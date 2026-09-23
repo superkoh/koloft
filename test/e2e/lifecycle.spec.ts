@@ -14,6 +14,7 @@ import {
   layoutOnDisk,
   menuItemTexts,
   openMenu,
+  processAlive,
   readCalls,
   resumedId,
   runIn,
@@ -410,7 +411,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     await snap(page, 'T-LIFE-10')
   })
 
-  test('T-LIFE-11: right-click menus carry exactly the per-kind sets, with the A2 negatives', async ({
+  test("T-LIFE-11: right-click menus carry exactly the per-kind sets, with the A2 negatives, and a running row's Close leaves it cold in place", async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -434,8 +435,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
 
       await openMenu(page, page.locator('.ws-tab', { hasText: 'Running menu session' }))
       const running = await menuItemTexts(page)
-      expect(running).toEqual(['Reveal in Finder', 'Copy session ID'])
-      for (const t of running) expect(t).not.toMatch(/close|remove from list/i)
+      expect(running).toEqual(['Reveal in Finder', 'Copy session ID', 'Close'])
       noForbidden(running)
       await closeMenu(page)
 
@@ -458,6 +458,13 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       ])
       noForbidden(ws)
       await closeMenu(page)
+
+      const [session] = await waitForCalls(env, 1)
+      const runningRow = page.locator('.ws-tab', { hasText: 'Running menu session' })
+      await openMenu(page, runningRow)
+      await page.locator('.menu .mi', { hasText: /^Close$/ }).click()
+      await expect(runningRow).toHaveClass(/\bcold\b/, { timeout: 20_000 })
+      await expect.poll(() => processAlive(session.pid), { timeout: 15_000 }).toBe(false)
     } finally {
       await app.close().catch(() => {})
     }
