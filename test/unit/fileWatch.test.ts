@@ -7,14 +7,9 @@ import {
   unwatchFile,
   closeAllFileWatchers,
   watchDir,
+  unwatchDir,
   closeAllDirWatchers
 } from '../../src/main/fileWatch'
-
-// Contract (preview auto-refresh): watchFile(p, onChange) fires onChange(p) whenever the
-// file at absolute path `p` changes on disk — content writes, deletion, and recreation
-// alike (the poll follows the *path*, so an atomic rename-replace keeps being observed).
-// Watches are ref-counted per path: only the final unwatch stops the poll.
-// closeAllFileWatchers drops everything (renderer hard-reload leak guard).
 
 let dir: string
 let file: string
@@ -32,7 +27,6 @@ afterEach(() => {
 })
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
-/** poll until cond() or timeout; returns the final cond value */
 const until = async (cond: () => boolean, ms = 4000): Promise<boolean> => {
   const end = Date.now() + ms
   while (Date.now() < end) {
@@ -41,13 +35,12 @@ const until = async (cond: () => boolean, ms = 4000): Promise<boolean> => {
   }
   return cond()
 }
-/** let the watcher take its baseline stat before we mutate the file (500ms poll) */
-const settle = (): Promise<void> => sleep(700)
+const settlePastTheWatchersBaselinePoll = (): Promise<void> => sleep(700)
 
 describe('fileWatch (preview auto-refresh watcher)', () => {
   it('fires onChange with the path when the file content changes', async () => {
     watchFile(file, (p) => calls.push(p))
-    await settle()
+    await settlePastTheWatchersBaselinePoll()
     fs.appendFileSync(file, 'two\n')
     expect(await until(() => calls.length > 0)).toBe(true)
     expect(calls[0]).toBe(file)
@@ -55,21 +48,20 @@ describe('fileWatch (preview auto-refresh watcher)', () => {
 
   it('survives an atomic rename-replace (write temp + rename over the path)', async () => {
     watchFile(file, (p) => calls.push(p))
-    await settle()
+    await settlePastTheWatchersBaselinePoll()
     const tmp = path.join(dir, 'tmp-replace')
     fs.writeFileSync(tmp, 'replaced content\n')
     fs.renameSync(tmp, file)
     expect(await until(() => calls.length > 0)).toBe(true)
-    // and a LATER in-place change on the same path is still observed
     calls = []
-    await settle()
+    await settlePastTheWatchersBaselinePoll()
     fs.appendFileSync(file, 'more\n')
     expect(await until(() => calls.length > 0)).toBe(true)
   })
 
   it('fires on deletion and again on recreation', async () => {
     watchFile(file, (p) => calls.push(p))
-    await settle()
+    await settlePastTheWatchersBaselinePoll()
     fs.rmSync(file)
     expect(await until(() => calls.length >= 1)).toBe(true)
     const afterDelete = calls.length
@@ -79,15 +71,15 @@ describe('fileWatch (preview auto-refresh watcher)', () => {
 
   it('is ref-counted: one unwatch of two keeps it alive, the final unwatch stops it', async () => {
     watchFile(file, (p) => calls.push(p))
-    watchFile(file, (p) => calls.push(p)) // second ref, same path
-    unwatchFile(file) // one ref left
-    await settle()
+    watchFile(file, (p) => calls.push(p))
+    unwatchFile(file)
+    await settlePastTheWatchersBaselinePoll()
     fs.appendFileSync(file, 'two\n')
     expect(await until(() => calls.length > 0)).toBe(true)
 
-    unwatchFile(file) // last ref gone → poll stops
+    unwatchFile(file)
     const before = calls.length
-    await settle()
+    await settlePastTheWatchersBaselinePoll()
     fs.appendFileSync(file, 'three\n')
     await sleep(1500)
     expect(calls.length).toBe(before)
@@ -99,11 +91,28 @@ describe('fileWatch (preview auto-refresh watcher)', () => {
       calls.push(p)
       seen.push({ mtimeMs: curr.mtimeMs, size: curr.size })
     })
-    await settle()
+    await settlePastTheWatchersBaselinePoll()
     fs.writeFileSync(file, 'one\ntwo\n')
     expect(await until(() => calls.length > 0)).toBe(true)
     const st = fs.statSync(file)
     expect(seen[0]).toEqual({ mtimeMs: st.mtimeMs, size: st.size })
+  })
+
+  it('unwatchFile removes only its own listener, so another fs.watchFile listener on the same path (the sessionTracker’s) keeps firing', async () => {
+    let siblingFired = 0
+    const sibling = (): void => {
+      siblingFired++
+    }
+    fs.watchFile(file, { interval: 500 }, sibling)
+    try {
+      watchFile(file, (p) => calls.push(p))
+      unwatchFile(file)
+      await settlePastTheWatchersBaselinePoll()
+      fs.appendFileSync(file, 'two\n')
+      expect(await until(() => siblingFired > 0)).toBe(true)
+    } finally {
+      fs.unwatchFile(file, sibling)
+    }
   })
 
   it('unwatch of an unknown path is a no-op', () => {
@@ -116,7 +125,7 @@ describe('fileWatch (preview auto-refresh watcher)', () => {
     watchFile(file, (p) => calls.push(p))
     watchFile(other, (p) => calls.push(p))
     closeAllFileWatchers()
-    await settle()
+    await settlePastTheWatchersBaselinePoll()
     fs.appendFileSync(file, 'two\n')
     fs.appendFileSync(other, 'y\n')
     await sleep(1500)
@@ -124,10 +133,6 @@ describe('fileWatch (preview auto-refresh watcher)', () => {
   })
 })
 
-// Contract (Changes stream live refresh): watchDir(root, onChange) answers whether
-// a recursive fs.watch is really running on `root`. A root where fs.watch throws
-// (network mount, EMFILE, no recursive support) answers false, so the renderer can fall
-// back to activity-driven refresh instead of waiting for events that never come.
 describe('watchDir (recursive dir watcher)', () => {
   afterEach(() => {
     closeAllDirWatchers()
@@ -145,5 +150,47 @@ describe('watchDir (recursive dir watcher)', () => {
     expect(watchDir(dir, () => {})).toBe(false)
     expect(watchDir(dir, () => {})).toBe(false)
     expect(spy).toHaveBeenCalledTimes(2)
+  })
+
+  it('never reports a change under .git, or git status rewriting .git/index would set off a refresh loop about every 300 ms', async () => {
+    const gitDir = path.join(dir, '.git')
+    fs.mkdirSync(gitDir)
+    fs.writeFileSync(path.join(gitDir, 'index'), 'a')
+    const roots: string[] = []
+    expect(watchDir(dir, (r) => roots.push(r))).toBe(true)
+    await sleep(700)
+    roots.length = 0
+
+    fs.writeFileSync(path.join(gitDir, 'index'), 'b')
+    fs.writeFileSync(path.join(gitDir, 'index.lock'), 'c')
+    await sleep(1000)
+    expect(roots).toEqual([])
+
+    fs.appendFileSync(file, 'two\n')
+    expect(await until(() => roots.length > 0)).toBe(true)
+  })
+
+  it('after an FSWatcher error rebuilds the watcher in place with its ref count kept, and keeps reporting changes', async () => {
+    const realWatch = fs.watch
+    const watchers: fs.FSWatcher[] = []
+    const spy = vi.spyOn(fs, 'watch').mockImplementation(((
+      ...args: Parameters<typeof fs.watch>
+    ) => {
+      const w = realWatch.apply(fs, args)
+      watchers.push(w)
+      return w
+    }) as typeof fs.watch)
+    const roots: string[] = []
+    expect(watchDir(dir, (r) => roots.push(r))).toBe(true)
+    expect(watchDir(dir, (r) => roots.push(r))).toBe(true)
+
+    watchers[0].emit('error', new Error('FSEvents stream died'))
+    expect(spy).toHaveBeenCalledTimes(2)
+    unwatchDir(dir)
+
+    await sleep(700)
+    roots.length = 0
+    fs.appendFileSync(file, 'two\n')
+    expect(await until(() => roots.length > 0)).toBe(true)
   })
 })

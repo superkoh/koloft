@@ -15,10 +15,6 @@ export default defineConfig({
   preload: {
     plugins: [externalizeDepsPlugin()],
     resolve: { alias },
-    // three preloads, and they are not variants of each other: `index` is Koloft's own
-    // privileged bridge for the host window, `guest` is the tiny dialog channel main
-    // registers on the browser partition (§05D-11), `extAlias` is the `browser`→`chrome`
-    // alias the extension platform registers on top of the upstream lib's preloads (D9).
     build: {
       rollupOptions: {
         input: {

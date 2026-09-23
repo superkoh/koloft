@@ -27,18 +27,6 @@ import { isComposing } from '../keys'
 import { useStore } from '../store'
 import { Switch } from './settings/Switch'
 
-/**
- * The one door to a workspace's scheduled jobs. It shows the saved rules as
- * cards, the form that writes one, and the runs each rule has had.
- *
- * Nothing here owns anything: main holds the store, the clock and every launch, and
- * this dialog only asks and re-paints what main pushes back. That is why a card reads
- * its live run out of `cron.live` rather than remembering a save it just made —
- * two windows of the same app would otherwise disagree.
- */
-
-/** Mon first: the chips read the way a week is written, while the stored numbers stay
- *  JavaScript's (0 = Sunday). */
 const DAY_CHIPS: { d: number; label: string }[] = [
   { d: 1, label: 'Mon' },
   { d: 2, label: 'Tue' },
@@ -86,17 +74,14 @@ const EFFORT_HINT =
 const NEVER_ASK_HINT =
   '"Never ask" can change files anywhere on this Mac, not only in the run\'s folder.'
 const NO_GIT_NOTE = 'This folder is not a git repo, so the run works in the folder itself.'
-/** A folder claude has never run in asks "do you trust this project?" first, and nothing
- *  automated can answer it — the run would sit there until the start deadline killed it
- *  (docs/claude-code-contract.md §9). Saying so is all Koloft does: it is a hint, not a
- *  refusal, because one session opened by hand here fixes it for good. */
+// CC§9
 const TRUST_HINT =
   'Claude has never been opened in this folder. Start one session here first — a scheduled ' +
   'run would stall on Claude\'s "do you trust this project?" question and be stopped at ' +
   'the deadline.'
 
-/** The card's last line, in the words §7.3 fixes. A run that is still open says what
- *  it is doing; a finished one says how it ended. */
+const MANY_RUN_FOLDERS = 10
+
 const LIVE_WORDS: Record<LiveRun['state'], string> = {
   launching: 'starting',
   running: 'working',
@@ -110,8 +95,6 @@ const HIST_WORDS: Record<HistoryLine['state'], string> = {
   missed: 'missed'
 }
 
-/** Green for a run that is waiting for a person, amber for a due that was let go,
- *  red for one that never started; everything else is a plain full stop. */
 function histDot(h: HistoryLine): string {
   if (h.state === 'skipped') return 'dot skip'
   if (h.state === 'failed') return 'dot bad'
@@ -124,15 +107,11 @@ export function CronJobsDialog({
   onClose
 }: {
   wsPath: string
-  /** the card to open on — the sidebar's forecast row names the job it just said would
-   *  run next. Absent (the menu's door) keeps the old rule: the oldest card. */
   initialJobId?: string
   onClose: () => void
 }): JSX.Element {
   const cron = useStore((s) => s.cron)
   const settings = useStore((s) => s.settings)
-  // git or not is already a fact the sidebar rows carry — the dialog reads the same
-  // one rather than asking main a second question about the same folder
   const isGit = useStore(
     (s) => s.workspaceRows.find((w) => w.workspace.path === wsPath)?.workspace.isGit === true
   )
@@ -142,45 +121,29 @@ export function CronJobsDialog({
     .slice()
     .sort((a, b) => a.createdAt - b.createdAt)
 
-  /** which card's history is on screen; falls back to the first card */
   const [selectedId, setSelectedId] = useState<string | null>(initialJobId ?? null)
   const selected = jobs.find((j) => j.id === selectedId) ?? jobs[0]
-  /** the card whose delete is waiting for a yes */
   const [confirmId, setConfirmId] = useState<string | null>(null)
-  /** the open form: a brand-new job, the id of the one being edited, or nothing */
   const [form, setForm] = useState<{ mode: 'new' } | { mode: 'edit'; id: string } | null>(null)
   const [fields, setFields] = useState<JobFields>(emptyFields())
-  /** no red text on a form nobody has touched yet — the first keystroke turns it on */
   const [touched, setTouched] = useState(false)
-  /** what main said no to, when it refused a save the form thought was fine */
   const [serverErrors, setServerErrors] = useState<string[]>([])
   const [skills, setSkills] = useState<SkillSuggestion[]>([])
-  /** null until main has answered; only `false` puts the warning up, so a slow answer
-   *  never flashes a warning at a folder that is fine */
   const [trusted, setTrusted] = useState<boolean | null>(null)
-  /** which suggestion the keyboard is on */
   const [hot, setHot] = useState(0)
-  /** which input wears the focus ring */
   const [focusKey, setFocusKey] = useState('')
   const nameRef = useRef<HTMLInputElement>(null)
 
-  // Opening the dialog is a question, so ask it. Main only pushes when something it
-  // owns changes, and the run folders on disk are not that: a person can delete eight
-  // of them behind Koloft's back, and the count would stay wrong until the next fire.
   useEffect(() => {
-    // a push that lands while the answer is in flight is the newer of the two, so the
-    // answer is dropped: the state object main pushed replaces the one asked about
-    const asked = useStore.getState().cron
+    const stateWhenAsked = useStore.getState().cron
     void window.api.cron
       .list()
       .then((s) => {
-        if (useStore.getState().cron === asked) useStore.getState().setCron(s)
+        if (useStore.getState().cron === stateWhenAsked) useStore.getState().setCron(s)
       })
       .catch(() => {})
   }, [])
 
-  // one read per open form: a skill added while the form is up stays absent, the same
-  // snapshot rule the worktree dialog's list follows
   useEffect(() => {
     if (!form) return
     let live = true
@@ -195,9 +158,6 @@ export function CronJobsDialog({
     }
   }, [form, wsPath])
 
-  // one question per open, like the skills list: a person who answers claude's trust
-  // question while this dialog is up sees the hint go on their next visit, and that is
-  // soon enough for a warning that only ever says "do this first"
   useEffect(() => {
     let live = true
     void window.api.cron
@@ -215,8 +175,6 @@ export function CronJobsDialog({
     if (form) nameRef.current?.focus()
   }, [form])
 
-  // Esc peels one layer per press, outermost last (the ladder `escPeel` states for
-  // the other dialogs): the form first, then the dialog itself.
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent): void => {
       if (e.key !== 'Escape') return
@@ -284,9 +242,6 @@ export function CronJobsDialog({
     if (form.mode === 'edit') input.id = form.id
     const r = await window.api.cron.save(input)
     if (r.ok) {
-      // History follows the job you just wrote — after an edit, its runs are what you
-      // came to look at. A dialog nobody has clicked in still falls back to the first
-      // card, which is what a fresh open shows.
       setSelectedId(r.job.id)
       closeForm()
     } else {
@@ -296,15 +251,10 @@ export function CronJobsDialog({
 
   const sugs = suggest(fields.task, skills)
   const pick = (s: SkillSuggestion): void => {
-    // the trailing space is what lets the next word be typed straight away — and it
-    // is also what closes the list, since no skill name starts with "<name> "
     patch({ task: s.name + ' ' })
     setHot(0)
   }
 
-  // Enter never saves the form — only the Save button does, so a half-filled form
-  // cannot go off by accident. With the skill list open, Enter picks; otherwise it is
-  // the textarea's own newline.
   const onTaskKey = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (sugs.length === 0 || isComposing(e)) return
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -322,8 +272,6 @@ export function CronJobsDialog({
     onBlur: () => setFocusKey((k) => (k === key ? '' : k))
   })
 
-  // ── the cards ───────────────────────────────────────────────────────────────
-
   const liveOf = (id: string): LiveRun | undefined => cron.live.find((l) => l.jobId === id)
 
   const whenLine = (job: CronJob): string => {
@@ -335,24 +283,17 @@ export function CronJobsDialog({
   const lastLine = (job: CronJob): JSX.Element => {
     const live = liveOf(job.id)
     const h = job.history[0]
-    // absent key = not a git workspace, so there are no run folders to count; zero of
-    // them is said by saying nothing, which is also what keeps a fresh job's line at
-    // the plain "never run"
     const folders = cron.folders[job.id] ?? 0
     const count = `${folders} run folder${folders === 1 ? '' : 's'} on disk`
     const foldersPart =
       folders === 0 ? null : (
         <>
           {' · '}
-          {folders > 10 ? <span className="am">{count}</span> : count}
+          {folders > MANY_RUN_FOLDERS ? <span className="am">{count}</span> : count}
         </>
       )
     if (!live && !h) return <>never run{foldersPart}</>
 
-    // the live run is the newest one there is unless a history line somehow outdates
-    // it; comparing the due minutes keeps that honest without a special case. A folded
-    // row covers a stretch, and "last run" means its NEWEST end — a nap of 85 missed
-    // dues must not report the minute the nap began.
     const hAt = h ? histEnd(h) : 0
     const useLive = !!live && (!h || live.dueAt >= hAt)
     const dueAt = useLive && live ? live.dueAt : hAt
@@ -425,8 +366,6 @@ export function CronJobsDialog({
     </div>
   )
 
-  // ── the form ────────────────────────────────────────────────────────────────
-
   const slug = slugOf(fields.name)
   const schedule = fieldsToSchedule(fields)
   const preview = schedule
@@ -497,8 +436,6 @@ export function CronJobsDialog({
               <div
                 key={s.name + s.source}
                 className={'cb-row' + (i === Math.min(hot, sugs.length - 1) ? ' hot' : '')}
-                // the field must keep the keyboard: a blur would take it away from
-                // the only thing that types the task
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => pick(s)}
               >
@@ -673,8 +610,6 @@ export function CronJobsDialog({
     </div>
   )
 
-  // ── history ─────────────────────────────────────────────────────────────────
-
   const renderHistory = (): JSX.Element | null => {
     if (!selected) return null
     const live = liveOf(selected.id)
@@ -682,8 +617,6 @@ export function CronJobsDialog({
       <div className="hist">
         <span className="flabel">{`History · ${selected.name}`}</span>
         <div className="hist-list">
-          {/* a run whose turn has ended is a result already, even though nothing has
-              been written down yet — it belongs at the top until it is closed */}
           {live?.state === 'done' && (
             <div className="hist-row">
               <span className="hist-when">{describeWhen(new Date(live.dueAt), new Date())}</span>
@@ -708,8 +641,6 @@ export function CronJobsDialog({
       </div>
     )
   }
-
-  // ── the dialog ──────────────────────────────────────────────────────────────
 
   const header =
     `Scheduled jobs · ${basename(wsPath)}` +

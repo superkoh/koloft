@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { hasWordChar, slugOf, worktreeBase } from '@shared/cronNames'
+import { hasWordChar, isValidModelName, slugOf, worktreeBase } from '@shared/cronNames'
 import { isValidWorktreeName } from '@shared/worktreeName'
-
-// The job name a person types becomes a folder name and a git branch name, so it
-// has to survive both. slugOf does the shaping; hasWordChar does the refusing.
 
 describe('slugOf', () => {
   it('lowercases and turns every run of other characters into one dash', () => {
@@ -20,7 +17,6 @@ describe('slugOf', () => {
   it('cuts to 48 characters and still leaves a name a branch can use', () => {
     const s = slugOf('a'.repeat(70))
     expect(s).toHaveLength(48)
-    // 48 + the 12-character `-yymmdd-HHMM` stamp is inside the 64-character limit
     expect(isValidWorktreeName(worktreeBase({ name: 'a'.repeat(70) }, Date.now()))).toBe(true)
   })
 
@@ -40,16 +36,37 @@ describe('hasWordChar', () => {
   })
 })
 
+describe('isValidModelName', () => {
+  it('accepts only a plain token, because the model name is typed into a login shell', () => {
+    for (const model of ['sonnet', 'claude-3.5:latest_x', '1abc', 'a'.repeat(81)]) {
+      expect(isValidModelName(model), model).toBe(true)
+    }
+    for (const model of [
+      '',
+      ' ',
+      'a b',
+      'sonnet; rm -rf ~',
+      '$(id)',
+      '`id`',
+      'a|b',
+      '-sonnet',
+      'a'.repeat(82)
+    ]) {
+      expect(isValidModelName(model), model).toBe(false)
+    }
+  })
+})
+
 describe('worktreeBase', () => {
   it('stamps the due time on the local wall clock', () => {
-    const due = new Date(2026, 8, 2, 21, 0, 0, 0) // 2 Sep 2026, 21:00 local
+    const due = new Date(2026, 8, 2, 21, 0, 0, 0)
     expect(worktreeBase({ name: 'Nightly Report' }, due.getTime())).toBe(
       'nightly-report-260902-2100'
     )
   })
 
   it('pads every part to two digits', () => {
-    const due = new Date(2026, 0, 5, 9, 7, 0, 0) // 5 Jan 2026, 09:07 local
+    const due = new Date(2026, 0, 5, 9, 7, 0, 0)
     expect(worktreeBase({ name: 'x' }, due.getTime())).toBe('x-260105-0907')
   })
 })

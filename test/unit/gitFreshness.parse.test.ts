@@ -2,8 +2,6 @@ import { describe, it, expect } from 'vitest'
 import { credentialGuardEnv, parseLeftRight, pullErrorReason } from '../../src/main/gitFreshness'
 
 describe('parseLeftRight', () => {
-  // `rev-list --left-right --count HEAD...origin/main` → "<left>\t<right>";
-  // left = ours (ahead), right = theirs (behind) — mixing them up inverts the feature
   it('reads ahead from the left column and behind from the right', () => {
     expect(parseLeftRight('1\t2\n')).toEqual({ ahead: 1, behind: 2 })
     expect(parseLeftRight('0\t0')).toEqual({ ahead: 0, behind: 0 })
@@ -51,14 +49,13 @@ describe('pullErrorReason', () => {
 })
 
 describe('credentialGuardEnv', () => {
-  it('closes every interactive prompt path', () => {
+  it('closes every interactive prompt path, and leaves the credential helper on', () => {
     const env = credentialGuardEnv({ PATH: '/usr/bin' })
     expect(env.GIT_TERMINAL_PROMPT).toBe('0')
     expect(env.GIT_ASKPASS).toBe('/usr/bin/false')
     expect(env.SSH_ASKPASS).toBe('/usr/bin/false')
     expect(env.SSH_ASKPASS_REQUIRE).toBe('never')
     expect(env.PATH).toBe('/usr/bin')
-    // the credential helper stays enabled on purpose (osxkeychain; decided)
     expect(env.GIT_CONFIG_PARAMETERS).toBeUndefined()
   })
 

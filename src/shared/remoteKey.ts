@@ -1,18 +1,11 @@
-/**
- * A remote workspace's key is `ssh://<machine>/<absolute path>`, stored in the layout's
- * `path` field like any local one. Everything that only treats the key as a string
- * (sidebar grouping, the note folder, tab ownership) works unchanged; everything that
- * touches a disk has to ask `parseRemoteKey` first. `<machine>` is handed to ssh
- * verbatim — an alias from ~/.ssh/config, `user@host`, whatever ssh accepts.
- */
 export interface RemoteKey {
   host: string
-  /** absolute path on the machine */
   path: string
 }
 
 const PREFIX = 'ssh://'
 
+// ADR-0025
 export function parseRemoteKey(key: string): RemoteKey | null {
   if (typeof key !== 'string' || !key.startsWith(PREFIX)) return null
   const rest = key.slice(PREFIX.length)
@@ -32,13 +25,10 @@ export function isRemoteKey(key: string): boolean {
   return parseRemoteKey(key) !== null
 }
 
-/** `machine:/path` — what "Copy path" hands over for a remote row. */
 export function remoteCopyText(host: string, path: string): string {
   return `${host}:${path}`
 }
 
-/** The per-machine folder name under `<userData>/remote/`. ssh hosts are already
- *  limited to the characters the parser admits, so only `@` needs taming. */
 export function remoteHostDirName(host: string): string {
   return host.replace(/@/g, '-at-')
 }

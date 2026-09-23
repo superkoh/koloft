@@ -1,8 +1,7 @@
 chrome.action.onClicked.addListener(async () => {
   let tabs = await chrome.tabs.query({ active: true, currentWindow: true })
-  // both spellings mean "the active tab" — a host that models a single window answers
-  // only the second one, and the case is about WHICH tab, not about the query shape
-  if (!tabs.length) tabs = await chrome.tabs.query({ active: true })
+  const singleWindowHostAnswersOnlyThisShape = { active: true }
+  if (!tabs.length) tabs = await chrome.tabs.query(singleWindowHostAnswersOnlyThisShape)
   let text = 'none'
   try {
     text = new URL(tabs[0].url).hostname

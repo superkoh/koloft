@@ -2,11 +2,6 @@ import { describe, it, expect } from 'vitest'
 import { AttentionTracker, type AttentionContext } from '../../src/main/attention'
 import type { AttentionEvent } from '../../src/shared/types'
 
-// Requirement: the pending set must mark exactly the sessions that need the
-// user — turn finished, blocked on approval, or died hard — and NEVER the tab the user
-// is currently watching. A wrong pending set means phantom badges (alert fatigue) or
-// silent misses (the exact babysitting problem the feature kills).
-
 const UNFOCUSED: AttentionContext = { windowFocused: false, activeTabId: 'tab-A' }
 const WATCHING_A: AttentionContext = { windowFocused: true, activeTabId: 'tab-A' }
 
@@ -57,11 +52,7 @@ describe('attention — approval→waiting is a finished turn (Stop can beat the
   it('raises turn-done when the approval marker was already consumed', () => {
     const { t, changes } = makeTracker()
     t.onStatusChange('tab-A', 'waiting', 'approval', UNFOCUSED)
-    // the user visited and granted the approval — marker consumed…
     t.clear('tab-A')
-    // …the tool finished fast and Stop fired before the 500ms jsonl poll could flip
-    // approval→working: this edge IS the turn ending, not a downgrade — without a
-    // raise the user waits forever on a notification that never comes
     t.onStatusChange('tab-A', 'approval', 'waiting', UNFOCUSED)
     expect(t.list()).toEqual([expect.objectContaining({ tabId: 'tab-A', kind: 'turn-done' })])
     expect(changes.at(-1)?.event).toMatchObject({ kind: 'turn-done' })
@@ -71,7 +62,6 @@ describe('attention — approval→waiting is a finished turn (Stop can beat the
     const { t } = makeTracker()
     t.onStatusChange('tab-A', 'waiting', 'approval', UNFOCUSED)
     t.onStatusChange('tab-A', 'approval', 'waiting', UNFOCUSED)
-    // the unanswered permission prompt outranks a mere finished turn
     expect(t.list()).toEqual([expect.objectContaining({ kind: 'approval' })])
   })
 })
@@ -80,7 +70,6 @@ describe('attention — precedence: approval outranks turn-done, exited replaces
   it('approval is not masked by a later turn-done for the same tab', () => {
     const { t } = makeTracker()
     t.onStatusChange('tab-A', 'waiting', 'approval', UNFOCUSED)
-    // the TUI can nudge waiting while still blocked on the permission prompt
     t.onStatusChange('tab-A', 'working', 'waiting', UNFOCUSED)
     expect(t.list()).toEqual([expect.objectContaining({ kind: 'approval' })])
   })
@@ -119,10 +108,8 @@ describe('attention — title snapshot survives the session it names', () => {
 describe('attention — reconsider (stale-context suppression race)', () => {
   it('a just-suppressed event is re-raised when the user switches away in time', () => {
     const { t } = makeTracker()
-    // status hook lands while ctx still says "watching A" (report lag)…
     t.onStatusChange('tab-A', 'working', 'waiting', WATCHING_A)
     expect(t.list()).toEqual([])
-    // …then the active-tab report arrives: the user is on B now
     t.reconsider('tab-A', { windowFocused: true, activeTabId: 'tab-B' })
     expect(t.list()).toEqual([expect.objectContaining({ tabId: 'tab-A', kind: 'turn-done' })])
   })
@@ -148,29 +135,24 @@ describe('attention — same-kind re-raise refreshes silently', () => {
     const { t, changes } = makeTracker()
     t.onStatusChange('tab-A', 'working', 'waiting', UNFOCUSED)
     const eventsBefore = changes.filter((c) => c.event).length
-    // marker still pending, same kind raised again (no intervening clear)
     t.onStatusChange('tab-A', 'working', 'waiting', UNFOCUSED)
     expect(t.list()).toHaveLength(1)
-    expect(changes.filter((c) => c.event).length).toBe(eventsBefore) // no second one-shot
+    expect(changes.filter((c) => c.event).length).toBe(eventsBefore)
   })
 })
 
 describe('attention — resurrected events carry the flag', () => {
   it('a reconsider re-raise is marked resurrected so outlets can stay silent', () => {
     const { t, changes } = makeTracker()
-    t.onStatusChange('tab-A', 'working', 'waiting', WATCHING_A) // suppressed
+    t.onStatusChange('tab-A', 'working', 'waiting', WATCHING_A)
     t.reconsider('tab-A', { windowFocused: true, activeTabId: 'tab-B' })
     const raised = changes.filter((c) => c.event).at(-1)?.event
     expect(raised).toMatchObject({ tabId: 'tab-A', resurrected: true })
-    // …while an ordinary raise is not marked
     const { t: t2, changes: ch2 } = makeTracker()
     t2.onStatusChange('tab-B', 'working', 'waiting', UNFOCUSED)
     expect(ch2.at(-1)?.event?.resurrected).toBeFalsy()
   })
 })
-
-// clearAll (the old renderer-loss purge) retired with adopted tabs come
-// back under the SAME pty ids, so markers survive a reload instead of being ghosts.
 
 describe('attention — the one suppression rule', () => {
   it('never pends for the tab the user is watching (focused + active)', () => {
@@ -203,7 +185,7 @@ describe('attention — clearing', () => {
     t.clear('tab-A')
     expect(t.list()).toEqual([expect.objectContaining({ tabId: 'tab-B' })])
     const before = changes.length
-    t.clear('tab-A') // already gone — no phantom re-render
+    t.clear('tab-A')
     expect(changes.length).toBe(before)
   })
 })

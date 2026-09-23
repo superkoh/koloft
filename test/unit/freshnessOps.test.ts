@@ -35,8 +35,6 @@ describe('canPull', () => {
     ['diverged (ahead)', { ahead: 2 }],
     ['dirty tree', { dirty: true }],
     ['off the default branch', { onDefault: false, branch: 'fix-auth' }],
-    // D5: Koloft's one write hand touches a MAIN checkout only — a linked worktree
-    // sitting on the default branch is still not ours to fast-forward
     ['a linked worktree, even on the default branch', { linked: true }]
   ])('refuses: %s', (_label, patch) => {
     expect(canPull(f(patch))).toBe(false)
@@ -79,7 +77,6 @@ describe('freshLineState', () => {
 
   it('offline never morphs into a pullable state', () => {
     expect(freshLineState(f({ state: 'error' }), false, 'main', NOW)).toBe('offline')
-    // error with nothing known to be behind is simply unknown — not "up to date"
     expect(freshLineState(f({ state: 'error', behind: 0 }), false, 'main', NOW)).toBe('hidden')
   })
 })

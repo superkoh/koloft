@@ -5,7 +5,6 @@ import os from 'os'
 import { spawnSync } from 'child_process'
 import { listDir, search as treeSearch, searchContent } from '../../src/main/fileTree'
 
-// A real git repo so searchContent's grep backends run for real.
 let repo: string
 beforeAll(() => {
   repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-ft-')))
@@ -16,19 +15,19 @@ beforeAll(() => {
   spawnSync('git', ['init', '-q', repo])
   git('config', 'user.email', 't@t.com')
   git('config', 'user.name', 't')
-  // line 1 has NO colon; line 2 has a colon INSIDE the matched text.
   fs.writeFileSync(path.join(repo, 'f.txt'), 'alpha match one\nbeta:gamma match two\n')
   git('add', 'f.txt')
 })
 afterAll(() => fs.rmSync(repo, { recursive: true, force: true }))
+
+const PATH_WITH_GIT_BUT_NO_RG = '/usr/bin:/bin'
 
 async function search(
   query: string,
   forceGitGrep: boolean
 ): Promise<{ line: number; text: string }[]> {
   const saved = process.env.PATH
-  // git present here, rg absent → rgLines() returns null → the gitGrepLines() fallback
-  if (forceGitGrep) process.env.PATH = '/usr/bin:/bin'
+  if (forceGitGrep) process.env.PATH = PATH_WITH_GIT_BUT_NO_RG
   try {
     const { hits } = await searchContent(repo, query)
     return hits.map((h) => ({ line: h.line, text: h.text }))
@@ -37,10 +36,8 @@ async function search(
   }
 }
 
-// Intent (regardless of backend): content search surfaces EVERY matching line with its
-// full, verbatim text. line 1 has no colon (git grep dropped it); line 2 has a colon in
-// its text (git grep mangled it). Both backends must agree.
-describe('searchContent returns every match with full text', () => {
+// PLATFORM§31
+describe('searchContent returns every match with full text, with or without a colon in it', () => {
   it('via the git grep fallback (no ripgrep on PATH)', async () => {
     const hits = await search('match', true)
     expect(hits.map((h) => h.line).sort()).toEqual([1, 2])
@@ -56,23 +53,12 @@ describe('searchContent returns every match with full text', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// A-01…A-04, A-08 — "Show ignored files". Real git repos, because what is under test IS
-// what git answers: the ignore rules, the batching of `check-ignore`, and the third
-// `ls-files` spawn that only the switch turns on.
-
-/** `git init`, loudly. A silent failure here (a spawn that could not fork under load, a
- *  git that is not on PATH) leaves a plain directory behind, and every case then fails as
- *  "nothing was marked ignored" — which reads exactly like the product bug these cases
- *  exist to catch. */
 function initRepo(dir: string): void {
   const r = spawnSync('git', ['init', '-q', dir], { encoding: 'utf8' })
   if (r.status !== 0) throw new Error(`git init failed (${r.status}): ${r.stderr || r.error}`)
   if (!fs.existsSync(path.join(dir, '.git'))) throw new Error(`no .git in ${dir}`)
 }
 
-/** does git itself call `name` ignored? Asked straight, so a case can tell "the batching
- *  dropped it" apart from "git never considered it ignored in the first place". */
 function gitCallsItIgnored(dir: string, name: string): boolean {
   const r = spawnSync('git', ['-C', dir, 'check-ignore', '--', name], { encoding: 'utf8' })
   if (r.status === 0) return true
@@ -80,7 +66,7 @@ function gitCallsItIgnored(dir: string, name: string): boolean {
   throw new Error(`git check-ignore failed (${r.status}): ${r.stderr || r.error}`)
 }
 
-describe('listDir / search honour the show-ignored switch', () => {
+describe('A-01…A-04: listDir / search honour the show-ignored switch', () => {
   let ws: string
   beforeAll(() => {
     ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-ign-')))
@@ -92,11 +78,8 @@ describe('listDir / search honour the show-ignored switch', () => {
     fs.writeFileSync(path.join(ws, '.venv', 'pyvenv.cfg'), 'home = /usr\n')
     fs.mkdirSync(path.join(ws, 'node_modules'))
     fs.writeFileSync(path.join(ws, 'node_modules', 'index.js'), '')
-    // a directory that merely shares its NAME with build output: this repo keeps its icon
-    // source in build/, and the old name-based drop hid it with no way back
     fs.mkdirSync(path.join(ws, 'build'))
     fs.writeFileSync(path.join(ws, 'build', 'icon.svg'), '<svg/>\n')
-    // a nested repository: `ls-files --others` prints it as one `nested/` entry
     fs.mkdirSync(path.join(ws, 'nested'))
     initRepo(path.join(ws, 'nested'))
     fs.writeFileSync(path.join(ws, 'nested', 'inner.txt'), '')
@@ -137,7 +120,6 @@ describe('listDir / search honour the show-ignored switch', () => {
       expect(e?.ignored, name).toBe(true)
     }
     expect(entries.find((e) => e.name === 'build')?.ignored).toBeUndefined()
-    // opening an ignored directory lists its children, each marked in turn
     const inside = await listDir(path.join(ws, '.venv'), { showIgnored: true })
     expect(inside.map((e) => e.name)).toContain('pyvenv.cfg')
     expect(inside.find((e) => e.name === 'pyvenv.cfg')?.ignored).toBe(true)
@@ -160,7 +142,6 @@ describe('listDir / search honour the show-ignored switch', () => {
     expect((await treeSearch(ws, 'index.js')).hits.map((h) => h.rel)).not.toContain(
       'node_modules/index.js'
     )
-    // …while a file under a tracked `build/` is
     expect((await treeSearch(ws, 'icon.svg')).hits.map((h) => h.rel)).toContain('build/icon.svg')
   })
 
@@ -184,6 +165,7 @@ describe('listDir / search honour the show-ignored switch', () => {
     }
   })
 
+  // PLATFORM§30
   it('search never lists a nested repository as a file (the `dir/` entry from ls-files)', async () => {
     for (const on of [false, true]) {
       const { hits } = await treeSearch(ws, 'nested', { showIgnored: on })
@@ -199,11 +181,10 @@ describe('listDir / search honour the show-ignored switch', () => {
     expect(hits.find((h) => h.rel === 'app.ts')?.ignored).toBeUndefined()
   })
 
-  // content search is a third backend (rg, or git grep) — it has to follow the same switch
   it('content search follows the switch, on both backends', async () => {
     const rels = async (on: boolean, gitGrepOnly: boolean): Promise<string[]> => {
       const saved = process.env.PATH
-      if (gitGrepOnly) process.env.PATH = '/usr/bin:/bin'
+      if (gitGrepOnly) process.env.PATH = PATH_WITH_GIT_BUT_NO_RG
       try {
         return (await searchContent(ws, 'SECRET', { showIgnored: on })).hits.map((h) => h.rel)
       } finally {
@@ -217,22 +198,16 @@ describe('listDir / search honour the show-ignored switch', () => {
   })
 })
 
-// A-08 — `check-ignore` is asked in batches of 500. A batch where NOTHING is ignored exits
-// 1, which the old code treated as fatal and used to abandon every later batch: ignored
-// files near the end of a big directory silently lost their mark. The directory order is
-// read back from disk, so the single ignored file is provably in a LATER batch.
-describe('listDir marks ignored files past the first check-ignore batch', () => {
+// PLATFORM§30
+describe('A-08: listDir marks ignored files past a first check-ignore batch that matched nothing', () => {
   let ws: string
   let lastName: string
-  /** `IGNORE_BATCH` in fileTree.ts — not exported, so the number is repeated here and the
-   *  case below re-checks the position it implies rather than trusting it. */
-  const BATCH = 500
+  const IGNORE_BATCH_COPIED_FROM_FILETREE = 500
   beforeAll(() => {
     ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-batch-')))
     initRepo(ws)
     fs.writeFileSync(path.join(ws, '.gitignore'), 'nothing-here\n')
     for (let i = 0; i < 600; i++) fs.writeFileSync(path.join(ws, `f${i}.txt`), '')
-    // whatever the filesystem hands back LAST sits at index >= 500, i.e. in batch 2+
     const order = fs.readdirSync(ws).filter((n) => n !== '.git')
     if (order.length !== 601) throw new Error(`expected 601 entries, got ${order.length}`)
     lastName = order[order.length - 1]
@@ -242,17 +217,16 @@ describe('listDir marks ignored files past the first check-ignore batch', () => 
   afterAll(() => fs.rmSync(ws, { recursive: true, force: true }))
 
   it('a later batch is still asked after an earlier one matched nothing', async () => {
-    // Everything the case leans on, checked here rather than assumed: the batching order
-    // is the directory order, so a red below means the batching dropped the file — not
-    // that the repo never came up or that git disagrees about it being ignored.
     const order = fs.readdirSync(ws).filter((n) => n !== '.git')
-    expect(order.indexOf(lastName)).toBeGreaterThanOrEqual(BATCH)
+    expect(order.indexOf(lastName)).toBeGreaterThanOrEqual(IGNORE_BATCH_COPIED_FROM_FILETREE)
     expect(gitCallsItIgnored(ws, lastName)).toBe(true)
-    // the first batch must match NOTHING — that exit-1 answer is the trigger. One spawn
-    // for all 500, the same shape the code under test uses.
-    const first = spawnSync('git', ['-C', ws, 'check-ignore', '--', ...order.slice(0, BATCH)], {
-      encoding: 'utf8'
-    })
+    const first = spawnSync(
+      'git',
+      ['-C', ws, 'check-ignore', '--', ...order.slice(0, IGNORE_BATCH_COPIED_FROM_FILETREE)],
+      {
+        encoding: 'utf8'
+      }
+    )
     expect({ status: first.status, stdout: first.stdout }).toEqual({ status: 1, stdout: '' })
 
     const entries = await listDir(ws, { showIgnored: true })
@@ -260,12 +234,7 @@ describe('listDir marks ignored files past the first check-ignore batch', () => 
   })
 })
 
-// The 300-result cap is what makes ranking load-bearing: 2000 ignored logs all score
-// above a tracked file buried deeper than they are, so they fill the cap and the file the
-// user was actually after never reaches the list at all. (A tracked `run.ts` at the ROOT
-// would win on path length alone — this case only bites where the tracked path is the
-// longer one, which is the normal shape of a real source tree.)
-describe('search ranks ignored files below everything else', () => {
+describe('search ranks ignored files below everything else, so they cannot crowd a deep tracked file out of the capped list', () => {
   let ws: string
   const tracked = 'src/services/runner/run.ts'
   beforeAll(() => {
@@ -281,7 +250,7 @@ describe('search ranks ignored files below everything else', () => {
 
   it('keeps the tracked file first, and in the list at all, past the result cap', async () => {
     const { hits, truncated } = await treeSearch(ws, 'run', { showIgnored: true })
-    expect(truncated).toBe(true) // the cap really is in play, or the case proves nothing
+    expect(truncated).toBe(true)
     expect(hits.map((h) => h.rel)).toContain(tracked)
     expect(hits[0].rel).toBe(tracked)
     expect(hits[0].ignored).toBeUndefined()

@@ -269,3 +269,18 @@ connection deadline can expire while the user is deciding. These prompts must st
 visible and interactive. Waiting more than 15 seconds before confirming still
 resumed the original thread and rendered its history with no connection deadline;
 closing the owning PTY still tears down its unused server.
+
+An earlier Koloft code note adds, with no measurement, date or version: a run waiting
+on the native "resume this thread?" question has not opened a thread yet, so it
+publishes no session entry for as long as the user takes to answer. It was not
+re-measured, and the check above named the directory trust question, not this one.
+
+## 10. Runtime markers from an enclosing app
+
+**From an earlier Koloft code note; not measured.** These variables are set by the
+app that encloses Codex, not by the user's own configuration of a new CLI:
+`CODEX_APP_TOOLS_PIPE_PATH`, `CODEX_INTERNAL_ORIGINATOR_OVERRIDE`,
+`CODEX_MCP_NODE_PATH`, `CODEX_PERMISSION_PROFILE`,
+`CODEX_SAGE_BACKFILL_TRACKER_TAB_REUSE`, `CODEX_SESSION_ID`, `CODEX_THREAD_ID`,
+`CODEX_SHELL` and `CODEX_CI`. A child Codex that inherits them acts as part of the
+enclosing run.

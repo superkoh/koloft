@@ -4,13 +4,10 @@ import {
   AccountPicker,
   FABLE_EXHAUSTED_LINE,
   PICK_BUDGET_MS,
+  PROBE_TIMEOUT_MS,
   type PickDeps
 } from '../../src/main/accountPicker'
 import type { ProbeResult } from '../../src/main/usageProbe'
-
-/** U4 — pick orchestration: cache short-circuit / single-flight / two-tier pool /
- *  degradation ladder (tests.md §2.4). Deps fully injected; no wall clocks except
- *  the deliberate budget-timeout case. */
 
 const NOW_S = 1_700_000_000
 const NOW_MS = NOW_S * 1000
@@ -45,11 +42,8 @@ function usage(p: Partial<UsageSnapshot>): UsageSnapshot {
   }
 }
 
-/** the second banner line, printed whenever the PICKED account has no fable allowance
- *  left to spend (the design state ②, re-judged per account by D21) */
 const FABLE_GONE = FABLE_EXHAUSTED_LINE
 
-/** hard-limited snapshot: rejected with reset ≥ grace away */
 function walled(extra: Partial<UsageSnapshot> = {}): UsageSnapshot {
   return usage({ u5: 1, s5: 'rejected', r5: NOW_S + 7200, ...extra })
 }
@@ -58,7 +52,6 @@ interface Harness {
   picker: AccountPicker
   probeCalls: string[]
   setProbe(name: string, r: ProbeResult): void
-  /** move the injected clock forward (ms) — snapshots age against this, not wall time */
   advance(ms: number): void
 }
 
@@ -79,7 +72,6 @@ function makeHarness(
       const name = secret.replace(/^tok-/, '')
       probeCalls.push(name)
       const r = results.get(name) ?? { ok: false, error: 'network' }
-      // stamp the snapshot with the CURRENT injected clock, like probeAccount does
       return r.ok && r.usage ? { ...r, usage: { ...r.usage, at: clock } } : r
     },
     onProbeOutcome: () => {},
@@ -144,14 +136,13 @@ describe('U4 · selection + banner', () => {
 describe('U4 · fable-host routing (rev2 D17/D19)', () => {
   it('an account whose fable bucket is spent stops hosting: pool routes on 5h/7d only', async () => {
     const h = makeHarness([meta({ name: 'burned' }), meta({ name: 'plain' })])
-    // burned has an INCLUDED allowance and has spent it; plain has none at all
     h.setProbe('burned', {
       ok: true,
       usage: usage({ u5: 0.05, u7: 0.5, uoi: 0.99, soi: 'allowed', hasOi: true })
     })
     h.setProbe('plain', { ok: true, usage: usage({ u5: 0.6, u7: 0.8 }) })
     const r = await h.picker.pick()
-    expect(r.account).toBe('burned') // opus route: oi discarded, burned is the idler
+    expect(r.account).toBe('burned')
     if (r.account) expect(r.warning).toBe(FABLE_GONE)
     if (r.account) expect(r.banner).not.toContain('fable 99%')
   })
@@ -168,9 +159,7 @@ describe('U4 · fable-host routing (rev2 D17/D19)', () => {
     if (r.account) expect(r.banner).toBe('koloft: → host · 5h 40% · 7d 50% · fable 40%')
   })
 
-  // D19 health gate: hosting fable means routing REAL work there, so a host must be
-  // healthy on 5h/7d too — a rejected-but-recovering account is not.
-  it('rejected-inside-grace disqualifies a fable host even though it is not hard-limited', async () => {
+  it('a fable host must be healthy on 5h/7d too: rejected-inside-grace disqualifies it even though it is not hard-limited', async () => {
     const alpha = usage({ uoi: 0.4, soi: 'allowed', hasOi: true, s5: 'rejected', r5: NOW_S + 1500 })
     const h = makeHarness([meta({ name: 'alpha' }), meta({ name: 'beta' })])
     h.setProbe('alpha', { ok: true, usage: alpha })
@@ -179,7 +168,6 @@ describe('U4 · fable-host routing (rev2 D17/D19)', () => {
     expect(r.account).toBe('beta')
     if (r.account) expect(r.warning).toBe(FABLE_GONE)
 
-    // control: the SAME account without the rejection does host
     const h2 = makeHarness([meta({ name: 'alpha' }), meta({ name: 'beta' })])
     h2.setProbe('alpha', { ok: true, usage: { ...alpha, s5: 'allowed', r5: 0 } })
     h2.setProbe('beta', { ok: true, usage: usage({ u5: 0.01, u7: 0.1 }) })
@@ -198,10 +186,7 @@ describe('U4 · fable-host routing (rev2 D17/D19)', () => {
     if (r.account) expect(r.warning).toBe(FABLE_GONE)
   })
 
-  // Eligibility reads RAW utilization: the reset discount is for ranking only. Seen
-  // — fable 99% with the week resetting in 50 min discounted to ~15%, so the
-  // account hosted, won as the idler, and the session's first hour had no allowance.
-  it('a spent fable bucket about to reset is still not a host (no discount on eligibility)', async () => {
+  it('a spent fable bucket about to reset is still not a host: eligibility reads raw utilization, the reset discount only ranks', async () => {
     const h = makeHarness([meta({ name: 'resetting' }), meta({ name: 'koh' })])
     h.setProbe('resetting', {
       ok: true,
@@ -224,9 +209,6 @@ describe('U4 · fable-host routing (rev2 D17/D19)', () => {
     if (r.account) expect(r.warning).toBeUndefined()
   })
 
-  // …but a reading whose reset has already PASSED is void: the bucket is full again.
-  // Snapshots never expire and a pick answers from cache, so the first launch after a
-  // weekly reset scores the pre-reset 99% — that account must host, with no billing line.
   it('a spent fable reading whose reset has passed hosts again, without the billing line', async () => {
     const h = makeHarness([meta({ name: 'renewed' }), meta({ name: 'plain' })])
     h.setProbe('renewed', {
@@ -249,7 +231,6 @@ describe('U4 · fable-host routing (rev2 D17/D19)', () => {
       ok: true,
       usage: usage({ u5: 0.2, uoi: 0.5, soi: 'allowed', hasOi: true })
     })
-    // fable route with both as hosts: cooled's 5h is void (0), other's is 0.2 → cooled
     expect((await h.picker.pick()).account).toBe('cooled')
   })
 
@@ -258,8 +239,38 @@ describe('U4 · fable-host routing (rev2 D17/D19)', () => {
     h.setProbe('shut', { ok: true, usage: usage({ uoi: 0.3, soi: 'rejected', hasOi: true }) })
     h.setProbe('plain', { ok: true, usage: usage({ u5: 0.5 }) })
     const r = await h.picker.pick()
-    expect(r.account).toBe('shut') // still the idler on 5h/7d — but on the opus route
+    expect(r.account).toBe('shut')
     if (r.account) expect(r.warning).toBe(FABLE_GONE)
+  })
+
+  it("fable hosting is decided only by the usage snapshot's hasOi, never by the account's fable badge: a stale badge must never route a launch", async () => {
+    const badged = makeHarness([
+      meta({ name: 'badged', fable: 'yes' }),
+      meta({ name: 'plain', fable: 'no' })
+    ])
+    badged.setProbe('badged', { ok: true, usage: usage({ u5: 0.4, u7: 0.2 }) })
+    badged.setProbe('plain', { ok: true, usage: usage({ u5: 0.1, u7: 0.2 }) })
+    expect(await badged.picker.pick()).toEqual({
+      account: 'plain',
+      kind: 'oauth',
+      banner: 'koloft: → plain · 5h 10% · 7d 20%',
+      warning: FABLE_GONE
+    })
+
+    const unbadged = makeHarness([
+      meta({ name: 'host', fable: 'no' }),
+      meta({ name: 'plain', fable: 'no' })
+    ])
+    unbadged.setProbe('host', {
+      ok: true,
+      usage: usage({ u5: 0.4, u7: 0.2, uoi: 0.2, soi: 'allowed', hasOi: true })
+    })
+    unbadged.setProbe('plain', { ok: true, usage: usage({ u5: 0.1, u7: 0.2 }) })
+    expect(await unbadged.picker.pick()).toEqual({
+      account: 'host',
+      kind: 'oauth',
+      banner: 'koloft: → host · 5h 40% · 7d 20% · fable 20%'
+    })
   })
 
   it('two opus candidates tied on every layer still resolve — never no-usable', async () => {
@@ -270,8 +281,6 @@ describe('U4 · fable-host routing (rev2 D17/D19)', () => {
     expect(r.account).toBe('twin-a')
   })
 
-  // near-equal accounts (every layer within EPS): the one whose weekly quota voids
-  // clearly sooner still wins every launch — use it up before it resets…
   it('near-equal accounts: a clearly earlier weekly reset still wins every launch', async () => {
     const h = makeHarness([meta({ name: 'a' }), meta({ name: 'b' })])
     h.setProbe('a', {
@@ -286,8 +295,6 @@ describe('U4 · fable-host routing (rev2 D17/D19)', () => {
     expect((await h.picker.pick()).account).toBe('b')
   })
 
-  // …but resets within 6h of each other say nothing, and list order used to hand
-  // every new session to the same account.
   it('near-equal accounts resetting together rotate across launches instead of sticking to one', async () => {
     const h = makeHarness([meta({ name: 'a' }), meta({ name: 'b' })])
     h.setProbe('a', {
@@ -305,9 +312,6 @@ describe('U4 · fable-host routing (rev2 D17/D19)', () => {
 })
 
 describe('U4 · fable-priority switch (rev3 D20/D21)', () => {
-  // D20: the switch decides whether the included fable allowance is a routing
-  // dimension at all. Off, a healthy host stops collapsing the pool onto itself —
-  // which is the whole point: 5h/7d load is the only thing left to rank on.
   it('switch off: a fable host no longer wins over an idler with no allowance', async () => {
     const pool = [meta({ name: 'host' }), meta({ name: 'idle' })]
     const usages: [string, UsageSnapshot][] = [
@@ -317,7 +321,6 @@ describe('U4 · fable-priority switch (rev3 D20/D21)', () => {
     const off = makeHarness(pool, { fablePriority: false })
     for (const [n, u] of usages) off.setProbe(n, { ok: true, usage: u })
     const r = await off.picker.pick()
-    // opus route: oi discarded → host s1 = 0.40, idle s1 = 0.01, gap > EPS
     expect(r).toEqual({
       account: 'idle',
       kind: 'oauth',
@@ -325,17 +328,12 @@ describe('U4 · fable-priority switch (rev3 D20/D21)', () => {
       warning: FABLE_GONE
     })
 
-    // control: the SAME pool with the switch on still routes on fable
     const on = makeHarness(pool)
     for (const [n, u] of usages) on.setProbe(n, { ok: true, usage: u })
     expect((await on.picker.pick()).account).toBe('host')
   })
 
-  // D21: the billing line is judged on the PICKED account's own allowance, not on
-  // whether the pool held a host. Switch off, the winner can still have fable left —
-  // saying "this will be billed" there is a lie, and a lying warning trains the user
-  // to skip the one line standing between them and a metered session.
-  it('switch off + the picked account still holds allowance → no billing line', async () => {
+  it('switch off + the picked account still holds allowance → no billing line (judged on the picked account, not on the pool)', async () => {
     const pool = [meta({ name: 'busy' }), meta({ name: 'spare' })]
     const usages: [string, UsageSnapshot][] = [
       ['busy', usage({ u5: 0.6, u7: 0.1, uoi: 0.1, soi: 'allowed', hasOi: true })],
@@ -343,23 +341,17 @@ describe('U4 · fable-priority switch (rev3 D20/D21)', () => {
     ]
     const off = makeHarness(pool, { fablePriority: false })
     for (const [n, u] of usages) off.setProbe(n, { ok: true, usage: u })
-    // opus route: s1 0.05 (spare) vs 0.60 (busy). spare's allowance is 80% used —
-    // deep, but NOT spent, so this launch is not about to be billed.
     expect(await off.picker.pick()).toEqual({
       account: 'spare',
       kind: 'oauth',
       banner: 'koloft: → spare · 5h 5% · 7d 10%'
     })
 
-    // control: with the switch on, spare's 1.0 oi component sends the pick to busy
     const on = makeHarness(pool)
     for (const [n, u] of usages) on.setProbe(n, { ok: true, usage: u })
     expect((await on.picker.pick()).account).toBe('busy')
   })
 
-  // the same judge, isolated from the switch: D19's health gate can empty the host
-  // set while every allowance is still intact, and that is an opus route whose winner
-  // is NOT about to be billed.
   it('switch on, no host (all 5h-hot) but the winner holds allowance → no billing line', async () => {
     const h = makeHarness([meta({ name: 'hot-a' }), meta({ name: 'hot-b' })])
     h.setProbe('hot-a', {
@@ -371,7 +363,7 @@ describe('U4 · fable-priority switch (rev3 D20/D21)', () => {
       usage: usage({ u5: 0.9, u7: 0.1, uoi: 0.1, soi: 'allowed', hasOi: true })
     })
     const r = await h.picker.pick()
-    expect(r.account).toBe('hot-a') // 0.86 vs 0.90 — inside EPS, original order wins
+    expect(r.account).toBe('hot-a')
     if (r.account) expect(r.warning).toBeUndefined()
   })
 })
@@ -382,8 +374,8 @@ describe('U4 · cache short-circuit and single-flight', () => {
     h.setProbe('bravo', { ok: true, usage: usage({ u5: 0.1 }) })
     await h.picker.pick()
     expect(h.probeCalls).toEqual(['bravo'])
-    await h.picker.pick() // same injected now → cache is 0s old
-    expect(h.probeCalls).toEqual(['bravo']) // no second probe
+    await h.picker.pick()
+    expect(h.probeCalls).toEqual(['bravo'])
   })
 
   it('concurrent picks coalesce onto one probe round', async () => {
@@ -393,43 +385,59 @@ describe('U4 · cache short-circuit and single-flight', () => {
     expect(h.probeCalls).toEqual(['bravo'])
   })
 
-  // regression: the single-flight latch must RELEASE after its round settles. It once
-  // stored `round.finally(...)` (a different promise than the one the cleanup compared
-  // against), so it never cleared and every later round was skipped — usage froze at
-  // the first reading for the life of the app and selection stopped following usage.
-  it('past the fresh window a later pick probes AGAIN, and the new reading steers the pick after it', async () => {
+  it('past the fresh window a later pick probes AGAIN (the single-flight latch released), and the new reading steers the pick after it', async () => {
     const h = makeHarness([meta({ name: 'a' }), meta({ name: 'b' })])
     h.setProbe('a', { ok: true, usage: usage({ u5: 0.1 }) })
     h.setProbe('b', { ok: true, usage: usage({ u5: 0.9 }) })
     expect((await h.picker.pick()).account).toBe('a')
     expect(h.probeCalls).toHaveLength(2)
 
-    // usage flips while the app keeps running
     h.setProbe('a', { ok: true, usage: usage({ u5: 0.95 }) })
     h.setProbe('b', { ok: true, usage: usage({ u5: 0.05 }) })
-    h.advance(31_000) // past FRESH_CACHE_MS
-    expect((await h.picker.pick()).account).toBe('a') // answered from the cache it had
-    expect(h.probeCalls).toHaveLength(4) // a real second round, not a stale replay
-    // the round lands on its own schedule — wait for its EFFECT, not for a tick count
+    h.advance(31_000)
+    expect((await h.picker.pick()).account).toBe('a')
+    expect(h.probeCalls).toHaveLength(4)
     await vi.waitFor(async () => {
-      expect((await h.picker.pick()).account).toBe('b') // …which the next launch follows
+      expect((await h.picker.pick()).account).toBe('b')
     })
   })
 
-  // The probe is a 4–5s call (claude-fable-5, measured) — far past any deadline a
-  // launch can wait on. So the cache is the answer and the round is a refresh for the
-  // NEXT launch: no snapshot ever expires, and a pick that has one never waits.
+  // CC§7
+  it('a probe that throws inside a round does not wedge the single-flight latch: once the fresh window has passed, a later pick starts a new round', async () => {
+    const h = makeHarness([meta({ name: 'a' })])
+    const deps = (h.picker as unknown as { deps: PickDeps }).deps
+    const realProbe = deps.probe
+    deps.probe = () => {
+      throw new Error('socket hang up')
+    }
+    const failed = await h.picker.pick()
+    if (failed.account) expect(failed.banner).toContain('round-robin')
+
+    deps.probe = realProbe
+    h.setProbe('a', { ok: true, usage: usage({ u5: 0.1, u7: 0.2 }) })
+    h.advance(31_000)
+    const r = await h.picker.pick()
+    expect(h.probeCalls).toEqual(['a'])
+    expect(r).toMatchObject({ account: 'a', banner: 'koloft: → a · 5h 10% · 7d 20%' })
+  })
+
+  it('PROBE_TIMEOUT_MS outlasts both the pick budget and the slowest measured claude-fable-5 probe (5.1 s, CC§7), so a round outlives the pick that started it and warms the cache; at 1.8 s every launch fell through to a blind round-robin', () => {
+    const slowestMeasuredFableProbeMs = 5_100
+    expect(PROBE_TIMEOUT_MS).toBeGreaterThan(PICK_BUDGET_MS)
+    expect(PROBE_TIMEOUT_MS).toBeGreaterThan(slowestMeasuredFableProbeMs)
+  })
+
   it('a snapshot older than any window still scores — a stale reading beats round-robin', async () => {
     const h = makeHarness([meta({ name: 'a' }), meta({ name: 'b' })])
     h.setProbe('a', { ok: true, usage: usage({ u5: 0.9 }) })
     h.setProbe('b', { ok: true, usage: usage({ u5: 0.1 }) })
     expect((await h.picker.pick()).account).toBe('b')
 
-    h.advance(3_600_000) // an hour later — every probe now fails
+    h.advance(3_600_000)
     h.setProbe('a', { ok: false, error: 'network' })
     h.setProbe('b', { ok: false, error: 'network' })
     const r = await h.picker.pick()
-    expect(r.account).toBe('b') // the hour-old reading, not the cursor
+    expect(r.account).toBe('b')
     if (r.account) expect(r.banner).not.toContain('round-robin')
   })
 
@@ -439,12 +447,11 @@ describe('U4 · cache short-circuit and single-flight', () => {
     h.setProbe('b', { ok: true, usage: usage({ u5: 0.9 }) })
     await h.picker.pick()
     h.advance(31_000)
-    // a round that never resolves: the pick must not be inside it
     const deps = (h.picker as unknown as { deps: PickDeps }).deps
     deps.probe = () => new Promise<ProbeResult>(() => {})
     const t0 = Date.now()
     const r = await h.picker.pick()
-    expect(Date.now() - t0).toBeLessThan(PICK_BUDGET_MS) // not even the budget was spent
+    expect(Date.now() - t0).toBeLessThan(PICK_BUDGET_MS)
     expect(r.account).toBe('a')
   })
 
@@ -455,14 +462,14 @@ describe('U4 · cache short-circuit and single-flight', () => {
       usage: usage({ u5: 0.1, uoi: 0.2, soi: 'allowed', hasOi: true })
     })
     const fresh = await h.picker.pick()
-    if (fresh.account) expect(fresh.warning).toBeUndefined() // fable route, no metered line
+    if (fresh.account) expect(fresh.warning).toBeUndefined()
 
     h.advance(3_600_000)
     h.setProbe('a', { ok: false, error: 'network' })
     const r = await h.picker.pick()
     expect(r.account).toBe('a')
     if (r.account) {
-      expect(r.banner).toContain('fable 20%') // still the fable route
+      expect(r.banner).toContain('fable 20%')
       expect(r.warning).toBeUndefined()
     }
   })
@@ -473,12 +480,12 @@ describe('U4 · cache short-circuit and single-flight', () => {
     const fresh = await h.picker.pick()
     if (fresh.account) expect(fresh.banner).toBe('koloft: → bravo · 5h 10% · 7d 20%')
 
-    h.advance(14 * 60_000) // still inside STALE_MS — the numbers still read as live
+    h.advance(14 * 60_000)
     h.setProbe('bravo', { ok: false, error: 'network' })
     const mid = await h.picker.pick()
     if (mid.account) expect(mid.banner).toBe('koloft: → bravo · 5h 10% · 7d 20%')
 
-    h.advance(8 * 60_000) // 22 min old
+    h.advance(8 * 60_000)
     const old = await h.picker.pick()
     if (old.account) expect(old.banner).toBe('koloft: → bravo · 5h 10% · 7d 20% · 22 min ago')
   })
@@ -489,16 +496,14 @@ describe('U4 · cache short-circuit and single-flight', () => {
     h.setProbe('b', { ok: true, usage: usage({ u5: 0.1 }) })
     expect((await h.picker.pick()).account).toBe('b')
 
-    h.picker.forget('oauth', 'b') // the row was removed from the pool
+    h.picker.forget('oauth', 'b')
     h.advance(31_000)
     h.setProbe('b', { ok: false, error: 'network' })
-    expect((await h.picker.pick()).account).toBe('a') // b has no reading at all now
+    expect((await h.picker.pick()).account).toBe('a')
   })
 
   it('cacheUsage (settings-panel refresh) feeds the SAME cache selection scores from', async () => {
     const h = makeHarness([meta({ name: 'a' }), meta({ name: 'b' })])
-    // no probe results configured: probing fails, so only injected snapshots exist —
-    // proving the panel's refresh alone is enough to steer the next pick
     h.picker.cacheUsage('oauth', 'a', usage({ u5: 0.9 }))
     h.picker.cacheUsage('oauth', 'b', usage({ u5: 0.1 }))
     expect((await h.picker.pick()).account).toBe('b')
@@ -523,7 +528,7 @@ describe('U4 · two-tier pool (D11 + grace)', () => {
     h.setProbe('s1', { ok: true, usage: walled() })
     h.setProbe('s2', { ok: true, usage: usage({ u5: 1, s5: 'rejected', r5: NOW_S + 300 }) })
     const r = await h.picker.pick()
-    expect(r).toMatchObject({ account: 's2', kind: 'oauth' }) // lighter pen wins too
+    expect(r).toMatchObject({ account: 's2', kind: 'oauth' })
   })
 
   it('MIXED case: one probe failed + rest rejected → NO metered fallback (flaps must not spend)', async () => {
@@ -531,7 +536,7 @@ describe('U4 · two-tier pool (D11 + grace)', () => {
     h.setProbe('s1', { ok: true, usage: walled() })
     h.setProbe('s2', { ok: false, error: 'network' })
     const r = await h.picker.pick()
-    expect(r).toMatchObject({ kind: 'oauth' }) // s1 — the only scored candidate
+    expect(r).toMatchObject({ kind: 'oauth' })
     expect(r.account).toBe('s1')
   })
 
@@ -540,25 +545,20 @@ describe('U4 · two-tier pool (D11 + grace)', () => {
     h.setProbe('s1', { ok: true, usage: walled({ r5: NOW_S + 7200 }) })
     h.setProbe('s2', { ok: true, usage: walled({ r5: NOW_S + 3600 }) })
     const r = await h.picker.pick()
-    // pen: s1 → min(1, 7200/1800)=1, s2 → 1 as well (≥grace both) — p5 differs:
-    // s1: 1×7200/10800=0.667+1, s2: 1×3600/10800=0.333+1 → s2 (earlier reset) wins
     expect(r.account).toBe('s2')
     if (r.account) expect(r.banner).toContain('every account rate-limited')
   })
 
-  // Snapshots no longer expire, but the metered switch is the one branch that SPENDS
-  // — it keeps the pre-cache-first freshness bound so an old wall cannot bill anyone.
   it('an old wall reading never spends: the metered switch keeps its freshness bound', async () => {
     const h = makeHarness([...subs, api])
     h.setProbe('s1', { ok: true, usage: walled() })
     h.setProbe('s2', { ok: true, usage: walled() })
-    expect((await h.picker.pick()).account).toBe('api-main') // fresh wall → metered
+    expect((await h.picker.pick()).account).toBe('api-main')
 
-    h.advance(3 * 60_000) // the wall still stands (reset is 2h out) but the reading is old
+    h.advance(3 * 60_000)
     h.setProbe('s1', { ok: false, error: 'network' })
     h.setProbe('s2', { ok: false, error: 'network' })
     const r = await h.picker.pick()
-    // stays on the free tier rather than guessing with money
     expect(r).toMatchObject({ kind: 'oauth' })
     if (r.account) expect(r.banner).toContain('every account rate-limited')
   })
@@ -570,7 +570,6 @@ describe('U4 · two-tier pool (D11 + grace)', () => {
     h.setProbe('s2', { ok: true, usage: walled() })
     const r = await h.picker.pick()
     expect(r).toMatchObject({ account: 'glm', kind: 'custom' })
-    // switching endpoint also switches MODEL — the banner has to say which
     if (r.account) expect(r.banner).toContain('glm-5.2')
   })
 
@@ -595,21 +594,14 @@ describe('U4 · two-tier pool (D11 + grace)', () => {
 describe('U4 · degradation ladder', () => {
   it('every probe fails → round-robin with a persistent cursor, launch never blocked', async () => {
     const h = makeHarness([meta({ name: 'a' }), meta({ name: 'b' })])
-    // default probe result is network failure
     const r1 = await h.picker.pick()
     const r2 = await h.picker.pick()
     expect(r1.account).not.toBeNull()
     expect(r2.account).not.toBeNull()
-    expect(r1.account).not.toBe(r2.account) // cursor advanced
+    expect(r1.account).not.toBe(r2.account)
     if (r1.account) expect(r1.banner).toContain('round-robin')
   })
 
-  // disc() reads a reset that has already passed as "this window's data is void" (0),
-  // so a snapshot old enough to outlive its own resets scores every account a flat 0.
-  // The reset tie-break must read those elapsed resets as void too — else, with the
-  // two dead resets days apart (the usual shape for independent subscriptions), every
-  // launch goes to whichever account's reset died first. A pool with nothing to say
-  // must spread, not pick a favourite.
   it('a pool scored flat zero carries no signal — spread instead of hammering one account', async () => {
     const h = makeHarness([meta({ name: 'a' }), meta({ name: 'b' })])
     h.setProbe('a', {
@@ -620,9 +612,9 @@ describe('U4 · degradation ladder', () => {
       ok: true,
       usage: usage({ u5: 0.2, u7: 0.1, r5: NOW_S + 3600, r7: NOW_S + 9 * 3600 })
     })
-    expect((await h.picker.pick()).account).toBe('b') // fresh: the idler wins on merit
+    expect((await h.picker.pick()).account).toBe('b')
 
-    h.advance(48 * 3_600_000) // both resets long past, 8h apart (> tie window); probes stay down
+    h.advance(48 * 3_600_000)
     h.setProbe('a', { ok: false, error: 'network' })
     h.setProbe('b', { ok: false, error: 'network' })
     const first = await h.picker.pick()
@@ -640,15 +632,14 @@ describe('U4 · degradation ladder', () => {
 
   it('probe round exceeding the 2s budget → cache/round-robin answer, not a hang', async () => {
     const h = makeHarness([meta({ name: 'slow' })])
-    // a probe that never resolves inside the test window
     const never = new Promise<ProbeResult>(() => {})
     const deps = (h.picker as unknown as { deps: PickDeps }).deps
     deps.probe = () => never
     const t0 = Date.now()
     const r = await h.picker.pick()
     const elapsed = Date.now() - t0
-    expect(elapsed).toBeLessThan(4000) // 2s budget + slack, NOT the probe's lifetime
-    expect(r.account).toBe('slow') // round-robin fallback
+    expect(elapsed).toBeLessThan(4000)
+    expect(r.account).toBe('slow')
     if (r.account) expect(r.banner).toContain('round-robin')
   }, 10_000)
 })

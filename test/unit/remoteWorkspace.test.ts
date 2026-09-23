@@ -43,7 +43,6 @@ describe('workspaceMenuCount', () => {
     expect(workspaceMenuCount({ missing: false, isGit: false, remote: true })).toBe(4)
   })
 
-  // the machine's own git answer puts the worktree door back
   it('keeps the worktree item when the remote folder is a checkout', () => {
     expect(workspaceMenuCount({ missing: false, isGit: true, remote: true })).toBe(5)
   })

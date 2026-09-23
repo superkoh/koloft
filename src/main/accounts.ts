@@ -12,27 +12,7 @@ import {
 } from '@shared/types'
 import { loadSettings, saveSettings } from './settings'
 
-/**
- * The account registry + credential store adapter.
- *
- * Metadata lives in settings.json (`Settings.accounts`); secrets live EXCLUSIVELY in
- * the macOS Keychain under Koloft's own namespace (D1/D13 — no external tool's service
- * names, no safeStorage second store). The `security` CLI is the one read path both
- * main and the bash shim share.
- *
- * Test seam: with KOLOFT_TEST_BACKGROUND=1 AND KOLOFT_KEYCHAIN_FILE set, secrets come from
- * a `{service:{account:secret}}` JSON fixture instead. A production run ignores the
- * variable entirely (and ptyManager strips it from tab env) — a stale export in a
- * profile must never silently redirect the credential store to a plaintext file.
- */
-
-// Keychain service names are per-build (see keychainService in @shared/types): the
-// installed app, `npm run dev` and `npm run dist:beta` each get their own credential
-// store, so a work-in-progress build can never overwrite or delete what the shipped
-// app depends on. app.getName() is the same key userData is namespaced by, and it is
-// read per call rather than cached — setName() runs in index.ts's body, i.e. AFTER
-// this module is evaluated.
-function serviceFor(kind: AccountKind): string {
+function serviceForAppNameAtCall(kind: AccountKind): string {
   return keychainService(app.getName(), kind)
 }
 
@@ -52,6 +32,7 @@ function readFixture(file: string): FixtureShape {
   }
 }
 
+// ADR-0001
 function execSecurity(args: string[]): Promise<{ code: number; stdout: string }> {
   return new Promise((resolve) => {
     execFile('security', args, { timeout: 10_000 }, (err, stdout) => {
@@ -67,11 +48,11 @@ function execSecurity(args: string[]): Promise<{ code: number; stdout: string }>
 
 export async function keychainRead(kind: AccountKind, name: string): Promise<string | null> {
   const fixture = testKeychainFile()
-  if (fixture) return readFixture(fixture)[serviceFor(kind)]?.[name] ?? null
+  if (fixture) return readFixture(fixture)[serviceForAppNameAtCall(kind)]?.[name] ?? null
   const { code, stdout } = await execSecurity([
     'find-generic-password',
     '-s',
-    serviceFor(kind),
+    serviceForAppNameAtCall(kind),
     '-a',
     name,
     '-w'
@@ -89,7 +70,7 @@ export async function keychainWrite(
   const fixture = testKeychainFile()
   if (fixture) {
     const data = readFixture(fixture)
-    const svc = serviceFor(kind)
+    const svc = serviceForAppNameAtCall(kind)
     data[svc] = { ...(data[svc] ?? {}), [name]: secret }
     try {
       fs.writeFileSync(fixture, JSON.stringify(data, null, 2), { mode: 0o600 })
@@ -98,13 +79,10 @@ export async function keychainWrite(
       return false
     }
   }
-  // -U updates in place — safe here because add() rejects duplicate names up front,
-  // so an update can only ever be a deliberate re-paste of the SAME account (D-table:
-  // the expired→re-auth path overwrites its own entry)
   const { code } = await execSecurity([
     'add-generic-password',
     '-s',
-    serviceFor(kind),
+    serviceForAppNameAtCall(kind),
     '-a',
     name,
     '-w',
@@ -118,21 +96,17 @@ export async function keychainDelete(kind: AccountKind, name: string): Promise<v
   const fixture = testKeychainFile()
   if (fixture) {
     const data = readFixture(fixture)
-    const svc = serviceFor(kind)
+    const svc = serviceForAppNameAtCall(kind)
     if (data[svc]) {
       delete data[svc][name]
       try {
         fs.writeFileSync(fixture, JSON.stringify(data, null, 2), { mode: 0o600 })
-      } catch {
-        /* best effort */
-      }
+      } catch {}
     }
     return
   }
-  await execSecurity(['delete-generic-password', '-s', serviceFor(kind), '-a', name])
+  await execSecurity(['delete-generic-password', '-s', serviceForAppNameAtCall(kind), '-a', name])
 }
-
-// ---- registry (metadata in settings.json; loadSettings sanitizes on read) --------
 
 export function listAccounts(): AccountMeta[] {
   return loadSettings().accounts
@@ -144,17 +118,12 @@ export function findAccount(name: string, kind: AccountKind): AccountMeta | unde
 
 export type AddValidation = 'ok' | 'invalid-name' | 'duplicate'
 
-/** main-side validation — the renderer's checks are advisory only */
 export function validateNewAccount(name: string, kind: AccountKind): AddValidation {
   if (!ACCOUNT_NAME_RE.test(name)) return 'invalid-name'
   if (findAccount(name, kind)) return 'duplicate'
   return 'ok'
 }
 
-/** Insert or replace one account, KEEPING ITS POSITION. Order is user-visible (the
- *  settings list renders it verbatim) and probes rewrite entries constantly — an
- *  append-on-update would make rows jump under the cursor mid-probe, so a click aimed
- *  at one row's × could land on another account. New accounts append. */
 export function upsertAccountMeta(meta: AccountMeta): AccountMeta[] {
   const current = listAccounts()
   const at = current.findIndex(
@@ -188,10 +157,6 @@ function setStatus(name: string, kind: AccountKind, status: AccountStatus): void
   if (acct && acct.status !== status) upsertAccountMeta({ ...acct, status })
 }
 
-// ---- status transitions (§2.2 rule 6) --------------------------------------------
-// Only 401 ever mutates status, and only after TWO consecutive 401s (a lone 401 is a
-// network flap); any successful probe heals. 403/429/5xx/timeouts touch nothing.
-
 const consecutive401 = new Map<string, number>()
 
 function keyOf(name: string, kind: AccountKind): string {
@@ -200,8 +165,6 @@ function keyOf(name: string, kind: AccountKind): string {
 
 export type ProbeOutcome = 'ok' | '401' | 'fail'
 
-/** Fold one probe outcome into the account's persisted status. Returns the (possibly
- *  updated) status so callers can react to a fresh expiry (one-shot notification). */
 export function recordProbeOutcome(
   name: string,
   kind: AccountKind,
@@ -224,20 +187,14 @@ export function recordProbeOutcome(
     }
     return acct.status
   }
-  // plain failure: break the consecutive-401 chain, change nothing
   consecutive401.delete(k)
   return acct.status
 }
 
-/** test-only: reset the in-memory 401 chain between unit cases */
 export function resetProbeOutcomeState(): void {
   consecutive401.clear()
 }
 
-/** Update the fable capability derived from a probe (display only, D10). A 'no'
- *  verdict also stamps `fableCheckedAt` — the §08 downgrade clock (①):
- *  restamped on EVERY 'no' so the weekly fable retry measures from the last verdict,
- *  not the first. */
 export function recordFableCapability(
   name: string,
   kind: AccountKind,

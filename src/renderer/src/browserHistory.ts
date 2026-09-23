@@ -22,8 +22,6 @@ export function remember(
   url: string,
   title = ''
 ): readonly HistoryEntry[] {
-  // did-navigate-in-page fires for every hash change, so the fragment is not part of a
-  // page's identity here; a pushState route keeps its path and stays its own entry
   const key = url.split('#')[0]
   if (!key || key === 'about:blank' || key.startsWith(SEARCH_URL)) return list
   const old = list.find((e) => e.url === key)

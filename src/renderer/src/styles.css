@@ -1,26 +1,16 @@
 :root {
-  /* warm stone-tinted dark surfaces, layered for depth.
-     bg-3/bg-4 are brighter than before so button surfaces read as clickable. */
   --bg-0: #0d0d0f;
   --bg-1: #161618;
   --bg-2: #1c1c1f;
   --bg-3: #27272c;
   --bg-4: #34343a;
-  /* the ground the TUI paints on: one notch above the sidebar's bg-0, below bg-1 */
   --bg-term: #0f0f11;
-  /* what a terminal paints under its cells (TerminalView reads it from its host): the
-     TUI's ground by default; the Workbench island re-scopes it to its own fill below */
   --term-ground: var(--bg-term);
-  /* the layout's seams — sidebar edge, footer rule, the two islands' frames — dimmer than
-     --line, which every control inside them keeps */
   --line-layout: rgba(255, 255, 255, 0.06);
 
-  /* borders carry more weight — 0.06 was effectively invisible */
   --line: rgba(255, 255, 255, 0.1);
   --line-2: rgba(255, 255, 255, 0.17);
 
-  /* foreground lifted across the board; dim/faint gain real contrast so the
-     headers / paths / hints that used them are legible */
   --fg: #f3f1ee;
   --fg-dim: #bdb9b2;
   --fg-faint: #908b84;
@@ -32,18 +22,11 @@
   --good: #8fc69a;
   --good-soft: rgba(143, 198, 154, 0.16);
 
-  /* V0 token roll-up (retired agent-centric design): amber/red were scattered raw
-     hexes; folder/fg-cold/danger are new semantic tokens. Each hex lives ONLY
-     here (T-SPEC-02). */
   --amber: #f0a830;
-  /* git-freshness surfaces (workspace-git-pull §05 NEW): amber = stale but fixable,
-     good = verified in sync. Tints/lines only — the hexes stay above (T-SPEC-02). */
   --amber-soft: rgba(240, 168, 48, 0.14);
   --amber-line: rgba(240, 168, 48, 0.45);
   --good-line: rgba(143, 198, 154, 0.4);
   --red: #d9776a;
-  /* fable allowance layer in the usage capsule — a hue no other state uses, and
-     4.89:1 against the --bg-4 track it sits in (routing §4.2.4) */
   --fable: #a99ad8;
   --folder: #c9a06a;
   --fg-cold: #9a958d;
@@ -54,7 +37,6 @@
   --r-lg: 12px;
   --shadow-lg: 0 18px 56px -16px rgba(0, 0, 0, 0.7);
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
-  /* the account-row switch; the meters under it indent by the same width */
   --switch-sm-w: 30px;
 
   --font: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
@@ -86,7 +68,6 @@ body {
   user-select: none;
 }
 
-/* ---------- scrollbars (dark, overlay-style) ---------- */
 ::-webkit-scrollbar {
   width: 11px;
   height: 11px;
@@ -108,7 +89,6 @@ body {
   background: transparent;
 }
 
-/* ---------- app shell: the flat sidebar | the centre (TUI on the ground, panel island) ---------- */
 .app {
   display: flex;
   flex-direction: row;
@@ -116,9 +96,6 @@ body {
   background: var(--bg-term);
   position: relative;
 }
-/* The sidebar: top of the window to its bottom, the deepest layer, one dim seam on its
-   right. Its head strip is the window's drag area (below), its dock the two islands, its
-   footer the usage capsule and the two global switches. */
 .side {
   flex: 0 0 auto;
   display: flex;
@@ -129,9 +106,6 @@ body {
   background: var(--bg-0);
   border-right: 1px solid var(--line-layout);
 }
-/* C1 titlebar — now the sidebar's head strip: the window drag area, with the macOS
-   traffic lights on its left (trafficLightPosition y:18 centers them in this 46px band;
-   the 82px inset clears them) and the Add-workspace button on its right. */
 .titlebar {
   position: relative;
   display: flex;
@@ -143,8 +117,6 @@ body {
   padding: 0 8px 0 82px;
   -webkit-app-region: drag;
 }
-/* the footer: the usage capsule on the left (as the titlebar's centre had it), keep-awake
-   and Settings on the right */
 .side-me {
   flex: 0 0 auto;
   display: flex;
@@ -154,12 +126,9 @@ body {
   padding: 6px 8px 8px 12px;
   border-top: 1px solid var(--line-layout);
 }
-/* the two switches cluster right; the capsule (or nothing, with the balancer off) stays left */
 .side-me > button:first-of-type {
   margin-left: auto;
 }
-/* the sidebar's resize grip rides its right border (the way `.fv-gutter` rides the file
-   list's): a 7px hit strip, nothing drawn at rest, the seam lights on hover / drag */
 .side-grip {
   position: absolute;
   top: 0;
@@ -184,8 +153,6 @@ body {
 .side-grip.active::after {
   background: var(--accent);
 }
-/* T1 icon buttons: 32×32 r8 hit area, icon 20; color-only interaction — no
-   background or border in any state (V0) */
 .tb-ico,
 .aux-ico {
   -webkit-app-region: no-drag;
@@ -214,9 +181,6 @@ body {
   opacity: 0.35;
   pointer-events: none;
 }
-/* C1 disabled aux toggle: no running session to attach a pane to. aria-disabled, not
-   `disabled`, so the click still lands on a real target and is simply ignored — the
-   button stays inert without becoming untargetable. */
 .aux-ico[aria-disabled='true'] {
   opacity: 0.35;
   cursor: default;
@@ -224,9 +188,6 @@ body {
 .aux-ico[aria-disabled='true']:hover {
   color: var(--fg-faint);
 }
-/* the sidebar footer's account-usage capsule.
-   ONE graphic element — vertical bars. The top rail (full height) is reserved for walled and
-   defunct bars; live fills cap at 92%, so touching the top always means "done". */
 .tbu-slot {
   flex: 0 0 auto;
   display: flex;
@@ -250,9 +211,6 @@ body {
   overflow: hidden;
   transition: background 0.15s var(--ease);
 }
-/* the pool total leads the group at twice the width, with a doubled gap after it
-   (4 + the 5px flex gap = 9px): size and position are the non-color channels that
-   pick it out of the row (D11) */
 .tbu-bar.total {
   width: 8px;
   border-radius: 3px;
@@ -262,11 +220,9 @@ body {
 .tbu-bar.total .tbu-fable {
   border-radius: 3px;
 }
-/* hover feedback is color-only (V0 titlebar convention): the tracks lift, no box */
 .tbu:hover .tbu-bar {
   background: var(--line-2);
 }
-/* fills jump, never animate — motion in the titlebar is a distraction */
 .tbu-fill {
   position: absolute;
   bottom: 0;
@@ -288,9 +244,6 @@ body {
 .tbu-fill.acc {
   background: var(--accent);
 }
-/* fable allowance, drawn UNDER the water line (painted first) and separated from it
-   by a 1px track-colored seam — the geometry, not the hue, is what says "the segment
-   above is a different thing" (routing §4.2.4) */
 .tbu-fable {
   position: absolute;
   bottom: 0;
@@ -306,15 +259,10 @@ body {
   height: 1px;
   background: var(--bg-4);
 }
-/* snapshot older than 15min: faded = don't trust this number */
 .tbu-bar.stale .tbu-fill,
 .tbu-bar.stale .tbu-fable {
   opacity: 0.5;
 }
-/* 430px = 400px of content (three 128px columns + two 6px gutters) once the panel and
-   row paddings are paid for (D14). The height is capped below the titlebar so the
-   account list scrolls and Probe now stays reachable — the panel outgrows a minHeight
-   window as soon as a few accounts carry sublines. */
 .tbu-pop {
   position: fixed;
   z-index: 200;
@@ -335,9 +283,6 @@ body {
 .tbu-pop > .tbu-act {
   flex: none;
 }
-/* the scrollbar is 11px of classic gutter (not an overlay), and the fixed columns
-   below have no give: borrow the panel's own padding so a scrolling list still fits
-   396px of grid, and keep the rows' left edge on the pool row's */
 .tbu-rows {
   flex: 0 1 auto;
   min-height: 0;
@@ -371,10 +316,6 @@ body {
 .tbu-row.dim .acct-note {
   opacity: 0.5;
 }
-/* the aggregate row is lifted one surface step and outlined — the account rows read
-   against the panel, this one reads against them (D12). The padding pays for the
-   border so this row's grid still starts on the same x as every account row's: the
-   whole point of fixed columns is that a column can be read downwards. */
 .tbu-row.pool {
   padding: 6px 7px 7px;
   background: var(--bg-3);
@@ -385,14 +326,11 @@ body {
   align-items: baseline;
   gap: 7px;
 }
-/* the window names, once, over every row below */
 .tbu-colhead {
   margin-top: 0;
   padding: 2px 8px 5px;
   font-size: 10px;
 }
-/* a name may be 32 chars: it is the only thing in the head allowed to lose width,
-   because every badge beside it is a state the user is looking for (§4.3) */
 .tbu-row .acct-name {
   min-width: 0;
   overflow: hidden;
@@ -420,10 +358,6 @@ body {
   font-size: 10.5px;
   color: var(--fg-faint);
 }
-/* true fixed columns, never 1fr: elastic columns take their width from the row's own
-   content, which is exactly the drift that made the old flex layout unreadable. Every
-   row spans the same three windows in the same order, so a whole column can be scanned
-   downwards (D14). */
 .tbu-grid {
   display: grid;
   grid-template-columns: repeat(3, 128px);
@@ -433,7 +367,6 @@ body {
 .tbu-grid.two {
   grid-template-columns: repeat(2, 128px);
 }
-/* wider than the Settings pane's: it fills a 128px column, with no label beside it */
 .tbu-grid .acct-meter .m-track {
   width: 86px;
 }
@@ -443,12 +376,9 @@ body {
   gap: 2px;
   min-width: 0;
 }
-/* probe errors and the pool's own notes take a full-width cell rather than a third
-   layer — one row is always exactly a head plus a grid */
 .tbu-cell.span {
   grid-column: 1 / -1;
 }
-/* the reset line is resident, so it keeps its height when it has nothing to say */
 .tbu-cell-sub {
   min-height: 15px;
   font-family: var(--mono, ui-monospace, monospace);
@@ -507,9 +437,6 @@ body {
   font-size: 10px;
   color: var(--fg-faint);
 }
-/* inline notice (add-workspace rejections, vanished resume cwd, a finished download).
-   It has to survive a glance across a full-screen window, so it reads as a card: a
-   raised surface, body-sized type, full-strength foreground. */
 .toast {
   position: fixed;
   top: 54px;
@@ -534,7 +461,6 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* the canvas the islands float on: gaps come from the gutters between islands */
 .dock-left {
   flex: 1;
   display: flex;
@@ -543,7 +469,6 @@ body {
   min-height: 0;
 }
 
-/* ---------- islands ---------- */
 .island {
   display: flex;
   flex-direction: column;
@@ -555,9 +480,6 @@ body {
   overflow: hidden;
   animation: riseIn 0.5s var(--ease) both;
 }
-/* an island that keeps the layout half of the contract (column flex, min sizes, the
-   overflow clip) and drops the frame: the session list inside the flat sidebar, and the
-   TUI on the bare ground */
 .island.flat {
   background: transparent;
   border: 0;
@@ -567,14 +489,11 @@ body {
 .isl-sessions {
   flex: 1;
 }
-/* D2 — the Notes island keeps exactly the height it is given (or, folded, just its
-   head band); the sessions island above takes whatever is left. */
 .isl-notes {
   flex: 0 0 auto;
   margin: 0 6px;
   border-color: var(--line-layout);
 }
-/* the one-line update banner above the note: a .btn-primary with the island's side margins */
 .upd-banner {
   flex: 0 0 auto;
   display: flex;
@@ -593,8 +512,6 @@ body {
   white-space: nowrap;
   text-align: left;
 }
-/* the head band's own glyph, beside the word Notes. `.wb-title` lays its children out on
-   the text baseline, which an icon has none of — this centres it back on the line. */
 .isl-notes .wb-title .ic {
   flex: 0 0 auto;
   display: flex;
@@ -602,45 +519,23 @@ body {
   margin-right: 6px;
   color: var(--fg-faint);
 }
-/* the note fills the island under the head band */
 .notes-body {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
 }
-/* the text box's 220px floor is the WORKBENCH's, whose own floor is 440 and which
-   therefore never feels it. The left dock narrows to 200, so in the note that floor would
-   push the box wider than the dock and leave the last characters of every line cut off. */
 .isl-notes .ed-area {
   min-width: 0;
 }
 
-/* D5/R13 — the focus ring: whichever island holds the caret wears the accent
-   colour, and only the COLOUR changes, never the width, so nothing on screen moves.
-   Pure CSS on purpose, with no mirror in the store: the browser already knows where the
-   focus is, and a second copy could only ever disagree with it — a guest, an xterm, the
-   address field and the panel root all take the focus by their own routes, and every one
-   of them would need to remember to report in. `:focus-within` covers them all at once.
-   A collapsed panel is excluded for free: `.wb-col.off` has a zero-width border and
-   holds nothing focusable. Koloft's own dialogs and the sidebar are inside neither
-   island, so clicking there leaves both dark, which is exactly the rule. */
-/* the TUI has no frame so it wears no ring: a caret in the conversation
-   reads as "neither island lit" (the panel dark is the half that carries information) */
+/* ADR-0012 PLATFORM§10 */
 .island.wb-col:focus-within,
-/* D5 — the note is an island too, so it wears the same ring when it holds the caret */
 .island.isl-notes:focus-within,
-/* …and the one case `:focus-within` is blind to: a focused <webview>, which is never
-   marked as focused in the host document at all (measured — App.tsx `guestHasCaret`).
-   App tracks that one from `document.activeElement` and puts `.caret` here. */
 .island.wb-col.caret {
   border-color: var(--accent-line);
 }
 
-/* vertical gutter between the TUI and the panel island: a 10px resize strip with
-   nothing drawn on it — on hover / drag the island's own LEFT edge lights (the grip pill
-   retired; the sibling combinator works because the gutter precedes the
-   island in the DOM, and the rule sits after the focus ring's so it wins over it) */
 .gutter-v {
   flex: 0 0 10px;
   position: relative;
@@ -652,10 +547,6 @@ body {
   border-left-color: var(--accent);
 }
 
-/* D6 — the horizontal twin of the gutter above, between the session list and the
-   note: on hover / drag the note's own TOP edge lights. Its HEIGHT is set inline from
-   `DOCK_GUTTER_PX` (sessionRows.ts), because the drag's ceiling has to subtract exactly
-   this much — the number is spelt once, over there. */
 .gutter-h {
   flex: 0 0 auto;
   position: relative;
@@ -666,7 +557,6 @@ body {
 .gutter-h.active + .isl-notes {
   border-top-color: var(--accent);
 }
-/* the island is folded: keep the gap, drop the resize cursor (and, above, the edge light) */
 .gutter-h.idle {
   cursor: default;
 }
@@ -682,7 +572,6 @@ body {
   }
 }
 
-/* dev-build marker: only rendered on the unpackaged (koloft-dev) build */
 .dev-badge {
   -webkit-app-region: no-drag;
   padding: 2px 7px;
@@ -706,7 +595,6 @@ body {
   margin-top: 56px;
 }
 
-/* small ghost button */
 .mini {
   -webkit-app-region: no-drag;
   display: inline-flex;
@@ -739,7 +627,6 @@ body {
   cursor: default;
 }
 
-/* ---------- C2 Sessions island: workspace → session tree ---------- */
 .ws-list {
   overflow-y: auto;
   flex: 1;
@@ -770,17 +657,12 @@ body {
 .ws-head:hover {
   background: var(--bg-3);
 }
-/* D7: a picked workspace wears the same fill a picked session row does */
 .ws-head.active {
   background: var(--accent-soft);
 }
-/* pinned dir vanished at scan time (A1): gray the head, keep only Remove */
 .ws-head.missing {
   opacity: 0.35;
 }
-/* workspace folder entity icon (LuFolderOpen/LuFolder doubles as the fold state).
-   D7: it is the fold BUTTON now — the head's own click picks the workspace — so it
-   has to read as clickable, with a fill of its own that stays visible over the head's. */
 .fico {
   flex: 0 0 auto;
   display: flex;
@@ -793,8 +675,6 @@ body {
 .fico:hover {
   background: var(--bg-4);
 }
-/* the name does not stretch: the git mark rides right behind it, and only the hover
-   button below sits at the far edge — a mark parked between the two lined up with neither */
 .ws-name {
   font-size: 12px;
   font-weight: 600;
@@ -809,8 +689,6 @@ body {
   gap: 3px;
   color: var(--fg-faint);
 }
-/* the count is a real <button> (keyboard-reachable). amber = pullable, .info = grey,
-   pure information (root is off the default branch — Koloft only pulls that one) */
 .ws-behind {
   border: 0;
   padding: 0;
@@ -828,7 +706,6 @@ body {
 .ws-behind.info {
   color: var(--fg-faint);
 }
-/* the head's single hover-revealed action (⑂ on git, ＋ on plain): 24×24 r6, color-only */
 .hact {
   -webkit-app-region: no-drag;
   margin-left: auto;
@@ -862,10 +739,6 @@ body {
   margin: 1px 0 4px 0;
   padding-left: 14px;
 }
-/* session row (C2): zero icons, zero resident buttons — state is the
-   left-edge lightbar, selection the accent-soft fill; the two never couple.
-   `.recent-row` is the S4 welcome panel's cold row: same geometry, its own class so
-   "a session row in the sidebar" stays one unambiguous selector. */
 .ws-tab,
 .recent-row {
   -webkit-app-region: no-drag;
@@ -903,9 +776,6 @@ body {
 .ob-bar.st-waiting {
   background: var(--good);
 }
-/* approval pumps *width*, not opacity — working owns the opacity channel, and two
-   opacity rhythms are indistinguishable in peripheral vision
-   (option A locked) */
 .ws-tab.st-approval::before,
 .ob-bar.st-approval {
   background: var(--amber);
@@ -928,7 +798,6 @@ body {
   background: var(--accent-soft);
   color: var(--fg);
 }
-/* vanished cwd (worktree deleted): grayed, not clickable, menu-only */
 .ws-tab.disabled,
 .recent-row.disabled {
   opacity: 0.35;
@@ -953,9 +822,6 @@ body {
 .ws-tab.active .ws-tab-title {
   font-weight: 600;
 }
-/* what the session keeps open without working on it (SessionInfo.parked: a dev
-   server, a Monitor, idle teammates) — a count pill with the details in its
-   tooltip. Never a run-state color: it is not work, and the lightbar says so. */
 .ws-tab-parked {
   flex: none;
   font-family: var(--mono);
@@ -1003,8 +869,6 @@ body {
 .recent-row .ws-tab-sub {
   opacity: 0.7;
 }
-/* a launch in flight reads like a cold row's title — italic, faint — until the
-   SessionStart hook promotes it in place (logic.md §4) */
 .ws-tab.st-pending .ws-tab-title {
   font-style: italic;
   color: var(--fg-cold);
@@ -1039,10 +903,6 @@ body {
     transform: translateY(30%);
   }
 }
-/* marquee: only an overflowing title, on row hover. The <i> wrapper is always
-   rendered (it becomes the scroller when .mq arms) — neutralize its italic. The
-   motion itself is a Web Animation (sessionRows.marqueeAnim): distance and
-   duration come from the measured overflow, which a keyframe cannot express. */
 .ws-tab-title i {
   font-style: inherit;
 }
@@ -1054,15 +914,12 @@ body {
   font-style: inherit;
   white-space: nowrap;
 }
-/* reduced motion also skips the marquee — guarded in JS, since a Web Animation
-   ignores `animation: none` */
 @media (prefers-reduced-motion: reduce) {
   .ws-tab::before {
     animation: none !important;
   }
 }
 
-/* row / workspace fly-out menu (hover 350ms or immediate on right-click) */
 .menu {
   position: fixed;
   z-index: 200;
@@ -1106,7 +963,6 @@ body {
   opacity: 0.35;
   pointer-events: none;
 }
-/* non-interactive header row (cold menu: relative time only) */
 .menu .mi.head {
   font-family: var(--mono);
   font-size: 10.5px;
@@ -1118,7 +974,6 @@ body {
   color: var(--fg-faint);
 }
 
-/* ---------- center: the TUI | Workbench row (the D2 terminal island retired,) -- */
 .center {
   display: flex;
   flex-direction: column;
@@ -1134,8 +989,6 @@ body {
   min-height: 0;
   padding: 0 10px 10px 0;
 }
-/* the TUI's column: a 46px strip carrying the window drag (the titlebar's old height,
-   kept so the traffic-light row reads as one band across the window), then the TUI */
 .term-col {
   flex: 1;
   min-width: 0;
@@ -1148,7 +1001,6 @@ body {
   display: flex;
   align-items: flex-start;
 }
-/* ---------- world clock: local zone + up to three more, in the strip above the TUI ---------- */
 .wc {
   display: flex;
   align-items: center;
@@ -1156,8 +1008,6 @@ body {
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
-  /* 12px down puts a 26px chip on the Workbench toggle's centre line (top 15 + 28 high);
-     56px on the right keeps the row clear of that toggle */
   margin: 12px 56px 0 20px;
   -webkit-app-region: no-drag;
 }
@@ -1222,7 +1072,6 @@ body {
   margin: 0 4px;
   background: var(--line-2);
 }
-/* half-there at rest so a first-time user can find it; lit while the strip is hovered */
 .wc-add {
   flex: 0 0 auto;
   opacity: 0.5;
@@ -1278,14 +1127,9 @@ body {
 .wc-item.on .wc-item-now {
   color: var(--fg);
 }
-/* the TUI on the bare ground (`.island.flat`): the padding on `.term-wrap` carries the
-   breathing room the island's border used to */
 .term-island {
   flex: 1;
 }
-/* the Workbench toggle floats at the row's top-right corner. The numbers put it exactly
-   where an open panel's tab strip ends: 10px island margin + 1px border + the strip's
-   4px / 9px insets — so the same button closes the panel from inside its own strip. */
 .aux-icons {
   position: absolute;
   top: 15px;
@@ -1299,8 +1143,6 @@ body {
   height: 28px;
   border-radius: 6px;
 }
-/* at rest it reads as strip chrome (the ＋ beside it), lit only under the pointer —
-   and, as before, not at all while there is no session to attach a panel to */
 .aux-ico.wb-toggle.on {
   color: var(--fg-faint);
 }
@@ -1311,7 +1153,6 @@ body {
 .aux-ico.wb-toggle[aria-disabled='true']:hover {
   color: var(--fg-faint);
 }
-/* ---------- notifications settings section (M3) ---------- */
 .notif-section {
   gap: 2px;
 }
@@ -1358,7 +1199,6 @@ body {
   appearance: checkbox;
 }
 
-/* ---------- terminals ---------- */
 .terminals {
   position: relative;
   flex: 1;
@@ -1367,27 +1207,17 @@ body {
 .term-wrap {
   position: absolute;
   inset: 0;
-  /* left 20px; right 12px + the row's 10px (or the gutter to the island) = 22px, less
-     what the eye reads as the same margin. The fit addon hands
-     the columns whole cells, so an under-a-cell remainder also lands on the right. (xterm's
-     own 14px scrollbar column is off for the TUI — TerminalView `scrollbar`.) */
   padding: 4px 12px 12px 20px;
 }
 .term {
   width: 100%;
   height: 100%;
 }
-/* xterm hardcodes the IME composition box to background:#000 (its CSS even notes
-   "Composition position got messed up somewhere"), which stamps a black rectangle
-   over our themed terminal while composing Chinese. Match the terminal theme so the
-   composing text replaces the cells beneath it cleanly instead of overlapping. */
+/* PLATFORM§21 */
 .xterm .composition-view {
   background: var(--term-ground);
   color: #f3f1ee;
 }
-/* placeholder text (resuming / no selection): vertically centered in the body —
-   the old mt72 lost its reference point when the term-head band retired (C4).
-   Opaque island surface so it also works as the resume overlay above a live pty. */
 .empty {
   position: absolute;
   inset: 0;
@@ -1406,17 +1236,10 @@ body {
   font-size: 12px;
   color: var(--fg-faint);
 }
-/* The panel half of the switch mask is a sibling of `.wb-panel`, which opens no stacking
-   context of its own — so the panel's overlays (the find bar at 20, a zoomed image at 30,
-   its menus at 40) would paint straight through a mask at 5. Above all of those, below
-   the panel's modal backdrop (130) and every app-level layer. Found by code review. */
 .wb-col > .empty {
   z-index: 50;
-  /* the mask matches the surface it covers: the island's fill, not the TUI's ground */
   background: var(--bg-1);
 }
-/* the switch mask's words wait a beat: a switch that lands within a frame or two shows
-   the island surface only, never a blink of caption (App's ResumingMask `late`) */
 .empty.late > div {
   animation: mask-late 0s 120ms both;
 }
@@ -1429,8 +1252,6 @@ body {
   }
 }
 
-/* S4 welcome panel: the center island with nothing running — either the first-run
-   onboarding step or the target workspace's identity + ＋ New session + recents. */
 .w-empty {
   position: absolute;
   inset: 0;
@@ -1475,7 +1296,6 @@ body {
   color: var(--fg-faint);
   padding: 0 10px 2px;
 }
-/* C2 cold rows, lifted off the panel ground so they read as cards */
 .recent-row {
   background: var(--bg-2);
 }
@@ -1483,7 +1303,6 @@ body {
   background: var(--bg-3);
 }
 
-/* close button (shared by the file-viewer pane header): T2 24×24 r6, color-only (V0) */
 .drawer-close {
   display: flex;
   align-items: center;
@@ -1500,7 +1319,6 @@ body {
   color: var(--accent);
 }
 
-/* full-screen capture layer while dragging a resize handle (over xterm/<webview>) */
 .drag-overlay {
   position: fixed;
   inset: 0;
@@ -1508,7 +1326,6 @@ body {
   cursor: col-resize;
 }
 
-/* rendered markdown ("paper" surface) */
 .md-body {
   overflow-y: auto;
   padding: 28px 30px;
@@ -1559,15 +1376,6 @@ body {
   padding: 7px 12px;
 }
 
-/* ===== rich markdown (the DOM contract lives in
-   src/renderer/src/markdown/index.ts's header) =====
-   Everything below sits on the paper surface above, so it is light-on-light throughout
-   (NFR-07). The code VIEW's dark theme is a different surface and stays dark. Hues are
-   raw hex like the rest of this block — the app's dark-surface tokens would be unreadable
-   here. */
-
-/* the paper needs a frame of its own: the diagram blow-up covers exactly the document,
-   and the .md-body scroller has to stay the pane's one scrollable child */
 .md-wrap {
   position: relative;
   width: 100%;
@@ -1578,7 +1386,6 @@ body {
   inset: 0;
 }
 
-/* front matter — a header card instead of a stray rule plus a line of debris (FR-11) */
 .md-body .md-frontmatter {
   display: grid;
   grid-template-columns: max-content 1fr;
@@ -1600,9 +1407,6 @@ body {
   word-break: break-word;
 }
 
-/* GitHub alert blocks (FR-08). The icon is absolutely placed so it lands right whether
-   the markup nests it inside the title row or beside it; :empty gives every type a glyph
-   if the renderer left the slot for CSS to fill. */
 .md-body .md-alert {
   position: relative;
   margin: 14px 0;
@@ -1667,20 +1471,16 @@ body {
   content: '⊘';
 }
 
-/* read-only task lists (FR-09) */
 .md-body input.md-task {
   margin: 0 0.45em 0 0;
   vertical-align: -0.08em;
   accent-color: #8c867c;
 }
-/* a tight list puts the box straight in the <li>, a loose one wraps it in a <p> */
 .md-body li:has(> input.md-task),
 .md-body li:has(> p > input.md-task) {
   list-style: none;
 }
 
-/* code fences: the toolbar floats over the top-right corner, so the fence keeps a band
-   of head room for it and shiki's own light background gives way to the paper (FR-05/06) */
 .md-body .md-code {
   position: relative;
   margin: 14px 0;
@@ -1732,7 +1532,6 @@ body {
   top: 4px;
   right: 6px;
 }
-/* an escaped bidi control (NFR-01): it has to read as a marker, not as source text */
 .md-body .md-bidi {
   padding: 0 2px;
   border-radius: 3px;
@@ -1740,8 +1539,6 @@ body {
   color: #8f2e26;
 }
 
-/* diagrams (FR-01/17b): a wide one scrolls inside its own frame rather than widening the
-   prose — the same deal as a wide table */
 .md-body .mmd {
   margin: 16px 0;
   padding: 10px;
@@ -1790,8 +1587,6 @@ body {
   overflow: auto;
 }
 
-/* FR-04 blow-up: covers the document (not the pane header), and dismisses on a click
-   anywhere in it — the copy button stops its own click from reaching that */
 .mmd-zoom {
   position: absolute;
   inset: 0;
@@ -1813,8 +1608,6 @@ body {
 .mmd-zoom-fig {
   width: 100%;
 }
-/* the blow-up is "as big as the panel" (FR-04), so it overrides the natural width the
-   diagram carries in the document — an inline style, hence !important */
 .mmd-zoom-fig svg {
   display: block;
   width: 100% !important;
@@ -1822,8 +1615,6 @@ body {
   max-width: none !important;
 }
 
-/* an external image is never fetched (FR-12b) and a blocked local one never leaves a
-   blank — either way the address stays readable */
 .md-body .md-img-blocked {
   display: inline-block;
   max-width: 100%;
@@ -1837,9 +1628,6 @@ body {
   word-break: break-all;
 }
 
-/* wide tables scroll inside themselves with the head pinned (FR-17). Cells are capped
-   rather than left to size themselves, so a prose table stays readable instead of
-   stretching to one line per cell. */
 .md-body .md-table-wrap {
   max-width: 100%;
   max-height: 70vh;
@@ -1854,7 +1642,7 @@ body {
 .md-body .md-table-wrap td {
   max-width: 320px;
 }
-/* a collapsed table's own borders don't travel with a sticky cell — the inset shadow does */
+/* PLATFORM§24 */
 .md-body .md-table-wrap thead th {
   position: sticky;
   top: 0;
@@ -1863,14 +1651,12 @@ body {
   box-shadow: inset 0 -1px 0 #e7e2da;
 }
 
-/* a wide formula scrolls rather than widening the column */
 .md-body .katex-display {
   max-width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
 }
 
-/* `path:line` references (FR-13) read as code that happens to be clickable */
 .md-body a.md-fileref {
   font-family: var(--mono);
   font-size: 92%;
@@ -1884,14 +1670,10 @@ body {
   border-bottom-style: solid;
 }
 
-/* the markdown outline reuses the symbol outline's panel wholesale (FR-14); it only
-   hangs one band lower, off .file-pane rather than off the scroller, so it clears the
-   46px header. Two-class selectors because the base rules come later in this file. */
 .outline.outline-md {
   top: 52px;
   right: 12px;
 }
-/* FR-14b — the section being read */
 .outline-it.cur {
   background: var(--accent-soft);
 }
@@ -1921,7 +1703,6 @@ body {
   box-shadow: var(--shadow-lg);
 }
 
-/* ---------- settings modal ---------- */
 @keyframes backdropIn {
   from {
     opacity: 0;
@@ -1977,7 +1758,6 @@ body {
   text-transform: uppercase;
   color: var(--fg-dim);
 }
-/* T2 24×24 r6, color-only (V0); letter-spacing reset — the header sets .12em */
 .modal-close {
   display: flex;
   align-items: center;
@@ -2055,8 +1835,6 @@ body {
   border-radius: 4px;
   color: var(--fg);
 }
-/* boolean setting: a checkbox inline with its label (overrides the text-input styling
-   `.field input` would otherwise apply) */
 .field-check-row {
   display: flex;
   align-items: center;
@@ -2076,7 +1854,6 @@ body {
   align-self: flex-start;
 }
 
-/* ---------- shared dialog vocabulary (C8/C10 — C7 retired with its dropdown) ------ */
 .flabel {
   font-family: var(--mono);
   font-size: 11px;
@@ -2154,8 +1931,6 @@ body {
 .field-hint.bad {
   color: var(--danger);
 }
-/* ---------- C10 workspace picker (new-session-entrances §03) ---------- */
-/* a list of workspaces and nothing else: no field, so the digits stay free (D13) */
 .wspicker {
   width: 460px;
 }
@@ -2179,8 +1954,6 @@ body {
   background: var(--bg-3);
   color: var(--fg);
 }
-/* the row number is a fixed column so the names line up under it — and stays there,
-   blank, for the tenth row and beyond, which have no digit to print */
 .wsp-num {
   flex: 0 0 auto;
   width: 9px;
@@ -2191,11 +1964,6 @@ body {
   text-overflow: ellipsis;
 }
 
-/* ---------- C8 worktree-session dialog (new-session-entrances §04) ---------- */
-/* one field = a NAME, and a list that is always there — it only dims as you type, so
-   a collision is visible while it is being typed (D5/D6) */
-/* Cancel + "Pull & Create · Claude ⇧⏎" + "Pull & Create · Codex ⏎" measure ~510px at
-   13px; the shared 540px modal leaves 500px for them, so this one is wider */
 .modal.worktreesess {
   width: 600px;
 }
@@ -2207,7 +1975,6 @@ body {
   font-size: 10.5px;
   opacity: 0.65;
 }
-/* the C7 dropdown's skin, minus the floating: this list is part of the dialog */
 .wt-list {
   padding: 4px;
   max-height: 244px;
@@ -2228,10 +1995,6 @@ body {
   text-overflow: ellipsis;
 }
 
-/* ---------- the lifecycle contract dialogs (⌘W confirm §3.1, resume tree §4) ---------- */
-/* these headers are product sentences ("Close running session?"), not the mono
-   section labels the rest of the modals use — the uppercase treatment would shout a
-   session title back at the user */
 .lifecycle-modal .modal-header {
   font-family: var(--font);
   font-size: 14px;
@@ -2243,11 +2006,9 @@ body {
 .lifecycle-modal .modal-body {
   gap: 12px;
 }
-/* the two-choice dialog carries three buttons — let them wrap rather than shrink */
 .lifecycle-modal .modal-foot {
   flex-wrap: wrap;
 }
-/* §4.1 evidence block: read fresh at resume time, never persisted */
 .ev-meta {
   display: flex;
   flex-direction: column;
@@ -2280,7 +2041,6 @@ body {
   color: var(--red);
 }
 
-/* ---------- C7 "Restore from history" (D5) ---------- */
 .restore {
   display: flex;
   flex-direction: column;
@@ -2340,7 +2100,6 @@ body {
   padding: 1px 6px;
 }
 
-/* ---------- software-update modal ---------- */
 .update-modal .modal-body {
   gap: 16px;
 }
@@ -2393,9 +2152,6 @@ body {
 .update-ver-new {
   color: var(--accent);
 }
-/* Rendered changelog markdown (UpdateModal). Body font, not mono: the content is prose +
-   bullets, and the old pre-wrap/mono pairing was what made raw `##`/`**` markers look
-   deliberate. Scrolls itself so a long changelog can't push the Download button off-screen. */
 .update-notes {
   max-height: 220px;
   overflow-y: auto;
@@ -2461,7 +2217,6 @@ body {
   border: 0;
   border-top: 1px solid var(--line);
 }
-/* Version header for the multi-release (skipped-versions) grouping. */
 .update-notes-ver {
   margin-bottom: 6px;
   font-family: var(--mono);
@@ -2554,10 +2309,6 @@ body {
   }
 }
 
-/* ---------- artifact rendering (a `file` tab, and the P1 Files placeholder) ---------- */
-/* pdf "file changed on disk" notice: floats INSIDE the pane (same overlay pattern as
-   .find-bar) so it never blocks the rest of the app; reload stays a user decision
-   because it irrecoverably resets the PDFium page position */
 .fp-stale {
   position: absolute;
   top: 54px;
@@ -2592,7 +2343,6 @@ body {
   padding: 4px 10px;
   cursor: pointer;
 }
-/* V0 T3 (22×22 / icon 14): color-only, same ladder as .find-btn */
 .fp-stale-x {
   display: flex;
   align-items: center;
@@ -2623,11 +2373,7 @@ body {
   height: 100%;
 }
 
-/* highlighted code — let Shiki's token spans keep their colors but drop its pre
-   background so the pane blends with the app surface */
 .code-body {
-  /* fill .code-wrap and own the scroll: .file-pane-body is overflow:hidden and sizes its
-     child to 100%, so the scroller must be this inner element, not the wrapper */
   position: absolute;
   inset: 0;
   overflow: auto;
@@ -2647,7 +2393,6 @@ body {
   font-family: inherit;
   background: transparent;
 }
-/* loading / binary / error placeholder */
 .code-state {
   display: flex;
   align-items: center;
@@ -2659,8 +2404,6 @@ body {
   font-size: 13px;
 }
 
-/* find-in-page bar — floats top-right over the viewer body, clearing the 46px header
-   (anchored to .file-pane) so it never overlaps the title / close × */
 .find-bar {
   position: absolute;
   top: 54px;
@@ -2700,7 +2443,6 @@ body {
   font-size: 11.5px;
   color: var(--fg-faint);
 }
-/* V0 T3 (22×22 / icon 14): color-only — idle faint, hover accent, never a painted box */
 .find-btn {
   display: flex;
   align-items: center;
@@ -2723,9 +2465,6 @@ body {
   cursor: default;
 }
 
-/* find-in-page match overlays (CSS Custom Highlight API). One scheme reads on both the
-   dark code surface and the light markdown paper: translucent yellow tints every match,
-   solid orange + black text marks the active one. */
 ::highlight(find-all) {
   background-color: rgba(250, 204, 21, 0.32);
 }
@@ -2734,25 +2473,11 @@ body {
   color: #000;
 }
 
-/* ── `.ft-*`: the former sidebar tree's class names, now the WORKBENCH's ──────────────
-   The sidebar file tree is gone (, FR-44…FR-50 moved browsing into the panel's pinned
-   `files` tab), but its class names deliberately did NOT go with it: `BrowseView` reuses
-   them so the rows, the git colours, the write pulse, the indent guides and the search
-   results look and select exactly as before, and so the e2e suite's selectors survived
-   the move. `ChangesView`, `FilesView` and `WorkbenchPane` consume parts of this block
-   too (`.ft-delta`, `.ft-gbadge`, `.ft-name`, `.ft-chip`, `.ft-ctx`).
-
-   So: deleting this block as "dead tree CSS" would strip the file browser bare while
-   `npm run typecheck` and the whole unit suite stayed green — nothing in either layer
-   references a stylesheet. Check the renderer for the class name first. */
 .file-tree {
   flex: 1;
   overflow-y: auto;
   padding: 6px 6px 12px;
 }
-/* quick-search bar above the tree (or its results). Collapsed by default (C3):
-   the LuSearch action / ⌘⇧F slides it out (0→32px, 120ms); collapsing ends the
-   search (query cleared by the component). */
 .ft-search {
   flex: 0 0 auto;
   display: flex;
@@ -2842,7 +2567,6 @@ body {
   color: var(--fg);
   box-shadow: inset 0 0 0 1px var(--accent-line);
 }
-/* results show name + dimmed dir, so the name shrinks-to-fit instead of hogging the row */
 .ft-result .ft-name {
   flex: 0 1 auto;
 }
@@ -2855,7 +2579,6 @@ body {
   color: var(--fg-faint);
 }
 
-/* nested children indent under their parent with a thin guide line, VS-Code-style */
 .ft-children {
   margin-left: 9px;
   padding-left: 2px;
@@ -2883,8 +2606,6 @@ body {
   background: var(--bg-3);
   color: var(--fg);
 }
-/* C3: selection is the fill + accent icon/name only — no left-edge bar of any
-   kind on tree rows (the rail and the active bar both retired) */
 .ft-node.active {
   background: var(--accent-soft);
   color: var(--fg);
@@ -2927,7 +2648,6 @@ body {
   color: var(--fg-faint);
 }
 
-/* ===== session-aware file tree: git colors + activity decorations ===== */
 :root {
   --git-m: #e2b04a;
   --git-a: #8fc69a;
@@ -2937,7 +2657,6 @@ body {
   --git-c: var(--red);
 }
 
-/* filter chips — one scrollable row, never wraps, full labels stay intact */
 .ft-chips {
   flex: 0 0 auto;
   display: flex;
@@ -2974,7 +2693,6 @@ body {
   color: var(--accent);
 }
 
-/* channel ①: git status name tint */
 .ft-name.git-modified {
   color: var(--git-m);
 }
@@ -2996,8 +2714,6 @@ body {
   color: var(--git-c);
 }
 
-/* channel ③: right-aligned decoration badges */
-/* plain (un-boxed) so it stays narrow and lets the filename keep its width */
 .ft-delta {
   flex: 0 0 auto;
   font-family: var(--mono);
@@ -3039,7 +2755,6 @@ body {
   color: var(--git-c);
 }
 
-/* channel ④: live pulse on the file being written right now */
 .ft-pulse {
   flex: 0 0 auto;
   width: 7px;
@@ -3063,7 +2778,6 @@ body {
   background: var(--accent-soft);
 }
 
-/* directory aggregation (●N session files) + git-changed dir tint */
 .ft-dir-agg {
   flex: 0 0 auto;
   font-family: var(--mono);
@@ -3075,7 +2789,6 @@ body {
   color: var(--git-m);
 }
 
-/* project-external virtual node + location hint */
 .ft-external .ft-name {
   color: var(--accent);
 }
@@ -3086,7 +2799,6 @@ body {
   color: var(--accent);
   font-size: 13px;
 }
-/* secondary path hint: capped so the filename keeps priority; mid-ellipsis from JS */
 .ft-loc {
   flex: 0 1 auto;
   min-width: 0;
@@ -3099,7 +2811,6 @@ body {
   margin-left: 6px;
 }
 
-/* read-only context menu */
 .ft-ctx {
   position: fixed;
   z-index: 200;
@@ -3127,7 +2838,6 @@ body {
   color: var(--accent);
 }
 
-/* search name/content mode toggle */
 .ft-mode {
   flex: 0 0 auto;
   display: flex;
@@ -3150,7 +2860,6 @@ body {
   color: var(--accent);
 }
 
-/* content-search results (file:line + matching text) */
 .ft-cresult {
   -webkit-app-region: no-drag;
   display: flex;
@@ -3190,18 +2899,15 @@ body {
   text-overflow: ellipsis;
 }
 
-/* bookmarks / recent sections reuse the external-node chrome */
 .ft-section .ft-name {
   color: var(--fg);
 }
 
-/* keyboard-navigation focus ring */
 .ft-node.kbd-focus {
   box-shadow: inset 0 0 0 1px var(--accent-line);
   background: rgba(255, 255, 255, 0.04);
 }
 
-/* ===== inline full-file diff (the default code view) ===== */
 .idiff {
   height: 100%;
   overflow: auto;
@@ -3214,7 +2920,6 @@ body {
 }
 .idiff-row {
   display: grid;
-  /* old# | new# | +/− sign | code (wraps, never overflows the pane) */
   grid-template-columns: 3.4em 3.4em 1.3em minmax(0, 1fr);
   align-items: baseline;
 }
@@ -3254,7 +2959,6 @@ body {
   font-size: 12px;
 }
 
-/* ===== symbol outline (in the code viewer) ===== */
 .code-wrap {
   position: relative;
   height: 100%;
@@ -3348,7 +3052,6 @@ body {
   color: var(--fg-faint);
 }
 
-/* ---- multi-account (settings panel) ---- */
 .acct-section {
   display: flex;
   flex-direction: column;
@@ -3401,7 +3104,6 @@ body {
 .acct-status {
   display: inline-flex;
   align-items: center;
-  /* a boxed pill sits mid-line beside a baseline-aligned name, not on its baseline */
   align-self: center;
   font-family: var(--mono, ui-monospace, monospace);
   font-size: 10px;
@@ -3442,8 +3144,6 @@ body {
   border-color: rgba(240, 168, 48, 0.45);
   background: rgba(240, 168, 48, 0.1);
 }
-/* outlined where EXPIRED is filled: a wall heals on the reset clock, an expired token
-   needs the user to do something (§4.2) */
 .acct-status.walled {
   color: var(--red);
   border-color: var(--red);
@@ -3460,7 +3160,6 @@ body {
   opacity: 1;
   color: var(--red);
 }
-/* the meters sit under the name, past the switch and the gap after it */
 .acct-meters {
   display: flex;
   align-items: center;
@@ -3491,8 +3190,6 @@ body {
   border-radius: 3px;
   background: var(--bg-4, #323238);
   overflow: hidden;
-  /* a narrow container must never shrink the track: two 100% bars of different widths
-     would read as two different numbers */
   flex: none;
 }
 .acct-meter .m-fill {
@@ -3553,7 +3250,6 @@ body {
   gap: 8px;
 }
 
-/* custom-endpoint badge + the expired row's recovery button */
 .acct-badge.custom {
   color: #c9a7e0;
   border-color: rgba(201, 167, 224, 0.4);
@@ -3576,7 +3272,6 @@ body {
   color: var(--bg-0);
 }
 
-/* guided-login status, shown in the panel because the pty running it is hidden */
 .acct-login-state {
   display: flex;
   flex-direction: column;
@@ -3608,13 +3303,6 @@ body {
   padding: 8px 10px;
 }
 
-/* ============================================================================
-   Settings redesign: two-column modal — left
-   category nav, right pane. Micro-vocabulary per the locked specs: nav rows use
-   C2's selection idiom (accent-soft active / bg-3 hover, r7, 600), icon buttons
-   paint no background and hover by color only (C1 / .modal-close), buttons stay
-   .mini. The pill switch is FR-16's one new control primitive.
-   ========================================================================== */
 .modal.settings-modal {
   width: min(92vw, 880px);
   height: min(86vh, 620px);
@@ -3642,8 +3330,6 @@ body {
   font-weight: 650;
   padding: 2px 10px 12px;
 }
-/* C2 row vocabulary: active = accent-soft ground + 600, hover = bg-3; no light-bar
-   (that channel belongs to session state in the sidebar) */
 .set-ni {
   display: flex;
   align-items: center;
@@ -3671,7 +3357,6 @@ body {
   color: var(--fg);
   font-weight: 600;
 }
-/* C1 icon idiom: idle faint → on accent, color only */
 .set-ni svg {
   flex: none;
   color: var(--fg-faint);
@@ -3680,7 +3365,6 @@ body {
 .set-ni.on svg {
   color: var(--accent);
 }
-/* a live guided login pulses on the Accounts item (FR-06) */
 .set-dot {
   width: 6px;
   height: 6px;
@@ -3699,8 +3383,6 @@ body {
     animation: none;
   }
 }
-/* SEC-11: the partition-wide wipe lives at the foot of the category list — a global
-   action, kept quiet (no danger red) until the confirm names what it takes */
 .set-clear {
   margin-top: auto;
   text-align: left;
@@ -3742,7 +3424,6 @@ body {
   overflow-y: auto;
   padding: 20px 26px 24px;
 }
-/* close = .modal-close primitive: no background in any state, hover by color */
 .set-x {
   position: absolute;
   top: 10px;
@@ -3765,7 +3446,6 @@ body {
   color: var(--accent);
 }
 
-/* pane header + section group labels */
 .set-ph {
   padding-bottom: 12px;
   border-bottom: 1px solid var(--line);
@@ -3795,7 +3475,6 @@ body {
   margin-top: 2px;
 }
 
-/* settings rows: label + hint left, control right, hairline separated */
 .set-row {
   display: flex;
   align-items: center;
@@ -3845,7 +3524,6 @@ body {
   font-size: 10.5px;
   padding: 0 4px;
 }
-/* Settings → Shortcuts: keycaps left, name + one line per place the key acts right */
 .set-key-row {
   align-items: flex-start;
 }
@@ -3871,7 +3549,6 @@ body {
   color: var(--fg-dim);
   font-weight: 550;
 }
-/* Settings → Extensions: one installed extension (browser-extensions D2, §04 fig. 3) */
 .ext-row {
   display: flex;
   align-items: center;
@@ -3885,7 +3562,6 @@ body {
 .ext-ver {
   font-family: var(--mono);
 }
-/* fig. 3: uninstall is an × that turns accent under the pointer, and asks once more */
 .ext-x {
   display: flex;
   align-items: center;
@@ -3897,7 +3573,6 @@ body {
   opacity: 1;
   color: var(--red);
 }
-/* D1's empty value: where the list would be, one sentence pointing at the store */
 .ext-empty {
   padding: 14px 12px;
   margin-bottom: 8px;
@@ -3907,11 +3582,7 @@ body {
   font-size: 12.5px;
   line-height: 1.6;
 }
-/* S1: the stage. While an agent drives a page and the column is off screen, the
-   column keeps a real box INSIDE the window instead of collapsing to zero width —
-   measured: a guest with no box (or one hidden with `visibility`) produces no frames at
-   all, and `Page.captureScreenshot` on it never answers. It is hidden from the user by
-   sitting behind the opaque UI and at 1% opacity, and takes no clicks. */
+/* PLATFORM§9 */
 .wb-col.staged {
   position: absolute;
   left: 0;
@@ -3920,8 +3591,6 @@ body {
   opacity: 0.01;
   pointer-events: none;
 }
-/* §4.3: an agent driving a page is never invisible — the tab wears a mark, and so
-   does the pane's head band while any of its tabs is being driven */
 .wb-tab.driven .lb::before,
 .wb-panel .bdriven::before {
   content: '';
@@ -3940,9 +3609,6 @@ body {
   white-space: nowrap;
 }
 
-/* R1: the app-level browser overlay — above the Settings modal (z 100), below
-   the extension ask modal (z 130) so a D7 install confirm lands on top of it (BB-67).
-   Generalised from the Web Store's own overlay, which is now one of its callers. */
 .wovl {
   position: fixed;
   inset: 26px;
@@ -3976,9 +3642,6 @@ body {
   text-overflow: ellipsis;
 }
 .wovl .bguest {
-  /* the guest factory's own rule fills a pane absolutely; in the overlay it is a flex
-     row instead — left absolute it covers the head band, and the three controls stop
-     taking clicks (found by BB-12/13, which could not press ↗ or Back) */
   position: relative;
   inset: auto;
   flex: 1;
@@ -3986,7 +3649,6 @@ body {
   border: none;
   background: #fff;
 }
-/* D7: what a running extension is asking for, inside the .bmodal it is asked in */
 .ext-perms {
   margin: 0;
   padding-left: 18px;
@@ -4009,7 +3671,6 @@ body {
   border-color: var(--accent-line);
 }
 
-/* FR-16: the pill switch — a native checkbox, so selectors/AT keep working */
 input.switch {
   appearance: none;
   -webkit-appearance: none;
@@ -4063,7 +3724,6 @@ input.switch:focus-visible {
   box-shadow: 0 0 0 2px var(--accent-line);
 }
 
-/* font chips + size stepper + live preview (FR-08) */
 .font-chips {
   display: flex;
   gap: 6px;
@@ -4167,7 +3827,6 @@ input.switch:focus-visible {
   }
 }
 
-/* inline confirms (FR-07 / FR-12): DOM strips, never a native dialog (A1) */
 .acct-confirm,
 .set-confirm {
   display: flex;
@@ -4202,7 +3861,6 @@ input.switch:focus-visible {
   color: var(--red);
 }
 
-/* About */
 .set-about {
   display: flex;
   align-items: center;
@@ -4251,7 +3909,6 @@ input.switch:focus-visible {
   color: var(--fg-dim);
 }
 
-/* the pool's × is now a real <button> (was a span) — keep the icon-button idiom */
 .acct-x {
   background: none;
   border: 0;
@@ -4259,21 +3916,13 @@ input.switch:focus-visible {
   display: flex;
   align-items: center;
 }
-/* foot buttons carry Lucide icons now (C1: no glyph characters) */
 .acct-foot .mini svg {
   flex: none;
 }
 
-/* ── workspace git freshness & one-click pull ──
-   Three surfaces, one measurement: the sidebar behind count (`.ws-behind`, with the
-   session tree's styles), the freshness popover (which reuses the .tbu-pop family
-   wholesale), and the C7 dialog's freshness line. */
-
-/* the freshness card reuses the account-usage popover whole, at its own narrower width */
 .tbu-pop.fx {
   width: 300px;
 }
-/* the ⏸ badge's card: what a session keeps parked, and how to release it */
 .tbu-pop.parked {
   width: 300px;
 }
@@ -4289,7 +3938,6 @@ input.switch:focus-visible {
   line-height: 1.55;
   color: var(--fg-faint);
 }
-/* freshness popover body rows */
 .fx-counts {
   display: flex;
   align-items: center;
@@ -4311,7 +3959,6 @@ input.switch:focus-visible {
 .fx-note.warn {
   color: var(--amber);
 }
-/* the pull action carries the accent — it is the one write Koloft performs */
 .tbu-act.pull {
   color: var(--accent);
 }
@@ -4320,8 +3967,6 @@ input.switch:focus-visible {
   color: var(--accent);
 }
 
-/* C7's freshness line: stale / verified / busy. The error state reuses
-   .field-hint.bad rather than inventing a fourth skin. */
 .fresh-line {
   display: flex;
   align-items: flex-start;
@@ -4376,11 +4021,6 @@ input.switch:focus-visible {
   animation: lspin 1s linear infinite;
 }
 
-/* ---------- Workbench panel ----------
-   The panel fills its column absolutely: it is a resident singleton hosting every
-   session's live guests at once (FR-01/D8), so it may never be unmounted or pulled out
-   of the layout, and a collapsed panel is a zero-width column rather than display:none.
-   The hosting column must therefore be `position: relative`. */
 .wb-panel {
   position: absolute;
   inset: 0;
@@ -4389,17 +4029,9 @@ input.switch:focus-visible {
   min-width: 0;
   background: var(--bg-1);
 }
-/* the root is focusable so the panel's own chrome can hold the keyboard (F5) — it is a
-   container, never a control, so it draws no ring of its own */
 .wb-panel:focus {
   outline: none;
 }
-/* row 1 — the tab strip: 36px, the first of the head band's two rows. The 30px of the
-   mock was one notch below what these controls need to be clicked comfortably (F6).
-   FR-26: this band IS the scroller and .wb-spill sticks to its right edge, so the ＋
-   never scrolls out of view. (The ＋ dropdown therefore cannot live inside the strip —
-   a scroll container clips it on the way down; it hangs off the panel root instead,
-   the same way .bmenu does.) */
 .wb-tabs {
   flex: 0 0 auto;
   display: flex;
@@ -4415,10 +4047,7 @@ input.switch:focus-visible {
 .wb-tabs::-webkit-scrollbar {
   display: none;
 }
-/* The window drag handle is the strip's empty run and never the strip itself: a drag
-   region must hold no controls and never scroll, because Electron's drag mask does not
-   follow a scrolled container (electron#40610) and a tab under a stale drag rect loses
-   its clicks to window drags. */
+/* PLATFORM§24 */
 .wb-tabs .wb-drag {
   -webkit-app-region: drag;
   flex: 1 1 0;
@@ -4430,11 +4059,6 @@ input.switch:focus-visible {
   align-items: center;
   gap: 6px;
   max-width: 180px;
-  /* Wide enough for the controls to survive, never narrower. `min-width: 0` let a
-     squeezed strip shrink a tab below its own contents, and the first thing to fall off
-     the edge was the ✕ (found in the manual round; the speaker added later made it
-     reachable at a wider strip than before). The strip already scrolls, so scrolling
-     is the right answer to "too many tabs" — clipping the close button is not. */
   min-width: 68px;
   height: 28px;
   padding: 0 9px;
@@ -4446,7 +4070,6 @@ input.switch:focus-visible {
   cursor: pointer;
   transition: background 0.15s var(--ease);
 }
-/* a tab carrying the speaker needs room for one more control */
 .wb-tab:has(.btab-spk) {
   min-width: 90px;
 }
@@ -4458,8 +4081,6 @@ input.switch:focus-visible {
   border-color: var(--accent-line);
   color: var(--fg);
 }
-/* FR-02 — the pinned tab. It carries no ✕, so it reserves no width for one, and it
-   reads as chrome rather than as one of the closable tabs beside it. */
 .wb-tab.pinned {
   flex: 0 0 auto;
   min-width: 0;
@@ -4471,7 +4092,6 @@ input.switch:focus-visible {
   background: var(--accent-soft);
   border-color: var(--accent-line);
 }
-/* FR-16 — agent-opened and not looked at yet: the strip's half of the unread signal */
 .wb-tab.agent::before {
   content: '';
   flex: 0 0 auto;
@@ -4480,18 +4100,12 @@ input.switch:focus-visible {
   border-radius: 50%;
   background: var(--accent);
 }
-/* …but a tab being DRIVEN wears the driven mark alone: side by side the two were two
-   identical accent dots, and "an agent is on it" already says everything the unread dot
-   would. The unread state itself stays, so the dot is back once the client lets go. */
 .wb-tab.driven.agent::before {
   display: none;
 }
-/* FR-24 — frozen by the global live-guest cap: still listed, reloads when clicked */
 .wb-tab.frozen {
   opacity: 0.5;
 }
-/* FR-28 — always Koloft's own glyph, never a site favicon: a remote <img> here would be
-   the DEFAULT session fetching from that site, outside the browser partition (SEC-6) */
 .wb-tab .ic {
   flex: 0 0 auto;
   display: flex;
@@ -4523,7 +4137,6 @@ input.switch:focus-visible {
   color: var(--accent);
   opacity: 1;
 }
-/* FR-50 — the change count, on the pinned tab and nowhere else */
 .wb-tab .cnt {
   flex: 0 0 auto;
   padding: 0 5px;
@@ -4543,8 +4156,6 @@ input.switch:focus-visible {
   margin: 0 2px;
   background: var(--line-2);
 }
-/* the button. 24px and borderless against a tab's 28px with a fill: near enough to
-   belong to the strip, different enough that nobody looks for a ✕ on it. */
 .wb-gh {
   -webkit-app-region: no-drag;
   flex: 0 0 auto;
@@ -4569,8 +4180,6 @@ input.switch:focus-visible {
   font-family: var(--mono);
   font-size: 11px;
 }
-/* still looking the number up: dimmed, never a spinner — the button already works, and a
-   moving thing in the corner of the strip earns attention it does not deserve */
 .wb-gh.pending {
   opacity: 0.45;
 }
@@ -4578,13 +4187,6 @@ input.switch:focus-visible {
   background: var(--bg-3);
   color: var(--fg);
 }
-/* FR-26 / §7.1 — the strip's two fixed ends. Both need `sticky` to stay put while
-   the tabs scroll under them: `margin-left: auto` alone parks the right one there only
-   while there is free space, and free space is exactly what an overflowing strip does not
-   have. Both carry the band's own background because tabs really do pass beneath them.
-   Left = the panel's own furniture (pinned Files, the GitHub button, the divider);
-   right = the ＋. `sticky` positions against the scroller's PADDING box, so the offsets
-   land on the strip's own 9px inset rather than on its edge. */
 .wb-pin,
 .wb-spill {
   position: sticky;
@@ -4621,8 +4223,6 @@ input.switch:focus-visible {
 .wb-new:hover {
   color: var(--accent);
 }
-/* FR-21 — drag-reorder. The dragged tab reads as picked up; the drop point is a line the
-   eye can follow, so a release is never a guess. */
 .wb-tab.dragging {
   opacity: 0.55;
   border-color: var(--accent-line);
@@ -4632,9 +4232,6 @@ input.switch:focus-visible {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
-/* row 2 — the kind bar. The same 36px band as the strip above it AND as .baddr below,
-   which the `web` kind keeps verbatim (FR-36): switching kind must not move the content
-   area by a pixel. */
 .wb-bar {
   -webkit-app-region: no-drag;
   position: relative;
@@ -4647,15 +4244,6 @@ input.switch:focus-visible {
   background: var(--bg-2);
   border-bottom: 1px solid var(--line);
 }
-/* FR-31 — path first, its parent directories dimmed: the file NAME is what the eye is
-   looking for, the directory is only there to disambiguate it. */
-/* The directory is what gets sacrificed when the bar is too narrow, never the name.
-   A single ellipsised box would cut the END — and the end is the filename, which is the
-   one thing the reader is looking for. That is invisible in-project (the relative dir is
-   short) and severe out of it: an artifact under ⌗ Scratchpad or ↗ Outside carries its
-   whole absolute directory, so a plain ellipsis leaves a header showing a path prefix and
-   no file at all. So the two parts are separate boxes: the dir may shrink to nothing, the
-   name never shrinks. */
 .wb-title {
   flex: 1;
   min-width: 0;
@@ -4680,16 +4268,6 @@ input.switch:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* …but "the name never shrinks" only held while it had somewhere to go. In the panel's
-   file headers the controls beside the title (git letter, ±N, the view segments, the icon
-   buttons) already want more room than the bar has at the panel's narrowest, so a name too
-   wide simply ran on underneath them: `notes.md` read as `notes`, with nothing to say it
-   had been cut. Here the dir is drained first (that is all the lopsided shrink does), then
-   the name gives way — cut at its FRONT, so the ending survives: `…tes.md`. `direction:
-   rtl` is what moves the ellipsis to the front, and the leading LRM keeps a name that
-   starts with a neutral character (`.gitignore`) from being reordered by it. The floor is
-   on both boxes because either one alone lets the other collapse. The Notes island's title
-   is deliberately out of scope: its name is a fixed word, not a path. */
 .wb-panel .wb-title {
   --nm-floor: 10ch;
   min-width: var(--nm-floor);
@@ -4697,6 +4275,7 @@ input.switch:focus-visible {
 .wb-panel .wb-title .dir {
   flex-shrink: 999;
 }
+/* PLATFORM§24 */
 .wb-panel .wb-title .nm {
   flex-shrink: 1;
   min-width: var(--nm-floor);
@@ -4763,14 +4342,6 @@ input.switch:focus-visible {
   color: var(--fg-faint);
 }
 
-/* FR-52 — the ＋ dropdown: exactly two items, and never a terminal one. It reuses the
-   sidebar's `.menu` / `.mi` skin and only overrides the positioning: the sidebar's
-   fly-outs are portalled `position: fixed` layers, this one is anchored to the panel
-   root under the ＋ it belongs to (it cannot hang off the spill itself — the strip is a
-   scroll container and would clip it). Its rows are buttons rather than divs, so they
-   need the button reset. */
-/* The two strip dropdowns, each hanging under the control that opens it: the ＋ at the
-   right end,'s GitHub button at the left. */
 .wb-newmenu,
 .wb-ghmenu {
   position: absolute;
@@ -4797,23 +4368,17 @@ input.switch:focus-visible {
   text-align: left;
 }
 
-/* content area: every live guest and every visited artifact stacks here, the current one
-   on top. Nothing is ever display:none — see .wb-host. */
 .wb-body {
   position: relative;
   flex: 1;
   min-height: 0;
   background: var(--bg-1);
 }
-/* S1: a guest an agent is driving while something else is on screen. It has to be
-   genuinely visible — a hidden guest produces no frames and a capture on it never
-   answers — so it is painted BEHIND .wb-body's own opaque background instead. */
+/* PLATFORM§9 */
 .wb-panel .bguest.staged {
   z-index: -1;
 }
-/* NFR-03 — an inactive tab's host is hidden with `visibility`, never `display:none`: a
-   <webview> in a display:none subtree detaches and reloads (electron#28677), and a
-   display:none artifact has no layout box to keep its scroll offset in. */
+/* PLATFORM§9 */
 .wb-host {
   position: absolute;
   inset: 0;
@@ -4821,11 +4386,6 @@ input.switch:focus-visible {
   flex-direction: column;
   min-height: 0;
 }
-/* R8 — a terminal tab's body. Hidden the same way every other host is, which here is
-   load-bearing twice over: `display:none` would give the xterm no box to measure (its fit
-   would land on 0×0 and be skipped), and unmounting it would drop the scrollback outright,
-   since main keeps none. The padding is the former island's, so a shell reads the same
-   as it always did. */
 .wb-term {
   padding: 10px 6px 8px 12px;
 }
@@ -4836,12 +4396,9 @@ input.switch:focus-visible {
   display: flex;
   flex-direction: column;
 }
-/* FR-32 — the outline list hangs over the text it scrolls; its ≡ lives in the kind bar */
 .wb-outline .outline-list {
   top: 0;
 }
-/* FR-35 — the panel's one find bar anchors to the panel root, so it has to clear the head
-   band itself (two 36px rows) rather than the single 46px header .find-bar was written for */
 .wb-panel > .find-bar {
   top: 82px;
 }
@@ -4860,8 +4417,6 @@ input.switch:focus-visible {
   border-color: var(--accent);
   color: var(--accent);
 }
-/* FR-54's first rung: an image blown up over the whole panel. The layer is the panel's,
-   not the artifact's, so Esc consumes it from anywhere inside. */
 .wb-zoom {
   position: absolute;
   inset: 0;
@@ -4878,23 +4433,15 @@ input.switch:focus-visible {
   max-height: 100%;
   object-fit: contain;
 }
-/* §07 #3 — the page's fullscreen fills the center row. The Koloft window itself never
-   enters macOS fullscreen: that would carry the user out of the window this feature
-   exists to keep them in. */
 .wb-panel.pagefull .wb-tabs,
 .wb-panel.pagefull .wb-bar,
 .wb-panel.pagefull .baddr {
   display: none;
 }
-/* the corner toggle floats over the row at z-index 2, so with the strip gone it would sit
-   on the page's own top-right control (most players put "leave fullscreen" there) and a
-   click meant for the page would collapse the panel. Found by code review,. */
 .center-row:has(.wb-panel.pagefull) .aux-icons {
   display: none;
 }
 
-/* the `web` kind's own bar, kept verbatim from the former Browser pane (FR-36):
-   36px like the strip above it (F6) */
 .baddr {
   -webkit-app-region: no-drag;
   position: relative;
@@ -4944,8 +4491,6 @@ input.switch:focus-visible {
 .baddr .url:focus {
   border-color: var(--accent-line);
 }
-/* extension action row (browser-extensions D3, §03 fig. 1): right of the field, grouped
-   away from the nav controls by its own leading line */
 .bext {
   position: relative;
   flex: 0 0 auto;
@@ -4979,7 +4524,6 @@ input.switch:focus-visible {
   height: 17px;
   object-fit: contain;
 }
-/* an extension with no icon of its own is still a button worth hitting */
 .bext-mono {
   display: flex;
   align-items: center;
@@ -5005,7 +4549,6 @@ input.switch:focus-visible {
   text-align: center;
   color: #1a120d;
 }
-/* the puzzle's menu — every extension, the three on the row included (D3) */
 .bext-menu {
   position: absolute;
   top: calc(100% + 4px);
@@ -5038,7 +4581,6 @@ input.switch:focus-visible {
   background: var(--bg-3);
   color: var(--fg);
 }
-/* address-bar history suggestions: the same menu box, spanning under the url field */
 .baddr-sugg {
   left: 9px;
   right: 9px;
@@ -5065,7 +4607,6 @@ input.switch:focus-visible {
 .bext-mrow .bext-badge {
   position: static;
 }
-/* 2px load line along the bottom edge of the address bar */
 .prog {
   position: absolute;
   bottom: -1px;
@@ -5082,7 +4623,6 @@ input.switch:focus-visible {
     left: 100%;
   }
 }
-/* one guest, stacked in .wb-body with every other live one (the current on top) */
 .bguest {
   position: absolute;
   inset: 0;
@@ -5140,7 +4680,6 @@ input.switch:focus-visible {
   border-color: var(--accent);
   color: var(--accent);
 }
-/* guest dialogs (§05D-5/§05D-11) — a DOM modal, never a native one */
 .bmodal-backdrop {
   position: fixed;
   inset: 0;
@@ -5208,56 +4747,33 @@ input.switch:focus-visible {
   border-top: 1px solid var(--line);
 }
 
-/* ---------- the Workbench's column, and its titlebar toggle (FR-55) ---------- */
-
-/* Position context for the absolutely-filled .wb, and NEVER display:none — a <webview>
-   inside a hidden subtree is detached and reloads on the way back (electron#28677),
-   which would cost every background session its live guests (D8). A collapsed panel
-   (T1) is a zero-width column instead. */
+/* PLATFORM§9 */
 .wb-col {
   position: relative;
-  /* the island's top edge meets the strip's height, so the corner toggle lands on the
-     tab strip (see `.center-row > .aux-icons`) */
   margin-top: 10px;
   border-color: var(--line-layout);
-  /* the island is the lightest layer of the three, but only just: its own two greys are
-     re-scoped one notch down, and every control inside follows */
   --bg-2: #19191c;
   --bg-1: #131315;
-  /* a shell tab's cells sit on the island's fill, not the TUI's ground */
   --term-ground: var(--bg-1);
 }
-/* T3: with the TUI column and its gutter gone, the island keeps the row's 10px on its
-   left too, so it never touches the sidebar's border */
 .wb-col.full {
   margin-left: 10px;
 }
-/* the strip's ＋ keeps clear of the corner toggle floating over the strip's right end */
 .wb-tabs .wb-spill {
   padding-right: 33px;
 }
+/* PLATFORM§9 */
 .wb-col.off {
   border-width: 0;
 }
-/* A collapsed column is zero wide, but the panel inside keeps the width it was last
-   shown at (`--wb-w`, set by App.tsx on the column). The island's overflow clips it.
-   Letting the panel follow the column to width 0 relaid out its whole subtree before
-   the collapse could paint (see App.tsx at `--wb-w` for the numbers). The stage is the
-   one exception: there the column IS the box a guest needs, so the panel fills it. */
 .wb-col.off:not(.staged) .wb-panel {
   right: auto;
   bottom: auto;
-  /* the SAME box it had: the island is border-box with a 1px border, so the shown panel
-     is 2px narrower than the column, and the collapsed column's zero border makes its
-     padding box 2px taller — a box off by even that much is a full relayout */
   width: calc(var(--wb-w) - 2px);
   height: calc(100% - 2px);
 }
 
-/* the agent's only report while its surface is closed (D10): a dot on the toggle */
 .aux-ico,
-/* R1: the titlebar entry to the app-level overlay wears the same dot — a page taken in
-   the background is unread in exactly the sense a Browser tab's is */
 .tb-ico {
   position: relative;
 }
@@ -5273,14 +4789,9 @@ input.switch:focus-visible {
   background: var(--accent);
 }
 
-/* F3 — a toast that points at a file on disk (a finished download) is the only door to
-   that file, so it waits for the user instead of expiring: it has to look like the
-   control it is, and it carries its own × because nothing else takes it down. */
 .toast.link {
   cursor: pointer;
   border-color: var(--accent-line);
-  /* a tint layer over the card's own surface — a second background COLOR would replace
-     it, and the toast floats over whatever is behind the window */
   background-image: linear-gradient(var(--accent-soft), var(--accent-soft));
 }
 .toast.link:hover {
@@ -5313,11 +4824,6 @@ input.switch:focus-visible {
   color: var(--accent);
 }
 
-/* ================= browser close-out: permission prompt / download list / menu / drag / mute ============ */
-
-/* §03 B7 — the permission prompt, and the notice that replaces a silent refusal. Under
-   the address bar and over the page, never over the chrome: the address bar has to stay
-   usable while a page is asking (BB-C44). */
 .bperm {
   display: flex;
   align-items: center;
@@ -5344,7 +4850,6 @@ input.switch:focus-visible {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* the buttons never shrink: a long site name must not push the answer off (BB-N04) */
 .bperm-btns {
   display: flex;
   gap: 7px;
@@ -5372,7 +4877,6 @@ input.switch:focus-visible {
   background: var(--accent-press);
 }
 
-/* §04 B9 — the download list: the durable home for a finished file. */
 .bdl {
   position: absolute;
   right: 44px;
@@ -5484,8 +4988,6 @@ input.switch:focus-visible {
   color: var(--accent-press);
 }
 
-/* B12 — the ⋯ menu. One item today; it exists so the next one does not have to
-   rearrange the head band again. */
 .bmenu {
   position: absolute;
   right: 9px;
@@ -5519,8 +5021,6 @@ input.switch:focus-visible {
   color: var(--fg);
 }
 
-/* §07 #4 — the speaker. Left of the close button: the strip is narrow and × owns the
-   right edge already. */
 .btab-spk {
   flex: 0 0 auto;
   display: flex;
@@ -5529,9 +5029,6 @@ input.switch:focus-visible {
   width: 16px;
   height: 16px;
   border-radius: 4px;
-  /* audible = accent, the colour this UI uses for "live". A muted tab is the opposite
-     of live, so it goes quiet visually too — leaving it accent reads as still playing
-     (found in the manual round). */
   color: var(--accent);
 }
 .btab-spk.muted {
@@ -5541,11 +5038,6 @@ input.switch:focus-visible {
   background: var(--bg-4);
 }
 
-/* ── Scheduled jobs ─────────────────────────────────────────────────── */
-/* ⏰ next run: a ROW at the top of the session list, never a badge on the head.
-   The head already carries the name, the git mark and the hover button, and a
-   badge there ate the folder name on a narrow sidebar.
-   An empty workspace's row is the same shape and, like this one, clickable. */
 .ws-next,
 .ws-empty {
   display: flex;
@@ -5572,8 +5064,6 @@ input.switch:focus-visible {
   flex: 0 0 auto;
   color: var(--accent);
 }
-/* the NAME is the only part that may shrink — the time must stay whole; the empty row's
-   label follows the same rule, so no wording can push the list sideways again */
 .ws-next-name,
 .ws-empty span {
   min-width: 0;
@@ -5589,7 +5079,6 @@ input.switch:focus-visible {
   color: var(--accent);
   font-weight: 600;
 }
-/* ⏰ mark on a session row (= .fico) */
 .ws-tab-cron {
   flex: 0 0 auto;
   display: flex;
@@ -5598,7 +5087,6 @@ input.switch:focus-visible {
 .ws-tab.cold .ws-tab-cron {
   opacity: 0.6;
 }
-/* Scheduled jobs dialog */
 .modal.cronjobs {
   width: 640px;
 }
@@ -5786,9 +5274,7 @@ input.switch:focus-visible {
 .inline .cb-input {
   padding: 7px 10px;
 }
-/* a native <input type=time>: Chromium paints its segments' selection and the picker
-   icon for the LIGHT scheme unless told otherwise, which on this dark surface left the
-   focused segment unreadable (manual round,) */
+/* PLATFORM§24 */
 .inline .cb-input.time {
   width: 120px;
   color-scheme: dark;
@@ -5797,9 +5283,7 @@ input.switch:focus-visible {
   resize: vertical;
   line-height: 1.4;
 }
-/* amber, not red: the form still saves. It warns that a run in a folder claude has never
-   been opened in would stall on its trust question (contract §9), and `.bad` is the
-   colour of a refusal — which the e2e `edErrors` also reads by that class alone. */
+/* CC§9 */
 .field-hint.warn {
   color: var(--amber);
 }
@@ -5824,8 +5308,6 @@ input.switch:focus-visible {
   text-align: right;
 }
 
-/* A-01 — the Browse tree's chip row. One chip today ("Show ignored files"); the row is a
-   flex line so a second one can sit beside it without moving anything. */
 .ft-chips {
   display: flex;
   gap: 6px;
@@ -5850,18 +5332,12 @@ input.switch:focus-visible {
   border-color: var(--accent);
   color: var(--accent);
 }
-/* A-02 — an ignored row is only DIMMED, never labelled: the column is 252px and the row
-   already carries an icon, the name, a git letter and a ±count. The reason lives in the
-   row's tooltip instead. */
 .ft-node.ignored .ft-name,
 .ft-result.ignored .ft-name {
   color: var(--fg-faint);
   opacity: 0.65;
 }
 
-/* ---------- file-edit §03 figure 3: the unsaved-changes question ---------- */
-/* it borrows the lifecycle dialogs' header treatment — a product sentence, not the
-   mono section label the settings modals use — and adds only the three-button row */
 .unsaved-modal .modal-header {
   font-family: var(--font);
   font-size: 14px;
@@ -5873,15 +5349,10 @@ input.switch:focus-visible {
 .unsaved-modal .modal-body {
   gap: 12px;
 }
-/* three buttons in a row this time — let them wrap rather than squeeze the labels */
 .unsaved-modal .modal-foot {
   flex-wrap: wrap;
 }
 
-/* ═══ file-edit (B-01…B-24) — the in-panel editor ═══════════════════════════════════ */
-
-/* B-07 — the editor fills its tab's host exactly as an artifact does, and is positioned
-   so the conflict strip and the diff overlay hang off IT rather than off the panel. */
 .wb-edit-pane {
   position: relative;
   flex: 1;
@@ -5890,9 +5361,6 @@ input.switch:focus-visible {
   flex-direction: column;
   background: var(--bg-1);
 }
-/* B-07/B-08 — a plain box: monospace, soft-wrapped, no resize grip, no focus ring of its
-   own (the whole pane IS the focus target). The wrap is free (measured, §05) and it is
-   what keeps a one-line 400 KB JSON readable. */
 .ed-area {
   flex: 1;
   min-width: 220px;
@@ -5912,8 +5380,6 @@ input.switch:focus-visible {
   overflow-wrap: anywhere;
   tab-size: 2;
 }
-/* B-10 — line and column, the endings, and whether there is unsaved work. Never the
-   encoding: it is always UTF-8, and a constant carries no information. */
 .ed-status {
   flex: 0 0 auto;
   display: flex;
@@ -5938,9 +5404,6 @@ input.switch:focus-visible {
   color: var(--accent);
   white-space: nowrap;
 }
-/* an autosaving buffer says "a save is coming" where a hand-saved one says
-   "unsaved". It is a wait, not a warning, so it sits at the quiet colour rather than the
-   accent the unsaved dot uses. */
 .ed-saving,
 .ed-saved,
 .ed-warn {
@@ -5949,8 +5412,6 @@ input.switch:focus-visible {
 .ed-warn {
   color: var(--amber);
 }
-/* B-04 — readable, not changeable, and the reason is on screen rather than in a tooltip
-   the user would have to go looking for. */
 .ed-ro {
   flex: 0 0 auto;
   display: flex;
@@ -5962,13 +5423,9 @@ input.switch:focus-visible {
   font-size: 12px;
   color: var(--amber);
 }
-/* B-20 — the conflict strip reuses the artifact's own floating bar; only its offset
-   changes, because this one hangs inside the editor and not under the panel's two rows. */
 .fp-stale.ed-stale {
   top: 12px;
 }
-/* B-21 — the difference, over the buffer it is about. An overlay rather than a swap: the
-   textarea keeps its content, its caret and its undo history while this is up. */
 .ed-conflict {
   position: absolute;
   inset: 0;
@@ -6001,7 +5458,6 @@ input.switch:focus-visible {
   width: 100%;
   height: 100%;
 }
-/* B-14 — the Source view is showing memory, not the file */
 .ed-unsaved-note {
   flex: 0 0 auto;
   padding: 5px 12px;
@@ -6011,9 +5467,6 @@ input.switch:focus-visible {
   font-size: 10.5px;
   color: var(--accent);
 }
-/* B-24 — unsaved work takes the close button's place, and the close button comes back
-   under the pointer. The left-edge dot is spoken for (FR-16, "an agent opened this"), and
-   a tab can be both at once. */
 .wb-tab .x .dirty {
   width: 7px;
   height: 7px;
@@ -6029,7 +5482,6 @@ input.switch:focus-visible {
 .wb-tab:hover .x .xhov {
   display: flex;
 }
-/* B-06 — the name box, sitting where the file it names will appear */
 .ft-newfile-row {
   gap: 5px;
   cursor: default;
@@ -6056,7 +5508,6 @@ input.ft-newfile {
   color: var(--red);
 }
 
-/* ---------- settings ▸ welcome pane ---------- */
 .wp-cards {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -6136,13 +5587,11 @@ input.ft-newfile {
   border-bottom: 0;
 }
 
-/* ---------- onboarding welcome ---------- */
 .w-empty.onboarding {
   --ob-w: 560px;
   gap: 16px;
   padding: 20px 16px;
   overflow-y: auto;
-  /* safe: centred while it fits, top-anchored (so reachable) once it overflows */
   justify-content: safe center;
 }
 .onboarding .ob-step {
@@ -6179,7 +5628,6 @@ input.ft-newfile {
 .onboarding .quiet.key {
   color: var(--fg-dim);
 }
-/* the little SVG illustrations, shared by the welcome pages and the hint cards */
 .pic {
   width: 100%;
   height: auto;
@@ -6209,7 +5657,6 @@ input.ft-newfile {
   text-decoration: underline;
 }
 
-/* step 2 — the folders Claude Code already has history in */
 .disc-list {
   width: 100%;
   display: flex;
@@ -6262,7 +5709,6 @@ input.ft-newfile {
   color: var(--fg-faint);
 }
 
-/* step 3 — which login */
 .ob-choices {
   width: 100%;
   display: flex;
@@ -6305,7 +5751,6 @@ input.ft-newfile {
   font-size: 11px;
 }
 
-/* step 4 — the lightbar legend */
 .ob-legend {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -6343,7 +5788,6 @@ input.ft-newfile {
   font-size: 11.5px;
 }
 
-/* the action row: Skip · dots · Back + primary */
 .ob-actions {
   display: flex;
   align-items: center;
@@ -6376,11 +5820,6 @@ input.ft-newfile {
   gap: 8px;
 }
 
-/* ---------- hints ---------- */
-/* The dim is a box-shadow spread OUT of a box laid over the target, so the target stays
-   lit with no second element over it — and `pointer-events: none` keeps the whole sheet
-   out of the way: a hint the user never asked for may not swallow the click or the
-   keystroke meant for the TUI behind it (Hint.tsx). */
 .hint-backdrop {
   position: fixed;
   z-index: 130;
@@ -6439,9 +5878,6 @@ input.ft-newfile {
   font-size: 12px;
 }
 
-/* ---------- remote workspaces --------------------------------------------- */
-
-/* the machine a workspace lives on, riding behind its name like the git mark does */
 .ws-remote {
   flex: 0 0 auto;
   display: flex;
@@ -6453,13 +5889,10 @@ input.ft-newfile {
   white-space: nowrap;
   font-family: var(--mono);
   font-size: 10px;
-  /* a smaller face centred by its box sits visibly above the 12px name — line it up
-     with the name's x-height instead */
   line-height: 1;
   margin-top: 2px;
   color: var(--fg-faint);
 }
-/* green = the last heartbeat answered, so the rows next to it are fresh */
 .ws-conn {
   flex: 0 0 auto;
   width: 6px;
@@ -6471,7 +5904,6 @@ input.ft-newfile {
   background: var(--good);
 }
 
-/* "alpha": the same mark on the ⊞ menu item, the welcome link and the dialog header */
 .tag {
   margin-left: 6px;
   padding: 1px 5px;
@@ -6484,7 +5916,6 @@ input.ft-newfile {
   letter-spacing: 0.02em;
 }
 
-/* the ⊞ button's own fly-out, anchored under it */
 .addws-menu {
   position: absolute;
   top: calc(var(--titlebar-h) - 4px);

@@ -7,31 +7,12 @@ import { execFileSync } from 'child_process'
 import type { AddressInfo, Socket } from 'net'
 import type { IncomingMessage, ServerResponse } from 'http'
 
-/**
- * Local fixture servers for the Browser suite (PRD §08 TEST-10).
- *
- * The request LOG is the black-box signal that a guest actually loaded a URL: "the
- * agent built a tab but must not load it" is provable only as "this server received
- * zero requests", and the echoed `User-Agent` is the UA oracle. Modelled on the
- * probe mock in multi-account.spec.ts, extended into a small route table so every
- * case (download / basic auth / upload / window.open / window.close / autoplay /
- * pdf / cookies) has a page to point at without inventing its own server.
- *
- * Everything binds 127.0.0.1 (plus ::1 when the kernel lets us have the same port),
- * so `localhost` resolves to the fixture regardless of which family Chromium tries
- * first, and nothing is ever exposed on the network.
- */
-
 export interface RecordedRequest {
   method: string
-  /** request target as received, e.g. `/a?x=1` */
   url: string
-  /** pathname only, e.g. `/a` */
   path: string
-  /** `?x=1` (empty string when there is no query) */
   search: string
   headers: Record<string, string>
-  /** convenience mirrors of the two headers the cases assert on */
   userAgent: string
   cookie: string
   ts: number
@@ -45,65 +26,46 @@ export type RouteHandler = (
 
 export interface FixtureServer {
   readonly kind: 'http' | 'https'
-  /** always '127.0.0.1' */
   readonly host: string
   readonly port: number
-  /** e.g. `http://127.0.0.1:53412` */
   readonly origin: string
-  /** every request received so far, oldest first (favicon excluded — see faviconHits) */
   readonly requests: RecordedRequest[]
-  /** favicon.ico hits, kept OUT of `requests` so a "loaded exactly once" oracle holds */
   readonly faviconHits: RecordedRequest[]
-  /** absolute url on the 127.0.0.1 origin */
   url(pathname?: string): string
-  /** same server, spelled `localhost` (secure-context + "not special-cased" cases) */
   localhostUrl(pathname?: string): string
-  /** same server under any hostname (needs a --host-resolver-rules mapping) */
   hostUrl(hostname: string, pathname?: string): string
   requestsFor(pathname: string): RecordedRequest[]
-  /** total recorded requests, or only those for `pathname` */
   count(pathname?: string): number
   reset(): void
-  /** serve `body` (a full html document or a fragment) at `pathname`; returns its url */
   page(pathname: string, body: string): string
-  /** serve anything at `pathname`; returns its url */
   route(pathname: string, handler: RouteHandler): string
   close(): Promise<void>
 }
 
 export interface HttpsFixtureServer extends FixtureServer {
-  /** hostnames baked into the self-signed cert's SAN list */
   readonly aliases: string[]
   aliasUrl(alias: string, pathname?: string): string
-  /** ready-made Electron switch — push it onto `env.extraArgs` before launchApp */
   readonly hostResolverSwitch: string
   readonly certPath: string
 }
 
 export interface FakeIdp extends FixtureServer {
-  /** entry point of the multi-hop chain: /login → 302 /callback?code= → 302 → finalUrl */
   readonly loginUrl: string
   readonly code: string
-  /** where the last hop lands; assign before driving the chain to end on another origin */
   finalUrl: string
 }
 
-/** hostnames the self-signed cert covers by default (reserved `.test` TLD, never DNS) */
 export const HTTPS_ALIASES = ['koloft-a.test', 'koloft-b.test']
 
 const BASIC_USER = 'koloft'
 const BASIC_PASS = 'secret'
-/** realm the /auth challenge advertises — the origin+realm oracle of BB-C62 */
 export const BASIC_REALM = 'Koloft Test Realm'
 export const BASIC_CREDENTIALS = { user: BASIC_USER, pass: BASIC_PASS }
 
-/** `--host-resolver-rules=…` mapping every alias (and localhost) onto the fixture IP */
 export function hostResolverSwitch(aliases: string[], ip = '127.0.0.1'): string {
   const rules = [...aliases, 'localhost'].map((h) => `MAP ${h} ${ip}`).join(',')
   return `--host-resolver-rules=${rules}`
 }
-
-// ---- page fixtures -------------------------------------------------------------------
 
 function doc(title: string, body: string): string {
   return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title></head><body>${body}</body></html>`
@@ -114,7 +76,6 @@ const PNG_1X1 = Buffer.from(
   'base64'
 )
 
-/** a real one-page PDF (correct xref offsets) — PDFium must be able to render it */
 function minimalPdf(): Buffer {
   const stream = 'BT /F1 18 Tf 20 100 Td (Koloft PDF FIXTURE) Tj ET\n'
   const objs = [
@@ -137,7 +98,6 @@ function minimalPdf(): Buffer {
   return Buffer.from(out, 'latin1')
 }
 
-/** half a second of 8-bit mono PCM — enough for an autoplay attempt to be audible */
 function beepWav(): Buffer {
   const rate = 8000
   const samples = rate / 2
@@ -159,8 +119,6 @@ function beepWav(): Buffer {
   header.writeUInt32LE(data.length, 40)
   return Buffer.concat([header, data])
 }
-
-// ---- server --------------------------------------------------------------------------
 
 interface Internals {
   requests: RecordedRequest[]
@@ -206,7 +164,6 @@ function defaultRoutes(state: Internals): Map<string, RouteHandler> {
   r.set('/p', (_q, res) => sendHtml(res, doc('Page P', '<h1 id="page-p">page p</h1>')))
   r.set('/next', (_q, res) => sendHtml(res, doc('Next', '<h1 id="page-next">next</h1>')))
 
-  // the UA / cookie mirror: same values the server recorded, readable from inside the guest
   r.set('/echo', (req, res) => {
     const ua = String(req.headers['user-agent'] ?? '')
     const cookie = String(req.headers['cookie'] ?? '')
@@ -219,7 +176,6 @@ function defaultRoutes(state: Internals): Map<string, RouteHandler> {
     )
   })
 
-  // `?name=&value=` — the cross-restart login-state oracle (Set-Cookie then re-read)
   r.set('/cookie', (_q, res, url) => {
     const name = url.searchParams.get('name') ?? 'koloft_e2e'
     const value = url.searchParams.get('value') ?? 'v1'
@@ -228,8 +184,6 @@ function defaultRoutes(state: Internals): Map<string, RouteHandler> {
     })
   })
 
-  // headers + a first chunk immediately, body finished only after `?ms` (default 30s):
-  // a navigation that is provably still in flight (progress bar / Stop / slow download)
   r.set('/slow', (_q, res, url) => {
     const ms = Number(url.searchParams.get('ms') ?? 30_000)
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
@@ -244,7 +198,6 @@ function defaultRoutes(state: Internals): Map<string, RouteHandler> {
     res.on('close', () => clearTimeout(t))
   })
 
-  // accepted and never answered — not even headers (the connection-level stall)
   r.set('/hang', (_q, res) => {
     state.openResponses.add(res)
   })
@@ -259,7 +212,6 @@ function defaultRoutes(state: Internals): Map<string, RouteHandler> {
     res.end(body)
   })
 
-  // an attachment whose bytes trickle: still in flight while a tab is closed / archived
   r.set('/download-slow', (_q, res, url) => {
     const name = url.searchParams.get('name') ?? 'slow.bin'
     const ms = Number(url.searchParams.get('ms') ?? 4000)
@@ -294,7 +246,6 @@ function defaultRoutes(state: Internals): Map<string, RouteHandler> {
     if (!authed(req)) return challenge(res)
     sendHtml(res, doc('Authed', '<h1 id="authed">authed</h1>'))
   })
-  // main frame 200, sub-resource 401: the anti-phishing half of the basic-auth case
   r.set('/auth-sub', (_q, res) =>
     sendHtml(
       res,
@@ -320,7 +271,6 @@ function defaultRoutes(state: Internals): Map<string, RouteHandler> {
     )
   )
 
-  // `?target=` — window.open on a real user click (OAuth popup / target=_blank routing)
   r.set('/popup', (_q, res, url) => {
     const target = url.searchParams.get('target') ?? '/next'
     sendHtml(
@@ -334,8 +284,6 @@ function defaultRoutes(state: Internals): Map<string, RouteHandler> {
     )
   })
 
-  // `?href=` + optional `?blank=1` — one page shape for every link case (in-page nav,
-  // target=_blank, mailto/tel, an unlisted scheme, file:///…app, data:)
   r.set('/link', (_q, res, url) => {
     const href = url.searchParams.get('href') ?? '/b'
     const blank = url.searchParams.get('blank') === '1'
@@ -405,9 +353,6 @@ function defaultRoutes(state: Internals): Map<string, RouteHandler> {
     )
   )
 
-  // R1/a page that ASKS for things: `#mic` / `#notify` end up holding what the
-  // browser answered, so "the overlay refuses every permission outright" and "a strip
-  // tab's page gets the user's own answer back" are both readable from the page itself.
   r.set('/permission', (_q, res) =>
     sendHtml(
       res,
@@ -443,8 +388,6 @@ function defaultRoutes(state: Internals): Map<string, RouteHandler> {
     )
   )
 
-  // cookie + service worker + cache + IndexedDB in one page — the "clear browsing data"
-  // fixture. `#stored` reads back what actually landed.
   r.set('/storage', (_q, res) =>
     sendHtml(
       res,
@@ -504,8 +447,7 @@ async function start(opts: StartOptions = {}): Promise<FixtureServer & { state: 
   const handler = (req: IncomingMessage, res: ServerResponse): void => {
     const url = new URL(req.url ?? '/', 'http://fixture.invalid')
     const rec = record(req, url)
-    // Chromium fetches /favicon.ico after every navigation; counting it would break
-    // "loaded exactly once" oracles, so it is logged apart and answered empty.
+    // PLATFORM§12
     if (url.pathname === '/favicon.ico') {
       state.faviconHits.push(rec)
       res.writeHead(204)
@@ -531,20 +473,17 @@ async function start(opts: StartOptions = {}): Promise<FixtureServer & { state: 
   await listen(primary, host, 0)
   const port = (primary.address() as AddressInfo).port
 
-  // Same port on ::1 when the kernel allows it, so `localhost` reaches the fixture
-  // whichever family Chromium resolves first. Best-effort: a machine without IPv6
-  // simply skips it.
-  let secondary: http.Server | https.Server | null = opts.tls
+  let ipv6LoopbackTwin: http.Server | https.Server | null = opts.tls
     ? https.createServer(opts.tls, handler)
     : http.createServer(handler)
   try {
-    secondary.on('connection', (s) => {
+    ipv6LoopbackTwin.on('connection', (s) => {
       state.sockets.add(s)
       s.on('close', () => state.sockets.delete(s))
     })
-    await listen(secondary, '::1', port)
+    await listen(ipv6LoopbackTwin, '::1', port)
   } catch {
-    secondary = null
+    ipv6LoopbackTwin = null
   }
 
   const kind: 'http' | 'https' = opts.tls ? 'https' : 'http'
@@ -587,17 +526,14 @@ async function start(opts: StartOptions = {}): Promise<FixtureServer & { state: 
       for (const s of state.sockets) s.destroy()
       state.sockets.clear()
       await new Promise<void>((ok) => primary.close(() => ok()))
-      if (secondary) await new Promise<void>((ok) => secondary?.close(() => ok()))
+      if (ipv6LoopbackTwin) await new Promise<void>((ok) => ipv6LoopbackTwin?.close(() => ok()))
     }
   }
 }
 
-/** The plain-http echo/fixture server. `await server.close()` in a finally block. */
 export async function startEchoServer(): Promise<FixtureServer> {
   return start()
 }
-
-// ---- https + self-signed cert ---------------------------------------------------------
 
 let certCache: { key: string; cert: string; certPath: string; aliases: string[] } | null = null
 
@@ -639,16 +575,6 @@ function selfSignedCert(aliases: string[]): { key: string; cert: string; certPat
   return certCache
 }
 
-/**
- * A self-signed https fixture on 127.0.0.1, reachable under several hostnames.
- *
- * The certificate is untrusted on purpose — it IS the interstitial fixture. Specs
- * must map the aliases onto the loopback before launch:
- *
- *   const tls = await startHttpsServer()
- *   env.extraArgs.push(tls.hostResolverSwitch)   // BEFORE launchApp
- *   … navigate to tls.aliasUrl('koloft-a.test', '/a')
- */
 export async function startHttpsServer(
   opts: { aliases?: string[] } = {}
 ): Promise<HttpsFixtureServer> {
@@ -664,13 +590,6 @@ export async function startHttpsServer(
   }
 }
 
-// ---- fake IdP -------------------------------------------------------------------------
-
-/**
- * A local stand-in for GitHub/Google's login: /login → 302 /callback?code=… → 302 →
- * finalUrl, entered through `window.open`. Its own origin differs from the page that
- * opens it, so the popup→tab routing is exercised cross-origin like the real thing.
- */
 export async function startFakeIdp(opts: { finalUrl?: string } = {}): Promise<FakeIdp> {
   const base = await start()
   const code = 'koloft-e2e-code-1'

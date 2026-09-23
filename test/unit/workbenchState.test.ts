@@ -1,15 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { PERSISTED_TAB_CAP, sanitizeTab, sanitizeSessionWorkbench } from '@shared/workbenchState'
 
-/**
- * The Workbench's persisted-state boundary. Three callers share it — the
- * v2→v3 migration, the `workbench.setState` write path and the read path — so anything a
- * hand-edited layout.json can hold has to be decided exactly once, here.
- *
- * The rule under test is per-item repair, never wholesale rejection (§6/hand-edited
- * layout.json, WB-P04): one dirty entry drops and the rest of the panel still restores.
- */
-
 describe('sanitizeTab — one tab, repaired or dropped', () => {
   it('keeps a well-formed web tab as {kind,title,url} only', () => {
     expect(
@@ -105,9 +96,7 @@ describe('sanitizeTab — one tab, repaired or dropped', () => {
   })
 })
 
-// WB-P04 — the whole session entry. The failure this shape exists to prevent is blanking
-// a panel over one bad tab, so every case below asserts what SURVIVES, not just what drops.
-describe('sanitizeSessionWorkbench (WB-P04)', () => {
+describe('sanitizeSessionWorkbench (WB-P04): one bad tab never blanks the panel, so each case asserts what survives', () => {
   it('keeps a well-formed entry as it stands', () => {
     const raw = {
       open: true,
@@ -163,7 +152,7 @@ describe('sanitizeSessionWorkbench (WB-P04)', () => {
     ])
   })
 
-  it('FR-22/WB-P04: truncates per kind at PERSISTED_TAB_CAP, counting the kinds apart', () => {
+  it('FR-22/WB-P04: truncates per kind at PERSISTED_TAB_CAP, counting the kinds apart and keeping the first of each kind', () => {
     const raw = {
       open: true,
       tabs: [
@@ -182,7 +171,6 @@ describe('sanitizeSessionWorkbench (WB-P04)', () => {
     const out = sanitizeSessionWorkbench(raw, false)
     expect(out.tabs.filter((t) => t.kind === 'web')).toHaveLength(PERSISTED_TAB_CAP)
     expect(out.tabs.filter((t) => t.kind === 'file')).toHaveLength(PERSISTED_TAB_CAP)
-    // the survivors are the first of each kind, not a slice of the mixed list
     expect(out.tabs[0].url).toBe('http://x.test/0')
     expect(out.tabs[PERSISTED_TAB_CAP].path).toBe('/ws/f0.ts')
   })
@@ -207,7 +195,6 @@ describe('sanitizeSessionWorkbench (WB-P04)', () => {
       expect(sanitizeSessionWorkbench({ open, tabs: [] }, true).open).toBe(true)
       expect(sanitizeSessionWorkbench({ open, tabs: [] }, false).open).toBe(false)
     }
-    // …and honours a real boolean over the default, in both directions
     expect(sanitizeSessionWorkbench({ open: false, tabs: [] }, true).open).toBe(false)
     expect(sanitizeSessionWorkbench({ open: true, tabs: [] }, false).open).toBe(true)
   })

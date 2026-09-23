@@ -7,16 +7,6 @@ import { headAge, pullNote, pullToast, type PullNote } from '../freshnessView'
 import { mainRunningCount } from '../newSession'
 import { PullConfirm } from './PullConfirm'
 
-/**
- * The behind-badge's detail card (workspace-git-pull §03 M2): the same measurement
- * the badge shows, plus the one reason Pull is or isn't available, plus the two
- * manual entry points. It reuses the account-usage popover's family whole.
- *
- * `f` and `rows` come straight from the pushed workspace rows, so a background fetch
- * refreshes the counts and the disabled state in place — the card owns only what is
- * genuinely local: its two in-flight flags, the running-session confirm, and the
- * error line of a pull that failed.
- */
 export function FreshnessPopover({
   wsPath,
   f,
@@ -30,12 +20,10 @@ export function FreshnessPopover({
 }: {
   wsPath: string
   f: WorkspaceFreshness
-  /** the workspace's session rows — the M3 guard counts the ones in the root checkout */
   rows: SessionRow[]
   left: number
   top: number
   onClose: () => void
-  /** a pull in flight — the owner must not unmount the card under it either */
   onBusy: (busy: boolean) => void
   onMouseEnter: () => void
   onMouseLeave: () => void
@@ -46,10 +34,6 @@ export function FreshnessPopover({
   const [failed, setFailed] = useState<string | null>(null)
   const [confirm, setConfirm] = useState<number | null>(null)
 
-  // dismissal follows the sidebar fly-out (outside click / blur / Escape) — except
-  // while the confirm is up, where Escape belongs to the topmost dialog and the
-  // backdrop's own click must not take the card down behind it, and except while a
-  // pull is in flight: unmounting the card mid-pull would drop the failure reason
   useEffect(() => {
     if (pulling) return
     if (confirm !== null) {
@@ -79,7 +63,6 @@ export function FreshnessPopover({
 
   const doFetch = async (): Promise<void> => {
     setFetching(true)
-    // a fresh measurement replaces the reason the previous pull failed on
     setFailed(null)
     try {
       await window.api.workspace.fetchFreshness(wsPath)
@@ -104,8 +87,6 @@ export function FreshnessPopover({
     onClose()
   }
 
-  // a pull rewrites files under whatever agents work in the root checkout — worktree
-  // sessions keep their own checkout and are untouched (D4)
   const inMain = mainRunningCount(rows)
   const eligible = canPull(f)
   const note: PullNote = failed ? { text: failed, tone: 'alarm' } : pullNote(f)
@@ -118,8 +99,6 @@ export function FreshnessPopover({
           style={{ left, top }}
           onClick={(e) => e.stopPropagation()}
           onMouseEnter={onMouseEnter}
-          // a failed pull's reason lives only here: the card waits for an outside
-          // click or Escape, not for the pointer to drift off
           onMouseLeave={failed ? undefined : onMouseLeave}
         >
           <div className="tbu-pop-head">

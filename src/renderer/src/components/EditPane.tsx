@@ -34,28 +34,9 @@ import {
   subscribeDirty
 } from '../editRegistry'
 
-/**
- * B-07…B-22 — the editor itself: one plain textarea, a status strip, and the two bars that
- * appear when the file moves under it.
- *
- * The textarea is UNCONTROLLED (N-02) and that is not a preference. React re-writing the
- * body on every keystroke costs 28ms a character on a big file (measured, §05), and
- * re-writing it mid-composition swallows the candidate characters of a Chinese input
- * method. So the DOM node owns the text, this component only ever reads it, and the one
- * place that writes it back is `syncFromRegistry` below — the reload paths, which B-09
- * already warns cut the undo history.
- *
- * Every piece of state that has to outlive the component lives in `editRegistry`: a
- * session switch unmounts this pane, and B-30 promises that loses nothing.
- */
+const MAIN_EDIT_WRITE_MAX_BYTES_MIRROR = 1024 * 1024
+const CARET_READOUT_THROTTLE_MS = 100
 
-/** Mirrors `EDIT_WRITE_MAX_BYTES` in src/main/fileEdit.ts. Checked here only on a PASTE
- *  (and by main on every save): counting the bytes of a whole buffer per keystroke is the
- *  kind of cost §05 measured this feature's limits to avoid. */
-const SAVE_MAX_BYTES = 1024 * 1024
-
-/** B-04 — one sentence per reason the ✎ is dark, in ordinary words. The `readOnly` values
- *  come back from `edit.open`; the `KOLOFT_*` ones are what it throws. */
 function reasonSentence(readOnly: string | null, failure: string): string {
   if (failure.includes('KOLOFT_TOO_LARGE')) return 'Too large to edit here (limit 512 KB)'
   if (failure.includes('KOLOFT_BINARY')) return 'Not a text file'
@@ -69,30 +50,16 @@ function reasonSentence(readOnly: string | null, failure: string): string {
   return ''
 }
 
-/** B-03/B-04 — the notice when a file the user asked to EDIT cannot be opened for editing
- *  at all (too big, binary, not a plain file). The reason is the same one the ✎'s tooltip
- *  carries, so the two routes never explain the same file differently. */
 export function editRefusal(failure: string): string {
   return 'Cannot edit this file — ' + (reasonSentence(null, failure) || 'unknown reason')
 }
 
 export interface EditProbe {
-  /** the answer is in (a false here only means "still asking") */
   ready: boolean
-  /** may this file be edited at all (B-04/B-05) */
   can: boolean
-  /** the ✎'s tooltip: 'Edit', or why not */
   title: string
 }
 
-/**
- * B-04/B-05 — ask, for one file, whether the ✎ may light up.
- *
- * The probe is `edit.open` itself, so the answer is the real size cap and the real endings
- * check rather than a second guess at them in the renderer. Both toolbars
- * use this one hook, which is what keeps the file tab's ✎ and the reading area's ✎ saying
- * the same thing about the same file (§09 note 4).
- */
 export function useEditProbe(path: string | null): EditProbe {
   const [probe, setProbe] = useState<EditProbe>({ ready: false, can: false, title: '' })
   useEffect(() => {
@@ -125,29 +92,11 @@ export function useEditProbe(path: string | null): EditProbe {
 }
 
 export interface EditPaneProps {
-  /** the CONVERSATION TAB this buffer belongs to — the registry's owner key (D8) */
   ownerTab: string
-  /** the panel tab inside it */
   tabId: string
-  /** the panel just entered edit mode on this tab — take the focus once */
   focusNonce: number
-  /** B-17 — a save landed, so the change set and the git letters have to catch up */
   onSaved: () => void
-  /**
-   * this buffer holds PROSE, not code. The note is a list of things a person wrote
-   * for themselves, so the spell checker is welcome where the code editor turns it off.
-   * And Tab writes two spaces at the caret instead of walking the focus away, because in
-   * a list of notes Tab means "indent this line", not "leave this box". Off by default:
-   * on a source file B-11 stands, Tab moves the focus.
-   */
   prose?: boolean
-  /**
-   * this buffer saves itself: 600 ms after the last key, at once when the box loses
-   * the focus, and at once if it goes away with unsaved text. It writes through the very
-   * same call ⌘S makes, so there is one save path and not two. It never writes over an
-   * unanswered conflict bar: the file moved under us and only the user can say which side
-   * wins. Off by default: a source file is saved on purpose.
-   */
   autosave?: boolean
 }
 
@@ -160,7 +109,6 @@ export function EditPane({
   autosave = false
 }: EditPaneProps): JSX.Element {
   const areaRef = useRef<HTMLTextAreaElement>(null)
-  // the registry mutates in place, so a version counter is what tells React something moved
   const [, bump] = useReducer((n: number) => n + 1, 0)
   useEffect(() => subscribeDirty(bump), [])
   const entry = getEntry(ownerTab, tabId)
@@ -173,8 +121,6 @@ export function EditPane({
   const text = entry?.text ?? ''
   const dirty = !!entry && entry.text !== entry.original
 
-  /** B-10 — the caret's line and column, at most ten times a second. Every cursor move
-   *  would otherwise walk the file from the top (§05: 2 MB per keypress on a big one). */
   const posTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const trackCaret = useCallback((): void => {
     if (posTimer.current) return
@@ -185,7 +131,7 @@ export function EditPane({
       const value = el.value
       setPos(positionAt(buildLineIndex(value), el.selectionStart, value))
       setSelection(ownerTab, tabId, el.selectionStart, el.selectionEnd)
-    }, 100)
+    }, CARET_READOUT_THROTTLE_MS)
   }, [ownerTab, tabId])
   useEffect(
     () => () => {
@@ -194,12 +140,7 @@ export function EditPane({
     []
   )
 
-  /**
-   * Push the registry's text into the DOM node when something OTHER than typing changed it
-   * — a silent reload (B-15), the conflict bar's Reload, a Discard. Never on a keystroke:
-   * the node is already right, and re-assigning `value` would move the caret to the end and
-   * throw the undo history away.
-   */
+  // ADR-0018
   const domText = useRef<string | null>(null)
   useLayoutEffect(() => {
     const el = areaRef.current
@@ -214,9 +155,6 @@ export function EditPane({
     trackCaret()
   }, [entry, entry?.text, trackCaret])
 
-  // B-30 — a session switch unmounts this pane, so the caret comes back off the registry.
-  // Mount-only: within a session the node itself is never unmounted (`visibility`), and
-  // re-applying a stored caret on a later render would fight the user's own cursor.
   const mounted = useRef(false)
   useLayoutEffect(() => {
     const el = areaRef.current
@@ -227,8 +165,6 @@ export function EditPane({
     trackCaret()
   }, [ownerTab, tabId, trackCaret])
 
-  // entering edit mode puts the caret in the box, so ⌘V and typing land where the user
-  // just clicked ✎ — and only then, never on a re-render
   const lastFocus = useRef(0)
   useEffect(() => {
     if (focusNonce === lastFocus.current) return
@@ -236,18 +172,6 @@ export function EditPane({
     if (focusNonce) areaRef.current?.focus()
   }, [focusNonce])
 
-  /**
-   * the autosaving buffer writes itself, and this is the whole of it.
-   *
-   * `saveAuto` is the write: it goes through `saveTab`, which is the exact call ⌘S makes, so
-   * there is one save path in this app and not a second one that could drift from it. It
-   * asks `autosaveAllowed` first, every single time, because the answer changes while the
-   * timer runs — a conflict bar can come up in those 600 ms, and writing over it is the one
-   * thing that bar exists to stop.
-   *
-   * `armSave` is the wait. It is re-armed on every key, so the write lands 600 ms after the
-   * LAST one rather than after each.
-   */
   const [saving, setSaving] = useState(false)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -293,9 +217,6 @@ export function EditPane({
     saveTimer.current = setTimeout(saveAuto, AUTOSAVE_DELAY_MS)
   }, [autosave, ownerTab, tabId, saveAuto])
 
-  // going away with unsaved text is the last chance to write it, and the pane goes away a
-  // lot: a session switch unmounts it. The ref is so this cleanup runs on unmount ONLY,
-  // rather than every time the callback above is rebuilt.
   const leaving = useRef(saveAuto)
   leaving.current = saveAuto
   useEffect(
@@ -305,25 +226,17 @@ export function EditPane({
     []
   )
 
-  /** everything typing does, in one place, so the prose Tab below can be typing too. */
   const takeInput = useCallback(
     (el: HTMLTextAreaElement, pasted: boolean): void => {
       domText.current = el.value
       setText(ownerTab, tabId, el.value)
-      // N-01 — only a paste can add enough at once to matter, so only a paste pays for
-      // counting the bytes
-      if (pasted || tooBig) setTooBig(exceedsBytes(el.value, SAVE_MAX_BYTES))
+      if (pasted || tooBig) setTooBig(exceedsBytes(el.value, MAIN_EDIT_WRITE_MAX_BYTES_MIRROR))
       trackCaret()
       armSave()
     },
     [ownerTab, tabId, tooBig, trackCaret, armSave]
   )
 
-  /**
-   * B-20/B-22 — the file on disk, watched while this pane is mounted and read once on
-   * mount: a session switch unmounts the pane and its watch, so a write that lands
-   * meanwhile reaches nobody until the pane is back. `reconcileDisk` holds the decision.
-   */
   useEffect(() => {
     if (!path) return
     window.api.fs.watchFile(path)
@@ -336,18 +249,13 @@ export function EditPane({
             stamp: { mtimeMs: r.mtimeMs, size: r.size }
           })
         )
-        .catch(() => {
-          /* gone, too big or binary for a moment — the save's own check is the real gate */
-        })
+        .catch(() => {})
     }
     readDisk()
     const off = window.api.fs.onFileChange((p, fp) => {
       if (p !== path) return
       const e = getEntry(ownerTab, tabId)
       if (!e) return
-      // the event carries a stamp and no bytes: a dirty buffer is told so at once (the
-      // diff view reads the text if it is opened); a clean one, or an event with no
-      // stamp at all, needs the read first
       if (fp && e.text !== e.original) {
         reconcileDisk(ownerTab, tabId, { text: null, stamp: fp })
         return
@@ -360,8 +268,6 @@ export function EditPane({
     }
   }, [path, ownerTab, tabId])
 
-  /** the conflict view needs the disk's text; the save path already brought it back, the
-   *  watcher path did not, so that one reads it when the view is opened */
   const openDiff = useCallback((): void => {
     setShowConflict(true)
     const e = getEntry(ownerTab, tabId)
@@ -376,8 +282,6 @@ export function EditPane({
         })
       )
       .catch(() => {
-        // what landed is too big, or is not text: there is no difference to draw, and the
-        // strip has to say that rather than leave a view waiting for bytes that never come
         const now = getEntry(ownerTab, tabId)
         if (!now?.conflict) return
         setShowConflict(false)
@@ -389,7 +293,6 @@ export function EditPane({
       })
   }, [ownerTab, tabId])
 
-  /** take what is on disk and drop the typing (B-09: this cuts the undo history) */
   const reload = useCallback((): void => {
     const e = getEntry(ownerTab, tabId)
     if (!e) return
@@ -400,14 +303,10 @@ export function EditPane({
         setShowConflict(false)
       })
       .catch((err: unknown) => {
-        // Now reachable on purpose: a file that grew past the reading cap, or turned
-        // binary, offers this button and cannot answer it. The strip stays up, which is the
-        // honest state, but a button that looks broken has to say what happened.
         useStore.getState().showToast(editRefusal(String((err as Error)?.message ?? '')))
       })
   }, [ownerTab, tabId])
 
-  /** the override, and the only caller of `force` anywhere (§03 figure 2) */
   const keepMine = useCallback((): void => {
     void saveTab(ownerTab, tabId, { force: true }).then((r) => {
       if (r !== 'saved') return
@@ -420,8 +319,6 @@ export function EditPane({
   const diskText = conflict?.text
   const parsed = useMemo(
     () => (showConflict && typeof diskText === 'string' ? diffLines(diskText, text) : null),
-    // `text` is read at the moment the view opens; the buffer cannot change under it,
-    // because the conflict view covers the box it would be typed into
     [showConflict, diskText, text]
   )
 
@@ -437,18 +334,10 @@ export function EditPane({
       )}
 
       {conflict && !showConflict && (
-        /* while the difference is open the strip stands down: it floats over the pane
-           (z-index 20, shared with the artifact's own notice) and its Dismiss button then
-           sits exactly on top of the view's first control — measured, not guessed. */
         <div className="fp-stale ed-stale" role="status">
           <span className="fp-stale-msg">
             {conflict.unreadable ? 'Changed on disk (too large to compare)' : 'Changed on disk'}
           </span>
-          {/* B-21 — the override lives inside the difference, so that nobody takes it
-              without having seen it. When there IS no difference to see, that reasoning
-              has nothing to protect and the choice comes back out here: otherwise a file
-              that grew past the reading cap would leave the user with Reload as the only
-              way out, i.e. throw your work away or keep it in memory for ever. */}
           {conflict.unreadable ? (
             <button className="fp-stale-btn" onClick={keepMine}>
               Keep mine
@@ -458,9 +347,6 @@ export function EditPane({
               Show diff
             </button>
           )}
-          {/* B-09 — the warning belongs on the control, not in a paragraph nobody reads:
-              both ways out of a conflict rewrite the box, and a rewrite cuts the undo
-              history (measured). The strip has room for a tooltip and nothing more. */}
           <button
             className="fp-stale-btn plain"
             title="Take what is on disk. Your changes go, and undo cannot bring them back."
@@ -479,42 +365,24 @@ export function EditPane({
         </div>
       )}
 
+      {/* ADR-0018 */}
       <textarea
         ref={areaRef}
         className="ed-area"
-        /* the spell checker and NOTHING else: autocorrect and auto-capitalise
-           would rewrite what the user typed, and a note is often a list of lines that
-           are not sentences. */
         spellCheck={prose}
         aria-label="File contents"
         readOnly={!!entry?.readOnly}
-        /* B-11 — over CODE, Tab is NOT captured: it moves the focus, exactly as it does
-           everywhere else in the app. Over prose it writes two spaces instead.
-           B-07 — no reformatting of any kind on the way in or out. */
         defaultValue={text}
         onInput={(e) => {
           takeInput(e.currentTarget, (e.nativeEvent as InputEvent).inputType === 'insertFromPaste')
         }}
         onKeyDown={(e) => {
-          // plain Tab only: Shift+Tab still walks the focus backwards, and a Tab with a
-          // modifier belongs to whatever shortcut owns it
           if (!prose || e.key !== 'Tab') return
           if (e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return
           const el = e.currentTarget
           if (el.readOnly) return
           e.preventDefault()
-          // B-09 — the spaces go in the way the browser itself puts text in: `insertText`
-          // keeps the box's own undo history, so ⌘Z right after a Tab takes the two spaces
-          // back. Writing them with `setRangeText` instead THROWS that history away
-          // (measured) — one Tab and every earlier keystroke becomes un-undoable, which is
-          // the worst thing a note can do to someone typing into it.
-          //
-          // It also fires the box's own `input` event, so `onInput` above has already told
-          // the registry about the new text — telling it a second time here would be the
-          // same answer twice.
           if (document.execCommand('insertText', false, TAB_TEXT)) return
-          // no `insertText` to be had: write the spaces by hand and hand the text over
-          // ourselves, at the cost of the undo history
           const { caret } = insertTab(el.value, el.selectionStart, el.selectionEnd)
           el.setRangeText(TAB_TEXT, el.selectionStart, el.selectionEnd)
           el.setSelectionRange(caret, caret)
@@ -566,10 +434,6 @@ export function EditPane({
         <span className="right">
           {tooBig && <span className="ed-warn">Over the 1 MB save limit</span>}
           {entry?.error && <span className="ed-warn">{entry.error}</span>}
-          {/* while the buffer is writing itself there is no "unsaved" to warn about,
-              only a wait; the ⌘S hint stays either way, because the key still works — in
-              the note it writes the file at once instead of waiting out the 600 ms
-              (App.tsx's `onSave` routes it by where the caret is). */}
           {saving ? (
             <span className="ed-saving">Saving…</span>
           ) : dirty ? (

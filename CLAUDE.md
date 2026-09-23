@@ -33,12 +33,37 @@ Working principles:
   interactions, state treatments and CSS classes. When the app already has a style
   or state for the same purpose, use it exactly; do not invent a parallel version
   or replace the existing screen to add another session backend.
-- Comments: the fewer the better. The test: delete it — would the next person to
-  change this code change it wrongly? Write one only if so, and only for what the
-  code cannot say — a constraint, a measured fact, a better-looking alternative
-  that was rejected — in one or two sentences. Never restate what the code does;
-  never record provenance or dates (git has them); a name that needs a comment
-  needs a better name.
+- Comments: none. In `.ts/.tsx/.js/.mjs/.cjs/.css` — and in the `#` lines of a
+  `#!/` script written as a template string — `npm run check:comments` (CI, plus an
+  after-edit hook) rejects every comment except two kinds, each with nothing else in it:
+  - a tool directive: `@ts-expect-error`, `prettier-ignore`, `@vite-ignore`,
+    `#__PURE__`, `@vitest-environment <env>`, `/// <reference … />`;
+  - a marker: `// ADR-0007`, `// CC§9`, `// CODEX§5`, `// PLATFORM§3` — several may
+    share one line;
+    in CSS `/* ADR-0007 */`, in JSX `{/* ADR-0007 */}`. Each must resolve to a
+    `docs/adr/` file or a `##` section of that contract ledger.
+
+  Knowledge the code cannot carry goes to the first of these that fits:
+  1. a name — rename, or extract a named constant or function (a magic number's
+     reason lives in its name);
+  2. a test whose title states the rule;
+  3. a measured fact about an external system → its contract ledger, cited from the
+     code with a marker: Claude Code `docs/claude-code-contract.md` (`CC§`), Codex
+     `docs/codex-cli-contract.md` (`CODEX§`), anything else — Electron, Node, macOS,
+     git, GitHub — `docs/platform-contract.md` (`PLATFORM§`);
+  4. an ADR (architecture decision record), `docs/adr/NNNN-slug.md` — only when ALL
+     four hold: it cannot be read from the code (names, types, tests); a smart
+     newcomer who reads and runs the code could not infer it; without it the next
+     person would plausibly make a reasonable-looking wrong change; and no existing
+     test or CI would catch that change. In practice: a rejected alternative, an
+     outside constraint or policy the code cannot show, a counter-intuitive
+     trade-off. One ADR per decision, cited by a marker at every site it governs.
+
+  Never written down anywhere: what or how the code does, provenance, dates (git has
+  them); a TODO is a GitHub issue. An ADR takes the next free number; before merging
+  a branch that adds one, bring in the latest `main` and rerun the check — a
+  duplicate number means renumber yours. An ADR no code cites fails the check, so it
+  goes when its code goes.
 - Tests follow behavior, not diffs: one change may need zero, one, or several. Before
   writing one, ask "if this behavior broke, which existing test would go red?" — if
   one would, change that test; only if none would, write a new one, and make it fail
@@ -49,7 +74,7 @@ Working principles:
 - Run only what the change can break, and say which ran and why those. Unit layer:
   `npm run test:unit:changed` picks the files by import graph. E2E layer: you pick.
   First choose candidates by flow name from `test/e2e` (spec names are flow names;
-  a spec's header comment says what it covers), then grep `test/e2e` for the
+  its test titles say what it covers), then grep `test/e2e` for the
   identifiers you touched — component names, `.wb-*` selectors, IPC channel names —
   to catch the rest. A change to a wide fan-out file (types.ts, store.ts, App.tsx,
   preload, main index.ts) is still picked by the flows whose state or IPC it
@@ -87,20 +112,17 @@ Working principles:
   editing the README itself. Test-layer seams and conventions live in `test/CLAUDE.md`.
 - No per-feature document survives its feature shipping — anywhere in the repo.
   While a feature is in flight its artifacts (design, spec, cases, status, review,
-  punchlist) live in and die with the PR that ships it. On
-  retirement, content disperses to wherever it can stay true: behavioral claims are
-  test assertions; code-local rationale is a comment at the load-bearing site
-  (precedent: `src/main/updater.ts` header); measured facts about Claude Code
-  itself — things reading Koloft's code cannot reveal, which drift when Claude Code
-  upgrades — go to `docs/claude-code-contract.md` with date, CC version, and how
-  they were established; cross-cutting doctrine goes in this file; leftover work →
-  GitHub issues. Everything else is git history — deletion loses nothing, while a
+  punchlist) live in and die with the PR that ships it. On retirement, content
+  disperses to wherever it can stay true: behavioral claims are test assertions;
+  rationale that passes the ADR bar (see Comments) is an ADR; measured facts about an
+  outside system — things reading Koloft's code cannot reveal, which drift when that
+  system upgrades — go to its contract ledger (see Comments) with date, version, and
+  how they were established; cross-cutting doctrine goes in this file; leftover work
+  → GitHub issues. Everything else is git history — deletion loses nothing, while a
   stale doc actively misleads whoever greps it. `docs/` therefore holds only
   documents organized around a subject that outlives any one feature (today: the
-  Claude Code and Codex contract ledgers, and the roadmap), never a shipped feature's
-  design doc. Code and
-  tests that cite a retired doc keep the citation with a "(retired to git history)"
-  note — never a bare pointer at a file that no longer exists.
+  Claude Code, Codex and platform contract ledgers, the ADRs, and the roadmap),
+  never a shipped feature's design doc.
 - The roadmap is `docs/roadmap.md`: the tiered checklist, the explicit not-doing list,
   and how much to trust the order. Start any "what's next" discussion from it rather
   than re-deriving one, and edit it there when a decision changes.

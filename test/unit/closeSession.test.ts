@@ -10,10 +10,6 @@ import {
   unsavedFilesPhrase
 } from '../../src/renderer/src/closeSession'
 
-// BB-E07 meets a scheduled run that dies before it binds is explained by
-// main's own toast ("could not start: Claude exited before it started"), and the toast
-// slot holds one line — so the generic session-death line must stand aside for exactly
-// that case, and for no other.
 describe('unexpectedExitWanted', () => {
   const crash = { exitCode: 1 }
   it('wants the line for an ordinary claude tab that ended badly', () => {
@@ -34,12 +30,6 @@ describe('unexpectedExitWanted', () => {
     expect(unexpectedExitWanted({ kind: 'claude', jobId: 'j1', sessionId: 's1' }, crash)).toBe(true)
   })
 })
-
-// the lifecycle contract D3 reverses the ⌘W policy: a bound session used to be untouchable,
-// now it closes — with one confirmation while it is working / on a permission
-// prompt. The branch that must NOT move is the pending launch (⌘W = Cancel,
-// T-KEY-02 / T-LIFE-02): a launch is alive from the moment it spawns and only its
-// missing session id tells it apart from a running session.
 
 const sess = (tabId: string, over: Partial<SessionInfo> = {}): SessionInfo => ({
   tabId,
@@ -89,7 +79,6 @@ describe('closeTabIntent (D3 ⌘W gate)', () => {
   })
 
   it('closes a PENDING launch silently — ⌘W stays its Cancel (T-KEY-02)', () => {
-    // registered but not hook-bound: alive, no session id, and main reports no status
     const pending = sess('t1', { sessionId: '', status: 'working' })
     expect(closeTabIntent(tab('t1'), [pending])).toEqual({ kind: 'close' })
   })
@@ -126,11 +115,6 @@ describe('close confirmation copy (§3.1)', () => {
   })
 })
 
-// file-edit B-24/B-25 §03 figure 3 — the sentence the unsaved-changes dialog puts in
-// front of the user. Naming the file is the whole point of the question, so the list
-// only collapses once it stops being readable: figure 3 draws the names up to three
-// and a bare count beyond that. The dialog itself renders one string, so these arities
-// are only reachable here — an end-to-end case pins one of them at most.
 describe('unsaved-changes copy (§03 figure 3)', () => {
   it('names the file when there is one', () => {
     expect(unsavedFilesPhrase(['apps/api/.env'])).toBe('apps/api/.env')
@@ -156,10 +140,6 @@ describe('unsaved-changes copy (§03 figure 3)', () => {
   })
 })
 
-// B-25 — a session that is BOTH running and holding unsaved edits gets one question,
-// not two in a row. The merged sentence is spliced between D3's lead and D3's promise:
-// the promise ("the session can be resumed") is about the session and stays last,
-// while the file warning belongs next to the thing that is actually unrecoverable.
 describe('closeConfirmBody with unsaved files (B-25 merged dialog)', () => {
   it('leaves the copy untouched when nothing is dirty', () => {
     expect(closeConfirmBody('My run', 'working')).toBe(closeConfirmBody('My run', 'working', []))
@@ -182,9 +162,7 @@ describe('closeConfirmBody with unsaved files (B-25 merged dialog)', () => {
   })
 })
 
-// node-pty leaves exitCode at 0 when a child dies by signal (pty.cc: WIFEXITED /
-// WIFSIGNALED are separate branches), so the signal is the ONLY tell for a killed
-// claude — a kill -9 must not be reported as "exit code 0".
+// PLATFORM§29
 describe('unexpectedExitNotice (the one account of a session that died)', () => {
   it('names the signal for a killed claude, the code for an error exit', () => {
     expect(unexpectedExitNotice({ exitCode: 0, signal: 9 })).toContain('signal 9')

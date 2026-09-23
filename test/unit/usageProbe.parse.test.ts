@@ -13,9 +13,7 @@ import {
 } from '../../src/main/usageProbe'
 import type { AccountMeta } from '../../src/shared/types'
 
-/** U1 — header parsing + the probe request shape (tests.md §2.3). */
-
-const NOW = 1_000_000_000_000 // ms
+const NOW_MS = 1_000_000_000_000
 
 function fullHeaders(): Record<string, string> {
   return {
@@ -34,7 +32,7 @@ function fullHeaders(): Record<string, string> {
 
 describe('U1 · parseRatelimitHeaders', () => {
   it('parses all three buckets + overage verbatim', () => {
-    const p = parseRatelimitHeaders(fullHeaders(), NOW)
+    const p = parseRatelimitHeaders(fullHeaders(), NOW_MS)
     expect(p).not.toBeNull()
     expect(p!.usage).toMatchObject({
       u5: 0.12,
@@ -47,7 +45,7 @@ describe('U1 · parseRatelimitHeaders', () => {
       r7: 1754800000,
       roi: 1754800000,
       overage: 'enabled',
-      at: NOW
+      at: NOW_MS
     })
     expect(p!.usage.hasOi).toBe(true)
   })
@@ -57,7 +55,7 @@ describe('U1 · parseRatelimitHeaders', () => {
     delete h['anthropic-ratelimit-unified-7d_oi-utilization']
     delete h['anthropic-ratelimit-unified-7d_oi-status']
     delete h['anthropic-ratelimit-unified-7d_oi-reset']
-    const p = parseRatelimitHeaders(h, NOW)
+    const p = parseRatelimitHeaders(h, NOW_MS)
     expect(p).not.toBeNull()
     expect(p!.usage.uoi).toBe(0)
     expect(p!.usage.soi).toBe('?')
@@ -68,19 +66,17 @@ describe('U1 · parseRatelimitHeaders', () => {
   it('missing u5 → probe failure (null)', () => {
     const h = fullHeaders()
     delete h['anthropic-ratelimit-unified-5h-utilization']
-    expect(parseRatelimitHeaders(h, NOW)).toBeNull()
+    expect(parseRatelimitHeaders(h, NOW_MS)).toBeNull()
   })
 
-  it('top-level unified-status trap: rejected top-level with healthy buckets is IGNORED', () => {
-    // the real bug the prototype documents: under a fable probe the top-level status
-    // follows the 7d_oi bucket and would misreport a fable-full account as dead
+  // CC§7
+  it('top-level unified-status trap: rejected top-level with healthy buckets is IGNORED and scores no rejected penalty', () => {
     const h = fullHeaders()
     h['anthropic-ratelimit-unified-status'] = 'rejected'
-    const p = parseRatelimitHeaders(h, NOW)
+    const p = parseRatelimitHeaders(h, NOW_MS)
     expect(p).not.toBeNull()
     expect(p!.usage.s5).toBe('allowed')
-    // and scoring applies no rejected penalty
-    const score = scoreSnapshot(p!.usage, Math.floor(NOW / 1000), 'fable')
+    const score = scoreSnapshot(p!.usage, Math.floor(NOW_MS / 1000), 'fable')
     expect(score.hardLimited).toBe(false)
   })
 
@@ -89,14 +85,12 @@ describe('U1 · parseRatelimitHeaders', () => {
       'Anthropic-Ratelimit-Unified-5h-Utilization': '0.5\r',
       'ANTHROPIC-RATELIMIT-UNIFIED-5H-STATUS': 'allowed\r'
     }
-    const p = parseRatelimitHeaders(h, NOW)
+    const p = parseRatelimitHeaders(h, NOW_MS)
     expect(p).not.toBeNull()
     expect(p!.usage.u5).toBe(0.5)
     expect(p!.usage.s5).toBe('allowed')
   })
 })
-
-// ---- probe request shape against a scripted local server -------------------------
 
 interface Seen {
   path: string
@@ -107,7 +101,6 @@ interface Seen {
 let server: http.Server
 let base: string
 let seen: Seen[]
-/** per-test behavior: given the parsed request, produce status + headers */
 let respond: (s: Seen) => { status: number; headers?: Record<string, string>; body?: string }
 
 beforeAll(async () => {
@@ -143,7 +136,7 @@ describe('U1 · probeAccount request shape', () => {
     expect(r.ok).toBe(true)
     if (r.ok) {
       expect(r.usage?.u5).toBe(0.12)
-      expect(r.fable).toBe('yes') // 7d_oi present ⇒ capability detected for free
+      expect(r.fable).toBe('yes')
     }
     expect(seen).toHaveLength(1)
     expect(seen[0].path).toBe('/v1/messages')
@@ -181,10 +174,8 @@ describe('U1 · probeAccount request shape', () => {
     expect(seen.map((s) => s.body.model)).toEqual([PROBE_MODEL, FALLBACK_PROBE_MODEL])
   })
 
-  // fail-closed: a plan that LOST its included fable allowance answers 200 with no
-  // 7d_oi bucket. Leaving `fable` undefined here made the fold in index.ts a no-op, so
-  // the badge stayed on its last 'yes' forever — the downgrade never self-healed.
-  it('200 WITHOUT a 7d_oi bucket → fable "no" (never undefined)', async () => {
+  // CC§7
+  it('200 WITHOUT a 7d_oi bucket → fable "no", never undefined, so a plan that lost its fable allowance downgrades the badge', async () => {
     respond = () => {
       const h = fullHeaders()
       delete h['anthropic-ratelimit-unified-7d_oi-utilization']
@@ -208,10 +199,7 @@ describe('U1 · probeAccount request shape', () => {
   })
 })
 
-// ②, measured: non-2xx /v1/messages responses carry NO
-// anthropic-ratelimit-unified-* headers (404 bad-model and three real 400 shapes all
-// bare). So usage after a fable-specific failure can only come from a fallback-model
-// re-probe — and a fable-only failure must never evict the account from the opus pool.
+// CC§7
 describe('U1 · probeAccount error paths', () => {
   it('403 without headers (org restriction) → fallback re-probe: ok + fable "no", account stays in the pool', async () => {
     respond = (s) =>
@@ -245,7 +233,7 @@ describe('U1 · probeAccount error paths', () => {
     respond = () => ({ status: 403, body: '{"error":{"type":"permission_error"}}' })
     const r = await probeAccount('oauth', 'sk-test-token', { timeoutMs: 2000 })
     expect(r).toEqual({ ok: false, error: 'unknown' })
-    expect(seen).toHaveLength(2) // it did TRY the fallback before giving up
+    expect(seen).toHaveLength(2)
   })
 
   it('5xx on the fable probe → "network", no pointless fallback, no fable verdict', async () => {
@@ -270,9 +258,8 @@ describe('U1 · probeAccount error paths', () => {
     expect(seen).toHaveLength(1)
   })
 
-  // only DETERMINISTIC fable-specific shapes (400/403/404) earn the 'no' verdict —
-  // a transient headerless 408/429 must not stamp a week-long downgrade
-  it('headerless 408 (transient blip) → usage re-probe but NO fable verdict', async () => {
+  // CC§7
+  it('headerless 408 (transient blip) → usage re-probe but NO fable verdict (only deterministic 400/403/404 earn "no")', async () => {
     respond = (s) =>
       s.body.model === PROBE_MODEL
         ? { status: 408, body: '{"error":{"type":"timeout_error"}}' }
@@ -286,9 +273,8 @@ describe('U1 · probeAccount error paths', () => {
     expect(seen.map((s) => s.body.model)).toEqual([PROBE_MODEL, FALLBACK_PROBE_MODEL])
   })
 
-  // the oi trio's presence on non-2xx responses is UNMEASURED (only measured
-  // headerless errors) — a rate-limited response missing the trio must not conclude 'no'
-  it('non-2xx with headers but WITHOUT the oi trio → no fable verdict (yes-only on error readings)', async () => {
+  // CC§7
+  it('non-2xx with headers but WITHOUT the oi trio → no fable verdict (yes-only on error readings: the trio on error responses is unmeasured)', async () => {
     respond = () => {
       const h = fullHeaders()
       delete h['anthropic-ratelimit-unified-7d_oi-utilization']
@@ -315,7 +301,7 @@ describe('U1 · probeAccount apikey/custom verify strictness', () => {
 })
 
 describe('U1 · probeAccount skipFable (§08 probe downgrade)', () => {
-  it('probes the fallback model ONLY and states no fable capability', async () => {
+  it('probes the fallback model ONLY and leaves fable undefined — a sonnet probe cannot see the oi bucket, so it must not overwrite the recorded capability', async () => {
     respond = () => {
       const h = fullHeaders()
       delete h['anthropic-ratelimit-unified-7d_oi-utilization']
@@ -327,8 +313,6 @@ describe('U1 · probeAccount skipFable (§08 probe downgrade)', () => {
     expect(r.ok).toBe(true)
     if (r.ok) {
       expect(r.usage?.u5).toBe(0.12)
-      // deliberately undefined: a sonnet probe cannot see the oi bucket, so it must
-      // not overwrite the recorded capability either way
       expect(r.fable).toBeUndefined()
     }
     expect(seen.map((s) => s.body.model)).toEqual([FALLBACK_PROBE_MODEL])
@@ -362,17 +346,14 @@ describe('U1 · shouldSkipFable (§08 weekly retry gate)', () => {
     expect(shouldSkipFable(acc(), T + FABLE_RETRY_MS)).toBe(false)
   })
 
-  it('fable yes/unknown, non-oauth, or a legacy row without the stamp → never skip', () => {
+  it('fable yes/unknown, non-oauth, or a legacy row without the stamp → never skip (the stampless row bootstraps with one fable probe)', () => {
     expect(shouldSkipFable(acc({ fable: 'yes' }), T + 1)).toBe(false)
     expect(shouldSkipFable(acc({ fable: 'unknown' }), T + 1)).toBe(false)
     expect(shouldSkipFable(acc({ kind: 'apikey' }), T + 1)).toBe(false)
-    // pre- 'no' rows have no stamp: bootstrap by letting one fable probe run
     expect(shouldSkipFable(acc({ fableCheckedAt: undefined }), T + 1)).toBe(false)
   })
 
-  it('a stamp in the FUTURE (clock rollback / corrupt settings) reads as invalid → retry due', () => {
-    // without this guard a far-future stamp keeps the gate true until the wall clock
-    // catches up — the weekly fable retry would never fire again
+  it('a stamp in the FUTURE (clock rollback / corrupt settings) reads as invalid → retry due, else the weekly fable retry never fires again', () => {
     expect(shouldSkipFable(acc({ fableCheckedAt: T + 60_000 }), T)).toBe(false)
   })
 })

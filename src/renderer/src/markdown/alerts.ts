@@ -1,14 +1,5 @@
 import type { MarkdownIt, StateCore, Token } from 'markdown-it'
 
-/**
- * FR-08: GitHub alerts. `> [!NOTE]` is written as a blockquote whose first line is a
- * marker, so markdown-it renders the marker as literal text inside a quote. This rewrites
- * that blockquote into a card and drops the marker line.
- *
- * Runs before the `inline` rule, so the marker is removed from the raw content and never
- * becomes a text token — no re-tokenizing, and the body keeps all its inline markup.
- */
-
 const KINDS = ['note', 'tip', 'important', 'warning', 'caution'] as const
 type Kind = (typeof KINDS)[number]
 
@@ -19,9 +10,7 @@ const SVG_OPEN =
 const BANG =
   '<rect x="7.1" y="5.4" width="1.8" height="4.6" rx=".9"/><circle cx="8" cy="11.8" r="1"/>'
 
-// Hand-built primitives (circle / rect / polygon) rather than icon-font paths: every shape
-// here has to survive DOMPurify, and these use only allowlisted SVG elements and attributes.
-const ICONS: Record<Kind, string> = {
+const ICONS_OF_DOMPURIFY_ALLOWLISTED_SVG_PRIMITIVES: Record<Kind, string> = {
   note:
     SVG_OPEN +
     '<circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/>' +
@@ -46,12 +35,11 @@ const ICONS: Record<Kind, string> = {
 
 function titleHtml(kind: Kind): string {
   return (
-    `<div class="md-alert-title"><span class="md-alert-icon">${ICONS[kind]}</span>` +
+    `<div class="md-alert-title"><span class="md-alert-icon">${ICONS_OF_DOMPURIFY_ALLOWLISTED_SVG_PRIMITIVES[kind]}</span>` +
     `<span class="md-alert-label">${kind.toUpperCase()}</span></div>\n`
   )
 }
 
-/** index of the `blockquote_close` that matches the opener at `open` */
 function closeOf(tokens: Token[], open: number): number {
   let depth = 0
   for (let i = open; i < tokens.length; i++) {
@@ -66,8 +54,6 @@ function closeOf(tokens: Token[], open: number): number {
 
 function rule(state: StateCore): void {
   const tokens = state.tokens
-  // backwards: a splice only shifts tokens after the insertion point, so indices still
-  // to be visited stay valid (and a nested alert is handled before its container)
   for (let i = tokens.length - 1; i >= 0; i--) {
     if (tokens[i].type !== 'blockquote_open') continue
     if (tokens[i + 1]?.type !== 'paragraph_open' || tokens[i + 2]?.type !== 'inline') continue
@@ -84,7 +70,6 @@ function rule(state: StateCore): void {
     const body = tokens[i + 2].content.slice(m[0].length)
     tokens[i + 2].content = body
     if (!body.trim()) {
-      // a title-only alert: hide the empty paragraph rather than emit <p></p>
       tokens[i + 1].hidden = true
       tokens[i + 2].hidden = true
       if (tokens[i + 3]?.type === 'paragraph_close') tokens[i + 3].hidden = true

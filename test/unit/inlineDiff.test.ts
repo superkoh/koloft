@@ -1,10 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { CUT_MARK, MAX_ROW_CHARS, parseUnifiedDiff } from '../../src/renderer/src/inlineDiff'
 
-// A real full-context diff (`git diff -U<huge>`): one whole-file hunk, two change regions,
-// a blank context line, and a tail addition — the exact shape gitFileDiffFull produces. Built
-// from an array so the blank CONTEXT line is unambiguously " " (space prefix, empty content),
-// exactly as git emits it — not a zero-length line (which is only the trailing-newline split).
 const FULL = [
   'diff --git a/f.txt b/f.txt',
   'index 4936548..7d4b7ee 100644',
@@ -13,7 +9,7 @@ const FULL = [
   '@@ -1,11 +1,12 @@',
   '-a',
   '+A1',
-  ' ', // blank context line
+  ' ',
   ' CHANGED2',
   ' c',
   ' d',
@@ -32,15 +28,11 @@ describe('parseUnifiedDiff', () => {
     const { rows, hasChange } = parseUnifiedDiff(FULL)
     expect(hasChange).toBe(true)
     expect(rows).toHaveLength(14)
-    // the pre-hunk `---`/`+++` headers must NOT be parsed as del/add rows
     expect(rows[0]).toEqual({ kind: 'del', oldNo: 1, newNo: null, text: 'a' })
     expect(rows[1]).toEqual({ kind: 'add', oldNo: null, newNo: 1, text: 'A1' })
-    // a blank context line keeps its slot and advances both sides
     expect(rows[2]).toEqual({ kind: 'ctx', oldNo: 2, newNo: 2, text: '' })
-    // second change region: old line 8 removed, new line 8 added
     expect(rows[8]).toEqual({ kind: 'del', oldNo: 8, newNo: null, text: 'g' })
     expect(rows[9]).toEqual({ kind: 'add', oldNo: null, newNo: 8, text: 'gX' })
-    // tail addition lands at new line 12 (past the old file's 11 lines)
     expect(rows[13]).toEqual({ kind: 'add', oldNo: null, newNo: 12, text: 'NEWTAIL' })
   })
 
@@ -54,8 +46,6 @@ describe('parseUnifiedDiff', () => {
     const { rows, oldText, newText } = parseUnifiedDiff(FULL)
     const oldRows = rows.filter((r) => r.kind !== 'add').length
     const newRows = rows.filter((r) => r.kind !== 'del').length
-    // highlightLines(text) returns one entry per line == split('\n').length; the InlineDiff
-    // row→line indexing relies on these matching, so a mismatch would misalign highlighting.
     expect(oldText.split('\n')).toHaveLength(oldRows)
     expect(newText.split('\n')).toHaveLength(newRows)
   })

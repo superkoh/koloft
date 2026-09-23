@@ -7,10 +7,9 @@ import {
 } from '../../src/renderer/src/components/filesModel'
 import { installLocalStorage } from './localStorageStub'
 
-// A-05 — the switch is remembered per checkout, in the renderer's localStorage.
 const store = installLocalStorage()
 
-describe('show-ignored flag storage', () => {
+describe('A-05: show-ignored flag storage', () => {
   it('keys on the checkout root, so two worktrees remember separately', () => {
     expect(showIgnoredKey('/a/koloft')).toBe('koloft.ft.showIgnored:/a/koloft')
     expect(showIgnoredKey('/a/koloft/wt/x')).not.toBe(showIgnoredKey('/a/koloft'))
@@ -35,11 +34,6 @@ describe('show-ignored flag storage', () => {
   })
 })
 
-// How every surface in the app spells a path: the tree, the Changes rows, the tab titles
-// and now the unsaved-changes dialogs all read it through here. Backfilled when those
-// dialogs became a caller — the case that earns the suite is the sibling-prefix trap,
-// which fails by producing a plausible-looking wrong answer ("-a/x.txt") rather than by
-// throwing.
 describe('relOf (how a path is spelt on screen)', () => {
   it('measures a file inside the workspace from its root', () => {
     expect(relOf('/w/ws-a/apps/api/.env', '/w/ws-a')).toBe('apps/api/.env')
@@ -50,7 +44,6 @@ describe('relOf (how a path is spelt on screen)', () => {
   })
 
   it('does not treat a sibling directory as a parent', () => {
-    // "/w/ws" is a prefix of "/w/ws-a" as text while being no parent of it
     expect(relOf('/w/ws-a/x.txt', '/w/ws')).toBe('/w/ws-a/x.txt')
   })
 

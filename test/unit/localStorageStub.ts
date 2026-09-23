@@ -1,8 +1,5 @@
 import { beforeEach } from 'vitest'
 
-/** Unit suites run in pure Node, so a Map stands in for the renderer's localStorage;
- *  the modules under test only ever call getItem / setItem / removeItem. Cleared before
- *  each test. */
 export function installLocalStorage(): Map<string, string> {
   const store = new Map<string, string>()
   beforeEach(() => store.clear())

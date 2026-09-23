@@ -15,11 +15,6 @@ import {
 } from '../../src/main/sessionAggregate'
 import { PENDING_SESSION_TITLE, PLACEHOLDER_SESSION_TITLE, type SessionRow } from '@shared/types'
 
-// Pure aggregation kernel (retired agent-centric test plan §2, T-AGG-01..05 + planRescan
-// triggers). All IO is injected, so these tests pin the exact matching,
-// ordering, title-chain and trigger decisions that an e2e could observe but
-// never localise to a branch.
-
 const WS = '/Users/dev/proj'
 const WT = '/Users/dev/proj/.claude/worktrees/bugfix'
 const WS_SLUG = '-Users-dev-proj'
@@ -63,9 +58,9 @@ describe('resolveBuckets', () => {
     ])
   })
 
+  // CC§2
   it('resolves a truncated+suffixed slug via prefix match confirmed by first-cwd lookup (T-AGG-02)', () => {
     const longWt = '/Users/dev/proj/.claude/worktrees/sequential-baking-goblet'
-    // real Claude truncated the encoded cwd and appended a 6-char suffix (V1)
     const truncated = '-Users-dev-proj--claude-worktrees-sequential-bak-ezjn6r'
     const buckets = resolveBuckets(WS, {
       gitWorktreeList: () => [WS, longWt],
@@ -88,13 +83,8 @@ describe('resolveBuckets', () => {
   })
 })
 
-// D2: claude removes its own unchanged worktree at exit — dir AND
-// git registration — but the session's jsonls survive under the slug. Bucket
-// resolution must not depend on `git worktree list` alone, or those sessions
-// vanish from the sidebar (§4 decision: a dead cwd is greyed, never hidden). A slug is adopted as an
-// orphan bucket when it prefix-matches the workspace's worktree home AND its own
-// recorded first-cwd confirms it lives exactly one level under it.
-describe('resolveBuckets: orphaned worktree slugs (D2)', () => {
+// CC§4
+describe('resolveBuckets: orphaned worktree slugs (D2) — a worktree claude removed at exit keeps its sessions, adopted by prefix plus first-cwd', () => {
   const GONE = '/Users/dev/proj/.claude/worktrees/merged'
   const GONE_SLUG = '-Users-dev-proj--claude-worktrees-merged'
 
@@ -110,9 +100,9 @@ describe('resolveBuckets: orphaned worktree slugs (D2)', () => {
     ])
   })
 
-  it('finds live worktree sessions even when git is unavailable entirely (D4)', () => {
+  it('finds live worktree sessions even when git is unavailable entirely, as in a packaged app launched without git on PATH (D4)', () => {
     const buckets = resolveBuckets(WS, {
-      gitWorktreeList: () => [], // packaged app: git missing from launchd PATH
+      gitWorktreeList: () => [],
       listProjectSlugs: () => [WS_SLUG, WT_SLUG],
       readFirstCwd: (s) => (s === WT_SLUG ? WT : null)
     })
@@ -162,6 +152,7 @@ describe('resolveBuckets: orphaned worktree slugs (D2)', () => {
     expect(buckets).toEqual([{ slug: WS_SLUG, dir: WS }])
   })
 
+  // CC§2
   it('adopts a truncated orphan slug once its recorded cwd confirms (V1 truncation)', () => {
     const longGone = '/Users/dev/proj/.claude/worktrees/sequential-baking-goblet'
     const truncated = '-Users-dev-proj--claude-worktrees-sequential-bak-ezjn6r'
@@ -191,13 +182,13 @@ describe('aggregateSessions', () => {
     { slug: WT_SLUG, dir: WT }
   ]
 
-  it('merges rows from every bucket; worktree label from bucket dir, not gitBranch (T-AGG-01/04)', () => {
+  // CC§2
+  it('merges rows from every bucket; worktree label from bucket dir, not the lagging gitBranch (T-AGG-01/04)', () => {
     const rows = aggregateSessions(
       twoBuckets,
       aggDeps({
         listJsonl: (slug) =>
           slug === WS_SLUG ? [{ id: 'm1', mtime: 2000 }] : [{ id: 'w1', mtime: 1000 }],
-        // gitBranch in the worktree jsonl lags as 'main' (V1) — attribution must ignore it
         readMeta: (_slug, id) =>
           (id === 'w1'
             ? { cwd: WT, timestamp: '2026-08-08T11:00:00.000Z', gitBranch: 'main' }
@@ -209,12 +200,11 @@ describe('aggregateSessions', () => {
     expect(rows.find((r) => r.id === 'w1')?.worktree).toBe('bugfix')
   })
 
-  it('one row per session id across buckets — the newest-written file wins', () => {
+  // CC§2
+  it('one row per session id across buckets — the newest-written file wins over a leftover copy', () => {
     const rows = aggregateSessions(
       twoBuckets,
       aggDeps({
-        // the same session left a leftover file in the root slug after CC moved its
-        // transcript into the worktree slug (contract §5)
         listJsonl: (slug) =>
           slug === WS_SLUG ? [{ id: 's1', mtime: 1000 }] : [{ id: 's1', mtime: 5000 }],
         readMeta: (slug) =>
@@ -235,7 +225,6 @@ describe('aggregateSessions', () => {
     const rows = aggregateSessions(
       [{ slug: WS_SLUG, dir: WS }],
       aggDeps({
-        // the oldest session was touched last, and the middle one is running
         listJsonl: () => [
           { id: 'a', mtime: 9000 },
           { id: 'b', mtime: 2000 },
@@ -248,7 +237,7 @@ describe('aggregateSessions', () => {
     expect(rows.map((r) => r.id)).toEqual(['b', 'c', 'a'])
   })
 
-  it('title chain: aiTitle → summary → firstUserText truncated → relative time (T-AGG-03)', () => {
+  it('title chain: aiTitle → summary → firstUserText truncated → relative time, matching the live tracker so a restart never demotes a title (T-AGG-03)', () => {
     const rows = aggregateSessions(
       [{ slug: WS_SLUG, dir: WS }],
       aggDeps({
@@ -262,8 +251,6 @@ describe('aggregateSessions', () => {
           { id: 'bare', mtime: 1000 }
         ],
         readMeta: (_slug, id) => {
-          // the live tracker titles ai-title-first, and the cold row must agree —
-          // a restart demoting titles is the "name reverts until activated" bug
           if (id === 'ai') return meta({ aiTitle: 'same title', summary: 'ignored too' })
           if (id === 'sum') return meta({ summary: 'Fix flaky test', firstUserText: 'ignored' })
           if (id === 'short')
@@ -271,7 +258,7 @@ describe('aggregateSessions', () => {
           if (id === 'long') return meta({ firstUserText: 'y'.repeat(TITLE_MAX + 10) })
           if (id === 'args') return meta({ commandArgsText: 'opus', commandNameText: '/model' })
           if (id === 'cmd') return meta({ commandNameText: '/release-dmg' })
-          return meta({ timestamp: '2026-08-08T10:00:00.000Z' }) // NOW − 2h
+          return meta({ timestamp: '2026-08-08T10:00:00.000Z' })
         }
       })
     )
@@ -297,10 +284,10 @@ describe('aggregateSessions', () => {
         ],
         readMeta: (_slug, id) => {
           const ts = {
-            d: '2026-08-06T12:00:00.000Z', // NOW − 2d
-            h: '2026-08-08T09:00:00.000Z', // NOW − 3h
-            m: '2026-08-08T11:55:00.000Z', // NOW − 5m
-            s: '2026-08-08T11:59:30.000Z' // NOW − 30s
+            d: '2026-08-06T12:00:00.000Z',
+            h: '2026-08-08T09:00:00.000Z',
+            m: '2026-08-08T11:55:00.000Z',
+            s: '2026-08-08T11:59:30.000Z'
           }[id] as string
           return meta({ timestamp: ts })
         }
@@ -327,15 +314,7 @@ describe('aggregateSessions', () => {
   })
 })
 
-// A brand-new session has no jsonl yet, so aggregation alone would leave the sidebar
-// empty until Claude writes one. resolvePending holds a row for every launched-but-
-// unmaterialized pty (§4) and reports the launches that are over, so a promoted row is
-// never resurrected as "Starting…" when its tab later untracks.
-// decided: the sidebar defaults to sessions Koloft itself drove — external claude
-// runs in the same repo stay invisible until an import (or a one-off resume) owns them.
-// The superset aggregation stays intact underneath as the future importer's candidate
-// source; this filter is the policy layer on top.
-describe('filterOwned (owned-only sidebar default)', () => {
+describe('filterOwned (owned-only sidebar default: external claude runs in the same repo stay hidden until Koloft owns them)', () => {
   const row = (id: string, running: boolean): SessionRow => ({
     id,
     title: 't',
@@ -356,10 +335,7 @@ describe('filterOwned (owned-only sidebar default)', () => {
   })
 })
 
-// D9 (new-session-entrances design)): the Restore menu item greys itself off the
-// pushed rows, so the offer's emptiness has to travel with them — it is exactly what
-// filterOwned drops, asked as a yes/no.
-describe('hasHistory (D9 greying data)', () => {
+describe('hasHistory (D9 greying data: the Restore item greys off exactly what filterOwned drops)', () => {
   const row = (id: string, running = false): SessionRow => ({
     id,
     title: 't',
@@ -421,10 +397,7 @@ describe('resolvePending', () => {
     ])
   })
 
-  // `claude -w <name>` is spawned in the ROOT and creates the worktree itself, so until
-  // the hook reports a cwd there is no bucket to place it in. Labelling it `main` made
-  // the D4 pull confirm count it as a session the pull would change files under.
-  it('labels a not-yet-created worktree launch by its target name, not main', () => {
+  it('labels a not-yet-created worktree launch by its target name, not main, so a pull confirm never counts it under main', () => {
     const out = resolvePending(
       twoBuckets,
       [{ tabId: 'tab-w', cwd: WS, worktree: 'bugfix' }],
@@ -459,17 +432,14 @@ describe('resolvePending', () => {
     expect(out.promoted).toEqual([])
   })
 
-  // Real Claude Code writes no jsonl until the FIRST user message, so "wait for the
-  // jsonl row" left the sidebar saying Starting… long after the TUI was up. The hook
-  // bind IS the promotion (T-LIFE-01 ②): a bound launch renders as a RUNNING
-  // placeholder row under its real session id until the jsonl row takes over.
-  it('a bound launch turns into a running placeholder row the moment the hook binds', () => {
+  // CC§2
+  it('T-LIFE-01: a bound launch turns into a running placeholder row the moment the hook binds, since no jsonl exists before the first message', () => {
     const launches = [{ tabId: 'tab-1', cwd: WS, sessionId: 's1' }]
     const bound = resolvePending(twoBuckets, launches, [], NOW)
     expect(bound.promoted).toEqual([])
     expect(bound.rows).toEqual([
       {
-        id: 's1', // the REAL session id — ⌘W/menus/selection all address the binding
+        id: 's1',
         title: PLACEHOLDER_SESSION_TITLE,
         worktree: 'main',
         cwd: WS,
@@ -487,11 +457,6 @@ describe('resolvePending', () => {
     expect(done.promoted).toEqual(['tab-1'])
   })
 
-  // `claude -w <new>` is spawned in the REPO ROOT — claude creates the worktree and
-  // cd's there itself, so the launch cwd says `main` while the session is anywhere but.
-  // The SessionStart hook reports where it actually landed (§4: the promotion completes
-  // the second line), and real Claude writes no jsonl until the first user message — so
-  // without this the row reads `main` for as long as the user stays silent.
   it('relabels a bound launch by the worktree its hook reported', () => {
     const out = resolvePending(
       twoBuckets,
@@ -512,10 +477,7 @@ describe('resolvePending', () => {
     ])
   })
 
-  // The reported cwd only refines the LABEL; workspace membership stays the launch
-  // cwd's, so a checkout git has not listed yet (rescan lag) leaves the row in place
-  // reading `main` rather than making it blink out of the sidebar.
-  it('keeps the launch-cwd label when the reported cwd matches no bucket', () => {
+  it('keeps the launch-cwd label when the reported cwd matches no bucket, so a checkout git has not listed yet never blinks out', () => {
     const out = resolvePending(
       twoBuckets,
       [{ tabId: 'tab-1', cwd: WS, sessionId: 's1', reportedCwd: WS + '/.claude/worktrees/fresh' }],
@@ -543,15 +505,14 @@ describe('extractJsonlMeta', () => {
 
   it('captures summary, first user text, and cwd/timestamp from the first line carrying them', () => {
     const meta = extractJsonlMeta([
-      summaryLine, // summary records carry no cwd/timestamp — must not blank them
-      'not json {{{', // torn/corrupt line is skipped, not fatal
+      summaryLine,
+      'not json {{{',
       '{"type":"user","isMeta":true,"message":{"role":"user","content":"skill preamble"},"cwd":"/first","timestamp":"2026-08-08T08:00:00.000Z"}',
       userLine('real prompt')
     ])
     expect(meta).toEqual({
       summary: 'Fix parser',
       firstUserText: 'real prompt',
-      // cwd/timestamp come from the FIRST message line that has them (V1), even isMeta
       cwd: '/first',
       timestamp: '2026-08-08T08:00:00.000Z'
     })
@@ -573,11 +534,8 @@ describe('extractJsonlMeta', () => {
     expect(meta.firstUserText).toBe('the actual ask')
   })
 
+  // CC§2
   it('an Esc-interrupt user record never claims firstUserText', () => {
-    // With commands no longer closing firstUserText, the slot stays open across an
-    // interrupted first turn — the `[Request interrupted by user]` record CC appends
-    // (a plain user line, no isMeta) must not win it; the live tracker already
-    // skips these records, and the cold row must agree.
     const meta = extractJsonlMeta([
       userLine('<command-name>/spec</command-name><command-args>build the feature</command-args>'),
       userLine('[Request interrupted by user]'),
@@ -588,9 +546,7 @@ describe('extractJsonlMeta', () => {
     expect(meta.commandArgsText).toBe('build the feature')
   })
 
-  it('an argless command fills commandNameText as the last text fallback', () => {
-    // the live tracker titles an argless-command session by its name (commandTitle);
-    // without this slot a restart demoted such rows to a bare relative time
+  it('an argless command fills commandNameText as the last text fallback, matching the live tracker title', () => {
     const meta = extractJsonlMeta([
       userLine(
         '<command-message>release-dmg</command-message><command-name>/release-dmg</command-name>'
@@ -601,9 +557,6 @@ describe('extractJsonlMeta', () => {
   })
 
   it('a command wrapper WITH args fills commandArgsText, leaving firstUserText to the real ask', () => {
-    // `/model opus` first: the args land in the mid-priority slot only, so the
-    // user's actual first prompt still owns firstUserText (the cold row must
-    // agree with the live tracker's demotion, or a restart re-pins "opus").
     const meta = extractJsonlMeta([
       userLine('<command-name>/model</command-name><command-args>opus</command-args>'),
       userLine('the actual ask')
@@ -617,10 +570,8 @@ describe('extractJsonlMeta', () => {
     expect(extractJsonlMeta(['garbage', '{"type":"assistant"}'])).toEqual({})
   })
 
-  // CC appends `ai-title` records (identical value re-logged every few turns) and the
-  // live tracker titles rows from them — the cold scan must capture them too, or a
-  // restart demotes every title to the first prompt until the session is re-activated.
-  it('captures the first ai-title record', () => {
+  // CC§2
+  it('captures the first ai-title record, the one the live tracker titles rows from', () => {
     const meta = extractJsonlMeta([
       userLine('first prompt'),
       '{"type":"ai-title","aiTitle":"Review project vision"}',
@@ -656,11 +607,8 @@ describe('extractJsonlMeta', () => {
   })
 })
 
-// the lifecycle contract D11. Real transcripts (535 scanned, 116 bound): the record is nested
-// under `worktreeSession`, sits in the head window (86× line 4, deepest line 236), and
-// appears in BOTH root and worktree slugs — so the binding, not the bucket, names the
-// worktree of a root-slug row.
-describe('worktree-state binding (D11)', () => {
+// CC§2
+describe('worktree-state binding (D11): the binding, not the bucket, names the worktree of a root-slug row', () => {
   const WT_STATE = {
     originalCwd: WS,
     worktreePath: WT,
@@ -668,8 +616,6 @@ describe('worktree-state binding (D11)', () => {
     worktreeBranch: 'worktree-bugfix',
     originalHeadCommit: 'a1b2c3d4'
   }
-  // real shape, extra fields and all — `sessionId` here is a predecessor's in 14/116
-  // real files and must never be read
   const worktreeStateLine = (over: Record<string, unknown> = {}): string =>
     JSON.stringify({
       type: 'worktree-state',
@@ -713,10 +659,7 @@ describe('worktree-state binding (D11)', () => {
     expect(meta.worktreeState?.worktreeName).toBe('bugfix')
   })
 
-  // The early-break must NOT gain worktreeState: most transcripts have no binding at
-  // all, so the conjunction would become unsatisfiable by design. Pinned here as an
-  // accepted tradeoff — a binding after the break is simply not seen.
-  it('does not extend the early break, so a binding past it is not read', () => {
+  it('does not extend the early break, so a binding past it is not read: most transcripts have none, and waiting for one would read every file whole', () => {
     const meta = extractJsonlMeta([
       '{"type":"summary","summary":"Fix parser"}',
       '{"type":"ai-title","aiTitle":"AI name"}',
@@ -736,13 +679,12 @@ describe('worktree-state binding (D11)', () => {
         readMeta: () => meta({ worktreeState: WT_STATE })
       })
     )
-    expect(rows[0].worktree).toBe('bugfix') // pre-v3 this root-bucket row read 'main'
+    expect(rows[0].worktree).toBe('bugfix')
     expect(rows[0].worktreeState).toEqual(WT_STATE)
   })
 
-  // `worktreeSession.sessionId` is a predecessor's id in 14/116 real transcripts —
-  // rows stay keyed by the file id alone.
-  it('never keys the row off worktreeSession.sessionId', () => {
+  // CC§2
+  it("never keys the row off worktreeSession.sessionId, which can be a predecessor's id", () => {
     const boundMeta = extractJsonlMeta([worktreeStateLine({ sessionId: 'someone-else' })])
     const rows = aggregateSessions(
       [{ slug: WS_SLUG, dir: WS }],
@@ -774,8 +716,6 @@ describe('worktree-state binding (D11)', () => {
     expect(rows.every((r) => r.worktreeState === undefined)).toBe(true)
   })
 
-  // invalidCwd stays a pure cwd fact: a binding says where the session BELONGS, not
-  // that its recorded cwd is back.
   it('does not let a binding mask a dead cwd', () => {
     const rows = aggregateSessions(
       [{ slug: WS_SLUG, dir: WS }],
@@ -812,8 +752,6 @@ describe('planRescan', () => {
     expect(
       planRescan({ kind: 'projects-dir-added', dirName: `${WS_SLUG}--claude-worktrees-x` }, state)
     ).toBe('rescan')
-    // truncation cut into the workspace slug itself: base after stripping the
-    // 6-char suffix is a prefix OF the slug
     expect(planRescan({ kind: 'projects-dir-added', dirName: '-Users-dev-pr-abc123' }, state)).toBe(
       'rescan'
     )

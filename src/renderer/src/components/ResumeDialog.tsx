@@ -9,16 +9,8 @@ import {
   runResume
 } from '../resumeFlow'
 
-/**
- * the lifecycle contract §4 — everything the resume decision tree has to ask. Which of the two
- * is up is main's verdict (`sessions:resumePlan`), never a renderer guess: a green
- * plan resumes silently — and since the decision so does a rebuild — so
- * neither ever reaches this component (D6/D8).
- */
 export function ResumeDialog(): JSX.Element | null {
   const dialog = useStore((s) => s.resumeDialog)
-  // the SAFE button in each dialog — nothing here is one keystroke from destroying a
-  // worktree (§4.1: any anomaly at all defaults to the new one)
   const safeRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
@@ -61,7 +53,6 @@ export function ResumeDialog(): JSX.Element | null {
         </p>
       </>,
       <>
-        {/* D12: the escape hatch is offered, never preselected — Cancel keeps the focus */}
         <button ref={safeRef} className="mini" onClick={dismiss}>
           Cancel
         </button>
@@ -96,7 +87,6 @@ export function ResumeDialog(): JSX.Element | null {
       <button className="mini" onClick={dismiss}>
         Cancel
       </button>
-      {/* the reset warning belongs ON the destructive button (§4.1), not in small print */}
       <button
         className="mini danger"
         title="May reset the worktree to this session's baseline"

@@ -1,14 +1,5 @@
 import type { MarkdownIt, StateCore } from 'markdown-it'
 
-/**
- * FR-09: `- [ ]` / `- [x]` become checkboxes. `disabled` is not decoration — the preview
- * pane is read-only (and `koloft-file://` is a read-only protocol), so a box the user could
- * tick would promise a write back to the file that never happens.
- *
- * Runs after the `inline` rule: the marker lives in the first text child, and replacing it
- * there leaves the rest of the item's inline markup untouched.
- */
-
 const MARKER_RE = /^\[([ xX])\][ \t]*/
 
 function rule(state: StateCore): void {

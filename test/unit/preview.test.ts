@@ -42,9 +42,7 @@ describe('preview helpers', () => {
     expect(basename(dirname('a\\b\\c.md'))).toBe('b')
   })
 
-  // FR-27 grows a file tab's label one parent at a time and reads '' / '/'
-  // as "this path has run out of parents" — the terminator that keeps the loop finite.
-  it('dirname bottoms out rather than looping, which is FR-27’s terminator', () => {
+  it('dirname bottoms out at an empty string rather than looping, so a file tab label grown one parent at a time always ends', () => {
     expect(dirname('/')).toBe('')
     expect(dirname('')).toBe('')
     expect(dirname(dirname('/a'))).toBe('')

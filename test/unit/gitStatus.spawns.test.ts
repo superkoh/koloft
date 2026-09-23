@@ -7,27 +7,10 @@ import { gitFileDiff, gitFileDiffFull, gitNumstat, gitStatus } from '../../src/m
 import { filterGitSpawns, parseGitSpawns, type GitSpawn } from '../e2e/helpers/gitSpawnLog'
 import { gitOnPath, realGit, recordArgv, restorePath, seedRepo } from './helpers/gitShim'
 
-/**
- * Process-count facts about gitStatus.ts, pinned by a recording `git` on PATH — the same
- * trick the e2e spawn counter plays (helpers/gitSpawnLog.ts, whose pure readers this suite
- * reuses) and for the same reason: the module looks git up on PATH at every call, so what
- * is counted is production code with no test branch in it.
- *
- * Two facts, both measured before the code they pin existed:
- *  - an untracked file's per-file diff cost FIVE spawns, and Changes re-diffs every
- *    untracked file on every watcher tick — ~3.8 s per tick at the 60-file cap, longer than
- *    the debounce. The `untracked` flag is the renderer handing over what it already knows.
- *  - `rev-parse --show-toplevel` ran uncached on every call: twice per tick plus once per
- *    file. Its answer is a path, which cannot change while the directory exists except by
- *    moving where `.git` lives — so the cache is validated by a stat walk, not a timer,
- *    and the cases below are that rule's edges.
- */
-
 let tmp: string
 let repo: string
 let log: string
 
-/** a `git` earlier on PATH that appends its argv to `log` before delegating to the real one */
 function recordingGitOnPath(): void {
   gitOnPath(tmp, `#!/usr/bin/env bash\n` + recordArgv(log) + `exec "${realGit()}" "$@"\n`)
 }
@@ -64,19 +47,15 @@ describe('the untracked fast path (gitFileDiff / gitFileDiffFull, untracked: tru
     const base = git('rev-parse', 'HEAD')
     recordingGitOnPath()
 
-    // cold: the toplevel lookup plus the --no-index diff, and nothing else
     resetLog()
     const fast = await gitFileDiff(file, base, true)
     expect(subcommands()).toEqual(['rev-parse', 'diff'])
     expect(spawns().length).toBeLessThanOrEqual(2)
 
-    // warm: the toplevel is cached, so one process per file
     resetLog()
     expect(await gitFileDiff(file, base, true)).toEqual(fast)
     expect(subcommands()).toEqual(['diff'])
 
-    // the probed path, warm: the empty base diff, both probes, then the same --no-index
-    // diff (cold it is five — the measurement the flag exists for)
     resetLog()
     const slow = await gitFileDiff(file, base)
     expect(subcommands()).toEqual(['diff', 'ls-files', 'check-ignore', 'diff'])
@@ -99,7 +78,7 @@ describe('the untracked fast path (gitFileDiff / gitFileDiffFull, untracked: tru
     expect(spawns().length).toBeLessThanOrEqual(2)
     const slow = await gitFileDiffFull(file, base)
     expect(fast).toEqual(slow)
-    expect(fast.text).toContain('+++ b/sub/fresh.txt') // toplevel-relative → clean headers
+    expect(fast.text).toContain('+++ b/sub/fresh.txt')
     expect(fast.text).toContain('+one\n+two\n')
   })
 
@@ -108,16 +87,11 @@ describe('the untracked fast path (gitFileDiff / gitFileDiffFull, untracked: tru
     fs.writeFileSync(file, 'brand new\n')
     recordingGitOnPath()
     resetLog()
-    // no base given: the probed path would spend symbolic-ref / rev-parse --verify /
-    // merge-base on deriving one; the fast path has nothing to measure against
     expect((await gitFileDiff(file, undefined, true)).text).toContain('+brand new')
     expect(filterGitSpawns(spawns(), { subcommand: /^(merge-base|symbolic-ref)$/ })).toHaveLength(0)
   })
 
   it('shows an IGNORED file when asked for as untracked — the probed path suppresses it', async () => {
-    // the status map is `--exclude-standard`, so a request for an ignored path can only
-    // mean the user force-revealed it in Browse and wants to see it (the contract in
-    // `fileDiff`'s doc); the probed path keeps treating it as "not a pending change"
     fs.writeFileSync(path.join(repo, '.gitignore'), 'secret.env\n')
     const file = path.join(repo, 'secret.env')
     fs.writeFileSync(file, 'TOKEN=1\n')
@@ -129,7 +103,6 @@ describe('the untracked fast path (gitFileDiff / gitFileDiffFull, untracked: tru
   it('honours only the literal true — a tracked, unmodified file stays empty under anything else', async () => {
     const file = path.join(repo, 'tracked.txt')
     const base = git('rev-parse', 'HEAD')
-    // the fast path would show the whole file as an add; the probed path answers "unchanged"
     expect((await gitFileDiff(file, base, 'true' as unknown as boolean)).text).toBe('')
     expect((await gitFileDiff(file, base, 1 as unknown as boolean)).text).toBe('')
     expect((await gitFileDiff(file, base, undefined)).text).toBe('')
@@ -142,7 +115,6 @@ describe('the toplevel cache', () => {
     recordingGitOnPath()
     resetLog()
     await gitStatus(repo, base)
-    // the poll tick's own shape: both consumers in flight together, twice over
     await Promise.all([gitStatus(repo, base), gitNumstat(repo, base)])
     await Promise.all([gitStatus(repo, base), gitNumstat(repo, base)])
     const lookups = filterGitSpawns(spawns(), {
@@ -154,14 +126,12 @@ describe('the toplevel cache', () => {
 
   it('re-asks when the root is gone, and does not cache the refusal', async () => {
     const base = git('rev-parse', 'HEAD')
-    await gitStatus(repo, base) // warm
+    await gitStatus(repo, base)
     fs.rmSync(repo, { recursive: true, force: true })
     recordingGitOnPath()
     resetLog()
     expect(await gitStatus(repo, base)).toEqual({})
     expect(await gitStatus(repo, base)).toEqual({})
-    // both calls went back to git (and got the refusal); a cached hit would have spawned a
-    // `diff` at a directory that no longer exists
     expect(subcommands()).toEqual(['rev-parse', 'rev-parse'])
   })
 
@@ -179,8 +149,6 @@ describe('the toplevel cache', () => {
 
     execFileSync('git', ['init', '-q', sub], { stdio: 'ignore' })
     const after = await gitStatus(sub, 'HEAD')
-    // `sub` is its own repo now: the outer file is out of scope, and the inner one is still
-    // keyed where it lives — which is only true if the toplevel was re-resolved to `sub`
     expect(after[path.join(repo, 'outer.txt')]).toBeUndefined()
     expect(after[path.join(sub, 'inner.txt')]).toBe('untracked')
     expect(
@@ -190,13 +158,11 @@ describe('the toplevel cache', () => {
 
   it('keeps trusting a hit across a .git deleted and recreated at the same path — the answer is unchanged', async () => {
     const base = git('rev-parse', 'HEAD')
-    await gitStatus(repo, base) // warm
+    await gitStatus(repo, base)
     fs.rmSync(path.join(repo, '.git'), { recursive: true, force: true })
     execFileSync('git', ['init', '-q', '-b', 'main', repo], { stdio: 'ignore' })
     recordingGitOnPath()
     resetLog()
-    // the toplevel is that PATH either way, so the cached answer is still right: no
-    // re-ask, and the (now untracked) file is keyed where it lives
     const status = await gitStatus(repo, 'HEAD')
     expect(status[path.join(repo, 'tracked.txt')]).toBe('untracked')
     expect(filterGitSpawns(spawns(), { argv: (a) => a.includes('--show-toplevel') })).toHaveLength(

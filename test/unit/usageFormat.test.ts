@@ -23,10 +23,8 @@ describe('formatCost — thresholds from the design', () => {
     expect(formatCost(128.7)).toBe('$129')
   })
   it('picks the tier from the ROUNDED value — rounding never spills across a boundary', () => {
-    // 9.997 rounds to 10.00: the $10 tier owns it → '$10.0', never '$10.00'
     expect(formatCost(9.997)).toBe('$10.0')
     expect(formatCost(9.994)).toBe('$9.99')
-    // 99.96 rounds to 100.0: the integer tier owns it → '$100', never '$100.0'
     expect(formatCost(99.96)).toBe('$100')
     expect(formatCost(99.94)).toBe('$99.9')
   })
@@ -40,9 +38,9 @@ describe('ctxLevel — ring colour bands (< 50% green / < 80% amber / ≥ 80% re
   })
   it('is correct on the boundaries', () => {
     expect(ctxLevel(0.499)).toBe('g')
-    expect(ctxLevel(0.5)).toBe('y') // 50% is NOT green
+    expect(ctxLevel(0.5)).toBe('y')
     expect(ctxLevel(0.799)).toBe('y')
-    expect(ctxLevel(0.8)).toBe('r') // 80% is red
+    expect(ctxLevel(0.8)).toBe('r')
     expect(ctxLevel(1.2)).toBe('r')
   })
 })
@@ -60,10 +58,10 @@ describe('ctxPercent / formatTokens', () => {
     expect(formatTokens(0)).toBe('0')
   })
   it('formatTokens never spills a magnitude (#9): no "1000k", no 5-char "100.0k"', () => {
-    expect(formatTokens(999_900)).toBe('1.00M') // would round to "1000k" naively
+    expect(formatTokens(999_900)).toBe('1.00M')
     expect(formatTokens(1_000_000)).toBe('1.00M')
-    expect(formatTokens(99_950)).toBe('100k') // 99.95 rounds to "100.0k" naively
-    expect(formatTokens(999_400)).toBe('999k') // just under the M cutover stays in k
+    expect(formatTokens(99_950)).toBe('100k')
+    expect(formatTokens(999_400)).toBe('999k')
   })
 })
 

@@ -2,11 +2,6 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import type { AdoptableTab, SessionInfo } from '@shared/types'
 import { useStore, consumeAdoptedNudge } from '../../src/renderer/src/store'
 
-// after a renderer reload the boot effect rebuilds the tab strip from
-// main's inventory. The e2e reload spec can only see the end state (wrong active
-// tab, a tab that never reverts); every adoption rule is pinned here. Zustand runs
-// in plain node — adoption spawns nothing, so no window.api is touched.
-
 const adoptable = (over: Partial<AdoptableTab>): AdoptableTab => ({
   id: 'pty-x-1',
   kind: 'claude',
@@ -37,7 +32,6 @@ describe('store: adoptTabs', () => {
       .adoptTabs([adoptable({ id: 'a1' }), adoptable({ id: 'a2' }), adoptable({ id: 'a3' })], null)
     const s = useStore.getState()
     expect(s.tabs.map((t) => t.id)).toEqual(['a1', 'a2', 'a3'])
-    // no remembered tab → nothing is activated (cold welcome path stays reachable)
     expect(s.activeTabId).toBeNull()
   })
 
@@ -92,8 +86,6 @@ describe('store: adoptTabs', () => {
   })
 
   it('seeds the revert gate: an adopted bound tab whose session ends flips to shell', () => {
-    // the session ended DURING the reload gap — no sessions push will ever carry this
-    // tab, so without adoption-time seeding the stale claude tab could never revert
     useStore.getState().adoptTabs([adoptable({ id: 'g1', sessionId: 'sess-g' })], null)
     useStore.getState().setSessions([])
     const t = useStore.getState().tabs.find((x) => x.id === 'g1')!
@@ -110,19 +102,15 @@ describe('store: adoptTabs', () => {
   it('owes each adopted tab exactly one repaint nudge', () => {
     useStore.getState().adoptTabs([adoptable({ id: 'j1' })], null)
     expect(consumeAdoptedNudge('j1')).toBe(true)
-    expect(consumeAdoptedNudge('j1')).toBe(false) // once only
+    expect(consumeAdoptedNudge('j1')).toBe(false)
     expect(consumeAdoptedNudge('never-adopted')).toBe(false)
   })
 
   it('skips entries whose tab already exists — a re-run boot effect must not duplicate', () => {
-    // same incident class as the former island's strip doubling: if anything re-runs the boot
-    // adoption against a surviving store, appending the same pty ids again would
-    // put two tabs on one terminal
     useStore.getState().adoptTabs([adoptable({ id: 'm1' }), adoptable({ id: 'm2' })], null)
     useStore.getState().adoptTabs([adoptable({ id: 'm1' }), adoptable({ id: 'm2' })], 'm1')
     const s = useStore.getState()
     expect(s.tabs.map((t) => t.id)).toEqual(['m1', 'm2'])
-    // the remembered id refers to an already-present tab — activation still lands
     expect(s.activeTabId).toBe('m1')
   })
 

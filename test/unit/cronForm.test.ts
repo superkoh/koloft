@@ -15,14 +15,8 @@ import {
   type JobFields
 } from '../../src/renderer/src/cronForm'
 
-// The scheduled-jobs form. BB-E17's unit half lives here (the day chips and the
-// words they turn into), plus every message §7.5 of the contract lists and the two
-// rules the suggestion box runs on. The e2e spec only checks that these strings reach
-// the screen — the rules are asserted here, once.
-
 const f = (over: Partial<JobFields> = {}): JobFields => ({ ...emptyFields(), ...over })
 
-/** a form that would save, so each case below can break exactly one thing */
 const good = (over: Partial<JobFields> = {}): JobFields =>
   f({ name: 'Nightly report', task: '/daily-report', at: '21:00', ...over })
 
@@ -255,8 +249,6 @@ describe('suggest', () => {
   })
 })
 
-// §7.4 — the History list. A row can stand for one outcome or for a run of them, and a
-// folded row has to say so in both halves: how many, and how long it went on.
 describe('history rows', () => {
   const NOW = new Date(2026, 8, 2, 12, 0, 0)
   const at = (h: number, m: number, dayOffset = 0): number =>
@@ -268,8 +260,6 @@ describe('history rows', () => {
     expect(histText({ dueAt: at(9, 0), state: 'failed', note: 'no usable account' })).toBe(
       'Could not start — no usable account'
     )
-    // a sleeping Mac writes this line with Koloft running the whole time, so the words
-    // must not accuse it of being down
     expect(histText({ dueAt: at(9, 0), state: 'missed' })).toBe(
       'Missed — Koloft was closed or asleep'
     )
@@ -284,21 +274,16 @@ describe('history rows', () => {
     )
   })
 
-  // without this the 85 misses above all read as having happened at 20:00 yesterday,
-  // which is why `until` is written down in the first place
   it('names both ends of a folded row, and one time for a plain one', () => {
     expect(histWhen({ dueAt: at(9, 0), state: 'missed' }, NOW)).toBe('today 09:00')
     expect(
       histWhen({ dueAt: at(20, 0, -1), state: 'missed', count: 85, until: at(10, 0) }, NOW)
     ).toBe('yesterday 20:00 → today 10:00')
-    // a fold of one covers no stretch at all
     expect(histWhen({ dueAt: at(9, 0), state: 'skipped', count: 1, until: at(9, 0) }, NOW)).toBe(
       'today 09:00'
     )
   })
 
-  // what the card means by "last run": the newest thing that happened, which for a
-  // folded row is the far end, not the minute the stretch began
   it('ends where the row ends', () => {
     expect(histEnd({ dueAt: at(9, 0), state: 'closed' })).toBe(at(9, 0))
     expect(histEnd({ dueAt: at(20, 0, -1), state: 'missed', count: 85, until: at(10, 0) })).toBe(
@@ -307,9 +292,6 @@ describe('history rows', () => {
   })
 })
 
-// The sidebar's forecast row: the words above a
-// workspace's sessions. The e2e spec only checks they reach the screen; the rules that
-// pick the job, count the rest and decide "soon" are asserted here, once.
 describe('forecastFor', () => {
   const NOW = new Date(2026, 8, 2, 12, 0, 0)
   const job = (name: string, at: string, over: Partial<CronJob> = {}): CronJob => ({
@@ -349,7 +331,6 @@ describe('forecastFor', () => {
     expect(forecastFor([], '/ws-a', NOW)).toBeNull()
   })
 
-  // an hour away still counts as soon; a minute past it does not
   it('calls a run soon right up to the 60 minute mark', () => {
     expect(forecastFor([job('Edge', '13:00')], '/ws-a', NOW)?.soon).toBe(true)
     expect(forecastFor([job('Past', '13:01')], '/ws-a', NOW)?.soon).toBe(false)

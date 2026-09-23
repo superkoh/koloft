@@ -10,20 +10,9 @@ import {
   withApproval
 } from '../../src/main/quitGuard'
 
-// file-edit B-26 — the most expensive of the three unsaved-changes guards, because
-// Electron's `before-quit` is SYNCHRONOUS: it cannot wait for an answer, so quitting
-// has to be turned into "block, ask, remember the answer, quit again". The whole
-// decision lives here as a latch over a clock so the two branches an end-to-end test
-// can never reach are still pinned: a second ⌘Q landing while the question is already
-// on screen, and a renderer that never answers at all.
-//
-// The times below are hand-picked round numbers; the only real arithmetic is the
-// grace window, taken from the exported constant rather than the literal 5000 so the
-// case still means "at the deadline" if the constant ever moves.
-
 beforeEach(() => declineQuit())
 
-describe('quitDecision (B-26 quit latch)', () => {
+describe('B-26: quitDecision: before-quit cannot wait for an answer, so a quit is block, ask, remember the answer, quit again', () => {
   it('asks on the first ⌘Q — nothing has been approved yet', () => {
     expect(quitDecision(1000)).toBe('ask')
   })
@@ -34,10 +23,7 @@ describe('quitDecision (B-26 quit latch)', () => {
     expect(quitDecision(1400)).toBe('wait')
   })
 
-  it('honours an approval given BEFORE the question was ever asked', () => {
-    // the e2e suite closes the app through the product's own `approveQuit`, with no
-    // dialog and no pending quit — a pre-approval has to let the very next quit
-    // straight through, or a spec that ends with an unsaved buffer hangs on teardown
+  it('honours an approval given BEFORE the question was ever asked, which is how the e2e suite closes the app without hanging', () => {
     approve()
     expect(quitDecision(1000)).toBe('allow')
   })
@@ -55,10 +41,8 @@ describe('quitDecision (B-26 quit latch)', () => {
     expect(quitDecision(1000 + QUIT_ANSWER_GRACE_MS)).toBe('allow')
   })
 
-  it('starts asking from scratch after a reset, deadline and all', () => {
+  it('starts asking from scratch after a reset, deadline and all: once the dialog is up the silence deadline stops running against the user', () => {
     expect(quitDecision(1000)).toBe('ask')
-    // the renderer took the question — the user is looking at the dialog now, so the
-    // silence deadline must NOT keep running against them
     reset()
     expect(quitDecision(1000 + QUIT_ANSWER_GRACE_MS * 2)).toBe('ask')
   })
@@ -69,26 +53,16 @@ describe('quitDecision (B-26 quit latch)', () => {
     expect(quitDecision(1000)).toBe('ask')
   })
 
-  // The approval is spent on the quit it was given for. It used to survive the cleanup,
-  // so anything that vetoes a quit AFTER `before-quit` has allowed it — a future
-  // "sessions are still running" window-close confirmation, say — would leave the latch
-  // open and the NEXT ⌘Q would skip the unsaved question entirely.
-  it('spends the approval: a quit that was allowed and then abandoned asks again', () => {
+  it('spends the approval: a quit that was allowed and then vetoed later asks again on the next quit', () => {
     quitDecision(1000)
     approve()
     expect(quitDecision(1100)).toBe('allow')
-    reset() // what the allow branch does once it has finished tearing down
+    reset()
     expect(quitDecision(1200)).toBe('ask')
   })
 })
 
-// Two paths END THE PROCESS without going through `before-quit` first: the updater
-// spawns a detached script that waits ~30s for our PID and then swaps the app bundle,
-// and Restart arms `app.relaunch()`. Both used to fire before the unsaved question was
-// even asked, so a user who thought about it for half a minute got the bundle replaced
-// underneath a running Koloft, and a user who cancelled got a relaunch that stayed armed
-// and reopened the app at the next ordinary quit. So neither may act before the answer.
-describe('withApproval (B-26: ask before anything irreversible)', () => {
+describe('B-26: withApproval: the updater bundle swap and Restart relaunch skip before-quit, so neither acts before the unsaved answer', () => {
   const ran: string[] = []
   const act = (): void => void ran.push('did it')
 
@@ -122,7 +96,6 @@ describe('withApproval (B-26: ask before anything irreversible)', () => {
     expect(withApproval(act, 1000)).toBe('waiting')
     declineQuit()
     expect(ran).toEqual([])
-    // the armed action must not be left lying around for the next ⌘Q to trip over
     expect(quitDecision(2000)).toBe('ask')
     approveAndRun(fallback)
     expect(ran).toEqual(['plain quit'])

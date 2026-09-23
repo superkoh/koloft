@@ -6,10 +6,6 @@ import {
   type HintSnapshot
 } from '../../src/renderer/src/hints'
 
-// Layer B. Each trigger is a TRANSITION, and the costly mistakes are all "fires when
-// it should not": on a tab switch onto a session that wrote long ago, on the row the user
-// is already looking at, on a resume replaying its own last write, on a page opened in a
-// session nobody is looking at, and on a second session started somewhere quiet.
 const empty: HintSnapshot = {
   activeTabId: null,
   githubBtn: false,
@@ -39,8 +35,6 @@ describe('firedHints — workbench', () => {
     expect(firedHints(prev, next)).toEqual([{ id: 'workbench', selector: '.aux-ico.wb-toggle' }])
   })
 
-  // a short turn: the write and the turn's end land in the same push, so the session
-  // is already waiting by the time the write is seen — it still happened
   it('fires when the write and the turn end arrive together', () => {
     const prev = snap({ activeTabId: 't1', sessions: [{ tabId: 't1', status: 'working' }] })
     const next = snap({
@@ -57,8 +51,6 @@ describe('firedHints — workbench', () => {
     expect(firedHints(prev, next)).toEqual([])
   })
 
-  // a resume: the catch-up parse replays the transcript's writes, which the tracker
-  // does not count as live — nothing Claude did just now
   it('stays quiet when a resumed session replays its history', () => {
     const prev = snap({ activeTabId: 't1', sessions: [{ tabId: 't1' }] })
     const next = snap({
@@ -96,7 +88,6 @@ describe('firedHints — agent-web', () => {
     expect(firedHints(prev, next)).toEqual([])
   })
 
-  // the card is spent on the open itself, not on later switching onto the session
   it('does not fire again while the same open sits in the store', () => {
     const prev = snap({ activeTabId: 't2', agentOpen: opened(1) })
     const next = snap({ activeTabId: 't1', agentOpen: opened(1) })
@@ -139,10 +130,6 @@ describe('firedHints — worktree', () => {
     expect(firedHints(prev, next)).toEqual([{ id: 'worktree', selector: rowSelector('pty-2') }])
   })
 
-  // no pending row ever exists on either of these paths: a resume keeps the session id it
-  // has always had, and a launch whose hook binds before the first emit comes up as a
-  // running placeholder under the real id. Such a row is named by its SESSION, so the
-  // anchor is resolved to the tab that runs it — the sidebar's own `tabIdFor` rule.
   it('fires when a cold row of that workspace starts running again, named by its tab', () => {
     const sessions = [{ tabId: 't2', sessionId: 's2', alive: true }]
     const prev = snap({ sessions, rows: [ws('/a', [running('s1'), cold('s2')])] })
@@ -188,9 +175,6 @@ describe('firedHints — worktree', () => {
   })
 })
 
-// the GitHub button appearing in the panel the user is looking at. The store field
-// is set only while the panel is SHOWING, so "it appeared" and "you can see it" are the
-// same fact and this rule needs no second condition.
 describe('firedHints — github', () => {
   it('fires when the button appears', () => {
     expect(firedHints(empty, snap({ githubBtn: true }))).toEqual([
@@ -207,9 +191,6 @@ describe('firedHints — github', () => {
     expect(firedHints(snap({ githubBtn: true }), empty)).toEqual([])
   })
 
-  // Collapsing the panel and opening it again is the common way this flips back on. The
-  // card is one-shot, so a second fire costs nothing — but it must be a real transition,
-  // not "it was already there".
   it('fires again after the panel was collapsed and re-opened', () => {
     const on = snap({ githubBtn: true })
     expect(firedHints(on, empty)).toEqual([])

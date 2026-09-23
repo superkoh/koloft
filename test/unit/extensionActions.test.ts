@@ -5,17 +5,10 @@ import {
   type ActionState
 } from '../../src/renderer/src/components/extensionActions'
 
-/** an action as the upstream state reports it, with no per-tab overrides */
 function action(id: string, extra: Partial<ActionState> = {}): ActionState {
   return { id, tabs: {}, ...extra }
 }
 
-/**
- * D3's collapse rule (browser-extensions design §03, retired; pinned
- * by BB-C01/BB-C02):
- * up to four extensions are all on the row and there is no puzzle at all; past four the
- * row keeps three and the puzzle's menu lists EVERY extension, not just the hidden ones.
- */
 describe('splitActions', () => {
   const names = (n: number): string[] => Array.from({ length: n }, (_, i) => `probe-${i + 1}`)
 
@@ -50,11 +43,6 @@ describe('splitActions', () => {
   })
 })
 
-/**
- * What one button shows. `title` is the extension's own name (the lib defaults it to the
- * manifest name), and chrome.action.setBadgeText/setTitle may be scoped to ONE tab — the
- * row follows the tab the extension is looking at, i.e. the active one (D4).
- */
 describe('actionView', () => {
   it('reads the name and the badge off the action itself', () => {
     expect(actionView(action('abc', { title: 'Koloft BB Probe', text: 'ok' }), 7)).toEqual({
@@ -88,8 +76,6 @@ describe('actionView', () => {
   })
 
   it('lets the active tab clear a badge the extension set everywhere', () => {
-    // an empty override is a value, not an absence: chrome.action.setBadgeText({text:'',
-    // tabId}) is how an extension takes the badge off ONE tab
     const cleared = action('abc', { text: 'ok', tabs: { '7': { text: '' } } })
     expect(actionView(cleared, 7).badge).toBe('')
   })

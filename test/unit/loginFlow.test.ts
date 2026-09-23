@@ -6,11 +6,6 @@ import {
 } from '../../src/renderer/src/components/settings/loginFlow'
 import type { LoginProgress } from '@shared/types'
 
-// Expectations hand-derived from FR-06
-//: saved
-// auto-clears after its 1.2s beat, failed persists until acknowledged, live phases
-// never auto-clear; a timer that outlives its login must not clear a newer one.
-
 const p = (phase: LoginProgress['phase']): LoginProgress =>
   ({ phase, name: 'work' }) as LoginProgress
 

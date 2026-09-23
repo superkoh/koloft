@@ -41,10 +41,7 @@ describe('session backend boundary', () => {
   })
 })
 
-// A1: every direct entrance (context menu, welcome ＋, single-workspace ⌘N,
-// Onboarding's Start) launches through this, so it has to answer for a Mac that has
-// only one of the two CLIs installed — settings alone cannot tell.
-describe('effectiveBackend (what a direct entrance starts)', () => {
+describe('effectiveBackend (what every direct entrance starts on a Mac that may have only one of the two CLIs)', () => {
   const methods = (defaultBackend: BackendId, codex = true) => ({
     defaultBackend,
     enabled: { claude: true, codex }

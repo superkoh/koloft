@@ -1,18 +1,11 @@
 import type { JSX } from 'react'
 
-/** One key and what it does in each place the caret can be; a line with no `where`
- *  holds everywhere. */
 interface Shortcut {
   keys: string[]
   name: string
   uses: { where?: string; what: string }[]
 }
 
-/**
- * The list is written by hand from the two places a key is bound — the native menu
- * (`src/main/menu.ts`) and App.tsx's focus arbitration — so a new or retargeted key has
- * to be added here too, or Settings tells the user a stale story.
- */
 const GROUPS: { title: string; items: Shortcut[] }[] = [
   {
     title: 'Sessions & workspaces',

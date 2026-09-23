@@ -6,22 +6,6 @@ import WebSocket from 'ws'
 import type { RelayTarget } from '../../src/main/cdpProtocol'
 import type { RelayDeps } from '../../src/main/cdpRelay'
 
-/**
- * The socket half of the CDP relay (§04) — the part the protocol suite
- * cannot see: who is allowed to connect, what a half-finished connection may still do
- * after the world moved under it, and what is left behind when a client vanishes
- * mid-handshake.
- *
- * Every case here drives the REAL server: `startRelay` + `setRelayEnabled` open an
- * actual ws server on a free port, and a real `ws` client talks to it over a real
- * socket. Only Electron (`app.getPath`, `webContents`) and the app-side deps are
- * stubbed, because the bugs these cases pin are all about ORDER — a close handler
- * firing before registration, a switch flipping inside an await — and order is exactly
- * what a hand-called `onConnection` would not reproduce.
- */
-
-// ---- the electron seam --------------------------------------------------------------
-
 let userData = ''
 const guests = new Map<number, FakeGuest>()
 
@@ -30,7 +14,6 @@ vi.mock('electron', () => ({
   webContents: { fromId: (id: number): FakeGuest | undefined => guests.get(id) }
 }))
 
-/** a guest webContents with just the debugger surface the relay touches */
 interface FakeGuest {
   isDestroyed(): boolean
   debugger: {
@@ -42,10 +25,9 @@ interface FakeGuest {
     off(event: string, fn: (...a: never[]) => void): void
     sendCommand(method: string, params?: unknown, sessionId?: string): Promise<unknown>
   }
-  /** how many listeners the relay currently has on this guest */
   listenerCount(): number
-  /** the next `Page.getFrameTree` waits until this is called */
   releaseFrameTree(): void
+  emit(event: string, ...args: unknown[]): void
 }
 
 function fakeGuest(id: number, opts: { holdFrameTree?: boolean } = {}): FakeGuest {
@@ -78,19 +60,20 @@ function fakeGuest(id: number, opts: { holdFrameTree?: boolean } = {}): FakeGues
       }
     },
     listenerCount: () => [...listeners.values()].reduce((n, s) => n + s.size, 0),
-    releaseFrameTree: () => release()
+    releaseFrameTree: () => release(),
+    emit: (event, ...args) => {
+      if (event === 'detach') attached = false
+      for (const fn of [...(listeners.get(event) ?? [])]) (fn as (...a: unknown[]) => void)(...args)
+    }
   }
   guests.set(id, guest)
   return guest
 }
 
-// ---- the app-side deps --------------------------------------------------------------
-
 const TAB = 'tab-1'
 const SESSION = 'sess-1'
 
 interface Harness extends RelayDeps {
-  /** what `sessionForTab` answers; null = "not bound yet" */
   session: string | null
   strip: RelayTarget[]
 }
@@ -114,22 +97,16 @@ function makeDeps(): Harness {
   return h
 }
 
-// ---- harness ------------------------------------------------------------------------
-
 type Relay = typeof import('../../src/main/cdpRelay')
 
 let relay: Relay
 let deps: Harness
 const sockets: WebSocket[] = []
 
-/** a live connection, with everything a case needs to observe it */
 interface Conn {
   ws: WebSocket
-  /** resolves with the close reason the server gave, if any */
   closed: Promise<string>
-  /** send a command and wait for its reply (or its error) */
   cmd(method: string, params?: unknown): Promise<Record<string, unknown>>
-  /** the ids of every event the relay pushed */
   events: Record<string, unknown>[]
 }
 
@@ -165,16 +142,12 @@ function connect(): Conn {
   }
 }
 
-/** a connection that got past the handshake — proven by an answered command */
 async function registered(): Promise<Conn> {
   const c = connect()
   await c.cmd('Browser.getVersion')
   return c
 }
 
-/** the reason the server closed a socket with, or a readable stand-in — never a hang:
- *  a connection that stays up when it should have been refused IS the failure, and it
- *  should read that way rather than as a test timeout. */
 async function closedReason(c: Conn): Promise<string> {
   return await Promise.race([
     c.closed,
@@ -198,7 +171,7 @@ beforeEach(async () => {
   deps = makeDeps()
   relay = await import('../../src/main/cdpRelay')
   relay.startRelay(deps)
-  relay.relayStripChanged(SESSION, deps.strip) // the renderer's report IS the registry
+  relay.relayStripChanged(SESSION, deps.strip)
   relay.setRelayEnabled(true, [TAB])
   await until(() => relay.relayEndpoint(TAB) !== '', 'the relay to listen')
 })
@@ -209,8 +182,6 @@ afterEach(() => {
   fs.rmSync(userData, { recursive: true, force: true })
 })
 
-// ---- cases --------------------------------------------------------------------------
-
 describe('one client per endpoint (D8)', () => {
   it('a refused second connection does not take the first client down with it', async () => {
     const a = await registered()
@@ -218,13 +189,9 @@ describe('one client per endpoint (D8)', () => {
     const b = connect()
     expect(await closedReason(b)).toBe('this endpoint already has a client')
 
-    // the whole bug in one assertion: if B's own `close` dropped A, the endpoint is free
-    // again and a third connection walks straight in
     const c = connect()
     expect(await closedReason(c)).toBe('this endpoint already has a client')
-    // …and nothing told the strip that A stopped driving
     expect(deps.setAttached).not.toHaveBeenCalled()
-    // A is still the client
     expect(await a.cmd('Browser.getVersion')).toHaveProperty('result')
   })
 })
@@ -236,19 +203,15 @@ describe('the master switch reaches connections that are still handshaking (D2)'
     await until(() => deps.sessionForTab(TAB) === null && a.ws.readyState === WebSocket.OPEN, 'a')
 
     relay.setRelayEnabled(false, [TAB])
-    deps.session = SESSION // the session binds a moment later — too late
+    deps.session = SESSION
 
     expect(await closedReason(a)).toBe('the Koloft browser endpoint is off')
   })
 })
 
 describe('a tab whose session went away (§4.4)', () => {
-  it('a rebind to the SAME session changes nothing — the client keeps its pages', async () => {
-    // The handshake reads the tracker's live state, but the "session bound" record that
-    // drives rebinds lands on a throttled event a moment later. That event must not read
-    // as "the session changed": it used to tear every page down and announce it again,
-    // and Playwright drops a page the instant it is told it detached (measured: BB-38/39
-    // saw one page where it had just opened two).
+  // PLATFORM§17
+  it('BB-38/39: a rebind to the SAME session changes nothing — the client keeps its pages', async () => {
     fakeGuest(11)
     const a = await registered()
     await a.cmd('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false })
@@ -303,9 +266,59 @@ describe('a client that drops in the middle of an attach', () => {
 
     expect(guest.debugger.detach).toHaveBeenCalled()
     expect(guest.listenerCount()).toBe(0)
-    // the tab must never be pinned as "being driven" for a client that is gone
     for (const call of (deps.setAttached as ReturnType<typeof vi.fn>).mock.calls) {
       expect(call[1]).toEqual([])
     }
+  })
+})
+
+describe('a guest whose debugger detaches by itself', () => {
+  it('delivers each later guest event exactly once after the tab is attached again, because the old message listener is removed', async () => {
+    const guest = fakeGuest(11)
+    const a = await registered()
+    const listed = (await a.cmd('Target.getTargets')).result as {
+      targetInfos: { targetId: string }[]
+    }
+    const targetId = listed.targetInfos[0]?.targetId ?? ''
+    await a.cmd('Target.attachToTarget', { targetId })
+
+    guest.emit('detach')
+    await until(
+      () => a.events.some((e) => e.method === 'Target.detachedFromTarget'),
+      'the detach to reach the client'
+    )
+    await a.cmd('Target.attachToTarget', { targetId })
+    guest.emit('message', {}, 'Page.loadEventFired', { timestamp: 1 }, '')
+    await until(
+      () => a.events.some((e) => e.method === 'Page.loadEventFired'),
+      'the guest event to reach the client'
+    )
+    await new Promise((r) => setTimeout(r, 100))
+
+    expect(a.events.filter((e) => e.method === 'Page.loadEventFired')).toHaveLength(1)
+  })
+})
+
+describe('a socket that closes while its tab is still binding', () => {
+  it('is never registered as the endpoint’s client, so a later client can still connect', async () => {
+    let asked = 0
+    deps.sessionForTab = (): string | null => {
+      asked++
+      return deps.session
+    }
+    deps.session = null
+    const a = connect()
+    await until(() => asked > 0 && a.ws.readyState === WebSocket.OPEN, 'a to be waiting')
+
+    a.ws.close()
+    await a.closed
+    await new Promise((r) => setTimeout(r, 100))
+    deps.session = SESSION
+    asked = 0
+    await until(() => asked > 0, 'the wait to see the session')
+    await new Promise((r) => setTimeout(r, 100))
+
+    const b = connect()
+    expect(await b.cmd('Browser.getVersion')).toHaveProperty('result')
   })
 })

@@ -48,9 +48,8 @@ describe('suggestedDownloadName — SEC-9: the name as the site wrote it', () =>
     )
   })
 
+  // PLATFORM§13
   it('keeps a traversal attempt intact for safeDownloadName to reduce', () => {
-    // Chromium flattens the same name to `_.._evil.sh`, which hides the traversal from
-    // the basename rule instead of answering it
     expect(suggestedDownloadName('attachment; filename="../../evil.sh"', '_.._evil.sh')).toBe(
       '../../evil.sh'
     )

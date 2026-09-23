@@ -3,17 +3,10 @@ import { LuX } from 'react-icons/lu'
 import { remoteKeyFromForm } from '../remoteWorkspace'
 import { isComposing } from '../keys'
 
-/**
- * the alpha door to a workspace that lives on another machine. Two fields
- * and nothing else: the machine name goes to `ssh` verbatim (an alias from
- * ~/.ssh/config, `user@host`, whatever it accepts), the path is absolute over there.
- * Nothing is connected here — the first ssh happens when a session starts.
- */
 export function RemoteWorkspaceDialog({
   onAdd,
   onClose
 }: {
-  /** hands over the `ssh://machine/path` key; the dialog is closed by the caller */
   onAdd: (key: string) => void
   onClose: () => void
 }): JSX.Element {

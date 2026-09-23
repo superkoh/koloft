@@ -1,11 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 
-// NFR-05: one block that fails to render must cost the reader that block, not the document.
-// The highlighter is the one dependency in this pipeline that can reject, so it is the one
-// worth forcing: a fence carrying BOOM throws, everything else highlights for real.
 vi.mock('dompurify', () => ({
-  // real DOMPurify needs a DOM; node has none. `addHook` has to exist because the pipeline
-  // installs a URL-blocking hook on it, and the sanitize step itself is e2e's to prove.
   default: { sanitize: (html: string) => html, addHook: () => {} }
 }))
 vi.mock('../../src/renderer/src/highlight', async (importOriginal) => {
@@ -17,6 +12,15 @@ vi.mock('../../src/renderer/src/highlight', async (importOriginal) => {
         ? Promise.reject(new Error('grammar exploded'))
         : real.highlightCodeLight(code, lang)
   }
+})
+
+const katexChunk = vi.hoisted(() => ({ failuresLeft: 1 }))
+vi.mock('@vscode/markdown-it-katex', async (importOriginal) => {
+  if (katexChunk.failuresLeft > 0) {
+    katexChunk.failuresLeft--
+    throw new Error('chunk failed to load')
+  }
+  return importOriginal()
 })
 
 const { renderMarkdown } = await import('../../src/renderer/src/markdown/index')
@@ -33,7 +37,18 @@ describe('renderMarkdown when the highlighter fails', () => {
     expect(doc.html).toContain('<p>end</p>')
     expect(doc.html).toContain('md-code-plain')
     expect(doc.html).toContain('BOOM')
-    // the healthy fence beside it is untouched
     expect(doc.html).toContain('<pre class="shiki github-light"')
+  })
+})
+
+describe('renderMarkdown when the KaTeX chunk fails to load', () => {
+  it('keeps the failing document’s text, and the next document with a $ tries the chunk again', async () => {
+    const first = await renderMarkdown('cost is $x$ today\n', { srcPath: '/ws/a.md' })
+    expect(first.html).toContain('cost is')
+    expect(first.html).toContain('today')
+    expect(first.html).not.toContain('class="katex')
+
+    const second = await renderMarkdown('cost is $x$ today\n', { srcPath: '/ws/b.md' })
+    expect(second.html).toContain('class="katex')
   })
 })

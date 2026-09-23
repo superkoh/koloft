@@ -1,16 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { diffLines } from '../../src/renderer/src/components/editDiff'
 
-/**
- * B-21 — the difference the conflict view draws between what is on disk and what is in the
- * buffer. Its own unit because the end-to-end case can only ask whether both versions'
- * lines appear somewhere on screen: a "diff" that marked every line of a 200-line file
- * changed would satisfy that and still be useless to read, which is the failure this pins.
- *
- * The shape is `ParsedDiff`, so the existing `InlineDiff` renders it unchanged — the rows
- * carry the same gutter contract git's own full-context diff does.
- */
-
 const kinds = (o: string, n: string): string[] => diffLines(o, n).rows.map((r) => r.kind)
 const texts = (o: string, n: string): string[] => diffLines(o, n).rows.map((r) => r.text)
 
@@ -43,8 +33,6 @@ describe('diffLines', () => {
   })
 
   it('keeps the untouched lines around a changed one as context', () => {
-    // the everyday conflict: one value differs, everything else is common. A diff that
-    // cannot find the common head and tail would mark all three lines changed.
     const d = diffLines('a\nb\nc\n', 'a\nB\nc\n')
     expect(d.rows).toEqual([
       { kind: 'ctx', oldNo: 1, newNo: 1, text: 'a' },

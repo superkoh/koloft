@@ -5,13 +5,10 @@ import { useStore } from '../../store'
 import { useEscConsumer } from './escScope'
 import { useSettingsUpdate } from './useSettingsUpdate'
 
-/** About: version, updates, and the one dangerous button (FR-11/FR-12). The update
- *  check reuses the store's existing openUpdateCheck → UpdateModal path wholesale. */
 export function AboutPane(): JSX.Element {
   const openUpdateCheck = useStore((s) => s.openUpdateCheck)
   const update = useSettingsUpdate()
   const [version, setVersion] = useState('')
-  /** FR-12: reset asks an inline confirm first; the trigger dims while it is open */
   const [confirming, setConfirming] = useState(false)
 
   useEffect(() => {
@@ -31,8 +28,6 @@ export function AboutPane(): JSX.Element {
 
   const reset = (): void => {
     setConfirming(false)
-    // the account domain (accounts / multiAccount / skipPermissions) is excluded —
-    // see buildResetPatch; main strips `accounts` again as defense in depth (FR-13)
     update(buildResetPatch())
   }
 

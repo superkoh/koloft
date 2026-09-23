@@ -2,16 +2,6 @@ import type { JSX } from 'react'
 import { LuBell, LuCamera, LuClipboard, LuMapPin, LuMic, LuShieldOff } from 'react-icons/lu'
 import type { BrowserPermissionAsk, BrowserPermissionRefusal } from '@shared/types'
 
-/**
- * §03 B7 — the prompt that stands between a page and the microphone, and the notice that
- * stands where a silent refusal used to be.
- *
- * It sits under the address bar and over the page, never over the chrome: the address
- * bar has to stay usable while a page is asking (BB-C44). The site's name is main's
- * word, read off the request Chromium made — a page cannot sign someone else's name to
- * a prompt (SEC-10's rule).
- */
-
 const LABEL: Record<string, string> = {
   microphone: 'your microphone',
   camera: 'your camera',
@@ -31,8 +21,6 @@ const ICON: Record<string, JSX.Element> = {
   'clipboard-read': <LuClipboard size={16} />
 }
 
-/** what the sentence reads as for a permission nobody named — the raw string is still
- *  better than an empty gap, and the refusal notice is the only place it shows */
 function label(permission: string): string {
   return LABEL[permission] ?? permission
 }

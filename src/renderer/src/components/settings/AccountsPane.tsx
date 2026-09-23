@@ -7,11 +7,8 @@ import { Switch } from './Switch'
 import { useEscConsumer } from './escScope'
 import { useSettingsUpdate } from './useSettingsUpdate'
 
-/** Multi-account pool management), hosted on
- *  the Accounts pane. Secrets pass through ONCE on add (write-only IPC) and are never
- *  echoed back; everything rendered here comes from AccountView (metadata + usage).
- *  The probe round is the SHELL's job (once per modal open, NFR-02) — this pane only
- *  lists and subscribes, so pane switches never re-probe. */
+const REFRESH_DONE_LABEL_BEAT_MS = 2500
+
 export function AccountsPane(): JSX.Element {
   const settings = useStore((s) => s.settings)
   const login = useStore((s) => s.accountLogin)
@@ -21,18 +18,12 @@ export function AccountsPane(): JSX.Element {
   const childRow = 'set-row child' + (multiAccount ? '' : ' off')
 
   const [accounts, setAccounts] = useState<AccountView[]>([])
-  // FR-03 exemption: the add dialog (and its pasted secret) is pane-local on
-  // purpose — switching panes discards it, secrets never enter the store
+  // ADR-0002
   const [adding, setAdding] = useState<AccountKind | null>(null)
-  /** row awaiting inline delete confirmation (FR-07), keyed `${kind}:${name}` */
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
-  // A refresh whose numbers happen not to move looks identical to a click that did
-  // nothing, so the button has to report on its own rather than relying on the rows.
   const [refresh, setRefresh] = useState<'idle' | 'busy' | 'done'>('idle')
 
   useEffect(() => {
-    // closing the modal (or switching panes) unmounts this pane, so a fetch still in
-    // flight must not land on a dead component
     let alive = true
     const apply = (next: AccountView[]): void => {
       if (alive) setAccounts(next)
@@ -45,12 +36,10 @@ export function AccountsPane(): JSX.Element {
     }
   }, [])
 
-  // FR-07: Esc collapses the confirm strip before Esc means "close settings"…
   useEscConsumer(
     confirmDel !== null,
     useCallback(() => setConfirmDel(null), [])
   )
-  // …and so does clicking anywhere outside the confirming row
   useEffect(() => {
     if (confirmDel === null) return
     const onDown = (e: MouseEvent): void => {
@@ -66,9 +55,7 @@ export function AccountsPane(): JSX.Element {
       setAccounts(await window.api.accounts.probe())
     } finally {
       setRefresh('done')
-      // back to the neutral label after a beat — a permanent "done" would be just as
-      // uninformative as no feedback the next time it is clicked
-      setTimeout(() => setRefresh('idle'), 2500)
+      setTimeout(() => setRefresh('idle'), REFRESH_DONE_LABEL_BEAT_MS)
     }
   }
 
@@ -136,8 +123,6 @@ export function AccountsPane(): JSX.Element {
                   disabled={!multiAccount}
                   confirming={confirmDel === key}
                   onToggle={(en) => {
-                    // optimistic, same reason as update(): the control is controlled and
-                    // must reflect the click before the IPC round-trip echoes back
                     setAccounts((cur) =>
                       cur.map((x) =>
                         x.kind === a.kind && x.name === a.name ? { ...x, enabled: en } : x
@@ -170,17 +155,7 @@ export function AccountsPane(): JSX.Element {
           <button className="mini" disabled={!multiAccount} onClick={() => setAdding('oauth')}>
             <LuPlus size={14} /> Paste token
           </button>
-          {/* The API-key and custom-endpoint entries are deliberately NOT rendered.
-              Both kinds are fully implemented and unit-tested (shim injection, the
-              fallback tier in the picker, loader validation), and both are reachable if
-              an account of that kind already exists — but neither add+verify path has
-              ever run against a real credential, and an entry nobody can verify end to
-              end should not be reachable in the UI. The API key carries the sharper
-              version of that risk: it bills per token, so its first real execution must
-              not be a user's production key on an unexercised path.
-              Consequence, stated plainly: with no way to add one, D11's "fall back to
-              metered when every subscription is walled" tier stays empty in practice.
-              Restore either button once there is a credential to test it against. */}
+          {/* ADR-0003 */}
           <button
             className="mini acct-refresh"
             disabled={!multiAccount || refresh === 'busy'}
@@ -209,12 +184,7 @@ export function AccountsPane(): JSX.Element {
   )
 }
 
-/**
- * Guided login (D9's primary entry): main runs the official `claude setup-token` on a
- * hidden pty and streams progress. This dialog is a PURE VIEW of the store's
- * accountLogin slice (FR-06) — the subscription lives in App.tsx, so switching panes
- * or closing Settings never loses a phase, and `saved` clears itself after its beat.
- */
+// CC§7
 function LoginDialog(): JSX.Element | null {
   const login = useStore((s) => s.accountLogin)
   const addTab = useStore((s) => s.addTab)
@@ -234,7 +204,7 @@ function LoginDialog(): JSX.Element | null {
     setLoginProgress({ phase: 'starting', name: nm })
     const ok = await window.api.accounts.startLogin(nm, !!reauthName)
     if (ok !== 'ok') {
-      beginLogin(reauthName) // flow refused: back to the entry state, dialog stays
+      beginLogin(reauthName)
       setError(
         ok === 'invalid-name'
           ? 'Invalid name: [A-Za-z0-9._-] only, 32 characters max'
@@ -250,8 +220,6 @@ function LoginDialog(): JSX.Element | null {
     clearLogin()
   }
 
-  /** Escape hatch (D9b): the hidden pty is a real pty — adding it to the tab list
-   *  simply makes it visible, so a flow that went sideways is never a dead end. */
   const showTerminal = (): void => {
     if (!progress?.tabId) return
     addTab({
@@ -364,20 +332,16 @@ function AccountRow({
 }: {
   account: AccountView
   disabled: boolean
-  /** FR-07: the inline delete confirm strip is open on this row */
   confirming: boolean
   onToggle(enabled: boolean): void
   onAskRemove(): void
   onCancelRemove(): void
   onRemove(): void
-  /** re-run the guided login for this account (oauth only) */
   onRelogin?: () => void
 }): JSX.Element {
   const u = a.usage
   const now = Date.now()
   const stale = u ? ageLabel(u.at, now) : null
-  // a dead credential has no way back on its own — surface the recovery right where
-  // the bad news is, rather than making the user delete the row and start over
   const needsAuth = a.status === 'expired' || a.status === 'unverified'
   return (
     <div className={'acct-row' + (a.enabled ? '' : ' off') + (confirming ? ' confirming' : '')}>
@@ -453,9 +417,7 @@ function AccountRow({
           <Meter label="5h" v={u.u5} win="5h" />
           <Meter label="7d" v={u.u7} win="7d" />
           {u.hasOi && <Meter label="fable" v={u.uoi} win="oi" soi={u.soi} />}
-          {/* Spell out WHAT resets and WHEN. A bare `↻ 18:40` reads as "last refreshed"
-              — and since the 5h window is rolling, its reset instant keeps sliding
-              forward, so that misreading looks like a clock jumping around. */}
+          {/* CC§7 */}
           {u.r5 > 0 && <span className="acct-note">5h resets {resetLabel(u.r5, now)}</span>}
         </div>
       ) : (
@@ -487,9 +449,9 @@ function AddAccountDialog({ kind, onClose }: { kind: AccountKind; onClose(): voi
       kind === 'custom' ? { baseUrl: baseUrl.trim(), model: model.trim() || undefined } : undefined
     )
     setBusy(false)
-    setSecret('') // the field never retains the pasted token, success or not
+    // ADR-0002
+    setSecret('')
     if (r.ok || r.account) {
-      // r.account without ok = saved but unverified (offline add); the badge says so
       onClose()
     } else {
       setError(

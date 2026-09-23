@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest'
 import MarkdownIt from 'markdown-it'
 import { alerts } from '../../src/renderer/src/markdown/alerts'
 
-/** FR-08: `> [!NOTE]` is a GitHub alert card, not a quote whose first line reads `[!NOTE]`. */
 const md = new MarkdownIt().use(alerts)
 
 describe('alerts', () => {

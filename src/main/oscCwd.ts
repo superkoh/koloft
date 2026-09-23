@@ -3,23 +3,15 @@ import os from 'os'
 const ESC = '\x1b'
 const BEL = '\x07'
 
-/** Longest partial sequence carried between pty chunks. A real OSC 7 is a path, so
- *  anything longer is binary noise that happened to contain `ESC ]` (`cat` on a jpeg)
- *  — buffering it would hold the rest of the session hostage. */
 export const OSC_CARRY_MAX = 4096
 
-/** D13: the local host, as the shell writes it. macOS's precmd hook interpolates zsh's
- *  `$HOST` UNENCODED, so it can hold spaces and quotes; a report from anywhere else is
- *  an ssh session inside the shell and describes a directory that isn't on this
- *  machine. Empty and `localhost` are the conventional "here" spellings. */
+// PLATFORM§2
 function isLocalHost(host: string, hostname: string): boolean {
   if (host === '') return true
   const h = host.toLowerCase()
   return h === 'localhost' || h === hostname.toLowerCase()
 }
 
-/** The directory an OSC body (everything between `ESC ]` and the terminator) reports,
- *  or undefined when it is not an OSC 7 naming a local path. */
 function cwdFromBody(body: string, hostname: string): string | undefined {
   const semi = body.indexOf(';')
   if (semi < 0 || body.slice(0, semi) !== '7') return undefined
@@ -32,30 +24,16 @@ function cwdFromBody(body: string, hostname: string): string | undefined {
   try {
     return decodeURIComponent(rest.slice(slash))
   } catch {
-    // a half-written escape that survived reassembly — a path we cannot decode is not
-    // one worth persisting, so the tab keeps its last known directory
     return undefined
   }
 }
 
-/**
- * D13 — the per-pty OSC 7 cwd tracker. A shell reports its directory as
- * `ESC ] 7; file://<host><percent-encoded path>` terminated by BEL or `ESC \`, on
- * every prompt (macOS's /etc/zshrc_Apple_Terminal precmd hook, which Koloft enables by
- * impersonating Apple Terminal — ptyManager).
- *
- * The parser is stateful because node-pty chunks are arbitrary: a sequence can be torn
- * anywhere, including inside a percent-escape or between the two bytes of an `ESC \`
- * terminator. xterm's parser used to absorb that for free; it went with the free
- * terminal in so the carry is ours to keep now.
- */
+// PLATFORM§2
 export class OscCwdParser {
-  /** an unterminated sequence's bytes, from its ESC, waiting for the rest */
   private carry = ''
 
   constructor(private readonly hostname: string = os.hostname()) {}
 
-  /** Feed one pty chunk; returns the last directory it reported, if any. */
   push(chunk: string): string | undefined {
     const s = this.carry + chunk
     this.carry = ''
@@ -64,7 +42,6 @@ export class OscCwdParser {
     while (i < s.length) {
       const esc = s.indexOf(ESC, i)
       if (esc < 0) break
-      // ESC as the last byte we have: `]` may still be coming
       if (esc + 1 >= s.length) return this.hold(s.slice(esc), found)
       if (s[esc + 1] !== ']') {
         i = esc + 1
@@ -81,8 +58,6 @@ export class OscCwdParser {
           break
         }
         if (c === ESC) {
-          // the ST terminator is ESC \; any other ESC aborts this sequence (a CSI the
-          // shell wrote over an OSC it never finished)
           if (j + 1 >= s.length) return this.hold(s.slice(esc), found)
           if (s[j + 1] === '\\') {
             end = j
@@ -92,7 +67,6 @@ export class OscCwdParser {
         }
       }
       if (end < 0) {
-        // aborted by another ESC → rescan from it; ran out of bytes → carry
         if (j < s.length) {
           i = j
           continue

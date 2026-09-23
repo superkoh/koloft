@@ -20,10 +20,6 @@ import type { SessionRow, WorkspaceFreshness } from '@shared/types'
 const NOW = 1_700_000_000_000
 const MIN = 60_000
 
-// Worktree-entrance logic (new-session-entrances design) §04). The launch branches
-// and the name rule decide what argv reaches `claude`; a wrong branch here spawns a
-// session in the wrong checkout, which e2e can only see as a mislabelled row.
-
 const wt = (
   name: string,
   inUse = false
@@ -55,17 +51,12 @@ describe('resolveLaunch (§5 — the two branches C8 chooses between)', () => {
   })
 })
 
-// The git-pull work stacked a confirm and an uninterruptible pull on top of every
-// dialog that can start a session, and C10 (which has no rungs of its own) rides the
-// same ladder. Every ordering bug looks identical from the outside — "the dialog
-// closed" — so the order is pinned here rather than left to the components.
 const peel = (p: { locked?: boolean; confirmOpen?: boolean }): string =>
   escPeel({ locked: false, confirmOpen: false, ...p })
 
 describe('escPeel (shared Esc ladder — the C10 rungs)', () => {
   it('swallows the key outright while a pull is in flight (D6: no cancel, no escape)', () => {
     expect(peel({ locked: true })).toBe('none')
-    // the lock outranks every layer under it, however deep the user was
     expect(peel({ locked: true, confirmOpen: true })).toBe('none')
   })
 
@@ -77,8 +68,6 @@ describe('escPeel (shared Esc ladder — the C10 rungs)', () => {
     expect(peel({})).toBe('close')
   })
 })
-
-// ── C7 git-freshness additions (workspace-git-pull design) §04 M4 / D6) ──────
 
 const fresh = (patch: Partial<WorkspaceFreshness> = {}): WorkspaceFreshness => ({
   state: 'ok',
@@ -240,11 +229,6 @@ describe('mainRunningCount (D4 guard counts only root-checkout Koloft sessions)'
   })
 })
 
-// ── C8 worktree dialog (new-session-entrances design) §04, D4/D5/D6) ────────
-// The entrance already declared the intent ("a worktree"), so the field means one
-// thing and ⏎ never has to guess: a new name creates, an exact one opens. The list
-// under it is the visibility that replaces the old "⏎ lands on the match" defence.
-
 describe('worktreeAim (D5 — what the primary acts on)', () => {
   const field: WtHot = { where: 'field' }
   const trees = [wt('new-session-ux'), wt('alpha')]
@@ -277,8 +261,6 @@ describe('worktreeAim (D5 — what the primary acts on)', () => {
   })
 
   it('opens a worktree that really is called `main` instead of refusing it', () => {
-    // the reservation exists to stop `-w main`; an existing checkout of that name is
-    // reached through the cd branch, where the ambiguity never arises (§08)
     expect(worktreeAim([wt('main')], 'main', field)).toEqual({
       kind: 'open',
       name: 'main',
@@ -368,7 +350,6 @@ describe('moveHot (§04A key table)', () => {
       where: 'list',
       index: 1
     })
-    // 'cherry' is dimmed by 'a', so there is nowhere further to go
     expect(moveHot({ where: 'list', index: 1 }, names, 'a', 'down')).toEqual({
       where: 'list',
       index: 1
@@ -377,7 +358,6 @@ describe('moveHot (§04A key table)', () => {
 
   it('returns to the field from the first lit row, and does nothing above it', () => {
     expect(moveHot({ where: 'list', index: 0 }, names, '', 'up')).toEqual({ where: 'field' })
-    // 'banana' is the first row 'ban' leaves lit — ↑ from it is the field, not 'apple'
     expect(moveHot({ where: 'list', index: 1 }, names, 'ban', 'up')).toEqual({ where: 'field' })
     expect(moveHot({ where: 'list', index: 2 }, names, '', 'up')).toEqual({
       where: 'list',
@@ -435,9 +415,6 @@ describe('primaryLabel (C8 — the button says the whole action, D12)', () => {
     expect(primaryLabel('start', { verb: 'Create', name: null })).toBe('Create worktree')
   })
 
-  // A3: with two methods installed the button has to say which one ⏎ starts and keep
-  // the verb — "Create Claude" says neither. The name and the word "worktree" go (the
-  // field and hint line carry them), so two buttons plus Cancel fit one footer line.
   it('names the method after the verb, never instead of it', () => {
     expect(primaryLabel('start', { verb: 'Create', name: 'feat-x' }, 'Claude')).toBe(
       'Create · Claude'

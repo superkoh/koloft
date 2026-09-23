@@ -6,14 +6,12 @@ import { useStore } from '../store'
 import { relTime } from '../sessionRows'
 import { useSettingsUpdate } from './settings/useSettingsUpdate'
 
-/** the three session rows of PicFlow: lightbar colour, title, state line */
 const PIC_ROWS: { color: string; title: string; state: string; cold?: boolean }[] = [
   { color: 'var(--accent)', title: 'Fix login bug', state: 'working' },
   { color: 'var(--amber)', title: 'Write tests', state: 'needs your OK' },
   { color: 'var(--fg-faint)', title: 'Refactor api', state: 'yesterday', cold: true }
 ]
 
-/** PicFlow's Workbench file list: name, added, removed */
 const PIC_FILES: [string, string, string][] = [
   ['app.tsx', '+12', '−3'],
   ['api.ts', '+4', '−1'],
@@ -161,8 +159,6 @@ function PicAccounts(): JSX.Element {
   )
 }
 
-/** the same class names rowStateClass gives a real sidebar row, so one set of lightbar
- *  rules paints both */
 const LEGEND: { cls: string; name: string; what: string }[] = [
   { cls: 'st-working', name: 'Orange', what: 'working' },
   { cls: 'st-approval', name: 'Amber', what: 'needs your OK' },
@@ -176,9 +172,7 @@ export function Onboarding({
   onAddWorkspace,
   onStartIn
 }: {
-  /** the system folder picker + workspace:add App already owns; true when a folder landed */
   onAddWorkspace: () => Promise<boolean>
-  /** the per-workspace direct launch the old welcome panel used */
   onStartIn: (wsPath: string) => void
 }): JSX.Element {
   const update = useSettingsUpdate()
@@ -211,7 +205,6 @@ export function Onboarding({
     )
   }, [])
 
-  // seen is what unmounts this — App owns that latch
   const finish = useCallback((): void => {
     update({ onboardingSeen: true })
     if (balance) setSettingsOpen(true)
@@ -237,7 +230,6 @@ export function Onboarding({
           })()
       }
     }
-    // Account balancing requires Claude; a normal launch can use either CLI.
     if (step === 3)
       return {
         label: 'Continue',
@@ -249,8 +241,6 @@ export function Onboarding({
     if (probe === 'pending') return { label: '＋ Start first session', disabled: true }
     if (probe === 'missing' && (balance || !codexFound))
       return { label: 'Check again', go: runProbe }
-    // no account is registered yet, so a session started now would meet a claude with
-    // nothing to sign in as — the accounts pane is the next step, not a launch
     if (balance) return { label: 'Set up accounts', go: finish }
     if (!firstWs) return { label: 'Choose Folder…', go: () => void onAddWorkspace() }
     return {
@@ -335,8 +325,6 @@ export function Onboarding({
         {step === 3 && (
           <>
             <div className="big">Use your existing login.</div>
-            {/* Codex is named only on a Mac that has it: to everyone else it is a tool
-                they do not own, and the choice below is about Claude either way. */}
             <div className="quiet">
               {codexFound
                 ? 'Claude Code needs a login, and Codex keeps its own. Koloft can also spread your Claude sessions over several accounts.'

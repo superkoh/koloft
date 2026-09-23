@@ -6,18 +6,7 @@ import {
   type PermissionAsk
 } from '../../src/main/browserPermission'
 
-/**
- * §03 B7/B8 — the pure decision behind the page-permission prompt. Everything the
- * handlers do is downstream of these three: what a raw Electron permission becomes for
- * the user (ask / silent-allow / visible-refusal), what it is remembered under, and
- * whose name the prompt carries.
- *
- * Written against the spike, which overturned two assumptions the PRD had
- * made: microphone and camera arrive as ONE permission (`media`, split by mediaTypes),
- * and the handler's own origin argument is empty — the asking site is only ever in
- * `details`.
- */
-
+// PLATFORM§11
 describe('permissionAsk — what a raw permission request becomes', () => {
   it('turns a microphone request into an ask that names the microphone', () => {
     const ask = permissionAsk('media', {
@@ -74,18 +63,14 @@ describe('permissionAsk — what a raw permission request becomes', () => {
     })
   })
 
+  // PLATFORM§11
   it('refuses the screen share that arrives disguised as a media request', () => {
-    // measured: getDisplayMedia does NOT arrive as 'display-capture'. It
-    // comes through as `media` with an EMPTY mediaTypes — indistinguishable by name
-    // from a camera ask. Left unhandled, a page asking for the screen raises a prompt
-    // that says "microphone", which is a prompt about the wrong thing.
     expect(
       permissionAsk('media', { requestingUrl: 'https://a.test/', mediaTypes: [] })
     ).toMatchObject({
       kind: 'refuse',
       origin: 'https://a.test'
     })
-    // and the same request with no mediaTypes key at all
     expect(permissionAsk('media', { requestingUrl: 'https://a.test/' })).toMatchObject({
       kind: 'refuse'
     })
@@ -104,7 +89,6 @@ describe('permissionAsk — what a raw permission request becomes', () => {
   })
 
   it('refuses without a prompt when the asking url is unreadable', () => {
-    // a prompt with no name on it is a prompt the user cannot judge
     expect(permissionAsk('media', { requestingUrl: '', mediaTypes: ['audio'] })).toMatchObject({
       kind: 'refuse'
     })
@@ -112,8 +96,6 @@ describe('permissionAsk — what a raw permission request becomes', () => {
   })
 
   it('refuses a sub-frame challenge rather than asking in the main frame’s name', () => {
-    // SEC-10's rule, same reason: a third-party frame must not raise a prompt that
-    // reads as the page the user thinks they are on
     expect(
       permissionAsk('media', {
         requestingUrl: 'https://ads.example/',
@@ -147,14 +129,13 @@ describe('permissionKey — what an answer is remembered under', () => {
   })
 
   it('answers a combined camera+microphone ask under both single keys', () => {
-    // so that a later microphone-only request does not re-prompt after the user
-    // already allowed the pair
     expect(permissionKey('https://a.test', 'camera-and-microphone')).toBe(
       permissionKey('https://a.test', 'camera-and-microphone')
     )
   })
 })
 
+// PLATFORM§11
 describe('permissionOriginOf — whose name the prompt carries', () => {
   it('reads the site off the request, never off the empty origin argument', () => {
     expect(permissionOriginOf({ requestingUrl: 'https://figma.com/file/x?y=1' })).toBe(
@@ -178,15 +159,11 @@ describe('permissionOriginOf — whose name the prompt carries', () => {
   })
 })
 
-// SEC-3 (moved here): these used to guard `browserPermissionGranted`, which
-//  replaced as the partition's gate. The function is gone; the guarantee is
-// not, so the cases now stand in front of the table that actually answers.
 describe('SEC-3: nothing is granted by accident', () => {
   const site = { requestingUrl: 'https://a.test/', isMainFrame: true }
 
   it('keeps clipboard READ behind a prompt — it hands over whatever was copied last', () => {
     expect(permissionAsk('clipboard-read', site)).toMatchObject({ kind: 'ask' })
-    // the deprecated synchronous twin is not promptable at all
     expect(permissionAsk('deprecated-sync-clipboard-read', site)).toMatchObject({ kind: 'refuse' })
   })
 
@@ -213,8 +190,6 @@ describe('SEC-3: nothing is granted by accident', () => {
       'unknown',
       ''
     ]) {
-      // 'allow' is the only outcome that hands a capability over with no user in the
-      // loop — everything above must be an ask or a refusal, never that
       expect(permissionAsk(permission, site).kind).not.toBe('allow')
     }
   })
@@ -232,10 +207,8 @@ describe('SEC-3: nothing is granted by accident', () => {
     }
   })
 
+  // PLATFORM§11
   it('allows the page filling its own surface, because refusing it breaks fullscreen', () => {
-    // measured: refusing `fullscreen` means enter-html-full-screen never fires, so the
-    // whole feature silently does nothing. What keeps it safe is main's rule that the
-    // Koloft window never follows the page into macOS fullscreen.
     expect(permissionAsk('fullscreen', site)).toMatchObject({ kind: 'allow' })
   })
 })
@@ -251,8 +224,6 @@ describe('which refusals are worth saying out loud', () => {
   })
 
   it('stays quiet about machinery nobody initiated', () => {
-    // a page probing for storage access, an ad frame asking for anything: a bar for
-    // each of these is noise wearing the shape of a real question
     expect(permissionAsk('storage-access', { requestingUrl: 'https://a.test/' })).toMatchObject({
       tell: false
     })

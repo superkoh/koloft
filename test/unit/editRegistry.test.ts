@@ -19,19 +19,6 @@ import {
   subscribeDirty
 } from '../../src/renderer/src/editRegistry'
 
-/**
- * B-15…B-24, B-27 — the editor's bookkeeping, the half with no DOM in it.
- *
- * It earns a suite of its own because three different surfaces read it and none of them
- * can say what went wrong: the tab strip's dot, the close guard's file list and the tab
- * cap's "skip this one" all ask this module the same question. An e2e failure there points
- * at a dialog or at a tab that vanished, never at the answer underneath.
- *
- * The one collaborator is `window.api.edit.write` — the only call in Koloft that writes a
- * user's file — so it is the only thing doubled, at exactly the interface `KoloftApi` names.
- * This is a pure-Node suite, so `window` is planted the way filesModel's is.
- */
-
 const write =
   vi.fn<
     (
@@ -43,10 +30,6 @@ const write =
   >()
 ;(globalThis as unknown as { window: unknown }).window = { api: { edit: { write } } }
 
-/** the owner key is the CONVERSATION TAB (D8), which is a pty id — it used to
- *  be the claude session id, and `rebindEdits` existed only to chase that id when `/clear`
- *  or `/resume` changed it. A tab id changes for nothing but ⇧⌘R, which the store moves
- *  the whole panel across in one step, so there is no chasing left to do. */
 const OWNER = 'pty-1'
 const TAB = 'wt7'
 const PATH = '/ws/config/app.json'
@@ -72,10 +55,8 @@ describe('opening a buffer', () => {
     expect(dirtyTabsOf(OWNER)).toEqual([])
   })
 
+  // PLATFORM§24
   it('flattens CRLF so a Windows file is not dirty the moment it opens', () => {
-    // measured (§05): a textarea turns every \r\n into \n on the way in, so a buffer
-    // compared against the raw bytes would be dirty before a key was pressed — and every
-    // close would then ask a question about typing that never happened.
     open('a\r\nb\r\n', 'crlf')
     expect(getEntry(OWNER, TAB)?.text).toBe('a\nb\n')
     expect(isTabDirty(OWNER, TAB)).toBe(false)
@@ -122,11 +103,13 @@ describe('dirty tracking', () => {
     expect(isTabDirty(OWNER, 'never-seen')).toBe(false)
   })
 
-  it('tells its listeners when the flag flips, and stops when they leave', () => {
+  it('tells its listeners only when the flag flips, not on a second key pressed while already dirty (so React is not woken on every character), and stops when they leave', () => {
     open()
     const seen = vi.fn()
     const off = subscribeDirty(seen)
     setText(OWNER, TAB, BODY + 'X=1\n')
+    expect(seen).toHaveBeenCalledTimes(1)
+    setText(OWNER, TAB, BODY + 'X=12\n')
     expect(seen).toHaveBeenCalledTimes(1)
     setText(OWNER, TAB, BODY)
     expect(seen).toHaveBeenCalledTimes(2)
@@ -195,16 +178,10 @@ describe('saving', () => {
     })
 
     await expect(saveTab(OWNER, TAB)).resolves.toBe('saved')
-    // what landed on disk is what was SENT, so the extra line is still unsaved work
     expect(isTabDirty(OWNER, TAB)).toBe(true)
   })
 
   it('queues a second save behind the first instead of writing the same fingerprint twice', async () => {
-    // the autosaving note made this ordinary: mousedown blurs the box (save #1),
-    // mouseup unmounts it (save #2), and before this the second write went out with the
-    // fingerprint the first one was in the middle of replacing. Main answers that with
-    // `stale`, so a buffer already on disk grew a conflict bar — and autosave, which
-    // refuses to write over an unanswered bar, stopped for good.
     open()
     setText(OWNER, TAB, BODY + 'X=1\n')
     write.mockResolvedValueOnce({ ok: true, mtimeMs: 2000, size: 40 })
@@ -221,14 +198,11 @@ describe('saving', () => {
     expect(write).toHaveBeenCalledTimes(1)
     expect(write).toHaveBeenCalledWith(PATH, BODY + 'X=1\n', STAMP, { eol: 'lf' })
     expect(first).toBe('saved')
-    // the second caller looked again and found nothing left to write
     expect(second).toBe('clean')
     expect(getEntry(OWNER, TAB)?.conflict).toBeNull()
   })
 
   it('writes the newer text when the second caller finds the buffer dirty again', async () => {
-    // the other half of the queue: typing during the first write is unsaved work, and the
-    // save waiting behind it must send it with the fingerprint the first one established
     open()
     setText(OWNER, TAB, BODY + 'X=1\n')
     write.mockImplementationOnce(async () => {
@@ -268,15 +242,10 @@ describe('saving', () => {
       stamp: { mtimeMs: 9000, size: 12 },
       unreadable: false
     })
-    // the fingerprint must NOT move to the disk's: the next plain save has to be refused too
     expect(getEntry(OWNER, TAB)?.stamp).toEqual(STAMP)
   })
 
   it('reports a conflict it cannot show, when what is on disk is too big to compare', async () => {
-    // main answers a stale write with `text: null` when the file it found is over the
-    // reading limit or is binary. It is still a conflict — nothing was written and the
-    // work is still here — but there is nothing to draw a difference against, and the
-    // strip has to say so instead of offering a view that would never fill.
     open()
     setText(OWNER, TAB, BODY + 'MINE=1\n')
     write.mockResolvedValue({
@@ -284,8 +253,6 @@ describe('saving', () => {
       code: 'stale',
       mtimeMs: 9000,
       size: 700_000,
-      // typed loosely on purpose: `EditWriteResult.text` is `string | null` only once the
-      // main-process half lands, and this case is what asks for it
       text: null
     } as unknown as EditWriteResult)
 
@@ -329,9 +296,6 @@ describe('saving', () => {
   })
 
   it('tells a missing FOLDER apart from a missing file, and offers no way back', async () => {
-    // The two are one letter apart in the code and worlds apart on screen: a file that is
-    // gone can be written again at the same path, a folder that is gone cannot, so the
-    // sentence for it must not suggest trying.
     open()
     setText(OWNER, TAB, BODY + 'X=1\n')
     write.mockRejectedValue(new Error('KOLOFT_DIR_GONE'))
@@ -342,9 +306,6 @@ describe('saving', () => {
   })
 })
 
-// B-15/B-20 — the one decision every "the disk was looked at" path goes through: the
-// watcher's stamp-only event, the read it triggers, and the editor's own mount after a
-// session switch.
 describe('reconcileDisk', () => {
   const moved = { mtimeMs: 5000, size: 12 }
 
@@ -365,7 +326,6 @@ describe('reconcileDisk', () => {
   })
 
   it('reads a file holding exactly what the box holds as the buffer being clean, not a conflict', () => {
-    // our own save, read back by a remount before the write's answer reached the registry
     open()
     setText(OWNER, TAB, BODY + 'X=1\n')
     reconcileDisk(OWNER, TAB, { text: BODY + 'X=1\n', stamp: moved })
@@ -404,9 +364,8 @@ describe('leaving the buffer', () => {
     expect(write).not.toHaveBeenCalled()
   })
 
+  // PLATFORM§24
   it('flattens what came off disk, so a CRLF file does not read as every line changed', () => {
-    // the buffer holds LF (the textarea flattens on the way in) while the file and every
-    // answer about it hold CRLF, and a diff between the two calls every single line changed
     open('a\r\nb\r\n', 'crlf')
     setText(OWNER, TAB, 'a\nb\nc\n')
     noteConflict(OWNER, TAB, {

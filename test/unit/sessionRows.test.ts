@@ -17,19 +17,14 @@ import {
   welcomeTarget
 } from '../../src/renderer/src/sessionRows'
 
-// C2 sidebar row presentation logic (retired agent-centric design C2 card +
-// logic.md §4). Pure functions — the e2e suite can only see the resulting
-// pixels, so a wrong branch here (say `claude`-status mapping to a working
-// bar) would surface as a subtly wrong animation nobody's selector catches.
-
 describe('relTime (cold menu header / tooltip)', () => {
   const now = 100_000_000_000
 
-  it('buckets seconds / minutes / hours / days at their contract thresholds', () => {
+  it('buckets seconds / minutes / hours / days at their contract thresholds, flooring rather than rounding up', () => {
     expect(relTime(now - 5_000, now)).toBe('5s ago')
     expect(relTime(now - 59_000, now)).toBe('59s ago')
     expect(relTime(now - 60_000, now)).toBe('1m ago')
-    expect(relTime(now - 90_000, now)).toBe('1m ago') // floors, never rounds up
+    expect(relTime(now - 90_000, now)).toBe('1m ago')
     expect(relTime(now - 2 * 3_600_000, now)).toBe('2h ago')
     expect(relTime(now - 2 * 86_400_000, now)).toBe('2d ago')
   })
@@ -59,13 +54,10 @@ describe('rowStateClass (C2 lightbar)', () => {
 
   it('cold rows carry no bar class — just cold', () => {
     expect(rowStateClass(false, undefined)).toBe('cold')
-    // a stale status must not leak a lightbar onto a cold row
     expect(rowStateClass(false, 'working')).toBe('cold')
   })
 
-  it('a pending launch reads as st-pending, never cold (logic.md §4)', () => {
-    // pending rows carry running:false (no session bound yet) — without the third
-    // channel they would render as an italic cold row and invite a resume click
+  it('a pending launch reads as st-pending, never cold, so it never invites a resume click (logic.md §4)', () => {
     expect(rowStateClass(false, undefined, true)).toBe('st-pending')
     expect(rowStateClass(false, 'working', true)).toBe('st-pending')
   })
@@ -81,11 +73,10 @@ describe('marqueeAnim (C2 hover marquee)', () => {
     expect(marqueeAnim(-12)).toBeNull()
   })
 
-  it('scrolls exactly the measured overflow, no fixed distance', () => {
+  it('scrolls exactly the measured overflow, no fixed distance, holding at the end rather than snapping back', () => {
     const a = marqueeAnim(240)
     expect(a?.frames[0].transform).toBe('translateX(0px)')
     expect(a?.frames[1].transform).toBe('translateX(-240px)')
-    // the tail holds at the end position rather than snapping back mid-loop
     expect(a?.frames[2].transform).toBe('translateX(-240px)')
   })
 
@@ -102,7 +93,6 @@ describe('marqueeAnim (C2 hover marquee)', () => {
     expect(a.timing.delay).toBe(500)
     expect(a.timing.iterations).toBe(Infinity)
     expect(a.timing.easing).toBe('linear')
-    // the tail keyframe sits where the scroll ends; the remainder is the 700ms hold
     const tailMs = a.timing.duration * (1 - a.frames[1].offset)
     expect(tailMs).toBeCloseTo(700, 5)
   })
@@ -134,7 +124,6 @@ describe('welcomeTarget (S4 panel / O2)', () => {
 
   it('falls back when the remembered workspace was removed or vanished', () => {
     expect(welcomeTarget([ws('/a'), ws('/b')], '/gone')?.workspace.path).toBe('/a')
-    // a deleted folder cannot host a new session — skip it in both channels
     expect(welcomeTarget([ws('/a', true), ws('/b')], '/a')?.workspace.path).toBe('/b')
   })
 
@@ -164,8 +153,6 @@ describe('currentWorkspace (the Notes island’s workspace)', () => {
   })
 
   it('gives a worktree session its PARENT workspace — that is where the note lives', () => {
-    // the sidebar lists a worktree row inside the pinned workspace's group, so finding
-    // the group that holds the row is already the parent-workspace answer
     const parent = ws('/a', ['s1', 'wt-1'])
     expect(currentWorkspace([parent, ws('/b')], 'wt-1', null, null)).toBe('/a')
   })
@@ -192,11 +179,7 @@ describe('currentWorkspace (the Notes island’s workspace)', () => {
   })
 })
 
-// D6 — nothing in the suite drags a gutter, so the direction and both clamps are
-// pinned here or nowhere: a mirrored sign would make the note shrink as it is pulled
-// open and every other layer would still pass.
 describe('notesHeightFromDrag (the dock gutter)', () => {
-  // a 700px dock whose foot is at y=740
   const drag = (y: number): number => notesHeightFromDrag(740, 700, y)
 
   it('grows the note as the gutter is pulled UP — it is the bottom island', () => {
@@ -216,15 +199,11 @@ describe('notesHeightFromDrag (the dock gutter)', () => {
   })
 
   it('keeps the floor even in a window too short to honour both clamps', () => {
-    // 200px of dock: the ceiling would be 30, which is under the note's floor
     expect(notesHeightFromDrag(240, 200, 0)).toBe(120)
   })
 })
 
-// D6 — the saved height is a wish, and this is what a given dock can grant. The case
-// that made it necessary: a height chosen on a big display, remembered, and then handed to
-// a small window, where the sessions island (flex:1) would be squeezed away to nothing.
-describe('clampNotesHeight (the remembered height, in THIS window)', () => {
+describe('clampNotesHeight (the remembered height, in THIS window: a height saved on a big display must not squeeze the sessions island away)', () => {
   it('hands a height the dock can hold straight back', () => {
     expect(clampNotesHeight(260, 700)).toBe(260)
   })
@@ -246,7 +225,6 @@ describe('selectionRoot (Files island root / a terminal tab’s cwd)', () => {
   const claude = { kind: 'claude' as const, cwd: '/repo' }
 
   it('roots a bound session at ITS cwd, not the launch cwd', () => {
-    // `claude -w feat` launches in the repo root but lands in the worktree checkout
     expect(selectionRoot(claude, '/repo/.claude/worktrees/feat', '/ws')).toBe(
       '/repo/.claude/worktrees/feat'
     )
@@ -261,8 +239,6 @@ describe('selectionRoot (Files island root / a terminal tab’s cwd)', () => {
   })
 
   it('falls back for a shell tab too — only a session carries a scope of its own', () => {
-    // the only shell left is the e2e seam tab; its OSC 7 drift no longer re-roots
-    // anything (free terminal retired, §9)
     expect(selectionRoot({ kind: 'shell', cwd: '/somewhere' }, undefined, '/ws')).toBe('/ws')
   })
 
@@ -274,7 +250,6 @@ describe('selectionRoot (Files island root / a terminal tab’s cwd)', () => {
 
 describe('paneWidthFromDrag (right-side aux pane, gutter on its left edge)', () => {
   it('width follows the mouse: pane right edge minus pointer x', () => {
-    // pane's fixed right edge at 1000, pointer at 550 → 450px pane
     expect(paneWidthFromDrag(1000, 100, 550)).toBe(450)
   })
 
@@ -287,32 +262,21 @@ describe('paneWidthFromDrag (right-side aux pane, gutter on its left edge)', () 
   })
 
   it('ceiling leaves the TUI its 360px (+20 chrome) between dock and pane', () => {
-    // available = 1000 − 100 = 900; ceiling = 900 − 380 = 520, even though the
-    // pointer asks for 800
     expect(paneWidthFromDrag(1000, 100, 200)).toBe(520)
   })
 })
 
-// F7: session tabs live only in renderer memory, so a reload (dev HMR,
-// render-process-gone) drops every one of them while main keeps the ptys alive. The
-// row is then running with nothing here to open — and Archive is cold-row-only, so
-// the force-close confirm this predicate gates is its only way out. Neither input is
-// observable from the e2e layer once the modal is up, and the post-reload quadrant is
-// the one a naive "the stream has a tabId" reading gets wrong.
-describe('isOrphanRow (a running row this renderer cannot open)', () => {
+describe('isOrphanRow (a running row this renderer cannot open, as after a reload drops every tab while main keeps the ptys)', () => {
   const row = { id: 'sess-1', running: true }
-  // a freshly launched session's tab never carries the id itself — the stream is the
-  // only thing linking the two (store.ts writes sessionId onto a tab it RESUMED)
-  const tab = { id: 'pty-1', alive: true }
+  const freshLaunchTab = { id: 'pty-1', alive: true }
   const resumeTab = { id: 'pty-9', sessionId: 'sess-1', alive: true }
   const stream = [{ sessionId: 'sess-1', tabId: 'pty-1', alive: true }]
 
   it('says no while the tab the stream names is here', () => {
-    expect(isOrphanRow(row, stream, [tab])).toBe(false)
+    expect(isOrphanRow(row, stream, [freshLaunchTab])).toBe(false)
   })
 
-  // the stream is push-only, so it can lag the rows push that turned the row running
-  it('says no when only the tab’s own session id links it', () => {
+  it('says no when only the tab’s own session id links it, since the push-only stream can lag', () => {
     expect(isOrphanRow(row, [], [resumeTab])).toBe(false)
   })
 
@@ -321,14 +285,12 @@ describe('isOrphanRow (a running row this renderer cannot open)', () => {
   })
 
   it('says yes when the stream still names a tab this renderer no longer has', () => {
-    // the post-reload window: main's binding survives the reload, the tab does not,
-    // and activateTab on an id the store lacks is a silent no-op (store.ts)
     expect(isOrphanRow(row, stream, [])).toBe(true)
   })
 
   it('says yes when the only tab carrying the id has exited', () => {
     expect(isOrphanRow(row, [], [{ ...resumeTab, alive: false }])).toBe(true)
-    expect(isOrphanRow(row, stream, [{ ...tab, alive: false }])).toBe(true)
+    expect(isOrphanRow(row, stream, [{ ...freshLaunchTab, alive: false }])).toBe(true)
   })
 
   it('ignores another session’s live tab', () => {
@@ -337,19 +299,19 @@ describe('isOrphanRow (a running row this renderer cannot open)', () => {
 
   it('never fires on a cold row — resume owns that click, tab or no tab', () => {
     const cold = { id: 'sess-1', running: false }
-    expect(isOrphanRow(cold, stream, [tab])).toBe(false)
+    expect(isOrphanRow(cold, stream, [freshLaunchTab])).toBe(false)
     expect(isOrphanRow(cold, [], [])).toBe(false)
   })
 
   it('does not read a dead stream entry as a reachable tab', () => {
-    expect(isOrphanRow(row, [{ sessionId: 'sess-1', tabId: 'pty-1', alive: false }], [tab])).toBe(
-      true
-    )
+    expect(
+      isOrphanRow(row, [{ sessionId: 'sess-1', tabId: 'pty-1', alive: false }], [freshLaunchTab])
+    ).toBe(true)
   })
 })
 
 describe('parkedBadge', () => {
-  it('counts every parked thing (a teammate entry counts as many) and names each for the card', () => {
+  it('counts every parked thing (a teammate entry counts as many), names each for the card, and says how to release them', () => {
     const b = parkedBadge([
       { kind: 'server', label: 'python3 -m http.server 4179', ageMs: 3 * 3600_000 },
       { kind: 'monitor', label: 'tail -f bot.log' },
@@ -361,14 +323,10 @@ describe('parkedBadge', () => {
       'monitor · tail -f bot.log',
       '12 teammates idle'
     ])
-    // the badge exists so the user releases these: the card must say how
     expect(b.hint).toMatch(/ctrl\+b/)
   })
 })
 
-// D7 — with a workspace head picked, its sessions are still running behind the
-// welcome panel. The line has to say so and point at where to go; the old wording claimed
-// the workspace was idle, which is the state this replaces.
 describe('welcomeQuietLine', () => {
   it('says nothing is running when nothing is', () => {
     expect(welcomeQuietLine(0)).toBe('No running session')
@@ -437,8 +395,6 @@ describe('session background activity', () => {
   })
 })
 
-// D2: the method icon is a comparison, so it earns its width only where there is
-// something to compare it against. A Claude-only user never sees it.
 describe('mixesBackends (when a row list shows method icons)', () => {
   it('stays off for a list of Claude rows, tagged or not', () => {
     expect(mixesBackends([{}, {}])).toBe(false)

@@ -28,7 +28,6 @@ describe('browserOpenTargetSession (D3/D6 fallback — review 2026-08-19)', () =
   it('user open over a non-session tab falls back to a LIVE session', () => {
     const dead = sess({ tabId: 't1', sessionId: 's1', alive: false })
     const live = sess({ tabId: 't2', sessionId: 's2', alive: true })
-    // the request names t9 (no session) — pick the live one, not the dead one
     expect(browserOpenTargetSession([dead, live], { tabId: 't9', source: 'user' })).toBe(live)
   })
 
@@ -40,15 +39,6 @@ describe('browserOpenTargetSession (D3/D6 fallback — review 2026-08-19)', () =
     ).toBeUndefined()
   })
 
-  // What is left for the fallback once R12 has had its say. A shell's own `open` no
-  // longer arrives here unresolved: App maps the pty id to the conversation tab that owns
-  // the shell (`conversationTabFor`) BEFORE calling this, so that request now matches a
-  // bound tab on the first line and never reaches the fallback at all.
-  //
-  // The sources that still do reach it name no tab of any kind — an extension's
-  // `chrome.tabs.create`, the Web Store button. The user is looking at whatever is on
-  // screen, so that is where the page goes; falling back to the list's first live session
-  // would open it in a session the user is not even looking at.
   it('user open with no bound tab prefers the ACTIVE tab’s session over the first live one', () => {
     const first = sess({ tabId: 't1', sessionId: 's1', alive: true })
     const onScreen = sess({ tabId: 't2', sessionId: 's2', alive: true })
@@ -59,7 +49,7 @@ describe('browserOpenTargetSession (D3/D6 fallback — review 2026-08-19)', () =
 
   it('…and falls back to any live session when the active tab has none', () => {
     const live = sess({ tabId: 't1', sessionId: 's1', alive: true })
-    const shellTab = 't9' // a tab with no session of its own
+    const shellTab = 't9'
     expect(browserOpenTargetSession([live], { tabId: 'gt-1', source: 'user' }, shellTab)).toBe(live)
   })
 
@@ -86,13 +76,6 @@ describe('browserOpenTargetSession (D3/D6 fallback — review 2026-08-19)', () =
   })
 })
 
-/**
- * R1 — the presentation split. Unit-level because the input it reads is
- * NOT the routing `source` the payload carries: main labels everything a session tab
- * fires as an agent's (SEC-14), and a shell tab's `open` carries that same label while
- * being the user's own keystroke (BB-03). Getting that wrong is a one-word slip that
- * every e2e in the A1 block would blame on the overlay instead.
- */
 describe('overlayPresentation (R1 — user-triggered pops up right away / not user-triggered lands in the background)', () => {
   const tabs = (...ids: string[]): { id: string }[] => ids.map((id) => ({ id }))
 
@@ -101,8 +84,6 @@ describe('overlayPresentation (R1 — user-triggered pops up right away / not us
     expect(overlayPresentation({ tabId: 'gt-1' }, tabs('t1', 'gt-1'), [live])).toBe('now')
   })
 
-  // the one session tab that reaches this split at all: a row whose session has not
-  // bound yet (a bound one lands in its own panel, and a dead one has no tab)
   it('a session tab’s request is an agent’s: background, never a surface popping open', () => {
     const unbound = sess({ tabId: 't1', sessionId: '', alive: true })
     expect(overlayPresentation({ tabId: 't1' }, tabs('t1'), [unbound])).toBe('background')

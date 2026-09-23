@@ -6,11 +6,6 @@ import {
   repairAllWebgl
 } from '../../src/renderer/src/webglRepair'
 
-// The glyph atlas is SHARED across every terminal with matching config, so both
-// repair paths must reach EVERY live tab, not just the one that triggered them:
-// a merge (or a clear) that only heals its own tab leaves the siblings rendering
-// stale coords into a changed atlas — the exact upstream defect (#5883/#6014).
-
 type FakeAddon = {
   cleared: number
   mergeListeners: Array<() => void>
@@ -51,21 +46,21 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  // the module keeps a singleton registry — drain it so tests stay independent
   for (const id of registered.splice(0)) unregisterWebglRepair(id)
   vi.useRealTimers()
 })
 
+// PLATFORM§23
 describe('webglRepair: merge-triggered healing frame', () => {
-  it('a page merge refreshes EVERY live tab, not just the one that merged', () => {
+  it('a page merge refreshes EVERY live tab, not just the one that merged, after a debounce', () => {
     const a = fakeAddon()
     const b = fakeAddon()
     const refreshed: string[] = []
     register('a', a, () => refreshed.push('a'))
     register('b', b, () => refreshed.push('b'))
 
-    a.mergeListeners.forEach((cb) => cb()) // merge signal lands on tab a only
-    expect(refreshed).toEqual([]) // debounced — nothing synchronous
+    a.mergeListeners.forEach((cb) => cb())
+    expect(refreshed).toEqual([])
     vi.advanceTimersByTime(60)
     expect(refreshed.sort()).toEqual(['a', 'b'])
   })
@@ -77,7 +72,7 @@ describe('webglRepair: merge-triggered healing frame', () => {
 
     for (let i = 0; i < 5; i++) {
       a.mergeListeners.forEach((cb) => cb())
-      vi.advanceTimersByTime(10) // within the debounce window
+      vi.advanceTimersByTime(10)
     }
     vi.advanceTimersByTime(100)
     expect(refreshed).toEqual(['a'])
@@ -91,7 +86,7 @@ describe('webglRepair: merge-triggered healing frame', () => {
     register('b', b, () => refreshed.push('b'))
 
     unregisterWebglRepair('b')
-    expect(b.mergeListeners).toHaveLength(0) // subscription actually disposed
+    expect(b.mergeListeners).toHaveLength(0)
 
     a.mergeListeners.forEach((cb) => cb())
     vi.advanceTimersByTime(60)
@@ -99,8 +94,40 @@ describe('webglRepair: merge-triggered healing frame', () => {
   })
 })
 
+// PLATFORM§23
+describe('webglRepair: a terminal joining or leaving churns the shared atlas', () => {
+  it('a terminal joining clears the atlas and repaints the terminals already there', () => {
+    const a = fakeAddon()
+    const refreshed: string[] = []
+    register('a', a, () => refreshed.push('a'))
+    vi.advanceTimersByTime(60)
+    a.cleared = 0
+    refreshed.length = 0
+
+    register('b', fakeAddon(), () => refreshed.push('b'))
+    vi.advanceTimersByTime(60)
+    expect(a.cleared).toBe(1)
+    expect(refreshed).toContain('a')
+  })
+
+  it('a terminal leaving clears the atlas and repaints the terminals that stay', () => {
+    const a = fakeAddon()
+    const refreshed: string[] = []
+    register('a', a, () => refreshed.push('a'))
+    register('b', fakeAddon(), () => refreshed.push('b'))
+    vi.advanceTimersByTime(60)
+    a.cleared = 0
+    refreshed.length = 0
+
+    unregisterWebglRepair('b')
+    vi.advanceTimersByTime(60)
+    expect(a.cleared).toBe(1)
+    expect(refreshed).toEqual(['a'])
+  })
+})
+
 describe('webglRepair: repairAllWebgl (webgl:repair IPC path)', () => {
-  it('clears the atlas via every live addon and refreshes every tab', () => {
+  it('clears the atlas via every live addon (each rebuilds its own vertex model) and refreshes every tab', () => {
     const a = fakeAddon()
     const b = fakeAddon()
     const refreshed: string[] = []
@@ -108,8 +135,6 @@ describe('webglRepair: repairAllWebgl (webgl:repair IPC path)', () => {
     register('b', b, () => refreshed.push('b'))
 
     repairAllWebgl()
-    // per-addon clear: the shared atlas is wiped once (siblings no-op on the emptied
-    // atlas inside xterm) AND each addon rebuilds its own vertex model
     expect(a.cleared).toBe(1)
     expect(b.cleared).toBe(1)
     expect(refreshed.sort()).toEqual(['a', 'b'])

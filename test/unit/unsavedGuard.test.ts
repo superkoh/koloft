@@ -10,7 +10,9 @@ import {
   removePlan,
   removeUnsavedNote,
   saveAll,
-  subscribeDirtyTabs
+  subscribeDirtyTabs,
+  subscribeMenuFlags,
+  type MenuFlags
 } from '../../src/renderer/src/unsavedGuard'
 import {
   allEditTabs,
@@ -21,9 +23,6 @@ import {
 } from '../../src/renderer/src/editRegistry'
 import { useStore } from '../../src/renderer/src/store'
 
-/** The only collaborator these two touch: the one call in Koloft that writes a user's
- *  file, and the settings write the island's unfold rides on. Planted the way
- *  editRegistry.test.ts plants it — this is a pure-Node suite, so there is no window. */
 const write =
   vi.fn<
     (
@@ -38,16 +37,8 @@ const setSetting = vi.fn<(patch: Record<string, unknown>) => Promise<void>>()
   api: { edit: { write }, settings: { set: setSetting } }
 }
 
-// The dialogs spell their paths with `relOf`, the app's one answer to that question —
-// its cases live with it, in filesModel.test.ts.
-
-// B-31 — removing a workspace closes its sessions, which was the seventh way to lose
-// unsaved work and the one route the design's six-item list never named. The sentence
-// is appended to the existing "N running sessions will be closed" copy rather than
-// replacing it, so the empty answer has to be EXACTLY empty: a stray space would change
-// the wording of every ordinary workspace removal.
 describe('removeUnsavedNote (B-31 workspace removal)', () => {
-  it('says nothing at all when no buffer is dirty', () => {
+  it('says nothing at all when no buffer is dirty — not even a space, as it is appended to the running-sessions copy', () => {
     expect(removeUnsavedNote(0)).toBe('')
   })
 
@@ -61,11 +52,7 @@ describe('removeUnsavedNote (B-31 workspace removal)', () => {
   })
 })
 
-// the other half of a workspace removal's warning. A removal that stops to ask
-// about unsaved files never asks main, so it has no answer of main's to read a job count
-// out of and used to delete the jobs without a word; both routes now read the sentence
-// from here, which is why the wording is one function and not two.
-describe('removeJobsNote', () => {
+describe('removeJobsNote: one sentence both removal routes read, so a removal that stops for unsaved files still names the jobs', () => {
   it('says nothing at all when the workspace has no job', () => {
     expect(removeJobsNote(0)).toBe('')
   })
@@ -76,14 +63,8 @@ describe('removeJobsNote', () => {
   })
 })
 
-// B-31 — which question a workspace removal has to ask. It is a fork made BEFORE any
-// call to main, because `workspace.remove` removes the workspace as a side effect of
-// reporting how many sessions are running: asking it first is what let an idle
-// workspace's unsaved work disappear without a word.
-describe('removePlan (B-31 which question to ask)', () => {
+describe('removePlan (B-31 which question to ask), decided before calling main, whose remove call removes while it counts running sessions', () => {
   it('goes straight to the removal API when nothing is unsaved', () => {
-    // unchanged both ways round — with sessions running, the API's own answer is what
-    // raises the existing "N running sessions will be closed" dialog
     expect(removePlan(0, 0)).toBe('remove')
     expect(removePlan(2, 0)).toBe('remove')
   })
@@ -97,12 +78,6 @@ describe('removePlan (B-31 which question to ask)', () => {
   })
 })
 
-// the workspace note is the eighth way to lose typing, and the only buffer in the
-// app that hangs off no session at all. The note FILE outlives the removal (D9: unpinning
-// keeps it), but the way back to unsaved typing does not: the island follows the pick, so
-// once the head has gone from the sidebar there is nothing left to click to reach a buffer
-// that could not save. The removal question has to name it while the head is still there,
-// and walking the workspace's session rows — all the guard used to do — never can.
 describe('dirtyInWorkspace + labelPaths (the workspace note)', () => {
   const WS = '/repo/proj'
   const owner = notesOwner(WS)
@@ -135,7 +110,6 @@ describe('dirtyInWorkspace + labelPaths (the workspace note)', () => {
 
     setText(owner, NOTES_TAB, 'old + something typed')
     expect(dirtyInWorkspace(WS)).toEqual([{ ownerTabId: owner, tabId: NOTES_TAB, path: notePath }])
-    // another workspace's removal must not ask about this one's note
     expect(dirtyInWorkspace('/repo/other')).toEqual([])
   })
 
@@ -146,11 +120,7 @@ describe('dirtyInWorkspace + labelPaths (the workspace note)', () => {
   })
 })
 
-// D6 / N07 — the note writes itself 600 ms after the last key, so ⌘Q typed inside
-// that window must WRITE it rather than raise a question about it. The one buffer that is
-// deliberately NOT flushed is a note under a conflict bar: the file moved under us, and
-// only the user can say which side wins, so that one still reaches the dialog.
-describe('flushNotes', () => {
+describe('flushNotes: ⌘Q before a note autosaves writes it instead of asking, but a note under a conflict bar still asks', () => {
   const WS = '/repo/proj'
   const owner = notesOwner(WS)
   const notePath = '/data/notes/-repo-proj/notes.md'
@@ -219,10 +189,6 @@ describe('flushNotes', () => {
   })
 })
 
-// a refused save brings the file in front of the user, and for a note that place is
-// the ISLAND, not a tab. There is no conversation tab called `notes-…`, so the ordinary
-// route would activate nothing, park panel state under an id no tab carries, and promise a
-// tab the user cannot find.
 describe('saveAll', () => {
   const WS = '/repo/proj'
   const owner = notesOwner(WS)
@@ -266,11 +232,8 @@ describe('saveAll', () => {
 
     const st = useStore.getState()
     expect(st.selectedWs).toBe(WS)
-    // the conflict bar lives in the island's body, which a folded island does not draw
     expect(st.settings.notesFolded).toBe(false)
     expect(setSetting).toHaveBeenCalledWith({ notesFolded: false })
-    // the owner key is not a tab id: parking panel state under it would leave a callback
-    // waiting for a panel that never comes
     expect(st.workbenchOpen[owner]).toBeUndefined()
     expect(st.toast).toBe(
       'Not saved — notes.md changed on disk. The Notes island shows the difference.'
@@ -286,12 +249,7 @@ describe('saveAll', () => {
   })
 })
 
-/*
- * the conversation tabs main must not auto-close. Unsaved text lives only in the
- * renderer, so whatever this push leaves out is work that dies silently half an hour
- * later.
- */
-describe('subscribeDirtyTabs', () => {
+describe('subscribeDirtyTabs: the conversation tabs main must not auto-close, as unsaved text lives only in the renderer', () => {
   const WS_HELD = '/repo/held'
   let ids: string[] = []
   let stop = (): void => {}
@@ -332,5 +290,31 @@ describe('subscribeDirtyTabs', () => {
     })
     setText(notesOwner(WS_HELD), NOTES_TAB, 'nn')
     expect(ids).toEqual([])
+  })
+})
+
+describe('subscribeMenuFlags', () => {
+  let flags: MenuFlags | null = null
+  let stop = (): void => {}
+
+  beforeEach(() => {
+    for (const t of allEditTabs()) endEdit(t.ownerTabId, t.tabId)
+    stop = subscribeMenuFlags((next) => (flags = next))
+  })
+  afterEach(() => {
+    stop()
+    for (const t of allEditTabs()) endEdit(t.ownerTabId, t.tabId)
+  })
+
+  it('anyDirty is true when any buffer in the window is dirty, even when the focused surface has nothing to write — enabling Save too often is the only safe direction', () => {
+    beginEdit('pty-bg', 'wt1', {
+      path: '/repo/bg/.env',
+      text: 'A=1\n',
+      eol: 'lf',
+      stamp: { mtimeMs: 5, size: 4 },
+      readOnly: null
+    })
+    setText('pty-bg', 'wt1', 'A=2\n')
+    expect(flags).toEqual({ editing: false, anyDirty: true })
   })
 })

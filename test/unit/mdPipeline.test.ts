@@ -1,26 +1,35 @@
 import { describe, it, expect, vi } from 'vitest'
 import { renderMarkdown } from '../../src/renderer/src/markdown/index'
 
-// Node has no document, so DOMPurify's factory hands back an unsupported stub that has no
-// `sanitize` at all. Sanitizing is e2e's to prove (it needs a real DOM); passing it through
-// here is what lets the rest of the pipeline — the part this module owns — be asserted.
 vi.mock('dompurify', () => ({
-  // real DOMPurify needs a DOM; node has none. `addHook` has to exist because the pipeline
-  // installs a URL-blocking hook on it, and the sanitize step itself is e2e's to prove.
-  default: { sanitize: (html: string) => html, addHook: () => {} }
+  default: {
+    sanitize: (html: string) => html,
+    addHook: (name: string, fn: (node: unknown) => void) => {
+      purifyHooks[name] = fn
+    }
+  }
 }))
 
-/**
- * The whole pipeline, markdown in / HTML out (NFR-06). Node has no DOM, so DOMPurify is
- * inert here and the sanitize step itself is an e2e concern; everything before it is
- * asserted directly. Colour assertions live in e2e too — shiki's palette is not this
- * module's contract.
- */
+const purifyHooks = vi.hoisted(() => ({}) as Record<string, (node: unknown) => void>)
+
+function sanitizedAttrs(attrs: Record<string, string>): Record<string, string> {
+  const el = {
+    getAttribute: (k: string): string | null => attrs[k] ?? null,
+    setAttribute: (k: string, v: string): void => {
+      attrs[k] = v
+    },
+    removeAttribute: (k: string): void => {
+      delete attrs[k]
+    }
+  }
+  purifyHooks.afterSanitizeAttributes(el)
+  return attrs
+}
+
 const SRC = '/ws/docs/design.md'
 const render = (text: string) => renderMarkdown(text, { srcPath: SRC })
+const SHIKI_2000_LINES_TIMEOUT_MS_ON_A_BUSY_MACHINE = 60_000
 
-/** the first `data-code` payload, decoded — it rides percent-encoded because DOMPurify
- *  strips any attribute containing `-->` (mdPayload.test.ts pins the reason) */
 function payload(html: string): string {
   const m = /data-code="([^"]*)"/.exec(html)
   return m ? decodeURIComponent(m[1]) : ''
@@ -48,14 +57,19 @@ describe('renderMarkdown', () => {
     expect(doc.html).toContain('<span class="md-code-lang">python</span>')
     expect(doc.html).toContain('md-code-copy')
     expect(payload(doc.html)).toBe('print(1)\nprint(2)')
-    // FR-05: the preview's own theme, not the code view's dark one
     expect(doc.html).toContain('<pre class="shiki github-light"')
+  })
+
+  it('highlights each fence on its own even when language and code run together the same way', async () => {
+    const doc = await render('```js\non{a}\n```\n\n```json\n{a}\n```\n')
+    const shown = [...doc.html.matchAll(/<pre[^>]*>([\s\S]*?)<\/pre>/g)].map((m) =>
+      m[1].replace(/<[^>]*>/g, '')
+    )
+    expect(shown).toEqual(['on{a}', '{a}'])
   })
 
   it('encodes the copy payload so code can never break out of the attribute', async () => {
     const doc = await render('```html\n<img src="x">\n```\n')
-    // percent-encoded, not merely escaped: DOMPurify deletes attributes containing `-->`
-    // or `]>` outright, so nothing may reach the attribute in raw form (see mdPayload.test)
     expect(doc.html).toContain('data-code="%3Cimg%20src%3D%22x%22%3E"')
     expect(payload(doc.html)).toBe('<img src="x">')
   })
@@ -70,19 +84,20 @@ describe('renderMarkdown', () => {
     expect(elixir.html).toContain('IO.puts')
   })
 
-  it('skips highlighting past 2000 lines but keeps every line (NFR-04)', async () => {
-    const lines = (n: number): string =>
-      Array.from({ length: n }, (_, i) => `const v${i} = ${i}`).join('\n')
-    const over = await render('```ts\n' + lines(2001) + '\n```\n')
-    expect(over.html).toContain('md-code-plain')
-    expect(over.html).toContain('const v0 = 0')
-    expect(over.html).toContain('const v2000 = 2000')
-    const atLimit = await render('```ts\n' + lines(2000) + '\n```\n')
-    expect(atLimit.html).not.toContain('md-code-plain')
-    // 60s, not 30: this is the one case here that does real work (shiki highlights 2000
-    // lines for the at-limit half), and it timed out once on a machine that was busy
-    // running the app at the same time. The assertions are about output, not speed.
-  }, 60000)
+  it(
+    'skips highlighting past 2000 lines but keeps every line (NFR-04)',
+    async () => {
+      const lines = (n: number): string =>
+        Array.from({ length: n }, (_, i) => `const v${i} = ${i}`).join('\n')
+      const over = await render('```ts\n' + lines(2001) + '\n```\n')
+      expect(over.html).toContain('md-code-plain')
+      expect(over.html).toContain('const v0 = 0')
+      expect(over.html).toContain('const v2000 = 2000')
+      const atLimit = await render('```ts\n' + lines(2000) + '\n```\n')
+      expect(atLimit.html).not.toContain('md-code-plain')
+    },
+    SHIKI_2000_LINES_TIMEOUT_MS_ON_A_BUSY_MACHINE
+  )
 
   it('leaves a mermaid fence as a placeholder and reports it as a diagram', async () => {
     const doc = await render('```mermaid\nflowchart TD\n  A --> B\n```\n')
@@ -174,8 +189,44 @@ describe('renderMarkdown', () => {
     const doc = await render('```ts\nconst a = 1 // \u202Eevil\n```\n')
     expect(doc.html).toContain('md-bidi')
     expect(doc.html).toContain('U+202E')
-    // the copy payload keeps the file's bytes
     expect(payload(doc.html)).toContain('\u202Eevil')
+  })
+
+  it('keeps an untrusted formula like \\rule{999999em}{999999em} within the maxSize cap, so it cannot blow up the layout', async () => {
+    const doc = await render('$\\rule{999999em}{999999em}$\n')
+    expect(doc.html).toMatch(/border-top-width:[\d.]+em/)
+    expect(doc.html).not.toContain('999999em')
+    const sizes = [...doc.html.matchAll(/([\d.]+)em/g)].map((m) => Number(m[1]))
+    expect(Math.max(...sizes)).toBeLessThanOrEqual(10)
+  })
+
+  it('moves a remote img src to data-blocked, so raw HTML cannot make the renderer fetch off the machine', async () => {
+    await render('<img src="https://example.com/a.png">\n')
+    expect(sanitizedAttrs({ src: 'https://example.com/a.png' })).toEqual({
+      'data-blocked': 'https://example.com/a.png'
+    })
+    expect(sanitizedAttrs({ src: '//example.com/a.png' })).toEqual({
+      'data-blocked': '//example.com/a.png'
+    })
+    expect(sanitizedAttrs({ src: 'koloft-file://localhost/ws/a.png' })).toEqual({
+      src: 'koloft-file://localhost/ws/a.png'
+    })
+    expect(sanitizedAttrs({ src: 'data:image/png;base64,AA==' })).toEqual({
+      src: 'data:image/png;base64,AA=='
+    })
+  })
+
+  it('drops a style that names an off-machine address (background:url, image-set) but keeps colours and local urls', async () => {
+    await render('<span style="color:#f00">x</span>\n')
+    expect(sanitizedAttrs({ style: 'background:url(https://example.com/b.png)' })).toEqual({})
+    expect(sanitizedAttrs({ style: "background:url('//example.com/b.png')" })).toEqual({})
+    expect(
+      sanitizedAttrs({ style: "background-image:image-set('https://example.com/c.png' 1x)" })
+    ).toEqual({})
+    expect(sanitizedAttrs({ style: 'color:#24292e' })).toEqual({ style: 'color:#24292e' })
+    expect(sanitizedAttrs({ style: 'background:url(koloft-file://localhost/ws/bg.png)' })).toEqual({
+      style: 'background:url(koloft-file://localhost/ws/bg.png)'
+    })
   })
 
   it('renders an empty document without throwing', async () => {

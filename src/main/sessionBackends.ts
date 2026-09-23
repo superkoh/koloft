@@ -17,7 +17,6 @@ export interface SessionBackend {
   transcriptExists(key: string): boolean | Promise<boolean>
 }
 
-/** The Claude adapter keeps its hook/tracker internals; shared callers use the same contract as Codex. */
 export class SessionBackends {
   private adapters = new Map<BackendId, SessionBackend>()
 

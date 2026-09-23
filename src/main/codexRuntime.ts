@@ -11,8 +11,7 @@ export interface CodexRuntime {
   binary: string
   env: NodeJS.ProcessEnv
   version: string
-  /** 0.153.x is what this build was checked against (docs/codex-cli-contract.md §7);
-   *  a newer Codex still runs, the user is only told once that it is untested. */
+  // CODEX§7
   verified: boolean
 }
 
@@ -46,7 +45,6 @@ export async function resolveCodexRuntime(
       )
       stdout = result.stdout
     } catch {
-      // execFile errors include stdout/stderr, which may contain credentials printed by a profile.
       throw new Error(
         'Could not load the shell environment for Codex. Check that your login shell starts successfully.'
       )

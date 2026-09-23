@@ -37,8 +37,6 @@ function Chip({
   )
 }
 
-/** The strip above the TUI: the machine's own clock, then up to WORLD_CLOCK_MAX zones
- *  the user added, each a chip of city + time. Times move on the minute. */
 export const WorldClock = memo(function WorldClock(): JSX.Element {
   const zones = useStore((s) => s.settings.worldClocks)
   const update = useSettingsUpdate()
@@ -49,7 +47,6 @@ export const WorldClock = memo(function WorldClock(): JSX.Element {
   const addRef = useRef<HTMLButtonElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // wake on the minute boundary, then once a minute — a chip must not lag its clock
   useEffect(() => {
     let every: ReturnType<typeof setInterval> | null = null
     const first = setTimeout(
@@ -65,7 +62,6 @@ export const WorldClock = memo(function WorldClock(): JSX.Element {
     }
   }, [])
 
-  // dismiss on any outside click / blur / Escape (the TopbarUsage model)
   useEffect(() => {
     if (!pop) return
     const close = (): void => setPop(null)

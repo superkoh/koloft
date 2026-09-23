@@ -2,13 +2,8 @@ import { describe, it, expect } from 'vitest'
 import MarkdownIt from 'markdown-it'
 import { fileRefs } from '../../src/renderer/src/markdown/fileRefs'
 
-/** FR-13 / FR-13b: `src/main/index.ts:975` in prose is a link to that file's line 975.
- *  The three exclusions are the load-bearing part — a rule this eager is only safe if it
- *  stays out of fenced code, out of URLs, and off anything that merely looks numeric. */
 const md = new MarkdownIt().use(fileRefs)
-// linkify on is what the preview actually runs with: a bare URL becomes a link before this
-// plugin ever sees it, so the two rules must not fight over the same text.
-const linkifying = new MarkdownIt({ linkify: true }).use(fileRefs)
+const linkifyingAsThePreviewRuns = new MarkdownIt({ linkify: true }).use(fileRefs)
 
 describe('fileRefs', () => {
   it('links a bare path:line and carries the path and line as data', () => {
@@ -45,7 +40,7 @@ describe('fileRefs', () => {
   it('ignores a colon+number that belongs to a URL (FR-13b)', () => {
     const html = md.render('see http://localhost:3000/app.ts:12\n')
     expect(html).not.toContain('md-fileref')
-    const linkified = linkifying.render('see http://localhost:3000/app.ts:12\n')
+    const linkified = linkifyingAsThePreviewRuns.render('see http://localhost:3000/app.ts:12\n')
     expect(linkified).not.toContain('md-fileref')
   })
 
@@ -71,6 +66,15 @@ describe('fileRefs', () => {
     const html = md.render('see the docs/设计说明.md:3 section\n')
     expect(html).toContain('data-path="docs/设计说明.md"')
     expect(html).toContain('data-line="3"')
+  })
+
+  it('links only the path when Chinese punctuation, not a space, sets it apart from the sentence around it', () => {
+    const colon = md.render('详见：docs/说明.md:3。\n')
+    expect(colon).toContain('详见：<a class="md-fileref" data-path="docs/说明.md" data-line="3">')
+    expect(colon).toContain('>docs/说明.md:3</a>。')
+    const commas = md.render('改动在，docs/说明.md:3，然后提交\n')
+    expect(commas).toContain('改动在，<a class="md-fileref" data-path="docs/说明.md"')
+    expect(commas).toContain('>docs/说明.md:3</a>，然后提交')
   })
 
   it('leaves the text of an existing markdown link alone', () => {

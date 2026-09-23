@@ -1,10 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { openDropTarget } from '../../src/main/openDrop'
 
-// What the `open` shim hands the main process. The two fields are not interchangeable:
-// a URL run through the path branch becomes `<cwd>/http:/localhost:5173` — a target no
-// router can resolve and the exact silent failure IMPL-3 warns about.
-
 describe('openDropTarget', () => {
   it('takes a url verbatim, never resolving it against the cwd', () => {
     expect(openDropTarget({ url: 'http://localhost:5173/a', cwd: '/repo' })).toBe(

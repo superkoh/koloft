@@ -5,11 +5,6 @@ import os from 'os'
 import { ensureNotesFile, notesFileFor } from '../../src/main/notes'
 import { encodeCwd } from '@shared/cwdKey'
 
-// the workspace note is one file per workspace, kept OUTSIDE the workspace.
-// Two things only this module can get wrong: where the file lands, and whether making
-// sure it exists ever harms a note the user already wrote. `notesBaseDir` is left out on
-// purpose — it is the one line that needs Electron, which cannot run under plain vitest.
-
 let base: string
 
 beforeEach(() => {
@@ -36,7 +31,6 @@ describe('notesFileFor', () => {
 
 describe('ensureNotesFile', () => {
   it('makes the folder and an empty file when there is no note yet', () => {
-    // it has to exist even while empty: the edit pane answers KOLOFT_GONE for a missing file
     const file = ensureNotesFile(base, '/Users/someone/one')
     expect(file).toBe(notesFileFor(base, '/Users/someone/one'))
     expect(fs.readFileSync(file, 'utf8')).toBe('')

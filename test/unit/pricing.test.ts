@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest'
-// Import the REAL production table + resolver so drift in either is caught here.
 import { resolvePricing, MODEL_PRICING } from '../../src/shared/pricing'
 
 describe('resolvePricing — exact then longest-prefix match', () => {
@@ -11,27 +10,20 @@ describe('resolvePricing — exact then longest-prefix match', () => {
   })
 
   it('resolves a date-suffixed id via prefix to the same family price', () => {
-    // real jsonl ids can carry a date suffix; the prefix path must still price them
     expect(resolvePricing('claude-opus-4-8-20260115')).toEqual(resolvePricing('claude-opus-4-8'))
   })
 
   it('does not collapse two price tiers of the same family (Opus 4.1 vs 4.8)', () => {
-    // a greedy `claude-opus-4` prefix would mis-price 4.1 as 4.8 — guard against it
     expect(resolvePricing('claude-opus-4-1')!.inPerM).toBe(15)
     expect(resolvePricing('claude-opus-4-8')!.inPerM).toBe(5)
   })
 
-  it('anchors the prefix at a hyphen so a future sibling id is NOT mis-priced (#6)', () => {
-    // `claude-opus-4-10` must not resolve to `claude-opus-4-1`'s tier — or any tier;
-    // an unknown id is tokens-only, never a fabricated $ (design D6)
+  it('anchors the prefix at a hyphen so a future sibling id is NOT mis-priced but unknown: tokens only, never a made-up $ (#6)', () => {
     expect(resolvePricing('claude-opus-4-10')).toBeUndefined()
     expect(resolvePricing('claude-sonnet-4-99')).toBeUndefined()
   })
 
-  it('prices the DATED 4.0-generation ids real transcripts record (review finding)', () => {
-    // A resumed mid-2025 session's records carry the full dated id, not the `-0`
-    // alias — unresolvable ids would set the sticky unknown-model flag and strip
-    // the $ from the ENTIRE session, current turns included.
+  it('prices the DATED 4.0-generation ids real transcripts record, since one unknown id strips the $ from the whole session', () => {
     const opus = resolvePricing('claude-opus-4-20250514')!
     expect(opus.inPerM).toBe(15)
     expect(opus.outPerM).toBe(75)
@@ -53,7 +45,6 @@ describe('resolvePricing — exact then longest-prefix match', () => {
     expect(p51.inPerM).toBe(10)
     expect(p51.outPerM).toBe(50)
     expect(p51.cacheReadPerM).toBe(0.25)
-    // the longest-first prefix match must send a dated 5.1 id to the 5.1 entry
     expect(resolvePricing('claude-fable-5-1-20260901')).toEqual(p51)
   })
 

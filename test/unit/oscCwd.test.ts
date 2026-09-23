@@ -1,26 +1,17 @@
 import { describe, it, expect } from 'vitest'
 import { OscCwdParser, OSC_CARRY_MAX } from '../../src/main/oscCwd'
 
-// D13 — the OSC 7 cwd tracker. The old parser was xterm's (deleted with the free
-// terminal later), so this one is main-side and hand-rolled: it sees the pty's
-// raw byte stream in whatever chunks node-pty hands over, which is exactly where a
-// hand-rolled parser goes wrong. macOS's /etc/zshrc_Apple_Terminal emits
-// `ESC ] 7; file://<host><percent-encoded path> BEL` from a precmd hook, verified on
-// a real pty — host is NOT encoded, and a real one can contain spaces and
-// an apostrophe (macOS names machines "Ada's MacBook Pro"), which is why host matching
-// compares the raw substring up to the first slash.
-
 const BEL = '\x07'
 const ESC = '\x1b'
+// PLATFORM§2
 const HOST = "Ada's MacBook Pro"
 
-/** One OSC 7 report, BEL-terminated (what Apple's precmd hook writes). */
 function osc7(uri: string, term = BEL): string {
   return `${ESC}]7;${uri}${term}`
 }
 
 describe('oscCwd: extracting the directory (D13 ①)', () => {
-  it('reads the path out of file://<host>/<path>', () => {
+  it('reads the path out of file://<host>/<path>, the host left unencoded with spaces and an apostrophe', () => {
     const p = new OscCwdParser(HOST)
     expect(p.push(osc7(`file://${HOST}/Users/me/Projects/app`))).toBe('/Users/me/Projects/app')
   })
@@ -110,13 +101,10 @@ describe('oscCwd: sequences split across pty chunks (D13 ③)', () => {
     expect(last).toBe('/Users/me/one two')
   })
 
-  it('drops an unterminated sequence once it outgrows the carry cap', () => {
+  it('drops an unterminated sequence once it outgrows the carry cap, so binary output holding ESC ] never buffers the rest of the session', () => {
     const p = new OscCwdParser(HOST)
-    // a binary blob (`cat` on a jpeg) that happens to contain ESC ] must not make the
-    // parser buffer the rest of the session
     expect(p.push(`${ESC}]7;file:///${'a'.repeat(OSC_CARRY_MAX)}`)).toBeUndefined()
     expect(p.push(`more${BEL}`)).toBeUndefined()
-    // …and the parser still works on the next real report
     expect(p.push(osc7('file:///tmp/after'))).toBe('/tmp/after')
   })
 
@@ -131,7 +119,6 @@ describe('oscCwd: reports that are not ours (D13 ④⑤)', () => {
     const p = new OscCwdParser(HOST)
     expect(p.push(`${ESC}]0;some window title${BEL}`)).toBeUndefined()
     expect(p.push(`${ESC}]133;A${BEL}`)).toBeUndefined()
-    // …including one whose payload looks exactly like ours
     expect(p.push(`${ESC}]17;file:///tmp/nope${BEL}`)).toBeUndefined()
   })
 

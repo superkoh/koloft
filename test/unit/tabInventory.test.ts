@@ -1,10 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { adoptableTabs, type PtySnapshot, type TrackedSnapshot } from '../../src/main/tabInventory'
 
-// the inventory a fresh renderer adopts after a reload. Pure join —
-// the e2e reload spec can only see "tab missing / wrong tab", not WHICH map's
-// join dropped or mislabelled it, so every classification rule is pinned here.
-
 const pty = (over: Partial<PtySnapshot>): PtySnapshot => ({
   id: 'pty-a-1',
   kind: 'claude',
@@ -22,7 +18,7 @@ const bound = (over: Partial<TrackedSnapshot>): TrackedSnapshot => ({
   ...over
 })
 
-describe('adoptableTabs', () => {
+describe('adoptableTabs: what a reloaded renderer adopts — every join rule pinned here, as the e2e reload spec sees only a missing tab', () => {
   it('joins a bound claude pty with its tracker decoration', () => {
     expect(adoptableTabs([pty({})], [bound({})])).toEqual([
       { id: 'pty-a-1', kind: 'claude', cwd: '/repo', sessionId: 'sess-1', title: 'Fix the bug' }

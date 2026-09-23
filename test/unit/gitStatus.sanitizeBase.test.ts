@@ -5,15 +5,6 @@ import os from 'os'
 import { execFileSync } from 'child_process'
 import { gitNumstat, sanitizeBase } from '../../src/main/gitStatus'
 
-/**
- * The IPC boundary's `base` whitelist. `fs:gitStatus` / `fs:gitNumstat` / `fs:gitDiff` /
- * `fs:gitFileDiff(Full)` all forward a renderer-supplied `base` into `git diff <base> …`,
- * where it sits in an OPTION-PARSABLE slot: the `--` after it guards only pathspecs. So a
- * type check let `--output=<file>` through and git wrote the file — measured on all four
- * channels. index.ts's `baseArg` is a closure inside the handler registration and cannot be
- * imported, so the whitelist lives in gitStatus.ts as `sanitizeBase` and is pinned here.
- */
-
 const SHA40 = '41bc8cd5b57f78e76e57ee127ce63d489203cccc'
 const SHA64 = SHA40 + '0123456789abcdef01234567'
 
@@ -21,8 +12,8 @@ describe('sanitizeBase', () => {
   it('passes exactly what fs:diffBase can answer: the literal HEAD, or a hex object id', () => {
     expect(sanitizeBase('HEAD')).toBe('HEAD')
     expect(sanitizeBase(SHA40)).toBe(SHA40)
-    expect(sanitizeBase(SHA64)).toBe(SHA64) // a sha256 repo's ids are 64 wide
-    expect(sanitizeBase('4b82')).toBe('4b82') // the shortest abbreviation git accepts
+    expect(sanitizeBase(SHA64)).toBe(SHA64)
+    expect(sanitizeBase('4b82')).toBe('4b82')
   })
 
   it('drops an option — the measured `--output=<file>` write, and anything else dashed', () => {
@@ -55,9 +46,6 @@ describe('sanitizeBase', () => {
   })
 })
 
-/** The attack itself, run against a real repo the way index.ts composes the call, so the
- *  case is falsifiable: the control shows git DOES write the file when the value reaches
- *  argv, and the guarded call shows the whitelist is what stops it. */
 describe('sanitizeBase in front of a real git', () => {
   let tmp: string
   let repo: string
@@ -86,7 +74,6 @@ describe('sanitizeBase in front of a real git', () => {
 
     const numstat = await gitNumstat(repo, sanitizeBase(`--output=${target}`))
     expect(fs.existsSync(target)).toBe(false)
-    // …and the caller still gets a self-derived answer rather than nothing
     expect(numstat[path.join(repo, 'a.txt')]).toEqual({ added: 1, removed: 1 })
   })
 })

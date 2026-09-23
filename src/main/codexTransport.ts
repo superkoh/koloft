@@ -29,7 +29,7 @@ const DEFAULT_MAX_FRAME = 32 * 1024 * 1024
 const execFileAsync = promisify(execFile)
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
-/** Runtime markers belong to the enclosing app, not the new CLI's user configuration. */
+// CODEX§10
 export function codexEnvironment(overrides?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env = { ...process.env, ...overrides }
   const runtime = new Set([
@@ -95,9 +95,7 @@ async function processRows(): Promise<ProcessRow[]> {
 
 const processObservers = new Set<(rows: ProcessRow[]) => void>()
 let processSampling = false
-// Sampling only records pid → start time so stop can still find a reparented child; the
-// gap it cannot close stays open at any rate (docs/codex-cli-contract.md §5), so sample
-// cheaply.
+// CODEX§5
 const PROCESS_SAMPLE_MS = 1000
 
 function watchProcesses(observer: (rows: ProcessRow[]) => void): () => void {
@@ -108,9 +106,7 @@ function watchProcesses(observer: (rows: ProcessRow[]) => void): () => void {
       try {
         const rows = await processRows()
         for (const receive of processObservers) receive(rows)
-      } catch {
-        /* retain proven ownership and retry; stop still requires a fresh scan */
-      }
+      } catch {}
       if (processObservers.size)
         setTimeout(() => {
           void sample()
@@ -164,8 +160,6 @@ class CodexProcess {
       })
       this.child.once('error', reject)
     })
-    // A caller may register a request after spawn failed; retain the rejection without
-    // creating an unhandled promise in the meantime.
     void this.ready.catch(() => {})
     this.child.on('error', (error) => this.fail(error))
     this.child.stdin.on('error', (error) => this.fail(error))
@@ -236,8 +230,7 @@ class CodexProcess {
     const root = this.child.pid
     if (!root) return
     const findOwned = async (): Promise<ProcessRow[]> => this.ownedProcesses(await processRows())
-    // Snapshot descendants before ending stdin: shell tools may have their own process
-    // group and can be reparented as soon as app-server exits.
+    // CODEX§5
     let alive = await findOwned()
     this.child.stdin.end()
     for (const phase of ['SIGTERM', 'SIGKILL'] as const) {
@@ -280,7 +273,6 @@ class CodexProcess {
         }
       }
     }
-    // Keep live descendants after reparenting, but discard a reused PID before signaling.
     return rows.filter(
       (row) => this.owned.get(row.pid) === row.started && !row.state.startsWith('Z')
     )
@@ -295,8 +287,7 @@ export async function createCodexTransport(options: CodexTransportOptions): Prom
   url: string
   stop(): Promise<void>
 }> {
-  // macOS sockaddr_un limits paths to 104 bytes; os.tmpdir() can already consume most
-  // of that budget. mkdtemp still gives each run a private, unpredictable directory.
+  // PLATFORM§3
   const directory = await fs.mkdtemp(
     path.join(process.platform === 'darwin' ? '/tmp' : os.tmpdir(), 'koloft-cx-')
   )
@@ -317,9 +308,7 @@ export async function createCodexTransport(options: CodexTransportOptions): Prom
   const report = (error: Error): void => {
     try {
       options.onError?.(error)
-    } catch {
-      /* observer only */
-    }
+    } catch {}
   }
   const observe = (direction: 'client' | 'server', frame: CodexFrame): void => {
     try {
@@ -386,8 +375,7 @@ export async function createCodexTransport(options: CodexTransportOptions): Prom
           const frame = parseFrame(raw, upstream.limit)
           const line = JSON.stringify(frame)
           observe('client', frame)
-          // Re-encode to one JSONL record; JSON whitespace in a WS frame must not turn
-          // into multiple stdio messages. The object and request IDs stay unchanged.
+          // CODEX§1
           upstream.write(line)
         } catch (error) {
           fail(asError(error))
@@ -418,8 +406,7 @@ export async function createCodexTransport(options: CodexTransportOptions): Prom
       })
     })
     await fs.chmod(socketPath, 0o600)
-    // Native trust/login prompts precede connection. The owning PTY's lifecycle,
-    // not a deadline on the user's answer, determines when to close this endpoint.
+    // CODEX§9
     return { url: `unix://${socketPath}`, stop }
   } catch (error) {
     await stop().catch(report)
@@ -433,7 +420,6 @@ interface PendingRequest {
   timer: ReturnType<typeof setTimeout>
 }
 
-/** A separate, initialized stdio connection for reads; it never attaches to the TUI run. */
 export class CodexRpc {
   private process: CodexProcess
   private initialized: Promise<void>

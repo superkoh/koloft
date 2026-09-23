@@ -8,12 +8,6 @@ import {
   type CronStoreFs
 } from '../../src/main/cronStore'
 
-// BB-E29 — the loader's small repairs. cron.json is a plain file a person can
-// hand-edit, and every field on it reaches somewhere sharp: the name becomes a folder
-// and a tab title, the task becomes a session's first message, the model and the
-// worktree name reach a shell command line. So each rule of contract §3 is one
-// assertion here, and the loader is the only place they live.
-
 const WS = '/pinned/ws-a'
 const PINNED = [WS]
 const DAILY: Schedule = { kind: 'daily', at: '21:00' }
@@ -37,7 +31,6 @@ function file(jobs: unknown[], version: unknown = 1): unknown {
   return { version, jobs }
 }
 
-/** loads one job, or answers null when the sanitizer dropped it */
 function one(over: Record<string, unknown>, pinned = PINNED): CronJob | null {
   return sanitizeCron(file([job(over)]), pinned).jobs[0] ?? null
 }
@@ -59,9 +52,6 @@ describe('sanitizeCron (BB-E29: which jobs are dropped)', () => {
     expect(one({ id: 7 })).toBeNull()
   })
 
-  // the id is the key the launch lock, the clock, the held dues, the start deadline and
-  // the dialog's rows are all filed under. Two jobs sharing one would collide on every
-  // one of them: the second would never fire, and its outcomes would land on the first.
   it('keeps only the first of two jobs that share an id', () => {
     const out = sanitizeCron(
       { version: 1, jobs: [job({ name: 'First' }), job({ name: 'Second' })] },
@@ -78,18 +68,12 @@ describe('sanitizeCron (BB-E29: which jobs are dropped)', () => {
     expect(one({ workspacePath: '/somewhere/else' })).toBeNull()
   })
 
-  // the loader never asks the disk anything — `pinned` is a list of strings. A layout
-  // that failed to load, or a folder renamed for an afternoon, must not delete the job;
-  // the missing folder is reported when the job tries to fire.
   it('keeps a job whose pinned folder is missing on disk', () => {
     const missing = '/pinned/gone-for-now'
     expect(one({ workspacePath: missing }, [missing])?.workspacePath).toBe(missing)
   })
 
-  // removing a workspace already deletes its jobs, so a file with jobs and no pins at
-  // all is far more likely a layout that failed to load. Filtering would drop every
-  // job, and the very next save would make that permanent.
-  it('keeps every job when the pinned list is empty', () => {
+  it('keeps every job when the pinned list is empty, which more likely means the layout failed to load', () => {
     expect(sanitizeCron(file([job()]), []).jobs).toHaveLength(1)
   })
 
@@ -165,18 +149,16 @@ describe('sanitizeCron (BB-E29: the history lines)', () => {
     expect(one({ history: { dueAt: 1 } })?.history).toEqual([])
   })
 
-  // one fixture, the shape BB-E29 names: 25 lines out of order, one with no state, one
-  // whose worktree name would escape its folder
   const raw: unknown[] = []
   for (let i = 1; i <= 25; i++) {
     const line: Record<string, unknown> = { dueAt: i * 60_000, state: 'closed' }
-    if (i === 24) delete line.state // the stateless one, high enough to survive the cut
+    if (i === 24) delete line.state
     if (i === 25) line.worktree = '../evil'
     if (i === 23) line.worktree = 'nightly-260902-2100'
     raw.push(line)
   }
   raw.reverse()
-  raw.push(raw.shift() as unknown) // …and shuffled, so the sort is doing real work
+  raw.push(raw.shift() as unknown)
   const history = one({ history: raw })?.history as HistoryLine[]
 
   it('keeps only the newest 20', () => {
@@ -203,9 +185,6 @@ describe('sanitizeCron (BB-E29: the history lines)', () => {
     expect(history[1].worktree).toBe('nightly-260902-2100')
   })
 
-  // a field only belongs on the line it means something for: `count` on a closed line
-  // would print "Closed 3 times", which never happened. The two states that DO fold are
-  // skipped (the run stayed open) and missed (Koloft slept through a run of them).
   it('keeps count and until on a folding line only, and a note on a failed line only', () => {
     const lines = one({
       history: [
@@ -222,7 +201,6 @@ describe('sanitizeCron (BB-E29: the history lines)', () => {
     expect(lines[2]).toEqual({ dueAt: 4, state: 'skipped', count: 1 })
     expect(lines[3]).toEqual({ dueAt: 3, state: 'closed' })
     expect(lines[4]).toEqual({ dueAt: 2, state: 'failed', note: 'no usable account' })
-    // one miss stays plain: only a fold is written with a count
     expect(lines[5]).toEqual({ dueAt: 1, state: 'missed' })
   })
 })
@@ -258,8 +236,6 @@ describe('loadCron / saveCron (BB-E29: reading and writing the file)', () => {
     expect(fs.disk).toEqual({})
   })
 
-  // the next save rewrites this file whole, so whatever was in it has to be kept
-  // somewhere first — a hand edit gone wrong is recoverable, not lost
   it('copies a file it cannot make sense of aside before answering with nothing', () => {
     const broken = fakeFs({ '/f.json': '{ half a fi' })
     expect(loadCron(broken, '/f.json', PINNED)).toEqual({ jobs: [], notes: {} })
@@ -267,7 +243,6 @@ describe('loadCron / saveCron (BB-E29: reading and writing the file)', () => {
     expect(copies).toHaveLength(1)
     expect(broken.disk[copies[0]]).toBe('{ half a fi')
 
-    // a file Koloft can read but does not know the shape of counts too
     const text = JSON.stringify(file([job()], 2))
     const wrongVersion = fakeFs({ '/f.json': text })
     expect(loadCron(wrongVersion, '/f.json', PINNED)).toEqual({ jobs: [], notes: {} })
@@ -276,9 +251,6 @@ describe('loadCron / saveCron (BB-E29: reading and writing the file)', () => {
     expect(wrongVersion.disk[kept[0]]).toBe(text)
   })
 
-  // a read that fails for any reason OTHER than "not there" says nothing about whether
-  // the jobs are still in the file. Answering "no jobs" and leaving it in place would
-  // let the next save delete a person's whole list over one bad read.
   it('moves a file it cannot read at all aside, and leaves nothing to overwrite', () => {
     const fs = fakeFs({ '/f.json': JSON.stringify(file([job()])) })
     const kept = fs.disk['/f.json']
@@ -319,8 +291,6 @@ describe('loadCron / saveCron (BB-E29: reading and writing the file)', () => {
     expect(fs.disk['/f.json.tmp']).toBeUndefined()
   })
 
-  // the whole point of tmp + rename: a write that dies half way must leave the jobs
-  // that were already saved exactly as they were
   it('leaves the old file alone, and does not throw, when the rename fails', () => {
     const before = JSON.stringify({ version: 1, jobs: [] }, null, 2)
     const fs = fakeFs({ '/f.json': before })

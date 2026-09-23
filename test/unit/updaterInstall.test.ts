@@ -5,16 +5,11 @@ import os from 'os'
 import path from 'path'
 import { INSTALL_SCRIPT, pickAppBundle } from '../../src/main/updaterInstall'
 
-// The self-updater's swap script, run for real against throwaway bundles. A release that
-// changes the bundle's name is the case worth pinning: the script installs beside the old
-// bundle and then removes it — instead of leaving the app at the old path, or two apps.
-
 const roots: string[] = []
 afterAll(() => {
   for (const d of roots) fs.rmSync(d, { recursive: true, force: true })
 })
 
-/** A fake bundle: one file whose content names the version, so a swap is observable. */
 function bundle(at: string, tag: string): void {
   fs.mkdirSync(path.join(at, 'Contents', 'MacOS'), { recursive: true })
   fs.writeFileSync(path.join(at, 'Contents', 'MacOS', 'app'), tag)
@@ -25,19 +20,17 @@ const tagOf = (at: string): string =>
 function runScript(args: string[]): { status: number | null; opened: string[]; stderr: string } {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-install-'))
   roots.push(root)
-  // `open` is stubbed on PATH: the script must relaunch DEST, not launch anything here
-  const bin = path.join(root, 'bin')
-  fs.mkdirSync(bin)
+  const stubbedOpenDir = path.join(root, 'bin')
+  fs.mkdirSync(stubbedOpenDir)
   const openLog = path.join(root, 'open.log')
-  fs.writeFileSync(path.join(bin, 'open'), `#!/bin/bash\necho "$1" >> "${openLog}"\n`, {
+  fs.writeFileSync(path.join(stubbedOpenDir, 'open'), `#!/bin/bash\necho "$1" >> "${openLog}"\n`, {
     mode: 0o755
   })
   const script = path.join(root, 'install.sh')
   fs.writeFileSync(script, INSTALL_SCRIPT, { mode: 0o755 })
-  // a PID that is already gone, so the wait loop exits at once
-  const dead = spawnSync('true').pid
-  const res = spawnSync('/bin/bash', [script, String(dead), ...args], {
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+  const alreadyExitedPid = spawnSync('true').pid
+  const res = spawnSync('/bin/bash', [script, String(alreadyExitedPid), ...args], {
+    env: { ...process.env, PATH: `${stubbedOpenDir}:${process.env.PATH}` },
     encoding: 'utf8',
     timeout: 20_000
   })
@@ -68,7 +61,7 @@ describe('pickAppBundle', () => {
   })
 })
 
-describe('INSTALL_SCRIPT', () => {
+describe('INSTALL_SCRIPT, run for real against throwaway bundles', () => {
   it('same name: swaps the running bundle in place, relaunches it, leaves no scratch behind', () => {
     const { work, apps } = fixture()
     const src = path.join(work, 'staging', 'Koloft.app')
@@ -101,9 +94,9 @@ describe('INSTALL_SCRIPT', () => {
     expect(r.opened).toEqual([dest])
   })
 
-  it('a failed copy leaves the running bundle untouched — in both shapes', () => {
+  it('a failed copy leaves the running bundle untouched — in both shapes; the old app goes only after the new one is complete', () => {
     const { work, apps } = fixture()
-    const missingSrc = path.join(work, 'staging', 'Koloft.app') // never created
+    const missingSrc = path.join(work, 'staging', 'Koloft.app')
     const dest = path.join(apps, 'Koloft.app')
     bundle(dest, 'old')
     let r = runScript([missingSrc, dest, work, ''])
@@ -121,7 +114,7 @@ describe('INSTALL_SCRIPT', () => {
       old
     ])
     expect(r.status).not.toBe(0)
-    expect(tagOf(old)).toBe('old') // the old app is only removed after the new one is complete
+    expect(tagOf(old)).toBe('old')
     expect(fs.existsSync(path.join(f2.apps, 'Koloft.app'))).toBe(false)
   })
 })

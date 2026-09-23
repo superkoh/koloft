@@ -12,9 +12,7 @@ import type { WorkspaceFreshness, WorkspaceRows } from '@shared/types'
 const NOW = 1_700_000_000_000
 const MIN = 60_000
 
-/** A measurement that IS pullable by default (clean main, purely behind) — the one
- *  state the ⌘N path treats specially (D3/D14). */
-const fresh = (patch: Partial<WorkspaceFreshness> = {}): WorkspaceFreshness => ({
+const pullableFreshness = (patch: Partial<WorkspaceFreshness> = {}): WorkspaceFreshness => ({
   state: 'ok',
   behind: 3,
   ahead: 0,
@@ -41,12 +39,7 @@ const ws = (path: string, patch: Partial<WorkspaceRows['workspace']> = {}): Work
   rows: []
 })
 
-// C10 workspace picker (new-session-entrances design) §03A, D13). The rows a mode
-// shows and the digit each one answers to are what "⌘N 2" means — an off-by-one after
-// a hidden row starts a session in the WRONG workspace, which e2e can only see as a
-// row under the wrong heading, never as the rule that produced it.
-
-describe('pickerRows (which workspaces a mode offers, and their digits)', () => {
+describe('pickerRows (C10: which workspaces a mode offers, and the digit ⌘N answers each to)', () => {
   it('numbers every pinned workspace in array order in ⌘N mode', () => {
     const rows = pickerRows([ws('/a'), ws('/b'), ws('/c')], 'main')
     expect(rows.map((r) => [r.ws.workspace.path, r.digit])).toEqual([
@@ -109,7 +102,6 @@ describe('preselectIndex (the last-touched chain, over THIS mode’s rows)', () 
 
   it('falls through to the first visible row when the last-touched one is hidden here (rev3)', () => {
     const rows = [ws('/plain', { isGit: false }), ws('/a'), ws('/b')]
-    // ⌘N still lands on it; ⇧⌘N cannot show it, so the chain moves on
     expect(preselectIndex(rows, 'main', '/plain')).toBe(0)
     expect(preselectIndex(rows, 'worktree', '/plain')).toBe(0)
     expect(pickerRows(rows, 'worktree')[0].ws.workspace.path).toBe('/a')
@@ -126,15 +118,15 @@ describe('preselectIndex (the last-touched chain, over THIS mode’s rows)', () 
 
 describe('pullable (D3: the one freshness state ⌘N reacts to)', () => {
   it('is true for a clean main checkout that is purely behind', () => {
-    expect(pullable(ws('/a', { freshness: fresh() }))).toBe(true)
+    expect(pullable(ws('/a', { freshness: pullableFreshness() }))).toBe(true)
   })
 
   it('is false for every other state — unmeasured, dirty, diverged, offline (D14)', () => {
     expect(pullable(ws('/a'))).toBe(false)
-    expect(pullable(ws('/a', { freshness: fresh({ dirty: true }) }))).toBe(false)
-    expect(pullable(ws('/a', { freshness: fresh({ ahead: 2 }) }))).toBe(false)
-    expect(pullable(ws('/a', { freshness: fresh({ state: 'error' }) }))).toBe(false)
-    expect(pullable(ws('/a', { freshness: fresh({ behind: 0 }) }))).toBe(false)
+    expect(pullable(ws('/a', { freshness: pullableFreshness({ dirty: true }) }))).toBe(false)
+    expect(pullable(ws('/a', { freshness: pullableFreshness({ ahead: 2 }) }))).toBe(false)
+    expect(pullable(ws('/a', { freshness: pullableFreshness({ state: 'error' }) }))).toBe(false)
+    expect(pullable(ws('/a', { freshness: pullableFreshness({ behind: 0 }) }))).toBe(false)
   })
 })
 
@@ -144,15 +136,17 @@ describe('skipPicker (when the picker gets out of the way — forked by mode)', 
   })
 
   it('does NOT skip a single behind-and-pullable one — that is the D6a gate', () => {
-    expect(skipPicker([ws('/a', { freshness: fresh() })], 'main')).toBe(false)
+    expect(skipPicker([ws('/a', { freshness: pullableFreshness() })], 'main')).toBe(false)
   })
 
   it('skips a single behind-but-not-pullable one: ⌘N launches instantly (D14)', () => {
-    expect(skipPicker([ws('/a', { freshness: fresh({ dirty: true }) })], 'main')).toBe(true)
+    expect(skipPicker([ws('/a', { freshness: pullableFreshness({ dirty: true }) })], 'main')).toBe(
+      true
+    )
   })
 
   it('skips unconditionally in ⇧⌘N mode — the confirm there opens C8, not a session', () => {
-    expect(skipPicker([ws('/a', { freshness: fresh() })], 'worktree')).toBe(true)
+    expect(skipPicker([ws('/a', { freshness: pullableFreshness() })], 'worktree')).toBe(true)
   })
 
   it('never skips with two visible rows, however fresh they are', () => {
@@ -203,9 +197,9 @@ describe('rowNote (§03A: the sidebar’s own badge, then the short path)', () =
   })
 
   it('prefixes how far behind the workspace is', () => {
-    expect(rowNote(ws(HOME + '/nb', { freshness: fresh({ behind: 3 }) }), HOME, NOW)).toBe(
-      'behind 3 · ~/nb'
-    )
+    expect(
+      rowNote(ws(HOME + '/nb', { freshness: pullableFreshness({ behind: 3 }) }), HOME, NOW)
+    ).toBe('behind 3 · ~/nb')
   })
 
   it('prefixes `no git` for a plain folder', () => {
@@ -213,9 +207,9 @@ describe('rowNote (§03A: the sidebar’s own badge, then the short path)', () =
   })
 
   it('says nothing about a workspace that is level with origin', () => {
-    expect(rowNote(ws(HOME + '/koloft', { freshness: fresh({ behind: 0 }) }), HOME, NOW)).toBe(
-      '~/koloft'
-    )
+    expect(
+      rowNote(ws(HOME + '/koloft', { freshness: pullableFreshness({ behind: 0 }) }), HOME, NOW)
+    ).toBe('~/koloft')
   })
 
   it('leaves a path outside home alone (and never eats a sibling of home)', () => {

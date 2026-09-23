@@ -1,24 +1,17 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
+import { execFileSync } from 'child_process'
 import {
   filterGitSpawns,
+  installGitSpawnLog,
   isAggregateDiff,
   parseGitSpawns,
   WORKBENCH_GIT
 } from '../e2e/helpers/gitSpawnLog'
-
-/**
- * The git spawn counter's readers (NFR-02 / WB-C17, WB-K08). Only the PURE halves are
- * here; installing the PATH shim and watching a real app spawn through it is the e2e
- * layer's job.
- *
- * They earn a unit test because both encode a contract with something outside themselves
- * that an e2e failure would report as a vague "the count is wrong":
- *  - `parseGitSpawns` has to agree, byte for byte, with the tab-joining the bash wrapper
- *    does (`IFS=$'\t'; "$*"`);
- *  - `isAggregateDiff` claims a specific argv shape belongs to exactly one caller in the
- *    app. If it also matched the sidebar tree's numstat/name-status reads, WB-K08 would
- *    pass while the panel was busy behind a collapsed panel.
- */
+import type { E2EEnv } from '../e2e/helpers/env'
+import { GitFreshnessEngine } from '../../src/main/gitFreshness'
 
 const SHA = '41bc8cd5b57f78e76e57ee127ce63d489203cccc'
 const ROOT = '/private/tmp/koloft-e2e-home-x/ws-a'
@@ -90,15 +83,12 @@ describe('filterGitSpawns', () => {
 })
 
 describe('WORKBENCH_GIT', () => {
-  // the split it encodes: these four reach git ONLY through a Workbench read…
   it('matches every subcommand the panel issues', () => {
     for (const sub of ['merge-base', 'diff', 'ls-files', 'check-ignore']) {
       expect(WORKBENCH_GIT.test(sub)).toBe(true)
     }
   })
 
-  // …while these are what main runs on its own timers (gitFreshness sweeps, workspace ops),
-  // so counting them would make WB-K08's "zero while collapsed" unreachable
   it('matches nothing the freshness engine or workspace ops issue', () => {
     for (const sub of ['rev-parse', 'symbolic-ref', 'status', 'rev-list', 'fetch', 'pull']) {
       expect(WORKBENCH_GIT.test(sub)).toBe(false)
@@ -119,6 +109,65 @@ describe('WORKBENCH_GIT', () => {
       ].join('\n')
     )
     expect(filterGitSpawns(calls, { root: ROOT, subcommand: WORKBENCH_GIT })).toHaveLength(2)
+  })
+})
+
+describe('WORKBENCH_GIT against the freshness engine’s real spawns', () => {
+  const realPath = process.env.PATH
+  let tmp = ''
+
+  afterEach(() => {
+    process.env.PATH = realPath
+    fs.rmSync(tmp, { recursive: true, force: true })
+  })
+
+  const git = (cwd: string, ...args: string[]): string =>
+    execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' })
+
+  function commitIn(repo: string, name: string): void {
+    fs.writeFileSync(path.join(repo, name), name + '\n')
+    git(repo, 'add', name)
+    git(repo, '-c', 'user.email=t@t.com', '-c', 'user.name=t', 'commit', '-q', '-m', name)
+  }
+
+  it('the freshness sweep, fetch and pull spawn none of the Workbench-only subcommands, or a WORKBENCH_GIT count would stop meaning the Workbench ran git', async () => {
+    tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-spawnlog-')))
+    const seed = path.join(tmp, 'seed')
+    execFileSync('git', ['init', '-q', '-b', 'main', seed])
+    commitIn(seed, 'a.txt')
+    const origin = path.join(tmp, 'origin.git')
+    execFileSync('git', ['clone', '-q', '--bare', seed, origin])
+    const work = path.join(tmp, 'work')
+    execFileSync('git', ['clone', '-q', origin, work])
+    commitIn(seed, 'b.txt')
+    git(seed, 'push', '-q', origin, 'main')
+
+    const fakeBin = path.join(tmp, 'bin')
+    fs.mkdirSync(fakeBin)
+    const gitCalls = path.join(tmp, 'git-calls.txt')
+    installGitSpawnLog({
+      fakeBin,
+      gitCalls,
+      shimDir: fakeBin,
+      launchEnv: { PATH: realPath }
+    } as unknown as E2EEnv)
+    process.env.PATH = `${fakeBin}:${realPath}`
+
+    const engine = new GitFreshnessEngine({
+      workspaces: () => [{ path: work, missing: false }],
+      autoFetch: () => true,
+      onChange: () => {}
+    })
+    await engine.sweep()
+    const before = await engine.fetchNow(work)
+    expect(before?.behind).toBe(1)
+    const pulled = await engine.pull(work, { branch: before!.branch, head: before!.head })
+    expect(pulled.ok).toBe(true)
+
+    const calls = parseGitSpawns(fs.readFileSync(gitCalls, 'utf8'))
+    expect(filterGitSpawns(calls, { root: work, subcommand: 'fetch' }).length).toBeGreaterThan(0)
+    expect(filterGitSpawns(calls, { root: work, argv: (a) => a.includes('pull') })).toHaveLength(1)
+    expect(filterGitSpawns(calls, { subcommand: WORKBENCH_GIT })).toEqual([])
   })
 })
 

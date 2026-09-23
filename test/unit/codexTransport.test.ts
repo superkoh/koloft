@@ -14,6 +14,8 @@ import {
 let directory: string
 let binary: string
 const cleanups: (() => Promise<void>)[] = []
+const LONGER_THAN_ONE_PROCESS_SAMPLE_MS = 1500
+const CHILD_SIGTERM_HANDLER_INSTALL_MS = 100
 
 beforeEach(async () => {
   directory = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-wire-test-'))
@@ -147,13 +149,13 @@ describe('Codex stdio reads', () => {
     expect(config.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
   })
 
+  // CODEX§5
   it('remembers detached tool ownership after the app-server is killed', async () => {
     const client = rpc()
     const tree = await client.request<{ pid: number; child: number }>('thread/read', {
       mode: 'tree'
     })
-    // longer than one process sample, so ownership of the detached child is on record
-    await new Promise((resolve) => setTimeout(resolve, 1500))
+    await new Promise((resolve) => setTimeout(resolve, LONGER_THAN_ONE_PROCESS_SAMPLE_MS))
     await expect(client.request('thread/read', { mode: 'crash' })).rejects.toThrow('exited')
     await client.close()
     expect(() => process.kill(tree.child, 0)).toThrow()
@@ -239,8 +241,7 @@ describe('Codex TUI transport', () => {
     const reply = nextFrame(socket)
     socket.send(JSON.stringify({ id: 2, method: 'thread/read', params: { mode: 'tree' } }))
     const { result } = (await reply) as { result: { pid: number; child: number } }
-    // Allow the child's SIGTERM handler to install, exercising forced termination.
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    await new Promise((resolve) => setTimeout(resolve, CHILD_SIGTERM_HANDLER_INSTALL_MS))
     socket.close()
     await done
     for (const pid of [result.pid, result.child]) expect(() => process.kill(pid, 0)).toThrow()

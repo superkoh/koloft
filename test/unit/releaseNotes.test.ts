@@ -10,11 +10,6 @@ import {
   type GhRelease
 } from '../../src/main/releaseNotes'
 
-// R: the update modal must show what a version actually CHANGED. v0.3.2–v0.5.2 all shipped
-// byte-identical, changelog-free notes (just install instructions), and the modal rendered
-// them verbatim — so these tests pin the two halves of the fix: cutting the install text off
-// a body, and spanning every release the user skipped.
-
 const INSTALL = `<!-- koloft:install -->
 **未签名个人构建 (macOS arm64, unsigned).** 最省事的装法 —— curl 下载不会被打上
 quarantine,装完双击即开,无需任何 Gatekeeper 操作:
@@ -23,7 +18,6 @@ quarantine,装完双击即开,无需任何 Gatekeeper 操作:
 curl -fsSL https://raw.githubusercontent.com/superkoh/koloft-releases/main/install.sh | bash
 \`\`\``
 
-/** The exact body v0.3.2–v0.5.2 published: install text, no marker, no changelog. */
 const LEGACY_BODY = INSTALL.replace('<!-- koloft:install -->\n', '')
 
 function rel(tag: string, body = `## What's Changed\n\n- feat: ${tag}\n\n${INSTALL}`): GhRelease {
@@ -40,12 +34,10 @@ describe('changelogOf', () => {
   it('keeps only what precedes the install marker', () => {
     const notes = changelogOf(`## What's Changed\n\n- feat: a\n- fix: b\n\n${INSTALL}`)
     expect(notes).toBe("## What's Changed\n\n- feat: a\n- fix: b")
-    // the whole point: none of the install half survives into the modal
     expect(notes).not.toMatch(/curl|xattr|未签名/)
   })
 
-  it('treats the legacy install-only body as no changelog at all', () => {
-    // rendering it would show install steps to a user whose app installs itself
+  it('treats the legacy install-only body as no changelog at all: the app installs itself, so install steps are noise', () => {
     expect(changelogOf(LEGACY_BODY)).toBe('')
   })
 
@@ -57,14 +49,12 @@ describe('changelogOf', () => {
   })
 
   it('tolerates marker whitespace/case and CRLF bodies', () => {
-    // GitHub hands back CRLF; a marker that fails to match would leak the install text
     expect(changelogOf('- fix: a\r\n\r\n<!--   Koloft:Install   -->\r\ninstall stuff')).toBe(
       '- fix: a'
     )
   })
 
   it('keeps a marker-less body that has real content', () => {
-    // a hand-written release (no marker) still has a changelog worth showing
     expect(changelogOf('- fix: hand-written note')).toBe('- fix: hand-written note')
   })
 })
@@ -92,7 +82,6 @@ describe('sortReleases', () => {
       rel('v0.6.0'),
       { body: 'no tag' }
     ]
-    // a draft or prerelease winning here would push an unfinished build at every user
     expect(sortReleases(list).map((r) => r.tag_name)).toEqual(['v0.6.0', 'v0.5.0'])
   })
 })
@@ -113,7 +102,6 @@ describe('notesSince', () => {
 
   it('leaves out releases whose body carries no changelog', () => {
     const mixed = sortReleases([rel('v0.7.0'), rel('v0.6.0', LEGACY_BODY), rel('v0.5.5', '')])
-    // an empty entry would render a version heading with nothing under it
     expect(notesSince(mixed, '0.5.0').releases.map((r) => r.version)).toEqual(['0.7.0'])
   })
 
@@ -128,27 +116,21 @@ describe('notesSince', () => {
     )
     const { releases, omittedReleases } = notesSince(many, '1.0.0')
     expect(releases).toHaveLength(MAX_NOTES_RELEASES)
-    expect(releases[0].version).toBe(`1.0.${MAX_NOTES_RELEASES + 5}`) // newest kept
+    expect(releases[0].version).toBe(`1.0.${MAX_NOTES_RELEASES + 5}`)
     expect(omittedReleases).toBe(5)
   })
 })
 
-// U-OB-02. The whole "what's new" decision: which span to show, and — separately —
-// which version to remember. Getting `record` wrong is the costly half: recording a version
-// whose notes were never shown loses them for good, and NOT recording one whose feed was
-// unreadable is what buys the next launch another go.
-describe('whatsNewDecision', () => {
+describe('U-OB-02: whatsNewDecision picks the span to show and, separately, the version to remember', () => {
   const published = sortReleases([rel('v0.22.0'), rel('v0.21.3'), rel('v0.21.2'), rel('v0.21.0')])
   const feed = () => Promise.resolve(published)
   const noFeed = (): Promise<GhRelease[]> => Promise.reject(new Error('offline'))
 
-  it('shows the span above lastSeen and at or below the running version', async () => {
+  it('shows the span above lastSeen and at or below the running version, recording nothing until the dismiss', async () => {
     const { show, record } = await whatsNewDecision('0.21.0', '0.21.3', feed)
     expect(show?.current).toBe('0.21.3')
-    // v0.22.0 was published while this build was installed — it is not in this binary
     expect(show?.releases.map((r) => r.version)).toEqual(['0.21.3', '0.21.2'])
     expect(show?.omittedReleases).toBe(0)
-    // shown, not yet read: the dismiss is what records it
     expect(record).toBeNull()
   })
 

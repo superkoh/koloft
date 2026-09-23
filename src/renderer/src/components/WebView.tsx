@@ -1,23 +1,12 @@
 import { createElement, useEffect, useRef, type JSX } from 'react'
 
-/** the subset of Electron's <webview> methods the reload path touches (typed locally so
- *  the renderer needn't depend on electron's types, same as FilePane's WebviewEl) */
+const WEDGED_GUEST_RELOAD_FALLBACK_MS = 500
+
 type ReloadableWebview = HTMLElement & {
   reload(): void
   executeJavaScript(code: string): Promise<unknown>
 }
 
-/**
- * Thin wrapper over Electron's <webview> tag. Rendered via createElement to avoid
- * having to augment React's JSX intrinsic elements. `plugins` enables Chromium's
- * built-in PDF viewer for koloft-file://*.pdf urls.
- *
- * `reloadToken`: bumping it reloads the guest (preview auto-refresh / the ↻ button).
- * The guest's scroll position is captured before the reload and restored on the next
- * dom-ready — best-effort: an html page's own JS state is inherently lost, and the
- * PDFium viewer keeps its page position internally where we can't reach it (which is
- * why the pdf path asks the user before reloading at all).
- */
 export function WebView({
   src,
   reloadToken = 0
@@ -30,11 +19,12 @@ export function WebView({
 
   useEffect(() => {
     if (!mounted.current) {
-      mounted.current = true // token 0 at mount = initial load, nothing to reload
+      mounted.current = true
       return
     }
     const wv = ref.current
     if (!wv) return
+    // PLATFORM§12
     let reloaded = false
     const reloadRestoring = (x: number, y: number): void => {
       if (reloaded) return
@@ -44,9 +34,7 @@ export function WebView({
         if (x || y) {
           try {
             void wv.executeJavaScript(`window.scrollTo(${x}, ${y})`)
-          } catch {
-            /* guest gone */
-          }
+          } catch {}
         }
       }
       wv.addEventListener('dom-ready', onReady)
@@ -66,8 +54,7 @@ export function WebView({
     } catch {
       reloadRestoring(0, 0)
     }
-    // a wedged guest may never resolve executeJavaScript — still reload
-    const t = setTimeout(() => reloadRestoring(0, 0), 500)
+    const t = setTimeout(() => reloadRestoring(0, 0), WEDGED_GUEST_RELOAD_FALLBACK_MS)
     return () => clearTimeout(t)
   }, [reloadToken])
 

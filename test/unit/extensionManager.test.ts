@@ -3,8 +3,6 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 
-// extensionManager reads app.getPath('userData') at call time; nothing in the pure
-// install layer touches Electron beyond that, so a stub is all it takes to import it.
 vi.mock('electron', () => ({
   app: { getPath: () => '/nowhere' },
   session: { fromPartition: () => ({}) }
@@ -22,13 +20,6 @@ import {
   sameTabTarget,
   type ManagedExtension
 } from '../../src/main/extensionManager'
-
-/**
- * The install layer behind the §07 probe seam (KOLOFT_EXT_INSTALL_DIRS) and the D8
- * registry it feeds. Everything here is decided before Electron is involved: which
- * dirs the seam accepts, where a dir is staged so the install survives the source
- * going away, and which directory an uninstall may remove.
- */
 
 describe('parseInstallDirs (the seam is env text: absolute dirs, colon separated)', () => {
   it('is empty for an unset or blank variable', () => {
@@ -65,11 +56,9 @@ describe('seamStageDir (idempotency key: one source dir, one staged copy)', () =
     expect(seamStageDir(store, '/tmp/probe-a')).not.toBe(seamStageDir(store, '/tmp/probe-b'))
   })
 
-  it('stages directly under the extensions store, one level down', () => {
+  it('stages directly under the extensions store, one level down, so it never looks like a store <id>/<version> install', () => {
     const staged = seamStageDir(store, '/tmp/probe-a')
     expect(path.dirname(staged)).toBe(store)
-    // the loader searches two levels for a manifest.json and reads a store install as
-    // <store>/<extension id>/<version>/ — a staged dir must not look like an id
     expect(path.basename(staged)).not.toMatch(/^[a-p]{32}$/)
   })
 })
@@ -100,7 +89,6 @@ describe('stageSeamExtension (the copy that makes an install outlive its source 
 
   it('is idempotent: a second run leaves the already-staged copy alone', () => {
     const staged = stageSeamExtension(store, source)!
-    // what a re-copy would destroy: the loaded extension's own on-disk state
     fs.writeFileSync(path.join(staged, 'state.txt'), 'kept')
     fs.writeFileSync(path.join(source, 'manifest.json'), '{"name":"changed","version":"2.0.0"}')
 
@@ -135,7 +123,6 @@ describe('stageSeamExtension (the copy that makes an install outlive its source 
     } finally {
       spy.mockRestore()
     }
-    // nothing under the store may masquerade as an installed extension
     const left = fs.existsSync(store) ? fs.readdirSync(store) : []
     expect(left).toEqual([])
   })

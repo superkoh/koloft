@@ -4,14 +4,11 @@ import { popoverX } from '@shared/accountUsage'
 import { HINT_IDS, type HintId } from '@shared/types'
 import type { ActiveHint } from '../hints'
 
+const CAPTURE_BEFORE_XTERM = true
 const CARD_W = 268
-/** breathing room between the cut-out and the card, and against the window edge */
 const GAP = 10
-/** how many still frames end a measuring burst — long enough for a strip that lands a few
- *  pixels off and settles over the frames right after it appears */
 const STILL_FRAMES = 10
 
-/** The frame every hint picture is drawn in: 244 wide, its own height. */
 function Pic(p: { h: number; label: string; children: JSX.Element }): JSX.Element {
   return (
     <svg className="pic" viewBox={`0 0 244 ${p.h}`} role="img" aria-label={p.label}>
@@ -29,7 +26,6 @@ function Pic(p: { h: number; label: string; children: JSX.Element }): JSX.Elemen
   )
 }
 
-/** Titles, bodies and pictures — one entry per HINT_IDS id. */
 const CONTENT: Record<HintId, { title: string; body: JSX.Element; pic: JSX.Element }> = {
   workbench: {
     title: 'Claude changed a file',
@@ -169,9 +165,6 @@ const CONTENT: Record<HintId, { title: string; body: JSX.Element; pic: JSX.Eleme
   }
 }
 
-/** Under the target when there is room for the card, over it when there is not; centred
- *  on the target and clamped into the window, which is what keeps the top-right toggle's
- *  card on screen. */
 function place(r: DOMRect, cardH: number): { left: number; top: number } {
   const vh = window.innerHeight
   const below = r.bottom + GAP
@@ -195,24 +188,12 @@ function sameBox(b: Box, rect: DOMRect, pos: { left: number; top: number }): boo
   )
 }
 
-/**
- * One contextual hint (Layer B): a dimming backdrop cut out around the element the
- * card points at, and the card itself.
- *
- * Portalled to `document.body` because the layout's transformed ancestors would capture a
- * `position: fixed` box. Nothing here may take the focus — the user is typing at a claude
- * TUI and a hint they never asked for must not swallow the next keystroke — so the card
- * is `tabIndex={-1}` with no autoFocus, the backdrop is `pointer-events: none`, and an
- * outside click is observed through a window listener rather than by putting a clickable
- * sheet over the app (which would eat that very click).
- */
 export function Hint({ id, selector, n, onDone, onOff }: ActiveHint): JSX.Element {
   const cardRef = useRef<HTMLDivElement>(null)
   const cardH = useRef(0)
   const boxRef = useRef<Box | null>(null)
   const [box, setBox] = useState<Box | null>(null)
 
-  /** true when nothing moved — what ends a burst. */
   const measure = useCallback((): boolean => {
     const el = document.querySelector(selector)
     if (!el) {
@@ -230,18 +211,6 @@ export function Hint({ id, selector, n, onDone, onOff }: ActiveHint): JSX.Elemen
     return false
   }, [selector])
 
-  // Measured in BURSTS, not every frame: a resting card would otherwise force a layout 60
-  // times a second for as long as it is up. A burst runs until the rect has held still for
-  // STILL_FRAMES, and anything that can move this target starts a new one. A
-  // ResizeObserver on the target is not enough — it fires when the element changes SIZE,
-  // never when it MOVES or is REPLACED, and both happen here: the sidebar swaps a row's
-  // node when a pending launch binds (the React key is the row id, which changes then),
-  // and expanding the panel drops the Browser tab into a strip that settles a few pixels
-  // after it appears.
-  //
-  // `attributes` earns its place in that same bind: for the beat between the rows arriving
-  // and the session entry, the rebuilt row can resolve no tab and carries no `data-tab-id`
-  // at all — the anchor comes BACK as an attribute write on a node nothing else touches.
   useLayoutEffect(() => {
     let raf = 0
     let still = 0
@@ -269,13 +238,6 @@ export function Hint({ id, selector, n, onDone, onOff }: ActiveHint): JSX.Elemen
     }
   }, [measure])
 
-  // Esc closes it first, the topmost-modal semantics UpdateModal set. A click anywhere
-  // outside the card closes it too, and still reaches whatever was clicked.
-  //
-  // Both listen in the CAPTURE phase, which UpdateModal does not have to: a hint takes no
-  // focus, so the caret is still in the claude TUI, and xterm answers a key it emits with
-  // preventDefault + stopPropagation — a bubble-phase Esc would never arrive at all.
-  // Nothing is cancelled here, so Esc still reaches the pty as Claude's own interrupt.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') onDone()
@@ -283,15 +245,16 @@ export function Hint({ id, selector, n, onDone, onOff }: ActiveHint): JSX.Elemen
     const onDown = (e: MouseEvent): void => {
       if (!cardRef.current?.contains(e.target as Node)) onDone()
     }
-    window.addEventListener('keydown', onKey, true)
-    window.addEventListener('mousedown', onDown, true)
+    window.addEventListener('keydown', onKey, CAPTURE_BEFORE_XTERM)
+    window.addEventListener('mousedown', onDown, CAPTURE_BEFORE_XTERM)
     return () => {
-      window.removeEventListener('keydown', onKey, true)
-      window.removeEventListener('mousedown', onDown, true)
+      window.removeEventListener('keydown', onKey, CAPTURE_BEFORE_XTERM)
+      window.removeEventListener('mousedown', onDown, CAPTURE_BEFORE_XTERM)
     }
   }, [onDone])
 
   const { title, body, pic } = CONTENT[id]
+  // ADR-0013
   return createPortal(
     <>
       {box && (
@@ -323,7 +286,6 @@ export function Hint({ id, selector, n, onDone, onOff }: ActiveHint): JSX.Elemen
         {pic}
         <div className="foot">
           <span className="n">{`tip ${n} of ${HINT_IDS.length}`}</span>
-          {/* the click must not pull the caret out of the claude TUI */}
           <button className="ob-link" onMouseDown={(e) => e.preventDefault()} onClick={onOff}>
             Don&apos;t show tips
           </button>

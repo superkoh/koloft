@@ -4,10 +4,6 @@ import path from 'path'
 import os from 'os'
 import { spawnSync } from 'child_process'
 
-// setupHooks() calls app.getPath('userData'); stub Electron so it writes the real hook
-// script to disk. We then exec that script exactly as Claude Code would (regDir + tabId
-// baked in as args, event payload on stdin) and assert the JSON it seds out — the
-// authoritative tab↔session binding + run-state reports the tracker consumes.
 vi.mock('electron', async () => {
   const nfs = await import('node:fs')
   const nos = await import('node:os')
@@ -25,10 +21,12 @@ let base: string
 
 beforeAll(() => {
   ;({ hookScript, regDir } = setupHooks())
-  base = path.dirname(path.dirname(hookScript)) // hookScript is <base>/hooks/sessionstart.sh
+  base = path.dirname(path.dirname(hookScript))
   stubBin = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-hook-stub-'))
-  const stub = path.join(stubBin, 'claude')
-  fs.writeFileSync(stub, '#!/bin/sh\necho "0.0.7-stub (Claude Code)"\n', { mode: 0o755 })
+  const answeringClaudeStub = path.join(stubBin, 'claude')
+  fs.writeFileSync(answeringClaudeStub, '#!/bin/sh\necho "0.0.7-stub (Claude Code)"\n', {
+    mode: 0o755
+  })
 })
 afterAll(() => fs.rmSync(base, { recursive: true, force: true }))
 beforeEach(() => {
@@ -46,14 +44,12 @@ function fire(
   const res = spawnSync(hookScript, [regDir, tab, event], {
     input: JSON.stringify(payload),
     encoding: 'utf8',
-    // a stub `claude` first on PATH that would answer, so an empty version proves no probe
     env: { ...process.env, ...extraEnv, PATH: `${stubBin}:${process.env.PATH}` }
   })
   if (res.status !== 0) throw new Error(`hook exited ${res.status}: ${res.stderr}`)
 }
 const readReg = (name: string): Record<string, string> =>
   JSON.parse(fs.readFileSync(path.join(regDir, name), 'utf8'))
-/** the tab's run-state log, one parsed record per appended transition */
 const readStatusLog = (tab: string): Record<string, string>[] =>
   fs
     .readFileSync(path.join(regDir, `${tab}.status.jsonl`), 'utf8')
@@ -91,10 +87,6 @@ describe('injected hook script', () => {
   })
 
   it('strips RAW control chars from the account (env values never went through tr -d \\n)', () => {
-    // an auth wrapper capturing the tag via command substitution can leave a trailing
-    // newline / embedded tab — raw bytes, unlike the JSON-escaped stdin payload. An
-    // unstripped control char makes the whole registration unparseable, silently
-    // killing the authoritative hook binding (readReg would throw right here).
     fire('tabA4', 'start', { session_id: 's1' }, { ANT_ACCOUNT: 'team\tprod\n' })
     expect(readReg('tabA4.json')).toMatchObject({ account: 'teamprod' })
   })
@@ -109,12 +101,9 @@ describe('injected hook script', () => {
     expect(readReg('tabA3.json')).toMatchObject({ account: '' })
   })
 
-  // A remote session runs inside tmux, and the tmux session is named after the claude
-  // session in it. Only the hook is in a position to keep that true across an in-TUI
-  // /clear, which mints a new id while the same claude keeps running.
-  it('renames the tmux session after the claude session, but only over ssh', () => {
+  // CC§1
+  it('renames the tmux session after the claude session, but only over ssh, reporting the name it had before', () => {
     const log = path.join(stubBin, 'tmux-log')
-    // the stub answers `display-message … '#S'` with the session's CURRENT name
     fs.writeFileSync(
       path.join(stubBin, 'tmux'),
       `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(log)}\ncase "$1" in display-message) echo k-sess-old;; esac\n`,
@@ -122,7 +111,6 @@ describe('injected hook script', () => {
     )
     fs.rmSync(log, { force: true })
 
-    // a local claude: nothing to rename, no tmux to ask, and no name in the report
     fire('tabT1', 'start', { session_id: 'sess-local' }, { TMUX: '/tmp/s,1,0', TMUX_PANE: '%0' })
     expect(fs.existsSync(log)).toBe(false)
     expect(readReg('tabT1.json')).toMatchObject({ tmux: '' })
@@ -137,7 +125,6 @@ describe('injected hook script', () => {
         TMUX_PANE: '%3'
       }
     )
-    // the name is read BEFORE the rename: after a /clear, Koloft still knows the old one
     expect(fs.readFileSync(log, 'utf8').trim().split('\n')).toEqual([
       'display-message -p -t %3 #S',
       'rename-session -t %3 k-sess-new'
@@ -157,6 +144,7 @@ describe('injected hook script', () => {
     fs.rmSync(path.join(stubBin, 'tmux'), { force: true })
   })
 
+  // CC§1
   it('version tier 1: CLAUDE_CODE_EXECPATH versioned-dir basename wins (resume-safe)', () => {
     fire(
       'tabV',
@@ -164,12 +152,13 @@ describe('injected hook script', () => {
       { session_id: 's1' },
       {
         CLAUDE_CODE_EXECPATH: '/x/versions/3.2.1',
-        AI_AGENT: 'claude-code_9-9-9_agent' // present but must not be consulted
+        AI_AGENT: 'claude-code_9-9-9_agent'
       }
     )
     expect(readReg('tabV.json')).toMatchObject({ ccVersion: '3.2.1' })
   })
 
+  // CC§1
   it('version tier 2: a non-version EXECPATH falls through to the AI_AGENT stamp', () => {
     fire(
       'tabV2',
@@ -200,23 +189,20 @@ describe('injected hook script', () => {
     ])
   })
 
-  // A `/fork`ed background copy inherits this tab's --settings, so ITS turns append to
-  // THIS tab's run-state log under THIS tab's id. Without the session id on the line
-  // there is nothing to tell the two apart, and the copy drives the tab's status dot
-  // and its turn-done notifications (docs/claude-code-contract.md §5; the fork design doc is retired).
-  it.each(['prompt', 'stop', 'notify'])('a %s report names the session it belongs to', (event) => {
-    fire('tabS', event, { session_id: 'sess-abc', message: 'x' })
-    expect(readStatusLog('tabS')[0]).toMatchObject({
-      tabId: 'tabS',
-      event,
-      sessionId: 'sess-abc'
-    })
-  })
+  // CC§5
+  it.each(['prompt', 'stop', 'notify'])(
+    'a %s report names the session it belongs to, so a /fork copy sharing the log is told apart',
+    (event) => {
+      fire('tabS', event, { session_id: 'sess-abc', message: 'x' })
+      expect(readStatusLog('tabS')[0]).toMatchObject({
+        tabId: 'tabS',
+        event,
+        sessionId: 'sess-abc'
+      })
+    }
+  )
 
-  // The id decides whether the reader keeps or drops the line, so mis-parsing it is not
-  // cosmetic: a foreign id silently discards a real turn transition (dot pinned
-  // 'working', no turn-done). A Stop payload already carries nested objects — the
-  // background_tasks list — and any of them may grow its own session_id.
+  // CC§8
   it('takes the TOP-LEVEL session_id, never one nested in a later field', () => {
     fire('tabN', 'stop', {
       session_id: 'sess-top',
@@ -237,9 +223,6 @@ describe('injected hook script', () => {
     expect(readReg('tabN2.json').sessionId).toBe('sess-top')
   })
 
-  // The gate compares an id parsed for the BINDING against one parsed for a RUN-STATE
-  // line. Two extractions that can drift would make the comparison meaningless — the
-  // binding would keep working while every transition is dropped as "not mine".
   it('binding and run-state parse the SAME id out of one payload', () => {
     const payload = {
       session_id: 'sess-top',
@@ -252,12 +235,8 @@ describe('injected hook script', () => {
     expect(readStatusLog('tabP')[0].sessionId).toBe(readReg('tabP.json').sessionId)
   })
 
-  // $tab.json is a last-writer-wins snapshot with NO re-delivery (unlike the run-state
-  // log, which is append-only and has a poll backstop). If a fork's start lands on top
-  // of a parent report Koloft has not read yet, that binding update is gone for good — and
-  // with the id gate in place the tab then rejects every later report of its own live
-  // session. The copy's start is something Koloft discards anyway, so never write it.
-  it("a fork's SessionStart does not clobber the tab's binding snapshot", () => {
+  // CC§5
+  it("a fork's SessionStart does not clobber the tab's binding snapshot, which is never re-delivered", () => {
     fire('tabFK', 'start', {
       session_id: 'sess-parent',
       transcript_path: '/p.jsonl',
@@ -274,19 +253,12 @@ describe('injected hook script', () => {
   })
 
   it('scrubs characters that would break the JSON line, as the message field does', () => {
-    // `[^"]*` happily captures backslashes; one at the wrong place makes the emitted
-    // line unparseable and drainStatusLog skips it with no log at all.
     fire('tabQ', 'stop', { session_id: 'sess\\bad', hook_event_name: 'Stop' })
     expect(readStatusLog('tabQ')[0].sessionId).toBe('sessbad')
   })
 
+  // CC§8
   it("a turn-end carries the COUNT of Claude Code's own live background tasks", () => {
-    // The Stop payload enumerates what is STILL RUNNING at the moment the turn
-    // ends (verified on real claude 2.1.228) — the authoritative answer to the
-    // question Koloft used to reconstruct from spawn acks. Only the count is
-    // recorded, not the list: a task's `command` can be multi-KB and quote-laden,
-    // and a long line would break the one-atomic-append-per-transition property
-    // the run-state log depends on.
     fire('tabBG', 'stop', {
       background_tasks: [
         { id: 'a1', type: 'subagent', status: 'running', description: 'reviewer' },
@@ -299,9 +271,8 @@ describe('injected hook script', () => {
     expect(rec.bgl).toBe('a1:subagent,b2:shell')
   })
 
+  // CC§8
   it('a turn-end with an empty list is distinguishable from one with no list at all', () => {
-    // zero live tasks -> rest the dot; no list at all (older claude) -> the caller
-    // must fall back to the ledger, so these two must never collapse together
     fire('tabE1', 'stop', { background_tasks: [], last_assistant_message: 'done' })
     fire('tabE2', 'stop', { last_assistant_message: 'done' })
     const empty = readStatusLog('tabE1')[0] as unknown as { bgl?: string }
@@ -310,11 +281,8 @@ describe('injected hook script', () => {
     expect(absent.bgl).toBeUndefined()
   })
 
-  it('only the task list is read — a later field cannot add to it', () => {
-    // A phantom entry is NOT harmless: a reported task holds the deferral, so it
-    // pins the dot at 'working' with no turn-done — and the next turn-end reports
-    // the same phantom, for the session's whole life. `session_crons` is the
-    // concrete case: a running cron sits AFTER the task array in the same payload.
+  // CC§8
+  it('only the task list is read — a later field such as session_crons cannot add to it', () => {
     fire('tabBG2', 'stop', {
       background_tasks: [],
       session_crons: [{ id: 'c1', status: 'running' }],
@@ -324,8 +292,6 @@ describe('injected hook script', () => {
   })
 
   it('a task command carrying JSON punctuation cannot truncate the scan', () => {
-    // the array cannot be bounded by "the first ]" — a command may legally
-    // contain ] and }, and cutting there would silently drop every task after it
     fire('tabBG3', 'stop', {
       background_tasks: [
         { id: 'b1', type: 'shell', status: 'running', command: 'echo "}]" | jq -r ".[0]"' },
@@ -337,11 +303,8 @@ describe('injected hook script', () => {
     expect(rec.bgl).toBe('b1:shell,a1:subagent')
   })
 
+  // CC§8
   it('live means NOT-terminal, not the single literal "running"', () => {
-    // A reported empty list is authoritative: it clears the inferred ledger and
-    // fires a turn-done. So an unknown non-terminal status (pending/queued/starting)
-    // must read as live — whitelisting one literal would turn a live task into a
-    // false turn-done, the exact failure this channel exists to prevent.
     fire('tabBG4', 'stop', {
       background_tasks: [
         { id: 'a1', type: 'subagent', status: 'running' },
@@ -354,13 +317,8 @@ describe('injected hook script', () => {
     expect(rec.bgl).toBe('a1:subagent,a2:subagent')
   })
 
+  // CC§8
   it('the list is id:type of each live task, scrubbed to a safe alphabet', () => {
-    // Koloft judges each task by what it is (a parked teammate, a dev server, a
-    // running subagent), so the type rides along. Ids are 9 base36 chars and
-    // types a fixed vocabulary, so both are scrubbed rather than
-    // escaped: nothing here may ever carry JSON punctuation into the log line.
-    // A description quoting another task's fields sits AFTER the real ones and
-    // arrives escaped, so it cannot fake an id or a type.
     fire('tabBL', 'stop', {
       background_tasks: [
         {
@@ -384,8 +342,6 @@ describe('injected hook script', () => {
   })
 
   it('a payload-less hook invocation still writes a parseable record', () => {
-    // an empty/garbled stdin must never cost the turn-end itself: the record has
-    // to stay valid JSON, just without a list (so the caller falls back)
     const res = spawnSync(hookScript, [regDir, 'tabNP', 'stop'], { input: '', encoding: 'utf8' })
     expect(res.status).toBe(0)
     const rec = readStatusLog('tabNP')[0] as unknown as { event: string; bgl?: string }
@@ -399,26 +355,18 @@ describe('injected hook script', () => {
   })
 
   it('run-state reports APPEND — a whole turn survives, not just its last edge', () => {
-    // The prompt→stop pair of one turn can land microseconds apart. Overwriting a
-    // single report file would leave only 'stop' for the reader to find, so Koloft
-    // would never see the turn run (no 'working' dot) and never raise its turn-done.
     fire('tabT', 'prompt', { hook_event_name: 'UserPromptSubmit' })
     fire('tabT', 'stop', { hook_event_name: 'Stop' })
     expect(readStatusLog('tabT').map((r) => r.event)).toEqual(['prompt', 'stop'])
   })
 
-  it('a new tab starts with an empty run-state log (pids, hence tab ids, recycle)', () => {
+  it('a new tab starts with no run-state log and no registration snapshot (pids, hence tab ids, recycle)', () => {
     fire('pty-abc-1', 'stop', { hook_event_name: 'Stop' })
     expect(readStatusLog('pty-abc-1')).toHaveLength(1)
-    // …and no registration snapshot either: the pty-exit drain reads <tab>.json
-    // straight off disk, so a dead run's SessionEnd left in place could replay as
-    // THIS tab's graceful exit and evict a session the user never closed
     fs.writeFileSync(
       path.join(regDir, 'pty-abc-1.json'),
       JSON.stringify({ tabId: 'pty-abc-1', event: 'end', reason: 'prompt_input_exit' })
     )
-    // a later Koloft run mints the same tab id: setting that tab up must clear the
-    // dead tab's log, which is read from byte 0 and would otherwise replay
     writeTabHookSettings(setupHooks(), 'pty-abc-1')
     expect(fs.existsSync(path.join(regDir, 'pty-abc-1.status.jsonl'))).toBe(false)
     expect(fs.existsSync(path.join(regDir, 'pty-abc-1.json'))).toBe(false)
@@ -431,12 +379,8 @@ describe('injected hook script', () => {
     expect(raw.trim().split('\n')).toHaveLength(6)
   })
 
+  // PLATFORM§36
   describe('posttool: statusline git-review cache invalidation', () => {
-    // Contract under test: after a PR-state-changing gh command, every cached
-    // git-review entry must read as STALE to ccstatusline — whose staleness rule
-    // is `now - mtime > 30_000` — so the very next render re-queries instead of
-    // waiting out the TTL. Lock files must NOT be freshened: a .lock younger
-    // than 30s suppresses refreshes, the exact opposite of the intent.
     let home: string
     let cacheDir: string
     const entry = (name: string): string => path.join(cacheDir, name)
@@ -490,7 +434,7 @@ describe('injected hook script', () => {
 
     it('exits 0 when no cache dir exists yet (fresh machine, statusline never rendered)', () => {
       fs.rmSync(cacheDir, { recursive: true, force: true })
-      firePosttool('gh pr create --fill') // fire() throws on non-zero exit
+      firePosttool('gh pr create --fill')
     })
 
     it('writes nothing to the reg dir — PostToolUse fires per tool call, reg must not flood', () => {
@@ -507,7 +451,6 @@ describe('injected hook script', () => {
     expect(withSl.hooks.PostToolUse).toHaveLength(1)
     expect(withSl.hooks.PostToolUse[0].matcher).toBe('Bash')
     expect(withSl.hooks.PostToolUse[0].hooks[0].command).toContain(' posttool')
-    // statusline off → its cache is not ours to manage; the hook must not ride
     const without = JSON.parse(
       fs.readFileSync(writeTabHookSettings(setupHooks(), 'tabPT2'), 'utf8')
     )
@@ -519,7 +462,7 @@ describe('injected hook script', () => {
     const file = writeTabHookSettings(setupHooks(), 'tabSL', sl)
     const settings = JSON.parse(fs.readFileSync(file, 'utf8'))
     expect(settings.statusLine).toEqual(sl)
-    expect(settings.hooks.SessionStart).toBeTruthy() // rides along, never replaces
+    expect(settings.hooks.SessionStart).toBeTruthy()
   })
 
   it('omits statusLine when the toggle is off — the user’s own settings stay in charge', () => {
@@ -527,11 +470,7 @@ describe('injected hook script', () => {
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).not.toHaveProperty('statusLine')
   })
 
-  // U-HOOK-2. A remote tab's settings describe the OTHER machine: the paths are spelt
-  // with `$HOME` and must reach that machine's shell inside double quotes, and building
-  // them must not touch this machine's registration dir — a same-named local tab keeps
-  // its own status log.
-  describe('settings for a tab running on another machine', () => {
+  describe('U-HOOK-2: settings for a tab running on another machine', () => {
     const machine = remoteMachineDir('m-abc123')
     const build = (): Record<string, unknown> =>
       hookSettings(
@@ -570,5 +509,30 @@ describe('injected hook script', () => {
       build()
       expect(fs.readFileSync(log, 'utf8')).toBe('{"a":1}\n{"a":2}\n')
     })
+  })
+})
+
+describe('setupHooks at startup', () => {
+  it('prunes only reports and settings older than 12 hours — a fresh one, such as another Koloft instance’s in the same folder, survives', () => {
+    const { settingsDir } = setupHooks()
+    const hoursAgo = (h: number): Date => new Date(Date.now() - h * 60 * 60 * 1000)
+    const fresh = [
+      path.join(regDir, 'peer-1.json'),
+      path.join(regDir, 'peer-1.status.jsonl'),
+      path.join(settingsDir, 'peer-1.json')
+    ]
+    const old = [
+      path.join(regDir, 'dead-1.json'),
+      path.join(regDir, 'dead-1.status.jsonl'),
+      path.join(settingsDir, 'dead-1.json')
+    ]
+    for (const f of [...fresh, ...old]) fs.writeFileSync(f, '{}\n')
+    for (const f of fresh) fs.utimesSync(f, hoursAgo(11), hoursAgo(11))
+    for (const f of old) fs.utimesSync(f, hoursAgo(13), hoursAgo(13))
+
+    setupHooks()
+
+    for (const f of fresh) expect(fs.existsSync(f), f).toBe(true)
+    for (const f of old) expect(fs.existsSync(f), f).toBe(false)
   })
 })

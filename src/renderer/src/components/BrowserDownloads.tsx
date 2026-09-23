@@ -2,15 +2,7 @@ import { useEffect, useRef, type JSX } from 'react'
 import { LuFileText, LuTrash2 } from 'react-icons/lu'
 import type { DownloadItem, DownloadList } from './downloadList'
 
-/**
- * §04 B9 — the download list. It is the durable home for a finished file now that the
- * completion toast dismisses itself again, so every ending keeps its own way out:
- * reveal for a success, retry for a failure, and a cancelled row that says so rather
- * than vanishing.
- *
- * Esc and a click outside close it, like the ⋯ menu — a panel that cannot be closed
- * sits over the page the user is trying to read (BB-C53).
- */
+const OPENER_BUTTON_IS_NOT_OUTSIDE = '[data-panel-toggle="downloads"]'
 
 function sizeText(item: DownloadItem): string {
   const mb = (n: number): string => (n / 1024 / 1024).toFixed(1) + ' MB'
@@ -49,10 +41,7 @@ export function BrowserDownloads({
     const onDown = (e: MouseEvent): void => {
       const target = e.target as HTMLElement | null
       if (ref.current?.contains(target as Node)) return
-      // the button that opened this panel is not "outside" it: closing here would be
-      // undone by that button's own onClick, leaving the panel impossible to dismiss
-      // from the control that raised it
-      if (target?.closest('[data-panel-toggle="downloads"]')) return
+      if (target?.closest(OPENER_BUTTON_IS_NOT_OUTSIDE)) return
       onClose()
     }
     document.addEventListener('keydown', onKey, true)

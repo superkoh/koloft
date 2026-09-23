@@ -17,13 +17,6 @@ import {
   type GuestMenuEntry
 } from '../../src/main/browserSecurity'
 
-/**
- * The pure decisions behind the main-process security guards (PRD §01 SEC-1/SEC-2,
- * §05D-4 SEC-8, §05D-5 SEC-10, §05D-1 SEC-12). Each one is a whitelist, so the cases
- * that matter are the spoofs that must NOT pass it — an e2e can prove one host is
- * refused, never that a family of look-alikes is.
- */
-
 const PROD_APP = 'file:///Users/x/koloft/out/renderer/index.html'
 const DEV_APP = 'http://localhost:5173/'
 
@@ -132,9 +125,6 @@ describe('authPromptFor (SEC-10: only a main-frame challenge may ask the user)',
     ).toEqual({ origin: 'http://127.0.0.1:8123', realm })
   })
 
-  // the auth challenge and a guest's alert/confirm/prompt share the surface's ONE modal
-  // slot: a challenge that painted over a live JS dialog would leave that page blocked
-  // inside its call with nothing left on screen able to answer it (§05D-11).
   it('stays silent while the one modal slot is already taken', () => {
     expect(
       authPromptFor(
@@ -236,7 +226,6 @@ describe('jsDialogFor (§05D-11: what a guest may ask, and what it may never dre
   })
 
   it('refuses a second dialog while one is still unanswered', () => {
-    // one modal slot: a second page would otherwise block on a question nobody sees
     expect(jsDialogFor({ kind: 'confirm', message: 'sure?' }, page, true)).toBeNull()
   })
 
@@ -256,8 +245,6 @@ describe('jsDialogFor (§05D-11: what a guest may ask, and what it may never dre
   })
 })
 
-// SEC-5/SEC-6 — the attach-time enforcement of the guest profile. The renderer's factory
-// authors these attributes; this is what makes them true for a call site that forgets.
 describe('enforceGuestAttach (SEC-5/SEC-6: what a <webview> may attach as)', () => {
   const HOST_PRELOAD = '/Applications/Koloft.app/Contents/Resources/app/out/preload/index.js'
   const GUEST_PRELOAD = '/Applications/Koloft.app/Contents/Resources/app/out/preload/guest.js'
@@ -281,18 +268,13 @@ describe('enforceGuestAttach (SEC-5/SEC-6: what a <webview> may attach as)', () 
       contextIsolation: true,
       webSecurity: true,
       allowFileAccessFromFileUrls: false,
-      // R5/BB-N03: a page may not start making noise on its own
       autoplayPolicy: 'document-user-activation-required',
-      // D12: window.open has to reach main's handler to become a tab; the handler is
-      // what refuses the OS window
       disablePopups: false
     })
   })
 
-  // BB-N03: muting a guest does not make it inaudible — a muted stream still reports as
-  // playing — so silence has to come from the audio never starting. Preview's viewer is
-  // held to the same rule: it is a page Koloft opened for the user to LOOK at.
-  it('refuses autoplay to every guest, whatever it asked for', () => {
+  // PLATFORM§13
+  it('BB-N03: refuses autoplay to every guest, whatever it asked for', () => {
     const browser: GuestAttachPrefs = { autoplayPolicy: 'no-user-gesture-required' }
     enforceGuestAttach(browser, browserParams(), HOST_PRELOAD)
     expect(browser.autoplayPolicy).toBe('document-user-activation-required')
@@ -327,7 +309,6 @@ describe('enforceGuestAttach (SEC-5/SEC-6: what a <webview> may attach as)', () 
   })
 
   it('refuses a guest that named no partition, or another one', () => {
-    // the default session is where the privileged koloft-file:// reader lives (SEC-6)
     expect(enforceGuestAttach({}, { partition: '', src: 'https://evil.test/' }, HOST_PRELOAD)).toBe(
       false
     )
@@ -375,12 +356,17 @@ describe("gestureFresh (SEC-4 — an OS hand-off is the user's, not the page's)"
     expect(gestureFresh(now - GESTURE_WINDOW_MS, now)).toBe(true)
     expect(gestureFresh(now - GESTURE_WINDOW_MS - 1, now)).toBe(false)
   })
+
+  // PLATFORM§11
+  it("gives a click one second, not Chromium's 5 s activation, so a page cannot ride a click made on it earlier", () => {
+    const now = 1_000_000
+    expect(gestureFresh(now - 1000, now)).toBe(true)
+    expect(gestureFresh(now - 1001, now)).toBe(false)
+    expect(gestureFresh(now - 4000, now)).toBe(false)
+  })
 })
 
-// G0-3 — a download belongs to the person, not to the guest that started it. Chromium
-// only hands the transfer to the session once the response's type is settled, and the
-// MIME sniff of a trickling body settles at its LAST byte; a tab closed in between takes
-// the download with it. These are the responses Koloft marks `nosniff` to settle at once.
+// PLATFORM§13
 describe('isAttachmentResponse (G0-3: a download declared by its own headers)', () => {
   it('reads the disposition whatever case the server spelled the header in', () => {
     expect(isAttachmentResponse({ 'content-disposition': ['attachment; filename="a.bin"'] })).toBe(
@@ -409,9 +395,6 @@ describe('isAttachmentResponse (G0-3: a download declared by its own headers)', 
   })
 })
 
-// §05D-10/G0-1 — the guest's only mouse entry point. What one right-click offers is a
-// judgement about its target alone, so it is settled here rather than in the listener:
-// an e2e can show one menu, never that the three items stay the three items.
 describe('guestMenuItems (§05D-10: the guest right-click menu)', () => {
   const click = (over: Partial<Parameters<typeof guestMenuItems>[0]>): GuestMenuEntry[] =>
     guestMenuItems({ linkURL: '', srcURL: '', mediaType: 'none', ...over })
@@ -445,9 +428,6 @@ describe('guestMenuItems (§05D-10: the guest right-click menu)', () => {
     expect(click({})).toEqual([])
   })
 
-  // SEC-4/D3: the routing table decides what may become a tab. `javascript:` is self-XSS
-  // and a remote page's `file:` link is refused inside Chromium — the menu may not be the
-  // way around either. Copying the text of one is harmless and stays.
   it('withholds open-in-new-tab from a link that cannot become a tab', () => {
     expect(actions(click({ linkURL: 'javascript:alert(1)' }))).toEqual(['copy-link'])
     expect(actions(click({ linkURL: 'file:///etc/passwd' }))).toEqual(['copy-link'])
