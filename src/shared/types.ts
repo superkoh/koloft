@@ -1145,4 +1145,4 @@ export type ResumePlan =
       resumeCwd: string
     }
   | { action: 'dialog'; evidence: ResumeEvidence; resumeCwd: string; renamedName: string }
-  | { action: 'unavailable'; reason: 'no-cwd' | 'not-found' }
+  | { action: 'unavailable'; reason: 'no-cwd' | 'not-found' | 'running' }

@@ -801,7 +801,17 @@ only — when an entry is written, updated or removed is unmeasured.
   statusUpdatedAt`. Values seen: `kind: 'interactive'`, `entrypoint: 'cli'`,
   `nameSource: 'derived' | 'user'`, `status: 'busy' | 'idle'`. A sibling
   `<pid>.<sha256>.key` sits next to each one.
-- Unused by Koloft today.
+- **Lifecycle, measured 2026-09-23 on CC 2.1.281** (7 live sessions plus a tmux probe):
+  - Every live interactive session had an entry, and its `sessionId` was the id it was
+    running, a resumed id included.
+  - `/clear` rewrites `sessionId` to the new id within seconds.
+  - A SIGTERM'd claude removes its entry; so does a tmux kill.
+  - A `kill -9`'d claude **leaves its entry behind**.
+  - `procStart` is `ps -o lstart=` for that pid printed in UTC (`TZ=UTC`,
+    e.g. `Wed Sep 23 20:29:08 2026`). So "pid alive and its UTC `lstart` equals
+    `procStart`" tells a live entry from a stale one whose pid was reused.
+- Koloft reads it before resuming a Claude session (`src/main/claudeSessionRegistry.ts`),
+  so it never opens a second claude on a session that is still running.
 
 ## §12 The interactive TUI inside a terminal
 

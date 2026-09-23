@@ -30,7 +30,7 @@ import { SessionBackends } from './sessionBackends'
 import { identityOf } from '@shared/sessionBackend'
 import { AttentionTracker, type AttentionContext } from './attention'
 import { route, dockBadgeText } from './notifyRouter'
-import { setupShim } from './shim'
+import { registeredByTabRoot, setupShim } from './shim'
 import { openDropTarget, type OpenDrop } from './openDrop'
 import { leaveForOS, openUrlExternally, osOpenFallback } from './osOpen'
 import {
@@ -187,6 +187,7 @@ import {
 } from './browserPermission'
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import { CDP_OP_BUDGET_MS } from '@shared/cdpBudget'
+import { runningClaudePid } from './claudeSessionRegistry'
 import { applyWindowCommand, guestShortcut } from '@shared/shortcutDispatch'
 import { BROWSER_PARTITION, PLACEHOLDER_SESSION_TITLE, isHttpUrl } from '@shared/types'
 import {
@@ -1524,10 +1525,12 @@ function handleRegistration(raw: unknown): void {
     cwd?: string
     ts?: number
     mode?: string
+    pid?: number
   }
   if (!obj.tabId || !obj.regId) return
   if (processedRegIds.has(obj.regId)) return
   if (!ptyMgr.get(obj.tabId)) return
+  if (!registeredByTabRoot(obj.pid, ptyMgr.pidOf(obj.tabId))) return
   processedRegIds.add(obj.regId)
   const cwd = obj.cwd && obj.cwd.length ? obj.cwd : os.homedir()
   tracker.track(obj.tabId, cwd)
@@ -2758,12 +2761,15 @@ const resumeProbes: ResumeProbes = {
   headAt: async (repoDir) => (await gitOut(repoDir, ['rev-parse', 'HEAD']))?.trim() || null
 }
 
-function resumePlanFor(sessionId: string): Promise<ResumePlan> {
+async function resumePlanFor(sessionId: string): Promise<ResumePlan> {
+  if (!isCodexSession(sessionId) && (await runningClaudePid(sessionId))) {
+    return { action: 'unavailable', reason: 'running' }
+  }
   const row = isCodexSession(sessionId)
     ? codexSessions?.findRow(sessionId)
     : workspaceMgr?.findRow(sessionId)
   if (isCodexSession(sessionId) && row && !row.worktreeState && !dirExistsSync(row.cwd)) {
-    return Promise.resolve({ action: 'unavailable', reason: 'no-cwd' })
+    return { action: 'unavailable', reason: 'no-cwd' }
   }
   return planResume(
     row,
