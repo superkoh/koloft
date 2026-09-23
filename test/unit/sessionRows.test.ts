@@ -342,6 +342,15 @@ describe('welcomeQuietLine', () => {
 })
 
 describe('session background activity', () => {
+  it('a cold row still shows the programs its session left running, by their name, not their path', () => {
+    const badge = sessionActivityBadge(undefined, [
+      { pid: 7541, command: '/sdk/emulator/qemu/qemu-system-aarch64 -avd nb_test_api35' }
+    ])!
+    expect(badge.text).toBe('⏸ 1')
+    expect(badge.lines).toEqual(['left running · qemu-system-aarch64 -avd nb_test_api35'])
+    expect(badge.hint).toContain('Stop any you no longer need')
+  })
+
   it('reports unavailable observation without presenting stale background work as current', () => {
     const badge = sessionActivityBadge({
       backendId: 'codex',

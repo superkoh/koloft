@@ -1538,6 +1538,16 @@ describe('auto-closing an idle session: every reason to keep it is read fresh at
     await waitForClose(closes, 'tabA9')
   }, 20_000)
 
+  // CC§9
+  it('never closes a session whose programs are still running on their own', async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    stageAllClear(tracker)
+    tracker.leftBehind = (sid) => sid === SID
+    const closes = await idleSession(tracker, 'tabA10', cwd)
+    await expectStays(closes)
+  }, 10_000)
+
   it('never closes a remote session (this Mac cannot see that machine)', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()

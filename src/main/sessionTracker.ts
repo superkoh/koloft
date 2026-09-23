@@ -375,6 +375,7 @@ export class SessionTracker extends EventEmitter {
   activeTabId?: () => string | null
   heldTabs?: () => ReadonlySet<string>
   needsUser?: (tabId: string) => boolean
+  leftBehind?: (sessionId: string) => boolean
 
   track(tabId: string, cwd: string, remote?: RemoteTab): void {
     const prev = this.tracked.get(tabId)
@@ -513,6 +514,7 @@ export class SessionTracker extends EventEmitter {
     const held =
       tabId === this.activeTabId?.() ||
       t.wakeupPending ||
+      !!this.leftBehind?.(t.info.sessionId) ||
       !!t.info.parked?.length ||
       !!this.heldTabs?.().has(tabId) ||
       !!this.needsUser?.(tabId)

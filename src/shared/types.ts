@@ -337,6 +337,11 @@ export interface FlowStats {
 // CC§8
 export type SessionStatus = 'working' | 'waiting' | 'approval' | 'idle'
 
+export interface LeftoverProcess {
+  pid: number
+  command: string
+}
+
 export interface ParkedItem {
   kind: 'server' | 'monitor' | 'teammate'
   label: string
@@ -672,6 +677,9 @@ export interface KoloftApi {
     forceClose(id: string): Promise<{ ok: boolean }>
     // CC§2
     transcriptExists(sessionId: string): Promise<boolean>
+    leftovers(): Promise<Record<string, LeftoverProcess[]>>
+    onLeftovers(cb: (leftovers: Record<string, LeftoverProcess[]>) => void): () => void
+    stopLeftover(sessionId: string, pid: number): Promise<boolean>
   }
   attention: {
     list(): Promise<AttentionEvent[]>

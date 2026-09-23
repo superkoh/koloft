@@ -23,6 +23,7 @@ import type {
   TerminalExit,
   TerminalCwd,
   TerminalProcessTitle,
+  LeftoverProcess,
   SessionInfo,
   SpawnedTab,
   CronState,
@@ -120,7 +121,14 @@ const api: KoloftApi = {
     resume: (req) => ipcRenderer.invoke('sessions:resume', req),
     archive: (id) => ipcRenderer.invoke('sessions:archive', id),
     forceClose: (id) => ipcRenderer.invoke('sessions:forceClose', id),
-    transcriptExists: (id) => ipcRenderer.invoke('sessions:transcriptExists', id)
+    transcriptExists: (id) => ipcRenderer.invoke('sessions:transcriptExists', id),
+    leftovers: () => ipcRenderer.invoke('sessions:leftovers'),
+    onLeftovers: (cb) => {
+      const handler = (_e: unknown, l: Record<string, LeftoverProcess[]>): void => cb(l)
+      ipcRenderer.on('sessions:leftovers', handler)
+      return () => ipcRenderer.removeListener('sessions:leftovers', handler)
+    },
+    stopLeftover: (sessionId, pid) => ipcRenderer.invoke('sessions:stopLeftover', sessionId, pid)
   },
   cron: {
     list: () => ipcRenderer.invoke('cron:list'),

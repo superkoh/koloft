@@ -10,6 +10,7 @@ import {
   type CronState,
   type SessionWorkbenchState,
   type LoginProgress,
+  type LeftoverProcess,
   type SessionInfo,
   type TabKind,
   type Settings,
@@ -81,6 +82,7 @@ interface AppState {
   tabs: Tab[]
   activeTabId: string | null
   sessions: SessionInfo[]
+  leftovers: Record<string, LeftoverProcess[]>
   settings: Settings
   settingsOpen: boolean
   welcomeActive: boolean
@@ -145,6 +147,7 @@ interface AppState {
   restartActiveSession: () => void
 
   setSessions: (s: SessionInfo[]) => void
+  setLeftovers: (l: Record<string, LeftoverProcess[]>) => void
   setSettings: (s: Settings) => void
   setSettingsOpen: (open: boolean) => void
   setWelcomeActive: (on: boolean) => void
@@ -367,6 +370,7 @@ export const useStore = create<AppState>((set, get) => ({
   tabs: [],
   activeTabId: null,
   sessions: [],
+  leftovers: {},
   settings: DEFAULT_SETTINGS,
   settingsOpen: false,
   welcomeActive: false,
@@ -631,6 +635,7 @@ export const useStore = create<AppState>((set, get) => ({
     })
     bindParkedWorkbench()
   },
+  setLeftovers: (leftovers) => set({ leftovers }),
   setSettings: (settings) => set({ settings }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   setWelcomeActive: (welcomeActive) => set({ welcomeActive }),

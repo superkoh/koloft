@@ -58,6 +58,11 @@ about how it was found.
   sleep, and `caffeinate -dims -w <pid>` exits when that pid exits — the kernel enforces
   it, so a crashed or SIGKILLed app never leaves a stray `caffeinate`. `caffeinate`
   exists only on macOS.
+- **`ps eww -Ao pid=,ppid=,command=` prints each same-user process's environment after
+  its arguments.** A process whose parent has exited is re-parented to launchd (ppid
+  1). Measured 2026-09-23 on macOS 27: 1041 processes, 1.6 MB of output, 88 ms. The
+  env words cannot be told apart from the arguments, so a clean command line needs a
+  second, plain `ps -Ao pid=,command=`.
 - **macOS has no `timeout(1)`**, and `/usr/bin/security` waits on a GUI unlock or
   authorization dialog with no timeout of its own. A time limit in a shell script has to
   be a `kill -0` polling loop.

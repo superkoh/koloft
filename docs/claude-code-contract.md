@@ -760,6 +760,14 @@ other bullets of §9 were not re-measured on this build.
   from inside a session's Bash, through the shim, registered as that session's tab
   (`"mode":"new"`). When it was killed, Koloft dropped the tab while the tab's real
   claude kept running, and the person then resumed the same id in a second tab.
+- **A claude cleans up its own background shells, but not a program that detaches
+  itself.** Measured 2026-09-23 on CC 2.1.281 in tmux. A `run_in_background` `sleep
+  900` ran in its own process group under claude, and SIGHUP to claude took the shell
+  and the `sleep` down with it. A program that re-parents itself to launchd lives on,
+  and it still carries `CLAUDE_CODE_SESSION_ID=<id>` and `CLAUDE_PID` in its
+  environment. Examples: an Android emulator's `qemu`, still running three days after
+  its session; an `adb` server; the OrbStack app. So "programs this session left
+  running" = processes with ppid 1 whose environment names that session id.
 
 Koloft dependents: the scheduled-jobs runner's launch line and the shim's new-session
 branch (`src/main/shim.ts`), `src/main/claudeArgs.ts`, `src/main/skillList.ts`.

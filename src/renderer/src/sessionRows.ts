@@ -1,5 +1,12 @@
 import type { SessionBackend } from './agentUi'
-import type { ParkedItem, SessionInfo, SessionStatus, TabKind, WorkspaceRows } from '@shared/types'
+import type {
+  LeftoverProcess,
+  ParkedItem,
+  SessionInfo,
+  SessionStatus,
+  TabKind,
+  WorkspaceRows
+} from '@shared/types'
 import { NOTES_HEIGHT_FLOOR } from '@shared/settingsOps'
 
 export function relTime(mtimeMs: number, nowMs: number): string {
@@ -16,11 +23,16 @@ function shortDur(ms: number): string {
   return m >= 1 ? `${m}m` : '<1m'
 }
 
+export function leftoverLabel(p: LeftoverProcess): string {
+  return p.command.replace(/^\S*\//, '')
+}
+
 export function parkedBadge(
   items: ParkedItem[],
-  backend?: SessionBackend
+  backend?: SessionBackend,
+  leftovers: LeftoverProcess[] = []
 ): { text: string; lines: string[]; hint: string } {
-  let n = 0
+  let n = leftovers.length
   const lines = items.map((p) => {
     if (p.kind === 'teammate') {
       const k = parseInt(p.label, 10) || 1
@@ -31,18 +43,21 @@ export function parkedBadge(
     if (p.kind === 'monitor') return `monitor · ${p.label}`
     return `server · ${p.label}` + (p.ageMs === undefined ? '' : ` · running ${shortDur(p.ageMs)}`)
   })
+  lines.push(...leftovers.map((p) => `left running · ${leftoverLabel(p)}`))
   return {
     text: `⏸ ${n}`,
     lines,
-    hint:
-      backend === 'codex'
+    hint: leftovers.length
+      ? 'Programs this session started keep running on their own. Stop any you no longer need.'
+      : backend === 'codex'
         ? 'Stop these tasks in the Codex session to free the resources.'
         : 'Stop them in the session (ctrl+b lists background tasks) to free the resources.'
   }
 }
 
 export function sessionActivityBadge(
-  session?: Pick<SessionInfo, 'parked' | 'background' | 'backendId' | 'observation'>
+  session?: Pick<SessionInfo, 'parked' | 'background' | 'backendId' | 'observation'>,
+  leftovers: LeftoverProcess[] = []
 ): (ReturnType<typeof parkedBadge> & { heading: string }) | null {
   if (session?.observation === 'degraded')
     return {
@@ -51,7 +66,10 @@ export function sessionActivityBadge(
       lines: ['Live status is unavailable; the session may still be running.'],
       hint: 'Check the terminal for its current state.'
     }
-  const parked = session?.parked?.length ? parkedBadge(session.parked, session.backendId) : null
+  const parked =
+    session?.parked?.length || leftovers.length
+      ? parkedBadge(session?.parked ?? [], session?.backendId, leftovers)
+      : null
   const background = session?.background ?? []
   if (!background.length)
     return parked ? { ...parked, heading: `${parked.text} parked · not working` } : null

@@ -188,6 +188,7 @@ import {
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import { CDP_OP_BUDGET_MS } from '@shared/cdpBudget'
 import { runningClaudePid } from './claudeSessionRegistry'
+import { scanLeftovers, stopLeftover } from './leftovers'
 import { applyWindowCommand, guestShortcut } from '@shared/shortcutDispatch'
 import { BROWSER_PARTITION, PLACEHOLDER_SESSION_TITLE, isHttpUrl } from '@shared/types'
 import {
@@ -226,6 +227,7 @@ import type {
   CronPermission,
   CronSaveInput,
   ProbeErrorKind,
+  LeftoverProcess,
   ResumePlan,
   SessionInfo,
   SessionStatus,
@@ -292,6 +294,19 @@ tracker.heldTabs = () => {
   return held
 }
 tracker.needsUser = (id) => attention.list().some((e) => e.tabId === id)
+let leftovers = new Map<string, LeftoverProcess[]>()
+tracker.leftBehind = (sessionId) => !!leftovers.get(sessionId)?.length
+const LEFTOVER_SCAN_MS = 30_000
+async function refreshLeftovers(): Promise<void> {
+  if (process.platform === 'win32') return
+  const next = await scanLeftovers()
+  const changed =
+    JSON.stringify(Object.fromEntries(next)) !== JSON.stringify(Object.fromEntries(leftovers))
+  leftovers = next
+  if (changed) sendToRenderer('sessions:leftovers', Object.fromEntries(next))
+}
+setInterval(() => void refreshLeftovers(), LEFTOVER_SCAN_MS).unref()
+void refreshLeftovers()
 const attention = new AttentionTracker((pending, event) => {
   updateDockBadge(pending)
   retractStaleOsNotifications(pending)
@@ -3212,6 +3227,14 @@ function registerIpc(): void {
       )
       return legacy
     }
+  })
+
+  ipcMain.handle('sessions:leftovers', () => Object.fromEntries(leftovers))
+  ipcMain.handle('sessions:stopLeftover', async (_e, sessionId: unknown, pid: unknown) => {
+    if (typeof sessionId !== 'string' || typeof pid !== 'number') return false
+    const stopped = await stopLeftover(sessionId, pid)
+    await refreshLeftovers()
+    return stopped
   })
 
   ipcMain.handle('sessions:resumePlan', (_e, id: unknown): Promise<ResumePlan> => {
