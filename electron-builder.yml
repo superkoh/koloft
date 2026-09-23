@@ -1,0 +1,54 @@
+# reverse-DNS of koloft.ai (the product domain)
+appId: ai.koloft.app
+productName: Koloft
+copyright: Copyright © 2026 koh
+
+directories:
+  output: release
+  buildResources: build
+
+# Allow-list: only the built app gets packed. package.json is always included, and
+# production node_modules (node-pty, ccstatusline) are collected by electron-builder's
+# dependency walker independent of these globs. The previous deny-list swept the whole
+# repo into the asar — including .claude/worktrees/* and their node_modules, which is
+# what ballooned the dmg from ~120 MB (0.5.0) to ~385 MB (0.5.1+).
+files:
+  - out/**
+
+# Chromium UI locales shipped inside Electron Framework — 220 .lproj folders, ~48 MB.
+# Koloft's own UI is English; these strings only surface in Chromium-internal chrome
+# (PDF viewer, spellcheck menus, the embedded-browser bits). A missing locale falls
+# back to en, so keep just en + zh_CN.
+electronLanguages:
+  - en
+  - zh_CN
+
+asarUnpack:
+  - '**/node_modules/node-pty/**'
+  # executed by an external bash wrapper (src/main/statusline.ts) via
+  # ELECTRON_RUN_AS_NODE — must exist as real files, not asar entries
+  - '**/node_modules/ccstatusline/**'
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - arm64
+    - target: zip
+      arch:
+        - arm64
+  category: public.app-category.developer-tools
+  icon: build/icon.icns
+  # personal / local build — no code signing or notarization
+  identity: null
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+dmg:
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+# Releases are cut by hand: `scripts/release-notes.sh` composes the notes and
+# `gh release create` uploads the dmg. electron-builder must never do it. Without this,
+# `repository` in package.json is enough for it to infer a GitHub target, and its
+# implicit publishing switches itself on when it detects CI — so the day packaging moves
+# into a workflow, a build would start publishing releases on its own.
+publish: null

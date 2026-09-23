@@ -1,0 +1,247 @@
+/*
+ * Changes (FR-38…FR-43) — the `files` tab's review half, INTERIOR ONLY.
+ *
+ * Its own file rather than a block in `styles.css`, for the reason `browseView.css` gives:
+ * several agents were appending to that file at once and a read-modify-write race there
+ * drops a block silently. Imported from `ChangesView.tsx`.
+ *
+ * Fig 2's two columns: the left file list and ONE continuous diff stream. The stream is
+ * both the scroller AND the offset parent — the left list's click sets `scrollTop` from a
+ * block's `offsetTop`, which only holds while nothing between them establishes a new
+ * containing block. Diff rows reuse the `.idiff-*` shape of the inline diff (styled in
+ * `styles.css`), so the plain → syntax-highlighted swap NFR-01 needs changes the colors
+ * and nothing else — same nodes, same height. The row badges (`.ft-gbadge`, `.ft-delta`)
+ * are the tree's own decorations, deliberately shared rather than re-cut.
+ */
+.fv-changes {
+  display: flex;
+  /* both spellings on purpose: `.fv` may host this as a flex child or as a plain block
+     with a definite height, and the stream must own the scroll either way */
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+}
+/* The left column: a summary header that never moves, over the list that scrolls. */
+.cv-side {
+  flex: 0 0 224px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--line);
+}
+.cv-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px 6px 12px;
+}
+/* The listed set added up — the one place the per-file ±N badges are totalled. A header
+   of the column, outside the scroller, so "how big is this change" is answerable from
+   anywhere in the list. (A sticky first row inside `.cv-list` until; the rows
+   seen over it were orphaned DOM, not paint — `groupByDir` in changesModel.ts.) */
+.cv-total {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 13px;
+  border-bottom: 1px solid var(--line);
+  font-size: 10.5px;
+  color: var(--fg-faint);
+  white-space: nowrap;
+}
+/* the file count gives up its width first — the ±N is the part worth keeping */
+.cv-total-n {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* some of the listed files bring no line count, so the sum understates the change — the
+   row says so itself, and the hover text says why */
+.cv-total[data-partial='1'] {
+  cursor: help;
+}
+.cv-total .ft-delta {
+  margin-left: auto;
+  font-size: 10.5px;
+}
+.cv-grp {
+  padding: 8px 7px 3px;
+  font-size: 10.5px;
+  color: var(--fg-faint);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cv-grp:first-child {
+  padding-top: 2px;
+}
+.cv-stream {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+}
+/* A block that is off screen is not laid out. Every diff row wraps (`.idiff-code` is
+   `pre-wrap`), so any change of the column's width re-breaks every line of every block —
+   with the rows always in the DOM (NFR-01 keeps them there for ⌘F and scroll-back) that
+   was the whole stream, on screen or not, on EVERY drag step of the gutter: measured
+   on the 6×900-line fixture, ~75ms of layout per step and a worst frame of
+   ~195ms (workbench-resize-perf.spec.ts). With this, only the screenful pays. The
+   intrinsic size is a placeholder for a block that has never been laid out; once it has,
+   `auto` remembers its real height, so scrolling back does not jump. */
+.cv-blk {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 600px;
+}
+/* the separator sits BETWEEN blocks (`+`, not `:first-of-type`) — a banner above the
+   first block is a div too, and would otherwise steal the "first" slot */
+.cv-blk + .cv-blk {
+  border-top: 1px solid var(--line);
+}
+/* Sticky because FR-12's ↗ hangs on this row: in a continuous stream the blocks worth
+   splitting are the ones you have scrolled INTO, and a header that scrolls away takes the
+   only route out of that block with it (measured at header y = −1 against a stream
+   starting at y = 119 — WB-R08's own When clause was unperformable). Stickiness is scoped
+   to `.cv-blk`, so each header pins only while its own file is on screen and hands over at
+   the next block's edge. It does NOT move `offsetTop`, which the anchor scroll and
+   WB-R13 both read off the BLOCK. */
+.cv-blk-hd {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  /* opaque on purpose — diff rows scroll UNDER this now */
+  background: var(--bg-2);
+}
+.cv-blk-hd .path {
+  min-width: 0;
+  font-size: 12px;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cv-blk-hd .path .dir {
+  color: var(--fg-faint);
+}
+.cv-gap {
+  flex: 1;
+}
+/* the hunk header row: git's own `@@` line, and FR-38's per-file ⤢ on the first one */
+.cv-hunk {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 10px;
+  background: var(--bg-1);
+  border-top: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg-faint);
+}
+.cv-hunk-hd {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cv-exp {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: none;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--fg-faint);
+  cursor: pointer;
+}
+.cv-exp:hover {
+  color: var(--fg);
+  background: var(--bg-3);
+}
+.cv-exp[aria-pressed='true'] {
+  color: var(--fg);
+  border-color: var(--accent);
+}
+/* FR-41 — one summary row per special state; FR-42 — only the rename is a button */
+.cv-special {
+  display: block;
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  background: none;
+  font-size: 12px;
+  color: var(--fg-dim);
+  text-align: left;
+}
+.cv-rename,
+.cv-bigdiff {
+  cursor: pointer;
+}
+.cv-rename:hover,
+.cv-bigdiff:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+.cv-note {
+  padding: 9px 12px;
+  font-size: 12px;
+  color: var(--fg-faint);
+}
+/* §Edge — the truncation / git-failure banners. They sit at the top of the stream and the
+   partial content below them stays readable (WB-C11). */
+.cv-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  background: var(--bg-3);
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+.cv-banner-err {
+  color: var(--red);
+}
+.cv-retry {
+  padding: 2px 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--bg-1);
+  font-size: 11.5px;
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+.cv-retry:hover {
+  color: var(--fg);
+  background: var(--bg-4);
+}
+/* the whole-stream states (empty / filtered-empty / not-a-repo) wear `.fv-empty` for the
+   look — `.cv-empty` is only the hook that says WHICH surface put it there */
+/* FR-31's Source segment inside a block — Shiki's own <pre>, stripped of its background
+   the same way `.code-body` does it, but flowing in the stream instead of owning a pane */
+.cv-src {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  overflow-x: auto;
+  user-select: text;
+}
+.cv-src .shiki,
+.cv-src pre {
+  margin: 0;
+  padding: 8px 12px;
+  background: transparent !important;
+}
+.cv-src code {
+  font-family: inherit;
+  background: transparent;
+}

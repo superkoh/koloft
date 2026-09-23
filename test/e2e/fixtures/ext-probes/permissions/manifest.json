@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Koloft BB Permissions",
+  "version": "1.0.0",
+  "description": "Black-box probe: requests an optional permission and badges the answer.",
+  "optional_permissions": ["clipboardRead"],
+  "action": {
+    "default_title": "Koloft BB Permissions"
+  },
+  "background": {
+    "service_worker": "sw.js"
+  }
+}

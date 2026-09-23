@@ -1,0 +1,83 @@
+{
+  "name": "koloft",
+  "version": "0.27.1",
+  "description": "A macOS app that runs and manages your Claude Code sessions — every session in a folder, with a Workbench beside it.",
+  "main": "./out/main/index.js",
+  "author": {
+    "name": "superkoh",
+    "url": "https://github.com/superkoh"
+  },
+  "license": "GPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/superkoh/koloft.git"
+  },
+  "bugs": {
+    "url": "https://github.com/superkoh/koloft/issues"
+  },
+  "homepage": "https://github.com/superkoh/koloft#readme",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "npm run typecheck && electron-vite build",
+    "postbuild": "bash scripts/assert-webgl-atlas.sh out/renderer",
+    "preview": "electron-vite preview",
+    "rebuild": "electron-rebuild -f -w node-pty",
+    "dist:mac": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --arm64",
+    "dist:dmg": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --arm64 --dir && bash scripts/make-dmg.sh",
+    "dist:beta": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --arm64 --dir -c.extraMetadata.name=koloft-beta -c.productName=Koloft-Beta -c.appId=ai.koloft.app.beta -c.directories.output=release-beta",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web && npm run typecheck:test",
+    "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test:unit": "vitest run",
+    "test:unit:changed": "vitest run --changed=main",
+    "test:unit:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test": "npm run test:unit && npm run test:e2e"
+  },
+  "dependencies": {
+    "ccstatusline": "2.2.29",
+    "electron-chrome-extensions": "^4.9.0",
+    "electron-chrome-web-store": "^0.13.0",
+    "node-pty": "^1.0.0",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@electron/asar": "^3.4.1",
+    "@electron/rebuild": "^4.2.0",
+    "@playwright/test": "^1.62.1",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^5.0.0",
+    "@vscode/markdown-it-katex": "^1.1.2",
+    "@xterm/addon-fit": "0.12.0-beta.299",
+    "@xterm/addon-unicode11": "0.10.0-beta.299",
+    "@xterm/addon-web-links": "0.13.0-beta.299",
+    "@xterm/addon-webgl": "0.20.0-beta.298",
+    "@xterm/xterm": "6.1.0-beta.302",
+    "dompurify": "^3.1.7",
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "katex": "^0.18.4",
+    "markdown-it": "^15.0.0",
+    "markdown-it-footnote": "^4.0.0",
+    "mermaid": "^11.17.0",
+    "prettier": "^3.9.6",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-icons": "^5.7.0",
+    "shiki": "^4.4.2",
+    "typescript": "^7.0.2",
+    "vite": "^7.0.0",
+    "vitest": "^4.1.10",
+    "zustand": "^5.0.0"
+  }
+}

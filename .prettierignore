@@ -1,0 +1,18 @@
+node_modules
+out
+dist
+release
+release-beta
+
+# npm owns these two — `npm version` rewrites package.json on every release, and a
+# formatter fighting it over the same lines helps nobody.
+package.json
+package-lock.json
+
+# Verbatim GPL-3.0.
+LICENSE
+
+# Prose stays hand-wrapped. Prettier does not reflow paragraphs, so all it would do here
+# is swap *emphasis* for _emphasis_ and repad tables — churn with nothing behind it, in
+# the one place where a human's line breaks carry meaning.
+*.md

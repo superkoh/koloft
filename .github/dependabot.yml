@@ -1,0 +1,36 @@
+version: 2
+
+updates:
+  # Monthly and grouped. A one-person project cannot absorb a pull request per bumped
+  # package, and an update nobody reviews is worse than one that waited four weeks.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    groups:
+      # Everything that only matters at build time travels together.
+      dev-dependencies:
+        dependency-type: development
+        update-types: ['minor', 'patch']
+      # The five runtime dependencies ship inside the app, so they move on their own
+      # and each gets read.
+      production-patch:
+        dependency-type: production
+        update-types: ['patch']
+    ignore:
+      # Electron and node-pty are pinned to each other through `npm run rebuild`, and a
+      # major bump of either needs a rebuild plus a real launch. Those arrive by hand.
+      - dependency-name: electron
+        update-types: ['version-update:semver-major']
+      - dependency-name: node-pty
+        update-types: ['version-update:semver-major']
+      # The xterm packages are pinned to exact beta builds on purpose: one of them
+      # shipped a glyph-atlas corruption that `scripts/assert-webgl-atlas.sh` now
+      # guards against. They move when someone chooses to move them.
+      - dependency-name: '@xterm/*'
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

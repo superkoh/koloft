@@ -1,0 +1,23 @@
+# The project runs no formatter on purpose, so this file is what keeps an editor from
+# quietly reformatting code your change never touched. It states what the tree already
+# is; it does not impose anything new.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 2
+insert_final_newline = true
+trim_trailing_whitespace = true
+max_line_length = 100
+
+[*.md]
+# Two trailing spaces are a hard line break in Markdown.
+trim_trailing_whitespace = false
+
+[LICENSE]
+# Verbatim GPL-3.0. Nothing may touch it.
+trim_trailing_whitespace = false
+insert_final_newline = false
+max_line_length = off

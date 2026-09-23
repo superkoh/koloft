@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Koloft BB Tabs Create",
+  "version": "1.0.0",
+  "description": "Black-box probe: opens the baked target url in a tab when its action is clicked.",
+  "action": {
+    "default_title": "Koloft BB Tabs Create"
+  },
+  "background": {
+    "service_worker": "sw.js"
+  }
+}

@@ -1,0 +1,68 @@
+name: Bug report
+description: Something in Koloft does not work the way it should.
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Koloft sits between you and Claude Code, so the first thing to sort out is which
+        of the two did the thing. If you can, check whether the same happens running
+        `claude` in a plain terminal — that answer alone often solves the report.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you saw, and what you expected instead.
+      placeholder: |
+        I clicked …
+        Koloft showed …
+        I expected …
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to make it happen again
+      description: Numbered steps from a fresh launch, if you can get it to repeat.
+      placeholder: |
+        1. Open Koloft with one workspace pinned
+        2. Press ⌘N
+        3. …
+    validations:
+      required: false
+
+  - type: input
+    id: koloft-version
+    attributes:
+      label: Koloft version
+      description: '`Koloft ▸ About`, or the name of the dmg you installed.'
+      placeholder: 0.24.1
+    validations:
+      required: true
+
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      placeholder: '15.6 (Apple Silicon)'
+    validations:
+      required: true
+
+  - type: input
+    id: claude-version
+    attributes:
+      label: Claude Code version
+      description: "Run `claude --version`. Koloft reads files and hooks that Claude Code writes, so its version matters as much as Koloft's."
+      placeholder: 2.1.266
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: A screenshot or a short screen recording usually says it faster than a paragraph.
+    validations:
+      required: false

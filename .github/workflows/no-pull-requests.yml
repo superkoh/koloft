@@ -1,0 +1,25 @@
+name: Pull requests are not open yet
+
+# Koloft is published to be read and run, and to take bug reports and ideas as issues.
+# It does not take code contributions yet. GitHub has no switch for that, so this closes
+# any pull request that is not the maintainer's own, with a note saying where to go.
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  close:
+    # Dependabot's version-update pull requests are the owner's own tooling.
+    if: github.event.pull_request.user.login != github.repository_owner && github.event.pull_request.user.login != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          gh pr comment "$PR" --repo "$REPO" --body "Thanks for taking the time. Koloft is not taking pull requests yet — the code is here to be read and run, and bug reports and ideas are very welcome as issues. This will change; when it does, CONTRIBUTING.md will say so. Closing for now."
+          gh pr close "$PR" --repo "$REPO"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}

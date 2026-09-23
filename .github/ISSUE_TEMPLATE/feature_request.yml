@@ -1,0 +1,40 @@
+name: Feature request
+description: Something Koloft should do and does not.
+labels: ['enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One idea decides what gets built: **you pick a folder, and you start or resume
+        Claude Code sessions in it.** Ideas that pull Koloft away from that get closed
+        even when they are good ideas and even when they work — a free-floating
+        terminal, a second copy of a transcript, anything that makes Koloft the thing
+        you look at instead of Claude.
+
+        [docs/roadmap.md](https://github.com/superkoh/koloft/blob/main/docs/roadmap.md) lists what is planned
+        and what was already turned down, and is worth a look first.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: The situation you are in, not the feature you have in mind. The best requests describe a moment that goes badly today.
+      placeholder: When I have four sessions running across two folders, I …
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you think would fix it
+      description: If you have something in mind. It is fine to leave this empty and let the problem speak.
+    validations:
+      required: false
+
+  - type: textarea
+    id: today
+    attributes:
+      label: What you do about it today
+      description: The workaround, if there is one. How annoying it is says a lot about how much the fix is worth.
+    validations:
+      required: false

@@ -1,0 +1,193 @@
+import { describe, expect, it } from 'vitest'
+import type { SessionInfo, SessionStatus } from '@shared/types'
+import {
+  closeConfirmBody,
+  closeTabIntent,
+  CLOSE_CONFIRM_TITLE,
+  unexpectedExitNotice,
+  unexpectedExitWanted,
+  unsavedBody,
+  unsavedFilesPhrase
+} from '../../src/renderer/src/closeSession'
+
+// BB-E07 meets a scheduled run that dies before it binds is explained by
+// main's own toast ("could not start: Claude exited before it started"), and the toast
+// slot holds one line — so the generic session-death line must stand aside for exactly
+// that case, and for no other.
+describe('unexpectedExitWanted', () => {
+  const crash = { exitCode: 1 }
+  it('wants the line for an ordinary claude tab that ended badly', () => {
+    expect(unexpectedExitWanted({ kind: 'claude', sessionId: 's1' }, crash)).toBe(true)
+    expect(unexpectedExitWanted({ kind: 'claude' }, { exitCode: 0, signal: 9 })).toBe(true)
+  })
+  it('reports Codex crashes using its own source', () => {
+    expect(unexpectedExitWanted({ kind: 'codex', sessionId: 'codex:local:a' }, crash)).toBe(true)
+    expect(unexpectedExitNotice(crash, 'codex')).toContain('Codex')
+  })
+  it('does not want it for a clean exit, or for a tab that is not a conversation', () => {
+    expect(unexpectedExitWanted({ kind: 'claude', sessionId: 's1' }, { exitCode: 0 })).toBe(false)
+    expect(unexpectedExitWanted({ kind: 'terminal' }, crash)).toBe(false)
+    expect(unexpectedExitWanted(undefined, crash)).toBe(false)
+  })
+  it('stands aside for a scheduled run that never bound, but not for one that did', () => {
+    expect(unexpectedExitWanted({ kind: 'claude', jobId: 'j1' }, crash)).toBe(false)
+    expect(unexpectedExitWanted({ kind: 'claude', jobId: 'j1', sessionId: 's1' }, crash)).toBe(true)
+  })
+})
+
+// the lifecycle contract D3 reverses the ⌘W policy: a bound session used to be untouchable,
+// now it closes — with one confirmation while it is working / on a permission
+// prompt. The branch that must NOT move is the pending launch (⌘W = Cancel,
+// T-KEY-02 / T-LIFE-02): a launch is alive from the moment it spawns and only its
+// missing session id tells it apart from a running session.
+
+const sess = (tabId: string, over: Partial<SessionInfo> = {}): SessionInfo => ({
+  tabId,
+  sessionId: 'sid-' + tabId,
+  title: 'Refactor session management',
+  cwd: '/w',
+  treeRoot: '/w',
+  jsonlPath: '/j',
+  files: [],
+  alive: true,
+  updatedAt: 0,
+  ...over
+})
+
+const tab = (
+  id: string,
+  kind: 'claude' | 'shell' = 'claude'
+): { id: string; kind: 'claude' | 'shell'; title: string } => ({
+  id,
+  kind,
+  title: 'Claude'
+})
+
+describe('closeTabIntent (D3 ⌘W gate)', () => {
+  it('asks before closing a working session, naming it', () => {
+    expect(closeTabIntent(tab('t1'), [sess('t1', { status: 'working' })])).toEqual({
+      kind: 'confirm',
+      status: 'working',
+      title: 'Refactor session management'
+    })
+  })
+
+  it('asks before closing a session parked on a permission prompt', () => {
+    expect(closeTabIntent(tab('t1'), [sess('t1', { status: 'approval' })])).toEqual({
+      kind: 'confirm',
+      status: 'approval',
+      title: 'Refactor session management'
+    })
+  })
+
+  it('closes an idle / waiting / statusless session silently', () => {
+    for (const status of [undefined, 'idle', 'waiting'] as (SessionStatus | undefined)[]) {
+      expect(closeTabIntent(tab('t1'), [sess('t1', { status })]), String(status)).toEqual({
+        kind: 'close'
+      })
+    }
+  })
+
+  it('closes a PENDING launch silently — ⌘W stays its Cancel (T-KEY-02)', () => {
+    // registered but not hook-bound: alive, no session id, and main reports no status
+    const pending = sess('t1', { sessionId: '', status: 'working' })
+    expect(closeTabIntent(tab('t1'), [pending])).toEqual({ kind: 'close' })
+  })
+
+  it('closes a tab whose session is already gone', () => {
+    expect(closeTabIntent(tab('t1'), [])).toEqual({ kind: 'close' })
+    expect(closeTabIntent(tab('t1'), [sess('t1', { alive: false, status: 'working' })])).toEqual({
+      kind: 'close'
+    })
+  })
+
+  it('asks for a working session hosted by a shell tab — the session is what is at risk', () => {
+    expect(closeTabIntent(tab('t1', 'shell'), [sess('t1', { status: 'working' })])).toEqual({
+      kind: 'confirm',
+      status: 'working',
+      title: 'Refactor session management'
+    })
+  })
+
+  it('does nothing with no active tab', () => {
+    expect(closeTabIntent(undefined, [sess('t1', { status: 'working' })])).toEqual({ kind: 'none' })
+  })
+})
+
+describe('close confirmation copy (§3.1)', () => {
+  it('names the session and promises it survives, per status', () => {
+    expect(CLOSE_CONFIRM_TITLE).toBe('Close running session?')
+    expect(closeConfirmBody('My run', 'working')).toBe(
+      '"My run" is still working on a task. Closing will interrupt the current turn. The session stays in the list and can be resumed anytime.'
+    )
+    expect(closeConfirmBody('My run', 'approval')).toBe(
+      '"My run" has a pending permission prompt. Closing will discard it. The session stays in the list and can be resumed anytime.'
+    )
+  })
+})
+
+// file-edit B-24/B-25 §03 figure 3 — the sentence the unsaved-changes dialog puts in
+// front of the user. Naming the file is the whole point of the question, so the list
+// only collapses once it stops being readable: figure 3 draws the names up to three
+// and a bare count beyond that. The dialog itself renders one string, so these arities
+// are only reachable here — an end-to-end case pins one of them at most.
+describe('unsaved-changes copy (§03 figure 3)', () => {
+  it('names the file when there is one', () => {
+    expect(unsavedFilesPhrase(['apps/api/.env'])).toBe('apps/api/.env')
+  })
+
+  it('joins two with "and", and three with a comma plus "and"', () => {
+    expect(unsavedFilesPhrase(['a.txt', 'b.txt'])).toBe('a.txt and b.txt')
+    expect(unsavedFilesPhrase(['a.txt', 'b.txt', 'c.txt'])).toBe('a.txt, b.txt and c.txt')
+  })
+
+  it('collapses to a count past three — four names no longer read as a sentence', () => {
+    expect(unsavedFilesPhrase(['a', 'b', 'c', 'd'])).toBe('4 files')
+    expect(unsavedFilesPhrase(['a', 'b', 'c', 'd', 'e', 'f', 'g'])).toBe('7 files')
+  })
+
+  it('says what is lost and that nothing is kept behind the scenes', () => {
+    expect(unsavedBody(['apps/api/.env'])).toBe(
+      'Unsaved changes in apps/api/.env. Closing loses them — Koloft keeps no drafts.'
+    )
+    expect(unsavedBody(['a', 'b', 'c', 'd'])).toBe(
+      'Unsaved changes in 4 files. Closing loses them — Koloft keeps no drafts.'
+    )
+  })
+})
+
+// B-25 — a session that is BOTH running and holding unsaved edits gets one question,
+// not two in a row. The merged sentence is spliced between D3's lead and D3's promise:
+// the promise ("the session can be resumed") is about the session and stays last,
+// while the file warning belongs next to the thing that is actually unrecoverable.
+describe('closeConfirmBody with unsaved files (B-25 merged dialog)', () => {
+  it('leaves the copy untouched when nothing is dirty', () => {
+    expect(closeConfirmBody('My run', 'working')).toBe(closeConfirmBody('My run', 'working', []))
+  })
+
+  it('splices the file warning in, naming the file', () => {
+    expect(closeConfirmBody('My run', 'working', ['apps/api/.env'])).toBe(
+      '"My run" is still working on a task. Closing will interrupt the current turn.' +
+        ' It also has unsaved changes in apps/api/.env, which closing will lose.' +
+        ' The session stays in the list and can be resumed anytime.'
+    )
+  })
+
+  it('collapses to a count past three, on the approval variant too', () => {
+    expect(closeConfirmBody('My run', 'approval', ['a', 'b', 'c', 'd'])).toBe(
+      '"My run" has a pending permission prompt. Closing will discard it.' +
+        ' It also has unsaved changes in 4 files, which closing will lose.' +
+        ' The session stays in the list and can be resumed anytime.'
+    )
+  })
+})
+
+// node-pty leaves exitCode at 0 when a child dies by signal (pty.cc: WIFEXITED /
+// WIFSIGNALED are separate branches), so the signal is the ONLY tell for a killed
+// claude — a kill -9 must not be reported as "exit code 0".
+describe('unexpectedExitNotice (the one account of a session that died)', () => {
+  it('names the signal for a killed claude, the code for an error exit', () => {
+    expect(unexpectedExitNotice({ exitCode: 0, signal: 9 })).toContain('signal 9')
+    expect(unexpectedExitNotice({ exitCode: 1 })).toContain('exit code 1')
+  })
+})

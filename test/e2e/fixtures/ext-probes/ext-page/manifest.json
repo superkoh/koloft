@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Koloft BB Ext Page",
+  "version": "1.0.0",
+  "description": "Black-box probe: opens its own extension page in a tab when its action is clicked.",
+  "action": {
+    "default_title": "Koloft BB Ext Page"
+  },
+  "background": {
+    "service_worker": "sw.js"
+  }
+}

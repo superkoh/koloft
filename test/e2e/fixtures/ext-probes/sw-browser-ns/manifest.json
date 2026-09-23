@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Koloft BB SW NS",
+  "version": "1.0.0",
+  "description": "Black-box probe: service worker that reads the `browser` namespace at top level.",
+  "action": {
+    "default_title": "Koloft BB SW NS"
+  },
+  "background": {
+    "service_worker": "sw.js",
+    "type": "module"
+  }
+}

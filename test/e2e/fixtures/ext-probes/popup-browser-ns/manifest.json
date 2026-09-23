@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Koloft BB Popup NS",
+  "version": "1.0.0",
+  "description": "Black-box probe: popup page that reads the `browser` namespace at top level.",
+  "action": {
+    "default_title": "Koloft BB Popup NS",
+    "default_popup": "popup.html"
+  }
+}

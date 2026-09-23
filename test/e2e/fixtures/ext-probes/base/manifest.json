@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Koloft BB Probe",
+  "version": "1.2.3",
+  "description": "Black-box probe: marks every page it is injected into.",
+  "action": {
+    "default_title": "Koloft BB Probe",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "all_frames": true,
+      "run_at": "document_start",
+      "js": ["probe.js"]
+    }
+  ]
+}

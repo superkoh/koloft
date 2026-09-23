@@ -1,0 +1,6 @@
+{
+  "allowedMcpServers": [],
+  "skillOverrides": {
+    "playwright-cli": "on"
+  }
+}

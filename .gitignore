@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+dist/
+release/
+release-beta/
+.vite/
+build/icon-1024.png
+
+# TypeScript
+*.tsbuildinfo
+
+# Test artifacts
+test-results/
+playwright-report/
+.playwright/
+# scratch dir the playwright-cli skill drops snapshots into (dev-time browsing of
+# the design docs, never part of the build)
+.playwright-cli/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Claude Code per-project data (file-based memory, session transcripts) and the
+# per-machine settings overlay (personal skill/plugin/MCP toggles, local paths).
+# .claude/settings.json IS committed — it holds the project-wide setup.
+.claude/projects/
+.claude/settings.local.json
+.claude/worktrees/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/

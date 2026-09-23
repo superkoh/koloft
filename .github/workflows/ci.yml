@@ -1,0 +1,43 @@
+name: CI
+
+# Push only, on every branch. Not `pull_request`: the repo takes no outside pull
+# requests, and a pull_request trigger would run a stranger's fork on this runner
+# before the closing workflow gets to it. Nobody but the owner can push.
+on:
+  push:
+
+# A newer push to the same branch supersedes the run still going.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    # macOS on purpose. Koloft only runs on macOS, and parts of the unit suite spawn
+    # real processes and read real `ps` output rather than mocking them.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          # The floor `engines` declares, which is Electron's own requirement.
+          node-version: 22.12.0
+          cache: npm
+
+      # Builds node-pty from source. Electron has shipped no install script since v42,
+      # so no browser-sized download happens here.
+      - run: npm ci
+
+      - run: npm run format:check
+
+      - run: npm run typecheck
+
+      - run: npm run test:unit
+
+      # The e2e layer is deliberately not a gate: it drives a real built app through
+      # Playwright, and the project has no full-suite gate by doctrine (CLAUDE.md).
+      # Run it locally with `npm run test:e2e` on the flows a change can break.

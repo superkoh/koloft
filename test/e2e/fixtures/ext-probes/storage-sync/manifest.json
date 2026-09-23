@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Koloft BB Storage Sync",
+  "version": "1.0.0",
+  "description": "Black-box probe: round-trips a value through chrome.storage.sync.",
+  "permissions": ["storage"],
+  "action": {
+    "default_title": "Koloft BB Storage Sync"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "all_frames": true,
+      "run_at": "document_start",
+      "js": ["probe.js"]
+    }
+  ]
+}

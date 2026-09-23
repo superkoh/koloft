@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Koloft BB Active Tab",
+  "version": "1.0.0",
+  "description": "Black-box probe: badges the hostname of the tab it sees as active.",
+  "permissions": ["tabs"],
+  "action": {
+    "default_title": "Koloft BB Active Tab"
+  },
+  "background": {
+    "service_worker": "sw.js"
+  }
+}

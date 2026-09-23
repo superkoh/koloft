@@ -1,0 +1,106 @@
+# CLAUDE.md
+
+Koloft is an Electron app that runs and manages Claude Code (the `claude` command-line
+tool, via node-pty). The one core idea: the user picks a **workspace** and starts
+or resumes **Claude sessions** in it; Koloft lists those sessions straight from
+Claude's own storage (`~/.claude/projects`) and hangs one helper panel — the
+Workbench: changed files, a file browser, web pages, a shell — off each session,
+and one plain-text note off each workspace (the Notes island under the sessions
+list; the Workbench is the session's, the note is the workspace's).
+Judge every trade-off against that one idea.
+(Source lives in `superkoh/koloft`; installers in `superkoh/koloft-releases`, the list
+`install.sh` and the in-app updater read.)
+
+How each feature behaves is NOT written here — the code and its tests are the source
+of truth.
+
+Working principles:
+
+- Write everything the simple way. All LLM output — session replies and every file
+  it writes — must use plain, everyday words that even a five-year-old could follow,
+  in whatever language it is writing; never pick a hard word where an easy one
+  works. When a picture says it better, draw one: a chart, diagram, or graph
+  (mermaid or ASCII in markdown) beats a wall of text. The first time an
+  abbreviation or shorthand appears in a document or in a session reply, spell it
+  out and say what it means — e.g. "PR (pull request, a proposed code change)".
+- Build the smallest thing that solves the problem at hand — in the design, the
+  code, and the tests alike. A branch, guard, fallback, or abstraction for a case
+  that is merely imaginable, and unlikely to ever happen, is cost with no payoff:
+  leave it out, and add it the day the case shows up, evidence in hand. (A case
+  that has been observed, or that the code's own invariants make likely, is not
+  "imaginable" — handle it.)
+- Extend the existing UI when adding a feature. Reuse its components, layouts,
+  interactions, state treatments and CSS classes. When the app already has a style
+  or state for the same purpose, use it exactly; do not invent a parallel version
+  or replace the existing screen to add another session backend.
+- Comments: the fewer the better. The test: delete it — would the next person to
+  change this code change it wrongly? Write one only if so, and only for what the
+  code cannot say — a constraint, a measured fact, a better-looking alternative
+  that was rejected — in one or two sentences. Never restate what the code does;
+  never record provenance or dates (git has them); a name that needs a comment
+  needs a better name.
+- Tests follow behavior, not diffs: one change may need zero, one, or several. Before
+  writing one, ask "if this behavior broke, which existing test would go red?" — if
+  one would, change that test; only if none would, write a new one, and make it fail
+  only when this behavior breaks. Do not write a test for a change with no behavior
+  in it (refactor, rename, moved file), for a test that merely restates the
+  implementation (mock everything, assert the mock was called), or to pin an
+  arbitrary cosmetic value (a pixel size, a colour, a line of copy).
+- Run only what the change can break, and say which ran and why those. Unit layer:
+  `npm run test:unit:changed` picks the files by import graph. E2E layer: you pick.
+  First choose candidates by flow name from `test/e2e` (spec names are flow names;
+  a spec's header comment says what it covers), then grep `test/e2e` for the
+  identifiers you touched — component names, `.wb-*` selectors, IPC channel names —
+  to catch the rest. A change to a wide fan-out file (types.ts, store.ts, App.tsx,
+  preload, main index.ts) is still picked by the flows whose state or IPC it
+  touched, never by falling back to the whole suite. There is no full-suite gate:
+  `npm test` runs only when someone asks for it, never as a reflex before a merge.
+- Hand-testing on a real machine is driven ONE CASE AT A TIME through
+  AskUserQuestion, never as a wall of text. The steps to carry out go INSIDE the
+  question; the options are the outcomes to choose between (what passed, what broke,
+  and the specific wrong thing worth naming). Ask the next case only after the last
+  one is answered, and keep a running tally so nothing is silently skipped. Never
+  paste a numbered list of cases and leave the person to work through it — they are
+  at the keyboard, reading a plan costs them the attention the test needs, and a
+  pasted list comes back as "some passed" with no record of which.
+- Three setup steps, each with a silent failure mode:
+  - `npm run rebuild` before the first run, and again after any change to the Electron
+    or node-pty version — otherwise the app crashes on launch with an ABI mismatch.
+  - A fresh git worktree has no `node_modules` of its own and Node silently resolves up
+    to the parent checkout's, so run `npm install` **and** `npm run rebuild` inside each
+    worktree before testing there.
+  - Since Electron ≥42 the binary is no longer fetched at install time — run
+    `node node_modules/electron/install.js` once, or the first (possibly headless e2e)
+    launch stalls on a silent download.
+- Auth comes from Koloft's own multi-account balancer (Settings ▸ Accounts): the claude
+  shim injects the picked account per launch; the probe/header contract is
+  `docs/claude-code-contract.md` §7. With the mode off, a session runs bare `claude` on
+  whatever the machine's own `/login` state is.
+- Any browser automation here stays headless — never pass `--headed` unless asked to
+  watch. Koloft is developed on the same Mac the automation runs on, so a browser window
+  that takes focus, or merely covers a fullscreen Space, interrupts whatever is being
+  typed at that moment. The app's own e2e suite obeys the same rule by launching
+  hidden and never showing itself (`KOLOFT_TEST_BACKGROUND=1` in
+  `test/e2e/helpers/env.ts`, pinned by `test/e2e/background-launch.spec.ts`).
+- `README.md` is the human-facing product page (install, packaging, Gatekeeper). Don't
+  read it for context — the code is the source of truth; read it only when the task is
+  editing the README itself. Test-layer seams and conventions live in `test/CLAUDE.md`.
+- No per-feature document survives its feature shipping — anywhere in the repo.
+  While a feature is in flight its artifacts (design, spec, cases, status, review,
+  punchlist) live in and die with the PR that ships it. On
+  retirement, content disperses to wherever it can stay true: behavioral claims are
+  test assertions; code-local rationale is a comment at the load-bearing site
+  (precedent: `src/main/updater.ts` header); measured facts about Claude Code
+  itself — things reading Koloft's code cannot reveal, which drift when Claude Code
+  upgrades — go to `docs/claude-code-contract.md` with date, CC version, and how
+  they were established; cross-cutting doctrine goes in this file; leftover work →
+  GitHub issues. Everything else is git history — deletion loses nothing, while a
+  stale doc actively misleads whoever greps it. `docs/` therefore holds only
+  documents organized around a subject that outlives any one feature (today: the
+  Claude Code and Codex contract ledgers, and the roadmap), never a shipped feature's
+  design doc. Code and
+  tests that cite a retired doc keep the citation with a "(retired to git history)"
+  note — never a bare pointer at a file that no longer exists.
+- The roadmap is `docs/roadmap.md`: the tiered checklist, the explicit not-doing list,
+  and how much to trust the order. Start any "what's next" discussion from it rather
+  than re-deriving one, and edit it there when a decision changes.
