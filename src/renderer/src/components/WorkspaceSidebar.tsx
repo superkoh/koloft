@@ -508,9 +508,8 @@ export function WorkspaceSidebar({
             className="mi"
             onClick={() => {
               setMenu(null)
-              const tabId = tabIdFor(row.id)
-              if (tabId) requestCloseTab(tabId)
-              else setConfirmOrphan(row.id)
+              if (isOrphanRow(row, sessions, storeTabs)) offerForceCloseUnlessMainHasBoundIt(row)
+              else requestCloseTab(tabIdFor(row.id) ?? null)
             }}
           >
             Close

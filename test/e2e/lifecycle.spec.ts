@@ -436,7 +436,6 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       await openMenu(page, page.locator('.ws-tab', { hasText: 'Running menu session' }))
       const running = await menuItemTexts(page)
       expect(running).toEqual(['Reveal in Finder', 'Copy session ID', 'Close'])
-      for (const t of running) expect(t).not.toMatch(/remove from list/i)
       noForbidden(running)
       await closeMenu(page)
 
