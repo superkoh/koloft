@@ -17,13 +17,27 @@ if [ ! -d "$APP" ]; then
   exit 1
 fi
 
-# Refuse to ship an app bundled from a pre-fix @xterm/addon-webgl (the v0.4.1
-# garbled-screen regression class) — also guards the "Koloft.app already exists, just run
+# Refuse to ship an app bundled from a pre-fix @xterm/addon-webgl (the garbled-screen
+# regression class) — also guards the "Koloft.app already exists, just run
 # make-dmg.sh" path, where the .app may predate the dependency fix.
 bash scripts/assert-webgl-atlas.sh "$APP/Contents/Resources/app.asar"
 
 cp -R "$APP" "$STAGING/Koloft.app"
 ln -s /Applications "$STAGING/Applications"
+
+# Native modules compiled on this machine (npm run rebuild) keep its absolute build paths in
+# their debug entries. Strip those from the shipped copy, then re-sign ad hoc: arm64 macOS
+# refuses to load code whose signature no longer matches.
+find "$STAGING/Koloft.app/Contents/Resources/app.asar.unpacked" -type f \
+  -path '*/build/Release/*' \( -name '*.node' -o -name spawn-helper \) -print0 |
+  while IFS= read -r -d '' bin; do
+    strip -S "$bin"
+    codesign -s - -f "$bin" 2>/dev/null
+  done
+if grep -rqa "$HOME" "$STAGING/Koloft.app/Contents/Resources"; then
+  echo "error: the app still contains $HOME" >&2
+  exit 1
+fi
 
 rm -f "$OUT" "$TMP_RO"
 hdiutil makehybrid -hfs -hfs-volume-name "Koloft" -o "$TMP_RO" "$STAGING" >/dev/null
