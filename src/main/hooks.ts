@@ -116,7 +116,13 @@ case "$event" in
           }')"
         ;;
     esac
-    printf '{"tabId":"%s","event":"%s","sessionId":"%s","message":"%s","tmux":"%s"%s}\\n' "$tab" "$event" "$sid" "$msg" "$tm" "$bgl" >> "$reg/$tab.status.jsonl"
+    # CC§8
+    wake=""
+    case "$input" in
+      *'"session_crons":[]'*) wake=',"wake":0' ;;
+      *'"session_crons":['*) wake=',"wake":1' ;;
+    esac
+    printf '{"tabId":"%s","event":"%s","sessionId":"%s","message":"%s","tmux":"%s"%s%s}\\n' "$tab" "$event" "$sid" "$msg" "$tm" "$bgl" "$wake" >> "$reg/$tab.status.jsonl"
     ;;
 esac
 exit 0

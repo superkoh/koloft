@@ -1524,6 +1524,20 @@ describe('auto-closing an idle session: every reason to keep it is read fresh at
     await expectStays(closes)
   }, 10_000)
 
+  // CC§8
+  it('never closes a session that has a wakeup scheduled (a /loop between ticks), and closes it once the loop is done', async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    stageAllClear(tracker)
+    const closes = recordAutoCloses(tracker)
+    await bindCaughtUp(tracker, 'tabA9', cwd, initialLines(cwd))
+    tracker.setWakeupPending('tabA9', true)
+    await waitFor(tracker, (s) => s.tabId === 'tabA9' && s.status === 'idle', 5000)
+    await expectStays(closes)
+    tracker.setWakeupPending('tabA9', false)
+    await waitForClose(closes, 'tabA9')
+  }, 20_000)
+
   it('never closes a remote session (this Mac cannot see that machine)', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()

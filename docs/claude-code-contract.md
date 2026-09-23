@@ -504,6 +504,12 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   `workflow`, `MCP task`, `cloud session`, `dream`, `auto-mode scan`. Nothing in the
   payload says whether a task is idle or ambient — the SDK stream's `ambient` flag
   ("hosts should exclude them from activity indicators") is not forwarded to hooks.
+- **A `/loop` wakeup shows up in `session_crons`.** Measured 2026-09-23 on CC 2.1.281,
+  in a tmux run with a Stop hook that saved its input. `/loop <prompt>` ended its turn
+  with `"session_crons":[{"id":"8044b6e3","schedule":"4 15 * * *","recurring":false,
+  "prompt":"/loop …"}]` and `"background_tasks":[]`, in compact JSON. So a session
+  whose last turn-end carried a non-empty `session_crons` will wake itself up, even
+  though it looks idle. 209 sessions on the dev Mac had called `ScheduleWakeup`.
 - **An idle teammate is still `running`**. CC's own activity checks use
   `status === 'running' && !isIdle`; hooks never see `isIdle`. On disk the idle edge
   is a user record in the lead's transcript — `Another Claude session sent a

@@ -322,6 +322,7 @@ interface Tracked {
   toolCmds: Map<string, string>
   procs: TaskProcs | null
   shellCpu: Map<string, { cpuMs: number; at: number; quiet: boolean }>
+  wakeupPending: boolean
   procsAt: number
   procsPromise?: Promise<void>
   teammateActiveMs: number
@@ -436,6 +437,7 @@ export class SessionTracker extends EventEmitter {
       toolCmds: new Map(),
       procs: null,
       shellCpu: new Map(),
+      wakeupPending: false,
       procsAt: 0,
       teammateActiveMs: 0,
       lastInterruptTs: 0,
@@ -510,6 +512,7 @@ export class SessionTracker extends EventEmitter {
     const tabId = t.info.tabId
     const held =
       tabId === this.activeTabId?.() ||
+      t.wakeupPending ||
       !!t.info.parked?.length ||
       !!this.heldTabs?.().has(tabId) ||
       !!this.needsUser?.(tabId)
@@ -526,6 +529,11 @@ export class SessionTracker extends EventEmitter {
       return
     }
     this.emit('auto-close', { tabId })
+  }
+
+  setWakeupPending(tabId: string, pending: boolean): void {
+    const t = this.tracked.get(tabId)
+    if (t) t.wakeupPending = pending
   }
 
   noteActivity(tabId: string): void {

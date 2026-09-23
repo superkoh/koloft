@@ -2262,12 +2262,14 @@ function liveTabFor(report: { tabId?: string; tmux?: string }): string | undefin
 }
 
 function handleStatusRegistration(raw: unknown): void {
-  const obj = raw as HookReport & { tabId?: string; message?: string; bgl?: string }
+  const obj = raw as HookReport & { tabId?: string; message?: string; bgl?: string; wake?: number }
   obj.tabId = liveTabFor(obj)
   if (!obj.tabId) return
   // CC§5
   if (!ownsHookReport(obj, sessionIdOf(obj.tabId))) return
   if (obj.event === 'prompt') consumeOutletDedupe(obj.tabId)
+  // CC§8
+  if (typeof obj.wake === 'number') tracker.setWakeupPending(obj.tabId, obj.wake === 1)
   const status = statusFromEvent(obj.event, obj.message)
   // CC§8
   if (status === 'waiting') void tracker.reportTurnEnd(obj.tabId, parseReportedTasks(obj.bgl))
