@@ -120,7 +120,7 @@ import { WorkspaceManager, type LiveSession } from './workspaces'
 import { sanitizeSessionWorkbench } from '@shared/workbenchState'
 import { planResume, worktreeHomeRoot, type ResumeProbes } from './resumePlan'
 import { claudeArgv } from './claudeArgs'
-import { isTrustedByClaude } from './claudeTrust'
+import { acceptClaudeTrust, isTrustedByClaude } from './claudeTrust'
 import { CronRunner, type LaunchRequest } from './cronRunner'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { listSkills, type SkillFs } from './skillList'
@@ -2671,11 +2671,27 @@ function accountUsable(): boolean {
   return listAccounts().some((a) => a.enabled && a.status === 'ok')
 }
 
+function claudeJsonPath(): string {
+  return path.join(os.homedir(), '.claude.json')
+}
+
+// CC§9
 function claudeTrusts(dir: string): boolean {
-  return isTrustedByClaude(
-    () => JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude.json'), 'utf8')),
-    dir
-  )
+  let real = dir
+  try {
+    real = fs.realpathSync(dir)
+  } catch {}
+  return isTrustedByClaude(() => JSON.parse(fs.readFileSync(claudeJsonPath(), 'utf8')), real)
+}
+
+// ADR-0026
+function trustBeforeWorktreeLaunch(root: string): void {
+  if (claudeTrusts(root)) return
+  try {
+    acceptClaudeTrust(claudeJsonPath(), root)
+  } catch (err) {
+    console.error('[koloft] could not record Claude trust for', root, err)
+  }
 }
 
 function launchCronRun(req: LaunchRequest): { ok: true; tabId: string } | { ok: false } {
@@ -2803,6 +2819,7 @@ async function createClaudeSession(opts: CreateTabOptions): Promise<CreateTabRes
     })
   }
   const cwd = resolveSpawnCwd(opts.cwd)
+  if (opts.worktree && cwd === opts.cwd) trustBeforeWorktreeLaunch(cwd)
   return createClaudeTab(cwd, opts.resumeSessionId, opts.cols, opts.rows, opts.worktree)
 }
 

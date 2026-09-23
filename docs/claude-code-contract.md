@@ -696,7 +696,18 @@ other bullets of §9 were not re-measured on this build.
   in `~/.claude.json` as `projects[<absolute path>].hasTrustDialogAccepted: true` (key
   name read off the 2.1.263 binary with `strings`, 2026-09-06), and ancestors count.
   Koloft READS that file to warn in the jobs form and to explain the deadline
-  (`src/main/claudeTrust.ts`); it never writes it — the answer is the person's to give.
+  (`src/main/claudeTrust.ts`), and writes it only for a worktree session the person
+  starts (ADR-0026).
+- **`-w` in a never-trusted repo does not ask — it refuses and exits.** `claude -w <name>`
+  prints `Error creating worktree: Workspace trust not yet accepted. Run \`claude\` once
+  in this directory and accept the trust dialog, then retry with --worktree.` and exits
+  in about 0.4 s; no worktree is made. **A bare `{"hasTrustDialogAccepted": true}`
+  entry is enough**: with only that under the repo's path, the same command made the
+  worktree (locked, branch `worktree-<name>`) and opened the session. **The key must be
+  the real path**: launched from `/var/folders/…` (a symlink to `/private/var/…`, with
+  `PWD` set to the symlink path), a key written as `/var/…` was ignored and `-w`
+  refused again; `/private/var/…` worked. Measured 2026-09-23, CC 2.1.281, pty probe on
+  a throwaway one-commit repo under `$TMPDIR`, no trusted ancestor.
 - **A child claude inherits the parent's session markers and stops writing its
   transcript.** With `CLAUDE_CODE_CHILD_SESSION=1` in the environment the launched
   session prints `⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION

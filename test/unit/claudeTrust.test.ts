@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { isTrustedByClaude } from '../../src/main/claudeTrust'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
+import { acceptClaudeTrust, isTrustedByClaude } from '../../src/main/claudeTrust'
 
 const doc =
   (projects: Record<string, unknown>): (() => unknown) =>
@@ -32,5 +35,30 @@ describe('isTrustedByClaude', () => {
     }
     expect(isTrustedByClaude(read, '/Users/me/repo')).toBe(false)
     expect(isTrustedByClaude(() => null, '/Users/me/repo')).toBe(false)
+  })
+})
+
+// CC§9
+describe('acceptClaudeTrust', () => {
+  it('records trust under the real path of a symlinked folder, keeping every other key', () => {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-trust-')))
+    const repo = path.join(tmp, 'repo')
+    const link = path.join(tmp, 'link')
+    fs.mkdirSync(repo)
+    fs.symlinkSync(repo, link)
+    const file = path.join(tmp, '.claude.json')
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ numStartups: 3, projects: { [repo]: { allowedTools: ['Bash'] } } })
+    )
+
+    acceptClaudeTrust(file, link)
+
+    const doc = JSON.parse(fs.readFileSync(file, 'utf8'))
+    expect(doc.numStartups).toBe(3)
+    expect(doc.projects[repo]).toEqual({ allowedTools: ['Bash'], hasTrustDialogAccepted: true })
+    expect(doc.projects[link]).toBeUndefined()
+    expect(fs.statSync(file).mode & 0o777).toBe(0o600)
+    fs.rmSync(tmp, { recursive: true, force: true })
   })
 })
