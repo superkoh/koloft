@@ -84,7 +84,8 @@ function mcpReplies(proc: ChildProcess, wanted: number): Promise<McpReply[]> {
         buf = buf.slice(i + 1)
         if (!line) continue
         try {
-          replies.push(JSON.parse(line) as McpReply)
+          const msg = JSON.parse(line) as McpReply
+          if (msg.id !== undefined) replies.push(msg)
         } catch {}
         if (replies.length >= wanted) return resolve(replies)
       }
