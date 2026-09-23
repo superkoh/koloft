@@ -33,15 +33,7 @@ function isToolShell(command: string): boolean {
   return /shell-snapshots/.test(command) || /(^|\/)(zsh|bash|sh) -c .*\beval\b/.test(command)
 }
 
-export function parseEtime(s: string): number {
-  const m = s.trim().match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/)
-  if (!m) return 0
-  const days = Number(m[1] ?? 0)
-  const hours = Number(m[2] ?? 0)
-  return (((days * 24 + hours) * 60 + Number(m[3])) * 60 + Number(m[4])) * 1000
-}
-
-export function parseCputime(s: string): number {
+export function parsePsDuration(s: string): number {
   const m = s.trim().match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+(?:\.\d+)?)$/)
   if (!m) return 0
   const hours = Number(m[1] ?? 0) * 24 + Number(m[2] ?? 0)
@@ -67,7 +59,7 @@ function parsePs(stdout: string): Snapshot | null {
     const ppid = Number(m[2])
     commandOf.set(pid, m[5])
     etimeOf.set(pid, m[3])
-    cpuOf.set(pid, parseCputime(m[4]))
+    cpuOf.set(pid, parsePsDuration(m[4]))
     const kids = childrenOf.get(ppid)
     if (kids) kids.push(pid)
     else childrenOf.set(ppid, [pid])
@@ -129,7 +121,7 @@ export async function inspectTaskProcs(
     if (name === undefined || !name.startsWith(prefix) || !name.endsWith('.output')) continue
     result.shells.set(path.basename(name, '.output'), {
       pid,
-      ageMs: parseEtime(snap.etimeOf.get(pid) ?? ''),
+      ageMs: parsePsDuration(snap.etimeOf.get(pid) ?? ''),
       listening: false,
       cpuMs: descendants(snap, pid).reduce((sum, p) => sum + (snap.cpuOf.get(p) ?? 0), 0)
     })

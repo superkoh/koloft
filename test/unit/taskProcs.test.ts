@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { inspectTaskProcs, makeExec, parseCputime, parseEtime } from '../../src/main/taskProcs'
+import { inspectTaskProcs, makeExec, parsePsDuration } from '../../src/main/taskProcs'
 
 const TASKS = '/tmp/claude-502/proj/sid/tasks'
 const SNAP = '/Users/me/.claude/shell-snapshots/snapshot-zsh-1.sh'
@@ -41,18 +41,18 @@ function stub(outputs: { ps?: string; fd1?: string; listen?: string }): {
 
 describe('taskProcs', () => {
   it('parses ps etime in every shape it comes in', () => {
-    expect(parseEtime('05:00')).toBe(5 * 60_000)
-    expect(parseEtime('01:02:03')).toBe((3600 + 120 + 3) * 1000)
-    expect(parseEtime('01-02:00:00')).toBe(26 * 3600 * 1000)
-    expect(parseEtime('garbage')).toBe(0)
+    expect(parsePsDuration('05:00')).toBe(5 * 60_000)
+    expect(parsePsDuration('01:02:03')).toBe((3600 + 120 + 3) * 1000)
+    expect(parsePsDuration('01-02:00:00')).toBe(26 * 3600 * 1000)
+    expect(parsePsDuration('garbage')).toBe(0)
   })
 
   it('parses ps cpu time in every shape it comes in (minutes run past 59)', () => {
-    expect(parseCputime('0:02.96')).toBe(2960)
-    expect(parseCputime('1659:13.75')).toBe((1659 * 60 + 13.75) * 1000)
-    expect(parseCputime('01:02:03')).toBe((3600 + 120 + 3) * 1000)
-    expect(parseCputime('1-00:00:01')).toBe((24 * 3600 + 1) * 1000)
-    expect(parseCputime('garbage')).toBe(0)
+    expect(parsePsDuration('0:02.96')).toBe(2960)
+    expect(parsePsDuration('1659:13.75')).toBe((1659 * 60 + 13.75) * 1000)
+    expect(parsePsDuration('01:02:03')).toBe((3600 + 120 + 3) * 1000)
+    expect(parsePsDuration('1-00:00:01')).toBe((24 * 3600 + 1) * 1000)
+    expect(parsePsDuration('garbage')).toBe(0)
   })
 
   it('maps each tool shell, foreground ones too, to its task by the output file it holds, reports one whose child listens, and never asks lsof about MCP servers or hooks', async () => {

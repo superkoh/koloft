@@ -294,19 +294,19 @@ tracker.heldTabs = () => {
   return held
 }
 tracker.needsUser = (id) => attention.list().some((e) => e.tabId === id)
-let leftovers = new Map<string, LeftoverProcess[]>()
-tracker.leftBehind = (sessionId) => !!leftovers.get(sessionId)?.length
+let leftovers: Record<string, LeftoverProcess[]> = {}
+tracker.leftBehind = (sessionId) => !!leftovers[sessionId]?.length
 const LEFTOVER_SCAN_MS = 30_000
 async function refreshLeftovers(): Promise<void> {
-  if (process.platform === 'win32') return
   const next = await scanLeftovers()
-  const changed =
-    JSON.stringify(Object.fromEntries(next)) !== JSON.stringify(Object.fromEntries(leftovers))
+  const changed = JSON.stringify(next) !== JSON.stringify(leftovers)
   leftovers = next
-  if (changed) sendToRenderer('sessions:leftovers', Object.fromEntries(next))
+  if (changed) sendToRenderer('sessions:leftovers', next)
 }
-setInterval(() => void refreshLeftovers(), LEFTOVER_SCAN_MS).unref()
-void refreshLeftovers()
+if (process.platform !== 'win32') {
+  setInterval(() => void refreshLeftovers(), LEFTOVER_SCAN_MS).unref()
+  void refreshLeftovers()
+}
 const attention = new AttentionTracker((pending, event) => {
   updateDockBadge(pending)
   retractStaleOsNotifications(pending)
@@ -3229,7 +3229,7 @@ function registerIpc(): void {
     }
   })
 
-  ipcMain.handle('sessions:leftovers', () => Object.fromEntries(leftovers))
+  ipcMain.handle('sessions:leftovers', () => leftovers)
   ipcMain.handle('sessions:stopLeftover', async (_e, sessionId: unknown, pid: unknown) => {
     if (typeof sessionId !== 'string' || typeof pid !== 'number') return false
     const stopped = await stopLeftover(sessionId, pid)
