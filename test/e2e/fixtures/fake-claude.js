@@ -116,6 +116,28 @@ function makeWorktree(name, fatal = false) {
   return fs.realpathSync(wtDir)
 }
 
+// CC§9
+function seededTrustRefuses(dir) {
+  let projects
+  try {
+    projects = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8')).projects ?? {}
+  } catch {
+    return false
+  }
+  for (let p = fs.realpathSync(dir); ; p = path.dirname(p)) {
+    if (projects[p]?.hasTrustDialogAccepted === true) return false
+    if (path.dirname(p) === p) return true
+  }
+}
+
+if (wtName && seededTrustRefuses(launchCwd)) {
+  process.stdout.write(
+    'Error creating worktree: Workspace trust not yet accepted. Run `claude` once in this ' +
+      'directory and accept the trust dialog, then retry with --worktree.\r\n'
+  )
+  process.exit(1)
+}
+
 if (wtName) effectiveCwd = makeWorktree(wtName, true)
 let cwd = effectiveCwd
 
