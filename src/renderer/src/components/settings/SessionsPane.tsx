@@ -1,8 +1,6 @@
 import type { JSX } from 'react'
 import { SessionMethodsSection } from './SessionMethodsSection'
 
-/** Which tool a new session runs. Its own pane because that is not an account
- *  question — Accounts is about the pool of Claude logins. */
 export function SessionsPane(): JSX.Element {
   return (
     <>

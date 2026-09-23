@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { isValidWorktreeName } from '@shared/worktreeName'
 
-// The `-w <name>` rule, shared since D11 because main
-// now refuses what the renderer refuses instead of dropping the flag.
-
 describe('isValidWorktreeName (§5 name rule)', () => {
   it('accepts letters, digits, dot, underscore and dash', () => {
     for (const n of ['a', 'payment-retry', 'v1.2_x', 'A9', 'a-b_c.d', 'a'.repeat(64)]) {
@@ -17,12 +14,10 @@ describe('isValidWorktreeName (§5 name rule)', () => {
     }
   })
 
-  it('rejects what `git check-ref-format --branch worktree-<name>` rejects', () => {
-    // probed against real git: trailing dot, `..`, and a `.lock` suffix all fail
+  it('rejects exactly what `git check-ref-format --branch worktree-<name>` rejects (probed against real git): trailing dot, `..`, `.lock` suffix — not `.lock` mid-name or a trailing dash', () => {
     for (const n of ['a.', 'a..b', 'a.lock']) {
       expect(isValidWorktreeName(n), n).toBe(false)
     }
-    // …and only those — `.lock` mid-name and a trailing dash are legal refs
     for (const n of ['a.lock.b', 'a.locky', 'a-']) {
       expect(isValidWorktreeName(n), n).toBe(true)
     }
@@ -36,7 +31,6 @@ describe('isValidWorktreeName (§5 name rule)', () => {
     for (const n of ['-x', '--force', '-rf']) {
       expect(isValidWorktreeName(n), n).toBe(false)
     }
-    // dash anywhere else stays legal
     expect(isValidWorktreeName('a-b')).toBe(true)
   })
 })

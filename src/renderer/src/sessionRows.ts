@@ -2,7 +2,6 @@ import type { SessionBackend } from './agentUi'
 import type { ParkedItem, SessionInfo, SessionStatus, TabKind, WorkspaceRows } from '@shared/types'
 import { NOTES_HEIGHT_FLOOR } from '@shared/settingsOps'
 
-/** Relative age for a cold row's menu header / tooltip (`2d ago`). */
 export function relTime(mtimeMs: number, nowMs: number): string {
   const s = Math.floor(Math.max(0, nowMs - mtimeMs) / 1000)
   if (s >= 86400) return `${Math.floor(s / 86400)}d ago`
@@ -11,20 +10,12 @@ export function relTime(mtimeMs: number, nowMs: number): string {
   return `${s}s ago`
 }
 
-/** A running time for the parked badge (`3h`, `12m`, `<1m`). */
 function shortDur(ms: number): string {
   const m = Math.floor(ms / 60_000)
   if (m >= 60) return `${Math.floor(m / 60)}h`
   return m >= 1 ? `${m}m` : '<1m'
 }
 
-/**
- * The C2 row's parked badge (SessionInfo.parked): what the session keeps open
- * without working on it — a server, a Monitor, teammates idle between messages.
- * These never count as 'working' (product decision); the badge is how
- * the user learns they are there, and the card behind it names each so it can be
- * released. Text is the count; a teammate entry counts as many.
- */
 export function parkedBadge(
   items: ParkedItem[],
   backend?: SessionBackend
@@ -80,10 +71,6 @@ export function sessionActivityBadge(
   }
 }
 
-/** The C2 row's state class: running rows map their run-state onto a lightbar
- *  class; a bound-but-statusless session reads as idle (logic.md §4); cold rows
- *  carry no bar at all. A pending launch outranks both — it has no session bound
- *  yet, so `running` is false while the row is anything but cold. */
 export function rowStateClass(
   running: boolean,
   status: SessionStatus | undefined,
@@ -103,17 +90,6 @@ export function rowStateClass(
   }
 }
 
-/**
- * F7: a running row this renderer cannot open. A reload now re-adopts
- * main's live ptys as tabs, so this is the FALLBACK state — adoption suppressed
- * (test seam), failed, or a pty the inventory could not offer — plus the sub-second
- * boot window before the inventory lands (which is why the confirm that consumes
- * this verdict awaits adoptionSettled). Both links to a tab are consulted and
- * neither may be assumed fresh: the sessions stream is push-only (empty until the
- * tracker's next update), and the tabId it carries may name a tab this renderer
- * does not have — activateTab on an unknown id is a silent no-op. So reachability
- * is decided against the tabs that are actually here.
- */
 export function isOrphanRow(
   row: { id: string; running: boolean },
   sessions: { sessionId: string; tabId: string; alive: boolean }[],
@@ -124,30 +100,18 @@ export function isOrphanRow(
   return !tabs.some((t) => t.alive && (t.id === bound || t.sessionId === row.id))
 }
 
-/** D2: the method icon earns its width only where one workspace lists both kinds of
- *  session. One icon on every row of a Claude-only workspace says nothing, and a lone
- *  icon with nothing to contrast against cannot be read at all. */
 export function mixesBackends(rows: { backendId?: SessionBackend }[]): boolean {
   return new Set(rows.map((r) => r.backendId ?? 'claude')).size > 1
 }
 
-/** Constant scroll speed for the C2 marquee: the distance is whatever the title
- *  actually overflows, so the duration has to follow it — a fixed duration would
- *  crawl through a short overflow and race through a long one. */
 const MARQUEE_SPEED_PX_S = 60
-/** Hover lead-in before the title starts moving (design.html C2). */
 const MARQUEE_START_MS = 500
-/** Hold at the tail before the loop snaps back to the truncated start. */
 const MARQUEE_TAIL_MS = 700
-/** A 20px overflow still needs long enough to register as motion, not a twitch. */
 const MARQUEE_MIN_SCROLL_MS = 600
 
 type MarqueeFrame = { transform: string; offset: number }
 type MarqueeTiming = { duration: number; delay: number; easing: string; iterations: number }
 
-/** The C2 hover marquee, measured: scroll exactly `overflowPx` (= the title's
- *  `calc(-100% + row width)`) at a constant speed, hold 0.7s, loop. Null when the
- *  title fits — a non-overflowing title never animates. */
 export function marqueeAnim(
   overflowPx: number
 ): { frames: MarqueeFrame[]; timing: MarqueeTiming } | null {
@@ -165,10 +129,6 @@ export function marqueeAnim(
   }
 }
 
-/** Which workspace the S4 welcome panel (and its ＋ New session) targets: the last
- *  one whose session was selected in this run, else the first pinned one — nothing
- *  about the selection is persisted, so a restart always lands on the array head
- *  (O2/A10). A vanished folder can't host a new session, so it never wins. */
 export function welcomeTarget(
   rows: WorkspaceRows[],
   lastPath: string | null
@@ -177,21 +137,6 @@ export function welcomeTarget(
   return live.find((w) => w.workspace.path === lastPath) ?? live[0] ?? null
 }
 
-/**
- * D2 — the workspace the window is IN right now, which is the workspace whose note
- * the Notes island shows.
- *
- * One rule covers both doors, which is the whole reason a workspace head became pickable
- * (D7). A session is picked: its workspace is the sidebar group that lists its row — and
- * a worktree session is listed under its PARENT workspace, so this lands on the parent,
- * which is where that note belongs. Nothing is picked: it is the workspace the user
- * chose by clicking its head, and failing that the one the welcome panel already points
- * at, so the island never goes blank while a workspace is on screen.
- *
- * `rowId` is the picked session's id — or, while a launch is still in flight, the
- * launching pty's tab id, the other name a sidebar row can carry. A vanished folder never
- * wins: there is no folder left to keep a note beside.
- */
 export function currentWorkspace(
   rows: WorkspaceRows[],
   rowId: string | null,
@@ -207,25 +152,12 @@ export function currentWorkspace(
   return welcomeTarget(rows, lastWsPath)?.workspace.path ?? null
 }
 
-/** D7 — the quiet line under the welcome panel's big workspace name. Picking a
- *  workspace head leaves its sessions running with none of them picked, so the panel has
- *  to say they are still there and where to go, instead of claiming nothing is running. */
 export function welcomeQuietLine(running: number): string {
   if (running < 1) return 'No running session'
   if (running === 1) return '1 session running — pick one on the left'
   return `${running} sessions running — pick one on the left`
 }
 
-/**
- * The directory the current selection scopes to — the Files island's root, and the
- * cwd a new terminal opens in. A selected session owns its own root
- * (`SessionInfo.treeRoot` — the directory the session IS in, so the Claude TUI cd'ing
- * around mid-session never re-roots the scope while a real move to another checkout
- * does; the tab's launch cwd stands in until the tracker reports); with nothing
- * selected, everything scopes to the welcome panel's workspace
- * (O2). A tab with no session of its own has no scope either, and OSC 7 `cd` drift
- * stopped re-rooting anything when the free terminal retired (§9).
- */
 export function selectionRoot(
   tab: { kind: TabKind; cwd: string } | undefined,
   sessionRoot: string | undefined,
@@ -235,41 +167,23 @@ export function selectionRoot(
   return welcomePath ?? null
 }
 
-/** Width of the aux pane while its LEFT-edge gutter is dragged (the pane sits right
- *  of the TUI — decided). No automated layer exercises a drag, so a mirrored
- *  sign here survives every suite — this pins the direction and both clamps:
- *  the surface's own floor, ceiling = whatever leaves the TUI ≥360px (+20px chrome) of
- *  the space between dock and pane edge. The floor is per-surface since the Browser
- *  shares this column (session-browser D2) — see auxPaneMin. */
+const TUI_MIN_WIDTH_PX = 360
+const TUI_CHROME_PX = 20
+
 export function paneWidthFromDrag(
   paneRight: number,
   dockRight: number,
   clientX: number,
   floor = 320
 ): number {
-  const ceiling = paneRight - dockRight - 380
+  const ceiling = paneRight - dockRight - TUI_MIN_WIDTH_PX - TUI_CHROME_PX
   return Math.min(Math.max(floor, paneRight - clientX), ceiling)
 }
 
-/** The sessions island's own floor: a note may never squeeze the session list away. */
 export const SESSIONS_MIN_HEIGHT = 160
 
-/** D6 — how tall the grip between the two dock islands is. Spelt once, here: the
- *  drag's ceiling has to leave room for it, and App.tsx gives the element its height from
- *  this same number, so the two can never drift apart. */
 export const DOCK_GUTTER_PX = 10
 
-/**
- * D6 — how tall the Notes island may be in a dock this tall.
- *
- * The one ceiling rule, spelt once. It is needed twice: while the gutter is dragged, and
- * again on every render, because the height is REMEMBERED. A note dragged to 600px on a
- * big display comes back on a small window where 600px is the whole dock — and the
- * sessions island, being `flex:1`, would give way and vanish. So the saved number is a
- * wish, and this is what the dock can actually grant: the sessions island keeps its floor
- * plus the gutter itself, and the note keeps its own floor even in a window too short for
- * both (a ceiling under the floor is no ceiling at all).
- */
 export function clampNotesHeight(
   saved: number,
   dockHeight: number,
@@ -279,15 +193,6 @@ export function clampNotesHeight(
   return Math.min(Math.max(floor, saved), ceiling)
 }
 
-/**
- * D6 — height of the Notes island while the gutter above it is dragged.
- *
- * The note is the BOTTOM island in the dock, so its height is the distance from the
- * cursor down to the dock's foot — pull the gutter up and the note grows. Pinned here
- * for the same reason `paneWidthFromDrag` is: no automated layer drags a gutter, so a
- * mirrored sign would survive every suite. The clamping is `clampNotesHeight`'s, so the
- * drag can never stop at a height a plain render would then refuse.
- */
 export function notesHeightFromDrag(
   dockBottom: number,
   dockHeight: number,

@@ -1,11 +1,4 @@
 #!/usr/bin/env node
-// Run via a symlink or node wrapper pointing here so ws resolves from this repository.
-// Files under the isolated HOME steer the fake: fake-codex-delay (binding delay ms),
-// fake-codex-exit (early exit code), fake-codex-next-title, fake-codex-lazy (no first turn),
-// fake-codex-version-delay (ms the --version answer is held back).
-// fake-codex-confirm-resume requires Enter before connecting, like native directory trust.
-// /new, /resume <id>, /fork, /exit model foreground TUI operations. A prompt containing
-// "hold" remains working; "approve" waits for y/n; everything else completes a turn.
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
@@ -72,10 +65,9 @@ const newThread = (cwd, predecessor) => {
 }
 
 if (argv.includes('--version')) {
-  // fake-codex-version-delay (ms) makes the probe slow on purpose, so a spec can prove
-  // the app does not wait for it. Blocking, like a real binary that is slow to answer.
-  const delay = Number(read('fake-codex-version-delay')) || 0
-  if (delay > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delay)
+  const versionProbeBlockingDelayMs = Number(read('fake-codex-version-delay')) || 0
+  if (versionProbeBlockingDelayMs > 0)
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, versionProbeBlockingDelayMs)
   console.log('codex-cli 0.153.4')
   process.exit(0)
 }

@@ -2,8 +2,6 @@ import { describe, it, expect } from 'vitest'
 import MarkdownIt from 'markdown-it'
 import { tasks } from '../../src/renderer/src/markdown/tasks'
 
-/** FR-09: `- [ ]` is a read-only checkbox. Disabled is the whole point — the preview pane
- *  is read-only, so a click must not look like it wrote the file back. */
 const md = new MarkdownIt().use(tasks)
 
 describe('tasks', () => {

@@ -3,12 +3,6 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 
-/**
- * The one place anything leaves Koloft for the OS (PRD TEST-2 / SEC-4). Two properties are
- * asserted here rather than in e2e: the scheme whitelist (a suite can show one refusal,
- * not a family) and the suppression seam — a test run must never launch a real app, so
- * "nothing escaped" has to be readable from the log even while the hand-off is off.
- */
 const calls = vi.hoisted(() => ({
   external: [] as string[],
   paths: [] as string[],
@@ -52,10 +46,7 @@ afterEach(() => {
   fs.rmSync(dir, { recursive: true, force: true })
 })
 
-/** the choke-point log once all `n` async appends have landed, sorted: two appends
- *  fired in the same tick reach the file in either order, and every reader of this file
- *  (the suite's own `osHandoffs`) filters rather than indexes. */
-async function logged(n: number): Promise<string[]> {
+async function loggedInAnyOrder(n: number): Promise<string[]> {
   return vi.waitFor(() => {
     const lines = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean)
     expect(lines).toHaveLength(n)
@@ -66,7 +57,7 @@ async function logged(n: number): Promise<string[]> {
 describe('leaveForOS', () => {
   it('records every hand-off and performs the one the kind asks for', async () => {
     leaveForOS('https://koloft.test/a', 'url')
-    expect(await logged(1)).toEqual(['https://koloft.test/a'])
+    expect(await loggedInAnyOrder(1)).toEqual(['https://koloft.test/a'])
     expect(calls.external).toEqual(['https://koloft.test/a'])
     expect(calls.paths).toEqual([])
 
@@ -76,18 +67,18 @@ describe('leaveForOS', () => {
 
   it('reveals a file without opening it (the download toast may not launch anything)', async () => {
     leaveForOS('/tmp/downloads/report.pdf', 'reveal')
-    expect(await logged(1)).toEqual(['/tmp/downloads/report.pdf'])
+    expect(await loggedInAnyOrder(1)).toEqual(['/tmp/downloads/report.pdf'])
     expect(calls.revealed).toEqual(['/tmp/downloads/report.pdf'])
     expect(calls.paths).toEqual([])
     expect(calls.external).toEqual([])
   })
 
-  it('still records, but performs nothing, while the suppression seam is set', async () => {
+  it('still records, but performs nothing, while the suppression seam is set: a test run never launches a real app yet can read what would have escaped', async () => {
     process.env.KOLOFT_SUPPRESS_OS_OPEN = '1'
     leaveForOS('https://koloft.test/a', 'url')
     leaveForOS('/tmp/report.pdf', 'path')
     leaveForOS('/tmp/downloads/report.pdf', 'reveal')
-    expect(await logged(3)).toEqual([
+    expect(await loggedInAnyOrder(3)).toEqual([
       '/tmp/downloads/report.pdf',
       '/tmp/report.pdf',
       'https://koloft.test/a'
@@ -110,7 +101,7 @@ describe('openUrlExternally (SEC-4: the escape hatch is http/https/mailto/tel on
       'mailto:user@koloft.test',
       'tel:+15551234'
     ])
-    expect(await logged(4)).toHaveLength(4)
+    expect(await loggedInAnyOrder(4)).toHaveLength(4)
   })
 
   it('refuses everything else outright — nothing performed, nothing recorded', () => {
@@ -130,7 +121,7 @@ describe('osOpenFallback', () => {
     osOpenFallback('https://koloft.test/a')
     expect(calls.paths).toEqual(['/tmp/report.pdf'])
     expect(calls.external).toEqual(['https://koloft.test/a'])
-    expect(await logged(2)).toEqual(['/tmp/report.pdf', 'https://koloft.test/a'])
+    expect(await loggedInAnyOrder(2)).toEqual(['/tmp/report.pdf', 'https://koloft.test/a'])
   })
 
   it('drops a target that is neither', () => {

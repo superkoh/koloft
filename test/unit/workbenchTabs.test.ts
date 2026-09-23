@@ -24,15 +24,6 @@ import {
   type WorkbenchTabSet
 } from '../../src/renderer/src/components/workbenchTabs'
 
-/**
- * The Workbench tab model. The retired `browserTabs` suite covered the
- * semantics this module generalizes — dedup, the source fork, eviction, drag order — so
- * the cases below keep those and add what the three-kind panel introduces: the pinned
- * `files` slot (FR-02/18/21), a cap that counts PER KIND (FR-22), directory-prefixed file
- * titles (FR-27) and the FR-56 backlink.
- */
-
-/** n user-opened web tabs on distinct urls, each of which becomes the active one */
 function webTabs(n: number, base = 'http://localhost:5173/t'): WorkbenchTabSet {
   let set = emptyTabSet()
   for (let i = 1; i <= n; i++) {
@@ -41,7 +32,6 @@ function webTabs(n: number, base = 'http://localhost:5173/t'): WorkbenchTabSet {
   return set
 }
 
-/** the same for file tabs, in the given path order */
 function fileTabs(paths: string[]): WorkbenchTabSet {
   let set = emptyTabSet()
   for (const path of paths) set = openTab(set, { kind: 'file', path, source: 'user' }).set
@@ -54,13 +44,9 @@ const urls = (set: WorkbenchTabSet): (string | undefined)[] =>
   set.tabs.filter((t) => t.kind === 'web').map((t) => t.url)
 const paths = (set: WorkbenchTabSet): (string | undefined)[] =>
   set.tabs.filter((t) => t.kind === 'file').map((t) => t.path)
-/** every file tab's rendered strip label, in strip order */
 const labels = (set: WorkbenchTabSet): string[] =>
   set.tabs.filter((t) => t.kind === 'file').map((t) => tabLabel(set, t))
 
-// FR-02/18/21 — `files` is system-pinned: it is the first slot from the empty set on, no
-// close can take it, and no drag can move it or push it out of slot 0. Every one of these
-// is enforced here rather than in the caller, so a new caller cannot forget the guard.
 describe('the pinned files tab (FR-02, FR-18, FR-21)', () => {
   it('FR-02: an empty set is exactly the files tab, active and in slot 0', () => {
     const set = emptyTabSet()
@@ -92,9 +78,7 @@ describe('the pinned files tab (FR-02, FR-18, FR-21)', () => {
   it('FR-21: files cannot be displaced either — a drop on slot 0 clamps to slot 1', () => {
     const set = webTabs(2)
     const [, a, b] = set.tabs
-    // dropping the second web tab on the pinned slot lands it just after it
     expect(ids(moveTab(set, b.id, 0))).toEqual([FILES_TAB_ID, b.id, a.id])
-    // and a tab already in slot 1 has nowhere further left to go
     expect(moveTab(set, a.id, 0)).toBe(set)
     expect(moveTab(set, a.id, -5)).toBe(set)
   })
@@ -104,22 +88,17 @@ describe('the pinned files tab (FR-02, FR-18, FR-21)', () => {
     const [, a, b, c] = set.tabs
     expect(ids(moveTab(set, c.id, 1))).toEqual([FILES_TAB_ID, c.id, a.id, b.id])
     expect(ids(moveTab(set, a.id, 99))).toEqual([FILES_TAB_ID, b.id, c.id, a.id])
-    // the tab OBJECTS survive the move — a per-tab marker may not jump to a new neighbour
     expect(moveTab(set, c.id, 1).tabs[1]).toBe(c)
     expect(moveTab(set, c.id, 1).activeId).toBe(set.activeId)
   })
 
-  // Carried over from the former `moveTab.test.ts` — the one property assertion its
-  // per-case tests do not imply: whatever index a drop lands on, including out-of-range
-  // ones that clamp, the SET is conserved. A splice that clamped wrongly would lose or
-  // duplicate a tab, and every other assertion here would still pass.
   it('FR-21: never loses or duplicates a tab, at any drop index', () => {
     const set = webTabs(3)
     for (const to of [-5, 0, 1, 2, 3, 99]) {
       const moved = moveTab(set, set.tabs[1].id, to)
-      expect(moved.tabs).toHaveLength(4) // files + 3
+      expect(moved.tabs).toHaveLength(4)
       expect(new Set(moved.tabs.map((t) => t.id)).size).toBe(4)
-      expect(moved.tabs[0].id).toBe(FILES_TAB_ID) // …and slot 0 is never surrendered
+      expect(moved.tabs[0].id).toBe(FILES_TAB_ID)
     }
   })
 
@@ -129,9 +108,6 @@ describe('the pinned files tab (FR-02, FR-18, FR-21)', () => {
   })
 })
 
-// FR-15/WB-T03/WB-T06 — the dedup key is shared with the router (so trailing-slash and
-// query-order variants are one tab), but what a HIT does forks by source: a user is taken
-// to the tab, an agent may only light its dot. A file dedups on its exact path instead.
 describe('opening a target that already has a tab (FR-15)', () => {
   it('WB-T06: a user open of a live url activates the existing tab, creating nothing', () => {
     let set = webTabs(2)
@@ -159,7 +135,7 @@ describe('opening a target that already has a tab (FR-15)', () => {
   })
 
   it('an agent re-open of the ACTIVE tab lights no dot — the user is already looking at it', () => {
-    const set = webTabs(2) // t2 is active
+    const set = webTabs(2)
     const r = openTab(set, { kind: 'web', url: 'http://localhost:5173/t2', source: 'agent' })
 
     expect(r.created).toBe(false)
@@ -210,7 +186,6 @@ describe('opening a target that already has a tab (FR-15)', () => {
     const r = openTab(set, { kind: 'file', path: '/ws/a.ts', source: 'user', line: 40 })
     expect(r.created).toBe(false)
     expect(r.set.tabs[1].line).toBe(40)
-    // …and leaves the previous anchor in place when the re-open carries none
     expect(
       openTab(r.set, { kind: 'file', path: '/ws/a.ts', source: 'user' }).set.tabs[1].line
     ).toBe(40)
@@ -224,8 +199,6 @@ describe('opening a target that already has a tab (FR-15)', () => {
   })
 })
 
-// FR-13/FR-15 — an agent open is a request to display, never a seizure. The invariant is
-// on `activeId`: the agent branch may not write it, on a dedup hit or on a fresh tab.
 describe('an agent open never takes the active tab (FR-13, FR-15)', () => {
   it('WB-T02: appends a background tab carrying the unread dot', () => {
     let set = webTabs(1)
@@ -250,10 +223,6 @@ describe('an agent open never takes the active tab (FR-13, FR-15)', () => {
   })
 })
 
-// FR-16 — activation is the ONLY thing that clears an unread mark. Expanding the panel
-// must not batch-clear (WB-T05), so nothing else in this module may touch the flag.
-// the session on screen going cold cancels the dialog in the App-wide slot only
-// when nobody alive is waiting on it.
 describe('a cold session answers only ownerless dialogs', () => {
   const owners: Record<number, string> = { 7: 'tab-A', 9: 'tab-B' }
   const ownerOf = (gid: number): string | undefined => owners[gid]
@@ -274,7 +243,6 @@ describe('a cold session answers only ownerless dialogs', () => {
 })
 
 describe('the unread mark clears on activation and nowhere else (FR-16)', () => {
-  /** an agent-made background tab plus the id of the pinned tab that stays active */
   function withUnread(): { set: WorkbenchTabSet; unreadId: string } {
     const r = openTab(emptyTabSet(), { kind: 'web', url: 'http://x.test/a', source: 'agent' })
     return { set: r.set, unreadId: r.tabId }
@@ -314,9 +282,6 @@ describe('the unread mark clears on activation and nowhere else (FR-16)', () => 
   })
 })
 
-// FR-22/23 + WB-T10/T11/T12 — the cap is 8 PER KIND. The ninth open of a kind really
-// closes one of that kind (unrecoverable), the victim is the least-recently-viewed
-// non-current tab, and `openTab` hands it back so the caller can name it in a toast.
 describe('the per-kind tab cap (FR-22, FR-23)', () => {
   it('allows exactly KIND_TAB_CAP tabs of a kind, plus the pinned one', () => {
     const set = webTabs(KIND_TAB_CAP)
@@ -336,9 +301,6 @@ describe('the per-kind tab cap (FR-22, FR-23)', () => {
 
   it('WB-T10: the victim is the least recently VIEWED, not the first created', () => {
     let set = webTabs(KIND_TAB_CAP)
-    // re-view the oldest tab, then go back to the newest: t1 is now neither the current
-    // tab nor the oldest view, which is what tells "last activation" apart from
-    // "creation order" — under creation order t1 would still be the victim
     set = activateTab(set, set.tabs[1].id)
     set = activateTab(set, set.tabs[KIND_TAB_CAP].id)
 
@@ -378,7 +340,6 @@ describe('the per-kind tab cap (FR-22, FR-23)', () => {
 
   it('WB-T12: a tab never activated participates by creation order', () => {
     let set = emptyTabSet()
-    // eight agent opens: all background, none ever activated, files stays current
     for (let i = 1; i <= KIND_TAB_CAP; i++) {
       set = openTab(set, { kind: 'web', url: `http://x.test/a${i}`, source: 'agent' }).set
     }
@@ -441,8 +402,6 @@ describe('the per-kind tab cap (FR-22, FR-23)', () => {
   })
 })
 
-// FR-19/WB-T07/WB-T08 — a close lands on a neighbour so the panel is never current-less,
-// and FR-02 makes `files` the floor of that walk.
 describe('closing a tab (FR-19)', () => {
   it('WB-T07: activates the right-hand neighbour', () => {
     let set = webTabs(3)
@@ -486,8 +445,6 @@ describe('closing a tab (FR-19)', () => {
   })
 })
 
-// FR-56/WB-R10 — “← Back to source” is a backlink to a tab that can close under it. The
-// button must VANISH then, not dangle, so the close pass drops every backlink to it.
 describe('the ← Back to source backlink (FR-56)', () => {
   it('WB-R10: closing the source tab clears the backlink on every tab pointing at it', () => {
     const source = openTab(emptyTabSet(), { kind: 'file', path: '/ws/page.html', source: 'user' })
@@ -541,9 +498,6 @@ describe('the ← Back to source backlink (FR-56)', () => {
   })
 })
 
-// FR-34 — a reference followed inside a `file` tab retargets THAT tab. Pinned here so the
-// panel cannot drift from the model's field surgery: path and anchor move, title and view
-// drop, and nothing else — on the tab or on its neighbours — changes.
 describe('retargetTab (FR-34)', () => {
   it('moves the tab to the new path and anchor, dropping its title and view', () => {
     let set = fileTabs(['/ws/a.ts'])
@@ -580,7 +534,6 @@ describe('retargetTab (FR-34)', () => {
     const moved = next.tabs.find((t) => t.id === r.tabId)!
     expect(moved.unread).toBe(true)
     expect(moved.sourceTabId).toBe(source.tabId)
-    // the tab OBJECTS of every other slot survive, as they do through moveTab
     expect(next.tabs[0]).toBe(r.set.tabs[0])
     expect(next.tabs[1]).toBe(r.set.tabs[1])
     expect(next.activeId).toBe(r.set.activeId)
@@ -600,11 +553,9 @@ describe('retargetTab (FR-34)', () => {
   })
 })
 
-// FR-53/WB-K03 — ⌘⌥←/→ walk the strip in its visible order and wrap at both ends;
-// `files` is a tab like any other to switch TO, so it is inside the cycle.
 describe('cycleTab (FR-53)', () => {
   it('WB-K03: walks right from files through the strip and wraps back to it', () => {
-    const set = webTabs(2) // [files, A, B], active B
+    const set = webTabs(2)
     const [files, a, b] = set.tabs
     expect(cycleTab(set, 1).activeId).toBe(files.id)
     expect(cycleTab(cycleTab(set, 1), 1).activeId).toBe(a.id)
@@ -621,8 +572,8 @@ describe('cycleTab (FR-53)', () => {
   })
 
   it('follows the strip order after a drag, not creation order', () => {
-    const set = webTabs(2) // [files, A, B]
-    const reordered = moveTab(set, set.tabs[2].id, 1) // [files, B, A]
+    const set = webTabs(2)
+    const reordered = moveTab(set, set.tabs[2].id, 1)
     const walked = cycleTab(activateTab(reordered, FILES_TAB_ID), 1)
     expect(walked.activeId).toBe(set.tabs[2].id)
   })
@@ -639,9 +590,6 @@ describe('cycleTab (FR-53)', () => {
   })
 })
 
-// FR-27/WB-T19 — the strip label. A `web` tab that an agent built, one restored from disk
-// and one the guest cap froze all have no page title (FR-13), so the url has to carry the
-// label — and carry the part that tells two pages of one host apart.
 describe('the web tab label (FR-27)', () => {
   const label = (url: string, title = ''): string => {
     const r = openTab(emptyTabSet(), { kind: 'web', url, source: 'user', title })
@@ -703,9 +651,6 @@ describe('the web tab label (FR-27)', () => {
   })
 })
 
-// FR-27/WB-T19's file half — the name alone while it is unambiguous, growing one parent
-// directory at a time until the session's own tab set can tell them apart. Computed over
-// the whole SET because opening a second `config.ts` has to relabel the first one too.
 describe('file tab labels disambiguate by parent directory (FR-27)', () => {
   it('leaves a lone file bare, however deep it sits', () => {
     expect(labels(fileTabs(['/ws/src/very/deep/nested/config.ts']))).toEqual(['config.ts'])
@@ -735,7 +680,6 @@ describe('file tab labels disambiguate by parent directory (FR-27)', () => {
   })
 
   it('stops rather than loops when a path has run out of parents', () => {
-    // a root-level file and a bare relative one both bottom out at the same label
     const set = fileTabs(['/config.ts', 'config.ts'])
     expect(labels(set)).toEqual(['config.ts', 'config.ts'])
   })
@@ -764,9 +708,6 @@ describe('file tab labels disambiguate by parent directory (FR-27)', () => {
   })
 })
 
-// FR-24/WB-T13 — the GLOBAL live-guest cap. Overflow is frozen, never closed; the tab
-// keeps its url and title and reloads when clicked. The active tab is live regardless,
-// because freezing what the user is looking at would be a blank pane, not a saving.
 describe('liveWebTabs (FR-24)', () => {
   it('keeps every web tab live while the set is under the limit', () => {
     const set = webTabs(3)
@@ -774,19 +715,17 @@ describe('liveWebTabs (FR-24)', () => {
   })
 
   it('freezes the least recently viewed once over the limit', () => {
-    let set = webTabs(3) // t1, t2, t3 activated in that order
-    set = activateTab(set, set.tabs[1].id) // t1 is now the most recent AND active
+    let set = webTabs(3)
+    set = activateTab(set, set.tabs[1].id)
     const live = liveWebTabs(set, 2)
-    expect(live.has(set.tabs[1].id)).toBe(true) // active
-    expect(live.has(set.tabs[3].id)).toBe(true) // most recently viewed of the rest
+    expect(live.has(set.tabs[1].id)).toBe(true)
+    expect(live.has(set.tabs[3].id)).toBe(true)
     expect(live.has(set.tabs[2].id)).toBe(false)
   })
 
   it('WB-T13: the active tab stays live at a limit of one, newer arrivals notwithstanding', () => {
     let set = webTabs(2)
     const watching = set.activeId
-    // an agent open is the newest entry in recency but does NOT take the active tab —
-    // freezing what the user is looking at in favour of it would be a blank pane
     set = openTab(set, { kind: 'web', url: 'http://x.test/agent', source: 'agent' }).set
     expect(set.recency[set.recency.length - 1]).not.toBe(watching)
     expect([...liveWebTabs(set, 1)]).toEqual([watching])
@@ -818,11 +757,7 @@ describe('liveWebTabs (FR-24)', () => {
   })
 })
 
-// WB-P01 / §Data Model — only {kind, title, url, path, view} survives a restart. The
-// active tab and every unread mark are runtime state by standing decision, so a restored
-// set lands on `files` with a clean strip.
 describe('persistence round-trip (WB-P01)', () => {
-  /** [files, A(web, unread), B(file, source view)] with B active and a live backlink */
   function mixedSet(): WorkbenchTabSet {
     const a = openTab(emptyTabSet(), { kind: 'web', url: 'http://x.test/a', source: 'agent' })
     const b = openTab(a.set, {
@@ -899,7 +834,6 @@ describe('persistence round-trip (WB-P01)', () => {
     const set = restoreTabSet([...web, ...files])
     expect(urls(set)).toHaveLength(KIND_TAB_CAP)
     expect(paths(set)).toHaveLength(KIND_TAB_CAP)
-    // the survivors are the first of each kind, not a slice off the mixed list
     expect(urls(set)).toEqual(web.slice(0, KIND_TAB_CAP).map((t) => t.url))
     expect(paths(set)).toEqual(files.slice(0, KIND_TAB_CAP).map((t) => t.path))
   })
@@ -913,12 +847,7 @@ describe('persistence round-trip (WB-P01)', () => {
   })
 })
 
-/**
- * §4.1c/D5 — the third source. A CDP client's `Target.createTarget` is not an
- * `open`: two `newPage()` calls are two pages even though both start at about:blank, and
- * a tab a client is DRIVING may not be closed out from under it by the cap.
- */
-describe('a CDP-source tab', () => {
+describe('a CDP-source tab (§4.1c/D5): not an `open`, and a driven tab is not the cap’s to close', () => {
   it('is never deduped — two calls on one url are two tabs', () => {
     const first = openTab(emptyTabSet(), {
       kind: 'web',
@@ -976,12 +905,10 @@ describe('a CDP-source tab', () => {
     expect(r.refused).toBe('tab-cap')
     expect(r.created).toBe(false)
     expect(r.evicted).toBeNull()
-    expect(r.set).toBe(set) // nothing was touched
+    expect(r.set).toBe(set)
   })
 
-  it('a USER open still gets its tab when the cap is full of pinned ones', () => {
-    // the user is never told "no" by an agent's grip: their open closes a pinned tab,
-    // which the client then hears about as a targetDestroyed
+  it('a USER open still gets its tab when the cap is full of pinned ones — an agent’s grip never tells the user no', () => {
     const set = webTabs(KIND_TAB_CAP)
     const all = new Set(set.tabs.filter((t) => t.kind === 'web').map((t) => t.id))
 
@@ -997,9 +924,7 @@ describe('a CDP-source tab', () => {
     expect(r.evicted).not.toBeNull()
   })
 
-  it('a driven tab and a dirty tab are both stepped over — the two exemptions compose', () => {
-    // a client's open: the driven tab is not a candidate (D5), and neither is a tab with
-    // unsaved text (B-27) — so the victim is the third-oldest
+  it('a driven tab (D5) and a dirty tab (B-27) are both stepped over — the two exemptions compose', () => {
     const set = webTabs(KIND_TAB_CAP)
     const web = set.tabs.filter((t) => t.kind === 'web')
     const [oldest, nextOldest, third] = web.map((t) => t.id)
@@ -1018,15 +943,10 @@ describe('a CDP-source tab', () => {
   })
 })
 
-// B-27/B-28 (file editing) — a tab holding unsaved text is not a tab the model may throw
-// away. Both guards are OFF unless the caller passes `isDirty`, so every case above still
-// describes the strip a session without the editor sees.
 describe('tabs with unsaved changes (B-27, B-28)', () => {
-  /** the ids of `set`'s file tabs, in strip order */
   const fileIds = (set: WorkbenchTabSet): string[] =>
     set.tabs.filter((t) => t.kind === 'file').map((t) => t.id)
 
-  /** KIND_TAB_CAP file tabs on /ws/f1.ts … /ws/fN.ts */
   const fullFileStrip = (): WorkbenchTabSet =>
     fileTabs(Array.from({ length: KIND_TAB_CAP }, (_, i) => `/ws/f${i + 1}.ts`))
 
@@ -1067,7 +987,6 @@ describe('tabs with unsaved changes (B-27, B-28)', () => {
     expect(r.created).toBe(false)
     expect(r.tabId).toBe('')
     expect(r.evicted).toBeNull()
-    // the whole strip is untouched — no new tab, and nothing switched
     expect(r.set).toBe(set)
   })
 
@@ -1142,9 +1061,7 @@ describe('tabs with unsaved changes (B-27, B-28)', () => {
     expect(r.openedNew).toBe(true)
     expect(r.tabId).not.toBe(id)
     expect(paths(r.set)).toEqual(['/ws/a.ts', '/ws/b.ts'])
-    // the dirty tab is exactly as it was — same object, same path, same anchor
     expect(r.set.tabs[1]).toBe(set.tabs[1])
-    // the reference was followed by the user, so the new tab is the one in front of them
     expect(r.set.activeId).toBe(r.tabId)
     expect(r.set.tabs.find((t) => t.id === r.tabId)).toMatchObject({ path: '/ws/b.ts', line: 12 })
   })
@@ -1171,9 +1088,6 @@ describe('tabs with unsaved changes (B-27, B-28)', () => {
   })
 })
 
-// ---- the `terminal` kind (R2/R19) -----------------------------------------
-
-/** One conversation tab's strip with `n` shells already on it. */
 function withShells(n: number): WorkbenchTabSet {
   let set = emptyTabSet()
   for (let i = 1; i <= n; i++) {
@@ -1188,7 +1102,7 @@ function withShells(n: number): WorkbenchTabSet {
   return set
 }
 
-describe('a terminal tab', () => {
+describe('a terminal tab (R2/R19)', () => {
   it('takes the pty id as its own id, so every report about that shell finds it', () => {
     const r = openTab(emptyTabSet(), {
       kind: 'terminal',
@@ -1215,7 +1129,7 @@ describe('a terminal tab', () => {
     expect(after.tabs.map((t) => t.kind)).toEqual(['files', 'web', 'terminal'])
   })
 
-  it('refuses the ninth instead of evicting one of the eight', () => {
+  it('refuses the ninth instead of evicting one of the eight, which could kill a running shell (R2)', () => {
     const full = withShells(KIND_TAB_CAP)
     const r = openTab(full, {
       kind: 'terminal',
@@ -1224,8 +1138,6 @@ describe('a terminal tab', () => {
       title: 'zsh',
       source: 'user'
     })
-    // the refusal is the case: an eviction would silently kill a shell that may be
-    // running something, which is the one thing R2 forbids
     expect(r.refused).toBe('cap')
     expect(r.created).toBe(false)
     expect(r.evicted).toBeNull()
@@ -1244,9 +1156,7 @@ describe('a terminal tab', () => {
     }).set
     set = openTab(set, { kind: 'web', url: 'http://h/b', source: 'user' }).set
     expect(set.tabs.map((t) => t.kind)).toEqual(['files', 'web', 'web', 'terminal'])
-    // it cannot be dragged…
     expect(moveTab(set, 'pty1', 1)).toBe(set)
-    // …and it cannot be displaced: a web tab dropped past the end clamps in front of it
     const moved = moveTab(set, set.tabs[1].id, 9)
     expect(moved.tabs.map((t) => t.kind)).toEqual(['files', 'web', 'web', 'terminal'])
     expect(moved.tabs[3].id).toBe('pty1')
@@ -1258,18 +1168,12 @@ describe('a terminal tab', () => {
   })
 
   it('is never written to disk — a shell opening or closing is not a layout change', () => {
-    // The carrying assertion for BOTH halves: `samePersistedTabs` compares exactly this
-    // projection to decide whether a strip change needs a layout.json write, so a
-    // terminal leaking through here would turn every ⌃` into a disk write.
     const set = openTab(withShells(3), { kind: 'web', url: 'http://h/p', source: 'user' }).set
     expect(persistTabs(set)).toEqual([{ kind: 'web', title: '', url: 'http://h/p' }])
   })
 })
 
-// R19 — the kind bar's directory label: a deep path keeps its identifying tail
-// ("…/worktrees/bugfix") so it stays readable in a narrow mono label. Moved here whole
-// with the function when the global terminal island retired.
-describe('a terminal tab’s cwd label', () => {
+describe('a terminal tab’s cwd label (R19)', () => {
   it('keeps the last two segments of a deep path, marked as elided', () => {
     expect(shortAuxCwd('/Users/me/Projects/app/.claude/worktrees/bugfix')).toBe(
       '…/worktrees/bugfix'
@@ -1293,11 +1197,7 @@ describe('a terminal tab’s cwd label', () => {
   })
 })
 
-// R4 — a conversation tab whose root has vanished (a cleaned-up worktree, usually). Main
-// puts the shell wherever its own fallback chain could, and the shell opens either way;
-// this sentence is the only thing that stops it from silently coming back somewhere else.
-// (Moved here with the function when `auxTabs.ts` retired.)
-describe('the vanished-root notice', () => {
+describe('the vanished-root notice (R4): the only sign a shell opened somewhere other than its vanished root', () => {
   it('names where the shell actually landed', () => {
     expect(cwdFallbackNotice('/Users/me/Projects/app')).toBe(
       'Folder is gone — terminal opened in …/Projects/app'

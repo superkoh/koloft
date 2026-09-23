@@ -1,17 +1,6 @@
 import type { JSX } from 'react'
 import { LuX } from 'react-icons/lu'
 
-/**
- * The running-session guard (workspace-git-pull §03 M3 / D4): a pull changes files
- * under whatever agents are working in the root checkout, so it is confirmed once —
- * a reminder, not a veto. Structure copied from the remove-workspace confirm: one
- * hint line with the COUNT only, never a list.
- *
- * Presentational: both entry points (the sidebar popover and the C7 dialog, where it
- * stacks above the new-session modal) own their own Esc handling, so this binds none.
- * It does take FOCUS, though: the callers' own key handlers all refuse while the confirm
- * is stacked, so without this the Return key does nothing at all until the user clicks.
- */
 export function PullConfirm({
   count,
   onCancel,

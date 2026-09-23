@@ -3,17 +3,16 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 
-// U-SSH-1. Every remote command rides one shared ssh master connection, whose socket
-// lives in a folder ssh will NOT create for itself — get that wrong and the very first
-// command dies with "No such file or directory", taking connection reuse with it.
-
 import { defaultControlDir, ensureControlDir, runSsh, sshOptions } from '../../src/main/remote/ssh'
+
+const UNIX_SOCKET_PATH_MAX_BYTES = 104
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-ssh-'))
 afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }))
 
 describe('remote ssh options', () => {
-  it('creates the control folder, private to this user', () => {
+  // PLATFORM§33
+  it('U-SSH-1: creates the control folder ssh will not create for itself, private to this user', () => {
     const dir = path.join(tmp, 'ctl')
     ensureControlDir(dir)
     expect(fs.existsSync(dir)).toBe(true)
@@ -42,17 +41,12 @@ describe('remote ssh options', () => {
 
   it('the default folder is short and per-user', () => {
     expect(defaultControlDir()).toMatch(/^\/tmp\/koloft-\d+$/)
-    // a unix socket path caps at 104 bytes (sun_path) — the folder Koloft really uses
-    // has to leave room for the `%C` hash ssh appends, whatever the host string is
-    expect(`${defaultControlDir()}/%C`.length).toBeLessThan(104)
+    // PLATFORM§3
+    expect(`${defaultControlDir()}/%C`.length).toBeLessThan(UNIX_SOCKET_PATH_MAX_BYTES)
   })
 })
 
-// U-SSH-2. `code` says why a remote command failed: null when the local timeout killed
-// it, 127 when the binary is missing (reason in stderr), else the command's own exit
-// code. A real fake `ssh` on PATH proves the mapping end to end.
-
-describe('remote command result', () => {
+describe("U-SSH-2: remote command result code is null on a local timeout, 127 for a missing binary, else the command's own", () => {
   const bin = path.join(tmp, 'bin')
   fs.mkdirSync(bin, { recursive: true })
   const fakeSsh = (body: string): void => {

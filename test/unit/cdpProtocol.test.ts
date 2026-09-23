@@ -8,16 +8,6 @@ import {
   type RelayTarget
 } from '../../src/main/cdpProtocol'
 
-/**
- * The relay's conversation with a CDP client (§04/§4.2).
- *
- * Unit-level because the conversation IS the contract and almost none of it is visible
- * from outside: which targets are announced, in what order the lifecycle events go out,
- * and — the ones that cost hours when wrong — the fields Playwright silently ASSERTS on
- * (type "page", a non-empty browserContextId) and the commands Koloft must answer itself
- * because Electron cannot (Target.createTarget returns nothing there).
- */
-
 const VERSION = {
   product: 'Chrome/150.0.7871.212',
   userAgent: 'Mozilla/5.0 … Chrome/150.0.7871.212 Safari/537.36',
@@ -34,13 +24,11 @@ let tabs: RelayTarget[]
 let backend: RelayBackend
 let relay: CdpProtocol
 
-/** every message the relay pushed that is not a reply to a command */
 function events(method?: string): Record<string, unknown>[] {
   const evs = sent.filter((m) => m.method !== undefined)
   return method ? evs.filter((m) => m.method === method) : evs
 }
 
-/** the reply to command `id` */
 function reply(id: number): Record<string, unknown> | undefined {
   return sent.find((m) => m.id === id)
 }
@@ -74,6 +62,7 @@ async function cmd(
   await relay.handle(JSON.stringify({ id, method, params: params ?? {}, sessionId }))
 }
 
+// PLATFORM§17 PLATFORM§16
 describe('the browser-level commands the relay answers itself', () => {
   it('reports the REAL Chromium version — Playwright branches on it', async () => {
     await cmd(1, 'Browser.getVersion')
@@ -119,12 +108,10 @@ describe('the browser-level commands the relay answers itself', () => {
         ]
       }
     })
-    // D4: listing a tab must not load it
     expect(backend.mount).not.toHaveBeenCalled()
   })
 
-  // Measured against playwright-core 1.62: connectOverCDP sends this with NO targetId
-  // right after the handshake, and an error here makes it drop the connection outright.
+  // PLATFORM§17
   it('answers getTargetInfo with no targetId as the BROWSER’s own target', async () => {
     await cmd(2, 'Target.getTargetInfo')
     const r = reply(2) as { result: { targetInfo: { type: string; targetId: string } } }
@@ -142,7 +129,6 @@ describe('the browser-level commands the relay answers itself', () => {
     await cmd(4, 'Target.createBrowserContext')
     const r = reply(4) as { error?: { message?: string } }
     expect(r.error?.message).toBeTruthy()
-    // …and the connection carries on
     await cmd(5, 'Browser.getVersion')
     expect(reply(5)).toHaveProperty('result')
   })
@@ -166,7 +152,6 @@ describe('attaching (the handshake Playwright actually performs)', () => {
       expect(p.targetInfo.type).toBe('page')
       expect(p.targetInfo.browserContextId).toBe(RELAY_CONTEXT_ID)
     }
-    // attaching IS loading (D4's other half): both guests are mounted and piped
     expect(backend.mount).toHaveBeenCalledTimes(2)
     expect(backend.attachGuest).toHaveBeenCalledTimes(2)
   })
@@ -182,9 +167,7 @@ describe('attaching (the handshake Playwright actually performs)', () => {
     expect(events('Target.attachedToTarget')).toHaveLength(1)
   })
 
-  // Two attaches for one target are the NORMAL case: a client's createTarget and the
-  // auto-attach the same tab's arrival triggers. Announcing that page twice makes
-  // Playwright drop the connection outright ("Duplicate target").
+  // PLATFORM§17
   it('attaches a target exactly once even when two attaches race', async () => {
     await Promise.all([
       cmd(1, 'Target.attachToTarget', { targetId: 't1', flatten: true }),
@@ -252,9 +235,7 @@ describe('session-level traffic', () => {
     expect(backend.forward).not.toHaveBeenCalled()
   })
 
-  // Electron hands the guest's own session id over as an EMPTY STRING, not as absent.
-  // Passed through, it addresses every page event to the browser session — where a
-  // client reads them as belonging to no page, and its first page "detaches".
+  // PLATFORM§16
   it('passes a guest’s events up on that session, flat — an empty guest session id too', async () => {
     const sid = await attached()
     relay.fromGuest('t1', 'Page.frameNavigated', { frame: { id: 'f1' } }, '')
@@ -266,11 +247,8 @@ describe('session-level traffic', () => {
     })
   })
 
-  // A guest's own sub-targets (a cross-origin iframe, a worker) attach through flat
-  // mode: the guest announces the child ON THE ROOT session, with the child's id inside
-  // `params`. Getting this wrong is invisible until a client drives an OOPIF and its
-  // commands come back "no session" (BB-68).
-  it('learns a sub-session from the guest’s announcement and routes its commands', async () => {
+  // PLATFORM§16
+  it('BB-68: learns a sub-session from the guest’s announcement and routes its commands', async () => {
     const sid = await attached()
     relay.fromGuest('t1', 'Target.attachedToTarget', {
       sessionId: 'CHILD',
@@ -278,7 +256,7 @@ describe('session-level traffic', () => {
     })
 
     const ev = events('Target.attachedToTarget').at(-1) as Record<string, unknown>
-    expect(ev.sessionId).toBe(sid) // announced on the root, as the guest sent it
+    expect(ev.sessionId).toBe(sid)
     expect((ev.params as { sessionId: string }).sessionId).toBe('CHILD')
 
     await cmd(3, 'Runtime.evaluate', { expression: '1' }, 'CHILD')
@@ -313,12 +291,6 @@ describe('creating and closing tabs', () => {
   })
 })
 
-/**
- * The strip arrives whole on every change; the client is owed the difference. Unit-level
- * because getting it wrong is SILENT: compare the two reports in different id languages
- * and every report reads as "all new" — no error anywhere, just a client that stops
- * hearing about navigations.
- */
 describe('stripDiff', () => {
   const t = (id: string, over: Partial<RelayTarget> = {}): RelayTarget =>
     target({ targetId: id, ...over })
@@ -352,8 +324,7 @@ describe('stripDiff', () => {
 })
 
 describe('lifecycle events', () => {
-  // Chrome's own rule: targetCreated belongs to DISCOVERY, attachedToTarget to
-  // auto-attach. A client that asked for one must not be handed the other.
+  // PLATFORM§16
   it('with auto-attach on, a new tab arrives as an attach (not as a discovery event)', async () => {
     await cmd(1, 'Target.setAutoAttach', { autoAttach: true, flatten: true })
     sent = []
@@ -396,7 +367,6 @@ describe('lifecycle events', () => {
 
     expect(events('Target.detachedFromTarget')).toHaveLength(1)
     expect(backend.detachGuest).toHaveBeenCalledWith('t1')
-    // the target still exists — the tab is fine, only the client's grip is gone
     expect(events('Target.targetDestroyed')).toHaveLength(0)
   })
 
@@ -411,12 +381,7 @@ describe('lifecycle events', () => {
   })
 })
 
-// Chrome never fails Target.setAutoAttach because ONE target could not be attached, and
-// Playwright reads a failure there as "there is no browser": the whole connectOverCDP
-// rejects, and the endpoint stays unusable for exactly as long as that one tab exists.
-// A tab that cannot be driven (its guest never mounts, another debugger holds it) must
-// cost the client that tab, not the session — it stays listed, and attaching it by hand
-// still returns the real error.
+// PLATFORM§16 PLATFORM§17
 describe('one tab that cannot be driven does not take the endpoint down', () => {
   function targetIdOf(ev: Record<string, unknown>): string {
     return (ev.params as { targetInfo: { targetId: string } }).targetInfo.targetId
@@ -436,7 +401,6 @@ describe('one tab that cannot be driven does not take the endpoint down', () => 
     expect(reply(1)).toEqual({ id: 1, result: {} })
     const attached = events('Target.attachedToTarget')
     expect(attached.map(targetIdOf)).toEqual(['t2'])
-    // the skipped tab is still a target the client can reach for
     await cmd(2, 'Target.getTargets')
     const listed = (reply(2)?.result as { targetInfos: { targetId: string; attached: boolean }[] })
       .targetInfos
@@ -453,17 +417,12 @@ describe('one tab that cannot be driven does not take the endpoint down', () => 
 
     await cmd(3, 'Target.createTarget', { url: 'http://localhost/new' })
 
-    // the page exists — reporting the create as failed would hand the client a page it
-    // cannot see under a targetId it never learns
     expect(reply(3)).toEqual({ id: 3, result: { targetId: 't2' } })
     expect(events('Target.targetCreated').map(targetIdOf)).toEqual(['t2'])
     expect(events('Target.attachedToTarget')).toHaveLength(0)
   })
 
-  // The attaches run one at a time, and each may take its whole mount budget to fail.
-  // The reply must not wait for all of them: Playwright gives the entire handshake 30s,
-  // so a strip of tabs that cannot be driven would otherwise turn "those tabs are
-  // unusable" into "there is no browser".
+  // PLATFORM§17
   it('setAutoAttach replies within its budget even while a tab is still mounting', async () => {
     vi.useFakeTimers()
     try {
@@ -473,7 +432,7 @@ describe('one tab that cannot be driven does not take the endpoint down', () => 
       ]
       backend.attachGuest = vi.fn(
         (targetId: string) => new Promise<void>((resolve) => targetId !== 't1' && resolve())
-      ) // t1 never finishes
+      )
       void cmd(1, 'Target.setAutoAttach', { autoAttach: true, flatten: true })
 
       await vi.advanceTimersByTimeAsync(SET_AUTO_ATTACH_REPLY_MS)
@@ -484,27 +443,16 @@ describe('one tab that cannot be driven does not take the endpoint down', () => 
   })
 })
 
-/** let every already-queued microtask run */
 async function tick(): Promise<void> {
   for (let i = 0; i < 10; i++) await Promise.resolve()
 }
 
-/**
- * The relay hands every client message to `handle` through ONE promise chain, so
- * whatever `handle` waits for, the whole connection waits for. A page command can
- * legitimately take minutes (an evaluate that only finishes once the client answers a
- * paused request; a wait-for-selector), and holding the line behind it is not merely
- * slow — it is a deadlock, because the answer the client owes travels on that same line.
- */
 describe('a slow page command does not hold the connection', () => {
   async function attached(): Promise<string> {
     await cmd(1, 'Target.attachToTarget', { targetId: 't1', flatten: true })
     return (reply(1) as { result: { sessionId: string } }).result.sessionId
   }
 
-  // The exact deadlock: page.route + page.evaluate(fetch). The evaluate cannot finish
-  // until the client's Fetch.continueRequest lands, and that command was queued behind
-  // the evaluate.
   it('answers a second command while the first is still running', async () => {
     const sid = await attached()
     let release!: (v: unknown) => void
@@ -517,7 +465,7 @@ describe('a slow page command does not hold the connection', () => {
       .handle(JSON.stringify({ id: 2, method: 'Runtime.evaluate', params: {}, sessionId: sid }))
       .then(() => (dispatched = true))
     await tick()
-    expect(dispatched).toBe(true) // the line is free again, though nothing was answered
+    expect(dispatched).toBe(true)
     expect(reply(2)).toBeUndefined()
 
     await cmd(3, 'Fetch.continueRequest', { requestId: 'r1' }, sid)
@@ -528,8 +476,6 @@ describe('a slow page command does not hold the connection', () => {
     expect(reply(2)).toEqual({ id: 2, sessionId: sid, result: { ok: 'evaluated' } })
   })
 
-  // Browser-level commands keep their in-order semantics: an attach and the first
-  // command on the session it mints arrive back to back.
   it('keeps browser-level commands in order — attach finishes before handle returns', async () => {
     let finish!: (guestId: number) => void
     backend.mount = vi.fn(() => new Promise<number>((resolve) => (finish = resolve)))
@@ -545,13 +491,7 @@ describe('a slow page command does not hold the connection', () => {
   })
 })
 
-/**
- * Nothing in Koloft awaits the promise `targetCreated` returns (both callers drop it with
- * `void`), and the main process has no `unhandledRejection` handler — so a rejection
- * here is promoted to an uncaught exception and Electron raises its native "A
- * JavaScript error occurred in the main process" dialog. Every ordinary attach failure
- * (DevTools open on that tab, a mount that times out, the tab cap) would do it.
- */
+// PLATFORM§4
 describe('an automatic attach that fails stays quiet', () => {
   it('targetCreated resolves even when the attach cannot be done', async () => {
     tabs = []
@@ -567,12 +507,6 @@ describe('an automatic attach that fails stays quiet', () => {
   })
 })
 
-/**
- * An attach waits twice (the mount, then the guest's frame-tree call), and a tab can be
- * closed inside either wait. Without a check the mount lands on a tab that no longer
- * exists: the client is told a destroyed target just attached, and the strip keeps
- * showing a closed tab as driven.
- */
 describe('a tab closed while it is attaching', () => {
   it('is never announced as attached when it goes while mounting', async () => {
     let finish!: (guestId: number) => void
@@ -587,7 +521,6 @@ describe('a tab closed while it is attaching', () => {
 
     expect(backend.attachGuest).not.toHaveBeenCalled()
     expect(events('Target.attachedToTarget')).toHaveLength(0)
-    // a hand-written attach hears why, rather than getting a session over a dead tab
     expect((reply(1) as { error?: { message?: string } }).error?.message).toBeTruthy()
   })
 
@@ -603,7 +536,6 @@ describe('a tab closed while it is attaching', () => {
     await attaching
 
     expect(events('Target.attachedToTarget')).toHaveLength(0)
-    // the guest that was piped in the meantime is let go again
     expect(backend.detachGuest).toHaveBeenCalledWith('t1')
     expect((reply(1) as { error?: { message?: string } }).error?.message).toBeTruthy()
   })

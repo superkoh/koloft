@@ -21,12 +21,8 @@ import {
   CAP
 } from '../../src/shared/accountUsage'
 
-/** Capsule view rules (topbar-usage design §3/§04/§05, retired —
- *  this suite IS the surviving contract). Every expected
- *  value is hand-derived from the design doc, never from the implementation. */
-
-const NOW_SEC = 1_700_000_000 // epoch seconds (reset headers)
-const NOW_MS = NOW_SEC * 1000 // epoch ms (snapshot `at`)
+const NOW_SEC = 1_700_000_000
+const NOW_MS = NOW_SEC * 1000
 
 function snap(p: Partial<UsageSnapshot>): UsageSnapshot {
   return {
@@ -46,7 +42,6 @@ function snap(p: Partial<UsageSnapshot>): UsageSnapshot {
   }
 }
 
-/** the fable layer of an untouched included-allowance plan (uoi 0, nothing spent) */
 const NO_FABLE_SPEND = { frac: 0, spent: false }
 
 function view(p: Partial<AccountView>): AccountView {
@@ -121,8 +116,6 @@ describe('capsuleGlyph', () => {
     })
   })
   it('a rejected fable bucket does NOT wall the account, and does NOT raise the bar either', () => {
-    // the regression point: before the change this same input drew frac 0.92 / level 'bad',
-    // i.e. a fable-only wall was displayed as a nearly exhausted account.
     const g = capsuleGlyph(
       view({ usage: snap({ u5: 0.1, u7: 0.2, uoi: 1.0, soi: 'rejected' }) }),
       NOW_MS
@@ -302,7 +295,6 @@ describe('oldestAt', () => {
 
 describe('autoProbeDue', () => {
   const M = 60_000
-  /** an enabled, alive OAuth row with a snapshot of the given age */
   const aged = (name: string, ageMs: number): AccountView =>
     view({ name, usage: snap({ at: NOW_MS - ageMs }) })
   const cold = (name: string): AccountView => view({ name })
@@ -323,14 +315,13 @@ describe('autoProbeDue', () => {
     expect(autoProbeDue([aged('a', 1_000), aged('b', 60 * M)], null, NOW_MS)).toBe(true)
   })
   it('a row with NO snapshot is stale however fresh its neighbours are', () => {
-    // the half-failed round: alpha answered, bravo did not
     expect(autoProbeDue([aged('alpha', 1_000), cold('bravo')], null, NOW_MS)).toBe(true)
   })
   it('rows that can never carry a number are not a reason to probe', () => {
     const rows = [
       aged('alpha', 1_000),
-      view({ name: 'api', kind: 'apikey' }), // metered: no buckets, ever
-      view({ name: 'dead', status: 'expired' }), // can't get a snapshot either
+      view({ name: 'api', kind: 'apikey' }),
+      view({ name: 'dead', status: 'expired' }),
       view({ name: 'off', enabled: false })
     ]
     expect(autoProbeDue(rows, null, NOW_MS)).toBe(false)
@@ -356,8 +347,6 @@ describe('autoProbeDue', () => {
 
 describe('capsuleAria', () => {
   it('reads the D11 sample string: accounts, pool, highest, usable, walled', () => {
-    // §03 D11. tensions .61 / .78 / 1 (hard-walled) → mean .7967 → 80%;
-    // the expired row is in the count but in neither the mean nor `usable`.
     const rows = [
       view({ usage: snap({ u7: 0.61 }) }),
       view({ name: 'b', usage: snap({ u5: 0.78 }) }),
@@ -367,7 +356,6 @@ describe('capsuleAria', () => {
     expect(capsuleAria(rows, NOW_MS)).toBe('4 accounts, pool 80%, highest 100%, 2 usable, 1 walled')
   })
   it('names the pool size and the highest utilization', () => {
-    // tensions .61 / .78 / .1 → mean .4967 → 50%
     const rows = [
       view({ usage: snap({ u5: 0.42, u7: 0.61 }) }),
       view({ name: 'b', usage: snap({ u5: 0.78 }) }),
@@ -379,7 +367,6 @@ describe('capsuleAria', () => {
     expect(capsuleAria([view({})], NOW_MS)).toBe('1 account, 1 usable')
   })
   it('a walled account reads as 100% and is counted, and drops out of usable', () => {
-    // tensions .5 / 1 → mean .75
     const rows = [
       view({ usage: snap({ u5: 0.5 }) }),
       view({ name: 'b', usage: snap({ s5: 'rejected', u5: 1 }) })
@@ -390,7 +377,6 @@ describe('capsuleAria', () => {
     expect(capsuleAria([view({ status: 'expired' })], NOW_MS)).toBe('1 account, 0 usable')
   })
   it('a spent fable bucket does not inflate the highest — it gets its own segment', () => {
-    // tensions .61 / .2 → mean .405 → 41%
     const rows = [
       view({ usage: snap({ u5: 0.42, u7: 0.61 }) }),
       view({ name: 'b', usage: snap({ u5: 0.2, uoi: 1, soi: 'rejected' }) })
@@ -405,7 +391,6 @@ describe('capsuleAria', () => {
     )
   })
   it('the fable segment follows the walled one, and a walled row is never counted twice', () => {
-    // tensions 1 / .3 /.3 → mean .5333 → 53%
     const rows = [
       view({ usage: snap({ s5: 'rejected', u5: 1, uoi: 1, soi: 'rejected' }) }),
       view({ name: 'b', usage: snap({ u5: 0.3, uoi: 0.98 }) }),
@@ -432,8 +417,7 @@ describe('popoverX', () => {
   })
 })
 
-/** §2.1 predicate table: "walled" is one word for four different situations. */
-describe('windowTone', () => {
+describe('windowTone — "walled" is one word for four different situations', () => {
   it('a window that never got rejected is ok, whatever its reset says', () => {
     expect(windowTone('?', 0, NOW_SEC)).toBe('ok')
     expect(windowTone('allowed', NOW_SEC + 10, NOW_SEC)).toBe('ok')
@@ -481,7 +465,6 @@ describe('accountWalled', () => {
   })
 })
 
-/** D15 side note: the member bar reads the same predicate table as the popover badge. */
 describe('capsuleGlyph — the D15 tri-state', () => {
   it('a wall clearing inside GRACE draws a bar at min(u,1), not the walled rail', () => {
     expect(
@@ -517,8 +500,8 @@ describe('capsuleGlyph — the D15 tri-state', () => {
   })
 })
 
-/** §2.2 / D10: the pool is the equal-weight mean over M, never over the enabled rows. */
-describe('poolSnapshot', () => {
+// CC§7
+describe('poolSnapshot — an equal-weight mean over the live rows that have a reading, never over every enabled row', () => {
   const hard = (p: Partial<UsageSnapshot> = {}): UsageSnapshot =>
     snap({ s5: 'rejected', r5: NOW_SEC + 7_200, u5: 1, ...p })
 
@@ -728,8 +711,7 @@ describe('poolGlyph', () => {
   })
 })
 
-/** §4.2: the reset subline is resident, so it has a state for every situation. */
-describe('sublineFor', () => {
+describe('sublineFor — the resident reset subline has a state for every situation', () => {
   it('5h healthy with a reset → a plain time, faint', () => {
     expect(sublineFor('5h', snap({ u5: 0.4, r5: NOW_SEC + 1_320 }), NOW_SEC)).toEqual({
       kind: 'time',

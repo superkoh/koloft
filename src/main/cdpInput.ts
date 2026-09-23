@@ -1,31 +1,4 @@
-/**
- * a CDP client's keyboard, delivered INSIDE the page instead of through the window.
- *
- * Chromium routes `Input.dispatchKeyEvent` and the IME commit behind `Input.insertText`
- * by the WINDOW's focus, not by the CDP target: on a <webview> guest that is not the host
- * document's focused element, insertText answers ok and changes nothing, and a key event
- * lands wherever the user's focus is (measured: an agent's form fill went into the TUI
- * the user was typing in). A real `Input.dispatchMouseEvent` reaches the guest by its
- * coordinates, but its mousedown then makes the guest the window's focused frame — the
- * host's focus leaves the TUI (measured: `focusout` on the terminal, activeElement WEBVIEW).
- *
- * Taking or moving the focus is not an option — nothing an agent does in the Browser may
- * touch what the user is doing in the TUI — so the relay turns keyboard AND mouse commands
- * into things the page does to itself: `document.execCommand('insertText')` and friends
- * (measured: a value lands, `delete` removes it, `requestSubmit` fires the submit
- * handler), `elementFromPoint` plus dispatched pointer/mouse/click events for the mouse,
- * with the element focused IN the page (an in-page `focus()` moves nothing in the host —
- * measured). Handlers on the page run and can cancel the default action as for real input.
- *
- * What is emulated is what agents actually send — Playwright's `fill` (insertText),
- * `type`/`pressSequentially` (keyDown with text), `press` of Enter, Tab, Backspace, Delete,
- * arrows, Home/End, Escape, ⌘/Ctrl-A; `click`/`dblclick`/`hover`/right-click and the
- * wheel. Not emulated, by the nature of synthetic events: `:hover` styling, native pickers
- * (a <select> popup, a file dialog — Playwright drives those through the DOM anyway) and
- * HTML5 drag-and-drop. Everything else answers ok and does nothing.
- */
-
-/** the in-page emulator, as source: evaluated in the guest with one event as argument */
+// PLATFORM§16
 const EMULATOR = String.raw`
 function (ev) {
   var doc = document
@@ -201,8 +174,6 @@ interface MouseParams {
   deltaY?: number
 }
 
-/** The `Runtime.evaluate` expression that does what this Input command asks, inside the
- *  page — or null for a command the relay forwards as it is. */
 export function inputEmulation(method: string, params: unknown): string | null {
   const p = (params ?? {}) as KeyParams
   let ev: Record<string, unknown> | null = null

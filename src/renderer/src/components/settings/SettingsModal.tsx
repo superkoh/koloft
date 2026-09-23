@@ -32,12 +32,6 @@ type PaneId =
   | 'extensions'
   | 'about'
 
-/**
- * SEC-11/D11 — everything the Browser's partition kept, in one action. It sits under the
- * category list rather than in a pane because what it wipes is the partition itself, not
- * any one category's settings; the confirm names every store so "cleared" is never
- * read as "cookies only".
- */
 function ClearBrowsingData(): JSX.Element {
   const [asking, setAsking] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -85,19 +79,13 @@ const PANES: { id: PaneId; label: string; Icon: typeof LuUsers }[] = [
   { id: 'appearance', label: 'Appearance', Icon: LuPalette },
   { id: 'shortcuts', label: 'Shortcuts', Icon: LuKeyboard },
   { id: 'notifications', label: 'Notifications', Icon: LuBell },
-  // browser-extensions D2: between Notifications and About
   { id: 'extensions', label: 'Extensions', Icon: LuPuzzle },
   { id: 'about', label: 'About', Icon: LuInfo }
 ]
 
-/** Two-column Settings: left category nav, right pane.
- *  The open guard sits BELOW the hooks (UpdateModal's pattern) so the Esc listener
- *  and focus management can live here. */
 export function SettingsModal(): JSX.Element | null {
   const open = useStore((s) => s.settingsOpen)
   const setSettingsOpen = useStore((s) => s.setSettingsOpen)
-  // FR-06's "come back to a running login" affordance: a live login pulses a dot on
-  // the Accounts nav item, pointing back at the pane that owns it
   const loginLive = useStore((s) => {
     const phase = s.accountLogin?.progress?.phase
     return phase === 'starting' || phase === 'browser'
@@ -112,29 +100,22 @@ export function SettingsModal(): JSX.Element | null {
     return () => void escConsumers.current.delete(fn)
   }, [])
 
-  // every open lands on Accounts (no persistence, per Open Items) and runs exactly
-  // one probe round (D5/NFR-02) — panes remount freely without re-probing
   useEffect(() => {
     if (!open) return
     setPane('accounts')
     void window.api.accounts.probe()
   }, [open])
 
-  // initial focus: the active nav item, so ↑/↓ work immediately (NFR-01)
   useEffect(() => {
     if (!open) return
     navRef.current?.querySelector<HTMLElement>('.set-ni.on')?.focus()
   }, [open])
 
-  // FR-15: Esc collapses an open confirm first; a stacked UpdateModal on top owns
-  // the press outright (topmost-modal semantics — UpdateModal closes itself)
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return
       if (useStore.getState().update.open) return
-      // R1: same topmost-modal rule for the app-level overlay — the releases
-      // page opens from inside Settings, and Esc there means "close the page" (BB-10)
       if (useStore.getState().overlay?.open) return
       for (const consume of escConsumers.current) if (consume()) return
       setSettingsOpen(false)
@@ -143,7 +124,6 @@ export function SettingsModal(): JSX.Element | null {
     return () => window.removeEventListener('keydown', onKey)
   }, [open, setSettingsOpen])
 
-  // NFR-01: keep Tab cycling inside the dialog
   const trapTab = (e: React.KeyboardEvent): void => {
     if (e.key !== 'Tab') return
     const root = modalRef.current
@@ -169,7 +149,6 @@ export function SettingsModal(): JSX.Element | null {
     const move = (next: number): void => {
       const target = PANES[(next + PANES.length) % PANES.length]
       setPane(target.id)
-      // roving tabindex: focus follows selection
       requestAnimationFrame(() => navRef.current?.querySelector<HTMLElement>('.set-ni.on')?.focus())
     }
     if (e.key === 'ArrowDown') {

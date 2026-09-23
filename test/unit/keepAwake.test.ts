@@ -4,12 +4,6 @@ import os from 'os'
 import path from 'path'
 import { applyKeepAwake, CAFFEINATE_ARGS, keepAwakeHeld } from '../../src/main/keepAwake'
 
-// The keepAwake setting's whole effect is one child process. Real spawn, real PATH — the
-// stand-in is an sh script named `caffeinate` (test/CLAUDE.md: never reimplement the
-// script logic in a test, and never copy a signed system binary under another name). It
-// records its argv and then `exec`s a sleep, so its pid IS the child Koloft holds and a
-// kill on that pid is observable with `kill -0`.
-
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-keepawake-'))
 const argvFile = path.join(dir, 'argv.txt')
 fs.writeFileSync(

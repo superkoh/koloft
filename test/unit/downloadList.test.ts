@@ -6,14 +6,6 @@ import {
   type DownloadList
 } from '../../src/renderer/src/components/downloadList'
 
-/**
- * §04 B9 — the download list's own bookkeeping. It is the durable home for a finished
- * file now that the toast auto-dismisses again, so what matters here is that a record
- * never silently disappears and that a failure is as visible as a success.
- *
- * The list is this run's list: it is never restored, so there is no persistence case.
- */
-
 const empty: DownloadList = { items: [] }
 
 const started = (id: string, name = 'report.csv'): DownloadList =>
@@ -79,7 +71,6 @@ describe('the three endings each stay visible', () => {
   it('keeps a cancelled one, and it never becomes completed afterwards', () => {
     let list = applyDownloadEvent(started('d1'), { id: 'd1', kind: 'done', state: 'cancelled' })
     expect(list.items[0]).toMatchObject({ state: 'cancelled' })
-    // a late completion event for a cancelled download must not resurrect it
     list = applyDownloadEvent(list, { id: 'd1', kind: 'done', state: 'completed', path: '/tmp/x' })
     expect(list.items[0].state).toBe('cancelled')
   })

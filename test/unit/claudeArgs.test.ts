@@ -2,12 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { claudeArgv } from '../../src/main/claudeArgs'
 import type { CronEffort, CronPermission } from '../../src/shared/types'
 
-// D11 (new-session-entrances design) §08/§11 S1): the argv both claude spawn
-// paths build. It is the only unit seam for main's launch line — index.ts cannot be
-// loaded here — and the reason it exists is that an illegal `-w` name used to be
-// dropped silently, launching in the repo root instead of the worktree the caller
-// asked for.
-
 const BASE = 'claude'
 
 describe('claudeArgv (T-ARG-01: the valid argv)', () => {
@@ -45,8 +39,6 @@ describe('claudeArgv (T-ARG-02: an illegal worktree name is refused, never dropp
   })
 
   it('refuses the names main’s old bare regex let through (git ref rules)', () => {
-    // these all passed `^[A-Za-z0-9._-]{1,64}$` and would have launched in the repo
-    // root with no worktree at all — the shared validator is what closes that gap
     for (const worktree of ['.hidden', 'a.', 'a..b', 'a.lock']) {
       expect(claudeArgv(BASE, { worktree }), worktree).toEqual({ ok: false, code: 'invalid-args' })
     }
@@ -60,9 +52,7 @@ describe('claudeArgv (T-ARG-02: an illegal worktree name is refused, never dropp
   })
 })
 
-// item 6: a remote launch mints the new session's id itself (no shim over there)
-// and hands it to claude, so the builder both launches share has to be able to say it.
-describe('claudeArgv (a brand-new session id)', () => {
+describe('claudeArgv (a brand-new session id, minted by a remote launch that has no shim)', () => {
   it('asks claude to use the minted id, ahead of the worktree flag', () => {
     const id = '9f8c1b2a-3d4e-5f60-7182-93a4b5c6d7e8'
     expect(claudeArgv(BASE, { sessionId: id, worktree: 'n1', permission: 'skipAll' })).toEqual({
@@ -83,7 +73,6 @@ describe('claudeArgv (a brand-new session id)', () => {
 
 describe('claudeArgv (T-ARG-03: the resumed id keeps its own verdict)', () => {
   it('refuses an id that is not a uuid-shaped token', () => {
-    // the id comes off a persisted file and lands in a shell command line
     for (const resumeSessionId of ['a b', 'a;rm -rf /', '$(id)', 'a/b', '']) {
       expect(claudeArgv(BASE, { resumeSessionId }), resumeSessionId).toEqual({
         ok: false,
@@ -101,10 +90,6 @@ describe('claudeArgv (T-ARG-03: the resumed id keeps its own verdict)', () => {
   })
 })
 
-// BB-E31 (§4.7): a scheduled job carries a model and a permission, and both come
-// off cron.json — a file a person can hand-edit. Every token here is joined with spaces
-// into a line typed into a login shell, so the launch line refuses what the form should
-// have refused rather than dropping the flag and running with the wrong settings.
 describe('claudeArgv (BB-E31: a scheduled job’s model and permission)', () => {
   it('refuses a model that is not a plain token', () => {
     for (const model of ['sonnet; rm -rf ~', 'a b', '-sonnet', '$(id)', 'a'.repeat(82)]) {
@@ -151,8 +136,6 @@ describe('claudeArgv (BB-E31: a scheduled job’s model and permission)', () => 
     expect(claudeArgv(BASE, { permission: 'same' })).toEqual({ ok: true, argv: ['claude'] })
   })
 
-  // the order is the contract: a test that only checked the set would pass on a line
-  // whose flags sit in an order the caller never asked for
   it('keeps the worktree flag ahead of the model and the permission', () => {
     expect(
       claudeArgv(BASE, { worktree: 'n1', model: 'sonnet', permission: 'acceptEdits' })

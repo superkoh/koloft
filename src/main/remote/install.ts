@@ -1,21 +1,13 @@
 import { shq } from '@shared/shellQuote'
 import { parseWorktreeEntries, type WorktreeEntry } from '../workspaceOps'
 
-// The scripts Koloft leaves on a remote machine. POSIX sh throughout: ensure.sh is the
-// one that installs bash, so it cannot assume it. Every script starts by fixing PATH —
-// `ssh host cmd` runs a NON-login shell, where ~/.local/bin (claude), ~/.koloft/node/bin
-// and /opt/homebrew/bin (tmux on a Mac) are all absent.
-
-/** The node the statusline runs on when the machine has none of its own. Only a
- *  released 22.x line has a SHASUMS256.txt to verify against. */
 export const NODE_VERSION = '22.12.0'
 
+// PLATFORM§33
 export const REMOTE_PATH_LINE =
   'export PATH="$HOME/.local/bin:$HOME/.koloft/node/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"'
 
 export const ENSURE_SH = `#!/bin/sh
-# Koloft: make sure this machine has what a session needs. Runs before every session;
-# with everything in place it is a handful of \`command -v\` checks.
 ${REMOTE_PATH_LINE}
 NODE_VERSION=${NODE_VERSION}
 say() { printf '[Koloft] %s\\n' "$*"; }
@@ -27,14 +19,7 @@ for c in apt-get dnf yum apk brew; do
   if have "$c"; then pm="$c"; break; fi
 done
 
-# root needs no sudo; a passwordless sudo is used when there is one; otherwise the
-# password is asked for right here. ensure.sh only ever runs inside the interactive
-# \`ssh -tt\` tab, so the prompt lands where the person can type it. Only if that fails
-# too is the exact command printed for them to run by hand.
-# a fresh Debian/Ubuntu (a container, a just-provisioned box) has no package lists at
-# all, and apt-get install then fails on every package; one update per run fixes that
 apt_updated=0
-# \`eval\` so the prefix can carry a quoted -p prompt (spaces and all) in one argument
 apt_update() {
   [ "$pm" = apt-get ] && [ "$apt_updated" = 0 ] || return 0
   apt_updated=1
@@ -69,7 +54,6 @@ install_pkg() {
   return 1
 }
 
-# bash first: claude's installer and Koloft's hook script are both bash
 have bash || install_pkg bash || exit 4
 
 if ! have claude; then
@@ -116,13 +100,7 @@ have rsync || install_pkg rsync || exit 4
 exit 0
 `
 
-/** tmux made invisible: no status bar, no prefix key, the session command run by sh
- *  whatever the user's login shell is (the command string below is sh syntax). `-f`
- *  only counts for the server it starts — a machine with a session already running
- *  keeps the old config until the last one ends. `mouse off` is what keeps Claude
- *  Code's wheel scrolling working: with it off tmux 3.6b forwards the pane's own
- *  mouse-mode requests (1000/1002/1006) to the outer terminal untouched (measured
- *  locally in a python pty). */
+// PLATFORM§35
 export const TMUX_CONF = `set -g default-shell /bin/sh
 set -g status off
 set -g prefix None
@@ -134,17 +112,11 @@ set -g exit-empty on
 set -g mouse off
 `
 
-/** The heartbeat's question, inline rather than a script on the machine: it has to
- *  work before the machine package was ever pushed. tmux missing reads as no
- *  sessions, which is true. For each folder given it also says whether that is a git
- *  checkout and which worktrees it has — nothing else can tell this Mac that about
- *  the other machine's disk. Wrapped in `sh -c` because the remote LOGIN shell runs
- *  it, and `export` is not fish syntax; the folders ride as `$@` so they never have
- *  to fit inside the single-quoted body. */
+// PLATFORM§33
 export function heartbeatCmd(paths: string[]): string {
   const body =
     `${REMOTE_PATH_LINE}; tmux -L koloft ls -F "#S" 2>/dev/null; ` +
-    // `real`: claude slugs a transcript by the PHYSICAL cwd (contract §2)
+    // CC§2
     'for p in "$@"; do echo "== $p"; echo "real $(cd "$p" 2>/dev/null && pwd -P)"; ' +
     '[ -e "$p/.git" ] && echo git; ' +
     'git -C "$p" worktree list --porcelain 2>/dev/null; done; exit 0'
@@ -154,12 +126,9 @@ export function heartbeatCmd(paths: string[]): string {
 export interface RemoteGitInfo {
   isGit: boolean
   worktrees: WorktreeEntry[]
-  /** the folder's path with every symlink resolved; absent when it is not there */
   real?: string
 }
 
-/** Split the heartbeat's answer: the lines before the first `== ` are tmux session
- *  names, and each `== <path>` section is that folder's git answer. */
 export function parseHeartbeat(stdout: string): {
   alive: string[]
   git: Map<string, RemoteGitInfo>

@@ -65,7 +65,6 @@ interface Activity extends BackgroundItem {
   visible: boolean
 }
 
-/** Observes the sole TUI connection. It never answers a request on the user's behalf. */
 export class CodexObservation {
   private requests = new Map<
     string | number,
@@ -262,7 +261,7 @@ export class CodexObservation {
     for (const activity of this.activities.values()) {
       if (activity.owner === owner && activity.kind === 'command') {
         activity.visible = true
-        // A still-open command may be work or a resident service; the protocol does not distinguish them.
+        // CODEX§4
         activity.state = 'unknown'
       }
     }

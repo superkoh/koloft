@@ -1,9 +1,7 @@
+import fs from 'fs'
+import path from 'path'
 import { describe, it, expect, vi } from 'vitest'
 
-// The app menu is the only surface the restart feature has: ⇧⌘R and the File item are
-// the same code path, and the e2e suite triggers it by menu-item id. Electron can't run
-// under plain-node vitest, so stub it and capture the template handed to buildFromTemplate
-// — that template IS what becomes the menu.
 const mocks = vi.hoisted(() => {
   const state: {
     template: unknown[] | null
@@ -18,21 +16,16 @@ const mocks = vi.hoisted(() => {
     Menu: {
       buildFromTemplate: (t: unknown[]) => {
         state.template = t
-        // The built menu the setters reach for. Electron flattens the template into
-        // MenuItems and looks them up by id; the only properties any setter here touches
-        // are `enabled` and `checked`, so an id → { enabled, checked } map is the whole
-        // of what has to be real — seeded from the template so a built-disabled item
-        // starts disabled and a checkbox starts as built.
         state.live = new Map()
         type T = { id?: string; enabled?: boolean; checked?: boolean; submenu?: unknown[] }
-        const walk = (items: T[]): void => {
+        const seedLiveItemsAsBuilt = (items: T[]): void => {
           for (const i of items) {
             if (i.id)
               state.live.set(i.id, { enabled: i.enabled !== false, checked: i.checked === true })
-            if (i.submenu) walk(i.submenu as T[])
+            if (i.submenu) seedLiveItemsAsBuilt(i.submenu as T[])
           }
         }
-        walk(t as T[])
+        seedLiveItemsAsBuilt(t as T[])
         return { built: true }
       },
       setApplicationMenu: () => {},
@@ -44,7 +37,12 @@ const mocks = vi.hoisted(() => {
 })
 vi.mock('electron', () => ({ app: mocks.app, Menu: mocks.Menu }))
 
-import { setKeepAwakeChecked, setupAppMenu, setWorkbenchAvailable } from '../../src/main/menu'
+import {
+  setFindAvailable,
+  setKeepAwakeChecked,
+  setupAppMenu,
+  setWorkbenchAvailable
+} from '../../src/main/menu'
 
 interface Item {
   id?: string
@@ -72,12 +70,10 @@ function topLevel(template: Item[], label: string): Item {
   return menu
 }
 
-/** every item in the tree, submenus included */
 function flatten(items: Item[]): Item[] {
   return items.flatMap((i) => [i, ...(i.submenu ? flatten(i.submenu) : [])])
 }
 
-/** modifier order in an accelerator is a free choice; the keys it binds are not */
 function normalizeAccel(accel: string): string {
   return accel
     .toLowerCase()
@@ -113,9 +109,7 @@ describe('app menu: Restart Session', () => {
   })
 })
 
-// ⌘N is the only entry point for a Claude session (agent-centric A1/§5: ⌘T retired).
-// xterm swallows plain renderer keydowns, so it has to be a native accelerator; the
-// e2e suite triggers it by the menu-item id, which is therefore a contract.
+// PLATFORM§7
 describe('app menu: New Session', () => {
   it('exposes the item in File with the contracted id, label and ⌘N accelerator', () => {
     const file = topLevel(buildMenu(), 'File').submenu!
@@ -141,10 +135,6 @@ describe('app menu: New Session', () => {
   })
 })
 
-// ⇧⌘N is the second creation gesture (new-session-entrances D8) — "shift = the same
-// action, one family over", the way Finder and the browsers use it. Same native-accelerator
-// reason as ⌘N, same id-as-contract for the e2e suite; the assertions are per-key by hand,
-// so a new key is only covered once it has its own.
 describe('app menu: New Worktree Session', () => {
   it('exposes the item in File with the contracted id, label and ⇧⌘N accelerator', () => {
     const file = topLevel(buildMenu(), 'File').submenu!
@@ -172,10 +162,6 @@ describe('app menu: New Worktree Session', () => {
   })
 })
 
-// Free-terminal retirement (agent-centric §9): there is no global New Tab any more, and
-// ⌘T must reach the renderer as a plain keydown so a focused panel surface can claim it
-// (§7). A menu accelerator is handled natively and would swallow the key app-wide, so the
-// binding's ABSENCE is the contract here — not just the item's.
 describe('app menu: the retired New Tab / ⌘T', () => {
   it('offers no New Tab item anywhere', () => {
     const all = flatten(buildMenu())
@@ -190,11 +176,7 @@ describe('app menu: the retired New Tab / ⌘T', () => {
   })
 })
 
-// D3/R5: ⌃` opens one terminal tab in the selected session's panel. The accelerator
-// has to be native — xterm holds the focus most of the time and swallows plain renderer
-// keydowns (A1) — so the menu item IS the feature's only wiring, and its id is what the
-// e2e suite triggers by. (It used to be `toggle-terminal`, the global island's three-state
-// toggle; the id, the label and the enabled flag all moved with the feature.)
+// PLATFORM§7
 describe('app menu: New Terminal Tab', () => {
   it('exposes the item in View with the contracted id, label and ⌃` accelerator', () => {
     const view = topLevel(buildMenu(), 'View').submenu!
@@ -221,21 +203,13 @@ describe('app menu: New Terminal Tab', () => {
     expect(bound.map((i) => i.id)).toEqual(['new-terminal-tab'])
   })
 
-  // R5/D1: a shell has nowhere to live until a session is selected, bound and alive, and
-  // only the renderer knows that. Built disabled, exactly as Focus Mode is — a live
-  // accelerator that silently does nothing is a worse answer than a greyed item.
-  it('ships disabled, exactly as Focus Mode does', () => {
+  it('ships disabled, exactly as Focus Mode does, rather than a live key that does nothing', () => {
     const view = topLevel(buildMenu(), 'View').submenu!
     expect(view.find((i) => i.id === 'new-terminal-tab')!.enabled).toBe(false)
     expect(view.find((i) => i.id === 'toggle-focus-mode')!.enabled).toBe(false)
   })
 
-  // …and the flip itself, which is the half the built template cannot show. The two items
-  // take SEPARATE flags because they ask different questions: Focus Mode only needs a
-  // panel to give the row to, so a cold session still counts, while a shell needs a claude
-  // that is alive to belong to (D2). The mixed case is the one that would pass on a build
-  // that wired both to one flag — which is what this used to do.
-  it('flips both items on the renderer’s report, each on its own flag', () => {
+  it('flips both items on the renderer’s report, each on its own flag: a cold session keeps Focus Mode but not the shell', () => {
     const enabled = (id: string): boolean | undefined => mocks.state.live.get(id)?.enabled
 
     buildMenu()
@@ -243,22 +217,17 @@ describe('app menu: New Terminal Tab', () => {
     expect(enabled('toggle-focus-mode')).toBe(true)
     expect(enabled('new-terminal-tab')).toBe(true)
 
-    // a selected COLD session: its panel is still readable, its shells are gone (D2)
     setWorkbenchAvailable(true, false)
     expect(enabled('toggle-focus-mode')).toBe(true)
     expect(enabled('new-terminal-tab')).toBe(false)
 
-    // nothing selected at all: neither has anything to act on (FR-04 / D1)
     setWorkbenchAvailable(false, false)
     expect(enabled('toggle-focus-mode')).toBe(false)
     expect(enabled('new-terminal-tab')).toBe(false)
   })
 })
 
-// ⌥⌘N puts the caret in the workspace's note. Native accelerator for the usual
-// reason — xterm eats plain renderer keydowns — so the menu item IS the shortcut's whole
-// wiring, and its id is the contract the e2e suite triggers by. Unlike the two items
-// above it is always enabled: with no workspace pinned the renderer simply does nothing.
+// PLATFORM§7
 describe('app menu: Notes', () => {
   it('exposes the item in View with the contracted id, label and ⌥⌘N accelerator', () => {
     const view = topLevel(buildMenu(), 'View').submenu!
@@ -287,9 +256,7 @@ describe('app menu: Notes', () => {
   })
 })
 
-// ⇧⌘R is Electron's default Force Reload accelerator, so the View menu can no longer be
-// the `viewMenu` role — but rebuilding it by hand must not quietly cost the user the rest
-// of the standard View menu (or Reload's own ⌘R).
+// PLATFORM§7
 describe('app menu: View menu after Force Reload gave up ⇧⌘R', () => {
   it('no longer offers Force Reload anywhere', () => {
     const all = flatten(buildMenu())
@@ -297,11 +264,8 @@ describe('app menu: View menu after Force Reload gave up ⇧⌘R', () => {
     expect(all.some((i) => /force\s*reload/i.test(i.label ?? ''))).toBe(false)
   })
 
-  // session-browser D9/IMPL-4/5 overturns the mechanism these items used to have: an
-  // Electron role acts on the whole Koloft renderer, so ⌘R pressed inside a guest would
-  // reload the app and take every terminal with it. The items — and ⌘R itself — must
-  // still be there; they are custom, renderer-dispatched ones now.
-  it('keeps Reload on ⌘R, plus the other standard View items', () => {
+  // PLATFORM§7
+  it('keeps Reload on ⌘R as a custom item, never the role that reloads the whole app, plus the other standard View items', () => {
     const view = topLevel(buildMenu(), 'View').submenu!
     const reload = view.find((i) => i.id === 'browser-reload')
     expect(reload).toBeDefined()
@@ -315,11 +279,7 @@ describe('app menu: View menu after Force Reload gave up ⇧⌘R', () => {
   })
 })
 
-// Q2's else-branch: dropping the roles must not cost the app the keys themselves. With
-// another surface on the aux column, DevTools and the three zoom items keep their
-// whole-window meaning, so they stay real, always-enabled items on the accelerators the
-// roles bound — the renderer decides where each one lands, never the menu.
-describe('app menu: the whole-window keys after the roles went away (Q2)', () => {
+describe('app menu: the whole-window keys stay real, always-enabled items after the roles went away', () => {
   const isMac = process.platform === 'darwin'
   const standard: [string, string][] = [
     ['browser-devtools', isMac ? 'Alt+Command+I' : 'Ctrl+Shift+I'],
@@ -334,7 +294,6 @@ describe('app menu: the whole-window keys after the roles went away (Q2)', () =>
       const item = all.find((i) => i.id === id)
       expect(item, `no menu item with id "${id}"`).toBeDefined()
       expect(item!.accelerator).toBe(accelerator)
-      // an item the user cannot reach outside the Browser would be the regression
       expect((item as { enabled?: boolean }).enabled).not.toBe(false)
       const bound = all.filter(
         (i) => i.accelerator && normalizeAccel(i.accelerator) === normalizeAccel(accelerator)
@@ -344,11 +303,7 @@ describe('app menu: the whole-window keys after the roles went away (Q2)', () =>
   }
 })
 
-// D9/IMPL-4: every Browser command reaches the renderer, because only the renderer knows
-// which aux surface is active. The ids are what the e2e suite triggers by, so they are a
-// contract; ⌘T's ABSENCE from the menu is one too (it travels the guest's
-// before-input-event hook instead, §08 P1⑩).
-describe('app menu: the Browser commands (D9)', () => {
+describe('app menu: the Browser commands, all forwarded to the renderer', () => {
   const ids = [
     'toggle-browser',
     'browser-new-tab',
@@ -402,10 +357,6 @@ describe('app menu: the Browser commands (D9)', () => {
   })
 })
 
-// keepAwake: the View checkbox is the menu-side half of the quick switch (the titlebar
-// coffee button is the other). It is a CHECKBOX because it mirrors a setting rather than
-// firing a gesture, and it is main that flips the setting — the click reaches index.ts
-// as 'toggle-keep-awake', never the renderer. macOS only: caffeinate exists nowhere else.
 describe.runIf(process.platform === 'darwin')('app menu: Keep Mac Awake (keepAwake)', () => {
   it('exposes a checkbox in View built to the setting handed in', () => {
     const on = topLevel(
@@ -461,3 +412,121 @@ describe.runIf(process.platform === 'darwin')('app menu: Settings… (⌘,)', ()
     expect(seen).toEqual(['open-settings'])
   })
 })
+
+describe('app menu: ⌘W belongs to Close Tab alone', () => {
+  it('binds ⌘W exactly once, to Close Tab, and builds no role-made File or Window menu that would bind it again', () => {
+    const all = flatten(buildMenu())
+    const bound = all.filter(
+      (i) => i.accelerator && normalizeAccel(i.accelerator) === 'cmdorctrl+w'
+    )
+    expect(bound.map((i) => i.label)).toEqual(['Close Tab'])
+    expect(all.some((i) => i.role === 'fileMenu' || i.role === 'windowMenu')).toBe(false)
+  })
+
+  it.runIf(process.platform === 'darwin')(
+    'moves Close Window to an explicit ⇧⌘W, since the close role would otherwise take ⌘W',
+    () => {
+      const closers = flatten(buildMenu()).filter((i) => i.role === 'close')
+      expect(closers).toHaveLength(1)
+      expect(closers[0].label).toBe('Close Window')
+      expect(closers[0].accelerator).toBe('Shift+CmdOrCtrl+W')
+    }
+  )
+})
+
+describe('app menu: only the four gated items ever grey out', () => {
+  it('keeps Toggle Workbench and Search Files enabled, so a greyed item never reads as a build with no Workbench; only Focus Mode, New Terminal Tab, Save and Find grey out', () => {
+    buildMenu()
+    setWorkbenchAvailable(false, false)
+    setFindAvailable(false)
+    const greyed = [...mocks.state.live]
+      .filter(([, item]) => !item.enabled)
+      .map(([id]) => id)
+      .sort()
+    expect(greyed).toEqual(['find-in-page', 'new-terminal-tab', 'save', 'toggle-focus-mode'])
+  })
+})
+
+const MODIFIER_GLYPHS: Record<string, string> = {
+  cmdorctrl: '⌘',
+  command: '⌘',
+  shift: '⇧',
+  alt: '⌥',
+  control: '⌃'
+}
+const KEY_GLYPHS: Record<string, string> = { return: '⏎', plus: '+' }
+const MODIFIER_ORDER = '⌃⌥⇧⌘'
+
+function canonicalKey(modifiers: string[], key: string): string {
+  const mods = [...modifiers].sort((a, b) => MODIFIER_ORDER.indexOf(a) - MODIFIER_ORDER.indexOf(b))
+  return mods.join('') + key.toUpperCase()
+}
+
+function fromAccelerator(accel: string): string {
+  const parts = accel.split('+')
+  const key = parts.pop()!
+  return canonicalKey(
+    parts.map((p) => MODIFIER_GLYPHS[p.toLowerCase()] ?? p),
+    KEY_GLYPHS[key.toLowerCase()] ?? key
+  )
+}
+
+function splitPaneKey(key: string): { mods: string[]; key: string } {
+  const chars = [...key]
+  const mods: string[] = []
+  while (chars.length > 1 && MODIFIER_ORDER.includes(chars[0])) mods.push(chars.shift()!)
+  return { mods, key: chars.join('') }
+}
+
+const RENDERER_SRC = path.join(__dirname, '..', '..', 'src', 'renderer', 'src')
+
+function shortcutsPaneKeys(): string[] {
+  const src = fs.readFileSync(
+    path.join(RENDERER_SRC, 'components', 'settings', 'ShortcutsPane.tsx'),
+    'utf8'
+  )
+  return [...src.matchAll(/keys:\s*\[((?:\s*'[^']*',?)*)\s*\]/g)].flatMap((list) =>
+    [...list[1].matchAll(/'([^']*)'/g)].map((m) => m[1])
+  )
+}
+
+const DOM_KEY_GLYPHS: Record<string, string> = {
+  ArrowLeft: '←',
+  ArrowRight: '→',
+  ArrowUp: '↑',
+  ArrowDown: '↓',
+  Escape: 'ESC',
+  Enter: '⏎'
+}
+
+function appHandledKeys(): string[] {
+  const src = fs.readFileSync(path.join(RENDERER_SRC, 'App.tsx'), 'utf8')
+  const keys = [...src.matchAll(/\be\.key\s*[!=]==\s*'([^']+)'/g)].map((m) => m[1])
+  return [...new Set(keys.map((k) => DOM_KEY_GLYPHS[k] ?? k.toUpperCase()))].sort()
+}
+
+describe.runIf(process.platform === 'darwin')(
+  'Settings ▸ Shortcuts lists every real binding',
+  () => {
+    it('lists every accelerator the native menu binds, so the pane cannot drift from the menu', () => {
+      const listed = new Set(
+        shortcutsPaneKeys().map((k) => {
+          const { mods, key } = splitPaneKey(k)
+          return canonicalKey(mods, key)
+        })
+      )
+      const unlisted = flatten(buildMenu())
+        .filter((i) => i.accelerator)
+        .map((i) => ({ item: i.label ?? i.role, key: fromAccelerator(i.accelerator!) }))
+        .filter((b) => !listed.has(b.key))
+      expect(unlisted).toEqual([])
+    })
+
+    it('lists every key App.tsx handles itself, so the pane cannot drift from the renderer', () => {
+      const listedKeys = new Set(shortcutsPaneKeys().map((k) => splitPaneKey(k).key.toUpperCase()))
+      const handled = appHandledKeys()
+      expect(handled.length).toBeGreaterThan(0)
+      expect(handled.filter((k) => !listedKeys.has(k))).toEqual([])
+    })
+  }
+)

@@ -3,11 +3,6 @@ import { useStore } from '../../store'
 import { Switch } from './Switch'
 import { useSettingsUpdate } from './useSettingsUpdate'
 
-/** Notifications (D3) — three categories, an indented approval-sound child,
- *  and the Dock badge. Defaults: all categories on, muted. "Only send an OS
- *  notification when the window is in the background" is fixed logic, not a setting
- *  (design M3). FR-10: the sound child is DISABLED while its parent is off — the
- *  dimming says it, no extra label. */
 export function NotificationsPane(): JSX.Element {
   const settings = useStore((s) => s.settings)
   const update = useSettingsUpdate()

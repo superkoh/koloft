@@ -11,9 +11,6 @@ import {
 } from '@shared/settingsOps'
 import { DEFAULT_SETTINGS, HINT_IDS } from '@shared/types'
 
-// Expectations are hand-derived from the original case list (FR-08 / FR-12 / FR-13 and
-// the fontSize edge case), not from running the implementation.
-
 describe('buildResetPatch (FR-12)', () => {
   it('excludes the whole account domain: accounts, multiAccount, skipPermissions, fablePriority', () => {
     const patch = buildResetPatch()
@@ -23,14 +20,10 @@ describe('buildResetPatch (FR-12)', () => {
     expect(patch).not.toHaveProperty('fablePriority')
   })
 
-  it('carries every non-account default', () => {
+  it('carries every non-account default — browser control, keep-awake, the Notes size and the first-run welcome and tips included', () => {
     const patch = buildResetPatch()
-    // every Settings key minus the 4 account-domain ones
     expect(Object.keys(patch).sort()).toEqual(
       [
-        // D2: browser control resets to ON with everything else — it is a normal
-        // setting with a default, not a consent that a reset should silently re-grant
-        // (the per-session takeover is asked again either way, D10)
         'browserControl',
         'browserPaneWidth',
         'dockBadge',
@@ -39,15 +32,11 @@ describe('buildResetPatch (FR-12)', () => {
         'fontFamily',
         'fontSize',
         'gitAutoFetch',
-        // a reset re-runs the welcome and re-arms the tips — that IS what
-        // "Reset to defaults" means for a first-run aid
         'hintsOff',
         'hintsSeen',
-        // keepAwake resets to ON with everything else — it is a normal setting
         'keepAwake',
         'lastSeenVersion',
         'onboardingSeen',
-        // the Notes island's size resets with everything else
         'notesFolded',
         'notesHeight',
         'notifyApproval',
@@ -61,7 +50,6 @@ describe('buildResetPatch (FR-12)', () => {
         'worldClocks'
       ].sort()
     )
-    // spot-check values are the factory defaults
     expect(patch.fontSize).toBe(DEFAULT_SETTINGS.fontSize)
     expect(patch.statuslineBuiltin).toBe(DEFAULT_SETTINGS.statuslineBuiltin)
     expect(patch.sidebarWidth).toBe(DEFAULT_SETTINGS.sidebarWidth)
@@ -91,16 +79,11 @@ describe('sanitizeSettingsPatch (FR-13)', () => {
     const patch = { fontFamily: 'Menlo', dockBadge: false, accounts: [] } as never
     const out = sanitizeSettingsPatch(patch)
     expect(out).toEqual({ fontFamily: 'Menlo', dockBadge: false })
-    // input object is not mutated by the strip
     expect(patch).toHaveProperty('accounts')
   })
 })
 
-// FR-08/NFR-07: the Workbench's saved width, read off a hand-editable settings.json.
-// A hand-editable value that is arithmetic all the way to a CSS width, with a floor:
-// below 440 a `web` tab hits
-// most sites' mobile breakpoint, and any tab in the merged panel can be a `web` one.
-describe('sanitizeWorkbenchWidth (FR-08/NFR-07, the disk boundary)', () => {
+describe("sanitizeWorkbenchWidth (FR-08/NFR-07, the disk boundary; below the floor a `web` tab hits most sites' mobile breakpoint)", () => {
   it('keeps a plausible saved width', () => {
     expect(sanitizeWorkbenchWidth(620)).toBe(620)
     expect(sanitizeWorkbenchWidth(WORKBENCH_WIDTH_FLOOR)).toBe(WORKBENCH_WIDTH_FLOOR)
@@ -121,10 +104,17 @@ describe('sanitizeWorkbenchWidth (FR-08/NFR-07, the disk boundary)', () => {
   it('the shipped default is itself at or above the floor', () => {
     expect(DEFAULT_SETTINGS.workbenchWidth).toBeGreaterThanOrEqual(WORKBENCH_WIDTH_FLOOR)
   })
+
+  it('a saved width narrower than the retired pane widths survives a relaunch: once the key is on disk it wins over them', () => {
+    const loaded = sanitizeLoadedSettings({
+      workbenchWidth: 480,
+      filePaneWidth: 560,
+      browserPaneWidth: 700
+    })
+    expect(loaded.workbenchWidth).toBe(480)
+  })
 })
 
-// the Notes island's saved height, repaired on load just like the Workbench width —
-// the number is arithmetic all the way to a CSS height.
 describe('sanitizeNotesHeight', () => {
   it('keeps a plausible saved height', () => {
     expect(sanitizeNotesHeight(320)).toBe(320)
@@ -148,10 +138,7 @@ describe('sanitizeNotesHeight', () => {
   })
 })
 
-// settings.json is hand-editable, and loadSettings used to merge it raw — a typed
-// `notesHeight: 0` or `"tall"`, or a string notesFolded, reached the renderer untouched.
-// The repair happens on load now, in the one place every reader goes through.
-describe('sanitizeLoadedSettings and the Notes keys', () => {
+describe('sanitizeLoadedSettings and the Notes keys: a hand-edited settings.json is repaired on load, where every reader goes through', () => {
   it('repairs a hand-edited notesHeight and keeps a plausible one', () => {
     expect(sanitizeLoadedSettings({ notesHeight: 0 }).notesHeight).toBe(NOTES_HEIGHT_FLOOR)
     expect(sanitizeLoadedSettings({ notesHeight: 'tall' }).notesHeight).toBe(
@@ -175,10 +162,7 @@ describe('sanitizeLoadedSettings and the Notes keys', () => {
   })
 })
 
-// U-OB-03: a settings.json written before this release has no onboarding keys in
-// it. That is an upgrade — the user already knows the app — so the welcome and the tips
-// count as seen. An empty document says nothing about the user and keeps the defaults.
-describe('sanitizeLoadedSettings and the onboarding keys', () => {
+describe('U-OB-03: sanitizeLoadedSettings and the onboarding keys', () => {
   it('treats a document without onboardingSeen as an upgrade: welcome and tips seen', () => {
     const loaded = sanitizeLoadedSettings({ fontSize: 14 })
     expect(loaded.onboardingSeen).toBe(true)
@@ -198,6 +182,20 @@ describe('sanitizeLoadedSettings and the onboarding keys', () => {
   })
 })
 
+describe('sanitizeLoadedSettings and the account list', () => {
+  it('merges accounts that differ only in letter case within one kind, keeping the first, and keeps the same name under another kind', () => {
+    const base = { enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }
+    const accounts = sanitizeLoadedSettings({
+      accounts: [
+        { ...base, name: 'Work', kind: 'oauth' },
+        { ...base, name: 'work', kind: 'oauth' },
+        { ...base, name: 'WORK', kind: 'apikey' }
+      ]
+    }).accounts
+    expect(accounts.map((a) => `${a.kind}:${a.name}`)).toEqual(['oauth:Work', 'apikey:WORK'])
+  })
+})
+
 describe('clampFontSize (FR-08 edge case)', () => {
   it('passes in-range values through', () => {
     expect(clampFontSize('13')).toBe(13)
@@ -208,7 +206,7 @@ describe('clampFontSize (FR-08 edge case)', () => {
   it('clamps typed out-of-range values (input min/max does not)', () => {
     expect(clampFontSize('7')).toBe(8)
     expect(clampFontSize('33')).toBe(32)
-    expect(clampFontSize('99')).toBe(32) // the spec's named example
+    expect(clampFontSize('99')).toBe(32)
     expect(clampFontSize('-5')).toBe(8)
   })
 

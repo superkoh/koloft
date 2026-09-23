@@ -42,11 +42,8 @@ export interface CodexAvailability {
   verified?: boolean
 }
 
-/** How long a failed probe is trusted. A probe runs a login shell, so asking again on
- *  every dialog costs seconds; a minute is short enough to notice a fresh install. */
 const AVAILABILITY_FAILURE_MS = 60_000
 
-/** Codex was uninstalled after the probe said yes: a spawn now fails with ENOENT. */
 const binaryGone = (error: unknown): boolean =>
   (error as NodeJS.ErrnoException | null)?.code === 'ENOENT'
 
@@ -141,7 +138,6 @@ export class CodexSessions {
     )
   }
 
-  /** A binary that will not start makes the cached probe a lie — probe again next time. */
   private forgetProbe(): void {
     this.probed = undefined
     this.binary = undefined
@@ -195,8 +191,6 @@ export class CodexSessions {
   }
 
   rows(workspace: string): SessionRow[] {
-    // Reading resources and project info per thread is a filesystem walk per row; one
-    // lookup built here serves the whole call, and nothing outlives it to go stale.
     const scope: RowScope = {
       byPath: new Map(this.store.listResources().map((r) => [r.worktreePath, r])),
       roots: new Map()
@@ -217,7 +211,6 @@ export class CodexSessions {
         invalidCwd: !exists(m.cwd),
         mtime: m.updatedAt
       }
-      // Resume in a rebuilt/renamed checkout is Koloft's choice; native history can still carry the old cwd.
       r.cwd = m.cwd
       r.invalidCwd = !exists(m.cwd)
       r.backendId = 'codex'
@@ -345,7 +338,6 @@ export class CodexSessions {
     } catch (error) {
       if (binaryGone(error)) this.forgetProbe()
       this.historyError = error instanceof Error ? error : new Error(String(error))
-      // A failed or partial listing never removes membership or replaces the last complete snapshot.
     } finally {
       await rpc.close()
     }
@@ -694,8 +686,7 @@ export class CodexSessions {
     return run.stopping
   }
 
-  /** Quitting must not hang on a stop that never answers: past the deadline Koloft
-   *  leaves, possibly leaking an app-server child (docs/codex-cli-contract.md §5). */
+  // CODEX§5
   async stopAll(deadlineMs = 5000): Promise<void> {
     this.shuttingDown = true
     const stopped = (async () => {
@@ -703,7 +694,6 @@ export class CodexSessions {
       await Promise.all([...this.runs.keys()].map((id) => this.stop(id)))
       if (this.refreshing) await this.refreshing
     })()
-    // the deadline may win the race, so a failure arriving later is already spoken for
     stopped.catch(() => {})
     let timer: ReturnType<typeof setTimeout> | undefined
     await Promise.race([

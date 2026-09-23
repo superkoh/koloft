@@ -26,8 +26,6 @@ export function useSessionLaunch(remote: boolean, onStart: StartSession, onClose
       live.current = false
     }
   }, [])
-  // Two separate asks, because one failing must not take the other down with it: a
-  // machine without Codex was marking Claude unprobed too.
   useEffect(() => {
     let alive = true
     setDetected(null)
@@ -53,17 +51,12 @@ export function useSessionLaunch(remote: boolean, onStart: StartSession, onClose
       alive = false
     }
   }, [retry])
-  /** Enabled in settings, allowed here, and actually on this Mac. A probe still in
-   *  flight is not a No — see `issue`. */
   const usable = (backend: BackendId, onRemote = remote): boolean => {
     if (!methods.enabled[backend]) return false
     if (onRemote && !SESSION_CAPABILITIES[backend].remote) return false
     if (backend === 'claude') return claudeFound !== false
     return !!detected?.find((b) => b.id === backend)?.available
   }
-  /** Why this method cannot start here, or '' — including while the probes are still
-   *  out. ⌘N ⏎ is this app's signature gesture and it may never wait on a login shell;
-   *  main refuses an unavailable method anyway, in its own words. */
   const issue = (backend: BackendId, onRemote = remote): string => {
     if (!methods.enabled[backend]) return 'Disabled in Settings ▸ Sessions'
     if (onRemote) return SESSION_CAPABILITIES[backend].remote ? '' : 'Local only'
@@ -88,8 +81,6 @@ export function useSessionLaunch(remote: boolean, onStart: StartSession, onClose
   }
   return {
     methods,
-    /** D1: the methods that get a button. Claude always has one — it is the method this
-     *  app is built around, and a missing `claude` is worth saying out loud. */
     usable: SESSION_BACKENDS.filter((b) => b === 'claude' || usable(b)),
     issue,
     launch,
@@ -100,12 +91,6 @@ export function useSessionLaunch(remote: boolean, onStart: StartSession, onClose
   }
 }
 
-/**
- * D1: only a method the user can actually pick gets a button, because a greyed door
- * still says there is a room here (App.tsx's rule for a remote session's Workbench).
- * The label comes from the caller — the dialog is the one that knows the whole action
- * the button performs (D12).
- */
 export function SessionLaunchButtons({
   launch,
   backends,
@@ -123,7 +108,6 @@ export function SessionLaunchButtons({
   onStart: (backend: BackendId) => void
   issue?: (backend: BackendId) => string
 }) {
-  // The existing primary action stays at the right edge of the dialog footer.
   const ordered = [...backends].sort(
     (a, b) =>
       Number(a === launch.methods.defaultBackend) - Number(b === launch.methods.defaultBackend)
@@ -154,9 +138,6 @@ export function SessionLaunchButtons({
 }
 
 export function SessionLaunchStatus({ launch }: { launch: ReturnType<typeof useSessionLaunch> }) {
-  // A Claude-only user never reads a word about Codex: with no button to explain, the
-  // line would be noise. Making Codex the default is the one hands-on signal that the
-  // user is waiting for it, and then its absence is the thing they need to know.
   const watched =
     launch.methods.defaultBackend === 'codex' ? SESSION_BACKENDS : (['claude'] as const)
   const issues = watched.flatMap((b) => {

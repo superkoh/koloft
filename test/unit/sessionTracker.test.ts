@@ -5,27 +5,18 @@ import os from 'os'
 import type { EventEmitter } from 'events'
 import type { ClaudeSessionInfo as SessionInfo } from '@shared/types'
 
-// The tracker computes PROJECTS_ROOT = $HOME/.claude/projects at *module load*, and
-// os.homedir() follows $HOME on POSIX. So point HOME at a throwaway dir, then import
-// the module — every jsonl the tracker tails now lives under our sandbox, never the
-// developer's real ~/.claude. Import is dynamic so HOME is set before the const runs.
 let SessionTracker: typeof import('../../src/main/sessionTracker').SessionTracker
-// the production cwd→dir encoding (not a copy), so an encoding change can't leave this
-// test writing jsonl where the tracker no longer looks. Pulled from the same dynamic
-// import so it isn't loaded before HOME is set.
 let encodeCwd: typeof import('../../src/main/sessionTracker').encodeCwd
 let scratchpadDirFor: typeof import('../../src/main/sessionTracker').scratchpadDirFor
 let classifyUserPrompt: typeof import('../../src/main/sessionTracker').classifyUserPrompt
 let home: string
 let projectsRoot: string
+const RELOCATE_SETTLE_STRETCHED_PAST_THE_500MS_FILE_POLL_MS = '2000'
 
 beforeAll(async () => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-tracker-home-'))
   process.env.HOME = home
-  // R8: the window a burst of worktree moves collapses into, stretched from the
-  // shipped 1.2s so that "the second move arrived inside it" is not a race against the
-  // 500ms file poll. Read at module load, like HOME.
-  process.env.KOLOFT_RELOCATE_SETTLE_MS = '2000'
+  process.env.KOLOFT_RELOCATE_SETTLE_MS = RELOCATE_SETTLE_STRETCHED_PAST_THE_500MS_FILE_POLL_MS
   projectsRoot = path.join(home, '.claude', 'projects')
   ;({ SessionTracker, encodeCwd, scratchpadDirFor, classifyUserPrompt } =
     await import('../../src/main/sessionTracker'))
@@ -37,7 +28,6 @@ afterAll(() => {
 
 const trackers: InstanceType<typeof SessionTracker>[] = []
 afterEach(() => {
-  // untrack everything so fs.watchFile listeners are torn down (they'd keep vitest alive)
   for (const t of trackers) for (const s of t.list()) t.untrack(s.tabId)
   trackers.length = 0
 })
@@ -48,8 +38,6 @@ function newTracker(): InstanceType<typeof SessionTracker> {
   return t
 }
 
-/** A workspace dir with real files the jsonl can reference (canonFile stat-filters
- *  non-existent paths, so referenced files must exist on disk). */
 function makeWorkspace(files: Record<string, string>): string {
   const cwd = fs.mkdtempSync(path.join(home, 'ws-'))
   for (const [rel, content] of Object.entries(files)) {
@@ -60,7 +48,6 @@ function makeWorkspace(files: Record<string, string>): string {
   return fs.realpathSync(cwd)
 }
 
-/** Write a session jsonl at the exact path the tracker predicts for (cwd, sessionId). */
 function writeJsonl(cwd: string, sessionId: string, lines: unknown[]): string {
   const dir = path.join(projectsRoot, encodeCwd(cwd))
   fs.mkdirSync(dir, { recursive: true })
@@ -69,8 +56,6 @@ function writeJsonl(cwd: string, sessionId: string, lines: unknown[]): string {
   return file
 }
 
-/** Write a subagent transcript under `<projectDir>/<sessionId>/subagents/<name>` —
- *  the real layout the tracker globs for Task-subagent spend. */
 function writeSubagentJsonl(
   cwd: string,
   sessionId: string,
@@ -84,14 +69,12 @@ function writeSubagentJsonl(
   return file
 }
 
-/** Resolve once a session snapshot matching `pred` is emitted (or already present).
- *  The default budget is generous because the tracker reaches the snapshot through
- *  `fs.watchFile` polling: it is here to fail a genuine hang, not to measure latency,
- *  and 8s was tight enough that a loaded CI runner tripped it. */
+const HANG_NOT_LATENCY_BUDGET_FOR_A_LOADED_CI_MS = 15000
+
 function waitFor(
   tracker: EventEmitter,
   pred: (s: SessionInfo) => boolean,
-  timeoutMs = 15000
+  timeoutMs = HANG_NOT_LATENCY_BUDGET_FOR_A_LOADED_CI_MS
 ): Promise<SessionInfo> {
   return new Promise((resolve, reject) => {
     const done = (s: SessionInfo): void => {
@@ -113,9 +96,6 @@ function waitFor(
   })
 }
 
-/** A repo with a linked worktree under it, spelled the way claude spells them: a `.git`
- *  DIRECTORY at the repo, and in the worktree a `.git` FILE pointing into
- *  `<repo>/.git/worktrees/<name>` — the only shape projectInfoFor reads as a worktree. */
 function repoWithWorktree(name: string): { repo: string; wt: string } {
   const repo = makeWorkspace({})
   fs.mkdirSync(path.join(repo, '.git', 'worktrees', name), { recursive: true })
@@ -128,7 +108,7 @@ function repoWithWorktree(name: string): { repo: string; wt: string } {
 const SID = '11111111-1111-4111-8111-111111111111'
 
 describe('SessionTracker — file extraction from tool_use', () => {
-  it('tags writes vs reads, sums line deltas, and tracks last-touched/last-written', async () => {
+  it('tags writes vs reads, sums line deltas, tracks last-touched/last-written, and counts only live writes, shell writes to a real file included', async () => {
     const cwd = makeWorkspace({
       'hello.js': 'function hi(){}\n',
       'README.md': '# readme\n'
@@ -168,12 +148,9 @@ describe('SessionTracker — file extraction from tool_use', () => {
     expect(wrote?.added).toBe(3)
     expect(read?.access).toBe('read')
     expect(s.lastWritten).toMatch(/hello\.js$/)
-    expect(s.lastTouched).toMatch(/README\.md$/) // Read came after the Write
-    // the Write above is replayed history (no timestamp, parsed by the catch-up): it
-    // moved lastWritten but is not a write Claude did just now
+    expect(s.lastTouched).toMatch(/README\.md$/)
     expect(s.liveWrites ?? 0).toBe(0)
 
-    // a write appended after the bind is live, and counts
     fs.appendFileSync(
       file,
       JSON.stringify({
@@ -190,8 +167,7 @@ describe('SessionTracker — file extraction from tool_use', () => {
     const s2 = await waitFor(tracker, (x) => x.tabId === 'tabA' && (x.liveWrites ?? 0) > 0)
     expect(s2.liveWrites).toBe(1)
 
-    // a shell command that writes a file counts too — Claude Code records nothing else
-    // about it — while one that only redirects to /dev/null does not
+    // CC§2
     const bash = (command: string): string =>
       JSON.stringify({
         type: 'assistant',
@@ -231,7 +207,6 @@ describe('SessionTracker — file extraction from tool_use', () => {
         },
         cwd
       },
-      // a later Read of the same file must NOT downgrade its 'wrote' access
       {
         type: 'assistant',
         message: { content: [{ type: 'tool_use', name: 'Read', input: { file_path: 'a.ts' } }] },
@@ -243,8 +218,6 @@ describe('SessionTracker — file extraction from tool_use', () => {
     const s = await waitFor(tracker, (x) => x.tabId === 'tabE' && x.files.length >= 1)
     const f = s.files.find((x) => x.label === 'a.ts')
     expect(f?.access).toBe('wrote')
-    // Edit is not diffed: the whole new_string counts as added, the whole old_string
-    // as removed (see editDelta). new_string has 4 lines, old_string has 2.
     expect(f?.added).toBe(4)
     expect(f?.removed).toBe(2)
   })
@@ -274,7 +247,6 @@ describe('SessionTracker — title resolution priority', () => {
     tracker.bindSession('tabT2', file, SID, cwd)
     await waitFor(tracker, (x) => x.tabId === 'tabT2' && x.title === 'AI generated title')
 
-    // now the external title sidecar appears — it must win
     fs.writeFileSync(file.replace(/\.jsonl$/, '.title'), 'Sidecar Name\n')
     const s = await waitFor(tracker, (x) => x.tabId === 'tabT2' && x.title === 'Sidecar Name')
     expect(s.title).toBe('Sidecar Name')
@@ -304,10 +276,8 @@ describe('SessionTracker — title resolution priority', () => {
     expect(s.title).toBe('the PR diff')
   })
 
+  // CC§9
   it('the message-first command wrapper (newer claude) still titles by <command-args>', async () => {
-    // Newer claude versions reorder the wrapper tags: <command-message> comes BEFORE
-    // <command-name>. A session launched straight into a skill/command must still be
-    // titled by its args — never by the raw wrapper XML.
     const cwd = makeWorkspace({})
     const tracker = newTracker()
     tracker.track('tabT8', cwd)
@@ -349,8 +319,6 @@ describe('SessionTracker — title resolution priority', () => {
   })
 
   it('an argless command never blocks the real first prompt from titling the session', async () => {
-    // /model, /status etc. typed before the real work must not pin the title: the
-    // command name is only the LOWEST-priority fallback, below the first prompt.
     const cwd = makeWorkspace({})
     const tracker = newTracker()
     tracker.track('tabT10', cwd)
@@ -373,9 +341,6 @@ describe('SessionTracker — title resolution priority', () => {
   })
 
   it('a command WITH args must not pin the title either: the real first prompt takes over', async () => {
-    // `/model opus` typed first: "opus" is a parameter, not the session's intent.
-    // Command args are a MID-priority fallback (above the bare command name, below
-    // any plain prompt), so the user's actual first message re-titles the session.
     const cwd = makeWorkspace({})
     const tracker = newTracker()
     tracker.track('tabT10b', cwd)
@@ -399,9 +364,6 @@ describe('SessionTracker — title resolution priority', () => {
   })
 
   it('classifyUserPrompt routes wrapper args / plain text / argless name to distinct slots', () => {
-    // Three sources, three priorities: plain text is `title`, wrapper args are
-    // `commandArgs` (a later plain prompt must beat them), an argless command's
-    // name is `commandName` (lowest).
     expect(
       classifyUserPrompt('<command-name>/model</command-name>\n<command-args>opus</command-args>')
     ).toEqual({ genuine: true, title: null, commandArgs: 'opus', commandName: null })
@@ -419,9 +381,6 @@ describe('SessionTracker — title resolution priority', () => {
   })
 
   it('a genuine prompt that merely starts with a <command-…> token is not a wrapper', async () => {
-    // Only the KNOWN wrapper tags mark a slash-command message; pasted XML/doc text
-    // like '<command-line> …' is a real prompt and must title the session (and count
-    // as activity), not be swallowed as argless plumbing.
     const cwd = makeWorkspace({})
     const tracker = newTracker()
     tracker.track('tabT11', cwd)
@@ -437,9 +396,8 @@ describe('SessionTracker — title resolution priority', () => {
     expect(s.title).toBe('<command-line> parsing in bash is broken, please fix')
   })
 
+  // CC§2
   it('a skill/command invoked with an image-only argument is not titled `[Image #1]`', async () => {
-    // The reported bug: `/goal <pasted image>` records command-args as the TUI's
-    // `[Image #1]` placeholder — that must be skipped so the next real prompt titles it.
     const cwd = makeWorkspace({})
     const tracker = newTracker()
     tracker.track('tabT4', cwd)
@@ -513,7 +471,6 @@ describe('SessionTracker — title resolution priority', () => {
   })
 
   it('an image pasted mid-text does not inject a spurious space into the title', async () => {
-    // CJK is the project's focus: `你好<image>世界` must not become `你好 世界`.
     const cwd = makeWorkspace({})
     const tracker = newTracker()
     tracker.track('tabT7', cwd)
@@ -541,9 +498,8 @@ describe('SessionTracker — binding', () => {
     const tracker = newTracker()
     const file = writeJsonl(cwd, SID, [{ type: 'user', message: { content: 'hi' }, cwd }])
     tracker.track('tabF', cwd)
-    await new Promise((r) => setTimeout(r, 300)) // ample time for any inference to fire
+    await new Promise((r) => setTimeout(r, 300))
     expect(tracker.list().find((x) => x.tabId === 'tabF')!.jsonlPath).toBeNull()
-    // the SessionStart hook is the only binding path
     tracker.bindSession('tabF', file, SID, cwd)
     const s = await waitFor(tracker, (x) => x.tabId === 'tabF' && x.jsonlPath === file)
     expect(s.sessionId).toBe(SID)
@@ -563,11 +519,7 @@ describe('SessionTracker — binding', () => {
     expect(s.cwd).toBe(worktreeCwd)
   })
 
-  // The file panel roots at `treeRoot` — the checkout the session was established
-  // in — NOT at the live cwd: the Claude TUI cd'ing around mid-session moves `cwd`
-  // (display, relative-path resolution) but must never re-root the tree.
-  describe('treeRoot pinning (file panel root)', () => {
-    /** A main-checkout fixture: a workspace dir with a real `.git` DIRECTORY. */
+  describe("treeRoot pinning (file panel root): the checkout the session was established in, never re-rooted by the TUI cd'ing around", () => {
     function makeRepo(): string {
       const repo = makeWorkspace({})
       fs.mkdirSync(path.join(repo, '.git'))
@@ -604,13 +556,11 @@ describe('SessionTracker — binding', () => {
       const { repo, wt } = repoWithWorktree('feat')
       const tracker = newTracker()
       tracker.track('tabTR3', repo)
-      // pre-bind, the launch cwd's checkout root stands in (what the panel shows today)
       expect(tracker.list().find((x) => x.tabId === 'tabTR3')!.treeRoot).toBe(repo)
       const file = writeJsonl(wt, SID, [{ type: 'user', message: { content: 'x' }, cwd: wt }])
       tracker.bindSession('tabTR3', file, SID, wt)
       const s1 = await waitFor(tracker, (x) => x.tabId === 'tabTR3' && x.cwd === wt)
       expect(s1.treeRoot).toBe(wt)
-      // the TUI wandering back into the main checkout must not re-root the worktree session
       fs.appendFileSync(file, JSON.stringify({ type: 'assistant', cwd: repo }) + '\n')
       const s2 = await waitFor(tracker, (x) => x.tabId === 'tabTR3' && x.cwd === repo)
       expect(s2.treeRoot).toBe(wt)
@@ -640,11 +590,8 @@ describe('SessionTracker — binding', () => {
       tracker.track('tabTR5', ws)
       const file = writeJsonl(ws, SID, [{ type: 'user', message: { content: 'x' }, cwd: ws }])
       tracker.bindSession('tabTR5', file, SID)
-      // wait on a PARSE-derived signal (the seeded prompt titling the row), not just
-      // jsonlPath: launch cwd equals ws here, so cwd can't tell "line 1 consumed"
-      // apart from "not started", and appending the drift record before the first
-      // parse tick let one batch pin the root at driftWs under load (flake)
-      await waitFor(tracker, (x) => x.tabId === 'tabTR5' && x.title === 'x')
+      const firstLineParsed = (x: SessionInfo): boolean => x.tabId === 'tabTR5' && x.title === 'x'
+      await waitFor(tracker, firstLineParsed)
       fs.appendFileSync(file, JSON.stringify({ type: 'assistant', cwd: driftWs }) + '\n')
       const s = await waitFor(tracker, (x) => x.tabId === 'tabTR5' && x.cwd === driftWs)
       expect(s.treeRoot).toBe(ws)
@@ -659,7 +606,6 @@ describe('SessionTracker — binding', () => {
       const fileA = writeJsonl(wsA, SID, [{ type: 'user', message: { content: 'x' }, cwd: wsA }])
       tracker.bindSession('tabTR6', fileA, SID, wsA, '', '', 'startup')
       await waitFor(tracker, (x) => x.tabId === 'tabTR6' && x.jsonlPath === fileA)
-      // the TUI cd'ed to wsB, then the user typed /clear: SessionStart fires again
       const fileB = writeJsonl(wsB, SID2, [{ type: 'user', message: { content: 'y' }, cwd: wsB }])
       tracker.bindSession('tabTR6', fileB, SID2, wsB, '', '', 'clear')
       const s = await waitFor(tracker, (x) => x.tabId === 'tabTR6' && x.sessionId === SID2)
@@ -709,11 +655,7 @@ describe('SessionTracker — binding', () => {
     })
   })
 
-  // F7 force-close: the renderer that asks has lost its tabs, so main must resolve the
-  // session id → pty itself. What it resolves is what gets killed — an id that resolves
-  // to nothing (a claude running outside Koloft keeps its transcript fresh) must kill
-  // nothing at all.
-  describe('aliveTabFor', () => {
+  describe('aliveTabFor (F7 force-close): what it resolves is what gets killed', () => {
     it('resolves a bound session id to its live tab', async () => {
       const cwd = makeWorkspace({})
       const tracker = newTracker()
@@ -780,12 +722,11 @@ describe('SessionTracker — run-state', () => {
     await waitFor(tracker, (x) => x.tabId === 'tabT' && x.status === 'waiting')
 
     tracker.setStatus('tabT', 'working')
-    tracker.setStatus('tabT', 'working') // no change — must NOT re-emit
+    tracker.setStatus('tabT', 'working')
     tracker.setStatus('tabT', 'waiting')
     const relevant = transitions.filter((t) => t.tabId === 'tabT')
     expect(relevant.at(-2)).toMatchObject({ prev: 'waiting', next: 'working' })
     expect(relevant.at(-1)).toMatchObject({ prev: 'working', next: 'waiting' })
-    // exactly one working emission despite the duplicate set
     expect(relevant.filter((t) => t.next === 'working').length).toBe(1)
   })
 
@@ -793,20 +734,16 @@ describe('SessionTracker — run-state', () => {
     const cwd = makeWorkspace({})
     const tracker = newTracker()
     tracker.track('tabS2', cwd)
-    // a completed prior turn, so the tab is caught up and its dot sits on a stale 'waiting'
     const file = writeJsonl(cwd, SID, [
       { type: 'user', message: { content: 'initial prompt' }, cwd },
       { type: 'assistant', message: { content: [{ type: 'text', text: 'done' }] }, cwd }
     ])
-    tracker.bindSession('tabS2', file, SID, cwd) // seeds 'waiting'
-    // The seeded status precedes the historical parse; its title confirms catch-up.
+    tracker.bindSession('tabS2', file, SID, cwd)
     await waitFor(
       tracker,
       (x) => x.tabId === 'tabS2' && x.status === 'waiting' && x.title === 'initial prompt'
     )
 
-    // user pastes ONLY an image (the text block is just the placeholder): a genuine new
-    // turn that yields no title text but must still resume the dot to 'working'
     fs.appendFileSync(
       file,
       JSON.stringify({
@@ -823,15 +760,40 @@ describe('SessionTracker — run-state', () => {
     const s = await waitFor(tracker, (x) => x.tabId === 'tabS2' && x.status === 'working')
     expect(s.status).toBe('working')
   })
+
+  // CC§2
+  it('an assistant record flushed just after Stop does not bounce a waiting dot', async () => {
+    const cwd = makeWorkspace({})
+    const tracker = newTracker()
+    tracker.track('tabS3', cwd)
+    const file = writeJsonl(cwd, SID, [{ type: 'user', message: { content: 'go' }, cwd }])
+    tracker.bindSession('tabS3', file, SID, cwd)
+    await waitFor(tracker, (x) => x.tabId === 'tabS3' && x.status === 'waiting' && !!x.title)
+    tracker.setStatus('tabS3', 'working')
+    await tracker.reportTurnEnd('tabS3')
+    expect(tracker.list().find((x) => x.tabId === 'tabS3')?.status).toBe('waiting')
+
+    fs.appendFileSync(
+      file,
+      JSON.stringify({
+        type: 'assistant',
+        timestamp: new Date().toISOString(),
+        message: {
+          id: 'msg_tail',
+          model: 'claude-opus-4-8',
+          content: [{ type: 'text', text: 'all done' }],
+          usage: { input_tokens: 1, output_tokens: 1 }
+        },
+        cwd
+      }) + '\n'
+    )
+    const s = await waitFor(tracker, (x) => x.tabId === 'tabS3' && !!x.usage)
+    expect(s.status).toBe('waiting')
+  })
 })
 
-// claude can move a live session into another git checkout (EnterWorktree) and
-// out again (ExitWorktree). It does that by RENAMING the transcript into another project
-// bucket, and it fires no hook at all, so the only signal is the file itself: the inode
-// it had is suddenly somewhere else. Everything here drives that real shape.
-describe('SessionTracker — a session that moved', () => {
-  /** what EnterWorktree / ExitWorktree do on disk: the SAME file, moved to the bucket of
-   *  another directory. A rename keeps the inode — that is the whole trigger. */
+// CC§2
+describe('SessionTracker — a session that moved: EnterWorktree / ExitWorktree rename the transcript and fire no hook', () => {
   function moveTranscript(from: string, toCwd: string): string {
     const dir = path.join(projectsRoot, encodeCwd(toCwd))
     fs.mkdirSync(dir, { recursive: true })
@@ -852,9 +814,6 @@ describe('SessionTracker — a session that moved', () => {
       ? { originalCwd: 'x', worktreePath: wt, worktreeName: path.basename(wt) }
       : null
   })
-  /** a usage record with NO id of any kind: those are always counted (there is nothing to
-   *  dedup by), so re-reading the file from the top would count it twice. That is what
-   *  makes the cost assertion below a test of the read cursor and not of the dedup set. */
   const spend = (inTok: number): Record<string, unknown> => ({
     type: 'assistant',
     timestamp: new Date().toISOString(),
@@ -886,14 +845,11 @@ describe('SessionTracker — a session that moved', () => {
 
     const after = await waitFor(tracker, (x) => x.tabId === 'tabM1' && x.treeRoot === wt)
     expect(after.jsonlPath).toBe(moved)
-    // R5: the worktree itself — not the repo above it, not a directory under it
     expect(after.treeRoot).toBe(wt)
     expect(after.worktree).toBe('feat')
-    // R3: 105, not 205 — the bytes already read are not read again
     expect(after.usage!.inTok).toBe(105)
-    // R6: claude leaves the scratchpad in the bucket the session started in
     expect(after.scratchpadDir).toBe(scratchpad)
-    expect(scratchpadDirFor(moved)).not.toBe(scratchpad) // i.e. re-deriving it WOULD move it
+    expect(scratchpadDirFor(moved)).not.toBe(scratchpad)
   })
 
   it('follows it back out, where no line ever carries a directory again (R4)', async () => {
@@ -905,13 +861,12 @@ describe('SessionTracker — a session that moved', () => {
     const before = await waitFor(tracker, (x) => x.tabId === 'tabM2' && x.treeRoot === wt)
     expect(before.worktree).toBe('back')
 
-    // ExitWorktree: the two records say where it landed, and nothing after them has a cwd
     const moved = moveTranscript(file, repo)
     append(moved, [relocated(repo), wtState(null)])
 
     const after = await waitFor(tracker, (x) => x.tabId === 'tabM2' && x.treeRoot === repo)
-    expect(after.worktree).toBeUndefined() // back on the main checkout
-    expect(after.cwd).toBe(wt) // the transcript never said otherwise, and that is fine
+    expect(after.worktree).toBeUndefined()
+    expect(after.cwd).toBe(wt)
   })
 
   it('coalesces a burst of moves: one landing, one notice (R8)', async () => {
@@ -925,14 +880,13 @@ describe('SessionTracker — a session that moved', () => {
     tracker.bindSession('tabM3', file, SID, repo)
     await waitFor(tracker, (x) => x.tabId === 'tabM3' && x.jsonlPath === file)
 
-    // in, then straight into another one — real transcripts do this 100ms apart. The
-    // wait is for the FIRST move to have been seen (otherwise one poll would find only
-    // the end state and there would be nothing to coalesce); it is still well inside the
-    // settle window, so only the second one may land.
+    // CC§2
     const first = moveTranscript(file, wt)
     append(first, [relocated(wt), wtState(wt)])
-    await waitFor(tracker, (x) => x.tabId === 'tabM3' && x.jsonlPath === first)
-    expect(events).toEqual([]) // nothing said yet — the burst has not settled
+    const waitFirstMoveSeenSoTheSecondHasSomethingToCoalesceWith = (): ReturnType<typeof waitFor> =>
+      waitFor(tracker, (x) => x.tabId === 'tabM3' && x.jsonlPath === first)
+    await waitFirstMoveSeenSoTheSecondHasSomethingToCoalesceWith()
+    expect(events).toEqual([])
     const second = moveTranscript(first, other.wt)
     append(second, [relocated(other.wt), wtState(other.wt)])
 
@@ -949,7 +903,6 @@ describe('SessionTracker — a session that moved', () => {
     tracker.bindSession('tabM4', file, SID, repo)
     await waitFor(tracker, (x) => x.tabId === 'tabM4' && x.title === 'mine')
 
-    // a COPY, not a move: same name, same content, its own inode — and then ours is gone
     const dir = path.join(projectsRoot, encodeCwd(wt))
     fs.mkdirSync(dir, { recursive: true })
     const stray = path.join(dir, SID + '.jsonl')
@@ -990,10 +943,10 @@ describe('SessionTracker — a session that moved', () => {
     tracker.bindSession('tabM6', file, SID, cwd)
     await waitFor(tracker, (x) => x.tabId === 'tabM6' && x.title === 'the long one')
 
-    // the stub claude sometimes leaves at the old path: same file, far shorter
+    // CC§2
     fs.writeFileSync(file, JSON.stringify({ type: 'ai-title', aiTitle: 'the stub' }) + '\n')
     const s = await waitFor(tracker, (x) => x.tabId === 'tabM6' && x.title === 'the stub')
-    expect(s.usage).toBeUndefined() // the spend was in the bytes that are gone
+    expect(s.usage).toBeUndefined()
   })
 
   it('a relative path keeps meaning the file under the directory it was read in (R12)', async () => {
@@ -1013,7 +966,6 @@ describe('SessionTracker — a session that moved', () => {
     tracker.bindSession('tabM7', file, SID, a)
     await waitFor(tracker, (x) => x.tabId === 'tabM7' && x.files.length === 1)
 
-    // the session walks on; the file it read back there is still that one
     append(file, [{ type: 'assistant', cwd: b }])
     const s = await waitFor(tracker, (x) => x.tabId === 'tabM7' && x.cwd === b)
     expect(s.files.map((f) => f.src)).toEqual([path.join(a, 'notes.md')])
@@ -1022,7 +974,6 @@ describe('SessionTracker — a session that moved', () => {
 })
 
 describe('SessionTracker — per-session usage', () => {
-  /** One assistant record carrying token usage, in the real jsonl shape. */
   const asst = (o: {
     id: string
     req: string
@@ -1052,11 +1003,11 @@ describe('SessionTracker — per-session usage', () => {
     cwd: o.cwd
   })
 
+  // CC§2
   it('dedups a usage record repeated by streaming (same id+requestId) — counts it once', async () => {
     const cwd = makeWorkspace({})
     const tracker = newTracker()
     tracker.track('tabU1', cwd)
-    // the identical record appears 3× — exactly what streaming writes to the jsonl
     const rec = asst({
       id: 'msg_a',
       req: 'req_a',
@@ -1071,12 +1022,10 @@ describe('SessionTracker — per-session usage', () => {
     tracker.bindSession('tabU1', file, SID, cwd)
 
     const s = await waitFor(tracker, (x) => x.tabId === 'tabU1' && !!x.usage)
-    // tokens counted once, not 3×
     expect(s.usage!.inTok).toBe(100)
     expect(s.usage!.outTok).toBe(200)
     expect(s.usage!.cacheWriteTok).toBe(1000)
     expect(s.usage!.cacheReadTok).toBe(5000)
-    // opus-4-8 = $5/$25/$6.25/$0.5 per Mtok → single-record cost, not tripled
     const expected = (100 * 5 + 200 * 25 + 1000 * 6.25 + 5000 * 0.5) / 1_000_000
     expect(s.usage!.costUsd).toBeCloseTo(expected, 10)
   })
@@ -1095,13 +1044,13 @@ describe('SessionTracker — per-session usage', () => {
       cr: 0,
       cwd
     })
-    rec.version = '2.0.0-test' // every real Claude Code record stamps its CLI version
+    rec.version = '2.0.0-test'
     const file = writeJsonl(cwd, SID, [rec])
     tracker.bindSession('tabUM', file, SID, cwd, 'acct-x', '3.9.9')
 
     const s = await waitFor(tracker, (x) => x.tabId === 'tabUM' && !!x.usage)
-    expect(s.usage!.ccVersion).toBe('2.0.0-test') // what the transcript was written by
-    expect(s.ccVersion).toBe('3.9.9') // what is RUNNING now (outranks in the card)
+    expect(s.usage!.ccVersion).toBe('2.0.0-test')
+    expect(s.ccVersion).toBe('3.9.9')
     expect(s.account).toBe('acct-x')
   })
 
@@ -1128,7 +1077,7 @@ describe('SessionTracker — per-session usage', () => {
     expect(s.usage!.outTok).toBe(20)
     expect(s.usage!.costUsd).toBeUndefined()
     expect(s.usage!.todayCostUsd).toBeUndefined()
-    expect(s.usage!.ctxPct).toBeUndefined() // no known window either
+    expect(s.usage!.ctxPct).toBeUndefined()
   })
 
   it('context uses the LATEST record, not the first or the sum', async () => {
@@ -1159,10 +1108,8 @@ describe('SessionTracker — per-session usage', () => {
     ])
     tracker.bindSession('tabU3', file, SID, cwd)
 
-    // wait until the SECOND record has been folded in (ctxTokens reflects the latest)
     const s = await waitFor(tracker, (x) => x.tabId === 'tabU3' && x.usage?.ctxTokens === 150_010)
-    expect(s.usage!.ctxTokens).toBe(150_010) // 10 + 0 + 150000 (latest), not 90010 or the sum
-    // opus-4-8 has a real 1M window (finding #7) — ctxPct measures against that
+    expect(s.usage!.ctxTokens).toBe(150_010)
     expect(s.usage!.ctxPct).toBeCloseTo(150_010 / 1_000_000, 6)
   })
 
@@ -1186,7 +1133,6 @@ describe('SessionTracker — per-session usage', () => {
     tracker.bindSession('tabU4', file, SID, cwd)
 
     const s = await waitFor(tracker, (x) => x.tabId === 'tabU4' && !!x.usage)
-    // the synthetic record's 999s must not leak into any accumulator
     expect(s.usage!.inTok).toBe(7)
     expect(s.usage!.outTok).toBe(8)
     expect(s.usage!.model).toBe('claude-opus-4-8')
@@ -1197,7 +1143,6 @@ describe('SessionTracker — per-session usage', () => {
     const tracker = newTracker()
     tracker.track('tabU5', cwd)
     const file = writeJsonl(cwd, SID, [
-      // a record dated well in the past must NOT count toward "today"
       asst({
         id: 'old',
         req: 'ro',
@@ -1209,14 +1154,12 @@ describe('SessionTracker — per-session usage', () => {
         ts: '2020-01-01T00:00:00.000Z',
         cwd
       }),
-      // ...but a record dated now must
       asst({ id: 'now', req: 'rn', model: 'claude-opus-4-8', in: 100, out: 100, cw: 0, cr: 0, cwd })
     ])
     tracker.bindSession('tabU5', file, SID, cwd)
 
     const s = await waitFor(tracker, (x) => x.tabId === 'tabU5' && x.usage?.todayCostUsd != null)
     const oneRec = (100 * 5 + 100 * 25) / 1_000_000
-    // session cost = both records; today = only the current-day record
     expect(s.usage!.costUsd).toBeCloseTo(oneRec * 2, 10)
     expect(s.usage!.todayCostUsd).toBeCloseTo(oneRec, 10)
   })
@@ -1233,7 +1176,6 @@ describe('SessionTracker — per-session usage', () => {
     tracker.bindSession('tabU6', fileA, SID_A, cwd)
     await waitFor(tracker, (x) => x.tabId === 'tabU6' && x.usage?.inTok === 500)
 
-    // hook rebinds the SAME tab to a new session (e.g. in-TUI /clear or /resume)
     const fileB = writeJsonl(cwd, SID_B, [
       asst({ id: 'mb', req: 'rb', model: 'claude-opus-4-8', in: 7, out: 7, cw: 0, cr: 0, cwd })
     ])
@@ -1243,16 +1185,15 @@ describe('SessionTracker — per-session usage', () => {
       tracker,
       (x) => x.tabId === 'tabU6' && x.sessionId === SID_B && x.usage?.inTok === 7
     )
-    // session B's accumulators start fresh — session A's 500 must be gone
     expect(s.usage!.inTok).toBe(7)
     expect(s.usage!.outTok).toBe(7)
   })
 
+  // CC§8
   it('folds subagent-transcript spend into the session totals but not its context (#1)', async () => {
     const cwd = makeWorkspace({})
     const tracker = newTracker()
     tracker.track('tabSA', cwd)
-    // main record: ctx = 10 + 40000 + 0 = 40010
     const file = writeJsonl(cwd, SID, [
       asst({
         id: 'main',
@@ -1265,7 +1206,6 @@ describe('SessionTracker — per-session usage', () => {
         cwd
       })
     ])
-    // subagent transcript (real cost — up to ~78% of a session's spend lives here)
     writeSubagentJsonl(cwd, SID, 'agent-x.jsonl', [
       asst({
         id: 'sub',
@@ -1281,12 +1221,10 @@ describe('SessionTracker — per-session usage', () => {
     tracker.bindSession('tabSA', file, SID, cwd)
 
     const s = await waitFor(tracker, (x) => x.tabId === 'tabSA' && x.usage?.inTok === 4642)
-    // subagent tokens + cost fold into the totals...
-    expect(s.usage!.inTok).toBe(4642) // 10 (main) + 4632 (subagent)
+    expect(s.usage!.inTok).toBe(4642)
     const mainCost = (10 * 5 + 20 * 25 + 40_000 * 0.5) / 1_000_000
     const subCost = (4632 * 5 + 1 * 25 + 10_478 * 6.25) / 1_000_000
     expect(s.usage!.costUsd).toBeCloseTo(mainCost + subCost, 9)
-    // ...but the subagent's context is NOT the parent session's — ctx stays the main record's
     expect(s.usage!.ctxTokens).toBe(40_010)
   })
 
@@ -1294,7 +1232,6 @@ describe('SessionTracker — per-session usage', () => {
     const cwd = makeWorkspace({})
     const tracker = newTracker()
     tracker.track('tabIL', cwd)
-    // two records with NEITHER message.id NOR requestId: unkeyable, so each must count
     const rec = {
       type: 'assistant',
       timestamp: new Date().toISOString(),
@@ -1315,14 +1252,10 @@ describe('SessionTracker — per-session usage', () => {
     tracker.bindSession('tabIL', file, SID, cwd)
 
     const s = await waitFor(tracker, (x) => x.tabId === 'tabIL' && !!x.usage)
-    expect(s.usage!.inTok).toBe(200) // both counted, not collapsed to a single 100
+    expect(s.usage!.inTok).toBe(200)
   })
 
-  it('folds subagent spend when ONLY the subagent transcript grows (idle main jsonl)', async () => {
-    // A background Task subagent burns tokens while the session idles at the prompt;
-    // its result reaches the main transcript only at the next user interaction. The
-    // poll timer must fold that spend without any main-jsonl write — otherwise the
-    // status-bar cost freezes at the pre-subagent value indefinitely.
+  it('folds subagent spend when ONLY the subagent transcript grows (idle main jsonl), so the cost never freezes while a background Task runs', async () => {
     const cwd = makeWorkspace({})
     const tracker = newTracker()
     tracker.track('tabSP', cwd)
@@ -1332,18 +1265,15 @@ describe('SessionTracker — per-session usage', () => {
     tracker.bindSession('tabSP', file, SID, cwd)
     await waitFor(tracker, (x) => x.tabId === 'tabSP' && x.usage?.inTok === 10)
 
-    // now ONLY a subagent transcript appears — the main jsonl never changes again
     writeSubagentJsonl(cwd, SID, 'agent-late.jsonl', [
       asst({ id: 'late', req: 'rl', model: 'claude-opus-4-8', in: 777, out: 1, cw: 0, cr: 0, cwd })
     ])
     const s = await waitFor(tracker, (x) => x.tabId === 'tabSP' && x.usage?.inTok === 787, 15_000)
-    expect(s.usage!.inTok).toBe(787) // 10 (main) + 777 (subagent-only growth)
+    expect(s.usage!.inTok).toBe(787)
   }, 20_000)
 
+  // CC§2
   it('a sidechain record in the MAIN jsonl adds cost but not context/model', async () => {
-    // Some CC versions interleave Task-subagent turns into the main transcript as
-    // isSidechain records — same rule as the subagents/-dir channel: their spend is
-    // the session's, their context window is not.
     const cwd = makeWorkspace({})
     const tracker = newTracker()
     tracker.track('tabSC', cwd)
@@ -1372,8 +1302,8 @@ describe('SessionTracker — per-session usage', () => {
     tracker.bindSession('tabSC', file, SID, cwd)
 
     const s = await waitFor(tracker, (x) => x.tabId === 'tabSC' && x.usage?.inTok === 4010)
-    expect(s.usage!.model).toBe('claude-opus-4-8') // the sidechain's model must not win
-    expect(s.usage!.ctxTokens).toBe(40_010) // main record's context, not the sidechain's ~4k
+    expect(s.usage!.model).toBe('claude-opus-4-8')
+    expect(s.usage!.ctxTokens).toBe(40_010)
     const mainCost = (10 * 5 + 5 * 25 + 40_000 * 0.5) / 1_000_000
     const sideCost = (4000 * 1 + 2 * 5) / 1_000_000
     expect(s.usage!.costUsd).toBeCloseTo(mainCost + sideCost, 10)
@@ -1383,7 +1313,6 @@ describe('SessionTracker — per-session usage', () => {
     const cwd = makeWorkspace({})
     const tracker = newTracker()
     tracker.track('tabOO', cwd)
-    // today's record FIRST, then an older-dated one; the older must neither reset nor add
     const file = writeJsonl(cwd, SID, [
       asst({
         id: 'now',
@@ -1411,42 +1340,37 @@ describe('SessionTracker — per-session usage', () => {
 
     const s = await waitFor(tracker, (x) => x.tabId === 'tabOO' && x.usage?.todayCostUsd != null)
     const oneRec = (100 * 5 + 100 * 25) / 1_000_000
-    expect(s.usage!.todayCostUsd).toBeCloseTo(oneRec, 10) // today's record only; older didn't wipe it
-    expect(s.usage!.costUsd).toBeCloseTo(oneRec * 2, 10) // both still in the session total
-    expect(s.usage!.todayDayKey).toMatch(/^\d{4}-\d{2}-\d{2}$/) // carries its day for the renderer gate
+    expect(s.usage!.todayCostUsd).toBeCloseTo(oneRec, 10)
+    expect(s.usage!.costUsd).toBeCloseTo(oneRec * 2, 10)
+    expect(s.usage!.todayDayKey).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   })
 })
 
+// CC§1
 describe('SessionTracker — compact SessionStart (auto-compaction fires mid-turn)', () => {
-  it("source='compact' does not reseed waiting — no phantom working→waiting edge", async () => {
+  it("source='compact' does not reseed waiting — no phantom working→waiting edge, which would raise a false turn-done banner", async () => {
     const cwd = makeWorkspace({})
     const tracker = newTracker()
     tracker.track('tabCP', cwd)
     const file = writeJsonl(cwd, SID, [{ type: 'user', message: { content: 'go' }, cwd }])
     tracker.bindSession('tabCP', file, SID, cwd, '', '', 'startup')
     await waitFor(tracker, (x) => x.tabId === 'tabCP' && x.status === 'waiting')
-    tracker.setStatus('tabCP', 'working') // mid-turn when auto-compaction kicks in
+    tracker.setStatus('tabCP', 'working')
     await waitFor(tracker, (x) => x.tabId === 'tabCP' && x.status === 'working')
 
     const transitions: { prev?: string; next: string }[] = []
     tracker.on('status', (t: { prev?: string; next: string }) => transitions.push(t))
-    // Claude Code re-fires SessionStart with source 'compact' (same session, same
-    // transcript) — the dot must stay 'working': a working→waiting flicker here
-    // becomes a false "turn done — your move" banner in the attention layer
     tracker.bindSession('tabCP', file, SID, cwd, '', '', 'compact')
     expect(tracker.list().find((s) => s.tabId === 'tabCP')!.status).toBe('working')
     expect(transitions).toEqual([])
 
-    // a REAL restart (in-TUI /clear → source 'clear') still seeds waiting
     tracker.bindSession('tabCP', file, SID, cwd, '', '', 'clear')
     expect(tracker.list().find((s) => s.tabId === 'tabCP')!.status).toBe('waiting')
   })
 })
 
+// CC§2
 describe('scratchpadDirFor — Claude Code per-session scratchpad', () => {
-  // Contract: claude writes the scratchpad at <base>/<projectSlug>/<sessionId>/scratchpad,
-  // where <base> is /tmp/claude-<uid> and <projectSlug>/<sessionId>.jsonl is where the
-  // transcript itself lives — so slug and id are read back off jsonlPath, never re-slugged.
   afterEach(() => {
     delete process.env.KOLOFT_SCRATCHPAD_BASE
   })
@@ -1458,10 +1382,7 @@ describe('scratchpadDirFor — Claude Code per-session scratchpad', () => {
     ).toBe('/tmp/koloft-test-claude-uid/-Users-me-Projects-proj/abc-123/scratchpad')
   })
 
-  // claude hardcodes /tmp (it ignores TMPDIR), and the base is spelled as the RESOLVED
-  // /tmp — on macOS that is /private/tmp, which is also how canonFile spells the session
-  // files it realpath's, so the same file can never reach the tree under two spellings.
-  it('defaults the base to the resolved /tmp/claude-<uid>', () => {
+  it('defaults the base to the resolved /tmp/claude-<uid>, the spelling canonFile gives session files too', () => {
     expect(scratchpadDirFor('/h/.claude/projects/-p/sid.jsonl')).toBe(
       `${fs.realpathSync('/tmp')}/claude-${process.getuid!()}/-p/sid/scratchpad`
     )
@@ -1476,11 +1397,8 @@ describe('scratchpadDirFor — Claude Code per-session scratchpad', () => {
   })
 })
 
+// CC§2
 describe('SessionTracker — scratchpad dir on the emitted session', () => {
-  // The slug must come off the TRANSCRIPT's own dir, not from re-encoding cwd. Those two
-  // diverge for real: a `-w` session's jsonl stays in the LAUNCH cwd's slug while its cwd
-  // is the worktree (the lifecycle contract §6). So bind a transcript that deliberately sits under a
-  // slug dir cwd would never produce — re-slugging cwd is then a visibly wrong answer.
   it('reports the scratchpad dir off the transcript slug, not off cwd', async () => {
     const base = fs.mkdtempSync(path.join(home, 'spbase-'))
     process.env.KOLOFT_SCRATCHPAD_BASE = base
@@ -1506,13 +1424,8 @@ describe('SessionTracker — scratchpad dir on the emitted session', () => {
   })
 })
 
-// the ⇧⌘R gate's probe. Claude Code creates a session's jsonl LAZILY, at
-// the first user message, while the SessionStart hook reports its path immediately: a
-// bound session's `jsonlPath` is a PREDICTION, not proof of a file. The probe answers
-// the one question a restart needs before it kills anything — is there a conversation on
-// disk to resume — and every branch of that answer is invisible from the outside (the UI
-// shows one toast either way), so it is pinned here.
-describe('SessionTracker.transcriptExists — the pre-kill disk truth', () => {
+// CC§2
+describe('SessionTracker.transcriptExists — the pre-kill disk truth ⇧⌘R asks before it kills anything', () => {
   it('answers true for a bound session whose transcript is on disk', () => {
     const cwd = makeWorkspace({ 'a.txt': 'a\n' })
     const file = writeJsonl(cwd, SID, [
@@ -1525,9 +1438,7 @@ describe('SessionTracker.transcriptExists — the pre-kill disk truth', () => {
     expect(tracker.transcriptExists(SID)).toBe(true)
   })
 
-  // the issue itself: SessionStart fired, the tracker holds the path, the file does not
-  // exist yet. `claude --resume` on this id finds nothing and dies.
-  it('answers false for a bound session that was never conversed with', () => {
+  it('answers false for a bound session that was never conversed with — its jsonl is only a prediction', () => {
     const cwd = makeWorkspace({ 'a.txt': 'a\n' })
     const predicted = path.join(projectsRoot, encodeCwd(cwd), SID + '.jsonl')
     fs.mkdirSync(path.dirname(predicted), { recursive: true })
@@ -1538,9 +1449,6 @@ describe('SessionTracker.transcriptExists — the pre-kill disk truth', () => {
     expect(tracker.transcriptExists(SID)).toBe(false)
   })
 
-  // A tracker HIT is answered by that entry's own file and nothing else. Falling back to
-  // the storage sweep here would let a same-id file in another bucket re-open the gate on
-  // a conversation the user just deleted — the false 'true' Edge #6 forbids.
   it('answers false when the bound transcript was deleted, without falling back to the sweep', () => {
     const cwd = makeWorkspace({ 'a.txt': 'a\n' })
     const file = writeJsonl(cwd, SID, [
@@ -1550,7 +1458,6 @@ describe('SessionTracker.transcriptExists — the pre-kill disk truth', () => {
     tracker.track('tabTE3', cwd)
     tracker.bindSession('tabTE3', file, SID, cwd)
     fs.rmSync(file)
-    // a stray copy of the same id in another bucket — visible to the sweep, irrelevant here
     const other = path.join(projectsRoot, encodeCwd(cwd) + '-other')
     fs.mkdirSync(other, { recursive: true })
     fs.writeFileSync(path.join(other, SID + '.jsonl'), '{}\n')
@@ -1558,26 +1465,19 @@ describe('SessionTracker.transcriptExists — the pre-kill disk truth', () => {
     expect(tracker.transcriptExists(SID)).toBe(false)
   })
 
-  // A tab is tracked from registration, before any hook: sessionId '' and no path — so
-  // the empty id is a state the app really produces, and it must resolve to nothing.
-  // Both branches have to refuse it: the sweep would otherwise concatenate to a bare
-  // `<bucket>/.jsonl`, which a dotfile in Claude storage makes a real match.
-  it('answers false for the empty session id', () => {
+  it('answers false for the empty session id a registered-unbound tab carries, even with a stray .jsonl dotfile', () => {
     const cwd = makeWorkspace({ 'a.txt': 'a\n' })
     const bucket = path.join(projectsRoot, encodeCwd(cwd))
     fs.mkdirSync(bucket, { recursive: true })
     fs.writeFileSync(path.join(bucket, '.jsonl'), '{}\n')
     const tracker = newTracker()
 
-    expect(tracker.transcriptExists('')).toBe(false) // no entry: unguarded, the dotfile would match
+    expect(tracker.transcriptExists('')).toBe(false)
     tracker.track('tabTE4', cwd)
-    expect(tracker.transcriptExists('')).toBe(false) // registered-unbound entry: still refused up front
+    expect(tracker.transcriptExists('')).toBe(false)
   })
 
-  // The dead-tab anchor path (FR-07): the pty is gone and the tracker entry with it, so
-  // the id reaches the probe with no table entry at all. The file is still there, and
-  // resuming it is exactly what ⇧⌘R must still do — the answer comes from Claude storage.
-  it('finds an untracked session by sweeping Claude storage', () => {
+  it("finds an untracked session by sweeping Claude storage, as a dead tab's anchor needs", () => {
     const cwd = makeWorkspace({ 'a.txt': 'a\n' })
     const gone = '22222222-2222-4222-8222-222222222222'
     writeJsonl(cwd, gone, [{ type: 'user', message: { role: 'user', content: 'hi' }, cwd }])
@@ -1592,10 +1492,7 @@ describe('SessionTracker.transcriptExists — the pre-kill disk truth', () => {
     expect(tracker.transcriptExists('33333333-3333-4333-8333-333333333333')).toBe(false)
   })
 
-  // The sweep is by FILE NAME across every bucket, never by re-deriving the session's
-  // slug from a cwd: a `-w` session's jsonl lives under the LAUNCH cwd's slug, so a
-  // cwd-derived lookup would answer false for a real, resumable conversation.
-  it('finds a session filed under a bucket its cwd would never produce', () => {
+  it('finds a session filed under a bucket its cwd would never produce — the sweep is by file name', () => {
     const cwd = makeWorkspace({ 'a.txt': 'a\n' })
     const elsewhere = '44444444-4444-4444-8444-444444444444'
     const foreign = path.join(projectsRoot, encodeCwd(cwd) + '-launch-bucket')
@@ -1606,10 +1503,6 @@ describe('SessionTracker.transcriptExists — the pre-kill disk truth', () => {
     expect(tracker.transcriptExists(elsewhere)).toBe(true)
   })
 
-  // Never throw at the probe. The renderer treats a rejected probe as "do not restart",
-  // but that fail-safe must be reached by contract, not by an unreadable storage root
-  // accidentally landing there — a machine with no Claude storage yet simply has no
-  // conversation to resume, which is a plain false.
   it('answers false instead of throwing when Claude storage does not exist', () => {
     const stashed = projectsRoot + '.stashed'
     fs.renameSync(projectsRoot, stashed)
@@ -1623,10 +1516,7 @@ describe('SessionTracker.transcriptExists — the pre-kill disk truth', () => {
   })
 })
 
-// ---- remote tabs -----------------------------------------------------------
-// A remote tab's claude runs on another machine: its transcript arrives in a mirror
-// under userData, and nothing here may walk this Mac's disk on its behalf.
-describe('a tab whose claude runs on another machine', () => {
+describe("a tab whose claude runs on another machine: its transcript lives in a mirror, and this Mac's disk is never walked for it", () => {
   const RCWD = '/home/koh/api'
   const RSID = 'remote-session-1'
 
@@ -1644,10 +1534,8 @@ describe('a tab whose claude runs on another machine', () => {
     return tracker
   }
 
-  // U-TRK-1
-  it('predicts the transcript inside the machine mirror, not local storage', () => {
+  it('U-TRK-1: predicts the transcript inside the machine mirror, not local storage', () => {
     const tracker = remoteTracker()
-    // the hook ran over there, so its path is the machine's — only the slug carries over
     tracker.bindSession(
       'tabR',
       `/home/koh/.claude/projects/-home-koh-api/${RSID}.jsonl`,
@@ -1668,26 +1556,19 @@ describe('a tab whose claude runs on another machine', () => {
     )
   })
 
-  // U-TRK-2
-  it('follows the tmux name when an in-TUI /clear mints a new session id', () => {
+  it('U-TRK-2: follows the tmux name when an in-TUI /clear mints a new session id — liveness, kill and restart key off it', () => {
     const tracker = remoteTracker()
     tracker.bindSession('tabR', '', RSID, RCWD)
     tracker.bindSession('tabR', '', 'session-after-clear', RCWD, '', '', 'clear')
-    // the hook renames the tmux session over there to match the new id, and main tells
-    // the tracker: liveness, the kill and the restart all key off this name, so a name
-    // left pointing at the old id would read the live session as cold
     tracker.setRemoteTmuxName('tabR', 'k-session-after-clear')
     expect(tracker.remoteOf('tabR')?.tmuxName).toBe('k-session-after-clear')
     expect(tracker.list().find((s) => s.tabId === 'tabR')?.sessionId).toBe('session-after-clear')
   })
 
-  // U-TRK-3
-  it('answers ⇧⌘R from the mirror, exactly like a local session from its own file', () => {
+  it('U-TRK-3: answers ⇧⌘R from the mirror, exactly like a local session from its own file', () => {
     const tracker = remoteTracker()
     tracker.bindSession('tabR', '', RSID, RCWD)
     const file = path.join(mirrorRoot(), encodeCwd(RCWD), RSID + '.jsonl')
-    // nothing mirrored yet: killing the live claude to resume a conversation that does
-    // not exist would lose it for good
     expect(tracker.transcriptExists(RSID)).toBe(false)
     fs.mkdirSync(path.dirname(file), { recursive: true })
     fs.writeFileSync(file, '{}\n')

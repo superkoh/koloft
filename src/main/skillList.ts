@@ -1,12 +1,6 @@
 import path from 'path'
 import type { SkillSuggestion } from '@shared/types'
 
-/** §4.3 — what the task field offers after you type `/`. Pure over an injected
- *  fs so it can be tested without a disk: the caller passes the real `fs` at the edge.
- *  Nothing here throws — a broken skill file must cost you its description, never the
- *  whole list. Order is project first, then home, because a project's own skill is the
- *  one you meant when two share a name. */
-
 export interface SkillFs {
   readdir(p: string): string[]
   readFile(p: string): string
@@ -54,9 +48,6 @@ function unquote(s: string): string {
   return t
 }
 
-/** The front matter of a SKILL.md: the `---` block at the very top. We only want two
- *  keys, so this reads lines rather than pulling in a YAML parser. A `>` or `|` value
- *  puts its text on the lines below, indented — we take the first of those lines. */
 function frontMatter(text: string): { name?: string; description?: string } {
   const lines = text.split(/\r?\n/)
   if (lines[0]?.trim() !== '---') return {}
@@ -70,8 +61,6 @@ function frontMatter(text: string): { name?: string; description?: string } {
     if (out[key] !== undefined) continue
     let value = unquote(m[2])
     if (value === '>' || value === '|' || value === '>-' || value === '|-') {
-      // folded / literal: the value is on the following indented lines; take the first
-      // one with words on it
       value = ''
       for (let j = i + 1; j < lines.length; j++) {
         if (lines[j].trim() === '---') break
@@ -90,7 +79,6 @@ function cut120(s: string): string {
   return s.length > 120 ? s.slice(0, 120) : s
 }
 
-/** `<base>/.claude/skills/<dir>/SKILL.md` — one suggestion per folder that has one. */
 function skillsIn(fs: SkillFs, base: string, source: 'project' | 'home'): SkillSuggestion[] {
   const root = path.join(base, '.claude', 'skills')
   const out: SkillSuggestion[] = []
@@ -108,12 +96,9 @@ function skillsIn(fs: SkillFs, base: string, source: 'project' | 'home'): SkillS
       source
     })
   }
-  // by the name a person reads, not by the folder it came out of — a front-matter
-  // `name:` can differ from its directory
   return out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
 }
 
-/** `<base>/.claude/commands/<file>.md` — one level only; the name is the file name. */
 function commandsIn(fs: SkillFs, base: string, source: 'project' | 'home'): SkillSuggestion[] {
   const root = path.join(base, '.claude', 'commands')
   const out: SkillSuggestion[] = []

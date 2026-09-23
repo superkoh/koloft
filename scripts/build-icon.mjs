@@ -1,14 +1,4 @@
 #!/usr/bin/env node
-// Build the macOS app icon from its SVG source.
-//
-//   node scripts/build-icon.mjs                      # build/icon.svg -> build/icon.icns
-//   node scripts/build-icon.mjs --preview out.png    # also render a review sheet (sizes on light/dark)
-//   node scripts/build-icon.mjs --svg a.svg --png out.png [--size 1024]   # just rasterize
-//
-// build/icon.svg is the source of truth; the .icns is a derived artifact checked in so a
-// packaging run needs no browser. Rendering goes through the Chromium that Playwright
-// already ships for the e2e suite (headless — never a visible window), then `sips` scales
-// the 1024px master into the ten sizes an .iconset wants and `iconutil` packs them.
 import { chromium } from '@playwright/test'
 import { execFileSync } from 'child_process'
 import fs from 'fs'
@@ -54,7 +44,6 @@ try {
     await rasterize(svgPath, master, 1024)
     const iconset = path.join(work, 'icon.iconset')
     fs.mkdirSync(iconset)
-    // Apple's naming: icon_<pt>x<pt>[@2x].png, where @2x holds double the pixels
     for (const pt of [16, 32, 128, 256, 512]) {
       for (const scale of [1, 2]) {
         const px = pt * scale
@@ -72,7 +61,6 @@ try {
       `wrote ${path.relative(root, icns)} (${(fs.statSync(icns).size / 1024).toFixed(0)} KB)`
     )
     if (preview) {
-      // review sheet: the icon at Dock/Finder/menu sizes on both appearances
       const dataUrl = 'data:image/png;base64,' + fs.readFileSync(master).toString('base64')
       const cell = (px) =>
         `<figure><img src="${dataUrl}" width="${px}" height="${px}"><figcaption>${px}</figcaption></figure>`

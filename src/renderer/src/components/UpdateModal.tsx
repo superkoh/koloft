@@ -4,18 +4,8 @@ import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 import { useStore } from '../store'
 
-// `html: false` renders raw tags in a release body as text; `linkify: false` because the
-// only thing auto-linking could produce here is an anchor the sanitizer strips again.
 const md = new MarkdownIt({ html: false, linkify: false, breaks: false })
 
-/** Release-notes markdown → sanitized HTML.
- *  Anchors are dropped but their text kept (`KEEP_CONTENT`): the app installs no
- *  will-navigate / window-open guard, so one click on a link in here would navigate the
- *  whole renderer to GitHub and take every tab's live terminal with it. "View release ↗"
- *  is the sanctioned door — it goes through main, which shows the page in the app's own
- *  browser overlay (R3, it used to leave for the system browser).
- *  `img` is out for the same class of reason: a release body shouldn't be able to make the
- *  privileged renderer fetch a remote asset, or blow up the modal's layout. */
 function renderNotes(markdown: string): string {
   return DOMPurify.sanitize(md.render(markdown), {
     FORBID_TAGS: ['a', 'img', 'iframe', 'script', 'style'],
@@ -23,35 +13,24 @@ function renderNotes(markdown: string): string {
   })
 }
 
-// Every generated body opens with this heading (see scripts/release-notes.sh). When the
-// modal groups several releases it prints the version as the group's own heading, so the
-// per-release repeat is pure noise — drop it there, keep it when a lone release is shown.
-const WHATS_CHANGED = /^#{1,6}[ \t]*What[’']s Changed[ \t]*\r?\n+/i
+const HEADING_REPEATED_BY_EVERY_RELEASE_BODY = /^#{1,6}[ \t]*What[’']s Changed[ \t]*\r?\n+/i
 
-/**
- * The manual "Check for Updates…" modal. The app is unsigned, so a confirmed update is a
- * direct in-app download→swap→relaunch (see main/updater.ts), not an App Store / Squirrel
- * flow. Phases come straight from the store's `update` slice.
- */
 export function UpdateModal(): JSX.Element | null {
   const update = useStore((s) => s.update)
   const setUpdate = useStore((s) => s.setUpdate)
   const startUpdateDownload = useStore((s) => s.startUpdateDownload)
   const openUpdateCheck = useStore((s) => s.openUpdateCheck)
 
-  // stable {__html} identities — React 19 re-sets innerHTML on a fresh wrapper object
-  // (see PreviewViewer); inline objects would rebuild the notes DOM (dropping its
-  // scroll) on every download-progress tick.
+  // PLATFORM§25
   const notesHtml = useMemo(() => {
     const rs = update.releases ?? []
     return rs.map((r) => ({
-      __html: renderNotes(rs.length > 1 ? r.notes.replace(WHATS_CHANGED, '') : r.notes)
+      __html: renderNotes(
+        rs.length > 1 ? r.notes.replace(HEADING_REPEATED_BY_EVERY_RELEASE_BODY, '') : r.notes
+      )
     }))
   }, [update.releases])
 
-  // Esc closes this modal first when it stacks over Settings (topmost-modal
-  // semantics — the settings shell ignores Esc while update.open); a running
-  // download still refuses to be dismissed, same as backdrop and ×.
   useEffect(() => {
     if (!update.open) return
     const onKey = (e: KeyboardEvent): void => {
@@ -67,14 +46,9 @@ export function UpdateModal(): JSX.Element | null {
 
   const downloading = update.phase === 'downloading'
   const restarting = !!update.restarting
-  // Main already dropped every release with no changelog, so an empty list means there is
-  // genuinely nothing to show — render no notes box at all rather than an empty frame.
   const releases = update.releases ?? []
   const close = (): void => setUpdate({ open: false })
   const percent = update.percent ?? -1
-  // don't let a backdrop click / × strand a running install. percent hits 100 on the last
-  // downloaded byte — the mount/stage/spawn that follows can still fail, and that failure
-  // has to land somewhere the user can see it.
   const dismiss = downloading ? undefined : close
   const whatsNew = update.phase === 'whats-new'
   const notes = releases.length > 0 && (
@@ -142,9 +116,6 @@ export function UpdateModal(): JSX.Element | null {
                 <button
                   className="btn-primary"
                   onClick={() => {
-                    // Stays clickable on purpose: main arms the relaunch once but retries
-                    // the quit, and a stalled quit — the very thing that produced this
-                    // state — is exactly when the user needs a second press.
                     setUpdate({ restarting: true })
                     window.api.update.restart()
                   }}

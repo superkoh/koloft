@@ -14,16 +14,9 @@ import {
   writeTabPackage,
   type TabSpec
 } from '../../src/main/remote/launch'
-import { TMUX_CONF } from '../../src/main/remote/install'
+import { TMUX_CONF, heartbeatCmd } from '../../src/main/remote/install'
 
-// U-LINE-*, U-TAB-*, U-ENV-1. Two strings decide whether a remote session starts: the
-// ONE line typed into the tab's shell, and the little script that line runs on the
-// other machine. Both are executed here for real — the line by dash (the plainest
-// shell it must survive), the script by sh with a fake tmux and a fake claude — because
-// every failure mode they exist for is a quoting or an ordering mistake that reading
-// them will not show.
-
-const SH = fs.existsSync('/bin/dash') ? '/bin/dash' : '/bin/sh'
+const PLAINEST_SHELL_THE_LINE_MUST_SURVIVE = fs.existsSync('/bin/dash') ? '/bin/dash' : '/bin/sh'
 const tmpRoots: string[] = []
 const mkroot = (tag: string): string => {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), `koloft-${tag}-`))
@@ -34,20 +27,28 @@ afterAll(() => {
   for (const d of tmpRoots) fs.rmSync(d, { recursive: true, force: true })
 })
 
-// ── the machine at the other end ────────────────────────────────────────────────
-// A fake `ssh` that is a real one in the only ways these cases care about: it numbers
-// its calls, records each one, can be told to fail any of them, and otherwise RUNS the
-// remote command string for real under a home directory the test can look inside. That
-// last part is what makes the push a genuine test — the tar really is streamed, really
-// is unpacked, and the move-into-place really races.
 interface Remote {
   dir: string
-  /** the machine's HOME */
-  machine: string
+  machineHome: string
   fail(call: number, code: number): void
   argv(call: number): string[]
   calls(): number
   bin: string
+}
+
+const FISH_LOGIN_SHELL = `#!/bin/sh
+dry=""
+[ "$1" = -n ] && { dry=1; shift; }
+bare=$(printf '%s' "$2" | sed "s/'[^']*'//g")
+case "$bare" in *'export '*|*'{ '*|*'; }'*|*'$$'*) echo "fish: not fish syntax: $2" >&2; exit 2;; esac
+[ -n "$dry" ] && exit 0
+exec sh -c "$2"
+`
+
+function writeFishLoginShell(bin: string): string {
+  const fish = path.join(bin, 'fish')
+  fs.writeFileSync(fish, FISH_LOGIN_SHELL, { mode: 0o755 })
+  return fish
 }
 
 function remote(): Remote {
@@ -56,6 +57,7 @@ function remote(): Remote {
   fs.mkdirSync(path.join(dir, 'machine'))
   const bin = path.join(dir, 'bin')
   fs.mkdirSync(bin)
+  writeFishLoginShell(bin)
   fs.writeFileSync(
     path.join(bin, 'ssh'),
     `#!/bin/sh
@@ -66,15 +68,15 @@ last=""
 for a in "$@"; do last="$a"; done
 printf '%s\\n' "$@" > "$D/log.$n"
 [ -f "$D/exit.$n" ] && exit "$(cat "$D/exit.$n")"
-[ "$1" = -tt ] && exit 0
-exec env HOME="$D/machine" sh -c "$last"
+[ "$1" = -tt ] && exec "$D/bin/fish" -n -c "$last"
+exec env HOME="$D/machine" "$D/bin/fish" -c "$last"
 `,
     { mode: 0o755 }
   )
   return {
     dir,
     bin,
-    machine: path.join(dir, 'machine'),
+    machineHome: path.join(dir, 'machine'),
     fail: (call, code) => fs.writeFileSync(path.join(dir, `exit.${call}`), String(code)),
     argv: (call) =>
       fs
@@ -85,13 +87,15 @@ exec env HOME="$D/machine" sh -c "$last"
   }
 }
 
-const koloft = (r: Remote, ...rest: string[]): string => path.join(r.machine, '.koloft', ...rest)
+const SSH_LINK_BROKE_EXIT = 255
 
-/** run one launch line the way the tab's shell would */
+const koloft = (r: Remote, ...rest: string[]): string =>
+  path.join(r.machineHome, '.koloft', ...rest)
+
 function typeLine(r: Remote, line: string): { status: number | null; stdout: string } {
   const script = path.join(mkroot('line'), 'line.sh')
   fs.writeFileSync(script, line + '\n')
-  const res = spawnSync(SH, [script], {
+  const res = spawnSync(PLAINEST_SHELL_THE_LINE_MUST_SURVIVE, [script], {
     encoding: 'utf8',
     env: { HOME: process.env.HOME, PATH: `${r.bin}:/usr/bin:/bin` },
     timeout: 60_000
@@ -99,15 +103,13 @@ function typeLine(r: Remote, line: string): { status: number | null; stdout: str
   return { status: res.status, stdout: res.stdout }
 }
 
-/** the same, but left running: the caller reads the output as it comes and decides
- *  when (and whether) the line gets its Enter */
 function typeLineLive(
   r: Remote,
   line: string
 ): { out: () => string; running: () => boolean; enter: () => void; done: Promise<number | null> } {
   const script = path.join(mkroot('line'), 'line.sh')
   fs.writeFileSync(script, line + '\n')
-  const c = spawn(SH, [script], {
+  const c = spawn(PLAINEST_SHELL_THE_LINE_MUST_SURVIVE, [script], {
     env: { HOME: process.env.HOME, PATH: `${r.bin}:/usr/bin:/bin`, TERM: 'xterm' },
     stdio: ['pipe', 'pipe', 'pipe']
   })
@@ -123,7 +125,6 @@ function typeLineLive(
   return { out: () => out, running: () => alive, enter: () => c.stdin.write('\n'), done }
 }
 
-/** wait until `pred` holds, or give up — a plain poll, no timers to leak */
 async function until(pred: () => boolean, ms = 15_000): Promise<boolean> {
   const end = Date.now() + ms
   while (Date.now() < end) {
@@ -163,25 +164,23 @@ function stage(r: Remote, files: Record<string, string | Buffer>, s: TabSpec) {
   }
 }
 
-describe('the launch line', () => {
-  it('pushes the machine package once, the tab package always, then runs the tab script', () => {
+describe('U-LINE-*: the launch line', () => {
+  it('pushes the machine package once, the tab package always, then runs the tab script, never letting ssh eat the terminal keystrokes', () => {
     const r = remote()
     const st = stage(r, { 'run.sh': 'echo hi\n', 'theme.json': '{}' }, spec())
     const first = typeLine(r, st.line())
 
     expect(first.status).toBe(0)
     expect(r.calls()).toBe(4)
-    expect(r.argv(1)).toContain('-n') // never eats the terminal's keystrokes
+    expect(r.argv(1)).toContain('-n')
     expect(r.argv(1).at(-1)).toContain('test -d')
     expect(fs.readFileSync(koloft(r, st.pkg.name, 'run.sh'), 'utf8')).toBe('echo hi\n')
     expect(fs.readFileSync(koloft(r, 'tabs', 'T.sh'), 'utf8')).toContain('new-session')
     expect(r.argv(4)).toContain('-tt')
     expect(r.argv(4).at(-1)).toContain(`T.sh" start`)
-    // the local tab package carried a credential file: it must not stay on this disk
-    expect(fs.existsSync(st.tabDir)).toBe(false)
+    const credentialTabPackageLeftOnThisDisk = fs.existsSync(st.tabDir)
+    expect(credentialTabPackageLeftOnThisDisk).toBe(false)
 
-    // second start on the same machine: the package is already there, so only the tab
-    // package moves (3 MB per session start otherwise)
     const st2 = stage(r, { 'run.sh': 'echo hi\n', 'theme.json': '{}' }, spec({ tabId: 'T2' }))
     const again = typeLine(r, st2.line())
     expect(again.status).toBe(0)
@@ -192,12 +191,10 @@ describe('the launch line', () => {
     expect(r.argv(7)).toContain('-tt')
   })
 
+  // PLATFORM§3
   it('pushes no macOS AppleDouble twins along with the packages', () => {
     const r = remote()
     const st = stage(r, { 'run.sh': 'echo hi\n' }, spec())
-    // macOS tar packs a `._name` file next to every file that carries an extended
-    // attribute — a quarantine flag is enough — and claude then reads `._settings.json`
-    // as a second, corrupt settings file
     for (const f of [path.join(st.pkg.dir, 'run.sh'), path.join(st.tabDir, 'T.json')]) {
       spawnSync('/usr/bin/xattr', ['-w', 'com.apple.metadata:x', 'y', f])
     }
@@ -212,24 +209,22 @@ describe('the launch line', () => {
   it('stops when a push fails — never a bare login shell dressed up as Claude', () => {
     const r = remote()
     const st = stage(r, { 'run.sh': 'x' }, spec())
-    r.fail(3, 1) // the tab package push
+    r.fail(3, 1)
     const res = typeLine(r, st.line())
     expect(res.status).toBe(4)
     expect(res.stdout).toContain('[Koloft]')
-    expect(r.calls()).toBe(3) // never reached the `-tt` run
+    expect(r.calls()).toBe(3)
     expect(fs.existsSync(st.tabDir)).toBe(false)
   })
 
-  it('reconnects only on ssh’s own link-broke code, and reconnecting attaches', () => {
+  it("reconnects only on ssh’s own link-broke code, turning claude's mouse and paste modes off before the notice, and reconnecting attaches", () => {
     const r = remote()
     const st = stage(r, { 'run.sh': 'x' }, spec())
-    r.fail(4, 255)
+    r.fail(4, SSH_LINK_BROKE_EXIT)
     const res = typeLine(r, st.line())
     expect(res.status).toBe(0)
     expect(r.calls()).toBe(5)
     expect(r.argv(5).at(-1)).toContain(`T.sh" attach`)
-    // the link died with claude's terminal modes still on: they are turned off before
-    // the notice, or the shell echoes every mouse move as text over it
     expect(res.stdout).toContain('\u001b[?1000l')
     expect(res.stdout).toContain('\u001b[?2004l')
     expect(res.stdout.indexOf('\u001b[?1000l')).toBeLessThan(
@@ -249,11 +244,10 @@ describe('the launch line', () => {
   it('a start that failed holds the tab open until Enter, so its reason can be read', async () => {
     const r = remote()
     const st = stage(r, { 'run.sh': 'x' }, spec())
-    r.fail(4, 7) // ensure.sh stopped over there; the why is already on screen
+    r.fail(4, 7)
     const live = typeLineLive(r, st.line())
     expect(await until(() => live.out().includes('did not start (exit 7)'))).toBe(true)
     expect(live.out()).toContain('press Enter to close')
-    // …and it is still there a moment later: closing the tab would take the reason with it
     await new Promise((res) => setTimeout(res, 300))
     expect(live.running()).toBe(true)
     live.enter()
@@ -266,7 +260,6 @@ describe('the launch line', () => {
     const st = stage(r, { 'run.sh': 'x' }, spec({ banner }))
     const res = typeLine(r, st.line())
     expect(res.status).toBe(0)
-    // what the machine's own shell makes of the line that landed there
     const echo = fs
       .readFileSync(koloft(r, 'tabs', 'T.sh'), 'utf8')
       .split('\n')
@@ -280,13 +273,13 @@ describe('the launch line', () => {
     const files = { 'run.sh': 'x', 'ccstatusline.js': big }
     const a = stage(r, files, spec({ tabId: 'A' }))
     const b = stage(r, files, spec({ tabId: 'B' }))
-    expect(a.pkg.name).toBe(b.pkg.name) // same content, same folder name
+    expect(a.pkg.name).toBe(b.pkg.name)
 
     const both = [a, b].map((st) => {
       const script = path.join(mkroot('line'), 'line.sh')
       fs.writeFileSync(script, st.line() + '\n')
       return new Promise<number | null>((resolve) => {
-        const c = spawn(SH, [script], {
+        const c = spawn(PLAINEST_SHELL_THE_LINE_MUST_SURVIVE, [script], {
           env: { HOME: process.env.HOME, PATH: `${r.bin}:/usr/bin:/bin` },
           stdio: 'ignore'
         })
@@ -302,8 +295,6 @@ describe('the launch line', () => {
   }, 60_000)
 })
 
-// ── the script the line runs on the machine ─────────────────────────────────────
-
 interface Box {
   home: string
   tabs: string
@@ -312,13 +303,9 @@ interface Box {
   argv(): string[]
   tmux(): string[]
   ensured(): boolean
-  /** every claude the script started, in order, each one's argv */
   claudeCalls(): string[][]
-  /** the environment of the nth claude (1-based) */
   envAt(n: number): Record<string, string>
-  /** did `<tab>.env` still exist while the nth claude ran? */
   tabEnvSeenAt(n: number): boolean
-  /** what ran when: `claude …` and `tmux …` lines in the order they happened */
   order(): string[]
   run(arg?: string): { status: number | null; stdout: string }
 }
@@ -338,9 +325,7 @@ function box(s: TabSpec, opts: { ensureExit?: number } = {}): Box {
     { mode: 0o755 }
   )
 
-  // a tmux that does the two things the tab script depends on: it records what it was
-  // asked to do, and it runs the session command through the shell its config names —
-  // `$SHELL` when the config says nothing, which is how a fish user's session breaks.
+  // PLATFORM§35
   fs.writeFileSync(
     path.join(bin, 'tmux'),
     `#!/bin/sh
@@ -354,15 +339,7 @@ exec "$SHELL" -c "$last"
 `,
     { mode: 0o755 }
   )
-  // the login shell of a fish user: sh syntax is a syntax error, not a no-op
-  fs.writeFileSync(
-    path.join(bin, 'fish'),
-    `#!/bin/sh\ncase "$2" in *'&&'*|*'; '*) exit 2;; esac\nexec sh -c "$2"\n`,
-    { mode: 0o755 }
-  )
-  // a claude that may be started more than once per run (the settings warm-up, then the
-  // session itself): each call is numbered, and the last one's files stay where the
-  // single-call cases look for them
+  writeFishLoginShell(bin)
   fs.mkdirSync(path.join(logs, 'c'))
   const tabs = path.join(home, '.koloft', 'tabs')
   fs.writeFileSync(
@@ -415,7 +392,6 @@ exit 0
           HOME: home,
           PATH: '/usr/bin:/bin',
           SHELL: path.join(bin, 'fish'),
-          // an account the machine had lying around: the tab must not inherit it
           ANTHROPIC_API_KEY: 'stale-machine-key'
         },
         timeout: 30_000
@@ -425,17 +401,14 @@ exit 0
   }
 }
 
-/** the environment claude was started with, straight out of a run of the script */
 function claudeEnvOf(s: TabSpec): Record<string, string> {
   const b = box(s)
   b.run()
   return b.env()
 }
 
-describe('the tab script on the machine', () => {
-  // a resume into a worktree that was removed over there must still open —
-  // in the workspace root, where claude runs the session unisolated
-  it('falls back to the workspace root when the recorded directory is gone', () => {
+describe('U-TAB-*: the tab script on the machine', () => {
+  it('falls back to the workspace root when the recorded directory is gone, so a resume into a removed worktree still opens', () => {
     const root = mkroot('root')
     const s = spec({ cwd: path.join(root, '.claude', 'worktrees', 'gone'), fallbackCwd: root })
     const b = box(s)
@@ -458,7 +431,7 @@ describe('the tab script on the machine', () => {
     const env = b.env()
     expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe('sk-ant-oat01-remote')
     expect(env.ANT_ACCOUNT).toBe('bravo')
-    expect(env.ANTHROPIC_API_KEY).toBeUndefined() // the machine's stale one is gone
+    expect(env.ANTHROPIC_API_KEY).toBeUndefined()
     expect(env.PWD).toBe(cwd)
     expect(b.argv()).toEqual([
       '--settings',
@@ -466,13 +439,10 @@ describe('the tab script on the machine', () => {
       '--session-id',
       'sess1'
     ])
-    // read once, then gone: a token must not sit on a shared machine's disk
     expect(fs.existsSync(path.join(b.tabs, 'T.env'))).toBe(false)
     expect(res.stdout).toContain('koloft: bravo')
   })
 
-  // a worktree session on a machine is the same `-w` a local one uses — claude
-  // makes the checkout over there, in the folder the tab script cd'd into
   it('hands claude the -w name for a worktree session', () => {
     const b = box(spec({ claudeArgs: ['--session-id', 'sess1', '-w', 'my.feature-1'] }))
     expect(b.run().status).toBe(0)
@@ -487,27 +457,22 @@ describe('the tab script on the machine', () => {
     expect(b.ensured()).toBe(false)
   })
 
-  it("clears the tab's leftover hook reports before starting, but not on a reconnect", () => {
+  it("clears the tab's leftover hook reports before starting, since tab ids are reused across Koloft runs, but not on a reconnect", () => {
     const b = box(spec())
     const hooks = path.join(b.home, '.koloft', 'hook-sessions')
     fs.mkdirSync(hooks, { recursive: true })
     const stale = [path.join(hooks, 'T.json'), path.join(hooks, 'T.status.jsonl')]
-    // tab ids are recycled across Koloft runs: a dead tab's reports would be mirrored
-    // back and replayed as this session's own binding and turns
     for (const f of stale) fs.writeFileSync(f, '{"event":"end"}\n')
     expect(b.run().status).toBe(0)
     expect(stale.map((f) => fs.existsSync(f))).toEqual([false, false])
 
-    // a reconnect joins a session that is mid-conversation — its reports are current
     for (const f of stale) fs.writeFileSync(f, '{"event":"start"}\n')
     b.run('attach')
     expect(stale.map((f) => fs.existsSync(f))).toEqual([true, true])
   })
 
+  // CC§10
   it("skips claude's first-run login page when Koloft brought the login", () => {
-    // a fresh claude asks to "select login method" even with the token in its
-    // environment; this flag is what says there is nothing to ask
-    // (docs/claude-code-contract.md §10)
     const withLogin = (): TabSpec => spec({ env: accountEnv('oauth', 'bravo', 'sk-ant-oat01-x') })
     const cj = (b: Box): string => path.join(b.home, '.claude.json')
 
@@ -515,7 +480,6 @@ describe('the tab script on the machine', () => {
     expect(fresh.run().status).toBe(0)
     expect(JSON.parse(fs.readFileSync(cj(fresh), 'utf8'))).toEqual({ hasCompletedOnboarding: true })
 
-    // a machine that already has a claude.json keeps every key it had, and stays JSON
     const used = box(withLogin())
     fs.writeFileSync(cj(used), '{\n  "numStartups": 3,\n  "userID": "u1"\n}\n')
     expect(used.run().status).toBe(0)
@@ -526,35 +490,26 @@ describe('the tab script on the machine', () => {
     })
     expect(fs.existsSync(cj(used) + '.koloft-bak')).toBe(false)
 
-    // with the balancer off the login is the machine's own: its onboarding is its business
     const own = box(spec())
     expect(own.run().status).toBe(0)
     expect(fs.existsSync(cj(own))).toBe(false)
   })
 
-  it("warms claude's server-side settings once on a machine that has never run it", () => {
-    // claude's full-screen layout is switched on by flags it caches in ~/.claude.json;
-    // the very first process on a machine draws before they arrive and keeps the old
-    // layout for its whole life (docs/claude-code-contract.md §10). One print-mode call
-    // fetches them before the session the person sees starts.
+  // CC§10
+  it("warms claude's server-side settings once, with the account, on a machine that has never run it", () => {
     const b = box(spec({ env: accountEnv('oauth', 'bravo', 'sk-ant-oat01-warm') }))
     const res = b.run()
 
     expect(res.status).toBe(0)
     expect(res.stdout).toContain('first run on this machine')
-    // `timeout 60 claude …` and a bare `claude …` reach claude with the same argv, so
-    // this holds whether or not the machine has a timeout
     expect(b.claudeCalls()[0]).toEqual(['-p', 'ok', '--max-turns', '1'])
-    expect(b.claudeCalls()).toHaveLength(2) // the warm-up, then the session
+    expect(b.claudeCalls()).toHaveLength(2)
     expect(b.order()[0]).toMatch(/^claude /)
     expect(b.order().find((l) => l.includes('new-session'))).toBeTruthy()
     expect(b.order().findIndex((l) => l.startsWith('claude '))).toBeLessThan(
       b.order().findIndex((l) => l.includes('new-session'))
     )
-    // it needs the account too — an unauthenticated call caches nothing
     expect(b.envAt(1).CLAUDE_CODE_OAUTH_TOKEN).toBe('sk-ant-oat01-warm')
-    // and it only borrows the credential file: the tmux command is still the one that
-    // reads it and takes it away
     expect(b.tabEnvSeenAt(1)).toBe(true)
     expect(fs.existsSync(path.join(b.tabs, 'T.env'))).toBe(false)
   })
@@ -580,9 +535,8 @@ describe('the tab script on the machine', () => {
     expect(b.claudeCalls()).toHaveLength(1)
   })
 
-  it("tells the hook to rename the tmux session after claude's own id", () => {
-    // an in-TUI /clear mints a new session id; the tmux name has to follow it or the
-    // heartbeat reads the live session as cold (hooks.ts reads this variable)
+  // CC§1
+  it("tells the hook to rename the tmux session after claude's own id, which an in-TUI /clear changes", () => {
     expect(claudeEnvOf(spec()).KOLOFT_TMUX_FOLLOW).toBe('1')
   })
 
@@ -614,9 +568,43 @@ describe('the tab script on the machine', () => {
   })
 })
 
-// ── the credential file ─────────────────────────────────────────────────────────
+describe('remote commands under a fish login shell', () => {
+  it("every remote command string — the launch line's ssh commands, the heartbeat and the kill — still works when the remote login shell is fish: no bare export, { } or $$ outside sh -c", () => {
+    const r = remote()
+    const st = stage(r, { 'run.sh': 'x' }, spec())
+    expect(typeLine(r, st.line()).status).toBe(0)
+    expect(r.calls()).toBe(4)
 
-describe('what a tab sends about the account', () => {
+    const machineHome = mkroot('fishhome')
+    const machineBin = path.join(machineHome, '.local', 'bin')
+    fs.mkdirSync(machineBin, { recursive: true })
+    const tmuxLog = path.join(machineHome, 'tmux.log')
+    fs.writeFileSync(
+      path.join(machineBin, 'tmux'),
+      `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(tmuxLog)}\n`,
+      { mode: 0o755 }
+    )
+    const fish = writeFishLoginShell(mkroot('fishbin'))
+    const loginShell = (cmd: string): ReturnType<typeof spawnSync> =>
+      spawnSync(fish, ['-c', cmd], {
+        encoding: 'utf8',
+        env: { HOME: machineHome, PATH: '/usr/bin:/bin' },
+        timeout: 30_000
+      })
+
+    const kill = loginShell(killSessionCmd('k-sess1'))
+    expect(kill.stderr).toBe('')
+    expect(kill.status).toBe(0)
+    expect(fs.readFileSync(tmuxLog, 'utf8')).toContain('kill-session -t k-sess1')
+
+    const heartbeat = loginShell(heartbeatCmd([machineHome]))
+    expect(heartbeat.stderr).toBe('')
+    expect(heartbeat.status).toBe(0)
+    expect(heartbeat.stdout).toContain(`== ${machineHome}`)
+  }, 60_000)
+})
+
+describe('U-ENV-1: what a tab sends about the account', () => {
   it('carries the same variables the local shim exports, per account kind', () => {
     expect(Object.keys(accountEnv('oauth', 'bravo', 't')).sort()).toEqual([
       'ANT_ACCOUNT',
@@ -644,7 +632,6 @@ describe('what a tab sends about the account', () => {
     ])
     expect(custom.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('glm-5.2')
     expect(custom.CLAUDE_CODE_SUBAGENT_MODEL_FORCE).toBe('1')
-    // an endpoint that pins no model leaves claude's own choice alone
     expect(
       Object.keys(accountEnv('custom', 'p', 't', { baseUrl: 'https://p.test' })).sort()
     ).toEqual(['ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'ANT_ACCOUNT'])

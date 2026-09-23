@@ -2,9 +2,6 @@ import { describe, it, expect } from 'vitest'
 import MarkdownIt from 'markdown-it'
 import { frontMatter } from '../../src/renderer/src/markdown/frontMatter'
 
-/** FR-11: the `---` block a doc opens with is metadata, not an `<hr>` plus a garbled
- *  paragraph. Plugin-level assertions (bare MarkdownIt in, HTML string out) — the pane's
- *  sanitize step needs a DOM and is covered by e2e. */
 const md = new MarkdownIt().use(frontMatter)
 
 describe('frontMatter', () => {
@@ -16,7 +13,6 @@ describe('frontMatter', () => {
     expect(html).toContain('<span class="md-fm-key">status</span>')
     expect(html).toContain('<span class="md-fm-val">draft</span>')
     expect(html).toContain('<p>body text</p>')
-    // the bug this replaces: `---` parsed as a horizontal rule
     expect(html).not.toContain('<hr>')
   })
 

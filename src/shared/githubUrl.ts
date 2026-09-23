@@ -1,18 +1,8 @@
-/**
- *) —
- * everything the GitHub button works out from text: which remote to use, what repository
- * its url names, and which pull request a branch belongs to.
- *
- * Pure on purpose. Running git and caching the answer is `src/main/github.ts`; this file
- * only reads what git printed, so every rule here is testable without a repo.
- */
-
 export interface GithubRepo {
   owner: string
   repo: string
 }
 
-/** github.com and nothing else (D5) — an enterprise host is treated as "not GitHub". */
 function isGithubHost(host: string): boolean {
   const h = host.toLowerCase()
   return h === 'github.com' || h === 'www.github.com'
@@ -27,13 +17,6 @@ function ownerRepoOf(pathname: string): GithubRepo | null {
   return { owner: parts[0], repo: parts[1] }
 }
 
-/**
- * The repository a remote url names, or null when it is not a github.com one.
- *
- * Four spellings, because git accepts four: `git@github.com:o/r.git` (scp-like, no
- * scheme), and `https://`, `ssh://`, `git://` urls. The scp-like form has to be matched
- * first — it has a colon but no `//`, so a url parser reads `github.com` as the scheme.
- */
 export function parseGithubRemote(url: string): GithubRepo | null {
   const raw = url.trim()
   if (!raw) return null
@@ -52,12 +35,6 @@ export function parseGithubRemote(url: string): GithubRepo | null {
   return ownerRepoOf(decodeURIComponent(u.pathname))
 }
 
-/**
- * Which remote to ask, from `git config --get-regexp '^remote\..*\.url'`.
- *
- * `origin` when there is one; the only remote when there is exactly one; otherwise null
- * (§10 — with two remotes and no `origin` the button does not guess, it stays away).
- */
 export function pickRemoteUrl(configOut: string): string | null {
   const urls = new Map<string, string>()
   for (const line of configOut.split('\n')) {
@@ -72,18 +49,8 @@ export function pickRemoteUrl(configOut: string): string | null {
   return urls.size === 1 ? [...urls.values()][0] : null
 }
 
-/**
- * Branch → pull-request number, from one
- * `git ls-remote origin 'refs/heads/*' 'refs/pull/*\/head'`.
- *
- * A branch and its pull request are matched by COMMIT, not by name: `refs/pull/N/head` is
- * the same commit as the branch it was opened from, so a local commit that has not been
- * pushed cannot produce a wrong number. D7 — a commit that several pull requests point at
- * answers with the highest number, i.e. the most recently opened one.
- */
 export function prNumbersByBranch(lsRemoteOut: string): Map<string, number> {
   const heads: [string, string][] = []
-  /** commit → highest pull-request number pointing at it */
   const pulls = new Map<string, number>()
   for (const line of lsRemoteOut.split('\n')) {
     const tab = line.indexOf('\t')
@@ -116,17 +83,7 @@ export function pullsUrlOf(r: GithubRepo): string {
   return `${repoUrlOf(r)}/pulls`
 }
 
-/**
- * D1 — the page to open when the built-in browser has never signed in to GitHub. A
- * private repository answers 404 rather than a login form, which reads as a broken
- * button; this sends the user to the login page and lets GitHub bring them back.
- * `return_to` is a path, not a whole url.
- *
- * That GitHub honours it at all is a fact about GitHub, not about this code, and nothing
- * here can prove it — so it was checked by hand (signed out, private repo):
- * the login page appears, and the same tab lands on the target once the login completes.
- * Re-check before simplifying this away.
- */
+// PLATFORM§32
 export function loginUrlFor(target: string): string {
   let back = ''
   try {

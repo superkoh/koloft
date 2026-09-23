@@ -5,18 +5,10 @@ import os from 'os'
 import { execFileSync } from 'child_process'
 import { defaultBranch } from '../../src/main/gitStatus'
 
-// The 5s budget on defaultBranch belongs to the freshness engine, which reaches the
-// network on a timer. With no caller timeout the module's own cap (GIT_TIMEOUT_MS, 30s)
-// applies instead — still far above that budget, so a cold, huge repo's metadata read is
-// not lost, and losing the base would silently drop every tree decoration. So the budget
-// is the CALLER's to set, and the case below is what pins the cap well above 5s.
-
 let tmp: string
 let repo: string
 let realPath: string
 
-/** a `git` shim earlier on PATH that sleeps before delegating, so a caller's timeout
- *  (or absence of one) is the only thing that decides the outcome */
 function slowGitOnPath(sleepSecs: string): void {
   const dir = path.join(tmp, 'slowbin')
   fs.mkdirSync(dir, { recursive: true })

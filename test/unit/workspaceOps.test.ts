@@ -9,10 +9,6 @@ import {
 } from '../../src/main/workspaceOps'
 import { type LayoutV4, type SessionWorkbenchState } from '@shared/types'
 
-// Pure workspace-management decisions (A1 add/remove rules, §6 sessions GC).
-// A wrong branch here surfaces in e2e only as "add silently did the wrong thing"
-// or "panel state vanished much later" — neither localises to the decision.
-
 describe('parseWorktreeEntries', () => {
   it('returns checkouts in porcelain order (first = main) with their short branch', () => {
     expect(
@@ -42,10 +38,7 @@ describe('parseWorktreeEntries', () => {
     ).toEqual([{ dir: '/Users/dev/detached-co' }])
   })
 
-  // git says `prunable` for a checkout whose directory is gone. Locally a dirExists
-  // filter catches those later; a remote list has no such filter, so the only
-  // place they can be dropped is here.
-  it('skips a checkout git marks prunable', () => {
+  it('skips a checkout git marks prunable — a remote list has no directory check to drop it later', () => {
     expect(
       parseWorktreeEntries(
         'worktree /Users/dev/proj\nbranch refs/heads/main\n\n' +
@@ -74,7 +67,6 @@ describe('decideWorkspaceAdd (A1)', () => {
   })
 
   it('normalizes a subdir to the repo root (root comes from projectInfoFor)', () => {
-    // projectInfoFor('/repo/src/deep').root === '/repo' — the decision persists the root
     expect(decideWorkspaceAdd({ root: '/repo', treeRoot: '/repo' }, ['/other'])).toEqual({
       code: 'added',
       path: '/repo'
@@ -105,7 +97,6 @@ describe('gcSessions (T-AGG-09①: keys follow their jsonl)', () => {
     expect(out.changed).toBe(true)
     expect(Object.keys(out.sessions)).toEqual(['alive'])
     expect(out.sessions.alive).toEqual(entry(true))
-    // the caller's object is not mutated — save decisions key off `changed`
     expect(Object.keys(input)).toEqual(['alive', 'orphan'])
   })
 
@@ -124,25 +115,18 @@ describe('gcSessions (T-AGG-09①: keys follow their jsonl)', () => {
 describe('carrySessionWorkbench (T-LIFE-07: the panel follows a /clear id change)', () => {
   const entry = (): SessionWorkbenchState => ({ open: true, tabs: [] })
 
-  it("'/clear' copies the old id's state to the new id, keeping the old key", () => {
+  it("'/clear' copies the old id's state to the new id, keeping the old key for the caller to drop (D2)", () => {
     const input = { old: entry(), other: { open: false, tabs: [] } }
     const out = carrySessionWorkbench(input, 'old', 'fresh', 'clear')
     expect(out.changed).toBe(true)
     expect(out.sessions.fresh).toEqual(entry())
-    // the copy is all this function does; the lifecycle contract D2 turns it into a MOVE by
-    // having the caller drop the old key right after (index.ts dropOwnership), which
-    // is deliberately NOT folded in here — the two halves have different guards
     expect(out.sessions.old).toEqual(entry())
     expect(out.sessions.other).toEqual({ open: false, tabs: [] })
-    // a copy, not the same object: a later write of one id must not rewrite the other
     expect(out.sessions.fresh).not.toBe(out.sessions.old)
     expect(Object.keys(input)).toEqual(['old', 'other'])
   })
 
-  // FR-29 / §Edge: /clear is a rebind, not a removal — the tab set MOVES to the new id
-  // and is never emptied. Carrying `open` alone would leave the user's pages on the dead
-  // id, which is the failure session-browser IMPL-1 already booked once.
-  it('carries the whole tab set onto the new id', () => {
+  it('carries the whole tab set onto the new id — /clear is a rebind, not a removal (FR-29)', () => {
     const tabs: SessionWorkbenchState['tabs'] = [
       { kind: 'web', title: 'app', url: 'http://localhost:5173/' },
       { kind: 'file', title: 'README.md', path: '/repo/README.md', view: 'render' }
@@ -152,9 +136,7 @@ describe('carrySessionWorkbench (T-LIFE-07: the panel follows a /clear id change
     expect(out.sessions.fresh).toEqual({ open: true, tabs })
   })
 
-  // a collapsed panel is state too: FR-29 keeps the OPEN state across the move, so a
-  // /clear must not silently re-expand the panel the user had closed
-  it('carries a collapsed panel as collapsed', () => {
+  it('carries a collapsed panel as collapsed, never re-expanding it (FR-29)', () => {
     const out = carrySessionWorkbench({ old: { open: false, tabs: [] } }, 'old', 'f', 'clear')
     expect(out.sessions.f).toEqual({ open: false, tabs: [] })
   })
@@ -173,8 +155,6 @@ describe('carrySessionWorkbench (T-LIFE-07: the panel follows a /clear id change
   })
 
   it('a /resume or startup id change is a session SWITCH — nothing is carried (A8)', () => {
-    // §4 case ②: the panel comes from the target id's own entry, or the default — a
-    // resumed session must not inherit the tab set of whatever the tab ran before.
     const tabs: SessionWorkbenchState['tabs'] = [
       { kind: 'web', title: 'app', url: 'http://localhost:5173/' }
     ]
@@ -202,9 +182,7 @@ describe('resolveWorkbenchState (§7: what the panel starts from)', () => {
     })
   })
 
-  it('returns the stored entry verbatim — a collapsed panel stays collapsed', () => {
-    // `open: false` means "the user collapsed the panel for this session"; falling back
-    // to defaultOpen here would re-expand it on every restart (A6/A10)
+  it('returns the stored entry verbatim — a collapsed panel stays collapsed across restarts (A6/A10)', () => {
     const stored: SessionWorkbenchState = {
       open: false,
       tabs: [{ kind: 'web', title: 'app', url: 'http://localhost:5173/' }]
@@ -237,9 +215,6 @@ describe('withWorkbenchState (§6: the panel state round-trips through layout v3
     expect(withWorkbenchState(base, 's1', state).s1).toEqual(state)
   })
 
-  // D8: the submitted state is the whole truth, not a merge — v2 patched one field at a
-  // time, so `browser` could only ever be replaced, never the entry. Closing the last tab
-  // has to be able to empty what is on disk.
   it('writes an empty tab list, so a closed tab really leaves disk', () => {
     const base = layout({ s1: { open: true, tabs: [tab('http://a/')] } })
     expect(withWorkbenchState(base, 's1', { open: true, tabs: [] }).s1).toEqual({
@@ -254,7 +229,6 @@ describe('withWorkbenchState (§6: the panel state round-trips through layout v3
     const out = withWorkbenchState(base, 's1', { open: false, tabs: [] })
     expect(base.sessions.s1).toEqual(stored)
     expect(out).not.toBe(base.sessions)
-    // sibling sessions are carried through untouched
     expect(
       withWorkbenchState(layout({ other: { open: false, tabs: [] } }), 's1', {
         open: true,

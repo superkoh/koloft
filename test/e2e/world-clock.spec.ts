@@ -2,11 +2,7 @@ import { expect, launchApp, quitAndClose, test } from './helpers/app'
 import { seedSettings } from './helpers/env'
 import { waitBooted } from './helpers/p1'
 
-// The world clock in the strip above the TUI: the machine's own zone is always the first
-// chip; the ＋ opens a search whose pick becomes a chip and a settings entry; a chip's ×
-// takes both away; three added zones use up the ＋.
-
-test.describe('world clock', () => {
+test.describe('world clock: the machine’s own zone is always the first chip, a pick adds a chip and a settings entry, and three added zones use up the ＋', () => {
   test('adds a zone through the search, removes it with the chip ×', async ({ page }) => {
     await waitBooted(page)
     const chips = page.locator('.wc-chip')

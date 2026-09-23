@@ -2,17 +2,6 @@ import { useState, type JSX, type ReactNode, type RefObject } from 'react'
 import { LuArrowLeft, LuArrowRight, LuExternalLink, LuRotateCw, LuX } from 'react-icons/lu'
 import { loadHistory, match } from '../browserHistory'
 
-/**
- * §05C/§06B — the Browser's second head-band row: history, reload/stop, the editable
- * address, and the ↗ escape hatch. It decides nothing about a typed target: the value
- * goes up to the pane, which runs it through the shared routing table (SEC-13), so the
- * scheme whitelist has exactly one implementation.
- *
- * The field shows the tab's url at rest and the user's own text while they edit it
- * (blur / Esc / a submit drop back to the canonical form). While editing it offers
- * matching pages from the browser's own history; picking one just fills the value
- * that goes out through onSubmit, so the routing table still decides.
- */
 export function BrowserAddressBar({
   url,
   loading,
@@ -39,11 +28,7 @@ export function BrowserAddressBar({
   onReload: () => void
   onStop: () => void
   onExternalOpen: () => void
-  /** the extension action row (browser-extensions D3) — right of the field, and its own
-   *  business entirely: this bar neither knows nor decides what is in it */
   actions?: ReactNode
-  /** B12: the ⋯ menu button, last in the row. Kept a slot rather than built here for
-   *  the same reason as `actions`: what the menu contains is the pane's business. */
   overflow?: ReactNode
 }): JSX.Element {
   const [draft, setDraft] = useState<string | null>(null)

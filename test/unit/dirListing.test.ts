@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { directoryListingHtml } from '../../src/main/dirListing'
 
-/** §05B/C-33: what a `file://` url pointing at a directory renders as. */
 describe('directoryListingHtml', () => {
   it('lists every entry, directories first, each as an absolute file:// link', () => {
     const html = directoryListingHtml('/ws/docs', [

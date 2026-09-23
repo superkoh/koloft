@@ -3,10 +3,6 @@ import path from 'path'
 import { planResume, worktreeHomeRoot, type ResumeProbes } from '../../src/main/resumePlan'
 import type { SessionRow, WorktreeStateMeta } from '@shared/types'
 
-// the lifecycle contract §4: the resume decision tree, driven entirely by injected probes so
-// every leaf (silent resume / two-choice dialog / rebuild / unavailable) is reachable
-// without a git checkout. The wiring in index.ts supplies the real probes.
-
 const REPO = '/repo'
 const WT = '/repo/.claude/worktrees/session-tab'
 
@@ -31,7 +27,6 @@ function row(over: Partial<SessionRow> = {}): SessionRow {
   }
 }
 
-/** all-green probes over an existing worktree — each case overrides one fact */
 function probes(over: Partial<ResumeProbes> = {}): ResumeProbes {
   return {
     dirExists: (p) => p === REPO || p === WT,
@@ -100,9 +95,8 @@ describe('planResume: unbound session whose cwd WAS a claude worktree (§4 left 
 describe('planResume: bound session whose worktree still exists (D8 evidence gate)', () => {
   const bound = row({ worktreeState: binding })
 
-  it('resumes silently from originalCwd when branch, cleanliness and occupancy are green', async () => {
-    // V2: the explicit-id lookup is global, and claude re-enters the worktree itself —
-    // the spawn dir is the ORIGINAL cwd, never the worktree
+  // CC§3
+  it('resumes silently from originalCwd, never the worktree (claude re-enters it), when branch, cleanliness and occupancy are green', async () => {
     expect(await planResume(bound, probes())).toEqual({ action: 'direct', cwd: REPO })
   })
 
@@ -124,12 +118,8 @@ describe('planResume: bound session whose worktree still exists (D8 evidence gat
     })
   })
 
-  // D8 revision (user decided): dirty alone is the NORMAL state of resuming your
-  // own half-done worktree, and E8 already proved re-entering a dirty same-branch
-  // worktree is silent and lossless — so dirty no longer gates. Only the two facts
-  // that mean the worktree is no longer this session's — branch drift, or another
-  // session working in it — still raise the dialog.
-  it('resumes silently despite uncommitted changes when branch matches and nobody else is in (E8)', async () => {
+  // CC§3
+  it('resumes silently despite uncommitted changes when branch matches and nobody else is in: dirty is the normal state of your own half-done worktree (E8)', async () => {
     expect(await planResume(bound, probes({ dirtyAt: async () => true }))).toEqual({
       action: 'direct',
       cwd: REPO

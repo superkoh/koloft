@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest'
 import MarkdownIt from 'markdown-it'
 import { headingSlug, headingAnchors } from '../../src/renderer/src/mdHeadings'
 
-/** X-9①: the ids an `#anchor` link in a rendered md preview scrolls to. */
 describe('headingSlug', () => {
   it('is the GitHub slug an md writer already assumes', () => {
     expect(headingSlug('Section')).toBe('section')
@@ -31,8 +30,6 @@ describe('headingAnchors', () => {
   })
 
   it('gives a heading with no slug a positional id rather than none at all', () => {
-    // never an empty id — and never NO id: the preview's outline lists every heading and
-    // locates them by id, so one heading without one shifts every later row by a section
     const html = md.render('# First\n\n## ???\n\n## Third\n')
     expect(html).not.toContain('id=""')
     expect(html).toContain('<h2 id="h-2">')

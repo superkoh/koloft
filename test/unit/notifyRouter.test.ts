@@ -7,21 +7,6 @@ import {
   type Settings
 } from '../../src/shared/types'
 
-// Requirement (the outlet matrix D4/D3/D8): a raised event reaches the user through
-// an OS notification ONLY when they are away from the app —
-//   window focused                     → nothing: the sidebar's status dot already says it
-//   window unfocused / minimized       → OS notification
-// A disabled category (D3) fires nothing. Sound is opt-in, approval-only, and does NOT
-// depend on focus (it covers "at the app but not looking at the sidebar"). Under a
-// background test launch (D8, hard rule) no OS-level outlet may ever be used, so nothing
-// fires at all. Deriving these from the spec (not the code) is what would catch an OS
-// notification stealing focus while the user is typing, a killed category still
-// notifying, or a beep leaking into a test run.
-//
-// The focused case used to raise an in-window toast; that outlet was removed along with
-// the rest of the in-app attention UI. `RouteDecision` no longer has a `toast` field —
-// the compiler (typecheck:test) is what pins that.
-
 const ev = (kind: AttentionKind): AttentionEvent => ({ tabId: 'tab-A', kind, at: 1 })
 const settings = (o: Partial<Settings> = {}): Settings => ({ ...DEFAULT_SETTINGS, ...o })
 
@@ -87,8 +72,6 @@ describe('notifyRouter — a disabled category (D3) emits through NO outlet', ()
 describe('notifyRouter — sound is opt-in, approval-only, and focus-independent', () => {
   it('approval + sound enabled + not test → sound true whether focused or not', () => {
     const s = settings({ notifyApprovalSound: true })
-    // focused raises NO notification, but the beep still fires: the user may be at the
-    // app with their eyes on the terminal rather than the sidebar
     expect(route(ev('approval'), FOCUSED, s)).toEqual({ os: false, sound: true })
     expect(route(ev('approval'), UNFOCUSED, s)).toEqual({ os: true, sound: true })
   })

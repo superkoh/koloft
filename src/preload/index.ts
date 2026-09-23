@@ -37,13 +37,8 @@ import type {
 } from '@shared/types'
 
 const api: KoloftApi = {
-  // resolved synchronously at preload time so React can read it on first render
   isDev: ipcRenderer.sendSync('app:isDev') as boolean,
-  // test-only seam: e2e sets KOLOFT_DOM_RENDERER=1 (renderer inherits main's env;
-  // sandbox is off, so preload sees it) to keep terminal text DOM-assertable
   domRenderer: process.env.KOLOFT_DOM_RENDERER === '1',
-  // test-only seam: the e2e harness always sets KOLOFT_TEST_BACKGROUND=1 (the webgl specs
-  // drop KOLOFT_DOM_RENDERER, so that one can't stand in for "a test is driving us")
   testMode: process.env.KOLOFT_TEST_BACKGROUND === '1',
   home: ipcRenderer.sendSync('app:home') as string,
   app: {
@@ -59,7 +54,7 @@ const api: KoloftApi = {
   terminal: {
     create: (opts: CreateTabOptions) => ipcRenderer.invoke('terminal:create', opts),
     write: (id, data) => ipcRenderer.send('terminal:write', id, data),
-    ack: (id, units) => ipcRenderer.send('terminal:ack', id, units),
+    ack: (id, utf16Units) => ipcRenderer.send('terminal:ack', id, utf16Units),
     attach: (id) => ipcRenderer.send('terminal:attach', id),
     flowStats: () => ipcRenderer.invoke('terminal:flowStats'),
     resize: (id, cols, rows) => ipcRenderer.send('terminal:resize', id, cols, rows),
@@ -84,8 +79,6 @@ const api: KoloftApi = {
       ipcRenderer.on('terminal:cwd', handler)
       return () => ipcRenderer.removeListener('terminal:cwd', handler)
     },
-    // main opened this pty by itself (a scheduled job fired). The renderer
-    // adds the tab without activating it — nothing may steal the screen.
     onSpawned: (cb) => {
       const handler = (_e: unknown, t: SpawnedTab): void => cb(t)
       ipcRenderer.on('terminal:spawned', handler)
@@ -129,8 +122,6 @@ const api: KoloftApi = {
     forceClose: (id) => ipcRenderer.invoke('sessions:forceClose', id),
     transcriptExists: (id) => ipcRenderer.invoke('sessions:transcriptExists', id)
   },
-  // scheduled jobs. Main owns the clock, the store and every launch; the
-  // renderer only asks and listens.
   cron: {
     list: () => ipcRenderer.invoke('cron:list'),
     save: (input) => ipcRenderer.invoke('cron:save', input),
@@ -171,12 +162,7 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener('preview:open-file', handler)
     }
   },
-  // main owns the env (KOLOFT_BROWSER_GUEST_LIMIT); the renderer owns the LRU that
-  // enforces it, so the number crosses the bridge at preload time like domRenderer
   browserGuestLimit: ipcRenderer.sendSync('browser:guest-limit') as number,
-  // test-only seam, read here for the same reason domRenderer is (preload sees main's
-  // env): filling an 8-tab strip in a case costs eight page loads, and what is under
-  // test is the behaviour AT the cap, not the counting up to it. 0 = the product rule.
   browserTabCap: Number(process.env.KOLOFT_BROWSER_TAB_CAP) || 0,
   browser: {
     onOpenRequest: (cb) => {
@@ -492,9 +478,4 @@ const api: KoloftApi = {
 
 contextBridge.exposeInMainWorld('api', api)
 
-// browser-extensions D3: the action row is Koloft's own React, but the state behind it
-// (which extensions, their icons and badges) and the click that activates one belong to
-// the upstream library. This is its bridge — `window.browserAction`, exposed through
-// contextBridge like everything else here. It is the HOST window's alone: a guest never
-// runs this preload (SEC-5/SEC-6), so no page can reach it.
 injectBrowserAction()

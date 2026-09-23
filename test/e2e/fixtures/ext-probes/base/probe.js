@@ -1,11 +1,11 @@
-// document_start can run before <html> exists — retry until there is a root to mark.
-function mark() {
+// PLATFORM§15
+function markOnceRootExists() {
   const root = document.documentElement
   if (!root) {
-    requestAnimationFrame(mark)
+    requestAnimationFrame(markOnceRootExists)
     return
   }
   root.setAttribute('data-koloft-bb-probe', chrome.runtime.id)
 }
 
-mark()
+markOnceRootExists()

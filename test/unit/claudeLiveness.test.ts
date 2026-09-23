@@ -5,18 +5,14 @@ import os from 'os'
 import path from 'path'
 import { rootsWithClaude } from '../../src/main/claudeLiveness'
 
-// The ps-based fallback that decides a bound session's claude is gone (and untracks
-// the tab). Real processes, real `ps` — reading the OS IS the probe's job, so a mocked
-// ps would test nothing. The stand-in is a sh script named `claude` (copying a signed
-// system binary under another name gets the copy SIGKILLed on macOS).
-
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-liveness-'))
-// the runner must not carry "claude" in its own ps command — that is what makes the
-// descendant case prove the tree walk rather than the root match
+// PLATFORM§3
 const fakeClaude = path.join(dir, 'claude')
-const runner = path.join(dir, 'runner.sh')
+const runnerWithNoClaudeInItsOwnCommandLine = path.join(dir, 'runner.sh')
 fs.writeFileSync(fakeClaude, '#!/bin/sh\nsleep 30\n', { mode: 0o755 })
-fs.writeFileSync(runner, `#!/bin/sh\n${fakeClaude}; true\n`, { mode: 0o755 })
+fs.writeFileSync(runnerWithNoClaudeInItsOwnCommandLine, `#!/bin/sh\n${fakeClaude}; true\n`, {
+  mode: 0o755
+})
 
 const kids: ChildProcess[] = []
 function spawned(cmd: string, args: string[] = []): ChildProcess {
@@ -25,14 +21,9 @@ function spawned(cmd: string, args: string[] = []): ChildProcess {
   return p
 }
 
-/** ps needs a moment to see a freshly forked tree */
 const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 400))
 
-/** positive sightings poll: a fixed sleep loses the race under load (the gates run
- *  flaked at 400ms once the whole suite was hammering the box) — the fork is coming,
- *  the only question is when ps sees it */
 const seen = (pid: number): (() => Promise<boolean>) => {
-  // null = ps itself failed ("can't tell") — for the poll that just means "not yet"
   return async () => (await rootsWithClaude([pid]))?.has(pid) ?? false
 }
 
@@ -41,17 +32,13 @@ afterEach(() => {
 })
 
 describe('rootsWithClaude', () => {
-  // A session pty runs `exec claude` (agent-centric §9: no shell wraps it any more),
-  // so the ROOT process is claude itself. Skipping the root — the old assumption that
-  // "the shell's own command is never claude" — reports every live session as gone,
-  // untracking the tab and reverting it mid-session.
-  it('sees claude when the root pid IS the claude process', async () => {
+  it('sees claude when the root pid IS the claude process (a session pty execs claude with no shell around it)', async () => {
     const p = spawned(fakeClaude)
     await expect.poll(seen(p.pid!), { timeout: 5000, interval: 150 }).toBe(true)
   })
 
   it('still sees claude running as a descendant of a shell root', async () => {
-    const p = spawned(runner)
+    const p = spawned(runnerWithNoClaudeInItsOwnCommandLine)
     await expect.poll(seen(p.pid!), { timeout: 5000, interval: 150 }).toBe(true)
   })
 
@@ -59,5 +46,29 @@ describe('rootsWithClaude', () => {
     const p = spawned('/bin/sleep', ['30'])
     await settle()
     expect(await rootsWithClaude([p.pid!])).toEqual(new Set())
+  })
+})
+
+describe('rootsWithClaude when ps cannot be read', () => {
+  const realPath = process.env.PATH
+  const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-liveness-ps-'))
+
+  function fakePs(body: string): void {
+    fs.writeFileSync(path.join(fakeBin, 'ps'), `#!/bin/sh\n${body}\n`, { mode: 0o755 })
+    process.env.PATH = `${fakeBin}:${realPath}`
+  }
+
+  afterEach(() => {
+    process.env.PATH = realPath
+  })
+
+  it('answers null, never an empty set, when ps fails — an empty set would untrack every live claude tab within two sweeps', async () => {
+    fakePs(`echo '${process.pid} 1 node'; exit 1`)
+    expect(await rootsWithClaude([process.pid])).toBeNull()
+  })
+
+  it('answers null, never an empty set, when the ps output parses to zero rows — an empty set would untrack every live claude tab within two sweeps', async () => {
+    fakePs("echo 'PID PPID COMMAND'; echo 'not a process row'")
+    expect(await rootsWithClaude([process.pid])).toBeNull()
   })
 })

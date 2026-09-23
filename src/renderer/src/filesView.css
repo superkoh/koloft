@@ -1,8 +1,3 @@
-/* FR-38…FR-49 — the pinned `files` tab's shell: the two-column frame Changes and Browse
-   live in, the reading area's header, and the two dropdowns the kind bar hangs.
-   Changes' and Browse's own interiors are styled by `changesView.css` / `browseView.css`;
-   this file owns only what `FilesView.tsx` renders itself. */
-
 .fv {
   position: relative;
   flex: 1;
@@ -12,9 +7,6 @@
   background: var(--bg-1);
 }
 
-/* Browse is the two-column half: navigation on the left, the reading area on the right.
-   Changes renders its own two columns, because its left rail is a change list rather
-   than a tree and the two do not share a scroll model. */
 .fv-browse {
   flex: 1;
   min-height: 0;
@@ -38,8 +30,6 @@
   display: flex;
   flex-direction: column;
 }
-/* the artifact fills what the header leaves; `.wb-host` is absolute by default (it is
-   the panel's tab-stacking primitive) and here it is just a flex child instead */
 .fv-read .fv-read-host {
   position: relative;
   inset: auto;
@@ -47,9 +37,6 @@
   min-height: 0;
 }
 
-/* FR-31's full header over Browse's reading area. It is a `.wb-bar` so the control skin
-   is literally the `file` tab's, one requirement short of being the same element —
-   WB-B09 asserts the two agree, and reusing the class is what keeps that cheap. */
 .fv-artifact-hd {
   height: 32px;
   background: var(--bg-1);
@@ -66,9 +53,6 @@
   text-align: center;
 }
 
-/* the base picker and the filter menu hang off the kind bar, which is `position:
-   relative` — so unlike the row context menu these need no portal: their coordinates are
-   the bar's own, not the viewport's. */
 .fv-menu {
   top: 34px;
   right: auto;
@@ -98,12 +82,6 @@
   overflow: visible;
 }
 
-/* The left column is resizable (Changes' list and Browse's tree share the width — see
-   `filesSide.ts`). The grip is not a flex child: `.fv-changes` and `.fv-browse` lay out
-   their own columns, so one absolutely-positioned strip over the shared border serves
-   both halves. Its hit area is wider than the 1px line it sits on — but it grows to the
-   RIGHT only: the left column's own scrollbar (11px, always shown) ends at that line, and
-   a grip reaching over it would turn the scrollbar's outer pixels into a resize. */
 .fv-gutter {
   position: absolute;
   top: 0;
@@ -129,13 +107,6 @@
   background: var(--accent);
 }
 
-/* A clipped label slides its text under the pointer (`installSlideOnHover`): the ellipsis
-   gives way and `text-indent` carries the text left at reading speed; leaving the row
-   drops the class and the text is back at once. Idle rows never get the class, so nothing
-   moves unprompted. */
-/* `.cv-grp.fs-slide` is spelled out because `.cv-grp` sets `text-overflow: ellipsis` at
-   the same specificity in a stylesheet that loads later — without it the … keeps eating
-   the tail of a directory header for the whole slide. */
 .fs-slide,
 .cv-grp.fs-slide {
   text-overflow: clip;
@@ -143,9 +114,6 @@
   transition: text-indent var(--fs-dur, 0.4s) linear 0.35s;
 }
 
-/* The path in a block header / the reading area's header is also the way to its
-   Reveal-in-Finder / Copy-path menu — a click, not only a right-click, because a
-   right-click is not something a reader goes looking for. */
 .cv-blk-hd .path,
 .fv-artifact-hd .fv-pathbtn {
   cursor: pointer;
@@ -155,7 +123,6 @@
 .fv-artifact-hd .fv-pathbtn:hover {
   background: var(--bg-3);
 }
-/* hugs the text inside the `flex: 1` title, keeping `.dir`'s ellipsis behaviour intact */
 .fv-artifact-hd .fv-pathbtn {
   display: flex;
   align-items: baseline;

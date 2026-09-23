@@ -26,9 +26,7 @@ import { useStore } from '../store'
 import { Meter, ageLabel, probeErrorLabel, resetIn, resetLabel } from './accountMeter'
 
 const POP_W = 430
-/** hover intent: long enough that crossing the sidebar's footer doesn't open the panel */
 const HOVER_OPEN_MS = 150
-/** and long enough to bridge the 6px gap between the capsule and the panel */
 const HOVER_CLOSE_MS = 220
 
 function headAge(oldest: number | null, now: number): string {
@@ -38,11 +36,6 @@ function headAge(oldest: number | null, now: number): string {
   return mins < 60 ? `updated ${mins}m ago` : `updated ${Math.floor(mins / 60)}h ago`
 }
 
-/** Titlebar account-usage capsule (the pool bar is the
- *  total): one vertical bar per enabled OAuth account led by the pool bar, hover for
- *  the detail popover. Resident state still costs ZERO requests — it only consumes
- *  accounts:update pushes (D7); the probe round is paid for by OPENING the panel, and
- *  only when the numbers went stale. */
 export function TopbarUsage(): JSX.Element | null {
   const multiAccount = useStore((s) => s.settings.multiAccount)
   const setSettingsOpen = useStore((s) => s.setSettingsOpen)
@@ -52,9 +45,7 @@ export function TopbarUsage(): JSX.Element | null {
   const [probing, setProbing] = useState(false)
   const btnRef = useRef<HTMLButtonElement>(null)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  /** dismissed by a click with the pointer still on the capsule — cleared on leave */
   const clickedShut = useRef(false)
-  /** when the panel last ASKED for a probe — throttles the retry of a failing one */
   const lastAutoProbe = useRef<number | null>(null)
 
   useEffect(() => {
@@ -70,33 +61,22 @@ export function TopbarUsage(): JSX.Element | null {
     }
   }, [])
 
-  // staleness must fade in even when no push arrives — tick the clock once a minute
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 60_000)
     return () => clearInterval(t)
   }, [])
 
   const probe = useCallback(async (): Promise<void> => {
-    // every round starts the throttle window, manual ones too: a probe that just
-    // failed must not have an auto-probe chasing it on the very next push
     lastAutoProbe.current = Date.now()
     setProbing(true)
     try {
       setAccounts(await window.api.accounts.probe())
     } catch {
-      // a rejected invoke (no Keychain, no main) is a blank capsule, not a crash —
-      // this path is automatic now, so it must not surface as an unhandled rejection
     } finally {
       setProbing(false)
     }
   }, [])
 
-  // Opening the panel is the only moment the numbers are actually read — and nothing
-  // probes on a timer (D7), so a snapshot left over from the last launch can be hours
-  // old. Refresh it here, throttled, instead of showing a number nobody trusts.
-  // Deliberately keyed on the OPEN, not on `accounts`: pushes keep arriving while the
-  // panel sits open (a launch's own probe round pushes per account), and re-running
-  // the decision on each one would fire a duplicate round right beside the picker's.
   const accountsRef = useRef(accounts)
   accountsRef.current = accounts
   useEffect(() => {
@@ -104,7 +84,6 @@ export function TopbarUsage(): JSX.Element | null {
     if (autoProbeDue(accountsRef.current, lastAutoProbe.current, Date.now())) void probe()
   }, [pop, probe])
 
-  // dismiss the popover on any outside click / blur / Escape (sidebar .menu model)
   useEffect(() => {
     if (!pop) return
     const close = (): void => setPop(null)
@@ -121,7 +100,6 @@ export function TopbarUsage(): JSX.Element | null {
     }
   }, [pop])
 
-  // a pending hover timer must not fire setPop into an unmounted tree
   useEffect(
     () => () => {
       if (hoverTimer.current) clearTimeout(hoverTimer.current)
@@ -135,14 +113,10 @@ export function TopbarUsage(): JSX.Element | null {
   const enabled = accounts.filter((a) => a.enabled)
   const armed = meteredArmed(accounts, Math.floor(now / 1000))
   const total = poolGlyph(members, now)
-  // the column count is a PANEL decision (D14): one row without an included allowance
-  // must not read as a different table from the row above it
   const cols = enabled.some((a) => a.kind === 'oauth' && a.status === 'ok' && a.usage?.hasOi)
     ? 3
     : 2
 
-  // one timer for both directions: crossing the 6px gap fires leave-then-enter, and
-  // the enter must cancel the pending close rather than race it
   const schedule = (ms: number, fn: () => void): void => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current)
     hoverTimer.current = setTimeout(fn, ms)
@@ -152,8 +126,6 @@ export function TopbarUsage(): JSX.Element | null {
     hoverTimer.current = null
   }
   const enter = (): void => {
-    // clicked shut while the pointer never left: honour that until it does, or the
-    // panel would spring straight back open under the cursor that just dismissed it
     if (!clickedShut.current) schedule(HOVER_OPEN_MS, open)
   }
   const leave = (): void => {
@@ -163,9 +135,6 @@ export function TopbarUsage(): JSX.Element | null {
   const open = (): void => {
     const r = btnRef.current?.getBoundingClientRect()
     if (!r) return
-    // the capsule sits in the sidebar's footer now, so the card opens UPWARD
-    // from the capsule's top edge — anchored by `bottom`, so a tall list grows up the
-    // window instead of off its lower edge
     setPop({
       x: popoverX(r.left + r.width / 2, POP_W, window.innerWidth),
       bottom: window.innerHeight - r.top + 6
@@ -182,10 +151,6 @@ export function TopbarUsage(): JSX.Element | null {
         aria-expanded={pop !== null}
         onMouseEnter={enter}
         onMouseLeave={leave}
-        // still a toggle — `aria-expanded` promises one, and Escape is the only other
-        // way a keyboard user could ever put this panel away. `detail === 0` is the
-        // keyboard activation: no pointer is resting on the capsule, so nothing needs
-        // suppressing and the next real hover must still work.
         onClick={(e: ReactMouseEvent) => {
           e.stopPropagation()
           cancel()
@@ -207,10 +172,7 @@ export function TopbarUsage(): JSX.Element | null {
           </span>
         )}
       </button>
-      {/* PORTAL, not a child: the capsule sits in the sidebar's footer, under `overflow`
-          clips and stacking contexts of its own (the islands, the resize grip), and a
-          position:fixed card rendered inline would be clipped or stacked by whichever
-          ancestor gets there first — on the body it answers to none of them */}
+      {/* ADR-0013 */}
       {pop &&
         createPortal(
           <div
@@ -263,19 +225,14 @@ export function TopbarUsage(): JSX.Element | null {
   )
 }
 
-/** One capsule bar. The pool total is the same glyph at twice the width (D11), so the
- *  water-line rule below keeps a single home. */
 function CapsuleBar({ glyph: g, total }: { glyph: CapsuleGlyph; total?: boolean }): JSX.Element {
   const stale = (g.kind === 'walled' || g.kind === 'bar') && g.stale
   const fillPct = g.kind === 'bar' ? Math.round(g.frac * 100) : 0
-  // a fable segment at or below the water line is already inside the main fill:
-  // drawing it (and its seam) there would claim a distinction nothing can see
   const fable = g.kind === 'bar' && g.fable && g.fable.frac > g.frac ? g.fable : null
   return (
     <span className={'tbu-bar' + (total ? ' total' : '') + (stale ? ' stale' : '')}>
       {g.kind === 'grey' && <i className="tbu-fill cold" style={{ height: '100%' }} />}
       {g.kind === 'walled' && <i className="tbu-fill bad" style={{ height: '100%' }} />}
-      {/* painted before the fill = under it; the seam goes last, over both */}
       {fable && (
         <i
           className="tbu-fable"
@@ -295,9 +252,6 @@ function CapsuleBar({ glyph: g, total }: { glyph: CapsuleGlyph; total?: boolean 
 
 type Subline = ReturnType<typeof sublineFor>
 
-/** The reset instant as its own column spells it: the rolling 5h window answers "hold
- *  on or switch account" and wants a duration, the weekly buckets are days out and
- *  want a date (D13). */
 function stamp(win: string, epoch: number, now: number): string {
   return win === '5h' ? resetIn(epoch, now) : resetLabel(epoch, now)
 }
@@ -319,14 +273,10 @@ function subText(win: string, s: Subline, now: number): string {
   }
 }
 
-/** The same instant said out loud: an absolute stamp needs the preposition the mono
- *  subline can drop, or the sentence stops being one. */
 function spoken(win: string, epoch: number, now: number): string {
   return win === '5h' ? resetIn(epoch, now) : `at ${resetLabel(epoch, now)}`
 }
 
-/** The same cell as a sentence: the column header is aria-hidden, so the window and
- *  its state are spelled out here instead (D13). */
 function subAria(label: string, win: string, s: Subline, now: number): string {
   switch (s.kind) {
     case 'time':
@@ -374,9 +324,6 @@ function GridCell({
   )
 }
 
-/** The pool reading (D12): what the mean is made of, then the mean itself. `measured`
- *  is the denominator — the pool shrinking is a different problem from the pool being
- *  spent, and this is where the first one shows. */
 function PoolRow({
   members,
   now,
@@ -392,8 +339,6 @@ function PoolRow({
 }): JSX.Element {
   const p = poolSnapshot(members, now)
   const age = p.oldestAt === null ? null : ageLabel(p.oldestAt, now)
-  // nothing schedulable while a metered account stands by is not "the pool is dead",
-  // it is "you are paying per token now" — the one thing to react to
   const fallback = armed && p.usable === 0
   return (
     <div
@@ -436,7 +381,6 @@ function PoolRow({
               <div className="tbu-cell span">
                 <span className="tbu-cell-sub alarm">
                   {p.walled} walled
-                  {/* one walled account would only repeat its own row's subline */}
                   {p.walled >= 2 && p.earliestBack !== null
                     ? ` · earliest back ${resetLabel(p.earliestBack, now)}`
                     : ''}
@@ -473,7 +417,6 @@ function PopRow({ a, now, cols }: { a: AccountView; now: number; cols: number })
         {a.kind === 'oauth' && a.fable === 'yes' && <span className="acct-badge fable">FABLE</span>}
         {a.status === 'expired' && <span className="acct-status expired">EXPIRED</span>}
         {a.status === 'unverified' && <span className="acct-status unverified">UNVERIFIED</span>}
-        {/* outlined, where EXPIRED is filled: this one heals on its own clock */}
         {walled && <span className="acct-status walled">WALLED</span>}
         {stale && <span className="tbu-age">{stale}</span>}
       </div>

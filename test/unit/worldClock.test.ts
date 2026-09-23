@@ -8,25 +8,25 @@ import {
   zoneTitle
 } from '../../src/renderer/src/worldClock'
 
-// 23:30 in Los Angeles: London and Tokyo are already on the 8th,
-// Honolulu (UTC−10) is still on the 7th
-const LATE_LA = new Date('2026-09-08T06:30:00Z')
+const LA_2330_SEP_7 = new Date('2026-09-08T06:30:00Z')
 
 describe('dayDelta', () => {
-  it('reads tomorrow / today / yesterday against the local calendar day', () => {
-    expect(dayDelta('Europe/London', LATE_LA, 'America/Los_Angeles')).toBe(1)
-    expect(dayDelta('Pacific/Honolulu', LATE_LA, 'America/Los_Angeles')).toBe(0)
-    expect(dayDelta('America/Los_Angeles', LATE_LA, 'Asia/Tokyo')).toBe(-1)
+  it('reads tomorrow / today / yesterday against the local calendar day (London already on the 8th, Honolulu still on the 7th)', () => {
+    expect(dayDelta('Europe/London', LA_2330_SEP_7, 'America/Los_Angeles')).toBe(1)
+    expect(dayDelta('Pacific/Honolulu', LA_2330_SEP_7, 'America/Los_Angeles')).toBe(0)
+    expect(dayDelta('America/Los_Angeles', LA_2330_SEP_7, 'Asia/Tokyo')).toBe(-1)
   })
 })
 
 describe('zoneTitle', () => {
   it('names the zone and its whole-hour distance from the local one', () => {
-    expect(zoneTitle('Asia/Tokyo', LATE_LA, 'America/Los_Angeles')).toMatch(
+    expect(zoneTitle('Asia/Tokyo', LA_2330_SEP_7, 'America/Los_Angeles')).toMatch(
       /^Asia\/Tokyo .*16 hours ahead/
     )
-    expect(zoneTitle('Pacific/Honolulu', LATE_LA, 'America/Los_Angeles')).toMatch(/3 hours behind/)
-    expect(zoneTitle('America/Los_Angeles', LATE_LA, 'America/Los_Angeles')).not.toMatch(
+    expect(zoneTitle('Pacific/Honolulu', LA_2330_SEP_7, 'America/Los_Angeles')).toMatch(
+      /3 hours behind/
+    )
+    expect(zoneTitle('America/Los_Angeles', LA_2330_SEP_7, 'America/Los_Angeles')).not.toMatch(
       /ahead|behind/
     )
   })
@@ -34,8 +34,8 @@ describe('zoneTitle', () => {
 
 describe('formatTime', () => {
   it('is 24-hour HH:MM, midnight as 00', () => {
-    expect(formatTime('America/Los_Angeles', LATE_LA)).toBe('23:30')
-    expect(formatTime('Europe/London', LATE_LA)).toBe('07:30')
+    expect(formatTime('America/Los_Angeles', LA_2330_SEP_7)).toBe('23:30')
+    expect(formatTime('Europe/London', LA_2330_SEP_7)).toBe('07:30')
     expect(formatTime('Asia/Kolkata', new Date('2026-09-07T18:30:00Z'))).toBe('00:00')
   })
 })

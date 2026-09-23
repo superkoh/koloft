@@ -58,6 +58,13 @@ async function branchExists(cwd: string, branch: string): Promise<boolean> {
   }
 }
 
+async function unregisterOnlyThisMissingCheckout(
+  root: string,
+  checkoutPath: string
+): Promise<void> {
+  await git(root, ['worktree', 'remove', checkoutPath])
+}
+
 function validName(name: string): void {
   if (!isValidWorktreeName(name)) throw new Error('Invalid worktree name')
 }
@@ -181,8 +188,7 @@ export class SessionWorktrees {
       if (stale) {
         if (stale.locked)
           throw new Error('The missing worktree is locked; unlock it before rebuilding')
-        // Remove only this absent registration; a global prune would affect unrelated worktrees.
-        await git(root, ['worktree', 'remove', resource.worktreePath])
+        await unregisterOnlyThisMissingCheckout(root, resource.worktreePath)
       }
       const branch = resource.worktreeBranch
       const args = branch

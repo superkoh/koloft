@@ -4,16 +4,11 @@ import path from 'path'
 import os from 'os'
 import { spawnSync } from 'child_process'
 
-// setupShim() calls app.getPath('userData'); stub Electron so it writes the real shim
-// scripts into a throwaway base dir. The factory is async so it can create the dir with
-// node builtins (vi.mock is hoisted above normal imports).
 vi.mock('electron', async () => {
   const nfs = await import('node:fs')
   const nos = await import('node:os')
   const npath = await import('node:path')
   const base = nfs.mkdtempSync(npath.join(nos.tmpdir(), 'koloft-openshim-'))
-  // getName() is read by setupShim() to namespace the claude shim's Keychain lookups;
-  // irrelevant to the `open` shim under test here, but it must not throw
   return { app: { getPath: () => base, getName: () => 'koloft-dev', isPackaged: false } }
 })
 
@@ -22,34 +17,26 @@ import { setupShim } from '../../src/main/shim'
 let shimDir: string
 let openDir: string
 let base: string
-let realBin: string
-/** a second copy of the open shim, as a nested Koloft instance would put on PATH */
+let recordingRealOpenDir: string
 let peerShimDir: string
-/** realpath'd fixture dir holding the previewable / unsupported target files */
 let fixtures: string
-/** a pid guaranteed dead (a short-lived child that already exited) */
 let deadPid: string
 
 beforeAll(() => {
   ;({ shimDir, openDir } = setupShim())
   base = path.dirname(shimDir)
-  // a fake "real" open, found on PATH *after* the shim dir. It records the exact argv
-  // the shim exec'd it with, so we can assert exact-passthrough (and its absence).
-  realBin = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-realopen-'))
+  recordingRealOpenDir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-realopen-'))
   fs.writeFileSync(
-    path.join(realBin, 'open'),
+    path.join(recordingRealOpenDir, 'open'),
     '#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "$KOLOFT_ARGS_OUT"\nexit 0\n',
     { mode: 0o755 }
   )
-  fs.chmodSync(path.join(realBin, 'open'), 0o755)
+  fs.chmodSync(path.join(recordingRealOpenDir, 'open'), 0o755)
 
-  // a peer instance's shim: byte-identical script in another dir (nested dev+packaged
-  // Kolofts). The passthrough scan must skip it by marker, not exec it (infinite loop).
   peerShimDir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-peershim-'))
   fs.copyFileSync(path.join(shimDir, 'open'), path.join(peerShimDir, 'open'))
   fs.chmodSync(path.join(peerShimDir, 'open'), 0o755)
 
-  // realpath'd so the /tmp -> /private/tmp symlink can't skew the abs-path assertions
   fixtures = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-open-fix-')))
   fs.writeFileSync(path.join(fixtures, 'doc.md'), '# doc\n')
   fs.writeFileSync(path.join(fixtures, 'SHOUT.MD'), '# shout\n')
@@ -65,7 +52,7 @@ beforeAll(() => {
 
 afterAll(() => {
   fs.rmSync(base, { recursive: true, force: true })
-  fs.rmSync(realBin, { recursive: true, force: true })
+  fs.rmSync(recordingRealOpenDir, { recursive: true, force: true })
   fs.rmSync(peerShimDir, { recursive: true, force: true })
   fs.rmSync(fixtures, { recursive: true, force: true })
 })
@@ -87,8 +74,8 @@ interface OpenRun {
   realArgs: string[] | null
 }
 
-/** Run the installed open shim as if a tab process invoked `open <args>`. The 10s
- *  timeout turns a passthrough exec-loop regression into a loud failure, not a hang. */
+const EXEC_LOOP_FAILS_LOUD_TIMEOUT_MS = 10_000
+
 function runOpenShim(
   args: string[],
   cwd: string,
@@ -98,14 +85,14 @@ function runOpenShim(
   const argsOut = path.join(base, `args-${Math.random().toString(36).slice(2)}`)
   const res = spawnSync(path.join(shimDir, 'open'), args, {
     cwd,
-    timeout: 10_000,
+    timeout: EXEC_LOOP_FAILS_LOUD_TIMEOUT_MS,
     env: {
       ...process.env,
-      PATH: (pathDirs ?? [shimDir, realBin, '/usr/bin', '/bin']).join(':'),
+      PATH: (pathDirs ?? [shimDir, recordingRealOpenDir, '/usr/bin', '/bin']).join(':'),
       PWD: cwd,
       KOLOFT_TAB_ID: 'tab-open',
       KOLOFT_OPEN_DIR: openDir,
-      KOLOFT_PID: String(process.pid), // the "owning Koloft" is this live test process
+      KOLOFT_PID: String(process.pid),
       KOLOFT_ARGS_OUT: argsOut,
       ...envPatch
     },
@@ -166,12 +153,10 @@ describe('open shim: interception', () => {
     const target = path.join(fixtures, 'sp ace"d.md')
     const { regs, realArgs } = runOpenShim([target], os.tmpdir())
     expect(realArgs).toBeNull()
-    expect(regs[0].path).toBe(target) // JSON.parse already succeeded in runOpenShim
+    expect(regs[0].path).toBe(target)
   })
 
-  // IMPL-3: an `.html` left the Preview extension set with D5 but must stay intercepted
-  // — a bare EXT_GLOBS regression here is the silent "open x.html launches Safari" bug.
-  it('an .html file is intercepted like any other viewable file', () => {
+  it('an .html file is intercepted like any other viewable file, never launching Safari', () => {
     const { regs, realArgs } = runOpenShim(['page.html'], fixtures)
     expect(realArgs).toBeNull()
     expect(regs[0].path).toBe(path.join(fixtures, 'page.html'))
@@ -183,8 +168,6 @@ describe('open shim: interception', () => {
       const { regs, realArgs } = runOpenShim([target], fixtures)
       expect(realArgs, target).toBeNull()
       expect(regs[0].url, target).toBe(target)
-      // the cwd-prefix rule is filesystem-only: prefixing a URL would make it a path
-      // no router could ever resolve
       expect(regs[0].path, target).toBe('')
       expect(regs[0].cwd, target).toBe(fixtures)
     }
@@ -207,10 +190,7 @@ describe('open shim: passthrough', () => {
     expect(realArgs).toEqual(['-a', 'Safari', target])
   })
 
-  // session-browser IMPL-3 overturns the old "URLs pass through" rule: http(s) is now
-  // Koloft's own surface, and passing it through is the G0 breach (Safari opens instead).
-  // Every OTHER scheme still belongs to the OS.
-  it('a non-http scheme passes through with the exact argv', () => {
+  it("a non-http scheme passes through with the exact argv: only http(s) is Koloft's own, every other scheme belongs to the OS", () => {
     const { regs, realArgs } = runOpenShim(['zoommtg://example'], cwd)
     expect(regs).toEqual([])
     expect(realArgs).toEqual(['zoommtg://example'])
@@ -219,7 +199,7 @@ describe('open shim: passthrough', () => {
   it('no arguments passes through', () => {
     const { regs, realArgs } = runOpenShim([], cwd)
     expect(regs).toEqual([])
-    expect(realArgs).not.toBeNull() // recorder ran (with an empty argv)
+    expect(realArgs).not.toBeNull()
   })
 
   it('a missing file passes through (the real open reports the error)', () => {
@@ -237,8 +217,6 @@ describe('open shim: passthrough', () => {
   it('a control character in the path passes through instead of corrupting the JSON handoff', () => {
     const { regs, realArgs } = runOpenShim(['bad\nname.md'], fixtures)
     expect(regs).toEqual([])
-    // the recorder writes argv newline-separated, so the embedded \n splits it —
-    // joining reconstructs the single original argument
     expect(realArgs?.join('\n')).toBe('bad\nname.md')
   })
 
@@ -267,12 +245,10 @@ describe('open shim: passthrough', () => {
   })
 
   it("skips a peer Koloft instance's open shim on PATH instead of exec-looping through it", () => {
-    // nested instances: self shim first, the PEER's shim next, the real open last.
-    // Without the marker skip the two shims exec each other forever (timeout kills).
     const { regs, realArgs } = runOpenShim(['data.xyz'], fixtures, {}, [
       shimDir,
       peerShimDir,
-      realBin,
+      recordingRealOpenDir,
       '/usr/bin',
       '/bin'
     ])

@@ -1,19 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import os from 'os'
 
-// node-pty is a native addon built for Electron's ABI (npm run rebuild), so it can't
-// load under plain-node vitest — and we don't need a real pty anyway. Mock spawn and
-// capture the env it was handed, so we can assert the (critical, otherwise-untested)
-// per-tab environment scrubbing without spawning anything.
 const mocks = vi.hoisted(() => {
-  // the foreground process name node-pty reports (`.process`) and the data / exit
-  // callbacks the manager registers — all here so a test can drive them like a real
-  // shell would
-  // `processName` is deliberately `unknown`: node-pty TYPES `.process` as `string`,
-  // but on macOS it is a native read of the tty's foreground process and answers
-  // `undefined` in the gap between two commands (unixTerminal's darwin branch has no
-  // `|| this._file` fallback). A mock that cannot lie the same way cannot reach the
-  // poll's real hazard.
+  // PLATFORM§29
   const state: {
     processName: unknown
     exit?: (e: { exitCode: number; signal?: number }) => void
@@ -38,14 +27,18 @@ const mocks = vi.hoisted(() => {
 })
 vi.mock('node-pty', () => ({ spawn: mocks.spawn }))
 
-import { PtyManager, foregroundName } from '../../src/main/ptyManager'
+import { PtyManager, foregroundName, tabInstancePid } from '../../src/main/ptyManager'
 
 const POLLUTANTS = {
   CLAUDE_CODE_ENTRYPOINT: 'cli',
   CLAUDECODE: '1',
   CLAUDE_EFFORT: 'high',
   AI_AGENT: '1',
-  TERM_SESSION_ID: 'w0t1p0:ABC'
+  TERM_SESSION_ID: 'w0t1p0:ABC',
+  KOLOFT_SESSION_DIR: '/parent-koloft/reg',
+  KOLOFT_OPEN_DIR: '/parent-koloft/opens',
+  KOLOFT_HOOK_SETTINGS: '/parent-koloft/hooks/pty-x-1.json',
+  ANT_ACCOUNT: 'whoever-started-koloft'
 }
 
 let saved: Record<string, string | undefined>
@@ -60,7 +53,6 @@ beforeEach(() => {
     saved[k] = process.env[k]
     process.env[k] = v
   }
-  // remove any locale so the UTF-8 fallback branch is exercised deterministically
   for (const k of ['LC_ALL', 'LANG', 'LC_CTYPE']) {
     saved[k] = process.env[k]
     delete process.env[k]
@@ -80,12 +72,11 @@ function spawnedEnv(): Record<string, string> {
 }
 
 describe('PtyManager per-tab environment', () => {
-  it('strips inherited CLAUDE_CODE_* / CLAUDECODE / CLAUDE_EFFORT / AI_AGENT / TERM_SESSION_ID', () => {
+  it("strips inherited env that would mislead a tab: a nested claude would skip its transcript, a parent Koloft's dirs would grow ghost rows in the parent, and a parent's ANT_ACCOUNT would mislabel every tab", () => {
     const mgr = new PtyManager()
     mgr.create({ kind: 'shell', cwd: os.tmpdir() })
     const env = spawnedEnv()
     for (const k of Object.keys(POLLUTANTS)) expect(env[k]).toBeUndefined()
-    // nothing CLAUDE_CODE_-prefixed survives
     expect(Object.keys(env).some((k) => k.startsWith('CLAUDE_CODE_'))).toBe(false)
   })
 
@@ -101,26 +92,22 @@ describe('PtyManager per-tab environment', () => {
     expect(env.KOLOFT_TAB_ID).toBe(handle.id)
     expect(env.KOLOFT_SESSION_DIR).toBe('/koloft/reg')
     expect(env.KOLOFT_OPEN_DIR).toBe('/koloft/opens')
-    // the open shim's is-my-Koloft-still-alive gate (kill -0) checks this pid
     expect(env.KOLOFT_PID).toBe(String(process.pid))
     expect(env.KOLOFT_HOOK_SETTINGS).toBe(`/koloft/hooks/${handle.id}.json`)
-    // impersonate Apple Terminal for the OSC 7 cwd report
+    // PLATFORM§2
     expect(env.TERM_PROGRAM).toBe('Apple_Terminal')
   })
 
-  // §06/D8: the shim's hard block keys off KOLOFT_UTIL, so the variable must mark utility
-  // shells and ONLY utility shells — a session's own claude pty carrying it would be
-  // blocked from starting at all (T-BLK-03's product premise).
-  it('marks a global-terminal (utility) shell with KOLOFT_UTIL=1', () => {
+  it('marks a global-terminal (utility) shell with KOLOFT_UTIL=1, the variable the shim hard block keys off', () => {
     const mgr = new PtyManager()
     mgr.create({ kind: 'shell', cwd: os.tmpdir(), util: true })
     const env = spawnedEnv()
     expect(env.KOLOFT_UTIL).toBe('1')
-    expect(env.KOLOFT_AUX).toBeUndefined() // the former name is not written alongside it
+    expect(env.KOLOFT_AUX).toBeUndefined()
   })
 
   it('never leaks KOLOFT_UTIL into a session pty, even when Koloft itself inherited one', () => {
-    process.env.KOLOFT_UTIL = '1' // Koloft launched from inside someone's terminal tab
+    process.env.KOLOFT_UTIL = '1'
     try {
       const mgr = new PtyManager()
       mgr.create({ kind: 'claude', cwd: os.tmpdir() })
@@ -130,10 +117,7 @@ describe('PtyManager per-tab environment', () => {
     }
   })
 
-  // KOLOFT_AUX / KOLOFT_AUX_TITLE named the former aux terminal. Nothing reads them any
-  // more, but an older Koloft in the ancestry still exports them, and a marker whose
-  // meaning has changed under it is exactly what must not travel into a fresh tab.
-  it('strips the retired aux markers rather than passing them down', () => {
+  it('strips the retired aux markers an older Koloft in the ancestry still exports, rather than passing them down', () => {
     process.env.KOLOFT_AUX = '1'
     process.env.KOLOFT_AUX_TITLE = 'somebody else’s session'
     try {
@@ -147,12 +131,7 @@ describe('PtyManager per-tab environment', () => {
     }
   })
 
-  // §06 (D8 re-review revisions 3 and 4, amended): a utility shell is cut off from what binds
-  // a shell to a SESSION — registration (a `claude -p` there would grow a ghost sidebar
-  // row) and the per-tab hook settings behind it. `open` interception is NOT in that
-  // set: it binds a target to a surface, not a shell to a session, and a shell is
-  // the user's own hands, so its opens land in Koloft like every other user open.
-  it('withholds the session-bound env from a utility shell, keeping the rest', () => {
+  it('withholds the session-bound env (registration, hook settings) from a utility shell so a claude -p there grows no ghost row, but keeps open interception and the rest', () => {
     const mgr = new PtyManager()
     mgr.shimDir = '/koloft/shim'
     mgr.regDir = '/koloft/reg'
@@ -170,12 +149,7 @@ describe('PtyManager per-tab environment', () => {
     expect(env.PATH.startsWith('/koloft/shim:')).toBe(true)
   })
 
-  // Multi-account balancing hands each launch its own credential, but the shim yields to
-  // an auth token already in the env (nested calls / external wrappers must keep working).
-  // So an ambient ANTHROPIC_* export in the launching shell would silently disable
-  // balancing in EVERY tab — the whole feature off, with only a stderr line to say so.
-  // Exports from an rc file can't be reached; what Koloft inherited at launch can.
-  it('drops an inherited ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN while balancing is on', () => {
+  it('drops an inherited ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN while balancing is on, since the shim yields to any token already in the env', () => {
     process.env.ANTHROPIC_API_KEY = 'sk-ant-ambient'
     process.env.ANTHROPIC_AUTH_TOKEN = 'ambient-token'
     try {
@@ -191,9 +165,7 @@ describe('PtyManager per-tab environment', () => {
     }
   })
 
-  // …and with the mode OFF they are the user's own auth: Koloft has no account to put in
-  // their place, so stripping them would leave `claude` unauthenticated in every tab.
-  it('keeps them when balancing is off', () => {
+  it("keeps them when balancing is off: they are the user's own auth and Koloft has none to put in their place", () => {
     process.env.ANTHROPIC_API_KEY = 'sk-ant-ambient'
     process.env.ANTHROPIC_AUTH_TOKEN = 'ambient-token'
     try {
@@ -208,11 +180,7 @@ describe('PtyManager per-tab environment', () => {
     }
   })
 
-  // D9: a utility shell is never handed a browser endpoint. The shim exports one into
-  // every session it starts, so a shell inside a Koloft session that then launches Koloft
-  // (`npm run dev`, or the e2e suite) passes the PARENT instance's endpoint down — and an
-  // inherited copy can never be right: it points at another instance's browser.
-  it('never lets an inherited browser endpoint reach a utility shell', () => {
+  it("never lets an inherited browser endpoint reach a utility shell: it would point at the parent instance's browser", () => {
     process.env.KOLOFT_CDP_DIR = '/parent/koloft/cdp'
     process.env.KOLOFT_BROWSER_CDP = 'ws://127.0.0.1:9999/cdp/' + 'a'.repeat(32)
     process.env.PLAYWRIGHT_MCP_CDP_ENDPOINT = process.env.KOLOFT_BROWSER_CDP
@@ -235,14 +203,52 @@ describe('PtyManager per-tab environment', () => {
     mgr.create({ kind: 'shell', cwd: os.tmpdir() })
     expect(spawnedEnv().LANG).toBe('en_US.UTF-8')
   })
+
+  it('removes KOLOFT_KEYCHAIN_FILE from a tab unless KOLOFT_TEST_BACKGROUND=1, so a stale export in a profile can never redirect the shim’s credential reads in a real run', () => {
+    const background = process.env.KOLOFT_TEST_BACKGROUND
+    process.env.KOLOFT_KEYCHAIN_FILE = '/stale/keychain.json'
+    try {
+      delete process.env.KOLOFT_TEST_BACKGROUND
+      new PtyManager().create({ kind: 'claude', cwd: os.tmpdir() })
+      expect(spawnedEnv().KOLOFT_KEYCHAIN_FILE).toBeUndefined()
+
+      mocks.spawn.mockClear()
+      process.env.KOLOFT_TEST_BACKGROUND = '1'
+      new PtyManager().create({ kind: 'claude', cwd: os.tmpdir() })
+      expect(spawnedEnv().KOLOFT_KEYCHAIN_FILE).toBe('/stale/keychain.json')
+    } finally {
+      delete process.env.KOLOFT_KEYCHAIN_FILE
+      if (background === undefined) delete process.env.KOLOFT_TEST_BACKGROUND
+      else process.env.KOLOFT_TEST_BACKGROUND = background
+    }
+  })
 })
 
-// BB-E27 (§4.8): a scheduled run's first message travels as KOLOFT_FIRST_PROMPT,
-// and the shim types it into the fresh session. That makes the variable dangerous in two
-// directions: an INHERITED one (Koloft started from inside a scheduled run's own session)
-// would make every ordinary new tab send somebody else's task by itself, and a value
-// left behind on the manager would do the same to the next tab.
-describe('PtyManager per-tab environment', () => {
+describe('PtyManager handles after the pty exits', () => {
+  it('keeps an exited pty findable through get() until reapDead() runs at teardown, so a late SessionStart hook for a tab that just died still finds its handle', () => {
+    const mgr = new PtyManager()
+    const h = mgr.create({ kind: 'claude', cwd: os.tmpdir() })
+    mocks.state.exit?.({ exitCode: 0 })
+    expect(mgr.get(h.id)).toBe(h)
+    expect(h.alive).toBe(false)
+
+    mgr.reapDead()
+    expect(mgr.get(h.id)).toBeUndefined()
+  })
+})
+
+describe('tabInstancePid', () => {
+  it('answers process.pid for an id PtyManager.create() minted and null for a malformed id, so a registration from another live Koloft is left alone', () => {
+    const h = new PtyManager().create({ kind: 'claude', cwd: os.tmpdir() })
+    expect(tabInstancePid(h.id)).toBe(process.pid)
+    expect(tabInstancePid(`pty-${(98765).toString(36)}-3`)).toBe(98765)
+    expect(tabInstancePid('tab-1')).toBeNull()
+    expect(tabInstancePid('pty-')).toBeNull()
+    expect(tabInstancePid('pty-0-1')).toBeNull()
+  })
+})
+
+describe("BB-E27: a scheduled run's first prompt and session name reach only the tab that asked for them", () => {
   function envOf(call: number): Record<string, string> {
     return (mocks.spawn.mock.calls[call][2] as { env: Record<string, string> }).env
   }
@@ -275,11 +281,7 @@ describe('PtyManager per-tab environment', () => {
     expect(envOf(1).KOLOFT_SESSION_NAME).toBeUndefined()
   })
 
-  // the TYPE allows only those two keys, but the object comes off a caller the compiler
-  // never saw — a hand-edited store, a future call site — so the merge names them rather
-  // than looping. PATH is the sharp case: set here it would land AFTER the shim line and
-  // undo it, taking the account balancer with it.
-  it('ignores any other key someone puts in that object', () => {
+  it('ignores any other key someone puts in that object, so a PATH there cannot undo the shim line', () => {
     const mgr = new PtyManager()
     mgr.shimDir = '/koloft/shim'
     mgr.create({ kind: 'claude', cwd: os.tmpdir() })
@@ -297,8 +299,6 @@ describe('PtyManager per-tab environment', () => {
     expect(envOf(1).ANTHROPIC_API_KEY).toBeUndefined()
   })
 
-  // the merge happens last, after the shim dir is put in front of PATH — so it must add
-  // to the env, never rebuild it
   it('leaves PATH exactly as the tab would have had it', () => {
     const mgr = new PtyManager()
     mgr.shimDir = '/koloft/shim'
@@ -312,10 +312,6 @@ describe('PtyManager per-tab environment', () => {
   })
 })
 
-// R19: a terminal tab is labelled with its shell's foreground process, and node-pty
-// exposes that only as a getter — so main polls it. Everything downstream (the
-// renderer's follow/pin rule) is fed by these events; an e2e that sees a stale label
-// cannot say whether main polled the wrong ptys, never stopped, or never emitted.
 describe('PtyManager utility-shell process title', () => {
   function titles(mgr: PtyManager): { id: string; name: string }[] {
     const seen: { id: string; name: string }[] = []
@@ -344,9 +340,7 @@ describe('PtyManager utility-shell process title', () => {
     expect(seen.map((t) => t.name)).toEqual(['zsh'])
   })
 
-  // node-pty falls back to the spawn file when the tty has no readable foreground
-  // process — a tab must never be labelled `/bin/zsh`
-  it('reports the command name, not a path', () => {
+  it('reports the command name, never the spawn-file path node-pty falls back to', () => {
     const mgr = new PtyManager()
     const seen = titles(mgr)
     mocks.state.processName = '/bin/zsh'
@@ -355,8 +349,6 @@ describe('PtyManager utility-shell process title', () => {
     expect(seen.map((t) => t.name)).toEqual(['zsh'])
   })
 
-  // a session's own pty is a claude TUI whose title comes from the transcript, and the
-  // e2e seam's shell has no tab strip of its own — polling either is pure waste
   it('never polls a pty that is not a utility shell', () => {
     const mgr = new PtyManager()
     const seen = titles(mgr)
@@ -366,13 +358,8 @@ describe('PtyManager utility-shell process title', () => {
     expect(seen).toEqual([])
   })
 
-  // node-pty's `.process` does not throw when the foreground process is unreadable —
-  // on macOS it hands back `undefined`, which a `try/catch` cannot see. The poll lives
-  // in a setInterval, so a TypeError there is an UNCAUGHT exception in the main
-  // process: Electron's crash dialog, re-raised every 1500ms until the tab is closed
-  // (v0.16.2). Any command that cycles the foreground fast (`a | b | c`, a seq loop)
-  // lands in that gap within seconds.
-  it('survives a foreground-process read that answers undefined', () => {
+  // PLATFORM§29
+  it('survives a foreground-process read that answers undefined instead of crashing main from the poll timer', () => {
     const mgr = new PtyManager()
     const seen = titles(mgr)
     mgr.create({ kind: 'shell', cwd: os.tmpdir(), util: true })
@@ -380,7 +367,6 @@ describe('PtyManager utility-shell process title', () => {
     mocks.state.processName = undefined
     expect(() => vi.advanceTimersByTime(2000)).not.toThrow()
     expect(seen.map((t) => t.name)).toEqual(['zsh'])
-    // an unreadable tick is a GAP, not a state: the next command still labels the tab
     mocks.state.processName = 'node'
     vi.advanceTimersByTime(2000)
     expect(seen.map((t) => t.name)).toEqual(['zsh', 'node'])
@@ -398,10 +384,6 @@ describe('PtyManager utility-shell process title', () => {
   })
 })
 
-// R19: a terminal tab's live directory. The parser itself is covered in oscCwd.test;
-// what this pins is the wiring — which ptys are watched, that the handle follows the
-// shell, and that an idle prompt (which re-reports the SAME directory on every single
-// command) does not turn into a layout write per keystroke.
 describe('PtyManager utility-shell cwd tracking (D13)', () => {
   function cwds(mgr: PtyManager): { id: string; cwd: string }[] {
     const seen: { id: string; cwd: string }[] = []
@@ -423,7 +405,7 @@ describe('PtyManager utility-shell cwd tracking (D13)', () => {
     const mgr = new PtyManager()
     const seen = cwds(mgr)
     const h = mgr.create({ kind: 'shell', cwd: '/tmp', util: true })
-    mocks.state.data?.(report('/tmp')) // the prompt hook fires on EVERY command
+    mocks.state.data?.(report('/tmp'))
     mocks.state.data?.(report('/tmp'))
     expect(seen).toEqual([])
     mocks.state.data?.(report('/tmp/sub'))
@@ -441,8 +423,6 @@ describe('PtyManager utility-shell cwd tracking (D13)', () => {
     expect(seen.map((c) => c.cwd)).toEqual(['/tmp/torn'])
   })
 
-  // a claude TUI floods the stream with escape sequences and never reports a cwd —
-  // scanning it would be pure waste, and its tab's directory is the session's, fixed
   it('never tracks a pty that is not a utility shell', () => {
     const mgr = new PtyManager()
     const seen = cwds(mgr)
@@ -462,10 +442,7 @@ describe('PtyManager utility-shell cwd tracking (D13)', () => {
   })
 })
 
-// The value half of the poll, split out so the hazard is testable at the only place it
-// exists: what node-pty reports is untrusted input, whatever its typing claims. `null`
-// means "this tick cannot name the process" — not a title, and not an error either.
-describe('foregroundName', () => {
+describe("foregroundName: node-pty's report is untrusted input whatever its typing claims", () => {
   it('reduces a reported path to its command name', () => {
     expect(foregroundName('node')).toBe('node')
     expect(foregroundName('/bin/zsh')).toBe('zsh')
@@ -473,10 +450,10 @@ describe('foregroundName', () => {
   })
 
   it('answers null for anything that is not a usable name', () => {
-    expect(foregroundName(undefined)).toBeNull() // the macOS hand-over gap
+    expect(foregroundName(undefined)).toBeNull()
     expect(foregroundName(null)).toBeNull()
     expect(foregroundName('')).toBeNull()
-    expect(foregroundName('/')).toBeNull() // basename of a bare slash is empty
+    expect(foregroundName('/')).toBeNull()
     expect(foregroundName('/bin/')).toBeNull()
     expect(foregroundName(42)).toBeNull()
   })
@@ -511,8 +488,6 @@ describe('Codex native terminal isolation', () => {
       expect(hooks).not.toHaveBeenCalled()
       expect(Object.keys(options.env).filter((k) => k.startsWith('KOLOFT_'))).toEqual([])
       expect(options.env.CODEX_HOME).toBe('/chosen/codex/config')
-      // by entry, not substring: this machine's own PATH may hold an installed
-      // Koloft's ".../Application Support/koloft/shim"
       expect(options.env.PATH?.split(':')).not.toContain(mgr.shimDir)
     } finally {
       if (originalHome === undefined) delete process.env.CODEX_HOME

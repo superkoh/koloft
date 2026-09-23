@@ -9,8 +9,6 @@ import { useSettingsUpdate } from './useSettingsUpdate'
 
 type Detected = Awaited<ReturnType<typeof window.api.sessions.backends>>
 
-/** What the probe found, in the user's words. This is the one place that answers
- *  "why is there no Codex button?" and "is my Codex too new?". */
 function statusLine(found: Detected[number] | undefined): string {
   if (!found) return 'Checking…'
   if (!found.available) return found.reason || 'Not installed'
@@ -29,8 +27,6 @@ export function SessionMethodsSection() {
     void Promise.all([window.api.sessions.backends(), window.api.claude.probe()]).then(
       ([backends, claude]) => {
         if (!alive) return
-        // main answers claude from settings, not from a probe; the truth the user
-        // needs here is whether the binary is on this Mac.
         setDetected(
           backends.map((b) =>
             b.id === 'claude'

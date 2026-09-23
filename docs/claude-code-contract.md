@@ -5,7 +5,7 @@ Koloft's own code cannot reveal**. Every entry carries its observation date, CC 
 and how it was established; any entry can drift when CC upgrades — the canary run
 (below) watches for structural drift, and a disproven entry is corrected in place,
 never kept for history. This file records only observations of the
-external system; Koloft's own mechanism rationale lives in code comments and behavioral
+external system; Koloft's own mechanism rationale lives in ADRs (`docs/adr/`) and behavioral
 claims live in tests (doctrine: the document-retirement rule in CLAUDE.md). Entries
 were extracted from earlier design notes; sources are named per section.
 
@@ -53,9 +53,28 @@ binary.
   running hook with elapsed time, and Esc cancels a prompt waiting on one. A hook that
   does slow work before its report may never report — Koloft's hook does nothing slow
   before its report (no `claude --version` probe).
+- **A hard exit fires no SessionEnd.** Only a clean exit (`/exit`, Ctrl+D, `logout`,
+  and SIGHUP above) fires it; a kill by Ctrl+C, a crash, SIGTERM or `kill -9` fires
+  none, so only a liveness check notices. An intermittent "didn't revert" bug came from
+  this. **claude waits for its own SessionEnd hook to finish before it exits**, so when
+  the session pty dies the hook's report file is already whole. (Both from earlier
+  Koloft code notes; no date or CC version; not re-measured.)
+- **Every hook payload carries `session_id`**, run-state events (UserPromptSubmit,
+  Stop, Notification) included, not only SessionStart/SessionEnd. (Earlier Koloft code
+  notes; not re-measured.)
+- **A hook can read the running claude's version from its env.** On a native install
+  `CLAUDE_CODE_EXECPATH` is the binary inside `…/versions/<version>`, so its basename
+  is the version (digits and dots only; an npm layout's basename is not a version).
+  claude also stamps its children with `AI_AGENT=claude-code_X-Y-Z_agent`. A resumed
+  session's transcript tail still shows the version of the older claude that wrote it,
+  so only the live process tells the truth. (Earlier Koloft code notes; not
+  re-measured.)
+- **A brand-new claude prints its login and onboarding links before its SessionStart
+  hook fires**, so a user can click a link before the session is bound. (Earlier Koloft
+  code notes; not re-measured.)
 
 Evidence: live experiments E1–E8, 2026-08-10, claude 2.1.227; enums read from CC 2.1.238 source on 2026-08-22. Koloft dependents: the `EVICTING_END_REASONS` whitelist
-and its comment in `src/main/index.ts`; `workspaces.stampLive` (the launch-directory
+in `src/main/index.ts` (marked `CC§1`); `workspaces.stampLive` (the launch-directory
 entry above); `test/e2e/fixtures/fake-claude.js` mimics this section entry by entry.
 
 ## §2 Transcript on disk
@@ -135,8 +154,8 @@ entry above); `test/e2e/fixtures/fake-claude.js` mimics this section entry by en
   `path`" — and entering an existing one by path failed too; the parent transcripts
   carried 0 `worktree-state`, 0 `relocated` and 0 sidechain records. So a session move is
   always the main loop's own doing, and needs no "was this a subagent?" filter. **This is
-  the entry most likely to drift**: if CC relaxes it, one is needed (noted at
-  `sessionTracker.followRelocation`).
+  the entry most likely to drift**: if CC relaxes it, one is needed in
+  `sessionTracker.followRelocation` (marked `CC§2`).
 - **Tool file paths are all but always absolute**: 17 relative out of 18,035 (0.094%),
   every one a `Read`, all in a single repository. A relative one means a file under the
   directory CC stood in on that line, so it has to be resolved as it is read, once.
@@ -145,6 +164,42 @@ entry above); `test/e2e/fixtures/fake-claude.js` mimics this section entry by en
 - **Concurrent sessions used to revert each other's `~/.claude.json` writes**, resetting
   a workspace's trust answer (the key is in §9). The 2.1.259 changelog says fixed
   ("workspace trust no longer resets"); changelog claim, read 2026-09-18, not measured.
+
+The bullets below came from earlier Koloft code notes; unless a bullet says more, no
+date, CC version or method was recorded and they were not re-measured.
+
+- **The transcript is append-only.** Once the head of a file has been read to its end
+  (or to the scan cap), later writes never change what that head says; a file that
+  shrinks was rewritten by someone else.
+- **`ai-title` records repeat.** CC writes the session's `ai-title` again every few
+  turns with the same value, so the first one is enough. A real transcript carries both
+  an `ai-title` and a `summary` record with the same text — which sits uneasily with the
+  "no `summary` guaranteed" bullet above; recheck both together.
+- **Streaming repeats the usage record.** The same assistant usage object is written
+  several times — 3 times in real transcripts, with the same `message.id` and
+  `requestId`. Some records carry neither id and each must count; records with model
+  `<synthetic>` carry no real spend.
+- **Some CC versions mix subagent turns (`isSidechain: true`) into the main jsonl**,
+  their usage records and Esc interrupts included; their spend is the session's, their
+  context window and model are not. Which versions was not recorded.
+- **An Esc interrupt is a plain user record** whose only text is exactly
+  `[Request interrupted by user]`, or `[Request interrupted by user for tool use]` when a
+  tool was running, with no `isMeta`; **no Stop hook fires for an interrupted turn**
+  (the old note says "verified against live transcripts"). Esc stops only the main
+  loop; background tasks keep running.
+- **A pasted image appears in the text as the TUI placeholder** `[Image #1]`,
+  `[Image #2]` or a bare `[Image]`, also inside `<command-args>` (from a user bug
+  report: `/goal <pasted image>`).
+- **A Bash tool call that writes files leaves no file record**; the file-history
+  snapshot stays empty for it and the command text is the only trace.
+- **The `relocated` record is written before the transcript rename as often as after
+  it**, and a resumed session replays its old `relocated` records.
+- **Moves come in bursts**: 4 moves in 34 seconds were seen, two of them about 100 ms
+  apart (enter A, enter B, leave, enter A again); only the last move of a burst matters.
+- **Claude 4.0-generation transcripts record the dated model id** in `message.model`
+  (`claude-opus-4-20250514`, `claude-sonnet-4-20250514`).
+- **The Stop hook can fire a moment before the turn's assistant record is flushed** to
+  the jsonl (seen live on 2.1.263), so a reader that trusts Stop has to poll for it.
 
 Evidence: full census of 535 on-disk transcripts, 2026-08-10 (CC 2.1.220–227), plus
 controlled experiment E2; lazy write verified live 2026-08-24. The five mid-conversation
@@ -190,6 +245,9 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
   that the person had created by hand**; the 2.1.246 changelog says it no longer does
   (changelog claim, read 2026-09-18, not measured). Koloft's worktrees live exactly
   there.
+- **A worktree name is refused when only its branch is left.** If a person deletes
+  `.claude/worktrees/<n>` but keeps the branch `worktree-<n>`, `claude -w <n>` refuses
+  that name. (Earlier Koloft code notes; no date, version or method; not re-measured.)
 
 Evidence: experiments E3/E4/E8, 2026-08-10, plus `strings` analysis of the claude
 2.1.227 binary. Koloft dependents: the `sessions:resumePlan` decision tree;
@@ -298,7 +356,7 @@ prompt emulation.
 Evidence: on-machine diagnosis 2026-08-22 (CC 2.1.238 / app 0.13.1), CC source
 reading, and the 2026-08-28 implementation review. Koloft
 dependents: the fork gate and session_id extraction in `src/main/hooks.ts`'s injected
-script (commented in detail there); `src/main/hookRouting.ts`. Unshipped remainder is
+script (marked `CC§5`); `src/main/hookRouting.ts`. Unshipped remainder is
 collected in a follow-up issue.
 
 ## §6 Settings precedence & the statusLine protocol
@@ -309,6 +367,10 @@ collected in a follow-up issue.
   the CLI reference, 2026-08-07). This is the seam Koloft's entire per-tab injection
   (hooks + statusLine) rests on. The one tier above it: **managed (enterprise)
   settings out-rank `--settings`** — accepted, no managed policy on target machines.
+- **Hooks from `--settings` are ADDED to the user's own hooks for the same event**, not
+  swapped in: "merging per key" above does not say that hook arrays are joined. The
+  user's own hooks (for example a Stop hook that writes `<id>.title`) keep running next
+  to Koloft's. (Earlier Koloft code notes; no separate measurement recorded.)
 - **The `statusLine.command` string is shell-interpreted by CC** (paths need quoting),
   and **CC ≥2.1.153 exports `COLUMNS` before running it**. CC pipes its status JSON to
   the command's stdin and **treats stdout-pipe EOF as "render done"** — any orphaned
@@ -335,8 +397,8 @@ collected in a follow-up issue.
 
 Evidence: three parallel investigations + two local experiments, 2026-08-07, CC
 2.1.224; render-latency mechanism found in live
-testing (commit 1dabc23). Koloft dependents: `src/main/statusline.ts` (wrapper comments
-carry the mechanics), `writeTabHookSettings` in `src/main/hooks.ts`,
+testing (commit 1dabc23). Koloft dependents: `src/main/statusline.ts` (its wrapper
+script is marked `CC§6`; the ccstatusline side is platform ledger §36), `writeTabHookSettings` in `src/main/hooks.ts`,
 `test/e2e/statusline.spec.ts`.
 
 ## §7 Anthropic API: usage headers, auth env, model fallback
@@ -395,11 +457,30 @@ carry the mechanics), `writeTabHookSettings` in `src/main/hooks.ts`,
 - **CC's fable consent prompt guards only the interactive first use**: `-p`, the Agent
   SDK, and already-consented users pass with zero protection, and a bare fetch (Koloft's
   main-process probe) is structurally outside the consent mechanism entirely.
+- **What `claude setup-token` prints.** Before it prints, it runs `open <auth url>`
+  from PATH and waits for the browser round trip (verified against 2.1.266). The token
+  is about 108 characters, and its format is not documented; the stable parts are the
+  `sk-ant-` prefix, a short kind segment (2–12 letters and digits), then a body of 24
+  or more characters from `[A-Za-z0-9_-]`. **The output is hard-wrapped at the terminal
+  width**, so at 80 columns the token is split across lines, and a capture stores a
+  cut-off token that fails only later, when checked (seen in the guided-login flow).
+  Apart from the 2.1.266 check: earlier Koloft code notes, not re-measured.
+- **The 5h window's reset time moves forward between probes** — the window is rolling,
+  so a bare time label reads like a clock jumping around. (Earlier Koloft code notes;
+  not re-measured.)
+- **Model prices** (USD per million tokens, input/output, and context window): Fable 5.1
+  $10/$50, 1M (cache read $0.25); Fable/Mythos 5 $10/$50, 1M; Opus 4.6–4.8 $5/$25, 1M;
+  Opus 4.5 $5/$25, 200k; Opus 4/4.1 $15/$75, 200k; Sonnet 5 $2/$10, 1M (standard rates
+  since CC 2.1.243); Sonnet 4.6 $3/$15, 1M; Sonnet 4/4.5 $3/$15, 200k; Haiku 4.5 $1/$5,
+  200k. A 5-minute cache write costs 1.25× input and a cache read 0.10× input, as
+  ccusage applies them. Sources (2026-07): the Anthropic model catalog (through the
+  local claude-api skill reference) for current families, Anthropic's public pricing
+  page for older Opus/Sonnet, and the Sonnet 5 change noted against CC 2.1.243.
 
 Evidence: two years of shell-prototype quota economics productized 2026-08-07; probe
 edge shapes curl-verified 2026-08-17; latency measured 2026-08-19-20;
 classifier fallback established in the rev3 routing review, 2026-08-20. Koloft dependents:
-`src/main/usageProbe.ts` (header comment carries the parse doctrine),
+`src/main/usageProbe.ts` (marked `CC§7`; its parse rules are this section),
 `src/main/accountPicker.ts`, `src/shared/accountUsage.ts`, the shim's inject section
 in `src/main/shim.ts` and `accountEnv` in `src/main/remote/launch.ts` (the remote
 launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.parse/score`, `accountPicker`,
@@ -449,6 +530,51 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
 - **`Notification` payloads carry no task list** (124 "Claude is waiting for your
   input" nudges, none with `background_tasks`), and `-p` mode exits with a background
   shell still running, firing one Stop.
+- **A permission Notification reads like "Claude needs your permission to use Bash"**
+  (it contains "permission" or "approval"); any other Notification is the idle
+  "waiting for your input" nudge. (Quoted in earlier Koloft code notes; no date or CC
+  version.)
+
+**How a background task shows up in the transcript.** Checked "against real
+transcripts and the CLI's own result schemas" on claude 2.1.222; the forked-skill
+shapes on real transcripts, 2.1.227 and 2.1.220. Bullets with no source named come from
+earlier Koloft code notes and were not re-measured.
+
+- **The spawn ack** is a tool_result user record whose `toolUseResult` tells the kind:
+  - `status: 'async_launched'` — an Agent with `run_in_background`, and every Workflow
+    run (`taskType: 'local_workflow'`). The Agent form looks like
+    `{isAsync: true, status: 'async_launched', agentId}` with the text
+    "Spawned successfully.", and the turn can end with Stop while it runs.
+  - `status: 'teammate_spawned'` — a named or team Agent.
+  - `status: 'remote_launched'` — a cloud agent (`isolation: 'remote'`,
+    `taskType: 'remote_agent'`). It runs on CC's side: nothing under the session's
+    `subagents/` folder ever grows, so the ack is the only local sign it runs.
+  - `backgroundTaskId` — a background shell. A shell the model was waiting on also
+    carries `timedOutAfterMs` (moved to the background at its tool timeout; the text
+    reads "Command timed out and was moved to the background (ID: …)") or
+    `backgroundedByUser` (Ctrl+B).
+  - `{taskId, timeoutMs}` — a Monitor.
+  - `{status: 'forked', background: true, agentId}` — a skill forked into a background
+    agent (2.1.227). Its agent writes a transcript at once, and the main loop writes ONE
+    wrap-up line before its Stop. A fork whose result is already final OMITS
+    `background` entirely (2.1.220), rather than setting it false.
+- **A Workflow's agents write transcripts** under `<sid>/subagents/workflows/<runId>/`,
+  one level deeper than a plain subagent.
+- **The finish report is a `<task-notification>`** naming both a `<tool-use-id>` and a
+  `<task-id>`. It is written three ways: a `queue-operation` record (`operation:
+  'enqueue'`, content = the notification) when the task reports, removed when
+  delivered; then an `attachment` record (`type: 'queued_command'`,
+  `commandMode: 'task-notification'`) — the current shapes; and, before 2.1.18x, a user
+  record with `origin.kind: 'task-notification'`. Terminal `<status>` values are
+  `completed`, `failed`, `killed`, `stopped`, `cancelled`, `canceled`; `stopped` comes
+  for a task killed from the UI, by a Monitor timeout, or by agent teardown. Long-lived
+  tasks (Monitor, teammate) also send progress notifications with the same tool-use-id.
+  The terminal notification wakes the model, so a wrap-up turn with its own Stop
+  follows. Every ack kind gets one — except a teammate.
+- **A teammate never gets a `<task-notification>`** (measured: 149 `teammate_spawned`
+  acks across 41 recent transcripts, zero named by one). It reports through an
+  `Another Claude session sent a message: <teammate-message …>` record, which carries
+  no tool-use-id.
 
 Evidence: 2026-09-05, CC 2.1.261 — binary reading (`smr` / `Vp` / `qDe` in the
 Stop-hook module), 251 real Stop records in Koloft's run-state logs cross-checked
@@ -558,6 +684,8 @@ other bullets of §9 were not re-measured on this build.
   --file --mcp-config --tools`. Note `-n` really is CC's short form of `--name`, so any
   argv scanner that skips a flag's value has to know it. `--permission-prompts none` is a
   value that flag takes since 2.1.259 (changelog, read 2026-09-18; not measured here).
+  `--effort` accepts exactly `low`, `medium`, `high`, `xhigh`, `max` (2.1.263, per an
+  earlier Koloft code note; method not recorded).
 - **A new directory always asks for trust on its first launch**, and
   `--dangerously-skip-permissions` does not skip that question ("Quick safety check: Is
   this a project you created or one you trust?", default answer "No, exit"). A worktree
@@ -594,6 +722,8 @@ running install.
   `sudo`** (plain root is fine), and installs a self-contained native binary to
   `~/.local/bin/claude`. Having claude therefore says nothing about node being present
   — anything that needs node (Koloft's statusline) has to bring or find its own.
+  **The native installer adds `~/.local/bin` to PATH in `~/.zshrc`**, which only an
+  interactive shell reads (earlier Koloft code notes; not re-measured).
 
 - **A fresh install shows the first-run "Select login method" page even when
   `CLAUDE_CODE_OAUTH_TOKEN` is set** — the token is used (the process fetched
@@ -631,3 +761,25 @@ only — when an entry is written, updated or removed is unmeasured.
   `nameSource: 'derived' | 'user'`, `status: 'busy' | 'idle'`. A sibling
   `<pid>.<sha256>.key` sits next to each one.
 - Unused by Koloft today.
+
+## §12 The interactive TUI inside a terminal
+
+How established: moved from earlier Koloft code notes. Unless a bullet names a version
+or a measurement, none was recorded and it was not re-measured.
+
+- **Every TUI frame is wrapped in DEC mode 2026** (`?2026h` … `?2026l`, synchronized
+  output), so while claude streams, a sync window is open much of the time and a
+  terminal resize very often lands inside one (verified in the 2.1.232 binary).
+- **The XTVERSION reply picks the wheel-scroll engine.** A reply naming
+  `xterm.js(<version>)` (which xterm ≥ 6.1.0-beta sends) switches fullscreen wheel
+  scrolling to a paced drain of 2–3 lines per frame; no reply keeps the native profile,
+  which drains in step with the input. claude also skips its DEC-2026 probe when
+  `TERM_PROGRAM=Apple_Terminal`; "no XTVERSION reply" is the other half of that gate.
+- **Cell widths follow Unicode 11 tables** (Ink / string-width). A terminal using other
+  tables makes wide CJK and emoji drift and clip at the right edge.
+- **A bare LF (`\n`, the same as Ctrl+J) inserts a newline in the input box; CR
+  submits.**
+- **URLs and files are opened with `Bun.spawn(["open", url])`**, which looks `open` up
+  on PATH, so a PATH shim can catch it.
+- **An idle claude process holds a lot of memory**: measured 185–350 MB each for idle
+  processes about two days old (another note says about 250 MB).

@@ -315,7 +315,6 @@ describe('CodexSessions', () => {
     const gate = deferred<{ id: 'codex'; available: boolean }>()
     vi.mocked(sessions.availability).mockReturnValueOnce(gate.promise)
     const launch = sessions.launch({ kind: 'codex', cwd: repo })
-    // a launch that has not bound yet already owns processes — quitting must wait for it
     expect(sessions.hasRuns()).toBe(true)
     const rejected = expect(launch).rejects.toThrow('shutting down')
     const shutdown = sessions.stopAll()

@@ -5,20 +5,8 @@ import os from 'os'
 import { execFileSync } from 'child_process'
 import { gitOnPath, realGit, restorePath, seedRepo } from './helpers/gitShim'
 
-/**
- * Every git this module runs is killed after `GIT_TIMEOUT_MS` and carries
- * GIT_OPTIONAL_LOCKS=0. The cap is a ceiling for a git that never answers (a dead network
- * mount, a sleeping disk), so the cases below hold git open forever and check that the
- * call settles, leaves no process behind, and answers honestly: what git printed before
- * the kill comes back labelled cut off, and a git that printed nothing fails the query
- * instead of letting a fallback answer a different question.
- *
- * The cap is set through the env seam BEFORE the module is imported, so the module's own
- * constant is what is under test.
- */
-// generous against a loaded machine: the kill must land AFTER the shim has started
-const TIMEOUT_MS = 1000
-process.env.KOLOFT_GIT_TIMEOUT_MS = String(TIMEOUT_MS)
+const TIMEOUT_MS_AFTER_THE_SHIM_HAS_STARTED = 1000
+process.env.KOLOFT_GIT_TIMEOUT_MS = String(TIMEOUT_MS_AFTER_THE_SHIM_HAS_STARTED)
 const { gitDiff, gitFileDiff, gitNumstat, gitStatus } = await import('../../src/main/gitStatus')
 
 let tmp: string
@@ -26,18 +14,14 @@ let repo: string
 let pids: string
 let envLog: string
 
-/** a `git` that never answers, recording the pid Node will have to kill. `exec` matters:
- *  a bare `sleep` child of the shell would outlive its parent and fake an orphan. */
 function hangingGitOnPath(): void {
   gitOnPath(tmp, `#!/bin/sh\nprintf '%s\\n' "$$" >> "${pids}"\nexec sleep 60\n`)
 }
 
-/** a `git` that prints part of a diff and then never answers */
 function cutOffGitOnPath(text: string): void {
   gitOnPath(tmp, `#!/bin/sh\nprintf '%s\\n' '${text}'\nexec sleep 60\n`)
 }
 
-/** a `git` that records the GIT_OPTIONAL_LOCKS it was handed, then delegates */
 function envRecordingGitOnPath(): void {
   gitOnPath(
     tmp,
@@ -47,7 +31,6 @@ function envRecordingGitOnPath(): void {
   )
 }
 
-/** every pid the hanging shim recorded — one line per git Node had to spawn */
 const spawnedPids = (): number[] =>
   fs.readFileSync(pids, 'utf8').split('\n').filter(Boolean).map(Number)
 
@@ -79,15 +62,13 @@ afterEach(() => {
 describe('the git timeout', () => {
   it('a git that never answers is killed after GIT_TIMEOUT_MS: the call settles and no process is left behind', async () => {
     const base = git('rev-parse', 'HEAD')
-    await gitNumstat(repo, base) // warm the toplevel cache with a real git
+    await gitNumstat(repo, base)
     hangingGitOnPath()
 
     const t0 = Date.now()
     await expect(gitNumstat(repo, base)).rejects.toThrow()
-    expect(Date.now() - t0).toBeLessThan(TIMEOUT_MS + 1000)
+    expect(Date.now() - t0).toBeLessThan(TIMEOUT_MS_AFTER_THE_SHIM_HAS_STARTED + 1000)
 
-    // just the numstat: the fresh-repo fallback counts different lines, so a killed git
-    // must not be answered with it
     const [pid, ...rest] = spawnedPids()
     expect(rest).toEqual([])
     await vi.waitFor(() => expect(alive(pid)).toBe(false))
@@ -95,7 +76,7 @@ describe('the git timeout', () => {
 
   it('an aggregate diff cut off by the timeout is handed back labelled truncated', async () => {
     const base = git('rev-parse', 'HEAD')
-    await gitDiff(repo, base) // warm the toplevel cache
+    await gitDiff(repo, base)
     cutOffGitOnPath('diff --git a/tracked.txt b/tracked.txt')
 
     const r = await gitDiff(repo, base)
@@ -108,7 +89,7 @@ describe('the git timeout', () => {
     const base = git('rev-parse', 'HEAD')
     const fresh = path.join(repo, 'fresh.txt')
     fs.writeFileSync(fresh, 'new\n')
-    await gitFileDiff(fresh, base, true) // warm the toplevel cache
+    await gitFileDiff(fresh, base, true)
     cutOffGitOnPath('diff --git a/dev/null b/fresh.txt')
 
     const r = await gitFileDiff(fresh, base, true)
@@ -116,6 +97,7 @@ describe('the git timeout', () => {
     expect(r.truncated).toBe(true)
   })
 
+  // PLATFORM§30
   it('every git the panel runs carries GIT_OPTIONAL_LOCKS=0, so it never takes index.lock', async () => {
     const base = git('rev-parse', 'HEAD')
     const fresh = path.join(repo, 'fresh.txt')
@@ -132,24 +114,18 @@ describe('the git timeout', () => {
 
   it('a git killed before it printed anything fails the diff instead of calling it empty', async () => {
     const base = git('rev-parse', 'HEAD')
-    await gitDiff(repo, base) // warm the toplevel cache
+    await gitDiff(repo, base)
     hangingGitOnPath()
 
-    // the stream shows its "git unresponsive — retry" state only on a rejection; the
-    // fresh-repo fallback would answer a different question (staged + unstaged), and an
-    // empty diff is read as "nothing has changed"
     await expect(gitDiff(repo, base)).rejects.toThrow()
     expect(spawnedPids()).toHaveLength(1)
   })
 
   it('a status whose base diff was killed fails instead of asking about HEAD', async () => {
     const base = git('rev-parse', 'HEAD')
-    await gitStatus(repo, base) // warm the toplevel cache
+    await gitStatus(repo, base)
     hangingGitOnPath()
 
-    // the three listings and nothing behind them: `git status --porcelain` measures
-    // against HEAD, which drops every change already committed on the branch — and a
-    // rejection is what keeps the panel's last good map (an empty one would replace it)
     await expect(gitStatus(repo, base)).rejects.toThrow()
     expect(spawnedPids()).toHaveLength(3)
   })
@@ -157,7 +133,7 @@ describe('the git timeout', () => {
   it('a per-file diff whose base diff was killed fails at that rung, not three probes later', async () => {
     const base = git('rev-parse', 'HEAD')
     const tracked = path.join(repo, 'tracked.txt')
-    await gitFileDiff(tracked, base) // warm the toplevel cache
+    await gitFileDiff(tracked, base)
     hangingGitOnPath()
 
     await expect(gitFileDiff(tracked, base)).rejects.toThrow()

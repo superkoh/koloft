@@ -34,6 +34,7 @@
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "check:comments": "node scripts/check-comments.mjs",
     "test:unit": "vitest run",
     "test:unit:changed": "vitest run --changed=main",
     "test:unit:watch": "vitest",
@@ -48,6 +49,7 @@
     "ws": "^8.21.3"
   },
   "devDependencies": {
+    "@babel/parser": "^7.29.9",
     "@electron/asar": "^3.4.1",
     "@electron/rebuild": "^4.2.0",
     "@playwright/test": "^1.63.0",
@@ -70,6 +72,7 @@
     "markdown-it": "^15.0.2",
     "markdown-it-footnote": "^4.0.0",
     "mermaid": "^11.17.0",
+    "postcss": "^8.5.28",
     "prettier": "^3.9.8",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

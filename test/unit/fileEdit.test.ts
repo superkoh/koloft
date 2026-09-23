@@ -11,13 +11,8 @@ import {
   writeText
 } from '../../src/main/fileEdit'
 
-// The main-process half of the editor (§05). Everything runs against a REAL temp
-// directory: the whole point of these cases is what lands on disk, so a mocked fs would
-// assert the mock.
-
 let dir: string
 let file: string
-/** every `.koloft-tmp-` file still lying around — none may survive any path, success or not */
 const leftoverTmps = (d = dir): string[] =>
   fs.readdirSync(d).filter((n) => n.includes('.koloft-tmp-'))
 
@@ -35,9 +30,7 @@ afterEach(() => {
   vi.restoreAllMocks()
   try {
     fs.chmodSync(dir, 0o755)
-  } catch {
-    // already writable
-  }
+  } catch {}
   fs.rmSync(dir, { recursive: true, force: true })
 })
 
@@ -68,11 +61,8 @@ describe('openForEdit', () => {
   })
 
   it('refuses a non-UTF-8 file, but NOT a valid UTF-8 file that contains U+FFFD', () => {
-    // latin-1 0xE9 ("é") is not valid UTF-8 — decoding it produces a replacement char
     fs.writeFileSync(file, Buffer.from([0x61, 0xe9, 0x0a]))
     expect(openForEdit(file).readOnly).toBe('notUtf8')
-    // the same replacement char, this time legitimately encoded: searching for it would
-    // misjudge this file, a byte round-trip does not
     fs.writeFileSync(file, 'a � b\n', 'utf8')
     expect(openForEdit(file).readOnly).toBe(null)
   })
@@ -103,7 +93,7 @@ describe('openForEdit', () => {
   })
 
   it('measures the size cap in BYTES, not characters', () => {
-    fs.writeFileSync(file, '密钥密钥密钥密钥密钥密钥密钥密钥密钥密钥') // 20 chars, 60 bytes
+    fs.writeFileSync(file, '密钥密钥密钥密钥密钥密钥密钥密钥密钥密钥')
     expect(fs.statSync(file).size).toBe(60)
     expect(() => openForEdit(file, 50)).toThrow('KOLOFT_TOO_LARGE')
     expect(() => openForEdit(file, 60)).not.toThrow()
@@ -121,6 +111,25 @@ describe('openForEdit', () => {
     fs.writeFileSync(path.join(dir, 'bin'), Buffer.from([0x41, 0x00, 0x42]))
     expect(() => openForEdit(path.join(dir, 'bin'))).toThrow('KOLOFT_BINARY')
   })
+
+  it('a file changed while it is being read makes the next save refused as stale, never a silent overwrite', () => {
+    const realRead = fs.readFileSync
+    let changed = false
+    vi.spyOn(fs, 'readFileSync').mockImplementation(((p: fs.PathOrFileDescriptor, ...rest) => {
+      const out = (realRead as (...a: unknown[]) => unknown)(p, ...rest)
+      if (p === file && !changed) {
+        changed = true
+        fs.writeFileSync(file, 'KEY=theirs, written mid-read\n')
+      }
+      return out
+    }) as typeof fs.readFileSync)
+    const opened = openForEdit(file)
+    vi.restoreAllMocks()
+
+    const r = writeText(file, 'KEY=mine\n', { mtimeMs: opened.mtimeMs, size: opened.size })
+    expect(r).toMatchObject({ ok: false, code: 'stale' })
+    expect(fs.readFileSync(file, 'utf8')).toBe('KEY=theirs, written mid-read\n')
+  })
 })
 
 describe('writeText', () => {
@@ -137,14 +146,13 @@ describe('writeText', () => {
     const stale = { mtimeMs: 1, size: 999 }
     const r = writeText(file, 'KEY=mine\n', stale)
     expect(r).toMatchObject({ ok: false, code: 'stale', text: 'KEY=one\n' })
-    expect(fs.readFileSync(file, 'utf8')).toBe('KEY=one\n') // not one byte moved
+    expect(fs.readFileSync(file, 'utf8')).toBe('KEY=one\n')
     expect(leftoverTmps()).toEqual([])
   })
 
   it('catches a write that lands AFTER the first fingerprint check (§05 step 8)', () => {
     const expect0 = fingerprint(file)
     const real = fs.openSync
-    // the temp file is created between the two checks — the same window Claude writes in
     vi.spyOn(fs, 'openSync').mockImplementation(((p: string, ...rest: unknown[]) => {
       if (String(p).includes('.koloft-tmp-')) fs.writeFileSync(file, 'KEY=claude-was-here\n')
       return (real as (...a: unknown[]) => number)(p, ...rest)
@@ -152,7 +160,7 @@ describe('writeText', () => {
 
     const r = writeText(file, 'KEY=mine\n', expect0)
     expect(r).toMatchObject({ ok: false, code: 'stale' })
-    expect(fs.readFileSync(file, 'utf8')).toBe('KEY=claude-was-here\n') // the intruder's, kept
+    expect(fs.readFileSync(file, 'utf8')).toBe('KEY=claude-was-here\n')
     vi.restoreAllMocks()
     expect(leftoverTmps()).toEqual([])
   })
@@ -161,15 +169,12 @@ describe('writeText', () => {
     const realRename = fs.renameSync
     vi.spyOn(fs, 'renameSync').mockImplementation(((from: string, to: string) => {
       ;(realRename as (a: string, b: string) => void)(from, to)
-      // Claude finishes a write of its own between the rename and our last look at disk
       fs.writeFileSync(file, 'KEY=claude-came-back-with-more\n')
     }) as typeof fs.renameSync)
 
     const r = writeText(file, 'KEY=two\n', fingerprint(file))
     vi.restoreAllMocks()
     expect(r.ok).toBe(true)
-    // handing back the intruder's fingerprint would make the NEXT save overwrite it
-    // silently, and make the watcher event look like our own echo
     if (r.ok) {
       expect(r.size).toBe(Buffer.byteLength('KEY=two\n'))
       expect(r.size).not.toBe(fs.statSync(file).size)
@@ -186,13 +191,11 @@ describe('writeText', () => {
     })
     fs.writeFileSync(file, Buffer.from([0x41, 0x00, 0x42]))
     expect(writeText(file, 'mine\n', stale)).toMatchObject({ text: null })
-    // …but a small text file still comes back in full, which is what draws the diff
     fs.writeFileSync(file, 'KEY=one\n')
     expect(writeText(file, 'mine\n', stale)).toMatchObject({ text: 'KEY=one\n' })
   })
 
   it('never deletes a file that already occupies the temp name', () => {
-    // pin the random suffix so the name is guaranteed to collide
     vi.spyOn(crypto, 'randomBytes').mockImplementation((() =>
       Buffer.from([0xde, 0xad, 0xbe, 0xef])) as unknown as typeof crypto.randomBytes)
     const squatter = path.join(dir, `.config.env.koloft-tmp-${process.pid}-deadbeef`)
@@ -212,7 +215,6 @@ describe('writeText', () => {
     const fp = fingerprint(inner)
     fs.rmSync(sub, { recursive: true })
     expect(() => writeText(inner, 'y\n', fp)).toThrow('KOLOFT_DIR_GONE')
-    // the folder still standing means it really is the file that went
     expect(() => writeText(path.join(dir, 'missing'), 'y\n', fp)).toThrow(/KOLOFT_GONE$/)
   })
 
@@ -227,7 +229,7 @@ describe('writeText', () => {
     writeText(file, 'KEY=two\n', fingerprint(file))
     const tmpOpen = seen.find((c) => c.p.includes('.koloft-tmp-'))
     expect(tmpOpen).toBeDefined()
-    expect(tmpOpen?.flags).toBe('wx') // must fail rather than reuse someone else's file
+    expect(tmpOpen?.flags).toBe('wx')
     expect(tmpOpen?.mode).toBe(0o600)
     expect(path.basename(String(tmpOpen?.p)).startsWith('.')).toBe(true)
   })
@@ -251,12 +253,12 @@ describe('writeText', () => {
     expect(fs.lstatSync(link).isSymbolicLink()).toBe(true)
   })
 
+  // PLATFORM§24
   it('CRLF in, CRLF out — and a file with no trailing newline keeps none', () => {
     fs.writeFileSync(file, 'a\r\nb')
     const opened = openForEdit(file)
     expect(opened.eol).toBe('crlf')
     expect(opened.text).toBe('a\r\nb')
-    // the renderer always hands back LF (the textarea converts) — the eol option restores it
     const r = writeText(file, 'a\nb\nc', opened, { eol: 'crlf' })
     expect(r.ok).toBe(true)
     expect(fs.readFileSync(file, 'utf8')).toBe('a\r\nb\r\nc')
@@ -340,7 +342,6 @@ describe('createFile', () => {
     for (const bad of ['a/b.txt', 'a\\b.txt', '..', '.', '', '/etc/passwd']) {
       expect(() => createFile(dir, bad)).toThrow('KOLOFT_BAD_NAME')
     }
-    // a leading dot is a normal file name, not a dot entry
     expect(() => createFile(dir, '.env')).not.toThrow()
   })
 

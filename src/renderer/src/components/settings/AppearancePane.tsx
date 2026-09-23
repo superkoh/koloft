@@ -5,8 +5,6 @@ import { useStore } from '../../store'
 import { Switch } from './Switch'
 import { useSettingsUpdate } from './useSettingsUpdate'
 
-// a few common monospace / Nerd Font families to offer as quick picks (FR-08: the
-// full FONT_SUGGESTIONS set, presented as chips instead of a datalist)
 const FONT_SUGGESTIONS = [
   'JetBrainsMono Nerd Font',
   'MesloLGS NF',
@@ -17,14 +15,9 @@ const FONT_SUGGESTIONS = [
   'Monaco'
 ]
 
-/** Appearance = "Terminal font" + "Session display" (the four-category
- *  decision): everything about how terminals and session rows look. */
 export function AppearancePane(): JSX.Element {
   const settings = useStore((s) => s.settings)
   const update = useSettingsUpdate()
-  // fontSize edits go through a draft so a user can TYPE "13" without the clamp
-  // eating the intermediate "1"; the clamped value commits on blur/Enter, so an
-  // out-of-range size never persists (FR-08 edge case)
   const [sizeDraft, setSizeDraft] = useState(String(settings.fontSize))
   useEffect(() => setSizeDraft(String(settings.fontSize)), [settings.fontSize])
 

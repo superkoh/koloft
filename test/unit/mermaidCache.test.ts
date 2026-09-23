@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { hashCode, makeCache } from '../../src/renderer/src/mermaidRender'
 
-/** The cache key for FR-15: "same source ⇒ same rendered svg, don't redraw". */
 describe('hashCode', () => {
   it('gives the same source the same key', () => {
     const src = 'flowchart TD\n  A --> B\n'
@@ -29,7 +28,6 @@ describe('hashCode', () => {
   })
 })
 
-/** §Data Model: `Map<source hash, sanitized svg>`, process-wide, 50 entries LRU. */
 describe('makeCache', () => {
   it('returns nothing for a source it has not rendered', () => {
     const c = makeCache()
@@ -49,7 +47,6 @@ describe('makeCache', () => {
     for (let i = 0; i < 50; i++) c.set(`h${i}`, `svg${i}`)
     expect(c.size).toBe(50)
 
-    // no reads before the 51st: nothing has been promoted, so the oldest stored one goes
     c.set('h50', 'svg50')
     expect(c.size).toBe(50)
     expect(c.get('h50')).toBe('svg50')
@@ -69,7 +66,7 @@ describe('makeCache', () => {
   it('evicts the least recently *used*, not the least recently stored', () => {
     const c = makeCache()
     for (let i = 0; i < 50; i++) c.set(`h${i}`, `svg${i}`)
-    c.get('h0') // a diagram still on screen: reading it keeps it alive
+    c.get('h0')
     c.set('h50', 'svg50')
 
     expect(c.get('h0')).toBe('svg0')

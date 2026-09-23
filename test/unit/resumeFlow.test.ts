@@ -17,11 +17,6 @@ import {
 } from '../../src/renderer/src/resumeFlow'
 import { useStore } from '../../src/renderer/src/store'
 
-// the lifecycle contract §4: main decides, the renderer renders. What this layer owns is the
-// mapping plan → (silent spawn | which dialog) and the exact argv-shaped request each
-// button sends — a wrong mode here resumes in the wrong checkout, which the UI shows
-// as a session that came back "somewhere else".
-
 const target = { id: 'sid-1', title: 'Refactor session management' }
 
 const evidence = (over: Partial<ResumeEvidence> = {}): ResumeEvidence => ({
@@ -59,10 +54,7 @@ describe('planToStep (D6/D8 routing)', () => {
     })
   })
 
-  // (user decided): the sidebar row already announces "worktree deleted; click
-  // to rebuild and resume", so the click IS the consent — D6's "missing → rebuild, then resume"
-  // runs without a confirmation stop. Failure still lands in the D12 escape dialog.
-  it('spawns the rebuild straight away when the worktree is gone (D6)', () => {
+  it('spawns the rebuild straight away when the worktree is gone: the row already says so, so the click is the consent', () => {
     expect(planToStep(rebuildPlan, target)).toEqual({
       kind: 'spawn',
       req: {
@@ -181,13 +173,10 @@ describe('history rows (D5/D9)', () => {
     const now = 1_000_000_000
     expect(mayBeRunningElsewhere(now - 59_000, now)).toBe(true)
     expect(mayBeRunningElsewhere(now - 61_000, now)).toBe(false)
-    // a clock-skewed future mtime is recent, not ancient
     expect(mayBeRunningElsewhere(now + 5_000, now)).toBe(true)
   })
 })
 
-/** enough of the preload surface for one green resume: plan → spawn → tab. Returns the
- *  stub so a case can swap one call (a plan that stalls, a plan that throws). */
 function stubApi(): { resumePlan: () => Promise<ResumePlan> } {
   const sessions = {
     resumePlan: async (): Promise<ResumePlan> => ({ action: 'direct', cwd: '/repo' }),
@@ -206,41 +195,31 @@ describe('the in-flight latch (double-click dedupe)', () => {
     stubApi()
     await resumeSession({ id: 'sid-member', title: 'a session' })
     expect(resumeInFlight('sid-member')).toBe(true)
-    releaseSettledResumes(new Set()) // rows push: the row came back running
+    releaseSettledResumes(new Set())
     expect(resumeInFlight('sid-member')).toBe(false)
   })
 
-  it('holds a D5 restore across the rows push that has no row for it at all', async () => {
+  it('holds a D5 restore across the rows push that has no row for it at all, so a second click cannot spawn a second pty', async () => {
     stubApi()
     await resumeSession({ id: 'sid-restore', title: 'from history', restore: true })
     expect(resumeInFlight('sid-restore')).toBe(true)
-    // a restore is not a member yet — every push looks like "no cold row", and
-    // releasing on that would let a second click spawn a second pty on the transcript
     releaseSettledResumes(new Set())
     releaseSettledResumes(new Set())
     expect(resumeInFlight('sid-restore')).toBe(true)
-    // the bind (or the launch pty's death) is what actually ends it
     releaseResume('sid-restore')
     expect(resumeInFlight('sid-restore')).toBe(false)
   })
 })
 
-// The click must show at once. Main's plan probes (git on the worktree) and the pty spawn
-// take a noticeable while on some sessions, and until the tab landed nothing on screen
-// moved — the sidebar row stayed cold and unselected, the island kept the previous tab —
-// which reads as a hang. So the flow puts the target on the store BEFORE the first IPC
-// and the island/sidebar render it as the resume mask + selected row from there.
-describe('the click-time placeholder (immediate response)', () => {
+describe('the click-time placeholder: the store holds the target before the first IPC, so a slow plan never reads as a hang', () => {
   it('is up from the click until the tab lands, and gone the moment it does', async () => {
     const api = stubApi()
     let answer!: (p: ResumePlan) => void
     api.resumePlan = () => new Promise<ResumePlan>((r) => (answer = r))
     const done = resumeSession({ id: 'sid-slow', title: 'Slow to plan' })
-    // synchronously after the click — main has not been heard from yet
     expect(useStore.getState().resumeLaunch).toEqual({ id: 'sid-slow', title: 'Slow to plan' })
     answer({ action: 'direct', cwd: '/repo' })
     await done
-    // the pty landed: the tab (with its own `resuming` mask) is on screen instead
     expect(useStore.getState().resumeLaunch).toBeNull()
     expect(useStore.getState().activeTabId).toBe('pty-1')
     releaseResume('sid-slow')

@@ -8,9 +8,6 @@ import {
   repoUrlOf
 } from '@shared/githubUrl'
 
-// the button's whole reading half. Everything here is text git printed, so the
-// rules are pinned without a repository, a network or a clock.
-
 describe('parseGithubRemote', () => {
   it('reads the four spellings git accepts', () => {
     const want = { owner: 'acme', repo: 'widgets' }
@@ -27,8 +24,6 @@ describe('parseGithubRemote', () => {
     expect(parseGithubRemote('git@GITHUB.COM:acme/widgets.git')).toEqual(want)
   })
 
-  // D5: github.com and nothing else. An enterprise host is not guessed at, and it must
-  // not be — its pull request lives at a different address entirely.
   it('refuses anything that is not github.com', () => {
     expect(parseGithubRemote('git@gitlab.com:acme/widgets.git')).toBeNull()
     expect(parseGithubRemote('https://github.example.com/acme/widgets.git')).toBeNull()
@@ -56,7 +51,6 @@ describe('pickRemoteUrl', () => {
     expect(pickRemoteUrl(line('gh', 'git@github.com:a/b.git'))).toBe('git@github.com:a/b.git')
   })
 
-  // §10 — two remotes and no origin: the button stays away rather than picking one.
   it('gives up on two remotes with no origin', () => {
     const out = line('upstream', 'git@github.com:a/b.git') + line('fork', 'git@github.com:c/d.git')
     expect(pickRemoteUrl(out)).toBeNull()
@@ -78,12 +72,10 @@ describe('prNumbersByBranch', () => {
     `${SHA_B}\trefs/heads/main`,
     `${SHA_A}\trefs/pull/265/head`,
     `${SHA_B}\trefs/pull/12/head`,
-    // an open pull request also publishes a `merge` ref; it names no branch and must not
-    // be read as one (D6's evidence, deliberately unused)
     `${SHA_A}\trefs/pull/265/merge`
   ].join('\n')
 
-  it('matches a branch to its pull request by commit', () => {
+  it('matches a branch to its pull request by commit, never reading a merge ref as a branch', () => {
     const m = prNumbersByBranch(out)
     expect(m.get('feature')).toBe(265)
     expect(m.get('main')).toBe(12)
@@ -94,7 +86,6 @@ describe('prNumbersByBranch', () => {
     expect(prNumbersByBranch('').size).toBe(0)
   })
 
-  // D7 — several pull requests on one commit: the newest, i.e. the highest number.
   it('takes the highest number when one commit has several', () => {
     const many = [
       `${SHA_A}\trefs/heads/feature`,
@@ -119,7 +110,7 @@ describe('urls', () => {
     expect(pullsUrlOf(r)).toBe('https://github.com/acme/widgets/pulls')
   })
 
-  // D1 — `return_to` is a PATH, and GitHub returns there once the login is done.
+  // PLATFORM§32
   it('wraps a target into the login page', () => {
     expect(loginUrlFor('https://github.com/acme/widgets/pull/265')).toBe(
       'https://github.com/login?return_to=%2Facme%2Fwidgets%2Fpull%2F265'

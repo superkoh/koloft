@@ -9,6 +9,7 @@ import {
   CHANGES_MSG,
   HIGHLIGHT_LEAD_IN,
   baseArg,
+  baseUnresolved,
   buildEntries,
   classifyKind,
   emptyStreamMessage,
@@ -28,20 +29,11 @@ import {
 } from '../../src/renderer/src/components/changesModel'
 import { DEFAULT_FILTERS, type ChangeFilters } from '../../src/renderer/src/components/filesModel'
 
-/**
- * FR-38…FR-43 · FR-58 — the Changes stream's pure layer.
- *
- * The aggregate splitter is tested against a REAL `git diff` rather than a hand-typed
- * fixture: every shape it has to survive (a delete with no `+++`, a binary file with
- * neither `---` nor `+++`, a rename whose two halves differ, a path with a space in it) is
- * a shape git chooses, and a fixture written from memory is exactly where a parser like
- * this goes quietly wrong.
- */
+const NUL_BYTES_GIT_CALLS_BINARY = Buffer.from([0x00, 0x01, 0x02, 0x00, 0x41])
+const LINES_FOR_TWO_SEPARATE_HUNKS = 20
 
 let repo: string
-/** the whole change set as one unified diff, straight out of git */
 let aggregate: string
-/** the commit the diff is measured against */
 let base: string
 
 const lines = (n: number): string[] => Array.from({ length: n }, (_, i) => `line ${i + 1}`)
@@ -56,18 +48,19 @@ beforeAll(() => {
   git('config', 'user.name', 't')
 
   fs.mkdirSync(path.join(repo, 'src'))
-  // 20 lines so the two edits below land in SEPARATE hunks (3 lines of context each)
-  fs.writeFileSync(path.join(repo, 'src/mod.ts'), lines(20).join('\n') + '\n')
+  fs.writeFileSync(
+    path.join(repo, 'src/mod.ts'),
+    lines(LINES_FOR_TWO_SEPARATE_HUNKS).join('\n') + '\n'
+  )
   fs.writeFileSync(path.join(repo, 'gone.txt'), 'delete me\n')
   fs.writeFileSync(path.join(repo, 'sp ace.txt'), 'spaced\n')
   fs.writeFileSync(path.join(repo, 'old-name.ts'), 'export const x = 1\nexport const y = 2\n')
-  // NUL bytes in the first 8k is what makes git call a file binary
-  fs.writeFileSync(path.join(repo, 'logo.bin'), Buffer.from([0x00, 0x01, 0x02, 0x00, 0x41]))
+  fs.writeFileSync(path.join(repo, 'logo.bin'), NUL_BYTES_GIT_CALLS_BINARY)
   git('add', '-A')
   git('commit', '-q', '-m', 'base')
   base = git('rev-parse', 'HEAD').trim()
 
-  const edited = lines(20)
+  const edited = lines(LINES_FOR_TWO_SEPARATE_HUNKS)
   edited[1] = 'TWO'
   edited[18] = 'NINETEEN'
   fs.writeFileSync(path.join(repo, 'src/mod.ts'), edited.join('\n') + '\n')
@@ -95,8 +88,6 @@ describe('splitAggregateDiff over a real `git diff`', () => {
     const rels = splitAggregateDiff(aggregate)
       .map((s) => s.rel)
       .sort()
-    // untracked.txt is deliberately absent: `git diff` never lists untracked files, which
-    // is why the view fetches those per file (and why FR-43 leaves them without a ±N).
     expect(rels).toEqual([
       'gone.txt',
       'logo.bin',
@@ -129,8 +120,6 @@ describe('splitAggregateDiff over a real `git diff`', () => {
   it('pairs a rename with its source and keeps the small edit, not a whole-file add', () => {
     const s = byRel('new-name.ts')
     expect(s.renameFrom).toBe('old-name.ts')
-    // FR-42's whole point: the paired diff, so the two unchanged lines are context rather
-    // than a delete of the old file plus an add of the new one
     expect(s.text).not.toContain('new file mode')
     expect(s.text.split('\n').filter((l) => l.startsWith('+') && !l.startsWith('+++'))).toEqual([
       '+export const z = 3'
@@ -141,8 +130,6 @@ describe('splitAggregateDiff over a real `git diff`', () => {
     const hunks = splitHunks(byRel('src/mod.ts').text)
     expect(hunks).toHaveLength(2)
     expect(hunks[0].header).toMatch(/^@@ -1,\d+ \+1,\d+ @@/)
-    // the `@@` line stays at the head of `text` — that is where `parseUnifiedDiff` reads
-    // the line numbers it puts in the gutter
     expect(hunks[0].text.startsWith(hunks[0].header)).toBe(true)
     expect(hunks[0].text).toContain('+TWO')
     expect(hunks[1].text).toContain('+NINETEEN')
@@ -159,8 +146,6 @@ describe('isBigDiff', () => {
 })
 
 describe('splitAggregateDiff on shapes git only produces occasionally', () => {
-  // A diff whose CONTENT is a diff: every body line carries a ' ', '+' or '-' prefix, so a
-  // real section header is the only thing that can start at column 0.
   it('does not mistake diff text inside a hunk for a new section', () => {
     const sections = splitAggregateDiff(
       [
@@ -184,7 +169,7 @@ describe('splitAggregateDiff on shapes git only produces occasionally', () => {
       ['diff --git a/run.sh b/run.sh', 'old mode 100644', 'new mode 100755', ''].join('\n')
     )
     expect(s.rel).toBe('run.sh')
-    expect(splitHunks(s.text)).toEqual([]) // nothing to render — the block says so
+    expect(splitHunks(s.text)).toEqual([])
   })
 
   it('keeps the partial tail of a truncated aggregate rather than dropping it', () => {
@@ -205,8 +190,6 @@ describe('sectionsByPath', () => {
   })
 
   it('keeps two files apart when one path is the other with the session root folded in', () => {
-    // session root /repo/z, toplevel /repo: git prints `a/x.ts` and `z/a/x.ts`. Joined onto
-    // the ROOT (or matched by suffix), `a/x.ts` landed on /repo/z/a/x.ts — the other file's key.
     const s = (rel: string): DiffSection => ({
       rel,
       text: `diff --git a/${rel} b/${rel}`,
@@ -250,8 +233,6 @@ describe('mergeSections keeps identity for what did not move (FR-58)', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-
 const ROOT = '/w'
 const bin: DiffSection = { rel: 'logo.png', text: '', binary: true, renameFrom: null }
 
@@ -291,7 +272,6 @@ describe('buildEntries', () => {
   it('leaves untracked and binary files without a ±N, and keeps everyone else’s (FR-43)', () => {
     const list = entries(
       { '/w/a.ts': 'modified', '/w/new.ts': 'untracked', '/w/logo.png': 'modified' },
-      // a numstat that DOES carry the two — the rule must hold on the entry, not by luck
       {
         '/w/a.ts': { added: 4, removed: 1 },
         '/w/new.ts': { added: 9, removed: 0 },
@@ -309,8 +289,6 @@ describe('buildEntries', () => {
       '/w/src/z.ts': 'modified',
       '/w/a.ts': 'modified',
       '/w/src/a.ts': 'modified',
-      // a root file that a whole-path sort would put LAST; the directory-first sort keeps
-      // it with the other root file, ahead of every directory
       '/w/zeta.md': 'modified',
       '/w/docs/x.md': 'modified'
     })
@@ -392,9 +370,6 @@ describe('groupByDir', () => {
     ])
   })
 
-  // `dir` is the group's React key, so two groups for one directory is the bug `groupByDir`
-  // describes — and a whole-path sort produced exactly that, a subdirectory sorting
-  // BETWEEN two of its parent's files.
   it('keeps a directory’s files together when a subdirectory sorts between them — one group, one key', () => {
     const list = entries({
       '/w/src/a.ts': 'modified',
@@ -409,8 +384,6 @@ describe('groupByDir', () => {
       ['src/lib', ['x.ts']]
     ])
     expect(new Set(groups.map((g) => g.dir)).size).toBe(groups.length)
-    // the list's order IS the stream's order: the groups are the sorted entries, folded,
-    // not a re-ordering of them — a row click scrolls to the block in the same position
     expect(groups.flatMap((g) => g.entries)).toEqual(list)
   })
 })
@@ -427,7 +400,6 @@ describe('totalDelta — the set added up, which no per-file badge can say', () 
       {
         '/w/a.ts': { added: 4, removed: 1 },
         '/w/b.ts': { added: 10, removed: 6 },
-        // buildEntries drops these two by FR-43, so they must not reach the sum either
         '/w/new.ts': { added: 9, removed: 0 },
         '/w/logo.png': { added: 7, removed: 7 }
       },
@@ -449,14 +421,6 @@ describe('totalDelta — the set added up, which no per-file badge can say', () 
     expect(totalDelta(docs)).toEqual({ files: 1, added: 2, removed: 2, noCount: 0 })
   })
 
-  // A set of brand-new files sums to +0 −0 — a number that reads as "nothing changed".
-  // The hover text is the only thing that says otherwise, so it is part of the contract.
-  //
-  // It names the reason as a LIST, and that is the assertion worth having: a null delta is
-  // usually a new or binary file, but `buildEntries` leaves it null for any file the
-  // numstat map misses too — and `gitNumstat` answers `{}` for the WHOLE repo when git
-  // fails while `gitStatus` beside it succeeded. A verdict-shaped wording would call every
-  // ordinary modified file "new or binary" in exactly that state.
   it('spells out what the numbers leave out, without naming a cause it cannot know', () => {
     expect(CHANGES_MSG.totals({ files: 3, added: 14, removed: 7, noCount: 0 })).toBe(
       '3 files listed · 14 added, 7 removed.'
@@ -488,26 +452,23 @@ describe('stableEntries', () => {
 })
 
 describe('nearViewport (NFR-01)', () => {
-  const view = { top: 100, bottom: 900 } // an 800px stream sitting 100px down the window
+  const view = { top: 100, bottom: 900 }
 
   it('takes a block that overlaps the viewport', () => {
     expect(nearViewport({ top: 200, bottom: 400 }, view)).toBe(true)
-    expect(nearViewport({ top: -5000, bottom: 5000 }, view)).toBe(true) // taller than the view
+    expect(nearViewport({ top: -5000, bottom: 5000 }, view)).toBe(true)
   })
 
   it('takes a block within the lead-in on either side, and drops it past that', () => {
-    expect(nearViewport({ top: 1290, bottom: 1400 }, view)).toBe(true) // 390px below
-    expect(nearViewport({ top: 1301, bottom: 1400 }, view)).toBe(false) // 401px below
-    expect(nearViewport({ top: -400, bottom: -300 }, view)).toBe(true) // 400px above
-    expect(nearViewport({ top: -600, bottom: -301 }, view)).toBe(false) // 401px above
+    expect(nearViewport({ top: 1290, bottom: 1400 }, view)).toBe(true)
+    expect(nearViewport({ top: 1301, bottom: 1400 }, view)).toBe(false)
+    expect(nearViewport({ top: -400, bottom: -300 }, view)).toBe(true)
+    expect(nearViewport({ top: -600, bottom: -301 }, view)).toBe(false)
   })
 
   it('drops the far block a full-height diff pushes off the stream (WB-C16 geometry)', () => {
-    // the measured failing case: six 1800-row blocks, the last at offsetTop 350489 in a
-    // 790px viewport. Before the diffs land every block is a ~30px placeholder and they all
-    // pass; the point of the settle sweep is that this is measured AFTER they land.
-    expect(nearViewport({ top: 100, bottom: 1900 }, view)).toBe(true) // first block
-    expect(nearViewport({ top: 350489, bottom: 352289 }, view)).toBe(false) // last block
+    expect(nearViewport({ top: 100, bottom: 1900 }, view)).toBe(true)
+    expect(nearViewport({ top: 350489, bottom: 352289 }, view)).toBe(false)
   })
 
   it('agrees with the observer margin it shares', () => {
@@ -518,8 +479,6 @@ describe('nearViewport (NFR-01)', () => {
 })
 
 describe('CHANGES_MSG', () => {
-  // The e2e cases assert these verbatim (WB-C11/C12/C13), so an edit to the wording must
-  // break here — where the fix is one line — rather than in a serial browser round.
   it('spells §Edge’s four states', () => {
     expect(CHANGES_MSG.empty).toBe('No changes against the base.')
     expect(CHANGES_MSG.notGit).toBe('Not a git repository.')
@@ -542,14 +501,6 @@ describe('emptyStreamMessage — never claim "no changes" while an answer is on 
   })
 
   it('stays on loading when the aggregate found files but the row list has none yet', () => {
-    // The rows come from the status map, the sections from the aggregate diff, on
-    // independent schedules against the same base. With a slow git the diff lands first;
-    // claiming "No changes" over a real answer is the bug's manual round caught (its
-    // fifth "no answer yet ≠ answer is none"). Replayed from the real aggregate exactly
-    // as the view meets it: the status map is still `{}`, so the join keeps nothing and
-    // there are no rows — and `files` is what the aggregate CARRIED, counted before that
-    // join. Counted after it (how the rung first shipped) it reads 0 too, the two never
-    // disagree, and this rung can never fire; that is the version this case rules out.
     const secs = splitAggregateDiff(aggregate)
     const noStatusYet: GitStatusMap = {}
     const joined = sectionsByPath(secs, Object.keys(noStatusYet), repo)
@@ -588,6 +539,14 @@ describe('emptyStreamMessage — never claim "no changes" while an answer is on 
   })
 })
 
+describe('baseUnresolved', () => {
+  it('waits only while the base is still being resolved — a null base (a repo with no commits) and a real base are both ready', () => {
+    expect(baseUnresolved(undefined)).toBe(true)
+    expect(baseUnresolved(null)).toBe(false)
+    expect(baseUnresolved('abc123')).toBe(false)
+  })
+})
+
 describe('baseArg (NFR-02)', () => {
   it('forwards a resolved base verbatim — the half NFR-02 and WB-C17 are about', () => {
     expect(baseArg('abc123')).toBe('abc123')
@@ -595,14 +554,7 @@ describe('baseArg (NFR-02)', () => {
   })
 
   it('maps "no base" to a value main reads as self-derive, which is what a fresh repo needs', () => {
-    // main's own `baseArg` maps '' and undefined alike to undefined, so this does NOT
-    // prevent per-file re-derivation and never did — it reaches main's staged+unstaged
-    // fallback, which is the only answer available in a repo with no commits.
     expect(baseArg(null)).toBe('')
-    // An UNRESOLVED base is indistinguishable from "there is none" once it reaches here,
-    // which is exactly why `ChangesView` WAITS for the baseline instead of calling this
-    // with it: a cold open that sent `undefined` down made main resolve a merge-base of
-    // its own — the second resolution NFR-02 forbids and WB-C17 counts.
     expect(baseArg(undefined)).toBe('')
   })
 })

@@ -111,11 +111,7 @@ describe('hiddenTouchedUnder — FR-47 force-reveal', () => {
   ]
 
   it('keeps only writes whose first segment the listing does not show', () => {
-    const touched = [
-      ROOT + '/src/a.ts', // visible via `src`
-      ROOT + '/dist/bundle.js', // HEAVY, hidden by listDir
-      ROOT + '/.env' // gitignored
-    ]
+    const touched = [ROOT + '/src/a.ts', ROOT + '/dist/bundle.js', ROOT + '/.env']
     expect(hiddenTouchedUnder(ROOT, entries, touched)).toEqual([
       ROOT + '/dist/bundle.js',
       ROOT + '/.env'
@@ -201,11 +197,8 @@ describe('FR-46 — ↗ Outside', () => {
       scratchpadDir: SCRATCH,
       scratchListed: new Set<string>()
     }
-    // probed, gone → the whole node empties out
     expect(outsideFiles({ ...input, missingDirs: new Set(['/tmp/notes']) })).toEqual([])
-    // probed, present → shown
     expect(outsideFiles({ ...input, missingDirs: allPresent })).toHaveLength(1)
-    // a SIBLING directory being gone says nothing about this one
     expect(outsideFiles({ ...input, missingDirs: new Set(['/tmp/other']) })).toHaveLength(1)
   })
 
@@ -221,9 +214,6 @@ describe('FR-46 — ↗ Outside', () => {
   })
 
   it('existence is a DIRECTORY question, so a gitignored external write still shows', () => {
-    // the regression this shape exists to prevent: deriving existence from `listDir`'s
-    // membership would run `git check-ignore` and silently drop this file, losing the very
-    // artifact ↗ Outside is there to keep reachable
     expect(
       outsideFiles({
         candidates: [wrote('/repo/ignored/note.md')],

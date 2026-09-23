@@ -1,15 +1,8 @@
 import { useEffect, useRef, type JSX, type ReactNode } from 'react'
 import type { ExtensionPermissionRequest } from '@shared/types'
 
-/**
- * D7/§04 figure 4 — the one modal every extension question is asked in: a Web Store install,
- * a running extension's `chrome.permissions.request`, an uninstall. Never a native
- * dialog: an OS sheet says nothing about which extension is asking, and the e2e
- * discipline forbids one outright (BB-N01).
- *
- * Dismissing is always the negative answer — the caller is stopped inside its own call
- * until one comes back, so there is no third outcome.
- */
+const CAPTURE_BEFORE_XTERM = true
+
 export function ExtensionModal({
   title,
   realm,
@@ -32,23 +25,16 @@ export function ExtensionModal({
   const answer = useRef(onAnswer)
   answer.current = onAnswer
 
-  // the modal takes the keyboard on the way up: whatever had it (the terminal, an
-  // address bar) would otherwise keep it, and a modal nothing can type into is a modal
-  // Tab and Enter cannot reach either
   useEffect(() => cancelRef.current?.focus(), [])
 
-  // one subscription for as long as the modal is up — the caller's handler is a fresh
-  // closure on every render of whatever owns it
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return
       e.preventDefault()
       answer.current(false)
     }
-    // capture: an Esc pressed while xterm has the focus never reaches a bubbling
-    // listener — the terminal stops it on the way up
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
+    window.addEventListener('keydown', onKey, CAPTURE_BEFORE_XTERM)
+    return () => window.removeEventListener('keydown', onKey, CAPTURE_BEFORE_XTERM)
   }, [])
 
   return (
@@ -80,11 +66,6 @@ export function ExtensionModal({
   )
 }
 
-/**
- * The two asks that reach the renderer from the platform itself: an install the Web Store
- * page started (figure 4 — the extension is not installed yet, and its summary is the version
- * and permissions the store offered), and a permission a running extension wants more of.
- */
 export function ExtensionConfirm({
   request,
   onAnswer

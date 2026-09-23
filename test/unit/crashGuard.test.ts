@@ -1,10 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { allowCrashReload } from '../../src/main/crashGuard'
 
-// M1: auto-reload after render-process-gone, at most 2 per 30s window.
-// An e2e can't practically drive three crashes inside the window; a too-loose
-// guard is an infinite reload loop that manifests nowhere near this decision.
-
 describe('allowCrashReload', () => {
   const now = 1_000_000_000
 

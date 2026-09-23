@@ -2,13 +2,6 @@ import type { JSX, RefObject } from 'react'
 import { LuChevronLeft, LuChevronRight, LuX } from 'react-icons/lu'
 import type { FindCount } from '../useDomFind'
 
-/**
- * The find-in-page bar that floats top-right over the file viewer. Pure presentation +
- * input keyboard (Enter / ⇧Enter step matches; Esc is handled by FilePane so it can
- * also fall through to closing the pane). Focus is driven by FilePane via `inputRef`
- * (so re-triggering ⌘F over a focused webview re-focuses the input). The matching/
- * navigation backend (DOM or webview) is wired by FilePane via `count` + the handlers.
- */
 export function FindBar({
   inputRef,
   query,

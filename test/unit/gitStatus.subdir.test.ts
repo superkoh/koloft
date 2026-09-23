@@ -5,20 +5,6 @@ import os from 'os'
 import { execFileSync } from 'child_process'
 import { gitDiff, gitNumstat, gitStatus } from '../../src/main/gitStatus'
 
-/**
- * A session rooted in a SUBDIRECTORY of its repo — the shape every fixture so far avoided
- * (they put the root AT the toplevel), and the one that makes path bases matter: `gitStatus`
- * keys its map by joining what git prints onto the toplevel, which is only right when git
- * printed toplevel-relative paths, for the whole repo, on every listing.
- *
- * Measured, and the reason this suite exists: `ls-files --others` (the untracked leg) prints
- * paths relative to its CWD and lists only the files UNDER it, while `diff --name-status`
- * prints toplevel-relative paths for the whole repo. So from `<repo>/sub`, an untracked
- * `sub/inner.txt` was keyed as `<repo>/inner.txt` — a file that does not exist, which Changes
- * rendered as a row whose diff loaded forever while Browse gave the real file no badge — and
- * an untracked `<repo>/outer.txt` was not listed at all.
- */
-
 let tmp: string
 let repo: string
 let sub: string
@@ -45,12 +31,12 @@ afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true })
 })
 
+// PLATFORM§30
 describe('gitStatus from a session root below the toplevel', () => {
   it('keys an untracked file under the root at its REAL path, not at a toplevel phantom', async () => {
     fs.writeFileSync(path.join(sub, 'inner.txt'), 'new\n')
     const status = await gitStatus(sub)
     expect(status[path.join(sub, 'inner.txt')]).toBe('untracked')
-    // the phantom the CWD-relative listing produced — its absence is what carries the case
     expect(status[path.join(repo, 'inner.txt')]).toBeUndefined()
   })
 
@@ -71,7 +57,6 @@ describe('gitStatus from a session root below the toplevel', () => {
       [path.join(sub, 'inner.txt')]: 'untracked',
       [path.join(repo, 'outer.txt')]: 'untracked'
     })
-    // every ±N badge lands on a row that exists: numstat's keys are a subset of status's
     const numstat = await gitNumstat(sub)
     expect(Object.keys(numstat).sort()).toEqual(
       [path.join(repo, 'top.txt'), path.join(sub, 'tracked.txt')].sort()
@@ -97,7 +82,5 @@ describe('gitStatus from a session root below the toplevel', () => {
     expect(status[path.join(freshSub, 'inner.txt')]).toBe('untracked')
     expect(status[path.join(fresh, 'outer.txt')]).toBe('untracked')
     expect(status[path.join(fresh, 'inner.txt')]).toBeUndefined()
-    // (the porcelain fallback also lists the collapsed `sub/` directory entry — its own
-    // long-standing shape, and not what this case is about)
   })
 })

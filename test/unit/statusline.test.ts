@@ -4,11 +4,6 @@ import fs from 'fs'
 import path from 'path'
 import { spawnSync } from 'child_process'
 
-// setupStatusline() writes real files under app.getPath('userData'); stub Electron so
-// they land in a temp dir. The bundle path resolves from statusline.ts's __dirname
-// (src/main under vitest), landing on the REAL vendored bundle in node_modules — the
-// render test below then exercises the exact chain Claude Code will: bash wrapper →
-// node-mode binary → bundle → stdout.
 vi.mock('electron', async () => {
   const nfs = await import('node:fs')
   const nos = await import('node:os')
@@ -38,7 +33,6 @@ beforeAll(() => {
 })
 afterAll(() => fs.rmSync(path.dirname(path.dirname(wrapper)), { recursive: true, force: true }))
 
-// the status JSON Claude Code pipes to the command (documented statusline fields)
 const PAYLOAD = JSON.stringify({
   hook_event_name: 'Status',
   session_id: 'sess-statusline-unit',
@@ -70,11 +64,7 @@ const PAYLOAD = JSON.stringify({
 })
 
 describe('built-in statusline', () => {
-  // The theme is rewritten on EVERY start, on purpose: the product never shows this
-  // path, so nobody can edit it from inside Koloft, and write-if-absent meant a new
-  // default theme reached only fresh installs. Upgrading Koloft must upgrade the
-  // statusline, so an edit made from outside is put back.
-  it('rewrites the theme on every start, so an upgrade always reaches an existing install', () => {
+  it('rewrites the theme on every start, so an upgrade always reaches an existing install and an outside edit is put back', () => {
     const theme = JSON.parse(fs.readFileSync(config, 'utf8'))
     expect(theme.version).toBe(3)
     expect(theme.powerline.theme).toBe('nord-aurora')
@@ -84,14 +74,12 @@ describe('built-in statusline', () => {
     expect(JSON.parse(fs.readFileSync(config, 'utf8'))).toEqual(theme)
   })
 
-  it('regenerates an executable wrapper with absolute paths baked in', () => {
+  it('regenerates an executable wrapper with absolute paths baked in, stdin re-attached to the backgrounded render and a watchdog for a render hung on stdin', () => {
     expect(fs.statSync(wrapper).mode & 0o755).toBe(0o755)
     const script = fs.readFileSync(wrapper, 'utf8')
     expect(script).toContain(process.execPath)
     expect(script).toContain(`--config '${config}'`)
     expect(script).toContain(path.join('node_modules', 'ccstatusline', 'dist', 'ccstatusline.js'))
-    // <&0 re-attaches stdin to the backgrounded render; the watchdog kills a render
-    // hung on a never-closing stdin (upstream ccstatusline)
     expect(script).toContain('<&0 &')
     expect(script).toMatch(/sleep 10; kill/)
   })
@@ -99,7 +87,6 @@ describe('built-in statusline', () => {
   it('names the wrapper per install (execPath hash) — instances stop clobbering each other', () => {
     const expected = `run-${crypto.createHash('sha256').update(process.execPath).digest('hex').slice(0, 10)}.sh`
     expect(path.basename(wrapper)).toBe(expected)
-    // the marker line pruning reads to decide whether an install is still on disk
     expect(fs.readFileSync(wrapper, 'utf8')).toContain(`# koloft-exec: ${process.execPath}`)
   })
 
@@ -113,12 +100,10 @@ describe('built-in statusline', () => {
       dead,
       `#!/usr/bin/env bash\n# koloft-exec: ${path.join(dir, 'gone-build', 'Koloft')}\n`
     )
-    // a concurrent peer instance that started long ago but is still running — its
-    // binary exists, so its wrapper must survive byte-identical (age is no death test)
     const liveContent = `#!/usr/bin/env bash\n# koloft-exec: ${process.execPath}\necho peer\n`
     fs.writeFileSync(live, liveContent)
-    fs.writeFileSync(bare, '#!/usr/bin/env bash\n') // no marker — can't prove it dead
-    fs.writeFileSync(legacy, '#!/usr/bin/env bash\n') // a pre-per-install peer may still use it
+    fs.writeFileSync(bare, '#!/usr/bin/env bash\n')
+    fs.writeFileSync(legacy, '#!/usr/bin/env bash\n')
     setupStatusline()
     expect(fs.existsSync(dead)).toBe(false)
     expect(fs.readFileSync(live, 'utf8')).toBe(liveContent)
@@ -131,35 +116,28 @@ describe('built-in statusline', () => {
     expect(sl).toEqual({ type: 'command', command: `'${wrapper}'`, padding: 0 })
   })
 
-  it('renders end-to-end: wrapper → node-mode binary → vendored bundle → ANSI lines', () => {
+  it('renders end-to-end: wrapper → node-mode binary → vendored bundle → ANSI lines, with no orphaned watchdog holding stdout open', () => {
     const started = Date.now()
     const res = spawnSync(wrapper, [], {
       input: PAYLOAD,
       encoding: 'utf8',
-      // claude ≥2.1.153 exports the terminal width for the statusline subprocess
+      // CC§6
       env: { ...process.env, COLUMNS: '120' },
       timeout: 25_000
     })
     expect(res.status).toBe(0)
     expect(res.stdout.length).toBeGreaterThan(0)
-    // claude code treats stdout-pipe EOF as "render done" (spawnSync waits on the
-    // same); a watchdog subshell that inherits stdout leaves an orphaned sleep
-    // holding the write end, and the statusline appears a stable ~10s late on
-    // EVERY render — the render itself finishes well under a second warm.
+    // CC§6
     expect(Date.now() - started).toBeLessThan(8000)
     expect(res.stdout).toContain('[')
   }, 30_000)
 })
 
-// U-SL-1 — the wrapper pushed to a remote machine. It is the one file in the machine
-// package that runs on a stranger's node, or on no node at all, so it is executed here
-// for real: a machine without node must still start its session.
-describe('remote statusline wrapper', () => {
+describe('U-SL-1: remote statusline wrapper, run for real — a machine without node must still start its session', () => {
   let dir: string
   let home: string
 
   beforeAll(() => {
-    // the machine package's layout: the wrapper sits next to bundle and theme
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-remote-sl-'))
     home = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-remote-home-'))
     fs.writeFileSync(path.join(dir, 'run.sh'), remoteWrapperScript(), { mode: 0o755 })

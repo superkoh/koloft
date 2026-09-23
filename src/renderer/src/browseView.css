@@ -1,26 +1,4 @@
-/*
- * Browse (FR-44…FR-49) — the `files` tab's navigation column, INTERIOR ONLY.
- *
- * Its own file rather than a block in `styles.css`: several agents were appending to that
- * file at once while the Workbench landed, and a read-modify-write race there silently
- * drops a block. Imported from `BrowseView.tsx`, so the styles arrive with the component.
- *
- * Two things are deliberately NOT here:
- *  · the column's FRAME — `.fv-browse` and `.fv-browse > .fv-tree` (width, border, scroll)
- *    belong to `filesView.css`, which owns the two-column shell both halves live in.
- *  · anything a ROW needs — that is already `.ft-*` in `styles.css` (2557–3092) and is
- *    reused verbatim, so a Browse row and a retiring file-tree row are the same pixels.
- *    That reuse is also what lets the e2e suite's `.ft-node.ft-file` / `.ft-name` /
- *    `.ft-gbadge` selectors survive the tree's retirement as a near-textual substitution.
- */
-
-/* `.file-tree` already supplies flex/overflow; the panel wants a tighter top pad than the
-   sidebar island did, and the container is programmatically focused when the search row
-   closes (WB-B02 keeps the focus inside the Files tab), so it must not flash a ring.
-   NOTE the doubled selector: a bare `.bv-body` ties with `.file-tree` on specificity
-   (0,1,0) and would win on source order alone — which, now that these rules live in a
-   different FILE, is decided by Vite's bundling order rather than by anything visible
-   here. Qualifying it makes the override hold whatever order the two arrive in. */
+/* ADR-0014 */
 .file-tree.bv-body {
   flex: 1;
   min-height: 0;
@@ -30,8 +8,6 @@
   outline: none;
 }
 
-/* a section groups its head row with its children, so `[data-section]` scopes a duplicated
-   path — the same file can sit in Bookmarks, in Recent and in the tree at once */
 .bv-sec {
   display: block;
 }
@@ -39,10 +15,7 @@
   margin-top: 2px;
 }
 
-/* FR-45's search row lives inside the column (its toggle is the kind bar's). `.ft-search`
-   supplies the band; only the tighter gutter and the close affordance are new — and the
-   gutter overrides `.ft-search`'s own `padding`, so it is qualified for the same reason
-   `.file-tree.bv-body` is. */
+/* ADR-0014 */
 .ft-search.bv-search {
   padding: 0 8px;
   gap: 5px;
@@ -69,8 +42,6 @@
   color: var(--fg);
 }
 
-/* FR-47's bookmark marker on the row itself — the Bookmarks section says WHICH files are
-   bookmarked, this says so where the file actually lives */
 .bv-bm {
   flex: 0 0 auto;
   display: inline-flex;
@@ -79,9 +50,6 @@
   opacity: 0.9;
 }
 
-/* directory-level change dot. `.ft-dir-agg`'s ●N ("the session wrote N files here")
-   outranks it; this plain dot is the git-changed-underneath signal for a directory the
-   session never touched, which the retiring tree marked with a name tint alone. */
 .bv-dot {
   flex: 0 0 auto;
   font-size: 9px;

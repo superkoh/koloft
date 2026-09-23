@@ -8,7 +8,6 @@ import {
 import { FABLE_STOP } from '@shared/accountUsage'
 
 const MIN = 60_000
-/** local-time instants so the expectations hold in any TZ the suite runs under */
 const at = (y: number, mo: number, d: number, h: number, mi: number): number =>
   new Date(y, mo - 1, d, h, mi, 0, 0).getTime()
 const sec = (ms: number): number => Math.floor(ms / 1000)
@@ -22,14 +21,12 @@ describe('resetLabel', () => {
 
   it('carries month-day once the reset leaves today', () => {
     expect(resetLabel(sec(at(2026, 8, 19, 21, 0)), now)).toBe('8-19 21:00')
-    // an earlier clock time on another day is still another day
     expect(resetLabel(sec(at(2026, 8, 14, 9, 5)), now)).toBe('8-14 09:05')
   })
 
   it('does not read a next-year reset as today', () => {
     const eve = at(2026, 12, 31, 23, 40)
     expect(resetLabel(sec(at(2027, 1, 1, 0, 10)), eve)).toBe('1-1 00:10')
-    // same month+day, one year apart — the year must be part of the comparison
     expect(resetLabel(sec(at(2027, 12, 31, 23, 40)), eve)).toBe('12-31 23:40')
   })
 })

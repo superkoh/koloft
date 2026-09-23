@@ -8,19 +8,10 @@ import { execFileSync } from 'child_process'
 import { GitFreshnessEngine } from '../../src/main/gitFreshness'
 import type { WorkspaceFreshness } from '@shared/types'
 
-// The engine measures a REAL checkout against a REAL remote — the only way to pin
-// git's own contracts (rev-list column order, that a fetch moves the tracking ref,
-// that --ff-only refuses a diverged branch with its exact wording). Everything is
-// local: the origin is a bare repo reached over a plain path, no network.
-
 let tmp: string
-/** the bare repo standing in for origin */
 let origin: string
-/** the workspace under test (a clone of origin) */
 let work: string
-/** a second clone used to publish upstream commits */
-let other: string
-/** the real PATH, restored after a test that shims `git` into it */
+let publisherClone: string
 let realPath: string
 
 function git(cwd: string, ...args: string[]): string {
@@ -47,10 +38,10 @@ beforeEach(() => {
   execFileSync('git', ['clone', '-q', origin, work])
   git(work, 'config', 'user.email', 't@t.com')
   git(work, 'config', 'user.name', 't')
-  other = path.join(tmp, 'other')
-  execFileSync('git', ['clone', '-q', origin, other])
-  git(other, 'config', 'user.email', 't@t.com')
-  git(other, 'config', 'user.name', 't')
+  publisherClone = path.join(tmp, 'publisherClone')
+  execFileSync('git', ['clone', '-q', origin, publisherClone])
+  git(publisherClone, 'config', 'user.email', 't@t.com')
+  git(publisherClone, 'config', 'user.name', 't')
 })
 
 afterEach(() => {
@@ -58,10 +49,9 @@ afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true })
 })
 
-/** publish `n` commits to origin's main from the sibling clone */
 function publish(n: number): void {
-  for (let i = 0; i < n; i++) commit(other, `up${i}.txt`)
-  git(other, 'push', '-q', 'origin', 'main')
+  for (let i = 0; i < n; i++) commit(publisherClone, `up${i}.txt`)
+  git(publisherClone, 'push', '-q', 'origin', 'main')
 }
 
 interface Harness {
@@ -97,21 +87,19 @@ function harness(
   return { engine, changed, setNow: (ms) => (now = ms) }
 }
 
-/** A `git` stand-in on disk: logs every invocation (spawn counting) and, once, sleeps
- *  through a `rev-list` when the flag file exists — the only way to hold a LOCAL
- *  measurement open while a fetch overtakes it. */
-function gitWrapper(name: string, opts: { slowFlag?: string } = {}): { bin: string; log: string } {
+function loggingGitBin(
+  name: string,
+  opts: { slowRevListOnceFlag?: string } = {}
+): { bin: string; log: string } {
   const bin = path.join(tmp, name)
   const log = path.join(tmp, name + '.log')
-  const slow = opts.slowFlag
-    ? `case " $* " in *" rev-list "*) if [ -f '${opts.slowFlag}' ]; then rm -f '${opts.slowFlag}'; sleep 1; fi;; esac\n`
+  const slow = opts.slowRevListOnceFlag
+    ? `case " $* " in *" rev-list "*) if [ -f '${opts.slowRevListOnceFlag}' ]; then rm -f '${opts.slowRevListOnceFlag}'; sleep 1; fi;; esac\n`
     : ''
   fs.writeFileSync(bin, `#!/bin/sh\necho "$*" >> '${log}'\n${slow}exec git "$@"\n`, { mode: 0o755 })
   return { bin, log }
 }
 
-/** Like `gitWrapper`, but installed FIRST ON PATH, so it also catches the calls that go
- *  through `defaultBranch` — that one spawns a literal `git`, not the engine's gitBin. */
 function loggingGitOnPath(name: string): string {
   const dir = path.join(tmp, name + '-bin')
   fs.mkdirSync(dir, { recursive: true })
@@ -145,10 +133,10 @@ function alive(pid: number): boolean {
   }
 }
 
-/** A remote that never answers: git runs the `ext::` helper and waits forever. The
- *  helper records its own pid and that of a grandchild, so a test can prove the whole
- *  process GROUP died — killing the direct child alone would leave both behind. */
-function extRemote(name: string, repo: string = work): { pidFile: string; childFile: string } {
+function neverAnsweringExtRemote(
+  name: string,
+  repo: string = work
+): { pidFile: string; childFile: string } {
   const pidFile = path.join(tmp, name + '.pid')
   const childFile = path.join(tmp, name + '.child')
   const script = path.join(tmp, name + '.sh')
@@ -157,18 +145,17 @@ function extRemote(name: string, repo: string = work): { pidFile: string; childF
     `#!/bin/sh\necho $$ > '${pidFile}'\nsleep 30 &\necho $! > '${childFile}'\nwait\n`,
     { mode: 0o755 }
   )
-  git(repo, 'config', 'protocol.ext.allow', 'always') // off by default; scoped to this repo
+  git(repo, 'config', 'protocol.ext.allow', 'always')
   git(repo, 'remote', 'set-url', 'origin', `ext::${script}`)
   return { pidFile, childFile }
 }
 
-/** `n` fresh clones of origin, each pointed at a remote that never answers */
 function hangingClones(n: number): string[] {
   const paths: string[] = []
   for (let i = 0; i < n; i++) {
     const p = path.join(tmp, `slow${i}`)
     execFileSync('git', ['clone', '-q', origin, p])
-    extRemote(`slow${i}`, p)
+    neverAnsweringExtRemote(`slow${i}`, p)
     paths.push(p)
   }
   return paths
@@ -196,7 +183,6 @@ describe('Tier-1 + Tier-2 measurement', () => {
   it('counts behind only after a fetch moves the tracking ref', async () => {
     const h = harness()
     publish(2)
-    // Tier-1 alone still compares against the pre-push tracking ref
     await h.engine.refreshLocal([work])
     expect(f(h.engine.get(work)).behind).toBe(0)
 
@@ -232,7 +218,6 @@ describe('Tier-1 + Tier-2 measurement', () => {
 
   it('falls through a dangling origin/HEAD to the verified chain', async () => {
     const h = harness()
-    // the server renamed master → main: origin/HEAD still points at a ref that is gone
     git(work, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/master')
     const v = f(await h.engine.fetchNow(work))
     expect(v.state).toBe('ok')
@@ -249,6 +234,20 @@ describe('Tier-1 + Tier-2 measurement', () => {
     const v = f(await h.engine.fetchNow(solo))
     expect(v.state).toBe('none')
     expect(v.behind).toBe(0)
+  })
+
+  it('a repo that gains an origin later gets its badge: a bare local default is never remembered', async () => {
+    const solo = path.join(tmp, 'solo')
+    execFileSync('git', ['clone', '-q', origin, solo])
+    git(solo, 'remote', 'remove', 'origin')
+    const h = harness({ paths: [solo] })
+    expect(f(await h.engine.fetchNow(solo)).state).toBe('none')
+
+    git(solo, 'remote', 'add', 'origin', origin)
+    git(solo, 'fetch', '-q', 'origin')
+    const v = f(await h.engine.fetchNow(solo))
+    expect(v.state).toBe('ok')
+    expect(v.defRef).toBe('origin/main')
   })
 
   it('is state none on a detached HEAD', async () => {
@@ -274,7 +273,7 @@ describe('Tier-1 + Tier-2 measurement', () => {
     git(work, 'remote', 'set-url', 'origin', path.join(tmp, 'does-not-exist.git'))
     const v = f(await h.engine.fetchNow(work))
     expect(v.state).toBe('error')
-    expect(v.behind).toBe(2) // stale but honest — never silently "up to date"
+    expect(v.behind).toBe(2)
     expect(v.lastAttemptAt).not.toBeNull()
   })
 
@@ -313,7 +312,7 @@ describe('pull', () => {
     const before = f(await h.engine.fetchNow(work))
     const res = await h.engine.pull(work, { branch: before.branch, head: 'f'.repeat(40) })
     expect(res).toEqual({ ok: false, reason: 'state changed' })
-    expect(git(work, 'rev-parse', 'HEAD').trim()).toBe(before.head) // nothing moved
+    expect(git(work, 'rev-parse', 'HEAD').trim()).toBe(before.head)
   })
 
   it('refuses a diverged branch before it ever execs a pull', async () => {
@@ -344,12 +343,11 @@ describe('pull', () => {
     expect(res).toEqual({ ok: false, reason: 'state changed' })
   })
 
-  it("surfaces git's own last error line when the pull itself fails", async () => {
+  // PLATFORM§30
+  it("surfaces git's own last error line when the pull itself fails, e.g. an untracked file in the way", async () => {
     const h = harness()
-    // an untracked file colliding with an incoming one: clean by our dirty rule
-    // (-uno), so the pre-check passes and git is the one that refuses
-    commit(other, 'clash.txt')
-    git(other, 'push', '-q', 'origin', 'main')
+    commit(publisherClone, 'clash.txt')
+    git(publisherClone, 'push', '-q', 'origin', 'main')
     fs.writeFileSync(path.join(work, 'clash.txt'), 'local\n')
     const before = f(await h.engine.fetchNow(work))
     expect(before.dirty).toBe(false)
@@ -361,7 +359,7 @@ describe('pull', () => {
   })
 })
 
-describe('sweep throttle, backoff and the D8 switch', () => {
+describe('sweep throttle, backoff and the gitAutoFetch switch', () => {
   const T0 = 1_700_000_000_000
 
   it('fetches at most once per 60s per workspace', async () => {
@@ -372,7 +370,7 @@ describe('sweep throttle, backoff and the D8 switch', () => {
 
     h.setNow(T0 + 30_000)
     await h.engine.sweep()
-    expect(f(h.engine.get(work)).lastAttemptAt).toBe(T0) // throttled
+    expect(f(h.engine.get(work)).lastAttemptAt).toBe(T0)
 
     h.setNow(T0 + 61_000)
     await h.engine.sweep()
@@ -400,9 +398,8 @@ describe('sweep throttle, backoff and the D8 switch', () => {
     const lastTry = f(h.engine.get(work)).lastAttemptAt
     h.setNow(t)
     await h.engine.sweep()
-    expect(f(h.engine.get(work)).lastAttemptAt).toBe(lastTry) // skipped by the backoff
+    expect(f(h.engine.get(work)).lastAttemptAt).toBe(lastTry)
 
-    // a manual fetch always gets through, and clears the backoff
     h.setNow(t + 1_000)
     await h.engine.fetchNow(work)
     expect(f(h.engine.get(work)).lastAttemptAt).toBe(t + 1_000)
@@ -431,10 +428,10 @@ describe('sweep throttle, backoff and the D8 switch', () => {
     await h.engine.fetchNow(work)
     expect(f(h.engine.get(work)).behind).toBe(2)
 
-    git(work, 'merge', '-q', '--ff-only', 'origin/main') // the user pulled elsewhere
+    git(work, 'merge', '-q', '--ff-only', 'origin/main')
     h.setNow(T0 + 5_000)
     await h.engine.refreshLocal([work])
-    expect(f(h.engine.get(work)).behind).toBe(2) // skipped: measured moments ago
+    expect(f(h.engine.get(work)).behind).toBe(2)
 
     h.setNow(T0 + 11_000)
     await h.engine.refreshLocal([work])
@@ -445,7 +442,7 @@ describe('sweep throttle, backoff and the D8 switch', () => {
     const h = harness()
     publish(1)
     const [a, b] = await Promise.all([h.engine.fetchNow(work), h.engine.fetchNow(work)])
-    expect(a).toBe(b) // the very same object: one measurement, one process
+    expect(a).toBe(b)
   })
 })
 
@@ -460,7 +457,6 @@ describe('linked worktrees and submodules', () => {
     expect(v.linked).toBe(true)
     expect(v.onDefault).toBe(true)
     expect(v.behind).toBe(2)
-    // D5: Koloft only ever fast-forwards a MAIN checkout
     const res = await h.engine.pull(wt, { branch: v.branch, head: v.head })
     expect(res).toEqual({ ok: false, reason: 'state changed' })
   })
@@ -482,7 +478,7 @@ describe('linked worktrees and submodules', () => {
 describe('fetch health', () => {
   const T0 = 1_700_000_000_000
 
-  it('survives a local re-measure and clears only on a successful fetch', async () => {
+  it('survives a local re-measure (so the offline UI stays reachable) and clears only on a successful fetch', async () => {
     const h = harness()
     publish(2)
     h.setNow(T0)
@@ -492,8 +488,6 @@ describe('fetch health', () => {
     h.setNow(T0 + 61_000)
     expect(f(await h.engine.fetchNow(work)).state).toBe('error')
 
-    // the Tier-1 piggyback must not stamp 'ok' over a live fetch failure — the backoff
-    // is suppressing re-fetches, so the offline UI would become unreachable
     h.setNow(T0 + 120_000)
     await h.engine.refreshLocal([work])
     expect(f(h.engine.get(work)).state).toBe('error')
@@ -506,16 +500,16 @@ describe('fetch health', () => {
   it('a fetch landing during a local measure is not overwritten by it', async () => {
     const flag = path.join(tmp, 'slow-rev-list')
     fs.writeFileSync(flag, '')
-    const w = gitWrapper('git-slow', { slowFlag: flag })
+    const w = loggingGitBin('git-slow', { slowRevListOnceFlag: flag })
     const h = harness({ gitBin: w.bin })
     publish(2)
-    const local = h.engine.refreshLocal([work]) // its rev-list sleeps for a second
+    const local = h.engine.refreshLocal([work])
     await new Promise((r) => setTimeout(r, 300))
     const fetched = f(await h.engine.fetchNow(work))
     expect(fetched.behind).toBe(2)
     await local
     const after = f(h.engine.get(work))
-    expect(after.behind).toBe(2) // the pre-fetch local numbers did not land on top
+    expect(after.behind).toBe(2)
     expect(after.fetchedAt).toBe(fetched.fetchedAt)
   })
 })
@@ -526,7 +520,7 @@ describe('the local floor and the missing filter', () => {
   it('honors the floor for a path that measures nothing at all', async () => {
     const plain = path.join(tmp, 'plain')
     fs.mkdirSync(plain)
-    const w = gitWrapper('git-count')
+    const w = loggingGitBin('git-count')
     const h = harness({ paths: [plain], gitBin: w.bin })
     h.setNow(T0)
     await h.engine.refreshLocal([plain])
@@ -537,7 +531,7 @@ describe('the local floor and the missing filter', () => {
 
   it('never measures a workspace whose directory is gone', async () => {
     const gone = path.join(tmp, 'gone')
-    const w = gitWrapper('git-gone')
+    const w = loggingGitBin('git-gone')
     const h = harness({ paths: [gone], missing: [gone], gitBin: w.bin })
     await h.engine.refreshLocal([gone])
     expect(logLines(w.log)).toEqual([])
@@ -552,8 +546,6 @@ describe('git missing from PATH', () => {
     expect(await h.engine.fetchNow(work)).toBeNull()
     expect(h.engine.get(work)).toBeUndefined()
 
-    // the same path now exists as a logging wrapper: anything that still spawns
-    // leaves a line behind
     fs.writeFileSync(bin, `#!/bin/sh\necho "$*" >> '${log}'\nexec git "$@"\n`, { mode: 0o755 })
     expect(await h.engine.fetchNow(work)).toBeNull()
     await h.engine.refreshLocal([work])
@@ -565,7 +557,8 @@ describe('git missing from PATH', () => {
 })
 
 describe('network safety', () => {
-  it('never lets git ask for credentials, however the repo is configured', async () => {
+  // PLATFORM§30
+  it('never lets git ask for credentials, however the repo is configured: fails fast, never runs core.askpass', async () => {
     const marker = path.join(tmp, 'askpass-called')
     const askpass = path.join(tmp, 'askpass.sh')
     fs.writeFileSync(askpass, `#!/bin/sh\necho called > '${marker}'\necho hunter2\n`, {
@@ -578,23 +571,22 @@ describe('network safety', () => {
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()))
     const port = (server.address() as AddressInfo).port
     try {
-      git(work, 'config', 'credential.helper', '') // never touch the real keychain
+      git(work, 'config', 'credential.helper', '')
       git(work, 'config', 'core.askpass', askpass)
       git(work, 'remote', 'set-url', 'origin', `http://127.0.0.1:${port}/x.git`)
       const h = harness({ fetchTimeoutMs: 8_000 })
       const t = Date.now()
       expect(f(await h.engine.fetchNow(work)).state).toBe('error')
-      // it FAILED rather than hanging until the timeout: GIT_TERMINAL_PROMPT=0 in force
       expect(Date.now() - t).toBeLessThan(6_000)
-      // GIT_ASKPASS beats the repo's own core.askpass — the helper never ran
       expect(fs.existsSync(marker)).toBe(false)
     } finally {
       server.close()
     }
   })
 
+  // PLATFORM§27
   it('times out a hung fetch and takes its whole process group with it', async () => {
-    const r = extRemote('hang')
+    const r = neverAnsweringExtRemote('hang')
     const h = harness({ fetchTimeoutMs: 1_500 })
     const t = Date.now()
     expect(f(await h.engine.fetchNow(work)).state).toBe('error')
@@ -606,7 +598,7 @@ describe('network safety', () => {
   })
 
   it('stop() kills a fetch still in flight (before-quit)', async () => {
-    const r = extRemote('quit')
+    const r = neverAnsweringExtRemote('quit')
     const h = harness({ fetchTimeoutMs: 30_000 })
     const p = h.engine.fetchNow(work)
     expect(await waitFor(() => fs.existsSync(r.childFile))).toBe(true)
@@ -622,22 +614,21 @@ describe('stop() closes the door on new work (before-quit)', () => {
   it('a sweep already running spawns nothing more once stopped', async () => {
     const third = path.join(tmp, 'third')
     execFileSync('git', ['clone', '-q', origin, third])
-    const w = gitWrapper('git-stop')
-    const h = harness({ paths: [work, other, third], gitBin: w.bin })
+    const w = loggingGitBin('git-stop')
+    const h = harness({ paths: [work, publisherClone, third], gitBin: w.bin })
 
     const p = h.engine.sweep({ stagger: true })
     expect(await waitFor(() => fetchLines(w.log).length >= 1)).toBe(true)
     h.engine.stop()
     const atStop = fetchLines(w.log).length
     await p
-    // past every stagger slot the sweep still had left
     await new Promise((r) => setTimeout(r, 2 * 750 + 400))
     expect(fetchLines(w.log).length).toBe(atStop)
-    expect(atStop).toBeLessThan(3) // it really did abandon the rest of the round
+    expect(atStop).toBeLessThan(3)
   })
 
   it('refuses the manual entries after stop()', async () => {
-    const w = gitWrapper('git-after-stop')
+    const w = loggingGitBin('git-after-stop')
     const h = harness({ gitBin: w.bin })
     h.engine.stop()
     expect(await h.engine.fetchNow(work)).toBeNull()
@@ -653,7 +644,7 @@ describe('unmeasurable pins are throttled like every other path', () => {
   it('does not re-probe a non-repo pin on every sweep', async () => {
     const plain = path.join(tmp, 'plain')
     fs.mkdirSync(plain)
-    const w = gitWrapper('git-null-sweep')
+    const w = loggingGitBin('git-null-sweep')
     const h = harness({ paths: [plain], gitBin: w.bin })
     h.setNow(T0)
     await h.engine.sweep()
@@ -662,17 +653,17 @@ describe('unmeasurable pins are throttled like every other path', () => {
 
     h.setNow(T0 + 5_000)
     await h.engine.sweep()
-    expect(logLines(w.log).length).toBe(first) // throttled: nothing cached, still bookkept
+    expect(logLines(w.log).length).toBe(first)
 
     h.setNow(T0 + 61_000)
     await h.engine.sweep()
-    expect(logLines(w.log).length).toBeGreaterThan(first) // the 60s window reopens
+    expect(logLines(w.log).length).toBeGreaterThan(first)
   })
 
   it('backs a permanently unmeasurable pin off after the same three strikes', async () => {
     const plain = path.join(tmp, 'plain')
     fs.mkdirSync(plain)
-    const w = gitWrapper('git-null-backoff')
+    const w = loggingGitBin('git-null-backoff')
     const h = harness({ paths: [plain], gitBin: w.bin })
     let t = T0
     for (let i = 0; i < 3; i++) {
@@ -683,7 +674,7 @@ describe('unmeasurable pins are throttled like every other path', () => {
     const struck = logLines(w.log).length
     h.setNow(t)
     await h.engine.sweep()
-    expect(logLines(w.log).length).toBe(struck) // in backoff, not re-probed
+    expect(logLines(w.log).length).toBe(struck)
   })
 })
 
@@ -694,8 +685,7 @@ describe('sweep concurrency', () => {
     const t = Date.now()
     await h.engine.sweep()
     const ms = Date.now() - t
-    // serial would be 4 × 1.5s ≈ 6s; a cap of 3 means two waves ≈ 3s
-    expect(ms).toBeGreaterThan(1_400) // the timeout really is what bounds each fetch
+    expect(ms).toBeGreaterThan(1_400)
     expect(ms).toBeLessThan(5_000)
   }, 30_000)
 })
@@ -704,7 +694,7 @@ describe('default-ref memo', () => {
   const T0 = 1_700_000_000_000
 
   it('verifies the remembered ref instead of re-deriving it every measure', async () => {
-    const log = loggingGitOnPath('defref') // catches defaultBranch's literal `git` too
+    const log = loggingGitOnPath('defref')
     const h = harness()
     h.setNow(T0)
     await h.engine.fetchNow(work)
@@ -714,7 +704,6 @@ describe('default-ref memo', () => {
     h.setNow(T0 + 61_000)
     await h.engine.fetchNow(work)
     const warm = logLines(log).length - cold
-    // the probe chain ran once, for the first measurement only
     expect(logLines(log).filter((l) => l.includes('symbolic-ref')).length).toBe(1)
     expect(warm).toBeLessThan(cold)
   })
@@ -722,7 +711,6 @@ describe('default-ref memo', () => {
   it('re-derives once the remembered ref stops resolving', async () => {
     const h = harness()
     expect(f(await h.engine.fetchNow(work)).defRef).toBe('origin/main')
-    // the server renamed main → master: the memoized origin/main is gone
     git(work, 'branch', '-m', '-q', 'main', 'master')
     git(work, 'update-ref', 'refs/remotes/origin/master', 'refs/remotes/origin/main')
     git(work, 'update-ref', '-d', 'refs/remotes/origin/main')
@@ -732,10 +720,8 @@ describe('default-ref memo', () => {
 })
 
 describe('remote workspaces', () => {
-  // U-FRESH-1: a remote key names no repo on this Mac. Left in, every sweep would run
-  // git against a path that cannot exist and fill the log with errors.
-  it('never measures a remote key, and still measures the local pins beside it', async () => {
-    const w = gitWrapper('git-remote-filter')
+  it('U-FRESH-1: never measures a remote key, and still measures the local pins beside it', async () => {
+    const w = loggingGitBin('git-remote-filter')
     const h = harness({ paths: [work, 'ssh://devbox/x'], gitBin: w.bin })
     await h.engine.sweep()
     await h.engine.refreshLocal([work, 'ssh://devbox/x'])

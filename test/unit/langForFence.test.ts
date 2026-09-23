@@ -1,10 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { langForFence } from '../../src/renderer/src/highlight'
 
-// The grammars highlight.ts loads. `langForFence` may only ever name one of these (or
-// `text`): a mapping to anything else is a silently unstyled code block at runtime,
-// because highlightCode falls back to `text` for an unloaded language.
-const LOADED = [
+const GRAMMARS_HIGHLIGHT_TS_LOADS = [
   'typescript',
   'tsx',
   'javascript',
@@ -32,7 +29,6 @@ const LOADED = [
   'makefile'
 ]
 
-/** FR-05: fence language name → a grammar shiki has actually loaded. */
 describe('langForFence', () => {
   it('maps the short names md writers actually type', () => {
     expect(langForFence('bash')).toBe('shellscript')
@@ -69,7 +65,6 @@ describe('langForFence', () => {
   })
 
   it('falls back to plain text instead of erroring on an unloaded language', () => {
-    // Edge Cases #7: `elixir` has no grammar here — plain text, no throw.
     expect(langForFence('elixir')).toBe('text')
     expect(langForFence('plantuml')).toBe('text')
     expect(langForFence('')).toBe('text')
@@ -133,7 +128,7 @@ describe('langForFence', () => {
     ]
     for (const f of fences) {
       const lang = langForFence(f)
-      expect([...LOADED, 'text'], `fence \`${f}\` -> ${lang}`).toContain(lang)
+      expect([...GRAMMARS_HIGHLIGHT_TS_LOADS, 'text'], `fence \`${f}\` -> ${lang}`).toContain(lang)
     }
   })
 })

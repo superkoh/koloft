@@ -11,14 +11,6 @@ import { slugOf } from '../../src/shared/cronNames'
 import { isValidWorktreeName } from '../../src/shared/worktreeName'
 import type { CronJob, CronSaveInput, CronState } from '../../src/shared/types'
 
-// §4.4/§4.5. The runner is the one place that decides a run happens, so every
-// rule below is a promise to the person who made the job: it starts once, it never
-// starts twice, and whatever the answer is, the history says so in words.
-//
-// The clock, the timers and the filesystem all arrive as dependencies, so a whole
-// day of scheduling fits in a millisecond and nothing here touches disk.
-
-/** Wed 2 Sep 2026, 10:00:00 local — every test reads times off this wall clock. */
 const T0 = new Date(2026, 8, 2, 10, 0, 0, 0).getTime()
 const SEC = 1000
 const MIN = 60 * SEC
@@ -155,13 +147,11 @@ function makeHarness(
     setClock: (t: number) => {
       clock = t
     },
-    /** one beat of the 20-second interval, at wall-clock time `t` */
     async tick(t?: number): Promise<void> {
       if (t !== undefined) clock = t
       for (const i of [...intervals.values()]) i.cb()
       await flush()
     },
-    /** move the clock to `t` and let every timer that is now due fire */
     async fireTimers(t: number): Promise<void> {
       clock = t
       for (const [id, timer] of [...timeouts.entries()]) {
@@ -175,8 +165,6 @@ function makeHarness(
   }
 }
 
-// ---------------------------------------------------------------------------
-
 describe('worktreeNameFor (BB-E03: two runs never share a folder)', () => {
   const DUE = at(21, 0)
   const BASE = 'nightly-report-260902-2100'
@@ -186,9 +174,7 @@ describe('worktreeNameFor (BB-E03: two runs never share a folder)', () => {
     expect(await worktreeNameFor(makeJob(), DUE, taken)).toBe(BASE)
   })
 
-  it('steps to -2 when the folder is gone but the branch is still there', async () => {
-    // the folder was removed by hand; `git worktree remove` was never run, so the
-    // branch survives and claude would refuse the name
+  it('steps to -2 when the folder was removed by hand but its branch survives', async () => {
     const taken = vi.fn(async (n: string) => n === BASE)
     expect(await worktreeNameFor(makeJob(), DUE, taken)).toBe(`${BASE}-2`)
   })
@@ -211,9 +197,7 @@ describe('worktreeNameFor (BB-E03: two runs never share a folder)', () => {
     expect(isValidWorktreeName(out)).toBe(true)
   })
 
-  it('keeps the hex fallback inside the 64-character limit for a long name', async () => {
-    // 48-char slug + 12-char stamp + '-abcd' would be 65: the slug gives way, the
-    // date stamp never does — telling two runs of the same job apart is its job
+  it('keeps the hex fallback inside the 64-character limit by cutting the slug, never the date stamp', async () => {
     const name = 'Nightly release build for the whole team and everyone else, every night!!'
     const base = `${slugOf(name)}-260902-2100`
     const taken = vi.fn(async (n: string) => n === base || /-\d{1,2}$/.test(n))
@@ -223,8 +207,6 @@ describe('worktreeNameFor (BB-E03: two runs never share a folder)', () => {
     expect(isValidWorktreeName(out)).toBe(true)
   })
 })
-
-// ---------------------------------------------------------------------------
 
 describe('CronRunner — starting one run', () => {
   it('launches a due job with its task and name as environment variables', async () => {
@@ -267,8 +249,7 @@ describe('CronRunner — starting one run', () => {
     expect(h.branchExists).not.toHaveBeenCalled()
   })
 
-  // five minutes exactly is still worth starting; a millisecond more is not
-  it('fires a due that is exactly five minutes old, and misses the next millisecond', async () => {
+  it("the tick's own window check fires a due exactly five minutes old, and misses the next millisecond", async () => {
     for (const [age, launched] of [
       [5 * MIN, true],
       [5 * MIN + 1, false]
@@ -283,7 +264,6 @@ describe('CronRunner — starting one run', () => {
     }
   })
 
-  // the switch says "do not start this on its own", not "never start this"
   it('runs a switched-off job when the person presses Run now', async () => {
     const h = makeHarness([makeJob({ enabled: false })])
     expect(await h.runner.runNow('j1')).toEqual({ ok: true })
@@ -296,8 +276,6 @@ describe('CronRunner — starting one run', () => {
     expect(h.launch).not.toHaveBeenCalled()
   })
 })
-
-// ---------------------------------------------------------------------------
 
 describe('CronRunner — reasons a run does not start', () => {
   it('writes "the folder is missing" and never launches', async () => {
@@ -326,9 +304,8 @@ describe('CronRunner — reasons a run does not start', () => {
     expect(h.toasts).toEqual(['⏰ Nightly report could not start: no usable account'])
   })
 
-  it('writes "Claude exited before it started" when the launch itself is refused', async () => {
+  it('writes "Claude exited before it started" as failed, never skipped, when the launch itself is refused', async () => {
     const h = makeHarness([makeJob()], { launch: vi.fn(() => ({ ok: false }) as LaunchResult) })
-    // a refused launch is 'failed', never 'skipped' — nothing was still open
     expect(await h.runner.runNow('j1')).toEqual({ ok: false, reason: 'failed' })
     expect(h.jobs[0].history[0]).toEqual({
       dueAt: T0,
@@ -341,10 +318,8 @@ describe('CronRunner — reasons a run does not start', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-
 describe('CronRunner — BB-E01 overlap: a run that is still open', () => {
-  it('skips the second due and folds the third into the same line', async () => {
+  it('skips the second due and folds the third into the same line, answering every button press', async () => {
     const h = makeHarness([makeJob()])
     await h.runner.runNow('j1')
     h.setClock(T0 + 1 * MIN)
@@ -362,33 +337,27 @@ describe('CronRunner — BB-E01 overlap: a run that is still open', () => {
     expect(h.jobs[0].history).toEqual([
       { dueAt: T0 + 1 * MIN, state: 'skipped', count: 2, until: T0 + 2 * MIN, manual: true }
     ])
-    // one row, but a person who pressed the button gets an answer every time: a press
-    // that says nothing back reads as a broken button
     expect(h.toasts).toHaveLength(3)
     expect(h.toasts[2]).toBe('⏰ Nightly report skipped: the last run is still open')
     expect(h.launch).toHaveBeenCalledTimes(1)
   })
 
-  // A closed run's line is dated by the due it ran for, which is OLDER than the skips
-  // that piled up while it was open. The loader sorts newest-first, so after a restart
-  // that run's skip row is back on top — and the next run's first skip must not count
-  // itself onto it.
   it('starts a new skip row for a new run, even when the last run left its skips on top', async () => {
     const written = [
-      { dueAt: at(10, 0), state: 'closed' }, // run A, as the close left it
+      { dueAt: at(10, 0), state: 'closed' },
       { dueAt: at(10, 10), state: 'skipped', count: 2, until: at(10, 20) }
     ]
     const reloaded = sanitizeCron(
       { version: 1, jobs: [makeJob({ history: written as CronJob['history'] })] },
       ['/ws/a']
     ).jobs[0]
-    expect(reloaded.history[0].state).toBe('skipped') // the premise: the loader reordered
+    expect(reloaded.history[0].state).toBe('skipped')
 
     const h = makeHarness([reloaded])
     h.setClock(at(11, 0))
-    await h.runner.runNow('j1') // run B starts
+    await h.runner.runNow('j1')
     h.setClock(at(11, 10))
-    await h.runner.runNow('j1') // a due while B is open
+    await h.runner.runNow('j1')
     expect(reloaded.history).toEqual([
       { dueAt: at(11, 10), state: 'skipped', count: 1, manual: true },
       { dueAt: at(10, 10), state: 'skipped', count: 2, until: at(10, 20) },
@@ -396,17 +365,16 @@ describe('CronRunner — BB-E01 overlap: a run that is still open', () => {
     ])
   })
 
-  // the other half of the same rule: nobody asked for these, so folding them is silent
   it('says nothing when the CLOCK folds a skip nobody asked for', async () => {
     const jobs = [makeJob({ schedule: { kind: 'every', n: 10, unit: 'minutes' } })]
     const h = makeHarness(jobs, { bootTime: at(9, 59) })
     h.setClock(at(9, 59))
     h.runner.start()
-    await h.tick(at(10, 0, 20)) // 10:00 is due: it starts
+    await h.tick(at(10, 0, 20))
     expect(h.launch).toHaveBeenCalledTimes(1)
 
-    await h.tick(at(10, 10, 20)) // 10:10 is due: skipped, and said out loud once
-    await h.tick(at(10, 20, 20)) // 10:20 folds into that same row, in silence
+    await h.tick(at(10, 10, 20))
+    await h.tick(at(10, 20, 20))
     expect(jobs[0].history).toEqual([
       { dueAt: at(10, 10), state: 'skipped', count: 2, until: at(10, 20) }
     ])
@@ -416,8 +384,6 @@ describe('CronRunner — BB-E01 overlap: a run that is still open', () => {
     ])
   })
 })
-
-// ---------------------------------------------------------------------------
 
 describe('CronRunner — BB-E24: two fires in one launch start one run', () => {
   it('drops the second arrival silently, and skips only once the run is really there', async () => {
@@ -434,7 +400,6 @@ describe('CronRunner — BB-E24: two fires in one launch start one run', () => {
     await h.tick(at(10, 0, 20))
     expect(launch).toHaveBeenCalledTimes(1)
 
-    // the launch has not answered yet: the lock, not the live run, blocks this one
     h.setClock(at(10, 0, 25))
     await h.runner.runNow('j1')
     expect(launch).toHaveBeenCalledTimes(1)
@@ -458,8 +423,6 @@ describe('CronRunner — BB-E24: two fires in one launch start one run', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-
 describe('CronRunner — BB-E11: a due that arrives with no window', () => {
   it('holds it and launches it once the window comes back inside five minutes', async () => {
     const h = makeHarness([makeJob()])
@@ -476,7 +439,6 @@ describe('CronRunner — BB-E11: a due that arrives with no window', () => {
     expect(h.launch).toHaveBeenCalledTimes(1)
     expect(h.runner.state().live[0].dueAt).toBe(T0)
 
-    // and the held due is spent: a second ready does nothing
     h.runner.onRendererReady()
     await flush()
     expect(h.launch).toHaveBeenCalledTimes(1)
@@ -496,9 +458,6 @@ describe('CronRunner — BB-E11: a due that arrives with no window', () => {
     expect(h.jobs[0].history).toEqual([{ dueAt: T0, state: 'missed' }])
   })
 
-  // On macOS the last window can close with the app still running for hours, so a job
-  // piles up a due per hour. Only the newest can still start; the older ones truly did
-  // not run, and each of them is kept — folded into one row, not thrown away.
   it('keeps every due it held, starts only the newest, and misses the rest in one row', async () => {
     const jobs = [makeJob({ schedule: { kind: 'every', n: 1, unit: 'hours' } })]
     const h = makeHarness(jobs, { bootTime: at(9, 59) })
@@ -513,22 +472,13 @@ describe('CronRunner — BB-E11: a due that arrives with no window', () => {
     h.setClock(at(12, 2, 0))
     h.runner.onRendererReady()
     await flush()
-    // 12:00 is two minutes old, so it starts; 10:00 and 11:00 are one folded miss
     expect(h.launch).toHaveBeenCalledTimes(1)
     expect(jobs[0].history).toEqual([
       { dueAt: at(10, 0), state: 'missed', count: 2, until: at(11, 0) }
     ])
   })
 
-  // Five minutes exactly is still worth starting; a millisecond more is not. This is a
-  // SECOND expression, not the tick's one seen from another angle: the tick lets a due
-  // go with `now - due > MISS_WINDOW_MS` (cronScheduler.ts, in `tick`), while a HELD
-  // due is judged by `now - newest.dueAt <= MISS_WINDOW_MS` (cronRunner.ts, in the
-  // renderer-ready branch). Two lines in two modules, which can drift apart. So this
-  // test and the tick's own boundary test above ("fires a due that is exactly five
-  // minutes old…") are BOTH load-bearing: delete either and one of the two lines is
-  // left unpinned.
-  it('launches a held due that is exactly five minutes old, and misses the next millisecond', async () => {
+  it("the held-due window check, separate from the tick's, launches at exactly five minutes old and misses the next millisecond", async () => {
     for (const [age, launched] of [
       [5 * MIN, true],
       [5 * MIN + 1, false]
@@ -549,9 +499,7 @@ describe('CronRunner — BB-E11: a due that arrives with no window', () => {
     }
   })
 
-  it('throws the held due away when the job is saved again', async () => {
-    // the held due belongs to the rule as it was. Keeping it would start a job the
-    // person has just switched off, the moment the window came back.
+  it('throws the held due away when the job is saved again, so a just-switched-off job never starts', async () => {
     const h = makeHarness([makeJob()])
     h.flags.ready = false
     h.runner.start()
@@ -576,22 +524,19 @@ describe('CronRunner — BB-E11: a due that arrives with no window', () => {
     expect(h.jobs[0].history).toEqual([])
   })
 
-  it('answers not-ready to Run now, and writes nothing at all', async () => {
+  it('answers not-ready to Run now, writes nothing, and never holds the press for later', async () => {
     const h = makeHarness([makeJob()])
     h.flags.ready = false
     expect(await h.runner.runNow('j1')).toEqual({ ok: false, reason: 'not-ready' })
     expect(h.launch).not.toHaveBeenCalled()
     expect(h.jobs[0].history).toEqual([])
     expect(h.toasts).toEqual([])
-    // a hand-pressed Run now is not held either: the person is right there
     h.flags.ready = true
     h.runner.onRendererReady()
     await flush()
     expect(h.launch).not.toHaveBeenCalled()
   })
 })
-
-// ---------------------------------------------------------------------------
 
 describe('CronRunner — BB-E26: the first tick after the Mac wakes waits 30 seconds', () => {
   it('ignores ticks for half a minute, then fires the fresh due and misses the old one', async () => {
@@ -618,10 +563,6 @@ describe('CronRunner — BB-E26: the first tick after the Mac wakes waits 30 sec
     expect(jobs[1].history).toEqual([{ dueAt: at(9, 54), state: 'missed' }])
   })
 
-  // A Mac asleep with Koloft open hands one tick every due it slept through — 85 here,
-  // 2880 for a job due every minute over a weekend. Every one is true, so none is
-  // thrown away; they become ONE row, written once. A row each would spend the whole
-  // 20-line history on one nap and rewrite cron.json 85 times inside one tick.
   it('folds a whole sleep into one missed row, saved once and pushed once', async () => {
     const jobs = [makeJob({ schedule: { kind: 'every', n: 10, unit: 'minutes' } })]
     const h = makeHarness(jobs, { bootTime: at(20, 0, 0, -1) })
@@ -629,8 +570,6 @@ describe('CronRunner — BB-E26: the first tick after the Mac wakes waits 30 sec
     h.runner.start()
     const pushes = h.states.length
 
-    // lid down just after 20:00 yesterday, up at 10:05 today; the newest due (10:00)
-    // is six minutes old, so even that one is too late to start
     h.setClock(at(10, 5, 10))
     h.runner.onResume()
     await h.tick(at(10, 6, 0))
@@ -643,8 +582,6 @@ describe('CronRunner — BB-E26: the first tick after the Mac wakes waits 30 sec
     expect(h.states.length - pushes).toBe(1)
   })
 })
-
-// ---------------------------------------------------------------------------
 
 describe('CronRunner — BB-E23: an edit or a switch re-arms from now', () => {
   it('replays nothing after the job is switched off and on again', async () => {
@@ -691,8 +628,6 @@ describe('CronRunner — BB-E23: an edit or a switch re-arms from now', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-
 describe('CronRunner — a live run growing up', () => {
   async function started(): Promise<ReturnType<typeof makeHarness>> {
     const h = makeHarness([makeJob()])
@@ -732,10 +667,7 @@ describe('CronRunner — a live run growing up', () => {
     expect(h.states).toHaveLength(before)
   })
 
-  // a status edge can arrive before SessionStart does. If it finished the run there,
-  // the start deadline would be defused and every later due would skip on "the last
-  // run is still open" — for a run that never opened.
-  it('cannot finish a run that has not started yet', async () => {
+  it('cannot finish a run that has not started yet, even when a status edge beats SessionStart', async () => {
     const h = makeHarness([makeJob()], { bindDeadlineMs: 5 * SEC })
     await h.runner.runNow('j1')
     h.runner.onStatus('tab-1', 'working', 'waiting')
@@ -780,7 +712,6 @@ describe('CronRunner — a live run growing up', () => {
       '⏰ Nightly report started',
       '⏰ Nightly report could not start: Claude exited before it started'
     ])
-    // the job is not blocked: the next Run now starts a real run
     await h.runner.runNow('j1')
     expect(h.launch).toHaveBeenCalledTimes(2)
   })
@@ -796,28 +727,23 @@ describe('CronRunner — a live run growing up', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-
 describe('CronRunner — BB-N02: the runner never writes into a session', () => {
   it('has no write path, kills only the run that never started, and says so once', async () => {
     const h = makeHarness([makeJob()], { bindDeadlineMs: 5 * SEC })
     expect(Object.keys(h.deps).filter((k) => /write/i.test(k))).toEqual([])
 
-    // run one: launch → working → waiting → the person closes it
     await h.runner.runNow('j1')
     h.runner.onBound('tab-1', 's1')
     h.runner.onStatus('tab-1', 'idle', 'working')
     h.runner.onStatus('tab-1', 'working', 'waiting')
     h.runner.onPtyExit('tab-1')
 
-    // run two: it stops to ask a question, then the person closes it
     h.setClock(T0 + 1 * MIN)
     await h.runner.runNow('j1')
     h.runner.onBound('tab-2', 's2')
     h.runner.onStatus('tab-2', 'working', 'approval')
     h.runner.onPtyExit('tab-2')
 
-    // run three: nothing ever binds
     h.setClock(T0 + 2 * MIN)
     await h.runner.runNow('j1')
     await h.fireTimers(T0 + 2 * MIN + 5 * SEC)
@@ -835,9 +761,7 @@ describe('CronRunner — BB-N02: the runner never writes into a session', () => 
     expect(h.runner.state().live).toEqual([])
   })
 
-  // A folder claude has never been opened in stalls on its trust question, before
-  // anything Koloft can see — so every run there dies at the deadline with the same
-  // words, and "Claude did not start" alone would never say what to do about it.
+  // CC§9
   it('names the untrusted folder in the deadline row, and only there', async () => {
     const h = makeHarness([makeJob()], { bindDeadlineMs: 5 * SEC, trusted: () => false })
     await h.runner.runNow('j1')
@@ -847,7 +771,6 @@ describe('CronRunner — BB-N02: the runner never writes into a session', () => 
       state: 'failed',
       note: 'Claude did not start — this folder was never opened in Claude; start one session here first'
     })
-    // the one-line surfaces keep the short words
     expect(h.toasts.at(-1)).toBe('⏰ Nightly report could not start: Claude did not start')
     expect(h.notify.mock.calls.at(-1)).toEqual([
       'Nightly report',
@@ -855,8 +778,6 @@ describe('CronRunner — BB-N02: the runner never writes into a session', () => 
     ])
   })
 })
-
-// ---------------------------------------------------------------------------
 
 describe('CronRunner — quitting', () => {
   it('ends every open run, empties the live list, and lets the pty exits fall silent', async () => {
@@ -879,9 +800,7 @@ describe('CronRunner — quitting', () => {
     expect(h.jobs[0].history).toHaveLength(1)
   })
 
-  // the sweep already wrote the run's ending, so a deadline firing afterwards would
-  // kill a tab during shutdown and write a second, contradicting line
-  it('disarms the deadline of a run it just ended', async () => {
+  it('disarms the deadline of a run it just ended, so shutdown kills no tab and writes no second line', async () => {
     const h = makeHarness([makeJob()], { bindDeadlineMs: 5 * SEC })
     await h.runner.runNow('j1')
     h.runner.quitSweep()
@@ -903,8 +822,6 @@ describe('CronRunner — quitting', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-
 describe('CronRunner — the history stays short', () => {
   it('keeps the newest twenty lines and drops the rest', async () => {
     const h = makeHarness([makeJob()])
@@ -919,8 +836,6 @@ describe('CronRunner — the history stays short', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-
 describe('CronRunner.save — the same rules the form uses', () => {
   const BASE: CronSaveInput = {
     workspacePath: '/ws/a',
@@ -932,11 +847,12 @@ describe('CronRunner.save — the same rules the form uses', () => {
   }
 
   const bad: Array<[string, Partial<CronSaveInput>, string]> = [
-    // the order is the form's, so both sides answer the same thing about the same name:
-    // empty, then dash, then letter-or-digit, then length
     ['an empty name', { name: '   ' }, 'Give the job a name.'],
-    // `--name -foo` would reach claude as a flag where a value belongs
-    ['a name starting with a dash', { name: '-force' }, 'The name cannot start with a dash.'],
+    [
+      'a name starting with a dash, which claude would read as a flag',
+      { name: '-force' },
+      'The name cannot start with a dash.'
+    ],
     ['a name that is only dashes', { name: '-!!!' }, 'The name cannot start with a dash.'],
     [
       'a name with no letter or digit',
@@ -987,22 +903,15 @@ describe('CronRunner.save — the same rules the form uses', () => {
     })
   }
 
-  // the loader keeps only jobs whose workspace is pinned, so a job saved against an
-  // unpinned path would run today and be gone after a restart — saved, and quietly not
-  it('refuses a workspace path that is not pinned', () => {
+  it('refuses a workspace path that is not pinned, since the loader would drop it after a restart', () => {
     const h = makeHarness([])
     h.flags.pinned = false
     expect(h.runner.save(BASE)).toEqual({ ok: false, errors: ['The workspace path is not valid.'] })
     expect(h.save).not.toHaveBeenCalled()
   })
 
-  // the one test that reads both ends at once: whatever save writes, the loader must
-  // hand back unchanged. A rule save does not enforce shows up here as a job that
-  // comes back different from the one that went in.
-  it('writes a job the loader gives back exactly as it was, history and all', async () => {
+  it("writes a job at the loader's own length limits that the loader gives back exactly as it was, history and all", async () => {
     const h = makeHarness([])
-    // the longest name and text the loader will keep: if save's own limits sat one
-    // character either side of the loader's, this job would come back missing
     const res = h.runner.save({
       ...BASE,
       name: 'N'.repeat(80),
@@ -1014,7 +923,6 @@ describe('CronRunner.save — the same rules the form uses', () => {
     expect(res.ok).toBe(true)
     if (!res.ok) return
 
-    // give it one real history line, so the line's own fields make the trip too
     h.flags.dir = false
     await h.runner.runNow(res.job.id)
     const saved = h.runner.state().jobs
@@ -1075,8 +983,6 @@ describe('CronRunner.save — the same rules the form uses', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-
 describe('CronRunner — switching off, deleting, and losing a workspace', () => {
   it('switching a job off leaves it in the list but off', () => {
     const h = makeHarness([makeJob()])
@@ -1098,8 +1004,6 @@ describe('CronRunner — switching off, deleting, and losing a workspace', () =>
     expect(job.history).toEqual([])
   })
 
-  // the guarantee, stated once: after the job is gone, nothing else happens for it.
-  // Both the waiting due and its place in the schedule are dropped.
   it('does nothing more for a job that was deleted, or whose workspace was removed', async () => {
     const a = makeJob({ id: 'a', name: 'Job A', workspacePath: '/ws/a' })
     const b = makeJob({ id: 'b', name: 'Job B', workspacePath: '/ws/b' })
@@ -1124,9 +1028,6 @@ describe('CronRunner — switching off, deleting, and losing a workspace', () =>
   })
 
   it('never lets the deadline kill a run whose job has gone away', async () => {
-    // the run stays open as an ordinary session, so the deadline must be disarmed with
-    // the job: a tab killed a minute later, with no toast and no history to explain it,
-    // reads as the app closing a session by itself
     const a = makeJob({ id: 'a', name: 'Job A', workspacePath: '/ws/a' })
     const b = makeJob({ id: 'b', name: 'Job B', workspacePath: '/ws/b' })
     const h = makeHarness([a, b], { bindDeadlineMs: 5 * SEC })
@@ -1153,8 +1054,6 @@ describe('CronRunner — switching off, deleting, and losing a workspace', () =>
   })
 })
 
-// ---------------------------------------------------------------------------
-
 describe('CronRunner — the state it hands the dialog', () => {
   it('counts run folders per job for a git workspace only', async () => {
     const h = makeHarness([makeJob()])
@@ -1165,8 +1064,6 @@ describe('CronRunner — the state it hands the dialog', () => {
   })
 
   it('counts the folders again after the deadline kills a run', async () => {
-    // the killed run left its folder on disk; the card must say so straight away,
-    // not the next time the dialog is opened
     const h = makeHarness([makeJob()], { bindDeadlineMs: 5 * SEC })
     h.flags.folders = 1
     await h.runner.runNow('j1')
@@ -1175,12 +1072,11 @@ describe('CronRunner — the state it hands the dialog', () => {
     expect(h.states.at(-1)?.folders).toEqual({ j1: 2 })
   })
 
-  it('carries the loader’s complaint through to the dialog', () => {
+  it('carries the loader’s complaint through to the dialog until the job is saved again', () => {
     const h = makeHarness([makeJob()], {}, { j1: 'The saved model was not valid and was ignored.' })
     expect(h.runner.state().notes).toEqual({
       j1: 'The saved model was not valid and was ignored.'
     })
-    // re-saving the job is the person fixing it, so the complaint goes
     h.runner.save({
       id: 'j1',
       workspacePath: '/ws/a',

@@ -5,15 +5,6 @@ import os from 'os'
 import { spawnSync, type SpawnSyncReturns } from 'child_process'
 import { createPackage } from '@electron/asar'
 
-// an earlier release shipped an atlas-corrupting @xterm/addon-webgl: the release was built from a
-// checkout whose node_modules held the wrong addon, and nothing in the build chain
-// checked the artifact — webglAtlasFix.test.ts guards node_modules but only fires
-// where tests run, not where the build runs. (The live version of that trap today: a
-// worktree with no node_modules of its own silently resolves the parent checkout's,
-// which may still hold the pre-fix 0.19.0 addon.) These tests guard the release gate
-// that closes that hole: scripts/assert-webgl-atlas.sh must pass/fail on artifact
-// content, and every path that ships a build must actually invoke it.
-
 const repo = path.resolve(__dirname, '../..')
 const script = path.join(repo, 'scripts/assert-webgl-atlas.sh')
 
@@ -25,11 +16,10 @@ const FINGERPRINT = '_lastSeenPageLayoutVersion'
 
 let fx: string
 
-/** An app image mirroring what electron-builder packs: out/renderer bundle (fixed or
- *  stale) plus the test/ sources its wide files glob sweeps in — which mention the
- *  fingerprint STRING and would make a stale asar pass a naive raw grep (the exact
- *  shape of an earlier incident). */
-async function makeAppAsar(name: string, rendererJs: string): Promise<string> {
+async function makeAppAsarWithFingerprintInTestSources(
+  name: string,
+  rendererJs: string
+): Promise<string> {
   const src = path.join(fx, `${name}-src`)
   fs.mkdirSync(path.join(src, 'out/renderer/assets'), { recursive: true })
   fs.writeFileSync(path.join(src, 'out/renderer/assets/index-abc.js'), rendererJs)
@@ -52,8 +42,8 @@ beforeAll(async () => {
   fs.writeFileSync(path.join(fx, 'fixed/assets/index-abc.js'), `e.${FINGERPRINT}=-1`)
   fs.mkdirSync(path.join(fx, 'stale/assets'), { recursive: true })
   fs.writeFileSync(path.join(fx, 'stale/assets/index-abc.js'), 'e.version++')
-  fixedAsar = await makeAppAsar('fixed', `e.${FINGERPRINT}=-1`)
-  staleAsar = await makeAppAsar('stale', 'e.version++')
+  fixedAsar = await makeAppAsarWithFingerprintInTestSources('fixed', `e.${FINGERPRINT}=-1`)
+  staleAsar = await makeAppAsarWithFingerprintInTestSources('stale', 'e.version++')
 })
 
 describe('assert-webgl-atlas.sh (the artifact gate)', () => {
@@ -61,10 +51,10 @@ describe('assert-webgl-atlas.sh (the artifact gate)', () => {
     expect(runGate(path.join(fx, 'fixed')).status).toBe(0)
   })
 
-  it('fails a build dir compiled from a pre-fix addon — the v0.4.1 incident class', () => {
+  it('fails a build dir compiled from a pre-fix addon — the v0.4.1 incident class — and names npm install as the remedy', () => {
     const r = runGate(path.join(fx, 'stale'))
     expect(r.status).not.toBe(0)
-    expect(r.stderr).toContain('npm install') // the remedy must be actionable
+    expect(r.stderr).toContain('npm install')
   })
 
   it('passes an asar whose out/renderer bundle carries the fingerprint', () => {
@@ -88,7 +78,7 @@ describe('assert-webgl-atlas.sh (the artifact gate)', () => {
   })
 })
 
-describe('the gate is wired into every path that ships a build', () => {
+describe('the gate is wired into every path that ships a build, since webglAtlasFix.test.ts only guards node_modules where tests run', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(repo, 'package.json'), 'utf8')) as {
     scripts: Record<string, string>
   }

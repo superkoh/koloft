@@ -2,16 +2,11 @@ import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 
-/** U3 — registry persistence, name validation (an injection surface), the Keychain
- *  adapter seams, and the 401 double-confirm / heal state machine (tests.md §2.2). */
-
 vi.mock('electron', async () => {
   const nfs = await import('node:fs')
   const nos = await import('node:os')
   const npath = await import('node:path')
   const base = nfs.mkdtempSync(npath.join(nos.tmpdir(), 'koloft-accounts-'))
-  // getName() drives the Keychain namespace; 'koloft' = a production build, so the
-  // fixture keys below are the production service names
   return { app: { getPath: () => base, getName: () => 'koloft', isPackaged: false } }
 })
 
@@ -86,11 +81,7 @@ describe('U3 · registry persistence', () => {
     expect(listAccounts().map((a) => a.name)).toEqual(['bravo'])
   })
 
-  // regression: probes rewrite entries constantly (status / fable / heal), and the
-  // settings list renders this array verbatim. An append-on-update reorders the rows
-  // under the user's cursor mid-probe — a click aimed at one row's × can land on a
-  // different account by the time it registers.
-  it('updating an account keeps its POSITION; only new ones append', () => {
+  it('updating an account keeps its POSITION; only new ones append (a probe must not move a row under the cursor)', () => {
     for (const n of ['alpha', 'bravo', 'charlie']) upsertAccountMeta(meta({ name: n }))
     upsertAccountMeta(meta({ name: 'bravo', status: 'expired' }))
     upsertAccountMeta(meta({ name: 'alpha', fable: 'yes' }))
@@ -99,15 +90,13 @@ describe('U3 · registry persistence', () => {
     expect(listAccounts().map((a) => a.name)).toEqual(['alpha', 'bravo', 'charlie', 'api'])
   })
 
-  // a custom endpoint's baseUrl and model land in shell exports inside the shim, so
-  // they get the same "never trust the disk" treatment as account names
-  it('custom entries survive only with a valid http(s) URL and a safe model id', () => {
+  it('custom entries survive only with a valid http(s) URL and a safe model id (both land in shell exports in the shim)', () => {
     saveSettings({})
     const raw = JSON.parse(fs.readFileSync(settingsFile, 'utf8'))
     const base = { kind: 'custom', enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }
     raw.accounts = [
       { ...base, name: 'good', baseUrl: 'https://ok.test/api', model: 'glm-5.2[1m]' },
-      { ...base, name: 'nourl' }, // unusable: would inject an empty ANTHROPIC_BASE_URL
+      { ...base, name: 'nourl' },
       { ...base, name: 'badscheme', baseUrl: 'file:///etc/passwd' },
       { ...base, name: 'quoted', baseUrl: 'https://x.test/"; rm -rf $HOME; #' },
       { ...base, name: 'badmodel', baseUrl: 'https://ok.test', model: 'a"; touch /tmp/pwned; #' }
@@ -115,8 +104,8 @@ describe('U3 · registry persistence', () => {
     fs.writeFileSync(settingsFile, JSON.stringify(raw))
     const kept = loadSettings().accounts
     expect(kept.map((a) => a.name)).toEqual(['good', 'badmodel'])
-    expect(kept[0].model).toBe('glm-5.2[1m]') // real-world model ids keep their suffix
-    expect(kept[1].model).toBeUndefined() // hostile model dropped, account still usable
+    expect(kept[0].model).toBe('glm-5.2[1m]')
+    expect(kept[1].model).toBeUndefined()
   })
 
   it('saveSettings writes atomically: no .tmp remains, content is complete JSON', () => {
@@ -133,14 +122,14 @@ describe('U3 · registry persistence', () => {
   })
 
   it('hostile entries on disk are dropped on load (names reach a shell)', () => {
-    saveSettings({}) // create a valid file first
+    saveSettings({})
     const raw = JSON.parse(fs.readFileSync(settingsFile, 'utf8'))
     raw.accounts = [
       { name: 'ok-name', kind: 'oauth', enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 },
       { name: 'bad;rm -rf $HOME', kind: 'oauth', enabled: true },
-      { name: 'ok-name', kind: 'oauth', enabled: true }, // duplicate
-      { name: 'x'.repeat(64), kind: 'oauth', enabled: true }, // too long
-      { name: 'other', kind: 'not-a-kind', enabled: true } // bad kind
+      { name: 'ok-name', kind: 'oauth', enabled: true },
+      { name: 'x'.repeat(64), kind: 'oauth', enabled: true },
+      { name: 'other', kind: 'not-a-kind', enabled: true }
     ]
     fs.writeFileSync(settingsFile, JSON.stringify(raw))
     expect(loadSettings().accounts.map((a) => a.name)).toEqual(['ok-name'])
@@ -163,10 +152,7 @@ describe('U3 · name validation (main-side)', () => {
 })
 
 describe('U3 · per-build keychain namespace', () => {
-  // the production namespace is load-bearing for MIGRATION: these three strings are
-  // byte-identical to the pre-namespacing constants, so a shipped install keeps its
-  // credentials. Changing them silently orphans every real user's accounts.
-  it('a production build keeps the historical service names', () => {
+  it("a production build keeps the historical service names — a change orphans every shipped install's credentials", () => {
     expect(keychainService('koloft', 'oauth')).toBe('koloft-claude-oauth')
     expect(keychainService('koloft', 'apikey')).toBe('koloft-anthropic-api')
     expect(keychainService('koloft', 'custom')).toBe('koloft-custom-endpoint')
@@ -178,11 +164,8 @@ describe('U3 · per-build keychain namespace', () => {
     expect(keychainService('koloft-dev', 'oauth')).not.toBe(keychainService('koloft', 'oauth'))
   })
 
-  // a rename of package.json "name" moves userData (recoverable — settings only), but
-  // must NOT move the credential store: those items would become invisible orphans
-  // holding live tokens. Anything unrecognised falls back to production.
   it.each(['koloft', 'Koloft', 'koloft2', '', 'something-else', 'koloft-'])(
-    'unrecognised app name %j falls back to the production namespace',
+    'unrecognised app name %j falls back to the production namespace, so a rename never orphans stored tokens',
     (n) => {
       expect(keychainNamespace(n as string)).toBe('koloft')
     }
@@ -199,7 +182,6 @@ describe('U3 · keychain adapter seams', () => {
   it('fixture roundtrip: write → read → delete, file mode 0600', async () => {
     expect(await keychainWrite('oauth', 'bravo', 'tok-1')).toBe(true)
     expect(await keychainRead('oauth', 'bravo')).toBe('tok-1')
-    // kinds are separate services
     expect(await keychainRead('apikey', 'bravo')).toBeNull()
     const mode = fs.statSync(fixtureFile).mode & 0o777
     expect(mode).toBe(0o600)
@@ -210,7 +192,6 @@ describe('U3 · keychain adapter seams', () => {
   it('outside test mode the fixture is IGNORED (production refuses the plaintext seam)', async () => {
     fs.writeFileSync(fixtureFile, JSON.stringify({ 'koloft-claude-oauth': { bravo: 'tok-x' } }))
     delete process.env.KOLOFT_TEST_BACKGROUND
-    // falls through to the real `security` CLI, where this entry does not exist
     expect(await keychainRead('oauth', 'bravo')).toBeNull()
   })
 })
@@ -247,12 +228,10 @@ describe('U3 · 401 double-confirm / heal (only 401 ever mutates status)', () =>
     recordProbeOutcome('bravo', 'oauth', '401')
     const a = listAccounts()[0]
     expect(a.status).toBe('expired')
-    expect(a.enabled).toBe(true) // user intent and availability are separate axes
+    expect(a.enabled).toBe(true)
   })
 })
 
-// ① (closed defensively): while an account is known no-fable, routine
-// probes must stop firing the fable model — the downgrade clock lives on the meta.
 describe('U3 · fable capability + §08 downgrade clock', () => {
   it("a 'no' verdict stamps fableCheckedAt", () => {
     upsertAccountMeta(meta({ name: 'acct' }))
@@ -290,10 +269,7 @@ describe('U3 · fable capability + §08 downgrade clock', () => {
 })
 
 describe('U4 · accounts:add IPC wiring', () => {
-  // main's handler takes a 4th `endpoint` argument (baseUrl + model for a custom
-  // endpoint) and the renderer passes it — the preload in between is the only hop that
-  // can drop it, and a drop is silent: the account saves, just with no endpoint.
-  it('the preload forwards the endpoint argument to main', () => {
+  it('the preload forwards the endpoint argument to main (a drop would save the account silently without it)', () => {
     const root = path.resolve(__dirname, '../..')
     const preload = fs.readFileSync(path.join(root, 'src/preload/index.ts'), 'utf8')
     const call = preload.match(

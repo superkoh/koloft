@@ -2,8 +2,6 @@ import { describe, it, expect } from 'vitest'
 import MarkdownIt from 'markdown-it'
 import { assets } from '../../src/renderer/src/markdown/assets'
 
-/** FR-12 / FR-12b: a relative image resolves against the document, and an off-site image
- *  is never fetched — loading it would tell that site which document is open right now. */
 const md = new MarkdownIt().use(assets)
 const env = { srcPath: '/ws/docs/design.md' }
 
@@ -25,7 +23,6 @@ describe('assets', () => {
   })
 
   it('percent-encodes a path with spaces and non-ASCII', () => {
-    // angle brackets are how CommonMark spells a destination containing a space
     const html = md.render('![pic](<./my pic.png>)\n', { srcPath: '/ws/设计/a.md' })
     expect(html).toContain('koloft-file://localhost/ws/%E8%AE%BE%E8%AE%A1/my%20pic.png')
   })

@@ -34,7 +34,6 @@ export function sessionKey(ref: SessionIdentity): string {
   return [ref.backendId, ref.sourceId, ref.nativeSessionId].map(encodeURIComponent).join(':')
 }
 
-// Existing Claude keys remain readable at the compatibility boundary.
 export function identityOf(key: string): SessionIdentity {
   const parts = key.split(':')
   if (parts.length === 3 && (parts[0] === 'codex' || parts[0] === 'claude')) {
@@ -47,13 +46,6 @@ export function identityOf(key: string): SessionIdentity {
   return { backendId: 'claude', sourceId: 'local', nativeSessionId: key }
 }
 
-/**
- * Which method a direct entrance launches. `available` is what the probes found, so a
- * machine with only Codex installed still starts in one step — `normalizeSessionMethods`
- * reads settings alone and would hand back a `claude` that is not there. A default that
- * is off or missing with no single replacement comes back unchanged: main refuses it and
- * says why, which is better than quietly starting the other one.
- */
 export function effectiveBackend(
   methods: SessionMethods,
   available: ReadonlySet<BackendId>

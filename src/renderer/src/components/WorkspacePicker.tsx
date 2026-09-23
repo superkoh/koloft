@@ -24,22 +24,6 @@ import {
 import { PullConfirm } from './PullConfirm'
 import { SessionLaunchButtons, SessionLaunchStatus, useSessionLaunch } from './SessionLaunchButtons'
 
-/**
- * C10 — the mini workspace picker (new-session-entrances design) §03). Both global
- * gestures come here first, because "which workspace" is the one question a keystroke
- * cannot answer on its own (D13): the last-touched workspace is preselected, ⏎ takes it,
- * a digit takes any row in a single press. It has no text field, ever — that is what
- * keeps the digits free (fuzzy jumping belongs to the command palette).
- *
- * Two forms, one component (§03B):
- *  - LIST — the global keys, one row per offered workspace;
- *  - GATE — a per-workspace direct launch (workspace context menu, welcome primary)
- *    whose target is behind-and-pullable: the same dialog with its list pinned to that
- *    one workspace, so the D6a gate has no back door.
- * The morph is the gate: on a behind-and-pullable row the primary becomes Pull & Start
- * and the pull runs BEFORE the launch. Every other freshness state renders nothing at
- * all and starts straight away (D14).
- */
 export function WorkspacePicker({
   mode,
   rows,
@@ -50,37 +34,24 @@ export function WorkspacePicker({
   launchLock
 }: {
   mode: PickerMode
-  /** the live pushed rows — the list, the notes and the morph all read from them */
   rows: WorkspaceRows[]
   lastWsPath: string | null
-  /** gate form: the single workspace this dialog is guarding */
   pinned?: WorkspaceRows
   onClose: () => void
-  /** what the confirmed workspace is for — a launch (⌘N) or C8 (⇧⌘N); in the pullable
-   *  case it fires only once the pull has landed */
   onConfirm: (ws: WorkspaceRows, backend: BackendId) => Promise<void>
   launchLock: { current: boolean }
 }): JSX.Element {
   const visible = useMemo(() => pickerRows(rows, mode), [rows, mode])
-  // the preselection is where the keyboard STARTS: a later rows push must not move it
-  // out from under the user (same stance as C8's snapshot order)
   const [hot, setHot] = useState(() => preselectIndex(rows, mode, lastWsPath))
   const [phase, setPhase] = useState<PullPhase>('idle')
   const [failReason, setFailReason] = useState('')
-  /** the workspace a pull FAILED for — the M4 failed-degrade ("Start on the current
-   *  HEAD is the honest option") only carries for that row; any other pullable row
-   *  keeps its D6a morph (rev-verify fix: a dialog-wide brake let a sibling row
-   *  launch on its old base after an unrelated failure) */
   const [failedFor, setFailedFor] = useState<string | null>(null)
-  /** how many root-checkout sessions the D4 confirm is warning about; null = closed */
   const [confirm, setConfirm] = useState<number | null>(null)
-  /** the workspace that confirm was raised FOR (captured at submit — review #2) */
   const [confirmWs, setConfirmWs] = useState<WorkspaceRows | null>(null)
   const boxRef = useRef<HTMLDivElement>(null)
   const showToast = useStore((s) => s.showToast)
 
   const at = Math.min(hot, Math.max(0, visible.length - 1))
-  /** what the primary acts on: the pinned workspace in gate form, else the hot row */
   const target = pinned ?? visible[at]?.ws
   const sessionLaunch = useSessionLaunch(
     !!target?.workspace.remote,
@@ -95,12 +66,10 @@ export function WorkspacePicker({
   )
   const confirmBackend = useRef<BackendId>(sessionLaunch.methods.defaultBackend)
   const backends = sessionLaunch.usable
-  /** the method ⇧⏎ starts — the keyboard's only way to the one that is not the default */
   const other =
     backends.length > 1
       ? backends.find((b) => b !== sessionLaunch.methods.defaultBackend)
       : undefined
-  /** a pull in flight locks the whole dialog (D6): no cancel, no escape, ≤60s */
   const locked = phase === 'pulling' || sessionLaunch.starting
   useEffect(() => {
     launchLock.current = locked
@@ -108,11 +77,7 @@ export function WorkspacePicker({
       launchLock.current = false
     }
   }, [locked, launchLock])
-  /** the failed-degrade applies to the row the pull failed FOR, nobody else */
   const failedHere = phase === 'failed' && !!target && failedFor === target.workspace.path
-  // D3: ⌘N morphs only on the one state Koloft can safely fix, and only until a pull has
-  // failed for THIS row — after that, starting on the current HEAD is the honest
-  // option (M4 failed); a sibling row's failure never unguards this one (D6a)
   const morph =
     mode === 'main' &&
     (phase === 'idle' || (phase === 'failed' && !failedHere)) &&
@@ -136,14 +101,10 @@ export function WorkspacePicker({
       return
     }
     showToast(pullToast(ws.workspace.path, f.branch, r.summary))
-    // the badge is already gone: main re-stamps and pushes the fresh rows before this
-    // resolves, so the session row can only appear on the new base
     setPhase('idle')
     void sessionLaunch.launch({ cwd: ws.workspace.path }, backend)
   }
 
-  /** D4: a pull changes files under whatever agents are working in the root checkout,
-   *  so it is confirmed once — Cancel leaves the dialog exactly as it was. */
   const submit = (
     ws: WorkspaceRows | undefined,
     backend = sessionLaunch.methods.defaultBackend
@@ -161,8 +122,6 @@ export function WorkspacePicker({
     }
     const count = mainRunningCount(ws.rows)
     if (count > 0) {
-      // capture the workspace the confirm DESCRIBES — a rows push while it is open
-      // must not retarget "Pull anyway" through the re-clamped hot index (review #2)
       confirmBackend.current = backend
       setConfirmWs(ws)
       setConfirm(count)
@@ -173,9 +132,6 @@ export function WorkspacePicker({
     if (!locked) onClose()
   }
 
-  // The dialog owns the keyboard while it is up — it has nothing focusable to type into,
-  // so the keys are read from the window and the box itself takes the focus away from
-  // whatever TUI was behind it. Esc peels one layer per press through the shared ladder.
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent): void => {
       if (e.key === 'Escape') {
@@ -194,7 +150,6 @@ export function WorkspacePicker({
         submit(target, e.shiftKey && other ? other : undefined)
         return
       }
-      // the gate form has no list to walk or number
       if (pinned) return
       if (e.key === 'ArrowDown') {
         e.preventDefault()
@@ -204,8 +159,6 @@ export function WorkspacePicker({
         setHot((h) => Math.max(h - 1, 0))
       } else if (/^[0-9]$/.test(e.key)) {
         e.preventDefault()
-        // D13 × D6a: a digit is "pick AND confirm", so it confirms whatever the row's
-        // primary says — including its Pull & Start morph
         const i = digitPick(visible, Number(e.key))
         if (i === null) return
         setHot(i)
@@ -214,11 +167,8 @@ export function WorkspacePicker({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-    // no dependency list: every key answer depends on where the cursor is right now
   })
 
-  // …and it re-takes the focus when the pull lock releases or the confirm closes, both
-  // of which hand it elsewhere (the confirm's primary autofocuses)
   useEffect(() => {
     if (locked || confirm !== null) return
     boxRef.current?.focus()
@@ -227,8 +177,6 @@ export function WorkspacePicker({
   const now = Date.now()
   const home = window.api.home
 
-  /** D14: the freshness apparatus appears for the pullable state alone — checking, ok,
-   *  offline, dirty and diverged can last for hours, and a box per ⌘N is pure noise. */
   const freshLine = (): JSX.Element | null => {
     const f = target?.workspace.freshness
     if (locked) {
@@ -293,7 +241,6 @@ export function WorkspacePicker({
               aria-label={pinned ? undefined : 'Workspaces'}
             >
               {pinned ? (
-                // gate form: the target is not a choice, so it is not an option row
                 <div className="cb-row hot">
                   <span className="wsp-name">{basename(pinned.workspace.path)}</span>
                   <span className="note">{rowNote(pinned, home, now)}</span>
@@ -305,9 +252,6 @@ export function WorkspacePicker({
                     className={'cb-row' + (i === at ? ' hot' : '')}
                     role="option"
                     aria-selected={i === at}
-                    // No hover-follows-selection: ⏎ must mean the row the keyboard is on,
-                    // never wherever the pointer came to rest. Mousedown is declined so
-                    // the box keeps the focus — a blur would take Esc with it.
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => {
                       setHot(i)
@@ -357,8 +301,6 @@ export function WorkspacePicker({
                 label={(backend, isDefault) => {
                   if (sessionLaunch.starting) return 'Starting…'
                   if (kind === 'pulling' || backends.length === 1) return primaryLabel(kind)
-                  // the primary spells the whole action and names its method; the second
-                  // button keeps the verb, because a bare "Codex" beside it reads as a noun
                   return isDefault
                     ? primaryLabel(kind, undefined, backendLabel(backend))
                     : `${primaryLabel(kind)} ${backendLabel(backend)}`

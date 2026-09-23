@@ -11,18 +11,6 @@ import {
   parseHeartbeat
 } from '../../src/main/remote/install'
 
-// U-ENS-1..4. ensure.sh is what makes a bare machine usable, and it runs before EVERY
-// remote session, so it is executed here for real against fake tools on PATH. Two
-// things it must never do: sit on a hidden password prompt, and refuse to start a
-// session just because the statusline's node could not be installed.
-//
-// ensure.sh sets its own PATH, putting `$HOME/.local/bin` first and the two Homebrew
-// folders after it. So a tool is made PRESENT by dropping a fake into the sandbox
-// home's `.local/bin`, and ABSENT by keeping it out of the little folder of real
-// unix tools that is all the rest of PATH holds. `rsync` is the missing package below
-// rather than tmux because this Mac has a real tmux in /opt/homebrew/bin, which no
-// PATH the test controls can hide (see the guard in the tmux-less case).
-
 const REAL_TOOLS = [
   'sh',
   'sed',
@@ -46,7 +34,7 @@ const REAL_TOOLS = [
   'printf'
 ]
 
-let sysbin: string
+let onlyRealUnixToolsDir: string
 let fixtures: string
 let ext: 'tar.gz' | 'tar.xz'
 let nodeName: string
@@ -57,14 +45,12 @@ function which(tool: string): string | null {
 }
 
 beforeAll(() => {
-  sysbin = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-sysbin-'))
+  onlyRealUnixToolsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-onlyRealUnixToolsDir-'))
   for (const t of REAL_TOOLS) {
     const real = which(t)
-    if (real) fs.symlinkSync(real, path.join(sysbin, t))
+    if (real) fs.symlinkSync(real, path.join(onlyRealUnixToolsDir, t))
   }
 
-  // the node download ensure.sh verifies and unpacks. Both compressions are staged:
-  // which one it asks for depends on whether the machine has `xz`.
   fixtures = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-nodedist-'))
   const uos = spawnSync('uname', ['-s'], { encoding: 'utf8' }).stdout.trim().toLowerCase()
   const uarch = spawnSync('uname', ['-m'], { encoding: 'utf8' }).stdout.trim()
@@ -87,16 +73,14 @@ beforeAll(() => {
   ext = which('xz') || fs.existsSync('/opt/homebrew/bin/xz') ? 'tar.xz' : 'tar.gz'
 })
 afterAll(() => {
-  fs.rmSync(sysbin, { recursive: true, force: true })
+  fs.rmSync(onlyRealUnixToolsDir, { recursive: true, force: true })
   fs.rmSync(fixtures, { recursive: true, force: true })
 })
 
 interface Machine {
   home: string
   logs: string
-  /** put a tool on the machine; `body` is the shell after the shebang */
   give(name: string, body: string): void
-  /** a tool that records its arguments and exits with `code` */
   giveLogger(name: string, code?: number): void
   calls(name: string): string[]
   run(): { status: number | null; stdout: string; stderr: string }
@@ -125,13 +109,12 @@ function machine(): Machine {
     run: () =>
       spawnSync('/bin/sh', [script], {
         encoding: 'utf8',
-        env: { HOME: home, PATH: sysbin, FIXTURES: fixtures },
+        env: { HOME: home, PATH: onlyRealUnixToolsDir, FIXTURES: fixtures },
         timeout: 60_000
       })
   }
 }
 
-/** a curl that serves the staged node dist; `exitCode` makes every fetch fail */
 const CURL = (exitCode = 0) => `
 printf '%s\\n' "$*" >> "$LOGS/curl.log"
 [ ${exitCode} != 0 ] && exit ${exitCode}
@@ -141,6 +124,10 @@ name=\${url##*/}
 [ -f "$FIXTURES/$name" ] || exit 22
 cat "$FIXTURES/$name" > "$out"
 exit 0`
+
+const expectNoHomebrewRsyncThePathCannotHide = (): void => {
+  expect(['/opt/homebrew/bin/rsync', '/usr/local/bin/rsync'].filter(fs.existsSync)).toEqual([])
+}
 
 const NODE = (version: string) => `[ "$1" = -v ] && echo v${version}\nexit 0`
 
@@ -155,7 +142,7 @@ const complete = (m: Machine, opts: { node?: string; curlExit?: number } = {}): 
   m.giveLogger('apt-get')
 }
 
-describe('ensure.sh on a remote machine', () => {
+describe('U-ENS-1..4: ensure.sh on a remote machine never sits on a hidden password prompt nor blocks a session over the statusline node', () => {
   it('a machine that already has everything installs nothing', () => {
     const m = machine()
     complete(m)
@@ -177,7 +164,6 @@ describe('ensure.sh on a remote machine', () => {
       `https://nodejs.org/dist/v${NODE_VERSION}/${nodeName}.${ext}`
     )
     expect(m.calls('curl').join('\n')).toContain('SHASUMS256.txt')
-    // nothing of the download is left behind
     expect(
       fs.readdirSync(path.join(m.home, '.koloft')).filter((n) => n.startsWith('node.tmp'))
     ).toEqual([])
@@ -193,13 +179,10 @@ describe('ensure.sh on a remote machine', () => {
       fs.copyFileSync(path.join(fixtures, f), path.join(bad, f))
     }
     const sums = path.join(bad, 'SHASUMS256.txt')
-    // Every line's first character has to come out DIFFERENT. Overwriting it with a
-    // fixed '9' left the sum untouched whenever it already began with one — a real
-    // checksum over a tarball built fresh each run, so one run in sixteen tampered with
-    // nothing, the download verified, and this test failed on CI for no reason.
+    const alwaysDifferentHexDigit = (c: string): string => (c === '9' ? '0' : '9')
     fs.writeFileSync(
       sums,
-      fs.readFileSync(sums, 'utf8').replace(/^[0-9a-f]/gm, (c) => (c === '9' ? '0' : '9'))
+      fs.readFileSync(sums, 'utf8').replace(/^[0-9a-f]/gm, alwaysDifferentHexDigit)
     )
     m.give('curl', `LOGS=${JSON.stringify(m.logs)}\nFIXTURES=${JSON.stringify(bad)}\n${CURL()}`)
     const res = m.run()
@@ -218,13 +201,11 @@ describe('ensure.sh on a remote machine', () => {
     expect(res.stdout).toContain('no statusline')
   })
 
-  // a bare Debian/Ubuntu container has no package lists at all, and every
-  // `apt-get install` then fails on "unable to locate package"
-  it('refreshes apt\u2019s package lists once, right before the first install', () => {
+  it('refreshes apt\u2019s package lists once, right before the first install: a bare Debian/Ubuntu container has none', () => {
     const m = machine()
     complete(m)
     fs.rmSync(path.join(m.home, '.local', 'bin', 'rsync'))
-    m.give('id', 'echo 0') // root: no sudo in the way
+    m.give('id', 'echo 0')
     m.run()
     expect(m.calls('apt-get')).toEqual(['update', 'install -y rsync'])
     expect(m.calls('sudo')).toEqual([])
@@ -244,10 +225,7 @@ describe('ensure.sh on a remote machine', () => {
   })
 
   it('with no passwordless sudo the password is asked for in the tab, and the install runs', () => {
-    // ensure.sh only ever runs inside the interactive ssh tab, so a prompt there is
-    // exactly where the person can type. rsync stands in for tmux here — a real
-    // Homebrew tmux sits on the PATH ensure.sh builds and cannot be hidden.
-    expect(['/opt/homebrew/bin/rsync', '/usr/local/bin/rsync'].filter(fs.existsSync)).toEqual([])
+    expectNoHomebrewRsyncThePathCannotHide()
     const m = machine()
     complete(m)
     fs.rmSync(path.join(m.home, '.local', 'bin', 'rsync'))
@@ -268,7 +246,7 @@ exec "$@"`
   })
 
   it('only when the password sudo fails too is the command handed over', () => {
-    expect(['/opt/homebrew/bin/rsync', '/usr/local/bin/rsync'].filter(fs.existsSync)).toEqual([])
+    expectNoHomebrewRsyncThePathCannotHide()
     const m = machine()
     complete(m)
     fs.rmSync(path.join(m.home, '.local', 'bin', 'rsync'))
@@ -281,9 +259,6 @@ exec "$@"`
   })
 })
 
-// The heartbeat is the only thing that can tell this Mac what the machine's disk looks
-// like, so it is run for real here: a temp repo with one linked worktree, asked through
-// the very command string that is sent over ssh.
 describe('the heartbeat question', () => {
   let dir = ''
   let repo = ''
@@ -337,7 +312,7 @@ describe('the heartbeat question', () => {
     })
   })
 
-  // claude slugs the PHYSICAL cwd (contract §2)
+  // CC§2
   it('resolves a folder reached through a symlink, and says nothing for one that is gone', () => {
     const link = path.join(dir, 'api-link')
     fs.symlinkSync(repo, link)

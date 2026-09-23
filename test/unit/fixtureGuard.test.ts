@@ -4,14 +4,10 @@ import path from 'path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { assertFixtureDir } from '../e2e/helpers/fixtureGuard'
 
-// The e2e suite can only ever prove the guard LETS legit dirs through — nothing in it
-// intentionally passes undefined or the real checkout. The reject branches (the whole
-// point) are provable only here.
-
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-guard-'))
 afterAll(() => fs.rmSync(scratch, { recursive: true, force: true }))
 
-describe('assertFixtureDir', () => {
+describe('assertFixtureDir: the reject branches, which the e2e suite never reaches', () => {
   it('throws on undefined — the incident: cwd would fall back to the real repo', () => {
     expect(() => assertFixtureDir('gitInit', undefined)).toThrow(/gitInit.*no dir/)
   })
@@ -21,14 +17,12 @@ describe('assertFixtureDir', () => {
   })
 
   it('throws on a real dir outside the temp area — a defined-but-wrong path', () => {
-    // process.cwd() is the developer's checkout: exactly where the leaked commit landed
     expect(() => assertFixtureDir('gitInit', process.cwd())).toThrow(/gitInit/)
     expect(() => assertFixtureDir('gitInit', process.cwd())).toThrow(/outside/)
   })
 
+  // PLATFORM§3
   it('accepts a dir under os.tmpdir() in its un-realpath’d (symlinked) form', () => {
-    // on macOS os.tmpdir() is /var/folders/… whose realpath is /private/var/folders/…;
-    // a naive one-sided realpath comparison would reject every legitimate fixture
     expect(() => assertFixtureDir('gitInit', scratch)).not.toThrow()
   })
 

@@ -6,14 +6,8 @@ import {
   onLayoutDragEnd
 } from '../../src/renderer/src/resizeGate'
 
-// The gate decides whether a terminal is allowed to push a new size to its pty. Its
-// two failure modes are both silent in the UI: a gate that never releases freezes
-// every terminal at its pre-drag size forever, and one that announces a release
-// nobody asked for costs a spurious SIGWINCH. Neither is localisable from the e2e
-// drag spec, which can only see "the terminal did / didn't resize".
-
 beforeEach(() => {
-  endLayoutDrag() // module singleton — never let one test's drag leak into the next
+  endLayoutDrag()
 })
 
 describe('resizeGate', () => {

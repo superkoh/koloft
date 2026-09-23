@@ -144,7 +144,7 @@ describe('CodexObservation', () => {
     })
   })
 
-  // Event order and payload fields come from the standalone 0.153.4 TUI background probe.
+  // CODEX§4
   it('keeps a main turn working until its spawned child finishes, without rebinding to the child', () => {
     const f = fixture()
     f.bind()
