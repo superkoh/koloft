@@ -5,7 +5,7 @@ import type { ProjectInfo } from '@shared/types'
 
 const WALK_UP_DEPTH_CAP = 128
 
-function realpathSafe(p: string): string {
+export function realpathSafe(p: string): string {
   try {
     return fs.realpathSync(p)
   } catch {

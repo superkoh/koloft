@@ -4,8 +4,8 @@
 ask the trust question — it prints an error and exits at once (`CC§9`). So the first
 session in a newly added workspace, if it is a worktree session, died on start.
 **Decision**: when the person starts a new worktree session and `~/.claude.json` has no
-trust for the repo root (or an ancestor), Koloft first writes
-`hasTrustDialogAccepted: true` under the root's real path. That click counts as their
+trust for the workspace folder (or an ancestor), Koloft first writes
+`hasTrustDialogAccepted: true` under that folder's real path. That click counts as their
 yes. Nothing else writes it: a main session gets Claude's own question in the
 terminal, and a scheduled run — a worktree launch nobody clicked — keeps the jobs
 form's warning. Never when the launch fell back to another folder (the home folder

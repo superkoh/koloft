@@ -706,7 +706,9 @@ other bullets of §9 were not re-measured on this build.
   worktree (locked, branch `worktree-<name>`) and opened the session. **The key must be
   the real path**: launched from `/var/folders/…` (a symlink to `/private/var/…`, with
   `PWD` set to the symlink path), a key written as `/var/…` was ignored and `-w`
-  refused again; `/private/var/…` worked. Measured 2026-09-23, CC 2.1.281, pty probe on
+  refused again; `/private/var/…` worked. **The launch folder is what counts, not the
+  repo's top folder**: launched from a subfolder of the repo, with only that subfolder
+  trusted, `-w` made the worktree at the top folder's `.claude/worktrees/` and started. Measured 2026-09-23, CC 2.1.281, pty probe on
   a throwaway one-commit repo under `$TMPDIR`, no trusted ancestor.
 - **A child claude inherits the parent's session markers and stops writing its
   transcript.** With `CLAUDE_CODE_CHILD_SESSION=1` in the environment the launched

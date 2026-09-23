@@ -120,7 +120,7 @@ import { WorkspaceManager, type LiveSession } from './workspaces'
 import { sanitizeSessionWorkbench } from '@shared/workbenchState'
 import { planResume, worktreeHomeRoot, type ResumeProbes } from './resumePlan'
 import { claudeArgv } from './claudeArgs'
-import { acceptClaudeTrust, isTrustedByClaude } from './claudeTrust'
+import { acceptClaudeTrust, claudeTrustsFolder } from './claudeTrust'
 import { CronRunner, type LaunchRequest } from './cronRunner'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { listSkills, type SkillFs } from './skillList'
@@ -2675,18 +2675,12 @@ function claudeJsonPath(): string {
   return path.join(os.homedir(), '.claude.json')
 }
 
-// CC§9
 function claudeTrusts(dir: string): boolean {
-  let real = dir
-  try {
-    real = fs.realpathSync(dir)
-  } catch {}
-  return isTrustedByClaude(() => JSON.parse(fs.readFileSync(claudeJsonPath(), 'utf8')), real)
+  return claudeTrustsFolder(claudeJsonPath(), dir)
 }
 
 // ADR-0026
 function trustBeforeWorktreeLaunch(root: string): void {
-  if (claudeTrusts(root)) return
   try {
     acceptClaudeTrust(claudeJsonPath(), root)
   } catch (err) {
