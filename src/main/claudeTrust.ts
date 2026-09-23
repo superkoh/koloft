@@ -1,4 +1,6 @@
+import fs from 'fs'
 import path from 'path'
+import { realpathSafe } from './projectInfo'
 
 // CC§9
 export function isTrustedByClaude(readClaudeJson: () => unknown, dir: string): boolean {
@@ -18,4 +20,21 @@ export function isTrustedByClaude(readClaudeJson: () => unknown, dir: string): b
     if (up === p) return false
     p = up
   }
+}
+
+// CC§9
+export function claudeTrustsFolder(claudeJson: string, dir: string): boolean {
+  return isTrustedByClaude(() => JSON.parse(fs.readFileSync(claudeJson, 'utf8')), realpathSafe(dir))
+}
+
+// CC§9 ADR-0026
+export function acceptClaudeTrust(claudeJson: string, dir: string): void {
+  const doc = JSON.parse(fs.readFileSync(claudeJson, 'utf8'))
+  const key = fs.realpathSync(dir)
+  if (isTrustedByClaude(() => doc, key)) return
+  const projects = (doc.projects ??= {})
+  projects[key] = { ...projects[key], hasTrustDialogAccepted: true }
+  const tmp = `${claudeJson}.koloft-${process.pid}`
+  fs.writeFileSync(tmp, JSON.stringify(doc, null, 2), { mode: 0o600 })
+  fs.renameSync(tmp, claudeJson)
 }
