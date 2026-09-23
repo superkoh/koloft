@@ -77,7 +77,7 @@ moved file), for something that only restates the implementation, or for a cosme
 
 **Only what a change can break gets run.** There is no full-suite gate. The unit layer is
 picked by import graph (`npm run test:unit:changed`); the e2e layer by flow name — spec
-names in `test/e2e` are flow names, and each spec's header comment says what it covers.
+names in `test/e2e` are flow names, and each spec's test titles say what it covers.
 Layer-specific traps (`$HOME` sandboxing, why you must never `SIGKILL` a remembered pid,
 how to drive native menu shortcuts) are in **`test/CLAUDE.md`**.
 
