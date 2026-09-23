@@ -218,23 +218,23 @@ test.describe('Workbench browser cases between the other browser specs: agent op
       await showWorkbench(page)
       await openLoadedTab(page, server, 'X')
       await openLoadedTab(page, server, 'Y')
-      expect(await wbTabTitles(page)).toEqual([PINNED_FILES_TAB_LABEL, 'X', 'Y'])
+      await expect.poll(() => wbTabTitles(page)).toEqual([PINNED_FILES_TAB_LABEL, 'X', 'Y'])
 
       await rowB.click()
       await expect(rowB).toHaveClass(/\bactive\b/, { timeout: 20_000 })
       await showWorkbench(page)
       await openLoadedTab(page, server, 'Z')
-      expect(await wbTabTitles(page)).toEqual([PINNED_FILES_TAB_LABEL, 'Z'])
+      await expect.poll(() => wbTabTitles(page)).toEqual([PINNED_FILES_TAB_LABEL, 'Z'])
 
       await rowA.click()
       await expect(rowA).toHaveClass(/\bactive\b/, { timeout: 20_000 })
       await showWorkbench(page)
-      expect(await wbTabTitles(page)).toEqual([PINNED_FILES_TAB_LABEL, 'X', 'Y'])
+      await expect.poll(() => wbTabTitles(page)).toEqual([PINNED_FILES_TAB_LABEL, 'X', 'Y'])
 
       await rowB.click()
       await expect(rowB).toHaveClass(/\bactive\b/, { timeout: 20_000 })
       await showWorkbench(page)
-      expect(await wbTabTitles(page)).toEqual([PINNED_FILES_TAB_LABEL, 'Z'])
+      await expect.poll(() => wbTabTitles(page)).toEqual([PINNED_FILES_TAB_LABEL, 'Z'])
     } finally {
       await server.close()
     }
