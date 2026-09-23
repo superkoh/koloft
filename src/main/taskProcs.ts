@@ -5,6 +5,7 @@ export interface ShellProc {
   pid: number
   ageMs: number
   listening: boolean
+  cpuMs: number
 }
 
 export interface TaskProcs {
@@ -40,28 +41,38 @@ export function parseEtime(s: string): number {
   return (((days * 24 + hours) * 60 + Number(m[3])) * 60 + Number(m[4])) * 1000
 }
 
+export function parseCputime(s: string): number {
+  const m = s.trim().match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+(?:\.\d+)?)$/)
+  if (!m) return 0
+  const hours = Number(m[1] ?? 0) * 24 + Number(m[2] ?? 0)
+  return Math.round(((hours * 60 + Number(m[3])) * 60 + Number(m[4])) * 1000)
+}
+
 interface Snapshot {
   childrenOf: Map<number, number[]>
   commandOf: Map<number, string>
   etimeOf: Map<number, string>
+  cpuOf: Map<number, number>
 }
 
 function parsePs(stdout: string): Snapshot | null {
   const childrenOf = new Map<number, number[]>()
   const commandOf = new Map<number, string>()
   const etimeOf = new Map<number, string>()
+  const cpuOf = new Map<number, number>()
   for (const line of stdout.split('\n')) {
-    const m = line.match(/^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/)
+    const m = line.match(/^\s*(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(.*)$/)
     if (!m) continue
     const pid = Number(m[1])
     const ppid = Number(m[2])
-    commandOf.set(pid, m[4])
+    commandOf.set(pid, m[5])
     etimeOf.set(pid, m[3])
+    cpuOf.set(pid, parseCputime(m[4]))
     const kids = childrenOf.get(ppid)
     if (kids) kids.push(pid)
     else childrenOf.set(ppid, [pid])
   }
-  return commandOf.size ? { childrenOf, commandOf, etimeOf } : null
+  return commandOf.size ? { childrenOf, commandOf, etimeOf, cpuOf } : null
 }
 
 function descendants(snap: Snapshot, root: number): number[] {
@@ -101,7 +112,7 @@ export async function inspectTaskProcs(
   tasksDir: string,
   exec: Exec = defaultExec
 ): Promise<TaskProcs | null> {
-  const snap = parsePs(await exec('ps', ['-Ao', 'pid=,ppid=,etime=,command=']))
+  const snap = parsePs(await exec('ps', ['-Ao', 'pid=,ppid=,etime=,time=,command=']))
   if (!snap) return null
   if (!/claude/i.test(snap.commandOf.get(rootPid) ?? '')) return null
   const shells = (snap.childrenOf.get(rootPid) ?? []).filter((k) =>
@@ -119,7 +130,8 @@ export async function inspectTaskProcs(
     result.shells.set(path.basename(name, '.output'), {
       pid,
       ageMs: parseEtime(snap.etimeOf.get(pid) ?? ''),
-      listening: false
+      listening: false,
+      cpuMs: descendants(snap, pid).reduce((sum, p) => sum + (snap.cpuOf.get(p) ?? 0), 0)
     })
   }
   if (result.shells.size) {

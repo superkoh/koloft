@@ -1,23 +1,25 @@
 import { describe, it, expect } from 'vitest'
-import { inspectTaskProcs, makeExec, parseEtime } from '../../src/main/taskProcs'
+import { inspectTaskProcs, makeExec, parseCputime, parseEtime } from '../../src/main/taskProcs'
 
 const TASKS = '/tmp/claude-502/proj/sid/tasks'
 const SNAP = '/Users/me/.claude/shell-snapshots/snapshot-zsh-1.sh'
 
 const OWN_STOP_HOOK_IN_FLIGHT =
-  ' 4800  4242       00:00 /bin/sh -c /x/hooks/sessionstart.sh /x/reg pty-1 stop'
+  ' 4800  4242       00:00 0:00.00 /bin/sh -c /x/hooks/sessionstart.sh /x/reg pty-1 stop'
 
 // CC§8
 const PS = [
-  '    1     0 12-03:20:11 /sbin/launchd',
-  ' 4242     1    01:02:03 /Users/me/.local/bin/claude --settings x.json',
-  ' 4300  4242       05:00 /bin/zsh -c source ' + SNAP + ' && eval "sleep 100"',
-  ' 4301  4300       05:00 sleep 100',
-  ' 4400  4242 01-02:00:00 /bin/zsh -c source ' + SNAP + ' && eval "python3 -m http.server"',
-  ' 4401  4400 01-02:00:00 python3 -m http.server 4179',
-  ' 4500  4242       00:01 /bin/zsh -c source ' + SNAP + ' && eval "git status"',
-  ' 4600  4242       00:03 node /Users/me/.ndot/ndot-mcp.mjs',
-  ' 4700  4242       10:00 caffeinate -i -t 300',
+  '    1     0 12-03:20:11 0:00.00 /sbin/launchd',
+  ' 4242     1    01:02:03 0:00.00 /Users/me/.local/bin/claude --settings x.json',
+  ' 4300  4242       05:00 0:00.05 /bin/zsh -c source ' + SNAP + ' && eval "sleep 100"',
+  ' 4301  4300       05:00 0:01.50 sleep 100',
+  ' 4400  4242 01-02:00:00 0:00.10 /bin/zsh -c source ' +
+    SNAP +
+    ' && eval "python3 -m http.server"',
+  ' 4401  4400 01-02:00:00 0:02.40 python3 -m http.server 4179',
+  ' 4500  4242       00:01 0:00.00 /bin/zsh -c source ' + SNAP + ' && eval "git status"',
+  ' 4600  4242       00:03 0:00.00 node /Users/me/.ndot/ndot-mcp.mjs',
+  ' 4700  4242       10:00 0:00.00 caffeinate -i -t 300',
   OWN_STOP_HOOK_IN_FLIGHT
 ].join('\n')
 
@@ -45,6 +47,14 @@ describe('taskProcs', () => {
     expect(parseEtime('garbage')).toBe(0)
   })
 
+  it('parses ps cpu time in every shape it comes in (minutes run past 59)', () => {
+    expect(parseCputime('0:02.96')).toBe(2960)
+    expect(parseCputime('1659:13.75')).toBe((1659 * 60 + 13.75) * 1000)
+    expect(parseCputime('01:02:03')).toBe((3600 + 120 + 3) * 1000)
+    expect(parseCputime('1-00:00:01')).toBe((24 * 3600 + 1) * 1000)
+    expect(parseCputime('garbage')).toBe(0)
+  })
+
   it('maps each tool shell, foreground ones too, to its task by the output file it holds, reports one whose child listens, and never asks lsof about MCP servers or hooks', async () => {
     const s = stub({
       fd1: [
@@ -63,8 +73,18 @@ describe('taskProcs', () => {
     const r = await inspectTaskProcs(4242, TASKS, s.exec)
     expect(r).not.toBeNull()
     expect([...r!.shells.keys()].sort()).toEqual(['bgit', 'bsleep', 'bsrv'])
-    expect(r!.shells.get('bsleep')).toEqual({ pid: 4300, ageMs: 5 * 60_000, listening: false })
-    expect(r!.shells.get('bsrv')).toEqual({ pid: 4400, ageMs: 26 * 3600_000, listening: true })
+    expect(r!.shells.get('bsleep')).toEqual({
+      pid: 4300,
+      ageMs: 5 * 60_000,
+      listening: false,
+      cpuMs: 1550
+    })
+    expect(r!.shells.get('bsrv')).toEqual({
+      pid: 4400,
+      ageMs: 26 * 3600_000,
+      listening: true,
+      cpuMs: 2500
+    })
     expect(r!.shells.get('bgit')?.pid).toBe(4500)
     const fd1Call = s.calls.find((c) => c.includes('-d'))!
     expect(fd1Call[fd1Call.indexOf('-p') + 1]).toBe('4300,4400,4500')
@@ -86,7 +106,7 @@ describe('taskProcs', () => {
   })
 
   it('a claude with no tool shells is an empty view, with no lsof asked', async () => {
-    const s = stub({ ps: ' 4242     1 01:00 /Users/me/.local/bin/claude\n' })
+    const s = stub({ ps: ' 4242     1 01:00 0:00.00 /Users/me/.local/bin/claude\n' })
     const r = await inspectTaskProcs(4242, TASKS, s.exec)
     expect(r).toEqual({ shells: new Map() })
     expect(s.calls.map((c) => c[0])).toEqual(['ps'])

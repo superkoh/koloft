@@ -532,8 +532,16 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   holding it; the file outlives the task, the descriptor does not). So "is
   background shell `<id>` alive" has an exact OS answer, and a tool shell holding an
   output file the Stop list does not name is a FOREGROUND call in flight. One
-  `bun listen.ts` was found 11.5 h into its run holding no listening socket — age is
-  a needed server tell, a port is only the fast one.
+  `bun listen.ts` was found 11.5 h into its run holding no listening socket.
+- **Age does not tell a server from long work.** Census 2026-09-23 over every
+  transcript on the dev Mac: of 2244 background shells with a start and an end, 88 ran
+  ≥30 min. About 28 were servers (`npm run dev`, `next start`, `port-forward`); at
+  least 25 were work (`until ! pgrep vitest…` waits, `npx playwright test`, gate
+  scripts). CPU does tell them apart: over 60 s an idle `python3 -m http.server` used
+  0.01 s of CPU per minute, while a test run uses tens of seconds per minute. A busy
+  emulator (qemu) also used 24.5 s per minute, so it reads as work too. Koloft
+  therefore calls a shell a server only when its tree listens on a port **and** used
+  under 3 s of CPU per minute over the last 2 minutes (`src/main/sessionTracker.ts`).
 - **`Notification` payloads carry no task list** (124 "Claude is waiting for your
   input" nudges, none with `background_tasks`), and `-p` mode exits with a background
   shell still running, firing one Stop.
