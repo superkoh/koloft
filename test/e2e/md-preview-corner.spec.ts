@@ -1039,6 +1039,7 @@ test.describe('rich Markdown preview corner cases — black-box against each cas
     await wsRows(page, 'ws-a').first().click()
 
     await expect(artifactTitle(page)).toHaveText('c25.md', { timeout: 30_000 })
+    await expect(mdBody(page)).toBeVisible({ timeout: 30_000 })
     await scrollToBottom(page)
     await expect(diagrams(page)).toHaveCount(3, { timeout: 120_000 })
     const texts = await diagrams(page).evaluateAll((els) => els.map((e) => e.textContent ?? ''))
