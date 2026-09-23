@@ -4,6 +4,18 @@
     "playwright-cli": "on"
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "asyncRewake": true,
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/worktree-deps.mjs\""
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write|MultiEdit",

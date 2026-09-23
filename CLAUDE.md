@@ -29,6 +29,12 @@ Working principles:
   leave it out, and add it the day the case shows up, evidence in hand. (A case
   that has been observed, or that the code's own invariants make likely, is not
   "imaginable" — handle it.)
+- A guess is not a fact. A limit read off a name, a sibling module, a doc or an
+  outside tool's past behavior stays a guess until one command proves it: say
+  "inferred, not checked" where you state it, and check it before any code depends
+  on it — everything built on a wrong premise goes when the premise does. The same
+  goes for your own access: run the command and read the error; never report a
+  permission you have not tried. What a command can answer is never asked of the owner.
 - Extend the existing UI when adding a feature. Reuse its components, layouts,
   interactions, state treatments and CSS classes. When the app already has a style
   or state for the same purpose, use it exactly; do not invent a parallel version
@@ -80,6 +86,29 @@ Working principles:
   preload, main index.ts) is still picked by the flows whose state or IPC it
   touched, never by falling back to the whole suite. There is no full-suite gate:
   `npm test` runs only when someone asks for it, never as a reflex before a merge.
+- Finish the code, then review, then test. While code is still being written, only
+  the fast checks run (typecheck, `check:comments`, `test:unit:changed`). Once the
+  diff is final, run `/code-review low` and `/simplify` over the whole diff, fix what
+  is real, and only then pick and run the e2e flows — a cleanup commit that lands
+  after a test round throws that round away.
+- The PR (pull request) body is a report for the owner deciding whether to merge. It
+  opens with six lines, in this order:
+  - **What it does** — one sentence, in the user's words, before any mechanism.
+  - **What a user sees change** — a table, one row per case, today against after;
+    or "no user-visible change".
+  - **Runtime code** — +N/−M lines under `src/`, tests, docs and fixtures not counted.
+  - **How to see it in the shipped app** — what to click in an installed build, or
+    "no way from the app".
+  - **Confidence to ship as-is** — high / medium / low, and the one fact that sets it.
+  - **Hand-test before merging** — no, or yes: what to try and why no suite can
+    answer it.
+
+  Then a table of what ran (suite · result · why that one), what did not run and
+  why, and `Out of scope`: each cut, and each claim still "inferred, not checked",
+  one line apiece. Before `gh pr create`, `git fetch origin` and make sure the branch
+  merges clean with `origin/main`; a conflict is resolved and the affected checks
+  re-run first. The reply that hands the PR back repeats the six lines and what
+  ran — the owner reads the reply, not the PR.
 - Hand-testing on a real machine is driven ONE CASE AT A TIME through
   AskUserQuestion, never as a wall of text. The steps to carry out go INSIDE the
   question; the options are the outcomes to choose between (what passed, what broke,
@@ -92,11 +121,20 @@ Working principles:
   - `npm run rebuild` before the first run, and again after any change to the Electron
     or node-pty version — otherwise the app crashes on launch with an ABI mismatch.
   - A fresh git worktree has no `node_modules` of its own and Node silently resolves up
-    to the parent checkout's, so run `npm install` **and** `npm run rebuild` inside each
-    worktree before testing there.
+    to the parent checkout's. A SessionStart hook (`scripts/worktree-deps.mjs`) runs
+    `npm ci`, `npm run rebuild` and the Electron download in the background the first
+    time a session starts in a worktree without `node_modules`, and wakes Claude only
+    if a step fails. When a worktree is entered mid-session no session starts, so run
+    those three by hand there.
   - Since Electron ≥42 the binary is no longer fetched at install time — run
     `node node_modules/electron/install.js` once, or the first (possibly headless e2e)
     launch stalls on a silent download.
+- Shell in a worktree stays plain. The worktree isolation guard refuses a Bash call
+  that names git and that it cannot prove stays inside this worktree — a `.github` in
+  a path counts as naming git. Refused: a shell variable in such a line, and a `cd`
+  outside the worktree followed by a `git` command. Each refusal is a wasted turn: one
+  plain command per call, absolute paths. zsh trap: an unquoted glob that matches
+  nothing (`--include=*.md`) aborts the whole call — quote it.
 - Auth comes from Koloft's own multi-account balancer (Settings ▸ Accounts): the claude
   shim injects the picked account per launch; the probe/header contract is
   `docs/claude-code-contract.md` §7. With the mode off, a session runs bare `claude` on
