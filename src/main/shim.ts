@@ -51,6 +51,8 @@ for a in "$@"; do
   prev="$a"
 done
 case "$1" in ""|-*) ;; *) skip=1 ;; esac
+# CC§9
+[ -n "$CLAUDECODE" ] && skip=1
 
 if [ "$KOLOFT_UTIL" = "1" ]; then
   utilok=0

@@ -77,6 +77,32 @@ function readWorktreeState(obj: Record<string, unknown>): WorktreeStateMeta | un
   return { originalCwd, worktreePath, worktreeName, worktreeBranch, originalHeadCommit }
 }
 
+export interface JsonlTail {
+  leftWorktree: boolean
+  relocatedCwd?: string
+}
+
+// CC§2 CC§4
+export function extractJsonlTail(lines: Iterable<string>): JsonlTail {
+  const tail: JsonlTail = { leftWorktree: false }
+  for (const line of lines) {
+    if (!line.includes('"worktree-state"') && !line.includes('"relocated"')) continue
+    let obj: Record<string, unknown>
+    try {
+      const parsed: unknown = JSON.parse(line)
+      if (!parsed || typeof parsed !== 'object') continue
+      obj = parsed as Record<string, unknown>
+    } catch {
+      continue
+    }
+    if (obj.type === 'worktree-state') tail.leftWorktree = obj.worktreeSession === null
+    else if (obj.type === 'relocated' && typeof obj.relocatedCwd === 'string' && obj.relocatedCwd) {
+      tail.relocatedCwd = obj.relocatedCwd
+    }
+  }
+  return tail
+}
+
 export function extractJsonlMeta(lines: Iterable<string>): Partial<SessionMeta> {
   const meta: Partial<SessionMeta> = {}
   for (const line of lines) {

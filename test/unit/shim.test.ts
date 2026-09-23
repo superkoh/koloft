@@ -201,6 +201,15 @@ describe('claude shim (registration — unchanged behavior)', () => {
     expect(realArgs).toEqual(['-p', 'hello'])
   })
 
+  // CC§9
+  it("a claude started by the tab's own claude never takes the tab over: no registration, no --settings", () => {
+    for (const args of [[], ['--resume', 'abcdef01-2345-4678-8abc-def012345678']]) {
+      const { reg, realArgs } = runShim(args, { CLAUDECODE: '1' })
+      expect(reg).toBeNull()
+      expect(realArgs).toEqual(args)
+    }
+  })
+
   it('subcommands (mcp) are passed through untouched', () => {
     const { reg, realArgs } = runShim(['mcp', 'list'])
     expect(reg).toBeNull()

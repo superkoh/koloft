@@ -457,6 +457,19 @@ describe('injected hook script', () => {
     expect(without.hooks).not.toHaveProperty('PostToolUse')
   })
 
+  // CC§8
+  // CC§8
+  it('a Notification reaches Koloft only when claude stops to wait on the person, never for a mid-turn one', () => {
+    const settings = JSON.parse(
+      fs.readFileSync(writeTabHookSettings(setupHooks(), 'tabNT'), 'utf8')
+    )
+    const types: string[] = settings.hooks.Notification[0].matcher.split('|')
+    expect(types).toEqual(expect.arrayContaining(['permission_prompt', 'idle_prompt']))
+    for (const midTurn of ['agent_completed', 'push_notification', 'auth_success']) {
+      expect(types).not.toContain(midTurn)
+    }
+  })
+
   it('carries a statusLine next to the hooks when the built-in statusline is on', () => {
     const sl = { type: 'command' as const, command: "'/x/statusline/run.sh'", padding: 0 }
     const file = writeTabHookSettings(setupHooks(), 'tabSL', sl)

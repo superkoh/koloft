@@ -1248,7 +1248,7 @@ export class SessionTracker extends EventEmitter {
         if (cls?.title && !t.firstPrompt) t.firstPrompt = cls.title
         if (cls?.commandArgs && !t.commandArgsTitle) t.commandArgsTitle = cls.commandArgs
         if (cls?.commandName && !t.commandTitle) t.commandTitle = cls.commandName
-        if (cls?.genuine || hasImage) {
+        if ((cls?.genuine || hasImage) && obj.isSidechain !== true) {
           activity = 'user'
           if (t.caughtUp || (isFinite(recTs) && recTs >= t.resetMs)) {
             t.stopPending = false
@@ -1259,7 +1259,7 @@ export class SessionTracker extends EventEmitter {
         this.accumulateUsage(t, obj, obj.isSidechain !== true)
       }
       if (obj.type === 'assistant' && Array.isArray(obj.message?.content)) {
-        activity = 'assistant'
+        if (obj.isSidechain !== true) activity = 'assistant'
         const liveNow = t.caughtUp || (isFinite(recTs) && recTs >= t.bindMs)
         for (const b of obj.message.content) {
           if (!b || b.type !== 'tool_use') continue

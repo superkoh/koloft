@@ -105,6 +105,13 @@ entry above); `test/e2e/fixtures/fake-claude.js` mimics this section entry by en
   **`worktreeSession.sessionId` differs from the file's own id in 14/116 samples**
   (the binding is inherited from a predecessor session) — never key on it (pinned in
   `src/main/sessionAggregate.ts`).
+- **CC keeps re-writing `worktree-state` through the run, so the LAST one sits near the
+  end of the file** and says where the session is now; the first one only says where
+  it started. Census 2026-09-23, CC ≤2.1.281, 313 transcripts carrying one: the last
+  record sat at most 49KB from the end (p90 27KB), so a 64KB tail read always finds it.
+  241 ended on `worktreeSession: null` (left the worktree), all in the root checkout's
+  slug; 70 ended bound, all in a worktree's slug; 2 ended bound in the root slug.
+  Measured by reading every `~/.claude/projects/*/*.jsonl` on the dev Mac.
 
 - **Message-line field vocabulary**: jsonl message lines carry
   `cwd / gitBranch / timestamp / sessionId / version`; a `summary` record is NOT
@@ -531,9 +538,23 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   input" nudges, none with `background_tasks`), and `-p` mode exits with a background
   shell still running, firing one Stop.
 - **A permission Notification reads like "Claude needs your permission to use Bash"**
-  (it contains "permission" or "approval"); any other Notification is the idle
-  "waiting for your input" nudge. (Quoted in earlier Koloft code notes; no date or CC
-  version.)
+  (it contains "permission" or "approval"). (Quoted in earlier Koloft code notes; no
+  date or CC version.)
+- **A Notification is NOT always one of those two: its input carries a
+  `notification_type`, and a hook's `matcher` filters on it.** The 2.1.281 binary
+  lists the types `permission_prompt, idle_prompt, auth_success, elicitation_dialog,
+  agent_needs_input, agent_completed, elicitation_url_dialog,
+  worker_permission_prompt, push_notification, computer_use_enter, computer_use_exit,
+  quota_auto_resume_fired, …` — most are not a turn end. Measured 2026-09-23 on CC
+  2.1.281 in a tmux run with `--settings`: a permission prompt fired
+  `{"message":"Claude needs your permission","notification_type":"permission_prompt"}`,
+  the 60 s nudge fired `{"message":"Claude is waiting for your
+  input","notification_type":"idle_prompt"}`; both reached a hook with
+  `"matcher":"permission_prompt|idle_prompt"`, and neither reached one with
+  `"matcher":"auth_success"`. Koloft also lets `worker_permission_prompt`,
+  `elicitation_dialog` and `elicitation_url_dialog` through, because their names say the
+  run is waiting on the person. That is inferred from the names; their payloads are not
+  measured.
 
 **How a background task shows up in the transcript.** Checked "against real
 transcripts and the CLI's own result schemas" on claude 2.1.222; the forked-skill
@@ -705,6 +726,13 @@ other bullets of §9 were not re-measured on this build.
   session and then expects a transcript must unset it (the sibling markers
   `CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, `CLAUDE_PID`, `CLAUDE_EFFORT`,
   `CLAUDE_CODE_MESSAGING_SOCKET/TOKEN` leak effort and messaging the same way).
+- **Every process a claude starts carries `CLAUDECODE=1`** (the Bash tool's shell and
+  everything under it; seen 2026-09-23 on CC 2.1.281). Koloft's own terminals strip it
+  (`src/main/ptyManager.ts`), so inside a Koloft tab it means "started by a claude".
+  The shim treats such a launch like `-p`. On 2026-09-23 an interactive claude started
+  from inside a session's Bash, through the shim, registered as that session's tab
+  (`"mode":"new"`). When it was killed, Koloft dropped the tab while the tab's real
+  claude kept running, and the person then resumed the same id in a second tab.
 
 Koloft dependents: the scheduled-jobs runner's launch line and the shim's new-session
 branch (`src/main/shim.ts`), `src/main/claudeArgs.ts`, `src/main/skillList.ts`.

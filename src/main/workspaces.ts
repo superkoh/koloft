@@ -17,11 +17,13 @@ import type {
 import {
   aggregateSessions,
   extractJsonlMeta,
+  extractJsonlTail,
   planRescan,
   filterOwned,
   hasHistory,
   resolveBuckets,
   resolvePending,
+  type JsonlTail,
   type PendingLaunch,
   type RescanState,
   type SessionMeta
@@ -43,6 +45,8 @@ import type { RemoteGitInfo } from './remote/install'
 const RESCAN_DEBOUNCE_MS = 250
 const PANEL_SAVE_DEBOUNCE_MS = 600
 const JSONL_SCAN_CAP = 256 * 1024
+// CC§2
+const JSONL_TAIL_BYTES = 64 * 1024
 const DISCOVER_MAX = 8
 
 interface HeadScan {
@@ -119,6 +123,25 @@ function* jsonlHeadLines(file: string, probe = { opened: false, eof: false }): G
   }
 }
 
+function jsonlTailLines(file: string): string[] {
+  let fd: number
+  try {
+    fd = fs.openSync(file, 'r')
+  } catch {
+    return []
+  }
+  try {
+    const size = fs.fstatSync(fd).size
+    const start = Math.max(0, size - JSONL_TAIL_BYTES)
+    const buf = Buffer.alloc(size - start)
+    fs.readSync(fd, buf, 0, buf.length, start)
+    const lines = buf.toString('utf8').split('\n')
+    return start > 0 ? lines.slice(1) : lines
+  } finally {
+    fs.closeSync(fd)
+  }
+}
+
 // PLATFORM§1
 function gitWorktreeEntries(root: string): Promise<WorktreeEntry[]> {
   return new Promise((resolve) => {
@@ -154,6 +177,7 @@ export class WorkspaceManager {
   private disposed = false
   private headScans = new Map<string, HeadScan>()
   private headScansSeen = new Set<string>()
+  private tailScans = new Map<string, { size: number; mtimeMs: number; tail: JsonlTail }>()
   private statByFile = new Map<string, { size: number; mtimeMs: number }>()
 
   constructor(private deps: WorkspaceManagerDeps) {
@@ -613,6 +637,9 @@ export class WorkspaceManager {
     for (const file of this.headScans.keys()) {
       if (!this.headScansSeen.has(file)) this.headScans.delete(file)
     }
+    for (const file of this.tailScans.keys()) {
+      if (!this.headScansSeen.has(file)) this.tailScans.delete(file)
+    }
     this.statByFile.clear()
 
     // CC§2
@@ -806,6 +833,23 @@ export class WorkspaceManager {
     return meta
   }
 
+  private scanTail(file: string): JsonlTail {
+    let st = this.statByFile.get(file)
+    if (!st) {
+      try {
+        const s = fs.statSync(file)
+        st = { size: s.size, mtimeMs: s.mtimeMs }
+      } catch {
+        return { leftWorktree: false }
+      }
+    }
+    const prev = this.tailScans.get(file)
+    if (prev && prev.size === st.size && prev.mtimeMs === st.mtimeMs) return prev.tail
+    const tail = extractJsonlTail(jsonlTailLines(file))
+    this.tailScans.set(file, { ...st, tail })
+    return tail
+  }
+
   // CC§2
   private readFirstCwd(
     root: string,
@@ -823,6 +867,14 @@ export class WorkspaceManager {
   private readMeta(root: string, slug: string, id: string, bucketDir: string): SessionMeta {
     const file = path.join(root, slug, id + '.jsonl')
     const partial: Partial<SessionMeta> = { ...this.scanHead(file) }
+    // CC§4
+    if (partial.worktreeState) {
+      const tail = this.scanTail(file)
+      if (tail.leftWorktree) {
+        partial.worktreeState = undefined
+        partial.cwd = tail.relocatedCwd
+      }
+    }
     try {
       const sidecar = fs.readFileSync(file.replace(/\.jsonl$/, '.title'), 'utf8').trim()
       if (sidecar) partial.aiTitle = sidecar

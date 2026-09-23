@@ -923,6 +923,30 @@ describe('run-state vs background work: any live background task keeps the sessi
     expect(status(tracker, 'tabX1')).toBe('working')
   })
 
+  // CC§2
+  it("a subagent's own prompt in the main transcript is not the user's: a held turn still self-releases", async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    const file = await bindCaughtUp(tracker, 'tabX2', cwd, initialLines(cwd))
+    tracker.setStatus('tabX2', 'working')
+
+    appendJsonl(file, [spawnRec('toolu_side', cwd)])
+    await tracker.reportTurnEnd('tabX2')
+    expect(status(tracker, 'tabX2')).toBe('working')
+
+    appendJsonl(file, [
+      {
+        type: 'user',
+        timestamp: new Date().toISOString(),
+        isSidechain: true,
+        message: { role: 'user', content: 'look through the logs' },
+        cwd
+      },
+      mainAssistantRec(cwd, Date.now(), true)
+    ])
+    await waitFor(tracker, (s) => s.tabId === 'tabX2' && s.status === 'waiting', 8000)
+  }, 12_000)
+
   it('a turn-end racing the watch-tick parse of its own spawn ack still holds', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
