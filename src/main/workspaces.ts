@@ -55,6 +55,7 @@ interface HeadScan {
   meta: Partial<SessionMeta>
   // CC§2
   final: boolean
+  tail?: { size: number; mtimeMs: number; tail: JsonlTail }
 }
 
 export interface LiveSession {
@@ -133,7 +134,7 @@ function jsonlTailLines(file: string): string[] {
   try {
     const size = fs.fstatSync(fd).size
     const start = Math.max(0, size - JSONL_TAIL_BYTES)
-    const buf = Buffer.alloc(size - start)
+    const buf = Buffer.allocUnsafe(size - start)
     fs.readSync(fd, buf, 0, buf.length, start)
     const lines = buf.toString('utf8').split('\n')
     return start > 0 ? lines.slice(1) : lines
@@ -177,7 +178,6 @@ export class WorkspaceManager {
   private disposed = false
   private headScans = new Map<string, HeadScan>()
   private headScansSeen = new Set<string>()
-  private tailScans = new Map<string, { size: number; mtimeMs: number; tail: JsonlTail }>()
   private statByFile = new Map<string, { size: number; mtimeMs: number }>()
 
   constructor(private deps: WorkspaceManagerDeps) {
@@ -637,9 +637,6 @@ export class WorkspaceManager {
     for (const file of this.headScans.keys()) {
       if (!this.headScansSeen.has(file)) this.headScans.delete(file)
     }
-    for (const file of this.tailScans.keys()) {
-      if (!this.headScansSeen.has(file)) this.tailScans.delete(file)
-    }
     this.statByFile.clear()
 
     // CC§2
@@ -834,19 +831,12 @@ export class WorkspaceManager {
   }
 
   private scanTail(file: string): JsonlTail {
-    let st = this.statByFile.get(file)
-    if (!st) {
-      try {
-        const s = fs.statSync(file)
-        st = { size: s.size, mtimeMs: s.mtimeMs }
-      } catch {
-        return { leftWorktree: false }
-      }
-    }
-    const prev = this.tailScans.get(file)
-    if (prev && prev.size === st.size && prev.mtimeMs === st.mtimeMs) return prev.tail
+    const st = this.statByFile.get(file)
+    const head = this.headScans.get(file)
+    const prev = head?.tail
+    if (prev && st && prev.size === st.size && prev.mtimeMs === st.mtimeMs) return prev.tail
     const tail = extractJsonlTail(jsonlTailLines(file))
-    this.tailScans.set(file, { ...st, tail })
+    if (head && st) head.tail = { ...st, tail }
     return tail
   }
 
@@ -870,10 +860,10 @@ export class WorkspaceManager {
     // CC§4
     if (partial.worktreeState) {
       const tail = this.scanTail(file)
-      if (tail.leftWorktree) {
+      if (tail.worktreeState === null) {
         partial.worktreeState = undefined
         partial.cwd = tail.relocatedCwd
-      }
+      } else if (tail.worktreeState) partial.worktreeState = tail.worktreeState
     }
     try {
       const sidecar = fs.readFileSync(file.replace(/\.jsonl$/, '.title'), 'utf8').trim()

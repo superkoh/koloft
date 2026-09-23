@@ -1217,8 +1217,9 @@ export class SessionTracker extends EventEmitter {
       }
       // CC§2
       const recTs = Math.min(Date.parse(obj.timestamp), Date.now())
+      const mainThread = obj.isSidechain !== true
       if (isFinite(recTs)) {
-        if (obj.isSidechain === true) {
+        if (!mainThread) {
           if (recTs > t.lastBgActivityTs) t.lastBgActivityTs = recTs
         } else if (recTs > t.lastMainActivityTs) {
           t.lastMainActivityTs = recTs
@@ -1236,7 +1237,7 @@ export class SessionTracker extends EventEmitter {
           if (text?.text) raw = text.text
           hasImage = c.some((x: any) => x?.type === 'image')
         }
-        if (raw !== null && INTERRUPT_TEXTS.has(raw) && obj.isSidechain !== true) {
+        if (raw !== null && INTERRUPT_TEXTS.has(raw) && mainThread) {
           if (t.caughtUp || (isFinite(recTs) && recTs >= t.resetMs)) {
             const at = isFinite(recTs) ? recTs : Date.now()
             if (at > t.lastInterruptTs) t.lastInterruptTs = at
@@ -1248,7 +1249,7 @@ export class SessionTracker extends EventEmitter {
         if (cls?.title && !t.firstPrompt) t.firstPrompt = cls.title
         if (cls?.commandArgs && !t.commandArgsTitle) t.commandArgsTitle = cls.commandArgs
         if (cls?.commandName && !t.commandTitle) t.commandTitle = cls.commandName
-        if ((cls?.genuine || hasImage) && obj.isSidechain !== true) {
+        if ((cls?.genuine || hasImage) && mainThread) {
           activity = 'user'
           if (t.caughtUp || (isFinite(recTs) && recTs >= t.resetMs)) {
             t.stopPending = false
@@ -1256,10 +1257,10 @@ export class SessionTracker extends EventEmitter {
         }
       }
       if (obj.type === 'assistant' && obj.message && obj.message.usage) {
-        this.accumulateUsage(t, obj, obj.isSidechain !== true)
+        this.accumulateUsage(t, obj, mainThread)
       }
       if (obj.type === 'assistant' && Array.isArray(obj.message?.content)) {
-        if (obj.isSidechain !== true) activity = 'assistant'
+        if (mainThread) activity = 'assistant'
         const liveNow = t.caughtUp || (isFinite(recTs) && recTs >= t.bindMs)
         for (const b of obj.message.content) {
           if (!b || b.type !== 'tool_use') continue
