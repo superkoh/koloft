@@ -22,6 +22,7 @@ import {
 } from '../sessionRows'
 import { releaseSettledResumes, resumeInFlight, resumeSession } from '../resumeFlow'
 import { adoptionSettled } from '../adoption'
+import { requestCloseTab } from '../closeFlow'
 import { behindBadge } from '../freshnessView'
 import { FreshnessPopover } from './FreshnessPopover'
 import { basename } from '@shared/preview'
@@ -228,7 +229,7 @@ export function WorkspaceSidebar({
       : t.row.pending
         ? 1
         : t.row.running
-          ? 2
+          ? 3
           : 5
 
   const openMenuAt = (el: HTMLElement, target: MenuTarget): void => {
@@ -502,6 +503,17 @@ export function WorkspaceSidebar({
             }}
           >
             Copy session ID
+          </div>
+          <div
+            className="mi"
+            onClick={() => {
+              setMenu(null)
+              const tabId = tabIdFor(row.id)
+              if (tabId) requestCloseTab(tabId)
+              else setConfirmOrphan(row.id)
+            }}
+          >
+            Close
           </div>
         </div>
       )
