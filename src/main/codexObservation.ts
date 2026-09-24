@@ -2,6 +2,7 @@ import type { BackgroundItem } from '@shared/types'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from './sessionRuntime'
 import path from 'path'
+import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
 
 export function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -60,6 +61,16 @@ const TURN_EVENT: Record<Turn, SessionEvent> = {
   ended: { type: 'stop' }
 }
 
+function patchDelta(kind: unknown, diff: string): { added: number; removed: number } {
+  const lines = diff.split('\n')
+  if (lines[lines.length - 1] === '') lines.pop()
+  if (kind === 'add') return { added: lines.length, removed: 0 }
+  return {
+    added: lines.filter((l) => l.startsWith('+') && !l.startsWith('+++ ')).length,
+    removed: lines.filter((l) => l.startsWith('-') && !l.startsWith('--- ')).length
+  }
+}
+
 interface Activity extends BackgroundItem {
   root: string
   owner: string
@@ -84,6 +95,10 @@ export class CodexObservation {
   private childRoots = new Map<string, string>()
   private childTurns = new Map<string, string>()
   private activities = new Map<string, Activity>()
+  private touched = new Map<string, FileAcc>()
+  private lastTouched?: string
+  private lastWritten?: string
+  private liveWrites = 0
   unsubscribed = false
 
   constructor(private emit: (event: CodexEvent) => void) {}
@@ -151,6 +166,9 @@ export class CodexObservation {
       this.waitingForInput = false
       this.mainTurn = 'ended'
       this.publishedTurn = undefined
+      this.touched.clear()
+      this.lastTouched = this.lastWritten = undefined
+      this.liveWrites = 0
       this.model = typeof result.model === 'string' ? result.model : (thread.model ?? undefined)
       const cwd =
         typeof result.cwd === 'string' && path.isAbsolute(result.cwd)
@@ -168,6 +186,7 @@ export class CodexObservation {
     const ownedChild =
       typeof p.threadId === 'string' && this.childRoots.get(p.threadId) === this.threadId
     if (!this.threadId || (p.threadId !== this.threadId && !ownedChild)) return
+    if (method === 'item/completed') this.observeFiles(record(p.item))
     if (
       id !== undefined &&
       method &&
@@ -234,6 +253,44 @@ export class CodexObservation {
     } else if (method === 'error') {
       this.degraded(String(record(p.error).message ?? 'Codex reported an error.'))
     }
+  }
+
+  // CODEX§12
+  private observeFiles(item: Record<string, unknown>): void {
+    if (item.status !== 'completed') return
+    let changed = false
+    if (item.type === 'fileChange' && Array.isArray(item.changes)) {
+      for (const change of item.changes.map(record)) {
+        const kind = record(change.kind)
+        const target = typeof kind.move_path === 'string' ? kind.move_path : change.path
+        if (kind.type === 'delete' || typeof target !== 'string' || !path.isAbsolute(target))
+          continue
+        const { added, removed } = patchDelta(
+          kind.type,
+          typeof change.diff === 'string' ? change.diff : ''
+        )
+        noteWrite(this.touched, target, added, removed)
+        this.lastTouched = this.lastWritten = target
+        changed = true
+      }
+      if (changed) this.liveWrites++
+    } else if (item.type === 'commandExecution' && Array.isArray(item.commandActions)) {
+      for (const action of item.commandActions.map(record)) {
+        if (action.type !== 'read' || typeof action.path !== 'string') continue
+        if (!path.isAbsolute(action.path)) continue
+        noteRead(this.touched, action.path)
+        this.lastTouched = action.path
+        changed = true
+      }
+    }
+    if (!changed) return
+    this.emit({
+      type: 'files-changed',
+      files: capTouched([...this.touched].map(([src, acc]) => touchedItem(src, acc))),
+      lastTouched: this.lastTouched,
+      lastWritten: this.lastWritten,
+      liveWrites: this.liveWrites
+    })
   }
 
   private degraded(message: string): void {

@@ -1,4 +1,4 @@
-import type { BackgroundItem, SessionUsage } from './types'
+import type { BackgroundItem, PreviewItem, SessionUsage } from './types'
 
 // CC§8
 export interface ReportedTask {
@@ -15,3 +15,10 @@ export type SessionEvent =
   | { type: 'usage'; usage: SessionUsage }
   | { type: 'title'; title: string }
   | { type: 'degraded'; message: string }
+  | {
+      type: 'files-changed'
+      files: PreviewItem[]
+      lastTouched?: string
+      lastWritten?: string
+      liveWrites: number
+    }

@@ -37,6 +37,7 @@ function fixture() {
   const background = (): BackgroundItem[] | undefined =>
     events.flatMap((e) => (e.type === 'background-changed' ? [e.items] : [])).at(-1)
   const status = () => runtime.statusOf(TAB)
+  const files = () => events.flatMap((e) => (e.type === 'files-changed' ? [e] : [])).at(-1)
   const turnDone = () => raised.filter((kind) => kind === 'turn-done').length
   const bind = (id = A, requestId = 1, method = 'thread/start', cwd?: string) => {
     observer.receive('client', { id: requestId, method, params: { cwd } })
@@ -54,6 +55,7 @@ function fixture() {
     server,
     bound,
     background,
+    files,
     status,
     turnDone
   }
@@ -313,5 +315,84 @@ describe('CodexObservation', () => {
       status: { type: 'active', activeFlags: ['waitingOnUserInput'] }
     })
     expect(f.status()).toBe('waiting')
+  })
+
+  const patch = (status: string, changes: object[]) => ({
+    item: { type: 'fileChange', id: 'patch', status, changes }
+  })
+  const command = (command: string, commandActions: object[]) => ({
+    item: {
+      type: 'commandExecution',
+      id: 'cmd-' + command,
+      status: 'completed',
+      command: `/bin/zsh -lc '${command}'`,
+      cwd: '/repo',
+      commandActions
+    }
+  })
+
+  it('lists the files a patch wrote, with line counts, and a file a command read, from the item shapes Codex sends', () => {
+    const f = fixture()
+    f.bind()
+    f.server(
+      'item/completed',
+      patch('completed', [
+        { path: '/repo/added.txt', kind: { type: 'add' }, diff: 'hi\n' },
+        {
+          path: '/repo/notes.txt',
+          kind: { type: 'update', move_path: null },
+          diff: '@@ -1 +1 @@\n-old line\n+new line\n'
+        }
+      ])
+    )
+    f.server(
+      'item/completed',
+      command('cat docs/a.md', [
+        { type: 'read', command: 'cat docs/a.md', name: 'a.md', path: '/repo/docs/a.md' }
+      ])
+    )
+    expect(f.files()).toEqual({
+      type: 'files-changed',
+      files: [
+        { src: '/repo/added.txt', label: 'added.txt', access: 'wrote', added: 1 },
+        { src: '/repo/notes.txt', label: 'notes.txt', access: 'wrote', added: 1, removed: 1 },
+        { src: '/repo/docs/a.md', label: 'a.md', access: 'read' }
+      ],
+      lastTouched: '/repo/docs/a.md',
+      lastWritten: '/repo/notes.txt',
+      liveWrites: 1
+    })
+  })
+
+  it('ignores a declined patch and a shell command that only writes through the shell', () => {
+    const f = fixture()
+    f.bind()
+    f.server(
+      'item/completed',
+      patch('declined', [{ path: '/repo/a.txt', kind: { type: 'add' }, diff: 'x\n' }])
+    )
+    f.server(
+      'item/completed',
+      command('echo hello > b.txt', [{ type: 'unknown', command: 'echo hello > b.txt' }])
+    )
+    expect(f.files()).toBeUndefined()
+  })
+
+  it('starts a fresh file list when the foreground session changes', () => {
+    const f = fixture()
+    f.bind()
+    f.server(
+      'item/completed',
+      patch('completed', [{ path: '/repo/a.txt', kind: { type: 'add' }, diff: 'a\n' }])
+    )
+    f.bind(B, 2, 'thread/start')
+    f.observer.receive('server', {
+      method: 'item/completed',
+      params: {
+        threadId: B,
+        ...patch('completed', [{ path: '/repo/b.txt', kind: { type: 'add' }, diff: 'b\n' }])
+      }
+    })
+    expect(f.files()?.files.map((file) => file.src)).toEqual(['/repo/b.txt'])
   })
 })

@@ -5,19 +5,18 @@ import type {
   ClaudeSessionInfo as SessionInfo,
   PreviewItem,
   SessionStatus,
-  FileAccess,
   SessionUsage,
   BackgroundItem
 } from '@shared/types'
 import type { ReportedTask, SessionEvent } from '@shared/sessionEvent'
 import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
-import { basename } from '@shared/preview'
 import { resolvePricing } from '@shared/pricing'
 import { localDayKey } from '@shared/usageFormat'
 import { encodeCwd } from '@shared/cwdKey'
 import { projectInfoFor } from './projectInfo'
 import { inspectTaskProcs, type TaskProcs } from './taskProcs'
 import { SessionRuntime, envMs, turnOf, type Turn } from './sessionRuntime'
+import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
 
 const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects')
 const TMP_ROOT = ((): string => {
@@ -27,7 +26,6 @@ const TMP_ROOT = ((): string => {
     return '/tmp'
   }
 })()
-const MAX_FILES = 300
 const SUBAGENT_SCAN_MS = envMs('KOLOFT_SUBAGENT_SCAN_MS', 5000)
 const EMIT_THROTTLE_MS = 500
 const RESUME_AFTER_STOP_MS = envMs('KOLOFT_RESUME_AFTER_STOP_MS', 2000)
@@ -187,12 +185,6 @@ interface SubagentFile {
   tail: Buffer
   activeMs: number
   teammate?: boolean
-}
-
-interface FileAcc {
-  access: FileAccess
-  added: number
-  removed: number
 }
 
 function toolFilePath(input: unknown): string | null {
@@ -1278,19 +1270,12 @@ export class SessionTracker extends SessionRuntime {
           if (!fp) continue
           if (WRITE_TOOLS.has(b.name)) {
             const { added, removed } = editDelta(b.name, b.input)
-            const cur = t.candidates.get(fp)
-            if (cur && cur.access === 'wrote') {
-              cur.added += added
-              cur.removed += removed
-            } else {
-              t.candidates.set(fp, { access: 'wrote', added, removed })
-            }
+            noteWrite(t.candidates, fp, added, removed)
             t.lastTouchedAbs = fp
             t.lastWrittenAbs = fp
             if (liveNow) t.info.liveWrites = (t.info.liveWrites ?? 0) + 1
           } else if (READ_TOOLS.has(b.name)) {
-            if (!t.candidates.has(fp))
-              t.candidates.set(fp, { access: 'read', added: 0, removed: 0 })
+            noteRead(t.candidates, fp)
             t.lastTouchedAbs = fp
           }
         }
@@ -1395,20 +1380,10 @@ export class SessionTracker extends SessionRuntime {
         ex.removed = (ex.removed ?? 0) + acc.removed
         if (acc.access === 'wrote') ex.access = 'wrote'
       } else {
-        const item: PreviewItem = { src: canon, label: basename(canon), access: acc.access }
-        if (acc.added) item.added = acc.added
-        if (acc.removed) item.removed = acc.removed
-        byCanon.set(canon, item)
+        byCanon.set(canon, touchedItem(canon, acc))
       }
     }
-    const all = [...byCanon.values()]
-    const files =
-      all.length <= MAX_FILES
-        ? all
-        : [
-            ...all.filter((f) => f.access === 'wrote'),
-            ...all.filter((f) => f.access !== 'wrote')
-          ].slice(0, MAX_FILES)
+    const files = capTouched([...byCanon.values()])
 
     const sidecarTitle = t.info.jsonlPath ? this.titleFromSidecar(t.info.jsonlPath) : null
     t.info.title =

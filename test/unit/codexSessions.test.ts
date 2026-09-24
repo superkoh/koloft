@@ -292,6 +292,29 @@ describe('CodexSessions', () => {
     expect(closes).toEqual([launched.id])
   })
 
+  it('shows the files a Codex patch wrote on the session, and counts the patch as a live write', async () => {
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    bind()
+    const file = path.join(repo, 'notes.txt')
+    transports[0].options.onFrame('server', {
+      method: 'item/completed',
+      params: {
+        threadId: A,
+        item: {
+          type: 'fileChange',
+          id: 'patch',
+          status: 'completed',
+          changes: [{ path: file, kind: { type: 'update', move_path: null }, diff: '+new\n' }]
+        }
+      }
+    })
+    expect(sessions.list()[0]).toMatchObject({
+      files: [{ src: file, access: 'wrote', added: 1 }],
+      lastWritten: file,
+      liveWrites: 1
+    })
+  })
+
   it('reports an unexpected exit after confirmed stop without immediately clearing the alert', async () => {
     const launched = await sessions.launch({ kind: 'codex', cwd: repo })
     bind()

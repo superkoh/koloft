@@ -319,3 +319,38 @@ past argument parsing (it then stopped at "stdin is not a terminal"). In section
 run, `-a on-request -s read-only` led to an approval request. That `never` /
 `danger-full-access` and `workspace-write` take effect the same way was **not
 exercised against a model — inferred, not checked**.
+
+## 12. Files a turn touched, and a command that opens a file
+
+**Checked on 2026-09-24 with standalone Codex CLI 0.153.4 (`codex-cli 0.153.4`), one real
+model turn.** A Node script ran `codex app-server` on stdio and sent `initialize`,
+`initialized`, `thread/start` (`approvalPolicy: "never"`, `sandbox: "workspace-write"`) and
+one `turn/start`, in a temporary Git repository. `CODEX_HOME` was a temporary folder with
+`features.apps=false`, `features.plugins=false`, a trust table for the repository and a
+copy of this Mac's own login file, deleted after the run. The prompt asked for one patch
+(two edits and one new file), then `cat notes.txt`, then `open ./missing-report.html` (a
+file that did not exist, so no app opened), then `echo hello > shellwrite.txt`. Every
+server frame was saved and read.
+
+- A patch arrived as one `fileChange` item: `item/started` with `status: "inProgress"`,
+  then `item/completed` with `status: "completed"`, both carrying the full `changes`
+  list. Each change had an **absolute** `path`, a `kind` (`{type: "add"}` or
+  `{type: "update", move_path: null}`) and a `diff`. For an update the diff was a unified
+  hunk (`@@ -1 +1 @@`, `-old`, `+new`, no `---`/`+++` file lines); for an added file it
+  was the file's text with no `+` signs.
+- A shell command arrived as a `commandExecution` item whose `command` was wrapped in the
+  user's shell: `/bin/zsh -lc 'cat notes.txt'`. Its `commandActions` list held the
+  command without the wrapper. `cat notes.txt` came as `{type: "read", path: <absolute>}`;
+  `cat notes.txt sub/deep.txt`, `open ./missing-report.html` and `echo hello >
+  shellwrite.txt` each came as `{type: "unknown", command: …}`. So a file written through
+  the shell shows up nowhere as a file.
+- `open ./missing-report.html` really ran: the item completed with `status: "failed"`,
+  `exitCode: 1` and the system `open` tool's "file … does not exist" message. Nothing on
+  the wire lets a client stop it, so a real file would also open in its own app.
+- `item/completed` for a command that ran fine had `status: "completed"`.
+
+Not seen on the wire, read from the generated schema only: the `delete` kind, a
+non-null `move_path`, and the `failed` / `declined` patch statuses. How they arrive is
+**inferred, not checked**. `open <url>`, and `open` under `read-only` or with
+`on-request` approval, were not tried (a URL would have opened a browser on this Mac):
+that they reach the wire the same way is **inferred, not checked**.

@@ -580,6 +580,12 @@ export class CodexSessions {
         return this.deps.changed()
       case 'title':
         return this.retitle(info, event.title)
+      case 'files-changed':
+        info.files = event.files
+        info.lastTouched = event.lastTouched
+        info.lastWritten = event.lastWritten
+        info.liveWrites = event.liveWrites
+        return this.deps.changed()
     }
   }
 
