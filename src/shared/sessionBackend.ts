@@ -73,7 +73,6 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities | 'refused'>> 
       ...EVERYTHING,
       agentOpen: PENDING,
       browserControl: PENDING,
-      scheduledTasks: PENDING,
       rename: PENDING
     }
   },

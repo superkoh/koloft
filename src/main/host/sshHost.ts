@@ -1,3 +1,5 @@
+import crypto from 'crypto'
+import os from 'os'
 import path from 'path'
 import {
   HIDDEN_BY_DEFAULT_NAMES,
@@ -24,15 +26,107 @@ import {
 import { GIT_TIMEOUT_MS, gitOps, type GitOps } from '../gitStatus'
 import { GithubLookup, type GithubOptions } from '../github'
 import { REMOTE_PATH_LINE } from '../remote/install'
-import { killSessionCmd } from '../remote/launch'
-import type { BytesResult } from '../remote/ssh'
-import type { Host, ShellLaunch } from './host'
+import {
+  killSessionCmd,
+  launchLine,
+  POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
+  sessionIdOfTmux,
+  tmuxSessionName,
+  writeTabPackage,
+  type MachinePackage
+} from '../remote/launch'
+import { mirrorHookDir, mirrorProjectsRoot, remoteMachineDir, tabPackageDir } from '../remote/paths'
+import { launchMode } from '../remote/sync'
+import { ensureControlDir, sshOptions, type BytesResult } from '../remote/ssh'
+import { claudeArgv } from '../claudeArgs'
+import type { ClaudeLaunch, ClaudeLaunchPlan, Host, ShellLaunch } from './host'
+
+export interface MachineAccount {
+  env: Record<string, string>
+  picked: string
+  banner: string
+}
+
+export interface MachineClaudeDeps {
+  userData: string
+  controlDir: string
+  machinePackage(): MachinePackage
+  alive(): ReadonlySet<string>
+  realPath(p: string): string
+  settings(): { multiAccount: boolean; skipPermissions: boolean }
+  pickAccount(): Promise<MachineAccount | undefined>
+  hookSettings(tabId: string, machineDir: string): Record<string, unknown>
+}
 
 export interface SshHostDeps {
   run(cmd: string, opts?: { timeoutMs?: number; input?: Buffer }): Promise<BytesResult>
   shell(dir: string): Omit<ShellLaunch, 'cwd'>
   github: GithubOptions
+  claude: MachineClaudeDeps
 }
+
+const OWN_LOGIN_BANNER = "[Koloft] using this machine's own claude login"
+
+// CC§9
+export function machineClaudeArgs(
+  spec: ClaudeLaunch,
+  sessionId: string,
+  skipPermissions: boolean
+): { ok: true; args: string[] } | { ok: false; code: 'invalid-args' } {
+  const argv = claudeArgv('claude', {
+    resumeSessionId: spec.resumeSessionId,
+    sessionId: spec.resumeSessionId ? undefined : sessionId,
+    worktree: spec.worktree,
+    model: spec.model,
+    effort: spec.effort,
+    permission:
+      spec.permission && spec.permission !== 'default'
+        ? spec.permission
+        : skipPermissions
+          ? 'bypass'
+          : undefined
+  })
+  if (!argv.ok) return argv
+  const unwatched = !spec.resumeSessionId && spec.firstPrompt !== undefined
+  return {
+    ok: true,
+    args: [
+      ...argv.argv.slice(1),
+      ...(unwatched && spec.name ? ['--name', spec.name] : []),
+      ...(unwatched && spec.firstPrompt ? ['--', spec.firstPrompt] : [])
+    ]
+  }
+}
+
+const TRUST_CWD_JS = [
+  'const fs=require("fs"),path=require("path");',
+  'const [f,d]=process.argv.slice(1);',
+  'let j={};',
+  'try{j=JSON.parse(fs.readFileSync(f,"utf8"))}catch(e){if(e.code!=="ENOENT")process.exit(0)}',
+  'const p=(j.projects=j.projects||{});',
+  'for(let x=d;;x=path.dirname(x)){',
+  'if(p[x]&&p[x].hasTrustDialogAccepted===true)process.exit(0);',
+  'if(path.dirname(x)===x)break}',
+  'p[d]=Object.assign({},p[d],{hasTrustDialogAccepted:true});',
+  'fs.writeFileSync(f+".koloft",JSON.stringify(j,null,2),{mode:0o600});',
+  'fs.renameSync(f+".koloft",f)'
+].join('')
+
+const TRUSTED_JS = [
+  'const fs=require("fs"),path=require("path");',
+  'const [f,d]=process.argv.slice(1);',
+  'let p={};',
+  'try{p=JSON.parse(fs.readFileSync(f,"utf8")).projects||{}}catch(e){}',
+  'for(let x=d;;x=path.dirname(x)){',
+  'if(p[x]&&p[x].hasTrustDialogAccepted===true)process.exit(0);',
+  'if(path.dirname(x)===x)process.exit(1)}'
+].join('')
+
+const NOT_TRUSTED = 1
+
+const WITH_NODE_IN_REAL_DIR = `cd "$1" 2>/dev/null || exit ${NOT_TRUSTED}
+command -v node >/dev/null 2>&1 || exit ${NOT_TRUSTED}
+node -e "$2" "$HOME/.claude.json" "$(pwd -P)"`
 
 // PLATFORM§33
 export function remoteSh(script: string, args: string[]): string {
@@ -225,6 +319,8 @@ SSH_ASKPASS_REQUIRE=never GIT_SSH_COMMAND="\${GIT_SSH_COMMAND:-ssh} -o BatchMode
 export class SshHost implements Host {
   readonly github: GithubLookup
   private git: GitOps
+  private killedSessions = new Set<string>()
+  private kills = new Map<string, Promise<unknown>>()
 
   constructor(
     readonly machine: string,
@@ -268,8 +364,8 @@ export class SshHost implements Host {
     return key.path
   }
 
-  private keyed(p: string): string {
-    return formatRemoteKey(this.machine, p)
+  keyed(p: string): string {
+    return parseRemoteKey(p) ? p : formatRemoteKey(this.machine, p)
   }
 
   private keyedMap<V>(m: Record<string, V>): Record<string, V> {
@@ -440,7 +536,83 @@ export class SshHost implements Host {
 
   osOpen(): void {}
 
-  async endTmuxSession(tmuxName: string): Promise<void> {
-    await this.deps.run(killSessionCmd(tmuxName))
+  endTmuxSession(tmuxName: string): Promise<void> {
+    const kill = this.deps.run(killSessionCmd(tmuxName)).then(() => {
+      if (this.kills.get(tmuxName) === kill) this.kills.delete(tmuxName)
+    })
+    this.kills.set(tmuxName, kill)
+    const killedId = sessionIdOfTmux(tmuxName)
+    if (killedId) this.killedSessions.add(killedId)
+    return kill
+  }
+
+  // CC§9 ADR-0026
+  async trustFolder(dir: string): Promise<void> {
+    await this.sh(WITH_NODE_IN_REAL_DIR, [this.bare(dir), TRUST_CWD_JS])
+  }
+
+  // CC§9
+  async trustsFolder(dir: string): Promise<boolean> {
+    return (await this.sh(WITH_NODE_IN_REAL_DIR, [this.bare(dir), TRUSTED_JS])).code === 0
+  }
+
+  async launch(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {
+    const d = this.deps.claude
+    ensureControlDir(d.controlDir)
+    const settings = d.settings()
+    const sid = spec.resumeSessionId ?? crypto.randomUUID()
+    const args = machineClaudeArgs(spec, sid, settings.skipPermissions)
+    if (!args.ok) return args
+    const tmuxName = tmuxSessionName(sid)
+    const mode = launchMode({ alive: d.alive(), killed: this.killedSessions, sessionId: sid })
+    this.killedSessions.delete(sid)
+    // CC§2
+    const root = d.realPath(this.bare(spec.root))
+    const cwd = spec.cwd ? this.bare(spec.cwd) : root
+    const wsRoot = spec.fallbackCwd ? d.realPath(this.bare(spec.fallbackCwd)) : root
+    const account = mode === 'start' && settings.multiAccount ? await d.pickAccount() : undefined
+    const pkg = d.machinePackage()
+    const machineDir = remoteMachineDir(pkg.name)
+    await this.kills.get(tmuxName)
+    return {
+      ok: true,
+      spawnCwd: os.homedir(),
+      cwd: spec.root,
+      shell: POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
+      launchCommand: (tabId) => {
+        const tabDir = tabPackageDir(d.userData, tabId)
+        writeTabPackage(tabDir, {
+          tabId,
+          tmuxName,
+          machineName: pkg.name,
+          cwd,
+          fallbackCwd: wsRoot !== cwd ? wsRoot : undefined,
+          banner: account?.banner ?? OWN_LOGIN_BANNER,
+          env: account?.env,
+          settings: d.hookSettings(tabId, machineDir),
+          claudeArgs: args.args
+        })
+        return launchLine({
+          host: this.machine,
+          sshOptions: sshOptions(d.controlDir, false),
+          machine: pkg,
+          tabDir,
+          tabId,
+          mode
+        })
+      },
+      machine: {
+        tracking: {
+          host: this.machine,
+          projectsRoot: mirrorProjectsRoot(d.userData, this.machine),
+          tmuxName
+        },
+        cwd,
+        root,
+        hookMirror: mirrorHookDir(d.userData, this.machine),
+        attachTo: mode === 'attach' ? sid : undefined,
+        picked: account?.picked
+      }
+    }
   }
 }

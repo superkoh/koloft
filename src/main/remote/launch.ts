@@ -87,26 +87,11 @@ export interface TabSpec {
   env?: Record<string, string>
   settings: Record<string, unknown>
   claudeArgs: string[]
-  trustCwd?: boolean
 }
 
-const TRUST_CWD_JS = [
-  'const fs=require("fs"),path=require("path");',
-  'const [f,d]=process.argv.slice(1);',
-  'let j={};',
-  'try{j=JSON.parse(fs.readFileSync(f,"utf8"))}catch(e){if(e.code!=="ENOENT")process.exit(0)}',
-  'const p=(j.projects=j.projects||{});',
-  'for(let x=d;;x=path.dirname(x)){',
-  'if(p[x]&&p[x].hasTrustDialogAccepted===true)process.exit(0);',
-  'if(path.dirname(x)===x)break}',
-  'p[d]=Object.assign({},p[d],{hasTrustDialogAccepted:true});',
-  'fs.writeFileSync(f+".koloft",JSON.stringify(j,null,2),{mode:0o600});',
-  'fs.renameSync(f+".koloft",f)'
-].join('')
+export const POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE = '/bin/zsh'
 
 export function tabScript(spec: TabSpec): string {
-  for (const a of spec.claudeArgs)
-    if (!NEEDS_NO_QUOTING_RE.test(a)) throw new Error(`unsafe claude arg: ${a}`)
   if (
     !NEEDS_NO_QUOTING_RE.test(spec.tabId) ||
     !NEEDS_NO_QUOTING_RE.test(spec.tmuxName) ||
@@ -117,24 +102,19 @@ export function tabScript(spec: TabSpec): string {
   const T = `$HOME/.koloft/tabs/${spec.tabId}`
   const H = `$HOME/.koloft/hook-sessions/${spec.tabId}`
   // PLATFORM§35
-  const cmd =
-    `KOLOFT_TMUX_FOLLOW=1; export KOLOFT_TMUX_FOLLOW; ` +
-    `unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN; ` +
-    `E="${T}.env"; [ -f "$E" ] && { set -a; . "$E"; set +a; rm -f "$E"; }; ` +
-    `exec claude --settings "${T}.json" ${spec.claudeArgs.join(' ')}`
   return `#!/bin/sh
 M="$HOME/.koloft/${spec.machineName}"
 ${REMOTE_PATH_LINE}
 [ "$1" = attach ] && exec tmux -L koloft attach -d -t '${spec.tmuxName}'
+if [ "$1" = run ]; then
+  KOLOFT_TMUX_FOLLOW=1; export KOLOFT_TMUX_FOLLOW
+  unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN
+  E="${T}.env"; [ -f "$E" ] && { set -a; . "$E"; set +a; rm -f "$E"; }
+  exec claude --settings "${T}.json" ${spec.claudeArgs.map(shq).join(' ')}
+fi
 sh "$M/ensure.sh" || exit $?
 cd ${shq(spec.cwd)}${spec.fallbackCwd ? ` || cd ${shq(spec.fallbackCwd)}` : ''} || exit 3
-${
-  spec.trustCwd && !spec.fallbackCwd
-    ? `# CC§9 ADR-0026
-command -v node >/dev/null 2>&1 && node -e ${shq(TRUST_CWD_JS)} "$HOME/.claude.json" "$(pwd -P)"
-`
-    : ''
-}echo ${shq(spec.banner)}
+echo ${shq(spec.banner)}
 rm -f "${H}.json" "${H}.status.jsonl"
 # CC§10
 CJ="$HOME/.claude.json"
@@ -150,7 +130,7 @@ if [ -f "${T}.env" ]; then
       if command -v timeout >/dev/null 2>&1; then timeout 60 claude -p ok --max-turns 1; else claude -p ok --max-turns 1; fi ) >/dev/null 2>&1
   fi
 fi
-tmux -L koloft -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' '${cmd}'
+tmux -L koloft -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' 'sh "${T}.sh" run'
 c=$?
 rm -f "${T}.env"
 exit $c

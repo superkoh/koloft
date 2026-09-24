@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto'
-import path from 'node:path'
+import { isAbsoluteOnHost } from '@shared/remoteKey'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
 import { cronBackend, slugOf, hasWordChar, isValidModelName, worktreeBase } from '@shared/cronNames'
 import { BACKEND_LABEL, backendIdOf } from '@shared/sessionBackend'
@@ -80,6 +80,13 @@ export interface LaunchRequest {
   name: string
 }
 
+type MaybeAsync<T> = T | Promise<T>
+
+function whenSettled<T>(value: MaybeAsync<T>, then: (settled: T) => void): void {
+  if (value instanceof Promise) void value.then(then)
+  else then(value)
+}
+
 export interface RunnerDeps {
   now(): number
   bootTime: number
@@ -87,14 +94,14 @@ export interface RunnerDeps {
     load(): { jobs: CronJob[]; notes: Record<string, string> }
     save(jobs: CronJob[]): void
   }
-  dirExists(p: string): boolean
+  dirExists(p: string): MaybeAsync<boolean>
   isPinned(p: string): boolean
-  gitDirExists(root: string): boolean
-  worktreeDirExists(root: string, name: string): boolean
+  gitDirExists(root: string): MaybeAsync<boolean>
+  worktreeDirExists(root: string, name: string): MaybeAsync<boolean>
   branchExists(root: string, branch: string): Promise<boolean>
-  countRunFolders(root: string, slug: string): number
+  countRunFolders(root: string, slug: string): MaybeAsync<number>
   accountUsable(backend: BackendId): boolean
-  trusted(wsPath: string, backend: BackendId): boolean
+  trusted(wsPath: string, backend: BackendId): MaybeAsync<boolean>
   ready(): boolean
   launch(req: LaunchRequest): LaunchResult | Promise<LaunchResult>
   killTab(tabId: string): void
@@ -172,7 +179,7 @@ function saveErrors(
   const errs: string[] = []
   if (
     typeof workspacePath !== 'string' ||
-    !path.isAbsolute(workspacePath) ||
+    !isAbsoluteOnHost(workspacePath) ||
     !isPinned(workspacePath)
   ) {
     errs.push(CRON_SAVE_MESSAGES.workspace)
@@ -315,7 +322,7 @@ export class CronRunner {
         return { ok: false, reason: 'skipped' }
       }
 
-      if (!this.d.dirExists(job.workspacePath)) {
+      if (!(await this.d.dirExists(job.workspacePath))) {
         this.fail(job, dueAt, mark, 'the folder is missing')
         return { ok: false, reason: 'folder-missing' }
       }
@@ -335,7 +342,7 @@ export class CronRunner {
         return { ok: false, reason: 'not-ready' }
       }
 
-      const git = this.d.gitDirExists(job.workspacePath)
+      const git = await this.d.gitDirExists(job.workspacePath)
       const worktree = git
         ? await worktreeNameFor(job, dueAt, (n) => this.taken(job.workspacePath, n))
         : undefined
@@ -376,7 +383,7 @@ export class CronRunner {
   }
 
   private async taken(root: string, name: string): Promise<boolean> {
-    if (this.d.worktreeDirExists(root, name)) return true
+    if (await this.d.worktreeDirExists(root, name)) return true
     return this.d.branchExists(root, `worktree-${name}`)
   }
 
@@ -414,18 +421,20 @@ export class CronRunner {
     }
     const label = BACKEND_LABEL[cronBackend(job)]
     // CC§9 CODEX§14
-    const note = this.d.trusted(job.workspacePath, cronBackend(job))
-      ? `${label} did not start`
-      : `${label} did not start — this folder was never opened in ${label}; start one session here first`
-    this.writeHistory(job, {
-      dueAt: run.dueAt,
-      state: 'failed',
-      note,
-      ...(run.worktree ? { worktree: run.worktree } : {}),
-      ...(run.manual ? MANUAL : {})
+    whenSettled(this.d.trusted(job.workspacePath, cronBackend(job)), (trusted) => {
+      const note = trusted
+        ? `${label} did not start`
+        : `${label} did not start — this folder was never opened in ${label}; start one session here first`
+      this.writeHistory(job, {
+        dueAt: run.dueAt,
+        state: 'failed',
+        note,
+        ...(run.worktree ? { worktree: run.worktree } : {}),
+        ...(run.manual ? MANUAL : {})
+      })
+      this.d.toast(`⏰ ${job.name} could not start: ${label} did not start`)
+      this.d.notify(job.name, `Could not start — ${label} did not start`)
     })
-    this.d.toast(`⏰ ${job.name} could not start: ${label} did not start`)
-    this.d.notify(job.name, `Could not start — ${label} did not start`)
   }
 
   onBound(tabId: string, sessionId: string): void {
@@ -617,11 +626,18 @@ export class CronRunner {
 
   private refreshFolders(): void {
     const next: Record<string, number> = {}
-    for (const j of this.jobs) {
-      if (!this.d.gitDirExists(j.workspacePath)) continue
-      next[j.id] = this.d.countRunFolders(j.workspacePath, slugOf(j.name))
-    }
     this.folders = next
+    let counting = true
+    for (const j of this.jobs) {
+      whenSettled(this.d.gitDirExists(j.workspacePath), (git) => {
+        if (!git) return
+        whenSettled(this.d.countRunFolders(j.workspacePath, slugOf(j.name)), (count) => {
+          next[j.id] = count
+          if (!counting && this.folders === next) this.push()
+        })
+      })
+    }
+    counting = false
   }
 
   private buildState(): CronState {

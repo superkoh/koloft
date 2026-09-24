@@ -199,7 +199,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
-  test('E-RW-03: remote menus drop the local-only items and Copy path gives machine:/path', async ({
+  test('E-RW-03: remote menus drop the local-only items, keep Scheduled jobs, and Copy path gives machine:/path', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -210,7 +210,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
 
       await openMenu(page, page.locator('.ws-head', { hasText: REMOTE_WS_NAME }))
       const wsItems = await menuItemTexts(page)
-      expect(wsItems.join(' | ')).not.toContain('Scheduled jobs')
+      expect(wsItems.join(' | ')).toContain('Scheduled jobs')
       expect(wsItems.join(' | ')).not.toContain('Fetch origin')
       expect(wsItems.join(' | ')).not.toContain('New worktree session')
       expect(wsItems.some((t) => t.startsWith('New session'))).toBe(true)

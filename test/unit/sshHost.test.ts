@@ -3,7 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { execFileSync, spawn, spawnSync } from 'child_process'
-import { SshHost } from '../../src/main/host/sshHost'
+import { machineClaudeArgs, SshHost } from '../../src/main/host/sshHost'
 import { diffBase as localDiffBase } from '../../src/main/gitStatus'
 import { utilClaudeGuard } from '../../src/main/remote/install'
 import { UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE } from '../../src/main/shim'
@@ -32,7 +32,17 @@ const machine = (): SshHost =>
   new SshHost(MACHINE, {
     run: runOnMachine,
     shell: () => ({ spawnCwd: '/' }),
-    github: {}
+    github: {},
+    claude: {
+      userData: home,
+      controlDir: home,
+      machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
+      alive: () => new Set(),
+      realPath: (p) => p,
+      settings: () => ({ multiAccount: false, skipPermissions: false }),
+      pickAccount: async () => undefined,
+      hookSettings: () => ({})
+    }
   })
 
 const keyed = (p: string): string => `ssh://${MACHINE}${p}`
@@ -128,6 +138,84 @@ describe('a remote session’s Workbench reads and writes the machine’s files 
     await expect(machine().openForEdit(keyed(path.join(repo, 'gone')))).rejects.toThrow(
       'KOLOFT_GONE'
     )
+  })
+})
+
+describe("Claude's folder trust on the machine", () => {
+  // CC§9 ADR-0026
+  it("trusts a folder in the machine's .claude.json under its real path, keeping what the file had, and reads a folder under it back as trusted", async () => {
+    const node = path.join(home, '.koloft', 'node', 'bin')
+    fs.mkdirSync(node, { recursive: true })
+    fs.symlinkSync(process.execPath, path.join(node, 'node'))
+    fs.writeFileSync(path.join(home, '.claude.json'), '{"numStartups":3}\n')
+    expect(await machine().trustsFolder(keyed(repo))).toBe(false)
+
+    await machine().trustFolder(keyed(repo))
+
+    expect(JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'))).toEqual({
+      numStartups: 3,
+      projects: { [repo]: { hasTrustDialogAccepted: true } }
+    })
+    expect(await machine().trustsFolder(keyed(path.join(repo, 'sub')))).toBe(true)
+  })
+})
+
+describe('what a remote launch hands claude', () => {
+  const root = keyed('/w')
+
+  // CC§9
+  it('carries the model, effort, permission, name and first prompt a local launch carries', () => {
+    expect(
+      machineClaudeArgs(
+        {
+          root,
+          worktree: 'nightly-1',
+          model: 'sonnet',
+          effort: 'high',
+          permission: 'acceptEdits',
+          name: 'Nightly report',
+          firstPrompt: '/daily-report'
+        },
+        'sid1',
+        true
+      )
+    ).toEqual({
+      ok: true,
+      args: [
+        '--session-id',
+        'sid1',
+        '-w',
+        'nightly-1',
+        '--model',
+        'sonnet',
+        '--effort',
+        'high',
+        '--permission-mode',
+        'acceptEdits',
+        '--name',
+        'Nightly report',
+        '--',
+        '/daily-report'
+      ]
+    })
+  })
+
+  it('asks as a session you start does when the job keeps the usual permission, and a resume carries no name or prompt', () => {
+    expect(machineClaudeArgs({ root, permission: 'default' }, 'sid1', true)).toEqual({
+      ok: true,
+      args: ['--session-id', 'sid1', '--dangerously-skip-permissions']
+    })
+    expect(machineClaudeArgs({ root, permission: 'default' }, 'sid1', false)).toEqual({
+      ok: true,
+      args: ['--session-id', 'sid1']
+    })
+    expect(
+      machineClaudeArgs(
+        { root, resumeSessionId: 'old1', name: 'n', firstPrompt: 'x' },
+        'sid1',
+        false
+      )
+    ).toEqual({ ok: true, args: ['--resume', 'old1'] })
   })
 })
 

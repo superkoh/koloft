@@ -23,6 +23,6 @@ export function workspaceMenuCount(t: {
   remote: boolean
 }): number {
   if (t.missing) return 1
-  if (t.remote) return t.isGit ? 5 : 4
+  if (t.remote) return t.isGit ? 6 : 5
   return t.isGit ? 7 : 5
 }

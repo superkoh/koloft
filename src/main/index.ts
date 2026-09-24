@@ -18,7 +18,6 @@ import path from 'path'
 import fs from 'fs'
 import os from 'os'
 import { pathToFileURL } from 'url'
-import { execFile } from 'child_process'
 import { PtyManager, tabInstancePid } from './ptyManager'
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
@@ -60,6 +59,7 @@ import {
 import { ENSURE_SH, TMUX_CONF, UTIL_SH, utilClaudeGuard } from './remote/install'
 import {
   buildMachinePackage,
+  POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
   tmuxSessionName,
   UTIL_BIN_DIR,
   utilShellLine,
@@ -113,7 +113,7 @@ import { ensureNotesFile, notesBaseDir } from './notes'
 import { WorkspaceManager, type LiveSession } from './workspaces'
 import { sanitizeSessionWorkbench } from '@shared/workbenchState'
 import { dirExistsSync, gitProbes, type ResumeProbes } from './resumePlan'
-import { ClaudeBackend, POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE } from './backends/claude'
+import { ClaudeBackend, machineHookSettings, pickMachineAccount } from './backends/claude'
 import { codexBackend, trustCodexFolder } from './backends/codex'
 import { codexConfigFile } from './codexTrust'
 import {
@@ -135,7 +135,7 @@ import { fullscreenOption, windowMinWidth } from './windowBounds'
 import { closeAllFileWatchers, closeAllDirWatchers } from './fileWatch'
 import { sanitizeBase } from './gitStatus'
 import { Hosts } from './host/hosts'
-import { localHost } from './host/localHost'
+import { localGitOut, localHost } from './host/localHost'
 import { SshHost } from './host/sshHost'
 import { projectInfoFor } from './projectInfo'
 import { whatsNewDecision } from './releaseNotes'
@@ -1315,11 +1315,12 @@ app.whenReady().then(() => {
       save: (jobs) => saveCron(cronFs, cronFile, jobs)
     },
     isPinned: (p) => (workspaceMgr?.pinnedPaths() ?? []).some((w) => w.path === p),
-    dirExists: dirExistsSync,
-    gitDirExists: gitDirExistsSync,
-    worktreeDirExists: (root, name) => dirExistsSync(path.join(worktreeHomeOf(root), name)),
-    branchExists: resumeProbes.branchExists,
-    countRunFolders: countRunFoldersSync,
+    dirExists: (p) => hosts.of(p).dirExists(p),
+    gitDirExists: (root) => hosts.of(root).dirExists(`${root}/.git`),
+    worktreeDirExists: (root, name) => hosts.of(root).dirExists(`${worktreeHomeOf(root)}/${name}`),
+    branchExists: (root, branch) =>
+      gitProbes((dir, args) => hosts.of(dir).gitOut(dir, args)).branchExists(root, branch),
+    countRunFolders,
     accountUsable: (backend) => sessionBackends.get(backend).accountUsable(),
     trusted: (wsPath, backend) => sessionBackends.get(backend).trustsFolder(wsPath),
     ready: () => rendererReady && BrowserWindow.getAllWindows().length > 0,
@@ -2135,21 +2136,12 @@ function killTabPty(tabId: string, how: { detach?: boolean } = {}): Promise<bool
 }
 
 function worktreeHomeOf(root: string): string {
-  return path.join(root, '.claude', 'worktrees')
+  return `${root}/.claude/worktrees`
 }
 
-function gitDirExistsSync(root: string): boolean {
-  return dirExistsSync(path.join(root, '.git'))
-}
-
-function countRunFoldersSync(root: string, slug: string): number {
-  try {
-    return fs
-      .readdirSync(worktreeHomeOf(root), { withFileTypes: true })
-      .filter((e) => e.isDirectory() && e.name.startsWith(`${slug}-`)).length
-  } catch {
-    return 0
-  }
+async function countRunFolders(root: string, slug: string): Promise<number> {
+  const entries = await hosts.of(root).listDir(worktreeHomeOf(root), { showIgnored: true })
+  return entries.filter((e) => e.isDir && e.name.startsWith(`${slug}-`)).length
 }
 
 async function launchCronRun(
@@ -2205,19 +2197,10 @@ function cronBindDeadlineMs(): number {
   )
 }
 
-const GIT_CALL_TIMEOUT_MS = 5000
-function gitOut(cwd: string, args: string[]): Promise<string | null> {
-  return new Promise((resolve) => {
-    execFile('git', ['-C', cwd, ...args], { timeout: GIT_CALL_TIMEOUT_MS }, (err, stdout) =>
-      resolve(err ? null : stdout)
-    )
-  })
-}
-
 const resumeProbes: ResumeProbes = {
   dirExists: dirExistsSync,
   occupantOf: (dir) => sessionBackends.occupantOf(dir),
-  ...gitProbes(gitOut)
+  ...gitProbes(localGitOut)
 }
 
 function commitSettings(patch: Partial<Settings>): Settings {
@@ -2267,7 +2250,18 @@ const hosts = new Hosts(
             })
         }
       },
-      github: githubOptions
+      github: githubOptions,
+      claude: {
+        userData: app.getPath('userData'),
+        controlDir: remoteControlDir,
+        machinePackage,
+        alive: () => remoteSync?.alive(machine) ?? new Set(),
+        realPath: (p) => workspaceMgr?.realRemotePath({ host: machine, path: p }) ?? p,
+        settings: loadSettings,
+        pickAccount: () => pickMachineAccount(pickForLaunch),
+        hookSettings: (tabId, dir) =>
+          machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin)
+      }
     })
 )
 
@@ -2277,13 +2271,9 @@ const claudeBackend = new ClaudeBackend({
   hosts,
   workspaces: () => workspaceMgr,
   remoteSync: () => remoteSync,
-  machinePackage,
-  remoteControlDir,
   userData: () => app.getPath('userData'),
   setupLine,
   ptysChanged: () => writeRelayEnv(ptyTabIds()),
-  pickForLaunch,
-  git: gitOut,
   resumeProbes,
   attention: {
     exited: (tabId, title) => attention.onExited(tabId, attentionCtx(), title),

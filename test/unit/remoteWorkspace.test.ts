@@ -39,12 +39,12 @@ describe('remoteKeyFromForm', () => {
 })
 
 describe('workspaceMenuCount', () => {
-  it('drops Scheduled jobs and Fetch origin for a remote workspace', () => {
-    expect(workspaceMenuCount({ missing: false, isGit: false, remote: true })).toBe(4)
+  it('keeps Scheduled jobs for a remote workspace', () => {
+    expect(workspaceMenuCount({ missing: false, isGit: false, remote: true })).toBe(5)
   })
 
-  it('keeps the worktree item when the remote folder is a checkout', () => {
-    expect(workspaceMenuCount({ missing: false, isGit: true, remote: true })).toBe(5)
+  it('keeps the worktree item and drops Fetch origin when the remote folder is a checkout', () => {
+    expect(workspaceMenuCount({ missing: false, isGit: true, remote: true })).toBe(6)
   })
 
   it('is unchanged for local workspaces', () => {

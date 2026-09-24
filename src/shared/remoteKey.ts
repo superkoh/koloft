@@ -27,6 +27,10 @@ export function isRemoteKey(key: string): boolean {
   return parseRemoteKey(key) !== null
 }
 
+export function isAbsoluteOnHost(p: string): boolean {
+  return isRemoteKey(p) || p.startsWith('/')
+}
+
 export function hostOf(cwdOrWorkspacePath: string): HostId {
   return isRemoteKey(cwdOrWorkspacePath) ? 'ssh' : 'local'
 }

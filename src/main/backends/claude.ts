@@ -1,4 +1,3 @@
-import crypto from 'crypto'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -14,7 +13,7 @@ import type {
 } from '@shared/types'
 import type { SessionEvent } from '@shared/sessionEvent'
 import { identityOf } from '@shared/sessionBackend'
-import { formatRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
+import { formatRemoteKey, hostOf, isAbsoluteOnHost } from '@shared/remoteKey'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import type { SessionBackend } from '../sessionBackends'
 import type { PtyManager } from '../ptyManager'
@@ -22,33 +21,17 @@ import type { SessionTracker } from '../sessionTracker'
 import type { WorkspaceManager } from '../workspaces'
 import type { Hosts } from '../host/hosts'
 import { publicClaudeSession } from '../host/hosts'
-import type { SshHost } from '../host/sshHost'
+import type { MachineAccount, SshHost } from '../host/sshHost'
+import type { ClaudeLaunch, Host } from '../host/host'
 import type { RemoteSync } from '../remote/sync'
-import { launchMode } from '../remote/sync'
-import { ensureControlDir, sshOptions } from '../remote/ssh'
-import {
-  accountEnv,
-  launchLine,
-  sessionIdOfTmux,
-  tmuxSessionName,
-  writeTabPackage,
-  type MachinePackage
-} from '../remote/launch'
-import {
-  dq,
-  mirrorHookDir,
-  mirrorProjectsRoot,
-  REMOTE_HOOK_DIR,
-  remoteMachineDir,
-  tabPackageDir
-} from '../remote/paths'
+import { accountEnv, tmuxSessionName } from '../remote/launch'
+import { dq, mirrorHookDir, REMOTE_HOOK_DIR, tabPackageDir } from '../remote/paths'
 import { hookSettings } from '../hooks'
 import type { StatusLineSetting } from '../statusline'
 import { loadSettings } from '../settings'
 import { keychainRead, listAccounts } from '../accounts'
 import type { PickResponse } from '../accountPicker'
-import { claudeArgv, SESSION_ID_RE } from '../claudeArgs'
-import { acceptClaudeTrust, claudeJsonPath, claudeTrustsFolder } from '../claudeTrust'
+import { SESSION_ID_RE } from '../claudeArgs'
 import { probeClaude } from '../claudeProbe'
 import { runningClaudePid } from '../claudeSessionRegistry'
 import { rootsWithClaude } from '../claudeLiveness'
@@ -56,7 +39,6 @@ import { readAppendedLines, sessionEventFromHook } from '../sessionTracker'
 import { makeDropDedupe, ownsHookReport, type HookReport } from '../hookRouting'
 import { registeredByTabRoot } from '../shim'
 import { watchJsonDrops } from '../jsonDrops'
-import { resolveSpawnCwd } from '../projectInfo'
 import {
   dirExistsSync,
   gitProbes,
@@ -73,13 +55,9 @@ export interface ClaudeBackendDeps {
   hosts: Hosts<SshHost>
   workspaces(): WorkspaceManager | null
   remoteSync(): RemoteSync | null
-  machinePackage(): MachinePackage
-  remoteControlDir: string
   userData(): string
   setupLine(): string | undefined
   ptysChanged(): void
-  pickForLaunch(): Promise<{ res: PickResponse; endpoint?: { baseUrl?: string; model?: string } }>
-  git: GitOut
   resumeProbes: ResumeProbes
   attention: { exited(tabId: string, title?: string): void; clear(tabId: string): void }
   promptSeen(tabId: string): void
@@ -100,17 +78,6 @@ const REMOTE_EXIT_POLL_MS = 500
 const REMOTE_EXIT_SLACK_MS = 30_000
 const LIVENESS_SWEEP_MS = 2500
 const MISSED_SWEEPS_BEFORE_UNTRACK = 2
-export const POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE = '/bin/zsh'
-
-// ADR-0026
-function trustBeforeWorktreeLaunch(root: string): void {
-  try {
-    acceptClaudeTrust(claudeJsonPath(), root)
-  } catch (err) {
-    console.error('[koloft] could not record Claude trust for', root, err)
-  }
-}
-
 async function rebuildWorktree(
   spec: {
     worktreePath: string
@@ -132,8 +99,6 @@ async function rebuildWorktree(
 
 export class ClaudeBackend implements SessionBackend {
   readonly id = 'claude'
-  private killedRemoteSessions = new Set<string>()
-  private remoteKills = new Map<string, Promise<unknown>>()
   private hookRegDir = ''
   private statusLogCursors = new Map<string, { offset: number; tail: Buffer }>()
   private statusLogDraining = new Map<string, boolean>()
@@ -192,8 +157,8 @@ export class ClaudeBackend implements SessionBackend {
     return listAccounts().some((a) => a.kind !== 'codex-home' && a.enabled && a.status === 'ok')
   }
 
-  trustsFolder(dir: string): boolean {
-    return claudeTrustsFolder(claudeJsonPath(), dir)
+  trustsFolder(dir: string): Promise<boolean> {
+    return this.d.hosts.of(dir).trustsFolder(dir)
   }
 
   archive(key: string): boolean {
@@ -216,16 +181,10 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   endRemoteTmux(machine: string, tmuxName: string): void {
-    const kill = this.d.hosts
+    void this.d.hosts
       .machine(machine)
       .endTmuxSession(tmuxName)
-      .then(() => {
-        if (this.remoteKills.get(tmuxName) === kill) this.remoteKills.delete(tmuxName)
-        this.d.remoteSync()?.pokeNow(machine)
-      })
-    this.remoteKills.set(tmuxName, kill)
-    const killedId = sessionIdOfTmux(tmuxName)
-    if (killedId) this.killedRemoteSessions.add(killedId)
+      .then(() => this.d.remoteSync()?.pokeNow(machine))
   }
 
   sessionIdOf(tabId: string): string | undefined {
@@ -618,36 +577,38 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   async create(opts: CreateTabOptions): Promise<CreateTabResult> {
-    const key =
-      (typeof opts.cwd === 'string' ? parseRemoteKey(opts.cwd) : null) ??
-      this.remoteKeyOfSession(opts.resumeSessionId)
-    if (key) {
-      return this.createRemoteTab(key, {
-        resumeSessionId: opts.resumeSessionId,
-        cols: opts.cols,
-        rows: opts.rows,
-        worktree: opts.worktree,
-        trustCwd: !!opts.worktree && !opts.scheduled && !opts.resumeSessionId
-      })
-    }
-    const cwd = resolveSpawnCwd(opts.cwd)
-    if (opts.worktree && !opts.scheduled && cwd === opts.cwd) trustBeforeWorktreeLaunch(cwd)
-    return this.createLocalTab({ ...opts, cwd })
+    const asked = typeof opts.cwd === 'string' ? opts.cwd : ''
+    const root = hostOf(asked) === 'ssh' ? asked : (this.homeOf(opts.resumeSessionId) ?? asked)
+    const host = this.d.hosts.of(root)
+    if (opts.worktree && !opts.scheduled && !opts.resumeSessionId) await host.trustFolder(root)
+    return this.createTab(host, {
+      root,
+      resumeSessionId: opts.resumeSessionId,
+      worktree: opts.worktree,
+      model: opts.model,
+      effort: opts.effort,
+      permission: opts.permission,
+      firstPrompt: opts.firstPrompt,
+      name: opts.name,
+      cols: opts.cols,
+      rows: opts.rows
+    })
   }
 
   async resume(req: SessionResumeRequest): Promise<SessionResumeResult> {
     const sid = req?.sessionId
-    const machineKey = typeof req?.cwd === 'string' ? parseRemoteKey(req.cwd) : null
-    let cwd = machineKey ? machineKey.path : req?.cwd
+    const asked = req?.cwd
     if (
       typeof sid !== 'string' ||
       !SESSION_ID_RE.test(sid) ||
-      typeof cwd !== 'string' ||
-      !path.isAbsolute(cwd)
+      typeof asked !== 'string' ||
+      !isAbsoluteOnHost(asked)
     ) {
       return { ok: false, code: 'invalid-args' }
     }
-    const remoteKey = machineKey ?? this.remoteKeyOfSession(sid)
+    const home = hostOf(asked) === 'ssh' ? asked : this.homeOf(sid)
+    const host = this.d.hosts.of(home ?? asked)
+    let cwd = host.keyed(asked)
     const mode = req.mode ?? 'direct'
     let worktree: string | undefined
     if (mode === 'renamed') {
@@ -657,37 +618,39 @@ export class ClaudeBackend implements SessionBackend {
       worktree = req.worktree
     }
     if (mode === 'rebuild') {
-      const plan = remoteKey
-        ? await this.remoteResumePlan(remoteKey.host, sid)
-        : await this.localResumePlan(sid)
-      if (plan.action === 'direct') cwd = plan.cwd
+      const plan = home ? await this.machineResumePlan(host, sid) : await this.localResumePlan(sid)
+      if (plan.action === 'direct') cwd = host.keyed(plan.cwd)
       else if (
         plan.action !== 'rebuild' ||
         !GIT_REF_RE.test(plan.branch) ||
         !GIT_REF_RE.test(plan.baseRef) ||
-        !(await rebuildWorktree(plan, remoteKey ? this.machineGit(remoteKey.host) : this.d.git))
+        !(await rebuildWorktree(plan, hostGit(host)))
       ) {
         return { ok: false, code: 'rebuild-failed' }
       }
     }
-    const tab = { resumeSessionId: sid, cols: req.cols, rows: req.rows, worktree }
-    if (remoteKey) {
-      const r = await this.createRemoteTab(remoteKey, { ...tab, resumeCwd: cwd })
-      return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
+    if (!home) {
+      if (mode === 'main' && !dirExistsSync(cwd)) {
+        const wt = this.d.workspaces()?.findRow(sid)?.worktreeState?.worktreePath
+        const root = wt ? worktreeHomeRoot(wt) : null
+        if (root && dirExistsSync(root)) cwd = root
+      }
+      if (!dirExistsSync(cwd)) return { ok: false, code: 'cwd-missing' }
     }
-    if (mode === 'main' && !dirExistsSync(cwd)) {
-      const wt = this.d.workspaces()?.findRow(sid)?.worktreeState?.worktreePath
-      const root = wt ? worktreeHomeRoot(wt) : null
-      if (root && dirExistsSync(root)) cwd = root
-    }
-    if (!dirExistsSync(cwd)) return { ok: false, code: 'cwd-missing' }
-    const r = this.createLocalTab({ ...tab, cwd })
+    const r = await this.createTab(host, {
+      root: home ?? cwd,
+      cwd,
+      resumeSessionId: sid,
+      worktree,
+      cols: req.cols,
+      rows: req.rows
+    })
     return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
   }
 
   resumePlan(key: string): Promise<ResumePlan> {
-    const machine = this.remoteKeyOfSession(key)?.host
-    return machine ? this.remoteResumePlan(machine, key) : this.localResumePlan(key)
+    const home = this.homeOf(key)
+    return home ? this.machineResumePlan(this.d.hosts.of(home), key) : this.localResumePlan(key)
   }
 
   private async localResumePlan(sessionId: string): Promise<ResumePlan> {
@@ -700,206 +663,119 @@ export class ClaudeBackend implements SessionBackend {
     )
   }
 
-  private async remoteResumePlan(machine: string, sessionId: string): Promise<ResumePlan> {
+  private async machineResumePlan(host: Host, sessionId: string): Promise<ResumePlan> {
     const row = this.d.workspaces()?.findRow(sessionId)
     if (!row) return { action: 'unavailable', reason: 'not-found' }
     if (!row.worktreeState) return { action: 'direct', cwd: row.cwd }
     return planResume(
       row,
-      this.machineResumeProbes(machine),
+      {
+        dirExists: (p) => host.dirExists(host.keyed(p)),
+        occupantOf: (dir) => this.machineOccupantOf(host.keyed(dir)),
+        ...gitProbes(hostGit(host))
+      },
       this.d.workspaces()?.bucketDirOf(sessionId)
     )
   }
 
-  private machineGit(machine: string): GitOut {
-    return (dir, args) => this.d.hosts.machine(machine).gitOut(formatRemoteKey(machine, dir), args)
-  }
-
-  private machineOccupantOf(machine: string, dir: string): string | null {
+  private machineOccupantOf(dir: string): string | null {
     for (const s of this.d.tracker.list()) {
-      if (!s.alive || s.remote?.host !== machine) continue
-      if (s.cwd === dir) return occupantName(s)
+      if (!s.alive || !s.remote) continue
+      const onMachine = (p: string): string => formatRemoteKey(s.remote!.host, p)
+      if (onMachine(s.cwd) === dir) return occupantName(s)
       const bound = s.sessionId
         ? this.d.workspaces()?.findRow(s.sessionId)?.worktreeState
         : undefined
-      if (bound?.worktreePath === dir) return occupantName(s)
+      if (bound && onMachine(bound.worktreePath) === dir) return occupantName(s)
     }
     return null
   }
 
-  private machineResumeProbes(machine: string): ResumeProbes {
-    return {
-      dirExists: (p) => this.d.hosts.machine(machine).dirExists(formatRemoteKey(machine, p)),
-      occupantOf: (dir) => this.machineOccupantOf(machine, dir),
-      ...gitProbes(this.machineGit(machine))
-    }
-  }
-
-  private remoteKeyOfSession(sessionId?: string): RemoteKey | null {
-    if (!sessionId) return null
+  private homeOf(sessionId?: string): string | undefined {
+    if (!sessionId) return undefined
     for (const t of this.d.tracker.list()) {
       const remote = this.d.tracker.remoteOf(t.tabId)
-      if (remote && t.sessionId === sessionId) return { host: remote.host, path: t.cwd }
+      if (remote && t.sessionId === sessionId) return formatRemoteKey(remote.host, t.cwd)
     }
-    const wsPath = this.d.workspaces()?.workspaceOf(sessionId)
-    return wsPath ? parseRemoteKey(wsPath) : null
+    const ws = this.d.workspaces()?.workspaceOf(sessionId)
+    return ws && hostOf(ws) === 'ssh' ? ws : undefined
   }
 
-  private createLocalTab(
-    spec: Omit<CreateTabOptions, 'kind' | 'cwd'> & { cwd: string }
-  ): CreateTabResult {
-    const { cwd, resumeSessionId, worktree } = spec
-    const base = process.env.KOLOFT_CLAUDE_CMD || 'claude'
-    const args = claudeArgv(base, {
-      resumeSessionId,
-      worktree,
-      model: spec.model,
-      effort: spec.effort,
-      permission: spec.permission
-    })
-    if (!args.ok) return args
-    const launchCommand = `exec ${args.argv.join(' ')}`
-    const handle = this.d.pty.create({
-      kind: 'claude',
-      cwd,
-      cols: spec.cols,
-      rows: spec.rows,
-      setupCommand: this.d.setupLine(),
-      launchCommand,
-      resumeSessionId,
-      // CC§9
-      extraEnv:
-        spec.firstPrompt !== undefined
-          ? { KOLOFT_FIRST_PROMPT: spec.firstPrompt, KOLOFT_SESSION_NAME: spec.name ?? '' }
-          : undefined
-    })
-    const workspaces = this.d.workspaces()
-    if (!resumeSessionId || !workspaces?.isMember(resumeSessionId)) {
-      workspaces?.launchStarted(handle.id, cwd, worktree)
-    }
-    this.d.ptysChanged()
-    return { ok: true, id: handle.id, cwd }
-  }
-
-  private async createRemoteTab(
-    key: RemoteKey,
-    opts: {
-      resumeSessionId?: string
-      cols?: number
-      rows?: number
-      worktree?: string
-      resumeCwd?: string
-      trustCwd?: boolean
-    }
+  private async createTab(
+    host: Host,
+    spec: ClaudeLaunch & { cols?: number; rows?: number }
   ): Promise<CreateTabResult> {
     const { tracker } = this.d
     const workspaces = this.d.workspaces()
-    const remoteSync = this.d.remoteSync()
-    const pkg = this.d.machinePackage()
-    ensureControlDir(this.d.remoteControlDir)
-    const settings = loadSettings()
-    const sid = opts.resumeSessionId ?? crypto.randomUUID()
-    const args = claudeArgv('claude', {
-      resumeSessionId: opts.resumeSessionId,
-      sessionId: opts.resumeSessionId ? undefined : sid,
-      worktree: opts.worktree,
-      permission: settings.skipPermissions ? 'bypass' : undefined
+    const ws = spec.resumeSessionId ? workspaces?.workspaceOf(spec.resumeSessionId) : undefined
+    const plan = await host.launch({
+      ...spec,
+      fallbackCwd: ws && this.d.hosts.of(ws) === host ? ws : undefined
     })
-    if (!args.ok) return args
-    const claudeArgs = args.argv.slice(1)
-    const tmuxName = tmuxSessionName(sid)
-    const mode = launchMode({
-      alive: remoteSync?.alive(key.host) ?? new Set(),
-      killed: this.killedRemoteSessions,
-      sessionId: sid
-    })
-    this.killedRemoteSessions.delete(sid)
-    // CC§2
-    const root = workspaces?.realRemotePath(key) ?? key.path
-    const cwd = opts.resumeCwd || (opts.resumeSessionId && workspaces?.findRow(sid)?.cwd) || root
-    const wsKey = parseRemoteKey(workspaces?.workspaceOf(sid) ?? '')
-    const wsRoot = wsKey ? (workspaces?.realRemotePath(wsKey) ?? wsKey.path) : root
-
-    let env: Record<string, string> | undefined
-    let picked: string | undefined
-    let banner = "[Koloft] using this machine's own claude login"
-    if (mode === 'start' && settings.multiAccount) {
-      const { res, endpoint } = await this.d.pickForLaunch()
-      if (res.account) {
-        const secret = await keychainRead(res.kind, res.account)
-        if (secret) {
-          env = accountEnv(res.kind, res.account, secret, endpoint)
-          picked = res.account
-          banner = res.warning ? `${res.banner}\n${res.warning}` : res.banner
-        }
-      }
-    }
-
-    const remoteStatusLine: StatusLineSetting | undefined = settings.statuslineBuiltin
-      ? {
-          type: 'command',
-          command: dq(`${remoteMachineDir(pkg.name)}/statusline/run.sh`),
-          padding: 0
-        }
-      : undefined
-    const userData = this.d.userData()
-    await this.remoteKills.get(tmuxName)
+    if (!plan.ok) return plan
+    const machine = plan.machine
     const handle = this.d.pty.create({
       kind: 'claude',
-      cwd: os.homedir(),
-      cols: opts.cols,
-      rows: opts.rows,
+      cwd: plan.spawnCwd,
+      cols: spec.cols,
+      rows: spec.rows,
       setupCommand: this.d.setupLine(),
       launchCommand: (tabId) => {
-        const mirror = mirrorHookDir(userData, key.host)
-        fs.rmSync(path.join(mirror, `${tabId}.json`), { force: true })
-        this.dropStatusLog(mirror, tabId)
-        const tabDir = tabPackageDir(userData, tabId)
-        writeTabPackage(tabDir, {
-          tabId,
-          tmuxName,
-          machineName: pkg.name,
-          cwd,
-          fallbackCwd: wsRoot !== cwd ? wsRoot : undefined,
-          banner,
-          env,
-          settings: hookSettings(
-            `${remoteMachineDir(pkg.name)}/hook.sh`,
-            REMOTE_HOOK_DIR,
-            tabId,
-            remoteStatusLine,
-            dq
-          ),
-          claudeArgs,
-          trustCwd: opts.trustCwd
-        })
-        return launchLine({
-          host: key.host,
-          sshOptions: sshOptions(this.d.remoteControlDir, false),
-          machine: pkg,
-          tabDir,
-          tabId,
-          mode
-        })
+        if (machine) this.forgetHookReports(machine.hookMirror, tabId)
+        return plan.launchCommand(tabId)
       },
-      resumeSessionId: opts.resumeSessionId,
-      shell: POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE
+      resumeSessionId: spec.resumeSessionId,
+      shell: plan.shell,
+      extraEnv: plan.extraEnv
     })
-
-    tracker.track(handle.id, cwd, {
-      host: key.host,
-      projectsRoot: mirrorProjectsRoot(userData, key.host),
-      tmuxName
-    })
-    if (picked) tracker.setPickedAccount(handle.id, picked)
-    if (mode === 'attach') {
-      tracker.bindSession(handle.id, '', sid, cwd)
-      workspaces?.onSessionBound(sid)
-    } else if (!opts.resumeSessionId) {
-      workspaces?.launchStarted(handle.id, root, opts.worktree, key.host)
+    if (machine) {
+      tracker.track(handle.id, machine.cwd, machine.tracking)
+      if (machine.picked) tracker.setPickedAccount(handle.id, machine.picked)
+      if (machine.attachTo) {
+        tracker.bindSession(handle.id, '', machine.attachTo, machine.cwd)
+        workspaces?.onSessionBound(machine.attachTo)
+      } else if (!spec.resumeSessionId) {
+        workspaces?.launchStarted(handle.id, machine.root, spec.worktree, machine.tracking.host)
+      }
+      this.d.remoteSync()?.pokeNow(machine.tracking.host)
+    } else if (!spec.resumeSessionId || !workspaces?.isMember(spec.resumeSessionId)) {
+      workspaces?.launchStarted(handle.id, plan.cwd, spec.worktree)
     }
     this.d.ptysChanged()
-    remoteSync?.pokeNow(key.host)
-    return { ok: true, id: handle.id, cwd: formatRemoteKey(key.host, key.path) }
+    return { ok: true, id: handle.id, cwd: plan.cwd }
   }
+
+  private forgetHookReports(dir: string, tabId: string): void {
+    fs.rmSync(path.join(dir, `${tabId}.json`), { force: true })
+    this.dropStatusLog(dir, tabId)
+  }
+}
+
+function hostGit(host: Host): GitOut {
+  return (dir, args) => host.gitOut(host.keyed(dir), args)
+}
+
+export async function pickMachineAccount(
+  pick: () => Promise<{ res: PickResponse; endpoint?: { baseUrl?: string; model?: string } }>
+): Promise<MachineAccount | undefined> {
+  const { res, endpoint } = await pick()
+  if (!res.account) return undefined
+  const secret = await keychainRead(res.kind, res.account)
+  if (!secret) return undefined
+  return {
+    env: accountEnv(res.kind, res.account, secret, endpoint),
+    picked: res.account,
+    banner: res.warning ? `${res.banner}\n${res.warning}` : res.banner
+  }
+}
+
+export function machineHookSettings(
+  tabId: string,
+  machineDir: string,
+  statusline: boolean
+): Record<string, unknown> {
+  const remoteStatusLine: StatusLineSetting | undefined = statusline
+    ? { type: 'command', command: dq(`${machineDir}/statusline/run.sh`), padding: 0 }
+    : undefined
+  return hookSettings(`${machineDir}/hook.sh`, REMOTE_HOOK_DIR, tabId, remoteStatusLine, dq)
 }

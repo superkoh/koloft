@@ -36,7 +36,7 @@ export interface SessionBackend {
   observe(tabId: string, event: SessionEvent): void
   occupantOf(dir: string): string | null
   accountUsable(): boolean
-  trustsFolder(dir: string): boolean
+  trustsFolder(dir: string): boolean | Promise<boolean>
 }
 
 export class SessionBackends {

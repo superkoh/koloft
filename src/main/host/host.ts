@@ -1,15 +1,18 @@
 import type {
   ContentHit,
+  CronEffort,
   DirEntry,
   EditCreateResult,
   EditOpenResult,
   EditWriteResult,
   GitNumstatMap,
   GitStatusMap,
+  LaunchPermission,
   SearchHit
 } from '@shared/types'
 import type { DiffResult, GitDiffResult } from '../gitStatus'
 import type { GithubLookup } from '../github'
+import type { RemoteTab } from '../sessionTracker'
 
 export interface ShowIgnored {
   showIgnored?: boolean
@@ -21,6 +24,40 @@ export interface ShellLaunch {
   shell?: string
   launchCommand?: (tabId: string) => string
 }
+
+export interface ClaudeLaunch {
+  root: string
+  cwd?: string
+  fallbackCwd?: string
+  resumeSessionId?: string
+  worktree?: string
+  model?: string
+  effort?: CronEffort
+  permission?: LaunchPermission
+  firstPrompt?: string
+  name?: string
+}
+
+export interface MachineTab {
+  tracking: RemoteTab
+  cwd: string
+  root: string
+  hookMirror: string
+  attachTo?: string
+  picked?: string
+}
+
+export type ClaudeLaunchPlan =
+  | { ok: false; code: 'invalid-args' }
+  | {
+      ok: true
+      spawnCwd: string
+      cwd: string
+      shell?: string
+      launchCommand: (tabId: string) => string
+      extraEnv?: { KOLOFT_FIRST_PROMPT?: string; KOLOFT_SESSION_NAME?: string }
+      machine?: MachineTab
+    }
 
 export interface Host {
   listDir(dir: string, opts?: ShowIgnored): Promise<DirEntry[]>
@@ -58,6 +95,11 @@ export interface Host {
   ): void
   unwatchFile(file: string): void
   shell(cwd: string): ShellLaunch
+  launch(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan>
+  trustFolder(dir: string): Promise<void>
+  trustsFolder(dir: string): Promise<boolean>
+  keyed(p: string): string
+  gitOut(root: string, args: string[]): Promise<string | null>
   reveal(p: string): void
   osOpen(p: string): void
   github: GithubLookup

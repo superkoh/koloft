@@ -460,17 +460,15 @@ export function WorkspaceSidebar({
                   Fetch origin
                 </div>
               )}
-              {!remote && (
-                <div
-                  className="mi"
-                  onClick={() => {
-                    setMenu(null)
-                    onScheduledJobs(target.wsPath)
-                  }}
-                >
-                  Scheduled jobs…
-                </div>
-              )}
+              <div
+                className="mi"
+                onClick={() => {
+                  setMenu(null)
+                  onScheduledJobs(target.wsPath)
+                }}
+              >
+                Scheduled jobs…
+              </div>
               <div className="sep" />
             </>
           )}
@@ -664,8 +662,7 @@ export function WorkspaceSidebar({
               else onNewSession(ws.path)
             }
             const cronNow = new Date()
-            const soon =
-              ws.missing || !open || ws.remote ? null : forecastFor(cron.jobs, ws.path, cronNow)
+            const soon = ws.missing || !open ? null : forecastFor(cron.jobs, ws.path, cronNow)
             return (
               <div className="ws" key={ws.path}>
                 <div
