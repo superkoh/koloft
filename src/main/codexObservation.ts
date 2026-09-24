@@ -3,6 +3,7 @@ import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from './sessionRuntime'
 import path from 'path'
 import { schemeOf } from '@shared/browserRoute'
+import { costUsdOf, resolvePricing } from '@shared/pricing'
 import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
 
 export function record(value: unknown): Record<string, unknown> {
@@ -253,13 +254,19 @@ export class CodexObservation {
         return
       const ctx = n(last.totalTokens) ? last.totalTokens : undefined
       const window = n(u.modelContextWindow) ? u.modelContextWindow : undefined
+      // CODEX§13
+      const tokens = {
+        inTok: Math.max(0, total.inputTokens - total.cachedInputTokens),
+        outTok: total.outputTokens,
+        cacheReadTok: total.cachedInputTokens,
+        cacheWriteTok: (total.cacheWriteInputTokens as number) ?? 0
+      }
+      const pricing = this.model ? resolvePricing(this.model) : undefined
       this.emit({
         type: 'usage',
         usage: {
-          inTok: total.inputTokens,
-          outTok: total.outputTokens,
-          cacheReadTok: total.cachedInputTokens,
-          cacheWriteTok: (total.cacheWriteInputTokens as number) ?? 0,
+          ...tokens,
+          ...(pricing ? { costUsd: costUsdOf(pricing, tokens) } : {}),
           ctxTokens: ctx,
           ...(window && ctx !== undefined ? { ctxPct: ctx / window } : {}),
           model: this.model

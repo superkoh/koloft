@@ -373,3 +373,34 @@ Browser control (an agent driving a Workbench web tab through Koloft's CDP (Chro
 Protocol) relay) was not tried for Codex. Whether a command inside Codex's sandbox can
 reach the relay's local socket at all is **inferred, not checked** either way, so browser
 control stays pending for Codex.
+
+## 13. Token counts and the price table
+
+**Token counts checked on 2026-09-24 with standalone Codex CLI 0.153.4**, reading the
+`thread/tokenUsage/updated` frames saved from section 12's real model turn (model
+`gpt-6-astra`, `modelContextWindow: 258400`).
+
+- Each frame carries `total` and `last`, each with `inputTokens`, `cachedInputTokens`,
+  `cacheWriteInputTokens` (0 in every frame), `outputTokens`, `reasoningOutputTokens` and
+  `totalTokens`.
+- In every frame `totalTokens = inputTokens + outputTokens` (for example 13535 = 13480 +
+  55), with `cachedInputTokens` (11136) left out of the sum. So the cached tokens are a
+  **part of** `inputTokens`, not extra to it. Koloft prices `inputTokens −
+  cachedInputTokens` at the input price and the cached part at the cached price.
+- `reasoningOutputTokens` was 0 in every frame, so whether it is a part of
+  `outputTokens` (the way OpenAI's API counts it) is **inferred, not checked**. Koloft
+  does not add it on top.
+
+**Price table.** Read on 2026-09-24 from OpenAI's pricing page
+(`developers.openai.com/api/docs/pricing`, reached from `platform.openai.com/docs/pricing`,
+through a web fetch that summarized the page), standard tier, US dollars per million
+tokens (input / cached input / output): `gpt-6-astra` 10 / 1 / 50, `gpt-6-sol` 2 / 0.2 /
+10, `gpt-6-luna` 0.1 / 0.01 / 0.5, `gpt-5.6-sol` 4 / 0.4 / 20, `gpt-5.6-terra` 2 / 0.2 /
+12, `gpt-5.6-luna` 0.2 / 0.02 / 1.2, `gpt-5.5` 5 / 0.5 / 30, `gpt-5.4` 2.5 / 0.25 / 15,
+`gpt-5.3-codex` 1.75 / 0.175 / 14, `gpt-5.2` 1.75 / 0.175 / 14, `gpt-5.1` 1.25 / 0.125 /
+10, `gpt-5` 1.25 / 0.125 / 10. OpenAI charges nothing to write the cache. The page lists
+a higher "long context" price for prompts above 272K tokens; Codex's window on this Mac
+(258400 on the wire, 272000 in `~/.codex/models_cache.json`) stays below it, so only
+the short-context price is used. The model ids match the `slug`s in
+`~/.codex/models_cache.json` on the same day. A ChatGPT plan login is not billed per token:
+this cost is what the same tokens would cost on the API, not what the person pays.

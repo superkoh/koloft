@@ -10,7 +10,7 @@ import type {
 } from '@shared/types'
 import type { ReportedTask, SessionEvent } from '@shared/sessionEvent'
 import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
-import { resolvePricing } from '@shared/pricing'
+import { costUsdOf, resolvePricing } from '@shared/pricing'
 import { localDayKey } from '@shared/usageFormat'
 import { encodeCwd } from '@shared/cwdKey'
 import { projectInfoFor } from './projectInfo'
@@ -1312,12 +1312,12 @@ export class SessionTracker extends SessionRuntime {
     if (!pricing) {
       t.usageUnknownModel = true
     } else {
-      const cost =
-        (inTok * pricing.inPerM +
-          outTok * pricing.outPerM +
-          cacheWrite * pricing.cacheWritePerM +
-          cacheRead * pricing.cacheReadPerM) /
-        1_000_000
+      const cost = costUsdOf(pricing, {
+        inTok,
+        outTok,
+        cacheWriteTok: cacheWrite,
+        cacheReadTok: cacheRead
+      })
       t.usageCostUsd += cost
       const recDay = localDayKey(obj.timestamp)
       if (recDay) {

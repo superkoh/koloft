@@ -162,24 +162,40 @@ describe('CodexObservation', () => {
     expect(f.turnDone()).toBe(2)
   })
 
-  it('preserves unknown usage fields and reports context as a ratio', () => {
+  // CODEX§13
+  it('counts cached input apart from fresh input, prices the tokens by model, and reports context as a ratio', () => {
     const f = fixture()
     const usage = () => f.events.flatMap((e) => (e.type === 'usage' ? [e.usage] : []))
-    f.bind()
+    f.observer.receive('client', { id: 1, method: 'thread/start', params: {} })
+    f.observer.receive('server', { id: 1, result: { thread: thread(), model: 'gpt-5' } })
     f.server('thread/tokenUsage/updated', { tokenUsage: { total: {}, last: {} } })
     expect(usage()).toEqual([])
     f.server('thread/tokenUsage/updated', {
       tokenUsage: {
-        total: { inputTokens: 50, outputTokens: 5, cachedInputTokens: 10 },
+        total: { inputTokens: 1_000_000, outputTokens: 100_000, cachedInputTokens: 400_000 },
         last: { totalTokens: 25 },
         modelContextWindow: 100
       }
     })
-    expect(usage().at(-1)).toMatchObject({
-      inTok: 50,
+    const last = usage().at(-1)!
+    expect(last).toMatchObject({
+      inTok: 600_000,
+      cacheReadTok: 400_000,
       ctxPct: 0.25,
       cacheWriteTok: 0
     })
+    expect(last.costUsd).toBeCloseTo(0.6 * 1.25 + 0.4 * 0.125 + 0.1 * 10)
+  })
+
+  it('leaves the cost out when the model has no known price', () => {
+    const f = fixture()
+    f.bind()
+    f.server('thread/tokenUsage/updated', {
+      tokenUsage: { total: { inputTokens: 50, outputTokens: 5, cachedInputTokens: 10 }, last: {} }
+    })
+    const last = f.events.flatMap((e) => (e.type === 'usage' ? [e.usage] : [])).at(-1)!
+    expect(last.inTok).toBe(40)
+    expect(last.costUsd).toBeUndefined()
   })
 
   // CODEX§4

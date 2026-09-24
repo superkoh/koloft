@@ -19,6 +19,28 @@ function tier(inPerM: number, outPerM: number, windowTokens: number): ModelPrici
   }
 }
 
+const CODEX_WINDOW_TOKENS = 272_000
+
+function openAi(inPerM: number, cacheReadPerM: number, outPerM: number): ModelPricing {
+  return { inPerM, outPerM, cacheWritePerM: 0, cacheReadPerM, windowTokens: CODEX_WINDOW_TOKENS }
+}
+
+// CODEX§13
+export const OPENAI_PRICING: Record<string, ModelPricing> = {
+  'gpt-6-astra': openAi(10, 1, 50),
+  'gpt-6-sol': openAi(2, 0.2, 10),
+  'gpt-6-luna': openAi(0.1, 0.01, 0.5),
+  'gpt-5.6-sol': openAi(4, 0.4, 20),
+  'gpt-5.6-terra': openAi(2, 0.2, 12),
+  'gpt-5.6-luna': openAi(0.2, 0.02, 1.2),
+  'gpt-5.5': openAi(5, 0.5, 30),
+  'gpt-5.4': openAi(2.5, 0.25, 15),
+  'gpt-5.3-codex': openAi(1.75, 0.175, 14),
+  'gpt-5.2': openAi(1.75, 0.175, 14),
+  'gpt-5.1': openAi(1.25, 0.125, 10),
+  'gpt-5': openAi(1.25, 0.125, 10)
+}
+
 // CC§7
 export const MODEL_PRICING: Record<string, ModelPricing> = {
   'claude-fable-5-1': { ...tier(10, 50, M), cacheReadPerM: 0.25 },
@@ -44,10 +66,27 @@ const KEYS = Object.keys(MODEL_PRICING).sort((a, b) => b.length - a.length)
 
 export function resolvePricing(model: string): ModelPricing | undefined {
   if (!model) return undefined
-  const exact = MODEL_PRICING[model]
+  const exact = MODEL_PRICING[model] ?? OPENAI_PRICING[model]
   if (exact) return exact
   for (const k of KEYS) {
     if (model.startsWith(k + '-')) return MODEL_PRICING[k]
   }
   return undefined
+}
+
+export interface TokenCounts {
+  inTok: number
+  outTok: number
+  cacheWriteTok: number
+  cacheReadTok: number
+}
+
+export function costUsdOf(pricing: ModelPricing, t: TokenCounts): number {
+  return (
+    (t.inTok * pricing.inPerM +
+      t.outTok * pricing.outPerM +
+      t.cacheWriteTok * pricing.cacheWritePerM +
+      t.cacheReadTok * pricing.cacheReadPerM) /
+    1_000_000
+  )
 }
