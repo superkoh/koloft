@@ -96,6 +96,31 @@ test.describe('CDP target list: what a client is shown, what it costs, and what 
     }
   })
 
+  // PLATFORM§17
+  test('a tab the user opened is not listed to a client, so Playwright cannot make it its current page', async ({
+    page,
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const server = await startEchoServer()
+    try {
+      const url = await session(page, env)
+      await openBrowser(page)
+      await openTabOn(page, server.page('/mine', '<title>Mine</title><body>mine</body>'))
+      await expect(tabByTitle(page, 'Mine')).toHaveCount(1, { timeout: 30_000 })
+
+      const browser = await chromium.connectOverCDP(url)
+      try {
+        expect(browser.contexts()[0].pages()).toEqual([])
+        await expect(tabByTitle(page, 'Mine')).toHaveCount(1)
+      } finally {
+        await browser.close().catch(() => {})
+      }
+    } finally {
+      await server.close()
+    }
+  })
+
   test('BB-47/59: /clear swaps the tab set under a connected client, connection intact, because the endpoint belongs to the tab', async ({
     page,
     env
@@ -300,10 +325,11 @@ test.describe('CDP target list: what a client is shown, what it costs, and what 
       const url = await session(page, env)
       await openBrowser(page)
       for (const name of ['P1', 'P2', 'P3']) {
-        await openTabOn(
+        await openViaAgent(
           page,
           server.page(`/${name.toLowerCase()}`, `<title>${name}</title><body>${name}</body>`)
         )
+        await page.locator(BROWSER.tabAgent).last().click()
         await expect(tabByTitle(page, name)).toHaveCount(1, { timeout: 30_000 })
       }
 

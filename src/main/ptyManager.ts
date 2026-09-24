@@ -2,6 +2,7 @@ import * as pty from 'node-pty'
 import { EventEmitter } from 'events'
 import os from 'os'
 import type { TabKind } from '@shared/types'
+import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { OscCwdParser } from './oscCwd'
 import { codexEnvironment } from './codexTransport'
 import { userShell } from './userShell'
@@ -100,9 +101,8 @@ export class PtyManager extends EventEmitter {
         key === 'KOLOFT_FIRST_PROMPT' ||
         key === 'KOLOFT_SESSION_NAME' ||
         key === 'KOLOFT_CDP_DIR' ||
-        key === 'KOLOFT_BROWSER_CDP' ||
-        key === 'PLAYWRIGHT_MCP_CDP_ENDPOINT' ||
-        key === 'ANT_ACCOUNT'
+        key === 'ANT_ACCOUNT' ||
+        (BROWSER_TAB_ENV as readonly string[]).includes(key)
       ) {
         delete env[key]
       }

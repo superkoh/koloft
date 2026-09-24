@@ -725,7 +725,7 @@ export const useStore = create<AppState>((set, get) => ({
     whenWorkbenchFetched(tabId, () => {
       const s = get()
       const base = s.workbench[tabId] ?? emptyTabSet()
-      const r = openTab(base, { kind: 'web', ...opts })
+      const r = openTab(base, { kind: 'web', ...opts, openedByAgent: opts.fromShim })
       set((st) => ({ workbench: { ...st.workbench, [tabId]: r.set } }))
       persistWorkbench(tabId)
       if (r.evicted) s.showToast(tabEvictedNotice(tabLabel(r.set, r.evicted)))
@@ -772,6 +772,7 @@ export const useStore = create<AppState>((set, get) => ({
       kind: 'web',
       url,
       source: 'cdp',
+      openedByAgent: true,
       pinned: new Set((sid && s.cdpAttached[sid]) || [])
     })
     if (r.refused) return null

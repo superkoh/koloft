@@ -220,7 +220,20 @@ about how it was found.
 - **HTML fullscreen**: a guest asking for it puts the whole host WINDOW into macOS
   fullscreen, its own Space (measured, 2026-08-18 spike). `leave-html-full-screen`
   arrives only while the guest is alive, so closing a fullscreen page never sends it.
-  With the app window hidden, `requestFullscreen()` never settles (measured).
+  Measured 2026-09-23 on Electron 43.7.3, with a probe spec reading the window's
+  state and events:
+  - The request goes through the session's permission request handler as
+    `fullscreen`. Inside `callback(true)`, `enter-html-full-screen` fires and the
+    window's resize is decided, all before the callback returns. The native
+    `enter-full-screen` lands about 800 ms later, so checking `isFullScreen()` in
+    `enter-html-full-screen` cannot catch it.
+  - A window with `setFullScreenable(false)` at that moment keeps its size and
+    state: the page still goes fullscreen inside its `<webview>`, the promise
+    resolves, and leaving works. This holds whether the window was windowed, already
+    in system fullscreen, or hidden.
+  - `disableHtmlFullscreenWindowResize` changes nothing, set on the guest or on the
+    host window.
+  - A hidden window that is allowed to follow the guest shows itself.
 
 ## §9 `<webview>`: visibility, frames and capture
 
@@ -423,6 +436,11 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   `connectOverCDP` for its whole timeout** (measured: 30 s on BB-49, 6 s on BB-25).
 - **playwright-mcp reads `PLAYWRIGHT_MCP_CDP_ENDPOINT`** with no other setup, and an
   injected endpoint wins over the tool's own `--isolated` flag.
+- **playwright-mcp sends a notification between its replies**: 0.0.82 (Playwright
+  1.64 alpha) writes `notifications/tools/list_changed`, a message with no `id`,
+  after the `initialize` reply and before the first tool result (measured
+  2026-09-23, reading its stdout). A client that counts lines as replies stops one
+  reply early.
 - **When playwright-mcp or playwright-cli starts a browser of its own, it is the
   machine's Google Chrome**, not the ms-playwright bundle; it can be told apart by
   Playwright's launch flag `--disable-field-trial-config`, not by its path.
@@ -433,6 +451,29 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   a bare WebSocket CDP client can see a tab as listed but not loaded.
 - **`Browser.version()` and `contexts()` are local state** and still answer on a dead
   socket; only a real round trip (such as `page.evaluate`) shows the client is alive.
+- **playwright-cli runs one background daemon per (workspace, session name), machine
+  wide, and the daemon keeps the env of the process that ran `open`** (measured
+  2026-09-24 on @playwright/cli 0.1.18 / playwright-core 1.63 and 0.1.21 / 1.64 alpha:
+  session B's `goto` with no `open` navigated session A's page inside A's Koloft tab). The
+  session name is the `-s`
+  flag, else `PLAYWRIGHT_CLI_SESSION`, else `default`; the workspace is the nearest
+  directory holding a `.playwright` folder, else the playwright-core install root, so
+  every directory without that marker shares one bucket (read in
+  `lib/tools/cli-client/registry.js` and `session.js`). Each Koloft tab therefore
+  exports its own `PLAYWRIGHT_CLI_SESSION`. A browser the cli starts itself is headless
+  unless `--headed` (read in `resolveCLIConfigForCLI`); playwright-mcp's default is headed.
+- **playwright-mcp and playwright-cli drive the first page they are shown.** On attach
+  the shared MCP context walks `browserContext.pages()` in the order the targets were
+  announced and makes the first one its current tab; `goto` / `browser_navigate` go to
+  that tab, and a new page is created only when there is none (read in the
+  `coreBundle.js` of playwright-cli 0.1.18, playwright-core 1.63.0-alpha-2026-08-05,
+  2026-09-24). So every tab the relay lists is a tab the agent may navigate away.
+- **The same context refuses `file:` URLs** ("Access to "file:" protocol is blocked")
+  unless `allowUnrestrictedFileAccess` is set, which the CLI and MCP read from
+  `PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS` (measured 2026-09-24 with
+  playwright-cli 0.1.18 against Koloft's relay, `test/e2e/real-tools-smoke.spec.ts`:
+  `open file://…` fails with that message on the endpoint alone and succeeds with the
+  variable set to `1`).
 
 ## §18 Playwright and Electron in the e2e suite
 

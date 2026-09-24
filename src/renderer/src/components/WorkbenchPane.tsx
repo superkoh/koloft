@@ -85,6 +85,7 @@ import { boundSessionId, useStore } from '../store'
 import {
   FILES_TAB_ID,
   activateTab,
+  cdpVisibleTabs,
   closeTab,
   cycleTab,
   dialogHasLiveOwner,
@@ -635,14 +636,12 @@ export function WorkbenchPane({
     for (const [owner, s] of Object.entries(states)) {
       const sid = boundSessionId(st, owner)
       if (!sid) continue
-      const targets = s.tabs
-        .filter((t) => t.kind === 'web')
-        .map((t) => ({
-          targetId: t.id,
-          url: t.url ?? '',
-          title: t.title,
-          guestId: guestIdOf(t.id) || null
-        }))
+      const targets = cdpVisibleTabs(s).map((t) => ({
+        targetId: t.id,
+        url: t.url ?? '',
+        title: t.title,
+        guestId: guestIdOf(t.id) || null
+      }))
       const json = JSON.stringify(targets)
       if (lastReport.current.get(sid) === json) continue
       lastReport.current.set(sid, json)

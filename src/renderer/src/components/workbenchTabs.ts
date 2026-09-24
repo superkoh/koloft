@@ -25,6 +25,7 @@ export interface WorkbenchTab {
   line?: number
   scrollTop?: number
   cwd?: string
+  openedByAgent?: true
 }
 
 export interface WorkbenchTabSet {
@@ -139,6 +140,7 @@ export function openTab(
     scrollTop?: number
     pinned?: ReadonlySet<string>
     isDirty?: (tabId: string) => boolean
+    openedByAgent?: boolean
   }
 ): OpenTabResult {
   const hasTarget = opts.kind === 'web' ? !!opts.url : opts.kind === 'file' ? !!opts.path : false
@@ -199,7 +201,8 @@ export function openTab(
     sourcePath: opts.sourcePath,
     line: opts.line,
     scrollTop: opts.scrollTop,
-    cwd: opts.cwd
+    cwd: opts.cwd,
+    openedByAgent: opts.openedByAgent ? true : undefined
   }
   const at =
     opts.kind === 'terminal' ? base.tabs.length : base.tabs.findIndex((t) => t.kind === 'terminal')
@@ -364,6 +367,10 @@ export function tabLabel(set: WorkbenchTabSet, tab: WorkbenchTab): string {
   if (tab.kind === 'terminal') return tab.title
   if (tab.kind === 'web') return webLabel(tab)
   return fileLabels(set)[tab.id] ?? tab.title ?? ''
+}
+
+export function cdpVisibleTabs(set: WorkbenchTabSet): WorkbenchTab[] {
+  return set.tabs.filter((t) => t.kind === 'web' && t.openedByAgent)
 }
 
 export function liveWebTabs(set: WorkbenchTabSet, limit: number): Set<string> {

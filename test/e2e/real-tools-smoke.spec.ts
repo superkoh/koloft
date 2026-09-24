@@ -4,7 +4,7 @@ import path from 'path'
 import type { Page } from '@playwright/test'
 import { test, expect } from './helpers/app'
 import type { E2EEnv } from './helpers/env'
-import { readCalls, startSessionIn, waitBooted } from './helpers/p1'
+import { readCalls, startSessionIn, waitBooted, wsRows } from './helpers/p1'
 import { BROWSER, cdpEndpointOf, openBrowser, openTabs } from './helpers/browser'
 import { openSettings } from './helpers/extensions'
 import { startEchoServer } from './helpers/fixtureServer'
@@ -84,7 +84,9 @@ function mcpReplies(proc: ChildProcess, wanted: number): Promise<McpReply[]> {
         buf = buf.slice(i + 1)
         if (!line) continue
         try {
-          replies.push(JSON.parse(line) as McpReply)
+          const msg = JSON.parse(line) as McpReply
+          // PLATFORM§17
+          if (msg.id !== undefined) replies.push(msg)
         } catch {}
         if (replies.length >= wanted) return resolve(replies)
       }
@@ -217,6 +219,76 @@ test.describe('real third-party tools (playwright-mcp, playwright-cli), unmodifi
     } finally {
       await server.close()
     }
+  })
+
+  test('BB-57: two sessions get two playwright-cli daemons — one session’s `open` never takes over the other’s browser', async ({
+    page,
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const server = await startEchoServer()
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    const a = readCalls(env).at(-1)!
+    await startSessionIn(page, 'ws-b')
+    const b = readCalls(env).at(-1)!
+    const envA = {
+      PLAYWRIGHT_MCP_CDP_ENDPOINT: a.playwrightMcpEndpoint!,
+      PLAYWRIGHT_CLI_SESSION: a.playwrightCliSession!
+    }
+    const envB = {
+      PLAYWRIGHT_MCP_CDP_ENDPOINT: b.playwrightMcpEndpoint!,
+      PLAYWRIGHT_CLI_SESSION: b.playwrightCliSession!
+    }
+    try {
+      const pageA = server.page('/a', '<title>Page A</title><body><h1>a</h1></body>')
+      const pageB = server.page('/b', '<title>Page B</title><body><h1>b</h1></body>')
+
+      expect((await cli(['open', pageA], env.home, envA)).code).toBe(0)
+      expect((await cli(['open', pageB], env.home, envB)).code).toBe(0)
+      const [titleA, titleB] = await Promise.all([
+        cli(['eval', 'document.title'], env.home, envA),
+        cli(['eval', 'document.title'], env.home, envB)
+      ])
+      expect(titleA.out).toContain('Page A')
+      expect(titleB.out).toContain('Page B')
+
+      await openBrowser(page)
+      await expect(openTabs(page)).toHaveCount(1, { timeout: 30_000 })
+      await expect(openTabs(page)).toContainText('Page B')
+      await wsRows(page, 'ws-a').first().click()
+      await expect(openTabs(page)).toHaveCount(1, { timeout: 30_000 })
+      await expect(openTabs(page)).toContainText('Page A')
+    } finally {
+      await Promise.all([cli(['close'], env.home, envA), cli(['close'], env.home, envB)])
+      await server.close()
+    }
+  })
+
+  // PLATFORM§17
+  test('the real CLI refuses a file URL until the switch the shim injects is set; with it, the file opens in Koloft', async ({
+    page,
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const url = await drivenSession(page, env)
+    const file = path.join(env.home, 'mine.html')
+    fs.writeFileSync(file, '<title>Mine</title><body>mine</body>')
+    const target = `file://${file}`
+
+    const endpointOnly = { PLAYWRIGHT_MCP_CDP_ENDPOINT: url }
+    const refused = await cli(['open', '--headed', target], env.home, endpointOnly)
+    expect(refused.out).toMatch(/blocked/i)
+    await cli(['close'], env.home, endpointOnly)
+
+    const asTheShimInjects = { ...endpointOnly, PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS: '1' }
+    expect((await cli(['open', '--headed', target], env.home, asTheShimInjects)).code).toBe(0)
+    expect((await cli(['eval', 'document.title'], env.home, asTheShimInjects)).out).toContain(
+      'Mine'
+    )
+    await openBrowser(page)
+    await expect(openTabs(page)).toHaveCount(1, { timeout: 30_000 })
+    await cli(['close'], env.home, asTheShimInjects)
   })
 
   test('BB-57: a multi-step task through the real CLI — fill a form, read the result, move on and back', async ({

@@ -3,6 +3,7 @@ import type { SessionInfo, SessionRow, SessionWorkbenchState, WorkspaceRows } fr
 import {
   FILES_TAB_ID,
   activateTab,
+  cdpVisibleTabs,
   closeTab,
   moveTab,
   openTab,
@@ -117,6 +118,22 @@ describe('openWorkbenchTarget (FR-13/15/57 — one dedup, one cap, one source fo
     expect(set.activeId).toBe(FILES_TAB_ID)
     expect(useStore.getState().workbenchOpen[TAB]).toBe(false)
     expect(useStore.getState().workbenchLoad).toBeNull()
+  })
+
+  it('the agent owns a tab only when its open command or a CDP page made it — a user open, and a ⌘-click that opens in the background, stay the user’s', async () => {
+    useStore.getState().openWorkbenchTarget(TAB, {
+      url: 'http://localhost:1/shim',
+      source: 'agent',
+      fromShim: true
+    })
+    openWeb('http://localhost:1/popup', 'agent')
+    openWeb('http://localhost:1/mine', 'user')
+    await useStore.getState().openCdpTab(TAB, 'http://localhost:1/cdp')
+
+    expect(cdpVisibleTabs(strip()).map((t) => t.url)).toEqual([
+      'http://localhost:1/shim',
+      'http://localhost:1/cdp'
+    ])
   })
 
   it('FR-15: a user re-open focuses the existing tab, never a second one, and re-asks for a load (WB-T06)', () => {

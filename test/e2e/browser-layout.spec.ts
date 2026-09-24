@@ -43,7 +43,7 @@ async function sessionWithWorkbench(page: Page, env: E2EEnv): Promise<void> {
   await openBrowser(page)
 }
 
-function commitSoFileOpensAsCodeNotDiff(env: E2EEnv): void {
+function commitBeforeTheSessionSoTheDiffBaseAlreadyHoldsTheFile(env: E2EEnv): void {
   gitCommitAll(env.workspaces.a)
 }
 
@@ -87,13 +87,13 @@ test.describe('Workbench layout and keyboard: one panel holds both kinds without
   }) => {
     test.setTimeout(240_000)
     gitInit(env.workspaces.a)
-    await startSessionIn(page, 'ws-a')
-
     fs.writeFileSync(
       path.join(env.workspaces.a, 'long.txt'),
       Array.from({ length: 400 }, (_, i) => `line ${i + 1}`).join('\n') + '\n'
     )
-    commitSoFileOpensAsCodeNotDiff(env)
+    commitBeforeTheSessionSoTheDiffBaseAlreadyHoldsTheFile(env)
+    await startSessionIn(page, 'ws-a')
+
     await openInBrowse(page, path.join(env.workspaces.a, 'long.txt'))
     const codeBody = page.locator(`${BROWSER.surface} .code-body`).first()
     await expect(codeBody).toBeVisible({ timeout: 20_000 })
