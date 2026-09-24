@@ -201,7 +201,7 @@ export function openTab(
     line: opts.line,
     scrollTop: opts.scrollTop,
     cwd: opts.cwd,
-    openedByAgent: opts.source === 'user' ? undefined : true
+    openedByAgent: opts.source === 'agent' || opts.source === 'cdp' ? true : undefined
   }
   const at =
     opts.kind === 'terminal' ? base.tabs.length : base.tabs.findIndex((t) => t.kind === 'terminal')

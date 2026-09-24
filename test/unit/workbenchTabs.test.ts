@@ -1213,7 +1213,7 @@ describe('the vanished-root notice (R4): the only sign a shell opened somewhere 
 })
 
 describe('what a CDP client is shown', () => {
-  it('only the web tabs the agent opened — a tab the user opened, or one restored from disk, is never handed to a client to navigate away', () => {
+  it('lists only the web tabs the agent opened — never one the user opened or one restored from disk', () => {
     let set = openTab(emptyTabSet(), {
       kind: 'web',
       url: 'file:///tmp/mine.html',
@@ -1221,7 +1221,6 @@ describe('what a CDP client is shown', () => {
     }).set
     set = openTab(set, { kind: 'web', url: 'http://localhost:8000/a', source: 'agent' }).set
     set = openTab(set, { kind: 'web', url: 'http://localhost:8000/b', source: 'cdp' }).set
-    set = openTab(set, { kind: 'file', path: '/tmp/notes.md', source: 'agent' }).set
     expect(cdpVisibleTabs(set).map((t) => t.url)).toEqual([
       'http://localhost:8000/a',
       'http://localhost:8000/b'

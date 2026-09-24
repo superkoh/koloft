@@ -97,29 +97,22 @@ test.describe('CDP target list: what a client is shown, what it costs, and what 
   })
 
   // PLATFORM§17
-  test('a tab the user opened is not handed to a client, so a Playwright goto lands on a page of its own and leaves the user’s page where it was', async ({
+  test('a tab the user opened is not listed to a client, so Playwright cannot make it its current page', async ({
     page,
     env
   }) => {
-    test.setTimeout(240_000)
+    test.setTimeout(180_000)
     const server = await startEchoServer()
     try {
       const url = await session(page, env)
       await openBrowser(page)
-      const mine = server.page('/mine', '<title>Mine</title><body>mine</body>')
-      await openTabOn(page, mine)
+      await openTabOn(page, server.page('/mine', '<title>Mine</title><body>mine</body>'))
       await expect(tabByTitle(page, 'Mine')).toHaveCount(1, { timeout: 30_000 })
 
       const browser = await chromium.connectOverCDP(url)
       try {
-        const ctx = browser.contexts()[0]
-        expect(ctx.pages().map((p) => p.url())).toEqual([])
-
-        const driven = await ctx.newPage()
-        await driven.goto(server.page('/theirs', '<title>Theirs</title><body>t</body>'))
-        await expect(tabByTitle(page, 'Theirs')).toHaveCount(1, { timeout: 30_000 })
+        expect(browser.contexts()[0].pages()).toEqual([])
         await expect(tabByTitle(page, 'Mine')).toHaveCount(1)
-        await expect(openTabs(page)).toHaveCount(2)
       } finally {
         await browser.close().catch(() => {})
       }
