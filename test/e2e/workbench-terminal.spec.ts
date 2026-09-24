@@ -8,6 +8,7 @@ import {
   clickAppMenuItem,
   focusOwner,
   gitInit,
+  killSession,
   layoutOnDisk,
   openMenu,
   openSessionTerminal,
@@ -335,7 +336,7 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
       await expect(termBodies(page)).toHaveCount(1, { timeout: 40_000 })
       await expect(panelTerm(page)).toBeVisible({ timeout: 40_000 })
 
-      process.kill(session.pid, 'SIGKILL')
+      killSession(session.pid, env)
       await expect(wsRows(page, 'ws-a').first()).toHaveClass(/\bcold\b/, { timeout: 40_000 })
       await expect.poll(itemEnabled, { timeout: 20_000 }).toBe(false)
     })
@@ -403,7 +404,7 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
       expect(processAlive(pid)).toBe(true)
 
       // CC§1
-      process.kill(session.pid, 'SIGKILL')
+      killSession(session.pid, env)
       await expect(wsRows(page, 'ws-a').first()).toHaveClass(/\bcold\b/, { timeout: 40_000 })
 
       await expect.poll(() => processAlive(pid), { timeout: 40_000 }).toBe(false)
