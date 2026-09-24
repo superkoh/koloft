@@ -12,6 +12,7 @@ import {
   sortWorktrees,
   worktreeAim,
   worktreeBaseMode,
+  worktreeInUse,
   type WtHot
 } from '../../src/renderer/src/newSession'
 import { freshLineState, type FreshLineState } from '@shared/freshnessOps'
@@ -226,6 +227,20 @@ describe('mainRunningCount (D4 guard counts only root-checkout Koloft sessions)'
 
   it('is zero for an idle checkout', () => {
     expect(mainRunningCount([sessionRow({ running: false })])).toBe(0)
+  })
+})
+
+describe('worktreeInUse (C8 "in use" note)', () => {
+  it('a session running in the repo root does not mark a worktree named main in use', () => {
+    expect(worktreeInUse(wt('main'), [sessionRow()])).toBe(false)
+  })
+
+  it('a session running in the folder of a worktree named main marks it in use', () => {
+    expect(worktreeInUse(wt('main'), [sessionRow({ cwd: wt('main').dir })])).toBe(true)
+  })
+
+  it('a session that moved into a worktree mid-run marks it in use though its cwd is still the root', () => {
+    expect(worktreeInUse(wt('busy'), [sessionRow({ worktree: 'busy' })])).toBe(true)
   })
 })
 
