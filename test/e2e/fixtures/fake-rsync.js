@@ -20,8 +20,6 @@ const src = argv[argv.length - 2] || ''
 const rel = src.replace(/^[^:]*:/, '').replace(/\/+$/, '')
 const from = path.isAbsolute(rel) ? rel : path.join(cfg.machine, rel)
 
-const excludedNames = argv.map((a) => /^--exclude=([^*/]+)$/.exec(a)?.[1]).filter((name) => !!name)
-
 function mirrorRewritingOnlyChangedBytesLikeInplace(fromDir, toDir) {
   fs.mkdirSync(toDir, { recursive: true })
   for (const e of fs.readdirSync(fromDir, { withFileTypes: true })) {
@@ -31,7 +29,6 @@ function mirrorRewritingOnlyChangedBytesLikeInplace(fromDir, toDir) {
       mirrorRewritingOnlyChangedBytesLikeInplace(src, out)
       continue
     }
-    if (excludedNames.includes(e.name)) continue
     const buf = fs.readFileSync(src)
     let same = false
     try {

@@ -23,14 +23,7 @@ function projectFlags(paths: string[]): string[] {
   ]
 }
 // PLATFORM§34
-function hookFlags(streamedTabs: string[]): string[] {
-  return [
-    '-I',
-    '--inplace',
-    '--delete',
-    ...streamedTabs.map((tabId) => `--exclude=${tabId}.status.jsonl`)
-  ]
-}
+const HOOK_FLAGS = ['-I', '--inplace', '--delete']
 
 const FAST_INTERVAL_MS = 2000
 const IDLE_INTERVAL_MS = 20_000
@@ -42,7 +35,6 @@ export interface RemoteTarget {
   mirrorHookDir: string
   paths: string[]
   hasTabs: boolean
-  streamedTabs: string[]
 }
 
 export interface RemoteSyncDeps {
@@ -187,12 +179,7 @@ export class RemoteSync {
             target.mirrorProjectsRoot,
             projectFlags(target.paths.map((p) => st.git.get(p)?.real ?? p))
           ),
-          this.deps.rsync(
-            host,
-            '.koloft/hook-sessions',
-            target.mirrorHookDir,
-            hookFlags(target.streamedTabs)
-          )
+          this.deps.rsync(host, '.koloft/hook-sessions', target.mirrorHookDir, HOOK_FLAGS)
         ])
       }
       if (

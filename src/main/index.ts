@@ -18,7 +18,7 @@ import path from 'path'
 import fs from 'fs'
 import os from 'os'
 import { pathToFileURL } from 'url'
-import { execFile, spawn } from 'child_process'
+import { execFile } from 'child_process'
 import { PtyManager, tabInstancePid } from './ptyManager'
 import { probeClaude } from './claudeProbe'
 import { adoptableTabs } from './tabInventory'
@@ -81,7 +81,6 @@ import {
   tabPackageDir
 } from './remote/paths'
 import { launchMode, RemoteSync } from './remote/sync'
-import { StatusTails } from './remote/statusTail'
 import { makeDropDedupe, ownsHookReport, type HookReport } from './hookRouting'
 import type { StatusLineSetting } from './statusline'
 import {
@@ -479,24 +478,6 @@ function machinePackage(): MachinePackage {
 const watchedHookMirrors = new Map<string, () => void>()
 const killedRemoteSessions = new Set<string>()
 const remoteKills = new Map<string, Promise<unknown>>()
-const streamedStatusLogs = new Set<string>()
-const statusTails = new StatusTails({
-  spawn: (host, remoteCmd) => {
-    ensureControlDir(remoteControlDir)
-    const child = spawn('ssh', ['-n', ...sshOptions(remoteControlDir, true), host, remoteCmd], {
-      stdio: ['ignore', 'pipe', 'ignore']
-    })
-    return {
-      onData: (cb) => child.stdout?.on('data', cb),
-      onExit: (cb) => {
-        child.on('close', cb)
-        child.on('error', cb)
-      },
-      kill: () => child.kill()
-    }
-  },
-  mirrorDir: (host) => mirrorHookDir(app.getPath('userData'), host)
-})
 
 let cronRunner: CronRunner | null = null
 
@@ -1126,14 +1107,6 @@ app.whenReady().then(() => {
   tracker.on('update', (sessions: SessionInfo[]) => {
     sendToRenderer('sessions:update', allSessions())
     workspaceMgr?.onTrackerUpdate()
-    statusTails.follow(
-      sessions.flatMap((s) => {
-        const remote = s.alive ? tracker.remoteOf(s.tabId) : undefined
-        return remote && streamedStatusLogs.has(s.tabId)
-          ? [{ tabId: s.tabId, host: remote.host }]
-          : []
-      })
-    )
     const seen = new Set<string>()
     for (const s of sessions) {
       seen.add(s.tabId)
@@ -1311,8 +1284,7 @@ app.whenReady().then(() => {
         mirrorProjectsRoot: mirrorProjectsRoot(userData, t.host),
         mirrorHookDir: mirrorHookDir(userData, t.host),
         paths: t.paths,
-        hasTabs: live.has(t.host),
-        streamedTabs: [...streamedStatusLogs].filter((id) => tracker.remoteOf(id)?.host === t.host)
+        hasTabs: live.has(t.host)
       }))
     },
     onChange: () => workspaceMgr?.onRemoteChanged(),
@@ -1502,7 +1474,6 @@ app.on('before-quit', (e) => {
   workspaceMgr?.dispose()
   freshness?.stop()
   remoteSync?.stop()
-  statusTails.stopAll()
   closeAllDirWatchers()
   resetQuitGuard()
 })
@@ -2354,7 +2325,6 @@ function occupantOfDir(dir: string): string | null {
 }
 
 function untrackSession(tabId: string): void {
-  streamedStatusLogs.delete(tabId)
   tracker.untrack(tabId)
 }
 
@@ -2705,7 +2675,6 @@ async function createRemoteClaudeTab(
     shell: POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE
   })
 
-  if (mode === 'start') streamedStatusLogs.add(handle.id)
   tracker.track(handle.id, cwd, {
     host: key.host,
     projectsRoot: mirrorProjectsRoot(userData, key.host),

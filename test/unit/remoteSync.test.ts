@@ -57,8 +57,7 @@ beforeEach(() => {
     mirrorProjectsRoot: '/ud/remote/devbox/projects',
     mirrorHookDir: '/ud/remote/devbox/hook-sessions',
     paths: ['/home/koh/api'],
-    hasTabs: true,
-    streamedTabs: []
+    hasTabs: true
   }
   sync = make()
 })
@@ -132,35 +131,6 @@ it('pulls the slug of the path the machine resolved, not the one that was pinned
 
   await tick(2000)
   expect(rsyncFlags[2]).toContain('--include=/-mnt-disk2-api*/')
-})
-
-// PLATFORM§34
-it('pulls every hook report but the status logs a live stream is already writing, so a stream never races the pull', async () => {
-  target = { ...target, streamedTabs: ['pty-new'] }
-  sync.start()
-  await tick(1)
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-hooks-'))
-  try {
-    const src = path.join(root, 'src')
-    fs.mkdirSync(src)
-    for (const f of ['pty-new.json', 'pty-new.status.jsonl', 'pty-old.status.jsonl'])
-      fs.writeFileSync(path.join(src, f), 'x')
-    const dst = path.join(root, 'dst')
-    fs.mkdirSync(dst)
-    fs.writeFileSync(path.join(dst, 'pty-new.status.jsonl'), 'streamed')
-    const r = spawnSync('rsync', ['-a', ...rsyncFlags[1], `${src}/`, `${dst}/`], {
-      encoding: 'utf8'
-    })
-    expect(r.stderr).toBe('')
-    expect(fs.readdirSync(dst).sort()).toEqual([
-      'pty-new.json',
-      'pty-new.status.jsonl',
-      'pty-old.status.jsonl'
-    ])
-    expect(fs.readFileSync(path.join(dst, 'pty-new.status.jsonl'), 'utf8')).toBe('streamed')
-  } finally {
-    fs.rmSync(root, { recursive: true, force: true })
-  }
 })
 
 // CC§2 PLATFORM§34
