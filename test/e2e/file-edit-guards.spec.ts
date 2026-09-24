@@ -18,6 +18,7 @@ import {
   WORKBENCH,
   browseRow,
   openFileTab,
+  rowMenu,
   seedScratchpad,
   showBrowse,
   wbTabTitles,
@@ -47,8 +48,8 @@ async function dirtyEditor(page: Page, root: string, ed: EditFixture): Promise<s
   const file = browseRow(page, ed.config)
   await expect(file).toBeVisible({ timeout: 20_000 })
   await file.click({ button: 'right' })
-  await expect(page.locator(WORKBENCH.rowMenuOnPage)).toBeVisible()
-  await page.locator(WORKBENCH.rowMenuOnPage).getByText('Edit', { exact: true }).click()
+  await expect(rowMenu(page)).toBeVisible()
+  await rowMenu(page).getByText('Edit', { exact: true }).click()
   await editReady(page, 'koloft-e2e-edit-fixture')
   await typeAtEnd(page, MARKER)
   await page.keyboard.press('Enter')
@@ -233,7 +234,7 @@ test.describe('File edit · unsaved work is never lost, and the ✎ that stays o
     await expect(browseRow(page, fx.root)).toBeVisible({ timeout: 30_000 })
     await browseRow(page, `${fx.root}/config`).click()
     await browseRow(page, ed.config).click({ button: 'right', timeout: 30_000 })
-    await page.locator(WORKBENCH.rowMenuOnPage).getByText('Edit', { exact: true }).click()
+    await rowMenu(page).getByText('Edit', { exact: true }).click()
     await editReady(page, 'koloft-e2e-edit-fixture')
     await expect(page.locator(EDIT.dirty)).toHaveCount(0)
 

@@ -5,7 +5,7 @@ import type { E2EEnv } from './helpers/env'
 import { startSessionIn, waitBooted } from './helpers/p1'
 import { setupChangeFixture } from './helpers/filesFixture'
 import { seedEditFixture } from './helpers/editFixture'
-import { WORKBENCH, browseRow, showBrowse, workbenchPanel } from './helpers/workbench'
+import { browseRow, rowMenu, rowMenuItems, showBrowse, workbenchPanel } from './helpers/workbench'
 import { EDIT, closeDiscardingEdits } from './helpers/editPane'
 
 test.describe('Show ignored files: off hides every ignored entry; on shows everything and marks the ignored ones, directories included', () => {
@@ -13,7 +13,6 @@ test.describe('Show ignored files: off hides every ignored entry; on shows every
   const searchToggle = (page: Page): Locator =>
     page.locator('.wb-bar .icobtn[aria-label="Search files"]')
   const searchInput = (page: Page): Locator => page.locator('.wb-panel .ft-search-input')
-  const ctxMenu = (page: Page): Locator => page.locator(WORKBENCH.rowMenuOnPage)
   const searchRanAndFoundNothing = (page: Page): Locator => page.locator('.wb-panel .bv-nomatch')
 
   async function browseReady(page: Page, root: string): Promise<void> {
@@ -167,11 +166,9 @@ test.describe('Show ignored files: off hides every ignored entry; on shows every
     await browseRow(page, `${fx.root}/config`).click()
     await expect(browseRow(page, `${fx.root}/config/app.json`)).toBeVisible({ timeout: 20_000 })
     await browseRow(page, `${fx.root}/config/app.json`).click({ button: 'right' })
-    await expect(ctxMenu(page)).toBeVisible()
-    expect(await page.locator(WORKBENCH.rowMenuItemOnPage).allTextContents()).toContain(
-      'Open with default app'
-    )
-    await ctxMenu(page).getByText('Open with default app', { exact: true }).click()
+    await expect(rowMenu(page)).toBeVisible()
+    expect(await rowMenuItems(page).allTextContents()).toContain('Open with default app')
+    await rowMenu(page).getByText('Open with default app', { exact: true }).click()
 
     await expect
       .poll(

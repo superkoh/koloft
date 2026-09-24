@@ -22,7 +22,7 @@ import {
 import { setupChangeFixture } from './helpers/filesFixture'
 import { seedEditFixture, type EditFixture } from './helpers/editFixture'
 import { EDIT, closeDiscardingEdits, editReady, typeAtEnd } from './helpers/editPane'
-import { WORKBENCH, browseRow, showBrowse } from './helpers/workbench'
+import { browseRow, rowMenu, showBrowse } from './helpers/workbench'
 
 const JOB = 'Nightly report'
 const TASK = '/daily-report'
@@ -900,8 +900,8 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
     await expect(dir).toBeVisible({ timeout: 30_000 })
     if (!(await dir.getAttribute('class'))?.split(/\s+/).includes('open')) await dir.click()
     await browseRow(page, ed.config).click({ button: 'right' })
-    await expect(page.locator(WORKBENCH.rowMenuOnPage)).toBeVisible()
-    await page.locator(WORKBENCH.rowMenuOnPage).getByText('Edit', { exact: true }).click()
+    await expect(rowMenu(page)).toBeVisible()
+    await rowMenu(page).getByText('Edit', { exact: true }).click()
     await editReady(page, 'koloft-e2e-edit-fixture')
     await typeAtEnd(page, 'KOLOFT_E2E_BB_E34=1')
     await expect(page.locator(EDIT.dirty)).toBeVisible()

@@ -4,7 +4,15 @@ import type { Locator, Page } from '@playwright/test'
 import { startSessionIn, wsRows } from './helpers/p1'
 import { setupChangeFixture } from './helpers/filesFixture'
 import { seedEditFixture } from './helpers/editFixture'
-import { WORKBENCH, browseRow, showBrowse, wbTabs, workbenchPanel } from './helpers/workbench'
+import {
+  WORKBENCH,
+  browseRow,
+  rowMenu,
+  rowMenuItems,
+  showBrowse,
+  wbTabs,
+  workbenchPanel
+} from './helpers/workbench'
 import {
   EDIT,
   editArea,
@@ -18,7 +26,6 @@ import {
 
 const MARKER = 'KOLOFT_E2E_EDIT_MARKER=1'
 
-const ctxMenu = (page: Page): Locator => page.locator(WORKBENCH.rowMenuOnPage)
 const tabReload = (page: Page): Locator =>
   page.locator('.wb-bar:not(.fv-artifact-hd) .icobtn[aria-label="Reload"]')
 const halfBtn = (page: Page, name: 'Changes' | 'Browse'): Locator =>
@@ -46,9 +53,9 @@ async function treeRow(page: Page, root: string, abs: string): Promise<Locator> 
 async function editViaMenu(page: Page, root: string, abs: string): Promise<void> {
   const r = await treeRow(page, root, abs)
   await r.click({ button: 'right' })
-  await expect(ctxMenu(page)).toBeVisible()
-  expect((await page.locator(WORKBENCH.rowMenuItemOnPage).allTextContents())[0]).toBe('Edit')
-  await ctxMenu(page).getByText('Edit', { exact: true }).click()
+  await expect(rowMenu(page)).toBeVisible()
+  expect((await rowMenuItems(page).allTextContents())[0]).toBe('Edit')
+  await rowMenu(page).getByText('Edit', { exact: true }).click()
 }
 
 test.describe('File edit · getting in, typing, and ⌘S, asserted on disk byte for byte', () => {

@@ -5,7 +5,14 @@ import type { Locator, Page } from '@playwright/test'
 import { startSessionIn } from './helpers/p1'
 import { setupChangeFixture } from './helpers/filesFixture'
 import { seedEditFixture } from './helpers/editFixture'
-import { WORKBENCH, browseRow, showBrowse, wbTabs, workbenchPanel } from './helpers/workbench'
+import {
+  WORKBENCH,
+  browseRow,
+  rowMenu,
+  showBrowse,
+  wbTabs,
+  workbenchPanel
+} from './helpers/workbench'
 import { EDIT, closeDiscardingEdits, editArea, editText, sendSave } from './helpers/editPane'
 
 const nameBox = (page: Page): Locator => page.locator(EDIT.newFileInput)
@@ -18,8 +25,8 @@ async function waitCreateRefused(page: Page, wording: RegExp): Promise<void> {
 
 async function startNewFile(page: Page, dirAbs: string): Promise<void> {
   await browseRow(page, dirAbs).click({ button: 'right' })
-  await expect(page.locator(WORKBENCH.rowMenuOnPage)).toBeVisible()
-  await page.locator(WORKBENCH.rowMenuOnPage).getByText('New File…', { exact: true }).click()
+  await expect(rowMenu(page)).toBeVisible()
+  await rowMenu(page).getByText('New File…', { exact: true }).click()
   await expect(nameBox(page)).toBeVisible({ timeout: 20_000 })
 }
 

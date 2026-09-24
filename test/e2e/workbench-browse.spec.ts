@@ -11,6 +11,8 @@ import {
   browseRow,
   browseSection,
   openInBrowse,
+  rowMenu,
+  rowMenuItems,
   seedScratchpad,
   showBrowse,
   wbActiveTab,
@@ -32,9 +34,6 @@ const searchToggle = (page: Page): Locator =>
 const searchInput = (page: Page): Locator => page.locator('.wb-panel .ft-search-input')
 const searchMode = (page: Page, mode: 'name' | 'content'): Locator =>
   page.locator(`.wb-panel .ft-mode-btn[data-mode="${mode}"]`)
-
-const portalledCtxMenu = (page: Page): Locator => page.locator(WORKBENCH.rowMenuOnPage)
-const ctxItems = (page: Page): Locator => page.locator(WORKBENCH.rowMenuItemOnPage)
 
 const readingTitle = (page: Page): Locator => page.locator(WORKBENCH.readingTitle)
 const readingBody = (page: Page): Locator => page.locator(WORKBENCH.readingBody)
@@ -287,18 +286,14 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
     await expect(readingBody(page)).toContainText(path.basename(outside.md), { timeout: 30_000 })
 
     // CC§2
-    await expect(
-      page.locator(`${WORKBENCH.browseRows}[data-path="${scratch.tasksDir}"]`)
-    ).toHaveCount(0)
-    await expect(
-      page.locator(`${WORKBENCH.browseRows}[data-path="${scratch.tasksFile}"]`)
-    ).toHaveCount(0)
-    await expect(
-      page.locator(`${WORKBENCH.browseRows}[data-path="${scratch.siblingTasksDir}"]`)
-    ).toHaveCount(0)
-    await expect(
-      page.locator(`${WORKBENCH.browseRows}[data-path="${scratch.siblingTasksFile}"]`)
-    ).toHaveCount(0)
+    for (const p of [
+      scratch.tasksDir,
+      scratch.tasksFile,
+      scratch.siblingTasksDir,
+      scratch.siblingTasksFile
+    ]) {
+      await expect(page.locator(`${WORKBENCH.browseRows}[data-path="${p}"]`)).toHaveCount(0)
+    }
 
     outside.remove()
     fs.rmSync(controlDir, { recursive: true, force: true })
@@ -405,7 +400,7 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
     await expect(readingTitle(page)).toHaveText('lib/deep/nested/beacon.ts', { timeout: 25_000 })
 
     await browseRow(page, fx.paths.deepFile).click({ button: 'right' })
-    await portalledCtxMenu(page).getByText('Add bookmark', { exact: true }).click()
+    await rowMenu(page).getByText('Add bookmark', { exact: true }).click()
     await expect(browseRow(page, fx.paths.deepFile).locator('.bv-bm')).toBeVisible()
     await expect(browseRow(page, fx.paths.deepFile, 'bookmarks')).toBeVisible()
 
@@ -506,8 +501,8 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
 
     await expandTo(page, fx.root, fx.paths.html)
     await browseRow(page, fx.paths.html).click({ button: 'right' })
-    await expect(portalledCtxMenu(page)).toBeVisible()
-    expect(await ctxItems(page).allTextContents()).toEqual([
+    await expect(rowMenu(page)).toBeVisible()
+    expect(await rowMenuItems(page).allTextContents()).toEqual([
       'Edit',
       'Open',
       'View source',
@@ -519,7 +514,7 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
       '@ Inject into terminal'
     ])
     await page.keyboard.press('Escape')
-    await expect(portalledCtxMenu(page)).toHaveCount(0)
+    await expect(rowMenu(page)).toHaveCount(0)
 
     await halfBtn(page, 'Changes').click()
     const changesRow = page.locator(
@@ -527,8 +522,8 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
     )
     await expect(changesRow).toBeVisible({ timeout: 30_000 })
     await changesRow.click({ button: 'right' })
-    await expect(portalledCtxMenu(page)).toBeVisible()
-    expect(await ctxItems(page).allTextContents()).toEqual([
+    await expect(rowMenu(page)).toBeVisible()
+    expect(await rowMenuItems(page).allTextContents()).toEqual([
       'Edit',
       'Open',
       'Reveal in Finder',
@@ -542,7 +537,7 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
     const rel = fx.rel(fx.paths.changeable[0])
     const before = await ttyCursorX(page)
     expect(before).toBeGreaterThanOrEqual(0)
-    await portalledCtxMenu(page).getByText('@ Inject into terminal', { exact: true }).click()
+    await rowMenu(page).getByText('@ Inject into terminal', { exact: true }).click()
     await expect(centerTerm(page)).toContainText(`@${rel}`, { timeout: 20_000 })
     await expect
       .poll(() => ttyCursorX(page), { timeout: 20_000 })

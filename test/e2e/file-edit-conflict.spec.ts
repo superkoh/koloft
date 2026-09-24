@@ -4,7 +4,7 @@ import type { Locator, Page } from '@playwright/test'
 import { startSessionIn } from './helpers/p1'
 import { setupChangeFixture } from './helpers/filesFixture'
 import { seedEditFixture, type EditFixture } from './helpers/editFixture'
-import { WORKBENCH, browseRow, showBrowse, workbenchPanel } from './helpers/workbench'
+import { browseRow, rowMenu, showBrowse, workbenchPanel } from './helpers/workbench'
 import {
   EDIT,
   closeDiscardingEdits,
@@ -39,8 +39,8 @@ async function dirtyEditor(page: Page, root: string, ed: EditFixture): Promise<s
   const file = browseRow(page, ed.config)
   await expect(file).toBeVisible({ timeout: 20_000 })
   await file.click({ button: 'right' })
-  await expect(page.locator(WORKBENCH.rowMenuOnPage)).toBeVisible()
-  await page.locator(WORKBENCH.rowMenuOnPage).getByText('Edit', { exact: true }).click()
+  await expect(rowMenu(page)).toBeVisible()
+  await rowMenu(page).getByText('Edit', { exact: true }).click()
   await editReady(page, 'koloft-e2e-edit-fixture')
   await typeAtEnd(page, MINE)
   await page.keyboard.press('Enter')
