@@ -210,6 +210,7 @@ test.describe('who ends the claude on the other machine: every way of ending a r
       expect(await termIds(page)).toHaveLength(2)
 
       await expect.poll(() => termIds(page), { timeout: 60_000 }).toHaveLength(1)
+      await expect(remoteRow).not.toHaveClass(/\bcold\b/)
       expect(killLines(env, first.sessionId)).toEqual([])
       expect(liveTmuxSessions(env)).toContain(tmuxName(first.sessionId))
       expect(processAlive(first.pid)).toBe(true)

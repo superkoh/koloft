@@ -2353,8 +2353,9 @@ function killTabPty(
     remoteKills.set(remote.tmuxName, kill)
     const killedId = sessionIdOfTmux(remote.tmuxName)
     if (killedId) killedRemoteSessions.add(killedId)
-    fs.rmSync(tabPackageDir(app.getPath('userData'), tabId), { recursive: true, force: true })
   }
+  if (remote)
+    fs.rmSync(tabPackageDir(app.getPath('userData'), tabId), { recursive: true, force: true })
   ptyMgr.kill(tabId)
   attention.clear(tabId)
   sessionEndSeenAt.delete(tabId)
