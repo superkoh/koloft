@@ -258,17 +258,7 @@ test.describe('artifact rendering in a Workbench `file` tab, driven through the 
     await wsRows(page, 'ws-a').first().click()
     await expect(artifactTitle(page)).toHaveText('long.txt', { timeout: 20_000 })
     await expect(artifactBody(page).locator('.code-body')).toContainText('400', { timeout: 20_000 })
-    await expect
-      .poll(
-        () =>
-          artifactBody(page)
-            .locator('.code-body')
-            .evaluate((el) => el.scrollTop),
-        {
-          timeout: 20_000
-        }
-      )
-      .toBe(1200)
+    await expect.poll(() => codeBody.evaluate((el) => el.scrollTop), { timeout: 20_000 }).toBe(1200)
   })
 
   test('a file that got shorter while its session was off screen comes back as far down as it now goes, and a later reload leaves the scroll where the user put it (R1)', async ({

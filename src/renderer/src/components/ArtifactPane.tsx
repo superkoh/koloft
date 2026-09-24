@@ -374,7 +374,7 @@ export function ArtifactPane({
     refresh()
   }, [reloadNonce, refresh])
 
-  const lastScroll = useRef(0)
+  const lastScroll = useRef(initialScrollTop ?? 0)
   // PLATFORM§24
   const pendingRestoreOffset = useRef<number | null>(null)
   useEffect(() => {
@@ -390,40 +390,16 @@ export function ArtifactPane({
   }, [])
   // ADR-0016
   useEffect(() => () => onUnmount?.(tabId, lastScroll.current), [tabId, onUnmount])
-  const seeded = useRef(false)
-  useEffect(() => {
-    if (!initialScrollTop || seeded.current) return
-    const host = bodyRef.current
-    if (!host) return
-    const finish = (): void => {
-      seeded.current = true
-      mo.disconnect()
-    }
-    const apply = (): void => {
-      const child = host.querySelector<HTMLElement>(VIEW_SCROLLER)
-      if (!child) return
-      child.scrollTop = initialScrollTop
-      if (child.scrollTop === initialScrollTop) finish()
-    }
-    const mo = new MutationObserver(apply)
-    mo.observe(host, { childList: true, subtree: true })
-    apply()
-    const stop = setTimeout(finish, GIVE_UP_RESTORE_MS)
-    return () => {
-      clearTimeout(stop)
-      mo.disconnect()
-    }
-  }, [initialScrollTop, path])
 
-  const swapRef = useRef({ path, view: current })
+  const swapRef = useRef<{ path: string; view: ArtifactView | null } | null>(null)
   useLayoutEffect(() => {
     const prev = swapRef.current
     swapRef.current = { path, view: current }
-    if (prev.path !== path) {
+    if (prev && prev.path !== path) {
       lastScroll.current = 0
       return
     }
-    if (prev.view === current) return
+    if (prev && prev.view === current) return
     const host = bodyRef.current
     const want = lastScroll.current
     if (!host || !want) return
