@@ -95,6 +95,7 @@ import {
   openTab,
   retargetOrOpenTab,
   retitleTab,
+  setTabScrollTop,
   setTabView,
   shortAuxCwd,
   tabLabel,
@@ -1475,6 +1476,15 @@ export function WorkbenchPane({
     outlineBtnRef.current?.focus()
   }, [])
   const closeZoom = useCallback((): void => setZoom(null), [])
+  const keepScrollTop = useCallback(
+    (tabId: string, scrollTop: number): void => {
+      const owner = Object.keys(statesRef.current).find((o) =>
+        statesRef.current[o].tabs.some((t) => t.id === tabId)
+      )
+      if (owner) onUpdate(owner, (prev) => setTabScrollTop(prev, tabId, scrollTop))
+    },
+    [onUpdate]
+  )
   const retarget = useCallback(
     (tabId: string, path: string, line?: number): void => {
       if (!ownerTab) return
@@ -2224,6 +2234,7 @@ export function WorkbenchPane({
                 onCloseZoom={closeZoom}
                 onOutlineClose={closeOutline}
                 onClose={close}
+                onUnmount={keepScrollTop}
                 editText={
                   ownerTab && isTabDirty(ownerTab, t.id)
                     ? getEntry(ownerTab, t.id)?.text

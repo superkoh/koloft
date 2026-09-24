@@ -182,6 +182,7 @@ export interface ArtifactPaneProps {
   onCloseZoom: () => void
   onOutlineClose: (tabId: string) => void
   onClose: (tabId: string) => void
+  onUnmount?: (tabId: string, scrollTop: number) => void
   editText?: string
   editUnsaved?: boolean
 }
@@ -205,6 +206,7 @@ export function ArtifactPane({
   onCloseZoom,
   onOutlineClose,
   onClose,
+  onUnmount,
   editText,
   editUnsaved
 }: ArtifactPaneProps): JSX.Element {
@@ -386,24 +388,31 @@ export function ArtifactPane({
     host.addEventListener('scroll', onScroll, true)
     return () => host.removeEventListener('scroll', onScroll, true)
   }, [])
+  // ADR-0016
+  useEffect(() => () => onUnmount?.(tabId, lastScroll.current), [tabId, onUnmount])
   const seeded = useRef(false)
   useEffect(() => {
     if (!initialScrollTop || seeded.current) return
     const host = bodyRef.current
     if (!host) return
+    const finish = (): void => {
+      seeded.current = true
+      mo.disconnect()
+    }
     const apply = (): void => {
       const child = host.querySelector<HTMLElement>(VIEW_SCROLLER)
       if (!child) return
       child.scrollTop = initialScrollTop
-      if (child.scrollTop === initialScrollTop) {
-        seeded.current = true
-        mo.disconnect()
-      }
+      if (child.scrollTop === initialScrollTop) finish()
     }
     const mo = new MutationObserver(apply)
     mo.observe(host, { childList: true, subtree: true })
     apply()
-    return () => mo.disconnect()
+    const stop = setTimeout(finish, GIVE_UP_RESTORE_MS)
+    return () => {
+      clearTimeout(stop)
+      mo.disconnect()
+    }
   }, [initialScrollTop, path])
 
   const swapRef = useRef({ path, view: current })
