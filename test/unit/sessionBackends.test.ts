@@ -51,9 +51,9 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
     expect(Object.values(capabilitiesFor('claude', 'local')).every((c) => c === true)).toBe(true)
   })
 
-  it('keeps the Workbench, agent open and browser control off for a remote Claude session', () => {
+  it('gives a remote Claude session a Workbench but keeps agent open and browser control off', () => {
     const remote = capabilitiesFor('claude', 'ssh')
-    expect(remote.workbench).not.toBe(true)
+    expect(remote.workbench).toBe(true)
     expect(remote.agentOpen).not.toBe(true)
     expect(remote.browserControl).not.toBe(true)
   })

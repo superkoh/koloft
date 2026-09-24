@@ -163,3 +163,30 @@ export function parseHeartbeat(stdout: string): {
   flush()
   return { alive, git }
 }
+
+export function utilClaudeGuard(refusal: string): string {
+  return `#!/bin/sh
+${refusal}
+self=$(cd "$(dirname "$0")" && pwd)
+IFS=:
+set -f
+for d in $PATH; do
+  [ "$d" = "$self" ] && continue
+  [ -x "$d/claude" ] && exec "$d/claude" "$@"
+done
+echo "claude: not found" >&2
+exit 127
+`
+}
+
+// PLATFORM§37
+export const UTIL_SH = `#!/bin/sh
+M=$(cd "$(dirname "$0")" && pwd)
+${REMOTE_PATH_LINE}
+KOLOFT_UTIL=1
+export KOLOFT_UTIL
+PATH="$M/util-bin:$PATH"
+export PATH
+cd "$1" 2>/dev/null || cd
+exec "\${SHELL:-/bin/sh}" -l
+`

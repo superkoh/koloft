@@ -58,7 +58,6 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities>> = {
     local: EVERYTHING,
     ssh: {
       ...EVERYTHING,
-      workbench: PENDING,
       agentOpen: PENDING,
       browserControl: PENDING,
       scheduledTasks: PENDING,

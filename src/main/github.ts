@@ -50,6 +50,7 @@ export interface GithubOptions {
   signedIn?: () => Promise<boolean>
   fixture?: GithubFixture | null
   gitBin?: string
+  git?: (root: string, args: string[], network: boolean) => Promise<string | null>
   now?: () => number
 }
 
@@ -146,6 +147,7 @@ export class GithubLookup {
   }
 
   private async git(root: string, args: string[], remote = false): Promise<string | null> {
+    if (this.opts.git) return this.opts.git(root, args, remote)
     try {
       const { stdout } = await execFile(this.gitBin, ['-C', root, ...args], {
         timeout: remote ? FETCH_TIMEOUT_MS : LOCAL_TIMEOUT_MS,

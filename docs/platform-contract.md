@@ -848,3 +848,27 @@ Version state needs a recheck: one old note says #5759 and #5747 are in the ship
 - **Its stdout is a pipe**, so it sizes flex layouts only from `CCSTATUSLINE_WIDTH`.
 - **It never exits while its stdin stays open** (upstream #485), and Claude Code
   sometimes keeps it open.
+
+## §37 Shell tools on a remote machine (for the remote Workbench)
+
+Measured 2026-09-24 over ssh on a real Ubuntu 24.04 LTS box (GNU coreutils 9.4, git
+2.43.0, `/bin/sh` is dash) and on this Mac (macOS 27.0, BSD tools), by running each
+command by hand:
+
+- **`stat` has two dialects.** GNU: `stat -c '%.9Y %s'` prints the last-modified time with
+  nanoseconds and the size (`1748674639.260000000 16`). BSD (macOS): the same flags
+  fail; `stat -f '%Fm %z'` prints the same shape (`1788431650.000000000 213`). Trying
+  GNU first and falling back to BSD works on both.
+- **`readlink -f` resolves a path on both** (GNU coreutils 9.4, and macOS 27).
+- **ripgrep (`rg`) was not installed on the Ubuntu box**, and neither was
+  `inotifywait`; `git grep` is there with git. So content search needs the `git grep`
+  fallback, and there is no file watcher to lean on.
+- **A PATH prefix set before `bash -l -i` survives the login files** on that Ubuntu box
+  (`/etc/profile` there does not set PATH). Debian's `/etc/profile` does set PATH, so
+  there it may be lost — inferred, not checked.
+- Older coreutils may not know the `%.9Y` precision — inferred, not checked.
+- **The remote Workbench's shell commands all ran on that box** (dash as `sh`, no
+  ripgrep): listing a folder with `git check-ignore -z --stdin`, finding files with
+  `git ls-files -z`, searching text with the `git grep` fallback, the Changes diffs, and
+  an edit's read, stale check, write and new file. Checked by running Koloft's own
+  `SshHost` against a scratch git repo in `/tmp` there, then deleting it.

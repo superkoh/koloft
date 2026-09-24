@@ -68,6 +68,48 @@ export function runSsh(
   )
 }
 
+export interface BytesResult {
+  code: number | null
+  stdout: Buffer
+  stderr: string
+}
+
+export function runSshBytes(
+  host: string,
+  remoteCmd: string,
+  opts: { controlDir: string; timeoutMs?: number; input?: Buffer }
+): Promise<BytesResult> {
+  const args = [
+    ...(opts.input ? [] : ['-n']),
+    ...sshOptions(opts.controlDir, true),
+    host,
+    remoteCmd
+  ]
+  return new Promise((resolve) => {
+    const child = execFile(
+      'ssh',
+      args,
+      {
+        timeout: opts.timeoutMs ?? 10_000,
+        killSignal: 'SIGKILL',
+        maxBuffer: 64 * 1024 * 1024,
+        encoding: 'buffer'
+      },
+      (err, stdout, stderr) => {
+        const errText = stderr.toString('utf8')
+        if (!err) resolve({ code: 0, stdout, stderr: errText })
+        else if (typeof err.code === 'number') resolve({ code: err.code, stdout, stderr: errText })
+        // PLATFORM§27
+        else if (typeof err.code === 'string')
+          resolve({ code: 127, stdout, stderr: errText + String(err) })
+        else resolve({ code: null, stdout, stderr: errText })
+      }
+    )
+    // PLATFORM§27
+    child.stdin?.end(opts.input)
+  })
+}
+
 export function rsyncPull(
   host: string,
   remoteDir: string,

@@ -31,7 +31,7 @@ import { SessionBackends } from './sessionBackends'
 import { identityOf } from '@shared/sessionBackend'
 import { AttentionTracker, type AttentionContext } from './attention'
 import { route, dockBadgeText } from './notifyRouter'
-import { registeredByTabRoot, setupShim } from './shim'
+import { registeredByTabRoot, setupShim, UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE } from './shim'
 import { openDropTarget, type OpenDrop } from './openDrop'
 import { leaveForOS, openUrlExternally, osOpenFallback } from './osOpen'
 import {
@@ -49,9 +49,16 @@ import {
 } from './browserSecurity'
 import { directoryListingHtml } from './dirListing'
 import { HOOK_SCRIPT, hookSettings, setupHooks, writeTabHookSettings } from './hooks'
-import { formatRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
-import { defaultControlDir, ensureControlDir, rsyncPull, runSsh, sshOptions } from './remote/ssh'
-import { ENSURE_SH, TMUX_CONF } from './remote/install'
+import { formatRemoteKey, hostOf, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
+import {
+  defaultControlDir,
+  ensureControlDir,
+  rsyncPull,
+  runSsh,
+  runSshBytes,
+  sshOptions
+} from './remote/ssh'
+import { ENSURE_SH, TMUX_CONF, UTIL_SH, utilClaudeGuard } from './remote/install'
 import {
   accountEnv,
   buildMachinePackage,
@@ -59,6 +66,8 @@ import {
   launchLine,
   sessionIdOfTmux,
   tmuxSessionName,
+  UTIL_BIN_DIR,
+  utilShellLine,
   writeTabPackage,
   type MachinePackage
 } from './remote/launch'
@@ -128,34 +137,14 @@ import { listSkills, type SkillFs } from './skillList'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import { GitFreshnessEngine } from './gitFreshness'
-import { GithubLookup, parseGithubFixture } from './github'
+import { GithubLookup, parseGithubFixture, type GithubOptions } from './github'
 import { restoredWindowGeometry, trackWindowState } from './windowState'
 import { fullscreenOption, windowMinWidth } from './windowBounds'
-import { dirExists, listDir, search, searchContent } from './fileTree'
-import {
-  watchFile as watchPreviewFile,
-  unwatchFile as unwatchPreviewFile,
-  closeAllFileWatchers,
-  watchDir,
-  unwatchDir,
-  closeAllDirWatchers
-} from './fileWatch'
-import {
-  MAX_READ_BYTES,
-  createFile as createFileForEdit,
-  looksBinary,
-  openForEdit,
-  writeText as writeTextForEdit
-} from './fileEdit'
-import {
-  diffBase,
-  gitStatus,
-  gitNumstat,
-  gitDiff,
-  gitFileDiff,
-  gitFileDiffFull,
-  sanitizeBase
-} from './gitStatus'
+import { closeAllFileWatchers, closeAllDirWatchers } from './fileWatch'
+import { sanitizeBase } from './gitStatus'
+import { Hosts, withMachinePaths } from './host/hosts'
+import { localHost } from './host/localHost'
+import { SshHost } from './host/sshHost'
 import { projectInfoFor, resolveSpawnCwd } from './projectInfo'
 import { whatsNewDecision } from './releaseNotes'
 import {
@@ -279,7 +268,7 @@ function isCodexSession(key: string): boolean {
 }
 sessionBackends.register({
   id: 'claude',
-  list: () => tracker.list(),
+  list: () => tracker.list().map(withMachinePaths),
   create: createClaudeSession,
   resume: resumeClaudeSession,
   archive: (key) => workspaceMgr?.archiveSession(key) ?? false,
@@ -472,7 +461,9 @@ function machinePackage(): MachinePackage {
   const pkgFiles: Record<string, string | Buffer> = {
     'ensure.sh': ENSURE_SH,
     'hook.sh': HOOK_SCRIPT,
-    'tmux.conf': TMUX_CONF
+    'tmux.conf': TMUX_CONF,
+    'util.sh': UTIL_SH,
+    [`${UTIL_BIN_DIR}claude`]: utilClaudeGuard(UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE)
   }
   try {
     pkgFiles['statusline/ccstatusline.js'] = fs.readFileSync(bundlePath())
@@ -2894,7 +2885,7 @@ async function resumeClaudeSession(req: SessionResumeRequest): Promise<SessionRe
   return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
 }
 
-const githubLookup = new GithubLookup({
+const githubOptions: GithubOptions = {
   fixture: parseGithubFixture(process.env.KOLOFT_GITHUB_FIXTURE),
   signedIn: async () => {
     try {
@@ -2909,7 +2900,31 @@ const githubLookup = new GithubLookup({
       return false
     }
   }
-})
+}
+
+const hosts = new Hosts(
+  localHost(new GithubLookup(githubOptions)),
+  (machine) =>
+    new SshHost(machine, {
+      run: (cmd, opts) => runSshBytes(machine, cmd, { controlDir: remoteControlDir, ...opts }),
+      shell: (dir) => {
+        ensureControlDir(remoteControlDir)
+        return {
+          spawnCwd: os.homedir(),
+          shell: POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
+          launchCommand: (tabId) =>
+            utilShellLine({
+              host: machine,
+              sshOptions: sshOptions(remoteControlDir, false),
+              machine: machinePackage(),
+              tabId,
+              dir
+            })
+        }
+      },
+      github: githubOptions
+    })
+)
 
 // ADR-0007
 function shrinkAdoptedClaudePtysOneRowSoFitRepaints(tabs: TabInventoryReply['tabs']): void {
@@ -2932,18 +2947,21 @@ function registerIpc(): void {
         throw new Error('This session method is disabled in Settings ▸ Sessions.')
       }
       if (opts.kind !== 'shell') return sessionBackends.create(opts)
-      const cwd = resolveSpawnCwd(opts.cwd)
+      const requested = typeof opts.cwd === 'string' ? opts.cwd : ''
+      const launch = hosts.of(requested).shell(requested)
       const handle = ptyMgr.create({
         kind: 'shell',
-        cwd,
+        cwd: launch.spawnCwd,
         cols: opts.cols,
         rows: opts.rows,
         setupCommand: setupLine(),
+        launchCommand: launch.launchCommand,
+        shell: launch.shell,
         util: opts.util === true,
         ownerTabId: typeof opts.ownerTabId === 'string' ? opts.ownerTabId : undefined
       })
       writeRelayEnv(ptyTabIds())
-      return { ok: true, id: handle.id, cwd }
+      return { ok: true, id: handle.id, cwd: launch.cwd }
     }
   )
 
@@ -3441,90 +3459,81 @@ function registerIpc(): void {
 
   ipcMain.handle('preview:readText', async (_e, p: string): Promise<string> => {
     if (typeof p !== 'string' || !p) throw new Error('KOLOFT_READ_FAILED')
-    const st = await fs.promises.stat(p).catch(() => {
-      throw new Error('KOLOFT_READ_FAILED')
-    })
-    if (!st.isFile()) throw new Error('KOLOFT_NOT_FILE')
-    if (st.size > MAX_READ_BYTES) throw new Error('KOLOFT_TOO_LARGE')
-    const buf = await fs.promises.readFile(p).catch(() => {
-      throw new Error('KOLOFT_READ_FAILED')
-    })
-    if (looksBinary(buf)) throw new Error('KOLOFT_BINARY')
-    return buf.toString('utf8')
+    return hosts.of(p).readText(p)
   })
   ipcMain.handle('fs:listDir', (_e, p: string, opts?: { showIgnored?: boolean }) =>
-    listDir(p, opts)
+    hosts.of(p).listDir(p, opts)
   )
   ipcMain.handle('fs:dirExists', (_e, p: string) =>
-    typeof p === 'string' && p ? dirExists(p) : false
+    typeof p === 'string' && p ? hosts.of(p).dirExists(p) : false
   )
   ipcMain.handle('fs:search', (_e, p: string, q: string, opts?: { showIgnored?: boolean }) =>
-    search(p, q, opts)
+    hosts.of(p).search(p, q, opts)
   )
   const baseArg = sanitizeBase
   const untrackedArg = (u: unknown): boolean => u === true
   ipcMain.handle('fs:diffBase', (_e, root: string) =>
-    typeof root === 'string' && root ? diffBase(root) : null
+    typeof root === 'string' && root ? hosts.of(root).diffBase(root) : null
   )
   ipcMain.handle('fs:gitStatus', (_e, root: string, base?: unknown) =>
-    typeof root === 'string' && root ? gitStatus(root, baseArg(base)) : {}
+    typeof root === 'string' && root ? hosts.of(root).gitStatus(root, baseArg(base)) : {}
   )
   ipcMain.handle('fs:gitNumstat', (_e, root: string, base?: unknown) =>
-    typeof root === 'string' && root ? gitNumstat(root, baseArg(base)) : {}
+    typeof root === 'string' && root ? hosts.of(root).gitNumstat(root, baseArg(base)) : {}
   )
   ipcMain.handle('fs:gitDiff', (_e, root: string, base?: unknown) =>
     typeof root === 'string' && root
-      ? gitDiff(root, baseArg(base))
+      ? hosts.of(root).gitDiff(root, baseArg(base))
       : { text: '', truncated: false, notRepo: true, toplevel: null }
   )
   ipcMain.handle('fs:gitFileDiff', (_e, p: string, base?: unknown, untracked?: unknown) =>
     typeof p === 'string' && p
-      ? gitFileDiff(p, baseArg(base), untrackedArg(untracked))
+      ? hosts.of(p).gitFileDiff(p, baseArg(base), untrackedArg(untracked))
       : { text: '', truncated: false }
   )
   ipcMain.handle('fs:gitFileDiffFull', (_e, p: string, base?: unknown, untracked?: unknown) =>
     typeof p === 'string' && p
-      ? gitFileDiffFull(p, baseArg(base), untrackedArg(untracked))
+      ? hosts.of(p).gitFileDiffFull(p, baseArg(base), untrackedArg(untracked))
       : { text: '', truncated: false }
   )
   ipcMain.handle(
     'fs:searchContent',
     (_e, root: string, q: string, opts?: { showIgnored?: boolean }) =>
       typeof root === 'string' && root
-        ? searchContent(root, q, opts)
+        ? hosts.of(root).searchContent(root, q, opts)
         : { hits: [], truncated: false }
   )
   ipcMain.handle('fs:watchDir', (_e, root: string) =>
     typeof root === 'string' && root
-      ? watchDir(root, (r) => sendToRenderer('fs:dir-changed', r))
+      ? hosts.of(root).watchDir(root, (r) => sendToRenderer('fs:dir-changed', r))
       : false
   )
   ipcMain.on('fs:unwatchDir', (_e, root: string) => {
-    if (typeof root === 'string' && root) unwatchDir(root)
+    if (typeof root === 'string' && root) hosts.of(root).unwatchDir(root)
   })
   ipcMain.on('fs:watchFile', (_e, p: string) => {
     if (typeof p === 'string' && path.isAbsolute(p))
-      watchPreviewFile(p, (fp, st) =>
-        sendToRenderer('fs:file-changed', fp, { mtimeMs: st.mtimeMs, size: st.size })
-      )
+      hosts.of(p).watchFile(p, (fp, st) => sendToRenderer('fs:file-changed', fp, st))
   })
   ipcMain.on('fs:unwatchFile', (_e, p: string) => {
-    if (typeof p === 'string' && p) unwatchPreviewFile(p)
+    if (typeof p === 'string' && p) hosts.of(p).unwatchFile(p)
   })
   ipcMain.on('fs:reveal', (_e, p: string) => {
-    if (typeof p === 'string' && p) void leaveForOS(p, 'reveal')
+    if (typeof p === 'string' && p && hostOf(p) === 'local') void leaveForOS(p, 'reveal')
   })
-  ipcMain.handle('edit:open', (_e, p: unknown) => openForEdit(p as string))
+  ipcMain.handle('edit:open', (_e, p: unknown) => hosts.of(p as string).openForEdit(p as string))
   ipcMain.handle('edit:write', (_e, p: unknown, text: unknown, expect: unknown, opts: unknown) =>
-    writeTextForEdit(
-      p as string,
-      text as string,
-      expect,
-      (opts ?? undefined) as { force?: unknown; eol?: unknown } | undefined
-    )
+    hosts
+      .of(p as string)
+      .writeText(
+        p as string,
+        text as string,
+        expect,
+        (opts ?? undefined) as { force?: unknown; eol?: unknown } | undefined
+      )
   )
   ipcMain.handle('edit:create', (_e, dirPath: unknown, name: unknown) =>
-    createFileForEdit(dirPath as string, name as string)
+    hosts.of(dirPath as string).createFile(dirPath as string, name as string)
   )
   ipcMain.handle('notes:path', (_e, ws: unknown) => {
     if (typeof ws !== 'string' || !ws) return null
@@ -3534,7 +3543,7 @@ function registerIpc(): void {
   })
   ipcMain.handle('github:info', async (_e, root: unknown, force: unknown) => {
     if (typeof root !== 'string' || !root) return null
-    const { now, settled } = await githubLookup.info(root, { force: force === true })
+    const { now, settled } = await hosts.of(root).github.info(root, { force: force === true })
     if (settled)
       void settled.then(
         (info) => sendToRenderer('github:info', root, info),
@@ -3545,7 +3554,7 @@ function registerIpc(): void {
   ipcMain.handle('github:target', (_e, root: unknown, what: unknown) => {
     if (typeof root !== 'string' || !root) return null
     if (what !== 'repo' && what !== 'pulls' && what !== 'pr') return null
-    return githubLookup.target(root, what)
+    return hosts.of(root).github.target(root, what)
   })
   ipcMain.handle('preview:openFileDialog', async () => {
     const stub = process.env.KOLOFT_FILE_DIALOG_FILE
@@ -3566,7 +3575,7 @@ function registerIpc(): void {
   })
 
   ipcMain.on('preview:os-open', (_e, p: string) => {
-    if (typeof p === 'string' && p) osOpenFallback(p)
+    if (typeof p === 'string' && p && hostOf(p) === 'local') osOpenFallback(p)
   })
 
   ipcMain.on('app:home', (e) => {

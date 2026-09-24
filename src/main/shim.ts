@@ -11,6 +11,29 @@ export interface ShimPaths {
   pickDir: string
 }
 
+export const UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE = `if [ "$KOLOFT_UTIL" = "1" ]; then
+  utilok=0
+  valflag=0
+  for a in "$@"; do
+    if [ "$valflag" = "1" ]; then
+      valflag=0
+      case "$a" in -*) ;; *) continue ;; esac   # a flag's value, not a keyword (\`-w update\`)
+    fi
+    case "$a" in
+      -p|--print|-h|--help|--help-all|-v|--version|doctor|mcp|config|auth|setup-token|agents|project|update|install|plugin|import) utilok=1 ;;
+    esac
+    case "$a" in
+      -w|--worktree|--name|-n|--model|--permission-mode|--settings|--session-id|-r|--resume|--agent|--effort) valflag=1 ;;
+    esac
+  done
+  if [ "$utilok" = "0" ]; then
+    printf '⛔ Koloft — this is a Koloft terminal, not an agent surface.\\n' >&2
+    printf '   %s\\n' "Start interactive Claude from the sidebar's ＋ (⌘N)." >&2
+    printf '   %s\\n' 'Non-interactive use is fine: claude -p · --help · doctor · mcp · …' >&2
+    exit 1
+  fi
+fi`
+
 const SHIM_SCRIPT = `#!/usr/bin/env bash
 : koloft claude shim
 self_dir="$(cd "$(dirname "$0")" >/dev/null 2>&1 && pwd)"
@@ -54,28 +77,7 @@ case "$1" in ""|-*) ;; *) skip=1 ;; esac
 # CC§9
 [ -n "$CLAUDECODE" ] && skip=1
 
-if [ "$KOLOFT_UTIL" = "1" ]; then
-  utilok=0
-  valflag=0
-  for a in "$@"; do
-    if [ "$valflag" = "1" ]; then
-      valflag=0
-      case "$a" in -*) ;; *) continue ;; esac   # a flag's value, not a keyword (\`-w update\`)
-    fi
-    case "$a" in
-      -p|--print|-h|--help|--help-all|-v|--version|doctor|mcp|config|auth|setup-token|agents|project|update|install|plugin|import) utilok=1 ;;
-    esac
-    case "$a" in
-      -w|--worktree|--name|-n|--model|--permission-mode|--settings|--session-id|-r|--resume|--agent|--effort) valflag=1 ;;
-    esac
-  done
-  if [ "$utilok" = "0" ]; then
-    printf '⛔ Koloft — this is a Koloft terminal, not an agent surface.\\n' >&2
-    printf '   %s\\n' "Start interactive Claude from the sidebar's ＋ (⌘N)." >&2
-    printf '   %s\\n' 'Non-interactive use is fine: claude -p · --help · doctor · mcp · …' >&2
-    exit 1
-  fi
-fi
+${UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE}
 
 # CC§6
 pre=()

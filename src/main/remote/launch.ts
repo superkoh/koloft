@@ -39,6 +39,8 @@ export interface MachinePackage {
   name: string
 }
 
+export const UTIL_BIN_DIR = 'util-bin/'
+
 export function buildMachinePackage(
   base: string,
   files: Record<string, string | Buffer>
@@ -57,7 +59,8 @@ export function buildMachinePackage(
     for (const [rel, content] of Object.entries(files)) {
       const full = path.join(dir, rel)
       fs.mkdirSync(path.dirname(full), { recursive: true })
-      fs.writeFileSync(full, content, { mode: rel.endsWith('.sh') ? 0o755 : 0o644 })
+      const executable = rel.endsWith('.sh') || rel.startsWith(UTIL_BIN_DIR)
+      fs.writeFileSync(full, content, { mode: executable ? 0o755 : 0o644 })
     }
     fs.writeFileSync(path.join(dir, '.complete'), '')
   }
@@ -158,8 +161,12 @@ const SSH_LINK_BROKE_EXIT = 255
 
 const TURN_OFF_MOUSE_PASTE_AND_ALT_SCREEN = `printf '\\033[?1000l\\033[?1002l\\033[?1003l\\033[?1006l\\033[?2004l\\033[?25h\\033[?1049l'`
 
-// PLATFORM§33
-export function launchLine(s: LaunchLineSpec): string {
+function machineReady(s: {
+  host: string
+  sshOptions: string[]
+  machine: MachinePackage
+  tabId: string
+}): string {
   const opts = s.sshOptions.join(' ')
   const host = shq(s.host)
   const m = s.machine.name
@@ -169,17 +176,43 @@ export function launchLine(s: LaunchLineSpec): string {
     `COPYFILE_DISABLE=1 tar cf - -C ${shq(s.machine.dir)} . | ssh ${opts} ${host} ` +
     `'umask 077; mkdir -p "$HOME/.koloft" && cd "$HOME/.koloft" && rm -rf ${tmp} && mkdir ${tmp} ` +
     `&& tar xf - -C ${tmp} && sh -c "test -d ${m} || mv ${tmp} ${m}; rm -rf ${tmp}"'`
+  return `h=$(${probe}); { [ "$h" = ok ] || ${pushMachine}; }`
+}
+
+const COULD_NOT_CONNECT = `echo '[Koloft] could not connect or push files — see the error above'`
+
+// PLATFORM§33
+export function launchLine(s: LaunchLineSpec): string {
+  const opts = s.sshOptions.join(' ')
+  const host = shq(s.host)
   const pushTab =
     `COPYFILE_DISABLE=1 tar cf - -C ${shq(s.tabDir)} . | ssh ${opts} ${host} ` +
     `'umask 077; mkdir -p "$HOME/.koloft/tabs" && tar xf - -C "$HOME/.koloft/tabs"'`
   const run = `ssh -tt ${opts} ${host} "sh \\"\\$HOME/.koloft/tabs/${s.tabId}.sh\\" $a"`
   return (
-    `h=$(${probe}); { [ "$h" = ok ] || ${pushMachine}; } && ${pushTab} ` +
-    `|| { echo '[Koloft] could not connect or push files — see the error above'; rm -rf ${shq(s.tabDir)}; exit 4; }; ` +
+    `${machineReady(s)} && ${pushTab} ` +
+    `|| { ${COULD_NOT_CONNECT}; rm -rf ${shq(s.tabDir)}; exit 4; }; ` +
     `rm -rf ${shq(s.tabDir)}; a=${s.mode}; while :; do ${run}; c=$?; [ "$c" = ${SSH_LINK_BROKE_EXIT} ] || { ` +
     `[ "$c" = 0 ] || { echo "[Koloft] the session did not start (exit $c) — see above; press Enter to close"; read -r _; }; exit "$c"; }; ` +
     `a=attach; ${TURN_OFF_MOUSE_PASTE_AND_ALT_SCREEN}; clear; ` +
     `echo '[Koloft] connection lost, reconnecting in 2s…'; sleep 2; done`
+  )
+}
+
+export interface UtilShellLineSpec {
+  host: string
+  sshOptions: string[]
+  machine: MachinePackage
+  tabId: string
+  dir: string
+}
+
+// PLATFORM§33
+export function utilShellLine(s: UtilShellLineSpec): string {
+  const run = `sh "$HOME/.koloft/${s.machine.name}/util.sh" ${shq(s.dir)}`
+  return (
+    `${machineReady(s)} || { ${COULD_NOT_CONNECT}; exit 4; }; ` +
+    `clear; ssh -t ${s.sshOptions.join(' ')} ${shq(s.host)} ${shq(run)}; exit`
   )
 }
 

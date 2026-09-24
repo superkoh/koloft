@@ -660,15 +660,15 @@ describe('an unfetched session is read before anything is written (the data-loss
 })
 
 describe('openWebPage (FR-11 — an .html file renders in a `web` tab)', () => {
-  it('opens remote Claude links externally, since a remote session has no Workbench to show them in', () => {
+  it('opens remote Claude links in the session’s own Workbench, since a web page needs nothing from the machine', () => {
     useStore.setState({
       tabs: [
         { id: TAB, kind: 'claude', host: 'ssh', title: 'Remote', cwd: 'ssh://host/ws', alive: true }
       ]
     })
     openWebPage('https://example.com')
-    expect(openExternal).toHaveBeenCalledWith('https://example.com')
-    expect(strip()?.tabs.some((t) => t.url === 'https://example.com')).not.toBe(true)
+    expect(openExternal).not.toHaveBeenCalled()
+    expect(strip()?.tabs.some((t) => t.url === 'https://example.com')).toBe(true)
   })
 
   it('opens Codex web links externally without creating a Workbench', () => {
@@ -924,11 +924,8 @@ describe('removeTab clears the tab’s panel state — the tab going away is the
   })
 })
 
-describe('sessions without a Workbench (Codex, remote Claude)', () => {
-  it.each([
-    { kind: 'codex' as const, host: 'local' as const, cwd: '/ws' },
-    { kind: 'claude' as const, host: 'ssh' as const, cwd: 'ssh://host/ws' }
-  ])(
+describe('sessions without a Workbench (Codex)', () => {
+  it.each([{ kind: 'codex' as const, host: 'local' as const, cwd: '/ws' }])(
     '$kind on $host does not create panel state or services through any Workbench entry',
     async ({ kind, host, cwd }) => {
       useStore.setState({

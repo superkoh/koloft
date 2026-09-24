@@ -89,6 +89,17 @@ export function openForEdit(p: string, maxBytes = EDIT_OPEN_MAX_BYTES): EditOpen
   } catch {
     throw new Error('KOLOFT_READ_FAILED')
   }
+  return editOpenResult(buf, statBeforeRead, {
+    file: () => canWrite(real),
+    dir: () => canWrite(path.dirname(real))
+  })
+}
+
+export function editOpenResult(
+  buf: Buffer,
+  fp: EditFingerprint,
+  writable: { file: () => boolean; dir: () => boolean }
+): EditOpenResult {
   if (looksBinary(buf)) throw new Error('KOLOFT_BINARY')
 
   const text = buf.toString('utf8')
@@ -99,13 +110,34 @@ export function openForEdit(p: string, maxBytes = EDIT_OPEN_MAX_BYTES): EditOpen
     ? 'notUtf8'
     : mixed
       ? 'mixedEol'
-      : !canWrite(real)
+      : !writable.file()
         ? 'noPerm'
-        : !canWrite(path.dirname(real))
+        : !writable.dir()
           ? 'dirNotWritable'
           : null
 
-  return { text, mtimeMs: statBeforeRead.mtimeMs, size: statBeforeRead.size, eol, readOnly }
+  return { text, mtimeMs: fp.mtimeMs, size: fp.size, eol, readOnly }
+}
+
+export function sameFingerprint(expect: unknown, now: EditFingerprint): boolean {
+  return isFingerprint(expect) && now.mtimeMs === expect.mtimeMs && now.size === expect.size
+}
+
+export function bytesToWrite(text: string, eol: unknown): Buffer {
+  return Buffer.from(eol === 'crlf' ? text.replace(/\r?\n/g, '\r\n') : text, 'utf8')
+}
+
+export function checkNewFileName(name: unknown): asserts name is string {
+  if (
+    typeof name !== 'string' ||
+    !name ||
+    name === '.' ||
+    name === '..' ||
+    name.includes('/') ||
+    name.includes('\\')
+  ) {
+    throw new Error('KOLOFT_BAD_NAME')
+  }
 }
 
 function staleResult(real: string, st: fs.Stats): EditWriteResult {
@@ -151,11 +183,10 @@ export function writeText(
   }
   if (!st.isFile()) throw new Error('KOLOFT_NOT_FILE')
 
-  const matches = (s: fs.Stats): boolean =>
-    isFingerprint(expect) && s.mtimeMs === expect.mtimeMs && s.size === expect.size
+  const matches = (s: fs.Stats): boolean => sameFingerprint(expect, s)
   if (!force && !matches(st)) return staleResult(real, st)
 
-  const data = Buffer.from(opts?.eol === 'crlf' ? text.replace(/\r?\n/g, '\r\n') : text, 'utf8')
+  const data = bytesToWrite(text, opts?.eol)
   const dir = path.dirname(real)
   const tmp = path.join(
     dir,
@@ -205,16 +236,7 @@ export function writeText(
 }
 
 export function createFile(dirPath: string, name: string): EditCreateResult {
-  if (
-    typeof name !== 'string' ||
-    !name ||
-    name === '.' ||
-    name === '..' ||
-    name.includes('/') ||
-    name.includes('\\')
-  ) {
-    throw new Error('KOLOFT_BAD_NAME')
-  }
+  checkNewFileName(name)
   if (typeof dirPath !== 'string' || !dirPath) throw new Error('KOLOFT_GONE')
 
   let realDir: string
