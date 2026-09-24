@@ -3,6 +3,7 @@ import os from 'os'
 import path from 'path'
 import type {
   CreateTabOptions,
+  LaunchPermission,
   ProjectInfo,
   SessionInfo,
   SessionResumeRequest,
@@ -42,6 +43,13 @@ const STATUS_LINE_CONFIG = `tui.status_line=${JSON.stringify([
   'current-dir'
 ])}`
 
+// CODEX§11
+const PERMISSION_ARGS: Record<LaunchPermission, string[]> = {
+  default: [],
+  acceptEdits: ['-a', 'on-request', '-s', 'workspace-write'],
+  bypass: ['-a', 'never', '-s', 'danger-full-access']
+}
+
 export interface CodexAvailability {
   id: 'codex'
   available: boolean
@@ -62,6 +70,7 @@ export interface CodexSessionDeps {
   changed(): void
   attention(tabId: string, kind: 'exited' | 'clear'): void
   error(message: string): void
+  trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
 }
 
 interface RowScope {
@@ -477,6 +486,8 @@ export class CodexSessions {
     } else if (opts.worktree) {
       resource = await this.worktrees.create(workspace, opts.worktree)
       cwd = resource.worktreePath
+      // ADR-0026
+      if (!opts.scheduled) this.deps.trustFolder(workspace, processEnv)
     } else if (!resource && this.deps.projectInfo(cwd).worktreeName) {
       resource = await this.worktrees.adopt(workspace, this.deps.projectInfo(cwd).treeRoot)
     }
@@ -515,7 +526,15 @@ export class CodexSessions {
     })
     try {
       this.assertStarting()
-      const argv = ['--remote', transport.url, '-C', cwd, '-c', STATUS_LINE_CONFIG]
+      const argv = [
+        '--remote',
+        transport.url,
+        '-C',
+        cwd,
+        '-c',
+        STATUS_LINE_CONFIG,
+        ...PERMISSION_ARGS[opts.permission ?? 'default']
+      ]
       if (opts.resumeSessionId) argv.push('resume', this.nativeId(opts.resumeSessionId))
       const handle = this.deps.pty.create({
         kind: 'codex',

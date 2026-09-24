@@ -192,7 +192,8 @@ export class ClaudeBackend implements SessionBackend {
         resumeSessionId: opts.resumeSessionId,
         cols: opts.cols,
         rows: opts.rows,
-        worktree: opts.worktree
+        worktree: opts.worktree,
+        trustCwd: !!opts.worktree && !opts.scheduled && !opts.resumeSessionId
       })
     }
     const cwd = resolveSpawnCwd(opts.cwd)
@@ -398,6 +399,7 @@ export class ClaudeBackend implements SessionBackend {
       rows?: number
       worktree?: string
       resumeCwd?: string
+      trustCwd?: boolean
     }
   ): Promise<CreateTabResult> {
     const { tracker } = this.d
@@ -478,7 +480,8 @@ export class ClaudeBackend implements SessionBackend {
             remoteStatusLine,
             dq
           ),
-          claudeArgs
+          claudeArgs,
+          trustCwd: opts.trustCwd
         })
         return launchLine({
           host: key.host,

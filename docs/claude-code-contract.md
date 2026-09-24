@@ -745,6 +745,12 @@ other bullets of §9 were not re-measured on this build.
   repo's top folder**: launched from a subfolder of the repo, with only that subfolder
   trusted, `-w` made the worktree at the top folder's `.claude/worktrees/` and started. Measured 2026-09-23, CC 2.1.281, pty probe on
   a throwaway one-commit repo under `$TMPDIR`, no trusted ancestor.
+- **On a remote machine** Koloft writes the same entry, under the folder's real path
+  (`pwd -P`), from the tab script with the machine's `node` (the one `ensure.sh`
+  installs for the statusline; with no node nothing is written and `-w` refuses as
+  above). That CC on a Linux machine reads the same key the same way as on macOS is
+  **inferred, not checked** on a real machine (2026-09-24): the script's write was
+  checked only in the unit test's stand-in home, with this Mac's node.
 - **A child claude inherits the parent's session markers and stops writing its
   transcript.** With `CLAUDE_CODE_CHILD_SESSION=1` in the environment the launched
   session prints `⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION

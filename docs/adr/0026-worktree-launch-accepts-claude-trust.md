@@ -9,6 +9,9 @@ trust for the workspace folder (or an ancestor), Koloft first writes
 yes. Nothing else writes it: a main session gets Claude's own question in the
 terminal, and a scheduled run — a worktree launch nobody clicked — keeps the jobs
 form's warning. Never when the launch fell back to another folder (the home folder
-would trust everything under it).
+would trust everything under it). A Codex worktree session follows the same rule: its
+native TUI asks the same kind of question (`CODEX§9`), so Koloft writes
+`trust_level = "trusted"` for the workspace folder into Codex's `config.toml`
+(`CODEX§11`), on the same trigger.
 **Rejected**: refusing the launch and telling the person to open a main session first
 to answer the question — the owner chose one click over that detour.

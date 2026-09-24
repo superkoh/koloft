@@ -284,3 +284,35 @@ app that encloses Codex, not by the user's own configuration of a new CLI:
 `CODEX_SAGE_BACKFILL_TRACKER_TAB_REUSE`, `CODEX_SESSION_ID`, `CODEX_THREAD_ID`,
 `CODEX_SHELL` and `CODEX_CI`. A child Codex that inherits them acts as part of the
 enclosing run.
+
+## 11. Folder trust and the approval flags
+
+**Checked on 2026-09-24 with standalone Codex CLI 0.153.4 (`codex-cli 0.153.4`), without
+a model call.** The TUI ran in a Python PTY (120×40, answering its cursor, colour and
+keyboard queries) with an isolated `CODEX_HOME` holding a test provider on an unused
+localhost port, so no login screen came first. The test repository had one commit and a
+linked worktree at `<repo>/.claude/worktrees/probe`. Each run lasted 8 seconds and pressed
+no key.
+
+- With no `projects` entry, the TUI asked "Do you trust the contents of this
+  directory?" both in the repository and in the linked worktree.
+- A `[projects."<repo real path>"]` table with `trust_level = "trusted"` in
+  `config.toml` stopped the question in the repository **and** in its linked worktree.
+  A table for the worktree path alone stopped it in the worktree.
+- Unanswered, the question left `config.toml` byte-for-byte unchanged.
+- The same table shape (`[projects."<absolute path>"]` / `trust_level = "trusted"`) is
+  what Codex itself had written into this Mac's own `~/.codex/config.toml`, read on the
+  same day.
+
+These runs started the TUI without `--remote`. Section 9 saw the same question under
+`--remote`; that a `config.toml` table also stops it there is **inferred, not checked**.
+
+**Approval flags, read from `codex --help` on the same binary.** `-a/--ask-for-approval`
+takes `on-request` or `never`; `-s/--sandbox` takes `read-only`, `workspace-write` or
+`danger-full-access`. There is **no `--full-auto`**: `codex --remote ws://127.0.0.1:9
+--full-auto` stopped with `error: unexpected argument '--full-auto' found`, while the
+same line with `-a never -s danger-full-access` or `-a on-request -s workspace-write` got
+past argument parsing (it then stopped at "stdin is not a terminal"). In section 3's
+run, `-a on-request -s read-only` led to an approval request. That `never` /
+`danger-full-access` and `workspace-write` take effect the same way was **not
+exercised against a model — inferred, not checked**.

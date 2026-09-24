@@ -87,7 +87,22 @@ export interface TabSpec {
   env?: Record<string, string>
   settings: Record<string, unknown>
   claudeArgs: string[]
+  trustCwd?: boolean
 }
+
+const TRUST_CWD_JS = [
+  'const fs=require("fs"),path=require("path");',
+  'const [f,d]=process.argv.slice(1);',
+  'let j={};',
+  'try{j=JSON.parse(fs.readFileSync(f,"utf8"))}catch(e){if(e.code!=="ENOENT")process.exit(0)}',
+  'const p=(j.projects=j.projects||{});',
+  'for(let x=d;;x=path.dirname(x)){',
+  'if(p[x]&&p[x].hasTrustDialogAccepted===true)process.exit(0);',
+  'if(path.dirname(x)===x)break}',
+  'p[d]=Object.assign({},p[d],{hasTrustDialogAccepted:true});',
+  'fs.writeFileSync(f+".koloft",JSON.stringify(j,null,2),{mode:0o600});',
+  'fs.renameSync(f+".koloft",f)'
+].join('')
 
 export function tabScript(spec: TabSpec): string {
   for (const a of spec.claudeArgs)
@@ -113,7 +128,13 @@ ${REMOTE_PATH_LINE}
 [ "$1" = attach ] && exec tmux -L koloft attach -d -t '${spec.tmuxName}'
 sh "$M/ensure.sh" || exit $?
 cd ${shq(spec.cwd)}${spec.fallbackCwd ? ` || cd ${shq(spec.fallbackCwd)}` : ''} || exit 3
-echo ${shq(spec.banner)}
+${
+  spec.trustCwd && !spec.fallbackCwd
+    ? `# CC§9 ADR-0026
+command -v node >/dev/null 2>&1 && node -e ${shq(TRUST_CWD_JS)} "$HOME/.claude.json" "$(pwd -P)"
+`
+    : ''
+}echo ${shq(spec.banner)}
 rm -f "${H}.json" "${H}.status.jsonl"
 # CC§10
 CJ="$HOME/.claude.json"

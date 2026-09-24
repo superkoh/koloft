@@ -121,6 +121,7 @@ import { sanitizeSessionWorkbench } from '@shared/workbenchState'
 import { dirExistsSync, gitProbes, occupantName, type ResumeProbes } from './resumePlan'
 import { ClaudeBackend, POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE } from './backends/claude'
 import { codexBackend } from './backends/codex'
+import { acceptCodexTrust, codexConfigFile } from './codexTrust'
 import { claudeTrustsFolder } from './claudeTrust'
 import { CronRunner, type LaunchRequest } from './cronRunner'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
@@ -1171,7 +1172,14 @@ app.whenReady().then(() => {
         if (kind === 'clear') attention.clear(tabId)
         else attention.onExited(tabId, attentionCtx(), sessionTitleOf(tabId))
       },
-      error: (message) => sendToRenderer('cron:toast', message)
+      error: (message) => sendToRenderer('cron:toast', message),
+      trustFolder: (root, env) => {
+        try {
+          acceptCodexTrust(codexConfigFile(env), root)
+        } catch (err) {
+          console.error('[koloft] could not record Codex trust for', root, err)
+        }
+      }
     })
   } catch (error) {
     codexStartupError = `Codex session data could not be loaded; the original file is preserved. ${String(error)}`

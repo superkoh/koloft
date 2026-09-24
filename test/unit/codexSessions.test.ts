@@ -96,7 +96,8 @@ beforeEach(() => {
     projectInfo: (p) => ({ root: p.startsWith(repo) ? repo : other, treeRoot: p }),
     changed: vi.fn(),
     attention: vi.fn(),
-    error: vi.fn()
+    error: vi.fn(),
+    trustFolder: vi.fn()
   }
   sessions = new CodexSessions(path.join(directory, 'sessions.json'), deps)
   vi.spyOn(sessions, 'availability').mockResolvedValue({ id: 'codex', available: true })
@@ -339,6 +340,26 @@ describe('CodexSessions', () => {
       worktreeResourceId: renamed.id
     })
     expect(sessions.list()[0].cwd).toBe(newPath)
+  })
+
+  it('a person’s new worktree launch trusts the workspace folder and passes the chosen permission as approval and sandbox flags; a scheduled one trusts nothing', async () => {
+    const worktree = path.join(repo, '.claude', 'worktrees', 'w1')
+    fs.mkdirSync(worktree, { recursive: true })
+    vi.spyOn(sessions.worktrees, 'create').mockResolvedValue({
+      id: randomUUID(),
+      originalCwd: repo,
+      worktreePath: worktree,
+      worktreeName: 'w1',
+      worktreeBranch: 'worktree-w1'
+    } as WorktreeResource)
+    await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1', permission: 'bypass' })
+    expect(deps.trustFolder).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(deps.trustFolder).mock.calls[0][0]).toBe(repo)
+    const argv = vi.mocked(deps.pty.create).mock.calls[0][0].argv!
+    expect(argv.slice(-4)).toEqual(['-a', 'never', '-s', 'danger-full-access'])
+
+    await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1', scheduled: true })
+    expect(deps.trustFolder).toHaveBeenCalledTimes(1)
   })
 
   it('cancels launches waiting on availability when shutdown starts and performs no refresh', async () => {

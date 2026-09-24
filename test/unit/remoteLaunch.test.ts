@@ -471,6 +471,27 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(stale.map((f) => fs.existsSync(f))).toEqual([true, true])
   })
 
+  // CC§9 ADR-0026
+  it("a new remote worktree session trusts its folder in the machine's .claude.json, keeping what the file had; other launches write nothing", () => {
+    const cwd = mkroot('trusted')
+    const b = box(spec({ cwd, trustCwd: true }))
+    const node = path.join(b.home, '.koloft', 'node', 'bin')
+    fs.mkdirSync(node, { recursive: true })
+    fs.symlinkSync(process.execPath, path.join(node, 'node'))
+    fs.writeFileSync(path.join(b.home, '.claude.json'), '{"numStartups":3}\n')
+    expect(b.run().status).toBe(0)
+    expect(JSON.parse(fs.readFileSync(path.join(b.home, '.claude.json'), 'utf8'))).toEqual({
+      numStartups: 3,
+      projects: { [fs.realpathSync(cwd)]: { hasTrustDialogAccepted: true } }
+    })
+
+    const plain = box(spec({ cwd }))
+    fs.mkdirSync(path.join(plain.home, '.koloft', 'node', 'bin'), { recursive: true })
+    fs.symlinkSync(process.execPath, path.join(plain.home, '.koloft', 'node', 'bin', 'node'))
+    expect(plain.run().status).toBe(0)
+    expect(fs.existsSync(path.join(plain.home, '.claude.json'))).toBe(false)
+  })
+
   // CC§10
   it("skips claude's first-run login page when Koloft brought the login", () => {
     const withLogin = (): TabSpec => spec({ env: accountEnv('oauth', 'bravo', 'sk-ant-oat01-x') })
