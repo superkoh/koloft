@@ -212,9 +212,8 @@ export class ClaudeBackend implements SessionBackend {
     ) {
       return { ok: false, code: 'invalid-args' }
     }
-    const remoteKey = this.remoteKeyOfSession(sid)
+    const remoteKey = machineKey ?? this.remoteKeyOfSession(sid)
     if (remoteKey) return this.resumeRemote(remoteKey, { ...req, cwd })
-    if (machineKey) return { ok: false, code: 'invalid-args' }
     const mode = req.mode ?? 'direct'
     let worktree: string | undefined
     if (mode === 'renamed') {
