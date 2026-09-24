@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
 import { cronBackend, slugOf, hasWordChar, isValidModelName, worktreeBase } from '@shared/cronNames'
-import { BACKEND_LABEL, SESSION_BACKENDS } from '@shared/sessionBackend'
+import { BACKEND_LABEL, backendIdOf } from '@shared/sessionBackend'
 import { isValidSchedule, parseHHMM } from '@shared/schedule'
 import {
   isCronEffort,
@@ -156,7 +156,7 @@ function clean(input: CronSaveInput): Clean {
   return {
     name,
     task,
-    backend: SESSION_BACKENDS.find((b) => b === input.backend) ?? 'claude',
+    backend: backendIdOf(input.backend) ?? 'claude',
     permission,
     ...(model ? { model } : {}),
     ...(isCronEffort(input.effort) ? { effort: input.effort } : {})

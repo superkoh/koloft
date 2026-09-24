@@ -2,6 +2,10 @@ import type { BackendId, HostId, SessionMethods } from './types'
 
 export const SESSION_BACKENDS: BackendId[] = ['claude', 'codex']
 
+export function backendIdOf(value: unknown): BackendId | undefined {
+  return SESSION_BACKENDS.find((b) => b === value)
+}
+
 export function normalizeSessionMethods(raw: unknown): SessionMethods {
   const value = raw && typeof raw === 'object' ? (raw as Partial<SessionMethods>) : {}
   const enabled = { claude: true, codex: value.enabled?.codex !== false }

@@ -4,7 +4,7 @@ import type { AccountView, CodexLimits, CodexLimitWindow } from '@shared/types'
 
 const CODEX_HOMES = 'codex-homes'
 
-export function codexHomesRoot(userData: string): string {
+function codexHomesRoot(userData: string): string {
   return path.join(userData, CODEX_HOMES)
 }
 

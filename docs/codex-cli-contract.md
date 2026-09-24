@@ -308,7 +308,7 @@ no key.
   same day.
 
 These runs started the TUI without `--remote`. Section 9 saw the same question under
-`--remote`; that a `config.toml` table also stops it there is **inferred, not checked**.
+`--remote`; section 14 then checked that a `config.toml` table also stops it there.
 
 **Approval flags, read from `codex --help` on the same binary.** `-a/--ask-for-approval`
 takes `on-request` or `never`; `-s/--sandbox` takes `read-only`, `workspace-write` or
@@ -467,7 +467,11 @@ plugins. Each run sent `initialize`, `initialized`, `account/read` and
 a symbolic link to a file elsewhere answered `config/read` with the model set in that
 file. In the real TUI (Python PTY, section 11's setup) in a folder with no trust table,
 pressing Enter on "Yes, continue" wrote the folder's trust table **into the linked file**
-and left `config.toml` a link. So linked homes share settings and folder trust.
+and left `config.toml` a link. So linked homes share folder trust. Only the trust answer
+was seen going through the link; that every other save Codex makes to `config.toml` keeps
+the link too (and so keeps settings shared) is **inferred, not checked**. Koloft's own
+trust writer replaces the file it is given with a new one, so Koloft hands it the shared
+file, never an account home's link.
 
 Not tried, because they need a second real login or would open a browser on this Mac:
 - that `codex login` with `CODEX_HOME` set signs in only that home and exits 0 once

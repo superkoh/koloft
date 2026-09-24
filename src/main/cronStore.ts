@@ -2,7 +2,7 @@ import path from 'path'
 import { isValidSchedule } from '@shared/schedule'
 import { hasWordChar, isValidModelName } from '@shared/cronNames'
 import { isValidWorktreeName } from '@shared/worktreeName'
-import { SESSION_BACKENDS } from '@shared/sessionBackend'
+import { backendIdOf } from '@shared/sessionBackend'
 import { isCronEffort, type CronJob, type HistoryLine, type HistoryState } from '@shared/types'
 
 export interface CronStoreFs {
@@ -117,7 +117,7 @@ export function sanitizeCron(
       else notes[id] = BAD_MODEL_NOTE
     }
     if (isCronEffort(item.effort)) job.effort = item.effort
-    const backend = SESSION_BACKENDS.find((b) => b === item.backend)
+    const backend = backendIdOf(item.backend)
     if (backend) job.backend = backend
     seen.add(id)
     jobs.push(job)
