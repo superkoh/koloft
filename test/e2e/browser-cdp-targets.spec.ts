@@ -325,10 +325,11 @@ test.describe('CDP target list: what a client is shown, what it costs, and what 
       const url = await session(page, env)
       await openBrowser(page)
       for (const name of ['P1', 'P2', 'P3']) {
-        await openTabOn(
+        await openViaAgent(
           page,
           server.page(`/${name.toLowerCase()}`, `<title>${name}</title><body>${name}</body>`)
         )
+        await page.locator(BROWSER.tabAgent).last().click()
         await expect(tabByTitle(page, name)).toHaveCount(1, { timeout: 30_000 })
       }
 

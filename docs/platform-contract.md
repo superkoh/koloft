@@ -438,8 +438,10 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   2026-09-24). So every tab the relay lists is a tab the agent may navigate away.
 - **The same context refuses `file:` URLs** ("Access to "file:" protocol is blocked")
   unless `allowUnrestrictedFileAccess` is set, which the CLI and MCP read from
-  `PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS` (same source, same date; read, not
-  run).
+  `PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS` (measured 2026-09-24 with
+  playwright-cli 0.1.18 against Koloft's relay, `test/e2e/real-tools-smoke.spec.ts`:
+  `open file://…` fails with that message on the endpoint alone and succeeds with the
+  variable set to `1`).
 
 ## §18 Playwright and Electron in the e2e suite
 
