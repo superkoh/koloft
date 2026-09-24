@@ -69,7 +69,7 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
     ]
   },
   {
-    title: 'Workbench panel (Claude sessions)',
+    title: 'Workbench panel',
     items: [
       {
         keys: ['⇧⌘B'],
@@ -77,7 +77,6 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
         uses: [
           { what: 'Shows or hides the panel, and moves the caret with it.' },
           { where: 'Full width', what: 'Hides the panel in one step.' },
-          { where: 'Codex session', what: 'Tells you Codex sessions have no Workbench yet.' },
           { where: 'No session', what: 'Nothing.' }
         ]
       },
@@ -94,7 +93,6 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
         name: 'New terminal tab',
         uses: [
           { what: 'Opens a shell in the panel and puts the caret there.' },
-          { where: 'Codex session', what: 'Tells you Codex sessions have no Workbench yet.' },
           { where: 'Session not running', what: 'Nothing.' }
         ]
       },

@@ -288,7 +288,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('Codex and Claude coexist; Codex closes, resumes and restarts without Workbench', async ({
+  test('Codex and Claude coexist; Codex has its own Workbench, and closes, resumes and restarts with it', async ({
     env
   }) => {
     installCodex(env)
@@ -316,10 +316,9 @@ test.describe('Codex sessions through the real method chooser, process transport
       ).toHaveCount(1)
       await expect(codexRows(page)).toHaveClass(/active/)
       await expect(page.locator('.term-island')).toBeVisible()
-      await expect(page.getByRole('button', { name: 'Workbench', exact: true })).toHaveCount(0)
-      await expect(page.locator('.wb-col:visible')).toHaveCount(0)
-      await clickAppMenuItem(app, page, 'toggle-browser')
-      await expect(page.locator('.wb-col:visible')).toHaveCount(0)
+      await expect(toggle).toBeVisible()
+      if (!(await toggle.getAttribute('class'))?.includes(' on')) await toggle.click()
+      await expect(page.locator('.wb-col:visible')).toHaveCount(1)
 
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(codexRows(page)).toHaveClass(/cold/)
@@ -333,7 +332,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       expect(codexCalls(env)[2].sessionId).toBe(first.sessionId)
       await expect(wsRows(page, 'ws-a')).toHaveCount(2)
       expect(readCalls(env)).toHaveLength(1)
-      await expect(page.getByRole('button', { name: 'Workbench', exact: true })).toHaveCount(0)
+      await expect(page.locator('.wb-col:visible')).toHaveCount(1)
       await wsRows(page, 'ws-a')
         .filter({ has: page.getByRole('img', { name: 'Claude', exact: true }) })
         .click()
@@ -451,7 +450,6 @@ test.describe('Codex sessions through the real method chooser, process transport
       )
       await runIn(page, centerTerm(page), 'y')
       await expect(codexRows(page)).toHaveClass(/st-waiting/)
-      await expect(page.getByRole('button', { name: 'Workbench', exact: true })).toHaveCount(0)
     } finally {
       await quitAndClose(app)
     }
@@ -577,7 +575,6 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(codexRows(page)).toHaveClass(/st-waiting/)
       expect(codexCalls(env)).toHaveLength(1)
       expect(processAlive(first.pid)).toBe(true)
-      await expect(page.getByRole('button', { name: 'Workbench', exact: true })).toHaveCount(0)
     } finally {
       await quitAndClose(app)
     }

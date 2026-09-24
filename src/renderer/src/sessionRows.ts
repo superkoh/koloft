@@ -1,4 +1,4 @@
-import type { SessionBackend } from './agentUi'
+import { isSessionKind, type SessionBackend } from './agentUi'
 import type {
   BackgroundItem,
   LeftoverProcess,
@@ -185,7 +185,7 @@ export function selectionRoot(
   sessionRoot: string | undefined,
   welcomePath: string | undefined
 ): string | null {
-  if (tab?.kind === 'claude') return sessionRoot ?? tab.cwd
+  if (tab && isSessionKind(tab.kind)) return sessionRoot ?? tab.cwd
   return welcomePath ?? null
 }
 

@@ -67,7 +67,6 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities>> = {
   codex: {
     local: {
       ...EVERYTHING,
-      workbench: PENDING,
       accounts: PENDING,
       scheduledTasks: PENDING,
       filesTouched: PENDING,

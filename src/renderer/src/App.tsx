@@ -152,15 +152,6 @@ function terminalActionTab(): string | undefined {
   return st.sessions.some((s) => s.tabId === id && s.alive && s.sessionId) ? id : undefined
 }
 
-function noWorkbenchNotice(): string | undefined {
-  const st = useStore.getState()
-  const tab = st.tabs.find((t) => t.id === st.activeTabId)
-  if (!tab || !isSessionKind(tab.kind) || hasWorkbench(tab)) return undefined
-  return tab.host === 'ssh'
-    ? 'Remote sessions have no Workbench yet'
-    : `${backendLabel(tab.kind)} sessions have no Workbench yet`
-}
-
 function activeTabIsWeb(): boolean {
   const st = useStore.getState()
   const tabId = panelTabId(st)
@@ -289,11 +280,7 @@ export default function App(): JSX.Element {
   const toggleWorkbench = useCallback((): void => {
     const st = useStore.getState()
     const tabId = panelActionTab()
-    if (!tabId) {
-      const notice = noWorkbenchNotice()
-      if (notice) st.showToast(notice)
-      return
-    }
+    if (!tabId) return
     const open = panelIsOpen(st, tabId)
     const next = !(open || st.workbenchFull)
     if (st.workbenchFull) st.setWorkbenchFull(false)
@@ -449,11 +436,7 @@ export default function App(): JSX.Element {
 
   const newTerminalTab = useCallback((): void => {
     const tabId = terminalActionTab()
-    if (!tabId) {
-      const notice = noWorkbenchNotice()
-      if (notice) useStore.getState().showToast(notice)
-      return
-    }
+    if (!tabId) return
     useStore.getState().openTerminalTab(tabId)
   }, [])
 

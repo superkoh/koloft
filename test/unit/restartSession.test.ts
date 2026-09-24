@@ -142,7 +142,7 @@ describe('restartActiveSession: the restart itself', () => {
     expect(created).toEqual([{ sessionId: 'sid-A', cwd: '/w/repo' }])
   })
 
-  it('restarts Codex in place with the same native backend and session', async () => {
+  it('restarts Codex in place with the same native backend and session, carrying its Workbench onto the new tab', async () => {
     const s = useStore.getState()
     s.addTab({
       id: 'codex-restart',
@@ -155,6 +155,9 @@ describe('restartActiveSession: the restart itself', () => {
     s.setSessions([
       session('codex-restart', { backendId: 'codex', sessionId: 'codex:local:thread-a' })
     ])
+    await s.ensureWorkbench('codex-restart')
+    const panel = useStore.getState().workbench['codex-restart']
+    expect(panel).toBeDefined()
     nextPty = { id: 'codex-restarted', cwd: '/w' }
 
     s.restartActiveSession()
@@ -165,7 +168,7 @@ describe('restartActiveSession: the restart itself', () => {
     expect(useStore.getState().tabs).toMatchObject([
       { id: 'codex-restarted', kind: 'codex', sessionId: 'codex:local:thread-a' }
     ])
-    expect(useStore.getState().workbench['codex-restarted']).toBeUndefined()
+    expect(useStore.getState().workbench['codex-restarted']).toBe(panel)
   })
 
   it('resumes from the session root, not the launch cwd (a --worktree session)', async () => {

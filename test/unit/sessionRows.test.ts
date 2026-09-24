@@ -226,11 +226,14 @@ describe('clampNotesHeight (the remembered height, in THIS window: a height save
 describe('selectionRoot (Files island root / a terminal tab’s cwd)', () => {
   const claude = { kind: 'claude' as const, cwd: '/repo' }
 
-  it('roots a bound session at ITS cwd, not the launch cwd', () => {
-    expect(selectionRoot(claude, '/repo/.claude/worktrees/feat', '/ws')).toBe(
-      '/repo/.claude/worktrees/feat'
-    )
-  })
+  it.each(['claude', 'codex'] as const)(
+    'roots a bound %s session at ITS cwd, not the launch cwd',
+    (kind) => {
+      expect(selectionRoot({ kind, cwd: '/repo' }, '/repo/.claude/worktrees/feat', '/ws')).toBe(
+        '/repo/.claude/worktrees/feat'
+      )
+    }
+  )
 
   it('roots an unbound claude tab at its launch cwd until the session reports', () => {
     expect(selectionRoot(claude, undefined, '/ws')).toBe('/repo')

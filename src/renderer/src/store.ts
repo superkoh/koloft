@@ -22,7 +22,7 @@ import {
   type WorkspaceRows
 } from '@shared/types'
 import { basename } from '@shared/preview'
-import { canOpenExternally, routeFor } from '@shared/browserRoute'
+import { routeFor } from '@shared/browserRoute'
 import type { LoginFlowState } from './components/settings/loginFlow'
 import type { ResumeDialogState } from './resumeFlow'
 import { endEditsOf, rekeyOwner } from './editRegistry'
@@ -1014,10 +1014,6 @@ export function previewLinkTarget(href: string, fromSrc: string): string {
 export function openWebPage(src: string, sourceTabId?: string, sourcePath?: string): void {
   const st = useStore.getState()
   const selected = st.tabs.find((t) => t.id === st.activeTabId)
-  if (selected && isSessionKind(selected.kind) && !hasWorkbench(selected)) {
-    if (canOpenExternally(src)) window.api.browser.openExternal(src)
-    return
-  }
   const decision = routeFor(src, 'user')
   if (decision.dest !== 'browser') return
   const tabId = hasWorkbench(selected) ? selected?.id : undefined
