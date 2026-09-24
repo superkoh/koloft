@@ -27,7 +27,7 @@ import { requestCloseTab } from '../closeFlow'
 import { behindBadge } from '../freshnessView'
 import { FreshnessPopover } from './FreshnessPopover'
 import { basename } from '@shared/preview'
-import { parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
+import { hostOf, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { workspaceMenuCount } from '../remoteWorkspace'
 import {
   discardAll,
@@ -395,22 +395,24 @@ export function WorkspaceSidebar({
     const style = { left: menu.left, top: menu.top }
     if (target.kind === 'workspace') {
       const remote = machineOf(target.wsPath)
-      const refusal = (backend?: BackendId): string | undefined =>
-        (backend && unsupportedPairMessage(backend, remote ? 'ssh' : 'local')) || undefined
-      const newSessionItem = (label: string, backend?: BackendId, key?: string): JSX.Element => (
-        <div
-          className={'mi' + (refusal(backend) ? ' disabled' : '')}
-          title={refusal(backend)}
-          onClick={() => {
-            if (refusal(backend)) return
-            setMenu(null)
-            onNewSession(target.wsPath, backend)
-          }}
-        >
-          {label}
-          {key && <span className="k">{key}</span>}
-        </div>
-      )
+      const newSessionItem = (label: string, backend?: BackendId, key?: string): JSX.Element => {
+        const refusal =
+          (backend && unsupportedPairMessage(backend, hostOf(target.wsPath))) || undefined
+        return (
+          <div
+            className={'mi' + (refusal ? ' disabled' : '')}
+            title={refusal}
+            onClick={() => {
+              if (refusal) return
+              setMenu(null)
+              onNewSession(target.wsPath, backend)
+            }}
+          >
+            {label}
+            {key && <span className="k">{key}</span>}
+          </div>
+        )
+      }
       return (
         <div className="menu" style={style} onMouseEnter={keepMenu} onMouseLeave={scheduleClose}>
           {!target.missing && (
