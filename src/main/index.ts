@@ -23,14 +23,14 @@ import { PtyManager, tabInstancePid } from './ptyManager'
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { FlowGate } from './flowControl'
-import { SessionTracker, readAppendedLines, sessionEventFromHook } from './sessionTracker'
+import { SessionTracker } from './sessionTracker'
 import type { StatusEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
 import { SessionBackends } from './sessionBackends'
 import { BACKEND_LABEL, capabilitiesFor, SUPPORTED_PAIRS } from '@shared/sessionBackend'
 import { AttentionTracker, type AttentionContext } from './attention'
 import { route, dockBadgeText } from './notifyRouter'
-import { registeredByTabRoot, setupShim, UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE } from './shim'
+import { setupShim, UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE } from './shim'
 import { openDropTarget, type OpenDrop } from './openDrop'
 import { openUrlExternally, osOpenFallback } from './osOpen'
 import {
@@ -65,14 +65,9 @@ import {
   utilShellLine,
   type MachinePackage
 } from './remote/launch'
-import {
-  machinePackageBase,
-  mirrorHookDir,
-  mirrorProjectsRoot,
-  tabPackageDir
-} from './remote/paths'
+import { machinePackageBase, mirrorHookDir, mirrorProjectsRoot } from './remote/paths'
 import { RemoteSync } from './remote/sync'
-import { makeDropDedupe, ownsHookReport, type HookReport } from './hookRouting'
+import { readJsonDrop, watchJsonDrops } from './jsonDrops'
 import {
   bundlePath,
   DEFAULT_THEME,
@@ -97,7 +92,6 @@ import {
   reset as resetQuitGuard,
   setQuitAsk
 } from './quitGuard'
-import { rootsWithClaude } from './claudeLiveness'
 import { loadSettings, saveSettings } from './settings'
 import {
   keychainDelete,
@@ -294,12 +288,6 @@ const attention = new AttentionTracker((pending, event) => {
 })
 let uiActiveTabId: string | null = null
 let activeTabBeforeReload: string | null = null
-const sessionEndSeenAt = new Map<string, number>()
-const SESSION_END_SEEN_TTL_MS = 30_000
-function endReportedRecently(tabId: string): boolean {
-  const at = sessionEndSeenAt.get(tabId)
-  return at !== undefined && Date.now() - at <= SESSION_END_SEEN_TTL_MS
-}
 function sessionTitleOf(tabId: string): string | undefined {
   return allSessions().find((s) => s.tabId === tabId)?.title
 }
@@ -417,7 +405,6 @@ function routeAttentionEvent(event: AttentionEvent): void {
   if (decision.os) showOsNotification(event)
   if (decision.sound) shell.beep()
 }
-const processedRegIds = new Set<string>()
 let mainWindow: BrowserWindow | null = null
 
 // PLATFORM§5
@@ -470,7 +457,6 @@ function machinePackage(): MachinePackage {
   }
   return (machinePkg = buildMachinePackage(machinePackageBase(app.getPath('userData')), pkgFiles))
 }
-const watchedHookMirrors = new Map<string, () => void>()
 
 let cronRunner: CronRunner | null = null
 
@@ -1079,7 +1065,7 @@ app.whenReady().then(() => {
   const { shimDir, regDir, openDir, pickDir } = setupShim()
   ptyMgr.shimDir = shimDir
   ptyMgr.regDir = regDir
-  watchRegistrations(regDir)
+  claudeBackend.watchShimRegistrations(regDir)
   if (watchOpenRequests(openDir)) {
     ptyMgr.openDir = openDir
     sweepOpenRequests(openDir)
@@ -1101,7 +1087,7 @@ app.whenReady().then(() => {
       tabId,
       loadSettings().statuslineBuiltin ? statusLineSetting(statusline) : undefined
     )
-  watchHookRegistrations(hookPaths.regDir)
+  claudeBackend.watchLocalHooks(hookPaths.regDir)
 
   const PTY_OUTPUT_COALESCE_ONE_FRAME_MS = 16
   const pendingData = new Map<string, string>()
@@ -1156,14 +1142,8 @@ app.whenReady().then(() => {
       return
     }
     if (loginWatchers.has(e.id)) failLogin(e.id, 'setup-token exited without printing a token')
-    const remoteTab = tracker.remoteOf(e.id)
-    if (!remoteTab) {
-      // CC§1
-      drainExitRegistration(hookPaths.regDir, e.id)
-      dropStatusLog(hookPaths.regDir, e.id)
-    }
+    claudeBackend.onPtyExit(e.id)
     attention.clear(e.id)
-    sessionEndSeenAt.delete(e.id)
     flushData()
     // PLATFORM§21
     const held = pendingData.get(e.id)
@@ -1178,19 +1158,6 @@ app.whenReady().then(() => {
       void codexSessions
         .stop(e.id, e.signal ? -1 : e.exitCode)
         .catch((error) => sendToRenderer('cron:toast', String(error)))
-    if (remoteTab) {
-      const sid = sessionIdOf(e.id)
-      const title = sessionTitleOf(e.id)
-      untrackSession(e.id)
-      fs.rmSync(tabPackageDir(app.getPath('userData'), e.id), { recursive: true, force: true })
-      void drainRemoteExit(
-        remoteTab.host,
-        mirrorHookDir(app.getPath('userData'), remoteTab.host),
-        e.id,
-        sid,
-        title
-      )
-    }
     workspaceMgr?.launchEnded(e.id)
     cronRunner?.onPtyExit(e.id)
     sendToRenderer('terminal:exit', e)
@@ -1224,52 +1191,6 @@ app.whenReady().then(() => {
     // ADR-0022
     cronRunner?.onStatus(t.tabId, t.prev, t.next)
   })
-
-  // CC§1
-  if (process.platform !== 'win32') {
-    const LIVENESS_SWEEP_MS = 2500
-    const MISSED_SWEEPS_BEFORE_UNTRACK = 2
-    const goneStrikes = new Map<string, number>()
-    let sweeping = false
-    const sweepLiveness = async (): Promise<void> => {
-      if (sweeping) return
-      sweeping = true
-      try {
-        const pidByTab = new Map<string, number>()
-        for (const s of tracker.list()) {
-          if (!s.alive || !s.jsonlPath || s.remote) continue
-          const pid = ptyMgr.pidOf(s.tabId)
-          if (pid) pidByTab.set(s.tabId, pid)
-        }
-        for (const tabId of [...goneStrikes.keys()]) {
-          if (!pidByTab.has(tabId)) goneStrikes.delete(tabId)
-        }
-        if (!pidByTab.size) return
-        const alive = await rootsWithClaude([...pidByTab.values()])
-        if (!alive) return
-        for (const [tabId, pid] of pidByTab) {
-          if (alive.has(pid)) {
-            goneStrikes.delete(tabId)
-            continue
-          }
-          const strikes = (goneStrikes.get(tabId) ?? 0) + 1
-          if (strikes >= MISSED_SWEEPS_BEFORE_UNTRACK) {
-            goneStrikes.delete(tabId)
-            if (!endReportedRecently(tabId)) {
-              attention.onExited(tabId, attentionCtx(), sessionTitleOf(tabId))
-            }
-            sessionEndSeenAt.delete(tabId)
-            untrackSession(tabId)
-          } else {
-            goneStrikes.set(tabId, strikes)
-          }
-        }
-      } finally {
-        sweeping = false
-      }
-    }
-    setInterval(() => void sweepLiveness(), LIVENESS_SWEEP_MS).unref()
-  }
 
   const userData = app.getPath('userData')
   try {
@@ -1336,7 +1257,7 @@ app.whenReady().then(() => {
     freshness: (wsPath) => freshness?.get(wsPath),
     onRescanned: (wsPaths) => {
       void freshness?.refreshLocal(wsPaths)
-      watchRemoteHookMirrors()
+      claudeBackend.watchRemoteHookMirrors()
     },
     jobCountFor: (wsPath) => cronRunner?.jobCountFor(wsPath) ?? 0,
     remoteProjectsRoot: (host) => mirrorProjectsRoot(userData, host),
@@ -1365,7 +1286,7 @@ app.whenReady().then(() => {
       }))
     },
     onChange: () => workspaceMgr?.onRemoteChanged(),
-    onLeft: noticeRemoteExits
+    onLeft: (host, ids) => claudeBackend.noticeRemoteExits(host, ids)
   })
   freshness = new GitFreshnessEngine({
     workspaces: () => workspaceMgr?.pinnedPaths() ?? [],
@@ -1558,66 +1479,6 @@ app.on('before-quit', (e) => {
 function setupLine(): string | undefined {
   if (!ptyMgr.shimDir) return undefined
   return `export PATH="${ptyMgr.shimDir}:$PATH"; hash -r 2>/dev/null; clear`
-}
-
-const MID_WRITE_PARSE_RETRIES = 3
-const MID_WRITE_RETRY_MS = 60
-function readJsonDrop(full: string, attempt: number, handle: (obj: unknown) => void): void {
-  fs.readFile(full, 'utf8', (err, data) => {
-    if (err) return
-    let obj: unknown
-    try {
-      obj = JSON.parse(data)
-    } catch {
-      if (attempt < MID_WRITE_PARSE_RETRIES) {
-        setTimeout(() => readJsonDrop(full, attempt + 1, handle), MID_WRITE_RETRY_MS)
-      }
-      return
-    }
-    handle(obj)
-  })
-}
-
-function watchJsonDrops(
-  dir: string,
-  handlerFor: (name: string) => ((obj: unknown, full: string) => void) | null
-): fs.FSWatcher | null {
-  try {
-    return fs.watch(dir, (_event, filename) => {
-      if (!filename) return
-      const name = filename.toString()
-      if (!name.endsWith('.json')) return
-      const handle = handlerFor(name)
-      if (!handle) return
-      const full = path.join(dir, name)
-      readJsonDrop(full, 0, (obj) => handle(obj, full))
-    })
-  } catch {
-    return null
-  }
-}
-
-function watchRegistrations(regDir: string): void {
-  watchJsonDrops(regDir, () => handleRegistration)
-}
-
-function handleRegistration(raw: unknown): void {
-  const obj = raw as {
-    tabId?: string
-    regId?: string
-    sessionId?: string
-    cwd?: string
-    ts?: number
-    mode?: string
-    pid?: number
-  }
-  if (!obj.tabId || !obj.regId) return
-  if (processedRegIds.has(obj.regId)) return
-  if (!ptyMgr.get(obj.tabId)) return
-  if (!registeredByTabRoot(obj.pid, ptyMgr.pidOf(obj.tabId))) return
-  processedRegIds.add(obj.regId)
-  const cwd = obj.cwd && obj.cwd.length ? obj.cwd : os.homedir()
-  tracker.track(obj.tabId, cwd)
 }
 
 const processedOpenIds = new Set<string>()
@@ -1961,7 +1822,7 @@ function cdpOp(
 
 function relayDeps(): RelayDeps {
   return {
-    sessionForTab: (tabId) => sessionIdOf(tabId) ?? null,
+    sessionForTab: (tabId) => claudeBackend.sessionIdOf(tabId) ?? null,
     mount: async (sessionId, targetId) => {
       const r = await cdpOp('mount', sessionId, { targetId })
       if (!r.ok || typeof r.guestId !== 'number')
@@ -2256,153 +2117,12 @@ function openInWorkbench(
   return false
 }
 
-function watchHookRegistrations(dir: string, mirror = false): () => void {
-  const isNews = mirror ? makeDropDedupe() : null
-  const drops = watchJsonDrops(dir, () => (obj, full) => {
-    if (isNews && !isNews(full, JSON.stringify(obj))) return
-    handleHookRegistration(obj)
-  })
-  const logs = watchStatusLogs(dir)
-  return () => {
-    drops?.close()
-    logs()
-  }
-}
-
-const statusLogCursors = new Map<string, { offset: number; tail: Buffer }>()
-const statusLogDraining = new Map<string, boolean>()
-
-// PLATFORM§28
-const STATUS_LOG_POLL_MS = 2000
-
-function watchStatusLogs(dir: string): () => void {
-  let watcher: fs.FSWatcher | null = null
-  try {
-    watcher = fs.watch(dir, (_event, filename) => {
-      const name = filename?.toString()
-      if (!name || !name.endsWith('.status.jsonl')) return
-      void drainStatusLog(path.join(dir, name))
-    })
-  } catch {}
-  const poll = setInterval(() => {
-    let names: string[]
-    try {
-      names = fs.readdirSync(dir)
-    } catch {
-      return
-    }
-    for (const name of names) {
-      if (name.endsWith('.status.jsonl')) void drainStatusLog(path.join(dir, name))
-    }
-  }, STATUS_LOG_POLL_MS)
-  return () => {
-    watcher?.close()
-    clearInterval(poll)
-  }
-}
-
-function dropStatusLog(regDir: string, tabId: string): void {
-  const full = path.join(regDir, `${tabId}.status.jsonl`)
-  statusLogCursors.delete(full)
-  statusLogDraining.delete(full)
-  fs.rm(full, { force: true }, () => {})
-}
-
-async function drainStatusLog(full: string): Promise<void> {
-  if (statusLogDraining.get(full)) return
-  statusLogDraining.set(full, true)
-  try {
-    let again = true
-    while (again) {
-      again = false
-      let size: number
-      try {
-        size = (await fs.promises.stat(full)).size
-      } catch {
-        return
-      }
-      let cur = statusLogCursors.get(full)
-      if (!cur) {
-        cur = { offset: 0, tail: Buffer.alloc(0) }
-        statusLogCursors.set(full, cur)
-      }
-      if (size < cur.offset) {
-        cur.offset = 0
-        cur.tail = Buffer.alloc(0)
-      }
-      if (size <= cur.offset) return
-      const lines = await readAppendedLines(full, size, cur)
-      if (!lines) return
-      for (const line of lines) {
-        if (!line) continue
-        try {
-          handleStatusRegistration(JSON.parse(line))
-        } catch {}
-      }
-      again = true
-    }
-  } finally {
-    statusLogDraining.set(full, false)
-  }
-}
-
-function liveTabFor(report: { tabId?: string; tmux?: string }): string | undefined {
-  if (report.tabId && ptyMgr.get(report.tabId)) return report.tabId
-  if (!report.tmux) return undefined
-  for (const s of tracker.list()) {
-    if (s.alive && tracker.remoteOf(s.tabId)?.tmuxName === report.tmux && ptyMgr.get(s.tabId)) {
-      return s.tabId
-    }
-  }
-  return undefined
-}
-
-function handleStatusRegistration(raw: unknown): void {
-  const obj = raw as HookReport & { tabId?: string; message?: string; bgl?: string; wake?: number }
-  obj.tabId = liveTabFor(obj)
-  if (!obj.tabId) return
-  // CC§5
-  if (!ownsHookReport(obj, sessionIdOf(obj.tabId))) return
-  if (obj.event === 'prompt') consumeOutletDedupe(obj.tabId)
-  // CC§8
-  if (typeof obj.wake === 'number') tracker.setWakeupPending(obj.tabId, obj.wake === 1)
-  const event = sessionEventFromHook(obj.event, obj.message, obj.bgl)
-  if (event) claudeBackend.observe(obj.tabId, event)
-}
-
-// CC§1
-const SESSION_END_SETTLE_MS = 800
-function untrackIfClaudeGone(tabId: string): void {
-  if (tracker.remoteOf(tabId)) return
-  setTimeout(async () => {
-    const pid = ptyMgr.pidOf(tabId)
-    if (!pid) return
-    if (!tracker.list().some((s) => s.tabId === tabId && s.jsonlPath)) return
-    const alive = await rootsWithClaude([pid])
-    if (!alive) return
-    if (!alive.has(pid)) {
-      attention.clear(tabId)
-      sessionEndSeenAt.delete(tabId)
-      untrackSession(tabId)
-    }
-  }, SESSION_END_SETTLE_MS)
-}
-
-function sessionIdOf(tabId: string): string | undefined {
-  return tracker.list().find((s) => s.tabId === tabId)?.sessionId
-}
-
-function untrackSession(tabId: string): void {
-  tracker.untrack(tabId)
-}
-
 function killTabPty(tabId: string, how: { detach?: boolean } = {}): Promise<boolean> {
   const owner = sessionBackends.ownerOfTab(tabId)
   const stopped = owner
     ? Promise.resolve(owner.stop(tabId, how))
     : Promise.resolve(ptyMgr.kill(tabId))
   attention.clear(tabId)
-  sessionEndSeenAt.delete(tabId)
   relayTabClosed(tabId)
   boundSessions.delete(tabId)
   return stopped.then(
@@ -2412,162 +2132,6 @@ function killTabPty(tabId: string, how: { detach?: boolean } = {}): Promise<bool
       return false
     }
   )
-}
-
-// CC§1
-const EVICTING_END_REASONS = new Set(['prompt_input_exit', 'logout'])
-
-const REMOTE_EXIT_WAIT_MS = 10_000
-const REMOTE_EXIT_POLL_MS = 500
-const REMOTE_EXIT_SLACK_MS = 30_000
-
-function remoteSessionGone(host: string, sessionId: string): boolean {
-  return !!remoteSync?.connected(host) && !remoteSync.alive(host).has(sessionId)
-}
-
-function noticeRemoteExits(host: string, sessionIds: string[]): void {
-  for (const s of tracker.list()) {
-    if (!s.alive || !sessionIds.includes(s.sessionId)) continue
-    if (tracker.remoteOf(s.tabId)?.host !== host) continue
-    const { tabId, sessionId } = s
-    setTimeout(() => {
-      const still = tracker
-        .list()
-        .some((t) => t.tabId === tabId && t.alive && t.sessionId === sessionId)
-      if (!still || !remoteSessionGone(host, sessionId) || endReportedRecently(tabId)) return
-      attention.onExited(tabId, attentionCtx(), sessionTitleOf(tabId))
-      untrackSession(tabId)
-    }, REMOTE_EXIT_WAIT_MS).unref()
-  }
-}
-
-async function drainRemoteExit(
-  host: string,
-  mirrorDir: string,
-  tabId: string,
-  sid?: string,
-  title?: string
-): Promise<void> {
-  // PLATFORM§34
-  const since = Date.now() - REMOTE_EXIT_SLACK_MS
-  const thisExit = (): { name: string; raw: { event?: string; reason?: string } } | undefined => {
-    let names: string[] = []
-    try {
-      names = fs.readdirSync(mirrorDir)
-    } catch {
-      return undefined
-    }
-    for (const name of names) {
-      if (!name.endsWith('.json')) continue
-      const full = path.join(mirrorDir, name)
-      try {
-        if (fs.statSync(full).mtimeMs < since) continue
-        const text = fs.readFileSync(full, 'utf8')
-        if (!sid || !text.includes(`"${sid}"`)) continue
-        const raw = JSON.parse(text) as { event?: string; reason?: string }
-        if (raw.event === 'end') return { name, raw }
-      } catch {}
-    }
-    return undefined
-  }
-  remoteSync?.pokeNow(host)
-  const deadline = Date.now() + REMOTE_EXIT_WAIT_MS
-  let hit = thisExit()
-  while (!hit && Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, REMOTE_EXIT_POLL_MS))
-    hit = thisExit()
-  }
-  if (hit && EVICTING_END_REASONS.has(hit.raw.reason ?? '')) {
-    const stillBound = !!sid && tracker.list().some((t) => t.alive && t.sessionId === sid)
-    if (sid && !stillBound) workspaceMgr?.dropOwnership(sid)
-  }
-  if (!hit && sid && remoteSessionGone(host, sid)) attention.onExited(tabId, attentionCtx(), title)
-  for (const name of new Set([`${tabId}.json`, hit?.name ?? ''])) {
-    if (name) fs.rmSync(path.join(mirrorDir, name), { force: true })
-  }
-  dropStatusLog(mirrorDir, tabId)
-}
-
-function drainExitRegistration(regDir: string, tabId: string): void {
-  let raw: { event?: string; reason?: string }
-  try {
-    raw = JSON.parse(fs.readFileSync(path.join(regDir, `${tabId}.json`), 'utf8'))
-  } catch {
-    return
-  }
-  if (raw.event === 'end' && EVICTING_END_REASONS.has(raw.reason ?? '')) {
-    handleHookRegistration(raw)
-  }
-}
-
-function handleHookRegistration(raw: unknown): void {
-  const obj = raw as HookReport & {
-    tabId?: string
-    transcriptPath?: string
-    cwd?: string
-    reason?: string
-    account?: string
-    ccVersion?: string
-  }
-  obj.tabId = liveTabFor(obj)
-  if (!obj.tabId) return
-  // CC§5
-  if (!ownsHookReport(obj, sessionIdOf(obj.tabId))) return
-  if (obj.event === 'end') {
-    if (EVICTING_END_REASONS.has(obj.reason ?? '')) {
-      const sid = sessionIdOf(obj.tabId)
-      attention.clear(obj.tabId)
-      untrackSession(obj.tabId)
-      const stillBound = !!sid && tracker.list().some((s) => s.alive && s.sessionId === sid)
-      if (sid && !stillBound) workspaceMgr?.dropOwnership(sid)
-    } else {
-      // CC§1
-      sessionEndSeenAt.set(obj.tabId, Date.now())
-      untrackIfClaudeGone(obj.tabId)
-    }
-    return
-  }
-  sessionEndSeenAt.delete(obj.tabId)
-  if (obj.cwd) workspaceMgr?.onSessionStart(obj.tabId, obj.cwd)
-  const prevId = sessionIdOf(obj.tabId)
-  tracker.bindSession(
-    obj.tabId,
-    obj.transcriptPath || '',
-    obj.sessionId || '',
-    obj.cwd || '',
-    obj.account || '',
-    obj.ccVersion || '',
-    obj.source || ''
-  )
-  ptyMgr.clearResumeIntent(obj.tabId)
-  const nextId = sessionIdOf(obj.tabId)
-  if (prevId && nextId && nextId !== prevId) {
-    if (tracker.remoteOf(obj.tabId)) tracker.setRemoteTmuxName(obj.tabId, tmuxSessionName(nextId))
-    workspaceMgr?.onSessionRebind(prevId, nextId, obj.source || '')
-    if (obj.source === 'clear') {
-      workspaceMgr?.dropOwnership(prevId)
-    }
-  }
-  if (nextId) workspaceMgr?.onSessionBound(nextId)
-  if (nextId) cronRunner?.onBound(obj.tabId, nextId)
-}
-
-function watchRemoteHookMirrors(): void {
-  const wanted = new Set(
-    (workspaceMgr?.remoteTargets() ?? []).map((t) => mirrorHookDir(app.getPath('userData'), t.host))
-  )
-  for (const [dir, dispose] of watchedHookMirrors) {
-    if (wanted.has(dir)) continue
-    dispose()
-    watchedHookMirrors.delete(dir)
-  }
-  for (const dir of wanted) {
-    if (watchedHookMirrors.has(dir)) continue
-    try {
-      fs.mkdirSync(dir, { recursive: true })
-    } catch {}
-    watchedHookMirrors.set(dir, watchHookRegistrations(dir, true))
-  }
 }
 
 function worktreeHomeOf(root: string): string {
@@ -2721,7 +2285,12 @@ const claudeBackend = new ClaudeBackend({
   pickForLaunch,
   git: gitOut,
   resumeProbes,
-  dropStatusLog
+  attention: {
+    exited: (tabId, title) => attention.onExited(tabId, attentionCtx(), title),
+    clear: (tabId) => attention.clear(tabId)
+  },
+  promptSeen: consumeOutletDedupe,
+  bound: (tabId, sessionId) => cronRunner?.onBound(tabId, sessionId)
 })
 sessionBackends.register(claudeBackend)
 
