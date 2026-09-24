@@ -870,7 +870,7 @@ test('E10: guided login captures the printed token (even wrapped at 80 columns) 
     await page.locator('.acct-add input[type="text"]').fill('bravo')
     await page.locator('.acct-add-actions button', { hasText: 'Sign in' }).click()
 
-    await expect(page.locator('.acct-section')).toBeVisible()
+    await expect(claudeAccounts(page)).toBeVisible()
 
     await expect
       .poll(
