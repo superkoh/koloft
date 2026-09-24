@@ -5,7 +5,7 @@ import { execFileSync } from 'child_process'
 import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
-import { WORKBENCH } from './helpers/workbench'
+import { WORKBENCH, wbUnreadTabs } from './helpers/workbench'
 import {
   addWorkspace,
   centerTerm,
@@ -390,6 +390,28 @@ test.describe('Codex sessions through the real method chooser, process transport
         .click()
       await expect(page.locator(WORKBENCH.readingTitle)).toHaveText('README.md')
       await expect(page.locator(WORKBENCH.readingBody)).toContainText('koloft-e2e-alpha')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a page Codex opens with `open` lands as an unread web tab in its own Workbench, and the agent-web hint names Codex', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedSettings(env, { onboardingSeen: true, hintsSeen: ['workbench'] })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await runIn(page, centerTerm(page), 'open http://127.0.0.1:1/codex-opened')
+      const hint = page.locator('.hint-card[data-hint="agent-web"] .h')
+      await expect(hint).toContainText('Codex')
+      await expect(hint).not.toContainText('Claude')
+      const toggle = page.getByRole('button', { name: 'Workbench', exact: true })
+      if (!(await toggle.getAttribute('class'))?.includes(' on')) await toggle.click()
+      await expect(wbUnreadTabs(page)).toHaveCount(1)
     } finally {
       await quitAndClose(app)
     }

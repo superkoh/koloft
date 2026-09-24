@@ -3,6 +3,9 @@ import { createPortal } from 'react-dom'
 import { popoverX } from '@shared/accountUsage'
 import { HINT_IDS, type HintId } from '@shared/types'
 import type { ActiveHint } from '../hints'
+import { useStore } from '../store'
+import { backendLabel, isSessionKind } from '../agentUi'
+import { capabilitiesFor } from '@shared/sessionBackend'
 
 const CAPTURE_BEFORE_XTERM = true
 const CARD_W = 268
@@ -26,9 +29,20 @@ function Pic(p: { h: number; label: string; children: JSX.Element }): JSX.Elemen
   )
 }
 
-const CONTENT: Record<HintId, { title: string; body: JSX.Element; pic: JSX.Element }> = {
-  workbench: {
-    title: 'Claude changed a file',
+interface HintWords {
+  title: string
+  body: JSX.Element
+  pic: JSX.Element
+}
+
+interface AgentWords {
+  name: string
+  drivesBrowser: boolean
+}
+
+const CONTENT: Record<HintId, HintWords | ((agent: AgentWords) => HintWords)> = {
+  workbench: ({ name }) => ({
+    title: `${name} changed a file`,
     body: (
       <>
         It is in the <b>Workbench</b>, with a diff. Click here or press <b>⇧⌘B</b>.
@@ -48,7 +62,7 @@ const CONTENT: Record<HintId, { title: string; body: JSX.Element; pic: JSX.Eleme
         </g>
       </Pic>
     )
-  },
+  }),
   approval: {
     title: 'Amber means a session needs you',
     body: (
@@ -71,12 +85,16 @@ const CONTENT: Record<HintId, { title: string; body: JSX.Element; pic: JSX.Eleme
       </Pic>
     )
   },
-  'agent-web': {
-    title: 'Claude opened this page here',
-    body: (
+  'agent-web': ({ name, drivesBrowser }) => ({
+    title: `${name} opened this page here`,
+    body: drivesBrowser ? (
       <>
-        It is a <b>real browser</b> inside Koloft, and Claude&apos;s Playwright tools can drive it.
+        It is a <b>real browser</b> inside Koloft, and {name}&apos;s Playwright tools can drive it.
         Turn that off in Settings ▸ Extensions.
+      </>
+    ) : (
+      <>
+        It is a <b>real browser</b> inside Koloft.
       </>
     ),
     pic: (
@@ -102,7 +120,7 @@ const CONTENT: Record<HintId, { title: string; body: JSX.Element; pic: JSX.Eleme
         </g>
       </Pic>
     )
-  },
+  }),
   worktree: {
     title: 'Two sessions on one folder?',
     body: (
@@ -253,7 +271,19 @@ export function Hint({ id, selector, n, onDone, onOff }: ActiveHint): JSX.Elemen
     }
   }, [onDone])
 
-  const { title, body, pic } = CONTENT[id]
+  const session = useStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
+  const content = CONTENT[id]
+  const { title, body, pic } =
+    typeof content === 'function'
+      ? content(
+          session && isSessionKind(session.kind)
+            ? {
+                name: backendLabel(session.kind),
+                drivesBrowser: capabilitiesFor(session.kind, session.host).browserControl === true
+              }
+            : { name: 'The session', drivesBrowser: false }
+        )
+      : content
   // ADR-0013
   return createPortal(
     <>

@@ -1187,7 +1187,7 @@ app.whenReady().then(() => {
       },
       agentOpen: (tabId, target) => {
         if (path.isAbsolute(target) && !fs.existsSync(target)) return
-        openInWorkbench(tabId, routeFor(target, 'agent'), 'agent')
+        openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target)
       }
     })
   } catch (error) {
