@@ -362,3 +362,8 @@ line outside the sandbox failed with `-10814` (`kLSApplicationNotFoundErr`). So 
 changes how `open` finds an app. Whether `open` of a file that exists succeeds inside that
 sandbox was not tried (it would have opened an app on this Mac): **inferred, not checked**
 either way, which is why a failed `open` still counts as an open request.
+
+Browser control (an agent driving a Workbench web tab through Koloft's CDP (Chrome DevTools
+Protocol) relay) was not tried for Codex. Whether a command inside Codex's sandbox can
+reach the relay's local socket at all is **inferred, not checked** either way, so browser
+control stays pending for Codex.
