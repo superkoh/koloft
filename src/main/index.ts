@@ -1778,9 +1778,6 @@ function setupGuestFullscreen(): void {
     if (contents.getType() !== 'webview') return
     contents.on('enter-html-full-screen', () => {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
-      // PLATFORM§8
-      const win = mainWindow
-      if (win && !win.isDestroyed() && win.isFullScreen()) win.setFullScreen(false)
       sendToRenderer('browser:fullscreen', true)
     })
     contents.on('leave-html-full-screen', () => {
@@ -1954,6 +1951,14 @@ const downloadSources = new Map<string, string>()
 
 const retryTargets = new Map<string, string>()
 
+// PLATFORM§8
+function allowPageFullscreenWithoutTheWindow(callback: (granted: boolean) => void): void {
+  const win = mainWindow
+  win?.setFullScreenable(false)
+  callback(true)
+  setImmediate(() => win?.setFullScreenable(true))
+}
+
 function setupBrowserPartition(): void {
   const ses = session.fromPartition(BROWSER_PARTITION)
   // PLATFORM§11
@@ -1964,7 +1969,8 @@ function setupBrowserPartition(): void {
       return
     }
     if (decision.kind === 'allow') {
-      callback(true)
+      if (permission === 'fullscreen') allowPageFullscreenWithoutTheWindow(callback)
+      else callback(true)
       return
     }
     if (decision.kind === 'refuse') {
