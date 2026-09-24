@@ -126,6 +126,9 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await runIn(page, centerTerm(page), TURN_LONGER_THAN_ONE_MIRROR_PULL)
       await expect(rows.first()).toHaveClass(/\bst-working\b/, { timeout: 60_000 })
       await expect(rows.first()).toHaveClass(/\bst-waiting\b/, { timeout: 90_000 })
+      expect(
+        sshCommands(env).some((c) => c.includes('tail -c') && c.includes('.status.jsonl'))
+      ).toBe(true)
 
       const localProjects = path.join(env.home, '.claude', 'projects')
       expect(fs.existsSync(path.join(localProjects, encodeCwd(remoteDir(env))))).toBe(false)

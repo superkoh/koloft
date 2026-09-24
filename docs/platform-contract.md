@@ -879,3 +879,7 @@ command by hand:
   `git ls-files -z`, searching text with the `git grep` fallback, the Changes diffs, and
   an edit's read, stale check, write and new file. Checked by running Koloft's own
   `SshHost` against a scratch git repo in `/tmp` there, then deleting it.
+- **`tail -c +N -F <file>` behaves the same on GNU (coreutils 9.4) and BSD (macOS
+  27) tail**: it prints from byte N, follows appends, and when the file is deleted and
+  written again it follows the new file from its first byte. Measured by hand on both,
+  with a scratch file.
