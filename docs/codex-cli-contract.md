@@ -490,8 +490,8 @@ machine's home (its `codex` and `rg`, not its bundled `bwrap`), run with a new e
 `CODEX_HOME` beside it, and the folder was deleted afterwards. No login or key was
 copied to the machine.
 
-What was tried is the "Codex runs on the machine, its screen runs on the Mac" shape:
-Koloft's own relay design (section 1) on the Mac, but the relay's app-server was
+What was tried is the "Codex runs on the machine, its screen runs on the Mac" shape: a
+small Node probe relay on the Mac built like Koloft's (section 1), whose app-server was
 `ssh -T <machine> 'cd <folder> && CODEX_HOME=<home> exec <codex> app-server --stdio'`.
 
 - A Node script sent `initialize`, `initialized`, `account/read` and `thread/list` down
@@ -499,8 +499,13 @@ Koloft's own relay design (section 1) on the Mac, but the relay's app-server was
   Codex start) with `platformOs: "linux"` and the machine's `codexHome`; `account/read`
   gave `{account: null, requiresOpenaiAuth: true}`; `thread/list` gave an empty `data`.
   Closing stdin ended the remote app-server (exit 0) in about 0.2 seconds, and `ps` on
-  the machine showed nothing left over. The app-server also sent a `configWarning`
-  that bubblewrap was not on the machine's `PATH`.
+  the machine showed nothing left over. Koloft's own `CodexProcess.stop()` also ends
+  stdin before it sends any signal, so this is the stop path that matters; its local
+  `ps` walk was not run against ssh. The app-server also sent a `configWarning` that
+  bubblewrap was not on the machine's `PATH` and that it would use its bundled one. This
+  probe did not unpack the package's `codex-resources/bwrap`, so there was none; a real
+  launch must put that file on the machine or install `bubblewrap` there, and that the
+  bundled one works on Ubuntu is **inferred, not checked**.
 - The real TUI ran on the Mac in a Python PTY (120×40) as `codex -c
   check_for_update_on_startup=false --remote unix://<relay socket> -C <folder on the
   machine>`. That folder does not exist on the Mac, and the TUI still connected: it sent
