@@ -71,6 +71,7 @@ export interface CodexSessionDeps {
   attention(tabId: string, kind: 'exited' | 'clear'): void
   error(message: string): void
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
+  agentOpen(tabId: string, target: string): void
 }
 
 interface RowScope {
@@ -580,6 +581,8 @@ export class CodexSessions {
         return this.deps.changed()
       case 'title':
         return this.retitle(info, event.title)
+      case 'open':
+        return this.deps.agentOpen(run.tabId, event.target)
       case 'files-changed':
         info.files = event.files
         info.lastTouched = event.lastTouched

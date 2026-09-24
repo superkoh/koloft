@@ -97,7 +97,8 @@ beforeEach(() => {
     changed: vi.fn(),
     attention: vi.fn(),
     error: vi.fn(),
-    trustFolder: vi.fn()
+    trustFolder: vi.fn(),
+    agentOpen: vi.fn()
   }
   sessions = new CodexSessions(path.join(directory, 'sessions.json'), deps)
   vi.spyOn(sessions, 'availability').mockResolvedValue({ id: 'codex', available: true })
@@ -313,6 +314,26 @@ describe('CodexSessions', () => {
       lastWritten: file,
       liveWrites: 1
     })
+  })
+
+  it('hands an open command Codex ran to the Workbench for that tab', async () => {
+    const launched = await sessions.launch({ kind: 'codex', cwd: repo })
+    bind()
+    transports[0].options.onFrame('server', {
+      method: 'item/completed',
+      params: {
+        threadId: A,
+        item: {
+          type: 'commandExecution',
+          id: 'open',
+          status: 'completed',
+          command: "/bin/zsh -lc 'open ./report.html'",
+          cwd: repo,
+          commandActions: [{ type: 'unknown', command: 'open ./report.html' }]
+        }
+      }
+    })
+    expect(deps.agentOpen).toHaveBeenCalledWith(launched.id, path.join(repo, 'report.html'))
   })
 
   it('reports an unexpected exit after confirmed stop without immediately clearing the alert', async () => {

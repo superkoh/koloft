@@ -354,3 +354,11 @@ non-null `move_path`, and the `failed` / `declined` patch statuses. How they arr
 **inferred, not checked**. `open <url>`, and `open` under `read-only` or with
 `on-request` approval, were not tried (a URL would have opened a browser on this Mac):
 that they reach the wire the same way is **inferred, not checked**.
+
+The same day, without a model, `codex sandbox -c 'sandbox_mode="workspace-write"'
+/usr/bin/open nosuchscheme98765://x` (a scheme no app claims, so nothing could open)
+failed with Launch Services error `-10661` (`kLSExecutableIncorrectFormat`), while the same
+line outside the sandbox failed with `-10814` (`kLSApplicationNotFoundErr`). So the sandbox
+changes how `open` finds an app. Whether `open` of a file that exists succeeds inside that
+sandbox was not tried (it would have opened an app on this Mac): **inferred, not checked**
+either way, which is why a failed `open` still counts as an open request.

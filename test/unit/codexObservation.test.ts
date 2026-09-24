@@ -395,4 +395,28 @@ describe('CodexObservation', () => {
     })
     expect(f.files()?.files.map((file) => file.src)).toEqual(['/repo/b.txt'])
   })
+
+  it('turns an open command Codex ran into an open request, but only one with a single target, like the open shim', () => {
+    const f = fixture()
+    f.bind()
+    const ran = (line: string, status = 'completed') =>
+      f.server('item/completed', {
+        item: {
+          ...command(line, [{ type: 'unknown', command: line }]).item,
+          status
+        }
+      })
+    ran('open ./report.html')
+    ran("open 'docs/a b.md'", 'failed')
+    ran('open https://example.test/x')
+    ran('open -a Safari page.html')
+    ran('open one.html two.html')
+    ran('open ./declined.html', 'declined')
+    ran('echo open ./not-a-command.html')
+    expect(f.events.flatMap((e) => (e.type === 'open' ? [e.target] : []))).toEqual([
+      '/repo/report.html',
+      '/repo/docs/a b.md',
+      'https://example.test/x'
+    ])
+  })
 })

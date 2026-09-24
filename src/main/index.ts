@@ -148,7 +148,12 @@ import {
 } from './updater'
 import { currentOffer, startUpdateNotifier } from './updateNotifier'
 import { extOf } from '@shared/preview'
-import { canOpenExternally, routeFor, type RouteSource } from '@shared/browserRoute'
+import {
+  canOpenExternally,
+  routeFor,
+  type RouteDecision,
+  type RouteSource
+} from '@shared/browserRoute'
 import {
   cdpEnvDir,
   relayStripChanged,
@@ -1179,6 +1184,10 @@ app.whenReady().then(() => {
         } catch (err) {
           console.error('[koloft] could not record Codex trust for', root, err)
         }
+      },
+      agentOpen: (tabId, target) => {
+        if (path.isAbsolute(target) && !fs.existsSync(target)) return
+        openInWorkbench(tabId, routeFor(target, 'agent'), 'agent')
       }
     })
   } catch (error) {
@@ -2114,20 +2123,27 @@ function handleOpenRequest(obj: OpenDrop, full: string): void {
     openUrlExternally(decision.target)
     return
   }
-  if (decision.dest === 'browser') {
-    const payload: BrowserOpenRequest = {
-      tabId: obj.tabId,
-      url: decision.target,
-      source,
-      osFallback: p
-    }
-    sendToRenderer('browser:open', payload)
-  } else if (decision.dest === 'preview' && fs.existsSync(decision.target)) {
-    const payload: OpenRequest = { tabId: obj.tabId, path: decision.target, source }
-    sendToRenderer('preview:open-file', payload)
-  } else if (decision.dest !== 'drop') {
+  if (!openInWorkbench(obj.tabId, decision, source, p) && decision.dest !== 'drop')
     osOpenFallback(p)
+}
+
+function openInWorkbench(
+  tabId: string,
+  decision: RouteDecision,
+  source: 'agent' | 'user',
+  osFallback?: string
+): boolean {
+  if (decision.dest === 'browser') {
+    const payload: BrowserOpenRequest = { tabId, url: decision.target, source, osFallback }
+    sendToRenderer('browser:open', payload)
+    return true
   }
+  if (decision.dest === 'preview' && fs.existsSync(decision.target)) {
+    const payload: OpenRequest = { tabId, path: decision.target, source }
+    sendToRenderer('preview:open-file', payload)
+    return true
+  }
+  return false
 }
 
 function watchHookRegistrations(dir: string, mirror = false): () => void {

@@ -15,6 +15,7 @@ export type SessionEvent =
   | { type: 'usage'; usage: SessionUsage }
   | { type: 'title'; title: string }
   | { type: 'degraded'; message: string }
+  | { type: 'open'; target: string }
   | {
       type: 'files-changed'
       files: PreviewItem[]

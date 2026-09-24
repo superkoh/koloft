@@ -71,6 +71,18 @@ function patchDelta(kind: unknown, diff: string): { added: number; removed: numb
   }
 }
 
+const OPEN_ONE_TARGET = /^open\s+(?:'([^']+)'|"([^"]+)"|([^\s'"-]\S*))$/
+const HAS_SCHEME = /^[a-z][a-z0-9+.-]*:/i
+const OPEN_RAN = ['completed', 'failed']
+
+function openTarget(command: string, cwd: unknown): string | null {
+  const m = OPEN_ONE_TARGET.exec(command.trim())
+  const arg = m && (m[1] ?? m[2] ?? m[3])
+  if (!arg) return null
+  if (HAS_SCHEME.test(arg)) return arg
+  return typeof cwd === 'string' && path.isAbsolute(cwd) ? path.resolve(cwd, arg) : null
+}
+
 interface Activity extends BackgroundItem {
   root: string
   owner: string
@@ -186,7 +198,10 @@ export class CodexObservation {
     const ownedChild =
       typeof p.threadId === 'string' && this.childRoots.get(p.threadId) === this.threadId
     if (!this.threadId || (p.threadId !== this.threadId && !ownedChild)) return
-    if (method === 'item/completed') this.observeFiles(record(p.item))
+    if (method === 'item/completed') {
+      this.observeFiles(record(p.item))
+      this.observeOpen(record(p.item))
+    }
     if (
       id !== undefined &&
       method &&
@@ -291,6 +306,17 @@ export class CodexObservation {
       lastWritten: this.lastWritten,
       liveWrites: this.liveWrites
     })
+  }
+
+  // CODEX§12
+  private observeOpen(item: Record<string, unknown>): void {
+    if (item.type !== 'commandExecution' || !OPEN_RAN.includes(String(item.status))) return
+    if (!Array.isArray(item.commandActions)) return
+    for (const action of item.commandActions.map(record)) {
+      const target =
+        typeof action.command === 'string' ? openTarget(action.command, item.cwd) : null
+      if (target) this.emit({ type: 'open', target })
+    }
   }
 
   private degraded(message: string): void {

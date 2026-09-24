@@ -69,7 +69,6 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities>> = {
       ...EVERYTHING,
       accounts: PENDING,
       scheduledTasks: PENDING,
-      agentOpen: PENDING,
       browserControl: PENDING,
       // CODEX§8
       statusline3: { unsupported: 'CODEX§8' }
