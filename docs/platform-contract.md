@@ -212,7 +212,20 @@ about how it was found.
 - **HTML fullscreen**: a guest asking for it puts the whole host WINDOW into macOS
   fullscreen, its own Space (measured, 2026-08-18 spike). `leave-html-full-screen`
   arrives only while the guest is alive, so closing a fullscreen page never sends it.
-  With the app window hidden, `requestFullscreen()` never settles (measured).
+  Measured 2026-09-23 on Electron 43.7.3, with a probe spec reading the window's
+  state and events:
+  - The request goes through the session's permission request handler as
+    `fullscreen`. Inside `callback(true)`, `enter-html-full-screen` fires and the
+    window's resize is decided, all before the callback returns. The native
+    `enter-full-screen` lands about 800 ms later, so checking `isFullScreen()` in
+    `enter-html-full-screen` cannot catch it.
+  - A window with `setFullScreenable(false)` at that moment keeps its size and
+    state: the page still goes fullscreen inside its `<webview>`, the promise
+    resolves, and leaving works. This holds whether the window was windowed, already
+    in system fullscreen, or hidden.
+  - `disableHtmlFullscreenWindowResize` changes nothing, set on the guest or on the
+    host window.
+  - A hidden window that is allowed to follow the guest shows itself.
 
 ## §9 `<webview>`: visibility, frames and capture
 

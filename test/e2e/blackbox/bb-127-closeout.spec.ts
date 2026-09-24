@@ -420,11 +420,6 @@ test.describe('Black-box: the browser close-out, inside the Workbench web tab', 
       page,
       app
     }) => {
-      // PLATFORM§8
-      test.skip(
-        process.env.KOLOFT_E2E_FULLSCREEN !== '1',
-        'needs a visible window (hidden mode never settles requestFullscreen) — opt in with KOLOFT_E2E_FULLSCREEN=1'
-      )
       const g = await openProbe(page, app)
       const wasFullscreen = await app.evaluate(
         async ({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isFullScreen() ?? false
