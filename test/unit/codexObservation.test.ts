@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { CodexObservation, userThread, type CodexEvent } from '../../src/main/codexObservation'
-import { SessionRuntime, type StatusEdge } from '../../src/main/sessionRuntime'
+import { SessionRuntime, turnOf, type StatusEdge } from '../../src/main/sessionRuntime'
 import { AttentionTracker } from '../../src/main/attention'
 import type { AttentionKind, BackgroundItem } from '../../src/shared/types'
 
@@ -27,10 +27,9 @@ function fixture() {
   })
   const observer = new CodexObservation((event) => {
     events.push(event)
-    if (event.type === 'bound') runtime.forget(TAB)
-    else if (event.type === 'prompt') runtime.recordTurn(TAB, 'working')
-    else if (event.type === 'notify') runtime.recordTurn(TAB, event.need)
-    else if (event.type === 'stop') runtime.recordTurn(TAB, 'ended')
+    if (event.type === 'bound') return runtime.forget(TAB)
+    const turn = turnOf(event)
+    if (turn) runtime.recordTurn(TAB, turn)
     else if (event.type === 'background-changed') runtime.setBackground(TAB, event.items)
   })
   const bound = () =>

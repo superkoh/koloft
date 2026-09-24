@@ -17,7 +17,7 @@ import { localDayKey } from '@shared/usageFormat'
 import { encodeCwd } from '@shared/cwdKey'
 import { projectInfoFor } from './projectInfo'
 import { inspectTaskProcs, type TaskProcs } from './taskProcs'
-import { SessionRuntime, envMs, type Turn } from './sessionRuntime'
+import { SessionRuntime, envMs, turnOf, type Turn } from './sessionRuntime'
 
 const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects')
 const TMP_ROOT = ((): string => {
@@ -456,9 +456,11 @@ export class SessionTracker extends SessionRuntime {
   }
 
   receive(tabId: string, event: SessionEvent): void {
-    if (event.type === 'prompt') this.recordHookTurn(tabId, 'working')
-    else if (event.type === 'notify') this.recordHookTurn(tabId, event.need)
-    else if (event.type === 'stop') void this.reportTurnEnd(tabId, event.reported)
+    const turn = turnOf(event)
+    if (turn === 'working' || turn === 'approval') this.recordHookTurn(tabId, turn)
+    // CC§8
+    else if (turn)
+      void this.reportTurnEnd(tabId, event.type === 'stop' ? event.reported : undefined)
   }
 
   setStatus(tabId: string, status: SessionStatus): void {

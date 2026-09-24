@@ -21,7 +21,7 @@ import { SessionStore, codexSessionKey, type WorktreeResource } from './sessionS
 import { SessionWorktrees } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
 import { resolveCodexRuntime } from './codexRuntime'
-import type { SessionRuntime, StatusEdge } from './sessionRuntime'
+import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
 
 const exists = (p: string): boolean => {
   try {
@@ -493,13 +493,9 @@ export class CodexSessions {
       const info = run.info
       if (!info) return
       const runtime = this.deps.runtime
+      const turn = turnOf(event)
+      if (turn) return runtime.recordTurn(run.tabId, turn)
       switch (event.type) {
-        case 'prompt':
-          return runtime.recordTurn(run.tabId, 'working')
-        case 'notify':
-          return runtime.recordTurn(run.tabId, event.need)
-        case 'stop':
-          return runtime.recordTurn(run.tabId, 'ended')
         case 'background-changed':
           if (!runtime.setBackground(run.tabId, event.items)) return
           info.background = event.items.length ? event.items : undefined

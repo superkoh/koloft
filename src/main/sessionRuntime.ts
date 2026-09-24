@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events'
 import type { BackgroundItem, SessionStatus } from '@shared/types'
+import type { SessionEvent } from '@shared/sessionEvent'
 
 export function envMs(name: string, dflt: number): number {
   const v = process.env[name]
@@ -12,6 +13,13 @@ const IDLE_MS = envMs('KOLOFT_IDLE_MS', 4 * 60_000)
 const AUTO_CLOSE_MS = envMs('KOLOFT_IDLE_CLOSE_MS', 30 * 60_000)
 
 export type Turn = 'working' | 'approval' | 'input' | 'ended'
+
+export function turnOf(event: SessionEvent): Turn | undefined {
+  if (event.type === 'prompt') return 'working'
+  if (event.type === 'notify') return event.need
+  if (event.type === 'stop') return 'ended'
+  return undefined
+}
 
 export interface StatusSignals {
   turn?: Turn

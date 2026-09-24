@@ -18,6 +18,7 @@ const TRUNCATION_SEEN_BY_500_MS_WATCH_TICK_PLUS_RECONCILE_MS = 1500
 
 let SessionTracker: typeof import('../../src/main/sessionTracker').SessionTracker
 let encodeCwd: typeof import('../../src/main/sessionTracker').encodeCwd
+let sessionEventFromHook: typeof import('../../src/main/sessionTracker').sessionEventFromHook
 let home: string
 let projectsRoot: string
 
@@ -34,7 +35,8 @@ beforeAll(async () => {
   process.env.KOLOFT_IDLE_MS = String(IDLE_MS)
   process.env.KOLOFT_IDLE_CLOSE_MS = String(IDLE_CLOSE_MS)
   projectsRoot = path.join(home, '.claude', 'projects')
-  ;({ SessionTracker, encodeCwd } = await import('../../src/main/sessionTracker'))
+  ;({ SessionTracker, encodeCwd, sessionEventFromHook } =
+    await import('../../src/main/sessionTracker'))
 })
 
 afterAll(() => {
@@ -359,6 +361,24 @@ describe('run-state vs background work: any live background task keeps the sessi
 
     expect(status(tracker, 'tabB1')).toBe('working')
     expect(edges.find((e) => e.next === 'waiting')).toBeUndefined()
+  })
+
+  it("claude's 60-second 'waiting for your input' nudge is a turn-end, so live background work still holds working", async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    const file = await bindCaughtUp(tracker, 'tabB16', cwd, initialLines(cwd))
+    tracker.setStatus('tabB16', 'working')
+    appendJsonl(file, [spawnRec('toolu_bg16', cwd)])
+    await tracker.reportTurnEnd('tabB16')
+    expect(status(tracker, 'tabB16')).toBe('working')
+
+    const edges: Array<{ prev?: SessionStatus; next: SessionStatus }> = []
+    tracker.on('status', (e: { prev?: SessionStatus; next: SessionStatus }) => edges.push(e))
+    tracker.receive('tabB16', sessionEventFromHook('notify', 'Claude is waiting for your input')!)
+    await sleep(200)
+
+    expect(status(tracker, 'tabB16')).toBe('working')
+    expect(edges).toEqual([])
   })
 
   it('a delivered task-notification drains the ledger; the next turn-end waits', async () => {
