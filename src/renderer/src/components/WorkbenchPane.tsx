@@ -1184,7 +1184,10 @@ export function WorkbenchPane({
     setGhMenu(false)
   }, [])
 
+  const resetOwner = useRef(ownerTab)
   useEffect(() => {
+    if (resetOwner.current === ownerTab) return
+    resetOwner.current = ownerTab
     cancelPrompts()
     // PLATFORM§8
     setPageFullscreen(false)
