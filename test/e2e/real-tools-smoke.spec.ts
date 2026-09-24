@@ -221,6 +221,32 @@ test.describe('real third-party tools (playwright-mcp, playwright-cli), unmodifi
     }
   })
 
+  // PLATFORM§17
+  test('the real CLI refuses a file URL until the switch the shim injects is set; with it, the file opens in Koloft', async ({
+    page,
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const url = await drivenSession(page, env)
+    const file = path.join(env.home, 'mine.html')
+    fs.writeFileSync(file, '<title>Mine</title><body>mine</body>')
+    const target = `file://${file}`
+
+    const endpointOnly = { PLAYWRIGHT_MCP_CDP_ENDPOINT: url }
+    const refused = await cli(['open', '--headed', target], env.home, endpointOnly)
+    expect(refused.out).toMatch(/blocked/i)
+    await cli(['close'], env.home, endpointOnly)
+
+    const asTheShimInjects = { ...endpointOnly, PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS: '1' }
+    expect((await cli(['open', '--headed', target], env.home, asTheShimInjects)).code).toBe(0)
+    expect((await cli(['eval', 'document.title'], env.home, asTheShimInjects)).out).toContain(
+      'Mine'
+    )
+    await openBrowser(page)
+    await expect(openTabs(page)).toHaveCount(1, { timeout: 30_000 })
+    await cli(['close'], env.home, asTheShimInjects)
+  })
+
   test('BB-57: a multi-step task through the real CLI — fill a form, read the result, move on and back', async ({
     page,
     env

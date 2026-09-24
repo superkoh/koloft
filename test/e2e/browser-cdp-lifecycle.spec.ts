@@ -16,10 +16,9 @@ import {
   cdpRefusal,
   connectCdp,
   guestByUrl,
-  newWebTab,
   openBrowser,
   openTabs,
-  typeInAddressBar
+  openViaAgent
 } from './helpers/browser'
 import { openSettings } from './helpers/extensions'
 import { startEchoServer } from './helpers/fixtureServer'
@@ -60,9 +59,9 @@ test.describe('CDP client lifecycle: the user always wins, and a connected clien
     const server = await startEchoServer()
     try {
       const url = await session(page, env, 'ws-a')
+      await openViaAgent(page, server.page('/guarded', '<title>Guarded</title><body>g</body>'))
       await openBrowser(page)
-      await newWebTab(page)
-      await typeInAddressBar(page, server.page('/guarded', '<title>Guarded</title><body>g</body>'))
+      await page.locator(BROWSER.tabAgent).click()
       await guestByUrl(app, '/guarded')
       await clickAppMenuItem(app, page, BROWSER_MENU_IDS.devtools)
       await expect

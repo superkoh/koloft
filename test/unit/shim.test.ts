@@ -746,6 +746,7 @@ describe('claude shim (Koloft browser endpoint)', () => {
     const first = runShim([], cdpEnv)
     expect(first.realEnv?.KOLOFT_BROWSER_CDP).toBe(endpointAt(1111))
     expect(first.realEnv?.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBe(endpointAt(1111))
+    expect(first.realEnv?.PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS).toBe('1')
 
     fs.writeFileSync(path.join(cdpDir, 'tab-shim'), endpointAt(2222))
     const afterPortChange = runShim([], cdpEnv)
@@ -756,5 +757,6 @@ describe('claude shim (Koloft browser endpoint)', () => {
     expect(utilityShell.realArgs).toEqual(['--version'])
     expect(utilityShell.realEnv?.KOLOFT_BROWSER_CDP).toBeUndefined()
     expect(utilityShell.realEnv?.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBeUndefined()
+    expect(utilityShell.realEnv?.PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS).toBeUndefined()
   })
 })
