@@ -75,6 +75,7 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities>> = {
       // CODEX§8
       statusline3: { unsupported: 'CODEX§8' }
     },
+    // CODEX§16
     ssh: NOTHING_YET
   }
 }
@@ -85,6 +86,7 @@ export function capabilitiesFor(backend: BackendId, host: HostId): Capabilities 
 
 export const SUPPORTED_PAIRS: Record<BackendId, Record<HostId, boolean>> = {
   claude: { local: true, ssh: true },
+  // CODEX§16
   codex: { local: true, ssh: false }
 }
 

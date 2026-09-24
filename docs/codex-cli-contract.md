@@ -479,3 +479,57 @@ Not tried, because they need a second real login or would open a browser on this
   only on exit 0) — **inferred, not checked**;
 - that two homes with two different logins each use their own login, so moving new
   sessions between homes spreads use across the two accounts — **inferred, not checked**.
+
+## 16. Codex on a remote machine
+
+**Checked on 2026-09-24.** On the Mac: standalone Codex CLI 0.153.4 (`codex-cli 0.153.4`).
+On the machine: an Ubuntu 24.04 x86_64 server reached with `ssh -o BatchMode=yes` (bash,
+tmux, no node, no Codex, no Codex login). For the probe only, the official
+`@openai/codex@0.153.4-linux-x64` npm package was unpacked into a new folder in the
+machine's home (its `codex` and `rg`, not its bundled `bwrap`), run with a new empty
+`CODEX_HOME` beside it, and the folder was deleted afterwards. No login or key was
+copied to the machine.
+
+What was tried is the "Codex runs on the machine, its screen runs on the Mac" shape:
+Koloft's own relay design (section 1) on the Mac, but the relay's app-server was
+`ssh -T <machine> 'cd <folder> && CODEX_HOME=<home> exec <codex> app-server --stdio'`.
+
+- A Node script sent `initialize`, `initialized`, `account/read` and `thread/list` down
+  that ssh line. All answered: `initialize` after about 4.4 seconds (ssh connect plus
+  Codex start) with `platformOs: "linux"` and the machine's `codexHome`; `account/read`
+  gave `{account: null, requiresOpenaiAuth: true}`; `thread/list` gave an empty `data`.
+  Closing stdin ended the remote app-server (exit 0) in about 0.2 seconds, and `ps` on
+  the machine showed nothing left over. The app-server also sent a `configWarning`
+  that bubblewrap was not on the machine's `PATH`.
+- The real TUI ran on the Mac in a Python PTY (120×40) as `codex -c
+  check_for_update_on_startup=false --remote unix://<relay socket> -C <folder on the
+  machine>`. That folder does not exist on the Mac, and the TUI still connected: it sent
+  `config/read` with `cwd: <folder on the machine>` (its trust check) and
+  `account/read`, and showed its sign-in screen. Before that answer came, its start card
+  showed the Mac folder the TUI process was started in. With a folder missing on the Mac
+  and no socket at all, it failed only with "failed to connect to remote app server".
+  Closing the TUI closed the relay's connection and the remote app-server ended.
+- Sign-in from that screen did not work on this machine. "Sign in with Device Code" sent
+  `account/login/start {type: "chatgptDeviceCode"}` to the machine, which answered
+  error `-32603`, "device code request failed with status 403 Forbidden". A plain `curl`
+  to `https://auth.openai.com/` from the machine also got 403, so the machine's network
+  is refused by OpenAI; this says nothing about Codex. "Sign in with ChatGPT" answered
+  an `authUrl` whose `redirect_uri` is `http://localhost:1455/…` — the machine's own
+  localhost, which a browser on the Mac does not reach.
+
+Not tried, and why:
+- **A real model turn over ssh.** The machine has no login and this probe copied none, so
+  no turn, tool call, approval or file edit ran on the machine. That turn frames look the
+  same as section 12's when they cross ssh is **inferred, not checked**.
+- **Signing in on a machine OpenAI does not refuse.** That `codex login --device-auth`
+  (the flag is in `codex login --help` on 0.153.4) signs the machine in from an
+  `ssh -t` terminal is **inferred, not checked**.
+- **"Codex and its screen both on the machine"** (a relay that runs on the machine next
+  to a TUI in tmux) needs a relay and node shipped to the machine; it was not built or
+  run. `codex app-server --help` lists `--listen unix://PATH` and `app-server proxy
+  --sock <SOCKET_PATH>` ("proxy stdio bytes to the running app-server control socket"),
+  so an app-server that outlives one ssh line may not need Koloft's own relay there —
+  **inferred, not checked** (only the help text was read).
+
+So Koloft keeps Codex on a remote machine refused: the part that runs (transport, the
+remote folder, stop) is checked, but no one has yet signed in and run a turn there.
