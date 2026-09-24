@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type JSX } from 'react'
 import type { DiscoveredFolder } from '@shared/types'
 import { basename } from '@shared/preview'
+import { backendAvailable } from '@shared/sessionBackend'
 import { shortenHome } from '../browseModel'
 import { useStore } from '../store'
 import { relTime } from '../sessionRows'
@@ -198,8 +199,8 @@ export function Onboarding({
     setProbe('pending')
     setCodexFound(false)
     void window.api.sessions.backends().then((backends) => {
-      setCodexFound(backends.some((b) => b.id === 'codex' && b.available))
-      setProbe(backends.some((b) => b.id === 'claude' && b.available) ? 'found' : 'missing')
+      setCodexFound(backendAvailable(backends, 'codex'))
+      setProbe(backendAvailable(backends, 'claude') ? 'found' : 'missing')
     })
   }, [])
 

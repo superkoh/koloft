@@ -1,4 +1,4 @@
-import type { BackendId, HostId, SessionMethods, SessionSource } from './types'
+import type { BackendAvailability, BackendId, HostId, SessionMethods, SessionSource } from './types'
 import { hostOf } from './remoteKey'
 
 export const SESSION_BACKENDS: BackendId[] = ['claude', 'codex']
@@ -17,6 +17,10 @@ export function normalizeSessionMethods(raw: unknown): SessionMethods {
 }
 
 export const BACKEND_LABEL: Record<BackendId, string> = { claude: 'Claude', codex: 'Codex' }
+
+export function backendAvailable(list: BackendAvailability[], id: BackendId): boolean {
+  return list.some((b) => b.id === id && b.available)
+}
 
 export function sourceOf(backendId: BackendId, workspacePath: string): SessionSource {
   return { backendId, host: hostOf(workspacePath) }

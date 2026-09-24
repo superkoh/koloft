@@ -82,17 +82,16 @@ export function runSsh(
   remoteCmd: string,
   opts: { controlDir: string; timeoutMs?: number }
 ): Promise<RunResult> {
-  return run(
-    'ssh',
-    ['-n', ...sshOptions(opts.controlDir, true), host, remoteCmd],
-    opts.timeoutMs ?? 10_000
-  )
+  return runSshBytes(host, remoteCmd, { ...opts, maxBuffer: 32 * 1024 * 1024 }).then((r) => ({
+    ...r,
+    stdout: r.stdout.toString('utf8')
+  }))
 }
 
 export function runSshBytes(
   host: string,
   remoteCmd: string,
-  opts: { controlDir: string; timeoutMs?: number; input?: Buffer }
+  opts: { controlDir: string; timeoutMs?: number; input?: Buffer; maxBuffer?: number }
 ): Promise<BytesResult> {
   const args = [
     ...(opts.input ? [] : ['-n']),
@@ -102,7 +101,7 @@ export function runSshBytes(
   ]
   return runBytes('ssh', args, {
     timeoutMs: opts.timeoutMs ?? 10_000,
-    maxBuffer: 64 * 1024 * 1024,
+    maxBuffer: opts.maxBuffer ?? 64 * 1024 * 1024,
     input: opts.input
   })
 }

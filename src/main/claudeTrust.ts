@@ -2,6 +2,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { realpathSafe } from './projectInfo'
+import { writePrivateAtomically } from './privateFile'
 
 export function claudeJsonPath(): string {
   return path.join(os.homedir(), '.claude.json')
@@ -39,7 +40,5 @@ export function acceptClaudeTrust(claudeJson: string, dir: string): void {
   if (isTrustedByClaude(() => doc, key)) return
   const projects = (doc.projects ??= {})
   projects[key] = { ...projects[key], hasTrustDialogAccepted: true }
-  const tmp = `${claudeJson}.koloft-${process.pid}`
-  fs.writeFileSync(tmp, JSON.stringify(doc, null, 2), { mode: 0o600 })
-  fs.renameSync(tmp, claudeJson)
+  writePrivateAtomically(claudeJson, JSON.stringify(doc, null, 2))
 }

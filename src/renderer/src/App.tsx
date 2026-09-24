@@ -1,6 +1,7 @@
 import { NewSessionDialog } from './components/NewSessionDialog'
 import { SessionBackendIcon } from './components/SessionBackendIcon'
 import {
+  backendAvailable,
   BACKEND_LABEL,
   effectiveBackend,
   SESSION_BACKENDS,
@@ -302,11 +303,13 @@ export default function App(): JSX.Element {
   const [probed, setProbed] = useState<Record<SessionBackend, boolean> | null>(null)
   useEffect(() => {
     let alive = true
-    const found = (list: { id: SessionBackend; available: boolean }[], id: SessionBackend) =>
-      list.some((b) => b.id === id && b.available)
     void window.api.sessions.backends().then(
       (list) => {
-        if (alive) setProbed({ claude: found(list, 'claude'), codex: found(list, 'codex') })
+        if (alive)
+          setProbed({
+            claude: backendAvailable(list, 'claude'),
+            codex: backendAvailable(list, 'codex')
+          })
       },
       () => {
         if (alive) setProbed({ claude: false, codex: false })
@@ -981,8 +984,7 @@ export default function App(): JSX.Element {
     return subscribeDirtyTabs((ids) => window.api.workbench.setDirtyTabs(ids))
   }, [])
 
-  const welcomeRoot =
-    welcomeWs && !welcomeWs.workspace.remote ? welcomeWs.workspace.path : undefined
+  const welcomeRoot = welcomeWs?.workspace.path
   const welcomeRefusal = (backend?: SessionBackend): string | undefined =>
     welcomeWs && backend
       ? unsupportedPairMessage(backend, hostOf(welcomeWs.workspace.path))

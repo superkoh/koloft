@@ -342,3 +342,10 @@ describe('forecastFor', () => {
     expect(f?.title).toBe('Soonest · today 14:00\nLate · today 21:00\nScheduled jobs…')
   })
 })
+
+describe('a new job', () => {
+  it('starts a Codex job on "Never ask", the way scheduled Codex runs have always run, and a Claude job on "Same as my other sessions"', () => {
+    expect(emptyFields('codex').permission).toBe('skipAll')
+    expect(emptyFields('claude').permission).toBe('same')
+  })
+})

@@ -780,16 +780,16 @@ describe('CronRunner — BB-N02: the runner never writes into a session', () => 
 
 describe('CronRunner — a Codex job', () => {
   // CODEX§14
-  it("launches on Codex with approvals off whatever permission it saved, checks Codex's own trust, and names Codex when it does not start", async () => {
+  it("launches on Codex with the permission it saved, checks Codex's own trust, and names Codex when it does not start", async () => {
     const trusted = vi.fn(() => false)
     const accountUsable = vi.fn(() => true)
-    const h = makeHarness([makeJob({ backend: 'codex', permission: 'same' })], {
+    const h = makeHarness([makeJob({ backend: 'codex', permission: 'acceptEdits' })], {
       bindDeadlineMs: 5 * SEC,
       trusted,
       accountUsable
     })
     await h.runner.runNow('j1')
-    expect(h.launches[0]).toMatchObject({ backend: 'codex', permission: 'bypass' })
+    expect(h.launches[0]).toMatchObject({ backend: 'codex', permission: 'acceptEdits' })
     expect(accountUsable).toHaveBeenCalledWith('codex')
     await h.fireTimers(T0 + 5 * SEC)
     expect(trusted).toHaveBeenCalledWith('/ws/a', 'codex')

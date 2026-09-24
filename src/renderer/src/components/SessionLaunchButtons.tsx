@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { BACKEND_LABEL, SESSION_BACKENDS, SUPPORTED_PAIRS } from '@shared/sessionBackend'
+import {
+  backendAvailable,
+  BACKEND_LABEL,
+  SESSION_BACKENDS,
+  unsupportedPairMessage
+} from '@shared/sessionBackend'
 import type { BackendId, HostId } from '@shared/types'
 import { launchErrorMessage } from '../agentUi'
 import { useStore } from '../store'
@@ -42,17 +47,15 @@ export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: (
     }
   }, [retry])
   const found = (backend: BackendId) => detected?.find((b) => b.id === backend)
-  const usable = (backend: BackendId, on = host): boolean => {
-    if (!methods.enabled[backend]) return false
-    if (!SUPPORTED_PAIRS[backend][on]) return false
-    if (backend === 'claude') return found(backend)?.available !== false
-    return !!found(backend)?.available
-  }
+  const usable = (backend: BackendId, on = host): boolean =>
+    methods.enabled[backend] &&
+    !unsupportedPairMessage(backend, on) &&
+    (!detected || backendAvailable(detected, backend))
   const issue = (backend: BackendId, on = host): string => {
     if (!methods.enabled[backend]) return 'Disabled in Settings ▸ Sessions'
-    if (on === 'ssh') return SUPPORTED_PAIRS[backend][on] ? '' : 'Local only'
+    const refusal = unsupportedPairMessage(backend, on)
+    if (refusal || on === 'ssh') return refusal ?? ''
     const result = found(backend)
-    if (backend === 'claude') return result?.available === false ? 'Not installed' : ''
     return !detected || result?.available ? '' : result?.reason || 'Not installed'
   }
   const launch = async (opts: SessionLaunchOptions, backend: BackendId): Promise<void> => {
@@ -71,6 +74,7 @@ export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: (
     }
   }
   return {
+    host,
     methods,
     usable: SESSION_BACKENDS.filter((b) => b === 'claude' || usable(b)),
     issue,
@@ -142,7 +146,8 @@ export function SessionLaunchStatus({ launch }: { launch: ReturnType<typeof useS
           {issues.map(({ backend, reason }, index) => (
             <span key={backend} title={reason}>
               {index > 0 && ' · '}
-              {BACKEND_LABEL[backend]}: {reason === 'Local only' ? reason : 'Unavailable'}
+              {BACKEND_LABEL[backend]}:{' '}
+              {unsupportedPairMessage(backend, launch.host) ? 'Local only' : 'Unavailable'}
             </span>
           ))}
         </p>

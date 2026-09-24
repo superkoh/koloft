@@ -29,6 +29,11 @@ export interface JobFields {
   permission: CronPermission
 }
 
+const NEW_JOB_PERMISSION: Record<BackendId, CronPermission> = {
+  claude: 'same',
+  codex: 'skipAll'
+}
+
 export function emptyFields(backend: BackendId = 'claude'): JobFields {
   return {
     backend,
@@ -42,7 +47,7 @@ export function emptyFields(backend: BackendId = 'claude'): JobFields {
     model: '',
     modelOther: '',
     effort: '',
-    permission: 'same'
+    permission: NEW_JOB_PERMISSION[backend]
   }
 }
 

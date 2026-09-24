@@ -558,6 +558,7 @@ export class WorkspaceManager {
     const workspaceSlugs: string[] = []
     const wantedBucketDirs = new Set<string>()
 
+    const owned = new Set([...this.ownedClaudeIds(), ...(this.deps.additionalMembers?.() ?? [])])
     for (const ws of this.layout.workspaces) {
       const { key, root, scanPath, missing } = this.scope(ws.path)
       workspaceSlugs.push(encodeCwd(scanPath))
@@ -615,7 +616,6 @@ export class WorkspaceManager {
       }
       allRowsByWs.set(ws.path, allRows)
       for (const r of allRows) wsBySession.set(r.id, ws.path)
-      const owned = new Set([...this.ownedClaudeIds(), ...(this.deps.additionalMembers?.() ?? [])])
       const rows = filterOwned(allRows, owned, wsRunningIds)
       for (const b of buckets) {
         bucketDirs.push(b.dir)

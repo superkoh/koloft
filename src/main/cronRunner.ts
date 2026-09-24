@@ -347,7 +347,7 @@ export class CronRunner {
         worktree,
         model: job.model,
         effort: job.effort,
-        permission: backend === 'codex' ? 'bypass' : LAUNCH_PERMISSION[job.permission],
+        permission: LAUNCH_PERMISSION[job.permission],
         firstPrompt: job.task,
         name: job.name
       })
