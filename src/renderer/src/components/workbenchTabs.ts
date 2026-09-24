@@ -271,6 +271,8 @@ export function setTabScrollTop(
   id: string,
   scrollTop: number
 ): WorkbenchTabSet {
+  const tab = set.tabs.find((t) => t.id === id)
+  if (!tab || tab.scrollTop === scrollTop) return set
   return { ...set, tabs: set.tabs.map((t) => (t.id === id ? { ...t, scrollTop } : t)) }
 }
 
