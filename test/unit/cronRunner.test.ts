@@ -1109,6 +1109,21 @@ describe('CronRunner — the state it hands the dialog', () => {
     expect(h.states.at(-1)?.folders).toEqual({ j1: 2 })
   })
 
+  it('keeps the last run-folder count while a slow host counts again, then sends the new count', async () => {
+    const hostAnswers = (): Promise<void> => new Promise((r) => setImmediate(r))
+    let onDisk = 3
+    const h = makeHarness([makeJob()], {
+      gitDirExists: async () => true,
+      countRunFolders: async () => onDisk
+    })
+    await hostAnswers()
+    expect(h.runner.state().folders).toEqual({ j1: 3 })
+    onDisk = 4
+    expect(h.runner.state().folders).toEqual({ j1: 3 })
+    await hostAnswers()
+    expect(h.states.at(-1)?.folders).toEqual({ j1: 4 })
+  })
+
   it('carries the loader’s complaint through to the dialog until the job is saved again', () => {
     const h = makeHarness([makeJob()], {}, { j1: 'The saved model was not valid and was ignored.' })
     expect(h.runner.state().notes).toEqual({

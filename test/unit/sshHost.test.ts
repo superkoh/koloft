@@ -28,9 +28,9 @@ function runOnMachine(cmd: string, opts?: { input?: Buffer }): Promise<BytesResu
   })
 }
 
-const machine = (): SshHost =>
+const machine = (run = runOnMachine): SshHost =>
   new SshHost(MACHINE, {
-    run: runOnMachine,
+    run,
     shell: () => ({ spawnCwd: '/' }),
     github: {},
     claude: {
@@ -157,6 +157,15 @@ describe("Claude's folder trust on the machine", () => {
       projects: { [repo]: { hasTrustDialogAccepted: true } }
     })
     expect(await machine().trustsFolder(keyed(path.join(repo, 'sub')))).toBe(true)
+  })
+
+  it('does not call a folder untrusted when the machine cannot be reached', async () => {
+    const unreachable = async (): Promise<BytesResult> => ({
+      code: 255,
+      stdout: Buffer.alloc(0),
+      stderr: 'ssh: connect to host devbox port 22: Operation timed out'
+    })
+    expect(await machine(unreachable).trustsFolder(keyed(repo))).toBe(true)
   })
 })
 

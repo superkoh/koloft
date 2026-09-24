@@ -553,7 +553,7 @@ export class SshHost implements Host {
 
   // CC§9
   async trustsFolder(dir: string): Promise<boolean> {
-    return (await this.sh(WITH_NODE_IN_REAL_DIR, [this.bare(dir), TRUSTED_JS])).code === 0
+    return (await this.sh(WITH_NODE_IN_REAL_DIR, [this.bare(dir), TRUSTED_JS])).code !== NOT_TRUSTED
   }
 
   async launch(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {

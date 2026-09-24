@@ -203,6 +203,7 @@ export class CronRunner {
   private jobs: CronJob[]
   private notes: Record<string, string>
   private folders: Record<string, number> = {}
+  private foldersRound = 0
   private live = new Map<string, LiveRun>()
   private launching = new Set<string>()
   private held = new Map<string, Due[]>()
@@ -625,19 +626,26 @@ export class CronRunner {
   }
 
   private refreshFolders(): void {
+    const round = ++this.foldersRound
     const next: Record<string, number> = {}
-    this.folders = next
+    let pending = this.jobs.length
     let counting = true
+    const settled = (): void => {
+      if (--pending > 0 || round !== this.foldersRound) return
+      this.folders = next
+      if (!counting) this.push()
+    }
     for (const j of this.jobs) {
       whenSettled(this.d.gitDirExists(j.workspacePath), (git) => {
-        if (!git) return
+        if (!git) return settled()
         whenSettled(this.d.countRunFolders(j.workspacePath, slugOf(j.name)), (count) => {
           next[j.id] = count
-          if (!counting && this.folders === next) this.push()
+          settled()
         })
       })
     }
     counting = false
+    if (this.jobs.length === 0) this.folders = next
   }
 
   private buildState(): CronState {
