@@ -428,7 +428,9 @@ say hi"`, in a fresh Git repository, for 15 seconds, pressing no key.
   and is not a directory: /tmp" (on macOS `/tmp` is a link to `/private/tmp`); a folder
   under `/private/tmp` worked.
 
-Only `high` was tried; that `low`, `medium`, `xhigh` and `max` reach the wire the same
+The same run with the last argument `/daily-report KOLOFT_FIRST_PROMPT_PROBE` (a slash
+word that is not a Codex command) also sent that text as the first turn, so a skill
+name typed as a scheduled task reaches the model as plain text. Only `high` was tried; that `low`, `medium`, `xhigh` and `max` reach the wire the same
 way is **inferred, not checked** (`~/.codex/models_cache.json` lists them, plus
 `ultra`, as `supported_reasoning_levels` for `gpt-6-astra`). Codex has no flag that
 names the session, so a scheduled Codex run gets its title from Codex itself.
@@ -469,6 +471,7 @@ and left `config.toml` a link. So linked homes share settings and folder trust.
 
 Not tried, because they need a second real login or would open a browser on this Mac:
 - that `codex login` with `CODEX_HOME` set signs in only that home and exits 0 once
-  done (Koloft closes the sign-in terminal on exit 0) — **inferred, not checked**;
+  done (Koloft types `codex login && exit` into the sign-in terminal, so the tab closes
+  only on exit 0) — **inferred, not checked**;
 - that two homes with two different logins each use their own login, so moving new
   sessions between homes spreads use across the two accounts — **inferred, not checked**.
