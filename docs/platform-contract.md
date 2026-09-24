@@ -454,6 +454,18 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   `lib/tools/cli-client/registry.js` and `session.js`). Each Koloft tab therefore
   exports its own `PLAYWRIGHT_CLI_SESSION`. A browser the cli starts itself is headless
   unless `--headed` (read in `resolveCLIConfigForCLI`); playwright-mcp's default is headed.
+- **playwright-mcp and playwright-cli drive the first page they are shown.** On attach
+  the shared MCP context walks `browserContext.pages()` in the order the targets were
+  announced and makes the first one its current tab; `goto` / `browser_navigate` go to
+  that tab, and a new page is created only when there is none (read in the
+  `coreBundle.js` of playwright-cli 0.1.18, playwright-core 1.63.0-alpha-2026-08-05,
+  2026-09-24). So every tab the relay lists is a tab the agent may navigate away.
+- **The same context refuses `file:` URLs** ("Access to "file:" protocol is blocked")
+  unless `allowUnrestrictedFileAccess` is set, which the CLI and MCP read from
+  `PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS` (measured 2026-09-24 with
+  playwright-cli 0.1.18 against Koloft's relay, `test/e2e/real-tools-smoke.spec.ts`:
+  `open file://…` fails with that message on the endpoint alone and succeeds with the
+  variable set to `1`).
 
 ## §18 Playwright and Electron in the e2e suite
 
