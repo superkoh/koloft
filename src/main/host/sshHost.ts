@@ -265,13 +265,15 @@ export class SshHost implements Host {
   }
 
   async listDir(dir: string, opts?: { showIgnored?: boolean }): Promise<DirEntry[]> {
-    const r = await this.sh(LIST_DIR, [this.bare(dir)])
+    const bareDir = this.bare(dir)
+    const r = await this.sh(LIST_DIR, [bareDir])
     if (r.code !== 0) return []
-    const { entries, ignored } = parseListDir(r.stdout.toString('utf8'), this.bare(dir))
-    return visibleEntries(entries, ignored, !!opts?.showIgnored).map((e) => ({
-      ...e,
-      path: this.keyed(e.path)
-    }))
+    const { entries, ignored } = parseListDir(r.stdout.toString('utf8'), bareDir)
+    return this.keyedPaths(visibleEntries(entries, ignored, !!opts?.showIgnored))
+  }
+
+  private keyedPaths<T extends { path: string }>(items: T[]): T[] {
+    return items.map((item) => ({ ...item, path: this.keyed(item.path) }))
   }
 
   async dirExists(dir: string): Promise<boolean> {
@@ -288,7 +290,7 @@ export class SshHost implements Host {
     })
     const found = r.code === 0 ? parseSearchFiles(r.stdout.toString('utf8')) : []
     const ranked = rankFiles(found, bareRoot, q, showIgnored)
-    return { ...ranked, hits: ranked.hits.map((h) => ({ ...h, path: this.keyed(h.path) })) }
+    return { ...ranked, hits: this.keyedPaths(ranked.hits) }
   }
 
   async searchContent(root: string, query: string, opts?: { showIgnored?: boolean }) {
@@ -302,7 +304,7 @@ export class SshHost implements Host {
       r = await this.sh(GIT_GREP, [bareRoot, ...gitGrepArgs(q, showIgnored)], { timeoutMs })
     const lines = r.code === 0 ? r.stdout.toString('utf8').split('\n') : []
     const found = contentHitsOf(lines, bareRoot, showIgnored)
-    return { ...found, hits: found.hits.map((h) => ({ ...h, path: this.keyed(h.path) })) }
+    return { ...found, hits: this.keyedPaths(found.hits) }
   }
 
   diffBase(root: string): Promise<string | null> {
