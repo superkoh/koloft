@@ -1776,15 +1776,21 @@ function setupGuestBackgroundOpen(): void {
 function setupGuestFullscreen(): void {
   app.on('web-contents-created', (_e, contents) => {
     if (contents.getType() !== 'webview') return
+    let pageFullscreen = false
+    // PLATFORM§7
+    contents.on('input-event', (_event, input) => {
+      if (!pageFullscreen || input.type !== 'rawKeyDown') return
+      if ((input as { key?: string }).key !== 'Escape') return
+      contents.executeJavaScript('document.exitFullscreen?.()').catch(() => {})
+    })
     contents.on('enter-html-full-screen', () => {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
-      // PLATFORM§8
-      const win = mainWindow
-      if (win && !win.isDestroyed() && win.isFullScreen()) win.setFullScreen(false)
+      pageFullscreen = true
       sendToRenderer('browser:fullscreen', true)
     })
     contents.on('leave-html-full-screen', () => {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
+      pageFullscreen = false
       sendToRenderer('browser:fullscreen', false)
     })
   })
@@ -1954,6 +1960,16 @@ const downloadSources = new Map<string, string>()
 
 const retryTargets = new Map<string, string>()
 
+// PLATFORM§8
+function allowPageFullscreenWithoutTheWindow(callback: (granted: boolean) => void): void {
+  const win = mainWindow
+  win?.setFullScreenable(false)
+  callback(true)
+  setImmediate(() => {
+    if (win && !win.isDestroyed()) win.setFullScreenable(true)
+  })
+}
+
 function setupBrowserPartition(): void {
   const ses = session.fromPartition(BROWSER_PARTITION)
   // PLATFORM§11
@@ -1964,7 +1980,8 @@ function setupBrowserPartition(): void {
       return
     }
     if (decision.kind === 'allow') {
-      callback(true)
+      if (permission === 'fullscreen') allowPageFullscreenWithoutTheWindow(callback)
+      else callback(true)
       return
     }
     if (decision.kind === 'refuse') {
