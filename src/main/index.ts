@@ -305,6 +305,10 @@ let uiActiveTabId: string | null = null
 let activeTabBeforeReload: string | null = null
 const sessionEndSeenAt = new Map<string, number>()
 const SESSION_END_SEEN_TTL_MS = 30_000
+function endReportedRecently(tabId: string): boolean {
+  const at = sessionEndSeenAt.get(tabId)
+  return at !== undefined && Date.now() - at <= SESSION_END_SEEN_TTL_MS
+}
 function sessionTitleOf(tabId: string): string | undefined {
   return allSessions().find((s) => s.tabId === tabId)?.title
 }
@@ -1164,8 +1168,7 @@ app.whenReady().then(() => {
           const strikes = (goneStrikes.get(tabId) ?? 0) + 1
           if (strikes >= MISSED_SWEEPS_BEFORE_UNTRACK) {
             goneStrikes.delete(tabId)
-            const endSeenAt = sessionEndSeenAt.get(tabId)
-            if (endSeenAt === undefined || Date.now() - endSeenAt > SESSION_END_SEEN_TTL_MS) {
+            if (!endReportedRecently(tabId)) {
               attention.onExited(tabId, attentionCtx(), sessionTitleOf(tabId))
             }
             sessionEndSeenAt.delete(tabId)
@@ -2378,9 +2381,7 @@ function noticeRemoteExits(host: string, sessionIds: string[]): void {
       const still = tracker
         .list()
         .some((t) => t.tabId === tabId && t.alive && t.sessionId === sessionId)
-      if (!still || !remoteSessionGone(host, sessionId)) return
-      const endSeenAt = sessionEndSeenAt.get(tabId)
-      if (endSeenAt !== undefined && Date.now() - endSeenAt <= SESSION_END_SEEN_TTL_MS) return
+      if (!still || !remoteSessionGone(host, sessionId) || endReportedRecently(tabId)) return
       attention.onExited(tabId, attentionCtx(), sessionTitleOf(tabId))
       untrackSession(tabId)
     }, REMOTE_EXIT_WAIT_MS).unref()

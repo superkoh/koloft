@@ -872,8 +872,12 @@ command by hand:
   fallback, and there is no file watcher to lean on.
 - **A PATH prefix set before `bash -l -i` survives the login files** on that Ubuntu box
   (`/etc/profile` there does not set PATH). Debian's `/etc/profile` does set PATH, so
-  there it may be lost — inferred, not checked.
+  there it may be lost — inferred, not checked. On a macOS machine, `path_helper` in
+  the login files may put a real `claude` in `/usr/local/bin` ahead of that prefix —
+  inferred, not checked.
 - Older coreutils may not know the `%.9Y` precision — inferred, not checked.
+- Wrapping each command in `sh -c '…'` keeps it safe when the user's shell is fish —
+  inferred, not checked (neither box has fish).
 - **The remote Workbench's shell commands all ran on that box** (dash as `sh`, no
   ripgrep): listing a folder with `git check-ignore -z --stdin`, finding files with
   `git ls-files -z`, searching text with the `git grep` fallback, the Changes diffs, and
