@@ -415,6 +415,9 @@ export class CodexSessions {
               if (cursor) cursors.add(cursor)
             } while (cursor)
           }
+        } catch (error) {
+          if (!home) throw error
+          this.keepLastListing(home, seen, homes, archivedIds)
         } finally {
           await rpc.close()
         }
@@ -427,6 +430,21 @@ export class CodexSessions {
     } catch (error) {
       if (binaryGone(error)) this.forgetProbe()
       this.historyError = error instanceof Error ? error : new Error(String(error))
+    }
+  }
+
+  private keepLastListing(
+    home: string,
+    seen: Map<string, CodexThread>,
+    homes: Map<string, string>,
+    archivedIds: Set<string>
+  ): void {
+    for (const [key, owner] of this.threadHomes) {
+      const thread = this.history.get(key)
+      if (owner !== home || !thread) continue
+      seen.set(key, thread)
+      homes.set(key, home)
+      if (this.archivedIds.has(key)) archivedIds.add(key)
     }
   }
 

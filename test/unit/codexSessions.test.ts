@@ -274,6 +274,23 @@ describe('CodexSessions', () => {
     expect(deps.pickHome).not.toHaveBeenCalled()
   })
 
+  it('an account home that fails to list keeps its last threads and hides no other home', async () => {
+    vi.mocked(deps.homes).mockReturnValue(['/homes/work'])
+    let broken = false
+    mocks.request.mockImplementation(async (_method, params) => {
+      const home = mocks.rpcHomes.at(-1)
+      if (home === '/homes/work' && broken) throw new Error('state database locked')
+      if (params.archived) return { data: [] }
+      return { data: [home === '/homes/work' ? { id: B, cwd: repo } : { id: A, cwd: repo }] }
+    })
+    await sessions.refreshHistory()
+    broken = true
+    const rows = await sessions.historyRows(repo)
+    expect(rows.map((row) => row.id).sort()).toEqual(
+      [codexSessionKey(A), codexSessionKey(B)].sort()
+    )
+  })
+
   it('waits for an in-flight stop before restarting and prevents duplicate resume', async () => {
     const launched = await sessions.launch({ kind: 'codex', cwd: repo })
     bind()
