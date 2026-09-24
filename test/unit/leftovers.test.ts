@@ -20,15 +20,22 @@ const PROCS: { pid: number; ppid: number; command: string; env: string }[] = [
   }
 ]
 
+const LINE_BREAKING_ENV = 'LESS_TERMCAP_mb=\u001b[1;31m\nPS2=> \n  1234 not-a-pid'
+
 const asked: string[][] = []
 const exec = async (_cmd: string, args: string[]): Promise<string> => {
   asked.push(args)
   if (args[0] === '-Ao') return PROCS.map((p) => ` ${p.pid} ${p.ppid} ${p.command}`).join('\n')
   const pids = args[args.length - 1].split(',').map(Number)
   const withPpid = args[2] === 'ppid=,command='
-  return PROCS.filter((p) => pids.includes(p.pid))
-    .map((p) => ` ${withPpid ? p.ppid : p.pid} ${p.command} HOME=/Users/me ${p.env}`)
-    .join('\n')
+  return (
+    PROCS.filter((p) => pids.includes(p.pid))
+      .map(
+        (p) =>
+          ` ${withPpid ? p.ppid : p.pid} ${p.command} HOME=/Users/me ${LINE_BREAKING_ENV} ${p.env}`
+      )
+      .join('\n') + '\n'
+  )
 }
 
 describe('programs a session left running on their own', () => {

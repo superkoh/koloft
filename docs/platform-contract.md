@@ -62,7 +62,10 @@ about how it was found.
   its arguments.** A process whose parent has exited is re-parented to launchd (ppid
   1). Measured 2026-09-23 on macOS 27: 1041 processes, 1.6 MB of output, 88 ms. The
   env words cannot be told apart from the arguments, so a clean command line needs a
-  second, plain `ps -Ao pid=,command=`.
+  second, plain `ps -Ao pid=,command=`. **Apple's own binaries show no environment**:
+  `/bin/zsh`, `/bin/sleep` and Xcode's `python3` printed 0 env words for the same user,
+  while `claude`, `qemu` and `adb` printed theirs (2026-09-23). So an env-based lookup
+  never sees a leftover that is an Apple binary.
 - **macOS has no `timeout(1)`**, and `/usr/bin/security` waits on a GUI unlock or
   authorization dialog with no timeout of its own. A time limit in a shell script has to
   be a `kill -0` polling loop.
