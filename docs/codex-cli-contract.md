@@ -355,6 +355,12 @@ non-null `move_path`, and the `failed` / `declined` patch statuses. How they arr
 `on-request` approval, were not tried (a URL would have opened a browser on this Mac):
 that they reach the wire the same way is **inferred, not checked**.
 
+Only one live turn was watched; `thread/resume` was not tried. Koloft takes a file list
+and an `open` only from live `item/completed` frames and starts the list empty on every
+bind. That `thread/resume` does not send the old turns' `item/completed` frames again (the
+schema puts them in the reply's `thread.turns[].items` instead) is **inferred, not
+checked**; if it did, a resumed session would open its old files again.
+
 The same day, without a model, `codex sandbox -c 'sandbox_mode="workspace-write"'
 /usr/bin/open nosuchscheme98765://x` (a scheme no app claims, so nothing could open)
 failed with Launch Services error `-10661` (`kLSExecutableIncorrectFormat`), while the same

@@ -2,6 +2,7 @@ import type { BackgroundItem } from '@shared/types'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from './sessionRuntime'
 import path from 'path'
+import { schemeOf } from '@shared/browserRoute'
 import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
 
 export function record(value: unknown): Record<string, unknown> {
@@ -72,14 +73,13 @@ function patchDelta(kind: unknown, diff: string): { added: number; removed: numb
 }
 
 const OPEN_ONE_TARGET = /^open\s+(?:'([^']+)'|"([^"]+)"|([^\s'"-]\S*))$/
-const HAS_SCHEME = /^[a-z][a-z0-9+.-]*:/i
 const OPEN_RAN = ['completed', 'failed']
 
 function openTarget(command: string, cwd: unknown): string | null {
   const m = OPEN_ONE_TARGET.exec(command.trim())
   const arg = m && (m[1] ?? m[2] ?? m[3])
   if (!arg) return null
-  if (HAS_SCHEME.test(arg)) return arg
+  if (schemeOf(arg)) return arg
   return typeof cwd === 'string' && path.isAbsolute(cwd) ? path.resolve(cwd, arg) : null
 }
 
