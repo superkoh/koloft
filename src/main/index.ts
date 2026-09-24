@@ -255,7 +255,16 @@ let flushHeldData: () => void = () => {}
 const tracker = new SessionTracker()
 let codexSessions: CodexSessions | null = null
 let codexStartupError: string | undefined
-const sessionBackends = new SessionBackends()
+const sessionBackends = new SessionBackends({
+  prompted: consumeOutletDedupe,
+  bound: (tabId, key) => cronRunner?.onBound(tabId, key),
+  exited: (tabId, title) => attention.onExited(tabId, attentionCtx(), title),
+  clearAttention: (tabId) => attention.clear(tabId),
+  open: (tabId, target) => {
+    if (path.isAbsolute(target) && !fs.existsSync(target)) return
+    openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target)
+  }
+})
 function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
@@ -1202,17 +1211,9 @@ app.whenReady().then(() => {
         sendToRenderer('sessions:update', allSessions())
         workspaceMgr?.onRemoteChanged()
       },
-      attention: (tabId, kind) => {
-        if (kind === 'clear') attention.clear(tabId)
-        else attention.onExited(tabId, attentionCtx(), sessionTitleOf(tabId))
-      },
+      events: (tabId, event) => sessionBackends.observe(tabId, event),
       error: (message) => sendToRenderer('cron:toast', message),
       trustFolder: trustCodexFolder,
-      agentOpen: (tabId, target) => {
-        if (path.isAbsolute(target) && !fs.existsSync(target)) return
-        openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target)
-      },
-      bound: (tabId, key) => cronRunner?.onBound(tabId, key),
       pickHome: pickCodexHome,
       homes: () => codexHomes(userData)
     })
@@ -2275,12 +2276,7 @@ const claudeBackend = new ClaudeBackend({
   setupLine,
   ptysChanged: () => writeRelayEnv(ptyTabIds()),
   resumeProbes,
-  attention: {
-    exited: (tabId, title) => attention.onExited(tabId, attentionCtx(), title),
-    clear: (tabId) => attention.clear(tabId)
-  },
-  promptSeen: consumeOutletDedupe,
-  bound: (tabId, sessionId) => cronRunner?.onBound(tabId, sessionId)
+  events: (tabId, event) => sessionBackends.observe(tabId, event)
 })
 sessionBackends.register(claudeBackend)
 

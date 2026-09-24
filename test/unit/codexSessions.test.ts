@@ -102,11 +102,9 @@ beforeEach(() => {
     runtime: new SessionRuntime(),
     projectInfo: (p) => ({ root: p.startsWith(repo) ? repo : other, treeRoot: p }),
     changed: vi.fn(),
-    attention: vi.fn(),
+    events: vi.fn((tabId, event) => sessions.observe(tabId, event)),
     error: vi.fn(),
     trustFolder: vi.fn(),
-    agentOpen: vi.fn(),
-    bound: vi.fn(),
     pickHome: vi.fn(() => undefined),
     homes: vi.fn(() => [])
   }
@@ -397,15 +395,21 @@ describe('CodexSessions', () => {
         }
       }
     })
-    expect(deps.agentOpen).toHaveBeenCalledWith(launched.id, path.join(repo, 'report.html'))
+    expect(deps.events).toHaveBeenCalledWith(launched.id, {
+      type: 'open',
+      target: path.join(repo, 'report.html')
+    })
   })
 
   it('reports an unexpected exit after confirmed stop without immediately clearing the alert', async () => {
     const launched = await sessions.launch({ kind: 'codex', cwd: repo })
     bind()
-    vi.mocked(deps.attention).mockClear()
+    vi.mocked(deps.events).mockClear()
     await sessions.stop(launched.id, 1)
-    expect(deps.attention).toHaveBeenLastCalledWith(launched.id, 'exited')
+    expect(deps.events).toHaveBeenCalledWith(
+      launched.id,
+      expect.objectContaining({ type: 'exited', clean: false })
+    )
     expect(sessions.members().has(codexSessionKey(A))).toBe(true)
   })
 
@@ -496,9 +500,10 @@ describe('CodexSessions', () => {
       'model_reasoning_effort="high"',
       '/daily-report now'
     ])
-    expect(deps.bound).not.toHaveBeenCalled()
+    const bound = { type: 'bound', key: codexSessionKey(A) }
+    expect(deps.events).not.toHaveBeenCalledWith(id, bound)
     bind()
-    expect(deps.bound).toHaveBeenCalledWith(id, codexSessionKey(A))
+    expect(deps.events).toHaveBeenCalledWith(id, bound)
   })
 
   it('cancels launches waiting on availability when shutdown starts and performs no refresh', async () => {

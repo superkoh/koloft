@@ -59,16 +59,13 @@ export interface ClaudeBackendDeps {
   setupLine(): string | undefined
   ptysChanged(): void
   resumeProbes: ResumeProbes
-  attention: { exited(tabId: string, title?: string): void; clear(tabId: string): void }
-  promptSeen(tabId: string): void
-  bound(tabId: string, sessionId: string): void
+  events(tabId: string, event: SessionEvent): void
 }
 
 const GIT_REF_RE = /^[A-Za-z0-9._][A-Za-z0-9._/-]{0,120}$/
 
 // PLATFORM§28
 const STATUS_LOG_POLL_MS = 2000
-const SESSION_END_SEEN_TTL_MS = 30_000
 // CC§1
 const SESSION_END_SETTLE_MS = 800
 // CC§1
@@ -102,7 +99,6 @@ export class ClaudeBackend implements SessionBackend {
   private hookRegDir = ''
   private statusLogCursors = new Map<string, { offset: number; tail: Buffer }>()
   private statusLogDraining = new Map<string, boolean>()
-  private sessionEndSeenAt = new Map<string, number>()
   private processedRegIds = new Set<string>()
   private watchedHookMirrors = new Map<string, () => void>()
 
@@ -175,7 +171,6 @@ export class ClaudeBackend implements SessionBackend {
       if (!how.detach) this.endRemoteTmux(remote.host, remote.tmuxName)
       fs.rmSync(tabPackageDir(this.d.userData(), tabId), { recursive: true, force: true })
     }
-    this.sessionEndSeenAt.delete(tabId)
     this.d.pty.kill(tabId)
     this.d.tracker.untrack(tabId)
   }
@@ -193,11 +188,6 @@ export class ClaudeBackend implements SessionBackend {
 
   private titleOf(tabId: string): string | undefined {
     return this.d.tracker.list().find((s) => s.tabId === tabId)?.title
-  }
-
-  private endReportedRecently(tabId: string): boolean {
-    const at = this.sessionEndSeenAt.get(tabId)
-    return at !== undefined && Date.now() - at <= SESSION_END_SEEN_TTL_MS
   }
 
   watchShimRegistrations(regDir: string): void {
@@ -231,7 +221,6 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   onPtyExit(tabId: string): void {
-    this.sessionEndSeenAt.delete(tabId)
     const remote = this.d.tracker.remoteOf(tabId)
     if (!remote) {
       // CC§1
@@ -274,10 +263,7 @@ export class ClaudeBackend implements SessionBackend {
           const strikes = (goneStrikes.get(tabId) ?? 0) + 1
           if (strikes >= MISSED_SWEEPS_BEFORE_UNTRACK) {
             goneStrikes.delete(tabId)
-            if (!this.endReportedRecently(tabId)) {
-              this.d.attention.exited(tabId, this.titleOf(tabId))
-            }
-            this.sessionEndSeenAt.delete(tabId)
+            this.d.events(tabId, { type: 'exited', clean: false, title: this.titleOf(tabId) })
             this.d.tracker.untrack(tabId)
           } else {
             goneStrikes.set(tabId, strikes)
@@ -397,11 +383,10 @@ export class ClaudeBackend implements SessionBackend {
     if (!obj.tabId) return
     // CC§5
     if (!ownsHookReport(obj, this.sessionIdOf(obj.tabId))) return
-    if (obj.event === 'prompt') this.d.promptSeen(obj.tabId)
     // CC§8
     if (typeof obj.wake === 'number') this.d.tracker.setWakeupPending(obj.tabId, obj.wake === 1)
     const event = sessionEventFromHook(obj.event, obj.message, obj.bgl)
-    if (event) this.observe(obj.tabId, event)
+    if (event) this.d.events(obj.tabId, event)
   }
 
   // CC§1
@@ -413,11 +398,7 @@ export class ClaudeBackend implements SessionBackend {
       if (!this.d.tracker.list().some((s) => s.tabId === tabId && s.jsonlPath)) return
       const alive = await rootsWithClaude([pid])
       if (!alive) return
-      if (!alive.has(pid)) {
-        this.d.attention.clear(tabId)
-        this.sessionEndSeenAt.delete(tabId)
-        this.d.tracker.untrack(tabId)
-      }
+      if (!alive.has(pid)) this.d.tracker.untrack(tabId)
     }, SESSION_END_SETTLE_MS)
   }
 
@@ -436,9 +417,8 @@ export class ClaudeBackend implements SessionBackend {
         const still = tracker
           .list()
           .some((t) => t.tabId === tabId && t.alive && t.sessionId === sessionId)
-        if (!still || !this.remoteSessionGone(host, sessionId) || this.endReportedRecently(tabId))
-          return
-        this.d.attention.exited(tabId, this.titleOf(tabId))
+        if (!still || !this.remoteSessionGone(host, sessionId)) return
+        this.d.events(tabId, { type: 'exited', clean: false, title: this.titleOf(tabId) })
         tracker.untrack(tabId)
       }, REMOTE_EXIT_WAIT_MS).unref()
     }
@@ -484,7 +464,8 @@ export class ClaudeBackend implements SessionBackend {
       const stillBound = !!sid && this.d.tracker.list().some((t) => t.alive && t.sessionId === sid)
       if (sid && !stillBound) this.d.workspaces()?.dropOwnership(sid)
     }
-    if (!hit && sid && this.remoteSessionGone(host, sid)) this.d.attention.exited(tabId, title)
+    if (!hit && sid && this.remoteSessionGone(host, sid))
+      this.d.events(tabId, { type: 'exited', clean: false, title })
     for (const name of new Set([`${tabId}.json`, hit?.name ?? ''])) {
       if (name) fs.rmSync(path.join(mirrorDir, name), { force: true })
     }
@@ -519,20 +500,18 @@ export class ClaudeBackend implements SessionBackend {
     // CC§5
     if (!ownsHookReport(obj, this.sessionIdOf(obj.tabId))) return
     if (obj.event === 'end') {
+      this.d.events(obj.tabId, { type: 'exited', clean: true })
       if (EVICTING_END_REASONS.has(obj.reason ?? '')) {
         const sid = this.sessionIdOf(obj.tabId)
-        this.d.attention.clear(obj.tabId)
         tracker.untrack(obj.tabId)
         const stillBound = !!sid && tracker.list().some((s) => s.alive && s.sessionId === sid)
         if (sid && !stillBound) workspaces?.dropOwnership(sid)
       } else {
         // CC§1
-        this.sessionEndSeenAt.set(obj.tabId, Date.now())
         this.untrackIfClaudeGone(obj.tabId)
       }
       return
     }
-    this.sessionEndSeenAt.delete(obj.tabId)
     if (obj.cwd) workspaces?.onSessionStart(obj.tabId, obj.cwd)
     const prevId = this.sessionIdOf(obj.tabId)
     tracker.bindSession(
@@ -554,7 +533,7 @@ export class ClaudeBackend implements SessionBackend {
       }
     }
     if (nextId) workspaces?.onSessionBound(nextId)
-    if (nextId) this.d.bound(obj.tabId, nextId)
+    if (nextId) this.d.events(obj.tabId, { type: 'bound', key: nextId })
   }
 
   watchRemoteHookMirrors(): void {

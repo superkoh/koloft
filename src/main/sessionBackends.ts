@@ -39,8 +39,48 @@ export interface SessionBackend {
   trustsFolder(dir: string): boolean | Promise<boolean>
 }
 
+export interface SessionLifecycle {
+  prompted(tabId: string): void
+  bound(tabId: string, key: string): void
+  exited(tabId: string, title?: string): void
+  clearAttention(tabId: string): void
+  open(tabId: string, target: string): void
+}
+
+const CLEAN_EXIT_HIDES_A_LATER_EXIT_MS = 30_000
+
 export class SessionBackends {
   private adapters = new Map<BackendId, SessionBackend>()
+  private cleanExitAt = new Map<string, number>()
+
+  constructor(private lifecycle: SessionLifecycle) {}
+
+  observe(tabId: string, event: SessionEvent): void {
+    switch (event.type) {
+      case 'bound':
+        this.cleanExitAt.delete(tabId)
+        this.lifecycle.clearAttention(tabId)
+        return this.lifecycle.bound(tabId, event.key)
+      case 'exited':
+        return this.exited(tabId, event.clean, event.title)
+      case 'open':
+        return this.lifecycle.open(tabId, event.target)
+      case 'prompt':
+        this.lifecycle.prompted(tabId)
+    }
+    this.ownerOfTab(tabId)?.observe(tabId, event)
+  }
+
+  private exited(tabId: string, clean: boolean, title?: string): void {
+    const now = Date.now()
+    for (const [id, at] of this.cleanExitAt) {
+      if (now - at > CLEAN_EXIT_HIDES_A_LATER_EXIT_MS) this.cleanExitAt.delete(id)
+    }
+    if (clean) {
+      this.cleanExitAt.set(tabId, now)
+      this.lifecycle.clearAttention(tabId)
+    } else if (!this.cleanExitAt.has(tabId)) this.lifecycle.exited(tabId, title)
+  }
 
   register(adapter: SessionBackend): void {
     if (this.adapters.has(adapter.id))

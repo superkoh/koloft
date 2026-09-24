@@ -54,9 +54,10 @@ export function userThread(value: unknown): CodexThread | null {
 }
 
 export type CodexEvent =
-  SessionEvent | { type: 'bound'; thread: CodexThread; change: 'replace' | 'switch' }
+  | Exclude<SessionEvent, { type: 'bound' }>
+  | { type: 'bound'; thread: CodexThread; change: 'replace' | 'switch' }
 
-const TURN_EVENT: Record<Turn, SessionEvent> = {
+const TURN_EVENT: Record<Turn, CodexEvent> = {
   working: { type: 'prompt' },
   approval: { type: 'notify', need: 'approval' },
   input: { type: 'notify', need: 'input' },

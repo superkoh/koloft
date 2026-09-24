@@ -34,6 +34,14 @@ function stubBackend(
   } satisfies SessionBackend
 }
 
+const lifecycle = () => ({
+  prompted: vi.fn(),
+  bound: vi.fn(),
+  exited: vi.fn(),
+  clearAttention: vi.fn(),
+  open: vi.fn()
+})
+
 const row = (id: string, mtime: number): BackendSessionRow => ({
   id,
   title: id,
@@ -46,7 +54,7 @@ const row = (id: string, mtime: number): BackendSessionRow => ({
 
 describe('session backend boundary', () => {
   it('shows the history one method could read when another fails, newest first, and says which failed', async () => {
-    const registry = new SessionBackends()
+    const registry = new SessionBackends(lifecycle())
     registry.register(stubBackend('claude', async () => [row('a', 1), row('b', 3)]))
     registry.register(
       stubBackend('codex', async () => {
@@ -60,7 +68,7 @@ describe('session backend boundary', () => {
   })
 
   it('marks every session and history row with the method it came from and the machine it runs on', async () => {
-    const registry = new SessionBackends()
+    const registry = new SessionBackends(lifecycle())
     const session = (tabId: string, remote?: { host: string }): BackendSessionInfo => ({
       tabId,
       sessionId: tabId,
@@ -87,7 +95,7 @@ describe('session backend boundary', () => {
   })
 
   it('fails the history read when no method could read anything', async () => {
-    const registry = new SessionBackends()
+    const registry = new SessionBackends(lifecycle())
     registry.register(
       stubBackend('codex', async () => {
         throw new Error('app-server gone')
@@ -106,7 +114,7 @@ describe('session backend boundary', () => {
   })
 
   it('refuses implicit/new unsupported launches before reaching any backend', async () => {
-    const registry = new SessionBackends()
+    const registry = new SessionBackends(lifecycle())
     const create = vi.fn(async () => ({ ok: true as const, id: 'tab', cwd: '/repo' }))
     const backend: SessionBackend = { ...stubBackend('codex'), create }
     registry.register(backend)

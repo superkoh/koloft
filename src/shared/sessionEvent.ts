@@ -16,6 +16,8 @@ export type SessionEvent =
   | { type: 'title'; title: string }
   | { type: 'degraded'; message: string }
   | { type: 'open'; target: string }
+  | { type: 'bound'; key: string }
+  | { type: 'exited'; clean: boolean; title?: string }
   | {
       type: 'files-changed'
       files: PreviewItem[]

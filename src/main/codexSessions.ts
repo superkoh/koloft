@@ -78,11 +78,9 @@ export interface CodexSessionDeps {
   runtime: SessionRuntime
   projectInfo(p: string): ProjectInfo
   changed(): void
-  attention(tabId: string, kind: 'exited' | 'clear'): void
+  events(tabId: string, event: SessionEvent): void
   error(message: string): void
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
-  agentOpen(tabId: string, target: string): void
-  bound(tabId: string, key: string): void
   pickHome(): { account: string; home: string } | undefined
   homes(): string[]
 }
@@ -603,7 +601,7 @@ export class CodexSessions {
     let run: Run | undefined
     const observe = (event: CodexEvent): void => {
       if (event.type !== 'bound') {
-        if (run) this.observe(run.tabId, event)
+        if (run) this.deps.events(run.tabId, event)
         else if (event.type === 'degraded') this.deps.error(event.message)
         return
       }
@@ -692,8 +690,6 @@ export class CodexSessions {
         return this.changedSoon()
       case 'title':
         return this.retitle(info, event.title)
-      case 'open':
-        return this.deps.agentOpen(run.tabId, event.target)
       case 'files-changed':
         info.files = event.files
         info.lastTouched = event.lastTouched
@@ -744,7 +740,6 @@ export class CodexSessions {
     }
     run.resumeKey = undefined
     this.deps.runtime.forget(run.tabId)
-    this.deps.attention(run.tabId, 'clear')
     run.info = {
       tabId: run.tabId,
       sessionId: key,
@@ -763,7 +758,7 @@ export class CodexSessions {
     if (run.home) this.threadHomes.set(key, run.home)
     this.deps.pty.clearResumeIntent(run.tabId)
     this.changed()
-    this.deps.bound(run.tabId, key)
+    this.deps.events(run.tabId, { type: 'bound', key })
   }
 
   private retitle(info: BackendSessionInfo, title: string): void {
@@ -828,7 +823,11 @@ export class CodexSessions {
       .then(() => {
         this.deps.pty.kill(tabId)
         this.deps.runtime.forget(tabId)
-        if (unexpectedExit) this.deps.attention(tabId, 'exited')
+        this.deps.events(tabId, {
+          type: 'exited',
+          clean: !unexpectedExit,
+          title: run.info?.title
+        })
         this.runs.delete(tabId)
         if (nativeExit && run.info && !this.aliveTabFor(run.info.sessionId)) {
           try {
@@ -837,7 +836,6 @@ export class CodexSessions {
             this.deps.error(String(error))
           }
         }
-        if (!unexpectedExit) this.deps.attention(tabId, 'clear')
         this.changed()
         if (!this.shuttingDown)
           void this.refreshHistory().catch((error) => this.deps.error(String(error)))
