@@ -48,7 +48,7 @@ import { loadSettings } from '../settings'
 import { keychainRead } from '../accounts'
 import type { PickResponse } from '../accountPicker'
 import { claudeArgv } from '../claudeArgs'
-import { acceptClaudeTrust } from '../claudeTrust'
+import { acceptClaudeTrust, claudeJsonPath } from '../claudeTrust'
 import { probeClaude } from '../claudeProbe'
 import { runningClaudePid } from '../claudeSessionRegistry'
 import { resolveSpawnCwd } from '../projectInfo'
@@ -82,10 +82,6 @@ export interface ClaudeBackendDeps {
 const GIT_REF_RE = /^[A-Za-z0-9._][A-Za-z0-9._/-]{0,120}$/
 const SESSION_ID_RE = /^[a-zA-Z0-9-]+$/
 export const POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE = '/bin/zsh'
-
-function claudeJsonPath(): string {
-  return path.join(os.homedir(), '.claude.json')
-}
 
 // ADR-0026
 function trustBeforeWorktreeLaunch(root: string): void {

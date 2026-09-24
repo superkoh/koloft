@@ -300,6 +300,9 @@ no key.
   `config.toml` stopped the question in the repository **and** in its linked worktree.
   A table for the worktree path alone stopped it in the worktree.
 - Unanswered, the question left `config.toml` byte-for-byte unchanged.
+- What Codex writes when a person answers **No** was not tried. That it writes a
+  table for the folder (so Koloft, which leaves any existing table alone, never
+  overrides the answer) is **inferred, not checked**.
 - The same table shape (`[projects."<absolute path>"]` / `trust_level = "trusted"`) is
   what Codex itself had written into this Mac's own `~/.codex/config.toml`, read on the
   same day.

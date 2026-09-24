@@ -1,6 +1,11 @@
 import fs from 'fs'
+import os from 'os'
 import path from 'path'
 import { realpathSafe } from './projectInfo'
+
+export function claudeJsonPath(): string {
+  return path.join(os.homedir(), '.claude.json')
+}
 
 // CC§9
 export function isTrustedByClaude(readClaudeJson: () => unknown, dir: string): boolean {

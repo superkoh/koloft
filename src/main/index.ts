@@ -122,7 +122,7 @@ import { dirExistsSync, gitProbes, occupantName, type ResumeProbes } from './res
 import { ClaudeBackend, POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE } from './backends/claude'
 import { codexBackend } from './backends/codex'
 import { acceptCodexTrust, codexConfigFile } from './codexTrust'
-import { claudeTrustsFolder } from './claudeTrust'
+import { claudeJsonPath, claudeTrustsFolder } from './claudeTrust'
 import { CronRunner, type LaunchRequest } from './cronRunner'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { listSkills, type SkillFs } from './skillList'
@@ -2484,10 +2484,6 @@ function countRunFoldersSync(root: string, slug: string): number {
 function accountUsable(): boolean {
   if (!loadSettings().multiAccount) return true
   return listAccounts().some((a) => a.enabled && a.status === 'ok')
-}
-
-function claudeJsonPath(): string {
-  return path.join(os.homedir(), '.claude.json')
 }
 
 function claudeTrusts(dir: string): boolean {
