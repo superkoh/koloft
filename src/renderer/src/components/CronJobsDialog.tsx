@@ -81,10 +81,14 @@ const NEVER_ASK_HINT =
   '"Never ask" can change files anywhere on this Mac, not only in the run\'s folder.'
 const NO_GIT_NOTE = 'This folder is not a git repo, so the run works in the folder itself.'
 // CC§9 CODEX§14
-const trustHint = (label: string): string =>
-  `${label} has never been opened in this folder. Start one session here first — a scheduled ` +
-  `run would stall on ${label}'s "do you trust this folder?" question and be stopped at ` +
-  'the deadline.'
+const TRUST_QUESTION: Record<BackendId, string> = {
+  claude: 'do you trust this project?',
+  codex: 'do you trust the contents of this directory?'
+}
+const trustHint = (backend: BackendId): string =>
+  `${BACKEND_LABEL[backend]} has never been opened in this folder. Start one session here ` +
+  `first — a scheduled run would stall on ${BACKEND_LABEL[backend]}'s "${TRUST_QUESTION[backend]}" ` +
+  'question and be stopped at the deadline.'
 
 const MANY_RUN_FOLDERS = 10
 
@@ -506,7 +510,7 @@ export function CronJobsDialog({
       <span className="flabel">Where it runs</span>
       <div className="fcol">
         {whereItRuns()}
-        {trusted === false && <p className="field-hint warn">{trustHint(label)}</p>}
+        {trusted === false && <p className="field-hint warn">{trustHint(fields.backend)}</p>}
       </div>
 
       <span className="flabel">When</span>

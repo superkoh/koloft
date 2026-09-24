@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import http from 'http'
 import type { AddressInfo } from 'net'
-import type { ElectronApplication, Page } from '@playwright/test'
+import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
 import { centerTerm, runIn, startSessionIn, waitBooted } from './helpers/p1'
@@ -186,6 +186,10 @@ function scanForTokens(root: string, skip: (p: string) => boolean): string[] {
   return hits
 }
 
+function claudeAccounts(page: Page): Locator {
+  return page.locator('.acct-section').first()
+}
+
 test('E1: settings CRUD — no launch-command field, only the verifiable add entries (Sign in, Paste token), an inline delete that also removes the Keychain secret, persistence, stale key ignored', async ({
   env
 }) => {
@@ -202,15 +206,23 @@ test('E1: settings CRUD — no launch-command field, only the verifiable add ent
     await openSettings(page)
 
     await expect(page.locator('.modal')).not.toContainText('Claude launch command')
-    await expect(page.locator('.acct-foot button', { hasText: 'Sign in' })).toBeVisible()
-    await expect(page.locator('.acct-foot button', { hasText: 'Paste token' })).toBeVisible()
-    await expect(page.locator('.acct-foot button', { hasText: 'API key' })).toHaveCount(0)
-    await expect(page.locator('.acct-foot button', { hasText: 'Custom endpoint' })).toHaveCount(0)
-    await expect(page.locator('.acct-foot button')).toHaveCount(3)
+    await expect(
+      claudeAccounts(page).locator('.acct-foot button', { hasText: 'Sign in' })
+    ).toBeVisible()
+    await expect(
+      claudeAccounts(page).locator('.acct-foot button', { hasText: 'Paste token' })
+    ).toBeVisible()
+    await expect(
+      claudeAccounts(page).locator('.acct-foot button', { hasText: 'API key' })
+    ).toHaveCount(0)
+    await expect(
+      claudeAccounts(page).locator('.acct-foot button', { hasText: 'Custom endpoint' })
+    ).toHaveCount(0)
+    await expect(claudeAccounts(page).locator('.acct-foot button')).toHaveCount(3)
 
-    await expect(page.locator('.acct-empty')).toBeVisible()
+    await expect(claudeAccounts(page).locator('.acct-empty')).toBeVisible()
 
-    await page.locator('.acct-foot button', { hasText: 'Paste token' }).click()
+    await claudeAccounts(page).locator('.acct-foot button', { hasText: 'Paste token' }).click()
     await page.locator('.acct-add input[type="text"]').fill('bravo')
     await page.locator('.acct-add input[type="password"]').fill(TOKENS.bravo)
     await page.locator('.acct-add-actions button', { hasText: 'Verify and save' }).click()
@@ -231,11 +243,15 @@ test('E1: settings CRUD — no launch-command field, only the verifiable add ent
     await openSettings(page)
     await expect(page.locator('.acct-row.off')).toHaveCount(1)
 
-    await page.locator('.acct-foot button', { hasText: 'Refresh usage' }).click()
-    await expect(page.locator('.acct-foot button', { hasText: 'Updated' })).toBeVisible({
+    await claudeAccounts(page).locator('.acct-foot button', { hasText: 'Refresh usage' }).click()
+    await expect(
+      claudeAccounts(page).locator('.acct-foot button', { hasText: 'Updated' })
+    ).toBeVisible({
       timeout: 15_000
     })
-    await expect(page.locator('.acct-foot button', { hasText: 'Refresh usage' })).toBeVisible({
+    await expect(
+      claudeAccounts(page).locator('.acct-foot button', { hasText: 'Refresh usage' })
+    ).toBeVisible({
       timeout: 15_000
     })
 
@@ -847,10 +863,10 @@ test('E10: guided login captures the printed token (even wrapped at 80 columns) 
   const { app, page } = await launchConfigured(env)
   try {
     await openSettings(page)
-    await expect(page.locator('.acct-empty')).toBeVisible()
+    await expect(claudeAccounts(page).locator('.acct-empty')).toBeVisible()
 
     const tabsBefore = await page.locator('.ws-tab').count()
-    await page.locator('.acct-foot button', { hasText: 'Sign in' }).click()
+    await claudeAccounts(page).locator('.acct-foot button', { hasText: 'Sign in' }).click()
     await page.locator('.acct-add input[type="text"]').fill('bravo')
     await page.locator('.acct-add-actions button', { hasText: 'Sign in' }).click()
 
@@ -902,7 +918,7 @@ test('guided login: a captured token the probe rejects as expired reports failur
   const { app, page } = await launchConfigured(env)
   try {
     await openSettings(page)
-    await page.locator('.acct-foot button', { hasText: 'Sign in' }).click()
+    await claudeAccounts(page).locator('.acct-foot button', { hasText: 'Sign in' }).click()
     await page.locator('.acct-add input[type="text"]').fill('bravo')
     await page.locator('.acct-add-actions button', { hasText: 'Sign in' }).click()
 
