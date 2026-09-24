@@ -94,10 +94,11 @@ register() {
     "$KOLOFT_TAB_ID" "$1" "$2" "$PWD" "$(date +%s)" "$3" > "$reg_dir/$1.json"
 }
 
+# PLATFORM§17
 if [ -n "$KOLOFT_CDP_DIR" ] && [ -n "$KOLOFT_TAB_ID" ] && [ "$KOLOFT_UTIL" != "1" ]; then
+  export PLAYWRIGHT_CLI_SESSION="koloft-$KOLOFT_TAB_ID"
   kcdp="$(cat "$KOLOFT_CDP_DIR/$KOLOFT_TAB_ID" 2>/dev/null)"
   if [ -n "$kcdp" ]; then
-    # PLATFORM§17
     export PLAYWRIGHT_MCP_CDP_ENDPOINT="$kcdp"
     export KOLOFT_BROWSER_CDP="$kcdp"
   fi

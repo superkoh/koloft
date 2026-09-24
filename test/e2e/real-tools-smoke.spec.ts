@@ -4,7 +4,7 @@ import path from 'path'
 import type { Page } from '@playwright/test'
 import { test, expect } from './helpers/app'
 import type { E2EEnv } from './helpers/env'
-import { readCalls, startSessionIn, waitBooted } from './helpers/p1'
+import { readCalls, startSessionIn, waitBooted, wsRows } from './helpers/p1'
 import { BROWSER, cdpEndpointOf, openBrowser, openTabs } from './helpers/browser'
 import { openSettings } from './helpers/extensions'
 import { startEchoServer } from './helpers/fixtureServer'
@@ -217,6 +217,50 @@ test.describe('real third-party tools (playwright-mcp, playwright-cli), unmodifi
       await expect(openTabs(page)).toHaveCount(1, { timeout: 30_000 })
       await cli(['close'], env.home, injected)
     } finally {
+      await server.close()
+    }
+  })
+
+  test('BB-57: two sessions get two playwright-cli daemons — one session’s `open` never takes over the other’s browser', async ({
+    page,
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const server = await startEchoServer()
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    const a = readCalls(env).at(-1)!
+    await startSessionIn(page, 'ws-b')
+    const b = readCalls(env).at(-1)!
+    const envA = {
+      PLAYWRIGHT_MCP_CDP_ENDPOINT: a.playwrightMcpEndpoint!,
+      PLAYWRIGHT_CLI_SESSION: a.playwrightCliSession!
+    }
+    const envB = {
+      PLAYWRIGHT_MCP_CDP_ENDPOINT: b.playwrightMcpEndpoint!,
+      PLAYWRIGHT_CLI_SESSION: b.playwrightCliSession!
+    }
+    try {
+      const pageA = server.page('/a', '<title>Page A</title><body><h1>a</h1></body>')
+      const pageB = server.page('/b', '<title>Page B</title><body><h1>b</h1></body>')
+
+      expect((await cli(['open', pageA], env.home, envA)).code).toBe(0)
+      expect((await cli(['open', pageB], env.home, envB)).code).toBe(0)
+      const [titleA, titleB] = await Promise.all([
+        cli(['eval', 'document.title'], env.home, envA),
+        cli(['eval', 'document.title'], env.home, envB)
+      ])
+      expect(titleA.out).toContain('Page A')
+      expect(titleB.out).toContain('Page B')
+
+      await openBrowser(page)
+      await expect(openTabs(page)).toHaveCount(1, { timeout: 30_000 })
+      await expect(openTabs(page)).toContainText('Page B')
+      await wsRows(page, 'ws-a').first().click()
+      await expect(openTabs(page)).toHaveCount(1, { timeout: 30_000 })
+      await expect(openTabs(page)).toContainText('Page A')
+    } finally {
+      await Promise.all([cli(['close'], env.home, envA), cli(['close'], env.home, envB)])
       await server.close()
     }
   })

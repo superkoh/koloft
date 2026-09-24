@@ -64,7 +64,8 @@ function writeCallLog(effCwd) {
         oauthToken: process.env.CLAUDE_CODE_OAUTH_TOKEN || null,
         apiKey: process.env.ANTHROPIC_API_KEY || null,
         cdpEndpoint: process.env.KOLOFT_BROWSER_CDP || null,
-        playwrightMcpEndpoint: process.env.PLAYWRIGHT_MCP_CDP_ENDPOINT || null
+        playwrightMcpEndpoint: process.env.PLAYWRIGHT_MCP_CDP_ENDPOINT || null,
+        playwrightCliSession: process.env.PLAYWRIGHT_CLI_SESSION || null
       }) + '\n'
     )
   } catch {}

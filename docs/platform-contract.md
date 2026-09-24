@@ -430,6 +430,16 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   a bare WebSocket CDP client can see a tab as listed but not loaded.
 - **`Browser.version()` and `contexts()` are local state** and still answer on a dead
   socket; only a real round trip (such as `page.evaluate`) shows the client is alive.
+- **playwright-cli runs one background daemon per (workspace, session name), machine
+  wide, and the daemon keeps the env of the process that ran `open`** (measured
+  2026-09-24, @playwright/cli 0.1.18 on playwright-core 1.63: session B's `goto` with no
+  `open` navigated session A's page inside A's Koloft tab). The session name is the `-s`
+  flag, else `PLAYWRIGHT_CLI_SESSION`, else `default`; the workspace is the nearest
+  directory holding a `.playwright` folder, else the playwright-core install root, so
+  every directory without that marker shares one bucket (read in
+  `lib/tools/cli-client/registry.js` and `session.js`). Each Koloft tab therefore
+  exports its own `PLAYWRIGHT_CLI_SESSION`. A browser the cli starts itself is headless
+  unless `--headed` (read in `resolveCLIConfigForCLI`); playwright-mcp's default is headed.
 
 ## §18 Playwright and Electron in the e2e suite
 

@@ -6,6 +6,7 @@ import path from 'path'
 import { StringDecoder } from 'string_decoder'
 import { promisify } from 'util'
 import WebSocket, { WebSocketServer } from 'ws'
+import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 
 export type CodexFrame = Record<string, unknown>
 
@@ -46,7 +47,7 @@ export function codexEnvironment(overrides?: NodeJS.ProcessEnv): NodeJS.ProcessE
     'CLAUDE_EFFORT',
     'AI_AGENT',
     'TERM_SESSION_ID',
-    'PLAYWRIGHT_MCP_CDP_ENDPOINT'
+    ...BROWSER_TAB_ENV
   ])
   for (const key of Object.keys(env)) {
     if (runtime.has(key) || key.startsWith('KOLOFT_') || key.startsWith('CLAUDE_CODE_'))
