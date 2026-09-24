@@ -1,7 +1,14 @@
 import fs from 'fs'
 import path from 'path'
 import type { Locator, Page } from '@playwright/test'
-import { test, expect, launchApp } from './helpers/app'
+import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import {
+  addRemoteWorkspace,
+  killFakeRemote,
+  launchWithRemote,
+  REMOTE_WS_NAME,
+  remoteDir
+} from './helpers/remote'
 import { seedSettings, type E2EEnv } from './helpers/env'
 import {
   auxIcon,
@@ -780,6 +787,42 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await expect(card(page, 'Job A').locator('.job-task')).toHaveText('/job-a · sonnet · xhigh')
     } finally {
       await app.close().catch(() => {})
+    }
+  })
+
+  // CC§9
+  test('BB-M17: a job in a remote workspace starts claude on the machine with its task, name, model and permission, and waits for you when its turn ends', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const TASK = `/daily-report please "quote" it's $HOME`
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await expect(page.locator('.ws-head', { hasText: REMOTE_WS_NAME })).toBeVisible({
+        timeout: 20_000
+      })
+
+      const dlg = await openCron(page, REMOTE_WS_NAME)
+      await createJob(page, dlg, {
+        name: 'Remote report',
+        task: TASK,
+        model: 'Sonnet',
+        permission: 'Let it edit files without asking'
+      })
+      await clickRunNow(page, 'Remote report')
+
+      const call = await waitNewCall(env, 0, 120_000)
+      expect(call.firstPrompt).toBe(TASK)
+      expect(call.cwd).toBe(remoteDir(env))
+      expect(call.argv[call.argv.indexOf('--name') + 1]).toBe('Remote report')
+      expect(call.argv[call.argv.indexOf('--model') + 1]).toBe('sonnet')
+      expect(call.argv[call.argv.indexOf('--permission-mode') + 1]).toBe('acceptEdits')
+
+      await waitTurnStopSoTheTranscriptExistsBeforeClose(page, 'Remote report')
+    } finally {
+      await quitAndClose(app)
+      killFakeRemote(env)
     }
   })
 
