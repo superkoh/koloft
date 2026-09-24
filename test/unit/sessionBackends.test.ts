@@ -133,6 +133,31 @@ describe('session backend boundary', () => {
   })
 })
 
+describe('session lifecycle tap (one place turns a bind or an exit into attention)', () => {
+  it('raises no exited mark for a tab that ended cleanly less than 30 s ago, and raises it again once 30 s passed or a new session bound there', () => {
+    vi.useFakeTimers()
+    try {
+      const sink = lifecycle()
+      const registry = new SessionBackends(sink)
+      registry.observe('tab', { type: 'exited', clean: true })
+      expect(sink.clearAttention).toHaveBeenCalledWith('tab')
+      registry.observe('tab', { type: 'exited', clean: false, title: 'late sweep' })
+      expect(sink.exited).not.toHaveBeenCalled()
+
+      registry.observe('tab', { type: 'bound', key: 'next' })
+      registry.observe('tab', { type: 'exited', clean: false, title: 'after bind' })
+      expect(sink.exited).toHaveBeenLastCalledWith('tab', 'after bind')
+
+      registry.observe('other', { type: 'exited', clean: true })
+      vi.advanceTimersByTime(30_001)
+      registry.observe('other', { type: 'exited', clean: false, title: 'much later' })
+      expect(sink.exited).toHaveBeenLastCalledWith('other', 'much later')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
 describe('capabilitiesFor (what one session can do, from its method and the machine it runs on)', () => {
   it('gives a Claude session on this Mac every capability', () => {
     expect(Object.values(capabilitiesFor('claude', 'local')).every((c) => c === true)).toBe(true)
