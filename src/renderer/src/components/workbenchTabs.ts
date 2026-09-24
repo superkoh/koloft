@@ -140,6 +140,7 @@ export function openTab(
     scrollTop?: number
     pinned?: ReadonlySet<string>
     isDirty?: (tabId: string) => boolean
+    openedByAgent?: boolean
   }
 ): OpenTabResult {
   const hasTarget = opts.kind === 'web' ? !!opts.url : opts.kind === 'file' ? !!opts.path : false
@@ -201,7 +202,7 @@ export function openTab(
     line: opts.line,
     scrollTop: opts.scrollTop,
     cwd: opts.cwd,
-    openedByAgent: opts.source === 'agent' || opts.source === 'cdp' ? true : undefined
+    openedByAgent: opts.openedByAgent ? true : undefined
   }
   const at =
     opts.kind === 'terminal' ? base.tabs.length : base.tabs.findIndex((t) => t.kind === 'terminal')

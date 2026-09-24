@@ -1213,14 +1213,25 @@ describe('the vanished-root notice (R4): the only sign a shell opened somewhere 
 })
 
 describe('what a CDP client is shown', () => {
-  it('lists only the web tabs the agent opened — never one the user opened or one restored from disk', () => {
+  it('lists only the web tabs the agent opened (its open command, or a page it created) — never one the user opened, one the user ⌘-clicked open in the background, or one restored from disk', () => {
     let set = openTab(emptyTabSet(), {
       kind: 'web',
       url: 'file:///tmp/mine.html',
       source: 'user'
     }).set
-    set = openTab(set, { kind: 'web', url: 'http://localhost:8000/a', source: 'agent' }).set
-    set = openTab(set, { kind: 'web', url: 'http://localhost:8000/b', source: 'cdp' }).set
+    set = openTab(set, {
+      kind: 'web',
+      url: 'http://localhost:8000/a',
+      source: 'agent',
+      openedByAgent: true
+    }).set
+    set = openTab(set, {
+      kind: 'web',
+      url: 'http://localhost:8000/b',
+      source: 'cdp',
+      openedByAgent: true
+    }).set
+    set = openTab(set, { kind: 'web', url: 'http://localhost:8000/popup', source: 'agent' }).set
     expect(cdpVisibleTabs(set).map((t) => t.url)).toEqual([
       'http://localhost:8000/a',
       'http://localhost:8000/b'
@@ -1236,7 +1247,12 @@ describe('what a CDP client is shown', () => {
       url: 'http://localhost:8000/a',
       source: 'user'
     }).set
-    set = openTab(set, { kind: 'web', url: 'http://localhost:8000/a', source: 'agent' }).set
+    set = openTab(set, {
+      kind: 'web',
+      url: 'http://localhost:8000/a',
+      source: 'agent',
+      openedByAgent: true
+    }).set
     expect(cdpVisibleTabs(set)).toEqual([])
   })
 })
