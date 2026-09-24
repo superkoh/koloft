@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { acceptCodexTrust } from '../../src/main/codexTrust'
+import { acceptCodexTrust, codexTrustsFolder } from '../../src/main/codexTrust'
 
 let dir: string
 let repo: string
@@ -37,5 +37,21 @@ describe('acceptCodexTrust', () => {
     fs.writeFileSync(config, answered)
     acceptCodexTrust(config, repo)
     expect(fs.readFileSync(config, 'utf8')).toBe(answered)
+  })
+})
+
+// CODEX§14
+describe('codexTrustsFolder', () => {
+  it('says yes only for a table of the folder that says trusted, so a scheduled run is warned before it would stall', () => {
+    expect(codexTrustsFolder(config, repo)).toBe(false)
+    fs.mkdirSync(path.dirname(config))
+    fs.writeFileSync(
+      config,
+      `[projects."${repo}"]\ntrust_level = "untrusted"\n[projects."${dir}"]\ntrust_level = "trusted"\n`
+    )
+    expect(codexTrustsFolder(config, repo)).toBe(false)
+    fs.writeFileSync(config, '')
+    acceptCodexTrust(config, repo)
+    expect(codexTrustsFolder(config, repo)).toBe(true)
   })
 })

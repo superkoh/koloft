@@ -1,4 +1,5 @@
 import type {
+  BackendId,
   CronEffort,
   CronJob,
   CronPermission,
@@ -14,6 +15,7 @@ import { describeWhen, isValidSchedule, nextRun, parseHHMM } from '@shared/sched
 export type WhenKind = 'daily' | 'weekly' | 'every'
 
 export interface JobFields {
+  backend: BackendId
   name: string
   task: string
   whenKind: WhenKind
@@ -27,8 +29,9 @@ export interface JobFields {
   permission: CronPermission
 }
 
-export function emptyFields(): JobFields {
+export function emptyFields(backend: BackendId = 'claude'): JobFields {
   return {
+    backend,
     name: '',
     task: '',
     whenKind: 'daily',
@@ -119,6 +122,7 @@ export function validate(f: JobFields): ValidateResult {
   if (Object.keys(errors).length > 0 || !schedule) return { ok: false, errors }
 
   const input: Omit<CronSaveInput, 'workspacePath' | 'id'> = {
+    backend: f.backend,
     name,
     task,
     schedule,

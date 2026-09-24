@@ -121,7 +121,7 @@ import { sanitizeSessionWorkbench } from '@shared/workbenchState'
 import { dirExistsSync, gitProbes, occupantName, type ResumeProbes } from './resumePlan'
 import { ClaudeBackend, POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE } from './backends/claude'
 import { codexBackend } from './backends/codex'
-import { acceptCodexTrust, codexConfigFile } from './codexTrust'
+import { acceptCodexTrust, codexConfigFile, codexTrustsFolder } from './codexTrust'
 import { claudeJsonPath, claudeTrustsFolder } from './claudeTrust'
 import { CronRunner, type LaunchRequest } from './cronRunner'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
@@ -194,6 +194,7 @@ import type {
   AccountKind,
   AccountMeta,
   AccountView,
+  BackendId,
   BrowserAuthChallenge,
   BrowserDialogAnswer,
   BrowserDownload,
@@ -1188,7 +1189,8 @@ app.whenReady().then(() => {
       agentOpen: (tabId, target) => {
         if (path.isAbsolute(target) && !fs.existsSync(target)) return
         openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target)
-      }
+      },
+      bound: (tabId, key) => cronRunner?.onBound(tabId, key)
     })
   } catch (error) {
     codexStartupError = `Codex session data could not be loaded; the original file is preserved. ${String(error)}`
@@ -1295,7 +1297,7 @@ app.whenReady().then(() => {
     branchExists: resumeProbes.branchExists,
     countRunFolders: countRunFoldersSync,
     accountUsable,
-    trusted: claudeTrusts,
+    trusted: backendTrusts,
     ready: () => rendererReady && BrowserWindow.getAllWindows().length > 0,
     launch: launchCronRun,
     killTab: (tabId) => void killTabPty(tabId),
@@ -2497,12 +2499,13 @@ function countRunFoldersSync(root: string, slug: string): number {
   }
 }
 
-function accountUsable(): boolean {
-  if (!loadSettings().multiAccount) return true
+function accountUsable(backend: BackendId): boolean {
+  if (backend === 'codex' || !loadSettings().multiAccount) return true
   return listAccounts().some((a) => a.enabled && a.status === 'ok')
 }
 
-function claudeTrusts(dir: string): boolean {
+function backendTrusts(dir: string, backend: BackendId): boolean {
+  if (backend === 'codex') return codexTrustsFolder(codexConfigFile(codexSessions?.defaultEnv), dir)
   return claudeTrustsFolder(claudeJsonPath(), dir)
 }
 
@@ -2511,7 +2514,7 @@ async function launchCronRun(
 ): Promise<{ ok: true; tabId: string } | { ok: false }> {
   try {
     const r = await sessionBackends.create({
-      kind: 'claude',
+      kind: req.backend,
       cwd: req.cwd,
       worktree: req.worktree,
       model: req.model,
@@ -2524,7 +2527,7 @@ async function launchCronRun(
     if (!r.ok) return { ok: false }
     const spawned: SpawnedTab = {
       id: r.id,
-      kind: 'claude',
+      kind: req.backend,
       cwd: r.cwd,
       title: req.name,
       jobId: req.jobId
@@ -2782,7 +2785,9 @@ function registerIpc(): void {
   ipcMain.handle('cron:skills', (_e, workspacePath: string) =>
     listSkills(skillFs, workspacePath, os.homedir())
   )
-  ipcMain.handle('cron:trusted', (_e, workspacePath: string) => claudeTrusts(workspacePath))
+  ipcMain.handle('cron:trusted', (_e, workspacePath: string, backend: BackendId) =>
+    backendTrusts(workspacePath, backend)
+  )
 
   ipcMain.handle('update:check', () => checkForUpdates())
   ipcMain.handle('update:download', () =>

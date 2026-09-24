@@ -216,6 +216,7 @@ describe('CronRunner — starting one run', () => {
     expect(h.launches).toEqual([
       {
         jobId: 'j1',
+        backend: 'claude',
         cwd: '/ws/a',
         worktree: 'nightly-report-260902-1000',
         model: undefined,
@@ -774,6 +775,44 @@ describe('CronRunner — BB-N02: the runner never writes into a session', () => 
       'Nightly report',
       'Could not start — Claude did not start'
     ])
+  })
+})
+
+describe('CronRunner — a Codex job', () => {
+  // CODEX§14
+  it("launches on Codex with approvals off whatever permission it saved, checks Codex's own trust, and names Codex when it does not start", async () => {
+    const trusted = vi.fn(() => false)
+    const accountUsable = vi.fn(() => true)
+    const h = makeHarness([makeJob({ backend: 'codex', permission: 'same' })], {
+      bindDeadlineMs: 5 * SEC,
+      trusted,
+      accountUsable
+    })
+    await h.runner.runNow('j1')
+    expect(h.launches[0]).toMatchObject({ backend: 'codex', permission: 'bypass' })
+    expect(accountUsable).toHaveBeenCalledWith('codex')
+    await h.fireTimers(T0 + 5 * SEC)
+    expect(trusted).toHaveBeenCalledWith('/ws/a', 'codex')
+    expect(h.jobs[0].history[0]).toMatchObject({
+      state: 'failed',
+      note: 'Codex did not start — this folder was never opened in Codex; start one session here first'
+    })
+  })
+
+  it('keeps the Codex choice through a save, and an unknown backend saves as Claude', () => {
+    const h = makeHarness([])
+    const input = {
+      workspacePath: '/ws/a',
+      name: 'Nightly',
+      task: 'report',
+      schedule: { kind: 'daily', at: '10:00' },
+      permission: 'same',
+      enabled: true
+    } as const
+    const codex = h.runner.save({ ...input, backend: 'codex' })
+    expect(codex.ok && codex.job.backend).toBe('codex')
+    const odd = h.runner.save({ ...input, backend: 'gemini' as never })
+    expect(odd.ok && odd.job.backend).toBe('claude')
   })
 })
 

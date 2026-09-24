@@ -893,7 +893,7 @@ export interface KoloftApi {
     runNow(jobId: string): Promise<CronRunNowResult>
     skills(workspacePath: string): Promise<SkillSuggestion[]>
     // CC§9
-    trusted(workspacePath: string): Promise<boolean>
+    trusted(workspacePath: string, backend: BackendId): Promise<boolean>
     onState(cb: (s: CronState) => void): () => void
     onToast(cb: (text: string) => void): () => void
   }
@@ -918,6 +918,7 @@ export interface CronJob {
   name: string
   task: string
   schedule: Schedule
+  backend?: BackendId
   model?: string
   effort?: CronEffort
   permission: CronPermission
@@ -971,7 +972,7 @@ export interface SkillSuggestion {
 
 export interface SpawnedTab {
   id: string
-  kind: 'claude'
+  kind: BackendId
   cwd: string
   title: string
   jobId: string

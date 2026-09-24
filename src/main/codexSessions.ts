@@ -50,6 +50,14 @@ const PERMISSION_ARGS: Record<LaunchPermission, string[]> = {
   bypass: ['-a', 'never', '-s', 'danger-full-access']
 }
 
+// CODEX§14
+function launchChoiceArgs(opts: CreateTabOptions): string[] {
+  return [
+    ...(opts.model ? ['-m', opts.model] : []),
+    ...(opts.effort ? ['-c', `model_reasoning_effort=${JSON.stringify(opts.effort)}`] : [])
+  ]
+}
+
 export interface CodexAvailability {
   id: 'codex'
   available: boolean
@@ -72,6 +80,7 @@ export interface CodexSessionDeps {
   error(message: string): void
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
   agentOpen(tabId: string, target: string): void
+  bound(tabId: string, key: string): void
 }
 
 interface RowScope {
@@ -179,6 +188,10 @@ export class CodexSessions {
       this.forgetProbe()
       throw error
     }
+  }
+
+  get defaultEnv(): NodeJS.ProcessEnv | undefined {
+    return this.processEnv
   }
 
   hasRuns(): boolean {
@@ -525,9 +538,11 @@ export class CodexSessions {
         cwd,
         '-c',
         STATUS_LINE_CONFIG,
-        ...PERMISSION_ARGS[opts.permission ?? 'default']
+        ...PERMISSION_ARGS[opts.permission ?? 'default'],
+        ...launchChoiceArgs(opts)
       ]
       if (opts.resumeSessionId) argv.push('resume', this.nativeId(opts.resumeSessionId))
+      else if (opts.firstPrompt) argv.push(opts.firstPrompt)
       const handle = this.deps.pty.create({
         kind: 'codex',
         cwd,
@@ -651,6 +666,7 @@ export class CodexSessions {
     this.history.set(key, { ...thread, cwd: run.cwd })
     this.deps.pty.clearResumeIntent(run.tabId)
     this.deps.changed()
+    this.deps.bound(run.tabId, key)
   }
 
   private retitle(info: SessionInfo, title: string): void {

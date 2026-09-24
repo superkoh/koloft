@@ -1,10 +1,12 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
-import { slugOf, hasWordChar, isValidModelName, worktreeBase } from '@shared/cronNames'
+import { cronBackend, slugOf, hasWordChar, isValidModelName, worktreeBase } from '@shared/cronNames'
+import { BACKEND_LABEL, SESSION_BACKENDS } from '@shared/sessionBackend'
 import { isValidSchedule, parseHHMM } from '@shared/schedule'
 import {
   isCronEffort,
+  type BackendId,
   type CronEffort,
   type CronJob,
   type CronPermission,
@@ -68,6 +70,7 @@ export type LaunchResult = { ok: true; tabId: string } | { ok: false }
 
 export interface LaunchRequest {
   jobId: string
+  backend: BackendId
   cwd: string
   worktree?: string
   model?: string
@@ -90,8 +93,8 @@ export interface RunnerDeps {
   worktreeDirExists(root: string, name: string): boolean
   branchExists(root: string, branch: string): Promise<boolean>
   countRunFolders(root: string, slug: string): number
-  accountUsable(): boolean
-  trusted(wsPath: string): boolean
+  accountUsable(backend: BackendId): boolean
+  trusted(wsPath: string, backend: BackendId): boolean
   ready(): boolean
   launch(req: LaunchRequest): LaunchResult | Promise<LaunchResult>
   killTab(tabId: string): void
@@ -137,6 +140,7 @@ function scheduleErrors(s: unknown): string[] {
 interface Clean {
   name: string
   task: string
+  backend: BackendId
   model?: string
   effort?: CronEffort
   permission: CronPermission
@@ -152,6 +156,7 @@ function clean(input: CronSaveInput): Clean {
   return {
     name,
     task,
+    backend: SESSION_BACKENDS.find((b) => b === input.backend) ?? 'claude',
     permission,
     ...(model ? { model } : {}),
     ...(isCronEffort(input.effort) ? { effort: input.effort } : {})
@@ -315,7 +320,8 @@ export class CronRunner {
         return { ok: false, reason: 'folder-missing' }
       }
 
-      if (!this.d.accountUsable()) {
+      const backend = cronBackend(job)
+      if (!this.d.accountUsable(backend)) {
         this.fail(job, dueAt, mark, 'no usable account')
         return { ok: false, reason: 'no-account' }
       }
@@ -336,16 +342,17 @@ export class CronRunner {
 
       const res = await this.d.launch({
         jobId: job.id,
+        backend,
         cwd: job.workspacePath,
         worktree,
         model: job.model,
         effort: job.effort,
-        permission: LAUNCH_PERMISSION[job.permission],
+        permission: backend === 'codex' ? 'bypass' : LAUNCH_PERMISSION[job.permission],
         firstPrompt: job.task,
         name: job.name
       })
       if (!res.ok) {
-        this.fail(job, dueAt, mark, 'Claude exited before it started')
+        this.fail(job, dueAt, mark, `${BACKEND_LABEL[backend]} exited before it started`)
         return { ok: false, reason: 'failed' }
       }
       const run: LiveRun = {
@@ -405,10 +412,11 @@ export class CronRunner {
       this.push()
       return
     }
-    // CC§9
-    const note = this.d.trusted(job.workspacePath)
-      ? 'Claude did not start'
-      : 'Claude did not start — this folder was never opened in Claude; start one session here first'
+    const label = BACKEND_LABEL[cronBackend(job)]
+    // CC§9 CODEX§14
+    const note = this.d.trusted(job.workspacePath, cronBackend(job))
+      ? `${label} did not start`
+      : `${label} did not start — this folder was never opened in ${label}; start one session here first`
     this.writeHistory(job, {
       dueAt: run.dueAt,
       state: 'failed',
@@ -416,8 +424,8 @@ export class CronRunner {
       ...(run.worktree ? { worktree: run.worktree } : {}),
       ...(run.manual ? MANUAL : {})
     })
-    this.d.toast(`⏰ ${job.name} could not start: Claude did not start`)
-    this.d.notify(job.name, 'Could not start — Claude did not start')
+    this.d.toast(`⏰ ${job.name} could not start: ${label} did not start`)
+    this.d.notify(job.name, `Could not start — ${label} did not start`)
   }
 
   onBound(tabId: string, sessionId: string): void {
@@ -467,8 +475,9 @@ export class CronRunner {
       ...(run.manual ? MANUAL : {})
     }
     if (run.state === 'launching') {
-      this.writeHistory(job, { ...line, state: 'failed', note: 'Claude exited before it started' })
-      this.d.toast(`⏰ ${job.name} could not start: Claude exited before it started`)
+      const note = `${BACKEND_LABEL[cronBackend(job)]} exited before it started`
+      this.writeHistory(job, { ...line, state: 'failed', note })
+      this.d.toast(`⏰ ${job.name} could not start: ${note}`)
     } else {
       this.writeHistory(job, { ...line, state: 'closed' })
     }

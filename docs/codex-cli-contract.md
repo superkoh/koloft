@@ -404,3 +404,31 @@ a higher "long context" price for prompts above 272K tokens; Codex's window on t
 the short-context price is used. The model ids match the `slug`s in
 `~/.codex/models_cache.json` on the same day. A ChatGPT plan login is not billed per token:
 this cost is what the same tokens would cost on the API, not what the person pays.
+
+## 14. A launch that starts with a task, a model and a thinking level
+
+**Checked on 2026-09-24 with standalone Codex CLI 0.153.4 (`codex-cli 0.153.4`), no real
+model.** `codex app-server --listen unix://<dir>/rpc.sock` ran with an isolated
+`CODEX_HOME` whose `config.toml` pointed the model provider at a small local HTTP server
+that saved every request body. The real TUI ran in a Python PTY (120×40, answering its
+terminal queries) as `codex --remote unix://<dir>/rpc.sock -C <repo> -m probe-model-x -c
+model_reasoning_effort="high" -a never -s danger-full-access "KOLOFT_FIRST_PROMPT_PROBE
+say hi"`, in a fresh Git repository, for 15 seconds, pressing no key.
+
+- With a `[projects."<repo>"]` `trust_level = "trusted"` table, the TUI sent the last
+  argument as the first turn with no key pressed: the provider got a `/v1/responses`
+  request whose `input` held the prompt text, `model: "probe-model-x"` and
+  `reasoning: {effort: "high", …}`. A second request (a title thread, section 2) had the
+  same model and no effort.
+- Without that table, the same line showed "Do you trust the contents of this
+  directory?" and sent **nothing** to the provider in 15 seconds: `-a never -s
+  danger-full-access` does not skip the trust question. A scheduled run into a folder
+  Codex never trusted waits there until Koloft's start deadline.
+- `app-server --listen unix:///tmp/…` refused to start with "socket directory path exists
+  and is not a directory: /tmp" (on macOS `/tmp` is a link to `/private/tmp`); a folder
+  under `/private/tmp` worked.
+
+Only `high` was tried; that `low`, `medium`, `xhigh` and `max` reach the wire the same
+way is **inferred, not checked** (`~/.codex/models_cache.json` lists them, plus
+`ultra`, as `supported_reasoning_levels` for `gpt-6-astra`). Codex has no flag that
+names the session, so a scheduled Codex run gets its title from Codex itself.

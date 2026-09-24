@@ -165,6 +165,7 @@ describe('validate messages (§7.5)', () => {
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.input).toEqual({
+      backend: 'claude',
       name: 'Nightly report',
       task: '/daily-report',
       schedule: { kind: 'weekly', days: [1, 2, 3, 4, 5], at: '09:00' },

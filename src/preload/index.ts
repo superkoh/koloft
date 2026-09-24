@@ -137,7 +137,7 @@ const api: KoloftApi = {
     setEnabled: (jobId, on) => ipcRenderer.invoke('cron:setEnabled', { jobId, on }),
     runNow: (jobId) => ipcRenderer.invoke('cron:runNow', jobId),
     skills: (workspacePath) => ipcRenderer.invoke('cron:skills', workspacePath),
-    trusted: (workspacePath) => ipcRenderer.invoke('cron:trusted', workspacePath),
+    trusted: (workspacePath, backend) => ipcRenderer.invoke('cron:trusted', workspacePath, backend),
     onState: (cb) => {
       const handler = (_e: unknown, s: CronState): void => cb(s)
       ipcRenderer.on('cron:state', handler)

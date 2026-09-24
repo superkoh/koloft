@@ -98,7 +98,8 @@ beforeEach(() => {
     attention: vi.fn(),
     error: vi.fn(),
     trustFolder: vi.fn(),
-    agentOpen: vi.fn()
+    agentOpen: vi.fn(),
+    bound: vi.fn()
   }
   sessions = new CodexSessions(path.join(directory, 'sessions.json'), deps)
   vi.spyOn(sessions, 'availability').mockResolvedValue({ id: 'codex', available: true })
@@ -404,6 +405,34 @@ describe('CodexSessions', () => {
 
     await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1', scheduled: true })
     expect(deps.trustFolder).toHaveBeenCalledTimes(1)
+  })
+
+  // CODEX§14
+  it('a scheduled launch hands Codex its task as the first prompt with its model and thinking level, and reports the bind so the run stops counting as starting', async () => {
+    const { id } = await sessions.launch({
+      kind: 'codex',
+      cwd: repo,
+      scheduled: true,
+      permission: 'bypass',
+      model: 'gpt-5.5',
+      effort: 'high',
+      firstPrompt: '/daily-report now'
+    })
+    const argv = vi.mocked(deps.pty.create).mock.calls[0][0].argv!
+    expect(argv.slice(-9)).toEqual([
+      '-a',
+      'never',
+      '-s',
+      'danger-full-access',
+      '-m',
+      'gpt-5.5',
+      '-c',
+      'model_reasoning_effort="high"',
+      '/daily-report now'
+    ])
+    expect(deps.bound).not.toHaveBeenCalled()
+    bind()
+    expect(deps.bound).toHaveBeenCalledWith(id, codexSessionKey(A))
   })
 
   it('cancels launches waiting on availability when shutdown starts and performs no refresh', async () => {

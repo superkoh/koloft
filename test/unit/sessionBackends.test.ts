@@ -107,8 +107,9 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
     expect(remote.browserControl).not.toBe(true)
   })
 
-  it('gives a Codex session on this Mac a Workbench and marks the three-line status line unsupported, citing the ledger section that shows why', () => {
+  it('gives a Codex session on this Mac a Workbench and scheduled tasks, and marks the three-line status line unsupported, citing the ledger section that shows why', () => {
     expect(capabilitiesFor('codex', 'local').workbench).toBe(true)
+    expect(capabilitiesFor('codex', 'local').scheduledTasks).toBe(true)
     expect(capabilitiesFor('codex', 'local').statusline3).toEqual({ unsupported: 'CODEX§8' })
   })
 
