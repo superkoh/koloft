@@ -5,6 +5,7 @@ import { execFileSync } from 'child_process'
 import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
+import { WORKBENCH } from './helpers/workbench'
 import {
   addWorkspace,
   centerTerm,
@@ -369,6 +370,26 @@ test.describe('Codex sessions through the real method chooser, process transport
       ])
       expect(readCalls(env).some((call) => statusOverride(call.argv))).toBe(false)
       expect(fs.readFileSync(configFile, 'utf8')).toBe(userConfig)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a file Codex opens with `open` shows in its own Workbench reading area', async ({
+    env
+  }) => {
+    installCodex(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await runIn(page, centerTerm(page), 'open README.md')
+      await page
+        .locator('.wb-bar .seg[aria-label="Files view"] button', { hasText: 'Browse' })
+        .click()
+      await expect(page.locator(WORKBENCH.readingTitle)).toHaveText('README.md')
+      await expect(page.locator(WORKBENCH.readingBody)).toContainText('koloft-e2e-alpha')
     } finally {
       await quitAndClose(app)
     }

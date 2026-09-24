@@ -209,6 +209,19 @@ if (argv[0] === 'app-server') {
       result(id, { turn })
       status(thread, { type: 'active', activeFlags: [] })
       event('turn/started', { threadId: thread.id, turn })
+      if (text.startsWith('open '))
+        event('item/completed', {
+          threadId: thread.id,
+          turnId: turn.id,
+          item: {
+            type: 'commandExecution',
+            id: 'open-' + turn.id,
+            status: 'completed',
+            command: `/bin/zsh -lc '${text}'`,
+            cwd: thread.cwd,
+            commandActions: [{ type: 'unknown', command: text }]
+          }
+        })
       if (text.includes('approve')) {
         pendingApproval = { id: 'approval-' + turn.id, thread, turn }
         status(thread, { type: 'active', activeFlags: ['waitingOnApproval'] })

@@ -66,8 +66,8 @@ function patchDelta(kind: unknown, diff: string): { added: number; removed: numb
   if (lines[lines.length - 1] === '') lines.pop()
   if (kind === 'add') return { added: lines.length, removed: 0 }
   return {
-    added: lines.filter((l) => l.startsWith('+') && !l.startsWith('+++ ')).length,
-    removed: lines.filter((l) => l.startsWith('-') && !l.startsWith('--- ')).length
+    added: lines.filter((l) => l.startsWith('+')).length,
+    removed: lines.filter((l) => l.startsWith('-')).length
   }
 }
 
