@@ -58,5 +58,7 @@ export interface Host {
   ): void
   unwatchFile(file: string): void
   shell(cwd: string): ShellLaunch
+  reveal(p: string): void
+  osOpen(p: string): void
   github: GithubLookup
 }

@@ -27,12 +27,12 @@ import { SessionTracker, readAppendedLines, sessionEventFromHook } from './sessi
 import type { StatusEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
 import { SessionBackends } from './sessionBackends'
-import { BACKEND_LABEL } from '@shared/sessionBackend'
+import { BACKEND_LABEL, capabilitiesFor, SUPPORTED_PAIRS } from '@shared/sessionBackend'
 import { AttentionTracker, type AttentionContext } from './attention'
 import { route, dockBadgeText } from './notifyRouter'
 import { registeredByTabRoot, setupShim, UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE } from './shim'
 import { openDropTarget, type OpenDrop } from './openDrop'
-import { leaveForOS, openUrlExternally, osOpenFallback } from './osOpen'
+import { openUrlExternally, osOpenFallback } from './osOpen'
 import {
   authPromptFor,
   certHostOf,
@@ -48,7 +48,7 @@ import {
 } from './browserSecurity'
 import { directoryListingHtml } from './dirListing'
 import { HOOK_SCRIPT, setupHooks, writeTabHookSettings } from './hooks'
-import { formatRemoteKey, hostOf, parseRemoteKey } from '@shared/remoteKey'
+import { formatRemoteKey, hostOf } from '@shared/remoteKey'
 import {
   defaultControlDir,
   ensureControlDir,
@@ -118,10 +118,10 @@ import { loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
 import { WorkspaceManager, type LiveSession } from './workspaces'
 import { sanitizeSessionWorkbench } from '@shared/workbenchState'
-import { dirExistsSync, gitProbes, occupantName, type ResumeProbes } from './resumePlan'
+import { dirExistsSync, gitProbes, type ResumeProbes } from './resumePlan'
 import { ClaudeBackend, POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE } from './backends/claude'
-import { codexBackend } from './backends/codex'
-import { acceptCodexTrust, codexConfigFile, codexTrustsFolder } from './codexTrust'
+import { codexBackend, trustCodexFolder } from './backends/codex'
+import { codexConfigFile } from './codexTrust'
 import {
   CodexAccountPicker,
   codexHomeOf,
@@ -130,7 +130,6 @@ import {
   prepareCodexHome
 } from './codexAccounts'
 import { shq } from '@shared/shellQuote'
-import { claudeJsonPath, claudeTrustsFolder } from './claudeTrust'
 import { CronRunner, type LaunchRequest } from './cronRunner'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { listSkills, type SkillFs } from './skillList'
@@ -1287,13 +1286,7 @@ app.whenReady().then(() => {
         else attention.onExited(tabId, attentionCtx(), sessionTitleOf(tabId))
       },
       error: (message) => sendToRenderer('cron:toast', message),
-      trustFolder: (root, env) => {
-        try {
-          acceptCodexTrust(codexConfigFile(env), root)
-        } catch (err) {
-          console.error('[koloft] could not record Codex trust for', root, err)
-        }
-      },
+      trustFolder: trustCodexFolder,
       agentOpen: (tabId, target) => {
         if (path.isAbsolute(target) && !fs.existsSync(target)) return
         openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target)
@@ -1406,8 +1399,8 @@ app.whenReady().then(() => {
     worktreeDirExists: (root, name) => dirExistsSync(path.join(worktreeHomeOf(root), name)),
     branchExists: resumeProbes.branchExists,
     countRunFolders: countRunFoldersSync,
-    accountUsable,
-    trusted: backendTrusts,
+    accountUsable: (backend) => sessionBackends.get(backend).accountUsable(),
+    trusted: (wsPath, backend) => sessionBackends.get(backend).trustsFolder(wsPath),
     ready: () => rendererReady && BrowserWindow.getAllWindows().length > 0,
     launch: launchCronRun,
     killTab: (tabId) => void killTabPty(tabId),
@@ -1937,7 +1930,12 @@ const boundSessions = new Map<string, string>()
 function ptyTabIds(): string[] {
   return ptyMgr
     .list()
-    .filter((p) => !p.util && p.kind !== 'codex')
+    .filter(
+      (p) =>
+        !p.util &&
+        (p.kind === 'shell' ||
+          capabilitiesFor(p.kind, tracker.remoteOf(p.id) ? 'ssh' : 'local').browserControl === true)
+    )
     .map((p) => p.id)
 }
 
@@ -2394,22 +2392,6 @@ function sessionIdOf(tabId: string): string | undefined {
   return tracker.list().find((s) => s.tabId === tabId)?.sessionId
 }
 
-function occupantOfDir(dir: string): string | null {
-  const target = path.resolve(dir)
-  for (const s of allSessions()) {
-    if (!s.alive || s.remote) continue
-    if (s.treeRoot && path.resolve(s.treeRoot) === target) return occupantName(s)
-    // CC§4
-    const bound = s.sessionId ? workspaceMgr?.findRow(s.sessionId)?.worktreeState : undefined
-    if (bound && path.resolve(bound.worktreePath) === target) return occupantName(s)
-  }
-  for (const tab of ptyMgr.list()) {
-    if (tab.kind === 'codex' && tab.alive && path.resolve(tab.cwd) === target)
-      return 'a starting Codex session'
-  }
-  return null
-}
-
 function untrackSession(tabId: string): void {
   tracker.untrack(tabId)
 }
@@ -2606,16 +2588,6 @@ function countRunFoldersSync(root: string, slug: string): number {
   }
 }
 
-function accountUsable(backend: BackendId): boolean {
-  if (backend === 'codex' || !loadSettings().multiAccount) return true
-  return listAccounts().some((a) => a.kind !== 'codex-home' && a.enabled && a.status === 'ok')
-}
-
-function backendTrusts(dir: string, backend: BackendId): boolean {
-  if (backend === 'codex') return codexTrustsFolder(codexSharedConfig(), dir)
-  return claudeTrustsFolder(claudeJsonPath(), dir)
-}
-
 async function launchCronRun(
   req: LaunchRequest
 ): Promise<{ ok: true; tabId: string } | { ok: false }> {
@@ -2680,7 +2652,7 @@ function gitOut(cwd: string, args: string[]): Promise<string | null> {
 
 const resumeProbes: ResumeProbes = {
   dirExists: dirExistsSync,
-  occupantOf: occupantOfDir,
+  occupantOf: (dir) => sessionBackends.occupantOf(dir),
   ...gitProbes(gitOut)
 }
 
@@ -2893,7 +2865,7 @@ function registerIpc(): void {
     listSkills(skillFs, workspacePath, os.homedir())
   )
   ipcMain.handle('cron:trusted', (_e, workspacePath: string, backend: BackendId) =>
-    backendTrusts(workspacePath, backend)
+    sessionBackends.get(backend).trustsFolder(workspacePath)
   )
 
   ipcMain.handle('update:check', () => checkForUpdates())
@@ -2986,7 +2958,7 @@ function registerIpc(): void {
   ipcMain.handle('workspace:discover', () => workspaceMgr?.discover() ?? [])
   ipcMain.handle('workspace:worktrees', async (_e, p: string) => {
     const trees = (await workspaceMgr?.worktrees(p)) ?? []
-    if (!parseRemoteKey(p)) {
+    if (SUPPORTED_PAIRS.codex[hostOf(p)]) {
       for (const resource of codexSessions?.store.listResources() ?? []) {
         if (
           resource.originalCwd !== p ||
@@ -3331,7 +3303,7 @@ function registerIpc(): void {
     if (typeof p === 'string' && p) hosts.of(p).unwatchFile(p)
   })
   ipcMain.on('fs:reveal', (_e, p: string) => {
-    if (typeof p === 'string' && p && hostOf(p) === 'local') void leaveForOS(p, 'reveal')
+    if (typeof p === 'string' && p) hosts.of(p).reveal(p)
   })
   ipcMain.handle('edit:open', (_e, p: unknown) => hosts.of(p as string).openForEdit(p as string))
   ipcMain.handle('edit:write', (_e, p: unknown, text: unknown, expect: unknown, opts: unknown) =>
@@ -3387,7 +3359,7 @@ function registerIpc(): void {
   })
 
   ipcMain.on('preview:os-open', (_e, p: string) => {
-    if (typeof p === 'string' && p && hostOf(p) === 'local') osOpenFallback(p)
+    if (typeof p === 'string' && p) hosts.of(p).osOpen(p)
   })
 
   ipcMain.on('app:home', (e) => {

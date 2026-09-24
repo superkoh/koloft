@@ -393,8 +393,6 @@ describe('resolvePending', () => {
     expect(out.rows).toEqual([
       {
         id: 'tab-1',
-        backendId: 'claude',
-        host: 'local',
         title: PENDING_SESSION_TITLE,
         worktree: 'main',
         cwd: WS,
@@ -449,8 +447,6 @@ describe('resolvePending', () => {
     expect(bound.rows).toEqual([
       {
         id: 's1',
-        backendId: 'claude',
-        host: 'local',
         title: PLACEHOLDER_SESSION_TITLE,
         worktree: 'main',
         cwd: WS,
@@ -478,8 +474,6 @@ describe('resolvePending', () => {
     expect(out.rows).toEqual([
       {
         id: 's1',
-        backendId: 'claude',
-        host: 'local',
         title: PLACEHOLDER_SESSION_TITLE,
         worktree: 'bugfix',
         cwd: WT,

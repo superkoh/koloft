@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
-import type { ResumeEvidence, ResumePlan, SessionRow } from '@shared/types'
+import type { BackendSessionRow, ResumeEvidence, ResumePlan } from '@shared/types'
 
 export interface ResumeProbes {
   dirExists(p: string): boolean | Promise<boolean>
@@ -73,7 +73,7 @@ async function planUnboundRebuild(cwd: string, probes: ResumeProbes): Promise<Re
 }
 
 export async function planResume(
-  row: SessionRow | undefined,
+  row: BackendSessionRow | undefined,
   probes: ResumeProbes,
   bucketDir?: string
 ): Promise<ResumePlan> {

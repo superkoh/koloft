@@ -12,6 +12,7 @@ import {
 } from '../gitStatus'
 import type { GithubLookup } from '../github'
 import { resolveSpawnCwd } from '../projectInfo'
+import { leaveForOS, osOpenFallback } from '../osOpen'
 import type { Host } from './host'
 
 async function readText(p: string): Promise<string> {
@@ -52,6 +53,8 @@ export function localHost(github: GithubLookup): Host {
       const spawnCwd = resolveSpawnCwd(cwd)
       return { spawnCwd, cwd: spawnCwd }
     },
+    reveal: (p) => void leaveForOS(p, 'reveal'),
+    osOpen: osOpenFallback,
     github
   }
 }

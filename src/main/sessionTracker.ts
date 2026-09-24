@@ -373,8 +373,6 @@ export class SessionTracker extends SessionRuntime {
 
     const info: SessionInfo = {
       tabId,
-      backendId: 'claude',
-      host: remote ? 'ssh' : 'local',
       sessionId: '',
       title: PLACEHOLDER_SESSION_TITLE,
       cwd,

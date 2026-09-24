@@ -1,6 +1,8 @@
 import type {
   BackendAvailability,
   BackendId,
+  BackendSessionInfo,
+  BackendSessionRow,
   CreateTabOptions,
   CreateTabResult,
   ResumePlan,
@@ -10,14 +12,19 @@ import type {
   SessionRow
 } from '@shared/types'
 import type { SessionEvent } from '@shared/sessionEvent'
-import { identityOf, SUPPORTED_PAIRS, unsupportedPairMessage } from '@shared/sessionBackend'
+import {
+  identityOf,
+  sourceOf,
+  SUPPORTED_PAIRS,
+  unsupportedPairMessage
+} from '@shared/sessionBackend'
 import { hostOf } from '@shared/remoteKey'
 
 export interface SessionBackend {
   id: BackendId
   availability(): Promise<BackendAvailability>
-  list(): SessionInfo[]
-  historyRows(workspacePath: string): Promise<SessionRow[]>
+  list(): BackendSessionInfo[]
+  historyRows(workspacePath: string): Promise<BackendSessionRow[]>
   create(spec: CreateTabOptions): Promise<CreateTabResult>
   resume(request: SessionResumeRequest): Promise<SessionResumeResult>
   resumePlan(key: string): Promise<ResumePlan>
@@ -27,6 +34,9 @@ export interface SessionBackend {
   archive(key: string): boolean
   transcriptExists(key: string): boolean | Promise<boolean>
   observe(tabId: string, event: SessionEvent): void
+  occupantOf(dir: string): string | null
+  accountUsable(): boolean
+  trustsFolder(dir: string): boolean
 }
 
 export class SessionBackends {
@@ -48,6 +58,14 @@ export class SessionBackends {
     return this.get(identityOf(key).backendId)
   }
 
+  occupantOf(dir: string): string | null {
+    for (const backend of this.adapters.values()) {
+      const occupant = backend.occupantOf(dir)
+      if (occupant) return occupant
+    }
+    return null
+  }
+
   ownerOfTab(tabId: string): SessionBackend | undefined {
     return [...this.adapters.values()].find((backend) => backend.hasTab(tabId))
   }
@@ -65,8 +83,10 @@ export class SessionBackends {
 
   list(): SessionInfo[] {
     return [...this.adapters.values()].flatMap((backend) =>
-      backend.list().map((s) => ({
+      backend.list().map((s): SessionInfo => ({
         ...s,
+        backendId: backend.id,
+        host: s.remote ? 'ssh' : 'local',
         nativeSessionId: s.nativeSessionId ?? s.sessionId
       }))
     )
@@ -81,7 +101,10 @@ export class SessionBackends {
     const rows: SessionRow[] = []
     const failures: { id: BackendId; error: unknown }[] = []
     answers.forEach((answer, i) => {
-      if (answer.status === 'fulfilled') rows.push(...answer.value)
+      if (answer.status === 'fulfilled')
+        rows.push(
+          ...answer.value.map((r) => ({ ...r, ...sourceOf(backends[i].id, workspacePath) }))
+        )
       else failures.push({ id: backends[i].id, error: answer.reason })
     })
     if (failures.length && !rows.length) throw failures[0].error

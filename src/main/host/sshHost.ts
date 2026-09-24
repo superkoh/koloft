@@ -436,6 +436,10 @@ export class SshHost implements Host {
     return { ...this.deps.shell(this.bare(cwd)), cwd }
   }
 
+  reveal(): void {}
+
+  osOpen(): void {}
+
   async endTmuxSession(tmuxName: string): Promise<void> {
     await this.deps.run(killSessionCmd(tmuxName))
   }

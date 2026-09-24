@@ -1,4 +1,5 @@
-import type { BackendId, HostId, SessionMethods } from './types'
+import type { BackendId, HostId, SessionMethods, SessionSource } from './types'
+import { hostOf } from './remoteKey'
 
 export const SESSION_BACKENDS: BackendId[] = ['claude', 'codex']
 
@@ -16,6 +17,10 @@ export function normalizeSessionMethods(raw: unknown): SessionMethods {
 }
 
 export const BACKEND_LABEL: Record<BackendId, string> = { claude: 'Claude', codex: 'Codex' }
+
+export function sourceOf(backendId: BackendId, workspacePath: string): SessionSource {
+  return { backendId, host: hostOf(workspacePath) }
+}
 
 export type Capability = true | { unsupported: string } | { pending: true }
 
@@ -57,7 +62,7 @@ const NOTHING_YET: Capabilities = {
   rename: PENDING
 }
 
-const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities>> = {
+const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities | 'refused'>> = {
   claude: {
     local: EVERYTHING,
     ssh: {
@@ -76,19 +81,21 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities>> = {
       statusline3: { unsupported: 'CODEX§8' }
     },
     // CODEX§16
-    ssh: NOTHING_YET
+    ssh: 'refused'
   }
 }
 
 export function capabilitiesFor(backend: BackendId, host: HostId): Capabilities {
-  return CAPABILITIES[backend][host]
+  const caps = CAPABILITIES[backend][host]
+  return caps === 'refused' ? NOTHING_YET : caps
 }
 
-export const SUPPORTED_PAIRS: Record<BackendId, Record<HostId, boolean>> = {
-  claude: { local: true, ssh: true },
-  // CODEX§16
-  codex: { local: true, ssh: false }
-}
+export const SUPPORTED_PAIRS = Object.fromEntries(
+  SESSION_BACKENDS.map((b) => [
+    b,
+    { local: CAPABILITIES[b].local !== 'refused', ssh: CAPABILITIES[b].ssh !== 'refused' }
+  ])
+) as Record<BackendId, Record<HostId, boolean>>
 
 export function unsupportedPairMessage(backend: BackendId, host: HostId): string | undefined {
   return SUPPORTED_PAIRS[backend][host]

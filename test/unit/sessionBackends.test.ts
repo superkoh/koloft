@@ -7,13 +7,17 @@ import {
   sessionKey,
   SUPPORTED_PAIRS
 } from '@shared/sessionBackend'
-import type { BackendId, SessionRow } from '@shared/types'
+import type { BackendId, BackendSessionInfo, BackendSessionRow } from '@shared/types'
 
-function stubBackend(id: BackendId, rows: () => Promise<SessionRow[]> = async () => []) {
+function stubBackend(
+  id: BackendId,
+  rows: () => Promise<BackendSessionRow[]> = async () => [],
+  sessions: BackendSessionInfo[] = []
+) {
   return {
     id,
     availability: async () => ({ id, available: true }),
-    list: () => [],
+    list: () => sessions,
     historyRows: rows,
     create: async () => ({ ok: true as const, id: 'tab', cwd: '/repo' }),
     resume: async () => ({ ok: true as const, id: 'tab', cwd: '/repo' }),
@@ -23,14 +27,15 @@ function stubBackend(id: BackendId, rows: () => Promise<SessionRow[]> = async ()
     stop: () => {},
     archive: () => true,
     transcriptExists: () => true,
-    observe: () => {}
+    observe: () => {},
+    occupantOf: () => null,
+    accountUsable: () => true,
+    trustsFolder: () => true
   } satisfies SessionBackend
 }
 
-const row = (id: string, backendId: BackendId, mtime: number): SessionRow => ({
+const row = (id: string, mtime: number): BackendSessionRow => ({
   id,
-  backendId,
-  host: 'local',
   title: id,
   cwd: '/repo',
   worktree: 'main',
@@ -42,9 +47,7 @@ const row = (id: string, backendId: BackendId, mtime: number): SessionRow => ({
 describe('session backend boundary', () => {
   it('shows the history one method could read when another fails, newest first, and says which failed', async () => {
     const registry = new SessionBackends()
-    registry.register(
-      stubBackend('claude', async () => [row('a', 'claude', 1), row('b', 'claude', 3)])
-    )
+    registry.register(stubBackend('claude', async () => [row('a', 1), row('b', 3)]))
     registry.register(
       stubBackend('codex', async () => {
         throw new Error('app-server gone')
@@ -54,6 +57,33 @@ describe('session backend boundary', () => {
     const rows = await registry.historyRows('/repo', (id) => unread.push(id))
     expect(rows.map((r) => r.id)).toEqual(['b', 'a'])
     expect(unread).toEqual(['codex'])
+  })
+
+  it('marks every session and history row with the method it came from and the machine it runs on', async () => {
+    const registry = new SessionBackends()
+    const session = (tabId: string, remote?: { host: string }): BackendSessionInfo => ({
+      tabId,
+      sessionId: tabId,
+      title: tabId,
+      cwd: '/repo',
+      treeRoot: '/repo',
+      alive: true,
+      updatedAt: 1,
+      ...(remote ? { remote } : {})
+    })
+    registry.register(
+      stubBackend('claude', async () => [row('a', 1)], [session('t1', { host: 'devbox' })])
+    )
+    registry.register(stubBackend('codex', async () => [row('b', 2)], [session('t2')]))
+    expect(registry.list().map((s) => [s.tabId, s.backendId, s.host])).toEqual([
+      ['t1', 'claude', 'ssh'],
+      ['t2', 'codex', 'local']
+    ])
+    const rows = await registry.historyRows('ssh://devbox/repo', () => {})
+    expect(rows.map((r) => [r.id, r.backendId, r.host])).toEqual([
+      ['b', 'codex', 'ssh'],
+      ['a', 'claude', 'ssh']
+    ])
   })
 
   it('fails the history read when no method could read anything', async () => {

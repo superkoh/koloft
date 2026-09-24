@@ -6,6 +6,7 @@ import type {
   DiscoveredFolder,
   LayoutV4,
   ProjectInfo,
+  BackendSessionRow,
   SessionRow,
   SessionWorkbenchState,
   WorkspaceAddResult,
@@ -40,7 +41,7 @@ import {
 import { encodeCwd } from './sessionTracker'
 import { isGitCheckout } from './projectInfo'
 import { isRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
-import { identityOf } from '@shared/sessionBackend'
+import { identityOf, sourceOf } from '@shared/sessionBackend'
 import type { RemoteGitInfo } from './remote/install'
 
 const RESCAN_DEBOUNCE_MS = 250
@@ -67,7 +68,7 @@ export interface LiveSession {
 }
 
 export interface WorkspaceManagerDeps {
-  additionalRows?(workspacePath: string): SessionRow[]
+  additionalRows?(workspacePath: string): BackendSessionRow[]
   additionalMembers?(): Set<string>
   projectsRoot: string
   loadLayout(): LayoutV4
@@ -575,6 +576,10 @@ export class WorkspaceManager {
       const wsRunningIds = key
         ? new Set([...runningIds, ...(this.deps.remoteRunning?.(key.host) ?? [])])
         : runningIds
+      const claudeRow = (r: BackendSessionRow): SessionRow => ({
+        ...r,
+        ...sourceOf('claude', ws.path)
+      })
       const allRows = aggregateSessions(buckets, {
         listJsonl: (slug) => {
           const files = this.listJsonl(root, slug)
@@ -594,9 +599,12 @@ export class WorkspaceManager {
         runningIds: wsRunningIds,
         dirExists: key ? () => true : dirExistsSync,
         now: Date.now
-      })
+      }).map(claudeRow)
       if (!key) {
-        const additional = this.deps.additionalRows?.(ws.path) ?? []
+        const additional = (this.deps.additionalRows?.(ws.path) ?? []).map((r): SessionRow => ({
+          ...r,
+          ...sourceOf('codex', ws.path)
+        }))
         for (const r of additional) bucketDirById.set(r.id, r.cwd)
         for (const r of additional) {
           if (r.pending) continue
@@ -633,7 +641,7 @@ export class WorkspaceManager {
               }
             : {})
         },
-        rows: [...pending.rows, ...rows]
+        rows: [...pending.rows.map(claudeRow), ...rows]
       })
     }
 

@@ -19,10 +19,12 @@ vi.mock('../../src/main/codexRuntime', () => ({ resolveCodexRuntime: mocks.runti
 vi.mock('../../src/main/codexTransport', () => ({
   createCodexTransport: mocks.create,
   CodexRpc: class {
+    private home?: string
     constructor(options: { env?: NodeJS.ProcessEnv }) {
-      mocks.rpcHomes.push(options.env?.CODEX_HOME)
+      this.home = options.env?.CODEX_HOME
+      mocks.rpcHomes.push(this.home)
     }
-    request = mocks.request
+    request = (method: string, params: unknown) => mocks.request(method, params, this.home)
     close = mocks.close
   }
 }))
@@ -255,14 +257,10 @@ describe('CodexSessions', () => {
   // CODEX§15
   it('lists history from the default home and every account home, and resumes a thread in the home it was found in', async () => {
     vi.mocked(deps.homes).mockReturnValue(['/homes/work'])
-    mocks.request.mockImplementation(async (_method, params) =>
+    mocks.request.mockImplementation(async (_method, params, home) =>
       params.archived
         ? { data: [] }
-        : {
-            data: [
-              mocks.rpcHomes.at(-1) === '/homes/work' ? { id: B, cwd: repo } : { id: A, cwd: repo }
-            ]
-          }
+        : { data: [home === '/homes/work' ? { id: B, cwd: repo } : { id: A, cwd: repo }] }
     )
     const rows = await sessions.historyRows(repo)
     expect(rows.map((row) => row.id).sort()).toEqual(
@@ -277,8 +275,7 @@ describe('CodexSessions', () => {
   it('an account home that fails to list keeps its last threads and hides no other home', async () => {
     vi.mocked(deps.homes).mockReturnValue(['/homes/work'])
     let broken = false
-    mocks.request.mockImplementation(async (_method, params) => {
-      const home = mocks.rpcHomes.at(-1)
+    mocks.request.mockImplementation(async (_method, params, home) => {
       if (home === '/homes/work' && broken) throw new Error('state database locked')
       if (params.archived) return { data: [] }
       return { data: [home === '/homes/work' ? { id: B, cwd: repo } : { id: A, cwd: repo }] }

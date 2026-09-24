@@ -5,9 +5,9 @@ import type {
   CreateTabOptions,
   LaunchPermission,
   ProjectInfo,
-  SessionInfo,
+  BackendSessionInfo,
   SessionResumeRequest,
-  SessionRow
+  BackendSessionRow
 } from '@shared/types'
 import { identityOf } from '@shared/sessionBackend'
 import type { SessionEvent } from '@shared/sessionEvent'
@@ -23,6 +23,7 @@ import { SessionStore, codexSessionKey, type WorktreeResource } from './sessionS
 import { SessionWorktrees } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
 import { resolveCodexRuntime } from './codexRuntime'
+import { occupantName } from './resumePlan'
 import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
 
 const exists = (p: string): boolean => {
@@ -67,6 +68,7 @@ export interface CodexAvailability {
 }
 
 const AVAILABILITY_FAILURE_MS = 60_000
+const EMIT_THROTTLE_MS = 500
 
 const binaryGone = (error: unknown): boolean =>
   (error as NodeJS.ErrnoException | null)?.code === 'ENOENT'
@@ -94,7 +96,7 @@ interface Run {
   tabId: string
   cwd: string
   workspace: string
-  info?: SessionInfo
+  info?: BackendSessionInfo
   resource?: WorktreeResource
   observer: CodexObservation
   transport: Awaited<ReturnType<typeof createCodexTransport>>
@@ -119,6 +121,8 @@ export class CodexSessions {
   private launchingKeys = new Set<string>()
   private pendingLaunches = new Set<Promise<{ id: string; cwd: string }>>()
   private shuttingDown = false
+  private emitTimer?: ReturnType<typeof setTimeout>
+  private lastEmitMs = 0
   readonly store: SessionStore
   readonly worktrees: SessionWorktrees
 
@@ -133,8 +137,18 @@ export class CodexSessions {
       if (!run?.info || run.explicitStop || run.stopping) return
       run.info.status = next
       run.info.updatedAt = Date.now()
-      deps.changed()
+      this.changed()
     })
+  }
+
+  private changed(): void {
+    if (this.emitTimer) return
+    const wait = Math.max(0, EMIT_THROTTLE_MS - (Date.now() - this.lastEmitMs))
+    this.emitTimer = setTimeout(() => {
+      this.emitTimer = undefined
+      this.lastEmitMs = Date.now()
+      this.deps.changed()
+    }, wait)
   }
 
   async availability(opts: { force?: boolean } = {}): Promise<CodexAvailability> {
@@ -212,11 +226,15 @@ export class CodexSessions {
     return this.store.getMember(key)?.codexHome ?? this.threadHomes.get(key)
   }
 
+  private rpc(home: string | undefined): CodexRpc {
+    return new CodexRpc({ binary: this.binary!, env: this.envFor(home), cwd: os.homedir() })
+  }
+
   // CODEX§15
   async readAccount(home: string): Promise<{ signedIn: boolean; limits?: unknown }> {
     if (!this.binary && !(await this.availability()).available)
       throw new Error('Codex CLI is unavailable.')
-    const rpc = new CodexRpc({ binary: this.binary!, env: this.envFor(home), cwd: os.homedir() })
+    const rpc = this.rpc(home)
     try {
       const account = record(await rpc.request('account/read', {}))
       if (!account.account) return { signedIn: false }
@@ -230,7 +248,7 @@ export class CodexSessions {
     return this.runs.size > 0 || this.pendingLaunches.size > 0
   }
 
-  list(): SessionInfo[] {
+  list(): BackendSessionInfo[] {
     return [...this.runs.values()].flatMap((r) => (r.info ? [{ ...r.info }] : []))
   }
   hasTab(tabId: string): boolean {
@@ -240,6 +258,21 @@ export class CodexSessions {
     return [...this.runs.values()].find((r) => r.info?.sessionId === key || r.resumeKey === key)
       ?.tabId
   }
+  occupantOf(dir: string): string | null {
+    const target = path.resolve(dir)
+    for (const run of this.runs.values()) {
+      const info = run.info
+      if (!info) {
+        if (path.resolve(run.cwd) === target) return 'a starting Codex session'
+        continue
+      }
+      if (path.resolve(info.treeRoot) === target) return occupantName(info)
+      const bound = this.findRow(info.sessionId)?.worktreeState
+      if (bound && path.resolve(bound.worktreePath) === target) return occupantName(info)
+    }
+    return null
+  }
+
   runningBindings(): Map<string, string> {
     return new Map(
       [...this.runs.values()].flatMap((run) => {
@@ -248,7 +281,7 @@ export class CodexSessions {
       })
     )
   }
-  findRow(key: string): SessionRow | undefined {
+  findRow(key: string): BackendSessionRow | undefined {
     const member = this.store.getMember(key)
     const thread = this.history.get(key)
     const workspace = member?.workspacePath ?? (thread ? this.workspaceFor(thread.cwd) : undefined)
@@ -261,22 +294,20 @@ export class CodexSessions {
     ])
   }
 
-  rows(workspace: string): SessionRow[] {
+  rows(workspace: string): BackendSessionRow[] {
     const scope: RowScope = {
       byPath: new Map(this.store.listResources().map((r) => [r.worktreePath, r])),
       roots: new Map()
     }
-    const rows = new Map<string, SessionRow>()
+    const rows = new Map<string, BackendSessionRow>()
     for (const [key, t] of this.history) {
       const member = this.store.getMember(key)
       if ((member?.workspacePath ?? this.workspaceFor(t.cwd, scope)) !== workspace) continue
       rows.set(key, this.row(t, scope))
     }
     for (const m of this.store.listMembers(workspace)) {
-      const r: SessionRow = rows.get(m.key) ?? {
+      const r: BackendSessionRow = rows.get(m.key) ?? {
         id: m.key,
-        backendId: 'codex',
-        host: 'local',
         title: m.title,
         cwd: m.cwd,
         worktree: 'main',
@@ -306,8 +337,6 @@ export class CodexSessions {
       }
       rows.set(run.tabId, {
         id: run.tabId,
-        backendId: 'codex',
-        host: 'local',
         title: 'Starting…',
         cwd: run.cwd,
         worktree: run.resource?.worktreeName ?? 'main',
@@ -322,13 +351,11 @@ export class CodexSessions {
     )
   }
 
-  private row(t: CodexThread, scope: RowScope): SessionRow {
+  private row(t: CodexThread, scope: RowScope): BackendSessionRow {
     const key = codexSessionKey(t.id)
     const resource = scope.byPath.get(t.cwd)
     return {
       id: key,
-      backendId: 'codex',
-      host: 'local',
       nativeSessionId: t.id,
       createdAt: (t.createdAt ?? 0) * 1000,
       title: t.name || t.preview?.slice(0, 100) || 'Codex session',
@@ -373,82 +400,80 @@ export class CodexSessions {
       }
     }
     if (this.shuttingDown) return
+    const homeList = [undefined, ...this.deps.homes()]
+    const listings = await Promise.allSettled(homeList.map((home) => this.listHome(home)))
+    const defaultListing = listings[0]
+    if (defaultListing.status === 'rejected') {
+      if (binaryGone(defaultListing.reason)) this.forgetProbe()
+      const error = defaultListing.reason
+      this.historyError = error instanceof Error ? error : new Error(String(error))
+      return
+    }
     const seen = new Map<string, CodexThread>()
     const homes = new Map<string, string>()
     const archivedIds = new Set<string>()
-    try {
-      for (const home of [undefined, ...this.deps.homes()]) {
-        const rpc = new CodexRpc({
-          binary: this.binary!,
-          env: this.envFor(home),
-          cwd: os.homedir()
-        })
-        try {
-          for (const archived of [false, true]) {
-            let cursor: string | undefined
-            const cursors = new Set<string>()
-            do {
-              const reply = record(
-                await rpc.request('thread/list', {
-                  limit: 100,
-                  cursor,
-                  archived,
-                  sourceKinds: ['cli', 'vscode', 'appServer']
-                })
-              )
-              if (!Array.isArray(reply.data))
-                throw new Error('Codex history returned an unsupported response.')
-              for (const value of reply.data) {
-                const t = userThread(value)
-                if (t) {
-                  const key = codexSessionKey(t.id)
-                  seen.set(key, t)
-                  if (home) homes.set(key, home)
-                  if (archived) archivedIds.add(key)
-                }
-              }
-              cursor =
-                typeof reply.nextCursor === 'string' && reply.nextCursor
-                  ? reply.nextCursor
-                  : undefined
-              if (cursor && cursors.has(cursor)) throw new Error('Codex history repeated a page.')
-              if (cursor) cursors.add(cursor)
-            } while (cursor)
-          }
-        } catch (error) {
-          if (!home) throw error
-          this.keepLastListing(home, seen, homes, archivedIds)
-        } finally {
-          await rpc.close()
-        }
+    listings.forEach((listing, i) => {
+      const home = homeList[i]
+      const threads =
+        listing.status === 'fulfilled'
+          ? listing.value
+          : [...this.threadHomes]
+              .filter(([key, owner]) => owner === home && this.history.has(key))
+              .map(([key]) => ({
+                key,
+                thread: this.history.get(key)!,
+                archived: this.archivedIds.has(key)
+              }))
+      for (const { key, thread, archived } of threads) {
+        seen.set(key, thread)
+        if (home) homes.set(key, home)
+        if (archived) archivedIds.add(key)
       }
-      this.history = seen
-      this.threadHomes = homes
-      this.archivedIds = archivedIds
-      this.historyError = undefined
-      this.deps.changed()
-    } catch (error) {
-      if (binaryGone(error)) this.forgetProbe()
-      this.historyError = error instanceof Error ? error : new Error(String(error))
+    })
+    this.history = seen
+    this.threadHomes = homes
+    this.archivedIds = archivedIds
+    this.historyError = undefined
+    this.changed()
+  }
+
+  private async listHome(
+    home: string | undefined
+  ): Promise<{ key: string; thread: CodexThread; archived: boolean }[]> {
+    const rpc = this.rpc(home)
+    const threads: { key: string; thread: CodexThread; archived: boolean }[] = []
+    try {
+      for (const archived of [false, true]) {
+        let cursor: string | undefined
+        const cursors = new Set<string>()
+        do {
+          const reply = record(
+            await rpc.request('thread/list', {
+              limit: 100,
+              cursor,
+              archived,
+              sourceKinds: ['cli', 'vscode', 'appServer']
+            })
+          )
+          if (!Array.isArray(reply.data))
+            throw new Error('Codex history returned an unsupported response.')
+          for (const value of reply.data) {
+            const thread = userThread(value)
+            if (thread) threads.push({ key: codexSessionKey(thread.id), thread, archived })
+          }
+          cursor =
+            typeof reply.nextCursor === 'string' && reply.nextCursor ? reply.nextCursor : undefined
+          if (cursor && cursors.has(cursor)) throw new Error('Codex history repeated a page.')
+          if (cursor) cursors.add(cursor)
+        } while (cursor)
+      }
+      return threads
+    } finally {
+      await rpc.close()
     }
   }
 
-  private keepLastListing(
-    home: string,
-    seen: Map<string, CodexThread>,
-    homes: Map<string, string>,
-    archivedIds: Set<string>
-  ): void {
-    for (const [key, owner] of this.threadHomes) {
-      const thread = this.history.get(key)
-      if (owner !== home || !thread) continue
-      seen.set(key, thread)
-      homes.set(key, home)
-      if (this.archivedIds.has(key)) archivedIds.add(key)
-    }
-  }
-
-  async historyRows(workspace: string): Promise<SessionRow[]> {
+  async historyRows(workspace: string): Promise<BackendSessionRow[]> {
     await this.refreshHistory()
     if (this.historyError) throw this.historyError
     return this.rows(workspace).filter(
@@ -461,11 +486,7 @@ export class CodexSessions {
     if (this.archivedIds.has(key)) return false
     if (!this.binary && !(await this.availability()).available)
       throw new Error('Codex CLI is unavailable.')
-    const rpc = new CodexRpc({
-      binary: this.binary!,
-      env: this.envFor(this.homeFor(key)),
-      cwd: os.homedir()
-    })
+    const rpc = this.rpc(this.homeFor(key))
     try {
       const reply = record(await rpc.request('thread/read', { threadId: id, includeTurns: false }))
       const t = userThread(reply.thread)
@@ -481,7 +502,7 @@ export class CodexSessions {
   archive(key: string): boolean {
     if (this.aliveTabFor(key)) return false
     const removed = this.store.removeMember(key)
-    this.deps.changed()
+    this.changed()
     return removed
   }
 
@@ -636,7 +657,7 @@ export class CodexSessions {
         account: picked?.account
       }
       this.runs.set(handle.id, run)
-      this.deps.changed()
+      this.changed()
       this.warnUntestedVersion(available)
       return { id: handle.id, cwd }
     } catch (error) {
@@ -662,10 +683,10 @@ export class CodexSessions {
       case 'background-changed':
         if (!runtime.setBackground(run.tabId, event.items)) return
         info.background = event.items.length ? event.items : undefined
-        return this.deps.changed()
+        return this.changed()
       case 'usage':
         info.usage = event.usage
-        return this.deps.changed()
+        return this.changed()
       case 'title':
         return this.retitle(info, event.title)
       case 'open':
@@ -675,14 +696,14 @@ export class CodexSessions {
         info.lastTouched = event.lastTouched
         info.lastWritten = event.lastWritten
         info.liveWrites = event.liveWrites
-        return this.deps.changed()
+        return this.changed()
     }
   }
 
   private markDegraded(run: Run | undefined): void {
     if (!run?.info) return
     run.info.details = { codex: { observation: 'degraded' } }
-    this.deps.changed()
+    this.changed()
   }
 
   private bindThread(run: Run, thread: CodexThread, change: 'replace' | 'switch'): void {
@@ -725,8 +746,6 @@ export class CodexSessions {
       tabId: run.tabId,
       sessionId: key,
       nativeSessionId: thread.id,
-      backendId: 'codex',
-      host: 'local',
       title: this.store.getMember(key)?.title ?? 'Codex session',
       cwd: run.cwd,
       treeRoot: run.cwd,
@@ -740,11 +759,11 @@ export class CodexSessions {
     this.history.set(key, { ...thread, cwd: run.cwd })
     if (run.home) this.threadHomes.set(key, run.home)
     this.deps.pty.clearResumeIntent(run.tabId)
-    this.deps.changed()
+    this.changed()
     this.deps.bound(run.tabId, key)
   }
 
-  private retitle(info: SessionInfo, title: string): void {
+  private retitle(info: BackendSessionInfo, title: string): void {
     info.title = title
     try {
       this.store.updateMember(info.sessionId, { title, updatedAt: Date.now() })
@@ -753,7 +772,7 @@ export class CodexSessions {
     }
     const t = this.history.get(info.sessionId)
     if (t) t.name = title
-    this.deps.changed()
+    this.changed()
   }
 
   resume(req: SessionResumeRequest): Promise<{ id: string; cwd: string }> {
@@ -816,14 +835,14 @@ export class CodexSessions {
           }
         }
         if (!unexpectedExit) this.deps.attention(tabId, 'clear')
-        this.deps.changed()
+        this.changed()
         if (!this.shuttingDown)
           void this.refreshHistory().catch((error) => this.deps.error(String(error)))
       })
       .catch((error) => {
         run.stopping = undefined
         if (run.info) run.info.details = { codex: { observation: 'degraded' } }
-        this.deps.changed()
+        this.changed()
         throw error
       })
     return run.stopping

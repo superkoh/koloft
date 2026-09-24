@@ -2,7 +2,16 @@ import type { ResumePlan } from '@shared/types'
 import { parseRemoteKey } from '@shared/remoteKey'
 import type { SessionBackend } from '../sessionBackends'
 import type { CodexSessions } from '../codexSessions'
+import { acceptCodexTrust, codexConfigFile, codexTrustsFolder } from '../codexTrust'
 import { dirExistsSync, planResume, type ResumeProbes } from '../resumePlan'
+
+export function trustCodexFolder(root: string, env: NodeJS.ProcessEnv | undefined): void {
+  try {
+    acceptCodexTrust(codexConfigFile(env), root)
+  } catch (err) {
+    console.error('[koloft] could not record Codex trust for', root, err)
+  }
+}
 
 export function codexBackend(sessions: CodexSessions, resumeProbes: ResumeProbes): SessionBackend {
   return {
@@ -37,6 +46,9 @@ export function codexBackend(sessions: CodexSessions, resumeProbes: ResumeProbes
     stop: (tabId) => sessions.stop(tabId),
     archive: (key) => sessions.archive(key),
     transcriptExists: (key) => sessions.transcriptExists(key),
-    observe: (tabId, event) => sessions.observe(tabId, event)
+    observe: (tabId, event) => sessions.observe(tabId, event),
+    occupantOf: (dir) => sessions.occupantOf(dir),
+    accountUsable: () => true,
+    trustsFolder: (dir) => codexTrustsFolder(codexConfigFile(sessions.defaultEnv), dir)
   }
 }

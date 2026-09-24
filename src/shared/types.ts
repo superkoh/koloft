@@ -405,11 +405,14 @@ export const PLACEHOLDER_SESSION_TITLE = 'Claude session'
 
 export const PENDING_SESSION_TITLE = 'Starting…'
 
-export interface SessionInfo {
-  cliVersion?: string
-  background?: BackgroundItem[]
+export interface SessionSource {
   backendId: BackendId
   host: HostId
+}
+
+export interface BackendSessionInfo {
+  cliVersion?: string
+  background?: BackgroundItem[]
   nativeSessionId?: string
   tabId: string
   sessionId: string
@@ -438,7 +441,9 @@ export interface SessionInfo {
   updatedAt: number
 }
 
-export interface ClaudeSessionInfo extends SessionInfo {
+export interface SessionInfo extends BackendSessionInfo, SessionSource {}
+
+export interface ClaudeSessionInfo extends BackendSessionInfo {
   jsonlPath: string | null
   // CC§2
   scratchpadDir?: string
@@ -1072,9 +1077,7 @@ export interface WorktreeStateMeta {
   originalHeadCommit: string
 }
 
-export interface SessionRow {
-  backendId: BackendId
-  host: HostId
+export interface BackendSessionRow {
   nativeSessionId?: string
   createdAt?: number
   id: string
@@ -1089,6 +1092,8 @@ export interface SessionRow {
   worktreeState?: WorktreeStateMeta
   revealDir?: string
 }
+
+export interface SessionRow extends BackendSessionRow, SessionSource {}
 
 export interface WorkspaceFreshness {
   state: 'ok' | 'none' | 'error'

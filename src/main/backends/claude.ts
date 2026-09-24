@@ -4,10 +4,10 @@ import os from 'os'
 import path from 'path'
 import type {
   BackendAvailability,
+  BackendSessionInfo,
   CreateTabOptions,
   CreateTabResult,
   ResumePlan,
-  SessionInfo,
   SessionResumeRequest,
   SessionResumeResult,
   SessionRow
@@ -45,10 +45,10 @@ import {
 import { hookSettings } from '../hooks'
 import type { StatusLineSetting } from '../statusline'
 import { loadSettings } from '../settings'
-import { keychainRead } from '../accounts'
+import { keychainRead, listAccounts } from '../accounts'
 import type { PickResponse } from '../accountPicker'
 import { claudeArgv, SESSION_ID_RE } from '../claudeArgs'
-import { acceptClaudeTrust, claudeJsonPath } from '../claudeTrust'
+import { acceptClaudeTrust, claudeJsonPath, claudeTrustsFolder } from '../claudeTrust'
 import { probeClaude } from '../claudeProbe'
 import { runningClaudePid } from '../claudeSessionRegistry'
 import { resolveSpawnCwd } from '../projectInfo'
@@ -122,7 +122,7 @@ export class ClaudeBackend implements SessionBackend {
     return { id: 'claude', available: found, reason: found ? undefined : 'Not installed' }
   }
 
-  list(): SessionInfo[] {
+  list(): BackendSessionInfo[] {
     return this.d.tracker.list().map(publicClaudeSession)
   }
 
@@ -145,6 +145,29 @@ export class ClaudeBackend implements SessionBackend {
 
   observe(tabId: string, event: SessionEvent): void {
     this.d.tracker.receive(tabId, event)
+  }
+
+  occupantOf(dir: string): string | null {
+    const target = path.resolve(dir)
+    for (const s of this.d.tracker.list()) {
+      if (!s.alive || s.remote) continue
+      if (s.treeRoot && path.resolve(s.treeRoot) === target) return occupantName(s)
+      // CC§4
+      const bound = s.sessionId
+        ? this.d.workspaces()?.findRow(s.sessionId)?.worktreeState
+        : undefined
+      if (bound && path.resolve(bound.worktreePath) === target) return occupantName(s)
+    }
+    return null
+  }
+
+  accountUsable(): boolean {
+    if (!loadSettings().multiAccount) return true
+    return listAccounts().some((a) => a.kind !== 'codex-home' && a.enabled && a.status === 'ok')
+  }
+
+  trustsFolder(dir: string): boolean {
+    return claudeTrustsFolder(claudeJsonPath(), dir)
   }
 
   archive(key: string): boolean {
