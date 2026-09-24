@@ -1,4 +1,3 @@
-import { EventEmitter } from 'events'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
@@ -8,8 +7,9 @@ import type {
   SessionStatus,
   FileAccess,
   SessionUsage,
-  ParkedItem
+  BackgroundItem
 } from '@shared/types'
+import type { ReportedTask, SessionEvent } from '@shared/sessionEvent'
 import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
 import { basename } from '@shared/preview'
 import { resolvePricing } from '@shared/pricing'
@@ -17,6 +17,7 @@ import { localDayKey } from '@shared/usageFormat'
 import { encodeCwd } from '@shared/cwdKey'
 import { projectInfoFor } from './projectInfo'
 import { inspectTaskProcs, type TaskProcs } from './taskProcs'
+import { SessionRuntime, envMs, type Turn } from './sessionRuntime'
 
 const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects')
 const TMP_ROOT = ((): string => {
@@ -29,9 +30,6 @@ const TMP_ROOT = ((): string => {
 const MAX_FILES = 300
 const SUBAGENT_SCAN_MS = envMs('KOLOFT_SUBAGENT_SCAN_MS', 5000)
 const EMIT_THROTTLE_MS = 500
-const IDLE_MS = envMs('KOLOFT_IDLE_MS', 4 * 60_000)
-// CC§12
-const AUTO_CLOSE_MS = envMs('KOLOFT_IDLE_CLOSE_MS', 30 * 60_000)
 const RESUME_AFTER_STOP_MS = envMs('KOLOFT_RESUME_AFTER_STOP_MS', 2000)
 const STOP_HOLD_MS = envMs('KOLOFT_STOP_HOLD_MS', 10_000)
 const BG_SILENCE_MAX_MS = envMs('KOLOFT_BG_SILENCE_MS', 10 * 60_000)
@@ -50,20 +48,7 @@ function num(x: unknown): number {
   return typeof x === 'number' && isFinite(x) && x > 0 ? x : 0
 }
 
-function envMs(name: string, dflt: number): number {
-  const v = process.env[name]
-  const n = v && v.trim() ? Number(v) : NaN
-  return isFinite(n) && n >= 0 ? n : dflt
-}
-
 const BG_PROMOTED = '\x00promoted'
-
-// CC§8
-export interface ReportedTask {
-  id: string
-  type: string
-  since?: number
-}
 
 // CC§8
 export function parseReportedTasks(bgl: unknown): ReportedTask[] | undefined {
@@ -75,6 +60,27 @@ export function parseReportedTasks(bgl: unknown): ReportedTask[] | undefined {
     out.push({ id: pair.slice(0, i), type: pair.slice(i + 1) })
   }
   return out
+}
+
+export function sessionEventFromHook(
+  event?: string,
+  message?: string,
+  bgl?: unknown
+): SessionEvent | null {
+  switch (event) {
+    case 'prompt':
+      return { type: 'prompt' }
+    case 'stop':
+      return { type: 'stop', reported: parseReportedTasks(bgl) }
+    case 'notify': {
+      const m = (message || '').toLowerCase()
+      // CC§8
+      const approval = m.includes('permission') || m.includes('approval')
+      return { type: 'notify', need: approval ? 'approval' : 'input' }
+    }
+    default:
+      return null
+  }
 }
 
 // CC§8
@@ -290,9 +296,6 @@ interface Tracked {
   parseAgain: boolean
   statusSeq: number
   caughtUp: boolean
-  statusSince: number
-  idleTimer?: ReturnType<typeof setTimeout>
-  autoCloseTimer?: ReturnType<typeof setTimeout>
   jsonlListener?: () => void
   titleListener?: () => void
   usageSeen: Set<string>
@@ -314,7 +317,6 @@ interface Tracked {
   lastMainActivityTs: number
   bindMs: number
   resetMs: number
-  stopPending: boolean
   reported: ReportedTask[] | null
   reportedAt: number
   taskCmds: Map<string, string>
@@ -322,7 +324,6 @@ interface Tracked {
   toolCmds: Map<string, string>
   procs: TaskProcs | null
   shellCpu: Map<string, { cpuMs: number; at: number; quiet: boolean }>
-  wakeupPending: boolean
   procsAt: number
   procsPromise?: Promise<void>
   teammateActiveMs: number
@@ -365,16 +366,13 @@ export async function readAppendedLines(
   return buf.toString('utf8', 0, lastNl).split('\n')
 }
 
-export class SessionTracker extends EventEmitter {
+export class SessionTracker extends SessionRuntime {
   private tracked = new Map<string, Tracked>()
   private pendingPicked = new Map<string, string>()
   private emitTimer?: ReturnType<typeof setTimeout>
   private lastEmitMs = 0
   pidOf?: (tabId: string) => number | undefined
   inspect: typeof inspectTaskProcs = inspectTaskProcs
-  activeTabId?: () => string | null
-  heldTabs?: () => ReadonlySet<string>
-  needsUser?: (tabId: string) => boolean
   leftBehind?: (sessionId: string) => boolean
 
   track(tabId: string, cwd: string, remote?: RemoteTab): void {
@@ -413,7 +411,6 @@ export class SessionTracker extends EventEmitter {
       parseAgain: false,
       statusSeq: 0,
       caughtUp: false,
-      statusSince: 0,
       usageSeen: new Set(),
       usageAny: false,
       usageInTok: 0,
@@ -430,7 +427,6 @@ export class SessionTracker extends EventEmitter {
       lastMainActivityTs: 0,
       bindMs: Date.now(),
       resetMs: Date.now(),
-      stopPending: false,
       reported: null,
       reportedAt: 0,
       taskCmds: new Map(),
@@ -438,7 +434,6 @@ export class SessionTracker extends EventEmitter {
       toolCmds: new Map(),
       procs: null,
       shellCpu: new Map(),
-      wakeupPending: false,
       procsAt: 0,
       teammateActiveMs: 0,
       lastInterruptTs: 0,
@@ -460,88 +455,46 @@ export class SessionTracker extends EventEmitter {
     }
   }
 
+  receive(tabId: string, event: SessionEvent): void {
+    if (event.type === 'prompt') this.recordHookTurn(tabId, 'working')
+    else if (event.type === 'notify') this.recordHookTurn(tabId, event.need)
+    else if (event.type === 'stop') void this.reportTurnEnd(tabId, event.reported)
+  }
+
   setStatus(tabId: string, status: SessionStatus): void {
+    this.recordHookTurn(tabId, status === 'working' || status === 'approval' ? status : 'ended')
+  }
+
+  private recordHookTurn(tabId: string, turn: Turn): void {
     const t = this.tracked.get(tabId)
     if (!t) return
     t.statusSeq++
-    this.applyStatus(t, status)
+    this.applyStatus(t, turn)
   }
 
-  private applyStatus(t: Tracked, status: SessionStatus): void {
-    const tabId = t.info.tabId
-    if (this.tracked.get(tabId) !== t) return
-    t.stopPending = false
-    if (t.idleTimer) {
-      clearTimeout(t.idleTimer)
-      t.idleTimer = undefined
-    }
-    if (t.autoCloseTimer) {
-      clearTimeout(t.autoCloseTimer)
-      t.autoCloseTimer = undefined
-    }
-    if (t.info.status !== status) {
-      const prev = t.info.status
-      t.info.status = status
-      t.info.updatedAt = Date.now()
-      t.statusSince = t.info.updatedAt
-      this.emit('status', { tabId, prev, next: status })
-      this.emitUpdate()
-    }
-    if (status === 'waiting') {
-      t.idleTimer = setTimeout(() => {
-        t.idleTimer = undefined
-        if (t.info.status === 'waiting') {
-          t.info.status = 'idle'
-          t.info.updatedAt = Date.now()
-          this.emit('status', { tabId, prev: 'waiting', next: 'idle' })
-          this.emitUpdate()
-          this.armAutoClose(t)
-        }
-      }, IDLE_MS)
-    }
+  private applyStatus(t: Tracked, turn: Turn, heldByBackground = false): void {
+    if (this.tracked.get(t.info.tabId) !== t) return
+    this.recordTurn(t.info.tabId, turn, heldByBackground)
   }
 
-  private armAutoClose(t: Tracked): void {
-    if (t.autoCloseTimer) clearTimeout(t.autoCloseTimer)
-    t.autoCloseTimer = t.remote
-      ? undefined
-      : setTimeout(() => void this.tryAutoClose(t), AUTO_CLOSE_MS)
+  protected override statusChanged(tabId: string, status: SessionStatus): void {
+    const t = this.tracked.get(tabId)
+    if (!t) return
+    t.info.status = status
+    t.info.updatedAt = Date.now()
+    this.emitUpdate()
   }
 
-  private async tryAutoClose(t: Tracked): Promise<void> {
-    t.autoCloseTimer = undefined
-    const tabId = t.info.tabId
-    const held =
-      tabId === this.activeTabId?.() ||
-      t.wakeupPending ||
-      !!this.leftBehind?.(t.info.sessionId) ||
-      !!t.info.parked?.length ||
-      !!this.heldTabs?.().has(tabId) ||
-      !!this.needsUser?.(tabId)
+  protected override async workStillRunning(tabId: string): Promise<boolean> {
+    const t = this.tracked.get(tabId)
+    if (!t) return false
+    if (this.leftBehind?.(t.info.sessionId)) return true
+    if (t.remote) return false
     const root = this.pidOf?.(tabId)
     const scratch = t.info.scratchpadDir
-    if (held || !root || !scratch) {
-      this.armAutoClose(t)
-      return
-    }
+    if (!root || !scratch) return true
     const procs = await this.inspect(root, tasksDirOf(scratch))
-    if (this.tracked.get(tabId) !== t || t.info.status !== 'idle' || t.autoCloseTimer) return
-    if (!procs || procs.shells.size > 0) {
-      this.armAutoClose(t)
-      return
-    }
-    this.emit('auto-close', { tabId })
-  }
-
-  setWakeupPending(tabId: string, pending: boolean): void {
-    const t = this.tracked.get(tabId)
-    if (t) t.wakeupPending = pending
-  }
-
-  noteActivity(tabId: string): void {
-    const t = this.tracked.get(tabId)
-    if (!t || t.info.status !== 'idle') return
-    this.armAutoClose(t)
+    return !procs || procs.shells.size > 0
   }
 
   async reportTurnEnd(tabId: string, list?: ReportedTask[]): Promise<void> {
@@ -559,19 +512,15 @@ export class SessionTracker extends EventEmitter {
       if (this.tracked.get(tabId) !== t || t.statusSeq !== seq) return
     }
     const busy = t.reported ? this.judgeReported(t) : this.bgBusy(t)
-    if (busy) {
-      t.stopPending = true
-    } else {
-      t.bgTasks.clear()
-      this.applyStatus(t, 'waiting')
-    }
+    if (!busy) t.bgTasks.clear()
+    this.applyStatus(t, 'ended', busy)
   }
 
   private judgeReported(t: Tracked): boolean {
     const now = Date.now()
     const list = t.reported ?? []
     const procs = t.procs
-    const parked: ParkedItem[] = []
+    const parked: BackgroundItem[] = []
     let observed = false
     let trusted = false
     const reportedIds = new Set(list.map((x) => x.id))
@@ -583,7 +532,7 @@ export class SessionTracker extends EventEmitter {
       if (task.type === 'shell') {
         const label = t.taskCmds.get(task.id) ?? task.id
         if (t.monitorIds.has(task.id)) {
-          parked.push({ kind: 'monitor', label })
+          parked.push({ id: task.id, kind: 'monitor', label, state: 'waiting' })
         } else if (!procs) {
           trusted = true
         } else {
@@ -593,7 +542,13 @@ export class SessionTracker extends EventEmitter {
             continue
           }
           if (sh.listening && t.shellCpu.get(task.id)?.quiet) {
-            parked.push({ kind: 'server', label, ageMs: Math.floor(sh.ageMs / 60_000) * 60_000 })
+            parked.push({
+              id: task.id,
+              kind: 'server',
+              label,
+              state: 'waiting',
+              ageMs: Math.floor(sh.ageMs / 60_000) * 60_000
+            })
           } else observed = true
         }
       } else if (AGENT_TYPES.has(task.type)) {
@@ -603,17 +558,22 @@ export class SessionTracker extends EventEmitter {
         else idleTeammates++
       }
     }
-    if (idleTeammates) parked.push({ kind: 'teammate', label: `${idleTeammates} idle` })
+    if (idleTeammates)
+      parked.push({
+        id: 'teammates',
+        kind: 'teammate',
+        label: `${idleTeammates} idle`,
+        state: 'waiting'
+      })
     this.setParked(t, parked)
     if (observed) return true
     if (!trusted) return false
     return this.quietMs(t) < BG_SILENCE_MAX_MS
   }
 
-  private setParked(t: Tracked, items: ParkedItem[]): void {
-    const next = items.length ? items : undefined
-    if (JSON.stringify(next) === JSON.stringify(t.info.parked)) return
-    t.info.parked = next
+  private setParked(t: Tracked, items: BackgroundItem[]): void {
+    if (this.tracked.get(t.info.tabId) !== t || !this.setBackground(t.info.tabId, items)) return
+    t.info.background = items.length ? items : undefined
     t.info.updatedAt = Date.now()
     this.emitUpdate()
   }
@@ -660,7 +620,10 @@ export class SessionTracker extends EventEmitter {
   }
 
   private quietMs(t: Tracked): number {
-    return Date.now() - Math.max(t.lastMainActivityTs, t.lastBgActivityTs, t.statusSince)
+    return (
+      Date.now() -
+      Math.max(t.lastMainActivityTs, t.lastBgActivityTs, this.statusSince(t.info.tabId))
+    )
   }
 
   private bgBusy(t: Tracked): boolean {
@@ -777,8 +740,7 @@ export class SessionTracker extends EventEmitter {
 
   // PLATFORM§28
   private cleanup(t: Tracked): void {
-    if (t.idleTimer) clearTimeout(t.idleTimer)
-    if (t.autoCloseTimer) clearTimeout(t.autoCloseTimer)
+    this.forget(t.info.tabId)
     if (t.subagentTimer) clearInterval(t.subagentTimer)
     if (t.landTimer) clearTimeout(t.landTimer)
     if (t.info.jsonlPath) {
@@ -1018,7 +980,8 @@ export class SessionTracker extends EventEmitter {
     }
     const subChanged = await this.tailSubagents(t)
     const s = t.info.status
-    if (t.stopPending || (s !== 'working' && s !== 'approval')) await this.refreshProcs(t)
+    if (this.isHeldByBackground(t.info.tabId) || (s !== 'working' && s !== 'approval'))
+      await this.refreshProcs(t)
     if (mainChanged || subChanged) this.recompute(t)
     this.reconcileBackground(t)
   }
@@ -1028,14 +991,13 @@ export class SessionTracker extends EventEmitter {
     if (
       (s === 'waiting' || s === 'idle') &&
       t.caughtUp &&
-      t.lastBgActivityTs > t.statusSince + RESUME_AFTER_STOP_MS
+      t.lastBgActivityTs > this.statusSince(t.info.tabId) + RESUME_AFTER_STOP_MS
     ) {
-      this.applyStatus(t, 'working')
-      t.stopPending = true
+      this.applyStatus(t, 'ended', true)
       t.bgTasks.add(BG_PROMOTED)
       return
     }
-    if (!t.stopPending) {
+    if (!this.isHeldByBackground(t.info.tabId)) {
       if (t.reported && s !== 'working' && s !== 'approval') this.judgeReported(t)
       return
     }
@@ -1043,7 +1005,7 @@ export class SessionTracker extends EventEmitter {
     if (!busy) {
       if (Date.now() - t.lastMainActivityTs < STOP_HOLD_MS) return
       t.bgTasks.clear()
-      this.applyStatus(t, 'waiting')
+      this.applyStatus(t, 'ended')
     }
   }
 
@@ -1078,18 +1040,15 @@ export class SessionTracker extends EventEmitter {
   private async interruptTurn(t: Tracked): Promise<void> {
     const s = t.info.status
     if (s !== 'working' && s !== 'approval') return
-    if (t.statusSince > t.lastInterruptTs) return
+    const tabId = t.info.tabId
+    if (this.statusSince(tabId) > t.lastInterruptTs) return
     if (t.reported) {
       await this.refreshProcs(t, true)
-      if (this.tracked.get(t.info.tabId) !== t || t.statusSince > t.lastInterruptTs) return
+      if (this.tracked.get(tabId) !== t || this.statusSince(tabId) > t.lastInterruptTs) return
     }
     const busy = t.reported ? this.judgeReported(t) : this.bgBusy(t)
-    if (busy) {
-      t.stopPending = true
-      return
-    }
-    t.bgTasks.clear()
-    this.applyStatus(t, 'waiting')
+    if (!busy) t.bgTasks.clear()
+    this.applyStatus(t, 'ended', busy)
   }
 
   private async tailSubagents(t: Tracked): Promise<boolean> {
@@ -1163,7 +1122,10 @@ export class SessionTracker extends EventEmitter {
     if (!sawAssistant) return
     if (s === 'approval' || s === 'idle') {
       this.applyStatus(t, 'working')
-    } else if (s === 'waiting' && Date.now() - t.statusSince > RESUME_AFTER_STOP_MS) {
+    } else if (
+      s === 'waiting' &&
+      Date.now() - this.statusSince(t.info.tabId) > RESUME_AFTER_STOP_MS
+    ) {
       // CC§2
       this.applyStatus(t, 'working')
     }
@@ -1282,8 +1244,11 @@ export class SessionTracker extends EventEmitter {
         if (cls?.commandName && !t.commandTitle) t.commandTitle = cls.commandName
         if ((cls?.genuine || hasImage) && mainThread) {
           activity = 'user'
-          if (t.caughtUp || (isFinite(recTs) && recTs >= t.resetMs)) {
-            t.stopPending = false
+          if (
+            (t.caughtUp || (isFinite(recTs) && recTs >= t.resetMs)) &&
+            this.isHeldByBackground(t.info.tabId)
+          ) {
+            this.applyStatus(t, 'working')
           }
         }
       }

@@ -24,7 +24,8 @@ import { probeClaude } from './claudeProbe'
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { FlowGate } from './flowControl'
-import { SessionTracker, readAppendedLines, parseReportedTasks } from './sessionTracker'
+import { SessionTracker, readAppendedLines, sessionEventFromHook } from './sessionTracker'
+import type { StatusEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
 import { SessionBackends } from './sessionBackends'
 import { identityOf } from '@shared/sessionBackend'
@@ -230,7 +231,6 @@ import type {
   LeftoverProcess,
   ResumePlan,
   SessionInfo,
-  SessionStatus,
   AttentionEvent,
   AttentionKind,
   SessionResumeRequest,
@@ -1133,16 +1133,13 @@ app.whenReady().then(() => {
   })
   tracker.on('auto-close', ({ tabId }: { tabId: string }) => {
     sendToRenderer('tab:killedByMain', tabId)
-    killTabPty(tabId)
+    killTabPty(tabId, 'keep-remote-session')
   })
-  tracker.on(
-    'status',
-    (t: { tabId: string; prev: SessionStatus | undefined; next: SessionStatus }) => {
-      attention.onStatusChange(t.tabId, t.prev, t.next, attentionCtx(), sessionTitleOf(t.tabId))
-      // ADR-0022
-      cronRunner?.onStatus(t.tabId, t.prev, t.next)
-    }
-  )
+  tracker.on('status', (t: StatusEdge) => {
+    attention.onStatusChange(t.tabId, t.prev, t.next, attentionCtx(), sessionTitleOf(t.tabId))
+    // ADR-0022
+    cronRunner?.onStatus(t.tabId, t.prev, t.next)
+  })
 
   // CC§1
   if (process.platform !== 'win32') {
@@ -1195,6 +1192,7 @@ app.whenReady().then(() => {
   try {
     codexSessions = new CodexSessions(path.join(userData, 'sessions.json'), {
       pty: ptyMgr,
+      runtime: tracker,
       projectInfo: projectInfoFor,
       changed: () => {
         sendToRenderer('sessions:update', allSessions())
@@ -1202,7 +1200,7 @@ app.whenReady().then(() => {
       },
       attention: (tabId, kind) => {
         if (kind === 'clear') attention.clear(tabId)
-        else attention.onEvent(tabId, kind, attentionCtx(), sessionTitleOf(tabId))
+        else attention.onExited(tabId, attentionCtx(), sessionTitleOf(tabId))
       },
       error: (message) => sendToRenderer('cron:toast', message)
     })
@@ -2265,23 +2263,6 @@ async function drainStatusLog(full: string): Promise<void> {
   }
 }
 
-function statusFromEvent(event?: string, message?: string): SessionStatus | null {
-  switch (event) {
-    case 'prompt':
-      return 'working'
-    case 'stop':
-      return 'waiting'
-    case 'notify': {
-      const m = (message || '').toLowerCase()
-      // CC§8
-      if (m.includes('permission') || m.includes('approval')) return 'approval'
-      return 'waiting'
-    }
-    default:
-      return null
-  }
-}
-
 function liveTabFor(report: { tabId?: string; tmux?: string }): string | undefined {
   if (report.tabId && ptyMgr.get(report.tabId)) return report.tabId
   if (!report.tmux) return undefined
@@ -2302,10 +2283,8 @@ function handleStatusRegistration(raw: unknown): void {
   if (obj.event === 'prompt') consumeOutletDedupe(obj.tabId)
   // CC§8
   if (typeof obj.wake === 'number') tracker.setWakeupPending(obj.tabId, obj.wake === 1)
-  const status = statusFromEvent(obj.event, obj.message)
-  // CC§8
-  if (status === 'waiting') void tracker.reportTurnEnd(obj.tabId, parseReportedTasks(obj.bgl))
-  else if (status) tracker.setStatus(obj.tabId, status)
+  const event = sessionEventFromHook(obj.event, obj.message, obj.bgl)
+  if (event) tracker.receive(obj.tabId, event)
 }
 
 // CC§1
@@ -2355,13 +2334,16 @@ function untrackSession(tabId: string): void {
   tracker.untrack(tabId)
 }
 
-function killTabPty(tabId: string): void {
+function killTabPty(
+  tabId: string,
+  remoteSession: 'kill-remote-session' | 'keep-remote-session' = 'kill-remote-session'
+): void {
   if (codexSessions?.hasTab(tabId)) {
     void codexSessions.stop(tabId).catch((error) => sendToRenderer('cron:toast', String(error)))
     return
   }
   const remote = tracker.remoteOf(tabId)
-  if (remote) {
+  if (remote && remoteSession === 'kill-remote-session') {
     const kill = runSsh(remote.host, killSessionCmd(remote.tmuxName), {
       controlDir: remoteControlDir
     }).then(() => {

@@ -1160,7 +1160,7 @@ function writeTeammateJsonl(
 }
 
 function parked(tracker: InstanceType<typeof SessionTracker>, tabId: string): unknown {
-  return tracker.list().find((s) => s.tabId === tabId)?.parked
+  return tracker.list().find((s) => s.tabId === tabId)?.background
 }
 
 // CC§8
@@ -1187,7 +1187,9 @@ describe('run-state from the typed task list: each task judged by what it is, an
     ])
     await tracker.reportTurnEnd('tabL1', [{ id: 'mtoolu_mon', type: 'shell' }])
     expect(status(tracker, 'tabL1')).toBe('waiting')
-    expect(parked(tracker, 'tabL1')).toEqual([{ kind: 'monitor', label: 'tail -f /tmp/bot.log' }])
+    expect(parked(tracker, 'tabL1')).toEqual([
+      { id: 'mtoolu_mon', kind: 'monitor', label: 'tail -f /tmp/bot.log', state: 'waiting' }
+    ])
   })
 
   it('a reported shell holds working while a tool shell holds its output file, and rests once it is gone', async () => {
@@ -1218,7 +1220,13 @@ describe('run-state from the typed task list: each task judged by what it is, an
     expect(status(tracker, 'tabL3')).toBe('working')
     await waitFor(tracker, (s) => s.tabId === 'tabL3' && s.status === 'waiting', 6000)
     expect(parked(tracker, 'tabL3')).toEqual([
-      { kind: 'server', label: 'python3 -m http.server 4179', ageMs: 0 }
+      {
+        id: 'btoolu_srv',
+        kind: 'server',
+        label: 'python3 -m http.server 4179',
+        state: 'waiting',
+        ageMs: 0
+      }
     ])
   }, 10_000)
 
@@ -1300,7 +1308,9 @@ describe('run-state from the typed task list: each task judged by what it is, an
     ])
     expect(status(tracker, 'tabL6')).toBe('working')
     await waitFor(tracker, (s) => s.tabId === 'tabL6' && s.status === 'waiting', 6000)
-    expect(parked(tracker, 'tabL6')).toEqual([{ kind: 'teammate', label: '2 idle' }])
+    expect(parked(tracker, 'tabL6')).toEqual([
+      { id: 'teammates', kind: 'teammate', label: '2 idle', state: 'waiting' }
+    ])
   }, 10_000)
 
   it('a tool call in flight (a shell the list does not name) holds a quiet teammate as working', async () => {
@@ -1315,7 +1325,9 @@ describe('run-state from the typed task list: each task judged by what it is, an
     expect(status(tracker, 'tabL18')).toBe('working')
     stageProcs(tracker, {})
     await waitFor(tracker, (s) => s.tabId === 'tabL18' && s.status === 'waiting', 6000)
-    expect(parked(tracker, 'tabL18')).toEqual([{ kind: 'teammate', label: '1 idle' }])
+    expect(parked(tracker, 'tabL18')).toEqual([
+      { id: 'teammates', kind: 'teammate', label: '1 idle', state: 'waiting' }
+    ])
   }, 10_000)
 
   it('a fresh teammate spawn counts as activity before its transcript exists', async () => {
@@ -1428,7 +1440,7 @@ describe('run-state from the typed task list: each task judged by what it is, an
     tracker.setStatus('tabL14', 'working')
     stageProcs(tracker, { bsrv: { listening: true } })
     await tracker.reportTurnEnd('tabL14', [{ id: 'bsrv', type: 'shell' }])
-    await waitFor(tracker, (s) => s.tabId === 'tabL14' && !!s.parked, 6000)
+    await waitFor(tracker, (s) => s.tabId === 'tabL14' && !!s.background, 6000)
     tracker.bindSession('tabL14', file, SID, cwd, '', '', 'clear')
     expect(parked(tracker, 'tabL14')).toBeUndefined()
     expect(status(tracker, 'tabL14')).toBe('waiting')
@@ -1548,16 +1560,17 @@ describe('auto-closing an idle session: every reason to keep it is read fresh at
     await expectStays(closes)
   }, 10_000)
 
-  it('never closes a remote session (this Mac cannot see that machine)', async () => {
+  it('closes an idle remote session too, with no process check (this Mac cannot see that machine)', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     stageAllClear(tracker)
+    tracker.inspect = async () => null
     const closes = recordAutoCloses(tracker)
     tracker.track('tabA4', cwd, { host: 'devbox', projectsRoot, tmuxName: 'k-' + SID })
     const file = writeJsonl(cwd, SID, initialLines(cwd))
     tracker.bindSession('tabA4', file, SID, cwd)
     await waitFor(tracker, (s) => s.tabId === 'tabA4' && s.status === 'idle', 5000)
-    await expectStays(closes)
+    await waitForClose(closes, 'tabA4')
   }, 10_000)
 
   it('never closes a session holding something parked (a Monitor badge)', async () => {

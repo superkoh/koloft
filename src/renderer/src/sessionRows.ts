@@ -1,7 +1,7 @@
 import type { SessionBackend } from './agentUi'
 import type {
+  BackgroundItem,
   LeftoverProcess,
-  ParkedItem,
   SessionInfo,
   SessionStatus,
   TabKind,
@@ -27,8 +27,10 @@ export function leftoverLabel(p: LeftoverProcess): string {
   return p.command.replace(/^\S*\//, '')
 }
 
+const PARKED_KINDS: ReadonlySet<BackgroundItem['kind']> = new Set(['server', 'monitor', 'teammate'])
+
 export function parkedBadge(
-  items: ParkedItem[],
+  items: Pick<BackgroundItem, 'kind' | 'label' | 'ageMs'>[],
   backend?: SessionBackend,
   leftovers: LeftoverProcess[] = []
 ): { text: string; lines: string[]; hint: string } {
@@ -56,7 +58,7 @@ export function parkedBadge(
 }
 
 export function sessionActivityBadge(
-  session?: Pick<SessionInfo, 'parked' | 'background' | 'backendId' | 'observation'>,
+  session?: Pick<SessionInfo, 'background' | 'backendId' | 'observation'>,
   leftovers: LeftoverProcess[] = []
 ): (ReturnType<typeof parkedBadge> & { heading: string }) | null {
   if (session?.observation === 'degraded')
@@ -66,11 +68,13 @@ export function sessionActivityBadge(
       lines: ['Live status is unavailable; the session may still be running.'],
       hint: 'Check the terminal for its current state.'
     }
+  const all = session?.background ?? []
+  const parkedItems = all.filter((item) => PARKED_KINDS.has(item.kind))
+  const background = all.filter((item) => !PARKED_KINDS.has(item.kind))
   const parked =
-    session?.parked?.length || leftovers.length
-      ? parkedBadge(session?.parked ?? [], session?.backendId, leftovers)
+    parkedItems.length || leftovers.length
+      ? parkedBadge(parkedItems, session?.backendId, leftovers)
       : null
-  const background = session?.background ?? []
   if (!background.length)
     return parked ? { ...parked, heading: `${parked.text} parked · not working` } : null
   const unknown = background.some((item) => item.state === 'unknown')

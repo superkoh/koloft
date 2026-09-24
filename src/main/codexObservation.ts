@@ -1,4 +1,6 @@
-import type { SessionInfo, SessionStatus, SessionUsage } from '@shared/types'
+import type { BackgroundItem } from '@shared/types'
+import type { SessionEvent } from '@shared/sessionEvent'
+import type { Turn } from './sessionRuntime'
 import path from 'path'
 
 export function record(value: unknown): Record<string, unknown> {
@@ -48,17 +50,16 @@ export function userThread(value: unknown): CodexThread | null {
   return t as unknown as CodexThread
 }
 
-interface ObservationEvents {
-  bind(thread: CodexThread, change: 'replace' | 'switch'): void
-  status(status: SessionStatus): void
-  title(title: string): void
-  usage(usage: SessionUsage): void
-  attention(kind: 'approval' | 'turn-done' | 'clear'): void
-  degraded(message: string): void
-  background?(items: NonNullable<SessionInfo['background']>): void
+export type CodexEvent =
+  SessionEvent | { type: 'bound'; thread: CodexThread; change: 'replace' | 'switch' }
+
+const TURN_EVENT: Record<Turn, SessionEvent> = {
+  working: { type: 'prompt' },
+  approval: { type: 'notify', need: 'approval' },
+  input: { type: 'notify', need: 'input' },
+  ended: { type: 'stop' }
 }
 
-type BackgroundItem = NonNullable<SessionInfo['background']>[number]
 interface Activity extends BackgroundItem {
   root: string
   owner: string
@@ -76,16 +77,16 @@ export class CodexObservation {
   private threadId?: string
   private liveTurns = new Set<string>()
   private model?: string
-  private mainStatus: SessionStatus = 'idle'
+  private mainTurn: Turn = 'ended'
+  private publishedTurn?: Turn
   private waitingForInput = false
-  private pendingCompletion = false
   private roots = new Set<string>()
   private childRoots = new Map<string, string>()
   private childTurns = new Map<string, string>()
   private activities = new Map<string, Activity>()
   unsubscribed = false
 
-  constructor(private events: ObservationEvents) {}
+  constructor(private emit: (event: CodexEvent) => void) {}
 
   receive(direction: 'client' | 'server', value: unknown): void {
     const f = record(value),
@@ -114,9 +115,8 @@ export class CodexObservation {
       if (id !== undefined && !method && this.approvals.delete(id)) {
         this.approvalThreads.delete(id)
         if (!this.approvals.size) {
-          this.events.attention('clear')
           this.waitingForInput = false
-          this.mainStatus = this.liveTurns.size ? 'working' : 'idle'
+          this.mainTurn = this.liveTurns.size ? 'working' : 'ended'
         }
         this.publishActivity()
       }
@@ -133,33 +133,34 @@ export class CodexObservation {
         return
       }
       if (f.error) {
-        this.events.degraded(String(record(f.error).message ?? 'Codex could not open the session.'))
+        this.degraded(String(record(f.error).message ?? 'Codex could not open the session.'))
         return
       }
       const result = record(f.result)
       const thread = userThread(result.thread)
       if (!thread) {
-        this.events.degraded('Codex returned an unsupported session response.')
+        this.degraded('Codex returned an unsupported session response.')
         return
       }
       this.threadId = thread.id
       this.roots.add(thread.id)
       this.unsubscribed = false
-      this.pendingCompletion = false
       this.liveTurns.clear()
       this.approvals.clear()
       this.approvalThreads.clear()
       this.waitingForInput = false
+      this.mainTurn = 'ended'
+      this.publishedTurn = undefined
       this.model = typeof result.model === 'string' ? result.model : (thread.model ?? undefined)
-      this.events.attention('clear')
       const cwd =
         typeof result.cwd === 'string' && path.isAbsolute(result.cwd)
           ? result.cwd
           : (req.cwd ?? thread.cwd)
-      this.events.bind(
-        { ...thread, cwd, model: this.model },
-        req.method === 'thread/start' ? 'replace' : 'switch'
-      )
+      this.emit({
+        type: 'bound',
+        thread: { ...thread, cwd, model: this.model },
+        change: req.method === 'thread/start' ? 'replace' : 'switch'
+      })
       this.status(thread.status)
       return
     }
@@ -176,9 +177,8 @@ export class CodexObservation {
     ) {
       this.approvals.set(id, method)
       this.approvalThreads.set(id, p.threadId as string)
-      this.mainStatus = method.endsWith('/requestApproval') ? 'approval' : 'waiting'
+      this.mainTurn = method.endsWith('/requestApproval') ? 'approval' : 'input'
       this.publishActivity()
-      this.events.attention('approval')
     } else if (ownedChild) {
       return
     } else if (method === 'thread/status/changed') {
@@ -187,9 +187,7 @@ export class CodexObservation {
       const turn = record(p.turn)
       if (typeof turn.id === 'string') this.liveTurns.add(turn.id)
       this.waitingForInput = false
-      this.pendingCompletion = false
-      this.events.attention('clear')
-      this.mainStatus = 'working'
+      this.mainTurn = 'working'
       this.publishActivity()
     } else if (method === 'turn/completed') {
       const turn = record(p.turn)
@@ -202,13 +200,11 @@ export class CodexObservation {
         }
       }
       this.waitingForInput = false
-      if (!this.approvals.size) this.events.attention('clear')
       this.markBackgroundCommands(this.threadId)
-      this.mainStatus = this.liveTurns.size ? 'working' : 'waiting'
-      this.pendingCompletion = !this.liveTurns.size && turn.status === 'completed'
+      this.mainTurn = this.liveTurns.size ? 'working' : 'ended'
       this.publishActivity()
     } else if (method === 'thread/name/updated' && typeof p.threadName === 'string') {
-      this.events.title(p.threadName)
+      this.emit({ type: 'title', title: p.threadName })
     } else if (method === 'thread/tokenUsage/updated') {
       const u = record(p.tokenUsage),
         total = record(u.total),
@@ -223,18 +219,25 @@ export class CodexObservation {
         return
       const ctx = n(last.totalTokens) ? last.totalTokens : undefined
       const window = n(u.modelContextWindow) ? u.modelContextWindow : undefined
-      this.events.usage({
-        inTok: total.inputTokens,
-        outTok: total.outputTokens,
-        cacheReadTok: total.cachedInputTokens,
-        cacheWriteTok: (total.cacheWriteInputTokens as number) ?? 0,
-        ctxTokens: ctx,
-        ...(window && ctx !== undefined ? { ctxPct: ctx / window } : {}),
-        model: this.model
+      this.emit({
+        type: 'usage',
+        usage: {
+          inTok: total.inputTokens,
+          outTok: total.outputTokens,
+          cacheReadTok: total.cachedInputTokens,
+          cacheWriteTok: (total.cacheWriteInputTokens as number) ?? 0,
+          ctxTokens: ctx,
+          ...(window && ctx !== undefined ? { ctxPct: ctx / window } : {}),
+          model: this.model
+        }
       })
     } else if (method === 'error') {
-      this.events.degraded(String(record(p.error).message ?? 'Codex reported an error.'))
+      this.degraded(String(record(p.error).message ?? 'Codex reported an error.'))
     }
+  }
+
+  private degraded(message: string): void {
+    this.emit({ type: 'degraded', message })
   }
 
   private status(raw: unknown): void {
@@ -245,13 +248,12 @@ export class CodexObservation {
       [...this.approvals.values()].some((method) => method.endsWith('/requestApproval')) ||
       flags.includes('waitingOnApproval')
     )
-      this.mainStatus = 'approval'
-    else if (this.approvals.size || flags.includes('waitingOnUserInput'))
-      this.mainStatus = 'waiting'
-    else if (s.type === 'active') this.mainStatus = 'working'
-    else if (s.type === 'idle' || s.type === 'notLoaded') this.mainStatus = 'idle'
+      this.mainTurn = 'approval'
+    else if (this.approvals.size || flags.includes('waitingOnUserInput')) this.mainTurn = 'input'
+    else if (s.type === 'active') this.mainTurn = 'working'
+    else if (s.type === 'idle' || s.type === 'notLoaded') this.mainTurn = 'ended'
     else if (s.type === 'systemError') {
-      this.events.degraded('Codex session state is unavailable.')
+      this.degraded('Codex session state is unavailable.')
       return
     }
     this.publishActivity()
@@ -368,36 +370,23 @@ export class CodexObservation {
   }
 
   private publishActivity(): void {
-    const activities = [...this.activities.values()].filter(
-      (item) => item.root === this.threadId && item.visible
-    )
-    this.events.background?.(
-      activities.map(({ id, kind, label, state }) => ({ id, kind, label, state }))
-    )
-    const active = activities.some((item) => item.state === 'working')
-    const uncertain = activities.some((item) => item.state === 'unknown')
-    const status = [...this.approvals.values()].some((method) =>
+    const items = [...this.activities.values()]
+      .filter((item) => item.root === this.threadId && item.visible)
+      .map(({ id, kind, label, state }) => ({ id, kind, label, state }))
+    this.emit({ type: 'background-changed', items })
+    const turn: Turn = [...this.approvals.values()].some((method) =>
       method.endsWith('/requestApproval')
     )
       ? 'approval'
       : this.approvals.size || this.waitingForInput
-        ? 'waiting'
-        : this.mainStatus === 'approval'
+        ? 'input'
+        : this.mainTurn === 'approval'
           ? 'approval'
-          : this.liveTurns.size || active
+          : this.liveTurns.size
             ? 'working'
-            : this.mainStatus
-    this.events.status(status)
-    if (
-      this.pendingCompletion &&
-      !this.liveTurns.size &&
-      !active &&
-      !uncertain &&
-      !this.approvals.size &&
-      !this.waitingForInput
-    ) {
-      this.pendingCompletion = false
-      this.events.attention('turn-done')
-    }
+            : this.mainTurn
+    if (turn === this.publishedTurn) return
+    this.publishedTurn = turn
+    this.emit(TURN_EVENT[turn])
   }
 }

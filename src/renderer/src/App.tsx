@@ -1,7 +1,13 @@
 import { NewSessionDialog } from './components/NewSessionDialog'
 import { SessionBackendIcon } from './components/SessionBackendIcon'
 import { effectiveBackend, SESSION_BACKENDS } from '@shared/sessionBackend'
-import { backendLabel, hasWorkbench, launchErrorMessage, type SessionBackend } from './agentUi'
+import {
+  backendLabel,
+  hasWorkbench,
+  isSessionKind,
+  launchErrorMessage,
+  type SessionBackend
+} from './agentUi'
 import {
   useCallback,
   useEffect,
@@ -1296,7 +1302,7 @@ export default function App(): JSX.Element {
                       active={t.id === shown.id}
                       scrollbar={false}
                       onUserInput={
-                        t.kind === 'claude'
+                        isSessionKind(t.kind)
                           ? () => window.api.sessions.noteActivity(t.id)
                           : undefined
                       }

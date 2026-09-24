@@ -342,9 +342,11 @@ export interface LeftoverProcess {
   command: string
 }
 
-export interface ParkedItem {
-  kind: 'server' | 'monitor' | 'teammate'
+export interface BackgroundItem {
+  id: string
+  kind: 'agent' | 'command' | 'server' | 'monitor' | 'teammate'
   label: string
+  state: 'working' | 'waiting' | 'unknown'
   ageMs?: number
 }
 
@@ -368,12 +370,7 @@ export const PENDING_SESSION_TITLE = 'Starting…'
 
 export interface SessionInfo {
   cliVersion?: string
-  background?: {
-    id: string
-    kind: 'agent' | 'command'
-    label: string
-    state: 'working' | 'waiting' | 'unknown'
-  }[]
+  background?: BackgroundItem[]
   backendId?: BackendId
   nativeSessionId?: string
   observation?: 'live' | 'degraded'
@@ -399,7 +396,6 @@ export interface SessionInfo {
   // ADR-0025
   remote?: { host: string }
   status?: SessionStatus
-  parked?: ParkedItem[]
   usage?: SessionUsage
   updatedAt: number
 }

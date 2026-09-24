@@ -9,12 +9,19 @@ import type {
   SessionRow
 } from '@shared/types'
 import { identityOf } from '@shared/sessionBackend'
-import { CodexObservation, record, userThread, type CodexThread } from './codexObservation'
+import {
+  CodexObservation,
+  record,
+  userThread,
+  type CodexEvent,
+  type CodexThread
+} from './codexObservation'
 import { CodexRpc, createCodexTransport } from './codexTransport'
 import { SessionStore, codexSessionKey, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
 import { resolveCodexRuntime } from './codexRuntime'
+import type { SessionRuntime, StatusEdge } from './sessionRuntime'
 
 const exists = (p: string): boolean => {
   try {
@@ -49,9 +56,10 @@ const binaryGone = (error: unknown): boolean =>
 
 export interface CodexSessionDeps {
   pty: PtyManager
+  runtime: SessionRuntime
   projectInfo(p: string): ProjectInfo
   changed(): void
-  attention(tabId: string, kind: 'approval' | 'turn-done' | 'exited' | 'clear'): void
+  attention(tabId: string, kind: 'exited' | 'clear'): void
   error(message: string): void
 }
 
@@ -95,6 +103,13 @@ export class CodexSessions {
   ) {
     this.store = new SessionStore(file)
     this.worktrees = new SessionWorktrees(this.store)
+    deps.runtime.on('status', ({ tabId, next }: StatusEdge) => {
+      const run = this.runs.get(tabId)
+      if (!run?.info || run.explicitStop || run.stopping) return
+      run.info.status = next
+      run.info.updatedAt = Date.now()
+      deps.changed()
+    })
   }
 
   async availability(opts: { force?: boolean } = {}): Promise<CodexAvailability> {
@@ -464,102 +479,39 @@ export class CodexSessions {
     this.assertStarting()
     let run: Run | undefined
     const changed = (): void => this.deps.changed()
-    const observer = new CodexObservation({
-      bind: (thread, change) => {
-        if (!run || run.explicitStop || run.stopping) return
-        const key = codexSessionKey(thread.id),
-          old = run.info?.sessionId
-        if (run.info) {
-          run.cwd = thread.cwd
-          run.workspace = this.workspaceFor(thread.cwd)
-          const treeRoot = this.deps.projectInfo(thread.cwd).treeRoot
-          run.resource = this.store.listResources().find((r) => r.worktreePath === treeRoot)
-        }
-        const m = this.store.getMember(key),
-          now = Date.now()
-        try {
-          this.store.upsertMember({
-            id: thread.id,
-            key,
-            workspacePath: run.workspace,
-            cwd: run.cwd,
-            title: thread.name || thread.preview?.slice(0, 100) || m?.title || 'Codex session',
-            createdAt: m?.createdAt ?? (thread.createdAt ? thread.createdAt * 1000 : now),
-            updatedAt: now,
-            worktreeResourceId: run.resource?.id
-          })
-          if (
-            change === 'replace' &&
-            old &&
-            old !== key &&
-            ![...this.runs.values()].some((r) => r !== run && r.info?.sessionId === old)
-          )
-            this.store.removeMember(old)
-        } catch (e) {
-          this.deps.error(String(e))
-        }
-        run.resumeKey = undefined
-        run.info = {
-          tabId: run.tabId,
-          sessionId: key,
-          nativeSessionId: thread.id,
-          backendId: 'codex',
-          title: this.store.getMember(key)?.title ?? 'Codex session',
-          cwd: run.cwd,
-          treeRoot: run.cwd,
-          worktree: run.resource?.worktreeName,
-          alive: true,
-          observation: 'live',
-          cliVersion: thread.cliVersion,
-          status: 'idle',
-          updatedAt: now
-        }
-        this.history.set(key, { ...thread, cwd: run.cwd })
-        this.deps.pty.clearResumeIntent(run.tabId)
-        changed()
-      },
-      status: (status) => {
-        if (run?.info && !run.explicitStop && !run.stopping) {
-          run.info.status = status
-          run.info.updatedAt = Date.now()
-          changed()
-        }
-      },
-      title: (title) => {
-        if (!run?.info || run.explicitStop || run.stopping) return
-        run.info.title = title
-        try {
-          this.store.updateMember(run.info.sessionId, { title, updatedAt: Date.now() })
-        } catch (e) {
-          this.deps.error(String(e))
-        }
-        const t = this.history.get(run.info.sessionId)
-        if (t) t.name = title
-        changed()
-      },
-      usage: (usage) => {
-        if (run?.info && !run.explicitStop && !run.stopping) {
-          run.info.usage = usage
-          changed()
-        }
-      },
-      background: (items) => {
-        if (run?.info && !run.explicitStop && !run.stopping) {
-          run.info.background = items.length ? items : undefined
-          changed()
-        }
-      },
-      attention: (kind) => {
-        if (run && !run.explicitStop && !run.stopping) this.deps.attention(run.tabId, kind)
-      },
-      degraded: (message) => {
+    const observe = (event: CodexEvent): void => {
+      if (event.type === 'degraded') {
         if (run?.info) {
           run.info.observation = 'degraded'
           changed()
         }
-        this.deps.error(message)
+        this.deps.error(event.message)
+        return
       }
-    })
+      if (!run || run.explicitStop || run.stopping) return
+      if (event.type === 'bound') return this.bindThread(run, event.thread, event.change)
+      const info = run.info
+      if (!info) return
+      const runtime = this.deps.runtime
+      switch (event.type) {
+        case 'prompt':
+          return runtime.recordTurn(run.tabId, 'working')
+        case 'notify':
+          return runtime.recordTurn(run.tabId, event.need)
+        case 'stop':
+          return runtime.recordTurn(run.tabId, 'ended')
+        case 'background-changed':
+          if (!runtime.setBackground(run.tabId, event.items)) return
+          info.background = event.items.length ? event.items : undefined
+          return changed()
+        case 'usage':
+          info.usage = event.usage
+          return changed()
+        case 'title':
+          return this.retitle(info, event.title)
+      }
+    }
+    const observer = new CodexObservation(observe)
     const transport = await this.startTransport({
       binary,
       env: processEnv,
@@ -614,6 +566,72 @@ export class CodexSessions {
     }
   }
 
+  private bindThread(run: Run, thread: CodexThread, change: 'replace' | 'switch'): void {
+    const key = codexSessionKey(thread.id),
+      old = run.info?.sessionId
+    if (run.info) {
+      run.cwd = thread.cwd
+      run.workspace = this.workspaceFor(thread.cwd)
+      const treeRoot = this.deps.projectInfo(thread.cwd).treeRoot
+      run.resource = this.store.listResources().find((r) => r.worktreePath === treeRoot)
+    }
+    const m = this.store.getMember(key),
+      now = Date.now()
+    try {
+      this.store.upsertMember({
+        id: thread.id,
+        key,
+        workspacePath: run.workspace,
+        cwd: run.cwd,
+        title: thread.name || thread.preview?.slice(0, 100) || m?.title || 'Codex session',
+        createdAt: m?.createdAt ?? (thread.createdAt ? thread.createdAt * 1000 : now),
+        updatedAt: now,
+        worktreeResourceId: run.resource?.id
+      })
+      if (
+        change === 'replace' &&
+        old &&
+        old !== key &&
+        ![...this.runs.values()].some((r) => r !== run && r.info?.sessionId === old)
+      )
+        this.store.removeMember(old)
+    } catch (e) {
+      this.deps.error(String(e))
+    }
+    run.resumeKey = undefined
+    this.deps.runtime.forget(run.tabId)
+    this.deps.attention(run.tabId, 'clear')
+    run.info = {
+      tabId: run.tabId,
+      sessionId: key,
+      nativeSessionId: thread.id,
+      backendId: 'codex',
+      title: this.store.getMember(key)?.title ?? 'Codex session',
+      cwd: run.cwd,
+      treeRoot: run.cwd,
+      worktree: run.resource?.worktreeName,
+      alive: true,
+      observation: 'live',
+      cliVersion: thread.cliVersion,
+      updatedAt: now
+    }
+    this.history.set(key, { ...thread, cwd: run.cwd })
+    this.deps.pty.clearResumeIntent(run.tabId)
+    this.deps.changed()
+  }
+
+  private retitle(info: SessionInfo, title: string): void {
+    info.title = title
+    try {
+      this.store.updateMember(info.sessionId, { title, updatedAt: Date.now() })
+    } catch (e) {
+      this.deps.error(String(e))
+    }
+    const t = this.history.get(info.sessionId)
+    if (t) t.name = title
+    this.deps.changed()
+  }
+
   resume(req: SessionResumeRequest): Promise<{ id: string; cwd: string }> {
     return this.trackLaunch(req.sessionId, () => this.resumeRun(req))
   }
@@ -663,6 +681,7 @@ export class CodexSessions {
       .then(() => run.transport.stop())
       .then(() => {
         this.deps.pty.kill(tabId)
+        this.deps.runtime.forget(tabId)
         if (unexpectedExit) this.deps.attention(tabId, 'exited')
         this.runs.delete(tabId)
         if (nativeExit && run.info && !this.aliveTabFor(run.info.sessionId)) {

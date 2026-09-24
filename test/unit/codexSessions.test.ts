@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CodexSessions, type CodexSessionDeps } from '../../src/main/codexSessions'
 import { codexSessionKey, type WorktreeResource } from '../../src/main/sessionStore'
 import type { CodexTransportOptions } from '../../src/main/codexTransport'
+import { SessionRuntime } from '../../src/main/sessionRuntime'
 
 const mocks = vi.hoisted(() => ({
   create: vi.fn(),
@@ -91,6 +92,7 @@ beforeEach(() => {
       kill: vi.fn(),
       clearResumeIntent: vi.fn()
     } as unknown as CodexSessionDeps['pty'],
+    runtime: new SessionRuntime(),
     projectInfo: (p) => ({ root: p.startsWith(repo) ? repo : other, treeRoot: p }),
     changed: vi.fn(),
     attention: vi.fn(),
@@ -259,6 +261,34 @@ describe('CodexSessions', () => {
     transports[1].options.onFrame('server', { id: 2, result: { status: 'unsubscribed' } })
     await sessions.stop(second.id, 0)
     expect(sessions.members().has(codexSessionKey(A))).toBe(false)
+  })
+
+  it('a waiting Codex session turns idle after 4 minutes and closes itself 30 minutes later, but not while a background command is still open', async () => {
+    vi.useFakeTimers()
+    const closes: string[] = []
+    deps.runtime.on('auto-close', ({ tabId }: { tabId: string }) => closes.push(tabId))
+    const launched = await sessions.launch({ kind: 'codex', cwd: repo })
+    bind()
+    const status = () => sessions.list()[0]?.status
+    expect(status()).toBe('waiting')
+    const command = { type: 'commandExecution', id: 'dev', command: 'npm run dev' }
+    const receive = transports[0].options.onFrame
+    receive('server', {
+      method: 'item/started',
+      params: { threadId: A, item: { ...command, status: 'inProgress' } }
+    })
+    await vi.advanceTimersByTimeAsync(4 * 60_000 - 1)
+    expect(status()).toBe('waiting')
+    await vi.advanceTimersByTimeAsync(1)
+    expect(status()).toBe('idle')
+    await vi.advanceTimersByTimeAsync(31 * 60_000)
+    expect(closes).toEqual([])
+    receive('server', {
+      method: 'item/completed',
+      params: { threadId: A, item: { ...command, status: 'completed' } }
+    })
+    await vi.advanceTimersByTimeAsync(30 * 60_000)
+    expect(closes).toEqual([launched.id])
   })
 
   it('reports an unexpected exit after confirmed stop without immediately clearing the alert', async () => {

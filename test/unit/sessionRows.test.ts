@@ -393,11 +393,12 @@ describe('session background activity', () => {
   })
 
   it('keeps known parked services visible alongside background activity', () => {
-    const parked = [{ kind: 'server' as const, label: 'dev server' }]
-    expect(sessionActivityBadge({ parked })?.lines).toEqual(parkedBadge(parked).lines)
+    const parked = [
+      { id: 's1', kind: 'server' as const, label: 'dev server', state: 'waiting' as const }
+    ]
+    expect(sessionActivityBadge({ background: parked })?.lines).toEqual(parkedBadge(parked).lines)
     const badge = sessionActivityBadge({
-      parked,
-      background: [{ id: 'a1', kind: 'agent', label: 'Review', state: 'working' }]
+      background: [...parked, { id: 'a1', kind: 'agent', label: 'Review', state: 'working' }]
     })!
     expect(badge.lines).toContain('server · dev server')
     expect(sessionActivityBadge({})).toBeNull()
