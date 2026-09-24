@@ -28,6 +28,7 @@ export interface ClaudeCall {
   ts: number
   cdpEndpoint?: string | null
   playwrightMcpEndpoint?: string | null
+  playwrightCliSession?: string | null
 }
 
 export function readCalls(env: E2EEnv): ClaudeCall[] {
