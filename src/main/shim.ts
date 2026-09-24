@@ -99,6 +99,7 @@ if [ -n "$KOLOFT_CDP_DIR" ] && [ -n "$KOLOFT_TAB_ID" ] && [ "$KOLOFT_UTIL" != "1
   if [ -n "$kcdp" ]; then
     # PLATFORM§17
     export PLAYWRIGHT_MCP_CDP_ENDPOINT="$kcdp"
+    export PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS=1
     export KOLOFT_BROWSER_CDP="$kcdp"
   fi
   kcdp=""

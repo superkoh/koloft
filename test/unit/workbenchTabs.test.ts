@@ -3,6 +3,7 @@ import {
   FILES_TAB_ID,
   KIND_TAB_CAP,
   activateTab,
+  cdpVisibleTabs,
   closeTab,
   cycleTab,
   dialogHasLiveOwner,
@@ -1208,5 +1209,35 @@ describe('the vanished-root notice (R4): the only sign a shell opened somewhere 
     expect(cwdFallbackNotice('/Users/me/Projects/app/.claude/worktrees/bugfix')).toContain(
       '…/worktrees/bugfix'
     )
+  })
+})
+
+describe('what a CDP client is shown', () => {
+  it('only the web tabs the agent opened — a tab the user opened, or one restored from disk, is never handed to a client to navigate away', () => {
+    let set = openTab(emptyTabSet(), {
+      kind: 'web',
+      url: 'file:///tmp/mine.html',
+      source: 'user'
+    }).set
+    set = openTab(set, { kind: 'web', url: 'http://localhost:8000/a', source: 'agent' }).set
+    set = openTab(set, { kind: 'web', url: 'http://localhost:8000/b', source: 'cdp' }).set
+    set = openTab(set, { kind: 'file', path: '/tmp/notes.md', source: 'agent' }).set
+    expect(cdpVisibleTabs(set).map((t) => t.url)).toEqual([
+      'http://localhost:8000/a',
+      'http://localhost:8000/b'
+    ])
+
+    const restored = restoreTabSet(persistTabs(set))
+    expect(cdpVisibleTabs(restored)).toEqual([])
+  })
+
+  it('an agent open that lands on a tab the user already has keeps that tab the user’s', () => {
+    let set = openTab(emptyTabSet(), {
+      kind: 'web',
+      url: 'http://localhost:8000/a',
+      source: 'user'
+    }).set
+    set = openTab(set, { kind: 'web', url: 'http://localhost:8000/a', source: 'agent' }).set
+    expect(cdpVisibleTabs(set)).toEqual([])
   })
 })

@@ -430,6 +430,16 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   a bare WebSocket CDP client can see a tab as listed but not loaded.
 - **`Browser.version()` and `contexts()` are local state** and still answer on a dead
   socket; only a real round trip (such as `page.evaluate`) shows the client is alive.
+- **playwright-mcp and playwright-cli drive the first page they are shown.** On attach
+  the shared MCP context walks `browserContext.pages()` in the order the targets were
+  announced and makes the first one its current tab; `goto` / `browser_navigate` go to
+  that tab, and a new page is created only when there is none (read in the
+  `coreBundle.js` of playwright-cli 0.1.18, playwright-core 1.63.0-alpha-2026-08-05,
+  2026-09-24). So every tab the relay lists is a tab the agent may navigate away.
+- **The same context refuses `file:` URLs** ("Access to "file:" protocol is blocked")
+  unless `allowUnrestrictedFileAccess` is set, which the CLI and MCP read from
+  `PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS` (same source, same date; read, not
+  run).
 
 ## §18 Playwright and Electron in the e2e suite
 
