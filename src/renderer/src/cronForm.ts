@@ -51,6 +51,10 @@ export function emptyFields(backend: BackendId = 'claude'): JobFields {
   }
 }
 
+export function permissionAfterSwitch(f: JobFields, backend: BackendId): CronPermission {
+  return f.permission === NEW_JOB_PERMISSION[f.backend] ? NEW_JOB_PERMISSION[backend] : f.permission
+}
+
 export function fieldsToSchedule(f: JobFields): Schedule | null {
   let s: Schedule
   if (f.whenKind === 'every') {

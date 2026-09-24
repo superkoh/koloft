@@ -137,18 +137,21 @@ export class CodexSessions {
       if (!run?.info || run.explicitStop || run.stopping) return
       run.info.status = next
       run.info.updatedAt = Date.now()
-      this.changed()
+      this.changedSoon()
     })
   }
 
   private changed(): void {
+    clearTimeout(this.emitTimer)
+    this.emitTimer = undefined
+    this.lastEmitMs = Date.now()
+    this.deps.changed()
+  }
+
+  private changedSoon(): void {
     if (this.emitTimer) return
     const wait = Math.max(0, EMIT_THROTTLE_MS - (Date.now() - this.lastEmitMs))
-    this.emitTimer = setTimeout(() => {
-      this.emitTimer = undefined
-      this.lastEmitMs = Date.now()
-      this.deps.changed()
-    }, wait)
+    this.emitTimer = setTimeout(() => this.changed(), wait)
   }
 
   async availability(opts: { force?: boolean } = {}): Promise<CodexAvailability> {
@@ -683,10 +686,10 @@ export class CodexSessions {
       case 'background-changed':
         if (!runtime.setBackground(run.tabId, event.items)) return
         info.background = event.items.length ? event.items : undefined
-        return this.changed()
+        return this.changedSoon()
       case 'usage':
         info.usage = event.usage
-        return this.changed()
+        return this.changedSoon()
       case 'title':
         return this.retitle(info, event.title)
       case 'open':
@@ -696,7 +699,7 @@ export class CodexSessions {
         info.lastTouched = event.lastTouched
         info.lastWritten = event.lastWritten
         info.liveWrites = event.liveWrites
-        return this.changed()
+        return this.changedSoon()
     }
   }
 
@@ -772,7 +775,7 @@ export class CodexSessions {
     }
     const t = this.history.get(info.sessionId)
     if (t) t.name = title
-    this.changed()
+    this.changedSoon()
   }
 
   resume(req: SessionResumeRequest): Promise<{ id: string; cwd: string }> {

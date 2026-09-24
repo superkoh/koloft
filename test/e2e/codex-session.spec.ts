@@ -932,10 +932,10 @@ test.describe('Codex sessions through the real method chooser, process transport
       await dlg.locator('input[aria-label="Model name"]').fill('gpt-5.5')
       await dlg.locator('.chip', { hasText: /^High$/ }).click()
       await expect(dlg.locator('.chip', { hasText: 'Opus' })).toHaveCount(0)
-      await expect(dlg.locator('.chip', { hasText: 'Never ask' })).toHaveCount(0)
+      await expect(dlg.locator('.chip.on', { hasText: 'Never ask' })).toHaveCount(1)
       await expect(dlg.locator('.field-hint.warn')).toHaveCount(0)
       await dlg.locator('.modal-foot .btn-primary').click()
-      await expect(dlg.locator('.job-task')).toHaveText(`Codex · ${TASK} · gpt-5.5 · high`)
+      await expect(dlg.locator('.job-task')).toHaveText(`${TASK} · gpt-5.5 · high`)
       await dlg.locator('.job-row button.mini', { hasText: 'Run now' }).click()
 
       await expect.poll(() => codexCalls(env).length, { timeout: 30_000 }).toBe(1)

@@ -21,6 +21,7 @@ import {
 import { describeSchedule, describeWhen, nextRun } from '@shared/schedule'
 import {
   emptyFields,
+  permissionAfterSwitch,
   fieldsToSchedule,
   histEnd,
   histText,
@@ -441,6 +442,7 @@ export function CronJobsDialog({
                   onClick={() =>
                     patch({
                       backend: b,
+                      permission: permissionAfterSwitch(fields, b),
                       ...(MODEL_CHIPS_OF[b].some((c) => c.value === fields.model)
                         ? {}
                         : { model: '' })

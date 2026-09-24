@@ -4,6 +4,7 @@ import { describeSchedule } from '@shared/schedule'
 import {
   emptyFields,
   fieldsToSchedule,
+  permissionAfterSwitch,
   forecastFor,
   histEnd,
   histText,
@@ -347,5 +348,11 @@ describe('a new job', () => {
   it('starts a Codex job on "Never ask", the way scheduled Codex runs have always run, and a Claude job on "Same as my other sessions"', () => {
     expect(emptyFields('codex').permission).toBe('skipAll')
     expect(emptyFields('claude').permission).toBe('same')
+  })
+
+  it('takes the other backend’s starting permission when switched before the permission was changed, and keeps a permission the user picked', () => {
+    expect(permissionAfterSwitch(emptyFields('claude'), 'codex')).toBe('skipAll')
+    expect(permissionAfterSwitch(emptyFields('codex'), 'claude')).toBe('same')
+    expect(permissionAfterSwitch(f({ permission: 'acceptEdits' }), 'codex')).toBe('acceptEdits')
   })
 })
