@@ -1956,7 +1956,9 @@ function allowPageFullscreenWithoutTheWindow(callback: (granted: boolean) => voi
   const win = mainWindow
   win?.setFullScreenable(false)
   callback(true)
-  setImmediate(() => win?.setFullScreenable(true))
+  setImmediate(() => {
+    if (win && !win.isDestroyed()) win.setFullScreenable(true)
+  })
 }
 
 function setupBrowserPartition(): void {
