@@ -117,7 +117,7 @@ async function rebuildWorktree(
 
 export class ClaudeBackend implements SessionBackend {
   readonly id = 'claude'
-  readonly killedRemoteSessions = new Set<string>()
+  private killedRemoteSessions = new Set<string>()
   private remoteKills = new Map<string, Promise<unknown>>()
 
   constructor(private d: ClaudeBackendDeps) {}

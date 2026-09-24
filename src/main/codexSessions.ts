@@ -493,7 +493,6 @@ export class CodexSessions {
     }
     this.assertStarting()
     let run: Run | undefined
-    const changed = (): void => this.deps.changed()
     const observe = (event: CodexEvent): void => {
       if (event.type !== 'bound') {
         if (run) this.observe(run.tabId, event)
@@ -510,17 +509,9 @@ export class CodexSessions {
       cwd,
       configOverrides: [STATUS_LINE_CONFIG],
       onFrame: (direction, frame) => observer.receive(direction, frame),
-      onDisconnect: () => {
-        if (run?.info) {
-          run.info.details = { codex: { observation: 'degraded' } }
-          changed()
-        }
-      },
+      onDisconnect: () => this.markDegraded(run),
       onError: (error) => {
-        if (run?.info) {
-          run.info.details = { codex: { observation: 'degraded' } }
-          changed()
-        }
+        this.markDegraded(run)
         this.deps.error(String(error))
       }
     })
@@ -557,7 +548,7 @@ export class CodexSessions {
         resumeKey: opts.resumeSessionId
       }
       this.runs.set(handle.id, run)
-      changed()
+      this.deps.changed()
       this.warnUntestedVersion(available)
       return { id: handle.id, cwd }
     } catch (error) {
@@ -569,10 +560,7 @@ export class CodexSessions {
   observe(tabId: string, event: SessionEvent): void {
     const run = this.runs.get(tabId)
     if (event.type === 'degraded') {
-      if (run?.info) {
-        run.info.details = { codex: { observation: 'degraded' } }
-        this.deps.changed()
-      }
+      this.markDegraded(run)
       this.deps.error(event.message)
       return
     }
@@ -593,6 +581,12 @@ export class CodexSessions {
       case 'title':
         return this.retitle(info, event.title)
     }
+  }
+
+  private markDegraded(run: Run | undefined): void {
+    if (!run?.info) return
+    run.info.details = { codex: { observation: 'degraded' } }
+    this.deps.changed()
   }
 
   private bindThread(run: Run, thread: CodexThread, change: 'replace' | 'switch'): void {
