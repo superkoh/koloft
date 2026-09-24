@@ -39,6 +39,7 @@ interface CodexCall {
   argv: string[]
   cwd: string
   sessionId: string
+  codexHome: string | null
 }
 function installCodex(env: E2EEnv): void {
   const binary = path.join(env.fakeBin, 'codex')
@@ -865,6 +866,96 @@ test.describe('Codex sessions through the real method chooser, process transport
       await row.click()
       await expect.poll(() => codexCalls(env).length).toBe(4)
       await expect(row).toHaveClass(/st-waiting|st-idle/)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§15
+  test('a Codex account signed in from Settings shows its weekly use, and a new Codex session runs in its own sign-in folder', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedSettings(env, { hintsOff: true, multiAccount: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      await page.getByRole('button', { name: 'Sign in to Codex' }).click()
+      await page.getByPlaceholder('Name this account (e.g. work)').fill('work')
+      await page.locator('.acct-add').getByRole('button', { name: 'Sign in', exact: true }).click()
+      const home = path.join(env.userData, 'codex-homes', 'work')
+      await expect
+        .poll(() => fs.existsSync(path.join(home, 'auth.json')), { timeout: 30_000 })
+        .toBe(true)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      await expect(
+        page.locator('.acct-row', { hasText: 'work' }).locator('.acct-meter[data-win="7d"] .m-pct')
+      ).toHaveText('30%', { timeout: 30_000 })
+      await page.keyboard.press('Escape')
+
+      await startCodex(page, env)
+      expect(codexCalls(env).at(-1)!.codexHome).toBe(home)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§14
+  test('a scheduled job set to run in Codex starts Codex with its task, model and thinking level, never asking, and counts as running once Codex binds', async ({
+    env
+  }) => {
+    const TASK = '/daily-report now'
+    installCodex(env)
+    gitInit(env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    fs.mkdirSync(path.join(env.home, '.codex'), { recursive: true })
+    fs.writeFileSync(
+      path.join(env.home, '.codex', 'config.toml'),
+      `[projects.${JSON.stringify(fs.realpathSync(env.workspaces.a))}]\ntrust_level = "trusted"\n`
+    )
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await page.locator('.menu .mi', { hasText: 'Scheduled jobs' }).click()
+      const dlg = page.locator('.modal.cronjobs')
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await dlg.locator('.chip', { hasText: /^Codex$/ }).click()
+      await dlg.locator('input[aria-label="Name"]').fill('Nightly report')
+      await dlg.locator('[aria-label="What to run"]').fill(TASK)
+      await dlg.locator('.chip', { hasText: 'Other…' }).click()
+      await dlg.locator('input[aria-label="Model name"]').fill('gpt-5.5')
+      await dlg.locator('.chip', { hasText: /^High$/ }).click()
+      await expect(dlg.locator('.chip', { hasText: 'Opus' })).toHaveCount(0)
+      await expect(dlg.locator('.chip', { hasText: 'Never ask' })).toHaveCount(0)
+      await expect(dlg.locator('.field-hint.warn')).toHaveCount(0)
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await expect(dlg.locator('.job-task')).toHaveText(`Codex · ${TASK} · gpt-5.5 · high`)
+      await dlg.locator('.job-row button.mini', { hasText: 'Run now' }).click()
+
+      await expect.poll(() => codexCalls(env).length, { timeout: 30_000 }).toBe(1)
+      expect(codexCalls(env)[0].argv.slice(-9)).toEqual([
+        '-a',
+        'never',
+        '-s',
+        'danger-full-access',
+        '-m',
+        'gpt-5.5',
+        '-c',
+        'model_reasoning_effort="high"',
+        TASK
+      ])
+      await expect
+        .poll(
+          () => page.evaluate(async () => (await window.api.cron.list()).live.map((l) => l.state)),
+          { timeout: 30_000 }
+        )
+        .toEqual([expect.stringMatching(/^(running|done)$/)])
     } finally {
       await quitAndClose(app)
     }

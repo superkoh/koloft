@@ -828,12 +828,17 @@ async function probeCodexAccount(name: string): Promise<void> {
   pushAccounts()
 }
 
-function probeCodexAccounts(): Promise<void[]> {
-  return Promise.all(
+let codexProbeRound: Promise<void> | null = null
+
+function probeCodexAccounts(): Promise<void> {
+  codexProbeRound ??= Promise.all(
     listAccounts()
       .filter((a) => a.kind === 'codex-home' && a.enabled)
       .map((a) => probeCodexAccount(a.name))
-  )
+  ).then(() => {
+    codexProbeRound = null
+  })
+  return codexProbeRound
 }
 
 async function codexSignIn(name: string, again?: boolean): Promise<CodexSignInResult> {
@@ -2610,7 +2615,7 @@ function accountUsable(backend: BackendId): boolean {
 }
 
 function backendTrusts(dir: string, backend: BackendId): boolean {
-  if (backend === 'codex') return codexTrustsFolder(codexConfigFile(codexSessions?.defaultEnv), dir)
+  if (backend === 'codex') return codexTrustsFolder(codexSharedConfig(), dir)
   return claudeTrustsFolder(claudeJsonPath(), dir)
 }
 
