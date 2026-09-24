@@ -1,3 +1,5 @@
+import type { HostId } from './types'
+
 export interface RemoteKey {
   host: string
   path: string
@@ -23,6 +25,10 @@ export function formatRemoteKey(host: string, path: string): string {
 
 export function isRemoteKey(key: string): boolean {
   return parseRemoteKey(key) !== null
+}
+
+export function hostOf(cwdOrWorkspacePath: string): HostId {
+  return isRemoteKey(cwdOrWorkspacePath) ? 'ssh' : 'local'
 }
 
 export function remoteCopyText(host: string, path: string): string {

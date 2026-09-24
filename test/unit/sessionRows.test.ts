@@ -137,6 +137,8 @@ describe('currentWorkspace (the Notes island’s workspace)', () => {
     workspace: { path, missing, isGit: true, hasHistory: false },
     rows: ids.map((id) => ({
       id,
+      backendId: 'claude' as const,
+      host: 'local' as const,
       title: id,
       worktree: 'main',
       cwd: path,
@@ -377,6 +379,7 @@ describe('session background activity', () => {
 
   it('reports agents and commands with their distinct states', () => {
     const badge = sessionActivityBadge({
+      backendId: 'claude',
       background: [
         { id: 'a1', kind: 'agent', label: 'Review changes', state: 'working' },
         { id: 'a2', kind: 'agent', label: 'Check tests', state: 'waiting' },
@@ -396,19 +399,21 @@ describe('session background activity', () => {
     const parked = [
       { id: 's1', kind: 'server' as const, label: 'dev server', state: 'waiting' as const }
     ]
-    expect(sessionActivityBadge({ background: parked })?.lines).toEqual(parkedBadge(parked).lines)
+    expect(sessionActivityBadge({ backendId: 'claude', background: parked })?.lines).toEqual(
+      parkedBadge(parked).lines
+    )
     const badge = sessionActivityBadge({
+      backendId: 'claude',
       background: [...parked, { id: 'a1', kind: 'agent', label: 'Review', state: 'working' }]
     })!
     expect(badge.lines).toContain('server · dev server')
-    expect(sessionActivityBadge({})).toBeNull()
+    expect(sessionActivityBadge({ backendId: 'claude' })).toBeNull()
   })
 })
 
 describe('mixesBackends (when a row list shows method icons)', () => {
-  it('stays off for a list of Claude rows, tagged or not', () => {
-    expect(mixesBackends([{}, {}])).toBe(false)
-    expect(mixesBackends([{ backendId: 'claude' }, {}])).toBe(false)
+  it('stays off for a list of Claude rows', () => {
+    expect(mixesBackends([{ backendId: 'claude' }, { backendId: 'claude' }])).toBe(false)
   })
 
   it('turns on as soon as one list holds both methods', () => {

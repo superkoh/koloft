@@ -217,8 +217,10 @@ export class CodexSessions {
       rows.set(key, this.row(t, scope))
     }
     for (const m of this.store.listMembers(workspace)) {
-      const r = rows.get(m.key) ?? {
+      const r: SessionRow = rows.get(m.key) ?? {
         id: m.key,
+        backendId: 'codex',
+        host: 'local',
         title: m.title,
         cwd: m.cwd,
         worktree: 'main',
@@ -228,7 +230,6 @@ export class CodexSessions {
       }
       r.cwd = m.cwd
       r.invalidCwd = !exists(m.cwd)
-      r.backendId = 'codex'
       r.nativeSessionId = m.id
       r.createdAt = m.createdAt
       r.running = !!this.aliveTabFor(m.key)
@@ -250,6 +251,7 @@ export class CodexSessions {
       rows.set(run.tabId, {
         id: run.tabId,
         backendId: 'codex',
+        host: 'local',
         title: 'Starting…',
         cwd: run.cwd,
         worktree: run.resource?.worktreeName ?? 'main',
@@ -270,6 +272,7 @@ export class CodexSessions {
     return {
       id: key,
       backendId: 'codex',
+      host: 'local',
       nativeSessionId: t.id,
       createdAt: (t.createdAt ?? 0) * 1000,
       title: t.name || t.preview?.slice(0, 100) || 'Codex session',
@@ -602,6 +605,7 @@ export class CodexSessions {
       sessionId: key,
       nativeSessionId: thread.id,
       backendId: 'codex',
+      host: 'local',
       title: this.store.getMember(key)?.title ?? 'Codex session',
       cwd: run.cwd,
       treeRoot: run.cwd,

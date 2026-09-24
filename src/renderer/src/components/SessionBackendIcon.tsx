@@ -7,7 +7,7 @@ export function SessionBackendIcon({
   size = 12,
   decorative = false
 }: {
-  backend?: BackendId
+  backend: BackendId
   size?: number
   decorative?: boolean
 }) {

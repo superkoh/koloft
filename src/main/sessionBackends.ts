@@ -6,7 +6,8 @@ import type {
   SessionResumeRequest,
   SessionResumeResult
 } from '@shared/types'
-import { identityOf, SESSION_CAPABILITIES } from '@shared/sessionBackend'
+import { identityOf, SUPPORTED_PAIRS, unsupportedPairMessage } from '@shared/sessionBackend'
+import { hostOf } from '@shared/remoteKey'
 
 export interface SessionBackend {
   id: BackendId
@@ -40,8 +41,6 @@ export class SessionBackends {
     return [...this.adapters.values()].flatMap((backend) =>
       backend.list().map((s) => ({
         ...s,
-        cliVersion: s.cliVersion ?? s.ccVersion,
-        backendId: backend.id,
         nativeSessionId: s.nativeSessionId ?? s.sessionId
       }))
     )
@@ -49,15 +48,15 @@ export class SessionBackends {
 
   create(options: CreateTabOptions): Promise<CreateTabResult> {
     if (options.kind === 'shell') throw new Error('A utility terminal is not a session.')
-    const capabilities = SESSION_CAPABILITIES[options.kind]
     if (
-      !capabilities ||
-      (options.cwd?.startsWith('ssh://') && !capabilities.remote) ||
+      !SUPPORTED_PAIRS[options.kind] ||
       options.util ||
       (options.worktreeResourceId && options.kind !== 'codex')
     ) {
       return Promise.resolve({ ok: false, code: 'invalid-args' })
     }
+    const refusal = unsupportedPairMessage(options.kind, hostOf(options.cwd ?? ''))
+    if (refusal) return Promise.reject(new Error(refusal))
     return this.get(options.kind).create(options)
   }
 }

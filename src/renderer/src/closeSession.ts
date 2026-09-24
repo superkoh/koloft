@@ -49,7 +49,7 @@ export function unsavedBody(files: string[]): string {
 
 export function unexpectedExitNotice(
   exit: { exitCode: number; signal?: number },
-  backend?: SessionBackend
+  backend: SessionBackend
 ): string {
   // PLATFORM§29
   return exit.signal

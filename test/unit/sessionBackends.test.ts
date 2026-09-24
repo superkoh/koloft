@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { SessionBackends, type SessionBackend } from '../../src/main/sessionBackends'
-import { effectiveBackend, identityOf, sessionKey } from '@shared/sessionBackend'
+import {
+  capabilitiesFor,
+  effectiveBackend,
+  identityOf,
+  sessionKey,
+  SUPPORTED_PAIRS
+} from '@shared/sessionBackend'
 import type { BackendId } from '@shared/types'
 
 describe('session backend boundary', () => {
@@ -25,10 +31,9 @@ describe('session backend boundary', () => {
       transcriptExists: () => true
     }
     registry.register(backend)
-    await expect(registry.create({ kind: 'codex', cwd: 'ssh://server/repo' })).resolves.toEqual({
-      ok: false,
-      code: 'invalid-args'
-    })
+    await expect(registry.create({ kind: 'codex', cwd: 'ssh://server/repo' })).rejects.toThrow(
+      'Codex sessions cannot run on a remote machine yet.'
+    )
     await expect(registry.create({ kind: undefined as never, cwd: '/repo' })).resolves.toEqual({
       ok: false,
       code: 'invalid-args'
@@ -38,6 +43,31 @@ describe('session backend boundary', () => {
       ok: true
     })
     expect(registry.forSession('codex:local:id')).toBe(backend)
+  })
+})
+
+describe('capabilitiesFor (what one session can do, from its method and the machine it runs on)', () => {
+  it('gives a Claude session on this Mac every capability', () => {
+    expect(Object.values(capabilitiesFor('claude', 'local')).every((c) => c === true)).toBe(true)
+  })
+
+  it('keeps the Workbench, agent open and browser control off for a remote Claude session', () => {
+    const remote = capabilitiesFor('claude', 'ssh')
+    expect(remote.workbench).not.toBe(true)
+    expect(remote.agentOpen).not.toBe(true)
+    expect(remote.browserControl).not.toBe(true)
+  })
+
+  it('marks the three-line status line unsupported for Codex, citing the ledger section that shows why', () => {
+    expect(capabilitiesFor('codex', 'local').statusline3).toEqual({ unsupported: 'CODEX§8' })
+    expect(capabilitiesFor('codex', 'local').workbench).toEqual({ pending: true })
+  })
+
+  it('supports every pair but Codex on a remote machine', () => {
+    expect(SUPPORTED_PAIRS).toEqual({
+      claude: { local: true, ssh: true },
+      codex: { local: true, ssh: false }
+    })
   })
 })
 

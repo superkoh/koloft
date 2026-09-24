@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { SESSION_BACKENDS, SESSION_CAPABILITIES } from '@shared/sessionBackend'
-import type { BackendId } from '@shared/types'
+import { SESSION_BACKENDS, SUPPORTED_PAIRS } from '@shared/sessionBackend'
+import type { BackendId, HostId } from '@shared/types'
 import { backendLabel, launchErrorMessage } from '../agentUi'
 import { useStore } from '../store'
 import { SessionBackendIcon } from './SessionBackendIcon'
@@ -8,12 +8,11 @@ import { SessionBackendIcon } from './SessionBackendIcon'
 export type SessionLaunchOptions = { cwd: string; worktree?: string; worktreeResourceId?: string }
 export type StartSession = (opts: SessionLaunchOptions, backend: BackendId) => Promise<void>
 
-export function useSessionLaunch(remote: boolean, onStart: StartSession, onClose: () => void) {
+export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: () => void) {
   const methods = useStore((s) => s.settings.sessionMethods)
   const [detected, setDetected] = useState<Awaited<
     ReturnType<typeof window.api.sessions.backends>
   > | null>(null)
-  const [claudeFound, setClaudeFound] = useState<boolean | null>(null)
   const [probeError, setProbeError] = useState('')
   const [retry, setRetry] = useState(0)
   const [starting, setStarting] = useState(false)
@@ -29,19 +28,10 @@ export function useSessionLaunch(remote: boolean, onStart: StartSession, onClose
   useEffect(() => {
     let alive = true
     setDetected(null)
-    setClaudeFound(null)
     setProbeError('')
     void window.api.sessions.backends().then(
       (backends) => {
         if (alive) setDetected(backends)
-      },
-      () => {
-        if (alive) setDetected([])
-      }
-    )
-    void window.api.claude.probe().then(
-      (claude) => {
-        if (alive) setClaudeFound(claude.found)
       },
       () => {
         if (alive) setProbeError('Could not check that Claude Code is installed.')
@@ -51,17 +41,18 @@ export function useSessionLaunch(remote: boolean, onStart: StartSession, onClose
       alive = false
     }
   }, [retry])
-  const usable = (backend: BackendId, onRemote = remote): boolean => {
+  const found = (backend: BackendId) => detected?.find((b) => b.id === backend)
+  const usable = (backend: BackendId, on = host): boolean => {
     if (!methods.enabled[backend]) return false
-    if (onRemote && !SESSION_CAPABILITIES[backend].remote) return false
-    if (backend === 'claude') return claudeFound !== false
-    return !!detected?.find((b) => b.id === backend)?.available
+    if (!SUPPORTED_PAIRS[backend][on]) return false
+    if (backend === 'claude') return found(backend)?.available !== false
+    return !!found(backend)?.available
   }
-  const issue = (backend: BackendId, onRemote = remote): string => {
+  const issue = (backend: BackendId, on = host): string => {
     if (!methods.enabled[backend]) return 'Disabled in Settings ▸ Sessions'
-    if (onRemote) return SESSION_CAPABILITIES[backend].remote ? '' : 'Local only'
-    if (backend === 'claude') return claudeFound === false ? 'Not installed' : ''
-    const result = detected?.find((b) => b.id === backend)
+    if (on === 'ssh') return SUPPORTED_PAIRS[backend][on] ? '' : 'Local only'
+    const result = found(backend)
+    if (backend === 'claude') return result?.available === false ? 'Not installed' : ''
     return !detected || result?.available ? '' : result?.reason || 'Not installed'
   }
   const launch = async (opts: SessionLaunchOptions, backend: BackendId): Promise<void> => {

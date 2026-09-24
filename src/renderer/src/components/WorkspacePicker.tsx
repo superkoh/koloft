@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { LuLoaderCircle, LuTriangleAlert, LuX } from 'react-icons/lu'
 import type { BackendId, WorkspaceRows } from '@shared/types'
 import { basename } from '@shared/preview'
+import { hostOf } from '@shared/remoteKey'
 import {
   escPeel,
   freshLineCopy,
@@ -54,7 +55,7 @@ export function WorkspacePicker({
   const at = Math.min(hot, Math.max(0, visible.length - 1))
   const target = pinned ?? visible[at]?.ws
   const sessionLaunch = useSessionLaunch(
-    !!target?.workspace.remote,
+    hostOf(target?.workspace.path ?? ''),
     async (opts, backend) => {
       const ws =
         rows.find((w) => w.workspace.path === opts.cwd) ??
@@ -114,7 +115,7 @@ export function WorkspacePicker({
       void onConfirm(ws, backend)
       return
     }
-    if (sessionLaunch.issue(backend, !!ws.workspace.remote)) return
+    if (sessionLaunch.issue(backend, hostOf(ws.workspace.path))) return
     const failedForThis = phase === 'failed' && failedFor === ws.workspace.path
     if (!(mode === 'main' && !failedForThis && pullable(ws))) {
       void sessionLaunch.launch({ cwd: ws.workspace.path }, backend)

@@ -2977,7 +2977,11 @@ function registerIpc(): void {
 
   ipcMain.handle('sessions:list', () => allSessions())
   ipcMain.handle('sessions:backends', async () => [
-    { id: 'claude', available: true },
+    await probeClaude().then(({ found }) => ({
+      id: 'claude',
+      available: found,
+      reason: found ? undefined : 'Not installed'
+    })),
     (await codexSessions?.availability()) ?? {
       id: 'codex',
       available: false,
@@ -3049,8 +3053,6 @@ function registerIpc(): void {
     listSkills(skillFs, workspacePath, os.homedir())
   )
   ipcMain.handle('cron:trusted', (_e, workspacePath: string) => claudeTrusts(workspacePath))
-
-  ipcMain.handle('claude:probe', () => probeClaude())
 
   ipcMain.handle('update:check', () => checkForUpdates())
   ipcMain.handle('update:download', () =>

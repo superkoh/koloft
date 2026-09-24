@@ -25,6 +25,8 @@ import {
 function session(tabId: string): SessionInfo {
   return {
     tabId,
+    backendId: 'claude',
+    host: 'local',
     sessionId: 'sid-' + tabId,
     title: 'Live title',
     cwd: '/w',
@@ -51,7 +53,14 @@ beforeEach(() => {
 describe('store: claude → shell revert, only after a session actually bound', () => {
   it('reverts a claude tab to a shell once its (previously bound) session ends', () => {
     const s = useStore.getState()
-    s.addTab({ id: 'rev1', kind: 'claude', title: 'My session', cwd: '/w', alive: true })
+    s.addTab({
+      id: 'rev1',
+      kind: 'claude',
+      host: 'local',
+      title: 'My session',
+      cwd: '/w',
+      alive: true
+    })
     s.setSessions([session('rev1')])
     s.setSessions([])
     const t = useStore.getState().tabs.find((x) => x.id === 'rev1')!
@@ -62,28 +71,36 @@ describe('store: claude → shell revert, only after a session actually bound', 
 
   it('does NOT revert a claude tab that never bound a session (launch window)', () => {
     const s = useStore.getState()
-    s.addTab({ id: 'nev1', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
+    s.addTab({ id: 'nev1', kind: 'claude', host: 'local', title: 'Claude', cwd: '/w', alive: true })
     s.setSessions([])
     expect(useStore.getState().tabs.find((x) => x.id === 'nev1')!.kind).toBe('claude')
   })
 
   it('T-LIFE-06: clears the resuming placeholder flag once the session binds, so the overlay never returns when it ends', () => {
     const s = useStore.getState()
-    s.addTab({ id: 'rs1', kind: 'claude', title: 'T', cwd: '/w', alive: true, resuming: true })
+    s.addTab({
+      id: 'rs1',
+      kind: 'claude',
+      host: 'local',
+      title: 'T',
+      cwd: '/w',
+      alive: true,
+      resuming: true
+    })
     s.setSessions([session('rs1')])
     expect(useStore.getState().tabs.find((x) => x.id === 'rs1')!.resuming).toBeFalsy()
   })
 
   it('leaves a plain shell tab untouched', () => {
     const s = useStore.getState()
-    s.addTab({ id: 'sh1', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({ id: 'sh1', kind: 'shell', host: 'local', title: 'Terminal', cwd: '/w', alive: true })
     s.setSessions([])
     expect(useStore.getState().tabs.find((x) => x.id === 'sh1')!.kind).toBe('shell')
   })
 
   it('reverting the active claude tab to a shell clears its open file, like a switch', () => {
     const s = useStore.getState()
-    s.addTab({ id: 'P', kind: 'claude', title: 'S', cwd: '/w', alive: true })
+    s.addTab({ id: 'P', kind: 'claude', host: 'local', title: 'S', cwd: '/w', alive: true })
     s.setSessions([session('P')])
     useStore.setState({ openFiles: { P: { src: '/w/NOTES.md', label: 'NOTES.md' } } })
     s.setSessions([])
@@ -94,7 +111,7 @@ describe('store: claude → shell revert, only after a session actually bound', 
 describe('store: intercepted file open routing — the open always surfaces, tagged so it stays out of Recent', () => {
   it('opens the file in the viewer pane (tagged as an intercept) when the owning tab is active', () => {
     const s = useStore.getState()
-    s.addTab({ id: 'op1', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({ id: 'op1', kind: 'shell', host: 'local', title: 'Terminal', cwd: '/w', alive: true })
     openInterceptedFile('op1', '/w/README.md')
     expect(useStore.getState().openFiles['op1']).toMatchObject({
       src: '/w/README.md',
@@ -105,8 +122,8 @@ describe('store: intercepted file open routing — the open always surfaces, tag
 
   it("activates a background tab first; the preview lands on that tab and survives the switch's view reset", () => {
     const s = useStore.getState()
-    s.addTab({ id: 'op1', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
-    s.addTab({ id: 'op2', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({ id: 'op1', kind: 'shell', host: 'local', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({ id: 'op2', kind: 'shell', host: 'local', title: 'Terminal', cwd: '/w', alive: true })
     openInterceptedFile('op1', '/w/doc.md')
     expect(useStore.getState().activeTabId).toBe('op1')
     expect(useStore.getState().openFiles['op1']?.src).toBe('/w/doc.md')
@@ -114,7 +131,7 @@ describe('store: intercepted file open routing — the open always surfaces, tag
 
   it('still surfaces the preview when the tab closed since the shim fired (no activation)', () => {
     const s = useStore.getState()
-    s.addTab({ id: 'op1', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({ id: 'op1', kind: 'shell', host: 'local', title: 'Terminal', cwd: '/w', alive: true })
     openInterceptedFile('gone', '/w/doc.md')
     expect(useStore.getState().activeTabId).toBe('op1')
     expect(useStore.getState().openFiles['op1']?.src).toBe('/w/doc.md')
@@ -136,10 +153,10 @@ describe('store: per-tab preview persistence', () => {
 
   it('a file opened on one tab is retained when the active tab switches away and back', () => {
     const s = useStore.getState()
-    s.addTab({ id: 'A', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({ id: 'A', kind: 'shell', host: 'local', title: 'Terminal', cwd: '/w', alive: true })
     s.setOpenFile(f('/w/a.ts'))
     expect(useStore.getState().openFiles['A']?.src).toBe('/w/a.ts')
-    s.addTab({ id: 'B', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({ id: 'B', kind: 'shell', host: 'local', title: 'Terminal', cwd: '/w', alive: true })
     expect(useStore.getState().openFiles['A']?.src).toBe('/w/a.ts')
     s.setActive('A')
     expect(useStore.getState().openFiles['A']?.src).toBe('/w/a.ts')
@@ -147,9 +164,9 @@ describe('store: per-tab preview persistence', () => {
 
   it('each tab keeps its own file; setOpenFile targets the active tab only', () => {
     const s = useStore.getState()
-    s.addTab({ id: 'A', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({ id: 'A', kind: 'shell', host: 'local', title: 'Terminal', cwd: '/w', alive: true })
     s.setOpenFile(f('/w/a.ts'))
-    s.addTab({ id: 'B', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({ id: 'B', kind: 'shell', host: 'local', title: 'Terminal', cwd: '/w', alive: true })
     s.setOpenFile(f('/w/b.ts'))
     expect(useStore.getState().openFiles['A']?.src).toBe('/w/a.ts')
     expect(useStore.getState().openFiles['B']?.src).toBe('/w/b.ts')
@@ -157,9 +174,9 @@ describe('store: per-tab preview persistence', () => {
 
   it('closing a tab drops only its preview entry', () => {
     const s = useStore.getState()
-    s.addTab({ id: 'A', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({ id: 'A', kind: 'shell', host: 'local', title: 'Terminal', cwd: '/w', alive: true })
     s.setOpenFile(f('/w/a.ts'))
-    s.addTab({ id: 'B', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({ id: 'B', kind: 'shell', host: 'local', title: 'Terminal', cwd: '/w', alive: true })
     s.setOpenFile(f('/w/b.ts'))
     s.removeTab('B')
     expect(useStore.getState().openFiles['B']).toBeUndefined()
@@ -268,7 +285,7 @@ function tabWithShells(tabId: string, shells: string[]): void {
   }
   set = openTab(set, { kind: 'web', url: 'http://h/p', source: 'user' }).set
   useStore.setState({
-    tabs: [{ id: tabId, kind: 'claude', title: 'Claude', cwd: '/w', alive: true }],
+    tabs: [{ id: tabId, kind: 'claude', host: 'local', title: 'Claude', cwd: '/w', alive: true }],
     sessions: [session(tabId)],
     activeTabId: tabId,
     workbench: { [tabId]: set },
@@ -352,7 +369,9 @@ describe('store: a conversation tab going away kills its shells, not just their 
 describe('store: closing a tab whose restore is still launching', () => {
   it('is a cancel, so the exit that follows is not read as a failed restore', () => {
     stubTerminalApi()
-    useStore.getState().addTab({ id: 'rst1', kind: 'claude', title: 'T', cwd: '/w', alive: true })
+    useStore
+      .getState()
+      .addTab({ id: 'rst1', kind: 'claude', host: 'local', title: 'T', cwd: '/w', alive: true })
     markRestoreLaunch('rst1')
     useStore.getState().closeTab('rst1')
     expect(consumeRestoreExit('rst1')).toBe(false)
@@ -363,7 +382,9 @@ describe('store: opening a terminal tab', () => {
   it('adds the shell main answered with, in the tab’s own root, expands the panel and asks focus for that shell by name', async () => {
     stubTerminalApi()
     useStore.setState({
-      tabs: [{ id: 't1', kind: 'claude', title: 'Claude', cwd: '/launch', alive: true }],
+      tabs: [
+        { id: 't1', kind: 'claude', host: 'local', title: 'Claude', cwd: '/launch', alive: true }
+      ],
       sessions: [{ ...session('t1'), treeRoot: '/w/worktree' }],
       activeTabId: 't1',
       workbench: { t1: emptyTabSet() },
@@ -385,7 +406,7 @@ describe('store: opening a terminal tab', () => {
   it('says so out loud when the shell never started', async () => {
     stubTerminalApi({ fail: true })
     useStore.setState({
-      tabs: [{ id: 't1', kind: 'claude', title: 'Claude', cwd: '/w', alive: true }],
+      tabs: [{ id: 't1', kind: 'claude', host: 'local', title: 'Claude', cwd: '/w', alive: true }],
       sessions: [session('t1')],
       activeTabId: 't1',
       workbench: { t1: emptyTabSet() },
@@ -401,7 +422,9 @@ describe('store: opening a terminal tab', () => {
   it('says where the shell landed when the tab’s root has vanished, and still opens it', async () => {
     stubTerminalApi({ mainAnswersCwd: '/elsewhere' })
     useStore.setState({
-      tabs: [{ id: 't1', kind: 'claude', title: 'Claude', cwd: '/gone', alive: true }],
+      tabs: [
+        { id: 't1', kind: 'claude', host: 'local', title: 'Claude', cwd: '/gone', alive: true }
+      ],
       sessions: [{ ...session('t1'), treeRoot: '/gone' }],
       activeTabId: 't1',
       workbench: { t1: emptyTabSet() },
@@ -434,7 +457,7 @@ describe('store: opening a file expands the session Workbench onto `files` (FR-5
       api: { workbench: { setState: () => {} } }
     }
     const s = useStore.getState()
-    s.addTab({ id: 'tab-A', kind: 'claude', title: 'S', cwd: '/w', alive: true })
+    s.addTab({ id: 'tab-A', kind: 'claude', host: 'local', title: 'S', cwd: '/w', alive: true })
     useStore.setState({
       sessions: [session('tab-A')],
       workbench: {},
@@ -514,6 +537,7 @@ describe('store: a tab’s bound session id across the ⇧⌘R restart window, b
   const restarted = {
     id: 'pty-new',
     kind: 'claude' as const,
+    host: 'local' as const,
     title: 'Claude',
     cwd: '/w',
     alive: true,
@@ -531,7 +555,14 @@ describe('store: a tab’s bound session id across the ⇧⌘R restart window, b
   })
 
   it('still has nothing to say about a fresh tab that never bound anything', () => {
-    const fresh = { id: 'pty-1', kind: 'claude' as const, title: 'Claude', cwd: '/w', alive: true }
+    const fresh = {
+      id: 'pty-1',
+      kind: 'claude' as const,
+      host: 'local' as const,
+      title: 'Claude',
+      cwd: '/w',
+      alive: true
+    }
     expect(boundSessionId({ tabs: [fresh], sessions: [] }, 'pty-1')).toBeUndefined()
   })
 })
@@ -572,7 +603,7 @@ describe('store: a terminal spawn that lands on a tab already gone', () => {
   it('kills the shell instead of adding it to a strip nobody holds', async () => {
     const rec = stubTerminalApi()
     useStore.setState({
-      tabs: [{ id: 't1', kind: 'claude', title: 'Claude', cwd: '/w', alive: true }],
+      tabs: [{ id: 't1', kind: 'claude', host: 'local', title: 'Claude', cwd: '/w', alive: true }],
       sessions: [session('t1')],
       activeTabId: 't1',
       workbench: { t1: emptyTabSet() },
@@ -594,6 +625,7 @@ describe("tabForSession: the CDP relay's session id to the conversation tab the 
   ): {
     id: string
     kind: 'claude'
+    host: 'local'
     title: string
     cwd: string
     alive: boolean
@@ -601,6 +633,7 @@ describe("tabForSession: the CDP relay's session id to the conversation tab the 
   } => ({
     id,
     kind: 'claude',
+    host: 'local',
     title: 'S',
     cwd: '/w',
     alive: true,
@@ -636,7 +669,7 @@ describe('selectWorkspace: a session tab and a workspace head are one selection'
 
   it('picks the workspace, drops the active tab and leaves the running tabs alone', () => {
     const s = useStore.getState()
-    s.addTab({ id: 'sel1', kind: 'claude', title: 'A', cwd: '/w/a', alive: true })
+    s.addTab({ id: 'sel1', kind: 'claude', host: 'local', title: 'A', cwd: '/w/a', alive: true })
     expect(useStore.getState().activeTabId).toBe('sel1')
 
     useStore.getState().selectWorkspace('/w/b')
@@ -649,7 +682,7 @@ describe('selectWorkspace: a session tab and a workspace head are one selection'
 
   it('gives the pick back to a tab the moment one goes active', () => {
     const s = useStore.getState()
-    s.addTab({ id: 'sel2', kind: 'claude', title: 'A', cwd: '/w/a', alive: true })
+    s.addTab({ id: 'sel2', kind: 'claude', host: 'local', title: 'A', cwd: '/w/a', alive: true })
     useStore.getState().selectWorkspace('/w/b')
     expect(useStore.getState().selectedWs).toBe('/w/b')
 

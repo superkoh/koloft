@@ -233,6 +233,8 @@ export function aggregateSessions(buckets: Bucket[], deps: AggregateDeps): Sessi
       const meta = deps.readMeta(b.slug, f.id)
       const row: SessionRow = {
         id: f.id,
+        backendId: 'claude',
+        host: b.host ? 'ssh' : 'local',
         createdAt: Date.parse(meta.timestamp) || 0,
         title: titleFor(meta, nowMs),
         // CC§2
@@ -310,6 +312,8 @@ export function resolvePending(
       // CC§2
       out.rows.push({
         id: l.sessionId,
+        backendId: 'claude',
+        host: l.host ? 'ssh' : 'local',
         title: PLACEHOLDER_SESSION_TITLE,
         worktree,
         cwd: dir,
@@ -321,6 +325,8 @@ export function resolvePending(
     }
     out.rows.push({
       id: l.tabId,
+      backendId: 'claude',
+      host: l.host ? 'ssh' : 'local',
       title: PENDING_SESSION_TITLE,
       worktree,
       cwd: dir,

@@ -33,6 +33,8 @@ describe('unexpectedExitWanted', () => {
 
 const sess = (tabId: string, over: Partial<SessionInfo> = {}): SessionInfo => ({
   tabId,
+  backendId: 'claude',
+  host: 'local',
   sessionId: 'sid-' + tabId,
   title: 'Refactor session management',
   cwd: '/w',
@@ -165,7 +167,7 @@ describe('closeConfirmBody with unsaved files (B-25 merged dialog)', () => {
 // PLATFORM§29
 describe('unexpectedExitNotice (the one account of a session that died)', () => {
   it('names the signal for a killed claude, the code for an error exit', () => {
-    expect(unexpectedExitNotice({ exitCode: 0, signal: 9 })).toContain('signal 9')
-    expect(unexpectedExitNotice({ exitCode: 1 })).toContain('exit code 1')
+    expect(unexpectedExitNotice({ exitCode: 0, signal: 9 }, 'claude')).toContain('signal 9')
+    expect(unexpectedExitNotice({ exitCode: 1 }, 'claude')).toContain('exit code 1')
   })
 })

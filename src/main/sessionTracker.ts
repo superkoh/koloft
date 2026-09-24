@@ -381,6 +381,8 @@ export class SessionTracker extends SessionRuntime {
 
     const info: SessionInfo = {
       tabId,
+      backendId: 'claude',
+      host: remote ? 'ssh' : 'local',
       sessionId: '',
       title: PLACEHOLDER_SESSION_TITLE,
       cwd,
@@ -651,8 +653,8 @@ export class SessionTracker extends SessionRuntime {
       t.info.updatedAt = Date.now()
       this.emitUpdate()
     }
-    if (ccVersion && t.info.ccVersion !== ccVersion) {
-      t.info.ccVersion = ccVersion
+    if (ccVersion && t.info.cliVersion !== ccVersion) {
+      t.info.cliVersion = ccVersion
       t.info.updatedAt = Date.now()
       this.emitUpdate()
     }

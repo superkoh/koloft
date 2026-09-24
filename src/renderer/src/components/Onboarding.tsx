@@ -197,12 +197,10 @@ export function Onboarding({
   const runProbe = useCallback((): void => {
     setProbe('pending')
     setCodexFound(false)
-    void Promise.all([window.api.claude.probe(), window.api.sessions.backends()]).then(
-      ([claude, backends]) => {
-        setCodexFound(backends.some((b) => b.id === 'codex' && b.available))
-        setProbe(claude.found ? 'found' : 'missing')
-      }
-    )
+    void window.api.sessions.backends().then((backends) => {
+      setCodexFound(backends.some((b) => b.id === 'codex' && b.available))
+      setProbe(backends.some((b) => b.id === 'claude' && b.available) ? 'found' : 'missing')
+    })
   }, [])
 
   const finish = useCallback((): void => {

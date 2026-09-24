@@ -24,20 +24,9 @@ export function SessionMethodsSection() {
   const [detected, setDetected] = useState<Detected | 'error' | null>(null)
   useEffect(() => {
     let alive = true
-    void Promise.all([window.api.sessions.backends(), window.api.claude.probe()]).then(
-      ([backends, claude]) => {
-        if (!alive) return
-        setDetected(
-          backends.map((b) =>
-            b.id === 'claude'
-              ? {
-                  ...b,
-                  available: claude.found,
-                  reason: claude.found ? undefined : 'Not installed'
-                }
-              : b
-          )
-        )
+    void window.api.sessions.backends().then(
+      (backends) => {
+        if (alive) setDetected(backends)
       },
       () => {
         if (alive) setDetected('error')

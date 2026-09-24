@@ -6,10 +6,11 @@ import type {
   SessionResumeResult
 } from '@shared/types'
 import { basename } from '@shared/preview'
+import { hostOf } from '@shared/remoteKey'
 import { markRestoreLaunch, useStore } from './store'
 
 export interface ResumeTarget {
-  backendId?: SessionBackend
+  backendId: SessionBackend
   id: string
   title: string
   restore?: boolean
@@ -167,7 +168,8 @@ export async function runResume(target: ResumeTarget, req: SessionResumeRequest)
     }
     st.addTab({
       id: res.id,
-      kind: res.kind ?? target.backendId ?? 'claude',
+      kind: res.kind ?? target.backendId,
+      host: hostOf(res.cwd),
       title: target.title,
       cwd: res.cwd,
       sessionId: target.id,

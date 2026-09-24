@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } fr
 import { LuCheck, LuLoaderCircle, LuTriangleAlert, LuX } from 'react-icons/lu'
 import type { BackendId, WorkspaceFreshness, WorkspaceRows, WorktreeInfo } from '@shared/types'
 import { basename } from '@shared/preview'
+import { hostOf } from '@shared/remoteKey'
 import { freshLineState } from '@shared/freshnessOps'
 import {
   escPeel,
@@ -60,7 +61,7 @@ export function WorktreeSessionDialog({
   const rowsAtOpen = useRef(ws.rows)
   const showToast = useStore((s) => s.showToast)
   const gitAutoFetch = useStore((s) => s.settings.gitAutoFetch)
-  const sessionLaunch = useSessionLaunch(!!remote, onStart, onClose)
+  const sessionLaunch = useSessionLaunch(hostOf(wsPath), onStart, onClose)
   const confirmBackend = useRef<BackendId>(sessionLaunch.methods.defaultBackend)
 
   useEffect(() => {

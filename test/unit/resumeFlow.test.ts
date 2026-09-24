@@ -18,7 +18,7 @@ import {
 } from '../../src/renderer/src/resumeFlow'
 import { useStore } from '../../src/renderer/src/store'
 
-const target = { id: 'sid-1', title: 'Refactor session management' }
+const target = { id: 'sid-1', backendId: 'claude' as const, title: 'Refactor session management' }
 
 const evidence = (over: Partial<ResumeEvidence> = {}): ResumeEvidence => ({
   worktreePath: '/repo/.claude/worktrees/session-tab',
@@ -201,7 +201,7 @@ function stubApi(): { resumePlan: () => Promise<ResumePlan> } {
 describe('the in-flight latch (double-click dedupe)', () => {
   it('lets go of a member-row resume as soon as its row is no longer cold', async () => {
     stubApi()
-    await resumeSession({ id: 'sid-member', title: 'a session' })
+    await resumeSession({ id: 'sid-member', backendId: 'claude', title: 'a session' })
     expect(resumeInFlight('sid-member')).toBe(true)
     releaseSettledResumes(new Set())
     expect(resumeInFlight('sid-member')).toBe(false)
@@ -209,7 +209,12 @@ describe('the in-flight latch (double-click dedupe)', () => {
 
   it('holds a D5 restore across the rows push that has no row for it at all, so a second click cannot spawn a second pty', async () => {
     stubApi()
-    await resumeSession({ id: 'sid-restore', title: 'from history', restore: true })
+    await resumeSession({
+      id: 'sid-restore',
+      backendId: 'claude',
+      title: 'from history',
+      restore: true
+    })
     expect(resumeInFlight('sid-restore')).toBe(true)
     releaseSettledResumes(new Set())
     releaseSettledResumes(new Set())
@@ -224,7 +229,7 @@ describe('the click-time placeholder: the store holds the target before the firs
     const api = stubApi()
     let answer!: (p: ResumePlan) => void
     api.resumePlan = () => new Promise<ResumePlan>((r) => (answer = r))
-    const done = resumeSession({ id: 'sid-slow', title: 'Slow to plan' })
+    const done = resumeSession({ id: 'sid-slow', backendId: 'claude', title: 'Slow to plan' })
     expect(useStore.getState().resumeLaunch).toEqual({ id: 'sid-slow', title: 'Slow to plan' })
     answer({ action: 'direct', cwd: '/repo' })
     await done
@@ -236,7 +241,7 @@ describe('the click-time placeholder: the store holds the target before the firs
   it('comes down when the resume ends without a tab (failed plan)', async () => {
     const api = stubApi()
     api.resumePlan = () => Promise.reject(new Error('ipc down'))
-    await resumeSession({ id: 'sid-fail', title: 'Never lands' })
+    await resumeSession({ id: 'sid-fail', backendId: 'claude', title: 'Never lands' })
     expect(useStore.getState().resumeLaunch).toBeNull()
   })
 })

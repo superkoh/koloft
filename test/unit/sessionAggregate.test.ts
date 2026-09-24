@@ -318,6 +318,8 @@ describe('aggregateSessions', () => {
 describe('filterOwned (owned-only sidebar default: external claude runs in the same repo stay hidden until Koloft owns them)', () => {
   const row = (id: string, running: boolean): SessionRow => ({
     id,
+    backendId: 'claude',
+    host: 'local',
     title: 't',
     worktree: 'main',
     cwd: WS,
@@ -339,6 +341,8 @@ describe('filterOwned (owned-only sidebar default: external claude runs in the s
 describe('hasHistory (D9 greying data: the Restore item greys off exactly what filterOwned drops)', () => {
   const row = (id: string, running = false): SessionRow => ({
     id,
+    backendId: 'claude',
+    host: 'local',
     title: 't',
     worktree: 'main',
     cwd: WS,
@@ -373,6 +377,8 @@ describe('resolvePending', () => {
   ]
   const realRow = (id: string): SessionRow => ({
     id,
+    backendId: 'claude',
+    host: 'local',
     title: 't',
     worktree: 'main',
     cwd: WS,
@@ -387,6 +393,8 @@ describe('resolvePending', () => {
     expect(out.rows).toEqual([
       {
         id: 'tab-1',
+        backendId: 'claude',
+        host: 'local',
         title: PENDING_SESSION_TITLE,
         worktree: 'main',
         cwd: WS,
@@ -441,6 +449,8 @@ describe('resolvePending', () => {
     expect(bound.rows).toEqual([
       {
         id: 's1',
+        backendId: 'claude',
+        host: 'local',
         title: PLACEHOLDER_SESSION_TITLE,
         worktree: 'main',
         cwd: WS,
@@ -468,6 +478,8 @@ describe('resolvePending', () => {
     expect(out.rows).toEqual([
       {
         id: 's1',
+        backendId: 'claude',
+        host: 'local',
         title: PLACEHOLDER_SESSION_TITLE,
         worktree: 'bugfix',
         cwd: WT,

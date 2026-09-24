@@ -1,4 +1,4 @@
-import type { BackendId, SessionMethods } from './types'
+import type { BackendId, HostId, SessionMethods } from './types'
 
 export const SESSION_BACKENDS: BackendId[] = ['claude', 'codex']
 
@@ -11,17 +11,89 @@ export function normalizeSessionMethods(raw: unknown): SessionMethods {
   }
 }
 
-export interface SessionCapabilities {
-  workbench: boolean
-  worktree: boolean
-  remote: boolean
-  accounts: boolean
-  scheduledTasks: boolean
+export const BACKEND_LABEL: Record<BackendId, string> = { claude: 'Claude', codex: 'Codex' }
+
+export type Capability = true | { unsupported: string } | { pending: true }
+
+export interface Capabilities {
+  workbench: Capability
+  worktree: Capability
+  accounts: Capability
+  scheduledTasks: Capability
+  agentOpen: Capability
+  browserControl: Capability
+  filesTouched: Capability
+  statusline3: Capability
+  rename: Capability
 }
 
-export const SESSION_CAPABILITIES: Record<BackendId, SessionCapabilities> = {
-  claude: { workbench: true, worktree: true, remote: true, accounts: true, scheduledTasks: true },
-  codex: { workbench: false, worktree: true, remote: false, accounts: false, scheduledTasks: false }
+const PENDING = { pending: true } as const
+
+const EVERYTHING: Capabilities = {
+  workbench: true,
+  worktree: true,
+  accounts: true,
+  scheduledTasks: true,
+  agentOpen: true,
+  browserControl: true,
+  filesTouched: true,
+  statusline3: true,
+  rename: true
+}
+
+const NOTHING_YET: Capabilities = {
+  workbench: PENDING,
+  worktree: PENDING,
+  accounts: PENDING,
+  scheduledTasks: PENDING,
+  agentOpen: PENDING,
+  browserControl: PENDING,
+  filesTouched: PENDING,
+  statusline3: PENDING,
+  rename: PENDING
+}
+
+const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities>> = {
+  claude: {
+    local: EVERYTHING,
+    ssh: {
+      ...EVERYTHING,
+      workbench: PENDING,
+      agentOpen: PENDING,
+      browserControl: PENDING,
+      scheduledTasks: PENDING,
+      rename: PENDING
+    }
+  },
+  codex: {
+    local: {
+      ...EVERYTHING,
+      workbench: PENDING,
+      accounts: PENDING,
+      scheduledTasks: PENDING,
+      filesTouched: PENDING,
+      agentOpen: PENDING,
+      browserControl: PENDING,
+      // CODEX§8
+      statusline3: { unsupported: 'CODEX§8' }
+    },
+    ssh: NOTHING_YET
+  }
+}
+
+export function capabilitiesFor(backend: BackendId, host: HostId): Capabilities {
+  return CAPABILITIES[backend][host]
+}
+
+export const SUPPORTED_PAIRS: Record<BackendId, Record<HostId, boolean>> = {
+  claude: { local: true, ssh: true },
+  codex: { local: true, ssh: false }
+}
+
+export function unsupportedPairMessage(backend: BackendId, host: HostId): string | null {
+  return SUPPORTED_PAIRS[backend][host]
+    ? null
+    : `${BACKEND_LABEL[backend]} sessions cannot run on a remote machine yet.`
 }
 
 export interface SessionIdentity {

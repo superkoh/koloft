@@ -200,6 +200,7 @@ export const DEFAULT_SETTINGS: Settings = {
 }
 
 export type BackendId = 'claude' | 'codex'
+export type HostId = 'local' | 'ssh'
 export interface SessionMethods {
   defaultBackend: BackendId
   enabled: Record<BackendId, boolean>
@@ -371,7 +372,8 @@ export const PENDING_SESSION_TITLE = 'Starting…'
 export interface SessionInfo {
   cliVersion?: string
   background?: BackgroundItem[]
-  backendId?: BackendId
+  backendId: BackendId
+  host: HostId
   nativeSessionId?: string
   observation?: 'live' | 'degraded'
   tabId: string
@@ -391,7 +393,6 @@ export interface SessionInfo {
   liveWrites?: number
   account?: string
   pickedAccount?: string
-  ccVersion?: string
   alive: boolean
   // ADR-0025
   remote?: { host: string }
@@ -808,9 +809,6 @@ export interface KoloftApi {
     pull(path: string, expect: { branch: string; head: string }): Promise<WorkspacePullResult>
     discover(): Promise<DiscoveredFolder[]>
   }
-  claude: {
-    probe(): Promise<{ found: boolean }>
-  }
   settings: {
     get(): Promise<Settings>
     set(patch: Partial<Settings>): Promise<Settings>
@@ -1041,7 +1039,8 @@ export interface WorktreeStateMeta {
 }
 
 export interface SessionRow {
-  backendId?: BackendId
+  backendId: BackendId
+  host: HostId
   nativeSessionId?: string
   createdAt?: number
   id: string

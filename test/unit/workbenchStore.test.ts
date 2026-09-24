@@ -48,7 +48,10 @@ function boundSession2(): SessionInfo {
 
 function bindThirdTab(): void {
   useStore.setState((s) => ({
-    tabs: [...s.tabs, { id: 'pty-3', kind: 'claude', title: 'U', cwd: '/ws', alive: true }],
+    tabs: [
+      ...s.tabs,
+      { id: 'pty-3', kind: 'claude', host: 'local', title: 'U', cwd: '/ws', alive: true }
+    ],
     sessions: [
       ...s.sessions,
       { tabId: 'pty-3', sessionId: 'sess-3', alive: true, title: 'U', cwd: '/ws' } as SessionInfo
@@ -76,8 +79,8 @@ beforeEach(() => {
   disk = {}
   useStore.setState({
     tabs: [
-      { id: TAB, kind: 'claude', title: 'S', cwd: '/ws', alive: true },
-      { id: TAB2, kind: 'claude', title: 'T', cwd: '/ws', alive: true }
+      { id: TAB, kind: 'claude', host: 'local', title: 'S', cwd: '/ws', alive: true },
+      { id: TAB2, kind: 'claude', host: 'local', title: 'T', cwd: '/ws', alive: true }
     ],
     activeTabId: TAB,
     sessions: [boundSession(), boundSession2()],
@@ -412,7 +415,17 @@ describe('an unfetched session is read before anything is written (the data-loss
 
   it('FR-57 pre-bind: a user file open never writes `tabs: []` — the flag lands on main’s tabs', async () => {
     useStore.setState({
-      tabs: [{ id: TAB, kind: 'claude', title: 'S', cwd: '/ws', alive: true, sessionId: SID }],
+      tabs: [
+        {
+          id: TAB,
+          kind: 'claude',
+          host: 'local',
+          title: 'S',
+          cwd: '/ws',
+          alive: true,
+          sessionId: SID
+        }
+      ],
       sessions: []
     })
 
@@ -545,7 +558,9 @@ describe('an unfetched session is read before anything is written (the data-loss
   it('an unbound tab is not marked fetched, and its first bind reads once — the read hangs off the bind, not the tab existing (D8/R1)', async () => {
     disk = { 'sess-fresh': { open: true, tabs: [{ kind: 'web', title: 'A', url: 'u1' }] } }
     useStore.setState({
-      tabs: [{ id: 'pty-new', kind: 'claude', title: 'Claude', cwd: '/ws', alive: true }],
+      tabs: [
+        { id: 'pty-new', kind: 'claude', host: 'local', title: 'Claude', cwd: '/ws', alive: true }
+      ],
       sessions: [],
       activeTabId: 'pty-new',
       workbench: {},
@@ -583,7 +598,9 @@ describe('an unfetched session is read before anything is written (the data-loss
   it('a link clicked in the TUI before a fresh ⌘N session binds waits, then lands on main’s saved tabs with the gesture’s `open`', async () => {
     disk = { 'sess-fresh': { open: false, tabs: [{ kind: 'web', title: 'A', url: 'u1' }] } }
     useStore.setState({
-      tabs: [{ id: 'pty-new', kind: 'claude', title: 'Claude', cwd: '/ws', alive: true }],
+      tabs: [
+        { id: 'pty-new', kind: 'claude', host: 'local', title: 'Claude', cwd: '/ws', alive: true }
+      ],
       sessions: [],
       activeTabId: 'pty-new',
       workbench: {},
@@ -623,7 +640,9 @@ describe('an unfetched session is read before anything is written (the data-loss
 
   it('a parked gesture is dropped with the tab when the bind never comes', () => {
     useStore.setState({
-      tabs: [{ id: 'pty-new', kind: 'claude', title: 'Claude', cwd: '/ws', alive: true }],
+      tabs: [
+        { id: 'pty-new', kind: 'claude', host: 'local', title: 'Claude', cwd: '/ws', alive: true }
+      ],
       sessions: [],
       activeTabId: 'pty-new',
       workbench: {},
@@ -641,18 +660,20 @@ describe('an unfetched session is read before anything is written (the data-loss
 })
 
 describe('openWebPage (FR-11 — an .html file renders in a `web` tab)', () => {
-  it('keeps remote Claude links in the existing session web-tab route', () => {
+  it('opens remote Claude links externally, since a remote session has no Workbench to show them in', () => {
     useStore.setState({
-      tabs: [{ id: TAB, kind: 'claude', title: 'Remote', cwd: 'ssh://host/ws', alive: true }]
+      tabs: [
+        { id: TAB, kind: 'claude', host: 'ssh', title: 'Remote', cwd: 'ssh://host/ws', alive: true }
+      ]
     })
     openWebPage('https://example.com')
-    expect(strip().tabs.at(-1)?.url).toBe('https://example.com')
-    expect(openExternal).not.toHaveBeenCalled()
+    expect(openExternal).toHaveBeenCalledWith('https://example.com')
+    expect(strip()?.tabs.some((t) => t.url === 'https://example.com')).not.toBe(true)
   })
 
   it('opens Codex web links externally without creating a Workbench', () => {
     useStore.setState({
-      tabs: [{ id: TAB, kind: 'codex', title: 'Codex', cwd: '/ws', alive: true }]
+      tabs: [{ id: TAB, kind: 'codex', host: 'local', title: 'Codex', cwd: '/ws', alive: true }]
     })
     openWebPage('https://example.com')
     expect(openExternal).toHaveBeenCalledWith('https://example.com')
@@ -727,8 +748,8 @@ describe('workbenchFull (FR-07 — T3 is global and transient)', () => {
     useStore.setState({
       workbenchFull: true,
       tabs: [
-        { id: TAB, kind: 'claude', title: 'S', cwd: '/ws', alive: true },
-        { id: TAB2, kind: 'claude', title: 'T', cwd: '/ws2', alive: true }
+        { id: TAB, kind: 'claude', host: 'local', title: 'S', cwd: '/ws', alive: true },
+        { id: TAB2, kind: 'claude', host: 'local', title: 'T', cwd: '/ws2', alive: true }
       ]
     })
 
@@ -779,7 +800,9 @@ describe('what reaches disk is keyed by the claude session id (D8/R1, R11)', () 
 
   it('an unbound tab writes nothing at all — there is no key to file it under', () => {
     useStore.setState({
-      tabs: [{ id: 'pty-new', kind: 'claude', title: 'Claude', cwd: '/ws', alive: true }],
+      tabs: [
+        { id: 'pty-new', kind: 'claude', host: 'local', title: 'Claude', cwd: '/ws', alive: true }
+      ],
       sessions: [],
       activeTabId: 'pty-new',
       workbenchFetched: { 'pty-new': true }
@@ -885,7 +908,10 @@ describe('removeTab clears the tab’s panel state — the tab going away is the
     get.mockClear()
 
     useStore.setState((s) => ({
-      tabs: [...s.tabs, { id: 'pty-resumed', kind: 'claude', title: 'S', cwd: '/ws', alive: true }],
+      tabs: [
+        ...s.tabs,
+        { id: 'pty-resumed', kind: 'claude', host: 'local', title: 'S', cwd: '/ws', alive: true }
+      ],
       sessions: [
         ...s.sessions,
         { tabId: 'pty-resumed', sessionId: SID, alive: true, title: 'S', cwd: '/ws' } as SessionInfo
@@ -898,28 +924,34 @@ describe('removeTab clears the tab’s panel state — the tab going away is the
   })
 })
 
-describe('Codex optional capabilities', () => {
-  it('does not create panel state or services through any Workbench entry', async () => {
-    useStore.setState({
-      tabs: [{ id: TAB, kind: 'codex', title: 'Codex', cwd: '/ws', alive: true }],
-      sessions: [{ ...boundSession(), backendId: 'codex' }],
-      workbenchOpen: {},
-      workbenchFetched: {},
-      workbenchFull: false
-    })
-    const s = useStore.getState()
-    await s.ensureWorkbench(TAB)
-    s.setWorkbenchOpen(TAB, true)
-    s.setWorkbenchFull(true)
-    openWeb('https://example.test/', 'agent')
-    gesture(
-      (prev) => openTab(prev, { url: 'https://example.test/', source: 'user', kind: 'web' }).set
-    )
-    await flush()
-    expect(strip()).toBeUndefined()
-    expect(useStore.getState().workbenchOpen[TAB]).toBeUndefined()
-    expect(useStore.getState().workbenchFull).toBe(false)
-    expect(get).not.toHaveBeenCalled()
-    expect(setState).not.toHaveBeenCalled()
-  })
+describe('sessions without a Workbench (Codex, remote Claude)', () => {
+  it.each([
+    { kind: 'codex' as const, host: 'local' as const, cwd: '/ws' },
+    { kind: 'claude' as const, host: 'ssh' as const, cwd: 'ssh://host/ws' }
+  ])(
+    '$kind on $host does not create panel state or services through any Workbench entry',
+    async ({ kind, host, cwd }) => {
+      useStore.setState({
+        tabs: [{ id: TAB, kind, host, title: 'S', cwd, alive: true }],
+        sessions: [{ ...boundSession(), backendId: kind, host }],
+        workbenchOpen: {},
+        workbenchFetched: {},
+        workbenchFull: false
+      })
+      const s = useStore.getState()
+      await s.ensureWorkbench(TAB)
+      s.setWorkbenchOpen(TAB, true)
+      s.setWorkbenchFull(true)
+      openWeb('https://example.test/', 'agent')
+      gesture(
+        (prev) => openTab(prev, { url: 'https://example.test/', source: 'user', kind: 'web' }).set
+      )
+      await flush()
+      expect(strip()).toBeUndefined()
+      expect(useStore.getState().workbenchOpen[TAB]).toBeUndefined()
+      expect(useStore.getState().workbenchFull).toBe(false)
+      expect(get).not.toHaveBeenCalled()
+      expect(setState).not.toHaveBeenCalled()
+    }
+  )
 })

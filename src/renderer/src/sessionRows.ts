@@ -122,8 +122,8 @@ export function isOrphanRow(
   return !tabs.some((t) => t.alive && (t.id === bound || t.sessionId === row.id))
 }
 
-export function mixesBackends(rows: { backendId?: SessionBackend }[]): boolean {
-  return new Set(rows.map((r) => r.backendId ?? 'claude')).size > 1
+export function mixesBackends(rows: { backendId: SessionBackend }[]): boolean {
+  return new Set(rows.map((r) => r.backendId)).size > 1
 }
 
 const MARQUEE_SPEED_PX_S = 60

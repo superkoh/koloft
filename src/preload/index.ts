@@ -373,9 +373,6 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener('accounts:update', handler)
     }
   },
-  claude: {
-    probe: () => ipcRenderer.invoke('claude:probe')
-  },
   update: {
     version: () => ipcRenderer.invoke('app:version'),
     whatsNew: () => ipcRenderer.invoke('update:whatsNew'),

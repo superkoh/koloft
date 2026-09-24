@@ -225,6 +225,7 @@ function LoginDialog(): JSX.Element | null {
     addTab({
       id: progress.tabId,
       kind: 'shell',
+      host: 'local',
       title: `Sign in: ${progress.name}`,
       cwd: progress.cwd ?? '',
       alive: true

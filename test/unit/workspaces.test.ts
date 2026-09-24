@@ -1076,6 +1076,7 @@ describe('mixed session backends', () => {
       {
         id: codexKey,
         backendId: 'codex' as const,
+        host: 'local' as const,
         title: 'newer',
         cwd: codexDir,
         worktree: 'codex-feature',
@@ -1087,6 +1088,7 @@ describe('mixed session backends', () => {
       {
         id: 'codex:local:history',
         backendId: 'codex' as const,
+        host: 'local' as const,
         title: 'external history',
         cwd: repo,
         worktree: 'main',
@@ -1098,6 +1100,7 @@ describe('mixed session backends', () => {
       {
         id: 'pending-tab',
         backendId: 'codex' as const,
+        host: 'local' as const,
         title: 'Starting…',
         cwd: repo,
         worktree: 'main',

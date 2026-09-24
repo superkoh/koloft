@@ -11,6 +11,8 @@ const adoptable = (over: Partial<AdoptableTab>): AdoptableTab => ({
 
 const live = (tabId: string, sessionId: string): SessionInfo => ({
   tabId,
+  backendId: 'claude',
+  host: 'local',
   sessionId,
   title: 'Live',
   cwd: '/repo',
