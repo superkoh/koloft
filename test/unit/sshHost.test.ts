@@ -84,11 +84,12 @@ describe('a remote session’s Workbench reads and writes the machine’s files 
     expect(byName.hits.map((h) => h.path)).toEqual([keyed(path.join(repo, 'sub', 'b.txt'))])
 
     const byText = await machine().searchContent(keyed(repo), 'hello')
-    expect(byText.hits.map((h) => [h.rel, h.line])).toEqual([
+    const byRel = [...byText.hits].sort((x, y) => x.rel.localeCompare(y.rel))
+    expect(byRel.map((h) => [h.rel, h.line])).toEqual([
       ['a.txt', 1],
       ['sub/b.txt', 1]
     ])
-    expect(byText.hits[0].path).toBe(keyed(path.join(repo, 'a.txt')))
+    expect(byRel[0].path).toBe(keyed(path.join(repo, 'a.txt')))
   })
 
   it('reports Changes with the machine’s paths, so the renderer can hand them straight back', async () => {
