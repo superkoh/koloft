@@ -396,8 +396,7 @@ export function WorkspaceSidebar({
     if (target.kind === 'workspace') {
       const remote = machineOf(target.wsPath)
       const newSessionItem = (label: string, backend?: BackendId, key?: string): JSX.Element => {
-        const refusal =
-          (backend && unsupportedPairMessage(backend, hostOf(target.wsPath))) || undefined
+        const refusal = backend ? unsupportedPairMessage(backend, hostOf(target.wsPath)) : undefined
         return (
           <div
             className={'mi' + (refusal ? ' disabled' : '')}

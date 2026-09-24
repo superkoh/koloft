@@ -846,7 +846,7 @@ export default function App(): JSX.Element {
       if (consumeRestoreExit(e.id)) useStore.getState().showToast(RESTORE_FAILED_NOTICE)
       const tab = useStore.getState().tabs.find((t) => t.id === e.id)
       if (tab?.sessionId) releaseResume(tab.sessionId)
-      if (tab && isSessionKind(tab.kind) && unexpectedExitWanted(tab, e)) {
+      if (unexpectedExitWanted(tab, e)) {
         useStore.getState().showToast(unexpectedExitNotice(e, tab.kind))
       }
       closeTab(e.id)
@@ -1004,8 +1004,9 @@ export default function App(): JSX.Element {
   const welcomeRoot =
     welcomeWs && !welcomeWs.workspace.remote ? welcomeWs.workspace.path : undefined
   const welcomeRefusal = (backend?: SessionBackend): string | undefined =>
-    (welcomeWs && backend && unsupportedPairMessage(backend, hostOf(welcomeWs.workspace.path))) ||
-    undefined
+    welcomeWs && backend
+      ? unsupportedPairMessage(backend, hostOf(welcomeWs.workspace.path))
+      : undefined
   const fileTreeRoot = selectionRoot(
     hasWorkbench(landedTab) ? landedTab : undefined,
     landedSession?.treeRoot,

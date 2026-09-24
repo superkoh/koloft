@@ -90,9 +90,9 @@ export const SUPPORTED_PAIRS: Record<BackendId, Record<HostId, boolean>> = {
   codex: { local: true, ssh: false }
 }
 
-export function unsupportedPairMessage(backend: BackendId, host: HostId): string | null {
+export function unsupportedPairMessage(backend: BackendId, host: HostId): string | undefined {
   return SUPPORTED_PAIRS[backend][host]
-    ? null
+    ? undefined
     : `${BACKEND_LABEL[backend]} sessions cannot run on a remote machine yet.`
 }
 

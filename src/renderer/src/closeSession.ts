@@ -57,10 +57,12 @@ export function unexpectedExitNotice(
     : `${backendLabel(backend)} session ended unexpectedly (exit code ${exit.exitCode})`
 }
 
-export function unexpectedExitWanted(
-  tab: { kind: string; sessionId?: string; jobId?: string } | undefined,
+export function unexpectedExitWanted<
+  T extends { kind: string; sessionId?: string; jobId?: string }
+>(
+  tab: T | undefined,
   exit: { exitCode: number; signal?: number }
-): boolean {
+): tab is T & { kind: SessionBackend } {
   if (!tab || !isSessionKind(tab.kind)) return false
   // PLATFORM§29
   if (exit.exitCode === 0 && !exit.signal) return false
