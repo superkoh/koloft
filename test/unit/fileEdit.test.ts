@@ -3,13 +3,8 @@ import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import {
-  EDIT_OPEN_MAX_BYTES,
-  EDIT_WRITE_MAX_BYTES,
-  createFile,
-  openForEdit,
-  writeText
-} from '../../src/main/fileEdit'
+import { EDIT_OPEN_MAX_BYTES, createFile, openForEdit, writeText } from '../../src/main/fileEdit'
+import { EDIT_WRITE_MAX_BYTES } from '@shared/editLimits'
 
 let dir: string
 let file: string

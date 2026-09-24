@@ -7,11 +7,11 @@ import type {
   EditOpenResult,
   EditWriteResult
 } from '@shared/types'
+import { EDIT_WRITE_MAX_BYTES } from '@shared/editLimits'
 
 export const MAX_READ_BYTES = 2 * 1024 * 1024
 
 export const EDIT_OPEN_MAX_BYTES = 512 * 1024
-export const EDIT_WRITE_MAX_BYTES = 1024 * 1024
 
 export function looksBinary(buf: Buffer): boolean {
   const n = Math.min(buf.length, 8192)
