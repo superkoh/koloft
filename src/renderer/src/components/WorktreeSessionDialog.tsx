@@ -166,13 +166,10 @@ export function WorktreeSessionDialog({
     if (target.kind === 'recover') {
       void sessionLaunch.launch(resolveLaunch(target, wsPath), method)
     } else if (target.kind === 'open') {
-      const row = {
-        kind: 'existing' as const,
-        name: target.name,
-        dir: target.dir,
-        inUse: worktreeInUse(target, ws.rows)
-      }
-      void sessionLaunch.launch(resolveLaunch(row, wsPath), method)
+      void sessionLaunch.launch(
+        resolveLaunch({ kind: 'existing', name: target.name, dir: target.dir }, wsPath),
+        method
+      )
     } else if (target.kind === 'create') {
       void sessionLaunch.launch(
         resolveLaunch({ kind: 'create', name: target.name }, wsPath),

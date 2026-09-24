@@ -21,14 +21,10 @@ import type { SessionRow, WorkspaceFreshness } from '@shared/types'
 const NOW = 1_700_000_000_000
 const MIN = 60_000
 
-const wt = (
-  name: string,
-  inUse = false
-): { name: string; dir: string; branch?: string; inUse: boolean } => ({
+const wt = (name: string): { name: string; dir: string; branch?: string } => ({
   name,
   dir: `/repo/.claude/worktrees/${name}`,
-  branch: `worktree-${name}`,
-  inUse
+  branch: `worktree-${name}`
 })
 
 describe('resolveLaunch (§5 — the two branches C8 chooses between)', () => {

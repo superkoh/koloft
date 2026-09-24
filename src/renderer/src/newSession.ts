@@ -4,7 +4,7 @@ import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { isValidWorktreeName } from '@shared/worktreeName'
 
 export type RunChoice =
-  | ({ kind: 'existing' } & WorktreeInfo & { inUse: boolean })
+  | ({ kind: 'existing' } & WorktreeInfo)
   | { kind: 'create'; name: string }
   | { kind: 'recover'; recoveryResourceId: string }
 
