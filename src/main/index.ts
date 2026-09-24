@@ -1089,13 +1089,15 @@ app.whenReady().then(() => {
         .catch((error) => sendToRenderer('cron:toast', String(error)))
     if (remoteTab) {
       const sid = sessionIdOf(e.id)
+      const title = sessionTitleOf(e.id)
       untrackSession(e.id)
       fs.rmSync(tabPackageDir(app.getPath('userData'), e.id), { recursive: true, force: true })
       void drainRemoteExit(
         remoteTab.host,
         mirrorHookDir(app.getPath('userData'), remoteTab.host),
         e.id,
-        sid
+        sid,
+        title
       )
     }
     workspaceMgr?.launchEnded(e.id)
@@ -1285,7 +1287,8 @@ app.whenReady().then(() => {
         hasTabs: live.has(t.host)
       }))
     },
-    onChange: () => workspaceMgr?.onRemoteChanged()
+    onChange: () => workspaceMgr?.onRemoteChanged(),
+    onLeft: noticeRemoteExits
   })
   freshness = new GitFreshnessEngine({
     workspaces: () => workspaceMgr?.pinnedPaths() ?? [],
@@ -2362,11 +2365,34 @@ const REMOTE_EXIT_WAIT_MS = 10_000
 const REMOTE_EXIT_POLL_MS = 500
 const REMOTE_EXIT_SLACK_MS = 30_000
 
+function remoteSessionGone(host: string, sessionId: string): boolean {
+  return !!remoteSync?.connected(host) && !remoteSync.alive(host).has(sessionId)
+}
+
+function noticeRemoteExits(host: string, sessionIds: string[]): void {
+  for (const s of tracker.list()) {
+    if (!s.alive || !sessionIds.includes(s.sessionId)) continue
+    if (tracker.remoteOf(s.tabId)?.host !== host) continue
+    const { tabId, sessionId } = s
+    setTimeout(() => {
+      const still = tracker
+        .list()
+        .some((t) => t.tabId === tabId && t.alive && t.sessionId === sessionId)
+      if (!still || !remoteSessionGone(host, sessionId)) return
+      const endSeenAt = sessionEndSeenAt.get(tabId)
+      if (endSeenAt !== undefined && Date.now() - endSeenAt <= SESSION_END_SEEN_TTL_MS) return
+      attention.onExited(tabId, attentionCtx(), sessionTitleOf(tabId))
+      untrackSession(tabId)
+    }, REMOTE_EXIT_WAIT_MS).unref()
+  }
+}
+
 async function drainRemoteExit(
   host: string,
   mirrorDir: string,
   tabId: string,
-  sid?: string
+  sid?: string,
+  title?: string
 ): Promise<void> {
   // PLATFORM§34
   const since = Date.now() - REMOTE_EXIT_SLACK_MS
@@ -2401,6 +2427,7 @@ async function drainRemoteExit(
     const stillBound = !!sid && tracker.list().some((t) => t.alive && t.sessionId === sid)
     if (sid && !stillBound) workspaceMgr?.dropOwnership(sid)
   }
+  if (!hit && sid && remoteSessionGone(host, sid)) attention.onExited(tabId, attentionCtx(), title)
   for (const name of new Set([`${tabId}.json`, hit?.name ?? ''])) {
     if (name) fs.rmSync(path.join(mirrorDir, name), { force: true })
   }

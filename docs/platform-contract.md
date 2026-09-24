@@ -819,6 +819,13 @@ Version state needs a recheck: one old note says #5759 and #5747 are in the ship
   pull), and even with it an unchanged file may be touched again, so a watcher can see
   it again.
 - **Mirrored files keep the source machine's mtime**, not the time they arrived.
+- **Filter rules anchored with a leading `/`, and `**`, work the same on both ends.**
+  `--include=/<slug>*/`, `/<slug>*/*.jsonl`, `/<slug>*/*.title`, `/<slug>*/*/`,
+  `/<slug>*/*/**` then `--exclude=*` pulled exactly the workspace's transcripts, their
+  title files and everything under each session's own folder, and nothing of another
+  project. Measured 2026-09-24 with this Mac's openrsync (2.6.9 compatible) pulling
+  from GNU rsync 3.2.7 on Ubuntu 24.04, and openrsync on both ends locally, over a
+  scratch tree.
 
 ## §35 tmux
 

@@ -15,6 +15,7 @@ import {
 } from './helpers/remote'
 import {
   centerTerm,
+  killSession,
   openMenu,
   processAlive,
   runIn,
@@ -141,6 +142,30 @@ test.describe('who ends the claude on the other machine: every way of ending a r
 
       await expect.poll(() => processAlive(first.pid), { timeout: 60_000 }).toBe(false)
       await expect(wsRows(page, REMOTE_WS_NAME)).toHaveCount(0, { timeout: 90_000 })
+      expect(killLines(env, first.sessionId)).toEqual([])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-20: a remote claude that dies without an end report raises the “exited” mark once the machine’s tmux list has lost it', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const [first] = await waitForCalls(env, 1)
+      await expect(wsRows(page, REMOTE_WS_NAME).first()).toHaveClass(/st-waiting|st-idle/, {
+        timeout: 60_000
+      })
+
+      killSession(first.pid, env)
+
+      await expect
+        .poll(async () => (await pendingAttention(page)).map((a) => a.kind), { timeout: 60_000 })
+        .toContain('exited')
       expect(killLines(env, first.sessionId)).toEqual([])
     } finally {
       await quitAndClose(app)
