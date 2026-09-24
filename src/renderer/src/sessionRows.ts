@@ -58,10 +58,10 @@ export function parkedBadge(
 }
 
 export function sessionActivityBadge(
-  session?: Pick<SessionInfo, 'background' | 'backendId' | 'observation'>,
+  session?: Pick<SessionInfo, 'background' | 'backendId' | 'details'>,
   leftovers: LeftoverProcess[] = []
 ): (ReturnType<typeof parkedBadge> & { heading: string }) | null {
-  if (session?.observation === 'degraded')
+  if (session?.details?.codex?.observation === 'degraded')
     return {
       text: '?',
       heading: 'Status unavailable',

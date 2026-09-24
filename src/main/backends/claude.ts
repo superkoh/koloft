@@ -21,7 +21,7 @@ import type { PtyManager } from '../ptyManager'
 import type { SessionTracker } from '../sessionTracker'
 import type { WorkspaceManager } from '../workspaces'
 import type { Hosts } from '../host/hosts'
-import { withMachinePaths } from '../host/hosts'
+import { publicClaudeSession } from '../host/hosts'
 import type { SshHost } from '../host/sshHost'
 import type { RemoteSync } from '../remote/sync'
 import { launchMode } from '../remote/sync'
@@ -128,7 +128,7 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   list(): SessionInfo[] {
-    return this.d.tracker.list().map(withMachinePaths)
+    return this.d.tracker.list().map(publicClaudeSession)
   }
 
   async historyRows(workspacePath: string): Promise<SessionRow[]> {

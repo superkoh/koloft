@@ -781,7 +781,7 @@ export function WorkspaceSidebar({
                           : undefined
                       const sess = tabId ? sessions.find((s) => s.tabId === tabId) : undefined
                       const stateCls =
-                        sess?.observation === 'degraded'
+                        sess?.details?.codex?.observation === 'degraded'
                           ? ''
                           : rowStateClass(row.running, sess?.status, row.pending)
                       const badge = sessionActivityBadge(sess, leftovers[row.id])

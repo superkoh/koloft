@@ -501,13 +501,13 @@ export class CodexSessions {
       onFrame: (direction, frame) => observer.receive(direction, frame),
       onDisconnect: () => {
         if (run?.info) {
-          run.info.observation = 'degraded'
+          run.info.details = { codex: { observation: 'degraded' } }
           changed()
         }
       },
       onError: (error) => {
         if (run?.info) {
-          run.info.observation = 'degraded'
+          run.info.details = { codex: { observation: 'degraded' } }
           changed()
         }
         this.deps.error(String(error))
@@ -551,7 +551,7 @@ export class CodexSessions {
     const run = this.runs.get(tabId)
     if (event.type === 'degraded') {
       if (run?.info) {
-        run.info.observation = 'degraded'
+        run.info.details = { codex: { observation: 'degraded' } }
         this.deps.changed()
       }
       this.deps.error(event.message)
@@ -622,7 +622,7 @@ export class CodexSessions {
       treeRoot: run.cwd,
       worktree: run.resource?.worktreeName,
       alive: true,
-      observation: 'live',
+      details: { codex: { observation: 'live' } },
       cliVersion: thread.cliVersion,
       updatedAt: now
     }
@@ -709,7 +709,7 @@ export class CodexSessions {
       })
       .catch((error) => {
         run.stopping = undefined
-        if (run.info) run.info.observation = 'degraded'
+        if (run.info) run.info.details = { codex: { observation: 'degraded' } }
         this.deps.changed()
         throw error
       })

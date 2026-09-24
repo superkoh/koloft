@@ -31,7 +31,6 @@ function session(tabId: string): SessionInfo {
     title: 'Live title',
     cwd: '/w',
     treeRoot: '/w',
-    jsonlPath: '/j',
     files: [],
     alive: true,
     updatedAt: 0

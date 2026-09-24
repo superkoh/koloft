@@ -1,17 +1,24 @@
 import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
-import type { SessionInfo } from '@shared/types'
+import type { ClaudeSessionInfo, SessionInfo } from '@shared/types'
 import type { Host } from './host'
 
 // ADR-0025
-export function withMachinePaths(s: SessionInfo): SessionInfo {
+export function publicClaudeSession({
+  jsonlPath,
+  scratchpadDir,
+  ...s
+}: ClaudeSessionInfo): SessionInfo {
   const machine = s.remote?.host
-  if (!machine) return s
   const keyed = (p: string | undefined): string | undefined =>
-    p?.startsWith('/') ? formatRemoteKey(machine, p) : p
-  return {
+    machine && p?.startsWith('/') ? formatRemoteKey(machine, p) : p
+  const info: SessionInfo = {
     ...s,
+    details: { claude: { jsonlPath, scratchpadDir: keyed(scratchpadDir) } }
+  }
+  if (!machine) return info
+  return {
+    ...info,
     treeRoot: keyed(s.treeRoot) ?? s.treeRoot,
-    scratchpadDir: keyed(s.scratchpadDir),
     lastTouched: keyed(s.lastTouched),
     lastWritten: keyed(s.lastWritten),
     files: s.files?.map((f) => ({ ...f, src: keyed(f.src) ?? f.src }))

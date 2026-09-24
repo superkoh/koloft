@@ -37,7 +37,6 @@ function session(files: PreviewItem[], extra: Partial<SessionInfo> = {}): Sessio
     title: 'x',
     cwd: ROOT,
     treeRoot: ROOT,
-    jsonlPath: null,
     files,
     alive: true,
     updatedAt: 0,

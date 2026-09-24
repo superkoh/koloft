@@ -50,7 +50,6 @@ function session(tabId: string, over: Partial<SessionInfo> = {}): SessionInfo {
     title: 'Live title',
     cwd: '/w',
     treeRoot: over.cwd ?? '/w',
-    jsonlPath: '/j',
     files: [],
     alive: true,
     updatedAt: 0,

@@ -39,7 +39,6 @@ const sess = (tabId: string, over: Partial<SessionInfo> = {}): SessionInfo => ({
   title: 'Refactor session management',
   cwd: '/w',
   treeRoot: '/w',
-  jsonlPath: '/j',
   files: [],
   alive: true,
   updatedAt: 0,

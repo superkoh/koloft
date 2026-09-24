@@ -356,7 +356,7 @@ describe('session background activity', () => {
   it('reports unavailable observation without presenting stale background work as current', () => {
     const badge = sessionActivityBadge({
       backendId: 'codex',
-      observation: 'degraded',
+      details: { codex: { observation: 'degraded' } },
       background: [{ id: 'a1', kind: 'agent', label: 'Review', state: 'working' }]
     })!
     expect(badge.heading).toBe('Status unavailable')

@@ -17,7 +17,6 @@ const live = (tabId: string, sessionId: string): SessionInfo => ({
   title: 'Live',
   cwd: '/repo',
   treeRoot: '/repo',
-  jsonlPath: '/j',
   files: [],
   alive: true,
   updatedAt: 0

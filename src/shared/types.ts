@@ -392,7 +392,6 @@ export interface SessionInfo {
   backendId: BackendId
   host: HostId
   nativeSessionId?: string
-  observation?: 'live' | 'degraded'
   tabId: string
   sessionId: string
   title: string
@@ -401,9 +400,11 @@ export interface SessionInfo {
   worktree?: string
   // CC§1
   relocated?: boolean
-  jsonlPath?: string | null
   // CC§2
-  scratchpadDir?: string
+  details?: {
+    claude?: { jsonlPath: string | null; scratchpadDir?: string }
+    codex?: { observation: 'live' | 'degraded' }
+  }
   files?: PreviewItem[]
   lastTouched?: string
   lastWritten?: string
@@ -420,6 +421,8 @@ export interface SessionInfo {
 
 export interface ClaudeSessionInfo extends SessionInfo {
   jsonlPath: string | null
+  // CC§2
+  scratchpadDir?: string
   files: PreviewItem[]
 }
 
