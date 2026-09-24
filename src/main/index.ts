@@ -213,8 +213,6 @@ import type {
   LoginProgress,
   CreateTabOptions,
   CreateTabResult,
-  CronEffort,
-  CronPermission,
   CronSaveInput,
   ProbeErrorKind,
   LeftoverProcess,
@@ -2500,37 +2498,32 @@ function handleHookRegistration(raw: unknown): void {
 }
 
 function createClaudeTab(
-  cwd: string,
-  resumeSessionId?: string,
-  cols?: number,
-  rows?: number,
-  worktree?: string,
-  extra?: {
-    env?: { KOLOFT_FIRST_PROMPT?: string; KOLOFT_SESSION_NAME?: string }
-    model?: string
-    effort?: CronEffort
-    permission?: CronPermission
-  }
+  spec: Omit<CreateTabOptions, 'kind' | 'cwd'> & { cwd: string }
 ): CreateTabResult {
+  const { cwd, resumeSessionId, worktree } = spec
   const base = process.env.KOLOFT_CLAUDE_CMD || 'claude'
   const args = claudeArgv(base, {
     resumeSessionId,
     worktree,
-    model: extra?.model,
-    effort: extra?.effort,
-    permission: extra?.permission
+    model: spec.model,
+    effort: spec.effort,
+    permission: spec.permission
   })
   if (!args.ok) return args
   const launchCommand = `exec ${args.argv.join(' ')}`
   const handle = ptyMgr.create({
     kind: 'claude',
     cwd,
-    cols,
-    rows,
+    cols: spec.cols,
+    rows: spec.rows,
     setupCommand: setupLine(),
     launchCommand,
     resumeSessionId,
-    extraEnv: extra?.env
+    // CC§9
+    extraEnv:
+      spec.firstPrompt !== undefined
+        ? { KOLOFT_FIRST_PROMPT: spec.firstPrompt, KOLOFT_SESSION_NAME: spec.name ?? '' }
+        : undefined
   })
   if (!resumeSessionId || !workspaceMgr?.isMember(resumeSessionId)) {
     workspaceMgr?.launchStarted(handle.id, cwd, worktree)
@@ -2594,7 +2587,7 @@ async function createRemoteClaudeTab(
     resumeSessionId: opts.resumeSessionId,
     sessionId: opts.resumeSessionId ? undefined : sid,
     worktree: opts.worktree,
-    permission: settings.skipPermissions ? 'skipAll' : undefined
+    permission: settings.skipPermissions ? 'bypass' : undefined
   })
   if (!args.ok) return args
   const claudeArgs = args.argv.slice(1)
@@ -2733,20 +2726,27 @@ function trustBeforeWorktreeLaunch(root: string): void {
   }
 }
 
-function launchCronRun(req: LaunchRequest): { ok: true; tabId: string } | { ok: false } {
+async function launchCronRun(
+  req: LaunchRequest
+): Promise<{ ok: true; tabId: string } | { ok: false }> {
   try {
-    const r = createClaudeTab(req.cwd, undefined, undefined, undefined, req.worktree, {
-      env: req.env,
+    const r = await sessionBackends.create({
+      kind: 'claude',
+      cwd: req.cwd,
+      worktree: req.worktree,
       model: req.model,
       effort: req.effort,
-      permission: req.permission
+      permission: req.permission,
+      firstPrompt: req.firstPrompt,
+      name: req.name,
+      scheduled: true
     })
     if (!r.ok) return { ok: false }
     const spawned: SpawnedTab = {
       id: r.id,
       kind: 'claude',
       cwd: r.cwd,
-      title: req.env.KOLOFT_SESSION_NAME,
+      title: req.name,
       jobId: req.jobId
     }
     sendToRenderer('terminal:spawned', spawned)
@@ -2901,8 +2901,8 @@ async function createClaudeSession(opts: CreateTabOptions): Promise<CreateTabRes
     })
   }
   const cwd = resolveSpawnCwd(opts.cwd)
-  if (opts.worktree && cwd === opts.cwd) trustBeforeWorktreeLaunch(cwd)
-  return createClaudeTab(cwd, opts.resumeSessionId, opts.cols, opts.rows, opts.worktree)
+  if (opts.worktree && !opts.scheduled && cwd === opts.cwd) trustBeforeWorktreeLaunch(cwd)
+  return createClaudeTab({ ...opts, cwd })
 }
 
 async function resumeRemoteClaudeSession(
@@ -2942,7 +2942,8 @@ async function resumeRemoteClaudeSession(
 
 async function resumeClaudeSession(req: SessionResumeRequest): Promise<SessionResumeResult> {
   const sid = req?.sessionId
-  const cwd = req?.cwd
+  const machineKey = typeof req?.cwd === 'string' ? parseRemoteKey(req.cwd) : null
+  const cwd = machineKey ? machineKey.path : req?.cwd
   if (
     typeof sid !== 'string' ||
     !/^[a-zA-Z0-9-]+$/.test(sid) ||
@@ -2952,7 +2953,8 @@ async function resumeClaudeSession(req: SessionResumeRequest): Promise<SessionRe
     return { ok: false, code: 'invalid-args' }
   }
   const remoteKey = remoteKeyOfSession(sid)
-  if (remoteKey) return resumeRemoteClaudeSession(remoteKey, req)
+  if (remoteKey) return resumeRemoteClaudeSession(remoteKey, { ...req, cwd })
+  if (machineKey) return { ok: false, code: 'invalid-args' }
   const mode = req.mode ?? 'direct'
   let worktree: string | undefined
   if (mode === 'renamed') {
@@ -2964,7 +2966,12 @@ async function resumeClaudeSession(req: SessionResumeRequest): Promise<SessionRe
   if (mode === 'rebuild') {
     const plan = await resumePlanFor(sid)
     if (plan.action === 'direct') {
-      const r = createClaudeTab(plan.cwd, sid, req.cols, req.rows)
+      const r = createClaudeTab({
+        cwd: plan.cwd,
+        resumeSessionId: sid,
+        cols: req.cols,
+        rows: req.rows
+      })
       return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
     }
     if (
@@ -2983,7 +2990,13 @@ async function resumeClaudeSession(req: SessionResumeRequest): Promise<SessionRe
     if (root && dirExistsSync(root)) spawnCwd = root
   }
   if (!dirExistsSync(spawnCwd)) return { ok: false, code: 'cwd-missing' }
-  const r = createClaudeTab(spawnCwd, sid, req.cols, req.rows, worktree)
+  const r = createClaudeTab({
+    cwd: spawnCwd,
+    resumeSessionId: sid,
+    cols: req.cols,
+    rows: req.rows,
+    worktree
+  })
   return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
 }
 

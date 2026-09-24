@@ -1,6 +1,6 @@
 import { isValidWorktreeName } from '@shared/worktreeName'
 import { isValidModelName } from '@shared/cronNames'
-import { isCronEffort, type CronEffort, type CronPermission } from '@shared/types'
+import { isCronEffort, type CronEffort, type LaunchPermission } from '@shared/types'
 
 export type ClaudeArgvResult = { ok: true; argv: string[] } | { ok: false; code: 'invalid-args' }
 
@@ -15,7 +15,7 @@ export function claudeArgv(
     worktree?: string
     model?: string
     effort?: CronEffort
-    permission?: CronPermission
+    permission?: LaunchPermission
   }
 ): ClaudeArgvResult {
   const { resumeSessionId: sid, sessionId: newSid, worktree: wt, model, effort, permission } = opts
@@ -27,8 +27,8 @@ export function claudeArgv(
   if (effort !== undefined && !isCronEffort(effort)) return { ok: false, code: 'invalid-args' }
   const perm: string[] = []
   if (permission === 'acceptEdits') perm.push('--permission-mode', 'acceptEdits')
-  else if (permission === 'skipAll') perm.push('--dangerously-skip-permissions')
-  else if (permission !== undefined && permission !== 'same')
+  else if (permission === 'bypass') perm.push('--dangerously-skip-permissions')
+  else if (permission !== undefined && permission !== 'default')
     return { ok: false, code: 'invalid-args' }
   return {
     ok: true,

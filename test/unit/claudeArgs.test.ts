@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { claudeArgv } from '../../src/main/claudeArgs'
-import type { CronEffort, CronPermission } from '../../src/shared/types'
+import type { CronEffort, LaunchPermission } from '../../src/shared/types'
 
 const BASE = 'claude'
 
@@ -55,7 +55,7 @@ describe('claudeArgv (T-ARG-02: an illegal worktree name is refused, never dropp
 describe('claudeArgv (a brand-new session id, minted by a remote launch that has no shim)', () => {
   it('asks claude to use the minted id, ahead of the worktree flag', () => {
     const id = '9f8c1b2a-3d4e-5f60-7182-93a4b5c6d7e8'
-    expect(claudeArgv(BASE, { sessionId: id, worktree: 'n1', permission: 'skipAll' })).toEqual({
+    expect(claudeArgv(BASE, { sessionId: id, worktree: 'n1', permission: 'bypass' })).toEqual({
       ok: true,
       argv: ['claude', '--session-id', id, '-w', 'n1', '--dangerously-skip-permissions']
     })
@@ -98,7 +98,7 @@ describe('claudeArgv (BB-E31: a scheduled job’s model and permission)', () => 
   })
 
   it('refuses a permission word it does not know', () => {
-    expect(claudeArgv(BASE, { permission: 'bypass' as CronPermission })).toEqual({
+    expect(claudeArgv(BASE, { permission: 'skipAll' as LaunchPermission })).toEqual({
       ok: false,
       code: 'invalid-args'
     })
@@ -112,7 +112,7 @@ describe('claudeArgv (BB-E31: a scheduled job’s model and permission)', () => 
   })
 
   it('puts the thinking effort after the model', () => {
-    expect(claudeArgv(BASE, { model: 'sonnet', effort: 'xhigh', permission: 'skipAll' })).toEqual({
+    expect(claudeArgv(BASE, { model: 'sonnet', effort: 'xhigh', permission: 'bypass' })).toEqual({
       ok: true,
       argv: ['claude', '--model', 'sonnet', '--effort', 'xhigh', '--dangerously-skip-permissions']
     })
@@ -126,14 +126,14 @@ describe('claudeArgv (BB-E31: a scheduled job’s model and permission)', () => 
   })
 
   it('asks to skip every permission question', () => {
-    expect(claudeArgv(BASE, { permission: 'skipAll' })).toEqual({
+    expect(claudeArgv(BASE, { permission: 'bypass' })).toEqual({
       ok: true,
       argv: ['claude', '--dangerously-skip-permissions']
     })
   })
 
   it('adds nothing at all for "same" — the run gets the settings the workspace has', () => {
-    expect(claudeArgv(BASE, { permission: 'same' })).toEqual({ ok: true, argv: ['claude'] })
+    expect(claudeArgv(BASE, { permission: 'default' })).toEqual({ ok: true, argv: ['claude'] })
   })
 
   it('keeps the worktree flag ahead of the model and the permission', () => {

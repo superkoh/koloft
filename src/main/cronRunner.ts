@@ -13,6 +13,7 @@ import {
   type CronSaveResult,
   type CronState,
   type HistoryLine,
+  type LaunchPermission,
   type LiveRun,
   type Schedule,
   type SessionStatus
@@ -31,6 +32,11 @@ const STAMP_LEN = 12
 const MAX_HISTORY = 20
 
 const PERMISSIONS: CronPermission[] = ['same', 'acceptEdits', 'skipAll']
+const LAUNCH_PERMISSION: Record<CronPermission, LaunchPermission> = {
+  same: 'default',
+  acceptEdits: 'acceptEdits',
+  skipAll: 'bypass'
+}
 
 function withSuffix(base: string, suffix: string): string {
   const over = base.length + suffix.length - MAX_WORKTREE_NAME
@@ -66,9 +72,9 @@ export interface LaunchRequest {
   worktree?: string
   model?: string
   effort?: CronEffort
-  permission: CronPermission
-  // CC§9
-  env: { KOLOFT_FIRST_PROMPT: string; KOLOFT_SESSION_NAME: string }
+  permission: LaunchPermission
+  firstPrompt: string
+  name: string
 }
 
 export interface RunnerDeps {
@@ -334,8 +340,9 @@ export class CronRunner {
         worktree,
         model: job.model,
         effort: job.effort,
-        permission: job.permission,
-        env: { KOLOFT_FIRST_PROMPT: job.task, KOLOFT_SESSION_NAME: job.name }
+        permission: LAUNCH_PERMISSION[job.permission],
+        firstPrompt: job.task,
+        name: job.name
       })
       if (!res.ok) {
         this.fail(job, dueAt, mark, 'Claude exited before it started')

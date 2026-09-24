@@ -209,7 +209,7 @@ describe('worktreeNameFor (BB-E03: two runs never share a folder)', () => {
 })
 
 describe('CronRunner — starting one run', () => {
-  it('launches a due job with its task and name as environment variables', async () => {
+  it('launches a due job with its task as the first prompt and its name as the session name', async () => {
     const h = makeHarness([makeJob()])
     h.runner.start()
     await h.tick(at(10, 0, 20))
@@ -219,11 +219,9 @@ describe('CronRunner — starting one run', () => {
         cwd: '/ws/a',
         worktree: 'nightly-report-260902-1000',
         model: undefined,
-        permission: 'same',
-        env: {
-          KOLOFT_FIRST_PROMPT: '/koloft.release-dmg patch',
-          KOLOFT_SESSION_NAME: 'Nightly report'
-        }
+        permission: 'default',
+        firstPrompt: '/koloft.release-dmg patch',
+        name: 'Nightly report'
       }
     ])
     expect(h.toasts).toEqual(['⏰ Nightly report started'])
@@ -558,7 +556,7 @@ describe('CronRunner — BB-E26: the first tick after the Mac wakes waits 30 sec
 
     await h.tick(at(10, 0, 40))
     expect(h.launches).toHaveLength(1)
-    expect(h.launches[0].env.KOLOFT_SESSION_NAME).toBe('Report A')
+    expect(h.launches[0].name).toBe('Report A')
     expect(jobs[0].history).toEqual([])
     expect(jobs[1].history).toEqual([{ dueAt: at(9, 54), state: 'missed' }])
   })

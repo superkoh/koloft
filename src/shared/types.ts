@@ -207,6 +207,8 @@ export interface SessionMethods {
 }
 export type TabKind = 'shell' | BackendId
 
+export type LaunchPermission = 'default' | 'acceptEdits' | 'bypass'
+
 export interface CreateTabOptions {
   worktreeResourceId?: string
   kind: TabKind
@@ -216,6 +218,13 @@ export interface CreateTabOptions {
   resumeSessionId?: string
   // CC§3
   worktree?: string
+  permission?: LaunchPermission
+  model?: string
+  effort?: CronEffort
+  firstPrompt?: string
+  name?: string
+  // ADR-0026
+  scheduled?: boolean
   util?: boolean
   ownerTabId?: string
 }

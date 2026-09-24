@@ -11,13 +11,12 @@ import {
   setText
 } from '../../src/renderer/src/editRegistry'
 
-interface CreateOpts {
-  kind: string
-  cwd?: string
-  resumeSessionId?: string
+interface ResumeReq {
+  sessionId: string
+  cwd: string
 }
 
-let created: CreateOpts[]
+let created: ResumeReq[]
 let killed: string[]
 let order: string[]
 let nextPty: { id: string; cwd: string }
@@ -85,18 +84,18 @@ beforeEach(() => {
             ? Promise.reject(new Error('main is not answering'))
             : Promise.resolve(transcriptOnDisk)
           return probeGate ? probeGate.promise.then(() => answer) : answer
-        }
-      },
-      workbench: { get: async () => ({ open: false, tabs: [] }), setState: () => {} },
-      terminal: {
-        create: (opts: CreateOpts) => {
-          created.push(opts)
+        },
+        resume: (req: ResumeReq) => {
+          created.push(req)
           order.push('create')
           if (createRefuses) return Promise.resolve({ ok: false, code: 'invalid-args' })
           if (createFails) return Promise.reject(new Error('spawn failed'))
           const done = Promise.resolve({ ok: true, ...nextPty })
           return createGate ? createGate.promise.then(() => done) : done
-        },
+        }
+      },
+      workbench: { get: async () => ({ open: false, tabs: [] }), setState: () => {} },
+      terminal: {
         kill: (id: string) => {
           killed.push(id)
           order.push('kill')
@@ -141,7 +140,7 @@ describe('restartActiveSession: the restart itself', () => {
 
     expect(order).toEqual(['probe', 'kill', 'create'])
     expect(killed).toEqual(['ord1'])
-    expect(created).toEqual([{ kind: 'claude', cwd: '/w/repo', resumeSessionId: 'sid-A' }])
+    expect(created).toEqual([{ sessionId: 'sid-A', cwd: '/w/repo' }])
   })
 
   it('restarts Codex in place with the same native backend and session', async () => {
@@ -163,7 +162,7 @@ describe('restartActiveSession: the restart itself', () => {
     await settle()
 
     expect(order).toEqual(['probe', 'kill', 'create'])
-    expect(created).toEqual([{ kind: 'codex', cwd: '/w', resumeSessionId: 'codex:local:thread-a' }])
+    expect(created).toEqual([{ sessionId: 'codex:local:thread-a', cwd: '/w' }])
     expect(useStore.getState().tabs).toMatchObject([
       { id: 'codex-restarted', kind: 'codex', sessionId: 'codex:local:thread-a' }
     ])
@@ -352,7 +351,7 @@ describe('restartActiveSession: the restart itself', () => {
     s.restartActiveSession()
     await settle()
 
-    expect(created).toEqual([{ kind: 'claude', cwd: '/w', resumeSessionId: 'sid-A' }])
+    expect(created).toEqual([{ sessionId: 'sid-A', cwd: '/w' }])
   })
 })
 
@@ -405,7 +404,7 @@ describe("restartActiveSession vs. the claude→shell revert: the kill's own unt
 
     const after = useStore.getState()
     expect(after.tabs[0].id).toBe('pw2')
-    expect(created).toEqual([{ kind: 'claude', cwd: '/w', resumeSessionId: 'sid-PW' }])
+    expect(created).toEqual([{ sessionId: 'sid-PW', cwd: '/w' }])
     expect(after.openFiles['pw2']?.src).toBe('/w/notes.md')
   })
 })
@@ -454,7 +453,7 @@ describe('restartActiveSession: no-op guards', () => {
     s.setSessions([session('late1', { sessionId: 'sid-late' })])
     s.restartActiveSession()
     await settle()
-    expect(created).toEqual([{ kind: 'claude', cwd: '/w', resumeSessionId: 'sid-late' }])
+    expect(created).toEqual([{ sessionId: 'sid-late', cwd: '/w' }])
   })
 
   it('falls back to the tab anchor while the registered session has no id yet', async () => {
@@ -473,7 +472,7 @@ describe('restartActiveSession: no-op guards', () => {
     s.restartActiveSession()
     await settle()
 
-    expect(created).toEqual([{ kind: 'claude', cwd: '/w', resumeSessionId: 'sid-ANCH' }])
+    expect(created).toEqual([{ sessionId: 'sid-ANCH', cwd: '/w' }])
   })
 
   it('resumes from the tracker while the throttled renderer snapshot is still stale, since ⇧⌘R never retries', async () => {
@@ -494,7 +493,7 @@ describe('restartActiveSession: no-op guards', () => {
     await settle()
 
     expect(order).toEqual(['probe', 'kill', 'create'])
-    expect(created).toEqual([{ kind: 'claude', cwd: '/w/repo', resumeSessionId: 'sid-MAIN' }])
+    expect(created).toEqual([{ sessionId: 'sid-MAIN', cwd: '/w/repo' }])
   })
 
   it('stays a silent no-op when the tracker has no session for the tab either', async () => {
@@ -687,7 +686,7 @@ describe('restartActiveSession: respawn failure', () => {
     await settle()
 
     expect(created).toHaveLength(2)
-    expect(created[1]).toEqual({ kind: 'claude', cwd: '/w', resumeSessionId: 'sid-A' })
+    expect(created[1]).toEqual({ sessionId: 'sid-A', cwd: '/w' })
     expect(useStore.getState().tabs[0].id).toBe('fail2')
   })
 
@@ -787,7 +786,7 @@ describe('restartActiveSession: the transcript gate — a session never typed in
     useStore.getState().restartActiveSession()
     await settle()
 
-    expect(created).toEqual([{ kind: 'claude', cwd: '/w', resumeSessionId: 'sid-LATER' }])
+    expect(created).toEqual([{ sessionId: 'sid-LATER', cwd: '/w' }])
     expect(useStore.getState().tabs[0].id).toBe('gate3b')
   })
 

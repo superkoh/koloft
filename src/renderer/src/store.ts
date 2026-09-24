@@ -532,8 +532,8 @@ export const useStore = create<AppState>((set, get) => ({
       restartedPtys.add(oldId)
       get().setTabTitle(oldId, sess?.title ?? tab.title)
       window.api.terminal.kill(oldId)
-      void window.api.terminal
-        .create({ kind: backend, cwd, resumeSessionId: resumeId })
+      void window.api.sessions
+        .resume({ sessionId: resumeId, cwd })
         .then((res) => {
           if (!res.ok) throw new Error(res.code)
           if (!get().tabs.some((x) => x.id === oldId)) {
