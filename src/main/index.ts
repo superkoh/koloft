@@ -2976,18 +2976,20 @@ function registerIpc(): void {
   ipcMain.on('terminal:kill', (_e, id: string) => killTabPty(id))
 
   ipcMain.handle('sessions:list', () => allSessions())
-  ipcMain.handle('sessions:backends', async () => [
-    await probeClaude().then(({ found }) => ({
-      id: 'claude',
-      available: found,
-      reason: found ? undefined : 'Not installed'
-    })),
-    (await codexSessions?.availability()) ?? {
-      id: 'codex',
-      available: false,
-      reason: codexStartupError ?? 'Codex is not ready.'
-    }
-  ])
+  ipcMain.handle('sessions:backends', () =>
+    Promise.all([
+      probeClaude().then(({ found }) => ({
+        id: 'claude',
+        available: found,
+        reason: found ? undefined : 'Not installed'
+      })),
+      codexSessions?.availability() ?? {
+        id: 'codex',
+        available: false,
+        reason: codexStartupError ?? 'Codex is not ready.'
+      }
+    ])
+  )
   ipcMain.handle('attention:list', () => attention.list())
   ipcMain.handle('tabs:list', (): TabInventoryReply => {
     rendererReady = true
