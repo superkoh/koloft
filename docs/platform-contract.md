@@ -415,6 +415,11 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   `connectOverCDP` for its whole timeout** (measured: 30 s on BB-49, 6 s on BB-25).
 - **playwright-mcp reads `PLAYWRIGHT_MCP_CDP_ENDPOINT`** with no other setup, and an
   injected endpoint wins over the tool's own `--isolated` flag.
+- **playwright-mcp sends a notification between its replies**: 0.0.82 (Playwright
+  1.64 alpha) writes `notifications/tools/list_changed`, a message with no `id`,
+  after the `initialize` reply and before the first tool result (measured
+  2026-09-23, reading its stdout). A client that counts lines as replies stops one
+  reply early.
 - **When playwright-mcp or playwright-cli starts a browser of its own, it is the
   machine's Google Chrome**, not the ms-playwright bundle; it can be told apart by
   Playwright's launch flag `--disable-field-trial-config`, not by its path.
