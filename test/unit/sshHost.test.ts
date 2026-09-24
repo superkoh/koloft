@@ -4,6 +4,7 @@ import os from 'os'
 import path from 'path'
 import { execFileSync, spawn, spawnSync } from 'child_process'
 import { SshHost } from '../../src/main/host/sshHost'
+import { diffBase as localDiffBase } from '../../src/main/gitStatus'
 import { utilClaudeGuard } from '../../src/main/remote/install'
 import { UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE } from '../../src/main/shim'
 import type { BytesResult } from '../../src/main/remote/ssh'
@@ -92,6 +93,15 @@ describe('a remote session’s Workbench reads and writes the machine’s files 
     const diff = await machine().gitFileDiff(keyed(path.join(repo, 'a.txt')))
     expect(diff.text).toContain('+more')
     expect((await machine().gitDiff(keyed(repo))).toplevel).toBe(keyed(repo))
+  })
+
+  it('diffs a branch against where it left main, the same base the local Workbench picks', async () => {
+    git('branch', '-M', 'main')
+    const forkPoint = git('rev-parse', 'HEAD').trim()
+    git('checkout', '-qb', 'feature')
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'more', '--allow-empty')
+    expect(await machine().diffBase(keyed(repo))).toBe(forkPoint)
+    expect(await localDiffBase(repo)).toBe(forkPoint)
   })
 
   it('refuses a save when the file changed on the machine since it was opened, and saves when it did not', async () => {

@@ -1,6 +1,5 @@
-import { hostOf } from '@shared/remoteKey'
-import { identityOf } from '@shared/sessionBackend'
-import { backendLabel, hasWorkbench, isSessionKind } from './agentUi'
+import { BACKEND_LABEL, identityOf } from '@shared/sessionBackend'
+import { hasWorkbench, isSessionKind } from './agentUi'
 import { create } from 'zustand'
 import {
   DEFAULT_SETTINGS,
@@ -14,7 +13,6 @@ import {
   type LeftoverProcess,
   type SessionInfo,
   type TabKind,
-  type HostId,
   type Settings,
   type ReleaseNotes,
   type WhatsNew,
@@ -48,7 +46,6 @@ import { DEFAULT_PANEL_OPEN } from '@shared/workbenchState'
 export interface Tab {
   id: string
   kind: TabKind
-  host: HostId
   title: string
   cwd: string
   sessionId?: string
@@ -423,8 +420,7 @@ export const useStore = create<AppState>((set, get) => ({
       const t: Tab = {
         id: a.id,
         kind: a.kind,
-        host: hostOf(a.cwd),
-        title: a.title ?? (isSessionKind(a.kind) ? backendLabel(a.kind) : 'Terminal'),
+        title: a.title ?? (isSessionKind(a.kind) ? BACKEND_LABEL[a.kind] : 'Terminal'),
         cwd: a.cwd,
         alive: true
       }

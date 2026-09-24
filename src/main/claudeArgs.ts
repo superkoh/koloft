@@ -4,7 +4,7 @@ import { isCronEffort, type CronEffort, type LaunchPermission } from '@shared/ty
 
 export type ClaudeArgvResult = { ok: true; argv: string[] } | { ok: false; code: 'invalid-args' }
 
-const SESSION_ID_RE = /^[a-zA-Z0-9-]+$/
+export const SESSION_ID_RE = /^[a-zA-Z0-9-]+$/
 
 // CC§9
 export function claudeArgv(

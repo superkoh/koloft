@@ -1,3 +1,4 @@
+import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { LuLoaderCircle, LuTriangleAlert, LuX } from 'react-icons/lu'
 import type { BackendId, WorkspaceRows } from '@shared/types'
@@ -12,7 +13,6 @@ import {
   type PullPhase
 } from '../newSession'
 import { pullToast } from '../freshnessView'
-import { backendLabel } from '../agentUi'
 import { useStore } from '../store'
 import {
   digitPick,
@@ -271,7 +271,7 @@ export function WorkspacePicker({
             {!pinned && (
               <p className="field-hint">
                 ↓↑ move · digit picks · ⏎ confirm
-                {other && ` · ⇧⏎ ${backendLabel(other)}`} · Esc cancel
+                {other && ` · ⇧⏎ ${BACKEND_LABEL[other]}`} · Esc cancel
               </p>
             )}
           </div>
@@ -303,8 +303,8 @@ export function WorkspacePicker({
                   if (sessionLaunch.starting) return 'Starting…'
                   if (kind === 'pulling' || backends.length === 1) return primaryLabel(kind)
                   return isDefault
-                    ? primaryLabel(kind, undefined, backendLabel(backend))
-                    : `${primaryLabel(kind)} ${backendLabel(backend)}`
+                    ? primaryLabel(kind, undefined, BACKEND_LABEL[backend])
+                    : `${primaryLabel(kind)} ${BACKEND_LABEL[backend]}`
                 }}
                 onStart={(backend) => submit(target, backend)}
               />

@@ -126,7 +126,6 @@ describe('restartActiveSession: the restart itself', () => {
     s.addTab({
       id: 'ord1',
       kind: 'shell',
-      host: 'local',
       title: 'Terminal',
       cwd: '/w',
       alive: true
@@ -147,7 +146,6 @@ describe('restartActiveSession: the restart itself', () => {
     s.addTab({
       id: 'codex-restart',
       kind: 'codex',
-      host: 'local',
       title: 'Codex',
       cwd: '/w',
       alive: true
@@ -176,7 +174,6 @@ describe('restartActiveSession: the restart itself', () => {
     s.addTab({
       id: 'wt1',
       kind: 'shell',
-      host: 'local',
       title: 'Terminal',
       cwd: '/w/main',
       alive: true
@@ -191,7 +188,7 @@ describe('restartActiveSession: the restart itself', () => {
 
   it('resumes at the PINNED root, not a drifted cwd — `--resume` only finds the transcript from the dir it is bucketed under', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'dr1', kind: 'shell', host: 'local', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({ id: 'dr1', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
     s.setSessions([
       session('dr1', { sessionId: 'sid-D', cwd: '/w/elsewhere', treeRoot: '/w/repo' })
     ])
@@ -208,7 +205,6 @@ describe('restartActiveSession: the restart itself', () => {
     s.addTab({
       id: 'pos-a',
       kind: 'shell',
-      host: 'local',
       title: 'Terminal',
       cwd: '/w',
       alive: true
@@ -216,7 +212,6 @@ describe('restartActiveSession: the restart itself', () => {
     s.addTab({
       id: 'pos-b',
       kind: 'shell',
-      host: 'local',
       title: 'Terminal',
       cwd: '/w',
       alive: true
@@ -224,7 +219,6 @@ describe('restartActiveSession: the restart itself', () => {
     s.addTab({
       id: 'pos-c',
       kind: 'shell',
-      host: 'local',
       title: 'Terminal',
       cwd: '/w',
       alive: true
@@ -248,7 +242,6 @@ describe('restartActiveSession: the restart itself', () => {
     s.addTab({
       id: 'pane1',
       kind: 'shell',
-      host: 'local',
       title: 'Terminal',
       cwd: '/w',
       alive: true
@@ -267,7 +260,7 @@ describe('restartActiveSession: the restart itself', () => {
 
   it('carries the panel — strip, open flag and fetched marker — onto the new pty id as the SAME object, so nothing remounts', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'wb1', kind: 'claude', host: 'local', title: 'Claude', cwd: '/w', alive: true })
+    s.addTab({ id: 'wb1', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
     s.setSessions([session('wb1', { sessionId: 'sid-W' })])
     await s.ensureWorkbench('wb1')
     s.setWorkbenchOpen('wb1', true)
@@ -289,7 +282,7 @@ describe('restartActiveSession: the restart itself', () => {
 
   it('carries an unsaved edit buffer onto the new pty id, so the pane, the unsaved dot, ⌘W and the quit guard still see it', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'ed1', kind: 'shell', host: 'local', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({ id: 'ed1', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
     s.setSessions([session('ed1', { sessionId: 'sid-E' })])
     beginEdit('ed1', 'wt-file', {
       path: '/w/notes.md',
@@ -316,7 +309,6 @@ describe('restartActiveSession: the restart itself', () => {
     s.addTab({
       id: 'sib-A',
       kind: 'shell',
-      host: 'local',
       title: 'Terminal',
       cwd: '/w',
       alive: true
@@ -324,7 +316,6 @@ describe('restartActiveSession: the restart itself', () => {
     s.addTab({
       id: 'sib-B',
       kind: 'shell',
-      host: 'local',
       title: 'Terminal',
       cwd: '/w',
       alive: true
@@ -345,7 +336,7 @@ describe('restartActiveSession: the restart itself', () => {
 
   it('still resumes after claude exited and the tab reverted to a plain shell', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'rev1', kind: 'claude', host: 'local', title: 'Claude', cwd: '/w', alive: true })
+    s.addTab({ id: 'rev1', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
     s.setSessions([session('rev1', { sessionId: 'sid-A' })])
     s.setSessions([])
     expect(useStore.getState().tabs[0].sessionId).toBeUndefined()
@@ -360,7 +351,7 @@ describe('restartActiveSession: the restart itself', () => {
 describe("restartActiveSession vs. the claude→shell revert: the kill's own untrack is not the session ending, so no teardown runs", () => {
   it('an untracked-session update mid-restart neither reverts the tab nor strips its state', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'int1', kind: 'claude', host: 'local', title: 'Claude', cwd: '/w', alive: true })
+    s.addTab({ id: 'int1', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
     s.setSessions([session('int1', { sessionId: 'sid-I', title: 'Long conversation' })])
     s.setOpenFile({ src: '/w/notes.md', label: 'notes.md' })
     nextPty = { id: 'int2', cwd: '/w' }
@@ -387,7 +378,7 @@ describe("restartActiveSession vs. the claude→shell revert: the kill's own unt
 
   it('an untracked-session update DURING the probe leaves the restarting tab standing', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'pw1', kind: 'claude', host: 'local', title: 'Claude', cwd: '/w', alive: true })
+    s.addTab({ id: 'pw1', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
     s.setSessions([session('pw1', { sessionId: 'sid-PW', title: 'Long conversation' })])
     s.setOpenFile({ src: '/w/notes.md', label: 'notes.md' })
     nextPty = { id: 'pw2', cwd: '/w' }
@@ -417,7 +408,6 @@ describe('restartActiveSession: no-op guards', () => {
     s.addTab({
       id: 'plain1',
       kind: 'shell',
-      host: 'local',
       title: 'Terminal',
       cwd: '/w',
       alive: true
@@ -436,7 +426,6 @@ describe('restartActiveSession: no-op guards', () => {
     s.addTab({
       id: 'late1',
       kind: 'claude',
-      host: 'local',
       title: 'Claude',
       cwd: '/w',
       alive: true
@@ -463,7 +452,6 @@ describe('restartActiveSession: no-op guards', () => {
     s.addTab({
       id: 'anch1',
       kind: 'claude',
-      host: 'local',
       title: 'Claude',
       cwd: '/w',
       sessionId: 'sid-ANCH',
@@ -482,7 +470,6 @@ describe('restartActiveSession: no-op guards', () => {
     s.addTab({
       id: 'stale1',
       kind: 'shell',
-      host: 'local',
       title: 'Terminal',
       cwd: '/w',
       alive: true
@@ -503,7 +490,6 @@ describe('restartActiveSession: no-op guards', () => {
     s.addTab({
       id: 'none1',
       kind: 'shell',
-      host: 'local',
       title: 'Terminal',
       cwd: '/w',
       alive: true
@@ -530,7 +516,6 @@ describe('restartActiveSession: double trigger', () => {
     s.addTab({
       id: 'dup1',
       kind: 'shell',
-      host: 'local',
       title: 'Terminal',
       cwd: '/w',
       alive: true
@@ -552,7 +537,6 @@ describe('restartActiveSession: double trigger', () => {
     s.addTab({
       id: 'race1',
       kind: 'shell',
-      host: 'local',
       title: 'Terminal',
       cwd: '/w',
       alive: true
@@ -575,7 +559,6 @@ describe('restartActiveSession: double trigger', () => {
       s.addTab({
         id: 'cd1',
         kind: 'shell',
-        host: 'local',
         title: 'Terminal',
         cwd: '/w',
         alive: true
@@ -609,7 +592,7 @@ describe('restartActiveSession: double trigger', () => {
 describe("restart-killed pty exits: App closes a tab whose pty exits, so the restart's own kill is marked expected", () => {
   it('marks the killed pty exit as expected exactly once, and never a foreign one', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'ex1', kind: 'shell', host: 'local', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({ id: 'ex1', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
     s.setSessions([session('ex1', { sessionId: 'sid-A' })])
     nextPty = { id: 'ex2', cwd: '/w' }
 
@@ -627,7 +610,6 @@ describe('restartActiveSession: the tab closes mid-restart', () => {
     s.addTab({
       id: 'gone1',
       kind: 'shell',
-      host: 'local',
       title: 'Terminal',
       cwd: '/w',
       alive: true
@@ -649,7 +631,6 @@ describe('restartActiveSession: the tab closes mid-restart', () => {
     useStore.getState().addTab({
       id: 'gone2',
       kind: 'shell',
-      host: 'local',
       title: 'Terminal',
       cwd: '/w',
       alive: true
@@ -666,7 +647,6 @@ describe('restartActiveSession: respawn failure', () => {
     s.addTab({
       id: 'fail1',
       kind: 'shell',
-      host: 'local',
       title: 'Terminal',
       cwd: '/w',
       alive: true
@@ -697,7 +677,6 @@ describe('restartActiveSession: respawn failure', () => {
     s.addTab({
       id: 'ref1',
       kind: 'shell',
-      host: 'local',
       title: 'Terminal',
       cwd: '/w',
       alive: true
@@ -722,7 +701,6 @@ describe('restartActiveSession: the transcript gate — a session never typed in
     s.addTab({
       id: 'gate1',
       kind: 'claude',
-      host: 'local',
       title: 'Claude',
       cwd: '/w',
       alive: true
@@ -747,7 +725,6 @@ describe('restartActiveSession: the transcript gate — a session never typed in
     s.addTab({
       id: 'gate2',
       kind: 'claude',
-      host: 'local',
       title: 'Claude',
       cwd: '/w',
       alive: true
@@ -771,7 +748,6 @@ describe('restartActiveSession: the transcript gate — a session never typed in
     s.addTab({
       id: 'gate3',
       kind: 'claude',
-      host: 'local',
       title: 'Claude',
       cwd: '/w',
       alive: true
@@ -797,7 +773,6 @@ describe('restartActiveSession: the transcript gate — a session never typed in
     s.addTab({
       id: 'gate4',
       kind: 'claude',
-      host: 'local',
       title: 'Claude',
       cwd: '/w',
       alive: true
@@ -821,7 +796,6 @@ describe('restartActiveSession: the transcript gate — a session never typed in
     s.addTab({
       id: 'gate9',
       kind: 'claude',
-      host: 'local',
       title: 'Claude',
       cwd: '/w',
       alive: true
@@ -843,7 +817,6 @@ describe('restartActiveSession: the transcript gate — a session never typed in
     s.addTab({
       id: 'gate6',
       kind: 'claude',
-      host: 'local',
       title: 'Claude',
       cwd: '/w',
       alive: true
@@ -871,7 +844,6 @@ describe('restartActiveSession: the transcript gate — a session never typed in
     s.addTab({
       id: 'gate7',
       kind: 'claude',
-      host: 'local',
       title: 'Claude',
       cwd: '/w',
       alive: true
@@ -894,7 +866,6 @@ describe('restartActiveSession: the transcript gate — a session never typed in
     s.addTab({
       id: 'gate8',
       kind: 'shell',
-      host: 'local',
       title: 'Terminal',
       cwd: '/w',
       alive: true
@@ -917,7 +888,6 @@ describe('restartActiveSession: the transcript gate — a session never typed in
     s.addTab({
       id: 'gate10',
       kind: 'claude',
-      host: 'local',
       title: 'Claude',
       cwd: '/w',
       alive: true,
@@ -939,7 +909,6 @@ describe('restartActiveSession: the transcript gate — a session never typed in
     s.addTab({
       id: 'gate11',
       kind: 'shell',
-      host: 'local',
       title: 'Terminal',
       cwd: '/w',
       alive: true
@@ -962,7 +931,6 @@ describe('restartActiveSession: resume anchor', () => {
     s.addTab({
       id: 'snap1',
       kind: 'shell',
-      host: 'local',
       title: 'Terminal',
       cwd: '/w',
       alive: true

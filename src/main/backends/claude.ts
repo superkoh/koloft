@@ -47,7 +47,7 @@ import type { StatusLineSetting } from '../statusline'
 import { loadSettings } from '../settings'
 import { keychainRead } from '../accounts'
 import type { PickResponse } from '../accountPicker'
-import { claudeArgv } from '../claudeArgs'
+import { claudeArgv, SESSION_ID_RE } from '../claudeArgs'
 import { acceptClaudeTrust, claudeJsonPath } from '../claudeTrust'
 import { probeClaude } from '../claudeProbe'
 import { runningClaudePid } from '../claudeSessionRegistry'
@@ -80,7 +80,6 @@ export interface ClaudeBackendDeps {
 }
 
 const GIT_REF_RE = /^[A-Za-z0-9._][A-Za-z0-9._/-]{0,120}$/
-const SESSION_ID_RE = /^[a-zA-Z0-9-]+$/
 export const POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE = '/bin/zsh'
 
 // ADR-0026
@@ -200,7 +199,7 @@ export class ClaudeBackend implements SessionBackend {
   async resume(req: SessionResumeRequest): Promise<SessionResumeResult> {
     const sid = req?.sessionId
     const machineKey = typeof req?.cwd === 'string' ? parseRemoteKey(req.cwd) : null
-    const cwd = machineKey ? machineKey.path : req?.cwd
+    let cwd = machineKey ? machineKey.path : req?.cwd
     if (
       typeof sid !== 'string' ||
       !SESSION_ID_RE.test(sid) ||
@@ -210,7 +209,6 @@ export class ClaudeBackend implements SessionBackend {
       return { ok: false, code: 'invalid-args' }
     }
     const remoteKey = machineKey ?? this.remoteKeyOfSession(sid)
-    if (remoteKey) return this.resumeRemote(remoteKey, { ...req, cwd })
     const mode = req.mode ?? 'direct'
     let worktree: string | undefined
     if (mode === 'renamed') {
@@ -220,39 +218,31 @@ export class ClaudeBackend implements SessionBackend {
       worktree = req.worktree
     }
     if (mode === 'rebuild') {
-      const plan = await this.localResumePlan(sid)
-      if (plan.action === 'direct') {
-        const r = this.createLocalTab({
-          cwd: plan.cwd,
-          resumeSessionId: sid,
-          cols: req.cols,
-          rows: req.rows
-        })
-        return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
-      }
-      if (
+      const plan = remoteKey
+        ? await this.remoteResumePlan(remoteKey.host, sid)
+        : await this.localResumePlan(sid)
+      if (plan.action === 'direct') cwd = plan.cwd
+      else if (
         plan.action !== 'rebuild' ||
         !GIT_REF_RE.test(plan.branch) ||
-        !GIT_REF_RE.test(plan.baseRef)
+        !GIT_REF_RE.test(plan.baseRef) ||
+        !(await rebuildWorktree(plan, remoteKey ? this.machineGit(remoteKey.host) : this.d.git))
       ) {
         return { ok: false, code: 'rebuild-failed' }
       }
-      if (!(await rebuildWorktree(plan, this.d.git))) return { ok: false, code: 'rebuild-failed' }
     }
-    let spawnCwd = cwd
-    if (mode === 'main' && !dirExistsSync(spawnCwd)) {
+    const tab = { resumeSessionId: sid, cols: req.cols, rows: req.rows, worktree }
+    if (remoteKey) {
+      const r = await this.createRemoteTab(remoteKey, { ...tab, resumeCwd: cwd })
+      return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
+    }
+    if (mode === 'main' && !dirExistsSync(cwd)) {
       const wt = this.d.workspaces()?.findRow(sid)?.worktreeState?.worktreePath
       const root = wt ? worktreeHomeRoot(wt) : null
-      if (root && dirExistsSync(root)) spawnCwd = root
+      if (root && dirExistsSync(root)) cwd = root
     }
-    if (!dirExistsSync(spawnCwd)) return { ok: false, code: 'cwd-missing' }
-    const r = this.createLocalTab({
-      cwd: spawnCwd,
-      resumeSessionId: sid,
-      cols: req.cols,
-      rows: req.rows,
-      worktree
-    })
+    if (!dirExistsSync(cwd)) return { ok: false, code: 'cwd-missing' }
+    const r = this.createLocalTab({ ...tab, cwd })
     return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
   }
 
@@ -314,41 +304,6 @@ export class ClaudeBackend implements SessionBackend {
     }
     const wsPath = this.d.workspaces()?.workspaceOf(sessionId)
     return wsPath ? parseRemoteKey(wsPath) : null
-  }
-
-  private async resumeRemote(
-    key: RemoteKey,
-    req: SessionResumeRequest
-  ): Promise<SessionResumeResult> {
-    const mode = req.mode ?? 'direct'
-    let worktree: string | undefined
-    let resumeCwd = req.cwd
-    if (mode === 'renamed') {
-      if (typeof req.worktree !== 'string' || !isValidWorktreeName(req.worktree)) {
-        return { ok: false, code: 'invalid-args' }
-      }
-      worktree = req.worktree
-    }
-    if (mode === 'rebuild') {
-      const plan = await this.remoteResumePlan(key.host, req.sessionId)
-      if (plan.action === 'direct') resumeCwd = plan.cwd
-      else if (
-        plan.action !== 'rebuild' ||
-        !GIT_REF_RE.test(plan.branch) ||
-        !GIT_REF_RE.test(plan.baseRef) ||
-        !(await rebuildWorktree(plan, this.machineGit(key.host)))
-      ) {
-        return { ok: false, code: 'rebuild-failed' }
-      }
-    }
-    const r = await this.createRemoteTab(key, {
-      resumeSessionId: req.sessionId,
-      cols: req.cols,
-      rows: req.rows,
-      worktree,
-      resumeCwd
-    })
-    return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
   }
 
   private createLocalTab(

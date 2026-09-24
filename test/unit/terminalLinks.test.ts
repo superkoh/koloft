@@ -26,7 +26,7 @@ beforeEach(() => {
   setState.mockClear()
   osOpen.mockClear()
   useStore.setState({
-    tabs: [{ id: TAB, kind: 'claude', host: 'local', title: 'S', cwd: '/ws', alive: true }],
+    tabs: [{ id: TAB, kind: 'claude', title: 'S', cwd: '/ws', alive: true }],
     activeTabId: TAB,
     sessions: [{ tabId: TAB, sessionId: SID, alive: true, title: 'S', cwd: '/ws' } as SessionInfo],
     workbench: {},

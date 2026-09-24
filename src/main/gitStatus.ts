@@ -6,15 +6,16 @@ import type { GitFileStatus, GitStatusMap, GitNumstatMap } from '@shared/types'
 
 const execFile = promisify(execFileCb)
 
-const GIT_TIMEOUT_MS = Number(process.env.KOLOFT_GIT_TIMEOUT_MS) || 30_000
+export const GIT_TIMEOUT_MS = Number(process.env.KOLOFT_GIT_TIMEOUT_MS) || 30_000
 
 export interface GitRunner {
   id: string
   git(
     args: string[],
-    opts?: { maxBuffer?: number; timeout?: number }
+    opts: { maxBuffer?: number; timeout: number }
   ): Promise<{ stdout: string; stderr: string }>
   toplevelStillValid?(absRoot: string, toplevel: string): Promise<boolean>
+  resolveBase?(absRoot: string): Promise<string | null>
 }
 
 const wasKilled = (e: unknown): boolean => (e as { killed?: boolean }).killed === true
@@ -180,7 +181,8 @@ export function gitOps(runner: GitRunner): GitOps {
   const git = (
     args: string[],
     opts?: { maxBuffer?: number; timeout?: number }
-  ): Promise<{ stdout: string; stderr: string }> => runner.git(args, opts)
+  ): Promise<{ stdout: string; stderr: string }> =>
+    runner.git(args, { ...opts, timeout: opts?.timeout ?? GIT_TIMEOUT_MS })
 
   const gitOut = async (
     args: string[],
@@ -202,14 +204,13 @@ export function gitOps(runner: GitRunner): GitOps {
   const toplevelCache = new Map<string, string>()
 
   async function resolveToplevel(absRoot: string): Promise<string | null> {
-    const stillValid = runner.toplevelStillValid
-    const hit = stillValid ? toplevelCache.get(absRoot) : undefined
-    if (stillValid && hit !== undefined) {
-      if (await stillValid(absRoot, hit)) return hit
+    const hit = toplevelCache.get(absRoot)
+    if (hit !== undefined) {
+      if (!runner.toplevelStillValid || (await runner.toplevelStillValid(absRoot, hit))) return hit
       toplevelCache.delete(absRoot)
     }
     const top = (await gitOut(['-C', absRoot, 'rev-parse', '--show-toplevel']))?.trim()
-    if (top && stillValid) toplevelCache.set(absRoot, top)
+    if (top) toplevelCache.set(absRoot, top)
     return top || null
   }
 
@@ -243,7 +244,7 @@ export function gitOps(runner: GitRunner): GitOps {
     return head === null ? null : 'HEAD'
   }
 
-  const diffBase = gated('base', resolveBase)
+  const diffBase = gated('base', runner.resolveBase ?? resolveBase)
 
   async function statusOf(absRoot: string, baseIn?: string): Promise<GitStatusMap> {
     const cap = { maxBuffer: 32 * 1024 * 1024 }
@@ -481,10 +482,9 @@ export function gitOps(runner: GitRunner): GitOps {
 
 const localGit = gitOps({
   id: 'local',
-  git: (args, opts = {}) =>
+  git: (args, opts) =>
     execFile('git', args, {
       ...opts,
-      timeout: opts.timeout ?? GIT_TIMEOUT_MS,
       env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' }
     }),
   toplevelStillValid: stillToplevelOf

@@ -28,20 +28,17 @@ export interface StatusSignals {
   restingSince?: number
 }
 
-export function deriveStatus(
-  signals: StatusSignals,
-  now: number
-): { status?: SessionStatus; background: BackgroundItem[] } {
+export function deriveStatus(signals: StatusSignals, now: number): SessionStatus | undefined {
   const { turn, background } = signals
-  if (!turn) return { background }
-  if (turn === 'working' || turn === 'approval') return { status: turn, background }
+  if (!turn) return undefined
+  if (turn === 'working' || turn === 'approval') return turn
   if (
     turn === 'ended' &&
     (signals.heldByBackground || background.some((item) => item.state === 'working'))
   )
-    return { status: 'working', background }
+    return 'working'
   const idle = signals.restingSince !== undefined && now - signals.restingSince >= IDLE_MS
-  return { status: idle ? 'idle' : 'waiting', background }
+  return idle ? 'idle' : 'waiting'
 }
 
 export interface StatusEdge {
@@ -127,7 +124,7 @@ export class SessionRuntime extends EventEmitter {
   }
 
   private evaluate(tabId: string, e: RuntimeEntry, now: number): void {
-    const { status } = deriveStatus(e, now)
+    const status = deriveStatus(e, now)
     const resting = status === 'waiting' || status === 'idle'
     e.restingSince = resting ? (e.restingSince ?? now) : undefined
     clearTimeout(e.idleTimer)

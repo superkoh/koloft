@@ -21,7 +21,7 @@ import {
   looksBinary,
   sameFingerprint
 } from '../fileEdit'
-import { gitOps, type GitOps } from '../gitStatus'
+import { GIT_TIMEOUT_MS, gitOps, type GitOps } from '../gitStatus'
 import { GithubLookup, type GithubOptions } from '../github'
 import { REMOTE_PATH_LINE } from '../remote/install'
 import { killSessionCmd } from '../remote/launch'
@@ -39,7 +39,6 @@ export function remoteSh(script: string, args: string[]): string {
   return [`sh -c ${shq(`${REMOTE_PATH_LINE}; ${script}`)} sh`, ...args.map(shq)].join(' ')
 }
 
-const GIT_TIMEOUT_MS = 30_000
 const NETWORK_GIT_TIMEOUT_MS = 20_000
 
 // PLATFORM§37
@@ -204,6 +203,22 @@ fp "$t"`
 
 const GIT = `GIT_OPTIONAL_LOCKS=0 git "$@"`
 
+const DIFF_BASE = `r=$1
+g() { GIT_OPTIONAL_LOCKS=0 git -C "$r" "$@" 2>/dev/null; }
+def=
+ref=$(g symbolic-ref --quiet refs/remotes/origin/HEAD) && ref=\${ref#refs/remotes/} &&
+  g rev-parse --verify --quiet "$ref" >/dev/null && def=$ref
+if [ -z "$def" ]; then
+  for c in origin/main origin/master main master; do
+    g rev-parse --verify --quiet "$c" >/dev/null && { def=$c; break; }
+  done
+fi
+if [ -n "$def" ]; then
+  mb=$(g merge-base HEAD "$def") && [ -n "$mb" ] && { printf '%s' "$mb"; exit 0; }
+fi
+g rev-parse --verify --quiet HEAD >/dev/null && printf HEAD
+exit 0`
+
 const NETWORK_GIT = `GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=false SSH_ASKPASS=false \
 SSH_ASKPASS_REQUIRE=never GIT_SSH_COMMAND="\${GIT_SSH_COMMAND:-ssh} -o BatchMode=yes" git "$@"`
 
@@ -218,9 +233,7 @@ export class SshHost implements Host {
     this.git = gitOps({
       id: `ssh:${machine}`,
       git: async (args, opts) => {
-        const r = await deps.run(remoteSh(GIT, args), {
-          timeoutMs: opts?.timeout ?? GIT_TIMEOUT_MS
-        })
+        const r = await this.sh(GIT, args, { timeoutMs: opts.timeout })
         const stdout = r.stdout.toString('utf8')
         if (r.code === 0) return { stdout, stderr: r.stderr }
         throw Object.assign(new Error(r.stderr || 'git failed'), {
@@ -229,6 +242,11 @@ export class SshHost implements Host {
           stdout,
           stderr: r.stderr
         })
+      },
+      resolveBase: async (root) => {
+        const r = await this.sh(DIFF_BASE, [root], { timeoutMs: GIT_TIMEOUT_MS })
+        if (r.code === null) throw Object.assign(new Error('git timed out'), { killed: true })
+        return r.stdout.toString('utf8').trim() || null
       }
     })
     this.github = new GithubLookup({
@@ -238,10 +256,9 @@ export class SshHost implements Host {
   }
 
   async gitOut(root: string, args: string[], network = false): Promise<string | null> {
-    const r = await this.deps.run(
-      remoteSh(network ? NETWORK_GIT : GIT, ['-C', this.bare(root), ...args]),
-      { timeoutMs: network ? NETWORK_GIT_TIMEOUT_MS : undefined }
-    )
+    const r = await this.sh(network ? NETWORK_GIT : GIT, ['-C', this.bare(root), ...args], {
+      timeoutMs: network ? NETWORK_GIT_TIMEOUT_MS : undefined
+    })
     return r.code === 0 ? r.stdout.toString('utf8') : null
   }
 

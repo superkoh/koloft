@@ -4,8 +4,9 @@ import { popoverX } from '@shared/accountUsage'
 import { HINT_IDS, type HintId } from '@shared/types'
 import type { ActiveHint } from '../hints'
 import { useStore } from '../store'
-import { backendLabel, isSessionKind } from '../agentUi'
-import { capabilitiesFor } from '@shared/sessionBackend'
+import { isSessionKind } from '../agentUi'
+import { BACKEND_LABEL, capabilitiesFor } from '@shared/sessionBackend'
+import { hostOf } from '@shared/remoteKey'
 
 const CAPTURE_BEFORE_XTERM = true
 const CARD_W = 268
@@ -278,8 +279,9 @@ export function Hint({ id, selector, n, onDone, onOff }: ActiveHint): JSX.Elemen
       ? content(
           session && isSessionKind(session.kind)
             ? {
-                name: backendLabel(session.kind),
-                drivesBrowser: capabilitiesFor(session.kind, session.host).browserControl === true
+                name: BACKEND_LABEL[session.kind],
+                drivesBrowser:
+                  capabilitiesFor(session.kind, hostOf(session.cwd)).browserControl === true
               }
             : { name: 'The session', drivesBrowser: false }
         )

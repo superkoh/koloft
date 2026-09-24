@@ -1218,7 +1218,7 @@ app.whenReady().then(() => {
   })
   tracker.on('auto-close', ({ tabId }: { tabId: string }) => {
     sendToRenderer('tab:killedByMain', tabId)
-    void killTabPty(tabId, 'keep-remote-session')
+    void killTabPty(tabId, { detach: true })
   })
   tracker.on('status', (t: StatusEdge) => {
     attention.onStatusChange(t.tabId, t.prev, t.next, attentionCtx(), sessionTitleOf(t.tabId))
@@ -2414,13 +2414,10 @@ function untrackSession(tabId: string): void {
   tracker.untrack(tabId)
 }
 
-function killTabPty(
-  tabId: string,
-  remoteSession: 'kill-remote-session' | 'keep-remote-session' = 'kill-remote-session'
-): Promise<boolean> {
+function killTabPty(tabId: string, how: { detach?: boolean } = {}): Promise<boolean> {
   const owner = sessionBackends.ownerOfTab(tabId)
   const stopped = owner
-    ? Promise.resolve(owner.stop(tabId, { detach: remoteSession === 'keep-remote-session' }))
+    ? Promise.resolve(owner.stop(tabId, how))
     : Promise.resolve(ptyMgr.kill(tabId))
   attention.clear(tabId)
   sessionEndSeenAt.delete(tabId)

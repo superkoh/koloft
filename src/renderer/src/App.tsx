@@ -1,13 +1,12 @@
 import { NewSessionDialog } from './components/NewSessionDialog'
 import { SessionBackendIcon } from './components/SessionBackendIcon'
-import { effectiveBackend, SESSION_BACKENDS, unsupportedPairMessage } from '@shared/sessionBackend'
 import {
-  backendLabel,
-  hasWorkbench,
-  isSessionKind,
-  launchErrorMessage,
-  type SessionBackend
-} from './agentUi'
+  BACKEND_LABEL,
+  effectiveBackend,
+  SESSION_BACKENDS,
+  unsupportedPairMessage
+} from '@shared/sessionBackend'
+import { hasWorkbench, isSessionKind, launchErrorMessage, type SessionBackend } from './agentUi'
 import {
   useCallback,
   useEffect,
@@ -340,8 +339,7 @@ export default function App(): JSX.Element {
       addTab({
         id: res.id,
         kind: backend,
-        host: hostOf(res.cwd),
-        title: backendLabel(backend),
+        title: BACKEND_LABEL[backend],
         cwd: res.cwd,
         alive: true
       })
@@ -781,7 +779,6 @@ export default function App(): JSX.Element {
       useStore.getState().addTabQuiet({
         id: t.id,
         kind: t.kind,
-        host: hostOf(t.cwd),
         title: t.title,
         cwd: t.cwd,
         alive: true,
@@ -1339,7 +1336,7 @@ export default function App(): JSX.Element {
                       >
                         ＋{' '}
                         {namedMethods
-                          ? `New ${backendLabel(namedMethods[0])} session`
+                          ? `New ${BACKEND_LABEL[namedMethods[0]]} session`
                           : 'New session'}
                       </button>
                       {namedMethods && (
@@ -1349,7 +1346,7 @@ export default function App(): JSX.Element {
                           title={welcomeRefusal(namedMethods[1])}
                           onClick={() => startIn(welcomeWs.workspace.path, namedMethods[1])}
                         >
-                          New {backendLabel(namedMethods[1])} session
+                          New {BACKEND_LABEL[namedMethods[1]]} session
                         </button>
                       )}
                       {welcomeWs.workspace.isGit && (

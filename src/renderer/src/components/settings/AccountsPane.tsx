@@ -9,6 +9,7 @@ import { useEscConsumer } from './escScope'
 import { useSettingsUpdate } from './useSettingsUpdate'
 
 const REFRESH_DONE_LABEL_BEAT_MS = 2500
+const INVALID_ACCOUNT_NAME = 'Invalid name: [A-Za-z0-9._-] only, 32 characters max'
 
 export function AccountsPane(): JSX.Element {
   const settings = useStore((s) => s.settings)
@@ -84,6 +85,17 @@ export function AccountsPane(): JSX.Element {
     )
   }
 
+  const section = (list: AccountView[], empty: string, foot: JSX.Element): JSX.Element => (
+    <div className={'acct-section' + (multiAccount ? '' : ' disabled')}>
+      {list.length === 0 ? (
+        <div className="acct-empty">{empty}</div>
+      ) : (
+        <div className="acct-list">{list.map(row)}</div>
+      )}
+      <div className="acct-foot">{foot}</div>
+    </div>
+  )
+
   const runRefresh = async (): Promise<void> => {
     setRefresh('busy')
     try {
@@ -141,17 +153,10 @@ export function AccountsPane(): JSX.Element {
         />
       </div>
 
-      <div className={'acct-section' + (multiAccount ? '' : ' disabled')}>
-        {claudeAccounts.length === 0 ? (
-          <div className="acct-empty">
-            No accounts yet — add one below. With the switch on but the pool empty, claude falls
-            back to your system login.
-          </div>
-        ) : (
-          <div className="acct-list">{claudeAccounts.map(row)}</div>
-        )}
-
-        <div className="acct-foot">
+      {section(
+        claudeAccounts,
+        'No accounts yet — add one below. With the switch on but the pool empty, claude falls back to your system login.',
+        <>
           <button
             className="mini"
             disabled={!multiAccount}
@@ -177,30 +182,22 @@ export function AccountsPane(): JSX.Element {
                 ? '✓ Updated'
                 : 'Refresh usage'}
           </button>
-        </div>
-      </div>
+        </>
+      )}
 
       <div className="set-grp">Codex</div>
-      <div className={'acct-section' + (multiAccount ? '' : ' disabled')}>
-        {codexAccounts.length === 0 ? (
-          <div className="acct-empty">
-            No Codex accounts yet — with none, Codex uses its own login on this Mac. Each account
-            here is its own Codex sign-in, and every new Codex session picks the least-used one.
-          </div>
-        ) : (
-          <div className="acct-list">{codexAccounts.map(row)}</div>
-        )}
-        <div className="acct-foot">
-          <button
-            className="mini"
-            disabled={!multiAccount}
-            onClick={() => setCodexSignIn({})}
-            title="Runs codex login in a terminal tab for a new Codex account"
-          >
-            <LuGlobe size={14} /> Sign in to Codex
-          </button>
-        </div>
-      </div>
+      {section(
+        codexAccounts,
+        'No Codex accounts yet — with none, Codex uses its own login on this Mac. Each account here is its own Codex sign-in, and every new Codex session picks the least-used one.',
+        <button
+          className="mini"
+          disabled={!multiAccount}
+          onClick={() => setCodexSignIn({})}
+          title="Runs codex login in a terminal tab for a new Codex account"
+        >
+          <LuGlobe size={14} /> Sign in to Codex
+        </button>
+      )}
       {codexSignIn && (
         <CodexSignInDialog again={codexSignIn.again} onClose={() => setCodexSignIn(null)} />
       )}
@@ -233,7 +230,7 @@ function LoginDialog(): JSX.Element | null {
       beginLogin(reauthName)
       setError(
         ok === 'invalid-name'
-          ? 'Invalid name: [A-Za-z0-9._-] only, 32 characters max'
+          ? INVALID_ACCOUNT_NAME
           : ok === 'duplicate'
             ? 'A subscription account already has that name'
             : 'Could not start sign-in'
@@ -251,7 +248,6 @@ function LoginDialog(): JSX.Element | null {
     addTab({
       id: progress.tabId,
       kind: 'shell',
-      host: 'local',
       title: `Sign in: ${progress.name}`,
       cwd: progress.cwd ?? '',
       alive: true
@@ -364,7 +360,7 @@ function CodexSignInDialog({ again, onClose }: { again?: string; onClose(): void
     if (!r.ok) {
       setError(
         r.error === 'invalid-name'
-          ? 'Invalid name: [A-Za-z0-9._-] only, 32 characters max'
+          ? INVALID_ACCOUNT_NAME
           : r.error === 'duplicate'
             ? 'A Codex account already has that name'
             : 'Codex is not available on this Mac'
@@ -374,7 +370,6 @@ function CodexSignInDialog({ again, onClose }: { again?: string; onClose(): void
     addTab({
       id: r.tabId,
       kind: 'shell',
-      host: 'local',
       title: `Codex sign in: ${nm}`,
       cwd: r.cwd,
       alive: true
@@ -584,7 +579,7 @@ function AddAccountDialog({ kind, onClose }: { kind: AccountKind; onClose(): voi
     } else {
       setError(
         r.error === 'invalid-name'
-          ? 'Invalid name: [A-Za-z0-9._-] only, 32 characters max'
+          ? INVALID_ACCOUNT_NAME
           : r.error === 'duplicate'
             ? 'An account of this kind already has that name'
             : r.error === 'invalid-endpoint'

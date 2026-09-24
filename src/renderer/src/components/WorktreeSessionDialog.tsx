@@ -1,3 +1,4 @@
+import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from 'react'
 import { LuCheck, LuLoaderCircle, LuTriangleAlert, LuX } from 'react-icons/lu'
 import type { BackendId, WorkspaceFreshness, WorkspaceRows, WorktreeInfo } from '@shared/types'
@@ -22,7 +23,6 @@ import {
   type WtAim,
   type WtHot
 } from '../newSession'
-import { backendLabel } from '../agentUi'
 import { shortenHome } from '../browseModel'
 import { pullToast } from '../freshnessView'
 import { isComposing } from '../keys'
@@ -400,10 +400,10 @@ export function WorktreeSessionDialog({
                     primary,
                     action,
                     backends.length > 1 || aim.kind === 'recover'
-                      ? backendLabel(backend)
+                      ? BACKEND_LABEL[backend]
                       : undefined
                   )
-                return `${primary === 'pull' ? 'Pull & ' : ''}${action.verb} · ${backendLabel(backend)}`
+                return `${primary === 'pull' ? 'Pull & ' : ''}${action.verb} · ${BACKEND_LABEL[backend]}`
               }}
               onStart={submit}
             />

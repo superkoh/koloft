@@ -1,4 +1,9 @@
-import { capabilitiesFor, identityOf, unsupportedPairMessage } from '@shared/sessionBackend'
+import {
+  BACKEND_LABEL,
+  capabilitiesFor,
+  identityOf,
+  unsupportedPairMessage
+} from '@shared/sessionBackend'
 import { SessionBackendIcon } from './SessionBackendIcon'
 import { useCallback, useEffect, useRef, useState, type JSX, type MouseEvent } from 'react'
 import { GoGitBranch } from 'react-icons/go'
@@ -9,7 +14,6 @@ import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
 import { popoverX } from '@shared/accountUsage'
 import { slugOf } from '@shared/cronNames'
 import { describeWhen } from '@shared/schedule'
-import { backendLabel } from '../agentUi'
 import { forecastFor } from '../cronForm'
 import { useStore } from '../store'
 import {
@@ -418,13 +422,13 @@ export function WorkspaceSidebar({
             <>
               {namedMethods
                 ? newSessionItem(
-                    `New ${backendLabel(namedMethods[0])} session`,
+                    `New ${BACKEND_LABEL[namedMethods[0]]} session`,
                     namedMethods[0],
                     '⌘N'
                   )
                 : newSessionItem('New session', undefined, '⌘N')}
               {namedMethods &&
-                newSessionItem(`New ${backendLabel(namedMethods[1])} session`, namedMethods[1])}
+                newSessionItem(`New ${BACKEND_LABEL[namedMethods[1]]} session`, namedMethods[1])}
               {target.isGit && (
                 <div
                   className="mi"

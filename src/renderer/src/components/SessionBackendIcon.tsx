@@ -1,6 +1,6 @@
+import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { BsClaude, BsOpenai } from 'react-icons/bs'
 import type { BackendId } from '@shared/types'
-import { backendLabel } from '../agentUi'
 
 export function SessionBackendIcon({
   backend,
@@ -17,8 +17,8 @@ export function SessionBackendIcon({
     <span
       className="session-backend-icon"
       role="img"
-      aria-label={backendLabel(backend)}
-      title={backendLabel(backend)}
+      aria-label={BACKEND_LABEL[backend]}
+      title={BACKEND_LABEL[backend]}
     >
       <Icon size={size} aria-hidden="true" />
     </span>

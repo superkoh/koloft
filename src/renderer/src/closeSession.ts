@@ -1,4 +1,5 @@
-import { backendLabel, isSessionKind, type SessionBackend } from './agentUi'
+import { BACKEND_LABEL } from '@shared/sessionBackend'
+import { isSessionKind, type SessionBackend } from './agentUi'
 import type { SessionInfo, TabKind } from '@shared/types'
 
 export type CloseIntent =
@@ -53,8 +54,8 @@ export function unexpectedExitNotice(
 ): string {
   // PLATFORM§29
   return exit.signal
-    ? `${backendLabel(backend)} session ended: killed by signal ${exit.signal}`
-    : `${backendLabel(backend)} session ended unexpectedly (exit code ${exit.exitCode})`
+    ? `${BACKEND_LABEL[backend]} session ended: killed by signal ${exit.signal}`
+    : `${BACKEND_LABEL[backend]} session ended unexpectedly (exit code ${exit.exitCode})`
 }
 
 export function unexpectedExitWanted<

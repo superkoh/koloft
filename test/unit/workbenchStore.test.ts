@@ -79,8 +79,8 @@ beforeEach(() => {
   disk = {}
   useStore.setState({
     tabs: [
-      { id: TAB, kind: 'claude', host: 'local', title: 'S', cwd: '/ws', alive: true },
-      { id: TAB2, kind: 'claude', host: 'local', title: 'T', cwd: '/ws', alive: true }
+      { id: TAB, kind: 'claude', title: 'S', cwd: '/ws', alive: true },
+      { id: TAB2, kind: 'claude', title: 'T', cwd: '/ws', alive: true }
     ],
     activeTabId: TAB,
     sessions: [boundSession(), boundSession2()],
@@ -419,7 +419,6 @@ describe('an unfetched session is read before anything is written (the data-loss
         {
           id: TAB,
           kind: 'claude',
-          host: 'local',
           title: 'S',
           cwd: '/ws',
           alive: true,
@@ -558,9 +557,7 @@ describe('an unfetched session is read before anything is written (the data-loss
   it('an unbound tab is not marked fetched, and its first bind reads once — the read hangs off the bind, not the tab existing (D8/R1)', async () => {
     disk = { 'sess-fresh': { open: true, tabs: [{ kind: 'web', title: 'A', url: 'u1' }] } }
     useStore.setState({
-      tabs: [
-        { id: 'pty-new', kind: 'claude', host: 'local', title: 'Claude', cwd: '/ws', alive: true }
-      ],
+      tabs: [{ id: 'pty-new', kind: 'claude', title: 'Claude', cwd: '/ws', alive: true }],
       sessions: [],
       activeTabId: 'pty-new',
       workbench: {},
@@ -598,9 +595,7 @@ describe('an unfetched session is read before anything is written (the data-loss
   it('a link clicked in the TUI before a fresh ⌘N session binds waits, then lands on main’s saved tabs with the gesture’s `open`', async () => {
     disk = { 'sess-fresh': { open: false, tabs: [{ kind: 'web', title: 'A', url: 'u1' }] } }
     useStore.setState({
-      tabs: [
-        { id: 'pty-new', kind: 'claude', host: 'local', title: 'Claude', cwd: '/ws', alive: true }
-      ],
+      tabs: [{ id: 'pty-new', kind: 'claude', title: 'Claude', cwd: '/ws', alive: true }],
       sessions: [],
       activeTabId: 'pty-new',
       workbench: {},
@@ -640,9 +635,7 @@ describe('an unfetched session is read before anything is written (the data-loss
 
   it('a parked gesture is dropped with the tab when the bind never comes', () => {
     useStore.setState({
-      tabs: [
-        { id: 'pty-new', kind: 'claude', host: 'local', title: 'Claude', cwd: '/ws', alive: true }
-      ],
+      tabs: [{ id: 'pty-new', kind: 'claude', title: 'Claude', cwd: '/ws', alive: true }],
       sessions: [],
       activeTabId: 'pty-new',
       workbench: {},
@@ -665,8 +658,8 @@ describe('openWebPage (FR-11 — an .html file renders in a `web` tab)', () => {
     { kind: 'codex' as const, host: 'local' as const, cwd: '/ws' }
   ])(
     'opens $kind on $host links in the session’s own Workbench, since a web page needs nothing from the session',
-    ({ kind, host, cwd }) => {
-      useStore.setState({ tabs: [{ id: TAB, kind, host, title: 'S', cwd, alive: true }] })
+    ({ kind, cwd }) => {
+      useStore.setState({ tabs: [{ id: TAB, kind, title: 'S', cwd, alive: true }] })
       openWebPage('https://example.com')
       expect(openExternal).not.toHaveBeenCalled()
       expect(strip()?.tabs.some((t) => t.url === 'https://example.com')).toBe(true)
@@ -741,8 +734,8 @@ describe('workbenchFull (FR-07 — T3 is global and transient)', () => {
     useStore.setState({
       workbenchFull: true,
       tabs: [
-        { id: TAB, kind: 'claude', host: 'local', title: 'S', cwd: '/ws', alive: true },
-        { id: TAB2, kind: 'claude', host: 'local', title: 'T', cwd: '/ws2', alive: true }
+        { id: TAB, kind: 'claude', title: 'S', cwd: '/ws', alive: true },
+        { id: TAB2, kind: 'claude', title: 'T', cwd: '/ws2', alive: true }
       ]
     })
 
@@ -793,9 +786,7 @@ describe('what reaches disk is keyed by the claude session id (D8/R1, R11)', () 
 
   it('an unbound tab writes nothing at all — there is no key to file it under', () => {
     useStore.setState({
-      tabs: [
-        { id: 'pty-new', kind: 'claude', host: 'local', title: 'Claude', cwd: '/ws', alive: true }
-      ],
+      tabs: [{ id: 'pty-new', kind: 'claude', title: 'Claude', cwd: '/ws', alive: true }],
       sessions: [],
       activeTabId: 'pty-new',
       workbenchFetched: { 'pty-new': true }

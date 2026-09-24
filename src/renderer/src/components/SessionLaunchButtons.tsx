@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { SESSION_BACKENDS, SUPPORTED_PAIRS } from '@shared/sessionBackend'
+import { BACKEND_LABEL, SESSION_BACKENDS, SUPPORTED_PAIRS } from '@shared/sessionBackend'
 import type { BackendId, HostId } from '@shared/types'
-import { backendLabel, launchErrorMessage } from '../agentUi'
+import { launchErrorMessage } from '../agentUi'
 import { useStore } from '../store'
 import { SessionBackendIcon } from './SessionBackendIcon'
 
@@ -142,7 +142,7 @@ export function SessionLaunchStatus({ launch }: { launch: ReturnType<typeof useS
           {issues.map(({ backend, reason }, index) => (
             <span key={backend} title={reason}>
               {index > 0 && ' · '}
-              {backendLabel(backend)}: {reason === 'Local only' ? reason : 'Unavailable'}
+              {BACKEND_LABEL[backend]}: {reason === 'Local only' ? reason : 'Unavailable'}
             </span>
           ))}
         </p>
