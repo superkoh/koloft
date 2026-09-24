@@ -199,7 +199,7 @@ test.describe('Workbench web tabs: an .html goes to a web tab, and the tab set s
       await expect
         .poll(() => sessionWorkbenchOnDisk(env, id)?.open ?? null, { timeout: 30_000 })
         .toBe(false)
-      expect(layoutOnDisk(env).version).toBe(4)
+      expect(layoutOnDisk(env).version).toBe(5)
 
       await row.click()
       await expect(auxIcon(page, 'Workbench')).toHaveAttribute('aria-disabled', 'false', {
