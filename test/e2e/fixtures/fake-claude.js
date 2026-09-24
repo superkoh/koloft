@@ -563,9 +563,11 @@ function handleLine(line) {
     process.stdout.write(`\r\n[fake-claude] compacted -> session ${sessionId}\r\n> `)
     return
   }
+  // CC§1
   if (text.startsWith('/resume ')) {
     const target = text.slice('/resume '.length).trim()
     if (!target) return void process.stdout.write('> ')
+    fireHook('end', { session_id: sessionId, transcript_path: transcript, cwd, reason: 'other' })
     sessionId = target
     transcript = path.join(projDir, sessionId + '.jsonl')
     if (!fs.existsSync(transcript)) fs.writeFileSync(transcript, '')
