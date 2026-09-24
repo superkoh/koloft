@@ -499,9 +499,10 @@ small Node probe relay on the Mac built like Koloft's (section 1), whose app-ser
   Codex start) with `platformOs: "linux"` and the machine's `codexHome`; `account/read`
   gave `{account: null, requiresOpenaiAuth: true}`; `thread/list` gave an empty `data`.
   Closing stdin ended the remote app-server (exit 0) in about 0.2 seconds, and `ps` on
-  the machine showed nothing left over. Koloft's own `CodexProcess.stop()` also ends
-  stdin before it sends any signal, so this is the stop path that matters; its local
-  `ps` walk was not run against ssh. The app-server also sent a `configWarning` that
+  the machine showed nothing left over. Koloft's own `CodexProcess.stop()` ends stdin
+  first too, but then at once sends SIGTERM to the processes it owns on the Mac — here
+  the ssh client — and that path was not run against ssh; that the remote app-server
+  still ends cleanly when the ssh client is killed is **inferred, not checked**. The app-server also sent a `configWarning` that
   bubblewrap was not on the machine's `PATH` and that it would use its bundled one. This
   probe did not unpack the package's `codex-resources/bwrap`, so there was none; a real
   launch must put that file on the machine or install `bubblewrap` there, and that the
@@ -517,8 +518,9 @@ small Node probe relay on the Mac built like Koloft's (section 1), whose app-ser
 - Sign-in from that screen did not work on this machine. "Sign in with Device Code" sent
   `account/login/start {type: "chatgptDeviceCode"}` to the machine, which answered
   error `-32603`, "device code request failed with status 403 Forbidden". A plain `curl`
-  to `https://auth.openai.com/` from the machine also got 403, so the machine's network
-  is refused by OpenAI; this says nothing about Codex. "Sign in with ChatGPT" answered
+  to `https://auth.openai.com/` from the machine also got 403, so OpenAI refuses that
+  machine, not Codex; that the cause is the machine's network or region is **inferred,
+  not checked**. "Sign in with ChatGPT" answered
   an `authUrl` whose `redirect_uri` is `http://localhost:1455/…` — the machine's own
   localhost, which a browser on the Mac does not reach.
 
