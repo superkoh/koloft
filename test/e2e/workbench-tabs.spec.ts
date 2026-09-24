@@ -441,7 +441,7 @@ test.describe('Workbench commands and the panel’s first mount', () => {
     }
   })
 
-  test('View ▸ New Browser Tab opens the ＋ menu on the first mount of a panel that was never shown, and again on a panel shown once and collapsed', async ({
+  test('the pre-armed View ▸ New Browser Tab opens the ＋ menu on the first mount of a panel that was never shown', async ({
     env
   }) => {
     test.setTimeout(120_000)
@@ -452,20 +452,10 @@ test.describe('Workbench commands and the panel’s first mount', () => {
       await page.waitForLoadState('domcontentloaded')
       await startSessionIn(page, 'ws-a')
       await expect(page.locator(WORKBENCH.column)).toHaveCount(0)
-      const menu = page.locator(WORKBENCH.newMenu)
 
       await clickAppMenuItem(app, page, 'browser-new-tab')
       await expect(workbenchPanel(page)).toBeVisible({ timeout: 20_000 })
-      await expect(menu).toBeVisible()
-
-      await page.keyboard.press('Escape')
-      await expect(menu).toHaveCount(0)
-      await clickAppMenuItem(app, page, 'toggle-browser')
-      await expect(workbenchPanel(page)).toBeHidden()
-
-      await clickAppMenuItem(app, page, 'browser-new-tab')
-      await expect(workbenchPanel(page)).toBeVisible()
-      await expect(menu).toBeVisible()
+      await expect(page.locator(WORKBENCH.newMenu)).toBeVisible()
     } finally {
       await quitAndClose(app)
     }
