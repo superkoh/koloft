@@ -51,6 +51,8 @@ for a in "$@"; do
   prev="$a"
 done
 case "$1" in ""|-*) ;; *) skip=1 ;; esac
+# CC§9
+[ -n "$CLAUDECODE" ] && skip=1
 
 if [ "$KOLOFT_UTIL" = "1" ]; then
   utilok=0
@@ -90,8 +92,8 @@ register() {
   reg_dir="$KOLOFT_SESSION_DIR"
   if [ -z "$reg_dir" ]; then reg_dir="$HOME/.koloft/sessions"; fi
   mkdir -p "$reg_dir"
-  printf '{"tabId":"%s","regId":"%s","sessionId":"%s","cwd":"%s","ts":%s,"mode":"%s"}\\n' \\
-    "$KOLOFT_TAB_ID" "$1" "$2" "$PWD" "$(date +%s)" "$3" > "$reg_dir/$1.json"
+  printf '{"tabId":"%s","regId":"%s","sessionId":"%s","cwd":"%s","ts":%s,"mode":"%s","pid":%s}\\n' \\
+    "$KOLOFT_TAB_ID" "$1" "$2" "$PWD" "$(date +%s)" "$3" "$$" > "$reg_dir/$1.json"
 }
 
 # PLATFORM§17
@@ -319,6 +321,10 @@ function pruneStale(dir: string, maxAgeMs = STALE_REGISTRATION_AGE_MS): void {
       if (now - fs.statSync(full).mtimeMs > maxAgeMs) fs.rmSync(full, { force: true })
     } catch {}
   }
+}
+
+export function registeredByTabRoot(regPid: unknown, rootPid: number | undefined): boolean {
+  return typeof regPid !== 'number' || rootPid === undefined || regPid === rootPid
 }
 
 export function setupShim(): ShimPaths {

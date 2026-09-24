@@ -35,7 +35,9 @@ const AUTO_CLOSE_MS = envMs('KOLOFT_IDLE_CLOSE_MS', 30 * 60_000)
 const RESUME_AFTER_STOP_MS = envMs('KOLOFT_RESUME_AFTER_STOP_MS', 2000)
 const STOP_HOLD_MS = envMs('KOLOFT_STOP_HOLD_MS', 10_000)
 const BG_SILENCE_MAX_MS = envMs('KOLOFT_BG_SILENCE_MS', 10 * 60_000)
-const SERVER_AGE_MS = envMs('KOLOFT_SERVER_AGE_MS', 30 * 60_000)
+// CC§8
+const SERVER_QUIET_WINDOW_MS = envMs('KOLOFT_SERVER_QUIET_MS', 2 * 60_000)
+const IDLE_SERVER_CPU_MS_PER_MINUTE = 3000
 // CC§8
 const TEAMMATE_QUIET_MS = envMs('KOLOFT_TEAMMATE_QUIET_MS', 60_000)
 const PROCS_SCAN_MS = envMs('KOLOFT_PROCS_SCAN_MS', 5000)
@@ -319,6 +321,8 @@ interface Tracked {
   monitorIds: Set<string>
   toolCmds: Map<string, string>
   procs: TaskProcs | null
+  shellCpu: Map<string, { cpuMs: number; at: number; quiet: boolean }>
+  wakeupPending: boolean
   procsAt: number
   procsPromise?: Promise<void>
   teammateActiveMs: number
@@ -371,6 +375,7 @@ export class SessionTracker extends EventEmitter {
   activeTabId?: () => string | null
   heldTabs?: () => ReadonlySet<string>
   needsUser?: (tabId: string) => boolean
+  leftBehind?: (sessionId: string) => boolean
 
   track(tabId: string, cwd: string, remote?: RemoteTab): void {
     const prev = this.tracked.get(tabId)
@@ -432,6 +437,8 @@ export class SessionTracker extends EventEmitter {
       monitorIds: new Set(),
       toolCmds: new Map(),
       procs: null,
+      shellCpu: new Map(),
+      wakeupPending: false,
       procsAt: 0,
       teammateActiveMs: 0,
       lastInterruptTs: 0,
@@ -506,6 +513,8 @@ export class SessionTracker extends EventEmitter {
     const tabId = t.info.tabId
     const held =
       tabId === this.activeTabId?.() ||
+      t.wakeupPending ||
+      !!this.leftBehind?.(t.info.sessionId) ||
       !!t.info.parked?.length ||
       !!this.heldTabs?.().has(tabId) ||
       !!this.needsUser?.(tabId)
@@ -522,6 +531,11 @@ export class SessionTracker extends EventEmitter {
       return
     }
     this.emit('auto-close', { tabId })
+  }
+
+  setWakeupPending(tabId: string, pending: boolean): void {
+    const t = this.tracked.get(tabId)
+    if (t) t.wakeupPending = pending
   }
 
   noteActivity(tabId: string): void {
@@ -578,7 +592,7 @@ export class SessionTracker extends EventEmitter {
             if ((task.since ?? 0) > t.procsAt) observed = true
             continue
           }
-          if (sh.listening || sh.ageMs >= SERVER_AGE_MS) {
+          if (sh.listening && t.shellCpu.get(task.id)?.quiet) {
             parked.push({ kind: 'server', label, ageMs: Math.floor(sh.ageMs / 60_000) * 60_000 })
           } else observed = true
         }
@@ -621,11 +635,28 @@ export class SessionTracker extends EventEmitter {
         if (this.tracked.get(t.info.tabId) !== t) return
         t.procs = procs
         t.procsAt = Date.now()
+        if (procs) this.sampleShellCpu(t, procs, t.procsAt)
       } finally {
         t.procsPromise = undefined
       }
     })()
     await t.procsPromise
+  }
+
+  private sampleShellCpu(t: Tracked, procs: TaskProcs, now: number): void {
+    for (const id of t.shellCpu.keys()) if (!procs.shells.has(id)) t.shellCpu.delete(id)
+    for (const [id, sh] of procs.shells) {
+      const prev = t.shellCpu.get(id)
+      if (!prev) t.shellCpu.set(id, { cpuMs: sh.cpuMs, at: now, quiet: false })
+      else if (now - prev.at >= SERVER_QUIET_WINDOW_MS) {
+        const perMinute = ((sh.cpuMs - prev.cpuMs) * 60_000) / (now - prev.at)
+        t.shellCpu.set(id, {
+          cpuMs: sh.cpuMs,
+          at: now,
+          quiet: perMinute < IDLE_SERVER_CPU_MS_PER_MINUTE
+        })
+      }
+    }
   }
 
   private quietMs(t: Tracked): number {
@@ -1217,8 +1248,9 @@ export class SessionTracker extends EventEmitter {
       }
       // CC§2
       const recTs = Math.min(Date.parse(obj.timestamp), Date.now())
+      const mainThread = obj.isSidechain !== true
       if (isFinite(recTs)) {
-        if (obj.isSidechain === true) {
+        if (!mainThread) {
           if (recTs > t.lastBgActivityTs) t.lastBgActivityTs = recTs
         } else if (recTs > t.lastMainActivityTs) {
           t.lastMainActivityTs = recTs
@@ -1236,7 +1268,7 @@ export class SessionTracker extends EventEmitter {
           if (text?.text) raw = text.text
           hasImage = c.some((x: any) => x?.type === 'image')
         }
-        if (raw !== null && INTERRUPT_TEXTS.has(raw) && obj.isSidechain !== true) {
+        if (raw !== null && INTERRUPT_TEXTS.has(raw) && mainThread) {
           if (t.caughtUp || (isFinite(recTs) && recTs >= t.resetMs)) {
             const at = isFinite(recTs) ? recTs : Date.now()
             if (at > t.lastInterruptTs) t.lastInterruptTs = at
@@ -1248,7 +1280,7 @@ export class SessionTracker extends EventEmitter {
         if (cls?.title && !t.firstPrompt) t.firstPrompt = cls.title
         if (cls?.commandArgs && !t.commandArgsTitle) t.commandArgsTitle = cls.commandArgs
         if (cls?.commandName && !t.commandTitle) t.commandTitle = cls.commandName
-        if (cls?.genuine || hasImage) {
+        if ((cls?.genuine || hasImage) && mainThread) {
           activity = 'user'
           if (t.caughtUp || (isFinite(recTs) && recTs >= t.resetMs)) {
             t.stopPending = false
@@ -1256,10 +1288,10 @@ export class SessionTracker extends EventEmitter {
         }
       }
       if (obj.type === 'assistant' && obj.message && obj.message.usage) {
-        this.accumulateUsage(t, obj, obj.isSidechain !== true)
+        this.accumulateUsage(t, obj, mainThread)
       }
       if (obj.type === 'assistant' && Array.isArray(obj.message?.content)) {
-        activity = 'assistant'
+        if (mainThread) activity = 'assistant'
         const liveNow = t.caughtUp || (isFinite(recTs) && recTs >= t.bindMs)
         for (const b of obj.message.content) {
           if (!b || b.type !== 'tool_use') continue

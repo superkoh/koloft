@@ -116,7 +116,13 @@ case "$event" in
           }')"
         ;;
     esac
-    printf '{"tabId":"%s","event":"%s","sessionId":"%s","message":"%s","tmux":"%s"%s}\\n' "$tab" "$event" "$sid" "$msg" "$tm" "$bgl" >> "$reg/$tab.status.jsonl"
+    # CC§8
+    wake=""
+    case "$input" in
+      *'"session_crons":[]'*) wake=',"wake":0' ;;
+      *'"session_crons":['*) wake=',"wake":1' ;;
+    esac
+    printf '{"tabId":"%s","event":"%s","sessionId":"%s","message":"%s","tmux":"%s"%s%s}\\n' "$tab" "$event" "$sid" "$msg" "$tm" "$bgl" "$wake" >> "$reg/$tab.status.jsonl"
     ;;
 esac
 exit 0
@@ -157,6 +163,15 @@ export function setupHooks(): HookPaths {
   return { hookScript, settingsDir, regDir }
 }
 
+// CC§8
+const NOTIFICATIONS_WAITING_ON_THE_PERSON = [
+  'permission_prompt',
+  'worker_permission_prompt',
+  'idle_prompt',
+  'elicitation_dialog',
+  'elicitation_url_dialog'
+].join('|')
+
 // CC§6
 export function hookSettings(
   hookScript: string,
@@ -173,7 +188,12 @@ export function hookSettings(
       SessionEnd: [{ hooks: [{ type: 'command', command: cmd('end') }] }],
       UserPromptSubmit: [{ hooks: [{ type: 'command', command: cmd('prompt') }] }],
       Stop: [{ hooks: [{ type: 'command', command: cmd('stop') }] }],
-      Notification: [{ hooks: [{ type: 'command', command: cmd('notify') }] }]
+      Notification: [
+        {
+          matcher: NOTIFICATIONS_WAITING_ON_THE_PERSON,
+          hooks: [{ type: 'command', command: cmd('notify') }]
+        }
+      ]
     }
   }
   if (statusLine) {

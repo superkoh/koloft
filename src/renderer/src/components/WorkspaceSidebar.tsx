@@ -17,6 +17,7 @@ import {
   marqueeAnim,
   mixesBackends,
   sessionActivityBadge,
+  leftoverLabel,
   relTime,
   rowStateClass
 } from '../sessionRows'
@@ -115,6 +116,7 @@ export function WorkspaceSidebar({
   const welcomeActive = useStore((s) => s.welcomeActive)
   const cron = useStore((s) => s.cron)
   const sessions = useStore((s) => s.sessions)
+  const leftovers = useStore((s) => s.leftovers)
   const storeTabs = useStore((s) => s.tabs)
   const activeTabId = useStore((s) => s.activeTabId)
   const resumeLaunch = useStore((s) => s.resumeLaunch)
@@ -204,7 +206,7 @@ export function WorkspaceSidebar({
 
   const parkedFor = (row: SessionRow): ReturnType<typeof sessionActivityBadge> => {
     const sess = row.running ? sessions.find((s) => s.tabId === tabIdFor(row.id)) : undefined
-    return sessionActivityBadge(sess)
+    return sessionActivityBadge(sess, leftovers[row.id])
   }
 
   useEffect(() => {
@@ -576,6 +578,16 @@ export function WorkspaceSidebar({
         </div>
         <div className="tbu-sep" />
         <div className="tbu-row parked-hint">{badge.hint}</div>
+        {(leftovers[parkedPop.rowId] ?? []).map((p) => (
+          <button
+            key={p.pid}
+            className="tbu-act"
+            title={p.command}
+            onClick={() => void window.api.sessions.stopLeftover(parkedPop.rowId, p.pid)}
+          >
+            Stop {leftoverLabel(p)}
+          </button>
+        ))}
       </div>
     )
   }
@@ -767,7 +779,7 @@ export function WorkspaceSidebar({
                         sess?.observation === 'degraded'
                           ? ''
                           : rowStateClass(row.running, sess?.status, row.pending)
-                      const badge = sessionActivityBadge(sess)
+                      const badge = sessionActivityBadge(sess, leftovers[row.id])
                       const launching = resumeLaunch?.id === row.id
                       const active =
                         launching || (!resumeLaunch && !!tabId && tabId === activeTabId)

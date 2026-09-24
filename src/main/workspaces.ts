@@ -17,11 +17,13 @@ import type {
 import {
   aggregateSessions,
   extractJsonlMeta,
+  extractJsonlTail,
   planRescan,
   filterOwned,
   hasHistory,
   resolveBuckets,
   resolvePending,
+  type JsonlTail,
   type PendingLaunch,
   type RescanState,
   type SessionMeta
@@ -43,6 +45,8 @@ import type { RemoteGitInfo } from './remote/install'
 const RESCAN_DEBOUNCE_MS = 250
 const PANEL_SAVE_DEBOUNCE_MS = 600
 const JSONL_SCAN_CAP = 256 * 1024
+// CC§2
+const JSONL_TAIL_BYTES = 64 * 1024
 const DISCOVER_MAX = 8
 
 interface HeadScan {
@@ -51,6 +55,7 @@ interface HeadScan {
   meta: Partial<SessionMeta>
   // CC§2
   final: boolean
+  tail?: { size: number; mtimeMs: number; tail: JsonlTail }
 }
 
 export interface LiveSession {
@@ -114,6 +119,25 @@ function* jsonlHeadLines(file: string, probe = { opened: false, eof: false }): G
       yield* parts
     }
     if (tail) yield tail
+  } finally {
+    fs.closeSync(fd)
+  }
+}
+
+function jsonlTailLines(file: string): string[] {
+  let fd: number
+  try {
+    fd = fs.openSync(file, 'r')
+  } catch {
+    return []
+  }
+  try {
+    const size = fs.fstatSync(fd).size
+    const start = Math.max(0, size - JSONL_TAIL_BYTES)
+    const buf = Buffer.allocUnsafe(size - start)
+    fs.readSync(fd, buf, 0, buf.length, start)
+    const lines = buf.toString('utf8').split('\n')
+    return start > 0 ? lines.slice(1) : lines
   } finally {
     fs.closeSync(fd)
   }
@@ -806,6 +830,16 @@ export class WorkspaceManager {
     return meta
   }
 
+  private scanTail(file: string): JsonlTail {
+    const st = this.statByFile.get(file)
+    const head = this.headScans.get(file)
+    const prev = head?.tail
+    if (prev && st && prev.size === st.size && prev.mtimeMs === st.mtimeMs) return prev.tail
+    const tail = extractJsonlTail(jsonlTailLines(file))
+    if (head && st) head.tail = { ...st, tail }
+    return tail
+  }
+
   // CC§2
   private readFirstCwd(
     root: string,
@@ -823,6 +857,14 @@ export class WorkspaceManager {
   private readMeta(root: string, slug: string, id: string, bucketDir: string): SessionMeta {
     const file = path.join(root, slug, id + '.jsonl')
     const partial: Partial<SessionMeta> = { ...this.scanHead(file) }
+    // CC§4
+    if (partial.worktreeState) {
+      const tail = this.scanTail(file)
+      if (tail.worktreeState === null) {
+        partial.worktreeState = undefined
+        partial.cwd = tail.relocatedCwd
+      } else if (tail.worktreeState) partial.worktreeState = tail.worktreeState
+    }
     try {
       const sidecar = fs.readFileSync(file.replace(/\.jsonl$/, '.title'), 'utf8').trim()
       if (sidecar) partial.aiTitle = sidecar

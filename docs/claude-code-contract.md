@@ -105,6 +105,13 @@ entry above); `test/e2e/fixtures/fake-claude.js` mimics this section entry by en
   **`worktreeSession.sessionId` differs from the file's own id in 14/116 samples**
   (the binding is inherited from a predecessor session) — never key on it (pinned in
   `src/main/sessionAggregate.ts`).
+- **CC keeps re-writing `worktree-state` through the run, so the LAST one sits near the
+  end of the file** and says where the session is now; the first one only says where
+  it started. Census 2026-09-23, CC ≤2.1.281, 313 transcripts carrying one: the last
+  record sat at most 49KB from the end (p90 27KB), so a 64KB tail read always finds it.
+  241 ended on `worktreeSession: null` (left the worktree), all in the root checkout's
+  slug; 70 ended bound, all in a worktree's slug; 2 ended bound in the root slug.
+  Measured by reading every `~/.claude/projects/*/*.jsonl` on the dev Mac.
 
 - **Message-line field vocabulary**: jsonl message lines carry
   `cwd / gitBranch / timestamp / sessionId / version`; a `summary` record is NOT
@@ -497,6 +504,12 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   `workflow`, `MCP task`, `cloud session`, `dream`, `auto-mode scan`. Nothing in the
   payload says whether a task is idle or ambient — the SDK stream's `ambient` flag
   ("hosts should exclude them from activity indicators") is not forwarded to hooks.
+- **A `/loop` wakeup shows up in `session_crons`.** Measured 2026-09-23 on CC 2.1.281,
+  in a tmux run with a Stop hook that saved its input. `/loop <prompt>` ended its turn
+  with `"session_crons":[{"id":"8044b6e3","schedule":"4 15 * * *","recurring":false,
+  "prompt":"/loop …"}]` and `"background_tasks":[]`, in compact JSON. So a session
+  whose last turn-end carried a non-empty `session_crons` will wake itself up, even
+  though it looks idle. 209 sessions on the dev Mac had called `ScheduleWakeup`.
 - **An idle teammate is still `running`**. CC's own activity checks use
   `status === 'running' && !isIdle`; hooks never see `isIdle`. On disk the idle edge
   is a user record in the lead's transcript — `Another Claude session sent a
@@ -525,15 +538,37 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   holding it; the file outlives the task, the descriptor does not). So "is
   background shell `<id>` alive" has an exact OS answer, and a tool shell holding an
   output file the Stop list does not name is a FOREGROUND call in flight. One
-  `bun listen.ts` was found 11.5 h into its run holding no listening socket — age is
-  a needed server tell, a port is only the fast one.
+  `bun listen.ts` was found 11.5 h into its run holding no listening socket.
+- **Age does not tell a server from long work.** Census 2026-09-23 over every
+  transcript on the dev Mac: of 2244 background shells with a start and an end, 88 ran
+  ≥30 min. About 28 were servers (`npm run dev`, `next start`, `port-forward`); at
+  least 25 were work (`until ! pgrep vitest…` waits, `npx playwright test`, gate
+  scripts). CPU does tell them apart: over 60 s an idle `python3 -m http.server` used
+  0.01 s of CPU per minute, while a test run uses tens of seconds per minute. A busy
+  emulator (qemu) also used 24.5 s per minute, so it reads as work too. Koloft
+  therefore calls a shell a server only when its tree listens on a port **and** used
+  under 3 s of CPU per minute over the last 2 minutes (`src/main/sessionTracker.ts`).
 - **`Notification` payloads carry no task list** (124 "Claude is waiting for your
   input" nudges, none with `background_tasks`), and `-p` mode exits with a background
   shell still running, firing one Stop.
 - **A permission Notification reads like "Claude needs your permission to use Bash"**
-  (it contains "permission" or "approval"); any other Notification is the idle
-  "waiting for your input" nudge. (Quoted in earlier Koloft code notes; no date or CC
-  version.)
+  (it contains "permission" or "approval"). (Quoted in earlier Koloft code notes; no
+  date or CC version.)
+- **A Notification is NOT always one of those two: its input carries a
+  `notification_type`, and a hook's `matcher` filters on it.** The 2.1.281 binary
+  lists the types `permission_prompt, idle_prompt, auth_success, elicitation_dialog,
+  agent_needs_input, agent_completed, elicitation_url_dialog,
+  worker_permission_prompt, push_notification, computer_use_enter, computer_use_exit,
+  quota_auto_resume_fired, …` — most are not a turn end. Measured 2026-09-23 on CC
+  2.1.281 in a tmux run with `--settings`: a permission prompt fired
+  `{"message":"Claude needs your permission","notification_type":"permission_prompt"}`,
+  the 60 s nudge fired `{"message":"Claude is waiting for your
+  input","notification_type":"idle_prompt"}`; both reached a hook with
+  `"matcher":"permission_prompt|idle_prompt"`, and neither reached one with
+  `"matcher":"auth_success"`. Koloft also lets `worker_permission_prompt`,
+  `elicitation_dialog` and `elicitation_url_dialog` through, because their names say the
+  run is waiting on the person. That is inferred from the names; their payloads are not
+  measured.
 
 **How a background task shows up in the transcript.** Checked "against real
 transcripts and the CLI's own result schemas" on claude 2.1.222; the forked-skill
@@ -718,6 +753,21 @@ other bullets of §9 were not re-measured on this build.
   session and then expects a transcript must unset it (the sibling markers
   `CLAUDECODE`, `CLAUDE_CODE_SESSION_ID`, `CLAUDE_PID`, `CLAUDE_EFFORT`,
   `CLAUDE_CODE_MESSAGING_SOCKET/TOKEN` leak effort and messaging the same way).
+- **Every process a claude starts carries `CLAUDECODE=1`** (the Bash tool's shell and
+  everything under it; seen 2026-09-23 on CC 2.1.281). Koloft's own terminals strip it
+  (`src/main/ptyManager.ts`), so inside a Koloft tab it means "started by a claude".
+  The shim treats such a launch like `-p`. On 2026-09-23 an interactive claude started
+  from inside a session's Bash, through the shim, registered as that session's tab
+  (`"mode":"new"`). When it was killed, Koloft dropped the tab while the tab's real
+  claude kept running, and the person then resumed the same id in a second tab.
+- **A claude cleans up its own background shells, but not a program that detaches
+  itself.** Measured 2026-09-23 on CC 2.1.281 in tmux. A `run_in_background` `sleep
+  900` ran in its own process group under claude, and SIGHUP to claude took the shell
+  and the `sleep` down with it. A program that re-parents itself to launchd lives on,
+  and it still carries `CLAUDE_CODE_SESSION_ID=<id>` and `CLAUDE_PID` in its
+  environment. Examples: an Android emulator's `qemu`, still running three days after
+  its session; an `adb` server; the OrbStack app. So "programs this session left
+  running" = processes with ppid 1 whose environment names that session id.
 
 Koloft dependents: the scheduled-jobs runner's launch line and the shim's new-session
 branch (`src/main/shim.ts`), `src/main/claudeArgs.ts`, `src/main/skillList.ts`.
@@ -773,7 +823,17 @@ only — when an entry is written, updated or removed is unmeasured.
   statusUpdatedAt`. Values seen: `kind: 'interactive'`, `entrypoint: 'cli'`,
   `nameSource: 'derived' | 'user'`, `status: 'busy' | 'idle'`. A sibling
   `<pid>.<sha256>.key` sits next to each one.
-- Unused by Koloft today.
+- **Lifecycle, measured 2026-09-23 on CC 2.1.281** (7 live sessions plus a tmux probe):
+  - Every live interactive session had an entry, and its `sessionId` was the id it was
+    running, a resumed id included.
+  - `/clear` rewrites `sessionId` to the new id within seconds.
+  - A SIGTERM'd claude removes its entry; so does a tmux kill.
+  - A `kill -9`'d claude **leaves its entry behind**.
+  - `procStart` is `ps -o lstart=` for that pid printed in UTC (`TZ=UTC`,
+    e.g. `Wed Sep 23 20:29:08 2026`). So "pid alive and its UTC `lstart` equals
+    `procStart`" tells a live entry from a stale one whose pid was reused.
+- Koloft reads it before resuming a Claude session (`src/main/claudeSessionRegistry.ts`),
+  so it never opens a second claude on a session that is still running.
 
 ## §12 The interactive TUI inside a terminal
 

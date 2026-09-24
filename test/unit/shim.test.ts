@@ -12,7 +12,7 @@ vi.mock('electron', async () => {
   return { app: { getPath: () => base, getName: () => 'koloft-dev', isPackaged: false } }
 })
 
-import { setupShim } from '../../src/main/shim'
+import { registeredByTabRoot, setupShim } from '../../src/main/shim'
 
 let shimDir: string
 let regDir: string
@@ -61,7 +61,8 @@ beforeEach(() => {
 })
 
 interface ShimRun {
-  reg: { tabId: string; sessionId: string; mode: string; cwd: string } | null
+  reg: { tabId: string; sessionId: string; mode: string; cwd: string; pid?: number } | null
+  pid?: number
   realArgs: string[] | null
   realArgs0: string[] | null
   realEnv: Record<string, string> | null
@@ -130,7 +131,7 @@ function runShim(args: string[], extraEnv: Record<string, string> = {}): ShimRun
     encoding: 'utf8',
     timeout: 15_000
   })
-  return collect(cwd, argsOut, envOut, res.status ?? -1, res.stderr ?? '')
+  return { ...collect(cwd, argsOut, envOut, res.status ?? -1, res.stderr ?? ''), pid: res.pid }
 }
 
 function runShimPick(
@@ -199,6 +200,23 @@ describe('claude shim (registration — unchanged behavior)', () => {
     const { reg, realArgs } = runShim(['-p', 'hello'])
     expect(reg).toBeNull()
     expect(realArgs).toEqual(['-p', 'hello'])
+  })
+
+  it("only the tab's own claude may register: the shim execs into claude, so its pid is the tab's root", () => {
+    const { reg, pid } = runShim([])
+    expect(reg?.pid).toBe(pid)
+    expect(registeredByTabRoot(reg?.pid, pid)).toBe(true)
+    expect(registeredByTabRoot(reg?.pid, pid! + 1)).toBe(false)
+    expect(registeredByTabRoot(undefined, pid)).toBe(true)
+  })
+
+  // CC§9
+  it("a claude started by the tab's own claude never takes the tab over: no registration, no --settings", () => {
+    for (const args of [[], ['--resume', 'abcdef01-2345-4678-8abc-def012345678']]) {
+      const { reg, realArgs } = runShim(args, { CLAUDECODE: '1' })
+      expect(reg).toBeNull()
+      expect(realArgs).toEqual(args)
+    }
   })
 
   it('subcommands (mcp) are passed through untouched', () => {

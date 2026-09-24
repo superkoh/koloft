@@ -30,7 +30,7 @@ import { SessionBackends } from './sessionBackends'
 import { identityOf } from '@shared/sessionBackend'
 import { AttentionTracker, type AttentionContext } from './attention'
 import { route, dockBadgeText } from './notifyRouter'
-import { setupShim } from './shim'
+import { registeredByTabRoot, setupShim } from './shim'
 import { openDropTarget, type OpenDrop } from './openDrop'
 import { leaveForOS, openUrlExternally, osOpenFallback } from './osOpen'
 import {
@@ -187,6 +187,8 @@ import {
 } from './browserPermission'
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import { CDP_OP_BUDGET_MS } from '@shared/cdpBudget'
+import { runningClaudePid } from './claudeSessionRegistry'
+import { scanLeftovers, stopLeftover } from './leftovers'
 import { applyWindowCommand, guestShortcut } from '@shared/shortcutDispatch'
 import { BROWSER_PARTITION, PLACEHOLDER_SESSION_TITLE, isHttpUrl } from '@shared/types'
 import {
@@ -225,6 +227,7 @@ import type {
   CronPermission,
   CronSaveInput,
   ProbeErrorKind,
+  LeftoverProcess,
   ResumePlan,
   SessionInfo,
   SessionStatus,
@@ -291,6 +294,19 @@ tracker.heldTabs = () => {
   return held
 }
 tracker.needsUser = (id) => attention.list().some((e) => e.tabId === id)
+let leftovers: Record<string, LeftoverProcess[]> = {}
+tracker.leftBehind = (sessionId) => !!leftovers[sessionId]?.length
+const LEFTOVER_SCAN_MS = 30_000
+async function refreshLeftovers(): Promise<void> {
+  const next = await scanLeftovers()
+  const changed = JSON.stringify(next) !== JSON.stringify(leftovers)
+  leftovers = next
+  if (changed) sendToRenderer('sessions:leftovers', next)
+}
+if (process.platform !== 'win32') {
+  setInterval(() => void refreshLeftovers(), LEFTOVER_SCAN_MS).unref()
+  void refreshLeftovers()
+}
 const attention = new AttentionTracker((pending, event) => {
   updateDockBadge(pending)
   retractStaleOsNotifications(pending)
@@ -1524,10 +1540,12 @@ function handleRegistration(raw: unknown): void {
     cwd?: string
     ts?: number
     mode?: string
+    pid?: number
   }
   if (!obj.tabId || !obj.regId) return
   if (processedRegIds.has(obj.regId)) return
   if (!ptyMgr.get(obj.tabId)) return
+  if (!registeredByTabRoot(obj.pid, ptyMgr.pidOf(obj.tabId))) return
   processedRegIds.add(obj.regId)
   const cwd = obj.cwd && obj.cwd.length ? obj.cwd : os.homedir()
   tracker.track(obj.tabId, cwd)
@@ -2276,12 +2294,14 @@ function liveTabFor(report: { tabId?: string; tmux?: string }): string | undefin
 }
 
 function handleStatusRegistration(raw: unknown): void {
-  const obj = raw as HookReport & { tabId?: string; message?: string; bgl?: string }
+  const obj = raw as HookReport & { tabId?: string; message?: string; bgl?: string; wake?: number }
   obj.tabId = liveTabFor(obj)
   if (!obj.tabId) return
   // CC§5
   if (!ownsHookReport(obj, sessionIdOf(obj.tabId))) return
   if (obj.event === 'prompt') consumeOutletDedupe(obj.tabId)
+  // CC§8
+  if (typeof obj.wake === 'number') tracker.setWakeupPending(obj.tabId, obj.wake === 1)
   const status = statusFromEvent(obj.event, obj.message)
   // CC§8
   if (status === 'waiting') void tracker.reportTurnEnd(obj.tabId, parseReportedTasks(obj.bgl))
@@ -2775,12 +2795,15 @@ const resumeProbes: ResumeProbes = {
   headAt: async (repoDir) => (await gitOut(repoDir, ['rev-parse', 'HEAD']))?.trim() || null
 }
 
-function resumePlanFor(sessionId: string): Promise<ResumePlan> {
+async function resumePlanFor(sessionId: string): Promise<ResumePlan> {
+  if (!isCodexSession(sessionId) && (await runningClaudePid(sessionId))) {
+    return { action: 'unavailable', reason: 'running' }
+  }
   const row = isCodexSession(sessionId)
     ? codexSessions?.findRow(sessionId)
     : workspaceMgr?.findRow(sessionId)
   if (isCodexSession(sessionId) && row && !row.worktreeState && !dirExistsSync(row.cwd)) {
-    return Promise.resolve({ action: 'unavailable', reason: 'no-cwd' })
+    return { action: 'unavailable', reason: 'no-cwd' }
   }
   return planResume(
     row,
@@ -3221,6 +3244,14 @@ function registerIpc(): void {
       )
       return legacy
     }
+  })
+
+  ipcMain.handle('sessions:leftovers', () => leftovers)
+  ipcMain.handle('sessions:stopLeftover', async (_e, sessionId: unknown, pid: unknown) => {
+    if (typeof sessionId !== 'string' || typeof pid !== 'number') return false
+    const stopped = await stopLeftover(sessionId, pid)
+    await refreshLeftovers()
+    return stopped
   })
 
   ipcMain.handle('sessions:resumePlan', (_e, id: unknown): Promise<ResumePlan> => {

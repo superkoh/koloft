@@ -3,6 +3,7 @@ import {
   resolveBuckets,
   aggregateSessions,
   extractJsonlMeta,
+  extractJsonlTail,
   filterOwned,
   hasHistory,
   planRescan,
@@ -657,6 +658,22 @@ describe('worktree-state binding (D11): the binding, not the bucket, names the w
       worktreeStateLine({ worktreeName: 'later', worktreePath: WS + '/.claude/worktrees/later' })
     ])
     expect(meta.worktreeState?.worktreeName).toBe('bugfix')
+  })
+
+  // CC§2 CC§4
+  it('the tail says where the session is now: the last binding wins, an emptied one means it left', () => {
+    const later = worktreeStateLine({
+      worktreeName: 'later',
+      worktreePath: WS + '/.claude/worktrees/later'
+    })
+    expect(extractJsonlTail([worktreeStateLine(), later]).worktreeState?.worktreeName).toBe('later')
+    expect(
+      extractJsonlTail([
+        later,
+        '{"type":"relocated","sessionId":"s","relocatedCwd":"/ws"}',
+        '{"type":"worktree-state","worktreeSession":null,"sessionId":"s"}'
+      ])
+    ).toEqual({ worktreeState: null, relocatedCwd: '/ws' })
   })
 
   it('does not extend the early break, so a binding past it is not read: most transcripts have none, and waiting for one would read every file whole', () => {

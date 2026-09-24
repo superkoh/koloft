@@ -291,6 +291,21 @@ describe('injected hook script', () => {
     expect((readStatusLog('tabBG2')[0] as unknown as { bgl: string }).bgl).toBe('')
   })
 
+  // CC§8
+  it('a turn-end says whether claude has a wakeup scheduled, so a /loop between ticks is not idle', () => {
+    fire('tabWK1', 'stop', {
+      background_tasks: [],
+      session_crons: [{ id: '8044b6e3', schedule: '4 15 * * *', recurring: false }]
+    })
+    fire('tabWK2', 'stop', { background_tasks: [], session_crons: [] })
+    fire('tabWK3', 'stop', { background_tasks: [] })
+    const wake = (tab: string): unknown =>
+      (readStatusLog(tab)[0] as unknown as { wake?: number }).wake
+    expect(wake('tabWK1')).toBe(1)
+    expect(wake('tabWK2')).toBe(0)
+    expect(wake('tabWK3')).toBeUndefined()
+  })
+
   it('a task command carrying JSON punctuation cannot truncate the scan', () => {
     fire('tabBG3', 'stop', {
       background_tasks: [
@@ -455,6 +470,19 @@ describe('injected hook script', () => {
       fs.readFileSync(writeTabHookSettings(setupHooks(), 'tabPT2'), 'utf8')
     )
     expect(without.hooks).not.toHaveProperty('PostToolUse')
+  })
+
+  // CC§8
+  // CC§8
+  it('a Notification reaches Koloft only when claude stops to wait on the person, never for a mid-turn one', () => {
+    const settings = JSON.parse(
+      fs.readFileSync(writeTabHookSettings(setupHooks(), 'tabNT'), 'utf8')
+    )
+    const types: string[] = settings.hooks.Notification[0].matcher.split('|')
+    expect(types).toEqual(expect.arrayContaining(['permission_prompt', 'idle_prompt']))
+    for (const midTurn of ['agent_completed', 'push_notification', 'auth_success']) {
+      expect(types).not.toContain(midTurn)
+    }
   })
 
   it('carries a statusLine next to the hooks when the built-in statusline is on', () => {

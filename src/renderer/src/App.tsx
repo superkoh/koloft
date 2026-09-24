@@ -746,6 +746,12 @@ export default function App(): JSX.Element {
   }, [])
 
   useEffect(() => {
+    const set = useStore.getState().setLeftovers
+    void window.api.sessions.leftovers().then(set)
+    return window.api.sessions.onLeftovers(set)
+  }, [])
+
+  useEffect(() => {
     const off = window.api.sessions.onUpdate((sessions) => {
       setSessions(sessions)
       for (const s of sessions) {

@@ -77,17 +77,45 @@ function readWorktreeState(obj: Record<string, unknown>): WorktreeStateMeta | un
   return { originalCwd, worktreePath, worktreeName, worktreeBranch, originalHeadCommit }
 }
 
+function parseRecord(line: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(line)
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
+export interface JsonlTail {
+  worktreeState?: WorktreeStateMeta | null
+  relocatedCwd?: string
+}
+
+// CC§2 CC§4
+export function extractJsonlTail(lines: Iterable<string>): JsonlTail {
+  const tail: JsonlTail = {}
+  for (const line of lines) {
+    if (!line.includes('"worktree-state"') && !line.includes('"relocated"')) continue
+    const obj = parseRecord(line)
+    if (obj?.type === 'worktree-state') {
+      const ws = obj.worktreeSession === null ? null : readWorktreeState(obj)
+      if (ws !== undefined) tail.worktreeState = ws
+    } else if (
+      obj?.type === 'relocated' &&
+      typeof obj.relocatedCwd === 'string' &&
+      obj.relocatedCwd
+    ) {
+      tail.relocatedCwd = obj.relocatedCwd
+    }
+  }
+  return tail
+}
+
 export function extractJsonlMeta(lines: Iterable<string>): Partial<SessionMeta> {
   const meta: Partial<SessionMeta> = {}
   for (const line of lines) {
-    let obj: Record<string, unknown>
-    try {
-      const parsed: unknown = JSON.parse(line)
-      if (!parsed || typeof parsed !== 'object') continue
-      obj = parsed as Record<string, unknown>
-    } catch {
-      continue
-    }
+    const obj = parseRecord(line)
+    if (!obj) continue
     if (
       meta.summary === undefined &&
       obj.type === 'summary' &&

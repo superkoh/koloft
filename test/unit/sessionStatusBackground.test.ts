@@ -9,7 +9,7 @@ const HOLD_MS = 400
 const SILENCE_MS = 1500
 const SCAN_MS = 250
 const RESUME_MS = 300
-const SERVER_AGE_MS = 1000
+const SERVER_QUIET_MS = 300
 const TEAMMATE_QUIET_MS = 500
 const PROCS_SCAN_MS = 100
 const IDLE_MS = 2000
@@ -28,7 +28,7 @@ beforeAll(async () => {
   process.env.KOLOFT_BG_SILENCE_MS = String(SILENCE_MS)
   process.env.KOLOFT_SUBAGENT_SCAN_MS = String(SCAN_MS)
   process.env.KOLOFT_RESUME_AFTER_STOP_MS = String(RESUME_MS)
-  process.env.KOLOFT_SERVER_AGE_MS = String(SERVER_AGE_MS)
+  process.env.KOLOFT_SERVER_QUIET_MS = String(SERVER_QUIET_MS)
   process.env.KOLOFT_TEAMMATE_QUIET_MS = String(TEAMMATE_QUIET_MS)
   process.env.KOLOFT_PROCS_SCAN_MS = String(PROCS_SCAN_MS)
   process.env.KOLOFT_IDLE_MS = String(IDLE_MS)
@@ -42,7 +42,7 @@ afterAll(() => {
   delete process.env.KOLOFT_BG_SILENCE_MS
   delete process.env.KOLOFT_SUBAGENT_SCAN_MS
   delete process.env.KOLOFT_RESUME_AFTER_STOP_MS
-  delete process.env.KOLOFT_SERVER_AGE_MS
+  delete process.env.KOLOFT_SERVER_QUIET_MS
   delete process.env.KOLOFT_TEAMMATE_QUIET_MS
   delete process.env.KOLOFT_PROCS_SCAN_MS
   delete process.env.KOLOFT_IDLE_MS
@@ -923,6 +923,30 @@ describe('run-state vs background work: any live background task keeps the sessi
     expect(status(tracker, 'tabX1')).toBe('working')
   })
 
+  // CC§2
+  it("a subagent's own prompt in the main transcript is not the user's: a held turn still self-releases", async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    const file = await bindCaughtUp(tracker, 'tabX2', cwd, initialLines(cwd))
+    tracker.setStatus('tabX2', 'working')
+
+    appendJsonl(file, [spawnRec('toolu_side', cwd)])
+    await tracker.reportTurnEnd('tabX2')
+    expect(status(tracker, 'tabX2')).toBe('working')
+
+    appendJsonl(file, [
+      {
+        type: 'user',
+        timestamp: new Date().toISOString(),
+        isSidechain: true,
+        message: { role: 'user', content: 'look through the logs' },
+        cwd
+      },
+      mainAssistantRec(cwd, Date.now(), true)
+    ])
+    await waitFor(tracker, (s) => s.tabId === 'tabX2' && s.status === 'waiting', 8000)
+  }, 12_000)
+
   it('a turn-end racing the watch-tick parse of its own spawn ack still holds', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
@@ -1089,7 +1113,7 @@ describe('Esc interrupt as turn-end: no Stop ever fires, so the interrupt record
   }, 10_000)
 })
 
-type StagedShell = { ageMs?: number; listening?: boolean }
+type StagedShell = { ageMs?: number; listening?: boolean; cpuMs?: number }
 
 function stageProcs(
   tracker: InstanceType<typeof SessionTracker>,
@@ -1100,7 +1124,7 @@ function stageProcs(
     shells: new Map(
       Object.entries(shells).map(([id, s]) => [
         id,
-        { pid: 1, ageMs: s.ageMs ?? 0, listening: !!s.listening }
+        { pid: 1, ageMs: s.ageMs ?? 0, listening: !!s.listening, cpuMs: s.cpuMs ?? 0 }
       ])
     )
   })
@@ -1180,7 +1204,7 @@ describe('run-state from the typed task list: each task judged by what it is, an
     await waitFor(tracker, (s) => s.tabId === 'tabL2' && s.status === 'waiting', 6000)
   }, 10_000)
 
-  it('a reported shell that listens on a port is a server: parked, and the turn-end lands', async () => {
+  it('a reported shell that listens on a port and has gone quiet is a server: parked, and the turn-end lands', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     const file = await bindCaughtUp(tracker, 'tabL3', cwd, initialLines(cwd))
@@ -1189,28 +1213,52 @@ describe('run-state from the typed task list: each task judged by what it is, an
       commandUseRec('toolu_srv', cwd, 'python3 -m http.server 4179'),
       shellAckRec('toolu_srv', cwd)
     ])
-    stageProcs(tracker, { btoolu_srv: { listening: true } })
+    stageProcs(tracker, { btoolu_srv: { listening: true, cpuMs: 100 } })
     await tracker.reportTurnEnd('tabL3', [{ id: 'btoolu_srv', type: 'shell' }])
-    expect(status(tracker, 'tabL3')).toBe('waiting')
+    expect(status(tracker, 'tabL3')).toBe('working')
+    await waitFor(tracker, (s) => s.tabId === 'tabL3' && s.status === 'waiting', 6000)
     expect(parked(tracker, 'tabL3')).toEqual([
       { kind: 'server', label: 'python3 -m http.server 4179', ageMs: 0 }
     ])
-  })
+  }, 10_000)
 
-  it('a reported shell older than the server age is a server too, whatever it listens on', async () => {
+  it('a listening shell still burning CPU is work, not a server (a test run with its own web server)', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     const file = await bindCaughtUp(tracker, 'tabL4', cwd, initialLines(cwd))
     tracker.setStatus('tabL4', 'working')
     appendJsonl(file, [
-      commandUseRec('toolu_old', cwd, 'bun listen.ts'),
-      shellAckRec('toolu_old', cwd)
+      commandUseRec('toolu_e2e', cwd, 'npx playwright test'),
+      shellAckRec('toolu_e2e', cwd)
     ])
-    stageProcs(tracker, { btoolu_old: { ageMs: SERVER_AGE_MS * 5 } })
-    await tracker.reportTurnEnd('tabL4', [{ id: 'btoolu_old', type: 'shell' }])
-    expect(status(tracker, 'tabL4')).toBe('waiting')
-    expect((parked(tracker, 'tabL4') as { kind: string }[])[0].kind).toBe('server')
-  })
+    let cpuMs = 0
+    tracker.pidOf = () => 4242
+    tracker.inspect = async () => ({
+      shells: new Map([
+        ['btoolu_e2e', { pid: 1, ageMs: 0, listening: true, cpuMs: (cpuMs += 60_000) }]
+      ])
+    })
+    await tracker.reportTurnEnd('tabL4', [{ id: 'btoolu_e2e', type: 'shell' }])
+    await sleep(SERVER_QUIET_MS * 4 + SCAN_MS * 2)
+    expect(status(tracker, 'tabL4')).toBe('working')
+    expect(parked(tracker, 'tabL4')).toBeUndefined()
+  }, 10_000)
+
+  it('a long job that listens on nothing is work however old it is', async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    const file = await bindCaughtUp(tracker, 'tabL6', cwd, initialLines(cwd))
+    tracker.setStatus('tabL6', 'working')
+    appendJsonl(file, [
+      commandUseRec('toolu_wait', cwd, 'until ! pgrep -f vitest; do sleep 5; done'),
+      shellAckRec('toolu_wait', cwd)
+    ])
+    stageProcs(tracker, { btoolu_wait: { ageMs: 5 * 3600_000 } })
+    await tracker.reportTurnEnd('tabL6', [{ id: 'btoolu_wait', type: 'shell' }])
+    await sleep(SERVER_QUIET_MS * 4 + SCAN_MS * 2)
+    expect(status(tracker, 'tabL6')).toBe('working')
+    expect(parked(tracker, 'tabL6')).toBeUndefined()
+  }, 10_000)
 
   it('a reported shell is trusted when the OS cannot be asked (no pid wired)', async () => {
     const cwd = makeWorkspace()
@@ -1380,11 +1428,11 @@ describe('run-state from the typed task list: each task judged by what it is, an
     tracker.setStatus('tabL14', 'working')
     stageProcs(tracker, { bsrv: { listening: true } })
     await tracker.reportTurnEnd('tabL14', [{ id: 'bsrv', type: 'shell' }])
-    expect(parked(tracker, 'tabL14')).toBeDefined()
+    await waitFor(tracker, (s) => s.tabId === 'tabL14' && !!s.parked, 6000)
     tracker.bindSession('tabL14', file, SID, cwd, '', '', 'clear')
     expect(parked(tracker, 'tabL14')).toBeUndefined()
     expect(status(tracker, 'tabL14')).toBe('waiting')
-  })
+  }, 10_000)
 
   it("an Esc judges the shells of the interrupted turn on a FRESH OS view, not the previous turn's", async () => {
     const cwd = makeWorkspace()
@@ -1473,6 +1521,30 @@ describe('auto-closing an idle session: every reason to keep it is read fresh at
     stageAllClear(tracker)
     tracker.activeTabId = () => 'tabA3'
     const closes = await idleSession(tracker, 'tabA3', cwd)
+    await expectStays(closes)
+  }, 10_000)
+
+  // CC§8
+  it('never closes a session that has a wakeup scheduled (a /loop between ticks), and closes it once the loop is done', async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    stageAllClear(tracker)
+    const closes = recordAutoCloses(tracker)
+    await bindCaughtUp(tracker, 'tabA9', cwd, initialLines(cwd))
+    tracker.setWakeupPending('tabA9', true)
+    await waitFor(tracker, (s) => s.tabId === 'tabA9' && s.status === 'idle', 5000)
+    await expectStays(closes)
+    tracker.setWakeupPending('tabA9', false)
+    await waitForClose(closes, 'tabA9')
+  }, 20_000)
+
+  // CC§9
+  it('never closes a session whose programs are still running on their own', async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    stageAllClear(tracker)
+    tracker.leftBehind = (sid) => sid === SID
+    const closes = await idleSession(tracker, 'tabA10', cwd)
     await expectStays(closes)
   }, 10_000)
 

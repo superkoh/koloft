@@ -13,7 +13,8 @@ import {
   resumeFailureMessage,
   resumeInFlight,
   resumeSession,
-  UNAVAILABLE_NOTICE
+  UNAVAILABLE_NOTICE,
+  STILL_RUNNING_NOTICE
 } from '../../src/renderer/src/resumeFlow'
 import { useStore } from '../../src/renderer/src/store'
 
@@ -84,6 +85,13 @@ describe('planToStep (D6/D8 routing)', () => {
       message: UNAVAILABLE_NOTICE
     })
     expect(UNAVAILABLE_NOTICE).toBe("This session's directory no longer exists — transcript only.")
+  })
+
+  it('a session still running in another claude is never opened a second time', () => {
+    expect(planToStep({ action: 'unavailable', reason: 'running' }, target)).toEqual({
+      kind: 'notice',
+      message: STILL_RUNNING_NOTICE
+    })
   })
 })
 

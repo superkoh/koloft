@@ -1233,6 +1233,41 @@ describe('WorkspaceManager: a running session that moved', () => {
     })
   })
 
+  // CC§4
+  it('a stopped session that left its worktree is back on main, resumable from the root, even with the worktree gone', async () => {
+    const wt = path.join(repo, '.claude', 'worktrees', 'gone')
+    const dir = path.join(projectsRoot, encodeCwd(repo))
+    const id = 'exited-1'
+    fs.mkdirSync(dir, { recursive: true })
+    const records = [
+      { type: 'user', cwd: wt, timestamp: '2026-09-10T11:00:00.000Z', sessionId: id },
+      {
+        type: 'worktree-state',
+        sessionId: id,
+        worktreeSession: {
+          originalCwd: repo,
+          worktreePath: wt,
+          worktreeName: 'gone',
+          worktreeBranch: 'worktree-gone',
+          originalHeadCommit: 'abc123'
+        }
+      },
+      { type: 'relocated', sessionId: id, relocatedCwd: repo },
+      { type: 'worktree-state', worktreeSession: null, sessionId: id }
+    ]
+    fs.writeFileSync(
+      path.join(dir, id + '.jsonl'),
+      records.map((r) => JSON.stringify(r)).join('\n') + '\n'
+    )
+    layout = { ...layout, workspaces: [{ path: repo }], sessions: { [id]: SEEDED } }
+    mgr = liveMgr()
+    mgr.start()
+    await vi.waitFor(() => expect(latest(repo).rows.length).toBe(1))
+    const row = latest(repo).rows[0]
+    expect(row).toMatchObject({ worktree: 'main', cwd: repo, invalidCwd: false })
+    expect(row.worktreeState).toBeUndefined()
+  })
+
   it('hands back no folder when the one it would open is gone (the menu item greys)', async () => {
     const { repoDir, wtDir } = gitRepoWithWorktree('vanished')
     writeJsonl(wtDir, 'wt-1')
