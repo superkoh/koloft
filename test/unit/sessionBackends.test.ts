@@ -7,9 +7,65 @@ import {
   sessionKey,
   SUPPORTED_PAIRS
 } from '@shared/sessionBackend'
-import type { BackendId } from '@shared/types'
+import type { BackendId, SessionRow } from '@shared/types'
+
+function stubBackend(id: BackendId, rows: () => Promise<SessionRow[]> = async () => []) {
+  return {
+    id,
+    availability: async () => ({ id, available: true }),
+    list: () => [],
+    historyRows: rows,
+    create: async () => ({ ok: true as const, id: 'tab', cwd: '/repo' }),
+    resume: async () => ({ ok: true as const, id: 'tab', cwd: '/repo' }),
+    resumePlan: async () => ({ action: 'unavailable' as const, reason: 'not-found' as const }),
+    hasTab: () => false,
+    aliveTabFor: () => undefined,
+    stop: () => {},
+    archive: () => true,
+    transcriptExists: () => true,
+    observe: () => {}
+  } satisfies SessionBackend
+}
+
+const row = (id: string, backendId: BackendId, mtime: number): SessionRow => ({
+  id,
+  backendId,
+  host: 'local',
+  title: id,
+  cwd: '/repo',
+  worktree: 'main',
+  running: false,
+  invalidCwd: false,
+  mtime
+})
 
 describe('session backend boundary', () => {
+  it('shows the history one method could read when another fails, newest first, and says which failed', async () => {
+    const registry = new SessionBackends()
+    registry.register(
+      stubBackend('claude', async () => [row('a', 'claude', 1), row('b', 'claude', 3)])
+    )
+    registry.register(
+      stubBackend('codex', async () => {
+        throw new Error('app-server gone')
+      })
+    )
+    const unread: BackendId[] = []
+    const rows = await registry.historyRows('/repo', (id) => unread.push(id))
+    expect(rows.map((r) => r.id)).toEqual(['b', 'a'])
+    expect(unread).toEqual(['codex'])
+  })
+
+  it('fails the history read when no method could read anything', async () => {
+    const registry = new SessionBackends()
+    registry.register(
+      stubBackend('codex', async () => {
+        throw new Error('app-server gone')
+      })
+    )
+    await expect(registry.historyRows('/repo', () => {})).rejects.toThrow('app-server gone')
+  })
+
   it('keeps native ids from different backends separate and accepts legacy Claude references', () => {
     const nativeSessionId = '00000000-0000-4000-8000-000000000001'
     const claude = sessionKey({ backendId: 'claude', sourceId: 'local', nativeSessionId })
@@ -22,14 +78,7 @@ describe('session backend boundary', () => {
   it('refuses implicit/new unsupported launches before reaching any backend', async () => {
     const registry = new SessionBackends()
     const create = vi.fn(async () => ({ ok: true as const, id: 'tab', cwd: '/repo' }))
-    const backend: SessionBackend = {
-      id: 'codex',
-      list: () => [],
-      create,
-      resume: async () => ({ ok: true, id: 'tab', cwd: '/repo' }),
-      archive: () => true,
-      transcriptExists: () => true
-    }
+    const backend: SessionBackend = { ...stubBackend('codex'), create }
     registry.register(backend)
     await expect(registry.create({ kind: 'codex', cwd: 'ssh://server/repo' })).rejects.toThrow(
       'Codex sessions cannot run on a remote machine yet.'

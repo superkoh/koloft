@@ -1,21 +1,32 @@
 import type {
+  BackendAvailability,
   BackendId,
   CreateTabOptions,
   CreateTabResult,
+  ResumePlan,
   SessionInfo,
   SessionResumeRequest,
-  SessionResumeResult
+  SessionResumeResult,
+  SessionRow
 } from '@shared/types'
+import type { SessionEvent } from '@shared/sessionEvent'
 import { identityOf, SUPPORTED_PAIRS, unsupportedPairMessage } from '@shared/sessionBackend'
 import { hostOf } from '@shared/remoteKey'
 
 export interface SessionBackend {
   id: BackendId
+  availability(): Promise<BackendAvailability>
   list(): SessionInfo[]
-  create(options: CreateTabOptions): Promise<CreateTabResult>
+  historyRows(workspacePath: string): Promise<SessionRow[]>
+  create(spec: CreateTabOptions): Promise<CreateTabResult>
   resume(request: SessionResumeRequest): Promise<SessionResumeResult>
+  resumePlan(key: string): Promise<ResumePlan>
+  hasTab(tabId: string): boolean
+  aliveTabFor(key: string): string | undefined
+  stop(tabId: string, how?: { detach?: boolean }): void | Promise<void>
   archive(key: string): boolean
   transcriptExists(key: string): boolean | Promise<boolean>
+  observe(tabId: string, event: SessionEvent): void
 }
 
 export class SessionBackends {
@@ -37,6 +48,21 @@ export class SessionBackends {
     return this.get(identityOf(key).backendId)
   }
 
+  ownerOfTab(tabId: string): SessionBackend | undefined {
+    return [...this.adapters.values()].find((backend) => backend.hasTab(tabId))
+  }
+
+  availability(
+    unregistered: (id: BackendId) => BackendAvailability
+  ): Promise<BackendAvailability[]> {
+    return Promise.all(
+      (Object.keys(SUPPORTED_PAIRS) as BackendId[]).map((id) => {
+        const backend = this.adapters.get(id)
+        return backend ? backend.availability() : unregistered(id)
+      })
+    )
+  }
+
   list(): SessionInfo[] {
     return [...this.adapters.values()].flatMap((backend) =>
       backend.list().map((s) => ({
@@ -44,6 +70,23 @@ export class SessionBackends {
         nativeSessionId: s.nativeSessionId ?? s.sessionId
       }))
     )
+  }
+
+  async historyRows(
+    workspacePath: string,
+    partlyUnread: (backend: BackendId, error: unknown) => void
+  ): Promise<SessionRow[]> {
+    const backends = [...this.adapters.values()]
+    const answers = await Promise.allSettled(backends.map((b) => b.historyRows(workspacePath)))
+    const rows: SessionRow[] = []
+    const failures: { id: BackendId; error: unknown }[] = []
+    answers.forEach((answer, i) => {
+      if (answer.status === 'fulfilled') rows.push(...answer.value)
+      else failures.push({ id: backends[i].id, error: answer.reason })
+    })
+    if (failures.length && !rows.length) throw failures[0].error
+    for (const f of failures) partlyUnread(f.id, f.error)
+    return rows.sort((a, b) => b.mtime - a.mtime)
   }
 
   create(options: CreateTabOptions): Promise<CreateTabResult> {

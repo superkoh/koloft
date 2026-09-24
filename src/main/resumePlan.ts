@@ -1,4 +1,6 @@
+import fs from 'fs'
 import path from 'path'
+import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
 import type { ResumeEvidence, ResumePlan, SessionRow } from '@shared/types'
 
 export interface ResumeProbes {
@@ -8,6 +10,34 @@ export interface ResumeProbes {
   occupantOf(dir: string): string | null
   branchExists(repoDir: string, branch: string): Promise<boolean>
   headAt(repoDir: string): Promise<string | null>
+}
+
+export function dirExistsSync(p: string): boolean {
+  try {
+    return fs.statSync(p).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+export type GitOut = (dir: string, args: string[]) => Promise<string | null>
+
+export function gitProbes(git: GitOut): Omit<ResumeProbes, 'dirExists' | 'occupantOf'> {
+  return {
+    branchAt: async (dir) => (await git(dir, ['symbolic-ref', '--short', 'HEAD']))?.trim() || null,
+    dirtyAt: async (dir) => {
+      const out = await git(dir, ['status', '--porcelain'])
+      return out === null ? null : out.trim() !== ''
+    },
+    branchExists: async (repoDir, branch) =>
+      (await git(repoDir, ['rev-parse', '--verify', 'refs/heads/' + branch])) !== null,
+    headAt: async (repoDir) => (await git(repoDir, ['rev-parse', 'HEAD']))?.trim() || null
+  }
+}
+
+export function occupantName(s: { title: string; sessionId: string }): string {
+  if (s.title && s.title !== PLACEHOLDER_SESSION_TITLE) return s.title
+  return s.sessionId || 'a launching session'
 }
 
 // CC§3

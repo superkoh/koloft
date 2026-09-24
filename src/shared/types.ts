@@ -207,6 +207,14 @@ export interface SessionMethods {
 }
 export type TabKind = 'shell' | BackendId
 
+export interface BackendAvailability {
+  id: BackendId
+  available: boolean
+  reason?: string
+  version?: string
+  verified?: boolean
+}
+
 export type LaunchPermission = 'default' | 'acceptEdits' | 'bypass'
 
 export interface CreateTabOptions {
@@ -664,15 +672,7 @@ export interface KoloftApi {
     onKilledByMain(cb: (tabId: string) => void): () => void
   }
   sessions: {
-    backends(): Promise<
-      {
-        id: BackendId
-        available: boolean
-        reason?: string
-        version?: string
-        verified?: boolean
-      }[]
-    >
+    backends(): Promise<BackendAvailability[]>
     onUpdate(cb: (sessions: SessionInfo[]) => void): () => void
     onRelocated(cb: (e: { tabId: string; dir: string }) => void): () => void
     noteActivity(tabId: string): void

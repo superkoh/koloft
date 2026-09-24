@@ -24,6 +24,7 @@ import {
 import { gitOps, type GitOps } from '../gitStatus'
 import { GithubLookup, type GithubOptions } from '../github'
 import { REMOTE_PATH_LINE } from '../remote/install'
+import { killSessionCmd } from '../remote/launch'
 import type { BytesResult } from '../remote/ssh'
 import type { Host, ShellLaunch } from './host'
 
@@ -416,5 +417,9 @@ export class SshHost implements Host {
 
   shell(cwd: string): ShellLaunch {
     return { ...this.deps.shell(this.bare(cwd)), cwd }
+  }
+
+  async endTmuxSession(tmuxName: string): Promise<void> {
+    await this.deps.run(killSessionCmd(tmuxName))
   }
 }

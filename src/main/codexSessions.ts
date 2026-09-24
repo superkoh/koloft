@@ -9,6 +9,7 @@ import type {
   SessionRow
 } from '@shared/types'
 import { identityOf } from '@shared/sessionBackend'
+import type { SessionEvent } from '@shared/sessionEvent'
 import {
   CodexObservation,
   record,
@@ -483,32 +484,13 @@ export class CodexSessions {
     let run: Run | undefined
     const changed = (): void => this.deps.changed()
     const observe = (event: CodexEvent): void => {
-      if (event.type === 'degraded') {
-        if (run?.info) {
-          run.info.observation = 'degraded'
-          changed()
-        }
-        this.deps.error(event.message)
+      if (event.type !== 'bound') {
+        if (run) this.observe(run.tabId, event)
+        else if (event.type === 'degraded') this.deps.error(event.message)
         return
       }
-      if (!run || run.explicitStop || run.stopping) return
-      if (event.type === 'bound') return this.bindThread(run, event.thread, event.change)
-      const info = run.info
-      if (!info) return
-      const runtime = this.deps.runtime
-      const turn = turnOf(event)
-      if (turn) return runtime.recordTurn(run.tabId, turn)
-      switch (event.type) {
-        case 'background-changed':
-          if (!runtime.setBackground(run.tabId, event.items)) return
-          info.background = event.items.length ? event.items : undefined
-          return changed()
-        case 'usage':
-          info.usage = event.usage
-          return changed()
-        case 'title':
-          return this.retitle(info, event.title)
-      }
+      if (run && !run.explicitStop && !run.stopping)
+        this.bindThread(run, event.thread, event.change)
     }
     const observer = new CodexObservation(observe)
     const transport = await this.startTransport({
@@ -562,6 +544,35 @@ export class CodexSessions {
     } catch (error) {
       await transport.stop()
       throw error
+    }
+  }
+
+  observe(tabId: string, event: SessionEvent): void {
+    const run = this.runs.get(tabId)
+    if (event.type === 'degraded') {
+      if (run?.info) {
+        run.info.observation = 'degraded'
+        this.deps.changed()
+      }
+      this.deps.error(event.message)
+      return
+    }
+    if (!run || run.explicitStop || run.stopping) return
+    const info = run.info
+    if (!info) return
+    const runtime = this.deps.runtime
+    const turn = turnOf(event)
+    if (turn) return runtime.recordTurn(run.tabId, turn)
+    switch (event.type) {
+      case 'background-changed':
+        if (!runtime.setBackground(run.tabId, event.items)) return
+        info.background = event.items.length ? event.items : undefined
+        return this.deps.changed()
+      case 'usage':
+        info.usage = event.usage
+        return this.deps.changed()
+      case 'title':
+        return this.retitle(info, event.title)
     }
   }
 
