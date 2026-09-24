@@ -633,6 +633,17 @@ describe('WorkspaceManager: /clear id change (T-LIFE-07)', () => {
     mgr.onSessionRebind('fresh', 'target', 'resume')
     expect(layout).toBe(saved)
   })
+
+  it('the bind that follows a /clear makes the new id a member and keeps the panel state it carried', () => {
+    own('old')
+    layout.sessions.old = entry
+
+    mgr.onSessionRebind('old', 'fresh', 'clear')
+    mgr.onSessionBound('fresh')
+
+    expect(layout.members).toEqual(['old', 'fresh'])
+    expect(layout.sessions.fresh).toEqual(entry)
+  })
 })
 
 describe('WorkspaceManager: worktrees() stale-dir filter (T-NEW-07 successor)', () => {
