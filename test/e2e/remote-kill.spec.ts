@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { test, expect, quitAndClose } from './helpers/app'
+import { test, expect, pendingAttention, quitAndClose } from './helpers/app'
 import type { E2EEnv } from './helpers/env'
 import {
   addRemoteWorkspace,
@@ -20,6 +20,7 @@ import {
   runIn,
   sendShortcut,
   startSessionIn,
+  termIds,
   waitForCalls,
   resumedId,
   readCalls,
@@ -27,6 +28,8 @@ import {
 } from './helpers/p1'
 
 const MIRROR_PULL_SETTLE_MS = 4000
+const WAITING_TO_IDLE_MS = 1000
+const IDLE_TO_CLOSE_MS = 3000
 
 test.afterEach(({ env }) => killFakeRemote(env))
 
@@ -180,6 +183,36 @@ test.describe('who ends the claude on the other machine: every way of ending a r
       await page.waitForTimeout(3000)
       await expect(wsRows(page, REMOTE_WS_NAME).first()).not.toHaveClass(/\bcold\b/)
       expect(readCalls(env)).toHaveLength(1)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-19: an idle remote session closes its own tab and sends no kill, so its tmux session keeps running', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+    env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_CLOSE_MS)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const [first] = await waitForCalls(env, 1)
+      const remoteRow = wsRows(page, REMOTE_WS_NAME).first()
+      await expect(remoteRow).toHaveClass(/st-waiting|st-idle/, { timeout: 60_000 })
+      await startSessionIn(page, 'ws-a')
+      const localRow = wsRows(page, 'ws-a').first()
+      await expect(localRow).toHaveClass(/st-waiting|st-idle/, { timeout: 30_000 })
+      await remoteRow.click()
+      await localRow.click()
+      await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
+      expect(await termIds(page)).toHaveLength(2)
+
+      await expect.poll(() => termIds(page), { timeout: 60_000 }).toHaveLength(1)
+      expect(killLines(env, first.sessionId)).toEqual([])
+      expect(liveTmuxSessions(env)).toContain(tmuxName(first.sessionId))
+      expect(processAlive(first.pid)).toBe(true)
     } finally {
       await quitAndClose(app)
     }
