@@ -2,7 +2,7 @@ import path from 'path'
 import type { ResumeEvidence, ResumePlan, SessionRow } from '@shared/types'
 
 export interface ResumeProbes {
-  dirExists(p: string): boolean
+  dirExists(p: string): boolean | Promise<boolean>
   branchAt(dir: string): Promise<string | null>
   dirtyAt(dir: string): Promise<boolean | null>
   occupantOf(dir: string): string | null
@@ -21,9 +21,13 @@ export function worktreeHomeRoot(worktreePath: string): string | null {
 const RENAME_SUFFIX_CAP = 100
 
 // CC§3
-function freeWorktreeName(base: string, home: string, dirExists: (p: string) => boolean): string {
+async function freeWorktreeName(
+  base: string,
+  home: string,
+  dirExists: ResumeProbes['dirExists']
+): Promise<string> {
   let n = 2
-  while (n < RENAME_SUFFIX_CAP && dirExists(path.join(home, `${base}-${n}`))) n++
+  while (n < RENAME_SUFFIX_CAP && (await dirExists(path.join(home, `${base}-${n}`)))) n++
   return `${base}-${n}`
 }
 
@@ -46,7 +50,7 @@ export async function planResume(
   if (!row) return { action: 'unavailable', reason: 'not-found' }
   const ws = row.worktreeState
   if (!ws) {
-    if (probes.dirExists(row.cwd)) return { action: 'direct', cwd: row.cwd }
+    if (await probes.dirExists(row.cwd)) return { action: 'direct', cwd: row.cwd }
     return planUnboundRebuild(row.cwd, probes)
   }
   // CC§2 CC§3
@@ -55,7 +59,7 @@ export async function planResume(
       ? ws.worktreePath
       : ws.originalCwd
 
-  if (!probes.dirExists(ws.worktreePath)) {
+  if (!(await probes.dirExists(ws.worktreePath))) {
     // CC§3
     const branchLives = await probes.branchExists(ws.originalCwd, ws.worktreeBranch)
     return {
@@ -90,6 +94,10 @@ export async function planResume(
     action: 'dialog',
     evidence,
     resumeCwd,
-    renamedName: freeWorktreeName(ws.worktreeName, path.dirname(ws.worktreePath), probes.dirExists)
+    renamedName: await freeWorktreeName(
+      ws.worktreeName,
+      path.dirname(ws.worktreePath),
+      probes.dirExists
+    )
   }
 }

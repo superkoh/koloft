@@ -19,19 +19,22 @@ export function withMachinePaths(s: SessionInfo): SessionInfo {
 }
 
 // ADR-0025
-export class Hosts {
-  private machines = new Map<string, Host>()
+export class Hosts<Machine extends Host> {
+  private machines = new Map<string, Machine>()
 
   constructor(
     private local: Host,
-    private makeSsh: (machine: string) => Host
+    private makeSsh: (machine: string) => Machine
   ) {}
 
   of(p: string): Host {
     const key = parseRemoteKey(p)
-    if (!key) return this.local
-    let host = this.machines.get(key.host)
-    if (!host) this.machines.set(key.host, (host = this.makeSsh(key.host)))
+    return key ? this.machine(key.host) : this.local
+  }
+
+  machine(name: string): Machine {
+    let host = this.machines.get(name)
+    if (!host) this.machines.set(name, (host = this.makeSsh(name)))
     return host
   }
 }

@@ -232,14 +232,16 @@ export class SshHost implements Host {
     })
     this.github = new GithubLookup({
       ...deps.github,
-      git: async (root, args, network) => {
-        const r = await this.deps.run(
-          remoteSh(network ? NETWORK_GIT : GIT, ['-C', this.bare(root), ...args]),
-          { timeoutMs: network ? NETWORK_GIT_TIMEOUT_MS : undefined }
-        )
-        return r.code === 0 ? r.stdout.toString('utf8') : null
-      }
+      git: (root, args, network) => this.gitOut(root, args, network)
     })
+  }
+
+  async gitOut(root: string, args: string[], network = false): Promise<string | null> {
+    const r = await this.deps.run(
+      remoteSh(network ? NETWORK_GIT : GIT, ['-C', this.bare(root), ...args]),
+      { timeoutMs: network ? NETWORK_GIT_TIMEOUT_MS : undefined }
+    )
+    return r.code === 0 ? r.stdout.toString('utf8') : null
   }
 
   private bare(p: string): string {

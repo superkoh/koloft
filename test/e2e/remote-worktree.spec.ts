@@ -1,6 +1,7 @@
+import { execFileSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
-import type { Page } from '@playwright/test'
+import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, quitAndClose } from './helpers/app'
 import {
   addRemoteWorkspace,
@@ -9,7 +10,8 @@ import {
   launchWithRemote,
   liveTmuxSessions,
   REMOTE_WS_NAME,
-  remoteDir
+  remoteDir,
+  sshCommands
 } from './helpers/remote'
 import {
   FAKE_SESSION_TITLE,
@@ -25,6 +27,18 @@ import {
 } from './helpers/p1'
 
 test.afterEach(({ env }) => killFakeRemote(env))
+
+async function closeActiveTab(app: ElectronApplication, page: Page): Promise<void> {
+  await page.locator('.ws-tab.active').first().click()
+  await sendShortcut(app, 'shortcut:close-tab')
+  const confirm = page.locator('.modal', { hasText: 'Close running session?' })
+  if (await confirm.isVisible({ timeout: 4000 }).catch(() => false)) {
+    await confirm
+      .locator('.btn-primary, button', { hasText: /^Close$/ })
+      .first()
+      .click()
+  }
+}
 
 async function wsMenuTexts(page: Page): Promise<string[]> {
   await openMenu(page, page.locator('.ws-head', { hasText: REMOTE_WS_NAME }))
@@ -131,15 +145,7 @@ test.describe('worktree sessions in a remote workspace, driven by the machine’
       await expect(row).toHaveCount(1, { timeout: 120_000 })
       const [first] = await waitForCalls(env, 1, 60_000)
 
-      await page.locator('.ws-tab.active').first().click()
-      await sendShortcut(app, 'shortcut:close-tab')
-      const confirm = page.locator('.modal', { hasText: 'Close running session?' })
-      if (await confirm.isVisible({ timeout: 4000 }).catch(() => false)) {
-        await confirm
-          .locator('.btn-primary, button', { hasText: /^Close$/ })
-          .first()
-          .click()
-      }
+      await closeActiveTab(app, page)
       await expect(row).toHaveClass(/\bcold\b/, { timeout: 90_000 })
 
       await row.click()
@@ -149,6 +155,51 @@ test.describe('worktree sessions in a remote workspace, driven by the machine’
       expect(resumedId(resume)).toBe(first.sessionId)
       expect(resume.argv).not.toContain('-w')
       expect(fs.realpathSync(resume.cwd)).toBe(fs.realpathSync(wtDir))
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-21: a cold worktree row whose worktree is gone from the machine rebuilds it there with git before resuming, from the folder that holds its transcript', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    installFakeRemote(env)
+    gitInit(remoteDir(env))
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await expect
+        .poll(async () => (await wsMenuTexts(page)).join(' | '), { timeout: 60_000 })
+        .toContain('New worktree session')
+      const dlg = await openWorktreeSession(page, REMOTE_WS_NAME)
+      await dlg.getByRole('textbox').click()
+      await page.keyboard.type('gone')
+      await page.keyboard.press('Enter')
+      await expect(dlg).toHaveCount(0)
+
+      const row = wsRows(page, REMOTE_WS_NAME).filter({ hasText: FAKE_SESSION_TITLE })
+      await expect(row).toHaveCount(1, { timeout: 120_000 })
+      await expect(row).toHaveClass(/st-waiting|st-idle/, { timeout: 60_000 })
+      const [first] = await waitForCalls(env, 1, 60_000)
+      const wtDir = path.join(remoteDir(env), '.claude', 'worktrees', 'gone')
+
+      await closeActiveTab(app, page)
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 90_000 })
+      execFileSync('git', ['-C', remoteDir(env), 'worktree', 'remove', '--force', wtDir])
+      expect(fs.existsSync(wtDir)).toBe(false)
+
+      await row.click()
+
+      const calls = await waitForCalls(env, 2, 90_000)
+      const resume = calls[calls.length - 1]
+      expect(resumedId(resume)).toBe(first.sessionId)
+      expect(sshCommands(env).some((c) => c.includes("'worktree' 'add'"))).toBe(true)
+      expect(fs.statSync(wtDir).isDirectory()).toBe(true)
+      expect(
+        execFileSync('git', ['-C', wtDir, 'branch', '--show-current'], { encoding: 'utf8' })
+      ).toBe('worktree-gone\n')
+      expect(fs.realpathSync(resume.cwd)).toBe(fs.realpathSync(remoteDir(env)))
     } finally {
       await quitAndClose(app)
     }

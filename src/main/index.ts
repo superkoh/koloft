@@ -2607,7 +2607,13 @@ function remoteKeyOfSession(sessionId?: string): RemoteKey | null {
 const POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE = '/bin/zsh'
 async function createRemoteClaudeTab(
   key: RemoteKey,
-  opts: { resumeSessionId?: string; cols?: number; rows?: number; worktree?: string }
+  opts: {
+    resumeSessionId?: string
+    cols?: number
+    rows?: number
+    worktree?: string
+    resumeCwd?: string
+  }
 ): Promise<CreateTabResult> {
   const pkg = machinePackage()
   ensureControlDir(remoteControlDir)
@@ -2630,7 +2636,7 @@ async function createRemoteClaudeTab(
   killedRemoteSessions.delete(sid)
   // CC§2
   const root = workspaceMgr?.realRemotePath(key) ?? key.path
-  const cwd = (opts.resumeSessionId && workspaceMgr?.findRow(sid)?.cwd) || root
+  const cwd = opts.resumeCwd || (opts.resumeSessionId && workspaceMgr?.findRow(sid)?.cwd) || root
   const wsKey = parseRemoteKey(workspaceMgr?.workspaceOf(sid) ?? '')
   const wsRoot = wsKey ? (workspaceMgr?.realRemotePath(wsKey) ?? wsKey.path) : root
 
@@ -2814,17 +2820,54 @@ function gitOut(cwd: string, args: string[]): Promise<string | null> {
 
 const GIT_REF_RE = /^[A-Za-z0-9._][A-Za-z0-9._/-]{0,120}$/
 
+type GitOut = (dir: string, args: string[]) => Promise<string | null>
+
+function gitProbes(git: GitOut): Omit<ResumeProbes, 'dirExists' | 'occupantOf'> {
+  return {
+    branchAt: async (dir) => (await git(dir, ['symbolic-ref', '--short', 'HEAD']))?.trim() || null,
+    dirtyAt: async (dir) => {
+      const out = await git(dir, ['status', '--porcelain'])
+      return out === null ? null : out.trim() !== ''
+    },
+    branchExists: async (repoDir, branch) =>
+      (await git(repoDir, ['rev-parse', '--verify', 'refs/heads/' + branch])) !== null,
+    headAt: async (repoDir) => (await git(repoDir, ['rev-parse', 'HEAD']))?.trim() || null
+  }
+}
+
 const resumeProbes: ResumeProbes = {
   dirExists: dirExistsSync,
-  branchAt: async (dir) => (await gitOut(dir, ['symbolic-ref', '--short', 'HEAD']))?.trim() || null,
-  dirtyAt: async (dir) => {
-    const out = await gitOut(dir, ['status', '--porcelain'])
-    return out === null ? null : out.trim() !== ''
-  },
   occupantOf: occupantOfDir,
-  branchExists: async (repoDir, branch) =>
-    (await gitOut(repoDir, ['rev-parse', '--verify', 'refs/heads/' + branch])) !== null,
-  headAt: async (repoDir) => (await gitOut(repoDir, ['rev-parse', 'HEAD']))?.trim() || null
+  ...gitProbes(gitOut)
+}
+
+function machineGit(machine: string): GitOut {
+  return (dir, args) => hosts.machine(machine).gitOut(formatRemoteKey(machine, dir), args)
+}
+
+function machineOccupantOf(machine: string, dir: string): string | null {
+  for (const s of tracker.list()) {
+    if (!s.alive || s.remote?.host !== machine) continue
+    if (s.cwd === dir) return occupantName(s)
+    const bound = s.sessionId ? workspaceMgr?.findRow(s.sessionId)?.worktreeState : undefined
+    if (bound?.worktreePath === dir) return occupantName(s)
+  }
+  return null
+}
+
+function machineResumeProbes(machine: string): ResumeProbes {
+  return {
+    dirExists: (p) => hosts.machine(machine).dirExists(formatRemoteKey(machine, p)),
+    occupantOf: (dir) => machineOccupantOf(machine, dir),
+    ...gitProbes(machineGit(machine))
+  }
+}
+
+async function remoteResumePlanFor(machine: string, sessionId: string): Promise<ResumePlan> {
+  const row = workspaceMgr?.findRow(sessionId)
+  if (!row) return { action: 'unavailable', reason: 'not-found' }
+  if (!row.worktreeState) return { action: 'direct', cwd: row.cwd }
+  return planResume(row, machineResumeProbes(machine), workspaceMgr?.bucketDirOf(sessionId))
 }
 
 async function resumePlanFor(sessionId: string): Promise<ResumePlan> {
@@ -2846,20 +2889,23 @@ async function resumePlanFor(sessionId: string): Promise<ResumePlan> {
   )
 }
 
-async function rebuildWorktree(spec: {
-  worktreePath: string
-  branch: string
-  baseRef: string
-}): Promise<boolean> {
+async function rebuildWorktree(
+  spec: {
+    worktreePath: string
+    branch: string
+    baseRef: string
+  },
+  git: GitOut = gitOut
+): Promise<boolean> {
   const root = worktreeHomeRoot(spec.worktreePath)
   if (!root) return false
   const branchLives =
-    (await gitOut(root, ['rev-parse', '--verify', 'refs/heads/' + spec.branch])) !== null
+    (await git(root, ['rev-parse', '--verify', 'refs/heads/' + spec.branch])) !== null
   // PLATFORM§30
   const args = branchLives
     ? ['worktree', 'add', spec.worktreePath, spec.branch]
     : ['worktree', 'add', '-b', spec.branch, spec.worktreePath, spec.baseRef]
-  return (await gitOut(root, args)) !== null
+  return (await git(root, args)) !== null
 }
 
 function commitSettings(patch: Partial<Settings>): Settings {
@@ -2889,6 +2935,41 @@ async function createClaudeSession(opts: CreateTabOptions): Promise<CreateTabRes
   return createClaudeTab(cwd, opts.resumeSessionId, opts.cols, opts.rows, opts.worktree)
 }
 
+async function resumeRemoteClaudeSession(
+  key: RemoteKey,
+  req: SessionResumeRequest
+): Promise<SessionResumeResult> {
+  const mode = req.mode ?? 'direct'
+  let worktree: string | undefined
+  let resumeCwd = req.cwd
+  if (mode === 'renamed') {
+    if (typeof req.worktree !== 'string' || !isValidWorktreeName(req.worktree)) {
+      return { ok: false, code: 'invalid-args' }
+    }
+    worktree = req.worktree
+  }
+  if (mode === 'rebuild') {
+    const plan = await remoteResumePlanFor(key.host, req.sessionId)
+    if (plan.action === 'direct') resumeCwd = plan.cwd
+    else if (
+      plan.action !== 'rebuild' ||
+      !GIT_REF_RE.test(plan.branch) ||
+      !GIT_REF_RE.test(plan.baseRef) ||
+      !(await rebuildWorktree(plan, machineGit(key.host)))
+    ) {
+      return { ok: false, code: 'rebuild-failed' }
+    }
+  }
+  const r = await createRemoteClaudeTab(key, {
+    resumeSessionId: req.sessionId,
+    cols: req.cols,
+    rows: req.rows,
+    worktree,
+    resumeCwd
+  })
+  return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
+}
+
 async function resumeClaudeSession(req: SessionResumeRequest): Promise<SessionResumeResult> {
   const sid = req?.sessionId
   const cwd = req?.cwd
@@ -2901,14 +2982,7 @@ async function resumeClaudeSession(req: SessionResumeRequest): Promise<SessionRe
     return { ok: false, code: 'invalid-args' }
   }
   const remoteKey = remoteKeyOfSession(sid)
-  if (remoteKey) {
-    const r = await createRemoteClaudeTab(remoteKey, {
-      resumeSessionId: sid,
-      cols: req.cols,
-      rows: req.rows
-    })
-    return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
-  }
+  if (remoteKey) return resumeRemoteClaudeSession(remoteKey, req)
   const mode = req.mode ?? 'direct'
   let worktree: string | undefined
   if (mode === 'renamed') {
@@ -3321,9 +3395,8 @@ function registerIpc(): void {
     if (typeof id !== 'string' || !id) {
       return Promise.resolve({ action: 'unavailable', reason: 'not-found' })
     }
-    const row = remoteKeyOfSession(id) ? workspaceMgr?.findRow(id) : undefined
-    if (row) return Promise.resolve({ action: 'direct', cwd: row.cwd })
-    return resumePlanFor(id)
+    const machine = remoteKeyOfSession(id)?.host
+    return machine ? remoteResumePlanFor(machine, id) : resumePlanFor(id)
   })
 
   ipcMain.handle('sessions:resume', (_e, req: SessionResumeRequest) => {
