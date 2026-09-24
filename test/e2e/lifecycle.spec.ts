@@ -167,7 +167,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     await expect(page.locator('.ws-tab')).toHaveCount(1)
     await expect(row).not.toHaveClass(/\bcold\b/)
     expect(readCalls(env)).toHaveLength(1)
-    expect((layoutOnDisk(env).sessions as Record<string, unknown>)[call.sessionId]).toBeTruthy()
+    expect(layoutOnDisk(env).members).toContain(call.sessionId)
   })
 
   test('T-LIFE-05: a session that dies closes its tab, says killed by signal in a toast, and leaves a cold, unselected row', async ({

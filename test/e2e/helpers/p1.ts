@@ -161,7 +161,13 @@ function seedOwnership(env: E2EEnv, id: string): void {
   const sessions = (layout.sessions ?? {}) as Record<string, unknown>
   sessions[id] = { open: true, tabs: [] }
   layout.sessions = sessions
+  layout.members = withMember(layout.members, id)
   fs.writeFileSync(file, JSON.stringify(layout, null, 2))
+}
+
+export function withMember(members: unknown, id: string): string[] {
+  const list = Array.isArray(members) ? (members as string[]) : []
+  return list.includes(id) ? list : [...list, id]
 }
 
 export function seedJsonl(env: E2EEnv, bucketDir: string, opts: SeedOptions = {}): string {
@@ -260,6 +266,7 @@ export interface LayoutOnDisk {
   version?: number
   workspaces?: { path: string }[]
   workbench?: { defaultOpen: boolean }
+  members?: string[]
   sessions?: Record<string, SessionWorkbenchState>
   globalTerminal?: { visible: boolean; tabs: { title: string; cwd: string }[] }
   [key: string]: unknown

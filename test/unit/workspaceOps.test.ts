@@ -7,7 +7,7 @@ import {
   resolveWorkbenchState,
   withWorkbenchState
 } from '../../src/main/workspaceOps'
-import { type LayoutV4, type SessionWorkbenchState } from '@shared/types'
+import { type LayoutV5, type SessionWorkbenchState } from '@shared/types'
 
 describe('parseWorktreeEntries', () => {
   it('returns checkouts in porcelain order (first = main) with their short branch', () => {
@@ -167,9 +167,10 @@ describe('carrySessionWorkbench (T-LIFE-07: the panel follows a /clear id change
 })
 
 describe('resolveWorkbenchState (§7: what the panel starts from)', () => {
-  const layout = (sessions: LayoutV4['sessions'], defaultOpen = true): LayoutV4 => ({
-    version: 4,
+  const layout = (sessions: LayoutV5['sessions'], defaultOpen = true): LayoutV5 => ({
+    version: 5,
     workspaces: [],
+    members: [],
     workbench: { defaultOpen },
     sessions
   })
@@ -192,9 +193,10 @@ describe('resolveWorkbenchState (§7: what the panel starts from)', () => {
 })
 
 describe('withWorkbenchState (§6: the panel state round-trips through layout v3)', () => {
-  const layout = (sessions: LayoutV4['sessions']): LayoutV4 => ({
-    version: 4,
+  const layout = (sessions: LayoutV5['sessions']): LayoutV5 => ({
+    version: 5,
     workspaces: [],
+    members: [],
     workbench: { defaultOpen: true },
     sessions
   })

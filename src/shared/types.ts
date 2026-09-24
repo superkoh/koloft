@@ -1068,6 +1068,16 @@ export interface LayoutV4 {
 
 export type LayoutV3 = Omit<LayoutV4, 'version'> & { version: 3 }
 
+export interface LayoutV5 {
+  version: 5
+  workspaces: { path: string }[]
+  workbench: {
+    defaultOpen: boolean
+  }
+  members: string[]
+  sessions: Record<string, SessionWorkbenchState>
+}
+
 // CC§2
 export interface WorktreeStateMeta {
   originalCwd: string

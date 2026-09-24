@@ -3,7 +3,7 @@ import path from 'path'
 import type { Locator, Page } from '@playwright/test'
 import { expect } from './app'
 import type { E2EEnv } from './env'
-import { encodeCwd, layoutOnDisk } from './p1'
+import { encodeCwd, layoutOnDisk, withMember } from './p1'
 import { assertFixtureDir } from './fixtureGuard'
 import { PNG_1X1 } from './filesFixture'
 import type { LayoutV2, PersistedTab, SessionWorkbenchState } from '../../../src/shared/types'
@@ -147,6 +147,7 @@ export function seedWorkbench(
     const sessions = (doc.sessions ?? {}) as Record<string, unknown>
     sessions[sessionId] = state
     doc.sessions = sessions
+    doc.members = withMember(doc.members, sessionId)
   })
 }
 

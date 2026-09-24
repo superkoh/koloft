@@ -1,5 +1,12 @@
-import type { LayoutV3, LayoutV4, PersistedTab, SessionWorkbenchState } from '@shared/types'
+import type {
+  LayoutV3,
+  LayoutV4,
+  LayoutV5,
+  PersistedTab,
+  SessionWorkbenchState
+} from '@shared/types'
 import { DEFAULT_PANEL_OPEN, sanitizeSessionWorkbench } from '@shared/workbenchState'
+import { identityOf } from '@shared/sessionBackend'
 
 export interface MigrateDeps {
   dirExists(p: string): boolean
@@ -30,7 +37,7 @@ function isLayoutV2(raw: unknown): boolean {
   )
 }
 
-export function serializeLayout(layout: LayoutV4): string {
+export function serializeLayout(layout: LayoutV5): string {
   return JSON.stringify(layout, null, 2)
 }
 
@@ -130,7 +137,7 @@ function startCollapsed(v3: LayoutV3): LayoutV4 {
   }
 }
 
-export function migrateLayout(raw: unknown, deps: MigrateDeps): LayoutV4 {
+function toV4(raw: unknown, deps: MigrateDeps): LayoutV4 {
   if (isPanelLayout(raw, 4)) {
     const doc = raw as Record<string, unknown>
     const defaultOpen = readDefaultOpen(doc, DEFAULT_PANEL_OPEN)
@@ -142,4 +149,30 @@ export function migrateLayout(raw: unknown, deps: MigrateDeps): LayoutV4 {
     }
   }
   return startCollapsed(toV3(raw, deps))
+}
+
+function claudeKeysBecomeMembers(v4: LayoutV4): LayoutV5 {
+  return {
+    version: 5,
+    workspaces: v4.workspaces,
+    workbench: v4.workbench,
+    members: Object.keys(v4.sessions).filter((id) => identityOf(id).backendId === 'claude'),
+    sessions: v4.sessions
+  }
+}
+
+export function migrateLayout(raw: unknown, deps: MigrateDeps): LayoutV5 {
+  if (isPanelLayout(raw, 5)) {
+    const doc = raw as Record<string, unknown>
+    const defaultOpen = readDefaultOpen(doc, DEFAULT_PANEL_OPEN)
+    const members = Array.isArray(doc.members) ? doc.members : []
+    return {
+      version: 5,
+      workspaces: keepWorkspaces(doc.workspaces),
+      workbench: { defaultOpen },
+      members: members.filter((id): id is string => typeof id === 'string' && id.length > 0),
+      sessions: readSessions(doc, defaultOpen)
+    }
+  }
+  return claudeKeysBecomeMembers(toV4(raw, deps))
 }

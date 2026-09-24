@@ -1,4 +1,4 @@
-import { type LayoutV4, type ProjectInfo, type SessionWorkbenchState } from '@shared/types'
+import { type LayoutV5, type ProjectInfo, type SessionWorkbenchState } from '@shared/types'
 
 export type WorkspaceAddDecision =
   { code: 'rejected-worktree' } | { code: 'exists'; path: string } | { code: 'added'; path: string }
@@ -45,11 +45,11 @@ export function parseWorktreeEntries(text: string): WorktreeEntry[] {
 
 // CC§1
 export function carrySessionWorkbench(
-  sessions: LayoutV4['sessions'],
+  sessions: LayoutV5['sessions'],
   prevId: string,
   nextId: string,
   source: string
-): { changed: boolean; sessions: LayoutV4['sessions'] } {
+): { changed: boolean; sessions: LayoutV5['sessions'] } {
   if (source !== 'clear') return { changed: false, sessions }
   const prev = sessions[prevId]
   if (!prev || sessions[nextId]) return { changed: false, sessions }
@@ -57,23 +57,23 @@ export function carrySessionWorkbench(
   return { changed: true, sessions: { ...sessions, [nextId]: carried } }
 }
 
-export function resolveWorkbenchState(layout: LayoutV4, sessionId: string): SessionWorkbenchState {
+export function resolveWorkbenchState(layout: LayoutV5, sessionId: string): SessionWorkbenchState {
   return layout.sessions[sessionId] ?? { open: layout.workbench.defaultOpen, tabs: [] }
 }
 
 export function withWorkbenchState(
-  layout: LayoutV4,
+  layout: LayoutV5,
   sessionId: string,
   state: SessionWorkbenchState
-): LayoutV4['sessions'] {
+): LayoutV5['sessions'] {
   return { ...layout.sessions, [sessionId]: state }
 }
 
 export function gcSessions(
-  sessions: LayoutV4['sessions'],
+  sessions: LayoutV5['sessions'],
   liveIds: ReadonlySet<string>
-): { changed: boolean; sessions: LayoutV4['sessions'] } {
-  const kept: LayoutV4['sessions'] = {}
+): { changed: boolean; sessions: LayoutV5['sessions'] } {
+  const kept: LayoutV5['sessions'] = {}
   let changed = false
   for (const [id, entry] of Object.entries(sessions)) {
     if (liveIds.has(id)) kept[id] = entry

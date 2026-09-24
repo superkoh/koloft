@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { migrateLayout, serializeLayout, type MigrateDeps } from '../../src/main/layoutMigrate'
-import type { LayoutV4 } from '@shared/types'
+import type { LayoutV5 } from '@shared/types'
 import { DEFAULT_PANEL_OPEN, PERSISTED_TAB_CAP } from '@shared/workbenchState'
 
 const FAKE_PROJECT_ROOT_BY_CWD: Record<string, string> = {
@@ -28,10 +28,11 @@ const V1 = {
   ]
 }
 
-const SAFE_EMPTY: LayoutV4 = {
-  version: 4,
+const SAFE_EMPTY: LayoutV5 = {
+  version: 5,
   workspaces: [],
   workbench: { defaultOpen: false },
+  members: [],
   sessions: {}
 }
 
@@ -39,15 +40,16 @@ it('the shipped panel default is collapsed', () => {
   expect(DEFAULT_PANEL_OPEN).toBe(false)
 })
 
-describe('migrateLayout (v1 → v4)', () => {
+describe('migrateLayout (v1 → v5)', () => {
   it('T-MIG-01 idempotent: same v1 twice → same output', () => {
     const first = migrateLayout(V1, deps)
     const second = migrateLayout(V1, deps)
     expect(second).toEqual(first)
   })
 
-  it('seeds sessions[] from v1 claude tabs so the owned-only sidebar still shows them', () => {
+  it('seeds members and sessions from v1 claude tabs so the owned-only sidebar still shows them', () => {
     const out = migrateLayout(V1, deps)
+    expect([...out.members].sort()).toEqual(['sid-1', 'sid-2', 'sid-3', 'sid-4'])
     expect(Object.keys(out.sessions).sort()).toEqual(['sid-1', 'sid-2', 'sid-3', 'sid-4'])
     expect(out.sessions['sid-1']).toEqual({ open: false, tabs: [] })
   })
@@ -88,12 +90,18 @@ describe('migrateLayout (v1 → v4)', () => {
     const paths = out.workspaces.map((w) => w.path)
     expect(paths).not.toContain('/zeta')
     expect(paths).toEqual(['/alpha', '/repo'])
-    expect(Object.keys(out).sort()).toEqual(['sessions', 'version', 'workbench', 'workspaces'])
+    expect(Object.keys(out).sort()).toEqual([
+      'members',
+      'sessions',
+      'version',
+      'workbench',
+      'workspaces'
+    ])
   })
 
   it('T-MIG-06 the shipped default, v1 titles dropped, no activeSessionId (A10)', () => {
     const out = migrateLayout(V1, deps)
-    expect(out.version).toBe(4)
+    expect(out.version).toBe(5)
     expect(out.workbench).toEqual({ defaultOpen: DEFAULT_PANEL_OPEN })
     expect('activeSessionId' in out).toBe(false)
     expect('activeIndex' in out).toBe(false)
@@ -101,10 +109,11 @@ describe('migrateLayout (v1 → v4)', () => {
   })
 
   it('T-AGG-09② panel state round-trip serialize → parse → load untouched', () => {
-    const doc: LayoutV4 = {
-      version: 4,
+    const doc: LayoutV5 = {
+      version: 5,
       workspaces: [{ path: '/zzz' }, { path: '/aaa' }],
       workbench: { defaultOpen: true },
+      members: ['s-open', 's-collapsed'],
       sessions: {
         's-open': {
           open: true,
@@ -123,23 +132,24 @@ describe('migrateLayout (v1 → v4)', () => {
   it('a v4 document with no `workbench` block is whole: the shipped default fills in', () => {
     const out = migrateLayout({ version: 4, workspaces: [{ path: '/repo' }], sessions: {} }, deps)
     expect(out).toEqual({
-      version: 4,
+      version: 5,
       workspaces: [{ path: '/repo' }],
       workbench: { defaultOpen: DEFAULT_PANEL_OPEN },
+      members: [],
       sessions: {}
     })
   })
 
-  it('corrupt or unknown shape → safe empty v4', () => {
+  it('corrupt or unknown shape → safe empty layout', () => {
     expect(migrateLayout(null, deps)).toEqual(SAFE_EMPTY)
     expect(migrateLayout('garbage', deps)).toEqual(SAFE_EMPTY)
     expect(migrateLayout({ tabs: 'nope' }, deps)).toEqual(SAFE_EMPTY)
-    expect(migrateLayout({ version: 5, future: true }, deps)).toEqual(SAFE_EMPTY)
+    expect(migrateLayout({ version: 6, future: true }, deps)).toEqual(SAFE_EMPTY)
     expect(migrateLayout({ version: 4, workspaces: 'x' }, deps)).toEqual(SAFE_EMPTY)
   })
 })
 
-describe('migrateLayout: v3 → v4, every panel lands collapsed once, since a v3 `open: true` came from a default and not the user', () => {
+describe('migrateLayout: v3 → v5, every panel lands collapsed once, since a v3 `open: true` came from a default and not the user', () => {
   const V3 = {
     version: 3,
     workspaces: [{ path: '/zzz' }, { path: '/aaa' }],
@@ -162,7 +172,7 @@ describe('migrateLayout: v3 → v4, every panel lands collapsed once, since a v3
 
   it('every session lands collapsed, whatever its v3 flag said', () => {
     const out = migrateLayout(V3, deps)
-    expect(out.version).toBe(4)
+    expect(out.version).toBe(5)
     expect(out.sessions['s-seeded'].open).toBe(false)
     expect(out.sessions['s-worked'].open).toBe(false)
     expect(out.sessions['s-collapsed'].open).toBe(false)
@@ -185,9 +195,9 @@ describe('migrateLayout: v3 → v4, every panel lands collapsed once, since a v3
     expect(out).not.toEqual(SAFE_EMPTY)
   })
 
-  it('runs once — a v4 document keeps a stored `open: true`, and a stored default', () => {
+  it('runs once — a v5 document keeps a stored `open: true`, and a stored default', () => {
     const upgraded = migrateLayout(V3, deps)
-    const opened: LayoutV4 = {
+    const opened: LayoutV5 = {
       ...upgraded,
       workbench: { defaultOpen: true },
       sessions: {
@@ -232,7 +242,7 @@ describe('migrateLayout: v3 → v4, every panel lands collapsed once, since a v3
   })
 })
 
-describe('migrateLayout: v2 → v4, the Workbench merge', () => {
+describe('migrateLayout: v2 → v5, the Workbench merge', () => {
   const V2 = {
     version: 2,
     workspaces: [{ path: '/zzz' }, { path: '/aaa' }],
@@ -254,7 +264,7 @@ describe('migrateLayout: v2 → v4, the Workbench merge', () => {
 
   it('WB-P03 preserves every workspace and session entry', () => {
     const out = migrateLayout(V2, deps)
-    expect(out.version).toBe(4)
+    expect(out.version).toBe(5)
     expect(out.workspaces).toEqual([{ path: '/zzz' }, { path: '/aaa' }])
     expect(Object.keys(out.sessions).sort()).toEqual(['s-browser', 's-collapsed', 's-preview'])
   })
@@ -452,5 +462,48 @@ describe('migrateLayout: a dirty v4 document (WB-P04)', () => {
     expect(migrateLayout({ ...noDefault, sessions: { s: entry } }, deps).sessions.s.open).toBe(
       DEFAULT_PANEL_OPEN
     )
+  })
+})
+
+describe('migrateLayout: v4 → v5, sidebar membership moves out of the Workbench state map', () => {
+  const codexKey = 'codex:local:00000000-0000-4000-8000-000000000001'
+  const V4 = {
+    version: 4,
+    workspaces: [{ path: '/repo' }],
+    workbench: { defaultOpen: true },
+    sessions: {
+      'claude-a': { open: true, tabs: [{ kind: 'web', title: 'app', url: 'http://a/' }] },
+      'claude-b': { open: false, tabs: [] },
+      [codexKey]: { open: true, tabs: [] }
+    }
+  }
+
+  it('every Claude session of a v4 document becomes a member and keeps its Workbench state', () => {
+    const out = migrateLayout(V4, deps)
+    expect(out.version).toBe(5)
+    expect(out.members).toEqual(['claude-a', 'claude-b'])
+    expect(out.sessions['claude-a']).toEqual(V4.sessions['claude-a'])
+    expect(out.sessions['claude-b']).toEqual(V4.sessions['claude-b'])
+  })
+
+  it('a Codex session keeps its Workbench state but is never counted as a Claude member', () => {
+    const out = migrateLayout(V4, deps)
+    expect(out.members).not.toContain(codexKey)
+    expect(out.sessions[codexKey]).toEqual({ open: true, tabs: [] })
+  })
+
+  it('a v5 member with no Workbench state stays a member, and a v5 key with state alone stays out', () => {
+    const out = migrateLayout(
+      {
+        version: 5,
+        workspaces: [],
+        workbench: { defaultOpen: false },
+        members: ['member-only', 7, ''],
+        sessions: { 'state-only': { open: true, tabs: [] } }
+      },
+      deps
+    )
+    expect(out.members).toEqual(['member-only'])
+    expect(Object.keys(out.sessions)).toEqual(['state-only'])
   })
 })

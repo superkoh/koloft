@@ -365,10 +365,12 @@ test.describe('Workbench panel layout: T1 collapsed, T2 right column, T3 the TUI
     const doc = layoutOnDisk(env) as unknown as {
       version: number
       workspaces: { path: string }[]
+      members: string[]
       sessions: Record<string, { open: boolean; tabs: { kind: string; url?: string }[] }>
     }
-    expect(doc.version).toBe(4)
+    expect(doc.version).toBe(5)
     expect(doc.workspaces.map((w) => w.path)).toEqual([wsPath])
+    expect([...doc.members].sort()).toEqual(['sid-browser', 'sid-collapsed', 'sid-preview'])
     expect(Object.keys(doc.sessions).sort()).toEqual([
       'sid-browser',
       'sid-collapsed',

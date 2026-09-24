@@ -31,12 +31,10 @@ const TURN_LONGER_THAN_ONE_MIRROR_PULL = '/busy'
 
 test.afterEach(({ env }) => killFakeRemote(env))
 
-function layoutSessionIds(env: E2EEnv): string[] {
+function layoutMembers(env: E2EEnv): string[] {
   const file = path.join(env.userData, 'layout.json')
-  const layout = JSON.parse(fs.readFileSync(file, 'utf8')) as {
-    sessions: Record<string, unknown>
-  }
-  return Object.keys(layout.sessions)
+  const layout = JSON.parse(fs.readFileSync(file, 'utf8')) as { members: string[] }
+  return layout.members
 }
 
 test.describe('losing and regaining the machine: Koloft never invents an ending for a remote session', () => {
@@ -131,7 +129,7 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
     } finally {
       await quitAndClose(app)
     }
-    expect(layoutSessionIds(env)).toContain(first.sessionId)
+    expect(layoutMembers(env)).toContain(first.sessionId)
 
     const app2 = await launchApp(env)
     try {
@@ -156,7 +154,7 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
       await expect.poll(() => processAlive(first.pid), { timeout: 60_000 }).toBe(false)
       await expect(wsRows(page2, REMOTE_WS_NAME)).toHaveCount(0, { timeout: 60_000 })
       await expect
-        .poll(() => layoutSessionIds(env), { timeout: 30_000 })
+        .poll(() => layoutMembers(env), { timeout: 30_000 })
         .not.toContain(first.sessionId)
     } finally {
       await quitAndClose(app2)

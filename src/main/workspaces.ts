@@ -4,7 +4,7 @@ import { execFile } from 'child_process'
 import { StringDecoder } from 'string_decoder'
 import type {
   DiscoveredFolder,
-  LayoutV4,
+  LayoutV5,
   ProjectInfo,
   BackendSessionRow,
   SessionRow,
@@ -41,7 +41,7 @@ import {
 import { encodeCwd } from './sessionTracker'
 import { isGitCheckout } from './projectInfo'
 import { isRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
-import { identityOf, sourceOf } from '@shared/sessionBackend'
+import { sourceOf } from '@shared/sessionBackend'
 import type { RemoteGitInfo } from './remote/install'
 
 const RESCAN_DEBOUNCE_MS = 250
@@ -71,8 +71,8 @@ export interface WorkspaceManagerDeps {
   additionalRows?(workspacePath: string): BackendSessionRow[]
   additionalMembers?(): Set<string>
   projectsRoot: string
-  loadLayout(): LayoutV4
-  saveLayout(layout: LayoutV4): void
+  loadLayout(): LayoutV5
+  saveLayout(layout: LayoutV5): void
   projectInfo(p: string): ProjectInfo
   runningBindings(): Map<string, string>
   liveSessions?(): Map<string, LiveSession>
@@ -158,7 +158,7 @@ function gitWorktreeEntries(root: string): Promise<WorktreeEntry[]> {
 }
 
 export class WorkspaceManager {
-  private layout: LayoutV4
+  private layout: LayoutV5
   private rowsCache: WorkspaceRows[] = []
   private firstScanDone!: () => void
   readonly firstScan: Promise<void> = new Promise((res) => {
@@ -241,14 +241,9 @@ export class WorkspaceManager {
     return this.bucketDirById.get(sessionId)
   }
 
-  private ownedClaudeIds(): string[] {
-    return Object.keys(this.layout.sessions).filter((k) => identityOf(k).backendId === 'claude')
-  }
-
   isMember(sessionId: string): boolean {
     return (
-      (!!this.layout.sessions[sessionId] && identityOf(sessionId).backendId === 'claude') ||
-      !!this.deps.additionalMembers?.().has(sessionId)
+      this.layout.members.includes(sessionId) || !!this.deps.additionalMembers?.().has(sessionId)
     )
   }
 
@@ -378,32 +373,36 @@ export class WorkspaceManager {
   }
 
   archiveSession(sessionId: string): boolean {
-    if (!this.layout.sessions[sessionId]) return false
+    if (!this.layout.members.includes(sessionId)) return false
     if (this.deps.runningBindings().has(sessionId)) return false
-    const sessions = { ...this.layout.sessions }
-    delete sessions[sessionId]
-    this.layout = { ...this.layout, sessions }
-    this.deps.saveLayout(this.layout)
-    this.scheduleRescan()
+    this.forget(sessionId)
     return true
   }
 
   dropOwnership(sessionId: string): void {
-    if (!this.layout.sessions[sessionId]) return
+    if (this.layout.members.includes(sessionId)) this.forget(sessionId)
+  }
+
+  private forget(sessionId: string): void {
     const sessions = { ...this.layout.sessions }
     delete sessions[sessionId]
-    this.layout = { ...this.layout, sessions }
+    this.layout = {
+      ...this.layout,
+      members: this.layout.members.filter((id) => id !== sessionId),
+      sessions
+    }
     this.deps.saveLayout(this.layout)
     this.scheduleRescan()
   }
 
   onSessionBound(sessionId: string): void {
-    if (!sessionId || this.layout.sessions[sessionId]) return
+    if (!sessionId || this.layout.members.includes(sessionId)) return
     this.layout = {
       ...this.layout,
+      members: [...this.layout.members, sessionId],
       sessions: {
-        ...this.layout.sessions,
-        [sessionId]: { open: this.layout.workbench.defaultOpen, tabs: [] }
+        [sessionId]: { open: this.layout.workbench.defaultOpen, tabs: [] },
+        ...this.layout.sessions
       }
     }
     this.deps.saveLayout(this.layout)
@@ -558,7 +557,7 @@ export class WorkspaceManager {
     const workspaceSlugs: string[] = []
     const wantedBucketDirs = new Set<string>()
 
-    const owned = new Set([...this.ownedClaudeIds(), ...(this.deps.additionalMembers?.() ?? [])])
+    const owned = new Set([...this.layout.members, ...(this.deps.additionalMembers?.() ?? [])])
     for (const ws of this.layout.workspaces) {
       const { key, root, scanPath, missing } = this.scope(ws.path)
       workspaceSlugs.push(encodeCwd(scanPath))
@@ -601,6 +600,7 @@ export class WorkspaceManager {
         dirExists: key ? () => true : dirExistsSync,
         now: Date.now
       }).map(claudeRow)
+      allRowsByWs.set(ws.path, [...allRows])
       if (!key) {
         const additional = (this.deps.additionalRows?.(ws.path) ?? []).map((r): SessionRow => ({
           ...r,
@@ -614,7 +614,6 @@ export class WorkspaceManager {
         }
         allRows.unshift(...additional.filter((r) => r.pending))
       }
-      allRowsByWs.set(ws.path, allRows)
       for (const r of allRows) wsBySession.set(r.id, ws.path)
       const rows = filterOwned(allRows, owned, wsRunningIds)
       for (const b of buckets) {
@@ -661,10 +660,13 @@ export class WorkspaceManager {
     for (const t of this.remoteTargets()) {
       for (const id of this.deps.remoteRunning?.(t.host) ?? []) liveIds.add(id)
     }
-    for (const key of this.deps.additionalMembers?.() ?? []) liveIds.add(key)
-    const gc = gcSessions(this.layout.sessions, liveIds)
-    if (gc.changed) {
-      this.layout = { ...this.layout, sessions: gc.sessions }
+    const members = this.layout.members.filter((id) => liveIds.has(id))
+    const gc = gcSessions(
+      this.layout.sessions,
+      new Set([...members, ...(this.deps.additionalMembers?.() ?? [])])
+    )
+    if (gc.changed || members.length !== this.layout.members.length) {
+      this.layout = { ...this.layout, members, sessions: gc.sessions }
       this.deps.saveLayout(this.layout)
     }
 

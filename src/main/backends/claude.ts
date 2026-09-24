@@ -12,7 +12,6 @@ import type {
   SessionRow
 } from '@shared/types'
 import type { SessionEvent } from '@shared/sessionEvent'
-import { identityOf } from '@shared/sessionBackend'
 import { formatRemoteKey, hostOf, isAbsoluteOnHost } from '@shared/remoteKey'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import type { SessionBackend } from '../sessionBackends'
@@ -114,9 +113,7 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   async historyRows(workspacePath: string): Promise<SessionRow[]> {
-    return (this.d.workspaces()?.historyRows(workspacePath) ?? []).filter(
-      (r) => identityOf(r.id).backendId === 'claude'
-    )
+    return this.d.workspaces()?.historyRows(workspacePath) ?? []
   }
 
   hasTab(tabId: string): boolean {
