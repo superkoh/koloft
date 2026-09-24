@@ -476,6 +476,43 @@ describe('WorkspaceManager: per-session Workbench state (T-AGG-09②, T-AUX-02/0
     expect(layout.sessions.s1).toEqual({ open: false, tabs: [] })
   })
 
+  it('keeps a Codex session’s panel state through rescans while Codex counts it, and drops it once Codex lets it go', async () => {
+    const key = 'codex:local:thread-1'
+    const members = new Set([key])
+    mgr.dispose()
+    mgr = new WorkspaceManager({
+      projectsRoot,
+      remoteProjectsRoot: (host: string) => path.join(root, 'remote', host, 'projects'),
+      loadLayout: () => layout,
+      saveLayout: (l) => {
+        layout = l
+      },
+      projectInfo: projectInfoFor,
+      runningBindings: () => bindings,
+      killTab: () => {},
+      pushRows: (p) => pushed.push(p),
+      additionalMembers: () => members
+    })
+    mgr.start()
+    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+    const state: SessionWorkbenchState = {
+      open: true,
+      tabs: [{ kind: 'web', title: 'app', url: 'http://localhost:5173/' }]
+    }
+    mgr.setWorkbenchState(key, state)
+
+    const before = pushed.length
+    mgr.onRemoteChanged()
+    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(before))
+    expect(mgr.workbenchState(key)).toEqual(state)
+
+    members.delete(key)
+    const later = pushed.length
+    mgr.onRemoteChanged()
+    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(later))
+    expect(mgr.workbenchState(key)).toEqual(SEEDED)
+  })
+
   it('drops a write for a session that has left the working set (the row stays gone)', () => {
     bindAsRunning('s1')
     mgr.setWorkbenchState('s1', {

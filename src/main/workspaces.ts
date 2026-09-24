@@ -40,6 +40,7 @@ import {
 import { encodeCwd } from './sessionTracker'
 import { isGitCheckout } from './projectInfo'
 import { isRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
+import { identityOf } from '@shared/sessionBackend'
 import type { RemoteGitInfo } from './remote/install'
 
 const RESCAN_DEBOUNCE_MS = 250
@@ -239,8 +240,15 @@ export class WorkspaceManager {
     return this.bucketDirById.get(sessionId)
   }
 
+  private ownedClaudeIds(): string[] {
+    return Object.keys(this.layout.sessions).filter((k) => identityOf(k).backendId === 'claude')
+  }
+
   isMember(sessionId: string): boolean {
-    return !!this.layout.sessions[sessionId] || !!this.deps.additionalMembers?.().has(sessionId)
+    return (
+      (!!this.layout.sessions[sessionId] && identityOf(sessionId).backendId === 'claude') ||
+      !!this.deps.additionalMembers?.().has(sessionId)
+    )
   }
 
   pinnedPaths(): { path: string; missing: boolean }[] {
@@ -363,7 +371,7 @@ export class WorkspaceManager {
   }
 
   setWorkbenchState(sessionId: string, state: SessionWorkbenchState): void {
-    if (!this.layout.sessions[sessionId]) return
+    if (!this.isMember(sessionId)) return
     this.layout = { ...this.layout, sessions: withWorkbenchState(this.layout, sessionId, state) }
     this.saveSoon()
   }
@@ -599,10 +607,7 @@ export class WorkspaceManager {
       }
       allRowsByWs.set(ws.path, allRows)
       for (const r of allRows) wsBySession.set(r.id, ws.path)
-      const owned = new Set([
-        ...Object.keys(this.layout.sessions),
-        ...(this.deps.additionalMembers?.() ?? [])
-      ])
+      const owned = new Set([...this.ownedClaudeIds(), ...(this.deps.additionalMembers?.() ?? [])])
       const rows = filterOwned(allRows, owned, wsRunningIds)
       for (const b of buckets) {
         bucketDirs.push(b.dir)
@@ -648,6 +653,7 @@ export class WorkspaceManager {
     for (const t of this.remoteTargets()) {
       for (const id of this.deps.remoteRunning?.(t.host) ?? []) liveIds.add(id)
     }
+    for (const key of this.deps.additionalMembers?.() ?? []) liveIds.add(key)
     const gc = gcSessions(this.layout.sessions, liveIds)
     if (gc.changed) {
       this.layout = { ...this.layout, sessions: gc.sessions }

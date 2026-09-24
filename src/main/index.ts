@@ -27,7 +27,7 @@ import { SessionTracker, readAppendedLines, sessionEventFromHook } from './sessi
 import type { StatusEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
 import { SessionBackends } from './sessionBackends'
-import { BACKEND_LABEL, identityOf } from '@shared/sessionBackend'
+import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { AttentionTracker, type AttentionContext } from './attention'
 import { route, dockBadgeText } from './notifyRouter'
 import { registeredByTabRoot, setupShim, UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE } from './shim'
@@ -2877,13 +2877,10 @@ function registerIpc(): void {
       freshness?.pull(p, expect) ?? { ok: false, reason: 'state changed' }
   )
   ipcMain.handle('workbench:get', (_e, sessionId: string) =>
-    identityOf(sessionId).backendId === 'codex'
-      ? { open: false, tabs: [] }
-      : workspaceMgr?.workbenchState(sessionId)
+    workspaceMgr?.workbenchState(sessionId)
   )
   ipcMain.on('workbench:setState', (_e, sessionId: string, state: SessionWorkbenchState) => {
     if (typeof sessionId !== 'string' || !sessionId) return
-    if (identityOf(sessionId).backendId === 'codex') return
     if (!state || typeof state !== 'object' || !Array.isArray(state.tabs)) return
     if (!workspaceMgr) return
     workspaceMgr.setWorkbenchState(
