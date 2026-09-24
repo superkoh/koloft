@@ -362,6 +362,7 @@ const api: KoloftApi = {
     probe: () => ipcRenderer.invoke('accounts:probe'),
     startLogin: (name, reauth) => ipcRenderer.invoke('accounts:start-login', name, reauth),
     cancelLogin: () => ipcRenderer.send('accounts:cancel-login'),
+    codexSignIn: (name, again) => ipcRenderer.invoke('accounts:codex-sign-in', name, again),
     onLoginProgress: (cb) => {
       const handler = (_e: unknown, p: LoginProgress): void => cb(p)
       ipcRenderer.on('accounts:login-progress', handler)

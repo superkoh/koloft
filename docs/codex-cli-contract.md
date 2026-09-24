@@ -432,3 +432,43 @@ Only `high` was tried; that `low`, `medium`, `xhigh` and `max` reach the wire th
 way is **inferred, not checked** (`~/.codex/models_cache.json` lists them, plus
 `ultra`, as `supported_reasoning_levels` for `gpt-6-astra`). Codex has no flag that
 names the session, so a scheduled Codex run gets its title from Codex itself.
+
+## 15. One login per CODEX_HOME, and its rate limits
+
+**Checked on 2026-09-24 with standalone Codex CLI 0.153.4 (`codex-cli 0.153.4`), no model
+turn.** A Node script ran `codex app-server` on stdio twice, each time with its own
+temporary `CODEX_HOME`: one empty, one holding only a copy of this Mac's `auth.json`
+(a ChatGPT Pro login; deleted after the run) and a `config.toml` turning off apps and
+plugins. Each run sent `initialize`, `initialized`, `account/read` and
+`account/rateLimits/read`. Email and account ids were redacted before anything was saved.
+
+- Empty home: `account/read` answered `{account: null, requiresOpenaiAuth: true}`;
+  `account/rateLimits/read` answered error `-32600`, "codex account authentication
+  required to read rate limits". `codex login status` printed "Not logged in" and exited 1.
+- Home with the login: `account/read` answered `{account: {type: "chatgpt", email, planType:
+  "pro"}, requiresOpenaiAuth: true}`; `codex login status` exited 0. `rateLimits` held
+  `limitId: "codex"`, `primary: {usedPercent: 85, windowDurationMins: 10080, resetsAt:
+  <epoch seconds>}`, `secondary: null`, `credits`, `planType: "pro"` and
+  `rateLimitReachedType: null`. So this plan showed **one weekly window and no 5-hour
+  window**; Koloft labels each window from `windowDurationMins`, never by position.
+  `rateLimitsByLimitId` also held a second bucket, `base_model_inference` ("gpt-reserve",
+  0%), which Koloft does not show.
+- Section 12's live turn also sent `account/rateLimits/updated` notifications with the
+  same `rateLimits` shape while the turn ran.
+- Just starting an app-server wrote `state_5.sqlite`, `logs_2.sqlite`, `goals_1.sqlite`,
+  `memories_1.sqlite`, `queue_1.sqlite`, `installation_id`, `skills` and `tmp` into the
+  empty home: each home keeps its own state. Section 12's thread `path` lay under
+  `<CODEX_HOME>/sessions/…`, so a session lives in the home it was started in, and only
+  an app-server on that home can list, read or resume it.
+
+**A shared config.toml.** Same day and version, no model: a home whose `config.toml` was
+a symbolic link to a file elsewhere answered `config/read` with the model set in that
+file. In the real TUI (Python PTY, section 11's setup) in a folder with no trust table,
+pressing Enter on "Yes, continue" wrote the folder's trust table **into the linked file**
+and left `config.toml` a link. So linked homes share settings and folder trust.
+
+Not tried, because they need a second real login or would open a browser on this Mac:
+- that `codex login` with `CODEX_HOME` set signs in only that home and exits 0 once
+  done (Koloft closes the sign-in terminal on exit 0) — **inferred, not checked**;
+- that two homes with two different logins each use their own login, so moving new
+  sessions between homes spreads use across the two accounts — **inferred, not checked**.

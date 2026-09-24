@@ -4,8 +4,8 @@ export interface ProjectInfo {
   worktreeName?: string
 }
 
-// CC§7
-export type AccountKind = 'oauth' | 'apikey' | 'custom'
+// CC§7 CODEX§15
+export type AccountKind = 'oauth' | 'apikey' | 'custom' | 'codex-home'
 
 export type AccountStatus = 'ok' | 'expired' | 'unverified'
 
@@ -25,6 +25,7 @@ export function keychainService(appName: string, kind: AccountKind): string {
 
 export function keychainServiceSuffix(kind: AccountKind): string {
   if (kind === 'oauth') return '-claude-oauth'
+  if (kind === 'codex-home') return '-codex-home'
   return kind === 'apikey' ? '-anthropic-api' : '-custom-endpoint'
 }
 
@@ -59,7 +60,8 @@ export function sanitizeAccountList(raw: unknown): AccountMeta[] {
   const seen = new Set<string>()
   for (const a of raw as Partial<AccountMeta>[]) {
     if (!a || typeof a.name !== 'string' || !ACCOUNT_NAME_RE.test(a.name)) continue
-    if (a.kind !== 'oauth' && a.kind !== 'apikey' && a.kind !== 'custom') continue
+    if (a.kind !== 'oauth' && a.kind !== 'apikey' && a.kind !== 'custom' && a.kind !== 'codex-home')
+      continue
     if (a.kind === 'custom' && !isHttpUrl(a.baseUrl)) continue
     const key = `${a.kind}:${a.name.toLowerCase()}`
     if (seen.has(key)) continue
@@ -107,10 +109,27 @@ export interface UsageSnapshot {
   at: number
 }
 
+// CODEX§15
+export interface CodexLimitWindow {
+  minutes: number
+  used: number
+  resetsAt: number
+}
+
+export interface CodexLimits {
+  windows: CodexLimitWindow[]
+  at: number
+}
+
 export interface AccountView extends AccountMeta {
   usage?: UsageSnapshot
+  limits?: CodexLimits
   probeError?: ProbeErrorKind
 }
+
+export type CodexSignInResult =
+  | { ok: true; tabId: string; cwd: string }
+  | { ok: false; error: 'invalid-name' | 'duplicate' | 'unavailable' }
 
 export interface LoginProgress {
   phase: 'starting' | 'browser' | 'saved' | 'failed'
@@ -843,6 +862,8 @@ export interface KoloftApi {
       reauth?: boolean
     ): Promise<'ok' | 'invalid-name' | 'duplicate' | 'unknown'>
     cancelLogin(): void
+    // CODEX§15
+    codexSignIn(name: string, again?: boolean): Promise<CodexSignInResult>
     onLoginProgress(cb: (p: LoginProgress) => void): () => void
     onUpdate(cb: (accounts: AccountView[]) => void): () => void
   }

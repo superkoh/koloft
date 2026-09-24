@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type JSX } from 'react'
 import { LuGlobe, LuPlus, LuRefreshCw, LuX } from 'react-icons/lu'
 import type { AccountKind, AccountView } from '@shared/types'
 import { useStore } from '../../store'
+import { windowLabel } from '@shared/accountUsage'
 import { Meter, ageLabel, probeErrorLabel, resetLabel } from '../accountMeter'
 import { Switch } from './Switch'
 import { useEscConsumer } from './escScope'
@@ -22,6 +23,9 @@ export function AccountsPane(): JSX.Element {
   const [adding, setAdding] = useState<AccountKind | null>(null)
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
   const [refresh, setRefresh] = useState<'idle' | 'busy' | 'done'>('idle')
+  const [codexSignIn, setCodexSignIn] = useState<{ again?: string } | null>(null)
+  const claudeAccounts = accounts.filter((a) => a.kind !== 'codex-home')
+  const codexAccounts = accounts.filter((a) => a.kind === 'codex-home')
 
   useEffect(() => {
     let alive = true
@@ -48,6 +52,37 @@ export function AccountsPane(): JSX.Element {
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
   }, [confirmDel])
+
+  const row = (a: AccountView): JSX.Element => {
+    const key = `${a.kind}:${a.name}`
+    return (
+      <AccountRow
+        key={key}
+        account={a}
+        disabled={!multiAccount}
+        confirming={confirmDel === key}
+        onToggle={(en) => {
+          setAccounts((cur) =>
+            cur.map((x) => (x.kind === a.kind && x.name === a.name ? { ...x, enabled: en } : x))
+          )
+          void window.api.accounts.toggle(a.name, a.kind, en)
+        }}
+        onAskRemove={() => setConfirmDel(key)}
+        onCancelRemove={() => setConfirmDel(null)}
+        onRemove={() => {
+          setConfirmDel(null)
+          void window.api.accounts.remove(a.name, a.kind)
+        }}
+        onRelogin={
+          a.kind === 'oauth'
+            ? () => beginLogin(a.name)
+            : a.kind === 'codex-home'
+              ? () => setCodexSignIn({ again: a.name })
+              : undefined
+        }
+      />
+    )
+  }
 
   const runRefresh = async (): Promise<void> => {
     setRefresh('busy')
@@ -107,40 +142,13 @@ export function AccountsPane(): JSX.Element {
       </div>
 
       <div className={'acct-section' + (multiAccount ? '' : ' disabled')}>
-        {accounts.length === 0 ? (
+        {claudeAccounts.length === 0 ? (
           <div className="acct-empty">
             No accounts yet — add one below. With the switch on but the pool empty, claude falls
             back to your system login.
           </div>
         ) : (
-          <div className="acct-list">
-            {accounts.map((a) => {
-              const key = `${a.kind}:${a.name}`
-              return (
-                <AccountRow
-                  key={key}
-                  account={a}
-                  disabled={!multiAccount}
-                  confirming={confirmDel === key}
-                  onToggle={(en) => {
-                    setAccounts((cur) =>
-                      cur.map((x) =>
-                        x.kind === a.kind && x.name === a.name ? { ...x, enabled: en } : x
-                      )
-                    )
-                    void window.api.accounts.toggle(a.name, a.kind, en)
-                  }}
-                  onAskRemove={() => setConfirmDel(key)}
-                  onCancelRemove={() => setConfirmDel(null)}
-                  onRemove={() => {
-                    setConfirmDel(null)
-                    void window.api.accounts.remove(a.name, a.kind)
-                  }}
-                  onRelogin={a.kind === 'oauth' ? () => beginLogin(a.name) : undefined}
-                />
-              )
-            })}
-          </div>
+          <div className="acct-list">{claudeAccounts.map(row)}</div>
         )}
 
         <div className="acct-foot">
@@ -173,11 +181,29 @@ export function AccountsPane(): JSX.Element {
       </div>
 
       <div className="set-grp">Codex</div>
-      <div className="set-row">
-        <div className="set-lab">
-          <small>Codex uses its own login on this Mac. Turn it on in Settings ▸ Sessions.</small>
+      <div className={'acct-section' + (multiAccount ? '' : ' disabled')}>
+        {codexAccounts.length === 0 ? (
+          <div className="acct-empty">
+            No Codex accounts yet — with none, Codex uses its own login on this Mac. Each account
+            here is its own Codex sign-in, and every new Codex session picks the least-used one.
+          </div>
+        ) : (
+          <div className="acct-list">{codexAccounts.map(row)}</div>
+        )}
+        <div className="acct-foot">
+          <button
+            className="mini"
+            disabled={!multiAccount}
+            onClick={() => setCodexSignIn({})}
+            title="Runs codex login in a terminal tab for a new Codex account"
+          >
+            <LuGlobe size={14} /> Sign in to Codex
+          </button>
         </div>
       </div>
+      {codexSignIn && (
+        <CodexSignInDialog again={codexSignIn.again} onClose={() => setCodexSignIn(null)} />
+      )}
       {adding && <AddAccountDialog kind={adding} onClose={() => setAdding(null)} />}
       {login && <LoginDialog />}
     </>
@@ -321,6 +347,72 @@ function LoginDialog(): JSX.Element | null {
   )
 }
 
+// CODEX§15
+function CodexSignInDialog({ again, onClose }: { again?: string; onClose(): void }): JSX.Element {
+  const addTab = useStore((s) => s.addTab)
+  const setSettingsOpen = useStore((s) => s.setSettingsOpen)
+  const [name, setName] = useState(again ?? '')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const start = async (): Promise<void> => {
+    setBusy(true)
+    setError(null)
+    const nm = name.trim()
+    const r = await window.api.accounts.codexSignIn(nm, !!again)
+    setBusy(false)
+    if (!r.ok) {
+      setError(
+        r.error === 'invalid-name'
+          ? 'Invalid name: [A-Za-z0-9._-] only, 32 characters max'
+          : r.error === 'duplicate'
+            ? 'A Codex account already has that name'
+            : 'Codex is not available on this Mac'
+      )
+      return
+    }
+    addTab({
+      id: r.tabId,
+      kind: 'shell',
+      host: 'local',
+      title: `Codex sign in: ${nm}`,
+      cwd: r.cwd,
+      alive: true
+    })
+    setSettingsOpen(false)
+    onClose()
+  }
+
+  return (
+    <div className="acct-add">
+      <div className="acct-add-title">{again ? `Sign in again ${again}` : 'Sign in to Codex'}</div>
+      <input
+        type="text"
+        placeholder="Name this account (e.g. work)"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        spellCheck={false}
+        autoFocus={!again}
+        readOnly={!!again}
+      />
+      {error && <div className="acct-add-err">{error}</div>}
+      <div className="acct-add-actions">
+        <button className="mini" onClick={onClose} disabled={busy}>
+          Cancel
+        </button>
+        <button className="mini" onClick={() => void start()} disabled={busy || !name.trim()}>
+          Sign in
+        </button>
+      </div>
+      <span className="field-hint">
+        Koloft opens a terminal tab that runs <code>codex login</code> for this account only. Finish
+        the sign-in there; the tab closes itself when it is done and the account joins the pool.
+        Your Codex settings and trusted folders are shared by every account.
+      </span>
+    </div>
+  )
+}
+
 function AccountRow({
   account: a,
   disabled,
@@ -342,7 +434,8 @@ function AccountRow({
 }): JSX.Element {
   const u = a.usage
   const now = Date.now()
-  const stale = u ? ageLabel(u.at, now) : null
+  const measuredAt = u?.at ?? a.limits?.at
+  const stale = measuredAt !== undefined ? ageLabel(measuredAt, now) : null
   const needsAuth = a.status === 'expired' || a.status === 'unverified'
   return (
     <div className={'acct-row' + (a.enabled ? '' : ' off') + (confirming ? ' confirming' : '')}>
@@ -389,7 +482,16 @@ function AccountRow({
       {confirming && (
         <div className="acct-confirm">
           <span>
-            Delete <b>{a.name}</b> and remove its Keychain credential?
+            {a.kind === 'codex-home' ? (
+              <>
+                Delete <b>{a.name}</b>? Its sign-in folder stays on disk, so its sessions stay in
+                your history.
+              </>
+            ) : (
+              <>
+                Delete <b>{a.name}</b> and remove its Keychain credential?
+              </>
+            )}
           </span>
           <button className="mini danger" onClick={onRemove}>
             Delete
@@ -399,7 +501,32 @@ function AccountRow({
           </button>
         </div>
       )}
-      {a.kind === 'custom' ? (
+      {a.kind === 'codex-home' ? (
+        <div className="acct-meters">
+          {a.status !== 'ok' ? (
+            <span className="acct-note">Not signed in — use Sign in again</span>
+          ) : a.limits && a.limits.windows.length > 0 ? (
+            a.limits.windows.map((w) => (
+              <Meter
+                key={w.minutes}
+                label={windowLabel(w.minutes)}
+                v={w.used}
+                win={windowLabel(w.minutes)}
+              />
+            ))
+          ) : (
+            <span className="acct-note">
+              {a.probeError ? probeErrorLabel(a.probeError) : 'Not probed yet'}
+            </span>
+          )}
+          {a.status === 'ok' && a.limits?.windows[0]?.resetsAt ? (
+            <span className="acct-note">
+              {windowLabel(a.limits.windows[0].minutes)} resets{' '}
+              {resetLabel(a.limits.windows[0].resetsAt, now)}
+            </span>
+          ) : null}
+        </div>
+      ) : a.kind === 'custom' ? (
         <div className="acct-meters">
           <span className="acct-note">
             {a.baseUrl}

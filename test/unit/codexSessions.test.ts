@@ -12,12 +12,16 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   request: vi.fn(),
   close: vi.fn(),
-  runtime: vi.fn()
+  runtime: vi.fn(),
+  rpcHomes: [] as (string | undefined)[]
 }))
 vi.mock('../../src/main/codexRuntime', () => ({ resolveCodexRuntime: mocks.runtime }))
 vi.mock('../../src/main/codexTransport', () => ({
   createCodexTransport: mocks.create,
   CodexRpc: class {
+    constructor(options: { env?: NodeJS.ProcessEnv }) {
+      mocks.rpcHomes.push(options.env?.CODEX_HOME)
+    }
     request = mocks.request
     close = mocks.close
   }
@@ -72,6 +76,7 @@ beforeEach(() => {
   fs.mkdirSync(repo)
   fs.mkdirSync(other)
   transports = []
+  mocks.rpcHomes.length = 0
   mocks.create.mockImplementation(async (options: CodexTransportOptions) => {
     const stop = vi.fn(async () => {})
     transports.push({ options, stop })
@@ -99,7 +104,9 @@ beforeEach(() => {
     error: vi.fn(),
     trustFolder: vi.fn(),
     agentOpen: vi.fn(),
-    bound: vi.fn()
+    bound: vi.fn(),
+    pickHome: vi.fn(() => undefined),
+    homes: vi.fn(() => [])
   }
   sessions = new CodexSessions(path.join(directory, 'sessions.json'), deps)
   vi.spyOn(sessions, 'availability').mockResolvedValue({ id: 'codex', available: true })
@@ -223,6 +230,48 @@ describe('CodexSessions', () => {
     await sessions.stop(launched.id)
     expect(sessions.hasTab(launched.id)).toBe(false)
     expect(sessions.members().has(codexSessionKey(A))).toBe(true)
+  })
+
+  // CODEX§15
+  it('a new launch runs in the account home the picker chose, and a resume goes back to the home its session lives in', async () => {
+    vi.mocked(deps.pickHome).mockReturnValue({ account: 'work', home: '/homes/work' })
+    const first = await sessions.launch({ kind: 'codex', cwd: repo })
+    expect(transports[0].options.env?.CODEX_HOME).toBe('/homes/work')
+    expect(vi.mocked(deps.pty.create).mock.calls[0][0].processEnv?.CODEX_HOME).toBe('/homes/work')
+    bind()
+    expect(sessions.store.getMember(codexSessionKey(A))?.codexHome).toBe('/homes/work')
+    expect(sessions.list()[0].pickedAccount).toBe('work')
+    await sessions.stop(first.id)
+
+    vi.mocked(deps.pickHome).mockReturnValue({ account: 'home', home: '/homes/home' })
+    await sessions.resume({ sessionId: codexSessionKey(A), cwd: repo })
+    expect(transports[1].options.env?.CODEX_HOME).toBe('/homes/work')
+    mocks.request.mockResolvedValue({ thread: { id: A, cwd: repo, path: null } })
+    mocks.rpcHomes.length = 0
+    await sessions.transcriptExists(codexSessionKey(A))
+    expect(mocks.rpcHomes).toEqual(['/homes/work'])
+  })
+
+  // CODEX§15
+  it('lists history from the default home and every account home, and resumes a thread in the home it was found in', async () => {
+    vi.mocked(deps.homes).mockReturnValue(['/homes/work'])
+    mocks.request.mockImplementation(async (_method, params) =>
+      params.archived
+        ? { data: [] }
+        : {
+            data: [
+              mocks.rpcHomes.at(-1) === '/homes/work' ? { id: B, cwd: repo } : { id: A, cwd: repo }
+            ]
+          }
+    )
+    const rows = await sessions.historyRows(repo)
+    expect(rows.map((row) => row.id).sort()).toEqual(
+      [codexSessionKey(A), codexSessionKey(B)].sort()
+    )
+    expect(mocks.rpcHomes).toEqual([undefined, '/homes/work'])
+    await sessions.resume({ sessionId: codexSessionKey(B), cwd: repo })
+    expect(transports[0].options.env?.CODEX_HOME).toBe('/homes/work')
+    expect(deps.pickHome).not.toHaveBeenCalled()
   })
 
   it('waits for an in-flight stop before restarting and prevents duplicate resume', async () => {

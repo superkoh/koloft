@@ -81,6 +81,8 @@ export interface CodexSessionDeps {
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
   agentOpen(tabId: string, target: string): void
   bound(tabId: string, key: string): void
+  pickHome(): { account: string; home: string } | undefined
+  homes(): string[]
 }
 
 interface RowScope {
@@ -99,11 +101,14 @@ interface Run {
   stopping?: Promise<void>
   explicitStop: boolean
   resumeKey?: string
+  home?: string
+  account?: string
 }
 
 export class CodexSessions {
   private runs = new Map<string, Run>()
   private history = new Map<string, CodexThread>()
+  private threadHomes = new Map<string, string>()
   private archivedIds = new Set<string>()
   private binary?: string
   private processEnv?: NodeJS.ProcessEnv
@@ -192,6 +197,33 @@ export class CodexSessions {
 
   get defaultEnv(): NodeJS.ProcessEnv | undefined {
     return this.processEnv
+  }
+
+  get cliBinary(): string | undefined {
+    return this.binary
+  }
+
+  // CODEX§15
+  private envFor(home: string | undefined): NodeJS.ProcessEnv | undefined {
+    return home ? { ...this.processEnv, CODEX_HOME: home } : this.processEnv
+  }
+
+  private homeFor(key: string): string | undefined {
+    return this.store.getMember(key)?.codexHome ?? this.threadHomes.get(key)
+  }
+
+  // CODEX§15
+  async readAccount(home: string): Promise<{ signedIn: boolean; limits?: unknown }> {
+    if (!this.binary && !(await this.availability()).available)
+      throw new Error('Codex CLI is unavailable.')
+    const rpc = new CodexRpc({ binary: this.binary!, env: this.envFor(home), cwd: os.homedir() })
+    try {
+      const account = record(await rpc.request('account/read', {}))
+      if (!account.account) return { signedIn: false }
+      return { signedIn: true, limits: await rpc.request('account/rateLimits/read', {}) }
+    } finally {
+      await rpc.close()
+    }
   }
 
   hasRuns(): boolean {
@@ -341,47 +373,60 @@ export class CodexSessions {
       }
     }
     if (this.shuttingDown) return
-    const rpc = new CodexRpc({ binary: this.binary!, env: this.processEnv, cwd: os.homedir() })
+    const seen = new Map<string, CodexThread>()
+    const homes = new Map<string, string>()
+    const archivedIds = new Set<string>()
     try {
-      const seen = new Map<string, CodexThread>()
-      const archivedIds = new Set<string>()
-      for (const archived of [false, true]) {
-        let cursor: string | undefined
-        const cursors = new Set<string>()
-        do {
-          const reply = record(
-            await rpc.request('thread/list', {
-              limit: 100,
-              cursor,
-              archived,
-              sourceKinds: ['cli', 'vscode', 'appServer']
-            })
-          )
-          if (!Array.isArray(reply.data))
-            throw new Error('Codex history returned an unsupported response.')
-          for (const value of reply.data) {
-            const t = userThread(value)
-            if (t) {
-              const key = codexSessionKey(t.id)
-              seen.set(key, t)
-              if (archived) archivedIds.add(key)
-            }
+      for (const home of [undefined, ...this.deps.homes()]) {
+        const rpc = new CodexRpc({
+          binary: this.binary!,
+          env: this.envFor(home),
+          cwd: os.homedir()
+        })
+        try {
+          for (const archived of [false, true]) {
+            let cursor: string | undefined
+            const cursors = new Set<string>()
+            do {
+              const reply = record(
+                await rpc.request('thread/list', {
+                  limit: 100,
+                  cursor,
+                  archived,
+                  sourceKinds: ['cli', 'vscode', 'appServer']
+                })
+              )
+              if (!Array.isArray(reply.data))
+                throw new Error('Codex history returned an unsupported response.')
+              for (const value of reply.data) {
+                const t = userThread(value)
+                if (t) {
+                  const key = codexSessionKey(t.id)
+                  seen.set(key, t)
+                  if (home) homes.set(key, home)
+                  if (archived) archivedIds.add(key)
+                }
+              }
+              cursor =
+                typeof reply.nextCursor === 'string' && reply.nextCursor
+                  ? reply.nextCursor
+                  : undefined
+              if (cursor && cursors.has(cursor)) throw new Error('Codex history repeated a page.')
+              if (cursor) cursors.add(cursor)
+            } while (cursor)
           }
-          cursor =
-            typeof reply.nextCursor === 'string' && reply.nextCursor ? reply.nextCursor : undefined
-          if (cursor && cursors.has(cursor)) throw new Error('Codex history repeated a page.')
-          if (cursor) cursors.add(cursor)
-        } while (cursor)
+        } finally {
+          await rpc.close()
+        }
       }
       this.history = seen
+      this.threadHomes = homes
       this.archivedIds = archivedIds
       this.historyError = undefined
       this.deps.changed()
     } catch (error) {
       if (binaryGone(error)) this.forgetProbe()
       this.historyError = error instanceof Error ? error : new Error(String(error))
-    } finally {
-      await rpc.close()
     }
   }
 
@@ -398,7 +443,11 @@ export class CodexSessions {
     if (this.archivedIds.has(key)) return false
     if (!this.binary && !(await this.availability()).available)
       throw new Error('Codex CLI is unavailable.')
-    const rpc = new CodexRpc({ binary: this.binary!, env: this.processEnv, cwd: os.homedir() })
+    const rpc = new CodexRpc({
+      binary: this.binary!,
+      env: this.envFor(this.homeFor(key)),
+      cwd: os.homedir()
+    })
     try {
       const reply = record(await rpc.request('thread/read', { threadId: id, includeTurns: false }))
       const t = userThread(reply.thread)
@@ -506,6 +555,9 @@ export class CodexSessions {
       resource = await this.worktrees.adopt(workspace, this.deps.projectInfo(cwd).treeRoot)
     }
     this.assertStarting()
+    const picked = opts.resumeSessionId ? undefined : this.deps.pickHome()
+    const home = opts.resumeSessionId ? this.homeFor(opts.resumeSessionId) : picked?.home
+    const env = this.envFor(home)
     let run: Run | undefined
     const observe = (event: CodexEvent): void => {
       if (event.type !== 'bound') {
@@ -519,7 +571,7 @@ export class CodexSessions {
     const observer = new CodexObservation(observe)
     const transport = await this.startTransport({
       binary,
-      env: processEnv,
+      env,
       cwd,
       configOverrides: [STATUS_LINE_CONFIG],
       onFrame: (direction, frame) => observer.receive(direction, frame),
@@ -550,7 +602,7 @@ export class CodexSessions {
         rows: opts.rows,
         executable: binary,
         argv,
-        processEnv,
+        processEnv: env,
         resumeSessionId: opts.resumeSessionId
       })
       run = {
@@ -561,7 +613,9 @@ export class CodexSessions {
         observer,
         transport,
         explicitStop: false,
-        resumeKey: opts.resumeSessionId
+        resumeKey: opts.resumeSessionId,
+        home,
+        account: picked?.account
       }
       this.runs.set(handle.id, run)
       this.deps.changed()
@@ -633,7 +687,8 @@ export class CodexSessions {
         title: thread.name || thread.preview?.slice(0, 100) || m?.title || 'Codex session',
         createdAt: m?.createdAt ?? (thread.createdAt ? thread.createdAt * 1000 : now),
         updatedAt: now,
-        worktreeResourceId: run.resource?.id
+        worktreeResourceId: run.resource?.id,
+        ...(run.home ? { codexHome: run.home } : {})
       })
       if (
         change === 'replace' &&
@@ -661,9 +716,11 @@ export class CodexSessions {
       alive: true,
       details: { codex: { observation: 'live' } },
       cliVersion: thread.cliVersion,
+      ...(run.account ? { pickedAccount: run.account } : {}),
       updatedAt: now
     }
     this.history.set(key, { ...thread, cwd: run.cwd })
+    if (run.home) this.threadHomes.set(key, run.home)
     this.deps.pty.clearResumeIntent(run.tabId)
     this.deps.changed()
     this.deps.bound(run.tabId, key)

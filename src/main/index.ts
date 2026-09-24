@@ -122,6 +122,14 @@ import { dirExistsSync, gitProbes, occupantName, type ResumeProbes } from './res
 import { ClaudeBackend, POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE } from './backends/claude'
 import { codexBackend } from './backends/codex'
 import { acceptCodexTrust, codexConfigFile, codexTrustsFolder } from './codexTrust'
+import {
+  CodexAccountPicker,
+  codexHomeOf,
+  codexHomes,
+  limitsFrom,
+  prepareCodexHome
+} from './codexAccounts'
+import { shq } from '@shared/shellQuote'
 import { claudeJsonPath, claudeTrustsFolder } from './claudeTrust'
 import { CronRunner, type LaunchRequest } from './cronRunner'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
@@ -195,6 +203,8 @@ import type {
   AccountMeta,
   AccountView,
   BackendId,
+  CodexLimits,
+  CodexSignInResult,
   BrowserAuthChallenge,
   BrowserDialogAnswer,
   BrowserDownload,
@@ -470,7 +480,10 @@ const BOOT_TIME = Date.now()
 let rendererReady = false
 
 // CC§7
-const usageViews = new Map<string, { usage?: UsageSnapshot; probeError?: ProbeErrorKind }>()
+const usageViews = new Map<
+  string,
+  { usage?: UsageSnapshot; limits?: CodexLimits; probeError?: ProbeErrorKind }
+>()
 
 function viewKey(name: string, kind: AccountKind): string {
   return `${kind}:${name.toLowerCase()}`
@@ -711,6 +724,7 @@ function probeAllForPanel(): Promise<AccountView[]> {
     const enabled = listAccounts().filter((a) => a.enabled)
     await Promise.all(
       enabled.map(async (a) => {
+        if (a.kind === 'codex-home') return probeCodexAccount(a.name)
         const secret = await keychainRead(a.kind, a.name)
         if (!secret) return
         const result = await probeAccount(a.kind, secret, {
@@ -769,6 +783,90 @@ async function addAccount(
   pushAccounts()
   const account = accountViews().find((a) => a.kind === kind && a.name === name)
   return result.ok ? { ok: true, account } : { ok: false, error: result.error, account }
+}
+
+const codexPicker = new CodexAccountPicker()
+const codexSignInPtys = new Map<string, string>()
+const CODEX_LIMITS_STALE_MS = 5 * 60_000
+
+function codexSharedConfig(): string {
+  return codexConfigFile(codexSessions?.defaultEnv)
+}
+
+// CODEX§15
+function pickCodexHome(): { account: string; home: string } | undefined {
+  if (!loadSettings().multiAccount) return undefined
+  const views = accountViews()
+  const picked = codexPicker.pick(views)
+  if (!picked) return undefined
+  const stale = views.some(
+    (a) =>
+      a.kind === 'codex-home' &&
+      a.enabled &&
+      (!a.limits || Date.now() - a.limits.at > CODEX_LIMITS_STALE_MS)
+  )
+  if (stale) void probeCodexAccounts()
+  const home = codexHomeOf(app.getPath('userData'), picked.name)
+  prepareCodexHome(home, codexSharedConfig())
+  return { account: picked.name, home }
+}
+
+async function probeCodexAccount(name: string): Promise<void> {
+  const acct = findAccount(name, 'codex-home')
+  if (!acct || !codexSessions) return
+  const key = viewKey(name, 'codex-home')
+  try {
+    const r = await codexSessions.readAccount(codexHomeOf(app.getPath('userData'), name))
+    const status = r.signedIn ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
+    if (status !== acct.status) upsertAccountMeta({ ...acct, status })
+    usageViews.set(key, {
+      limits: (r.signedIn && limitsFrom(r.limits, Date.now())) || usageViews.get(key)?.limits
+    })
+  } catch {
+    usageViews.set(key, { ...usageViews.get(key), probeError: 'network' })
+  }
+  pushAccounts()
+}
+
+function probeCodexAccounts(): Promise<void[]> {
+  return Promise.all(
+    listAccounts()
+      .filter((a) => a.kind === 'codex-home' && a.enabled)
+      .map((a) => probeCodexAccount(a.name))
+  )
+}
+
+async function codexSignIn(name: string, again?: boolean): Promise<CodexSignInResult> {
+  const v = again
+    ? findAccount(name, 'codex-home')
+      ? 'ok'
+      : 'invalid-name'
+    : validateNewAccount(name, 'codex-home')
+  if (v !== 'ok') return { ok: false, error: v }
+  const binary = (await codexSessions?.availability())?.available && codexSessions?.cliBinary
+  if (!binary) return { ok: false, error: 'unavailable' }
+  const home = codexHomeOf(app.getPath('userData'), name)
+  prepareCodexHome(home, codexSharedConfig())
+  const acct = findAccount(name, 'codex-home')
+  upsertAccountMeta({
+    name,
+    kind: 'codex-home',
+    enabled: acct?.enabled ?? true,
+    fable: 'unknown',
+    status: acct?.status ?? 'unverified',
+    addedAt: acct?.addedAt ?? Date.now()
+  })
+  pushAccounts()
+  const cwd = os.homedir()
+  const handle = ptyMgr.create({
+    kind: 'shell',
+    cwd,
+    cols: 100,
+    rows: 30,
+    launchCommand: `CODEX_HOME=${shq(home)} ${shq(binary)} login && exit`
+  })
+  codexSignInPtys.set(handle.id, name)
+  return { ok: true, tabId: handle.id, cwd }
 }
 
 protocol.registerSchemesAsPrivileged([
@@ -1043,6 +1141,11 @@ app.whenReady().then(() => {
   })
   ptyMgr.on('exit', (e) => {
     loginPtys.delete(e.id)
+    const codexAccount = codexSignInPtys.get(e.id)
+    if (codexAccount) {
+      codexSignInPtys.delete(e.id)
+      void probeCodexAccount(codexAccount)
+    }
     if (teardownKilledPtys.delete(e.id)) {
       flowGates.get(e.id)?.reset()
       flowGates.delete(e.id)
@@ -1190,7 +1293,9 @@ app.whenReady().then(() => {
         if (path.isAbsolute(target) && !fs.existsSync(target)) return
         openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target)
       },
-      bound: (tabId, key) => cronRunner?.onBound(tabId, key)
+      bound: (tabId, key) => cronRunner?.onBound(tabId, key),
+      pickHome: pickCodexHome,
+      homes: () => codexHomes(userData)
     })
   } catch (error) {
     codexStartupError = `Codex session data could not be loaded; the original file is preserved. ${String(error)}`
@@ -2501,7 +2606,7 @@ function countRunFoldersSync(root: string, slug: string): number {
 
 function accountUsable(backend: BackendId): boolean {
   if (backend === 'codex' || !loadSettings().multiAccount) return true
-  return listAccounts().some((a) => a.enabled && a.status === 'ok')
+  return listAccounts().some((a) => a.kind !== 'codex-home' && a.enabled && a.status === 'ok')
 }
 
 function backendTrusts(dir: string, backend: BackendId): boolean {
@@ -2819,7 +2924,8 @@ function registerIpc(): void {
     ) => addAccount(name, kind, secret, endpoint)
   )
   ipcMain.handle('accounts:remove', async (_e, name: string, kind: AccountKind) => {
-    await keychainDelete(kind, name)
+    // CODEX§15
+    if (kind !== 'codex-home') await keychainDelete(kind, name)
     removeAccountMeta(name, kind)
     usageViews.delete(viewKey(name, kind))
     picker.forget(kind, name)
@@ -2841,6 +2947,9 @@ function registerIpc(): void {
     startGuidedLogin(name)
     return 'ok'
   })
+  ipcMain.handle('accounts:codex-sign-in', (_e, name: string, again?: boolean) =>
+    codexSignIn(name, again === true)
+  )
   ipcMain.on('accounts:cancel-login', () => {
     for (const id of [...loginWatchers.keys()]) cancelGuidedLogin(id)
   })

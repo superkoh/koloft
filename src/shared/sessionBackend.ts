@@ -67,7 +67,6 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities>> = {
   codex: {
     local: {
       ...EVERYTHING,
-      accounts: PENDING,
       browserControl: PENDING,
       // CODEX§8
       statusline3: { unsupported: 'CODEX§8' }
