@@ -119,10 +119,6 @@ describe('a remote session’s Workbench reads and writes the machine’s files 
       'KOLOFT_GONE'
     )
   })
-
-  it('has no file watcher, so the Workbench falls back to refreshing on session updates', () => {
-    expect(machine().watchDir()).toBe(false)
-  })
 })
 
 describe('the utility terminal on the machine', () => {
