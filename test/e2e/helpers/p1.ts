@@ -281,6 +281,10 @@ export function notesIsland(page: Page): Locator {
   return page.locator('.isl-notes')
 }
 
+export function notesArea(page: Page): Locator {
+  return notesIsland(page).locator('.ed-area')
+}
+
 export function notesPath(env: E2EEnv, wsPath: string): string {
   return path.join(env.userData, 'notes', encodeCwd(wsPath), 'notes.md')
 }

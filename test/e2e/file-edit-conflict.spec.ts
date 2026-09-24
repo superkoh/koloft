@@ -4,7 +4,7 @@ import type { Locator, Page } from '@playwright/test'
 import { startSessionIn } from './helpers/p1'
 import { setupChangeFixture } from './helpers/filesFixture'
 import { seedEditFixture, type EditFixture } from './helpers/editFixture'
-import { showBrowse, workbenchPanel } from './helpers/workbench'
+import { WORKBENCH, browseRow, showBrowse, workbenchPanel } from './helpers/workbench'
 import {
   EDIT,
   closeDiscardingEdits,
@@ -16,10 +16,6 @@ import {
 } from './helpers/editPane'
 
 const MINE = 'KOLOFT_E2E_MINE=1'
-
-function row(page: Page, abs: string, section = 'tree'): Locator {
-  return page.locator(`.wb-panel .bv-sec[data-section="${section}"] .ft-node[data-path="${abs}"]`)
-}
 
 const stale = (page: Page): Locator => page.locator(EDIT.stale)
 const conflict = (page: Page): Locator => page.locator(EDIT.conflict)
@@ -36,15 +32,15 @@ function expectSaveWroteNothing(ed: EditFixture, theirs: string): void {
 
 async function dirtyEditor(page: Page, root: string, ed: EditFixture): Promise<string> {
   await showBrowse(page)
-  await expect(row(page, root)).toBeVisible({ timeout: 30_000 })
-  const dir = row(page, `${root}/config`)
+  await expect(browseRow(page, root)).toBeVisible({ timeout: 30_000 })
+  const dir = browseRow(page, `${root}/config`)
   await expect(dir).toBeVisible({ timeout: 30_000 })
   await dir.click()
-  const file = row(page, ed.config)
+  const file = browseRow(page, ed.config)
   await expect(file).toBeVisible({ timeout: 20_000 })
   await file.click({ button: 'right' })
-  await expect(page.locator(EDIT.ctxMenu)).toBeVisible()
-  await page.locator(EDIT.ctxMenu).getByText('Edit', { exact: true }).click()
+  await expect(page.locator(WORKBENCH.rowMenuOnPage)).toBeVisible()
+  await page.locator(WORKBENCH.rowMenuOnPage).getByText('Edit', { exact: true }).click()
   await editReady(page, 'koloft-e2e-edit-fixture')
   await typeAtEnd(page, MINE)
   await page.keyboard.press('Enter')

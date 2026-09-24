@@ -13,11 +13,7 @@ import {
   waitForCalls,
   wsRows
 } from './helpers/p1'
-import { seedScratchpad, showBrowse } from './helpers/workbench'
-
-function treeRow(page: Page, abs: string, section = 'tree'): Locator {
-  return page.locator(`.wb-panel .bv-sec[data-section="${section}"] .ft-node[data-path="${abs}"]`)
-}
+import { browseRow, seedScratchpad, showBrowse } from './helpers/workbench'
 
 const subLine = (page: Page, wsName: string): Locator =>
   wsRows(page, wsName).first().locator('.ws-tab-sub')
@@ -40,19 +36,19 @@ test.describe('a session follows its worktree when Claude moves it mid-conversat
       const scratch = seedScratchpad(env, call.cwd, call.sessionId)
 
       await showBrowse(page)
-      await expect(treeRow(page, env.workspaces.a)).toBeVisible({ timeout: 60_000 })
+      await expect(browseRow(page, env.workspaces.a)).toBeVisible({ timeout: 60_000 })
       await expect(subLine(page, 'ws-a')).toHaveText('main')
 
       const wtDir = path.join(env.workspaces.a, '.claude', 'worktrees', 'wt269')
       await runIn(page, centerTerm(page), '/enter-worktree wt269')
       await expect(page.locator('.toast')).toContainText('wt269', { timeout: 60_000 })
       await expect(subLine(page, 'ws-a')).toHaveText('wt269', { timeout: 30_000 })
-      await expect(treeRow(page, wtDir)).toBeVisible({ timeout: 60_000 })
-      await expect(treeRow(page, env.workspaces.a)).toHaveCount(0)
+      await expect(browseRow(page, wtDir)).toBeVisible({ timeout: 60_000 })
+      await expect(browseRow(page, env.workspaces.a)).toHaveCount(0)
       expect(
         await page.evaluate((id) => window.api.sessions.transcriptExists(id), call.sessionId)
       ).toBe(true)
-      await expect(treeRow(page, scratch.md, 'scratchpad')).toBeVisible({ timeout: 30_000 })
+      await expect(browseRow(page, scratch.md, 'scratchpad')).toBeVisible({ timeout: 30_000 })
       const menu = await openMenu(page, wsRows(page, 'ws-a').first())
       await expect(menu.locator('.mi', { hasText: 'Reveal in Finder' })).not.toHaveClass(/disabled/)
       await closeMenu(page)
@@ -60,8 +56,8 @@ test.describe('a session follows its worktree when Claude moves it mid-conversat
       // CC§4
       await runIn(page, centerTerm(page), '/exit-worktree')
       await expect(subLine(page, 'ws-a')).toHaveText('main', { timeout: 60_000 })
-      await expect(treeRow(page, env.workspaces.a)).toBeVisible({ timeout: 60_000 })
-      await expect(treeRow(page, wtDir)).toHaveCount(0)
+      await expect(browseRow(page, env.workspaces.a)).toBeVisible({ timeout: 60_000 })
+      await expect(browseRow(page, wtDir)).toHaveCount(0)
     } finally {
       await app.close().catch(() => {})
     }

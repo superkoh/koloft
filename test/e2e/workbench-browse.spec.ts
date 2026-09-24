@@ -8,6 +8,8 @@ import { LINE42_MARKER, seedOutsideDir, setupChangeFixture } from './helpers/fil
 import {
   WORKBENCH,
   activeKind,
+  browseRow,
+  browseSection,
   openInBrowse,
   seedScratchpad,
   showBrowse,
@@ -17,16 +19,8 @@ import {
 } from './helpers/workbench'
 import { guestByUrl, openTabs } from './helpers/browser'
 
-function row(page: Page, abs: string, section = 'tree'): Locator {
-  return page.locator(`.wb-panel .bv-sec[data-section="${section}"] .ft-node[data-path="${abs}"]`)
-}
-
-function section(page: Page, name: string): Locator {
-  return page.locator(`.wb-panel .bv-sec[data-section="${name}"]`)
-}
-
 function fileRows(page: Page, name: string): Locator {
-  return page.locator(`.wb-panel .bv-sec[data-section="${name}"] .ft-node.ft-file`)
+  return browseSection(page, name).locator('.ft-file')
 }
 
 function halfBtn(page: Page, name: 'Changes' | 'Browse'): Locator {
@@ -39,16 +33,16 @@ const searchInput = (page: Page): Locator => page.locator('.wb-panel .ft-search-
 const searchMode = (page: Page, mode: 'name' | 'content'): Locator =>
   page.locator(`.wb-panel .ft-mode-btn[data-mode="${mode}"]`)
 
-const portalledCtxMenu = (page: Page): Locator => page.locator('.ft-ctx[role="menu"]')
-const ctxItems = (page: Page): Locator => page.locator('.ft-ctx .ft-ctx-it')
+const portalledCtxMenu = (page: Page): Locator => page.locator(WORKBENCH.rowMenuOnPage)
+const ctxItems = (page: Page): Locator => page.locator(WORKBENCH.rowMenuItemOnPage)
 
 const readingTitle = (page: Page): Locator => page.locator(WORKBENCH.readingTitle)
 const readingBody = (page: Page): Locator => page.locator(WORKBENCH.readingBody)
 
 async function browseReady(page: Page, root: string): Promise<void> {
   await showBrowse(page)
-  await expect(row(page, root)).toBeVisible({ timeout: 30_000 })
-  await expect(row(page, `${root}/src`)).toBeVisible({ timeout: 30_000 })
+  await expect(browseRow(page, root)).toBeVisible({ timeout: 30_000 })
+  await expect(browseRow(page, `${root}/src`)).toBeVisible({ timeout: 30_000 })
 }
 
 async function expandTo(page: Page, root: string, abs: string): Promise<void> {
@@ -56,7 +50,7 @@ async function expandTo(page: Page, root: string, abs: string): Promise<void> {
   let dir = root
   for (const seg of segs.slice(0, -1)) {
     dir += '/' + seg
-    const r = row(page, dir)
+    const r = browseRow(page, dir)
     await expect(r).toBeVisible({ timeout: 20_000 })
     if (!(await r.getAttribute('class'))?.split(/\s+/).includes('open')) await r.click()
     await expect(r).toHaveClass(/\bopen\b/, { timeout: 20_000 })
@@ -147,28 +141,30 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
 
     const tabsBefore = await wbTabs(page).count()
 
-    await expect(row(page, `${fx.root}/lib`)).toBeVisible()
-    await expect(row(page, `${fx.root}/lib/deep`)).toHaveCount(0)
-    await expect(row(page, fx.paths.deepDir)).toHaveCount(0)
-    await expect(row(page, fx.paths.deepFile)).toHaveCount(0)
+    await expect(browseRow(page, `${fx.root}/lib`)).toBeVisible()
+    await expect(browseRow(page, `${fx.root}/lib/deep`)).toHaveCount(0)
+    await expect(browseRow(page, fx.paths.deepDir)).toHaveCount(0)
+    await expect(browseRow(page, fx.paths.deepFile)).toHaveCount(0)
 
-    await row(page, `${fx.root}/lib`).click()
-    await expect(row(page, `${fx.root}/lib/deep`)).toBeVisible({ timeout: 20_000 })
-    await expect(row(page, fx.paths.deepDir)).toHaveCount(0)
+    await browseRow(page, `${fx.root}/lib`).click()
+    await expect(browseRow(page, `${fx.root}/lib/deep`)).toBeVisible({ timeout: 20_000 })
+    await expect(browseRow(page, fx.paths.deepDir)).toHaveCount(0)
 
-    await row(page, `${fx.root}/lib/deep`).click()
-    await expect(row(page, fx.paths.deepDir)).toBeVisible({ timeout: 20_000 })
-    await row(page, fx.paths.deepDir).click()
-    await expect(row(page, fx.paths.deepFile)).toBeVisible({ timeout: 20_000 })
+    await browseRow(page, `${fx.root}/lib/deep`).click()
+    await expect(browseRow(page, fx.paths.deepDir)).toBeVisible({ timeout: 20_000 })
+    await browseRow(page, fx.paths.deepDir).click()
+    await expect(browseRow(page, fx.paths.deepFile)).toBeVisible({ timeout: 20_000 })
 
     await expect(
-      row(page, fx.paths.ignoredDir),
+      browseRow(page, fx.paths.ignoredDir),
       'hidden by .gitignore (git check-ignore)'
     ).toHaveCount(0)
-    await expect(row(page, fx.paths.heavyDir), 'hidden by fileTree’s HEAVY set').toHaveCount(0)
-    await expect(row(page, `${fx.root}/docs`)).toBeVisible()
+    await expect(browseRow(page, fx.paths.heavyDir), 'hidden by fileTree’s HEAVY set').toHaveCount(
+      0
+    )
+    await expect(browseRow(page, `${fx.root}/docs`)).toBeVisible()
 
-    await row(page, fx.paths.deepFile).click()
+    await browseRow(page, fx.paths.deepFile).click()
     await expect(readingTitle(page)).toHaveText('lib/deep/nested/beacon.ts', { timeout: 25_000 })
     await expect(readingBody(page)).toContainText('beacon_1', { timeout: 25_000 })
     expect(await wbTabs(page).count()).toBe(tabsBefore)
@@ -190,7 +186,7 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
     await searchInput(page).fill('beacon')
     const nameHit = page.locator(`.wb-panel .ft-result[data-path="${fx.paths.deepFile}"]`)
     await expect(nameHit).toBeVisible({ timeout: 20_000 })
-    await expect(section(page, 'tree')).toHaveCount(0)
+    await expect(browseSection(page, 'tree')).toHaveCount(0)
 
     await searchMode(page, 'content').click()
     await searchInput(page).fill(LINE42_MARKER)
@@ -270,41 +266,45 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
 
     await browseReady(page, fx.root)
 
-    await expect(section(page, 'scratchpad')).toBeVisible({ timeout: 30_000 })
-    await expect(section(page, 'scratchpad').locator('.ft-scratchpad')).toContainText('Scratchpad')
-    await expect(section(page, 'outside')).toBeVisible({ timeout: 30_000 })
-    await expect(section(page, 'outside').locator('.ft-external')).toContainText('Outside')
+    await expect(browseSection(page, 'scratchpad')).toBeVisible({ timeout: 30_000 })
+    await expect(browseSection(page, 'scratchpad').locator('.ft-scratchpad')).toContainText(
+      'Scratchpad'
+    )
+    await expect(browseSection(page, 'outside')).toBeVisible({ timeout: 30_000 })
+    await expect(browseSection(page, 'outside').locator('.ft-external')).toContainText('Outside')
 
     for (const p of [scratch.md, scratch.png, scratch.ts, scratchWritten]) {
-      await expect(row(page, p, 'scratchpad')).toBeVisible({ timeout: 30_000 })
+      await expect(browseRow(page, p, 'scratchpad')).toBeVisible({ timeout: 30_000 })
     }
 
     for (const p of [outside.md, outside.html, outside.png, siblingControl]) {
-      await expect(row(page, p, 'outside')).toBeVisible({ timeout: 30_000 })
+      await expect(browseRow(page, p, 'outside')).toBeVisible({ timeout: 30_000 })
     }
-    await expect(row(page, outside.ts, 'outside')).toHaveCount(0)
-    await expect(row(page, scratchWritten, 'outside')).toHaveCount(0)
+    await expect(browseRow(page, outside.ts, 'outside')).toHaveCount(0)
+    await expect(browseRow(page, scratchWritten, 'outside')).toHaveCount(0)
 
-    await row(page, outside.md, 'outside').click({ timeout: 30_000 })
+    await browseRow(page, outside.md, 'outside').click({ timeout: 30_000 })
     await expect(readingBody(page)).toContainText(path.basename(outside.md), { timeout: 30_000 })
 
     // CC§2
-    await expect(page.locator(`.wb-panel .ft-node[data-path="${scratch.tasksDir}"]`)).toHaveCount(0)
-    await expect(page.locator(`.wb-panel .ft-node[data-path="${scratch.tasksFile}"]`)).toHaveCount(
-      0
-    )
     await expect(
-      page.locator(`.wb-panel .ft-node[data-path="${scratch.siblingTasksDir}"]`)
+      page.locator(`${WORKBENCH.browseRows}[data-path="${scratch.tasksDir}"]`)
     ).toHaveCount(0)
     await expect(
-      page.locator(`.wb-panel .ft-node[data-path="${scratch.siblingTasksFile}"]`)
+      page.locator(`${WORKBENCH.browseRows}[data-path="${scratch.tasksFile}"]`)
+    ).toHaveCount(0)
+    await expect(
+      page.locator(`${WORKBENCH.browseRows}[data-path="${scratch.siblingTasksDir}"]`)
+    ).toHaveCount(0)
+    await expect(
+      page.locator(`${WORKBENCH.browseRows}[data-path="${scratch.siblingTasksFile}"]`)
     ).toHaveCount(0)
 
     outside.remove()
     fs.rmSync(controlDir, { recursive: true, force: true })
-    await expect(section(page, 'outside')).toHaveCount(0, { timeout: 40_000 })
+    await expect(browseSection(page, 'outside')).toHaveCount(0, { timeout: 40_000 })
     await expect(page.locator('.wb-panel .ft-external', { hasText: 'Outside' })).toHaveCount(0)
-    await expect(section(page, 'scratchpad')).toBeVisible()
+    await expect(browseSection(page, 'scratchpad')).toBeVisible()
   })
 
   test('WB-B05: a written gitignored file is forced visible, and status / ±N / pulse / dir marks paint', async ({
@@ -326,31 +326,31 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
 
     await browseReady(page, fx.root)
 
-    const forcedDir = row(page, fx.paths.ignoredDir)
+    const forcedDir = browseRow(page, fx.paths.ignoredDir)
     await expect(forcedDir).toBeVisible({ timeout: 30_000 })
     await expect(forcedDir).toHaveAttribute('data-forced', '1')
-    const forcedFile = row(page, ignoredWrite)
+    const forcedFile = browseRow(page, ignoredWrite)
     await expect(forcedFile).toBeVisible()
     await expect(forcedFile).toHaveAttribute('data-forced', '1')
 
     await expandTo(page, fx.root, fx.paths.changeable[0])
-    const changed = row(page, fx.paths.changeable[0])
+    const changed = browseRow(page, fx.paths.changeable[0])
     await expect(changed.locator('.ft-gbadge.git-modified')).toHaveText('M', { timeout: 30_000 })
     await expect(changed.locator('.ft-name')).toHaveClass(/\bgit-modified\b/)
     await expect(changed.locator('.ft-delta .add')).toHaveText('+1')
     await expect(changed.locator('.ft-delta .del')).toHaveText('−1')
 
-    const docsRow = row(page, `${fx.root}/docs`)
+    const docsRow = browseRow(page, `${fx.root}/docs`)
     await expect(docsRow).toHaveClass(/\bhas-changes\b/, { timeout: 30_000 })
     await expect(docsRow.locator('.bv-dot')).toBeVisible()
 
     const pulsing = fx.paths.changeable[1]
     await runIn(page, centerTerm(page), `/write ${fx.rel(pulsing)}`)
-    await expect(row(page, pulsing).locator('.ft-pulse')).toBeVisible({ timeout: 10_000 })
-    await expect(row(page, pulsing)).toHaveClass(/\blive\b/)
+    await expect(browseRow(page, pulsing).locator('.ft-pulse')).toBeVisible({ timeout: 10_000 })
+    await expect(browseRow(page, pulsing)).toHaveClass(/\blive\b/)
 
     await expect(centerTerm(page)).toContainText(`wrote ${fx.rel(pulsing)}`, { timeout: 30_000 })
-    await expect(row(page, `${fx.root}/src`).locator('.ft-dir-agg')).toContainText('●', {
+    await expect(browseRow(page, `${fx.root}/src`).locator('.ft-dir-agg')).toContainText('●', {
       timeout: 30_000
     })
   })
@@ -374,29 +374,29 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
     const keyTo = async (abs: string): Promise<void> => {
       for (let i = 0; i < 60; i++) {
         if (
-          await row(page, abs)
+          await browseRow(page, abs)
             .evaluate((el) => el.classList.contains('kbd-focus'))
             .catch(() => false)
         )
           return
         await page.keyboard.press('ArrowDown')
       }
-      await expect(row(page, abs)).toHaveClass(/\bkbd-focus\b/)
+      await expect(browseRow(page, abs)).toHaveClass(/\bkbd-focus\b/)
     }
 
     await keyTo(`${fx.root}/lib`)
     await page.keyboard.press('ArrowRight')
-    await expect(row(page, `${fx.root}/lib`)).toHaveClass(/\bopen\b/)
-    await expect(row(page, `${fx.root}/lib/deep`)).toBeVisible({ timeout: 20_000 })
+    await expect(browseRow(page, `${fx.root}/lib`)).toHaveClass(/\bopen\b/)
+    await expect(browseRow(page, `${fx.root}/lib/deep`)).toBeVisible({ timeout: 20_000 })
 
     await keyTo(`${fx.root}/lib/deep`)
     await page.keyboard.press('ArrowRight')
-    await expect(row(page, fx.paths.deepDir)).toBeVisible({ timeout: 20_000 })
+    await expect(browseRow(page, fx.paths.deepDir)).toBeVisible({ timeout: 20_000 })
     await page.keyboard.press('ArrowLeft')
-    await expect(row(page, `${fx.root}/lib/deep`)).not.toHaveClass(/\bopen\b/)
-    await expect(row(page, fx.paths.deepDir)).toHaveCount(0)
+    await expect(browseRow(page, `${fx.root}/lib/deep`)).not.toHaveClass(/\bopen\b/)
+    await expect(browseRow(page, fx.paths.deepDir)).toHaveCount(0)
     await page.keyboard.press('ArrowRight')
-    await expect(row(page, fx.paths.deepDir)).toBeVisible({ timeout: 20_000 })
+    await expect(browseRow(page, fx.paths.deepDir)).toBeVisible({ timeout: 20_000 })
 
     await keyTo(fx.paths.deepDir)
     await page.keyboard.press('ArrowRight')
@@ -404,22 +404,22 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
     await page.keyboard.press('Enter')
     await expect(readingTitle(page)).toHaveText('lib/deep/nested/beacon.ts', { timeout: 25_000 })
 
-    await row(page, fx.paths.deepFile).click({ button: 'right' })
+    await browseRow(page, fx.paths.deepFile).click({ button: 'right' })
     await portalledCtxMenu(page).getByText('Add bookmark', { exact: true }).click()
-    await expect(row(page, fx.paths.deepFile).locator('.bv-bm')).toBeVisible()
-    await expect(row(page, fx.paths.deepFile, 'bookmarks')).toBeVisible()
+    await expect(browseRow(page, fx.paths.deepFile).locator('.bv-bm')).toBeVisible()
+    await expect(browseRow(page, fx.paths.deepFile, 'bookmarks')).toBeVisible()
 
     const restarted = await relaunchOnSameUserData(app, env)
     await startSessionIn(restarted.page, 'ws-a')
     await expect(workbenchPanel(restarted.page)).toBeVisible({ timeout: 25_000 })
     await browseReady(restarted.page, fx.root)
-    await expect(row(restarted.page, fx.paths.deepDir)).toBeVisible({ timeout: 30_000 })
-    await expect(row(restarted.page, fx.paths.deepFile)).toBeVisible()
-    await expect(row(restarted.page, fx.paths.deepFile, 'bookmarks')).toBeVisible()
+    await expect(browseRow(restarted.page, fx.paths.deepDir)).toBeVisible({ timeout: 30_000 })
+    await expect(browseRow(restarted.page, fx.paths.deepFile)).toBeVisible()
+    await expect(browseRow(restarted.page, fx.paths.deepFile, 'bookmarks')).toBeVisible()
 
     await expandTo(restarted.page, fx.root, fx.paths.deepFile)
-    await row(restarted.page, fx.paths.deepDir).click()
-    await expect(row(restarted.page, fx.paths.deepFile)).toHaveCount(0)
+    await browseRow(restarted.page, fx.paths.deepDir).click()
+    await expect(browseRow(restarted.page, fx.paths.deepFile)).toHaveCount(0)
 
     await searchToggle(restarted.page).click()
     await searchInput(restarted.page).fill('beacon')
@@ -431,7 +431,7 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
     })
     await searchToggle(restarted.page).click()
 
-    const revealed = row(restarted.page, fx.paths.deepFile)
+    const revealed = browseRow(restarted.page, fx.paths.deepFile)
     await expect(revealed).toBeVisible({ timeout: 25_000 })
     await expect(revealed).toHaveClass(/\bactive\b/)
     await expect
@@ -467,7 +467,7 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
 
     await expandTo(page, fx.root, opened[0])
     for (const abs of opened) {
-      await row(page, abs).click()
+      await browseRow(page, abs).click()
       await expect(readingTitle(page)).toHaveText(`src/${abs.slice(abs.lastIndexOf('/') + 1)}`, {
         timeout: 25_000
       })
@@ -475,20 +475,20 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
 
     const recents = fileRows(page, 'recents')
     await expect(recents).toHaveCount(12, { timeout: 20_000 })
-    await expect(row(page, opened[0], 'recents')).toHaveCount(0)
+    await expect(browseRow(page, opened[0], 'recents')).toHaveCount(0)
     await expect(recents.first()).toHaveAttribute('data-path', opened[12])
 
-    await row(page, opened[1]).click()
+    await browseRow(page, opened[1]).click()
     await expect(readingTitle(page)).toHaveText('src/change-2.ts', { timeout: 25_000 })
     await expect(recents.first()).toHaveAttribute('data-path', opened[1])
     await expect(recents).toHaveCount(12)
-    await expect(row(page, opened[1], 'recents')).toHaveCount(1)
+    await expect(browseRow(page, opened[1], 'recents')).toHaveCount(1)
 
     await runIn(page, centerTerm(page), '/open README.koloft.md')
     await expect(centerTerm(page)).toContainText('opened README.koloft.md', { timeout: 30_000 })
     await expect(readingTitle(page)).toHaveText('README.koloft.md', { timeout: 25_000 })
     await expect(recents).toHaveCount(12)
-    await expect(row(page, `${fx.root}/README.koloft.md`, 'recents')).toHaveCount(0)
+    await expect(browseRow(page, `${fx.root}/README.koloft.md`, 'recents')).toHaveCount(0)
     await expect(recents.first()).toHaveAttribute('data-path', opened[1])
   })
 
@@ -505,7 +505,7 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
     await browseReady(page, fx.root)
 
     await expandTo(page, fx.root, fx.paths.html)
-    await row(page, fx.paths.html).click({ button: 'right' })
+    await browseRow(page, fx.paths.html).click({ button: 'right' })
     await expect(portalledCtxMenu(page)).toBeVisible()
     expect(await ctxItems(page).allTextContents()).toEqual([
       'Edit',
@@ -570,7 +570,7 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
     }
 
     await expandTo(page, fx.root, fx.paths.markdown)
-    await row(page, fx.paths.markdown).click()
+    await browseRow(page, fx.paths.markdown).click()
 
     const reading = page.locator('.wb-panel .fv-artifact-hd')
     await expect(reading.locator('.wb-title')).toHaveText('docs/guide.md', { timeout: 25_000 })
@@ -656,9 +656,9 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
     await browseReady(page, fx.root)
 
     await expandTo(page, fx.root, fx.paths.deepFile)
-    await row(page, fx.paths.deepFile).click()
+    await browseRow(page, fx.paths.deepFile).click()
     await expect(readingTitle(page)).toHaveText('lib/deep/nested/beacon.ts', { timeout: 25_000 })
-    await row(page, fx.paths.readme).click()
+    await browseRow(page, fx.paths.readme).click()
     await expect(readingTitle(page)).toHaveText('README.koloft.md', { timeout: 25_000 })
     await expect(fileRows(page, 'recents')).toHaveCount(2)
 
@@ -667,7 +667,7 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
     await startSessionIn(restarted.page, 'ws-a')
     await expect(workbenchPanel(restarted.page)).toBeVisible({ timeout: 25_000 })
     await browseReady(restarted.page, fx.root)
-    await expect(row(restarted.page, fx.paths.deepFile)).toBeVisible({ timeout: 30_000 })
+    await expect(browseRow(restarted.page, fx.paths.deepFile)).toBeVisible({ timeout: 30_000 })
     const restoredRecents = fileRows(restarted.page, 'recents')
     await expect(restoredRecents).toHaveCount(2, { timeout: 20_000 })
     await expect(restoredRecents.first()).toHaveAttribute('data-path', fx.paths.readme)
@@ -677,13 +677,11 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
     await expect(workbenchPanel(restarted.page)).toBeVisible({ timeout: 25_000 })
     await showBrowse(restarted.page)
     const rootB = env.workspaces.b
-    await expect(row(restarted.page, rootB)).toBeVisible({ timeout: 30_000 })
-    await expect(section(restarted.page, 'recents')).toHaveCount(0)
+    await expect(browseRow(restarted.page, rootB)).toBeVisible({ timeout: 30_000 })
+    await expect(browseSection(restarted.page, 'recents')).toHaveCount(0)
+    await expect(browseSection(restarted.page, 'tree').locator('.ft-dir.open')).toHaveCount(1)
     await expect(
-      restarted.page.locator('.wb-panel .bv-sec[data-section="tree"] .ft-node.ft-dir.open')
-    ).toHaveCount(1)
-    await expect(
-      restarted.page.locator(`.wb-panel .ft-node[data-path="${fx.paths.deepFile}"]`)
+      restarted.page.locator(`${WORKBENCH.browseRows}[data-path="${fx.paths.deepFile}"]`)
     ).toHaveCount(0)
 
     await restarted.app.close().catch(() => {})
@@ -704,7 +702,7 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
     await expandTo(page, fx.root, fx.paths.html)
     await expect(openTabs(page)).toHaveCount(0)
 
-    await row(page, fx.paths.html).click()
+    await browseRow(page, fx.paths.html).click()
     await expect(openTabs(page)).toHaveCount(1, { timeout: 30_000 })
     await expect.poll(() => activeKind(page), { timeout: 25_000 }).toBe('web')
     await expect(wbActiveTab(page)).toHaveAttribute('title', new RegExp('report\\.html$'))
@@ -713,7 +711,7 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
     await expect(readingTitle(page)).toHaveCount(0)
 
     await showBrowse(page)
-    await row(page, fx.paths.htm).click()
+    await browseRow(page, fx.paths.htm).click()
     await expect(openTabs(page)).toHaveCount(2, { timeout: 30_000 })
     await expect.poll(() => activeKind(page), { timeout: 25_000 }).toBe('web')
     await expect(wbActiveTab(page)).toHaveAttribute('title', new RegExp('report\\.htm$'))
@@ -723,7 +721,7 @@ test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots
 
     await showBrowse(page)
     await expandTo(page, fx.root, fx.paths.changeable[0])
-    await row(page, fx.paths.changeable[0]).click()
+    await browseRow(page, fx.paths.changeable[0]).click()
     await expect(readingTitle(page)).toHaveText('src/change-1.ts', { timeout: 25_000 })
     await expect(openTabs(page)).toHaveCount(2)
     expect(await activeKind(page)).toBe('files')

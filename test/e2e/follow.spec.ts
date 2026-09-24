@@ -25,11 +25,9 @@ test('T-AUX-08: a session write never opens itself or builds a tab; a click open
 
   await showBrowse(page)
   await page
-    .locator(
-      `${WORKBENCH.panel} .ft-node.ft-dir[data-path="${path.join(env.workspaces.a, 'docs')}"]`
-    )
+    .locator(`${WORKBENCH.browseRows}.ft-dir[data-path="${path.join(env.workspaces.a, 'docs')}"]`)
     .click({ timeout: 20_000 })
-  const written = page.locator(`${WORKBENCH.panel} .ft-node.ft-file`, { hasText: 'guide.md' })
+  const written = page.locator(`${WORKBENCH.browseRows}.ft-file`, { hasText: 'guide.md' })
   await expect(written).toBeVisible({ timeout: 20_000 })
   await expect(page.locator(`${WORKBENCH.panel} .fv-read .fv-empty`)).toBeVisible()
   await expect(page.locator(WORKBENCH.readingBody)).toHaveCount(0)

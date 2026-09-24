@@ -22,7 +22,7 @@ import {
 import { setupChangeFixture } from './helpers/filesFixture'
 import { seedEditFixture, type EditFixture } from './helpers/editFixture'
 import { EDIT, closeDiscardingEdits, editReady, typeAtEnd } from './helpers/editPane'
-import { showBrowse } from './helpers/workbench'
+import { WORKBENCH, browseRow, showBrowse } from './helpers/workbench'
 
 const JOB = 'Nightly report'
 const TASK = '/daily-report'
@@ -895,15 +895,13 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
   })
 
   async function edDirtyEditor(page: Page, ed: EditFixture): Promise<void> {
-    const node = (abs: string): Locator =>
-      page.locator(`.wb-panel .bv-sec[data-section="tree"] .ft-node[data-path="${abs}"]`)
     await showBrowse(page)
-    const dir = node(ed.configDir)
+    const dir = browseRow(page, ed.configDir)
     await expect(dir).toBeVisible({ timeout: 30_000 })
     if (!(await dir.getAttribute('class'))?.split(/\s+/).includes('open')) await dir.click()
-    await node(ed.config).click({ button: 'right' })
-    await expect(page.locator(EDIT.ctxMenu)).toBeVisible()
-    await page.locator(EDIT.ctxMenu).getByText('Edit', { exact: true }).click()
+    await browseRow(page, ed.config).click({ button: 'right' })
+    await expect(page.locator(WORKBENCH.rowMenuOnPage)).toBeVisible()
+    await page.locator(WORKBENCH.rowMenuOnPage).getByText('Edit', { exact: true }).click()
     await editReady(page, 'koloft-e2e-edit-fixture')
     await typeAtEnd(page, 'KOLOFT_E2E_BB_E34=1')
     await expect(page.locator(EDIT.dirty)).toBeVisible()

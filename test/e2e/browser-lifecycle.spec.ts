@@ -115,12 +115,14 @@ test.describe('Workbench web tabs: an .html goes to a web tab, and the tab set s
 
     await showBrowse(page)
     await page
-      .locator(`${WORKBENCH.panel} .ft-node.ft-dir[data-path="${path.dirname(html)}"]`)
+      .locator(`${WORKBENCH.browseRows}.ft-dir[data-path="${path.dirname(html)}"]`)
       .click({ timeout: 30_000 })
     await page
-      .locator(`${WORKBENCH.panel} .ft-node.ft-file[data-path="${html}"]`)
+      .locator(`${WORKBENCH.browseRows}.ft-file[data-path="${html}"]`)
       .click({ button: 'right', timeout: 30_000 })
-    await page.locator('.ft-ctx-it', { hasText: 'View source' }).click({ timeout: 20_000 })
+    await page
+      .locator(WORKBENCH.rowMenuItemOnPage, { hasText: 'View source' })
+      .click({ timeout: 20_000 })
 
     await expect(page.locator(WORKBENCH.readingTitle)).toHaveText('docs/page.html', {
       timeout: 20_000

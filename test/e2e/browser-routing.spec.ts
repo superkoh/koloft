@@ -115,7 +115,7 @@ async function seedWorkspaceFile(
 ): Promise<void> {
   fs.writeFileSync(path.join(env.workspaces.a, rel), body)
   await showBrowse(page)
-  await expect(page.locator(`${WORKBENCH.panel} .ft-node.ft-file`, { hasText: rel })).toBeVisible({
+  await expect(page.locator(`${WORKBENCH.browseRows}.ft-file`, { hasText: rel })).toBeVisible({
     timeout: 30_000
   })
 }

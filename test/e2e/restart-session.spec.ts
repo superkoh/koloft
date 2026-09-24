@@ -484,7 +484,7 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
       const [first] = await waitForCalls(env, 1)
 
       await showBrowse(page)
-      const notes = page.locator(`${WORKBENCH.panel} .ft-node.ft-file`, { hasText: 'NOTES.md' })
+      const notes = page.locator(`${WORKBENCH.browseRows}.ft-file`, { hasText: 'NOTES.md' })
       await expect(notes).toBeVisible({ timeout: 20_000 })
       await notes.click()
       await expect(page.locator(WORKBENCH.readingTitle)).toHaveText('NOTES.md')
@@ -543,7 +543,7 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
         await waitForCalls(env, 2)
 
         await showBrowse(page)
-        const notes = page.locator(`${WORKBENCH.panel} .ft-node.ft-file`, { hasText: 'NOTES.md' })
+        const notes = page.locator(`${WORKBENCH.browseRows}.ft-file`, { hasText: 'NOTES.md' })
         await expect(notes).toBeVisible({ timeout: 25_000 })
         await notes.click()
         await expect(page.locator(WORKBENCH.readingTitle)).toHaveText('NOTES.md')

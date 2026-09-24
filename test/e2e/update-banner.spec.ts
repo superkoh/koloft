@@ -5,7 +5,7 @@ import { higher, release, withFixtureEnv, writeFixture } from './helpers/updateF
 import { openSettings } from './helpers/extensions'
 import { setupChangeFixture } from './helpers/filesFixture'
 import { seedEditFixture, type EditFixture } from './helpers/editFixture'
-import { showBrowse, workbenchPanel } from './helpers/workbench'
+import { WORKBENCH, browseRow, showBrowse, workbenchPanel } from './helpers/workbench'
 import { EDIT, closeDiscardingEdits, editReady, typeAtEnd } from './helpers/editPane'
 
 test.describe('the sidebar update banner, driven by the background release check', () => {
@@ -105,16 +105,14 @@ async function tryToDismiss(page: Page): Promise<void> {
 }
 
 async function dirtyEditor(page: Page, root: string, ed: EditFixture): Promise<void> {
-  const row = (abs: string): Locator =>
-    page.locator(`.wb-panel .bv-sec[data-section="tree"] .ft-node[data-path="${abs}"]`)
   await showBrowse(page)
-  const dir = row(`${root}/config`)
+  const dir = browseRow(page, `${root}/config`)
   await expect(dir).toBeVisible({ timeout: 30_000 })
   if (!(await dir.getAttribute('class'))?.split(/\s+/).includes('open')) await dir.click()
-  const file = row(ed.config)
+  const file = browseRow(page, ed.config)
   await expect(file).toBeVisible({ timeout: 20_000 })
   await file.click({ button: 'right' })
-  await page.locator(EDIT.ctxMenu).getByText('Edit', { exact: true }).click()
+  await page.locator(WORKBENCH.rowMenuOnPage).getByText('Edit', { exact: true }).click()
   await editReady(page, 'koloft-e2e-edit-fixture')
   await typeAtEnd(page, 'KOLOFT_E2E_UPDATE_UNSAVED=1')
   await expect(page.locator(EDIT.dirty)).toBeVisible()
