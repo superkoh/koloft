@@ -1776,12 +1776,21 @@ function setupGuestBackgroundOpen(): void {
 function setupGuestFullscreen(): void {
   app.on('web-contents-created', (_e, contents) => {
     if (contents.getType() !== 'webview') return
+    let pageFullscreen = false
+    // PLATFORM§7
+    contents.on('input-event', (_event, input) => {
+      if (!pageFullscreen || input.type !== 'rawKeyDown') return
+      if ((input as { key?: string }).key !== 'Escape') return
+      contents.executeJavaScript('document.exitFullscreen?.()').catch(() => {})
+    })
     contents.on('enter-html-full-screen', () => {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
+      pageFullscreen = true
       sendToRenderer('browser:fullscreen', true)
     })
     contents.on('leave-html-full-screen', () => {
       if (contents.session !== session.fromPartition(BROWSER_PARTITION)) return
+      pageFullscreen = false
       sendToRenderer('browser:fullscreen', false)
     })
   })
