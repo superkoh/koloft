@@ -29,6 +29,8 @@ function committedRepo(dir: string): void {
 
 const MINIMAL_EVEN_UNRENDERABLE_PDF = '%PDF-1.4\n%%EOF\n'
 
+const SCROLL_RESTORE_GIVE_UP_SETTLE_MS = 5_000
+
 const numberedLines = (n: number): string =>
   Array.from({ length: n }, (_, i) => String(i + 1)).join('\n') + '\n'
 
@@ -225,7 +227,7 @@ test.describe('artifact rendering in a Workbench `file` tab, driven through the 
     }
   })
 
-  test('an artifact survives switching to another tab and back, scroll position intact; a session round trip keeps its document but not its scroll (R1)', async ({
+  test('an artifact survives switching to another tab and back, scroll position intact; a session round trip keeps its document and its scroll (R1)', async ({
     page,
     env
   }) => {
@@ -256,6 +258,48 @@ test.describe('artifact rendering in a Workbench `file` tab, driven through the 
     await wsRows(page, 'ws-a').first().click()
     await expect(artifactTitle(page)).toHaveText('long.txt', { timeout: 20_000 })
     await expect(artifactBody(page).locator('.code-body')).toContainText('400', { timeout: 20_000 })
+    await expect.poll(() => codeBody.evaluate((el) => el.scrollTop), { timeout: 20_000 }).toBe(1200)
+  })
+
+  test('a file that got shorter while its session was off screen comes back as far down as it now goes, and a later reload leaves the scroll where the user put it (R1)', async ({
+    page,
+    env
+  }) => {
+    test.setTimeout(150_000)
+    const long = path.join(env.workspaces.a, 'long.txt')
+    fs.writeFileSync(long, numberedLines(400))
+
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    await openArtifact(page, env, 'long.txt')
+
+    const codeBody = artifactBody(page).locator('.code-body')
+    await expect(codeBody).toBeVisible({ timeout: 15_000 })
+    await codeBody.evaluate((el) => {
+      el.scrollTop = 1200
+    })
+    await expect.poll(() => codeBody.evaluate((el) => el.scrollTop)).toBe(1200)
+
+    await startSessionIn(page, 'ws-b')
+    await expect(page.locator(WORKBENCH.artifact)).toHaveCount(0)
+    fs.writeFileSync(long, numberedLines(80))
+
+    await wsRows(page, 'ws-a').first().click()
+    await expect(artifactTitle(page)).toHaveText('long.txt', { timeout: 20_000 })
+    await expect(codeBody).toContainText('80', { timeout: 20_000 })
+    const bottom = await codeBody.evaluate((el) => el.scrollHeight - el.clientHeight)
+    expect(bottom, 'the shorter file still scrolls, only not as far as before').toBeGreaterThan(0)
+    expect(bottom).toBeLessThan(1200)
+    await expect.poll(() => codeBody.evaluate((el) => el.scrollTop)).toBe(bottom)
+
+    await page.waitForTimeout(SCROLL_RESTORE_GIVE_UP_SETTLE_MS)
+    await codeBody.evaluate((el) => {
+      el.scrollTop = 0
+    })
+    await expect.poll(() => codeBody.evaluate((el) => el.scrollTop)).toBe(0)
+    fs.appendFileSync(long, 'tail-marker-e2e\n')
+    await expect(codeBody).toContainText('tail-marker-e2e', { timeout: 10_000 })
+    expect(await codeBody.evaluate((el) => el.scrollTop)).toBe(0)
   })
 
   test('WB-R04: a markdown artifact auto-refreshes when the file changes on disk (R4)', async ({

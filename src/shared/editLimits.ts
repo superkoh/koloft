@@ -1,0 +1,1 @@
+export const EDIT_WRITE_MAX_BYTES = 1024 * 1024

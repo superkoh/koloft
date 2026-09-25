@@ -4,7 +4,15 @@ import type { Locator, Page } from '@playwright/test'
 import { startSessionIn, wsRows } from './helpers/p1'
 import { setupChangeFixture } from './helpers/filesFixture'
 import { seedEditFixture } from './helpers/editFixture'
-import { WORKBENCH, showBrowse, wbTabs, workbenchPanel } from './helpers/workbench'
+import {
+  WORKBENCH,
+  browseRow,
+  rowMenu,
+  rowMenuItems,
+  showBrowse,
+  wbTabs,
+  workbenchPanel
+} from './helpers/workbench'
 import {
   EDIT,
   editArea,
@@ -18,11 +26,6 @@ import {
 
 const MARKER = 'KOLOFT_E2E_EDIT_MARKER=1'
 
-function row(page: Page, abs: string, section = 'tree'): Locator {
-  return page.locator(`.wb-panel .bv-sec[data-section="${section}"] .ft-node[data-path="${abs}"]`)
-}
-
-const ctxMenu = (page: Page): Locator => page.locator(EDIT.ctxMenu)
 const tabReload = (page: Page): Locator =>
   page.locator('.wb-bar:not(.fv-artifact-hd) .icobtn[aria-label="Reload"]')
 const halfBtn = (page: Page, name: 'Changes' | 'Browse'): Locator =>
@@ -30,8 +33,8 @@ const halfBtn = (page: Page, name: 'Changes' | 'Browse'): Locator =>
 
 async function browseReady(page: Page, root: string): Promise<void> {
   await showBrowse(page)
-  await expect(row(page, root)).toBeVisible({ timeout: 30_000 })
-  await expect(row(page, `${root}/config`)).toBeVisible({ timeout: 30_000 })
+  await expect(browseRow(page, root)).toBeVisible({ timeout: 30_000 })
+  await expect(browseRow(page, `${root}/config`)).toBeVisible({ timeout: 30_000 })
 }
 
 async function treeRow(page: Page, root: string, abs: string): Promise<Locator> {
@@ -39,20 +42,20 @@ async function treeRow(page: Page, root: string, abs: string): Promise<Locator> 
   let dir = root
   for (const seg of segs.slice(0, -1)) {
     dir += '/' + seg
-    const r = row(page, dir)
+    const r = browseRow(page, dir)
     await expect(r).toBeVisible({ timeout: 20_000 })
     if (!(await r.getAttribute('class'))?.split(/\s+/).includes('open')) await r.click()
     await expect(r).toHaveClass(/\bopen\b/, { timeout: 20_000 })
   }
-  return row(page, abs)
+  return browseRow(page, abs)
 }
 
 async function editViaMenu(page: Page, root: string, abs: string): Promise<void> {
   const r = await treeRow(page, root, abs)
   await r.click({ button: 'right' })
-  await expect(ctxMenu(page)).toBeVisible()
-  expect((await page.locator(EDIT.ctxItem).allTextContents())[0]).toBe('Edit')
-  await ctxMenu(page).getByText('Edit', { exact: true }).click()
+  await expect(rowMenu(page)).toBeVisible()
+  expect((await rowMenuItems(page).allTextContents())[0]).toBe('Edit')
+  await rowMenu(page).getByText('Edit', { exact: true }).click()
 }
 
 test.describe('File edit · getting in, typing, and ⌘S, asserted on disk byte for byte', () => {

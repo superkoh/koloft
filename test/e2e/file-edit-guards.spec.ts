@@ -16,7 +16,9 @@ import { setupChangeFixture } from './helpers/filesFixture'
 import { seedEditFixture, type EditFixture } from './helpers/editFixture'
 import {
   WORKBENCH,
+  browseRow,
   openFileTab,
+  rowMenu,
   seedScratchpad,
   showBrowse,
   wbTabTitles,
@@ -34,24 +36,20 @@ import {
 
 const MARKER = 'KOLOFT_E2E_GUARD=1'
 
-function row(page: Page, abs: string, section = 'tree'): Locator {
-  return page.locator(`.wb-panel .bv-sec[data-section="${section}"] .ft-node[data-path="${abs}"]`)
-}
-
 const modal = (page: Page): Locator => page.locator(EDIT.unsavedModal)
 const fileTab = (page: Page): Locator => page.locator(`${WORKBENCH.tab}:not(.pinned)`)
 
 async function dirtyEditor(page: Page, root: string, ed: EditFixture): Promise<string> {
   await showBrowse(page)
-  await expect(row(page, root)).toBeVisible({ timeout: 30_000 })
-  const dir = row(page, `${root}/config`)
+  await expect(browseRow(page, root)).toBeVisible({ timeout: 30_000 })
+  const dir = browseRow(page, `${root}/config`)
   await expect(dir).toBeVisible({ timeout: 30_000 })
   if (!(await dir.getAttribute('class'))?.split(/\s+/).includes('open')) await dir.click()
-  const file = row(page, ed.config)
+  const file = browseRow(page, ed.config)
   await expect(file).toBeVisible({ timeout: 20_000 })
   await file.click({ button: 'right' })
-  await expect(page.locator(EDIT.ctxMenu)).toBeVisible()
-  await page.locator(EDIT.ctxMenu).getByText('Edit', { exact: true }).click()
+  await expect(rowMenu(page)).toBeVisible()
+  await rowMenu(page).getByText('Edit', { exact: true }).click()
   await editReady(page, 'koloft-e2e-edit-fixture')
   await typeAtEnd(page, MARKER)
   await page.keyboard.press('Enter')
@@ -155,9 +153,9 @@ test.describe('File edit · unsaved work is never lost, and the ✎ that stays o
     await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })
 
     await showBrowse(page)
-    await expect(row(page, fx.root)).toBeVisible({ timeout: 30_000 })
-    await row(page, `${fx.root}/config`).click()
-    await row(page, ed.big).click({ timeout: 30_000 })
+    await expect(browseRow(page, fx.root)).toBeVisible({ timeout: 30_000 })
+    await browseRow(page, `${fx.root}/config`).click()
+    await browseRow(page, ed.big).click({ timeout: 30_000 })
 
     await expect(page.locator(WORKBENCH.readingTitle)).toHaveText('config/big.txt', {
       timeout: 30_000
@@ -184,8 +182,8 @@ test.describe('File edit · unsaved work is never lost, and the ✎ that stays o
     const scratch = seedScratchpad(env, call.cwd, call.sessionId)
 
     await showBrowse(page)
-    await expect(row(page, fx.root)).toBeVisible({ timeout: 30_000 })
-    await row(page, scratch.md, 'scratchpad').click({ timeout: 30_000 })
+    await expect(browseRow(page, fx.root)).toBeVisible({ timeout: 30_000 })
+    await browseRow(page, scratch.md, 'scratchpad').click({ timeout: 30_000 })
     await expect(page.locator(WORKBENCH.readingTitle)).toContainText('notes.md', {
       timeout: 30_000
     })
@@ -194,7 +192,7 @@ test.describe('File edit · unsaved work is never lost, and the ✎ that stays o
     await expect(edit).toBeVisible({ timeout: 20_000 })
     await expect(edit).toBeEnabled({ timeout: 20_000 })
 
-    await row(page, `${fx.root}/README.koloft.md`).click({ timeout: 30_000 })
+    await browseRow(page, `${fx.root}/README.koloft.md`).click({ timeout: 30_000 })
     await expect(page.locator(WORKBENCH.readingTitle)).toHaveText('README.koloft.md', {
       timeout: 30_000
     })
@@ -233,10 +231,10 @@ test.describe('File edit · unsaved work is never lost, and the ✎ that stays o
     await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })
 
     await showBrowse(page)
-    await expect(row(page, fx.root)).toBeVisible({ timeout: 30_000 })
-    await row(page, `${fx.root}/config`).click()
-    await row(page, ed.config).click({ button: 'right', timeout: 30_000 })
-    await page.locator(EDIT.ctxMenu).getByText('Edit', { exact: true }).click()
+    await expect(browseRow(page, fx.root)).toBeVisible({ timeout: 30_000 })
+    await browseRow(page, `${fx.root}/config`).click()
+    await browseRow(page, ed.config).click({ button: 'right', timeout: 30_000 })
+    await rowMenu(page).getByText('Edit', { exact: true }).click()
     await editReady(page, 'koloft-e2e-edit-fixture')
     await expect(page.locator(EDIT.dirty)).toHaveCount(0)
 

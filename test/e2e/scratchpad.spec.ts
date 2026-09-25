@@ -53,7 +53,7 @@ test.describe('the ⌗ Scratchpad node in Browse: Claude’s per-session scratch
     expect(path.basename(dir!)).toBe('scratchpad')
     expect(fs.existsSync(path.join(dir!, 'analysis.py'))).toBe(true)
 
-    const analysis = panel.locator('.ft-node.ft-file', { hasText: /analysis\.py/ })
+    const analysis = page.locator(`${WORKBENCH.browseRows}.ft-file`, { hasText: /analysis\.py/ })
     await expect(analysis).toHaveCount(1)
     await expect(analysis).toBeVisible()
 
@@ -80,7 +80,9 @@ test.describe('the ⌗ Scratchpad node in Browse: Claude’s per-session scratch
 
     await showBrowse(page)
     const panel = workbenchPanel(page)
-    await expect(panel.locator('.ft-node.ft-file', { hasText: /NOTES\.md/ })).toHaveCount(1, {
+    await expect(
+      page.locator(`${WORKBENCH.browseRows}.ft-file`, { hasText: /NOTES\.md/ })
+    ).toHaveCount(1, {
       timeout: 40_000
     })
     await expect(panel.locator('.ft-scratchpad')).toHaveCount(0)

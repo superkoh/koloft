@@ -422,6 +422,36 @@ test.describe('C8 New Worktree Session dialog and the ⇧⌘N entrance that reac
     }
   })
 
+  test('BB-C71: a worktree named main is in use only while a session runs in it, not in the repo root', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const pinned = pinWorkspaces(env, [{ name: 'repo-one', kind: 'git' }])
+    gitWorktreeAdd(pinned.paths['repo-one'], 'main')
+
+    const { app, page } = await launchSettled(env)
+    try {
+      await startMainSession(page, 'repo-one')
+      const running = rowsWithSub(page, 'repo-one', 'main').and(
+        page.locator('.ws-tab:not(.cold):not(.st-pending)')
+      )
+      await expect(running).toHaveCount(1, { timeout: 60_000 })
+
+      const dlg = await openC8(app, page, 'repo-one')
+      await waitForAsyncWorktreeListToLand(dlg, 'main')
+      await expect(wtRow(dlg, 'main')).not.toContainText('in use')
+
+      await wtRow(dlg, 'main').click()
+      await expect(dlg).toHaveCount(0)
+      await expect(running).toHaveCount(2, { timeout: 60_000 })
+
+      const again = await openC8(app, page, 'repo-one')
+      await expect(wtRow(again, 'main')).toContainText('in use')
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
   test("BB-C34: ↓ skips dimmed rows; ↑ from the first row restores the field's Create", async ({
     env
   }) => {

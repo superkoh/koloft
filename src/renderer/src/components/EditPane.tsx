@@ -33,8 +33,8 @@ import {
   setText,
   subscribeDirty
 } from '../editRegistry'
+import { EDIT_WRITE_MAX_BYTES } from '@shared/editLimits'
 
-const MAIN_EDIT_WRITE_MAX_BYTES_MIRROR = 1024 * 1024
 const CARET_READOUT_THROTTLE_MS = 100
 
 function reasonSentence(readOnly: string | null, failure: string): string {
@@ -230,7 +230,7 @@ export function EditPane({
     (el: HTMLTextAreaElement, pasted: boolean): void => {
       domText.current = el.value
       setText(ownerTab, tabId, el.value)
-      if (pasted || tooBig) setTooBig(exceedsBytes(el.value, MAIN_EDIT_WRITE_MAX_BYTES_MIRROR))
+      if (pasted || tooBig) setTooBig(exceedsBytes(el.value, EDIT_WRITE_MAX_BYTES))
       trackCaret()
       armSave()
     },
