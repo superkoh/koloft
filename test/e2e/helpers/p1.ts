@@ -26,6 +26,7 @@ export interface ClaudeCall {
   sessionId: string
   firstPrompt?: string | null
   ts: number
+  oauthToken: string | null
   cdpEndpoint?: string | null
   playwrightMcpEndpoint?: string | null
   playwrightCliSession?: string | null
@@ -278,6 +279,10 @@ export function settingsOnDisk(env: E2EEnv): Record<string, unknown> {
 
 export function notesIsland(page: Page): Locator {
   return page.locator('.isl-notes')
+}
+
+export function notesArea(page: Page): Locator {
+  return notesIsland(page).locator('.ed-area')
 }
 
 export function notesPath(env: E2EEnv, wsPath: string): string {

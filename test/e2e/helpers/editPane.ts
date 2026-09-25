@@ -28,10 +28,7 @@ export const EDIT = {
   sessionModal: '.modal.lifecycle-modal',
   sessionModalTitle: 'Close running session?',
 
-  newFileInput: 'input.ft-newfile',
-
-  ctxMenu: '.ft-ctx[role="menu"]',
-  ctxItem: '.ft-ctx .ft-ctx-it'
+  newFileInput: 'input.ft-newfile'
 } as const
 
 export const showIgnoredKey = (root: string): string => 'koloft.ft.showIgnored:' + root

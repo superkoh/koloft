@@ -39,7 +39,13 @@ export const WORKBENCH = {
   stateButton: '.wb-state-btn',
 
   readingTitle: '.wb-panel .fv-artifact-hd .wb-title',
-  readingBody: '.wb-panel .fv-read .wb-artifact'
+  readingBody: '.wb-panel .fv-read .wb-artifact',
+
+  browseSection: '.wb-panel .bv-sec',
+  browseRows: '.wb-panel .bv-body .ft-node',
+
+  rowMenu: '.ft-ctx[role="menu"]',
+  rowMenuItem: '.ft-ctx .ft-ctx-it'
 } as const
 
 export async function waitPanelAttached(page: Page, timeout = 60_000): Promise<void> {
@@ -112,6 +118,22 @@ export function wbTabByTitle(page: Page, text: string | RegExp): Locator {
 export async function wbTabTitles(page: Page): Promise<string[]> {
   const texts = await page.locator(`${WORKBENCH.tab} ${WORKBENCH.tabLabel}`).allTextContents()
   return texts.map((t) => t.replace(/\s+/g, ' ').trim())
+}
+
+export function browseSection(page: Page, name: string): Locator {
+  return page.locator(`${WORKBENCH.browseSection}[data-section="${name}"]`)
+}
+
+export function browseRow(page: Page, absPath: string, section = 'tree'): Locator {
+  return browseSection(page, section).locator(`.ft-node[data-path="${absPath}"]`)
+}
+
+export function rowMenu(page: Page): Locator {
+  return page.locator(WORKBENCH.rowMenu)
+}
+
+export function rowMenuItems(page: Page): Locator {
+  return page.locator(WORKBENCH.rowMenuItem)
 }
 
 export function sessionWorkbenchOnDisk(
@@ -254,8 +276,7 @@ export async function showBrowse(page: Page): Promise<void> {
 
 export async function openInBrowse(page: Page, absPath: string): Promise<void> {
   await showBrowse(page)
-  const panel = page.locator(WORKBENCH.panel)
-  const rootRow = panel.locator('.ft-node.ft-root')
+  const rootRow = page.locator(`${WORKBENCH.browseRows}.ft-root`)
   await expect(rootRow).toBeVisible({ timeout: 30_000 })
   const root = (await rootRow.getAttribute('data-path')) ?? ''
   if (absPath.startsWith(root + '/')) {
@@ -263,11 +284,13 @@ export async function openInBrowse(page: Page, absPath: string): Promise<void> {
     let dir = root
     for (const seg of segs.slice(0, -1)) {
       dir += '/' + seg
-      const row = panel.locator(`.ft-node.ft-dir[data-path="${dir}"]`)
+      const row = browseRow(page, dir)
       await expect(row).toBeVisible({ timeout: 30_000 })
       if (!(await row.getAttribute('class'))?.split(/\s+/).includes('open')) await row.click()
       await expect(row).toHaveClass(/\bopen\b/, { timeout: 20_000 })
     }
   }
-  await panel.locator(`.ft-node.ft-file[data-path="${absPath}"]`).click({ timeout: 30_000 })
+  await page
+    .locator(`${WORKBENCH.browseRows}.ft-file[data-path="${absPath}"]`)
+    .click({ timeout: 30_000 })
 }

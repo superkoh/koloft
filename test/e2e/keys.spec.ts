@@ -26,10 +26,8 @@ test.describe('Keyboard shortcuts · native accelerators are driven as shortcut:
     await expect(panel.locator('.icobtn[aria-label="Search files"]')).toBeVisible({
       timeout: 20_000
     })
-    const tree = panel.locator('.bv-body')
-    await expect(tree.locator('.ft-node', { hasText: 'README.md' })).toBeVisible({
-      timeout: 20_000
-    })
+    const readmeRow = page.locator(WORKBENCH.browseRows, { hasText: 'README.md' })
+    await expect(readmeRow).toBeVisible({ timeout: 20_000 })
 
     await sendShortcut(app, 'shortcut:find-files')
     const searchRow = panel.locator('.ft-search.open')
@@ -47,7 +45,7 @@ test.describe('Keyboard shortcuts · native accelerators are driven as shortcut:
     await sendShortcut(app, 'shortcut:find-files')
     await expect(panel.locator('.ft-search.open')).toHaveCount(0)
     await expect(panel.locator('.ft-results')).toHaveCount(0)
-    await expect(tree.locator('.ft-node', { hasText: 'README.md' })).toBeVisible()
+    await expect(readmeRow).toBeVisible()
 
     await sendShortcut(app, 'shortcut:find-files')
     await expect(panel.locator('.ft-search.open')).toBeVisible()

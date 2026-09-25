@@ -17,7 +17,7 @@ test('starting a session in a workspace surfaces it, its file, and a preview thr
   await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 15_000 })
 
   await showBrowse(page)
-  const notes = page.locator(`${WORKBENCH.panel} .ft-node.ft-file`, { hasText: 'NOTES.md' })
+  const notes = page.locator(`${WORKBENCH.browseRows}.ft-file`, { hasText: 'NOTES.md' })
   await expect(notes).toBeVisible({ timeout: 15_000 })
 
   await notes.click()

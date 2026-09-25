@@ -15,6 +15,7 @@ import {
   clickAppMenuItem,
   encodeCwd,
   focusOwner,
+  notesArea,
   notesIsland,
   notesOnDisk,
   notesPath,
@@ -29,8 +30,6 @@ import {
   wsRows
 } from './helpers/p1'
 import { layoutState } from './helpers/workbench'
-
-const notesArea = (page: Page) => notesIsland(page).locator('.ed-area')
 
 const head = (page: Page, wsName: string) => page.locator('.ws-head', { hasText: wsName })
 

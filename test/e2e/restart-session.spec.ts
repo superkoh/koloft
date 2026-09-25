@@ -1,16 +1,20 @@
 import fs from 'fs'
 import path from 'path'
-import { spawnSync } from 'child_process'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, runInTerminal } from './helpers/app'
 import { writeClaudeWrapper, type E2EEnv } from './helpers/env'
 import {
   centerTerm,
   openMenu,
+  processAlive,
+  readCalls,
+  resumedId,
   runIn,
   setNextSessionTitle,
   startSessionIn,
-  waitBooted
+  waitBooted,
+  waitForCalls,
+  type ClaudeCall
 } from './helpers/p1'
 import { WORKBENCH, showBrowse } from './helpers/workbench'
 
@@ -23,39 +27,6 @@ const OLD_PTY_REVERT_CAN_TRAIL_RELAUNCH_MS = 5000
 const TITLE_SAMPLE_INTERVAL_MS = 150
 const SHELL_COMMAND_NOT_FOUND_TOAST = 'exit code 127'
 
-interface ClaudeCall {
-  pid: number
-  argv: string[]
-  cwd: string
-  sessionId: string
-  ts: number
-}
-
-function readCalls(env: E2EEnv): ClaudeCall[] {
-  if (!fs.existsSync(env.claudeCalls)) return []
-  return fs
-    .readFileSync(env.claudeCalls, 'utf8')
-    .split('\n')
-    .filter(Boolean)
-    .flatMap((line) => {
-      try {
-        return [JSON.parse(line) as ClaudeCall]
-      } catch {
-        return []
-      }
-    })
-}
-
-async function waitForCalls(env: E2EEnv, count: number, timeout = 40_000): Promise<ClaudeCall[]> {
-  await expect.poll(() => readCalls(env).length, { timeout }).toBeGreaterThanOrEqual(count)
-  return readCalls(env)
-}
-
-function resumedId(call: ClaudeCall): string | undefined {
-  const i = call.argv.indexOf('--resume')
-  return i >= 0 ? call.argv[i + 1] : undefined
-}
-
 function hasMalformedResume(calls: ClaudeCall[]): boolean {
   return calls.some((c) => {
     const i = c.argv.indexOf('--resume')
@@ -63,13 +34,6 @@ function hasMalformedResume(calls: ClaudeCall[]): boolean {
     const id = c.argv[i + 1]
     return !id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
   })
-}
-
-function processAlive(pid: number): boolean {
-  const res = spawnSync('ps', ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf8' })
-  if (res.status !== 0) return false
-  const stat = res.stdout.trim()
-  return stat.length > 0 && !stat.startsWith('Z')
 }
 
 interface MenuEntry {
@@ -520,7 +484,7 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
       const [first] = await waitForCalls(env, 1)
 
       await showBrowse(page)
-      const notes = page.locator(`${WORKBENCH.panel} .ft-node.ft-file`, { hasText: 'NOTES.md' })
+      const notes = page.locator(`${WORKBENCH.browseRows}.ft-file`, { hasText: 'NOTES.md' })
       await expect(notes).toBeVisible({ timeout: 20_000 })
       await notes.click()
       await expect(page.locator(WORKBENCH.readingTitle)).toHaveText('NOTES.md')
@@ -579,7 +543,7 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
         await waitForCalls(env, 2)
 
         await showBrowse(page)
-        const notes = page.locator(`${WORKBENCH.panel} .ft-node.ft-file`, { hasText: 'NOTES.md' })
+        const notes = page.locator(`${WORKBENCH.browseRows}.ft-file`, { hasText: 'NOTES.md' })
         await expect(notes).toBeVisible({ timeout: 25_000 })
         await notes.click()
         await expect(page.locator(WORKBENCH.readingTitle)).toHaveText('NOTES.md')
