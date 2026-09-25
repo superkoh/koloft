@@ -613,10 +613,12 @@ export class CodexSessions {
       if (run && !run.explicitStop && !run.stopping)
         this.bindThread(run, event.thread, event.change)
     }
-    const openShim = this.startOpenShim(processEnv, (target) => observe({ type: 'open', target }))
+    const openShim = this.startOpenShim(processEnv?.ZDOTDIR, (target) =>
+      observe({ type: 'open', target })
+    )
     const env = { ...this.envFor(home), ZDOTDIR: openShim.zdotDir }
     const observer = new CodexObservation(observe)
-    let transport: Awaited<ReturnType<typeof createCodexTransport>>
+    let transport: Awaited<ReturnType<typeof createCodexTransport>> | undefined
     try {
       transport = await this.startTransport({
         binary,
@@ -630,11 +632,6 @@ export class CodexSessions {
           this.deps.error(String(error))
         }
       })
-    } catch (error) {
-      openShim.release()
-      throw error
-    }
-    try {
       this.assertStarting()
       const argv = [
         '--remote',
@@ -676,7 +673,7 @@ export class CodexSessions {
       this.warnUntestedVersion(available)
       return { id: handle.id, cwd }
     } catch (error) {
-      await transport.stop()
+      await transport?.stop()
       openShim.release()
       throw error
     }
@@ -684,10 +681,10 @@ export class CodexSessions {
 
   // CODEX§12
   private startOpenShim(
-    processEnv: NodeJS.ProcessEnv | undefined,
+    userZdotdir: string | undefined,
     open: (target: string) => void
   ): { zdotDir: string; release(): void } {
-    const shim = writeCodexOpenShim(this.deps.openShimRoot, randomUUID(), processEnv?.ZDOTDIR)
+    const shim = writeCodexOpenShim(this.deps.openShimRoot, randomUUID(), userZdotdir)
     const handled = new Set<string>()
     const drops = watchJsonDrops(shim.requestDir, (name) => (obj, full) => {
       if (handled.has(name)) return

@@ -56,12 +56,20 @@ newid() {
 }
 
 esc() { printf '%s' "$1" | sed -e 's/\\\\/\\\\\\\\/g' -e 's/"/\\\\"/g'; }
+
+write_drop() {
+  oid="$(newid)"
+  [ -n "$oid" ] || oid="$$-$(date +%s)"
+  part="$1/$oid.part"
+  printf '{"tabId":"%s","openId":"%s","path":"%s","url":"%s","cwd":"%s","ts":%s}\\n' \\
+    "$(esc "$2")" "$oid" "$(esc "$abs")" "$(esc "$url")" "$(esc "$PWD")" "$(date +%s)" > "$part" 2>/dev/null \\
+    && mv "$part" "$1/$oid.json" 2>/dev/null && return 0
+  rm -f "$part" 2>/dev/null
+  return 1
+}
 `
 
 export const CODEX_OPEN_SENT = 'koloft-open:sent'
-export const CODEX_OPEN_BLOCKED = 'koloft-open:blocked'
-
-export const codexOpenRequestDir = (token: string): string => `/tmp/koloft-cx-open-${token}`
 
 // CODEX§12
 function codexOpenShimScript(requestDir: string): string {
@@ -69,17 +77,7 @@ function codexOpenShimScript(requestDir: string): string {
   return `${OPEN_SHIM_HEAD}
 [ -d ${dir} ] || passthrough "$@"
 ${OPEN_SHIM_TARGET}
-oid="$(newid)"
-[ -n "$oid" ] || oid="$$-$(date +%s)"
-part=${dir}/"$oid.part"
-if printf '{"openId":"%s","path":"%s","url":"%s","cwd":"%s","ts":%s}\\n' \\
-  "$oid" "$(esc "$abs")" "$(esc "$url")" "$(esc "$PWD")" "$(date +%s)" > "$part" 2>/dev/null \\
-  && mv "$part" ${dir}/"$oid.json" 2>/dev/null; then
-  echo ${CODEX_OPEN_SENT}
-else
-  rm -f "$part" 2>/dev/null
-  echo ${CODEX_OPEN_BLOCKED}
-fi
+if write_drop ${dir} ""; then echo ${CODEX_OPEN_SENT}; else echo koloft-open:blocked; fi
 exit 0
 `
 }
@@ -106,7 +104,7 @@ export function writeCodexOpenShim(
 ): CodexOpenShim {
   const shimDir = path.join(root, token)
   const zdotDir = path.join(shimDir, 'zdot')
-  const shim = { shimDir, zdotDir, requestDir: codexOpenRequestDir(token) }
+  const shim = { shimDir, zdotDir, requestDir: `/tmp/koloft-cx-open-${token}` }
   try {
     fs.mkdirSync(zdotDir, { recursive: true })
     fs.writeFileSync(path.join(shimDir, 'open'), codexOpenShimScript(shim.requestDir), {

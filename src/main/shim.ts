@@ -244,12 +244,7 @@ const OPEN_SHIM_SCRIPT = `${OPEN_SHIM_HEAD}
 [ -n "$KOLOFT_PID" ] && kill -0 "$KOLOFT_PID" 2>/dev/null || passthrough "$@"
 ${OPEN_SHIM_TARGET}
 mkdir -p "$KOLOFT_OPEN_DIR" 2>/dev/null || passthrough "$@"
-oid="$(newid)"
-[ -n "$oid" ] || oid="$$-$(date +%s)"
-out="$KOLOFT_OPEN_DIR/$oid.json"
-printf '{"tabId":"%s","openId":"%s","path":"%s","url":"%s","cwd":"%s","ts":%s}\\n' \\
-  "$(esc "$KOLOFT_TAB_ID")" "$oid" "$(esc "$abs")" "$(esc "$url")" "$(esc "$PWD")" "$(date +%s)" > "$out" 2>/dev/null \\
-  || { rm -f "$out" 2>/dev/null; passthrough "$@"; }
+write_drop "$KOLOFT_OPEN_DIR" "$KOLOFT_TAB_ID" || passthrough "$@"
 exit 0
 `
 
