@@ -8,6 +8,7 @@ import { readCalls, startSessionIn, waitBooted, wsRows } from './helpers/p1'
 import { BROWSER, cdpEndpointOf, openBrowser, openTabs } from './helpers/browser'
 import { openSettings } from './helpers/extensions'
 import { startEchoServer } from './helpers/fixtureServer'
+import { BROWSER_TAB_ENV } from '../../src/shared/browserTabEnv'
 
 const BIN = process.env.KOLOFT_SMOKE_TOOLS_DIR ?? ''
 const HAVE_TOOLS = !!BIN && fs.existsSync(path.join(BIN, 'playwright-mcp'))
@@ -44,6 +45,12 @@ function browsersWithPlaywrightLaunchFlags(): string[] {
   return out ? out.split('\n') : []
 }
 
+function envWithoutTheHostKoloftTabsBrowser(): NodeJS.ProcessEnv {
+  const own = { ...process.env }
+  for (const k of BROWSER_TAB_ENV) delete own[k]
+  return own
+}
+
 function collect(p: ChildProcess): Promise<{ code: number | null; out: string }> {
   return new Promise((resolve) => {
     let out = ''
@@ -62,7 +69,7 @@ function cli(
     spawn(path.join(BIN, 'playwright-cli'), args, {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, ...extraEnv }
+      env: { ...envWithoutTheHostKoloftTabsBrowser(), ...extraEnv }
     })
   )
 }
@@ -100,8 +107,7 @@ function mcpNavigate(
   url: string,
   opts: { endpoint?: string; args?: string[] }
 ): { proc: ChildProcess; replies: Promise<McpReply[]> } {
-  const childEnv = { ...process.env }
-  delete childEnv.PLAYWRIGHT_MCP_CDP_ENDPOINT
+  const childEnv = envWithoutTheHostKoloftTabsBrowser()
   if (opts.endpoint) childEnv.PLAYWRIGHT_MCP_CDP_ENDPOINT = opts.endpoint
   const proc = spawn(path.join(BIN, 'playwright-mcp'), opts.args ?? [], {
     cwd: env.home,
