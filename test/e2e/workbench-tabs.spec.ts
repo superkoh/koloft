@@ -440,4 +440,24 @@ test.describe('Workbench commands and the panel’s first mount', () => {
       await quitAndClose(app)
     }
   })
+
+  test('the pre-armed View ▸ New Browser Tab opens the ＋ menu on the first mount of a panel that was never shown', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    seedWorkbenchDefault(env, false)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await startSessionIn(page, 'ws-a')
+      await expect(page.locator(WORKBENCH.column)).toHaveCount(0)
+
+      await clickAppMenuItem(app, page, 'browser-new-tab')
+      await expect(workbenchPanel(page)).toBeVisible({ timeout: 20_000 })
+      await expect(page.locator(WORKBENCH.newMenu)).toBeVisible()
+    } finally {
+      await quitAndClose(app)
+    }
+  })
 })
