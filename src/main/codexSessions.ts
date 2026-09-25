@@ -779,6 +779,7 @@ export class CodexSessions {
 
   private async resumeRun(req: SessionResumeRequest): Promise<{ id: string; cwd: string }> {
     await this.waitForPrevious(req.sessionId)
+    // CODEX§2
     if (this.archivedIds.has(req.sessionId)) {
       throw new Error(
         `Archived in Codex. Run codex unarchive ${this.nativeId(req.sessionId)} first.`

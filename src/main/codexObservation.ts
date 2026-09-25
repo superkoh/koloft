@@ -30,6 +30,7 @@ export interface CodexThread {
   status?: { type: string; activeFlags?: string[] }
 }
 
+// CODEX§2
 export function userThread(value: unknown): CodexThread | null {
   const t = record(value)
   if (
@@ -204,6 +205,7 @@ export class CodexObservation {
       this.observeFiles(record(p.item))
       this.observeOpen(record(p.item))
     }
+    // CODEX§3
     if (
       id !== undefined &&
       method &&
