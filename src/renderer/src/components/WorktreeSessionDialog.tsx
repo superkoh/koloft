@@ -16,6 +16,7 @@ import {
   sortWorktrees,
   worktreeAim,
   worktreeBaseMode,
+  worktreeInUse,
   type PullPhase,
   type WtAction,
   type WtAim,
@@ -102,10 +103,6 @@ export function WorktreeSessionDialog({
 
   const listed = useMemo(() => sortWorktrees(worktrees, rowsAtOpen.current), [worktrees])
   const names = useMemo(() => listed.map((w) => w.name), [listed])
-  const running = useMemo(
-    () => new Set(ws.rows.filter((r) => r.running).map((r) => r.worktree)),
-    [ws.rows]
-  )
 
   const aim = worktreeAim(listed, query, hot)
   const actionable =
@@ -169,13 +166,10 @@ export function WorktreeSessionDialog({
     if (target.kind === 'recover') {
       void sessionLaunch.launch(resolveLaunch(target, wsPath), method)
     } else if (target.kind === 'open') {
-      const row = {
-        kind: 'existing' as const,
-        name: target.name,
-        dir: target.dir,
-        inUse: running.has(target.name)
-      }
-      void sessionLaunch.launch(resolveLaunch(row, wsPath), method)
+      void sessionLaunch.launch(
+        resolveLaunch({ kind: 'existing', name: target.name, dir: target.dir }, wsPath),
+        method
+      )
     } else if (target.kind === 'create') {
       void sessionLaunch.launch(
         resolveLaunch({ kind: 'create', name: target.name }, wsPath),
@@ -365,7 +359,7 @@ export function WorktreeSessionDialog({
                     <span className="note">
                       {w.recoveryResourceId ? 'Recover worktree · ' : ''}
                       {w.branch ? `branch ${w.branch}` : 'detached'}
-                      {running.has(w.name) && (
+                      {worktreeInUse(w, ws.rows) && (
                         <>
                           {' · '}
                           <span className="inuse">in use</span>
