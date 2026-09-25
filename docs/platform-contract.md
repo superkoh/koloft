@@ -297,6 +297,11 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
 - **With no audio or video input device, `getUserMedia` rejects with `NotFoundError`
   before the request handler is asked** (measured on a Mac mini whose guest reported
   only `audiooutput`), so no prompt can appear.
+- **`--use-fake-device-for-media-stream` gives a guest a fake mic and camera that still
+  go through the request handler**: the prompt shows, Allow resolves `getUserMedia`,
+  Deny rejects it with `NotAllowedError`. Measured 2026-09-24 on Electron 43.7.3, on the same
+  device-less Mac mini: with the switch, BB-M01–M04 pass; without it, BB-16 and BB-C63
+  get `NotFoundError` where they expect `NotAllowedError`.
 
 ## §12 `<webview>` guests: navigation, certificates, dialogs and PDFs
 

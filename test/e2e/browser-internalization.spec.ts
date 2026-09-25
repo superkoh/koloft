@@ -451,7 +451,7 @@ document.getElementById('ask').addEventListener('click', async function () {
       const outcome = JSON.parse(await result.innerText()) as Record<string, string>
       expect(outcome.notifications).toBe('denied')
       expect(outcome.clipboardRead).toMatch(/^rejected:/)
-      expect(outcome.media).toMatch(/^rejected:/)
+      expect(outcome.media).toBe('rejected:NotAllowedError')
       expect(outcome.geolocation).toBe(`rejected:${GEOLOCATION_PERMISSION_DENIED}`)
 
       expect(readExternalOpens(env)).toEqual([])
