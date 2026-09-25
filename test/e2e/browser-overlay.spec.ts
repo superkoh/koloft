@@ -290,7 +290,7 @@ test.describe("App-level browser overlay: a page no session's Browser can show l
       const guest = await guestByUrl(app, '/permission')
 
       await guest.locator('#ask-mic').click()
-      await expect(guest.locator('#mic')).toContainText('denied:', { timeout: 30_000 })
+      await expect(guest.locator('#mic')).toHaveText('denied:NotAllowedError', { timeout: 30_000 })
       await guest.locator('#ask-notify').click()
       await expect(guest.locator('#notify')).toHaveText('denied', { timeout: 30_000 })
       expect(await page.locator(BROWSER.permissionBar).count()).toBe(0)

@@ -44,7 +44,9 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   — `startSessionIn` / `openWorktreeSession` (helpers/p1.ts) — and reuses that
   file's helpers. Fixture workspaces live in helpers/env.ts.
 - `setupE2EEnv` pins ws-a and ws-b (so ⌘N always shows the C10 picker) and turns on
-  an open Workbench (`workbench.defaultOpen`). A case that needs the panel shut calls
+  an open Workbench (`workbench.defaultOpen`), and launches with Chromium's fake mic and
+  camera, so a media request reaches the permission prompt on a machine without them
+  (platform ledger §11). A case that needs the panel shut calls
   `seedWorkbenchDefault(env, false)`; a case about the shipped default deletes the
   block with the app down instead (workbench-layout
   `unseedWorkbenchDefaultWhileAppDown`) — a seeded `false` would pass against a build
