@@ -106,7 +106,8 @@ beforeEach(() => {
     error: vi.fn(),
     trustFolder: vi.fn(),
     pickHome: vi.fn(() => undefined),
-    homes: vi.fn(() => [])
+    homes: vi.fn(() => []),
+    openShimRoot: path.join(directory, 'codex-open')
   }
   sessions = new CodexSessions(path.join(directory, 'sessions.json'), deps)
   vi.spyOn(sessions, 'availability').mockResolvedValue({ id: 'codex', available: true })
@@ -399,6 +400,35 @@ describe('CodexSessions', () => {
       type: 'open',
       target: path.join(repo, 'report.html')
     })
+  })
+
+  it("points Codex's zsh at a dotfile folder of the run's own, whose open shim asks Koloft through /tmp and reads no KOLOFT_ variable", async () => {
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    const zdot = transports[0].options.env?.ZDOTDIR
+    expect(zdot?.startsWith(path.join(directory, 'codex-open') + path.sep)).toBe(true)
+    expect(vi.mocked(deps.pty.create).mock.calls[0][0].processEnv?.ZDOTDIR).toBe(zdot)
+    const script = fs.readFileSync(path.join(path.dirname(zdot!), 'open'), 'utf8')
+    expect(script).toMatch(/\/tmp\/koloft-cx-open-[0-9a-f-]{36}/)
+    expect(script).not.toContain('KOLOFT_')
+  })
+
+  it("an open the shim drops in the run's request folder reaches that tab's Workbench, and stopping the run removes the shim and the folder", async () => {
+    const launched = await sessions.launch({ kind: 'codex', cwd: repo })
+    bind()
+    const shimDir = path.dirname(transports[0].options.env!.ZDOTDIR!)
+    const requestDir = /\/tmp\/koloft-cx-open-[0-9a-f-]{36}/.exec(
+      fs.readFileSync(path.join(shimDir, 'open'), 'utf8')
+    )![0]
+    fs.writeFileSync(
+      path.join(requestDir, 'drop-1.json'),
+      JSON.stringify({ openId: 'drop-1', path: path.join(repo, 'report.html'), url: '', cwd: repo })
+    )
+    await expect
+      .poll(() => vi.mocked(deps.events).mock.calls)
+      .toContainEqual([launched.id, { type: 'open', target: path.join(repo, 'report.html') }])
+    await sessions.stop(launched.id)
+    expect(fs.existsSync(shimDir)).toBe(false)
+    expect(fs.existsSync(requestDir)).toBe(false)
   })
 
   it('reports an unexpected exit after confirmed stop without immediately clearing the alert', async () => {

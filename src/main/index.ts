@@ -1215,7 +1215,8 @@ app.whenReady().then(() => {
       error: (message) => sendToRenderer('cron:toast', message),
       trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
-      homes: () => codexHomes(userData)
+      homes: () => codexHomes(userData),
+      openShimRoot: path.join(userData, 'codex-open')
     })
   } catch (error) {
     codexStartupError = `Codex session data could not be loaded; the original file is preserved. ${String(error)}`

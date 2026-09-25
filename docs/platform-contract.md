@@ -29,6 +29,14 @@ method. A recheck adds its date, version and command to the bullet.
   one inside a session pty, unless its folder is put first again after the rc files
   have run. (2026-09-24, macOS 27.0: `PATH=/fakebin:/usr/bin:/bin zsh -lc` printed
   `/usr/local/bin` as the first entry, the first line of `/etc/paths`.)
+- **A `ZDOTDIR` wrapper puts a folder first again after `path_helper`.** zsh reads its
+  dotfiles from `$ZDOTDIR` instead of `$HOME`, and `/etc/zprofile` (where `path_helper`
+  runs) is read before `$ZDOTDIR/.zprofile`. A wrapper folder whose `.zshenv`,
+  `.zprofile`, `.zshrc` and `.zlogin` each source the user's own file of the same name
+  and whose `.zprofile` then prepends a folder to `PATH` makes that folder win in
+  `zsh -lc`, with the user's own `PATH` additions kept. (2026-09-25, macOS 27.0, zsh:
+  `command -v open` printed the wrapper's `open`; `command -v codex` still printed
+  `~/.local/bin/codex`, which the user's `~/.zprofile` adds.)
 - **`zsh -lc` skips `~/.zshrc`** (a login shell that is not interactive), so a
   `command -v` run through it can miss a tool that every interactive session finds.
   Only `zsh -l -i` loads the user's full profile. (2026-09-24, macOS 27.0, zsh with a

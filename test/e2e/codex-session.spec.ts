@@ -46,6 +46,16 @@ function installCodex(env: E2EEnv): void {
   fs.symlinkSync(path.join(__dirname, 'fixtures', 'fake-codex.js'), binary)
   env.launchEnv.KOLOFT_CODEX_CMD = binary
   env.launchEnv.CODEX_HOME = path.join(env.home, '.codex')
+  fs.writeFileSync(path.join(env.home, '.zprofile'), `export PATH="${env.fakeBin}:$PATH"\n`)
+}
+function codexOpenOutputs(env: E2EEnv): string[] {
+  return fs
+    .readFileSync(path.join(env.home, 'fake-codex-wire.jsonl'), 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line).frame?.params?.item)
+    .filter((item) => item?.type === 'commandExecution' && item.id.startsWith('open-'))
+    .map((item) => item.aggregatedOutput)
 }
 function codexCalls(env: E2EEnv): CodexCall[] {
   const file = path.join(env.home, 'fake-codex-calls.jsonl')
@@ -376,7 +386,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('a file Codex opens with `open` shows in its own Workbench reading area', async ({
+  test("a file Codex opens with `open` reaches its own Workbench reading area through Koloft's open shim, so the frame does not open it a second time", async ({
     env
   }) => {
     installCodex(env)
@@ -391,6 +401,8 @@ test.describe('Codex sessions through the real method chooser, process transport
         .click()
       await expect(page.locator(WORKBENCH.readingTitle)).toHaveText('README.md')
       await expect(page.locator(WORKBENCH.readingBody)).toContainText('koloft-e2e-alpha')
+      expect(codexOpenOutputs(env)).toEqual(['koloft-open:sent\n'])
+      expect(fs.existsSync(path.join(env.home, 'open-calls.txt'))).toBe(false)
     } finally {
       await quitAndClose(app)
     }

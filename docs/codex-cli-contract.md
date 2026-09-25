@@ -331,10 +331,42 @@ checked**; if it did, a resumed session would open its old files again.
 The same day, without a model, `codex sandbox -c 'sandbox_mode="workspace-write"'
 /usr/bin/open nosuchscheme98765://x` (a scheme no app claims, so nothing could open)
 failed with Launch Services error `-10661` (`kLSExecutableIncorrectFormat`), while the same
-line outside the sandbox failed with `-10814` (`kLSApplicationNotFoundErr`). So the sandbox
-changes how `open` finds an app. Whether `open` of a file that exists succeeds inside that
-sandbox was not tried (it would have opened an app on this Mac): **inferred, not checked**
-either way, which is why a failed `open` still counts as an open request.
+line outside the sandbox failed with `-10814` (`kLSApplicationNotFoundErr`).
+
+**Inside the sandbox, `open` of a file that exists fails too, so nothing opens on the
+Mac.** Checked 2026-09-25 with codex-cli 0.153.4 on macOS 27.0, three ways: `codex
+sandbox -c 'sandbox_mode="workspace-write"' /usr/bin/open report.txt` (a plain text file
+in the folder), the same under `read-only`, and one real model turn (`thread/start` with
+`sandbox: "workspace-write"`, `approvalPolicy: "never"`) whose `open ./report.txt`
+`commandExecution` item completed with `status: "failed"`, `exitCode: 1` and the same
+`-10661` message in `aggregatedOutput`. No app opened. So under `read-only` and
+`workspace-write` the system `open` never shows anything, and Koloft's own open (from the
+frame or from the shim below) is the only one the person sees. Under
+`danger-full-access` there is no sandbox and `open` behaves as it does in any shell:
+**inferred, not checked** (running it would have opened an app on this Mac).
+
+**Which `open` the model's shell picks.** The item's `command` is `/bin/zsh -lc '…'`,
+a login shell, so `path_helper` runs (`PLATFORM§2`). Checked 2026-09-25 in a real
+turn: with a shim folder put first in the app-server's `PATH`, `command -v open` inside
+the turn still printed `/usr/bin/open`; the shim folder had moved behind the `/etc/paths`
+entries. With `ZDOTDIR` in the app-server environment pointing at a folder whose
+`.zprofile` sources the user's own `~/.zprofile` and then puts the shim folder first
+again, the same turn printed the shim's path, the shim ran (`status: "completed"`,
+`exitCode: 0`), the user's own `PATH` additions were still there (`command -v codex`
+found `~/.local/bin/codex`), and the shim could write under the turn's folder and under
+`/tmp` but not under `~/Library/Application Support` (`Operation not permitted`). Under
+`read-only` the shim could write nowhere, in the folder or `/tmp`. The app-server hands
+`PATH` and `ZDOTDIR` from its own environment to the turn's shell unchanged (both showed
+up in `echo "$PATH"` and in the shim's log). A user whose login shell is not zsh was not
+tried: for bash or fish `ZDOTDIR` means nothing, **inferred, not checked**.
+
+So Koloft handles an `open` three ways. Under `workspace-write` and `danger-full-access`
+its own shim (put first through `ZDOTDIR`) writes the request into `/tmp`, never runs the
+system `open`, and prints `koloft-open:sent`, and Koloft then skips that item's frame
+(the shim under `danger-full-access` was not run: **inferred, not checked**). Under
+`read-only` the shim can write nowhere, prints `koloft-open:blocked`, and Koloft opens the
+file from the `item/completed` frame. A shell that is not zsh never reaches the shim, so
+its item has neither line and Koloft opens from the frame too.
 
 Browser control (an agent driving a Workbench web tab through Koloft's CDP (Chrome DevTools
 Protocol) relay) was not tried for Codex. Whether a command inside Codex's sandbox can

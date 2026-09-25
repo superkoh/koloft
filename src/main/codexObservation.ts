@@ -5,6 +5,7 @@ import path from 'path'
 import { schemeOf } from '@shared/browserRoute'
 import { costUsdOf, resolvePricing } from '@shared/pricing'
 import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
+import { CODEX_OPEN_SENT } from './openShimScript'
 
 export function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -322,6 +323,7 @@ export class CodexObservation {
   private observeOpen(item: Record<string, unknown>): void {
     if (item.type !== 'commandExecution' || !OPEN_RAN.includes(String(item.status))) return
     if (!Array.isArray(item.commandActions)) return
+    if (String(item.aggregatedOutput ?? '').includes(CODEX_OPEN_SENT)) return
     for (const action of item.commandActions.map(record)) {
       const target =
         typeof action.command === 'string' ? openTarget(action.command, item.cwd) : null

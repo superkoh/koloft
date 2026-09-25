@@ -1,6 +1,7 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import { randomUUID } from 'crypto'
 import type {
   CreateTabOptions,
   LaunchPermission,
@@ -25,6 +26,9 @@ import type { PtyManager } from './ptyManager'
 import { resolveCodexRuntime } from './codexRuntime'
 import { occupantName } from './resumePlan'
 import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
+import { watchJsonDrops } from './jsonDrops'
+import { openDropTarget, type OpenDrop } from './openDrop'
+import { removeCodexOpenShim, writeCodexOpenShim } from './openShimScript'
 
 const exists = (p: string): boolean => {
   try {
@@ -83,6 +87,7 @@ export interface CodexSessionDeps {
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
   pickHome(): { account: string; home: string } | undefined
   homes(): string[]
+  openShimRoot: string
 }
 
 interface RowScope {
@@ -103,6 +108,7 @@ interface Run {
   resumeKey?: string
   home?: string
   account?: string
+  releaseOpenShim(): void
 }
 
 export class CodexSessions {
@@ -597,7 +603,6 @@ export class CodexSessions {
     this.assertStarting()
     const picked = opts.resumeSessionId ? undefined : this.deps.pickHome()
     const home = opts.resumeSessionId ? this.homeFor(opts.resumeSessionId) : picked?.home
-    const env = this.envFor(home)
     let run: Run | undefined
     const observe = (event: CodexEvent): void => {
       if (event.type !== 'bound') {
@@ -608,19 +613,27 @@ export class CodexSessions {
       if (run && !run.explicitStop && !run.stopping)
         this.bindThread(run, event.thread, event.change)
     }
+    const openShim = this.startOpenShim(processEnv, (target) => observe({ type: 'open', target }))
+    const env = { ...this.envFor(home), ZDOTDIR: openShim.zdotDir }
     const observer = new CodexObservation(observe)
-    const transport = await this.startTransport({
-      binary,
-      env,
-      cwd,
-      configOverrides: [STATUS_LINE_CONFIG],
-      onFrame: (direction, frame) => observer.receive(direction, frame),
-      onDisconnect: () => this.markDegraded(run),
-      onError: (error) => {
-        this.markDegraded(run)
-        this.deps.error(String(error))
-      }
-    })
+    let transport: Awaited<ReturnType<typeof createCodexTransport>>
+    try {
+      transport = await this.startTransport({
+        binary,
+        env,
+        cwd,
+        configOverrides: [STATUS_LINE_CONFIG],
+        onFrame: (direction, frame) => observer.receive(direction, frame),
+        onDisconnect: () => this.markDegraded(run),
+        onError: (error) => {
+          this.markDegraded(run)
+          this.deps.error(String(error))
+        }
+      })
+    } catch (error) {
+      openShim.release()
+      throw error
+    }
     try {
       this.assertStarting()
       const argv = [
@@ -655,7 +668,8 @@ export class CodexSessions {
         explicitStop: false,
         resumeKey: opts.resumeSessionId,
         home,
-        account: picked?.account
+        account: picked?.account,
+        releaseOpenShim: openShim.release
       }
       this.runs.set(handle.id, run)
       this.changed()
@@ -663,7 +677,31 @@ export class CodexSessions {
       return { id: handle.id, cwd }
     } catch (error) {
       await transport.stop()
+      openShim.release()
       throw error
+    }
+  }
+
+  // CODEX§12
+  private startOpenShim(
+    processEnv: NodeJS.ProcessEnv | undefined,
+    open: (target: string) => void
+  ): { zdotDir: string; release(): void } {
+    const shim = writeCodexOpenShim(this.deps.openShimRoot, randomUUID(), processEnv?.ZDOTDIR)
+    const handled = new Set<string>()
+    const drops = watchJsonDrops(shim.requestDir, (name) => (obj, full) => {
+      if (handled.has(name)) return
+      handled.add(name)
+      fs.rm(full, { force: true }, () => {})
+      const target = openDropTarget(record(obj) as OpenDrop)
+      if (target) open(target)
+    })
+    return {
+      zdotDir: shim.zdotDir,
+      release: () => {
+        drops?.close()
+        removeCodexOpenShim(shim)
+      }
     }
   }
 
@@ -822,6 +860,7 @@ export class CodexSessions {
     run.stopping = Promise.resolve()
       .then(() => run.transport.stop())
       .then(() => {
+        run.releaseOpenShim()
         this.deps.pty.kill(tabId)
         this.deps.runtime.forget(tabId)
         this.deps.events(tabId, {

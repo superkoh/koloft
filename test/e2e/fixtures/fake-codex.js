@@ -3,6 +3,7 @@ const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
 const readline = require('readline')
+const { spawnSync } = require('child_process')
 const WebSocket = require('ws')
 
 const argv = process.argv.slice(2)
@@ -224,19 +225,23 @@ if (argv[0] === 'app-server') {
       result(id, { turn })
       status(thread, { type: 'active', activeFlags: [] })
       event('turn/started', { threadId: thread.id, turn })
-      if (text.startsWith('open '))
+      if (text.startsWith('open ')) {
+        const shell = spawnSync('/bin/zsh', ['-lc', text], { cwd: thread.cwd, encoding: 'utf8' })
         event('item/completed', {
           threadId: thread.id,
           turnId: turn.id,
           item: {
             type: 'commandExecution',
             id: 'open-' + turn.id,
-            status: 'completed',
+            status: shell.status === 0 ? 'completed' : 'failed',
+            exitCode: shell.status,
+            aggregatedOutput: (shell.stdout || '') + (shell.stderr || ''),
             command: `/bin/zsh -lc '${text}'`,
             cwd: thread.cwd,
             commandActions: [{ type: 'unknown', command: text }]
           }
         })
+      }
       if (text.includes('approve')) {
         pendingApproval = { id: 'approval-' + turn.id, thread, turn }
         status(thread, { type: 'active', activeFlags: ['waitingOnApproval'] })

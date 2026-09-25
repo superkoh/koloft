@@ -435,4 +435,24 @@ describe('CodexObservation', () => {
       'https://example.test/x'
     ])
   })
+
+  it("leaves an open to Koloft's open shim when the shim says it already asked, and opens it from the frame when the shim was blocked or never ran", () => {
+    const f = fixture()
+    f.bind()
+    const ran = (line: string, aggregatedOutput: string) =>
+      f.server('item/completed', {
+        item: {
+          ...command(line, [{ type: 'unknown', command: line }]).item,
+          status: 'completed',
+          aggregatedOutput
+        }
+      })
+    ran('open ./sent.html', 'koloft-open:sent\n')
+    ran('open ./blocked.html', 'koloft-open:blocked\n')
+    ran('open ./no-shim.html', '')
+    expect(f.events.flatMap((e) => (e.type === 'open' ? [e.target] : []))).toEqual([
+      '/repo/blocked.html',
+      '/repo/no-shim.html'
+    ])
+  })
 })
