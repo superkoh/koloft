@@ -66,7 +66,7 @@ export function BrowserOverlay({
 
   const dialogIsThisGuests = dialog && dialog.guestId === guestId.current
 
-  // PLATFORM§24
+  // PLATFORM§24 ADR-0013
   return createPortal(
     <div className="wovl">
       <div className="wovl-head">

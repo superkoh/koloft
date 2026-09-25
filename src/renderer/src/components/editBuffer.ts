@@ -7,7 +7,6 @@ export function sameStamp(a: FileStamp, b: FileStamp): boolean {
   return a.mtimeMs === b.mtimeMs && a.size === b.size
 }
 
-// ADR-0018
 export function isDirty(original: string, current: string): boolean {
   if (original.length !== current.length) return true
   return original !== current

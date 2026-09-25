@@ -7,11 +7,14 @@ Claude's own storage (`~/.claude/projects`) and hangs one helper panel — the
 Workbench: changed files, a file browser, web pages, a shell — off each session,
 and one plain-text note off each workspace (the Notes island under the sessions
 list; the Workbench is the session's, the note is the workspace's).
+A session tab is not a session: the tab is the terminal `claude` runs in, and
+`/clear`, a resume or a restart swaps the session inside it while the tab stays —
+the Workbench, its web pages and the shim's env are keyed by the tab.
 Judge every trade-off against that one idea.
 (Source lives in `superkoh/koloft`; installers in `superkoh/koloft-releases`, the list
 `install.sh` and the in-app updater read.)
 
-How each feature behaves is NOT written here — the code and its tests are the source
+How each feature behaves is not written here — the code and its tests are the source
 of truth.
 
 Working principles:
@@ -57,7 +60,7 @@ Working principles:
      code with a marker: Claude Code `docs/claude-code-contract.md` (`CC§`), Codex
      `docs/codex-cli-contract.md` (`CODEX§`), anything else — Electron, Node, macOS,
      git, GitHub — `docs/platform-contract.md` (`PLATFORM§`);
-  4. an ADR (architecture decision record), `docs/adr/NNNN-slug.md` — only when ALL
+  4. an ADR (architecture decision record), `docs/adr/NNNN-slug.md` — only when all
      four hold: it cannot be read from the code (names, types, tests); a smart
      newcomer who reads and runs the code could not infer it; without it the next
      person would plausibly make a reasonable-looking wrong change; and no existing
@@ -78,16 +81,19 @@ Working principles:
   implementation (mock everything, assert the mock was called), or to pin an
   arbitrary cosmetic value (a pixel size, a colour, a line of copy).
 - Run only what the change can break, and say which ran and why those. Unit layer:
-  `npm run test:unit:changed` picks the files by import graph. E2E layer: you pick.
+  `npm run test:unit:changed` picks the files by import graph. E2E layer: no tool
+  picks, so the agent making the change picks the specs itself, never the owner.
   First choose candidates by flow name from `test/e2e` (spec names are flow names;
   its test titles say what it covers), then grep `test/e2e` for the
   identifiers you touched — component names, `.wb-*` selectors, IPC channel names —
   to catch the rest. A change to a wide fan-out file (types.ts, store.ts, App.tsx,
   preload, main index.ts) is still picked by the flows whose state or IPC it
   touched, never by falling back to the whole suite. There is no full-suite gate:
-  `npm test` runs only when someone asks for it, never as a reflex before a merge.
+  `npm test` runs only when someone asks for it, never as a reflex before a merge or
+  after a rebase.
 - Finish the code, then review, then test. While code is still being written, only
-  the fast checks run (typecheck, `check:comments`, `test:unit:changed`). Once the
+  the fast checks run (`format`, typecheck, `check:comments`, `test:unit:changed`) —
+  CI's first gate is `format:check`, and no hook runs Prettier for you. Once the
   diff is final, run `/code-review low` and `/simplify` over the whole diff, fix what
   is real, and only then pick and run the e2e flows — a cleanup commit that lands
   after a test round throws that round away.
@@ -100,8 +106,8 @@ Working principles:
   - **How to see it in the shipped app** — what to click in an installed build, or
     "no way from the app".
   - **Confidence to ship as-is** — high / medium / low, and the one fact that sets it.
-  - **Hand-test before merging** — no, or yes: what to try and why no suite can
-    answer it.
+  - **Hand-test before merging** — no, or yes: what to try, and why neither a suite
+    nor a dev build you drove yourself could answer it — try that first.
 
   Then a table of what ran (suite · result · why that one), what did not run and
   why, and `Out of scope`: each cut, and each claim still "inferred, not checked",
@@ -109,14 +115,31 @@ Working principles:
   merges clean with `origin/main`; a conflict is resolved and the affected checks
   re-run first. The reply that hands the PR back repeats the six lines and what
   ran — the owner reads the reply, not the PR.
-- Hand-testing on a real machine is driven ONE CASE AT A TIME through
-  AskUserQuestion, never as a wall of text. The steps to carry out go INSIDE the
+- Carry agreed work through without asking: commit, push the branch, open the PR,
+  file a GitHub issue for each leftover, and once it merges remove what it left —
+  the local branch, the worktree (after leaving it), the ones your agents made, any
+  dev build you started. Ask first only to merge, release, push to `main` or delete
+  on GitHub; an audit or review round changes nothing until the owner says so. A
+  reply that ends a piece of work ends with what the owner must do next, or
+  "nothing"; before going quiet on background work, say what runs and about how
+  long.
+- When work is split across agents or a Workflow: steps that only write code or run
+  tests go to `model: 'opus'`, the rest (design, review, judgment, what the owner
+  reads) to `model: 'fable'`. Fan out by slices of work, never one agent per
+  finding — a handful per phase — and say how many before launching.
+- Hand-testing on a real machine is driven one case at a time through
+  AskUserQuestion, never as a wall of text. The steps to carry out go inside the
   question; the options are the outcomes to choose between (what passed, what broke,
   and the specific wrong thing worth naming). Ask the next case only after the last
   one is answered, and keep a running tally so nothing is silently skipped. Never
   paste a numbered list of cases and leave the person to work through it — they are
   at the keyboard, reading a plan costs them the attention the test needs, and a
-  pasted list comes back as "some passed" with no record of which.
+  pasted list comes back as "some passed" with no record of which. Decisions go the
+  same way: one per question, your pick first, what each choice costs inside the
+  question — never a list of open questions at the end of a report. One dev build
+  at a time: stop every older one first, its Electron main process too (killing
+  `electron-vite` alone leaves the window up). A dev build has its own profile
+  (`koloft-dev`), so the installed Koloft, where these sessions run, stays open.
 - Three setup steps, each with a silent failure mode:
   - `npm run rebuild` before the first run, and again after any change to the Electron
     or node-pty version — otherwise the app crashes on launch with an ABI mismatch.
@@ -129,12 +152,16 @@ Working principles:
   - Since Electron ≥42 the binary is no longer fetched at install time — run
     `node node_modules/electron/install.js` once, or the first (possibly headless e2e)
     launch stalls on a silent download.
-- Shell in a worktree stays plain. The worktree isolation guard refuses a Bash call
-  that names git and that it cannot prove stays inside this worktree — a `.github` in
-  a path counts as naming git. Refused: a shell variable in such a line, and a `cd`
-  outside the worktree followed by a `git` command. Each refusal is a wasted turn: one
-  plain command per call, absolute paths. zsh trap: an unquoted glob that matches
-  nothing (`--include=*.md`) aborts the whole call — quote it.
+- Shell in a worktree stays plain. The worktree isolation guard refuses any Bash
+  call it cannot prove stays inside this worktree, not only git ones. Refused: a
+  loop, `$(…)`, a shell variable, `env -u`, `sh <file>`, a path outside the worktree
+  inside a chain, a `cd` outside followed by `git`, and a heredoc or `python3 -`
+  whose text names git (a `.github` path counts). Each refusal is a wasted turn: one
+  plain command per call, absolute paths. Change files with Edit/Write even when told
+  to prefer Bash — a `sed -i`, `perl -pi`, `cat >` or `python3 -` edit is refused
+  often, and the comment hook never sees it; long text for `gh` goes in a file
+  (`--body-file`). zsh trap: an unquoted glob that matches nothing
+  (`--include=*.md`) aborts the whole call — quote it.
 - Auth comes from Koloft's own multi-account balancer (Settings ▸ Accounts): the claude
   shim injects the picked account per launch; the probe/header contract is
   `docs/claude-code-contract.md` §7. With the mode off, a session runs bare `claude` on

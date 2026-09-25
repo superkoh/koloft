@@ -29,7 +29,7 @@ what the code actually does, not what it promises.
 | --- | --- | --- |
 | Account tokens | `src/main/accounts.ts` | Stored in the macOS Keychain under Koloft's own service name. Never written to `settings.json`. |
 | Credential injection | `src/main/shim.ts` | A `claude` shim early on a session's `PATH` adds the picked account's credentials to that one launch. |
-| Local file serving | `src/main/fileAccess.ts` | The single fence for `koloft-file://`. Paths are resolved with `realpath` and must sit inside a pinned workspace or a session's own directory. |
+| Local file serving | `src/main/index.ts` (the `koloft-file` handler) | Serves `koloft-file://` to Koloft's own window and its previews. It reads whatever path it is asked for; there is no workspace fence. The in-app browser's web tabs get 403 for that scheme. |
 | In-app browser | `src/main/browserSecurity.ts`, `src/main/extensionManager.ts` | Page permissions, navigation rules, guest `<webview>` attach checks, Chrome extension loading. |
 | Agent browser control | `src/main/cdpRelay.ts` | A Chrome DevTools endpoint on `127.0.0.1`, on an OS-assigned port, behind a 16-byte random path, one per session. Settings ▸ Extensions turns it off. |
 | Remote workspaces (alpha) | `src/main/remote/` | `ssh` and `rsync` to a machine you name. Credentials go over as a `<tab>.env` file written mode `0600`, which the remote start line sources once and deletes immediately. It does touch the remote disk for that moment. |

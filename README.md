@@ -27,7 +27,7 @@ browser, web pages, and a shell.
   appear with a title, a status dot (working / waiting for you / done) and how long ago
   they ran. Nothing is imported: the list is what Claude Code itself wrote to disk, so
   sessions you started from a plain terminal show up too.
-- **Start or resume sessions** — `File ▸ New Claude Session` (⌘N) starts one in the
+- **Start or resume sessions** — `File ▸ New Session…` (⌘N) starts one in the
   selected workspace; clicking an old row resumes it; `New Worktree Session…` (⇧⌘N) runs
   Claude in an isolated git worktree (`claude -w`). A workspace's right-click menu holds
   the low-traffic doors: restore a session from history, fetch origin, remove the
@@ -52,15 +52,14 @@ browser, web pages, and a shell.
   never types into a session — the first message is handed to `claude` directly, and
   everything after it is yours.
 - **Multi-account balancing** — register several Claude subscription accounts. Every
-  launch probes their live rate limits and starts on the least-loaded one; API keys and
-  Anthropic-compatible endpoints can serve as a paid fallback. The topbar shows the pool's
-  remaining allowance. These are meant to be *your own* accounts — please check that how
+  launch probes their live rate limits and starts on the least-loaded one. The topbar
+  shows the pool's remaining allowance. These are meant to be *your own* accounts — please check that how
   you use them fits Anthropic's terms, which is between you and them.
 - **Built-in statusline** — a Koloft-managed statusline in every session: model, cost,
   context usage, git branch.
 - **Notifications** — an OS notification when a session finishes its turn or waits for
   approval, only while Koloft is in the background.
-- **Remote workspaces** (alpha) — the ⊞ button's menu has `Remote directory…`: a folder
+- **Remote workspaces** (alpha) — the Add workspace button's menu has `Remote directory…`: a folder
   on another machine you can `ssh` to. Claude runs *there*, held by `tmux` so it
   survives a dropped link; the accounts still come from your local pool, and the
   transcripts are mirrored back with `rsync` so the sidebar reads the same as a local
@@ -98,8 +97,8 @@ pinned workspace (its root checkout plus its git worktrees) to build the sidebar
 last activity, which files were written. Koloft never keeps a second copy of a session.
 
 **Launches are bound through Claude Code's own hooks.** Every `claude` Koloft starts gets
-a per-session `--settings` file that injects a `SessionStart` / `SessionEnd` hook, a
-`Stop` / `Notification` hook and the statusline command. The hooks report the real
+a per-session `--settings` file that injects `SessionStart`, `SessionEnd`,
+`UserPromptSubmit`, `Stop` and `Notification` hooks and the statusline command. The hooks report the real
 session id back to Koloft, so the row, the status dot and the Workbench follow the
 session even across an in-TUI `/resume` or `/clear`. A small `claude` shim on the
 session's `PATH` adds `--session-id` and the picked account's credentials on the way in.
@@ -201,9 +200,10 @@ Apple Developer ID identity to `electron-builder.yml` and a notarization step (p
 Everything lives in **Settings** (⌘, or the gear at the left of the title bar):
 
 - **Welcome** — the first-run walkthrough and the tips, re-openable any time.
+- **Sessions** — which tool a new session runs: Claude Code, or OpenAI's Codex CLI when it
+  is installed. A Codex session uses Codex's own login and has no Workbench.
 - **Accounts** — turn on multi-account mode and add accounts: run the official
-  `claude setup-token` login from inside the app, or paste an OAuth token, an API key, or
-  an Anthropic-compatible endpoint. Each launch then gets the least-loaded account's
+  `claude setup-token` login from inside the app, or paste an OAuth token. Each launch then gets the least-loaded account's
   credentials injected by the shim. Tokens live in the macOS Keychain, never in
   `settings.json`. With the mode off, sessions run a bare `claude` on whatever login the
   machine already has (`/login`). Two more switches: skip permission prompts, and prefer
@@ -211,10 +211,11 @@ Everything lives in **Settings** (⌘, or the gear at the left of the title bar)
 - **Appearance** — terminal font and size, the built-in statusline and its cost/context
   widgets, auto-fetching git remotes for the "behind origin" hint.
 - **Shortcuts** — every key and what it does, which depends on where the caret is.
-- **Notifications** — which events notify (turn complete, needs approval), the approval
-  sound, the Dock badge.
+- **Notifications** — which events notify (turn complete, needs approval, a session that
+  exited unexpectedly), the approval sound, the Dock badge.
 - **Extensions** — the agent-drives-the-Browser switch and Chrome extensions for the
   in-app browser.
+- **About** — the version, the update check, release notes, and a reset to defaults.
 
 ## Notes / limitations
 
