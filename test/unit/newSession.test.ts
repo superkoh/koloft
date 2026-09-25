@@ -12,6 +12,7 @@ import {
   sortWorktrees,
   worktreeAim,
   worktreeBaseMode,
+  worktreeInUse,
   type WtHot
 } from '../../src/renderer/src/newSession'
 import { freshLineState, type FreshLineState } from '@shared/freshnessOps'
@@ -20,14 +21,10 @@ import type { SessionRow, WorkspaceFreshness } from '@shared/types'
 const NOW = 1_700_000_000_000
 const MIN = 60_000
 
-const wt = (
-  name: string,
-  inUse = false
-): { name: string; dir: string; branch?: string; inUse: boolean } => ({
+const wt = (name: string): { name: string; dir: string; branch?: string } => ({
   name,
   dir: `/repo/.claude/worktrees/${name}`,
-  branch: `worktree-${name}`,
-  inUse
+  branch: `worktree-${name}`
 })
 
 describe('resolveLaunch (§5 — the two branches C8 chooses between)', () => {
@@ -228,6 +225,20 @@ describe('mainRunningCount (D4 guard counts only root-checkout Koloft sessions)'
 
   it('is zero for an idle checkout', () => {
     expect(mainRunningCount([sessionRow({ running: false })])).toBe(0)
+  })
+})
+
+describe('worktreeInUse (C8 "in use" note)', () => {
+  it('a session running in the repo root does not mark a worktree named main in use', () => {
+    expect(worktreeInUse(wt('main'), [sessionRow()])).toBe(false)
+  })
+
+  it('a session running in the folder of a worktree named main marks it in use', () => {
+    expect(worktreeInUse(wt('main'), [sessionRow({ cwd: wt('main').dir })])).toBe(true)
+  })
+
+  it('a session that moved into a worktree mid-run marks it in use though its cwd is still the root', () => {
+    expect(worktreeInUse(wt('busy'), [sessionRow({ worktree: 'busy' })])).toBe(true)
   })
 })
 

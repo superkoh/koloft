@@ -5,12 +5,15 @@ import type { Locator, Page } from '@playwright/test'
 import { startSessionIn } from './helpers/p1'
 import { setupChangeFixture } from './helpers/filesFixture'
 import { seedEditFixture } from './helpers/editFixture'
-import { WORKBENCH, showBrowse, wbTabs, workbenchPanel } from './helpers/workbench'
+import {
+  WORKBENCH,
+  browseRow,
+  rowMenu,
+  showBrowse,
+  wbTabs,
+  workbenchPanel
+} from './helpers/workbench'
 import { EDIT, closeDiscardingEdits, editArea, editText, sendSave } from './helpers/editPane'
-
-function row(page: Page, abs: string, section = 'tree'): Locator {
-  return page.locator(`.wb-panel .bv-sec[data-section="${section}"] .ft-node[data-path="${abs}"]`)
-}
 
 const nameBox = (page: Page): Locator => page.locator(EDIT.newFileInput)
 
@@ -21,16 +24,16 @@ async function waitCreateRefused(page: Page, wording: RegExp): Promise<void> {
 }
 
 async function startNewFile(page: Page, dirAbs: string): Promise<void> {
-  await row(page, dirAbs).click({ button: 'right' })
-  await expect(page.locator(EDIT.ctxMenu)).toBeVisible()
-  await page.locator(EDIT.ctxMenu).getByText('New File…', { exact: true }).click()
+  await browseRow(page, dirAbs).click({ button: 'right' })
+  await expect(rowMenu(page)).toBeVisible()
+  await rowMenu(page).getByText('New File…', { exact: true }).click()
   await expect(nameBox(page)).toBeVisible({ timeout: 20_000 })
 }
 
 async function browseReady(page: Page, root: string): Promise<void> {
   await showBrowse(page)
-  await expect(row(page, root)).toBeVisible({ timeout: 30_000 })
-  const dir = row(page, `${root}/config`)
+  await expect(browseRow(page, root)).toBeVisible({ timeout: 30_000 })
+  const dir = browseRow(page, `${root}/config`)
   await expect(dir).toBeVisible({ timeout: 30_000 })
   if (!(await dir.getAttribute('class'))?.split(/\s+/).includes('open')) await dir.click()
   await expect(dir).toHaveClass(/\bopen\b/, { timeout: 20_000 })
@@ -68,7 +71,7 @@ test.describe('File edit · New File…, with refusals asserted on disk', () => 
     await expect(page.locator(EDIT.dirty)).toHaveCount(0)
 
     await page.locator(WORKBENCH.tabFiles).click()
-    await expect(row(page, made)).toBeVisible({ timeout: 25_000 })
+    await expect(browseRow(page, made)).toBeVisible({ timeout: 25_000 })
 
     await madeTab.click()
     await expect(editArea(page)).toBeVisible({ timeout: 20_000 })

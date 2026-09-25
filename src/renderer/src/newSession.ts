@@ -4,7 +4,7 @@ import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { isValidWorktreeName } from '@shared/worktreeName'
 
 export type RunChoice =
-  | ({ kind: 'existing' } & WorktreeInfo & { inUse: boolean })
+  | ({ kind: 'existing' } & WorktreeInfo)
   | { kind: 'create'; name: string }
   | { kind: 'recover'; recoveryResourceId: string }
 
@@ -186,4 +186,11 @@ export function pullFailedReason(reason: string): string {
 
 export function mainRunningCount(rows: SessionRow[]): number {
   return rows.filter((r) => (r.running || r.pending) && r.worktree === 'main').length
+}
+
+export function worktreeInUse(w: Pick<WorktreeInfo, 'name' | 'dir'>, rows: SessionRow[]): boolean {
+  const nameIsAlsoRootLabel = w.name === 'main'
+  return rows.some(
+    (r) => r.running && r.worktree === w.name && (!nameIsAlsoRootLabel || r.cwd === w.dir)
+  )
 }

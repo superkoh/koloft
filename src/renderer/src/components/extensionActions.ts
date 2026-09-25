@@ -3,7 +3,6 @@ export interface ActionOverrides {
   text?: string
 }
 
-// ADR-0010
 export interface ActionState extends ActionOverrides {
   id: string
   tabs: Record<string, ActionOverrides>

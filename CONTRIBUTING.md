@@ -50,8 +50,10 @@ Three steps that each fail **silently** if you skip them:
   Electron 42 that no longer happens during `npm install`, so the first launch otherwise
   stalls on a download with nothing on screen saying so.
 - **A fresh git worktree has no `node_modules` of its own**, and Node quietly resolves
-  up to the parent checkout's. Run `npm install` **and** `npm run rebuild` inside each
-  worktree before testing there.
+  up to the parent checkout's. Run all three — `npm install`, `npm run rebuild` and
+  `node node_modules/electron/install.js` — inside each worktree before testing there.
+  A Claude Code session started in a worktree of this repo does it for you, through the
+  project's SessionStart hook.
 
 Everyday commands:
 
@@ -60,6 +62,7 @@ npm run dev            # launch in dev mode
 npm run typecheck      # main + renderer + tests
 npm run build          # typecheck, then build
 npm run format         # Prettier over the tree (CI checks it)
+npm run check:comments # the comment rule below (CI checks it)
 npm run test:unit      # Vitest — pure Node, hermetic, fast
 npm run test:e2e       # Playwright drives the real built app (needs npm run build first)
 ```
@@ -69,7 +72,7 @@ npm run test:e2e       # Playwright drives the real built app (needs npm run bui
 If you read the code, these are the rules it was written under. They are what a change
 would be judged against once pull requests open.
 
-**Tests follow behavior, not diffs.** Every behavior change comes with one test that goes
+**Tests follow behavior, not diffs.** Every behavior change comes with a test that goes
 red when that behavior breaks, and never a test just to have one. Before adding a test,
 ask: *if this behavior broke, which existing test would fail?* If one would, that test
 changes instead. No test for a change with no behavior in it (a refactor, a rename, a
@@ -91,18 +94,21 @@ breaks carry meaning.
 at all, and that still caps TypeScript at `<6.1.0` while this project is on the native
 TypeScript 7, whose compiler API moved.
 
-**Comments: the fewer the better.** The test is: delete it — would the next person to
-change this code get it wrong? Write one only then, and only for what the code cannot say
-itself: a constraint, a fact someone measured, an alternative that looked better and was
-rejected. Never restate what the code does.
+**No comments.** `npm run check:comments` (run by CI) rejects every comment in the code
+except a tool directive (`@ts-expect-error`, `prettier-ignore`, …) or a marker such as
+`// ADR-0007` or `// CC§9` that points at an ADR or a section of a contract ledger. What
+the code cannot say itself goes, first fit wins, into a name, a test title, a contract
+ledger, or an ADR — the full rule is under "Comments" in `CLAUDE.md`.
 
 **No per-feature document survives its feature shipping.** A claim about behavior becomes
-a test assertion; a reason the code needs becomes a comment at the place it applies; a
-measured fact about Claude Code itself — something reading Koloft's own code cannot tell
-you, and that can drift when Claude Code updates — goes to `docs/claude-code-contract.md`
-with the date, the Claude Code version, and how it was established.
+a test assertion; a reason the code needs, if it passes the bar in `CLAUDE.md`, becomes an
+ADR in `docs/adr/`, cited by a marker where it applies; a measured fact about an outside
+tool — something reading Koloft's own code cannot tell you, and that can drift when the
+tool updates — goes to its contract ledger (`docs/claude-code-contract.md`,
+`docs/codex-cli-contract.md`, or `docs/platform-contract.md` for Electron, Node, macOS, git
+and GitHub) with the date, the version, and how it was established.
 
-Code, comments and documentation are in **English**.
+Code and documentation are in **English**.
 
 ## Licence
 

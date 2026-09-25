@@ -997,7 +997,7 @@ test.describe('rich Markdown preview corner cases — black-box against each cas
     await expect(mdBody(page)).toContainText('marker-C20')
   })
 
-  test('BB-C25 switching away from a tab and back keeps the diagrams and the scroll position; a session round trip keeps the diagrams but comes back at the top', async ({
+  test('BB-C25 switching away from a tab and back keeps the diagrams and the scroll position; a session round trip comes back at the same scroll position and draws every diagram again', async ({
     page,
     env
   }) => {
@@ -1040,6 +1040,11 @@ test.describe('rich Markdown preview corner cases — black-box against each cas
 
     await expect(artifactTitle(page)).toHaveText('c25.md', { timeout: 30_000 })
     await expect(mdBody(page)).toBeVisible({ timeout: 30_000 })
+    await expect.poll(() => scrollTopOf(page), { timeout: 15_000 }).toBe(before)
+    await setScrollTop(page, 0)
+    await expect(mdBody(page).locator('.mmd').first().locator('svg')).toHaveCount(1, {
+      timeout: 60_000
+    })
     await scrollToBottom(page)
     await expect(diagrams(page)).toHaveCount(3, { timeout: 120_000 })
     const texts = await diagrams(page).evaluateAll((els) => els.map((e) => e.textContent ?? ''))

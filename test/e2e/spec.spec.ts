@@ -42,7 +42,7 @@ test.describe('V0: a functional icon is a hotspot — a fixed box, a glyph, colo
       24
     )
     await page
-      .locator(`${WORKBENCH.panel} .ft-node.ft-file`, { hasText: 'NOTES.md' })
+      .locator(`${WORKBENCH.browseRows}.ft-file`, { hasText: 'NOTES.md' })
       .click({ timeout: 30_000 })
     await expect(page.locator(WORKBENCH.readingTitle)).toHaveText('NOTES.md')
     await assertHotspot(

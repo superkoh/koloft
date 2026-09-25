@@ -182,6 +182,7 @@ export interface ArtifactPaneProps {
   onCloseZoom: () => void
   onOutlineClose: (tabId: string) => void
   onClose: (tabId: string) => void
+  onUnmount?: (tabId: string, scrollTop: number) => void
   editText?: string
   editUnsaved?: boolean
 }
@@ -205,6 +206,7 @@ export function ArtifactPane({
   onCloseZoom,
   onOutlineClose,
   onClose,
+  onUnmount,
   editText,
   editUnsaved
 }: ArtifactPaneProps): JSX.Element {
@@ -372,7 +374,7 @@ export function ArtifactPane({
     refresh()
   }, [reloadNonce, refresh])
 
-  const lastScroll = useRef(0)
+  const lastScroll = useRef(initialScrollTop ?? 0)
   // PLATFORM§24
   const pendingRestoreOffset = useRef<number | null>(null)
   useEffect(() => {
@@ -386,35 +388,18 @@ export function ArtifactPane({
     host.addEventListener('scroll', onScroll, true)
     return () => host.removeEventListener('scroll', onScroll, true)
   }, [])
-  const seeded = useRef(false)
-  useEffect(() => {
-    if (!initialScrollTop || seeded.current) return
-    const host = bodyRef.current
-    if (!host) return
-    const apply = (): void => {
-      const child = host.querySelector<HTMLElement>(VIEW_SCROLLER)
-      if (!child) return
-      child.scrollTop = initialScrollTop
-      if (child.scrollTop === initialScrollTop) {
-        seeded.current = true
-        mo.disconnect()
-      }
-    }
-    const mo = new MutationObserver(apply)
-    mo.observe(host, { childList: true, subtree: true })
-    apply()
-    return () => mo.disconnect()
-  }, [initialScrollTop, path])
+  // ADR-0016
+  useEffect(() => () => onUnmount?.(tabId, lastScroll.current), [tabId, onUnmount])
 
-  const swapRef = useRef({ path, view: current })
+  const swapRef = useRef<{ path: string; view: ArtifactView | null } | null>(null)
   useLayoutEffect(() => {
     const prev = swapRef.current
     swapRef.current = { path, view: current }
-    if (prev.path !== path) {
+    if (prev && prev.path !== path) {
       lastScroll.current = 0
       return
     }
-    if (prev.view === current) return
+    if (prev && prev.view === current) return
     const host = bodyRef.current
     const want = lastScroll.current
     if (!host || !want) return

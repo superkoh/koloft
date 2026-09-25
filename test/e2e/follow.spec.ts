@@ -8,7 +8,7 @@ import {
   startSessionIn,
   waitBooted
 } from './helpers/p1'
-import { WORKBENCH, showBrowse, wbTabs } from './helpers/workbench'
+import { WORKBENCH, browseRow, showBrowse, wbTabs } from './helpers/workbench'
 
 test('T-AUX-08: a session write never opens itself or builds a tab; a click opens it in the reading area; retired follow controls stay gone', async ({
   page,
@@ -24,12 +24,8 @@ test('T-AUX-08: a session write never opens itself or builds a tab; a click open
   await runIn(page, centerTerm(page), '/write docs/guide.md')
 
   await showBrowse(page)
-  await page
-    .locator(
-      `${WORKBENCH.panel} .ft-node.ft-dir[data-path="${path.join(env.workspaces.a, 'docs')}"]`
-    )
-    .click({ timeout: 20_000 })
-  const written = page.locator(`${WORKBENCH.panel} .ft-node.ft-file`, { hasText: 'guide.md' })
+  await browseRow(page, path.join(env.workspaces.a, 'docs')).click({ timeout: 20_000 })
+  const written = page.locator(`${WORKBENCH.browseRows}.ft-file`, { hasText: 'guide.md' })
   await expect(written).toBeVisible({ timeout: 20_000 })
   await expect(page.locator(`${WORKBENCH.panel} .fv-read .fv-empty`)).toBeVisible()
   await expect(page.locator(WORKBENCH.readingBody)).toHaveCount(0)

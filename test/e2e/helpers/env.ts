@@ -28,6 +28,9 @@ export interface E2EEnv {
 
 const SPEC_OPT_IN_PANEL_EXPANDED_NOT_SHIPPED_DEFAULT = { defaultOpen: true }
 
+// PLATFORM§11
+const FAKE_MIC_AND_CAMERA_BEHIND_THE_PERMISSION_PROMPT = '--use-fake-device-for-media-stream'
+
 const FAKE_CLAUDE_SRC = path.join(__dirname, '..', 'fixtures', 'fake-claude.js')
 
 function makeWorkspace(home: string, name: string, files: Record<string, string>): string {
@@ -157,7 +160,7 @@ export function setupE2EEnv(): E2EEnv {
     downloadDir,
     fileDialogFile,
     gitCalls: path.join(home, 'git-calls.txt'),
-    extraArgs: [],
+    extraArgs: [FAKE_MIC_AND_CAMERA_BEHIND_THE_PERMISSION_PROMPT],
     claudeCalls: path.join(home, 'fake-claude-calls.jsonl'),
     wrapperCalls: path.join(home, 'wrapper-calls.txt'),
     scratchpadBase,

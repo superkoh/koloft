@@ -168,7 +168,6 @@ export function AccountsPane(): JSX.Element {
           <button className="mini" disabled={!multiAccount} onClick={() => setAdding('oauth')}>
             <LuPlus size={14} /> Paste token
           </button>
-          {/* ADR-0003 */}
           <button
             className="mini acct-refresh"
             disabled={!multiAccount || refresh === 'busy'}

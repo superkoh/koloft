@@ -211,11 +211,9 @@ function unpaddedHour(at: string): string {
   return `${Number(h)}:${m}`
 }
 
-type CallWithToken = ClaudeCall & { oauthToken: string | null }
-
-async function waitNewCall(env: E2EEnv, before: number, timeout = 60_000): Promise<CallWithToken> {
+async function waitNewCall(env: E2EEnv, before: number, timeout = 60_000): Promise<ClaudeCall> {
   const calls = await waitForCalls(env, before + 1, timeout)
-  return calls[calls.length - 1] as CallWithToken
+  return calls[calls.length - 1]
 }
 
 function worktreeOf(call: ClaudeCall): string {
@@ -760,11 +758,10 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         expect(readCalls(env)).toHaveLength(i + 1)
       }
 
-      const calls = readCalls(env) as CallWithToken[]
+      const calls = readCalls(env)
       for (const c of calls) expect(c.oauthToken).toBe('sk-ant-oat01-fixture-alpha')
-      const byTask = (t: string): CallWithToken => calls.find((c) => c.firstPrompt === t)!
-      const count = (c: CallWithToken, flag: string): number =>
-        c.argv.filter((a) => a === flag).length
+      const byTask = (t: string): ClaudeCall => calls.find((c) => c.firstPrompt === t)!
+      const count = (c: ClaudeCall, flag: string): number => c.argv.filter((a) => a === flag).length
 
       const a = byTask('/job-a')
       expect(a.argv[a.argv.indexOf('--model') + 1]).toBe('sonnet')

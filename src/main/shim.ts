@@ -157,7 +157,7 @@ if [ "$noinj" = "0" ]; then
       psvc="__KOLOFT_KEYCHAIN_NS__-claude-oauth"
       [ "$pkind" = "apikey" ] && psvc="__KOLOFT_KEYCHAIN_NS__-anthropic-api"
       [ "$pkind" = "custom" ] && psvc="__KOLOFT_KEYCHAIN_NS__-custom-endpoint"
-      # PLATFORM§3 PLATFORM§2
+      # PLATFORM§3 PLATFORM§2 ADR-0001
       ptokf="$KOLOFT_PICK_DIR/tok-$pickid"
       ( umask 077; exec security find-generic-password -s "$psvc" -a "$pacct" -w > "$ptokf" 2>/dev/null ) &
       psec=$!

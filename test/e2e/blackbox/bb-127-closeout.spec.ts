@@ -89,35 +89,11 @@ async function openProbe(page: Page, app: Parameters<typeof guestPages>[0]): Pro
 
 test.describe('Black-box: the browser close-out, inside the Workbench web tab', () => {
   test.describe('permission prompts', () => {
-    // PLATFORM§11
-    async function mediaInputKinds(guest: Page): Promise<string[]> {
-      return guest.evaluate(() =>
-        navigator.mediaDevices.enumerateDevices().then(
-          (devices) =>
-            [...new Set(devices.map((d) => d.kind as string))].filter(
-              (kind) => kind === 'audioinput' || kind === 'videoinput'
-            ),
-          () => [] as string[]
-        )
-      )
-    }
-
-    async function needsMediaInput(guest: Page, kind: 'audioinput' | 'videoinput'): Promise<void> {
-      const found = await mediaInputKinds(guest)
-      test.skip(
-        !found.includes(kind),
-        `no ${kind} on this machine — enumerateDevices reported [${found.join(', ') || 'none'}]. ` +
-          'Chromium rejects getUserMedia with NotFoundError before any permission handler runs, ' +
-          'so no prompt can appear on any build. Not flakiness; runs again on a box with the device.'
-      )
-    }
-
     test('BB-M01/M02: a page asking for the microphone shows a prompt, and Allow really hands it over', async ({
       page,
       app
     }) => {
       const g = await openProbe(page, app)
-      await needsMediaInput(g, 'audioinput')
       const asked = g.evaluate(() =>
         (window as never as { __ask(w: string): Promise<string> }).__ask('mic')
       )
@@ -129,12 +105,11 @@ test.describe('Black-box: the browser close-out, inside the Workbench web tab', 
 
       await page.locator(BROWSER.permissionAllow).click()
       await expect(bar).toBeHidden()
-      expect(await asked).not.toBe('NotAllowedError')
+      expect(await asked).toBe('ok')
     })
 
     test('BB-M03: click Deny and the page gets a denial', async ({ page, app }) => {
       const g = await openProbe(page, app)
-      await needsMediaInput(g, 'audioinput')
       const asked = g.evaluate(() =>
         (window as never as { __ask(w: string): Promise<string> }).__ask('mic')
       )
@@ -147,7 +122,6 @@ test.describe('Black-box: the browser close-out, inside the Workbench web tab', 
       app
     }) => {
       const g = await openProbe(page, app)
-      await needsMediaInput(g, 'videoinput')
       for (const [what, text] of [
         ['cam', 'camera'],
         ['notify', 'notifications'],

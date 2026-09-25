@@ -1,8 +1,8 @@
 # 0004 Startup never wipes files that other Koloft instances share
 
-**Constraint**: several Koloft installs can run at once on one userData folder (a dev
-build, the packaged app, a worktree's release build under test), and a peer may have
-been running for days.
+**Constraint**: several Koloft installs can run at once on one userData folder (two dev
+runs from different checkouts, or the installed app next to a release build of a
+worktree under test), and a peer may have been running for days.
 **Decision**: startup never wipes the shared folders. Each install writes its own
 statusline wrapper, named by a hash of its binary path, and deletes a wrapper only when
 the binary baked into it is gone from disk. Registration and pick files are deleted only
