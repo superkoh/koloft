@@ -213,7 +213,7 @@ test.describe('who ends the claude on the other machine: every way of ending a r
     }
   })
 
-  test('E-RW-19: an idle remote session closes its own tab and sends no kill, so its tmux session keeps running', async ({
+  test('E-RW-19: an idle remote session closes its own tab and kills its tmux session, the way a local one ends its process', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -235,10 +235,11 @@ test.describe('who ends the claude on the other machine: every way of ending a r
       expect(await termIds(page)).toHaveLength(2)
 
       await expect.poll(() => termIds(page), { timeout: 60_000 }).toHaveLength(1)
-      await expect(remoteRow).not.toHaveClass(/\bcold\b/)
-      expect(killLines(env, first.sessionId)).toEqual([])
-      expect(liveTmuxSessions(env)).toContain(tmuxName(first.sessionId))
-      expect(processAlive(first.pid)).toBe(true)
+      await expect.poll(() => killLines(env, first.sessionId), { timeout: 30_000 }).toHaveLength(1)
+      await expect
+        .poll(() => liveTmuxSessions(env), { timeout: 30_000 })
+        .not.toContain(tmuxName(first.sessionId))
+      await expect(remoteRow).toHaveClass(/\bcold\b/, { timeout: 30_000 })
     } finally {
       await quitAndClose(app)
     }

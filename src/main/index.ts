@@ -1193,7 +1193,7 @@ app.whenReady().then(() => {
   })
   tracker.on('auto-close', ({ tabId }: { tabId: string }) => {
     sendToRenderer('tab:killedByMain', tabId)
-    void killTabPty(tabId, { detach: true })
+    void killTabPty(tabId)
   })
   tracker.on('status', (t: StatusEdge) => {
     attention.onStatusChange(t.tabId, t.prev, t.next, attentionCtx(), sessionTitleOf(t.tabId))
@@ -2120,11 +2120,9 @@ function openInWorkbench(
   return false
 }
 
-function killTabPty(tabId: string, how: { detach?: boolean } = {}): Promise<boolean> {
+function killTabPty(tabId: string): Promise<boolean> {
   const owner = sessionBackends.ownerOfTab(tabId)
-  const stopped = owner
-    ? Promise.resolve(owner.stop(tabId, how))
-    : Promise.resolve(ptyMgr.kill(tabId))
+  const stopped = owner ? Promise.resolve(owner.stop(tabId)) : Promise.resolve(ptyMgr.kill(tabId))
   attention.clear(tabId)
   relayTabClosed(tabId)
   boundSessions.delete(tabId)

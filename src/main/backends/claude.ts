@@ -162,10 +162,10 @@ export class ClaudeBackend implements SessionBackend {
     return this.d.tracker.transcriptExists(key)
   }
 
-  stop(tabId: string, how: { detach?: boolean } = {}): void {
+  stop(tabId: string): void {
     const remote = this.d.tracker.remoteOf(tabId)
     if (remote) {
-      if (!how.detach) this.endRemoteTmux(remote.host, remote.tmuxName)
+      this.endRemoteTmux(remote.host, remote.tmuxName)
       fs.rmSync(tabPackageDir(this.d.userData(), tabId), { recursive: true, force: true })
     }
     this.d.pty.kill(tabId)

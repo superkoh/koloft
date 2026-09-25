@@ -30,7 +30,7 @@ export interface SessionBackend {
   resumePlan(key: string): Promise<ResumePlan>
   hasTab(tabId: string): boolean
   aliveTabFor(key: string): string | undefined
-  stop(tabId: string, how?: { detach?: boolean }): void | Promise<void>
+  stop(tabId: string): void | Promise<void>
   archive(key: string): boolean
   transcriptExists(key: string): boolean | Promise<boolean>
   observe(tabId: string, event: SessionEvent): void
