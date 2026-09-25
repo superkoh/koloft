@@ -2725,6 +2725,7 @@ function trustBeforeWorktreeLaunch(root: string): void {
   }
 }
 
+// ADR-0026
 function launchCronRun(req: LaunchRequest): { ok: true; tabId: string } | { ok: false } {
   try {
     const r = createClaudeTab(req.cwd, undefined, undefined, undefined, req.worktree, {
@@ -2853,6 +2854,7 @@ async function createClaudeSession(opts: CreateTabOptions): Promise<CreateTabRes
     })
   }
   const cwd = resolveSpawnCwd(opts.cwd)
+  // ADR-0026
   if (opts.worktree && cwd === opts.cwd) trustBeforeWorktreeLaunch(cwd)
   return createClaudeTab(cwd, opts.resumeSessionId, opts.cols, opts.rows, opts.worktree)
 }

@@ -107,6 +107,7 @@
   background: var(--accent);
 }
 
+/* ADR-0014 */
 .fs-slide,
 .cv-grp.fs-slide {
   text-overflow: clip;

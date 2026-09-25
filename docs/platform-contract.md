@@ -6,11 +6,9 @@ Koloft's own code cannot reveal**. Claude Code and Codex have their own ledgers.
 entry says how it was established; a disproven entry is corrected in place, never kept
 for history. Code cites a section with a `// PLATFORM§N` marker.
 
-**How to read "how established"**: the entries below were moved here from code
-comments Koloft had carried for a while. When a bullet names no date, version or
-method, it comes from those earlier Koloft code notes and was **not re-measured** when
-it moved here. A bullet that says "measured" or "seen" repeats what the old note said
-about how it was found.
+**How to read "how established"**: a bullet that names no date, version or method is
+inferred, not checked. "Measured", "seen" or "read in" with no date names only the
+method. A recheck adds its date, version and command to the bullet.
 
 ## §1 macOS: the environment of an app opened from Finder
 
@@ -24,14 +22,18 @@ about how it was found.
 
 ## §2 Shells: login shells, PATH order, bash, and OSC 7
 
-- **A login shell moves `/usr/bin` to the front.** On macOS a login shell runs
-  `path_helper`, which puts `/usr/bin` and the other system folders ahead of the PATH
-  the parent handed it. A fake binary (for example a test's fake `open`) placed early
-  on the inherited PATH loses to the real `/usr/bin` one inside a session pty, unless
-  its folder is put first again after the rc files have run.
-- **`zsh -lc` skips `~/.zshrc`** (a login shell that is not interactive). A check that
-  used it reported "no claude" for a claude that every session found. Only `zsh -l -i`
-  loads the user's full profile.
+- **A login shell moves the system folders to the front.** On macOS a login shell runs
+  `path_helper`, which puts the folders listed in `/etc/paths` (`/usr/local/bin`,
+  `/usr/bin`, …) ahead of the PATH the parent handed it. A fake binary (for example a
+  test's fake `open`) placed early on the inherited PATH loses to the real `/usr/bin`
+  one inside a session pty, unless its folder is put first again after the rc files
+  have run. (2026-09-24, macOS 27.0: `PATH=/fakebin:/usr/bin:/bin zsh -lc` printed
+  `/usr/local/bin` as the first entry, the first line of `/etc/paths`.)
+- **`zsh -lc` skips `~/.zshrc`** (a login shell that is not interactive), so a
+  `command -v` run through it can miss a tool that every interactive session finds.
+  Only `zsh -l -i` loads the user's full profile. (2026-09-24, macOS 27.0, zsh with a
+  scratch `ZDOTDIR` whose `.zshrc` sets a variable: `-lc` did not see it, `-l -i -c`
+  did.)
 - **Apple Terminal's OSC 7.** With `TERM_PROGRAM=Apple_Terminal`, macOS `/etc/zshrc`
   sources `/etc/zshrc_Apple_Terminal` (bash does the same through
   `/etc/bashrc_Apple_Terminal`). Its precmd hook writes
@@ -41,8 +43,8 @@ about how it was found.
   Pro"). The same script's per-session history block (`~/.zsh_sessions`) turns on only
   when `TERM_SESSION_ID` is set, and Terminal.app, iTerm and VS Code all set it, so an
   inherited value turns it on. node-pty reports nothing on `cd`, so OSC 7 is the only
-  way to follow a plain shell's folder. (The old note says the format was "verified on a
-  real pty"; no date or macOS version.)
+  way to follow a plain shell's folder. (Format seen on a real pty; no date or macOS
+  version.)
 - **bash `$!` and the subshell fold.** After `( … ) &`, `$!` is the subshell's pid. Bash
   folds the subshell into its last command only when that command stands alone; a
   `umask` before it prevents the fold. Without `exec`, killing `$!` kills only the
@@ -64,24 +66,27 @@ about how it was found.
   env words cannot be told apart from the arguments, so a clean command line needs a
   second, plain `ps -Ao pid=,command=`. **Apple's own binaries show no environment**:
   `/bin/zsh`, `/bin/sleep` and Xcode's `python3` printed 0 env words for the same user,
-  while `claude`, `qemu` and `adb` printed theirs (2026-09-23). So an env-based lookup
-  never sees a leftover that is an Apple binary.
-- **macOS has no `timeout(1)`**, and `/usr/bin/security` waits on a GUI unlock or
-  authorization dialog with no timeout of its own. A time limit in a shell script has to
-  be a `kill -0` polling loop.
-- **The Keychain items Koloft writes trust `/usr/bin/security` in their ACL**, so any
-  process running as the user can read them all, whatever the service name, and a real
-  authorization prompt does not show up in normal use. A per-build service name keeps
-  builds apart; it is not a security line.
+  while `claude`, `qemu` and `adb` printed theirs (2026-09-23; rechecked 2026-09-24 on
+  macOS 27.0: `ps eww` showed a set env word for `node` and none for `/bin/sleep`). So
+  an env-based lookup never sees a leftover that is an Apple binary.
+- **macOS has no `timeout(1)`** (2026-09-24, macOS 27.0: `command -v timeout` found
+  nothing), and `/usr/bin/security` waits on a GUI unlock or authorization dialog with
+  no timeout of its own. A time limit in a shell script has to be a `kill -0` polling
+  loop.
+- **An item that `security add-generic-password` writes with no `-T` trusts
+  `/usr/bin/security` in its ACL**, so any process running as the user can read it
+  through `security find-generic-password`, whatever the service name, and a real
+  authorization prompt does not show up in normal use.
 - **`lsof` exits 1** whenever one of the pids it was asked about has nothing to show,
-  while still printing the rest.
+  while still printing the rest (2026-09-24, macOS 27.0: `lsof -p <live>,999999`
+  exited 1).
 - **macOS `tar` adds AppleDouble `._name` files** next to every file with an extended
   attribute (a quarantine flag is enough); `COPYFILE_DISABLE=1` turns this off. Pushed
   to another machine, claude reads `._settings.json` as a second, broken settings file.
   (Reproduced in a unit test with `xattr -w` and real macOS tar.)
 - **A copy of a signed system binary saved under another name is SIGKILLed** when run.
 - **A file downloaded by Node has no `com.apple.quarantine` flag**, so an app installed
-  from it opens without Gatekeeper. The official `install.sh` relies on the same fact.
+  from it opens without Gatekeeper.
 - **A launch in roughly the first half-minute after wake fails**: the network, the
   Keychain and file watches all need a moment to come back.
 - **A unix socket path is capped at 104 bytes** (`sun_path`). `os.tmpdir()`
@@ -117,9 +122,9 @@ about how it was found.
   a fake `open` on PATH cannot catch them. `openPath` does not reject on failure: it
   resolves with an error string (empty on success). `openExternal` and
   `showItemInFolder` report nothing like that.
-- **An unhandled promise rejection in main** (Koloft has no `unhandledRejection`
-  handler) becomes Electron's native "A JavaScript error occurred in the main process"
-  dialog.
+- **An unhandled promise rejection in main**, with no `unhandledRejection` handler
+  installed, becomes Electron's native "A JavaScript error occurred in the main
+  process" dialog.
 
 ## §5 Electron: windows, renderers and quitting
 
@@ -206,9 +211,13 @@ about how it was found.
 - **A `<webview>` with no `partition` quietly uses the default session**, and nothing
   errors.
 - **Popups**: without the `allowpopups` attribute (`disablePopups` true) Electron drops
-  `window.open` in the browser process, before any window-open handler runs (SEC-7
-  spike). The `webPreferences` in `will-attach-webview` carry `disablePopups` and can
-  carry `allowFileAccessFromFileUrls`; neither is in Electron's typings. Its `params`
+  `window.open` in the browser process, before any window-open handler runs (seen in a
+  spike, no date). The `webPreferences` in `will-attach-webview` carry `disablePopups`,
+  which is not in Electron's typings. Which file-access key, if any, Electron reads
+  there is inferred, not checked: the Electron 43.7.3 framework binary holds
+  `disablePopups` and Blink's `allowFileAccessFromFileURLs` (capital `URLs`) but no
+  `allowFileAccessFromFileUrls` and no `allowFileAccessFromFiles` (2026-09-24,
+  `grep -a` on `Electron Framework`). Its `params`
   always carry a `disablewebsecurity` key, even for a guest that never asked, and
   attribute values arrive as strings, so only `String(value) === 'true'` means it is set.
 - **Zoom**: a guest takes on its embedder's zoom (measured: window and guest go 1 →
@@ -281,9 +290,9 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
 - **Microphone and camera arrive as ONE permission, `media`**, told apart by
   `mediaTypes` (request handler) or `mediaType` (check handler). `getDisplayMedia`
   arrives as `media` with empty or missing `mediaTypes`, not as `display-capture`
-  (measured, "not documented anywhere"). A denied permission reaches the page as a
+  (measured; Electron's docs do not say so). A denied permission reaches the page as a
   real error, not a hang — except a refused `getDisplayMedia()`, whose promise never
-  settles (no measurement given).
+  settles (inferred, not checked).
 - **Refusing `fullscreen` stops `enter-html-full-screen` from ever firing**, which turns
   page fullscreen off entirely (measured).
 - **A session with no request handler grants everything**, so a page could open the
@@ -352,8 +361,8 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   Chrome user agent with no Client Hints gives the embedded browser away.
 - **Google's sign-in gate reads these on the server** — `userAgentData` / Client Hints
   brands, `window.chrome.loadTimes` / `csi`, and `navigator.webdriver`. A guest whose UA
-  says Chrome while its brands list only Chromium is marked as embedded (from manual
-  finds; best effort).
+  says Chrome while its brands list only Chromium is marked as embedded (seen by hand,
+  no date; which signals Google reads is inferred, not checked).
 - **`navigator.userAgentData` may return a fresh object on each access**, so a patch has
   to go on its prototype, not on one instance.
 
@@ -433,7 +442,8 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   string, so made-up target ids break every page action with "Frame has been detached"
   (measured).
 - **A socket the server closes before Playwright's first command hangs
-  `connectOverCDP` for its whole timeout** (measured: 30 s on BB-49, 6 s on BB-25).
+  `connectOverCDP` for its whole timeout** (measured: 30 s in one e2e spec, 6 s in
+  another).
 - **playwright-mcp reads `PLAYWRIGHT_MCP_CDP_ENDPOINT`** with no other setup, and an
   injected endpoint wins over the tool's own `--isolated` flag.
 - **playwright-mcp sends a notification between its replies**: 0.0.82 (Playwright
@@ -459,8 +469,7 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   flag, else `PLAYWRIGHT_CLI_SESSION`, else `default`; the workspace is the nearest
   directory holding a `.playwright` folder, else the playwright-core install root, so
   every directory without that marker shares one bucket (read in
-  `lib/tools/cli-client/registry.js` and `session.js`). Each Koloft tab therefore
-  exports its own `PLAYWRIGHT_CLI_SESSION`. A browser the cli starts itself is headless
+  `lib/tools/cli-client/registry.js` and `session.js`). A browser the cli starts itself is headless
   unless `--headed` (read in `resolveCLIConfigForCLI`); playwright-mcp's default is headed.
 - **playwright-mcp and playwright-cli drive the first page they are shown.** On attach
   the shared MCP context walks `browserContext.pages()` in the order the targets were
@@ -484,7 +493,7 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
 - **`electronApp.windows()` includes webview guests and leaves out hidden windows**;
   count with `BrowserWindow.getAllWindows()`.
 - **`fill()` and `pressSequentially()` silently do nothing on a `<webview>` guest** until
-  a real click has landed inside it (upstream #9729, closed wontfix).
+  a real click has landed inside it (Playwright issue #9729, closed wontfix).
 - **A dynamic `import()` of a `file://` chunk shows up as a `request` event.**
 - **xterm's `.xterm-screen` covers the row spans**, so `locator.click()` fails its
   actionability check there; the link provider needs a hover then a click, and the DOM
@@ -528,8 +537,9 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
 ## §21 xterm.js
 
 - **Write buffer**: xterm takes in about 5–35 MB/s and silently throws away written
-  data past a hard cap of about 50 MB. Its flow-control guide says to keep about
-  500 KB or less pending.
+  data past a hard cap of about 50 MB (`DISCARD_WATERMARK = 50000000` in
+  `src/common/input/WriteBuffer.ts`, read 2026-09-24 in 6.1.0-beta.302). Its
+  flow-control guide says to keep about 500 KB or less pending.
 - **Resize inside synchronized output shows black.** xterm holds back every row refresh
   while DEC mode 2026 is on, until `?2026l` or a 1000 ms safety timeout, but
   `RenderService.handleResize` ignores the mode: under WebGL it resets `canvas.width`,
@@ -564,7 +574,7 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
 
 ## §22 xterm.js input method (IME) defects
 
-From upstream issues and PRs, as the old notes cited them:
+From the upstream xterm.js issues and PRs named below:
 
 1. The preedit is anchored to a stale cursor, because `updateCompositionElements`
    returns early while not composing (xtermjs/xterm.js#5454, fixed upstream by #5759).
@@ -588,17 +598,24 @@ From upstream issues and PRs, as the old notes cited them:
    `_finalizeComposition` reads the textarea in its own `setTimeout(0)`, queued first
    because its listener was added first (defect 6), so it has sent the text by then.
 
-Version state needs a recheck: one old note says #5759 and #5747 are in the shipped
-6.1.0-beta; another says #5759 was in no stable release (6.0.0 included).
+State in the shipped `@xterm/xterm` 6.1.0-beta.302 (read 2026-09-24 in
+`src/browser/input/CompositionHelper.ts`): `updateCompositionElements` still returns
+early while not composing (defect 1), and the #5747 clamp is in — `maxWidth`,
+`overflow:hidden` and `direction:rtl` on the overlay (defect 2), with the preedit text
+wrapped in U+200E marks. Whether those marks stop the backwards CJK drawing is
+inferred, not checked.
 
 ## §23 xterm.js WebGL glyph atlas
 
 - **The atlas is shared** by every terminal with the same font, theme and DPR
   (`CharAtlasCache`), so healing one terminal after a page merge or a clear leaves the
   others drawing stale coordinates into a changed atlas (upstream #5883/#6014).
-- **It has at most 16 pages, and the page count only goes up.** `clearTexture()` empties
-  pages but never removes entries from `_pages`, and a merge fires only on
-  `_pages.length >= maxAtlasPages`, so clearing early cannot stop merges. Every char ×
+- **Its page cap comes from the GPU, and the page count only goes up.** `maxAtlasPages`
+  is `min(32, MAX_TEXTURE_IMAGE_UNITS)` (the source says "typically 8 or 16").
+  `clearTexture()` empties pages but never removes entries from `_pages`, and a merge
+  fires only on `_pages.length >= max(4, maxAtlasPages)`, so clearing early cannot stop
+  merges (read 2026-09-24 in `@xterm/addon-webgl` 0.20.0-beta.298, `GlyphRenderer.ts`
+  and `TextureAtlas.ts`). Every char ×
   colour × bold is its own key, so heavy CJK output fills it fast: about 24k keys
   (4k CJK code points × 6 colours) force repeated merges, which reliably garbled the
   screen on addon 0.19.0 and older (read from the addon source; upstream #6014/#6055).
@@ -647,8 +664,8 @@ Version state needs a recheck: one old note says #5759 and #5747 are in the ship
 
 - **React 19 sets `innerHTML` again whenever the `dangerouslySetInnerHTML` wrapper is a
   new object**, even with the same string. The DOM is rebuilt, scroll resets, and a
-  MutationObserver on it fires again (observed as BUG-P1-01: a find-bar observer and
-  the rebuild fed each other until real key events froze the renderer).
+  MutationObserver on it fires again (seen: a find-bar observer and the rebuild fed
+  each other until real key events froze the renderer).
 - **React runs a child's effects before its parent's** in the same commit, so a rAF the
   parent queues runs after one the child queued.
 - **Two siblings under the same key leave orphan DOM.** The reconciler keeps only the
@@ -700,8 +717,8 @@ Version state needs a recheck: one old note says #5759 and #5747 are in the ship
 - **The default `maxBuffer` is 1 MB**; past it the call throws
   `ERR_CHILD_PROCESS_STDIO_MAXBUFFER` (measured: an ignored-files listing of a
   20 000-file node_modules was 1 240 022 bytes).
-- **`execFileSync` with `cwd: undefined` quietly runs in `process.cwd()`** (an incident:
-  a fixture helper ran `git init` and a commit in the developer's real checkout).
+- **`execFileSync` with `cwd: undefined` quietly runs in `process.cwd()`** (seen: a
+  fixture helper ran `git init` and a commit in the checkout it was started from).
 - **`https.get` throws synchronously on a non-https URL**; during a redirect that throw
   is inside the parent response callback and escapes to `uncaughtException`.
 - **A failed `fetch`'s error `cause` chain can turn the request options into text,
@@ -725,16 +742,19 @@ Version state needs a recheck: one old note says #5759 and #5747 are in the ship
 
 ## §29 node-pty and ptys
 
+Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
+
 - **A process killed by a signal is reported with `exitCode` 0** and the signal in
-  `signal` (read from node-pty's `pty.cc`, which keeps WIFEXITED and WIFSIGNALED apart).
-- **node-pty tears down its socket about 200 ms after exit**, so a pty paused at exit
+  `signal` (`src/unix/pty.cc` keeps WIFEXITED and WIFSIGNALED apart).
+- **node-pty tears down its socket about 200 ms after exit**
+  (`DESTROY_SOCKET_TIMEOUT_MS = 200` in `lib/unixTerminal.js`), so a pty paused at exit
   can lose its last output.
 - **`.process` is typed as string but can be `undefined`** on macOS: it is a native read
   of the tty's foreground process, and returns `undefined` between two commands (the
-  darwin branch has no fallback); it does not throw. Where it falls back, it gives the
-  spawn file path (`/bin/zsh`), not a command name. Fast pipelines hit the gap within
-  seconds (read from `unixTerminal`; a shipped crash in v0.16.2 raised Electron's error
-  dialog every 1500 ms).
+  darwin branch falls back to the spawn file only for `kernel_task`); it does not
+  throw. Where it falls back, it gives the spawn file path (`/bin/zsh`), not a command
+  name. Fast pipelines hit the gap within seconds (seen: a poll that read it raised
+  Electron's error dialog every 1500 ms).
 - **Resizing a pty to the size it already has sends no SIGWINCH.**
 
 ## §30 git
@@ -751,7 +771,7 @@ Version state needs a recheck: one old note says #5759 and #5747 are in the ship
   symlink (`/tmp` → `/private/tmp`) gets a toplevel that does not start with the path
   asked about.
 - **`git check-ignore`**: `-z` is only valid with `--stdin` (with pathspecs git exits
-  128, which once silently turned the filter off on every repo). It exits 1 with empty
+  128). It exits 1 with empty
   output when nothing is ignored — a normal answer — and 128 outside a repo.
 - **`git ls-files`**: `--others` (and `--ignored`) prints a nested repository as one
   `dir/` entry. Run with `-C <dir>` it lists only files under that folder, relative to
@@ -812,7 +832,8 @@ Version state needs a recheck: one old note says #5759 and #5747 are in the ship
 
 ## §34 rsync
 
-- **macOS ships openrsync, not GNU rsync.** Its protocol has 1-second time resolution,
+- **macOS ships openrsync, not GNU rsync** (2026-09-24, macOS 27.0: `rsync --version`
+  printed `openrsync: protocol version 29`). Its protocol has 1-second time resolution,
   so a same-size rewrite within one second is skipped unless `-I` is passed.
 - **`--inplace` writes through the existing file**, so an unchanged round leaves the
   inode and times alone. Without it every round re-creates changed files (new inode each
@@ -840,11 +861,12 @@ Version state needs a recheck: one old note says #5759 and #5747 are in the ship
 
 - **Git-review cache**: pull request state lives in
   `~/.cache/ccstatusline/git-review/*.json`, stale when `now - mtime > 30 000 ms`; a
-  `*.json.lock` younger than 30 s stops a refresh. After a tool result Claude Code
-  re-renders the statusline within about 300 ms, and that render starts ccstatusline's
-  own background `gh` fetch.
-- **Parsing the 3.1 MB bundle is most of each render's cost**; `NODE_COMPILE_CACHE`
-  removes it.
+  `*.json.lock` younger than 30 s stops a refresh (`CACHE_TTL = 30000`,
+  `REFRESH_LOCK_STALE_MS = 30000` in the 2.2.30 bundle, read 2026-09-24). After a tool
+  result Claude Code re-renders the statusline within about 300 ms, and that render
+  starts ccstatusline's own background `gh` fetch.
+- **Parsing the 3 MB bundle is most of each render's cost** (2.2.30's
+  `dist/ccstatusline.js` is 3 018 224 bytes); `NODE_COMPILE_CACHE` removes it.
 - **Its stdout is a pipe**, so it sizes flex layouts only from `CCSTATUSLINE_WIDTH`.
 - **It never exits while its stdin stays open** (upstream #485), and Claude Code
   sometimes keeps it open.

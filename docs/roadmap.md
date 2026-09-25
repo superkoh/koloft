@@ -73,9 +73,9 @@ Reopen one of these only with new evidence, not a new argument.
 - **A quake-style hotkey window** — the value it was for already ships: clicking the OS
   notification brings the window forward with that session active. And hide-on-blur
   contradicts a board you keep visible.
-- **More preview renderers (CSV, a directory browser, edit-in-place)** — the Workbench
-  is pinned to the files a session touches. A directory browser walks that back to a
-  file manager; edit-in-place belongs to an IDE.
+- **More preview renderers (CSV and the like)** — Markdown, code, images and PDF cover
+  nearly every file a session produces; any other format opens in the app the system
+  already has for it.
 - **A saved prompt library** — it would mirror Claude Code's own `/` menu inside
   Koloft's scarcest surface, against "the centre is 100% Claude's UI". Koloft can only
   ever chase Claude Code's native commands and skills there.

@@ -1,6 +1,6 @@
 # test/ — project-specific test facts
 
-This file holds only what a NEW test has to know and cannot learn from the file it
+This file holds only what a new test has to know and cannot learn from the file it
 is about to touch: the conventions of each layer, and the shared vocabulary the
 specs are written in. A fact about one helper, seam or fixture lives in that file's
 names and tests, in a contract ledger (`docs/*-contract.md`), or in an ADR it cites
@@ -50,7 +50,7 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `unseedWorkbenchDefaultWhileAppDown`) — a seeded `false` would pass against a build
   that still ships it open.
 - The `app`/`page` fixtures launch before the test body runs. Main reads its launch
-  env, its Chromium args and layout.json/userData ONCE at startup, so a case that
+  env, its Chromium args and layout.json/userData once at startup, so a case that
   needs `env.launchEnv`, `env.extraArgs`, a seeder (`seedWorkbench*`, `seedJsonl`,
   `setupGitFixture`, `setGuestLimit`, …) or two launches on one home asks only for
   `env` and calls `launchApp` / `launchSettled` itself.
@@ -61,11 +61,14 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 ### Sessions, terminals and the fake claude
 
 - `fixtures/fake-claude.js` is the `claude` the shim runs. It stands in only for the
-  LLM, and is steered by sentinel FILES under `<home>`, never env vars (Koloft spawns
-  the pty itself, so a spec has no shell to export into). What it does:
+  LLM. Its `KOLOFT_FAKE_*` env inputs come from `env.launchEnv`, so they hold for every
+  launch in one app run; to steer one launch or one moment, it reads sentinel files under
+  `<home>`, which a spec may write at any time (Koloft spawns the pty itself, so a spec
+  has no shell to export into). What it does:
   - flags: `-w <name>` makes a real `.claude/worktrees/<name>` on branch
     `worktree-<name>`; `-- <text>` types `<text>` first, in place of the canned
-    startup turn (ADR-0020).
+    startup turn (ADR-0020); `setup-token` prints a login token the way the real one
+    does (`KOLOFT_FAKE_SETUP_TOKEN`, `KOLOFT_FAKE_SETUP_URL`).
   - files: `fake-claude-delay` (ms before it binds), `-next-title` (title of the next
     fresh launch, used once), `-no-status` (binds but never reports a run-state),
     `-exit` (exits with that code, no hook), `-lazy` (no transcript until the first
@@ -74,7 +77,9 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   - typed lines: `/write <path>` (a Write, Stop 2.5 s later — the file on disk proves
     the transcript has it), `/busy` (a turn held open ~30 s), `/need-approval`,
     `/scratch <name>`, `/open <target>`, `/open-later <target>` (fires once
-    `<home>/go-open` exists), `/clear`, `/compact`, `/resume <id>`, `/exit`,
+    `<home>/go-open` exists), `/clear`, `/compact`, `/resume <id>`, `/exit` (also
+    `exit` and `/quit`; in a `-w` worktree with uncommitted files it first asks keep or
+    remove, and a typed `2` removes),
     `/enter-worktree <name>`, `/exit-worktree`, `/bg-work`, `/bg-reported`,
     `/bg-monitor`, `/bg-shell`. Any other line is a prompt answered by a Read and a
     Stop.
@@ -98,9 +103,9 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   (helpers/p1.ts). It kills only if the pid's command line still names this env's
   home, because pids are reused within one run (platform ledger §3) and a blind kill
   can hit another worker's session.
-- The only shell the product has is the SELECTED session's terminal tab
+- The only shell the product has is the selected session's terminal tab
   (`openSessionTerminal` + `panelTerm`). It needs a bound, live session, and
-  opening it EXPANDS the Workbench panel — a case that needs the panel shut fires
+  opening it expands the Workbench panel — a case that needs the panel shut fires
   its command behind a `sleep` and collapses inside that window (worked examples:
   workbench-tabs WB-T20, workbench-aux T-AUX-02). It waits for the screen to go quiet
   and types nothing: an `echo <marker>` readiness probe, typed across the shell's
@@ -110,15 +115,17 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 - A session pty is a login shell, so the real `/usr/bin` tools beat the suite's
   recording fakes (platform ledger §2). Reach a fake through the agent, or re-export
   PATH in the shell first (browser-routing BB-C11).
-- Remote workspaces: the other machine is helpers/remote.ts + fixtures/fake-ssh.js,
-  with nothing in the product stubbed. A remote row's state arrives one mirror pull
+- Remote workspaces: the other machine is helpers/remote.ts + fixtures/fake-ssh.js
+  (with fake-tmux.js and fake-rsync.js), with nothing in the product stubbed. A remote row's state arrives one mirror pull
   late, so drive working → waiting with `/busy`, not a short turn.
+- Codex sessions: the `codex` is fixtures/fake-codex.js, installed per spec by
+  codex-session's `installCodex` (it sets `KOLOFT_CODEX_CMD` and `CODEX_HOME`).
 
 ### Keys, focus and the hidden window
 
 - Native menu accelerators are unreachable from Playwright's synthetic keys — send
   the IPC (`sendShortcut`) or click the menu item (`clickAppMenuItem`). Which island
-  a key belongs to is decided by FOCUS, so click the target area first. Dialog-local
+  a key belongs to is decided by focus, so click the target area first. Dialog-local
   keys (⏎/Esc/digits/arrows/typing inside C8/C9/C10) are renderer keydown — plain
   `page.keyboard`. The app drops a shortcut sent before its first rows push, on
   purpose: send one only after `waitSettled` / `launchSettled` (`clickAppMenuItem`
@@ -152,7 +159,7 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `sendSave` return before the work is done, and fake-claude's echoes wrap at 80
   columns.
 - After a click on a session row, the Workbench still shows the old session for two
-  frames (ADR-0011): poll, don't read once.
+  frames (T-SWITCH-04): poll, don't read once.
 
 ### Selectors
 
@@ -199,6 +206,7 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 - Per spec, read once at startup, so set in `env.launchEnv` before launching by hand:
   `KOLOFT_BROWSER_TAB_CAP`, `KOLOFT_BROWSER_GUEST_LIMIT`, `KOLOFT_GITHUB_FIXTURE`,
   `KOLOFT_EXT_INSTALL_DIRS`, `KOLOFT_TEST_NO_ADOPT`, `KOLOFT_TEST_CLAUDE_PROBE`,
+  `KOLOFT_CODEX_CMD`,
   `KOLOFT_PROBE_BASE_URL`, `KOLOFT_UPDATE_FIXTURE`, `KOLOFT_RELEASES_URL`,
   `KOLOFT_CRON_BIND_DEADLINE_MS`, `KOLOFT_GIT_TIMEOUT_MS`, the sessionTracker
   `KOLOFT_*_MS` knobs, and the fakes' `KOLOFT_FAKE_*` inputs. The files behind
@@ -212,14 +220,9 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 
 ## Component & case numbers used in specs and test titles
 
-C-numbers come from the original design and live on as
-shared vocabulary: C1 titlebar · C2 sessions island (sidebar rows) · C3 files
-island · C4 TUI island (its header band is retired) · C5 aux Preview · C6 aux
-Terminal (retired — the global terminal island took over, and was itself retired in
-turn: a shell is a `terminal` tab inside the session's Workbench panel) · C7 the old
-new-session dialog · C8 New Worktree Session dialog · C9 Restore
-session dialog · C10 mini workspace picker (list + gate forms). S1–S4 were its
-composed screens; V0 its icon/type/color ladder (pinned by `styleVars.test.ts` +
-`spec.spec.ts`). T-* and BB-* case ids come from the original test plan and black-box
-case files — the spec carrying an id IS its contract now: report a wrong case, don't
-rewrite it in place.
+Specs and test titles name parts of the app by number: C2 sessions island (sidebar
+rows) · C8 New Worktree Session dialog · C9 Restore session dialog · C10 mini workspace
+picker (list + gate forms) · V0 the icon/type/color ladder (pinned by
+`styleVars.test.ts` + `spec.spec.ts`). No other C-number is in use.
+T-* and BB-* are case ids: the spec carrying an id is its contract — report a wrong
+case, don't rewrite it in place.

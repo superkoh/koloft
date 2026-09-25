@@ -184,7 +184,7 @@ export default function App(): JSX.Element {
   const tabs = useStore((s) => s.tabs)
   const activeTabId = useStore((s) => s.activeTabId)
   const resumeLaunch = useStore((s) => s.resumeLaunch)
-  // ADR-0011 PLATFORM§21
+  // PLATFORM§21
   const [switchFrom, setSwitchFrom] = useState(activeTabId)
   const [switchGen, setSwitchGen] = useState(0)
   if (switchFrom !== activeTabId) {
@@ -394,6 +394,7 @@ export default function App(): JSX.Element {
 
   const [panelFocus, setPanelFocus] = useState(0)
 
+  // ADR-0012
   const [guestLit, setGuestLit] = useState(false)
   useEffect(() => {
     let queued = 0
