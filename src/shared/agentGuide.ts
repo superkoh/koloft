@@ -75,7 +75,7 @@ koloft session list
     List this workspace's sessions: name and state (working, waiting for the owner, or idle). For a Claude session it also prints the path of its transcript (the file that holds its conversation).
 
 koloft session new [--name <name>] [-w <worktree name>] [--model <model>] -- "<first message>"
-    Start a sibling session of your own kind (Claude starts Claude, Codex starts Codex) in this workspace, and print the name to reach it by. A Codex session has no name, so you get its session id instead. -w starts it in its own git worktree (a separate copy of the repository).
+    Start a sibling session of your own kind (Claude starts Claude, Codex starts Codex) in this workspace, and print the name to reach it by. A Codex session has no name, so you get its tab id instead; its session id shows in "koloft session list" once it starts, and "koloft session send" takes either. -w starts it in its own git worktree (a separate copy of the repository).
     Example: koloft session new --name docs-fixer -- "Fix the broken links in docs/."
 
 How to talk to a session you started:

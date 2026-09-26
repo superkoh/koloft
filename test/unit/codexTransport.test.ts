@@ -270,6 +270,37 @@ describe('Codex TUI transport', () => {
     expect(errors.map((e) => e.message)).toEqual(['observer failed'])
   })
 
+  // CODEX§1
+  it("answers Koloft's own requests without showing them to the TUI, whose ids include 0", async () => {
+    const transport = await createCodexTransport({ binary, cwd: directory, onFrame: () => {} })
+    cleanups.push(() => transport.stop())
+    const socket = await connect(transport.url)
+    await handshake(socket)
+    const seen: CodexFrame[] = []
+    socket.on('message', (bytes) => seen.push(JSON.parse(bytes.toString()) as CodexFrame))
+    const tuiRead = async (id: string | number): Promise<void> => {
+      const reply = nextFrame(socket)
+      socket.send(JSON.stringify({ id, method: 'thread/read', params: { threadId: 'main' } }))
+      expect(await reply).toMatchObject({ id })
+    }
+    await tuiRead(0)
+    await expect(
+      transport.request('thread/queue/add', { threadId: 'main' }, 5000)
+    ).resolves.toMatchObject({ params: { threadId: 'main' } })
+    await tuiRead('after')
+    expect(seen.map((f) => f.id)).toEqual([0, 'after'])
+  })
+
+  it("an error answer fails Koloft's request and is not saved up for a TUI that connects later", async () => {
+    const transport = await createCodexTransport({ binary, cwd: directory, onFrame: () => {} })
+    cleanups.push(() => transport.stop())
+    await expect(transport.request('thread/queue/add', {}, 5000)).rejects.toThrow('Not initialized')
+    const socket = await connect(transport.url)
+    const first = nextFrame(socket)
+    socket.send(JSON.stringify({ id: 'start', method: 'initialize', params: {} }))
+    expect(await first).toMatchObject({ id: 'start' })
+  })
+
   it('rejects oversized peer input and stops instead of hanging on a partial write', async () => {
     const errors: Error[] = []
     const transport = await createCodexTransport({

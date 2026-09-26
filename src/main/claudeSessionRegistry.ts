@@ -20,12 +20,17 @@ function processStartUtc(pid: number): Promise<string | null> {
 const sameStart = (a: string, b: string): boolean =>
   a.replace(/\s+/g, ' ') === b.replace(/\s+/g, ' ')
 
+interface LiveEntry {
+  pid: number
+  name?: unknown
+}
+
 // CC§11
-export async function runningClaudePid(
+async function liveEntry(
   sessionId: string,
-  dir = REGISTRY_DIR,
-  startOf = processStartUtc
-): Promise<number | null> {
+  dir: string,
+  startOf: typeof processStartUtc
+): Promise<LiveEntry | null> {
   let names: string[]
   try {
     names = fs.readdirSync(dir)
@@ -34,7 +39,7 @@ export async function runningClaudePid(
   }
   for (const name of names) {
     if (!/^\d+\.json$/.test(name)) continue
-    let entry: { pid?: unknown; sessionId?: unknown; procStart?: unknown }
+    let entry: { pid?: unknown; sessionId?: unknown; procStart?: unknown; name?: unknown }
     try {
       entry = JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8'))
     } catch {
@@ -43,7 +48,24 @@ export async function runningClaudePid(
     if (entry.sessionId !== sessionId) continue
     if (typeof entry.pid !== 'number' || typeof entry.procStart !== 'string') continue
     const started = await startOf(entry.pid)
-    if (started && sameStart(started, entry.procStart)) return entry.pid
+    if (started && sameStart(started, entry.procStart)) return { pid: entry.pid, name: entry.name }
   }
   return null
+}
+
+export async function runningClaudePid(
+  sessionId: string,
+  dir = REGISTRY_DIR,
+  startOf = processStartUtc
+): Promise<number | null> {
+  return (await liveEntry(sessionId, dir, startOf))?.pid ?? null
+}
+
+export async function claudePeerName(
+  sessionId: string,
+  dir = REGISTRY_DIR,
+  startOf = processStartUtc
+): Promise<string | null> {
+  const name = (await liveEntry(sessionId, dir, startOf))?.name
+  return typeof name === 'string' && name ? name : null
 }

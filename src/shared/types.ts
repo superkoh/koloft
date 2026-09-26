@@ -1004,7 +1004,7 @@ export interface SpawnedTab {
   kind: BackendId
   cwd: string
   title: string
-  jobId: string
+  jobId?: string
 }
 
 export type CronSaveInput = Omit<CronJob, 'history' | 'createdAt' | 'id'> & { id?: string }

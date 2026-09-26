@@ -36,7 +36,11 @@ let repo: string
 let other: string
 let sessions: CodexSessions
 let deps: CodexSessionDeps
-let transports: { options: CodexTransportOptions; stop: ReturnType<typeof vi.fn> }[]
+let transports: {
+  options: CodexTransportOptions
+  stop: ReturnType<typeof vi.fn>
+  request: ReturnType<typeof vi.fn>
+}[]
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -81,8 +85,9 @@ beforeEach(() => {
   mocks.rpcHomes.length = 0
   mocks.create.mockImplementation(async (options: CodexTransportOptions) => {
     const stop = vi.fn(async () => {})
-    transports.push({ options, stop })
-    return { url: 'unix:///test/rpc.sock', stop }
+    const request = vi.fn(async () => ({}))
+    transports.push({ options, stop, request })
+    return { url: 'unix:///test/rpc.sock', stop, request }
   })
   mocks.request.mockResolvedValue({ data: [], nextCursor: null })
   mocks.close.mockResolvedValue(undefined)
@@ -459,6 +464,25 @@ describe('CodexSessions', () => {
       .toContainEqual([launched.id, requestDir, 'req-1.json', request])
     await sessions.stop(launched.id)
     expect(fs.existsSync(requestDir)).toBe(false)
+  })
+
+  // CODEX§17
+  it("koloft session send queues on the session's own thread, never on the TUI's title thread", async () => {
+    const launched = await sessions.launch({ kind: 'codex', cwd: repo })
+    await expect(sessions.queueMessage(launched.id, 'hello')).rejects.toThrow('not started')
+    bind()
+    const receive = transports[0].options.onFrame
+    receive('client', { id: 'title', method: 'thread/start', params: { ephemeral: true } })
+    receive('server', { id: 'title', result: { thread: { id: B, cwd: repo, ephemeral: true } } })
+    await sessions.queueMessage(launched.id, 'hello')
+    expect(transports[0].request).toHaveBeenCalledWith(
+      'thread/queue/add',
+      expect.objectContaining({
+        threadId: A,
+        input: [{ type: 'text', text: 'hello', text_elements: [] }]
+      }),
+      expect.any(Number)
+    )
   })
 
   it('with agent tools off, a Codex tab gets neither the koloft command nor the Koloft hint', async () => {

@@ -2,17 +2,17 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { runningClaudePid } from '../../src/main/claudeSessionRegistry'
+import { claudePeerName, runningClaudePid } from '../../src/main/claudeSessionRegistry'
 
 const SID = '1425a153-9a1b-45b1-a727-b05f5a9c490e'
 const START = 'Wed Sep 23 20:29:08 2026'
 
 let dir: string
 
-function entry(pid: number, sessionId: string, procStart = START): void {
+function entry(pid: number, sessionId: string, procStart = START, name?: string): void {
   fs.writeFileSync(
     path.join(dir, `${pid}.json`),
-    JSON.stringify({ pid, sessionId, procStart, kind: 'interactive' })
+    JSON.stringify({ pid, sessionId, procStart, kind: 'interactive', name })
   )
 }
 
@@ -48,5 +48,20 @@ describe("claude's own session registry: is this session still running somewhere
 
   it('no registry directory means nothing is running', async () => {
     expect(await runningClaudePid(SID, path.join(dir, 'missing'), async () => START)).toBeNull()
+  })
+})
+
+// CC§11
+describe("claude's own session registry: the name other sessions reach it by", () => {
+  it('reads the name from the live entry, not from one a hard-killed claude left behind', async () => {
+    entry(12345, SID, 'Mon Sep 21 08:00:00 2026', 'old-name')
+    entry(29948, SID, START, 'docs-fixer')
+    const startOf = async (pid: number): Promise<string | null> => (pid === 29948 ? START : null)
+    expect(await claudePeerName(SID, dir, startOf)).toBe('docs-fixer')
+  })
+
+  it('has no name for a session that is not running', async () => {
+    entry(92355, SID, START, 'docs-fixer')
+    expect(await claudePeerName(SID, dir, async () => null)).toBeNull()
   })
 })

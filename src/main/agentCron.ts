@@ -53,7 +53,7 @@ export interface CronCommand {
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string }
 
-function fail<T>(error: string): Parsed<T> {
+export function fail<T>(error: string): Parsed<T> {
   return { ok: false, error }
 }
 

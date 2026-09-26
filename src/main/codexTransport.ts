@@ -1,4 +1,5 @@
 import { spawn, execFile, type ChildProcessWithoutNullStreams } from 'child_process'
+import { randomUUID } from 'crypto'
 import fs from 'fs/promises'
 import http from 'http'
 import os from 'os'
@@ -284,10 +285,66 @@ function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error))
 }
 
-export async function createCodexTransport(options: CodexTransportOptions): Promise<{
+interface PendingRequest {
+  resolve(value: unknown): void
+  reject(error: Error): void
+  timer: ReturnType<typeof setTimeout>
+}
+
+function sendRequest<K>(
+  pending: Map<K, PendingRequest>,
+  id: K,
+  method: string,
+  params: unknown,
+  timeoutMs: number,
+  write: (raw: string) => void
+): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pending.delete(id)
+      reject(new Error(`Codex RPC timed out: ${method}`))
+    }, timeoutMs)
+    pending.set(id, { resolve, reject, timer })
+    try {
+      write(JSON.stringify({ id, method, params }))
+    } catch (error) {
+      clearTimeout(timer)
+      pending.delete(id)
+      reject(asError(error))
+    }
+  })
+}
+
+function settleRequest<K>(pending: Map<K, PendingRequest>, id: K, frame: CodexFrame): void {
+  const request = pending.get(id)
+  if (!request) return
+  pending.delete(id)
+  clearTimeout(request.timer)
+  if (frame.error) {
+    const error = frame.error as { message?: string; code?: number }
+    request.reject(new Error(error.message ?? `Codex RPC error ${error.code ?? ''}`))
+  } else request.resolve(frame.result)
+}
+
+function rejectAll<K>(pending: Map<K, PendingRequest>, error: Error): void {
+  for (const request of pending.values()) {
+    clearTimeout(request.timer)
+    request.reject(error)
+  }
+  pending.clear()
+}
+
+const OWN_REQUEST_ID_PREFIX = 'koloft-'
+
+export interface CodexTransport {
   url: string
   stop(): Promise<void>
-}> {
+  request(method: string, params: unknown, timeoutMs: number): Promise<unknown>
+}
+
+export async function createCodexTransport(
+  options: CodexTransportOptions
+): Promise<CodexTransport> {
   // PLATFORM§3
   const directory = await fs.mkdtemp(
     path.join(process.platform === 'darwin' ? '/tmp' : os.tmpdir(), 'koloft-cx-')
@@ -306,6 +363,7 @@ export async function createCodexTransport(options: CodexTransportOptions): Prom
   let stopping: Promise<void> | undefined
   const pending: string[] = []
   let pendingBytes = 0
+  const own = new Map<string, PendingRequest>()
   const report = (error: Error): void => {
     try {
       options.onError?.(error)
@@ -321,6 +379,7 @@ export async function createCodexTransport(options: CodexTransportOptions): Prom
   const stop = (): Promise<void> => {
     if (!stopping)
       stopping = (async () => {
+        rejectAll(own, new Error('Codex connection is closed'))
         client?.terminate()
         server.closeAllConnections()
         await Promise.all([
@@ -343,6 +402,15 @@ export async function createCodexTransport(options: CodexTransportOptions): Prom
     options,
     (raw, frame) => {
       observe('server', frame)
+      // CODEX§1
+      if (
+        frame.method === undefined &&
+        typeof frame.id === 'string' &&
+        frame.id.startsWith(OWN_REQUEST_ID_PREFIX)
+      ) {
+        settleRequest(own, frame.id, frame)
+        return
+      }
       if (client?.readyState === WebSocket.OPEN) {
         if (client.bufferedAmount > upstream.limit * 2)
           throw new Error('Codex output queue exceeds the size limit')
@@ -408,17 +476,23 @@ export async function createCodexTransport(options: CodexTransportOptions): Prom
     })
     await fs.chmod(socketPath, 0o600)
     // CODEX§9
-    return { url: `unix://${socketPath}`, stop }
+    return {
+      url: `unix://${socketPath}`,
+      stop,
+      request: (method, params, timeoutMs) =>
+        sendRequest(
+          own,
+          `${OWN_REQUEST_ID_PREFIX}${randomUUID()}`,
+          method,
+          params,
+          timeoutMs,
+          (raw) => upstream.write(raw)
+        )
+    }
   } catch (error) {
     await stop().catch(report)
     throw error
   }
-}
-
-interface PendingRequest {
-  resolve(value: unknown): void
-  reject(error: Error): void
-  timer: ReturnType<typeof setTimeout>
 }
 
 export class CodexRpc {
@@ -433,17 +507,10 @@ export class CodexRpc {
       options,
       (_raw, frame) => {
         if (frame.method !== undefined || typeof frame.id !== 'number') return
-        const request = this.pending.get(frame.id)
-        if (!request) return
-        this.pending.delete(frame.id)
-        clearTimeout(request.timer)
-        if (frame.error) {
-          const error = frame.error as { message?: string; code?: number }
-          request.reject(new Error(error.message ?? `Codex RPC error ${error.code ?? ''}`))
-        } else request.resolve(frame.result)
+        settleRequest(this.pending, frame.id, frame)
       },
       (error) => {
-        this.rejectPending(error)
+        rejectAll(this.pending, error)
         void this.close().catch(() => {})
       }
     )
@@ -479,34 +546,19 @@ export class CodexRpc {
 
   private send(method: string, params: unknown): Promise<unknown> {
     if (this.closed) return Promise.reject(new Error('Codex RPC connection is closed'))
-    const id = ++this.nextId
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id)
-        reject(new Error(`Codex RPC timed out: ${method}`))
-      }, this.options.timeoutMs ?? DEFAULT_TIMEOUT)
-      this.pending.set(id, { resolve, reject, timer })
-      try {
-        this.process.write(JSON.stringify({ id, method, params }))
-      } catch (error) {
-        clearTimeout(timer)
-        this.pending.delete(id)
-        reject(asError(error))
-      }
-    })
-  }
-
-  private rejectPending(error: Error): void {
-    for (const request of this.pending.values()) {
-      clearTimeout(request.timer)
-      request.reject(error)
-    }
-    this.pending.clear()
+    return sendRequest(
+      this.pending,
+      ++this.nextId,
+      method,
+      params,
+      this.options.timeoutMs ?? DEFAULT_TIMEOUT,
+      (raw) => this.process.write(raw)
+    )
   }
 
   close(): Promise<void> {
     this.closed = true
-    this.rejectPending(new Error('Codex RPC connection is closed'))
+    rejectAll(this.pending, new Error('Codex RPC connection is closed'))
     return this.process.stop()
   }
 }

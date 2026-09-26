@@ -240,6 +240,8 @@ import type {
 import { AgentRequests, BUILTIN_VERBS } from './agentRequests'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
+import { sessionVerb } from './agentSessions'
+import { claudePeerName } from './claudeSessionRegistry'
 import { writeAgentPlugin } from './agentPlugin'
 
 // PLATFORM§4
@@ -558,14 +560,23 @@ function agentToolsFor(kind: TabKind, host: HostId): boolean {
   )
 }
 
-function pinnedWorkspaceOfTab(tabId: string): string | undefined {
+function workspaceOfTab(tabId: string): string | undefined {
   const claudeSession = claudeBackend.sessionIdOf(tabId)
-  const workspace =
+  return (
     codexSessions?.workspaceOfTab(tabId) ??
     (claudeSession ? workspaceMgr?.workspaceOf(claudeSession) : undefined)
+  )
+}
+
+function pinnedWorkspaceOfTab(tabId: string): string | undefined {
+  const workspace = workspaceOfTab(tabId)
   return workspace && workspaceMgr?.pinnedPaths().some((w) => w.path === workspace)
     ? workspace
     : undefined
+}
+
+function backendOfTab(tabId: string): BackendId {
+  return backendIdOf(ptyMgr.get(tabId)?.kind) ?? 'claude'
 }
 
 const agentRequests = new AgentRequests({
@@ -574,7 +585,7 @@ const agentRequests = new AgentRequests({
     cron: cronVerb({
       runner: () => cronRunner,
       pinnedWorkspaceOf: pinnedWorkspaceOfTab,
-      backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind) ?? 'claude',
+      backendOf: backendOfTab,
       sessionName: (tabId) => sessionTitleOf(tabId) ?? 'A session',
       toast: (text) => sendToRenderer('cron:toast', text),
       now: () => new Date()
@@ -586,6 +597,18 @@ const agentRequests = new AgentRequests({
         const workspace = pinnedWorkspaceOfTab(tabId)
         return workspace ? ensureNotesFile(notesBaseDir(), workspace) : undefined
       }
+    }),
+    session: sessionVerb({
+      backendOf: backendOfTab,
+      workspaceOf: workspaceOfTab,
+      sessionsIn: (workspace) => allSessions().filter((s) => workspaceOfTab(s.tabId) === workspace),
+      peerName: (sessionId) => claudePeerName(sessionId),
+      launch: ({ backend, name, ...spec }) =>
+        launchQuietTab(
+          { kind: backend, name, ...spec, permission: 'default' },
+          name ?? BACKEND_LABEL[backend]
+        ),
+      queue: async (tabId, text) => codexSessions?.queueMessage(tabId, text)
     })
   },
   tab: (tabId) => ptyMgr.get(tabId),
@@ -2210,31 +2233,38 @@ async function countRunFolders(root: string, slug: string): Promise<number> {
   return entries.filter((e) => e.isDir && e.name.startsWith(`${slug}-`)).length
 }
 
+async function launchQuietTab(
+  options: CreateTabOptions & { kind: BackendId },
+  title: string,
+  jobId?: string
+): Promise<string | null> {
+  const r = await sessionBackends.create(options)
+  if (!r.ok) return null
+  const spawned: SpawnedTab = { id: r.id, kind: options.kind, cwd: r.cwd, title, jobId }
+  sendToRenderer('terminal:spawned', spawned)
+  return r.id
+}
+
 async function launchCronRun(
   req: LaunchRequest
 ): Promise<{ ok: true; tabId: string } | { ok: false }> {
   try {
-    const r = await sessionBackends.create({
-      kind: req.backend,
-      cwd: req.cwd,
-      worktree: req.worktree,
-      model: req.model,
-      effort: req.effort,
-      permission: req.permission,
-      firstPrompt: req.firstPrompt,
-      name: req.name,
-      scheduled: true
-    })
-    if (!r.ok) return { ok: false }
-    const spawned: SpawnedTab = {
-      id: r.id,
-      kind: req.backend,
-      cwd: r.cwd,
-      title: req.name,
-      jobId: req.jobId
-    }
-    sendToRenderer('terminal:spawned', spawned)
-    return { ok: true, tabId: r.id }
+    const tabId = await launchQuietTab(
+      {
+        kind: req.backend,
+        cwd: req.cwd,
+        worktree: req.worktree,
+        model: req.model,
+        effort: req.effort,
+        permission: req.permission,
+        firstPrompt: req.firstPrompt,
+        name: req.name,
+        scheduled: true
+      },
+      req.name,
+      req.jobId
+    )
+    return tabId ? { ok: true, tabId } : { ok: false }
   } catch (err) {
     console.error('[koloft] a scheduled run could not be launched:', err)
     return { ok: false }
