@@ -122,7 +122,7 @@ describe('hiddenTouchedUnder — FR-47 force-reveal', () => {
   })
 })
 
-describe('FR-46 — tasks/ is never exposed', () => {
+describe('FR-46 — the file tree shows the session scratchpad but never its sibling tasks/ folder, nor a tasks/ inside it', () => {
   it('matches the scratchpad sibling and a tasks dir inside the scratchpad', () => {
     expect(isTasksPath('/tmp/claude-501/slug/sess-1/tasks', SCRATCH)).toBe(true)
     expect(isTasksPath('/tmp/claude-501/slug/sess-1/tasks/agent.jsonl', SCRATCH)).toBe(true)

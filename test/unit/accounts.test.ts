@@ -158,7 +158,10 @@ describe('U3 · per-build keychain namespace', () => {
     expect(keychainService('koloft', 'custom')).toBe('koloft-custom-endpoint')
   })
 
-  it('dev and beta builds get stores of their own', () => {
+  it('each build gets a Keychain namespace of its own: it keeps dev, beta and production apart, and is not a security line', () => {
+    expect(
+      new Set(['koloft-dev', 'koloft-beta', 'koloft'].map((n) => keychainNamespace(n))).size
+    ).toBe(3)
     expect(keychainService('koloft-dev', 'oauth')).toBe('koloft-dev-claude-oauth')
     expect(keychainService('koloft-beta', 'oauth')).toBe('koloft-beta-claude-oauth')
     expect(keychainService('koloft-dev', 'oauth')).not.toBe(keychainService('koloft', 'oauth'))
