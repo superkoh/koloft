@@ -851,8 +851,12 @@ How established: 2026-09-26, CC 2.1.283, on this Mac. Each launch route was run 
 `claude -p … --output-format stream-json --verbose --model haiku --strict-mcp-config
 --mcp-config <empty>` in a scratch folder, and the check was a made-up word that only
 the injected text held: the model had to say it back, and the `system/init` record's
-`skills` and `plugins` lists were read. Interactive mode was not run for these five
-routes. The messaging lines below were run in interactive sessions.
+`skills` and `plugins` lists were read. The same day, one interactive claude (a pty,
+`--permission-mode default --plugin-dir <dir> --settings <file with the allow rule>` and
+a first prompt) called `Skill(koloft:koloft)`, said back its word, and ran `koloft …`
+through Bash with no approval prompt, so those two routes hold interactively too; the
+other three were run in `-p` only. The messaging lines below were run in interactive
+sessions.
 
 - **`--plugin-dir <dir>` loads a plugin with no install step.** A folder holding
   `.claude-plugin/plugin.json` (`{"name":"koloft",…}`) and `skills/<n>/SKILL.md` showed up
@@ -867,8 +871,7 @@ routes. The messaging lines below were run in interactive sessions.
 - **`permissions.allow: ["Bash(koloft *)"]` in a `--settings` file lets that command run
   in `--permission-mode default`**; without it the same call was denied ("This command
   requires approval") in `-p`. A command with arguments (`koloft note append "hello
-  world"`) matched too. That the rule works the same in interactive mode is inferred,
-  not checked.
+  world"`) matched too.
 - **Sessions on one machine can message each other.** A second interactive claude
   started with `-n <name>` showed up in another session's `ListAgents` under that name,
   and `SendMessage` reached it. With no context, the receiver would not act on the
