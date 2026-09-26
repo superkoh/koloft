@@ -26,7 +26,7 @@ const CARDS: { Icon: typeof LuFolder; title: string; body: string; where: string
   },
   {
     Icon: LuPanelRight,
-    title: 'Workbench per Claude session',
+    title: 'Workbench per session',
     body: 'Changed files with diffs, a file browser, a real browser, a shell.',
     where: '⇧⌘B · ⌃`'
   },
@@ -38,8 +38,8 @@ const CARDS: { Icon: typeof LuFolder; title: string; body: string; where: string
   },
   {
     Icon: LuUsers,
-    title: 'Several Claude accounts, one pool',
-    body: 'Each Claude session starts on the account with the most room left. Codex uses its existing login.',
+    title: 'Several accounts, one pool',
+    body: 'Each session starts on the account with the most room left.',
     where: 'Settings ▸ Accounts'
   },
   {
@@ -51,7 +51,7 @@ const CARDS: { Icon: typeof LuFolder; title: string; body: string; where: string
   {
     Icon: LuClock,
     title: 'Scheduled jobs',
-    body: 'Run a Claude task on a timer, in its own worktree when the folder is a git repo, with a run history.',
+    body: 'Run a Claude or Codex task on a timer, in its own worktree when the folder is a git repo, with a run history.',
     where: 'workspace menu ▸ Scheduled jobs…'
   },
   {
@@ -66,8 +66,8 @@ const DIFFS: [string, string, string][] = [
   ['Real Claude Code and Codex terminals', 'yes', 'yes'],
   ['Session list and history per folder', 'no', 'yes'],
   ['Working / needs your OK / done, at a glance', 'no', 'for sessions Koloft started'],
-  ['Files changed, with diff, beside the chat', 'git diff by hand', 'Claude sessions'],
-  ['Several accounts, auto-balanced', 'no', 'Claude sessions'],
+  ['Files changed, with diff, beside the chat', 'git diff by hand', 'yes'],
+  ['Several accounts, auto-balanced', 'no', 'yes'],
   ["Claude drives a browser you're logged into", 'no', 'yes, Playwright tools'],
   ['Keep using a plain terminal any time', 'yes', 'yes']
 ]

@@ -260,13 +260,13 @@ export function Onboarding({
           <>
             <div className="big">Koloft runs Claude Code — and Codex, if you have it.</div>
             <div className="quiet">
-              Pick a <b>folder</b>. Koloft shows every <b>session</b> in it. Each Claude session
-              gets a side panel, the <b>Workbench</b>: the files Claude changed, a browser, a shell.
+              Pick a <b>folder</b>. Koloft shows every <b>session</b> in it. Each session gets a
+              side panel, the <b>Workbench</b>: the files the agent changed, a browser, a shell.
             </div>
             <PicFlow />
             <div className="quiet">
-              Nothing is copied. Koloft reads Claude&apos;s own files, so sessions you started in a
-              plain terminal show up here too.
+              Nothing is copied. Koloft reads each tool&apos;s own history, so sessions you started
+              in a plain terminal show up here too.
             </div>
           </>
         )}
@@ -326,7 +326,7 @@ export function Onboarding({
             <div className="big">Use your existing login.</div>
             <div className="quiet">
               {codexFound
-                ? 'Claude Code needs a login, and Codex keeps its own. Koloft can also spread your Claude sessions over several accounts.'
+                ? 'Claude Code and Codex each need a login. Keep the ones this Mac already has, or let Koloft spread your sessions over several accounts.'
                 : 'Claude Code needs a login. Keep the one this Mac already has, or let Koloft spread your sessions over several accounts.'}
             </div>
             <div className="ob-choices">
@@ -349,7 +349,7 @@ export function Onboarding({
                 className={'choice' + (balance ? ' on' : '')}
                 onClick={() => setBalance(true)}
               >
-                <span className="choice-t">Balance several Claude accounts</span>
+                <span className="choice-t">Balance several accounts</span>
                 <span className="choice-d">
                   Each new session starts on the one with the most room left. Set it up in Settings
                   ▸ Accounts after this.

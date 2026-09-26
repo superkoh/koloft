@@ -7,12 +7,12 @@ when it does, this page will say so.
 
 ## What Koloft is for
 
-One idea decides everything: **you pick a folder, and you start or resume Claude Code
-sessions in it.** Koloft lists those sessions straight from Claude's own storage, and
-hangs one helper panel — the Workbench — off each session.
+One idea decides everything: **you pick a folder, and you start or resume Claude Code or
+Codex sessions in it.** Koloft lists those sessions straight from each tool's own
+storage, and hangs one helper panel — the Workbench — off each session.
 
 Ideas are judged against that. A free-floating terminal, a second copy of a transcript,
-or a feature that makes Koloft the thing you look at instead of Claude are all outside it,
+or a feature that makes Koloft the thing you look at instead of the agent are all outside it,
 and get closed even when they are good ideas.
 
 What is planned, and what is deliberately not being done, is in
@@ -20,10 +20,11 @@ What is planned, and what is deliberately not being done, is in
 
 ## Filing an issue
 
-Use the templates — they ask for the three versions every report here needs (Koloft,
-macOS, Claude Code). Koloft sits between you and Claude Code, so the first thing to sort
-out is which of the two did the thing; if you can, check whether the same happens running
-`claude` in a plain terminal. That answer alone often settles it.
+Use the templates — they ask for the versions every report here needs (Koloft, macOS,
+Claude Code, and Codex when the problem is in a Codex session). Koloft sits between you
+and the agent, so the first thing to sort out is which of the two did the thing; if you
+can, check whether the same happens running `claude` or `codex` in a plain terminal. That
+answer alone often settles it.
 
 Found a security problem? Please do not open a public issue — see
 [SECURITY.md](SECURITY.md).

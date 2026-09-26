@@ -76,7 +76,9 @@ export function SessionMethodsSection() {
           <div className="set-lab">
             <b>{BACKEND_LABEL[backend]}</b>
             <small>
-              {backend === 'claude' ? 'Always enabled' : 'Uses its own login on this Mac'}
+              {backend === 'claude'
+                ? 'Always enabled'
+                : 'Uses Settings ▸ Accounts, or its own login on this Mac'}
             </small>
             <small>{status(backend)}</small>
           </div>
