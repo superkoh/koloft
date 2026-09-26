@@ -1,5 +1,5 @@
-import { SESSION_CAPABILITIES } from '@shared/sessionBackend'
-import { backendLabel, hasWorkbench, isSessionKind } from './agentUi'
+import { BACKEND_LABEL, identityOf } from '@shared/sessionBackend'
+import { hasWorkbench, isSessionKind } from './agentUi'
 import { create } from 'zustand'
 import {
   DEFAULT_SETTINGS,
@@ -20,7 +20,7 @@ import {
   type WorkspaceRows
 } from '@shared/types'
 import { basename } from '@shared/preview'
-import { canOpenExternally, routeFor } from '@shared/browserRoute'
+import { routeFor } from '@shared/browserRoute'
 import type { LoginFlowState } from './components/settings/loginFlow'
 import type { ResumeDialogState } from './resumeFlow'
 import { endEditsOf, rekeyOwner } from './editRegistry'
@@ -332,12 +332,8 @@ function bindParkedWorkbench(): void {
   }
 }
 
-function workbenchAllowed(s: AppState, tabId: string | null): boolean {
-  const tab = s.tabs.find((t) => t.id === tabId)
-  const backend =
-    s.sessions.find((session) => session.tabId === tabId)?.backendId ??
-    (tab?.kind === 'codex' ? 'codex' : 'claude')
-  return SESSION_CAPABILITIES[backend].workbench
+function workbenchAllowed(s: Pick<AppState, 'tabs'>, tabId: string | null): boolean {
+  return hasWorkbench(s.tabs.find((t) => t.id === tabId))
 }
 
 function whenWorkbenchFetched(tabId: string, fn: () => void): void {
@@ -424,7 +420,7 @@ export const useStore = create<AppState>((set, get) => ({
       const t: Tab = {
         id: a.id,
         kind: a.kind,
-        title: a.title ?? (isSessionKind(a.kind) ? backendLabel(a.kind) : 'Terminal'),
+        title: a.title ?? (isSessionKind(a.kind) ? BACKEND_LABEL[a.kind] : 'Terminal'),
         cwd: a.cwd,
         alive: true
       }
@@ -505,12 +501,12 @@ export const useStore = create<AppState>((set, get) => ({
     const tab = tabs.find((t) => t.id === activeTabId)
     if (!tab) return
     const sess = sessions.find((s) => s.tabId === tab.id)
-    const backend = sess?.backendId ?? (tab.kind === 'codex' ? 'codex' : 'claude')
     const sessionId = sess?.sessionId || tab.sessionId || lastSessionId.get(tab.id)
     if (restarting.has(tab.id)) return
     const oldId = tab.id
     const liveClaude = !!sess?.alive && !!sess.sessionId
     const begin = async (resumeId: string, cwd: string, live: boolean): Promise<void> => {
+      const backend = identityOf(resumeId).backendId
       restarting.add(oldId)
       // CC§2
       let hasTranscript = false
@@ -532,8 +528,8 @@ export const useStore = create<AppState>((set, get) => ({
       restartedPtys.add(oldId)
       get().setTabTitle(oldId, sess?.title ?? tab.title)
       window.api.terminal.kill(oldId)
-      void window.api.terminal
-        .create({ kind: backend, cwd, resumeSessionId: resumeId })
+      void window.api.sessions
+        .resume({ sessionId: resumeId, cwd })
         .then((res) => {
           if (!res.ok) throw new Error(res.code)
           if (!get().tabs.some((x) => x.id === oldId)) {
@@ -546,7 +542,7 @@ export const useStore = create<AppState>((set, get) => ({
                 ? {
                     ...x,
                     id: res.id,
-                    kind: backend as TabKind,
+                    kind: backend,
                     cwd: res.cwd,
                     sessionId: resumeId,
                     alive: true
@@ -1014,13 +1010,9 @@ export function previewLinkTarget(href: string, fromSrc: string): string {
 export function openWebPage(src: string, sourceTabId?: string, sourcePath?: string): void {
   const st = useStore.getState()
   const selected = st.tabs.find((t) => t.id === st.activeTabId)
-  if (selected?.kind === 'codex') {
-    if (canOpenExternally(src)) window.api.browser.openExternal(src)
-    return
-  }
   const decision = routeFor(src, 'user')
   if (decision.dest !== 'browser') return
-  const tabId = st.tabs.find((t) => t.id === st.activeTabId && t.kind === 'claude')?.id
+  const tabId = hasWorkbench(selected) ? selected?.id : undefined
   if (!tabId) {
     st.landOverlay(decision.target, 'now')
     return

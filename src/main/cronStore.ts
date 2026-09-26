@@ -2,6 +2,8 @@ import path from 'path'
 import { isValidSchedule } from '@shared/schedule'
 import { hasWordChar, isValidModelName } from '@shared/cronNames'
 import { isValidWorktreeName } from '@shared/worktreeName'
+import { backendIdOf } from '@shared/sessionBackend'
+import { isAbsoluteOnHost } from '@shared/remoteKey'
 import { isCronEffort, type CronJob, type HistoryLine, type HistoryState } from '@shared/types'
 
 export interface CronStoreFs {
@@ -88,7 +90,7 @@ export function sanitizeCron(
     const { id, workspacePath, schedule, enabled, createdAt } = item
     if (typeof id !== 'string' || id === '') continue
     if (seen.has(id)) continue
-    if (typeof workspacePath !== 'string' || !path.isAbsolute(workspacePath)) continue
+    if (typeof workspacePath !== 'string' || !isAbsoluteOnHost(workspacePath)) continue
     if (filterByPin && !pinnedSet.has(workspacePath)) continue
     const name = cleanName(item.name)
     if (name === null) continue
@@ -116,6 +118,8 @@ export function sanitizeCron(
       else notes[id] = BAD_MODEL_NOTE
     }
     if (isCronEffort(item.effort)) job.effort = item.effort
+    const backend = backendIdOf(item.backend)
+    if (backend) job.backend = backend
     seen.add(id)
     jobs.push(job)
   }

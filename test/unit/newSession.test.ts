@@ -84,6 +84,8 @@ const fresh = (patch: Partial<WorkspaceFreshness> = {}): WorkspaceFreshness => (
 
 const sessionRow = (patch: Partial<SessionRow> = {}): SessionRow => ({
   id: 's1',
+  backendId: 'claude',
+  host: 'local',
   title: 't',
   worktree: 'main',
   cwd: '/repo',

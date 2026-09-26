@@ -11,6 +11,7 @@ export interface CodexMember {
   createdAt: number
   updatedAt: number
   worktreeResourceId?: string
+  codexHome?: string
 }
 
 export interface WorktreeResource {
@@ -58,7 +59,8 @@ function validMember(value: unknown, key: string): value is CodexMember {
     Number.isFinite(value.createdAt) &&
     typeof value.updatedAt === 'number' &&
     Number.isFinite(value.updatedAt) &&
-    (value.worktreeResourceId === undefined || typeof value.worktreeResourceId === 'string')
+    (value.worktreeResourceId === undefined || typeof value.worktreeResourceId === 'string') &&
+    (value.codexHome === undefined || absolute(value.codexHome))
   )
 }
 

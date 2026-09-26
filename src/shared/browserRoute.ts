@@ -20,7 +20,7 @@ function drop(reason: RouteDropReason): RouteDecision {
   return { dest: 'drop', target: '', reason }
 }
 
-function schemeOf(target: string): string {
+export function schemeOf(target: string): string {
   const m = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.exec(target)
   return m ? m[0].toLowerCase() : ''
 }

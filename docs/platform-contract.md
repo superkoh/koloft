@@ -29,6 +29,14 @@ method. A recheck adds its date, version and command to the bullet.
   one inside a session pty, unless its folder is put first again after the rc files
   have run. (2026-09-24, macOS 27.0: `PATH=/fakebin:/usr/bin:/bin zsh -lc` printed
   `/usr/local/bin` as the first entry, the first line of `/etc/paths`.)
+- **A `ZDOTDIR` wrapper puts a folder first again after `path_helper`.** zsh reads its
+  dotfiles from `$ZDOTDIR` instead of `$HOME`, and `/etc/zprofile` (where `path_helper`
+  runs) is read before `$ZDOTDIR/.zprofile`. A wrapper folder whose `.zshenv`,
+  `.zprofile`, `.zshrc` and `.zlogin` each source the user's own file of the same name
+  and whose `.zprofile` then prepends a folder to `PATH` makes that folder win in
+  `zsh -lc`, with the user's own `PATH` additions kept. (2026-09-25, macOS 27.0, zsh:
+  `command -v open` printed the wrapper's `open`; `command -v codex` still printed
+  `~/.local/bin/codex`, which the user's `~/.zprofile` adds.)
 - **`zsh -lc` skips `~/.zshrc`** (a login shell that is not interactive), so a
   `command -v` run through it can miss a tool that every interactive session finds.
   Only `zsh -l -i` loads the user's full profile. (2026-09-24, macOS 27.0, zsh with a
@@ -850,6 +858,13 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   pull), and even with it an unchanged file may be touched again, so a watcher can see
   it again.
 - **Mirrored files keep the source machine's mtime**, not the time they arrived.
+- **Filter rules anchored with a leading `/`, and `**`, work the same on both ends.**
+  `--include=/<slug>*/`, `/<slug>*/*.jsonl`, `/<slug>*/*.title`, `/<slug>*/*/`,
+  `/<slug>*/*/**` then `--exclude=*` pulled exactly the workspace's transcripts, their
+  title files and everything under each session's own folder, and nothing of another
+  project. Measured 2026-09-24 with this Mac's openrsync (2.6.9 compatible) pulling
+  from GNU rsync 3.2.7 on Ubuntu 24.04, and openrsync on both ends locally, over a
+  scratch tree.
 
 ## §35 tmux
 
@@ -880,3 +895,31 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
 - **Its stdout is a pipe**, so it sizes flex layouts only from `CCSTATUSLINE_WIDTH`.
 - **It never exits while its stdin stays open** (upstream #485), and Claude Code
   sometimes keeps it open.
+
+## §37 Shell tools on a remote machine (for the remote Workbench)
+
+Measured 2026-09-24 over ssh on a real Ubuntu 24.04 LTS box (GNU coreutils 9.4, git
+2.43.0, `/bin/sh` is dash) and on this Mac (macOS 27.0, BSD tools), by running each
+command by hand:
+
+- **`stat` has two dialects.** GNU: `stat -c '%.9Y %s'` prints the last-modified time with
+  nanoseconds and the size (`1748674639.260000000 16`). BSD (macOS): the same flags
+  fail; `stat -f '%Fm %z'` prints the same shape (`1788431650.000000000 213`). Trying
+  GNU first and falling back to BSD works on both.
+- **`readlink -f` resolves a path on both** (GNU coreutils 9.4, and macOS 27).
+- **ripgrep (`rg`) was not installed on the Ubuntu box**, and neither was
+  `inotifywait`; `git grep` is there with git. So content search needs the `git grep`
+  fallback, and there is no file watcher to lean on.
+- **A PATH prefix set before `bash -l -i` survives the login files** on that Ubuntu box
+  (`/etc/profile` there does not set PATH). Debian's `/etc/profile` does set PATH, so
+  there it may be lost — inferred, not checked. On a macOS machine, `path_helper` in
+  the login files may put a real `claude` in `/usr/local/bin` ahead of that prefix —
+  inferred, not checked.
+- Older coreutils may not know the `%.9Y` precision — inferred, not checked.
+- Wrapping each command in `sh -c '…'` keeps it safe when the user's shell is fish —
+  inferred, not checked (neither box has fish).
+- **The remote Workbench's shell commands all ran on that box** (dash as `sh`, no
+  ripgrep): listing a folder with `git check-ignore -z --stdin`, finding files with
+  `git ls-files -z`, searching text with the `git grep` fallback, the Changes diffs, and
+  an edit's read, stale check, write and new file. Checked by running Koloft's own
+  `SshHost` against a scratch git repo in `/tmp` there, then deleting it.

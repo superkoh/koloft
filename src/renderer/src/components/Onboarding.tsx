@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type JSX } from 'react'
 import type { DiscoveredFolder } from '@shared/types'
 import { basename } from '@shared/preview'
+import { backendAvailable } from '@shared/sessionBackend'
 import { shortenHome } from '../browseModel'
 import { useStore } from '../store'
 import { relTime } from '../sessionRows'
@@ -197,12 +198,10 @@ export function Onboarding({
   const runProbe = useCallback((): void => {
     setProbe('pending')
     setCodexFound(false)
-    void Promise.all([window.api.claude.probe(), window.api.sessions.backends()]).then(
-      ([claude, backends]) => {
-        setCodexFound(backends.some((b) => b.id === 'codex' && b.available))
-        setProbe(claude.found ? 'found' : 'missing')
-      }
-    )
+    void window.api.sessions.backends().then((backends) => {
+      setCodexFound(backendAvailable(backends, 'codex'))
+      setProbe(backendAvailable(backends, 'claude') ? 'found' : 'missing')
+    })
   }, [])
 
   const finish = useCallback((): void => {

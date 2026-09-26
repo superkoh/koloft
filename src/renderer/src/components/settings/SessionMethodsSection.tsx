@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
-import { SESSION_BACKENDS, normalizeSessionMethods } from '@shared/sessionBackend'
+import { BACKEND_LABEL, SESSION_BACKENDS, normalizeSessionMethods } from '@shared/sessionBackend'
 import type { BackendId } from '@shared/types'
-import { backendLabel } from '../../agentUi'
 import { useStore } from '../../store'
 import { SessionBackendIcon } from '../SessionBackendIcon'
 import { Switch } from './Switch'
@@ -24,20 +23,9 @@ export function SessionMethodsSection() {
   const [detected, setDetected] = useState<Detected | 'error' | null>(null)
   useEffect(() => {
     let alive = true
-    void Promise.all([window.api.sessions.backends(), window.api.claude.probe()]).then(
-      ([backends, claude]) => {
-        if (!alive) return
-        setDetected(
-          backends.map((b) =>
-            b.id === 'claude'
-              ? {
-                  ...b,
-                  available: claude.found,
-                  reason: claude.found ? undefined : 'Not installed'
-                }
-              : b
-          )
-        )
+    void window.api.sessions.backends().then(
+      (backends) => {
+        if (alive) setDetected(backends)
       },
       () => {
         if (alive) setDetected('error')
@@ -69,7 +57,7 @@ export function SessionMethodsSection() {
               key={backend}
               className={methods.defaultBackend === backend ? 'on' : ''}
               aria-pressed={methods.defaultBackend === backend}
-              aria-label={`Use ${backendLabel(backend)} by default`}
+              aria-label={`Use ${BACKEND_LABEL[backend]} by default`}
               disabled={!methods.enabled[backend]}
               onClick={() =>
                 update({
@@ -78,7 +66,7 @@ export function SessionMethodsSection() {
               }
             >
               <SessionBackendIcon backend={backend} size={14} decorative />
-              {backendLabel(backend)}
+              {BACKEND_LABEL[backend]}
             </button>
           ))}
         </div>
@@ -86,7 +74,7 @@ export function SessionMethodsSection() {
       {SESSION_BACKENDS.map((backend) => (
         <div className="set-row" key={backend}>
           <div className="set-lab">
-            <b>{backendLabel(backend)}</b>
+            <b>{BACKEND_LABEL[backend]}</b>
             <small>
               {backend === 'claude' ? 'Always enabled' : 'Uses its own login on this Mac'}
             </small>
@@ -95,7 +83,7 @@ export function SessionMethodsSection() {
           <Switch
             checked={methods.enabled[backend]}
             disabled={backend === 'claude'}
-            ariaLabel={`Enable ${backendLabel(backend)}`}
+            ariaLabel={`Enable ${BACKEND_LABEL[backend]}`}
             title={
               backend === 'claude' ? 'Claude is always enabled' : 'Enable Codex for new sessions'
             }

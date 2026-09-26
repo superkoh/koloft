@@ -2,12 +2,10 @@ import path from 'path'
 import {
   PENDING_SESSION_TITLE,
   PLACEHOLDER_SESSION_TITLE,
-  type SessionRow,
+  type BackendSessionRow,
   type WorktreeStateMeta
 } from '@shared/types'
 import { classifyUserPrompt, encodeCwd, INTERRUPT_TEXTS } from './sessionTracker'
-
-export type { SessionRow }
 
 export interface Bucket {
   slug: string
@@ -225,13 +223,13 @@ function titleFor(meta: SessionMeta, nowMs: number): string {
   return relativeAgo(Date.parse(meta.timestamp), nowMs)
 }
 
-export function aggregateSessions(buckets: Bucket[], deps: AggregateDeps): SessionRow[] {
+export function aggregateSessions(buckets: Bucket[], deps: AggregateDeps): BackendSessionRow[] {
   const nowMs = deps.now()
-  const rows = new Map<string, SessionRow>()
+  const rows = new Map<string, BackendSessionRow>()
   buckets.forEach((b, i) => {
     for (const f of deps.listJsonl(b.slug)) {
       const meta = deps.readMeta(b.slug, f.id)
-      const row: SessionRow = {
+      const row: BackendSessionRow = {
         id: f.id,
         createdAt: Date.parse(meta.timestamp) || 0,
         title: titleFor(meta, nowMs),
@@ -251,16 +249,16 @@ export function aggregateSessions(buckets: Bucket[], deps: AggregateDeps): Sessi
   return [...rows.values()].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
 }
 
-export function filterOwned(
-  rows: SessionRow[],
+export function filterOwned<R extends BackendSessionRow>(
+  rows: R[],
   owned: ReadonlySet<string>,
   running: ReadonlySet<string>
-): SessionRow[] {
+): R[] {
   return rows.filter((r) => owned.has(r.id) || running.has(r.id))
 }
 
 export function hasHistory(
-  rows: SessionRow[],
+  rows: BackendSessionRow[],
   owned: ReadonlySet<string>,
   running: ReadonlySet<string>
 ): boolean {
@@ -277,14 +275,14 @@ export interface PendingLaunch {
 }
 
 export interface PendingSplit {
-  rows: SessionRow[]
+  rows: BackendSessionRow[]
   promoted: string[]
 }
 
 export function resolvePending(
   buckets: Bucket[],
   launches: PendingLaunch[],
-  rows: SessionRow[],
+  rows: BackendSessionRow[],
   nowMs: number
 ): PendingSplit {
   const out: PendingSplit = { rows: [], promoted: [] }

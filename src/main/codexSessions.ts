@@ -1,20 +1,34 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import { randomUUID } from 'crypto'
 import type {
   CreateTabOptions,
+  LaunchPermission,
   ProjectInfo,
-  SessionInfo,
+  BackendSessionInfo,
   SessionResumeRequest,
-  SessionRow
+  BackendSessionRow
 } from '@shared/types'
 import { identityOf } from '@shared/sessionBackend'
-import { CodexObservation, record, userThread, type CodexThread } from './codexObservation'
+import type { SessionEvent } from '@shared/sessionEvent'
+import {
+  CodexObservation,
+  record,
+  userThread,
+  type CodexEvent,
+  type CodexThread
+} from './codexObservation'
 import { CodexRpc, createCodexTransport } from './codexTransport'
 import { SessionStore, codexSessionKey, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
 import { resolveCodexRuntime } from './codexRuntime'
+import { occupantName } from './resumePlan'
+import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
+import { watchJsonDrops } from './jsonDrops'
+import { openDropTarget, type OpenDrop } from './openDrop'
+import { removeCodexOpenShim, writeCodexOpenShim } from './openShimScript'
 
 const exists = (p: string): boolean => {
   try {
@@ -37,6 +51,21 @@ const STATUS_LINE_CONFIG = `tui.status_line=${JSON.stringify([
 // CODEX§1
 const NO_UPDATE_NOTICE_AT_START = 'check_for_update_on_startup=false'
 
+// CODEX§11
+const PERMISSION_ARGS: Record<LaunchPermission, string[]> = {
+  default: [],
+  acceptEdits: ['-a', 'on-request', '-s', 'workspace-write'],
+  bypass: ['-a', 'never', '-s', 'danger-full-access']
+}
+
+// CODEX§14
+function launchChoiceArgs(opts: CreateTabOptions): string[] {
+  return [
+    ...(opts.model ? ['-m', opts.model] : []),
+    ...(opts.effort ? ['-c', `model_reasoning_effort=${JSON.stringify(opts.effort)}`] : [])
+  ]
+}
+
 export interface CodexAvailability {
   id: 'codex'
   available: boolean
@@ -46,16 +75,22 @@ export interface CodexAvailability {
 }
 
 const AVAILABILITY_FAILURE_MS = 60_000
+const EMIT_THROTTLE_MS = 500
 
 const binaryGone = (error: unknown): boolean =>
   (error as NodeJS.ErrnoException | null)?.code === 'ENOENT'
 
 export interface CodexSessionDeps {
   pty: PtyManager
+  runtime: SessionRuntime
   projectInfo(p: string): ProjectInfo
   changed(): void
-  attention(tabId: string, kind: 'approval' | 'turn-done' | 'exited' | 'clear'): void
+  events(tabId: string, event: SessionEvent): void
   error(message: string): void
+  trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
+  pickHome(): { account: string; home: string } | undefined
+  homes(): string[]
+  openShimRoot: string
 }
 
 interface RowScope {
@@ -67,18 +102,22 @@ interface Run {
   tabId: string
   cwd: string
   workspace: string
-  info?: SessionInfo
+  info?: BackendSessionInfo
   resource?: WorktreeResource
   observer: CodexObservation
   transport: Awaited<ReturnType<typeof createCodexTransport>>
   stopping?: Promise<void>
   explicitStop: boolean
   resumeKey?: string
+  home?: string
+  account?: string
+  releaseOpenShim(): void
 }
 
 export class CodexSessions {
   private runs = new Map<string, Run>()
   private history = new Map<string, CodexThread>()
+  private threadHomes = new Map<string, string>()
   private archivedIds = new Set<string>()
   private binary?: string
   private processEnv?: NodeJS.ProcessEnv
@@ -89,6 +128,8 @@ export class CodexSessions {
   private launchingKeys = new Set<string>()
   private pendingLaunches = new Set<Promise<{ id: string; cwd: string }>>()
   private shuttingDown = false
+  private emitTimer?: ReturnType<typeof setTimeout>
+  private lastEmitMs = 0
   readonly store: SessionStore
   readonly worktrees: SessionWorktrees
 
@@ -98,6 +139,26 @@ export class CodexSessions {
   ) {
     this.store = new SessionStore(file)
     this.worktrees = new SessionWorktrees(this.store)
+    deps.runtime.on('status', ({ tabId, next }: StatusEdge) => {
+      const run = this.runs.get(tabId)
+      if (!run?.info || run.explicitStop || run.stopping) return
+      run.info.status = next
+      run.info.updatedAt = Date.now()
+      this.changedSoon()
+    })
+  }
+
+  private changed(): void {
+    clearTimeout(this.emitTimer)
+    this.emitTimer = undefined
+    this.lastEmitMs = Date.now()
+    this.deps.changed()
+  }
+
+  private changedSoon(): void {
+    if (this.emitTimer) return
+    const wait = Math.max(0, EMIT_THROTTLE_MS - (Date.now() - this.lastEmitMs))
+    this.emitTimer = setTimeout(() => this.changed(), wait)
   }
 
   async availability(opts: { force?: boolean } = {}): Promise<CodexAvailability> {
@@ -158,11 +219,46 @@ export class CodexSessions {
     }
   }
 
+  get defaultEnv(): NodeJS.ProcessEnv | undefined {
+    return this.processEnv
+  }
+
+  get cliBinary(): string | undefined {
+    return this.binary
+  }
+
+  // CODEX§15
+  private envFor(home: string | undefined): NodeJS.ProcessEnv | undefined {
+    return home ? { ...this.processEnv, CODEX_HOME: home } : this.processEnv
+  }
+
+  private homeFor(key: string): string | undefined {
+    return this.store.getMember(key)?.codexHome ?? this.threadHomes.get(key)
+  }
+
+  private rpc(home: string | undefined): CodexRpc {
+    return new CodexRpc({ binary: this.binary!, env: this.envFor(home), cwd: os.homedir() })
+  }
+
+  // CODEX§15
+  async readAccount(home: string): Promise<{ signedIn: boolean; limits?: unknown }> {
+    if (!this.binary && !(await this.availability()).available)
+      throw new Error('Codex CLI is unavailable.')
+    const rpc = this.rpc(home)
+    try {
+      const account = record(await rpc.request('account/read', {}))
+      if (!account.account) return { signedIn: false }
+      return { signedIn: true, limits: await rpc.request('account/rateLimits/read', {}) }
+    } finally {
+      await rpc.close()
+    }
+  }
+
   hasRuns(): boolean {
     return this.runs.size > 0 || this.pendingLaunches.size > 0
   }
 
-  list(): SessionInfo[] {
+  list(): BackendSessionInfo[] {
     return [...this.runs.values()].flatMap((r) => (r.info ? [{ ...r.info }] : []))
   }
   hasTab(tabId: string): boolean {
@@ -172,6 +268,21 @@ export class CodexSessions {
     return [...this.runs.values()].find((r) => r.info?.sessionId === key || r.resumeKey === key)
       ?.tabId
   }
+  occupantOf(dir: string): string | null {
+    const target = path.resolve(dir)
+    for (const run of this.runs.values()) {
+      const info = run.info
+      if (!info) {
+        if (path.resolve(run.cwd) === target) return 'a starting Codex session'
+        continue
+      }
+      if (path.resolve(info.treeRoot) === target) return occupantName(info)
+      const bound = this.findRow(info.sessionId)?.worktreeState
+      if (bound && path.resolve(bound.worktreePath) === target) return occupantName(info)
+    }
+    return null
+  }
+
   runningBindings(): Map<string, string> {
     return new Map(
       [...this.runs.values()].flatMap((run) => {
@@ -180,7 +291,7 @@ export class CodexSessions {
       })
     )
   }
-  findRow(key: string): SessionRow | undefined {
+  findRow(key: string): BackendSessionRow | undefined {
     const member = this.store.getMember(key)
     const thread = this.history.get(key)
     const workspace = member?.workspacePath ?? (thread ? this.workspaceFor(thread.cwd) : undefined)
@@ -193,19 +304,19 @@ export class CodexSessions {
     ])
   }
 
-  rows(workspace: string): SessionRow[] {
+  rows(workspace: string): BackendSessionRow[] {
     const scope: RowScope = {
       byPath: new Map(this.store.listResources().map((r) => [r.worktreePath, r])),
       roots: new Map()
     }
-    const rows = new Map<string, SessionRow>()
+    const rows = new Map<string, BackendSessionRow>()
     for (const [key, t] of this.history) {
       const member = this.store.getMember(key)
       if ((member?.workspacePath ?? this.workspaceFor(t.cwd, scope)) !== workspace) continue
       rows.set(key, this.row(t, scope))
     }
     for (const m of this.store.listMembers(workspace)) {
-      const r = rows.get(m.key) ?? {
+      const r: BackendSessionRow = rows.get(m.key) ?? {
         id: m.key,
         title: m.title,
         cwd: m.cwd,
@@ -216,7 +327,6 @@ export class CodexSessions {
       }
       r.cwd = m.cwd
       r.invalidCwd = !exists(m.cwd)
-      r.backendId = 'codex'
       r.nativeSessionId = m.id
       r.createdAt = m.createdAt
       r.running = !!this.aliveTabFor(m.key)
@@ -237,7 +347,6 @@ export class CodexSessions {
       }
       rows.set(run.tabId, {
         id: run.tabId,
-        backendId: 'codex',
         title: 'Starting…',
         cwd: run.cwd,
         worktree: run.resource?.worktreeName ?? 'main',
@@ -252,12 +361,11 @@ export class CodexSessions {
     )
   }
 
-  private row(t: CodexThread, scope: RowScope): SessionRow {
+  private row(t: CodexThread, scope: RowScope): BackendSessionRow {
     const key = codexSessionKey(t.id)
     const resource = scope.byPath.get(t.cwd)
     return {
       id: key,
-      backendId: 'codex',
       nativeSessionId: t.id,
       createdAt: (t.createdAt ?? 0) * 1000,
       title: t.name || t.preview?.slice(0, 100) || 'Codex session',
@@ -302,10 +410,49 @@ export class CodexSessions {
       }
     }
     if (this.shuttingDown) return
-    const rpc = new CodexRpc({ binary: this.binary!, env: this.processEnv, cwd: os.homedir() })
+    const homeList = [undefined, ...this.deps.homes()]
+    const listings = await Promise.allSettled(homeList.map((home) => this.listHome(home)))
+    const defaultListing = listings[0]
+    if (defaultListing.status === 'rejected') {
+      if (binaryGone(defaultListing.reason)) this.forgetProbe()
+      const error = defaultListing.reason
+      this.historyError = error instanceof Error ? error : new Error(String(error))
+      return
+    }
+    const seen = new Map<string, CodexThread>()
+    const homes = new Map<string, string>()
+    const archivedIds = new Set<string>()
+    listings.forEach((listing, i) => {
+      const home = homeList[i]
+      const threads =
+        listing.status === 'fulfilled'
+          ? listing.value
+          : [...this.threadHomes]
+              .filter(([key, owner]) => owner === home && this.history.has(key))
+              .map(([key]) => ({
+                key,
+                thread: this.history.get(key)!,
+                archived: this.archivedIds.has(key)
+              }))
+      for (const { key, thread, archived } of threads) {
+        seen.set(key, thread)
+        if (home) homes.set(key, home)
+        if (archived) archivedIds.add(key)
+      }
+    })
+    this.history = seen
+    this.threadHomes = homes
+    this.archivedIds = archivedIds
+    this.historyError = undefined
+    this.changed()
+  }
+
+  private async listHome(
+    home: string | undefined
+  ): Promise<{ key: string; thread: CodexThread; archived: boolean }[]> {
+    const rpc = this.rpc(home)
+    const threads: { key: string; thread: CodexThread; archived: boolean }[] = []
     try {
-      const seen = new Map<string, CodexThread>()
-      const archivedIds = new Set<string>()
       for (const archived of [false, true]) {
         let cursor: string | undefined
         const cursors = new Set<string>()
@@ -321,12 +468,8 @@ export class CodexSessions {
           if (!Array.isArray(reply.data))
             throw new Error('Codex history returned an unsupported response.')
           for (const value of reply.data) {
-            const t = userThread(value)
-            if (t) {
-              const key = codexSessionKey(t.id)
-              seen.set(key, t)
-              if (archived) archivedIds.add(key)
-            }
+            const thread = userThread(value)
+            if (thread) threads.push({ key: codexSessionKey(thread.id), thread, archived })
           }
           cursor =
             typeof reply.nextCursor === 'string' && reply.nextCursor ? reply.nextCursor : undefined
@@ -334,19 +477,13 @@ export class CodexSessions {
           if (cursor) cursors.add(cursor)
         } while (cursor)
       }
-      this.history = seen
-      this.archivedIds = archivedIds
-      this.historyError = undefined
-      this.deps.changed()
-    } catch (error) {
-      if (binaryGone(error)) this.forgetProbe()
-      this.historyError = error instanceof Error ? error : new Error(String(error))
+      return threads
     } finally {
       await rpc.close()
     }
   }
 
-  async historyRows(workspace: string): Promise<SessionRow[]> {
+  async historyRows(workspace: string): Promise<BackendSessionRow[]> {
     await this.refreshHistory()
     if (this.historyError) throw this.historyError
     return this.rows(workspace).filter(
@@ -359,7 +496,7 @@ export class CodexSessions {
     if (this.archivedIds.has(key)) return false
     if (!this.binary && !(await this.availability()).available)
       throw new Error('Codex CLI is unavailable.')
-    const rpc = new CodexRpc({ binary: this.binary!, env: this.processEnv, cwd: os.homedir() })
+    const rpc = this.rpc(this.homeFor(key))
     try {
       const reply = record(await rpc.request('thread/read', { threadId: id, includeTurns: false }))
       const t = userThread(reply.thread)
@@ -375,7 +512,7 @@ export class CodexSessions {
   archive(key: string): boolean {
     if (this.aliveTabFor(key)) return false
     const removed = this.store.removeMember(key)
-    this.deps.changed()
+    this.changed()
     return removed
   }
 
@@ -461,129 +598,43 @@ export class CodexSessions {
     } else if (opts.worktree) {
       resource = await this.worktrees.create(workspace, opts.worktree)
       cwd = resource.worktreePath
+      // ADR-0026
+      if (!opts.scheduled) this.deps.trustFolder(workspace, processEnv)
     } else if (!resource && this.deps.projectInfo(cwd).worktreeName) {
       resource = await this.worktrees.adopt(workspace, this.deps.projectInfo(cwd).treeRoot)
     }
     this.assertStarting()
+    const picked = opts.resumeSessionId ? undefined : this.deps.pickHome()
+    const home = opts.resumeSessionId ? this.homeFor(opts.resumeSessionId) : picked?.home
     let run: Run | undefined
-    const changed = (): void => this.deps.changed()
-    const observer = new CodexObservation({
-      bind: (thread, change) => {
-        if (!run || run.explicitStop || run.stopping) return
-        const key = codexSessionKey(thread.id),
-          old = run.info?.sessionId
-        if (run.info) {
-          run.cwd = thread.cwd
-          run.workspace = this.workspaceFor(thread.cwd)
-          const treeRoot = this.deps.projectInfo(thread.cwd).treeRoot
-          run.resource = this.store.listResources().find((r) => r.worktreePath === treeRoot)
-        }
-        const m = this.store.getMember(key),
-          now = Date.now()
-        try {
-          this.store.upsertMember({
-            id: thread.id,
-            key,
-            workspacePath: run.workspace,
-            cwd: run.cwd,
-            title: thread.name || thread.preview?.slice(0, 100) || m?.title || 'Codex session',
-            createdAt: m?.createdAt ?? (thread.createdAt ? thread.createdAt * 1000 : now),
-            updatedAt: now,
-            worktreeResourceId: run.resource?.id
-          })
-          if (
-            change === 'replace' &&
-            old &&
-            old !== key &&
-            ![...this.runs.values()].some((r) => r !== run && r.info?.sessionId === old)
-          )
-            this.store.removeMember(old)
-        } catch (e) {
-          this.deps.error(String(e))
-        }
-        run.resumeKey = undefined
-        run.info = {
-          tabId: run.tabId,
-          sessionId: key,
-          nativeSessionId: thread.id,
-          backendId: 'codex',
-          title: this.store.getMember(key)?.title ?? 'Codex session',
-          cwd: run.cwd,
-          treeRoot: run.cwd,
-          worktree: run.resource?.worktreeName,
-          alive: true,
-          observation: 'live',
-          cliVersion: thread.cliVersion,
-          status: 'idle',
-          updatedAt: now
-        }
-        this.history.set(key, { ...thread, cwd: run.cwd })
-        this.deps.pty.clearResumeIntent(run.tabId)
-        changed()
-      },
-      status: (status) => {
-        if (run?.info && !run.explicitStop && !run.stopping) {
-          run.info.status = status
-          run.info.updatedAt = Date.now()
-          changed()
-        }
-      },
-      title: (title) => {
-        if (!run?.info || run.explicitStop || run.stopping) return
-        run.info.title = title
-        try {
-          this.store.updateMember(run.info.sessionId, { title, updatedAt: Date.now() })
-        } catch (e) {
-          this.deps.error(String(e))
-        }
-        const t = this.history.get(run.info.sessionId)
-        if (t) t.name = title
-        changed()
-      },
-      usage: (usage) => {
-        if (run?.info && !run.explicitStop && !run.stopping) {
-          run.info.usage = usage
-          changed()
-        }
-      },
-      background: (items) => {
-        if (run?.info && !run.explicitStop && !run.stopping) {
-          run.info.background = items.length ? items : undefined
-          changed()
-        }
-      },
-      attention: (kind) => {
-        if (run && !run.explicitStop && !run.stopping) this.deps.attention(run.tabId, kind)
-      },
-      degraded: (message) => {
-        if (run?.info) {
-          run.info.observation = 'degraded'
-          changed()
-        }
-        this.deps.error(message)
+    const observe = (event: CodexEvent): void => {
+      if (event.type !== 'bound') {
+        if (run) this.deps.events(run.tabId, event)
+        else if (event.type === 'degraded') this.deps.error(event.message)
+        return
       }
-    })
-    const transport = await this.startTransport({
-      binary,
-      env: processEnv,
-      cwd,
-      configOverrides: [STATUS_LINE_CONFIG],
-      onFrame: (direction, frame) => observer.receive(direction, frame),
-      onDisconnect: () => {
-        if (run?.info) {
-          run.info.observation = 'degraded'
-          changed()
-        }
-      },
-      onError: (error) => {
-        if (run?.info) {
-          run.info.observation = 'degraded'
-          changed()
-        }
-        this.deps.error(String(error))
-      }
-    })
+      if (run && !run.explicitStop && !run.stopping)
+        this.bindThread(run, event.thread, event.change)
+    }
+    const openShim = this.startOpenShim(processEnv?.ZDOTDIR, (target) =>
+      observe({ type: 'open', target })
+    )
+    const env = { ...this.envFor(home), ZDOTDIR: openShim.zdotDir }
+    const observer = new CodexObservation(observe)
+    let transport: Awaited<ReturnType<typeof createCodexTransport>> | undefined
     try {
+      transport = await this.startTransport({
+        binary,
+        env,
+        cwd,
+        configOverrides: [STATUS_LINE_CONFIG],
+        onFrame: (direction, frame) => observer.receive(direction, frame),
+        onDisconnect: () => this.markDegraded(run),
+        onError: (error) => {
+          this.markDegraded(run)
+          this.deps.error(String(error))
+        }
+      })
       this.assertStarting()
       const argv = [
         '--remote',
@@ -593,9 +644,12 @@ export class CodexSessions {
         '-c',
         STATUS_LINE_CONFIG,
         '-c',
-        NO_UPDATE_NOTICE_AT_START
+        NO_UPDATE_NOTICE_AT_START,
+        ...PERMISSION_ARGS[opts.permission ?? 'default'],
+        ...launchChoiceArgs(opts)
       ]
       if (opts.resumeSessionId) argv.push('resume', this.nativeId(opts.resumeSessionId))
+      else if (opts.firstPrompt) argv.push(opts.firstPrompt)
       const handle = this.deps.pty.create({
         kind: 'codex',
         cwd,
@@ -603,7 +657,7 @@ export class CodexSessions {
         rows: opts.rows,
         executable: binary,
         argv,
-        processEnv,
+        processEnv: env,
         resumeSessionId: opts.resumeSessionId
       })
       run = {
@@ -614,16 +668,149 @@ export class CodexSessions {
         observer,
         transport,
         explicitStop: false,
-        resumeKey: opts.resumeSessionId
+        resumeKey: opts.resumeSessionId,
+        home,
+        account: picked?.account,
+        releaseOpenShim: openShim.release
       }
       this.runs.set(handle.id, run)
-      changed()
+      this.changed()
       this.warnUntestedVersion(available)
       return { id: handle.id, cwd }
     } catch (error) {
-      await transport.stop()
+      await transport?.stop()
+      openShim.release()
       throw error
     }
+  }
+
+  // CODEX§12
+  private startOpenShim(
+    userZdotdir: string | undefined,
+    open: (target: string) => void
+  ): { zdotDir: string; release(): void } {
+    const shim = writeCodexOpenShim(this.deps.openShimRoot, randomUUID(), userZdotdir)
+    const handled = new Set<string>()
+    const drops = watchJsonDrops(shim.requestDir, (name) => (obj, full) => {
+      if (handled.has(name)) return
+      handled.add(name)
+      fs.rm(full, { force: true }, () => {})
+      const target = openDropTarget(record(obj) as OpenDrop)
+      if (target) open(target)
+    })
+    return {
+      zdotDir: shim.zdotDir,
+      release: () => {
+        drops?.close()
+        removeCodexOpenShim(shim)
+      }
+    }
+  }
+
+  observe(tabId: string, event: SessionEvent): void {
+    const run = this.runs.get(tabId)
+    if (event.type === 'degraded') {
+      this.markDegraded(run)
+      this.deps.error(event.message)
+      return
+    }
+    if (!run || run.explicitStop || run.stopping) return
+    const info = run.info
+    if (!info) return
+    const runtime = this.deps.runtime
+    const turn = turnOf(event)
+    if (turn) return runtime.recordTurn(run.tabId, turn)
+    switch (event.type) {
+      case 'background-changed':
+        if (!runtime.setBackground(run.tabId, event.items)) return
+        info.background = event.items.length ? event.items : undefined
+        return this.changedSoon()
+      case 'usage':
+        info.usage = event.usage
+        return this.changedSoon()
+      case 'title':
+        return this.retitle(info, event.title)
+      case 'files-changed':
+        info.files = event.files
+        info.lastTouched = event.lastTouched
+        info.lastWritten = event.lastWritten
+        info.liveWrites = event.liveWrites
+        return this.changedSoon()
+    }
+  }
+
+  private markDegraded(run: Run | undefined): void {
+    if (!run?.info) return
+    run.info.details = { codex: { observation: 'degraded' } }
+    this.changed()
+  }
+
+  private bindThread(run: Run, thread: CodexThread, change: 'replace' | 'switch'): void {
+    const key = codexSessionKey(thread.id),
+      old = run.info?.sessionId
+    if (run.info) {
+      run.cwd = thread.cwd
+      run.workspace = this.workspaceFor(thread.cwd)
+      const treeRoot = this.deps.projectInfo(thread.cwd).treeRoot
+      run.resource = this.store.listResources().find((r) => r.worktreePath === treeRoot)
+    }
+    const m = this.store.getMember(key),
+      now = Date.now()
+    try {
+      this.store.upsertMember({
+        id: thread.id,
+        key,
+        workspacePath: run.workspace,
+        cwd: run.cwd,
+        title: thread.name || thread.preview?.slice(0, 100) || m?.title || 'Codex session',
+        createdAt: m?.createdAt ?? (thread.createdAt ? thread.createdAt * 1000 : now),
+        updatedAt: now,
+        worktreeResourceId: run.resource?.id,
+        ...(run.home ? { codexHome: run.home } : {})
+      })
+      if (
+        change === 'replace' &&
+        old &&
+        old !== key &&
+        ![...this.runs.values()].some((r) => r !== run && r.info?.sessionId === old)
+      )
+        this.store.removeMember(old)
+    } catch (e) {
+      this.deps.error(String(e))
+    }
+    run.resumeKey = undefined
+    this.deps.runtime.forget(run.tabId)
+    run.info = {
+      tabId: run.tabId,
+      sessionId: key,
+      nativeSessionId: thread.id,
+      title: this.store.getMember(key)?.title ?? 'Codex session',
+      cwd: run.cwd,
+      treeRoot: run.cwd,
+      worktree: run.resource?.worktreeName,
+      alive: true,
+      details: { codex: { observation: 'live' } },
+      cliVersion: thread.cliVersion,
+      ...(run.account ? { pickedAccount: run.account } : {}),
+      updatedAt: now
+    }
+    this.history.set(key, { ...thread, cwd: run.cwd })
+    if (run.home) this.threadHomes.set(key, run.home)
+    this.deps.pty.clearResumeIntent(run.tabId)
+    this.changed()
+    this.deps.events(run.tabId, { type: 'bound', key })
+  }
+
+  private retitle(info: BackendSessionInfo, title: string): void {
+    info.title = title
+    try {
+      this.store.updateMember(info.sessionId, { title, updatedAt: Date.now() })
+    } catch (e) {
+      this.deps.error(String(e))
+    }
+    const t = this.history.get(info.sessionId)
+    if (t) t.name = title
+    this.changedSoon()
   }
 
   resume(req: SessionResumeRequest): Promise<{ id: string; cwd: string }> {
@@ -632,6 +819,7 @@ export class CodexSessions {
 
   private async resumeRun(req: SessionResumeRequest): Promise<{ id: string; cwd: string }> {
     await this.waitForPrevious(req.sessionId)
+    // CODEX§2
     if (this.archivedIds.has(req.sessionId)) {
       throw new Error(
         `Archived in Codex. Run codex unarchive ${this.nativeId(req.sessionId)} first.`
@@ -674,8 +862,14 @@ export class CodexSessions {
     run.stopping = Promise.resolve()
       .then(() => run.transport.stop())
       .then(() => {
+        run.releaseOpenShim()
         this.deps.pty.kill(tabId)
-        if (unexpectedExit) this.deps.attention(tabId, 'exited')
+        this.deps.runtime.forget(tabId)
+        this.deps.events(tabId, {
+          type: 'exited',
+          clean: !unexpectedExit,
+          title: run.info?.title
+        })
         this.runs.delete(tabId)
         if (nativeExit && run.info && !this.aliveTabFor(run.info.sessionId)) {
           try {
@@ -684,15 +878,14 @@ export class CodexSessions {
             this.deps.error(String(error))
           }
         }
-        if (!unexpectedExit) this.deps.attention(tabId, 'clear')
-        this.deps.changed()
+        this.changed()
         if (!this.shuttingDown)
           void this.refreshHistory().catch((error) => this.deps.error(String(error)))
       })
       .catch((error) => {
         run.stopping = undefined
-        if (run.info) run.info.observation = 'degraded'
-        this.deps.changed()
+        if (run.info) run.info.details = { codex: { observation: 'degraded' } }
+        this.changed()
         throw error
       })
     return run.stopping

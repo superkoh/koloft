@@ -5,31 +5,36 @@ import {
   addRemoteWorkspace,
   killFakeRemote,
   launchWithRemote,
+  machineHome,
   mirrorProjectDir,
   REMOTE_HOST,
   REMOTE_WS_NAME,
   remoteDir,
   remoteKey,
   remoteStatuslineOut,
+  sshCalls,
   sshCommands,
   liveTmuxSessions
 } from './helpers/remote'
 import {
   auxIcon,
   centerTerm,
-  clickAppMenuItem,
   encodeCwd,
   FAKE_SESSION_TITLE,
+  gitCommitAll,
+  gitInit,
   layoutOnDisk,
   menuItemTexts,
   openMenu,
+  openSessionTerminal,
+  panelTerm,
   runIn,
-  sendShortcut,
   startSessionIn,
   waitBooted,
   waitForCalls,
   wsRows
 } from './helpers/p1'
+import { WORKBENCH, showBrowse, workbenchPanel } from './helpers/workbench'
 
 const LAYOUT_SAVE_DEBOUNCE_SETTLE_MS = 3000
 const TURN_LONGER_THAN_ONE_MIRROR_PULL = '/busy'
@@ -140,41 +145,61 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
-  test('E-RW-02: a remote session has no Workbench — no icon, dead shortcut, disabled menu item', async ({
+  test('E-RW-02: a remote session has a Workbench on the machine — Files lists its folder, Changes shows its edits, and a terminal opens there that refuses an interactive claude', async ({
     env
   }) => {
-    test.setTimeout(240_000)
+    test.setTimeout(300_000)
     const { app, page } = await launchWithRemote(env)
     try {
+      const dir = remoteDir(env)
+      fs.writeFileSync(path.join(dir, '.gitignore'), 'NOTES.md\n')
+      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\n')
+      gitInit(dir)
+      gitCommitAll(dir)
+      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\ntwo\n')
+
       await addRemoteWorkspace(page, env)
       await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
       await wsRows(page, REMOTE_WS_NAME).first().click()
+      await expect(auxIcon(page, 'Workbench')).toHaveCount(1)
 
-      await expect(auxIcon(page, 'Workbench')).toHaveCount(0)
+      await showBrowse(page)
+      await expect(
+        workbenchPanel(page).locator(`.ft-node.ft-file[data-path="${remoteKey(env)}/tracked.txt"]`)
+      ).toBeVisible({ timeout: 30_000 })
 
-      await sendShortcut(app, 'shortcut:toggle-browser')
-      await page.waitForTimeout(1500)
-      await expect(page.locator('.wb-col')).toHaveCount(0)
+      await page
+        .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
+        .filter({ hasText: 'Changes' })
+        .click()
+      await expect(page.locator('.wb-panel .cv-row[data-path="tracked.txt"]')).toBeVisible({
+        timeout: 30_000
+      })
 
+      await openSessionTerminal(app, page)
       await expect
         .poll(
           () =>
-            app.evaluate(({ Menu }) => ({
-              focus: Menu.getApplicationMenu()?.getMenuItemById('toggle-focus-mode')?.enabled,
-              terminal: Menu.getApplicationMenu()?.getMenuItemById('new-terminal-tab')?.enabled
-            })),
-          { timeout: 20_000 }
+            sshCalls(env).some(
+              (c) => c.argv.includes('-t') && (c.argv[c.argv.length - 1] ?? '').includes('util.sh')
+            ),
+          { timeout: 60_000 }
         )
-        .toEqual({ focus: false, terminal: false })
-      await clickAppMenuItem(app, page, 'toggle-browser')
-      await page.waitForTimeout(1500)
-      await expect(page.locator('.wb-col')).toHaveCount(0)
+        .toBe(true)
+      await runIn(
+        page,
+        panelTerm(page),
+        `[ "$HOME" = '${machineHome(env)}' ] && [ "$PWD" = '${dir}' ] && [ "$KOLOFT_UTIL" = 1 ] && echo RW02_ON_$((6 * 7))`
+      )
+      await expect(panelTerm(page)).toContainText('RW02_ON_42', { timeout: 60_000 })
+      await runIn(page, panelTerm(page), 'claude')
+      await expect(panelTerm(page)).toContainText('not an agent surface', { timeout: 25_000 })
     } finally {
       await quitAndClose(app)
     }
   })
 
-  test('E-RW-03: remote menus drop the local-only items and Copy path gives machine:/path', async ({
+  test('E-RW-03: remote menus drop the local-only items, keep Scheduled jobs, and Copy path gives machine:/path', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -185,7 +210,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
 
       await openMenu(page, page.locator('.ws-head', { hasText: REMOTE_WS_NAME }))
       const wsItems = await menuItemTexts(page)
-      expect(wsItems.join(' | ')).not.toContain('Scheduled jobs')
+      expect(wsItems.join(' | ')).toContain('Scheduled jobs')
       expect(wsItems.join(' | ')).not.toContain('Fetch origin')
       expect(wsItems.join(' | ')).not.toContain('New worktree session')
       expect(wsItems.some((t) => t.startsWith('New session'))).toBe(true)

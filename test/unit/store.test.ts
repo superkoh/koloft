@@ -25,11 +25,12 @@ import {
 function session(tabId: string): SessionInfo {
   return {
     tabId,
+    backendId: 'claude',
+    host: 'local',
     sessionId: 'sid-' + tabId,
     title: 'Live title',
     cwd: '/w',
     treeRoot: '/w',
-    jsonlPath: '/j',
     files: [],
     alive: true,
     updatedAt: 0
@@ -51,7 +52,13 @@ beforeEach(() => {
 describe('store: claude → shell revert, only after a session actually bound', () => {
   it('reverts a claude tab to a shell once its (previously bound) session ends', () => {
     const s = useStore.getState()
-    s.addTab({ id: 'rev1', kind: 'claude', title: 'My session', cwd: '/w', alive: true })
+    s.addTab({
+      id: 'rev1',
+      kind: 'claude',
+      title: 'My session',
+      cwd: '/w',
+      alive: true
+    })
     s.setSessions([session('rev1')])
     s.setSessions([])
     const t = useStore.getState().tabs.find((x) => x.id === 'rev1')!
@@ -69,7 +76,14 @@ describe('store: claude → shell revert, only after a session actually bound', 
 
   it('T-LIFE-06: clears the resuming placeholder flag once the session binds, so the overlay never returns when it ends', () => {
     const s = useStore.getState()
-    s.addTab({ id: 'rs1', kind: 'claude', title: 'T', cwd: '/w', alive: true, resuming: true })
+    s.addTab({
+      id: 'rs1',
+      kind: 'claude',
+      title: 'T',
+      cwd: '/w',
+      alive: true,
+      resuming: true
+    })
     s.setSessions([session('rs1')])
     expect(useStore.getState().tabs.find((x) => x.id === 'rs1')!.resuming).toBeFalsy()
   })
@@ -514,6 +528,7 @@ describe('store: a tab’s bound session id across the ⇧⌘R restart window, b
   const restarted = {
     id: 'pty-new',
     kind: 'claude' as const,
+    host: 'local' as const,
     title: 'Claude',
     cwd: '/w',
     alive: true,
@@ -531,7 +546,14 @@ describe('store: a tab’s bound session id across the ⇧⌘R restart window, b
   })
 
   it('still has nothing to say about a fresh tab that never bound anything', () => {
-    const fresh = { id: 'pty-1', kind: 'claude' as const, title: 'Claude', cwd: '/w', alive: true }
+    const fresh = {
+      id: 'pty-1',
+      kind: 'claude' as const,
+      host: 'local' as const,
+      title: 'Claude',
+      cwd: '/w',
+      alive: true
+    }
     expect(boundSessionId({ tabs: [fresh], sessions: [] }, 'pty-1')).toBeUndefined()
   })
 })
@@ -594,6 +616,7 @@ describe("tabForSession: the CDP relay's session id to the conversation tab the 
   ): {
     id: string
     kind: 'claude'
+    host: 'local'
     title: string
     cwd: string
     alive: boolean
@@ -601,6 +624,7 @@ describe("tabForSession: the CDP relay's session id to the conversation tab the 
   } => ({
     id,
     kind: 'claude',
+    host: 'local',
     title: 'S',
     cwd: '/w',
     alive: true,

@@ -1,3 +1,5 @@
+import type { BackendId } from './types'
+
 const SLUG_CAP_LEAVING_ROOM_FOR_STAMP_IN_64_CHAR_WORKTREE_NAME = 48
 
 export function slugOf(name: string): string {
@@ -23,4 +25,8 @@ export function worktreeBase(job: { name: string }, dueAt: number): string {
   const p2 = (n: number): string => String(n).padStart(2, '0')
   const stamp = `${p2(d.getFullYear() % 100)}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}`
   return `${slugOf(job.name)}-${stamp}`
+}
+
+export function cronBackend(job: { backend?: BackendId }): BackendId {
+  return job.backend ?? 'claude'
 }

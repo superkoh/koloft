@@ -4,8 +4,8 @@ export interface ProjectInfo {
   worktreeName?: string
 }
 
-// CC§7
-export type AccountKind = 'oauth' | 'apikey' | 'custom'
+// CC§7 CODEX§15
+export type AccountKind = 'oauth' | 'apikey' | 'custom' | 'codex-home'
 
 export type AccountStatus = 'ok' | 'expired' | 'unverified'
 
@@ -25,6 +25,7 @@ export function keychainService(appName: string, kind: AccountKind): string {
 
 export function keychainServiceSuffix(kind: AccountKind): string {
   if (kind === 'oauth') return '-claude-oauth'
+  if (kind === 'codex-home') return '-codex-home'
   return kind === 'apikey' ? '-anthropic-api' : '-custom-endpoint'
 }
 
@@ -59,7 +60,8 @@ export function sanitizeAccountList(raw: unknown): AccountMeta[] {
   const seen = new Set<string>()
   for (const a of raw as Partial<AccountMeta>[]) {
     if (!a || typeof a.name !== 'string' || !ACCOUNT_NAME_RE.test(a.name)) continue
-    if (a.kind !== 'oauth' && a.kind !== 'apikey' && a.kind !== 'custom') continue
+    if (a.kind !== 'oauth' && a.kind !== 'apikey' && a.kind !== 'custom' && a.kind !== 'codex-home')
+      continue
     if (a.kind === 'custom' && !isHttpUrl(a.baseUrl)) continue
     const key = `${a.kind}:${a.name.toLowerCase()}`
     if (seen.has(key)) continue
@@ -107,10 +109,27 @@ export interface UsageSnapshot {
   at: number
 }
 
+// CODEX§15
+export interface CodexLimitWindow {
+  minutes: number
+  used: number
+  resetsAt: number
+}
+
+export interface CodexLimits {
+  windows: CodexLimitWindow[]
+  at: number
+}
+
 export interface AccountView extends AccountMeta {
   usage?: UsageSnapshot
+  limits?: CodexLimits
   probeError?: ProbeErrorKind
 }
+
+export type CodexSignInResult =
+  | { ok: true; tabId: string; cwd: string }
+  | { ok: false; error: 'invalid-name' | 'duplicate' | 'unavailable' }
 
 export interface LoginProgress {
   phase: 'starting' | 'browser' | 'saved' | 'failed'
@@ -200,11 +219,22 @@ export const DEFAULT_SETTINGS: Settings = {
 }
 
 export type BackendId = 'claude' | 'codex'
+export type HostId = 'local' | 'ssh'
 export interface SessionMethods {
   defaultBackend: BackendId
   enabled: Record<BackendId, boolean>
 }
 export type TabKind = 'shell' | BackendId
+
+export interface BackendAvailability {
+  id: BackendId
+  available: boolean
+  reason?: string
+  version?: string
+  verified?: boolean
+}
+
+export type LaunchPermission = 'default' | 'acceptEdits' | 'bypass'
 
 export interface CreateTabOptions {
   worktreeResourceId?: string
@@ -215,6 +245,13 @@ export interface CreateTabOptions {
   resumeSessionId?: string
   // CC§3
   worktree?: string
+  permission?: LaunchPermission
+  model?: string
+  effort?: CronEffort
+  firstPrompt?: string
+  name?: string
+  // ADR-0026
+  scheduled?: boolean
   util?: boolean
   ownerTabId?: string
 }
@@ -342,9 +379,11 @@ export interface LeftoverProcess {
   command: string
 }
 
-export interface ParkedItem {
-  kind: 'server' | 'monitor' | 'teammate'
+export interface BackgroundItem {
+  id: string
+  kind: 'agent' | 'command' | 'server' | 'monitor' | 'teammate'
   label: string
+  state: 'working' | 'waiting' | 'unknown'
   ageMs?: number
 }
 
@@ -366,17 +405,15 @@ export const PLACEHOLDER_SESSION_TITLE = 'Claude session'
 
 export const PENDING_SESSION_TITLE = 'Starting…'
 
-export interface SessionInfo {
+export interface SessionSource {
+  backendId: BackendId
+  host: HostId
+}
+
+export interface BackendSessionInfo {
   cliVersion?: string
-  background?: {
-    id: string
-    kind: 'agent' | 'command'
-    label: string
-    state: 'working' | 'waiting' | 'unknown'
-  }[]
-  backendId?: BackendId
+  background?: BackgroundItem[]
   nativeSessionId?: string
-  observation?: 'live' | 'degraded'
   tabId: string
   sessionId: string
   title: string
@@ -385,27 +422,31 @@ export interface SessionInfo {
   worktree?: string
   // CC§1
   relocated?: boolean
-  jsonlPath?: string | null
   // CC§2
-  scratchpadDir?: string
+  details?: {
+    claude?: { jsonlPath: string | null; scratchpadDir?: string }
+    codex?: { observation: 'live' | 'degraded' }
+  }
   files?: PreviewItem[]
   lastTouched?: string
   lastWritten?: string
   liveWrites?: number
   account?: string
   pickedAccount?: string
-  ccVersion?: string
   alive: boolean
   // ADR-0025
   remote?: { host: string }
   status?: SessionStatus
-  parked?: ParkedItem[]
   usage?: SessionUsage
   updatedAt: number
 }
 
-export interface ClaudeSessionInfo extends SessionInfo {
+export interface SessionInfo extends BackendSessionInfo, SessionSource {}
+
+export interface ClaudeSessionInfo extends BackendSessionInfo {
   jsonlPath: string | null
+  // CC§2
+  scratchpadDir?: string
   files: PreviewItem[]
 }
 
@@ -658,15 +699,7 @@ export interface KoloftApi {
     onKilledByMain(cb: (tabId: string) => void): () => void
   }
   sessions: {
-    backends(): Promise<
-      {
-        id: BackendId
-        available: boolean
-        reason?: string
-        version?: string
-        verified?: boolean
-      }[]
-    >
+    backends(): Promise<BackendAvailability[]>
     onUpdate(cb: (sessions: SessionInfo[]) => void): () => void
     onRelocated(cb: (e: { tabId: string; dir: string }) => void): () => void
     noteActivity(tabId: string): void
@@ -812,9 +845,6 @@ export interface KoloftApi {
     pull(path: string, expect: { branch: string; head: string }): Promise<WorkspacePullResult>
     discover(): Promise<DiscoveredFolder[]>
   }
-  claude: {
-    probe(): Promise<{ found: boolean }>
-  }
   settings: {
     get(): Promise<Settings>
     set(patch: Partial<Settings>): Promise<Settings>
@@ -837,6 +867,8 @@ export interface KoloftApi {
       reauth?: boolean
     ): Promise<'ok' | 'invalid-name' | 'duplicate' | 'unknown'>
     cancelLogin(): void
+    // CODEX§15
+    codexSignIn(name: string, again?: boolean): Promise<CodexSignInResult>
     onLoginProgress(cb: (p: LoginProgress) => void): () => void
     onUpdate(cb: (accounts: AccountView[]) => void): () => void
   }
@@ -887,7 +919,7 @@ export interface KoloftApi {
     runNow(jobId: string): Promise<CronRunNowResult>
     skills(workspacePath: string): Promise<SkillSuggestion[]>
     // CC§9
-    trusted(workspacePath: string): Promise<boolean>
+    trusted(workspacePath: string, backend: BackendId): Promise<boolean>
     onState(cb: (s: CronState) => void): () => void
     onToast(cb: (text: string) => void): () => void
   }
@@ -912,6 +944,7 @@ export interface CronJob {
   name: string
   task: string
   schedule: Schedule
+  backend?: BackendId
   model?: string
   effort?: CronEffort
   permission: CronPermission
@@ -965,7 +998,7 @@ export interface SkillSuggestion {
 
 export interface SpawnedTab {
   id: string
-  kind: 'claude'
+  kind: BackendId
   cwd: string
   title: string
   jobId: string
@@ -1035,6 +1068,8 @@ export interface LayoutV4 {
 
 export type LayoutV3 = Omit<LayoutV4, 'version'> & { version: 3 }
 
+export type LayoutV5 = Omit<LayoutV4, 'version'> & { version: 5; members: string[] }
+
 // CC§2
 export interface WorktreeStateMeta {
   originalCwd: string
@@ -1044,8 +1079,7 @@ export interface WorktreeStateMeta {
   originalHeadCommit: string
 }
 
-export interface SessionRow {
-  backendId?: BackendId
+export interface BackendSessionRow {
   nativeSessionId?: string
   createdAt?: number
   id: string
@@ -1060,6 +1094,8 @@ export interface SessionRow {
   worktreeState?: WorktreeStateMeta
   revealDir?: string
 }
+
+export interface SessionRow extends BackendSessionRow, SessionSource {}
 
 export interface WorkspaceFreshness {
   state: 'ok' | 'none' | 'error'

@@ -1,7 +1,13 @@
 import { NewSessionDialog } from './components/NewSessionDialog'
 import { SessionBackendIcon } from './components/SessionBackendIcon'
-import { effectiveBackend, SESSION_BACKENDS } from '@shared/sessionBackend'
-import { backendLabel, hasWorkbench, launchErrorMessage, type SessionBackend } from './agentUi'
+import {
+  backendAvailable,
+  BACKEND_LABEL,
+  effectiveBackend,
+  SESSION_BACKENDS,
+  unsupportedPairMessage
+} from '@shared/sessionBackend'
+import { hasWorkbench, isSessionKind, launchErrorMessage, type SessionBackend } from './agentUi'
 import {
   useCallback,
   useEffect,
@@ -86,7 +92,7 @@ import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePi
 import { RestoreDialog } from './components/RestoreDialog'
 import { CronJobsDialog } from './components/CronJobsDialog'
 import { RemoteWorkspaceDialog } from './components/RemoteWorkspaceDialog'
-import { isRemoteKey } from '@shared/remoteKey'
+import { hostOf } from '@shared/remoteKey'
 import { WorkbenchPane } from './components/WorkbenchPane'
 import type { WorkbenchCommandSignal } from './components/workbenchCommands'
 import { ExtensionConfirm } from './components/ExtensionConfirm'
@@ -107,7 +113,6 @@ const LAUNCH_REFUSED_NOTICE = 'Could not start the session — invalid launch ar
 
 const NO_WORKSPACE_NOTICE = 'No workspace yet — add one first (⇧⌘O)'
 const NO_GIT_NOTICE = 'no git repository among your workspaces — no worktrees here'
-const NO_CODEX_WORKBENCH_NOTICE = 'Codex sessions have no Workbench yet'
 
 function relocatedNotice(dir: string): string {
   return `Workbench followed Claude to ${basename(dir)}`
@@ -145,11 +150,6 @@ function terminalActionTab(): string | undefined {
   if (!id) return undefined
   const st = useStore.getState()
   return st.sessions.some((s) => s.tabId === id && s.alive && s.sessionId) ? id : undefined
-}
-
-function codexTabSelected(): boolean {
-  const st = useStore.getState()
-  return st.tabs.find((t) => t.id === st.activeTabId)?.kind === 'codex'
 }
 
 function activeTabIsWeb(): boolean {
@@ -280,10 +280,7 @@ export default function App(): JSX.Element {
   const toggleWorkbench = useCallback((): void => {
     const st = useStore.getState()
     const tabId = panelActionTab()
-    if (!tabId) {
-      if (codexTabSelected()) st.showToast(NO_CODEX_WORKBENCH_NOTICE)
-      return
-    }
+    if (!tabId) return
     const open = panelIsOpen(st, tabId)
     const next = !(open || st.workbenchFull)
     if (st.workbenchFull) st.setWorkbenchFull(false)
@@ -306,18 +303,18 @@ export default function App(): JSX.Element {
   const [probed, setProbed] = useState<Record<SessionBackend, boolean> | null>(null)
   useEffect(() => {
     let alive = true
-    void Promise.all([
-      window.api.claude.probe().then(
-        (r) => r.found,
-        () => false
-      ),
-      window.api.sessions.backends().then(
-        (list) => list.some((b) => b.id === 'codex' && b.available),
-        () => false
-      )
-    ]).then(([claude, codex]) => {
-      if (alive) setProbed({ claude, codex })
-    })
+    void window.api.sessions.backends().then(
+      (list) => {
+        if (alive)
+          setProbed({
+            claude: backendAvailable(list, 'claude'),
+            codex: backendAvailable(list, 'codex')
+          })
+      },
+      () => {
+        if (alive) setProbed({ claude: false, codex: false })
+      }
+    )
     return () => {
       alive = false
     }
@@ -342,7 +339,13 @@ export default function App(): JSX.Element {
     ): Promise<void> => {
       const res = await window.api.terminal.create({ kind: backend, ...opts })
       if (!res.ok) throw new Error(LAUNCH_REFUSED_NOTICE)
-      addTab({ id: res.id, kind: backend, title: backendLabel(backend), cwd: res.cwd, alive: true })
+      addTab({
+        id: res.id,
+        kind: backend,
+        title: BACKEND_LABEL[backend],
+        cwd: res.cwd,
+        alive: true
+      })
     },
     [addTab]
   )
@@ -362,8 +365,14 @@ export default function App(): JSX.Element {
         return
       }
       if (newSessionLocked.current) return
+      const chosen = backend ?? effectiveBackend(sessionMethods, installed)
+      const refusal = unsupportedPairMessage(chosen, hostOf(wsPath))
+      if (refusal) {
+        showToast(refusal)
+        return
+      }
       newSessionLocked.current = true
-      void startSession({ cwd: wsPath }, backend ?? effectiveBackend(sessionMethods, installed))
+      void startSession({ cwd: wsPath }, chosen)
         .catch((e) => showToast(launchErrorMessage(e)))
         .finally(() => {
           newSessionLocked.current = false
@@ -429,10 +438,7 @@ export default function App(): JSX.Element {
 
   const newTerminalTab = useCallback((): void => {
     const tabId = terminalActionTab()
-    if (!tabId) {
-      if (codexTabSelected()) useStore.getState().showToast(NO_CODEX_WORKBENCH_NOTICE)
-      return
-    }
+    if (!tabId) return
     useStore.getState().openTerminalTab(tabId)
   }, [])
 
@@ -825,9 +831,7 @@ export default function App(): JSX.Element {
       const tab = useStore.getState().tabs.find((t) => t.id === e.id)
       if (tab?.sessionId) releaseResume(tab.sessionId)
       if (unexpectedExitWanted(tab, e)) {
-        useStore
-          .getState()
-          .showToast(unexpectedExitNotice(e, tab?.kind === 'codex' ? 'codex' : 'claude'))
+        useStore.getState().showToast(unexpectedExitNotice(e, tab.kind))
       }
       closeTab(e.id)
     })
@@ -939,8 +943,6 @@ export default function App(): JSX.Element {
   const activeSession = activeTab ? sessions.find((s) => s.tabId === activeTab.id) : undefined
   const landedTab = tabs.find((t) => t.id === shown.id) ?? activeTab
   const landedSession = landedTab ? sessions.find((s) => s.tabId === landedTab.id) : undefined
-  // ADR-0025
-  const remoteTab = !!landedTab && isRemoteKey(landedTab.cwd)
   const panelTab = hasWorkbench(landedTab) ? landedTab?.id : undefined
   const panelWidth = (panelTab ? workbenchWidths[panelTab] : undefined) ?? workbenchWidth
   const liveTabs = useMemo(
@@ -983,10 +985,13 @@ export default function App(): JSX.Element {
     return subscribeDirtyTabs((ids) => window.api.workbench.setDirtyTabs(ids))
   }, [])
 
-  const welcomeRoot =
-    welcomeWs && !welcomeWs.workspace.remote ? welcomeWs.workspace.path : undefined
+  const welcomeRoot = welcomeWs?.workspace.path
+  const welcomeRefusal = (backend?: SessionBackend): string | undefined =>
+    welcomeWs && backend
+      ? unsupportedPairMessage(backend, hostOf(welcomeWs.workspace.path))
+      : undefined
   const fileTreeRoot = selectionRoot(
-    remoteTab ? undefined : landedTab,
+    hasWorkbench(landedTab) ? landedTab : undefined,
     landedSession?.treeRoot,
     welcomeRoot
   )
@@ -1297,7 +1302,7 @@ export default function App(): JSX.Element {
                       active={t.id === shown.id}
                       scrollbar={false}
                       onUserInput={
-                        t.kind === 'claude'
+                        isSessionKind(t.kind)
                           ? () => window.api.sessions.noteActivity(t.id)
                           : undefined
                       }
@@ -1328,19 +1333,23 @@ export default function App(): JSX.Element {
                       <div className="quiet">{welcomeQuietLine(welcomeRunning)}</div>
                       <button
                         className="btn-primary"
+                        disabled={!!welcomeRefusal(namedMethods?.[0])}
+                        title={welcomeRefusal(namedMethods?.[0])}
                         onClick={() => startIn(welcomeWs.workspace.path)}
                       >
                         ＋{' '}
                         {namedMethods
-                          ? `New ${backendLabel(namedMethods[0])} session`
+                          ? `New ${BACKEND_LABEL[namedMethods[0]]} session`
                           : 'New session'}
                       </button>
                       {namedMethods && (
                         <button
                           className="mini"
+                          disabled={!!welcomeRefusal(namedMethods[1])}
+                          title={welcomeRefusal(namedMethods[1])}
                           onClick={() => startIn(welcomeWs.workspace.path, namedMethods[1])}
                         >
-                          New {backendLabel(namedMethods[1])} session
+                          New {BACKEND_LABEL[namedMethods[1]]} session
                         </button>
                       )}
                       {welcomeWs.workspace.isGit && (
@@ -1482,7 +1491,7 @@ export default function App(): JSX.Element {
           )}
 
           <div className="aux-icons">
-            {!remoteTab && (!landedTab || hasWorkbench(landedTab)) && (
+            {(!landedTab || hasWorkbench(landedTab)) && (
               <button
                 className={'aux-ico wb-toggle' + (panelShown ? ' on' : '')}
                 aria-disabled={!panelReady}

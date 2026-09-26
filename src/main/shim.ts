@@ -1,8 +1,8 @@
 import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { VIEWABLE_EXTENSIONS } from '@shared/preview'
 import { keychainNamespace } from '@shared/types'
+import { OPEN_SHIM_HEAD, OPEN_SHIM_TARGET } from './openShimScript'
 
 export interface ShimPaths {
   shimDir: string
@@ -10,6 +10,29 @@ export interface ShimPaths {
   openDir: string
   pickDir: string
 }
+
+export const UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE = `if [ "$KOLOFT_UTIL" = "1" ]; then
+  utilok=0
+  valflag=0
+  for a in "$@"; do
+    if [ "$valflag" = "1" ]; then
+      valflag=0
+      case "$a" in -*) ;; *) continue ;; esac   # a flag's value, not a keyword (\`-w update\`)
+    fi
+    case "$a" in
+      -p|--print|-h|--help|--help-all|-v|--version|doctor|mcp|config|auth|setup-token|agents|project|update|install|plugin|import) utilok=1 ;;
+    esac
+    case "$a" in
+      -w|--worktree|--name|-n|--model|--permission-mode|--settings|--session-id|-r|--resume|--agent|--effort) valflag=1 ;;
+    esac
+  done
+  if [ "$utilok" = "0" ]; then
+    printf '⛔ Koloft — this is a Koloft terminal, not an agent surface.\\n' >&2
+    printf '   %s\\n' "Start interactive Claude from the sidebar's ＋ (⌘N)." >&2
+    printf '   %s\\n' 'Non-interactive use is fine: claude -p · --help · doctor · mcp · …' >&2
+    exit 1
+  fi
+fi`
 
 const SHIM_SCRIPT = `#!/usr/bin/env bash
 : koloft claude shim
@@ -54,28 +77,7 @@ case "$1" in ""|-*) ;; *) skip=1 ;; esac
 # CC§9
 [ -n "$CLAUDECODE" ] && skip=1
 
-if [ "$KOLOFT_UTIL" = "1" ]; then
-  utilok=0
-  valflag=0
-  for a in "$@"; do
-    if [ "$valflag" = "1" ]; then
-      valflag=0
-      case "$a" in -*) ;; *) continue ;; esac   # a flag's value, not a keyword (\`-w update\`)
-    fi
-    case "$a" in
-      -p|--print|-h|--help|--help-all|-v|--version|doctor|mcp|config|auth|setup-token|agents|project|update|install|plugin|import) utilok=1 ;;
-    esac
-    case "$a" in
-      -w|--worktree|--name|-n|--model|--permission-mode|--settings|--session-id|-r|--resume|--agent|--effort) valflag=1 ;;
-    esac
-  done
-  if [ "$utilok" = "0" ]; then
-    printf '⛔ Koloft — this is a Koloft terminal, not an agent surface.\\n' >&2
-    printf '   %s\\n' "Start interactive Claude from the sidebar's ＋ (⌘N)." >&2
-    printf '   %s\\n' 'Non-interactive use is fine: claude -p · --help · doctor · mcp · …' >&2
-    exit 1
-  fi
-fi
+${UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE}
 
 # CC§6
 pre=()
@@ -236,69 +238,13 @@ fi
 exec "$real" "\${inj[@]}" "$@"
 `
 
-const EXT_GLOBS = VIEWABLE_EXTENSIONS.map((e) => `*${e}`).join('|')
-
 // CC§12
-const OPEN_SHIM_SCRIPT = `#!/usr/bin/env bash
-: koloft open shim
-self_dir="$(cd "$(dirname "$0")" >/dev/null 2>&1 && pwd)"
-
-passthrough() {
-  real=""
-  old_ifs="$IFS"; IFS=":"
-  set -f
-  for d in $PATH; do
-    [ "$d" = "$self_dir" ] && continue
-    [ -x "$d/open" ] || continue
-    if head -n 2 "$d/open" 2>/dev/null | grep -q "koloft open shim"; then continue; fi
-    real="$d/open"; break
-  done
-  set +f
-  IFS="$old_ifs"
-  [ -z "$real" ] && real="/usr/bin/open"
-  exec "$real" "$@"
-}
-
+const OPEN_SHIM_SCRIPT = `${OPEN_SHIM_HEAD}
 [ -n "$KOLOFT_TAB_ID" ] && [ -n "$KOLOFT_OPEN_DIR" ] || passthrough "$@"
 [ -n "$KOLOFT_PID" ] && kill -0 "$KOLOFT_PID" 2>/dev/null || passthrough "$@"
-[ "$#" -eq 1 ] || passthrough "$@"
-case "$1" in -*) passthrough "$@" ;; esac
-
-f="$1"
-url=""
-abs=""
-case "$f" in
-  http://*|https://*) url="$f" ;;
-  file://localhost/*) f="\${f#file://localhost}"; f="$(printf '%b' "\${f//%/\\\\x}")" ;;
-  file:///*) f="\${f#file://}"; f="$(printf '%b' "\${f//%/\\\\x}")" ;;
-  *://*) passthrough "$@" ;;
-esac
-if [ -z "$url" ]; then
-  low="$(printf '%s' "$f" | tr '[:upper:]' '[:lower:]')"
-  case "$low" in
-    ${EXT_GLOBS}) ;;
-    *) passthrough "$@" ;;
-  esac
-  [ -f "$f" ] || passthrough "$@"
-  case "$f" in /*) abs="$f" ;; *) abs="$PWD/$f" ;; esac
-fi
-if [ "$(printf '%s' "$abs$url$PWD" | LC_ALL=C tr -d '[:cntrl:]')" != "$abs$url$PWD" ]; then passthrough "$@"; fi
-
-newid() {
-  u="$(uuidgen 2>/dev/null | tr 'A-Z' 'a-z')"
-  if [ -z "$u" ] && [ -r /proc/sys/kernel/random/uuid ]; then u="$(cat /proc/sys/kernel/random/uuid)"; fi
-  echo "$u"
-}
-
-esc() { printf '%s' "$1" | sed -e 's/\\\\/\\\\\\\\/g' -e 's/"/\\\\"/g'; }
-
+${OPEN_SHIM_TARGET}
 mkdir -p "$KOLOFT_OPEN_DIR" 2>/dev/null || passthrough "$@"
-oid="$(newid)"
-[ -n "$oid" ] || oid="$$-$(date +%s)"
-out="$KOLOFT_OPEN_DIR/$oid.json"
-printf '{"tabId":"%s","openId":"%s","path":"%s","url":"%s","cwd":"%s","ts":%s}\\n' \\
-  "$(esc "$KOLOFT_TAB_ID")" "$oid" "$(esc "$abs")" "$(esc "$url")" "$(esc "$PWD")" "$(date +%s)" > "$out" 2>/dev/null \\
-  || { rm -f "$out" 2>/dev/null; passthrough "$@"; }
+write_drop "$KOLOFT_OPEN_DIR" "$KOLOFT_TAB_ID" || passthrough "$@"
 exit 0
 `
 

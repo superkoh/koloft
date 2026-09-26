@@ -558,8 +558,19 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(fs.existsSync(path.join(b.tabs, 'T.env'))).toBe(false)
   })
 
-  it('refuses to build a script around anything the shell could read as syntax', () => {
-    expect(() => tabScript(spec({ claudeArgs: ['--task', '; rm -rf /'] }))).toThrow()
+  // CC§9
+  it("hands claude a job's name and first prompt word for word, quotes and shell syntax included, and refuses a session name the shell could read as syntax", () => {
+    const args = [
+      '--session-id',
+      'sess1',
+      '--name',
+      "Bob's nightly",
+      '--',
+      '/report; rm -rf / $HOME'
+    ]
+    const b = box(spec({ claudeArgs: args }))
+    expect(b.run().status).toBe(0)
+    expect(b.argv().slice(2)).toEqual(args)
     expect(() => tabScript(spec({ tmuxName: "k-'; id #" }))).toThrow()
   })
 

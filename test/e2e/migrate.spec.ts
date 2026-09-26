@@ -64,15 +64,14 @@ test.describe('v1 → v4 layout migration end to end: a v1 layout.json written b
       await expect(page.locator('.center')).toContainText('No running session')
 
       const layout = layoutOnDisk(env)
-      expect(layout.version).toBe(4)
+      expect(layout.version).toBe(5)
       expect(layout.workspaces).toEqual([{ path: repo }])
       expect(layout).not.toHaveProperty('tabs')
       expect(layout).not.toHaveProperty('activeSessionId')
       expect(layout.workbench).toEqual({ defaultOpen: false })
       expect(layout).not.toHaveProperty('aux')
-      expect(Object.keys(layout.sessions as Record<string, unknown>).sort()).toEqual(
-        [mainId, wtId].sort()
-      )
+      expect([...(layout.members ?? [])].sort()).toEqual([mainId, wtId].sort())
+      expect(Object.keys(layout.sessions ?? {}).sort()).toEqual([mainId, wtId].sort())
 
       await snap(page, 'T-MIG-07')
     } finally {
@@ -94,6 +93,7 @@ test.describe('v1 → v4 layout migration end to end: a v1 layout.json written b
       await expect(page.locator('.ws-tab', { hasText: 'External session' })).toHaveCount(0)
 
       const after = layoutOnDisk(env)
+      expect(after.members).not.toContain(histId)
       expect((after.sessions as Record<string, unknown>)[histId]).toBeUndefined()
     } finally {
       await app.close().catch(() => {})

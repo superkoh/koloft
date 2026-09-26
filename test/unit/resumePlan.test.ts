@@ -17,6 +17,8 @@ const binding: WorktreeStateMeta = {
 function row(over: Partial<SessionRow> = {}): SessionRow {
   return {
     id: 's1',
+    backendId: 'claude',
+    host: 'local',
     title: 'a session',
     worktree: 'session-tab',
     cwd: REPO,

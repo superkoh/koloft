@@ -209,21 +209,20 @@ describe('worktreeNameFor (BB-E03: two runs never share a folder)', () => {
 })
 
 describe('CronRunner — starting one run', () => {
-  it('launches a due job with its task and name as environment variables', async () => {
+  it('launches a due job with its task as the first prompt and its name as the session name', async () => {
     const h = makeHarness([makeJob()])
     h.runner.start()
     await h.tick(at(10, 0, 20))
     expect(h.launches).toEqual([
       {
         jobId: 'j1',
+        backend: 'claude',
         cwd: '/ws/a',
         worktree: 'nightly-report-260902-1000',
         model: undefined,
-        permission: 'same',
-        env: {
-          KOLOFT_FIRST_PROMPT: '/koloft.release-dmg patch',
-          KOLOFT_SESSION_NAME: 'Nightly report'
-        }
+        permission: 'default',
+        firstPrompt: '/koloft.release-dmg patch',
+        name: 'Nightly report'
       }
     ])
     expect(h.toasts).toEqual(['⏰ Nightly report started'])
@@ -558,7 +557,7 @@ describe('CronRunner — BB-E26: the first tick after the Mac wakes waits 30 sec
 
     await h.tick(at(10, 0, 40))
     expect(h.launches).toHaveLength(1)
-    expect(h.launches[0].env.KOLOFT_SESSION_NAME).toBe('Report A')
+    expect(h.launches[0].name).toBe('Report A')
     expect(jobs[0].history).toEqual([])
     expect(jobs[1].history).toEqual([{ dueAt: at(9, 54), state: 'missed' }])
   })
@@ -776,6 +775,44 @@ describe('CronRunner — BB-N02: the runner never writes into a session', () => 
       'Nightly report',
       'Could not start — Claude did not start'
     ])
+  })
+})
+
+describe('CronRunner — a Codex job', () => {
+  // CODEX§14
+  it("launches on Codex with the permission it saved, checks Codex's own trust, and names Codex when it does not start", async () => {
+    const trusted = vi.fn(() => false)
+    const accountUsable = vi.fn(() => true)
+    const h = makeHarness([makeJob({ backend: 'codex', permission: 'acceptEdits' })], {
+      bindDeadlineMs: 5 * SEC,
+      trusted,
+      accountUsable
+    })
+    await h.runner.runNow('j1')
+    expect(h.launches[0]).toMatchObject({ backend: 'codex', permission: 'acceptEdits' })
+    expect(accountUsable).toHaveBeenCalledWith('codex')
+    await h.fireTimers(T0 + 5 * SEC)
+    expect(trusted).toHaveBeenCalledWith('/ws/a', 'codex')
+    expect(h.jobs[0].history[0]).toMatchObject({
+      state: 'failed',
+      note: 'Codex did not start — this folder was never opened in Codex; start one session here first'
+    })
+  })
+
+  it('keeps the Codex choice through a save, and an unknown backend saves as Claude', () => {
+    const h = makeHarness([])
+    const input = {
+      workspacePath: '/ws/a',
+      name: 'Nightly',
+      task: 'report',
+      schedule: { kind: 'daily', at: '10:00' },
+      permission: 'same',
+      enabled: true
+    } as const
+    const codex = h.runner.save({ ...input, backend: 'codex' })
+    expect(codex.ok && codex.job.backend).toBe('codex')
+    const odd = h.runner.save({ ...input, backend: 'gemini' as never })
+    expect(odd.ok && odd.job.backend).toBe('claude')
   })
 })
 
@@ -1070,6 +1107,21 @@ describe('CronRunner — the state it hands the dialog', () => {
     h.flags.folders = 2
     await h.fireTimers(T0 + 5 * SEC)
     expect(h.states.at(-1)?.folders).toEqual({ j1: 2 })
+  })
+
+  it('keeps the last run-folder count while a slow host counts again, then sends the new count', async () => {
+    const hostAnswers = (): Promise<void> => new Promise((r) => setImmediate(r))
+    let onDisk = 3
+    const h = makeHarness([makeJob()], {
+      gitDirExists: async () => true,
+      countRunFolders: async () => onDisk
+    })
+    await hostAnswers()
+    expect(h.runner.state().folders).toEqual({ j1: 3 })
+    onDisk = 4
+    expect(h.runner.state().folders).toEqual({ j1: 3 })
+    await hostAnswers()
+    expect(h.states.at(-1)?.folders).toEqual({ j1: 4 })
   })
 
   it('carries the loader’s complaint through to the dialog until the job is saved again', () => {

@@ -11,13 +11,12 @@ import {
   setText
 } from '../../src/renderer/src/editRegistry'
 
-interface CreateOpts {
-  kind: string
-  cwd?: string
-  resumeSessionId?: string
+interface ResumeReq {
+  sessionId: string
+  cwd: string
 }
 
-let created: CreateOpts[]
+let created: ResumeReq[]
 let killed: string[]
 let order: string[]
 let nextPty: { id: string; cwd: string }
@@ -45,11 +44,12 @@ let createGate: Gate | null
 function session(tabId: string, over: Partial<SessionInfo> = {}): SessionInfo {
   return {
     tabId,
+    backendId: 'claude',
+    host: 'local',
     sessionId: 'sid-' + tabId,
     title: 'Live title',
     cwd: '/w',
     treeRoot: over.cwd ?? '/w',
-    jsonlPath: '/j',
     files: [],
     alive: true,
     updatedAt: 0,
@@ -83,18 +83,18 @@ beforeEach(() => {
             ? Promise.reject(new Error('main is not answering'))
             : Promise.resolve(transcriptOnDisk)
           return probeGate ? probeGate.promise.then(() => answer) : answer
-        }
-      },
-      workbench: { get: async () => ({ open: false, tabs: [] }), setState: () => {} },
-      terminal: {
-        create: (opts: CreateOpts) => {
-          created.push(opts)
+        },
+        resume: (req: ResumeReq) => {
+          created.push(req)
           order.push('create')
           if (createRefuses) return Promise.resolve({ ok: false, code: 'invalid-args' })
           if (createFails) return Promise.reject(new Error('spawn failed'))
           const done = Promise.resolve({ ok: true, ...nextPty })
           return createGate ? createGate.promise.then(() => done) : done
-        },
+        }
+      },
+      workbench: { get: async () => ({ open: false, tabs: [] }), setState: () => {} },
+      terminal: {
         kill: (id: string) => {
           killed.push(id)
           order.push('kill')
@@ -123,7 +123,13 @@ const CONFIRMED_COPY_NO_CONVERSATION_DEAD =
 describe('restartActiveSession: the restart itself', () => {
   it('probes disk, then kills the tab pty, then respawns it resuming the SAME session, even from a plain shell tab', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'ord1', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({
+      id: 'ord1',
+      kind: 'shell',
+      title: 'Terminal',
+      cwd: '/w',
+      alive: true
+    })
     s.setSessions([session('ord1', { sessionId: 'sid-A', cwd: '/w/repo' })])
     nextPty = { id: 'ord2', cwd: '/w/repo' }
 
@@ -132,31 +138,46 @@ describe('restartActiveSession: the restart itself', () => {
 
     expect(order).toEqual(['probe', 'kill', 'create'])
     expect(killed).toEqual(['ord1'])
-    expect(created).toEqual([{ kind: 'claude', cwd: '/w/repo', resumeSessionId: 'sid-A' }])
+    expect(created).toEqual([{ sessionId: 'sid-A', cwd: '/w/repo' }])
   })
 
-  it('restarts Codex in place with the same native backend and session', async () => {
+  it('restarts Codex in place with the same native backend and session, carrying its Workbench onto the new tab', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'codex-restart', kind: 'codex', title: 'Codex', cwd: '/w', alive: true })
+    s.addTab({
+      id: 'codex-restart',
+      kind: 'codex',
+      title: 'Codex',
+      cwd: '/w',
+      alive: true
+    })
     s.setSessions([
       session('codex-restart', { backendId: 'codex', sessionId: 'codex:local:thread-a' })
     ])
+    await s.ensureWorkbench('codex-restart')
+    const panel = useStore.getState().workbench['codex-restart']
+    expect(panel).toBeDefined()
     nextPty = { id: 'codex-restarted', cwd: '/w' }
 
     s.restartActiveSession()
     await settle()
 
     expect(order).toEqual(['probe', 'kill', 'create'])
-    expect(created).toEqual([{ kind: 'codex', cwd: '/w', resumeSessionId: 'codex:local:thread-a' }])
+    expect(created).toEqual([{ sessionId: 'codex:local:thread-a', cwd: '/w' }])
     expect(useStore.getState().tabs).toMatchObject([
       { id: 'codex-restarted', kind: 'codex', sessionId: 'codex:local:thread-a' }
     ])
-    expect(useStore.getState().workbench['codex-restarted']).toBeUndefined()
+    expect(useStore.getState().workbench['codex-restarted']).toBe(panel)
   })
 
   it('resumes from the session root, not the launch cwd (a --worktree session)', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'wt1', kind: 'shell', title: 'Terminal', cwd: '/w/main', alive: true })
+    s.addTab({
+      id: 'wt1',
+      kind: 'shell',
+      title: 'Terminal',
+      cwd: '/w/main',
+      alive: true
+    })
     s.setSessions([session('wt1', { sessionId: 'sid-W', cwd: '/w/worktrees/feature' })])
 
     s.restartActiveSession()
@@ -181,9 +202,27 @@ describe('restartActiveSession: the restart itself', () => {
 
   it('replaces the pty in place: same position, same tab count, title kept rather than flashing back to the default', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'pos-a', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
-    s.addTab({ id: 'pos-b', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
-    s.addTab({ id: 'pos-c', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({
+      id: 'pos-a',
+      kind: 'shell',
+      title: 'Terminal',
+      cwd: '/w',
+      alive: true
+    })
+    s.addTab({
+      id: 'pos-b',
+      kind: 'shell',
+      title: 'Terminal',
+      cwd: '/w',
+      alive: true
+    })
+    s.addTab({
+      id: 'pos-c',
+      kind: 'shell',
+      title: 'Terminal',
+      cwd: '/w',
+      alive: true
+    })
     s.setSessions([session('pos-b', { sessionId: 'sid-B', title: 'Fix the parser' })])
     s.setActive('pos-b')
     nextPty = { id: 'pos-b2', cwd: '/w' }
@@ -200,7 +239,13 @@ describe('restartActiveSession: the restart itself', () => {
 
   it('carries the tab viewer pane onto the new pty id, dropping the dead pty state', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'pane1', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({
+      id: 'pane1',
+      kind: 'shell',
+      title: 'Terminal',
+      cwd: '/w',
+      alive: true
+    })
     s.setSessions([session('pane1', { sessionId: 'sid-A' })])
     s.setOpenFile({ src: '/w/report.md', label: 'report.md' })
     nextPty = { id: 'pane2', cwd: '/w' }
@@ -215,7 +260,7 @@ describe('restartActiveSession: the restart itself', () => {
 
   it('carries the panel — strip, open flag and fetched marker — onto the new pty id as the SAME object, so nothing remounts', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'wb1', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({ id: 'wb1', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
     s.setSessions([session('wb1', { sessionId: 'sid-W' })])
     await s.ensureWorkbench('wb1')
     s.setWorkbenchOpen('wb1', true)
@@ -261,8 +306,20 @@ describe('restartActiveSession: the restart itself', () => {
 
   it('leaves every other tab alone, even one driving the same session', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'sib-A', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
-    s.addTab({ id: 'sib-B', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({
+      id: 'sib-A',
+      kind: 'shell',
+      title: 'Terminal',
+      cwd: '/w',
+      alive: true
+    })
+    s.addTab({
+      id: 'sib-B',
+      kind: 'shell',
+      title: 'Terminal',
+      cwd: '/w',
+      alive: true
+    })
     s.setSessions([
       session('sib-A', { sessionId: 'sid-S' }),
       session('sib-B', { sessionId: 'sid-S' })
@@ -287,7 +344,7 @@ describe('restartActiveSession: the restart itself', () => {
     s.restartActiveSession()
     await settle()
 
-    expect(created).toEqual([{ kind: 'claude', cwd: '/w', resumeSessionId: 'sid-A' }])
+    expect(created).toEqual([{ sessionId: 'sid-A', cwd: '/w' }])
   })
 })
 
@@ -340,7 +397,7 @@ describe("restartActiveSession vs. the claude→shell revert: the kill's own unt
 
     const after = useStore.getState()
     expect(after.tabs[0].id).toBe('pw2')
-    expect(created).toEqual([{ kind: 'claude', cwd: '/w', resumeSessionId: 'sid-PW' }])
+    expect(created).toEqual([{ sessionId: 'sid-PW', cwd: '/w' }])
     expect(after.openFiles['pw2']?.src).toBe('/w/notes.md')
   })
 })
@@ -348,7 +405,13 @@ describe("restartActiveSession vs. the claude→shell revert: the kill's own unt
 describe('restartActiveSession: no-op guards', () => {
   it('does nothing on a terminal that never ran claude', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'plain1', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({
+      id: 'plain1',
+      kind: 'shell',
+      title: 'Terminal',
+      cwd: '/w',
+      alive: true
+    })
 
     s.restartActiveSession()
     await settle()
@@ -360,7 +423,13 @@ describe('restartActiveSession: no-op guards', () => {
 
   it('does nothing on a claude tab whose session has not bound yet (an empty id included), and works once it does', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'late1', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
+    s.addTab({
+      id: 'late1',
+      kind: 'claude',
+      title: 'Claude',
+      cwd: '/w',
+      alive: true
+    })
 
     s.restartActiveSession()
     await settle()
@@ -375,7 +444,7 @@ describe('restartActiveSession: no-op guards', () => {
     s.setSessions([session('late1', { sessionId: 'sid-late' })])
     s.restartActiveSession()
     await settle()
-    expect(created).toEqual([{ kind: 'claude', cwd: '/w', resumeSessionId: 'sid-late' }])
+    expect(created).toEqual([{ sessionId: 'sid-late', cwd: '/w' }])
   })
 
   it('falls back to the tab anchor while the registered session has no id yet', async () => {
@@ -393,12 +462,18 @@ describe('restartActiveSession: no-op guards', () => {
     s.restartActiveSession()
     await settle()
 
-    expect(created).toEqual([{ kind: 'claude', cwd: '/w', resumeSessionId: 'sid-ANCH' }])
+    expect(created).toEqual([{ sessionId: 'sid-ANCH', cwd: '/w' }])
   })
 
   it('resumes from the tracker while the throttled renderer snapshot is still stale, since ⇧⌘R never retries', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'stale1', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({
+      id: 'stale1',
+      kind: 'shell',
+      title: 'Terminal',
+      cwd: '/w',
+      alive: true
+    })
     s.setSessions([session('stale1', { sessionId: '' })])
     mainTrackerSessions = [session('stale1', { sessionId: 'sid-MAIN', cwd: '/w/repo' })]
     nextPty = { id: 'stale2', cwd: '/w/repo' }
@@ -407,12 +482,18 @@ describe('restartActiveSession: no-op guards', () => {
     await settle()
 
     expect(order).toEqual(['probe', 'kill', 'create'])
-    expect(created).toEqual([{ kind: 'claude', cwd: '/w/repo', resumeSessionId: 'sid-MAIN' }])
+    expect(created).toEqual([{ sessionId: 'sid-MAIN', cwd: '/w/repo' }])
   })
 
   it('stays a silent no-op when the tracker has no session for the tab either', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'none1', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({
+      id: 'none1',
+      kind: 'shell',
+      title: 'Terminal',
+      cwd: '/w',
+      alive: true
+    })
     mainTrackerSessions = [session('other', { sessionId: 'sid-X' })]
 
     s.restartActiveSession()
@@ -432,7 +513,13 @@ describe('restartActiveSession: no-op guards', () => {
 describe('restartActiveSession: double trigger', () => {
   it('restarts once when ⇧⌘R is hit twice before the respawn lands', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'dup1', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({
+      id: 'dup1',
+      kind: 'shell',
+      title: 'Terminal',
+      cwd: '/w',
+      alive: true
+    })
     s.setSessions([session('dup1', { sessionId: 'sid-A' })])
     nextPty = { id: 'dup2', cwd: '/w' }
 
@@ -447,7 +534,13 @@ describe('restartActiveSession: double trigger', () => {
 
   it('restarts once when ⇧⌘R is hit twice while the tracker lookup is in flight', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'race1', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({
+      id: 'race1',
+      kind: 'shell',
+      title: 'Terminal',
+      cwd: '/w',
+      alive: true
+    })
     mainTrackerSessions = [session('race1', { sessionId: 'sid-R' })]
     nextPty = { id: 'race2', cwd: '/w' }
 
@@ -463,7 +556,13 @@ describe('restartActiveSession: double trigger', () => {
     vi.useFakeTimers()
     try {
       const s = useStore.getState()
-      s.addTab({ id: 'cd1', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+      s.addTab({
+        id: 'cd1',
+        kind: 'shell',
+        title: 'Terminal',
+        cwd: '/w',
+        alive: true
+      })
       s.setSessions([session('cd1', { sessionId: 'sid-CD' })])
       nextPty = { id: 'cd2', cwd: '/w' }
 
@@ -508,7 +607,13 @@ describe("restart-killed pty exits: App closes a tab whose pty exits, so the res
 describe('restartActiveSession: the tab closes mid-restart', () => {
   it('reaps the orphan pty and leaves no resume anchor behind for its id', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'gone1', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({
+      id: 'gone1',
+      kind: 'shell',
+      title: 'Terminal',
+      cwd: '/w',
+      alive: true
+    })
     s.setSessions([session('gone1', { sessionId: 'sid-G' })])
     nextPty = { id: 'gone2', cwd: '/w' }
     createGate = gate()
@@ -523,9 +628,13 @@ describe('restartActiveSession: the tab closes mid-restart', () => {
     expect(useStore.getState().tabs).toHaveLength(0)
 
     const createdBefore = created.length
-    useStore
-      .getState()
-      .addTab({ id: 'gone2', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    useStore.getState().addTab({
+      id: 'gone2',
+      kind: 'shell',
+      title: 'Terminal',
+      cwd: '/w',
+      alive: true
+    })
     useStore.getState().restartActiveSession()
     await settle()
     expect(created).toHaveLength(createdBefore)
@@ -535,7 +644,13 @@ describe('restartActiveSession: the tab closes mid-restart', () => {
 describe('restartActiveSession: respawn failure', () => {
   it('keeps the tab (marked not alive) and lets a later trigger retry', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'fail1', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({
+      id: 'fail1',
+      kind: 'shell',
+      title: 'Terminal',
+      cwd: '/w',
+      alive: true
+    })
     s.setSessions([session('fail1', { sessionId: 'sid-A' })])
     createFails = true
 
@@ -553,13 +668,19 @@ describe('restartActiveSession: respawn failure', () => {
     await settle()
 
     expect(created).toHaveLength(2)
-    expect(created[1]).toEqual({ kind: 'claude', cwd: '/w', resumeSessionId: 'sid-A' })
+    expect(created[1]).toEqual({ sessionId: 'sid-A', cwd: '/w' })
     expect(useStore.getState().tabs[0].id).toBe('fail2')
   })
 
   it('an invalid-args refusal from main lands in the same dead-tab state as a spawn failure', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'ref1', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({
+      id: 'ref1',
+      kind: 'shell',
+      title: 'Terminal',
+      cwd: '/w',
+      alive: true
+    })
     s.setSessions([session('ref1', { sessionId: 'sid-A' })])
     createRefuses = true
 
@@ -577,7 +698,13 @@ describe('restartActiveSession: respawn failure', () => {
 describe('restartActiveSession: the transcript gate — a session never typed into has nothing to resume, so ⇧⌘R asks main before the kill', () => {
   it('refuses a session with no conversation on disk: nothing killed, nothing spawned, a toast', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'gate1', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
+    s.addTab({
+      id: 'gate1',
+      kind: 'claude',
+      title: 'Claude',
+      cwd: '/w',
+      alive: true
+    })
     s.setSessions([session('gate1', { sessionId: 'sid-EMPTY' })])
     transcriptOnDisk = false
 
@@ -595,7 +722,13 @@ describe('restartActiveSession: the transcript gate — a session never typed in
 
   it('has not killed anything while the probe is still in flight', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'gate2', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
+    s.addTab({
+      id: 'gate2',
+      kind: 'claude',
+      title: 'Claude',
+      cwd: '/w',
+      alive: true
+    })
     s.setSessions([session('gate2', { sessionId: 'sid-SLOW' })])
     probeGate = gate()
 
@@ -612,7 +745,13 @@ describe('restartActiveSession: the transcript gate — a session never typed in
 
   it('releases the restart lock on a refusal, so the next press works once there is a conversation', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'gate3', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
+    s.addTab({
+      id: 'gate3',
+      kind: 'claude',
+      title: 'Claude',
+      cwd: '/w',
+      alive: true
+    })
     s.setSessions([session('gate3', { sessionId: 'sid-LATER' })])
     transcriptOnDisk = false
     nextPty = { id: 'gate3b', cwd: '/w' }
@@ -625,13 +764,19 @@ describe('restartActiveSession: the transcript gate — a session never typed in
     useStore.getState().restartActiveSession()
     await settle()
 
-    expect(created).toEqual([{ kind: 'claude', cwd: '/w', resumeSessionId: 'sid-LATER' }])
+    expect(created).toEqual([{ sessionId: 'sid-LATER', cwd: '/w' }])
     expect(useStore.getState().tabs[0].id).toBe('gate3b')
   })
 
   it('swallows a second ⇧⌘R while the probe is still out, and probes only once', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'gate4', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
+    s.addTab({
+      id: 'gate4',
+      kind: 'claude',
+      title: 'Claude',
+      cwd: '/w',
+      alive: true
+    })
     s.setSessions([session('gate4', { sessionId: 'sid-TWICE' })])
     probeGate = gate()
     nextPty = { id: 'gate4b', cwd: '/w' }
@@ -648,7 +793,13 @@ describe('restartActiveSession: the transcript gate — a session never typed in
 
   it('tells the exited-claude case apart on a tab that is still alive, though the liveness sweep keeps its entry', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'gate9', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
+    s.addTab({
+      id: 'gate9',
+      kind: 'claude',
+      title: 'Claude',
+      cwd: '/w',
+      alive: true
+    })
     s.setSessions([session('gate9', { sessionId: 'sid-EXITED' })])
     s.setSessions([session('gate9', { sessionId: 'sid-EXITED', alive: false })])
     transcriptOnDisk = false
@@ -663,7 +814,13 @@ describe('restartActiveSession: the transcript gate — a session never typed in
 
   it('never kills when the probe itself fails — and stays retryable', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'gate6', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
+    s.addTab({
+      id: 'gate6',
+      kind: 'claude',
+      title: 'Claude',
+      cwd: '/w',
+      alive: true
+    })
     s.setSessions([session('gate6', { sessionId: 'sid-IPCDOWN' })])
     probeFails = true
     nextPty = { id: 'gate6b', cwd: '/w' }
@@ -684,7 +841,13 @@ describe('restartActiveSession: the transcript gate — a session never typed in
 
   it('drops the restart when the tab is closed while the probe is out', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'gate7', kind: 'claude', title: 'Claude', cwd: '/w', alive: true })
+    s.addTab({
+      id: 'gate7',
+      kind: 'claude',
+      title: 'Claude',
+      cwd: '/w',
+      alive: true
+    })
     s.setSessions([session('gate7', { sessionId: 'sid-CLOSED' })])
     probeGate = gate()
 
@@ -700,7 +863,13 @@ describe('restartActiveSession: the transcript gate — a session never typed in
 
   it('gates the tracker-fallback entry too', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'gate8', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({
+      id: 'gate8',
+      kind: 'shell',
+      title: 'Terminal',
+      cwd: '/w',
+      alive: true
+    })
     s.setSessions([session('gate8', { sessionId: '' })])
     mainTrackerSessions = [session('gate8', { sessionId: 'sid-FRESH' })]
     transcriptOnDisk = false
@@ -737,7 +906,13 @@ describe('restartActiveSession: the transcript gate — a session never typed in
 
   it('words the tracker-fallback refusal dead when the tracker entry is no longer alive', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'gate11', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({
+      id: 'gate11',
+      kind: 'shell',
+      title: 'Terminal',
+      cwd: '/w',
+      alive: true
+    })
     mainTrackerSessions = [session('gate11', { sessionId: 'sid-GONE', alive: false })]
     transcriptOnDisk = false
 
@@ -753,7 +928,13 @@ describe('restartActiveSession: the transcript gate — a session never typed in
 describe('restartActiveSession: resume anchor', () => {
   it('keeps sessionId + cwd on the restarted tab so a later ⇧⌘R can resume it again', async () => {
     const s = useStore.getState()
-    s.addTab({ id: 'snap1', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({
+      id: 'snap1',
+      kind: 'shell',
+      title: 'Terminal',
+      cwd: '/w',
+      alive: true
+    })
     s.setSessions([session('snap1', { sessionId: 'sid-A', cwd: '/w/repo' })])
     nextPty = { id: 'snap2', cwd: '/w/repo' }
 

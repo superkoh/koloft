@@ -1,4 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
+import { spawnSync } from 'child_process'
 import { launchMode, RemoteSync, type RemoteTarget } from '../../src/main/remote/sync'
 import type { RunResult } from '../../src/main/remote/ssh'
 
@@ -8,6 +12,7 @@ let rsyncFlags: string[][]
 let runsFull: string[]
 let answers: (() => Promise<RunResult>)[]
 let changes: string[]
+let lefts: string[]
 let answerWhenQueueEmpty: (() => Promise<RunResult>) | undefined
 let target: RemoteTarget
 let sync: RemoteSync
@@ -28,7 +33,8 @@ function make(): RemoteSync {
       return Promise.resolve(ok(''))
     },
     targets: () => [target],
-    onChange: (host) => changes.push(host)
+    onChange: (host) => changes.push(host),
+    onLeft: (host, ids) => lefts.push(`${host}:${ids.join(',')}`)
   })
 }
 
@@ -45,6 +51,7 @@ beforeEach(() => {
   answers = []
   answerWhenQueueEmpty = undefined
   changes = []
+  lefts = []
   target = {
     host: 'devbox',
     mirrorProjectsRoot: '/ud/remote/devbox/projects',
@@ -68,14 +75,6 @@ it('U-HB-1: turns the tmux name list into the alive set (an empty list is an ans
   expect([...sync.alive('devbox')].sort()).toEqual(['aaa', 'bbb'])
   expect(sync.connected('devbox')).toBe(true)
   expect(rsyncs).toEqual(['devbox .claude/projects', 'devbox .koloft/hook-sessions'])
-  expect(rsyncFlags[0]).toEqual([
-    '--inplace',
-    '-m',
-    '--delete',
-    '--include=-home-koh-api*/',
-    '--include=*.jsonl',
-    '--exclude=*'
-  ])
   expect(changes).toEqual(['devbox'])
 
   answers.push(() => Promise.resolve(ok('')))
@@ -127,11 +126,50 @@ it('pulls the slug of the path the machine resolved, not the one that was pinned
     )
   sync.start()
   await tick(1)
-  expect(rsyncFlags[0]).toContain('--include=-mnt-disk2-api*/')
-  expect(rsyncFlags[0]).not.toContain('--include=-home-koh-api*/')
+  expect(rsyncFlags[0]).toContain('--include=/-mnt-disk2-api*/')
+  expect(rsyncFlags[0]).not.toContain('--include=/-home-koh-api*/')
 
   await tick(2000)
-  expect(rsyncFlags[2]).toContain('--include=-mnt-disk2-api*/')
+  expect(rsyncFlags[2]).toContain('--include=/-mnt-disk2-api*/')
+})
+
+// CC§2 PLATFORM§34
+it("mirrors the workspace's transcripts, their title files and each session's own folder (subagent transcripts), and nothing of other projects", async () => {
+  sync.start()
+  await tick(1)
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-mirror-'))
+  try {
+    const src = path.join(root, 'src')
+    for (const f of [
+      '-home-koh-api/s1.jsonl',
+      '-home-koh-api/s1.title',
+      '-home-koh-api/notes.txt',
+      '-home-koh-api/s1/subagents/agent-a.jsonl',
+      '-home-koh-api--wt/s2.jsonl',
+      '-srv-www/s3.jsonl',
+      '-srv-www/s3/subagents/agent-b.jsonl'
+    ]) {
+      fs.mkdirSync(path.dirname(path.join(src, f)), { recursive: true })
+      fs.writeFileSync(path.join(src, f), 'x')
+    }
+    const dst = path.join(root, 'dst')
+    const r = spawnSync('rsync', ['-a', ...rsyncFlags[0], `${src}/`, `${dst}/`], {
+      encoding: 'utf8'
+    })
+    expect(r.stderr).toBe('')
+    const mirrored = fs
+      .readdirSync(dst, { recursive: true, encoding: 'utf8' })
+      .filter((f) => fs.statSync(path.join(dst, f)).isFile())
+      .sort()
+    expect(mirrored).toEqual([
+      '-home-koh-api--wt/s2.jsonl',
+      '-home-koh-api/s1.jsonl',
+      '-home-koh-api/s1.title',
+      '-home-koh-api/s1/subagents/agent-a.jsonl'
+    ])
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
 })
 
 it('asks about every folder pinned on the machine, and again at once after a poke', async () => {
@@ -157,6 +195,25 @@ it('U-HB-2: keeps the previous alive set when a round fails, only greys the dot 
   expect([...sync.alive('devbox')]).toEqual(['aaa'])
   expect(sync.connected('devbox')).toBe(false)
   expect(rsyncs.length).toBe(2)
+})
+
+it('reports a session that left the tmux list only from a heartbeat that answered, never from a failed one', async () => {
+  answers.push(() => Promise.resolve(ok('k-aaa\nk-bbb\n')))
+  sync.start()
+  await tick(1)
+  expect(lefts).toEqual([])
+
+  answers.push(() => Promise.resolve({ code: 255, stdout: '', stderr: 'broken pipe' }))
+  await tick(2000)
+  expect(lefts).toEqual([])
+
+  answers.push(() => Promise.resolve(ok('k-bbb\n')))
+  await tick(2000)
+  expect(lefts).toEqual(['devbox:aaa'])
+
+  answers.push(() => Promise.resolve(ok('k-bbb\n')))
+  await tick(2000)
+  expect(lefts).toEqual(['devbox:aaa'])
 })
 
 it("U-HB-3: greys the dot when ssh's own timeout kills the command (code null)", async () => {

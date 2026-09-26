@@ -1,24 +1,86 @@
 import type {
+  BackendAvailability,
   BackendId,
+  BackendSessionInfo,
+  BackendSessionRow,
   CreateTabOptions,
   CreateTabResult,
+  ResumePlan,
   SessionInfo,
   SessionResumeRequest,
-  SessionResumeResult
+  SessionResumeResult,
+  SessionRow
 } from '@shared/types'
-import { identityOf, SESSION_CAPABILITIES } from '@shared/sessionBackend'
+import type { SessionEvent } from '@shared/sessionEvent'
+import {
+  identityOf,
+  sourceOf,
+  SUPPORTED_PAIRS,
+  unsupportedPairMessage
+} from '@shared/sessionBackend'
+import { hostOf } from '@shared/remoteKey'
 
 export interface SessionBackend {
   id: BackendId
-  list(): SessionInfo[]
-  create(options: CreateTabOptions): Promise<CreateTabResult>
+  availability(): Promise<BackendAvailability>
+  list(): BackendSessionInfo[]
+  historyRows(workspacePath: string): Promise<BackendSessionRow[]>
+  create(spec: CreateTabOptions): Promise<CreateTabResult>
   resume(request: SessionResumeRequest): Promise<SessionResumeResult>
+  resumePlan(key: string): Promise<ResumePlan>
+  hasTab(tabId: string): boolean
+  aliveTabFor(key: string): string | undefined
+  stop(tabId: string): void | Promise<void>
   archive(key: string): boolean
   transcriptExists(key: string): boolean | Promise<boolean>
+  observe(tabId: string, event: SessionEvent): void
+  occupantOf(dir: string): string | null
+  accountUsable(): boolean
+  trustsFolder(dir: string): boolean | Promise<boolean>
 }
+
+export interface SessionLifecycle {
+  prompted(tabId: string): void
+  bound(tabId: string, key: string): void
+  exited(tabId: string, title?: string): void
+  clearAttention(tabId: string): void
+  open(tabId: string, target: string): void
+}
+
+const CLEAN_EXIT_HIDES_A_LATER_EXIT_MS = 30_000
 
 export class SessionBackends {
   private adapters = new Map<BackendId, SessionBackend>()
+  private cleanExitAt = new Map<string, number>()
+
+  constructor(private lifecycle: SessionLifecycle) {}
+
+  observe(tabId: string, event: SessionEvent): void {
+    switch (event.type) {
+      case 'bound':
+        this.cleanExitAt.delete(tabId)
+        this.lifecycle.clearAttention(tabId)
+        return this.lifecycle.bound(tabId, event.key)
+      case 'exited':
+        return this.exited(tabId, event.clean, event.title)
+      case 'open':
+        return this.lifecycle.open(tabId, event.target)
+      case 'prompt':
+        this.lifecycle.prompted(tabId)
+    }
+    this.ownerOfTab(tabId)?.observe(tabId, event)
+  }
+
+  private exited(tabId: string, clean: boolean, title?: string): void {
+    const now = Date.now()
+    for (const [id, at] of this.cleanExitAt) {
+      if (now - at > CLEAN_EXIT_HIDES_A_LATER_EXIT_MS) this.cleanExitAt.delete(id)
+    }
+    if (clean) {
+      this.cleanExitAt.set(tabId, now)
+      this.lifecycle.clearAttention(tabId)
+    } else if (!this.cleanExitAt.has(tabId)) this.lifecycle.exited(tabId, title)
+  }
 
   register(adapter: SessionBackend): void {
     if (this.adapters.has(adapter.id))
@@ -36,28 +98,71 @@ export class SessionBackends {
     return this.get(identityOf(key).backendId)
   }
 
+  occupantOf(dir: string): string | null {
+    for (const backend of this.adapters.values()) {
+      const occupant = backend.occupantOf(dir)
+      if (occupant) return occupant
+    }
+    return null
+  }
+
+  ownerOfTab(tabId: string): SessionBackend | undefined {
+    return [...this.adapters.values()].find((backend) => backend.hasTab(tabId))
+  }
+
+  availability(
+    unregistered: (id: BackendId) => BackendAvailability
+  ): Promise<BackendAvailability[]> {
+    return Promise.all(
+      (Object.keys(SUPPORTED_PAIRS) as BackendId[]).map((id) => {
+        const backend = this.adapters.get(id)
+        return backend ? backend.availability() : unregistered(id)
+      })
+    )
+  }
+
   list(): SessionInfo[] {
     return [...this.adapters.values()].flatMap((backend) =>
-      backend.list().map((s) => ({
+      backend.list().map((s): SessionInfo => ({
         ...s,
-        cliVersion: s.cliVersion ?? s.ccVersion,
         backendId: backend.id,
+        host: s.remote ? 'ssh' : 'local',
         nativeSessionId: s.nativeSessionId ?? s.sessionId
       }))
     )
   }
 
+  async historyRows(
+    workspacePath: string,
+    partlyUnread: (backend: BackendId, error: unknown) => void
+  ): Promise<SessionRow[]> {
+    const backends = [...this.adapters.values()]
+    const answers = await Promise.allSettled(backends.map((b) => b.historyRows(workspacePath)))
+    const rows: SessionRow[] = []
+    const failures: { id: BackendId; error: unknown }[] = []
+    answers.forEach((answer, i) => {
+      if (answer.status === 'fulfilled')
+        rows.push(
+          ...answer.value.map((r) => ({ ...r, ...sourceOf(backends[i].id, workspacePath) }))
+        )
+      else failures.push({ id: backends[i].id, error: answer.reason })
+    })
+    if (failures.length && !rows.length) throw failures[0].error
+    for (const f of failures) partlyUnread(f.id, f.error)
+    return rows.sort((a, b) => b.mtime - a.mtime)
+  }
+
   create(options: CreateTabOptions): Promise<CreateTabResult> {
     if (options.kind === 'shell') throw new Error('A utility terminal is not a session.')
-    const capabilities = SESSION_CAPABILITIES[options.kind]
     if (
-      !capabilities ||
-      (options.cwd?.startsWith('ssh://') && !capabilities.remote) ||
+      !SUPPORTED_PAIRS[options.kind] ||
       options.util ||
       (options.worktreeResourceId && options.kind !== 'codex')
     ) {
       return Promise.resolve({ ok: false, code: 'invalid-args' })
     }
+    const refusal = unsupportedPairMessage(options.kind, hostOf(options.cwd ?? ''))
+    if (refusal) return Promise.reject(new Error(refusal))
     return this.get(options.kind).create(options)
   }
 }

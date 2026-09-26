@@ -137,6 +137,8 @@ describe('currentWorkspace (the Notes island’s workspace)', () => {
     workspace: { path, missing, isGit: true, hasHistory: false },
     rows: ids.map((id) => ({
       id,
+      backendId: 'claude' as const,
+      host: 'local' as const,
       title: id,
       worktree: 'main',
       cwd: path,
@@ -224,11 +226,14 @@ describe('clampNotesHeight (the remembered height, in THIS window: a height save
 describe('selectionRoot (Files island root / a terminal tab’s cwd)', () => {
   const claude = { kind: 'claude' as const, cwd: '/repo' }
 
-  it('roots a bound session at ITS cwd, not the launch cwd', () => {
-    expect(selectionRoot(claude, '/repo/.claude/worktrees/feat', '/ws')).toBe(
-      '/repo/.claude/worktrees/feat'
-    )
-  })
+  it.each(['claude', 'codex'] as const)(
+    'roots a bound %s session at ITS cwd, not the launch cwd',
+    (kind) => {
+      expect(selectionRoot({ kind, cwd: '/repo' }, '/repo/.claude/worktrees/feat', '/ws')).toBe(
+        '/repo/.claude/worktrees/feat'
+      )
+    }
+  )
 
   it('roots an unbound claude tab at its launch cwd until the session reports', () => {
     expect(selectionRoot(claude, undefined, '/ws')).toBe('/repo')
@@ -354,7 +359,7 @@ describe('session background activity', () => {
   it('reports unavailable observation without presenting stale background work as current', () => {
     const badge = sessionActivityBadge({
       backendId: 'codex',
-      observation: 'degraded',
+      details: { codex: { observation: 'degraded' } },
       background: [{ id: 'a1', kind: 'agent', label: 'Review', state: 'working' }]
     })!
     expect(badge.heading).toBe('Status unavailable')
@@ -377,6 +382,7 @@ describe('session background activity', () => {
 
   it('reports agents and commands with their distinct states', () => {
     const badge = sessionActivityBadge({
+      backendId: 'claude',
       background: [
         { id: 'a1', kind: 'agent', label: 'Review changes', state: 'working' },
         { id: 'a2', kind: 'agent', label: 'Check tests', state: 'waiting' },
@@ -393,21 +399,24 @@ describe('session background activity', () => {
   })
 
   it('keeps known parked services visible alongside background activity', () => {
-    const parked = [{ kind: 'server' as const, label: 'dev server' }]
-    expect(sessionActivityBadge({ parked })?.lines).toEqual(parkedBadge(parked).lines)
+    const parked = [
+      { id: 's1', kind: 'server' as const, label: 'dev server', state: 'waiting' as const }
+    ]
+    expect(sessionActivityBadge({ backendId: 'claude', background: parked })?.lines).toEqual(
+      parkedBadge(parked).lines
+    )
     const badge = sessionActivityBadge({
-      parked,
-      background: [{ id: 'a1', kind: 'agent', label: 'Review', state: 'working' }]
+      backendId: 'claude',
+      background: [...parked, { id: 'a1', kind: 'agent', label: 'Review', state: 'working' }]
     })!
     expect(badge.lines).toContain('server · dev server')
-    expect(sessionActivityBadge({})).toBeNull()
+    expect(sessionActivityBadge({ backendId: 'claude' })).toBeNull()
   })
 })
 
 describe('mixesBackends (when a row list shows method icons)', () => {
-  it('stays off for a list of Claude rows, tagged or not', () => {
-    expect(mixesBackends([{}, {}])).toBe(false)
-    expect(mixesBackends([{ backendId: 'claude' }, {}])).toBe(false)
+  it('stays off for a list of Claude rows', () => {
+    expect(mixesBackends([{ backendId: 'claude' }, { backendId: 'claude' }])).toBe(false)
   })
 
   it('turns on as soon as one list holds both methods', () => {

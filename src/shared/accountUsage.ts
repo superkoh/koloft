@@ -242,3 +242,10 @@ export function capsuleAria(views: AccountView[], nowMs: number): string {
 export function popoverX(centerX: number, width: number, viewportW: number, margin = 8): number {
   return Math.max(margin, Math.min(centerX - width / 2, viewportW - margin - width))
 }
+
+// CODEX§15
+export function windowLabel(minutes: number): string {
+  if (minutes % (24 * 60) === 0) return `${minutes / (24 * 60)}d`
+  if (minutes % 60 === 0) return `${minutes / 60}h`
+  return `${minutes}m`
+}

@@ -34,6 +34,13 @@ describe('resolvePricing — exact then longest-prefix match', () => {
     expect(sonnet.windowTokens).toBe(200_000)
   })
 
+  it("prices an OpenAI id only on an exact match, so gpt-5-mini never borrows gpt-5's price", () => {
+    expect(resolvePricing('gpt-5')!.inPerM).toBe(1.25)
+    expect(resolvePricing('gpt-5')!.cacheWritePerM).toBe(0)
+    expect(resolvePricing('gpt-5-mini')).toBeUndefined()
+    expect(resolvePricing('gpt-6-astra-2026-09-01')).toBeUndefined()
+  })
+
   it('returns undefined for unknown / synthetic / empty ids (design D6: no $)', () => {
     expect(resolvePricing('gpt-4')).toBeUndefined()
     expect(resolvePricing('<synthetic>')).toBeUndefined()

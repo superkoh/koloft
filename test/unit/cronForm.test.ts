@@ -4,6 +4,7 @@ import { describeSchedule } from '@shared/schedule'
 import {
   emptyFields,
   fieldsToSchedule,
+  permissionAfterSwitch,
   forecastFor,
   histEnd,
   histText,
@@ -165,6 +166,7 @@ describe('validate messages (§7.5)', () => {
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.input).toEqual({
+      backend: 'claude',
       name: 'Nightly report',
       task: '/daily-report',
       schedule: { kind: 'weekly', days: [1, 2, 3, 4, 5], at: '09:00' },
@@ -339,5 +341,18 @@ describe('forecastFor', () => {
   it('lists every switched-on job in the hover text, nearest first', () => {
     const f = forecastFor([job('Late', '21:00'), job('Soonest', '14:00')], '/ws-a', NOW)
     expect(f?.title).toBe('Soonest · today 14:00\nLate · today 21:00\nScheduled jobs…')
+  })
+})
+
+describe('a new job', () => {
+  it('starts a Codex job on "Never ask", the way scheduled Codex runs have always run, and a Claude job on "Same as my other sessions"', () => {
+    expect(emptyFields('codex').permission).toBe('skipAll')
+    expect(emptyFields('claude').permission).toBe('same')
+  })
+
+  it('takes the other backend’s starting permission when switched before the permission was changed, and keeps a permission the user picked', () => {
+    expect(permissionAfterSwitch(emptyFields('claude'), 'codex')).toBe('skipAll')
+    expect(permissionAfterSwitch(emptyFields('codex'), 'claude')).toBe('same')
+    expect(permissionAfterSwitch(f({ permission: 'acceptEdits' }), 'codex')).toBe('acceptEdits')
   })
 })

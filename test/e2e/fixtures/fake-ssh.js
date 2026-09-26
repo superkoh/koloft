@@ -65,6 +65,10 @@ if (argv.includes('-tt')) {
   done(r.status == null ? 1 : r.status)
 }
 
+if (argv.includes('-t')) {
+  done(runSh(remoteCmd, 'inherit'))
+}
+
 // PLATFORM§33
 if (fs.existsSync(path.join(STATE, 'hb-fail'))) done(SSH_UNREACHABLE_EXIT)
-done(runSh(remoteCmd, 'ignore'))
+done(runSh(remoteCmd, argv.includes('-n') ? 'ignore' : 'inherit'))

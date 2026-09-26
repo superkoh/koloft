@@ -6,18 +6,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CodexSessions, type CodexSessionDeps } from '../../src/main/codexSessions'
 import { codexSessionKey, type WorktreeResource } from '../../src/main/sessionStore'
 import type { CodexTransportOptions } from '../../src/main/codexTransport'
+import { SessionRuntime } from '../../src/main/sessionRuntime'
 
 const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   request: vi.fn(),
   close: vi.fn(),
-  runtime: vi.fn()
+  runtime: vi.fn(),
+  rpcHomes: [] as (string | undefined)[]
 }))
 vi.mock('../../src/main/codexRuntime', () => ({ resolveCodexRuntime: mocks.runtime }))
 vi.mock('../../src/main/codexTransport', () => ({
   createCodexTransport: mocks.create,
   CodexRpc: class {
-    request = mocks.request
+    private home?: string
+    constructor(options: { env?: NodeJS.ProcessEnv }) {
+      this.home = options.env?.CODEX_HOME
+      mocks.rpcHomes.push(this.home)
+    }
+    request = (method: string, params: unknown) => mocks.request(method, params, this.home)
     close = mocks.close
   }
 }))
@@ -71,6 +78,7 @@ beforeEach(() => {
   fs.mkdirSync(repo)
   fs.mkdirSync(other)
   transports = []
+  mocks.rpcHomes.length = 0
   mocks.create.mockImplementation(async (options: CodexTransportOptions) => {
     const stop = vi.fn(async () => {})
     transports.push({ options, stop })
@@ -91,10 +99,15 @@ beforeEach(() => {
       kill: vi.fn(),
       clearResumeIntent: vi.fn()
     } as unknown as CodexSessionDeps['pty'],
+    runtime: new SessionRuntime(),
     projectInfo: (p) => ({ root: p.startsWith(repo) ? repo : other, treeRoot: p }),
     changed: vi.fn(),
-    attention: vi.fn(),
-    error: vi.fn()
+    events: vi.fn((tabId, event) => sessions.observe(tabId, event)),
+    error: vi.fn(),
+    trustFolder: vi.fn(),
+    pickHome: vi.fn(() => undefined),
+    homes: vi.fn(() => []),
+    openShimRoot: path.join(directory, 'codex-open')
   }
   sessions = new CodexSessions(path.join(directory, 'sessions.json'), deps)
   vi.spyOn(sessions, 'availability').mockResolvedValue({ id: 'codex', available: true })
@@ -228,6 +241,60 @@ describe('CodexSessions', () => {
     expect(sessions.members().has(codexSessionKey(A))).toBe(true)
   })
 
+  // CODEX§15
+  it('a new launch runs in the account home the picker chose, and a resume goes back to the home its session lives in', async () => {
+    vi.mocked(deps.pickHome).mockReturnValue({ account: 'work', home: '/homes/work' })
+    const first = await sessions.launch({ kind: 'codex', cwd: repo })
+    expect(transports[0].options.env?.CODEX_HOME).toBe('/homes/work')
+    expect(vi.mocked(deps.pty.create).mock.calls[0][0].processEnv?.CODEX_HOME).toBe('/homes/work')
+    bind()
+    expect(sessions.store.getMember(codexSessionKey(A))?.codexHome).toBe('/homes/work')
+    expect(sessions.list()[0].pickedAccount).toBe('work')
+    await sessions.stop(first.id)
+
+    vi.mocked(deps.pickHome).mockReturnValue({ account: 'home', home: '/homes/home' })
+    await sessions.resume({ sessionId: codexSessionKey(A), cwd: repo })
+    expect(transports[1].options.env?.CODEX_HOME).toBe('/homes/work')
+    mocks.request.mockResolvedValue({ thread: { id: A, cwd: repo, path: null } })
+    mocks.rpcHomes.length = 0
+    await sessions.transcriptExists(codexSessionKey(A))
+    expect(mocks.rpcHomes).toEqual(['/homes/work'])
+  })
+
+  // CODEX§15
+  it('lists history from the default home and every account home, and resumes a thread in the home it was found in', async () => {
+    vi.mocked(deps.homes).mockReturnValue(['/homes/work'])
+    mocks.request.mockImplementation(async (_method, params, home) =>
+      params.archived
+        ? { data: [] }
+        : { data: [home === '/homes/work' ? { id: B, cwd: repo } : { id: A, cwd: repo }] }
+    )
+    const rows = await sessions.historyRows(repo)
+    expect(rows.map((row) => row.id).sort()).toEqual(
+      [codexSessionKey(A), codexSessionKey(B)].sort()
+    )
+    expect(mocks.rpcHomes).toEqual([undefined, '/homes/work'])
+    await sessions.resume({ sessionId: codexSessionKey(B), cwd: repo })
+    expect(transports[0].options.env?.CODEX_HOME).toBe('/homes/work')
+    expect(deps.pickHome).not.toHaveBeenCalled()
+  })
+
+  it('an account home that fails to list keeps its last threads and hides no other home', async () => {
+    vi.mocked(deps.homes).mockReturnValue(['/homes/work'])
+    let broken = false
+    mocks.request.mockImplementation(async (_method, params, home) => {
+      if (home === '/homes/work' && broken) throw new Error('state database locked')
+      if (params.archived) return { data: [] }
+      return { data: [home === '/homes/work' ? { id: B, cwd: repo } : { id: A, cwd: repo }] }
+    })
+    await sessions.refreshHistory()
+    broken = true
+    const rows = await sessions.historyRows(repo)
+    expect(rows.map((row) => row.id).sort()).toEqual(
+      [codexSessionKey(A), codexSessionKey(B)].sort()
+    )
+  })
+
   it('waits for an in-flight stop before restarting and prevents duplicate resume', async () => {
     const launched = await sessions.launch({ kind: 'codex', cwd: repo })
     bind()
@@ -269,12 +336,118 @@ describe('CodexSessions', () => {
     expect(sessions.members().has(codexSessionKey(A))).toBe(false)
   })
 
+  it('a waiting Codex session turns idle after 4 minutes and closes itself 30 minutes later, but not while a background command is still open', async () => {
+    vi.useFakeTimers()
+    const closes: string[] = []
+    deps.runtime.on('auto-close', ({ tabId }: { tabId: string }) => closes.push(tabId))
+    const launched = await sessions.launch({ kind: 'codex', cwd: repo })
+    bind()
+    const status = () => sessions.list()[0]?.status
+    expect(status()).toBe('waiting')
+    const command = { type: 'commandExecution', id: 'dev', command: 'npm run dev' }
+    const receive = transports[0].options.onFrame
+    receive('server', {
+      method: 'item/started',
+      params: { threadId: A, item: { ...command, status: 'inProgress' } }
+    })
+    await vi.advanceTimersByTimeAsync(4 * 60_000 - 1)
+    expect(status()).toBe('waiting')
+    await vi.advanceTimersByTimeAsync(1)
+    expect(status()).toBe('idle')
+    await vi.advanceTimersByTimeAsync(31 * 60_000)
+    expect(closes).toEqual([])
+    receive('server', {
+      method: 'item/completed',
+      params: { threadId: A, item: { ...command, status: 'completed' } }
+    })
+    await vi.advanceTimersByTimeAsync(30 * 60_000)
+    expect(closes).toEqual([launched.id])
+  })
+
+  it('shows the files a Codex patch wrote on the session, and counts the patch as a live write', async () => {
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    bind()
+    const file = path.join(repo, 'notes.txt')
+    transports[0].options.onFrame('server', {
+      method: 'item/completed',
+      params: {
+        threadId: A,
+        item: {
+          type: 'fileChange',
+          id: 'patch',
+          status: 'completed',
+          changes: [{ path: file, kind: { type: 'update', move_path: null }, diff: '+new\n' }]
+        }
+      }
+    })
+    expect(sessions.list()[0]).toMatchObject({
+      files: [{ src: file, access: 'wrote', added: 1 }],
+      lastWritten: file,
+      liveWrites: 1
+    })
+  })
+
+  it('hands an open command Codex ran to the Workbench for that tab', async () => {
+    const launched = await sessions.launch({ kind: 'codex', cwd: repo })
+    bind()
+    transports[0].options.onFrame('server', {
+      method: 'item/completed',
+      params: {
+        threadId: A,
+        item: {
+          type: 'commandExecution',
+          id: 'open',
+          status: 'completed',
+          command: "/bin/zsh -lc 'open ./report.html'",
+          cwd: repo,
+          commandActions: [{ type: 'unknown', command: 'open ./report.html' }]
+        }
+      }
+    })
+    expect(deps.events).toHaveBeenCalledWith(launched.id, {
+      type: 'open',
+      target: path.join(repo, 'report.html')
+    })
+  })
+
+  it("points Codex's zsh at a dotfile folder of the run's own, whose open shim asks Koloft through /tmp and reads no KOLOFT_ variable", async () => {
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    const zdot = transports[0].options.env?.ZDOTDIR
+    expect(zdot?.startsWith(path.join(directory, 'codex-open') + path.sep)).toBe(true)
+    expect(vi.mocked(deps.pty.create).mock.calls[0][0].processEnv?.ZDOTDIR).toBe(zdot)
+    const script = fs.readFileSync(path.join(path.dirname(zdot!), 'open'), 'utf8')
+    expect(script).toMatch(/\/tmp\/koloft-cx-open-[0-9a-f-]{36}/)
+    expect(script).not.toContain('KOLOFT_')
+  })
+
+  it("an open the shim drops in the run's request folder reaches that tab's Workbench, and stopping the run removes the shim and the folder", async () => {
+    const launched = await sessions.launch({ kind: 'codex', cwd: repo })
+    bind()
+    const shimDir = path.dirname(transports[0].options.env!.ZDOTDIR!)
+    const requestDir = /\/tmp\/koloft-cx-open-[0-9a-f-]{36}/.exec(
+      fs.readFileSync(path.join(shimDir, 'open'), 'utf8')
+    )![0]
+    fs.writeFileSync(
+      path.join(requestDir, 'drop-1.json'),
+      JSON.stringify({ openId: 'drop-1', path: path.join(repo, 'report.html'), url: '', cwd: repo })
+    )
+    await expect
+      .poll(() => vi.mocked(deps.events).mock.calls)
+      .toContainEqual([launched.id, { type: 'open', target: path.join(repo, 'report.html') }])
+    await sessions.stop(launched.id)
+    expect(fs.existsSync(shimDir)).toBe(false)
+    expect(fs.existsSync(requestDir)).toBe(false)
+  })
+
   it('reports an unexpected exit after confirmed stop without immediately clearing the alert', async () => {
     const launched = await sessions.launch({ kind: 'codex', cwd: repo })
     bind()
-    vi.mocked(deps.attention).mockClear()
+    vi.mocked(deps.events).mockClear()
     await sessions.stop(launched.id, 1)
-    expect(deps.attention).toHaveBeenLastCalledWith(launched.id, 'exited')
+    expect(deps.events).toHaveBeenCalledWith(
+      launched.id,
+      expect.objectContaining({ type: 'exited', clean: false })
+    )
     expect(sessions.members().has(codexSessionKey(A))).toBe(true)
   })
 
@@ -317,6 +490,58 @@ describe('CodexSessions', () => {
       worktreeResourceId: renamed.id
     })
     expect(sessions.list()[0].cwd).toBe(newPath)
+  })
+
+  it('a person’s new worktree launch trusts the workspace folder in the shared config, never through an account home, and passes the chosen permission as approval and sandbox flags; a scheduled one trusts nothing', async () => {
+    const worktree = path.join(repo, '.claude', 'worktrees', 'w1')
+    fs.mkdirSync(worktree, { recursive: true })
+    vi.spyOn(sessions.worktrees, 'create').mockResolvedValue({
+      id: randomUUID(),
+      originalCwd: repo,
+      worktreePath: worktree,
+      worktreeName: 'w1',
+      worktreeBranch: 'worktree-w1'
+    } as WorktreeResource)
+    vi.mocked(deps.pickHome).mockReturnValue({ account: 'work', home: '/homes/work' })
+    await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1', permission: 'bypass' })
+    expect(deps.trustFolder).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(deps.trustFolder).mock.calls[0][0]).toBe(repo)
+    expect(vi.mocked(deps.trustFolder).mock.calls[0][1]?.CODEX_HOME).toBeUndefined()
+    expect(vi.mocked(deps.pty.create).mock.calls[0][0].processEnv?.CODEX_HOME).toBe('/homes/work')
+    const argv = vi.mocked(deps.pty.create).mock.calls[0][0].argv!
+    expect(argv.slice(-4)).toEqual(['-a', 'never', '-s', 'danger-full-access'])
+
+    await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1', scheduled: true })
+    expect(deps.trustFolder).toHaveBeenCalledTimes(1)
+  })
+
+  // CODEX§14
+  it('a scheduled launch hands Codex its task as the first prompt with its model and thinking level, and reports the bind so the run stops counting as starting', async () => {
+    const { id } = await sessions.launch({
+      kind: 'codex',
+      cwd: repo,
+      scheduled: true,
+      permission: 'bypass',
+      model: 'gpt-5.5',
+      effort: 'high',
+      firstPrompt: '/daily-report now'
+    })
+    const argv = vi.mocked(deps.pty.create).mock.calls[0][0].argv!
+    expect(argv.slice(-9)).toEqual([
+      '-a',
+      'never',
+      '-s',
+      'danger-full-access',
+      '-m',
+      'gpt-5.5',
+      '-c',
+      'model_reasoning_effort="high"',
+      '/daily-report now'
+    ])
+    const bound = { type: 'bound', key: codexSessionKey(A) }
+    expect(deps.events).not.toHaveBeenCalledWith(id, bound)
+    bind()
+    expect(deps.events).toHaveBeenCalledWith(id, bound)
   })
 
   it('cancels launches waiting on availability when shutdown starts and performs no refresh', async () => {

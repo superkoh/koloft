@@ -18,21 +18,20 @@ import path from 'path'
 import fs from 'fs'
 import os from 'os'
 import { pathToFileURL } from 'url'
-import { execFile } from 'child_process'
 import { PtyManager, tabInstancePid } from './ptyManager'
-import { probeClaude } from './claudeProbe'
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { FlowGate } from './flowControl'
-import { SessionTracker, readAppendedLines, parseReportedTasks } from './sessionTracker'
+import { SessionTracker } from './sessionTracker'
+import type { StatusEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
 import { SessionBackends } from './sessionBackends'
-import { identityOf } from '@shared/sessionBackend'
+import { BACKEND_LABEL, capabilitiesFor, SUPPORTED_PAIRS } from '@shared/sessionBackend'
 import { AttentionTracker, type AttentionContext } from './attention'
 import { route, dockBadgeText } from './notifyRouter'
-import { registeredByTabRoot, setupShim } from './shim'
+import { setupShim, UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE } from './shim'
 import { openDropTarget, type OpenDrop } from './openDrop'
-import { leaveForOS, openUrlExternally, osOpenFallback } from './osOpen'
+import { openUrlExternally, osOpenFallback } from './osOpen'
 import {
   authPromptFor,
   certHostOf,
@@ -47,32 +46,28 @@ import {
   standardUserAgent
 } from './browserSecurity'
 import { directoryListingHtml } from './dirListing'
-import { HOOK_SCRIPT, hookSettings, setupHooks, writeTabHookSettings } from './hooks'
-import { formatRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
-import { defaultControlDir, ensureControlDir, rsyncPull, runSsh, sshOptions } from './remote/ssh'
-import { ENSURE_SH, TMUX_CONF } from './remote/install'
+import { HOOK_SCRIPT, setupHooks, writeTabHookSettings } from './hooks'
+import { formatRemoteKey, hostOf } from '@shared/remoteKey'
 import {
-  accountEnv,
+  defaultControlDir,
+  ensureControlDir,
+  rsyncPull,
+  runSsh,
+  runSshBytes,
+  sshOptions
+} from './remote/ssh'
+import { ENSURE_SH, TMUX_CONF, UTIL_SH, utilClaudeGuard } from './remote/install'
+import {
   buildMachinePackage,
-  killSessionCmd,
-  launchLine,
-  sessionIdOfTmux,
+  POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
   tmuxSessionName,
-  writeTabPackage,
+  UTIL_BIN_DIR,
+  utilShellLine,
   type MachinePackage
 } from './remote/launch'
-import {
-  dq,
-  machinePackageBase,
-  mirrorHookDir,
-  mirrorProjectsRoot,
-  REMOTE_HOOK_DIR,
-  remoteMachineDir,
-  tabPackageDir
-} from './remote/paths'
-import { launchMode, RemoteSync } from './remote/sync'
-import { makeDropDedupe, ownsHookReport, type HookReport } from './hookRouting'
-import type { StatusLineSetting } from './statusline'
+import { machinePackageBase, mirrorHookDir, mirrorProjectsRoot } from './remote/paths'
+import { RemoteSync } from './remote/sync'
+import { readJsonDrop, watchJsonDrops } from './jsonDrops'
 import {
   bundlePath,
   DEFAULT_THEME,
@@ -97,7 +92,6 @@ import {
   reset as resetQuitGuard,
   setQuitAsk
 } from './quitGuard'
-import { rootsWithClaude } from './claudeLiveness'
 import { loadSettings, saveSettings } from './settings'
 import {
   keychainDelete,
@@ -118,44 +112,32 @@ import { loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
 import { WorkspaceManager, type LiveSession } from './workspaces'
 import { sanitizeSessionWorkbench } from '@shared/workbenchState'
-import { planResume, worktreeHomeRoot, type ResumeProbes } from './resumePlan'
-import { claudeArgv } from './claudeArgs'
-import { acceptClaudeTrust, claudeTrustsFolder } from './claudeTrust'
+import { dirExistsSync, gitProbes, type ResumeProbes } from './resumePlan'
+import { ClaudeBackend, machineHookSettings, pickMachineAccount } from './backends/claude'
+import { codexBackend, trustCodexFolder } from './backends/codex'
+import { codexConfigFile } from './codexTrust'
+import {
+  CodexAccountPicker,
+  codexHomeOf,
+  codexHomes,
+  limitsFrom,
+  prepareCodexHome
+} from './codexAccounts'
+import { shq } from '@shared/shellQuote'
 import { CronRunner, type LaunchRequest } from './cronRunner'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { listSkills, type SkillFs } from './skillList'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
-import { isValidWorktreeName } from '@shared/worktreeName'
 import { GitFreshnessEngine } from './gitFreshness'
-import { GithubLookup, parseGithubFixture } from './github'
+import { GithubLookup, parseGithubFixture, type GithubOptions } from './github'
 import { restoredWindowGeometry, trackWindowState } from './windowState'
 import { fullscreenOption, windowMinWidth } from './windowBounds'
-import { dirExists, listDir, search, searchContent } from './fileTree'
-import {
-  watchFile as watchPreviewFile,
-  unwatchFile as unwatchPreviewFile,
-  closeAllFileWatchers,
-  watchDir,
-  unwatchDir,
-  closeAllDirWatchers
-} from './fileWatch'
-import {
-  MAX_READ_BYTES,
-  createFile as createFileForEdit,
-  looksBinary,
-  openForEdit,
-  writeText as writeTextForEdit
-} from './fileEdit'
-import {
-  diffBase,
-  gitStatus,
-  gitNumstat,
-  gitDiff,
-  gitFileDiff,
-  gitFileDiffFull,
-  sanitizeBase
-} from './gitStatus'
-import { projectInfoFor, resolveSpawnCwd } from './projectInfo'
+import { closeAllFileWatchers, closeAllDirWatchers } from './fileWatch'
+import { sanitizeBase } from './gitStatus'
+import { Hosts } from './host/hosts'
+import { localGitOut, localHost } from './host/localHost'
+import { SshHost } from './host/sshHost'
+import { projectInfoFor } from './projectInfo'
 import { whatsNewDecision } from './releaseNotes'
 import {
   checkForUpdates,
@@ -167,7 +149,12 @@ import {
 } from './updater'
 import { currentOffer, startUpdateNotifier } from './updateNotifier'
 import { extOf } from '@shared/preview'
-import { canOpenExternally, routeFor, type RouteSource } from '@shared/browserRoute'
+import {
+  canOpenExternally,
+  routeFor,
+  type RouteDecision,
+  type RouteSource
+} from '@shared/browserRoute'
 import {
   cdpEnvDir,
   relayStripChanged,
@@ -187,7 +174,6 @@ import {
 } from './browserPermission'
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import { CDP_OP_BUDGET_MS } from '@shared/cdpBudget'
-import { runningClaudePid } from './claudeSessionRegistry'
 import { scanLeftovers, stopLeftover } from './leftovers'
 import { applyWindowCommand, guestShortcut } from '@shared/shortcutDispatch'
 import { BROWSER_PARTITION, PLACEHOLDER_SESSION_TITLE, isHttpUrl } from '@shared/types'
@@ -209,6 +195,9 @@ import type {
   AccountKind,
   AccountMeta,
   AccountView,
+  BackendId,
+  CodexLimits,
+  CodexSignInResult,
   BrowserAuthChallenge,
   BrowserDialogAnswer,
   BrowserDownload,
@@ -223,18 +212,14 @@ import type {
   LoginProgress,
   CreateTabOptions,
   CreateTabResult,
-  CronEffort,
-  CronPermission,
   CronSaveInput,
   ProbeErrorKind,
   LeftoverProcess,
   ResumePlan,
   SessionInfo,
-  SessionStatus,
   AttentionEvent,
   AttentionKind,
   SessionResumeRequest,
-  SessionResumeResult,
   SpawnedTab,
   TabInventoryReply,
   OpenRequest,
@@ -270,21 +255,19 @@ let flushHeldData: () => void = () => {}
 const tracker = new SessionTracker()
 let codexSessions: CodexSessions | null = null
 let codexStartupError: string | undefined
-const sessionBackends = new SessionBackends()
+const sessionBackends = new SessionBackends({
+  prompted: consumeOutletDedupe,
+  bound: (tabId, key) => cronRunner?.onBound(tabId, key),
+  exited: (tabId, title) => attention.onExited(tabId, attentionCtx(), title),
+  clearAttention: (tabId) => attention.clear(tabId),
+  open: (tabId, target) => {
+    if (path.isAbsolute(target) && !fs.existsSync(target)) return
+    openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target)
+  }
+})
 function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
-function isCodexSession(key: string): boolean {
-  return identityOf(key).backendId === 'codex'
-}
-sessionBackends.register({
-  id: 'claude',
-  list: () => tracker.list(),
-  create: createClaudeSession,
-  resume: resumeClaudeSession,
-  archive: (key) => workspaceMgr?.archiveSession(key) ?? false,
-  transcriptExists: (key) => tracker.transcriptExists(key)
-})
 tracker.pidOf = (tabId) => ptyMgr.pidOf(tabId)
 const dirtyTabIds = new Set<string>()
 tracker.activeTabId = () => uiActiveTabId
@@ -314,8 +297,6 @@ const attention = new AttentionTracker((pending, event) => {
 })
 let uiActiveTabId: string | null = null
 let activeTabBeforeReload: string | null = null
-const sessionEndSeenAt = new Map<string, number>()
-const SESSION_END_SEEN_TTL_MS = 30_000
 function sessionTitleOf(tabId: string): string | undefined {
   return allSessions().find((s) => s.tabId === tabId)?.title
 }
@@ -433,7 +414,6 @@ function routeAttentionEvent(event: AttentionEvent): void {
   if (decision.os) showOsNotification(event)
   if (decision.sound) shell.beep()
 }
-const processedRegIds = new Set<string>()
 let mainWindow: BrowserWindow | null = null
 
 // PLATFORM§5
@@ -472,7 +452,9 @@ function machinePackage(): MachinePackage {
   const pkgFiles: Record<string, string | Buffer> = {
     'ensure.sh': ENSURE_SH,
     'hook.sh': HOOK_SCRIPT,
-    'tmux.conf': TMUX_CONF
+    'tmux.conf': TMUX_CONF,
+    'util.sh': UTIL_SH,
+    [`${UTIL_BIN_DIR}claude`]: utilClaudeGuard(UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE)
   }
   try {
     pkgFiles['statusline/ccstatusline.js'] = fs.readFileSync(bundlePath())
@@ -484,9 +466,6 @@ function machinePackage(): MachinePackage {
   }
   return (machinePkg = buildMachinePackage(machinePackageBase(app.getPath('userData')), pkgFiles))
 }
-const watchedHookMirrors = new Map<string, () => void>()
-const killedRemoteSessions = new Set<string>()
-const remoteKills = new Map<string, Promise<unknown>>()
 
 let cronRunner: CronRunner | null = null
 
@@ -495,7 +474,10 @@ const BOOT_TIME = Date.now()
 let rendererReady = false
 
 // CC§7
-const usageViews = new Map<string, { usage?: UsageSnapshot; probeError?: ProbeErrorKind }>()
+const usageViews = new Map<
+  string,
+  { usage?: UsageSnapshot; limits?: CodexLimits; probeError?: ProbeErrorKind }
+>()
 
 function viewKey(name: string, kind: AccountKind): string {
   return `${kind}:${name.toLowerCase()}`
@@ -736,6 +718,7 @@ function probeAllForPanel(): Promise<AccountView[]> {
     const enabled = listAccounts().filter((a) => a.enabled)
     await Promise.all(
       enabled.map(async (a) => {
+        if (a.kind === 'codex-home') return probeCodexAccount(a.name)
         const secret = await keychainRead(a.kind, a.name)
         if (!secret) return
         const result = await probeAccount(a.kind, secret, {
@@ -794,6 +777,95 @@ async function addAccount(
   pushAccounts()
   const account = accountViews().find((a) => a.kind === kind && a.name === name)
   return result.ok ? { ok: true, account } : { ok: false, error: result.error, account }
+}
+
+const codexPicker = new CodexAccountPicker()
+const codexSignInPtys = new Map<string, string>()
+const CODEX_LIMITS_STALE_MS = 5 * 60_000
+
+function codexSharedConfig(): string {
+  return codexConfigFile(codexSessions?.defaultEnv)
+}
+
+// CODEX§15
+function pickCodexHome(): { account: string; home: string } | undefined {
+  if (!loadSettings().multiAccount) return undefined
+  const views = accountViews()
+  const picked = codexPicker.pick(views)
+  if (!picked) return undefined
+  const stale = views.some(
+    (a) =>
+      a.kind === 'codex-home' &&
+      a.enabled &&
+      (!a.limits || Date.now() - a.limits.at > CODEX_LIMITS_STALE_MS)
+  )
+  if (stale) void probeCodexAccounts()
+  const home = codexHomeOf(app.getPath('userData'), picked.name)
+  prepareCodexHome(home, codexSharedConfig())
+  return { account: picked.name, home }
+}
+
+async function probeCodexAccount(name: string): Promise<void> {
+  const acct = findAccount(name, 'codex-home')
+  if (!acct || !codexSessions) return
+  const key = viewKey(name, 'codex-home')
+  try {
+    const r = await codexSessions.readAccount(codexHomeOf(app.getPath('userData'), name))
+    const status = r.signedIn ? 'ok' : acct.status === 'ok' ? 'expired' : acct.status
+    if (status !== acct.status) upsertAccountMeta({ ...acct, status })
+    usageViews.set(key, {
+      limits: (r.signedIn && limitsFrom(r.limits, Date.now())) || usageViews.get(key)?.limits
+    })
+  } catch {
+    usageViews.set(key, { ...usageViews.get(key), probeError: 'network' })
+  }
+  pushAccounts()
+}
+
+let codexProbeRound: Promise<void> | null = null
+
+function probeCodexAccounts(): Promise<void> {
+  codexProbeRound ??= Promise.all(
+    listAccounts()
+      .filter((a) => a.kind === 'codex-home' && a.enabled)
+      .map((a) => probeCodexAccount(a.name))
+  ).then(() => {
+    codexProbeRound = null
+  })
+  return codexProbeRound
+}
+
+async function codexSignIn(name: string, again?: boolean): Promise<CodexSignInResult> {
+  const v = again
+    ? findAccount(name, 'codex-home')
+      ? 'ok'
+      : 'invalid-name'
+    : validateNewAccount(name, 'codex-home')
+  if (v !== 'ok') return { ok: false, error: v }
+  const binary = (await codexSessions?.availability())?.available && codexSessions?.cliBinary
+  if (!binary) return { ok: false, error: 'unavailable' }
+  const home = codexHomeOf(app.getPath('userData'), name)
+  prepareCodexHome(home, codexSharedConfig())
+  const acct = findAccount(name, 'codex-home')
+  upsertAccountMeta({
+    name,
+    kind: 'codex-home',
+    enabled: acct?.enabled ?? true,
+    fable: 'unknown',
+    status: acct?.status ?? 'unverified',
+    addedAt: acct?.addedAt ?? Date.now()
+  })
+  pushAccounts()
+  const cwd = os.homedir()
+  const handle = ptyMgr.create({
+    kind: 'shell',
+    cwd,
+    cols: 100,
+    rows: 30,
+    launchCommand: `CODEX_HOME=${shq(home)} ${shq(binary)} login && exit`
+  })
+  codexSignInPtys.set(handle.id, name)
+  return { ok: true, tabId: handle.id, cwd }
 }
 
 protocol.registerSchemesAsPrivileged([
@@ -1002,7 +1074,7 @@ app.whenReady().then(() => {
   const { shimDir, regDir, openDir, pickDir } = setupShim()
   ptyMgr.shimDir = shimDir
   ptyMgr.regDir = regDir
-  watchRegistrations(regDir)
+  claudeBackend.watchShimRegistrations(regDir)
   if (watchOpenRequests(openDir)) {
     ptyMgr.openDir = openDir
     sweepOpenRequests(openDir)
@@ -1024,7 +1096,7 @@ app.whenReady().then(() => {
       tabId,
       loadSettings().statuslineBuiltin ? statusLineSetting(statusline) : undefined
     )
-  watchHookRegistrations(hookPaths.regDir)
+  claudeBackend.watchLocalHooks(hookPaths.regDir)
 
   const PTY_OUTPUT_COALESCE_ONE_FRAME_MS = 16
   const pendingData = new Map<string, string>()
@@ -1068,20 +1140,19 @@ app.whenReady().then(() => {
   })
   ptyMgr.on('exit', (e) => {
     loginPtys.delete(e.id)
+    const codexAccount = codexSignInPtys.get(e.id)
+    if (codexAccount) {
+      codexSignInPtys.delete(e.id)
+      void probeCodexAccount(codexAccount)
+    }
     if (teardownKilledPtys.delete(e.id)) {
       flowGates.get(e.id)?.reset()
       flowGates.delete(e.id)
       return
     }
     if (loginWatchers.has(e.id)) failLogin(e.id, 'setup-token exited without printing a token')
-    const remoteTab = tracker.remoteOf(e.id)
-    if (!remoteTab) {
-      // CC§1
-      drainExitRegistration(hookPaths.regDir, e.id)
-      dropStatusLog(hookPaths.regDir, e.id)
-    }
+    claudeBackend.onPtyExit(e.id)
     attention.clear(e.id)
-    sessionEndSeenAt.delete(e.id)
     flushData()
     // PLATFORM§21
     const held = pendingData.get(e.id)
@@ -1096,17 +1167,6 @@ app.whenReady().then(() => {
       void codexSessions
         .stop(e.id, e.signal ? -1 : e.exitCode)
         .catch((error) => sendToRenderer('cron:toast', String(error)))
-    if (remoteTab) {
-      const sid = sessionIdOf(e.id)
-      untrackSession(e.id)
-      fs.rmSync(tabPackageDir(app.getPath('userData'), e.id), { recursive: true, force: true })
-      void drainRemoteExit(
-        remoteTab.host,
-        mirrorHookDir(app.getPath('userData'), remoteTab.host),
-        e.id,
-        sid
-      )
-    }
     workspaceMgr?.launchEnded(e.id)
     cronRunner?.onPtyExit(e.id)
     sendToRenderer('terminal:exit', e)
@@ -1133,101 +1193,36 @@ app.whenReady().then(() => {
   })
   tracker.on('auto-close', ({ tabId }: { tabId: string }) => {
     sendToRenderer('tab:killedByMain', tabId)
-    killTabPty(tabId)
+    void killTabPty(tabId)
   })
-  tracker.on(
-    'status',
-    (t: { tabId: string; prev: SessionStatus | undefined; next: SessionStatus }) => {
-      attention.onStatusChange(t.tabId, t.prev, t.next, attentionCtx(), sessionTitleOf(t.tabId))
-      // ADR-0022
-      cronRunner?.onStatus(t.tabId, t.prev, t.next)
-    }
-  )
-
-  // CC§1
-  if (process.platform !== 'win32') {
-    const LIVENESS_SWEEP_MS = 2500
-    const MISSED_SWEEPS_BEFORE_UNTRACK = 2
-    const goneStrikes = new Map<string, number>()
-    let sweeping = false
-    const sweepLiveness = async (): Promise<void> => {
-      if (sweeping) return
-      sweeping = true
-      try {
-        const pidByTab = new Map<string, number>()
-        for (const s of tracker.list()) {
-          if (!s.alive || !s.jsonlPath || s.remote) continue
-          const pid = ptyMgr.pidOf(s.tabId)
-          if (pid) pidByTab.set(s.tabId, pid)
-        }
-        for (const tabId of [...goneStrikes.keys()]) {
-          if (!pidByTab.has(tabId)) goneStrikes.delete(tabId)
-        }
-        if (!pidByTab.size) return
-        const alive = await rootsWithClaude([...pidByTab.values()])
-        if (!alive) return
-        for (const [tabId, pid] of pidByTab) {
-          if (alive.has(pid)) {
-            goneStrikes.delete(tabId)
-            continue
-          }
-          const strikes = (goneStrikes.get(tabId) ?? 0) + 1
-          if (strikes >= MISSED_SWEEPS_BEFORE_UNTRACK) {
-            goneStrikes.delete(tabId)
-            const endSeenAt = sessionEndSeenAt.get(tabId)
-            if (endSeenAt === undefined || Date.now() - endSeenAt > SESSION_END_SEEN_TTL_MS) {
-              attention.onExited(tabId, attentionCtx(), sessionTitleOf(tabId))
-            }
-            sessionEndSeenAt.delete(tabId)
-            untrackSession(tabId)
-          } else {
-            goneStrikes.set(tabId, strikes)
-          }
-        }
-      } finally {
-        sweeping = false
-      }
-    }
-    setInterval(() => void sweepLiveness(), LIVENESS_SWEEP_MS).unref()
-  }
+  tracker.on('status', (t: StatusEdge) => {
+    attention.onStatusChange(t.tabId, t.prev, t.next, attentionCtx(), sessionTitleOf(t.tabId))
+    // ADR-0022
+    cronRunner?.onStatus(t.tabId, t.prev, t.next)
+  })
 
   const userData = app.getPath('userData')
   try {
     codexSessions = new CodexSessions(path.join(userData, 'sessions.json'), {
       pty: ptyMgr,
+      runtime: tracker,
       projectInfo: projectInfoFor,
       changed: () => {
         sendToRenderer('sessions:update', allSessions())
         workspaceMgr?.onRemoteChanged()
       },
-      attention: (tabId, kind) => {
-        if (kind === 'clear') attention.clear(tabId)
-        else attention.onEvent(tabId, kind, attentionCtx(), sessionTitleOf(tabId))
-      },
-      error: (message) => sendToRenderer('cron:toast', message)
+      events: (tabId, event) => sessionBackends.observe(tabId, event),
+      error: (message) => sendToRenderer('cron:toast', message),
+      trustFolder: trustCodexFolder,
+      pickHome: pickCodexHome,
+      homes: () => codexHomes(userData),
+      openShimRoot: path.join(userData, 'codex-open')
     })
   } catch (error) {
     codexStartupError = `Codex session data could not be loaded; the original file is preserved. ${String(error)}`
   }
   if (codexSessions) {
-    sessionBackends.register({
-      id: 'codex',
-      list: () => codexSessions!.list(),
-      create: async (opts) => ({ ok: true, ...(await codexSessions!.launch(opts)) }),
-      resume: async (req) => {
-        try {
-          return { ok: true, kind: 'codex', ...(await codexSessions!.resume(req)) }
-        } catch (error) {
-          return {
-            ok: false,
-            code: 'backend',
-            message: error instanceof Error ? error.message : String(error)
-          }
-        }
-      },
-      archive: (key) => codexSessions!.archive(key),
-      transcriptExists: (key) => codexSessions!.transcriptExists(key)
-    })
+    sessionBackends.register(codexBackend(codexSessions, resumeProbes))
     void codexSessions
       .availability()
       .then((codex) => (codex.available ? codexSessions!.refreshHistory() : undefined))
@@ -1246,7 +1241,7 @@ app.whenReady().then(() => {
       for (const [key, tabId] of codexSessions?.runningBindings() ?? []) m.set(key, tabId)
       return m
     },
-    killTab: (tabId) => killTabPty(tabId),
+    killTab: (tabId) => void killTabPty(tabId),
     liveSessions: () => {
       const m = new Map<string, LiveSession>()
       for (const s of tracker.list()) {
@@ -1264,19 +1259,15 @@ app.whenReady().then(() => {
     freshness: (wsPath) => freshness?.get(wsPath),
     onRescanned: (wsPaths) => {
       void freshness?.refreshLocal(wsPaths)
-      watchRemoteHookMirrors()
+      claudeBackend.watchRemoteHookMirrors()
     },
     jobCountFor: (wsPath) => cronRunner?.jobCountFor(wsPath) ?? 0,
     remoteProjectsRoot: (host) => mirrorProjectsRoot(userData, host),
     remoteRunning: (host) => remoteSync?.alive(host) ?? new Set(),
     remoteConnected: (host) => remoteSync?.connected(host) ?? false,
     remoteGit: (host, p) => remoteSync?.gitInfo(host, p),
-    killRemoteSession: (host, sessionId) => {
-      void runSsh(host, killSessionCmd(tmuxSessionName(sessionId)), {
-        controlDir: remoteControlDir
-      }).then(() => remoteSync?.pokeNow(host))
-      killedRemoteSessions.add(sessionId)
-    }
+    killRemoteSession: (host, sessionId) =>
+      claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId))
   })
   remoteSync = new RemoteSync({
     run: (host, cmd) => runSsh(host, cmd, { controlDir: remoteControlDir }),
@@ -1296,7 +1287,8 @@ app.whenReady().then(() => {
         hasTabs: live.has(t.host)
       }))
     },
-    onChange: () => workspaceMgr?.onRemoteChanged()
+    onChange: () => workspaceMgr?.onRemoteChanged(),
+    onLeft: (host, ids) => claudeBackend.noticeRemoteExits(host, ids)
   })
   freshness = new GitFreshnessEngine({
     workspaces: () => workspaceMgr?.pinnedPaths() ?? [],
@@ -1325,16 +1317,17 @@ app.whenReady().then(() => {
       save: (jobs) => saveCron(cronFs, cronFile, jobs)
     },
     isPinned: (p) => (workspaceMgr?.pinnedPaths() ?? []).some((w) => w.path === p),
-    dirExists: dirExistsSync,
-    gitDirExists: gitDirExistsSync,
-    worktreeDirExists: (root, name) => dirExistsSync(path.join(worktreeHomeOf(root), name)),
-    branchExists: resumeProbes.branchExists,
-    countRunFolders: countRunFoldersSync,
-    accountUsable,
-    trusted: claudeTrusts,
+    dirExists: (p) => hosts.of(p).dirExists(p),
+    gitDirExists: (root) => hosts.of(root).dirExists(`${root}/.git`),
+    worktreeDirExists: (root, name) => hosts.of(root).dirExists(`${worktreeHomeOf(root)}/${name}`),
+    branchExists: (root, branch) =>
+      gitProbes((dir, args) => hosts.of(dir).gitOut(dir, args)).branchExists(root, branch),
+    countRunFolders,
+    accountUsable: (backend) => sessionBackends.get(backend).accountUsable(),
+    trusted: (wsPath, backend) => sessionBackends.get(backend).trustsFolder(wsPath),
     ready: () => rendererReady && BrowserWindow.getAllWindows().length > 0,
     launch: launchCronRun,
-    killTab: killTabPty,
+    killTab: (tabId) => void killTabPty(tabId),
     toast: (text) => sendToRenderer('cron:toast', text),
     notify: notifyPlain,
     push: (state) => sendToRenderer('cron:state', state),
@@ -1489,66 +1482,6 @@ app.on('before-quit', (e) => {
 function setupLine(): string | undefined {
   if (!ptyMgr.shimDir) return undefined
   return `export PATH="${ptyMgr.shimDir}:$PATH"; hash -r 2>/dev/null; clear`
-}
-
-const MID_WRITE_PARSE_RETRIES = 3
-const MID_WRITE_RETRY_MS = 60
-function readJsonDrop(full: string, attempt: number, handle: (obj: unknown) => void): void {
-  fs.readFile(full, 'utf8', (err, data) => {
-    if (err) return
-    let obj: unknown
-    try {
-      obj = JSON.parse(data)
-    } catch {
-      if (attempt < MID_WRITE_PARSE_RETRIES) {
-        setTimeout(() => readJsonDrop(full, attempt + 1, handle), MID_WRITE_RETRY_MS)
-      }
-      return
-    }
-    handle(obj)
-  })
-}
-
-function watchJsonDrops(
-  dir: string,
-  handlerFor: (name: string) => ((obj: unknown, full: string) => void) | null
-): fs.FSWatcher | null {
-  try {
-    return fs.watch(dir, (_event, filename) => {
-      if (!filename) return
-      const name = filename.toString()
-      if (!name.endsWith('.json')) return
-      const handle = handlerFor(name)
-      if (!handle) return
-      const full = path.join(dir, name)
-      readJsonDrop(full, 0, (obj) => handle(obj, full))
-    })
-  } catch {
-    return null
-  }
-}
-
-function watchRegistrations(regDir: string): void {
-  watchJsonDrops(regDir, () => handleRegistration)
-}
-
-function handleRegistration(raw: unknown): void {
-  const obj = raw as {
-    tabId?: string
-    regId?: string
-    sessionId?: string
-    cwd?: string
-    ts?: number
-    mode?: string
-    pid?: number
-  }
-  if (!obj.tabId || !obj.regId) return
-  if (processedRegIds.has(obj.regId)) return
-  if (!ptyMgr.get(obj.tabId)) return
-  if (!registeredByTabRoot(obj.pid, ptyMgr.pidOf(obj.tabId))) return
-  processedRegIds.add(obj.regId)
-  const cwd = obj.cwd && obj.cwd.length ? obj.cwd : os.homedir()
-  tracker.track(obj.tabId, cwd)
 }
 
 const processedOpenIds = new Set<string>()
@@ -1861,7 +1794,12 @@ const boundSessions = new Map<string, string>()
 function ptyTabIds(): string[] {
   return ptyMgr
     .list()
-    .filter((p) => !p.util && p.kind !== 'codex')
+    .filter(
+      (p) =>
+        !p.util &&
+        (p.kind === 'shell' ||
+          capabilitiesFor(p.kind, tracker.remoteOf(p.id) ? 'ssh' : 'local').browserControl === true)
+    )
     .map((p) => p.id)
 }
 
@@ -1887,7 +1825,7 @@ function cdpOp(
 
 function relayDeps(): RelayDeps {
   return {
-    sessionForTab: (tabId) => sessionIdOf(tabId) ?? null,
+    sessionForTab: (tabId) => claudeBackend.sessionIdOf(tabId) ?? null,
     mount: async (sessionId, targetId) => {
       const r = await cdpOp('mount', sessionId, { targetId })
       if (!r.ok || typeof r.guestId !== 'number')
@@ -2159,587 +2097,74 @@ function handleOpenRequest(obj: OpenDrop, full: string): void {
     openUrlExternally(decision.target)
     return
   }
-  if (decision.dest === 'browser') {
-    const payload: BrowserOpenRequest = {
-      tabId: obj.tabId,
-      url: decision.target,
-      source,
-      osFallback: p
-    }
-    sendToRenderer('browser:open', payload)
-  } else if (decision.dest === 'preview' && fs.existsSync(decision.target)) {
-    const payload: OpenRequest = { tabId: obj.tabId, path: decision.target, source }
-    sendToRenderer('preview:open-file', payload)
-  } else if (decision.dest !== 'drop') {
+  if (!openInWorkbench(obj.tabId, decision, source, p) && decision.dest !== 'drop')
     osOpenFallback(p)
+}
+
+function openInWorkbench(
+  tabId: string,
+  decision: RouteDecision,
+  source: 'agent' | 'user',
+  osFallback?: string
+): boolean {
+  if (decision.dest === 'browser') {
+    const payload: BrowserOpenRequest = { tabId, url: decision.target, source, osFallback }
+    sendToRenderer('browser:open', payload)
+    return true
   }
-}
-
-function watchHookRegistrations(dir: string, mirror = false): () => void {
-  const isNews = mirror ? makeDropDedupe() : null
-  const drops = watchJsonDrops(dir, () => (obj, full) => {
-    if (isNews && !isNews(full, JSON.stringify(obj))) return
-    handleHookRegistration(obj)
-  })
-  const logs = watchStatusLogs(dir)
-  return () => {
-    drops?.close()
-    logs()
+  if (decision.dest === 'preview' && fs.existsSync(decision.target)) {
+    const payload: OpenRequest = { tabId, path: decision.target, source }
+    sendToRenderer('preview:open-file', payload)
+    return true
   }
+  return false
 }
 
-const statusLogCursors = new Map<string, { offset: number; tail: Buffer }>()
-const statusLogDraining = new Map<string, boolean>()
-
-// PLATFORM§28
-const STATUS_LOG_POLL_MS = 2000
-
-function watchStatusLogs(dir: string): () => void {
-  let watcher: fs.FSWatcher | null = null
-  try {
-    watcher = fs.watch(dir, (_event, filename) => {
-      const name = filename?.toString()
-      if (!name || !name.endsWith('.status.jsonl')) return
-      void drainStatusLog(path.join(dir, name))
-    })
-  } catch {}
-  const poll = setInterval(() => {
-    let names: string[]
-    try {
-      names = fs.readdirSync(dir)
-    } catch {
-      return
-    }
-    for (const name of names) {
-      if (name.endsWith('.status.jsonl')) void drainStatusLog(path.join(dir, name))
-    }
-  }, STATUS_LOG_POLL_MS)
-  return () => {
-    watcher?.close()
-    clearInterval(poll)
-  }
-}
-
-function dropStatusLog(regDir: string, tabId: string): void {
-  const full = path.join(regDir, `${tabId}.status.jsonl`)
-  statusLogCursors.delete(full)
-  statusLogDraining.delete(full)
-  fs.rm(full, { force: true }, () => {})
-}
-
-async function drainStatusLog(full: string): Promise<void> {
-  if (statusLogDraining.get(full)) return
-  statusLogDraining.set(full, true)
-  try {
-    let again = true
-    while (again) {
-      again = false
-      let size: number
-      try {
-        size = (await fs.promises.stat(full)).size
-      } catch {
-        return
-      }
-      let cur = statusLogCursors.get(full)
-      if (!cur) {
-        cur = { offset: 0, tail: Buffer.alloc(0) }
-        statusLogCursors.set(full, cur)
-      }
-      if (size < cur.offset) {
-        cur.offset = 0
-        cur.tail = Buffer.alloc(0)
-      }
-      if (size <= cur.offset) return
-      const lines = await readAppendedLines(full, size, cur)
-      if (!lines) return
-      for (const line of lines) {
-        if (!line) continue
-        try {
-          handleStatusRegistration(JSON.parse(line))
-        } catch {}
-      }
-      again = true
-    }
-  } finally {
-    statusLogDraining.set(full, false)
-  }
-}
-
-function statusFromEvent(event?: string, message?: string): SessionStatus | null {
-  switch (event) {
-    case 'prompt':
-      return 'working'
-    case 'stop':
-      return 'waiting'
-    case 'notify': {
-      const m = (message || '').toLowerCase()
-      // CC§8
-      if (m.includes('permission') || m.includes('approval')) return 'approval'
-      return 'waiting'
-    }
-    default:
-      return null
-  }
-}
-
-function liveTabFor(report: { tabId?: string; tmux?: string }): string | undefined {
-  if (report.tabId && ptyMgr.get(report.tabId)) return report.tabId
-  if (!report.tmux) return undefined
-  for (const s of tracker.list()) {
-    if (s.alive && tracker.remoteOf(s.tabId)?.tmuxName === report.tmux && ptyMgr.get(s.tabId)) {
-      return s.tabId
-    }
-  }
-  return undefined
-}
-
-function handleStatusRegistration(raw: unknown): void {
-  const obj = raw as HookReport & { tabId?: string; message?: string; bgl?: string; wake?: number }
-  obj.tabId = liveTabFor(obj)
-  if (!obj.tabId) return
-  // CC§5
-  if (!ownsHookReport(obj, sessionIdOf(obj.tabId))) return
-  if (obj.event === 'prompt') consumeOutletDedupe(obj.tabId)
-  // CC§8
-  if (typeof obj.wake === 'number') tracker.setWakeupPending(obj.tabId, obj.wake === 1)
-  const status = statusFromEvent(obj.event, obj.message)
-  // CC§8
-  if (status === 'waiting') void tracker.reportTurnEnd(obj.tabId, parseReportedTasks(obj.bgl))
-  else if (status) tracker.setStatus(obj.tabId, status)
-}
-
-// CC§1
-const SESSION_END_SETTLE_MS = 800
-function untrackIfClaudeGone(tabId: string): void {
-  if (tracker.remoteOf(tabId)) return
-  setTimeout(async () => {
-    const pid = ptyMgr.pidOf(tabId)
-    if (!pid) return
-    if (!tracker.list().some((s) => s.tabId === tabId && s.jsonlPath)) return
-    const alive = await rootsWithClaude([pid])
-    if (!alive) return
-    if (!alive.has(pid)) {
-      attention.clear(tabId)
-      sessionEndSeenAt.delete(tabId)
-      untrackSession(tabId)
-    }
-  }, SESSION_END_SETTLE_MS)
-}
-
-function sessionIdOf(tabId: string): string | undefined {
-  return tracker.list().find((s) => s.tabId === tabId)?.sessionId
-}
-
-function occupantName(s: { title: string; sessionId: string }): string {
-  if (s.title && s.title !== PLACEHOLDER_SESSION_TITLE) return s.title
-  return s.sessionId || 'a launching session'
-}
-
-function occupantOfDir(dir: string): string | null {
-  const target = path.resolve(dir)
-  for (const s of allSessions()) {
-    if (!s.alive || s.remote) continue
-    if (s.treeRoot && path.resolve(s.treeRoot) === target) return occupantName(s)
-    // CC§4
-    const bound = s.sessionId ? workspaceMgr?.findRow(s.sessionId)?.worktreeState : undefined
-    if (bound && path.resolve(bound.worktreePath) === target) return occupantName(s)
-  }
-  for (const tab of ptyMgr.list()) {
-    if (tab.kind === 'codex' && tab.alive && path.resolve(tab.cwd) === target)
-      return 'a starting Codex session'
-  }
-  return null
-}
-
-function untrackSession(tabId: string): void {
-  tracker.untrack(tabId)
-}
-
-function killTabPty(tabId: string): void {
-  if (codexSessions?.hasTab(tabId)) {
-    void codexSessions.stop(tabId).catch((error) => sendToRenderer('cron:toast', String(error)))
-    return
-  }
-  const remote = tracker.remoteOf(tabId)
-  if (remote) {
-    const kill = runSsh(remote.host, killSessionCmd(remote.tmuxName), {
-      controlDir: remoteControlDir
-    }).then(() => {
-      if (remoteKills.get(remote.tmuxName) === kill) remoteKills.delete(remote.tmuxName)
-      remoteSync?.pokeNow(remote.host)
-    })
-    remoteKills.set(remote.tmuxName, kill)
-    const killedId = sessionIdOfTmux(remote.tmuxName)
-    if (killedId) killedRemoteSessions.add(killedId)
-    fs.rmSync(tabPackageDir(app.getPath('userData'), tabId), { recursive: true, force: true })
-  }
-  ptyMgr.kill(tabId)
+function killTabPty(tabId: string): Promise<boolean> {
+  const owner = sessionBackends.ownerOfTab(tabId)
+  const stopped = owner ? Promise.resolve(owner.stop(tabId)) : Promise.resolve(ptyMgr.kill(tabId))
   attention.clear(tabId)
-  sessionEndSeenAt.delete(tabId)
-  untrackSession(tabId)
   relayTabClosed(tabId)
   boundSessions.delete(tabId)
-}
-
-// CC§1
-const EVICTING_END_REASONS = new Set(['prompt_input_exit', 'logout'])
-
-const REMOTE_EXIT_WAIT_MS = 10_000
-const REMOTE_EXIT_POLL_MS = 500
-const REMOTE_EXIT_SLACK_MS = 30_000
-
-async function drainRemoteExit(
-  host: string,
-  mirrorDir: string,
-  tabId: string,
-  sid?: string
-): Promise<void> {
-  // PLATFORM§34
-  const since = Date.now() - REMOTE_EXIT_SLACK_MS
-  const thisExit = (): { name: string; raw: { event?: string; reason?: string } } | undefined => {
-    let names: string[] = []
-    try {
-      names = fs.readdirSync(mirrorDir)
-    } catch {
-      return undefined
+  return stopped.then(
+    () => true,
+    (error) => {
+      sendToRenderer('cron:toast', String(error))
+      return false
     }
-    for (const name of names) {
-      if (!name.endsWith('.json')) continue
-      const full = path.join(mirrorDir, name)
-      try {
-        if (fs.statSync(full).mtimeMs < since) continue
-        const text = fs.readFileSync(full, 'utf8')
-        if (!sid || !text.includes(`"${sid}"`)) continue
-        const raw = JSON.parse(text) as { event?: string; reason?: string }
-        if (raw.event === 'end') return { name, raw }
-      } catch {}
-    }
-    return undefined
-  }
-  remoteSync?.pokeNow(host)
-  const deadline = Date.now() + REMOTE_EXIT_WAIT_MS
-  let hit = thisExit()
-  while (!hit && Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, REMOTE_EXIT_POLL_MS))
-    hit = thisExit()
-  }
-  if (hit && EVICTING_END_REASONS.has(hit.raw.reason ?? '')) {
-    const stillBound = !!sid && tracker.list().some((t) => t.alive && t.sessionId === sid)
-    if (sid && !stillBound) workspaceMgr?.dropOwnership(sid)
-  }
-  for (const name of new Set([`${tabId}.json`, hit?.name ?? ''])) {
-    if (name) fs.rmSync(path.join(mirrorDir, name), { force: true })
-  }
-  dropStatusLog(mirrorDir, tabId)
-}
-
-function drainExitRegistration(regDir: string, tabId: string): void {
-  let raw: { event?: string; reason?: string }
-  try {
-    raw = JSON.parse(fs.readFileSync(path.join(regDir, `${tabId}.json`), 'utf8'))
-  } catch {
-    return
-  }
-  if (raw.event === 'end' && EVICTING_END_REASONS.has(raw.reason ?? '')) {
-    handleHookRegistration(raw)
-  }
-}
-
-function handleHookRegistration(raw: unknown): void {
-  const obj = raw as HookReport & {
-    tabId?: string
-    transcriptPath?: string
-    cwd?: string
-    reason?: string
-    account?: string
-    ccVersion?: string
-  }
-  obj.tabId = liveTabFor(obj)
-  if (!obj.tabId) return
-  // CC§5
-  if (!ownsHookReport(obj, sessionIdOf(obj.tabId))) return
-  if (obj.event === 'end') {
-    if (EVICTING_END_REASONS.has(obj.reason ?? '')) {
-      const sid = sessionIdOf(obj.tabId)
-      attention.clear(obj.tabId)
-      untrackSession(obj.tabId)
-      const stillBound = !!sid && tracker.list().some((s) => s.alive && s.sessionId === sid)
-      if (sid && !stillBound) workspaceMgr?.dropOwnership(sid)
-    } else {
-      // CC§1
-      sessionEndSeenAt.set(obj.tabId, Date.now())
-      untrackIfClaudeGone(obj.tabId)
-    }
-    return
-  }
-  sessionEndSeenAt.delete(obj.tabId)
-  if (obj.cwd) workspaceMgr?.onSessionStart(obj.tabId, obj.cwd)
-  const prevId = sessionIdOf(obj.tabId)
-  tracker.bindSession(
-    obj.tabId,
-    obj.transcriptPath || '',
-    obj.sessionId || '',
-    obj.cwd || '',
-    obj.account || '',
-    obj.ccVersion || '',
-    obj.source || ''
   )
-  ptyMgr.clearResumeIntent(obj.tabId)
-  const nextId = sessionIdOf(obj.tabId)
-  if (prevId && nextId && nextId !== prevId) {
-    if (tracker.remoteOf(obj.tabId)) tracker.setRemoteTmuxName(obj.tabId, tmuxSessionName(nextId))
-    workspaceMgr?.onSessionRebind(prevId, nextId, obj.source || '')
-    if (obj.source === 'clear') {
-      workspaceMgr?.dropOwnership(prevId)
-    }
-  }
-  if (nextId) workspaceMgr?.onSessionBound(nextId)
-  if (nextId) cronRunner?.onBound(obj.tabId, nextId)
-}
-
-function createClaudeTab(
-  cwd: string,
-  resumeSessionId?: string,
-  cols?: number,
-  rows?: number,
-  worktree?: string,
-  extra?: {
-    env?: { KOLOFT_FIRST_PROMPT?: string; KOLOFT_SESSION_NAME?: string }
-    model?: string
-    effort?: CronEffort
-    permission?: CronPermission
-  }
-): CreateTabResult {
-  const base = process.env.KOLOFT_CLAUDE_CMD || 'claude'
-  const args = claudeArgv(base, {
-    resumeSessionId,
-    worktree,
-    model: extra?.model,
-    effort: extra?.effort,
-    permission: extra?.permission
-  })
-  if (!args.ok) return args
-  const launchCommand = `exec ${args.argv.join(' ')}`
-  const handle = ptyMgr.create({
-    kind: 'claude',
-    cwd,
-    cols,
-    rows,
-    setupCommand: setupLine(),
-    launchCommand,
-    resumeSessionId,
-    extraEnv: extra?.env
-  })
-  if (!resumeSessionId || !workspaceMgr?.isMember(resumeSessionId)) {
-    workspaceMgr?.launchStarted(handle.id, cwd, worktree)
-  }
-  writeRelayEnv(ptyTabIds())
-  return { ok: true, id: handle.id, cwd }
-}
-
-function dirExistsSync(p: string): boolean {
-  try {
-    return fs.statSync(p).isDirectory()
-  } catch {
-    return false
-  }
-}
-
-function watchRemoteHookMirrors(): void {
-  const wanted = new Set(
-    (workspaceMgr?.remoteTargets() ?? []).map((t) => mirrorHookDir(app.getPath('userData'), t.host))
-  )
-  for (const [dir, dispose] of watchedHookMirrors) {
-    if (wanted.has(dir)) continue
-    dispose()
-    watchedHookMirrors.delete(dir)
-  }
-  for (const dir of wanted) {
-    if (watchedHookMirrors.has(dir)) continue
-    try {
-      fs.mkdirSync(dir, { recursive: true })
-    } catch {}
-    watchedHookMirrors.set(dir, watchHookRegistrations(dir, true))
-  }
-}
-
-function remoteKeyOfSession(sessionId?: string): RemoteKey | null {
-  if (!sessionId) return null
-  for (const t of tracker.list()) {
-    const remote = tracker.remoteOf(t.tabId)
-    if (remote && t.sessionId === sessionId) return { host: remote.host, path: t.cwd }
-  }
-  const wsPath = workspaceMgr?.workspaceOf(sessionId)
-  return wsPath ? parseRemoteKey(wsPath) : null
-}
-
-const POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE = '/bin/zsh'
-async function createRemoteClaudeTab(
-  key: RemoteKey,
-  opts: { resumeSessionId?: string; cols?: number; rows?: number; worktree?: string }
-): Promise<CreateTabResult> {
-  const pkg = machinePackage()
-  ensureControlDir(remoteControlDir)
-  const settings = loadSettings()
-  const sid = opts.resumeSessionId ?? crypto.randomUUID()
-  const args = claudeArgv('claude', {
-    resumeSessionId: opts.resumeSessionId,
-    sessionId: opts.resumeSessionId ? undefined : sid,
-    worktree: opts.worktree,
-    permission: settings.skipPermissions ? 'skipAll' : undefined
-  })
-  if (!args.ok) return args
-  const claudeArgs = args.argv.slice(1)
-  const tmuxName = tmuxSessionName(sid)
-  const mode = launchMode({
-    alive: remoteSync?.alive(key.host) ?? new Set(),
-    killed: killedRemoteSessions,
-    sessionId: sid
-  })
-  killedRemoteSessions.delete(sid)
-  // CC§2
-  const root = workspaceMgr?.realRemotePath(key) ?? key.path
-  const cwd = (opts.resumeSessionId && workspaceMgr?.findRow(sid)?.cwd) || root
-  const wsKey = parseRemoteKey(workspaceMgr?.workspaceOf(sid) ?? '')
-  const wsRoot = wsKey ? (workspaceMgr?.realRemotePath(wsKey) ?? wsKey.path) : root
-
-  let env: Record<string, string> | undefined
-  let picked: string | undefined
-  let banner = "[Koloft] using this machine's own claude login"
-  if (mode === 'start' && settings.multiAccount) {
-    const { res, endpoint } = await pickForLaunch()
-    if (res.account) {
-      const secret = await keychainRead(res.kind, res.account)
-      if (secret) {
-        env = accountEnv(res.kind, res.account, secret, endpoint)
-        picked = res.account
-        banner = res.warning ? `${res.banner}\n${res.warning}` : res.banner
-      }
-    }
-  }
-
-  const remoteStatusLine: StatusLineSetting | undefined = settings.statuslineBuiltin
-    ? {
-        type: 'command',
-        command: dq(`${remoteMachineDir(pkg.name)}/statusline/run.sh`),
-        padding: 0
-      }
-    : undefined
-  const userData = app.getPath('userData')
-  await remoteKills.get(tmuxName)
-  const handle = ptyMgr.create({
-    kind: 'claude',
-    cwd: os.homedir(),
-    cols: opts.cols,
-    rows: opts.rows,
-    setupCommand: setupLine(),
-    launchCommand: (tabId) => {
-      const mirror = mirrorHookDir(userData, key.host)
-      fs.rmSync(path.join(mirror, `${tabId}.json`), { force: true })
-      dropStatusLog(mirror, tabId)
-      const tabDir = tabPackageDir(userData, tabId)
-      writeTabPackage(tabDir, {
-        tabId,
-        tmuxName,
-        machineName: pkg.name,
-        cwd,
-        fallbackCwd: wsRoot !== cwd ? wsRoot : undefined,
-        banner,
-        env,
-        settings: hookSettings(
-          `${remoteMachineDir(pkg.name)}/hook.sh`,
-          REMOTE_HOOK_DIR,
-          tabId,
-          remoteStatusLine,
-          dq
-        ),
-        claudeArgs
-      })
-      return launchLine({
-        host: key.host,
-        sshOptions: sshOptions(remoteControlDir, false),
-        machine: pkg,
-        tabDir,
-        tabId,
-        mode
-      })
-    },
-    resumeSessionId: opts.resumeSessionId,
-    shell: POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE
-  })
-
-  tracker.track(handle.id, cwd, {
-    host: key.host,
-    projectsRoot: mirrorProjectsRoot(userData, key.host),
-    tmuxName
-  })
-  if (picked) tracker.setPickedAccount(handle.id, picked)
-  if (mode === 'attach') {
-    tracker.bindSession(handle.id, '', sid, cwd)
-    workspaceMgr?.onSessionBound(sid)
-  } else if (!opts.resumeSessionId) {
-    workspaceMgr?.launchStarted(handle.id, root, opts.worktree, key.host)
-  }
-  writeRelayEnv(ptyTabIds())
-  remoteSync?.pokeNow(key.host)
-  return { ok: true, id: handle.id, cwd: formatRemoteKey(key.host, key.path) }
 }
 
 function worktreeHomeOf(root: string): string {
-  return path.join(root, '.claude', 'worktrees')
+  return `${root}/.claude/worktrees`
 }
 
-function gitDirExistsSync(root: string): boolean {
-  return dirExistsSync(path.join(root, '.git'))
+async function countRunFolders(root: string, slug: string): Promise<number> {
+  const entries = await hosts.of(root).listDir(worktreeHomeOf(root), { showIgnored: true })
+  return entries.filter((e) => e.isDir && e.name.startsWith(`${slug}-`)).length
 }
 
-function countRunFoldersSync(root: string, slug: string): number {
+async function launchCronRun(
+  req: LaunchRequest
+): Promise<{ ok: true; tabId: string } | { ok: false }> {
   try {
-    return fs
-      .readdirSync(worktreeHomeOf(root), { withFileTypes: true })
-      .filter((e) => e.isDirectory() && e.name.startsWith(`${slug}-`)).length
-  } catch {
-    return 0
-  }
-}
-
-function accountUsable(): boolean {
-  if (!loadSettings().multiAccount) return true
-  return listAccounts().some((a) => a.enabled && a.status === 'ok')
-}
-
-function claudeJsonPath(): string {
-  return path.join(os.homedir(), '.claude.json')
-}
-
-function claudeTrusts(dir: string): boolean {
-  return claudeTrustsFolder(claudeJsonPath(), dir)
-}
-
-// ADR-0026
-function trustBeforeWorktreeLaunch(root: string): void {
-  try {
-    acceptClaudeTrust(claudeJsonPath(), root)
-  } catch (err) {
-    console.error('[koloft] could not record Claude trust for', root, err)
-  }
-}
-
-// ADR-0026
-function launchCronRun(req: LaunchRequest): { ok: true; tabId: string } | { ok: false } {
-  try {
-    const r = createClaudeTab(req.cwd, undefined, undefined, undefined, req.worktree, {
-      env: req.env,
+    const r = await sessionBackends.create({
+      kind: req.backend,
+      cwd: req.cwd,
+      worktree: req.worktree,
       model: req.model,
       effort: req.effort,
-      permission: req.permission
+      permission: req.permission,
+      firstPrompt: req.firstPrompt,
+      name: req.name,
+      scheduled: true
     })
     if (!r.ok) return { ok: false }
     const spawned: SpawnedTab = {
       id: r.id,
-      kind: 'claude',
+      kind: req.backend,
       cwd: r.cwd,
-      title: req.env.KOLOFT_SESSION_NAME,
+      title: req.name,
       jobId: req.jobId
     }
     sendToRenderer('terminal:spawned', spawned)
@@ -2772,63 +2197,10 @@ function cronBindDeadlineMs(): number {
   )
 }
 
-const GIT_CALL_TIMEOUT_MS = 5000
-function gitOut(cwd: string, args: string[]): Promise<string | null> {
-  return new Promise((resolve) => {
-    execFile('git', ['-C', cwd, ...args], { timeout: GIT_CALL_TIMEOUT_MS }, (err, stdout) =>
-      resolve(err ? null : stdout)
-    )
-  })
-}
-
-const GIT_REF_RE = /^[A-Za-z0-9._][A-Za-z0-9._/-]{0,120}$/
-
 const resumeProbes: ResumeProbes = {
   dirExists: dirExistsSync,
-  branchAt: async (dir) => (await gitOut(dir, ['symbolic-ref', '--short', 'HEAD']))?.trim() || null,
-  dirtyAt: async (dir) => {
-    const out = await gitOut(dir, ['status', '--porcelain'])
-    return out === null ? null : out.trim() !== ''
-  },
-  occupantOf: occupantOfDir,
-  branchExists: async (repoDir, branch) =>
-    (await gitOut(repoDir, ['rev-parse', '--verify', 'refs/heads/' + branch])) !== null,
-  headAt: async (repoDir) => (await gitOut(repoDir, ['rev-parse', 'HEAD']))?.trim() || null
-}
-
-async function resumePlanFor(sessionId: string): Promise<ResumePlan> {
-  if (!isCodexSession(sessionId) && (await runningClaudePid(sessionId))) {
-    return { action: 'unavailable', reason: 'running' }
-  }
-  const row = isCodexSession(sessionId)
-    ? codexSessions?.findRow(sessionId)
-    : workspaceMgr?.findRow(sessionId)
-  if (isCodexSession(sessionId) && row && !row.worktreeState && !dirExistsSync(row.cwd)) {
-    return { action: 'unavailable', reason: 'no-cwd' }
-  }
-  return planResume(
-    row,
-    resumeProbes,
-    isCodexSession(sessionId)
-      ? row?.worktreeState?.worktreePath
-      : workspaceMgr?.bucketDirOf(sessionId)
-  )
-}
-
-async function rebuildWorktree(spec: {
-  worktreePath: string
-  branch: string
-  baseRef: string
-}): Promise<boolean> {
-  const root = worktreeHomeRoot(spec.worktreePath)
-  if (!root) return false
-  const branchLives =
-    (await gitOut(root, ['rev-parse', '--verify', 'refs/heads/' + spec.branch])) !== null
-  // PLATFORM§30
-  const args = branchLives
-    ? ['worktree', 'add', spec.worktreePath, spec.branch]
-    : ['worktree', 'add', '-b', spec.branch, spec.worktreePath, spec.baseRef]
-  return (await gitOut(root, args)) !== null
+  occupantOf: (dir) => sessionBackends.occupantOf(dir),
+  ...gitProbes(localGitOut)
 }
 
 function commitSettings(patch: Partial<Settings>): Settings {
@@ -2841,79 +2213,7 @@ function commitSettings(patch: Partial<Settings>): Settings {
   return s
 }
 
-async function createClaudeSession(opts: CreateTabOptions): Promise<CreateTabResult> {
-  const key =
-    (typeof opts.cwd === 'string' ? parseRemoteKey(opts.cwd) : null) ??
-    remoteKeyOfSession(opts.resumeSessionId)
-  if (key) {
-    return createRemoteClaudeTab(key, {
-      resumeSessionId: opts.resumeSessionId,
-      cols: opts.cols,
-      rows: opts.rows,
-      worktree: opts.worktree
-    })
-  }
-  const cwd = resolveSpawnCwd(opts.cwd)
-  // ADR-0026
-  if (opts.worktree && cwd === opts.cwd) trustBeforeWorktreeLaunch(cwd)
-  return createClaudeTab(cwd, opts.resumeSessionId, opts.cols, opts.rows, opts.worktree)
-}
-
-async function resumeClaudeSession(req: SessionResumeRequest): Promise<SessionResumeResult> {
-  const sid = req?.sessionId
-  const cwd = req?.cwd
-  if (
-    typeof sid !== 'string' ||
-    !/^[a-zA-Z0-9-]+$/.test(sid) ||
-    typeof cwd !== 'string' ||
-    !path.isAbsolute(cwd)
-  ) {
-    return { ok: false, code: 'invalid-args' }
-  }
-  const remoteKey = remoteKeyOfSession(sid)
-  if (remoteKey) {
-    const r = await createRemoteClaudeTab(remoteKey, {
-      resumeSessionId: sid,
-      cols: req.cols,
-      rows: req.rows
-    })
-    return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
-  }
-  const mode = req.mode ?? 'direct'
-  let worktree: string | undefined
-  if (mode === 'renamed') {
-    if (typeof req.worktree !== 'string' || !isValidWorktreeName(req.worktree)) {
-      return { ok: false, code: 'invalid-args' }
-    }
-    worktree = req.worktree
-  }
-  if (mode === 'rebuild') {
-    const plan = await resumePlanFor(sid)
-    if (plan.action === 'direct') {
-      const r = createClaudeTab(plan.cwd, sid, req.cols, req.rows)
-      return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
-    }
-    if (
-      plan.action !== 'rebuild' ||
-      !GIT_REF_RE.test(plan.branch) ||
-      !GIT_REF_RE.test(plan.baseRef)
-    ) {
-      return { ok: false, code: 'rebuild-failed' }
-    }
-    if (!(await rebuildWorktree(plan))) return { ok: false, code: 'rebuild-failed' }
-  }
-  let spawnCwd = cwd
-  if (mode === 'main' && !dirExistsSync(spawnCwd)) {
-    const wt = workspaceMgr?.findRow(sid)?.worktreeState?.worktreePath
-    const root = wt ? worktreeHomeRoot(wt) : null
-    if (root && dirExistsSync(root)) spawnCwd = root
-  }
-  if (!dirExistsSync(spawnCwd)) return { ok: false, code: 'cwd-missing' }
-  const r = createClaudeTab(spawnCwd, sid, req.cols, req.rows, worktree)
-  return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
-}
-
-const githubLookup = new GithubLookup({
+const githubOptions: GithubOptions = {
   fixture: parseGithubFixture(process.env.KOLOFT_GITHUB_FIXTURE),
   signedIn: async () => {
     try {
@@ -2928,7 +2228,56 @@ const githubLookup = new GithubLookup({
       return false
     }
   }
+}
+
+const hosts = new Hosts(
+  localHost(new GithubLookup(githubOptions)),
+  (machine) =>
+    new SshHost(machine, {
+      run: (cmd, opts) => runSshBytes(machine, cmd, { controlDir: remoteControlDir, ...opts }),
+      shell: (dir) => {
+        ensureControlDir(remoteControlDir)
+        return {
+          spawnCwd: os.homedir(),
+          shell: POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
+          launchCommand: (tabId) =>
+            utilShellLine({
+              host: machine,
+              sshOptions: sshOptions(remoteControlDir, false),
+              machine: machinePackage(),
+              tabId,
+              dir
+            })
+        }
+      },
+      github: githubOptions,
+      claude: {
+        userData: app.getPath('userData'),
+        controlDir: remoteControlDir,
+        machinePackage,
+        alive: () => remoteSync?.alive(machine) ?? new Set(),
+        realPath: (p) => workspaceMgr?.realRemotePath({ host: machine, path: p }) ?? p,
+        settings: loadSettings,
+        pickAccount: () => pickMachineAccount(pickForLaunch),
+        hookSettings: (tabId, dir) =>
+          machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin)
+      }
+    })
+)
+
+const claudeBackend = new ClaudeBackend({
+  pty: ptyMgr,
+  tracker,
+  hosts,
+  workspaces: () => workspaceMgr,
+  remoteSync: () => remoteSync,
+  userData: () => app.getPath('userData'),
+  setupLine,
+  ptysChanged: () => writeRelayEnv(ptyTabIds()),
+  resumeProbes,
+  events: (tabId, event) => sessionBackends.observe(tabId, event)
 })
+sessionBackends.register(claudeBackend)
 
 // ADR-0007
 function shrinkAdoptedClaudePtysOneRowSoFitRepaints(tabs: TabInventoryReply['tabs']): void {
@@ -2951,18 +2300,21 @@ function registerIpc(): void {
         throw new Error('This session method is disabled in Settings ▸ Sessions.')
       }
       if (opts.kind !== 'shell') return sessionBackends.create(opts)
-      const cwd = resolveSpawnCwd(opts.cwd)
+      const requested = typeof opts.cwd === 'string' ? opts.cwd : ''
+      const launch = hosts.of(requested).shell(requested)
       const handle = ptyMgr.create({
         kind: 'shell',
-        cwd,
+        cwd: launch.spawnCwd,
         cols: opts.cols,
         rows: opts.rows,
         setupCommand: setupLine(),
+        launchCommand: launch.launchCommand,
+        shell: launch.shell,
         util: opts.util === true,
         ownerTabId: typeof opts.ownerTabId === 'string' ? opts.ownerTabId : undefined
       })
       writeRelayEnv(ptyTabIds())
-      return { ok: true, id: handle.id, cwd }
+      return { ok: true, id: handle.id, cwd: launch.cwd }
     }
   )
 
@@ -2992,17 +2344,16 @@ function registerIpc(): void {
   ipcMain.on('terminal:resize', (_e, id: string, cols: number, rows: number) =>
     ptyMgr.resize(id, cols, rows)
   )
-  ipcMain.on('terminal:kill', (_e, id: string) => killTabPty(id))
+  ipcMain.on('terminal:kill', (_e, id: string) => void killTabPty(id))
 
   ipcMain.handle('sessions:list', () => allSessions())
-  ipcMain.handle('sessions:backends', async () => [
-    { id: 'claude', available: true },
-    (await codexSessions?.availability()) ?? {
-      id: 'codex',
+  ipcMain.handle('sessions:backends', () =>
+    sessionBackends.availability((id) => ({
+      id,
       available: false,
-      reason: codexStartupError ?? 'Codex is not ready.'
-    }
-  ])
+      reason: codexStartupError ?? `${BACKEND_LABEL[id]} is not ready.`
+    }))
+  )
   ipcMain.handle('attention:list', () => attention.list())
   ipcMain.handle('tabs:list', (): TabInventoryReply => {
     rendererReady = true
@@ -3067,9 +2418,9 @@ function registerIpc(): void {
   ipcMain.handle('cron:skills', (_e, workspacePath: string) =>
     listSkills(skillFs, workspacePath, os.homedir())
   )
-  ipcMain.handle('cron:trusted', (_e, workspacePath: string) => claudeTrusts(workspacePath))
-
-  ipcMain.handle('claude:probe', () => probeClaude())
+  ipcMain.handle('cron:trusted', (_e, workspacePath: string, backend: BackendId) =>
+    sessionBackends.get(backend).trustsFolder(workspacePath)
+  )
 
   ipcMain.handle('update:check', () => checkForUpdates())
   ipcMain.handle('update:download', () =>
@@ -3101,7 +2452,8 @@ function registerIpc(): void {
     ) => addAccount(name, kind, secret, endpoint)
   )
   ipcMain.handle('accounts:remove', async (_e, name: string, kind: AccountKind) => {
-    await keychainDelete(kind, name)
+    // CODEX§15
+    if (kind !== 'codex-home') await keychainDelete(kind, name)
     removeAccountMeta(name, kind)
     usageViews.delete(viewKey(name, kind))
     picker.forget(kind, name)
@@ -3123,6 +2475,9 @@ function registerIpc(): void {
     startGuidedLogin(name)
     return 'ok'
   })
+  ipcMain.handle('accounts:codex-sign-in', (_e, name: string, again?: boolean) =>
+    codexSignIn(name, again === true)
+  )
   ipcMain.on('accounts:cancel-login', () => {
     for (const id of [...loginWatchers.keys()]) cancelGuidedLogin(id)
   })
@@ -3157,7 +2512,7 @@ function registerIpc(): void {
   ipcMain.handle('workspace:discover', () => workspaceMgr?.discover() ?? [])
   ipcMain.handle('workspace:worktrees', async (_e, p: string) => {
     const trees = (await workspaceMgr?.worktrees(p)) ?? []
-    if (!parseRemoteKey(p)) {
+    if (SUPPORTED_PAIRS.codex[hostOf(p)]) {
       for (const resource of codexSessions?.store.listResources() ?? []) {
         if (
           resource.originalCwd !== p ||
@@ -3184,11 +2539,10 @@ function registerIpc(): void {
       freshness?.pull(p, expect) ?? { ok: false, reason: 'state changed' }
   )
   ipcMain.handle('workbench:get', (_e, sessionId: string) =>
-    isCodexSession(sessionId) ? { open: false, tabs: [] } : workspaceMgr?.workbenchState(sessionId)
+    workspaceMgr?.workbenchState(sessionId)
   )
   ipcMain.on('workbench:setState', (_e, sessionId: string, state: SessionWorkbenchState) => {
     if (typeof sessionId !== 'string' || !sessionId) return
-    if (isCodexSession(sessionId)) return
     if (!state || typeof state !== 'object' || !Array.isArray(state.tabs)) return
     if (!workspaceMgr) return
     workspaceMgr.setWorkbenchState(
@@ -3217,11 +2571,9 @@ function registerIpc(): void {
 
   ipcMain.handle('sessions:forceClose', async (_e, id: unknown): Promise<{ ok: boolean }> => {
     if (typeof id !== 'string' || !id) return { ok: false }
-    const tabId = isCodexSession(id) ? codexSessions?.aliveTabFor(id) : tracker.aliveTabFor(id)
+    const tabId = sessionBackends.forSession(id).aliveTabFor(id)
     if (!tabId) return { ok: false }
-    if (isCodexSession(id)) await codexSessions?.stop(tabId)
-    else killTabPty(tabId)
-    return { ok: true }
+    return { ok: await killTabPty(tabId) }
   })
 
   // CC§2
@@ -3230,23 +2582,14 @@ function registerIpc(): void {
     return sessionBackends.forSession(id).transcriptExists(id)
   })
 
-  ipcMain.handle('workspace:historyRows', async (_e, p: string) => {
-    const legacy = (workspaceMgr?.historyRows(p) ?? []).filter((r) => !isCodexSession(r.id))
-    try {
-      const codex =
-        parseRemoteKey(p) || !(await codexSessions?.availability())?.available
-          ? []
-          : ((await codexSessions?.historyRows(p)) ?? [])
-      return [...legacy, ...codex].sort((a, b) => b.mtime - a.mtime)
-    } catch (error) {
-      if (!legacy.length) throw error
+  ipcMain.handle('workspace:historyRows', (_e, p: string) =>
+    sessionBackends.historyRows(p, (id, error) =>
       sendToRenderer(
         'cron:toast',
-        `Codex history could not be read. Showing Claude history. ${String(error)}`
+        `${BACKEND_LABEL[id]} history could not be read. Showing the rest. ${String(error)}`
       )
-      return legacy
-    }
-  })
+    )
+  )
 
   ipcMain.handle('sessions:leftovers', () => leftovers)
   ipcMain.handle('sessions:stopLeftover', async (_e, sessionId: unknown, pid: unknown) => {
@@ -3260,9 +2603,7 @@ function registerIpc(): void {
     if (typeof id !== 'string' || !id) {
       return Promise.resolve({ action: 'unavailable', reason: 'not-found' })
     }
-    const row = remoteKeyOfSession(id) ? workspaceMgr?.findRow(id) : undefined
-    if (row) return Promise.resolve({ action: 'direct', cwd: row.cwd })
-    return resumePlanFor(id)
+    return sessionBackends.forSession(id).resumePlan(id)
   })
 
   ipcMain.handle('sessions:resume', (_e, req: SessionResumeRequest) => {
@@ -3456,90 +2797,81 @@ function registerIpc(): void {
 
   ipcMain.handle('preview:readText', async (_e, p: string): Promise<string> => {
     if (typeof p !== 'string' || !p) throw new Error('KOLOFT_READ_FAILED')
-    const st = await fs.promises.stat(p).catch(() => {
-      throw new Error('KOLOFT_READ_FAILED')
-    })
-    if (!st.isFile()) throw new Error('KOLOFT_NOT_FILE')
-    if (st.size > MAX_READ_BYTES) throw new Error('KOLOFT_TOO_LARGE')
-    const buf = await fs.promises.readFile(p).catch(() => {
-      throw new Error('KOLOFT_READ_FAILED')
-    })
-    if (looksBinary(buf)) throw new Error('KOLOFT_BINARY')
-    return buf.toString('utf8')
+    return hosts.of(p).readText(p)
   })
   ipcMain.handle('fs:listDir', (_e, p: string, opts?: { showIgnored?: boolean }) =>
-    listDir(p, opts)
+    hosts.of(p).listDir(p, opts)
   )
   ipcMain.handle('fs:dirExists', (_e, p: string) =>
-    typeof p === 'string' && p ? dirExists(p) : false
+    typeof p === 'string' && p ? hosts.of(p).dirExists(p) : false
   )
   ipcMain.handle('fs:search', (_e, p: string, q: string, opts?: { showIgnored?: boolean }) =>
-    search(p, q, opts)
+    hosts.of(p).search(p, q, opts)
   )
   const baseArg = sanitizeBase
   const untrackedArg = (u: unknown): boolean => u === true
   ipcMain.handle('fs:diffBase', (_e, root: string) =>
-    typeof root === 'string' && root ? diffBase(root) : null
+    typeof root === 'string' && root ? hosts.of(root).diffBase(root) : null
   )
   ipcMain.handle('fs:gitStatus', (_e, root: string, base?: unknown) =>
-    typeof root === 'string' && root ? gitStatus(root, baseArg(base)) : {}
+    typeof root === 'string' && root ? hosts.of(root).gitStatus(root, baseArg(base)) : {}
   )
   ipcMain.handle('fs:gitNumstat', (_e, root: string, base?: unknown) =>
-    typeof root === 'string' && root ? gitNumstat(root, baseArg(base)) : {}
+    typeof root === 'string' && root ? hosts.of(root).gitNumstat(root, baseArg(base)) : {}
   )
   ipcMain.handle('fs:gitDiff', (_e, root: string, base?: unknown) =>
     typeof root === 'string' && root
-      ? gitDiff(root, baseArg(base))
+      ? hosts.of(root).gitDiff(root, baseArg(base))
       : { text: '', truncated: false, notRepo: true, toplevel: null }
   )
   ipcMain.handle('fs:gitFileDiff', (_e, p: string, base?: unknown, untracked?: unknown) =>
     typeof p === 'string' && p
-      ? gitFileDiff(p, baseArg(base), untrackedArg(untracked))
+      ? hosts.of(p).gitFileDiff(p, baseArg(base), untrackedArg(untracked))
       : { text: '', truncated: false }
   )
   ipcMain.handle('fs:gitFileDiffFull', (_e, p: string, base?: unknown, untracked?: unknown) =>
     typeof p === 'string' && p
-      ? gitFileDiffFull(p, baseArg(base), untrackedArg(untracked))
+      ? hosts.of(p).gitFileDiffFull(p, baseArg(base), untrackedArg(untracked))
       : { text: '', truncated: false }
   )
   ipcMain.handle(
     'fs:searchContent',
     (_e, root: string, q: string, opts?: { showIgnored?: boolean }) =>
       typeof root === 'string' && root
-        ? searchContent(root, q, opts)
+        ? hosts.of(root).searchContent(root, q, opts)
         : { hits: [], truncated: false }
   )
   ipcMain.handle('fs:watchDir', (_e, root: string) =>
     typeof root === 'string' && root
-      ? watchDir(root, (r) => sendToRenderer('fs:dir-changed', r))
+      ? hosts.of(root).watchDir(root, (r) => sendToRenderer('fs:dir-changed', r))
       : false
   )
   ipcMain.on('fs:unwatchDir', (_e, root: string) => {
-    if (typeof root === 'string' && root) unwatchDir(root)
+    if (typeof root === 'string' && root) hosts.of(root).unwatchDir(root)
   })
   ipcMain.on('fs:watchFile', (_e, p: string) => {
     if (typeof p === 'string' && path.isAbsolute(p))
-      watchPreviewFile(p, (fp, st) =>
-        sendToRenderer('fs:file-changed', fp, { mtimeMs: st.mtimeMs, size: st.size })
-      )
+      hosts.of(p).watchFile(p, (fp, st) => sendToRenderer('fs:file-changed', fp, st))
   })
   ipcMain.on('fs:unwatchFile', (_e, p: string) => {
-    if (typeof p === 'string' && p) unwatchPreviewFile(p)
+    if (typeof p === 'string' && p) hosts.of(p).unwatchFile(p)
   })
   ipcMain.on('fs:reveal', (_e, p: string) => {
-    if (typeof p === 'string' && p) void leaveForOS(p, 'reveal')
+    if (typeof p === 'string' && p) hosts.of(p).reveal(p)
   })
-  ipcMain.handle('edit:open', (_e, p: unknown) => openForEdit(p as string))
+  ipcMain.handle('edit:open', (_e, p: unknown) => hosts.of(p as string).openForEdit(p as string))
   ipcMain.handle('edit:write', (_e, p: unknown, text: unknown, expect: unknown, opts: unknown) =>
-    writeTextForEdit(
-      p as string,
-      text as string,
-      expect,
-      (opts ?? undefined) as { force?: unknown; eol?: unknown } | undefined
-    )
+    hosts
+      .of(p as string)
+      .writeText(
+        p as string,
+        text as string,
+        expect,
+        (opts ?? undefined) as { force?: unknown; eol?: unknown } | undefined
+      )
   )
   ipcMain.handle('edit:create', (_e, dirPath: unknown, name: unknown) =>
-    createFileForEdit(dirPath as string, name as string)
+    hosts.of(dirPath as string).createFile(dirPath as string, name as string)
   )
   ipcMain.handle('notes:path', (_e, ws: unknown) => {
     if (typeof ws !== 'string' || !ws) return null
@@ -3549,7 +2881,7 @@ function registerIpc(): void {
   })
   ipcMain.handle('github:info', async (_e, root: unknown, force: unknown) => {
     if (typeof root !== 'string' || !root) return null
-    const { now, settled } = await githubLookup.info(root, { force: force === true })
+    const { now, settled } = await hosts.of(root).github.info(root, { force: force === true })
     if (settled)
       void settled.then(
         (info) => sendToRenderer('github:info', root, info),
@@ -3560,7 +2892,7 @@ function registerIpc(): void {
   ipcMain.handle('github:target', (_e, root: unknown, what: unknown) => {
     if (typeof root !== 'string' || !root) return null
     if (what !== 'repo' && what !== 'pulls' && what !== 'pr') return null
-    return githubLookup.target(root, what)
+    return hosts.of(root).github.target(root, what)
   })
   ipcMain.handle('preview:openFileDialog', async () => {
     const stub = process.env.KOLOFT_FILE_DIALOG_FILE
@@ -3581,7 +2913,7 @@ function registerIpc(): void {
   })
 
   ipcMain.on('preview:os-open', (_e, p: string) => {
-    if (typeof p === 'string' && p) osOpenFallback(p)
+    if (typeof p === 'string' && p) hosts.of(p).osOpen(p)
   })
 
   ipcMain.on('app:home', (e) => {

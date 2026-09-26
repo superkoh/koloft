@@ -1,12 +1,8 @@
-import { SESSION_CAPABILITIES } from '@shared/sessionBackend'
-import { isRemoteKey } from '@shared/remoteKey'
+import { capabilitiesFor } from '@shared/sessionBackend'
+import { hostOf } from '@shared/remoteKey'
 import type { BackendId, TabKind } from '@shared/types'
 
 export type SessionBackend = BackendId
-
-export function backendLabel(backend?: SessionBackend): string {
-  return backend === 'codex' ? 'Codex' : 'Claude'
-}
 
 export function isSessionKind(kind?: TabKind | string): kind is BackendId {
   return kind === 'claude' || kind === 'codex'
@@ -25,8 +21,7 @@ export function launchErrorMessage(e: unknown): string {
 export function hasWorkbench(tab?: { kind: TabKind; cwd: string }): boolean {
   return (
     !!tab &&
-    tab.kind !== 'shell' &&
-    SESSION_CAPABILITIES[tab.kind].workbench &&
-    !isRemoteKey(tab.cwd)
+    isSessionKind(tab.kind) &&
+    capabilitiesFor(tab.kind, hostOf(tab.cwd)).workbench === true
   )
 }

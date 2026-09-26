@@ -1,5 +1,12 @@
-import type { LayoutV3, LayoutV4, PersistedTab, SessionWorkbenchState } from '@shared/types'
+import type {
+  LayoutV3,
+  LayoutV4,
+  LayoutV5,
+  PersistedTab,
+  SessionWorkbenchState
+} from '@shared/types'
 import { DEFAULT_PANEL_OPEN, sanitizeSessionWorkbench } from '@shared/workbenchState'
+import { identityOf } from '@shared/sessionBackend'
 
 export interface MigrateDeps {
   dirExists(p: string): boolean
@@ -30,7 +37,7 @@ function isLayoutV2(raw: unknown): boolean {
   )
 }
 
-export function serializeLayout(layout: LayoutV4): string {
+export function serializeLayout(layout: LayoutV5): string {
   return JSON.stringify(layout, null, 2)
 }
 
@@ -56,6 +63,16 @@ function readDefaultOpen(doc: Record<string, unknown>, fallback: boolean): boole
   return isRecord(wb) && typeof wb.defaultOpen === 'boolean' ? wb.defaultOpen : fallback
 }
 
+function readPanelLayout(raw: unknown, defaultOpenFallback: boolean): Omit<LayoutV4, 'version'> {
+  const doc = raw as Record<string, unknown>
+  const defaultOpen = readDefaultOpen(doc, defaultOpenFallback)
+  return {
+    workspaces: keepWorkspaces(doc.workspaces),
+    workbench: { defaultOpen },
+    sessions: readSessions(doc, defaultOpen)
+  }
+}
+
 function sessionV2toV3(entry: unknown): SessionWorkbenchState {
   if (!isRecord(entry)) return { open: false, tabs: [] }
   const browser = entry.browser
@@ -69,16 +86,7 @@ function sessionV2toV3(entry: unknown): SessionWorkbenchState {
 }
 
 function toV3(raw: unknown, deps: MigrateDeps): LayoutV3 {
-  if (isPanelLayout(raw, 3)) {
-    const doc = raw as Record<string, unknown>
-    const defaultOpen = readDefaultOpen(doc, true)
-    return {
-      version: 3,
-      workspaces: keepWorkspaces(doc.workspaces),
-      workbench: { defaultOpen },
-      sessions: readSessions(doc, defaultOpen)
-    }
-  }
+  if (isPanelLayout(raw, 3)) return { version: 3, ...readPanelLayout(raw, true) }
 
   if (isLayoutV2(raw)) {
     const doc = raw as Record<string, unknown>
@@ -130,16 +138,29 @@ function startCollapsed(v3: LayoutV3): LayoutV4 {
   }
 }
 
-export function migrateLayout(raw: unknown, deps: MigrateDeps): LayoutV4 {
-  if (isPanelLayout(raw, 4)) {
-    const doc = raw as Record<string, unknown>
-    const defaultOpen = readDefaultOpen(doc, DEFAULT_PANEL_OPEN)
+function toV4(raw: unknown, deps: MigrateDeps): LayoutV4 {
+  if (isPanelLayout(raw, 4)) return { version: 4, ...readPanelLayout(raw, DEFAULT_PANEL_OPEN) }
+  return startCollapsed(toV3(raw, deps))
+}
+
+function claudeKeysBecomeMembers(v4: LayoutV4): LayoutV5 {
+  return {
+    ...v4,
+    version: 5,
+    members: Object.keys(v4.sessions).filter((id) => identityOf(id).backendId === 'claude')
+  }
+}
+
+export function migrateLayout(raw: unknown, deps: MigrateDeps): LayoutV5 {
+  if (isPanelLayout(raw, 5)) {
+    const members = (raw as Record<string, unknown>).members
     return {
-      version: 4,
-      workspaces: keepWorkspaces(doc.workspaces),
-      workbench: { defaultOpen },
-      sessions: readSessions(doc, defaultOpen)
+      version: 5,
+      ...readPanelLayout(raw, DEFAULT_PANEL_OPEN),
+      members: Array.isArray(members)
+        ? members.filter((id): id is string => typeof id === 'string' && id.length > 0)
+        : []
     }
   }
-  return startCollapsed(toV3(raw, deps))
+  return claudeKeysBecomeMembers(toV4(raw, deps))
 }

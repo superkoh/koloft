@@ -39,6 +39,8 @@ export interface MachinePackage {
   name: string
 }
 
+export const UTIL_BIN_DIR = 'util-bin/'
+
 export function buildMachinePackage(
   base: string,
   files: Record<string, string | Buffer>
@@ -57,7 +59,8 @@ export function buildMachinePackage(
     for (const [rel, content] of Object.entries(files)) {
       const full = path.join(dir, rel)
       fs.mkdirSync(path.dirname(full), { recursive: true })
-      fs.writeFileSync(full, content, { mode: rel.endsWith('.sh') ? 0o755 : 0o644 })
+      const executable = rel.endsWith('.sh') || rel.startsWith(UTIL_BIN_DIR)
+      fs.writeFileSync(full, content, { mode: executable ? 0o755 : 0o644 })
     }
     fs.writeFileSync(path.join(dir, '.complete'), '')
   }
@@ -86,9 +89,9 @@ export interface TabSpec {
   claudeArgs: string[]
 }
 
+export const POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE = '/bin/zsh'
+
 export function tabScript(spec: TabSpec): string {
-  for (const a of spec.claudeArgs)
-    if (!NEEDS_NO_QUOTING_RE.test(a)) throw new Error(`unsafe claude arg: ${a}`)
   if (
     !NEEDS_NO_QUOTING_RE.test(spec.tabId) ||
     !NEEDS_NO_QUOTING_RE.test(spec.tmuxName) ||
@@ -99,15 +102,16 @@ export function tabScript(spec: TabSpec): string {
   const T = `$HOME/.koloft/tabs/${spec.tabId}`
   const H = `$HOME/.koloft/hook-sessions/${spec.tabId}`
   // PLATFORM§35
-  const cmd =
-    `KOLOFT_TMUX_FOLLOW=1; export KOLOFT_TMUX_FOLLOW; ` +
-    `unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN; ` +
-    `E="${T}.env"; [ -f "$E" ] && { set -a; . "$E"; set +a; rm -f "$E"; }; ` +
-    `exec claude --settings "${T}.json" ${spec.claudeArgs.join(' ')}`
   return `#!/bin/sh
 M="$HOME/.koloft/${spec.machineName}"
 ${REMOTE_PATH_LINE}
 [ "$1" = attach ] && exec tmux -L koloft attach -d -t '${spec.tmuxName}'
+if [ "$1" = run ]; then
+  KOLOFT_TMUX_FOLLOW=1; export KOLOFT_TMUX_FOLLOW
+  unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN
+  E="${T}.env"; [ -f "$E" ] && { set -a; . "$E"; set +a; rm -f "$E"; }
+  exec claude --settings "${T}.json" ${spec.claudeArgs.map(shq).join(' ')}
+fi
 sh "$M/ensure.sh" || exit $?
 cd ${shq(spec.cwd)}${spec.fallbackCwd ? ` || cd ${shq(spec.fallbackCwd)}` : ''} || exit 3
 echo ${shq(spec.banner)}
@@ -126,7 +130,7 @@ if [ -f "${T}.env" ]; then
       if command -v timeout >/dev/null 2>&1; then timeout 60 claude -p ok --max-turns 1; else claude -p ok --max-turns 1; fi ) >/dev/null 2>&1
   fi
 fi
-tmux -L koloft -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' '${cmd}'
+tmux -L koloft -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' 'sh "${T}.sh" run'
 c=$?
 rm -f "${T}.env"
 exit $c
@@ -158,8 +162,12 @@ const SSH_LINK_BROKE_EXIT = 255
 
 const TURN_OFF_MOUSE_PASTE_AND_ALT_SCREEN = `printf '\\033[?1000l\\033[?1002l\\033[?1003l\\033[?1006l\\033[?2004l\\033[?25h\\033[?1049l'`
 
-// PLATFORM§33
-export function launchLine(s: LaunchLineSpec): string {
+function machineReady(s: {
+  host: string
+  sshOptions: string[]
+  machine: MachinePackage
+  tabId: string
+}): string {
   const opts = s.sshOptions.join(' ')
   const host = shq(s.host)
   const m = s.machine.name
@@ -169,17 +177,43 @@ export function launchLine(s: LaunchLineSpec): string {
     `COPYFILE_DISABLE=1 tar cf - -C ${shq(s.machine.dir)} . | ssh ${opts} ${host} ` +
     `'umask 077; mkdir -p "$HOME/.koloft" && cd "$HOME/.koloft" && rm -rf ${tmp} && mkdir ${tmp} ` +
     `&& tar xf - -C ${tmp} && sh -c "test -d ${m} || mv ${tmp} ${m}; rm -rf ${tmp}"'`
+  return `h=$(${probe}); { [ "$h" = ok ] || ${pushMachine}; }`
+}
+
+const COULD_NOT_CONNECT = `echo '[Koloft] could not connect or push files — see the error above'`
+
+// PLATFORM§33
+export function launchLine(s: LaunchLineSpec): string {
+  const opts = s.sshOptions.join(' ')
+  const host = shq(s.host)
   const pushTab =
     `COPYFILE_DISABLE=1 tar cf - -C ${shq(s.tabDir)} . | ssh ${opts} ${host} ` +
     `'umask 077; mkdir -p "$HOME/.koloft/tabs" && tar xf - -C "$HOME/.koloft/tabs"'`
   const run = `ssh -tt ${opts} ${host} "sh \\"\\$HOME/.koloft/tabs/${s.tabId}.sh\\" $a"`
   return (
-    `h=$(${probe}); { [ "$h" = ok ] || ${pushMachine}; } && ${pushTab} ` +
-    `|| { echo '[Koloft] could not connect or push files — see the error above'; rm -rf ${shq(s.tabDir)}; exit 4; }; ` +
+    `${machineReady(s)} && ${pushTab} ` +
+    `|| { ${COULD_NOT_CONNECT}; rm -rf ${shq(s.tabDir)}; exit 4; }; ` +
     `rm -rf ${shq(s.tabDir)}; a=${s.mode}; while :; do ${run}; c=$?; [ "$c" = ${SSH_LINK_BROKE_EXIT} ] || { ` +
     `[ "$c" = 0 ] || { echo "[Koloft] the session did not start (exit $c) — see above; press Enter to close"; read -r _; }; exit "$c"; }; ` +
     `a=attach; ${TURN_OFF_MOUSE_PASTE_AND_ALT_SCREEN}; clear; ` +
     `echo '[Koloft] connection lost, reconnecting in 2s…'; sleep 2; done`
+  )
+}
+
+export interface UtilShellLineSpec {
+  host: string
+  sshOptions: string[]
+  machine: MachinePackage
+  tabId: string
+  dir: string
+}
+
+// PLATFORM§33
+export function utilShellLine(s: UtilShellLineSpec): string {
+  const run = `sh "$HOME/.koloft/${s.machine.name}/util.sh" ${shq(s.dir)}`
+  return (
+    `${machineReady(s)} || { ${COULD_NOT_CONNECT}; exit 4; }; ` +
+    `clear; ssh -t ${s.sshOptions.join(' ')} ${shq(s.host)} ${shq(run)}; exit`
   )
 }
 

@@ -1,4 +1,5 @@
 import type {
+  BackendId,
   CronEffort,
   CronJob,
   CronPermission,
@@ -14,6 +15,7 @@ import { describeWhen, isValidSchedule, nextRun, parseHHMM } from '@shared/sched
 export type WhenKind = 'daily' | 'weekly' | 'every'
 
 export interface JobFields {
+  backend: BackendId
   name: string
   task: string
   whenKind: WhenKind
@@ -27,8 +29,14 @@ export interface JobFields {
   permission: CronPermission
 }
 
-export function emptyFields(): JobFields {
+const NEW_JOB_PERMISSION: Record<BackendId, CronPermission> = {
+  claude: 'same',
+  codex: 'skipAll'
+}
+
+export function emptyFields(backend: BackendId = 'claude'): JobFields {
   return {
+    backend,
     name: '',
     task: '',
     whenKind: 'daily',
@@ -39,8 +47,12 @@ export function emptyFields(): JobFields {
     model: '',
     modelOther: '',
     effort: '',
-    permission: 'same'
+    permission: NEW_JOB_PERMISSION[backend]
   }
+}
+
+export function permissionAfterSwitch(f: JobFields, backend: BackendId): CronPermission {
+  return f.permission === NEW_JOB_PERMISSION[f.backend] ? NEW_JOB_PERMISSION[backend] : f.permission
 }
 
 export function fieldsToSchedule(f: JobFields): Schedule | null {
@@ -119,6 +131,7 @@ export function validate(f: JobFields): ValidateResult {
   if (Object.keys(errors).length > 0 || !schedule) return { ok: false, errors }
 
   const input: Omit<CronSaveInput, 'workspacePath' | 'id'> = {
+    backend: f.backend,
     name,
     task,
     schedule,

@@ -46,6 +46,14 @@ describe('sanitizeCron (BB-E29: the whole file)', () => {
   })
 })
 
+describe('sanitizeCron (which method a job runs in)', () => {
+  it('keeps a Codex job on Codex, and reads a job saved before the choice existed, or with an unknown method, as Claude', () => {
+    expect(one({ backend: 'codex' })?.backend).toBe('codex')
+    expect(one({})?.backend).toBeUndefined()
+    expect(one({ backend: 'gemini' })?.backend).toBeUndefined()
+  })
+})
+
 describe('sanitizeCron (BB-E29: which jobs are dropped)', () => {
   it('drops a job with no usable id', () => {
     expect(one({ id: '' })).toBeNull()

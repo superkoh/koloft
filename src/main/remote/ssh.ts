@@ -36,24 +36,45 @@ export interface RunResult {
   stderr: string
 }
 
-function run(bin: string, args: string[], timeoutMs: number): Promise<RunResult> {
+export interface BytesResult {
+  code: number | null
+  stdout: Buffer
+  stderr: string
+}
+
+function runBytes(
+  bin: string,
+  args: string[],
+  opts: { timeoutMs: number; maxBuffer: number; input?: Buffer }
+): Promise<BytesResult> {
   return new Promise((resolve) => {
     const child = execFile(
       bin,
       args,
-      { timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 32 * 1024 * 1024 },
+      {
+        timeout: opts.timeoutMs,
+        killSignal: 'SIGKILL',
+        maxBuffer: opts.maxBuffer,
+        encoding: 'buffer'
+      },
       (err, stdout, stderr) => {
-        if (!err) resolve({ code: 0, stdout, stderr })
-        else if (typeof err.code === 'number') resolve({ code: err.code, stdout, stderr })
+        const errText = stderr.toString('utf8')
+        if (!err) resolve({ code: 0, stdout, stderr: errText })
+        else if (typeof err.code === 'number') resolve({ code: err.code, stdout, stderr: errText })
         // PLATFORM§27
         else if (typeof err.code === 'string')
-          resolve({ code: 127, stdout, stderr: stderr + String(err) })
-        else resolve({ code: null, stdout, stderr })
+          resolve({ code: 127, stdout, stderr: errText + String(err) })
+        else resolve({ code: null, stdout, stderr: errText })
       }
     )
     // PLATFORM§27
-    child.stdin?.end()
+    child.stdin?.end(opts.input)
   })
+}
+
+async function run(bin: string, args: string[], timeoutMs: number): Promise<RunResult> {
+  const r = await runBytes(bin, args, { timeoutMs, maxBuffer: 32 * 1024 * 1024 })
+  return { ...r, stdout: r.stdout.toString('utf8') }
 }
 
 export function runSsh(
@@ -61,11 +82,28 @@ export function runSsh(
   remoteCmd: string,
   opts: { controlDir: string; timeoutMs?: number }
 ): Promise<RunResult> {
-  return run(
-    'ssh',
-    ['-n', ...sshOptions(opts.controlDir, true), host, remoteCmd],
-    opts.timeoutMs ?? 10_000
-  )
+  return runSshBytes(host, remoteCmd, { ...opts, maxBuffer: 32 * 1024 * 1024 }).then((r) => ({
+    ...r,
+    stdout: r.stdout.toString('utf8')
+  }))
+}
+
+export function runSshBytes(
+  host: string,
+  remoteCmd: string,
+  opts: { controlDir: string; timeoutMs?: number; input?: Buffer; maxBuffer?: number }
+): Promise<BytesResult> {
+  const args = [
+    ...(opts.input ? [] : ['-n']),
+    ...sshOptions(opts.controlDir, true),
+    host,
+    remoteCmd
+  ]
+  return runBytes('ssh', args, {
+    timeoutMs: opts.timeoutMs ?? 10_000,
+    maxBuffer: opts.maxBuffer ?? 64 * 1024 * 1024,
+    input: opts.input
+  })
 }
 
 export function rsyncPull(

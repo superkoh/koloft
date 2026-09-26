@@ -3,6 +3,7 @@ const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
 const readline = require('readline')
+const { spawnSync } = require('child_process')
 const WebSocket = require('ws')
 
 const argv = process.argv.slice(2)
@@ -70,6 +71,21 @@ if (argv.includes('--version')) {
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, versionProbeBlockingDelayMs)
   console.log('codex-cli 0.153.4')
   process.exit(0)
+}
+
+if (argv[0] === 'login') {
+  const usedPercent = Number(read('fake-codex-login-used')) || 30
+  fs.writeFileSync(path.join(codexHome, 'auth.json'), JSON.stringify({ usedPercent }))
+  console.log('Successfully logged in')
+  process.exit(0)
+}
+
+function signIn() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(codexHome, 'auth.json'), 'utf8'))
+  } catch {
+    return codexHome === path.join(home, '.codex') ? {} : null
+  }
 }
 
 if (argv[0] === 'app-server') {
@@ -209,6 +225,23 @@ if (argv[0] === 'app-server') {
       result(id, { turn })
       status(thread, { type: 'active', activeFlags: [] })
       event('turn/started', { threadId: thread.id, turn })
+      if (text.startsWith('open ')) {
+        const shell = spawnSync('/bin/zsh', ['-lc', text], { cwd: thread.cwd, encoding: 'utf8' })
+        event('item/completed', {
+          threadId: thread.id,
+          turnId: turn.id,
+          item: {
+            type: 'commandExecution',
+            id: 'open-' + turn.id,
+            status: shell.status === 0 ? 'completed' : 'failed',
+            exitCode: shell.status,
+            aggregatedOutput: (shell.stdout || '') + (shell.stderr || ''),
+            command: `/bin/zsh -lc '${text}'`,
+            cwd: thread.cwd,
+            commandActions: [{ type: 'unknown', command: text }]
+          }
+        })
+      }
       if (text.includes('approve')) {
         pendingApproval = { id: 'approval-' + turn.id, thread, turn }
         status(thread, { type: 'active', activeFlags: ['waitingOnApproval'] })
@@ -242,13 +275,30 @@ if (argv[0] === 'app-server') {
     }
     if (method === 'account/read') {
       result(id, {
-        account: { type: 'chatgpt', email: 'fixture@example.invalid', planType: 'plus' },
+        account: signIn()
+          ? { type: 'chatgpt', email: 'fixture@example.invalid', planType: 'plus' }
+          : null,
         requiresOpenaiAuth: false
       })
       return
     }
     if (method === 'account/rateLimits/read') {
-      result(id, { rateLimits: null, rateLimitsByLimitId: {} })
+      const auth = signIn()
+      result(id, {
+        rateLimits:
+          auth && auth.usedPercent !== undefined
+            ? {
+                limitId: 'codex',
+                primary: {
+                  usedPercent: auth.usedPercent,
+                  windowDurationMins: 10080,
+                  resetsAt: Math.floor(Date.now() / 1000) + 3600
+                },
+                secondary: null
+              }
+            : null,
+        rateLimitsByLimitId: {}
+      })
       return
     }
     if (method === 'model/list') {
@@ -324,6 +374,7 @@ async function startTui() {
       method,
       ts: Date.now(),
       backend: 'codex',
+      codexHome: process.env.CODEX_HOME || null,
       oauthToken: process.env.CLAUDE_CODE_OAUTH_TOKEN || null,
       cdpEndpoint: process.env.KOLOFT_BROWSER_CDP || null
     })

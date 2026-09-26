@@ -1,4 +1,9 @@
-import { identityOf, SESSION_CAPABILITIES } from '@shared/sessionBackend'
+import {
+  BACKEND_LABEL,
+  capabilitiesFor,
+  identityOf,
+  unsupportedPairMessage
+} from '@shared/sessionBackend'
 import { SessionBackendIcon } from './SessionBackendIcon'
 import { useCallback, useEffect, useRef, useState, type JSX, type MouseEvent } from 'react'
 import { GoGitBranch } from 'react-icons/go'
@@ -9,7 +14,6 @@ import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
 import { popoverX } from '@shared/accountUsage'
 import { slugOf } from '@shared/cronNames'
 import { describeWhen } from '@shared/schedule'
-import { backendLabel } from '../agentUi'
 import { forecastFor } from '../cronForm'
 import { useStore } from '../store'
 import {
@@ -27,7 +31,7 @@ import { requestCloseTab } from '../closeFlow'
 import { behindBadge } from '../freshnessView'
 import { FreshnessPopover } from './FreshnessPopover'
 import { basename } from '@shared/preview'
-import { parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
+import { hostOf, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { workspaceMenuCount } from '../remoteWorkspace'
 import {
   discardAll,
@@ -74,7 +78,7 @@ type MenuTarget =
     }
 
 // ADR-0025
-const hostOf = (wsPath: string): string | undefined => parseRemoteKey(wsPath)?.host ?? undefined
+const machineOf = (wsPath: string): string | undefined => parseRemoteKey(wsPath)?.host ?? undefined
 
 interface MenuState {
   target: MenuTarget
@@ -227,7 +231,7 @@ export function WorkspaceSidebar({
 
   const menuItemCount = (t: MenuTarget): number =>
     t.kind === 'workspace'
-      ? workspaceMenuCount({ missing: t.missing, isGit: t.isGit, remote: !!hostOf(t.wsPath) })
+      ? workspaceMenuCount({ missing: t.missing, isGit: t.isGit, remote: !!machineOf(t.wsPath) })
       : t.row.pending
         ? 1
         : t.row.running
@@ -296,7 +300,7 @@ export function WorkspaceSidebar({
   }
 
   const clickRow = (row: SessionRow, wsPath: string): void => {
-    const remoteHost = hostOf(wsPath)
+    const remoteHost = machineOf(wsPath)
     if (row.pending) {
       activateTab(row.id)
       return
@@ -371,7 +375,7 @@ export function WorkspaceSidebar({
   }
 
   const revealOrCopyPath = (t: Extract<MenuTarget, { kind: 'session' }>): JSX.Element => {
-    const remoteHost = hostOf(t.wsPath)
+    const remoteHost = machineOf(t.wsPath)
     const label = remoteHost ? 'Copy path' : 'Reveal in Finder'
     const dir = t.row.revealDir
     if (!dir) return <div className="mi disabled">{label}</div>
@@ -394,32 +398,37 @@ export function WorkspaceSidebar({
     const { target } = menu
     const style = { left: menu.left, top: menu.top }
     if (target.kind === 'workspace') {
-      const remote = hostOf(target.wsPath)
+      const remote = machineOf(target.wsPath)
+      const newSessionItem = (label: string, backend?: BackendId, key?: string): JSX.Element => {
+        const refusal = backend ? unsupportedPairMessage(backend, hostOf(target.wsPath)) : undefined
+        return (
+          <div
+            className={'mi' + (refusal ? ' disabled' : '')}
+            title={refusal}
+            onClick={() => {
+              if (refusal) return
+              setMenu(null)
+              onNewSession(target.wsPath, backend)
+            }}
+          >
+            {label}
+            {key && <span className="k">{key}</span>}
+          </div>
+        )
+      }
       return (
         <div className="menu" style={style} onMouseEnter={keepMenu} onMouseLeave={scheduleClose}>
           {!target.missing && (
             <>
-              <div
-                className="mi"
-                onClick={() => {
-                  setMenu(null)
-                  onNewSession(target.wsPath)
-                }}
-              >
-                {namedMethods ? `New ${backendLabel(namedMethods[0])} session` : 'New session'}
-                <span className="k">⌘N</span>
-              </div>
-              {namedMethods && (
-                <div
-                  className="mi"
-                  onClick={() => {
-                    setMenu(null)
-                    onNewSession(target.wsPath, namedMethods[1])
-                  }}
-                >
-                  New {backendLabel(namedMethods[1])} session
-                </div>
-              )}
+              {namedMethods
+                ? newSessionItem(
+                    `New ${BACKEND_LABEL[namedMethods[0]]} session`,
+                    namedMethods[0],
+                    '⌘N'
+                  )
+                : newSessionItem('New session', undefined, '⌘N')}
+              {namedMethods &&
+                newSessionItem(`New ${BACKEND_LABEL[namedMethods[1]]} session`, namedMethods[1])}
               {target.isGit && (
                 <div
                   className="mi"
@@ -451,17 +460,15 @@ export function WorkspaceSidebar({
                   Fetch origin
                 </div>
               )}
-              {!remote && (
-                <div
-                  className="mi"
-                  onClick={() => {
-                    setMenu(null)
-                    onScheduledJobs(target.wsPath)
-                  }}
-                >
-                  Scheduled jobs…
-                </div>
-              )}
+              <div
+                className="mi"
+                onClick={() => {
+                  setMenu(null)
+                  onScheduledJobs(target.wsPath)
+                }}
+              >
+                Scheduled jobs…
+              </div>
               <div className="sep" />
             </>
           )}
@@ -655,8 +662,7 @@ export function WorkspaceSidebar({
               else onNewSession(ws.path)
             }
             const cronNow = new Date()
-            const soon =
-              ws.missing || !open || ws.remote ? null : forecastFor(cron.jobs, ws.path, cronNow)
+            const soon = ws.missing || !open ? null : forecastFor(cron.jobs, ws.path, cronNow)
             return (
               <div className="ws" key={ws.path}>
                 <div
@@ -776,7 +782,7 @@ export function WorkspaceSidebar({
                           : undefined
                       const sess = tabId ? sessions.find((s) => s.tabId === tabId) : undefined
                       const stateCls =
-                        sess?.observation === 'degraded'
+                        sess?.details?.codex?.observation === 'degraded'
                           ? ''
                           : rowStateClass(row.running, sess?.status, row.pending)
                       const badge = sessionActivityBadge(sess, leftovers[row.id])
@@ -796,7 +802,7 @@ export function WorkspaceSidebar({
                         row
                       }
                       const isCronRow =
-                        SESSION_CAPABILITIES[row.backendId ?? 'claude'].scheduledTasks &&
+                        capabilitiesFor(row.backendId, row.host).scheduledTasks === true &&
                         (cron.live.some(
                           (l) => (!!tabId && l.tabId === tabId) || l.sessionId === row.id
                         ) ||

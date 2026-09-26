@@ -38,10 +38,6 @@ export class AttentionTracker {
     this.raise(tabId, 'exited', ctx, title)
   }
 
-  onEvent(tabId: string, kind: AttentionKind, ctx: AttentionContext, title?: string): void {
-    this.raise(tabId, kind, ctx, title)
-  }
-
   clear(tabId: string): void {
     this.recentlySuppressed.delete(tabId)
     if (this.pending.delete(tabId)) this.onChange(this.list(), null)

@@ -1050,7 +1050,7 @@ describe('SessionTracker — per-session usage', () => {
 
     const s = await waitFor(tracker, (x) => x.tabId === 'tabUM' && !!x.usage)
     expect(s.usage!.ccVersion).toBe('2.0.0-test')
-    expect(s.ccVersion).toBe('3.9.9')
+    expect(s.cliVersion).toBe('3.9.9')
     expect(s.account).toBe('acct-x')
   })
 

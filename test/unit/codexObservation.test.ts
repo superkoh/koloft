@@ -1,28 +1,64 @@
-import { describe, expect, it, vi } from 'vitest'
-import { CodexObservation, userThread } from '../../src/main/codexObservation'
+import { describe, expect, it } from 'vitest'
+import { CodexObservation, userThread, type CodexEvent } from '../../src/main/codexObservation'
+import { SessionRuntime, turnOf, type StatusEdge } from '../../src/main/sessionRuntime'
+import { AttentionTracker } from '../../src/main/attention'
+import type { AttentionKind, BackgroundItem } from '../../src/shared/types'
 
 const A = '11111111-1111-4111-8111-111111111111'
 const B = '22222222-2222-4222-8222-222222222222'
 const thread = (id = A) => ({ id, cwd: '/repo', status: { type: 'idle' }, source: 'cli' })
 
+const TAB = 'tab'
+
 function fixture() {
-  const events = {
-    bind: vi.fn(),
-    status: vi.fn(),
-    title: vi.fn(),
-    usage: vi.fn(),
-    attention: vi.fn(),
-    degraded: vi.fn(),
-    background: vi.fn()
-  }
-  const observer = new CodexObservation(events)
+  const runtime = new SessionRuntime()
+  const events: CodexEvent[] = []
+  const edges: StatusEdge[] = []
+  const raised: AttentionKind[] = []
+  const attention = new AttentionTracker((_pending, event) => {
+    if (event) raised.push(event.kind)
+  })
+  runtime.on('status', (edge: StatusEdge) => {
+    edges.push(edge)
+    attention.onStatusChange(edge.tabId, edge.prev, edge.next, {
+      windowFocused: false,
+      activeTabId: null
+    })
+  })
+  const observer = new CodexObservation((event) => {
+    events.push(event)
+    if (event.type === 'bound') return runtime.forget(TAB)
+    const turn = turnOf(event)
+    if (turn) runtime.recordTurn(TAB, turn)
+    else if (event.type === 'background-changed') runtime.setBackground(TAB, event.items)
+  })
+  const bound = () =>
+    events.flatMap((e) => (e.type === 'bound' ? [{ thread: e.thread, change: e.change }] : []))
+  const background = (): BackgroundItem[] | undefined =>
+    events.flatMap((e) => (e.type === 'background-changed' ? [e.items] : [])).at(-1)
+  const status = () => runtime.statusOf(TAB)
+  const files = () => events.flatMap((e) => (e.type === 'files-changed' ? [e] : [])).at(-1)
+  const turnDone = () => raised.filter((kind) => kind === 'turn-done').length
   const bind = (id = A, requestId = 1, method = 'thread/start', cwd?: string) => {
     observer.receive('client', { id: requestId, method, params: { cwd } })
     observer.receive('server', { id: requestId, result: { thread: thread(id) } })
   }
   const server = (method: string, params: object, id?: number) =>
     observer.receive('server', { id, method, params: { threadId: A, ...params } })
-  return { events, observer, bind, server }
+  return {
+    events,
+    edges,
+    raised,
+    attention,
+    observer,
+    bind,
+    server,
+    bound,
+    background,
+    files,
+    status,
+    turnDone
+  }
 }
 
 describe('CodexObservation', () => {
@@ -45,8 +81,8 @@ describe('CodexObservation', () => {
     const f = fixture()
     f.bind()
     f.bind(B, 2, 'thread/resume', '/chosen-checkout')
-    expect(f.events.bind.mock.calls.map((call) => call[1])).toEqual(['replace', 'switch'])
-    expect(f.events.bind.mock.lastCall?.[0].cwd).toBe('/chosen-checkout')
+    expect(f.bound().map((b) => b.change)).toEqual(['replace', 'switch'])
+    expect(f.bound().at(-1)?.thread.cwd).toBe('/chosen-checkout')
   })
 
   it('does not bind a delayed response over a newer foreground switch', () => {
@@ -55,8 +91,8 @@ describe('CodexObservation', () => {
     f.observer.receive('client', { id: 2, method: 'thread/resume' })
     f.observer.receive('server', { id: 2, result: { thread: thread(B) } })
     f.observer.receive('server', { id: 1, result: { thread: thread() } })
-    expect(f.events.bind).toHaveBeenCalledTimes(1)
-    expect(f.events.bind.mock.lastCall?.[0].id).toBe(B)
+    expect(f.bound()).toHaveLength(1)
+    expect(f.bound()[0].thread.id).toBe(B)
   })
 
   it('uses the effective server cwd and model rather than the stored thread metadata', () => {
@@ -66,7 +102,7 @@ describe('CodexObservation', () => {
       id: 1,
       result: { cwd: '/effective', model: 'model-from-runtime', thread: thread() }
     })
-    expect(f.events.bind.mock.lastCall?.[0]).toMatchObject({
+    expect(f.bound().at(-1)?.thread).toMatchObject({
       cwd: '/effective',
       model: 'model-from-runtime'
     })
@@ -95,26 +131,27 @@ describe('CodexObservation', () => {
     f.bind(A, 3, 'thread/resume')
     f.server('turn/started', { turn: { id: 'current' } })
     f.server('item/commandExecution/requestApproval', {}, 50)
-    f.events.attention.mockClear()
-    f.events.status.mockClear()
+    const edges = f.edges.length
     f.server('turn/completed', { turn: { id: 'old', status: 'completed' } })
-    expect(f.events.attention).not.toHaveBeenCalled()
-    expect(f.events.status).not.toHaveBeenCalled()
+    expect(f.edges).toHaveLength(edges)
+    expect(f.status()).toBe('approval')
+    expect(f.attention.list().map((e) => e.kind)).toEqual(['approval'])
   })
 
-  it('keeps tool questions distinct from permission approvals across status updates', () => {
+  it('keeps tool questions distinct from permission approvals across status updates, and the question marks the row as needing you', () => {
     const f = fixture()
     f.bind()
     f.server('turn/started', { turn: { id: 'turn' } })
     f.server('item/tool/requestUserInput', {}, 50)
     f.server('thread/status/changed', { status: { type: 'active' } })
-    expect(f.events.status).toHaveBeenLastCalledWith('waiting')
+    expect(f.status()).toBe('waiting')
+    expect(f.attention.list()).toHaveLength(1)
     f.observer.receive('client', { id: 50, result: { answers: {} } })
-    expect(f.events.status).toHaveBeenLastCalledWith('working')
-    expect(f.events.attention.mock.calls.some(([kind]) => kind === 'turn-done')).toBe(false)
+    expect(f.status()).toBe('working')
+    expect(f.raised).not.toContain('approval')
   })
 
-  it('notifies only once for a live completed turn, not interrupted or replayed turns', () => {
+  it('notifies once per live turn that ends, interrupted or completed, and never for a replayed completion', () => {
     const f = fixture()
     f.bind()
     f.server('turn/started', { turn: { id: 'first' } })
@@ -122,26 +159,43 @@ describe('CodexObservation', () => {
     f.server('turn/started', { turn: { id: 'second' } })
     f.server('turn/completed', { turn: { id: 'second', status: 'completed' } })
     f.server('turn/completed', { turn: { id: 'second', status: 'completed' } })
-    expect(f.events.attention.mock.calls.filter(([kind]) => kind === 'turn-done')).toHaveLength(1)
+    expect(f.turnDone()).toBe(2)
   })
 
-  it('preserves unknown usage fields and reports context as a ratio', () => {
+  // CODEX§13
+  it('counts cached input apart from fresh input, prices the tokens by model, and reports context as a ratio', () => {
     const f = fixture()
-    f.bind()
+    const usage = () => f.events.flatMap((e) => (e.type === 'usage' ? [e.usage] : []))
+    f.observer.receive('client', { id: 1, method: 'thread/start', params: {} })
+    f.observer.receive('server', { id: 1, result: { thread: thread(), model: 'gpt-5' } })
     f.server('thread/tokenUsage/updated', { tokenUsage: { total: {}, last: {} } })
-    expect(f.events.usage).not.toHaveBeenCalled()
+    expect(usage()).toEqual([])
     f.server('thread/tokenUsage/updated', {
       tokenUsage: {
-        total: { inputTokens: 50, outputTokens: 5, cachedInputTokens: 10 },
+        total: { inputTokens: 1_000_000, outputTokens: 100_000, cachedInputTokens: 400_000 },
         last: { totalTokens: 25 },
         modelContextWindow: 100
       }
     })
-    expect(f.events.usage.mock.lastCall?.[0]).toMatchObject({
-      inTok: 50,
+    const last = usage().at(-1)!
+    expect(last).toMatchObject({
+      inTok: 600_000,
+      cacheReadTok: 400_000,
       ctxPct: 0.25,
       cacheWriteTok: 0
     })
+    expect(last.costUsd).toBeCloseTo(0.6 * 1.25 + 0.4 * 0.125 + 0.1 * 10)
+  })
+
+  it('leaves the cost out when the model has no known price', () => {
+    const f = fixture()
+    f.bind()
+    f.server('thread/tokenUsage/updated', {
+      tokenUsage: { total: { inputTokens: 50, outputTokens: 5, cachedInputTokens: 10 }, last: {} }
+    })
+    const last = f.events.flatMap((e) => (e.type === 'usage' ? [e.usage] : [])).at(-1)!
+    expect(last.inTok).toBe(40)
+    expect(last.costUsd).toBeUndefined()
   })
 
   // CODEX§4
@@ -164,19 +218,17 @@ describe('CodexObservation', () => {
     f.server('turn/started', { threadId: B, turn: { id: 'child' } })
     f.server('thread/status/changed', { status: { type: 'idle' } })
     f.server('turn/completed', { turn: { id: 'main', status: 'completed' } })
-    expect(f.events.status).toHaveBeenLastCalledWith('working')
-    expect(f.events.background.mock.lastCall?.[0]).toEqual([
-      expect.objectContaining({ kind: 'agent', state: 'working' })
-    ])
-    expect(f.events.attention.mock.calls.filter(([kind]) => kind === 'turn-done')).toHaveLength(0)
+    expect(f.status()).toBe('working')
+    expect(f.background()).toEqual([expect.objectContaining({ kind: 'agent', state: 'working' })])
+    expect(f.turnDone()).toBe(0)
     f.server('thread/status/changed', { threadId: B, status: { type: 'idle' } })
     f.server('turn/completed', { threadId: B, turn: { id: 'child', status: 'completed' } })
-    expect(f.events.status).toHaveBeenLastCalledWith('waiting')
-    expect(f.events.attention.mock.calls.filter(([kind]) => kind === 'turn-done')).toHaveLength(1)
-    expect(f.events.bind).toHaveBeenCalledTimes(1)
+    expect(f.status()).toBe('waiting')
+    expect(f.turnDone()).toBe(1)
+    expect(f.bound()).toHaveLength(1)
   })
 
-  it('shows a surviving command as unclassified and suppresses completion until its terminal event', () => {
+  it('shows a surviving command as unclassified background while the turn itself lands waiting', () => {
     const f = fixture()
     f.bind()
     f.server('turn/started', { turn: { id: 'main' } })
@@ -189,19 +241,20 @@ describe('CodexObservation', () => {
       status: 'inProgress'
     }
     f.server('item/started', { item: command, turnId: 'main' })
-    expect(f.events.background.mock.lastCall?.[0]).toEqual([])
+    expect(f.background()).toEqual([])
     f.server('turn/completed', { turn: { id: 'main', status: 'completed' } })
-    expect(f.events.status).toHaveBeenLastCalledWith('waiting')
-    expect(f.events.background.mock.lastCall?.[0]).toEqual([
+    expect(f.status()).toBe('waiting')
+    expect(f.background()).toEqual([
       expect.objectContaining({ kind: 'command', label: 'sleep 12', state: 'unknown' })
     ])
-    expect(f.events.attention.mock.calls.filter(([kind]) => kind === 'turn-done')).toHaveLength(0)
+    expect(f.turnDone()).toBe(1)
     f.server('item/completed', {
       item: { ...command, status: 'completed', exitCode: 0 },
       turnId: 'main'
     })
-    expect(f.events.background.mock.lastCall?.[0]).toEqual([])
-    expect(f.events.attention.mock.calls.filter(([kind]) => kind === 'turn-done')).toHaveLength(1)
+    expect(f.background()).toEqual([])
+    expect(f.status()).toBe('waiting')
+    expect(f.turnDone()).toBe(1)
   })
 
   it('does not import arbitrary system-thread activity as a child or block completion', () => {
@@ -214,8 +267,8 @@ describe('CodexObservation', () => {
       item: { type: 'commandExecution', id: 'other', command: 'unrelated', status: 'inProgress' }
     })
     f.server('turn/completed', { turn: { id: 'main', status: 'completed' } })
-    expect(f.events.background.mock.lastCall?.[0]).toEqual([])
-    expect(f.events.attention.mock.calls.filter(([kind]) => kind === 'turn-done')).toHaveLength(1)
+    expect(f.background()).toEqual([])
+    expect(f.turnDone()).toBe(1)
   })
 
   it('keeps child permission request zero pending when the parent turn completes', () => {
@@ -235,11 +288,11 @@ describe('CodexObservation', () => {
     })
     f.server('item/commandExecution/requestApproval', { threadId: B }, 0)
     f.server('turn/completed', { turn: { id: 'main', status: 'completed' } })
-    expect(f.events.status).toHaveBeenLastCalledWith('approval')
-    expect(f.events.attention).toHaveBeenLastCalledWith('approval')
+    expect(f.status()).toBe('approval')
+    expect(f.raised.at(-1)).toBe('approval')
     f.observer.receive('client', { id: 0, result: { decision: 'accept' } })
-    expect(f.events.status).toHaveBeenLastCalledWith('working')
-    expect(f.events.attention.mock.calls.filter(([kind]) => kind === 'turn-done')).toHaveLength(0)
+    expect(f.status()).toBe('working')
+    expect(f.turnDone()).toBe(0)
   })
 
   it('does not let old background activity change the new foreground session or replay completion on return', () => {
@@ -260,16 +313,14 @@ describe('CodexObservation', () => {
     })
     f.server('turn/completed', { turn: { id: 'main', status: 'completed' } })
     f.bind(B, 2, 'thread/resume')
-    f.events.status.mockClear()
-    f.events.attention.mockClear()
+    const edges = f.edges.length
+    const raised = f.raised.length
     f.server('thread/status/changed', { threadId: child, status: { type: 'idle' } })
-    expect(f.events.status).not.toHaveBeenCalled()
-    expect(f.events.attention).not.toHaveBeenCalled()
+    expect(f.edges).toHaveLength(edges)
+    expect(f.raised).toHaveLength(raised)
     f.bind(A, 3, 'thread/resume')
-    expect(f.events.background.mock.lastCall?.[0]).toEqual([
-      expect.objectContaining({ state: 'waiting' })
-    ])
-    expect(f.events.attention.mock.calls.filter(([kind]) => kind === 'turn-done')).toHaveLength(0)
+    expect(f.background()).toEqual([expect.objectContaining({ state: 'waiting' })])
+    expect(f.turnDone()).toBe(0)
   })
 
   it('does not misreport a snapshot waiting for user input as work in progress', () => {
@@ -279,6 +330,129 @@ describe('CodexObservation', () => {
     f.server('thread/status/changed', {
       status: { type: 'active', activeFlags: ['waitingOnUserInput'] }
     })
-    expect(f.events.status).toHaveBeenLastCalledWith('waiting')
+    expect(f.status()).toBe('waiting')
+  })
+
+  const patch = (status: string, changes: object[]) => ({
+    item: { type: 'fileChange', id: 'patch', status, changes }
+  })
+  const command = (command: string, commandActions: object[]) => ({
+    item: {
+      type: 'commandExecution',
+      id: 'cmd-' + command,
+      status: 'completed',
+      command: `/bin/zsh -lc '${command}'`,
+      cwd: '/repo',
+      commandActions
+    }
+  })
+
+  it('lists the files a patch wrote, with line counts, and a file a command read, from the item shapes Codex sends', () => {
+    const f = fixture()
+    f.bind()
+    f.server(
+      'item/completed',
+      patch('completed', [
+        { path: '/repo/added.txt', kind: { type: 'add' }, diff: 'hi\n' },
+        {
+          path: '/repo/notes.txt',
+          kind: { type: 'update', move_path: null },
+          diff: '@@ -1 +1 @@\n-old line\n+new line\n'
+        }
+      ])
+    )
+    f.server(
+      'item/completed',
+      command('cat docs/a.md', [
+        { type: 'read', command: 'cat docs/a.md', name: 'a.md', path: '/repo/docs/a.md' }
+      ])
+    )
+    expect(f.files()).toEqual({
+      type: 'files-changed',
+      files: [
+        { src: '/repo/added.txt', label: 'added.txt', access: 'wrote', added: 1 },
+        { src: '/repo/notes.txt', label: 'notes.txt', access: 'wrote', added: 1, removed: 1 },
+        { src: '/repo/docs/a.md', label: 'a.md', access: 'read' }
+      ],
+      lastTouched: '/repo/docs/a.md',
+      lastWritten: '/repo/notes.txt',
+      liveWrites: 1
+    })
+  })
+
+  it('ignores a declined patch and a shell command that only writes through the shell', () => {
+    const f = fixture()
+    f.bind()
+    f.server(
+      'item/completed',
+      patch('declined', [{ path: '/repo/a.txt', kind: { type: 'add' }, diff: 'x\n' }])
+    )
+    f.server(
+      'item/completed',
+      command('echo hello > b.txt', [{ type: 'unknown', command: 'echo hello > b.txt' }])
+    )
+    expect(f.files()).toBeUndefined()
+  })
+
+  it('starts a fresh file list when the foreground session changes', () => {
+    const f = fixture()
+    f.bind()
+    f.server(
+      'item/completed',
+      patch('completed', [{ path: '/repo/a.txt', kind: { type: 'add' }, diff: 'a\n' }])
+    )
+    f.bind(B, 2, 'thread/start')
+    f.observer.receive('server', {
+      method: 'item/completed',
+      params: {
+        threadId: B,
+        ...patch('completed', [{ path: '/repo/b.txt', kind: { type: 'add' }, diff: 'b\n' }])
+      }
+    })
+    expect(f.files()?.files.map((file) => file.src)).toEqual(['/repo/b.txt'])
+  })
+
+  it('turns an open command Codex ran into an open request, but only one with a single target, like the open shim', () => {
+    const f = fixture()
+    f.bind()
+    const ran = (line: string, status = 'completed') =>
+      f.server('item/completed', {
+        item: {
+          ...command(line, [{ type: 'unknown', command: line }]).item,
+          status
+        }
+      })
+    ran('open ./report.html')
+    ran("open 'docs/a b.md'", 'failed')
+    ran('open https://example.test/x')
+    ran('open -a Safari page.html')
+    ran('open one.html two.html')
+    ran('open ./declined.html', 'declined')
+    ran('echo open ./not-a-command.html')
+    expect(f.events.flatMap((e) => (e.type === 'open' ? [e.target] : []))).toEqual([
+      '/repo/report.html',
+      '/repo/docs/a b.md',
+      'https://example.test/x'
+    ])
+  })
+
+  it("leaves an open to Koloft's open shim when the shim says it already asked, and opens it from the frame when the shim was blocked or never ran", () => {
+    const f = fixture()
+    f.bind()
+    const ran = (line: string, aggregatedOutput: string) =>
+      f.server('item/completed', {
+        item: {
+          ...command(line, [{ type: 'unknown', command: line }]).item,
+          status: 'completed',
+          aggregatedOutput
+        }
+      })
+    ran('open ./sent.html', 'koloft-open:sent\n')
+    ran('open ./blocked.html', 'koloft-open:blocked\n')
+    ran('open ./no-shim.html', '')
+    expect(f.events.flatMap((e) => (e.type === 'open' ? [e.target] : []))).toEqual([
+      '/repo/blocked.html',
+      '/repo/no-shim.html'
+    ])
   })
 })

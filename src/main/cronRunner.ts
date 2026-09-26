@@ -1,10 +1,12 @@
 import { randomBytes, randomUUID } from 'node:crypto'
-import path from 'node:path'
+import { isAbsoluteOnHost } from '@shared/remoteKey'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
-import { slugOf, hasWordChar, isValidModelName, worktreeBase } from '@shared/cronNames'
+import { cronBackend, slugOf, hasWordChar, isValidModelName, worktreeBase } from '@shared/cronNames'
+import { BACKEND_LABEL, backendIdOf } from '@shared/sessionBackend'
 import { isValidSchedule, parseHHMM } from '@shared/schedule'
 import {
   isCronEffort,
+  type BackendId,
   type CronEffort,
   type CronJob,
   type CronPermission,
@@ -13,6 +15,7 @@ import {
   type CronSaveResult,
   type CronState,
   type HistoryLine,
+  type LaunchPermission,
   type LiveRun,
   type Schedule,
   type SessionStatus
@@ -31,6 +34,11 @@ const STAMP_LEN = 12
 const MAX_HISTORY = 20
 
 const PERMISSIONS: CronPermission[] = ['same', 'acceptEdits', 'skipAll']
+const LAUNCH_PERMISSION: Record<CronPermission, LaunchPermission> = {
+  same: 'default',
+  acceptEdits: 'acceptEdits',
+  skipAll: 'bypass'
+}
 
 function withSuffix(base: string, suffix: string): string {
   const over = base.length + suffix.length - MAX_WORKTREE_NAME
@@ -62,13 +70,21 @@ export type LaunchResult = { ok: true; tabId: string } | { ok: false }
 
 export interface LaunchRequest {
   jobId: string
+  backend: BackendId
   cwd: string
   worktree?: string
   model?: string
   effort?: CronEffort
-  permission: CronPermission
-  // CC§9
-  env: { KOLOFT_FIRST_PROMPT: string; KOLOFT_SESSION_NAME: string }
+  permission: LaunchPermission
+  firstPrompt: string
+  name: string
+}
+
+type MaybeAsync<T> = T | Promise<T>
+
+function whenSettled<T>(value: MaybeAsync<T>, then: (settled: T) => void): void {
+  if (value instanceof Promise) void value.then(then)
+  else then(value)
 }
 
 export interface RunnerDeps {
@@ -78,14 +94,14 @@ export interface RunnerDeps {
     load(): { jobs: CronJob[]; notes: Record<string, string> }
     save(jobs: CronJob[]): void
   }
-  dirExists(p: string): boolean
+  dirExists(p: string): MaybeAsync<boolean>
   isPinned(p: string): boolean
-  gitDirExists(root: string): boolean
-  worktreeDirExists(root: string, name: string): boolean
+  gitDirExists(root: string): MaybeAsync<boolean>
+  worktreeDirExists(root: string, name: string): MaybeAsync<boolean>
   branchExists(root: string, branch: string): Promise<boolean>
-  countRunFolders(root: string, slug: string): number
-  accountUsable(): boolean
-  trusted(wsPath: string): boolean
+  countRunFolders(root: string, slug: string): MaybeAsync<number>
+  accountUsable(backend: BackendId): boolean
+  trusted(wsPath: string, backend: BackendId): MaybeAsync<boolean>
   ready(): boolean
   launch(req: LaunchRequest): LaunchResult | Promise<LaunchResult>
   killTab(tabId: string): void
@@ -131,6 +147,7 @@ function scheduleErrors(s: unknown): string[] {
 interface Clean {
   name: string
   task: string
+  backend: BackendId
   model?: string
   effort?: CronEffort
   permission: CronPermission
@@ -146,6 +163,7 @@ function clean(input: CronSaveInput): Clean {
   return {
     name,
     task,
+    backend: backendIdOf(input.backend) ?? 'claude',
     permission,
     ...(model ? { model } : {}),
     ...(isCronEffort(input.effort) ? { effort: input.effort } : {})
@@ -161,7 +179,7 @@ function saveErrors(
   const errs: string[] = []
   if (
     typeof workspacePath !== 'string' ||
-    !path.isAbsolute(workspacePath) ||
+    !isAbsoluteOnHost(workspacePath) ||
     !isPinned(workspacePath)
   ) {
     errs.push(CRON_SAVE_MESSAGES.workspace)
@@ -185,6 +203,7 @@ export class CronRunner {
   private jobs: CronJob[]
   private notes: Record<string, string>
   private folders: Record<string, number> = {}
+  private foldersRound = 0
   private live = new Map<string, LiveRun>()
   private launching = new Set<string>()
   private held = new Map<string, Due[]>()
@@ -304,12 +323,13 @@ export class CronRunner {
         return { ok: false, reason: 'skipped' }
       }
 
-      if (!this.d.dirExists(job.workspacePath)) {
+      if (!(await this.d.dirExists(job.workspacePath))) {
         this.fail(job, dueAt, mark, 'the folder is missing')
         return { ok: false, reason: 'folder-missing' }
       }
 
-      if (!this.d.accountUsable()) {
+      const backend = cronBackend(job)
+      if (!this.d.accountUsable(backend)) {
         this.fail(job, dueAt, mark, 'no usable account')
         return { ok: false, reason: 'no-account' }
       }
@@ -323,22 +343,24 @@ export class CronRunner {
         return { ok: false, reason: 'not-ready' }
       }
 
-      const git = this.d.gitDirExists(job.workspacePath)
+      const git = await this.d.gitDirExists(job.workspacePath)
       const worktree = git
         ? await worktreeNameFor(job, dueAt, (n) => this.taken(job.workspacePath, n))
         : undefined
 
       const res = await this.d.launch({
         jobId: job.id,
+        backend,
         cwd: job.workspacePath,
         worktree,
         model: job.model,
         effort: job.effort,
-        permission: job.permission,
-        env: { KOLOFT_FIRST_PROMPT: job.task, KOLOFT_SESSION_NAME: job.name }
+        permission: LAUNCH_PERMISSION[job.permission],
+        firstPrompt: job.task,
+        name: job.name
       })
       if (!res.ok) {
-        this.fail(job, dueAt, mark, 'Claude exited before it started')
+        this.fail(job, dueAt, mark, `${BACKEND_LABEL[backend]} exited before it started`)
         return { ok: false, reason: 'failed' }
       }
       const run: LiveRun = {
@@ -362,7 +384,7 @@ export class CronRunner {
   }
 
   private async taken(root: string, name: string): Promise<boolean> {
-    if (this.d.worktreeDirExists(root, name)) return true
+    if (await this.d.worktreeDirExists(root, name)) return true
     return this.d.branchExists(root, `worktree-${name}`)
   }
 
@@ -398,19 +420,22 @@ export class CronRunner {
       this.push()
       return
     }
-    // CC§9
-    const note = this.d.trusted(job.workspacePath)
-      ? 'Claude did not start'
-      : 'Claude did not start — this folder was never opened in Claude; start one session here first'
-    this.writeHistory(job, {
-      dueAt: run.dueAt,
-      state: 'failed',
-      note,
-      ...(run.worktree ? { worktree: run.worktree } : {}),
-      ...(run.manual ? MANUAL : {})
+    const label = BACKEND_LABEL[cronBackend(job)]
+    // CC§9 CODEX§14
+    whenSettled(this.d.trusted(job.workspacePath, cronBackend(job)), (trusted) => {
+      const note = trusted
+        ? `${label} did not start`
+        : `${label} did not start — this folder was never opened in ${label}; start one session here first`
+      this.writeHistory(job, {
+        dueAt: run.dueAt,
+        state: 'failed',
+        note,
+        ...(run.worktree ? { worktree: run.worktree } : {}),
+        ...(run.manual ? MANUAL : {})
+      })
+      this.d.toast(`⏰ ${job.name} could not start: ${label} did not start`)
+      this.d.notify(job.name, `Could not start — ${label} did not start`)
     })
-    this.d.toast(`⏰ ${job.name} could not start: Claude did not start`)
-    this.d.notify(job.name, 'Could not start — Claude did not start')
   }
 
   onBound(tabId: string, sessionId: string): void {
@@ -460,8 +485,9 @@ export class CronRunner {
       ...(run.manual ? MANUAL : {})
     }
     if (run.state === 'launching') {
-      this.writeHistory(job, { ...line, state: 'failed', note: 'Claude exited before it started' })
-      this.d.toast(`⏰ ${job.name} could not start: Claude exited before it started`)
+      const note = `${BACKEND_LABEL[cronBackend(job)]} exited before it started`
+      this.writeHistory(job, { ...line, state: 'failed', note })
+      this.d.toast(`⏰ ${job.name} could not start: ${note}`)
     } else {
       this.writeHistory(job, { ...line, state: 'closed' })
     }
@@ -600,12 +626,26 @@ export class CronRunner {
   }
 
   private refreshFolders(): void {
+    const round = ++this.foldersRound
     const next: Record<string, number> = {}
-    for (const j of this.jobs) {
-      if (!this.d.gitDirExists(j.workspacePath)) continue
-      next[j.id] = this.d.countRunFolders(j.workspacePath, slugOf(j.name))
+    let pending = this.jobs.length
+    let counting = true
+    const settled = (): void => {
+      if (--pending > 0 || round !== this.foldersRound) return
+      this.folders = next
+      if (!counting) this.push()
     }
-    this.folders = next
+    for (const j of this.jobs) {
+      whenSettled(this.d.gitDirExists(j.workspacePath), (git) => {
+        if (!git) return settled()
+        whenSettled(this.d.countRunFolders(j.workspacePath, slugOf(j.name)), (count) => {
+          next[j.id] = count
+          settled()
+        })
+      })
+    }
+    counting = false
+    if (this.jobs.length === 0) this.folders = next
   }
 
   private buildState(): CronState {

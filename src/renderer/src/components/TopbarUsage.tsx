@@ -110,7 +110,7 @@ export function TopbarUsage(): JSX.Element | null {
   const members = accounts.filter((a) => a.kind === 'oauth' && a.enabled)
   if (!multiAccount || members.length === 0) return null
 
-  const enabled = accounts.filter((a) => a.enabled)
+  const enabled = accounts.filter((a) => a.enabled && a.kind !== 'codex-home')
   const armed = meteredArmed(accounts, Math.floor(now / 1000))
   const total = poolGlyph(members, now)
   const cols = enabled.some((a) => a.kind === 'oauth' && a.status === 'ok' && a.usage?.hasOi)

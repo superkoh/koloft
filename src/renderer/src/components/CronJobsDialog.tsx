@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react'
 import { LuPencil, LuPlay, LuTrash2, LuX } from 'react-icons/lu'
 import type {
+  BackendId,
   CronJob,
   CronPermission,
   CronSaveInput,
@@ -9,10 +10,18 @@ import type {
   SkillSuggestion
 } from '@shared/types'
 import { basename } from '@shared/preview'
-import { slugOf } from '@shared/cronNames'
+import { cronBackend, slugOf } from '@shared/cronNames'
+import { hostOf } from '@shared/remoteKey'
+import {
+  BACKEND_LABEL,
+  capabilitiesFor,
+  effectiveBackend,
+  SESSION_BACKENDS
+} from '@shared/sessionBackend'
 import { describeSchedule, describeWhen, nextRun } from '@shared/schedule'
 import {
   emptyFields,
+  permissionAfterSwitch,
   fieldsToSchedule,
   histEnd,
   histText,
@@ -25,6 +34,7 @@ import {
 } from '../cronForm'
 import { isComposing } from '../keys'
 import { useStore } from '../store'
+import { mixesBackends } from '../sessionRows'
 import { Switch } from './settings/Switch'
 
 const DAY_CHIPS: { d: number; label: string }[] = [
@@ -51,6 +61,13 @@ const MODEL_CHIPS: { value: JobFields['model']; label: string }[] = [
   { value: 'other', label: 'Other…' }
 ]
 
+const MODEL_CHIPS_OF: Record<BackendId, typeof MODEL_CHIPS> = {
+  claude: MODEL_CHIPS,
+  codex: MODEL_CHIPS.filter((c) => c.value === '' || c.value === 'other')
+}
+
+const APP_NAME: Record<BackendId, string> = { claude: 'Claude Code', codex: 'Codex' }
+
 const EFFORT_CHIPS: { value: JobFields['effort']; label: string }[] = [
   { value: '', label: 'Same as usual' },
   { value: 'low', label: 'Low' },
@@ -66,19 +83,23 @@ const PERMISSION_CHIPS: { value: CronPermission; label: string }[] = [
   { value: 'skipAll', label: 'Never ask' }
 ]
 
-const TASK_HINT =
-  "Type the skill's /name, the same as in Claude Code — or any message. It cannot start with a dash."
+const taskHint = (label: string): string =>
+  `Type the skill's /name, the same as in ${label} — or any message. It cannot start with a dash.`
 const MODEL_HINT = 'Default = whatever a new session in this workspace would use.'
-const EFFORT_HINT =
-  'How hard Claude thinks before it answers. Same as usual = what your other sessions use.'
+const effortHint = (label: string): string =>
+  `How hard ${label} thinks before it answers. Same as usual = what your other sessions use.`
 const NEVER_ASK_HINT =
   '"Never ask" can change files anywhere on this Mac, not only in the run\'s folder.'
 const NO_GIT_NOTE = 'This folder is not a git repo, so the run works in the folder itself.'
-// CC§9
-const TRUST_HINT =
-  'Claude has never been opened in this folder. Start one session here first — a scheduled ' +
-  'run would stall on Claude\'s "do you trust this project?" question and be stopped at ' +
-  'the deadline.'
+// CC§9 CODEX§14
+const TRUST_QUESTION: Record<BackendId, string> = {
+  claude: 'do you trust this project?',
+  codex: 'do you trust the contents of this directory?'
+}
+const trustHint = (backend: BackendId): string =>
+  `${BACKEND_LABEL[backend]} has never been opened in this folder. Start one session here ` +
+  `first — a scheduled run would stall on ${BACKEND_LABEL[backend]}'s "${TRUST_QUESTION[backend]}" ` +
+  'question and be stopped at the deadline.'
 
 const MANY_RUN_FOLDERS = 10
 
@@ -121,6 +142,14 @@ export function CronJobsDialog({
     .slice()
     .sort((a, b) => a.createdAt - b.createdAt)
 
+  const backends = SESSION_BACKENDS.filter(
+    (b) =>
+      settings.sessionMethods.enabled[b] &&
+      capabilitiesFor(b, hostOf(wsPath)).scheduledTasks === true
+  )
+  const defaultBackend = effectiveBackend(settings.sessionMethods, new Set(backends))
+  const mixed = mixesBackends(jobs.map((j) => ({ backendId: cronBackend(j) })))
+
   const [selectedId, setSelectedId] = useState<string | null>(initialJobId ?? null)
   const selected = jobs.find((j) => j.id === selectedId) ?? jobs[0]
   const [confirmId, setConfirmId] = useState<string | null>(null)
@@ -160,8 +189,9 @@ export function CronJobsDialog({
 
   useEffect(() => {
     let live = true
+    setTrusted(null)
     void window.api.cron
-      .trusted(wsPath)
+      .trusted(wsPath, fields.backend)
       .then((t) => {
         if (live) setTrusted(t)
       })
@@ -169,7 +199,7 @@ export function CronJobsDialog({
     return () => {
       live = false
     }
-  }, [wsPath])
+  }, [wsPath, fields.backend])
 
   useEffect(() => {
     if (form) nameRef.current?.focus()
@@ -193,7 +223,7 @@ export function CronJobsDialog({
   }
 
   const edit = (job: CronJob): void => {
-    const f = emptyFields()
+    const f = emptyFields(cronBackend(job))
     setFields({
       ...f,
       ...scheduleToFields(job.schedule),
@@ -215,7 +245,7 @@ export function CronJobsDialog({
   }
 
   const newJob = (): void => {
-    setFields(emptyFields())
+    setFields(emptyFields(defaultBackend))
     setTouched(false)
     setServerErrors([])
     setForm({ mode: 'new' })
@@ -323,7 +353,9 @@ export function CronJobsDialog({
       <div className="job-main">
         <div className="job-name">{job.name}</div>
         <div className="job-task">
-          {[job.task, job.model, job.effort].filter(Boolean).join(' · ')}
+          {[mixed ? BACKEND_LABEL[cronBackend(job)] : '', job.task, job.model, job.effort]
+            .filter(Boolean)
+            .join(' · ')}
         </div>
         {cron.notes[job.id] && <p className="field-hint bad">{cron.notes[job.id]}</p>}
         <div className="job-when">{whenLine(job)}</div>
@@ -372,10 +404,13 @@ export function CronJobsDialog({
     ? `${describeSchedule(schedule)} · next ${describeWhen(nextRun(schedule, new Date()), new Date())}`
     : ''
 
+  const label = BACKEND_LABEL[fields.backend]
+  const modelChips = MODEL_CHIPS_OF[fields.backend]
+
   const permissionHint =
-    (settings.multiAccount && settings.skipPermissions
+    (fields.backend === 'claude' && settings.multiAccount && settings.skipPermissions
       ? 'Today that means: skips all permission checks (your Accounts setting).'
-      : 'Today that means: Claude asks before risky steps, like your other sessions.') +
+      : `Today that means: ${label} asks before risky steps, like your other sessions.`) +
     ' ' +
     NEVER_ASK_HINT
 
@@ -395,6 +430,32 @@ export function CronJobsDialog({
 
   const renderForm = (): JSX.Element => (
     <div className="fgrid">
+      {backends.length > 1 && (
+        <>
+          <span className="flabel">Runs in</span>
+          <div className="fcol">
+            <div className="chips">
+              {backends.map((b) => (
+                <button
+                  key={b}
+                  className={'chip' + (fields.backend === b ? ' on' : '')}
+                  onClick={() =>
+                    patch({
+                      backend: b,
+                      permission: permissionAfterSwitch(fields, b),
+                      ...(MODEL_CHIPS_OF[b].some((c) => c.value === fields.model)
+                        ? {}
+                        : { model: '' })
+                    })
+                  }
+                >
+                  {BACKEND_LABEL[b]}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
       <span className="flabel">Name</span>
       <div className="fcol">
         <div className={inputCls('name')}>
@@ -445,14 +506,14 @@ export function CronJobsDialog({
             ))}
           </div>
         )}
-        <p className="field-hint">{TASK_HINT}</p>
+        <p className="field-hint">{taskHint(APP_NAME[fields.backend])}</p>
         {err('task') && <p className="field-hint bad">{err('task')}</p>}
       </div>
 
       <span className="flabel">Where it runs</span>
       <div className="fcol">
         {whereItRuns()}
-        {trusted === false && <p className="field-hint warn">{TRUST_HINT}</p>}
+        {trusted === false && <p className="field-hint warn">{trustHint(fields.backend)}</p>}
       </div>
 
       <span className="flabel">When</span>
@@ -536,7 +597,7 @@ export function CronJobsDialog({
       <span className="flabel">Model</span>
       <div className="fcol">
         <div className="chips">
-          {MODEL_CHIPS.map((c) => (
+          {modelChips.map((c) => (
             <button
               key={c.label}
               className={'chip' + (fields.model === c.value ? ' on' : '')}
@@ -576,7 +637,7 @@ export function CronJobsDialog({
             </button>
           ))}
         </div>
-        <p className="field-hint">{EFFORT_HINT}</p>
+        <p className="field-hint">{effortHint(label)}</p>
       </div>
 
       <span className="flabel">Permissions</span>

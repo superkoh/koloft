@@ -9,8 +9,16 @@ function projectFlags(paths: string[]): string[] {
     '--inplace',
     '-m',
     '--delete',
-    ...paths.map((p) => `--include=${encodeCwd(p)}*/`),
-    '--include=*.jsonl',
+    ...paths.flatMap((p) => {
+      const project = `/${encodeCwd(p)}*`
+      return [
+        `--include=${project}/`,
+        `--include=${project}/*.jsonl`,
+        `--include=${project}/*.title`,
+        `--include=${project}/*/`,
+        `--include=${project}/*/**`
+      ]
+    }),
     '--exclude=*'
   ]
 }
@@ -34,6 +42,7 @@ export interface RemoteSyncDeps {
   rsync(host: string, remoteDir: string, localDir: string, extra: string[]): Promise<RunResult>
   targets(): RemoteTarget[]
   onChange(host: string): void
+  onLeft?(host: string, sessionIds: string[]): void
 }
 
 interface HostState {
@@ -149,9 +158,12 @@ export class RemoteSync {
       if (hb && hb.code === 0) {
         st.connected = true
         const parsed = parseHeartbeat(hb.stdout)
+        const prevAlive = st.alive
         st.alive = new Set(
           parsed.alive.map((n) => sessionIdOfTmux(n)).filter((id): id is string => !!id)
         )
+        const left = [...prevAlive].filter((id) => !st.alive.has(id))
+        if (left.length) this.deps.onLeft?.(host, left)
         if (askGit) {
           st.git = parsed.git
           st.gitAt = Date.now()

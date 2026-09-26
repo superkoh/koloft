@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { test, expect, quitAndClose } from './helpers/app'
+import { test, expect, pendingAttention, quitAndClose } from './helpers/app'
 import type { E2EEnv } from './helpers/env'
 import {
   addRemoteWorkspace,
@@ -15,11 +15,13 @@ import {
 } from './helpers/remote'
 import {
   centerTerm,
+  killSession,
   openMenu,
   processAlive,
   runIn,
   sendShortcut,
   startSessionIn,
+  termIds,
   waitForCalls,
   resumedId,
   readCalls,
@@ -27,6 +29,8 @@ import {
 } from './helpers/p1'
 
 const MIRROR_PULL_SETTLE_MS = 4000
+const WAITING_TO_IDLE_MS = 1000
+const IDLE_TO_CLOSE_MS = 3000
 
 test.afterEach(({ env }) => killFakeRemote(env))
 
@@ -144,6 +148,30 @@ test.describe('who ends the claude on the other machine: every way of ending a r
     }
   })
 
+  test('E-RW-20: a remote claude that dies without an end report raises the “exited” mark once the machine’s tmux list has lost it', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const [first] = await waitForCalls(env, 1)
+      await expect(wsRows(page, REMOTE_WS_NAME).first()).toHaveClass(/st-waiting|st-idle/, {
+        timeout: 60_000
+      })
+
+      killSession(first.pid, env)
+
+      await expect
+        .poll(async () => (await pendingAttention(page)).map((a) => a.kind), { timeout: 60_000 })
+        .toContain('exited')
+      expect(killLines(env, first.sessionId)).toEqual([])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('E-RW-12: ⌘W with ssh down closes the tab but the row stays running', async ({ env }) => {
     test.setTimeout(240_000)
     const { app, page } = await launchWithRemote(env)
@@ -180,6 +208,38 @@ test.describe('who ends the claude on the other machine: every way of ending a r
       await page.waitForTimeout(3000)
       await expect(wsRows(page, REMOTE_WS_NAME).first()).not.toHaveClass(/\bcold\b/)
       expect(readCalls(env)).toHaveLength(1)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-19: an idle remote session closes its own tab and kills its tmux session, the way a local one ends its process', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+    env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_CLOSE_MS)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const [first] = await waitForCalls(env, 1)
+      const remoteRow = wsRows(page, REMOTE_WS_NAME).first()
+      await expect(remoteRow).toHaveClass(/st-waiting|st-idle/, { timeout: 60_000 })
+      await startSessionIn(page, 'ws-a')
+      const localRow = wsRows(page, 'ws-a').first()
+      await expect(localRow).toHaveClass(/st-waiting|st-idle/, { timeout: 30_000 })
+      await remoteRow.click()
+      await localRow.click()
+      await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
+      expect(await termIds(page)).toHaveLength(2)
+
+      await expect.poll(() => termIds(page), { timeout: 60_000 }).toHaveLength(1)
+      await expect.poll(() => killLines(env, first.sessionId), { timeout: 30_000 }).toHaveLength(1)
+      await expect
+        .poll(() => liveTmuxSessions(env), { timeout: 30_000 })
+        .not.toContain(tmuxName(first.sessionId))
+      await expect(remoteRow).toHaveClass(/\bcold\b/, { timeout: 30_000 })
     } finally {
       await quitAndClose(app)
     }

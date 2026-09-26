@@ -1,7 +1,9 @@
+import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { LuLoaderCircle, LuTriangleAlert, LuX } from 'react-icons/lu'
 import type { BackendId, WorkspaceRows } from '@shared/types'
 import { basename } from '@shared/preview'
+import { hostOf } from '@shared/remoteKey'
 import {
   escPeel,
   freshLineCopy,
@@ -11,7 +13,6 @@ import {
   type PullPhase
 } from '../newSession'
 import { pullToast } from '../freshnessView'
-import { backendLabel } from '../agentUi'
 import { useStore } from '../store'
 import {
   digitPick,
@@ -54,7 +55,7 @@ export function WorkspacePicker({
   const at = Math.min(hot, Math.max(0, visible.length - 1))
   const target = pinned ?? visible[at]?.ws
   const sessionLaunch = useSessionLaunch(
-    !!target?.workspace.remote,
+    hostOf(target?.workspace.path ?? ''),
     async (opts, backend) => {
       const ws =
         rows.find((w) => w.workspace.path === opts.cwd) ??
@@ -114,7 +115,7 @@ export function WorkspacePicker({
       void onConfirm(ws, backend)
       return
     }
-    if (sessionLaunch.issue(backend, !!ws.workspace.remote)) return
+    if (sessionLaunch.issue(backend, hostOf(ws.workspace.path))) return
     const failedForThis = phase === 'failed' && failedFor === ws.workspace.path
     if (!(mode === 'main' && !failedForThis && pullable(ws))) {
       void sessionLaunch.launch({ cwd: ws.workspace.path }, backend)
@@ -270,7 +271,7 @@ export function WorkspacePicker({
             {!pinned && (
               <p className="field-hint">
                 ↓↑ move · digit picks · ⏎ confirm
-                {other && ` · ⇧⏎ ${backendLabel(other)}`} · Esc cancel
+                {other && ` · ⇧⏎ ${BACKEND_LABEL[other]}`} · Esc cancel
               </p>
             )}
           </div>
@@ -302,8 +303,8 @@ export function WorkspacePicker({
                   if (sessionLaunch.starting) return 'Starting…'
                   if (kind === 'pulling' || backends.length === 1) return primaryLabel(kind)
                   return isDefault
-                    ? primaryLabel(kind, undefined, backendLabel(backend))
-                    : `${primaryLabel(kind)} ${backendLabel(backend)}`
+                    ? primaryLabel(kind, undefined, BACKEND_LABEL[backend])
+                    : `${primaryLabel(kind)} ${BACKEND_LABEL[backend]}`
                 }}
                 onStart={(backend) => submit(target, backend)}
               />

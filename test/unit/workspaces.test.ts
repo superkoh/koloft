@@ -8,7 +8,7 @@ import { projectInfoFor } from '../../src/main/projectInfo'
 import { encodeCwd } from '../../src/main/sessionTracker'
 import {
   PENDING_SESSION_TITLE,
-  type LayoutV4,
+  type LayoutV5,
   type SessionWorkbenchState,
   type WorkspaceRows
 } from '@shared/types'
@@ -17,13 +17,20 @@ let root: string
 let projectsRoot: string
 let repo: string
 let plain: string
-let layout: LayoutV4
+let layout: LayoutV5
 let bindings: Map<string, string>
 let pushed: WorkspaceRows[][]
 let saves: number
 let mgr: WorkspaceManager
 
 const SEEDED: SessionWorkbenchState = { open: false, tabs: [] }
+
+function own(...ids: string[]): void {
+  for (const id of ids) {
+    layout.members.push(id)
+    layout.sessions[id] = SEEDED
+  }
+}
 
 function writeJsonl(cwd: string, id: string, timestamp = '2026-08-08T11:00:00.000Z'): void {
   const dir = path.join(projectsRoot, encodeCwd(cwd))
@@ -72,9 +79,10 @@ beforeEach(() => {
   fs.mkdirSync(path.join(repo, '.git'), { recursive: true })
   fs.mkdirSync(plain)
   layout = {
-    version: 4,
+    version: 5,
     workspaces: [{ path: repo }, { path: plain }],
     workbench: { defaultOpen: false },
+    members: [],
     sessions: {}
   }
   bindings = new Map()
@@ -153,7 +161,7 @@ describe('WorkspaceManager: freshness stamping', () => {
       lastAttemptAt: 1
     }
     let behind = 0
-    layout.sessions = { ghost: SEEDED }
+    own('ghost')
     mgr.dispose()
     mgr = new WorkspaceManager({
       projectsRoot,
@@ -186,6 +194,7 @@ describe('WorkspaceManager: owned-only sidebar (decided 2026-08-09)', () => {
 
     mgr.onSessionBound('ext-1')
     await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['ext-1']))
+    expect(layout.members).toEqual(['ext-1'])
     expect(layout.sessions['ext-1']).toEqual(SEEDED)
   })
 })
@@ -194,7 +203,7 @@ describe('WorkspaceManager: cold-row title parity with the live tracker', () => 
   it('prefers the `<id>.title` sidecar over the jsonl-head title', async () => {
     writeJsonl(repo, 's1')
     fs.writeFileSync(path.join(projectsRoot, encodeCwd(repo), 's1.title'), 'Fresh AI name\n')
-    layout.sessions['s1'] = SEEDED
+    own('s1')
     mgr.start()
     await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.title)).toEqual(['Fresh AI name']))
   })
@@ -210,6 +219,7 @@ describe('WorkspaceManager: orphan worktree bucket (D2)', () => {
     layout = {
       ...layout,
       workspaces: [{ path: repoDir }],
+      members: ['wt-1'],
       sessions: { 'wt-1': SEEDED }
     }
     mgr = new WorkspaceManager({
@@ -263,7 +273,7 @@ describe('WorkspaceManager: transcript bucket origin (§1✎)', () => {
 describe('WorkspaceManager: archive (decided 2026-08-09 — Close session retired)', () => {
   it('archiving a cold session deregisters it; the jsonl is untouched', async () => {
     writeJsonl(repo, 'done-1')
-    layout.sessions['done-1'] = SEEDED
+    own('done-1')
     mgr.start()
     await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['done-1']))
 
@@ -275,7 +285,7 @@ describe('WorkspaceManager: archive (decided 2026-08-09 — Close session retire
 
   it('refuses to archive a live (bound) session', async () => {
     writeJsonl(repo, 'live-1')
-    layout.sessions['live-1'] = SEEDED
+    own('live-1')
     bindings.set('live-1', 'tab-9')
     mgr.start()
     await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['live-1']))
@@ -288,7 +298,7 @@ describe('WorkspaceManager: archive (decided 2026-08-09 — Close session retire
 describe('WorkspaceManager: pending launches', () => {
   it('holds a pending row until the session materializes, then swaps it in place', async () => {
     writeJsonl(repo, 'old-one')
-    layout.sessions['old-one'] = SEEDED
+    own('old-one')
     mgr.start()
     await vi.waitFor(() => expect(latest(repo).rows).toHaveLength(1))
 
@@ -476,6 +486,43 @@ describe('WorkspaceManager: per-session Workbench state (T-AGG-09②, T-AUX-02/0
     expect(layout.sessions.s1).toEqual({ open: false, tabs: [] })
   })
 
+  it('keeps a Codex session’s panel state through rescans while Codex counts it, and drops it once Codex lets it go', async () => {
+    const key = 'codex:local:thread-1'
+    const members = new Set([key])
+    mgr.dispose()
+    mgr = new WorkspaceManager({
+      projectsRoot,
+      remoteProjectsRoot: (host: string) => path.join(root, 'remote', host, 'projects'),
+      loadLayout: () => layout,
+      saveLayout: (l) => {
+        layout = l
+      },
+      projectInfo: projectInfoFor,
+      runningBindings: () => bindings,
+      killTab: () => {},
+      pushRows: (p) => pushed.push(p),
+      additionalMembers: () => members
+    })
+    mgr.start()
+    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+    const state: SessionWorkbenchState = {
+      open: true,
+      tabs: [{ kind: 'web', title: 'app', url: 'http://localhost:5173/' }]
+    }
+    mgr.setWorkbenchState(key, state)
+
+    const before = pushed.length
+    mgr.onRemoteChanged()
+    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(before))
+    expect(mgr.workbenchState(key)).toEqual(state)
+
+    members.delete(key)
+    const later = pushed.length
+    mgr.onRemoteChanged()
+    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(later))
+    expect(mgr.workbenchState(key)).toEqual(SEEDED)
+  })
+
   it('drops a write for a session that has left the working set (the row stays gone)', () => {
     bindAsRunning('s1')
     mgr.setWorkbenchState('s1', {
@@ -496,7 +543,7 @@ describe('WorkspaceManager: per-session Workbench state (T-AGG-09②, T-AUX-02/0
 describe('WorkspaceManager: working-set eviction (D1/D2)', () => {
   it('evicts a session the Archive guard refuses, and repeats as a no-op', async () => {
     writeJsonl(repo, 'live-1')
-    layout.sessions['live-1'] = SEEDED
+    own('live-1')
     bindings.set('live-1', 'tab-9')
     mgr.start()
     await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['live-1']))
@@ -514,7 +561,7 @@ describe('WorkspaceManager: working-set eviction (D1/D2)', () => {
   // CC§2
   it('GC spares a bound running session whose jsonl has not been born yet', async () => {
     writeJsonl(repo, 'anchor-1')
-    layout.sessions['fresh-1'] = SEEDED
+    own('fresh-1')
     bindings.set('fresh-1', 'tab-1')
     mgr.start()
     await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
@@ -527,7 +574,7 @@ describe('WorkspaceManager: working-set eviction (D1/D2)', () => {
 
   it('leaves the jsonl behind, so the evicted session is restorable history', async () => {
     writeJsonl(repo, 'gone-1')
-    layout.sessions['gone-1'] = SEEDED
+    own('gone-1')
     mgr.start()
     await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['gone-1']))
     expect(latest(repo).workspace.hasHistory).toBe(false)
@@ -548,7 +595,7 @@ describe('WorkspaceManager: restore from history (D5)', () => {
     writeJsonl(repo, 'bound-1')
     setMtime(repo, 'hist-old', 1000)
     setMtime(repo, 'hist-new', 2000)
-    layout.sessions['owned-1'] = SEEDED
+    own('owned-1')
     bindings.set('bound-1', 'tab-1')
     mgr.start()
     await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
@@ -585,6 +632,17 @@ describe('WorkspaceManager: /clear id change (T-LIFE-07)', () => {
     const saved = layout
     mgr.onSessionRebind('fresh', 'target', 'resume')
     expect(layout).toBe(saved)
+  })
+
+  it('the bind that follows a /clear makes the new id a member and keeps the panel state it carried', () => {
+    own('old')
+    layout.sessions.old = entry
+
+    mgr.onSessionRebind('old', 'fresh', 'clear')
+    mgr.onSessionBound('fresh')
+
+    expect(layout.members).toEqual(['old', 'fresh'])
+    expect(layout.sessions.fresh).toEqual(entry)
   })
 })
 
@@ -630,7 +688,7 @@ describe('WorkspaceManager: a rescan re-reads only the transcript heads that cha
         .map((o) => JSON.stringify(o))
         .join('\n') + '\n'
     )
-    for (const id of ['quiet-1', 'grows-1', 'settled-1']) layout.sessions[id] = SEEDED
+    for (const id of ['quiet-1', 'grows-1', 'settled-1']) own(id)
     mgr.start()
     await vi.waitFor(() =>
       expect(
@@ -687,7 +745,7 @@ describe('WorkspaceManager: a rescan re-reads only the transcript heads that cha
     writeJsonl(repo, 'locked-1')
     const file = path.join(dir, 'locked-1.jsonl')
     fs.chmodSync(file, 0o000)
-    layout.sessions['locked-1'] = SEEDED
+    own('locked-1')
     mgr.start()
     await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['locked-1']))
     expect(latest(repo).rows[0].title).not.toBe('a session')
@@ -848,7 +906,7 @@ describe('remote workspace: pinning', () => {
   it('reads the mirror under the path the machine resolved, not the one that was pinned', async () => {
     writeMirrorJsonl('sym', '/mnt/disk2/api')
     layout.workspaces = [{ path: RKEY }]
-    layout.sessions = { sym: SEEDED }
+    own('sym')
     mgr = remoteMgr({
       remoteGit: () => ({ isGit: false, worktrees: [], real: '/mnt/disk2/api' })
     })
@@ -922,7 +980,7 @@ describe('remote workspace: reading the mirror', () => {
 
   it('U-READ-1/U-READ-2: turns a mirrored transcript into a row whose resume is not blocked', async () => {
     writeMirrorJsonl('abc')
-    layout.sessions = { abc: SEEDED }
+    own('abc')
     mgr = remoteMgr()
     mgr.start()
     await vi.waitFor(() => expect(latest(RKEY).rows.length).toBe(1))
@@ -935,7 +993,7 @@ describe('remote workspace: reading the mirror', () => {
   it('U-READ-3/U-READ-4: keeps a mirrored session through GC while still collecting a local orphan', async () => {
     writeMirrorJsonl('abc')
     writeJsonl(repo, 'local1')
-    layout.sessions = { abc: SEEDED, local1: SEEDED, ghost: SEEDED }
+    own('abc', 'local1', 'ghost')
     mgr = remoteMgr()
     mgr.start()
     await vi.waitFor(() => expect(latest(RKEY).rows.length).toBe(1))
@@ -945,7 +1003,7 @@ describe('remote workspace: reading the mirror', () => {
 
   it('counts a session the machine reports as alive as running', async () => {
     writeMirrorJsonl('abc')
-    layout.sessions = { abc: SEEDED }
+    own('abc')
     mgr = remoteMgr({
       remoteRunning: () => new Set(['abc']),
       remoteConnected: () => true
@@ -963,7 +1021,7 @@ describe('remote workspace: reading the mirror', () => {
     writeMirrorJsonl('abc')
     writeMirrorJsonl('wt1', wtPath)
     layout.workspaces = [{ path: RKEY }]
-    layout.sessions = { abc: SEEDED, wt1: SEEDED }
+    own('abc', 'wt1')
     mgr = remoteMgr({
       remoteGit: () => ({
         isGit: true,
@@ -983,7 +1041,7 @@ describe('remote workspace: reading the mirror', () => {
   it('reports which workspace a session belongs to, and what to mirror', async () => {
     writeMirrorJsonl('abc')
     writeJsonl(repo, 'local1')
-    layout.sessions = { abc: SEEDED, local1: SEEDED }
+    own('abc', 'local1')
     mgr = remoteMgr()
     mgr.start()
     await vi.waitFor(() => expect(latest(RKEY).rows.length).toBe(1))
@@ -1005,7 +1063,7 @@ describe('remote workspace: reading the mirror', () => {
 
   it('counts and kills a running remote session that has no tab here', async () => {
     writeMirrorJsonl('abc')
-    layout.sessions = { abc: SEEDED }
+    own('abc')
     const killedRemote: string[] = []
     mgr = remoteMgr({
       remoteRunning: () => new Set(['abc']),
@@ -1023,7 +1081,7 @@ describe('remote workspace: reading the mirror', () => {
 
   it('kills a session that has a tab here exactly once', async () => {
     writeMirrorJsonl('abc')
-    layout.sessions = { abc: SEEDED }
+    own('abc')
     const bindings = new Map([['abc', 'tab-1']])
     const killedTabs: string[] = []
     const killedRemote: string[] = []
@@ -1053,7 +1111,7 @@ describe('remote workspace: reading the mirror', () => {
       path.join(dupDir, 'localdup.jsonl'),
       JSON.stringify({ type: 'user', cwd: RPATH, timestamp: '2026-09-07T11:00:00.000Z' }) + '\n'
     )
-    layout.sessions = { remote1: SEEDED, localdup: SEEDED }
+    own('remote1', 'localdup')
     mgr = remoteMgr()
     mgr.start()
     await vi.waitFor(() => expect(latest(RKEY).rows.length).toBeGreaterThan(0))
@@ -1069,13 +1127,14 @@ describe('mixed session backends', () => {
     const codexDir = path.join(repo, '.koloft', 'worktrees', 'codex-feature')
     fs.mkdirSync(codexDir, { recursive: true })
     writeJsonl(repo, native, '2026-08-08T11:00:00.000Z')
-    layout.sessions[native] = SEEDED
+    own(native)
     bindings.set(codexKey, 'codex-tab')
     const members = new Set([codexKey, 'pending-tab'])
     const extra = [
       {
         id: codexKey,
         backendId: 'codex' as const,
+        host: 'local' as const,
         title: 'newer',
         cwd: codexDir,
         worktree: 'codex-feature',
@@ -1087,6 +1146,7 @@ describe('mixed session backends', () => {
       {
         id: 'codex:local:history',
         backendId: 'codex' as const,
+        host: 'local' as const,
         title: 'external history',
         cwd: repo,
         worktree: 'main',
@@ -1098,6 +1158,7 @@ describe('mixed session backends', () => {
       {
         id: 'pending-tab',
         backendId: 'codex' as const,
+        host: 'local' as const,
         title: 'Starting…',
         cwd: repo,
         worktree: 'main',
@@ -1124,7 +1185,7 @@ describe('mixed session backends', () => {
     mgr.start()
     await mgr.firstScan
     expect(latest(repo).rows.map((r) => r.id)).toEqual(['pending-tab', codexKey, native])
-    expect(mgr.historyRows(repo).map((r) => r.id)).toEqual(['codex:local:history'])
+    expect(mgr.historyRows(repo)).toEqual([])
     expect(mgr.remove(repo)).toMatchObject({ running: 2, removed: false })
     expect(layout.sessions[native]).toEqual(SEEDED)
     expect(layout.sessions[codexKey]).toBeUndefined()
@@ -1190,6 +1251,7 @@ describe('WorkspaceManager: a running session that moved', () => {
     layout = {
       ...layout,
       workspaces: [{ path: repo }],
+      members: ['left-1', 'in-1', 'resumed-1'],
       sessions: { 'left-1': SEEDED, 'in-1': SEEDED, 'resumed-1': SEEDED }
     }
     bindings.set('left-1', 'tab-a')
@@ -1210,7 +1272,12 @@ describe('WorkspaceManager: a running session that moved', () => {
   it('hands back no folder for a RUNNING session whose folder was removed under it', async () => {
     const gone = path.join(repo, '.claude', 'worktrees', 'pulled')
     writeJsonl(repo, 'live-2')
-    layout = { ...layout, workspaces: [{ path: repo }], sessions: { 'live-2': SEEDED } }
+    layout = {
+      ...layout,
+      workspaces: [{ path: repo }],
+      members: ['live-2'],
+      sessions: { 'live-2': SEEDED }
+    }
     bindings.set('live-2', 'tab-z')
     live.set('live-2', { treeRoot: gone, worktree: 'pulled', relocated: true })
     mgr = liveMgr()
@@ -1222,7 +1289,12 @@ describe('WorkspaceManager: a running session that moved', () => {
 
   it('a cold row keeps what its bucket says, and points at that folder', async () => {
     writeJsonl(repo, 'cold-1')
-    layout = { ...layout, workspaces: [{ path: repo }], sessions: { 'cold-1': SEEDED } }
+    layout = {
+      ...layout,
+      workspaces: [{ path: repo }],
+      members: ['cold-1'],
+      sessions: { 'cold-1': SEEDED }
+    }
     mgr = liveMgr()
     mgr.start()
     await vi.waitFor(() => expect(latest(repo).rows.length).toBe(1))
@@ -1259,7 +1331,7 @@ describe('WorkspaceManager: a running session that moved', () => {
       path.join(dir, id + '.jsonl'),
       records.map((r) => JSON.stringify(r)).join('\n') + '\n'
     )
-    layout = { ...layout, workspaces: [{ path: repo }], sessions: { [id]: SEEDED } }
+    layout = { ...layout, workspaces: [{ path: repo }], members: [id], sessions: { [id]: SEEDED } }
     mgr = liveMgr()
     mgr.start()
     await vi.waitFor(() => expect(latest(repo).rows.length).toBe(1))
@@ -1272,7 +1344,12 @@ describe('WorkspaceManager: a running session that moved', () => {
     const { repoDir, wtDir } = gitRepoWithWorktree('vanished')
     writeJsonl(wtDir, 'wt-1')
     execFileSync('git', ['-C', repoDir, 'worktree', 'remove', wtDir], { stdio: 'ignore' })
-    layout = { ...layout, workspaces: [{ path: repoDir }], sessions: { 'wt-1': SEEDED } }
+    layout = {
+      ...layout,
+      workspaces: [{ path: repoDir }],
+      members: ['wt-1'],
+      sessions: { 'wt-1': SEEDED }
+    }
     mgr = liveMgr()
     mgr.start()
     await vi.waitFor(() => expect(latest(repoDir).rows.length).toBe(1))
@@ -1283,7 +1360,12 @@ describe('WorkspaceManager: a running session that moved', () => {
   it('leaves a remote row alone: its worktree is the machine’s to know', async () => {
     const wtPath = `${RPATH}/.claude/worktrees/feature`
     writeMirrorJsonl('wt1', wtPath)
-    layout = { ...layout, workspaces: [{ path: RKEY }], sessions: { wt1: SEEDED } }
+    layout = {
+      ...layout,
+      workspaces: [{ path: RKEY }],
+      members: ['wt1'],
+      sessions: { wt1: SEEDED }
+    }
     live.set('wt1', { treeRoot: wtPath, remote: true })
     mgr = liveMgr({
       remoteRunning: () => new Set(['wt1']),

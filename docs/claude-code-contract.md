@@ -711,6 +711,23 @@ other bullets of §9 were not re-measured on this build.
   trusted, `-w` made the worktree at the top folder's `.claude/worktrees/` and started.
   Measured 2026-09-23, CC 2.1.281, pty probe on a throwaway one-commit repo under
   `$TMPDIR`, no trusted ancestor.
+- **On a remote machine** Koloft writes the same entry, under the folder's real path
+  (`pwd -P`), over ssh just before the launch, with the machine's `node` (the one
+  `ensure.sh` installs for the statusline; with no node nothing is written and `-w`
+  refuses as above). The write happens before the tab script runs `ensure.sh`, so on a
+  machine that has never had a Koloft session and has no node of its own, the very
+  first worktree session gets no trust written and `-w` refuses; the next one works.
+  That CC on a Linux machine reads the same key the same way as on macOS is
+  **inferred, not checked** on a real machine (2026-09-24): the write was checked only
+  in the unit test's stand-in home, with this Mac's node.
+- **A remote session takes the same launch flags as a local one, on its command line.**
+  The tab script runs `claude --settings <file> --session-id <id> [-w] [--model]
+  [--effort] [permission flag] [--name <title> -- <first message>]` on the machine,
+  each argument quoted for `sh`; the local shim adds `--name` and `--` from its
+  environment instead. That a CC on a Linux machine treats `--name` and the text after
+  `--` exactly as the bullets above measured on macOS is **inferred, not checked**
+  (2026-09-24, not run against a real machine): only the quoting was
+  checked, with a stand-in `claude` that records its argv.
 - **A child claude inherits the parent's session markers and stops writing its
   transcript.** With `CLAUDE_CODE_CHILD_SESSION=1` in the environment the launched
   session prints `⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION
@@ -736,7 +753,8 @@ Koloft dependents: the scheduled-jobs runner's launch line and the shim's new-se
 branch (`src/main/shim.ts`), `src/main/claudeArgs.ts`, `src/main/skillList.ts`,
 `src/main/claudeTrust.ts`, the env scrub in `src/main/ptyManager.ts`,
 `src/main/leftovers.ts`, the warm-up `claude -p ok --max-turns 1` in
-`src/main/remote/launch.ts`.
+`src/main/remote/launch.ts`, and the remote launch and trust in
+`src/main/host/sshHost.ts`.
 
 ## §10 The official install script (`https://claude.ai/install.sh`)
 

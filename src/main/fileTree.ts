@@ -78,8 +78,16 @@ export async function listDir(
     absPath,
     candidates.map((c) => c.name)
   )
+  return visibleEntries(candidates, gitIgnored, !!opts?.showIgnored)
+}
+
+export function visibleEntries(
+  candidates: DirEntry[],
+  gitIgnored: ReadonlySet<string>,
+  showIgnored: boolean
+): DirEntry[] {
   const isIgnored = (c: DirEntry): boolean => HEAVY.has(c.name) || gitIgnored.has(c.name)
-  if (!opts?.showIgnored) return sortEntries(candidates.filter((c) => !isIgnored(c)))
+  if (!showIgnored) return sortEntries(candidates.filter((c) => !isIgnored(c)))
   return sortEntries(candidates.map((c) => (isIgnored(c) ? { ...c, ignored: true } : c)))
 }
 
@@ -180,7 +188,15 @@ export async function search(
   const found =
     (await gitVisibleFiles(absRoot, showIgnored)) ??
     (await walkFiles(absRoot, showIgnored)).map((rel) => ({ rel, ignored: false }))
+  return rankFiles(found, absRoot, q, showIgnored)
+}
 
+export function rankFiles(
+  found: { rel: string; ignored: boolean }[],
+  absRoot: string,
+  q: string,
+  showIgnored: boolean
+): { hits: SearchHit[]; truncated: boolean } {
   const scored: { hit: SearchHit; score: number }[] = []
   for (const { rel, ignored } of found) {
     if (!showIgnored && !passesHeavy(rel)) continue
@@ -214,30 +230,49 @@ function parseGrepLine(line: string): { rel: string; line: number; text: string 
 }
 
 // PLATFORM§31
-async function rgLines(absRoot: string, q: string, showIgnored: boolean): Promise<string[] | null> {
+export function rgArgs(q: string, showIgnored: boolean): string[] {
   const visibility = showIgnored
     ? ['--no-ignore', '--hidden', '-g', '!.git']
     : ['-g', '!{node_modules,.git}']
+  return [
+    '--line-number',
+    '--no-heading',
+    '--color=never',
+    '--null',
+    '-S',
+    '-F',
+    '--max-columns',
+    '300',
+    '--max-columns-preview',
+    ...visibility,
+    '--',
+    q,
+    '.'
+  ]
+}
+
+export function gitGrepArgs(q: string, showIgnored: boolean): string[] {
+  return [
+    'grep',
+    '--no-color',
+    '-z',
+    '-n',
+    '-I',
+    '-F',
+    '--untracked',
+    ...(showIgnored ? ['--no-exclude-standard'] : []),
+    '-e',
+    q
+  ]
+}
+
+// PLATFORM§31
+async function rgLines(absRoot: string, q: string, showIgnored: boolean): Promise<string[] | null> {
   try {
-    const { stdout } = await execFile(
-      'rg',
-      [
-        '--line-number',
-        '--no-heading',
-        '--color=never',
-        '--null',
-        '-S',
-        '-F',
-        '--max-columns',
-        '300',
-        '--max-columns-preview',
-        ...visibility,
-        '--',
-        q,
-        '.'
-      ],
-      { cwd: absRoot, maxBuffer: 32 * 1024 * 1024 }
-    )
+    const { stdout } = await execFile('rg', rgArgs(q, showIgnored), {
+      cwd: absRoot,
+      maxBuffer: 32 * 1024 * 1024
+    })
     return stdout.split('\n')
   } catch (e) {
     const err = e as { code?: unknown; stdout?: string }
@@ -249,24 +284,9 @@ async function rgLines(absRoot: string, q: string, showIgnored: boolean): Promis
 
 async function gitGrepLines(absRoot: string, q: string, showIgnored: boolean): Promise<string[]> {
   try {
-    const { stdout } = await execFile(
-      'git',
-      [
-        '-C',
-        absRoot,
-        'grep',
-        '--no-color',
-        '-z',
-        '-n',
-        '-I',
-        '-F',
-        '--untracked',
-        ...(showIgnored ? ['--no-exclude-standard'] : []),
-        '-e',
-        q
-      ],
-      { maxBuffer: 32 * 1024 * 1024 }
-    )
+    const { stdout } = await execFile('git', ['-C', absRoot, ...gitGrepArgs(q, showIgnored)], {
+      maxBuffer: 32 * 1024 * 1024
+    })
     return stdout.split('\n')
   } catch (e) {
     return (e as { stdout?: string }).stdout?.split('\n') ?? []
@@ -285,6 +305,14 @@ export async function searchContent(
   const showIgnored = !!opts?.showIgnored
   const lines =
     (await rgLines(absRoot, q, showIgnored)) ?? (await gitGrepLines(absRoot, q, showIgnored))
+  return contentHitsOf(lines, absRoot, showIgnored)
+}
+
+export function contentHitsOf(
+  lines: string[],
+  absRoot: string,
+  showIgnored: boolean
+): { hits: ContentHit[]; truncated: boolean } {
   const hits: ContentHit[] = []
   let matched = 0
   for (const line of lines) {

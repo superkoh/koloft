@@ -18,6 +18,7 @@ import type {
   SessionInfo
 } from '@shared/types'
 import { basename, isWebPagePath } from '@shared/preview'
+import { parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { boundSessionId, useActiveOpenFile, useStore, type OpenFile } from '../store'
 import { ArtifactPane, NO_CAPS, sameCaps, type ArtifactCaps } from './ArtifactPane'
 import { useEditProbe } from './EditPane'
@@ -767,9 +768,13 @@ function FilesContextMenu({
       ])
     }
   }
-  items.push(['Reveal in Finder', () => window.api.fs.reveal(menu.path)])
-  items.push(['Open with default app', () => window.api.preview.osOpen(menu.path)])
-  items.push(['Copy path', () => window.api.browser.copyText(menu.path)])
+  const remote = parseRemoteKey(menu.path)
+  if (!remote) {
+    items.push(['Reveal in Finder', () => window.api.fs.reveal(menu.path)])
+    items.push(['Open with default app', () => window.api.preview.osOpen(menu.path)])
+  }
+  const copied = remote ? remoteCopyText(remote.host, remote.path) : menu.path
+  items.push(['Copy path', () => window.api.browser.copyText(copied)])
   items.push(['Copy relative path', () => window.api.browser.copyText(menu.rel)])
   if (!menu.isDir) {
     items.push([bookmarked ? 'Remove bookmark' : 'Add bookmark', onBookmark])
