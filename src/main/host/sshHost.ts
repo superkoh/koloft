@@ -12,10 +12,9 @@ import {
 } from '@shared/types'
 import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { shq } from '@shared/shellQuote'
-import { EDIT_WRITE_MAX_BYTES } from '@shared/editLimits'
+import { EDIT_OPEN_MAX_BYTES, EDIT_WRITE_MAX_BYTES } from '@shared/editLimits'
 import { contentHitsOf, gitGrepArgs, rankFiles, rgArgs, visibleEntries } from '../fileTree'
 import {
-  EDIT_OPEN_MAX_BYTES,
   MAX_READ_BYTES,
   bytesToWrite,
   checkNewFileName,
