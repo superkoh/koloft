@@ -1,4 +1,5 @@
 import type { EditFingerprint, EditOpenResult } from '@shared/types'
+import { EDIT_WRITE_MAX_BYTES, sizeLabel } from '@shared/editLimits'
 import { isDirty, sameStamp } from './components/editBuffer'
 
 export interface DirtyTab {
@@ -191,7 +192,8 @@ function saveFailureMessage(err: unknown): string {
   if (msg.includes('KOLOFT_NO_PERM')) return 'Not allowed to write this file.'
   if (msg.includes('KOLOFT_DIR_GONE')) return 'The folder is gone — nothing was written.'
   if (msg.includes('KOLOFT_GONE')) return 'This file is not there any more.'
-  if (msg.includes('KOLOFT_TOO_LARGE')) return 'Too big to save — the limit is 1 MB.'
+  if (msg.includes('KOLOFT_TOO_LARGE'))
+    return `Too big to save — the limit is ${sizeLabel(EDIT_WRITE_MAX_BYTES)}.`
   if (msg.includes('KOLOFT_NOT_FILE')) return 'This is not a plain file any more.'
   return 'Could not save this file.'
 }
