@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { seedSettings, type E2EEnv } from './helpers/env'
+import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
 import { seedJsonl, settingsOnDisk, snap, waitForCalls } from './helpers/p1'
 import {
   changelog,
@@ -264,6 +264,41 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
       await expect.poll(() => settingsOnDisk(env).onboardingSeen, { timeout: 20_000 }).toBe(true)
       expect(settingsOnDisk(env).multiAccount).toBe(false)
       expect(fs.existsSync(env.claudeCalls)).toBe(false)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('T-OB-11: with only Codex on this Mac the balancing card still ends in Settings ▸ Accounts, where Codex accounts are added', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    firstRun(env)
+    installCodex(env)
+    env.launchEnv.KOLOFT_TEST_CLAUDE_PROBE = 'missing'
+    seedJsonl(env, env.workspaces.a, { summary: 'A one', mtime: Date.now() - 60_000 })
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await advanceTo(page, 3)
+
+      await welcome(page).locator('.ob-choices .choice').nth(1).click()
+      await clickPrimary(page)
+      await expectStep(page, 4)
+
+      await expect(welcome(page).locator('.btn-primary')).toHaveText('Set up accounts', {
+        timeout: 20_000
+      })
+      await expect(welcome(page).locator('.ob-warn')).toHaveCount(0)
+      await clickPrimary(page)
+      await expect(page.locator('.settings-modal')).toBeVisible({ timeout: 20_000 })
+      await expect(page.locator('.set-ni.on')).toHaveText('Accounts')
+      await expect(
+        page.locator('.settings-modal button', { hasText: 'Sign in to Codex' })
+      ).toBeVisible()
+      await snap(page, 'T-OB-11')
     } finally {
       await quitAndClose(app)
     }

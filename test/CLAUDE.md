@@ -120,8 +120,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 - Remote workspaces: the other machine is helpers/remote.ts + fixtures/fake-ssh.js
   (with fake-tmux.js and fake-rsync.js), with nothing in the product stubbed. A remote row's state arrives one mirror pull
   late, so drive working → waiting with `/busy`, not a short turn.
-- Codex sessions: the `codex` is fixtures/fake-codex.js, installed per spec by
-  codex-session's `installCodex` (it sets `KOLOFT_CODEX_CMD` and `CODEX_HOME`).
+- Codex sessions: the `codex` is fixtures/fake-codex.js, installed per case by
+  `installCodex` (helpers/env.ts) (it sets `KOLOFT_CODEX_CMD` and `CODEX_HOME`).
 
 ### Keys, focus and the hidden window
 
