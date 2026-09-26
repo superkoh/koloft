@@ -13,8 +13,8 @@ place and edited in one place.
 3. The centre of the window is **100% the session's own tool UI** — Claude Code's or
    Codex's — with no Koloft chrome inside it.
 4. Worktree lifecycle and session retention belong to **the agent's tool**, not Koloft.
-   The one gap is Codex: Koloft creates the worktree for a Codex worktree session, and
-   Codex leaves it in place when it exits. Nobody removes it yet (#116).
+   The one gap: Koloft makes the worktree for a Codex worktree session, and nobody
+   removes it yet (#116).
 5. A file opens in the Workbench **on your intent only** — nothing follows the agent's
    writes around by itself.
 
@@ -27,7 +27,8 @@ when it works. That is what "judged against" means.
 
 - **Worktree session bootstrap** — a setup script, copying gitignored files, a port offset,
   so a fresh worktree is usable the moment its session starts. Creating the worktree
-  session itself already works; cleanup afterwards is Claude Code's, not Koloft's.
+  session itself already works; cleanup afterwards is the agent's tool's, not Koloft's
+  (Codex aside, #116).
 - **Broadcast input** — type once, send to the sessions you selected. The workspace →
   session tree is the first reliable "select N sessions" unit Koloft has had, so the
   scope is unambiguous: the rows you picked, nothing implied.
@@ -39,7 +40,7 @@ when it works. That is what "judged against" means.
 
 - **Comment back into the session** — the aggregated diff already exists in the Changes
   view; the missing half is sending a hunk plus a note back into the conversation, and
-  jumping to the Claude turn that produced a hunk.
+  jumping to the agent turn that produced a hunk.
 - **Plan-mode surfacing** — read-only rendering of a plan first; approve/reject only once
   the TUI's input mapping is proven against the fake-claude harness.
 
@@ -102,9 +103,8 @@ would settle Tier 1 against Tier 2.
 - **Augment the real CLI in a real terminal; don't replace it.** The dominant complaint
   against GUI wrappers is losing the real thing — aliases, `PATH`, editor integration.
   The terminal that must never be buried is the one the *agent* lives in: the Claude or
-  Codex TUI,
-  which is why it has the whole centre. That is not the same as keeping a free-floating
-  shell, which is a non-goal.
+  Codex TUI, which is why it has the whole centre. That is not the same as keeping a
+  free-floating shell, which is a non-goal.
 - **Anti-patterns with a track record of backlash**: telemetry, forced login, hiding the
   terminal, auto-hide-on-blur without an opt-out, ambiguous broadcast scope. Koloft has
   none of the first three and will not add them.

@@ -20,7 +20,7 @@ and lets you start new ones or resume old ones. Each session gets a **Workbench*
 beside its terminal: the files the agent changed, a file browser, web pages, and a
 shell.
 
-![Koloft: workspaces and their Claude sessions on the left, the running session in the middle, and its Workbench on the right showing the changes Claude made](.github/assets/screenshot.png)
+![Koloft: workspaces and their sessions on the left, the running session in the middle, and its Workbench on the right showing the changes the agent made](.github/assets/screenshot.png)
 
 ## What you get
 
@@ -29,8 +29,8 @@ shell.
   they ran. Nothing is imported: the list is what Claude Code and Codex themselves wrote
   to disk, so sessions you started from a plain terminal show up too.
 - **Start or resume sessions** — `File ▸ New Session…` (⌘N) starts one in the
-  selected workspace, with the tool you picked as default (`Settings ▸ Sessions`) or the
-  other one; clicking an old row resumes it; `New Worktree Session…` (⇧⌘N) runs the
+  selected workspace with the default method set in `Settings ▸ Sessions`; clicking an
+  old row resumes it; `New Worktree Session…` (⇧⌘N) runs the
   session in an isolated git worktree. A workspace's right-click menu holds
   the low-traffic doors: restore a session from history, fetch origin, remove the
   workspace. When the checkout is behind `origin`, a badge on the row says by how much
@@ -55,7 +55,7 @@ shell.
   or `codex` directly, and everything after it is yours.
 - **Multi-account balancing** — register several Claude subscription accounts and
   several Codex sign-ins. Every launch looks at their live rate limits and starts on the
-  least-loaded one of that tool. The topbar shows the pool's remaining allowance. These
+  account with the most room left. The topbar shows the pool's remaining allowance. These
   are meant to be *your own* accounts — please check that how you use them fits
   Anthropic's and OpenAI's terms, which is between you and them.
 - **Built-in statusline** — a Koloft-managed statusline in every Claude session: model,
@@ -69,7 +69,6 @@ shell.
   one. Koloft installs what the machine is missing (Node, `claude`) over the same
   connection. The Workbench works there too — its files, changes, edits and shell are
   the machine's — except that images and PDFs from the machine do not preview yet.
-  Remote workspaces run Claude only; Codex is not offered there yet.
 - **Stays current** — `Koloft ▸ Check for Updates…` downloads and swaps the app bundle
   without a signed installer; a banner in the sidebar says when a newer one is out.
 - **Smaller things** — a first-run walkthrough and a handful of tips that appear the
@@ -100,8 +99,7 @@ clear the quarantine flag once: `xattr -dr com.apple.quarantine /Applications/Ko
 session under `~/.claude/projects/<encoded-cwd>/<uuid>.jsonl`. Koloft reads that tree for
 every pinned workspace (its root checkout plus its git worktrees) to build the sidebar:
 title, last activity, which files were written. Codex keeps its sessions under its own
-home (`~/.codex`, or one home per Codex account Koloft signed in), and Koloft asks Codex
-for that list (`codex app-server`, `thread/list`). Koloft never keeps a second copy of a
+home (`~/.codex`), and Koloft asks Codex for that list (`codex app-server`, `thread/list`). Koloft never keeps a second copy of a
 session.
 
 **Claude launches are bound through Claude Code's own hooks.** Every `claude` Koloft
@@ -274,8 +272,8 @@ A remote workspace also reaches the machine you named, over `ssh` and `rsync`.
 
 Claude Code itself talks to Anthropic, and Codex to OpenAI, on their own account —
 logging in, and every turn you take. That traffic is theirs, not Koloft's, and this list
-does not cover it. The one Codex call Koloft asks for is each Codex account's remaining
-rate limits; Codex makes it, through its own `codex app-server`.
+does not cover it. Koloft also asks Codex for each account's remaining rate limits; that
+call is Codex's own, through `codex app-server`.
 
 ## Contributing
 

@@ -1,8 +1,8 @@
 # Security
 
 Koloft holds Claude subscription tokens and Codex logins, hands them to processes it
-starts, and runs a browser you are signed into. Please report anything that looks wrong privately, before
-it goes anywhere public.
+starts, and runs a browser you are signed into. Please report anything that looks wrong
+privately, before it goes anywhere public.
 
 ## Reporting a problem
 
@@ -32,9 +32,9 @@ what the code actually does, not what it promises.
 | Credential injection | `src/main/shim.ts` | A `claude` shim early on a session's `PATH` adds the picked account's credentials to that one launch. A Codex launch gets only the picked account's `CODEX_HOME`. |
 | Local file serving | `src/main/index.ts` (the `koloft-file` handler) | Serves `koloft-file://` to Koloft's own window and its previews. It reads whatever path it is asked for; there is no workspace fence. The in-app browser's web tabs get 403 for that scheme. |
 | In-app browser | `src/main/browserSecurity.ts`, `src/main/extensionManager.ts` | Page permissions, navigation rules, guest `<webview>` attach checks, Chrome extension loading. |
-| Agent browser control | `src/main/cdpRelay.ts` | A Chrome DevTools endpoint on `127.0.0.1`, on an OS-assigned port, behind a 16-byte random path, one per session. Settings ▸ Extensions turns it off. |
+| Agent browser control | `src/main/cdpRelay.ts` | A Chrome DevTools endpoint on `127.0.0.1`, on an OS-assigned port, behind a 16-byte random path, one per Claude session. Settings ▸ Extensions turns it off. |
 | Remote workspaces (alpha) | `src/main/remote/` | `ssh` and `rsync` to a machine you name. Credentials go over as a `<tab>.env` file written mode `0600`, which the remote start line sources once and deletes immediately. It does touch the remote disk for that moment. |
-| Scheduled jobs | `src/main/cronRunner.ts` | Starts sessions on a timer. It never types into a session; the first message travels as an environment variable, never on the shell command line. |
+| Scheduled jobs | `src/main/cronRunner.ts` | Starts sessions on a timer. It never types into a session. For Claude the first message travels as an environment variable, never on the shell command line; for Codex it is the last argument of `codex`, so it shows in the process list. |
 
 ## Known, and accepted
 

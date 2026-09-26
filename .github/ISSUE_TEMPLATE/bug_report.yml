@@ -5,8 +5,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        Koloft sits between you and Claude Code or Codex, so the first thing to sort out
-        is which of the two did the thing. If you can, check whether the same happens
+        Koloft sits between you and the agent (Claude Code or Codex), so the first thing
+        to sort out is which of the two did the thing. If you can, check whether the same happens
         running `claude` or `codex` in a plain terminal — that answer alone often solves
         the report.
 

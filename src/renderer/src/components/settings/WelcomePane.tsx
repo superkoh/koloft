@@ -39,7 +39,7 @@ const CARDS: { Icon: typeof LuFolder; title: string; body: string; where: string
   {
     Icon: LuUsers,
     title: 'Several accounts, one pool',
-    body: 'Each Claude or Codex session starts on the account of that kind with the most room left.',
+    body: 'Each session starts on the account with the most room left.',
     where: 'Settings ▸ Accounts'
   },
   {

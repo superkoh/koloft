@@ -326,7 +326,7 @@ export function Onboarding({
             <div className="big">Use your existing login.</div>
             <div className="quiet">
               {codexFound
-                ? 'Claude Code and Codex each need a login. Keep the ones this Mac already has, or let Koloft spread your sessions over several accounts of each.'
+                ? 'Claude Code and Codex each need a login. Keep the ones this Mac already has, or let Koloft spread your sessions over several accounts.'
                 : 'Claude Code needs a login. Keep the one this Mac already has, or let Koloft spread your sessions over several accounts.'}
             </div>
             <div className="ob-choices">
