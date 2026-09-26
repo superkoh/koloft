@@ -161,7 +161,7 @@ test.describe('Workbench titlebar toggle, and the panel seam with the retired au
     await expect(page.locator('.ws-tab', { hasText: FAKE_SESSION_TITLE })).toHaveCount(2)
   })
 
-  test('T-MIG-08: a v2 layout with the retired terminal mode, its strip and the island block upgrades to v4 — workspaces and entry kept, strip and island dropped, panel collapsed but usable', async ({
+  test('T-MIG-08: a v2 layout with the retired terminal mode, its strip and the island block upgrades to v5 — workspaces and entry kept, strip and island dropped, panel collapsed but usable', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -206,7 +206,7 @@ test.describe('Workbench titlebar toggle, and the panel seam with the retired au
       const row = wsRows(page2, 'ws-a').first()
       await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
 
-      await expect.poll(() => layoutOnDisk(env).version, { timeout: 30_000 }).toBe(4)
+      await expect.poll(() => layoutOnDisk(env).version, { timeout: 30_000 }).toBe(5)
       const upgraded = layoutOnDisk(env)
       expect(upgraded).not.toHaveProperty('aux')
       expect(upgraded).not.toHaveProperty('globalTerminal')
