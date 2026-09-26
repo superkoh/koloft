@@ -35,6 +35,11 @@ when it works. That is what "judged against" means.
 - **Command palette** — jump to any session across workspaces, and reach actions by name.
   Finding a session *inside* one workspace is already solved by the flat tree; this is
   the cross-workspace half.
+- **Agents use Koloft themselves** — a Claude or Codex session in Koloft already has a
+  `koloft` command and a guide for it: scheduled tasks, opening a file, page or diff in
+  its Workbench, the workspace note, and starting a sibling session and talking to it.
+  What is left: Codex driving the Workbench browser (#119), and sessions on another
+  machine over ssh, which get no `koloft` command yet.
 
 ### Tier 2 — review: where Koloft can still grow
 
@@ -59,6 +64,12 @@ when it works. That is what "judged against" means.
 ## Deliberately not doing
 
 Reopen one of these only with new evidence, not a new argument.
+
+- **An agent typing into another session's terminal** — agents in Koloft start and steer
+  a sibling session through messages (Claude Code's own `SendMessage`, and
+  `koloft session send` for Codex), which the receiving session sees as a message it can
+  judge. Faked keystrokes land in whatever that TUI's input box holds at the time.
+  Broadcast input above is a feature for the *person*, with the rows they picked.
 
 - **Mobile clients or a relay service** — an architectural mismatch. Koloft sessions are
   plain Claude Code or Codex sessions, so remote-control tools that work on those tools
