@@ -138,6 +138,11 @@ method. A recheck adds its date, version and command to the bullet.
 - **Passing `fullscreen: false` when building a BrowserWindow turns off the green
   fullscreen button** on macOS: it only zooms, and `isFullScreenable()` is false. Leave
   the key out unless it is true.
+- **`fullscreen: true` can be ignored right after the last window quit from
+  fullscreen** (macOS): while macOS is still closing the old fullscreen Space, a window
+  built with it keeps `isFullScreen()` false. Measured 2026-09-25, Electron 43.7.3,
+  macOS 27.0, relaunching at once after quit: 8 of 30 launches came up windowed; with a
+  1.5 s or 4 s gap, 0 of 20 each.
 - **Construction bounds are clamped up to `minWidth`**, so a saved window narrower than
   the minimum is widened unless the minimum is lowered to match.
 - **`backgroundThrottling: false` keeps a hidden window running**: rAF and timers keep
