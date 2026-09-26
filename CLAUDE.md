@@ -1,13 +1,13 @@
 # CLAUDE.md
 
-Koloft is an Electron app that runs and manages Claude Code (the `claude` command-line
-tool, via node-pty). The one core idea: the user picks a **workspace** and starts
-or resumes **Claude sessions** in it; Koloft lists those sessions straight from
-Claude's own storage (`~/.claude/projects`) and hangs one helper panel — the
-Workbench: changed files, a file browser, web pages, a shell — off each session,
+Koloft is an Electron app that runs and manages Claude Code and Codex (the `claude` and
+`codex` command-line tools, via node-pty). The one core idea: the user picks a
+**workspace** and starts or resumes **Claude Code or Codex sessions** in it; Koloft lists
+those sessions straight from each tool's own storage (`~/.claude/projects`; Codex's
+`thread/list`) and hangs one helper panel — the Workbench: changed files, a file browser, web pages, a shell — off each session,
 and one plain-text note off each workspace (the Notes island under the sessions
 list; the Workbench is the session's, the note is the workspace's).
-A session tab is not a session: the tab is the terminal `claude` runs in, and
+A session tab is not a session: the tab is the terminal `claude` or `codex` runs in, and
 `/clear`, a resume or a restart swaps the session inside it while the tab stays —
 the Workbench, its web pages and the shim's env are keyed by the tab.
 Judge every trade-off against that one idea.
@@ -184,8 +184,9 @@ Working principles:
   (`--include=*.md`) aborts the whole call — quote it.
 - Auth comes from Koloft's own multi-account balancer (Settings ▸ Accounts): the claude
   shim injects the picked account per launch; the probe/header contract is
-  `docs/claude-code-contract.md` §7. With the mode off, a session runs bare `claude` on
-  whatever the machine's own `/login` state is.
+  `docs/claude-code-contract.md` §7. A Codex account is its own `CODEX_HOME`, picked per
+  launch (`docs/codex-cli-contract.md` §15). With the mode off, a session runs bare
+  `claude` or `codex` on whatever login the machine already has.
 - Any browser automation here stays headless — never pass `--headed` unless asked to
   watch. Koloft is developed on the same Mac the automation runs on, so a browser window
   that takes focus, or merely covers a fullscreen Space, interrupts whatever is being

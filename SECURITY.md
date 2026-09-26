@@ -1,7 +1,7 @@
 # Security
 
-Koloft holds Claude subscription tokens, hands them to processes it starts, and runs a
-browser you are signed into. Please report anything that looks wrong privately, before
+Koloft holds Claude subscription tokens and Codex logins, hands them to processes it
+starts, and runs a browser you are signed into. Please report anything that looks wrong privately, before
 it goes anywhere public.
 
 ## Reporting a problem
@@ -27,8 +27,9 @@ what the code actually does, not what it promises.
 
 | Area | Where | What it does |
 | --- | --- | --- |
-| Account tokens | `src/main/accounts.ts` | Stored in the macOS Keychain under Koloft's own service name. Never written to `settings.json`. |
-| Credential injection | `src/main/shim.ts` | A `claude` shim early on a session's `PATH` adds the picked account's credentials to that one launch. |
+| Account tokens | `src/main/accounts.ts` | Claude tokens are stored in the macOS Keychain under Koloft's own service name. Never written to `settings.json`. |
+| Codex logins | `src/main/codexAccounts.ts` | Each Codex account is a folder (mode `0700`) under Koloft's app data, used as `CODEX_HOME`; `codex login` writes that account's login file there, on disk, not in the Keychain. |
+| Credential injection | `src/main/shim.ts` | A `claude` shim early on a session's `PATH` adds the picked account's credentials to that one launch. A Codex launch gets only the picked account's `CODEX_HOME`. |
 | Local file serving | `src/main/index.ts` (the `koloft-file` handler) | Serves `koloft-file://` to Koloft's own window and its previews. It reads whatever path it is asked for; there is no workspace fence. The in-app browser's web tabs get 403 for that scheme. |
 | In-app browser | `src/main/browserSecurity.ts`, `src/main/extensionManager.ts` | Page permissions, navigation rules, guest `<webview>` attach checks, Chrome extension loading. |
 | Agent browser control | `src/main/cdpRelay.ts` | A Chrome DevTools endpoint on `127.0.0.1`, on an OS-assigned port, behind a 16-byte random path, one per session. Settings ▸ Extensions turns it off. |
@@ -61,12 +62,12 @@ Reports about these will be closed as working-as-intended:
 - **An agent driving the in-app browser sees the pages you are signed into.** That is
   the feature. The switch in Settings ▸ Extensions is the control.
 - **Settings ▸ Accounts ▸ Skip permission prompts** adds
-  `--dangerously-skip-permissions` to the launches Koloft injects an account into. That
+  `--dangerously-skip-permissions` to the Claude launches Koloft injects an account into. That
   is what the switch is for, and it does what its name says. It never overrides a
   permission flag you passed yourself.
 
 ## Scope
 
-This is about Koloft itself. Problems in Claude Code, in Electron, or in a Chrome
+This is about Koloft itself. Problems in Claude Code, in Codex, in Electron, or in a Chrome
 extension you installed belong to those projects — though if Koloft uses one of them in
 a way that makes the problem worse, that part is ours and worth reporting.

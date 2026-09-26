@@ -6,12 +6,15 @@ place and edited in one place.
 
 ## The idea everything is judged against
 
-1. You declare a **workspace** and create or resume **Claude sessions** in it. Koloft
-   orchestrates; it does not spectate.
+1. You declare a **workspace** and create or resume **Claude Code or Codex sessions** in
+   it. Koloft orchestrates; it does not spectate.
 2. A free-floating terminal is **not** a product goal. A shell exists only as a session's
-   helper tool, inside that session's Workbench, and never hosts a Claude TUI of its own.
-3. The centre of the window is **100% Claude Code's own UI** — no Koloft chrome inside it.
-4. Worktree lifecycle and session retention belong to **Claude Code**, not Koloft.
+   helper tool, inside that session's Workbench, and never hosts an agent's TUI of its own.
+3. The centre of the window is **100% the session's own tool UI** — Claude Code's or
+   Codex's — with no Koloft chrome inside it.
+4. Worktree lifecycle and session retention belong to **the agent's tool**, not Koloft.
+   The one gap is Codex: Koloft creates the worktree for a Codex worktree session, and
+   Codex leaves it in place when it exits. Nobody removes it yet (#116).
 5. A file opens in the Workbench **on your intent only** — nothing follows the agent's
    writes around by itself.
 
@@ -57,9 +60,9 @@ when it works. That is what "judged against" means.
 Reopen one of these only with new evidence, not a new argument.
 
 - **Mobile clients or a relay service** — an architectural mismatch. Koloft sessions are
-  plain Claude Code sessions, so remote-control tools that work on Claude Code already
-  work alongside Koloft. (Remote *workspaces*, where Claude runs on another machine over
-  ssh with no relay, are a different thing and exist, in alpha.)
+  plain Claude Code or Codex sessions, so remote-control tools that work on those tools
+  already work alongside Koloft. (Remote *workspaces*, where Claude runs on another
+  machine over ssh with no relay service, are a different thing and exist, in alpha.)
 - **Checkpoints / rewind** — native in Claude Code (`/rewind`). At most, surface the list.
 - **Split panes / tiled layouts** — high cost on xterm.js for a window whose centre is
   one TUI.
@@ -67,18 +70,18 @@ Reopen one of these only with new evidence, not a new argument.
 - **`<webview>` → `WebContentsView`, node-pty → a Rust pty** — rejected in the
   measure-first backlog: no observed symptom.
 - **Shell command-block navigation** — its subject is a *shell* session, but the centre
-  is always the Claude TUI (alt-screen, no prompt marks), and the only shell left is the
+  is always the agent's TUI (alt-screen, no prompt marks), and the only shell left is the
   helper tab, which never hosts an agent. The surviving requirement — jump between
-  Claude turns — moved to Tier 2.
+  agent turns — moved to Tier 2.
 - **A quake-style hotkey window** — the value it was for already ships: clicking the OS
   notification brings the window forward with that session active. And hide-on-blur
   contradicts a board you keep visible.
 - **More preview renderers (CSV and the like)** — Markdown, code, images and PDF cover
   nearly every file a session produces; any other format opens in the app the system
   already has for it.
-- **A saved prompt library** — it would mirror Claude Code's own `/` menu inside
-  Koloft's scarcest surface, against "the centre is 100% Claude's UI". Koloft can only
-  ever chase Claude Code's native commands and skills there.
+- **A saved prompt library** — it would mirror the tool's own `/` menu inside Koloft's
+  scarcest surface, against "the centre is 100% the tool's own UI". Koloft can only ever
+  chase Claude Code's and Codex's native commands and skills there.
 - **pty → utilityProcess** — no observed jank. Folded into the performance backlog with
   the trigger that would justify it.
 - **Undo-close tab** — a closed session stays in the list as a cold row with *Resume*,
@@ -98,7 +101,8 @@ would settle Tier 1 against Tier 2.
 
 - **Augment the real CLI in a real terminal; don't replace it.** The dominant complaint
   against GUI wrappers is losing the real thing — aliases, `PATH`, editor integration.
-  The terminal that must never be buried is the one the *agent* lives in: the Claude TUI,
+  The terminal that must never be buried is the one the *agent* lives in: the Claude or
+  Codex TUI,
   which is why it has the whole centre. That is not the same as keeping a free-floating
   shell, which is a non-goal.
 - **Anti-patterns with a track record of backlash**: telemetry, forced login, hiding the

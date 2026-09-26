@@ -6,10 +6,10 @@ body:
     attributes:
       value: |
         One idea decides what gets built: **you pick a folder, and you start or resume
-        Claude Code sessions in it.** Ideas that pull Koloft away from that get closed
-        even when they are good ideas and even when they work — a free-floating
+        Claude Code or Codex sessions in it.** Ideas that pull Koloft away from that get
+        closed even when they are good ideas and even when they work — a free-floating
         terminal, a second copy of a transcript, anything that makes Koloft the thing
-        you look at instead of Claude.
+        you look at instead of the agent.
 
         [docs/roadmap.md](https://github.com/superkoh/koloft/blob/main/docs/roadmap.md) lists what is planned
         and what was already turned down, and is worth a look first.
