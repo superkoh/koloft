@@ -1,7 +1,7 @@
 import * as pty from 'node-pty'
 import { EventEmitter } from 'events'
 import os from 'os'
-import type { TabKind } from '@shared/types'
+import type { HostId, TabKind } from '@shared/types'
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { OscCwdParser } from './oscCwd'
 import { codexEnvironment } from './codexTransport'
@@ -32,6 +32,7 @@ interface CreateArgs {
   util?: boolean
   resumeSessionId?: string
   ownerTabId?: string
+  host?: HostId
   extraEnv?: { KOLOFT_FIRST_PROMPT?: string; KOLOFT_SESSION_NAME?: string }
 }
 
@@ -52,6 +53,9 @@ export class PtyManager extends EventEmitter {
   openDir?: string
   pickDir?: string
   cdpDir?: string
+  agentDir?: string
+  agentPlugin?: string
+  agentToolsFor?: (kind: TabKind, host: HostId) => boolean
   multiAccountOn?: () => boolean
   makeHookSettings?: (tabId: string) => string | undefined
 
@@ -101,6 +105,8 @@ export class PtyManager extends EventEmitter {
         key === 'KOLOFT_FIRST_PROMPT' ||
         key === 'KOLOFT_SESSION_NAME' ||
         key === 'KOLOFT_CDP_DIR' ||
+        key === 'KOLOFT_AGENT_DIR' ||
+        key === 'KOLOFT_AGENT_PLUGIN' ||
         key === 'ANT_ACCOUNT' ||
         (BROWSER_TAB_ENV as readonly string[]).includes(key)
       ) {
@@ -112,6 +118,14 @@ export class PtyManager extends EventEmitter {
     if (this.openDir) env.KOLOFT_OPEN_DIR = this.openDir
     if (this.pickDir) env.KOLOFT_PICK_DIR = this.pickDir
     if (this.cdpDir && !args.util) env.KOLOFT_CDP_DIR = this.cdpDir
+    if (
+      this.agentDir &&
+      args.kind !== 'codex' &&
+      this.agentToolsFor?.(args.kind, args.host ?? 'local')
+    ) {
+      env.KOLOFT_AGENT_DIR = this.agentDir
+      if (this.agentPlugin && !args.util) env.KOLOFT_AGENT_PLUGIN = this.agentPlugin
+    }
     if (args.kind !== 'codex' && this.multiAccountOn?.()) {
       env.KOLOFT_MULTI_ACCOUNT = '1'
       delete env.ANTHROPIC_API_KEY

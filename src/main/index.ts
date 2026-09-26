@@ -67,7 +67,7 @@ import {
 } from './remote/launch'
 import { machinePackageBase, mirrorHookDir, mirrorProjectsRoot } from './remote/paths'
 import { RemoteSync } from './remote/sync'
-import { readJsonDrop, watchJsonDrops } from './jsonDrops'
+import { readJsonDrop, watchJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
 import {
   bundlePath,
   DEFAULT_THEME,
@@ -227,8 +227,12 @@ import type {
   WindowCommand,
   SessionWorkbenchState,
   Settings,
+  HostId,
+  TabKind,
   WhatsNew
 } from '@shared/types'
+import { AgentRequests, BUILTIN_VERBS } from './agentRequests'
+import { writeAgentPlugin } from './agentPlugin'
 
 // PLATFORM§4
 if (!app.isPackaged) app.setName('koloft-dev')
@@ -539,6 +543,27 @@ function watchPickRequests(pickDir: string): fs.FSWatcher | null {
   )
 }
 
+function agentToolsFor(kind: TabKind, host: HostId): boolean {
+  return (
+    loadSettings().agentTools &&
+    (kind === 'shell' || capabilitiesFor(kind, host).agentTools === true)
+  )
+}
+
+const agentRequests = new AgentRequests({
+  verbs: { ...BUILTIN_VERBS },
+  tab: (tabId) => ptyMgr.get(tabId),
+  enabled: (tabId) => {
+    const kind = ptyMgr.get(tabId)?.kind
+    return (
+      kind !== undefined &&
+      kind !== 'shell' &&
+      agentToolsFor(kind, tracker.remoteOf(tabId) ? 'ssh' : 'local')
+    )
+  },
+  alive: pidAlive
+})
+
 async function pickForLaunch(): Promise<{
   res: PickResponse
   endpoint?: { baseUrl?: string; model?: string }
@@ -552,12 +577,6 @@ async function pickForLaunch(): Promise<{
   if (!res.account || res.kind !== 'custom') return { res }
   const meta = findAccount(res.account, 'custom')
   return { res, endpoint: { baseUrl: meta?.baseUrl, model: meta?.model } }
-}
-
-function writeWholeBeforeVisible(dest: string, text: string): void {
-  const tmp = `${dest}.tmp`
-  fs.writeFileSync(tmp, text)
-  fs.renameSync(tmp, dest)
 }
 
 async function handlePickRequest(pickDir: string, reqName: string, raw: unknown): Promise<void> {
@@ -1071,9 +1090,14 @@ app.whenReady().then(() => {
   setupGuestAudioState()
   setupGuestFullscreen()
 
-  const { shimDir, regDir, openDir, pickDir } = setupShim()
+  const { shimDir, regDir, openDir, pickDir, agentDir } = setupShim()
   ptyMgr.shimDir = shimDir
   ptyMgr.regDir = regDir
+  if (agentRequests.watch(agentDir)) {
+    ptyMgr.agentDir = agentDir
+    ptyMgr.agentPlugin = writeAgentPlugin(app.getPath('userData'))
+    ptyMgr.agentToolsFor = agentToolsFor
+  }
   claudeBackend.watchShimRegistrations(regDir)
   if (watchOpenRequests(openDir)) {
     ptyMgr.openDir = openDir
@@ -1094,7 +1118,8 @@ app.whenReady().then(() => {
     writeTabHookSettings(
       hookPaths,
       tabId,
-      loadSettings().statuslineBuiltin ? statusLineSetting(statusline) : undefined
+      loadSettings().statuslineBuiltin ? statusLineSetting(statusline) : undefined,
+      loadSettings().agentTools
     )
   claudeBackend.watchLocalHooks(hookPaths.regDir)
 
@@ -1216,7 +1241,11 @@ app.whenReady().then(() => {
       trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
       homes: () => codexHomes(userData),
-      openShimRoot: path.join(userData, 'codex-open')
+      openShimRoot: path.join(userData, 'codex-open'),
+      agent: {
+        enabled: () => agentToolsFor('codex', 'local'),
+        answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw)
+      }
     })
   } catch (error) {
     codexStartupError = `Codex session data could not be loaded; the original file is preserved. ${String(error)}`

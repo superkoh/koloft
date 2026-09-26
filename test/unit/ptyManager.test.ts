@@ -38,6 +38,8 @@ const POLLUTANTS = {
   KOLOFT_SESSION_DIR: '/parent-koloft/reg',
   KOLOFT_OPEN_DIR: '/parent-koloft/opens',
   KOLOFT_HOOK_SETTINGS: '/parent-koloft/hooks/pty-x-1.json',
+  KOLOFT_AGENT_DIR: '/parent-koloft/agent',
+  KOLOFT_AGENT_PLUGIN: '/parent-koloft/agent-plugin',
   ANT_ACCOUNT: 'whoever-started-koloft'
 }
 
@@ -96,6 +98,29 @@ describe('PtyManager per-tab environment', () => {
     expect(env.KOLOFT_HOOK_SETTINGS).toBe(`/koloft/hooks/${handle.id}.json`)
     // PLATFORM§2
     expect(env.TERM_PROGRAM).toBe('Apple_Terminal')
+  })
+
+  it('hands the koloft request folder and the skill plugin only to a tab whose kind and machine may use agent tools, and gives a utility shell the folder but not the plugin', () => {
+    const allowed: string[] = []
+    const envFor = (args: Parameters<PtyManager['create']>[0]): Record<string, string> => {
+      mocks.spawn.mockClear()
+      const mgr = new PtyManager()
+      mgr.agentDir = '/koloft/agent'
+      mgr.agentPlugin = '/koloft/agent-plugin'
+      mgr.agentToolsFor = (kind, host) => allowed.includes(`${kind}@${host}`)
+      mgr.create(args)
+      return spawnedEnv()
+    }
+    allowed.push('claude@local', 'shell@local')
+    const local = envFor({ kind: 'claude', cwd: os.tmpdir() })
+    expect(local.KOLOFT_AGENT_DIR).toBe('/koloft/agent')
+    expect(local.KOLOFT_AGENT_PLUGIN).toBe('/koloft/agent-plugin')
+    const util = envFor({ kind: 'shell', cwd: os.tmpdir(), util: true })
+    expect(util.KOLOFT_AGENT_DIR).toBe('/koloft/agent')
+    expect(util.KOLOFT_AGENT_PLUGIN).toBeUndefined()
+    const remote = envFor({ kind: 'claude', cwd: os.tmpdir(), host: 'ssh' })
+    expect(remote.KOLOFT_AGENT_DIR).toBeUndefined()
+    expect(remote.KOLOFT_AGENT_PLUGIN).toBeUndefined()
   })
 
   it('marks a global-terminal (utility) shell with KOLOFT_UTIL=1, the variable the shim hard block keys off', () => {

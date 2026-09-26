@@ -29,6 +29,8 @@ import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
 import { watchJsonDrops } from './jsonDrops'
 import { openDropTarget, type OpenDrop } from './openDrop'
 import { removeCodexOpenShim, writeCodexOpenShim } from './openShimScript'
+import { writeCodexAgentShim } from './agentShim'
+import { CODEX_AGENT_HINT } from '@shared/agentGuide'
 
 const exists = (p: string): boolean => {
   try {
@@ -47,6 +49,9 @@ const STATUS_LINE_CONFIG = `tui.status_line=${JSON.stringify([
   'pull-request-number',
   'current-dir'
 ])}`
+
+// CODEX§17
+const AGENT_HINT_CONFIG = `developer_instructions=${JSON.stringify(CODEX_AGENT_HINT)}`
 
 // CODEX§1
 const NO_UPDATE_NOTICE_AT_START = 'check_for_update_on_startup=false'
@@ -91,6 +96,10 @@ export interface CodexSessionDeps {
   pickHome(): { account: string; home: string } | undefined
   homes(): string[]
   openShimRoot: string
+  agent?: {
+    enabled(): boolean
+    answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
+  }
 }
 
 interface RowScope {
@@ -616,8 +625,11 @@ export class CodexSessions {
       if (run && !run.explicitStop && !run.stopping)
         this.bindThread(run, event.thread, event.change)
     }
-    const openShim = this.startOpenShim(processEnv?.ZDOTDIR, (target) =>
-      observe({ type: 'open', target })
+    const agent = this.deps.agent?.enabled() ? this.deps.agent : undefined
+    const openShim = this.startOpenShim(
+      processEnv?.ZDOTDIR,
+      (target) => observe({ type: 'open', target }),
+      agent && ((dir, name, raw) => agent.answer(run?.tabId, dir, name, raw))
     )
     const env = { ...this.envFor(home), ZDOTDIR: openShim.zdotDir }
     const observer = new CodexObservation(observe)
@@ -627,7 +639,7 @@ export class CodexSessions {
         binary,
         env,
         cwd,
-        configOverrides: [STATUS_LINE_CONFIG],
+        configOverrides: agent ? [STATUS_LINE_CONFIG, AGENT_HINT_CONFIG] : [STATUS_LINE_CONFIG],
         onFrame: (direction, frame) => observer.receive(direction, frame),
         onDisconnect: () => this.markDegraded(run),
         onError: (error) => {
@@ -687,9 +699,11 @@ export class CodexSessions {
   // CODEX§12
   private startOpenShim(
     userZdotdir: string | undefined,
-    open: (target: string) => void
+    open: (target: string) => void,
+    agent?: (dir: string, name: string, raw: unknown) => void
   ): { zdotDir: string; release(): void } {
-    const shim = writeCodexOpenShim(this.deps.openShimRoot, randomUUID(), userZdotdir)
+    const token = randomUUID()
+    const shim = writeCodexOpenShim(this.deps.openShimRoot, token, userZdotdir)
     const handled = new Set<string>()
     const drops = watchJsonDrops(shim.requestDir, (name) => (obj, full) => {
       if (handled.has(name)) return
@@ -698,13 +712,27 @@ export class CodexSessions {
       const target = openDropTarget(record(obj) as OpenDrop)
       if (target) open(target)
     })
-    return {
-      zdotDir: shim.zdotDir,
-      release: () => {
-        drops?.close()
-        removeCodexOpenShim(shim)
+    let agentDir: string | undefined
+    let agentDrops: fs.FSWatcher | null = null
+    const release = (): void => {
+      drops?.close()
+      agentDrops?.close()
+      removeCodexOpenShim(shim)
+      if (agentDir) fs.rmSync(agentDir, { recursive: true, force: true })
+    }
+    if (agent) {
+      try {
+        const dir = writeCodexAgentShim(shim.shimDir, token)
+        agentDir = dir
+        agentDrops = watchJsonDrops(dir, (name) =>
+          name.startsWith('req-') ? (obj): void => agent(dir, name, obj) : null
+        )
+      } catch (error) {
+        release()
+        throw error
       }
     }
+    return { zdotDir: shim.zdotDir, release }
   }
 
   observe(tabId: string, event: SessionEvent): void {

@@ -439,6 +439,38 @@ describe('CodexSessions', () => {
     expect(fs.existsSync(requestDir)).toBe(false)
   })
 
+  // CODEX§17
+  it("with agent tools on, the app-server is told to run koloft help, a koloft request dropped in the run's own folder is answered for that tab, and stopping the run removes the folder", async () => {
+    const answer = vi.fn()
+    deps.agent = { enabled: () => true, answer }
+    const launched = await sessions.launch({ kind: 'codex', cwd: repo })
+    const hint = transports[0].options.configOverrides?.find((c) =>
+      c.startsWith('developer_instructions=')
+    )
+    expect(hint).toContain('koloft help')
+    const shimDir = path.dirname(transports[0].options.env!.ZDOTDIR!)
+    const requestDir = /\/tmp\/koloft-cx-agent-[0-9a-f-]{36}/.exec(
+      fs.readFileSync(path.join(shimDir, 'koloft'), 'utf8')
+    )![0]
+    const request = { reqId: '1', argv: ['help'], cwd: repo, ts: 1 }
+    fs.writeFileSync(path.join(requestDir, 'req-1.json'), JSON.stringify(request))
+    await expect
+      .poll(() => answer.mock.calls)
+      .toContainEqual([launched.id, requestDir, 'req-1.json', request])
+    await sessions.stop(launched.id)
+    expect(fs.existsSync(requestDir)).toBe(false)
+  })
+
+  it('with agent tools off, a Codex tab gets neither the koloft command nor the Koloft hint', async () => {
+    deps.agent = { enabled: () => false, answer: vi.fn() }
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    expect(
+      transports[0].options.configOverrides?.some((c) => c.startsWith('developer_instructions='))
+    ).toBe(false)
+    const shimDir = path.dirname(transports[0].options.env!.ZDOTDIR!)
+    expect(fs.existsSync(path.join(shimDir, 'koloft'))).toBe(false)
+  })
+
   it('reports an unexpected exit after confirmed stop without immediately clearing the alert', async () => {
     const launched = await sessions.launch({ kind: 'codex', cwd: repo })
     bind()

@@ -170,6 +170,7 @@ export interface Settings {
   gitAutoFetch: boolean
   // PLATFORM§17
   browserControl: boolean
+  agentTools: boolean
   notesHeight: number
   notesFolded: boolean
   keepAwake: boolean
@@ -208,6 +209,7 @@ export const DEFAULT_SETTINGS: Settings = {
   statuslineBuiltin: true,
   gitAutoFetch: true,
   browserControl: true,
+  agentTools: true,
   notesHeight: 260,
   notesFolded: false,
   keepAwake: true,

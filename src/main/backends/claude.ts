@@ -702,6 +702,7 @@ export class ClaudeBackend implements SessionBackend {
       },
       resumeSessionId: spec.resumeSessionId,
       shell: plan.shell,
+      host: machine ? 'ssh' : 'local',
       extraEnv: plan.extraEnv
     })
     if (machine) {

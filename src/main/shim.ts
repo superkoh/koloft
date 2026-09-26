@@ -3,12 +3,14 @@ import fs from 'fs'
 import path from 'path'
 import { keychainNamespace } from '@shared/types'
 import { OPEN_SHIM_HEAD, OPEN_SHIM_TARGET } from './openShimScript'
+import { CLAUDE_AGENT_SHIM } from './agentShim'
 
 export interface ShimPaths {
   shimDir: string
   regDir: string
   openDir: string
   pickDir: string
+  agentDir: string
 }
 
 export const UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE = `if [ "$KOLOFT_UTIL" = "1" ]; then
@@ -82,6 +84,8 @@ ${UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE}
 # CC§6
 pre=()
 [ -n "$KOLOFT_HOOK_SETTINGS" ] && pre=(--settings "$KOLOFT_HOOK_SETTINGS")
+# CC§13
+[ -n "$KOLOFT_AGENT_PLUGIN" ] && pre+=(--plugin-dir "$KOLOFT_AGENT_PLUGIN")
 
 newid() {
   u="$(uuidgen 2>/dev/null | tr 'A-Z' 'a-z')"
@@ -279,14 +283,17 @@ export function setupShim(): ShimPaths {
   const regDir = path.join(base, 'sessions')
   const openDir = path.join(base, 'opens')
   const pickDir = path.join(base, 'picks')
+  const agentDir = path.join(base, 'agent')
 
   fs.mkdirSync(shimDir, { recursive: true })
   fs.mkdirSync(regDir, { recursive: true })
   fs.mkdirSync(openDir, { recursive: true })
   fs.mkdirSync(pickDir, { recursive: true })
+  fs.mkdirSync(agentDir, { recursive: true })
   pruneStale(regDir)
   pruneStale(openDir)
   pruneStale(pickDir, STALE_PICK_AGE_MS)
+  pruneStale(agentDir, STALE_PICK_AGE_MS)
 
   const ns = keychainNamespace(app.getName())
   if (!/^[a-z0-9-]+$/.test(ns)) throw new Error(`unsafe keychain namespace: ${ns}`)
@@ -299,5 +306,9 @@ export function setupShim(): ShimPaths {
   fs.writeFileSync(openShimPath, OPEN_SHIM_SCRIPT, { mode: 0o755 })
   fs.chmodSync(openShimPath, 0o755)
 
-  return { shimDir, regDir, openDir, pickDir }
+  const agentShimPath = path.join(shimDir, 'koloft')
+  fs.writeFileSync(agentShimPath, CLAUDE_AGENT_SHIM, { mode: 0o755 })
+  fs.chmodSync(agentShimPath, 0o755)
+
+  return { shimDir, regDir, openDir, pickDir, agentDir }
 }
