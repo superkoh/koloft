@@ -59,6 +59,8 @@ export interface OpenFile {
   label: string
   line?: number
   source?: 'intercept'
+  view?: ArtifactView
+  unseen?: true
 }
 
 export type UpdatePhase =
@@ -979,20 +981,28 @@ export function consumeRestoreExit(ptyId: string): boolean {
 export function openInterceptedFile(
   ptyId: string,
   src: string,
-  source: 'agent' | 'user' = 'agent'
+  source: 'agent' | 'user' = 'agent',
+  view?: ArtifactView
 ): void {
-  const { tabs, activeTabId, activateTab } = useStore.getState()
+  const { tabs, activeTabId, setOpenFile } = useStore.getState()
   const tabId = conversationTabFor(ptyId)
-  if (tabs.some((t) => t.id === tabId) && activeTabId !== tabId) activateTab(tabId)
-  if (!useStore.getState().activeTabId) {
+  const file: OpenFile = {
+    src,
+    label: basename(src),
+    source: source === 'agent' ? 'intercept' : undefined,
+    view
+  }
+  if (tabs.some((t) => t.id === tabId) && activeTabId !== tabId) {
+    useStore.setState((s) => ({
+      openFiles: { ...s.openFiles, [tabId]: { ...file, unseen: true } }
+    }))
+    return
+  }
+  if (!activeTabId) {
     window.api.preview.osOpen(src)
     return
   }
-  useStore.getState().setOpenFile({
-    src,
-    label: basename(src),
-    source: source === 'agent' ? 'intercept' : undefined
-  })
+  setOpenFile(file)
 }
 
 export function previewLinkTarget(href: string, fromSrc: string): string {
@@ -1023,6 +1033,8 @@ export function openWebPage(src: string, sourceTabId?: string, sourcePath?: stri
 useStore.subscribe((state, prev) => {
   if (state.activeTabId === prev.activeTabId) return
   if (state.workbenchFull) useStore.setState({ workbenchFull: false })
+  const waiting = state.activeTabId ? state.openFiles[state.activeTabId] : null
+  if (waiting?.unseen) state.setOpenFile({ ...waiting, unseen: undefined })
 })
 
 useStore.subscribe((state) => {

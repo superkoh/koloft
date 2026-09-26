@@ -200,6 +200,7 @@ import type {
   AccountKind,
   AccountMeta,
   AccountView,
+  ArtifactView,
   BackendId,
   CodexLimits,
   CodexSignInResult,
@@ -238,6 +239,7 @@ import type {
 } from '@shared/types'
 import { AgentRequests, BUILTIN_VERBS } from './agentRequests'
 import { cronVerb } from './agentCron'
+import { workbenchVerbs } from './agentWorkbench'
 import { writeAgentPlugin } from './agentPlugin'
 
 // PLATFORM§4
@@ -576,6 +578,14 @@ const agentRequests = new AgentRequests({
       sessionName: (tabId) => sessionTitleOf(tabId) ?? 'A session',
       toast: (text) => sendToRenderer('cron:toast', text),
       now: () => new Date()
+    }),
+    ...workbenchVerbs({
+      open: (tabId, target, view) =>
+        openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target, view),
+      notesFileOf: (tabId) => {
+        const workspace = pinnedWorkspaceOfTab(tabId)
+        return workspace ? ensureNotesFile(notesBaseDir(), workspace) : undefined
+      }
     })
   },
   tab: (tabId) => ptyMgr.get(tabId),
@@ -2160,7 +2170,8 @@ function openInWorkbench(
   tabId: string,
   decision: RouteDecision,
   source: 'agent' | 'user',
-  osFallback?: string
+  osFallback?: string,
+  view?: ArtifactView
 ): boolean {
   if (decision.dest === 'browser') {
     const payload: BrowserOpenRequest = { tabId, url: decision.target, source, osFallback }
@@ -2168,7 +2179,7 @@ function openInWorkbench(
     return true
   }
   if (decision.dest === 'preview' && fs.existsSync(decision.target)) {
-    const payload: OpenRequest = { tabId, path: decision.target, source }
+    const payload: OpenRequest = { tabId, path: decision.target, source, view }
     sendToRenderer('preview:open-file', payload)
     return true
   }

@@ -489,6 +489,7 @@ export interface OpenRequest {
   tabId: string
   path: string
   source: 'agent' | 'user'
+  view?: ArtifactView
 }
 
 export interface BrowserOpenRequest {

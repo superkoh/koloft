@@ -7,7 +7,15 @@ import {
 import { SessionBackendIcon } from './SessionBackendIcon'
 import { useCallback, useEffect, useRef, useState, type JSX, type MouseEvent } from 'react'
 import { GoGitBranch } from 'react-icons/go'
-import { LuAlarmClock, LuFolder, LuFolderOpen, LuGitBranchPlus, LuPlus, LuX } from 'react-icons/lu'
+import {
+  LuAlarmClock,
+  LuFileText,
+  LuFolder,
+  LuFolderOpen,
+  LuGitBranchPlus,
+  LuPlus,
+  LuX
+} from 'react-icons/lu'
 import type { BackendId, SessionRow } from '@shared/types'
 import type { DirtyTab } from '../unsavedGuard'
 import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
@@ -123,6 +131,7 @@ export function WorkspaceSidebar({
   const leftovers = useStore((s) => s.leftovers)
   const storeTabs = useStore((s) => s.tabs)
   const activeTabId = useStore((s) => s.activeTabId)
+  const openFiles = useStore((s) => s.openFiles)
   const resumeLaunch = useStore((s) => s.resumeLaunch)
   const activateTab = useStore((s) => s.activateTab)
   const selectedWs = useStore((s) => s.selectedWs)
@@ -853,6 +862,14 @@ export function WorkspaceSidebar({
                                   : row.title}
                               </i>
                             </span>
+                            {tabId && openFiles[tabId]?.unseen && (
+                              <span
+                                className="ws-tab-opened"
+                                title={`${basename(openFiles[tabId].src)} was opened here — select this session to see it`}
+                              >
+                                <LuFileText size={12} />
+                              </span>
+                            )}
                             {badge && (
                               <button
                                 className="ws-tab-parked"

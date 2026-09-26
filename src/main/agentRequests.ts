@@ -38,6 +38,8 @@ export const BUILTIN_VERBS: AgentVerbs = {
   help: () => answered(AGENT_GUIDE)
 }
 
+export const NOT_PINNED = 'koloft: pin this workspace in the sidebar first.'
+
 export const AGENT_TOOLS_OFF =
   "koloft: Koloft's agent tools are off for this session. The owner can turn them on in Koloft's Settings."
 const UNKNOWN_TAB = 'koloft: Koloft does not know this session.'

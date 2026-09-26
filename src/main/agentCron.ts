@@ -16,7 +16,14 @@ import { BACKEND_LABEL, backendIdOf } from '@shared/sessionBackend'
 import { cronBackend, NEW_JOB_PERMISSION } from '@shared/cronNames'
 import { describeSchedule, describeWhen, nextRun } from '@shared/schedule'
 import { histText, histWhen, lastRunOf, LIVE_WORDS, whenLine } from '@shared/cronHistory'
-import { answered, EXIT_USAGE, refused, type AgentReply, type AgentVerb } from './agentRequests'
+import {
+  answered,
+  EXIT_USAGE,
+  NOT_PINNED,
+  refused,
+  type AgentReply,
+  type AgentVerb
+} from './agentRequests'
 
 const SUBS = ['list', 'show', 'add', 'edit', 'rm', 'on', 'off', 'run'] as const
 type Sub = (typeof SUBS)[number]
@@ -267,7 +274,6 @@ const RUN_REFUSED: Record<Exclude<CronRunNowResult, { ok: true }>['reason'], str
   'unknown-job': 'the task is gone.'
 }
 
-export const NOT_PINNED = 'koloft: pin this workspace in the sidebar first.'
 const RUNNER_NOT_READY = 'koloft: Koloft is still starting. Try again in a moment.'
 
 export interface CronRunnerApi {

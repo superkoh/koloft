@@ -896,7 +896,9 @@ export default function App(): JSX.Element {
   }, [])
 
   useEffect(() => {
-    return window.api.preview.onOpenRequest((r) => openInterceptedFile(r.tabId, r.path, r.source))
+    return window.api.preview.onOpenRequest((r) =>
+      openInterceptedFile(r.tabId, r.path, r.source, r.view)
+    )
   }, [])
 
   const lastWsPath = useStore((s) => s.lastWsPath)

@@ -117,13 +117,22 @@ describe('store: intercepted file open routing — the open always surfaces, tag
     })
   })
 
-  it("activates a background tab first; the preview lands on that tab and survives the switch's view reset", () => {
+  it('an open for a background tab never switches to it: the file waits on that tab, marked unseen, and lands in its reading area with the asked view once the person switches there', () => {
     const s = useStore.getState()
-    s.addTab({ id: 'op1', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
-    s.addTab({ id: 'op2', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
-    openInterceptedFile('op1', '/w/doc.md')
-    expect(useStore.getState().activeTabId).toBe('op1')
-    expect(useStore.getState().openFiles['op1']?.src).toBe('/w/doc.md')
+    s.addTab({ id: 'bg1', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    s.addTab({ id: 'bg2', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
+    openInterceptedFile('bg1', '/w/doc.md', 'agent', 'diff')
+    expect(useStore.getState().activeTabId).toBe('bg2')
+    expect(useStore.getState().openFiles['bg1']).toMatchObject({ src: '/w/doc.md', unseen: true })
+    expect(useStore.getState().openFiles['bg2']).toBeUndefined()
+
+    s.activateTab('bg1')
+    expect(useStore.getState().openFiles['bg1']).toMatchObject({
+      src: '/w/doc.md',
+      source: 'intercept',
+      view: 'diff'
+    })
+    expect(useStore.getState().openFiles['bg1']?.unseen).toBeUndefined()
   })
 
   it('still surfaces the preview when the tab closed since the shim fired (no activation)', () => {
