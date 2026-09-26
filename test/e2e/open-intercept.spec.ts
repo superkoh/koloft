@@ -69,7 +69,7 @@ test.describe("`open <file>` inside a Koloft tab: previewable types render in Ko
     expect(await readingTitle(page).count()).toBe(0)
   })
 
-  test('an agent open fired from a background tab activates that tab and shows the preview, landing on Changes like any agent open', async ({
+  test('an agent open fired from a background tab leaves the person where they are, marks that session row, and the preview is waiting once they switch there', async ({
     page,
     env
   }) => {
@@ -82,9 +82,16 @@ test.describe("`open <file>` inside a Koloft tab: previewable types render in Ko
     await startSessionIn(page, 'ws-b')
     fs.writeFileSync(path.join(env.home, 'go-open'), '')
 
-    await expect(wsRows(page, 'ws-a').first()).toHaveClass(/\bactive\b/, {
+    const rowA = wsRows(page, 'ws-a').first()
+    await expect(rowA.locator('.ws-tab-opened')).toHaveCount(1, {
       timeout: TWO_LAUNCHES_AND_A_PANEL_SWAP_MS
     })
+    await expect(wsRows(page, 'ws-b').first()).toHaveClass(/\bactive\b/)
+    await expect(rowA).not.toHaveClass(/\bactive\b/)
+
+    await rowA.click()
+    await expect(rowA).toHaveClass(/\bactive\b/)
+    await expect(rowA.locator('.ws-tab-opened')).toHaveCount(0)
     await filesHalf(page, 'Browse').click()
     await expect(readingTitle(page)).toHaveText('README.md', {
       timeout: TWO_LAUNCHES_AND_A_PANEL_SWAP_MS

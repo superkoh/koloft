@@ -1,7 +1,14 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { isAbsoluteOnHost } from '@shared/remoteKey'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
-import { cronBackend, slugOf, hasWordChar, isValidModelName, worktreeBase } from '@shared/cronNames'
+import {
+  cronBackend,
+  CRON_PERMISSIONS,
+  slugOf,
+  hasWordChar,
+  isValidModelName,
+  worktreeBase
+} from '@shared/cronNames'
 import { BACKEND_LABEL, backendIdOf } from '@shared/sessionBackend'
 import { isValidSchedule, parseHHMM } from '@shared/schedule'
 import {
@@ -33,7 +40,6 @@ const MAX_WORKTREE_NAME = 64
 const STAMP_LEN = 12
 const MAX_HISTORY = 20
 
-const PERMISSIONS: CronPermission[] = ['same', 'acceptEdits', 'skipAll']
 const LAUNCH_PERMISSION: Record<CronPermission, LaunchPermission> = {
   same: 'default',
   acceptEdits: 'acceptEdits',
@@ -158,7 +164,7 @@ function clean(input: CronSaveInput): Clean {
   const task = String(input.task ?? '')
     .replace(/\0/g, '')
     .trim()
-  const permission = PERMISSIONS.includes(input.permission) ? input.permission : 'same'
+  const permission = CRON_PERMISSIONS.includes(input.permission) ? input.permission : 'same'
   const model = typeof input.model === 'string' ? input.model.trim() : undefined
   return {
     name,
@@ -517,6 +523,10 @@ export class CronRunner {
     return this.buildState()
   }
 
+  jobsAndLive(): Pick<CronState, 'jobs' | 'live'> {
+    return { jobs: this.jobs, live: [...this.live.values()] }
+  }
+
   save(input: CronSaveInput): CronSaveResult {
     const c = clean(input)
     const errors = saveErrors(c, input.schedule, input.workspacePath, (p) => this.d.isPinned(p))
@@ -650,8 +660,7 @@ export class CronRunner {
 
   private buildState(): CronState {
     return {
-      jobs: this.jobs,
-      live: [...this.live.values()],
+      ...this.jobsAndLive(),
       folders: this.folders,
       notes: this.notes
     }

@@ -247,6 +247,10 @@ export class WorkspaceManager {
     )
   }
 
+  isPinned(wsPath: string): boolean {
+    return this.layout.workspaces.some((ws) => ws.path === wsPath)
+  }
+
   pinnedPaths(): { path: string; missing: boolean }[] {
     return this.layout.workspaces.map((ws) => ({
       path: ws.path,

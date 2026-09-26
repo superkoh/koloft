@@ -942,6 +942,15 @@ function handleLine(line) {
     }
     return
   }
+  if (text.startsWith('/koloft ')) {
+    const rest = text.slice('/koloft '.length).trim()
+    cp.execFile('/bin/sh', ['-c', `koloft ${rest}`], { cwd, env: process.env }, (e, out, err) => {
+      const code = e ? (typeof e.code === 'number' ? e.code : 1) : 0
+      const said = `${out}${err}`.replace(/\r?\n/g, '\r\n')
+      process.stdout.write(`${said}[fake-claude] koloft exit=${code}\r\n> `)
+    })
+    return
+  }
   if (text === '/busy') {
     fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
     append([{ type: 'user', message: { role: 'user', content: text }, cwd }])

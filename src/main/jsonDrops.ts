@@ -19,6 +19,12 @@ export function readJsonDrop(full: string, attempt: number, handle: (obj: unknow
   })
 }
 
+export function writeWholeBeforeVisible(dest: string, text: string): void {
+  const tmp = `${dest}.tmp`
+  fs.writeFileSync(tmp, text)
+  fs.renameSync(tmp, dest)
+}
+
 export function watchJsonDrops(
   dir: string,
   handlerFor: (name: string) => ((obj: unknown, full: string) => void) | null

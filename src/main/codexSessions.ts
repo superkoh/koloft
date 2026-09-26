@@ -19,7 +19,7 @@ import {
   type CodexEvent,
   type CodexThread
 } from './codexObservation'
-import { CodexRpc, createCodexTransport } from './codexTransport'
+import { CodexRpc, createCodexTransport, type CodexTransport } from './codexTransport'
 import { SessionStore, codexSessionKey, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
@@ -29,6 +29,8 @@ import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
 import { watchJsonDrops } from './jsonDrops'
 import { openDropTarget, type OpenDrop } from './openDrop'
 import { removeCodexOpenShim, writeCodexOpenShim } from './openShimScript'
+import { writeCodexAgentShim } from './agentShim'
+import { CODEX_AGENT_HINT } from '@shared/agentGuide'
 
 const exists = (p: string): boolean => {
   try {
@@ -47,6 +49,11 @@ const STATUS_LINE_CONFIG = `tui.status_line=${JSON.stringify([
   'pull-request-number',
   'current-dir'
 ])}`
+
+// CODEX§17
+const AGENT_HINT_CONFIG = `developer_instructions=${JSON.stringify(CODEX_AGENT_HINT)}`
+
+const QUEUE_ANSWER_INSIDE_THE_KOLOFT_WAIT_MS = 5_000
 
 // CODEX§1
 const NO_UPDATE_NOTICE_AT_START = 'check_for_update_on_startup=false'
@@ -91,6 +98,10 @@ export interface CodexSessionDeps {
   pickHome(): { account: string; home: string } | undefined
   homes(): string[]
   openShimRoot: string
+  agent: {
+    enabled(): boolean
+    answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
+  }
 }
 
 interface RowScope {
@@ -105,7 +116,7 @@ interface Run {
   info?: BackendSessionInfo
   resource?: WorktreeResource
   observer: CodexObservation
-  transport: Awaited<ReturnType<typeof createCodexTransport>>
+  transport: CodexTransport
   stopping?: Promise<void>
   explicitStop: boolean
   resumeKey?: string
@@ -210,7 +221,7 @@ export class CodexSessions {
 
   private async startTransport(
     options: Parameters<typeof createCodexTransport>[0]
-  ): Promise<Awaited<ReturnType<typeof createCodexTransport>>> {
+  ): Promise<CodexTransport> {
     try {
       return await createCodexTransport(options)
     } catch (error) {
@@ -263,6 +274,9 @@ export class CodexSessions {
   }
   hasTab(tabId: string): boolean {
     return this.runs.has(tabId)
+  }
+  workspaceOfTab(tabId: string): string | undefined {
+    return this.runs.get(tabId)?.workspace
   }
   aliveTabFor(key: string): string | undefined {
     return [...this.runs.values()].find((r) => r.info?.sessionId === key || r.resumeKey === key)
@@ -616,18 +630,21 @@ export class CodexSessions {
       if (run && !run.explicitStop && !run.stopping)
         this.bindThread(run, event.thread, event.change)
     }
-    const openShim = this.startOpenShim(processEnv?.ZDOTDIR, (target) =>
-      observe({ type: 'open', target })
+    const agent = this.deps.agent.enabled() ? this.deps.agent : undefined
+    const openShim = this.startOpenShim(
+      processEnv?.ZDOTDIR,
+      (target) => observe({ type: 'open', target }),
+      agent && ((dir, name, raw) => agent.answer(run?.tabId, dir, name, raw))
     )
     const env = { ...this.envFor(home), ZDOTDIR: openShim.zdotDir }
     const observer = new CodexObservation(observe)
-    let transport: Awaited<ReturnType<typeof createCodexTransport>> | undefined
+    let transport: CodexTransport | undefined
     try {
       transport = await this.startTransport({
         binary,
         env,
         cwd,
-        configOverrides: [STATUS_LINE_CONFIG],
+        configOverrides: agent ? [STATUS_LINE_CONFIG, AGENT_HINT_CONFIG] : [STATUS_LINE_CONFIG],
         onFrame: (direction, frame) => observer.receive(direction, frame),
         onDisconnect: () => this.markDegraded(run),
         onError: (error) => {
@@ -687,16 +704,23 @@ export class CodexSessions {
   // CODEX§12
   private startOpenShim(
     userZdotdir: string | undefined,
-    open: (target: string) => void
+    open: (target: string) => void,
+    agent?: (dir: string, name: string, raw: unknown) => void
   ): { zdotDir: string; release(): void } {
     const shim = writeCodexOpenShim(this.deps.openShimRoot, randomUUID(), userZdotdir)
+    if (agent) writeCodexAgentShim(shim.shimDir, shim.requestDir)
     const handled = new Set<string>()
-    const drops = watchJsonDrops(shim.requestDir, (name) => (obj, full) => {
-      if (handled.has(name)) return
-      handled.add(name)
-      fs.rm(full, { force: true }, () => {})
-      const target = openDropTarget(record(obj) as OpenDrop)
-      if (target) open(target)
+    const drops = watchJsonDrops(shim.requestDir, (name) => {
+      if (name.startsWith('req-'))
+        return agent ? (obj): void => agent(shim.requestDir, name, obj) : null
+      if (name.startsWith('res-')) return null
+      return (obj, full) => {
+        if (handled.has(name)) return
+        handled.add(name)
+        fs.rm(full, { force: true }, () => {})
+        const target = openDropTarget(record(obj) as OpenDrop)
+        if (target) open(target)
+      }
     })
     return {
       zdotDir: shim.zdotDir,
@@ -737,6 +761,22 @@ export class CodexSessions {
         info.liveWrites = event.liveWrites
         return this.changedSoon()
     }
+  }
+
+  // CODEX§17
+  async queueMessage(tabId: string, text: string): Promise<void> {
+    const run = this.runs.get(tabId)
+    const threadId = run?.info?.nativeSessionId
+    if (!run || !threadId) throw new Error('that Codex session has not started yet.')
+    await run.transport.request(
+      'thread/queue/add',
+      {
+        threadId,
+        clientUserMessageId: `koloft-${randomUUID()}`,
+        input: [{ type: 'text', text, text_elements: [] }]
+      },
+      QUEUE_ANSWER_INSIDE_THE_KOLOFT_WAIT_MS
+    )
   }
 
   private markDegraded(run: Run | undefined): void {
