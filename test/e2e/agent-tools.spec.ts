@@ -140,9 +140,7 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       .toBe('0')
   })
 
-  test('with agent tools off in Settings, a new session has no koloft channel and koloft is refused', async ({
-    env
-  }) => {
+  test('with agent tools off in Settings, koloft in a new session is refused', async ({ env }) => {
     test.setTimeout(120_000)
     seedSettings(env, { agentTools: false })
     const app = await launchApp(env)
