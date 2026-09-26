@@ -509,7 +509,7 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
       await expect
         .poll(
           () =>
-            Object.keys(layoutOnDisk(env).sessions as Record<string, unknown>).filter(
+            Object.keys(layoutOnDisk(env).panels as Record<string, unknown>).filter(
               (i) => i !== call.sessionId
             ).length,
           { timeout: 60_000 }

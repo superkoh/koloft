@@ -121,10 +121,11 @@ export function setupE2EEnv(): E2EEnv {
   fs.writeFileSync(
     path.join(userData, 'layout.json'),
     JSON.stringify({
-      version: 4,
+      version: 6,
       workspaces: [{ path: workspaces.a }, { path: workspaces.b }],
       workbench: SPEC_OPT_IN_PANEL_EXPANDED_NOT_SHIPPED_DEFAULT,
-      sessions: {}
+      members: [],
+      panels: {}
     })
   )
 

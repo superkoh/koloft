@@ -64,14 +64,14 @@ test.describe('v1 → v4 layout migration end to end: a v1 layout.json written b
       await expect(page.locator('.center')).toContainText('No running session')
 
       const layout = layoutOnDisk(env)
-      expect(layout.version).toBe(5)
+      expect(layout.version).toBe(6)
       expect(layout.workspaces).toEqual([{ path: repo }])
       expect(layout).not.toHaveProperty('tabs')
       expect(layout).not.toHaveProperty('activeSessionId')
       expect(layout.workbench).toEqual({ defaultOpen: false })
       expect(layout).not.toHaveProperty('aux')
       expect([...(layout.members ?? [])].sort()).toEqual([mainId, wtId].sort())
-      expect(Object.keys(layout.sessions ?? {}).sort()).toEqual([mainId, wtId].sort())
+      expect(Object.keys(layout.panels ?? {}).sort()).toEqual([mainId, wtId].sort())
 
       await snap(page, 'T-MIG-07')
     } finally {
@@ -83,6 +83,15 @@ test.describe('v1 → v4 layout migration end to end: a v1 layout.json written b
     env
   }) => {
     const histId = seedJsonl(env, env.workspaces.a, { summary: 'External session', owned: false })
+    fs.writeFileSync(
+      path.join(env.userData, 'layout.json'),
+      JSON.stringify({
+        version: 4,
+        workspaces: [{ path: env.workspaces.a }, { path: env.workspaces.b }],
+        workbench: { defaultOpen: true },
+        sessions: {}
+      })
+    )
 
     const app = await launchApp(env)
     try {
@@ -94,7 +103,7 @@ test.describe('v1 → v4 layout migration end to end: a v1 layout.json written b
 
       const after = layoutOnDisk(env)
       expect(after.members).not.toContain(histId)
-      expect((after.sessions as Record<string, unknown>)[histId]).toBeUndefined()
+      expect((after.panels as Record<string, unknown>)[histId]).toBeUndefined()
     } finally {
       await app.close().catch(() => {})
     }

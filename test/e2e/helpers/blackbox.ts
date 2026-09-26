@@ -61,10 +61,11 @@ export function pinWorkspaces(env: E2EEnv, specs: WorkspaceSpec[]): PinnedWorksp
   const file = path.join(env.userData, 'layout.json')
   const layout = fs.existsSync(file)
     ? (JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>)
-    : { version: 4, workbench: { defaultOpen: true }, sessions: {} }
-  layout.version = 4
+    : { version: 6, workbench: { defaultOpen: true }, members: [], panels: {} }
+  layout.version = 6
   layout.workbench ??= { defaultOpen: true }
-  layout.sessions ??= {}
+  layout.members ??= []
+  layout.panels ??= {}
   layout.workspaces = specs.map((s) => ({ path: paths[s.name] }))
   fs.writeFileSync(file, JSON.stringify(layout, null, 2))
 

@@ -287,7 +287,13 @@ test.describe('Workspace note: an island under the sessions list, always holding
     test.setTimeout(120_000)
     fs.writeFileSync(
       path.join(env.userData, 'layout.json'),
-      JSON.stringify({ version: 4, workspaces: [], workbench: { defaultOpen: true }, sessions: {} })
+      JSON.stringify({
+        version: 6,
+        workspaces: [],
+        workbench: { defaultOpen: true },
+        members: [],
+        panels: {}
+      })
     )
     const app = await launchApp(env)
     try {

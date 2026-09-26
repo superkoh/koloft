@@ -2,6 +2,7 @@ import type {
   LayoutV3,
   LayoutV4,
   LayoutV5,
+  LayoutV6,
   PersistedTab,
   SessionWorkbenchState
 } from '@shared/types'
@@ -17,13 +18,15 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null
 }
 
-function isPanelLayout(raw: unknown, version: number): boolean {
+type PanelMapKey = 'sessions' | 'panels'
+
+function isPanelLayout(raw: unknown, version: number, mapKey: PanelMapKey = 'sessions'): boolean {
   return (
     isRecord(raw) &&
     raw.version === version &&
     Array.isArray(raw.workspaces) &&
     (raw.workbench === undefined || isRecord(raw.workbench)) &&
-    isRecord(raw.sessions)
+    isRecord(raw[mapKey])
   )
 }
 
@@ -37,7 +40,7 @@ function isLayoutV2(raw: unknown): boolean {
   )
 }
 
-export function serializeLayout(layout: LayoutV5): string {
+export function serializeLayout(layout: LayoutV6): string {
   return JSON.stringify(layout, null, 2)
 }
 
@@ -50,9 +53,13 @@ function keepWorkspaces(raw: unknown): { path: string }[] {
   return out
 }
 
-function readSessions(doc: Record<string, unknown>, defaultOpen: boolean): LayoutV4['sessions'] {
+function readSessions(
+  doc: Record<string, unknown>,
+  defaultOpen: boolean,
+  mapKey: PanelMapKey
+): LayoutV4['sessions'] {
   const sessions: Record<string, SessionWorkbenchState> = {}
-  for (const [id, entry] of Object.entries(doc.sessions as Record<string, unknown>)) {
+  for (const [id, entry] of Object.entries(doc[mapKey] as Record<string, unknown>)) {
     sessions[id] = sanitizeSessionWorkbench(entry, defaultOpen)
   }
   return sessions
@@ -63,13 +70,17 @@ function readDefaultOpen(doc: Record<string, unknown>, fallback: boolean): boole
   return isRecord(wb) && typeof wb.defaultOpen === 'boolean' ? wb.defaultOpen : fallback
 }
 
-function readPanelLayout(raw: unknown, defaultOpenFallback: boolean): Omit<LayoutV4, 'version'> {
+function readPanelLayout(
+  raw: unknown,
+  defaultOpenFallback: boolean,
+  mapKey: PanelMapKey = 'sessions'
+): Omit<LayoutV4, 'version'> {
   const doc = raw as Record<string, unknown>
   const defaultOpen = readDefaultOpen(doc, defaultOpenFallback)
   return {
     workspaces: keepWorkspaces(doc.workspaces),
     workbench: { defaultOpen },
-    sessions: readSessions(doc, defaultOpen)
+    sessions: readSessions(doc, defaultOpen, mapKey)
   }
 }
 
@@ -151,16 +162,28 @@ function claudeKeysBecomeMembers(v4: LayoutV4): LayoutV5 {
   }
 }
 
-export function migrateLayout(raw: unknown, deps: MigrateDeps): LayoutV5 {
+function readMembers(raw: unknown): string[] {
+  const members = (raw as Record<string, unknown>).members
+  return Array.isArray(members)
+    ? members.filter((id): id is string => typeof id === 'string' && id.length > 0)
+    : []
+}
+
+function toV5(raw: unknown, deps: MigrateDeps): LayoutV5 {
   if (isPanelLayout(raw, 5)) {
-    const members = (raw as Record<string, unknown>).members
-    return {
-      version: 5,
-      ...readPanelLayout(raw, DEFAULT_PANEL_OPEN),
-      members: Array.isArray(members)
-        ? members.filter((id): id is string => typeof id === 'string' && id.length > 0)
-        : []
-    }
+    return { version: 5, ...readPanelLayout(raw, DEFAULT_PANEL_OPEN), members: readMembers(raw) }
   }
   return claudeKeysBecomeMembers(toV4(raw, deps))
+}
+
+function sessionsBecomePanels({ sessions, ...v5 }: LayoutV5): LayoutV6 {
+  return { ...v5, version: 6, panels: sessions }
+}
+
+export function migrateLayout(raw: unknown, deps: MigrateDeps): LayoutV6 {
+  if (isPanelLayout(raw, 6, 'panels')) {
+    const { sessions, ...rest } = readPanelLayout(raw, DEFAULT_PANEL_OPEN, 'panels')
+    return { version: 6, ...rest, members: readMembers(raw), panels: sessions }
+  }
+  return sessionsBecomePanels(toV5(raw, deps))
 }

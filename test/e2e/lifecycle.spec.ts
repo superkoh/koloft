@@ -381,7 +381,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       expect(readCalls(env)).toHaveLength(1)
 
       const layout = layoutOnDisk(env)
-      expect(layout.version).toBe(5)
+      expect(layout.version).toBe(6)
       expect(layout).not.toHaveProperty('activeSessionId')
       expect(layout).not.toHaveProperty('tabs')
       await snap(page2, 'T-LIFE-09')
