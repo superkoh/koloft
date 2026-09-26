@@ -663,6 +663,20 @@ describe('claude shim (scheduled jobs: first prompt + session name ride env vars
     ])
   })
 
+  // CC§9
+  it('`--append-system-prompt update` is a prompt text, not the `update` subcommand', () => {
+    const r = runShim(['--append-system-prompt', 'update'])
+    expect(r.reg?.mode).toBe('new')
+    expect(norm(r)).toEqual([
+      '--settings',
+      '/tmp/koloft-hooks.json',
+      '--session-id',
+      '<sid>',
+      '--append-system-prompt',
+      'update'
+    ])
+  })
+
   it('BB-E19 with both variables unset the argv is byte-identical to a plain launch', () => {
     const r = runShim(['-w', 'n1'])
     expect(norm(r)).toEqual([
