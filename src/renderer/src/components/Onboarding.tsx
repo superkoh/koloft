@@ -238,8 +238,7 @@ export function Onboarding({
         }
       }
     if (probe === 'pending') return { label: '＋ Start first session', disabled: true }
-    if (probe === 'missing' && (balance || !codexFound))
-      return { label: 'Check again', go: runProbe }
+    if (probe === 'missing' && !codexFound) return { label: 'Check again', go: runProbe }
     if (balance) return { label: 'Set up accounts', go: finish }
     if (!firstWs) return { label: 'Choose Folder…', go: () => void onAddWorkspace() }
     return {
@@ -380,13 +379,11 @@ export function Onboarding({
               When Koloft is in the background, a light turning amber or green also sends a
               notification (Settings ▸ Notifications).
             </div>
-            {probe === 'missing' && (balance || !codexFound) ? (
+            {probe === 'missing' && !codexFound ? (
               <div className="quiet ob-warn">
-                {balance
-                  ? 'Claude Code is required to balance accounts.'
-                  : 'Install Claude Code or a supported Codex CLI to start a session.'}
+                Install Claude Code or a supported Codex CLI to start a session.
                 <code className="ob-cmd">npm install -g @anthropic-ai/claude-code</code>
-                {!balance && <code className="ob-cmd">npm install -g @openai/codex</code>}
+                <code className="ob-cmd">npm install -g @openai/codex</code>
               </div>
             ) : balance ? (
               <div className="quiet">
