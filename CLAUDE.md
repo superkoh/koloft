@@ -26,6 +26,7 @@ Working principles:
   (mermaid or ASCII in markdown) beats a wall of text. The first time an
   abbreviation or shorthand appears in a document or in a session reply, spell it
   out and say what it means — e.g. "PR (pull request, a proposed code change)".
+  Reply in the language the owner last wrote in, status lines and the hand-back too.
 - Build the smallest thing that solves the problem at hand — in the design, the
   code, and the tests alike. A branch, guard, fallback, or abstraction for a case
   that is merely imaginable, and unlikely to ever happen, is cost with no payoff:
@@ -38,6 +39,8 @@ Working principles:
   on it — everything built on a wrong premise goes when the premise does. The same
   goes for your own access: run the command and read the error; never report a
   permission you have not tried. What a command can answer is never asked of the owner.
+  Nothing is called impossible, unsupported or "works this way" — in a plan, a
+  question or a PR — before a probe has run; until then it is "not probed yet".
 - Extend the existing UI when adding a feature. Reuse its components, layouts,
   interactions, state treatments and CSS classes. When the app already has a style
   or state for the same purpose, use it exactly; do not invent a parallel version
@@ -94,9 +97,14 @@ Working principles:
 - Finish the code, then review, then test. While code is still being written, only
   the fast checks run (`format`, typecheck, `check:comments`, `test:unit:changed`) —
   CI's first gate is `format:check`, and no hook runs Prettier for you. Once the
-  diff is final, run `/code-review low` and `/simplify` over the whole diff, fix what
-  is real, and only then pick and run the e2e flows — a cleanup commit that lands
-  after a test round throws that round away.
+  diff is final, commit it, `git fetch origin`, run `/code-review low
+  origin/main...HEAD` and `/simplify` over the whole diff, fix what is real, and only
+  then pick and run the e2e flows, once — in a Workflow too, whose step agents run
+  only the fast checks. A cleanup commit that lands after a test round throws that
+  round away. `/code-review low` skips test files: on a test-only diff the what-ran
+  table says "did not apply", never "no findings". Playwright never builds: after the
+  last `src/` change or merge of `main`, `npm run build` first, or e2e tests the old
+  `out/`.
 - The PR (pull request) body is a report for the owner deciding whether to merge. It
   opens with six lines, in this order:
   - **What it does** — one sentence, in the user's words, before any mechanism.
@@ -122,11 +130,18 @@ Working principles:
   on GitHub; an audit or review round changes nothing until the owner says so. A
   reply that ends a piece of work ends with what the owner must do next, or
   "nothing"; before going quiet on background work, say what runs and about how
-  long.
+  long. A Monitor fires only on failure or finish, and when the watched work ends,
+  stop every Monitor and wake-up you armed, so the report stays the last message.
+  Remove an agent's worktree with `git worktree remove -f -f <path>` (locked while
+  its agent lives); when the owner asks to clean up your own, call the ExitWorktree
+  tool (`remove`) rather than telling them to type `/exit`.
 - When work is split across agents or a Workflow: steps that only write code or run
   tests go to `model: 'opus'`, the rest (design, review, judgment, what the owner
   reads) to `model: 'fable'`. Fan out by slices of work, never one agent per
-  finding — a handful per phase — and say how many before launching.
+  finding — a handful per phase — and say how many before launching. Each brief
+  carries the worktree shell rule below and asks for findings in the agent's final
+  message: the harness refuses a subagent's report files, so an agent writes only
+  patches or code, in a scratchpad folder of its own.
 - Hand-testing on a real machine is driven one case at a time through
   AskUserQuestion, never as a wall of text. The steps to carry out go inside the
   question; the options are the outcomes to choose between (what passed, what broke,
@@ -136,10 +151,13 @@ Working principles:
   at the keyboard, reading a plan costs them the attention the test needs, and a
   pasted list comes back as "some passed" with no record of which. Decisions go the
   same way: one per question, your pick first, what each choice costs inside the
-  question — never a list of open questions at the end of a report. One dev build
-  at a time: stop every older one first, its Electron main process too (killing
-  `electron-vite` alone leaves the window up). A dev build has its own profile
-  (`koloft-dev`), so the installed Koloft, where these sessions run, stays open.
+  question — never a list of open questions at the end of a report. Automate every
+  check you can — a suite, a dev build you drive; the owner hand-tests only a case
+  that matters and truly cannot be automated (name it and say why), or a round the
+  owner asks for. One dev build at a time: stop every older one first, its Electron
+  main process too (killing `electron-vite` alone leaves the window up). A dev build
+  has its own profile (`koloft-dev`), so the installed Koloft, where these sessions
+  run, stays open.
 - Three setup steps, each with a silent failure mode:
   - `npm run rebuild` before the first run, and again after any change to the Electron
     or node-pty version — otherwise the app crashes on launch with an ABI mismatch.
@@ -154,10 +172,12 @@ Working principles:
     launch stalls on a silent download.
 - Shell in a worktree stays plain. The worktree isolation guard refuses any Bash
   call it cannot prove stays inside this worktree, not only git ones. Refused: a
-  loop, `$(…)`, a shell variable, `env -u`, `sh <file>`, a path outside the worktree
-  inside a chain, a `cd` outside followed by `git`, and a heredoc or `python3 -`
-  whose text names git (a `.github` path counts). Each refusal is a wasted turn: one
-  plain command per call, absolute paths. Change files with Edit/Write even when told
+  loop, `$(…)`, a shell variable, `env -u`, `git -C` with another checkout's path
+  (use `gh pr diff <n>`, or diff `origin/<branch>` from here), a path outside the
+  worktree inside a chain, a `cd` outside followed by `git`, and a heredoc,
+  `python3 -` or `sh <file>` whose text names git (a `.github` path counts); a plain
+  `sh <file>` passes. Each refusal is a wasted turn: one plain command per call,
+  absolute paths. Change files with Edit/Write even when told
   to prefer Bash — a `sed -i`, `perl -pi`, `cat >` or `python3 -` edit is refused
   often, and the comment hook never sees it; long text for `gh` goes in a file
   (`--body-file`). zsh trap: an unquoted glob that matches nothing
