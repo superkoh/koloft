@@ -8,7 +8,7 @@ import { projectInfoFor } from '../../src/main/projectInfo'
 import { encodeCwd } from '../../src/main/sessionTracker'
 import {
   PENDING_SESSION_TITLE,
-  type LayoutV5,
+  type LayoutV6,
   type SessionWorkbenchState,
   type WorkspaceRows
 } from '@shared/types'
@@ -17,7 +17,7 @@ let root: string
 let projectsRoot: string
 let repo: string
 let plain: string
-let layout: LayoutV5
+let layout: LayoutV6
 let bindings: Map<string, string>
 let pushed: WorkspaceRows[][]
 let saves: number
@@ -28,7 +28,7 @@ const SEEDED: SessionWorkbenchState = { open: false, tabs: [] }
 function own(...ids: string[]): void {
   for (const id of ids) {
     layout.members.push(id)
-    layout.sessions[id] = SEEDED
+    layout.panels[id] = SEEDED
   }
 }
 
@@ -79,11 +79,11 @@ beforeEach(() => {
   fs.mkdirSync(path.join(repo, '.git'), { recursive: true })
   fs.mkdirSync(plain)
   layout = {
-    version: 5,
+    version: 6,
     workspaces: [{ path: repo }, { path: plain }],
     workbench: { defaultOpen: false },
     members: [],
-    sessions: {}
+    panels: {}
   }
   bindings = new Map()
   pushed = []
@@ -190,12 +190,12 @@ describe('WorkspaceManager: owned-only sidebar (decided 2026-08-09)', () => {
     mgr.start()
     await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
     expect(latest(repo).rows).toEqual([])
-    expect(layout.sessions['ext-1']).toBeUndefined()
+    expect(layout.panels['ext-1']).toBeUndefined()
 
     mgr.onSessionBound('ext-1')
     await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['ext-1']))
     expect(layout.members).toEqual(['ext-1'])
-    expect(layout.sessions['ext-1']).toEqual(SEEDED)
+    expect(layout.panels['ext-1']).toEqual(SEEDED)
   })
 })
 
@@ -220,7 +220,7 @@ describe('WorkspaceManager: orphan worktree bucket (D2)', () => {
       ...layout,
       workspaces: [{ path: repoDir }],
       members: ['wt-1'],
-      sessions: { 'wt-1': SEEDED }
+      panels: { 'wt-1': SEEDED }
     }
     mgr = new WorkspaceManager({
       projectsRoot,
@@ -279,7 +279,7 @@ describe('WorkspaceManager: archive (decided 2026-08-09 — Close session retire
 
     expect(mgr.archiveSession('done-1')).toBe(true)
     await vi.waitFor(() => expect(latest(repo).rows).toEqual([]))
-    expect(layout.sessions['done-1']).toBeUndefined()
+    expect(layout.panels['done-1']).toBeUndefined()
     expect(fs.existsSync(path.join(projectsRoot, encodeCwd(repo), 'done-1.jsonl'))).toBe(true)
   })
 
@@ -291,7 +291,7 @@ describe('WorkspaceManager: archive (decided 2026-08-09 — Close session retire
     await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['live-1']))
 
     expect(mgr.archiveSession('live-1')).toBe(false)
-    expect(layout.sessions['live-1']).toBeDefined()
+    expect(layout.panels['live-1']).toBeDefined()
   })
 })
 
@@ -464,7 +464,7 @@ describe('WorkspaceManager: per-session Workbench state (T-AGG-09②, T-AUX-02/0
     mgr.setWorkbenchState('s1', state)
     expect(mgr.workbenchState('s1')).toEqual(state)
 
-    await vi.waitFor(() => expect(layout.sessions.s1).toEqual(state), { timeout: 3000 })
+    await vi.waitFor(() => expect(layout.panels.s1).toEqual(state), { timeout: 3000 })
     expect(restart().workbenchState('s1')).toEqual(state)
   })
 
@@ -476,14 +476,14 @@ describe('WorkspaceManager: per-session Workbench state (T-AGG-09②, T-AUX-02/0
     })
     mgr.setWorkbenchState('s1', { open: true, tabs: [] })
     mgr.dispose()
-    expect(layout.sessions.s1).toEqual({ open: true, tabs: [] })
+    expect(layout.panels.s1).toEqual({ open: true, tabs: [] })
   })
 
   it('flushes a pending panel write on dispose (quit must not lose the last toggle)', () => {
     bindAsRunning('s1')
     mgr.setWorkbenchState('s1', { open: false, tabs: [] })
     mgr.dispose()
-    expect(layout.sessions.s1).toEqual({ open: false, tabs: [] })
+    expect(layout.panels.s1).toEqual({ open: false, tabs: [] })
   })
 
   it('keeps a Codex session’s panel state through rescans while Codex counts it, and drops it once Codex lets it go', async () => {
@@ -536,7 +536,7 @@ describe('WorkspaceManager: per-session Workbench state (T-AGG-09②, T-AUX-02/0
 
     expect(mgr.isMember('s1')).toBe(false)
     mgr.dispose()
-    expect(layout.sessions.s1).toBeUndefined()
+    expect(layout.panels.s1).toBeUndefined()
   })
 })
 
@@ -550,7 +550,7 @@ describe('WorkspaceManager: working-set eviction (D1/D2)', () => {
 
     expect(mgr.archiveSession('live-1')).toBe(false)
     mgr.dropOwnership('live-1')
-    expect(layout.sessions['live-1']).toBeUndefined()
+    expect(layout.panels['live-1']).toBeUndefined()
     expect(mgr.isMember('live-1')).toBe(false)
 
     const before = saves
@@ -565,11 +565,11 @@ describe('WorkspaceManager: working-set eviction (D1/D2)', () => {
     bindings.set('fresh-1', 'tab-1')
     mgr.start()
     await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
-    expect(layout.sessions['fresh-1']).toEqual(SEEDED)
+    expect(layout.panels['fresh-1']).toEqual(SEEDED)
 
     bindings.delete('fresh-1')
     mgr.onTrackerUpdate()
-    await vi.waitFor(() => expect(layout.sessions['fresh-1']).toBeUndefined())
+    await vi.waitFor(() => expect(layout.panels['fresh-1']).toBeUndefined())
   })
 
   it('leaves the jsonl behind, so the evicted session is restorable history', async () => {
@@ -624,10 +624,10 @@ describe('WorkspaceManager: /clear id change (T-LIFE-07)', () => {
   }
 
   it('persists the carried panel state, and writes nothing on a /resume switch', () => {
-    layout.sessions = { old: entry }
+    layout.panels = { old: entry }
 
     mgr.onSessionRebind('old', 'fresh', 'clear')
-    expect(layout.sessions).toEqual({ old: entry, fresh: entry })
+    expect(layout.panels).toEqual({ old: entry, fresh: entry })
 
     const saved = layout
     mgr.onSessionRebind('fresh', 'target', 'resume')
@@ -636,13 +636,13 @@ describe('WorkspaceManager: /clear id change (T-LIFE-07)', () => {
 
   it('the bind that follows a /clear makes the new id a member and keeps the panel state it carried', () => {
     own('old')
-    layout.sessions.old = entry
+    layout.panels.old = entry
 
     mgr.onSessionRebind('old', 'fresh', 'clear')
     mgr.onSessionBound('fresh')
 
     expect(layout.members).toEqual(['old', 'fresh'])
-    expect(layout.sessions.fresh).toEqual(entry)
+    expect(layout.panels.fresh).toEqual(entry)
   })
 })
 
@@ -997,7 +997,7 @@ describe('remote workspace: reading the mirror', () => {
     mgr = remoteMgr()
     mgr.start()
     await vi.waitFor(() => expect(latest(RKEY).rows.length).toBe(1))
-    await vi.waitFor(() => expect(Object.keys(layout.sessions).sort()).toEqual(['abc', 'local1']))
+    await vi.waitFor(() => expect(Object.keys(layout.panels).sort()).toEqual(['abc', 'local1']))
     expect(latest(repo).rows.map((r) => r.id)).toEqual(['local1'])
   })
 
@@ -1187,8 +1187,8 @@ describe('mixed session backends', () => {
     expect(latest(repo).rows.map((r) => r.id)).toEqual(['pending-tab', codexKey, native])
     expect(mgr.historyRows(repo)).toEqual([])
     expect(mgr.remove(repo)).toMatchObject({ running: 2, removed: false })
-    expect(layout.sessions[native]).toEqual(SEEDED)
-    expect(layout.sessions[codexKey]).toBeUndefined()
+    expect(layout.panels[native]).toEqual(SEEDED)
+    expect(layout.panels[codexKey]).toBeUndefined()
     expect(latest(repo).rows.find((r) => r.id === native)?.revealDir).toBe(repo)
     expect(latest(repo).rows.find((r) => r.id === codexKey)?.revealDir).toBe(codexDir)
     bindings.delete(codexKey)
@@ -1252,7 +1252,7 @@ describe('WorkspaceManager: a running session that moved', () => {
       ...layout,
       workspaces: [{ path: repo }],
       members: ['left-1', 'in-1', 'resumed-1'],
-      sessions: { 'left-1': SEEDED, 'in-1': SEEDED, 'resumed-1': SEEDED }
+      panels: { 'left-1': SEEDED, 'in-1': SEEDED, 'resumed-1': SEEDED }
     }
     bindings.set('left-1', 'tab-a')
     bindings.set('in-1', 'tab-b')
@@ -1276,7 +1276,7 @@ describe('WorkspaceManager: a running session that moved', () => {
       ...layout,
       workspaces: [{ path: repo }],
       members: ['live-2'],
-      sessions: { 'live-2': SEEDED }
+      panels: { 'live-2': SEEDED }
     }
     bindings.set('live-2', 'tab-z')
     live.set('live-2', { treeRoot: gone, worktree: 'pulled', relocated: true })
@@ -1293,7 +1293,7 @@ describe('WorkspaceManager: a running session that moved', () => {
       ...layout,
       workspaces: [{ path: repo }],
       members: ['cold-1'],
-      sessions: { 'cold-1': SEEDED }
+      panels: { 'cold-1': SEEDED }
     }
     mgr = liveMgr()
     mgr.start()
@@ -1331,7 +1331,7 @@ describe('WorkspaceManager: a running session that moved', () => {
       path.join(dir, id + '.jsonl'),
       records.map((r) => JSON.stringify(r)).join('\n') + '\n'
     )
-    layout = { ...layout, workspaces: [{ path: repo }], members: [id], sessions: { [id]: SEEDED } }
+    layout = { ...layout, workspaces: [{ path: repo }], members: [id], panels: { [id]: SEEDED } }
     mgr = liveMgr()
     mgr.start()
     await vi.waitFor(() => expect(latest(repo).rows.length).toBe(1))
@@ -1348,7 +1348,7 @@ describe('WorkspaceManager: a running session that moved', () => {
       ...layout,
       workspaces: [{ path: repoDir }],
       members: ['wt-1'],
-      sessions: { 'wt-1': SEEDED }
+      panels: { 'wt-1': SEEDED }
     }
     mgr = liveMgr()
     mgr.start()
@@ -1364,7 +1364,7 @@ describe('WorkspaceManager: a running session that moved', () => {
       ...layout,
       workspaces: [{ path: RKEY }],
       members: ['wt1'],
-      sessions: { wt1: SEEDED }
+      panels: { wt1: SEEDED }
     }
     live.set('wt1', { treeRoot: wtPath, remote: true })
     mgr = liveMgr({

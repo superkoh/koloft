@@ -1070,6 +1070,11 @@ export type LayoutV3 = Omit<LayoutV4, 'version'> & { version: 3 }
 
 export type LayoutV5 = Omit<LayoutV4, 'version'> & { version: 5; members: string[] }
 
+export type LayoutV6 = Omit<LayoutV5, 'version' | 'sessions'> & {
+  version: 6
+  panels: LayoutV5['sessions']
+}
+
 // CC§2
 export interface WorktreeStateMeta {
   originalCwd: string

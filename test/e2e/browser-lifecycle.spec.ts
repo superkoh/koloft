@@ -197,7 +197,7 @@ test.describe('Workbench web tabs: an .html goes to a web tab, and the tab set s
       await expect
         .poll(() => sessionWorkbenchOnDisk(env, id)?.open ?? null, { timeout: 30_000 })
         .toBe(false)
-      expect(layoutOnDisk(env).version).toBe(5)
+      expect(layoutOnDisk(env).version).toBe(6)
 
       await row.click()
       await expect(auxIcon(page, 'Workbench')).toHaveAttribute('aria-disabled', 'false', {
@@ -337,7 +337,7 @@ test.describe('Workbench web tabs: an .html goes to a web tab, and the tab set s
       await expect
         .poll(
           () => {
-            const ids = Object.keys(layoutOnDisk(env).sessions as Record<string, unknown>)
+            const ids = Object.keys(layoutOnDisk(env).panels as Record<string, unknown>)
             newId = ids.find((i) => i !== call.sessionId) ?? ''
             return newId
           },

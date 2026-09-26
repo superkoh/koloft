@@ -509,7 +509,7 @@ test.describe('File edit · unsaved work is never lost, and the ✎ that stays o
     await expect
       .poll(
         () => {
-          const ids = Object.keys(layoutOnDisk(env).sessions ?? {})
+          const ids = Object.keys(layoutOnDisk(env).panels ?? {})
           newId = ids.find((i) => i !== call.sessionId) ?? ''
           return newId
         },

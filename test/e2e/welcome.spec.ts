@@ -21,7 +21,13 @@ test.describe('S4: the centre with no session running — onboarding with nothin
     seedSettings(env, { onboardingSeen: true })
     fs.writeFileSync(
       path.join(env.userData, 'layout.json'),
-      JSON.stringify({ version: 4, workspaces: [], workbench: { defaultOpen: true }, sessions: {} })
+      JSON.stringify({
+        version: 6,
+        workspaces: [],
+        workbench: { defaultOpen: true },
+        members: [],
+        panels: {}
+      })
     )
 
     const app = await launchApp(env)

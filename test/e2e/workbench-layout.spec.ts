@@ -366,24 +366,20 @@ test.describe('Workbench panel layout: T1 collapsed, T2 right column, T3 the TUI
       version: number
       workspaces: { path: string }[]
       members: string[]
-      sessions: Record<string, { open: boolean; tabs: { kind: string; url?: string }[] }>
+      panels: Record<string, { open: boolean; tabs: { kind: string; url?: string }[] }>
     }
-    expect(doc.version).toBe(5)
+    expect(doc.version).toBe(6)
     expect(doc.workspaces.map((w) => w.path)).toEqual([wsPath])
     expect([...doc.members].sort()).toEqual(['sid-browser', 'sid-collapsed', 'sid-preview'])
-    expect(Object.keys(doc.sessions).sort()).toEqual([
-      'sid-browser',
-      'sid-collapsed',
-      'sid-preview'
-    ])
-    expect(doc.sessions['sid-browser'].open).toBe(false)
-    expect(doc.sessions['sid-browser'].tabs.map((t) => t.kind)).toEqual(['web', 'web'])
-    expect(doc.sessions['sid-browser'].tabs.map((t) => t.url)).toEqual([
+    expect(Object.keys(doc.panels).sort()).toEqual(['sid-browser', 'sid-collapsed', 'sid-preview'])
+    expect(doc.panels['sid-browser'].open).toBe(false)
+    expect(doc.panels['sid-browser'].tabs.map((t) => t.kind)).toEqual(['web', 'web'])
+    expect(doc.panels['sid-browser'].tabs.map((t) => t.url)).toEqual([
       'http://127.0.0.1:1/one',
       'http://127.0.0.1:1/two'
     ])
-    expect(doc.sessions['sid-preview'].open).toBe(false)
-    expect(doc.sessions['sid-collapsed'].open).toBe(false)
+    expect(doc.panels['sid-preview'].open).toBe(false)
+    expect(doc.panels['sid-collapsed'].open).toBe(false)
 
     const first = fs.readFileSync(path.join(env.userData, 'layout.json'), 'utf8')
     await current.close().catch(() => {})

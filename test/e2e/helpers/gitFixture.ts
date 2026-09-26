@@ -69,10 +69,11 @@ export function setupGitFixture(env: E2EEnv, name = 'repo'): GitFixture {
   fs.writeFileSync(
     path.join(env.userData, 'layout.json'),
     JSON.stringify({
-      version: 4,
+      version: 6,
       workspaces: [{ path: clone }],
       workbench: { defaultOpen: true },
-      sessions: {}
+      members: [],
+      panels: {}
     })
   )
 

@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import type { LayoutV5 } from '@shared/types'
+import type { LayoutV6 } from '@shared/types'
 import { migrateLayout, serializeLayout, type MigrateDeps } from './layoutMigrate'
 import { projectInfoFor } from './projectInfo'
 
@@ -21,7 +21,7 @@ const migrateDeps: MigrateDeps = {
   projectRootOf: (p) => projectInfoFor(p).root
 }
 
-export function loadLayout(): LayoutV5 {
+export function loadLayout(): LayoutV6 {
   let raw: unknown
   try {
     raw = JSON.parse(fs.readFileSync(layoutFile(), 'utf8'))
@@ -33,7 +33,7 @@ export function loadLayout(): LayoutV5 {
   return layout
 }
 
-export function saveLayout(layout: LayoutV5): void {
+export function saveLayout(layout: LayoutV6): void {
   try {
     fs.writeFileSync(layoutFile(), serializeLayout(layout))
   } catch {}
