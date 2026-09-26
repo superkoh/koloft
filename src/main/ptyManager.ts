@@ -1,7 +1,7 @@
 import * as pty from 'node-pty'
 import { EventEmitter } from 'events'
 import os from 'os'
-import type { HostId, TabKind } from '@shared/types'
+import type { TabKind } from '@shared/types'
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { OscCwdParser } from './oscCwd'
 import { codexEnvironment } from './codexTransport'
@@ -32,8 +32,11 @@ interface CreateArgs {
   util?: boolean
   resumeSessionId?: string
   ownerTabId?: string
-  host?: HostId
-  extraEnv?: { KOLOFT_FIRST_PROMPT?: string; KOLOFT_SESSION_NAME?: string }
+  extraEnv?: {
+    KOLOFT_FIRST_PROMPT?: string
+    KOLOFT_SESSION_NAME?: string
+    KOLOFT_AGENT_PLUGIN?: string
+  }
 }
 
 const UTIL_TITLE_POLL_MS = 1500
@@ -54,10 +57,8 @@ export class PtyManager extends EventEmitter {
   pickDir?: string
   cdpDir?: string
   agentDir?: string
-  agentPlugin?: string
-  agentToolsFor?: (kind: TabKind, host: HostId) => boolean
   multiAccountOn?: () => boolean
-  makeHookSettings?: (tabId: string) => string | undefined
+  makeHookSettings?: (tabId: string, allowKoloft: boolean) => string | undefined
 
   private ptys = new Map<string, PtyHandle>()
   private counter = 0
@@ -118,14 +119,7 @@ export class PtyManager extends EventEmitter {
     if (this.openDir) env.KOLOFT_OPEN_DIR = this.openDir
     if (this.pickDir) env.KOLOFT_PICK_DIR = this.pickDir
     if (this.cdpDir && !args.util) env.KOLOFT_CDP_DIR = this.cdpDir
-    if (
-      this.agentDir &&
-      args.kind !== 'codex' &&
-      this.agentToolsFor?.(args.kind, args.host ?? 'local')
-    ) {
-      env.KOLOFT_AGENT_DIR = this.agentDir
-      if (this.agentPlugin && !args.util) env.KOLOFT_AGENT_PLUGIN = this.agentPlugin
-    }
+    if (this.agentDir && args.kind !== 'codex') env.KOLOFT_AGENT_DIR = this.agentDir
     if (args.kind !== 'codex' && this.multiAccountOn?.()) {
       env.KOLOFT_MULTI_ACCOUNT = '1'
       delete env.ANTHROPIC_API_KEY
@@ -134,12 +128,18 @@ export class PtyManager extends EventEmitter {
     if (process.env.KOLOFT_TEST_BACKGROUND !== '1') delete env.KOLOFT_KEYCHAIN_FILE
     env.KOLOFT_PID = String(process.pid)
     const hookSettings =
-      args.util || args.kind === 'codex' ? undefined : this.makeHookSettings?.(id)
+      args.util || args.kind === 'codex'
+        ? undefined
+        : this.makeHookSettings?.(id, args.extraEnv?.KOLOFT_AGENT_PLUGIN !== undefined)
     if (hookSettings) env.KOLOFT_HOOK_SETTINGS = hookSettings
     if (this.shimDir && !isWin && args.kind !== 'codex')
       env.PATH = `${this.shimDir}:${process.env.PATH ?? ''}`
     if (args.extraEnv) {
-      for (const k of ['KOLOFT_FIRST_PROMPT', 'KOLOFT_SESSION_NAME'] as const) {
+      for (const k of [
+        'KOLOFT_FIRST_PROMPT',
+        'KOLOFT_SESSION_NAME',
+        'KOLOFT_AGENT_PLUGIN'
+      ] as const) {
         const v = args.extraEnv[k]
         if (v !== undefined) env[k] = v
       }
@@ -296,4 +296,10 @@ export function tabInstancePid(tabId: string): number | null {
   if (!m) return null
   const pid = parseInt(m[1], 36)
   return Number.isFinite(pid) && pid > 0 ? pid : null
+}
+
+// ADR-0004
+export function anotherLiveInstanceOwns(tabId: string, alive: (pid: number) => boolean): boolean {
+  const owner = tabInstancePid(tabId)
+  return owner !== null && owner !== process.pid && alive(owner)
 }

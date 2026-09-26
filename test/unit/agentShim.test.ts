@@ -9,6 +9,7 @@ vi.mock('node-pty', () => ({ spawn: vi.fn() }))
 import { CLAUDE_AGENT_SHIM, writeCodexAgentShim } from '../../src/main/agentShim'
 import { AgentRequests, answered, refused, type AgentVerbs } from '../../src/main/agentRequests'
 import { watchJsonDrops } from '../../src/main/jsonDrops'
+import type { SessionInfo } from '../../src/shared/types'
 
 const TAB = `pty-${process.pid.toString(36)}-1`
 const AWKWARD = 'say "hi" to C:\\temp\\n\tand\n50% of 日本 ✓\n'
@@ -27,10 +28,23 @@ const verbs: AgentVerbs = {
   fail: () => refused('it broke: "x"', 3)
 }
 
+const session = (tabId: string): SessionInfo => ({
+  tabId,
+  backendId: 'claude',
+  host: 'local',
+  sessionId: 's1',
+  title: 'Fix login',
+  cwd: '/w',
+  treeRoot: '/w',
+  alive: true,
+  updatedAt: 1
+})
+
 function listen(dir: string): void {
   watcher = new AgentRequests({
     verbs,
     tab: () => ({ util: false }),
+    session,
     enabled: () => true,
     alive: () => true
   }).watch(dir)
@@ -109,7 +123,9 @@ describe('koloft command in a Codex session', () => {
   let requestDir: string
 
   beforeEach(() => {
-    requestDir = writeCodexAgentShim(shimDir, `test-${process.pid}-${Date.now()}`)
+    requestDir = path.join(base, 'codex-requests')
+    fs.mkdirSync(requestDir)
+    writeCodexAgentShim(shimDir, requestDir)
   })
 
   afterEach(() => {
@@ -121,6 +137,7 @@ describe('koloft command in a Codex session', () => {
     const tab = new AgentRequests({
       verbs,
       tab: () => undefined,
+      session,
       enabled: () => true,
       alive: () => true
     })

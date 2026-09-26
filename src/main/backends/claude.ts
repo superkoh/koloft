@@ -100,6 +100,7 @@ export class ClaudeBackend implements SessionBackend {
   private statusLogDraining = new Map<string, boolean>()
   private processedRegIds = new Set<string>()
   private watchedHookMirrors = new Map<string, () => void>()
+  agentPlugin?: string
 
   constructor(private d: ClaudeBackendDeps) {}
 
@@ -180,11 +181,16 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   sessionIdOf(tabId: string): string | undefined {
-    return this.d.tracker.list().find((s) => s.tabId === tabId)?.sessionId
+    return this.d.tracker.infoOf(tabId)?.sessionId
+  }
+
+  workspaceOfTab(tabId: string): string | undefined {
+    const sessionId = this.sessionIdOf(tabId)
+    return sessionId ? this.d.workspaces()?.workspaceOf(sessionId) : undefined
   }
 
   private titleOf(tabId: string): string | undefined {
-    return this.d.tracker.list().find((s) => s.tabId === tabId)?.title
+    return this.d.tracker.infoOf(tabId)?.title
   }
 
   watchShimRegistrations(regDir: string): void {
@@ -690,6 +696,8 @@ export class ClaudeBackend implements SessionBackend {
     })
     if (!plan.ok) return plan
     const machine = plan.machine
+    const agentPlugin =
+      !machine && this.agentPlugin && loadSettings().agentTools ? this.agentPlugin : undefined
     const handle = this.d.pty.create({
       kind: 'claude',
       cwd: plan.spawnCwd,
@@ -702,8 +710,7 @@ export class ClaudeBackend implements SessionBackend {
       },
       resumeSessionId: spec.resumeSessionId,
       shell: plan.shell,
-      host: machine ? 'ssh' : 'local',
-      extraEnv: plan.extraEnv
+      extraEnv: agentPlugin ? { ...plan.extraEnv, KOLOFT_AGENT_PLUGIN: agentPlugin } : plan.extraEnv
     })
     if (machine) {
       tracker.track(handle.id, machine.cwd, machine.tracking)

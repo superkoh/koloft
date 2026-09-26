@@ -8,7 +8,7 @@ import {
   type CronVerbDeps
 } from '../../src/main/agentCron'
 import { EXIT_USAGE, NOT_PINNED } from '../../src/main/agentRequests'
-import type { BackendId, CronJob } from '../../src/shared/types'
+import type { BackendId, CronJob, SessionInfo } from '../../src/shared/types'
 
 const NOW = new Date(2026, 8, 2, 10, 0, 0, 0)
 const HERE = '/ws/here'
@@ -54,13 +54,22 @@ function cron(
   const verb = cronVerb({
     runner: () => runner,
     pinnedWorkspaceOf: () => HERE,
-    backendOf: () => over.backend ?? 'claude',
-    sessionName: () => 'Fix login',
     toast: (t) => toasts.push(t),
     now: () => NOW,
     ...over
   })
-  return { run: (...args) => verb(args, { tabId: 'tab-1', cwd: HERE }), runner, toasts }
+  const session: SessionInfo = {
+    tabId: 'tab-1',
+    backendId: over.backend ?? 'claude',
+    host: 'local',
+    sessionId: 'tab-1-session',
+    title: 'Fix login',
+    cwd: HERE,
+    treeRoot: HERE,
+    alive: true,
+    updatedAt: 1
+  }
+  return { run: (...args) => verb(args, { tabId: 'tab-1', cwd: HERE, session }), runner, toasts }
 }
 
 function parsedPatch(args: string[]): unknown {
@@ -161,7 +170,7 @@ describe('koloft cron: changing tasks', () => {
     const kept = job({ model: 'opus', effort: 'max', permission: 'skipAll', enabled: false })
     const c = cron([kept])
     const reply = await c.run('edit', 'nightly', '--daily', '03:00')
-    expect(reply.ok).toBe(true)
+    expect(reply.exit).toBe(0)
     expect(c.runner.state().jobs[0]).toMatchObject({
       id: 'j1',
       name: 'nightly',
@@ -178,20 +187,20 @@ describe('koloft cron: changing tasks', () => {
     const c = cron([job({ id: 'other', workspacePath: ELSEWHERE, name: 'theirs' })])
     const listed = await c.run('list')
     expect(listed.text).not.toMatch(/theirs/)
-    expect((await c.run('rm', 'theirs')).ok).toBe(false)
-    expect((await c.run('off', '1')).ok).toBe(false)
+    expect((await c.run('rm', 'theirs')).exit).not.toBe(0)
+    expect((await c.run('off', '1')).exit).not.toBe(0)
     expect(c.runner.state().jobs[0]).toMatchObject({ id: 'other', enabled: true })
   })
 
   it('refuses every command while the workspace is not pinned', async () => {
     const c = cron([job()], { pinnedWorkspaceOf: () => undefined })
-    expect(await c.run('list')).toEqual({ ok: false, text: NOT_PINNED, exit: 1 })
+    expect(await c.run('list')).toEqual({ text: NOT_PINNED, exit: 1 })
   })
 
   it('add saves an enabled task in the caller workspace with the dialog default permission for its backend, and toasts who did it', async () => {
     const c = cron([], { backend: 'codex' })
     const reply = await c.run('add', '--name', 'lint', '--every', '2h', '--', 'Run lint')
-    expect(reply.ok).toBe(true)
+    expect(reply.exit).toBe(0)
     expect(c.runner.state().jobs[0]).toMatchObject({
       workspacePath: HERE,
       name: 'lint',
@@ -206,7 +215,7 @@ describe('koloft cron: changing tasks', () => {
   it('a value the task dialog would reject comes back as that same error, and nothing is saved', async () => {
     const c = cron([])
     const reply = await c.run('add', '--name', 'lint', '--daily', '9am', '--', 'Run lint')
-    expect(reply).toMatchObject({ ok: false, text: expect.stringMatching(/Use a time like 09:00/) })
+    expect(reply).toMatchObject({ exit: 1, text: expect.stringMatching(/Use a time like 09:00/) })
     expect(c.runner.state().jobs).toEqual([])
     expect(c.toasts).toEqual([])
   })

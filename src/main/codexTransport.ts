@@ -339,7 +339,7 @@ const OWN_REQUEST_ID_PREFIX = 'koloft-'
 export interface CodexTransport {
   url: string
   stop(): Promise<void>
-  request(method: string, params: unknown, timeoutMs: number): Promise<unknown>
+  request(method: string, params: unknown, timeoutMs?: number): Promise<unknown>
 }
 
 export async function createCodexTransport(
@@ -479,7 +479,7 @@ export async function createCodexTransport(
     return {
       url: `unix://${socketPath}`,
       stop,
-      request: (method, params, timeoutMs) =>
+      request: (method, params, timeoutMs = DEFAULT_TIMEOUT) =>
         sendRequest(
           own,
           `${OWN_REQUEST_ID_PREFIX}${randomUUID()}`,

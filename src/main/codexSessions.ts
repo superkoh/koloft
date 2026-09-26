@@ -98,7 +98,7 @@ export interface CodexSessionDeps {
   pickHome(): { account: string; home: string } | undefined
   homes(): string[]
   openShimRoot: string
-  agent?: {
+  agent: {
     enabled(): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
   }
@@ -630,7 +630,7 @@ export class CodexSessions {
       if (run && !run.explicitStop && !run.stopping)
         this.bindThread(run, event.thread, event.change)
     }
-    const agent = this.deps.agent?.enabled() ? this.deps.agent : undefined
+    const agent = this.deps.agent.enabled() ? this.deps.agent : undefined
     const openShim = this.startOpenShim(
       processEnv?.ZDOTDIR,
       (target) => observe({ type: 'open', target }),
@@ -707,37 +707,28 @@ export class CodexSessions {
     open: (target: string) => void,
     agent?: (dir: string, name: string, raw: unknown) => void
   ): { zdotDir: string; release(): void } {
-    const token = randomUUID()
-    const shim = writeCodexOpenShim(this.deps.openShimRoot, token, userZdotdir)
+    const shim = writeCodexOpenShim(this.deps.openShimRoot, randomUUID(), userZdotdir)
+    if (agent) writeCodexAgentShim(shim.shimDir, shim.requestDir)
     const handled = new Set<string>()
-    const drops = watchJsonDrops(shim.requestDir, (name) => (obj, full) => {
-      if (handled.has(name)) return
-      handled.add(name)
-      fs.rm(full, { force: true }, () => {})
-      const target = openDropTarget(record(obj) as OpenDrop)
-      if (target) open(target)
+    const drops = watchJsonDrops(shim.requestDir, (name) => {
+      if (name.startsWith('req-'))
+        return agent ? (obj): void => agent(shim.requestDir, name, obj) : null
+      if (name.startsWith('res-')) return null
+      return (obj, full) => {
+        if (handled.has(name)) return
+        handled.add(name)
+        fs.rm(full, { force: true }, () => {})
+        const target = openDropTarget(record(obj) as OpenDrop)
+        if (target) open(target)
+      }
     })
-    let agentDir: string | undefined
-    let agentDrops: fs.FSWatcher | null = null
-    const release = (): void => {
-      drops?.close()
-      agentDrops?.close()
-      removeCodexOpenShim(shim)
-      if (agentDir) fs.rmSync(agentDir, { recursive: true, force: true })
-    }
-    if (agent) {
-      try {
-        const dir = writeCodexAgentShim(shim.shimDir, token)
-        agentDir = dir
-        agentDrops = watchJsonDrops(dir, (name) =>
-          name.startsWith('req-') ? (obj): void => agent(dir, name, obj) : null
-        )
-      } catch (error) {
-        release()
-        throw error
+    return {
+      zdotDir: shim.zdotDir,
+      release: () => {
+        drops?.close()
+        removeCodexOpenShim(shim)
       }
     }
-    return { zdotDir: shim.zdotDir, release }
   }
 
   observe(tabId: string, event: SessionEvent): void {

@@ -111,6 +111,19 @@ function cardPosFor(el: HTMLElement): { left: number; top: number } {
   }
 }
 
+function UnseenFileMark({ tabId }: { tabId: string }): JSX.Element | null {
+  const src = useStore((s) => (s.openFiles[tabId]?.unseen ? s.openFiles[tabId]?.src : undefined))
+  if (!src) return null
+  return (
+    <span
+      className="ws-tab-opened"
+      title={`${basename(src)} was opened here — select this session to see it`}
+    >
+      <LuFileText size={12} />
+    </span>
+  )
+}
+
 export function WorkspaceSidebar({
   onNewSession,
   namedMethods,
@@ -131,7 +144,6 @@ export function WorkspaceSidebar({
   const leftovers = useStore((s) => s.leftovers)
   const storeTabs = useStore((s) => s.tabs)
   const activeTabId = useStore((s) => s.activeTabId)
-  const openFiles = useStore((s) => s.openFiles)
   const resumeLaunch = useStore((s) => s.resumeLaunch)
   const activateTab = useStore((s) => s.activateTab)
   const selectedWs = useStore((s) => s.selectedWs)
@@ -862,14 +874,7 @@ export function WorkspaceSidebar({
                                   : row.title}
                               </i>
                             </span>
-                            {tabId && openFiles[tabId]?.unseen && (
-                              <span
-                                className="ws-tab-opened"
-                                title={`${basename(openFiles[tabId].src)} was opened here — select this session to see it`}
-                              >
-                                <LuFileText size={12} />
-                              </span>
-                            )}
+                            {tabId && <UnseenFileMark tabId={tabId} />}
                             {badge && (
                               <button
                                 className="ws-tab-parked"

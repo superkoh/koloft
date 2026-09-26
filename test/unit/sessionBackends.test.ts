@@ -23,6 +23,7 @@ function stubBackend(
     resume: async () => ({ ok: true as const, id: 'tab', cwd: '/repo' }),
     resumePlan: async () => ({ action: 'unavailable' as const, reason: 'not-found' as const }),
     hasTab: () => false,
+    workspaceOfTab: () => undefined,
     aliveTabFor: () => undefined,
     stop: () => {},
     archive: () => true,

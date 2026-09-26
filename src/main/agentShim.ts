@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { shq } from '@shared/shellQuote'
+import { NEWID_FN } from './openShimScript'
 
 const TEN_SECONDS_OF_50MS_TICKS = 200
 
@@ -18,14 +19,15 @@ jstr() {
 `
 
 const BODY = `
-id="$(uuidgen 2>/dev/null | tr 'A-Z' 'a-z')"
+${NEWID_FN}
+id="$(newid)"
 [ -n "$id" ] || id="$$-$(date +%s)"
 args=""
 for a in "$@"; do args="$args\${args:+,}\\"$(jstr "$a")\\""; done
 part="$dir/req-$id.part"
 req="$dir/req-$id.json"
 res="$dir/res-$id.json"
-if ! printf '{%s"reqId":"%s","argv":[%s],"cwd":"%s","ts":%s}\\n' "$tabfield" "$id" "$args" "$(jstr "$PWD")" "$(date +%s)" > "$part" 2>/dev/null || ! mv "$part" "$req" 2>/dev/null; then
+if ! printf '{%s"argv":[%s],"cwd":"%s"}\\n' "$tabfield" "$args" "$(jstr "$PWD")" > "$part" 2>/dev/null || ! mv "$part" "$req" 2>/dev/null; then
   rm -f "$part" 2>/dev/null
   echo "$unwritable" >&2
   exit 1
@@ -39,15 +41,13 @@ if [ ! -f "$res" ]; then
 fi
 reply="$(cat "$res" 2>/dev/null)"
 rm -f "$res" 2>/dev/null
-code="$(printf '%s' "$reply" | LC_ALL=C sed -n 's/^{"ok":[a-z]*,"exit":\\([0-9]*\\),.*/\\1/p')"
-text="$(printf '%s' "$reply" | LC_ALL=C sed -e 's/^{"ok":[a-z]*,"exit":[0-9]*,"text":"//' -e 's/"}$//' -e 's/\\\\"/"/g')"
+code="$(printf '%s' "$reply" | LC_ALL=C sed -n 's/^{"exit":\\([0-9]*\\),.*/\\1/p')"
+code="\${code:-1}"
+text="$(printf '%s' "$reply" | LC_ALL=C sed -e 's/^{"exit":[0-9]*,"text":"//' -e 's/"}$//' -e 's/\\\\"/"/g')"
 if [ -n "$text" ]; then
-  case "$reply" in
-    '{"ok":true,'*) printf '%b\\n' "$text" ;;
-    *) printf '%b\\n' "$text" >&2 ;;
-  esac
+  if [ "$code" = 0 ]; then printf '%b\\n' "$text"; else printf '%b\\n' "$text" >&2; fi
 fi
-exit "\${code:-1}"
+exit "$code"
 `
 
 export const CLAUDE_AGENT_SHIM = `${HEAD}
@@ -73,9 +73,6 @@ unwritable="koloft: this sandbox is read-only, so koloft cannot run here."
 ${BODY}`
 }
 
-export function writeCodexAgentShim(shimDir: string, token: string): string {
-  const requestDir = `/tmp/koloft-cx-agent-${token}`
-  fs.mkdirSync(requestDir, { mode: 0o700 })
+export function writeCodexAgentShim(shimDir: string, requestDir: string): void {
   fs.writeFileSync(path.join(shimDir, 'koloft'), codexAgentShim(requestDir), { mode: 0o755 })
-  return requestDir
 }

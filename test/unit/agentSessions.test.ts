@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import {
-  handoverPreamble,
-  parseNewSessionArgs,
-  sessionVerb,
-  type AgentLaunch
-} from '../../src/main/agentSessions'
-import { EXIT_USAGE } from '../../src/main/agentRequests'
-import type { BackendId, SessionInfo } from '../../src/shared/types'
+import { handoverPreamble, parseNewSessionArgs, sessionVerb } from '../../src/main/agentSessions'
+import { EXIT_USAGE, type AgentReply } from '../../src/main/agentRequests'
+import type { BackendId, CreateTabOptions, SessionInfo } from '../../src/shared/types'
 
 const WS = '/work/app'
 const CODEX_THREAD = '0199c3f2-7a41-7c30-9e55-1d2b8f6a0c11'
@@ -31,21 +26,22 @@ function session(
   }
 }
 
+type Launch = CreateTabOptions & { kind: BackendId }
+
 function harness(
   sessions: SessionInfo[],
   peerNames: Record<string, string> = {}
 ): {
-  verb: ReturnType<typeof sessionVerb>
-  launched: AgentLaunch[]
+  verb: (args: string[], from: { tabId: string; cwd: string }) => Promise<AgentReply>
+  launched: Launch[]
   queued: { tabId: string; text: string }[]
 } {
-  const launched: AgentLaunch[] = []
+  const launched: Launch[] = []
   const queued: { tabId: string; text: string }[] = []
-  const verb = sessionVerb({
-    backendOf: (tabId) => sessions.find((s) => s.tabId === tabId)?.backendId ?? 'claude',
+  const inner = sessionVerb({
     workspaceOf: (tabId) => (sessions.some((s) => s.tabId === tabId) ? WS : undefined),
     sessionsIn: () => sessions,
-    peerName: async (sessionId) => peerNames[sessionId] ?? null,
+    peerNames: () => async (sessionId) => peerNames[sessionId] ?? null,
     launch: async (spec) => {
       launched.push(spec)
       return 'new-tab'
@@ -54,6 +50,8 @@ function harness(
       queued.push({ tabId, text })
     }
   })
+  const verb = async (args: string[], from: { tabId: string; cwd: string }): Promise<AgentReply> =>
+    inner(args, { ...from, session: sessions.find((s) => s.tabId === from.tabId)! })
   return { verb, launched, queued }
 }
 
@@ -121,7 +119,7 @@ describe('koloft session list', () => {
       { 'me-session': 'planner' }
     )
     const reply = await verb(['list'], from('me'))
-    expect(reply.ok).toBe(true)
+    expect(reply.exit).toBe(0)
     expect(reply.text.split('\n')).toEqual([
       'me title (you) · Claude · working · name: planner · transcript: /home/.claude/projects/app/me.jsonl',
       `cx title · Codex · waiting for the owner · id: ${CODEX_THREAD}`,
@@ -137,12 +135,12 @@ describe('koloft session new', () => {
     const reply = await verb(['new', '-w', 'links', '--', 'Fix the links.'], from('me'))
     expect(launched).toHaveLength(1)
     const [spec] = launched
-    expect(spec).toMatchObject({ backend: 'claude', cwd: WS, worktree: 'links' })
+    expect(spec).toMatchObject({ kind: 'claude', cwd: WS, worktree: 'links' })
     expect(spec.name).toMatch(/^helper-/)
     expect(
-      spec.firstPrompt.startsWith(handoverPreamble({ backend: 'claude', name: 'planner' }))
+      spec.firstPrompt?.startsWith(handoverPreamble({ backend: 'claude', name: 'planner' }))
     ).toBe(true)
-    expect(spec.firstPrompt.endsWith('Fix the links.')).toBe(true)
+    expect(spec.firstPrompt?.endsWith('Fix the links.')).toBe(true)
     expect(reply.text).toContain(`"${spec.name}"`)
   })
 
@@ -156,7 +154,7 @@ describe('koloft session new', () => {
   it('a Codex caller starts a Codex sibling told to report back to its thread id, and gets the tab id to reach it by', async () => {
     const { verb, launched } = harness([session('me', 'codex', { nativeSessionId: CODEX_THREAD })])
     const reply = await verb(['new', '--', 'Check the tests.'], from('me'))
-    expect(launched[0]).toMatchObject({ backend: 'codex', name: undefined })
+    expect(launched[0]).toMatchObject({ kind: 'codex', name: undefined })
     expect(launched[0].firstPrompt).toContain(`koloft session send ${CODEX_THREAD}`)
     expect(reply.text).toContain('new-tab')
   })
@@ -164,7 +162,7 @@ describe('koloft session new', () => {
   it('a Codex caller cannot name the new session', async () => {
     const { verb, launched } = harness([session('me', 'codex', { nativeSessionId: CODEX_THREAD })])
     const reply = await verb(['new', '--name', 'x', '--', 'go'], from('me'))
-    expect(reply).toMatchObject({ ok: false, exit: EXIT_USAGE })
+    expect(reply).toMatchObject({ exit: EXIT_USAGE })
     expect(launched).toEqual([])
   })
 })
@@ -179,7 +177,7 @@ describe('koloft session send', () => {
   it('queues the message on the Codex session found by id, tab id or title', async () => {
     const { verb, queued } = harness(sessions())
     for (const ref of [OTHER_THREAD, 'cx', 'Test runner'])
-      expect((await verb(['send', ref, 'What', 'did you find?'], from('me'))).ok).toBe(true)
+      expect((await verb(['send', ref, 'What', 'did you find?'], from('me'))).exit).toBe(0)
     expect(queued).toEqual(Array(3).fill({ tabId: 'cx', text: 'What did you find?' }))
   })
 
@@ -188,7 +186,7 @@ describe('koloft session send', () => {
     const toClaude = await verb(['send', 'Planner', 'hi'], from('me'))
     const fromClaude = await verb(['send', OTHER_THREAD, 'hi'], from('cc'))
     for (const reply of [toClaude, fromClaude]) {
-      expect(reply.ok).toBe(false)
+      expect(reply.exit).not.toBe(0)
       expect(reply.text).toContain('SendMessage')
     }
     expect(queued).toEqual([])
@@ -196,11 +194,8 @@ describe('koloft session send', () => {
 
   it('refuses a session that is not open in this workspace, and a missing message', async () => {
     const { verb, queued } = harness(sessions())
-    expect((await verb(['send', 'nobody', 'hi'], from('me'))).ok).toBe(false)
-    expect(await verb(['send', OTHER_THREAD], from('me'))).toMatchObject({
-      ok: false,
-      exit: EXIT_USAGE
-    })
+    expect((await verb(['send', 'nobody', 'hi'], from('me'))).exit).not.toBe(0)
+    expect(await verb(['send', OTHER_THREAD], from('me'))).toMatchObject({ exit: EXIT_USAGE })
     expect(queued).toEqual([])
   })
 })

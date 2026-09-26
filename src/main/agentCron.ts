@@ -13,16 +13,18 @@ import {
   type Schedule
 } from '@shared/types'
 import { BACKEND_LABEL, backendIdOf } from '@shared/sessionBackend'
-import { cronBackend, NEW_JOB_PERMISSION } from '@shared/cronNames'
-import { describeSchedule, describeWhen, nextRun } from '@shared/schedule'
-import { histText, histWhen, lastRunOf, LIVE_WORDS, whenLine } from '@shared/cronHistory'
+import { cronBackend, CRON_PERMISSIONS, NEW_JOB_PERMISSION } from '@shared/cronNames'
+import { describeSchedule, describeWhen, DOW, nextRun } from '@shared/schedule'
+import { histText, histWhen, lastRunOf, LIVE_WORDS, liveOf, whenLine } from '@shared/cronHistory'
 import {
   answered,
   EXIT_USAGE,
+  fail,
   NOT_PINNED,
   refused,
   type AgentReply,
-  type AgentVerb
+  type AgentVerb,
+  type Parsed
 } from './agentRequests'
 
 const SUBS = ['list', 'show', 'add', 'edit', 'rm', 'on', 'off', 'run'] as const
@@ -32,8 +34,6 @@ const TAKES_NO_JOB: Sub[] = ['list', 'add']
 
 const TIME_FLAGS = ['--every', '--daily', '--weekly']
 const VALUE_FLAGS = ['--name', ...TIME_FLAGS, '--backend', '--model', '--effort', '--permission']
-const PERMISSIONS: CronPermission[] = ['same', 'acceptEdits', 'skipAll']
-const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
 
 export interface CronPatch {
   name?: string
@@ -51,12 +51,6 @@ export interface CronCommand {
   patch: CronPatch
 }
 
-export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string }
-
-export function fail<T>(error: string): Parsed<T> {
-  return { ok: false, error }
-}
-
 export function parseSchedule(flag: string, value: string): Parsed<Schedule> {
   if (flag === '--every') {
     const m = /^(\d+)([mh])$/.exec(value)
@@ -71,8 +65,8 @@ export function parseSchedule(flag: string, value: string): Parsed<Schedule> {
   if (at < 0) return fail('write --weekly like mon,wed,fri@09:00.')
   const days: number[] = []
   for (const word of value.slice(0, at).split(',')) {
-    const day = DAYS.indexOf(word.trim().toLowerCase())
-    if (day < 0) return fail(`"${word}" is not a day. Use ${DAYS.slice(1).join(', ')} or sun.`)
+    const day = DOW.findIndex((d) => d.toLowerCase() === word.trim().toLowerCase())
+    if (day < 0) return fail(`"${word}" is not a day. Use ${DOW.slice(1).join(', ')} or Sun.`)
     if (!days.includes(day)) days.push(day)
   }
   days.sort((a, b) => a - b)
@@ -80,7 +74,7 @@ export function parseSchedule(flag: string, value: string): Parsed<Schedule> {
   return {
     ok: true,
     value:
-      days.length === DAYS.length ? { kind: 'daily', at: time } : { kind: 'weekly', days, at: time }
+      days.length === DOW.length ? { kind: 'daily', at: time } : { kind: 'weekly', days, at: time }
   }
 }
 
@@ -95,8 +89,8 @@ function applyFlag(patch: CronPatch, flag: string, value: string): string | null
     if (!isCronEffort(value)) return `--effort is one of ${CRON_EFFORTS.join(', ')}.`
     patch.effort = value
   } else if (flag === '--permission') {
-    const permission = PERMISSIONS.find((p) => p === value)
-    if (!permission) return `--permission is one of ${PERMISSIONS.join(', ')}.`
+    const permission = CRON_PERMISSIONS.find((p) => p === value)
+    if (!permission) return `--permission is one of ${CRON_PERMISSIONS.join(', ')}.`
     patch.permission = permission
   } else {
     if (patch.schedule) return 'give only one of --every, --daily or --weekly.'
@@ -151,54 +145,38 @@ export function parseCronArgs(args: string[]): Parsed<CronCommand> {
   return { ok: true, value: { sub, ref, patch } }
 }
 
-function withModelAndEffort(
-  input: CronSaveInput,
-  model: string | undefined,
-  effort: CronEffort | undefined
-): CronSaveInput {
-  return {
-    ...input,
-    ...(model !== undefined ? { model } : {}),
-    ...(effort !== undefined ? { effort } : {})
-  }
-}
-
 export function newJobInput(
   patch: CronPatch,
   workspacePath: string,
   callerBackend: BackendId
 ): CronSaveInput {
   const backend = patch.backend ?? callerBackend
-  return withModelAndEffort(
-    {
-      workspacePath,
-      name: patch.name ?? '',
-      task: patch.task ?? '',
-      schedule: patch.schedule as Schedule,
-      backend,
-      permission: patch.permission ?? NEW_JOB_PERMISSION[backend],
-      enabled: true
-    },
-    patch.model,
-    patch.effort
-  )
+  return {
+    workspacePath,
+    name: patch.name ?? '',
+    task: patch.task ?? '',
+    schedule: patch.schedule as Schedule,
+    backend,
+    model: patch.model,
+    effort: patch.effort,
+    permission: patch.permission ?? NEW_JOB_PERMISSION[backend],
+    enabled: true
+  }
 }
 
 export function mergeEdit(job: CronJob, patch: CronPatch): CronSaveInput {
-  return withModelAndEffort(
-    {
-      id: job.id,
-      workspacePath: job.workspacePath,
-      name: patch.name ?? job.name,
-      task: patch.task ?? job.task,
-      schedule: patch.schedule ?? job.schedule,
-      backend: patch.backend ?? cronBackend(job),
-      permission: patch.permission ?? job.permission,
-      enabled: job.enabled
-    },
-    patch.model ?? job.model,
-    patch.effort ?? job.effort
-  )
+  return {
+    id: job.id,
+    workspacePath: job.workspacePath,
+    name: patch.name ?? job.name,
+    task: patch.task ?? job.task,
+    schedule: patch.schedule ?? job.schedule,
+    backend: patch.backend ?? cronBackend(job),
+    model: patch.model ?? job.model,
+    effort: patch.effort ?? job.effort,
+    permission: patch.permission ?? job.permission,
+    enabled: job.enabled
+  }
 }
 
 export function findJob(jobs: CronJob[], ref: string): Parsed<CronJob> {
@@ -215,13 +193,9 @@ export function findJob(jobs: CronJob[], ref: string): Parsed<CronJob> {
   return fail(`there is no task "${ref}" in this workspace. Run "koloft cron list" to see them.`)
 }
 
-function liveOf(live: LiveRun[], jobId: string): LiveRun | undefined {
-  return live.find((l) => l.jobId === jobId)
-}
-
 function lastText(job: CronJob, live: LiveRun[], now: Date): string {
-  const last = lastRunOf(job, liveOf(live, job.id))
-  return last ? `last run ${describeWhen(new Date(last.dueAt), now)} · ${last.words}` : 'never run'
+  const last = lastRunOf(job, live, now)
+  return last ? `${last.lead}${last.words}` : 'never run'
 }
 
 function nextText(job: CronJob, now: Date): string {
@@ -277,7 +251,7 @@ const RUN_REFUSED: Record<Exclude<CronRunNowResult, { ok: true }>['reason'], str
 const RUNNER_NOT_READY = 'koloft: Koloft is still starting. Try again in a moment.'
 
 export interface CronRunnerApi {
-  state(): CronState
+  jobsAndLive(): Pick<CronState, 'jobs' | 'live'>
   save(input: CronSaveInput): CronSaveResult
   delete(jobId: string): void
   setEnabled(jobId: string, on: boolean): void
@@ -287,8 +261,6 @@ export interface CronRunnerApi {
 export interface CronVerbDeps {
   runner(): CronRunnerApi | null
   pinnedWorkspaceOf(tabId: string): string | undefined
-  backendOf(tabId: string): BackendId
-  sessionName(tabId: string): string
   toast(text: string): void
   now(): Date
 }
@@ -303,21 +275,22 @@ export function cronVerb(d: CronVerbDeps): AgentVerb {
     if (!runner) return refused(RUNNER_NOT_READY)
     const { sub, ref, patch } = parsed.value
     const jobsHere = (all: CronJob[]): CronJob[] => all.filter((j) => j.workspacePath === workspace)
-    const { jobs: allJobs, live } = runner.state()
+    const { jobs: allJobs, live } = runner.jobsAndLive()
     const now = d.now()
     const tell = (did: string, name: string): void =>
-      d.toast(`⏰ ${d.sessionName(caller.tabId)} ${did} scheduled task ${name}`)
+      d.toast(`⏰ ${caller.session.title} ${did} scheduled task ${name}`)
     const saved = (result: CronSaveResult, did: string, reply: string): AgentReply => {
       if (!result.ok) return refused(`koloft cron: ${result.errors.join(' ')}`)
       tell(did, result.job.name)
-      const number = jobsHere(runner.state().jobs).indexOf(result.job) + 1
+      const number =
+        jobsHere(runner.jobsAndLive().jobs).findIndex((j) => j.id === result.job.id) + 1
       return answered(`${reply} task ${number}. ${result.job.name} · ${whenLine(result.job, now)}`)
     }
 
     const jobs = jobsHere(allJobs)
     if (sub === 'list') return answered(formatList(jobs, live, now))
     if (sub === 'add') {
-      const input = newJobInput(patch, workspace, d.backendOf(caller.tabId))
+      const input = newJobInput(patch, workspace, caller.session.backendId)
       return saved(runner.save(input), 'added', 'Added')
     }
 

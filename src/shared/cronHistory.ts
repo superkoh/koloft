@@ -46,14 +46,21 @@ const HIST_WORDS: Record<HistoryLine['state'], string> = {
   missed: 'missed'
 }
 
+export function liveOf(live: LiveRun[], jobId: string): LiveRun | undefined {
+  return live.find((l) => l.jobId === jobId)
+}
+
 export function lastRunOf(
   job: CronJob,
-  live: LiveRun | undefined
-): { dueAt: number; words: string; done: boolean } | null {
+  live: LiveRun[],
+  now: Date
+): { lead: string; words: string; done: boolean } | null {
+  const run = liveOf(live, job.id)
   const h: HistoryLine | undefined = job.history[0]
   const hAt = h ? histEnd(h) : 0
-  if (live && (!h || live.dueAt >= hAt)) {
-    return { dueAt: live.dueAt, words: LIVE_WORDS[live.state], done: live.state === 'done' }
+  const lead = (dueAt: number): string => `last run ${describeWhen(new Date(dueAt), now)} · `
+  if (run && (!h || run.dueAt >= hAt)) {
+    return { lead: lead(run.dueAt), words: LIVE_WORDS[run.state], done: run.state === 'done' }
   }
-  return h ? { dueAt: hAt, words: HIST_WORDS[h.state], done: false } : null
+  return h ? { lead: lead(hAt), words: HIST_WORDS[h.state], done: false } : null
 }

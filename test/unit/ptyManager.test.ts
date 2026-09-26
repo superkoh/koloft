@@ -100,27 +100,33 @@ describe('PtyManager per-tab environment', () => {
     expect(env.TERM_PROGRAM).toBe('Apple_Terminal')
   })
 
-  it('hands the koloft request folder and the skill plugin only to a tab whose kind and machine may use agent tools, and gives a utility shell the folder but not the plugin', () => {
-    const allowed: string[] = []
+  it('hands the koloft request folder to every tab but a Codex one, and the skill plugin and the koloft allow rule only to a launch that brings the plugin', () => {
+    const allowKoloft: boolean[] = []
     const envFor = (args: Parameters<PtyManager['create']>[0]): Record<string, string> => {
       mocks.spawn.mockClear()
       const mgr = new PtyManager()
       mgr.agentDir = '/koloft/agent'
-      mgr.agentPlugin = '/koloft/agent-plugin'
-      mgr.agentToolsFor = (kind, host) => allowed.includes(`${kind}@${host}`)
+      mgr.makeHookSettings = (id, allow) => {
+        allowKoloft.push(allow)
+        return `/koloft/hooks/${id}.json`
+      }
       mgr.create(args)
       return spawnedEnv()
     }
-    allowed.push('claude@local', 'shell@local')
-    const local = envFor({ kind: 'claude', cwd: os.tmpdir() })
-    expect(local.KOLOFT_AGENT_DIR).toBe('/koloft/agent')
-    expect(local.KOLOFT_AGENT_PLUGIN).toBe('/koloft/agent-plugin')
-    const util = envFor({ kind: 'shell', cwd: os.tmpdir(), util: true })
-    expect(util.KOLOFT_AGENT_DIR).toBe('/koloft/agent')
-    expect(util.KOLOFT_AGENT_PLUGIN).toBeUndefined()
-    const remote = envFor({ kind: 'claude', cwd: os.tmpdir(), host: 'ssh' })
-    expect(remote.KOLOFT_AGENT_DIR).toBeUndefined()
-    expect(remote.KOLOFT_AGENT_PLUGIN).toBeUndefined()
+    const plain = envFor({ kind: 'claude', cwd: os.tmpdir() })
+    expect(plain.KOLOFT_AGENT_DIR).toBe('/koloft/agent')
+    expect(plain.KOLOFT_AGENT_PLUGIN).toBeUndefined()
+    const plugged = envFor({
+      kind: 'claude',
+      cwd: os.tmpdir(),
+      extraEnv: { KOLOFT_AGENT_PLUGIN: '/koloft/agent-plugin' }
+    })
+    expect(plugged.KOLOFT_AGENT_PLUGIN).toBe('/koloft/agent-plugin')
+    expect(allowKoloft).toEqual([false, true])
+    expect(envFor({ kind: 'shell', cwd: os.tmpdir(), util: true }).KOLOFT_AGENT_DIR).toBe(
+      '/koloft/agent'
+    )
+    expect(envFor({ kind: 'codex', cwd: os.tmpdir() }).KOLOFT_AGENT_DIR).toBeUndefined()
   })
 
   it('marks a global-terminal (utility) shell with KOLOFT_UTIL=1, the variable the shim hard block keys off', () => {

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { claudePeerName, runningClaudePid } from '../../src/main/claudeSessionRegistry'
+import { claudePeerNames, runningClaudePid } from '../../src/main/claudeSessionRegistry'
 
 const SID = '1425a153-9a1b-45b1-a727-b05f5a9c490e'
 const START = 'Wed Sep 23 20:29:08 2026'
@@ -57,11 +57,11 @@ describe("claude's own session registry: the name other sessions reach it by", (
     entry(12345, SID, 'Mon Sep 21 08:00:00 2026', 'old-name')
     entry(29948, SID, START, 'docs-fixer')
     const startOf = async (pid: number): Promise<string | null> => (pid === 29948 ? START : null)
-    expect(await claudePeerName(SID, dir, startOf)).toBe('docs-fixer')
+    expect(await claudePeerNames(dir, startOf)(SID)).toBe('docs-fixer')
   })
 
   it('has no name for a session that is not running', async () => {
     entry(92355, SID, START, 'docs-fixer')
-    expect(await claudePeerName(SID, dir, async () => null)).toBeNull()
+    expect(await claudePeerNames(dir, async () => null)(SID)).toBeNull()
   })
 })

@@ -1,7 +1,7 @@
 import fs from 'fs'
-import path from 'path'
 import { schemeOf } from '@shared/browserRoute'
 import type { ArtifactView } from '@shared/types'
+import { openDropTarget } from './openDrop'
 import {
   answered,
   EXIT_USAGE,
@@ -22,10 +22,6 @@ const DIFF_USAGE = 'koloft diff: give one file, like "koloft diff src/app.ts".'
 const NOTE_USAGE =
   'koloft note: run "koloft note" to read the note, or "koloft note append <text>" to add to it.'
 
-export function agentOpenTarget(arg: string, cwd: string): string {
-  return schemeOf(arg) ? arg : path.resolve(cwd, arg)
-}
-
 export function noteAppendText(existing: string, text: string): string {
   const separator = existing && !existing.endsWith('\n') ? '\n' : ''
   return `${separator}${text}\n`
@@ -37,11 +33,9 @@ function show(
   caller: AgentCaller,
   view?: ArtifactView
 ): AgentReply {
-  const target = agentOpenTarget(arg, caller.cwd)
-  if (!schemeOf(arg) && !fs.existsSync(target))
-    return refused(`koloft: there is no file at ${target}.`)
+  const target = openDropTarget(schemeOf(arg) ? { url: arg } : { path: arg, cwd: caller.cwd })
   if (!d.open(caller.tabId, target, view))
-    return refused(`koloft: Koloft cannot show ${target} in the Workbench.`)
+    return refused(`koloft: there is no file at ${target} that the Workbench can show.`)
   return answered(`Opened ${target} in this session's Workbench.`)
 }
 

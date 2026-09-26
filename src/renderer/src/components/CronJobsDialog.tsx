@@ -6,7 +6,6 @@ import type {
   CronPermission,
   CronSaveInput,
   HistoryLine,
-  LiveRun,
   SkillSuggestion
 } from '@shared/types'
 import { basename } from '@shared/preview'
@@ -19,7 +18,7 @@ import {
   SESSION_BACKENDS
 } from '@shared/sessionBackend'
 import { describeSchedule, describeWhen, nextRun } from '@shared/schedule'
-import { histText, histWhen, lastRunOf, whenLine } from '@shared/cronHistory'
+import { histText, histWhen, lastRunOf, liveOf, whenLine } from '@shared/cronHistory'
 import {
   emptyFields,
   permissionAfterSwitch,
@@ -287,8 +286,6 @@ export function CronJobsDialog({
     onBlur: () => setFocusKey((k) => (k === key ? '' : k))
   })
 
-  const liveOf = (id: string): LiveRun | undefined => cron.live.find((l) => l.jobId === id)
-
   const lastLine = (job: CronJob): JSX.Element => {
     const folders = cron.folders[job.id] ?? 0
     const count = `${folders} run folder${folders === 1 ? '' : 's'} on disk`
@@ -299,11 +296,11 @@ export function CronJobsDialog({
           {folders > MANY_RUN_FOLDERS ? <span className="am">{count}</span> : count}
         </>
       )
-    const last = lastRunOf(job, liveOf(job.id))
+    const last = lastRunOf(job, cron.live, new Date())
     if (!last) return <>never run{foldersPart}</>
     return (
       <>
-        {`last run ${describeWhen(new Date(last.dueAt), new Date())} · `}
+        {last.lead}
         {last.done ? <span className="g">{last.words}</span> : last.words}
         {foldersPart}
       </>
@@ -645,7 +642,7 @@ export function CronJobsDialog({
 
   const renderHistory = (): JSX.Element | null => {
     if (!selected) return null
-    const live = liveOf(selected.id)
+    const live = liveOf(cron.live, selected.id)
     return (
       <div className="hist">
         <span className="flabel">{`History · ${selected.name}`}</span>

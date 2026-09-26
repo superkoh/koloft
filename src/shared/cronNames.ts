@@ -1,5 +1,7 @@
 import type { BackendId, CronPermission } from './types'
 
+export const CRON_PERMISSIONS: CronPermission[] = ['same', 'acceptEdits', 'skipAll']
+
 export const NEW_JOB_PERMISSION: Record<BackendId, CronPermission> = {
   claude: 'same',
   codex: 'skipAll'

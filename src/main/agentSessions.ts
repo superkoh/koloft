@@ -1,9 +1,16 @@
 import { randomBytes } from 'crypto'
-import type { BackendId, SessionInfo, SessionStatus } from '@shared/types'
+import type { BackendId, CreateTabOptions, SessionInfo, SessionStatus } from '@shared/types'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { isValidWorktreeName } from '@shared/worktreeName'
-import { answered, EXIT_USAGE, refused, type AgentReply, type AgentVerb } from './agentRequests'
-import { fail, type Parsed } from './agentCron'
+import {
+  answered,
+  EXIT_USAGE,
+  fail,
+  refused,
+  type AgentReply,
+  type AgentVerb,
+  type Parsed
+} from './agentRequests'
 
 export interface NewSessionArgs {
   name?: string
@@ -115,21 +122,11 @@ export function findCodexTarget(sessions: SessionInfo[], ref: string): Parsed<Se
     : fail(CLAUDE_USES_SEND_MESSAGE)
 }
 
-export interface AgentLaunch {
-  backend: BackendId
-  cwd: string
-  name?: string
-  worktree?: string
-  model?: string
-  firstPrompt: string
-}
-
 export interface SessionVerbDeps {
-  backendOf(tabId: string): BackendId
   workspaceOf(tabId: string): string | undefined
   sessionsIn(workspace: string): SessionInfo[]
-  peerName(sessionId: string): Promise<string | null>
-  launch(spec: AgentLaunch): Promise<string | null>
+  peerNames(): (sessionId: string) => Promise<string | null>
+  launch(options: CreateTabOptions & { kind: BackendId }): Promise<string | null>
   queue(tabId: string, text: string): Promise<void>
 }
 
@@ -145,11 +142,12 @@ async function listSessions(
   sessions: SessionInfo[],
   callerTabId: string
 ): Promise<AgentReply> {
+  const peerName = d.peerNames()
   const listed = await Promise.all(
     sessions.map(async (info) => ({
       info,
       peerName:
-        info.backendId === 'claude' ? ((await d.peerName(info.sessionId)) ?? undefined) : undefined
+        info.backendId === 'claude' ? ((await peerName(info.sessionId)) ?? undefined) : undefined
     }))
   )
   return answered(formatSessionList(listed, callerTabId))
@@ -165,15 +163,16 @@ async function startSibling(
   if (backend === 'codex' && args.name !== undefined) return refused(CODEX_HAS_NO_NAME, EXIT_USAGE)
   const caller: SessionCaller =
     backend === 'claude'
-      ? { backend, name: (await d.peerName(me.sessionId)) ?? me.title }
+      ? { backend, name: (await d.peerNames()(me.sessionId)) ?? me.title }
       : { backend, id: me.nativeSessionId ?? me.sessionId }
   const name = backend === 'claude' ? (args.name ?? newSessionName()) : undefined
   const tabId = await d.launch({
-    backend,
+    kind: backend,
     cwd: workspace,
     name,
     worktree: args.worktree,
     model: args.model,
+    permission: 'default',
     firstPrompt: withHandover(caller, args.prompt)
   })
   if (!tabId) return refused('koloft session new: Koloft could not start the session.')
@@ -187,26 +186,22 @@ async function startSibling(
 export function sessionVerb(d: SessionVerbDeps): AgentVerb {
   return async (args, caller): Promise<AgentReply> => {
     const [sub, ...rest] = args
-    const workspace = (): string | undefined => d.workspaceOf(caller.tabId)
+    const ws = d.workspaceOf(caller.tabId)
     if (sub === 'list') {
       if (rest.length > 0) return refused('koloft session list takes no options.', EXIT_USAGE)
-      const ws = workspace()
       return ws ? listSessions(d, d.sessionsIn(ws), caller.tabId) : refused(NO_WORKSPACE)
     }
     if (sub === 'new') {
       const parsed = parseNewSessionArgs(rest)
       if (!parsed.ok) return refused(`koloft session new: ${parsed.error}`, EXIT_USAGE)
-      const ws = workspace()
-      const me = ws ? d.sessionsIn(ws).find((s) => s.tabId === caller.tabId) : undefined
-      return ws && me ? startSibling(d, parsed.value, me, ws) : refused(NO_WORKSPACE)
+      return ws ? startSibling(d, parsed.value, caller.session, ws) : refused(NO_WORKSPACE)
     }
     if (sub === 'send') {
-      if (d.backendOf(caller.tabId) !== 'codex')
+      if (caller.session.backendId !== 'codex')
         return refused(`koloft session send: ${CLAUDE_USES_SEND_MESSAGE}`)
       const [ref, ...words] = rest
       const text = words.join(' ').trim()
       if (!ref || !text) return refused(SEND_USAGE, EXIT_USAGE)
-      const ws = workspace()
       if (!ws) return refused(NO_WORKSPACE)
       const target = findCodexTarget(d.sessionsIn(ws), ref)
       if (!target.ok) return refused(`koloft session send: ${target.error}`)

@@ -15,6 +15,7 @@ import {
   type AgentRequestDeps,
   type TabFacts
 } from '../../src/main/agentRequests'
+import type { SessionInfo } from '../../src/shared/types'
 
 const OTHER_LIVE_INSTANCE = process.pid + 1
 const tabOf = (pid: number, n: number): string => `pty-${pid.toString(36)}-${n}`
@@ -34,10 +35,25 @@ function requests(extra: Partial<AgentRequestDeps> = {}): AgentRequests {
       }
     },
     tab: (id) => tabs.get(id),
+    session: (id) => sessionOf(id),
     enabled: () => on,
     alive: (pid) => pid === OTHER_LIVE_INSTANCE,
     ...extra
   })
+}
+
+function sessionOf(tabId: string): SessionInfo {
+  return {
+    tabId,
+    backendId: 'claude',
+    host: 'local',
+    sessionId: `${tabId}-session`,
+    title: 'Fix login',
+    cwd: '/w',
+    treeRoot: '/w',
+    alive: true,
+    updatedAt: 1
+  }
 }
 
 function drop(name: string, body: unknown): void {
@@ -66,8 +82,8 @@ describe('koloft requests from a session', () => {
     const tabId = tabOf(process.pid, 1)
     await r.answer(dir, 'req-a.json', { tabId, argv: ['help'], cwd: '/w' })
     await r.answer(dir, 'req-b.json', { tabId, argv: [], cwd: '/w' })
-    expect(reply('a')).toEqual({ ok: true, exit: 0, text: AGENT_GUIDE })
-    expect(reply('b')).toEqual({ ok: true, exit: 0, text: AGENT_GUIDE })
+    expect(reply('a')).toEqual({ exit: 0, text: AGENT_GUIDE })
+    expect(reply('b')).toEqual({ exit: 0, text: AGENT_GUIDE })
   })
 
   it('an unknown command is refused with exit code 2 and points at koloft help', async () => {
@@ -76,7 +92,6 @@ describe('koloft requests from a session', () => {
     await requests().answer(dir, 'req-b.json', { tabId, argv: ['constructor'], cwd: '/w' })
     for (const id of ['a', 'b']) {
       expect(reply(id)).toEqual({
-        ok: false,
         exit: 2,
         text: expect.stringContaining('koloft help')
       })
@@ -86,8 +101,10 @@ describe('koloft requests from a session', () => {
   it('hands the command its words after the verb and the session tab it came from', async () => {
     const tabId = tabOf(process.pid, 1)
     await requests().answer(dir, 'req-a.json', { tabId, argv: ['echo', 'a b', 'c'], cwd: '/w' })
-    expect(calls).toEqual([{ args: ['a b', 'c'], caller: { tabId, cwd: '/w' } }])
-    expect(reply('a')).toEqual({ ok: true, exit: 0, text: 'a b c' })
+    expect(calls).toEqual([
+      { args: ['a b', 'c'], caller: { tabId, cwd: '/w', session: sessionOf(tabId) } }
+    ])
+    expect(reply('a')).toEqual({ exit: 0, text: 'a b c' })
   })
 
   it('a request typed in a Workbench shell acts for the session tab that shell belongs to', async () => {
@@ -107,7 +124,7 @@ describe('koloft requests from a session', () => {
 
     const orphan = tabOf(process.pid + 2, 1)
     await requests().answer(dir, 'req-b.json', { tabId: orphan, argv: ['echo'], cwd: '/w' })
-    expect(reply('b')).toEqual({ ok: false, exit: 1, text: expect.any(String) })
+    expect(reply('b')).toEqual({ exit: 1, text: expect.any(String) })
     expect(calls).toEqual([])
   })
 
@@ -115,7 +132,15 @@ describe('koloft requests from a session', () => {
     on = false
     const tabId = tabOf(process.pid, 1)
     await requests().answer(dir, 'req-a.json', { tabId, argv: ['echo'], cwd: '/w' })
-    expect(reply('a')).toEqual({ ok: false, exit: 1, text: AGENT_TOOLS_OFF })
+    expect(reply('a')).toEqual({ exit: 1, text: AGENT_TOOLS_OFF })
+    expect(calls).toEqual([])
+  })
+
+  it('a tab Koloft holds no session for is refused, and nothing runs', async () => {
+    const tabId = tabOf(process.pid, 1)
+    const r = requests({ session: () => undefined })
+    await r.answer(dir, 'req-a.json', { tabId, argv: ['echo'], cwd: '/w' })
+    expect(reply('a')).toEqual({ exit: 1, text: expect.any(String) })
     expect(calls).toEqual([])
   })
 
@@ -131,6 +156,6 @@ describe('koloft requests from a session', () => {
     await requests().answerFor(tabId, dir, 'req-a.json', { argv: ['echo'], cwd: '/w' })
     await requests().answerFor(undefined, dir, 'req-b.json', { argv: ['echo'], cwd: '/w' })
     expect(calls.map((c) => c.caller.tabId)).toEqual([tabId])
-    expect(reply('b')).toEqual({ ok: false, exit: 1, text: expect.any(String) })
+    expect(reply('b')).toEqual({ exit: 1, text: expect.any(String) })
   })
 })

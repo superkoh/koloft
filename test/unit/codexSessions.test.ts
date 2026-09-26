@@ -112,7 +112,8 @@ beforeEach(() => {
     trustFolder: vi.fn(),
     pickHome: vi.fn(() => undefined),
     homes: vi.fn(() => []),
-    openShimRoot: path.join(directory, 'codex-open')
+    openShimRoot: path.join(directory, 'codex-open'),
+    agent: { enabled: () => false, answer: vi.fn() }
   }
   sessions = new CodexSessions(path.join(directory, 'sessions.json'), deps)
   vi.spyOn(sessions, 'availability').mockResolvedValue({ id: 'codex', available: true })
@@ -454,10 +455,10 @@ describe('CodexSessions', () => {
     )
     expect(hint).toContain('koloft help')
     const shimDir = path.dirname(transports[0].options.env!.ZDOTDIR!)
-    const requestDir = /\/tmp\/koloft-cx-agent-[0-9a-f-]{36}/.exec(
+    const requestDir = /\/tmp\/koloft-cx-open-[0-9a-f-]{36}/.exec(
       fs.readFileSync(path.join(shimDir, 'koloft'), 'utf8')
     )![0]
-    const request = { reqId: '1', argv: ['help'], cwd: repo, ts: 1 }
+    const request = { argv: ['help'], cwd: repo }
     fs.writeFileSync(path.join(requestDir, 'req-1.json'), JSON.stringify(request))
     await expect
       .poll(() => answer.mock.calls)
@@ -486,7 +487,6 @@ describe('CodexSessions', () => {
   })
 
   it('with agent tools off, a Codex tab gets neither the koloft command nor the Koloft hint', async () => {
-    deps.agent = { enabled: () => false, answer: vi.fn() }
     await sessions.launch({ kind: 'codex', cwd: repo })
     expect(
       transports[0].options.configOverrides?.some((c) => c.startsWith('developer_instructions='))

@@ -18,7 +18,7 @@ import path from 'path'
 import fs from 'fs'
 import os from 'os'
 import { pathToFileURL } from 'url'
-import { PtyManager, tabInstancePid } from './ptyManager'
+import { anotherLiveInstanceOwns, PtyManager } from './ptyManager'
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { FlowGate } from './flowControl'
@@ -234,14 +234,13 @@ import type {
   SessionWorkbenchState,
   Settings,
   HostId,
-  TabKind,
   WhatsNew
 } from '@shared/types'
 import { AgentRequests, BUILTIN_VERBS } from './agentRequests'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
 import { sessionVerb } from './agentSessions'
-import { claudePeerName } from './claudeSessionRegistry'
+import { claudePeerNames } from './claudeSessionRegistry'
 import { writeAgentPlugin } from './agentPlugin'
 
 // PLATFORM§4
@@ -553,30 +552,17 @@ function watchPickRequests(pickDir: string): fs.FSWatcher | null {
   )
 }
 
-function agentToolsFor(kind: TabKind, host: HostId): boolean {
-  return (
-    loadSettings().agentTools &&
-    (kind === 'shell' || capabilitiesFor(kind, host).agentTools === true)
-  )
-}
-
-function workspaceOfTab(tabId: string): string | undefined {
-  const claudeSession = claudeBackend.sessionIdOf(tabId)
-  return (
-    codexSessions?.workspaceOfTab(tabId) ??
-    (claudeSession ? workspaceMgr?.workspaceOf(claudeSession) : undefined)
-  )
+function agentToolsFor(backend: BackendId, host: HostId): boolean {
+  return loadSettings().agentTools && capabilitiesFor(backend, host).agentTools === true
 }
 
 function pinnedWorkspaceOfTab(tabId: string): string | undefined {
-  const workspace = workspaceOfTab(tabId)
-  return workspace && workspaceMgr?.pinnedPaths().some((w) => w.path === workspace)
-    ? workspace
-    : undefined
+  const workspace = sessionBackends.workspaceOfTab(tabId)
+  return workspace && workspaceMgr?.isPinned(workspace) ? workspace : undefined
 }
 
-function backendOfTab(tabId: string): BackendId {
-  return backendIdOf(ptyMgr.get(tabId)?.kind) ?? 'claude'
+function notesFileOfPinned(workspace: string): string | undefined {
+  return workspaceMgr?.isPinned(workspace) ? ensureNotesFile(notesBaseDir(), workspace) : undefined
 }
 
 const agentRequests = new AgentRequests({
@@ -585,8 +571,6 @@ const agentRequests = new AgentRequests({
     cron: cronVerb({
       runner: () => cronRunner,
       pinnedWorkspaceOf: pinnedWorkspaceOfTab,
-      backendOf: backendOfTab,
-      sessionName: (tabId) => sessionTitleOf(tabId) ?? 'A session',
       toast: (text) => sendToRenderer('cron:toast', text),
       now: () => new Date()
     }),
@@ -594,31 +578,26 @@ const agentRequests = new AgentRequests({
       open: (tabId, target, view) =>
         openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target, view),
       notesFileOf: (tabId) => {
-        const workspace = pinnedWorkspaceOfTab(tabId)
-        return workspace ? ensureNotesFile(notesBaseDir(), workspace) : undefined
+        const workspace = sessionBackends.workspaceOfTab(tabId)
+        return workspace ? notesFileOfPinned(workspace) : undefined
       }
     }),
     session: sessionVerb({
-      backendOf: backendOfTab,
-      workspaceOf: workspaceOfTab,
-      sessionsIn: (workspace) => allSessions().filter((s) => workspaceOfTab(s.tabId) === workspace),
-      peerName: (sessionId) => claudePeerName(sessionId),
-      launch: ({ backend, name, ...spec }) =>
-        launchQuietTab(
-          { kind: backend, name, ...spec, permission: 'default' },
-          name ?? BACKEND_LABEL[backend]
+      workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
+      sessionsIn: (workspace) =>
+        allSessions().filter(
+          (s) => sessionBackends.get(s.backendId).workspaceOfTab(s.tabId) === workspace
         ),
+      peerNames: () => claudePeerNames(),
+      launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
       queue: async (tabId, text) => codexSessions?.queueMessage(tabId, text)
     })
   },
   tab: (tabId) => ptyMgr.get(tabId),
+  session: (tabId) => allSessions().find((s) => s.tabId === tabId),
   enabled: (tabId) => {
-    const kind = ptyMgr.get(tabId)?.kind
-    return (
-      kind !== undefined &&
-      kind !== 'shell' &&
-      agentToolsFor(kind, tracker.remoteOf(tabId) ? 'ssh' : 'local')
-    )
+    const backend = backendIdOf(ptyMgr.get(tabId)?.kind)
+    return !!backend && agentToolsFor(backend, tracker.remoteOf(tabId) ? 'ssh' : 'local')
   },
   alive: pidAlive
 })
@@ -1154,8 +1133,7 @@ app.whenReady().then(() => {
   ptyMgr.regDir = regDir
   if (agentRequests.watch(agentDir)) {
     ptyMgr.agentDir = agentDir
-    ptyMgr.agentPlugin = writeAgentPlugin(app.getPath('userData'))
-    ptyMgr.agentToolsFor = agentToolsFor
+    claudeBackend.agentPlugin = writeAgentPlugin(app.getPath('userData'))
   }
   claudeBackend.watchShimRegistrations(regDir)
   if (watchOpenRequests(openDir)) {
@@ -1173,12 +1151,12 @@ app.whenReady().then(() => {
 
   const hookPaths = setupHooks()
   const statusline = setupStatusline()
-  ptyMgr.makeHookSettings = (tabId) =>
+  ptyMgr.makeHookSettings = (tabId, allowKoloft) =>
     writeTabHookSettings(
       hookPaths,
       tabId,
       loadSettings().statuslineBuiltin ? statusLineSetting(statusline) : undefined,
-      loadSettings().agentTools
+      allowKoloft
     )
   claudeBackend.watchLocalHooks(hookPaths.regDir)
 
@@ -1404,7 +1382,7 @@ app.whenReady().then(() => {
       },
       save: (jobs) => saveCron(cronFs, cronFile, jobs)
     },
-    isPinned: (p) => (workspaceMgr?.pinnedPaths() ?? []).some((w) => w.path === p),
+    isPinned: (p) => workspaceMgr?.isPinned(p) ?? false,
     dirExists: (p) => hosts.of(p).dirExists(p),
     gitDirExists: (root) => hosts.of(root).dirExists(`${root}/.git`),
     worktreeDirExists: (root, name) => hosts.of(root).dirExists(`${worktreeHomeOf(root)}/${name}`),
@@ -2162,8 +2140,7 @@ function handleOpenRequest(obj: OpenDrop, full: string): void {
   if (!p) return
   const tab = ptyMgr.get(obj.tabId)
   if (!tab) {
-    const ownerPid = tabInstancePid(obj.tabId)
-    if (ownerPid !== null && ownerPid !== process.pid && pidAlive(ownerPid)) return
+    if (anotherLiveInstanceOwns(obj.tabId, pidAlive)) return
     processedOpenIds.add(obj.openId)
     fs.rm(full, { force: true }, () => {})
     const w = mainWindow
@@ -2971,9 +2948,7 @@ function registerIpc(): void {
   )
   ipcMain.handle('notes:path', (_e, ws: unknown) => {
     if (typeof ws !== 'string' || !ws) return null
-    const pinned = (workspaceMgr?.pinnedPaths() ?? []).some((w) => w.path === ws)
-    if (!pinned) return null
-    return ensureNotesFile(notesBaseDir(), ws)
+    return notesFileOfPinned(ws) ?? null
   })
   ipcMain.handle('github:info', async (_e, root: unknown, force: unknown) => {
     if (typeof root !== 'string' || !root) return null

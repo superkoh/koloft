@@ -2,7 +2,7 @@ import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { keychainNamespace } from '@shared/types'
-import { OPEN_SHIM_HEAD, OPEN_SHIM_TARGET } from './openShimScript'
+import { NEWID_FN, OPEN_SHIM_HEAD, OPEN_SHIM_TARGET } from './openShimScript'
 import { CLAUDE_AGENT_SHIM } from './agentShim'
 
 export interface ShimPaths {
@@ -87,11 +87,7 @@ pre=()
 # CC§13
 [ -n "$KOLOFT_AGENT_PLUGIN" ] && pre+=(--plugin-dir "$KOLOFT_AGENT_PLUGIN")
 
-newid() {
-  u="$(uuidgen 2>/dev/null | tr 'A-Z' 'a-z')"
-  if [ -z "$u" ] && [ -r /proc/sys/kernel/random/uuid ]; then u="$(cat /proc/sys/kernel/random/uuid)"; fi
-  echo "$u"
-}
+${NEWID_FN}
 
 register() {
   [ "$KOLOFT_UTIL" = "1" ] && return 0

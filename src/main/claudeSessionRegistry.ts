@@ -20,22 +20,20 @@ function processStartUtc(pid: number): Promise<string | null> {
 const sameStart = (a: string, b: string): boolean =>
   a.replace(/\s+/g, ' ') === b.replace(/\s+/g, ' ')
 
-interface LiveEntry {
+interface RegistryEntry {
   pid: number
-  name?: unknown
+  procStart: string
+  name?: string
 }
 
 // CC§11
-async function liveEntry(
-  sessionId: string,
-  dir: string,
-  startOf: typeof processStartUtc
-): Promise<LiveEntry | null> {
+function readRegistry(dir: string): Map<string, RegistryEntry[]> {
+  const bySession = new Map<string, RegistryEntry[]>()
   let names: string[]
   try {
     names = fs.readdirSync(dir)
   } catch {
-    return null
+    return bySession
   }
   for (const name of names) {
     if (!/^\d+\.json$/.test(name)) continue
@@ -45,10 +43,27 @@ async function liveEntry(
     } catch {
       continue
     }
-    if (entry.sessionId !== sessionId) continue
+    if (typeof entry.sessionId !== 'string') continue
     if (typeof entry.pid !== 'number' || typeof entry.procStart !== 'string') continue
+    const entries = bySession.get(entry.sessionId) ?? []
+    entries.push({
+      pid: entry.pid,
+      procStart: entry.procStart,
+      name: typeof entry.name === 'string' && entry.name ? entry.name : undefined
+    })
+    bySession.set(entry.sessionId, entries)
+  }
+  return bySession
+}
+
+// CC§11
+async function liveEntry(
+  entries: RegistryEntry[] | undefined,
+  startOf: typeof processStartUtc
+): Promise<RegistryEntry | null> {
+  for (const entry of entries ?? []) {
     const started = await startOf(entry.pid)
-    if (started && sameStart(started, entry.procStart)) return { pid: entry.pid, name: entry.name }
+    if (started && sameStart(started, entry.procStart)) return entry
   }
   return null
 }
@@ -58,14 +73,13 @@ export async function runningClaudePid(
   dir = REGISTRY_DIR,
   startOf = processStartUtc
 ): Promise<number | null> {
-  return (await liveEntry(sessionId, dir, startOf))?.pid ?? null
+  return (await liveEntry(readRegistry(dir).get(sessionId), startOf))?.pid ?? null
 }
 
-export async function claudePeerName(
-  sessionId: string,
+export function claudePeerNames(
   dir = REGISTRY_DIR,
   startOf = processStartUtc
-): Promise<string | null> {
-  const name = (await liveEntry(sessionId, dir, startOf))?.name
-  return typeof name === 'string' && name ? name : null
+): (sessionId: string) => Promise<string | null> {
+  const registry = readRegistry(dir)
+  return async (sessionId) => (await liveEntry(registry.get(sessionId), startOf))?.name ?? null
 }
