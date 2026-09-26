@@ -24,6 +24,8 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   'claude-fable-5-1': { ...tier(10, 50, M), cacheReadPerM: 0.25 },
   'claude-fable-5': tier(10, 50, M),
   'claude-mythos-5': tier(10, 50, M),
+  'claude-opus-5-5': { ...tier(4, 20, M), cacheReadPerM: 0.2 },
+  'claude-opus-5': tier(5, 25, M),
   'claude-opus-4-8': tier(5, 25, M),
   'claude-opus-4-7': tier(5, 25, M),
   'claude-opus-4-6': tier(5, 25, M),
