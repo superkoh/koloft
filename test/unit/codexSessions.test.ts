@@ -121,6 +121,14 @@ describe('CodexSessions', () => {
     expect(sessions.rows(repo).map((row) => row.id)).toEqual([codexSessionKey(A)])
   })
 
+  it('starts the Codex TUI with its update notice turned off, so nothing covers a new session', async () => {
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    const argv = vi.mocked(deps.pty.create).mock.calls[0][0].argv ?? []
+    const at = argv.indexOf('check_for_update_on_startup=false')
+    expect(at).toBeGreaterThan(0)
+    expect(argv[at - 1]).toBe('-c')
+  })
+
   it('replaces membership on native new while keeping the former history available', async () => {
     await sessions.launch({ kind: 'codex', cwd: repo })
     bind()

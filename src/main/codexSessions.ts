@@ -34,6 +34,9 @@ const STATUS_LINE_CONFIG = `tui.status_line=${JSON.stringify([
   'current-dir'
 ])}`
 
+// CODEX§1
+const NO_UPDATE_NOTICE_AT_START = 'check_for_update_on_startup=false'
+
 export interface CodexAvailability {
   id: 'codex'
   available: boolean
@@ -582,7 +585,16 @@ export class CodexSessions {
     })
     try {
       this.assertStarting()
-      const argv = ['--remote', transport.url, '-C', cwd, '-c', STATUS_LINE_CONFIG]
+      const argv = [
+        '--remote',
+        transport.url,
+        '-C',
+        cwd,
+        '-c',
+        STATUS_LINE_CONFIG,
+        '-c',
+        NO_UPDATE_NOTICE_AT_START
+      ]
       if (opts.resumeSessionId) argv.push('resume', this.nativeId(opts.resumeSessionId))
       const handle = this.deps.pty.create({
         kind: 'codex',
