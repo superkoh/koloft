@@ -216,7 +216,7 @@ export class CdpProtocol {
 
   async targetCreated(t: RelayTarget): Promise<void> {
     this.emitCreated(t)
-    // PLATFORM§4
+    // PLATFORM§16
     if (this.autoAttach) await this.tryAttach(t)
   }
 

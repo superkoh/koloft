@@ -491,7 +491,7 @@ describe('a slow page command does not hold the connection', () => {
   })
 })
 
-// PLATFORM§4
+// PLATFORM§16
 describe('an automatic attach that fails stays quiet', () => {
   it('targetCreated resolves even when the attach cannot be done', async () => {
     tabs = []

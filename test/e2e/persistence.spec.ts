@@ -5,6 +5,7 @@ import { FAKE_SESSION_TITLE, startSessionIn, waitBooted } from './helpers/p1'
 
 const DEBOUNCED_SAVES_LAND_MS = 1500
 const ROOM_FOR_A_WRONG_RESPAWN_MS = 2000
+const MACOS_CLOSES_THE_OLD_FULLSCREEN_SPACE_MS = 3000
 
 test('restart lands cold (T-LIFE-09 across a real relaunch): session listed unselected, nothing respawns, no session snapshot in layout.json, window bounds return', async ({
   env
@@ -79,6 +80,8 @@ test('a window quit in fullscreen restores into fullscreen, and the green button
   } finally {
     await app1.close().catch(() => {})
   }
+  // PLATFORM§5
+  await new Promise((r) => setTimeout(r, MACOS_CLOSES_THE_OLD_FULLSCREEN_SPACE_MS))
 
   const app2 = await launchApp(env)
   try {

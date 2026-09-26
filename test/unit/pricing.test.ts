@@ -61,6 +61,18 @@ describe('resolvePricing — exact then longest-prefix match', () => {
     expect(p.outPerM).toBe(10)
   })
 
+  it('prices the bare Opus 5.5 id transcripts record at its own $4/$20 rate with $0.20 cache reads, not as Opus 5', () => {
+    const p55 = resolvePricing('claude-opus-5-5')!
+    expect(p55.inPerM).toBe(4)
+    expect(p55.outPerM).toBe(20)
+    expect(p55.cacheReadPerM).toBe(0.2)
+    expect(p55.windowTokens).toBe(1_000_000)
+    const p5 = resolvePricing('claude-opus-5')!
+    expect(p5.inPerM).toBe(5)
+    expect(p5.outPerM).toBe(25)
+    expect(p5.windowTokens).toBe(1_000_000)
+  })
+
   it('uses real per-model context windows: 1M for current families, 200k for Haiku/legacy (#7)', () => {
     expect(resolvePricing('claude-fable-5')!.windowTokens).toBe(1_000_000)
     expect(resolvePricing('claude-opus-4-8')!.windowTokens).toBe(1_000_000)
@@ -74,7 +86,8 @@ describe('resolvePricing — exact then longest-prefix match', () => {
   it('derives cache rates from input: write = 1.25×, read = 0.1× (ccusage alignment)', () => {
     for (const [id, p] of Object.entries(MODEL_PRICING)) {
       expect(p.cacheWritePerM, id).toBeCloseTo(p.inPerM * 1.25, 10)
-      if (id !== 'claude-fable-5-1') expect(p.cacheReadPerM, id).toBeCloseTo(p.inPerM * 0.1, 10)
+      if (id !== 'claude-fable-5-1' && id !== 'claude-opus-5-5')
+        expect(p.cacheReadPerM, id).toBeCloseTo(p.inPerM * 0.1, 10)
       expect([200_000, 1_000_000]).toContain(p.windowTokens)
     }
   })

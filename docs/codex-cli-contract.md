@@ -30,6 +30,14 @@ Schema availability is distinguished from behavior actually seen on the wire.
 - The TUI made its own `config/read` and `account/read` requests through the relay.
   Reading history through a different app-server is not evidence that it subscribes
   to a running TUI's events.
+- **Checked on 2026-09-25 with the standalone 0.153.4 binary**, in a Python PTY at
+  120×40, with a fresh `CODEX_HOME` holding only a trusted folder, a test provider on
+  an unused localhost port, and a `version.json` whose `latest_version` was `0.156.1`
+  (the value the real home had cached). The TUI drew an "✨ Update available! 0.153.4
+  -> 0.156.1" box over its start screen. The same start with
+  `-c check_for_update_on_startup=false` drew no such box. The key is a top-level
+  config field in that binary's strings. Only the plain local start was checked; the
+  `--remote` start was not (inferred, not checked, that it reads the same key).
 
 ## 2. Foreground identity and native operations
 

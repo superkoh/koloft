@@ -48,6 +48,9 @@ const STATUS_LINE_CONFIG = `tui.status_line=${JSON.stringify([
   'current-dir'
 ])}`
 
+// CODEX§1
+const NO_UPDATE_NOTICE_AT_START = 'check_for_update_on_startup=false'
+
 // CODEX§11
 const PERMISSION_ARGS: Record<LaunchPermission, string[]> = {
   default: [],
@@ -640,6 +643,8 @@ export class CodexSessions {
         cwd,
         '-c',
         STATUS_LINE_CONFIG,
+        '-c',
+        NO_UPDATE_NOTICE_AT_START,
         ...PERMISSION_ARGS[opts.permission ?? 'default'],
         ...launchChoiceArgs(opts)
       ]

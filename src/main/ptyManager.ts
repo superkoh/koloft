@@ -73,7 +73,7 @@ export class PtyManager extends EventEmitter {
       TERM: 'xterm-256color',
       COLORTERM: 'truecolor',
       KOLOFT_TAB_ID: id,
-      // PLATFORM§2
+      // CC§12 PLATFORM§2
       TERM_PROGRAM: 'Apple_Terminal'
     }
     // PLATFORM§1
