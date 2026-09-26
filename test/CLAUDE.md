@@ -178,11 +178,12 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     tab's bar (`readingTitle`, `EDIT.tabEdit` / `EDIT.readEdit` say which). The Notes
     island reuses `.ed-area`, `.wb-bar`, `.wb-title`, `.icobtn` and the edit pane, so
     root Workbench selectors at `.wb-panel` / `.wb-col` and the note's at
-    `notesIsland(page)`. `.ft-node` is both a Browse and a Changes row: scope Browse
-    by `.bv-body` or `.bv-sec[data-section]` (one file can show in the tree,
-    Bookmarks and Recents at once). A bare `.ft-chip` also matches the Filter menu:
-    use `[data-chip=…]`.
-  - The file-row context menu is portalled to `body` (ADR-0013): root it at the page.
+    `notesIsland(page)` / `notesArea(page)`. `.ft-node` is both a Browse and a
+    Changes row: find a Browse row with `browseRow(page, path, section)` or
+    `WORKBENCH.browseRows` (one file can show in the tree, Bookmarks and Recents at
+    once). A bare `.ft-chip` also matches the Filter menu: use `[data-chip=…]`.
+  - The file-row context menu is portalled to `body` (ADR-0013): reach it with
+    `rowMenu(page)` / `rowMenuItems(page)`.
   - `showBrowse()` opens a shut panel first, so it cannot drive a case about "this
     gesture opens the panel".
   - Find a web guest by URL (`guestByUrl`), never by index.
