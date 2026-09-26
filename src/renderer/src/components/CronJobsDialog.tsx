@@ -19,13 +19,11 @@ import {
   SESSION_BACKENDS
 } from '@shared/sessionBackend'
 import { describeSchedule, describeWhen, nextRun } from '@shared/schedule'
+import { histText, histWhen, lastRunOf, whenLine } from '@shared/cronHistory'
 import {
   emptyFields,
   permissionAfterSwitch,
   fieldsToSchedule,
-  histEnd,
-  histText,
-  histWhen,
   scheduleToFields,
   suggest,
   validate,
@@ -102,19 +100,6 @@ const trustHint = (backend: BackendId): string =>
   'question and be stopped at the deadline.'
 
 const MANY_RUN_FOLDERS = 10
-
-const LIVE_WORDS: Record<LiveRun['state'], string> = {
-  launching: 'starting',
-  running: 'working',
-  done: 'done — waiting for you'
-}
-const HIST_WORDS: Record<HistoryLine['state'], string> = {
-  closed: 'closed by you',
-  ended: 'ended — Koloft quit',
-  failed: 'could not start',
-  skipped: 'skipped',
-  missed: 'missed'
-}
 
 function histDot(h: HistoryLine): string {
   if (h.state === 'skipped') return 'dot skip'
@@ -304,15 +289,7 @@ export function CronJobsDialog({
 
   const liveOf = (id: string): LiveRun | undefined => cron.live.find((l) => l.jobId === id)
 
-  const whenLine = (job: CronJob): string => {
-    const words = describeSchedule(job.schedule)
-    if (!job.enabled) return `${words} · off`
-    return `${words} · next ${describeWhen(nextRun(job.schedule, new Date()), new Date())}`
-  }
-
   const lastLine = (job: CronJob): JSX.Element => {
-    const live = liveOf(job.id)
-    const h = job.history[0]
     const folders = cron.folders[job.id] ?? 0
     const count = `${folders} run folder${folders === 1 ? '' : 's'} on disk`
     const foldersPart =
@@ -322,17 +299,12 @@ export function CronJobsDialog({
           {folders > MANY_RUN_FOLDERS ? <span className="am">{count}</span> : count}
         </>
       )
-    if (!live && !h) return <>never run{foldersPart}</>
-
-    const hAt = h ? histEnd(h) : 0
-    const useLive = !!live && (!h || live.dueAt >= hAt)
-    const dueAt = useLive && live ? live.dueAt : hAt
-    const words = useLive && live ? LIVE_WORDS[live.state] : HIST_WORDS[h.state]
-    const good = useLive && live?.state === 'done'
+    const last = lastRunOf(job, liveOf(job.id))
+    if (!last) return <>never run{foldersPart}</>
     return (
       <>
-        {`last run ${describeWhen(new Date(dueAt), new Date())} · `}
-        {good ? <span className="g">{words}</span> : words}
+        {`last run ${describeWhen(new Date(last.dueAt), new Date())} · `}
+        {last.done ? <span className="g">{last.words}</span> : last.words}
         {foldersPart}
       </>
     )
@@ -358,7 +330,7 @@ export function CronJobsDialog({
             .join(' · ')}
         </div>
         {cron.notes[job.id] && <p className="field-hint bad">{cron.notes[job.id]}</p>}
-        <div className="job-when">{whenLine(job)}</div>
+        <div className="job-when">{whenLine(job, new Date())}</div>
         <div className="job-last">{lastLine(job)}</div>
       </div>
       {confirmId === job.id ? (

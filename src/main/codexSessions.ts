@@ -273,6 +273,9 @@ export class CodexSessions {
   hasTab(tabId: string): boolean {
     return this.runs.has(tabId)
   }
+  workspaceOfTab(tabId: string): string | undefined {
+    return this.runs.get(tabId)?.workspace
+  }
   aliveTabFor(key: string): string | undefined {
     return [...this.runs.values()].find((r) => r.info?.sessionId === key || r.resumeKey === key)
       ?.tabId

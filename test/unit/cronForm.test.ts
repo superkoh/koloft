@@ -1,14 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { CronJob, Schedule, SkillSuggestion } from '@shared/types'
 import { describeSchedule } from '@shared/schedule'
+import { histEnd, histText, histWhen } from '@shared/cronHistory'
 import {
   emptyFields,
   fieldsToSchedule,
   permissionAfterSwitch,
   forecastFor,
-  histEnd,
-  histText,
-  histWhen,
   modelValue,
   scheduleToFields,
   suggest,

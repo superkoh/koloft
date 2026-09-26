@@ -26,7 +26,12 @@ import { SessionTracker } from './sessionTracker'
 import type { StatusEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
 import { SessionBackends } from './sessionBackends'
-import { BACKEND_LABEL, capabilitiesFor, SUPPORTED_PAIRS } from '@shared/sessionBackend'
+import {
+  BACKEND_LABEL,
+  backendIdOf,
+  capabilitiesFor,
+  SUPPORTED_PAIRS
+} from '@shared/sessionBackend'
 import { AttentionTracker, type AttentionContext } from './attention'
 import { route, dockBadgeText } from './notifyRouter'
 import { setupShim, UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE } from './shim'
@@ -232,6 +237,7 @@ import type {
   WhatsNew
 } from '@shared/types'
 import { AgentRequests, BUILTIN_VERBS } from './agentRequests'
+import { cronVerb } from './agentCron'
 import { writeAgentPlugin } from './agentPlugin'
 
 // PLATFORM§4
@@ -550,8 +556,28 @@ function agentToolsFor(kind: TabKind, host: HostId): boolean {
   )
 }
 
+function pinnedWorkspaceOfTab(tabId: string): string | undefined {
+  const claudeSession = claudeBackend.sessionIdOf(tabId)
+  const workspace =
+    codexSessions?.workspaceOfTab(tabId) ??
+    (claudeSession ? workspaceMgr?.workspaceOf(claudeSession) : undefined)
+  return workspace && workspaceMgr?.pinnedPaths().some((w) => w.path === workspace)
+    ? workspace
+    : undefined
+}
+
 const agentRequests = new AgentRequests({
-  verbs: { ...BUILTIN_VERBS },
+  verbs: {
+    ...BUILTIN_VERBS,
+    cron: cronVerb({
+      runner: () => cronRunner,
+      pinnedWorkspaceOf: pinnedWorkspaceOfTab,
+      backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind) ?? 'claude',
+      sessionName: (tabId) => sessionTitleOf(tabId) ?? 'A session',
+      toast: (text) => sendToRenderer('cron:toast', text),
+      now: () => new Date()
+    })
+  },
   tab: (tabId) => ptyMgr.get(tabId),
   enabled: (tabId) => {
     const kind = ptyMgr.get(tabId)?.kind
