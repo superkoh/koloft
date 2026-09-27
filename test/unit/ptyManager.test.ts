@@ -33,6 +33,8 @@ const POLLUTANTS = {
   CLAUDE_CODE_ENTRYPOINT: 'cli',
   CLAUDECODE: '1',
   CLAUDE_EFFORT: 'high',
+  CLAUDE_JOB_DIR: '/Users/me/.claude/jobs/5d5cfc93',
+  CLAUDE_PID: '54978',
   AI_AGENT: '1',
   TERM_SESSION_ID: 'w0t1p0:ABC',
   KOLOFT_SESSION_DIR: '/parent-koloft/reg',

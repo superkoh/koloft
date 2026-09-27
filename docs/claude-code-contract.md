@@ -762,7 +762,13 @@ other bullets of §9 were not re-measured on this build.
   `CLAUDE_CODE_CHILD_SESSION`, `CLAUDE_CODE_ENTRYPOINT`, `CLAUDE_CODE_EXECPATH`,
   `CLAUDE_CODE_MESSAGING_SOCKET`, `CLAUDE_CODE_MESSAGING_TOKEN`,
   `CLAUDE_CODE_SESSION_ATTENDED`, `CLAUDE_CODE_SESSION_ID`, `CLAUDE_EFFORT`,
-  `CLAUDE_PID`.
+  `CLAUDE_PID`. A background session (§5) also sets `CLAUDE_JOB_DIR=~/.claude/jobs/<short id>`.
+  **A claude started with an inherited `CLAUDE_JOB_DIR` takes that job's name**: seen
+  2026-09-27 on CC 2.1.283. A dev build of Koloft was started from a background
+  session's Bash, and two sessions it launched in another folder were registered in
+  `~/.claude/sessions/` under the parent job's name (`nameSource: "auto"`). Their
+  environment held the parent's `CLAUDE_JOB_DIR` and `CLAUDE_PID`. Which of the two
+  does it was not isolated.
 - **Every process a claude starts carries `CLAUDECODE=1`** (the Bash tool's shell and
   everything under it; seen 2026-09-23 and again 2026-09-24 on CC 2.1.281).
 - **A claude cleans up its own background shells, but not a program that detaches

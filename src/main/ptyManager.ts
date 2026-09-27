@@ -95,6 +95,8 @@ export class PtyManager extends EventEmitter {
         key.startsWith('CLAUDE_CODE_') ||
         key === 'CLAUDECODE' ||
         key === 'CLAUDE_EFFORT' ||
+        key === 'CLAUDE_JOB_DIR' ||
+        key === 'CLAUDE_PID' ||
         key === 'AI_AGENT' ||
         key === 'TERM_SESSION_ID' ||
         key === 'KOLOFT_UTIL' ||
