@@ -11,6 +11,42 @@ export interface ShimPaths {
   pickDir: string
 }
 
+// CC§9
+const CLAUDE_FLAGS_FOLLOWED_BY_A_VALUE = [
+  '-w',
+  '--worktree',
+  '-r',
+  '--resume',
+  '--agent',
+  '--agents',
+  '--append-system-prompt',
+  '--append-system-prompt-file',
+  '--autocompact',
+  '--debug-file',
+  '--effort',
+  '--environment',
+  '--fallback-model',
+  '--input-format',
+  '--json-schema',
+  '--max-budget-usd',
+  '--max-turns',
+  '--model',
+  '-n',
+  '--name',
+  '--output-format',
+  '--permission-mode',
+  '--permission-prompts',
+  '--plugin-dir',
+  '--plugin-url',
+  '--remote-control-session-name-prefix',
+  '--session-id',
+  '--setting-sources',
+  '--settings',
+  '--system-prompt',
+  '--system-prompt-file',
+  '--system-prompt-snapshot'
+].join('|')
+
 export const UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE = `if [ "$KOLOFT_UTIL" = "1" ]; then
   utilok=0
   valflag=0
@@ -23,7 +59,7 @@ export const UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE = `if [ "$KOLOFT_UTIL" = "
       -p|--print|-h|--help|--help-all|-v|--version|doctor|mcp|config|auth|setup-token|agents|project|update|install|plugin|import) utilok=1 ;;
     esac
     case "$a" in
-      -w|--worktree|--name|-n|--model|--permission-mode|--settings|--session-id|-r|--resume|--agent|--effort) valflag=1 ;;
+      ${CLAUDE_FLAGS_FOLLOWED_BY_A_VALUE}) valflag=1 ;;
     esac
   done
   if [ "$utilok" = "0" ]; then
@@ -69,7 +105,7 @@ for a in "$@"; do
     -r|--resume|-c|--continue) resume=1 ;;
   esac
   case "$a" in
-    -w|--worktree|--name|-n|--model|--permission-mode|--settings|--session-id|-r|--resume|--agent|--effort) valflag=1 ;;
+    ${CLAUDE_FLAGS_FOLLOWED_BY_A_VALUE}) valflag=1 ;;
   esac
   prev="$a"
 done
@@ -126,7 +162,7 @@ for a in "$@"; do
     -p|--print) hasp=1 ;;
   esac
   case "$a" in
-    -w|--worktree|--name|-n|--model|--permission-mode|--settings|--session-id|-r|--resume|--agent|--effort) valflag=1 ;;
+    ${CLAUDE_FLAGS_FOLLOWED_BY_A_VALUE}) valflag=1 ;;
   esac
 done
 if [ "$noinj" = "0" ]; then
