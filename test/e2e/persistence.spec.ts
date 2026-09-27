@@ -43,7 +43,7 @@ test('restart lands cold (T-LIFE-09 across a real relaunch): session listed unse
   expect(calls).toHaveLength(1)
 
   const layout = JSON.parse(fs.readFileSync(path.join(env.userData, 'layout.json'), 'utf8'))
-  expect(layout.version).toBe(5)
+  expect(layout.version).toBe(6)
   expect(layout).not.toHaveProperty('activeSessionId')
   expect(layout).not.toHaveProperty('tabs')
   expect(layout).not.toHaveProperty('aux')

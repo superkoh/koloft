@@ -4,7 +4,7 @@ import { execFile } from 'child_process'
 import { StringDecoder } from 'string_decoder'
 import type {
   DiscoveredFolder,
-  LayoutV5,
+  LayoutV6,
   ProjectInfo,
   BackendSessionRow,
   SessionRow,
@@ -71,8 +71,8 @@ export interface WorkspaceManagerDeps {
   additionalRows?(workspacePath: string): BackendSessionRow[]
   additionalMembers?(): Set<string>
   projectsRoot: string
-  loadLayout(): LayoutV5
-  saveLayout(layout: LayoutV5): void
+  loadLayout(): LayoutV6
+  saveLayout(layout: LayoutV6): void
   projectInfo(p: string): ProjectInfo
   runningBindings(): Map<string, string>
   liveSessions?(): Map<string, LiveSession>
@@ -158,7 +158,7 @@ function gitWorktreeEntries(root: string): Promise<WorktreeEntry[]> {
 }
 
 export class WorkspaceManager {
-  private layout: LayoutV5
+  private layout: LayoutV6
   private rowsCache: WorkspaceRows[] = []
   private firstScanDone!: () => void
   readonly firstScan: Promise<void> = new Promise((res) => {
@@ -368,7 +368,7 @@ export class WorkspaceManager {
 
   setWorkbenchState(sessionId: string, state: SessionWorkbenchState): void {
     if (!this.isMember(sessionId)) return
-    this.layout = { ...this.layout, sessions: withWorkbenchState(this.layout, sessionId, state) }
+    this.layout = { ...this.layout, panels: withWorkbenchState(this.layout, sessionId, state) }
     this.saveSoon()
   }
 
@@ -384,12 +384,12 @@ export class WorkspaceManager {
   }
 
   private forget(sessionId: string): void {
-    const sessions = { ...this.layout.sessions }
-    delete sessions[sessionId]
+    const panels = { ...this.layout.panels }
+    delete panels[sessionId]
     this.layout = {
       ...this.layout,
       members: this.layout.members.filter((id) => id !== sessionId),
-      sessions
+      panels
     }
     this.deps.saveLayout(this.layout)
     this.scheduleRescan()
@@ -400,9 +400,9 @@ export class WorkspaceManager {
     this.layout = {
       ...this.layout,
       members: [...this.layout.members, sessionId],
-      sessions: {
+      panels: {
         [sessionId]: { open: this.layout.workbench.defaultOpen, tabs: [] },
-        ...this.layout.sessions
+        ...this.layout.panels
       }
     }
     this.deps.saveLayout(this.layout)
@@ -410,9 +410,9 @@ export class WorkspaceManager {
   }
 
   onSessionRebind(prevId: string, nextId: string, source: string): void {
-    const next = carrySessionWorkbench(this.layout.sessions, prevId, nextId, source)
+    const next = carrySessionWorkbench(this.layout.panels, prevId, nextId, source)
     if (!next.changed) return
-    this.layout = { ...this.layout, sessions: next.sessions }
+    this.layout = { ...this.layout, panels: next.sessions }
     this.deps.saveLayout(this.layout)
   }
 
@@ -662,11 +662,11 @@ export class WorkspaceManager {
     }
     const members = this.layout.members.filter((id) => liveIds.has(id))
     const gc = gcSessions(
-      this.layout.sessions,
+      this.layout.panels,
       new Set([...members, ...(this.deps.additionalMembers?.() ?? [])])
     )
     if (gc.changed || members.length !== this.layout.members.length) {
-      this.layout = { ...this.layout, members, sessions: gc.sessions }
+      this.layout = { ...this.layout, members, panels: gc.sessions }
       this.deps.saveLayout(this.layout)
     }
 

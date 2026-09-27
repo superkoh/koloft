@@ -140,7 +140,7 @@ export function sessionWorkbenchOnDisk(
   env: E2EEnv,
   sessionId: string
 ): SessionWorkbenchState | null {
-  return layoutOnDisk(env).sessions?.[sessionId] ?? null
+  return layoutOnDisk(env).panels?.[sessionId] ?? null
 }
 
 export function persistedTabsOnDisk(env: E2EEnv, sessionId: string): PersistedTab[] {
@@ -155,7 +155,7 @@ function patchLayout(env: E2EEnv, patch: (doc: Record<string, unknown>) => void)
   const file = path.join(env.userData, 'layout.json')
   const doc = fs.existsSync(file)
     ? (JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>)
-    : { version: 4, workspaces: [], workbench: { defaultOpen: true }, sessions: {} }
+    : { version: 6, workspaces: [], workbench: { defaultOpen: true }, members: [], panels: {} }
   patch(doc)
   fs.writeFileSync(file, JSON.stringify(doc, null, 2))
 }
@@ -166,9 +166,9 @@ export function seedWorkbench(
   state: SessionWorkbenchState | Record<string, unknown>
 ): void {
   patchLayout(env, (doc) => {
-    const sessions = (doc.sessions ?? {}) as Record<string, unknown>
-    sessions[sessionId] = state
-    doc.sessions = sessions
+    const panels = (doc.panels ?? {}) as Record<string, unknown>
+    panels[sessionId] = state
+    doc.panels = panels
     doc.members = withMember(doc.members, sessionId)
   })
 }

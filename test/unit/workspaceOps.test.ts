@@ -7,7 +7,7 @@ import {
   resolveWorkbenchState,
   withWorkbenchState
 } from '../../src/main/workspaceOps'
-import { type LayoutV5, type SessionWorkbenchState } from '@shared/types'
+import { type LayoutV6, type SessionWorkbenchState } from '@shared/types'
 
 describe('parseWorktreeEntries', () => {
   it('returns checkouts in porcelain order (first = main) with their short branch', () => {
@@ -167,12 +167,12 @@ describe('carrySessionWorkbench (T-LIFE-07: the panel follows a /clear id change
 })
 
 describe('resolveWorkbenchState (§7: what the panel starts from)', () => {
-  const layout = (sessions: LayoutV5['sessions'], defaultOpen = true): LayoutV5 => ({
-    version: 5,
+  const layout = (panels: LayoutV6['panels'], defaultOpen = true): LayoutV6 => ({
+    version: 6,
     workspaces: [],
     members: [],
     workbench: { defaultOpen },
-    sessions
+    panels
   })
 
   it('gives a session with no entry the global default, with no tabs (FR-02)', () => {
@@ -193,12 +193,12 @@ describe('resolveWorkbenchState (§7: what the panel starts from)', () => {
 })
 
 describe('withWorkbenchState (§6: the panel state round-trips through layout v3)', () => {
-  const layout = (sessions: LayoutV5['sessions']): LayoutV5 => ({
-    version: 5,
+  const layout = (panels: LayoutV6['panels']): LayoutV6 => ({
+    version: 6,
     workspaces: [],
     members: [],
     workbench: { defaultOpen: true },
-    sessions
+    panels
   })
   const tab = (url: string): SessionWorkbenchState['tabs'][number] => ({
     kind: 'web',
@@ -229,8 +229,8 @@ describe('withWorkbenchState (§6: the panel state round-trips through layout v3
     const stored = { open: true, tabs: [tab('http://a/')] }
     const base = layout({ s1: stored })
     const out = withWorkbenchState(base, 's1', { open: false, tabs: [] })
-    expect(base.sessions.s1).toEqual(stored)
-    expect(out).not.toBe(base.sessions)
+    expect(base.panels.s1).toEqual(stored)
+    expect(out).not.toBe(base.panels)
     expect(
       withWorkbenchState(layout({ other: { open: false, tabs: [] } }), 's1', {
         open: true,
