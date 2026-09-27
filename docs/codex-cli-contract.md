@@ -25,6 +25,9 @@ Schema availability is distinguished from behavior actually seen on the wire.
 - The TUI sends `initialize`, waits for its result, then sends `initialized` before
   normal requests. An independent client using this handshake successfully called
   `thread/list`; the response contained `data` and `nextCursor`.
+- Koloft's history reads send `thread/list` with `archived` (true/false) and
+  `sourceKinds: ["cli","vscode","appServer"]`; that these values select every user
+  thread is not probed yet.
 - Request IDs are strings **or numbers, including zero**. Startup and temporary title
   requests used strings; the real command approval request used numeric `0`.
 - The TUI made its own `config/read` and `account/read` requests through the relay.
@@ -36,8 +39,10 @@ Schema availability is distinguished from behavior actually seen on the wire.
   (the value the real home had cached). The TUI drew an "✨ Update available! 0.153.4
   -> 0.156.1" box over its start screen. The same start with
   `-c check_for_update_on_startup=false` drew no such box. The key is a top-level
-  config field in that binary's strings. Only the plain local start was checked; the
-  `--remote` start was not (inferred, not checked, that it reads the same key).
+  config field in that binary's strings. Not probed yet: a `--remote` start — Koloft's
+  only mode — with the same cached `version.json` and the key passed to the TUI alone.
+  Under `--remote` the TUI reads its config from the app-server (`config/read`, above),
+  so whether the TUI-side `-c` reaches the check is open.
 
 ## 2. Foreground identity and native operations
 
@@ -91,6 +96,11 @@ sent `item/commandExecution/requestApproval`, carrying its request ID, `threadId
 displayed the approval. Pressing **y** there produced a client reply with the same ID
 and `{ "decision": "accept" }`; the file was then written and the turn completed.
 The relay never answered the approval itself.
+
+Not probed yet: the other server requests Koloft treats as waiting on the person
+(`…/requestApproval` for other item kinds, `item/tool/requestUserInput`,
+`mcpServer/elicitation/request`). None has been seen on the wire; that each is in the
+0.153.4 generated schema is inferred, not checked.
 
 The real model probes used a fresh temporary `CODEX_HOME`, populated with a local copy
 of an available test login. Credentials were not printed or put in evidence files;
@@ -187,16 +197,21 @@ branch and HEAD were still present and unchanged.
 
 ## 7. Rechecking a CLI upgrade
 
-Measured version: **0.153.4** only. Koloft treats every 0.153.x as verified (the
-`verified` flag from `resolveCodexRuntime`); later 0.153 patches are inferred, not
-checked. After rechecking a newer line, change that flag's rule in
-`src/main/codexRuntime.ts` and this line together.
+Measured version: **0.153.4** only; each dated section names the binary it ran. Koloft
+treats every 0.153.x as verified (`verified` in `src/main/codexRuntime.ts`, pinned by
+`test/unit/codexRuntime.test.ts`); later 0.153 patches are inferred, not checked. Before
+widening that rule to a newer line, redo the live checks the code leans on: section 1
+(handshake and the update-notice key), 2, 3, 4, 5, 8 (status-line item ids), 9 (the trust
+question before connecting), 11 (trust table, approval flags), 12 (`fileChange` /
+`commandActions` shapes, the `open` shim), 13 (token-usage fields), 14 (first prompt,
+`-m`, `model_reasoning_effort`) and 15 (`account/read`, `account/rateLimits/read`,
+per-home state). Then change that rule, the "(0.153.x)" in the warning in
+`src/main/codexSessions.ts`, the cases in `test/unit/codexRuntime.test.ts`, and this line
+together.
 
-Repeat the real TUI operations in section 2, approval in section 3, both background cases
-in section 4 and the shutdown case in section 5. Keep worktree tests inside a
-temporary repository. Record version, executable source, matching request IDs, thread
-IDs and event order; redact login/account contents. Fixture tests cannot replace these
-external checks.
+Keep worktree tests inside a temporary repository. Record version, executable source,
+matching request IDs, thread IDs and event order; redact login/account contents. Fixture
+tests cannot replace these external checks.
 
 ## 8. Native status line
 
@@ -251,7 +266,9 @@ by the user's own configuration of a new CLI, and a child Codex that inherits th
 acts as part of the enclosing run: `CODEX_APP_TOOLS_PIPE_PATH`,
 `CODEX_INTERNAL_ORIGINATOR_OVERRIDE`, `CODEX_MCP_NODE_PATH`,
 `CODEX_PERMISSION_PROFILE`, `CODEX_SAGE_BACKFILL_TRACKER_TAB_REUSE`,
-`CODEX_SESSION_ID`, `CODEX_THREAD_ID`, `CODEX_SHELL` and `CODEX_CI`.
+`CODEX_SESSION_ID`, `CODEX_THREAD_ID`, `CODEX_SHELL` and `CODEX_CI`. (The list came
+from a Koloft code note already in the repository's first commit; where the names were
+found, and on which version, was not recorded.)
 
 Checked 2026-09-24 with `strings` on the standalone codex-cli 0.153.4 binary: it names
 `CODEX_CI`, `CODEX_INTERNAL_ORIGINATOR_OVERRIDE`, `CODEX_PERMISSION_PROFILE`,
@@ -273,7 +290,10 @@ no key.
   directory?" both in the repository and in the linked worktree.
 - A `[projects."<repo real path>"]` table with `trust_level = "trusted"` in
   `config.toml` stopped the question in the repository **and** in its linked worktree.
-  A table for the worktree path alone stopped it in the worktree.
+  A table for the worktree path alone stopped it in the worktree. The worktree sat
+  inside the repository folder, so whether the table covers it as a sub-folder or as a
+  linked worktree was not told apart; a linked worktree outside the repository is not
+  probed yet.
 - Unanswered, the question left `config.toml` byte-for-byte unchanged.
 - What Codex writes when a person answers **No** was not tried. That it writes a
   table for the folder (so Koloft, which leaves any existing table alone, never
@@ -354,19 +374,17 @@ frame or from the shim below) is the only one the person sees. Under
 **inferred, not checked** (running it would have opened an app on this Mac).
 
 **Which `open` the model's shell picks.** The item's `command` is `/bin/zsh -lc '…'`,
-a login shell, so `path_helper` runs (`PLATFORM§2`). Checked 2026-09-25 in a real
-turn: with a shim folder put first in the app-server's `PATH`, `command -v open` inside
-the turn still printed `/usr/bin/open`; the shim folder had moved behind the `/etc/paths`
-entries. With `ZDOTDIR` in the app-server environment pointing at a folder whose
-`.zprofile` sources the user's own `~/.zprofile` and then puts the shim folder first
-again, the same turn printed the shim's path, the shim ran (`status: "completed"`,
-`exitCode: 0`), the user's own `PATH` additions were still there (`command -v codex`
-found `~/.local/bin/codex`), and the shim could write under the turn's folder and under
+a login shell, so the `path_helper` PATH order and the `ZDOTDIR` wrapper in `PLATFORM§2`
+apply to it. Checked 2026-09-25 in a real turn: a shim folder put first in the
+app-server's `PATH` lost to `/usr/bin/open`, and with the wrapper's `ZDOTDIR` in the
+app-server environment the turn found the shim, with the user's own `PATH` additions
+kept. The app-server hands `PATH` and `ZDOTDIR` from its own environment to the turn's
+shell unchanged (both showed up in `echo "$PATH"` and in the shim's log). The shim ran
+(`status: "completed"`, `exitCode: 0`) and could write under the turn's folder and under
 `/tmp` but not under `~/Library/Application Support` (`Operation not permitted`). Under
-`read-only` the shim could write nowhere, in the folder or `/tmp`. The app-server hands
-`PATH` and `ZDOTDIR` from its own environment to the turn's shell unchanged (both showed
-up in `echo "$PATH"` and in the shim's log). A user whose login shell is not zsh was not
-tried: for bash or fish `ZDOTDIR` means nothing, **inferred, not checked**.
+`read-only` the shim could write nowhere, in the folder or `/tmp`. Not probed yet: a
+user whose login shell is not zsh (for bash or fish `ZDOTDIR` means nothing,
+**inferred, not checked**).
 
 So Koloft handles an `open` three ways. Under `workspace-write` and `danger-full-access`
 its own shim (put first through `ZDOTDIR`) writes the request into `/tmp`, never runs the
