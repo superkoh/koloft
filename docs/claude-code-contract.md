@@ -52,10 +52,10 @@ binary.
   running hook with elapsed time, and Esc cancels a prompt waiting on one. So a hook
   that does slow work before its report may never report.
 - **A hard exit fires no SessionEnd.** Only a clean exit (`/exit`, Ctrl+D, `logout`,
-  and SIGHUP above) fires it; a kill by Ctrl+C, a crash, SIGTERM or `kill -9` fires
-  none, so only a liveness check notices. **claude waits for its own SessionEnd hook
-  to finish before it exits**, so when the session pty dies the hook's report file is
-  already whole. (Both inferred, not checked.)
+  and SIGHUP above) fires it; a kill by Ctrl+C, a crash or `kill -9` fires none
+  (SIGTERM: not probed yet), so only a liveness check notices. **claude waits for its
+  own SessionEnd hook to finish before it exits**, so when the session pty dies the
+  hook's report file is already whole. (Both inferred, not checked.)
 - **Every hook payload carries `session_id`**, run-state events (UserPromptSubmit,
   Stop, Notification) included, not only SessionStart/SessionEnd. (Inferred, not
   checked.)
@@ -73,8 +73,9 @@ binary.
   checked.)
 
 Evidence: live experiments E1–E8, 2026-08-10, claude 2.1.227; enums read from CC 2.1.238 source on 2026-08-22. Koloft dependents: the `EVICTING_END_REASONS` whitelist
-in `src/main/index.ts` (marked `CC§1`); `workspaces.stampLive` (the launch-directory
-entry above); `test/e2e/fixtures/fake-claude.js` mimics this section entry by entry.
+in `src/main/backends/claude.ts` (marked `CC§1`); `sessionTracker.bindSession` (it takes
+the hook's `cwd` — the launch-directory entry above); `test/e2e/fixtures/fake-claude.js`
+mimics this section (it also fires SessionEnd `other` on SIGTERM).
 
 ## §2 Transcript on disk
 
@@ -129,8 +130,11 @@ entry above); `test/e2e/fixtures/fake-claude.js` mimics this section entry by en
   needs a prefix match plus a read-back of the jsonl's first `cwd`. (2026-08-08.)
 - **Per-session scratchpad on disk**:
   `<resolved /tmp>/claude-<uid>/<slug>/<sessionId>/scratchpad` (lazily created —
-  usually absent at bind time; slug and sessionId derive from the jsonl path). Its
-  sibling `tasks/` holds full subagent transcripts (single files reach MBs).
+  usually absent at bind time). **The slug is not always the jsonl's**: for a session in
+  a linked worktree, `scratchpad/` sat under `<main checkout slug>` while the transcript
+  (and, in the two sessions checked, `tasks/`) sat under `<worktree slug>` (2026-09-26,
+  CC 2.1.283, 5 sessions read off disk). Whether older versions did the same is not
+  checked. `tasks/` holds full subagent transcripts (single files reach MBs).
 - **A live session can move to another checkout, and the transcript moves with it.** The
   `EnterWorktree` / `ExitWorktree` tools relocate a session mid-conversation; on disk that
   is ONE `rename` of the jsonl into the destination directory's slug — **the inode is
@@ -245,8 +249,9 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
   that name. (Inferred, not checked.)
 
 Evidence: experiments E3/E4/E8, 2026-08-10, plus `strings` analysis of the claude
-2.1.227 binary. Koloft dependents: the `sessions:resumePlan` decision tree;
-`createClaudeTab`'s composed `--resume`/`-w` construction.
+2.1.227 binary. Koloft dependents: the resume decision tree in `src/main/resumePlan.ts`
+(behind `sessions:resumePlan`); `claudeArgv` in `src/main/claudeArgs.ts`, which composes
+`--resume`/`-w`.
 
 ## §4 Worktree session exit
 
@@ -276,12 +281,15 @@ Evidence: experiments E3/E4/E8, 2026-08-10, plus `strings` analysis of the claud
 - SIGHUP is the opposite of an exit: worktree directory kept (still locked), branch
   kept, transcript left in the worktree slug, SessionEnd reason=`other`, exit code 129
   (2026-09-03, 2.1.259 — confirms §1).
-- **After a session LEAVES a worktree, no line ever carries a directory again** — 195/195
-  on-disk sessions (2026-09-10, CC 2.1.267): past the emptying `worktree-state` there is
-  not one record with a `cwd`. So where a departure landed can only be read from the
-  `relocated` record (§2), never from the session's own current directory, which stays
-  pointed at the checkout it left. In the same sweep, leaving a worktree was the session's
-  LAST act in all 195 cases — carrying on afterwards was never observed.
+- **After a session LEAVES a worktree, read where it landed from the `relocated` record
+  (§2), not from later `cwd` fields.** 195/195 on-disk sessions whose last
+  `worktree-state` was `null` (2026-09-10, CC 2.1.267) had not one record with a `cwd`
+  past that emptying `worktree-state`. A re-scan on 2026-09-26 (324 transcripts, 66 with a
+  `null` `worktree-state`) found none that entered a worktree again, but 4 of them, on CC
+  2.1.281–2.1.283, do carry records with a `cwd` (the root checkout) after the `null` —
+  all four are sessions that left through the ExitWorktree tool and kept talking, so
+  "no directory ever again" no longer holds. A session that leaves
+  and then enters a worktree again mid-conversation (§2) is outside both sets.
 
 Evidence: experiments E2/E8, 2026-08-10, claude 2.1.227; four live worktree exits on
 2026-09-03, claude 2.1.259 (`-w n5/n6/n7/n8/n9` in a throwaway repo, driven in a pty,
@@ -352,6 +360,8 @@ script (marked `CC§5`); `src/main/hookRouting.ts`.
   the command's stdin and **treats stdout-pipe EOF as "render done"** — any orphaned
   process holding the pipe's write end delays the visible render for its full lifetime
   (measured: 10.06 s → 0.83 s cold / 0.18 s warm once no orphan held the pipe).
+- **After a tool result Claude Code re-renders the statusline within about 300 ms**
+  (inferred, not checked — no date, version or method recorded).
 - statusLine (like hooks) only runs after the workspace trust dialog is accepted, and
   `disableAllHooks: true` turns off both statusLine and hooks.
 - CC also supports `subagentStatusLine` (the key is in the 2.1.281 binary, `strings`,
@@ -590,9 +600,9 @@ the prompt must ride stdin or `--allowedTools` swallows it). Koloft dependents: 
 
 ## §9 Launch flags for a run nobody is watching
 
-How established (all of §9): live pty runs of the real binary on 2026-09-03, CC
-2.1.259, on a throwaway one-commit git repo, with an own `--settings` hook file
-logging `SessionStart / UserPromptSubmit / Stop / SessionEnd` with millisecond stamps,
+How established (unless a bullet names its own date or says inferred): live pty runs
+of the real binary on 2026-09-03, CC 2.1.259, on a throwaway one-commit git repo, with
+an own `--settings` hook file logging `SessionStart / UserPromptSubmit / Stop / SessionEnd` with millisecond stamps,
 and the resulting `~/.claude/projects/<slug>/<id>.jsonl` read back record by record.
 Probes P1–P7. Flag spellings quoted from `claude --help` of the same build.
 
@@ -711,23 +721,9 @@ other bullets of §9 were not re-measured on this build.
   trusted, `-w` made the worktree at the top folder's `.claude/worktrees/` and started.
   Measured 2026-09-23, CC 2.1.281, pty probe on a throwaway one-commit repo under
   `$TMPDIR`, no trusted ancestor.
-- **On a remote machine** Koloft writes the same entry, under the folder's real path
-  (`pwd -P`), over ssh just before the launch, with the machine's `node` (the one
-  `ensure.sh` installs for the statusline; with no node nothing is written and `-w`
-  refuses as above). The write happens before the tab script runs `ensure.sh`, so on a
-  machine that has never had a Koloft session and has no node of its own, the very
-  first worktree session gets no trust written and `-w` refuses; the next one works.
-  That CC on a Linux machine reads the same key the same way as on macOS is
-  **inferred, not checked** on a real machine (2026-09-24): the write was checked only
-  in the unit test's stand-in home, with this Mac's node.
-- **A remote session takes the same launch flags as a local one, on its command line.**
-  The tab script runs `claude --settings <file> --session-id <id> [-w] [--model]
-  [--effort] [permission flag] [--name <title> -- <first message>]` on the machine,
-  each argument quoted for `sh`; the local shim adds `--name` and `--` from its
-  environment instead. That a CC on a Linux machine treats `--name` and the text after
-  `--` exactly as the bullets above measured on macOS is **inferred, not checked**
-  (2026-09-24, not run against a real machine): only the quoting was
-  checked, with a stand-in `claude` that records its argv.
+- That CC on Linux reads `projects[<real path>].hasTrustDialogAccepted` and treats
+  `--name` / the text after `--` exactly as measured above on macOS is **inferred, not
+  checked** on a real machine (2026-09-24).
 - **A child claude inherits the parent's session markers and stops writing its
   transcript.** With `CLAUDE_CODE_CHILD_SESSION=1` in the environment the launched
   session prints `⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION
@@ -789,16 +785,18 @@ re-measured against a running install.
   fetches and caches them before the first interactive run is inferred, not checked.
   Measured 2026-09-08, CC 2.1.263, Ubuntu 24.04 container.
 
-Koloft dependents: `ensure.sh` in `src/main/remote/install.ts` (installs bash before
-running the script, never through sudo, and treats node as a separate, non-fatal step);
-`tabs/<tab>.sh` in `src/main/remote/launch.ts` writes the onboarding flag when Koloft
-itself supplied the login, and runs `claude -p ok --max-turns 1` once when
+Koloft dependents: `ensure.sh` in `src/main/remote/install.ts` (installs bash first —
+through `sudo` unless root or Homebrew — pipes the install script to plain `bash`, never through
+`sudo`, and treats node as a separate, non-fatal step); `tabs/<tab>.sh` in
+`src/main/remote/launch.ts`, only when Koloft itself supplied the login, writes the
+onboarding flag and runs `claude -p ok --max-turns 1` once when
 `cachedGrowthBookFeatures` is missing.
 
 ## §11 Session registry (`~/.claude/sessions/`)
 
-How established: two entries looked at on this Mac, 2026-09-18, CC 2.1.276. Shape
-only — when an entry is written, updated or removed is unmeasured.
+How established: the shape from two entries looked at on this Mac, 2026-09-18, CC
+2.1.276, re-read on 7 entries 2026-09-24, CC 2.1.281; the lifecycle from 7 live
+sessions plus a tmux probe, 2026-09-23, CC 2.1.281 (bullets below).
 
 - **A session writes `~/.claude/sessions/<pid>.json`** with keys `pid, sessionId,
   cwd, startedAt, procStart, version, peerProtocol, peerFeatures, kind, entrypoint,

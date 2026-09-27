@@ -13,9 +13,11 @@ method. A recheck adds its date, version and command to the bullet.
 ## §1 macOS: the environment of an app opened from Finder
 
 - A packaged app opened from Finder or the Dock gets launchd's short environment, not
-  the user's shell one. PATH is only `/usr/bin:/bin:/usr/sbin:/sbin`: `git` is there,
-  but Homebrew tools like `gh`, and a `claude` found on a developer's PATH, are not. A
-  `git` or `gh` run by name from such an app can fail with no error shown.
+  the user's shell one. PATH is only `/usr/bin:/bin:/usr/sbin:/sbin`. `/usr/bin/git` is
+  always on it, but on a Mac without the Xcode Command Line Tools it is only a stub that
+  fails or offers an install dialog (inferred, not checked). Homebrew tools like `gh`,
+  and a `claude` found on a developer's PATH, are not found at all (ENOENT, the "no such file" error). Either kind
+  of failure shows no error in the app.
 - No locale is set either, so a shell started from the app runs in the C locale: CJK
   text is garbled and wcwidth counts a wide character as 1 cell, which breaks the
   layout of Claude Code's TUI (text user interface).
@@ -178,7 +180,8 @@ method. A recheck adds its date, version and command to the bullet.
 - **An Error thrown in an `ipcMain.handle` handler reaches the renderer without its
   `code`**; only the message survives, wrapped as
   `Error invoking remote method '<channel>': Error: <original message>` (the original
-  text follows the last `Error: `).
+  text is everything after the `': Error: ` that ends this prefix; a message may itself
+  contain `Error: `).
 
 ## §7 Electron: menus and keys
 
@@ -322,8 +325,10 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
 - **`--use-fake-device-for-media-stream` gives a guest a fake mic and camera that still
   go through the request handler**: the prompt shows, Allow resolves `getUserMedia`,
   Deny rejects it with `NotAllowedError`. Measured 2026-09-24 on Electron 43.7.3, on the same
-  device-less Mac mini: with the switch, BB-M01–M04 pass; without it, BB-16 and BB-C63
-  get `NotFoundError` where they expect `NotAllowedError`.
+  device-less Mac mini: with the switch, BB-M01–M04 in `blackbox/bb-127-closeout.spec.ts`
+  pass; without it, BB-16 (`browser-overlay.spec.ts`) and BB-C63
+  (`browser-internalization.spec.ts`) get `NotFoundError` where they expect
+  `NotAllowedError`.
 
 ## §12 `<webview>` guests: navigation, certificates, dialogs and PDFs
 
@@ -592,7 +597,9 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
 
 ## §22 xterm.js input method (IME) defects
 
-From the upstream xterm.js issues and PRs named below:
+Defects 1–3 are from the upstream xterm.js issues and PRs named in them. Defects 4–7 come
+from reading `CompositionHelper.ts` and from Koloft's own IME (input method) runs, no date
+recorded; inferred, not checked.
 
 1. The preedit is anchored to a stale cursor, because `updateCompositionElements`
    returns early while not composing (xtermjs/xterm.js#5454, fixed upstream by #5759).
@@ -887,9 +894,9 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
 - **Git-review cache**: pull request state lives in
   `~/.cache/ccstatusline/git-review/*.json`, stale when `now - mtime > 30 000 ms`; a
   `*.json.lock` younger than 30 s stops a refresh (`CACHE_TTL = 30000`,
-  `REFRESH_LOCK_STALE_MS = 30000` in the 2.2.30 bundle, read 2026-09-24). After a tool
-  result Claude Code re-renders the statusline within about 300 ms, and that render
-  starts ccstatusline's own background `gh` fetch.
+  `REFRESH_LOCK_STALE_MS = 30000` in the 2.2.30 bundle, read 2026-09-24). Each
+  statusline render starts ccstatusline's own background `gh` fetch (CC§6 says when
+  renders happen).
 - **Parsing the 3 MB bundle is most of each render's cost** (2.2.30's
   `dist/ccstatusline.js` is 3 018 224 bytes); `NODE_COMPILE_CACHE` removes it.
 - **Its stdout is a pipe**, so it sizes flex layouts only from `CCSTATUSLINE_WIDTH`.
@@ -918,8 +925,3 @@ command by hand:
 - Older coreutils may not know the `%.9Y` precision — inferred, not checked.
 - Wrapping each command in `sh -c '…'` keeps it safe when the user's shell is fish —
   inferred, not checked (neither box has fish).
-- **The remote Workbench's shell commands all ran on that box** (dash as `sh`, no
-  ripgrep): listing a folder with `git check-ignore -z --stdin`, finding files with
-  `git ls-files -z`, searching text with the `git grep` fallback, the Changes diffs, and
-  an edit's read, stale check, write and new file. Checked by running Koloft's own
-  `SshHost` against a scratch git repo in `/tmp` there, then deleting it.

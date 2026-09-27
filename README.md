@@ -55,7 +55,10 @@ shell.
   or `codex` directly, and everything after it is yours.
 - **Multi-account balancing** — register several Claude subscription accounts and
   several Codex sign-ins. Every launch looks at their live rate limits and starts on the
-  account with the most room left. The topbar shows the pool's remaining allowance. These
+  account with the most room left. A Claude API (application programming interface) key
+  or a custom endpoint can join the pool too; Koloft reads no allowance for those, so it
+  uses them only once every subscription has hit its limit, or when you have none. The
+  topbar shows the pool's remaining allowance. These
   are meant to be *your own* accounts — please check that how you use them fits
   Anthropic's and OpenAI's terms, which is between you and them.
 - **Built-in statusline** — a Koloft-managed statusline in every Claude session: model,
@@ -68,7 +71,9 @@ shell.
   transcripts are mirrored back with `rsync` so the sidebar reads the same as a local
   one. Koloft installs what the machine is missing (Node, `claude`) over the same
   connection. The Workbench works there too — its files, changes, edits and shell are
-  the machine's — except that images and PDFs from the machine do not preview yet.
+  the machine's — with a few gaps for now: images and PDFs from the machine do not
+  preview, an agent's `open <url>` and the agent-driven browser do not reach the
+  Workbench, and the session cannot be renamed from Koloft.
 - **Stays current** — `Koloft ▸ Check for Updates…` downloads and swaps the app bundle
   without a signed installer; a banner in the sidebar says when a newer one is out.
 - **Smaller things** — a first-run walkthrough and a handful of tips that appear the
@@ -99,12 +104,14 @@ clear the quarantine flag once: `xattr -dr com.apple.quarantine /Applications/Ko
 session under `~/.claude/projects/<encoded-cwd>/<uuid>.jsonl`. Koloft reads that tree for
 every pinned workspace (its root checkout plus its git worktrees) to build the sidebar:
 title, last activity, which files were written. Codex keeps its sessions under its own
-home (`~/.codex`), and Koloft asks Codex for that list (`codex app-server`, `thread/list`). Koloft never keeps a second copy of a
-session.
+home (`~/.codex`, or the account's `CODEX_HOME` when Koloft picked a Codex account), and Koloft asks Codex for each home's list (`codex app-server`, `thread/list`). Koloft never keeps a second copy of a
+local session; a remote workspace's transcripts are mirrored to this Mac so the sidebar
+can read them.
 
 **Claude launches are bound through Claude Code's own hooks.** Every `claude` Koloft
 starts gets a per-session `--settings` file that injects `SessionStart`, `SessionEnd`,
-`UserPromptSubmit`, `Stop` and `Notification` hooks and the statusline command. The hooks report the real
+`UserPromptSubmit`, `Stop` and `Notification` hooks, plus, while the built-in statusline
+is on, the statusline command and a `PostToolUse` hook for Bash. The hooks report the real
 session id back to Koloft, so the row, the status dot and the Workbench follow the
 session even across an in-TUI `/resume` or `/clear`. A small `claude` shim on the
 session's `PATH` adds `--session-id` and the picked account's credentials on the way in.
@@ -131,9 +138,10 @@ src/
 ### Letting an agent drive the Browser
 
 Browser tools normally launch a Chromium of their own — a second browser, with its own
-empty cookie jar, that you cannot see. Koloft offers its own instead: every Claude session
-is started with a Chrome debugging endpoint pointing at that session's web tabs. Codex
-sessions do not get one yet; an `open <url>` from Codex still lands in its Workbench.
+empty cookie jar, that you cannot see. Koloft offers its own instead: every local Claude
+session is started with a Chrome debugging endpoint pointing at that session's web tabs.
+Codex sessions and Claude sessions in a remote workspace do not get one yet; an
+`open <url>` from a local Codex session still lands in its Workbench.
 
 Both variables below are set for the session's Claude, so the agent — and anything the
 agent runs — sees them. A terminal tab in the Workbench is not that environment and has
@@ -181,7 +189,7 @@ Build / typecheck / preview / tests:
 npm run typecheck
 npm run build
 npm run preview
-npm run test:unit   # Vitest — fast, hermetic
+npm run test:unit   # Vitest — fast, no app
 npm run test:e2e    # Playwright drives the real built app (run npm run build first)
 ```
 
@@ -214,11 +222,14 @@ Everything lives in **Settings** (⌘, or the gear at the left of the title bar)
 
 - **Welcome** — the first-run walkthrough and the tips, re-openable any time.
 - **Sessions** — which tool a new session runs by default: Claude Code, or OpenAI's Codex
-  CLI once it is installed and switched on here.
+  CLI once it is installed (on by default; a switch here turns it off).
 - **Accounts** — turn on multi-account mode and add accounts.
   - Claude: run the official `claude setup-token` login from inside the app, or paste an
-    OAuth token. Each launch then gets the least-loaded account's credentials injected by
-    the shim. These tokens live in the macOS Keychain, never in `settings.json`. Two more
+    OAuth token. You can also add an API key, or a custom endpoint (another server that
+    speaks the same API: its address, its key and, if you want, its model); these two are
+    used only once every subscription has hit its limit, or when you have none. Each
+    launch then gets the least-loaded account's credentials injected by the shim. These
+    secrets live in the macOS Keychain, never in `settings.json`. Two more
     switches, for Claude launches: skip permission prompts, and prefer accounts that
     still have fable allowance.
   - Codex: `Sign in to Codex` runs `codex login` in a terminal tab. Each Codex account is
@@ -245,8 +256,11 @@ Everything lives in **Settings** (⌘, or the gear at the left of the title bar)
   (working / waiting) is only known for sessions started from Koloft, because the status
   comes from the hooks (Claude) or the relay (Codex) Koloft puts in at launch.
 - Codex does not run in remote workspaces yet.
-- Claude Code deletes a worktree session's transcripts when it exits with no changes.
-  That row disappearing from the sidebar is Claude's behavior, not a Koloft bug.
+- When a worktree session exits from an unchanged worktree, Claude Code removes the
+  worktree and moves the session's transcript under the root checkout, so the row moves
+  there. A session that never got a message has no transcript at all, so its row goes
+  away. That is Claude's behavior, not a Koloft bug (measured on Linux; macOS inferred,
+  not checked).
 - Koloft strips inherited `CLAUDE_CODE_*` / `CLAUDECODE` / `CLAUDE_EFFORT` / `AI_AGENT`
   env vars from each pty it spawns. Without this, when Koloft is launched from *inside* a
   Claude Code session, nested `claude` instances think they are child sessions and skip

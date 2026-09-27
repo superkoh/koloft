@@ -9,19 +9,20 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 
 ## Commands
 
-- `npm run test:unit`  — Vitest, pure Node, hermetic; the fast layer.
+- `npm run test:unit`  — Vitest, plain Node, no app; the fast layer.
 - `npm run test:unit:changed` — the same, only the files reachable from what this
   branch changed against `main` (vitest `--changed`).
 - `npm run test:e2e`   — Playwright drives the real built app. Needs
-  `npm run build` first (rebuild rules: root CLAUDE.md).
+  `npm run build` first — Playwright never builds (root CLAUDE.md).
 - `npm test`           — both.
 
 ## Unit layer (test/unit/)
 
 - There is no global `$HOME` sandbox (vitest has no setupFiles). Anything a module
-  reads once as it loads — `HOME`, the sessionTracker timing knobs (`KOLOFT_*_MS`; an
-  explicit 0 counts), `TZ` — is set *before dynamically importing* the module under
-  test (patterns: sessionTracker.test.ts, schedule.test.ts).
+  reads once as it loads — `HOME`, the session timing knobs (`KOLOFT_*_MS`, read through
+  `envMs` in sessionRuntime.ts and sessionTracker.ts; an explicit 0 counts), `TZ` — is
+  set *before dynamically importing* the module under test (pattern:
+  sessionTracker.test.ts; schedule.test.ts simply sets `TZ` on its first line).
 - Module-level state survives a store reset. The renderer store and editRegistry keep
   per-tab state, so give each case its own tab ids (restartSession.test.ts); a module
   with a one-shot latch is imported fresh per test with `vi.resetModules`
@@ -56,9 +57,11 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   needs `env.launchEnv`, `env.extraArgs`, a seeder (`seedWorkbench*`, `seedJsonl`,
   `setupGitFixture`, `setGuestLimit`, …) or two launches on one home asks only for
   `env` and calls `launchApp` / `launchSettled` itself.
-- End every app you launched with `quitAndClose`; a case that leaves unsaved editor
-  text ends with `closeDiscardingEdits`. A plain `app.close()` hangs on the
-  unsaved-changes question.
+- The `app` fixture ends its app with `quitAndClose`. A plain `app.close()` hangs once
+  any editor text is unsaved, because the renderer then holds the quit for the
+  unsaved-changes question — so an app you launched yourself that may have unsaved text
+  ends with `quitAndClose` (`closeDiscardingEdits` is the same call, named for that
+  case).
 
 ### Sessions, terminals and the fake claude
 
@@ -130,9 +133,9 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   a key belongs to is decided by focus, so click the target area first. Dialog-local
   keys (⏎/Esc/digits/arrows/typing inside C8/C9/C10) are renderer keydown — plain
   `page.keyboard`. The app drops a shortcut sent before its first rows push, on
-  purpose: send one only after `waitSettled` / `launchSettled` (`clickAppMenuItem`
-  waits for the shortcut listeners, not for the first rows push). Find a dialog by
-  its visible title.
+  purpose: send one only after `waitBooted` (helpers/p1.ts) or `launchSettled`
+  (helpers/blackbox.ts); `clickAppMenuItem` waits for the shortcut listeners, not for
+  the first rows push. Find a dialog by its visible title.
 - The test window never has OS focus. Read focus from `focusOwner` /
   `document.activeElement`, never `document.hasFocus()` (platform ledger §10). For the
   same reason no tab is ever "watched": every finished turn leaves an attention mark,
@@ -161,7 +164,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `sendSave` return before the work is done, and fake-claude's echoes wrap at 80
   columns.
 - After a click on a session row, the Workbench still shows the old session for two
-  frames (T-SWITCH-04): poll, don't read once.
+  frames (T-SWITCH-04): poll, don't read once. Its file tabs mount again only then
+  (ADR-0016): wait for the remount before touching one.
 
 ### Selectors
 
@@ -211,8 +215,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `KOLOFT_EXT_INSTALL_DIRS`, `KOLOFT_TEST_NO_ADOPT`, `KOLOFT_TEST_CLAUDE_PROBE`,
   `KOLOFT_CODEX_CMD`,
   `KOLOFT_PROBE_BASE_URL`, `KOLOFT_UPDATE_FIXTURE`, `KOLOFT_RELEASES_URL`,
-  `KOLOFT_CRON_BIND_DEADLINE_MS`, `KOLOFT_GIT_TIMEOUT_MS`, the sessionTracker
-  `KOLOFT_*_MS` knobs, and the fakes' `KOLOFT_FAKE_*` inputs. The files behind
+  `KOLOFT_CRON_BIND_DEADLINE_MS`, `KOLOFT_GIT_TIMEOUT_MS`, the session timing knobs
+  (`KOLOFT_*_MS`, see Unit layer), and the fakes' `KOLOFT_FAKE_*` inputs. The files behind
   `KOLOFT_FILE_DIALOG_FILE` and `KOLOFT_UPDATE_FIXTURE` are read on every use, so a
   spec may rewrite them after launch.
 - Not env vars: `window.__koloftTerms` (terminal text), `__koloftShortcutsReady` /

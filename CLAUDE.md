@@ -4,7 +4,7 @@ Koloft is an Electron app that runs and manages Claude Code and Codex (the `clau
 `codex` command-line tools, via node-pty). The one core idea: the user picks a
 **workspace** and starts or resumes **Claude Code or Codex sessions** in it; Koloft lists
 those sessions straight from each tool's own storage (`~/.claude/projects`; for Codex,
-`docs/codex-cli-contract.md` §1) and hangs one helper panel — the Workbench: changed
+`thread/list` on each `CODEX_HOME`'s app-server, `docs/codex-cli-contract.md` §1, §15) and hangs one helper panel — the Workbench: changed
 files, a file browser, web pages, a shell — off each session, and one plain-text note
 off each workspace (the Notes island under the sessions list; the Workbench is the
 session's, the note is the workspace's).
@@ -20,6 +20,10 @@ of truth.
 
 Working principles:
 
+- Every reply the owner reads — the one-line progress notes between tool calls,
+  questions, the hand-back — is in the language of the owner's last message. English
+  tool output, an English agent report or this English file never switch it.
+  Commits, PR bodies, issues and repo files stay in English.
 - Write everything the simple way. All LLM output — session replies and every file
   it writes — must use plain, everyday words that even a five-year-old could follow,
   in whatever language it is writing; never pick a hard word where an easy one
@@ -27,13 +31,15 @@ Working principles:
   (mermaid or ASCII in markdown) beats a wall of text. The first time an
   abbreviation or shorthand appears in a document or in a session reply, spell it
   out and say what it means — e.g. "PR (pull request, a proposed code change)".
-  Reply in the language the owner last wrote in, status lines and the hand-back too.
 - Build the smallest thing that solves the problem at hand — in the design, the
   code, and the tests alike. A branch, guard, fallback, or abstraction for a case
   that is merely imaginable, and unlikely to ever happen, is cost with no payoff:
   leave it out, and add it the day the case shows up, evidence in hand. (A case
   that has been observed, or that the code's own invariants make likely, is not
-  "imaginable" — handle it.)
+  "imaginable" — handle it.) Smallest is about how, never about what the owner asked
+  for: do not split an asked-for feature into a first and a second version, or leave
+  part of it for later, unless a probe showed that part cannot be done — then name
+  the probe.
 - A guess is not a fact. A limit read off a name, a sibling module, a doc or an
   outside tool's past behavior stays a guess until one command proves it: say
   "inferred, not checked" where you state it, and check it before any code depends
@@ -73,7 +79,8 @@ Working principles:
      trade-off. One ADR per decision, cited by a marker at every site it governs.
 
   Never written down anywhere: what or how the code does, provenance, dates (git has
-  them); a TODO is a GitHub issue. An ADR takes the next free number; before merging
+  them); a TODO is a GitHub issue. An ADR takes the number after the highest one in
+  `docs/adr/` (a deleted ADR's number is never reused); before merging
   a branch that adds one, bring in the latest `main` and rerun the check — a
   duplicate number means renumber yours. An ADR no code cites fails the check, so it
   goes when its code goes.
@@ -83,7 +90,8 @@ Working principles:
   only when this behavior breaks. Do not write a test for a change with no behavior
   in it (refactor, rename, moved file), for a test that merely restates the
   implementation (mock everything, assert the mock was called), or to pin an
-  arbitrary cosmetic value (a pixel size, a colour, a line of copy).
+  arbitrary cosmetic value (a pixel size, a colour, a line of copy) — a value a
+  written design rule names (V0 in `test/CLAUDE.md`) is not arbitrary.
 - Run only what the change can break, and say which ran and why those. Unit layer:
   `npm run test:unit:changed` picks the files by import graph. E2E layer: no tool
   picks, so the agent making the change picks the specs itself, never the owner.
@@ -95,6 +103,11 @@ Working principles:
   touched, never by falling back to the whole suite. There is no full-suite gate:
   `npm test` runs only when someone asks for it, never as a reflex before a merge or
   after a rebase.
+- A plan, design or audit report the owner will decide on — more than a screen, not
+  the pick inside one question — goes to the owner only after an independent `fable`
+  agent has checked it against the code and you have fixed what it found; the
+  hand-back says it was checked. An agent that cannot launch agents says its report
+  is unreviewed.
 - Finish the code, then review, then test. While code is still being written, only
   the fast checks run (`format`, typecheck, `check:comments`, `test:unit:changed`) —
   CI's first gate is `format:check`, and no hook runs Prettier for you. Once the
@@ -128,21 +141,30 @@ Working principles:
   file a GitHub issue for each leftover, and once it merges remove what it left —
   the local branch, the worktree (after leaving it), the ones your agents made, any
   dev build you started. Ask first only to merge, release, push to `main` or delete
-  on GitHub; an audit or review round changes nothing until the owner says so. A
+  on GitHub; an audit or review round changes nothing until the owner says so. The
+  go to merge is also the go to clean up: wait for the PR's CI
+  (`gh pr checks <n> --watch`), then plain `gh pr merge <n> --squash` (squash folds
+  the branch's commits into one) — the repo allows only squash and GitHub deletes the
+  PR's branch on merge, so never ask about either; `--delete-branch` fails in a
+  worktree (`'main' is already used by worktree`). Then call ExitWorktree (`remove`
+  deletes the worktree and its local branch; `discard_changes: true`, as the squash
+  on `main` holds the commits). Despite its description it also removes a worktree
+  the session was started in with `claude -w` (seen three times, 2026-09-24…26);
+  never hand the owner a `git worktree remove` or `/exit` to run. A
   reply that ends a piece of work ends with what the owner must do next, or
   "nothing"; before going quiet on background work, say what runs and about how
   long. A Monitor fires only on failure or finish, and when the watched work ends,
   stop every Monitor and wake-up you armed, so the report stays the last message.
   Remove an agent's worktree with `git worktree remove -f -f <path>` (locked while
-  its agent lives); when the owner asks to clean up your own, call the ExitWorktree
-  tool (`remove`) rather than telling them to type `/exit`.
+  its agent lives).
 - When work is split across agents or a Workflow: steps that only write code or run
   tests go to `model: 'opus'`, the rest (design, review, judgment, what the owner
   reads) to `model: 'fable'`. Fan out by slices of work, never one agent per
-  finding — a handful per phase — and say how many before launching. Each brief
-  carries the worktree shell rule below and asks for findings in the agent's final
-  message: the harness refuses a subagent's report files, so an agent writes only
-  patches or code, in a scratchpad folder of its own.
+  finding — a handful per phase — and say how many before launching. Every brief and
+  every Workflow step prompt starts with the shell-rule block below, word for word:
+  an Explore agent never sees this file, and agents whose brief lacked the block
+  were refused 2–3 times as often (211 agent transcripts, 2026-09-18…26). An agent writes only patches or code, in a
+  scratchpad folder of its own.
 - Hand-testing on a real machine is driven one case at a time through
   AskUserQuestion, never as a wall of text. The steps to carry out go inside the
   question; the options are the outcomes to choose between (what passed, what broke,
@@ -172,17 +194,29 @@ Working principles:
     `node node_modules/electron/install.js` once, or the first (possibly headless e2e)
     launch stalls on a silent download.
 - Shell in a worktree stays plain. The worktree isolation guard refuses any Bash
-  call it cannot prove stays inside this worktree, not only git ones. Refused: a
-  loop, `$(…)`, a shell variable, `env -u`, `git -C` with another checkout's path
-  (use `gh pr diff <n>`, or diff `origin/<branch>` from here), a path outside the
-  worktree inside a chain, a `cd` outside followed by `git`, and a heredoc,
-  `python3 -` or `sh <file>` whose text names git (a `.github` path counts); a plain
-  `sh <file>` passes. Each refusal is a wasted turn: one plain command per call,
-  absolute paths. Change files with Edit/Write even when told
-  to prefer Bash — a `sed -i`, `perl -pi`, `cat >` or `python3 -` edit is refused
-  often, and the comment hook never sees it; long text for `gh` goes in a file
-  (`--body-file`). zsh trap: an unquoted glob that matches nothing
-  (`--include=*.md`) aborts the whole call — quote it.
+  call it cannot prove stays inside this worktree, not only git ones. This block
+  binds you too, its last line aside — that one is for agents; your long text for
+  `gh` goes in a file (`--body-file`):
+
+  ```
+  Shell rules — a guard refuses the rest; each refusal is a lost turn:
+  - One plain command per Bash call, absolute paths. No loop, $(…) or shell
+    variable whose value lands in a command's arguments; no env -u.
+  - Create or change every file, scratch scripts too, with Write/Edit, even when
+    told to prefer Bash; run a script as node/python3/sh <file>. No heredoc,
+    sed -i, perl -pi or cat >.
+  - Quote every glob: grep -rn X <abs path> --include='*.ts'. Unquoted, zsh
+    prints "no matches found", the command never runs, and the tool may still
+    report success.
+  - Never git -C another checkout: diff origin/<branch>, or gh pr diff <n>.
+  - Read stops at 25,000 tokens: read a big file or diff ~1,000 lines at a time.
+  - Findings go in your final message; the harness refuses report files.
+  ```
+
+  Also refused: a path outside the worktree inside a chain, a `cd` outside followed
+  by `git`, a bare shell name or builtin as an argument (`grep -n "source" f`,
+  `bash --version`), and `python3 -` or `sh <file>` whose text names git (a `.github`
+  path counts). An edit made through the shell also slips past the comment hook.
 - Auth comes from Koloft's own multi-account balancer (Settings ▸ Accounts): the claude
   shim injects the picked account per launch; the probe/header contract is
   `docs/claude-code-contract.md` §7. A Codex account is its own `CODEX_HOME`, picked per
