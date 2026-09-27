@@ -131,10 +131,11 @@ export function useFilesController(tabId: string | null, root: string | null): F
   }, [root])
 
   const src = openFile?.src ?? null
+  const askedView = openFile?.view
   useEffect(() => {
-    setReadingViewRaw(undefined)
+    setReadingViewRaw(askedView)
     setOutlineOpen(false)
-  }, [src])
+  }, [src, askedView])
 
   const filesReveal = useStore((s) => s.filesReveal)
   const revealed = useRef(0)

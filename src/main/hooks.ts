@@ -209,11 +209,14 @@ export function hookSettings(
 export function writeTabHookSettings(
   paths: HookPaths,
   tabId: string,
-  statusLine?: StatusLineSetting
+  statusLine?: StatusLineSetting,
+  allowKoloft = false
 ): string {
   fs.rmSync(path.join(paths.regDir, `${tabId}.status.jsonl`), { force: true })
   fs.rmSync(path.join(paths.regDir, `${tabId}.json`), { force: true })
   const settings = hookSettings(paths.hookScript, paths.regDir, tabId, statusLine)
+  // CC§13
+  if (allowKoloft) settings.permissions = { allow: ['Bash(koloft *)'] }
   const out = path.join(paths.settingsDir, `${tabId}.json`)
   fs.writeFileSync(out, JSON.stringify(settings))
   return out

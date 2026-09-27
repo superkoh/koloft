@@ -24,6 +24,7 @@ describe('buildResetPatch (FR-12)', () => {
     const patch = buildResetPatch()
     expect(Object.keys(patch).sort()).toEqual(
       [
+        'agentTools',
         'browserControl',
         'browserPaneWidth',
         'dockBadge',

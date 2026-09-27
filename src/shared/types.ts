@@ -170,6 +170,7 @@ export interface Settings {
   gitAutoFetch: boolean
   // PLATFORM§17
   browserControl: boolean
+  agentTools: boolean
   notesHeight: number
   notesFolded: boolean
   keepAwake: boolean
@@ -208,6 +209,7 @@ export const DEFAULT_SETTINGS: Settings = {
   statuslineBuiltin: true,
   gitAutoFetch: true,
   browserControl: true,
+  agentTools: true,
   notesHeight: 260,
   notesFolded: false,
   keepAwake: true,
@@ -487,6 +489,7 @@ export interface OpenRequest {
   tabId: string
   path: string
   source: 'agent' | 'user'
+  view?: ArtifactView
 }
 
 export interface BrowserOpenRequest {
@@ -1001,7 +1004,7 @@ export interface SpawnedTab {
   kind: BackendId
   cwd: string
   title: string
-  jobId: string
+  jobId?: string
 }
 
 export type CronSaveInput = Omit<CronJob, 'history' | 'createdAt' | 'id'> & { id?: string }

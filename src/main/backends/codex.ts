@@ -42,6 +42,7 @@ export function codexBackend(sessions: CodexSessions, resumeProbes: ResumeProbes
       return planResume(row, resumeProbes, row?.worktreeState?.worktreePath)
     },
     hasTab: (tabId) => sessions.hasTab(tabId),
+    workspaceOfTab: (tabId) => sessions.workspaceOfTab(tabId),
     aliveTabFor: (key) => sessions.aliveTabFor(key),
     stop: (tabId) => sessions.stop(tabId),
     archive: (key) => sessions.archive(key),

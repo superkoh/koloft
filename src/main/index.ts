@@ -18,7 +18,7 @@ import path from 'path'
 import fs from 'fs'
 import os from 'os'
 import { pathToFileURL } from 'url'
-import { PtyManager, tabInstancePid } from './ptyManager'
+import { anotherLiveInstanceOwns, PtyManager } from './ptyManager'
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { FlowGate } from './flowControl'
@@ -26,7 +26,12 @@ import { SessionTracker } from './sessionTracker'
 import type { StatusEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
 import { SessionBackends } from './sessionBackends'
-import { BACKEND_LABEL, capabilitiesFor, SUPPORTED_PAIRS } from '@shared/sessionBackend'
+import {
+  BACKEND_LABEL,
+  backendIdOf,
+  capabilitiesFor,
+  SUPPORTED_PAIRS
+} from '@shared/sessionBackend'
 import { AttentionTracker, type AttentionContext } from './attention'
 import { route, dockBadgeText } from './notifyRouter'
 import { setupShim, UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE } from './shim'
@@ -67,7 +72,7 @@ import {
 } from './remote/launch'
 import { machinePackageBase, mirrorHookDir, mirrorProjectsRoot } from './remote/paths'
 import { RemoteSync } from './remote/sync'
-import { readJsonDrop, watchJsonDrops } from './jsonDrops'
+import { readJsonDrop, watchJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
 import {
   bundlePath,
   DEFAULT_THEME,
@@ -195,6 +200,7 @@ import type {
   AccountKind,
   AccountMeta,
   AccountView,
+  ArtifactView,
   BackendId,
   CodexLimits,
   CodexSignInResult,
@@ -227,8 +233,15 @@ import type {
   WindowCommand,
   SessionWorkbenchState,
   Settings,
+  HostId,
   WhatsNew
 } from '@shared/types'
+import { AgentRequests, BUILTIN_VERBS } from './agentRequests'
+import { cronVerb } from './agentCron'
+import { workbenchVerbs } from './agentWorkbench'
+import { sessionVerb } from './agentSessions'
+import { claudePeerNames } from './claudeSessionRegistry'
+import { writeAgentPlugin } from './agentPlugin'
 
 // PLATFORM§4
 if (!app.isPackaged) app.setName('koloft-dev')
@@ -539,6 +552,56 @@ function watchPickRequests(pickDir: string): fs.FSWatcher | null {
   )
 }
 
+function agentToolsFor(backend: BackendId, host: HostId): boolean {
+  return loadSettings().agentTools && capabilitiesFor(backend, host).agentTools === true
+}
+
+function pinnedWorkspaceOfTab(tabId: string): string | undefined {
+  const workspace = sessionBackends.workspaceOfTab(tabId)
+  return workspace && workspaceMgr?.isPinned(workspace) ? workspace : undefined
+}
+
+function notesFileOfPinned(workspace: string): string | undefined {
+  return workspaceMgr?.isPinned(workspace) ? ensureNotesFile(notesBaseDir(), workspace) : undefined
+}
+
+const agentRequests = new AgentRequests({
+  verbs: {
+    ...BUILTIN_VERBS,
+    cron: cronVerb({
+      runner: () => cronRunner,
+      pinnedWorkspaceOf: pinnedWorkspaceOfTab,
+      toast: (text) => sendToRenderer('cron:toast', text),
+      now: () => new Date()
+    }),
+    ...workbenchVerbs({
+      open: (tabId, target, view) =>
+        openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target, view),
+      notesFileOf: (tabId) => {
+        const workspace = sessionBackends.workspaceOfTab(tabId)
+        return workspace ? notesFileOfPinned(workspace) : undefined
+      }
+    }),
+    session: sessionVerb({
+      workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
+      sessionsIn: (workspace) =>
+        allSessions().filter(
+          (s) => sessionBackends.get(s.backendId).workspaceOfTab(s.tabId) === workspace
+        ),
+      peerNames: () => claudePeerNames(),
+      launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
+      queue: async (tabId, text) => codexSessions?.queueMessage(tabId, text)
+    })
+  },
+  tab: (tabId) => ptyMgr.get(tabId),
+  session: (tabId) => allSessions().find((s) => s.tabId === tabId),
+  enabled: (tabId) => {
+    const backend = backendIdOf(ptyMgr.get(tabId)?.kind)
+    return !!backend && agentToolsFor(backend, tracker.remoteOf(tabId) ? 'ssh' : 'local')
+  },
+  alive: pidAlive
+})
+
 async function pickForLaunch(): Promise<{
   res: PickResponse
   endpoint?: { baseUrl?: string; model?: string }
@@ -552,12 +615,6 @@ async function pickForLaunch(): Promise<{
   if (!res.account || res.kind !== 'custom') return { res }
   const meta = findAccount(res.account, 'custom')
   return { res, endpoint: { baseUrl: meta?.baseUrl, model: meta?.model } }
-}
-
-function writeWholeBeforeVisible(dest: string, text: string): void {
-  const tmp = `${dest}.tmp`
-  fs.writeFileSync(tmp, text)
-  fs.renameSync(tmp, dest)
 }
 
 async function handlePickRequest(pickDir: string, reqName: string, raw: unknown): Promise<void> {
@@ -1071,9 +1128,13 @@ app.whenReady().then(() => {
   setupGuestAudioState()
   setupGuestFullscreen()
 
-  const { shimDir, regDir, openDir, pickDir } = setupShim()
+  const { shimDir, regDir, openDir, pickDir, agentDir } = setupShim()
   ptyMgr.shimDir = shimDir
   ptyMgr.regDir = regDir
+  if (agentRequests.watch(agentDir)) {
+    ptyMgr.agentDir = agentDir
+    claudeBackend.agentPlugin = writeAgentPlugin(app.getPath('userData'))
+  }
   claudeBackend.watchShimRegistrations(regDir)
   if (watchOpenRequests(openDir)) {
     ptyMgr.openDir = openDir
@@ -1090,11 +1151,12 @@ app.whenReady().then(() => {
 
   const hookPaths = setupHooks()
   const statusline = setupStatusline()
-  ptyMgr.makeHookSettings = (tabId) =>
+  ptyMgr.makeHookSettings = (tabId, allowKoloft) =>
     writeTabHookSettings(
       hookPaths,
       tabId,
-      loadSettings().statuslineBuiltin ? statusLineSetting(statusline) : undefined
+      loadSettings().statuslineBuiltin ? statusLineSetting(statusline) : undefined,
+      allowKoloft
     )
   claudeBackend.watchLocalHooks(hookPaths.regDir)
 
@@ -1216,7 +1278,11 @@ app.whenReady().then(() => {
       trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
       homes: () => codexHomes(userData),
-      openShimRoot: path.join(userData, 'codex-open')
+      openShimRoot: path.join(userData, 'codex-open'),
+      agent: {
+        enabled: () => agentToolsFor('codex', 'local'),
+        answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw)
+      }
     })
   } catch (error) {
     codexStartupError = `Codex session data could not be loaded; the original file is preserved. ${String(error)}`
@@ -1316,7 +1382,7 @@ app.whenReady().then(() => {
       },
       save: (jobs) => saveCron(cronFs, cronFile, jobs)
     },
-    isPinned: (p) => (workspaceMgr?.pinnedPaths() ?? []).some((w) => w.path === p),
+    isPinned: (p) => workspaceMgr?.isPinned(p) ?? false,
     dirExists: (p) => hosts.of(p).dirExists(p),
     gitDirExists: (root) => hosts.of(root).dirExists(`${root}/.git`),
     worktreeDirExists: (root, name) => hosts.of(root).dirExists(`${worktreeHomeOf(root)}/${name}`),
@@ -2074,8 +2140,7 @@ function handleOpenRequest(obj: OpenDrop, full: string): void {
   if (!p) return
   const tab = ptyMgr.get(obj.tabId)
   if (!tab) {
-    const ownerPid = tabInstancePid(obj.tabId)
-    if (ownerPid !== null && ownerPid !== process.pid && pidAlive(ownerPid)) return
+    if (anotherLiveInstanceOwns(obj.tabId, pidAlive)) return
     processedOpenIds.add(obj.openId)
     fs.rm(full, { force: true }, () => {})
     const w = mainWindow
@@ -2105,7 +2170,8 @@ function openInWorkbench(
   tabId: string,
   decision: RouteDecision,
   source: 'agent' | 'user',
-  osFallback?: string
+  osFallback?: string,
+  view?: ArtifactView
 ): boolean {
   if (decision.dest === 'browser') {
     const payload: BrowserOpenRequest = { tabId, url: decision.target, source, osFallback }
@@ -2113,7 +2179,7 @@ function openInWorkbench(
     return true
   }
   if (decision.dest === 'preview' && fs.existsSync(decision.target)) {
-    const payload: OpenRequest = { tabId, path: decision.target, source }
+    const payload: OpenRequest = { tabId, path: decision.target, source, view }
     sendToRenderer('preview:open-file', payload)
     return true
   }
@@ -2144,31 +2210,38 @@ async function countRunFolders(root: string, slug: string): Promise<number> {
   return entries.filter((e) => e.isDir && e.name.startsWith(`${slug}-`)).length
 }
 
+async function launchQuietTab(
+  options: CreateTabOptions & { kind: BackendId },
+  title: string,
+  jobId?: string
+): Promise<string | null> {
+  const r = await sessionBackends.create(options)
+  if (!r.ok) return null
+  const spawned: SpawnedTab = { id: r.id, kind: options.kind, cwd: r.cwd, title, jobId }
+  sendToRenderer('terminal:spawned', spawned)
+  return r.id
+}
+
 async function launchCronRun(
   req: LaunchRequest
 ): Promise<{ ok: true; tabId: string } | { ok: false }> {
   try {
-    const r = await sessionBackends.create({
-      kind: req.backend,
-      cwd: req.cwd,
-      worktree: req.worktree,
-      model: req.model,
-      effort: req.effort,
-      permission: req.permission,
-      firstPrompt: req.firstPrompt,
-      name: req.name,
-      scheduled: true
-    })
-    if (!r.ok) return { ok: false }
-    const spawned: SpawnedTab = {
-      id: r.id,
-      kind: req.backend,
-      cwd: r.cwd,
-      title: req.name,
-      jobId: req.jobId
-    }
-    sendToRenderer('terminal:spawned', spawned)
-    return { ok: true, tabId: r.id }
+    const tabId = await launchQuietTab(
+      {
+        kind: req.backend,
+        cwd: req.cwd,
+        worktree: req.worktree,
+        model: req.model,
+        effort: req.effort,
+        permission: req.permission,
+        firstPrompt: req.firstPrompt,
+        name: req.name,
+        scheduled: true
+      },
+      req.name,
+      req.jobId
+    )
+    return tabId ? { ok: true, tabId } : { ok: false }
   } catch (err) {
     console.error('[koloft] a scheduled run could not be launched:', err)
     return { ok: false }
@@ -2875,9 +2948,7 @@ function registerIpc(): void {
   )
   ipcMain.handle('notes:path', (_e, ws: unknown) => {
     if (typeof ws !== 'string' || !ws) return null
-    const pinned = (workspaceMgr?.pinnedPaths() ?? []).some((w) => w.path === ws)
-    if (!pinned) return null
-    return ensureNotesFile(notesBaseDir(), ws)
+    return notesFileOfPinned(ws) ?? null
   })
   ipcMain.handle('github:info', async (_e, root: unknown, force: unknown) => {
     if (typeof root !== 'string' || !root) return null

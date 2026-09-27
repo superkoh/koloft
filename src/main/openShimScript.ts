@@ -5,6 +5,12 @@ import { shq } from '@shared/shellQuote'
 
 const EXT_GLOBS = VIEWABLE_EXTENSIONS.map((e) => `*${e}`).join('|')
 
+export const NEWID_FN = `newid() {
+  u="$(uuidgen 2>/dev/null | tr 'A-Z' 'a-z')"
+  if [ -z "$u" ] && [ -r /proc/sys/kernel/random/uuid ]; then u="$(cat /proc/sys/kernel/random/uuid)"; fi
+  echo "$u"
+}`
+
 export const OPEN_SHIM_HEAD = `#!/usr/bin/env bash
 : koloft open shim
 self_dir="$(cd "$(dirname "$0")" >/dev/null 2>&1 && pwd)"
@@ -49,11 +55,7 @@ if [ -z "$url" ]; then
 fi
 if [ "$(printf '%s' "$abs$url$PWD" | LC_ALL=C tr -d '[:cntrl:]')" != "$abs$url$PWD" ]; then passthrough "$@"; fi
 
-newid() {
-  u="$(uuidgen 2>/dev/null | tr 'A-Z' 'a-z')"
-  if [ -z "$u" ] && [ -r /proc/sys/kernel/random/uuid ]; then u="$(cat /proc/sys/kernel/random/uuid)"; fi
-  echo "$u"
-}
+${NEWID_FN}
 
 esc() { printf '%s' "$1" | sed -e 's/\\\\/\\\\\\\\/g' -e 's/"/\\\\"/g'; }
 

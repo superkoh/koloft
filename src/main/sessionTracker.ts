@@ -699,6 +699,10 @@ export class SessionTracker extends SessionRuntime {
     return this.tracked.get(tabId)?.remote
   }
 
+  infoOf(tabId: string): SessionInfo | undefined {
+    return this.tracked.get(tabId)?.info
+  }
+
   setRemoteTmuxName(tabId: string, tmuxName: string): void {
     const t = this.tracked.get(tabId)
     if (t?.remote) t.remote.tmuxName = tmuxName

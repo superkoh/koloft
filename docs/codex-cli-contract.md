@@ -547,3 +547,46 @@ Not tried, and why:
 
 So Koloft keeps Codex on a remote machine refused: the part that runs (transport, the
 remote folder, stop) is checked, but no one has yet signed in and run a turn there.
+
+## 17. Handing a session context and a command, and queuing a message into it
+
+**Checked on 2026-09-26 with standalone Codex CLI 0.153.4, real model turns
+(`gpt-5.6-luna`, low effort).** A Node client drove `codex app-server --stdio`, and a real
+TUI connected with `--remote` for the lines that name it. Each run used its own
+`CODEX_HOME` holding a copy of this Mac's login (deleted afterwards), `apps` and
+`plugins` off, and a trust table for the folder.
+
+- **`-c developer_instructions="…"` on the app-server command line reaches the model**:
+  it said back a word that only that text held. It still did with a real TUI connected
+  through `--remote` to that app-server. The TUI's own `thread/start` did not override it.
+  The line lands at the top of the thread's developer message. That it replaces a
+  `developer_instructions` in the user's `config.toml` rather than adding to it is
+  inferred, not checked.
+- **Skills:** a folder under `$CODEX_HOME/skills/<n>/SKILL.md` was listed by
+  `skills/list` (scope `user`) and used by the model. `-c 'skills.config=[{path=…}]'`
+  with a path to a folder, or to a `SKILL.md`, outside those roots added nothing to
+  `skills/list`.
+- **Hooks:** `-c 'hooks.SessionStart=[{hooks=[{type="command",command=…}]}]'` shows in
+  `hooks/list` with source `sessionFlags` and `trustStatus: "untrusted"`, and does not
+  run. `-c 'hooks.state."<key>".trusted_hash=…'` did not change that. The same
+  `[hooks.state."<key>"] trusted_hash = "<currentHash>"` table written into the home's
+  `config.toml` made it `trusted`, and then its `additionalContext` reached the model.
+- **A command put first on PATH through `ZDOTDIR` (section 12) ran without an approval
+  request** under `approvalPolicy: "on-request"`, `sandbox: "workspace-write"`, and
+  could write under `/tmp`.
+- **`codex queue --thread <id> --message …`** put a message into a plain `codex` TUI
+  session that was already running. The TUI showed it as a user message and answered
+  it.
+- **`thread/queue/add` sent by a client other than the TUI starts a turn on an idle
+  thread.** A relay shaped like Koloft's (one TUI over `--remote`, one stdio app-server
+  upstream) sent `{id:"koloft-…", method:"thread/queue/add",
+  params:{threadId, clientUserMessageId, input:[{type:"text", text, text_elements:[]}]}}`
+  upstream after the TUI's first turn ended. The reply held `queuedSubmission`. The
+  server sent `thread/queue/changed` twice, then `turn/started` and `turn/completed` on
+  its own, with no `thread/queue/start`. The TUI drew both the message and the answer.
+  The method appears only in the `--experimental` schema.
+- **The TUI opens a second, ephemeral thread** (`thread/start` with id
+  `temporary-structured-…`) to write a title. `thread/queue/add` on it is refused:
+  "ephemeral thread does not support queued submissions".
+- What `thread/queue/add` does on a thread that is in the middle of a turn was not
+  tried. That it waits for that turn to end is inferred, not checked.

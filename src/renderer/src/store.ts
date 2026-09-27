@@ -59,6 +59,8 @@ export interface OpenFile {
   label: string
   line?: number
   source?: 'intercept'
+  view?: ArtifactView
+  unseen?: true
 }
 
 export type UpdatePhase =
@@ -154,7 +156,7 @@ interface AppState {
   beginLogin: (reauthName?: string) => void
   setLoginProgress: (p: LoginProgress) => void
   clearLogin: () => void
-  setOpenFile: (f: OpenFile | null) => void
+  setOpenFile: (f: OpenFile | null, tabId?: string) => void
   setWorkbenchWidth: (w: number) => void
   setTabWorkbenchWidth: (tabId: string, w: number) => void
   setSidebarWidth: (w: number) => void
@@ -639,9 +641,9 @@ export const useStore = create<AppState>((set, get) => ({
   setLoginProgress: (progress) =>
     set((s) => ({ accountLogin: { ...(s.accountLogin ?? {}), progress } })),
   clearLogin: () => set({ accountLogin: null }),
-  setOpenFile: (f) => {
+  setOpenFile: (f, tabId) => {
     const s = get()
-    const id = s.activeTabId
+    const id = tabId ?? s.activeTabId
     if (!id) return
     if (f && f.source !== 'intercept') {
       get().updateWorkbenchTabs(id, (prev) => activateWbTab(prev, FILES_TAB_ID))
@@ -979,20 +981,26 @@ export function consumeRestoreExit(ptyId: string): boolean {
 export function openInterceptedFile(
   ptyId: string,
   src: string,
-  source: 'agent' | 'user' = 'agent'
+  source: 'agent' | 'user' = 'agent',
+  view?: ArtifactView
 ): void {
-  const { tabs, activeTabId, activateTab } = useStore.getState()
+  const { tabs, activeTabId, setOpenFile } = useStore.getState()
   const tabId = conversationTabFor(ptyId)
-  if (tabs.some((t) => t.id === tabId) && activeTabId !== tabId) activateTab(tabId)
-  if (!useStore.getState().activeTabId) {
+  const file: OpenFile = {
+    src,
+    label: basename(src),
+    source: source === 'agent' ? 'intercept' : undefined,
+    view
+  }
+  if (tabs.some((t) => t.id === tabId) && activeTabId !== tabId) {
+    setOpenFile({ ...file, unseen: true }, tabId)
+    return
+  }
+  if (!activeTabId) {
     window.api.preview.osOpen(src)
     return
   }
-  useStore.getState().setOpenFile({
-    src,
-    label: basename(src),
-    source: source === 'agent' ? 'intercept' : undefined
-  })
+  setOpenFile(file)
 }
 
 export function previewLinkTarget(href: string, fromSrc: string): string {
@@ -1023,6 +1031,12 @@ export function openWebPage(src: string, sourceTabId?: string, sourcePath?: stri
 useStore.subscribe((state, prev) => {
   if (state.activeTabId === prev.activeTabId) return
   if (state.workbenchFull) useStore.setState({ workbenchFull: false })
+  const tabId = state.activeTabId
+  const waiting = tabId ? state.openFiles[tabId] : null
+  if (tabId && waiting?.unseen)
+    useStore.setState((s) => ({
+      openFiles: { ...s.openFiles, [tabId]: { ...waiting, unseen: undefined } }
+    }))
 })
 
 useStore.subscribe((state) => {

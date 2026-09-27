@@ -219,6 +219,18 @@ describe('claude shim (registration — unchanged behavior)', () => {
     }
   })
 
+  // CC§13
+  it("hands claude Koloft's skill plugin on the tab's own launches, but not on -p or a claude started by the tab's claude", () => {
+    const plugin = { KOLOFT_AGENT_PLUGIN: '/koloft/agent-plugin' }
+    for (const args of [[], ['--resume', 'abcdef01-2345-4678-8abc-def012345678'], ['--resume']]) {
+      const { realArgs } = runShim(args, plugin)
+      const at = realArgs!.indexOf('--plugin-dir')
+      expect(realArgs![at + 1], args.join(' ')).toBe('/koloft/agent-plugin')
+    }
+    expect(runShim(['-p', 'hello'], plugin).realArgs).toEqual(['-p', 'hello'])
+    expect(runShim([], { ...plugin, CLAUDECODE: '1' }).realArgs).toEqual([])
+  })
+
   it('subcommands (mcp) are passed through untouched', () => {
     const { reg, realArgs } = runShim(['mcp', 'list'])
     expect(reg).toBeNull()

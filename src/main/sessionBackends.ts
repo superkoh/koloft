@@ -29,6 +29,7 @@ export interface SessionBackend {
   resume(request: SessionResumeRequest): Promise<SessionResumeResult>
   resumePlan(key: string): Promise<ResumePlan>
   hasTab(tabId: string): boolean
+  workspaceOfTab(tabId: string): string | undefined
   aliveTabFor(key: string): string | undefined
   stop(tabId: string): void | Promise<void>
   archive(key: string): boolean
@@ -108,6 +109,10 @@ export class SessionBackends {
 
   ownerOfTab(tabId: string): SessionBackend | undefined {
     return [...this.adapters.values()].find((backend) => backend.hasTab(tabId))
+  }
+
+  workspaceOfTab(tabId: string): string | undefined {
+    return this.ownerOfTab(tabId)?.workspaceOfTab(tabId)
   }
 
   availability(

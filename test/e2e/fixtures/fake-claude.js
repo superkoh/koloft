@@ -514,6 +514,34 @@ function handleLine(line) {
     process.stdout.write(`\r\n[fake-claude] cleared -> session ${sessionId}\r\n> `)
     return
   }
+  // CC§5
+  if (text === '/move-to-background') {
+    const phantom = require('crypto').randomUUID()
+    fireHook('start', {
+      session_id: phantom,
+      transcript_path: path.join(projDir, phantom + '.jsonl'),
+      cwd,
+      hook_event_name: 'SessionStart',
+      source: 'startup'
+    })
+    const next = require('crypto').randomUUID()
+    const nextTranscript = path.join(projDir, next + '.jsonl')
+    fs.copyFileSync(transcript, nextTranscript)
+    append([
+      {
+        type: 'continued-in',
+        timestamp: new Date().toISOString(),
+        sessionId,
+        continuedInSessionId: next
+      }
+    ])
+    sessionId = next
+    transcript = nextTranscript
+    fireHook('prompt', { session_id: sessionId, hook_event_name: 'UserPromptSubmit' })
+    fireHook('stop', { session_id: sessionId, hook_event_name: 'Stop' })
+    process.stdout.write(`\r\n[fake-claude] moved -> session ${sessionId}\r\n> `)
+    return
+  }
   // CC§2 CC§4
   if (text.startsWith('/enter-worktree ') || text === '/exit-worktree') {
     const entering = text !== '/exit-worktree'
@@ -940,6 +968,15 @@ function handleLine(line) {
     } catch (e) {
       process.stdout.write(`[fake-claude] open failed ${target}: ${e.message}\r\n> `)
     }
+    return
+  }
+  if (text.startsWith('/koloft ')) {
+    const rest = text.slice('/koloft '.length).trim()
+    cp.execFile('/bin/sh', ['-c', `koloft ${rest}`], { cwd, env: process.env }, (e, out, err) => {
+      const code = e ? (typeof e.code === 'number' ? e.code : 1) : 0
+      const said = `${out}${err}`.replace(/\r?\n/g, '\r\n')
+      process.stdout.write(`${said}[fake-claude] koloft exit=${code}\r\n> `)
+    })
     return
   }
   if (text === '/busy') {

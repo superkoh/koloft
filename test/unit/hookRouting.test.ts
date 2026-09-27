@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { makeDropDedupe, ownsHookReport } from '../../src/main/hookRouting'
+import {
+  continuedInOf,
+  conversationMovedTo,
+  makeDropDedupe,
+  MOVED_CONVERSATION_SOURCE,
+  ownsHookReport
+} from '../../src/main/hookRouting'
 
 const PARENT = 'f2954c58-a979-4e3f-92f3-e6aed7806bcb'
 const FORK = 'f68fbf6d-b57c-48b5-b2ca-325ce86ddac0'
@@ -104,5 +110,60 @@ describe('makeDropDedupe: a remote report re-pulled unchanged is dropped, so it 
     expect(isNews('/m/a.json', '{"event":"stop"}')).toBe(true)
     expect(isNews('/m/b.json', '{"event":"stop"}')).toBe(true)
     expect(isNews('/m/a.json', '{"event":"start"}')).toBe(true)
+  })
+})
+
+// CC§5
+describe('conversationMovedTo: a tab follows its conversation when Claude Code moves it to a new session id', () => {
+  const MOVED = '5d5cfc93-c42e-4e7c-96f6-6b9a57fdf702'
+
+  it('follows when the bound transcript ends with continued-in naming the reported session', () => {
+    expect(conversationMovedTo(MOVED, PARENT, { exists: true, continuedIn: MOVED }, true)).toBe(
+      true
+    )
+  })
+
+  it('follows when the bound session never wrote a transcript and the reported one did', () => {
+    expect(conversationMovedTo(MOVED, 'phantom', { exists: false }, true)).toBe(true)
+  })
+
+  it('stays put for a /fork copy: the parent transcript exists and names no successor', () => {
+    expect(conversationMovedTo(FORK, PARENT, { exists: true }, true)).toBe(false)
+  })
+
+  it('stays put when continued-in names some other session', () => {
+    expect(conversationMovedTo(MOVED, PARENT, { exists: true, continuedIn: FORK }, true)).toBe(
+      false
+    )
+  })
+
+  it('stays put while the reported session has no transcript of its own', () => {
+    expect(conversationMovedTo(MOVED, 'phantom', { exists: false }, false)).toBe(false)
+  })
+
+  it('a start Koloft writes for a moved conversation is accepted like /clear', () => {
+    expect(
+      ownsHookReport(
+        { event: 'start', source: MOVED_CONVERSATION_SOURCE, sessionId: MOVED },
+        'phantom'
+      )
+    ).toBe(true)
+  })
+})
+
+describe('continuedInOf: reads the continued-in record only when it is the last one', () => {
+  const record = (id: string): string =>
+    JSON.stringify({ type: 'continued-in', sessionId: PARENT, continuedInSessionId: id })
+
+  it('returns the successor id from a trailing record', () => {
+    expect(continuedInOf(`{"type":"user"}\n${record(FORK)}\n`)).toBe(FORK)
+  })
+
+  it('ignores a continued-in that later turns followed', () => {
+    expect(continuedInOf(`${record(FORK)}\n{"type":"assistant"}\n`)).toBeUndefined()
+  })
+
+  it('ignores a tail cut in the middle of a line', () => {
+    expect(continuedInOf('":"continued-in","continuedInSessionId":"x"')).toBeUndefined()
   })
 })

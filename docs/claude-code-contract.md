@@ -332,9 +332,34 @@ prompt emulation.
   fixed ("session transcripts being silently overwritten when a directory change
   relocated a session onto an existing same-ID transcript"; not measured).
 
-Evidence: on-machine diagnosis 2026-08-22 (CC 2.1.238) and CC source reading. Koloft
-dependents: the fork gate and session_id extraction in `src/main/hooks.ts`'s injected
-script (marked `CC§5`); `src/main/hookRouting.ts`.
+- **`/background` ("Send this session to the background and free the terminal") moves
+  the conversation out of the window** (measured 2026-09-26, CC 2.1.283, one
+  interactive haiku session in a pty with a logging hook on every event):
+  - The window's claude fires SessionEnd `reason=prompt_input_exit` and exits.
+  - A process claude daemon started in advance (`claude bg-spare --bg-spare
+    <…/spare/<id>.claim.sock>`, living under a `bg-pty-host`) takes the job. It fires
+    SessionStart `source=fork` under a new `session_id`, with the window's hook
+    settings.
+  - The daemon keeps one such spare ready, and starts another when one is used.
+- **A conversation can also move to a new id while the window's claude stays up**
+  (seen once, live, 2026-09-26, CC 2.1.283, in a Koloft worktree tab, around the
+  moment `/goal` was set; the trigger is not probed yet):
+  - The old transcript's last record is `{"type":"continued-in",
+    "continuedInSessionId":<new>}`.
+  - The conversation goes on in a daemon-hosted process: `--session-id <new>
+    --fork-session --resume <old transcript> --settings <the tab's file>`, registered in
+    `~/.claude/sessions/` with `kind: "bg"`.
+  - The window's claude stays alive and `interactive`, still registered under the old
+    id.
+  - The tab's hooks got a SessionStart `source=startup` carrying a third
+    `session_id`, which never wrote a transcript, at the same second. Every later
+    Stop / UserPromptSubmit carried the new id.
+
+Evidence: on-machine diagnosis 2026-08-22 (CC 2.1.238) and CC source reading; the two
+background-move bullets as dated above. Koloft dependents: the fork gate and session_id
+extraction in `src/main/hooks.ts`'s injected script (marked `CC§5`);
+`src/main/hookRouting.ts`, where a tab follows `continued-in` or leaves a start that
+never wrote a transcript.
 
 ## §6 Settings precedence & the statusLine protocol
 
@@ -737,7 +762,13 @@ other bullets of §9 were not re-measured on this build.
   `CLAUDE_CODE_CHILD_SESSION`, `CLAUDE_CODE_ENTRYPOINT`, `CLAUDE_CODE_EXECPATH`,
   `CLAUDE_CODE_MESSAGING_SOCKET`, `CLAUDE_CODE_MESSAGING_TOKEN`,
   `CLAUDE_CODE_SESSION_ATTENDED`, `CLAUDE_CODE_SESSION_ID`, `CLAUDE_EFFORT`,
-  `CLAUDE_PID`.
+  `CLAUDE_PID`. A background session (§5) also sets `CLAUDE_JOB_DIR=~/.claude/jobs/<short id>`.
+  **A claude started with an inherited `CLAUDE_JOB_DIR` takes that job's name**: seen
+  2026-09-27 on CC 2.1.283. A dev build of Koloft was started from a background
+  session's Bash, and two sessions it launched in another folder were registered in
+  `~/.claude/sessions/` under the parent job's name (`nameSource: "auto"`). Their
+  environment held the parent's `CLAUDE_JOB_DIR` and `CLAUDE_PID`. Which of the two
+  does it was not isolated.
 - **Every process a claude starts carries `CLAUDECODE=1`** (the Bash tool's shell and
   everything under it; seen 2026-09-23 and again 2026-09-24 on CC 2.1.281).
 - **A claude cleans up its own background shells, but not a program that detaches
@@ -844,3 +875,39 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   processes about two days old (date and CC version not recorded). On 2026-09-24, CC
   2.1.281, four live sessions (not idle, 20 min to 4 h old) held 196–403 MB each
   (`ps -o rss`).
+
+## §13 Handing a session extra skills, context and a command allow rule; messaging between sessions
+
+How established: 2026-09-26, CC 2.1.283, on this Mac. Each launch route was run with
+`claude -p … --output-format stream-json --verbose --model haiku --strict-mcp-config
+--mcp-config <empty>` in a scratch folder, and the check was a made-up word that only
+the injected text held: the model had to say it back, and the `system/init` record's
+`skills` and `plugins` lists were read. The same day, one interactive claude (a pty,
+`--permission-mode default --plugin-dir <dir> --settings <file with the allow rule>` and
+a first prompt) called `Skill(koloft:koloft)`, said back its word, and ran `koloft …`
+through Bash with no approval prompt, so those two routes hold interactively too; the
+other three were run in `-p` only. The messaging lines below were run in interactive
+sessions.
+
+- **`--plugin-dir <dir>` loads a plugin with no install step.** A folder holding
+  `.claude-plugin/plugin.json` (`{"name":"koloft",…}`) and `skills/<n>/SKILL.md` showed up
+  as `plugins: [{name:"koloft", source:"koloft@inline"}]` and
+  `skills: ["koloft:<n>"]`. The model called the skill through the Skill tool and read
+  its body.
+- **`--add-dir <dir>` also loads `<dir>/.claude/skills`** (listed without a prefix). It
+  also opens that folder to the model's file tools.
+- **A SessionStart hook's `hookSpecificOutput.additionalContext`** (given through a
+  `--settings` file) reached the model.
+- **`--append-system-prompt-file <file>`** reached the model.
+- **`permissions.allow: ["Bash(koloft *)"]` in a `--settings` file lets that command run
+  in `--permission-mode default`**; without it the same call was denied ("This command
+  requires approval") in `-p`. A command with arguments (`koloft note append "hello
+  world"`) matched too.
+- **Sessions on one machine can message each other.** A second interactive claude
+  started with `-n <name>` showed up in another session's `ListAgents` under that name,
+  and `SendMessage` reached it. With no context, the receiver would not act on the
+  message: it asked its own user first. When its first prompt said which session had
+  started it and that it should report back, it did the task and its `SendMessage`
+  reply arrived in the sender. The `SendMessage` tool text says a session in a
+  different permission mode holds such messages for its user's approval — read, not
+  measured.

@@ -4,12 +4,11 @@ import type {
   CronJob,
   CronPermission,
   CronSaveInput,
-  HistoryLine,
   Schedule,
   SkillSuggestion
 } from '@shared/types'
 import { CRON_SAVE_MESSAGES as M } from '@shared/cronMessages'
-import { hasWordChar, isValidModelName } from '@shared/cronNames'
+import { hasWordChar, isValidModelName, NEW_JOB_PERMISSION } from '@shared/cronNames'
 import { describeWhen, isValidSchedule, nextRun, parseHHMM } from '@shared/schedule'
 
 export type WhenKind = 'daily' | 'weekly' | 'every'
@@ -27,11 +26,6 @@ export interface JobFields {
   modelOther: string
   effort: '' | CronEffort
   permission: CronPermission
-}
-
-const NEW_JOB_PERMISSION: Record<BackendId, CronPermission> = {
-  claude: 'same',
-  codex: 'skipAll'
 }
 
 export function emptyFields(backend: BackendId = 'claude'): JobFields {
@@ -154,31 +148,6 @@ export function suggest(text: string, skills: SkillSuggestion[]): SkillSuggestio
     }
   }
   return out
-}
-
-export function histText(h: HistoryLine): string {
-  if (h.state === 'closed') return 'Closed by you'
-  if (h.state === 'ended') return 'Ended — Koloft quit'
-  if (h.state === 'failed') return h.note ? `Could not start — ${h.note}` : 'Could not start'
-  const n = h.count ?? 1
-  if (h.state === 'missed') {
-    return n > 1
-      ? `Missed ${n} times — Koloft was closed or asleep`
-      : 'Missed — Koloft was closed or asleep'
-  }
-  return n > 1
-    ? `Skipped ${n} times — the last run was still open`
-    : 'Skipped — the last run was still open'
-}
-
-export function histWhen(h: HistoryLine, now: Date): string {
-  const from = describeWhen(new Date(h.dueAt), now)
-  if (h.until === undefined || h.until <= h.dueAt) return from
-  return `${from} → ${describeWhen(new Date(h.until), now)}`
-}
-
-export function histEnd(h: HistoryLine): number {
-  return h.until !== undefined && h.until > h.dueAt ? h.until : h.dueAt
 }
 
 const SOON_MS = 60 * 60_000

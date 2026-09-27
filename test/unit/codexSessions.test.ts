@@ -36,7 +36,11 @@ let repo: string
 let other: string
 let sessions: CodexSessions
 let deps: CodexSessionDeps
-let transports: { options: CodexTransportOptions; stop: ReturnType<typeof vi.fn> }[]
+let transports: {
+  options: CodexTransportOptions
+  stop: ReturnType<typeof vi.fn>
+  request: ReturnType<typeof vi.fn>
+}[]
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -81,8 +85,9 @@ beforeEach(() => {
   mocks.rpcHomes.length = 0
   mocks.create.mockImplementation(async (options: CodexTransportOptions) => {
     const stop = vi.fn(async () => {})
-    transports.push({ options, stop })
-    return { url: 'unix:///test/rpc.sock', stop }
+    const request = vi.fn(async () => ({}))
+    transports.push({ options, stop, request })
+    return { url: 'unix:///test/rpc.sock', stop, request }
   })
   mocks.request.mockResolvedValue({ data: [], nextCursor: null })
   mocks.close.mockResolvedValue(undefined)
@@ -107,7 +112,8 @@ beforeEach(() => {
     trustFolder: vi.fn(),
     pickHome: vi.fn(() => undefined),
     homes: vi.fn(() => []),
-    openShimRoot: path.join(directory, 'codex-open')
+    openShimRoot: path.join(directory, 'codex-open'),
+    agent: { enabled: () => false, answer: vi.fn() }
   }
   sessions = new CodexSessions(path.join(directory, 'sessions.json'), deps)
   vi.spyOn(sessions, 'availability').mockResolvedValue({ id: 'codex', available: true })
@@ -437,6 +443,56 @@ describe('CodexSessions', () => {
     await sessions.stop(launched.id)
     expect(fs.existsSync(shimDir)).toBe(false)
     expect(fs.existsSync(requestDir)).toBe(false)
+  })
+
+  // CODEX§17
+  it("with agent tools on, the app-server is told to run koloft help, a koloft request dropped in the run's own folder is answered for that tab, and stopping the run removes the folder", async () => {
+    const answer = vi.fn()
+    deps.agent = { enabled: () => true, answer }
+    const launched = await sessions.launch({ kind: 'codex', cwd: repo })
+    const hint = transports[0].options.configOverrides?.find((c) =>
+      c.startsWith('developer_instructions=')
+    )
+    expect(hint).toContain('koloft help')
+    const shimDir = path.dirname(transports[0].options.env!.ZDOTDIR!)
+    const requestDir = /\/tmp\/koloft-cx-open-[0-9a-f-]{36}/.exec(
+      fs.readFileSync(path.join(shimDir, 'koloft'), 'utf8')
+    )![0]
+    const request = { argv: ['help'], cwd: repo }
+    fs.writeFileSync(path.join(requestDir, 'req-1.json'), JSON.stringify(request))
+    await expect
+      .poll(() => answer.mock.calls)
+      .toContainEqual([launched.id, requestDir, 'req-1.json', request])
+    await sessions.stop(launched.id)
+    expect(fs.existsSync(requestDir)).toBe(false)
+  })
+
+  // CODEX§17
+  it("koloft session send queues on the session's own thread, never on the TUI's title thread", async () => {
+    const launched = await sessions.launch({ kind: 'codex', cwd: repo })
+    await expect(sessions.queueMessage(launched.id, 'hello')).rejects.toThrow('not started')
+    bind()
+    const receive = transports[0].options.onFrame
+    receive('client', { id: 'title', method: 'thread/start', params: { ephemeral: true } })
+    receive('server', { id: 'title', result: { thread: { id: B, cwd: repo, ephemeral: true } } })
+    await sessions.queueMessage(launched.id, 'hello')
+    expect(transports[0].request).toHaveBeenCalledWith(
+      'thread/queue/add',
+      expect.objectContaining({
+        threadId: A,
+        input: [{ type: 'text', text: 'hello', text_elements: [] }]
+      }),
+      expect.any(Number)
+    )
+  })
+
+  it('with agent tools off, a Codex tab gets neither the koloft command nor the Koloft hint', async () => {
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    expect(
+      transports[0].options.configOverrides?.some((c) => c.startsWith('developer_instructions='))
+    ).toBe(false)
+    const shimDir = path.dirname(transports[0].options.env!.ZDOTDIR!)
+    expect(fs.existsSync(path.join(shimDir, 'koloft'))).toBe(false)
   })
 
   it('reports an unexpected exit after confirmed stop without immediately clearing the alert', async () => {

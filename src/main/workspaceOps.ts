@@ -1,4 +1,5 @@
 import { type LayoutV6, type ProjectInfo, type SessionWorkbenchState } from '@shared/types'
+import { replacesTheConversation } from './hookRouting'
 
 export type WorkspaceAddDecision =
   { code: 'rejected-worktree' } | { code: 'exists'; path: string } | { code: 'added'; path: string }
@@ -50,7 +51,7 @@ export function carrySessionWorkbench(
   nextId: string,
   source: string
 ): { changed: boolean; sessions: LayoutV6['panels'] } {
-  if (source !== 'clear') return { changed: false, sessions }
+  if (!replacesTheConversation(source)) return { changed: false, sessions }
   const prev = sessions[prevId]
   if (!prev || sessions[nextId]) return { changed: false, sessions }
   const carried = { ...prev }

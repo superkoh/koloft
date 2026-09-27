@@ -33,11 +33,15 @@ const POLLUTANTS = {
   CLAUDE_CODE_ENTRYPOINT: 'cli',
   CLAUDECODE: '1',
   CLAUDE_EFFORT: 'high',
+  CLAUDE_JOB_DIR: '/Users/me/.claude/jobs/5d5cfc93',
+  CLAUDE_PID: '54978',
   AI_AGENT: '1',
   TERM_SESSION_ID: 'w0t1p0:ABC',
   KOLOFT_SESSION_DIR: '/parent-koloft/reg',
   KOLOFT_OPEN_DIR: '/parent-koloft/opens',
   KOLOFT_HOOK_SETTINGS: '/parent-koloft/hooks/pty-x-1.json',
+  KOLOFT_AGENT_DIR: '/parent-koloft/agent',
+  KOLOFT_AGENT_PLUGIN: '/parent-koloft/agent-plugin',
   ANT_ACCOUNT: 'whoever-started-koloft'
 }
 
@@ -96,6 +100,35 @@ describe('PtyManager per-tab environment', () => {
     expect(env.KOLOFT_HOOK_SETTINGS).toBe(`/koloft/hooks/${handle.id}.json`)
     // PLATFORM§2
     expect(env.TERM_PROGRAM).toBe('Apple_Terminal')
+  })
+
+  it('hands the koloft request folder to every tab but a Codex one, and the skill plugin and the koloft allow rule only to a launch that brings the plugin', () => {
+    const allowKoloft: boolean[] = []
+    const envFor = (args: Parameters<PtyManager['create']>[0]): Record<string, string> => {
+      mocks.spawn.mockClear()
+      const mgr = new PtyManager()
+      mgr.agentDir = '/koloft/agent'
+      mgr.makeHookSettings = (id, allow) => {
+        allowKoloft.push(allow)
+        return `/koloft/hooks/${id}.json`
+      }
+      mgr.create(args)
+      return spawnedEnv()
+    }
+    const plain = envFor({ kind: 'claude', cwd: os.tmpdir() })
+    expect(plain.KOLOFT_AGENT_DIR).toBe('/koloft/agent')
+    expect(plain.KOLOFT_AGENT_PLUGIN).toBeUndefined()
+    const plugged = envFor({
+      kind: 'claude',
+      cwd: os.tmpdir(),
+      extraEnv: { KOLOFT_AGENT_PLUGIN: '/koloft/agent-plugin' }
+    })
+    expect(plugged.KOLOFT_AGENT_PLUGIN).toBe('/koloft/agent-plugin')
+    expect(allowKoloft).toEqual([false, true])
+    expect(envFor({ kind: 'shell', cwd: os.tmpdir(), util: true }).KOLOFT_AGENT_DIR).toBe(
+      '/koloft/agent'
+    )
+    expect(envFor({ kind: 'codex', cwd: os.tmpdir() }).KOLOFT_AGENT_DIR).toBeUndefined()
   })
 
   it('marks a global-terminal (utility) shell with KOLOFT_UTIL=1, the variable the shim hard block keys off', () => {

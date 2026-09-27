@@ -35,7 +35,15 @@ import { probeClaude } from '../claudeProbe'
 import { runningClaudePid } from '../claudeSessionRegistry'
 import { rootsWithClaude } from '../claudeLiveness'
 import { readAppendedLines, sessionEventFromHook } from '../sessionTracker'
-import { makeDropDedupe, ownsHookReport, type HookReport } from '../hookRouting'
+import {
+  continuedInOf,
+  conversationMovedTo,
+  makeDropDedupe,
+  MOVED_CONVERSATION_SOURCE,
+  ownsHookReport,
+  replacesTheConversation,
+  type HookReport
+} from '../hookRouting'
 import { registeredByTabRoot } from '../shim'
 import { watchJsonDrops } from '../jsonDrops'
 import {
@@ -100,6 +108,7 @@ export class ClaudeBackend implements SessionBackend {
   private statusLogDraining = new Map<string, boolean>()
   private processedRegIds = new Set<string>()
   private watchedHookMirrors = new Map<string, () => void>()
+  agentPlugin?: string
 
   constructor(private d: ClaudeBackendDeps) {}
 
@@ -180,11 +189,16 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   sessionIdOf(tabId: string): string | undefined {
-    return this.d.tracker.list().find((s) => s.tabId === tabId)?.sessionId
+    return this.d.tracker.infoOf(tabId)?.sessionId
+  }
+
+  workspaceOfTab(tabId: string): string | undefined {
+    const sessionId = this.sessionIdOf(tabId)
+    return sessionId ? this.d.workspaces()?.workspaceOf(sessionId) : undefined
   }
 
   private titleOf(tabId: string): string | undefined {
-    return this.d.tracker.list().find((s) => s.tabId === tabId)?.title
+    return this.d.tracker.infoOf(tabId)?.title
   }
 
   watchShimRegistrations(regDir: string): void {
@@ -379,11 +393,38 @@ export class ClaudeBackend implements SessionBackend {
     obj.tabId = this.liveTabFor(obj)
     if (!obj.tabId) return
     // CC§5
-    if (!ownsHookReport(obj, this.sessionIdOf(obj.tabId))) return
+    if (!ownsHookReport(obj, this.sessionIdOf(obj.tabId)) && !this.followMovedConversation(obj)) {
+      return
+    }
     // CC§8
     if (typeof obj.wake === 'number') this.d.tracker.setWakeupPending(obj.tabId, obj.wake === 1)
     const event = sessionEventFromHook(obj.event, obj.message, obj.bgl)
     if (event) this.d.events(obj.tabId, event)
+  }
+
+  // CC§5
+  private followMovedConversation(report: HookReport & { tabId?: string }): boolean {
+    const { tracker } = this.d
+    if (!report.tabId || !report.sessionId || tracker.remoteOf(report.tabId)) return false
+    const info = tracker.infoOf(report.tabId)
+    if (!info?.jsonlPath) return false
+    const movedFile = path.join(path.dirname(info.jsonlPath), `${report.sessionId}.jsonl`)
+    const moved = conversationMovedTo(
+      report.sessionId,
+      info.sessionId,
+      transcriptEnding(info.jsonlPath),
+      fs.existsSync(movedFile)
+    )
+    if (!moved) return false
+    this.handleHookRegistration({
+      tabId: report.tabId,
+      event: 'start',
+      source: MOVED_CONVERSATION_SOURCE,
+      sessionId: report.sessionId,
+      transcriptPath: movedFile,
+      cwd: info.cwd
+    })
+    return true
   }
 
   // CC§1
@@ -525,7 +566,7 @@ export class ClaudeBackend implements SessionBackend {
     if (prevId && nextId && nextId !== prevId) {
       if (tracker.remoteOf(obj.tabId)) tracker.setRemoteTmuxName(obj.tabId, tmuxSessionName(nextId))
       workspaces?.onSessionRebind(prevId, nextId, obj.source || '')
-      if (obj.source === 'clear') {
+      if (replacesTheConversation(obj.source || '')) {
         workspaces?.dropOwnership(prevId)
       }
     }
@@ -690,6 +731,8 @@ export class ClaudeBackend implements SessionBackend {
     })
     if (!plan.ok) return plan
     const machine = plan.machine
+    const agentPlugin =
+      !machine && this.agentPlugin && loadSettings().agentTools ? this.agentPlugin : undefined
     const handle = this.d.pty.create({
       kind: 'claude',
       cwd: plan.spawnCwd,
@@ -702,7 +745,7 @@ export class ClaudeBackend implements SessionBackend {
       },
       resumeSessionId: spec.resumeSessionId,
       shell: plan.shell,
-      extraEnv: plan.extraEnv
+      extraEnv: agentPlugin ? { ...plan.extraEnv, KOLOFT_AGENT_PLUGIN: agentPlugin } : plan.extraEnv
     })
     if (machine) {
       tracker.track(handle.id, machine.cwd, machine.tracking)
@@ -724,6 +767,26 @@ export class ClaudeBackend implements SessionBackend {
   private forgetHookReports(dir: string, tabId: string): void {
     fs.rmSync(path.join(dir, `${tabId}.json`), { force: true })
     this.dropStatusLog(dir, tabId)
+  }
+}
+
+const TRANSCRIPT_TAIL_BYTES_HOLDING_THE_LAST_RECORD = 8192
+
+function transcriptEnding(file: string): { exists: boolean; continuedIn?: string } {
+  let fd: number
+  try {
+    fd = fs.openSync(file, 'r')
+  } catch {
+    return { exists: false }
+  }
+  try {
+    const size = fs.fstatSync(fd).size
+    const length = Math.min(size, TRANSCRIPT_TAIL_BYTES_HOLDING_THE_LAST_RECORD)
+    const buf = Buffer.alloc(length)
+    fs.readSync(fd, buf, 0, length, size - length)
+    return { exists: true, continuedIn: continuedInOf(buf.toString('utf8')) }
+  } finally {
+    fs.closeSync(fd)
   }
 }
 

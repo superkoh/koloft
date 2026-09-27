@@ -5079,7 +5079,8 @@ input.switch:focus-visible {
   color: var(--accent);
   font-weight: 600;
 }
-.ws-tab-cron {
+.ws-tab-cron,
+.ws-tab-opened {
   flex: 0 0 auto;
   display: flex;
   color: var(--accent);

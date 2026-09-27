@@ -7,7 +7,15 @@ import {
 import { SessionBackendIcon } from './SessionBackendIcon'
 import { useCallback, useEffect, useRef, useState, type JSX, type MouseEvent } from 'react'
 import { GoGitBranch } from 'react-icons/go'
-import { LuAlarmClock, LuFolder, LuFolderOpen, LuGitBranchPlus, LuPlus, LuX } from 'react-icons/lu'
+import {
+  LuAlarmClock,
+  LuFileText,
+  LuFolder,
+  LuFolderOpen,
+  LuGitBranchPlus,
+  LuPlus,
+  LuX
+} from 'react-icons/lu'
 import type { BackendId, SessionRow } from '@shared/types'
 import type { DirtyTab } from '../unsavedGuard'
 import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
@@ -101,6 +109,19 @@ function cardPosFor(el: HTMLElement): { left: number; top: number } {
     left: popoverX(r.left + r.width / 2, FRESH_POP_W, window.innerWidth),
     top: Math.min(r.bottom + 6, Math.max(4, window.innerHeight - FRESH_POP_H - 4))
   }
+}
+
+function UnseenFileMark({ tabId }: { tabId: string }): JSX.Element | null {
+  const src = useStore((s) => (s.openFiles[tabId]?.unseen ? s.openFiles[tabId]?.src : undefined))
+  if (!src) return null
+  return (
+    <span
+      className="ws-tab-opened"
+      title={`${basename(src)} was opened here — select this session to see it`}
+    >
+      <LuFileText size={12} />
+    </span>
+  )
 }
 
 export function WorkspaceSidebar({
@@ -853,6 +874,7 @@ export function WorkspaceSidebar({
                                   : row.title}
                               </i>
                             </span>
+                            {tabId && <UnseenFileMark tabId={tabId} />}
                             {badge && (
                               <button
                                 className="ws-tab-parked"

@@ -498,6 +498,17 @@ describe('injected hook script', () => {
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).not.toHaveProperty('statusLine')
   })
 
+  // CC§13
+  it('lets the koloft command run without asking only when agent tools are on, and never puts that rule in the settings a remote tab shares', () => {
+    const read = (file: string): Record<string, unknown> =>
+      JSON.parse(fs.readFileSync(file, 'utf8'))
+    expect(read(writeTabHookSettings(setupHooks(), 'tabAG1', undefined, true)).permissions).toEqual(
+      { allow: ['Bash(koloft *)'] }
+    )
+    expect(read(writeTabHookSettings(setupHooks(), 'tabAG2'))).not.toHaveProperty('permissions')
+    expect(hookSettings('/x/hook.sh', '/x/reg', 'tabAG3')).not.toHaveProperty('permissions')
+  })
+
   describe('U-HOOK-2: settings for a tab running on another machine', () => {
     const machine = remoteMachineDir('m-abc123')
     const build = (): Record<string, unknown> =>

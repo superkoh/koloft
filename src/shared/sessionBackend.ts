@@ -34,6 +34,7 @@ export interface Capabilities {
   accounts: Capability
   scheduledTasks: Capability
   agentOpen: Capability
+  agentTools: Capability
   browserControl: Capability
   filesTouched: Capability
   statusline3: Capability
@@ -48,6 +49,7 @@ const EVERYTHING: Capabilities = {
   accounts: true,
   scheduledTasks: true,
   agentOpen: true,
+  agentTools: true,
   browserControl: true,
   filesTouched: true,
   statusline3: true,
@@ -60,6 +62,7 @@ const NOTHING_YET: Capabilities = {
   accounts: PENDING,
   scheduledTasks: PENDING,
   agentOpen: PENDING,
+  agentTools: PENDING,
   browserControl: PENDING,
   filesTouched: PENDING,
   statusline3: PENDING,
@@ -72,6 +75,7 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities | 'refused'>> 
     ssh: {
       ...EVERYTHING,
       agentOpen: PENDING,
+      agentTools: PENDING,
       browserControl: PENDING,
       rename: PENDING
     }
