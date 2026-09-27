@@ -14,7 +14,7 @@ const TEAMMATE_QUIET_MS = 500
 const PROCS_SCAN_MS = 100
 const IDLE_MS = 2000
 const IDLE_CLOSE_MS = 400
-const TRUNCATION_SEEN_BY_500_MS_WATCH_TICK_PLUS_RECONCILE_MS = 1500
+const ACK_AGE_PAST_THE_TRUNCATION_TICK_YET_INSIDE_ITS_SILENCE_CAP_MS = SILENCE_MS - 400
 
 let SessionTracker: typeof import('../../src/main/sessionTracker').SessionTracker
 let encodeCwd: typeof import('../../src/main/sessionTracker').encodeCwd
@@ -640,6 +640,7 @@ describe('run-state vs background work: any live background task keeps the sessi
     const file = await bindCaughtUp(tracker, 'tabB17', cwd, initialLines(cwd))
     tracker.setStatus('tabB17', 'working')
 
+    const ackAt = Date.now()
     const ack = spawnRec('toolu_keep', cwd)
     const padding = {
       type: 'assistant',
@@ -655,7 +656,7 @@ describe('run-state vs background work: any live background task keeps the sessi
       file,
       [...initialLines(cwd), ack].map((l) => JSON.stringify(l)).join('\n') + '\n'
     )
-    await sleep(TRUNCATION_SEEN_BY_500_MS_WATCH_TICK_PLUS_RECONCILE_MS)
+    await sleep(ackAt + ACK_AGE_PAST_THE_TRUNCATION_TICK_YET_INSIDE_ITS_SILENCE_CAP_MS - Date.now())
     expect(status(tracker, 'tabB17')).toBe('working')
 
     appendJsonl(file, [notifRec('toolu_keep', cwd)])
