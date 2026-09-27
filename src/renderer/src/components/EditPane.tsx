@@ -33,12 +33,13 @@ import {
   setText,
   subscribeDirty
 } from '../editRegistry'
-import { EDIT_WRITE_MAX_BYTES } from '@shared/editLimits'
+import { EDIT_OPEN_MAX_BYTES, EDIT_WRITE_MAX_BYTES, sizeLabel } from '@shared/editLimits'
 
 const CARET_READOUT_THROTTLE_MS = 100
 
 function reasonSentence(readOnly: string | null, failure: string): string {
-  if (failure.includes('KOLOFT_TOO_LARGE')) return 'Too large to edit here (limit 512 KB)'
+  if (failure.includes('KOLOFT_TOO_LARGE'))
+    return `Too large to edit here (limit ${sizeLabel(EDIT_OPEN_MAX_BYTES)})`
   if (failure.includes('KOLOFT_BINARY')) return 'Not a text file'
   if (failure.includes('KOLOFT_NOT_FILE')) return 'Not a plain file'
   if (failure.includes('KOLOFT_GONE')) return 'This file is not there any more'
@@ -432,7 +433,9 @@ export function EditPane({
         </span>
         <span className="ed-eol">{entry?.eol === 'crlf' ? 'CRLF' : 'LF'}</span>
         <span className="right">
-          {tooBig && <span className="ed-warn">Over the 1 MB save limit</span>}
+          {tooBig && (
+            <span className="ed-warn">Over the {sizeLabel(EDIT_WRITE_MAX_BYTES)} save limit</span>
+          )}
           {entry?.error && <span className="ed-warn">{entry.error}</span>}
           {saving ? (
             <span className="ed-saving">Saving…</span>

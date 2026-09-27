@@ -3,8 +3,8 @@ import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { EDIT_OPEN_MAX_BYTES, createFile, openForEdit, writeText } from '../../src/main/fileEdit'
-import { EDIT_WRITE_MAX_BYTES } from '@shared/editLimits'
+import { createFile, openForEdit, writeText } from '../../src/main/fileEdit'
+import { EDIT_OPEN_MAX_BYTES, EDIT_WRITE_MAX_BYTES, sizeLabel } from '@shared/editLimits'
 
 let dir: string
 let file: string
@@ -94,10 +94,12 @@ describe('openForEdit', () => {
     expect(() => openForEdit(file, 60)).not.toThrow()
   })
 
-  it('caps opening at 512 KB, well under the 1 MB write cap', () => {
+  it('caps opening at 512 KB, well under the 1 MB write cap, and names each cap in whole units', () => {
     expect(EDIT_OPEN_MAX_BYTES).toBe(512 * 1024)
     expect(EDIT_WRITE_MAX_BYTES).toBe(1024 * 1024)
     expect(EDIT_WRITE_MAX_BYTES).toBeGreaterThan(EDIT_OPEN_MAX_BYTES)
+    expect(sizeLabel(EDIT_OPEN_MAX_BYTES)).toBe('512 KB')
+    expect(sizeLabel(EDIT_WRITE_MAX_BYTES)).toBe('1 MB')
   })
 
   it('throws KOLOFT_GONE / KOLOFT_NOT_FILE / KOLOFT_BINARY for what it cannot open', () => {
