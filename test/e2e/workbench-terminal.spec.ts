@@ -366,7 +366,7 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
       await expect(panelTerm(page)).toContainText(`WT08_STILL_${pid}`, { timeout: 25_000 })
     })
 
-    test('T-WT-09: `open` from a shell lands in ITS OWN session’s Files, after a switch away', async ({
+    test('T-WT-09: `open` from a shell lands in ITS OWN session’s Files, after a switch away, without pulling you back', async ({
       app,
       page,
       env
@@ -384,7 +384,11 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
       )
       await startSessionIn(page, 'ws-b')
 
-      await expect(wsRows(page, 'ws-a').first()).toHaveClass(/\bactive\b/, { timeout: 45_000 })
+      const rowA = wsRows(page, 'ws-a').first()
+      await expect(rowA.locator('.ws-tab-opened')).toHaveCount(1, { timeout: 45_000 })
+      await expect(wsRows(page, 'ws-b').first()).toHaveClass(/\bactive\b/)
+      await rowA.click()
+      await expect(rowA).toHaveClass(/\bactive\b/)
       await expect(page.locator(WORKBENCH.readingTitle)).toHaveText('README.md', {
         timeout: 30_000
       })
