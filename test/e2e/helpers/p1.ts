@@ -158,10 +158,10 @@ function seedOwnership(env: E2EEnv, id: string): void {
   const file = path.join(env.userData, 'layout.json')
   const layout = fs.existsSync(file)
     ? (JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>)
-    : { version: 4, workspaces: [], workbench: { defaultOpen: true }, sessions: {} }
-  const sessions = (layout.sessions ?? {}) as Record<string, unknown>
-  sessions[id] = { open: true, tabs: [] }
-  layout.sessions = sessions
+    : { version: 6, workspaces: [], workbench: { defaultOpen: true }, members: [], panels: {} }
+  const panels = (layout.panels ?? {}) as Record<string, unknown>
+  panels[id] = { open: true, tabs: [] }
+  layout.panels = panels
   layout.members = withMember(layout.members, id)
   fs.writeFileSync(file, JSON.stringify(layout, null, 2))
 }
@@ -268,7 +268,7 @@ export interface LayoutOnDisk {
   workspaces?: { path: string }[]
   workbench?: { defaultOpen: boolean }
   members?: string[]
-  sessions?: Record<string, SessionWorkbenchState>
+  panels?: Record<string, SessionWorkbenchState>
   globalTerminal?: { visible: boolean; tabs: { title: string; cwd: string }[] }
   [key: string]: unknown
 }
@@ -308,7 +308,7 @@ export function seedGlobalTerm(
   const file = path.join(env.userData, 'layout.json')
   const layout = fs.existsSync(file)
     ? (JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>)
-    : { version: 4, workspaces: [], workbench: { defaultOpen: true }, sessions: {} }
+    : { version: 6, workspaces: [], workbench: { defaultOpen: true }, members: [], panels: {} }
   layout.globalTerminal = state
   fs.writeFileSync(file, JSON.stringify(layout, null, 2))
 }

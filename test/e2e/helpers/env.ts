@@ -121,10 +121,11 @@ export function setupE2EEnv(): E2EEnv {
   fs.writeFileSync(
     path.join(userData, 'layout.json'),
     JSON.stringify({
-      version: 4,
+      version: 6,
       workspaces: [{ path: workspaces.a }, { path: workspaces.b }],
       workbench: SPEC_OPT_IN_PANEL_EXPANDED_NOT_SHIPPED_DEFAULT,
-      sessions: {}
+      members: [],
+      panels: {}
     })
   )
 
@@ -180,6 +181,14 @@ export function seedSettings(env: E2EEnv, patch: Record<string, unknown>): void 
     ? (JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>)
     : {}
   fs.writeFileSync(file, JSON.stringify({ ...current, ...patch }, null, 2))
+}
+
+export function installCodex(env: E2EEnv): void {
+  const binary = path.join(env.fakeBin, 'codex')
+  fs.symlinkSync(path.join(__dirname, '..', 'fixtures', 'fake-codex.js'), binary)
+  env.launchEnv.KOLOFT_CODEX_CMD = binary
+  env.launchEnv.CODEX_HOME = path.join(env.home, '.codex')
+  fs.writeFileSync(path.join(env.home, '.zprofile'), `export PATH="${env.fakeBin}:$PATH"\n`)
 }
 
 export function setGuestLimit(env: E2EEnv, limit: number): void {
