@@ -34,12 +34,7 @@ import {
 } from '@shared/sessionBackend'
 import { AttentionTracker, type AttentionContext } from './attention'
 import { route, dockBadgeText } from './notifyRouter'
-import {
-  setupShim,
-  UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE,
-  UTIL_TERMINAL_REFUSES_INTERACTIVE_CODEX,
-  utilTerminalGuard
-} from './shim'
+import { setupShim, utilTerminalGuard } from './shim'
 import { openDropTarget, type OpenDrop } from './openDrop'
 import { openUrlExternally, osOpenFallback } from './osOpen'
 import {
@@ -472,11 +467,8 @@ function machinePackage(): MachinePackage {
     'hook.sh': HOOK_SCRIPT,
     'tmux.conf': TMUX_CONF,
     'util.sh': UTIL_SH,
-    [`${UTIL_BIN_DIR}claude`]: utilTerminalGuard(
-      'claude',
-      UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE
-    ),
-    [`${UTIL_BIN_DIR}codex`]: utilTerminalGuard('codex', UTIL_TERMINAL_REFUSES_INTERACTIVE_CODEX)
+    [`${UTIL_BIN_DIR}claude`]: utilTerminalGuard('claude'),
+    [`${UTIL_BIN_DIR}codex`]: utilTerminalGuard('codex')
   }
   try {
     pkgFiles['statusline/ccstatusline.js'] = fs.readFileSync(bundlePath())

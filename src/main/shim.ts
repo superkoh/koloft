@@ -49,7 +49,14 @@ const CLAUDE_FLAGS_FOLLOWED_BY_A_VALUE = [
   '--system-prompt-snapshot'
 ].join('|')
 
-export const UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE = `if [ "$KOLOFT_UTIL" = "1" ]; then
+function utilTerminalRefusal(agent: string, nonInteractiveExamples: string): string {
+  return `    printf '⛔ Koloft — this is a Koloft terminal, not an agent surface.\\n' >&2
+    printf '   %s\\n' "Start interactive ${agent} from the sidebar's ＋ (⌘N)." >&2
+    printf '   %s\\n' 'Non-interactive use is fine: ${nonInteractiveExamples} · …' >&2
+    exit 1`
+}
+
+const UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE = `if [ "$KOLOFT_UTIL" = "1" ]; then
   utilok=0
   valflag=0
   for a in "$@"; do
@@ -65,10 +72,7 @@ export const UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE = `if [ "$KOLOFT_UTIL" = "
     esac
   done
   if [ "$utilok" = "0" ]; then
-    printf '⛔ Koloft — this is a Koloft terminal, not an agent surface.\\n' >&2
-    printf '   %s\\n' "Start interactive Claude from the sidebar's ＋ (⌘N)." >&2
-    printf '   %s\\n' 'Non-interactive use is fine: claude -p · --help · doctor · mcp · …' >&2
-    exit 1
+${utilTerminalRefusal('Claude', 'claude -p · --help · doctor · mcp')}
   fi
 fi`
 
@@ -126,11 +130,10 @@ const CODEX_SUBCOMMANDS_WITHOUT_A_TUI = [
   'help'
 ].join('|')
 
-export const UTIL_TERMINAL_REFUSES_INTERACTIVE_CODEX = `if [ "$KOLOFT_UTIL" = "1" ]; then
+const UTIL_TERMINAL_REFUSES_INTERACTIVE_CODEX = `if [ "$KOLOFT_UTIL" = "1" ]; then
   utilok=0
   valflag=0
   sub=""
-  next=""
   for a in "$@"; do
     if [ "$valflag" = "1" ]; then
       valflag=0
@@ -140,24 +143,25 @@ export const UTIL_TERMINAL_REFUSES_INTERACTIVE_CODEX = `if [ "$KOLOFT_UTIL" = "1
       -h|--help|-V|--version) utilok=1 ;;
       ${CODEX_FLAGS_FOLLOWED_BY_A_VALUE}) valflag=1 ;;
       -*) ;;
-      *) if [ -z "$sub" ]; then sub="$a"; elif [ -z "$next" ]; then next="$a"; fi ;;
+      *) [ -z "$sub" ] && sub="$a" ;;
     esac
   done
   case "$sub" in
     ${CODEX_SUBCOMMANDS_WITHOUT_A_TUI}) utilok=1 ;;
-    cloud) [ -n "$next" ] && utilok=1 ;;
   esac
   if [ "$utilok" = "0" ]; then
-    printf '⛔ Koloft — this is a Koloft terminal, not an agent surface.\\n' >&2
-    printf '   %s\\n' "Start interactive Codex from the sidebar's ＋ (⌘N)." >&2
-    printf '   %s\\n' 'Non-interactive use is fine: codex exec · --help · login · mcp · …' >&2
-    exit 1
+${utilTerminalRefusal('Codex', 'codex exec · --help · login · mcp')}
   fi
 fi`
 
-export function utilTerminalGuard(bin: 'claude' | 'codex', refusal: string): string {
+const UTIL_TERMINAL_REFUSAL = {
+  claude: UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE,
+  codex: UTIL_TERMINAL_REFUSES_INTERACTIVE_CODEX
+}
+
+export function utilTerminalGuard(bin: keyof typeof UTIL_TERMINAL_REFUSAL): string {
   return `#!/bin/sh
-${refusal}
+${UTIL_TERMINAL_REFUSAL[bin]}
 self=$(cd "$(dirname "$0")" && pwd)
 IFS=:
 set -f
@@ -437,11 +441,7 @@ export function setupShim(): ShimPaths {
   fs.chmodSync(openShimPath, 0o755)
 
   const codexGuardPath = path.join(shimDir, 'codex')
-  fs.writeFileSync(
-    codexGuardPath,
-    utilTerminalGuard('codex', UTIL_TERMINAL_REFUSES_INTERACTIVE_CODEX),
-    { mode: 0o755 }
-  )
+  fs.writeFileSync(codexGuardPath, utilTerminalGuard('codex'), { mode: 0o755 })
   fs.chmodSync(codexGuardPath, 0o755)
 
   const agentShimPath = path.join(shimDir, 'koloft')

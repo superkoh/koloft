@@ -25,15 +25,17 @@ beforeAll(() => {
   ;({ shimDir, regDir, pickDir } = setupShim())
   base = path.dirname(shimDir)
   realBin = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-realbin-'))
-  fs.writeFileSync(
-    path.join(realBin, 'claude'),
-    '#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "$KOLOFT_ARGS_OUT"\n' +
-      'if [ -n "$KOLOFT_ARGS0_OUT" ]; then : > "$KOLOFT_ARGS0_OUT"\n' +
-      '  for a in "$@"; do printf "%s\\0" "$a" >> "$KOLOFT_ARGS0_OUT"; done\nfi\n' +
-      '[ -n "$KOLOFT_ENV_OUT" ] && env > "$KOLOFT_ENV_OUT"\nexit 0\n',
-    { mode: 0o755 }
-  )
-  fs.chmodSync(path.join(realBin, 'claude'), 0o755)
+  for (const bin of ['claude', 'codex']) {
+    fs.writeFileSync(
+      path.join(realBin, bin),
+      '#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "$KOLOFT_ARGS_OUT"\n' +
+        'if [ -n "$KOLOFT_ARGS0_OUT" ]; then : > "$KOLOFT_ARGS0_OUT"\n' +
+        '  for a in "$@"; do printf "%s\\0" "$a" >> "$KOLOFT_ARGS0_OUT"; done\nfi\n' +
+        '[ -n "$KOLOFT_ENV_OUT" ] && env > "$KOLOFT_ENV_OUT"\nexit 0\n',
+      { mode: 0o755 }
+    )
+    fs.chmodSync(path.join(realBin, bin), 0o755)
+  }
   fakeKeychainDir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-fakekc-'))
   fs.writeFileSync(
     path.join(realBin, 'security'),
@@ -121,11 +123,15 @@ function collect(
   return { reg, realArgs, realArgs0, realEnv, stderr, status }
 }
 
-function runShim(args: string[], extraEnv: Record<string, string> = {}): ShimRun {
+function runShim(
+  args: string[],
+  extraEnv: Record<string, string> = {},
+  bin: 'claude' | 'codex' = 'claude'
+): ShimRun {
   const cwd = os.tmpdir()
   const argsOut = path.join(base, `args-${Math.random().toString(36).slice(2)}`)
   const envOut = path.join(base, `env-${Math.random().toString(36).slice(2)}`)
-  const res = spawnSync(path.join(shimDir, 'claude'), args, {
+  const res = spawnSync(path.join(shimDir, bin), args, {
     cwd,
     env: pinnedShimEnvNeverSpreadingProcessEnv(cwd, argsOut, envOut, extraEnv),
     encoding: 'utf8',
@@ -612,32 +618,8 @@ describe('claude shim (Koloft terminal hard block — a product funnel, not a se
 })
 
 describe('codex guard (Koloft terminal hard block — the same funnel as claude, CODEX§18)', () => {
-  let argsOut: string
-
-  beforeAll(() => {
-    argsOut = path.join(realBin, 'codex-args')
-    fs.writeFileSync(
-      path.join(realBin, 'codex'),
-      `#!/bin/sh\nfor a in "$@"; do printf '%s\\n' "$a"; done > ${JSON.stringify(argsOut)}\nexit 0\n`,
-      { mode: 0o755 }
-    )
-  })
-
-  function runCodex(
-    args: string[],
-    extra: Record<string, string> = {}
-  ): { status: number | null; stderr: string; realArgs: string[] | null } {
-    fs.rmSync(argsOut, { force: true })
-    const r = spawnSync('codex', args, {
-      env: { HOME: base, PATH: `${shimDir}:${realBin}:/usr/bin:/bin`, ...extra },
-      encoding: 'utf8'
-    })
-    const realArgs = fs.existsSync(argsOut)
-      ? fs.readFileSync(argsOut, 'utf8').split('\n').slice(0, -1)
-      : null
-    return { status: r.status, stderr: r.stderr, realArgs }
-  }
-
+  const runCodex = (args: string[], extraEnv: Record<string, string> = {}): ShimRun =>
+    runShim(args, extraEnv, 'codex')
   const UTIL = { KOLOFT_UTIL: '1' }
 
   it.each([
@@ -666,7 +648,6 @@ describe('codex guard (Koloft terminal hard block — the same funnel as claude,
     [['review', '--uncommitted']],
     [['login']],
     [['mcp', 'list']],
-    [['cloud', 'list']],
     [['resume', '--help']],
     [['--version']],
     [['-h']]

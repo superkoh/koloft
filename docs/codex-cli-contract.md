@@ -612,8 +612,8 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
 ## 18. Which command lines open the full-screen TUI
 
 **Read on 2026-09-27 from `codex --help` and each subcommand's `--help`, standalone Codex
-CLI 0.153.4.** Koloft's Workbench terminal uses this to refuse only the forms that open
-Codex's own full-screen screen.
+CLI 0.153.4.** Koloft's Workbench terminal uses this to tell a command that opens
+Codex's own full-screen screen from one that prints and exits.
 
 - **Bare `codex`, or `codex <prompt>`, opens the TUI** ("If no subcommand is specified,
   options will be forwarded to the interactive CLI").
