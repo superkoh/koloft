@@ -104,9 +104,10 @@ clear the quarantine flag once: `xattr -dr com.apple.quarantine /Applications/Ko
 session under `~/.claude/projects/<encoded-cwd>/<uuid>.jsonl`. Koloft reads that tree for
 every pinned workspace (its root checkout plus its git worktrees) to build the sidebar:
 title, last activity, which files were written. Codex keeps its sessions under its own
-home (`~/.codex`, or the account's `CODEX_HOME` when Koloft picked a Codex account), and Koloft asks Codex for each home's list (`codex app-server`, `thread/list`). Koloft never keeps a second copy of a
-local session; a remote workspace's transcripts are mirrored to this Mac so the sidebar
-can read them.
+home (`~/.codex`, or the account's `CODEX_HOME` when Koloft picked a Codex account),
+and Koloft asks Codex for each home's list (`codex app-server`, `thread/list`). Koloft
+never keeps a second copy of a local session; a remote workspace's transcripts are
+mirrored to this Mac so the sidebar can read them.
 
 **Claude launches are bound through Claude Code's own hooks.** Every `claude` Koloft
 starts gets a per-session `--settings` file that injects `SessionStart`, `SessionEnd`,

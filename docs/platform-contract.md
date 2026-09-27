@@ -16,8 +16,8 @@ method. A recheck adds its date, version and command to the bullet.
   the user's shell one. PATH is only `/usr/bin:/bin:/usr/sbin:/sbin`. `/usr/bin/git` is
   always on it, but on a Mac without the Xcode Command Line Tools it is only a stub that
   fails or offers an install dialog (inferred, not checked). Homebrew tools like `gh`,
-  and a `claude` found on a developer's PATH, are not found at all (ENOENT, the "no such file" error). Either kind
-  of failure shows no error in the app.
+  and a `claude` found on a developer's PATH, are not found at all (ENOENT, the "no such
+  file" error). Either kind of failure shows no error in the app.
 - No locale is set either, so a shell started from the app runs in the C locale: CJK
   text is garbled and wcwidth counts a wide character as 1 cell, which breaks the
   layout of Claude Code's TUI (text user interface).
@@ -895,8 +895,7 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   `~/.cache/ccstatusline/git-review/*.json`, stale when `now - mtime > 30 000 ms`; a
   `*.json.lock` younger than 30 s stops a refresh (`CACHE_TTL = 30000`,
   `REFRESH_LOCK_STALE_MS = 30000` in the 2.2.30 bundle, read 2026-09-24). Each
-  statusline render starts ccstatusline's own background `gh` fetch (CC§6 says when
-  renders happen).
+  statusline render starts ccstatusline's own background `gh` fetch.
 - **Parsing the 3 MB bundle is most of each render's cost** (2.2.30's
   `dist/ccstatusline.js` is 3 018 224 bytes); `NODE_COMPILE_CACHE` removes it.
 - **Its stdout is a pipe**, so it sizes flex layouts only from `CCSTATUSLINE_WIDTH`.

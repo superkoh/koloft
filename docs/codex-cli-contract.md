@@ -379,11 +379,12 @@ apply to it. Checked 2026-09-25 in a real turn: a shim folder put first in the
 app-server's `PATH` lost to `/usr/bin/open`, and with the wrapper's `ZDOTDIR` in the
 app-server environment the turn found the shim, with the user's own `PATH` additions
 kept. The app-server hands `PATH` and `ZDOTDIR` from its own environment to the turn's
-shell unchanged (both showed up in `echo "$PATH"` and in the shim's log). The shim ran (`status: "completed"`,
-`exitCode: 0`) and could write under the turn's folder and under `/tmp` but not under
-`~/Library/Application Support` (`Operation not permitted`). Under `read-only` the shim
-could write nowhere, in the folder or `/tmp`. Not probed yet: a user whose login shell
-is not zsh (for bash or fish `ZDOTDIR` means nothing, **inferred, not checked**).
+shell unchanged (both showed up in `echo "$PATH"` and in the shim's log). The shim ran
+(`status: "completed"`, `exitCode: 0`) and could write under the turn's folder and under
+`/tmp` but not under `~/Library/Application Support` (`Operation not permitted`). Under
+`read-only` the shim could write nowhere, in the folder or `/tmp`. Not probed yet: a
+user whose login shell is not zsh (for bash or fish `ZDOTDIR` means nothing,
+**inferred, not checked**).
 
 So Koloft handles an `open` three ways. Under `workspace-write` and `danger-full-access`
 its own shim (put first through `ZDOTDIR`) writes the request into `/tmp`, never runs the

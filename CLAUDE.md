@@ -4,8 +4,9 @@ Koloft is an Electron app that runs and manages Claude Code and Codex (the `clau
 `codex` command-line tools, via node-pty). The one core idea: the user picks a
 **workspace** and starts or resumes **Claude Code or Codex sessions** in it; Koloft lists
 those sessions straight from each tool's own storage (`~/.claude/projects`; for Codex,
-`thread/list` on each `CODEX_HOME`'s app-server, `docs/codex-cli-contract.md` §1, §15) and hangs one helper panel — the Workbench: changed
-files, a file browser, web pages, a shell — off each session, and one plain-text note
+`thread/list` on each `CODEX_HOME`'s app-server, `docs/codex-cli-contract.md` §1, §15)
+and hangs one helper panel — the Workbench: changed files, a file browser, web pages,
+a shell — off each session, and one plain-text note
 off each workspace (the Notes island under the sessions list; the Workbench is the
 session's, the note is the workspace's).
 A session tab is not a session: the tab is the terminal `claude` or `codex` runs in, and
@@ -163,8 +164,8 @@ Working principles:
   finding — a handful per phase — and say how many before launching. Every brief and
   every Workflow step prompt starts with the shell-rule block below, word for word:
   an Explore agent never sees this file, and agents whose brief lacked the block
-  were refused 2–3 times as often (211 agent transcripts, 2026-09-18…26). An agent writes only patches or code, in a
-  scratchpad folder of its own.
+  were refused 2–3 times as often (211 agent transcripts, 2026-09-18…26). An agent
+  writes only patches or code, in a scratchpad folder of its own.
 - Hand-testing on a real machine is driven one case at a time through
   AskUserQuestion, never as a wall of text. The steps to carry out go inside the
   question; the options are the outcomes to choose between (what passed, what broke,

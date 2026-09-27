@@ -360,8 +360,6 @@ script (marked `CC§5`); `src/main/hookRouting.ts`.
   the command's stdin and **treats stdout-pipe EOF as "render done"** — any orphaned
   process holding the pipe's write end delays the visible render for its full lifetime
   (measured: 10.06 s → 0.83 s cold / 0.18 s warm once no orphan held the pipe).
-- **After a tool result Claude Code re-renders the statusline within about 300 ms**
-  (inferred, not checked — no date, version or method recorded).
 - statusLine (like hooks) only runs after the workspace trust dialog is accepted, and
   `disableAllHooks: true` turns off both statusLine and hooks.
 - CC also supports `subagentStatusLine` (the key is in the 2.1.281 binary, `strings`,
@@ -602,8 +600,9 @@ the prompt must ride stdin or `--allowedTools` swallows it). Koloft dependents: 
 
 How established (unless a bullet names its own date or says inferred): live pty runs
 of the real binary on 2026-09-03, CC 2.1.259, on a throwaway one-commit git repo, with
-an own `--settings` hook file logging `SessionStart / UserPromptSubmit / Stop / SessionEnd` with millisecond stamps,
-and the resulting `~/.claude/projects/<slug>/<id>.jsonl` read back record by record.
+an own `--settings` hook file logging `SessionStart / UserPromptSubmit / Stop /
+SessionEnd` with millisecond stamps, and the resulting
+`~/.claude/projects/<slug>/<id>.jsonl` read back record by record.
 Probes P1–P7. Flag spellings quoted from `claude --help` of the same build.
 
 Re-checked on 2026-09-06, CC 2.1.263, same throwaway-repo pty setup, six runs, each
@@ -786,8 +785,8 @@ re-measured against a running install.
   Measured 2026-09-08, CC 2.1.263, Ubuntu 24.04 container.
 
 Koloft dependents: `ensure.sh` in `src/main/remote/install.ts` (installs bash first —
-through `sudo` unless root or Homebrew — pipes the install script to plain `bash`, never through
-`sudo`, and treats node as a separate, non-fatal step); `tabs/<tab>.sh` in
+through `sudo` unless root or Homebrew — pipes the install script to plain `bash`,
+never through `sudo`, and treats node as a separate, non-fatal step); `tabs/<tab>.sh` in
 `src/main/remote/launch.ts`, only when Koloft itself supplied the login, writes the
 onboarding flag and runs `claude -p ok --max-turns 1` once when
 `cachedGrowthBookFeatures` is missing.
