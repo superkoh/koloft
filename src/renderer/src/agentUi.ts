@@ -11,12 +11,12 @@ export function isSessionKind(kind?: TabKind | string): kind is BackendId {
 // PLATFORM§6
 const ELECTRON_INVOKE_ERROR_PREAMBLE = /^Error invoking remote method '[^']*': Error: /
 
-export function ipcErrorText(message: string): string {
-  return message.replace(ELECTRON_INVOKE_ERROR_PREAMBLE, '')
+export function ipcErrorText(e: unknown): string {
+  return (e instanceof Error ? e.message : String(e)).replace(ELECTRON_INVOKE_ERROR_PREAMBLE, '')
 }
 
 export function launchErrorMessage(e: unknown): string {
-  return e instanceof Error ? ipcErrorText(e.message) : 'Could not start session.'
+  return e instanceof Error ? ipcErrorText(e) : 'Could not start session.'
 }
 
 // ADR-0025

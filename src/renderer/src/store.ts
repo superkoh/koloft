@@ -216,10 +216,6 @@ export function tabEvictedNotice(title: string): string {
   return `Closed ${title} — ${KIND_TAB_CAP} tabs is this session's limit per kind`
 }
 
-function ipcErrMessage(e: unknown): string {
-  return ipcErrorText(e instanceof Error ? e.message : String(e))
-}
-
 const everBoundSession = new Set<string>()
 const lastSessionId = new Map<string, string>()
 const restarting = new Set<string>()
@@ -909,7 +905,7 @@ export const useStore = create<AppState>((set, get) => ({
       )
       .catch((e) =>
         set((s) =>
-          s.update.open ? { update: { ...s.update, phase: 'error', error: ipcErrMessage(e) } } : {}
+          s.update.open ? { update: { ...s.update, phase: 'error', error: ipcErrorText(e) } } : {}
         )
       )
   },
@@ -941,7 +937,7 @@ export const useStore = create<AppState>((set, get) => ({
         }
       })
       .catch((e) =>
-        set((s) => ({ update: { ...s.update, phase: 'error', error: ipcErrMessage(e) } }))
+        set((s) => ({ update: { ...s.update, phase: 'error', error: ipcErrorText(e) } }))
       )
   },
   setUpdate: (patch) => {
