@@ -206,7 +206,7 @@ test.describe('Workbench titlebar toggle, and the panel seam with the retired au
       const row = wsRows(page2, 'ws-a').first()
       await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
 
-      await expect.poll(() => layoutOnDisk(env).version, { timeout: 30_000 }).toBe(4)
+      await expect.poll(() => layoutOnDisk(env).version, { timeout: 30_000 }).toBe(6)
       const upgraded = layoutOnDisk(env)
       expect(upgraded).not.toHaveProperty('aux')
       expect(upgraded).not.toHaveProperty('globalTerminal')

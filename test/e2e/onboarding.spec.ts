@@ -17,7 +17,13 @@ const BEAT_FOR_A_MODAL_THAT_MUST_NOT_OPEN_MS = 3000
 function firstRun(env: E2EEnv, settings: Record<string, unknown> = {}): void {
   fs.writeFileSync(
     path.join(env.userData, 'layout.json'),
-    JSON.stringify({ version: 4, workspaces: [], workbench: { defaultOpen: true }, sessions: {} })
+    JSON.stringify({
+      version: 6,
+      workspaces: [],
+      workbench: { defaultOpen: true },
+      members: [],
+      panels: {}
+    })
   )
   seedSettings(env, { onboardingSeen: false, ...settings })
 }
