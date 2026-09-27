@@ -1,5 +1,5 @@
 import { BACKEND_LABEL, identityOf } from '@shared/sessionBackend'
-import { hasWorkbench, isSessionKind } from './agentUi'
+import { hasWorkbench, ipcErrorText, isSessionKind } from './agentUi'
 import { create } from 'zustand'
 import {
   DEFAULT_SETTINGS,
@@ -216,13 +216,8 @@ export function tabEvictedNotice(title: string): string {
   return `Closed ${title} — ${KIND_TAB_CAP} tabs is this session's limit per kind`
 }
 
-const IPC_INVOKE_ERROR_PREFIX = 'Error: '
-
-// PLATFORM§6
 function ipcErrMessage(e: unknown): string {
-  const msg = e instanceof Error ? e.message : String(e)
-  const i = msg.lastIndexOf(IPC_INVOKE_ERROR_PREFIX)
-  return i >= 0 ? msg.slice(i + IPC_INVOKE_ERROR_PREFIX.length) : msg
+  return ipcErrorText(e instanceof Error ? e.message : String(e))
 }
 
 const everBoundSession = new Set<string>()
