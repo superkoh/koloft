@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto'
 import { execFileSync } from 'child_process'
 import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { seedSettings, type E2EEnv } from './helpers/env'
+import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
 import { WORKBENCH, wbUnreadTabs } from './helpers/workbench'
 import {
   addWorkspace,
@@ -40,13 +40,6 @@ interface CodexCall {
   cwd: string
   sessionId: string
   codexHome: string | null
-}
-function installCodex(env: E2EEnv): void {
-  const binary = path.join(env.fakeBin, 'codex')
-  fs.symlinkSync(path.join(__dirname, 'fixtures', 'fake-codex.js'), binary)
-  env.launchEnv.KOLOFT_CODEX_CMD = binary
-  env.launchEnv.CODEX_HOME = path.join(env.home, '.codex')
-  fs.writeFileSync(path.join(env.home, '.zprofile'), `export PATH="${env.fakeBin}:$PATH"\n`)
 }
 function codexOpenOutputs(env: E2EEnv): string[] {
   return fs

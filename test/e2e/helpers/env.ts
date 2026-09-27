@@ -182,6 +182,14 @@ export function seedSettings(env: E2EEnv, patch: Record<string, unknown>): void 
   fs.writeFileSync(file, JSON.stringify({ ...current, ...patch }, null, 2))
 }
 
+export function installCodex(env: E2EEnv): void {
+  const binary = path.join(env.fakeBin, 'codex')
+  fs.symlinkSync(path.join(__dirname, '..', 'fixtures', 'fake-codex.js'), binary)
+  env.launchEnv.KOLOFT_CODEX_CMD = binary
+  env.launchEnv.CODEX_HOME = path.join(env.home, '.codex')
+  fs.writeFileSync(path.join(env.home, '.zprofile'), `export PATH="${env.fakeBin}:$PATH"\n`)
+}
+
 export function setGuestLimit(env: E2EEnv, limit: number): void {
   env.launchEnv.KOLOFT_BROWSER_GUEST_LIMIT = String(limit)
 }
