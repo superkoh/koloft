@@ -7,6 +7,7 @@ import {
   resolveWorkbenchState,
   withWorkbenchState
 } from '../../src/main/workspaceOps'
+import { MOVED_CONVERSATION_SOURCE } from '../../src/main/hookRouting'
 import { type LayoutV5, type SessionWorkbenchState } from '@shared/types'
 
 describe('parseWorktreeEntries', () => {
@@ -124,6 +125,12 @@ describe('carrySessionWorkbench (T-LIFE-07: the panel follows a /clear id change
     expect(out.sessions.other).toEqual({ open: false, tabs: [] })
     expect(out.sessions.fresh).not.toBe(out.sessions.old)
     expect(Object.keys(input)).toEqual(['old', 'other'])
+  })
+
+  it('a conversation Claude Code moved to a new id carries its Workbench the same way', () => {
+    const out = carrySessionWorkbench({ old: entry() }, 'old', 'fresh', MOVED_CONVERSATION_SOURCE)
+    expect(out.changed).toBe(true)
+    expect(out.sessions.fresh).toEqual(entry())
   })
 
   it('carries the whole tab set onto the new id — /clear is a rebind, not a removal (FR-29)', () => {

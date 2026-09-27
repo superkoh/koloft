@@ -332,9 +332,34 @@ prompt emulation.
   fixed ("session transcripts being silently overwritten when a directory change
   relocated a session onto an existing same-ID transcript"; not measured).
 
-Evidence: on-machine diagnosis 2026-08-22 (CC 2.1.238) and CC source reading. Koloft
-dependents: the fork gate and session_id extraction in `src/main/hooks.ts`'s injected
-script (marked `CC§5`); `src/main/hookRouting.ts`.
+- **`/background` ("Send this session to the background and free the terminal") moves
+  the conversation out of the window** (measured 2026-09-26, CC 2.1.283, one
+  interactive haiku session in a pty with a logging hook on every event):
+  - The window's claude fires SessionEnd `reason=prompt_input_exit` and exits.
+  - A process claude daemon started in advance (`claude bg-spare --bg-spare
+    <…/spare/<id>.claim.sock>`, living under a `bg-pty-host`) takes the job. It fires
+    SessionStart `source=fork` under a new `session_id`, with the window's hook
+    settings.
+  - The daemon keeps one such spare ready, and starts another when one is used.
+- **A conversation can also move to a new id while the window's claude stays up**
+  (seen once, live, 2026-09-26, CC 2.1.283, in a Koloft worktree tab, around the
+  moment `/goal` was set; the trigger is not probed yet):
+  - The old transcript's last record is `{"type":"continued-in",
+    "continuedInSessionId":<new>}`.
+  - The conversation goes on in a daemon-hosted process: `--session-id <new>
+    --fork-session --resume <old transcript> --settings <the tab's file>`, registered in
+    `~/.claude/sessions/` with `kind: "bg"`.
+  - The window's claude stays alive and `interactive`, still registered under the old
+    id.
+  - The tab's hooks got a SessionStart `source=startup` carrying a third
+    `session_id`, which never wrote a transcript, at the same second. Every later
+    Stop / UserPromptSubmit carried the new id.
+
+Evidence: on-machine diagnosis 2026-08-22 (CC 2.1.238) and CC source reading; the two
+background-move bullets as dated above. Koloft dependents: the fork gate and session_id
+extraction in `src/main/hooks.ts`'s injected script (marked `CC§5`);
+`src/main/hookRouting.ts`, where a tab follows `continued-in` or leaves a start that
+never wrote a transcript.
 
 ## §6 Settings precedence & the statusLine protocol
 

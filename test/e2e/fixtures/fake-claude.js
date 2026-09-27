@@ -514,6 +514,34 @@ function handleLine(line) {
     process.stdout.write(`\r\n[fake-claude] cleared -> session ${sessionId}\r\n> `)
     return
   }
+  // CC§5
+  if (text === '/move-to-background') {
+    const phantom = require('crypto').randomUUID()
+    fireHook('start', {
+      session_id: phantom,
+      transcript_path: path.join(projDir, phantom + '.jsonl'),
+      cwd,
+      hook_event_name: 'SessionStart',
+      source: 'startup'
+    })
+    const next = require('crypto').randomUUID()
+    const nextTranscript = path.join(projDir, next + '.jsonl')
+    fs.copyFileSync(transcript, nextTranscript)
+    append([
+      {
+        type: 'continued-in',
+        timestamp: new Date().toISOString(),
+        sessionId,
+        continuedInSessionId: next
+      }
+    ])
+    sessionId = next
+    transcript = nextTranscript
+    fireHook('prompt', { session_id: sessionId, hook_event_name: 'UserPromptSubmit' })
+    fireHook('stop', { session_id: sessionId, hook_event_name: 'Stop' })
+    process.stdout.write(`\r\n[fake-claude] moved -> session ${sessionId}\r\n> `)
+    return
+  }
   // CC§2 CC§4
   if (text.startsWith('/enter-worktree ') || text === '/exit-worktree') {
     const entering = text !== '/exit-worktree'

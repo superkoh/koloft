@@ -78,7 +78,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     closes its tab kills it).
   - typed lines: `/write <path>` (a Write, Stop 2.5 s later — the file on disk proves
     the transcript has it), `/busy` (a turn held open ~30 s), `/need-approval`,
-    `/scratch <name>`, `/open <target>`, `/open-later <target>` (fires once
+    `/scratch <name>`, `/move-to-background` (a start for a session that never writes a
+    transcript, then `continued-in` to a new id whose Stop follows), `/open <target>`, `/open-later <target>` (fires once
     `<home>/go-open` exists), `/koloft <args>` (runs the agent command, then prints its
     output and `koloft exit=<code>`), `/clear`, `/compact`, `/resume <id>`, `/exit` (also
     `exit` and `/quit`; in a `-w` worktree with uncommitted files it first asks keep or
