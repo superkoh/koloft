@@ -72,6 +72,104 @@ export const UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE = `if [ "$KOLOFT_UTIL" = "
   fi
 fi`
 
+// CODEX§18
+const CODEX_FLAGS_FOLLOWED_BY_A_VALUE = [
+  '-c',
+  '--config',
+  '--enable',
+  '--disable',
+  '--remote',
+  '--remote-auth-token-env',
+  '-i',
+  '--image',
+  '-m',
+  '--model',
+  '--local-provider',
+  '-p',
+  '--profile',
+  '-s',
+  '--sandbox',
+  '-C',
+  '--cd',
+  '--add-dir',
+  '-a',
+  '--ask-for-approval'
+].join('|')
+
+// CODEX§18
+const CODEX_SUBCOMMANDS_WITHOUT_A_TUI = [
+  'exec',
+  'e',
+  'review',
+  'login',
+  'logout',
+  'mcp',
+  'plugin',
+  'mcp-server',
+  'app-server',
+  'remote-control',
+  'app',
+  'completion',
+  'update',
+  'doctor',
+  'sandbox',
+  'debug',
+  'apply',
+  'a',
+  'queue',
+  'archive',
+  'delete',
+  'migrate-rollouts',
+  'unarchive',
+  'exec-server',
+  'features',
+  'help'
+].join('|')
+
+export const UTIL_TERMINAL_REFUSES_INTERACTIVE_CODEX = `if [ "$KOLOFT_UTIL" = "1" ]; then
+  utilok=0
+  valflag=0
+  sub=""
+  next=""
+  for a in "$@"; do
+    if [ "$valflag" = "1" ]; then
+      valflag=0
+      continue
+    fi
+    case "$a" in
+      -h|--help|-V|--version) utilok=1 ;;
+      ${CODEX_FLAGS_FOLLOWED_BY_A_VALUE}) valflag=1 ;;
+      -*) ;;
+      *) if [ -z "$sub" ]; then sub="$a"; elif [ -z "$next" ]; then next="$a"; fi ;;
+    esac
+  done
+  case "$sub" in
+    ${CODEX_SUBCOMMANDS_WITHOUT_A_TUI}) utilok=1 ;;
+    cloud) [ -n "$next" ] && utilok=1 ;;
+  esac
+  if [ "$utilok" = "0" ]; then
+    printf '⛔ Koloft — this is a Koloft terminal, not an agent surface.\\n' >&2
+    printf '   %s\\n' "Start interactive Codex from the sidebar's ＋ (⌘N)." >&2
+    printf '   %s\\n' 'Non-interactive use is fine: codex exec · --help · login · mcp · …' >&2
+    exit 1
+  fi
+fi`
+
+export function utilTerminalGuard(bin: 'claude' | 'codex', refusal: string): string {
+  return `#!/bin/sh
+${refusal}
+self=$(cd "$(dirname "$0")" && pwd)
+IFS=:
+set -f
+for d in $PATH; do
+  [ "$d" = "$self" ] && continue
+  [ -x "$d/${bin}" ] && exec "$d/${bin}" "$@"
+done
+echo "${bin}: not found" >&2
+exit 127
+`
+}
+
 const SHIM_SCRIPT = `#!/usr/bin/env bash
 : koloft claude shim
 self_dir="$(cd "$(dirname "$0")" >/dev/null 2>&1 && pwd)"
@@ -337,6 +435,14 @@ export function setupShim(): ShimPaths {
   const openShimPath = path.join(shimDir, 'open')
   fs.writeFileSync(openShimPath, OPEN_SHIM_SCRIPT, { mode: 0o755 })
   fs.chmodSync(openShimPath, 0o755)
+
+  const codexGuardPath = path.join(shimDir, 'codex')
+  fs.writeFileSync(
+    codexGuardPath,
+    utilTerminalGuard('codex', UTIL_TERMINAL_REFUSES_INTERACTIVE_CODEX),
+    { mode: 0o755 }
+  )
+  fs.chmodSync(codexGuardPath, 0o755)
 
   const agentShimPath = path.join(shimDir, 'koloft')
   fs.writeFileSync(agentShimPath, CLAUDE_AGENT_SHIM, { mode: 0o755 })

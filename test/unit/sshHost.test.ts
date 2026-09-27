@@ -5,8 +5,7 @@ import path from 'path'
 import { execFileSync, spawn, spawnSync } from 'child_process'
 import { machineClaudeArgs, SshHost } from '../../src/main/host/sshHost'
 import { diffBase as localDiffBase } from '../../src/main/gitStatus'
-import { utilClaudeGuard } from '../../src/main/remote/install'
-import { UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE } from '../../src/main/shim'
+import { UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE, utilTerminalGuard } from '../../src/main/shim'
 import type { BytesResult } from '../../src/main/remote/ssh'
 
 const MACHINE = 'devbox'
@@ -237,7 +236,7 @@ describe('the utility terminal on the machine', () => {
     fs.mkdirSync(realDir)
     fs.writeFileSync(
       path.join(guardDir, 'claude'),
-      utilClaudeGuard(UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE),
+      utilTerminalGuard('claude', UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE),
       { mode: 0o755 }
     )
     const realLog = path.join(home, 'real.log')

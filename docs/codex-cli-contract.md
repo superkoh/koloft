@@ -608,3 +608,30 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   "ephemeral thread does not support queued submissions".
 - What `thread/queue/add` does on a thread that is in the middle of a turn was not
   tried. That it waits for that turn to end is inferred, not checked.
+
+## 18. Which command lines open the full-screen TUI
+
+**Read on 2026-09-27 from `codex --help` and each subcommand's `--help`, standalone Codex
+CLI 0.153.4.** Koloft's Workbench terminal uses this to refuse only the forms that open
+Codex's own full-screen screen.
+
+- **Bare `codex`, or `codex <prompt>`, opens the TUI** ("If no subcommand is specified,
+  options will be forwarded to the interactive CLI").
+- **Subcommands that open it too:** `resume` and `fork` (a picker by default),
+  `agents` ("Browse all agent sessions"; it takes `--no-alt-screen`, a TUI flag), and
+  bare `cloud` ("Browse tasks"). `cloud exec | status | list | apply | diff` print and
+  exit (`cloud exec`: "without launching the TUI").
+- **Subcommands that print or run and exit:** `exec` (alias `e`, "Run Codex
+  non-interactively"), `review` ("non-interactively"), `login`, `logout`, `mcp`, `plugin`,
+  `mcp-server`, `app-server`, `remote-control`, `app` (opens the Desktop app),
+  `completion`, `update`, `doctor`, `sandbox`, `debug`, `apply` (alias `a`), `queue`,
+  `archive`, `delete`, `migrate-rollouts`, `unarchive`, `exec-server`, `features`,
+  `help`; also `-h`/`--help` and `-V`/`--version` anywhere.
+- **Top-level options that take a value** (so the word after them is not a
+  subcommand): `-c/--config`, `--enable`, `--disable`, `--remote`,
+  `--remote-auth-token-env`, `-i/--image`, `-m/--model`, `--local-provider`,
+  `-p/--profile`, `-s/--sandbox`, `-C/--cd`, `--add-dir`, `-a/--ask-for-approval`.
+  `-i/--image` takes one or more files; only the first is skipped, so
+  `codex -i a.png b.png` reads as a prompt, which opens the TUI anyway.
+- That `login` opens no full-screen screen is read off its help text ("Manage login"),
+  not checked by running it.

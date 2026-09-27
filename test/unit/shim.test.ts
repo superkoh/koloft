@@ -611,6 +611,80 @@ describe('claude shim (Koloft terminal hard block — a product funnel, not a se
   }, 30_000)
 })
 
+describe('codex guard (Koloft terminal hard block — the same funnel as claude, CODEX§18)', () => {
+  let argsOut: string
+
+  beforeAll(() => {
+    argsOut = path.join(realBin, 'codex-args')
+    fs.writeFileSync(
+      path.join(realBin, 'codex'),
+      `#!/bin/sh\nfor a in "$@"; do printf '%s\\n' "$a"; done > ${JSON.stringify(argsOut)}\nexit 0\n`,
+      { mode: 0o755 }
+    )
+  })
+
+  function runCodex(
+    args: string[],
+    extra: Record<string, string> = {}
+  ): { status: number | null; stderr: string; realArgs: string[] | null } {
+    fs.rmSync(argsOut, { force: true })
+    const r = spawnSync('codex', args, {
+      env: { HOME: base, PATH: `${shimDir}:${realBin}:/usr/bin:/bin`, ...extra },
+      encoding: 'utf8'
+    })
+    const realArgs = fs.existsSync(argsOut)
+      ? fs.readFileSync(argsOut, 'utf8').split('\n').slice(0, -1)
+      : null
+    return { status: r.status, stderr: r.stderr, realArgs }
+  }
+
+  const UTIL = { KOLOFT_UTIL: '1' }
+
+  it.each([
+    [[]],
+    [['explain this repo']],
+    [['-m', 'gpt-5', 'fix the bug']],
+    [['-C', 'exec']],
+    [['resume', '--last']],
+    [['fork']],
+    [['agents']],
+    [['cloud']]
+  ])(
+    'an interactive form %j in a Koloft terminal is refused before the real codex runs',
+    (args) => {
+      const r = runCodex(args, UTIL)
+      expect(r.status).toBe(1)
+      expect(r.stderr).toContain('⛔ Koloft — this is a Koloft terminal, not an agent surface.')
+      expect(r.stderr).toContain("Start interactive Codex from the sidebar's ＋ (⌘N).")
+      expect(r.realArgs).toBeNull()
+    }
+  )
+
+  it.each([
+    [['exec', 'say hi']],
+    [['-m', 'gpt-5', 'exec', 'say hi']],
+    [['review', '--uncommitted']],
+    [['login']],
+    [['mcp', 'list']],
+    [['cloud', 'list']],
+    [['resume', '--help']],
+    [['--version']],
+    [['-h']]
+  ])('a form that opens no TUI %j passes through untouched', (args) => {
+    const r = runCodex(args, UTIL)
+    expect(r.status).toBe(0)
+    expect(r.stderr).not.toContain('⛔')
+    expect(r.realArgs).toEqual(args)
+  })
+
+  it("outside a Koloft terminal (a session's own shell) even a bare codex passes through", () => {
+    const r = runCodex([])
+    expect(r.status).toBe(0)
+    expect(r.stderr).not.toContain('⛔')
+    expect(r.realArgs).toEqual([])
+  })
+})
+
 describe('claude shim (scheduled jobs: first prompt + session name ride env vars, never the typed command line — BB-E19 / §4.6)', () => {
   const TASK = 'say "hi" $HOME \'there\'\nsecond line'
   const NAME = 'Nightly report'
