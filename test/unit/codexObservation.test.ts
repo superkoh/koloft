@@ -412,6 +412,43 @@ describe('CodexObservation', () => {
     expect(f.files()?.files.map((file) => file.src)).toEqual(['/repo/b.txt'])
   })
 
+  it('lists the files of a resumed session from the old turns in the resume reply, as history rather than live writes', () => {
+    const f = fixture()
+    f.observer.receive('client', { id: 1, method: 'thread/resume', params: {} })
+    f.observer.receive('server', {
+      id: 1,
+      result: {
+        thread: {
+          ...thread(),
+          turns: [
+            {
+              id: 'old-turn',
+              status: 'completed',
+              items: [
+                { type: 'userMessage', id: 'u' },
+                patch('completed', [{ path: '/repo/old.txt', kind: { type: 'add' }, diff: 'x\n' }])
+                  .item,
+                command('cat docs/a.md', [
+                  { type: 'read', command: 'cat docs/a.md', name: 'a.md', path: '/repo/docs/a.md' }
+                ]).item
+              ]
+            }
+          ]
+        }
+      }
+    })
+    expect(f.files()).toEqual({
+      type: 'files-changed',
+      files: [
+        { src: '/repo/old.txt', label: 'old.txt', access: 'wrote', added: 1 },
+        { src: '/repo/docs/a.md', label: 'a.md', access: 'read' }
+      ],
+      lastTouched: '/repo/docs/a.md',
+      lastWritten: '/repo/old.txt',
+      liveWrites: 0
+    })
+  })
+
   it('turns an open command Codex ran into an open request, but only one with a single target, like the open shim', () => {
     const f = fixture()
     f.bind()
