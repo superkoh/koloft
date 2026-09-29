@@ -148,7 +148,7 @@ Working principles:
   the branch's commits into one) — the repo allows only squash and GitHub deletes the
   PR's branch on merge, so never ask about either; `--delete-branch` fails in a
   worktree (`'main' is already used by worktree`). Then call ExitWorktree (`remove`
-  deletes the worktree and its local branch; `discard_changes: true`, as the squash
+  deletes the worktree; `discard_changes: true`, as the squash
   on `main` holds the commits). Despite its description it also removes a worktree
   the session was started in with `claude -w` (seen three times, 2026-09-24…26);
   never hand the owner a `git worktree remove` or `/exit` to run. A
