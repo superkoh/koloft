@@ -115,8 +115,9 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   opening it expands the Workbench panel — a case that needs the panel shut fires
   its command behind a `sleep` and collapses inside that window (worked examples:
   workbench-tabs WB-T20, workbench-aux T-AUX-02). It waits for the screen to go quiet
-  and types nothing: an `echo <marker>` readiness probe, typed across the shell's
-  PATH setup line, garbled the shell and broke four later cases. Read terminal text through
+  and types nothing: a readiness probe such as `echo <marker>`, typed before the shell
+  is quiet, can land on its PATH setup line and garble the shell (four later cases
+  broke once). Read terminal text through
   `window.__koloftTerms`, never the DOM. To type into a session that is not on screen,
   call `window.api.terminal.write(tabId, line + '\r')`.
 - A session pty is a login shell, so the real `/usr/bin` tools beat the suite's

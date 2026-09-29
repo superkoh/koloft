@@ -48,7 +48,7 @@ export const BUILTIN_VERBS: AgentVerbs = {
 export const NOT_PINNED = 'koloft: pin this workspace in the sidebar first.'
 
 export const AGENT_TOOLS_OFF =
-  "koloft: Koloft's agent tools are not on for this session. Either the owner turned them off in Koloft's Settings, or the session runs on another machine, where they do not work yet."
+  "koloft: Koloft's agent tools are not on for this session. Either the owner turned them off in Koloft's Settings, or the session runs on another machine, where they do not work."
 const UNKNOWN_TAB = 'koloft: Koloft does not know this session.'
 const UNREADABLE = 'koloft: Koloft could not read this request.'
 

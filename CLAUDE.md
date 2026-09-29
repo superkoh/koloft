@@ -150,7 +150,7 @@ Working principles:
   worktree (`'main' is already used by worktree`). Then call ExitWorktree (`remove`
   deletes the worktree; `discard_changes: true`, as the squash
   on `main` holds the commits). Despite its description it also removes a worktree
-  the session was started in with `claude -w` (seen three times, 2026-09-24…26);
+  the session was started in with `claude -w` (seen three times);
   never hand the owner a `git worktree remove` or `/exit` to run. A
   reply that ends a piece of work ends with what the owner must do next, or
   "nothing"; before going quiet on background work, say what runs and about how
@@ -164,7 +164,7 @@ Working principles:
   finding — a handful per phase — and say how many before launching. Every brief and
   every Workflow step prompt starts with the shell-rule block below, word for word:
   an Explore agent never sees this file, and agents whose brief lacked the block
-  were refused 2–3 times as often (211 agent transcripts, 2026-09-18…26). An agent
+  were refused 2–3 times as often (211 agent transcripts). An agent
   writes only patches or code, in a scratchpad folder of its own.
 - Hand-testing on a real machine is driven one case at a time through
   AskUserQuestion, never as a wall of text. The steps to carry out go inside the
@@ -191,8 +191,8 @@ Working principles:
     time a session starts in a worktree without `node_modules`, and wakes Claude only
     if a step fails. When a worktree is entered mid-session no session starts, so run
     those three by hand there.
-  - Since Electron ≥42 the binary is no longer fetched at install time — run
-    `node node_modules/electron/install.js` once, or the first (possibly headless e2e)
+  - The `electron` package has no install script, so `npm ci` / `npm install` leave
+    the binary unfetched — run `node node_modules/electron/install.js` once, or the first (possibly headless e2e)
     launch stalls on a silent download.
 - Shell in a worktree stays plain. The worktree isolation guard refuses any Bash
   call it cannot prove stays inside this worktree, not only git ones. This block
