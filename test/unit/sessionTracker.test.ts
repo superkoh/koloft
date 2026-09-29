@@ -8,6 +8,7 @@ import type { ClaudeSessionInfo as SessionInfo } from '@shared/types'
 let SessionTracker: typeof import('../../src/main/sessionTracker').SessionTracker
 let encodeCwd: typeof import('../../src/main/sessionTracker').encodeCwd
 let scratchpadDirFor: typeof import('../../src/main/sessionTracker').scratchpadDirFor
+let tasksDirFor: typeof import('../../src/main/sessionTracker').tasksDirFor
 let classifyUserPrompt: typeof import('../../src/main/sessionTracker').classifyUserPrompt
 let home: string
 let projectsRoot: string
@@ -18,7 +19,7 @@ beforeAll(async () => {
   process.env.HOME = home
   process.env.KOLOFT_RELOCATE_SETTLE_MS = RELOCATE_SETTLE_STRETCHED_PAST_THE_500MS_FILE_POLL_MS
   projectsRoot = path.join(home, '.claude', 'projects')
-  ;({ SessionTracker, encodeCwd, scratchpadDirFor, classifyUserPrompt } =
+  ;({ SessionTracker, encodeCwd, scratchpadDirFor, tasksDirFor, classifyUserPrompt } =
     await import('../../src/main/sessionTracker'))
 })
 
@@ -1395,16 +1396,32 @@ describe('scratchpadDirFor — Claude Code per-session scratchpad', () => {
   it('has no scratchpad for a path that is not a .jsonl transcript', () => {
     expect(scratchpadDirFor('/h/.claude/projects/-p/sid')).toBe(null)
   })
+
+  it('takes the slug of the folder claude started in when the transcript sits in a worktree under it', () => {
+    process.env.KOLOFT_SCRATCHPAD_BASE = '/b'
+    const inWorktree = '/h/.claude/projects/-r--claude-worktrees-w/sid.jsonl'
+    expect(scratchpadDirFor(inWorktree, '/r')).toBe('/b/-r/sid/scratchpad')
+    expect(scratchpadDirFor(inWorktree, '/r/.claude/worktrees/w')).toBe(
+      '/b/-r--claude-worktrees-w/sid/scratchpad'
+    )
+  })
+
+  it('keeps tasks/ beside the transcript, whatever folder claude started in', () => {
+    process.env.KOLOFT_SCRATCHPAD_BASE = '/b'
+    expect(tasksDirFor('/h/.claude/projects/-r--claude-worktrees-w/sid.jsonl')).toBe(
+      '/b/-r--claude-worktrees-w/sid/tasks'
+    )
+  })
 })
 
 // CC§2
 describe('SessionTracker — scratchpad dir on the emitted session', () => {
-  it('reports the scratchpad dir off the transcript slug, not off cwd', async () => {
+  it('reports the scratchpad dir off the transcript slug when it is not under the launch folder', async () => {
     const base = fs.mkdtempSync(path.join(home, 'spbase-'))
     process.env.KOLOFT_SCRATCHPAD_BASE = base
     try {
       const cwd = makeWorkspace({ 'a.txt': 'a\n' })
-      const otherSlug = encodeCwd(cwd) + '-elsewhere'
+      const otherSlug = '-elsewhere' + encodeCwd(cwd)
       const dir = path.join(projectsRoot, otherSlug)
       fs.mkdirSync(dir, { recursive: true })
       const file = path.join(dir, SID + '.jsonl')
@@ -1418,6 +1435,24 @@ describe('SessionTracker — scratchpad dir on the emitted session', () => {
       tracker.bindSession('tabSP', file, SID, cwd)
       const s = await waitFor(tracker, (x) => x.tabId === 'tabSP' && !!x.jsonlPath)
       expect(s.scratchpadDir).toBe(path.join(base, otherSlug, SID, 'scratchpad'))
+    } finally {
+      delete process.env.KOLOFT_SCRATCHPAD_BASE
+    }
+  })
+
+  it('keeps the scratchpad under the folder claude started in when its transcript sits in a worktree of it', async () => {
+    const base = fs.mkdtempSync(path.join(home, 'spbase-'))
+    process.env.KOLOFT_SCRATCHPAD_BASE = base
+    try {
+      const { repo, wt } = repoWithWorktree('scratch-wt')
+      const file = writeJsonl(wt, SID, [
+        { type: 'user', message: { role: 'user', content: 'hi' }, cwd: wt }
+      ])
+      const tracker = newTracker()
+      tracker.track('tabSPW', repo)
+      tracker.bindSession('tabSPW', file, SID, wt)
+      const s = await waitFor(tracker, (x) => x.tabId === 'tabSPW' && !!x.jsonlPath)
+      expect(s.scratchpadDir).toBe(path.join(base, encodeCwd(repo), SID, 'scratchpad'))
     } finally {
       delete process.env.KOLOFT_SCRATCHPAD_BASE
     }
