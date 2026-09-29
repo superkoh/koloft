@@ -86,7 +86,7 @@ test.describe('never forced to leave the app: login, downloads, certificates, up
     }
   })
 
-  test('BB-N08: the guest UA change is confined to the partition and does not alter Koloft’s own identity', async ({
+  test('BB-C71: a cross-site iframe in the guest reports the same Chrome UA as its page, so a Cloudflare "Verify you are human" box can pass', async ({
     app,
     page,
     env
@@ -94,17 +94,22 @@ test.describe('never forced to leave the app: login, downloads, certificates, up
     test.setTimeout(240_000)
     const server = await startEchoServer()
     try {
+      const framed = server.localhostUrl('/echo')
+      const host = server.page(
+        '/frame-host',
+        `<!doctype html><title>Frame host</title><iframe src="${framed}"></iframe>`
+      )
       gitInit(env.workspaces.a)
       await startSessionIn(page, 'ws-a')
       await browserSession(page)
 
-      await typeInAddressBar(page, server.url('/echo'))
-      await guestByUrl(app, server.url('/echo'))
-      await expect.poll(() => server.count('/echo'), { timeout: 30_000 }).toBe(1)
-
-      expect(server.requestsFor('/echo')[0].userAgent).not.toMatch(/Electron\//i)
-      const fallback = await app.evaluate(({ app: electronApp }) => electronApp.userAgentFallback)
-      expect(fallback).toMatch(/Electron\//i)
+      await typeInAddressBar(page, host)
+      const guest = await guestByUrl(app, host)
+      const pageUA = await guest.evaluate(() => navigator.userAgent)
+      await expect
+        .poll(() => guest.frame({ url: framed })?.evaluate(() => navigator.userAgent))
+        .toBe(pageUA)
+      expect(pageUA).not.toMatch(/Electron\/|koloft/i)
     } finally {
       await server.close()
     }
