@@ -1416,12 +1416,12 @@ describe('scratchpadDirFor — Claude Code per-session scratchpad', () => {
 
 // CC§2
 describe('SessionTracker — scratchpad dir on the emitted session', () => {
-  it('reports the scratchpad dir off the transcript slug when it is not under the launch folder', async () => {
+  it('keeps the transcript slug when Claude Code cut an over-long folder slug short, since the full one would not exist', async () => {
     const base = fs.mkdtempSync(path.join(home, 'spbase-'))
     process.env.KOLOFT_SCRATCHPAD_BASE = base
     try {
       const cwd = makeWorkspace({ 'a.txt': 'a\n' })
-      const otherSlug = '-elsewhere' + encodeCwd(cwd)
+      const otherSlug = encodeCwd(cwd).slice(0, -3) + '-ezjn6r'
       const dir = path.join(projectsRoot, otherSlug)
       fs.mkdirSync(dir, { recursive: true })
       const file = path.join(dir, SID + '.jsonl')

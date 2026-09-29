@@ -13,7 +13,7 @@ import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
 import { costUsdOf, resolvePricing } from '@shared/pricing'
 import { localDayKey } from '@shared/usageFormat'
 import { encodeCwd } from '@shared/cwdKey'
-import { projectInfoFor } from './projectInfo'
+import { projectInfoFor, realpathSafe } from './projectInfo'
 import { inspectTaskProcs, type TaskProcs } from './taskProcs'
 import { SessionRuntime, envMs, turnOf, type Turn } from './sessionRuntime'
 import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
@@ -164,14 +164,6 @@ const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
 const BASH_WRITES = /(^|[^0-9&])>>?\s*(?!\/dev\/null)\S|\btee\s|\bsed\s+-i\b|\btouch\s/
 const READ_TOOLS = new Set(['Read'])
 const UNACKED_TOOL_CMD_CAP = 64
-
-function physicalPath(p: string): string {
-  try {
-    return fs.realpathSync(p)
-  } catch {
-    return p
-  }
-}
 
 function sessionTmpDir(jsonlPath: string | null, launchCwd?: string): string | null {
   if (!jsonlPath || !jsonlPath.endsWith('.jsonl')) return null
@@ -409,7 +401,7 @@ export class SessionTracker extends SessionRuntime {
     }
     const t: Tracked = {
       info,
-      launchCwd: remote ? cwd : physicalPath(cwd),
+      launchCwd: remote ? cwd : realpathSafe(cwd),
       readOffset: 0,
       tailBuf: Buffer.alloc(0),
       title: null,
