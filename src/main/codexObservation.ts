@@ -204,7 +204,7 @@ export class CodexObservation {
       typeof p.threadId === 'string' && this.childRoots.get(p.threadId) === this.threadId
     if (!this.threadId || (p.threadId !== this.threadId && !ownedChild)) return
     if (method === 'item/completed') {
-      this.observeFiles(record(p.item))
+      if (this.noteFiles(record(p.item), true)) this.publishFiles()
       this.observeOpen(record(p.item))
     }
     // CODEX§3
@@ -291,10 +291,6 @@ export class CodexObservation {
       }
     }
     if (changed) this.publishFiles()
-  }
-
-  private observeFiles(item: Record<string, unknown>): void {
-    if (this.noteFiles(item, true)) this.publishFiles()
   }
 
   // CODEX§12
