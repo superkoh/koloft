@@ -25,15 +25,17 @@ beforeAll(() => {
   ;({ shimDir, regDir, pickDir } = setupShim())
   base = path.dirname(shimDir)
   realBin = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-realbin-'))
-  fs.writeFileSync(
-    path.join(realBin, 'claude'),
-    '#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "$KOLOFT_ARGS_OUT"\n' +
-      'if [ -n "$KOLOFT_ARGS0_OUT" ]; then : > "$KOLOFT_ARGS0_OUT"\n' +
-      '  for a in "$@"; do printf "%s\\0" "$a" >> "$KOLOFT_ARGS0_OUT"; done\nfi\n' +
-      '[ -n "$KOLOFT_ENV_OUT" ] && env > "$KOLOFT_ENV_OUT"\nexit 0\n',
-    { mode: 0o755 }
-  )
-  fs.chmodSync(path.join(realBin, 'claude'), 0o755)
+  for (const bin of ['claude', 'codex']) {
+    fs.writeFileSync(
+      path.join(realBin, bin),
+      '#!/usr/bin/env bash\nprintf "%s\\n" "$@" > "$KOLOFT_ARGS_OUT"\n' +
+        'if [ -n "$KOLOFT_ARGS0_OUT" ]; then : > "$KOLOFT_ARGS0_OUT"\n' +
+        '  for a in "$@"; do printf "%s\\0" "$a" >> "$KOLOFT_ARGS0_OUT"; done\nfi\n' +
+        '[ -n "$KOLOFT_ENV_OUT" ] && env > "$KOLOFT_ENV_OUT"\nexit 0\n',
+      { mode: 0o755 }
+    )
+    fs.chmodSync(path.join(realBin, bin), 0o755)
+  }
   fakeKeychainDir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-fakekc-'))
   fs.writeFileSync(
     path.join(realBin, 'security'),
@@ -121,11 +123,15 @@ function collect(
   return { reg, realArgs, realArgs0, realEnv, stderr, status }
 }
 
-function runShim(args: string[], extraEnv: Record<string, string> = {}): ShimRun {
+function runShim(
+  args: string[],
+  extraEnv: Record<string, string> = {},
+  bin: 'claude' | 'codex' = 'claude'
+): ShimRun {
   const cwd = os.tmpdir()
   const argsOut = path.join(base, `args-${Math.random().toString(36).slice(2)}`)
   const envOut = path.join(base, `env-${Math.random().toString(36).slice(2)}`)
-  const res = spawnSync(path.join(shimDir, 'claude'), args, {
+  const res = spawnSync(path.join(shimDir, bin), args, {
     cwd,
     env: pinnedShimEnvNeverSpreadingProcessEnv(cwd, argsOut, envOut, extraEnv),
     encoding: 'utf8',
@@ -609,6 +615,55 @@ describe('claude shim (Koloft terminal hard block — a product funnel, not a se
     expect(r.realArgs).toEqual(['-p', 'hi'])
     expect(r.realEnv?.CLAUDE_CODE_OAUTH_TOKEN).toBe('sk-ant-oat01-UTIL-P')
   }, 30_000)
+})
+
+describe('codex guard (Koloft terminal hard block — the same funnel as claude, CODEX§18)', () => {
+  const runCodex = (args: string[], extraEnv: Record<string, string> = {}): ShimRun =>
+    runShim(args, extraEnv, 'codex')
+  const UTIL = { KOLOFT_UTIL: '1' }
+
+  it.each([
+    [[]],
+    [['explain this repo']],
+    [['-m', 'gpt-5', 'fix the bug']],
+    [['-C', 'exec']],
+    [['resume', '--last']],
+    [['fork']],
+    [['agents']],
+    [['cloud']]
+  ])(
+    'an interactive form %j in a Koloft terminal is refused before the real codex runs',
+    (args) => {
+      const r = runCodex(args, UTIL)
+      expect(r.status).toBe(1)
+      expect(r.stderr).toContain('⛔ Koloft — this is a Koloft terminal, not an agent surface.')
+      expect(r.stderr).toContain("Start interactive Codex from the sidebar's ＋ (⌘N).")
+      expect(r.realArgs).toBeNull()
+    }
+  )
+
+  it.each([
+    [['exec', 'say hi']],
+    [['-m', 'gpt-5', 'exec', 'say hi']],
+    [['review', '--uncommitted']],
+    [['login']],
+    [['mcp', 'list']],
+    [['resume', '--help']],
+    [['--version']],
+    [['-h']]
+  ])('a form that opens no TUI %j passes through untouched', (args) => {
+    const r = runCodex(args, UTIL)
+    expect(r.status).toBe(0)
+    expect(r.stderr).not.toContain('⛔')
+    expect(r.realArgs).toEqual(args)
+  })
+
+  it("outside a Koloft terminal (a session's own shell) even a bare codex passes through", () => {
+    const r = runCodex([])
+    expect(r.status).toBe(0)
+    expect(r.stderr).not.toContain('⛔')
+    expect(r.realArgs).toEqual([])
+  })
 })
 
 describe('claude shim (scheduled jobs: first prompt + session name ride env vars, never the typed command line — BB-E19 / §4.6)', () => {

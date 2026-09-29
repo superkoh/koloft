@@ -34,7 +34,7 @@ import {
 } from '@shared/sessionBackend'
 import { AttentionTracker, type AttentionContext } from './attention'
 import { route, dockBadgeText } from './notifyRouter'
-import { setupShim, UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE } from './shim'
+import { setupShim, utilTerminalGuard } from './shim'
 import { openDropTarget, type OpenDrop } from './openDrop'
 import { openUrlExternally, osOpenFallback } from './osOpen'
 import {
@@ -61,7 +61,7 @@ import {
   runSshBytes,
   sshOptions
 } from './remote/ssh'
-import { ENSURE_SH, TMUX_CONF, UTIL_SH, utilClaudeGuard } from './remote/install'
+import { ENSURE_SH, TMUX_CONF, UTIL_SH } from './remote/install'
 import {
   buildMachinePackage,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
@@ -467,7 +467,8 @@ function machinePackage(): MachinePackage {
     'hook.sh': HOOK_SCRIPT,
     'tmux.conf': TMUX_CONF,
     'util.sh': UTIL_SH,
-    [`${UTIL_BIN_DIR}claude`]: utilClaudeGuard(UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE)
+    [`${UTIL_BIN_DIR}claude`]: utilTerminalGuard('claude'),
+    [`${UTIL_BIN_DIR}codex`]: utilTerminalGuard('codex')
   }
   try {
     pkgFiles['statusline/ccstatusline.js'] = fs.readFileSync(bundlePath())

@@ -164,21 +164,6 @@ export function parseHeartbeat(stdout: string): {
   return { alive, git }
 }
 
-export function utilClaudeGuard(refusal: string): string {
-  return `#!/bin/sh
-${refusal}
-self=$(cd "$(dirname "$0")" && pwd)
-IFS=:
-set -f
-for d in $PATH; do
-  [ "$d" = "$self" ] && continue
-  [ -x "$d/claude" ] && exec "$d/claude" "$@"
-done
-echo "claude: not found" >&2
-exit 127
-`
-}
-
 // PLATFORM§37
 export const UTIL_SH = `#!/bin/sh
 M=$(cd "$(dirname "$0")" && pwd)
