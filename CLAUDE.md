@@ -191,8 +191,8 @@ Working principles:
     time a session starts in a worktree without `node_modules`, and wakes Claude only
     if a step fails. When a worktree is entered mid-session no session starts, so run
     those three by hand there.
-  - The `electron` package has no install script, so `npm ci` / `npm install` leave
-    the binary unfetched — run `node node_modules/electron/install.js` once, or the first (possibly headless e2e)
+  - `npm ci` and `npm install` do not fetch the Electron binary — run
+    `node node_modules/electron/install.js` once, or the first (possibly headless e2e)
     launch stalls on a silent download.
 - Shell in a worktree stays plain. The worktree isolation guard refuses any Bash
   call it cannot prove stays inside this worktree, not only git ones. This block
