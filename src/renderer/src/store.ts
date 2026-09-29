@@ -1,5 +1,5 @@
 import { BACKEND_LABEL, identityOf } from '@shared/sessionBackend'
-import { hasWorkbench, isSessionKind } from './agentUi'
+import { hasWorkbench, ipcErrorText, isSessionKind } from './agentUi'
 import { create } from 'zustand'
 import {
   DEFAULT_SETTINGS,
@@ -214,15 +214,6 @@ interface AppState {
 
 export function tabEvictedNotice(title: string): string {
   return `Closed ${title} — ${KIND_TAB_CAP} tabs is this session's limit per kind`
-}
-
-const IPC_INVOKE_ERROR_PREFIX = 'Error: '
-
-// PLATFORM§6
-function ipcErrMessage(e: unknown): string {
-  const msg = e instanceof Error ? e.message : String(e)
-  const i = msg.lastIndexOf(IPC_INVOKE_ERROR_PREFIX)
-  return i >= 0 ? msg.slice(i + IPC_INVOKE_ERROR_PREFIX.length) : msg
 }
 
 const everBoundSession = new Set<string>()
@@ -914,7 +905,7 @@ export const useStore = create<AppState>((set, get) => ({
       )
       .catch((e) =>
         set((s) =>
-          s.update.open ? { update: { ...s.update, phase: 'error', error: ipcErrMessage(e) } } : {}
+          s.update.open ? { update: { ...s.update, phase: 'error', error: ipcErrorText(e) } } : {}
         )
       )
   },
@@ -946,7 +937,7 @@ export const useStore = create<AppState>((set, get) => ({
         }
       })
       .catch((e) =>
-        set((s) => ({ update: { ...s.update, phase: 'error', error: ipcErrMessage(e) } }))
+        set((s) => ({ update: { ...s.update, phase: 'error', error: ipcErrorText(e) } }))
       )
   },
   setUpdate: (patch) => {

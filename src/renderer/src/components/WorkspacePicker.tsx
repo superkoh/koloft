@@ -12,6 +12,7 @@ import {
   pullFailedReason,
   type PullPhase
 } from '../newSession'
+import { ipcErrorText } from '../agentUi'
 import { pullToast } from '../freshnessView'
 import { useStore } from '../store'
 import {
@@ -94,7 +95,7 @@ export function WorkspacePicker({
     setPhase('pulling')
     const r = await window.api.workspace
       .pull(ws.workspace.path, { branch: f.branch, head: f.head })
-      .catch((e: Error) => ({ ok: false as const, reason: e.message }))
+      .catch((e: Error) => ({ ok: false as const, reason: ipcErrorText(e) }))
     if (!r.ok) {
       setFailReason(r.reason)
       setFailedFor(ws.workspace.path)

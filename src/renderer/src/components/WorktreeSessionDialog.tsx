@@ -24,6 +24,7 @@ import {
   type WtAim,
   type WtHot
 } from '../newSession'
+import { ipcErrorText } from '../agentUi'
 import { shortenHome } from '../browseModel'
 import { pullToast } from '../freshnessView'
 import { isComposing } from '../keys'
@@ -186,7 +187,7 @@ export function WorktreeSessionDialog({
     setPhase('pulling')
     const r = await window.api.workspace
       .pull(wsPath, { branch, head })
-      .catch((e: Error) => ({ ok: false as const, reason: e.message }))
+      .catch((e: Error) => ({ ok: false as const, reason: ipcErrorText(e) }))
     if (!r.ok) {
       setFailReason(r.reason)
       setPhase('failed')

@@ -235,6 +235,25 @@ describe('store: update check → modal phase — never an offer the user cannot
     expect(u.installed).toBe('0.4.4')
   })
 
+  it("a failed check shows main's whole message, even one that itself contains 'Error: '", async () => {
+    ;(globalThis as { window?: unknown }).window = {
+      api: {
+        update: {
+          check: async () => {
+            throw new Error(
+              "Error invoking remote method 'update:check': Error: download failed: Error: ETIMEDOUT"
+            )
+          }
+        }
+      }
+    }
+    useStore.getState().openUpdateCheck()
+    await settle()
+    const u = useStore.getState().update
+    expect(u.phase).toBe('error')
+    expect(u.error).toBe('download failed: Error: ETIMEDOUT')
+  })
+
   it('turns an already-installed download result into the restart offer', async () => {
     useStore.setState({ update: { open: true, phase: 'downloading', percent: 100 } })
     ;(globalThis as { window?: unknown }).window = {
