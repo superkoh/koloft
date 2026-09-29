@@ -388,6 +388,15 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   no date; which signals Google reads is inferred, not checked).
 - **`navigator.userAgentData` may return a fresh object on each access**, so a patch has
   to go on its prototype, not on one instance.
+- **A cross-site iframe's `navigator.userAgent` comes from `app.userAgentFallback`**, not
+  from `session.setUserAgent` or `webContents.setUserAgent` — both leave the iframe
+  saying `Electron/…` while the page above it says Chrome. Cloudflare Turnstile (the
+  "Verify you are human" box, e.g. on login.twilio.com) runs in such an iframe and
+  falls back to the checkbox, which then never passes. Measured 2026-09-29 on Electron
+  43.7.3 with a plain Electron script, no automation: session UA only → checkbox;
+  plus `webContents.setUserAgent` → checkbox; plus `app.userAgentFallback` → token in
+  1.5 s, twice each. The iframe's `userAgentData.brands` still lacks "Google Chrome"
+  (the guest preload does not run in subframes) and Turnstile passed anyway.
 
 ## §15 Chrome extensions in Electron (electron-chrome-extensions)
 

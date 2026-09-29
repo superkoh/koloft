@@ -2059,6 +2059,7 @@ function setupBrowserPartition(): void {
   const guestUA = standardUserAgent(app.userAgentFallback, app.getName())
   ses.setUserAgent(guestUA)
   // PLATFORM§14
+  app.userAgentFallback = guestUA
   const guestHints = chromeClientHints(guestUA)
   if (guestHints) {
     const managed = new Set(Object.keys(guestHints).map((k) => k.toLowerCase()))
