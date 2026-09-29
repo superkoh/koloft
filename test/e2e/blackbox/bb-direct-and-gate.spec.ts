@@ -1,7 +1,7 @@
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect } from '../helpers/app'
 import { seedSettings } from '../helpers/env'
-import { openMenu, startSessionIn, wsGroup } from '../helpers/p1'
+import { dialogPrimary, openMenu, pickerDialog, startSessionIn, wsGroup } from '../helpers/p1'
 import {
   behindBadge,
   launchSettled,
@@ -26,7 +26,8 @@ const GRACE_FOR_A_WRONG_DIALOG_OR_LAUNCH_MS = 2000
 
 const pickerTitle = (page: Page): Locator => page.getByText('New Session in…')
 
-const pullAndStart = (page: Page): Locator => page.getByRole('button', { name: 'Pull & Start' })
+const pullAndStart = (page: Page): Locator =>
+  dialogPrimary(pickerDialog(page)).filter({ hasText: /Pull & Start/ })
 
 function emptyDoor(page: Page, wsName: string): Locator {
   return wsGroup(page, wsName).locator('.ws-empty')

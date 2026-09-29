@@ -12,7 +12,7 @@ import {
   waitForBehindBadge,
   waitForSessionRow
 } from '../helpers/blackbox'
-import { startSessionIn, wsRows } from '../helpers/p1'
+import { dialogPrimary, startSessionIn, wsRows } from '../helpers/p1'
 
 const PICKER = 'New Session in…'
 const GRACE_FOR_A_WRONG_DIALOG_OR_LAUNCH_MS = 2000
@@ -28,7 +28,8 @@ const pickerRows = (dlg: Locator): Locator => dlg.getByRole('option')
 
 const selectedRow = (dlg: Locator): Locator => dlg.locator('[aria-selected="true"]')
 
-const primary = (dlg: Locator, label: RegExp): Locator => dlg.getByRole('button', { name: label })
+const primary = (dlg: Locator, label: RegExp): Locator =>
+  dialogPrimary(dlg).filter({ hasText: label })
 
 const SAMPLE_ROW_AND_BADGE_EVERY_MS = 25
 
