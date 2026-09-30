@@ -97,11 +97,13 @@ describe('attention — precedence: approval outranks turn-done, exited replaces
   })
 })
 
-describe('attention — title snapshot survives the session it names', () => {
-  it('the raise-time title rides on the event (an exited session is untracked later)', () => {
+describe('attention — title and session snapshot survive the session they name', () => {
+  it('the raise-time title and session id ride on the event (an exited session is untracked later)', () => {
     const { t } = makeTracker()
-    t.onExited('tab-A', UNFOCUSED, 'Fix the WebGL garbling')
-    expect(t.list()).toEqual([expect.objectContaining({ title: 'Fix the WebGL garbling' })])
+    t.onExited('tab-A', UNFOCUSED, { title: 'Fix the WebGL garbling', sessionId: 'sid-A' })
+    expect(t.list()).toEqual([
+      expect.objectContaining({ title: 'Fix the WebGL garbling', sessionId: 'sid-A' })
+    ])
   })
 })
 

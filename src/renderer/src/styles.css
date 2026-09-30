@@ -835,6 +835,24 @@ body {
   cursor: pointer;
   cursor: help;
 }
+.ws-tab-unread {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--red);
+}
+.ws-unread-count {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 14px;
+  padding: 0 5px;
+  border-radius: 7px;
+  color: var(--bg-0);
+  background: var(--red);
+}
 .ws-tab-sub {
   display: flex;
   align-items: center;
