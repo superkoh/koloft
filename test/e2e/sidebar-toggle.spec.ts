@@ -5,6 +5,7 @@ import { test, expect, quitAndClose } from './helpers/app'
 import { launchSettled } from './helpers/blackbox'
 import {
   notesArea,
+  openMenu,
   sendShortcut,
   settingsOnDisk,
   snap,
@@ -107,6 +108,20 @@ test.describe('Sidebar: the button by the traffic lights hides and shows it, and
     await sendShortcut(app, 'shortcut:focus-notes')
     await expect(page.locator('.side')).toBeVisible()
     await expect(notesArea(page)).toBeFocused()
+  })
+
+  test('SB06: hiding the sidebar closes its open row menu, even with the pointer resting on the menu', async ({
+    app,
+    page
+  }) => {
+    test.setTimeout(60_000)
+    await waitBooted(page)
+    await openMenu(page, page.locator('.ws-head').first())
+    await page.locator('.menu .mi').last().hover()
+
+    await sendShortcut(app, 'shortcut:toggle-sidebar')
+    await expect(page.locator('.side')).toBeHidden()
+    await expect(page.locator('.menu')).toHaveCount(0)
   })
 
   test('SB03: adding a new workspace with ⇧⌘O while the sidebar is hidden shows it with the new workspace', async ({

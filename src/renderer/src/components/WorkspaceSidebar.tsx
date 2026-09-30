@@ -175,6 +175,15 @@ export function WorkspaceSidebar({
   const setFreshBusy = useCallback((busy: boolean) => {
     freshBusy.current = busy
   }, [])
+  const closeFloating = (): void => {
+    setMenu(null)
+    setParkedPop(null)
+    if (!freshBusy.current) setFresh(null)
+  }
+  const sidebarHidden = useStore((s) => s.settings.sidebarHidden)
+  useEffect(() => {
+    if (sidebarHidden) closeFloating()
+  }, [sidebarHidden])
   const [, bumpCronClock] = useState(0)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -650,14 +659,7 @@ export function WorkspaceSidebar({
   return (
     <>
       <div className="island flat isl-sessions">
-        <div
-          className="ws-list"
-          onScroll={() => {
-            setMenu(null)
-            setParkedPop(null)
-            if (!freshBusy.current) setFresh(null)
-          }}
-        >
+        <div className="ws-list" onScroll={closeFloating}>
           {rows.length === 0 && !welcomeActive && (
             <div className="hint">
               No workspaces yet.
