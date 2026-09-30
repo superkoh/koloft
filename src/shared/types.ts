@@ -357,12 +357,22 @@ export interface ContentHit {
 
 export type AttentionKind = 'turn-done' | 'approval' | 'exited'
 
-export interface AttentionEvent {
+export interface AttentionSubject {
+  title?: string
+  sessionId?: string
+}
+
+export interface AttentionEvent extends AttentionSubject {
   tabId: string
   kind: AttentionKind
   at: number
-  title?: string
   resurrected?: boolean
+}
+
+export const ATTENTION_REASON: Record<AttentionKind, string> = {
+  'turn-done': 'turn done — your move',
+  approval: 'waiting for your approval',
+  exited: 'session exited unexpectedly'
 }
 
 export interface FlowStats {
@@ -724,6 +734,7 @@ export interface KoloftApi {
     activeTab(id: string | null): void
     visit(id: string): void
     onActivateTab(cb: (tabId: string) => void): () => void
+    onChanged(cb: (pending: AttentionEvent[]) => void): () => void
   }
   preview: {
     readText(path: string): Promise<string>

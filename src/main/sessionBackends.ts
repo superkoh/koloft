@@ -1,4 +1,5 @@
 import type {
+  AttentionSubject,
   BackendAvailability,
   BackendId,
   BackendSessionInfo,
@@ -43,7 +44,7 @@ export interface SessionBackend {
 export interface SessionLifecycle {
   prompted(tabId: string): void
   bound(tabId: string, key: string): void
-  exited(tabId: string, title?: string): void
+  exited(tabId: string, subject: AttentionSubject): void
   clearAttention(tabId: string): void
   open(tabId: string, target: string): void
 }
@@ -63,7 +64,7 @@ export class SessionBackends {
         this.lifecycle.clearAttention(tabId)
         return this.lifecycle.bound(tabId, event.key)
       case 'exited':
-        return this.exited(tabId, event.clean, event.title)
+        return this.exited(tabId, event.clean, { title: event.title, sessionId: event.sessionId })
       case 'open':
         return this.lifecycle.open(tabId, event.target)
       case 'prompt':
@@ -72,7 +73,7 @@ export class SessionBackends {
     this.ownerOfTab(tabId)?.observe(tabId, event)
   }
 
-  private exited(tabId: string, clean: boolean, title?: string): void {
+  private exited(tabId: string, clean: boolean, subject: AttentionSubject): void {
     const now = Date.now()
     for (const [id, at] of this.cleanExitAt) {
       if (now - at > CLEAN_EXIT_HIDES_A_LATER_EXIT_MS) this.cleanExitAt.delete(id)
@@ -80,7 +81,7 @@ export class SessionBackends {
     if (clean) {
       this.cleanExitAt.set(tabId, now)
       this.lifecycle.clearAttention(tabId)
-    } else if (!this.cleanExitAt.has(tabId)) this.lifecycle.exited(tabId, title)
+    } else if (!this.cleanExitAt.has(tabId)) this.lifecycle.exited(tabId, subject)
   }
 
   register(adapter: SessionBackend): void {

@@ -18,13 +18,14 @@ import {
 } from 'react-icons/lu'
 import type { BackendId, SessionRow } from '@shared/types'
 import type { DirtyTab } from '../unsavedGuard'
-import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
+import { ATTENTION_REASON, PLACEHOLDER_SESSION_TITLE } from '@shared/types'
 import { popoverX } from '@shared/accountUsage'
 import { slugOf } from '@shared/cronNames'
 import { describeWhen } from '@shared/schedule'
 import { forecastFor } from '../cronForm'
 import { useStore } from '../store'
 import {
+  attentionOnRow,
   isOrphanRow,
   marqueeAnim,
   mixesBackends,
@@ -143,6 +144,7 @@ export function WorkspaceSidebar({
   const cron = useStore((s) => s.cron)
   const sessions = useStore((s) => s.sessions)
   const leftovers = useStore((s) => s.leftovers)
+  const attention = useStore((s) => s.attention)
   const storeTabs = useStore((s) => s.tabs)
   const activeTabId = useStore((s) => s.activeTabId)
   const resumeLaunch = useStore((s) => s.resumeLaunch)
@@ -181,6 +183,8 @@ export function WorkspaceSidebar({
   const tabIdFor = (sessionId: string): string | undefined =>
     sessionByIdEntries.find((s) => s.sessionId === sessionId && s.alive)?.tabId ??
     storeTabs.find((t) => t.alive && t.sessionId === sessionId)?.id
+  const tabIdOfRow = (row: SessionRow): string | undefined =>
+    row.pending ? row.id : row.running ? tabIdFor(row.id) : undefined
 
   useEffect(() => {
     const t = setInterval(() => bumpCronClock((n) => n + 1), CRON_BADGE_MS)
@@ -683,6 +687,9 @@ export function WorkspaceSidebar({
               if (ws.isGit) onNewWorktreeSession(ws.path)
               else onNewSession(ws.path)
             }
+            const callingInside = open
+              ? 0
+              : sessionRows.filter((r) => attentionOnRow(r.id, tabIdOfRow(r), attention)).length
             const cronNow = new Date()
             const soon = ws.missing || !open ? null : forecastFor(cron.jobs, ws.path, cronNow)
             return (
@@ -759,6 +766,18 @@ export function WorkspaceSidebar({
                       )}
                     </span>
                   )}
+                  {callingInside > 0 && (
+                    <span
+                      className="ws-tab-parked ws-unread-count"
+                      title={
+                        callingInside > 1
+                          ? `${callingInside} sessions need you`
+                          : '1 session needs you'
+                      }
+                    >
+                      {callingInside}
+                    </span>
+                  )}
                   {!ws.missing && (
                     <button
                       className="hact"
@@ -797,11 +816,8 @@ export function WorkspaceSidebar({
                       </div>
                     )}
                     {sessionRows.map((row) => {
-                      const tabId = row.pending
-                        ? row.id
-                        : row.running
-                          ? tabIdFor(row.id)
-                          : undefined
+                      const tabId = tabIdOfRow(row)
+                      const calling = attentionOnRow(row.id, tabId, attention)
                       const sess = tabId ? sessions.find((s) => s.tabId === tabId) : undefined
                       const stateCls = statusUnavailable(sess)
                         ? ''
@@ -875,6 +891,12 @@ export function WorkspaceSidebar({
                               </i>
                             </span>
                             {tabId && <UnseenFileMark tabId={tabId} />}
+                            {calling && (
+                              <span
+                                className="ws-tab-unread"
+                                title={ATTENTION_REASON[calling.kind]}
+                              />
+                            )}
                             {badge && (
                               <button
                                 className="ws-tab-parked"

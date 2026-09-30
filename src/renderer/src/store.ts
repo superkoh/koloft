@@ -6,6 +6,7 @@ import {
   DEFAULT_TERMINAL_TITLE,
   type AdoptableTab,
   type ArtifactView,
+  type AttentionEvent,
   type BrowserJsDialog,
   type CronState,
   type SessionWorkbenchState,
@@ -85,6 +86,7 @@ interface AppState {
   activeTabId: string | null
   sessions: SessionInfo[]
   leftovers: Record<string, LeftoverProcess[]>
+  attention: AttentionEvent[]
   settings: Settings
   settingsOpen: boolean
   welcomeActive: boolean
@@ -150,6 +152,7 @@ interface AppState {
 
   setSessions: (s: SessionInfo[]) => void
   setLeftovers: (l: Record<string, LeftoverProcess[]>) => void
+  setAttention: (pending: AttentionEvent[]) => void
   setSettings: (s: Settings) => void
   setSettingsOpen: (open: boolean) => void
   setWelcomeActive: (on: boolean) => void
@@ -360,6 +363,7 @@ export const useStore = create<AppState>((set, get) => ({
   activeTabId: null,
   sessions: [],
   leftovers: {},
+  attention: [],
   settings: DEFAULT_SETTINGS,
   settingsOpen: false,
   welcomeActive: false,
@@ -625,6 +629,7 @@ export const useStore = create<AppState>((set, get) => ({
     bindParkedWorkbench()
   },
   setLeftovers: (leftovers) => set({ leftovers }),
+  setAttention: (attention) => set({ attention }),
   setSettings: (settings) => set({ settings }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   setWelcomeActive: (welcomeActive) => set({ welcomeActive }),

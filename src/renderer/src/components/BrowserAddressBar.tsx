@@ -4,6 +4,7 @@ import { loadHistory, match } from '../browserHistory'
 
 export function BrowserAddressBar({
   url,
+  workspace,
   loading,
   canBack,
   canForward,
@@ -18,6 +19,7 @@ export function BrowserAddressBar({
   overflow
 }: {
   url: string
+  workspace: string | null
   loading: boolean
   canBack: boolean
   canForward: boolean
@@ -33,7 +35,7 @@ export function BrowserAddressBar({
 }): JSX.Element {
   const [draft, setDraft] = useState<string | null>(null)
   const [index, setIndex] = useState(-1)
-  const sugg = draft === null ? [] : match(loadHistory(), draft)
+  const sugg = draft === null ? [] : match(loadHistory(), draft, workspace)
 
   const close = (): void => {
     setDraft(null)

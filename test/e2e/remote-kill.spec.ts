@@ -148,7 +148,7 @@ test.describe('who ends the claude on the other machine: every way of ending a r
     }
   })
 
-  test('E-RW-20: a remote claude that dies without an end report raises the “exited” mark once the machine’s tmux list has lost it', async ({
+  test('E-RW-20: a remote claude that dies without an end report raises the “exited” mark, drawn as a red dot on its row, once the machine’s tmux list has lost it', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -166,6 +166,7 @@ test.describe('who ends the claude on the other machine: every way of ending a r
       await expect
         .poll(async () => (await pendingAttention(page)).map((a) => a.kind), { timeout: 60_000 })
         .toContain('exited')
+      await expect(wsRows(page, REMOTE_WS_NAME).locator('.ws-tab-unread')).toHaveCount(1)
       expect(killLines(env, first.sessionId)).toEqual([])
     } finally {
       await quitAndClose(app)

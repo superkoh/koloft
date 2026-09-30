@@ -1,4 +1,4 @@
-import type { AttentionEvent, AttentionKind, SessionStatus } from '@shared/types'
+import type { AttentionEvent, AttentionKind, AttentionSubject, SessionStatus } from '@shared/types'
 
 export interface AttentionContext {
   windowFocused: boolean
@@ -20,7 +20,7 @@ export class AttentionTracker {
     prev: SessionStatus | undefined,
     next: SessionStatus,
     ctx: AttentionContext,
-    title?: string
+    subject: AttentionSubject = {}
   ): void {
     if (next === 'working') {
       this.recentlySuppressed.delete(tabId)
@@ -31,11 +31,11 @@ export class AttentionTracker {
     if (next === 'approval') kind = 'approval'
     else if (next === 'waiting' && (prev === 'working' || prev === 'approval')) kind = 'turn-done'
     if (!kind) return
-    this.raise(tabId, kind, ctx, title)
+    this.raise(tabId, kind, ctx, subject)
   }
 
-  onExited(tabId: string, ctx: AttentionContext, title?: string): void {
-    this.raise(tabId, 'exited', ctx, title)
+  onExited(tabId: string, ctx: AttentionContext, subject: AttentionSubject = {}): void {
+    this.raise(tabId, 'exited', ctx, subject)
   }
 
   clear(tabId: string): void {
@@ -43,12 +43,18 @@ export class AttentionTracker {
     if (this.pending.delete(tabId)) this.onChange(this.list(), null)
   }
 
+  clearSession(sessionId: string): void {
+    const stale = this.list().filter((e) => e.sessionId === sessionId)
+    for (const e of stale) this.pending.delete(e.tabId)
+    if (stale.length) this.onChange(this.list(), null)
+  }
+
   reconsider(tabId: string, ctx: AttentionContext, maxAgeMs = RECONSIDER_WINDOW_MS): void {
     const ev = this.recentlySuppressed.get(tabId)
     if (!ev) return
     this.recentlySuppressed.delete(tabId)
     if (Date.now() - ev.at > maxAgeMs) return
-    this.raise(tabId, ev.kind, ctx, ev.title, true)
+    this.raise(tabId, ev.kind, ctx, ev, true)
   }
 
   list(): AttentionEvent[] {
@@ -59,10 +65,10 @@ export class AttentionTracker {
     tabId: string,
     kind: AttentionKind,
     ctx: AttentionContext,
-    title?: string,
+    subject: AttentionSubject,
     resurrected?: boolean
   ): void {
-    const event: AttentionEvent = { tabId, kind, at: Date.now(), title, resurrected }
+    const event: AttentionEvent = { ...subject, tabId, kind, at: Date.now(), resurrected }
     if (ctx.windowFocused && ctx.activeTabId === tabId) {
       this.recentlySuppressed.set(tabId, event)
       return

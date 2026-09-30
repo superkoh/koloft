@@ -1,5 +1,6 @@
 import { isSessionKind, type SessionBackend } from './agentUi'
 import type {
+  AttentionEvent,
   BackgroundItem,
   LeftoverProcess,
   SessionInfo,
@@ -126,6 +127,14 @@ export function sidebarAttention(
   return null
 }
 
+export function attentionOnRow(
+  rowId: string,
+  tabId: string | undefined,
+  pending: AttentionEvent[]
+): AttentionEvent | undefined {
+  return pending.find((e) => e.sessionId === rowId || e.tabId === tabId)
+}
+
 export function isOrphanRow(
   row: { id: string; running: boolean },
   sessions: { sessionId: string; tabId: string; alive: boolean }[],
@@ -173,17 +182,33 @@ export function welcomeTarget(
   return live.find((w) => w.workspace.path === lastPath) ?? live[0] ?? null
 }
 
+function workspaceOfRow(rows: WorkspaceRows[], rowId: string): string | null {
+  return (
+    rows.find((w) => !w.workspace.missing && w.rows.some((r) => r.id === rowId))?.workspace.path ??
+    null
+  )
+}
+
+export const rowIdOfTab = (sessions: readonly SessionInfo[], tabId: string): string =>
+  sessions.find((s) => s.tabId === tabId)?.sessionId ?? tabId
+
+export function workspaceOfTab(
+  rows: WorkspaceRows[],
+  sessions: readonly SessionInfo[],
+  tabId: string
+): string | null {
+  return workspaceOfRow(rows, rowIdOfTab(sessions, tabId))
+}
+
 export function currentWorkspace(
   rows: WorkspaceRows[],
   rowId: string | null,
   selectedWs: string | null,
   lastWsPath: string | null
 ): string | null {
+  const owner = rowId ? workspaceOfRow(rows, rowId) : null
+  if (owner) return owner
   const live = rows.filter((w) => !w.workspace.missing)
-  if (rowId) {
-    const owner = live.find((w) => w.rows.some((r) => r.id === rowId))
-    if (owner) return owner.workspace.path
-  }
   if (selectedWs && live.some((w) => w.workspace.path === selectedWs)) return selectedWs
   return welcomeTarget(rows, lastWsPath)?.workspace.path ?? null
 }
