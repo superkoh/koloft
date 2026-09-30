@@ -1,13 +1,32 @@
-import type { AccountKind, AccountMeta, UsageSnapshot } from '@shared/types'
+import type { AccountKind, AccountMeta, SessionInfo, UsageSnapshot } from '@shared/types'
 import { fableExhausted, STALE_MS } from '@shared/accountUsage'
 import { ageLabel } from '@shared/freshnessOps'
 import {
+  EPS,
   leximaxFinalists,
   scoreSnapshot,
   type Candidate,
   type ProbeResult,
+  type Score,
   type ScoreRoute
 } from './usageProbe'
+
+export const SCORE_PER_LIVE_SESSION = 2 * EPS
+
+export type LaunchedSession = Pick<SessionInfo, 'tabId' | 'account' | 'status'>
+
+export function liveSessionsPerAccount(
+  sessions: LaunchedSession[],
+  exceptTab: string | undefined
+): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const s of sessions) {
+    if (!s.account || s.tabId === exceptTab || s.status === 'idle') continue
+    const key = s.account.toLowerCase()
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  return counts
+}
 
 export const FRESH_CACHE_MS = 30_000
 export const PICK_BUDGET_MS = 2_000
@@ -25,6 +44,8 @@ export interface PickDeps {
   readSecret(kind: AccountKind, name: string): Promise<string | null>
   probe(a: AccountMeta, secret: string): Promise<ProbeResult>
   onProbeOutcome(name: string, kind: AccountKind, result: ProbeResult): void
+  launchedSessions(): LaunchedSession[]
+  recordPick(tabId: string, account: string): void
   now(): number
 }
 
@@ -80,6 +101,10 @@ function fableFree(u: UsageSnapshot, nowSec: number): boolean {
 
 function resetElapsed(r: number, nowSec: number): boolean {
   return r > 0 && r <= nowSec
+}
+
+function withLoad(score: Score, liveSessions: number): Score {
+  return { ...score, s1: score.s1 + liveSessions * SCORE_PER_LIVE_SESSION }
 }
 
 export class AccountPicker {
@@ -140,19 +165,13 @@ export class AccountPicker {
     return a
   }
 
-  async pick(): Promise<PickResponse> {
+  async pick(tabId?: string): Promise<PickResponse> {
     if (!this.deps.multiAccountOn()) return { account: null, reason: 'disabled' }
     const subs = this.eligible('oauth')
     const apis = this.eligible('apikey', 'custom')
     if (subs.length === 0 && apis.length === 0) return { account: null, reason: 'no-accounts' }
 
-    if (subs.length === 0) {
-      const a = this.roundRobin(apis)
-      return { account: a.name, kind: a.kind, banner: fallbackBanner(a) }
-    }
-
-    const allFresh = subs.every((a) => this.snapshotFor(a, FRESH_CACHE_MS))
-    if (!allFresh) {
+    if (subs.length > 0 && !subs.every((a) => this.snapshotFor(a, FRESH_CACHE_MS))) {
       const round = this.probeRound(subs)
       const nothingCached = subs.every((a) => !this.snapshotFor(a))
       if (nothingCached) {
@@ -161,7 +180,19 @@ export class AccountPicker {
       }
     }
 
+    const res = this.decide(subs, apis, tabId)
+    if (tabId && res.account) this.deps.recordPick(tabId, res.account)
+    return res
+  }
+
+  private decide(subs: AccountMeta[], apis: AccountMeta[], tabId?: string): PickResponse {
+    if (subs.length === 0) {
+      const a = this.roundRobin(apis)
+      return { account: a.name, kind: a.kind, banner: fallbackBanner(a) }
+    }
+
     const nowSec = Math.floor(this.deps.now() / 1000)
+    const load = liveSessionsPerAccount(this.deps.launchedSessions(), tabId)
     const withSnap: { meta: AccountMeta; snap: UsageSnapshot }[] = []
     for (const a of subs) {
       const snap = this.snapshotFor(a)
@@ -191,7 +222,7 @@ export class AccountPicker {
     const scored = withSnap.map(({ meta, snap }) => ({
       meta,
       snap,
-      score: scoreSnapshot(snap, nowSec, route)
+      score: withLoad(scoreSnapshot(snap, nowSec, route), load.get(meta.name.toLowerCase()) ?? 0)
     }))
 
     const fullyProbed = withSnap.length === subs.length

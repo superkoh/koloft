@@ -17,6 +17,7 @@ import { projectInfoFor, realpathSafe } from './projectInfo'
 import { inspectTaskProcs, type TaskProcs } from './taskProcs'
 import { SessionRuntime, envMs, turnOf, type Turn } from './sessionRuntime'
 import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
+import type { LaunchedSession } from './accountPicker'
 
 const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects')
 const TMP_ROOT = ((): string => {
@@ -451,6 +452,7 @@ export class SessionTracker extends SessionRuntime {
   }
 
   setAlive(tabId: string, alive: boolean): void {
+    if (!alive) this.pendingPicked.delete(tabId)
     const t = this.tracked.get(tabId)
     if (t) {
       t.info.alive = alive
@@ -698,6 +700,18 @@ export class SessionTracker extends SessionRuntime {
       t.info.updatedAt = Date.now()
       this.emitUpdate()
     }
+  }
+
+  launchedSessions(): LaunchedSession[] {
+    const tracked = [...this.tracked.values()]
+      .filter((t) => t.info.alive)
+      .map(({ info }) => ({
+        tabId: info.tabId,
+        account: info.pickedAccount ?? info.account,
+        status: info.status
+      }))
+    const awaiting = [...this.pendingPicked].map(([tabId, account]) => ({ tabId, account }))
+    return [...tracked, ...awaiting]
   }
 
   untrack(tabId: string): void {

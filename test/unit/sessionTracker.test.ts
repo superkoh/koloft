@@ -1460,6 +1460,25 @@ describe('SessionTracker — scratchpad dir on the emitted session', () => {
 })
 
 // CC§2
+describe('SessionTracker.launchedSessions — which account each running launch holds', () => {
+  it('lists a pick before its tab registers, once after it does, and drops it when the tab dies unregistered', () => {
+    const cwd = makeWorkspace({})
+    const tracker = newTracker()
+    tracker.setPickedAccount('tabLS1', 'koh')
+    tracker.setPickedAccount('tabLS2', 'nb')
+    expect(tracker.launchedSessions()).toEqual([
+      { tabId: 'tabLS1', account: 'koh' },
+      { tabId: 'tabLS2', account: 'nb' }
+    ])
+
+    tracker.track('tabLS1', cwd)
+    tracker.setAlive('tabLS2', false)
+    expect(tracker.launchedSessions()).toEqual([
+      { tabId: 'tabLS1', account: 'koh', status: undefined }
+    ])
+  })
+})
+
 describe('SessionTracker.transcriptExists — the pre-kill disk truth ⇧⌘R asks before it kills anything', () => {
   it('answers true for a bound session whose transcript is on disk', () => {
     const cwd = makeWorkspace({ 'a.txt': 'a\n' })
