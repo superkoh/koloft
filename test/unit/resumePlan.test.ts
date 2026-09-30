@@ -92,9 +92,10 @@ describe('planResume: unbound session whose cwd WAS a claude worktree (§4 left 
   })
 })
 
+const occupied = { occupantOf: () => 'Refactor sessions' }
+
 describe('planResume: bound session whose worktree still exists', () => {
   const bound = row({ worktreeState: binding })
-  const occupied = { occupantOf: () => 'Refactor sessions' }
 
   // CC§3
   it('resumes silently from originalCwd, never the worktree (claude re-enters it), when nobody else is in it', async () => {
@@ -152,7 +153,7 @@ describe('planResume: the resume start follows the transcript slug (§1✎)', ()
   })
 
   it('carries that start into the dialog and the rebuild alike', async () => {
-    const dialog = await planResume(bound, probes({ occupantOf: () => 'Other run' }), WT)
+    const dialog = await planResume(bound, probes(occupied), WT)
     expect(dialog).toMatchObject({ action: 'dialog', resumeCwd: WT })
     const rebuild = await planResume(bound, probes({ dirExists: (p) => p === REPO }), WT)
     expect(rebuild).toMatchObject({ action: 'rebuild', resumeCwd: WT })

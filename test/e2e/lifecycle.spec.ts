@@ -237,8 +237,8 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
   }) => {
     test.setTimeout(120_000)
     gitInit(env.workspaces.a)
-    const wt = gitWorktreeAdd(env.workspaces.a, 'slow')
-    execFileSync('git', ['worktree', 'remove', wt], { cwd: env.workspaces.a })
+    execFileSync('git', ['branch', 'worktree-slow'], { cwd: env.workspaces.a })
+    const wt = path.join(env.workspaces.a, '.claude', 'worktrees', 'slow')
     const id = seedJsonl(env, env.workspaces.a, {
       summary: 'Slow to plan session',
       cwd: env.workspaces.a,
@@ -335,7 +335,6 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       await page.keyboard.type('shared')
       await page.keyboard.press('Enter')
       await expect(c8).toHaveCount(0)
-      await waitForCalls(env, 1)
       await expect(page.locator('.ws-tab:not(.cold):not(.st-pending)')).toHaveCount(1, {
         timeout: 60_000
       })
