@@ -17,6 +17,7 @@ export function setupAppMenu(
       | 'save'
       | 'toggle-keep-awake'
       | 'focus-notes'
+      | 'toggle-sidebar'
       | 'open-settings'
   ) => void,
   onBrowserCommand: (cmd: BrowserCommand) => void,
@@ -152,6 +153,12 @@ export function setupAppMenu(
         accelerator: 'Control+`',
         enabled: false,
         click: () => onShortcut('new-terminal-tab')
+      },
+      {
+        id: 'toggle-sidebar',
+        label: 'Toggle Sidebar',
+        accelerator: 'CmdOrCtrl+B',
+        click: () => onShortcut('toggle-sidebar')
       },
       browserItem('toggle-browser', 'Toggle Workbench', 'Shift+CmdOrCtrl+B'),
       {

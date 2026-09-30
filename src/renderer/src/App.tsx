@@ -22,6 +22,7 @@ import {
   LuSettings,
   LuFolderPlus,
   LuPanelRight,
+  LuPanelLeft,
   LuAppWindow,
   LuCoffee,
   LuCircleArrowUp,
@@ -57,6 +58,7 @@ import {
   paneWidthFromDrag,
   relTime,
   selectionRoot,
+  sidebarAttention,
   welcomeQuietLine,
   welcomeTarget
 } from './sessionRows'
@@ -243,6 +245,7 @@ export default function App(): JSX.Element {
   const notesHeight = useStore((s) => s.notesHeight)
   const setNotesHeight = useStore((s) => s.setNotesHeight)
   const notesFolded = useStore((s) => s.settings.notesFolded)
+  const sidebarHidden = useStore((s) => s.settings.sidebarHidden)
   const selectedWs = useStore((s) => s.selectedWs)
   const [notesFocus, setNotesFocus] = useState(0)
   const [nbDragging, setNbDragging] = useState(false)
@@ -573,6 +576,22 @@ export default function App(): JSX.Element {
     void window.api.settings.set({ notesFolded: folded })
   }, [])
 
+  const setSidebarHidden = useCallback(
+    (hidden: boolean): void => {
+      const st = useStore.getState()
+      if (st.settings.sidebarHidden === hidden) return
+      if (hidden && document.activeElement?.closest('.side')) returnFocus()
+      st.setSettings({ ...st.settings, sidebarHidden: hidden })
+      void window.api.settings.set({ sidebarHidden: hidden })
+    },
+    [returnFocus]
+  )
+  const toggleSidebar = useCallback(
+    (): void => setSidebarHidden(!useStore.getState().settings.sidebarHidden),
+    [setSidebarHidden]
+  )
+  useEffect(() => window.api.shortcuts.onToggleSidebar(toggleSidebar), [toggleSidebar])
+
   useEffect(() => {
     return window.api.shortcuts.onFocusNotes(() => {
       if (!document.querySelector('.isl-notes')) return
@@ -580,10 +599,11 @@ export default function App(): JSX.Element {
         returnFocus()
         return
       }
+      setSidebarHidden(false)
       setNotesFolded(false)
       setNotesFocus((n) => n + 1)
     })
-  }, [returnFocus, setNotesFolded])
+  }, [returnFocus, setNotesFolded, setSidebarHidden])
 
   useEffect(() => {
     return window.api.shortcuts.onFindFiles(() => {
@@ -698,15 +718,17 @@ export default function App(): JSX.Element {
     const r = await window.api.workspace.add(picked)
     if (r.code === 'rejected-worktree') showToast('Pick the repo root instead')
     else if (r.code === 'not-found') showToast('That folder does not exist')
+    else if (r.code === 'added') setSidebarHidden(false)
     return r.code === 'added' || r.code === 'exists'
-  }, [showToast])
+  }, [showToast, setSidebarHidden])
   const addRemoteWorkspace = useCallback(
     async (key: string): Promise<void> => {
       setRemoteDialog(false)
       const r = await window.api.workspace.add(key)
       if (r.code === 'exists') showToast('Already added')
+      else if (r.code === 'added') setSidebarHidden(false)
     },
-    [showToast]
+    [showToast, setSidebarHidden]
   )
   useEffect(() => window.api.shortcuts.onAddWorkspace(() => void addWorkspace()), [addWorkspace])
   useEffect(() => {
@@ -1132,12 +1154,13 @@ export default function App(): JSX.Element {
     measure()
     window.addEventListener('resize', measure)
     return () => window.removeEventListener('resize', measure)
-  }, [])
+  }, [sidebarHidden])
 
   const hint = useHints()
+  const attention = sidebarHidden ? sidebarAttention(sessions, activeTabId) : null
 
   return (
-    <div className="app">
+    <div className={'app' + (sidebarHidden ? ' sb-off' : '')}>
       {toast && (
         <div
           className={'toast' + (toastReveal ? ' link' : '')}
@@ -1151,7 +1174,27 @@ export default function App(): JSX.Element {
         </div>
       )}
 
-      <div className="side" style={{ width: sidebarWidth }}>
+      <button
+        className={
+          'aux-ico sb-toggle' +
+          (sidebarHidden ? '' : ' on') +
+          (attention ? ` unread ${attention}` : '')
+        }
+        onClick={toggleSidebar}
+        title={
+          (sidebarHidden ? 'Show sidebar (⌘B)' : 'Hide sidebar (⌘B)') +
+          (attention === 'approval'
+            ? ' — a session needs approval'
+            : attention === 'waiting'
+              ? ' — a session just finished'
+              : '')
+        }
+        aria-label="Sidebar"
+        aria-pressed={!sidebarHidden}
+      >
+        <LuPanelLeft size={18} />
+      </button>
+      <div className={'side' + (sidebarHidden ? ' off' : '')} style={{ width: sidebarWidth }}>
         <div className="titlebar">
           {overlay && (
             <button

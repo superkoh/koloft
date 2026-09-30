@@ -61,9 +61,20 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
         keys: ['⌥⌘N'],
         name: 'Note',
         uses: [
-          { what: "Puts the caret in the workspace's note, unfolding it first." },
+          { what: "Puts the caret in the workspace's note, showing and unfolding it first." },
           { where: 'Note', what: 'Sends the caret back to where it was.' },
           { where: 'No workspace', what: 'Nothing.' }
+        ]
+      },
+      {
+        keys: ['⌘B'],
+        name: 'Toggle Sidebar',
+        uses: [
+          { what: 'Shows or hides the sidebar; its width is kept.' },
+          {
+            where: 'Hidden',
+            what: 'A dot on the sidebar button marks a session that needs approval or just finished.'
+          }
         ]
       }
     ]

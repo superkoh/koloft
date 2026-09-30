@@ -32,6 +32,7 @@ export function useHints(): ActiveHint | null {
   const [active, setActive] = useState<{ id: HintId; selector: string; n: number } | null>(null)
   const [readyAt, setReadyAt] = useState(0)
   const panelShown = useStore(panelShownOf)
+  const sidebarHidden = useStore((s) => s.settings.sidebarHidden)
 
   const enqueue = useCallback((f: HintFire): void => {
     const st = useStore.getState().settings
@@ -61,7 +62,8 @@ export function useHints(): ActiveHint | null {
         if (!mainHasAnsweredPanelState(st)) return
         if (panelShownOf(st)) return drop()
       }
-      if (!document.querySelector(selectorOf(next, panelShownOf(st)))) return
+      if (!document.querySelector(selectorOf(next, panelShownOf(st), st.settings.sidebarHidden)))
+        return
       const seen = st.settings.hintsSeen
       drop()
       updateSettings({ hintsSeen: [...seen, next.id] })
@@ -87,5 +89,5 @@ export function useHints(): ActiveHint | null {
   }, [])
 
   if (!active) return null
-  return { ...active, selector: selectorOf(active, panelShown), onDone, onOff }
+  return { ...active, selector: selectorOf(active, panelShown, sidebarHidden), onDone, onOff }
 }

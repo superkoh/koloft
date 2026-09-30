@@ -29,6 +29,7 @@ export interface ActiveHint extends HintFire {
 }
 
 const WORKBENCH_TOGGLE = '.aux-ico.wb-toggle'
+const SIDEBAR_TOGGLE = '.aux-ico.sb-toggle'
 
 export function rowSelector(tabId: string): string {
   return `.ws-tab[data-tab-id="${tabId}"]`
@@ -38,8 +39,10 @@ export function wbTabSelector(tabId: string): string {
   return `.wb-tab[data-wb-tab-id="${tabId}"]`
 }
 
-export function selectorOf(h: HintFire, panelShown: boolean): string {
-  return h.id === 'agent-web' && !panelShown ? WORKBENCH_TOGGLE : h.selector
+export function selectorOf(h: HintFire, panelShown: boolean, sidebarHidden: boolean): string {
+  if (h.id === 'agent-web' && !panelShown) return WORKBENCH_TOGGLE
+  if ((h.id === 'approval' || h.id === 'worktree') && sidebarHidden) return SIDEBAR_TOGGLE
+  return h.selector
 }
 
 function rowTabId(s: HintSnapshot, rowId: string): string {

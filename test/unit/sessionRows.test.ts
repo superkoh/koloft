@@ -13,6 +13,7 @@ import {
   relTime,
   rowStateClass,
   selectionRoot,
+  sidebarAttention,
   welcomeQuietLine,
   welcomeTarget
 } from '../../src/renderer/src/sessionRows'
@@ -64,6 +65,36 @@ describe('rowStateClass (C2 lightbar)', () => {
 
   it('keeps running rows on their run-state once the pending flag clears', () => {
     expect(rowStateClass(true, 'working', false)).toBe('st-working')
+  })
+})
+
+describe('sidebarAttention (the dot on the sidebar button while the sidebar is hidden)', () => {
+  const live = (tabId: string, status?: 'working' | 'waiting' | 'approval' | 'idle') => ({
+    tabId,
+    alive: true,
+    status
+  })
+
+  it('an approval anywhere else outranks a session that just finished', () => {
+    expect(
+      sidebarAttention([live('t1'), live('t2', 'waiting'), live('t3', 'approval')], 't1')
+    ).toBe('approval')
+    expect(sidebarAttention([live('t1'), live('t2', 'waiting')], 't1')).toBe('waiting')
+  })
+
+  it('ignores the session on screen, working and long-idle sessions, dead tabs and a degraded Codex session', () => {
+    expect(
+      sidebarAttention(
+        [
+          live('t1', 'approval'),
+          live('t2', 'working'),
+          live('t3', 'idle'),
+          { tabId: 't4', alive: false, status: 'approval' as const },
+          { ...live('t5', 'waiting'), details: { codex: { observation: 'degraded' as const } } }
+        ],
+        't1'
+      )
+    ).toBeNull()
   })
 })
 

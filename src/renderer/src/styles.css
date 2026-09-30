@@ -114,8 +114,36 @@ body {
   gap: 8px;
   height: var(--titlebar-h);
   flex: 0 0 auto;
-  padding: 0 8px 0 82px;
+  padding: 0 8px 0 118px;
   -webkit-app-region: drag;
+}
+.side.off {
+  display: none;
+}
+.aux-ico.sb-toggle {
+  position: absolute;
+  top: 9px;
+  left: 82px;
+  z-index: 3;
+}
+.aux-ico.sb-toggle.approval::after {
+  background: var(--amber);
+  animation: setDotPulse 1.6s ease-in-out infinite;
+}
+.aux-ico.sb-toggle.waiting::after {
+  background: var(--good);
+}
+.app.sb-off .center-row {
+  padding-left: 10px;
+}
+.app.sb-off .center-top {
+  padding-left: 104px;
+}
+.app.sb-off .wb-col.full {
+  margin-top: var(--titlebar-h);
+}
+.app:has(.wb-panel.pagefull) .sb-toggle {
+  display: none;
 }
 .side-me {
   flex: 0 0 auto;
@@ -1138,16 +1166,19 @@ body {
   display: flex;
   align-items: center;
 }
-.aux-ico.wb-toggle {
+.aux-ico.wb-toggle,
+.aux-ico.sb-toggle {
   width: 28px;
   height: 28px;
   border-radius: 6px;
 }
-.aux-ico.wb-toggle.on {
+.aux-ico.wb-toggle.on,
+.aux-ico.sb-toggle.on {
   color: var(--fg-faint);
 }
 .aux-ico.wb-toggle:hover,
-.aux-ico.wb-toggle.on:hover {
+.aux-ico.wb-toggle.on:hover,
+.aux-ico.sb-toggle:hover {
   color: var(--accent);
 }
 .aux-ico.wb-toggle[aria-disabled='true']:hover {

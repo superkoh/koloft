@@ -112,6 +112,18 @@ export function rowStateClass(
   }
 }
 
+export function sidebarAttention(
+  sessions: Pick<SessionInfo, 'tabId' | 'alive' | 'status' | 'details'>[],
+  activeTabId: string | null
+): 'approval' | 'waiting' | null {
+  const others = sessions.filter(
+    (s) => s.alive && s.tabId !== activeTabId && s.details?.codex?.observation !== 'degraded'
+  )
+  if (others.some((s) => s.status === 'approval')) return 'approval'
+  if (others.some((s) => s.status === 'waiting')) return 'waiting'
+  return null
+}
+
 export function isOrphanRow(
   row: { id: string; running: boolean },
   sessions: { sessionId: string; tabId: string; alive: boolean }[],

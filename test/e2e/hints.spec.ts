@@ -213,6 +213,36 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
     }
   })
 
+  test('with the sidebar hidden, an approval elsewhere lights an amber dot on the sidebar button and the approval card points at it until the sidebar comes back', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const { app, page } = await start(env, { hintsSeen: ['worktree'] })
+    const sidebarButton = '.aux-ico.sb-toggle'
+    try {
+      await startSessionIn(page, 'ws-a')
+      const a = await shownTabId(page)
+      await startSessionIn(page, 'ws-a')
+      const b = await shownTabId(page)
+      await page.locator(rowSel(a)).click()
+      await expect(page.locator(rowSel(a))).toHaveClass(/\bactive\b/, { timeout: 15_000 })
+
+      await clickAppMenuItem(app, page, 'toggle-sidebar')
+      await expect(page.locator('.side')).toBeHidden()
+      await typeIntoHiddenRow(page, b, '/need-approval')
+      await expect(page.locator(sidebarButton)).toHaveClass(/\bapproval\b/, { timeout: 30_000 })
+      await expect(card(page, 'approval')).toBeVisible({ timeout: 30_000 })
+      await expectAnchoredAt(page, sidebarButton)
+
+      await clickAppMenuItem(app, page, 'toggle-sidebar')
+      await expect(page.locator('.side')).toBeVisible()
+      await expectAnchoredAt(page, rowSel(b))
+      await expect(page.locator(sidebarButton)).not.toHaveClass(/\bapproval\b/)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('T-HN-03: the agent-web hint follows the page onto the Browser tab', async ({ env }) => {
     test.setTimeout(240_000)
     const { app, page } = await start(env, { hintsSeen: ['workbench'], panelOpen: false })

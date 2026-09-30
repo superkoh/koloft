@@ -411,6 +411,11 @@ const api: KoloftApi = {
       ipcRenderer.on('shortcut:focus-notes', handler)
       return () => ipcRenderer.removeListener('shortcut:focus-notes', handler)
     },
+    onToggleSidebar: (cb) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('shortcut:toggle-sidebar', handler)
+      return () => ipcRenderer.removeListener('shortcut:toggle-sidebar', handler)
+    },
     onNewSession: (cb) => {
       const handler = (): void => cb()
       ipcRenderer.on('shortcut:new-session', handler)
