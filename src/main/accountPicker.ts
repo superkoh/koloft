@@ -1,4 +1,4 @@
-import type { AccountKind, AccountMeta, SessionStatus, UsageSnapshot } from '@shared/types'
+import type { AccountKind, AccountMeta, SessionInfo, UsageSnapshot } from '@shared/types'
 import { fableExhausted, STALE_MS } from '@shared/accountUsage'
 import { ageLabel } from '@shared/freshnessOps'
 import {
@@ -12,25 +12,16 @@ import {
 } from './usageProbe'
 
 export const SCORE_PER_LIVE_SESSION = 2 * EPS
-export const QUIET_SESSION_STOPS_COUNTING_MS = 30 * 60_000
 
-export interface LaunchedSession {
-  tabId: string
-  account?: string
-  status?: SessionStatus
-  updatedAt: number
-}
+export type LaunchedSession = Pick<SessionInfo, 'tabId' | 'account' | 'status'>
 
 export function liveSessionsPerAccount(
   sessions: LaunchedSession[],
-  exceptTab: string | undefined,
-  nowMs: number
+  exceptTab: string | undefined
 ): Map<string, number> {
   const counts = new Map<string, number>()
   for (const s of sessions) {
-    if (!s.account || s.tabId === exceptTab) continue
-    const busy = s.status === 'working' || s.status === 'approval'
-    if (!busy && nowMs - s.updatedAt > QUIET_SESSION_STOPS_COUNTING_MS) continue
+    if (!s.account || s.tabId === exceptTab || s.status === 'idle') continue
     const key = s.account.toLowerCase()
     counts.set(key, (counts.get(key) ?? 0) + 1)
   }
@@ -201,7 +192,7 @@ export class AccountPicker {
     }
 
     const nowSec = Math.floor(this.deps.now() / 1000)
-    const load = liveSessionsPerAccount(this.deps.launchedSessions(), tabId, this.deps.now())
+    const load = liveSessionsPerAccount(this.deps.launchedSessions(), tabId)
     const withSnap: { meta: AccountMeta; snap: UsageSnapshot }[] = []
     for (const a of subs) {
       const snap = this.snapshotFor(a)

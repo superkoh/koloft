@@ -112,12 +112,7 @@ import {
   validateNewAccount
 } from './accounts'
 import { probeAccount, shouldSkipFable } from './usageProbe'
-import {
-  AccountPicker,
-  PROBE_TIMEOUT_MS,
-  type LaunchedSession,
-  type PickResponse
-} from './accountPicker'
+import { AccountPicker, PROBE_TIMEOUT_MS, type PickResponse } from './accountPicker'
 import { loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
 import { WorkspaceManager, type LiveSession } from './workspaces'
@@ -549,28 +544,10 @@ const picker = new AccountPicker({
       skipFable: shouldSkipFable(a, Date.now())
     }),
   onProbeOutcome: foldProbeResult,
-  launchedSessions,
+  launchedSessions: () => tracker.launchedSessions(),
   recordPick: (tabId, account) => tracker.setPickedAccount(tabId, account),
   now: () => Date.now()
 })
-
-function launchedSessions(): LaunchedSession[] {
-  const now = Date.now()
-  const tracked = tracker
-    .list()
-    .filter((s) => s.alive)
-    .map((s) => ({
-      tabId: s.tabId,
-      account: s.pickedAccount ?? s.account,
-      status: s.status,
-      updatedAt: s.updatedAt
-    }))
-  const awaiting = tracker
-    .picksAwaitingTrack()
-    .filter(([tabId]) => ptyMgr.get(tabId))
-    .map(([tabId, account]) => ({ tabId, account, updatedAt: now }))
-  return [...tracked, ...awaiting]
-}
 
 function watchPickRequests(pickDir: string): fs.FSWatcher | null {
   return watchJsonDrops(pickDir, (name) =>

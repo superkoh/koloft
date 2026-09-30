@@ -6,7 +6,6 @@ import {
   liveSessionsPerAccount,
   PICK_BUDGET_MS,
   PROBE_TIMEOUT_MS,
-  QUIET_SESSION_STOPS_COUNTING_MS,
   type LaunchedSession,
   type PickDeps
 } from '../../src/main/accountPicker'
@@ -80,7 +79,7 @@ function makeHarness(
     },
     onProbeOutcome: () => {},
     launchedSessions: () => sessions,
-    recordPick: (tabId, account) => sessions.push({ tabId, account, updatedAt: clock }),
+    recordPick: (tabId, account) => sessions.push({ tabId, account }),
     now: () => clock
   }
   return {
@@ -331,18 +330,11 @@ describe('U4 · sessions already running on an account', () => {
     return h
   }
 
-  function tally(picks: (string | null)[]): Record<string, number> {
-    const out: Record<string, number> = {}
-    for (const p of picks) out[p ?? 'null'] = (out[p ?? 'null'] ?? 0) + 1
-    return out
-  }
-
   it('a burst of launches spreads over even accounts instead of piling onto the one whose week resets first', async () => {
     const h = evenPool(['a', 'b', 'c', 'd'])
-    await h.picker.pick()
     const picks: (string | null)[] = []
     for (let i = 0; i < 8; i++) picks.push((await h.picker.pick(`tab-${i}`)).account)
-    expect(tally(picks)).toEqual({ a: 2, b: 2, c: 2, d: 2 })
+    expect(picks.sort()).toEqual(['a', 'a', 'b', 'b', 'c', 'c', 'd', 'd'])
   })
 
   it('launches that all wait on the first probe round still spread', async () => {
@@ -355,24 +347,21 @@ describe('U4 · sessions already running on an account', () => {
     const h = makeHarness([meta({ name: 'light' }), meta({ name: 'heavy' })])
     h.setProbe('light', { ok: true, usage: usage({ u5: 0.1, u7: 0.2 }) })
     h.setProbe('heavy', { ok: true, usage: usage({ u5: 0.6, u7: 0.6 }) })
-    await h.picker.pick()
     expect((await h.picker.pick('tab-1')).account).toBe('light')
     expect((await h.picker.pick('tab-2')).account).toBe('light')
   })
 
-  it('counts a session by account name in any case, skips the launching tab, and drops one quiet past the cutoff unless it is mid-turn', () => {
-    const quietSince = NOW_MS - QUIET_SESSION_STOPS_COUNTING_MS - 1
+  it('counts a session by account name in any case, and skips the launching tab and idle sessions', () => {
     const counts = liveSessionsPerAccount(
       [
-        { tabId: 'fresh', account: 'Koh', updatedAt: NOW_MS },
-        { tabId: 'quiet', account: 'koh', status: 'waiting', updatedAt: quietSince },
-        { tabId: 'long-turn', account: 'koh', status: 'working', updatedAt: quietSince },
-        { tabId: 'asking', account: 'koh', status: 'approval', updatedAt: quietSince },
-        { tabId: 'self', account: 'koh', updatedAt: NOW_MS },
-        { tabId: 'bare', updatedAt: NOW_MS }
+        { tabId: 'just-launched', account: 'Koh' },
+        { tabId: 'resting', account: 'koh', status: 'waiting' },
+        { tabId: 'mid-turn', account: 'koh', status: 'working' },
+        { tabId: 'idle', account: 'koh', status: 'idle' },
+        { tabId: 'self', account: 'koh' },
+        { tabId: 'no-account' }
       ],
-      'self',
-      NOW_MS
+      'self'
     )
     expect([...counts]).toEqual([['koh', 3]])
   })
