@@ -1161,11 +1161,17 @@ export default function App(): JSX.Element {
     return () => window.removeEventListener('resize', measure)
   }, [sidebarHidden])
 
+  const [osFullscreen, setOsFullscreen] = useState(false)
+  useEffect(() => {
+    void window.api.windowFullscreen.get().then(setOsFullscreen)
+    return window.api.windowFullscreen.onChange(setOsFullscreen)
+  }, [])
+
   const hint = useHints()
   const attention = sidebarHidden ? sidebarAttention(sessions, activeTabId) : null
 
   return (
-    <div className={'app' + (sidebarHidden ? ' sb-off' : '')}>
+    <div className={'app' + (sidebarHidden ? ' sb-off' : '') + (osFullscreen ? ' os-full' : '')}>
       {toast && (
         <div
           className={'toast' + (toastReveal ? ' link' : '')}
@@ -1179,19 +1185,6 @@ export default function App(): JSX.Element {
         </div>
       )}
 
-      <button
-        className={
-          'aux-ico sb-toggle' +
-          (sidebarHidden ? '' : ' on') +
-          (attention ? ` unread ${attention}` : '')
-        }
-        onClick={toggleSidebar}
-        title={'Sidebar (⌘B)' + (attention ? SIDEBAR_ATTENTION_NOTE[attention] : '')}
-        aria-label="Sidebar"
-        aria-pressed={!sidebarHidden}
-      >
-        <LuPanelLeft size={18} />
-      </button>
       <div className="side" style={{ width: sidebarWidth }}>
         <div className="titlebar">
           {overlay && (
@@ -1548,6 +1541,20 @@ export default function App(): JSX.Element {
           </div>
         </div>
       </div>
+      {/* PLATFORM§24 */}
+      <button
+        className={
+          'aux-ico sb-toggle' +
+          (sidebarHidden ? '' : ' on') +
+          (attention ? ` unread ${attention}` : '')
+        }
+        onClick={toggleSidebar}
+        title={'Sidebar (⌘B)' + (attention ? SIDEBAR_ATTENTION_NOTE[attention] : '')}
+        aria-label="Sidebar"
+        aria-pressed={!sidebarHidden}
+      >
+        <LuPanelLeft size={18} />
+      </button>
       {newRequest && (
         <NewSessionDialog
           key={newRequest.id}

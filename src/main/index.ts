@@ -1064,6 +1064,8 @@ function createWindow(): void {
   const WEBGL_REPAIR_BLUR_MS = 30_000
   let blurredAt = 0
   mainWindow.on('restore', requestWebglRepair)
+  mainWindow.on('enter-full-screen', () => sendToRenderer('window:fullscreen', true))
+  mainWindow.on('leave-full-screen', () => sendToRenderer('window:fullscreen', false))
   mainWindow.on('focus', () => {
     // PLATFORM§10
     sendToRenderer('window:focus', true)
@@ -2975,6 +2977,8 @@ function registerIpc(): void {
     if (res.canceled || res.filePaths.length === 0) return null
     return res.filePaths[0]
   })
+
+  ipcMain.handle('window:isFullScreen', () => mainWindow?.isFullScreen() ?? false)
 
   ipcMain.handle('workspace:pickFolder', async () => {
     const stub = process.env.KOLOFT_FILE_DIALOG_FILE

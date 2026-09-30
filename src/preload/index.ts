@@ -400,6 +400,14 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener('window:focus', handler)
     }
   },
+  windowFullscreen: {
+    get: () => ipcRenderer.invoke('window:isFullScreen'),
+    onChange: (cb) => {
+      const handler = (_e: unknown, on: boolean): void => cb(on)
+      ipcRenderer.on('window:fullscreen', handler)
+      return () => ipcRenderer.removeListener('window:fullscreen', handler)
+    }
+  },
   shortcuts: {
     onNewTerminalTab: (cb) => {
       const handler = (): void => cb()

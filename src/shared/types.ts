@@ -893,6 +893,10 @@ export interface KoloftApi {
   windowFocus: {
     onChange(cb: (focused: boolean) => void): () => void
   }
+  windowFullscreen: {
+    get(): Promise<boolean>
+    onChange(cb: (on: boolean) => void): () => void
+  }
   shortcuts: {
     onNewTerminalTab(cb: () => void): () => void
     onFocusNotes(cb: () => void): () => void

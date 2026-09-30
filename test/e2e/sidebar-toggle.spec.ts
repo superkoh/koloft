@@ -54,6 +54,46 @@ test.describe('Sidebar: the button by the traffic lights hides and shows it, and
     }
   })
 
+  test('SB04: the sidebar button comes after both title-bar drag strips in the document, so the window drag never swallows its clicks', async ({
+    page
+  }) => {
+    test.setTimeout(60_000)
+    await waitBooted(page)
+    const order = await page.evaluate((sel) => {
+      const button = document.querySelector(sel)
+      const after = (other: string): boolean => {
+        const el = document.querySelector(other)
+        return (
+          !!button &&
+          !!el &&
+          (el.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+        )
+      }
+      return { titlebar: after('.titlebar'), centerTop: after('.center-top') }
+    }, SIDEBAR_BUTTON)
+    expect(order).toEqual({ titlebar: true, centerTop: true })
+  })
+
+  test('SB05: in macOS full screen, with no traffic lights, the sidebar button moves to the left edge and comes back after', async ({
+    app,
+    page
+  }) => {
+    test.setTimeout(60_000)
+    await waitBooted(page)
+    const left = async (): Promise<number> =>
+      (await page.locator(SIDEBAR_BUTTON).boundingBox())?.x ?? -1
+    const windowed = await left()
+    const fullscreen = (on: boolean): Promise<void> =>
+      app.evaluate(({ BrowserWindow }, v) => {
+        BrowserWindow.getAllWindows()[0]?.webContents.send('window:fullscreen', v)
+      }, on)
+
+    await fullscreen(true)
+    await expect.poll(left).toBeLessThan(windowed)
+    await fullscreen(false)
+    await expect.poll(left).toBe(windowed)
+  })
+
   test('SB02: ⌥⌘N while the sidebar is hidden shows it and puts the caret in the note', async ({
     app,
     page

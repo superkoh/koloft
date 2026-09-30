@@ -95,6 +95,10 @@ body {
   height: 100vh;
   background: var(--bg-term);
   position: relative;
+  --sb-toggle-left: 82px;
+}
+.app.os-full {
+  --sb-toggle-left: 12px;
 }
 .side {
   flex: 0 0 auto;
@@ -114,7 +118,7 @@ body {
   gap: 8px;
   height: var(--titlebar-h);
   flex: 0 0 auto;
-  padding: 0 8px 0 118px;
+  padding: 0 8px 0 calc(var(--sb-toggle-left) + 36px);
   -webkit-app-region: drag;
 }
 .app.sb-off .side {
@@ -123,7 +127,7 @@ body {
 .aux-ico.sb-toggle {
   position: absolute;
   top: 9px;
-  left: 82px;
+  left: var(--sb-toggle-left);
   z-index: 3;
 }
 .aux-ico.sb-toggle.approval::after {
@@ -137,7 +141,7 @@ body {
   padding-left: 10px;
 }
 .app.sb-off .center-top {
-  padding-left: 104px;
+  padding-left: calc(var(--sb-toggle-left) + 22px);
 }
 .app.sb-off .wb-col.full {
   margin-top: var(--titlebar-h);
