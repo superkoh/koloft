@@ -73,7 +73,7 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
           { what: 'Shows or hides the sidebar; its width is kept.' },
           {
             where: 'Hidden',
-            what: 'A dot on the sidebar button marks a session that needs approval or just finished.'
+            what: 'The sidebar button counts the sessions that need you, as the Dock badge does.'
           }
         ]
       }

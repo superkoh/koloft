@@ -60,7 +60,7 @@ import {
   paneWidthFromDrag,
   relTime,
   selectionRoot,
-  sidebarAttention,
+  sessionsNeedYou,
   welcomeQuietLine,
   welcomeTarget
 } from './sessionRows'
@@ -118,11 +118,6 @@ const LAUNCH_REFUSED_NOTICE = 'Could not start the session — invalid launch ar
 
 const NO_WORKSPACE_NOTICE = 'No workspace yet — add one first (⇧⌘O)'
 const NO_GIT_NOTICE = 'no git repository among your workspaces — no worktrees here'
-
-const SIDEBAR_ATTENTION_NOTE = {
-  approval: ' — a session needs approval',
-  waiting: ' — a session just finished'
-} as const
 
 function relocatedNotice(dir: string): string {
   return `Workbench followed Claude to ${basename(dir)}`
@@ -254,6 +249,7 @@ export default function App(): JSX.Element {
   const setNotesHeight = useStore((s) => s.setNotesHeight)
   const notesFolded = useStore((s) => s.settings.notesFolded)
   const sidebarHidden = useStore((s) => s.settings.sidebarHidden)
+  const attentionCount = useStore((s) => s.attention.length)
   const selectedWs = useStore((s) => s.selectedWs)
   const [notesFocus, setNotesFocus] = useState(0)
   const [nbDragging, setNbDragging] = useState(false)
@@ -1175,7 +1171,7 @@ export default function App(): JSX.Element {
   }, [])
 
   const hint = useHints()
-  const attention = sidebarHidden ? sidebarAttention(sessions, activeTabId) : null
+  const callingCount = sidebarHidden ? attentionCount : 0
 
   return (
     <div className={'app' + (sidebarHidden ? ' sb-off' : '') + (osFullscreen ? ' os-full' : '')}>
@@ -1550,17 +1546,14 @@ export default function App(): JSX.Element {
       </div>
       {/* PLATFORM§24 */}
       <button
-        className={
-          'aux-ico sb-toggle' +
-          (sidebarHidden ? '' : ' on') +
-          (attention ? ` unread ${attention}` : '')
-        }
+        className={'aux-ico sb-toggle' + (sidebarHidden ? '' : ' on')}
         onClick={toggleSidebar}
-        title={'Sidebar (⌘B)' + (attention ? SIDEBAR_ATTENTION_NOTE[attention] : '')}
+        title={'Sidebar (⌘B)' + (callingCount ? ` — ${sessionsNeedYou(callingCount)}` : '')}
         aria-label="Sidebar"
         aria-pressed={!sidebarHidden}
       >
         <LuPanelLeft size={18} />
+        {callingCount > 0 && <span className="ws-tab-parked ws-unread-count">{callingCount}</span>}
       </button>
       {newRequest && (
         <NewSessionDialog

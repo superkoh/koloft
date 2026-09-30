@@ -1,5 +1,5 @@
 import type { ElectronApplication, Page } from '@playwright/test'
-import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
 import {
   centerTerm,
@@ -213,7 +213,7 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
     }
   })
 
-  test('with the sidebar hidden, an approval elsewhere lights an amber dot on the sidebar button and the approval card points at it until the sidebar comes back', async ({
+  test('with the sidebar hidden, the sidebar button carries the Dock badge’s count, and the approval card points at the button until the sidebar comes back', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -230,14 +230,24 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
       await clickAppMenuItem(app, page, 'toggle-sidebar')
       await expect(page.locator('.side')).toBeHidden()
       await typeIntoHiddenRow(page, b, '/need-approval')
-      await expect(page.locator(sidebarButton)).toHaveClass(/\bapproval\b/, { timeout: 30_000 })
       await expect(card(page, 'approval')).toBeVisible({ timeout: 30_000 })
       await expectAnchoredAt(page, sidebarButton)
+      const count = page.locator(`${sidebarButton} .ws-unread-count`)
+      await expect
+        .poll(
+          async () => {
+            const pending = (await pendingAttention(page)).length
+            const shown = (await count.count()) ? Number(await count.textContent()) : 0
+            return pending > 0 && shown === pending
+          },
+          { timeout: 30_000 }
+        )
+        .toBe(true)
 
       await clickAppMenuItem(app, page, 'toggle-sidebar')
       await expect(page.locator('.side')).toBeVisible()
       await expectAnchoredAt(page, rowSel(b))
-      await expect(page.locator(sidebarButton)).not.toHaveClass(/\bapproval\b/)
+      await expect(count).toHaveCount(0)
     } finally {
       await quitAndClose(app)
     }

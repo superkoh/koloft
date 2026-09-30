@@ -117,14 +117,8 @@ export function rowStateClass(
   }
 }
 
-export function sidebarAttention(
-  sessions: Pick<SessionInfo, 'tabId' | 'alive' | 'status' | 'details'>[],
-  activeTabId: string | null
-): 'approval' | 'waiting' | null {
-  const others = sessions.filter((s) => s.alive && s.tabId !== activeTabId && !statusUnavailable(s))
-  if (others.some((s) => s.status === 'approval')) return 'approval'
-  if (others.some((s) => s.status === 'waiting')) return 'waiting'
-  return null
+export function sessionsNeedYou(n: number): string {
+  return n > 1 ? `${n} sessions need you` : '1 session needs you'
 }
 
 export function attentionOnRow(

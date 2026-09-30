@@ -130,12 +130,10 @@ body {
   left: var(--sb-toggle-left);
   z-index: 3;
 }
-.aux-ico.sb-toggle.approval::after {
-  background: var(--amber);
-  animation: setDotPulse 1.6s ease-in-out infinite;
-}
-.aux-ico.sb-toggle.waiting::after {
-  background: var(--good);
+.aux-ico.sb-toggle .ws-unread-count {
+  position: absolute;
+  top: -3px;
+  right: -6px;
 }
 .app.sb-off .center-row {
   padding-left: 10px;
@@ -3427,8 +3425,7 @@ body {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .set-dot,
-  .aux-ico.sb-toggle.approval::after {
+  .set-dot {
     animation: none;
   }
 }

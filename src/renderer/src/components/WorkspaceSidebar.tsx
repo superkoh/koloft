@@ -33,6 +33,7 @@ import {
   leftoverLabel,
   relTime,
   rowStateClass,
+  sessionsNeedYou,
   statusUnavailable
 } from '../sessionRows'
 import { releaseSettledResumes, resumeInFlight, resumeSession } from '../resumeFlow'
@@ -769,11 +770,7 @@ export function WorkspaceSidebar({
                   {callingInside > 0 && (
                     <span
                       className="ws-tab-parked ws-unread-count"
-                      title={
-                        callingInside > 1
-                          ? `${callingInside} sessions need you`
-                          : '1 session needs you'
-                      }
+                      title={sessionsNeedYou(callingInside)}
                     >
                       {callingInside}
                     </span>
