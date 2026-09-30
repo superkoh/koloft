@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { ResumeEvidence, ResumePlan } from '@shared/types'
+import type { ResumePlan } from '@shared/types'
 import {
-  evidenceLines,
   existingRequest,
   mainRequest,
   mayBeRunningElsewhere,
@@ -20,23 +19,14 @@ import { useStore } from '../../src/renderer/src/store'
 
 const target = { id: 'sid-1', backendId: 'claude' as const, title: 'Refactor session management' }
 
-const evidence = (over: Partial<ResumeEvidence> = {}): ResumeEvidence => ({
+const dialogPlan: Extract<ResumePlan, { action: 'dialog' }> = {
+  action: 'dialog',
   worktreePath: '/repo/.claude/worktrees/session-tab',
   worktreeName: 'session-tab',
-  expectedBranch: 'worktree-session-tab',
-  currentBranch: 'worktree-session-tab',
-  branchMatches: true,
-  dirty: false,
-  occupiedBy: null,
-  ...over
-})
-
-const dialogPlan = (ev: ResumeEvidence): Extract<ResumePlan, { action: 'dialog' }> => ({
-  action: 'dialog',
-  evidence: ev,
+  occupiedBy: 'Other run',
   resumeCwd: '/repo',
   renamedName: 'session-tab-2'
-})
+}
 
 const rebuildPlan: Extract<ResumePlan, { action: 'rebuild' }> = {
   action: 'rebuild',
@@ -71,11 +61,10 @@ describe('planToStep (D6/D8 routing)', () => {
     })
   })
 
-  it('raises the two-choice dialog on anomalous evidence (§4.1)', () => {
-    const plan = dialogPlan(evidence({ dirty: true }))
-    expect(planToStep(plan, target)).toEqual({
+  it('raises the two-choice dialog when the worktree is in use (§4.1)', () => {
+    expect(planToStep(dialogPlan, target)).toEqual({
       kind: 'dialog',
-      dialog: { kind: 'choose', target, plan }
+      dialog: { kind: 'choose', target, plan: dialogPlan }
     })
   })
 
@@ -110,7 +99,7 @@ describe('resume requests (D10/D12 modes)', () => {
   })
 
   it('"resume in existing" is a plain resume at the plan cwd — claude re-enters', () => {
-    expect(existingRequest(target, dialogPlan(evidence({ dirty: true })))).toEqual({
+    expect(existingRequest(target, dialogPlan)).toEqual({
       sessionId: 'sid-1',
       cwd: '/repo',
       mode: 'direct'
@@ -118,7 +107,7 @@ describe('resume requests (D10/D12 modes)', () => {
   })
 
   it('"resume in new worktree" passes the renamed name through to `-w` (D10)', () => {
-    expect(renamedRequest(target, dialogPlan(evidence({ dirty: true })))).toEqual({
+    expect(renamedRequest(target, dialogPlan)).toEqual({
       sessionId: 'sid-1',
       cwd: '/repo',
       mode: 'renamed',
@@ -131,47 +120,6 @@ describe('resume requests (D10/D12 modes)', () => {
       sessionId: 'sid-1',
       cwd: '/repo',
       mode: 'main'
-    })
-  })
-})
-
-describe('evidenceLines (§4.1 evidence block)', () => {
-  it('confirms a matching branch and a clean tree without alarming', () => {
-    expect(evidenceLines(evidence())).toEqual([
-      { label: 'worktree', text: '/repo/.claude/worktrees/session-tab' },
-      { label: 'branch', text: 'worktree-session-tab (matches record)' },
-      { label: 'changes', text: 'clean' }
-    ])
-  })
-
-  it('names the branch that is actually checked out when it drifted', () => {
-    const lines = evidenceLines(evidence({ currentBranch: 'main', branchMatches: false }))
-    expect(lines[1]).toEqual({
-      label: 'branch',
-      text: 'main (record: worktree-session-tab)',
-      tone: 'warn'
-    })
-  })
-
-  it('reads a detached head as such rather than printing null', () => {
-    const lines = evidenceLines(evidence({ currentBranch: null, branchMatches: false }))
-    expect(lines[1].text).toBe('detached (record: worktree-session-tab)')
-  })
-
-  it('flags uncommitted changes', () => {
-    expect(evidenceLines(evidence({ dirty: true }))[2]).toEqual({
-      label: 'changes',
-      text: 'uncommitted changes',
-      tone: 'warn'
-    })
-  })
-
-  it('adds the occupancy line ONLY when Koloft sees a running session in there (D9)', () => {
-    expect(evidenceLines(evidence()).some((l) => l.label === 'in use')).toBe(false)
-    expect(evidenceLines(evidence({ occupiedBy: 'Other run' })).at(-1)).toEqual({
-      label: 'in use',
-      text: 'another running session is working in this worktree',
-      tone: 'danger'
     })
   })
 })

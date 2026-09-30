@@ -1,10 +1,5 @@
 import type { SessionBackend } from './agentUi'
-import type {
-  ResumeEvidence,
-  ResumePlan,
-  SessionResumeRequest,
-  SessionResumeResult
-} from '@shared/types'
+import type { ResumePlan, SessionResumeRequest, SessionResumeResult } from '@shared/types'
 import { basename } from '@shared/preview'
 import { markRestoreLaunch, useStore } from './store'
 
@@ -69,38 +64,6 @@ export function renamedRequest(target: ResumeTarget, plan: DialogPlan): SessionR
 
 export function mainRequest(target: ResumeTarget, cwd: string): SessionResumeRequest {
   return { sessionId: target.id, cwd, mode: 'main' }
-}
-
-export interface EvidenceLine {
-  label: string
-  text: string
-  tone?: 'warn' | 'danger'
-}
-
-export function evidenceLines(ev: ResumeEvidence): EvidenceLine[] {
-  const lines: EvidenceLine[] = [{ label: 'worktree', text: ev.worktreePath }]
-  lines.push(
-    ev.branchMatches
-      ? { label: 'branch', text: `${ev.currentBranch} (matches record)` }
-      : {
-          label: 'branch',
-          text: `${ev.currentBranch ?? 'detached'} (record: ${ev.expectedBranch})`,
-          tone: 'warn'
-        }
-  )
-  lines.push(
-    ev.dirty
-      ? { label: 'changes', text: 'uncommitted changes', tone: 'warn' }
-      : { label: 'changes', text: 'clean' }
-  )
-  if (ev.occupiedBy) {
-    lines.push({
-      label: 'in use',
-      text: 'another running session is working in this worktree',
-      tone: 'danger'
-    })
-  }
-  return lines
 }
 
 export const RUNNING_ELSEWHERE_MS = 60_000

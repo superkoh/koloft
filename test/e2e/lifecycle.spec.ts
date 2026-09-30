@@ -3,7 +3,7 @@ import path from 'path'
 import { execFileSync } from 'child_process'
 import type { Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention } from './helpers/app'
-import type { E2EEnv } from './helpers/env'
+import { seedSettings, type E2EEnv } from './helpers/env'
 import {
   centerTerm,
   closeMenu,
@@ -14,6 +14,7 @@ import {
   layoutOnDisk,
   menuItemTexts,
   openMenu,
+  openWorktreeSession,
   processAlive,
   readCalls,
   resumedId,
@@ -237,12 +238,18 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     test.setTimeout(120_000)
     gitInit(env.workspaces.a)
     const wt = gitWorktreeAdd(env.workspaces.a, 'slow')
+    execFileSync('git', ['worktree', 'remove', wt], { cwd: env.workspaces.a })
     const id = seedJsonl(env, env.workspaces.a, {
       summary: 'Slow to plan session',
       cwd: env.workspaces.a,
       worktreeState: { worktreeName: 'slow', worktreePath: wt, originalCwd: env.workspaces.a }
     })
-    const stallDone = installStallingGit(env, { root: wt, subcommand: 'symbolic-ref', ms: 3000 })
+    const stallDone = installStallingGit(env, {
+      root: env.workspaces.a,
+      subcommand: 'rev-parse',
+      lastArg: 'refs/heads/worktree-slow',
+      ms: 3000
+    })
 
     const app = await launchApp(env)
     try {
@@ -271,14 +278,16 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     }
   })
 
-  test('the worktree-anomaly resume dialog focuses "Resume in new worktree", never the destructive button, and Esc cancels the resume', async ({
+  // CC§3
+  test('a worktree session whose worktree moved to another branch and holds uncommitted work resumes straight away, with no dialog', async ({
     env
   }) => {
     test.setTimeout(120_000)
     gitInit(env.workspaces.a)
     const wt = gitWorktreeAdd(env.workspaces.a, 'drifted')
     execFileSync('git', ['checkout', '-q', '-b', 'somewhere-else'], { cwd: wt })
-    seedJsonl(env, env.workspaces.a, {
+    fs.writeFileSync(path.join(wt, 'half-done.txt'), 'uncommitted\n')
+    const id = seedJsonl(env, env.workspaces.a, {
       summary: 'Drifted worktree session',
       cwd: env.workspaces.a,
       worktreeState: { worktreeName: 'drifted', worktreePath: wt, originalCwd: env.workspaces.a }
@@ -292,11 +301,50 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
       await row.click()
 
+      const calls = await waitForCalls(env, 1)
+      expect(resumedId(calls[0])).toBe(id)
+      await expect(page.locator('.modal.lifecycle-modal')).toHaveCount(0)
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
+  test('the worktree-in-use resume dialog focuses "Resume in new worktree", never the destructive button, and Esc cancels the resume', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    gitInit(env.workspaces.a)
+    const wt = gitWorktreeAdd(env.workspaces.a, 'shared')
+    seedSettings(env, { hintsOff: true })
+    seedJsonl(env, env.workspaces.a, {
+      summary: 'Shared worktree session',
+      cwd: env.workspaces.a,
+      worktreeState: { worktreeName: 'shared', worktreePath: wt, originalCwd: env.workspaces.a }
+    })
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      const row = page.locator('.ws-tab', { hasText: 'Shared worktree session' })
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      await waitBooted(page)
+
+      const c8 = await openWorktreeSession(page, 'ws-a')
+      await c8.getByRole('textbox').click()
+      await page.keyboard.type('shared')
+      await page.keyboard.press('Enter')
+      await expect(c8).toHaveCount(0)
+      await waitForCalls(env, 1)
+      await expect(page.locator('.ws-tab:not(.cold):not(.st-pending)')).toHaveCount(1, {
+        timeout: 60_000
+      })
+
+      await row.click()
       const dialog = page.locator('.modal.lifecycle-modal')
-      await expect(dialog.locator('.modal-header')).toHaveText(
-        'Resume "Drifted worktree session"',
-        { timeout: 20_000 }
-      )
+      await expect(dialog.locator('.modal-header')).toHaveText('Resume "Shared worktree session"', {
+        timeout: 20_000
+      })
       await expect(dialog.getByRole('button', { name: /^Resume in new worktree/ })).toBeFocused()
 
       await page.keyboard.press('Escape')
@@ -305,7 +353,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
         page.locator('.terminals .empty', { hasText: 'Resuming Claude session…' })
       ).toHaveCount(0)
       await expect(row).toHaveClass(/\bcold\b/)
-      expect(readCalls(env)).toHaveLength(0)
+      expect(readCalls(env)).toHaveLength(1)
     } finally {
       await app.close().catch(() => {})
     }
