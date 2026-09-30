@@ -16,7 +16,7 @@ import {
   LuPlus,
   LuX
 } from 'react-icons/lu'
-import type { AttentionEvent, BackendId, SessionRow } from '@shared/types'
+import type { BackendId, SessionRow } from '@shared/types'
 import type { DirtyTab } from '../unsavedGuard'
 import { ATTENTION_REASON, PLACEHOLDER_SESSION_TITLE } from '@shared/types'
 import { popoverX } from '@shared/accountUsage'
@@ -184,8 +184,6 @@ export function WorkspaceSidebar({
     storeTabs.find((t) => t.alive && t.sessionId === sessionId)?.id
   const tabIdOfRow = (row: SessionRow): string | undefined =>
     row.pending ? row.id : row.running ? tabIdFor(row.id) : undefined
-  const rowAttention = (row: SessionRow): AttentionEvent | undefined =>
-    attentionOnRow(row.id, tabIdOfRow(row), attention)
 
   useEffect(() => {
     const t = setInterval(() => bumpCronClock((n) => n + 1), CRON_BADGE_MS)
@@ -348,8 +346,6 @@ export function WorkspaceSidebar({
       }
       return
     }
-    const calling = rowAttention(row)
-    if (calling) window.api.attention.visit(calling.tabId)
     if (resumeInFlight(row.id)) {
       const t = useStore.getState().tabs.find((x) => x.sessionId === row.id && x.alive)
       if (t) activateTab(t.id)
@@ -690,7 +686,9 @@ export function WorkspaceSidebar({
               if (ws.isGit) onNewWorktreeSession(ws.path)
               else onNewSession(ws.path)
             }
-            const callingInside = open ? 0 : sessionRows.filter((r) => rowAttention(r)).length
+            const callingInside = open
+              ? 0
+              : sessionRows.filter((r) => attentionOnRow(r.id, tabIdOfRow(r), attention)).length
             const cronNow = new Date()
             const soon = ws.missing || !open ? null : forecastFor(cron.jobs, ws.path, cronNow)
             return (
@@ -769,7 +767,7 @@ export function WorkspaceSidebar({
                   )}
                   {callingInside > 0 && (
                     <span
-                      className="ws-unread-count"
+                      className="ws-tab-parked ws-unread-count"
                       title={
                         callingInside > 1
                           ? `${callingInside} sessions need you`

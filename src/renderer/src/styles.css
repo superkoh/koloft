@@ -842,16 +842,11 @@ body {
   border-radius: 50%;
   background: var(--red);
 }
-.ws-unread-count {
-  flex: none;
-  font-family: var(--mono);
-  font-size: 10px;
+.ws-tab-parked.ws-unread-count {
   font-weight: 700;
-  line-height: 14px;
-  padding: 0 5px;
-  border-radius: 7px;
   color: var(--bg-0);
   background: var(--red);
+  cursor: inherit;
 }
 .ws-tab-sub {
   display: flex;

@@ -275,7 +275,10 @@ let codexSessions: CodexSessions | null = null
 let codexStartupError: string | undefined
 const sessionBackends = new SessionBackends({
   prompted: consumeOutletDedupe,
-  bound: (tabId, key) => cronRunner?.onBound(tabId, key),
+  bound: (tabId, key) => {
+    attention.clearSession(key)
+    cronRunner?.onBound(tabId, key)
+  },
   exited: (tabId, subject) => attention.onExited(tabId, attentionCtx(), subject),
   clearAttention: (tabId) => attention.clear(tabId),
   open: (tabId, target) => {
@@ -316,8 +319,11 @@ const attention = new AttentionTracker((pending, event) => {
 })
 let uiActiveTabId: string | null = null
 let activeTabBeforeReload: string | null = null
+function sessionOfTab(tabId: string): SessionInfo | undefined {
+  return allSessions().find((s) => s.tabId === tabId)
+}
 function attentionSubjectOf(tabId: string): AttentionSubject {
-  const s = allSessions().find((x) => x.tabId === tabId)
+  const s = sessionOfTab(tabId)
   return { title: s?.title, sessionId: s?.sessionId }
 }
 function attentionCtx(): AttentionContext {
@@ -329,7 +335,7 @@ function attentionCtx(): AttentionContext {
 }
 
 function projectFolderName(tabId: string): string | undefined {
-  const root = allSessions().find((s) => s.tabId === tabId)?.treeRoot
+  const root = sessionOfTab(tabId)?.treeRoot
   return root ? path.basename(root) : undefined
 }
 
@@ -596,7 +602,7 @@ const agentRequests = new AgentRequests({
     })
   },
   tab: (tabId) => ptyMgr.get(tabId),
-  session: (tabId) => allSessions().find((s) => s.tabId === tabId),
+  session: sessionOfTab,
   enabled: (tabId) => {
     const backend = backendIdOf(ptyMgr.get(tabId)?.kind)
     return !!backend && agentToolsFor(backend, tracker.remoteOf(tabId) ? 'ssh' : 'local')

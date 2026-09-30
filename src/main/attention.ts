@@ -43,12 +43,18 @@ export class AttentionTracker {
     if (this.pending.delete(tabId)) this.onChange(this.list(), null)
   }
 
+  clearSession(sessionId: string): void {
+    const stale = this.list().filter((e) => e.sessionId === sessionId)
+    for (const e of stale) this.pending.delete(e.tabId)
+    if (stale.length) this.onChange(this.list(), null)
+  }
+
   reconsider(tabId: string, ctx: AttentionContext, maxAgeMs = RECONSIDER_WINDOW_MS): void {
     const ev = this.recentlySuppressed.get(tabId)
     if (!ev) return
     this.recentlySuppressed.delete(tabId)
     if (Date.now() - ev.at > maxAgeMs) return
-    this.raise(tabId, ev.kind, ctx, { title: ev.title, sessionId: ev.sessionId }, true)
+    this.raise(tabId, ev.kind, ctx, ev, true)
   }
 
   list(): AttentionEvent[] {
@@ -62,7 +68,7 @@ export class AttentionTracker {
     subject: AttentionSubject,
     resurrected?: boolean
   ): void {
-    const event: AttentionEvent = { tabId, kind, at: Date.now(), ...subject, resurrected }
+    const event: AttentionEvent = { ...subject, tabId, kind, at: Date.now(), resurrected }
     if (ctx.windowFocused && ctx.activeTabId === tabId) {
       this.recentlySuppressed.set(tabId, event)
       return

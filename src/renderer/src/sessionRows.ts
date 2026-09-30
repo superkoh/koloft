@@ -118,7 +118,7 @@ export function attentionOnRow(
   tabId: string | undefined,
   pending: AttentionEvent[]
 ): AttentionEvent | undefined {
-  return pending.find((e) => e.sessionId === rowId || (!!tabId && e.tabId === tabId))
+  return pending.find((e) => e.sessionId === rowId || e.tabId === tabId)
 }
 
 export function isOrphanRow(

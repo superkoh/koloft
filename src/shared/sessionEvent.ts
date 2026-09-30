@@ -1,4 +1,4 @@
-import type { AttentionSubject, BackgroundItem, PreviewItem, SessionUsage } from './types'
+import type { BackgroundItem, PreviewItem, SessionUsage } from './types'
 
 // CC§8
 export interface ReportedTask {
@@ -17,7 +17,7 @@ export type SessionEvent =
   | { type: 'degraded'; message: string }
   | { type: 'open'; target: string }
   | { type: 'bound'; key: string }
-  | ({ type: 'exited'; clean: boolean } & AttentionSubject)
+  | { type: 'exited'; clean: boolean; title?: string; sessionId?: string }
   | {
       type: 'files-changed'
       files: PreviewItem[]
