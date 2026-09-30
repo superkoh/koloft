@@ -144,6 +144,12 @@ body {
 .app.sb-off .wb-col.full {
   margin-top: var(--titlebar-h);
 }
+.wb-full-drag {
+  position: absolute;
+  inset: 0 0 auto;
+  height: var(--titlebar-h);
+  -webkit-app-region: drag;
+}
 .app:has(.wb-panel.pagefull) :is(.sb-toggle, .aux-icons) {
   display: none;
 }
