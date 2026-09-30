@@ -157,6 +157,16 @@ describe('CodexSessions', () => {
     expect(sessions.rows(repo).some((row) => row.id === codexSessionKey(A))).toBe(true)
   })
 
+  it('names the session a native new replaced, so its Keep running mark can follow; a switch names none', async () => {
+    deps.replaced = vi.fn()
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    bind()
+    bind(0, B, repo, 2)
+    expect(deps.replaced).toHaveBeenCalledWith(codexSessionKey(A), codexSessionKey(B))
+    bind(0, A, repo, 3, 'thread/resume')
+    expect(deps.replaced).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps a bound run visible if saving its member fails', async () => {
     await sessions.launch({ kind: 'codex', cwd: repo })
     vi.spyOn(sessions.store, 'upsertMember').mockImplementation(() => {

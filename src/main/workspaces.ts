@@ -39,6 +39,7 @@ import {
   type WorktreeEntry
 } from './workspaceOps'
 import { encodeCwd } from './sessionTracker'
+import { replacesTheConversation } from './hookRouting'
 import { isGitCheckout } from './projectInfo'
 import { isRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { sourceOf } from '@shared/sessionBackend'
@@ -414,10 +415,39 @@ export class WorkspaceManager {
   }
 
   onSessionRebind(prevId: string, nextId: string, source: string): void {
+    if (replacesTheConversation(source)) this.moveResident(prevId, nextId)
     const next = carrySessionWorkbench(this.layout.panels, prevId, nextId, source)
     if (!next.changed) return
     this.layout = { ...this.layout, panels: next.sessions }
     this.deps.saveLayout(this.layout)
+  }
+
+  residentIds(): string[] {
+    return [...(this.layout.resident ?? [])]
+  }
+
+  isResident(sessionId: string): boolean {
+    return !!this.layout.resident?.includes(sessionId)
+  }
+
+  setResident(sessionId: string, on: boolean): void {
+    if (this.isResident(sessionId) === on) return
+    const rest = this.residentIds().filter((id) => id !== sessionId)
+    this.saveResident(on ? [...rest, sessionId] : rest)
+  }
+
+  moveResident(prevId: string, nextId: string): void {
+    if (!this.isResident(prevId)) return
+    this.saveResident([
+      ...this.residentIds().filter((id) => id !== prevId && id !== nextId),
+      nextId
+    ])
+  }
+
+  private saveResident(resident: string[]): void {
+    this.layout = { ...this.layout, resident }
+    this.deps.saveLayout(this.layout)
+    this.restampLive()
   }
 
   onTrackerUpdate(): void {
@@ -665,12 +695,15 @@ export class WorkspaceManager {
       for (const id of this.deps.remoteRunning?.(t.host) ?? []) liveIds.add(id)
     }
     const members = this.layout.members.filter((id) => liveIds.has(id))
-    const gc = gcSessions(
-      this.layout.panels,
-      new Set([...members, ...(this.deps.additionalMembers?.() ?? [])])
-    )
-    if (gc.changed || members.length !== this.layout.members.length) {
-      this.layout = { ...this.layout, members, panels: gc.sessions }
+    const kept = new Set([...members, ...(this.deps.additionalMembers?.() ?? [])])
+    const gc = gcSessions(this.layout.panels, kept)
+    const resident = this.residentIds().filter((id) => kept.has(id))
+    if (
+      gc.changed ||
+      members.length !== this.layout.members.length ||
+      resident.length !== this.residentIds().length
+    ) {
+      this.layout = { ...this.layout, members, panels: gc.sessions, resident }
       this.deps.saveLayout(this.layout)
     }
 
@@ -694,8 +727,14 @@ export class WorkspaceManager {
         const wt = live?.relocated && !live.remote ? (live.worktree ?? 'main') : undefined
         const revealDir = this.revealDirOf(r.id, live, !!e.workspace.remote, dirOk)
         const moved = wt && wt !== r.worktree
-        if (!moved && revealDir === r.revealDir) return r
-        return { ...r, ...(moved ? { worktree: wt } : {}), revealDir }
+        const resident = this.isResident(r.id)
+        if (!moved && revealDir === r.revealDir && resident === !!r.resident) return r
+        return {
+          ...r,
+          ...(moved ? { worktree: wt } : {}),
+          revealDir,
+          resident: resident || undefined
+        }
       })
     }))
   }

@@ -390,6 +390,54 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     }
   })
 
+  test('Keep running: a marked session starts again by itself when Koloft reopens — same id, shown resuming, nothing selected — and an unmarked one stays cold', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const app1 = await launchApp(env)
+    let resident: string
+    try {
+      const page1 = await app1.firstWindow()
+      await page1.waitForLoadState('domcontentloaded')
+      await startSession(page1, env, { title: 'Resident session' })
+      await startSession(page1, env, { title: 'Plain session', wsName: 'ws-b' })
+      const [first] = await waitForCalls(env, 2)
+      resident = first.sessionId
+      const residentRow = page1.locator('.ws-tab', { hasText: 'Resident session' })
+      await expect(residentRow).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+      await expect(page1.locator('.ws-tab', { hasText: 'Plain session' })).toHaveClass(
+        /\bst-waiting\b/,
+        { timeout: 30_000 }
+      )
+
+      await openMenu(page1, residentRow)
+      await page1.locator('.menu .mi', { hasText: 'Keep running' }).click()
+      await expect(residentRow.locator('.ws-tab-resident')).toBeVisible()
+      await expect.poll(() => layoutOnDisk(env).resident).toEqual([resident])
+    } finally {
+      await app1.close()
+    }
+
+    fs.writeFileSync(env.claudeDelayFile, '3000')
+    const app2 = await launchApp(env)
+    try {
+      const page2 = await app2.firstWindow()
+      await page2.waitForLoadState('domcontentloaded')
+      const residentRow = page2.locator('.ws-tab', { hasText: 'Resident session' })
+      await expect(residentRow).toHaveClass(/\bst-pending\b/, { timeout: 30_000 })
+      const calls = await waitForCalls(env, 3)
+      expect(resumedId(calls[2])).toBe(resident)
+
+      await expect(residentRow).toHaveClass(/\bst-(working|waiting|idle)\b/, { timeout: 30_000 })
+      await expect(page2.locator('.ws-tab.active')).toHaveCount(0)
+      await expect(page2.locator('.ws-tab', { hasText: 'Plain session' })).toHaveClass(/\bcold\b/)
+      await page2.waitForTimeout(ROOM_FOR_A_RESPAWN_MS)
+      expect(readCalls(env)).toHaveLength(3)
+    } finally {
+      await app2.close().catch(() => {})
+    }
+  })
+
   test('T-LIFE-10: a bound session that never reports a run-state shows the st-idle bar', async ({
     app,
     page,
@@ -435,14 +483,20 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
 
       await openMenu(page, page.locator('.ws-tab', { hasText: 'Running menu session' }))
       const running = await menuItemTexts(page)
-      expect(running).toEqual(['Reveal in Finder', 'Copy session ID', 'Close'])
+      expect(running).toEqual(['Reveal in Finder', 'Copy session ID', 'Keep running', 'Close'])
       noForbidden(running)
       await closeMenu(page)
 
       const coldMenu = await openMenu(page, coldRow)
       expect((await coldMenu.locator('.mi.head').textContent())?.trim()).toMatch(/^\d+[smhd] ago$/)
       const cold = await menuItemTexts(page)
-      expect(cold).toEqual(['Resume↩', 'Reveal in Finder', 'Copy session ID', 'Remove from list'])
+      expect(cold).toEqual([
+        'Resume↩',
+        'Reveal in Finder',
+        'Copy session ID',
+        'Keep running',
+        'Remove from list'
+      ])
       for (const t of cold) expect(t).not.toMatch(/close|delete/i)
       noForbidden(cold)
       await snap(page, 'T-LIFE-11')

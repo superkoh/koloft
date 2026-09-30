@@ -120,6 +120,7 @@ const api: KoloftApi = {
     resumePlan: (id) => ipcRenderer.invoke('sessions:resumePlan', id),
     resume: (req) => ipcRenderer.invoke('sessions:resume', req),
     archive: (id) => ipcRenderer.invoke('sessions:archive', id),
+    setResident: (id, on) => ipcRenderer.send('sessions:setResident', id, on),
     forceClose: (id) => ipcRenderer.invoke('sessions:forceClose', id),
     transcriptExists: (id) => ipcRenderer.invoke('sessions:transcriptExists', id),
     leftovers: () => ipcRenderer.invoke('sessions:leftovers'),

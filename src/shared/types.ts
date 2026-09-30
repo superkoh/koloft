@@ -710,6 +710,7 @@ export interface KoloftApi {
     resumePlan(sessionId: string): Promise<ResumePlan>
     resume(req: SessionResumeRequest): Promise<SessionResumeResult>
     archive(id: string): Promise<boolean>
+    setResident(id: string, on: boolean): void
     forceClose(id: string): Promise<{ ok: boolean }>
     // CC§2
     transcriptExists(sessionId: string): Promise<boolean>
@@ -1005,6 +1006,7 @@ export interface SpawnedTab {
   cwd: string
   title: string
   jobId?: string
+  sessionId?: string
 }
 
 export type CronSaveInput = Omit<CronJob, 'history' | 'createdAt' | 'id'> & { id?: string }
@@ -1076,6 +1078,7 @@ export type LayoutV5 = Omit<LayoutV4, 'version'> & { version: 5; members: string
 export type LayoutV6 = Omit<LayoutV5, 'version' | 'sessions'> & {
   version: 6
   panels: LayoutV5['sessions']
+  resident?: string[]
 }
 
 // CC§2
@@ -1103,7 +1106,9 @@ export interface BackendSessionRow {
   revealDir?: string
 }
 
-export interface SessionRow extends BackendSessionRow, SessionSource {}
+export interface SessionRow extends BackendSessionRow, SessionSource {
+  resident?: boolean
+}
 
 export interface WorkspaceFreshness {
   state: 'ok' | 'none' | 'error'

@@ -9,10 +9,12 @@ import { useCallback, useEffect, useRef, useState, type JSX, type MouseEvent } f
 import { GoGitBranch } from 'react-icons/go'
 import {
   LuAlarmClock,
+  LuCheck,
   LuFileText,
   LuFolder,
   LuFolderOpen,
   LuGitBranchPlus,
+  LuPin,
   LuPlus,
   LuX
 } from 'react-icons/lu'
@@ -414,6 +416,25 @@ export function WorkspaceSidebar({
     )
   }
 
+  const keepRunningItem = (row: SessionRow): JSX.Element => (
+    <div
+      className="mi"
+      role="menuitemcheckbox"
+      aria-checked={!!row.resident}
+      onClick={() => {
+        setMenu(null)
+        window.api.sessions.setResident(row.id, !row.resident)
+      }}
+    >
+      Keep running
+      {row.resident && (
+        <span className="k on">
+          <LuCheck size={14} />
+        </span>
+      )}
+    </div>
+  )
+
   const renderMenu = (): JSX.Element | null => {
     if (!menu) return null
     const { target } = menu
@@ -534,6 +555,7 @@ export function WorkspaceSidebar({
           >
             Copy session ID
           </div>
+          {keepRunningItem(row)}
           <div
             className="mi"
             onClick={() => {
@@ -570,6 +592,7 @@ export function WorkspaceSidebar({
         >
           Copy session ID
         </div>
+        {keepRunningItem(row)}
         <div
           className="mi"
           onClick={() => {
@@ -865,6 +888,14 @@ export function WorkspaceSidebar({
                             {isCronRow && (
                               <span className="ws-tab-cron" title="started by a scheduled job">
                                 <LuAlarmClock size={12} />
+                              </span>
+                            )}
+                            {row.resident && (
+                              <span
+                                className="ws-tab-resident"
+                                title="Keep running — starts again each time Koloft opens"
+                              >
+                                <LuPin size={12} />
                               </span>
                             )}
                             <span className={'ws-tab-title' + (mq?.id === row.id ? ' mq' : '')}>

@@ -646,6 +646,59 @@ describe('WorkspaceManager: /clear id change (T-LIFE-07)', () => {
   })
 })
 
+describe('WorkspaceManager: Keep running marks', () => {
+  it('a marked row reads resident in the push, the mark is saved, and unmarking takes it back', async () => {
+    writeJsonl(repo, 'keep-1')
+    own('keep-1')
+    mgr.start()
+    await mgr.firstScan
+
+    mgr.setResident('keep-1', true)
+    expect(layout.resident).toEqual(['keep-1'])
+    expect(latest(repo).rows.find((r) => r.id === 'keep-1')?.resident).toBe(true)
+
+    mgr.setResident('keep-1', false)
+    expect(layout.resident).toEqual([])
+    expect(latest(repo).rows.find((r) => r.id === 'keep-1')?.resident).toBeFalsy()
+  })
+
+  it('a /clear moves the mark to the new id, never leaving it on both; a /resume switch leaves it', () => {
+    own('old')
+    layout.resident = ['old']
+
+    mgr.onSessionRebind('old', 'fresh', 'clear')
+    expect(layout.resident).toEqual(['fresh'])
+
+    mgr.onSessionRebind('fresh', 'target', 'resume')
+    expect(layout.resident).toEqual(['fresh'])
+  })
+
+  it('a rescan drops the mark of a session the sidebar no longer owns, and keeps a Codex member’s', async () => {
+    mgr.dispose()
+    const codexKey = 'codex:local:00000000-0000-4000-8000-000000000001'
+    writeJsonl(repo, 'kept')
+    own('kept')
+    layout.resident = ['kept', codexKey, 'removed-from-list']
+    mgr = new WorkspaceManager({
+      projectsRoot,
+      remoteProjectsRoot: () => projectsRoot,
+      loadLayout: () => layout,
+      saveLayout: (l) => {
+        layout = l
+      },
+      projectInfo: projectInfoFor,
+      runningBindings: () => bindings,
+      killTab: () => {},
+      pushRows: (p) => pushed.push(p),
+      additionalMembers: () => new Set([codexKey])
+    })
+    mgr.start()
+    await mgr.firstScan
+
+    expect(layout.resident).toEqual(['kept', codexKey])
+  })
+})
+
 describe('WorkspaceManager: worktrees() stale-dir filter (T-NEW-07 successor)', () => {
   it('drops an entry git still lists after its checkout directory was deleted', async () => {
     const { repoDir, wtDir } = gitRepoWithWorktree('alive')

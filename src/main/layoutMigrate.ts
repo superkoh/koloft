@@ -162,16 +162,20 @@ function claudeKeysBecomeMembers(v4: LayoutV4): LayoutV5 {
   }
 }
 
-function readMembers(raw: unknown): string[] {
-  const members = (raw as Record<string, unknown>).members
-  return Array.isArray(members)
-    ? members.filter((id): id is string => typeof id === 'string' && id.length > 0)
+function readIds(raw: unknown, key: 'members' | 'resident'): string[] {
+  const ids = (raw as Record<string, unknown>)[key]
+  return Array.isArray(ids)
+    ? ids.filter((id): id is string => typeof id === 'string' && id.length > 0)
     : []
 }
 
 function toV5(raw: unknown, deps: MigrateDeps): LayoutV5 {
   if (isPanelLayout(raw, 5)) {
-    return { version: 5, ...readPanelLayout(raw, DEFAULT_PANEL_OPEN), members: readMembers(raw) }
+    return {
+      version: 5,
+      ...readPanelLayout(raw, DEFAULT_PANEL_OPEN),
+      members: readIds(raw, 'members')
+    }
   }
   return claudeKeysBecomeMembers(toV4(raw, deps))
 }
@@ -183,7 +187,14 @@ function sessionsBecomePanels({ sessions, ...v5 }: LayoutV5): LayoutV6 {
 export function migrateLayout(raw: unknown, deps: MigrateDeps): LayoutV6 {
   if (isPanelLayout(raw, 6, 'panels')) {
     const { sessions, ...rest } = readPanelLayout(raw, DEFAULT_PANEL_OPEN, 'panels')
-    return { version: 6, ...rest, members: readMembers(raw), panels: sessions }
+    const resident = readIds(raw, 'resident')
+    return {
+      version: 6,
+      ...rest,
+      members: readIds(raw, 'members'),
+      panels: sessions,
+      ...(resident.length ? { resident } : {})
+    }
   }
   return sessionsBecomePanels(toV5(raw, deps))
 }
