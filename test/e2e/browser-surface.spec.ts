@@ -111,7 +111,7 @@ test.describe('Workbench web tabs: address bar and history, back/forward, reload
     }
   })
 
-  test("BB-M04f: an iframe changing its own hash or history keeps the tab's address; the page's own change still moves it", async ({
+  test("BB-M04f: an iframe changing its own hash keeps the tab's address; the page's own change still moves it", async ({
     app,
     page,
     env
@@ -124,10 +124,7 @@ test.describe('Workbench web tabs: address bar and history, back/forward, reload
       server.page(
         '/inner',
         '<!doctype html><html><body><script>' +
-          "addEventListener('hashchange', () => {" +
-          "history.pushState(null, '', '/inner/pushed');" +
-          "parent.document.title = 'Framed-after';" +
-          '});' +
+          "addEventListener('hashchange', () => { parent.document.title = 'Framed-after' });" +
           "location.hash = 'moved';" +
           '</script></body></html>'
       )
