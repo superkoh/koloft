@@ -21,6 +21,8 @@ export function sshOptions(controlDir: string, batch: boolean, master = SHARED_M
     '-o',
     'RemoteCommand=none',
     '-o',
+    'RequestTTY=no',
+    '-o',
     'ControlMaster=auto',
     '-o',
     `ControlPath=${controlDir}/${master}`,
@@ -31,7 +33,7 @@ export function sshOptions(controlDir: string, batch: boolean, master = SHARED_M
     '-o',
     'ServerAliveCountMax=3'
   ]
-  if (batch) o.push('-o', 'BatchMode=yes', '-o', 'RequestTTY=no')
+  if (batch) o.push('-o', 'BatchMode=yes')
   return o
 }
 
@@ -153,8 +155,6 @@ export function runSshBytes(
 }
 
 // PLATFORM§34
-const REMOTE_RSYNC_ON_ANY_LOGIN_SHELL = `sh -c 'PATH=/opt/homebrew/bin:/usr/local/bin:$PATH exec rsync "$@"' sh`
-
 export function rsyncPull(
   host: string,
   remoteDir: string,
@@ -171,7 +171,6 @@ export function rsyncPull(
       '--timeout=10',
       '-e',
       `ssh ${backgroundOptions(host, opts.controlDir).join(' ')}`,
-      `--rsync-path=${REMOTE_RSYNC_ON_ANY_LOGIN_SHELL}`,
       `${host}:${remoteDir}/`,
       `${localDir}/`
     ],

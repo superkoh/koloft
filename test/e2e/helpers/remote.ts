@@ -53,10 +53,19 @@ export function sshCalls(env: E2EEnv): SshCall[] {
     })
 }
 
+const SCRIPT_SENT_AS_BASE64 =
+  /^sh -c 'eval "\$\(printf %s "\$0" \| base64 -d\)"' ([A-Za-z0-9+/=]+)$/
+
+export function remoteCommandText(argv: string[]): string {
+  const sent = argv[argv.length - 1] ?? ''
+  const encoded = SCRIPT_SENT_AS_BASE64.exec(sent)
+  return encoded ? Buffer.from(encoded[1], 'base64').toString('utf8') : sent
+}
+
 export function sshCommands(env: E2EEnv, phase: 'start' | 'end' = 'start'): string[] {
   return sshCalls(env)
     .filter((c) => c.phase === phase)
-    .map((c) => c.argv[c.argv.length - 1] ?? '')
+    .map((c) => remoteCommandText(c.argv))
 }
 
 export function rsyncCalls(env: E2EEnv): string[][] {

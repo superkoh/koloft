@@ -59,7 +59,8 @@ describe("a user's ~/.ssh/config cannot turn Koloft's commands into something el
     const config = path.join(tmp, 'user-config')
     fs.writeFileSync(config, 'Host *\n  RemoteCommand tmux attach\n  RequestTTY force\n')
     return execFileSync('/usr/bin/ssh', ['-G', '-F', config, ...args, 'devbox'], {
-      encoding: 'utf8'
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore']
     })
   }
 
@@ -68,9 +69,11 @@ describe("a user's ~/.ssh/config cannot turn Koloft's commands into something el
     expect(resolved(sshOptions('/tmp/x', false))).not.toMatch(/^remotecommand /m)
   })
 
-  it('never gives a background command a terminal, while a tab still gets the one it asks for', () => {
+  it('gives no command a terminal unless it asks with -t, so the bytes a tab pushes first arrive intact, while its session still gets one', () => {
     expect(resolved(['-n', ...sshOptions('/tmp/x', true)])).toMatch(/^requesttty false$/m)
+    expect(resolved(sshOptions('/tmp/x', false))).toMatch(/^requesttty false$/m)
     expect(resolved(['-tt', ...sshOptions('/tmp/x', false)])).toMatch(/^requesttty force$/m)
+    expect(resolved(['-t', ...sshOptions('/tmp/x', false)])).toMatch(/^requesttty true$/m)
   })
 })
 

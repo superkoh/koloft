@@ -884,7 +884,8 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   (2026-09-29, OpenSSH_10.3p1 on macOS 27 to Ubuntu 24.04.)
 - **`RequestTTY force` in the config gives even `ssh -n host cmd` a terminal**, and the
   terminal turns each `\n` of the output into `\r\n` (`printf "a\nb"` came back as
-  `a \r \n b`); `-o RequestTTY=no` first keeps the bytes as sent. The single-letter
+  `a \r \n b`), and a `tar | ssh host 'tar xf -'` push through it fails; `-o
+  RequestTTY=no` first keeps the bytes as sent. The single-letter
   `-t` / `-tt` beats `-o RequestTTY=` in either order (`ssh -G` printed
   `requesttty force` for `-tt` with `-o RequestTTY=no` before or after it). (Same date
   and versions.)
@@ -915,10 +916,21 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   project. Measured 2026-09-24 with this Mac's openrsync (2.6.9 compatible) pulling
   from GNU rsync 3.2.7 on Ubuntu 24.04, and openrsync on both ends locally, over a
   scratch tree.
-- **The remote end is started through the user's login shell**, `--rsync-path` text
-  and all, so a shell that prints anything as it starts (a greeting in `~/.bashrc`)
-  breaks the protocol: openrsync stopped with `error: unexpected tag 103` (2026-09-29,
-  a fake remote shell that echoes a line and then runs the command, locally).
+- **The remote end is started through the user's login shell**, so a shell that prints
+  anything as it starts (a greeting in `~/.bashrc`) breaks the protocol: openrsync
+  stopped with `error: unexpected tag 103` (2026-09-29, a fake remote shell that echoes
+  a line and then runs the command, locally; the same against a Debian 12 container
+  whose `.bashrc` echoes, through a real sshd).
+- **openrsync splits `--rsync-path` into words and drops its quotes**, single and double,
+  before ssh joins them back with spaces. So no quoted remote command survives: `sh -c
+  'PATH=… exec rsync "$@"' sh` arrived as `sh -c PATH=…:$PATH exec rsync "$@" sh …`, and
+  `env "PATH=…:$PATH" rsync` lost its quotes too. Unquoted, fish expands a list `$PATH`
+  inside `PATH=…:$PATH` into one word per entry, and `env` keeps only the last
+  (`/opt/homebrew/bin:/usr/local/bin:/bin`); tcsh has no `VAR=value cmd` form at all. A
+  bare `rsync` is found on every login shell's non-login PATH: `/usr/bin/rsync` on
+  macOS, and on Debian 12 under bash, tcsh and fish. (2026-09-30: this Mac's openrsync
+  through a stand-in ssh that logs its argv; Debian 12 `node:22-bookworm-slim`
+  containers.)
 
 ## §35 tmux
 
@@ -975,8 +987,10 @@ command by hand:
   (`PATH=…: Command not found.`). So `sh -c '<multi-line script>'`, an argument holding
   `!`, and `--rsync-path=PATH=… rsync` all fail there. A command made only of
   `sh -c '…'` around base64 text (`[A-Za-z0-9+/=]`), which `sh` decodes and runs, gets
-  through unchanged; so does `sh -c 'PATH=… exec rsync "$@"' sh`. `base64 -d` decodes
-  on GNU coreutils and macOS 27. (2026-09-29: every remote command Koloft sends, run
-  with `/bin/tcsh -c` and `/bin/csh -c` on macOS 27.)
-- Wrapping each command in `sh -c '…'` keeps it safe when the user's shell is fish —
-  inferred, not checked (neither box has fish).
+  through unchanged. `base64 -d` decodes on GNU coreutils and macOS 27. (2026-09-29:
+  every remote command Koloft sends, run with `/bin/tcsh -c` and `/bin/csh -c` on
+  macOS 27.)
+- **Wrapping each command in `sh -c '…'` keeps it safe when the user's shell is fish**
+  (2026-09-30, fish 3.6.0 and Debian 12's tcsh as the login shell of containers
+  behind a jump host: file listing and reading, a session start and the session sync
+  all worked through a real sshd).

@@ -10,6 +10,7 @@ import {
   launchWithRemote,
   liveTmuxSessions,
   REMOTE_WS_NAME,
+  remoteCommandText,
   sshCalls,
   sshCommands
 } from './helpers/remote'
@@ -189,9 +190,7 @@ test.describe('who ends the claude on the other machine: every way of ending a r
             sshCalls(env).filter(
               (c) =>
                 c.phase === 'end' &&
-                (c.argv[c.argv.length - 1] ?? '').includes(
-                  `kill-session -t ${tmuxName(first.sessionId)}`
-                )
+                remoteCommandText(c.argv).includes(`kill-session -t ${tmuxName(first.sessionId)}`)
             ).length,
           { timeout: 30_000 }
         )
@@ -199,7 +198,7 @@ test.describe('who ends the claude on the other machine: every way of ending a r
       const kills = sshCalls(env).filter(
         (c) =>
           c.phase === 'end' &&
-          (c.argv[c.argv.length - 1] ?? '').includes(`kill-session -t ${tmuxName(first.sessionId)}`)
+          remoteCommandText(c.argv).includes(`kill-session -t ${tmuxName(first.sessionId)}`)
       )
       expect(kills.every((k) => k.exit === 255)).toBe(true)
 

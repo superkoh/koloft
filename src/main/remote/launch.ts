@@ -218,5 +218,6 @@ export function utilShellLine(s: UtilShellLineSpec): string {
 }
 
 export function killSessionCmd(tmuxName: string): string {
-  return remoteShCommand('tmux -L koloft kill-session -t "$1"', [tmuxName])
+  if (!NEEDS_NO_QUOTING_RE.test(tmuxName)) throw new Error('unsafe tab/session name')
+  return remoteShCommand(`tmux -L koloft kill-session -t ${tmuxName}`)
 }
