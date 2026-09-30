@@ -105,6 +105,15 @@ describe('attention — title and session snapshot survive the session they name
       expect.objectContaining({ title: 'Fix the WebGL garbling', sessionId: 'sid-A' })
     ])
   })
+
+  it('the session binding again anywhere drops its exited mark, whatever tab raised it', () => {
+    const { t, changes } = makeTracker()
+    t.onExited('tab-A', UNFOCUSED, { sessionId: 'sid-A' })
+    t.onExited('tab-B', UNFOCUSED, { sessionId: 'sid-B' })
+    t.clearSession('sid-A')
+    expect(t.list()).toEqual([expect.objectContaining({ tabId: 'tab-B' })])
+    expect(changes.at(-1)).toMatchObject({ event: null })
+  })
 })
 
 describe('attention — reconsider (stale-context suppression race)', () => {

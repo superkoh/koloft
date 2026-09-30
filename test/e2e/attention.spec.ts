@@ -55,7 +55,7 @@ test.describe('attention markers come from real session-status transitions (shim
     expect(await pendingAttention(page)).toHaveLength(0)
   })
 
-  test('T-LIFE-04: a hard-killed claude turns its row cold in place, keeping its title and an exited red dot that clicking the row clears', async ({
+  test('T-LIFE-04: a hard-killed claude turns its row cold in place, keeping its title', async ({
     page,
     env
   }) => {
@@ -71,15 +71,5 @@ test.describe('attention markers come from real session-status transitions (shim
     await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
     await expect(page.locator('.ws-tab.st-waiting')).toHaveCount(0)
     await expect(page.locator('.ws-tab.st-approval')).toHaveCount(0)
-
-    await expect
-      .poll(async () => (await pendingAttention(page)).map((a) => a.kind))
-      .toEqual(['exited'])
-    await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
-
-    await row.click()
-    await expect
-      .poll(async () => (await pendingAttention(page)).map((a) => a.kind), { timeout: 10_000 })
-      .not.toContain('exited')
   })
 })
