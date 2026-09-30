@@ -111,6 +111,50 @@ test.describe('Workbench web tabs: address bar and history, back/forward, reload
     }
   })
 
+  test("BB-M04f: an iframe changing its own hash or history keeps the tab's address; the page's own change still moves it", async ({
+    app,
+    page,
+    env
+  }) => {
+    test.setTimeout(180_000)
+    gitInit(env.workspaces.a)
+    const server = await startEchoServer()
+    try {
+      await sessionWithWorkbench(page, env)
+      server.page(
+        '/inner',
+        '<!doctype html><html><body><script>' +
+          "addEventListener('hashchange', () => {" +
+          "history.pushState(null, '', '/inner/pushed');" +
+          "parent.document.title = 'Framed-after';" +
+          '});' +
+          "location.hash = 'moved';" +
+          '</script></body></html>'
+      )
+      const framed = server.page(
+        '/framed',
+        '<!doctype html><html><head><title>Framed</title></head>' +
+          '<body><iframe src="/inner"></iframe></body></html>'
+      )
+
+      await openTabOn(page, framed)
+
+      await expect(page.locator(`${BROWSER.tabActive} ${BROWSER.tabLabel}`)).toHaveText(
+        'Framed-after',
+        { timeout: 30_000 }
+      )
+      expect(await addressValue(page)).toMatch(new RegExp(`:${server.port}/framed$`))
+
+      const guest = await guestByUrl(app, `:${server.port}/framed`)
+      await guest.evaluate(() => history.pushState(null, '', '/framed#own'))
+      await expect
+        .poll(() => addressValue(page), { timeout: 20_000 })
+        .toMatch(new RegExp(`:${server.port}/framed#own$`))
+    } finally {
+      await server.close()
+    }
+  })
+
   test('BB-M07: an in-page link click navigates the tab, and Back returns to the prior page', async ({
     app,
     page,
