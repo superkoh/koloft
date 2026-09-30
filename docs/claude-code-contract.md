@@ -52,8 +52,11 @@ binary.
   running hook with elapsed time, and Esc cancels a prompt waiting on one. So a hook
   that does slow work before its report may never report.
 - **A hard exit fires no SessionEnd.** Only a clean exit (`/exit`, Ctrl+D, `logout`,
-  and SIGHUP above) fires it; a kill by Ctrl+C, a crash or `kill -9` fires none
-  (SIGTERM: not probed yet), so only a liveness check notices. **claude waits for its
+  and SIGHUP above) fires it; a kill by Ctrl+C, a crash or `kill -9` fires none, so
+  only a liveness check notices. **SIGTERM counts as a clean exit**: it fires
+  SessionEnd reason=`other`, then claude exits with code 143 (2026-09-29, CC 2.1.284:
+  an idle interactive `claude` in a pty with SessionStart/SessionEnd hooks that log
+  their payloads, sent `kill -TERM`). **claude waits for its
   own SessionEnd hook to finish before it exits**, so when the session pty dies the
   hook's report file is already whole. (Both inferred, not checked.)
 - **Every hook payload carries `session_id`**, run-state events (UserPromptSubmit,
@@ -75,7 +78,7 @@ binary.
 Evidence: live experiments E1–E8, 2026-08-10, claude 2.1.227; enums read from CC 2.1.238 source on 2026-08-22. Koloft dependents: the `EVICTING_END_REASONS` whitelist
 in `src/main/backends/claude.ts` (marked `CC§1`); `sessionTracker.bindSession` (it takes
 the hook's `cwd` — the launch-directory entry above); `test/e2e/fixtures/fake-claude.js`
-mimics this section (it also fires SessionEnd `other` on SIGTERM).
+mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
 
 ## §2 Transcript on disk
 
