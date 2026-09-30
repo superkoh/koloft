@@ -135,6 +135,7 @@ export function setupE2EEnv(): E2EEnv {
     HOME: home,
     PATH: `${fakeBin}:${nodeDir}:/usr/bin:/bin:/usr/sbin:/sbin`,
     KOLOFT_CLAUDE_CMD: 'claude',
+    KOLOFT_CODEX_CMD: path.join(home, 'codex-not-installed'),
     KOLOFT_KEYCHAIN_FILE: keychainFile,
     // CC§2
     KOLOFT_SCRATCHPAD_BASE: scratchpadBase,
