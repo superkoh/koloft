@@ -771,6 +771,13 @@ inferred, not checked.
   without a poll.
 - **`fs.watch` on a folder that does not exist yet throws**; a watch attached before the
   folder appears never fires.
+- **On macOS a folder watch goes live a moment after `fs.watch` returns, and a file
+  written in that gap is never reported.** Measured 2026-09-29 (Node 24.13.0, macOS 27.0)
+  with the Codex agent-drop unit test under load (16 copies at once): a request written
+  right after the watch started was lost in 2 of 16 runs, still lost with a 10 s wait;
+  written 500 ms later it was seen in 40 of 40. The same test failed on the GitHub macOS
+  runner in 4 of 5 CI runs that day. A test that drops a file right after starting a
+  watcher writes it again until it is seen.
 - **A recursive folder watcher cannot be trusted to report the removal of the watched
   folder itself.**
 

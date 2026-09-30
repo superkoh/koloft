@@ -459,9 +459,12 @@ describe('CodexSessions', () => {
       fs.readFileSync(path.join(shimDir, 'koloft'), 'utf8')
     )![0]
     const request = { argv: ['help'], cwd: repo }
-    fs.writeFileSync(path.join(requestDir, 'req-1.json'), JSON.stringify(request))
+    // PLATFORM§28
     await expect
-      .poll(() => answer.mock.calls)
+      .poll(() => {
+        fs.writeFileSync(path.join(requestDir, 'req-1.json'), JSON.stringify(request))
+        return answer.mock.calls
+      })
       .toContainEqual([launched.id, requestDir, 'req-1.json', request])
     await sessions.stop(launched.id)
     expect(fs.existsSync(requestDir)).toBe(false)
