@@ -18,6 +18,7 @@ import {
   type JSX,
   type MouseEvent
 } from 'react'
+import { createPortal } from 'react-dom'
 import {
   LuSettings,
   LuFolderPlus,
@@ -1554,51 +1555,58 @@ export default function App(): JSX.Element {
         <LuPanelLeft size={18} />
         {callingCount > 0 && <span className="ws-tab-parked ws-unread-count">{callingCount}</span>}
       </button>
-      {newRequest && (
-        <NewSessionDialog
-          key={newRequest.id}
-          mode={newRequest.mode}
-          initialPath={newRequest.path}
-          rows={workspaceRows}
-          onClose={() => setNewRequest(null)}
-          onStart={startSession}
-          launchLock={newSessionLocked}
-        />
+      {/* ADR-0013 */}
+      {createPortal(
+        <>
+          {newRequest && (
+            <NewSessionDialog
+              key={newRequest.id}
+              mode={newRequest.mode}
+              initialPath={newRequest.path}
+              rows={workspaceRows}
+              onClose={() => setNewRequest(null)}
+              onStart={startSession}
+              launchLock={newSessionLocked}
+            />
+          )}
+          {restoreWs && workspaceRows.some((w) => w.workspace.path === restoreWs) && (
+            <RestoreDialog
+              key={restoreWs}
+              wsPath={restoreWs}
+              onClose={() => setRestoreWs(null)}
+              onRestore={(row) => {
+                setRestoreWs(null)
+                void resumeSession({
+                  id: row.id,
+                  backendId: row.backendId,
+                  title: row.title,
+                  restore: true
+                })
+              }}
+            />
+          )}
+          {remoteDialog && (
+            <RemoteWorkspaceDialog
+              onAdd={(key) => void addRemoteWorkspace(key)}
+              onClose={() => setRemoteDialog(false)}
+            />
+          )}
+          {cronWs && (
+            <CronJobsDialog
+              key={cronWs.path}
+              wsPath={cronWs.path}
+              initialJobId={cronWs.jobId}
+              onClose={() => setCronWs(null)}
+            />
+          )}
+          <ResumeDialog />
+          <CloseSessionDialog />
+          <SettingsModal />
+          <UpdateModal />
+          <UnsavedDialog />
+        </>,
+        document.body
       )}
-      {restoreWs && workspaceRows.some((w) => w.workspace.path === restoreWs) && (
-        <RestoreDialog
-          key={restoreWs}
-          wsPath={restoreWs}
-          onClose={() => setRestoreWs(null)}
-          onRestore={(row) => {
-            setRestoreWs(null)
-            void resumeSession({
-              id: row.id,
-              backendId: row.backendId,
-              title: row.title,
-              restore: true
-            })
-          }}
-        />
-      )}
-      {remoteDialog && (
-        <RemoteWorkspaceDialog
-          onAdd={(key) => void addRemoteWorkspace(key)}
-          onClose={() => setRemoteDialog(false)}
-        />
-      )}
-      {cronWs && (
-        <CronJobsDialog
-          key={cronWs.path}
-          wsPath={cronWs.path}
-          initialJobId={cronWs.jobId}
-          onClose={() => setCronWs(null)}
-        />
-      )}
-      <ResumeDialog />
-      <CloseSessionDialog />
-      <SettingsModal />
-      <UpdateModal />
       {overlay?.open && <BrowserOverlay url={overlay.url} onClose={closeOverlay} />}
       {extAsks[0] && (
         <ExtensionConfirm
@@ -1610,7 +1618,6 @@ export default function App(): JSX.Element {
           }}
         />
       )}
-      <UnsavedDialog />
       {hint && <Hint {...hint} />}
     </div>
   )
