@@ -908,7 +908,8 @@ export class CodexSessions {
         this.deps.events(tabId, {
           type: 'exited',
           clean: !unexpectedExit,
-          title: run.info?.title
+          title: run.info?.title,
+          sessionId: run.info?.sessionId
         })
         this.runs.delete(tabId)
         if (nativeExit && run.info && !this.aliveTabFor(run.info.sessionId)) {

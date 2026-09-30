@@ -274,7 +274,12 @@ export class ClaudeBackend implements SessionBackend {
           const strikes = (goneStrikes.get(tabId) ?? 0) + 1
           if (strikes >= MISSED_SWEEPS_BEFORE_UNTRACK) {
             goneStrikes.delete(tabId)
-            this.d.events(tabId, { type: 'exited', clean: false, title: this.titleOf(tabId) })
+            this.d.events(tabId, {
+              type: 'exited',
+              clean: false,
+              title: this.titleOf(tabId),
+              sessionId: this.sessionIdOf(tabId)
+            })
             this.d.tracker.untrack(tabId)
           } else {
             goneStrikes.set(tabId, strikes)
@@ -456,7 +461,12 @@ export class ClaudeBackend implements SessionBackend {
           .list()
           .some((t) => t.tabId === tabId && t.alive && t.sessionId === sessionId)
         if (!still || !this.remoteSessionGone(host, sessionId)) return
-        this.d.events(tabId, { type: 'exited', clean: false, title: this.titleOf(tabId) })
+        this.d.events(tabId, {
+          type: 'exited',
+          clean: false,
+          title: this.titleOf(tabId),
+          sessionId
+        })
         tracker.untrack(tabId)
       }, REMOTE_EXIT_WAIT_MS).unref()
     }
@@ -503,7 +513,7 @@ export class ClaudeBackend implements SessionBackend {
       if (sid && !stillBound) this.d.workspaces()?.dropOwnership(sid)
     }
     if (!hit && sid && this.remoteSessionGone(host, sid))
-      this.d.events(tabId, { type: 'exited', clean: false, title })
+      this.d.events(tabId, { type: 'exited', clean: false, title, sessionId: sid })
     for (const name of new Set([`${tabId}.json`, hit?.name ?? ''])) {
       if (name) fs.rmSync(path.join(mirrorDir, name), { force: true })
     }

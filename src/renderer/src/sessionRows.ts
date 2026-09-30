@@ -1,5 +1,6 @@
 import { isSessionKind, type SessionBackend } from './agentUi'
 import type {
+  AttentionEvent,
   BackgroundItem,
   LeftoverProcess,
   SessionInfo,
@@ -110,6 +111,14 @@ export function rowStateClass(
     default:
       return 'st-idle'
   }
+}
+
+export function attentionOnRow(
+  rowId: string,
+  tabId: string | undefined,
+  pending: AttentionEvent[]
+): AttentionEvent | undefined {
+  return pending.find((e) => e.sessionId === rowId || e.tabId === tabId)
 }
 
 export function isOrphanRow(

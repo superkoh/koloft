@@ -825,6 +825,13 @@ export default function App(): JSX.Element {
   }, [])
 
   useEffect(() => {
+    const set = useStore.getState().setAttention
+    const off = window.api.attention.onChanged(set)
+    void window.api.attention.list().then(set)
+    return off
+  }, [])
+
+  useEffect(() => {
     const off = window.api.terminal.onExit((e) => {
       if (!adoptionIsSettled()) preAdoptExits.add(e.id)
       if (useStore.getState().terminalExited(e.id)) return
