@@ -685,6 +685,11 @@ inferred, not checked.
   segment cannot be read (seen in a manual round).
 - **`-webkit-app-region: drag` does not follow a scrolled container** (electron#40610):
   a stale drag rectangle stays, and a tab under it loses clicks to window drags.
+- **Where a `drag` and a `no-drag` region overlap, the element later in the document
+  wins, whatever the stacking order**: an absolutely placed `no-drag` button with the
+  higher `z-index`, placed before a `drag` title bar in the DOM, got neither hover nor
+  clicks; moved after it, both worked (seen in a manual round, 2026-09-30, Electron
+  43.7, macOS).
 - **`getComputedStyle().borderColor` is `''` when the four sides differ**, and
   `getPropertyValue('--token')` returns the token's raw text; assigning it to
   `border-top-color` on a probe element normalises it.

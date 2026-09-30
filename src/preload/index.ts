@@ -405,6 +405,14 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener('window:focus', handler)
     }
   },
+  windowFullscreen: {
+    get: () => ipcRenderer.invoke('window:isFullScreen'),
+    onChange: (cb) => {
+      const handler = (_e: unknown, on: boolean): void => cb(on)
+      ipcRenderer.on('window:fullscreen', handler)
+      return () => ipcRenderer.removeListener('window:fullscreen', handler)
+    }
+  },
   shortcuts: {
     onNewTerminalTab: (cb) => {
       const handler = (): void => cb()
@@ -415,6 +423,11 @@ const api: KoloftApi = {
       const handler = (): void => cb()
       ipcRenderer.on('shortcut:focus-notes', handler)
       return () => ipcRenderer.removeListener('shortcut:focus-notes', handler)
+    },
+    onToggleSidebar: (cb) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('shortcut:toggle-sidebar', handler)
+      return () => ipcRenderer.removeListener('shortcut:toggle-sidebar', handler)
     },
     onNewSession: (cb) => {
       const handler = (): void => cb()

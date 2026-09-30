@@ -406,6 +406,7 @@ test.describe('Black-box: the browser close-out, inside the Workbench web tab', 
       await expect(page.locator(BROWSER.pageFullscreen)).toBeVisible()
       await expect(page.locator(BROWSER.tabStrip)).toBeHidden()
       await expect(page.locator('.aux-icons')).toBeHidden()
+      await expect(page.locator('.aux-ico.sb-toggle')).toBeHidden()
 
       expect(
         await app.evaluate(

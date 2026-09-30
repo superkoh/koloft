@@ -155,6 +155,7 @@ export interface Settings {
   browserPaneWidth: number
   fileTreeHeight: number
   sidebarWidth: number
+  sidebarHidden: boolean
   multiAccount: boolean
   skipPermissions: boolean
   fablePriority: boolean
@@ -196,6 +197,7 @@ export const DEFAULT_SETTINGS: Settings = {
   browserPaneWidth: 560,
   fileTreeHeight: 260,
   sidebarWidth: 280,
+  sidebarHidden: false,
   multiAccount: false,
   skipPermissions: true,
   fablePriority: true,
@@ -902,9 +904,14 @@ export interface KoloftApi {
   windowFocus: {
     onChange(cb: (focused: boolean) => void): () => void
   }
+  windowFullscreen: {
+    get(): Promise<boolean>
+    onChange(cb: (on: boolean) => void): () => void
+  }
   shortcuts: {
     onNewTerminalTab(cb: () => void): () => void
     onFocusNotes(cb: () => void): () => void
+    onToggleSidebar(cb: () => void): () => void
     onNewSession(cb: () => void): () => void
     onNewWorktreeSession(cb: () => void): () => void
     onCloseTab(cb: () => void): () => void

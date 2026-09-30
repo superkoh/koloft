@@ -1,5 +1,5 @@
 import type { ElectronApplication, Page } from '@playwright/test'
-import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
 import {
   centerTerm,
@@ -208,6 +208,46 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
       )
       await expectAnchoredAt(page, rowSel(b))
       await snap(page, 'T-HN-02')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('with the sidebar hidden, the sidebar button carries the Dock badge’s count, and the approval card points at the button until the sidebar comes back', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const { app, page } = await start(env, { hintsSeen: ['worktree'] })
+    const sidebarButton = '.aux-ico.sb-toggle'
+    try {
+      await startSessionIn(page, 'ws-a')
+      const a = await shownTabId(page)
+      await startSessionIn(page, 'ws-a')
+      const b = await shownTabId(page)
+      await page.locator(rowSel(a)).click()
+      await expect(page.locator(rowSel(a))).toHaveClass(/\bactive\b/, { timeout: 15_000 })
+
+      await clickAppMenuItem(app, page, 'toggle-sidebar')
+      await expect(page.locator('.side')).toBeHidden()
+      await typeIntoHiddenRow(page, b, '/need-approval')
+      await expect(card(page, 'approval')).toBeVisible({ timeout: 30_000 })
+      await expectAnchoredAt(page, sidebarButton)
+      const count = page.locator(`${sidebarButton} .ws-unread-count`)
+      await expect
+        .poll(
+          async () => {
+            const pending = (await pendingAttention(page)).length
+            const shown = (await count.count()) ? Number(await count.textContent()) : 0
+            return pending > 0 && shown === pending
+          },
+          { timeout: 30_000 }
+        )
+        .toBe(true)
+
+      await clickAppMenuItem(app, page, 'toggle-sidebar')
+      await expect(page.locator('.side')).toBeVisible()
+      await expectAnchoredAt(page, rowSel(b))
+      await expect(count).toHaveCount(0)
     } finally {
       await quitAndClose(app)
     }

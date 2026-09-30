@@ -45,6 +45,7 @@ describe('buildResetPatch (FR-12)', () => {
         'notifyExited',
         'notifyTurnDone',
         'showUsage',
+        'sidebarHidden',
         'sidebarWidth',
         'statuslineBuiltin',
         'workbenchWidth',

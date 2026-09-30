@@ -95,6 +95,10 @@ body {
   height: 100vh;
   background: var(--bg-term);
   position: relative;
+  --sb-toggle-left: 82px;
+}
+.app.os-full {
+  --sb-toggle-left: 12px;
 }
 .side {
   flex: 0 0 auto;
@@ -114,8 +118,34 @@ body {
   gap: 8px;
   height: var(--titlebar-h);
   flex: 0 0 auto;
-  padding: 0 8px 0 82px;
+  padding: 0 8px 0 calc(var(--sb-toggle-left) + 36px);
   -webkit-app-region: drag;
+}
+.app.sb-off .side {
+  display: none;
+}
+.aux-ico.sb-toggle {
+  position: absolute;
+  top: 9px;
+  left: var(--sb-toggle-left);
+  z-index: 3;
+}
+.aux-ico.sb-toggle .ws-unread-count {
+  position: absolute;
+  top: -3px;
+  right: -6px;
+}
+.app.sb-off .center-row {
+  padding-left: 10px;
+}
+.app.sb-off .center-top {
+  padding-left: calc(var(--sb-toggle-left) + 22px);
+}
+.app.sb-off .wb-col.full {
+  margin-top: var(--titlebar-h);
+}
+.app:has(.wb-panel.pagefull) :is(.sb-toggle, .aux-icons) {
+  display: none;
 }
 .side-me {
   flex: 0 0 auto;
@@ -1151,16 +1181,19 @@ body {
   display: flex;
   align-items: center;
 }
-.aux-ico.wb-toggle {
+.aux-ico.wb-toggle,
+.aux-ico.sb-toggle {
   width: 28px;
   height: 28px;
   border-radius: 6px;
 }
-.aux-ico.wb-toggle.on {
+.aux-ico.wb-toggle.on,
+.aux-ico.sb-toggle.on {
   color: var(--fg-faint);
 }
 .aux-ico.wb-toggle:hover,
-.aux-ico.wb-toggle.on:hover {
+.aux-ico.wb-toggle.on:hover,
+.aux-ico.sb-toggle:hover {
   color: var(--accent);
 }
 .aux-ico.wb-toggle[aria-disabled='true']:hover {
@@ -4449,9 +4482,6 @@ input.switch:focus-visible {
 .wb-panel.pagefull .wb-tabs,
 .wb-panel.pagefull .wb-bar,
 .wb-panel.pagefull .baddr {
-  display: none;
-}
-.center-row:has(.wb-panel.pagefull) .aux-icons {
   display: none;
 }
 

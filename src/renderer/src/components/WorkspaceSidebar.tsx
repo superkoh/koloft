@@ -32,7 +32,9 @@ import {
   sessionActivityBadge,
   leftoverLabel,
   relTime,
-  rowStateClass
+  rowStateClass,
+  sessionsNeedYou,
+  statusUnavailable
 } from '../sessionRows'
 import { releaseSettledResumes, resumeInFlight, resumeSession } from '../resumeFlow'
 import { adoptionSettled } from '../adoption'
@@ -768,11 +770,7 @@ export function WorkspaceSidebar({
                   {callingInside > 0 && (
                     <span
                       className="ws-tab-parked ws-unread-count"
-                      title={
-                        callingInside > 1
-                          ? `${callingInside} sessions need you`
-                          : '1 session needs you'
-                      }
+                      title={sessionsNeedYou(callingInside)}
                     >
                       {callingInside}
                     </span>
@@ -818,10 +816,9 @@ export function WorkspaceSidebar({
                       const tabId = tabIdOfRow(row)
                       const calling = attentionOnRow(row.id, tabId, attention)
                       const sess = tabId ? sessions.find((s) => s.tabId === tabId) : undefined
-                      const stateCls =
-                        sess?.details?.codex?.observation === 'degraded'
-                          ? ''
-                          : rowStateClass(row.running, sess?.status, row.pending)
+                      const stateCls = statusUnavailable(sess)
+                        ? ''
+                        : rowStateClass(row.running, sess?.status, row.pending)
                       const badge = sessionActivityBadge(sess, leftovers[row.id])
                       const launching = resumeLaunch?.id === row.id
                       const active =

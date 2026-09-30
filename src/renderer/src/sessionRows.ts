@@ -58,11 +58,15 @@ export function parkedBadge(
   }
 }
 
+export function statusUnavailable(session?: Pick<SessionInfo, 'details'>): boolean {
+  return session?.details?.codex?.observation === 'degraded'
+}
+
 export function sessionActivityBadge(
   session?: Pick<SessionInfo, 'background' | 'backendId' | 'details'>,
   leftovers: LeftoverProcess[] = []
 ): (ReturnType<typeof parkedBadge> & { heading: string }) | null {
-  if (session?.details?.codex?.observation === 'degraded')
+  if (statusUnavailable(session))
     return {
       text: '?',
       heading: 'Status unavailable',
@@ -111,6 +115,10 @@ export function rowStateClass(
     default:
       return 'st-idle'
   }
+}
+
+export function sessionsNeedYou(n: number): string {
+  return n > 1 ? `${n} sessions need you` : '1 session needs you'
 }
 
 export function attentionOnRow(

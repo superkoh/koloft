@@ -257,6 +257,23 @@ describe('app menu: Notes', () => {
 })
 
 // PLATFORM§7
+describe('app menu: Toggle Sidebar', () => {
+  it('sits in View on ⌘B, bound exactly once, and forwards toggle-sidebar to the renderer', () => {
+    const seen: string[] = []
+    const menu = buildMenu((a) => seen.push(a))
+    const item = topLevel(menu, 'View').submenu!.find((i) => i.id === 'toggle-sidebar')
+    expect(item!.label).toBe('Toggle Sidebar')
+    expect(item!.accelerator).toBe('CmdOrCtrl+B')
+    const bound = flatten(menu).filter(
+      (i) => i.accelerator && normalizeAccel(i.accelerator) === normalizeAccel('CmdOrCtrl+B')
+    )
+    expect(bound.map((i) => i.id)).toEqual(['toggle-sidebar'])
+    item!.click!()
+    expect(seen).toEqual(['toggle-sidebar'])
+  })
+})
+
+// PLATFORM§7
 describe('app menu: View menu after Force Reload gave up ⇧⌘R', () => {
   it('no longer offers Force Reload anywhere', () => {
     const all = flatten(buildMenu())
