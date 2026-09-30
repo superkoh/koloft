@@ -350,11 +350,17 @@ non-null `move_path`, and the `failed` / `declined` patch statuses. How they arr
 `on-request` approval, were not tried (a URL would have opened a browser on this Mac):
 that they reach the wire the same way is **inferred, not checked**.
 
-Only one live turn was watched; `thread/resume` was not tried. Koloft takes a file list
-and an `open` only from live `item/completed` frames and starts the list empty on every
-bind. That `thread/resume` does not send the old turns' `item/completed` frames again (the
-schema puts them in the reply's `thread.turns[].items` instead) is **inferred, not
-checked**; if it did, a resumed session would open its old files again.
+**`thread/resume` hands back the old turns in its reply, not as frames.** Checked
+2026-09-29 with codex-cli 0.153.4: one real turn (`thread/start` with
+`sandbox: "workspace-write"`, `approvalPolicy: "never"`) wrote a file with a patch; a
+second `codex app-server` then answered `thread/resume` with `thread.turns` holding that
+turn (`status: "completed"`, items `userMessage, agentMessage, fileChange, agentMessage`),
+its `fileChange` item the same shape as the live `item/completed` one. No
+`item/completed` frame came in the 3 s after the reply. The reply also carried
+`initialTurnsPage: null` and `turnsBackwardsCursor` / `itemsBackwardsCursor`; with one
+turn, whether a long session's reply holds only some of its turns was not seen. Koloft
+takes `open` only from live frames, and seeds the file list from the reply's turns on
+every bind, without counting them as live writes.
 
 The same day, without a model, `codex sandbox -c 'sandbox_mode="workspace-write"'
 /usr/bin/open nosuchscheme98765://x` (a scheme no app claims, so nothing could open)
