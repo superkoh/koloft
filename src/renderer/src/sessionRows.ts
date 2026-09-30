@@ -57,11 +57,15 @@ export function parkedBadge(
   }
 }
 
+export function statusUnavailable(session?: Pick<SessionInfo, 'details'>): boolean {
+  return session?.details?.codex?.observation === 'degraded'
+}
+
 export function sessionActivityBadge(
   session?: Pick<SessionInfo, 'background' | 'backendId' | 'details'>,
   leftovers: LeftoverProcess[] = []
 ): (ReturnType<typeof parkedBadge> & { heading: string }) | null {
-  if (session?.details?.codex?.observation === 'degraded')
+  if (statusUnavailable(session))
     return {
       text: '?',
       heading: 'Status unavailable',
@@ -116,9 +120,7 @@ export function sidebarAttention(
   sessions: Pick<SessionInfo, 'tabId' | 'alive' | 'status' | 'details'>[],
   activeTabId: string | null
 ): 'approval' | 'waiting' | null {
-  const others = sessions.filter(
-    (s) => s.alive && s.tabId !== activeTabId && s.details?.codex?.observation !== 'degraded'
-  )
+  const others = sessions.filter((s) => s.alive && s.tabId !== activeTabId && !statusUnavailable(s))
   if (others.some((s) => s.status === 'approval')) return 'approval'
   if (others.some((s) => s.status === 'waiting')) return 'waiting'
   return null

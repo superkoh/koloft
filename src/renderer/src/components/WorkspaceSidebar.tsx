@@ -31,7 +31,8 @@ import {
   sessionActivityBadge,
   leftoverLabel,
   relTime,
-  rowStateClass
+  rowStateClass,
+  statusUnavailable
 } from '../sessionRows'
 import { releaseSettledResumes, resumeInFlight, resumeSession } from '../resumeFlow'
 import { adoptionSettled } from '../adoption'
@@ -802,10 +803,9 @@ export function WorkspaceSidebar({
                           ? tabIdFor(row.id)
                           : undefined
                       const sess = tabId ? sessions.find((s) => s.tabId === tabId) : undefined
-                      const stateCls =
-                        sess?.details?.codex?.observation === 'degraded'
-                          ? ''
-                          : rowStateClass(row.running, sess?.status, row.pending)
+                      const stateCls = statusUnavailable(sess)
+                        ? ''
+                        : rowStateClass(row.running, sess?.status, row.pending)
                       const badge = sessionActivityBadge(sess, leftovers[row.id])
                       const launching = resumeLaunch?.id === row.id
                       const active =

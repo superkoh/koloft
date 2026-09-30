@@ -108,6 +108,7 @@ import { Onboarding } from './components/Onboarding'
 import { BrowserOverlay } from './components/BrowserOverlay'
 import { Hint } from './components/Hint'
 import { useHints } from './useHints'
+import { updateSettings } from './components/settings/useSettingsUpdate'
 
 const RECENT_MAX = 3
 
@@ -115,6 +116,11 @@ const LAUNCH_REFUSED_NOTICE = 'Could not start the session — invalid launch ar
 
 const NO_WORKSPACE_NOTICE = 'No workspace yet — add one first (⇧⌘O)'
 const NO_GIT_NOTICE = 'no git repository among your workspaces — no worktrees here'
+
+const SIDEBAR_ATTENTION_NOTE = {
+  approval: ' — a session needs approval',
+  waiting: ' — a session just finished'
+} as const
 
 function relocatedNotice(dir: string): string {
   return `Workbench followed Claude to ${basename(dir)}`
@@ -581,8 +587,7 @@ export default function App(): JSX.Element {
       const st = useStore.getState()
       if (st.settings.sidebarHidden === hidden) return
       if (hidden && document.activeElement?.closest('.side')) returnFocus()
-      st.setSettings({ ...st.settings, sidebarHidden: hidden })
-      void window.api.settings.set({ sidebarHidden: hidden })
+      updateSettings({ sidebarHidden: hidden })
     },
     [returnFocus]
   )
@@ -1181,20 +1186,13 @@ export default function App(): JSX.Element {
           (attention ? ` unread ${attention}` : '')
         }
         onClick={toggleSidebar}
-        title={
-          (sidebarHidden ? 'Show sidebar (⌘B)' : 'Hide sidebar (⌘B)') +
-          (attention === 'approval'
-            ? ' — a session needs approval'
-            : attention === 'waiting'
-              ? ' — a session just finished'
-              : '')
-        }
+        title={'Sidebar (⌘B)' + (attention ? SIDEBAR_ATTENTION_NOTE[attention] : '')}
         aria-label="Sidebar"
         aria-pressed={!sidebarHidden}
       >
         <LuPanelLeft size={18} />
       </button>
-      <div className={'side' + (sidebarHidden ? ' off' : '')} style={{ width: sidebarWidth }}>
+      <div className="side" style={{ width: sidebarWidth }}>
         <div className="titlebar">
           {overlay && (
             <button

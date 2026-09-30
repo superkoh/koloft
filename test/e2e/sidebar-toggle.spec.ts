@@ -1,7 +1,8 @@
 import fs from 'fs'
 import path from 'path'
-import type { ElectronApplication, Page } from '@playwright/test'
-import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import type { Page } from '@playwright/test'
+import { test, expect, quitAndClose } from './helpers/app'
+import { launchSettled } from './helpers/blackbox'
 import {
   notesArea,
   sendShortcut,
@@ -11,17 +12,8 @@ import {
   workspaceNames
 } from './helpers/p1'
 import { answerFileDialog } from './helpers/workbench'
-import type { E2EEnv } from './helpers/env'
 
 const SIDEBAR_BUTTON = '.aux-ico.sb-toggle'
-
-async function open(env: E2EEnv): Promise<{ app: ElectronApplication; page: Page }> {
-  const app = await launchApp(env)
-  const page = await app.firstWindow()
-  await page.waitForLoadState('domcontentloaded')
-  await waitBooted(page)
-  return { app, page }
-}
 
 async function centerLeft(page: Page): Promise<number> {
   return (await page.locator('.center').boundingBox())?.x ?? -1
@@ -32,7 +24,7 @@ test.describe('Sidebar: the button by the traffic lights hides and shows it, and
     env
   }) => {
     test.setTimeout(180_000)
-    let { app, page } = await open(env)
+    let { app, page } = await launchSettled(env)
     let width = 0
     try {
       await expect(page.locator('.side')).toBeVisible({ timeout: 20_000 })
@@ -48,7 +40,7 @@ test.describe('Sidebar: the button by the traffic lights hides and shows it, and
       await quitAndClose(app)
     }
 
-    ;({ app, page } = await open(env))
+    ;({ app, page } = await launchSettled(env))
     try {
       await expect(page.locator(SIDEBAR_BUTTON)).toBeVisible({ timeout: 20_000 })
       await expect(page.locator('.side')).toBeHidden()
