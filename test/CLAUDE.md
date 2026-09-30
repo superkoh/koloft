@@ -128,8 +128,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   late, so drive working → waiting with `/busy`, not a short turn.
 - Codex sessions: the `codex` is fixtures/fake-codex.js, installed per case by
   `installCodex` (helpers/env.ts) (it sets `KOLOFT_CODEX_CMD` and `CODEX_HOME`).
-  Without it, `KOLOFT_CODEX_CMD` points at a file that does not exist, so Codex reads as
-  not installed whatever the developer's own login shell has.
+  Without it, `KOLOFT_CODEX_CMD` is a bare name, not a path, so Codex reads as not
+  installed whatever the developer's own login shell has.
 
 ### Keys, focus and the hidden window
 
