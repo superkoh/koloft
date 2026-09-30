@@ -21,6 +21,14 @@ method. A recheck adds its date, version and command to the bullet.
 - No locale is set either, so a shell started from the app runs in the C locale: CJK
   text is garbled and wcwidth counts a wide character as 1 cell, which breaks the
   layout of Claude Code's TUI (text user interface).
+- **`SSH_AUTH_SOCK` is launchd's own agent**, not one a shell rc file exports (gpg-agent,
+  a YubiKey, 1Password set through the environment). An `ssh` the app runs itself sees
+  neither that agent nor a Homebrew tool a `ProxyCommand` calls: ssh runs the
+  `ProxyCommand` through `$SHELL -c` with the app's PATH, which printed
+  `zsh:1: command not found: brew`. (2026-09-29, macOS 27.0: `ps eww` on the installed
+  Koloft showed `PATH=/usr/bin:/bin:/usr/sbin:/sbin` and
+  `SSH_AUTH_SOCK=/var/run/com.apple.launchd.…/Listeners`; the ProxyCommand line came
+  from `/usr/bin/ssh` run with that PATH.)
 
 ## §2 Shells: login shells, PATH order, bash, and OSC 7
 
@@ -875,6 +883,26 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   host, `/opt/homebrew/bin` are not on PATH there, and `{ }`, `$$` and `export` are not
   safe syntax.
 - **ssh exits 255 when the host cannot be reached**, and rsync over ssh does the same.
+- **A `RemoteCommand` in `~/.ssh/config` makes every ssh that also names a command
+  fail** with `Cannot execute command-line and remote command.` (exit 255);
+  `-o RemoteCommand=none` placed first wins over the config and the command runs.
+  (2026-09-29, OpenSSH_10.3p1 on macOS 27 to Ubuntu 24.04.)
+- **`RequestTTY force` in the config gives even `ssh -n host cmd` a terminal**, and the
+  terminal turns each `\n` of the output into `\r\n` (`printf "a\nb"` came back as
+  `a \r \n b`), and a `tar | ssh host 'tar xf -'` push through it fails; `-o
+  RequestTTY=no` first keeps the bytes as sent. The single-letter
+  `-t` / `-tt` beats `-o RequestTTY=` in either order (`ssh -G` printed
+  `requesttty force` for `-tt` with `-o RequestTTY=no` before or after it). (Same date
+  and versions.)
+- **One connection holds at most `MaxSessions` commands (sshd's default is 10)**, and
+  every open `ssh -tt` riding a ControlMaster holds one for its whole life. Past the
+  limit the master refuses (`mux_client_request_session: session request failed:
+  Session open refused by peer`) and ssh quietly makes a new connection of its own,
+  logging in again — which a `BatchMode` command cannot do for a password login.
+  (2026-09-29 on an Ubuntu 24.04 box with the stock `sshd_config`: with 14 sessions
+  held, the 15th printed that line and then `Authenticated … using "publickey"`; with
+  10 held, the 11th still rode the master, so the real limit there was not pinned
+  down.)
 
 ## §34 rsync
 
@@ -893,6 +921,21 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   project. Measured 2026-09-24 with this Mac's openrsync (2.6.9 compatible) pulling
   from GNU rsync 3.2.7 on Ubuntu 24.04, and openrsync on both ends locally, over a
   scratch tree.
+- **The remote end is started through the user's login shell**, so a shell that prints
+  anything as it starts (a greeting in `~/.bashrc`) breaks the protocol: openrsync
+  stopped with `error: unexpected tag 103` (2026-09-29, a fake remote shell that echoes
+  a line and then runs the command, locally; the same against a Debian 12 container
+  whose `.bashrc` echoes, through a real sshd).
+- **openrsync splits `--rsync-path` into words and drops its quotes**, single and double,
+  before ssh joins them back with spaces. So no quoted remote command survives: `sh -c
+  'PATH=… exec rsync "$@"' sh` arrived as `sh -c PATH=…:$PATH exec rsync "$@" sh …`, and
+  `env "PATH=…:$PATH" rsync` lost its quotes too. Unquoted, fish expands a list `$PATH`
+  inside `PATH=…:$PATH` into one word per entry, and `env` keeps only the last
+  (`/opt/homebrew/bin:/usr/local/bin:/bin`); tcsh has no `VAR=value cmd` form at all. A
+  bare `rsync` is found on every login shell's non-login PATH: `/usr/bin/rsync` on
+  macOS, and on Debian 12 under bash, tcsh and fish. (2026-09-30: this Mac's openrsync
+  through a stand-in ssh that logs its argv; Debian 12 `node:22-bookworm-slim`
+  containers.)
 
 ## §35 tmux
 
@@ -943,5 +986,16 @@ command by hand:
   the login files may put a real `claude` in `/usr/local/bin` ahead of that prefix —
   inferred, not checked.
 - Older coreutils may not know the `%.9Y` precision — inferred, not checked.
-- Wrapping each command in `sh -c '…'` keeps it safe when the user's shell is fish —
-  inferred, not checked (neither box has fish).
+- **A csh-family login shell (tcsh, csh) cannot take a newline inside single quotes**
+  (`Unmatched '''.`), **expands `!` even inside single quotes** (`echo 'a!b'` →
+  `b: Event not found.`; `!=` is left alone), and has no `VAR=value cmd` form
+  (`PATH=…: Command not found.`). So `sh -c '<multi-line script>'`, an argument holding
+  `!`, and `--rsync-path=PATH=… rsync` all fail there. A command made only of
+  `sh -c '…'` around base64 text (`[A-Za-z0-9+/=]`), which `sh` decodes and runs, gets
+  through unchanged. `base64 -d` decodes on GNU coreutils and macOS 27. (2026-09-29:
+  every remote command Koloft sends, run with `/bin/tcsh -c` and `/bin/csh -c` on
+  macOS 27.)
+- **Wrapping each command in `sh -c '…'` keeps it safe when the user's shell is fish**
+  (2026-09-30, fish 3.6.0 and Debian 12's tcsh as the login shell of containers
+  behind a jump host: file listing and reading, a session start and the session sync
+  all worked through a real sshd).

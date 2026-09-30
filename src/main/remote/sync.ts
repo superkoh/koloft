@@ -1,5 +1,5 @@
 import { encodeCwd } from '@shared/cwdKey'
-import type { RunResult } from './ssh'
+import { problemOf, type RunResult } from './ssh'
 import { heartbeatCmd, parseHeartbeat, type RemoteGitInfo } from './install'
 import { sessionIdOfTmux } from './launch'
 
@@ -28,6 +28,7 @@ const HOOK_FLAGS = ['-I', '--inplace', '--delete']
 const FAST_INTERVAL_MS = 2000
 const IDLE_INTERVAL_MS = 20_000
 const GIT_INTERVAL_MS = 20_000
+const LONGEST_RETRY_WHILE_OUT_OF_TOUCH_MS = 60_000
 
 export interface RemoteTarget {
   host: string
@@ -50,6 +51,8 @@ interface HostState {
   git: Map<string, RemoteGitInfo>
   gitAt: number
   connected: boolean
+  failures: number
+  problem?: string
   timer?: ReturnType<typeof setTimeout>
   running: boolean
   again: boolean
@@ -89,10 +92,15 @@ export class RemoteSync {
     return this.hosts.get(host)?.connected ?? false
   }
 
+  problem(host: string): string | undefined {
+    return this.hosts.get(host)?.problem
+  }
+
   pokeNow(host: string): void {
     if (this.stopped) return
     const st = this.state(host)
     st.gitAt = 0
+    st.failures = 0
     if (st.running) {
       st.again = true
       return
@@ -112,6 +120,7 @@ export class RemoteSync {
           git: new Map(),
           gitAt: 0,
           connected: false,
+          failures: 0,
           running: false,
           again: false
         })
@@ -148,15 +157,17 @@ export class RemoteSync {
     try {
       const before = {
         connected: st.connected,
+        problem: st.problem,
         alive: [...st.alive].sort().join(','),
         git: gitKey(st.git)
       }
       const askGit = Date.now() - st.gitAt >= GIT_INTERVAL_MS
       const hb = await this.deps
         .run(host, heartbeatCmd(askGit ? target.paths : []))
-        .catch(() => null)
-      if (hb && hb.code === 0) {
+        .catch((e: unknown) => ({ code: null, stdout: '', stderr: String(e) }))
+      if (hb.code === 0) {
         st.connected = true
+        st.failures = 0
         const parsed = parseHeartbeat(hb.stdout)
         const prevAlive = st.alive
         st.alive = new Set(
@@ -170,9 +181,11 @@ export class RemoteSync {
         }
       } else {
         st.connected = false
+        st.failures++
+        st.problem = problemOf(hb)
       }
       if (st.connected) {
-        await Promise.all([
+        const pulls = await Promise.all([
           this.deps.rsync(
             host,
             '.claude/projects',
@@ -181,9 +194,12 @@ export class RemoteSync {
           ),
           this.deps.rsync(host, '.koloft/hook-sessions', target.mirrorHookDir, HOOK_FLAGS)
         ])
+        const failed = pulls.find((r) => r.code !== 0)
+        st.problem = failed && problemOf(failed)
       }
       if (
         before.connected !== st.connected ||
+        before.problem !== st.problem ||
         before.alive !== [...st.alive].sort().join(',') ||
         before.git !== gitKey(st.git)
       ) {
@@ -194,7 +210,11 @@ export class RemoteSync {
       if (this.stopped) return
       const again = st.again
       st.again = false
-      const delay = again ? 0 : target.hasTabs ? FAST_INTERVAL_MS : IDLE_INTERVAL_MS
+      const steady = target.hasTabs ? FAST_INTERVAL_MS : IDLE_INTERVAL_MS
+      const backoff = st.failures
+        ? Math.min(FAST_INTERVAL_MS * 2 ** (st.failures - 1), LONGEST_RETRY_WHILE_OUT_OF_TOUCH_MS)
+        : 0
+      const delay = again ? 0 : Math.max(steady, backoff)
       if (st.timer) clearTimeout(st.timer)
       st.timer = setTimeout(() => void this.round(host), delay)
       st.timer.unref?.()

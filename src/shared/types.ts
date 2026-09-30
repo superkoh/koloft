@@ -1154,7 +1154,7 @@ export interface WorkspaceRows {
     isGit: boolean
     hasHistory: boolean
     freshness?: WorkspaceFreshness
-    remote?: { host: string; path: string; connected: boolean }
+    remote?: { host: string; path: string; connected: boolean; problem?: string }
   }
   rows: SessionRow[]
 }

@@ -12,9 +12,11 @@ const MACHINE = 'devbox'
 let home: string
 let repo: string
 
+let loginShell = '/bin/sh'
+
 function runOnMachine(cmd: string, opts?: { input?: Buffer }): Promise<BytesResult> {
   return new Promise((resolve) => {
-    const c = spawn('/bin/sh', ['-c', cmd], {
+    const c = spawn(loginShell, ['-c', cmd], {
       env: { HOME: home, PATH: '/usr/bin:/bin' },
       stdio: ['pipe', 'pipe', 'pipe']
     })
@@ -68,97 +70,104 @@ afterEach(() => {
   fs.rmSync(home, { recursive: true, force: true })
 })
 
-describe('a remote session’s Workbench reads and writes the machine’s files over ssh', () => {
-  it('lists a folder with every path keyed by the machine, hiding git-ignored and heavy entries and broken links', async () => {
-    const entries = await machine().listDir(keyed(repo))
-    expect(entries.map((e) => e.name)).toEqual(['sub', '.gitignore', 'a.txt'])
-    expect(entries[0]).toEqual({ name: 'sub', path: keyed(path.join(repo, 'sub')), isDir: true })
+// PLATFORM§37
+describe.each(['/bin/sh', '/bin/tcsh'])(
+  'a remote session’s Workbench reads and writes the machine’s files over ssh, when the login shell there is %s',
+  (shell) => {
+    beforeEach(() => (loginShell = shell))
+    afterEach(() => (loginShell = '/bin/sh'))
 
-    const all = await machine().listDir(keyed(repo), { showIgnored: true })
-    expect(all.filter((e) => e.ignored).map((e) => e.name)).toEqual(['.git', 'build'])
-  })
+    it('lists a folder with every path keyed by the machine, hiding git-ignored and heavy entries and broken links', async () => {
+      const entries = await machine().listDir(keyed(repo))
+      expect(entries.map((e) => e.name)).toEqual(['sub', '.gitignore', 'a.txt'])
+      expect(entries[0]).toEqual({ name: 'sub', path: keyed(path.join(repo, 'sub')), isDir: true })
 
-  it('finds files by name and text on the machine, keyed by the machine', async () => {
-    const byName = await machine().search(keyed(repo), 'b.txt')
-    expect(byName.hits.map((h) => h.path)).toEqual([keyed(path.join(repo, 'sub', 'b.txt'))])
-
-    const byText = await machine().searchContent(keyed(repo), 'hello')
-    const byRel = [...byText.hits].sort((x, y) => x.rel.localeCompare(y.rel))
-    expect(byRel.map((h) => [h.rel, h.line])).toEqual([
-      ['a.txt', 1],
-      ['sub/b.txt', 1]
-    ])
-    expect(byRel[0].path).toBe(keyed(path.join(repo, 'a.txt')))
-  })
-
-  it('reports Changes with the machine’s paths, so the renderer can hand them straight back', async () => {
-    fs.writeFileSync(path.join(repo, 'a.txt'), 'hello\nmore\n')
-    fs.writeFileSync(path.join(repo, 'new.txt'), 'n\n')
-    const status = await machine().gitStatus(keyed(repo))
-    expect(status).toEqual({
-      [keyed(path.join(repo, 'a.txt'))]: 'modified',
-      [keyed(path.join(repo, 'broken'))]: 'untracked',
-      [keyed(path.join(repo, 'new.txt'))]: 'untracked'
+      const all = await machine().listDir(keyed(repo), { showIgnored: true })
+      expect(all.filter((e) => e.ignored).map((e) => e.name)).toEqual(['.git', 'build'])
     })
-    const diff = await machine().gitFileDiff(keyed(path.join(repo, 'a.txt')))
-    expect(diff.text).toContain('+more')
-    expect((await machine().gitDiff(keyed(repo))).toplevel).toBe(keyed(repo))
-  })
 
-  it('diffs a branch against where it left main, the same base the local Workbench picks', async () => {
-    git('branch', '-M', 'main')
-    const forkPoint = git('rev-parse', 'HEAD').trim()
-    git('checkout', '-qb', 'feature')
-    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'more', '--allow-empty')
-    expect(await machine().diffBase(keyed(repo))).toBe(forkPoint)
-    expect(await localDiffBase(repo)).toBe(forkPoint)
-  })
+    it('finds files by name and text on the machine, keyed by the machine', async () => {
+      const byName = await machine().search(keyed(repo), 'b.txt')
+      expect(byName.hits.map((h) => h.path)).toEqual([keyed(path.join(repo, 'sub', 'b.txt'))])
 
-  it('refuses a save when the file changed on the machine since it was opened, and saves when it did not', async () => {
-    const file = keyed(path.join(repo, 'a.txt'))
-    const opened = await machine().openForEdit(file)
-    expect(opened.text).toBe('hello\n')
-    expect(opened.readOnly).toBeNull()
+      const byText = await machine().searchContent(keyed(repo), 'hello')
+      const byRel = [...byText.hits].sort((x, y) => x.rel.localeCompare(y.rel))
+      expect(byRel.map((h) => [h.rel, h.line])).toEqual([
+        ['a.txt', 1],
+        ['sub/b.txt', 1]
+      ])
+      expect(byRel[0].path).toBe(keyed(path.join(repo, 'a.txt')))
+    })
 
-    const stale = await machine().writeText(file, 'mine\n', { mtimeMs: 1, size: opened.size })
-    expect(stale).toMatchObject({ ok: false, code: 'stale', text: 'hello\n' })
-    expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8')).toBe('hello\n')
+    it('reports Changes with the machine’s paths, so the renderer can hand them straight back', async () => {
+      fs.writeFileSync(path.join(repo, 'a.txt'), 'hello\nmore\n')
+      fs.writeFileSync(path.join(repo, 'new.txt'), 'n\n')
+      const status = await machine().gitStatus(keyed(repo))
+      expect(status).toEqual({
+        [keyed(path.join(repo, 'a.txt'))]: 'modified',
+        [keyed(path.join(repo, 'broken'))]: 'untracked',
+        [keyed(path.join(repo, 'new.txt'))]: 'untracked'
+      })
+      const diff = await machine().gitFileDiff(keyed(path.join(repo, 'a.txt')))
+      expect(diff.text).toContain('+more')
+      expect((await machine().gitDiff(keyed(repo))).toplevel).toBe(keyed(repo))
+    })
 
-    const saved = await machine().writeText(file, 'mine\n', opened)
-    expect(saved).toMatchObject({ ok: true, size: 5 })
-    expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8')).toBe('mine\n')
-    expect(fs.readdirSync(repo).filter((n) => n.includes('koloft-tmp'))).toEqual([])
-  })
+    it('diffs a branch against where it left main, the same base the local Workbench picks', async () => {
+      git('branch', '-M', 'main')
+      const forkPoint = git('rev-parse', 'HEAD').trim()
+      git('checkout', '-qb', 'feature')
+      git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'more', '--allow-empty')
+      expect(await machine().diffBase(keyed(repo))).toBe(forkPoint)
+      expect(await localDiffBase(repo)).toBe(forkPoint)
+    })
 
-  it('creates a new file on the machine but never over one that is there', async () => {
-    const created = await machine().createFile(keyed(repo), 'fresh.md')
-    expect(created.path).toBe(keyed(path.join(repo, 'fresh.md')))
-    expect(fs.existsSync(path.join(repo, 'fresh.md'))).toBe(true)
-    await expect(machine().createFile(keyed(repo), 'a.txt')).rejects.toThrow('KOLOFT_EXISTS')
-    await expect(machine().openForEdit(keyed(path.join(repo, 'gone')))).rejects.toThrow(
-      'KOLOFT_GONE'
-    )
-  })
-})
+    it('refuses a save when the file changed on the machine since it was opened, and saves when it did not', async () => {
+      const file = keyed(path.join(repo, 'a.txt'))
+      const opened = await machine().openForEdit(file)
+      expect(opened.text).toBe('hello\n')
+      expect(opened.readOnly).toBeNull()
+
+      const stale = await machine().writeText(file, 'mine\n', { mtimeMs: 1, size: opened.size })
+      expect(stale).toMatchObject({ ok: false, code: 'stale', text: 'hello\n' })
+      expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8')).toBe('hello\n')
+
+      const saved = await machine().writeText(file, 'mine\n', opened)
+      expect(saved).toMatchObject({ ok: true, size: 5 })
+      expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8')).toBe('mine\n')
+      expect(fs.readdirSync(repo).filter((n) => n.includes('koloft-tmp'))).toEqual([])
+    })
+
+    it('creates a new file on the machine but never over one that is there', async () => {
+      const created = await machine().createFile(keyed(repo), 'fresh.md')
+      expect(created.path).toBe(keyed(path.join(repo, 'fresh.md')))
+      expect(fs.existsSync(path.join(repo, 'fresh.md'))).toBe(true)
+      await expect(machine().createFile(keyed(repo), 'a.txt')).rejects.toThrow('KOLOFT_EXISTS')
+      await expect(machine().openForEdit(keyed(path.join(repo, 'gone')))).rejects.toThrow(
+        'KOLOFT_GONE'
+      )
+    })
+
+    // CC§9 ADR-0026
+    it("trusts a folder in the machine's .claude.json under its real path, keeping what the file had, and reads a folder under it back as trusted", async () => {
+      const node = path.join(home, '.koloft', 'node', 'bin')
+      fs.mkdirSync(node, { recursive: true })
+      fs.symlinkSync(process.execPath, path.join(node, 'node'))
+      fs.writeFileSync(path.join(home, '.claude.json'), '{"numStartups":3}\n')
+      expect(await machine().trustsFolder(keyed(repo))).toBe(false)
+
+      await machine().trustFolder(keyed(repo))
+
+      expect(JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'))).toEqual({
+        numStartups: 3,
+        projects: { [repo]: { hasTrustDialogAccepted: true } }
+      })
+      expect(await machine().trustsFolder(keyed(path.join(repo, 'sub')))).toBe(true)
+    })
+  }
+)
 
 describe("Claude's folder trust on the machine", () => {
-  // CC§9 ADR-0026
-  it("trusts a folder in the machine's .claude.json under its real path, keeping what the file had, and reads a folder under it back as trusted", async () => {
-    const node = path.join(home, '.koloft', 'node', 'bin')
-    fs.mkdirSync(node, { recursive: true })
-    fs.symlinkSync(process.execPath, path.join(node, 'node'))
-    fs.writeFileSync(path.join(home, '.claude.json'), '{"numStartups":3}\n')
-    expect(await machine().trustsFolder(keyed(repo))).toBe(false)
-
-    await machine().trustFolder(keyed(repo))
-
-    expect(JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'))).toEqual({
-      numStartups: 3,
-      projects: { [repo]: { hasTrustDialogAccepted: true } }
-    })
-    expect(await machine().trustsFolder(keyed(path.join(repo, 'sub')))).toBe(true)
-  })
-
   it('does not call a folder untrusted when the machine cannot be reached', async () => {
     const unreachable = async (): Promise<BytesResult> => ({
       code: 255,

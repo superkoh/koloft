@@ -7,6 +7,12 @@ export const NODE_VERSION = '22.12.0'
 export const REMOTE_PATH_LINE =
   'export PATH="$HOME/.local/bin:$HOME/.koloft/node/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"'
 
+// PLATFORM§33 PLATFORM§37
+export function remoteShCommand(script: string, args: string[] = []): string {
+  const body = `set -- ${args.map(shq).join(' ')}\n${REMOTE_PATH_LINE}\n${script}`
+  return `sh -c 'eval "$(printf %s "$0" | base64 -d)"' ${Buffer.from(body).toString('base64')}`
+}
+
 export const ENSURE_SH = `#!/bin/sh
 ${REMOTE_PATH_LINE}
 NODE_VERSION=${NODE_VERSION}
@@ -112,15 +118,15 @@ set -g exit-empty on
 set -g mouse off
 `
 
-// PLATFORM§33
 export function heartbeatCmd(paths: string[]): string {
-  const body =
-    `${REMOTE_PATH_LINE}; tmux -L koloft ls -F "#S" 2>/dev/null; ` +
-    // CC§2
-    'for p in "$@"; do echo "== $p"; echo "real $(cd "$p" 2>/dev/null && pwd -P)"; ' +
-    '[ -e "$p/.git" ] && echo git; ' +
-    'git -C "$p" worktree list --porcelain 2>/dev/null; done; exit 0'
-  return [`sh -c '${body}' sh`, ...paths.map(shq)].join(' ')
+  return remoteShCommand(
+    'tmux -L koloft ls -F "#S" 2>/dev/null; ' +
+      // CC§2
+      'for p in "$@"; do echo "== $p"; echo "real $(cd "$p" 2>/dev/null && pwd -P)"; ' +
+      '[ -e "$p/.git" ] && echo git; ' +
+      'git -C "$p" worktree list --porcelain 2>/dev/null; done; exit 0',
+    paths
+  )
 }
 
 export interface RemoteGitInfo {

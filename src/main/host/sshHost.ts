@@ -24,7 +24,7 @@ import {
 } from '../fileEdit'
 import { GIT_TIMEOUT_MS, gitOps, type GitOps } from '../gitStatus'
 import { GithubLookup, type GithubOptions } from '../github'
-import { REMOTE_PATH_LINE } from '../remote/install'
+import { remoteShCommand } from '../remote/install'
 import {
   killSessionCmd,
   launchLine,
@@ -59,6 +59,7 @@ export interface MachineClaudeDeps {
 
 export interface SshHostDeps {
   run(cmd: string, opts?: { timeoutMs?: number; input?: Buffer }): Promise<BytesResult>
+  sshEnvReady?(): Promise<void>
   shell(dir: string): Omit<ShellLaunch, 'cwd'>
   github: GithubOptions
   claude: MachineClaudeDeps
@@ -126,11 +127,6 @@ const NOT_TRUSTED = 1
 const WITH_NODE_IN_REAL_DIR = `cd "$1" 2>/dev/null || exit ${NOT_TRUSTED}
 command -v node >/dev/null 2>&1 || exit ${NOT_TRUSTED}
 node -e "$2" "$HOME/.claude.json" "$(pwd -P)"`
-
-// PLATFORM§33
-export function remoteSh(script: string, args: string[]): string {
-  return [`sh -c ${shq(`${REMOTE_PATH_LINE}; ${script}`)} sh`, ...args.map(shq)].join(' ')
-}
 
 const NETWORK_GIT_TIMEOUT_MS = 20_000
 
@@ -374,7 +370,7 @@ export class SshHost implements Host {
   }
 
   private sh(script: string, args: string[], opts?: { timeoutMs?: number; input?: Buffer }) {
-    return this.deps.run(remoteSh(script, args), opts)
+    return this.deps.run(remoteShCommand(script, args), opts)
   }
 
   async listDir(dir: string, opts?: { showIgnored?: boolean }): Promise<DirEntry[]> {
@@ -557,6 +553,7 @@ export class SshHost implements Host {
 
   async launch(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {
     const d = this.deps.claude
+    await this.deps.sshEnvReady?.()
     ensureControlDir(d.controlDir)
     const settings = d.settings()
     const sid = spec.resumeSessionId ?? crypto.randomUUID()

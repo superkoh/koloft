@@ -15,7 +15,7 @@ export function parseRemoteKey(key: string): RemoteKey | null {
   if (slash <= 0) return null
   const host = rest.slice(0, slash)
   const path = rest.slice(slash)
-  if (!/^[A-Za-z0-9._@-]+$/.test(host) || path.length < 2) return null
+  if (!/^[A-Za-z0-9._@][A-Za-z0-9._@-]*$/.test(host) || path.length < 2) return null
   return { host, path }
 }
 

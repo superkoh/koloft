@@ -52,7 +52,7 @@ import {
 } from './browserSecurity'
 import { directoryListingHtml } from './dirListing'
 import { HOOK_SCRIPT, setupHooks, writeTabHookSettings } from './hooks'
-import { formatRemoteKey, hostOf } from '@shared/remoteKey'
+import { formatRemoteKey, hostOf, parseRemoteKey } from '@shared/remoteKey'
 import {
   defaultControlDir,
   ensureControlDir,
@@ -72,6 +72,7 @@ import {
 } from './remote/launch'
 import { machinePackageBase, mirrorHookDir, mirrorProjectsRoot } from './remote/paths'
 import { RemoteSync } from './remote/sync'
+import { readLoginShell, sshEnvFromLogin } from './loginShell'
 import { readJsonDrop, watchJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
 import {
   bundlePath,
@@ -466,6 +467,14 @@ let freshness: GitFreshnessEngine | null = null
 let remoteSync: RemoteSync | null = null
 let machinePkg: MachinePackage | null = null
 const remoteControlDir = defaultControlDir()
+let loginSshEnv: Promise<void> | null = null
+
+// PLATFORM§1
+function sshEnvReady(): Promise<void> {
+  return (loginSshEnv ??= readLoginShell({ env: process.env })
+    .then(({ env }) => void Object.assign(process.env, sshEnvFromLogin(process.env, env)))
+    .catch(() => undefined))
+}
 
 function machinePackage(): MachinePackage {
   if (machinePkg) return machinePkg
@@ -1342,13 +1351,16 @@ app.whenReady().then(() => {
     remoteProjectsRoot: (host) => mirrorProjectsRoot(userData, host),
     remoteRunning: (host) => remoteSync?.alive(host) ?? new Set(),
     remoteConnected: (host) => remoteSync?.connected(host) ?? false,
+    remoteProblem: (host) => remoteSync?.problem(host),
     remoteGit: (host, p) => remoteSync?.gitInfo(host, p),
     killRemoteSession: (host, sessionId) =>
       claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId))
   })
   remoteSync = new RemoteSync({
-    run: (host, cmd) => runSsh(host, cmd, { controlDir: remoteControlDir }),
-    rsync: (host, r, l, extra) => rsyncPull(host, r, l, extra, { controlDir: remoteControlDir }),
+    run: (host, cmd) =>
+      sshEnvReady().then(() => runSsh(host, cmd, { controlDir: remoteControlDir })),
+    rsync: (host, r, l, extra) =>
+      sshEnvReady().then(() => rsyncPull(host, r, l, extra, { controlDir: remoteControlDir })),
     targets: () => {
       const live = new Set(
         tracker
@@ -2319,7 +2331,11 @@ const hosts = new Hosts(
   localHost(new GithubLookup(githubOptions)),
   (machine) =>
     new SshHost(machine, {
-      run: (cmd, opts) => runSshBytes(machine, cmd, { controlDir: remoteControlDir, ...opts }),
+      run: (cmd, opts) =>
+        sshEnvReady().then(() =>
+          runSshBytes(machine, cmd, { controlDir: remoteControlDir, ...opts })
+        ),
+      sshEnvReady,
       shell: (dir) => {
         ensureControlDir(remoteControlDir)
         return {
@@ -2573,7 +2589,12 @@ function registerIpc(): void {
     return commitSettings(sanitizeSettingsPatch(patch))
   })
 
-  ipcMain.handle('workspace:add', (_e, p: string) => workspaceMgr?.add(p))
+  ipcMain.handle('workspace:add', (_e, p: string) => {
+    const r = workspaceMgr?.add(p)
+    const remote = parseRemoteKey(p)
+    if (remote && r?.code === 'added') remoteSync?.pokeNow(remote.host)
+    return r
+  })
   ipcMain.handle('workspace:remove', (_e, p: string) => {
     const r = workspaceMgr?.remove(p)
     if (r?.removed) cronRunner?.removeWorkspace(p)

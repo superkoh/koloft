@@ -84,6 +84,7 @@ export interface WorkspaceManagerDeps {
   remoteProjectsRoot(host: string): string
   remoteRunning?(host: string): Set<string>
   remoteConnected?(host: string): boolean
+  remoteProblem?(host: string): string | undefined
   remoteGit?(host: string, path: string): RemoteGitInfo | undefined
   killRemoteSession?(host: string, sessionId: string): void
 }
@@ -639,7 +640,8 @@ export class WorkspaceManager {
                 remote: {
                   host: key.host,
                   path: key.path,
-                  connected: this.deps.remoteConnected?.(key.host) ?? false
+                  connected: this.deps.remoteConnected?.(key.host) ?? false,
+                  problem: this.deps.remoteProblem?.(key.host)
                 }
               }
             : {})

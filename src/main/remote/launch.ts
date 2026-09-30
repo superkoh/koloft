@@ -3,7 +3,8 @@ import fs from 'fs'
 import path from 'path'
 import type { AccountKind } from '@shared/types'
 import { shq } from '@shared/shellQuote'
-import { REMOTE_PATH_LINE } from './install'
+import { REMOTE_PATH_LINE, remoteShCommand } from './install'
+import { SSH_LINK_BROKE_EXIT } from './ssh'
 
 export function accountEnv(
   kind: AccountKind,
@@ -158,8 +159,6 @@ export interface LaunchLineSpec {
   mode: 'start' | 'attach'
 }
 
-const SSH_LINK_BROKE_EXIT = 255
-
 const TURN_OFF_MOUSE_PASTE_AND_ALT_SCREEN = `printf '\\033[?1000l\\033[?1002l\\033[?1003l\\033[?1006l\\033[?2004l\\033[?25h\\033[?1049l'`
 
 function machineReady(s: {
@@ -217,7 +216,7 @@ export function utilShellLine(s: UtilShellLineSpec): string {
   )
 }
 
-// PLATFORM§33
 export function killSessionCmd(tmuxName: string): string {
-  return `sh -c '${REMOTE_PATH_LINE}; tmux -L koloft kill-session -t ${tmuxName}'`
+  if (!NEEDS_NO_QUOTING_RE.test(tmuxName)) throw new Error('unsafe tab/session name')
+  return remoteShCommand(`tmux -L koloft kill-session -t ${tmuxName}`)
 }

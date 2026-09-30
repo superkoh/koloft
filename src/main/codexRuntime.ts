@@ -1,9 +1,8 @@
 import path from 'path'
-import os from 'os'
-import { randomUUID } from 'crypto'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { codexEnvironment } from './codexTransport'
+import { LoginShellError, readLoginShell } from './loginShell'
 
 const exec = promisify(execFile)
 
@@ -27,38 +26,21 @@ export async function resolveCodexRuntime(
   let binary = inherited.KOLOFT_TEST_BACKGROUND === '1' ? inherited.KOLOFT_CODEX_CMD : undefined
   let resolved = inherited
   if (!binary) {
-    const token = randomUUID().replaceAll('-', '')
-    const begin = `\0KOLOFT_CODEX_BEGIN_${token}\0`
-    const end = `\0KOLOFT_CODEX_END_${token}\0`
-    const script = `printf '\\000KOLOFT_CODEX_BEGIN_${token}\\000'; command -v codex; printf '\\000'; /usr/bin/env -0; printf '\\000KOLOFT_CODEX_END_${token}\\000'`
-    let stdout: string
     try {
-      const result = await exec(
-        options.shell ?? inherited.SHELL ?? os.userInfo().shell ?? '/bin/zsh',
-        ['-l', '-i', '-c', script],
-        {
-          env: inherited,
-          timeout,
-          maxBuffer: 2 * 1024 * 1024,
-          encoding: 'utf8'
-        }
-      )
-      stdout = result.stdout
-    } catch {
+      const login = await readLoginShell({
+        shell: options.shell,
+        env: inherited,
+        timeoutMs: timeout,
+        probe: 'command -v codex'
+      })
+      binary = login.probed
+      resolved = login.env
+    } catch (e) {
       throw new Error(
-        'Could not load the shell environment for Codex. Check that your login shell starts successfully.'
+        e instanceof LoginShellError && e.reason === 'incomplete'
+          ? 'The shell did not return a complete Codex environment.'
+          : 'Could not load the shell environment for Codex. Check that your login shell starts successfully.'
       )
-    }
-    const start = stdout.indexOf(begin)
-    const finish = stdout.indexOf(end, start + begin.length)
-    if (start === -1 || finish === -1)
-      throw new Error('The shell did not return a complete Codex environment.')
-    const fields = stdout.slice(start + begin.length, finish).split('\0')
-    binary = fields.shift()?.trim()
-    resolved = Object.fromEntries(Object.keys(inherited).map((key) => [key, undefined]))
-    for (const field of fields) {
-      const equal = field.indexOf('=')
-      if (equal > 0) resolved[field.slice(0, equal)] = field.slice(equal + 1)
     }
   }
   if (!binary || !path.isAbsolute(binary)) {

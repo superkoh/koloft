@@ -19,6 +19,9 @@ let sync: RemoteSync
 
 const ok = (stdout: string): RunResult => ({ code: 0, stdout, stderr: '' })
 
+const scriptSent = (cmd: string): string =>
+  Buffer.from(cmd.split(' ').pop() ?? '', 'base64').toString('utf8')
+
 function make(): RemoteSync {
   return new RemoteSync({
     run: (host, cmd) => {
@@ -84,7 +87,7 @@ it('U-HB-1: turns the tmux name list into the alive set (an empty list is an ans
 })
 
 it("keeps the machine's git answer (asked every 20s, kept while out of touch) and reports a change in it", async () => {
-  const asked = (cmd: string): boolean => cmd.includes('/home/koh/api')
+  const asked = (cmd: string): boolean => scriptSent(cmd).includes('/home/koh/api')
   let wt = ['/home/koh/api']
   answerWhenQueueEmpty = () => {
     const cmd = runsFull[runsFull.length - 1]
@@ -176,12 +179,12 @@ it('asks about every folder pinned on the machine, and again at once after a pok
   target = { ...target, paths: ['/home/koh/api', '/srv/www'] }
   sync.start()
   await tick(1)
-  expect(runsFull[0]).toContain("'/home/koh/api' '/srv/www'")
+  expect(scriptSent(runsFull[0])).toContain("'/home/koh/api' '/srv/www'")
   await tick(2000)
-  expect(runsFull[1]).not.toContain('/srv/www')
+  expect(scriptSent(runsFull[1])).not.toContain('/srv/www')
   sync.pokeNow('devbox')
   await tick(1)
-  expect(runsFull[2]).toContain('/srv/www')
+  expect(scriptSent(runsFull[2])).toContain('/srv/www')
 })
 
 it('U-HB-2: keeps the previous alive set when a round fails, only greys the dot and copies nothing', async () => {
@@ -195,6 +198,57 @@ it('U-HB-2: keeps the previous alive set when a round fails, only greys the dot 
   expect([...sync.alive('devbox')]).toEqual(['aaa'])
   expect(sync.connected('devbox')).toBe(false)
   expect(rsyncs.length).toBe(2)
+})
+
+it("says why a machine is out of touch in ssh's own words, and forgets it once a round gets through", async () => {
+  answers.push(() =>
+    Promise.resolve({
+      code: 255,
+      stdout: '',
+      stderr: 'ssh: connect to host devbox port 22: Connection refused\n'
+    })
+  )
+  sync.start()
+  await tick(1)
+  expect(sync.problem('devbox')).toBe('ssh: connect to host devbox port 22: Connection refused')
+  expect(changes).toEqual(['devbox'])
+
+  answers.push(() => Promise.resolve(ok('')))
+  await tick(2000)
+  expect(sync.connected('devbox')).toBe(true)
+  expect(sync.problem('devbox')).toBeUndefined()
+  expect(changes).toEqual(['devbox', 'devbox'])
+})
+
+it('a machine that answers but whose sessions fail to copy says so, with the dot still on', async () => {
+  sync.stop()
+  sync = new RemoteSync({
+    run: () => Promise.resolve(ok('')),
+    rsync: () =>
+      Promise.resolve({ code: 1, stdout: '', stderr: 'rsync(1): error: unexpected tag 103\n' }),
+    targets: () => [target],
+    onChange: (host) => changes.push(host)
+  })
+  sync.start()
+  await tick(1)
+  expect(sync.connected('devbox')).toBe(true)
+  expect(sync.problem('devbox')).toMatch(/prints text when it starts/)
+})
+
+it('waits longer between tries the longer a machine stays out of reach, up to a minute, and a poke tries at once', async () => {
+  answerWhenQueueEmpty = () => Promise.resolve({ code: 255, stdout: '', stderr: 'down' })
+  sync.start()
+  await tick(1)
+  const triesWithin = async (ms: number): Promise<number> => {
+    const before = runs.length
+    await tick(ms)
+    return runs.length - before
+  }
+  expect(await triesWithin(2000 + 4000 + 8000)).toBe(3)
+  expect(await triesWithin(16_000 + 32_000 + 60_000 + 60_000)).toBe(4)
+  sync.pokeNow('devbox')
+  expect(await triesWithin(1)).toBe(1)
+  expect(await triesWithin(2000)).toBe(1)
 })
 
 it('reports a session that left the tmux list only from a heartbeat that answered, never from a failed one', async () => {

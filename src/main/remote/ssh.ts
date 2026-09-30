@@ -12,12 +12,20 @@ export function ensureControlDir(dir: string): void {
   fs.chmodSync(dir, 0o700)
 }
 
-export function sshOptions(controlDir: string, batch: boolean): string[] {
+const SHARED_MASTER = '%C'
+const SPILL_MASTER = '%C-spill'
+
+// PLATFORM§33
+export function sshOptions(controlDir: string, batch: boolean, master = SHARED_MASTER): string[] {
   const o = [
+    '-o',
+    'RemoteCommand=none',
+    '-o',
+    'RequestTTY=no',
     '-o',
     'ControlMaster=auto',
     '-o',
-    `ControlPath=${controlDir}/%C`,
+    `ControlPath=${controlDir}/${master}`,
     '-o',
     'ControlPersist=yes',
     '-o',
@@ -27,6 +35,44 @@ export function sshOptions(controlDir: string, batch: boolean): string[] {
   ]
   if (batch) o.push('-o', 'BatchMode=yes')
   return o
+}
+
+const MASTER_FULL = 'Session open refused by peer'
+
+const spilledHosts = new Set<string>()
+
+function backgroundOptions(host: string, controlDir: string): string[] {
+  return sshOptions(controlDir, true, spilledHosts.has(host) ? SPILL_MASTER : SHARED_MASTER)
+}
+
+export const SSH_LINK_BROKE_EXIT = 255
+
+// PLATFORM§33
+function noteMasterRoom<R extends { code: number | null; stderr: string }>(host: string, r: R): R {
+  if (r.stderr.includes(MASTER_FULL)) spilledHosts.add(host)
+  else if (r.code === SSH_LINK_BROKE_EXIT) spilledHosts.delete(host)
+  return r
+}
+
+const NEEDS_SOMEONE_TO_SIGN_IN =
+  /Permission denied|Host key verification failed|Too many authentication failures|passphrase/i
+// PLATFORM§34
+const SHELL_PRINTS_AT_LOGIN = /unexpected tag|protocol version mismatch|is your shell clean/i
+
+export function problemOf(r: { code: number | null; stderr: string }): string {
+  if (r.stderr.includes(MASTER_FULL))
+    return 'Too many tabs share one connection to this machine (its sshd MaxSessions) — close some, or raise MaxSessions there'
+  if (SHELL_PRINTS_AT_LOGIN.test(r.stderr))
+    return "This machine's shell prints text when it starts (see ~/.bashrc there); session sync needs it to print nothing"
+  const last = r.stderr
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .at(-1)
+  const said = last ?? (r.code === null ? 'ssh timed out' : `ssh exited with ${r.code}`)
+  return NEEDS_SOMEONE_TO_SIGN_IN.test(r.stderr)
+    ? `${said} — start a session on this machine and sign in there`
+    : said
 }
 
 export interface RunResult {
@@ -95,7 +141,7 @@ export function runSshBytes(
 ): Promise<BytesResult> {
   const args = [
     ...(opts.input ? [] : ['-n']),
-    ...sshOptions(opts.controlDir, true),
+    ...backgroundOptions(host, opts.controlDir),
     host,
     remoteCmd
   ]
@@ -103,9 +149,10 @@ export function runSshBytes(
     timeoutMs: opts.timeoutMs ?? 10_000,
     maxBuffer: opts.maxBuffer ?? 64 * 1024 * 1024,
     input: opts.input
-  })
+  }).then((r) => noteMasterRoom(host, r))
 }
 
+// PLATFORM§34
 export function rsyncPull(
   host: string,
   remoteDir: string,
@@ -121,12 +168,10 @@ export function rsyncPull(
       ...extra,
       '--timeout=10',
       '-e',
-      `ssh ${sshOptions(opts.controlDir, true).join(' ')}`,
-      // PLATFORM§33
-      '--rsync-path=PATH=/opt/homebrew/bin:/usr/local/bin:$PATH rsync',
+      `ssh ${backgroundOptions(host, opts.controlDir).join(' ')}`,
       `${host}:${remoteDir}/`,
       `${localDir}/`
     ],
     opts.timeoutMs ?? 12_000
-  )
+  ).then((r) => noteMasterRoom(host, r))
 }

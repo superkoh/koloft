@@ -43,7 +43,7 @@ import { behindBadge } from '../freshnessView'
 import { FreshnessPopover } from './FreshnessPopover'
 import { basename } from '@shared/preview'
 import { hostOf, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
-import { workspaceMenuCount } from '../remoteWorkspace'
+import { remoteDotTitle, workspaceMenuCount } from '../remoteWorkspace'
 import {
   discardAll,
   dirtyInWorkspace,
@@ -729,9 +729,7 @@ export function WorkspaceSidebar({
                       {ws.remote.host}
                       <span
                         className={'ws-conn' + (ws.remote.connected ? ' on' : '')}
-                        title={
-                          ws.remote.connected ? 'connected' : 'not connected — status may be stale'
-                        }
+                        title={remoteDotTitle(ws.remote)}
                       />
                     </span>
                   )}
