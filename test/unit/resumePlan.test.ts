@@ -32,8 +32,6 @@ function row(over: Partial<SessionRow> = {}): SessionRow {
 function probes(over: Partial<ResumeProbes> = {}): ResumeProbes {
   return {
     dirExists: (p) => p === REPO || p === WT,
-    branchAt: async () => 'worktree-session-tab',
-    dirtyAt: async () => false,
     occupantOf: () => null,
     branchExists: async () => true,
     headAt: async () => 'head9876',
@@ -94,76 +92,30 @@ describe('planResume: unbound session whose cwd WAS a claude worktree (§4 left 
   })
 })
 
-describe('planResume: bound session whose worktree still exists (D8 evidence gate)', () => {
+const occupied = { occupantOf: () => 'Refactor sessions' }
+
+describe('planResume: bound session whose worktree still exists', () => {
   const bound = row({ worktreeState: binding })
 
   // CC§3
-  it('resumes silently from originalCwd, never the worktree (claude re-enters it), when branch, cleanliness and occupancy are green', async () => {
+  it('resumes silently from originalCwd, never the worktree (claude re-enters it), when nobody else is in it', async () => {
     expect(await planResume(bound, probes())).toEqual({ action: 'direct', cwd: REPO })
   })
 
-  it('opens the dialog on a branch mismatch, carrying both branches', async () => {
-    const plan = await planResume(bound, probes({ branchAt: async () => 'main' }))
-    expect(plan).toMatchObject({
-      action: 'dialog',
-      resumeCwd: REPO,
-      renamedName: 'session-tab-2',
-      evidence: {
-        worktreePath: WT,
-        worktreeName: 'session-tab',
-        expectedBranch: 'worktree-session-tab',
-        currentBranch: 'main',
-        branchMatches: false,
-        dirty: false,
-        occupiedBy: null
-      }
-    })
-  })
-
-  // CC§3
-  it('resumes silently despite uncommitted changes when branch matches and nobody else is in: dirty is the normal state of your own half-done worktree (E8)', async () => {
-    expect(await planResume(bound, probes({ dirtyAt: async () => true }))).toEqual({
-      action: 'direct',
-      cwd: REPO
-    })
-  })
-
-  it('still carries dirty into the evidence when a real anomaly opens the dialog', async () => {
-    const plan = await planResume(
-      bound,
-      probes({ branchAt: async () => 'main', dirtyAt: async () => true })
-    )
-    expect(plan).toMatchObject({
-      action: 'dialog',
-      evidence: { dirty: true, branchMatches: false }
-    })
-  })
-
   it('opens the dialog when another running session works in the worktree (D9)', async () => {
-    const plan = await planResume(bound, probes({ occupantOf: () => 'Refactor sessions' }))
-    expect(plan).toMatchObject({
+    expect(await planResume(bound, probes(occupied))).toEqual({
       action: 'dialog',
-      evidence: { occupiedBy: 'Refactor sessions' }
-    })
-  })
-
-  it('treats a failed git probe as an anomaly, never as green', async () => {
-    const plan = await planResume(
-      bound,
-      probes({ branchAt: async () => null, dirtyAt: async () => null })
-    )
-    expect(plan).toMatchObject({
-      action: 'dialog',
-      evidence: { currentBranch: null, branchMatches: false, dirty: true }
+      worktreePath: WT,
+      worktreeName: 'session-tab',
+      occupiedBy: 'Refactor sessions',
+      resumeCwd: REPO,
+      renamedName: 'session-tab-2'
     })
   })
 
   it('picks the first free renamed worktree name', async () => {
     const taken = new Set([WT, REPO, WT + '-2', WT + '-3'])
-    const plan = await planResume(
-      bound,
-      probes({ branchAt: async () => 'main', dirExists: (p) => taken.has(p) })
-    )
+    const plan = await planResume(bound, probes({ ...occupied, dirExists: (p) => taken.has(p) }))
     expect(plan).toMatchObject({ renamedName: 'session-tab-4' })
   })
 })
@@ -201,7 +153,7 @@ describe('planResume: the resume start follows the transcript slug (§1✎)', ()
   })
 
   it('carries that start into the dialog and the rebuild alike', async () => {
-    const dialog = await planResume(bound, probes({ branchAt: async () => 'main' }), WT)
+    const dialog = await planResume(bound, probes(occupied), WT)
     expect(dialog).toMatchObject({ action: 'dialog', resumeCwd: WT })
     const rebuild = await planResume(bound, probes({ dirExists: (p) => p === REPO }), WT)
     expect(rebuild).toMatchObject({ action: 'rebuild', resumeCwd: WT })

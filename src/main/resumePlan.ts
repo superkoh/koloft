@@ -1,12 +1,10 @@
 import fs from 'fs'
 import path from 'path'
 import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
-import type { BackendSessionRow, ResumeEvidence, ResumePlan } from '@shared/types'
+import type { BackendSessionRow, ResumePlan } from '@shared/types'
 
 export interface ResumeProbes {
   dirExists(p: string): boolean | Promise<boolean>
-  branchAt(dir: string): Promise<string | null>
-  dirtyAt(dir: string): Promise<boolean | null>
   occupantOf(dir: string): string | null
   branchExists(repoDir: string, branch: string): Promise<boolean>
   headAt(repoDir: string): Promise<string | null>
@@ -24,11 +22,6 @@ export type GitOut = (dir: string, args: string[]) => Promise<string | null>
 
 export function gitProbes(git: GitOut): Omit<ResumeProbes, 'dirExists' | 'occupantOf'> {
   return {
-    branchAt: async (dir) => (await git(dir, ['symbolic-ref', '--short', 'HEAD']))?.trim() || null,
-    dirtyAt: async (dir) => {
-      const out = await git(dir, ['status', '--porcelain'])
-      return out === null ? null : out.trim() !== ''
-    },
     branchExists: async (repoDir, branch) =>
       (await git(repoDir, ['rev-parse', '--verify', 'refs/heads/' + branch])) !== null,
     headAt: async (repoDir) => (await git(repoDir, ['rev-parse', 'HEAD']))?.trim() || null
@@ -102,27 +95,14 @@ export async function planResume(
     }
   }
 
-  const [branch, dirty] = await Promise.all([
-    probes.branchAt(ws.worktreePath),
-    probes.dirtyAt(ws.worktreePath)
-  ])
-  const evidence: ResumeEvidence = {
-    worktreePath: ws.worktreePath,
-    worktreeName: ws.worktreeName,
-    expectedBranch: ws.worktreeBranch,
-    currentBranch: branch,
-    branchMatches: branch === ws.worktreeBranch,
-    // CC§3
-    dirty: dirty !== false,
-    occupiedBy: probes.occupantOf(ws.worktreePath)
-  }
+  const occupiedBy = probes.occupantOf(ws.worktreePath)
   // CC§3
-  if (evidence.branchMatches && !evidence.occupiedBy) {
-    return { action: 'direct', cwd: resumeCwd }
-  }
+  if (!occupiedBy) return { action: 'direct', cwd: resumeCwd }
   return {
     action: 'dialog',
-    evidence,
+    worktreePath: ws.worktreePath,
+    worktreeName: ws.worktreeName,
+    occupiedBy,
     resumeCwd,
     renamedName: await freeWorktreeName(
       ws.worktreeName,

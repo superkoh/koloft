@@ -1194,16 +1194,6 @@ export type SessionResumeResult =
   | { ok: false; code: 'cwd-missing' | 'invalid-args' | 'rebuild-failed' }
   | { ok: false; code: 'backend'; message: string }
 
-export interface ResumeEvidence {
-  worktreePath: string
-  worktreeName: string
-  expectedBranch: string
-  currentBranch: string | null
-  branchMatches: boolean
-  dirty: boolean
-  occupiedBy: string | null
-}
-
 export type ResumePlan =
   | { action: 'direct'; cwd: string }
   | {
@@ -1214,5 +1204,12 @@ export type ResumePlan =
       baseRef: string
       resumeCwd: string
     }
-  | { action: 'dialog'; evidence: ResumeEvidence; resumeCwd: string; renamedName: string }
+  | {
+      action: 'dialog'
+      worktreePath: string
+      worktreeName: string
+      occupiedBy: string
+      resumeCwd: string
+      renamedName: string
+    }
   | { action: 'unavailable'; reason: 'no-cwd' | 'not-found' | 'running' }

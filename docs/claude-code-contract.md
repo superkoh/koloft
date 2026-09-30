@@ -231,15 +231,29 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
   id, no fork (E3).
 - **`--resume <id> -w <name>` compose**: CC creates (or enters) the named worktree and
   resumes there with full history (E4); an existing name is entered and used as-is.
-- **Resume with a binding, worktree present** → CC re-enters after verification
-  (symbolic-ref / `status --porcelain` / baseline compare, with a possible
-  `git reset --hard` back to baseline — a loaded gun against a same-named NEW
-  worktree); **worktree missing** → resumes in the current directory without isolation
-  and clears the binding; **belongs to another repo** → refused; poisoned → refused.
-  **There is no auto-rebuild path** (CC 2.1.227 binary evidence).
-- **Re-entering a dirty same-branch worktree is silent and lossless** (E8: dirty files
-  survive). What exactly triggers the baseline reset is not mapped (inferred, not
-  checked).
+- **Resume with a binding, worktree present** → CC re-enters it; **worktree missing** →
+  resumes in the current directory without isolation and clears the binding; **belongs
+  to another repo** → refused; poisoned → refused. **There is no auto-rebuild path**
+  (CC 2.1.227 binary evidence).
+- **Re-entering never loses work** (CC 2.1.285, 2026-09-30). The one `reset --hard` on
+  this path (the binary's "fast-resume reset", logged as `reset resumed worktree … its
+  previous work was fully upstream`) runs only when ALL hold: the checkout is still on
+  `worktree-<name>`, `status` is empty, no commit is missing from upstream, and
+  `origin/<default>` exists and differs from HEAD. It then moves the worktree to
+  `origin/<default>`, not to the recorded baseline, so what it drops is already upstream.
+  Live runs in a throwaway repo, each session killed with SIGHUP the way a Koloft quit
+  ends it, then resumed:
+  - on another branch with one commit and uncommitted edits, `--resume` from inside the
+    worktree and from the repo root: branch, commit and edits all kept;
+  - a same-named NEW worktree with a tracked edit and a new file, `--resume` from both
+    places: kept (that repo had no `origin`, so the reset path could not run);
+  - with an `origin`, `-w <name>` into a clean CC-made worktree on its own branch whose
+    work was all upstream: reset fired and fast-forwarded it; the same after switching
+    to another branch: not reset; back on `worktree-<name>` with one unpushed commit:
+    not reset.
+  A plain `--resume` (no `-w`) reaching the reset was never seen live: in these runs it
+  fired only on the `-w` entry. The older E8 run agrees: a dirty same-branch worktree
+  re-enters silently and its files survive.
 - **A same-named old-vs-new worktree cannot be told apart from disk**: the branch name
   is derived from the worktree name (`worktree-<name>`), so a reused name reuses the
   branch, and the disk carries no ownership trace.

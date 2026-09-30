@@ -2080,9 +2080,6 @@ body {
   color: var(--fg-dim);
   overflow-wrap: anywhere;
 }
-.ev-text.ev-warn {
-  color: var(--amber);
-}
 .ev-text.ev-danger {
   color: var(--red);
 }
