@@ -34,7 +34,7 @@ import {
   waitForCalls,
   wsRows
 } from './helpers/p1'
-import { WORKBENCH, showBrowse } from './helpers/workbench'
+import { WORKBENCH, browseRow, showBrowse } from './helpers/workbench'
 
 const LAYOUT_SAVE_DEBOUNCE_SETTLE_MS = 3000
 const TURN_LONGER_THAN_ONE_MIRROR_PULL = '/busy'
@@ -164,9 +164,9 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await expect(auxIcon(page, 'Workbench')).toHaveCount(1)
 
       await showBrowse(page)
-      await expect(
-        page.locator(`${WORKBENCH.browseRows}.ft-file[data-path="${remoteKey(env)}/tracked.txt"]`)
-      ).toBeVisible({ timeout: 30_000 })
+      await expect(browseRow(page, `${remoteKey(env)}/tracked.txt`)).toBeVisible({
+        timeout: 30_000
+      })
 
       await page
         .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
