@@ -249,7 +249,7 @@ export default function App(): JSX.Element {
   const setNotesHeight = useStore((s) => s.setNotesHeight)
   const notesFolded = useStore((s) => s.settings.notesFolded)
   const sidebarHidden = useStore((s) => s.settings.sidebarHidden)
-  const attentionCount = useStore((s) => s.attention.length)
+  const callingCount = useStore((s) => (s.settings.sidebarHidden ? s.attention.length : 0))
   const selectedWs = useStore((s) => s.selectedWs)
   const [notesFocus, setNotesFocus] = useState(0)
   const [nbDragging, setNbDragging] = useState(false)
@@ -1171,7 +1171,6 @@ export default function App(): JSX.Element {
   }, [])
 
   const hint = useHints()
-  const callingCount = sidebarHidden ? attentionCount : 0
 
   return (
     <div className={'app' + (sidebarHidden ? ' sb-off' : '') + (osFullscreen ? ' os-full' : '')}>
