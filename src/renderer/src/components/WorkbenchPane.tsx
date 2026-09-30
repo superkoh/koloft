@@ -80,7 +80,8 @@ import {
   setEditingActive,
   subscribeDirty
 } from '../editRegistry'
-import { loadHistory, remember, saveHistory } from '../browserHistory'
+import { historyKey, loadHistory, remember, saveHistory } from '../browserHistory'
+import { workspaceOfTab } from '../sessionRows'
 import { boundSessionId, useStore } from '../store'
 import {
   FILES_TAB_ID,
@@ -403,6 +404,10 @@ export function WorkbenchPane({
   const pinnedIds = useMemo(() => new Set(Object.values(pinned).flat()), [pinned])
   const pinnedRef = useRef(pinnedIds)
   pinnedRef.current = pinnedIds
+  const countedUrl = useRef(new Map<string, string>())
+  const panelWorkspace = useStore((s) =>
+    ownerTab ? workspaceOfTab(s.workspaceRows, s.sessions, ownerTab) : null
+  )
 
   // PLATFORM§9
   const [staged, setStaged] = useState<ReadonlySet<string>>(() => new Set())
@@ -1508,7 +1513,17 @@ export function WorkbenchPane({
     [ownerTab, onUpdate]
   )
 
-  const recordVisit = (tab: WorkbenchTab, url: string, title?: string): void => {
+  const recordVisit = (owner: string, tab: WorkbenchTab, url: string): void => {
+    if (pinnedRef.current.has(tab.id)) return
+    const key = historyKey(url)
+    if (countedUrl.current.get(tab.id) === key) return
+    countedUrl.current.set(tab.id, key)
+    const { workspaceRows, sessions } = useStore.getState()
+    const ws = workspaceOfTab(workspaceRows, sessions, owner) ?? undefined
+    saveHistory(remember(loadHistory(), url, '', ws))
+  }
+
+  const recordTitle = (tab: WorkbenchTab, url: string, title: string): void => {
     if (!pinnedRef.current.has(tab.id)) saveHistory(remember(loadHistory(), url, title))
   }
 
@@ -1558,12 +1573,12 @@ export function WorkbenchPane({
         ...history(guestOf(tab.id))
       })
       onUpdate(owner, (prev) => navigateTab(prev, tab.id, url))
-      recordVisit(tab, url)
+      recordVisit(owner, tab, url)
     },
     onTitle: (title: string): void => {
       onUpdate(owner, (prev) => retitleTab(prev, tab.id, title))
       const url = guestUrl(guestOf(tab.id))
-      if (url) recordVisit(tab, url, title)
+      if (url) recordTitle(tab, url, title)
     },
     onFail: (fail: GuestFailure): void => {
       patchRuntime(tab.id, { fail, loading: false })
@@ -1965,6 +1980,7 @@ export function WorkbenchPane({
       {activeKind === 'web' ? (
         <BrowserAddressBar
           url={activeTab?.url ?? ''}
+          workspace={panelWorkspace}
           loading={activeRuntime.loading}
           canBack={activeRuntime.canBack}
           canForward={activeRuntime.canForward}
