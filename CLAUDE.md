@@ -49,10 +49,10 @@ Working principles:
   permission you have not tried. What a command can answer is never asked of the owner.
   Nothing is called impossible, unsupported or "works this way" — in a plan, a
   question or a PR — before a probe has run; until then it is "not probed yet".
-- Extend the existing UI when adding a feature. Reuse its components, layouts,
-  interactions, state treatments and CSS classes. When the app already has a style
-  or state for the same purpose, use it exactly; do not invent a parallel version
-  or replace the existing screen to add another session backend.
+- Extend the existing UI when adding a feature: reuse its components, layouts,
+  interactions, state treatments and CSS classes exactly; never invent a parallel
+  version or replace a screen for another session backend. A plan that changes a
+  screen shows it as a local HTML mockup built from the app's CSS.
 - Comments: none. In `.ts/.tsx/.js/.mjs/.cjs/.css` — and in the `#` lines of a
   `#!/` script written as a template string — `npm run check:comments` (CI, plus an
   after-edit hook) rejects every comment except two kinds, each with nothing else in it:
