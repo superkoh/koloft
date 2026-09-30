@@ -96,6 +96,9 @@ export function BrowserGuest({
       if (url === BOOTSTRAP_SRC && target.current && target.current !== BOOTSTRAP_SRC) return
       cb.current.onNavigate(url)
     }
+    const onInPageNav = (e: Event): void => {
+      if ((e as Event & { isMainFrame: boolean }).isMainFrame) onNav(e)
+    }
     const onTitleEv = (e: Event): void => cb.current.onTitle((e as Event & { title: string }).title)
     const onFailEv = (e: Event): void => {
       const f = e as Event & {
@@ -119,7 +122,7 @@ export function BrowserGuest({
     el.addEventListener('did-start-loading', onStart)
     el.addEventListener('did-stop-loading', onStop)
     el.addEventListener('did-navigate', onNav)
-    el.addEventListener('did-navigate-in-page', onNav)
+    el.addEventListener('did-navigate-in-page', onInPageNav)
     el.addEventListener('page-title-updated', onTitleEv)
     el.addEventListener('did-fail-load', onFailEv)
     el.addEventListener('render-process-gone', onGone)
@@ -131,7 +134,7 @@ export function BrowserGuest({
       el.removeEventListener('did-start-loading', onStart)
       el.removeEventListener('did-stop-loading', onStop)
       el.removeEventListener('did-navigate', onNav)
-      el.removeEventListener('did-navigate-in-page', onNav)
+      el.removeEventListener('did-navigate-in-page', onInPageNav)
       el.removeEventListener('page-title-updated', onTitleEv)
       el.removeEventListener('did-fail-load', onFailEv)
       el.removeEventListener('render-process-gone', onGone)

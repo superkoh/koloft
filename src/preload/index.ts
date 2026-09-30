@@ -157,6 +157,11 @@ const api: KoloftApi = {
       const handler = (_e: unknown, p: { tabId: string }): void => cb(p.tabId)
       ipcRenderer.on('attention:activate-tab', handler)
       return () => ipcRenderer.removeListener('attention:activate-tab', handler)
+    },
+    onChanged: (cb) => {
+      const handler = (_e: unknown, pending: AttentionEvent[]): void => cb(pending)
+      ipcRenderer.on('attention:changed', handler)
+      return () => ipcRenderer.removeListener('attention:changed', handler)
     }
   },
   preview: {

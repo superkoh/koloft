@@ -181,7 +181,12 @@ import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import { CDP_OP_BUDGET_MS } from '@shared/cdpBudget'
 import { scanLeftovers, stopLeftover } from './leftovers'
 import { applyWindowCommand, guestShortcut } from '@shared/shortcutDispatch'
-import { BROWSER_PARTITION, PLACEHOLDER_SESSION_TITLE, isHttpUrl } from '@shared/types'
+import {
+  ATTENTION_REASON,
+  BROWSER_PARTITION,
+  PLACEHOLDER_SESSION_TITLE,
+  isHttpUrl
+} from '@shared/types'
 import {
   answerPermissionRequest,
   awaitGuestFor,
@@ -224,7 +229,7 @@ import type {
   ResumePlan,
   SessionInfo,
   AttentionEvent,
-  AttentionKind,
+  AttentionSubject,
   SessionResumeRequest,
   SpawnedTab,
   TabInventoryReply,
@@ -270,8 +275,11 @@ let codexSessions: CodexSessions | null = null
 let codexStartupError: string | undefined
 const sessionBackends = new SessionBackends({
   prompted: consumeOutletDedupe,
-  bound: (tabId, key) => cronRunner?.onBound(tabId, key),
-  exited: (tabId, title) => attention.onExited(tabId, attentionCtx(), title),
+  bound: (tabId, key) => {
+    attention.clearSession(key)
+    cronRunner?.onBound(tabId, key)
+  },
+  exited: (tabId, subject) => attention.onExited(tabId, attentionCtx(), subject),
   clearAttention: (tabId) => attention.clear(tabId),
   open: (tabId, target) => {
     if (path.isAbsolute(target) && !fs.existsSync(target)) return
@@ -305,13 +313,18 @@ if (process.platform !== 'win32') {
 }
 const attention = new AttentionTracker((pending, event) => {
   updateDockBadge(pending)
+  sendToRenderer('attention:changed', pending)
   retractStaleOsNotifications(pending)
   if (event && !event.resurrected) routeAttentionEvent(event)
 })
 let uiActiveTabId: string | null = null
 let activeTabBeforeReload: string | null = null
-function sessionTitleOf(tabId: string): string | undefined {
-  return allSessions().find((s) => s.tabId === tabId)?.title
+function sessionOfTab(tabId: string): SessionInfo | undefined {
+  return allSessions().find((s) => s.tabId === tabId)
+}
+function attentionSubjectOf(tabId: string): AttentionSubject {
+  const s = sessionOfTab(tabId)
+  return { title: s?.title, sessionId: s?.sessionId }
 }
 function attentionCtx(): AttentionContext {
   let focused = false
@@ -321,14 +334,8 @@ function attentionCtx(): AttentionContext {
   return { windowFocused: focused, activeTabId: uiActiveTabId }
 }
 
-const ATTENTION_REASON: Record<AttentionKind, string> = {
-  'turn-done': 'turn done — your move',
-  approval: 'waiting for your approval',
-  exited: 'session exited unexpectedly'
-}
-
 function projectFolderName(tabId: string): string | undefined {
-  const root = allSessions().find((s) => s.tabId === tabId)?.treeRoot
+  const root = sessionOfTab(tabId)?.treeRoot
   return root ? path.basename(root) : undefined
 }
 
@@ -597,7 +604,7 @@ const agentRequests = new AgentRequests({
     })
   },
   tab: (tabId) => ptyMgr.get(tabId),
-  session: (tabId) => allSessions().find((s) => s.tabId === tabId),
+  session: sessionOfTab,
   enabled: (tabId) => {
     const backend = backendIdOf(ptyMgr.get(tabId)?.kind)
     return !!backend && agentToolsFor(backend, tracker.remoteOf(tabId) ? 'ssh' : 'local')
@@ -1260,7 +1267,7 @@ app.whenReady().then(() => {
     void killTabPty(tabId)
   })
   tracker.on('status', (t: StatusEdge) => {
-    attention.onStatusChange(t.tabId, t.prev, t.next, attentionCtx(), sessionTitleOf(t.tabId))
+    attention.onStatusChange(t.tabId, t.prev, t.next, attentionCtx(), attentionSubjectOf(t.tabId))
     // ADR-0022
     cronRunner?.onStatus(t.tabId, t.prev, t.next)
   })

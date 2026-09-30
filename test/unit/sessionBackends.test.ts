@@ -146,13 +146,21 @@ describe('session lifecycle tap (one place turns a bind or an exit into attentio
       expect(sink.exited).not.toHaveBeenCalled()
 
       registry.observe('tab', { type: 'bound', key: 'next' })
-      registry.observe('tab', { type: 'exited', clean: false, title: 'after bind' })
-      expect(sink.exited).toHaveBeenLastCalledWith('tab', 'after bind')
+      registry.observe('tab', {
+        type: 'exited',
+        clean: false,
+        title: 'after bind',
+        sessionId: 'next-sid'
+      })
+      expect(sink.exited).toHaveBeenLastCalledWith('tab', {
+        title: 'after bind',
+        sessionId: 'next-sid'
+      })
 
       registry.observe('other', { type: 'exited', clean: true })
       vi.advanceTimersByTime(30_001)
       registry.observe('other', { type: 'exited', clean: false, title: 'much later' })
-      expect(sink.exited).toHaveBeenLastCalledWith('other', 'much later')
+      expect(sink.exited).toHaveBeenLastCalledWith('other', { title: 'much later' })
     } finally {
       vi.useRealTimers()
     }
