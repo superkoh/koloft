@@ -5,7 +5,8 @@ import {
   loadHistory,
   match,
   remember,
-  saveHistory
+  saveHistory,
+  type HistoryEntry
 } from '../../src/renderer/src/browserHistory'
 import { SEARCH_URL } from '../../src/shared/browserRoute'
 import { installLocalStorage } from './localStorageStub'
@@ -39,6 +40,14 @@ describe('remember', () => {
     const list = remember(remember([], 'https://a.com', 'Zebra'), 'https://a.com')
     expect(list[0].title).toBe('Zebra')
   })
+
+  it('counts visits per workspace, and a title update counts none', () => {
+    let list = remember([], 'https://a.com', '', '/ws/a')
+    list = remember(list, 'https://a.com', '', '/ws/a')
+    list = remember(list, 'https://a.com', '', '/ws/b')
+    list = remember(list, 'https://a.com', 'A')
+    expect(list[0].visits).toEqual({ '/ws/a': 2, '/ws/b': 1 })
+  })
 })
 
 describe('match', () => {
@@ -57,6 +66,25 @@ describe('match', () => {
 
   it('suggests nothing for an empty query', () => {
     expect(match(list, '  ')).toEqual([])
+  })
+
+  it("puts this workspace's pages first by its visits, then the rest by all visits, recent first on a tie", () => {
+    const ranked: HistoryEntry[] = [
+      { url: 'https://recent.io/z', title: '' },
+      { url: 'https://elsewhere-once.io/z', title: '', visits: { '/ws/b': 1 } },
+      { url: 'https://elsewhere-often.io/z', title: '', visits: { '/ws/b': 5 } },
+      { url: 'https://here-once.io/z', title: '', visits: { '/ws/a': 1, '/ws/b': 9 } },
+      { url: 'https://here-twice.io/z', title: '', visits: { '/ws/a': 2 } },
+      { url: 'https://here-twice-older.io/z', title: '', visits: { '/ws/a': 2 } }
+    ]
+    expect(match(ranked, '/z', '/ws/a').map((e) => e.url)).toEqual([
+      'https://here-twice.io/z',
+      'https://here-twice-older.io/z',
+      'https://here-once.io/z',
+      'https://elsewhere-often.io/z',
+      'https://elsewhere-once.io/z',
+      'https://recent.io/z'
+    ])
   })
 })
 
