@@ -1,9 +1,5 @@
 name: Website
 
-# Publishes site/ to GitHub Pages. The screenshots and the app icon are copied in from
-# where the README already uses them, so there is one copy of each in the repo.
-# The custom domain is set in the repo's Pages settings: with a workflow as the source,
-# GitHub ignores a CNAME file.
 on:
   push:
     branches: [main]
@@ -21,7 +17,6 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -32,15 +27,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - run: |
-          cp -R site _site
-          cp .github/assets/screenshot.png .github/assets/screenshot-browse.png build/icon.svg _site/
+      - run: cp .github/assets/screenshot.png .github/assets/screenshot-browse.png build/icon.svg site/
 
       - uses: actions/configure-pages@v6
 
       - uses: actions/upload-pages-artifact@v5
         with:
-          path: _site
+          path: site
 
       - id: deployment
         uses: actions/deploy-pages@v5

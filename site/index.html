@@ -8,32 +8,27 @@
       name="description"
       content="Koloft is a free, open-source Mac app. Pick a folder, and it lists every Claude Code and Codex session that folder has, starts or resumes them, and puts a Workbench beside each one."
     />
-    <meta property="og:type" content="website" />
-    <meta property="og:title" content="Koloft" />
-    <meta
-      property="og:description"
-      content="Run and manage your Claude Code and Codex sessions on your Mac, one folder at a time."
-    />
     <meta name="theme-color" content="#0d0d0f" />
-    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="style.css" />
-    <script src="copy.js" defer></script>
   </head>
   <body>
     <header class="nav">
-      <a class="brand" href="#top">
-        <img src="icon.svg" alt="" width="28" height="28" />
-        <span>Koloft</span>
-      </a>
-      <nav>
-        <a href="#features">Features</a>
-        <a href="#install">Install</a>
-        <a href="#faq">FAQ</a>
-        <a href="https://github.com/superkoh/koloft">GitHub</a>
-      </nav>
+      <div class="column">
+        <a class="brand" href="#top">
+          <img src="icon.svg" alt="" width="28" height="28" />
+          <span>Koloft</span>
+        </a>
+        <nav>
+          <a href="#features">Features</a>
+          <a href="#install">Install</a>
+          <a href="#faq">FAQ</a>
+          <a href="https://github.com/superkoh/koloft">GitHub</a>
+        </nav>
+      </div>
     </header>
 
-    <main id="top">
+    <main>
       <section class="hero">
         <img class="hero-icon" src="icon.svg" alt="Koloft icon" width="112" height="112" />
         <h1>Your Claude Code and Codex sessions, one folder at a time.</h1>
@@ -55,6 +50,7 @@
           src="screenshot.png"
           width="3200"
           height="1880"
+          fetchpriority="high"
           alt="Koloft: folders and their sessions on the left, the running Claude Code session in the middle, and its Workbench on the right showing the changes the agent made"
         />
       </figure>
@@ -83,14 +79,15 @@
         </div>
       </section>
 
-      <section id="features" class="features">
+      <section id="features">
         <h2 class="section-title">What you get</h2>
         <div class="grid">
           <article>
             <h3>Folders and their sessions</h3>
             <p>
-              Pin folders as workspaces. Each session under one shows a title, a status dot
-              (working, waiting for you, done) and when it last ran. Click an old one to resume it.
+              Pin folders as workspaces. Each session under one shows a title, when it last ran and,
+              for sessions Koloft started, a status dot (working, waiting for you, done). Click an
+              old one to resume it.
             </p>
           </article>
           <article>
@@ -134,14 +131,16 @@
             <h3>Several accounts, one pool</h3>
             <p>
               Add more than one Claude or Codex account. Every new session starts on the one with
-              the most room left, and the top bar shows what is left.
+              the most room left. The top bar shows what your Claude accounts have left; Codex
+              accounts show theirs in Settings.
             </p>
           </article>
           <article>
             <h3>Know when it is your turn</h3>
             <p>
-              A system notification when a session finishes or waits for your approval, and, in
-              Claude sessions, a built-in status line with model, cost, context and git branch.
+              A system notification, while Koloft is in the background, when a session finishes or
+              waits for your approval, and, in Claude sessions, a built-in status line with model,
+              cost, context and git branch.
             </p>
           </article>
           <article>
@@ -167,15 +166,15 @@
         </figure>
       </section>
 
-      <section id="install" class="install">
+      <section id="install">
         <h2 class="section-title">Install</h2>
         <p>
           Paste this into Terminal. It downloads the latest release and puts Koloft in Applications.
         </p>
         <div class="code">
-          <pre id="install-cmd">
+          <pre>
 curl -fsSL https://raw.githubusercontent.com/superkoh/koloft-releases/main/install.sh | bash</pre>
-          <button type="button" class="copy" data-copy="install-cmd">Copy</button>
+          <button type="button" class="button copy">Copy</button>
         </div>
         <ul class="notes">
           <li>
@@ -191,17 +190,20 @@ curl -fsSL https://raw.githubusercontent.com/superkoh/koloft-releases/main/insta
           <li>
             <strong>Rather download it yourself?</strong> Get the <code>.dmg</code> from
             <a href="https://github.com/superkoh/koloft-releases/releases/latest">Releases</a>, drag
-            Koloft to Applications, then clear the flag once:<br />
-            <code>xattr -dr com.apple.quarantine /Applications/Koloft.app</code>
+            Koloft to Applications, then clear the flag once:
+            <div class="code">
+              <pre>xattr -dr com.apple.quarantine /Applications/Koloft.app</pre>
+              <button type="button" class="button copy">Copy</button>
+            </div>
           </li>
           <li>
-            <strong>Updates:</strong> Koloft checks for new versions itself — Koloft ▸ Check for
-            Updates.
+            <strong>Updates:</strong> Koloft checks for new versions itself, and
+            <code>Koloft ▸ Check for Updates…</code> does it on demand.
           </li>
         </ul>
       </section>
 
-      <section id="faq" class="faq">
+      <section id="faq">
         <h2 class="section-title">Questions</h2>
         <details>
           <summary>Does Koloft replace Claude Code or Codex?</summary>
@@ -222,7 +224,8 @@ curl -fsSL https://raw.githubusercontent.com/superkoh/koloft-releases/main/insta
           <summary>What does Koloft connect to?</summary>
           <p>
             Only what it needs: GitHub to check for updates, Anthropic to read how much allowance
-            your accounts have left when you add several, and a few hosts for optional features like
+            your accounts have left when you add several, DuckDuckGo for what you type in the
+            browser's address bar that is not a link, and a few hosts for optional features like
             remote folders and browser extensions. The full list is in the
             <a href="https://github.com/superkoh/koloft#what-it-talks-to">README</a>.
           </p>
@@ -258,5 +261,15 @@ curl -fsSL https://raw.githubusercontent.com/superkoh/koloft-releases/main/insta
         by or affiliated with Anthropic or OpenAI.
       </p>
     </footer>
+    <script>
+      for (const copy of document.querySelectorAll('.copy')) {
+        const label = copy.textContent
+        copy.addEventListener('click', async () => {
+          await navigator.clipboard.writeText(copy.previousElementSibling.textContent)
+          copy.textContent = 'Copied'
+          setTimeout(() => (copy.textContent = label), 1500)
+        })
+      }
+    </script>
   </body>
 </html>

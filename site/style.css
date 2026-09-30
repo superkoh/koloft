@@ -14,6 +14,7 @@
   --font: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
   --mono: 'SF Mono', 'JetBrains Mono', Menlo, monospace;
   --page: 1120px;
+  --nav-h: 64px;
   color-scheme: dark;
 }
 
@@ -23,6 +24,7 @@
 
 html {
   scroll-behavior: smooth;
+  scroll-padding-top: var(--nav-h);
 }
 
 body {
@@ -40,7 +42,8 @@ a {
   text-decoration: none;
 }
 
-a:hover {
+p a:hover,
+li a:hover {
   text-decoration: underline;
 }
 
@@ -61,14 +64,18 @@ code {
   position: sticky;
   top: 0;
   z-index: 10;
+  background: rgba(13, 13, 15, 0.82);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+
+.nav .column {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 12px max(16px, calc((100% - var(--page)) / 2));
-  background: rgba(13, 13, 15, 0.82);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--line);
+  padding-top: 12px;
+  padding-bottom: 12px;
 }
 
 .brand {
@@ -77,10 +84,6 @@ code {
   gap: 10px;
   color: var(--fg);
   font-weight: 600;
-}
-
-.brand:hover {
-  text-decoration: none;
 }
 
 .nav nav {
@@ -95,9 +98,9 @@ code {
 
 .nav nav a:hover {
   color: var(--fg);
-  text-decoration: none;
 }
 
+.column,
 main,
 footer {
   max-width: var(--page);
@@ -152,7 +155,6 @@ h1 {
 }
 
 .button:hover {
-  text-decoration: none;
   border-color: rgba(255, 255, 255, 0.2);
 }
 
@@ -220,12 +222,9 @@ figcaption {
   margin: 0 0 32px;
 }
 
-.features,
-.install,
-.faq {
+section[id] {
   padding-top: 24px;
   margin-bottom: 96px;
-  scroll-margin-top: 64px;
 }
 
 .grid {
@@ -266,33 +265,30 @@ figcaption {
   display: flex;
   align-items: center;
   gap: 12px;
+  color: var(--fg);
   background: var(--bg-1);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   padding: 14px 14px 14px 20px;
 }
 
+.notes .code {
+  margin-top: 10px;
+}
+
 .code pre {
   flex: 1;
+  min-width: 0;
   margin: 0;
   overflow-x: auto;
-  color: var(--fg);
 }
 
 .copy {
   flex: none;
   font: inherit;
   font-size: 14px;
-  color: var(--fg);
-  background: var(--bg-2);
-  border: 1px solid var(--line);
-  border-radius: var(--r);
   padding: 6px 14px;
   cursor: pointer;
-}
-
-.copy:hover {
-  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .notes {
@@ -300,16 +296,13 @@ figcaption {
   padding: 0;
   margin: 28px 0 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   color: var(--fg-dim);
 }
 
 .notes strong {
   color: var(--fg);
-}
-
-.notes code {
-  word-break: break-all;
 }
 
 details {
@@ -356,8 +349,10 @@ footer .fine {
   .nav nav {
     gap: 14px;
   }
+}
 
-  .nav nav a[href='#faq'] {
+@media (max-width: 360px) {
+  .brand span {
     display: none;
   }
 }
