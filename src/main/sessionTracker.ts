@@ -700,6 +700,10 @@ export class SessionTracker extends SessionRuntime {
     }
   }
 
+  picksAwaitingTrack(): [tabId: string, account: string][] {
+    return [...this.pendingPicked]
+  }
+
   untrack(tabId: string): void {
     const t = this.tracked.get(tabId)
     if (t) this.cleanup(t)

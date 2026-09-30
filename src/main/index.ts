@@ -112,7 +112,12 @@ import {
   validateNewAccount
 } from './accounts'
 import { probeAccount, shouldSkipFable } from './usageProbe'
-import { AccountPicker, PROBE_TIMEOUT_MS, type PickResponse } from './accountPicker'
+import {
+  AccountPicker,
+  PROBE_TIMEOUT_MS,
+  type LaunchedSession,
+  type PickResponse
+} from './accountPicker'
 import { loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
 import { WorkspaceManager, type LiveSession } from './workspaces'
@@ -544,8 +549,28 @@ const picker = new AccountPicker({
       skipFable: shouldSkipFable(a, Date.now())
     }),
   onProbeOutcome: foldProbeResult,
+  launchedSessions,
+  recordPick: (tabId, account) => tracker.setPickedAccount(tabId, account),
   now: () => Date.now()
 })
+
+function launchedSessions(): LaunchedSession[] {
+  const now = Date.now()
+  const tracked = tracker
+    .list()
+    .filter((s) => s.alive)
+    .map((s) => ({
+      tabId: s.tabId,
+      account: s.pickedAccount ?? s.account,
+      status: s.status,
+      updatedAt: s.updatedAt
+    }))
+  const awaiting = tracker
+    .picksAwaitingTrack()
+    .filter(([tabId]) => ptyMgr.get(tabId))
+    .map(([tabId, account]) => ({ tabId, account, updatedAt: now }))
+  return [...tracked, ...awaiting]
+}
 
 function watchPickRequests(pickDir: string): fs.FSWatcher | null {
   return watchJsonDrops(pickDir, (name) =>
@@ -603,13 +628,13 @@ const agentRequests = new AgentRequests({
   alive: pidAlive
 })
 
-async function pickForLaunch(): Promise<{
+async function pickForLaunch(tabId?: string): Promise<{
   res: PickResponse
   endpoint?: { baseUrl?: string; model?: string }
 }> {
   let res: PickResponse
   try {
-    res = await picker.pick()
+    res = await picker.pick(tabId)
   } catch {
     res = { account: null, reason: 'no-usable' }
   }
@@ -623,12 +648,11 @@ async function handlePickRequest(pickDir: string, reqName: string, raw: unknown)
   if (!obj.tabId || !ptyMgr.get(obj.tabId)) return
   const id = reqName.slice('req-'.length).replace(/\.json$/, '')
   if (!/^[A-Za-z0-9-]+$/.test(id)) return
-  const { res, endpoint } = await pickForLaunch()
+  const { res, endpoint } = await pickForLaunch(obj.tabId)
   const payload: Record<string, unknown> = { ...res }
   if (res.account && loadSettings().skipPermissions) payload.skipFlag = true
   if (endpoint?.baseUrl) payload.baseUrl = endpoint.baseUrl
   if (endpoint?.model) payload.model = endpoint.model
-  if (res.account) tracker.setPickedAccount(obj.tabId, res.account)
   const resPath = path.join(pickDir, `res-${id}.json`)
   try {
     writeWholeBeforeVisible(resPath, JSON.stringify(payload))
