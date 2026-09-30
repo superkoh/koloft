@@ -84,6 +84,6 @@ test.describe('Sidebar: the button by the traffic lights hides and shows it, and
     answerFileDialog(env, dir)
     await sendShortcut(app, 'shortcut:add-workspace')
     await expect(page.locator('.side')).toBeVisible({ timeout: 20_000 })
-    expect(await workspaceNames(page)).toContain('ws-new')
+    await expect.poll(() => workspaceNames(page), { timeout: 20_000 }).toContain('ws-new')
   })
 })
