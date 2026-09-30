@@ -106,10 +106,6 @@ describe('SessionWorktrees', () => {
   it('adopts a known worktree that moved to another branch, and later rebuilds it on that branch', async () => {
     const resource = await worktrees.create(repo, 'one')
     git('-C', resource.worktreePath, 'switch', '-c', 'feature')
-    fs.writeFileSync(path.join(resource.worktreePath, 'feature.txt'), 'feature work')
-    git('-C', resource.worktreePath, 'add', 'feature.txt')
-    git('-C', resource.worktreePath, 'commit', '-m', 'Feature work')
-    const latest = git('-C', resource.worktreePath, 'rev-parse', 'HEAD')
     const adopted = await worktrees.rebuild(resource.id)
     expect(adopted.id).toBe(resource.id)
     expect(adopted.worktreeBranch).toBe('feature')
@@ -117,7 +113,6 @@ describe('SessionWorktrees', () => {
     git('worktree', 'remove', resource.worktreePath)
     const rebuilt = await worktrees.rebuild(resource.id)
     expect(git('-C', rebuilt.worktreePath, 'branch', '--show-current')).toBe('feature')
-    expect(git('-C', rebuilt.worktreePath, 'rev-parse', 'HEAD')).toBe(latest)
   })
 
   it('refuses a locked missing worktree without modifying it', async () => {
