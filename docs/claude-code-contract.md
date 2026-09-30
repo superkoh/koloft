@@ -130,11 +130,20 @@ mimics this section (it also fires SessionEnd `other` on SIGTERM).
   needs a prefix match plus a read-back of the jsonl's first `cwd`. (2026-08-08.)
 - **Per-session scratchpad on disk**:
   `<resolved /tmp>/claude-<uid>/<slug>/<sessionId>/scratchpad` (lazily created —
-  usually absent at bind time). **The slug is not always the jsonl's**: for a session in
-  a linked worktree, `scratchpad/` sat under `<main checkout slug>` while the transcript
-  (and, in the two sessions checked, `tasks/`) sat under `<worktree slug>` (2026-09-26,
-  CC 2.1.283, 5 sessions read off disk). Whether older versions did the same is not
-  checked. `tasks/` holds full subagent transcripts (single files reach MBs).
+  usually absent at bind time). **The slug is not always the jsonl's**: `scratchpad/`
+  sits under the slug of the folder the claude process was started in, while the
+  transcript and `tasks/` sit under the slug of the folder the session is in now. So a
+  `claude -w` started in the main checkout, or a session that entered a worktree with
+  the EnterWorktree tool, keeps `scratchpad/` under `<main checkout slug>` and `tasks/`
+  under `<worktree slug>`; a claude started inside the worktree keeps both under
+  `<worktree slug>`. Measured 2026-09-29 on CC 2.1.284: an interactive `claude` started
+  in a worktree folder named `/private/tmp/claude-501/<worktree slug>/<id>/scratchpad`
+  as its scratchpad when asked; on disk, a `-w` session and an EnterWorktree session
+  (CC 2.1.283–2.1.284) had `scratchpad/` under the main checkout and `tasks/` under the
+  worktree, and a `-w` session with 96 `worktree-state` records (so, inferred, resumed
+  many times from inside the worktree) had both under the worktree. (`claude -p` names
+  no scratchpad at all.) Older versions not checked. `tasks/` holds full subagent
+  transcripts (single files reach MBs).
 - **A live session can move to another checkout, and the transcript moves with it.** The
   `EnterWorktree` / `ExitWorktree` tools relocate a session mid-conversation; on disk that
   is ONE `rename` of the jsonl into the destination directory's slug — **the inode is

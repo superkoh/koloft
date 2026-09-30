@@ -13,7 +13,7 @@ import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
 import { costUsdOf, resolvePricing } from '@shared/pricing'
 import { localDayKey } from '@shared/usageFormat'
 import { encodeCwd } from '@shared/cwdKey'
-import { projectInfoFor } from './projectInfo'
+import { projectInfoFor, realpathSafe } from './projectInfo'
 import { inspectTaskProcs, type TaskProcs } from './taskProcs'
 import { SessionRuntime, envMs, turnOf, type Turn } from './sessionRuntime'
 import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
@@ -165,19 +165,29 @@ const BASH_WRITES = /(^|[^0-9&])>>?\s*(?!\/dev\/null)\S|\btee\s|\bsed\s+-i\b|\bt
 const READ_TOOLS = new Set(['Read'])
 const UNACKED_TOOL_CMD_CAP = 64
 
-// CC§2
-export function scratchpadDirFor(jsonlPath: string | null): string | null {
+function sessionTmpDir(jsonlPath: string | null, launchCwd?: string): string | null {
   if (!jsonlPath || !jsonlPath.endsWith('.jsonl')) return null
   const sessionId = path.basename(jsonlPath, '.jsonl')
-  const slug = path.basename(path.dirname(jsonlPath))
-  if (!sessionId || !slug) return null
+  const transcriptSlug = path.basename(path.dirname(jsonlPath))
+  if (!sessionId || !transcriptSlug) return null
+  const launchSlug = launchCwd ? encodeCwd(launchCwd) : ''
+  const slug =
+    launchSlug && transcriptSlug.startsWith(launchSlug + '-') ? launchSlug : transcriptSlug
   const base =
     process.env.KOLOFT_SCRATCHPAD_BASE || path.join(TMP_ROOT, `claude-${process.getuid?.() ?? 0}`)
-  return path.join(base, slug, sessionId, 'scratchpad')
+  return path.join(base, slug, sessionId)
 }
 
-export function tasksDirOf(scratchpadDir: string): string {
-  return path.join(path.dirname(scratchpadDir), 'tasks')
+// CC§2
+export function scratchpadDirFor(jsonlPath: string | null, launchCwd?: string): string | null {
+  const dir = sessionTmpDir(jsonlPath, launchCwd)
+  return dir && path.join(dir, 'scratchpad')
+}
+
+// CC§2
+export function tasksDirFor(jsonlPath: string | null): string | null {
+  const dir = sessionTmpDir(jsonlPath)
+  return dir && path.join(dir, 'tasks')
 }
 
 interface SubagentFile {
@@ -274,6 +284,7 @@ export interface RemoteTab {
 
 interface Tracked {
   info: SessionInfo
+  launchCwd: string
   readOffset: number
   tailBuf: Buffer
   title: string | null
@@ -390,6 +401,7 @@ export class SessionTracker extends SessionRuntime {
     }
     const t: Tracked = {
       info,
+      launchCwd: remote ? cwd : realpathSafe(cwd),
       readOffset: 0,
       tailBuf: Buffer.alloc(0),
       title: null,
@@ -485,9 +497,9 @@ export class SessionTracker extends SessionRuntime {
     if (this.leftBehind?.(t.info.sessionId)) return true
     if (t.remote) return false
     const root = this.pidOf?.(tabId)
-    const scratch = t.info.scratchpadDir
-    if (!root || !scratch) return true
-    const procs = await this.inspect(root, tasksDirOf(scratch))
+    const tasksDir = tasksDirFor(t.info.jsonlPath)
+    if (!root || !tasksDir) return true
+    const procs = await this.inspect(root, tasksDir)
     return !procs || procs.shells.size > 0
   }
 
@@ -581,11 +593,11 @@ export class SessionTracker extends SessionRuntime {
     if (t.procsPromise) await t.procsPromise
     if (!force && Date.now() - t.procsAt < PROCS_SCAN_MS) return
     const root = this.pidOf?.(t.info.tabId)
-    const scratch = t.info.scratchpadDir
-    if (!root || !scratch) return
+    const tasksDir = tasksDirFor(t.info.jsonlPath)
+    if (!root || !tasksDir) return
     t.procsPromise = (async () => {
       try {
-        const procs = await this.inspect(root, tasksDirOf(scratch))
+        const procs = await this.inspect(root, tasksDir)
         if (this.tracked.get(t.info.tabId) !== t) return
         t.procs = procs
         t.procsAt = Date.now()
@@ -843,7 +855,7 @@ export class SessionTracker extends SessionRuntime {
     if (t.landTimer) clearTimeout(t.landTimer)
     t.landTimer = undefined
     t.info.relocated = undefined
-    t.info.scratchpadDir = scratchpadDirFor(file) ?? undefined
+    t.info.scratchpadDir = scratchpadDirFor(file, t.launchCwd) ?? undefined
     this.resetParseState(t)
     t.swept = false
     try {
