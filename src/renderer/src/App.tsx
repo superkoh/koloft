@@ -51,6 +51,8 @@ import { WORKBENCH_PANE_MIN } from './auxSurface'
 import {
   clampNotesHeight,
   currentWorkspace,
+  rowIdOfTab,
+  workspaceOfTab,
   DOCK_GUTTER_PX,
   mixesBackends,
   notesHeightFromDrag,
@@ -904,10 +906,8 @@ export default function App(): JSX.Element {
   const lastWsPath = useStore((s) => s.lastWsPath)
   const setLastWsPath = useStore((s) => s.setLastWsPath)
   useEffect(() => {
-    if (!activeTabId) return
-    const sid = sessions.find((s) => s.tabId === activeTabId)?.sessionId
-    const ws = workspaceRows.find((w) => w.rows.some((r) => r.id === (sid ?? activeTabId)))
-    if (ws) setLastWsPath(ws.workspace.path)
+    const ws = activeTabId && workspaceOfTab(workspaceRows, sessions, activeTabId)
+    if (ws) setLastWsPath(ws)
   }, [activeTabId, sessions, workspaceRows, setLastWsPath])
   const welcomeWs = welcomeTarget(workspaceRows, lastWsPath)
   const welcomeActive = useStore((s) => s.welcomeActive)
@@ -921,7 +921,7 @@ export default function App(): JSX.Element {
   const updateOffer = useStore((s) => s.updateOffer)
   const notesWs = currentWorkspace(
     workspaceRows,
-    activeTabId ? (sessions.find((s) => s.tabId === activeTabId)?.sessionId ?? activeTabId) : null,
+    activeTabId ? rowIdOfTab(sessions, activeTabId) : null,
     selectedWs,
     lastWsPath
   )

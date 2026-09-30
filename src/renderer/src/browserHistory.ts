@@ -33,7 +33,7 @@ export function remember(
     ? { ...old?.visits, [visitIn]: (old?.visits?.[visitIn] ?? 0) + 1 }
     : old?.visits
   return [
-    { url: key, title: title || old?.title || '', ...(visits && { visits }) },
+    { url: key, title: title || old?.title || '', visits },
     ...list.filter((e) => e.url !== key)
   ].slice(0, HISTORY_CAP)
 }

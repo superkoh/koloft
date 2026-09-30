@@ -1534,6 +1534,7 @@ export function WorkbenchPane({
         return
       }
       els.current.delete(tab.id)
+      countedUrl.current.delete(tab.id)
       setAudio((prev) => {
         if (!(tab.id in prev)) return prev
         const rest = { ...prev }
