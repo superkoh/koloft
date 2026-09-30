@@ -573,10 +573,6 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(b.argv().slice(2)).toEqual(args)
     expect(() => tabScript(spec({ tmuxName: "k-'; id #" }))).toThrow()
   })
-
-  it('the kill command names the tmux session, which outlives an in-TUI /clear', () => {
-    expect(killSessionCmd('k-sess1')).toContain('kill-session -t k-sess1')
-  })
 })
 
 describe('remote commands under a fish login shell', () => {

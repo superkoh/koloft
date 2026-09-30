@@ -3,7 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import type { AccountKind } from '@shared/types'
 import { shq } from '@shared/shellQuote'
-import { REMOTE_PATH_LINE } from './install'
+import { REMOTE_PATH_LINE, remoteShCommand } from './install'
 
 export function accountEnv(
   kind: AccountKind,
@@ -217,7 +217,6 @@ export function utilShellLine(s: UtilShellLineSpec): string {
   )
 }
 
-// PLATFORM§33
 export function killSessionCmd(tmuxName: string): string {
-  return `sh -c '${REMOTE_PATH_LINE}; tmux -L koloft kill-session -t ${tmuxName}'`
+  return remoteShCommand('tmux -L koloft kill-session -t "$1"', [tmuxName])
 }

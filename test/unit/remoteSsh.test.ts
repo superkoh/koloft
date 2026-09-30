@@ -1,9 +1,16 @@
 import { describe, it, expect, afterAll, beforeEach, afterEach } from 'vitest'
+import { execFileSync } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
 
-import { defaultControlDir, ensureControlDir, runSsh, sshOptions } from '../../src/main/remote/ssh'
+import {
+  defaultControlDir,
+  ensureControlDir,
+  problemOf,
+  runSsh,
+  sshOptions
+} from '../../src/main/remote/ssh'
 
 const UNIX_SOCKET_PATH_MAX_BYTES = 104
 
@@ -43,6 +50,99 @@ describe('remote ssh options', () => {
     expect(defaultControlDir()).toMatch(/^\/tmp\/koloft-\d+$/)
     // PLATFORM§3
     expect(`${defaultControlDir()}/%C`.length).toBeLessThan(UNIX_SOCKET_PATH_MAX_BYTES)
+  })
+})
+
+// PLATFORM§33
+describe("a user's ~/.ssh/config cannot turn Koloft's commands into something else", () => {
+  const resolved = (args: string[]): string => {
+    const config = path.join(tmp, 'user-config')
+    fs.writeFileSync(config, 'Host *\n  RemoteCommand tmux attach\n  RequestTTY force\n')
+    return execFileSync('/usr/bin/ssh', ['-G', '-F', config, ...args, 'devbox'], {
+      encoding: 'utf8'
+    })
+  }
+
+  it('drops a RemoteCommand the config sets, for background commands and tabs alike', () => {
+    expect(resolved(sshOptions('/tmp/x', true))).not.toMatch(/^remotecommand /m)
+    expect(resolved(sshOptions('/tmp/x', false))).not.toMatch(/^remotecommand /m)
+  })
+
+  it('never gives a background command a terminal, while a tab still gets the one it asks for', () => {
+    expect(resolved(['-n', ...sshOptions('/tmp/x', true)])).toMatch(/^requesttty false$/m)
+    expect(resolved(['-tt', ...sshOptions('/tmp/x', false)])).toMatch(/^requesttty force$/m)
+  })
+})
+
+describe('when the shared connection to a machine has no room for another command', () => {
+  const bin = path.join(tmp, 'spillbin')
+  const calls = path.join(tmp, 'spill-calls')
+  fs.mkdirSync(bin, { recursive: true })
+  const savedPath = process.env.PATH
+  const sshThat = (body: string): void =>
+    fs.writeFileSync(
+      path.join(bin, 'ssh'),
+      `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(calls)}\n${body}\n`,
+      { mode: 0o755 }
+    )
+  const socketsUsed = (): string[] =>
+    fs
+      .readFileSync(calls, 'utf8')
+      .trim()
+      .split('\n')
+      .map((l) => /ControlPath=\S+\/(%C\S*)/.exec(l)?.[1] ?? '')
+  beforeEach(() => {
+    process.env.PATH = `${bin}:/usr/bin:/bin`
+    fs.rmSync(calls, { force: true })
+  })
+  afterEach(() => (process.env.PATH = savedPath))
+
+  // PLATFORM§33
+  it('background commands move to a connection of their own, and back once that one cannot be made', async () => {
+    const opts = { controlDir: tmp }
+    sshThat(
+      'echo "mux_client_request_session: session request failed: Session open refused by peer" >&2'
+    )
+    await runSsh('full-box', 'true', opts)
+    sshThat('exit 0')
+    await runSsh('full-box', 'true', opts)
+    await runSsh('other-box', 'true', opts)
+    sshThat('echo "Permission denied (publickey,password)." >&2; exit 255')
+    await runSsh('full-box', 'true', opts)
+    await runSsh('full-box', 'true', opts)
+    expect(socketsUsed()).toEqual(['%C', '%C-spill', '%C', '%C-spill', '%C'])
+  })
+})
+
+describe('what the sidebar says when a machine cannot be reached', () => {
+  it("passes on ssh's own last word, and tells the user how to sign in when ssh needed someone to", () => {
+    expect(
+      problemOf({
+        code: 255,
+        stderr: 'ssh: Could not resolve hostname devbx: nodename nor servname\n'
+      })
+    ).toBe('ssh: Could not resolve hostname devbx: nodename nor servname')
+    expect(
+      problemOf({ code: 255, stderr: 'kuser@devbox: Permission denied (publickey,password).\n' })
+    ).toBe(
+      'kuser@devbox: Permission denied (publickey,password). — start a session on this machine and sign in there'
+    )
+    expect(problemOf({ code: 255, stderr: 'Host key verification failed.\n' })).toMatch(/sign in/)
+    expect(problemOf({ code: null, stderr: '' })).toBe('ssh timed out')
+  })
+
+  it('names a full shared connection and a shell that prints at login, which ssh itself does not explain', () => {
+    expect(
+      problemOf({
+        code: 255,
+        stderr:
+          'mux_client_request_session: session request failed: Session open refused by peer\nPermission denied (password).\n'
+      })
+    ).toMatch(/MaxSessions/)
+    // PLATFORM§34
+    expect(
+      problemOf({ code: 1, stderr: 'rsync(73905): error: unexpected tag 103 (0x6e6f6320)\n' })
+    ).toMatch(/prints text when it starts/)
   })
 })
 

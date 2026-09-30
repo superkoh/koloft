@@ -26,9 +26,10 @@ describe('remoteKeyFromForm', () => {
     expect(remoteKeyFromForm('   ', '/home/koh')).toEqual({ ok: false, message: MACHINE_EMPTY })
   })
 
-  it('refuses a machine name ssh would not take verbatim', () => {
+  it('refuses a machine name ssh would not take verbatim, or would read as one of its options', () => {
     expect(remoteKeyFromForm('dev box', '/home/koh')).toEqual({ ok: false, message: MACHINE_BAD })
     expect(remoteKeyFromForm('dev/box', '/home/koh')).toEqual({ ok: false, message: MACHINE_BAD })
+    expect(remoteKeyFromForm('-F', '/tmp/x')).toEqual({ ok: false, message: MACHINE_BAD })
   })
 
   it('refuses a path that is not an absolute directory over there', () => {
