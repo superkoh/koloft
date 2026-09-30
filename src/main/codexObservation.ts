@@ -195,6 +195,7 @@ export class CodexObservation {
         thread: { ...thread, cwd, model: this.model },
         change: req.method === 'thread/start' ? 'replace' : 'switch'
       })
+      this.seedFilesFromHistory(record(result.thread))
       this.status(thread.status)
       return
     }
@@ -203,7 +204,7 @@ export class CodexObservation {
       typeof p.threadId === 'string' && this.childRoots.get(p.threadId) === this.threadId
     if (!this.threadId || (p.threadId !== this.threadId && !ownedChild)) return
     if (method === 'item/completed') {
-      this.observeFiles(record(p.item))
+      if (this.noteFiles(record(p.item), true)) this.publishFiles()
       this.observeOpen(record(p.item))
     }
     // CODEX§3
@@ -282,8 +283,19 @@ export class CodexObservation {
   }
 
   // CODEX§12
-  private observeFiles(item: Record<string, unknown>): void {
-    if (item.status !== 'completed') return
+  private seedFilesFromHistory(thread: Record<string, unknown>): void {
+    let changed = false
+    for (const turn of Array.isArray(thread.turns) ? thread.turns.map(record) : []) {
+      for (const item of Array.isArray(turn.items) ? turn.items.map(record) : []) {
+        if (this.noteFiles(item, false)) changed = true
+      }
+    }
+    if (changed) this.publishFiles()
+  }
+
+  // CODEX§12
+  private noteFiles(item: Record<string, unknown>, live: boolean): boolean {
+    if (item.status !== 'completed') return false
     let changed = false
     if (item.type === 'fileChange' && Array.isArray(item.changes)) {
       for (const change of item.changes.map(record)) {
@@ -299,7 +311,7 @@ export class CodexObservation {
         this.lastTouched = this.lastWritten = target
         changed = true
       }
-      if (changed) this.liveWrites++
+      if (changed && live) this.liveWrites++
     } else if (item.type === 'commandExecution' && Array.isArray(item.commandActions)) {
       for (const action of item.commandActions.map(record)) {
         if (action.type !== 'read' || typeof action.path !== 'string') continue
@@ -309,7 +321,10 @@ export class CodexObservation {
         changed = true
       }
     }
-    if (!changed) return
+    return changed
+  }
+
+  private publishFiles(): void {
     this.emit({
       type: 'files-changed',
       files: capTouched([...this.touched].map(([src, acc]) => touchedItem(src, acc))),

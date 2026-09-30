@@ -388,6 +388,15 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   no date; which signals Google reads is inferred, not checked).
 - **`navigator.userAgentData` may return a fresh object on each access**, so a patch has
   to go on its prototype, not on one instance.
+- **A cross-site iframe's `navigator.userAgent` comes from `app.userAgentFallback`**, not
+  from `session.setUserAgent` or `webContents.setUserAgent` — both leave the iframe
+  saying `Electron/…` while the page above it says Chrome. Cloudflare Turnstile (the
+  "Verify you are human" box, e.g. on login.twilio.com) runs in such an iframe and
+  falls back to the checkbox, which then never passes. Measured 2026-09-29 on Electron
+  43.7.3 with a plain Electron script, no automation: session UA only → checkbox;
+  plus `webContents.setUserAgent` → checkbox; plus `app.userAgentFallback` → token in
+  1.5 s, twice each. The iframe's `userAgentData.brands` still lacks "Google Chrome"
+  (the guest preload does not run in subframes) and Turnstile passed anyway.
 
 ## §15 Chrome extensions in Electron (electron-chrome-extensions)
 
@@ -762,6 +771,13 @@ inferred, not checked.
   without a poll.
 - **`fs.watch` on a folder that does not exist yet throws**; a watch attached before the
   folder appears never fires.
+- **On macOS a folder watch goes live a moment after `fs.watch` returns, and a file
+  written in that gap is never reported.** Measured 2026-09-29 (Node 24.13.0, macOS 27.0)
+  with the Codex agent-drop unit test under load (16 copies at once): a request written
+  right after the watch started was lost in 2 of 16 runs, still lost with a 10 s wait;
+  written 500 ms later it was seen in 40 of 40. The same test failed on the GitHub macOS
+  runner in 4 of 5 CI runs that day. A test that drops a file right after starting a
+  watcher writes it again until it is seen.
 - **A recursive folder watcher cannot be trusted to report the removal of the watched
   folder itself.**
 
