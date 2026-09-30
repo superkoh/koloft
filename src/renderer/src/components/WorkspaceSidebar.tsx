@@ -419,8 +419,6 @@ export function WorkspaceSidebar({
   const keepRunningItem = (row: SessionRow): JSX.Element => (
     <div
       className="mi"
-      role="menuitemcheckbox"
-      aria-checked={!!row.resident}
       onClick={() => {
         setMenu(null)
         window.api.sessions.setResident(row.id, !row.resident)

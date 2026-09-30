@@ -809,14 +809,11 @@ export class CodexSessions {
         worktreeResourceId: run.resource?.id,
         ...(run.home ? { codexHome: run.home } : {})
       })
-      if (change === 'replace' && old && old !== key) this.deps.replaced?.(old, key)
-      if (
-        change === 'replace' &&
-        old &&
-        old !== key &&
-        ![...this.runs.values()].some((r) => r !== run && r.info?.sessionId === old)
-      )
-        this.store.removeMember(old)
+      if (change === 'replace' && old && old !== key) {
+        this.deps.replaced?.(old, key)
+        if (![...this.runs.values()].some((r) => r !== run && r.info?.sessionId === old))
+          this.store.removeMember(old)
+      }
     } catch (e) {
       this.deps.error(String(e))
     }

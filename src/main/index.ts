@@ -2238,39 +2238,29 @@ async function restoreResidentSessions(): Promise<void> {
       .flatMap((w) => w.rows)
       .find((r) => r.id === id)
     if (!row) continue
-    try {
-      await restoreResident(row)
-    } catch {
-      sendToRenderer('cron:toast', `Could not start “${row.title}” — click it to try again.`)
-    }
+    const notice = await restoreResident(row).catch(() => couldNotStart(row.title))
+    if (notice) sendToRenderer('cron:toast', notice)
   }
 }
 
+function couldNotStart(title: string): string {
+  return `Could not start “${title}” — click it to try again.`
+}
+
 // CC§11
-async function restoreResident(row: SessionRow): Promise<void> {
+async function restoreResident(row: SessionRow): Promise<string | undefined> {
   const backend = sessionBackends.forSession(row.id)
   const plan = await backend.resumePlan(row.id)
   if (plan.action === 'dialog' || plan.action === 'rebuild') {
-    sendToRenderer(
-      'cron:toast',
-      `“${row.title}” needs you — its worktree changed. Click it to resume.`
-    )
-    return
+    return `“${row.title}” needs you — its worktree changed. Click it to resume.`
   }
   if (plan.action === 'unavailable') {
-    sendToRenderer(
-      'cron:toast',
-      plan.reason === 'running'
-        ? `“${row.title}” is already running in another claude process, so Koloft left it there.`
-        : `Could not start “${row.title}” — its folder is gone.`
-    )
-    return
+    return plan.reason === 'running'
+      ? `“${row.title}” is already running in another claude process, so Koloft left it there.`
+      : `Could not start “${row.title}” — its folder is gone.`
   }
   const res = await backend.resume({ sessionId: row.id, cwd: plan.cwd, mode: 'direct' })
-  if (!res.ok) {
-    sendToRenderer('cron:toast', `Could not start “${row.title}” — click it to try again.`)
-    return
-  }
+  if (!res.ok) return couldNotStart(row.title)
   const spawned: SpawnedTab = {
     id: res.id,
     kind: row.backendId,
@@ -2279,6 +2269,7 @@ async function restoreResident(row: SessionRow): Promise<void> {
     sessionId: row.id
   }
   sendToRenderer('terminal:spawned', spawned)
+  return undefined
 }
 
 async function launchCronRun(
