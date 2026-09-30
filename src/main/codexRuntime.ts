@@ -1,5 +1,4 @@
 import path from 'path'
-import os from 'os'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { codexEnvironment } from './codexTransport'
@@ -29,7 +28,7 @@ export async function resolveCodexRuntime(
   if (!binary) {
     try {
       const login = await readLoginShell({
-        shell: options.shell ?? inherited.SHELL ?? os.userInfo().shell ?? '/bin/zsh',
+        shell: options.shell,
         env: inherited,
         timeoutMs: timeout,
         probe: 'command -v codex'

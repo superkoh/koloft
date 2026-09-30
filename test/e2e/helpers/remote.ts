@@ -133,7 +133,7 @@ export function seedRemoteWorkspace(env: E2EEnv): void {
   fs.writeFileSync(file, JSON.stringify(layout, null, 2))
 }
 
-function writeExec(file: string, body: string): void {
+export function writeExec(file: string, body: string): void {
   fs.writeFileSync(file, body, { mode: 0o755 })
   fs.chmodSync(file, 0o755)
 }

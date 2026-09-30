@@ -77,17 +77,18 @@ describe("a user's ~/.ssh/config cannot turn Koloft's commands into something el
   })
 })
 
+const bin = path.join(tmp, 'bin')
+fs.mkdirSync(bin, { recursive: true })
+const fakeSsh = (body: string): void => {
+  fs.writeFileSync(path.join(bin, 'ssh'), `#!/bin/sh\n${body}\n`, { mode: 0o755 })
+}
+const savedPath = process.env.PATH
+afterEach(() => (process.env.PATH = savedPath))
+
 describe('when the shared connection to a machine has no room for another command', () => {
-  const bin = path.join(tmp, 'spillbin')
   const calls = path.join(tmp, 'spill-calls')
-  fs.mkdirSync(bin, { recursive: true })
-  const savedPath = process.env.PATH
   const sshThat = (body: string): void =>
-    fs.writeFileSync(
-      path.join(bin, 'ssh'),
-      `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(calls)}\n${body}\n`,
-      { mode: 0o755 }
-    )
+    fakeSsh(`printf '%s\\n' "$*" >> ${JSON.stringify(calls)}\n${body}`)
   const socketsUsed = (): string[] =>
     fs
       .readFileSync(calls, 'utf8')
@@ -98,7 +99,6 @@ describe('when the shared connection to a machine has no room for another comman
     process.env.PATH = `${bin}:/usr/bin:/bin`
     fs.rmSync(calls, { force: true })
   })
-  afterEach(() => (process.env.PATH = savedPath))
 
   // PLATFORM§33
   it('background commands move to a connection of their own, and back once that one cannot be made', async () => {
@@ -150,14 +150,7 @@ describe('what the sidebar says when a machine cannot be reached', () => {
 })
 
 describe("U-SSH-2: remote command result code is null on a local timeout, 127 for a missing binary, else the command's own", () => {
-  const bin = path.join(tmp, 'bin')
-  fs.mkdirSync(bin, { recursive: true })
-  const fakeSsh = (body: string): void => {
-    fs.writeFileSync(path.join(bin, 'ssh'), `#!/bin/sh\n${body}\n`, { mode: 0o755 })
-  }
-  const savedPath = process.env.PATH
   beforeEach(() => (process.env.PATH = bin))
-  afterEach(() => (process.env.PATH = savedPath))
 
   it('a command that outlives the timeout comes back with no exit code', async () => {
     fakeSsh('/bin/sleep 5')

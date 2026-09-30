@@ -1,8 +1,10 @@
 import { randomUUID } from 'crypto'
 import { execFile } from 'child_process'
+import os from 'os'
 import { promisify } from 'util'
 
 const exec = promisify(execFile)
+const LOGIN_SHELL_TIMEOUT_MS = 8000
 
 export class LoginShellError extends Error {
   constructor(readonly reason: 'failed' | 'incomplete') {
@@ -12,9 +14,9 @@ export class LoginShellError extends Error {
 
 // PLATFORM§2
 export async function readLoginShell(opts: {
-  shell: string
   env: NodeJS.ProcessEnv
-  timeoutMs: number
+  shell?: string
+  timeoutMs?: number
   probe?: string
 }): Promise<{ probed: string; env: NodeJS.ProcessEnv }> {
   const token = randomUUID().replaceAll('-', '')
@@ -24,12 +26,16 @@ export async function readLoginShell(opts: {
   let stdout: string
   try {
     stdout = (
-      await exec(opts.shell, ['-l', '-i', '-c', script], {
-        env: opts.env,
-        timeout: opts.timeoutMs,
-        maxBuffer: 2 * 1024 * 1024,
-        encoding: 'utf8'
-      })
+      await exec(
+        opts.shell ?? (opts.env.SHELL || os.userInfo().shell || '/bin/zsh'),
+        ['-l', '-i', '-c', script],
+        {
+          env: opts.env,
+          timeout: opts.timeoutMs ?? LOGIN_SHELL_TIMEOUT_MS,
+          maxBuffer: 2 * 1024 * 1024,
+          encoding: 'utf8'
+        }
+      )
     ).stdout
   } catch {
     throw new LoginShellError('failed')

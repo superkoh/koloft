@@ -3,6 +3,7 @@ import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import type { E2EEnv } from './env'
+import { writeExec } from './remote'
 
 const FIXTURES = path.join(__dirname, '..', 'fixtures')
 const IMAGE_SOURCES = ['sshd.Dockerfile', 'sshd-entrypoint.sh', 'fake-claude.js']
@@ -35,12 +36,10 @@ export type LabAlias = (typeof LAB_ALIASES)[number]
 export const LAB_PASSWORD = 'koloft-pw'
 
 export interface SshLab {
-  image: string
   network: string
   bastion: string
   target: string
   port: number
-  dir: string
   config: string
   key: string
   knownHosts: string
@@ -75,14 +74,9 @@ function dk(args: string[]): string {
   return execFileSync(docker(), args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
 }
 
-function writeExec(file: string, body: string): void {
-  fs.writeFileSync(file, body, { mode: 0o755 })
-  fs.chmodSync(file, 0o755)
-}
-
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
-function ensureImage(dir: string): string {
+function ensureImage(): string {
   const h = crypto.createHash('sha256')
   for (const name of IMAGE_SOURCES) {
     h.update(name)
@@ -94,10 +88,7 @@ function ensureImage(dir: string): string {
   if (spawnSync(docker(), ['image', 'inspect', image], { stdio: 'ignore' }).status === 0) {
     return image
   }
-  const ctx = path.join(dir, 'docker-ctx')
-  fs.mkdirSync(ctx, { recursive: true })
-  for (const name of IMAGE_SOURCES) fs.copyFileSync(path.join(FIXTURES, name), path.join(ctx, name))
-  dk(['build', '-q', '-t', image, '-f', path.join(ctx, 'sshd.Dockerfile'), ctx])
+  dk(['build', '-q', '-t', image, '-f', path.join(FIXTURES, 'sshd.Dockerfile'), FIXTURES])
   return image
 }
 
@@ -172,15 +163,13 @@ function sshWorks(lab: SshLab, alias: LabAlias): boolean {
 export async function startSshLab(env: E2EEnv): Promise<SshLab> {
   const dir = path.join(env.home, 'ssh-lab')
   fs.mkdirSync(dir, { recursive: true })
-  const image = ensureImage(dir)
+  const image = ensureImage()
   const id = `${process.pid}-${crypto.randomBytes(3).toString('hex')}`
   const lab: SshLab = {
-    image,
     network: `koloft-lab-${id}`,
     bastion: `kl-bastion-${id}`,
     target: `kl-target-${id}`,
     port: 0,
-    dir,
     config: path.join(dir, 'config'),
     key: path.join(dir, 'id_lab'),
     knownHosts: path.join(dir, 'known_hosts'),
@@ -224,10 +213,13 @@ export async function startSshLab(env: E2EEnv): Promise<SshLab> {
     run(lab.target, [])
     run(lab.bastion, ['-p', '127.0.0.1::22'])
     lab.port = Number(/:(\d+)/.exec(dk(['port', lab.bastion, '22/tcp']))?.[1])
+    const [bastionKey, targetKey] = await Promise.all([
+      hostKeyOf(lab.bastion),
+      hostKeyOf(lab.target)
+    ])
     fs.writeFileSync(
       lab.knownHosts,
-      `[127.0.0.1]:${lab.port} ${await hostKeyOf(lab.bastion)}\n` +
-        `${lab.target} ${await hostKeyOf(lab.target)}\n`
+      `[127.0.0.1]:${lab.port} ${bastionKey}\n${lab.target} ${targetKey}\n`
     )
     const emptyKnownHosts = path.join(dir, 'known_hosts_first_contact')
     fs.writeFileSync(emptyKnownHosts, '')

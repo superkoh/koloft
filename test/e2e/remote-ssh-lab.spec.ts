@@ -5,7 +5,9 @@ import path from 'path'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import type { E2EEnv } from './helpers/env'
+import { defaultControlDir } from '../../src/main/remote/ssh'
 import {
+  addWorkspace,
   centerTerm,
   FAKE_SESSION_TITLE,
   openMenu,
@@ -27,13 +29,15 @@ import {
   type SshLab
 } from './helpers/docker'
 
-const KOLOFT_CONTROL_DIR = `/tmp/koloft-${process.getuid?.() ?? 0}`
 const BACKGROUND_CONNECT_MS = 45_000
 const TEN_SYNC_ROUNDS_WITH_TABS_OPEN_MS = 20_000
 const LOGINS_OF_THE_FIRST_FULL_ROUND_SETTLE_MS = 5000
 const README = (user: string): string => `# Lab project\n\nkoloft-ssh-lab marker for ${user}.\n`
 
-test.skip(!dockerAvailable(), 'needs a running Docker (for example `colima start`)')
+test.describe.configure({ timeout: 420_000 })
+test.beforeAll(() =>
+  test.skip(!dockerAvailable(), 'needs a running Docker (for example `colima start`)')
+)
 
 async function withLab(
   env: E2EEnv,
@@ -52,16 +56,12 @@ async function withLab(
     await body({ app, page, lab })
   } finally {
     if (app) await quitAndClose(app)
-    stopSshLab(lab, KOLOFT_CONTROL_DIR)
+    stopSshLab(lab, defaultControlDir())
   }
 }
 
 async function addMachine(page: Page, alias: LabAlias, user: string): Promise<void> {
-  const added = await page.evaluate(
-    (key) => window.api.workspace.add(key) as Promise<{ code: string }>,
-    remoteKeyFor(alias, user)
-  )
-  expect(added.code).toBe('added')
+  expect((await addWorkspace(page, remoteKeyFor(alias, user))).code).toBe('added')
 }
 
 function dot(page: Page, alias: LabAlias): Locator {
@@ -89,16 +89,18 @@ async function connectsListsAndReads(page: Page, alias: LabAlias, user: string):
   expect(await readme(page, alias, user)).toBe(README(user))
 }
 
-async function newSessionTypingAtTheTab(page: Page, alias: LabAlias, typed: string): Promise<void> {
+async function newSessionAnsweringAtTheTab(
+  page: Page,
+  alias: LabAlias,
+  prompt: string,
+  answer: string
+): Promise<void> {
   const rows = wsRows(page, alias)
   await openMenu(page, page.locator('.ws-head', { hasText: alias }))
   await page.locator('.menu .mi', { hasText: 'New session' }).click()
   await expect(rows).toHaveCount(1, { timeout: 30_000 })
-  await expect(centerTerm(page)).toContainText(
-    typed === LAB_PASSWORD ? 'password:' : 'continue connecting',
-    { timeout: 60_000 }
-  )
-  await runIn(page, centerTerm(page), typed)
+  await expect(centerTerm(page)).toContainText(prompt, { timeout: 60_000 })
+  await runIn(page, centerTerm(page), answer)
   await expect(rows.filter({ hasText: FAKE_SESSION_TITLE })).toHaveCount(1, { timeout: 90_000 })
 }
 
@@ -106,7 +108,6 @@ test.describe('remote workspaces against real sshd machines behind a company jum
   test('E-SSH-01: with a key, through the jump host: connects before any session, lists and reads files, and a session starts and shows up', async ({
     env
   }) => {
-    test.setTimeout(300_000)
     await withLab(env, async ({ page }) => {
       await addMachine(page, 'kt-key', 'kuser')
       await connectsListsAndReads(page, 'kt-key', 'kuser')
@@ -118,13 +119,12 @@ test.describe('remote workspaces against real sshd machines behind a company jum
   test('E-SSH-02: a password login says so on the dot, and once the password is typed in the session tab, files and sessions work', async ({
     env
   }) => {
-    test.setTimeout(300_000)
     await withLab(env, async ({ page }) => {
       await addMachine(page, 'kt-pw', 'puser')
       await expect(dot(page, 'kt-pw')).toHaveAttribute('title', /Permission denied.*sign in/, {
         timeout: BACKGROUND_CONNECT_MS
       })
-      await newSessionTypingAtTheTab(page, 'kt-pw', LAB_PASSWORD)
+      await newSessionAnsweringAtTheTab(page, 'kt-pw', 'password:', LAB_PASSWORD)
       await connectsListsAndReads(page, 'kt-pw', 'puser')
     })
   })
@@ -132,7 +132,6 @@ test.describe('remote workspaces against real sshd machines behind a company jum
   test('E-SSH-03: first contact with a machine says so on the dot; the session tab asks to trust its key, and after yes everything works', async ({
     env
   }) => {
-    test.setTimeout(300_000)
     await withLab(env, async ({ page }) => {
       await addMachine(page, 'kt-newhost', 'kuser')
       await expect(dot(page, 'kt-newhost')).toHaveAttribute(
@@ -140,7 +139,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         /Host key verification failed.*sign in/,
         { timeout: BACKGROUND_CONNECT_MS }
       )
-      await newSessionTypingAtTheTab(page, 'kt-newhost', 'yes')
+      await newSessionAnsweringAtTheTab(page, 'kt-newhost', 'continue connecting', 'yes')
       await connectsListsAndReads(page, 'kt-newhost', 'kuser')
     })
   })
@@ -149,7 +148,6 @@ test.describe('remote workspaces against real sshd machines behind a company jum
   test('E-SSH-04: a machine whose login shell is tcsh, and one whose is fish: files list and read, and sessions start and show up', async ({
     env
   }) => {
-    test.setTimeout(420_000)
     await withLab(env, async ({ page }) => {
       await addMachine(page, 'kt-tcsh', 'tuser')
       await addMachine(page, 'kt-fish', 'fuser')
@@ -164,7 +162,6 @@ test.describe('remote workspaces against real sshd machines behind a company jum
   test('E-SSH-05: a ~/.ssh/config that sets RemoteCommand and RequestTTY force: commands still run, files come back byte for byte, and a session starts', async ({
     env
   }) => {
-    test.setTimeout(300_000)
     await withLab(env, async ({ page }) => {
       await addMachine(page, 'kt-remotecmd', 'kuser')
       await connectsListsAndReads(page, 'kt-remotecmd', 'kuser')
@@ -176,7 +173,6 @@ test.describe('remote workspaces against real sshd machines behind a company jum
   test('E-SSH-06: a ProxyCommand tool and an ssh agent that only the login shell sets up: both machines connect before any session', async ({
     env
   }) => {
-    test.setTimeout(300_000)
     const agentSocket = `/tmp/kl-agent-${crypto.randomBytes(4).toString('hex')}.sock`
     const started = execFileSync('/usr/bin/ssh-agent', ['-s', '-a', agentSocket], {
       encoding: 'utf8'
@@ -213,7 +209,6 @@ test.describe('remote workspaces against real sshd machines behind a company jum
   test('E-SSH-07: more tabs than the machine lets one connection hold: background work moves to a connection of its own instead of logging in again every round', async ({
     env
   }) => {
-    test.setTimeout(420_000)
     await withLab(env, async ({ page, lab }) => {
       await addMachine(page, 'kt-few', 'muser')
       await startSessionIn(page, 'kt-few', { remote: true })
@@ -233,7 +228,6 @@ test.describe('remote workspaces against real sshd machines behind a company jum
   test('E-SSH-08: a machine whose shell prints a greeting at login: the dot says so instead of never syncing in silence', async ({
     env
   }) => {
-    test.setTimeout(300_000)
     await withLab(env, async ({ page }) => {
       await addMachine(page, 'kt-noisy', 'nuser')
       await expect(dot(page, 'kt-noisy')).toHaveAttribute('title', /prints text when it starts/, {

@@ -460,16 +460,11 @@ let freshness: GitFreshnessEngine | null = null
 let remoteSync: RemoteSync | null = null
 let machinePkg: MachinePackage | null = null
 const remoteControlDir = defaultControlDir()
-const LOGIN_SHELL_TIMEOUT_MS = 8000
 let loginSshEnv: Promise<void> | null = null
 
 // PLATFORM§1
 function sshEnvReady(): Promise<void> {
-  return (loginSshEnv ??= readLoginShell({
-    shell: process.env.SHELL || os.userInfo().shell || '/bin/zsh',
-    env: process.env,
-    timeoutMs: LOGIN_SHELL_TIMEOUT_MS
-  })
+  return (loginSshEnv ??= readLoginShell({ env: process.env })
     .then(({ env }) => void Object.assign(process.env, sshEnvFromLogin(process.env, env)))
     .catch(() => undefined))
 }

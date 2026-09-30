@@ -45,13 +45,14 @@ function backgroundOptions(host: string, controlDir: string): string[] {
   return sshOptions(controlDir, true, spilledHosts.has(host) ? SPILL_MASTER : SHARED_MASTER)
 }
 
-// PLATFORM§33
-function noteMasterRoom(host: string, r: { code: number | null; stderr: string }): void {
-  if (r.stderr.includes(MASTER_FULL)) spilledHosts.add(host)
-  else if (r.code === SSH_COULD_NOT_CONNECT) spilledHosts.delete(host)
-}
+export const SSH_LINK_BROKE_EXIT = 255
 
-const SSH_COULD_NOT_CONNECT = 255
+// PLATFORM§33
+function noteMasterRoom<R extends { code: number | null; stderr: string }>(host: string, r: R): R {
+  if (r.stderr.includes(MASTER_FULL)) spilledHosts.add(host)
+  else if (r.code === SSH_LINK_BROKE_EXIT) spilledHosts.delete(host)
+  return r
+}
 
 const NEEDS_SOMEONE_TO_SIGN_IN =
   /Permission denied|Host key verification failed|Too many authentication failures|passphrase/i
@@ -148,10 +149,7 @@ export function runSshBytes(
     timeoutMs: opts.timeoutMs ?? 10_000,
     maxBuffer: opts.maxBuffer ?? 64 * 1024 * 1024,
     input: opts.input
-  }).then((r) => {
-    noteMasterRoom(host, r)
-    return r
-  })
+  }).then((r) => noteMasterRoom(host, r))
 }
 
 // PLATFORM§34
@@ -175,8 +173,5 @@ export function rsyncPull(
       `${localDir}/`
     ],
     opts.timeoutMs ?? 12_000
-  ).then((r) => {
-    noteMasterRoom(host, r)
-    return r
-  })
+  ).then((r) => noteMasterRoom(host, r))
 }

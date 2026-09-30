@@ -4,6 +4,7 @@ import path from 'path'
 import type { AccountKind } from '@shared/types'
 import { shq } from '@shared/shellQuote'
 import { REMOTE_PATH_LINE, remoteShCommand } from './install'
+import { SSH_LINK_BROKE_EXIT } from './ssh'
 
 export function accountEnv(
   kind: AccountKind,
@@ -157,8 +158,6 @@ export interface LaunchLineSpec {
   tabId: string
   mode: 'start' | 'attach'
 }
-
-const SSH_LINK_BROKE_EXIT = 255
 
 const TURN_OFF_MOUSE_PASTE_AND_ALT_SCREEN = `printf '\\033[?1000l\\033[?1002l\\033[?1003l\\033[?1006l\\033[?2004l\\033[?25h\\033[?1049l'`
 

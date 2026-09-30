@@ -162,7 +162,9 @@ export class RemoteSync {
         git: gitKey(st.git)
       }
       const askGit = Date.now() - st.gitAt >= GIT_INTERVAL_MS
-      const hb = await this.deps.run(host, heartbeatCmd(askGit ? target.paths : []))
+      const hb = await this.deps
+        .run(host, heartbeatCmd(askGit ? target.paths : []))
+        .catch((e: unknown) => ({ code: null, stdout: '', stderr: String(e) }))
       if (hb.code === 0) {
         st.connected = true
         st.failures = 0
@@ -209,9 +211,9 @@ export class RemoteSync {
       const again = st.again
       st.again = false
       const steady = target.hasTabs ? FAST_INTERVAL_MS : IDLE_INTERVAL_MS
-      const backoff = st.connected
-        ? 0
-        : Math.min(FAST_INTERVAL_MS * 2 ** (st.failures - 1), LONGEST_RETRY_WHILE_OUT_OF_TOUCH_MS)
+      const backoff = st.failures
+        ? Math.min(FAST_INTERVAL_MS * 2 ** (st.failures - 1), LONGEST_RETRY_WHILE_OUT_OF_TOUCH_MS)
+        : 0
       const delay = again ? 0 : Math.max(steady, backoff)
       if (st.timer) clearTimeout(st.timer)
       st.timer = setTimeout(() => void this.round(host), delay)
