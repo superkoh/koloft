@@ -90,9 +90,12 @@ export class SessionWorktrees {
       .listResources()
       .find((r) => r.originalCwd === root && r.worktreePath === target)
     if (known) {
-      if (known.worktreeBranch !== checkout.branch)
-        throw new Error('The worktree branch has changed')
-      const ready: WorktreeResource = { ...known, state: 'ready', error: undefined }
+      const ready: WorktreeResource = {
+        ...known,
+        worktreeBranch: checkout.branch,
+        state: 'ready',
+        error: undefined
+      }
       this.store.putResource(ready)
       return ready
     }
