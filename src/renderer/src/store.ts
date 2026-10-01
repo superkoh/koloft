@@ -21,6 +21,7 @@ import {
   type WorkspaceRows
 } from '@shared/types'
 import { basename } from '@shared/preview'
+import { resolveOnHost } from '@shared/remoteKey'
 import { routeFor } from '@shared/browserRoute'
 import type { LoginFlowState } from './components/settings/loginFlow'
 import type { ResumeDialogState } from './resumeFlow'
@@ -1001,14 +1002,7 @@ export function openInterceptedFile(
 
 export function previewLinkTarget(href: string, fromSrc: string): string {
   if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(href)) return href
-  const base = fromSrc.slice(0, fromSrc.lastIndexOf('/'))
-  const out: string[] = []
-  for (const seg of `${base}/${href.split(/[?#]/)[0]}`.split('/')) {
-    if (seg === '' || seg === '.') continue
-    if (seg === '..') out.pop()
-    else out.push(seg)
-  }
-  return '/' + out.join('/')
+  return resolveOnHost(fromSrc, href.replace(/^\/+/, ''))
 }
 
 export function openWebPage(src: string, sourceTabId?: string, sourcePath?: string): void {
