@@ -232,6 +232,7 @@ import type {
   AttentionEvent,
   AttentionSubject,
   SessionResumeRequest,
+  SessionRow,
   SpawnedTab,
   TabInventoryReply,
   OpenRequest,
@@ -296,6 +297,7 @@ tracker.activeTabId = () => uiActiveTabId
 tracker.heldTabs = () => {
   const held = new Set(dirtyTabIds)
   for (const h of ptyMgr.list()) if (h.util && h.alive && h.ownerTabId) held.add(h.ownerTabId)
+  for (const s of allSessions()) if (workspaceMgr?.isResident(s.sessionId)) held.add(s.tabId)
   return held
 }
 tracker.needsUser = (id) => attention.list().some((e) => e.tabId === id)
@@ -1293,6 +1295,7 @@ app.whenReady().then(() => {
         sendToRenderer('sessions:update', allSessions())
         workspaceMgr?.onRemoteChanged()
       },
+      replaced: (oldKey, newKey) => workspaceMgr?.moveResident(oldKey, newKey),
       events: (tabId, event) => sessionBackends.observe(tabId, event),
       error: (message) => sendToRenderer('cron:toast', message),
       trustFolder: trustCodexFolder,
@@ -2246,6 +2249,51 @@ async function launchQuietTab(
   return r.id
 }
 
+let residentsRestored = false
+async function restoreResidentSessions(): Promise<void> {
+  if (residentsRestored || !workspaceMgr) return
+  residentsRestored = true
+  await workspaceMgr.firstScan
+  for (const id of workspaceMgr.residentIds()) {
+    const row = workspaceMgr
+      .rows()
+      .flatMap((w) => w.rows)
+      .find((r) => r.id === id)
+    if (!row) continue
+    const notice = await restoreResident(row).catch(() => couldNotStart(row.title))
+    if (notice) sendToRenderer('cron:toast', notice)
+  }
+}
+
+function couldNotStart(title: string): string {
+  return `Could not start “${title}” — click it to try again.`
+}
+
+// CC§11
+async function restoreResident(row: SessionRow): Promise<string | undefined> {
+  const backend = sessionBackends.forSession(row.id)
+  const plan = await backend.resumePlan(row.id)
+  if (plan.action === 'dialog' || plan.action === 'rebuild') {
+    return `“${row.title}” needs you — its worktree changed. Click it to resume.`
+  }
+  if (plan.action === 'unavailable') {
+    return plan.reason === 'running'
+      ? `“${row.title}” is already running in another claude process, so Koloft left it there.`
+      : `Could not start “${row.title}” — its folder is gone.`
+  }
+  const res = await backend.resume({ sessionId: row.id, cwd: plan.cwd, mode: 'direct' })
+  if (!res.ok) return couldNotStart(row.title)
+  const spawned: SpawnedTab = {
+    id: res.id,
+    kind: row.backendId,
+    cwd: res.cwd,
+    title: row.title,
+    sessionId: row.id
+  }
+  sendToRenderer('terminal:spawned', spawned)
+  return undefined
+}
+
 async function launchCronRun(
   req: LaunchRequest
 ): Promise<{ ok: true; tabId: string } | { ok: false }> {
@@ -2459,6 +2507,7 @@ function registerIpc(): void {
   ipcMain.handle('tabs:list', (): TabInventoryReply => {
     rendererReady = true
     cronRunner?.onRendererReady()
+    void restoreResidentSessions()
     const active = activeTabBeforeReload
     activeTabBeforeReload = null
     if (process.env.KOLOFT_TEST_NO_ADOPT === '1') return { tabs: [], activeTabBeforeReload: null }
@@ -2673,6 +2722,11 @@ function registerIpc(): void {
   ipcMain.handle('sessions:archive', (_e, id: unknown): boolean => {
     if (typeof id !== 'string' || !id) return false
     return sessionBackends.forSession(id).archive(id)
+  })
+
+  ipcMain.on('sessions:setResident', (_e, id: unknown, on: unknown) => {
+    if (typeof id !== 'string' || !id || typeof on !== 'boolean') return
+    workspaceMgr?.setResident(id, on)
   })
 
   ipcMain.handle('sessions:forceClose', async (_e, id: unknown): Promise<{ ok: boolean }> => {

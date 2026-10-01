@@ -533,3 +533,19 @@ describe('migrateLayout: v5 → v6, the Workbench state map is renamed from `ses
     })
   })
 })
+
+it('a v6 document keeps its Keep running marks across a reload, and drops an entry that is not an id', () => {
+  const out = migrateLayout(
+    {
+      version: 6,
+      workspaces: [{ path: '/repo' }],
+      workbench: { defaultOpen: true },
+      members: ['claude-a'],
+      panels: {},
+      resident: ['claude-a', 'codex:local:00000000-0000-0000-0000-000000000001', 7, '']
+    },
+    deps
+  )
+  expect(out.resident).toEqual(['claude-a', 'codex:local:00000000-0000-0000-0000-000000000001'])
+  expect(migrateLayout(JSON.parse(serializeLayout(out)), deps)).toEqual(out)
+})

@@ -1001,6 +1001,9 @@ body {
   font-size: 10.5px;
   color: var(--fg-faint);
 }
+.menu .mi .k.on {
+  color: var(--accent);
+}
 .menu .sep {
   height: 1px;
   background: var(--line);
@@ -5127,12 +5130,14 @@ input.switch:focus-visible {
   font-weight: 600;
 }
 .ws-tab-cron,
+.ws-tab-resident,
 .ws-tab-opened {
   flex: 0 0 auto;
   display: flex;
   color: var(--accent);
 }
-.ws-tab.cold .ws-tab-cron {
+.ws-tab.cold .ws-tab-cron,
+.ws-tab.cold .ws-tab-resident {
   opacity: 0.6;
 }
 .modal.cronjobs {

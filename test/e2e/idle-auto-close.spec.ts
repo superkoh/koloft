@@ -85,3 +85,46 @@ test('an idle session closes itself quietly once its needs-you mark is seen (win
     await quitAndClose(app)
   }
 })
+
+test('a Keep running session is never closed for being idle, while an unmarked one beside it is', async ({
+  env
+}) => {
+  test.setTimeout(120_000)
+  env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+  env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_CLOSE_AND_EACH_REFUSAL_MS)
+  seedSettings(env, { hintsOff: true })
+
+  const app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await page.waitForLoadState('domcontentloaded')
+    await waitBooted(page)
+    const row = (title: string): Locator => page.locator('.ws-tab', { hasText: title })
+
+    setNextSessionTitle(env, 'Resident A')
+    await startSessionIn(page, 'ws-a')
+    const [a] = await waitForCalls(env, 1)
+    await row('Resident A').click({ button: 'right' })
+    await page.locator('.menu .mi', { hasText: 'Keep running' }).click()
+    await expect(row('Resident A').locator('.ws-tab-resident')).toBeVisible()
+
+    setNextSessionTitle(env, 'Idle C')
+    await startSessionIn(page, 'ws-b')
+    const [, c] = await waitForCalls(env, 2)
+    setNextSessionTitle(env, 'Open B')
+    await startSessionIn(page, 'ws-a')
+    await waitForCalls(env, 3)
+
+    await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(3)
+    await row('Resident A').click()
+    await row('Idle C').click()
+    await row('Open B').click()
+    await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
+
+    await expect.poll(() => processAlive(c.pid), { timeout: 40_000 }).toBe(false)
+    expect(processAlive(a.pid)).toBe(true)
+    await expect(row('Resident A')).not.toHaveClass(/\bcold\b/)
+  } finally {
+    await quitAndClose(app)
+  }
+})

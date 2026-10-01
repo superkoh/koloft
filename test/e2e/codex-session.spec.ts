@@ -685,6 +685,36 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
+  test('a Codex session marked Keep running starts again by itself when Koloft reopens, with its native identity, and selects nothing', async ({
+    env
+  }) => {
+    installCodex(env)
+    let app = await launchApp(env)
+    try {
+      let page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      const first = codexCalls(env)[0]
+      await openMenu(page, codexRows(page))
+      await page.locator('.menu .mi', { hasText: 'Keep running' }).click()
+      await expect(codexRows(page).locator('.ws-tab-resident')).toBeVisible()
+      await quitAndClose(app)
+      await expect.poll(() => processAlive(first.pid)).toBe(false)
+
+      app = await launchApp(env)
+      page = await app.firstWindow()
+      await waitBooted(page)
+      await expect.poll(() => codexCalls(env).length, { timeout: 30_000 }).toBe(2)
+      expect(codexCalls(env)[1].sessionId).toBe(first.sessionId)
+      await expect(codexRows(page)).toHaveClass(/st-(working|waiting|idle)/, { timeout: 30_000 })
+      await expect(codexRows(page).locator('.ws-tab-resident')).toBeVisible()
+      await expect(wsRows(page, 'ws-a').and(page.locator('.active'))).toHaveCount(0)
+      expect(readCalls(env)).toHaveLength(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('workspace removal counts and stops both CLI runs while preserving their histories', async ({
     env
   }) => {

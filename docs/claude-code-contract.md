@@ -866,6 +866,10 @@ sessions plus a tmux probe, 2026-09-23, CC 2.1.281 (bullets below).
     running, a resumed id included.
   - `/clear` rewrites `sessionId` to the new id within seconds.
   - A SIGTERM'd claude removes its entry; so does a tmux kill.
+  - **Closing its terminal removes the entry within ~0.02 s**, and the process is gone
+    within ~1 s (two runs, 2026-09-29, CC 2.1.285: a python pty whose master fd was
+    closed, the way Koloft's own exit closes every tab). So a Koloft that relaunches
+    does not find its last run's sessions still registered.
   - A `kill -9`'d claude **leaves its entry behind**.
   - `procStart` is `ps -o lstart=` for that pid printed in UTC (`TZ=UTC`,
     e.g. `Wed Sep 23 20:29:08 2026`). So "pid alive and its UTC `lstart` equals
@@ -874,7 +878,8 @@ sessions plus a tmux probe, 2026-09-23, CC 2.1.281 (bullets below).
     for 7 of 7 entries.
 
 Koloft dependents: `src/main/claudeSessionRegistry.ts`, read before resuming a
-session.
+session; `restoreResident` in `src/main/index.ts`, which starts the Keep running
+sessions once at launch and does not retry one found still registered.
 
 ## §12 The interactive TUI inside a terminal
 

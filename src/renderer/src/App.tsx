@@ -805,16 +805,18 @@ export default function App(): JSX.Element {
   )
 
   useEffect(() => {
-    const offSpawned = window.api.terminal.onSpawned((t) =>
+    const offSpawned = window.api.terminal.onSpawned((t) => {
+      if (t.sessionId) rearmResume(t.sessionId)
       useStore.getState().addTabQuiet({
         id: t.id,
         kind: t.kind,
         title: t.title,
         cwd: t.cwd,
         alive: true,
-        jobId: t.jobId
+        jobId: t.jobId,
+        ...(t.sessionId ? { sessionId: t.sessionId, resuming: true } : {})
       })
-    )
+    })
     let pushed = false
     const offState = window.api.cron.onState((s) => {
       pushed = true
