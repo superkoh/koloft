@@ -270,12 +270,14 @@ export function WorkspaceSidebar({
     setMenu({ target, ...pos })
   }
 
-  const armMenu = (el: HTMLElement, target: MenuTarget): void => {
+  const armMenu = (e: MouseEvent, el: HTMLElement, target: MenuTarget): void => {
+    const draggingThrough = e.buttons !== 0
+    if (draggingThrough) return
     hoverTimer.current = setTimeout(() => openMenuAt(el, target), HOVER_MENU_MS)
   }
   const armHoverMenu = (e: MouseEvent, target: MenuTarget): void => {
     clearTimers()
-    armMenu(e.currentTarget as HTMLElement, target)
+    armMenu(e, e.currentTarget as HTMLElement, target)
   }
   const scheduleClose = (): void => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current)
@@ -745,7 +747,7 @@ export function WorkspaceSidebar({
                           ? (e) => {
                               leaveCard()
                               const head = (e.currentTarget as HTMLElement).closest('.ws-head')
-                              armMenu(head as HTMLElement, wsTarget)
+                              armMenu(e, head as HTMLElement, wsTarget)
                             }
                           : undefined
                       }
