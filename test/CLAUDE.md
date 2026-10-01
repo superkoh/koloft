@@ -145,7 +145,9 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `document.activeElement`, never `document.hasFocus()` (platform ledger §10). For the
   same reason no tab is ever "watched": every finished turn leaves an attention mark,
   seen only through `pendingAttention(page)`, and main's `__koloftOsNotifCount` must
-  stay 0.
+  stay 0. A case about what a focused user clears calls `pretendWindowFocused(app)`
+  (helpers/app.ts): main then reads its window as focused, and the click it makes
+  counts as "watching".
 - Never reach real OS UI or the developer's own state. No native dialog: stub and count
   it (restart-session `countConfirmationsInsteadOfShowingThem`). File pickers answer
   from a queue (`answerFileDialog`; an empty queue means "cancelled"); add workspaces

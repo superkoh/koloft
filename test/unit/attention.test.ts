@@ -1,16 +1,16 @@
 import { describe, it, expect } from 'vitest'
-import { AttentionTracker, type AttentionContext } from '../../src/main/attention'
+import { AttentionTracker, type AttentionContext, type SavedMark } from '../../src/main/attention'
 import type { AttentionEvent } from '../../src/shared/types'
 
 const UNFOCUSED: AttentionContext = { windowFocused: false, activeTabId: 'tab-A' }
 const WATCHING_A: AttentionContext = { windowFocused: true, activeTabId: 'tab-A' }
 
-function makeTracker(): {
+function makeTracker(lastRun?: SavedMark[]): {
   t: AttentionTracker
   changes: { pending: AttentionEvent[]; event: AttentionEvent | null }[]
 } {
   const changes: { pending: AttentionEvent[]; event: AttentionEvent | null }[] = []
-  const t = new AttentionTracker((pending, event) => changes.push({ pending, event }))
+  const t = new AttentionTracker((pending, event) => changes.push({ pending, event }), lastRun)
   return { t, changes }
 }
 
@@ -113,6 +113,48 @@ describe('attention — title and session snapshot survive the session they name
     t.clearSession('sid-A')
     expect(t.list()).toEqual([expect.objectContaining({ tabId: 'tab-B' })])
     expect(changes.at(-1)).toMatchObject({ event: null })
+  })
+})
+
+describe('attention — unread marks outlive a Koloft restart', () => {
+  const lastRun: SavedMark[] = [
+    { tabId: 'old-1', kind: 'turn-done', at: 1, title: 'Done one', sessionId: 'sid-1' },
+    { tabId: 'old-2', kind: 'approval', at: 2, sessionId: 'sid-2' }
+  ]
+
+  it('loads the last run’s marks silently — no notification or sound on launch', () => {
+    const { t, changes } = makeTracker(lastRun)
+    expect(changes).toEqual([])
+    expect(t.list()).toEqual([
+      expect.objectContaining({ sessionId: 'sid-1', kind: 'turn-done' }),
+      expect.objectContaining({ sessionId: 'sid-2' })
+    ])
+  })
+
+  it('an approval from the last run comes back as turn-done — the prompt died with the process', () => {
+    const { t } = makeTracker(lastRun)
+    expect(t.list().find((e) => e.sessionId === 'sid-2')?.kind).toBe('turn-done')
+  })
+})
+
+describe('attention — a session starting again keeps its unread mark unless the user is watching it', () => {
+  it('moves the mark onto the new tab as turn-done, silently, where visiting clears it', () => {
+    const { t, changes } = makeTracker()
+    t.onExited('tab-old', UNFOCUSED, { title: 'Done one', sessionId: 'sid-1' })
+    const raisedBefore = changes.filter((c) => c.event && !c.event.resurrected).length
+    t.bound('tab-new', 'sid-1', UNFOCUSED)
+    expect(t.list()).toEqual([
+      expect.objectContaining({ tabId: 'tab-new', kind: 'turn-done', title: 'Done one' })
+    ])
+    expect(changes.filter((c) => c.event && !c.event.resurrected)).toHaveLength(raisedBefore)
+    t.clear('tab-new')
+    expect(t.list()).toEqual([])
+  })
+
+  it('drops the mark when the session starts in the tab the user is watching', () => {
+    const { t } = makeTracker([{ tabId: 'old-1', kind: 'exited', at: 1, sessionId: 'sid-1' }])
+    t.bound('tab-A', 'sid-1', WATCHING_A)
+    expect(t.list()).toEqual([])
   })
 })
 
