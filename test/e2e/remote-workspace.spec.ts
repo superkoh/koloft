@@ -304,7 +304,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
-  test('E-RW-21: in a remote markdown file, a relative link and a path:line both open the file on the machine', async ({
+  test('E-RW-22: in a remote markdown file, a relative link and a path:line both open the file on the machine', async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -331,7 +331,8 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await body.locator('a', { hasText: 'open a' }).click({ timeout: 30_000 })
       await expect(title).toContainText('a.ts', { timeout: 30_000 })
 
-      await openInBrowse(page, doc)
+      await showBrowse(page)
+      await browseRow(page, doc).click()
       await body.locator('a.md-fileref', { hasText: 'src/b.ts:1' }).click({ timeout: 30_000 })
       await expect(title).toContainText('b.ts', { timeout: 30_000 })
     } finally {
