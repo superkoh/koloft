@@ -30,10 +30,9 @@ import {
   wbActiveTab
 } from './helpers/workbench'
 
-const CARD = '.wb-peek'
-const card = (page: Page): Locator => page.locator(CARD)
-const diffLabel = (page: Page): Locator => page.locator(`${CARD} .wb-tab.pinned .lb`)
-const docRows = (page: Page): Locator => page.locator(`${CARD} .ft-node`)
+const card = (page: Page): Locator => page.locator(WORKBENCH.previewCard)
+const diffLabel = (page: Page): Locator => page.locator(WORKBENCH.previewDiffLabel)
+const docRows = (page: Page): Locator => page.locator(WORKBENCH.previewDocs)
 const docNames = (page: Page): Promise<string[]> =>
   docRows(page).locator('.ft-name').allInnerTexts()
 const readingView = (page: Page): Locator =>
@@ -120,7 +119,7 @@ test.describe('Workbench preview: the card beside the terminal while the Workben
       await waitPanelAttached(page)
       await expect.poll(() => layoutState(page)).toBe('T1')
       await expect(diffLabel(page)).toHaveText('2 files', { timeout: 30_000 })
-      await page.locator(`${CARD} .wb-tab.pinned`).click()
+      await page.locator(WORKBENCH.previewDiff).click()
       await expect.poll(() => layoutState(page)).toBe('T2')
       await expect(page.locator(`${WORKBENCH.panel} .fv`)).toHaveAttribute('data-view', 'changes')
     } finally {

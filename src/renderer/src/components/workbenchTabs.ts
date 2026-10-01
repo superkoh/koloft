@@ -157,17 +157,21 @@ export function openTab(
       return { set: activateTab(withLine, hit.id), tabId: hit.id, created: false, evicted: null }
     }
     const at = opts.agentOpenedAt
-    const stamped =
-      at === undefined
-        ? set
-        : { ...set, tabs: set.tabs.map((t) => (t.id === hit.id ? { ...t, agentOpenedAt: at } : t)) }
-    if (hit.id === set.activeId) {
-      return { set: stamped, tabId: hit.id, created: false, evicted: null }
+    if (hit.id === set.activeId && at === undefined) {
+      return { set, tabId: hit.id, created: false, evicted: null }
     }
     return {
       set: {
-        ...stamped,
-        tabs: stamped.tabs.map((t) => (t.id === hit.id ? { ...t, unread: true } : t))
+        ...set,
+        tabs: set.tabs.map((t) =>
+          t.id === hit.id
+            ? {
+                ...t,
+                ...(at !== undefined && { agentOpenedAt: at }),
+                ...(hit.id !== set.activeId && { unread: true })
+              }
+            : t
+        )
       },
       tabId: hit.id,
       created: false,

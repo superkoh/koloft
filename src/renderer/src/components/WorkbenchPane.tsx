@@ -64,7 +64,7 @@ import {
 import { FindBar } from './FindBar'
 import { NO_FOCUS_SIGNAL, TerminalView } from './TerminalView'
 import { FilesBar, FilesBody, useFilesController } from './FilesView'
-import { useGitChangeSet } from './gitChangeSet'
+import { useGitChangeSet, useWatchlessRefresh } from './gitChangeSet'
 import { GIT_LETTER, relOf, splitPath } from './filesModel'
 import { ArtifactPane, NO_CAPS, sameCaps, type ArtifactCaps } from './ArtifactPane'
 import { EditPane, editRefusal, useEditProbe } from './EditPane'
@@ -1346,21 +1346,11 @@ export function WorkbenchPane({
     return () => el.removeEventListener('found-in-page', onFound)
   }, [findOpen, activeTab?.id, live])
 
-  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const refresh = files.refresh
-  useEffect(() => {
-    if (!watchDead || !visible || refreshTimer.current) return
-    refreshTimer.current = setTimeout(() => {
-      refreshTimer.current = null
-      refresh()
-    }, WATCHLESS_REFRESH_THROTTLE_MS)
-  }, [watchDead, visible, session?.updatedAt, refresh])
-  useEffect(
-    () => () => {
-      if (refreshTimer.current) clearTimeout(refreshTimer.current)
-      refreshTimer.current = null
-    },
-    [watchDead, visible, treeRoot]
+  useWatchlessRefresh(
+    watchDead && visible,
+    session?.updatedAt,
+    WATCHLESS_REFRESH_THROTTLE_MS,
+    files.refresh
   )
 
   const reportCaps = useCallback((tabId: string, next: ArtifactCaps): void => {

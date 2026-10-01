@@ -886,13 +886,14 @@ export class SessionTracker extends SessionRuntime {
     void this.parse(t)
   }
 
-  private resolvePath(raw: string, cwd: string, remote: boolean): string | null {
+  private resolvePath(t: Tracked, raw: string): string | null {
     let p = raw
     if (p === '~' || p === '~/') return null
     if (p.startsWith('~/')) {
-      if (remote) return null
+      // ADR-0025
+      if (t.remote) return null
       p = path.join(os.homedir(), p.slice(2))
-    } else if (!path.isAbsolute(p)) p = path.resolve(cwd, p)
+    } else if (!path.isAbsolute(p)) p = path.resolve(t.info.cwd, p)
     return p
   }
 
@@ -1296,7 +1297,7 @@ export class SessionTracker extends SessionRuntime {
           }
           // CC§2
           const raw = toolFilePath(b.input)
-          const fp = raw ? this.resolvePath(raw, t.info.cwd, !!t.remote) : null
+          const fp = raw ? this.resolvePath(t, raw) : null
           if (!fp) continue
           if (WRITE_TOOLS.has(b.name)) {
             const { added, removed } = editDelta(b.name, b.input)

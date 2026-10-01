@@ -1088,15 +1088,15 @@ export default function App(): JSX.Element {
     return () => ro.disconnect()
   }, [panelMounted])
   const centerRef = useRef<HTMLDivElement>(null)
-  const [centerWidth, setCenterWidth] = useState(0)
+  const [previewFits, setPreviewFits] = useState(false)
   useEffect(() => {
     const el = centerRef.current
     if (!el) return undefined
-    const ro = new ResizeObserver(() => setCenterWidth(el.offsetWidth))
+    const ro = new ResizeObserver(() => setPreviewFits(previewCardFits(el.offsetWidth)))
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
-  const previewShown = !!panelTab && panelReady && !panelShown && previewCardFits(centerWidth)
+  const previewShown = !!panelTab && panelReady && !panelShown && previewFits
   const SIDEBAR_MIN = 200
   const startVResize = (e: MouseEvent): void => {
     e.preventDefault()
@@ -1545,7 +1545,6 @@ export default function App(): JSX.Element {
           )}
           {previewShown && panelTab && (
             <WorkbenchPreview
-              key={panelTab}
               tabId={panelTab}
               root={fileTreeRoot}
               session={landedSession ?? null}

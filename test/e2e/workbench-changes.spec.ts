@@ -46,11 +46,7 @@ const CV = {
   empty: '.wb-panel .cv-empty'
 } as const
 
-const PREVIEW = {
-  card: '.wb-peek',
-  diff: '.wb-peek .wb-tab.pinned'
-} as const
-const previewLabel = (page: Page): Locator => page.locator(`${PREVIEW.diff} .lb`)
+const previewLabel = (page: Page): Locator => page.locator(WORKBENCH.previewDiffLabel)
 
 const badge = (page: Page): Locator => page.locator('.wb-tab.pinned .cnt')
 const reloadBtn = (page: Page): Locator => page.locator('.wb-bar .icobtn[aria-label="Reload"]')
@@ -907,7 +903,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
 
     await clickAppMenuItem(app, page, 'toggle-browser')
     await expect.poll(() => layoutState(page)).toBe('T2')
-    await expect(page.locator(PREVIEW.card)).toHaveCount(0)
+    await expect(page.locator(WORKBENCH.previewCard)).toHaveCount(0)
     await showChanges(page)
     await waitStream(page, 3)
     await expect(page.locator(CV.total)).toContainText('3 files')
@@ -929,9 +925,9 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
       await startSessionIn(p, 'ws-a')
       await expect.poll(() => layoutState(p)).toBe('T1')
       await expect(previewLabel(p)).toHaveText('2 files')
-      await expect(p.locator(`${PREVIEW.card} .ft-delta .add`)).toHaveText('+2')
+      await expect(p.locator(`${WORKBENCH.previewDiff} .ft-delta .add`)).toHaveText('+2')
 
-      await p.locator(PREVIEW.diff).click()
+      await p.locator(WORKBENCH.previewDiff).click()
       await expect.poll(() => layoutState(p)).toBe('T2')
       await expect(p.locator(`${WORKBENCH.panel} .fv`)).toHaveAttribute('data-view', 'changes')
       await waitStream(p, 2)

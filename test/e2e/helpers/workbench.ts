@@ -45,7 +45,12 @@ export const WORKBENCH = {
   browseRows: '.wb-panel .bv-body .ft-node',
 
   rowMenu: '.ft-ctx[role="menu"]',
-  rowMenuItem: '.ft-ctx .ft-ctx-it'
+  rowMenuItem: '.ft-ctx .ft-ctx-it',
+
+  previewCard: '.wb-peek',
+  previewDiff: '.wb-peek .wb-tab.pinned',
+  previewDiffLabel: '.wb-peek .wb-tab.pinned .lb',
+  previewDocs: '.wb-peek .ft-node'
 } as const
 
 export async function waitPanelAttached(page: Page, timeout = 60_000): Promise<void> {

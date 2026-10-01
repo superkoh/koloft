@@ -14,13 +14,13 @@ const wrote = (src: string, wroteAt: number): PreviewItem => ({
   wroteAt
 })
 
-const webTab = (url: string, agentOpenedAt?: number, openedByAgent = true): WorkbenchTab => ({
+const webTab = (url: string, agentOpenedAt?: number): WorkbenchTab => ({
   id: url,
   kind: 'web',
   url,
   title: '',
-  unread: true,
-  openedByAgent: openedByAgent ? true : undefined,
+  unread: agentOpenedAt !== undefined,
+  openedByAgent: agentOpenedAt !== undefined ? true : undefined,
   agentOpenedAt
 })
 
@@ -37,10 +37,10 @@ describe('Workbench preview card: the docs it lists', () => {
       ],
       webTabs: [
         webTab('file:///tmp/scratch/mock.html', 700),
-        webTab('file:///repo/site/index.html', 600, false),
+        webTab('file:///repo/site/index.html'),
         webTab('https://example.com/page.html', 800)
       ],
-      openFile: { src: '/repo/docs/guide.md', source: 'intercept', openedAt: 400 }
+      openFile: { src: '/repo/docs/guide.md', openedAt: 400 }
     })
     expect(docs.map((d) => d.src)).toEqual([
       '/tmp/scratch/mock.html',
@@ -51,10 +51,10 @@ describe('Workbench preview card: the docs it lists', () => {
     expect(docs[0]).toEqual({ src: '/tmp/scratch/mock.html', kind: 'page', at: 700 })
   })
 
-  it('leaves out a file the user opened in Browse themselves', () => {
+  it('leaves out a file the user opened in Browse themselves, and a page the user opened', () => {
     const docs = previewDocs({
       files: [],
-      webTabs: [],
+      webTabs: [webTab('file:///repo/site/index.html')],
       openFile: { src: '/repo/docs/guide.md' }
     })
     expect(docs).toEqual([])

@@ -565,7 +565,8 @@ export const useStore = create<AppState>((set, get) => ({
               openFiles: move(s.openFiles),
               workbench: move(s.workbench),
               workbenchOpen: move(s.workbenchOpen),
-              workbenchFetched: move(s.workbenchFetched)
+              workbenchFetched: move(s.workbenchFetched),
+              changesBase: move(s.changesBase)
             }
           })
           const parked = workbenchParked.get(oldId)

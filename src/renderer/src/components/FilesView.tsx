@@ -76,7 +76,7 @@ export interface FilesController {
 
 export function useFilesController(tabId: string | null, root: string | null): FilesController {
   const [view, setViewRaw] = useState<FilesTab>('changes')
-  const [baseChoice, setBaseChoiceRaw] = useState<BaseChoice>('merge-base')
+  const baseChoice = useStore((s) => (tabId && s.changesBase[tabId]) || 'merge-base')
   const [filters, setFilters] = useState<ChangeFilters>(DEFAULT_FILTERS)
   const [menu, setMenu] = useState<FilesMenu | null>(null)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -94,13 +94,11 @@ export function useFilesController(tabId: string | null, root: string | null): F
   const openFile = useActiveOpenFile()
 
   const convAnchor = useStore((s) => (tabId ? boundSessionId(s, tabId) : undefined))
-  const parked = useRef(
-    new Map<string, { view: FilesTab; baseChoice: BaseChoice; filters: ChangeFilters }>()
-  )
+  const parked = useRef(new Map<string, { view: FilesTab; filters: ChangeFilters }>())
   const lastTab = useRef<string | null>(tabId)
   const lastAnchor = useRef<string | undefined>(convAnchor)
-  const live = useRef({ view, baseChoice, filters })
-  live.current = { view, baseChoice, filters }
+  const live = useRef({ view, filters })
+  live.current = { view, filters }
   useEffect(() => {
     if (!tabId) return
     const sameTab = tabId === lastTab.current
@@ -108,17 +106,10 @@ export function useFilesController(tabId: string | null, root: string | null): F
     const prevTab = lastTab.current
     lastTab.current = tabId
     if (convAnchor) lastAnchor.current = convAnchor
-    if (sameTab) return
-    if (sameConversation) {
-      useStore.getState().setChangesBase(tabId, live.current.baseChoice)
-      return
-    }
+    if (sameTab || sameConversation) return
     if (prevTab) parked.current.set(prevTab, live.current)
     const next = parked.current.get(tabId)
     setViewRaw(next?.view ?? 'changes')
-    const nextBase = next?.baseChoice ?? 'merge-base'
-    setBaseChoiceRaw(nextBase)
-    useStore.getState().setChangesBase(tabId, nextBase)
     setFilters(next?.filters ?? DEFAULT_FILTERS)
     setMenu(null)
     setSearchOpen(false)
@@ -162,7 +153,6 @@ export function useFilesController(tabId: string | null, root: string | null): F
 
   const setBaseChoice = useCallback(
     (b: BaseChoice): void => {
-      setBaseChoiceRaw(b)
       if (tabId) useStore.getState().setChangesBase(tabId, b)
     },
     [tabId]

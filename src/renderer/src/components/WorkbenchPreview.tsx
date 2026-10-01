@@ -1,21 +1,19 @@
-import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { useCallback, useMemo, useState, type JSX } from 'react'
 import { LuFileText, LuGlobe, LuListTree } from 'react-icons/lu'
 import { routeFor } from '@shared/browserRoute'
 import { basename, dirname } from '@shared/preview'
-import { parseRemoteKey } from '@shared/remoteKey'
 import type { SessionInfo } from '@shared/types'
 import { useStore } from '../store'
 import { CHANGES_MSG } from './changesModel'
-import { useGitChangeSet } from './gitChangeSet'
-import { relOf } from './filesModel'
+import { splitPath } from './filesModel'
+import { useGitChangeSet, useWatchlessRefresh } from './gitChangeSet'
 import { changeTotals, docLanding, previewDocs, type PreviewDoc } from './workbenchPreviewModel'
 
 const WATCHLESS_REFRESH_SPARING_SSH_MS = 10_000
 
 function docDir(src: string, root: string | null): string {
-  const dir = dirname(src)
-  if (root && (dir === root || dir.startsWith(root + '/'))) return relOf(dir, root)
-  return basename(parseRemoteKey(dir)?.path ?? dir)
+  if (root && src.startsWith(root + '/')) return splitPath(src, root).dir.replace(/\/$/, '')
+  return basename(dirname(src))
 }
 
 function openDoc(tabId: string, doc: PreviewDoc): void {
@@ -50,22 +48,8 @@ export function WorkbenchPreview({
 
   const [refreshNonce, setRefreshNonce] = useState(0)
   const { git, numstat, base, watchDead } = useGitChangeSet(root, true, baseChoice, refreshNonce)
-
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  useEffect(() => {
-    if (!watchDead || timer.current) return
-    timer.current = setTimeout(() => {
-      timer.current = null
-      setRefreshNonce((n) => n + 1)
-    }, WATCHLESS_REFRESH_SPARING_SSH_MS)
-  }, [watchDead, session?.updatedAt])
-  useEffect(
-    () => () => {
-      if (timer.current) clearTimeout(timer.current)
-      timer.current = null
-    },
-    [root]
-  )
+  const refresh = useCallback(() => setRefreshNonce((n) => n + 1), [])
+  useWatchlessRefresh(watchDead, session?.updatedAt, WATCHLESS_REFRESH_SPARING_SSH_MS, refresh)
 
   const totals = useMemo(
     () => (root && base ? changeTotals(git, numstat, root) : null),

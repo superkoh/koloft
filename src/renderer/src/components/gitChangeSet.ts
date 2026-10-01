@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { GitNumstatMap, GitStatusMap } from '@shared/types'
 import type { BaseChoice } from './filesModel'
 
@@ -21,6 +21,29 @@ function sameMap<V>(
     if (!(k in b) || !eq(a[k], b[k])) return false
   }
   return true
+}
+
+export function useWatchlessRefresh(
+  enabled: boolean,
+  activityAt: number | undefined,
+  throttleMs: number,
+  refresh: () => void
+): void {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!enabled || timer.current) return
+    timer.current = setTimeout(() => {
+      timer.current = null
+      refresh()
+    }, throttleMs)
+  }, [enabled, activityAt, throttleMs, refresh])
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current)
+      timer.current = null
+    },
+    [enabled]
+  )
 }
 
 export function useGitChangeSet(
