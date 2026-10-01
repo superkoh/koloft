@@ -368,7 +368,6 @@ export interface AttentionEvent extends AttentionSubject {
   kind: AttentionKind
   at: number
   resurrected?: boolean
-  fromLastRun?: boolean
 }
 
 export const ATTENTION_REASON: Record<AttentionKind, string> = {

@@ -328,9 +328,12 @@ let activeTabBeforeReload: string | null = null
 function sessionOfTab(tabId: string): SessionInfo | undefined {
   return allSessions().find((s) => s.tabId === tabId)
 }
-function sessionIdsOfWorkspace(wsPath: string): string[] {
-  const ws = workspaceMgr?.rows().find((w) => w.workspace.path === wsPath)
-  return ws?.rows.map((r) => r.id) ?? []
+function markedSessionsOf(wsPath: string): string[] {
+  return attention
+    .list()
+    .flatMap((e) =>
+      e.sessionId && workspaceMgr?.workspaceOf(e.sessionId) === wsPath ? [e.sessionId] : []
+    )
 }
 function attentionSubjectOf(tabId: string): AttentionSubject {
   const s = sessionOfTab(tabId)
@@ -2654,11 +2657,11 @@ function registerIpc(): void {
     return r
   })
   ipcMain.handle('workspace:remove', (_e, p: string) => {
-    const rows = sessionIdsOfWorkspace(p)
+    const marked = markedSessionsOf(p)
     const r = workspaceMgr?.remove(p)
     if (r?.removed) {
       cronRunner?.removeWorkspace(p)
-      for (const id of rows) attention.clearSession(id)
+      for (const id of marked) attention.clearSession(id)
     }
     return r
   })
@@ -2670,10 +2673,10 @@ function registerIpc(): void {
         .filter((id): id is string => !!id)
     )
     await Promise.all([...codexTabs].map((id) => codexSessions?.stop(id)))
-    const rows = sessionIdsOfWorkspace(p)
+    const marked = markedSessionsOf(p)
     workspaceMgr?.removeConfirmed(p)
     cronRunner?.removeWorkspace(p)
-    for (const id of rows) attention.clearSession(id)
+    for (const id of marked) attention.clearSession(id)
   })
   ipcMain.handle('workspace:rows', async () => {
     await workspaceMgr?.firstScan
@@ -2736,8 +2739,9 @@ function registerIpc(): void {
   })
   ipcMain.handle('sessions:archive', (_e, id: unknown): boolean => {
     if (typeof id !== 'string' || !id) return false
-    attention.clearSession(id)
-    return sessionBackends.forSession(id).archive(id)
+    const archived = sessionBackends.forSession(id).archive(id)
+    if (archived) attention.clearSession(id)
+    return archived
   })
 
   ipcMain.on('sessions:setResident', (_e, id: unknown, on: unknown) => {

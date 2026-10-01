@@ -1,16 +1,16 @@
 import { describe, it, expect } from 'vitest'
-import { AttentionTracker, type AttentionContext } from '../../src/main/attention'
+import { AttentionTracker, type AttentionContext, type SavedMark } from '../../src/main/attention'
 import type { AttentionEvent } from '../../src/shared/types'
 
 const UNFOCUSED: AttentionContext = { windowFocused: false, activeTabId: 'tab-A' }
 const WATCHING_A: AttentionContext = { windowFocused: true, activeTabId: 'tab-A' }
 
-function makeTracker(): {
+function makeTracker(lastRun?: SavedMark[]): {
   t: AttentionTracker
   changes: { pending: AttentionEvent[]; event: AttentionEvent | null }[]
 } {
   const changes: { pending: AttentionEvent[]; event: AttentionEvent | null }[] = []
-  const t = new AttentionTracker((pending, event) => changes.push({ pending, event }))
+  const t = new AttentionTracker((pending, event) => changes.push({ pending, event }), lastRun)
   return { t, changes }
 }
 
@@ -117,60 +117,43 @@ describe('attention — title and session snapshot survive the session they name
 })
 
 describe('attention — unread marks outlive a Koloft restart', () => {
-  const lastRun: AttentionEvent[] = [
+  const lastRun: SavedMark[] = [
     { tabId: 'old-1', kind: 'turn-done', at: 1, title: 'Done one', sessionId: 'sid-1' },
-    { tabId: 'old-2', kind: 'approval', at: 2, sessionId: 'sid-2' },
-    { tabId: 'old-3', kind: 'exited', at: 3 }
+    { tabId: 'old-2', kind: 'approval', at: 2, sessionId: 'sid-2' }
   ]
-  const restarted = (): ReturnType<typeof makeTracker> => {
-    const changes: { pending: AttentionEvent[]; event: AttentionEvent | null }[] = []
-    const t = new AttentionTracker((pending, event) => changes.push({ pending, event }), lastRun)
-    return { t, changes }
-  }
 
   it('loads the last run’s marks silently — no notification or sound on launch', () => {
-    const { t, changes } = restarted()
+    const { t, changes } = makeTracker(lastRun)
     expect(changes).toEqual([])
     expect(t.list()).toEqual([
-      expect.objectContaining({ sessionId: 'sid-1', kind: 'turn-done', fromLastRun: true }),
-      expect.objectContaining({ sessionId: 'sid-2', fromLastRun: true })
+      expect.objectContaining({ sessionId: 'sid-1', kind: 'turn-done' }),
+      expect.objectContaining({ sessionId: 'sid-2' })
     ])
   })
 
   it('an approval from the last run comes back as turn-done — the prompt died with the process', () => {
-    const { t } = restarted()
+    const { t } = makeTracker(lastRun)
     expect(t.list().find((e) => e.sessionId === 'sid-2')?.kind).toBe('turn-done')
   })
+})
 
-  it('a mark with no session id is not brought back — its tab is gone and no row can show it', () => {
-    const { t } = restarted()
-    expect(t.list().some((e) => e.tabId === 'old-3')).toBe(false)
-  })
-
-  it('a session resumed in a tab the user is not watching keeps its mark, now on that tab, silently', () => {
-    const { t, changes } = restarted()
+describe('attention — a session starting again keeps its unread mark unless the user is watching it', () => {
+  it('moves the mark onto the new tab as turn-done, silently, where visiting clears it', () => {
+    const { t, changes } = makeTracker()
+    t.onExited('tab-old', UNFOCUSED, { title: 'Done one', sessionId: 'sid-1' })
+    const raisedBefore = changes.filter((c) => c.event && !c.event.resurrected).length
     t.bound('tab-new', 'sid-1', UNFOCUSED)
-    expect(t.list().find((e) => e.sessionId === 'sid-1')).toMatchObject({
-      tabId: 'tab-new',
-      title: 'Done one',
-      resurrected: true
-    })
-    expect(t.list().find((e) => e.sessionId === 'sid-1')?.fromLastRun).toBeFalsy()
+    expect(t.list()).toEqual([
+      expect.objectContaining({ tabId: 'tab-new', kind: 'turn-done', title: 'Done one' })
+    ])
+    expect(changes.filter((c) => c.event && !c.event.resurrected)).toHaveLength(raisedBefore)
     t.clear('tab-new')
-    expect(t.list().some((e) => e.sessionId === 'sid-1')).toBe(false)
-    expect(changes.some((c) => c.event && !c.event.resurrected)).toBe(false)
+    expect(t.list()).toEqual([])
   })
 
-  it('a session resumed into the tab the user is watching drops its mark', () => {
-    const { t } = restarted()
+  it('drops the mark when the session starts in the tab the user is watching', () => {
+    const { t } = makeTracker([{ tabId: 'old-1', kind: 'exited', at: 1, sessionId: 'sid-1' }])
     t.bound('tab-A', 'sid-1', WATCHING_A)
-    expect(t.list().some((e) => e.sessionId === 'sid-1')).toBe(false)
-  })
-
-  it('a mark raised in this run is still dropped when its session binds again', () => {
-    const { t } = makeTracker()
-    t.onExited('tab-A', UNFOCUSED, { sessionId: 'sid-A' })
-    t.bound('tab-B', 'sid-A', UNFOCUSED)
     expect(t.list()).toEqual([])
   })
 })
