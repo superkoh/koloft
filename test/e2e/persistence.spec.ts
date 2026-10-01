@@ -56,7 +56,9 @@ test('restart lands cold (T-LIFE-09 across a real relaunch): session listed unse
   await app2.close()
 })
 
-test('an unread red dot survives a real relaunch on the session’s cold row', async ({ env }) => {
+test('an unread red dot survives a real relaunch on the session’s cold row, and clicking the row in a focused window clears it', async ({
+  env
+}) => {
   const app1 = await launchApp(env)
   const page1 = await app1.firstWindow()
   await page1.waitForLoadState('domcontentloaded')
@@ -74,6 +76,16 @@ test('an unread red dot survives a real relaunch on the session’s cold row', a
   await expect(row).toHaveClass(/\bcold\b/, { timeout: 20_000 })
   await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
   await expect.poll(() => pendingAttention(page2)).toMatchObject([{ kind: 'turn-done' }])
+
+  await app2.evaluate(({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows()[0]
+    win.isFocused = () => true
+    win.emit('focus')
+  })
+  await row.click()
+  await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+  await expect(row.locator('.ws-tab-unread')).toHaveCount(0)
+  expect(await pendingAttention(page2)).toEqual([])
   await app2.close()
 })
 

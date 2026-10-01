@@ -685,6 +685,38 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
+  test('a Codex session’s unread red dot survives a Koloft restart on its cold row, and clicking the row in a focused window clears it', async ({
+    env
+  }) => {
+    installCodex(env)
+    let app = await launchApp(env)
+    try {
+      let page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await expect(codexRows(page).locator('.ws-tab-unread')).toHaveCount(1)
+      await quitAndClose(app)
+
+      app = await launchApp(env)
+      page = await app.firstWindow()
+      await waitBooted(page)
+      await expect(codexRows(page)).toHaveClass(/cold/)
+      await expect(codexRows(page).locator('.ws-tab-unread')).toHaveCount(1)
+
+      await app.evaluate(({ BrowserWindow }) => {
+        const win = BrowserWindow.getAllWindows()[0]
+        win.isFocused = () => true
+        win.emit('focus')
+      })
+      await codexRows(page).click()
+      await expect.poll(() => codexCalls(env).length).toBe(2)
+      await expect(codexRows(page)).toHaveClass(/st-waiting/)
+      await expect(codexRows(page).locator('.ws-tab-unread')).toHaveCount(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('a Codex session marked Keep running starts again by itself when Koloft reopens, with its native identity, and selects nothing', async ({
     env
   }) => {
