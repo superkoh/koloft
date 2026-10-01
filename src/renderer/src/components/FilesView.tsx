@@ -76,7 +76,7 @@ export interface FilesController {
 
 export function useFilesController(tabId: string | null, root: string | null): FilesController {
   const [view, setViewRaw] = useState<FilesTab>('changes')
-  const [baseChoice, setBaseChoice] = useState<BaseChoice>('merge-base')
+  const [baseChoice, setBaseChoiceRaw] = useState<BaseChoice>('merge-base')
   const [filters, setFilters] = useState<ChangeFilters>(DEFAULT_FILTERS)
   const [menu, setMenu] = useState<FilesMenu | null>(null)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -108,11 +108,17 @@ export function useFilesController(tabId: string | null, root: string | null): F
     const prevTab = lastTab.current
     lastTab.current = tabId
     if (convAnchor) lastAnchor.current = convAnchor
-    if (sameTab || sameConversation) return
+    if (sameTab) return
+    if (sameConversation) {
+      useStore.getState().setChangesBase(tabId, live.current.baseChoice)
+      return
+    }
     if (prevTab) parked.current.set(prevTab, live.current)
     const next = parked.current.get(tabId)
     setViewRaw(next?.view ?? 'changes')
-    setBaseChoice(next?.baseChoice ?? 'merge-base')
+    const nextBase = next?.baseChoice ?? 'merge-base'
+    setBaseChoiceRaw(nextBase)
+    useStore.getState().setChangesBase(tabId, nextBase)
     setFilters(next?.filters ?? DEFAULT_FILTERS)
     setMenu(null)
     setSearchOpen(false)
@@ -143,7 +149,8 @@ export function useFilesController(tabId: string | null, root: string | null): F
     if (!filesReveal || filesReveal.nonce === revealed.current) return
     if (filesReveal.tabId !== tabId) return
     revealed.current = filesReveal.nonce
-    setViewRaw('browse')
+    setViewRaw(filesReveal.view)
+    if (filesReveal.view !== 'browse') return
     const src = useStore.getState().openFiles[filesReveal.tabId]?.src
     if (!root || !src) return
     setRecents((prevList) => {
@@ -152,6 +159,14 @@ export function useFilesController(tabId: string | null, root: string | null): F
       return next
     })
   }, [filesReveal, root, tabId])
+
+  const setBaseChoice = useCallback(
+    (b: BaseChoice): void => {
+      setBaseChoiceRaw(b)
+      if (tabId) useStore.getState().setChangesBase(tabId, b)
+    },
+    [tabId]
+  )
 
   const setView = useCallback((v: FilesTab): void => {
     setViewRaw(v)

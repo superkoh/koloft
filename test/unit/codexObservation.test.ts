@@ -370,8 +370,21 @@ describe('CodexObservation', () => {
     expect(f.files()).toEqual({
       type: 'files-changed',
       files: [
-        { src: '/repo/added.txt', label: 'added.txt', access: 'wrote', added: 1 },
-        { src: '/repo/notes.txt', label: 'notes.txt', access: 'wrote', added: 1, removed: 1 },
+        {
+          src: '/repo/added.txt',
+          label: 'added.txt',
+          access: 'wrote',
+          added: 1,
+          wroteAt: expect.any(Number)
+        },
+        {
+          src: '/repo/notes.txt',
+          label: 'notes.txt',
+          access: 'wrote',
+          added: 1,
+          removed: 1,
+          wroteAt: expect.any(Number)
+        },
         { src: '/repo/docs/a.md', label: 'a.md', access: 'read' }
       ],
       lastTouched: '/repo/docs/a.md',
@@ -440,7 +453,13 @@ describe('CodexObservation', () => {
     expect(f.files()).toEqual({
       type: 'files-changed',
       files: [
-        { src: '/repo/old.txt', label: 'old.txt', access: 'wrote', added: 1 },
+        {
+          src: '/repo/old.txt',
+          label: 'old.txt',
+          access: 'wrote',
+          added: 1,
+          wroteAt: expect.any(Number)
+        },
         { src: '/repo/docs/a.md', label: 'a.md', access: 'read' }
       ],
       lastTouched: '/repo/docs/a.md',

@@ -235,6 +235,16 @@ export function paneWidthFromDrag(
   return Math.min(Math.max(floor, paneRight - clientX), ceiling)
 }
 
+export const PREVIEW_CARD_WIDTH_PX = 264
+const CENTER_ROW_RIGHT_PADDING_PX = 10
+
+export function previewCardFits(centerWidth: number): boolean {
+  return (
+    centerWidth - CENTER_ROW_RIGHT_PADDING_PX - PREVIEW_CARD_WIDTH_PX >=
+    TUI_MIN_WIDTH_PX + TUI_CHROME_PX
+  )
+}
+
 export const SESSIONS_MIN_HEIGHT = 160
 
 export const DOCK_GUTTER_PX = 10

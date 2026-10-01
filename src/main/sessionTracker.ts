@@ -886,11 +886,13 @@ export class SessionTracker extends SessionRuntime {
     void this.parse(t)
   }
 
-  private resolvePath(raw: string, cwd: string): string | null {
+  private resolvePath(raw: string, cwd: string, remote: boolean): string | null {
     let p = raw
     if (p === '~' || p === '~/') return null
-    if (p.startsWith('~/')) p = path.join(os.homedir(), p.slice(2))
-    else if (!path.isAbsolute(p)) p = path.resolve(cwd, p)
+    if (p.startsWith('~/')) {
+      if (remote) return null
+      p = path.join(os.homedir(), p.slice(2))
+    } else if (!path.isAbsolute(p)) p = path.resolve(cwd, p)
     return p
   }
 
@@ -1294,11 +1296,11 @@ export class SessionTracker extends SessionRuntime {
           }
           // CC§2
           const raw = toolFilePath(b.input)
-          const fp = raw ? this.resolvePath(raw, t.info.cwd) : null
+          const fp = raw ? this.resolvePath(raw, t.info.cwd, !!t.remote) : null
           if (!fp) continue
           if (WRITE_TOOLS.has(b.name)) {
             const { added, removed } = editDelta(b.name, b.input)
-            noteWrite(t.candidates, fp, added, removed)
+            noteWrite(t.candidates, fp, added, removed, isFinite(recTs) ? recTs : Date.now())
             t.lastTouchedAbs = fp
             t.lastWrittenAbs = fp
             if (liveNow) t.info.liveWrites = (t.info.liveWrites ?? 0) + 1
@@ -1406,7 +1408,10 @@ export class SessionTracker extends SessionRuntime {
       if (ex) {
         ex.added = (ex.added ?? 0) + acc.added
         ex.removed = (ex.removed ?? 0) + acc.removed
-        if (acc.access === 'wrote') ex.access = 'wrote'
+        if (acc.access === 'wrote') {
+          ex.access = 'wrote'
+          ex.wroteAt = Math.max(ex.wroteAt ?? 0, acc.wroteAt)
+        }
       } else {
         byCanon.set(canon, touchedItem(canon, acc))
       }
@@ -1436,6 +1441,8 @@ export class SessionTracker extends SessionRuntime {
   private canonFile(t: Tracked, abs: string): string | null {
     const cached = t.fileCache.get(abs)
     if (cached !== undefined) return cached
+    // ADR-0025
+    if (t.remote) return abs
     try {
       if (fs.statSync(abs).isFile()) {
         const real = fs.realpathSync(abs)

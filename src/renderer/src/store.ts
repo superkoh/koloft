@@ -23,6 +23,7 @@ import {
 import { basename } from '@shared/preview'
 import { routeFor } from '@shared/browserRoute'
 import type { LoginFlowState } from './components/settings/loginFlow'
+import type { BaseChoice, FilesTab } from './components/filesModel'
 import type { ResumeDialogState } from './resumeFlow'
 import { endEditsOf, rekeyOwner } from './editRegistry'
 import { selectionRoot } from './sessionRows'
@@ -62,6 +63,7 @@ export interface OpenFile {
   source?: 'intercept'
   view?: ArtifactView
   unseen?: true
+  openedAt?: number
 }
 
 export type UpdatePhase =
@@ -104,7 +106,8 @@ interface AppState {
   workbenchFetched: Record<string, true>
   workbenchLoad: { ownerTabId: string; tabId: string; nonce: number } | null
   agentOpen: { ownerTabId: string; tabId: string; nonce: number } | null
-  filesReveal: { tabId: string; nonce: number } | null
+  filesReveal: { tabId: string; nonce: number; view: FilesTab } | null
+  changesBase: Record<string, BaseChoice>
   workbenchFull: boolean
   overlay: { url: string; unread: boolean; open: boolean } | null
   cdpAttached: Record<string, string[]>
@@ -160,6 +163,8 @@ interface AppState {
   setLoginProgress: (p: LoginProgress) => void
   clearLogin: () => void
   setOpenFile: (f: OpenFile | null, tabId?: string) => void
+  openChanges: (tabId: string) => void
+  setChangesBase: (tabId: string, base: BaseChoice) => void
   setWorkbenchWidth: (w: number) => void
   setTabWorkbenchWidth: (tabId: string, w: number) => void
   setSidebarWidth: (w: number) => void
@@ -382,6 +387,7 @@ export const useStore = create<AppState>((set, get) => ({
   workbenchLoad: null,
   agentOpen: null,
   filesReveal: null,
+  changesBase: {},
   workbenchFull: false,
   overlay: null,
   overlayDialog: null,
@@ -641,13 +647,14 @@ export const useStore = create<AppState>((set, get) => ({
     const s = get()
     const id = tabId ?? s.activeTabId
     if (!id) return
-    if (f && f.source !== 'intercept') {
-      get().updateWorkbenchTabs(id, (prev) => activateWbTab(prev, FILES_TAB_ID))
-      if (!s.workbenchOpen[id]) get().setWorkbenchOpen(id, true)
-      set((st) => ({ filesReveal: { tabId: id, nonce: (st.filesReveal?.nonce ?? 0) + 1 } }))
-    }
+    if (f && f.source !== 'intercept') revealFiles(id, 'browse')
     set((st) => ({ openFiles: { ...st.openFiles, [id]: f } }))
   },
+  openChanges: (tabId) => revealFiles(tabId, 'changes'),
+  setChangesBase: (tabId, base) =>
+    set((s) =>
+      s.changesBase[tabId] === base ? s : { changesBase: { ...s.changesBase, [tabId]: base } }
+    ),
   setWorkbenchWidth: (workbenchWidth) => set({ workbenchWidth }),
   setTabWorkbenchWidth: (tabId, w) =>
     set((s) => ({ workbenchWidth: w, workbenchWidths: { ...s.workbenchWidths, [tabId]: w } })),
@@ -719,7 +726,12 @@ export const useStore = create<AppState>((set, get) => ({
     whenWorkbenchFetched(tabId, () => {
       const s = get()
       const base = s.workbench[tabId] ?? emptyTabSet()
-      const r = openTab(base, { kind: 'web', ...opts, openedByAgent: opts.fromShim })
+      const r = openTab(base, {
+        kind: 'web',
+        ...opts,
+        openedByAgent: opts.fromShim,
+        agentOpenedAt: opts.fromShim ? Date.now() : undefined
+      })
       set((st) => ({ workbench: { ...st.workbench, [tabId]: r.set } }))
       persistWorkbench(tabId)
       if (r.evicted) s.showToast(tabEvictedNotice(tabLabel(r.set, r.evicted)))
@@ -974,6 +986,15 @@ export function consumeRestoreExit(ptyId: string): boolean {
   return restoreLaunches.delete(ptyId)
 }
 
+function revealFiles(tabId: string, view: FilesTab): void {
+  const s = useStore.getState()
+  s.updateWorkbenchTabs(tabId, (prev) => activateWbTab(prev, FILES_TAB_ID))
+  if (!s.workbenchOpen[tabId]) s.setWorkbenchOpen(tabId, true)
+  useStore.setState((st) => ({
+    filesReveal: { tabId, view, nonce: (st.filesReveal?.nonce ?? 0) + 1 }
+  }))
+}
+
 export function openInterceptedFile(
   ptyId: string,
   src: string,
@@ -986,7 +1007,8 @@ export function openInterceptedFile(
     src,
     label: basename(src),
     source: source === 'agent' ? 'intercept' : undefined,
-    view
+    view,
+    openedAt: source === 'agent' ? Date.now() : undefined
   }
   if (tabs.some((t) => t.id === tabId) && activeTabId !== tabId) {
     setOpenFile({ ...file, unseen: true }, tabId)

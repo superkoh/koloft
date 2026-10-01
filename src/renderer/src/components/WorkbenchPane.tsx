@@ -44,8 +44,6 @@ import type {
   BrowserPermissionRefusal,
   EditFingerprint,
   GitFileStatus,
-  GitNumstatMap,
-  GitStatusMap,
   GithubInfo,
   GithubTarget,
   SessionInfo
@@ -66,6 +64,7 @@ import {
 import { FindBar } from './FindBar'
 import { NO_FOCUS_SIGNAL, TerminalView } from './TerminalView'
 import { FilesBar, FilesBody, useFilesController } from './FilesView'
+import { useGitChangeSet } from './gitChangeSet'
 import { GIT_LETTER, relOf, splitPath } from './filesModel'
 import { ArtifactPane, NO_CAPS, sameCaps, type ArtifactCaps } from './ArtifactPane'
 import { EditPane, editRefusal, useEditProbe } from './EditPane'
@@ -190,19 +189,6 @@ function guestUrl(el: GuestElement | undefined): string {
 
 function isCertFailure(fail: GuestFailure): boolean {
   return /^ERR_(CERT|SSL)/.test(fail.description)
-}
-
-function sameMap<V>(
-  a: Record<string, V>,
-  b: Record<string, V>,
-  eq: (x: V, y: V) => boolean
-): boolean {
-  const keys = Object.keys(a)
-  if (keys.length !== Object.keys(b).length) return false
-  for (const k of keys) {
-    if (!(k in b) || !eq(a[k], b[k])) return false
-  }
-  return true
 }
 
 export interface WorkbenchPaneProps {
@@ -348,14 +334,15 @@ export function WorkbenchPane({
   const [editFocus, setEditFocus] = useState<Record<string, number>>({})
   const [, bumpEdit] = useReducer((n: number) => n + 1, 0)
   useEffect(() => subscribeDirty(bumpEdit), [])
-  const [git, setGit] = useState<GitStatusMap>({})
-  const [numstat, setNumstat] = useState<GitNumstatMap>({})
-  const [base, setBase] = useState<string | null | undefined>(undefined)
-  const [rootMissing, setRootMissing] = useState(false)
-  const [watchDead, setWatchDead] = useState(false)
 
   const files = useFilesController(ownerTab, treeRoot)
   const refreshFiles = files.refresh
+  const { git, numstat, base, rootMissing, watchDead } = useGitChangeSet(
+    treeRoot,
+    visible,
+    files.baseChoice,
+    files.refreshNonce
+  )
 
   const addressRef = useRef<HTMLInputElement>(null)
   const findInputRef = useRef<HTMLInputElement>(null)
@@ -1358,72 +1345,6 @@ export function WorkbenchPane({
     el.addEventListener('found-in-page', onFound)
     return () => el.removeEventListener('found-in-page', onFound)
   }, [findOpen, activeTab?.id, live])
-
-  const baseChoice = files.baseChoice
-  const refreshNonce = files.refreshNonce
-  useEffect(() => {
-    setGit({})
-    setNumstat({})
-    setBase(undefined)
-    setRootMissing(false)
-    setWatchDead(false)
-  }, [treeRoot])
-
-  useEffect(() => {
-    if (visible) return
-    setGit({})
-    setNumstat({})
-    setBase(undefined)
-  }, [visible])
-
-  useEffect(() => {
-    if (!visible || !treeRoot) return
-    const root = treeRoot
-    let seq = 0
-    const fetchGit = (): void => {
-      const mine = ++seq
-      const resolve: Promise<string | null> =
-        baseChoice === 'head' ? Promise.resolve('HEAD') : window.api.fs.diffBase(root)
-      resolve
-        .catch(() => null)
-        .then((b) => {
-          if (mine !== seq) return undefined
-          setBase(b)
-          const arg = b ?? undefined
-          return Promise.all([
-            window.api.fs.gitStatus(root, arg),
-            window.api.fs.gitNumstat(root, arg),
-            window.api.fs.dirExists(root).then((ok) => !ok)
-          ])
-        })
-        .then((r) => {
-          if (!r || mine !== seq) return
-          const [g, ns, missing] = r
-          setGit((prev) => (sameMap(prev, g, (x, y) => x === y) ? prev : g))
-          setNumstat((prev) =>
-            sameMap(prev, ns, (x, y) => x.added === y.added && x.removed === y.removed) ? prev : ns
-          )
-          setRootMissing(missing)
-        })
-        .catch(() => {
-          if (mine !== seq) return
-        })
-    }
-    fetchGit()
-    let watching = true
-    window.api.fs.watchDir(root).then((live) => {
-      if (watching) setWatchDead(!live)
-    })
-    const off = window.api.fs.onDirChange((changed) => {
-      if (changed === root) fetchGit()
-    })
-    return () => {
-      seq++
-      watching = false
-      off()
-      window.api.fs.unwatchDir(root)
-    }
-  }, [visible, treeRoot, baseChoice, refreshNonce])
 
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const refresh = files.refresh

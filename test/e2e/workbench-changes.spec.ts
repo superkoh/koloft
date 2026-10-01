@@ -16,7 +16,6 @@ import {
 import { setupChangeFixture, seedBrowseTree } from './helpers/filesFixture'
 import {
   WORKBENCH,
-  WORKBENCH_GIT,
   countGitSpawns,
   installGitSpawnLog,
   installStallingGit,
@@ -46,6 +45,12 @@ const CV = {
   banner: '.cv-banner',
   empty: '.wb-panel .cv-empty'
 } as const
+
+const PREVIEW = {
+  card: '.wb-peek',
+  diff: '.wb-peek .wb-tab.pinned'
+} as const
+const previewLabel = (page: Page): Locator => page.locator(`${PREVIEW.diff} .lb`)
 
 const badge = (page: Page): Locator => page.locator('.wb-tab.pinned .cnt')
 const reloadBtn = (page: Page): Locator => page.locator('.wb-bar .icobtn[aria-label="Reload"]')
@@ -882,50 +887,38 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     await expect(blockOf(page, subject).locator('.cv-src')).toBeVisible()
   })
 
-  test('WB-K08: a collapsed panel spawns no git for the workspace, and catches up on expand', async ({
+  test('WB-K08: a collapsed panel keeps the total diff live on its preview card, and expanding shows the same change set', async ({
     app,
     page,
     env
   }) => {
     const fx = setupChangeFixture(env.workspaces.a)
     fx.modifyTracked(2)
-    const ws = env.workspaces.a
+    await openChanges(page)
+    await waitStream(page, 2)
+    await expect(page.locator(CV.total)).toContainText('2 files')
 
-    const relaunched = await relaunchWithGitLog(app, env)
-    const p = relaunched.page
-    try {
-      await openChanges(p)
-      await waitStream(p, 2)
+    await clickAppMenuItem(app, page, 'toggle-browser')
+    await expect.poll(() => layoutState(page)).toBe('T1')
+    await expect(previewLabel(page)).toHaveText('2 files')
 
-      await clickAppMenuItem(relaunched.app, p, 'toggle-browser')
-      await expect.poll(() => layoutState(p)).toBe('T1')
-      await waitGitQuiet(env, { root: ws })
-      const before = countGitSpawns(env, { root: ws, subcommand: WORKBENCH_GIT })
+    fx.addUntracked('src/while-collapsed.ts')
+    await expect(previewLabel(page)).toHaveText('3 files')
 
-      fx.addUntracked('src/while-collapsed.ts')
-      fx.editTracked(fx.paths.changeable[0])
-      await p.waitForTimeout(10_000)
-
-      expect(countGitSpawns(env, { root: ws, subcommand: WORKBENCH_GIT })).toBe(before)
-
-      await clickAppMenuItem(relaunched.app, p, 'toggle-browser')
-      await expect.poll(() => layoutState(p)).toBe('T2')
-      await showChanges(p)
-      await waitStream(p, 3)
-      await expect(rowOf(p, 'src/while-collapsed.ts')).toHaveCount(1)
-      expect(countGitSpawns(env, { root: ws, subcommand: WORKBENCH_GIT })).toBeGreaterThan(before)
-    } finally {
-      await relaunched.app.close().catch(() => {})
-    }
+    await clickAppMenuItem(app, page, 'toggle-browser')
+    await expect.poll(() => layoutState(page)).toBe('T2')
+    await expect(page.locator(PREVIEW.card)).toHaveCount(0)
+    await showChanges(page)
+    await waitStream(page, 3)
+    await expect(page.locator(CV.total)).toContainText('3 files')
   })
 
-  test('WB-K08b: a session whose panel starts collapsed spawns no git before main has answered', async ({
+  test('WB-K08b: a session whose panel starts collapsed shows its total diff on the card without opening the panel', async ({
     app,
     env
   }) => {
     const fx = setupChangeFixture(env.workspaces.a)
     fx.modifyTracked(2)
-    const ws = env.workspaces.a
 
     await app.close().catch(() => {})
     seedWorkbenchDefault(env, false)
@@ -935,14 +928,13 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     try {
       await startSessionIn(p, 'ws-a')
       await expect.poll(() => layoutState(p)).toBe('T1')
-      await waitGitQuiet(env, { root: ws })
-      expect(countGitSpawns(env, { root: ws, subcommand: WORKBENCH_GIT })).toBe(0)
+      await expect(previewLabel(p)).toHaveText('2 files')
+      await expect(p.locator(`${PREVIEW.card} .ft-delta .add`)).toHaveText('+2')
 
-      await clickAppMenuItem(relaunched.app, p, 'toggle-browser')
+      await p.locator(PREVIEW.diff).click()
       await expect.poll(() => layoutState(p)).toBe('T2')
-      await showChanges(p)
+      await expect(p.locator(`${WORKBENCH.panel} .fv`)).toHaveAttribute('data-view', 'changes')
       await waitStream(p, 2)
-      expect(countGitSpawns(env, { root: ws, subcommand: WORKBENCH_GIT })).toBeGreaterThan(0)
     } finally {
       await relaunched.app.close().catch(() => {})
     }
@@ -1191,7 +1183,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     }
   })
 
-  test('WB-K08c: switching to a session with a collapsed panel spawns no git for its workspace', async ({
+  test('WB-K08c: switching to a session with a collapsed panel reads git for that session only, never for the one left behind', async ({
     app,
     env
   }) => {
@@ -1213,14 +1205,15 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
         .click()
       await expect.poll(() => layoutState(page)).toBe('T2')
       await waitStream(page, 1)
-      const before = await waitGitQuiet(env, { root: env.workspaces.b })
 
       await page
         .locator('.ws-tab', { has: page.locator('.ws-tab-title', { hasText: 'S2' }) })
         .click()
       await expect.poll(() => layoutState(page)).toBe('T1')
+      await expect(previewLabel(page)).toHaveText('1 file')
+      const before = await waitGitQuiet(env, { root: env.workspaces.a })
       await page.waitForTimeout(3000)
-      expect(countGitSpawns(env, { root: env.workspaces.b })).toBe(before)
+      expect(countGitSpawns(env, { root: env.workspaces.a })).toBe(before)
     } finally {
       await p1app.close().catch(() => {})
     }
