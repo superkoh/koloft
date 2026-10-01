@@ -1225,7 +1225,8 @@ export class SessionTracker extends SessionRuntime {
     if (obj) {
       if (typeof obj.cwd === 'string' && obj.cwd && obj.cwd !== t.info.cwd) {
         t.info.cwd = obj.cwd
-        if (!fs.existsSync(t.info.treeRoot)) this.setTreeRoot(t, obj.cwd)
+        // ADR-0025
+        if (!t.remote && !fs.existsSync(t.info.treeRoot)) this.setTreeRoot(t, obj.cwd)
       }
       if (obj.type === 'ai-title' && typeof obj.aiTitle === 'string') t.title = obj.aiTitle
       // CC§2

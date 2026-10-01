@@ -654,6 +654,24 @@ describe('SessionTracker — binding', () => {
       const s = await waitFor(tracker, (x) => x.tabId === 'tabTR9' && x.cwd === wsB)
       expect(s.treeRoot).toBe(wsB)
     })
+
+    it('a tab on another machine keeps its root while the session cds — that root is not on this Mac to check', async () => {
+      const rcwd = '/home/koh/api'
+      const mirror = path.join(home, 'remote', 'pinbox', 'projects')
+      const file = path.join(mirror, encodeCwd(rcwd), SID + '.jsonl')
+      fs.mkdirSync(path.dirname(file), { recursive: true })
+      fs.writeFileSync(
+        file,
+        JSON.stringify({ type: 'user', message: { content: 'x' }, cwd: rcwd }) + '\n'
+      )
+      const tracker = newTracker()
+      tracker.track('tabTR10', rcwd, { host: 'pinbox', projectsRoot: mirror, tmuxName: `k-${SID}` })
+      tracker.bindSession('tabTR10', '', SID, rcwd)
+      await waitFor(tracker, (x) => x.tabId === 'tabTR10' && x.title === 'x')
+      fs.appendFileSync(file, JSON.stringify({ type: 'assistant', cwd: rcwd + '/sub' }) + '\n')
+      const s = await waitFor(tracker, (x) => x.tabId === 'tabTR10' && x.cwd === rcwd + '/sub')
+      expect(s.treeRoot).toBe(rcwd)
+    })
   })
 
   describe('aliveTabFor (F7 force-close): what it resolves is what gets killed', () => {
