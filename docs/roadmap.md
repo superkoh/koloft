@@ -26,9 +26,13 @@ when it works. That is what "judged against" means.
 ### Tier 1 — orchestration: the session is the unit
 
 - **Worktree session bootstrap** — a setup script, copying gitignored files, a port offset,
-  so a fresh worktree is usable the moment its session starts. Creating the worktree
+  so a fresh worktree is usable the moment its session starts (#5). Creating the worktree
   session itself already works; cleanup afterwards is the agent's tool's, not Koloft's
-  (Codex aside, #116).
+  (Codex aside, #116). `claude -w` already copies `.worktreeinclude` files and runs
+  `WorktreeCreate` hooks, so Koloft's part is the Codex worktrees it makes and the port
+  offset for both.
+- **Jump to the next waiting session** — one shortcut cycles through the sessions waiting
+  for you, across workspaces (#196). A grouped sidebar view is not part of it.
 - **Broadcast input** — type once, send to the sessions you selected. The workspace →
   session tree is the first reliable "select N sessions" unit Koloft has had, so the
   scope is unambiguous: the rows you picked, nothing implied.
@@ -48,6 +52,29 @@ when it works. That is what "judged against" means.
   jumping to the agent turn that produced a hunk.
 - **Plan-mode surfacing** — read-only rendering of a plan first; approve/reject only once
   the TUI's input mapping is proven against the fake-claude harness.
+- **PR and CI inside the session** — the session's PR and check status, failing checks
+  sent back to the session, commit / push / open PR from Koloft (#195). The end of the
+  loop that a session started from an issue or PR (#198) begins.
+- **Point the agent at things** — pick an element in the Workbench browser (#197); a
+  one-click review by a sibling session (#202).
+- **Many sessions, one change** — race one prompt across N new worktree sessions and keep
+  the best (#203); warn when two sessions write the same file (#201); each session's
+  listening ports, opened in the Workbench browser (#204).
+- **Finding and branching sessions** — full-text search across transcripts (#200); fork a
+  session from the sidebar (#199).
+- **Usage and accounts** — cost history by session, workspace, model and day (#205); pick
+  or pin a custom-endpoint account for a session (#206).
+
+### Parked until their trigger
+
+- **OpenCode as a third backend** (#207) — after the items above.
+- **Sessions that survive quit and update** (#208) — when an update interrupting a working
+  session shows up as a real complaint.
+- **Windows, Linux and Intel Mac builds** (#209) — when user demand shows up.
+- **Reopened, decision first** — steering sessions from a phone (#210), MCP / skills /
+  CLAUDE.md management (#211), a saved prompt library (#212). Each was on the list below;
+  each issue states what Koloft would add beyond the tool's own feature before anything
+  is built.
 
 ### Tier 3 — guardrails
 
@@ -71,14 +98,9 @@ Reopen one of these only with new evidence, not a new argument.
   judge. Faked keystrokes land in whatever that TUI's input box holds at the time.
   Broadcast input above is a feature for the *person*, with the rows they picked.
 
-- **Mobile clients or a relay service** — an architectural mismatch. Koloft sessions are
-  plain Claude Code or Codex sessions, so remote-control tools that work on those tools
-  already work alongside Koloft. (Remote *workspaces*, where Claude runs on another
-  machine over ssh with no relay service, are a different thing and exist, in alpha.)
 - **Checkpoints / rewind** — native in Claude Code (`/rewind`). At most, surface the list.
 - **Split panes / tiled layouts** — high cost on xterm.js for a window whose centre is
   one TUI.
-- **An MCP management UI** — commodity; only if it is trivially cheap.
 - **`<webview>` → `WebContentsView`, node-pty → a Rust pty** — rejected in the
   measure-first backlog: no observed symptom.
 - **Shell command-block navigation** — its subject is a *shell* session, but the centre
@@ -91,14 +113,28 @@ Reopen one of these only with new evidence, not a new argument.
 - **More preview renderers (CSV and the like)** — Markdown, code, images and PDF cover
   nearly every file a session produces; any other format opens in the app the system
   already has for it.
-- **A saved prompt library** — it would mirror the tool's own `/` menu inside Koloft's
-  scarcest surface, against "the centre is 100% the tool's own UI". Koloft can only ever
-  chase Claude Code's and Codex's native commands and skills there.
 - **pty → utilityProcess** — no observed jank. Folded into the performance backlog with
   the trigger that would justify it.
 - **Undo-close tab** — a closed session stays in the list as a cold row with *Resume*,
   and closing a working or approval-pending session asks first. There is nothing left to
   undo.
+- **Auto-archive a session when its PR merges** — retention belongs to the agent's tool
+  (idea 4), and a closed session is meant to stay listed as a cold row.
+- **A grouped "waiting / working / ready" sidebar view** — the sidebar carries no roll-up
+  (pinned by `attention-outlets.spec.ts`); the jump shortcut in Tier 1 answers the same
+  need.
+- **Kanban or task boards** — pulls Koloft toward a project tracker; the session tree is
+  the board.
+- **Per-session sandboxing (Seatbelt, Docker)** — the tools ship their own sandboxes.
+- **One session across several repos** — breaks "one workspace, one tree".
+- **Shared or multiplayer sessions** — a local app with no server.
+- **A chat UI instead of, or beside, the terminal** — against "the centre is 100% the
+  tool's own UI".
+- **Cloud agents** — no cloud service; running elsewhere is what ssh workspaces are for.
+- **Voice input** — macOS dictation already reaches the terminal.
+- **Approve or deny from Koloft's own UI** — answering for the TUI from outside is
+  keystroke-faking by another name; the prompt is answered where it appears.
+- **Desktop pets, theme stores, Office previews** — decoration, or another previewer.
 
 ## How much to trust the order
 
@@ -108,6 +144,10 @@ re-verified), and on the author's own felt experience (unrecorded). That is not 
 schedule against. The cheapest missing research is ten recorded real uses — what Koloft
 was opened to do, where it stalled, whether a bare terminal got used instead. Ten entries
 would settle Tier 1 against Tier 2.
+
+What comparable tools ship is now checked daily: the `competitor-watch` scheduled task
+reports features Koloft lacks — not tracked, not rejected above — on the pinned issue
+#213, whose body is the watch list and baseline.
 
 ## Strategy notes
 
