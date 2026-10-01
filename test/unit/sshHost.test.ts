@@ -178,6 +178,32 @@ describe("Claude's folder trust on the machine", () => {
   })
 })
 
+describe('a remote Workbench while the ssh link is down', () => {
+  it('fails the Changes reads instead of reporting the folder empty and not a repo, so the panel keeps what it showed and offers Retry', async () => {
+    let linkDown = false
+    const host = machine((cmd, opts) =>
+      linkDown
+        ? Promise.resolve({
+            code: 255,
+            stdout: Buffer.alloc(0),
+            stderr: 'ssh: connect to host devbox port 22: Connection refused'
+          })
+        : runOnMachine(cmd, opts)
+    )
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'hello\nmore\n')
+    expect(await host.gitStatus(keyed(repo))).toEqual({
+      [keyed(path.join(repo, 'a.txt'))]: 'modified',
+      [keyed(path.join(repo, 'broken'))]: 'untracked'
+    })
+
+    linkDown = true
+
+    await expect(host.gitStatus(keyed(repo))).rejects.toThrow()
+    await expect(host.gitNumstat(keyed(repo))).rejects.toThrow()
+    await expect(host.gitDiff(keyed(repo))).rejects.toThrow()
+  })
+})
+
 describe('what a remote launch hands claude', () => {
   const root = keyed('/w')
 

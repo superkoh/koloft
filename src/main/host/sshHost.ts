@@ -36,7 +36,7 @@ import {
 } from '../remote/launch'
 import { mirrorHookDir, mirrorProjectsRoot, remoteMachineDir, tabPackageDir } from '../remote/paths'
 import { launchMode } from '../remote/sync'
-import { ensureControlDir, sshOptions, type BytesResult } from '../remote/ssh'
+import { ensureControlDir, sshLinkBroke, sshOptions, type BytesResult } from '../remote/ssh'
 import { claudeArgv } from '../claudeArgs'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host, ShellLaunch } from './host'
 
@@ -329,7 +329,7 @@ export class SshHost implements Host {
         if (r.code === 0) return { stdout, stderr: r.stderr }
         throw Object.assign(new Error(r.stderr || 'git failed'), {
           code: r.code ?? undefined,
-          killed: r.code === null,
+          killed: sshLinkBroke(r),
           stdout,
           stderr: r.stderr
         })
