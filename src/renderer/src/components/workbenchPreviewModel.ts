@@ -19,6 +19,18 @@ function previewDocKind(src: string): PreviewDocKind | null {
   return isWebPagePath(src) ? 'page' : null
 }
 
+// CC§2 CC§9
+const AGENT_ONLY_PATHS = [
+  /\/(CLAUDE|AGENTS|SKILL)\.md$/,
+  /\/\.claude\/projects\/[^/]+\/memory\//,
+  /\/\.claude\/(skills|agents|commands)\//,
+  /\/skills\/[^/]+\/references\//
+]
+
+function writtenForTheAgent(src: string): boolean {
+  return AGENT_ONLY_PATHS.some((p) => p.test(src))
+}
+
 export function previewDocs(input: {
   files: readonly PreviewItem[]
   webTabs: readonly WorkbenchTab[]
@@ -30,7 +42,9 @@ export function previewDocs(input: {
     if (!kind || at === undefined) return
     if (at > (latest.get(src)?.at ?? -1)) latest.set(src, { src, kind, at })
   }
-  for (const f of input.files) if (f.access === 'wrote') note(f.src, f.wroteAt)
+  for (const f of input.files) {
+    if (f.access === 'wrote' && !writtenForTheAgent(f.src)) note(f.src, f.wroteAt)
+  }
   for (const t of input.webTabs) {
     const p = t.kind === 'web' && t.url ? fileUrlPath(t.url) : null
     if (p) note(p, t.agentOpenedAt)
