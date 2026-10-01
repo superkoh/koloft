@@ -490,12 +490,12 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
   }) => {
     test.setTimeout(120_000)
     gitInit(env.workspaces.a)
-    const wt = gitWorktreeAdd(env.workspaces.a, 'drifted')
-    execFileSync('git', ['checkout', '-q', '-b', 'somewhere-else'], { cwd: wt })
+    const wt = gitWorktreeAdd(env.workspaces.a, 'deleted')
+    execFileSync('git', ['worktree', 'remove', '--force', wt], { cwd: env.workspaces.a })
     const id = seedJsonl(env, env.workspaces.a, {
-      summary: 'Drifted resident session',
+      summary: 'Gone-worktree resident session',
       cwd: env.workspaces.a,
-      worktreeState: { worktreeName: 'drifted', worktreePath: wt, originalCwd: env.workspaces.a }
+      worktreeState: { worktreeName: 'deleted', worktreePath: wt, originalCwd: env.workspaces.a }
     })
     const layoutFile = path.join(env.userData, 'layout.json')
     fs.writeFileSync(layoutFile, JSON.stringify({ ...layoutOnDisk(env), resident: [id] }))
@@ -505,9 +505,9 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
       await expect(
-        page.locator('.toast-msg', { hasText: /“Drifted resident session” needs you/ })
+        page.locator('.toast-msg', { hasText: /“Gone-worktree resident session” needs you/ })
       ).toBeVisible({ timeout: 30_000 })
-      const row = page.locator('.ws-tab', { hasText: 'Drifted resident session' })
+      const row = page.locator('.ws-tab', { hasText: 'Gone-worktree resident session' })
       await expect(row).toHaveClass(/\bcold\b/)
       await expect(row.locator('.ws-tab-resident')).toBeVisible()
       await expect(page.locator('.modal')).toHaveCount(0)
