@@ -1,5 +1,5 @@
 import { fileUrlPath } from '@shared/browserRoute'
-import { isWebPagePath, previewKindForPath } from '@shared/preview'
+import { basename, isWebPagePath, previewKindForPath } from '@shared/preview'
 import { isRemoteKey } from '@shared/remoteKey'
 import type { GitNumstatMap, GitStatusMap, PreviewItem } from '@shared/types'
 import type { OpenFile } from '../store'
@@ -19,6 +19,17 @@ function previewDocKind(src: string): PreviewDocKind | null {
   return isWebPagePath(src) ? 'page' : null
 }
 
+const AGENT_INSTRUCTION_FILES = new Set(['CLAUDE.md', 'AGENTS.md', 'SKILL.md'])
+const AGENT_ONLY_DIRS = [
+  /\/\.claude\/projects\/[^/]+\/memory\//,
+  /\/\.claude\/(skills|agents|commands)\//,
+  /\/skills\/[^/]+\/references\//
+]
+
+function writtenForTheAgent(src: string): boolean {
+  return AGENT_INSTRUCTION_FILES.has(basename(src)) || AGENT_ONLY_DIRS.some((d) => d.test(src))
+}
+
 export function previewDocs(input: {
   files: readonly PreviewItem[]
   webTabs: readonly WorkbenchTab[]
@@ -30,7 +41,9 @@ export function previewDocs(input: {
     if (!kind || at === undefined) return
     if (at > (latest.get(src)?.at ?? -1)) latest.set(src, { src, kind, at })
   }
-  for (const f of input.files) if (f.access === 'wrote') note(f.src, f.wroteAt)
+  for (const f of input.files) {
+    if (f.access === 'wrote' && !writtenForTheAgent(f.src)) note(f.src, f.wroteAt)
+  }
   for (const t of input.webTabs) {
     const p = t.kind === 'web' && t.url ? fileUrlPath(t.url) : null
     if (p) note(p, t.agentOpenedAt)

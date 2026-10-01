@@ -51,6 +51,33 @@ describe('Workbench preview card: the docs it lists', () => {
     expect(docs[0]).toEqual({ src: '/tmp/scratch/mock.html', kind: 'page', at: 700 })
   })
 
+  it('leaves out what the agent writes for itself — memory, CLAUDE.md/AGENTS.md/SKILL.md, skill and agent config — unless the agent opens it', () => {
+    const docs = previewDocs({
+      files: [
+        wrote('/Users/koh/.claude/projects/-Users-koh-repo/memory/MEMORY.md', 100),
+        wrote('ssh://devbox/home/koh/.claude/projects/-home-koh-repo/memory/note.md', 110),
+        wrote('/repo/CLAUDE.md', 120),
+        wrote('/repo/sub/AGENTS.md', 130),
+        wrote('/repo/plugins/p/skills/review/SKILL.md', 140),
+        wrote('/repo/plugins/p/skills/review/references/rules.md', 150),
+        wrote('/repo/.claude/agents/helper.md', 160),
+        wrote('/repo/.claude/commands/ship.md', 170),
+        wrote('/repo/.claude/worktrees/wt/.claude/skills/x/guide.md', 180),
+        wrote('/repo/.claude/worktrees/wt/docs/design.html', 190),
+        wrote('/Users/koh/.claude/plans/plan.md', 200),
+        wrote('/tmp/review.md', 210)
+      ],
+      webTabs: [],
+      openFile: { src: '/repo/CLAUDE.md', openedAt: 300 }
+    })
+    expect(docs.map((d) => d.src)).toEqual([
+      '/repo/CLAUDE.md',
+      '/tmp/review.md',
+      '/Users/koh/.claude/plans/plan.md',
+      '/repo/.claude/worktrees/wt/docs/design.html'
+    ])
+  })
+
   it('leaves out a file the user opened in Browse themselves, and a page the user opened', () => {
     const docs = previewDocs({
       files: [],
