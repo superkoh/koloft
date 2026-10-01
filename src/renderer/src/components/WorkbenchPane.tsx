@@ -1376,6 +1376,7 @@ export function WorkbenchPane({
     setBase(undefined)
   }, [visible])
 
+  const pollGit = useRef<(() => void) | null>(null)
   useEffect(() => {
     if (!visible || !treeRoot) return
     const root = treeRoot
@@ -1410,6 +1411,7 @@ export function WorkbenchPane({
         })
     }
     fetchGit()
+    pollGit.current = fetchGit
     let watching = true
     window.api.fs.watchDir(root).then((live) => {
       if (watching) setWatchDead(!live)
@@ -1419,6 +1421,7 @@ export function WorkbenchPane({
     })
     return () => {
       seq++
+      pollGit.current = null
       watching = false
       off()
       window.api.fs.unwatchDir(root)
@@ -1426,14 +1429,13 @@ export function WorkbenchPane({
   }, [visible, treeRoot, baseChoice, refreshNonce])
 
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const refresh = files.refresh
   useEffect(() => {
     if (!watchDead || !visible || refreshTimer.current) return
     refreshTimer.current = setTimeout(() => {
       refreshTimer.current = null
-      refresh()
+      pollGit.current?.()
     }, WATCHLESS_REFRESH_THROTTLE_MS)
-  }, [watchDead, visible, session?.updatedAt, refresh])
+  }, [watchDead, visible, session?.updatedAt])
   useEffect(
     () => () => {
       if (refreshTimer.current) clearTimeout(refreshTimer.current)
