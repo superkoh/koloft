@@ -6,6 +6,7 @@ import {
 } from '@shared/sessionBackend'
 import { SessionBackendIcon } from './SessionBackendIcon'
 import { useCallback, useEffect, useRef, useState, type JSX, type MouseEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { GoGitBranch } from 'react-icons/go'
 import {
   LuAlarmClock,
@@ -174,6 +175,15 @@ export function WorkspaceSidebar({
   const setFreshBusy = useCallback((busy: boolean) => {
     freshBusy.current = busy
   }, [])
+  const closeFloating = (): void => {
+    setMenu(null)
+    setParkedPop(null)
+    if (!freshBusy.current) setFresh(null)
+  }
+  const sidebarHidden = useStore((s) => s.settings.sidebarHidden)
+  useEffect(() => {
+    if (sidebarHidden) closeFloating()
+  }, [sidebarHidden])
   const [, bumpCronClock] = useState(0)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -651,14 +661,7 @@ export function WorkspaceSidebar({
   return (
     <>
       <div className="island flat isl-sessions">
-        <div
-          className="ws-list"
-          onScroll={() => {
-            setMenu(null)
-            setParkedPop(null)
-            if (!freshBusy.current) setFresh(null)
-          }}
-        >
+        <div className="ws-list" onScroll={closeFloating}>
           {rows.length === 0 && !welcomeActive && (
             <div className="hint">
               No workspaces yet.
@@ -936,109 +939,115 @@ export function WorkspaceSidebar({
         </div>
       </div>
 
-      {renderMenu()}
-      {renderFresh()}
-      {renderParked()}
+      {/* ADR-0013 */}
+      {createPortal(
+        <>
+          {renderMenu()}
+          {renderFresh()}
+          {renderParked()}
 
-      {confirmRemove && (
-        <div className="modal-backdrop" onClick={() => !removing && setConfirmRemove(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              Remove workspace
-              <span
-                className="modal-close"
-                onClick={() => !removing && setConfirmRemove(null)}
-                aria-label="Close"
-              >
-                <LuX size={16} />
-              </span>
-            </div>
-            <div className="modal-body">
-              <div className="field-hint">
-                {removeConfirmText(confirmRemove.running, confirmRemove.jobs)}
-                {confirmRemove.dirty.length > 0 &&
-                  ' ' + removeUnsavedNote(confirmRemove.dirty.length)}
-              </div>
-            </div>
-            <div className="modal-foot">
-              <button
-                ref={removeCancelRef}
-                className="mini"
-                disabled={removing}
-                onClick={() => setConfirmRemove(null)}
-              >
-                Cancel
-              </button>
-              <button
-                className="btn-primary"
-                disabled={removing}
-                onClick={() => {
-                  discardAll(confirmRemove.dirty)
-                  const p = confirmRemove.path
-                  setConfirmRemove(null)
-                  void window.api.workspace.removeConfirmed(p)
-                }}
-              >
-                {confirmRemove.dirty.length > 0 ? 'Discard & remove' : 'Close & remove'}
-              </button>
-              {confirmRemove.dirty.length > 0 && (
-                <button
-                  className="btn-primary"
-                  disabled={removing}
-                  onClick={() => {
-                    const { path: p, dirty } = confirmRemove
-                    setRemoving(true)
-                    void saveAll(dirty).then((ok) => {
-                      setRemoving(false)
+          {confirmRemove && (
+            <div className="modal-backdrop" onClick={() => !removing && setConfirmRemove(null)}>
+              <div className="modal" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-header">
+                  Remove workspace
+                  <span
+                    className="modal-close"
+                    onClick={() => !removing && setConfirmRemove(null)}
+                    aria-label="Close"
+                  >
+                    <LuX size={16} />
+                  </span>
+                </div>
+                <div className="modal-body">
+                  <div className="field-hint">
+                    {removeConfirmText(confirmRemove.running, confirmRemove.jobs)}
+                    {confirmRemove.dirty.length > 0 &&
+                      ' ' + removeUnsavedNote(confirmRemove.dirty.length)}
+                  </div>
+                </div>
+                <div className="modal-foot">
+                  <button
+                    ref={removeCancelRef}
+                    className="mini"
+                    disabled={removing}
+                    onClick={() => setConfirmRemove(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="btn-primary"
+                    disabled={removing}
+                    onClick={() => {
+                      discardAll(confirmRemove.dirty)
+                      const p = confirmRemove.path
                       setConfirmRemove(null)
-                      if (ok) void window.api.workspace.removeConfirmed(p)
-                    })
-                  }}
-                >
-                  Save &amp; remove
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {confirmOrphan && (
-        <div className="modal-backdrop" onClick={() => setConfirmOrphan(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              Session unreachable
-              <span
-                className="modal-close"
-                onClick={() => setConfirmOrphan(null)}
-                aria-label="Close"
-              >
-                <LuX size={16} />
-              </span>
-            </div>
-            <div className="modal-body">
-              <div className="field-hint">
-                This session is running but its tab could not be re-adopted. Force close it to make
-                the row resumable — its in-flight work will stop.
+                      void window.api.workspace.removeConfirmed(p)
+                    }}
+                  >
+                    {confirmRemove.dirty.length > 0 ? 'Discard & remove' : 'Close & remove'}
+                  </button>
+                  {confirmRemove.dirty.length > 0 && (
+                    <button
+                      className="btn-primary"
+                      disabled={removing}
+                      onClick={() => {
+                        const { path: p, dirty } = confirmRemove
+                        setRemoving(true)
+                        void saveAll(dirty).then((ok) => {
+                          setRemoving(false)
+                          setConfirmRemove(null)
+                          if (ok) void window.api.workspace.removeConfirmed(p)
+                        })
+                      }}
+                    >
+                      Save &amp; remove
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
-            <div className="modal-foot">
-              <button className="mini" onClick={() => setConfirmOrphan(null)}>
-                Cancel
-              </button>
-              <button
-                className="btn-primary"
-                onClick={() => {
-                  const id = confirmOrphan
-                  setConfirmOrphan(null)
-                  void forceCloseSession(id)
-                }}
-              >
-                Force Close
-              </button>
+          )}
+
+          {confirmOrphan && (
+            <div className="modal-backdrop" onClick={() => setConfirmOrphan(null)}>
+              <div className="modal" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-header">
+                  Session unreachable
+                  <span
+                    className="modal-close"
+                    onClick={() => setConfirmOrphan(null)}
+                    aria-label="Close"
+                  >
+                    <LuX size={16} />
+                  </span>
+                </div>
+                <div className="modal-body">
+                  <div className="field-hint">
+                    This session is running but its tab could not be re-adopted. Force close it to
+                    make the row resumable — its in-flight work will stop.
+                  </div>
+                </div>
+                <div className="modal-foot">
+                  <button className="mini" onClick={() => setConfirmOrphan(null)}>
+                    Cancel
+                  </button>
+                  <button
+                    className="btn-primary"
+                    onClick={() => {
+                      const id = confirmOrphan
+                      setConfirmOrphan(null)
+                      void forceCloseSession(id)
+                    }}
+                  >
+                    Force Close
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          )}
+        </>,
+        document.body
       )}
     </>
   )
