@@ -1,6 +1,5 @@
 import { shq } from '@shared/shellQuote'
 import { parseWorktreeEntries, type WorktreeEntry } from '../workspaceOps'
-import type { MachineTmp } from '../sessionTracker'
 
 export const NODE_VERSION = '22.12.0'
 
@@ -119,15 +118,19 @@ set -g exit-empty on
 set -g mouse off
 `
 
+export interface MachineTmp {
+  tmpRoot: string
+  uid: number
+}
+
 const UID_LINE = 'uid '
 const TMP_LINE = 'tmp '
 
+// CC§2
 export function heartbeatCmd(paths: string[]): string {
   return remoteShCommand(
-    // CC§2
     `echo "${UID_LINE}$(id -u)"; echo "${TMP_LINE}$(cd /tmp && pwd -P)"; ` +
       'tmux -L koloft ls -F "#S" 2>/dev/null; ' +
-      // CC§2
       'for p in "$@"; do echo "== $p"; echo "real $(cd "$p" 2>/dev/null && pwd -P)"; ' +
       '[ -e "$p/.git" ] && echo git; ' +
       'git -C "$p" worktree list --porcelain 2>/dev/null; done; exit 0',

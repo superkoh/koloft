@@ -1,8 +1,7 @@
 import { encodeCwd } from '@shared/cwdKey'
 import { problemOf, type RunResult } from './ssh'
-import { heartbeatCmd, parseHeartbeat, type RemoteGitInfo } from './install'
+import { heartbeatCmd, parseHeartbeat, type MachineTmp, type RemoteGitInfo } from './install'
 import { sessionIdOfTmux } from './launch'
-import type { MachineTmp } from '../sessionTracker'
 
 // CC§2 CC§4 PLATFORM§34
 function projectFlags(paths: string[]): string[] {

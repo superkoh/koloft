@@ -1603,12 +1603,17 @@ describe("a tab whose claude runs on another machine: its transcript lives in a 
   })
 
   // CC§2
-  it("keys the scratchpad to the machine's own /tmp and uid, and names none before the machine has told them", () => {
+  it("keys the scratchpad to the machine's own /tmp and uid, names none before the machine has told them, and fills it in once it has", () => {
     const tracker = remoteTracker()
     tracker.bindSession('tabR', '', RSID, RCWD)
     expect(tracker.list().find((s) => s.tabId === 'tabR')?.scratchpadDir).toBeUndefined()
 
     tracker.machineTmp = (host) => (host === 'devbox' ? { tmpRoot: '/tmp', uid: 1000 } : undefined)
+    tracker.fillMachineScratchpads('devbox')
+    expect(tracker.list().find((s) => s.tabId === 'tabR')?.scratchpadDir).toBe(
+      `/tmp/claude-1000/${encodeCwd(RCWD)}/${RSID}/scratchpad`
+    )
+
     tracker.bindSession('tabR', '', 'session-after-clear', RCWD, '', '', 'clear')
     expect(tracker.list().find((s) => s.tabId === 'tabR')?.scratchpadDir).toBe(
       `/tmp/claude-1000/${encodeCwd(RCWD)}/session-after-clear/scratchpad`

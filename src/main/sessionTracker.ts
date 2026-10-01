@@ -18,6 +18,7 @@ import { inspectTaskProcs, type TaskProcs } from './taskProcs'
 import { SessionRuntime, envMs, turnOf, type Turn } from './sessionRuntime'
 import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
 import type { LaunchedSession } from './accountPicker'
+import type { MachineTmp } from './remote/install'
 
 const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects')
 const TMP_ROOT = ((): string => {
@@ -165,11 +166,6 @@ const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
 const BASH_WRITES = /(^|[^0-9&])>>?\s*(?!\/dev\/null)\S|\btee\s|\bsed\s+-i\b|\btouch\s/
 const READ_TOOLS = new Set(['Read'])
 const UNACKED_TOOL_CMD_CAP = 64
-
-export interface MachineTmp {
-  tmpRoot: string
-  uid: number
-}
 
 const THIS_MAC_TMP: MachineTmp = { tmpRoot: TMP_ROOT, uid: process.getuid?.() ?? 0 }
 
@@ -886,8 +882,7 @@ export class SessionTracker extends SessionRuntime {
     if (t.landTimer) clearTimeout(t.landTimer)
     t.landTimer = undefined
     t.info.relocated = undefined
-    const machine = t.remote ? (this.machineTmp?.(t.remote.host) ?? null) : undefined
-    t.info.scratchpadDir = scratchpadDirFor(file, t.launchCwd, machine) ?? undefined
+    t.info.scratchpadDir = this.scratchpadOf(t, file)
     this.resetParseState(t)
     t.swept = false
     try {
@@ -902,6 +897,19 @@ export class SessionTracker extends SessionRuntime {
     if (t.subagentTimer) clearInterval(t.subagentTimer)
     t.subagentTimer = setInterval(() => void this.parse(t), SUBAGENT_SCAN_MS)
     void this.parse(t)
+  }
+
+  private scratchpadOf(t: Tracked, file: string): string | undefined {
+    const machine = t.remote ? (this.machineTmp?.(t.remote.host) ?? null) : undefined
+    return scratchpadDirFor(file, t.launchCwd, machine) ?? undefined
+  }
+
+  fillMachineScratchpads(host: string): void {
+    for (const t of this.tracked.values()) {
+      if (t.remote?.host !== host || t.info.scratchpadDir || !t.info.jsonlPath) continue
+      t.info.scratchpadDir = this.scratchpadOf(t, t.info.jsonlPath)
+      if (t.info.scratchpadDir) this.recompute(t)
+    }
   }
 
   private resolvePath(raw: string, cwd: string): string | null {
