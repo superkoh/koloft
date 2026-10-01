@@ -199,7 +199,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
-  test('E-RW-20: remote Changes keeps an expanded diff open while the session works, and only Reload folds it back', async ({
+  test('E-RW-23: remote Changes keeps an expanded diff open while the session works, and only Reload folds it back', async ({
     env
   }) => {
     test.setTimeout(300_000)
