@@ -147,6 +147,13 @@ mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
   many times from inside the worktree) had both under the worktree. (`claude -p` names
   no scratchpad at all.) Older versions not checked. `tasks/` holds full subagent
   transcripts (single files reach MBs).
+  The base is `$CLAUDE_CODE_TMPDIR` when set, else a fixed `/tmp` — never `$TMPDIR`
+  (read 2026-10-01 from the compiled CC 2.1.286 binary:
+  `function dS(){let e=a.CLAUDE_CODE_TMPDIR;if(e)return e;return"/tmp"}`). So a session
+  on a remote machine keeps it under that machine's resolved `/tmp` and its own uid, which
+  the heartbeat asks for (Koloft dependent: `src/main/remote/install.ts`). Not yet seen
+  on a Linux machine with claude installed. Koloft does not follow `CLAUDE_CODE_TMPDIR`,
+  on this Mac or on a machine.
 - **A live session can move to another checkout, and the transcript moves with it.** The
   `EnterWorktree` / `ExitWorktree` tools relocate a session mid-conversation; on disk that
   is ONE `rename` of the jsonl into the destination directory's slug — **the inode is

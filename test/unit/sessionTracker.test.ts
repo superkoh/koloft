@@ -1602,6 +1602,19 @@ describe("a tab whose claude runs on another machine: its transcript lives in a 
     expect(info?.cwd).toBe(RCWD)
   })
 
+  // CC§2
+  it("keys the scratchpad to the machine's own /tmp and uid, and names none before the machine has told them", () => {
+    const tracker = remoteTracker()
+    tracker.bindSession('tabR', '', RSID, RCWD)
+    expect(tracker.list().find((s) => s.tabId === 'tabR')?.scratchpadDir).toBeUndefined()
+
+    tracker.machineTmp = (host) => (host === 'devbox' ? { tmpRoot: '/tmp', uid: 1000 } : undefined)
+    tracker.bindSession('tabR', '', 'session-after-clear', RCWD, '', '', 'clear')
+    expect(tracker.list().find((s) => s.tabId === 'tabR')?.scratchpadDir).toBe(
+      `/tmp/claude-1000/${encodeCwd(RCWD)}/session-after-clear/scratchpad`
+    )
+  })
+
   it('falls back to the encoded machine path when the hook reported no transcript', () => {
     const tracker = remoteTracker()
     tracker.bindSession('tabR', '', RSID, RCWD)

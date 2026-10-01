@@ -1,5 +1,6 @@
 import { shq } from '@shared/shellQuote'
 import { parseWorktreeEntries, type WorktreeEntry } from '../workspaceOps'
+import type { MachineTmp } from '../sessionTracker'
 
 export const NODE_VERSION = '22.12.0'
 
@@ -118,9 +119,14 @@ set -g exit-empty on
 set -g mouse off
 `
 
+const UID_LINE = 'uid '
+const TMP_LINE = 'tmp '
+
 export function heartbeatCmd(paths: string[]): string {
   return remoteShCommand(
-    'tmux -L koloft ls -F "#S" 2>/dev/null; ' +
+    // CC§2
+    `echo "${UID_LINE}$(id -u)"; echo "${TMP_LINE}$(cd /tmp && pwd -P)"; ` +
+      'tmux -L koloft ls -F "#S" 2>/dev/null; ' +
       // CC§2
       'for p in "$@"; do echo "== $p"; echo "real $(cd "$p" 2>/dev/null && pwd -P)"; ' +
       '[ -e "$p/.git" ] && echo git; ' +
@@ -138,9 +144,12 @@ export interface RemoteGitInfo {
 export function parseHeartbeat(stdout: string): {
   alive: string[]
   git: Map<string, RemoteGitInfo>
+  tmp?: MachineTmp
 } {
   const alive: string[] = []
   const git = new Map<string, RemoteGitInfo>()
+  let uid = NaN
+  let tmpRoot = ''
   let current: { path: string; isGit: boolean; real?: string; lines: string[] } | null = null
   const flush = (): void => {
     if (!current) return
@@ -156,6 +165,10 @@ export function parseHeartbeat(stdout: string): {
     if (line.startsWith('== ')) {
       flush()
       current = { path: line.slice(3), isGit: false, lines: [] }
+    } else if (!current && line.startsWith(UID_LINE)) {
+      uid = parseInt(line.slice(UID_LINE.length), 10)
+    } else if (!current && line.startsWith(TMP_LINE)) {
+      tmpRoot = line.slice(TMP_LINE.length)
     } else if (!current) {
       if (line.trim()) alive.push(line.trim())
     } else if (line === 'git') {
@@ -167,7 +180,7 @@ export function parseHeartbeat(stdout: string): {
     }
   }
   flush()
-  return { alive, git }
+  return { alive, git, tmp: tmpRoot && uid >= 0 ? { tmpRoot, uid } : undefined }
 }
 
 // PLATFORM§37

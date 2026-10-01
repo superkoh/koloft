@@ -327,6 +327,11 @@ describe('the heartbeat question', () => {
     expect(ask([nasty]).git.get(nasty)?.isGit).toBe(true)
   })
 
+  // CC§2
+  it("tells the machine's resolved /tmp and its user id, where claude keeps each session's scratchpad", () => {
+    expect(ask([]).tmp).toEqual({ tmpRoot: fs.realpathSync('/tmp'), uid: process.getuid!() })
+  })
+
   it('reads the lines before the first folder as tmux session names', () => {
     const parsed = parseHeartbeat('k-aaa\nk-bbb\n== /home/koh/api\ngit\nworktree /home/koh/api\n\n')
     expect(parsed.alive).toEqual(['k-aaa', 'k-bbb'])
