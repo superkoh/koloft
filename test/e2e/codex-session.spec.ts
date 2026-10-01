@@ -3,7 +3,14 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import { execFileSync } from 'child_process'
 import type { Locator, Page } from '@playwright/test'
-import { test, expect, launchApp, pretendWindowFocused, quitAndClose } from './helpers/app'
+import {
+  test,
+  expect,
+  launchApp,
+  pendingAttention,
+  pretendWindowFocused,
+  quitAndClose
+} from './helpers/app'
 import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
 import { WORKBENCH, wbUnreadTabs } from './helpers/workbench'
 import {
@@ -34,6 +41,7 @@ test.setTimeout(120_000)
 const LONGER_THAN_OLD_15S_RESUME_DEADLINE_MS = 16_000
 const SLOW_VERSION_PROBE_MS = 10_000
 const LAUNCH_MUST_NOT_WAIT_FOR_PROBE_MS = 4000
+const CODEX_TRANSPORT_STOP_WORST_CASE_MS = 4000
 
 interface CodexCall {
   pid: number
@@ -512,6 +520,25 @@ test.describe('Codex sessions through the real method chooser, process transport
       )
       await runIn(page, centerTerm(page), 'y')
       await expect(codexRows(page)).toHaveClass(/st-waiting/)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a Codex that fails before any session binds leaves no mark behind once its tab has closed itself, so the Dock badge counts nothing no row can show', async ({
+    env
+  }) => {
+    installCodex(env)
+    fs.writeFileSync(path.join(env.home, 'fake-codex-exit'), '3')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, 'ws-a', 'Codex')
+      await expect(page.locator('.toast-msg')).toContainText('exit code 3', { timeout: 20_000 })
+      await expect.poll(() => termIds(page)).toHaveLength(0)
+      await page.waitForTimeout(CODEX_TRANSPORT_STOP_WORST_CASE_MS)
+      expect(await pendingAttention(page)).toEqual([])
     } finally {
       await quitAndClose(app)
     }
