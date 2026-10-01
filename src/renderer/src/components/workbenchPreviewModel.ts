@@ -1,5 +1,5 @@
 import { fileUrlPath } from '@shared/browserRoute'
-import { basename, isWebPagePath, previewKindForPath } from '@shared/preview'
+import { isWebPagePath, previewKindForPath } from '@shared/preview'
 import { isRemoteKey } from '@shared/remoteKey'
 import type { GitNumstatMap, GitStatusMap, PreviewItem } from '@shared/types'
 import type { OpenFile } from '../store'
@@ -19,15 +19,16 @@ function previewDocKind(src: string): PreviewDocKind | null {
   return isWebPagePath(src) ? 'page' : null
 }
 
-const AGENT_INSTRUCTION_FILES = new Set(['CLAUDE.md', 'AGENTS.md', 'SKILL.md'])
-const AGENT_ONLY_DIRS = [
+// CC§2 CC§9
+const AGENT_ONLY_PATHS = [
+  /\/(CLAUDE|AGENTS|SKILL)\.md$/,
   /\/\.claude\/projects\/[^/]+\/memory\//,
   /\/\.claude\/(skills|agents|commands)\//,
   /\/skills\/[^/]+\/references\//
 ]
 
 function writtenForTheAgent(src: string): boolean {
-  return AGENT_INSTRUCTION_FILES.has(basename(src)) || AGENT_ONLY_DIRS.some((d) => d.test(src))
+  return AGENT_ONLY_PATHS.some((p) => p.test(src))
 }
 
 export function previewDocs(input: {

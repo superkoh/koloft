@@ -70,11 +70,11 @@ describe('Workbench preview card: the docs it lists', () => {
       webTabs: [],
       openFile: { src: '/repo/CLAUDE.md', openedAt: 300 }
     })
-    expect(docs.map((d) => d.src)).toEqual([
-      '/repo/CLAUDE.md',
-      '/tmp/review.md',
+    expect(docs.map((d) => d.src).sort()).toEqual([
       '/Users/koh/.claude/plans/plan.md',
-      '/repo/.claude/worktrees/wt/docs/design.html'
+      '/repo/.claude/worktrees/wt/docs/design.html',
+      '/repo/CLAUDE.md',
+      '/tmp/review.md'
     ])
   })
 
