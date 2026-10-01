@@ -53,6 +53,13 @@ Working principles:
   interactions, state treatments and CSS classes exactly; never invent a parallel
   version or replace a screen for another session backend. A plan that changes a
   screen shows it as a local HTML mockup built from the app's CSS.
+- Every feature covers every kind of session tab: Claude Code and Codex, each in a
+  local workspace and in a remote one reached over SSH (Secure Shell) — four kinds.
+  A plan, design or PR says what each of the four does: the same thing, a named
+  difference, or left out with the probe or missing data that forces it. A feature
+  built and checked for local Claude Code alone is not done, and the e2e flows picked
+  for a change include the Codex and remote specs whenever the change reaches those
+  tabs.
 - Comments: none. In `.ts/.tsx/.js/.mjs/.cjs/.css` — and in the `#` lines of a
   `#!/` script written as a template string — `npm run check:comments` (CI, plus an
   after-edit hook) rejects every comment except two kinds, each with nothing else in it:
