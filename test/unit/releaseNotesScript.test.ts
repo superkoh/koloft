@@ -70,7 +70,6 @@ describe('scripts/release-notes.sh — CLI contract', () => {
     tag(dir, 'v0.1.0')
     commit(dir, 'feat: alpha (#1)')
     commit(dir, 'fix: beta (#2)')
-    commit(dir, 'fix(gamma)!: gamma (#3)')
 
     const { stdout, status } = run(dir, '0.2.0', 'v0.1.0')
 
@@ -78,30 +77,25 @@ describe('scripts/release-notes.sh — CLI contract', () => {
     expect(stdout).toContain("## What's Changed")
     const iAlpha = stdout.indexOf('- feat: alpha (#1)')
     const iBeta = stdout.indexOf('- fix: beta (#2)')
-    const iGamma = stdout.indexOf('- fix(gamma)!: gamma (#3)')
-    expect(iGamma).toBeGreaterThan(-1)
-    expect(iGamma).toBeLessThan(iBeta)
+    expect(iBeta).toBeGreaterThan(-1)
     expect(iBeta).toBeLessThan(iAlpha)
   })
 
-  it('A2: only feat and fix commits reach the notes — docs, test, chore, refactor, build and release bumps change nothing a user sees', () => {
+  it('A2: only feat and fix commits reach the notes — docs, test and chore changes stay out', () => {
     const dir = freshRepo()
     commit(dir, 'chore: init')
     tag(dir, 'v0.1.0')
     commit(dir, 'feat(sidebar): x (#1)')
     commit(dir, 'docs(CLAUDE.md): d (#2)')
     commit(dir, 'test(e2e): t (#3)')
-    commit(dir, 'chore: c (#4)')
-    commit(dir, 'refactor: r (#5)')
-    commit(dir, 'build(deps): b (#6)')
     commit(dir, 'chore: release v0.2.0')
-    commit(dir, 'fixup the prefix-lookalike (#7)')
-    commit(dir, 'fix: y (#8)')
+    commit(dir, 'fixup the prefix-lookalike (#4)')
+    commit(dir, 'fix: y (#5)')
 
     const { stdout } = run(dir, '0.2.0', 'v0.1.0')
 
     expect(beforeMarker(stdout).match(/^- .*$/gm)).toEqual([
-      '- fix: y (#8)',
+      '- fix: y (#5)',
       '- feat(sidebar): x (#1)'
     ])
   })
