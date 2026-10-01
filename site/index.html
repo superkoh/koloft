@@ -3,273 +3,159 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Koloft — run and manage Claude Code and Codex sessions on your Mac</title>
+    <title>Koloft — run and manage Claude Code and Codex on your Mac</title>
     <meta
       name="description"
-      content="Koloft is a free, open-source Mac app. Pick a folder, and it lists every Claude Code and Codex session that folder has, starts or resumes them, and puts a Workbench beside each one."
+      content="A free, open-source Mac app. Pick a folder; Koloft shows its Claude Code and Codex sessions, starts and resumes them, and puts a Workbench beside each."
     />
-    <meta name="theme-color" content="#0d0d0f" />
+    <meta name="theme-color" content="#f6f1e6" />
+    <link rel="canonical" href="__SITE_URL__/" />
+    <link rel="icon" href="favicon.png" type="image/png" sizes="32x32" />
     <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Koloft" />
+    <meta property="og:title" content="Koloft — run and manage Claude Code and Codex on your Mac" />
+    <meta
+      property="og:description"
+      content="A free, open-source Mac app. Pick a folder; Koloft shows its Claude Code and Codex sessions, starts and resumes them, and puts a Workbench beside each."
+    />
+    <meta property="og:url" content="__SITE_URL__/" />
+    <meta property="og:image" content="__SITE_URL__/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="Koloft on ruled paper: its icon, the line &quot;run and manage Claude Code and Codex on your Mac&quot;, and a crop of a session with its Workbench"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      name="twitter:title"
+      content="Koloft — run and manage Claude Code and Codex on your Mac"
+    />
+    <meta
+      name="twitter:description"
+      content="A free, open-source Mac app. Pick a folder; Koloft shows its Claude Code and Codex sessions, starts and resumes them, and puts a Workbench beside each."
+    />
+    <meta name="twitter:image" content="__SITE_URL__/og.png" />
+    <link
+      rel="preload"
+      href="fonts/special-elite-latin-400-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
     <link rel="stylesheet" href="style.css" />
-  </head>
-  <body>
-    <header class="nav">
-      <div class="column">
-        <a class="brand" href="#top">
-          <img src="icon.svg" alt="" width="28" height="28" />
-          <span>Koloft</span>
-        </a>
-        <nav>
-          <a href="#features">Features</a>
-          <a href="#install">Install</a>
-          <a href="#faq">FAQ</a>
-          <a href="https://github.com/superkoh/koloft">GitHub</a>
-        </nav>
-      </div>
-    </header>
-
-    <main>
-      <section class="hero">
-        <img class="hero-icon" src="icon.svg" alt="Koloft icon" width="112" height="112" />
-        <h1>Your Claude Code and Codex sessions, one folder at a time.</h1>
-        <p class="lead">
-          Koloft is a Mac app. Pick a folder, and it lists every Claude Code and Codex session that
-          folder has. Start a new one or pick up an old one — and beside each session sits a
-          <strong>Workbench</strong>: the files the agent changed, a file browser, web pages and a
-          shell.
-        </p>
-        <div class="cta">
-          <a class="button primary" href="#install">Install</a>
-          <a class="button" href="https://github.com/superkoh/koloft">Source on GitHub</a>
-        </div>
-        <p class="meta">macOS on Apple Silicon · Free and open source (GPL-3.0)</p>
-      </section>
-
-      <figure class="shot">
-        <img
-          src="screenshot.png"
-          width="3200"
-          height="1880"
-          fetchpriority="high"
-          alt="Koloft: folders and their sessions on the left, the running Claude Code session in the middle, and its Workbench on the right showing the changes the agent made"
-        />
-      </figure>
-
-      <section class="pillars">
-        <div>
-          <h2>The real tool, untouched</h2>
-          <p>
-            The middle of the window is <code>claude</code> or <code>codex</code> itself, in a real
-            terminal. Koloft adds what sits around it and never paints over it.
-          </p>
-        </div>
-        <div>
-          <h2>Nothing to import</h2>
-          <p>
-            The list is read straight from what Claude Code and Codex already save on disk, so
-            sessions you started from a plain terminal show up too.
-          </p>
-        </div>
-        <div>
-          <h2>Nothing reported</h2>
-          <p>
-            No sign-up, no analytics, no telemetry. Your sessions talk to Anthropic and OpenAI the
-            same way they always do.
-          </p>
-        </div>
-      </section>
-
-      <section id="features">
-        <h2 class="section-title">What you get</h2>
-        <div class="grid">
-          <article>
-            <h3>Folders and their sessions</h3>
-            <p>
-              Pin folders as workspaces. Each session under one shows a title, when it last ran and,
-              for sessions Koloft started, a status dot (working, waiting for you, done). Click an
-              old one to resume it.
-            </p>
-          </article>
-          <article>
-            <h3>A Workbench per session</h3>
-            <p>
-              The files this session changed with their diffs, a tree of the folder, rendered
-              Markdown, images and PDF, an editor, web pages and a shell — all kept with that
-              session.
-            </p>
-          </article>
-          <article>
-            <h3>Worktree sessions</h3>
-            <p>
-              Start a session in its own git worktree with one shortcut, so two agents can work on
-              the same project without stepping on each other.
-            </p>
-          </article>
-          <article>
-            <h3>A browser the agent can drive</h3>
-            <p>
-              Pages the agent opens land in the Workbench, not in another app. Playwright tools in a
-              Claude session drive these tabs with nothing to set up — and one switch turns that
-              off.
-            </p>
-          </article>
-          <article>
-            <h3>A note per folder</h3>
-            <p>
-              A plain-text note that belongs to the folder, not the session, for the things that
-              should outlive today's work.
-            </p>
-          </article>
-          <article>
-            <h3>Scheduled sessions</h3>
-            <p>
-              Start a Claude or Codex session on a timer with a first message. Koloft hands that
-              message to the tool once; everything after it is yours.
-            </p>
-          </article>
-          <article>
-            <h3>Several accounts, one pool</h3>
-            <p>
-              Add more than one Claude or Codex account. Every new session starts on the one with
-              the most room left. The top bar shows what your Claude accounts have left; Codex
-              accounts show theirs in Settings.
-            </p>
-          </article>
-          <article>
-            <h3>Know when it is your turn</h3>
-            <p>
-              A system notification, while Koloft is in the background, when a session finishes or
-              waits for your approval, and, in Claude sessions, a built-in status line with model,
-              cost, context and git branch.
-            </p>
-          </article>
-          <article>
-            <h3>Remote folders <span class="tag">alpha</span></h3>
-            <p>
-              Run Claude on another machine you can reach over <code>ssh</code>. It keeps running if
-              the link drops, and the list reads the same as a local folder.
-            </p>
-          </article>
-        </div>
-
-        <figure class="shot small">
-          <img
-            src="screenshot-browse.png"
-            width="3200"
-            height="1880"
-            loading="lazy"
-            alt="The Workbench's Browse view: the folder's file tree with a Markdown file shown rendered beside it"
-          />
-          <figcaption>
-            The Workbench's Browse view: the folder's files, with a Markdown file rendered.
-          </figcaption>
-        </figure>
-      </section>
-
-      <section id="install">
-        <h2 class="section-title">Install</h2>
-        <p>
-          Paste this into Terminal. It downloads the latest release and puts Koloft in Applications.
-        </p>
-        <div class="code">
-          <pre>
-curl -fsSL https://raw.githubusercontent.com/superkoh/koloft-releases/main/install.sh | bash</pre>
-          <button type="button" class="button copy">Copy</button>
-        </div>
-        <ul class="notes">
-          <li>
-            <strong>You need:</strong> a Mac with Apple Silicon (M1 or later), and Claude Code or
-            the Codex CLI installed. There is no Intel, Windows or Linux build.
-          </li>
-          <li>
-            <strong>Why a Terminal command?</strong> Koloft is not signed by Apple — that needs a
-            paid Apple Developer ID this project does not have. A file downloaded in a browser gets
-            flagged, and macOS then refuses to open it. A file fetched with <code>curl</code> is not
-            flagged, so the app opens with a normal double-click.
-          </li>
-          <li>
-            <strong>Rather download it yourself?</strong> Get the <code>.dmg</code> from
-            <a href="https://github.com/superkoh/koloft-releases/releases/latest">Releases</a>, drag
-            Koloft to Applications, then clear the flag once:
-            <div class="code">
-              <pre>xattr -dr com.apple.quarantine /Applications/Koloft.app</pre>
-              <button type="button" class="button copy">Copy</button>
-            </div>
-          </li>
-          <li>
-            <strong>Updates:</strong> Koloft checks for new versions itself, and
-            <code>Koloft ▸ Check for Updates…</code> does it on demand.
-          </li>
-        </ul>
-      </section>
-
-      <section id="faq">
-        <h2 class="section-title">Questions</h2>
-        <details>
-          <summary>Does Koloft replace Claude Code or Codex?</summary>
-          <p>
-            No. It runs the real <code>claude</code> and <code>codex</code> command-line tools you
-            already have, and shows their own screen, untouched. Koloft adds the list, the Workbench
-            and the note around it.
-          </p>
-        </details>
-        <details>
-          <summary>Does it cost anything?</summary>
-          <p>
-            Koloft is free. Claude Code and Codex use your own Anthropic or OpenAI account, as they
-            do without Koloft.
-          </p>
-        </details>
-        <details>
-          <summary>What does Koloft connect to?</summary>
-          <p>
-            Only what it needs: GitHub to check for updates, Anthropic to read how much allowance
-            your accounts have left when you add several, DuckDuckGo for what you type in the
-            browser's address bar that is not a link, and a few hosts for optional features like
-            remote folders and browser extensions. The full list is in the
-            <a href="https://github.com/superkoh/koloft#what-it-talks-to">README</a>.
-          </p>
-        </details>
-        <details>
-          <summary>Can I help?</summary>
-          <p>
-            Bug reports and ideas are very welcome as
-            <a href="https://github.com/superkoh/koloft/issues">issues</a>. Koloft does not take
-            pull requests yet; the code is there to read, build and run.
-          </p>
-        </details>
-        <details>
-          <summary>What comes next?</summary>
-          <p>
-            The <a href="https://github.com/superkoh/koloft/blob/main/docs/roadmap.md">roadmap</a>
-            lists what is planned and what is deliberately left out.
-          </p>
-        </details>
-      </section>
-    </main>
-
-    <footer>
-      <p>
-        <a href="https://github.com/superkoh/koloft">Source</a> ·
-        <a href="https://github.com/superkoh/koloft-releases/releases">Releases</a> ·
-        <a href="https://github.com/superkoh/koloft/issues">Issues</a> ·
-        <a href="https://github.com/superkoh/koloft/blob/main/SECURITY.md">Security</a>
-      </p>
-      <p class="fine">
-        Koloft is free software under the
-        <a href="https://github.com/superkoh/koloft/blob/main/LICENSE">GPL-3.0</a>. It is not made
-        by or affiliated with Anthropic or OpenAI.
-      </p>
-    </footer>
-    <script>
-      for (const copy of document.querySelectorAll('.copy')) {
-        const label = copy.textContent
-        copy.addEventListener('click', async () => {
-          await navigator.clipboard.writeText(copy.previousElementSibling.textContent)
-          copy.textContent = 'Copied'
-          setTimeout(() => (copy.textContent = label), 1500)
-        })
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Koloft",
+        "description": "A free, open-source Mac app. Pick a folder; Koloft shows its Claude Code and Codex sessions, starts and resumes them, and puts a Workbench beside each.",
+        "url": "__SITE_URL__/",
+        "operatingSystem": "macOS (Apple Silicon)",
+        "applicationCategory": "DeveloperApplication",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "license": "https://www.gnu.org/licenses/gpl-3.0.html",
+        "downloadUrl": "https://github.com/superkoh/koloft-releases/releases/latest",
+        "sameAs": [
+          "https://github.com/superkoh/koloft"
+        ]
       }
     </script>
+  </head>
+  <body>
+    <div class="sheet">
+      <header class="masthead">
+        <h1 class="brand">
+          <a href="./"><img src="icon.svg" alt="" width="28" height="28" /><span>Koloft</span></a>
+        </h1>
+        <nav class="contents" aria-label="Pages">
+          contents:
+          <a href="./" aria-current="page">home</a> ·
+          <a href="sessions/">sessions</a> ·
+          <a href="workbench/">workbench</a> ·
+          <a href="agents/">agents</a> ·
+          <a href="scheduled/">scheduled</a> ·
+          <a href="accounts/">accounts</a> ·
+          <a href="remote/">remote</a> ·
+          <a href="install/">install</a>
+        </nav>
+      </header>
+
+      <main>
+        <p>
+          Koloft is a free, open-source Mac app that runs and manages Claude Code and Codex, the
+          AI coding agents that live in your terminal. You <mark class="hl">pick a folder</mark>.
+          Koloft shows its sessions, starts new ones and resumes old ones. Beside each session
+          hangs a Workbench: the files it changed, a file browser, web pages, a shell. The agent's
+          own terminal sits in the middle, <mark class="hl">untouched</mark>. Each folder also
+          gets one plain-text note.
+        </p>
+
+        <div class="quick">
+          <p class="command">
+            <code id="cmd"><span class="swipe">curl -fsSL https://raw.githubusercontent.com/superkoh/koloft-releases/main/install.sh | bash</span></code>
+            <button type="button" class="copy" data-copy="cmd">Copy</button>
+          </p>
+          <p class="quick-note">(not signed by Apple, so it installs from Terminal; Apple Silicon Macs only; <a href="install/">why Terminal</a>)</p>
+        </div>
+
+        <figure class="print">
+          <div class="photo">
+            <div class="crop">
+              <img
+                src="screenshot.png"
+                width="3200"
+                height="1880"
+                alt="Koloft: the running Claude Code session on the left, and its Workbench on the right showing the changes the agent made"
+              />
+            </div>
+            <span class="tape" aria-hidden="true"></span>
+          </div>
+          <figcaption>the agent's own terminal, and its Workbench with the diffs</figcaption>
+        </figure>
+
+        <h2>What's inside</h2>
+        <ul class="dash">
+          <li><a href="sessions/">Folders and their sessions</a> <span class="why">— the list, start and resume, worktree sessions</span></li>
+          <li><a href="workbench/">The Workbench</a> <span class="why">— changed files, a file browser, web tabs, a shell, the note</span></li>
+          <li><a href="agents/">Agents can use Koloft too</a> <span class="why">— the koloft command, and its web tabs for Playwright</span></li>
+          <li><a href="scheduled/">Sessions on a timer</a> <span class="why">— a session every hour, day or week</span></li>
+          <li><a href="accounts/">Several accounts, one pool</a> <span class="why">— Claude and Codex accounts, picked per launch</span></li>
+          <li><a href="remote/">Remote folders</a> <span class="why">— a folder on a machine you reach by ssh (alpha)</span></li>
+          <li><a href="install/">Install, update, what it talks to</a></li>
+        </ul>
+
+        <h2>What it won't do</h2>
+        <ul class="dash">
+          <li><s class="struck">build a database of your chats</s> <span class="why">(it reads the tools' own files, and keeps only a list of which ones are its own)</span></li>
+          <li><s class="struck">send anything about you</s> <span class="why">(no tracking; <a href="install/#what-it-talks-to">the few places it talks to</a>)</span></li>
+          <li><s class="struck">ask you to sign up</s> <span class="why">(no account)</span></li>
+          <li><s class="struck">cover the agent's own screen</s> <span class="why">(its terminal stays as it is)</span></li>
+        </ul>
+
+        <p class="aside">also: a status line, notifications, keep-awake, a shortcuts page, world clocks, an update banner.</p>
+
+        <p class="next">start reading -&gt; <a href="sessions/">Folders and their sessions</a></p>
+      </main>
+
+      <footer class="signoff">
+        <p>
+          <a href="https://github.com/superkoh/koloft">source</a> ·
+          <a href="https://github.com/superkoh/koloft-releases/releases">releases</a> ·
+          <a href="https://github.com/superkoh/koloft/issues">issues</a> · GPL-3.0
+        </p>
+        <p class="fine">
+          Not made by or affiliated with Anthropic or OpenAI.<span class="caret" aria-hidden="true"></span>
+        </p>
+      </footer>
+    </div>
+
+    <script src="script.js"></script>
   </body>
 </html>

@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sessions on a timer — Koloft</title>
+    <meta
+      name="description"
+      content="Koloft starts a Claude Code or Codex session on a timer: every few minutes or hours, every day or on the days you pick, with the first message you wrote."
+    />
+    <meta name="theme-color" content="#f6f1e6" />
+    <link rel="canonical" href="__SITE_URL__/scheduled/" />
+    <link rel="icon" href="../favicon.png" type="image/png" sizes="32x32" />
+    <link rel="icon" href="../icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Koloft" />
+    <meta property="og:title" content="Sessions on a timer — Koloft" />
+    <meta
+      property="og:description"
+      content="Koloft starts a Claude Code or Codex session on a timer: every few minutes or hours, every day or on the days you pick, with the first message you wrote."
+    />
+    <meta property="og:url" content="__SITE_URL__/scheduled/" />
+    <meta property="og:image" content="__SITE_URL__/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="Koloft on ruled paper: its icon, the line &quot;run and manage Claude Code and Codex on your Mac&quot;, and a crop of a session with its Workbench"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Sessions on a timer — Koloft" />
+    <meta
+      name="twitter:description"
+      content="Koloft starts a Claude Code or Codex session on a timer: every few minutes or hours, every day or on the days you pick, with the first message you wrote."
+    />
+    <meta name="twitter:image" content="__SITE_URL__/og.png" />
+    <link
+      rel="preload"
+      href="../fonts/special-elite-latin-400-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body>
+    <div class="sheet">
+      <header class="masthead">
+        <p class="brand">
+          <a href="../"><img src="../icon.svg" alt="" width="28" height="28" /><span>Koloft</span></a>
+        </p>
+        <nav class="contents" aria-label="Pages">
+          contents:
+          <a href="../">home</a> ·
+          <a href="../sessions/">sessions</a> ·
+          <a href="../workbench/">workbench</a> ·
+          <a href="../agents/">agents</a> ·
+          <a href="../scheduled/" aria-current="page">scheduled</a> ·
+          <a href="../accounts/">accounts</a> ·
+          <a href="../remote/">remote</a> ·
+          <a href="../install/">install</a>
+        </nav>
+      </header>
+
+      <main>
+        <h1 class="title">Sessions on a timer</h1>
+
+        <p>
+          Some agent work should just happen: run the tests every night, check for old packages
+          every morning. You should not have to be there to start it. Koloft starts
+          <mark class="hl">a fresh session on a timer</mark>, hands it the first message you
+          wrote, and leaves the rest to you. When a run finishes, it waits in the sidebar for you
+          to look at it.
+        </p>
+
+        <h2>Set up a job</h2>
+        <p>
+          Right-click a folder in the sidebar and pick Scheduled jobs… from the menu. Each job
+          starts a Claude or a Codex session. For each one you choose:
+        </p>
+        <ul class="dash">
+          <li>a name, and what to run: any message, or a skill's <code>/name</code></li>
+          <li>when: every so many minutes or hours, every day at a time, or on the days you pick</li>
+          <li>the model, and how hard it thinks</li>
+          <li>the permission it gets</li>
+        </ul>
+
+        <div class="typed-table">
+          <table>
+            <thead>
+              <tr><th>permission</th><th>what it means</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Same as my other sessions</td><td>Follows your Accounts setting. A Claude job skips every check when Multi-account mode and Skip permission prompts are both on in Accounts. If not, it asks before risky steps, like your other sessions.</td></tr>
+              <tr><td>Let it edit files without asking</td><td>It may change files without asking.</td></tr>
+              <tr><td>Never ask</td><td>It never asks. It can change files anywhere on this Mac, not only in the run's folder.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <figure class="shot" style="--ar: 1280 / 678">
+          <div class="frame">
+            <img
+              src="../img/g-scheduled-jobs.webp"
+              width="1280"
+              height="678"
+              loading="lazy"
+              alt="Koloft's Scheduled jobs window for one folder: two jobs, a nightly test run and a morning dependency check, each with an on switch, its first message, when it runs next, and a Run now button"
+            />
+            <span class="tape" aria-hidden="true"></span>
+          </div>
+          <figcaption>two jobs, each with its own switch and a Run now button to try it at once</figcaption>
+        </figure>
+        <p>
+          An agent can manage jobs too, with <code>koloft cron</code>. See
+          <a href="../agents/">Agents can use Koloft too</a>.
+        </p>
+
+        <h2>Where it runs</h2>
+        <p>
+          Git is the tool that keeps a history of your files. A worktree is
+          <mark class="hl">a new copy of the folder</mark>, on its own branch, so your own files
+          are never touched. Each run's copy and branch stay until you remove them.
+        </p>
+        <pre class="ascii" role="img" aria-label="When a job's time comes: if git tracks the folder, Koloft makes a new worktree and starts the session there. If git does not track the folder, the run happens in the folder itself.">
+  the time comes
+        |
+        v
+  does git track the folder?
+        |                 |
+       yes                no
+        |                 |
+        v                 v
+  new worktree,      session in the
+  session in it      folder itself
+</pre>
+
+        <h2>What it never does</h2>
+        <ul class="dash">
+          <li><s class="struck">type into your session</s> <span class="why">(it hands the first message to <code>claude</code> or <code>codex</code> once, as the session starts, and nothing after that)</span></li>
+          <li><s class="struck">run a missed time later</s> <span class="why">(Jobs run only while Koloft is open. If it was closed or asleep for more than five minutes past the time, the run is marked missed; a shorter gap still runs.)</span></li>
+          <li><s class="struck">pile up runs</s> <span class="why">(if the last run is still open, the next one is skipped)</span></li>
+        </ul>
+
+        <p class="next">next page -&gt; <a href="../accounts/">Several accounts, one pool</a></p>
+      </main>
+
+      <footer class="signoff">
+        <p>
+          <a href="https://github.com/superkoh/koloft">source</a> ·
+          <a href="https://github.com/superkoh/koloft-releases/releases">releases</a> ·
+          <a href="https://github.com/superkoh/koloft/issues">issues</a> · GPL-3.0
+        </p>
+        <p class="fine">
+          Not made by or affiliated with Anthropic or OpenAI.<span class="caret" aria-hidden="true"></span>
+        </p>
+      </footer>
+    </div>
+
+    <script src="../script.js"></script>
+  </body>
+</html>

@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - 'site/**'
-      - '.github/assets/**'
+      - '.github/assets/screenshot.png'
       - 'build/icon.svg'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
@@ -27,9 +27,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - run: cp .github/assets/screenshot.png .github/assets/screenshot-browse.png build/icon.svg site/
+      - run: cp .github/assets/screenshot.png build/icon.svg site/
 
-      - uses: actions/configure-pages@v6
+      - id: pages
+        uses: actions/configure-pages@v6
+
+      # Absolute links (canonical, og:image, sitemap) carry __SITE_URL__, so they follow
+      # the custom domain once one is set in the repo's Pages settings.
+      - env:
+          BASE_URL: ${{ steps.pages.outputs.base_url }}
+        run: |
+          find site -type f \( -name '*.html' -o -name 'sitemap.xml' -o -name 'robots.txt' \) -print0 \
+            | xargs -0 sed -i "s|__SITE_URL__|${BASE_URL%/}|g"
+          ! grep -rIl __SITE_URL__ site
 
       - uses: actions/upload-pages-artifact@v5
         with:

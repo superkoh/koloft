@@ -27,7 +27,8 @@ shell.
 - **Workspace sidebar** — pin folders as workspaces. Under each one, its sessions
   appear with a title, a status dot (working / waiting for you / done) and how long ago
   they ran. Nothing is imported: the list is what Claude Code and Codex themselves wrote
-  to disk, so sessions you started from a plain terminal show up too.
+  to disk, and Koloft keeps only a list of which sessions are its own. A session you
+  started from a plain terminal is one right-click ▸ `Restore session…` away.
 - **Start or resume sessions** — `File ▸ New Session…` (⌘N) starts one in the
   selected workspace with the default method set in `Settings ▸ Sessions`; clicking an
   old row resumes it; `New Worktree Session…` (⇧⌘N) runs the
@@ -38,8 +39,8 @@ shell.
 - **Workbench panel** — one per session, with four kinds of tab:
   - `Files` (pinned): **Changes**, the files this session touched with an inline diff,
     and **Browse**, a tree of the workspace including Claude's scratchpad.
-  - File tabs: rendered Markdown / HTML / images / PDF, a diff view, the source, and an
-    editor with ⌘S save.
+  - File tabs: rendered Markdown / images / PDF, a diff view, the source, and an
+    editor with ⌘S save. An HTML file opens as a web tab.
   - Web tabs: a real in-app browser (logins, downloads, popups, Chrome extensions) so an
     agent's `open <url>` never has to leave the app.
   - Terminal tabs: a shell in the session's directory (`View ▸ New Terminal Tab`, ⌃`).
@@ -50,8 +51,8 @@ shell.
   with it; the note belongs to the folder, so it is where the things that outlive this
   session go.
 - **Scheduled jobs** — a workspace's right-click menu has `Scheduled jobs…`: start a
-  Claude or Codex session on a timer with a first message, optionally in its own git
-  worktree. Koloft never types into a session — the first message is handed to `claude`
+  Claude or Codex session on a timer with a first message. In a git workspace every run
+  gets a fresh worktree of its own; a plain folder runs in place. Koloft never types into a session — the first message is handed to `claude`
   or `codex` directly, and everything after it is yours.
 - **Multi-account balancing** — register several Claude subscription accounts and
   several Codex sign-ins. Every launch looks at their live rate limits and starts on the
@@ -280,7 +281,8 @@ only hosts it ever reaches on its own are:
 | `api.anthropic.com` | reads each account's remaining rate-limit allowance, so the balancer can pick the least-loaded one |
 | `api.github.com`, `github.com` | checks for a newer Koloft and downloads its `.dmg` |
 | `claude.ai`, `nodejs.org` | only for a **remote** workspace, and only to install what that machine is missing — `claude` from the first, Node from the second |
-| `chromewebstore.google.com` | only when you install a Chrome extension for the in-app browser |
+| your workspace's git remote (often `github.com`) | every 5 minutes, to see whether the branch is behind — `Settings ▸ Appearance` turns auto-fetch off |
+| `clients2.google.com`, `update.googleapis.com` | only once you install a Chrome extension for the in-app browser: the first serves the extension, the second checks once per launch for a newer one |
 | `duckduckgo.com` | whatever you type in the browser's address bar that is not a URL |
 
 A remote workspace also reaches the machine you named, over `ssh` and `rsync`.
