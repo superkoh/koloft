@@ -4,10 +4,12 @@ import type { Page } from '@playwright/test'
 import { test, expect, quitAndClose } from './helpers/app'
 import { launchSettled } from './helpers/blackbox'
 import {
+  clickAppMenuItem,
   notesArea,
   sendShortcut,
   settingsOnDisk,
   snap,
+  startSessionIn,
   waitBooted,
   workspaceNames
 } from './helpers/p1'
@@ -17,6 +19,23 @@ const SIDEBAR_BUTTON = '.aux-ico.sb-toggle'
 
 async function centerLeft(page: Page): Promise<number> {
   return (await page.locator('.center').boundingBox())?.x ?? -1
+}
+
+// PLATFORM§24
+function dragsWindowAt(page: Page, x: number, y: number): Promise<boolean> {
+  return page.evaluate(
+    ([px, py]) => {
+      let drag = false
+      for (const el of Array.from(document.querySelectorAll('*'))) {
+        const region = getComputedStyle(el).getPropertyValue('app-region').trim()
+        if (region !== 'drag' && region !== 'no-drag') continue
+        const r = el.getBoundingClientRect()
+        if (px >= r.left && px < r.right && py >= r.top && py < r.bottom) drag = region === 'drag'
+      }
+      return drag
+    },
+    [x, y]
+  )
 }
 
 test.describe('Sidebar: the button by the traffic lights hides and shows it, and the choice survives a restart', () => {
@@ -92,6 +111,24 @@ test.describe('Sidebar: the button by the traffic lights hides and shows it, and
     await expect.poll(left).toBeLessThan(windowed)
     await fullscreen(false)
     await expect.poll(left).toBe(windowed)
+  })
+
+  test('SB06: with the sidebar hidden and the Workbench full width, the empty band above the Workbench still drags the window', async ({
+    app,
+    page
+  }) => {
+    test.setTimeout(120_000)
+    await startSessionIn(page, 'ws-a')
+    await page.locator(SIDEBAR_BUTTON).click()
+    await expect(page.locator('.side')).toBeHidden()
+    await clickAppMenuItem(app, page, 'toggle-focus-mode')
+    await expect(page.locator('.wb-col.full')).toBeVisible()
+
+    const band = await page.evaluate(() => {
+      const wb = document.querySelector('.wb-col.full')!.getBoundingClientRect()
+      return { x: wb.left + wb.width / 2, y: wb.top / 2 }
+    })
+    expect(await dragsWindowAt(page, band.x, band.y)).toBe(true)
   })
 
   test('SB02: ⌥⌘N while the sidebar is hidden shows it and puts the caret in the note', async ({

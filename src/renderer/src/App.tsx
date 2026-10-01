@@ -1323,6 +1323,7 @@ export default function App(): JSX.Element {
       {(sbDragging || nbDragging || vDragging) && <div className="drag-overlay" />}
       <div className="center" ref={centerRef}>
         <div className="center-row">
+          {sidebarHidden && panelFull && <div className="wb-full-drag" />}
           <div className="term-col" style={{ display: panelFull ? 'none' : undefined }}>
             <div className="center-top">
               <WorldClock />
