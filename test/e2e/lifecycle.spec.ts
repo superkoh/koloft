@@ -490,12 +490,14 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
   }) => {
     test.setTimeout(120_000)
     gitInit(env.workspaces.a)
-    const wt = gitWorktreeAdd(env.workspaces.a, 'deleted')
-    execFileSync('git', ['worktree', 'remove', '--force', wt], { cwd: env.workspaces.a })
     const id = seedJsonl(env, env.workspaces.a, {
       summary: 'Gone-worktree resident session',
       cwd: env.workspaces.a,
-      worktreeState: { worktreeName: 'deleted', worktreePath: wt, originalCwd: env.workspaces.a }
+      worktreeState: {
+        worktreeName: 'deleted',
+        worktreePath: path.join(env.workspaces.a, '.claude', 'worktrees', 'deleted'),
+        originalCwd: env.workspaces.a
+      }
     })
     const layoutFile = path.join(env.userData, 'layout.json')
     fs.writeFileSync(layoutFile, JSON.stringify({ ...layoutOnDisk(env), resident: [id] }))
