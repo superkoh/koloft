@@ -12,8 +12,21 @@ export class AttentionTracker {
   private recentlySuppressed = new Map<string, AttentionEvent>()
 
   constructor(
-    private readonly onChange: (pending: AttentionEvent[], event: AttentionEvent | null) => void
-  ) {}
+    private readonly onChange: (pending: AttentionEvent[], event: AttentionEvent | null) => void,
+    lastRun: AttentionEvent[] = []
+  ) {
+    for (const e of lastRun) {
+      if (!e.sessionId) continue
+      const kind = e.kind === 'approval' ? 'turn-done' : e.kind
+      this.pending.set(e.tabId, { ...e, kind, resurrected: undefined, fromLastRun: true })
+    }
+  }
+
+  bound(tabId: string, sessionId: string, ctx: AttentionContext): void {
+    const carried = this.list().find((e) => e.sessionId === sessionId && e.fromLastRun)
+    this.clearSession(sessionId)
+    if (carried) this.raise(tabId, carried.kind, ctx, { title: carried.title, sessionId }, true)
+  }
 
   onStatusChange(
     tabId: string,

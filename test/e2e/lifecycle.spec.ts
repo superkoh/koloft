@@ -437,7 +437,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     }
   })
 
-  test('Keep running: a marked session starts again by itself when Koloft reopens — same id, shown resuming, nothing selected — and an unmarked one stays cold', async ({
+  test('Keep running: a marked session starts again by itself when Koloft reopens — same id, shown resuming, nothing selected, its unread dot kept — and an unmarked one stays cold', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -461,6 +461,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       await page1.locator('.menu .mi', { hasText: 'Keep running' }).click()
       await expect(residentRow.locator('.ws-tab-resident')).toBeVisible()
       await expect.poll(() => layoutOnDisk(env).resident).toEqual([resident])
+      await expect(residentRow.locator('.ws-tab-unread')).toHaveCount(1)
     } finally {
       await app1.close()
     }
@@ -476,6 +477,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       expect(resumedId(calls[2])).toBe(resident)
 
       await expect(residentRow).toHaveClass(/\bst-(working|waiting|idle)\b/, { timeout: 30_000 })
+      await expect(residentRow.locator('.ws-tab-unread')).toHaveCount(1)
       await expect(page2.locator('.ws-tab.active')).toHaveCount(0)
       await expect(page2.locator('.ws-tab', { hasText: 'Plain session' })).toHaveClass(/\bcold\b/)
       await page2.waitForTimeout(ROOM_FOR_A_RESPAWN_MS)

@@ -33,6 +33,7 @@ import {
   SUPPORTED_PAIRS
 } from '@shared/sessionBackend'
 import { AttentionTracker, type AttentionContext } from './attention'
+import { loadLastRunAttention, saveAttention } from './attentionFile'
 import { route, dockBadgeText } from './notifyRouter'
 import { setupShim, utilTerminalGuard } from './shim'
 import { openDropTarget, type OpenDrop } from './openDrop'
@@ -278,7 +279,7 @@ let codexStartupError: string | undefined
 const sessionBackends = new SessionBackends({
   prompted: consumeOutletDedupe,
   bound: (tabId, key) => {
-    attention.clearSession(key)
+    attention.bound(tabId, key, attentionCtx())
     cronRunner?.onBound(tabId, key)
   },
   exited: (tabId, subject) => attention.onExited(tabId, attentionCtx(), subject),
@@ -314,16 +315,22 @@ if (process.platform !== 'win32') {
   setInterval(() => void refreshLeftovers(), LEFTOVER_SCAN_MS).unref()
   void refreshLeftovers()
 }
+let quitCommitted = false
 const attention = new AttentionTracker((pending, event) => {
+  if (!quitCommitted) saveAttention(pending)
   updateDockBadge(pending)
   sendToRenderer('attention:changed', pending)
   retractStaleOsNotifications(pending)
   if (event && !event.resurrected) routeAttentionEvent(event)
-})
+}, loadLastRunAttention())
 let uiActiveTabId: string | null = null
 let activeTabBeforeReload: string | null = null
 function sessionOfTab(tabId: string): SessionInfo | undefined {
   return allSessions().find((s) => s.tabId === tabId)
+}
+function sessionIdsOfWorkspace(wsPath: string): string[] {
+  const ws = workspaceMgr?.rows().find((w) => w.workspace.path === wsPath)
+  return ws?.rows.map((r) => r.id) ?? []
 }
 function attentionSubjectOf(tabId: string): AttentionSubject {
   const s = sessionOfTab(tabId)
@@ -1130,6 +1137,7 @@ app.whenReady().then(() => {
   })
 
   setupBrowserPartition()
+  updateDockBadge(attention.list())
   // PLATFORM§15
   setupExtensions({
     window: () => mainWindow,
@@ -1548,6 +1556,7 @@ app.on('before-quit', (e) => {
     approveQuit()
   }
   clearQuitFallback()
+  quitCommitted = true
   if (!codexQuitStopped && codexSessions?.hasRuns()) {
     e.preventDefault()
     if (!codexQuitPending) {
@@ -2645,8 +2654,12 @@ function registerIpc(): void {
     return r
   })
   ipcMain.handle('workspace:remove', (_e, p: string) => {
+    const rows = sessionIdsOfWorkspace(p)
     const r = workspaceMgr?.remove(p)
-    if (r?.removed) cronRunner?.removeWorkspace(p)
+    if (r?.removed) {
+      cronRunner?.removeWorkspace(p)
+      for (const id of rows) attention.clearSession(id)
+    }
     return r
   })
   ipcMain.handle('workspace:removeConfirmed', async (_e, p: string) => {
@@ -2657,8 +2670,10 @@ function registerIpc(): void {
         .filter((id): id is string => !!id)
     )
     await Promise.all([...codexTabs].map((id) => codexSessions?.stop(id)))
+    const rows = sessionIdsOfWorkspace(p)
     workspaceMgr?.removeConfirmed(p)
     cronRunner?.removeWorkspace(p)
+    for (const id of rows) attention.clearSession(id)
   })
   ipcMain.handle('workspace:rows', async () => {
     await workspaceMgr?.firstScan
@@ -2721,6 +2736,7 @@ function registerIpc(): void {
   })
   ipcMain.handle('sessions:archive', (_e, id: unknown): boolean => {
     if (typeof id !== 'string' || !id) return false
+    attention.clearSession(id)
     return sessionBackends.forSession(id).archive(id)
   })
 

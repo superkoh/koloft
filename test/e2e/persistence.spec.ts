@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { test, expect, launchApp } from './helpers/app'
+import { test, expect, launchApp, pendingAttention } from './helpers/app'
 import { FAKE_SESSION_TITLE, startSessionIn, waitBooted } from './helpers/p1'
 
 const DEBOUNCED_SAVES_LAND_MS = 1500
@@ -53,6 +53,27 @@ test('restart lands cold (T-LIFE-09 across a real relaunch): session listed unse
   )
   expect(bounds.width).toBe(1180)
   expect(bounds.height).toBe(760)
+  await app2.close()
+})
+
+test('an unread red dot survives a real relaunch on the session’s cold row', async ({ env }) => {
+  const app1 = await launchApp(env)
+  const page1 = await app1.firstWindow()
+  await page1.waitForLoadState('domcontentloaded')
+  await waitBooted(page1)
+  await startSessionIn(page1, 'ws-a')
+  await expect(page1.locator('.ws-tab.st-waiting .ws-tab-unread')).toHaveCount(1, {
+    timeout: 25_000
+  })
+  await app1.close()
+
+  const app2 = await launchApp(env)
+  const page2 = await app2.firstWindow()
+  await page2.waitForLoadState('domcontentloaded')
+  const row = page2.locator('.ws-tab', { hasText: FAKE_SESSION_TITLE })
+  await expect(row).toHaveClass(/\bcold\b/, { timeout: 20_000 })
+  await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
+  await expect.poll(() => pendingAttention(page2)).toMatchObject([{ kind: 'turn-done' }])
   await app2.close()
 })
 
