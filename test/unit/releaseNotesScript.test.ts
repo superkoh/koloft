@@ -70,37 +70,40 @@ describe('scripts/release-notes.sh — CLI contract', () => {
     tag(dir, 'v0.1.0')
     commit(dir, 'feat: alpha (#1)')
     commit(dir, 'fix: beta (#2)')
-    commit(dir, 'docs: gamma')
+    commit(dir, 'fix(gamma)!: gamma (#3)')
 
     const { stdout, status } = run(dir, '0.2.0', 'v0.1.0')
 
     expect(status).toBe(0)
     expect(stdout).toContain("## What's Changed")
-    expect(stdout).toContain('- feat: alpha (#1)')
-    expect(stdout).toContain('- fix: beta (#2)')
-    expect(stdout).toContain('- docs: gamma')
     const iAlpha = stdout.indexOf('- feat: alpha (#1)')
     const iBeta = stdout.indexOf('- fix: beta (#2)')
-    const iGamma = stdout.indexOf('- docs: gamma')
+    const iGamma = stdout.indexOf('- fix(gamma)!: gamma (#3)')
+    expect(iGamma).toBeGreaterThan(-1)
     expect(iGamma).toBeLessThan(iBeta)
     expect(iBeta).toBeLessThan(iAlpha)
   })
 
-  it('A2: drops "chore: release …" and "chore(release)…" commits from the list', () => {
+  it('A2: only feat and fix commits reach the notes — docs, test, chore, refactor, build and release bumps change nothing a user sees', () => {
     const dir = freshRepo()
     commit(dir, 'chore: init')
     tag(dir, 'v0.1.0')
-    commit(dir, 'feat: x (#1)')
+    commit(dir, 'feat(sidebar): x (#1)')
+    commit(dir, 'docs(CLAUDE.md): d (#2)')
+    commit(dir, 'test(e2e): t (#3)')
+    commit(dir, 'chore: c (#4)')
+    commit(dir, 'refactor: r (#5)')
+    commit(dir, 'build(deps): b (#6)')
     commit(dir, 'chore: release v0.2.0')
-    commit(dir, 'chore(release): v0.2.0')
-    commit(dir, 'fix: y (#2)')
+    commit(dir, 'fixup the prefix-lookalike (#7)')
+    commit(dir, 'fix: y (#8)')
 
     const { stdout } = run(dir, '0.2.0', 'v0.1.0')
 
-    expect(stdout).toContain('- feat: x (#1)')
-    expect(stdout).toContain('- fix: y (#2)')
-    expect(stdout).not.toContain('chore: release v0.2.0')
-    expect(stdout).not.toContain('chore(release): v0.2.0')
+    expect(beforeMarker(stdout).match(/^- .*$/gm)).toEqual([
+      '- fix: y (#8)',
+      '- feat(sidebar): x (#1)'
+    ])
   })
 
   it("A3: drops merge commit subjects while keeping the branch's real commits", () => {

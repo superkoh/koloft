@@ -61,10 +61,12 @@ RANGE="$END"
 SUBJECTS=""
 # A repo with no commits has no HEAD to log — that's "nothing to list", not a git failure.
 if git rev-parse -q --verify "$END" >/dev/null; then
-  # `|| true`: both an empty range and a grep that filters everything out are normal
-  # outcomes (a release whose only commit is its own version bump).
+  # Only feat/fix reach the notes: docs, test, chore, refactor and build commits change
+  # nothing a user sees. A user-facing change labelled anything else stays out — label it
+  # fix instead. `|| true`: both an empty range and a grep that filters everything out are
+  # normal outcomes (a release of only docs and its own version bump).
   SUBJECTS=$(git log --no-merges --pretty=format:%s "$RANGE" |
-    grep -Ev '^chore(\([^)]*\))?:[[:space:]]*release([[:space:]]|$)|^chore\(release\)' || true)
+    grep -E '^(feat|fix)(\([^)]*\))?!?:' || true)
 fi
 
 if [ -n "$SUBJECTS" ]; then
