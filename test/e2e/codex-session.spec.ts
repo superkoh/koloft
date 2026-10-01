@@ -3,7 +3,7 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import { execFileSync } from 'child_process'
 import type { Locator, Page } from '@playwright/test'
-import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { test, expect, launchApp, pretendWindowFocused, quitAndClose } from './helpers/app'
 import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
 import { WORKBENCH, wbUnreadTabs } from './helpers/workbench'
 import {
@@ -703,11 +703,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(codexRows(page)).toHaveClass(/cold/)
       await expect(codexRows(page).locator('.ws-tab-unread')).toHaveCount(1)
 
-      await app.evaluate(({ BrowserWindow }) => {
-        const win = BrowserWindow.getAllWindows()[0]
-        win.isFocused = () => true
-        win.emit('focus')
-      })
+      await pretendWindowFocused(app)
       await codexRows(page).click()
       await expect.poll(() => codexCalls(env).length).toBe(2)
       await expect(codexRows(page)).toHaveClass(/st-waiting/)

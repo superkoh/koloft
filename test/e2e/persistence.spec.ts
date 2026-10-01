@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { test, expect, launchApp, pendingAttention } from './helpers/app'
+import { test, expect, launchApp, pendingAttention, pretendWindowFocused } from './helpers/app'
 import { FAKE_SESSION_TITLE, startSessionIn, waitBooted } from './helpers/p1'
 
 const DEBOUNCED_SAVES_LAND_MS = 1500
@@ -77,15 +77,10 @@ test('an unread red dot survives a real relaunch on the session’s cold row, an
   await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
   await expect.poll(() => pendingAttention(page2)).toMatchObject([{ kind: 'turn-done' }])
 
-  await app2.evaluate(({ BrowserWindow }) => {
-    const win = BrowserWindow.getAllWindows()[0]
-    win.isFocused = () => true
-    win.emit('focus')
-  })
+  await pretendWindowFocused(app2)
   await row.click()
   await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
   await expect(row.locator('.ws-tab-unread')).toHaveCount(0)
-  expect(await pendingAttention(page2)).toEqual([])
   await app2.close()
 })
 

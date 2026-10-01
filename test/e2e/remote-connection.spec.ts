@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { test, expect, launchApp, pretendWindowFocused, quitAndClose } from './helpers/app'
 import {
   addRemoteWorkspace,
   breakConnection,
@@ -131,7 +131,6 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
       await expect(row).toHaveClass(/\bst-working\b/, { timeout: 60_000 })
       await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 90_000 })
       await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
-      await page.waitForTimeout(LAYOUT_SAVE_DEBOUNCE_SETTLE_MS)
     } finally {
       await quitAndClose(app)
     }
@@ -147,11 +146,7 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
       })
       await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
 
-      await app2.evaluate(({ BrowserWindow }) => {
-        const win = BrowserWindow.getAllWindows()[0]
-        win.isFocused = () => true
-        win.emit('focus')
-      })
+      await pretendWindowFocused(app2)
       await row.click()
       await expect(centerTerm(page2)).toBeVisible({ timeout: 30_000 })
       await expect(row.locator('.ws-tab-unread')).toHaveCount(0, { timeout: 30_000 })
