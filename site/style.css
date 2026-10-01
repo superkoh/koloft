@@ -30,6 +30,8 @@
   --rule: #9c958a;
   --link: #c8642f;
   --print: #fffdf8;
+  --type: 'Special Elite', 'Courier New', monospace;
+  --mono: 'Courier Prime', 'Courier New', monospace;
   --line: 28px;
   --rule-y: 20px;
   --col: 66ch;
@@ -56,10 +58,7 @@ html {
 body {
   margin: 0;
   color: var(--ink);
-  font:
-    400 17px / var(--line) 'Special Elite',
-    'Courier New',
-    monospace;
+  font: 400 17px / var(--line) var(--type);
   background-color: var(--paper);
   background-image: repeating-linear-gradient(
     180deg,
@@ -109,7 +108,6 @@ table {
 h2,
 h3,
 .shot:not(.is-narrow),
-.print,
 .command,
 .typed-table,
 .ascii,
@@ -130,9 +128,7 @@ h3,
   align-items: center;
   height: var(--line);
   margin: 0;
-  font:
-    400 28px / var(--line) 'Special Elite',
-    monospace;
+  font: 400 28px / var(--line) var(--type);
   letter-spacing: 0.02em;
 }
 
@@ -145,8 +141,6 @@ h3,
 }
 
 .brand img {
-  width: 28px;
-  height: 28px;
   position: relative;
   top: -3px;
 }
@@ -187,9 +181,7 @@ h3,
 h2 {
   position: relative;
   top: 10px;
-  font:
-    400 34px / calc(var(--line) * 2) 'Special Elite',
-    monospace;
+  font: 400 34px / calc(var(--line) * 2) var(--type);
   letter-spacing: 0.02em;
 }
 
@@ -211,7 +203,7 @@ h3 {
 
 code,
 kbd {
-  font-family: 'Courier Prime', 'Courier New', monospace;
+  font-family: var(--mono);
   font-weight: 700;
   font-size: 16px;
   line-height: 1;
@@ -254,7 +246,9 @@ button:focus-visible {
   outline-offset: 3px;
 }
 
-.aside {
+.aside,
+.why,
+.signoff .fine {
   color: var(--muted);
 }
 
@@ -281,7 +275,6 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 16px;
-  margin-bottom: var(--line);
 }
 
 .command code {
@@ -307,9 +300,7 @@ button:focus-visible {
   height: 26px;
   margin: 1px 0;
   padding: 0 12px;
-  font:
-    400 15px/24px 'Special Elite',
-    monospace;
+  font: 400 15px/24px var(--type);
   color: var(--ink);
   background: transparent;
   border: 1px solid var(--ink);
@@ -322,41 +313,14 @@ button:focus-visible {
   border-color: var(--link);
 }
 
-.photo,
 .frame {
   position: relative;
   z-index: 1;
   padding: var(--pad);
   background: var(--print);
   box-shadow:
-    0 1px 1px rgba(42, 38, 34, 0.14),
-    0 10px 20px -12px rgba(42, 38, 34, 0.4);
-}
-
-.print {
-  --hero-h: calc((100cqw - 2 * var(--pad)) * 1100 / 2640);
-  margin: var(--line) 0;
-}
-
-.photo {
-  height: round(up, calc(var(--hero-h) + 2 * var(--pad)), var(--line));
-}
-
-.crop {
-  position: relative;
-  height: var(--hero-h);
-  overflow: hidden;
-  background: #0d0d0f;
-}
-
-.crop img {
-  position: absolute;
-  top: 0;
-  left: calc(-560 / 2640 * 100%);
-  display: block;
-  width: calc(3200 / 2640 * 100%);
-  height: auto;
-  max-width: none;
+    0 1px 1px color-mix(in srgb, var(--ink) 14%, transparent),
+    0 10px 20px -12px color-mix(in srgb, var(--ink) 40%, transparent);
 }
 
 .tape {
@@ -366,11 +330,11 @@ button:focus-visible {
   left: 50%;
   width: 140px;
   height: 32px;
-  margin-left: -70px;
   background: rgba(247, 238, 212, 0.62);
   border-left: 1px dashed rgba(255, 255, 255, 0.35);
   border-right: 1px dashed rgba(255, 255, 255, 0.35);
-  box-shadow: 0 1px 2px rgba(42, 38, 34, 0.12);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 12%, transparent);
+  translate: -50%;
   transform: rotate(-2.5deg);
 }
 
@@ -408,7 +372,6 @@ button:focus-visible {
 .frame .tape {
   width: calc(var(--w) * 0.3);
   max-width: 140px;
-  margin-left: calc(min(var(--w) * 0.3, 140px) / -2);
 }
 
 .shot:nth-of-type(even) .tape {
@@ -439,15 +402,14 @@ figcaption::before {
 }
 
 .dash li {
+  position: relative;
   padding-left: 2ch;
-  text-indent: -2ch;
 }
 
 .dash li::before {
   content: '- ';
-  display: inline-block;
-  width: 2ch;
-  text-indent: 0;
+  position: absolute;
+  left: 0;
 }
 
 .struck {
@@ -468,10 +430,6 @@ figcaption::before {
   text-indent: 0;
   color: var(--ink);
   opacity: 0.92;
-}
-
-.why {
-  color: var(--muted);
 }
 
 .typed-table {
@@ -511,10 +469,7 @@ figcaption::before {
 .ascii {
   padding-left: 2ch;
   overflow-x: auto;
-  font:
-    400 15px / var(--line) 'Courier Prime',
-    'Courier New',
-    monospace;
+  font: 400 15px / var(--line) var(--mono);
   color: var(--ink);
 }
 
@@ -555,10 +510,6 @@ figcaption::before {
   margin: 0;
 }
 
-.signoff .fine {
-  color: var(--muted);
-}
-
 .caret {
   display: inline-block;
   width: 0.6em;
@@ -593,12 +544,12 @@ figcaption::before {
     left: -9px;
   }
 
-  .shot.no-phone {
-    display: none;
-  }
-
   .sheet::after {
     left: -6px;
+  }
+
+  .shot.no-phone {
+    display: none;
   }
 
   .title,
@@ -610,9 +561,7 @@ figcaption::before {
   }
 
   .tape {
-    width: 84px;
     height: 24px;
-    margin-left: -42px;
     top: -12px;
   }
 
@@ -669,9 +618,7 @@ figcaption::before {
 
   .typed-table td[data-label]::before {
     content: attr(data-label) ': ';
-    font:
-      400 13px / 1 'Special Elite',
-      monospace;
+    font: 400 13px / 1 var(--type);
     color: var(--muted);
   }
 

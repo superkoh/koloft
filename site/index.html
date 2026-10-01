@@ -26,7 +26,7 @@
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content="Koloft on ruled paper: its icon, the line &quot;run and manage Claude Code and Codex on your Mac&quot;, and a crop of a session with its Workbench"
+      content='Koloft on ruled paper: its icon, the line "run and manage Claude Code and Codex on your Mac", and a crop of a session with its Workbench'
     />
     <meta name="twitter:card" content="summary_large_image" />
     <meta
@@ -62,9 +62,7 @@
         },
         "license": "https://www.gnu.org/licenses/gpl-3.0.html",
         "downloadUrl": "https://github.com/superkoh/koloft-releases/releases/latest",
-        "sameAs": [
-          "https://github.com/superkoh/koloft"
-        ]
+        "sameAs": ["https://github.com/superkoh/koloft"]
       }
     </script>
   </head>
@@ -76,12 +74,9 @@
         </h1>
         <nav class="contents" aria-label="Pages">
           contents:
-          <a href="./" aria-current="page">home</a> ·
-          <a href="sessions/">sessions</a> ·
-          <a href="workbench/">workbench</a> ·
-          <a href="agents/">agents</a> ·
-          <a href="scheduled/">scheduled</a> ·
-          <a href="accounts/">accounts</a> ·
+          <a href="./" aria-current="page">home</a> · <a href="sessions/">sessions</a> ·
+          <a href="workbench/">workbench</a> · <a href="agents/">agents</a> ·
+          <a href="scheduled/">scheduled</a> · <a href="accounts/">accounts</a> ·
           <a href="remote/">remote</a> ·
           <a href="install/">install</a>
         </nav>
@@ -89,32 +84,37 @@
 
       <main>
         <p>
-          Koloft is a free, open-source Mac app that runs and manages Claude Code and Codex, the
-          AI coding agents that live in your terminal. You <mark class="hl">pick a folder</mark>.
-          Koloft shows its sessions, starts new ones and resumes old ones. Beside each session
-          hangs a Workbench: the files it changed, a file browser, web pages, a shell. The agent's
-          own terminal sits in the middle, <mark class="hl">untouched</mark>. Each folder also
-          gets one plain-text note.
+          Koloft is a free, open-source Mac app that runs and manages Claude Code and Codex, the AI
+          coding agents that live in your terminal. You <mark class="hl">pick a folder</mark>.
+          Koloft shows its sessions, starts new ones and resumes old ones. Beside each session hangs
+          a Workbench: the files it changed, a file browser, web pages, a shell. The agent's own
+          terminal sits in the middle, <mark class="hl">untouched</mark>. Each folder also gets one
+          plain-text note.
         </p>
 
         <div class="quick">
+          <!-- prettier-ignore -->
           <p class="command">
             <code id="cmd"><span class="swipe">curl -fsSL https://raw.githubusercontent.com/superkoh/koloft-releases/main/install.sh | bash</span></code>
             <button type="button" class="copy" data-copy="cmd">Copy</button>
           </p>
-          <p class="quick-note">(not signed by Apple, so it installs from Terminal; Apple Silicon Macs only; <a href="install/">why Terminal</a>)</p>
+          <p class="quick-note">
+            (not signed by Apple, so it installs from Terminal; Apple Silicon Macs only;
+            <a href="install/">why Terminal</a>)
+          </p>
         </div>
 
-        <figure class="print">
-          <div class="photo">
-            <div class="crop">
-              <img
-                src="screenshot.png"
-                width="3200"
-                height="1880"
-                alt="Koloft: the running Claude Code session on the left, and its Workbench on the right showing the changes the agent made"
-              />
-            </div>
+        <figure class="shot" style="--ar: 2640 / 1100">
+          <div class="frame">
+            <img
+              src="img/hero-2176.webp"
+              srcset="img/hero-1088.webp 1088w, img/hero-2176.webp 2176w"
+              sizes="(max-width: 760px) calc(100vw - 48px), 1064px"
+              width="2176"
+              height="907"
+              fetchpriority="high"
+              alt="Koloft: the running Claude Code session on the left, and its Workbench on the right showing the changes the agent made"
+            />
             <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>the agent's own terminal, and its Workbench with the diffs</figcaption>
@@ -122,24 +122,60 @@
 
         <h2>What's inside</h2>
         <ul class="dash">
-          <li><a href="sessions/">Folders and their sessions</a> <span class="why">— the list, start and resume, worktree sessions</span></li>
-          <li><a href="workbench/">The Workbench</a> <span class="why">— changed files, a file browser, web tabs, a shell, the note</span></li>
-          <li><a href="agents/">Agents can use Koloft too</a> <span class="why">— the koloft command, and its web tabs for Playwright</span></li>
-          <li><a href="scheduled/">Sessions on a timer</a> <span class="why">— a session every hour, day or week</span></li>
-          <li><a href="accounts/">Several accounts, one pool</a> <span class="why">— Claude and Codex accounts, picked per launch</span></li>
-          <li><a href="remote/">Remote folders</a> <span class="why">— a folder on a machine you reach by ssh (alpha)</span></li>
+          <li>
+            <a href="sessions/">Folders and their sessions</a>
+            <span class="why">— the list, start and resume, worktree sessions</span>
+          </li>
+          <li>
+            <a href="workbench/">The Workbench</a>
+            <span class="why">— changed files, a file browser, web tabs, a shell, the note</span>
+          </li>
+          <li>
+            <a href="agents/">Agents can use Koloft too</a>
+            <span class="why">— the koloft command, and its web tabs for Playwright</span>
+          </li>
+          <li>
+            <a href="scheduled/">Sessions on a timer</a>
+            <span class="why">— a session every hour, day or week</span>
+          </li>
+          <li>
+            <a href="accounts/">Several accounts, one pool</a>
+            <span class="why">— Claude and Codex accounts, picked per launch</span>
+          </li>
+          <li>
+            <a href="remote/">Remote folders</a>
+            <span class="why">— a folder on a machine you reach by ssh (alpha)</span>
+          </li>
           <li><a href="install/">Install, update, what it talks to</a></li>
         </ul>
 
         <h2>What it won't do</h2>
         <ul class="dash">
-          <li><s class="struck">build a database of your chats</s> <span class="why">(it reads the tools' own files, and keeps only a list of which ones are its own)</span></li>
-          <li><s class="struck">send anything about you</s> <span class="why">(no tracking; <a href="install/#what-it-talks-to">the few places it talks to</a>)</span></li>
+          <li>
+            <s class="struck">build a database of your chats</s>
+            <span class="why"
+              >(it reads the tools' own files, and keeps only a list of which ones are its
+              own)</span
+            >
+          </li>
+          <li>
+            <s class="struck">send anything about you</s>
+            <span class="why"
+              >(no tracking;
+              <a href="install/#what-it-talks-to">the few places it talks to</a>)</span
+            >
+          </li>
           <li><s class="struck">ask you to sign up</s> <span class="why">(no account)</span></li>
-          <li><s class="struck">cover the agent's own screen</s> <span class="why">(its terminal stays as it is)</span></li>
+          <li>
+            <s class="struck">cover the agent's own screen</s>
+            <span class="why">(its terminal stays as it is)</span>
+          </li>
         </ul>
 
-        <p class="aside">also: a status line, notifications, keep-awake, a shortcuts page, world clocks, an update banner.</p>
+        <p class="aside">
+          also: a status line, notifications, keep-awake, a shortcuts page, world clocks, an update
+          banner.
+        </p>
 
         <p class="next">start reading -&gt; <a href="sessions/">Folders and their sessions</a></p>
       </main>
@@ -151,7 +187,10 @@
           <a href="https://github.com/superkoh/koloft/issues">issues</a> · GPL-3.0
         </p>
         <p class="fine">
-          Not made by or affiliated with Anthropic or OpenAI.<span class="caret" aria-hidden="true"></span>
+          Not made by or affiliated with Anthropic or OpenAI.<span
+            class="caret"
+            aria-hidden="true"
+          ></span>
         </p>
       </footer>
     </div>

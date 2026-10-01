@@ -26,7 +26,7 @@
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content="Koloft on ruled paper: its icon, the line &quot;run and manage Claude Code and Codex on your Mac&quot;, and a crop of a session with its Workbench"
+      content='Koloft on ruled paper: its icon, the line "run and manage Claude Code and Codex on your Mac", and a crop of a session with its Workbench'
     />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Install, update, what it talks to — Koloft" />
@@ -48,16 +48,15 @@
     <div class="sheet">
       <header class="masthead">
         <p class="brand">
-          <a href="../"><img src="../icon.svg" alt="" width="28" height="28" /><span>Koloft</span></a>
+          <a href="../"
+            ><img src="../icon.svg" alt="" width="28" height="28" /><span>Koloft</span></a
+          >
         </p>
         <nav class="contents" aria-label="Pages">
           contents:
-          <a href="../">home</a> ·
-          <a href="../sessions/">sessions</a> ·
-          <a href="../workbench/">workbench</a> ·
-          <a href="../agents/">agents</a> ·
-          <a href="../scheduled/">scheduled</a> ·
-          <a href="../accounts/">accounts</a> ·
+          <a href="../">home</a> · <a href="../sessions/">sessions</a> ·
+          <a href="../workbench/">workbench</a> · <a href="../agents/">agents</a> ·
+          <a href="../scheduled/">scheduled</a> · <a href="../accounts/">accounts</a> ·
           <a href="../remote/">remote</a> ·
           <a href="../install/" aria-current="page">install</a>
         </nav>
@@ -68,8 +67,8 @@
 
         <p>
           Koloft is a free Mac app. <mark class="hl">One line in Terminal</mark> installs it. This
-          page says why it is a Terminal line, what you need, how Koloft stays up to date, and
-          every place on the internet it talks to.
+          page says why it is a Terminal line, what you need, how Koloft stays up to date, and every
+          place on the internet it talks to.
         </p>
 
         <h2>Install</h2>
@@ -77,6 +76,7 @@
           Open Terminal, paste this line and press Return. It finds the newest release and puts
           Koloft in your Applications folder.
         </p>
+        <!-- prettier-ignore -->
         <p class="command">
           <code id="cmd-install">curl -fsSL https://raw.githubusercontent.com/superkoh/koloft-releases/main/install.sh | bash</code>
           <button type="button" class="copy" data-copy="cmd-install">Copy</button>
@@ -85,20 +85,20 @@
         <h3>Why a Terminal line?</h3>
         <p>
           Koloft is not signed by Apple. Signing needs a paid Apple Developer ID, and this project
-          does not have one. When a browser downloads an app like that, macOS puts a quarantine
-          mark on it. Gatekeeper (the part of macOS that checks apps before they open) then blocks
-          it and calls it "damaged" or from an "unidentified developer".
+          does not have one. When a browser downloads an app like that, macOS puts a quarantine mark
+          on it. Gatekeeper (the part of macOS that checks apps before they open) then blocks it and
+          calls it "damaged" or from an "unidentified developer".
         </p>
         <p>
-          <code>curl</code> (the download tool inside Terminal) never adds that mark. So the app
-          it fetches opens with a normal double-click, with no prompt.
+          <code>curl</code> (the download tool inside Terminal) never adds that mark. So the app it
+          fetches opens with a normal double-click, with no prompt.
         </p>
 
         <h3>Rather download it yourself?</h3>
         <p>
           Get the <code>.dmg</code> (the disk image a Mac app comes in) from
-          <a href="https://github.com/superkoh/koloft-releases/releases">Releases</a>. Drag Koloft to
-          Applications. Then clear the mark once:
+          <a href="https://github.com/superkoh/koloft-releases/releases">Releases</a>. Drag Koloft
+          to Applications. Then clear the mark once:
         </p>
         <p class="command">
           <code id="cmd-xattr">xattr -dr com.apple.quarantine /Applications/Koloft.app</code>
@@ -126,12 +126,18 @@
         <div class="typed-table">
           <table>
             <thead>
-              <tr><th>host</th><th>why</th></tr>
+              <tr>
+                <th>host</th>
+                <th>why</th>
+              </tr>
             </thead>
             <tbody>
               <tr>
                 <td><code>api.anthropic.com</code></td>
-                <td>sends each account a tiny message and reads how much room is left from the reply. An account on your own endpoint is asked there instead</td>
+                <td>
+                  sends each account a tiny message and reads how much room is left from the reply.
+                  An account on your own endpoint is asked there instead
+                </td>
               </tr>
               <tr>
                 <td><code>api.github.com</code>, <code>github.com</code></td>
@@ -139,57 +145,79 @@
               </tr>
               <tr>
                 <td>your folder's git remote</td>
-                <td>often <code>github.com</code>; asked every 5 minutes, to see if your branch is behind. Turn it off in Settings ▸ Appearance ▸ Auto-fetch git remotes</td>
+                <td>
+                  often <code>github.com</code>; asked every 5 minutes, to see if your branch is
+                  behind. Turn it off in Settings ▸ Appearance ▸ Auto-fetch git remotes
+                </td>
               </tr>
               <tr>
                 <td><code>claude.ai</code>, <code>nodejs.org</code></td>
-                <td>only for a remote folder, and only to install what that machine is missing: <code>claude</code> from the first, Node from the second; <code>tmux</code> and <code>rsync</code> come from that machine's own package manager, which may ask for its sudo password (the admin password)</td>
+                <td>
+                  only for a remote folder, and only to install what that machine is missing:
+                  <code>claude</code> from the first, Node from the second; <code>tmux</code> and
+                  <code>rsync</code> come from that machine's own package manager, which may ask for
+                  its sudo password (the admin password)
+                </td>
               </tr>
               <tr>
                 <td><code>clients2.google.com</code>,<br /><code>update.googleapis.com</code></td>
-                <td>only if you installed a Chrome extension in the in-app browser: the first gives the extension, the second checks once per launch for a newer one</td>
+                <td>
+                  only if you installed a Chrome extension in the in-app browser: the first gives
+                  the extension, the second checks once per launch for a newer one
+                </td>
               </tr>
               <tr>
                 <td><code>duckduckgo.com</code></td>
-                <td>when you type words, not a URL (a web address), into the in-app browser, they go here as a search</td>
+                <td>
+                  when you type words, not a URL (a web address), into the in-app browser, they go
+                  here as a search
+                </td>
               </tr>
             </tbody>
           </table>
         </div>
         <p>
           A <a href="../remote/">remote folder</a> also reaches the machine you named, over
-          <code>ssh</code> (a safe way to log in to another computer) and <code>rsync</code> (a
-          tool that copies files).
+          <code>ssh</code> (a safe way to log in to another computer) and <code>rsync</code> (a tool
+          that copies files).
         </p>
         <p>
           Claude Code talks to Anthropic and Codex talks to OpenAI by themselves, when you log in
-          and every time you send a message. That traffic is theirs, not Koloft's, and this list does not
-          cover it. Koloft also asks Codex how much of each account's limit is left. Codex makes
-          that call itself, through <code>codex app-server</code>.
+          and every time you send a message. That traffic is theirs, not Koloft's, and this list
+          does not cover it. Koloft also asks Codex how much of each account's limit is left. Codex
+          makes that call itself, through <code>codex app-server</code>.
         </p>
 
         <h2>Questions</h2>
         <dl class="qa">
           <dt><span>Does Koloft replace Claude Code or Codex?</span></dt>
           <dd>
-            <span>No. It runs the real <code>claude</code> and <code>codex</code> tools you already
-            have, and shows their own screen, untouched. Koloft adds the list, the Workbench and the
-            note around it.</span>
+            <span
+              >No. It runs the real <code>claude</code> and <code>codex</code> tools you already
+              have, and shows their own screen, untouched. Koloft adds the list, the Workbench and
+              the note around it.</span
+            >
           </dd>
           <dt><span>Does it cost anything?</span></dt>
           <dd>
-            <span>Koloft is free. Claude Code and Codex use your own Anthropic or OpenAI account,
-            just as they do without Koloft.</span>
+            <span
+              >Koloft is free. Claude Code and Codex use your own Anthropic or OpenAI account, just
+              as they do without Koloft.</span
+            >
           </dd>
           <dt><span>Is there a version for Intel Macs, Windows or Linux?</span></dt>
           <dd>
-            <span>No. Koloft is built for Macs with Apple Silicon only, and the install line stops
-            on any other computer.</span>
+            <span
+              >No. Koloft is built for Macs with Apple Silicon only, and the install line stops on
+              any other computer.</span
+            >
           </dd>
           <dt><span>I started a session in a plain Terminal. Can Koloft open it?</span></dt>
           <dd>
-            <span>Yes. Right-click the folder in Koloft and pick <code>Restore session…</code>. See
-            <a href="../sessions/">Folders and their sessions</a>.</span>
+            <span
+              >Yes. Right-click the folder in Koloft and pick <code>Restore session…</code>. See
+              <a href="../sessions/">Folders and their sessions</a>.</span
+            >
           </dd>
         </dl>
 
@@ -218,7 +246,10 @@
           <a href="https://github.com/superkoh/koloft/issues">issues</a> · GPL-3.0
         </p>
         <p class="fine">
-          Not made by or affiliated with Anthropic or OpenAI.<span class="caret" aria-hidden="true"></span>
+          Not made by or affiliated with Anthropic or OpenAI.<span
+            class="caret"
+            aria-hidden="true"
+          ></span>
         </p>
       </footer>
     </div>

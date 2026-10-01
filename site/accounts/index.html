@@ -26,7 +26,7 @@
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content="Koloft on ruled paper: its icon, the line &quot;run and manage Claude Code and Codex on your Mac&quot;, and a crop of a session with its Workbench"
+      content='Koloft on ruled paper: its icon, the line "run and manage Claude Code and Codex on your Mac", and a crop of a session with its Workbench'
     />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Several accounts, one pool — Koloft" />
@@ -48,14 +48,14 @@
     <div class="sheet">
       <header class="masthead">
         <p class="brand">
-          <a href="../"><img src="../icon.svg" alt="" width="28" height="28" /><span>Koloft</span></a>
+          <a href="../"
+            ><img src="../icon.svg" alt="" width="28" height="28" /><span>Koloft</span></a
+          >
         </p>
         <nav class="contents" aria-label="Pages">
           contents:
-          <a href="../">home</a> ·
-          <a href="../sessions/">sessions</a> ·
-          <a href="../workbench/">workbench</a> ·
-          <a href="../agents/">agents</a> ·
+          <a href="../">home</a> · <a href="../sessions/">sessions</a> ·
+          <a href="../workbench/">workbench</a> · <a href="../agents/">agents</a> ·
           <a href="../scheduled/">scheduled</a> ·
           <a href="../accounts/" aria-current="page">accounts</a> ·
           <a href="../remote/">remote</a> ·
@@ -67,38 +67,44 @@
         <h1 class="title">Several accounts, one pool</h1>
 
         <p>
-          When several agents work at once, one subscription runs out fast. Then you stop, log
-          out, log in to another one, and start again. Koloft keeps your accounts in one pool, and
-          each new session starts on <mark class="hl">the one with the most room</mark> left.
+          When several agents work at once, one subscription runs out fast. Then you stop, log out,
+          log in to another one, and start again. Koloft keeps your accounts in one pool, and each
+          new session starts on <mark class="hl">the one with the most room</mark> left.
         </p>
 
-        <figure class="shot" style="--ar: 1760 / 940; --pos: 50% 0%">
+        <figure class="shot" style="--ar: 1760 / 940">
           <div class="frame">
             <img
               src="../img/h-settings-accounts.webp"
               width="1760"
-              height="1240"
+              height="940"
               alt="Koloft's Settings, Accounts page: Multi-account mode on, two Claude accounts named Personal and Work with their five-hour and seven-day use, and Sign in and Paste token buttons"
             />
             <span class="tape" aria-hidden="true"></span>
           </div>
-          <figcaption>Settings ▸ Accounts: two Claude accounts and how much each has used</figcaption>
+          <figcaption>
+            Settings ▸ Accounts: two Claude accounts and how much each has used
+          </figcaption>
         </figure>
 
         <h2>Claude</h2>
         <p>
           Turn on Settings ▸ Accounts ▸ Multi-account mode, then add your subscription accounts.
           Sign in runs the official <code>claude setup-token</code> for you in the background. You
-          approve once in your browser, and the token goes straight into the pool. Or paste a
-          token you already have.
+          approve once in your browser, and the token goes straight into the pool. Or paste a token
+          you already have.
         </p>
         <p>
           You can also add an API (application programming interface) key, or a custom endpoint:
-          another server that speaks the same API. Koloft cannot read how much is left on those,
-          so it uses them only when every subscription is out and none comes back within 30
-          minutes, or when you have none.
+          another server that speaks the same API. Koloft cannot read how much is left on those, so
+          it uses them only when every subscription is out and none comes back within 30 minutes, or
+          when you have none.
         </p>
-        <pre class="ascii" role="img" aria-label="How a new Claude session picks its account: with subscription accounts, it starts on the one with the most room; when none has room now and none comes back within 30 minutes, or there are no subscriptions, it uses your API key or custom endpoint.">
+        <pre
+          class="ascii"
+          role="img"
+          aria-label="How a new Claude session picks its account: with subscription accounts, it starts on the one with the most room; when none has room now and none comes back within 30 minutes, or there are no subscriptions, it uses your API key or custom endpoint."
+        >
  a new Claude session starts
          |
          v
@@ -113,26 +119,35 @@
  the most room               custom endpoint
 </pre>
         <ul class="dash">
-          <li>Koloft checks each account's limits as a session starts; a reading from the last 30 seconds is reused</li>
-          <li>with "Prefer accounts with fable allowance" on, an account that still has fable allowance wins first</li>
+          <li>
+            Koloft checks each account's limits as a session starts; a reading from the last 30
+            seconds is reused
+          </li>
+          <li>
+            with "Prefer accounts with fable allowance" on, an account that still has fable
+            allowance wins first
+          </li>
           <li>if no account can be read, Koloft picks the next one in order</li>
           <li>tokens and keys are kept in the macOS Keychain</li>
           <li>the top bar shows how much room your Claude accounts have left</li>
-          <li>with the mode on but no accounts added, a session you start uses the login already on this Mac; a scheduled job does not start</li>
+          <li>
+            with the mode on but no accounts added, a session you start uses the login already on
+            this Mac; a scheduled job does not start
+          </li>
         </ul>
 
         <h2>Codex</h2>
         <p>
-          Sign in to Codex runs <code>codex login</code> in a terminal tab. Each sign-in becomes
-          its own Codex home, a folder that holds that one login. New Codex sessions start on the
+          Sign in to Codex runs <code>codex login</code> in a terminal tab. Each sign-in becomes its
+          own Codex home, a folder that holds that one login. New Codex sessions start on the
           least-used one. Each account's use, for each limit Codex reports (such as 5 hours and a
           week), shows in Settings.
         </p>
 
         <h2>With the mode off</h2>
         <p>
-          Sessions run a plain <code>claude</code> or <code>codex</code>, on whatever login this
-          Mac already has. Nothing is picked for you.
+          Sessions run a plain <code>claude</code> or <code>codex</code>, on whatever login this Mac
+          already has. Nothing is picked for you.
         </p>
 
         <h2>Your own accounts</h2>
@@ -151,7 +166,10 @@
           <a href="https://github.com/superkoh/koloft/issues">issues</a> · GPL-3.0
         </p>
         <p class="fine">
-          Not made by or affiliated with Anthropic or OpenAI.<span class="caret" aria-hidden="true"></span>
+          Not made by or affiliated with Anthropic or OpenAI.<span
+            class="caret"
+            aria-hidden="true"
+          ></span>
         </p>
       </footer>
     </div>

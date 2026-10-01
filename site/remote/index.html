@@ -26,7 +26,7 @@
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content="Koloft on ruled paper: its icon, the line &quot;run and manage Claude Code and Codex on your Mac&quot;, and a crop of a session with its Workbench"
+      content='Koloft on ruled paper: its icon, the line "run and manage Claude Code and Codex on your Mac", and a crop of a session with its Workbench'
     />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Remote folders (alpha) — Koloft" />
@@ -48,16 +48,15 @@
     <div class="sheet">
       <header class="masthead">
         <p class="brand">
-          <a href="../"><img src="../icon.svg" alt="" width="28" height="28" /><span>Koloft</span></a>
+          <a href="../"
+            ><img src="../icon.svg" alt="" width="28" height="28" /><span>Koloft</span></a
+          >
         </p>
         <nav class="contents" aria-label="Pages">
           contents:
-          <a href="../">home</a> ·
-          <a href="../sessions/">sessions</a> ·
-          <a href="../workbench/">workbench</a> ·
-          <a href="../agents/">agents</a> ·
-          <a href="../scheduled/">scheduled</a> ·
-          <a href="../accounts/">accounts</a> ·
+          <a href="../">home</a> · <a href="../sessions/">sessions</a> ·
+          <a href="../workbench/">workbench</a> · <a href="../agents/">agents</a> ·
+          <a href="../scheduled/">scheduled</a> · <a href="../accounts/">accounts</a> ·
           <a href="../remote/" aria-current="page">remote</a> ·
           <a href="../install/">install</a>
         </nav>
@@ -68,10 +67,10 @@
 
         <p>
           Koloft can open a folder that lives on another computer, one you reach with
-          <code>ssh</code> (a safe way to log in to another computer over the network). Claude
-          Code runs over there. You watch it and work with it from your Mac. This part is
-          <mark class="hl">alpha</mark>: it is early, it works, and it still has gaps. The ones
-          we know are listed below.
+          <code>ssh</code> (a safe way to log in to another computer over the network). Claude Code
+          runs over there. You watch it and work with it from your Mac. This part is
+          <mark class="hl">alpha</mark>: it is early, it works, and it still has gaps. The ones we
+          know are listed below.
         </p>
 
         <h2>Add one</h2>
@@ -81,40 +80,60 @@
         </p>
         <ul class="dash">
           <li>Machine: <code>user@host</code>, or a name from your ssh settings</li>
-          <li>Path on the machine: the full path, starting with <code>/</code>, such as
-            <code>/home/me/project</code></li>
+          <li>
+            Path on the machine: the full path, starting with <code>/</code>, such as
+            <code>/home/me/project</code>
+          </li>
         </ul>
 
         <figure class="shot is-narrow" style="--ar: 840 / 836">
           <div class="frame">
-            <img src="../img/k-remote-dialog-abs.webp" width="840" height="836" alt="The Remote directory dialog, marked alpha: Machine is dev@build-box, Path on the machine is /home/dev/projects/tidewatch, with Cancel and Add buttons" />
+            <img
+              src="../img/k-remote-dialog-abs.webp"
+              width="840"
+              height="836"
+              alt="The Remote directory dialog, marked alpha: Machine is dev@build-box, Path on the machine is /home/dev/projects/tidewatch, with Cancel and Add buttons"
+            />
             <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>the Remote directory dialog: a machine, and a full path on it</figcaption>
         </figure>
 
         <p>
-          Keys set in <code>~/.ssh/config</code> work everywhere. A password works too: type it
-          once in a tab, and Koloft's own checks use that login after that.
+          Keys set in <code>~/.ssh/config</code> work everywhere. A password works too: type it once
+          in a tab, and Koloft's own checks use that login after that.
         </p>
 
         <h2>What happens there</h2>
         <p>
           Claude Code runs on the other machine. The account it uses comes from
           <a href="../accounts/">the pool on your Mac</a>. Its transcripts (the written record of
-          each session) stay there, and <code>rsync</code> (a tool that copies files) brings
-          copies back, so the sessions list reads like a folder on your Mac.
+          each session) stay there, and <code>rsync</code> (a tool that copies files) brings copies
+          back, so the sessions list reads like a folder on your Mac.
         </p>
 
         <figure class="shot is-narrow" style="--ar: 558 / 526">
           <div class="frame">
-            <img src="../img/l-remote-sidebar.webp" width="558" height="526" loading="lazy" alt="The sessions list: a local folder, harbor-site, and below it a remote folder, tidewatch, tagged dev@build-box with a green dot and two sessions under it" />
+            <img
+              src="../img/l-remote-sidebar.webp"
+              width="558"
+              height="526"
+              loading="lazy"
+              alt="The sessions list: a local folder, harbor-site, and below it a remote folder, tidewatch, tagged dev@build-box with a green dot and two sessions under it"
+            />
             <span class="tape" aria-hidden="true"></span>
           </div>
-          <figcaption>a remote folder in the list: the machine's name beside it, a dot that is lit while connected, and its sessions below, like any folder</figcaption>
+          <figcaption>
+            a remote folder in the list: the machine's name beside it, a dot that is lit while
+            connected, and its sessions below, like any folder
+          </figcaption>
         </figure>
 
-        <pre class="ascii" role="img" aria-label="Your Mac runs Koloft. The session's tab talks over ssh to claude, which runs inside tmux on the other machine. Koloft sends the account it picked across. rsync copies the transcripts back to the Mac, and the sessions list is read from those copies.">
+        <pre
+          class="ascii"
+          role="img"
+          aria-label="Your Mac runs Koloft. The session's tab talks over ssh to claude, which runs inside tmux on the other machine. Koloft sends the account it picked across. rsync copies the transcripts back to the Mac, and the sessions list is read from those copies."
+        >
 your Mac                     the other machine
 +-----------------+          +------------------+
 | Koloft          |          | tmux             |
@@ -133,15 +152,23 @@ your Mac                     the other machine
 </pre>
 
         <ul class="dash">
-          <li>Claude runs inside <code>tmux</code> (a program that keeps a terminal going after
-            you leave). If the link drops, Claude keeps working.</li>
-          <li>If the machine is missing <code>claude</code>, <code>tmux</code> or
-            <code>rsync</code>, Koloft installs them over the same link (<code>tmux</code> and
-            <code>rsync</code> may ask for that machine's sudo password, the admin password).</li>
-          <li>It also fetches Node, only for the status line. If that fails, the session still
-            runs, just without a status line.</li>
-          <li>The first session on a machine takes a few seconds longer: <code>claude</code>
-            fetches its own settings once.</li>
+          <li>
+            Claude runs inside <code>tmux</code> (a program that keeps a terminal going after you
+            leave). If the link drops, Claude keeps working.
+          </li>
+          <li>
+            If the machine is missing <code>claude</code>, <code>tmux</code> or <code>rsync</code>,
+            Koloft installs them over the same link (<code>tmux</code> and <code>rsync</code> may
+            ask for that machine's sudo password, the admin password).
+          </li>
+          <li>
+            It also fetches Node, only for the status line. If that fails, the session still runs,
+            just without a status line.
+          </li>
+          <li>
+            The first session on a machine takes a few seconds longer: <code>claude</code> fetches
+            its own settings once.
+          </li>
         </ul>
 
         <h2>The Workbench there</h2>
@@ -154,16 +181,22 @@ your Mac                     the other machine
         <ul class="dash">
           <li>Images and PDFs (document files) from the machine do not show a preview.</li>
           <li>An agent's <code>open &lt;url&gt;</code> does not reach the Workbench.</li>
-          <li>The agent cannot drive your web tabs. See <a href="../agents/">Agents can use Koloft
-            too</a>.</li>
+          <li>
+            The agent cannot drive your web tabs. See
+            <a href="../agents/">Agents can use Koloft too</a>.
+          </li>
           <li>The agent does not get the <code>koloft</code> command.</li>
           <li>No Codex yet. A remote folder runs Claude Code only.</li>
-          <li>The folder menu has no Fetch origin and no Reveal in Finder. It offers Copy path
-            instead.</li>
+          <li>
+            The folder menu has no Fetch origin and no Reveal in Finder. It offers Copy path
+            instead.
+          </li>
           <li>Koloft does not check whether the folder's branch is behind its git remote.</li>
         </ul>
 
-        <p class="next">next page -&gt; <a href="../install/">Install, update, what it talks to</a></p>
+        <p class="next">
+          next page -&gt; <a href="../install/">Install, update, what it talks to</a>
+        </p>
       </main>
 
       <footer class="signoff">
@@ -173,7 +206,10 @@ your Mac                     the other machine
           <a href="https://github.com/superkoh/koloft/issues">issues</a> · GPL-3.0
         </p>
         <p class="fine">
-          Not made by or affiliated with Anthropic or OpenAI.<span class="caret" aria-hidden="true"></span>
+          Not made by or affiliated with Anthropic or OpenAI.<span
+            class="caret"
+            aria-hidden="true"
+          ></span>
         </p>
       </footer>
     </div>

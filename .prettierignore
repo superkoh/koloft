@@ -16,8 +16,3 @@ LICENSE
 # is swap *emphasis* for _emphasis_ and repad tables — churn with nothing behind it, in
 # the one place where a human's line breaks carry meaning.
 *.md
-
-# The website's pages sit on a ruled-paper grid where whitespace between inline elements
-# renders: Prettier's rewrap adds line breaks inside code spans and shifts lines off the
-# rules. Its CSS and JS stay formatted.
-site/**/*.html

@@ -26,7 +26,7 @@
     <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content="Koloft on ruled paper: its icon, the line &quot;run and manage Claude Code and Codex on your Mac&quot;, and a crop of a session with its Workbench"
+      content='Koloft on ruled paper: its icon, the line "run and manage Claude Code and Codex on your Mac", and a crop of a session with its Workbench'
     />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Agents can use Koloft too — Koloft" />
@@ -48,16 +48,16 @@
     <div class="sheet">
       <header class="masthead">
         <p class="brand">
-          <a href="../"><img src="../icon.svg" alt="" width="28" height="28" /><span>Koloft</span></a>
+          <a href="../"
+            ><img src="../icon.svg" alt="" width="28" height="28" /><span>Koloft</span></a
+          >
         </p>
         <nav class="contents" aria-label="Pages">
           contents:
-          <a href="../">home</a> ·
-          <a href="../sessions/">sessions</a> ·
+          <a href="../">home</a> · <a href="../sessions/">sessions</a> ·
           <a href="../workbench/">workbench</a> ·
           <a href="../agents/" aria-current="page">agents</a> ·
-          <a href="../scheduled/">scheduled</a> ·
-          <a href="../accounts/">accounts</a> ·
+          <a href="../scheduled/">scheduled</a> · <a href="../accounts/">accounts</a> ·
           <a href="../remote/">remote</a> ·
           <a href="../install/">install</a>
         </nav>
@@ -75,10 +75,10 @@
         <h2>The koloft command</h2>
         <p>
           Every session Koloft starts on this Mac, Claude or Codex, gets a <code>koloft</code>
-          command. It is on by
-          default. The switch is Settings ▸ Extensions ▸ "Let agents use Koloft". Turning it on
-          reaches sessions you start after that. Turning it off stops the command in every session
-          at once. When an agent changes a scheduled job, a small message pops up to tell you.
+          command. It is on by default. The switch is Settings ▸ Extensions ▸ "Let agents use
+          Koloft". Turning it on reaches sessions you start after that. Turning it off stops the
+          command in every session at once. When an agent changes a scheduled job, a small message
+          pops up to tell you.
         </p>
         <p>With it, the agent can:</p>
 
@@ -91,21 +91,33 @@
 
         <h3>Scheduled jobs</h3>
         <ul class="dash">
-          <li><code>koloft cron</code> — list, show, add, change, remove, turn on or off, or run a job now; each job has its own timer, tool, model, effort and permission</li>
+          <li>
+            <code>koloft cron</code> — list, show, add, change, remove, turn on or off, or run a job
+            now; each job has its own timer, tool, model, effort and permission
+          </li>
         </ul>
 
         <h3>Sessions</h3>
         <ul class="dash">
-          <li><code>koloft session list</code> — see this folder's sessions, and whether each is working, waiting for you, or idle</li>
-          <li><code>koloft session new</code> — start a sibling session of the same kind (Claude starts Claude, Codex starts Codex), in its own git worktree if asked</li>
-          <li><code>koloft session send</code> — Codex only: message another Codex session (a Claude session uses its own SendMessage tool)</li>
+          <li>
+            <code>koloft session list</code> — see this folder's sessions, and whether each is
+            working, waiting for you, or idle
+          </li>
+          <li>
+            <code>koloft session new</code> — start a sibling session of the same kind (Claude
+            starts Claude, Codex starts Codex), in its own git worktree if asked
+          </li>
+          <li>
+            <code>koloft session send</code> — Codex only: message another Codex session (a Claude
+            session uses its own SendMessage tool)
+          </li>
         </ul>
         <p>
           Each command prints its answer, so the agent sees what happened. The agent runs
           <code>koloft help</code> for the rest.
         </p>
 
-        <figure class="shot" style="--ar: 1760 / 880; --pos: 50% 0%">
+        <figure class="shot" style="--ar: 1760 / 880">
           <div class="frame">
             <img
               src="../img/i-settings-extensions.webp"
@@ -116,24 +128,31 @@
             />
             <span class="tape" aria-hidden="true"></span>
           </div>
-          <figcaption>Settings ▸ Extensions: the two switches that decide what an agent may use</figcaption>
+          <figcaption>
+            Settings ▸ Extensions: the two switches that decide what an agent may use
+          </figcaption>
         </figure>
 
         <h2>Your browser, for the agent</h2>
         <p>
-          Browser tools for agents normally start a browser of their own. It is a second browser
-          you cannot see, and it is signed into nothing. Koloft offers its web tabs instead. Every
+          Browser tools for agents normally start a browser of their own. It is a second browser you
+          cannot see, and it is signed into nothing. Koloft offers its web tabs instead. Every
           Claude session on this Mac starts with a secret CDP address (CDP is the Chrome DevTools
           Protocol, the way tools steer a browser). A browser tool that uses it steers
           <mark class="hl">that session's own web tabs</mark>. This works while Settings ▸
           Extensions ▸ "Let agents drive this Browser" is on.
         </p>
         <ul class="dash">
-          <li>playwright-mcp and the Playwright CLI (command-line interface), tools that steer a
-            browser: nothing to set up.
-            Both read <code>PLAYWRIGHT_MCP_CDP_ENDPOINT</code>, which is already set for the
-            session, so they open a tab in Koloft and not a browser of their own.</li>
-          <li>your own Playwright script: one line, with the address in <code>KOLOFT_BROWSER_CDP</code>.</li>
+          <li>
+            playwright-mcp and the Playwright CLI (command-line interface), tools that steer a
+            browser: nothing to set up. Both read <code>PLAYWRIGHT_MCP_CDP_ENDPOINT</code>, which is
+            already set for the session, so they open a tab in Koloft and not a browser of their
+            own.
+          </li>
+          <li>
+            your own Playwright script: one line, with the address in
+            <code>KOLOFT_BROWSER_CDP</code>.
+          </li>
         </ul>
         <p class="command">
           <code id="cmd-cdp">chromium.connectOverCDP(process.env.KOLOFT_BROWSER_CDP)</code>
@@ -144,28 +163,72 @@
         <div class="typed-table">
           <table>
             <thead>
-              <tr><th>case</th><th>what happens</th></tr>
+              <tr>
+                <th>case</th>
+                <th>what happens</th>
+              </tr>
             </thead>
             <tbody>
-              <tr><td>it connects</td><td>It just drives. Nothing is asked. The switch is the one control.</td></tr>
-              <tr><td>pages it opens</td><td>Background web tabs with an unread dot, like an agent's <code>open</code>. No pane opens by itself, and the tab it is driving is marked.</td></tr>
-              <tr><td>pages it can see</td><td>That session's tabs only. Each session has its own address, reachable only from this Mac, behind a path no one can guess.</td></tr>
-              <tr><td>turning it off</td><td>Settings ▸ Extensions ▸ "Let agents drive this Browser". Off cuts whatever is connected right now. A session you start after that goes back to its own browser. A session already running keeps the old address, and its tool fails until you restart that session.</td></tr>
-              <tr><td>the trade</td><td>The agent drives the browser you are signed into. That is the point, and it is what the switch is for.</td></tr>
+              <tr>
+                <td>it connects</td>
+                <td>It just drives. Nothing is asked. The switch is the one control.</td>
+              </tr>
+              <tr>
+                <td>pages it opens</td>
+                <td>
+                  Background web tabs with an unread dot, like an agent's <code>open</code>. No pane
+                  opens by itself, and the tab it is driving is marked.
+                </td>
+              </tr>
+              <tr>
+                <td>pages it can see</td>
+                <td>
+                  That session's tabs only. Each session has its own address, reachable only from
+                  this Mac, behind a path no one can guess.
+                </td>
+              </tr>
+              <tr>
+                <td>turning it off</td>
+                <td>
+                  Settings ▸ Extensions ▸ "Let agents drive this Browser". Off cuts whatever is
+                  connected right now. A session you start after that goes back to its own browser.
+                  A session already running keeps the old address, and its tool fails until you
+                  restart that session.
+                </td>
+              </tr>
+              <tr>
+                <td>the trade</td>
+                <td>
+                  The agent drives the browser you are signed into. That is the point, and it is
+                  what the switch is for.
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
 
         <h3>If you run tools another way</h3>
         <ul class="dash">
-          <li>an explicit <code>--cdp-endpoint</code> wins, so you can point one tool at another browser without the switch</li>
-          <li><code>--isolated</code> does not get a tool out: the address Koloft set still wins, and the switch is the way out</li>
+          <li>
+            an explicit <code>--cdp-endpoint</code> wins, so you can point one tool at another
+            browser without the switch
+          </li>
+          <li>
+            <code>--isolated</code> does not get a tool out: the address Koloft set still wins, and
+            the switch is the way out
+          </li>
         </ul>
 
         <h2>Not there yet</h2>
         <ul class="dash">
-          <li><s class="struck">the browser in Codex</s> <span class="why">(a Codex session has the koloft command, but not the web tabs)</span></li>
-          <li><s class="struck">either one in remote folders</s> <span class="why">(a session on another machine has neither, yet)</span></li>
+          <li>
+            <s class="struck">the browser in Codex</s>
+            <span class="why">(a Codex session has the koloft command, but not the web tabs)</span>
+          </li>
+          <li>
+            <s class="struck">either one in remote folders</s>
+            <span class="why">(a session on another machine has neither, yet)</span>
+          </li>
         </ul>
 
         <p class="next">next page -&gt; <a href="../scheduled/">Sessions on a timer</a></p>
@@ -178,7 +241,10 @@
           <a href="https://github.com/superkoh/koloft/issues">issues</a> · GPL-3.0
         </p>
         <p class="fine">
-          Not made by or affiliated with Anthropic or OpenAI.<span class="caret" aria-hidden="true"></span>
+          Not made by or affiliated with Anthropic or OpenAI.<span
+            class="caret"
+            aria-hidden="true"
+          ></span>
         </p>
       </footer>
     </div>
