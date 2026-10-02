@@ -72,12 +72,15 @@ koloft cron run <number or name>
 
 SESSIONS
 
-koloft session list
-    List this workspace's sessions: name and state (working, waiting for the owner, or idle). For a Claude session it also prints the path of its transcript (the file that holds its conversation).
+A workspace is a folder in Koloft's sidebar. Where a command takes --workspace, give its folder name or its full path; leave it out to mean this session's workspace.
 
-koloft session new [--name <name>] [-w <worktree name>] [--model <model>] -- "<first message>"
-    Start a sibling session of your own kind (Claude starts Claude, Codex starts Codex) in this workspace, and print the name to reach it by. A Codex session has no name, so you get its tab id instead; its session id shows in "koloft session list" once it starts, and "koloft session send" takes either. -w starts it in its own git worktree (a separate copy of the repository).
+koloft session list [--workspace <workspace>]
+    List a workspace's sessions: name and state (working, waiting for the owner, or idle). For a Claude session it also prints the path of its transcript (the file that holds its conversation).
+
+koloft session new [--name <name>] [--workspace <workspace>] [-w <worktree name>] [--model <model>] -- "<first message>"
+    Start a sibling session of your own kind (Claude starts Claude, Codex starts Codex), and print the name to reach it by. It starts in this workspace, or in the one --workspace names; a remote (SSH) workspace is not allowed. A Codex session has no name, so you get its tab id instead; its session id shows in "koloft session list" once it starts, and "koloft session send" takes either. -w starts it in its own git worktree (a separate copy of the repository).
     Example: koloft session new --name docs-fixer -- "Fix the broken links in docs/."
+    Example: koloft session new --workspace koloft-releases -- "Check that the latest release has all its files."
 
 How to talk to a session you started:
     Claude: use your SendMessage tool with its name. ListAgents shows the sessions on this machine.

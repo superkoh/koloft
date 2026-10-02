@@ -2,6 +2,8 @@ import { randomBytes } from 'crypto'
 import type { BackendId, CreateTabOptions, SessionInfo, SessionStatus } from '@shared/types'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { isValidWorktreeName } from '@shared/worktreeName'
+import { isRemoteKey, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
+import { basename } from '@shared/preview'
 import {
   answered,
   EXIT_USAGE,
@@ -14,13 +16,15 @@ import {
 
 export interface NewSessionArgs {
   name?: string
+  workspace?: string
   worktree?: string
   model?: string
   prompt: string
 }
 
-const NEW_FLAGS: Record<string, 'name' | 'worktree' | 'model'> = {
+const NEW_FLAGS: Record<string, 'name' | 'workspace' | 'worktree' | 'model'> = {
   '--name': 'name',
+  '--workspace': 'workspace',
   '-w': 'worktree',
   '--model': 'model'
 }
@@ -101,6 +105,44 @@ export function formatSessionList(sessions: ListedSession[], callerTabId: string
     .join('\n')
 }
 
+export interface PinnedWorkspace {
+  path: string
+  missing: boolean
+}
+
+function workspaceLabel(wsPath: string): string {
+  const key = parseRemoteKey(wsPath)
+  return key ? remoteCopyText(key.host, key.path) : wsPath
+}
+
+const REMOTE_NOT_YET =
+  'the koloft command cannot start a session in a remote (SSH) workspace yet. Pick a workspace on this computer.'
+
+function resolveWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<PinnedWorkspace> {
+  const hits = pinned.filter(
+    (w) => w.path === ref || workspaceLabel(w.path) === ref || basename(w.path) === ref
+  )
+  const labels = (ws: PinnedWorkspace[]): string =>
+    ws.map((w) => `  ${workspaceLabel(w.path)}`).join('\n')
+  if (hits.length === 0)
+    return fail(
+      `there is no workspace "${ref}" in Koloft's sidebar. Give the folder name or full path of one of these:\n${labels(pinned)}`
+    )
+  if (hits.length > 1)
+    return fail(
+      `${hits.length} workspaces are named "${ref}". Give the full path:\n${labels(hits)}`
+    )
+  return { ok: true, value: hits[0] }
+}
+
+function startableWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<string> {
+  const found = resolveWorkspace(ref, pinned)
+  if (!found.ok) return fail(found.error)
+  if (isRemoteKey(found.value.path)) return fail(REMOTE_NOT_YET)
+  if (found.value.missing) return fail(`the folder of workspace "${found.value.path}" is missing.`)
+  return { ok: true, value: found.value.path }
+}
+
 const CLAUDE_USES_SEND_MESSAGE =
   'this is for Codex sessions. A Claude session talks to another Claude session with its SendMessage tool; ListAgents shows their names.'
 
@@ -114,9 +156,7 @@ export function findCodexTarget(sessions: SessionInfo[], ref: string): Parsed<Se
       `${hits.length} sessions are named "${ref}". Use the id from "koloft session list".`
     )
   if (hits.length === 0)
-    return fail(
-      `there is no open session "${ref}" in this workspace. Run "koloft session list" to see them.`
-    )
+    return fail(`there is no open session "${ref}". Run "koloft session list" to see them.`)
   return hits[0].backendId === 'codex'
     ? { ok: true, value: hits[0] }
     : fail(CLAUDE_USES_SEND_MESSAGE)
@@ -124,7 +164,8 @@ export function findCodexTarget(sessions: SessionInfo[], ref: string): Parsed<Se
 
 export interface SessionVerbDeps {
   workspaceOf(tabId: string): string | undefined
-  sessionsIn(workspace: string): SessionInfo[]
+  allSessions(): SessionInfo[]
+  pinnedWorkspaces(): PinnedWorkspace[]
   peerNames(): (sessionId: string) => Promise<string | null>
   launch(options: CreateTabOptions & { kind: BackendId }): Promise<string | null>
   queue(tabId: string, text: string): Promise<void>
@@ -134,6 +175,8 @@ const SESSION_USAGE = 'koloft session: use list, new or send. Run "koloft help" 
 const SEND_USAGE =
   'koloft session send: give an id or name, then the message, like: koloft session send <id> "Tell me what you found."'
 const NO_WORKSPACE = 'koloft session: Koloft does not know which workspace this session is in.'
+const LIST_USAGE =
+  'koloft session list: the only option is --workspace <folder name or path>, like: koloft session list --workspace koloft'
 const CODEX_HAS_NO_NAME =
   'koloft session new: a Codex session has no name, so leave out --name. Koloft prints an id to reach it by.'
 
@@ -176,10 +219,14 @@ async function startSibling(
     firstPrompt: withHandover(caller, args.prompt)
   })
   if (!tabId) return refused('koloft session new: Koloft could not start the session.')
+  const listHint =
+    args.workspace === undefined
+      ? 'koloft session list'
+      : `koloft session list --workspace ${JSON.stringify(workspace)}`
   return answered(
     name
       ? `Started session "${name}" in a new tab. Talk to it with SendMessage to "${name}".`
-      : `Started a Codex session in a new tab: ${tabId}. Its id shows in "koloft session list" once it starts; "koloft session send ${tabId} <message>" also reaches it.`
+      : `Started a Codex session in a new tab: ${tabId}. Its id shows in "${listHint}" once it starts; "koloft session send ${tabId} <message>" also reaches it.`
   )
 }
 
@@ -187,14 +234,25 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
   return async (args, caller): Promise<AgentReply> => {
     const [sub, ...rest] = args
     const ws = d.workspaceOf(caller.tabId)
+    const sessionsIn = (workspace: string): SessionInfo[] =>
+      d.allSessions().filter((s) => d.workspaceOf(s.tabId) === workspace)
     if (sub === 'list') {
-      if (rest.length > 0) return refused('koloft session list takes no options.', EXIT_USAGE)
-      return ws ? listSessions(d, d.sessionsIn(ws), caller.tabId) : refused(NO_WORKSPACE)
+      const listsOther = rest.length === 2 && rest[0] === '--workspace'
+      if (rest.length > 0 && !listsOther) return refused(LIST_USAGE, EXIT_USAGE)
+      if (!listsOther)
+        return ws ? listSessions(d, sessionsIn(ws), caller.tabId) : refused(NO_WORKSPACE)
+      const found = resolveWorkspace(rest[1], d.pinnedWorkspaces())
+      if (!found.ok) return refused(`koloft session list: ${found.error}`)
+      return listSessions(d, sessionsIn(found.value.path), caller.tabId)
     }
     if (sub === 'new') {
       const parsed = parseNewSessionArgs(rest)
       if (!parsed.ok) return refused(`koloft session new: ${parsed.error}`, EXIT_USAGE)
-      return ws ? startSibling(d, parsed.value, caller.session, ws) : refused(NO_WORKSPACE)
+      if (parsed.value.workspace === undefined)
+        return ws ? startSibling(d, parsed.value, caller.session, ws) : refused(NO_WORKSPACE)
+      const target = startableWorkspace(parsed.value.workspace, d.pinnedWorkspaces())
+      if (!target.ok) return refused(`koloft session new: ${target.error}`)
+      return startSibling(d, parsed.value, caller.session, target.value)
     }
     if (sub === 'send') {
       if (caller.session.backendId !== 'codex')
@@ -202,8 +260,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       const [ref, ...words] = rest
       const text = words.join(' ').trim()
       if (!ref || !text) return refused(SEND_USAGE, EXIT_USAGE)
-      if (!ws) return refused(NO_WORKSPACE)
-      const target = findCodexTarget(d.sessionsIn(ws), ref)
+      const target = findCodexTarget(d.allSessions(), ref)
       if (!target.ok) return refused(`koloft session send: ${target.error}`)
       await d.queue(target.value.tabId, text)
       return answered(`Sent to ${target.value.title}.`)
