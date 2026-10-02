@@ -174,7 +174,7 @@ describe('WorkspaceManager: move (the sidebar drag order)', () => {
     expect(saves).toBe(saved + 2)
   })
 
-  it('a scan already running when the move lands cannot leave the old order on screen', async () => {
+  it('a scan already running when the move lands pushes its rows in the new order', async () => {
     mgr.start()
     await mgr.firstScan
     let release!: () => void
@@ -195,7 +195,9 @@ describe('WorkspaceManager: move (the sidebar drag order)', () => {
     const afterMove = pushed.length
     release()
     await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(afterMove))
-    await vi.waitFor(() => expect(lastOrder()).toEqual([plain, repo]))
+    for (const push of pushed.slice(afterMove - 1)) {
+      expect(push.map((e) => e.workspace.path)).toEqual([plain, repo])
+    }
   })
 })
 

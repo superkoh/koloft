@@ -166,10 +166,7 @@ export function WorkspaceSidebar({
   const showToast = useStore((s) => s.showToast)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [menu, setMenu] = useState<MenuState | null>(null)
-  const [drag, setDrag] = useState<{
-    path: string
-    over: { path: string; below: boolean } | null
-  } | null>(null)
+  const [drag, setDrag] = useState<{ path: string; over: number | null } | null>(null)
   const [mq, setMq] = useState<{ id: string; overflow: number } | null>(null)
   const mqRef = useRef<HTMLElement | null>(null)
   const [confirmRemove, setConfirmRemove] = useState<{
@@ -320,9 +317,10 @@ export function WorkspaceSidebar({
     openMenuAt(e.currentTarget as HTMLElement, target)
   }
 
+  const wsPaths = rows.map((r) => r.workspace.path)
   const startWorkspaceDrag = (e: DragEvent<HTMLElement>, path: string): void => {
     clearTimers()
-    setMenu(null)
+    closeFloating()
     e.dataTransfer.effectAllowed = 'move'
     // PLATFORM§10
     e.dataTransfer.setData('text/plain', path)
@@ -332,28 +330,21 @@ export function WorkspaceSidebar({
     if (!drag) return
     e.preventDefault()
     const block = (e.target as Element).closest<HTMLElement>('.ws[data-ws-path]')
-    const path = block?.dataset.wsPath
-    let over: { path: string; below: boolean } | null = null
-    if (block && path) {
+    let over: number | null = null
+    if (block) {
       const box = block.getBoundingClientRect()
       const below = e.clientY >= box.top + box.height / 2
-      const paths = rows.map((r) => r.workspace.path)
-      const shift = paths.indexOf(path) - paths.indexOf(drag.path)
-      const staysPut = shift === 0 || (shift === 1 && !below) || (shift === -1 && below)
-      if (!staysPut) over = { path, below }
+      const slot = wsPaths.indexOf(block.dataset.wsPath ?? '') + (below ? 1 : 0)
+      const from = wsPaths.indexOf(drag.path)
+      if (slot !== from && slot !== from + 1) over = slot
     }
-    if (over?.path !== drag.over?.path || over?.below !== drag.over?.below) {
-      setDrag({ ...drag, over })
-    }
+    if (drag.over !== over) setDrag({ ...drag, over })
   }
   const dropWorkspace = (e: DragEvent<HTMLElement>): void => {
     e.preventDefault()
     setDrag(null)
-    if (!drag?.over) return
-    const paths = rows.map((r) => r.workspace.path)
-    const { path, below } = drag.over
-    const before = below ? (paths[paths.indexOf(path) + 1] ?? null) : path
-    void window.api.workspace.move(drag.path, before)
+    if (drag?.over == null) return
+    void window.api.workspace.move(drag.path, wsPaths[drag.over] ?? null)
   }
 
   const keepCard = (): void => {
@@ -744,7 +735,7 @@ export function WorkspaceSidebar({
             </div>
           )}
 
-          {rows.map(({ workspace: ws, rows: sessionRows }) => {
+          {rows.map(({ workspace: ws, rows: sessionRows }, wsIndex) => {
             const open = !collapsed[ws.path]
             const wsTarget: MenuTarget = {
               kind: 'workspace',
@@ -777,11 +768,8 @@ export function WorkspaceSidebar({
                 className={
                   'ws' +
                   (drag?.path === ws.path ? ' dragging' : '') +
-                  (drag?.over?.path === ws.path
-                    ? drag.over.below
-                      ? ' dropafter'
-                      : ' dropbefore'
-                    : '')
+                  (drag?.over === wsIndex ? ' dropbefore' : '') +
+                  (drag?.over === rows.length && wsIndex === rows.length - 1 ? ' dropafter' : '')
                 }
                 key={ws.path}
                 data-ws-path={ws.path}

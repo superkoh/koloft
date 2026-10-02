@@ -330,18 +330,21 @@ export class WorkspaceManager {
 
   move(wsPath: string, before: string | null): void {
     const moving = this.layout.workspaces.find((w) => w.path === wsPath)
-    if (!moving || wsPath === before) return
+    if (!moving) return
     const rest = this.layout.workspaces.filter((w) => w !== moving)
     const at = before === null ? rest.length : rest.findIndex((w) => w.path === before)
     if (at === -1) return
     this.layout.workspaces = [...rest.slice(0, at), moving, ...rest.slice(at)]
     this.deps.saveLayout(this.layout)
-    const rank = new Map(this.layout.workspaces.map((w, i) => [w.path, i]))
-    this.rowsCache = [...this.rowsCache].sort(
-      (a, b) => (rank.get(a.workspace.path) ?? 0) - (rank.get(b.workspace.path) ?? 0)
-    )
+    this.rowsCache = this.inLayoutOrder(this.rowsCache)
     this.deps.pushRows(this.rowsCache)
-    if (this.scanning) this.rescanQueued = true
+  }
+
+  private inLayoutOrder(rows: WorkspaceRows[]): WorkspaceRows[] {
+    const order = this.layout.workspaces.map((w) => w.path)
+    return [...rows].sort(
+      (a, b) => order.indexOf(a.workspace.path) - order.indexOf(b.workspace.path)
+    )
   }
 
   remove(wsPath: string): WorkspaceRemoveResult {
@@ -726,7 +729,7 @@ export class WorkspaceManager {
     }
 
     this.bucketDirById = bucketDirById
-    this.rowsCache = this.stampLive(payload)
+    this.rowsCache = this.stampLive(this.inLayoutOrder(payload))
     this.allRowsCache = allRowsByWs
     this.wsBySession = wsBySession
     this.deps.pushRows(this.rowsCache)
