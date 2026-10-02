@@ -1,9 +1,9 @@
 import { randomBytes } from 'crypto'
-import { posix } from 'path'
 import type { BackendId, CreateTabOptions, SessionInfo, SessionStatus } from '@shared/types'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { isValidWorktreeName } from '@shared/worktreeName'
-import { parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
+import { isRemoteKey, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
+import { basename } from '@shared/preview'
 import {
   answered,
   EXIT_USAGE,
@@ -115,23 +115,18 @@ function workspaceLabel(wsPath: string): string {
   return key ? remoteCopyText(key.host, key.path) : wsPath
 }
 
-function folderName(wsPath: string): string {
-  return posix.basename(parseRemoteKey(wsPath)?.path ?? wsPath)
-}
-
 const REMOTE_NOT_YET =
   'the koloft command cannot start a session in a remote (SSH) workspace yet. Pick a workspace on this computer.'
 
-export function resolveWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<PinnedWorkspace> {
-  const exact = pinned.filter((w) => w.path === ref || workspaceLabel(w.path) === ref)
-  const hits = exact.length > 0 ? exact : pinned.filter((w) => folderName(w.path) === ref)
+function resolveWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<PinnedWorkspace> {
+  const hits = pinned.filter(
+    (w) => w.path === ref || workspaceLabel(w.path) === ref || basename(w.path) === ref
+  )
   const labels = (ws: PinnedWorkspace[]): string =>
     ws.map((w) => `  ${workspaceLabel(w.path)}`).join('\n')
   if (hits.length === 0)
     return fail(
-      pinned.length === 0
-        ? `there is no workspace "${ref}" in Koloft's sidebar, and the sidebar has none.`
-        : `there is no workspace "${ref}" in Koloft's sidebar. Give the folder name or full path of one of these:\n${labels(pinned)}`
+      `there is no workspace "${ref}" in Koloft's sidebar. Give the folder name or full path of one of these:\n${labels(pinned)}`
     )
   if (hits.length > 1)
     return fail(
@@ -140,10 +135,12 @@ export function resolveWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed
   return { ok: true, value: hits[0] }
 }
 
-function startableWorkspace(target: PinnedWorkspace): Parsed<string> {
-  if (parseRemoteKey(target.path)) return fail(REMOTE_NOT_YET)
-  if (target.missing) return fail(`the folder of workspace "${target.path}" is missing.`)
-  return { ok: true, value: target.path }
+function startableWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<string> {
+  const found = resolveWorkspace(ref, pinned)
+  if (!found.ok) return fail(found.error)
+  if (isRemoteKey(found.value.path)) return fail(REMOTE_NOT_YET)
+  if (found.value.missing) return fail(`the folder of workspace "${found.value.path}" is missing.`)
+  return { ok: true, value: found.value.path }
 }
 
 const CLAUDE_USES_SEND_MESSAGE =
@@ -167,7 +164,6 @@ export function findCodexTarget(sessions: SessionInfo[], ref: string): Parsed<Se
 
 export interface SessionVerbDeps {
   workspaceOf(tabId: string): string | undefined
-  sessionsIn(workspace: string): SessionInfo[]
   allSessions(): SessionInfo[]
   pinnedWorkspaces(): PinnedWorkspace[]
   peerNames(): (sessionId: string) => Promise<string | null>
@@ -178,7 +174,7 @@ export interface SessionVerbDeps {
 const SESSION_USAGE = 'koloft session: use list, new or send. Run "koloft help" to see how.'
 const SEND_USAGE =
   'koloft session send: give an id or name, then the message, like: koloft session send <id> "Tell me what you found."'
-const NO_WORKSPACE = 'Koloft does not know which workspace this session is in.'
+const NO_WORKSPACE = 'koloft session: Koloft does not know which workspace this session is in.'
 const LIST_USAGE =
   'koloft session list: the only option is --workspace <folder name or path>, like: koloft session list --workspace koloft'
 const CODEX_HAS_NO_NAME =
@@ -204,8 +200,7 @@ async function startSibling(
   d: SessionVerbDeps,
   args: NewSessionArgs,
   me: SessionInfo,
-  workspace: string,
-  listHint: string
+  workspace: string
 ): Promise<AgentReply> {
   const backend = me.backendId
   if (backend === 'codex' && args.name !== undefined) return refused(CODEX_HAS_NO_NAME, EXIT_USAGE)
@@ -224,6 +219,10 @@ async function startSibling(
     firstPrompt: withHandover(caller, args.prompt)
   })
   if (!tabId) return refused('koloft session new: Koloft could not start the session.')
+  const listHint =
+    args.workspace === undefined
+      ? 'koloft session list'
+      : `koloft session list --workspace ${JSON.stringify(workspace)}`
   return answered(
     name
       ? `Started session "${name}" in a new tab. Talk to it with SendMessage to "${name}".`
@@ -235,30 +234,25 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
   return async (args, caller): Promise<AgentReply> => {
     const [sub, ...rest] = args
     const ws = d.workspaceOf(caller.tabId)
-    const workspaceFor = (ref: string | undefined): Parsed<PinnedWorkspace> =>
-      ref !== undefined
-        ? resolveWorkspace(ref, d.pinnedWorkspaces())
-        : ws
-          ? { ok: true, value: { path: ws, missing: false } }
-          : fail(NO_WORKSPACE)
+    const sessionsIn = (workspace: string): SessionInfo[] =>
+      d.allSessions().filter((s) => d.workspaceOf(s.tabId) === workspace)
     if (sub === 'list') {
       const listsOther = rest.length === 2 && rest[0] === '--workspace'
       if (rest.length > 0 && !listsOther) return refused(LIST_USAGE, EXIT_USAGE)
-      const target = workspaceFor(listsOther ? rest[1] : undefined)
-      if (!target.ok) return refused(`koloft session list: ${target.error}`)
-      return listSessions(d, d.sessionsIn(target.value.path), caller.tabId)
+      if (!listsOther)
+        return ws ? listSessions(d, sessionsIn(ws), caller.tabId) : refused(NO_WORKSPACE)
+      const found = resolveWorkspace(rest[1], d.pinnedWorkspaces())
+      if (!found.ok) return refused(`koloft session list: ${found.error}`)
+      return listSessions(d, sessionsIn(found.value.path), caller.tabId)
     }
     if (sub === 'new') {
       const parsed = parseNewSessionArgs(rest)
       if (!parsed.ok) return refused(`koloft session new: ${parsed.error}`, EXIT_USAGE)
-      const found = workspaceFor(parsed.value.workspace)
-      const target = found.ok ? startableWorkspace(found.value) : found
+      if (parsed.value.workspace === undefined)
+        return ws ? startSibling(d, parsed.value, caller.session, ws) : refused(NO_WORKSPACE)
+      const target = startableWorkspace(parsed.value.workspace, d.pinnedWorkspaces())
       if (!target.ok) return refused(`koloft session new: ${target.error}`)
-      const listHint =
-        target.value === ws
-          ? 'koloft session list'
-          : `koloft session list --workspace ${JSON.stringify(target.value)}`
-      return startSibling(d, parsed.value, caller.session, target.value, listHint)
+      return startSibling(d, parsed.value, caller.session, target.value)
     }
     if (sub === 'send') {
       if (caller.session.backendId !== 'codex')

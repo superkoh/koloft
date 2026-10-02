@@ -53,7 +53,6 @@ function harness(
   const queued: { tabId: string; text: string }[] = []
   const inner = sessionVerb({
     workspaceOf: (tabId) => sessions.find((s) => s.tabId === tabId)?.cwd,
-    sessionsIn: (workspace) => sessions.filter((s) => s.cwd === workspace),
     allSessions: () => sessions,
     pinnedWorkspaces: () => PINNED,
     peerNames: () => async (sessionId) => peerNames[sessionId] ?? null,

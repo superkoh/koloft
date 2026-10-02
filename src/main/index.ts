@@ -615,10 +615,6 @@ const agentRequests = new AgentRequests({
     }),
     session: sessionVerb({
       workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
-      sessionsIn: (workspace) =>
-        allSessions().filter(
-          (s) => sessionBackends.get(s.backendId).workspaceOfTab(s.tabId) === workspace
-        ),
       allSessions,
       pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
       peerNames: () => claudePeerNames(),
