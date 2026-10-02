@@ -11,6 +11,7 @@ import {
 import { LuX } from 'react-icons/lu'
 import type { ArtifactView } from '@shared/types'
 import { basename, isWebPagePath, previewKindForPath } from '@shared/preview'
+import { resolveOnHost } from '@shared/remoteKey'
 import { openWebPage, previewLinkTarget } from '../store'
 import { PreviewViewer, type MdHeading } from './PreviewViewer'
 import { InlineDiff } from './InlineDiff'
@@ -481,7 +482,7 @@ export function ArtifactPane({
     const n = Number(a.getAttribute('data-line'))
     const at = Number.isInteger(n) && n > 0 ? n : undefined
     const raw = rel.startsWith('/')
-      ? [previewLinkTarget(rel, '/.')]
+      ? [resolveOnHost(path, rel)]
       : [previewLinkTarget(rel, path), ...(wsRoot ? [previewLinkTarget(rel, `${wsRoot}/.`)] : [])]
     const candidates = raw.map(insideWorkspaceFence).filter((c): c is string => !!c)
     void (async () => {
@@ -516,12 +517,11 @@ export function ArtifactPane({
       bodyRef.current?.querySelector(`#${CSS.escape(id)}`)?.scrollIntoView()
       return
     }
-    const resolved = previewLinkTarget(href, path)
-    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(resolved)) {
-      openWebPage(resolved, tabId)
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(href)) {
+      openWebPage(href, tabId)
       return
     }
-    const inside = insideWorkspaceFence(resolved)
+    const inside = insideWorkspaceFence(previewLinkTarget(href, path))
     if (!inside) return
     if (isWebPagePath(inside)) openWebPage(inside, tabId)
     else onNavigate(tabId, inside)

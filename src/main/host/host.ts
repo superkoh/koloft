@@ -8,7 +8,8 @@ import type {
   GitNumstatMap,
   GitStatusMap,
   LaunchPermission,
-  SearchHit
+  SearchHit,
+  SkillSuggestion
 } from '@shared/types'
 import type { DiffResult, GitDiffResult } from '../gitStatus'
 import type { GithubLookup } from '../github'
@@ -98,6 +99,7 @@ export interface Host {
   launch(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan>
   trustFolder(dir: string): Promise<void>
   trustsFolder(dir: string): Promise<boolean>
+  listSkills(root: string): Promise<SkillSuggestion[]>
   keyed(p: string): string
   gitOut(root: string, args: string[]): Promise<string | null>
   reveal(p: string): void

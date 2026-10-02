@@ -654,6 +654,24 @@ describe('SessionTracker — binding', () => {
       const s = await waitFor(tracker, (x) => x.tabId === 'tabTR9' && x.cwd === wsB)
       expect(s.treeRoot).toBe(wsB)
     })
+
+    it('a tab on another machine keeps its root while the session cds — that root is not on this Mac to check', async () => {
+      const rcwd = '/home/koh/api'
+      const mirror = path.join(home, 'remote', 'pinbox', 'projects')
+      const file = path.join(mirror, encodeCwd(rcwd), SID + '.jsonl')
+      fs.mkdirSync(path.dirname(file), { recursive: true })
+      fs.writeFileSync(
+        file,
+        JSON.stringify({ type: 'user', message: { content: 'x' }, cwd: rcwd }) + '\n'
+      )
+      const tracker = newTracker()
+      tracker.track('tabTR10', rcwd, { host: 'pinbox', projectsRoot: mirror, tmuxName: `k-${SID}` })
+      tracker.bindSession('tabTR10', '', SID, rcwd)
+      await waitFor(tracker, (x) => x.tabId === 'tabTR10' && x.title === 'x')
+      fs.appendFileSync(file, JSON.stringify({ type: 'assistant', cwd: rcwd + '/sub' }) + '\n')
+      const s = await waitFor(tracker, (x) => x.tabId === 'tabTR10' && x.cwd === rcwd + '/sub')
+      expect(s.treeRoot).toBe(rcwd)
+    })
   })
 
   describe('aliveTabFor (F7 force-close): what it resolves is what gets killed', () => {
@@ -1600,6 +1618,24 @@ describe("a tab whose claude runs on another machine: its transcript lives in a 
     expect(info?.jsonlPath).toBe(path.join(mirrorRoot(), '-home-koh-api', RSID + '.jsonl'))
     expect(info?.remote).toEqual({ host: 'devbox' })
     expect(info?.cwd).toBe(RCWD)
+  })
+
+  // CC§2
+  it("keys the scratchpad to the machine's own /tmp and uid, names none before the machine has told them, and fills it in once it has", () => {
+    const tracker = remoteTracker()
+    tracker.bindSession('tabR', '', RSID, RCWD)
+    expect(tracker.list().find((s) => s.tabId === 'tabR')?.scratchpadDir).toBeUndefined()
+
+    tracker.machineTmp = (host) => (host === 'devbox' ? { tmpRoot: '/tmp', uid: 1000 } : undefined)
+    tracker.fillMachineScratchpads('devbox')
+    expect(tracker.list().find((s) => s.tabId === 'tabR')?.scratchpadDir).toBe(
+      `/tmp/claude-1000/${encodeCwd(RCWD)}/${RSID}/scratchpad`
+    )
+
+    tracker.bindSession('tabR', '', 'session-after-clear', RCWD, '', '', 'clear')
+    expect(tracker.list().find((s) => s.tabId === 'tabR')?.scratchpadDir).toBe(
+      `/tmp/claude-1000/${encodeCwd(RCWD)}/session-after-clear/scratchpad`
+    )
   })
 
   it('falls back to the encoded machine path when the hook reported no transcript', () => {

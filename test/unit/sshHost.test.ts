@@ -164,17 +164,56 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       })
       expect(await machine().trustsFolder(keyed(path.join(repo, 'sub')))).toBe(true)
     })
+
+    it("offers the machine's skills to a scheduled task: the workspace's, then the machine home's (BB-M16)", async () => {
+      const put = (file: string, text: string): void => {
+        fs.mkdirSync(path.dirname(file), { recursive: true })
+        fs.writeFileSync(file, text)
+      }
+      put(
+        path.join(repo, '.claude', 'skills', 'ship', 'SKILL.md'),
+        '---\ndescription: Ship it\n---'
+      )
+      put(path.join(repo, '.claude', 'commands', 'build.md'), '# build')
+      put(path.join(home, '.claude', 'skills', 'tidy', 'SKILL.md'), '---\nname: tidy-up\n---')
+      put(path.join(home, '.claude', 'skills', 'ship', 'SKILL.md'), '---\nname: ship\n---')
+
+      expect(await machine().listSkills(keyed(repo))).toEqual([
+        { name: '/ship', description: 'Ship it', source: 'project' },
+        { name: '/build', source: 'project' },
+        { name: '/tidy-up', source: 'home' }
+      ])
+    })
   }
 )
 
+const unreachable = async (): Promise<BytesResult> => ({
+  code: 255,
+  stdout: Buffer.alloc(0),
+  stderr: 'ssh: connect to host devbox port 22: Operation timed out'
+})
+
 describe("Claude's folder trust on the machine", () => {
   it('does not call a folder untrusted when the machine cannot be reached', async () => {
-    const unreachable = async (): Promise<BytesResult> => ({
-      code: 255,
-      stdout: Buffer.alloc(0),
-      stderr: 'ssh: connect to host devbox port 22: Operation timed out'
-    })
     expect(await machine(unreachable).trustsFolder(keyed(repo))).toBe(true)
+  })
+})
+
+describe('a remote Workbench while the ssh link is down', () => {
+  it('git status, numstat and diff fail when ssh cannot connect, instead of answering "empty, not a repo"', async () => {
+    let linkDown = false
+    const host = machine((cmd, opts) => (linkDown ? unreachable() : runOnMachine(cmd, opts)))
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'hello\nmore\n')
+    expect(await host.gitStatus(keyed(repo))).toEqual({
+      [keyed(path.join(repo, 'a.txt'))]: 'modified',
+      [keyed(path.join(repo, 'broken'))]: 'untracked'
+    })
+
+    linkDown = true
+
+    await expect(host.gitStatus(keyed(repo))).rejects.toThrow()
+    await expect(host.gitNumstat(keyed(repo))).rejects.toThrow()
+    await expect(host.gitDiff(keyed(repo))).rejects.toThrow()
   })
 })
 

@@ -6,7 +6,8 @@ import {
   formatRemoteKey,
   isRemoteKey,
   parseRemoteKey,
-  remoteCopyText
+  remoteCopyText,
+  resolveOnHost
 } from '../../src/shared/remoteKey'
 import { mirrorHookDir, mirrorProjectsRoot } from '../../src/main/remote/paths'
 import { buildMachinePackage } from '../../src/main/remote/launch'
@@ -40,6 +41,17 @@ describe('remote key', () => {
     expect(isRemoteKey('/Users/koh/app')).toBe(false)
     expect(parseRemoteKey('ssh:///home/koh')).toBeNull()
     expect(parseRemoteKey('ssh://devbox')).toBeNull()
+  })
+
+  it('resolves a path from a file on the same machine, keeping ssh://host for a remote file', () => {
+    expect(resolveOnHost('/ws/docs/a.md', '../b.md')).toBe('/ws/b.md')
+    expect(resolveOnHost('/ws/docs/a.md', '/etc/x.conf')).toBe('/etc/x.conf')
+    expect(resolveOnHost('ssh://devbox/ws/docs/a.md', './b.md#top')).toBe(
+      'ssh://devbox/ws/docs/b.md'
+    )
+    expect(resolveOnHost('ssh://devbox/ws/docs/a.md', '/home/koh/x.ts')).toBe(
+      'ssh://devbox/home/koh/x.ts'
+    )
   })
 })
 

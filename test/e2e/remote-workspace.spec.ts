@@ -3,6 +3,8 @@ import path from 'path'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   addRemoteWorkspace,
+  breakConnection,
+  healConnection,
   killFakeRemote,
   launchWithRemote,
   machineHome,
@@ -34,7 +36,7 @@ import {
   waitForCalls,
   wsRows
 } from './helpers/p1'
-import { WORKBENCH, browseRow, showBrowse } from './helpers/workbench'
+import { WORKBENCH, browseRow, openInBrowse, showBrowse } from './helpers/workbench'
 
 const LAYOUT_SAVE_DEBOUNCE_SETTLE_MS = 3000
 const TURN_LONGER_THAN_ONE_MIRROR_PULL = '/busy'
@@ -199,6 +201,48 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
+  test('E-RW-24: an ssh drop keeps the remote Changes list and offers Retry, never "This directory no longer exists."', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      fs.writeFileSync(path.join(dir, '.gitignore'), 'NOTES.md\n')
+      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\n')
+      gitInit(dir)
+      gitCommitAll(dir)
+      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\ntwo\n')
+
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      await wsRows(page, REMOTE_WS_NAME).first().click()
+      await expect(auxIcon(page, 'Workbench')).toHaveCount(1)
+      await showBrowse(page)
+      await page
+        .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
+        .filter({ hasText: 'Changes' })
+        .click()
+      const row = page.locator('.wb-panel .cv-row[data-path="tracked.txt"]')
+      await expect(row).toBeVisible({ timeout: 30_000 })
+
+      breakConnection(env)
+      await page.locator('.wb-bar .icobtn[aria-label="Reload"]').click()
+
+      const banner = page.locator('.wb-panel .cv-banner-err')
+      await expect(banner).toBeVisible({ timeout: 30_000 })
+      await expect(row).toBeVisible()
+      await expect(page.getByText('This directory no longer exists.')).toHaveCount(0)
+
+      healConnection(env)
+      await banner.getByRole('button', { name: /retry/i }).click()
+      await expect(banner).toHaveCount(0, { timeout: 30_000 })
+      await expect(row).toBeVisible()
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('E-RW-23: remote Changes keeps an expanded diff open while the session works, and only Reload folds it back', async ({
     env
   }) => {
@@ -342,6 +386,42 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       })
     } finally {
       await quitAndClose(app2)
+    }
+  })
+
+  test('E-RW-22: in a remote markdown file, a relative link and a path:line both open the file on the machine', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      fs.mkdirSync(path.join(dir, 'src'), { recursive: true })
+      fs.writeFileSync(path.join(dir, 'src', 'a.ts'), 'export const a = 1\n')
+      fs.writeFileSync(path.join(dir, 'src', 'b.ts'), 'export const b = 2\n')
+      fs.writeFileSync(
+        path.join(dir, 'doc.md'),
+        '# Doc\n\n[open a](src/a.ts)\n\nSee src/b.ts:1 here.\n'
+      )
+
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      await wsRows(page, REMOTE_WS_NAME).first().click()
+
+      const doc = `${remoteKey(env)}/doc.md`
+      const title = page.locator(WORKBENCH.readingTitle)
+      const body = page.locator(`${WORKBENCH.readingBody} .md-body`)
+
+      await openInBrowse(page, doc)
+      await body.locator('a', { hasText: 'open a' }).click({ timeout: 30_000 })
+      await expect(title).toContainText('a.ts', { timeout: 30_000 })
+
+      await showBrowse(page)
+      await browseRow(page, doc).click()
+      await body.locator('a.md-fileref', { hasText: 'src/b.ts:1' }).click({ timeout: 30_000 })
+      await expect(title).toContainText('b.ts', { timeout: 30_000 })
+    } finally {
+      await quitAndClose(app)
     }
   })
 })
