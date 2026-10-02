@@ -1,5 +1,6 @@
 import path from 'path'
 import { isValidSchedule } from '@shared/schedule'
+import { HIST_WORDS } from '@shared/cronHistory'
 import { hasWordChar, isValidModelName } from '@shared/cronNames'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import { backendIdOf } from '@shared/sessionBackend'
@@ -18,7 +19,7 @@ export function cronFilePath(userData: string): string {
 
 const BAD_MODEL_NOTE = 'The saved model was not valid and was ignored.'
 
-const HISTORY_STATES = new Set<string>(['closed', 'failed', 'ended', 'skipped', 'missed'])
+const HISTORY_STATES = new Set<string>(Object.keys(HIST_WORDS))
 const MAX_HISTORY = 20
 
 function isObj(x: unknown): x is Record<string, unknown> {
@@ -118,6 +119,7 @@ export function sanitizeCron(
       else notes[id] = BAD_MODEL_NOTE
     }
     if (isCronEffort(item.effort)) job.effort = item.effort
+    if (item.autoClose === true) job.autoClose = true
     const backend = backendIdOf(item.backend)
     if (backend) job.backend = backend
     seen.add(id)

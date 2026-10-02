@@ -100,6 +100,8 @@ describe('koloft cron: reading the command line', () => {
       'high',
       '--permission',
       'acceptEdits',
+      '--when-done',
+      'close',
       '--',
       'Run',
       'the tests'
@@ -116,6 +118,7 @@ describe('koloft cron: reading the command line', () => {
           model: 'gpt-5',
           effort: 'high',
           permission: 'acceptEdits',
+          autoClose: true,
           task: 'Run the tests'
         }
       }
@@ -152,6 +155,7 @@ describe('koloft cron: reading the command line', () => {
     expect(parseError(['edit', '1', '--backend', 'gemini'])).toMatch(/claude or codex/)
     expect(parseError(['edit', '1', '--effort', 'huge'])).toMatch(/--effort is one of/)
     expect(parseError(['edit', '1', '--permission', 'root'])).toMatch(/--permission is one of/)
+    expect(parseError(['edit', '1', '--when-done', 'quit'])).toMatch(/--when-done is one of/)
     expect(parseError(['edit', '1'])).toMatch(/say what to change/)
     expect(parseError(['edit', '--daily', '09:00'])).toMatch(/say which task/)
     expect(parseError(['show', '1', '--daily', '09:00'])).toMatch(/takes no options/)
@@ -166,8 +170,14 @@ describe('koloft cron: reading the command line', () => {
 })
 
 describe('koloft cron: changing tasks', () => {
-  it('edit changes only the parts given and keeps model, effort, permission, task and off state', async () => {
-    const kept = job({ model: 'opus', effort: 'max', permission: 'skipAll', enabled: false })
+  it('edit changes only the parts given and keeps model, effort, permission, when done, task and off state', async () => {
+    const kept = job({
+      model: 'opus',
+      effort: 'max',
+      permission: 'skipAll',
+      autoClose: true,
+      enabled: false
+    })
     const c = cron([kept])
     const reply = await c.run('edit', 'nightly', '--daily', '03:00')
     expect(reply.exit).toBe(0)
@@ -179,8 +189,11 @@ describe('koloft cron: changing tasks', () => {
       model: 'opus',
       effort: 'max',
       permission: 'skipAll',
+      autoClose: true,
       enabled: false
     })
+    await c.run('edit', 'nightly', '--when-done', 'open')
+    expect('autoClose' in c.runner.state().jobs[0]).toBe(false)
   })
 
   it('reaches only the caller workspace: another workspace’s task is neither listed nor found by name or number', async () => {
@@ -276,6 +289,7 @@ describe('koloft cron: printing tasks', () => {
     )
     expect(text).toContain('Id: j1')
     expect(text).toContain('opus')
+    expect(text).toContain('When done: open')
     expect(text).toContain('    Run the tests\n    and report')
     expect(text).toContain('today 02:00 · Could not start — no usable account')
   })

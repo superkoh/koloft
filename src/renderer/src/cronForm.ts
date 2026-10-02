@@ -26,6 +26,7 @@ export interface JobFields {
   modelOther: string
   effort: '' | CronEffort
   permission: CronPermission
+  autoClose: boolean
 }
 
 export function emptyFields(backend: BackendId = 'claude'): JobFields {
@@ -41,7 +42,8 @@ export function emptyFields(backend: BackendId = 'claude'): JobFields {
     model: '',
     modelOther: '',
     effort: '',
-    permission: NEW_JOB_PERMISSION[backend]
+    permission: NEW_JOB_PERMISSION[backend],
+    autoClose: false
   }
 }
 
@@ -134,6 +136,7 @@ export function validate(f: JobFields): ValidateResult {
   }
   if (model !== undefined) input.model = model
   if (f.effort) input.effort = f.effort
+  if (f.autoClose) input.autoClose = true
   return { ok: true, input }
 }
 
