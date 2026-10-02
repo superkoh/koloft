@@ -427,10 +427,7 @@ export class CronRunner {
   private onDeadline(tabId: string): void {
     const run = this.live.get(tabId)
     if (!run || run.state !== 'launching') return
-    this.d.killTab(tabId)
-    this.d.killed(tabId)
-    this.live.delete(tabId)
-    this.refreshFolders()
+    this.killRun(tabId)
     const job = this.byId(run.jobId)
     if (!job) {
       this.push()
@@ -481,11 +478,15 @@ export class CronRunner {
     else this.push()
   }
 
-  private closeFinished(tabId: string, run: LiveRun, job: CronJob): void {
+  private killRun(tabId: string): void {
     this.d.killTab(tabId)
     this.d.killed(tabId)
     this.live.delete(tabId)
     this.refreshFolders()
+  }
+
+  private closeFinished(tabId: string, run: LiveRun, job: CronJob): void {
+    this.killRun(tabId)
     this.writeHistory(job, { ...lineOf(run), state: 'finished' })
     this.d.toast(`⏰ ${job.name} finished and closed`)
   }

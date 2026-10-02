@@ -39,7 +39,7 @@ export const LIVE_WORDS: Record<LiveRun['state'], string> = {
   done: 'done — waiting for you'
 }
 
-const HIST_WORDS: Record<HistoryLine['state'], string> = {
+export const HIST_WORDS: Record<HistoryLine['state'], string> = {
   closed: 'closed by you',
   finished: 'done — closed itself',
   ended: 'ended — Koloft quit',
