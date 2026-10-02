@@ -152,13 +152,20 @@ mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
   many times from inside the worktree) had both under the worktree. (`claude -p` names
   no scratchpad at all.) Older versions not checked. `tasks/` holds full subagent
   transcripts (single files reach MBs).
-  The base is `$CLAUDE_CODE_TMPDIR` when set, else a fixed `/tmp` — never `$TMPDIR`
-  (read 2026-10-01 from the compiled CC 2.1.286 binary:
-  `function dS(){let e=a.CLAUDE_CODE_TMPDIR;if(e)return e;return"/tmp"}`). So a session
-  on a remote machine keeps it under that machine's resolved `/tmp` and its own uid, which
-  the heartbeat asks for (Koloft dependent: `src/main/remote/install.ts`). Not yet seen
-  on a Linux machine with claude installed. Koloft does not follow `CLAUDE_CODE_TMPDIR`,
-  on this Mac or on a machine.
+  The per-user folder is `realpath(<base>/claude-<uid>)` (mode 0700). `<base>` differs by
+  OS. macOS build: `$CLAUDE_CODE_TMPDIR`, else a fixed `/tmp` — `$TMPDIR` is ignored
+  (CC 2.1.286 and 2.1.287 macOS binaries:
+  `function NS(){let e=a.CLAUDE_CODE_TMPDIR;if(e)return e;return"/tmp"}`; a session
+  started with `TMPDIR=/var/folders/…` still used `/private/tmp/claude-501`). Linux build:
+  `$CLAUDE_CODE_TMPDIR`, else Node's `os.tmpdir()`, which follows `$TMPDIR` (2026-10-01,
+  CC 2.1.287 linux-arm64 in an `ubuntu:24.04` container, uid 1234, not logged in:
+  `function Lb(){let e=a.CLAUDE_CODE_TMPDIR;if(e)return e;return g()}` with `g` =
+  `tmpdir`; an interactive session made `/tmp/claude-1234`, with `TMPDIR=/var/tmp/x` it
+  made `/var/tmp/x/claude-1234` and nothing under `/tmp`, with `CLAUDE_CODE_TMPDIR` set it
+  used that). Without a login only the empty per-user folder appeared; the
+  `<slug>/<session>/scratchpad` folders under it were not seen on Linux. The remote
+  heartbeat asks the machine for this base and its uid (Koloft dependent:
+  `src/main/remote/install.ts`). Koloft does not follow `CLAUDE_CODE_TMPDIR` on this Mac.
 - **A live session can move to another checkout, and the transcript moves with it.** The
   `EnterWorktree` / `ExitWorktree` tools relocate a session mid-conversation; on disk that
   is ONE `rename` of the jsonl into the destination directory's slug — **the inode is

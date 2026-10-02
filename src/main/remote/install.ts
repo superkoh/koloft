@@ -125,11 +125,14 @@ export interface MachineTmp {
 
 const UID_LINE = 'uid '
 const TMP_LINE = 'tmp '
+const CLAUDE_TMP_BASE =
+  'if [ "$(uname)" = Darwin ]; then b="${CLAUDE_CODE_TMPDIR:-/tmp}"; ' +
+  'else b="${CLAUDE_CODE_TMPDIR:-${TMPDIR:-${TMP:-${TEMP:-/tmp}}}}"; fi'
 
 // CC§2
 export function heartbeatCmd(paths: string[]): string {
   return remoteShCommand(
-    `echo "${UID_LINE}$(id -u)"; echo "${TMP_LINE}$(cd /tmp && pwd -P)"; ` +
+    `echo "${UID_LINE}$(id -u)"; ${CLAUDE_TMP_BASE}; echo "${TMP_LINE}$(cd "$b" && pwd -P)"; ` +
       'tmux -L koloft ls -F "#S" 2>/dev/null; ' +
       'for p in "$@"; do echo "== $p"; echo "real $(cd "$p" 2>/dev/null && pwd -P)"; ' +
       '[ -e "$p/.git" ] && echo git; ' +

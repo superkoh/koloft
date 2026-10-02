@@ -332,6 +332,25 @@ describe('the heartbeat question', () => {
     expect(ask([]).tmp).toEqual({ tmpRoot: fs.realpathSync('/tmp'), uid: process.getuid!() })
   })
 
+  it("on Linux claude's scratchpad base follows CLAUDE_CODE_TMPDIR, then TMPDIR, as the Linux build reads os.tmpdir()", () => {
+    const fakeBin = path.join(dir, 'linux-bin')
+    fs.mkdirSync(fakeBin)
+    fs.writeFileSync(path.join(fakeBin, 'uname'), '#!/bin/sh\necho Linux\n', { mode: 0o755 })
+    const tmpdir = path.join(dir, 'tmpdir')
+    const ccTmp = path.join(dir, 'cc-tmp')
+    fs.mkdirSync(tmpdir)
+    fs.mkdirSync(ccTmp)
+    const onLinux = (env: Record<string, string>): string | undefined => {
+      const res = spawnSync('sh', ['-c', heartbeatCmd([])], {
+        encoding: 'utf8',
+        env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}`, ...env }
+      })
+      return parseHeartbeat(res.stdout).tmp?.tmpRoot
+    }
+    expect(onLinux({ TMPDIR: tmpdir })).toBe(fs.realpathSync(tmpdir))
+    expect(onLinux({ TMPDIR: tmpdir, CLAUDE_CODE_TMPDIR: ccTmp })).toBe(fs.realpathSync(ccTmp))
+  })
+
   it('reads the lines before the first folder as tmux session names', () => {
     const parsed = parseHeartbeat('k-aaa\nk-bbb\n== /home/koh/api\ngit\nworktree /home/koh/api\n\n')
     expect(parsed.alive).toEqual(['k-aaa', 'k-bbb'])
