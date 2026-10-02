@@ -47,6 +47,10 @@ function backgroundOptions(host: string, controlDir: string): string[] {
 
 export const SSH_LINK_BROKE_EXIT = 255
 
+export function sshLinkBroke(r: { code: number | null }): boolean {
+  return r.code === null || r.code === SSH_LINK_BROKE_EXIT
+}
+
 // PLATFORM§33
 function noteMasterRoom<R extends { code: number | null; stderr: string }>(host: string, r: R): R {
   if (r.stderr.includes(MASTER_FULL)) spilledHosts.add(host)

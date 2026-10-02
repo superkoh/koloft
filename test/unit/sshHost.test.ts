@@ -187,14 +187,33 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
   }
 )
 
+const unreachable = async (): Promise<BytesResult> => ({
+  code: 255,
+  stdout: Buffer.alloc(0),
+  stderr: 'ssh: connect to host devbox port 22: Operation timed out'
+})
+
 describe("Claude's folder trust on the machine", () => {
   it('does not call a folder untrusted when the machine cannot be reached', async () => {
-    const unreachable = async (): Promise<BytesResult> => ({
-      code: 255,
-      stdout: Buffer.alloc(0),
-      stderr: 'ssh: connect to host devbox port 22: Operation timed out'
-    })
     expect(await machine(unreachable).trustsFolder(keyed(repo))).toBe(true)
+  })
+})
+
+describe('a remote Workbench while the ssh link is down', () => {
+  it('git status, numstat and diff fail when ssh cannot connect, instead of answering "empty, not a repo"', async () => {
+    let linkDown = false
+    const host = machine((cmd, opts) => (linkDown ? unreachable() : runOnMachine(cmd, opts)))
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'hello\nmore\n')
+    expect(await host.gitStatus(keyed(repo))).toEqual({
+      [keyed(path.join(repo, 'a.txt'))]: 'modified',
+      [keyed(path.join(repo, 'broken'))]: 'untracked'
+    })
+
+    linkDown = true
+
+    await expect(host.gitStatus(keyed(repo))).rejects.toThrow()
+    await expect(host.gitNumstat(keyed(repo))).rejects.toThrow()
+    await expect(host.gitDiff(keyed(repo))).rejects.toThrow()
   })
 })
 
