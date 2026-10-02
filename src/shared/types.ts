@@ -972,12 +972,13 @@ export interface CronJob {
   model?: string
   effort?: CronEffort
   permission: CronPermission
+  autoClose?: true
   enabled: boolean
   createdAt: number
   history: HistoryLine[]
 }
 
-export type HistoryState = 'closed' | 'failed' | 'ended' | 'skipped' | 'missed'
+export type HistoryState = 'closed' | 'finished' | 'failed' | 'ended' | 'skipped' | 'missed'
 
 export interface HistoryLine {
   dueAt: number

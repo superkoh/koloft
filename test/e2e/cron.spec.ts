@@ -494,6 +494,56 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     }
   })
 
+  test('BB-M18: with "Close it" on, a finished run closes itself, keeps its folder, and resumes from the sidebar', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    gitInit(env.workspaces.a)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+
+      const dlg = await openCron(page, 'ws-a')
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await fillForm(dlg, { name: 'Nightly report', task: '/daily-report' })
+      await expect(dlg.locator('.chip.on', { hasText: 'Leave it open' })).toHaveCount(1)
+      await dlg.locator('.chip', { hasText: 'Close it' }).click()
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await expect(card(page, 'Nightly report').locator('.job-task')).toContainText(
+        'closes when done'
+      )
+      await clickRunNow(page, 'Nightly report')
+
+      const call = await waitNewCall(env, 0)
+      const wt = worktreeOf(call)
+      const row = cronRows(page, 'ws-a')
+      await expect(row).toHaveCount(1, { timeout: 60_000 })
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 60_000 })
+      await expect.poll(() => tabDisplays(page), { timeout: 30_000 }).toHaveLength(0)
+      await expect(page.locator('.modal:not(.cronjobs)')).toHaveCount(0)
+
+      await expect
+        .poll(async () => (await histLines(page))[0]?.state, { timeout: 20_000 })
+        .toBe('Done — closed itself')
+      expect((await histLines(page))[0].wt).toBe(` · ${wt}`)
+      await expect(card(page, 'Nightly report').locator('.job-last')).toContainText(
+        'done — closed itself'
+      )
+      expect(fs.existsSync(path.join(env.workspaces.a, '.claude', 'worktrees', wt))).toBe(true)
+
+      await closeCron(page)
+
+      const before = readCalls(env).length
+      await row.click()
+      const resume = await waitNewCall(env, before)
+      expect(resumedId(resume)).toBe(call.sessionId)
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
   test('BB-M07: the clock fires on its own, and takes nothing from you', async ({ env }) => {
     test.setTimeout(240_000)
     gitInit(env.workspaces.a)
@@ -817,6 +867,35 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       expect(call.argv[call.argv.indexOf('--permission-mode') + 1]).toBe('acceptEdits')
 
       await waitTurnStopSoTheTranscriptExistsBeforeClose(page, 'Remote report')
+    } finally {
+      await quitAndClose(app)
+      killFakeRemote(env)
+    }
+  })
+
+  test('BB-M19: a remote job set to "Close it" closes its tab once its turn ends', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await expect(page.locator('.ws-head', { hasText: REMOTE_WS_NAME })).toBeVisible({
+        timeout: 20_000
+      })
+
+      const dlg = await openCron(page, REMOTE_WS_NAME)
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await fillForm(dlg, { name: 'Remote report', task: '/daily-report' })
+      await dlg.locator('.chip', { hasText: 'Close it' }).click()
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await clickRunNow(page, 'Remote report')
+
+      await waitNewCall(env, 0, 120_000)
+      await expect
+        .poll(async () => (await histLines(page))[0]?.state, { timeout: 90_000 })
+        .toBe('Done — closed itself')
+      await expect.poll(() => tabDisplays(page), { timeout: 30_000 }).toHaveLength(0)
     } finally {
       await quitAndClose(app)
       killFakeRemote(env)

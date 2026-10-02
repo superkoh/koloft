@@ -174,9 +174,15 @@ describe('validate messages (§7.5)', () => {
     expect('model' in r.input).toBe(false)
   })
 
-  it('trims the name and the task, and keeps a chosen model and effort', () => {
+  it('trims the name and the task, and keeps a chosen model, effort and "Close it"', () => {
     const r = validate(
-      good({ name: '  Nightly report ', task: ' /daily-report ', model: 'sonnet', effort: 'max' })
+      good({
+        name: '  Nightly report ',
+        task: ' /daily-report ',
+        model: 'sonnet',
+        effort: 'max',
+        autoClose: true
+      })
     )
     expect(r.ok).toBe(true)
     if (!r.ok) return
@@ -184,6 +190,7 @@ describe('validate messages (§7.5)', () => {
     expect(r.input.task).toBe('/daily-report')
     expect(r.input.model).toBe('sonnet')
     expect(r.input.effort).toBe('max')
+    expect(r.input.autoClose).toBe(true)
   })
 
   it('keeps the lines of a task that spans several', () => {
@@ -256,6 +263,7 @@ describe('history rows', () => {
 
   it('names the outcome, and how many times when a row folded', () => {
     expect(histText({ dueAt: at(9, 0), state: 'closed' })).toBe('Closed by you')
+    expect(histText({ dueAt: at(9, 0), state: 'finished' })).toBe('Done — closed itself')
     expect(histText({ dueAt: at(9, 0), state: 'ended' })).toBe('Ended — Koloft quit')
     expect(histText({ dueAt: at(9, 0), state: 'failed', note: 'no usable account' })).toBe(
       'Could not start — no usable account'

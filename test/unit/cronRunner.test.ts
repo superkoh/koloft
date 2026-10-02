@@ -715,6 +715,33 @@ describe('CronRunner — a live run growing up', () => {
     expect(h.launch).toHaveBeenCalledTimes(2)
   })
 
+  it('with "Close it" on, a finished turn closes the tab and writes "finished" once; the next due starts instead of being skipped', async () => {
+    const h = makeHarness([makeJob({ autoClose: true })])
+    await h.runner.runNow('j1')
+    h.runner.onBound('tab-1', 'sess-1')
+    h.runner.onStatus('tab-1', 'working', 'waiting')
+    h.runner.onPtyExit('tab-1')
+
+    expect(h.killTab.mock.calls).toEqual([['tab-1']])
+    expect(h.killedTabs).toEqual(['tab-1'])
+    expect(h.jobs[0].history).toEqual([
+      { dueAt: T0, state: 'finished', worktree: 'nightly-report-260902-1000', manual: true }
+    ])
+    expect(h.runner.state().live).toEqual([])
+    expect(h.toasts.at(-1)).toBe('⏰ Nightly report finished and closed')
+
+    expect(await h.runner.runNow('j1')).toEqual({ ok: true })
+  })
+
+  it('with "Close it" on, a run waiting for permission stays open', async () => {
+    const h = makeHarness([makeJob({ autoClose: true })])
+    await h.runner.runNow('j1')
+    h.runner.onBound('tab-1', 'sess-1')
+    h.runner.onStatus('tab-1', 'working', 'approval')
+    expect(h.killTab).not.toHaveBeenCalled()
+    expect(h.runner.state().live[0].state).toBe('running')
+  })
+
   it('ignores events for a tab it does not own', async () => {
     const h = await started()
     const before = h.states.length
@@ -727,7 +754,7 @@ describe('CronRunner — a live run growing up', () => {
 })
 
 describe('CronRunner — BB-N02: the runner never writes into a session', () => {
-  it('has no write path, kills only the run that never started, and says so once', async () => {
+  it('has no write path; with the run left open when done, kills only the run that never started, and says so once', async () => {
     const h = makeHarness([makeJob()], { bindDeadlineMs: 5 * SEC })
     expect(Object.keys(h.deps).filter((k) => /write/i.test(k))).toEqual([])
 
@@ -955,7 +982,8 @@ describe('CronRunner.save — the same rules the form uses', () => {
       task: '/x'.padEnd(4096, 'y'),
       schedule: { kind: 'weekly', days: [1, 3, 5], at: '21:00' },
       model: 'opus',
-      permission: 'skipAll'
+      permission: 'skipAll',
+      autoClose: true
     })
     expect(res.ok).toBe(true)
     if (!res.ok) return
@@ -1002,12 +1030,14 @@ describe('CronRunner.save — the same rules the form uses', () => {
     expect('model' in res.job).toBe(false)
   })
 
-  it('keeps a thinking effort on save and drops it when the edit leaves it out', () => {
+  it('keeps a thinking effort and "Close it" on save and drops them when the edit leaves them out', () => {
     const h = makeHarness([])
-    const saved = h.runner.save({ ...BASE, id: 'j1', effort: 'high' })
+    const saved = h.runner.save({ ...BASE, id: 'j1', effort: 'high', autoClose: true })
     expect(saved.ok && saved.job.effort).toBe('high')
+    expect(saved.ok && saved.job.autoClose).toBe(true)
     const again = h.runner.save({ ...BASE, id: 'j1' })
     expect(again.ok && 'effort' in again.job).toBe(false)
+    expect(again.ok && 'autoClose' in again.job).toBe(false)
   })
 
   it('trims the name and the task before it saves them', () => {

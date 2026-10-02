@@ -157,6 +157,7 @@ interface Clean {
   model?: string
   effort?: CronEffort
   permission: CronPermission
+  autoClose?: true
 }
 
 function clean(input: CronSaveInput): Clean {
@@ -172,7 +173,8 @@ function clean(input: CronSaveInput): Clean {
     backend: backendIdOf(input.backend) ?? 'claude',
     permission,
     ...(model ? { model } : {}),
-    ...(isCronEffort(input.effort) ? { effort: input.effort } : {})
+    ...(isCronEffort(input.effort) ? { effort: input.effort } : {}),
+    ...(input.autoClose === true ? { autoClose: true } : {})
   }
 }
 
@@ -203,6 +205,14 @@ function saveErrors(
 }
 
 const MANUAL = { manual: true } as const
+
+function lineOf(run: LiveRun): Pick<HistoryLine, 'dueAt' | 'worktree' | 'manual'> {
+  return {
+    dueAt: run.dueAt,
+    ...(run.worktree ? { worktree: run.worktree } : {}),
+    ...(run.manual ? MANUAL : {})
+  }
+}
 
 export class CronRunner {
   private readonly d: RunnerDeps
@@ -417,10 +427,7 @@ export class CronRunner {
   private onDeadline(tabId: string): void {
     const run = this.live.get(tabId)
     if (!run || run.state !== 'launching') return
-    this.d.killTab(tabId)
-    this.d.killed(tabId)
-    this.live.delete(tabId)
-    this.refreshFolders()
+    this.killRun(tabId)
     const job = this.byId(run.jobId)
     if (!job) {
       this.push()
@@ -432,13 +439,7 @@ export class CronRunner {
       const note = trusted
         ? `${label} did not start`
         : `${label} did not start — this folder was never opened in ${label}; start one session here first`
-      this.writeHistory(job, {
-        dueAt: run.dueAt,
-        state: 'failed',
-        note,
-        ...(run.worktree ? { worktree: run.worktree } : {}),
-        ...(run.manual ? MANUAL : {})
-      })
+      this.writeHistory(job, { ...lineOf(run), state: 'failed', note })
       this.d.toast(`⏰ ${job.name} could not start: ${label} did not start`)
       this.d.notify(job.name, `Could not start — ${label} did not start`)
     })
@@ -471,7 +472,23 @@ export class CronRunner {
       run.state = 'running'
       changed = true
     }
-    if (changed) this.push()
+    if (!changed) return
+    const job = this.byId(run.jobId)
+    if (run.state === 'done' && job?.autoClose) this.closeFinished(tabId, run, job)
+    else this.push()
+  }
+
+  private killRun(tabId: string): void {
+    this.d.killTab(tabId)
+    this.d.killed(tabId)
+    this.live.delete(tabId)
+    this.refreshFolders()
+  }
+
+  private closeFinished(tabId: string, run: LiveRun, job: CronJob): void {
+    this.killRun(tabId)
+    this.writeHistory(job, { ...lineOf(run), state: 'finished' })
+    this.d.toast(`⏰ ${job.name} finished and closed`)
   }
 
   onPtyExit(tabId: string): void {
@@ -485,11 +502,7 @@ export class CronRunner {
       this.push()
       return
     }
-    const line = {
-      dueAt: run.dueAt,
-      ...(run.worktree ? { worktree: run.worktree } : {}),
-      ...(run.manual ? MANUAL : {})
-    }
+    const line = lineOf(run)
     if (run.state === 'launching') {
       const note = `${BACKEND_LABEL[cronBackend(job)]} exited before it started`
       this.writeHistory(job, { ...line, state: 'failed', note })
@@ -506,12 +519,7 @@ export class CronRunner {
     for (const run of this.live.values()) {
       const job = this.byId(run.jobId)
       if (!job) continue
-      this.pushLine(job, {
-        dueAt: run.dueAt,
-        state: 'ended',
-        ...(run.worktree ? { worktree: run.worktree } : {}),
-        ...(run.manual ? MANUAL : {})
-      })
+      this.pushLine(job, { ...lineOf(run), state: 'ended' })
     }
     this.live.clear()
     this.d.store.save(this.jobs)
@@ -538,6 +546,7 @@ export class CronRunner {
     if (existing) {
       delete existing.model
       delete existing.effort
+      delete existing.autoClose
       Object.assign(existing, c, {
         workspacePath: input.workspacePath,
         schedule,
