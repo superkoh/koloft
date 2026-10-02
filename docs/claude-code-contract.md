@@ -162,10 +162,19 @@ mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
   `function Lb(){let e=a.CLAUDE_CODE_TMPDIR;if(e)return e;return g()}` with `g` =
   `tmpdir`; an interactive session made `/tmp/claude-1234`, with `TMPDIR=/var/tmp/x` it
   made `/var/tmp/x/claude-1234` and nothing under `/tmp`, with `CLAUDE_CODE_TMPDIR` set it
-  used that). Without a login only the empty per-user folder appeared; the
-  `<slug>/<session>/scratchpad` folders under it were not seen on Linux. The remote
-  heartbeat asks the machine for this base and its uid (Koloft dependent:
-  `src/main/remote/install.ts`). Koloft does not follow `CLAUDE_CODE_TMPDIR` on this Mac.
+  used that). Under it sits `<slug>/<session id>/scratchpad`, `<slug>` being the
+  transcript's project folder name (seen the same day in the same build, turns run against
+  a stand-in Messages API through `ANTHROPIC_BASE_URL` + `apiKeyHelper`: default,
+  `TMPDIR` set, a symlinked `TMPDIR` (resolved), `CLAUDE_CODE_TMPDIR` set, and a cwd with
+  a space and a dot all wrote there). The path reaches the model in the first user
+  message's system reminder (`Scratchpad directory: …`), not in `system`. The scratchpad
+  exists only while the `tengu_scratch` feature flag is on (2.1.287: `Fw()` =
+  `tengu_scratch || isArtifactToolEligible()`); with it off, claude names and makes none,
+  which is why an idle, logged-out session showed only the empty per-user folder. The
+  remote heartbeat asks the machine for this base and its uid (Koloft dependent:
+  `src/main/remote/install.ts`); through the docker ssh lab a real Linux claude's
+  scratchpad, with and without `TMPDIR` from pam_env, was the folder Koloft's Browse
+  listed. Koloft does not follow `CLAUDE_CODE_TMPDIR` on this Mac.
 - **A live session can move to another checkout, and the transcript moves with it.** The
   `EnterWorktree` / `ExitWorktree` tools relocate a session mid-conversation; on disk that
   is ONE `rename` of the jsonl into the destination directory's slug — **the inode is
