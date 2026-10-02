@@ -57,6 +57,7 @@ import {
   workspaceOfTab,
   DOCK_GUTTER_PX,
   mixesBackends,
+  nextWaitingTab,
   notesHeightFromDrag,
   paneWidthFromDrag,
   PREVIEW_CARD_WIDTH_PX,
@@ -611,6 +612,16 @@ export default function App(): JSX.Element {
       setNotesFocus((n) => n + 1)
     })
   }, [returnFocus, setNotesFolded, setSidebarHidden])
+
+  useEffect(() => {
+    return window.api.shortcuts.onNextWaitingSession(() => {
+      const st = useStore.getState()
+      const tabId = nextWaitingTab(st.attention, st.activeTabId, st.tabs)
+      if (!tabId) return
+      window.api.attention.visit(tabId)
+      st.activateTab(tabId)
+    })
+  }, [])
 
   useEffect(() => {
     return window.api.shortcuts.onFindFiles(() => {

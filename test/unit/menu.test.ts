@@ -257,6 +257,23 @@ describe('app menu: Notes', () => {
 })
 
 // PLATFORM§7
+describe('app menu: Next Waiting Session', () => {
+  it('sits in View on ⌘J, bound exactly once, and forwards next-waiting-session to the renderer', () => {
+    const seen: string[] = []
+    const menu = buildMenu((a) => seen.push(a))
+    const item = topLevel(menu, 'View').submenu!.find((i) => i.id === 'next-waiting-session')
+    expect(item!.label).toBe('Next Waiting Session')
+    expect(item!.accelerator).toBe('CmdOrCtrl+J')
+    const bound = flatten(menu).filter(
+      (i) => i.accelerator && normalizeAccel(i.accelerator) === normalizeAccel('CmdOrCtrl+J')
+    )
+    expect(bound.map((i) => i.id)).toEqual(['next-waiting-session'])
+    item!.click!()
+    expect(seen).toEqual(['next-waiting-session'])
+  })
+})
+
+// PLATFORM§7
 describe('app menu: Toggle Sidebar', () => {
   it('sits in View on ⌘B, bound exactly once, and forwards toggle-sidebar to the renderer', () => {
     const seen: string[] = []
