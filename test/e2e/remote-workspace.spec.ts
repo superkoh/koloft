@@ -3,6 +3,8 @@ import path from 'path'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   addRemoteWorkspace,
+  breakConnection,
+  healConnection,
   killFakeRemote,
   launchWithRemote,
   machineHome,
@@ -194,6 +196,48 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await expect(panelTerm(page)).toContainText('RW02_ON_42', { timeout: 60_000 })
       await runIn(page, panelTerm(page), 'claude')
       await expect(panelTerm(page)).toContainText('not an agent surface', { timeout: 25_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-24: an ssh drop keeps the remote Changes list and offers Retry, never "This directory no longer exists."', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      fs.writeFileSync(path.join(dir, '.gitignore'), 'NOTES.md\n')
+      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\n')
+      gitInit(dir)
+      gitCommitAll(dir)
+      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\ntwo\n')
+
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      await wsRows(page, REMOTE_WS_NAME).first().click()
+      await expect(auxIcon(page, 'Workbench')).toHaveCount(1)
+      await showBrowse(page)
+      await page
+        .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
+        .filter({ hasText: 'Changes' })
+        .click()
+      const row = page.locator('.wb-panel .cv-row[data-path="tracked.txt"]')
+      await expect(row).toBeVisible({ timeout: 30_000 })
+
+      breakConnection(env)
+      await page.locator('.wb-bar .icobtn[aria-label="Reload"]').click()
+
+      const banner = page.locator('.wb-panel .cv-banner-err')
+      await expect(banner).toBeVisible({ timeout: 30_000 })
+      await expect(row).toBeVisible()
+      await expect(page.getByText('This directory no longer exists.')).toHaveCount(0)
+
+      healConnection(env)
+      await banner.getByRole('button', { name: /retry/i }).click()
+      await expect(banner).toHaveCount(0, { timeout: 30_000 })
+      await expect(row).toBeVisible()
     } finally {
       await quitAndClose(app)
     }
