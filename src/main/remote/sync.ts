@@ -1,6 +1,6 @@
 import { encodeCwd } from '@shared/cwdKey'
 import { problemOf, type RunResult } from './ssh'
-import { heartbeatCmd, parseHeartbeat, type RemoteGitInfo } from './install'
+import { heartbeatCmd, parseHeartbeat, type MachineTmp, type RemoteGitInfo } from './install'
 import { sessionIdOfTmux } from './launch'
 
 // CC§2 CC§4 PLATFORM§34
@@ -49,6 +49,7 @@ export interface RemoteSyncDeps {
 interface HostState {
   alive: Set<string>
   git: Map<string, RemoteGitInfo>
+  tmp?: MachineTmp
   gitAt: number
   connected: boolean
   failures: number
@@ -86,6 +87,10 @@ export class RemoteSync {
 
   gitInfo(host: string, path: string): RemoteGitInfo | undefined {
     return this.hosts.get(host)?.git.get(path)
+  }
+
+  machineTmp(host: string): MachineTmp | undefined {
+    return this.hosts.get(host)?.tmp
   }
 
   connected(host: string): boolean {
@@ -169,6 +174,7 @@ export class RemoteSync {
         st.connected = true
         st.failures = 0
         const parsed = parseHeartbeat(hb.stdout)
+        st.tmp = parsed.tmp
         const prevAlive = st.alive
         st.alive = new Set(
           parsed.alive.map((n) => sessionIdOfTmux(n)).filter((id): id is string => !!id)

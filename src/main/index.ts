@@ -476,6 +476,7 @@ let workspaceMgr: WorkspaceManager | null = null
 
 let freshness: GitFreshnessEngine | null = null
 let remoteSync: RemoteSync | null = null
+tracker.machineTmp = (host) => remoteSync?.machineTmp(host)
 let machinePkg: MachinePackage | null = null
 const remoteControlDir = defaultControlDir()
 let loginSshEnv: Promise<void> | null = null
@@ -1389,7 +1390,10 @@ app.whenReady().then(() => {
         hasTabs: live.has(t.host)
       }))
     },
-    onChange: () => workspaceMgr?.onRemoteChanged(),
+    onChange: (host) => {
+      tracker.fillMachineScratchpads(host)
+      workspaceMgr?.onRemoteChanged()
+    },
     onLeft: (host, ids) => claudeBackend.noticeRemoteExits(host, ids)
   })
   freshness = new GitFreshnessEngine({

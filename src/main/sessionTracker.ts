@@ -18,6 +18,7 @@ import { inspectTaskProcs, type TaskProcs } from './taskProcs'
 import { SessionRuntime, envMs, turnOf, type Turn } from './sessionRuntime'
 import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
 import type { LaunchedSession } from './accountPicker'
+import type { MachineTmp } from './remote/install'
 
 const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects')
 const TMP_ROOT = ((): string => {
@@ -166,7 +167,13 @@ const BASH_WRITES = /(^|[^0-9&])>>?\s*(?!\/dev\/null)\S|\btee\s|\bsed\s+-i\b|\bt
 const READ_TOOLS = new Set(['Read'])
 const UNACKED_TOOL_CMD_CAP = 64
 
-function sessionTmpDir(jsonlPath: string | null, launchCwd?: string): string | null {
+const THIS_MAC_TMP: MachineTmp = { tmpRoot: TMP_ROOT, uid: process.getuid?.() ?? 0 }
+
+function sessionTmpDir(
+  jsonlPath: string | null,
+  launchCwd?: string,
+  machine: MachineTmp | null = THIS_MAC_TMP
+): string | null {
   if (!jsonlPath || !jsonlPath.endsWith('.jsonl')) return null
   const sessionId = path.basename(jsonlPath, '.jsonl')
   const transcriptSlug = path.basename(path.dirname(jsonlPath))
@@ -175,13 +182,18 @@ function sessionTmpDir(jsonlPath: string | null, launchCwd?: string): string | n
   const slug =
     launchSlug && transcriptSlug.startsWith(launchSlug + '-') ? launchSlug : transcriptSlug
   const base =
-    process.env.KOLOFT_SCRATCHPAD_BASE || path.join(TMP_ROOT, `claude-${process.getuid?.() ?? 0}`)
-  return path.join(base, slug, sessionId)
+    process.env.KOLOFT_SCRATCHPAD_BASE ||
+    (machine && path.join(machine.tmpRoot, `claude-${machine.uid}`))
+  return base ? path.join(base, slug, sessionId) : null
 }
 
 // CC§2
-export function scratchpadDirFor(jsonlPath: string | null, launchCwd?: string): string | null {
-  const dir = sessionTmpDir(jsonlPath, launchCwd)
+export function scratchpadDirFor(
+  jsonlPath: string | null,
+  launchCwd?: string,
+  machine?: MachineTmp | null
+): string | null {
+  const dir = sessionTmpDir(jsonlPath, launchCwd, machine)
   return dir && path.join(dir, 'scratchpad')
 }
 
@@ -378,6 +390,7 @@ export class SessionTracker extends SessionRuntime {
   pidOf?: (tabId: string) => number | undefined
   inspect: typeof inspectTaskProcs = inspectTaskProcs
   leftBehind?: (sessionId: string) => boolean
+  machineTmp?: (host: string) => MachineTmp | undefined
 
   track(tabId: string, cwd: string, remote?: RemoteTab): void {
     const prev = this.tracked.get(tabId)
@@ -869,7 +882,7 @@ export class SessionTracker extends SessionRuntime {
     if (t.landTimer) clearTimeout(t.landTimer)
     t.landTimer = undefined
     t.info.relocated = undefined
-    t.info.scratchpadDir = scratchpadDirFor(file, t.launchCwd) ?? undefined
+    t.info.scratchpadDir = this.scratchpadOf(t, file)
     this.resetParseState(t)
     t.swept = false
     try {
@@ -884,6 +897,19 @@ export class SessionTracker extends SessionRuntime {
     if (t.subagentTimer) clearInterval(t.subagentTimer)
     t.subagentTimer = setInterval(() => void this.parse(t), SUBAGENT_SCAN_MS)
     void this.parse(t)
+  }
+
+  private scratchpadOf(t: Tracked, file: string): string | undefined {
+    const machine = t.remote ? (this.machineTmp?.(t.remote.host) ?? null) : undefined
+    return scratchpadDirFor(file, t.launchCwd, machine) ?? undefined
+  }
+
+  fillMachineScratchpads(host: string): void {
+    for (const t of this.tracked.values()) {
+      if (t.remote?.host !== host || t.info.scratchpadDir || !t.info.jsonlPath) continue
+      t.info.scratchpadDir = this.scratchpadOf(t, t.info.jsonlPath)
+      if (t.info.scratchpadDir) this.recompute(t)
+    }
   }
 
   private resolvePath(t: Tracked, raw: string): string | null {
