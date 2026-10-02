@@ -1066,9 +1066,9 @@ function createWindow(): void {
   mainWindow.webContents.on('before-mouse-event', (e, mouse) => {
     if (mouse.type === 'mouseDown') pressedInHost = true
     if (mouse.type !== 'mouseUp') return
-    const echoOfGuestRelease = !pressedInHost
+    const releaseWithoutHostPress = !pressedInHost
     pressedInHost = false
-    if (echoOfGuestRelease) e.preventDefault()
+    if (releaseWithoutHostPress) e.preventDefault()
   })
   // PLATFORM§5
   if (!BACKGROUND_TEST && geo.maximized && !geo.fullScreen) mainWindow.maximize()
