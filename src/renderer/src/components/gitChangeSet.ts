@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { GitNumstatMap, GitStatusMap } from '@shared/types'
 import type { BaseChoice } from './filesModel'
 
@@ -8,6 +8,7 @@ export interface GitChangeSet {
   base: string | null | undefined
   rootMissing: boolean
   watchDead: boolean
+  reread: () => void
 }
 
 function sameMap<V>(
@@ -57,6 +58,8 @@ export function useGitChangeSet(
   const [base, setBase] = useState<string | null | undefined>(undefined)
   const [rootMissing, setRootMissing] = useState(false)
   const [watchDead, setWatchDead] = useState(false)
+  const fetchNow = useRef<(() => void) | null>(null)
+  const reread = useCallback(() => fetchNow.current?.(), [])
 
   useEffect(() => {
     setGit({})
@@ -107,6 +110,7 @@ export function useGitChangeSet(
         })
     }
     fetchGit()
+    fetchNow.current = fetchGit
     let watching = true
     window.api.fs.watchDir(dir).then((live) => {
       if (watching) setWatchDead(!live)
@@ -116,11 +120,12 @@ export function useGitChangeSet(
     })
     return () => {
       seq++
+      fetchNow.current = null
       watching = false
       off()
       window.api.fs.unwatchDir(dir)
     }
   }, [active, root, baseChoice, refreshNonce])
 
-  return { git, numstat, base, rootMissing, watchDead }
+  return { git, numstat, base, rootMissing, watchDead, reread }
 }

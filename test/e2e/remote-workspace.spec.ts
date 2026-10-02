@@ -243,6 +243,47 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
+  test('E-RW-23: remote Changes keeps an expanded diff open while the session works, and only Reload folds it back', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\n')
+      gitInit(dir)
+      gitCommitAll(dir)
+      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\ntwo\n')
+
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      await wsRows(page, REMOTE_WS_NAME).first().click()
+      await expect(auxIcon(page, 'Workbench')).toHaveCount(1)
+      await showBrowse(page)
+      await page
+        .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
+        .filter({ hasText: 'Changes' })
+        .click()
+
+      const expand = page.locator('.wb-panel .cv-blk[data-path="tracked.txt"] .cv-exp')
+      await expect(expand).toBeVisible({ timeout: 30_000 })
+      await expand.click()
+      await expect(expand).toHaveAttribute('aria-pressed', 'true')
+
+      fs.writeFileSync(path.join(dir, 'extra.txt'), 'new\n')
+      await runIn(page, centerTerm(page), TURN_LONGER_THAN_ONE_MIRROR_PULL)
+      await expect(page.locator('.wb-panel .cv-row[data-path="extra.txt"]')).toBeVisible({
+        timeout: 90_000
+      })
+      await expect(expand).toHaveAttribute('aria-pressed', 'true')
+
+      await page.locator('.wb-bar .icobtn[aria-label="Reload"]').click()
+      await expect(expand).toHaveAttribute('aria-pressed', 'false', { timeout: 20_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('E-RW-03: remote menus drop the local-only items, keep Scheduled jobs, and Copy path gives machine:/path', async ({
     env
   }) => {

@@ -337,7 +337,7 @@ export function WorkbenchPane({
 
   const files = useFilesController(ownerTab, treeRoot)
   const refreshFiles = files.refresh
-  const { git, numstat, base, rootMissing, watchDead } = useGitChangeSet(
+  const { git, numstat, base, rootMissing, watchDead, reread } = useGitChangeSet(
     treeRoot,
     visible,
     files.baseChoice,
@@ -1350,7 +1350,7 @@ export function WorkbenchPane({
     watchDead && visible,
     session?.updatedAt,
     WATCHLESS_REFRESH_THROTTLE_MS,
-    files.refresh
+    reread
   )
 
   const reportCaps = useCallback((tabId: string, next: ArtifactCaps): void => {
