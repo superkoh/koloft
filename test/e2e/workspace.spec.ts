@@ -202,4 +202,39 @@ test.describe('Workspace management: every add goes through the workspace:add IP
       await app2.close().catch(() => {})
     }
   })
+
+  test('T-WS-07: dragging a workspace head reorders the sidebar without selecting it, and the order survives a restart', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    const app1 = await launchApp(env)
+    const page1 = await app1.firstWindow()
+    await page1.waitForLoadState('domcontentloaded')
+    const names1 = page1.locator('.ws-head .ws-name')
+    await expect(names1).toHaveText(['ws-a', 'ws-b'], { timeout: 20_000 })
+
+    await page1
+      .locator('.ws-head')
+      .nth(1)
+      .dragTo(page1.locator('.ws').nth(0), { targetPosition: { x: 40, y: 4 } })
+
+    await expect(names1).toHaveText(['ws-b', 'ws-a'])
+    await expect(page1.locator('.ws-head').nth(0)).not.toHaveClass(/active/)
+    expect((layoutOnDisk(env).workspaces as { path: string }[]).map((w) => w.path)).toEqual([
+      env.workspaces.b,
+      env.workspaces.a
+    ])
+    await app1.close()
+
+    const app2 = await launchApp(env)
+    try {
+      const page2 = await app2.firstWindow()
+      await page2.waitForLoadState('domcontentloaded')
+      await expect(page2.locator('.ws-head .ws-name')).toHaveText(['ws-b', 'ws-a'], {
+        timeout: 20_000
+      })
+    } finally {
+      await app2.close().catch(() => {})
+    }
+  })
 })

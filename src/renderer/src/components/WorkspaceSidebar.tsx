@@ -5,7 +5,15 @@ import {
   unsupportedPairMessage
 } from '@shared/sessionBackend'
 import { SessionBackendIcon } from './SessionBackendIcon'
-import { useCallback, useEffect, useRef, useState, type JSX, type MouseEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type JSX,
+  type MouseEvent
+} from 'react'
 import { createPortal } from 'react-dom'
 import { GoGitBranch } from 'react-icons/go'
 import {
@@ -158,6 +166,7 @@ export function WorkspaceSidebar({
   const showToast = useStore((s) => s.showToast)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [menu, setMenu] = useState<MenuState | null>(null)
+  const [drag, setDrag] = useState<{ path: string; over: number | null } | null>(null)
   const [mq, setMq] = useState<{ id: string; overflow: number } | null>(null)
   const mqRef = useRef<HTMLElement | null>(null)
   const [confirmRemove, setConfirmRemove] = useState<{
@@ -306,6 +315,36 @@ export function WorkspaceSidebar({
     e.stopPropagation()
     clearTimers()
     openMenuAt(e.currentTarget as HTMLElement, target)
+  }
+
+  const wsPaths = rows.map((r) => r.workspace.path)
+  const startWorkspaceDrag = (e: DragEvent<HTMLElement>, path: string): void => {
+    clearTimers()
+    closeFloating()
+    e.dataTransfer.effectAllowed = 'move'
+    // PLATFORM§10
+    e.dataTransfer.setData('text/plain', path)
+    setDrag({ path, over: null })
+  }
+  const dragOverWorkspaces = (e: DragEvent<HTMLElement>): void => {
+    if (!drag) return
+    e.preventDefault()
+    const block = (e.target as Element).closest<HTMLElement>('.ws[data-ws-path]')
+    let over: number | null = null
+    if (block) {
+      const box = block.getBoundingClientRect()
+      const below = e.clientY >= box.top + box.height / 2
+      const slot = wsPaths.indexOf(block.dataset.wsPath ?? '') + (below ? 1 : 0)
+      const from = wsPaths.indexOf(drag.path)
+      if (slot !== from && slot !== from + 1) over = slot
+    }
+    if (drag.over !== over) setDrag({ ...drag, over })
+  }
+  const dropWorkspace = (e: DragEvent<HTMLElement>): void => {
+    e.preventDefault()
+    setDrag(null)
+    if (drag?.over == null) return
+    void window.api.workspace.move(drag.path, wsPaths[drag.over] ?? null)
   }
 
   const keepCard = (): void => {
@@ -682,7 +721,12 @@ export function WorkspaceSidebar({
   return (
     <>
       <div className="island flat isl-sessions">
-        <div className="ws-list" onScroll={closeFloating}>
+        <div
+          className="ws-list"
+          onScroll={closeFloating}
+          onDragOver={dragOverWorkspaces}
+          onDrop={dropWorkspace}
+        >
           {rows.length === 0 && !welcomeActive && (
             <div className="hint">
               No workspaces yet.
@@ -691,7 +735,7 @@ export function WorkspaceSidebar({
             </div>
           )}
 
-          {rows.map(({ workspace: ws, rows: sessionRows }) => {
+          {rows.map(({ workspace: ws, rows: sessionRows }, wsIndex) => {
             const open = !collapsed[ws.path]
             const wsTarget: MenuTarget = {
               kind: 'workspace',
@@ -720,7 +764,16 @@ export function WorkspaceSidebar({
             const cronNow = new Date()
             const soon = ws.missing || !open ? null : forecastFor(cron.jobs, ws.path, cronNow)
             return (
-              <div className="ws" key={ws.path}>
+              <div
+                className={
+                  'ws' +
+                  (drag?.path === ws.path ? ' dragging' : '') +
+                  (drag?.over === wsIndex ? ' dropbefore' : '') +
+                  (drag?.over === rows.length && wsIndex === rows.length - 1 ? ' dropafter' : '')
+                }
+                key={ws.path}
+                data-ws-path={ws.path}
+              >
                 <div
                   className={
                     'ws-head' +
@@ -728,6 +781,9 @@ export function WorkspaceSidebar({
                     (selectedWs === ws.path && activeTabId === null ? ' active' : '')
                   }
                   title={ws.missing ? 'folder deleted' : ws.path}
+                  draggable
+                  onDragStart={(e) => startWorkspaceDrag(e, ws.path)}
+                  onDragEnd={() => setDrag(null)}
                   onClick={() => {
                     if (ws.missing) return
                     selectWorkspace(ws.path)

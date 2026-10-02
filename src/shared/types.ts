@@ -855,6 +855,7 @@ export interface KoloftApi {
     add(path: string): Promise<WorkspaceAddResult>
     remove(path: string): Promise<WorkspaceRemoveResult>
     removeConfirmed(path: string): Promise<void>
+    move(path: string, before: string | null): Promise<void>
     worktrees(path: string): Promise<WorktreeInfo[]>
     historyRows(path: string): Promise<SessionRow[]>
     rows(): Promise<WorkspaceRows[]>

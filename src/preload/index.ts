@@ -338,6 +338,7 @@ const api: KoloftApi = {
     add: (p) => ipcRenderer.invoke('workspace:add', p),
     remove: (p) => ipcRenderer.invoke('workspace:remove', p),
     removeConfirmed: (p) => ipcRenderer.invoke('workspace:removeConfirmed', p),
+    move: (p, before) => ipcRenderer.invoke('workspace:move', p, before),
     worktrees: (p) => ipcRenderer.invoke('workspace:worktrees', p),
     historyRows: (p) => ipcRenderer.invoke('workspace:historyRows', p),
     rows: () => ipcRenderer.invoke('workspace:rows'),
