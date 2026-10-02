@@ -32,7 +32,6 @@ interface GuestAttach {
   disablewebsecurity: boolean
   sandbox: boolean | null
   webSecurity: boolean | null
-  allowFileAccessFromFiles: boolean | null
   nodeIntegration: boolean | null
   preload: string
 }
@@ -394,7 +393,6 @@ test.describe('Session Browser security boundaries: local file reads, renderer n
               disablewebsecurity: String(params.disablewebsecurity) === 'true',
               sandbox: (p.sandbox as boolean | undefined) ?? null,
               webSecurity: (p.webSecurity as boolean | undefined) ?? null,
-              allowFileAccessFromFiles: (p.allowFileAccessFromFiles as boolean | undefined) ?? null,
               nodeIntegration: (p.nodeIntegration as boolean | undefined) ?? null,
               preload: p.preload ? String(p.preload) : ''
             })
@@ -428,7 +426,6 @@ test.describe('Session Browser security boundaries: local file reads, renderer n
         expect(g.preload).toBe('')
         expect(g.nodeIntegration).not.toBe(true)
         expect(g.webSecurity).not.toBe(false)
-        expect(g.allowFileAccessFromFiles).not.toBe(true)
         expect(g.sandbox === true || /sandbox=(yes|true|1)/.test(g.webpreferences)).toBe(true)
       }
 

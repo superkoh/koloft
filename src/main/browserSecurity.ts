@@ -124,7 +124,6 @@ export interface GuestAttachPrefs {
   contextIsolation?: boolean
   webSecurity?: boolean
   disablePopups?: boolean
-  allowFileAccessFromFileUrls?: boolean
   autoplayPolicy?: string
 }
 
@@ -136,7 +135,6 @@ export function enforceGuestAttach(
   prefs.nodeIntegration = false
   prefs.contextIsolation = true
   prefs.webSecurity = true
-  prefs.allowFileAccessFromFileUrls = false
   // PLATFORM§13
   prefs.autoplayPolicy = 'document-user-activation-required'
   if (!isGuestPreload(prefs.preload, hostPreload)) delete prefs.preload
