@@ -133,7 +133,6 @@ import {
 import { shq } from '@shared/shellQuote'
 import { CronRunner, type LaunchRequest } from './cronRunner'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
-import { listSkills, type SkillFs } from './skillList'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
 import { GitFreshnessEngine } from './gitFreshness'
 import { GithubLookup, parseGithubFixture, type GithubOptions } from './github'
@@ -2332,19 +2331,6 @@ async function launchCronRun(
   }
 }
 
-const skillFs: SkillFs = {
-  readdir: (p) => fs.readdirSync(p),
-  readFile: (p) => fs.readFileSync(p, 'utf8'),
-  isDir: dirExistsSync,
-  isFile: (p) => {
-    try {
-      return fs.statSync(p).isFile()
-    } catch {
-      return false
-    }
-  }
-}
-
 const CRON_BIND_DEADLINE_MS = 90_000
 function cronBindDeadlineMs(): number {
   return (
@@ -2578,7 +2564,7 @@ function registerIpc(): void {
     (_e, jobId: string) => cronRunner?.runNow(jobId) ?? { ok: false, reason: 'not-ready' }
   )
   ipcMain.handle('cron:skills', (_e, workspacePath: string) =>
-    listSkills(skillFs, workspacePath, os.homedir())
+    hosts.of(workspacePath).listSkills(workspacePath)
   )
   ipcMain.handle('cron:trusted', (_e, workspacePath: string, backend: BackendId) =>
     sessionBackends.get(backend).trustsFolder(workspacePath)

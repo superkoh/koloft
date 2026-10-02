@@ -164,6 +164,26 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       })
       expect(await machine().trustsFolder(keyed(path.join(repo, 'sub')))).toBe(true)
     })
+
+    it("offers the machine's skills to a scheduled task: the workspace's, then the machine home's (BB-M16)", async () => {
+      const put = (file: string, text: string): void => {
+        fs.mkdirSync(path.dirname(file), { recursive: true })
+        fs.writeFileSync(file, text)
+      }
+      put(
+        path.join(repo, '.claude', 'skills', 'ship', 'SKILL.md'),
+        '---\ndescription: Ship it\n---'
+      )
+      put(path.join(repo, '.claude', 'commands', 'build.md'), '# build')
+      put(path.join(home, '.claude', 'skills', 'tidy', 'SKILL.md'), '---\nname: tidy-up\n---')
+      put(path.join(home, '.claude', 'skills', 'ship', 'SKILL.md'), '---\nname: ship\n---')
+
+      expect(await machine().listSkills(keyed(repo))).toEqual([
+        { name: '/ship', description: 'Ship it', source: 'project' },
+        { name: '/build', source: 'project' },
+        { name: '/tidy-up', source: 'home' }
+      ])
+    })
   }
 )
 

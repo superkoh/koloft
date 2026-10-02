@@ -8,7 +8,8 @@ import {
   type EditFingerprint,
   type EditWriteResult,
   type GitNumstatMap,
-  type GitStatusMap
+  type GitStatusMap,
+  type SkillSuggestion
 } from '@shared/types'
 import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { shq } from '@shared/shellQuote'
@@ -38,6 +39,7 @@ import { mirrorHookDir, mirrorProjectsRoot, remoteMachineDir, tabPackageDir } fr
 import { launchMode } from '../remote/sync'
 import { ensureControlDir, sshOptions, type BytesResult } from '../remote/ssh'
 import { claudeArgv } from '../claudeArgs'
+import { listSkills, type SkillFs } from '../skillList'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host, ShellLaunch } from './host'
 
 export interface MachineAccount {
@@ -308,6 +310,36 @@ fi
 g rev-parse --verify --quiet HEAD >/dev/null && printf HEAD
 exit 0`
 
+const SKILL_FILES = `printf '%s\\0' "$HOME"
+for b in "$1" "$HOME"; do
+  for f in "$b"/.claude/skills/*/SKILL.md; do
+    [ -f "$f" ] && { printf '%s\\0' "$f"; cat "$f"; printf '\\0'; }
+  done
+  for f in "$b"/.claude/commands/*.md; do
+    [ -f "$f" ] && printf '%s\\0\\0' "$f"
+  done
+done
+exit 0`
+
+function skillFsOf(files: Map<string, string>): SkillFs {
+  const children = (dir: string): string[] => {
+    const names = new Set<string>()
+    for (const f of files.keys())
+      if (f.startsWith(dir + '/')) names.add(f.slice(dir.length + 1).split('/')[0])
+    return [...names]
+  }
+  return {
+    readdir: children,
+    readFile: (p) => {
+      const text = files.get(p)
+      if (text === undefined) throw new Error('KOLOFT_READ_FAILED')
+      return text
+    },
+    isDir: (p) => children(p).length > 0,
+    isFile: (p) => files.has(p)
+  }
+}
+
 const NETWORK_GIT = `GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=false SSH_ASKPASS=false \
 SSH_ASKPASS_REQUIRE=never GIT_SSH_COMMAND="\${GIT_SSH_COMMAND:-ssh} -o BatchMode=yes" git "$@"`
 
@@ -549,6 +581,16 @@ export class SshHost implements Host {
   // CC§9
   async trustsFolder(dir: string): Promise<boolean> {
     return (await this.sh(WITH_NODE_IN_REAL_DIR, [this.bare(dir), TRUSTED_JS])).code !== NOT_TRUSTED
+  }
+
+  async listSkills(root: string): Promise<SkillSuggestion[]> {
+    const bareRoot = this.bare(root)
+    const r = await this.sh(SKILL_FILES, [bareRoot])
+    if (r.code !== 0) return []
+    const [home, ...rest] = r.stdout.toString('utf8').split('\0')
+    const files = new Map<string, string>()
+    for (let i = 0; i + 1 < rest.length; i += 2) files.set(rest[i], rest[i + 1])
+    return listSkills(skillFsOf(files), bareRoot, home)
   }
 
   async launch(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {
