@@ -237,11 +237,18 @@ method. A recheck adds its date, version and command to the bullet.
 - **Popups**: without the `allowpopups` attribute (`disablePopups` true) Electron drops
   `window.open` in the browser process, before any window-open handler runs (seen in a
   spike, no date). The `webPreferences` in `will-attach-webview` carry `disablePopups`,
-  which is not in Electron's typings. Which file-access key, if any, Electron reads
-  there is inferred, not checked: the Electron 43.7.3 framework binary holds
-  `disablePopups` and Blink's `allowFileAccessFromFileURLs` (capital `URLs`) but no
-  `allowFileAccessFromFileUrls` and no `allowFileAccessFromFiles` (2026-09-24,
-  `grep -a` on `Electron Framework`). Its `params`
+  which is not in Electron's typings. They carry no file-access key at all (keys seen:
+  `contextIsolation, disableBlinkFeatures, disablePopups, enableBlinkFeatures,
+  nodeIntegration, nodeIntegrationInSubFrames, nodeIntegrationInWorker, partition,
+  plugins, sandbox, webSecurity, zoomFactor`), and setting `allowFileAccessFromFileUrls`,
+  `allowFileAccessFromFiles` or `allowFileAccessFromFileURLs` either way changes nothing.
+  Whether a `file://` page in a guest can read other `file://` URLs is decided by the
+  `GrantFileProtocolExtraPrivileges` fuse, which Koloft ships on (Electron's default;
+  nothing in the build changes fuses): on, XHR, `fetch` and an iframe all read any local
+  path, including outside the page's folder; off, all three are blocked and only
+  `webSecurity: false` lets them through (2026-10-01, Electron 43.7.3, hidden-window probe
+  plus a fuse-flipped copy via `@electron/fuses`; in the built app a `file://` page in the
+  browser partition fetched a file under `~/.ssh`). Koloft keeps this on purpose. Its `params`
   always carry a `disablewebsecurity` key, even for a guest that never asked, and
   attribute values arrive as strings, so only `String(value) === 'true'` means it is set.
 - **Zoom**: a guest takes on its embedder's zoom (measured: window and guest go 1 →
