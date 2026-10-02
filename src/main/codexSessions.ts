@@ -904,12 +904,14 @@ export class CodexSessions {
         run.releaseOpenShim()
         this.deps.pty.kill(tabId)
         this.deps.runtime.forget(tabId)
-        this.deps.events(tabId, {
-          type: 'exited',
-          clean: !unexpectedExit,
-          title: run.info?.title,
-          sessionId: run.info?.sessionId
-        })
+        const crashedWithNoRowToMark = unexpectedExit && !run.info?.sessionId
+        if (!crashedWithNoRowToMark)
+          this.deps.events(tabId, {
+            type: 'exited',
+            clean: !unexpectedExit,
+            title: run.info?.title,
+            sessionId: run.info?.sessionId
+          })
         this.runs.delete(tabId)
         if (nativeExit && run.info && !this.aliveTabFor(run.info.sessionId)) {
           try {
