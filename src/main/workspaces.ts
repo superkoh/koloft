@@ -328,6 +328,22 @@ export class WorkspaceManager {
     return { code: 'added', path: rawPath }
   }
 
+  move(wsPath: string, before: string | null): void {
+    const moving = this.layout.workspaces.find((w) => w.path === wsPath)
+    if (!moving || wsPath === before) return
+    const rest = this.layout.workspaces.filter((w) => w !== moving)
+    const at = before === null ? rest.length : rest.findIndex((w) => w.path === before)
+    if (at === -1) return
+    this.layout.workspaces = [...rest.slice(0, at), moving, ...rest.slice(at)]
+    this.deps.saveLayout(this.layout)
+    const rank = new Map(this.layout.workspaces.map((w, i) => [w.path, i]))
+    this.rowsCache = [...this.rowsCache].sort(
+      (a, b) => (rank.get(a.workspace.path) ?? 0) - (rank.get(b.workspace.path) ?? 0)
+    )
+    this.deps.pushRows(this.rowsCache)
+    if (this.scanning) this.rescanQueued = true
+  }
+
   remove(wsPath: string): WorkspaceRemoveResult {
     const running = this.runningTabsOf(wsPath).length + this.remoteOrphansOf(wsPath).length
     const jobs = this.deps.jobCountFor?.(wsPath) ?? 0

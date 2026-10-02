@@ -145,6 +145,60 @@ describe('WorkspaceManager: isGit', () => {
   })
 })
 
+describe('WorkspaceManager: move (the sidebar drag order)', () => {
+  const lastOrder = (): string[] => pushed[pushed.length - 1].map((e) => e.workspace.path)
+  const savedOrder = (): string[] => layout.workspaces.map((w) => w.path)
+
+  it('puts a workspace before another or at the end, saved and pushed at once; an unknown path changes nothing', async () => {
+    const third = path.join(root, 'third')
+    fs.mkdirSync(third)
+    layout.workspaces.push({ path: third })
+    mgr.start()
+    await mgr.firstScan
+    const pushes = pushed.length
+    const saved = saves
+
+    mgr.move(third, repo)
+    expect(savedOrder()).toEqual([third, repo, plain])
+    expect(saves).toBe(saved + 1)
+    expect(pushed.length).toBe(pushes + 1)
+    expect(lastOrder()).toEqual([third, repo, plain])
+
+    mgr.move(third, null)
+    expect(savedOrder()).toEqual([repo, plain, third])
+    expect(lastOrder()).toEqual([repo, plain, third])
+
+    mgr.move(path.join(root, 'gone'), repo)
+    mgr.move(repo, path.join(root, 'gone'))
+    expect(savedOrder()).toEqual([repo, plain, third])
+    expect(saves).toBe(saved + 2)
+  })
+
+  it('a scan already running when the move lands cannot leave the old order on screen', async () => {
+    mgr.start()
+    await mgr.firstScan
+    let release!: () => void
+    const held = new Promise<void>((r) => (release = r))
+    const internals = mgr as unknown as {
+      worktreeEntries(p: string): Promise<unknown>
+      rescan(): Promise<void>
+    }
+    const real = internals.worktreeEntries.bind(mgr)
+    const spy = vi.spyOn(internals, 'worktreeEntries').mockImplementationOnce(async (p) => {
+      await held
+      return real(p)
+    })
+    void internals.rescan()
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled())
+
+    mgr.move(plain, repo)
+    const afterMove = pushed.length
+    release()
+    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(afterMove))
+    await vi.waitFor(() => expect(lastOrder()).toEqual([plain, repo]))
+  })
+})
+
 describe('WorkspaceManager: freshness stamping', () => {
   it('reads the engine at the moment it writes the rows, for every workspace', async () => {
     const base = {

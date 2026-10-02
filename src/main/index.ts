@@ -2668,6 +2668,9 @@ function registerIpc(): void {
     cronRunner?.removeWorkspace(p)
     for (const id of marked) attention.clearSession(id)
   })
+  ipcMain.handle('workspace:move', (_e, p: string, before: string | null) =>
+    workspaceMgr?.move(p, before)
+  )
   ipcMain.handle('workspace:rows', async () => {
     await workspaceMgr?.firstScan
     return workspaceMgr?.rows() ?? []
