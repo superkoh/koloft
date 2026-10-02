@@ -123,6 +123,25 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     )
   })
 
+  test('koloft session new --workspace starts the sibling in another sidebar workspace', async ({
+    page,
+    env
+  }) => {
+    test.setTimeout(120_000)
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    const callsBefore = readCalls(env).length
+
+    expect(await koloftInSession(page, 'session new --workspace ws-b --name kid -- hello')).toBe(
+      '0'
+    )
+
+    await expect(wsRows(page, 'ws-b')).toHaveCount(1, { timeout: 60_000 })
+    const calls = await waitForCalls(env, callsBefore + 1, 60_000)
+    expect(calls[calls.length - 1].cwd).toMatch(/\/ws-b$/)
+    await expect(wsRows(page, 'ws-a')).toHaveCount(1)
+  })
+
   test("koloft in a session's Workbench shell acts for the session that owns the shell", async ({
     app,
     page

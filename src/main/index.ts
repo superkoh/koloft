@@ -619,6 +619,8 @@ const agentRequests = new AgentRequests({
         allSessions().filter(
           (s) => sessionBackends.get(s.backendId).workspaceOfTab(s.tabId) === workspace
         ),
+      allSessions,
+      pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
       peerNames: () => claudePeerNames(),
       launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
       queue: async (tabId, text) => codexSessions?.queueMessage(tabId, text)

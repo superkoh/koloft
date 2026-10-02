@@ -1,9 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { handoverPreamble, parseNewSessionArgs, sessionVerb } from '../../src/main/agentSessions'
+import {
+  handoverPreamble,
+  parseNewSessionArgs,
+  sessionVerb,
+  type PinnedWorkspace
+} from '../../src/main/agentSessions'
 import { EXIT_USAGE, type AgentReply } from '../../src/main/agentRequests'
 import type { BackendId, CreateTabOptions, SessionInfo } from '../../src/shared/types'
 
 const WS = '/work/app'
+const OTHER_WS = '/work/site'
+const PINNED: PinnedWorkspace[] = [
+  { path: WS, missing: false },
+  { path: OTHER_WS, missing: false },
+  { path: '/old/site', missing: false },
+  { path: '/work/gone', missing: true },
+  { path: 'ssh://box/srv/api', missing: false }
+]
 const CODEX_THREAD = '0199c3f2-7a41-7c30-9e55-1d2b8f6a0c11'
 const OTHER_THREAD = '0199c3f2-7a41-7c30-9e55-1d2b8f6a0c22'
 
@@ -39,8 +52,10 @@ function harness(
   const launched: Launch[] = []
   const queued: { tabId: string; text: string }[] = []
   const inner = sessionVerb({
-    workspaceOf: (tabId) => (sessions.some((s) => s.tabId === tabId) ? WS : undefined),
-    sessionsIn: () => sessions,
+    workspaceOf: (tabId) => sessions.find((s) => s.tabId === tabId)?.cwd,
+    sessionsIn: (workspace) => sessions.filter((s) => s.cwd === workspace),
+    allSessions: () => sessions,
+    pinnedWorkspaces: () => PINNED,
     peerNames: () => async (sessionId) => peerNames[sessionId] ?? null,
     launch: async (spec) => {
       launched.push(spec)
@@ -58,11 +73,13 @@ function harness(
 const from = (tabId: string): { tabId: string; cwd: string } => ({ tabId, cwd: WS })
 
 describe('koloft session new: reading the command line', () => {
-  it('reads the name, worktree and model, and joins the first message after --', () => {
+  it('reads the name, workspace, worktree and model, and joins the first message after --', () => {
     expect(
       parseNewSessionArgs([
         '--name',
         'docs-fixer',
+        '--workspace',
+        'site',
         '-w',
         'links',
         '--model',
@@ -73,7 +90,13 @@ describe('koloft session new: reading the command line', () => {
       ])
     ).toEqual({
       ok: true,
-      value: { name: 'docs-fixer', worktree: 'links', model: 'haiku', prompt: 'Fix the links' }
+      value: {
+        name: 'docs-fixer',
+        workspace: 'site',
+        worktree: 'links',
+        model: 'haiku',
+        prompt: 'Fix the links'
+      }
     })
   })
 
@@ -127,6 +150,18 @@ describe('koloft session list', () => {
       'idle title · Claude · idle'
     ])
   })
+
+  it('--workspace lists another workspace’s sessions, and refuses a name not in the sidebar or any other option', async () => {
+    const { verb } = harness([
+      session('me', 'claude'),
+      session('there', 'claude', { cwd: OTHER_WS, status: 'working' })
+    ])
+    expect((await verb(['list', '--workspace', OTHER_WS], from('me'))).text).toBe(
+      'there title · Claude · working'
+    )
+    expect((await verb(['list', '--workspace', 'nope'], from('me'))).exit).not.toBe(0)
+    expect(await verb(['list', '--all'], from('me'))).toMatchObject({ exit: EXIT_USAGE })
+  })
 })
 
 describe('koloft session new', () => {
@@ -157,6 +192,33 @@ describe('koloft session new', () => {
     expect(launched[0]).toMatchObject({ kind: 'codex', name: undefined })
     expect(launched[0].firstPrompt).toContain(`koloft session send ${CODEX_THREAD}`)
     expect(reply.text).toContain('new-tab')
+  })
+
+  it('--workspace starts the sibling in another sidebar workspace, found by full path or folder name', async () => {
+    const { verb, launched } = harness([session('me', 'claude')])
+    for (const ref of [OTHER_WS, 'app'])
+      expect((await verb(['new', '--workspace', ref, '--', 'go'], from('me'))).exit).toBe(0)
+    expect(launched.map((l) => l.cwd)).toEqual([OTHER_WS, WS])
+  })
+
+  it('a Codex caller starting one in another workspace is told how to list that workspace', async () => {
+    const { verb } = harness([session('me', 'codex', { nativeSessionId: CODEX_THREAD })])
+    const reply = await verb(['new', '--workspace', OTHER_WS, '--', 'go'], from('me'))
+    expect(reply.text).toContain(`koloft session list --workspace "${OTHER_WS}"`)
+  })
+
+  it('--workspace refuses, starting nothing, a name not in the sidebar (listing what is), a name two workspaces share, a missing folder and a remote workspace', async () => {
+    const { verb, launched } = harness([session('me', 'claude')])
+    const unknown = await verb(['new', '--workspace', 'nope', '--', 'go'], from('me'))
+    expect(unknown.exit).not.toBe(0)
+    expect(unknown.text).toContain(`  ${OTHER_WS}\n`)
+    expect(unknown.text).toContain('  box:/srv/api')
+    const shared = await verb(['new', '--workspace', 'site', '--', 'go'], from('me'))
+    expect(shared.exit).not.toBe(0)
+    expect(shared.text).toContain('/old/site')
+    for (const ref of ['gone', 'api', 'box:/srv/api', 'ssh://box/srv/api'])
+      expect((await verb(['new', '--workspace', ref, '--', 'go'], from('me'))).exit).not.toBe(0)
+    expect(launched).toEqual([])
   })
 
   it('a Codex caller cannot name the new session', async () => {
@@ -192,7 +254,16 @@ describe('koloft session send', () => {
     expect(queued).toEqual([])
   })
 
-  it('refuses a session that is not open in this workspace, and a missing message', async () => {
+  it('reaches a Codex session open in another workspace, so a child started there can report back', async () => {
+    const { verb, queued } = harness([
+      session('me', 'codex', { nativeSessionId: CODEX_THREAD }),
+      session('kid', 'codex', { nativeSessionId: OTHER_THREAD, cwd: OTHER_WS })
+    ])
+    expect((await verb(['send', CODEX_THREAD, 'done'], from('kid'))).exit).toBe(0)
+    expect(queued).toEqual([{ tabId: 'me', text: 'done' }])
+  })
+
+  it('refuses a session that is not open anywhere, and a missing message', async () => {
     const { verb, queued } = harness(sessions())
     expect((await verb(['send', 'nobody', 'hi'], from('me'))).exit).not.toBe(0)
     expect(await verb(['send', OTHER_THREAD], from('me'))).toMatchObject({ exit: EXIT_USAGE })
