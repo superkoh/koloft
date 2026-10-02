@@ -727,6 +727,18 @@ describe('previewLinkTarget (X-9 — md link resolution)', () => {
     expect(previewLinkTarget('./other.md#section', '/ws/a.md')).toBe('/ws/other.md')
     expect(previewLinkTarget('./other.md?v=2', '/ws/a.md')).toBe('/ws/other.md')
   })
+
+  it('reads a link that starts with / from the folder of the file it was written in', () => {
+    expect(previewLinkTarget('/src/a.ts', '/ws/README.md')).toBe('/ws/src/a.ts')
+  })
+
+  it('keeps the ssh://host part of a file on a remote workspace', () => {
+    expect(previewLinkTarget('src/a.ts', 'ssh://devbox/p/doc.md')).toBe('ssh://devbox/p/src/a.ts')
+    expect(previewLinkTarget('../top.md', 'ssh://devbox/p/docs/a.md')).toBe('ssh://devbox/p/top.md')
+    expect(previewLinkTarget('/src/a.ts', 'ssh://devbox/p/README.md')).toBe(
+      'ssh://devbox/p/src/a.ts'
+    )
+  })
 })
 
 describe('workbenchFull (FR-07 — T3 is global and transient)', () => {

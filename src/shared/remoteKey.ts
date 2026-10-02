@@ -31,6 +31,20 @@ export function isAbsoluteOnHost(p: string): boolean {
   return isRemoteKey(p) || p.startsWith('/')
 }
 
+export function resolveOnHost(fromSrc: string, rel: string): string {
+  const remote = parseRemoteKey(fromSrc)
+  const from = remote?.path ?? fromSrc
+  const base = rel.startsWith('/') ? '' : from.slice(0, from.lastIndexOf('/'))
+  const out: string[] = []
+  for (const seg of `${base}/${rel.split(/[?#]/)[0]}`.split('/')) {
+    if (seg === '' || seg === '.') continue
+    if (seg === '..') out.pop()
+    else out.push(seg)
+  }
+  const resolved = '/' + out.join('/')
+  return remote ? formatRemoteKey(remote.host, resolved) : resolved
+}
+
 export function hostOf(cwdOrWorkspacePath: string): HostId {
   return isRemoteKey(cwdOrWorkspacePath) ? 'ssh' : 'local'
 }

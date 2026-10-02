@@ -1,16 +1,6 @@
 import type { MarkdownIt } from 'markdown-it'
+import { resolveOnHost } from '@shared/remoteKey'
 import { escapeHtml as esc } from './escape'
-
-export function resolveAssetPath(src: string, fromSrc: string): string {
-  const base = src.startsWith('/') ? '' : fromSrc.slice(0, fromSrc.lastIndexOf('/'))
-  const out: string[] = []
-  for (const seg of `${base}/${src.split(/[?#]/)[0]}`.split('/')) {
-    if (seg === '' || seg === '.') continue
-    if (seg === '..') out.pop()
-    else out.push(seg)
-  }
-  return '/' + out.join('/')
-}
 
 function fileUrl(p: string): string {
   return `koloft-file://localhost${encodeURI(p)}`
@@ -48,7 +38,7 @@ export function assets(md: MarkdownIt): void {
     if (!isInline(src)) {
       const srcPath = typeof env?.srcPath === 'string' ? env.srcPath : ''
       const path = undoMarkdownItPercentEncoding(src)
-      token.attrSet('src', fileUrl(resolveAssetPath(path, srcPath)))
+      token.attrSet('src', fileUrl(resolveOnHost(srcPath, path)))
       token.attrSet('data-path', path)
     }
 
