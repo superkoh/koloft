@@ -4,7 +4,13 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import type { E2EEnv } from './helpers/env'
+import { seedSettings, type E2EEnv } from './helpers/env'
+import {
+  WORKBENCH,
+  layoutState,
+  seedWorkbenchDefault,
+  waitPanelAttached
+} from './helpers/workbench'
 import { defaultControlDir } from '../../src/main/remote/ssh'
 import {
   addWorkspace,
@@ -23,6 +29,7 @@ import {
   LAB_PASSWORD,
   loginsAccepted,
   remoteKeyFor,
+  runOnTarget,
   startSshLab,
   stopSshLab,
   type LabAlias,
@@ -221,6 +228,54 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       expect(loginsAccepted(lab, 'muser') - before).toBeLessThanOrEqual(1)
       await expect(dot(page, 'kt-few')).toHaveClass(/\bon\b/)
       expect(await readme(page, 'kt-few', 'muser')).toBe(README('muser'))
+    })
+  })
+
+  test('E-SSH-09: the collapsed Workbench card lists the docs a session wrote on the machine by their path there, though this Mac has no such file (#182), and opens a page there as source', async ({
+    env
+  }) => {
+    seedWorkbenchDefault(env, false)
+    seedSettings(env, { hintsOff: true })
+    const scratch = `/tmp/koloft-lab-${crypto.randomBytes(4).toString('hex')}.md`
+    expect(fs.existsSync(scratch)).toBe(false)
+    await withLab(env, async ({ page, lab }) => {
+      runOnTarget(
+        lab,
+        'kuser',
+        'cd proj && printf "NOTES.md\\n" > .gitignore && git init -q && git add -A' +
+          ' && git -c user.email=lab@koloft.test -c user.name=lab commit -qm base' +
+          ' && printf "edited\\n" >> README.md'
+      )
+      await addMachine(page, 'kt-key', 'kuser')
+      await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+      await startSessionIn(page, 'kt-key', { remote: true })
+      await waitPanelAttached(page)
+      expect(await layoutState(page)).toBe('T1')
+      await expect(page.locator(WORKBENCH.previewDiffLabel)).toHaveText('1 file', {
+        timeout: 60_000
+      })
+
+      const docs = page.locator(WORKBENCH.previewDocs)
+      await runIn(page, centerTerm(page), `/write ${scratch}`)
+      await expect(docs.filter({ hasText: path.basename(scratch) })).toHaveAttribute(
+        'data-path',
+        `ssh://kt-key${scratch}`,
+        { timeout: 90_000 }
+      )
+      await runIn(page, centerTerm(page), '/write y.html')
+      const htmlRow = docs.filter({ hasText: 'y.html' })
+      await expect(htmlRow).toHaveAttribute(
+        'data-path',
+        `${remoteKeyFor('kt-key', 'kuser')}/y.html`,
+        { timeout: 90_000 }
+      )
+
+      await htmlRow.click()
+      await expect.poll(() => layoutState(page)).toBe('T2')
+      await expect(page.locator(WORKBENCH.readingTitle)).toContainText('y.html')
+      await expect(
+        page.locator(`${WORKBENCH.panel} .fv-artifact-hd .seg[aria-label="View mode"] .on`)
+      ).toHaveText('Source')
     })
   })
 

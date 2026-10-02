@@ -3,7 +3,7 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import { execFileSync } from 'child_process'
 import type { Locator, Page } from '@playwright/test'
-import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { test, expect, launchApp, pretendWindowFocused, quitAndClose } from './helpers/app'
 import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
 import { WORKBENCH, wbUnreadTabs } from './helpers/workbench'
 import {
@@ -680,6 +680,34 @@ test.describe('Codex sessions through the real method chooser, process transport
       expect(codexCalls(env)[3].sessionId).toBe(member.sessionId)
       await expect(codexRows(page)).toHaveCount(2)
       expect(readCalls(env)).toHaveLength(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a Codex session’s unread red dot survives a Koloft restart on its cold row, and clicking the row in a focused window clears it', async ({
+    env
+  }) => {
+    installCodex(env)
+    let app = await launchApp(env)
+    try {
+      let page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await expect(codexRows(page).locator('.ws-tab-unread')).toHaveCount(1)
+      await quitAndClose(app)
+
+      app = await launchApp(env)
+      page = await app.firstWindow()
+      await waitBooted(page)
+      await expect(codexRows(page)).toHaveClass(/cold/)
+      await expect(codexRows(page).locator('.ws-tab-unread')).toHaveCount(1)
+
+      await pretendWindowFocused(app)
+      await codexRows(page).click()
+      await expect.poll(() => codexCalls(env).length).toBe(2)
+      await expect(codexRows(page)).toHaveClass(/st-waiting/)
+      await expect(codexRows(page).locator('.ws-tab-unread')).toHaveCount(0)
     } finally {
       await quitAndClose(app)
     }

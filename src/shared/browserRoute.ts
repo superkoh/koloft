@@ -44,6 +44,15 @@ function addressEntry(raw: string): RouteDecision {
   return { dest: 'browser', target: SEARCH_URL + encodeURIComponent(raw) }
 }
 
+export function fileUrlPath(url: string): string | null {
+  try {
+    const u = new URL(url)
+    return u.protocol === 'file:' ? decodeURIComponent(u.pathname) : null
+  } catch {
+    return null
+  }
+}
+
 export function routeFor(target: string, source: RouteSource): RouteDecision {
   const raw = target.trim()
   if (!raw) return drop('unsupported-target')
@@ -55,13 +64,8 @@ export function routeFor(target: string, source: RouteSource): RouteDecision {
       return { dest: 'browser', target: raw }
     case 'file:': {
       if (source === 'address') return { dest: 'browser', target: raw }
-      let p: string
-      try {
-        p = decodeURIComponent(new URL(raw).pathname)
-      } catch {
-        return drop('unsupported-target')
-      }
-      return localTarget(p)
+      const p = fileUrlPath(raw)
+      return p === null ? drop('unsupported-target') : localTarget(p)
     }
     case 'about:':
       return raw.toLowerCase() === 'about:blank'

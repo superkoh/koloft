@@ -763,6 +763,7 @@ export class ClaudeBackend implements SessionBackend {
       if (machine.attachTo) {
         tracker.bindSession(handle.id, '', machine.attachTo, machine.cwd)
         workspaces?.onSessionBound(machine.attachTo)
+        this.d.events(handle.id, { type: 'bound', key: machine.attachTo })
       } else if (!spec.resumeSessionId) {
         workspaces?.launchStarted(handle.id, machine.root, spec.worktree, machine.tracking.host)
       }
