@@ -33,7 +33,16 @@ const TAKES_OPTIONS: Sub[] = ['add', 'edit']
 const TAKES_NO_JOB: Sub[] = ['list', 'add']
 
 const TIME_FLAGS = ['--every', '--daily', '--weekly']
-const VALUE_FLAGS = ['--name', ...TIME_FLAGS, '--backend', '--model', '--effort', '--permission']
+const VALUE_FLAGS = [
+  '--name',
+  ...TIME_FLAGS,
+  '--backend',
+  '--model',
+  '--effort',
+  '--permission',
+  '--when-done'
+]
+const WHEN_DONE = ['open', 'close'] as const
 
 export interface CronPatch {
   name?: string
@@ -42,6 +51,7 @@ export interface CronPatch {
   model?: string
   effort?: CronEffort
   permission?: CronPermission
+  autoClose?: boolean
   task?: string
 }
 
@@ -92,6 +102,10 @@ function applyFlag(patch: CronPatch, flag: string, value: string): string | null
     const permission = CRON_PERMISSIONS.find((p) => p === value)
     if (!permission) return `--permission is one of ${CRON_PERMISSIONS.join(', ')}.`
     patch.permission = permission
+  } else if (flag === '--when-done') {
+    const whenDone = WHEN_DONE.find((w) => w === value)
+    if (!whenDone) return `--when-done is one of ${WHEN_DONE.join(', ')}.`
+    patch.autoClose = whenDone === 'close'
   } else {
     if (patch.schedule) return 'give only one of --every, --daily or --weekly.'
     const schedule = parseSchedule(flag, value)
@@ -160,6 +174,7 @@ export function newJobInput(
     model: patch.model,
     effort: patch.effort,
     permission: patch.permission ?? NEW_JOB_PERMISSION[backend],
+    ...(patch.autoClose ? { autoClose: true } : {}),
     enabled: true
   }
 }
@@ -175,6 +190,7 @@ export function mergeEdit(job: CronJob, patch: CronPatch): CronSaveInput {
     model: patch.model ?? job.model,
     effort: patch.effort ?? job.effort,
     permission: patch.permission ?? job.permission,
+    ...((patch.autoClose ?? job.autoClose) ? { autoClose: true } : {}),
     enabled: job.enabled
   }
 }
@@ -232,6 +248,7 @@ export function formatShow(job: CronJob, number: number, live: LiveRun[], now: D
     `Model: ${job.model ?? 'default'}`,
     `Effort: ${job.effort ?? 'default'}`,
     `Permission: ${job.permission}`,
+    `When done: ${job.autoClose ? 'close' : 'open'}`,
     'What to do:',
     ...job.task.split('\n').map((line) => `    ${line}`),
     'Recent runs:',

@@ -9,6 +9,7 @@ export function whenLine(job: CronJob, now: Date): string {
 
 export function histText(h: HistoryLine): string {
   if (h.state === 'closed') return 'Closed by you'
+  if (h.state === 'finished') return 'Done — closed itself'
   if (h.state === 'ended') return 'Ended — Koloft quit'
   if (h.state === 'failed') return h.note ? `Could not start — ${h.note}` : 'Could not start'
   const n = h.count ?? 1
@@ -40,6 +41,7 @@ export const LIVE_WORDS: Record<LiveRun['state'], string> = {
 
 const HIST_WORDS: Record<HistoryLine['state'], string> = {
   closed: 'closed by you',
+  finished: 'done — closed itself',
   ended: 'ended — Koloft quit',
   failed: 'could not start',
   skipped: 'skipped',
@@ -62,5 +64,5 @@ export function lastRunOf(
   if (run && (!h || run.dueAt >= hAt)) {
     return { lead: lead(run.dueAt), words: LIVE_WORDS[run.state], done: run.state === 'done' }
   }
-  return h ? { lead: lead(hAt), words: HIST_WORDS[h.state], done: false } : null
+  return h ? { lead: lead(hAt), words: HIST_WORDS[h.state], done: h.state === 'finished' } : null
 }

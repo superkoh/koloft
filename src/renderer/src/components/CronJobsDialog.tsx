@@ -80,6 +80,15 @@ const PERMISSION_CHIPS: { value: CronPermission; label: string }[] = [
   { value: 'skipAll', label: 'Never ask' }
 ]
 
+const WHEN_DONE_CHIPS: { value: boolean; label: string }[] = [
+  { value: false, label: 'Leave it open' },
+  { value: true, label: 'Close it' }
+]
+
+const WHEN_DONE_HINT =
+  'Close it = the tab closes once the run finishes its work, so the next run is not skipped. ' +
+  'The run stays in the sidebar; click it to look back. A run that stops to ask for permission stays open.'
+
 const taskHint = (label: string): string =>
   `Type the skill's /name, the same as in ${label} — or any message. It cannot start with a dash.`
 const MODEL_HINT = 'Default = whatever a new session in this workspace would use.'
@@ -103,6 +112,7 @@ const MANY_RUN_FOLDERS = 10
 function histDot(h: HistoryLine): string {
   if (h.state === 'skipped') return 'dot skip'
   if (h.state === 'failed') return 'dot bad'
+  if (h.state === 'finished') return 'dot ok'
   return 'dot'
 }
 
@@ -220,7 +230,8 @@ export function CronJobsDialog({
           : 'other',
       modelOther: job.model && !['fable', 'opus', 'sonnet'].includes(job.model) ? job.model : '',
       effort: job.effort ?? '',
-      permission: job.permission
+      permission: job.permission,
+      autoClose: job.autoClose === true
     })
     setTouched(false)
     setServerErrors([])
@@ -322,7 +333,13 @@ export function CronJobsDialog({
       <div className="job-main">
         <div className="job-name">{job.name}</div>
         <div className="job-task">
-          {[mixed ? BACKEND_LABEL[cronBackend(job)] : '', job.task, job.model, job.effort]
+          {[
+            mixed ? BACKEND_LABEL[cronBackend(job)] : '',
+            job.task,
+            job.model,
+            job.effort,
+            job.autoClose ? 'closes when done' : ''
+          ]
             .filter(Boolean)
             .join(' · ')}
         </div>
@@ -623,6 +640,22 @@ export function CronJobsDialog({
           ))}
         </div>
         <p className="field-hint">{permissionHint}</p>
+      </div>
+
+      <span className="flabel">When done</span>
+      <div className="fcol">
+        <div className="chips">
+          {WHEN_DONE_CHIPS.map((c) => (
+            <button
+              key={c.label}
+              className={'chip' + (fields.autoClose === c.value ? ' on' : '')}
+              onClick={() => patch({ autoClose: c.value })}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+        <p className="field-hint">{WHEN_DONE_HINT}</p>
       </div>
 
       {serverErrors.length > 0 && (

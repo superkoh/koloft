@@ -36,10 +36,11 @@ SCHEDULED TASKS
 A scheduled task (cron) is a job that starts a new session by itself on a timer. Name a task by its number from "koloft cron list" or by its name.
 
 When it runs: --every 30m, --every 2h, --daily 09:00, or --weekly mon,wed,fri@09:00
-Options: --backend claude|codex, --model <model>, --effort low|medium|high|xhigh|max, --permission same|acceptEdits|skipAll
+Options: --backend claude|codex, --model <model>, --effort low|medium|high|xhigh|max, --permission same|acceptEdits|skipAll, --when-done open|close
     same: the same permission as a session started from the sidebar's + button.
     acceptEdits: may change files without asking.
     skipAll: never asks for permission.
+    --when-done close: the run's tab closes once it finishes its work, so the next run is not skipped. The default, open, leaves it open for you.
 
 koloft cron list
     List this workspace's tasks: number, name, when it runs, on or off, next run, last result.
