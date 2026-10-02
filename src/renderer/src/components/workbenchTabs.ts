@@ -26,6 +26,7 @@ export interface WorkbenchTab {
   scrollTop?: number
   cwd?: string
   openedByAgent?: true
+  agentOpenedAt?: number
 }
 
 export interface WorkbenchTabSet {
@@ -141,6 +142,7 @@ export function openTab(
     pinned?: ReadonlySet<string>
     isDirty?: (tabId: string) => boolean
     openedByAgent?: boolean
+    agentOpenedAt?: number
   }
 ): OpenTabResult {
   const hasTarget = opts.kind === 'web' ? !!opts.url : opts.kind === 'file' ? !!opts.path : false
@@ -154,11 +156,23 @@ export function openTab(
           : { ...set, tabs: set.tabs.map((t) => (t.id === hit.id ? { ...t, line: opts.line } : t)) }
       return { set: activateTab(withLine, hit.id), tabId: hit.id, created: false, evicted: null }
     }
-    if (hit.id === set.activeId) {
+    const at = opts.agentOpenedAt
+    if (hit.id === set.activeId && at === undefined) {
       return { set, tabId: hit.id, created: false, evicted: null }
     }
     return {
-      set: { ...set, tabs: set.tabs.map((t) => (t.id === hit.id ? { ...t, unread: true } : t)) },
+      set: {
+        ...set,
+        tabs: set.tabs.map((t) =>
+          t.id === hit.id
+            ? {
+                ...t,
+                ...(at !== undefined && { agentOpenedAt: at }),
+                ...(hit.id !== set.activeId && { unread: true })
+              }
+            : t
+        )
+      },
       tabId: hit.id,
       created: false,
       evicted: null
@@ -202,7 +216,8 @@ export function openTab(
     line: opts.line,
     scrollTop: opts.scrollTop,
     cwd: opts.cwd,
-    openedByAgent: opts.openedByAgent ? true : undefined
+    openedByAgent: opts.openedByAgent ? true : undefined,
+    agentOpenedAt: opts.agentOpenedAt
   }
   const at =
     opts.kind === 'terminal' ? base.tabs.length : base.tabs.findIndex((t) => t.kind === 'terminal')

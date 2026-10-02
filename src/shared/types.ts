@@ -294,6 +294,7 @@ export interface PreviewItem {
   access?: FileAccess
   added?: number
   removed?: number
+  wroteAt?: number
 }
 
 export type GitFileStatus = 'modified' | 'added' | 'deleted' | 'untracked' | 'renamed' | 'conflict'

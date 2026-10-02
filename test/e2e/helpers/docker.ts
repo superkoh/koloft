@@ -271,6 +271,10 @@ export function stopSshLab(lab: SshLab, controlDir?: string): void {
   spawnSync(docker(), ['network', 'rm', lab.network], { stdio: 'ignore' })
 }
 
+export function runOnTarget(lab: SshLab, user: string, script: string): string {
+  return dk(['exec', '-u', user, '-w', `/home/${user}`, lab.target, 'sh', '-c', script])
+}
+
 export function loginsAccepted(lab: SshLab, user: string): number {
   const r = spawnSync(docker(), ['logs', lab.target], { encoding: 'utf8' })
   return `${r.stdout}${r.stderr}`

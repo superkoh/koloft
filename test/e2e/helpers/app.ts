@@ -70,6 +70,12 @@ export async function pendingAttention(page: Page): Promise<AttentionEvent[]> {
   return page.evaluate(() => window.api.attention.list())
 }
 
+export async function pretendWindowFocused(app: ElectronApplication): Promise<void> {
+  await app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0].isFocused = () => true
+  })
+}
+
 export async function runInTerminal(page: Page, cmd: string): Promise<void> {
   const term = page.locator('.term-wrap:visible .xterm').first()
   await term.click()

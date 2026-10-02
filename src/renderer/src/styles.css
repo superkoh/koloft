@@ -4798,13 +4798,40 @@ input.switch:focus-visible {
 }
 
 /* PLATFORM§9 */
-.wb-col {
+.wb-col,
+.wb-peek {
   position: relative;
   margin-top: 10px;
   border-color: var(--line-layout);
   --bg-2: #19191c;
   --bg-1: #131315;
   --term-ground: var(--bg-1);
+}
+.wb-peek {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  max-height: calc(100% - 10px);
+  margin-left: 10px;
+  animation: none;
+}
+.wb-peek .wb-tabs {
+  padding-right: 33px;
+}
+.wb-peek .wb-tab.pinned {
+  max-width: none;
+}
+.wb-peek .cv-list {
+  flex: 0 1 auto;
+}
+.wb-peek-dir {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--fg-faint);
 }
 .wb-col.full {
   margin-left: 10px;

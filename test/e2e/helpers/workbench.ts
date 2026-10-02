@@ -11,15 +11,15 @@ import type { LayoutV2, PersistedTab, SessionWorkbenchState } from '../../../src
 export const WORKBENCH = {
   column: '.wb-col',
   panel: '.wb-panel',
-  tabStrip: '.wb-tabs',
-  dragHandle: '.wb-tabs .wb-drag',
-  tab: '.wb-tab',
+  tabStrip: '.wb-panel .wb-tabs',
+  dragHandle: '.wb-panel .wb-tabs .wb-drag',
+  tab: '.wb-panel .wb-tab',
   tabLabel: '.lb',
-  tabActive: '.wb-tab.on',
-  tabFiles: '.wb-tab.pinned',
-  tabUnread: '.wb-tab.agent',
-  tabFrozen: '.wb-tab.frozen',
-  tabClose: '.wb-tab .x',
+  tabActive: '.wb-panel .wb-tab.on',
+  tabFiles: '.wb-panel .wb-tab.pinned',
+  tabUnread: '.wb-panel .wb-tab.agent',
+  tabFrozen: '.wb-panel .wb-tab.frozen',
+  tabClose: '.wb-panel .wb-tab .x',
   tabCloseIn: '.x',
   newTab: '.wb-new',
   newMenu: '.wb-newmenu',
@@ -45,7 +45,12 @@ export const WORKBENCH = {
   browseRows: '.wb-panel .bv-body .ft-node',
 
   rowMenu: '.ft-ctx[role="menu"]',
-  rowMenuItem: '.ft-ctx .ft-ctx-it'
+  rowMenuItem: '.ft-ctx .ft-ctx-it',
+
+  previewCard: '.wb-peek',
+  previewDiff: '.wb-peek .wb-tab.pinned',
+  previewDiffLabel: '.wb-peek .wb-tab.pinned .lb',
+  previewDocs: '.wb-peek .ft-node'
 } as const
 
 export async function waitPanelAttached(page: Page, timeout = 60_000): Promise<void> {

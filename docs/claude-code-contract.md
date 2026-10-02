@@ -111,6 +111,11 @@ mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
   241 ended on `worktreeSession: null` (left the worktree), all in the root checkout's
   slug; 70 ended bound, all in a worktree's slug; 2 ended bound in the root slug.
   Measured by reading every `~/.claude/projects/*/*.jsonl` on the dev Mac.
+- **Auto-memory lives beside the transcripts, in `~/.claude/projects/<slug>/memory/`**
+  (`MEMORY.md` plus one `.md` per memory), and CC writes it with the ordinary
+  Write/Edit tools, so memory files land in the transcript's file writes like any
+  other. A sweep on 2026-10-01 (CC up to 2.1.287) of the 398 transcripts touched in the
+  last 30 days found 927 Write/Edit calls on files under such a `memory/` folder.
 
 - **Message-line field vocabulary**: jsonl message lines carry
   `cwd / gitBranch / timestamp / sessionId / version`; a `summary` record is NOT

@@ -307,7 +307,7 @@ export class CodexObservation {
           kind.type,
           typeof change.diff === 'string' ? change.diff : ''
         )
-        noteWrite(this.touched, target, added, removed)
+        noteWrite(this.touched, target, added, removed, Date.now())
         this.lastTouched = this.lastWritten = target
         changed = true
       }

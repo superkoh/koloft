@@ -1646,4 +1646,42 @@ describe("a tab whose claude runs on another machine: its transcript lives in a 
     fs.writeFileSync(file, '{}\n')
     expect(tracker.transcriptExists(RSID)).toBe(true)
   })
+
+  it('lists the files it wrote by their path on the machine, though this Mac has no such file, with the time of the last write (#182)', async () => {
+    const tracker = remoteTracker()
+    const file = path.join(mirrorRoot(), encodeCwd(RCWD), RSID + '.jsonl')
+    const write = (filePath: string, at: string): unknown => ({
+      type: 'assistant',
+      message: {
+        content: [
+          { type: 'tool_use', name: 'Write', input: { file_path: filePath, content: 'a\n' } }
+        ]
+      },
+      timestamp: at,
+      cwd: RCWD
+    })
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(
+      file,
+      [
+        write('docs/plan.md', '2026-09-01T10:00:00.000Z'),
+        write('~/notes.md', '2026-09-01T10:01:00.000Z'),
+        write('/home/koh/api/docs/plan.md', '2026-09-01T10:02:00.000Z')
+      ]
+        .map((l) => JSON.stringify(l))
+        .join('\n') + '\n'
+    )
+    expect(fs.existsSync('/home/koh/api/docs/plan.md')).toBe(false)
+    tracker.bindSession('tabR', file, RSID, RCWD)
+
+    const s = await waitFor(tracker, (x) => x.tabId === 'tabR' && x.files.length > 0)
+    expect(s.files).toEqual([
+      expect.objectContaining({
+        src: '/home/koh/api/docs/plan.md',
+        access: 'wrote',
+        wroteAt: Date.parse('2026-09-01T10:02:00.000Z')
+      })
+    ])
+    expect(s.lastWritten).toBe('/home/koh/api/docs/plan.md')
+  })
 })

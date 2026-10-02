@@ -59,6 +59,8 @@ import {
   mixesBackends,
   notesHeightFromDrag,
   paneWidthFromDrag,
+  PREVIEW_CARD_WIDTH_PX,
+  previewCardFits,
   relTime,
   selectionRoot,
   sessionsNeedYou,
@@ -99,6 +101,7 @@ import { CronJobsDialog } from './components/CronJobsDialog'
 import { RemoteWorkspaceDialog } from './components/RemoteWorkspaceDialog'
 import { hostOf } from '@shared/remoteKey'
 import { WorkbenchPane } from './components/WorkbenchPane'
+import { WorkbenchPreview } from './components/WorkbenchPreview'
 import type { WorkbenchCommandSignal } from './components/workbenchCommands'
 import { ExtensionConfirm } from './components/ExtensionConfirm'
 import { tabLabel } from './components/workbenchTabs'
@@ -1085,6 +1088,15 @@ export default function App(): JSX.Element {
     return () => ro.disconnect()
   }, [panelMounted])
   const centerRef = useRef<HTMLDivElement>(null)
+  const [previewFits, setPreviewFits] = useState(false)
+  useEffect(() => {
+    const el = centerRef.current
+    if (!el) return undefined
+    const ro = new ResizeObserver(() => setPreviewFits(previewCardFits(el.offsetWidth)))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  const previewShown = !!panelTab && panelReady && !panelShown && previewFits
   const SIDEBAR_MIN = 200
   const startVResize = (e: MouseEvent): void => {
     e.preventDefault()
@@ -1530,6 +1542,14 @@ export default function App(): JSX.Element {
                 />
               )}
             </div>
+          )}
+          {previewShown && panelTab && (
+            <WorkbenchPreview
+              tabId={panelTab}
+              root={fileTreeRoot}
+              session={landedSession ?? null}
+              width={PREVIEW_CARD_WIDTH_PX}
+            />
           )}
 
           <div className="aux-icons">

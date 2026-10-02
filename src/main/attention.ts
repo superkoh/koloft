@@ -7,13 +7,27 @@ export interface AttentionContext {
 
 export const RECONSIDER_WINDOW_MS = 3000
 
+export type SavedMark = AttentionEvent & { sessionId: string }
+
 export class AttentionTracker {
   private pending = new Map<string, AttentionEvent>()
   private recentlySuppressed = new Map<string, AttentionEvent>()
 
   constructor(
-    private readonly onChange: (pending: AttentionEvent[], event: AttentionEvent | null) => void
-  ) {}
+    private readonly onChange: (pending: AttentionEvent[], event: AttentionEvent | null) => void,
+    lastRun: SavedMark[] = []
+  ) {
+    for (const { tabId, kind, at, title, sessionId } of lastRun) {
+      const deadKind = kind === 'approval' ? 'turn-done' : kind
+      this.pending.set(tabId, { tabId, kind: deadKind, at, title, sessionId })
+    }
+  }
+
+  bound(tabId: string, sessionId: string, ctx: AttentionContext): void {
+    const carried = this.list().find((e) => e.sessionId === sessionId)
+    this.clearSession(sessionId)
+    if (carried) this.raise(tabId, 'turn-done', ctx, { title: carried.title, sessionId }, true)
+  }
 
   onStatusChange(
     tabId: string,

@@ -226,7 +226,13 @@ test.describe('multi-bucket aggregation and the watcher triggers (each case laun
 
       const menu = await openMenu(page, row)
       const items = await menuItemTexts(page)
-      expect(items).toEqual(['Resume↩', 'Reveal in Finder', 'Copy session ID', 'Remove from list'])
+      expect(items).toEqual([
+        'Resume↩',
+        'Reveal in Finder',
+        'Copy session ID',
+        'Keep running',
+        'Remove from list'
+      ])
       await expect(menu.locator('.mi.disabled')).toHaveText('Reveal in Finder')
       await snap(page, 'T-AGG-05')
       await closeMenu(page)
