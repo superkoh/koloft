@@ -309,6 +309,19 @@ method. A recheck adds its date, version and command to the bullet.
   nobody can see.
 - **While the pointer is over a guest (or an xterm canvas) the host gets no
   `mousemove`**, so a drag needs a transparent fixed overlay.
+- **A mouse release inside a guest is often sent to the host too, at the guest-local
+  point** (measured on Electron 43.7.3, 2026-10-02: main's `before-mouse-event` on both
+  webContents while a person drag-selected text in a page). The host webContents gets a
+  `mouseUp` with the very coordinates the guest got, in the same millisecond and with
+  no `mouseDown` of its own before it; its page then fires `mouseover` (`buttons` 0)
+  and `mouseup` on whatever host element sits at that point — with a `<webview>` at
+  (1175, 83), a release at guest (169, 455) hovered a sidebar row. Not every guest
+  release is echoed. Dropping the host `mouseUp` with `preventDefault()` in
+  `before-mouse-event` stops both events. Playwright's `page.mouse` never produces the
+  echo; a raw `Input.dispatchMouseEvent` `mouseReleased` on the host page passes through
+  `before-mouse-event` the same way.
+- **A drag that starts in a guest and leaves it sends the host every move with
+  `buttons` 1**, both from a real mouse and from Playwright.
 - **An HTML drag with no `dataTransfer` payload fires no `dragover`**; at least one
   `setData` call is needed.
 

@@ -1061,6 +1061,15 @@ function createWindow(): void {
   mainWindow.webContents.on('will-navigate', (e, url) => {
     if (!isAppNavigation(url, appUrl)) e.preventDefault()
   })
+  // PLATFORM§10
+  let pressedInHost = false
+  mainWindow.webContents.on('before-mouse-event', (e, mouse) => {
+    if (mouse.type === 'mouseDown') pressedInHost = true
+    if (mouse.type !== 'mouseUp') return
+    const releaseWithoutHostPress = !pressedInHost
+    pressedInHost = false
+    if (releaseWithoutHostPress) e.preventDefault()
+  })
   // PLATFORM§5
   if (!BACKGROUND_TEST && geo.maximized && !geo.fullScreen) mainWindow.maximize()
   trackWindowState(
