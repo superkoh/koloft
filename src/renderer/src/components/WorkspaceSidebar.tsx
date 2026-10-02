@@ -161,6 +161,7 @@ export function WorkspaceSidebar({
   const activeTabId = useStore((s) => s.activeTabId)
   const resumeLaunch = useStore((s) => s.resumeLaunch)
   const activateTab = useStore((s) => s.activateTab)
+  const visitTab = useStore((s) => s.visitTab)
   const selectedWs = useStore((s) => s.selectedWs)
   const selectWorkspace = useStore((s) => s.selectWorkspace)
   const showToast = useStore((s) => s.showToast)
@@ -395,10 +396,7 @@ export function WorkspaceSidebar({
         return
       }
       const tabId = tabIdFor(row.id)
-      if (tabId) {
-        window.api.attention.visit(tabId)
-        activateTab(tabId)
-      }
+      if (tabId) visitTab(tabId)
       return
     }
     if (resumeInFlight(row.id)) {

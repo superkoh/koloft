@@ -617,9 +617,7 @@ export default function App(): JSX.Element {
     return window.api.shortcuts.onNextWaitingSession(() => {
       const st = useStore.getState()
       const tabId = nextWaitingTab(st.attention, st.activeTabId, st.tabs)
-      if (!tabId) return
-      window.api.attention.visit(tabId)
-      st.activateTab(tabId)
+      if (tabId) st.visitTab(tabId)
     })
   }, [])
 

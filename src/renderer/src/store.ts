@@ -152,6 +152,7 @@ interface AppState {
   setTabAlive: (id: string, alive: boolean) => void
 
   activateTab: (id: string) => void
+  visitTab: (id: string) => void
   restartActiveSession: () => void
 
   setSessions: (s: SessionInfo[]) => void
@@ -498,6 +499,10 @@ export const useStore = create<AppState>((set, get) => ({
   activateTab: (id) => {
     if (!get().tabs.some((x) => x.id === id)) return
     set({ activeTabId: id, resumeLaunch: null })
+  },
+  visitTab: (id) => {
+    window.api.attention.visit(id)
+    get().activateTab(id)
   },
 
   restartActiveSession: () => {

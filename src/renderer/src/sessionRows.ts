@@ -136,10 +136,7 @@ export function nextWaitingTab(
 ): string | undefined {
   return pending
     .filter((e) => e.tabId !== activeTabId && tabs.some((t) => t.id === e.tabId))
-    .reduce<AttentionEvent | undefined>(
-      (oldest, e) => (oldest && oldest.at <= e.at ? oldest : e),
-      undefined
-    )?.tabId
+    .sort((a, b) => a.at - b.at)[0]?.tabId
 }
 
 export function isOrphanRow(

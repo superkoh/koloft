@@ -459,9 +459,9 @@ describe('nextWaitingTab (⌘J: the session that has waited longest for you)', (
     expect(nextWaitingTab(pending, 'a', tabs)).toBe('b')
   })
 
-  it('skips a mark carried over from the last run whose tab is gone, rather than resuming that session', () => {
+  it('skips a mark whose tab is gone, so the press lands on a live session instead of silently clearing that mark', () => {
     const pending: AttentionEvent[] = [
-      { tabId: 'gone', kind: 'turn-done', at: 1, resurrected: true },
+      { tabId: 'gone', kind: 'turn-done', at: 1 },
       { tabId: 'c', kind: 'approval', at: 20 }
     ]
     expect(nextWaitingTab(pending, null, tabs)).toBe('c')
