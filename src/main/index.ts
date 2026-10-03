@@ -252,17 +252,17 @@ import { AgentRequests, BUILTIN_VERBS, refused, type AgentVerb } from './agentRe
 import { Conductors } from './discord/conductors'
 import { discordApiUrl, DiscordLink } from './discord/link'
 import { releaseLock, takeLock } from './discord/instanceLock'
-import { DiscordRelay } from './discord/relay'
+import { DiscordRelay, SUBMIT_AFTER_TEXT_MS } from './discord/relay'
 import { noticeKindOf, Notices, type NoticeKind } from './discord/notices'
 import { approvalDetail } from './discord/dialog'
 import { discordVerb } from './agentDiscord'
-import { runningClaudePid } from './claudeSessionRegistry'
-import { isDiscordId } from '@shared/conductors'
+import { claudePeerNames, messagingSocketOf, runningClaudePid } from './claudeSessionRegistry'
+import { isDiscordId, scopeName } from '@shared/conductors'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
-import { sessionVerb, workspaceVerb } from './agentSessions'
+import { sessionVerb, workspaceVerb, type Target } from './agentSessions'
+import { writeLine } from './crossSessionMessage'
 import { closingTree, removeTree, whatIsLeft } from './sessionClose'
-import { claudePeerNames } from './claudeSessionRegistry'
 import { discordTokenRead, discordTokenWrite } from './accounts'
 import { writeAgentPlugin } from './agentPlugin'
 
@@ -540,10 +540,16 @@ let conductors: Conductors | null = null
 let discordLink: DiscordLink | null = null
 let discordRelay: DiscordRelay | null = null
 let discordNotices: Notices | null = null
+const skipFlagTabs = new Set<string>()
+const closeNoticed = new Set<string>()
 
 function discordNotice(tabId: string, kind: NoticeKind): void {
   const s = sessionOfTab(tabId)
   if (!discordNotices || !s?.sessionId || conductors?.ownsTab(tabId)) return
+  if (kind === 'closed') {
+    if (closeNoticed.has(tabId)) return
+    closeNoticed.add(tabId)
+  }
   const asked = kind === 'waiting' ? codexSessions?.openApproval(tabId) : undefined
   discordNotices.notify(
     { key: s.sessionId, name: s.title, workspace: sessionBackends.workspaceOfTab(tabId) },
@@ -687,7 +693,7 @@ const agentRequests = new AgentRequests({
       pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
       peerNames: () => claudePeerNames(),
       launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
-      queue: async (tabId, text) => codexSessions?.queueMessage(tabId, text),
+      queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
       whatIsLeft: whatClosingWouldLose,
       closeSoon: (tabId, session) =>
         setTimeout(
@@ -697,7 +703,38 @@ const agentRequests = new AgentRequests({
       conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
       sidebar: () => workspaceMgr?.rows() ?? [],
       readTurns,
-      touch: (tabId, key) => conductors?.touch(tabId, key)
+      touch: (tabId, key) => conductors?.touch(tabId, key),
+      conductorOf: conductorTarget,
+      resume: async (row) => {
+        const resumed = await resumeRow(row)
+        if (!resumed.ok) throw new Error(resumed.error)
+        return resumed.tabId
+      },
+      ready: tabReady,
+      sendLine: async (tabId, line) => {
+        const sessionId = sessionOfTab(tabId)?.sessionId
+        const socket = sessionId ? await messagingSocketOf(sessionId) : null
+        if (!socket) throw new Error('Koloft could not find where that session takes messages.')
+        await writeLine(socket, line)
+      },
+      typeInto: async (tabId, text) => {
+        ptyMgr.write(tabId, text)
+        await new Promise((resolve) => setTimeout(resolve, SUBMIT_AFTER_TEXT_MS))
+        ptyMgr.write(tabId, '\r')
+      },
+      // ADR-0028
+      modeOf: (tabId) =>
+        skipFlagTabs.has(tabId) && sessionOfTab(tabId)?.account ? 'bypass' : 'prompting',
+      stop: (tabId) => {
+        sendToRenderer('tab:killedByMain', tabId)
+        void killTabPty(tabId)
+      },
+      started: (conductorTab, tabId, name, workspace, backend) => {
+        const b = conductors?.bindingOfTab(conductorTab)
+        if (!b) return
+        conductors?.touchWhenBound(conductorTab, tabId)
+        discordNotices?.started(b.channel.channelId, name, workspace, backend)
+      }
     }),
     workspace: workspaceVerb({
       conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
@@ -743,6 +780,8 @@ async function handlePickRequest(pickDir: string, reqName: string, raw: unknown)
   const { res, endpoint } = await pickForLaunch(obj.tabId)
   const payload: Record<string, unknown> = { ...res }
   if (res.account && loadSettings().skipPermissions) payload.skipFlag = true
+  if (payload.skipFlag) skipFlagTabs.add(obj.tabId)
+  else skipFlagTabs.delete(obj.tabId)
   if (endpoint?.baseUrl) payload.baseUrl = endpoint.baseUrl
   if (endpoint?.model) payload.model = endpoint.model
   const resPath = path.join(pickDir, `res-${id}.json`)
@@ -1332,7 +1371,9 @@ app.whenReady().then(() => {
   })
   ptyMgr.on('exit', (e) => {
     discordNotice(e.id, 'closed')
+    closeNoticed.delete(e.id)
     discordRelay?.forget(e.id)
+    skipFlagTabs.delete(e.id)
     loginPtys.delete(e.id)
     const codexAccount = codexSignInPtys.get(e.id)
     if (codexAccount) {
@@ -1396,7 +1437,7 @@ app.whenReady().then(() => {
   tracker.on('status', (t: StatusEdge) => {
     const conductor = !!conductors?.ownsTab(t.tabId)
     if (conductor && t.next === 'approval') discordRelay?.conductorWaiting(t.tabId)
-    const notice = noticeKindOf(t.prev, t.next)
+    const notice = noticeKindOf(t.prev, t.next, tracker.awaitsInput(t.tabId))
     if (notice) discordNotice(t.tabId, notice)
     if (!(conductor && t.next === 'waiting'))
       attention.onStatusChange(t.tabId, t.prev, t.next, attentionCtx(), attentionSubjectOf(t.tabId))
@@ -1493,7 +1534,16 @@ app.whenReady().then(() => {
     runningElsewhere: async (backend, key) =>
       backend === 'claude' && (await runningClaudePid(key)) !== null,
     transcriptExists: async (backend, key) => sessionBackends.get(backend).transcriptExists(key),
-    start: (l) => launchQuietTab({ kind: l.backend, cwd: l.cwd, role: l.role }, l.title),
+    start: (l) =>
+      launchQuietTab(
+        {
+          kind: l.backend,
+          cwd: l.cwd,
+          role: l.role,
+          name: l.backend === 'claude' ? l.title.replace(/\s+/g, '-') : undefined
+        },
+        l.title
+      ),
     resume: async (l) => {
       const res = await sessionBackends
         .get(l.backend)
@@ -1534,7 +1584,17 @@ app.whenReady().then(() => {
       markDiscordConnected(hookPaths.regDir, connected)
     },
     onMessage: (m) => discordRelay?.onMessage(m),
-    onReady: () => void discordRelay?.catchUp()
+    onReady: () => void discordRelay?.catchUp(),
+    postFailed: (channelId, error) => {
+      const name = conductors?.bindingOfChannel(channelId)?.channel.name ?? channelId
+      const text = `Koloft could not post to #${name} in Discord: ${error}`
+      sendToRenderer('cron:toast', text)
+      const failing = link.status().failing ?? {}
+      const other = conductors
+        ?.bindings()
+        .find((b) => b.channel.channelId !== channelId && !failing[b.channel.channelId])
+      if (other) void link.post(other.channel.channelId, text).catch(() => undefined)
+    }
   })
   discordLink = link
   const conductorsNow = conductors
@@ -2432,6 +2492,7 @@ function openInWorkbench(
 }
 
 function killTabPty(tabId: string): Promise<boolean> {
+  discordNotice(tabId, 'closed')
   const owner = sessionBackends.ownerOfTab(tabId)
   const stopped = owner ? Promise.resolve(owner.stop(tabId)) : Promise.resolve(ptyMgr.kill(tabId))
   attention.clear(tabId)
@@ -2522,19 +2583,28 @@ function couldNotStart(title: string): string {
 }
 
 // CC§11
-async function restoreResident(row: SessionRow): Promise<string | undefined> {
+async function resumeRow(
+  row: SessionRow
+): Promise<{ ok: true; tabId: string } | { ok: false; error: string }> {
   const backend = sessionBackends.forSession(row.id)
   const plan = await backend.resumePlan(row.id)
   if (plan.action === 'dialog' || plan.action === 'rebuild') {
-    return `“${row.title}” needs you — its worktree changed. Click it to resume.`
+    return {
+      ok: false,
+      error: `“${row.title}” needs you — its worktree changed. Click it to resume.`
+    }
   }
   if (plan.action === 'unavailable') {
-    return plan.reason === 'running'
-      ? `“${row.title}” is already running in another claude process, so Koloft left it there.`
-      : `Could not start “${row.title}” — its folder is gone.`
+    return {
+      ok: false,
+      error:
+        plan.reason === 'running'
+          ? `“${row.title}” is already running in another claude process, so Koloft left it there.`
+          : `Could not start “${row.title}” — its folder is gone.`
+    }
   }
   const res = await backend.resume({ sessionId: row.id, cwd: plan.cwd, mode: 'direct' })
-  if (!res.ok) return couldNotStart(row.title)
+  if (!res.ok) return { ok: false, error: couldNotStart(row.title) }
   const spawned: SpawnedTab = {
     id: res.id,
     kind: row.backendId,
@@ -2543,7 +2613,47 @@ async function restoreResident(row: SessionRow): Promise<string | undefined> {
     sessionId: row.id
   }
   sendToRenderer('terminal:spawned', spawned)
-  return undefined
+  return { ok: true, tabId: res.id }
+}
+
+async function restoreResident(row: SessionRow): Promise<string | undefined> {
+  const resumed = await resumeRow(row)
+  return resumed.ok ? undefined : resumed.error
+}
+
+const READY_POLL_MS = 250
+
+async function tabReady(tabId: string, ms: number, turnEnded: boolean): Promise<boolean> {
+  const until = Date.now() + ms
+  for (;;) {
+    const status = tracker.statusOf(tabId)
+    if (
+      sessionOfTab(tabId)?.sessionId &&
+      status !== undefined &&
+      (!turnEnded || status === 'waiting' || status === 'idle')
+    )
+      return true
+    if (!ptyMgr.get(tabId)?.alive || Date.now() >= until) return false
+    await new Promise((resolve) => setTimeout(resolve, READY_POLL_MS))
+  }
+}
+
+function conductorTarget(ref: string): Target | undefined {
+  const all = conductors
+  const b = all?.bindingOfSession(ref)
+  if (!all || !b) return undefined
+  return {
+    key: `conductor:${b.id}`,
+    name: `the ${scopeName(b.scope)} conductor`,
+    backend: b.backend,
+    remote: false,
+    tabId: all.liveTab(b.id),
+    open: async () => {
+      const opened = await all.open(b.id)
+      if (!opened.ok) throw new Error(opened.error)
+      return opened.tabId
+    }
+  }
 }
 
 async function launchCronRun(

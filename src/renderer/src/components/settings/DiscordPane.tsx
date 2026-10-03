@@ -178,6 +178,11 @@ export function DiscordPane(): JSX.Element {
                   Unbind
                 </button>
               </div>
+              {status.failing?.[b.channel.channelId] && (
+                <div className="acct-login-state bad">
+                  Cannot post here: {status.failing[b.channel.channelId]}
+                </div>
+              )}
             </div>
           ))}
         </div>

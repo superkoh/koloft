@@ -68,6 +68,7 @@ export class Conductors {
   private stopping = new Set<string>()
   private opening = new Map<string, Promise<ConductorOpenResult>>()
   private deadlines = new Map<string, ReturnType<typeof setTimeout>>()
+  private pendingTouch = new Map<string, string>()
 
   constructor(private d: ConductorDeps) {
     this.discord = d.load()
@@ -94,6 +95,17 @@ export class Conductors {
 
   bindingOfChannel(channelId: string): ConductorBinding | undefined {
     return this.discord.bindings.find((b) => b.channel.channelId === channelId)
+  }
+
+  bindingOfSession(ref: string): ConductorBinding | undefined {
+    return this.discord.bindings.find((b) =>
+      b.sessionIds.some((key) => key === ref || identityOf(key).nativeSessionId === ref)
+    )
+  }
+
+  touchWhenBound(conductorTab: string, tabId: string): void {
+    const b = this.bindingOfTab(conductorTab)
+    if (b) this.pendingTouch.set(tabId, b.id)
   }
 
   liveTab(id: string): string | undefined {
@@ -131,8 +143,12 @@ export class Conductors {
 
   touch(tabId: string, key: string): void {
     const b = this.bindingOfTab(tabId)
-    if (b && !b.touched.includes(key))
-      this.update(b.id, (x) => ({ ...x, touched: [...x.touched, key] }))
+    if (b) this.touchFor(b.id, key)
+  }
+
+  private touchFor(id: string, key: string): void {
+    if (!this.find(id)?.touched.includes(key))
+      this.update(id, (x) => ({ ...x, touched: [...x.touched, key] }))
   }
 
   noWorkspaceReason(tabId: string): string | undefined {
@@ -288,6 +304,12 @@ export class Conductors {
   }
 
   onBound(tabId: string, key: string): void {
+    const toucher = this.pendingTouch.get(tabId)
+    if (toucher) {
+      this.pendingTouch.delete(tabId)
+      this.touchFor(toucher, key)
+      return
+    }
     let b = this.bindingOfTab(tabId)
     if (!b) {
       b = this.discord.bindings.find((x) => x.sessionIds.includes(key))
@@ -307,6 +329,7 @@ export class Conductors {
 
   onPtyExit(tabId: string): void {
     this.stopping.delete(tabId)
+    this.pendingTouch.delete(tabId)
     for (const [id, tab] of this.tabs) if (tab === tabId) this.tabs.delete(id)
     this.forgetTab(tabId)
   }

@@ -2,7 +2,11 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { claudePeerNames, runningClaudePid } from '../../src/main/claudeSessionRegistry'
+import {
+  claudePeerNames,
+  messagingSocketOf,
+  runningClaudePid
+} from '../../src/main/claudeSessionRegistry'
 
 const SID = '1425a153-9a1b-45b1-a727-b05f5a9c490e'
 const START = 'Wed Sep 23 20:29:08 2026'
@@ -63,5 +67,21 @@ describe("claude's own session registry: the name other sessions reach it by", (
   it('has no name for a session that is not running', async () => {
     entry(92355, SID, START, 'docs-fixer')
     expect(await claudePeerNames(dir, async () => null)(SID)).toBeNull()
+  })
+})
+
+// CC§11
+describe("claude's own session registry: the socket a session takes messages on", () => {
+  it('reads messagingSocketPath from the live entry only', async () => {
+    const write = (pid: number, procStart: string, sock: string): void =>
+      fs.writeFileSync(
+        path.join(dir, `${pid}.json`),
+        JSON.stringify({ pid, sessionId: SID, procStart, messagingSocketPath: sock })
+      )
+    write(12345, 'Mon Sep 21 08:00:00 2026', '/tmp/cc-socks/12345.sock')
+    write(29948, START, '/tmp/cc-socks/29948.sock')
+    const startOf = async (pid: number): Promise<string | null> => (pid === 29948 ? START : null)
+    expect(await messagingSocketOf(SID, dir, startOf)).toBe('/tmp/cc-socks/29948.sock')
+    expect(await messagingSocketOf(SID, dir, async () => null)).toBeNull()
   })
 })

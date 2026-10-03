@@ -3,8 +3,17 @@ import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
-import { readCalls, settingsOnDisk, startSessionIn, waitBooted, waitForCalls } from './helpers/p1'
+import {
+  newSessionInWith,
+  readCalls,
+  settingsOnDisk,
+  startSessionIn,
+  waitBooted,
+  waitForCalls,
+  wsRows
+} from './helpers/p1'
 import { startFakeDiscord, type FakeDiscord } from './helpers/fakeDiscord'
+import { openSettings } from './helpers/extensions'
 import type { ConductorBinding, DiscordSettings } from '../../src/shared/types'
 
 test.setTimeout(120_000)
@@ -206,6 +215,157 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
         .toEqual(['101', '103'])
       await expect.poll(() => bindingOnDisk(env)?.lastMessageId).toBe('103')
       expect(readCalls(env)).toEqual([])
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  test('the conductor sends to a local Claude session through its message socket as the owner’s words, stops it, and resumes it with a first message; the session is touched', async ({
+    env
+  }) => {
+    seedConductor(env, 'claude')
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      await startSessionIn(page, 'ws-a')
+      const managed = (await waitForCalls(env, 1))[0].sessionId
+      const peerLog = path.join(env.home, 'fake-claude-peer.jsonl')
+      const peerLines = (): string[] =>
+        fs.existsSync(peerLog) ? fs.readFileSync(peerLog, 'utf8').split('\n').filter(Boolean) : []
+      const sent = (text: string): string =>
+        JSON.stringify({
+          type: 'user',
+          message: {
+            role: 'user',
+            content: `<cross-session-message from-mode="prompting">\n(Your owner, via the Koloft conductor:) ${text}\n</cross-session-message>`
+          }
+        })
+
+      fake.say(OWNER, `/koloft session send ${managed} fix the tests`)
+      await expect
+        .poll(peerLines, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toEqual([sent('fix the tests')])
+      await expect.poll(() => bindingOnDisk(env)?.touched).toEqual([managed])
+      await expect.poll(() => notices(fake)).toEqual([expect.stringMatching(/^🔔 .+ finished\.$/)])
+
+      fake.say(OWNER, `/koloft session stop ${managed}`)
+      await expect
+        .poll(() => notices(fake))
+        .toEqual([expect.stringMatching(/^🔔 /), expect.stringMatching(/^⏹ .+ closed\.$/)])
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/cold/)
+
+      fake.say(OWNER, `/koloft session resume ${managed} -- carry on`)
+      await expect
+        .poll(peerLines, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toEqual([sent('fix the tests'), sent('carry on')])
+      expect(
+        readCalls(env).filter((c) => c.argv[c.argv.indexOf('--resume') + 1] === managed)
+      ).toHaveLength(1)
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  test('the conductor queues a message on a Codex session with a conductor message id, and a session it starts with --backend codex is announced and touched', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedConductor(env, 'claude')
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      await newSessionInWith(page, 'ws-a', 'Codex')
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
+      const codexCalls = (): { sessionId: string }[] =>
+        fs
+          .readFileSync(path.join(env.home, 'fake-codex-calls.jsonl'), 'utf8')
+          .split('\n')
+          .filter(Boolean)
+          .map((l) => JSON.parse(l) as { sessionId: string })
+      const codexId = codexCalls()[0].sessionId
+
+      fake.say(OWNER, `/koloft session send ${codexId} check the docs`)
+      const queued = (): unknown[] =>
+        fs
+          .readFileSync(path.join(env.home, 'fake-codex-wire.jsonl'), 'utf8')
+          .trim()
+          .split('\n')
+          .map(
+            (l) =>
+              JSON.parse(l) as {
+                direction: string
+                frame: {
+                  method?: string
+                  params?: { clientUserMessageId?: string; input?: { text: string }[] }
+                }
+              }
+          )
+          .filter((w) => w.direction === 'client' && w.frame.method === 'thread/queue/add')
+          .map((w) => [w.frame.params?.clientUserMessageId, w.frame.params?.input?.[0].text])
+      await expect
+        .poll(queued, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toEqual([['koloft-conductor-1', '(Your owner, via the Koloft conductor:) check the docs']])
+
+      fake.say(OWNER, '/koloft session new --backend codex -- list the files')
+      await expect
+        .poll(() => said(fake).join('\n'))
+        .toContain('▶ Started a Codex session (ws-a, Codex)')
+      await expect.poll(() => bindingOnDisk(env)?.touched.length).toBe(2)
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  test('a channel Koloft cannot post to is reported in another bound channel, as a toast, and next to its binding in Settings ▸ Discord', async ({
+    env
+  }) => {
+    seedSettings(env, {
+      hintsOff: true,
+      discord: {
+        userId: OWNER.id,
+        userName: OWNER.username,
+        conductorsFolded: true,
+        bindings: [
+          {
+            id: 'b1',
+            scope: env.workspaces.a,
+            backend: 'claude',
+            channel: { guildId: '111', channelId: CHANNEL, name: 'koloft-all' },
+            sessionIds: [],
+            touched: []
+          },
+          {
+            id: 'b2',
+            scope: env.workspaces.b,
+            backend: 'claude',
+            channel: { guildId: '111', channelId: '333', name: 'koloft' },
+            sessionIds: [],
+            touched: []
+          }
+        ]
+      }
+    })
+    const fake = await startFakeDiscord(env)
+    fake.refusePostsIn.push('333')
+    const { app, page } = await connected(env, fake)
+    try {
+      await startSessionIn(page, 'ws-b')
+      const managed = (await waitForCalls(env, 1))[0].sessionId
+      const tab = (await page.evaluate(() => window.api.sessions.list())).find(
+        (s) => s.sessionId === managed
+      )!.tabId
+      await page.evaluate((id) => window.api.terminal.write(id, '/need-approval\r'), tab)
+      const report = /^Koloft could not post to #koloft in Discord: Discord answered 403/
+      await expect(page.locator('.toast')).toHaveText(report)
+      await expect.poll(() => said(fake)).toContainEqual(expect.stringMatching(report))
+      await openSettings(page)
+      await page.locator('.set-ni', { hasText: 'Discord' }).click()
+      await expect(page.locator('.set-main .acct-login-state.bad')).toHaveText(
+        /^Cannot post here: Discord answered 403/
+      )
     } finally {
       await quitAndClose(app)
       await fake.close()

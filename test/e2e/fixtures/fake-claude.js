@@ -492,6 +492,70 @@ function openEnvRoutingPastShimToRecordingFakeOpen() {
   return { ...process.env, PATH }
 }
 
+// CC§11
+const peerSocket = path.join(require('os').tmpdir(), `kfc-${process.pid}.sock`)
+const peerEntry = path.join(home, '.claude', 'sessions', `${process.pid}.json`)
+function registerPeer() {
+  const procStart = cp
+    .execFileSync('ps', ['-o', 'lstart=', '-p', String(process.pid)], {
+      env: { ...process.env, TZ: 'UTC' }
+    })
+    .toString()
+    .trim()
+  const name = argVal('--name')
+  fs.mkdirSync(path.dirname(peerEntry), { recursive: true })
+  fs.writeFileSync(
+    peerEntry,
+    JSON.stringify({
+      pid: process.pid,
+      sessionId,
+      procStart,
+      messagingSocketPath: peerSocket,
+      ...(name ? { name } : {})
+    })
+  )
+}
+// CC§13
+function peerTurn(content) {
+  fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
+  append([
+    {
+      type: 'user',
+      isMeta: true,
+      origin: { kind: 'peer', from: 'unknown' },
+      message: {
+        role: 'user',
+        content: `Another Claude session sent a message:\n${content}\n\nThis came from another Claude session — not typed by your user.`
+      },
+      cwd
+    },
+    {
+      type: 'assistant',
+      timestamp: new Date().toISOString(),
+      message: { role: 'assistant', content: [{ type: 'text', text: `Peer said: ${content}` }] },
+      cwd
+    }
+  ])
+  fireHook('stop', { hook_event_name: 'Stop' })
+  process.stdout.write('[fake-claude] took a peer message\r\n> ')
+}
+fs.rmSync(peerSocket, { force: true })
+require('net')
+  .createServer((c) => {
+    let got = ''
+    c.on('data', (b) => (got += b))
+    c.on('end', () => {
+      c.end()
+      fs.appendFileSync(path.join(home, 'fake-claude-peer.jsonl'), got)
+      for (const line of got.split('\n').filter(Boolean)) peerTurn(JSON.parse(line).message.content)
+    })
+  })
+  .listen(peerSocket, registerPeer)
+process.on('exit', () => {
+  fs.rmSync(peerEntry, { force: true })
+  fs.rmSync(peerSocket, { force: true })
+})
+
 const rl = readline.createInterface({ input: process.stdin })
 rl.on('line', handleLine)
 function handleLine(line) {
@@ -512,6 +576,7 @@ function handleLine(line) {
     sessionId = require('crypto').randomUUID()
     transcript = path.join(projDir, sessionId + '.jsonl')
     fs.writeFileSync(transcript, '')
+    registerPeer()
     fireHook('start', {
       session_id: sessionId,
       transcript_path: transcript,

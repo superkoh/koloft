@@ -621,8 +621,21 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
 - **The TUI opens a second, ephemeral thread** (`thread/start` with id
   `temporary-structured-…`) to write a title. `thread/queue/add` on it is refused:
   "ephemeral thread does not support queued submissions".
-- What `thread/queue/add` does on a thread that is in the middle of a turn was not
-  tried. That it waits for that turn to end is inferred, not checked.
+- **`thread/queue/add` sent while a turn is running waits for that turn to end, then
+  starts its own turn.** Checked on 2026-10-03 with Codex CLI 0.159.3 and a real model
+  (`gpt-6.1-sol`): a Node client drove `codex app-server --stdio` with its own
+  `CODEX_HOME` (a copy of this Mac's login, deleted afterwards), ran `thread/start` with
+  `approvalPolicy: "never"`, `sandbox: "read-only"`, and started a turn that ran
+  `sleep 20`. 3 s after `turn/started` it sent `thread/queue/add` with
+  `clientUserMessageId: "koloft-conductor-1"`. The reply came back within about 8 ms:
+  `{queuedSubmission: {id, input, clientUserMessageId}}`. `thread/queue/changed` (params
+  only `{threadId}`) fired then and again mid-turn. The running turn finished its
+  command and its own answer with no extra `userMessage` in it. About 25 ms after its
+  `turn/completed` the server sent `turn/started` for a new turn by itself, with no client
+  `turn/start`; that turn's first item was the queued `userMessage` with
+  `clientId: "koloft-conductor-1"`, and the model answered it there. Thread status went
+  `idle`, then `active` (`activeFlags: []`) between the two turns. On an idle thread the
+  same call started a turn at once.
 
 ## 18. Which command lines open the full-screen TUI
 

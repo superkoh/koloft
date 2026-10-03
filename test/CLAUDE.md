@@ -96,6 +96,10 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     Stop.
   - every launch writes one line to `env.claudeCalls` (argv, cwd, session id,
     injected auth) before any delay.
+  - like the real one, it lists itself in `<home>/.claude/sessions/<pid>.json` with a
+    message socket (CC§11); each line written there is appended raw to
+    `<home>/fake-claude-peer.jsonl` and taken as a peer message (reply
+    `Peer said: <content>`, then Stop). A `--name` shows as its registry name.
   - its canned startup turn writes NOTES.md into its cwd, so a git fixture it runs in
     lists NOTES.md in the first commit's .gitignore.
   - its transcript lands a moment after it binds: before closing an app whose

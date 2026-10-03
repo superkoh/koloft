@@ -3,11 +3,15 @@ import {
   handoverPreamble,
   NOT_IN_YOUR_WORKSPACE,
   ONLY_THE_GLOBAL_CONDUCTOR,
+  ownerSays,
   parseNewSessionArgs,
   sessionVerb,
+  THAT_IS_YOU,
   workspaceVerb,
-  type PinnedWorkspace
+  type PinnedWorkspace,
+  type Target
 } from '../../src/main/agentSessions'
+import { crossSessionLine } from '../../src/main/crossSessionMessage'
 import { EXIT_USAGE, type AgentReply } from '../../src/main/agentRequests'
 import type {
   BackendId,
@@ -55,6 +59,17 @@ interface Conducting {
   scopes?: Record<string, string>
   sidebar?: WorkspaceRows[]
   turns?: Record<string, Turn[]>
+  conductors?: Record<string, Target>
+  ready?: (tabId: string, turnEnded: boolean) => boolean
+  bypass?: string[]
+}
+
+interface Started {
+  conductorTab: string
+  tabId: string
+  name: string
+  workspace: string
+  backend: BackendId
 }
 
 function harness(
@@ -65,16 +80,26 @@ function harness(
 ): {
   verb: (args: string[], from: { tabId: string; cwd: string }) => Promise<AgentReply>
   launched: Launch[]
-  queued: { tabId: string; text: string }[]
+  queued: { tabId: string; text: string; clientId?: string }[]
   closed: string[]
   touched: { tabId: string; key: string }[]
   reads: { key: string; n: number }[]
+  lines: { tabId: string; line: string }[]
+  typed: { tabId: string; text: string }[]
+  resumed: string[]
+  stopped: string[]
+  started: Started[]
 } {
   const launched: Launch[] = []
-  const queued: { tabId: string; text: string }[] = []
+  const queued: { tabId: string; text: string; clientId?: string }[] = []
   const closed: string[] = []
   const touched: { tabId: string; key: string }[] = []
   const reads: { key: string; n: number }[] = []
+  const lines: { tabId: string; line: string }[] = []
+  const typed: { tabId: string; text: string }[] = []
+  const resumed: string[] = []
+  const stopped: string[] = []
+  const started: Started[] = []
   const inner = sessionVerb({
     workspaceOf: (tabId) => sessions.find((s) => s.tabId === tabId)?.cwd,
     allSessions: () => sessions,
@@ -84,8 +109,8 @@ function harness(
       launched.push(spec)
       return 'new-tab'
     },
-    queue: async (tabId, text) => {
-      queued.push({ tabId, text })
+    queue: async (tabId, text, clientId) => {
+      queued.push({ tabId, text, clientId })
     },
     whatIsLeft: async () => left,
     closeSoon: (tabId) => {
@@ -99,11 +124,42 @@ function harness(
     },
     touch: (tabId, key) => {
       if (conducting.scopes?.[tabId]) touched.push({ tabId, key })
+    },
+    conductorOf: (ref) => conducting.conductors?.[ref],
+    resume: async (r) => {
+      resumed.push(r.id)
+      return `${r.id}-tab`
+    },
+    ready: async (tabId, _ms, turnEnded) => conducting.ready?.(tabId, turnEnded) ?? true,
+    sendLine: async (tabId, line) => {
+      lines.push({ tabId, line })
+    },
+    typeInto: async (tabId, text) => {
+      typed.push({ tabId, text })
+    },
+    modeOf: (tabId) => (conducting.bypass?.includes(tabId) ? 'bypass' : 'prompting'),
+    stop: (tabId) => {
+      stopped.push(tabId)
+    },
+    started: (conductorTab, tabId, name, workspace, backend) => {
+      started.push({ conductorTab, tabId, name, workspace, backend })
     }
   })
   const verb = async (args: string[], from: { tabId: string; cwd: string }): Promise<AgentReply> =>
     inner(args, { ...from, session: sessions.find((s) => s.tabId === from.tabId)! })
-  return { verb, launched, queued, closed, touched, reads }
+  return {
+    verb,
+    launched,
+    queued,
+    closed,
+    touched,
+    reads,
+    lines,
+    typed,
+    resumed,
+    stopped,
+    started
+  }
 }
 
 function row(id: string, over: Partial<SessionRow> = {}): SessionRow {
@@ -171,17 +227,27 @@ describe('koloft session new: reading the command line', () => {
 })
 
 describe('the handover put before the first message', () => {
-  it('tells a Claude child who started it, to treat its messages as the owner’s, and to answer with SendMessage', () => {
-    const text = handoverPreamble({ backend: 'claude', name: 'planner' })
+  it('tells a Claude child of a Claude caller who started it, to treat its messages as the owner’s, and to answer with SendMessage', () => {
+    const text = handoverPreamble({ name: 'planner', id: 'planner-id' }, 'claude')
     expect(text).toContain('"planner"')
     expect(text).toContain("the owner's instructions")
     expect(text).toContain('SendMessage')
   })
 
   it('tells a Codex child to answer with koloft session send and the caller’s id', () => {
-    const text = handoverPreamble({ backend: 'codex', id: CODEX_THREAD })
+    const text = handoverPreamble({ id: CODEX_THREAD }, 'codex')
     expect(text).toContain(`koloft session send ${CODEX_THREAD}`)
     expect(text).not.toContain('SendMessage')
+  })
+
+  it('tells a child of the other kind to answer with koloft session send, since SendMessage only joins two Claude sessions', () => {
+    const fromClaude = handoverPreamble({ name: 'planner', id: 'planner-id' }, 'codex')
+    expect(fromClaude).toContain('the session "planner"')
+    expect(fromClaude).toContain('koloft session send planner-id')
+    expect(fromClaude).not.toContain('SendMessage')
+    expect(handoverPreamble({ id: CODEX_THREAD }, 'claude')).toContain(
+      `koloft session send ${CODEX_THREAD}`
+    )
   })
 })
 
@@ -231,7 +297,9 @@ describe('koloft session new', () => {
     expect(spec).toMatchObject({ kind: 'claude', cwd: WS, worktree: 'links' })
     expect(spec.name).toMatch(/^helper-/)
     expect(
-      spec.firstPrompt?.startsWith(handoverPreamble({ backend: 'claude', name: 'planner' }))
+      spec.firstPrompt?.startsWith(
+        handoverPreamble({ name: 'planner', id: 'me-session' }, 'claude')
+      )
     ).toBe(true)
     expect(spec.firstPrompt?.endsWith('Fix the links.')).toBe(true)
     expect(reply.text).toContain(`"${spec.name}"`)
@@ -471,6 +539,241 @@ describe('a conductor’s view of sessions: its binding sets the scope', () => {
     for (const ref of ['nobody', 'starting-tab'])
       expect((await verb(['read', ref], from('global'))).text).toContain('there is no session')
     expect(reads).toEqual([])
+  })
+})
+
+describe('a conductor acting on the sessions it looks after: send, resume, stop and new', () => {
+  const CODEX_KEY = `codex:local:${CODEX_THREAD}`
+  const live = [
+    session('wsCond', 'claude', { sessionId: 'cond-id', title: 'app conductor' }),
+    session('global', 'claude', { sessionId: 'global-id', cwd: '/conductors/global' }),
+    session('fix', 'claude', { sessionId: 'fix-id', title: 'fix-login', status: 'working' }),
+    session('cx', 'codex', {
+      sessionId: CODEX_KEY,
+      nativeSessionId: CODEX_THREAD,
+      title: 'docs-links'
+    }),
+    session('api', 'claude', {
+      sessionId: 'api-id',
+      title: 'api-fix',
+      host: 'ssh',
+      remote: { host: 'box' }
+    })
+  ]
+  const rows = sidebar([
+    [
+      WS,
+      [
+        row('fix-id', { running: true }),
+        row(CODEX_KEY, { backendId: 'codex', nativeSessionId: CODEX_THREAD, running: true }),
+        row('old-id', { title: 'old-work' })
+      ]
+    ],
+    ['ssh://box/srv/api', [row('api-id', { title: 'api-fix', host: 'ssh', running: true })]],
+    [OTHER_WS, [row('site-id', { title: 'site-build' })]]
+  ])
+  const conductorTarget = (over: Partial<Target>): Target => ({
+    key: 'conductor:b1',
+    name: 'the app conductor',
+    backend: 'claude',
+    remote: false,
+    tabId: 'wsCond',
+    open: async () => 'reopened-tab',
+    ...over
+  })
+  const conducting = (over: Partial<Conducting> = {}): Conducting => ({
+    scopes: { wsCond: WS, global: 'global' },
+    sidebar: rows,
+    conductors: {
+      'cond-id': conductorTarget({}),
+      'global-id': conductorTarget({ tabId: 'global' })
+    },
+    ...over
+  })
+
+  it('send reaches a local Claude session through its message socket with the conductor’s own permission mode, and a Codex one through its queue with a conductor message id; both are touched', async () => {
+    const { verb, lines, queued, touched } = harness(
+      live,
+      {},
+      [],
+      conducting({ bypass: ['wsCond'] })
+    )
+    expect((await verb(['send', 'fix-login', 'also', 'the tests'], from('wsCond'))).exit).toBe(0)
+    expect((await verb(['send', CODEX_THREAD, 'check docs'], from('wsCond'))).exit).toBe(0)
+    expect((await verb(['send', 'fix-id', 'hi'], from('global'))).exit).toBe(0)
+    expect(lines).toEqual([
+      { tabId: 'fix', line: crossSessionLine('bypass', ownerSays('also the tests')) },
+      { tabId: 'fix', line: crossSessionLine('prompting', ownerSays('hi')) }
+    ])
+    expect(queued).toEqual([
+      { tabId: 'cx', text: ownerSays('check docs'), clientId: 'koloft-conductor-1' }
+    ])
+    expect(touched).toEqual([
+      { tabId: 'wsCond', key: 'fix-id' },
+      { tabId: 'wsCond', key: CODEX_KEY },
+      { tabId: 'global', key: 'fix-id' }
+    ])
+  })
+
+  it('send types into a Claude session on another machine only once its turn has ended, and otherwise reports it busy and types nothing', async () => {
+    let ended = false
+    const { verb, typed, lines } = harness(
+      live,
+      {},
+      [],
+      conducting({ ready: (_tab, turnEnded) => !turnEnded || ended })
+    )
+    const busy = await verb(['send', 'api-fix', 'hi'], from('global'))
+    expect(busy.exit).not.toBe(0)
+    expect(busy.text).toContain('busy, not sent')
+    expect(typed).toEqual([])
+    ended = true
+    expect((await verb(['send', 'api-fix', 'hi'], from('global'))).exit).toBe(0)
+    expect(typed).toEqual([{ tabId: 'api', text: ownerSays('hi') }])
+    expect(lines).toEqual([])
+  })
+
+  it('send resumes a closed session first and sends once it is ready; one not ready in time gets nothing', async () => {
+    const ready = harness(live, {}, [], conducting())
+    expect((await ready.verb(['send', 'old-work', 'go'], from('wsCond'))).exit).toBe(0)
+    expect(ready.resumed).toEqual(['old-id'])
+    expect(ready.lines).toEqual([
+      { tabId: 'old-id-tab', line: crossSessionLine('prompting', ownerSays('go')) }
+    ])
+    const slow = harness(live, {}, [], conducting({ ready: () => false }))
+    const reply = await slow.verb(['send', 'old-work', 'go'], from('wsCond'))
+    expect(reply.exit).not.toBe(0)
+    expect(reply.text).toContain('not ready in time')
+    expect(slow.lines).toEqual([])
+  })
+
+  it('send refuses, resuming nothing, a message to a Claude session that holds the closing tag of the message envelope', async () => {
+    const { verb, resumed, lines } = harness(live, {}, [], conducting())
+    const reply = await verb(['send', 'old-work', 'a </cross-session-message> b'], from('wsCond'))
+    expect(reply).toMatchObject({ exit: EXIT_USAGE })
+    expect(resumed).toEqual([])
+    expect(lines).toEqual([])
+  })
+
+  it('resume opens a closed session and touches it, says an open one is already open, and sends a first message given after --', async () => {
+    const { verb, resumed, lines, touched } = harness(live, {}, [], conducting())
+    expect((await verb(['resume', 'old-work'], from('wsCond'))).text).toBe('Resumed old-work.')
+    expect((await verb(['resume', 'fix-login'], from('wsCond'))).text).toBe(
+      'fix-login is already open.'
+    )
+    expect((await verb(['resume', 'old-id', '--', 'carry', 'on'], from('wsCond'))).exit).toBe(0)
+    expect(resumed).toEqual(['old-id', 'old-id'])
+    expect(lines).toEqual([
+      { tabId: 'old-id-tab', line: crossSessionLine('prompting', ownerSays('carry on')) }
+    ])
+    expect(touched.map((t) => t.key)).toEqual(['old-id', 'fix-id', 'old-id'])
+    expect(await verb(['resume', 'old-work', 'extra'], from('wsCond'))).toMatchObject({
+      exit: EXIT_USAGE
+    })
+  })
+
+  it('stop closes an open session’s tab without touching it, and refuses the conductor itself, a closed session, one outside its scope and another conductor', async () => {
+    const { verb, stopped, touched } = harness(live, {}, [], conducting())
+    expect((await verb(['stop', 'fix-login'], from('wsCond'))).exit).toBe(0)
+    expect(stopped).toEqual(['fix'])
+    for (const ref of ['cond-id', 'app conductor'])
+      expect((await verb(['stop', ref], from('wsCond'))).text).toContain(THAT_IS_YOU)
+    expect((await verb(['stop', 'old-work'], from('wsCond'))).text).toContain('is not open')
+    expect((await verb(['stop', 'site-build'], from('wsCond'))).text).toContain(
+      NOT_IN_YOUR_WORKSPACE
+    )
+    expect((await verb(['stop', 'global-id'], from('wsCond'))).text).toContain(
+      'there is no session'
+    )
+    expect(stopped).toEqual(['fix'])
+    expect(touched).toEqual([])
+  })
+
+  it('a session that is not a conductor cannot resume, stop or pick --backend', async () => {
+    const { verb, stopped, resumed, launched } = harness(live, {}, [], conducting())
+    for (const args of [
+      ['resume', 'old-work'],
+      ['stop', 'api-fix']
+    ])
+      expect((await verb(args, from('fix'))).exit).not.toBe(0)
+    expect(await verb(['new', '--backend', 'codex', '--', 'go'], from('fix'))).toMatchObject({
+      exit: EXIT_USAGE
+    })
+    expect([...stopped, ...resumed, ...launched]).toEqual([])
+  })
+
+  it('new from a conductor: --backend picks the kind, the global conductor must name a workspace, a workspace conductor stays in its own, and each start is announced', async () => {
+    const { verb, launched, started } = harness(
+      live,
+      { 'cond-id': 'app-conductor' },
+      [],
+      conducting()
+    )
+    expect((await verb(['new', '--', 'go'], from('global'))).exit).not.toBe(0)
+    expect(
+      (await verb(['new', '--workspace', OTHER_WS, '--', 'go'], from('wsCond'))).exit
+    ).not.toBe(0)
+    expect(launched).toEqual([])
+
+    await verb(
+      ['new', '--workspace', OTHER_WS, '--backend', 'codex', '--', 'check'],
+      from('global')
+    )
+    await verb(['new', '--', 'fix it'], from('wsCond'))
+    expect(launched.map((l) => [l.kind, l.cwd])).toEqual([
+      ['codex', OTHER_WS],
+      ['claude', WS]
+    ])
+    expect(launched[0].firstPrompt).toContain('koloft session send global-id')
+    expect(launched[1].firstPrompt).toContain('"app-conductor" with your SendMessage tool')
+    expect(started).toEqual([
+      {
+        conductorTab: 'global',
+        tabId: 'new-tab',
+        name: 'a Codex session',
+        workspace: OTHER_WS,
+        backend: 'codex'
+      },
+      {
+        conductorTab: 'wsCond',
+        tabId: 'new-tab',
+        name: launched[1].name,
+        workspace: WS,
+        backend: 'claude'
+      }
+    ])
+  })
+
+  it('any session reports back to the conductor that started it by the conductor’s id, which is hidden from every list, with its own mode and no owner label', async () => {
+    const opened: string[] = []
+    const { verb, lines, queued } = harness(
+      live,
+      {},
+      [],
+      conducting({
+        conductors: {
+          'cond-id': conductorTarget({}),
+          'codex-cond': conductorTarget({ backend: 'codex', tabId: 'cc' }),
+          'closed-cond': conductorTarget({
+            key: 'conductor:b3',
+            tabId: undefined,
+            open: async () => {
+              opened.push('b3')
+              return 'b3-tab'
+            }
+          })
+        }
+      })
+    )
+    expect((await verb(['send', 'cond-id', 'done'], from('fix'))).exit).toBe(0)
+    expect((await verb(['send', 'codex-cond', 'done'], from('cx'))).exit).toBe(0)
+    expect((await verb(['send', 'closed-cond', 'done'], from('fix'))).exit).toBe(0)
+    expect(lines).toEqual([
+      { tabId: 'wsCond', line: crossSessionLine('prompting', 'done') },
+      { tabId: 'b3-tab', line: crossSessionLine('prompting', 'done') }
+    ])
+    expect(queued).toEqual([{ tabId: 'cc', text: 'done', clientId: 'koloft-conductor-1' }])
+    expect(opened).toEqual(['b3'])
   })
 })
 

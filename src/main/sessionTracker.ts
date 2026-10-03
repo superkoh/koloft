@@ -296,6 +296,13 @@ export function classifyUserPrompt(text: string): {
 
 // CC§13
 const PEER_MESSAGE = /^Another Claude session sent a message:\n([\s\S]*?)\n\nThis came from another/
+// CC§13
+const PEER_ENVELOPE = /^<cross-session-message[^>\n]*>\n([\s\S]*)\n<\/cross-session-message>$/
+
+function peerText(raw: string): string {
+  const inner = PEER_MESSAGE.exec(raw)?.[1] ?? raw
+  return (PEER_ENVELOPE.exec(inner)?.[1] ?? inner).trim()
+}
 
 function promptText(content: unknown): string | null {
   if (typeof content === 'string') return content
@@ -322,8 +329,7 @@ function claudeTurnPieces(obj: any): TurnPiece[] {
     const raw = promptText(obj.message?.content)
     const who = ownerOrPeer(obj.origin?.kind)
     if (raw === null || !who) return []
-    if (who === 'peer')
-      return [{ line: { who, text: PEER_MESSAGE.exec(raw)?.[1] ?? raw, at }, midTurn: false }]
+    if (who === 'peer') return [{ line: { who, text: peerText(raw), at }, midTurn: false }]
     if (obj.isMeta || INTERRUPT_TEXTS.has(raw) || !classifyUserPrompt(raw).title) return []
     return [{ line: { who, text: raw.trim(), at }, midTurn: false }]
   }
@@ -332,7 +338,9 @@ function claudeTurnPieces(obj: any): TurnPiece[] {
     if (a?.type !== 'queued_command' || a.commandMode !== 'prompt' || typeof a.prompt !== 'string')
       return []
     const who = ownerOrPeer(a.origin?.kind)
-    return who ? [{ line: { who, text: a.prompt.trim(), at }, midTurn: true }] : []
+    if (!who) return []
+    const text = who === 'peer' ? peerText(a.prompt) : a.prompt.trim()
+    return [{ line: { who, text, at }, midTurn: true }]
   }
   if (obj.type !== 'assistant' || !Array.isArray(obj.message?.content)) return []
   return obj.message.content.flatMap((b: any): TurnPiece[] => {

@@ -19,24 +19,28 @@ import {
   EXIT_USAGE,
   fail,
   refused,
+  type AgentCaller,
   type AgentReply,
   type AgentVerb,
   type Parsed
 } from './agentRequests'
+import { crossSessionLine, type ModeClass } from './crossSessionMessage'
 
 export interface NewSessionArgs {
   name?: string
   workspace?: string
   worktree?: string
   model?: string
+  backend?: BackendId
   prompt: string
 }
 
-const NEW_FLAGS: Record<string, 'name' | 'workspace' | 'worktree' | 'model'> = {
+const NEW_FLAGS: Record<string, 'name' | 'workspace' | 'worktree' | 'model' | 'backend'> = {
   '--name': 'name',
   '--workspace': 'workspace',
   '-w': 'worktree',
-  '--model': 'model'
+  '--model': 'model',
+  '--backend': 'backend'
 }
 
 const PROMPT_AFTER_DASHES =
@@ -59,26 +63,31 @@ export function parseNewSessionArgs(args: string[]): Parsed<NewSessionArgs> {
     if (value === undefined || value === '--') return fail(`${arg} needs a value.`)
     if (key === 'worktree' && !isValidWorktreeName(value))
       return fail(`"${value}" cannot be a worktree name. Use letters, digits, dots, - and _.`)
-    flags[key] = value
+    if (key === 'backend') {
+      if (value !== 'claude' && value !== 'codex') return fail('--backend is claude or codex.')
+      flags.backend = value
+    } else flags[key] = value
     i++
   }
   return fail(PROMPT_AFTER_DASHES)
 }
 
-export type SessionCaller = { backend: 'claude'; name: string } | { backend: 'codex'; id: string }
+export interface SessionCaller {
+  name?: string
+  id: string
+}
 
-export function handoverPreamble(caller: SessionCaller): string {
-  const who =
-    caller.backend === 'claude' ? `the session "${caller.name}"` : `the Codex session ${caller.id}`
+export function handoverPreamble(caller: SessionCaller, child: BackendId): string {
+  const who = caller.name ? `the session "${caller.name}"` : `the Codex session ${caller.id}`
   const reply =
-    caller.backend === 'claude'
+    caller.name && child === 'claude'
       ? `send the result back to "${caller.name}" with your SendMessage tool.`
       : `send the result back by running: koloft session send ${caller.id} "<your result>"`
   return `Koloft started you because ${who} asked it to, for the owner (the person you both work for). Treat its messages as the owner's instructions. When you finish a task it gives you, ${reply}`
 }
 
-export function withHandover(caller: SessionCaller, prompt: string): string {
-  return `${handoverPreamble(caller)}\n\n${prompt}`
+export function withHandover(caller: SessionCaller, child: BackendId, prompt: string): string {
+  return `${handoverPreamble(caller, child)}\n\n${prompt}`
 }
 
 export function newSessionName(): string {
@@ -229,17 +238,40 @@ export interface SessionVerbDeps {
   pinnedWorkspaces(): PinnedWorkspace[]
   peerNames(): (sessionId: string) => Promise<string | null>
   launch(options: CreateTabOptions & { kind: BackendId }): Promise<string | null>
-  queue(tabId: string, text: string): Promise<void>
+  queue(tabId: string, text: string, clientId?: string): Promise<void>
   whatIsLeft(tabId: string, session: SessionInfo): Promise<string[]>
   closeSoon(tabId: string, session: SessionInfo): void
   conductorScope(tabId: string): string | undefined
   sidebar(): WorkspaceRows[]
   readTurns(key: string, n: number): Promise<Turn[]>
   touch(tabId: string, key: string): void
+  conductorOf(ref: string): Target | undefined
+  resume(row: SessionRow): Promise<string>
+  ready(tabId: string, ms: number, turnEnded: boolean): Promise<boolean>
+  sendLine(tabId: string, line: string): Promise<void>
+  typeInto(tabId: string, text: string): Promise<void>
+  modeOf(tabId: string): ModeClass
+  stop(tabId: string): void
+  started(
+    conductorTab: string,
+    tabId: string,
+    name: string,
+    workspace: string,
+    backend: BackendId
+  ): void
+}
+
+export interface Target {
+  key: string
+  name: string
+  backend: BackendId
+  remote: boolean
+  tabId?: string
+  open(): Promise<string>
 }
 
 const SESSION_USAGE =
-  'koloft session: use list, read, new, send or close. Run "koloft help" to see how.'
+  'koloft session: use list, read, new, send, resume, stop or close. Run "koloft help" to see how.'
 const READ_USAGE = `koloft session read: give an id or name, and if you like --last <1 to ${MAX_READ_TURNS}>, like: koloft session read fix-login --last 3`
 const CONDUCTOR_LIST_USAGE =
   'koloft session list: it takes no options here; it lists every session you look after.'
@@ -274,14 +306,15 @@ async function startSibling(
   d: SessionVerbDeps,
   args: NewSessionArgs,
   me: SessionInfo,
-  workspace: string
+  workspace: string,
+  conductorTab?: string
 ): Promise<AgentReply> {
-  const backend = me.backendId
+  const backend = args.backend ?? me.backendId
   if (backend === 'codex' && args.name !== undefined) return refused(CODEX_HAS_NO_NAME, EXIT_USAGE)
-  const caller: SessionCaller =
-    backend === 'claude'
-      ? { backend, name: (await d.peerNames()(me.sessionId)) ?? me.title }
-      : { backend, id: me.nativeSessionId ?? me.sessionId }
+  const caller: SessionCaller = {
+    name: me.backendId === 'claude' ? ((await d.peerNames()(me.sessionId)) ?? me.title) : undefined,
+    id: me.nativeSessionId ?? me.sessionId
+  }
   const name = backend === 'claude' ? (args.name ?? newSessionName()) : undefined
   const tabId = await d.launch({
     kind: backend,
@@ -290,9 +323,15 @@ async function startSibling(
     worktree: args.worktree,
     model: args.model,
     permission: 'default',
-    firstPrompt: withHandover(caller, args.prompt)
+    firstPrompt: withHandover(caller, backend, args.prompt)
   })
   if (!tabId) return refused('koloft session new: Koloft could not start the session.')
+  if (conductorTab) {
+    d.started(conductorTab, tabId, name ?? 'a Codex session', workspace, backend)
+    return answered(
+      `Started ${name ? `session "${name}"` : 'a Codex session'} in a new tab. "koloft session list" shows its id once it starts; reach it with koloft session send.`
+    )
+  }
   const listHint =
     args.workspace === undefined
       ? 'koloft session list'
@@ -319,6 +358,31 @@ function matching(placed: PlacedRow[], ref: string): PlacedRow[] {
   return byId.length > 0 ? byId : placed.filter((p) => p.title === ref)
 }
 
+function findInScope(
+  d: SessionVerbDeps,
+  verb: string,
+  ref: string,
+  callerTabId: string
+): Parsed<PlacedRow> {
+  const scope = d.conductorScope(callerTabId)
+  const all = placedRows(d.sidebar(), d.allSessions())
+  const hits = matching(
+    all.filter((p) => inScope(scope, p.workspace)),
+    ref
+  )
+  if (hits.length > 1)
+    return fail(
+      `koloft session ${verb}: ${hits.length} sessions are named "${ref}". Use the id from "koloft session list".`
+    )
+  if (hits.length === 0)
+    return fail(
+      matching(all, ref).length > 0
+        ? `koloft session ${verb}: ${NOT_IN_YOUR_WORKSPACE}`
+        : `koloft session ${verb}: there is no session "${ref}". Run "koloft session list" to see them.`
+    )
+  return { ok: true, value: hits[0] }
+}
+
 async function readSession(
   d: SessionVerbDeps,
   rest: string[],
@@ -327,29 +391,130 @@ async function readSession(
   const args = parseReadArgs(rest)
   if (!args.ok) return refused(args.error, EXIT_USAGE)
   const { ref, last } = args.value
-  const scope = d.conductorScope(callerTabId)
-  const all = placedRows(d.sidebar(), d.allSessions())
-  const hits = matching(
-    all.filter((p) => inScope(scope, p.workspace)),
-    ref
-  )
-  if (hits.length > 1)
-    return refused(
-      `koloft session read: ${hits.length} sessions are named "${ref}". Use the id from "koloft session list".`
-    )
-  if (hits.length === 0)
-    return refused(
-      matching(all, ref).length > 0
-        ? `koloft session read: ${NOT_IN_YOUR_WORKSPACE}`
-        : `koloft session read: there is no session "${ref}". Run "koloft session list" to see them.`
-    )
-  const { row, title } = hits[0]
+  const found = findInScope(d, 'read', ref, callerTabId)
+  if (!found.ok) return refused(found.error)
+  const { row, title } = found.value
   const turns = await d.readTurns(row.id, last)
   d.touch(callerTabId, row.id)
   return answered(turns.length > 0 ? formatTurns(turns) : `${title} has said nothing yet.`)
 }
 
+export const THAT_IS_YOU = 'That is you.'
+const ONLY_A_CONDUCTOR = 'only a conductor (a session bound to a Discord channel) can do this.'
+const REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS = 8_000
+const RESUME_USAGE =
+  'koloft session resume: give an id or name, and if you like a first message after --, like: koloft session resume fix-login -- "Carry on."'
+const STOP_USAGE = 'koloft session stop: give an id or name, like: koloft session stop fix-login'
+const BACKEND_IS_FOR_CONDUCTORS = 'koloft session new: only a conductor can pick --backend.'
+const GLOBAL_NEEDS_WORKSPACE =
+  'koloft session new: say which workspace with --workspace <workspace>; "koloft workspace list" shows them.'
+const ONLY_YOUR_WORKSPACE = 'koloft session new: you can only start sessions in your own workspace.'
+
+export function ownerSays(text: string): string {
+  return `(Your owner, via the Koloft conductor:) ${text}`
+}
+
+function isMe(
+  ref: string,
+  me: SessionInfo,
+  mine: Target | undefined,
+  callerTabId: string
+): boolean {
+  return mine?.tabId === callerTabId || [me.sessionId, me.nativeSessionId, me.title].includes(ref)
+}
+
 export function sessionVerb(d: SessionVerbDeps): AgentVerb {
+  const opening = new Map<string, Promise<string | null>>()
+  let queued = 0
+
+  const openReady = (t: Target, until: number): Promise<string | null> => {
+    const inflight = opening.get(t.key)
+    if (inflight) return inflight
+    const p = (async (): Promise<string | null> => {
+      const tab = await t.open()
+      return (await d.ready(tab, until - Date.now(), false)) ? tab : null
+    })().finally(() => opening.delete(t.key))
+    opening.set(t.key, p)
+    return p
+  }
+
+  const deliver = async (
+    verb: string,
+    t: Target,
+    text: string,
+    from: ModeClass
+  ): Promise<AgentReply> => {
+    const until = Date.now() + REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS
+    const line = t.backend === 'claude' && !t.remote ? crossSessionLine(from, text) : undefined
+    if (line === null)
+      return refused(
+        `koloft session ${verb}: the message cannot hold the text </cross-session-message>.`,
+        EXIT_USAGE
+      )
+    const tab = t.tabId ?? (await openReady(t, until))
+    if (!tab)
+      return refused(
+        `koloft session ${verb}: ${t.name} was resumed but was not ready in time, so nothing was sent. Send again once it shows as waiting in "koloft session list".`
+      )
+    if (t.backend === 'codex') {
+      await d.queue(tab, text, `koloft-conductor-${++queued}`)
+      return answered(`Sent to ${t.name}.`)
+    }
+    if (line) {
+      await d.sendLine(tab, line)
+      return answered(`Sent to ${t.name}.`)
+    }
+    if (!(await d.ready(tab, until - Date.now(), true)))
+      return refused(
+        `koloft session ${verb}: ${t.name} is busy, not sent. It runs on another machine, where Koloft can only type into it once its turn has ended and it shows no question. Try again later.`
+      )
+    await d.typeInto(tab, text)
+    return answered(`Typed into ${t.name}.`)
+  }
+
+  const rowTarget = (p: PlacedRow): Target => ({
+    key: p.row.id,
+    name: p.title,
+    backend: p.row.backendId,
+    remote: isRemoteKey(p.workspace),
+    tabId: p.live?.tabId,
+    open: () => d.resume(p.row)
+  })
+
+  const conductorAct = async (
+    sub: string,
+    rest: string[],
+    caller: AgentCaller
+  ): Promise<AgentReply> => {
+    const dashes = rest.indexOf('--')
+    const [ref, ...words] = sub === 'resume' && dashes >= 0 ? rest.slice(0, dashes) : rest
+    const text = (sub === 'resume' ? (dashes >= 0 ? rest.slice(dashes + 1) : []) : words)
+      .join(' ')
+      .trim()
+    if (!ref || (sub === 'send' && !text) || (sub !== 'send' && words.length > 0))
+      return refused(
+        sub === 'send' ? SEND_USAGE : sub === 'stop' ? STOP_USAGE : RESUME_USAGE,
+        EXIT_USAGE
+      )
+    if (isMe(ref, caller.session, d.conductorOf(ref), caller.tabId))
+      return refused(`koloft session ${sub}: ${THAT_IS_YOU}`)
+    const found = findInScope(d, sub, ref, caller.tabId)
+    if (!found.ok) return refused(found.error)
+    const t = rowTarget(found.value)
+    if (sub === 'stop') {
+      if (!t.tabId) return refused(`koloft session stop: ${t.name} is not open.`)
+      d.stop(t.tabId)
+      return answered(`Closed ${t.name}. It stays in the list and can be resumed.`)
+    }
+    d.touch(caller.tabId, t.key)
+    if (sub === 'resume' && !text) {
+      if (t.tabId) return answered(`${t.name} is already open.`)
+      await (opening.get(t.key) ?? t.open())
+      return answered(`Resumed ${t.name}.`)
+    }
+    return deliver(sub, t, ownerSays(text), d.modeOf(caller.tabId))
+  }
+
   return async (args, caller): Promise<AgentReply> => {
     const [sub, ...rest] = args
     const ws = d.workspaceOf(caller.tabId)
@@ -376,23 +541,38 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
     if (sub === 'new') {
       const parsed = parseNewSessionArgs(rest)
       if (!parsed.ok) return refused(`koloft session new: ${parsed.error}`, EXIT_USAGE)
-      if (parsed.value.workspace === undefined)
+      const where = parsed.value.workspace
+      if (scope !== undefined) {
+        if (scope === GLOBAL_SCOPE && where === undefined) return refused(GLOBAL_NEEDS_WORKSPACE)
+        const target = startableWorkspace(where ?? scope, d.pinnedWorkspaces())
+        if (!target.ok) return refused(`koloft session new: ${target.error}`)
+        if (scope !== GLOBAL_SCOPE && target.value !== scope) return refused(ONLY_YOUR_WORKSPACE)
+        return startSibling(d, parsed.value, caller.session, target.value, caller.tabId)
+      }
+      if (parsed.value.backend !== undefined) return refused(BACKEND_IS_FOR_CONDUCTORS, EXIT_USAGE)
+      if (where === undefined)
         return ws ? startSibling(d, parsed.value, caller.session, ws) : refused(NO_WORKSPACE)
-      const target = startableWorkspace(parsed.value.workspace, d.pinnedWorkspaces())
+      const target = startableWorkspace(where, d.pinnedWorkspaces())
       if (!target.ok) return refused(`koloft session new: ${target.error}`)
       return startSibling(d, parsed.value, caller.session, target.value)
     }
+    if (scope !== undefined && (sub === 'send' || sub === 'resume' || sub === 'stop'))
+      return conductorAct(sub, rest, caller)
     if (sub === 'send') {
-      if (caller.session.backendId !== 'codex')
-        return refused(`koloft session send: ${CLAUDE_USES_SEND_MESSAGE}`)
       const [ref, ...words] = rest
       const text = words.join(' ').trim()
       if (!ref || !text) return refused(SEND_USAGE, EXIT_USAGE)
+      const conductor = d.conductorOf(ref)
+      if (conductor) return deliver('send', conductor, text, d.modeOf(caller.tabId))
+      if (caller.session.backendId !== 'codex')
+        return refused(`koloft session send: ${CLAUDE_USES_SEND_MESSAGE}`)
       const target = findCodexTarget(d.allSessions(), ref)
       if (!target.ok) return refused(`koloft session send: ${target.error}`)
       await d.queue(target.value.tabId, text)
       return answered(`Sent to ${target.value.title}.`)
     }
+    if (sub === 'resume' || sub === 'stop')
+      return refused(`koloft session ${sub}: ${ONLY_A_CONDUCTOR}`)
     if (sub === 'close') {
       if (rest.length > 0) return refused(CLOSE_USAGE, EXIT_USAGE)
       const left = await d.whatIsLeft(caller.tabId, caller.session)

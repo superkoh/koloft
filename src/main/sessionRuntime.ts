@@ -65,6 +65,10 @@ export class SessionRuntime extends EventEmitter {
     return this.entries.get(tabId)?.status
   }
 
+  awaitsInput(tabId: string): boolean {
+    return this.entries.get(tabId)?.turn === 'input'
+  }
+
   protected statusSince(tabId: string): number {
     return this.entries.get(tabId)?.since ?? 0
   }

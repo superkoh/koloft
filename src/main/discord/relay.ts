@@ -29,7 +29,7 @@ const QUEUED = '⏳'
 const DELIVERED = '✅'
 const PAGE = 100
 // CC§12
-const SUBMIT_AFTER_TEXT_MS = 300
+export const SUBMIT_AFTER_TEXT_MS = 300
 const READY_POLL_MS = 250
 const PROMPT_SETTLES_AFTER_BIND_MS = 1000
 const ATTACHMENTS_KEPT_MS = 7 * 24 * 60 * 60 * 1000

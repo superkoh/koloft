@@ -14,10 +14,12 @@ export const NOTICE_COALESCE_MS = 1000
 
 export function noticeKindOf(
   prev: SessionStatus | undefined,
-  next: SessionStatus
+  next: SessionStatus,
+  awaitsInput: boolean
 ): NoticeKind | undefined {
   if (next === 'approval') return 'waiting'
-  if (next === 'waiting' && (prev === 'working' || prev === 'approval')) return 'finished'
+  if (next === 'waiting' && (prev === 'working' || prev === 'approval'))
+    return awaitsInput ? 'waiting' : 'finished'
   return undefined
 }
 

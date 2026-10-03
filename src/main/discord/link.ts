@@ -45,6 +45,7 @@ export interface DiscordLinkDeps {
   push(status: DiscordStatus): void
   onMessage(m: DiscordMessage): void
   onReady(): void
+  postFailed(channelId: string, error: string): void
 }
 
 interface Author {
@@ -103,6 +104,7 @@ export class DiscordLink {
   private botName?: string
   private applicationId?: string
   private guilds = new Map<string, string>()
+  private failing = new Map<string, string>()
   private candidate?: Candidate
   private rest: DiscordRest | null = null
   private gateway: DiscordGateway | null = null
@@ -118,6 +120,7 @@ export class DiscordLink {
       botName: this.botName,
       applicationId: this.applicationId,
       guildNames: [...this.guilds.values()].filter(Boolean),
+      failing: Object.fromEntries(this.failing),
       ...(this.candidate
         ? {
             candidate: {
@@ -145,6 +148,7 @@ export class DiscordLink {
     this.botName = undefined
     this.applicationId = undefined
     this.guilds.clear()
+    this.failing.clear()
     this.candidate = undefined
   }
 
@@ -238,12 +242,25 @@ export class DiscordLink {
     return this.rest
   }
 
-  post(channelId: string, content: string, replyTo?: string): Promise<unknown> {
-    return this.api().request('POST', `/channels/${channelId}/messages`, {
-      content,
-      allowed_mentions: { parse: [] },
-      ...(replyTo ? { message_reference: { message_id: replyTo, fail_if_not_exists: false } } : {})
-    })
+  async post(channelId: string, content: string, replyTo?: string): Promise<unknown> {
+    try {
+      const sent = await this.api().request('POST', `/channels/${channelId}/messages`, {
+        content,
+        allowed_mentions: { parse: [] },
+        ...(replyTo
+          ? { message_reference: { message_id: replyTo, fail_if_not_exists: false } }
+          : {})
+      })
+      if (this.failing.delete(channelId)) this.d.push(this.status())
+      return sent
+    } catch (error) {
+      if (error instanceof DiscordHttpError && !this.failing.has(channelId)) {
+        this.failing.set(channelId, error.message)
+        this.d.push(this.status())
+        this.d.postFailed(channelId, error.message)
+      }
+      throw error
+    }
   }
 
   async upload(channelId: string, files: DiscordFile[], content: string): Promise<void> {

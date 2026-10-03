@@ -45,6 +45,7 @@ export interface FakeDiscord {
   closeOnIdentify: number | null
   closeCodes: number[]
   posted: FakePost[]
+  refusePostsIn: string[]
   reactions: FakeReaction[]
   history: Record<string, FakeHistoryMessage[]>
   say(
@@ -105,6 +106,7 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
     closeOnIdentify: null,
     closeCodes: [],
     posted: [],
+    refusePostsIn: [],
     reactions: [],
     history: {},
     say: (author, content, opts = {}) => {
@@ -167,6 +169,10 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
       return { status: 204 }
     }
     const message = MESSAGE_ROUTE.exec(route)
+    if (message && req.method === 'POST' && fake.refusePostsIn.includes(message[1])) {
+      await bodyOf(req)
+      return { status: 403, body: { message: 'Missing Permissions', code: 50013 } }
+    }
     if (message && req.method === 'POST') {
       fake.posted.push(await postOf(message[1], req))
       return { status: 200, body: { id: String(++nextId) } }

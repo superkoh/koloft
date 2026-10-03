@@ -1810,6 +1810,39 @@ describe('SessionTracker — what each turn said: the owner, another session, an
     ])
   })
 
+  it('a peer message wrapped in the cross-session envelope reads as its plain body, whether it arrived idle or busy', async () => {
+    const wrapped =
+      '<cross-session-message from-mode="bypass">\nsay the word LYCHEE7\n</cross-session-message>'
+    const cwd = makeWorkspace({})
+    const file = writeJsonl(cwd, '44444444-4444-4444-8444-444444444444', [
+      {
+        type: 'user',
+        isMeta: true,
+        origin: { kind: 'peer', from: 'unknown', verifiedPeerPid: 10917 },
+        timestamp: at(1),
+        message: {
+          role: 'user',
+          content: `Another Claude session sent a message:\n${wrapped}\n\nThis came from another Claude session — not typed by your user.`
+        }
+      },
+      said(text('LYCHEE7'), 2),
+      human('Run exactly this bash command: sleep 15', 3),
+      said(bash, 4),
+      queued(wrapped, 'peer', 5),
+      toolResult(6),
+      said(text('done'), 7)
+    ])
+    expect((await transcriptTurns(file, 2)).map((t) => t.said.map((l) => [l.who, l.text]))).toEqual(
+      [
+        [['peer', 'say the word LYCHEE7']],
+        [
+          ['owner', 'Run exactly this bash command: sleep 15'],
+          ['peer', 'say the word LYCHEE7']
+        ]
+      ]
+    )
+  })
+
   it('a Stop that comes before the reply is on disk waits for it, ends the turn once, and the live log keeps the history read at bind', async () => {
     const cwd = makeWorkspace({})
     const tracker = newTracker()

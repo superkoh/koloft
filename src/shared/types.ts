@@ -222,6 +222,7 @@ export interface DiscordStatus {
   botName?: string
   applicationId?: string
   guildNames: string[]
+  failing?: Record<string, string>
   candidate?: { name: string; text: string; at: number }
 }
 

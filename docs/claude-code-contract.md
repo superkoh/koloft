@@ -543,6 +543,12 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   Apart from the 2.1.266 check: inferred, not checked.
 - **The 5h window's reset time moves forward between probes** — the window is rolling.
   (Inferred, not checked.)
+- **Remote Control refuses the long-lived token Koloft injects.** Measured 2026-10-01,
+  CC 2.1.286, in a session the shim had launched with an account's
+  `CLAUDE_CODE_OAUTH_TOKEN`: `/remote-control` answered "Remote Control requires a
+  full-scope login token. Long-lived tokens (from claude setup-token or
+  CLAUDE_CODE_OAUTH_TOKEN) are limited to inference-only…". So with Koloft's account
+  balancing on, Claude's own phone remote does not work for a Koloft session.
 - **Model prices** (USD per million tokens, input/output, and context window): Fable 5.1
   $10/$50, 1M (cache read $0.25); Fable/Mythos 5 $10/$50, 1M; Opus 5.5 $4/$20, 1M
   (cache read $0.20); Opus 5 $5/$25, 1M; Opus 4.6–4.8 $5/$25, 1M;
@@ -1002,6 +1008,34 @@ sessions.
   and `isMeta: true`, whose `prompt` holds the bare text. A sweep of 80 recent
   transcripts on this Mac (CC 2.1.285–2.1.288, 2026-10-03) found 4 `user` records with
   `origin.kind: "peer"`, all `isMeta: true`.
+- **A receiver started with `--dangerously-skip-permissions` holds a message whose sender
+  does not say it runs the same way.** Measured 2026-10-02, CC 2.1.288, four interactive
+  receivers in a scratch `HOME`, each sent one line on its socket while idle; re-run
+  2026-10-03, CC 2.1.288, with Koloft's own writer (`src/main/crossSessionMessage.ts`)
+  against one logged-in receiver:
+  - content `<cross-session-message from-mode="bypass">` + `\n` + body + `\n` +
+    `</cross-session-message>`: delivered — the screen showed "Message from @peer: …" and
+    a turn started; the logged-in receiver did what the body asked. The transcript keeps
+    the envelope inside the usual "Another Claude session sent a message:" wrap.
+  - The same `bypass` line sent while that receiver was running a 15 s Bash command was
+    taken into the running turn and answered there: a `queued_command` attachment whose
+    `prompt` holds the whole envelope and whose `origin` adds `fromMode: "bypass"` and
+    `body` (the bare body).
+  - the same with `from-mode="prompting"`, or a bare body, or `"from_mode":"bypass"` as a
+    field beside `message`: held — "Held peer message … The sending session's permission
+    mode class doesn't match this session's", and a "Held message from another session"
+    dialog with two choices, "Deny" (selected) and "Deliver this message to Claude".
+  - The two classes are `bypass` and `prompting`. The 2.1.288 binary counts a session as
+    `bypass` when its mode is `bypassPermissions`, or when a second check passes that
+    takes the mode and whether bypass mode is available
+    (`e.mode==="bypassPermissions"||IW(e.mode,e.isBypassPermissionsModeAvailable)`);
+    what that second check accepts was not read.
+  - The binary only accepts the envelope when it matches its own pattern exactly
+    (attributes in a fixed order, a newline right after `>` and right before `</`).
+  - It is switched by the internal gate `tengu_harbor_kite_mode_emit`, default on
+    (`T("tengu_harbor_kite_mode_emit",!0)` in the 2.1.288 binary); recheck on upgrade.
+  - A busy receiver with a mismatched mode, and a receiver not in bypass mode, were not
+    tried.
 
 ## §14 The PermissionRequest hook: answering a dialog from outside
 
