@@ -2263,7 +2263,10 @@ function killTabPty(tabId: string): Promise<boolean> {
 
 function archiveSession(id: string): boolean {
   const archived = sessionBackends.forSession(id).archive(id)
-  if (archived) attention.clearSession(id)
+  if (archived) {
+    attention.clearSession(id)
+    startedSessions.forget(id)
+  }
   return archived
 }
 
@@ -2311,7 +2314,6 @@ async function closeSessionFully(target: ClosableSession): Promise<void> {
     return
   }
   archiveSession(target.sessionId)
-  startedSessions.forget(target.sessionId)
   codexSessions?.store.removeUnusedResourcesAt(info.treeRoot)
 }
 

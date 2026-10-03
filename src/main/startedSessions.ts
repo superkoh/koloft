@@ -16,25 +16,28 @@ export class StartedSessions {
 
   bound(tabId: string, sessionId: string): void {
     const parents = this.parents()
-    const before = JSON.stringify(parents)
+    let changed = false
     const previous = this.sessionOfTab.get(tabId)
     this.sessionOfTab.set(tabId, sessionId)
     if (previous && previous !== sessionId) {
-      for (const [child, parent] of Object.entries(parents))
-        if (parent === previous) parents[child] = sessionId
-      for (const [tab, parent] of this.parentOfWaitingTab)
-        if (parent === previous) this.parentOfWaitingTab.set(tab, sessionId)
+      for (const [child, parent] of Object.entries(parents)) {
+        if (parent !== previous) continue
+        parents[child] = sessionId
+        changed = true
+      }
       if (parents[previous]) {
         parents[sessionId] = parents[previous]
         delete parents[previous]
+        changed = true
       }
     }
     const parent = this.parentOfWaitingTab.get(tabId)
     if (parent) {
       parents[sessionId] = parent
       this.parentOfWaitingTab.delete(tabId)
+      changed = true
     }
-    if (JSON.stringify(parents) !== before) this.save()
+    if (changed) this.save()
   }
 
   startedBy(target: { sessionId: string; tabId?: string }, caller: { sessionId: string }): boolean {
@@ -66,6 +69,8 @@ export class StartedSessions {
   }
 
   private save(): void {
-    writePrivateAtomically(this.file(), JSON.stringify(this.parentOf))
+    try {
+      writePrivateAtomically(this.file(), JSON.stringify(this.parentOf))
+    } catch {}
   }
 }
