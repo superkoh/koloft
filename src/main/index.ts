@@ -187,6 +187,7 @@ import {
   ATTENTION_REASON,
   BROWSER_PARTITION,
   PLACEHOLDER_SESSION_TITLE,
+  exitedAbnormally,
   isHttpUrl
 } from '@shared/types'
 import {
@@ -1267,9 +1268,7 @@ app.whenReady().then(() => {
     }
     if (loginWatchers.has(e.id)) failLogin(e.id, 'setup-token exited without printing a token')
     attention.clear(e.id)
-    // PLATFORM§29
-    const crashed = !quitCommitted && (e.exitCode !== 0 || !!e.signal)
-    claudeBackend.onPtyExit(e.id, crashed)
+    claudeBackend.onPtyExit(e.id, !quitCommitted && exitedAbnormally(e))
     flushData()
     // PLATFORM§21
     const held = pendingData.get(e.id)

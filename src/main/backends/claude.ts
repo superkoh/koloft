@@ -233,22 +233,16 @@ export class ClaudeBackend implements SessionBackend {
 
   onPtyExit(tabId: string, crashed: boolean): void {
     const remote = this.d.tracker.remoteOf(tabId)
-    if (!remote) {
-      // CC§1
-      this.drainExitRegistration(this.hookRegDir, tabId)
-      this.dropStatusLog(this.hookRegDir, tabId)
-      const sessionId = this.sessionIdOf(tabId)
-      if (crashed && sessionId)
-        this.d.events(tabId, {
-          type: 'exited',
-          clean: false,
-          title: this.titleOf(tabId),
-          sessionId
-        })
-      return
-    }
     const sid = this.sessionIdOf(tabId)
     const title = this.titleOf(tabId)
+    if (!remote) {
+      // CC§1
+      const reportedEnd = this.drainExitRegistration(this.hookRegDir, tabId)
+      this.dropStatusLog(this.hookRegDir, tabId)
+      if (crashed && sid && !reportedEnd)
+        this.d.events(tabId, { type: 'exited', clean: false, title, sessionId: sid })
+      return
+    }
     this.d.tracker.untrack(tabId)
     const userData = this.d.userData()
     fs.rmSync(tabPackageDir(userData, tabId), { recursive: true, force: true })
@@ -529,16 +523,17 @@ export class ClaudeBackend implements SessionBackend {
     this.dropStatusLog(mirrorDir, tabId)
   }
 
-  private drainExitRegistration(regDir: string, tabId: string): void {
+  private drainExitRegistration(regDir: string, tabId: string): boolean {
     let raw: { event?: string; reason?: string }
     try {
       raw = JSON.parse(fs.readFileSync(path.join(regDir, `${tabId}.json`), 'utf8'))
     } catch {
-      return
+      return false
     }
     if (raw.event === 'end' && EVICTING_END_REASONS.has(raw.reason ?? '')) {
       this.handleHookRegistration(raw)
     }
+    return raw.event === 'end'
   }
 
   private handleHookRegistration(raw: unknown): void {
