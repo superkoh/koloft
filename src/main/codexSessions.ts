@@ -12,8 +12,10 @@ import type {
 } from '@shared/types'
 import { identityOf } from '@shared/sessionBackend'
 import type { SessionEvent } from '@shared/sessionEvent'
+import type { Turn } from '@shared/turns'
 import {
   CodexObservation,
+  codexTurns,
   record,
   userThread,
   type CodexEvent,
@@ -521,6 +523,24 @@ export class CodexSessions {
     } catch (error) {
       if (binaryGone(error)) this.forgetProbe()
       throw error
+    } finally {
+      await rpc.close()
+    }
+  }
+
+  turnsOf(key: string, n: number): Turn[] | undefined {
+    return [...this.runs.values()].find((r) => r.info?.sessionId === key)?.observer.turns.last(n)
+  }
+
+  // CODEX§19
+  async readTurns(key: string, n: number): Promise<Turn[]> {
+    const id = this.nativeId(key)
+    if (!this.binary && !(await this.availability()).available)
+      throw new Error('Codex CLI is unavailable.')
+    const rpc = this.rpc(this.homeFor(key))
+    try {
+      const reply = record(await rpc.request('thread/read', { threadId: id, includeTurns: true }))
+      return codexTurns(record(reply.thread).turns).last(n)
     } finally {
       await rpc.close()
     }

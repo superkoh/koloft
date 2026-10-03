@@ -80,7 +80,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     typed line), `-hang` (never binds, and has no signal handler, so the SIGHUP that
     closes its tab kills it).
   - typed lines: `/write <path>` (a Write, Stop 2.5 s later — the file on disk proves
-    the transcript has it), `/busy` (a turn held open ~30 s), `/need-approval`,
+    the transcript has it), `/answer <text>` (`<text>` as the prompt, `Answer to: <text>`
+    as the reply's text, then Stop), `/busy` (a turn held open ~30 s), `/need-approval`,
     `/scratch <name>`, `/move-to-background` (a start for a session that never writes a
     transcript, then `continued-in` to a new id whose Stop follows), `/open <target>`, `/open-later <target>` (fires once
     `<home>/go-open` exists), `/koloft <args>` (runs the agent command, then prints its

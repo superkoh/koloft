@@ -10,6 +10,7 @@ import type {
 } from '@shared/types'
 import type { ReportedTask, SessionEvent } from '@shared/sessionEvent'
 import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
+import { TurnLog, type SaidLine, type Turn as TalkTurn } from '@shared/turns'
 import { costUsdOf, resolvePricing } from '@shared/pricing'
 import { localDayKey } from '@shared/usageFormat'
 import { encodeCwd } from '@shared/cwdKey'
@@ -41,6 +42,9 @@ const TEAMMATE_QUIET_MS = envMs('KOLOFT_TEAMMATE_QUIET_MS', 60_000)
 const PROCS_SCAN_MS = envMs('KOLOFT_PROCS_SCAN_MS', 5000)
 // CC§2
 const RELOCATE_SETTLE_MS = envMs('KOLOFT_RELOCATE_SETTLE_MS', 1200)
+// CC§2
+const TURN_TEXT_WAIT_MS = envMs('KOLOFT_TURN_TEXT_WAIT_MS', 5000)
+const TURN_TEXT_POLL_MS = 200
 
 export { encodeCwd }
 
@@ -289,6 +293,88 @@ export function classifyUserPrompt(text: string): {
   }
 }
 
+// CC§13
+const PEER_MESSAGE = /^Another Claude session sent a message:\n([\s\S]*?)\n\nThis came from another/
+
+function promptText(content: unknown): string | null {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return null
+  const texts = content.flatMap((b) =>
+    b?.type === 'text' && typeof b.text === 'string' ? [b.text] : []
+  )
+  return texts.length ? texts.join('\n') : null
+}
+
+function ownerOrPeer(kind: unknown): 'owner' | 'peer' | null {
+  if (kind === undefined || kind === 'human') return 'owner'
+  return kind === 'peer' ? 'peer' : null
+}
+
+type TurnPiece = { line: SaidLine; midTurn: boolean } | 'tool'
+
+// CC§2 CC§13
+function claudeTurnPieces(obj: any): TurnPiece[] {
+  if (!obj || obj.isSidechain === true) return []
+  const ts = Date.parse(obj.timestamp)
+  const at = isFinite(ts) ? ts : Date.now()
+  if (obj.type === 'user') {
+    const raw = promptText(obj.message?.content)
+    const who = ownerOrPeer(obj.origin?.kind)
+    if (raw === null || !who) return []
+    if (who === 'peer')
+      return [{ line: { who, text: PEER_MESSAGE.exec(raw)?.[1] ?? raw, at }, midTurn: false }]
+    if (obj.isMeta || INTERRUPT_TEXTS.has(raw) || !classifyUserPrompt(raw).title) return []
+    return [{ line: { who, text: raw.trim(), at }, midTurn: false }]
+  }
+  if (obj.type === 'attachment') {
+    const a = obj.attachment
+    if (a?.type !== 'queued_command' || a.commandMode !== 'prompt' || typeof a.prompt !== 'string')
+      return []
+    const who = ownerOrPeer(a.origin?.kind)
+    return who ? [{ line: { who, text: a.prompt.trim(), at }, midTurn: true }] : []
+  }
+  if (obj.type !== 'assistant' || !Array.isArray(obj.message?.content)) return []
+  return obj.message.content.flatMap((b: any): TurnPiece[] => {
+    if (b?.type === 'tool_use') return ['tool']
+    if (b?.type !== 'text' || typeof b.text !== 'string' || !b.text.trim()) return []
+    return [{ line: { who: 'assistant', text: b.text.trim(), at }, midTurn: true }]
+  })
+}
+
+export async function transcriptTurns(file: string, n: number): Promise<TalkTurn[]> {
+  const log = new TurnLog()
+  for (const line of (await fs.promises.readFile(file, 'utf8')).split('\n')) {
+    let obj: unknown
+    try {
+      obj = JSON.parse(line)
+    } catch {
+      continue
+    }
+    for (const piece of claudeTurnPieces(obj))
+      if (piece !== 'tool') log.add(piece.line, piece.midTurn)
+  }
+  return log.last(n)
+}
+
+// CC§2
+export function findTranscript(projectsRoot: string, sessionId: string): string | null {
+  let buckets: string[]
+  try {
+    buckets = fs.readdirSync(projectsRoot)
+  } catch {
+    return null
+  }
+  let best: { file: string; size: number } | null = null
+  for (const b of buckets) {
+    const file = path.join(projectsRoot, b, sessionId + '.jsonl')
+    try {
+      const { size } = fs.statSync(file)
+      if (!best || size > best.size) best = { file, size }
+    } catch {}
+  }
+  return best?.file ?? null
+}
+
 export interface RemoteTab {
   host: string
   projectsRoot: string
@@ -345,6 +431,8 @@ interface Tracked {
   teammateActiveMs: number
   lastInterruptTs: number
   rootPinAwaitingCatchup: boolean
+  turns: TurnLog
+  replyDone: boolean
   inode?: number
   swept?: boolean
   relocatedCwd?: string
@@ -456,6 +544,8 @@ export class SessionTracker extends SessionRuntime {
       teammateActiveMs: 0,
       lastInterruptTs: 0,
       rootPinAwaitingCatchup: false,
+      turns: new TurnLog(),
+      replyDone: false,
       remote
     }
     this.tracked.set(tabId, t)
@@ -475,6 +565,7 @@ export class SessionTracker extends SessionRuntime {
   }
 
   receive(tabId: string, event: SessionEvent): void {
+    if (event.type === 'stop') void this.endTurn(tabId)
     const turn = turnOf(event)
     if (turn === 'working' || turn === 'approval') this.recordHookTurn(tabId, turn)
     // CC§8
@@ -535,6 +626,24 @@ export class SessionTracker extends SessionRuntime {
     const busy = t.reported ? this.judgeReported(t) : this.bgBusy(t)
     if (!busy) t.bgTasks.clear()
     this.applyStatus(t, 'ended', busy)
+  }
+
+  // CC§2
+  private async endTurn(tabId: string): Promise<void> {
+    const t = this.tracked.get(tabId)
+    if (!t) return
+    const until = Date.now() + TURN_TEXT_WAIT_MS
+    let turn: TalkTurn | undefined
+    for (;;) {
+      await this.parse(t).catch(() => {})
+      if (this.tracked.get(tabId) !== t) return
+      turn ??= t.turns.open()
+      if (turn && (turn !== t.turns.open() || t.replyDone)) break
+      if (Date.now() >= until) break
+      await new Promise((resolve) => setTimeout(resolve, TURN_TEXT_POLL_MS))
+    }
+    if (turn && t.turns.end(turn))
+      this.emit('turn-ended', { tabId, turn: { ...turn, said: [...turn.said] } })
   }
 
   private judgeReported(t: Tracked): boolean {
@@ -758,13 +867,13 @@ export class SessionTracker extends SessionRuntime {
       if (t.info.sessionId !== sessionId) continue
       return !!t.info.jsonlPath && fs.existsSync(t.info.jsonlPath)
     }
-    let buckets: string[]
-    try {
-      buckets = fs.readdirSync(PROJECTS_ROOT)
-    } catch {
-      return false
-    }
-    return buckets.some((d) => fs.existsSync(path.join(PROJECTS_ROOT, d, sessionId + '.jsonl')))
+    return !!findTranscript(PROJECTS_ROOT, sessionId)
+  }
+
+  turnsOf(sessionId: string, n: number): TalkTurn[] | undefined {
+    for (const t of this.tracked.values())
+      if (t.info.alive && t.info.sessionId === sessionId) return t.turns.last(n)
+    return undefined
   }
 
   aliveTabFor(sessionId: string): string | null {
@@ -859,6 +968,8 @@ export class SessionTracker extends SessionRuntime {
     t.lastBgActivityTs = 0
     t.lastMainActivityTs = 0
     t.lastInterruptTs = 0
+    t.turns = new TurnLog()
+    t.replyDone = false
     if (!keepBindMs) t.bindMs = Date.now()
     t.resetMs = Date.now()
   }
@@ -1086,7 +1197,11 @@ export class SessionTracker extends SessionRuntime {
     if (t.rootPinAwaitingCatchup) this.setTreeRoot(t, t.info.cwd)
     if (sawInterrupt) await this.interruptTurn(t)
     else if (t.caughtUp) this.resumeWorkingIfStale(t, sawUserPrompt, sawAssistant)
-    if (!t.caughtUp) t.caughtUp = true
+    if (!t.caughtUp) {
+      const history = t.turns.open()
+      if (history && history.at < t.bindMs) t.turns.end(history)
+      t.caughtUp = true
+    }
     return true
   }
 
@@ -1270,6 +1385,13 @@ export class SessionTracker extends SessionRuntime {
           if (recTs > t.lastBgActivityTs) t.lastBgActivityTs = recTs
         } else if (recTs > t.lastMainActivityTs) {
           t.lastMainActivityTs = recTs
+        }
+      }
+      for (const piece of claudeTurnPieces(obj)) {
+        if (piece === 'tool') t.replyDone = false
+        else {
+          t.turns.add(piece.line, piece.midTurn)
+          t.replyDone = piece.line.who === 'assistant'
         }
       }
       if (obj.type === 'user') this.ingestSpawnAck(t, obj)

@@ -1,12 +1,22 @@
 import { describe, expect, it } from 'vitest'
 import {
   handoverPreamble,
+  NOT_IN_YOUR_WORKSPACE,
+  ONLY_THE_GLOBAL_CONDUCTOR,
   parseNewSessionArgs,
   sessionVerb,
+  workspaceVerb,
   type PinnedWorkspace
 } from '../../src/main/agentSessions'
 import { EXIT_USAGE, type AgentReply } from '../../src/main/agentRequests'
-import type { BackendId, CreateTabOptions, SessionInfo } from '../../src/shared/types'
+import type {
+  BackendId,
+  CreateTabOptions,
+  SessionInfo,
+  SessionRow,
+  WorkspaceRows
+} from '../../src/shared/types'
+import type { Turn } from '../../src/shared/turns'
 
 const WS = '/work/app'
 const OTHER_WS = '/work/site'
@@ -41,19 +51,30 @@ function session(
 
 type Launch = CreateTabOptions & { kind: BackendId }
 
+interface Conducting {
+  scopes?: Record<string, string>
+  sidebar?: WorkspaceRows[]
+  turns?: Record<string, Turn[]>
+}
+
 function harness(
   sessions: SessionInfo[],
   peerNames: Record<string, string> = {},
-  left: string[] = []
+  left: string[] = [],
+  conducting: Conducting = {}
 ): {
   verb: (args: string[], from: { tabId: string; cwd: string }) => Promise<AgentReply>
   launched: Launch[]
   queued: { tabId: string; text: string }[]
   closed: string[]
+  touched: { tabId: string; key: string }[]
+  reads: { key: string; n: number }[]
 } {
   const launched: Launch[] = []
   const queued: { tabId: string; text: string }[] = []
   const closed: string[] = []
+  const touched: { tabId: string; key: string }[] = []
+  const reads: { key: string; n: number }[] = []
   const inner = sessionVerb({
     workspaceOf: (tabId) => sessions.find((s) => s.tabId === tabId)?.cwd,
     allSessions: () => sessions,
@@ -69,11 +90,42 @@ function harness(
     whatIsLeft: async () => left,
     closeSoon: (tabId) => {
       closed.push(tabId)
+    },
+    conductorScope: (tabId) => conducting.scopes?.[tabId],
+    sidebar: () => conducting.sidebar ?? [],
+    readTurns: async (key, n) => {
+      reads.push({ key, n })
+      return (conducting.turns?.[key] ?? []).slice(-n)
+    },
+    touch: (tabId, key) => {
+      if (conducting.scopes?.[tabId]) touched.push({ tabId, key })
     }
   })
   const verb = async (args: string[], from: { tabId: string; cwd: string }): Promise<AgentReply> =>
     inner(args, { ...from, session: sessions.find((s) => s.tabId === from.tabId)! })
-  return { verb, launched, queued, closed }
+  return { verb, launched, queued, closed, touched, reads }
+}
+
+function row(id: string, over: Partial<SessionRow> = {}): SessionRow {
+  return {
+    id,
+    title: `${id} title`,
+    cwd: WS,
+    worktree: 'main',
+    running: false,
+    invalidCwd: false,
+    mtime: Date.now(),
+    backendId: 'claude',
+    host: 'local',
+    ...over
+  }
+}
+
+function sidebar(entries: [string, SessionRow[]][]): WorkspaceRows[] {
+  return entries.map(([wsPath, rows]) => ({
+    workspace: { path: wsPath, missing: wsPath === '/work/gone', isGit: true, hasHistory: false },
+    rows
+  }))
 }
 
 const from = (tabId: string): { tabId: string; cwd: string } => ({ tabId, cwd: WS })
@@ -302,5 +354,151 @@ describe('koloft session close', () => {
     const { verb, closed } = harness([session('me', 'claude'), session('other', 'claude')])
     expect(await verb(['close', 'other'], from('me'))).toMatchObject({ exit: EXIT_USAGE })
     expect(closed).toEqual([])
+  })
+})
+
+describe('a conductor’s view of sessions: its binding sets the scope', () => {
+  const CODEX_KEY = `codex:local:${CODEX_THREAD}`
+  const conductor = (tabId: string): SessionInfo =>
+    session(tabId, 'claude', { cwd: '/conductors/global' })
+  const live = [
+    conductor('global'),
+    conductor('wsCond'),
+    session('fix', 'claude', { sessionId: 'fix-id', title: 'fix-login', status: 'working' })
+  ]
+  const rows = sidebar([
+    [
+      WS,
+      [
+        row('fix-id', { running: true }),
+        row(CODEX_KEY, {
+          backendId: 'codex',
+          nativeSessionId: CODEX_THREAD,
+          title: 'docs-links',
+          mtime: Date.now() - 2 * 3_600_000
+        }),
+        row('starting-tab', { pending: true })
+      ]
+    ],
+    [OTHER_WS, [row('site-id', { title: 'site-build' })]],
+    ['ssh://box/srv/api', [row('api-id', { title: 'api-fix', host: 'ssh' })]]
+  ])
+  const turns: Record<string, Turn[]> = {
+    'fix-id': [
+      { said: [{ who: 'owner', text: 'first', at: 1 }], reply: 'one', at: 1 },
+      {
+        said: [
+          { who: 'owner', text: 'fix the login', at: 2 },
+          { who: 'peer', text: 'also the tests', at: 3 }
+        ],
+        reply: 'Looking.\n\nFixed both.',
+        at: 4
+      }
+    ],
+    [CODEX_KEY]: [{ said: [{ who: 'owner', text: 'check docs', at: 1 }], reply: 'DONE', at: 2 }]
+  }
+  const conducting = {
+    scopes: { global: 'global', wsCond: WS },
+    sidebar: rows,
+    turns
+  }
+
+  it('a workspace conductor lists its own workspace’s sessions, open and closed, with backend, host, state, last active and id', async () => {
+    const { verb } = harness(live, {}, [], conducting)
+    const reply = await verb(['list'], from('wsCond'))
+    expect(reply.exit).toBe(0)
+    expect(reply.text.split('\n')).toEqual([
+      'fix-login · Claude · local · working · last active just now · id: fix-id',
+      `docs-links · Codex · local · closed · last active 2 h ago · id: ${CODEX_THREAD}`
+    ])
+  })
+
+  it('the global conductor lists every workspace’s sessions with a workspace column, a remote one under its machine', async () => {
+    const { verb } = harness(live, {}, [], conducting)
+    const lines = (await verb(['list'], from('global'))).text.split('\n')
+    expect(lines).toHaveLength(4)
+    expect(lines[0]).toBe(
+      `fix-login · Claude · local · working · last active just now · id: fix-id · workspace: ${WS}`
+    )
+    expect(lines[3]).toBe(
+      'api-fix · Claude · box · closed · last active just now · id: api-id · workspace: box:/srv/api'
+    )
+  })
+
+  it('a session that is not a conductor keeps listing only the open sessions of a workspace', async () => {
+    const { verb } = harness(live, {}, [], conducting)
+    expect((await verb(['list'], from('fix'))).text).toBe('fix-login (you) · Claude · working')
+  })
+
+  it('session read prints what the owner, a peer and the session said in the last N turns, found by name or id, and marks the session touched', async () => {
+    const { verb, touched } = harness(live, {}, [], conducting)
+    expect((await verb(['read', 'fix-login'], from('wsCond'))).text).toBe(
+      'owner: fix the login\npeer: also the tests\nassistant: Looking.\n\nFixed both.'
+    )
+    expect((await verb(['read', 'fix-id', '--last', '2'], from('wsCond'))).text).toBe(
+      'owner: first\nassistant: one\n\nowner: fix the login\npeer: also the tests\nassistant: Looking.\n\nFixed both.'
+    )
+    expect((await verb(['read', CODEX_THREAD], from('global'))).text).toBe(
+      'owner: check docs\nassistant: DONE'
+    )
+    expect(touched).toEqual([
+      { tabId: 'wsCond', key: 'fix-id' },
+      { tabId: 'wsCond', key: 'fix-id' },
+      { tabId: 'global', key: CODEX_KEY }
+    ])
+  })
+
+  it('a workspace conductor is told a session in another workspace is not in its workspace, and nothing is read', async () => {
+    const { verb, reads, touched } = harness(live, {}, [], conducting)
+    for (const ref of ['site-build', 'api-id']) {
+      const reply = await verb(['read', ref], from('wsCond'))
+      expect(reply.exit).not.toBe(0)
+      expect(reply.text).toContain(NOT_IN_YOUR_WORKSPACE)
+    }
+    expect(reads).toEqual([])
+    expect(touched).toEqual([])
+  })
+
+  it('read refuses a bad --last, an unknown session and a session still starting', async () => {
+    const { verb, reads } = harness(live, {}, [], conducting)
+    for (const args of [
+      ['read'],
+      ['read', 'fix-id', '--last', '0'],
+      ['read', 'fix-id', '--last', '21'],
+      ['read', 'fix-id', '--first', '2']
+    ])
+      expect(await verb(args, from('global'))).toMatchObject({ exit: EXIT_USAGE })
+    for (const ref of ['nobody', 'starting-tab'])
+      expect((await verb(['read', ref], from('global'))).text).toContain('there is no session')
+    expect(reads).toEqual([])
+  })
+})
+
+describe('koloft workspace list', () => {
+  const rows = sidebar([
+    [WS, [row('a', { running: true }), row('b')]],
+    ['/work/gone', []],
+    ['ssh://box/srv/api', [row('c', { running: true, host: 'ssh' })]]
+  ])
+  const verb = workspaceVerb({
+    conductorScope: (tabId) => ({ global: 'global', wsCond: WS })[tabId],
+    sidebar: () => rows
+  })
+  const caller = (tabId: string) => ({ tabId, cwd: WS, session: session(tabId, 'claude') })
+
+  it('the global conductor gets every sidebar workspace with its path and how many sessions are open', async () => {
+    expect((await verb(['list'], caller('global'))).text.split('\n')).toEqual([
+      `app · ${WS} · 1 open`,
+      'gone · /work/gone · 0 open · folder missing',
+      'api · box:/srv/api · 1 open'
+    ])
+  })
+
+  it('a workspace conductor and a plain session are refused', async () => {
+    for (const tabId of ['wsCond', 'plain'])
+      expect(await verb(['list'], caller(tabId))).toMatchObject({
+        exit: 1,
+        text: ONLY_THE_GLOBAL_CONDUCTOR
+      })
   })
 })

@@ -1,9 +1,19 @@
 import { randomBytes } from 'crypto'
-import type { BackendId, CreateTabOptions, SessionInfo, SessionStatus } from '@shared/types'
+import type {
+  BackendId,
+  CreateTabOptions,
+  SessionInfo,
+  SessionRow,
+  SessionStatus,
+  WorkspaceRows
+} from '@shared/types'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import { isRemoteKey, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { basename } from '@shared/preview'
+import { GLOBAL_SCOPE, scopeName } from '@shared/conductors'
+import { ageLabel } from '@shared/freshnessOps'
+import { MAX_READ_TURNS, type Turn } from '@shared/turns'
 import {
   answered,
   EXIT_USAGE,
@@ -115,6 +125,57 @@ function workspaceLabel(wsPath: string): string {
   return key ? remoteCopyText(key.host, key.path) : wsPath
 }
 
+interface PlacedRow {
+  workspace: string
+  row: SessionRow
+  title: string
+  live?: SessionInfo
+}
+
+function placedRows(sidebar: WorkspaceRows[], sessions: SessionInfo[]): PlacedRow[] {
+  return sidebar.flatMap((w) =>
+    w.rows
+      .filter((row) => !row.pending)
+      .map((row) => {
+        const live = sessions.find((s) => s.alive && s.sessionId === row.id)
+        return { workspace: w.workspace.path, row, title: live?.title ?? row.title, live }
+      })
+  )
+}
+
+function inScope(scope: string | undefined, workspace: string): boolean {
+  return scope === undefined || scope === GLOBAL_SCOPE || scope === workspace
+}
+
+function formatConductorList(placed: PlacedRow[], withWorkspace: boolean, now: number): string {
+  if (placed.length === 0) return 'There are no sessions to look after.'
+  return placed
+    .map(({ workspace, row, title, live: info }) => {
+      const parts = [
+        title,
+        BACKEND_LABEL[row.backendId],
+        parseRemoteKey(workspace)?.host ?? 'local',
+        info ? STATE_WORDS[info.status ?? 'idle'] : 'closed',
+        `last active ${ageLabel(row.mtime, now)}`,
+        `id: ${row.nativeSessionId ?? row.id}`
+      ]
+      if (withWorkspace) parts.push(`workspace: ${workspaceLabel(workspace)}`)
+      return parts.join(' · ')
+    })
+    .join('\n')
+}
+
+function formatTurns(turns: Turn[]): string {
+  return turns
+    .map((turn) =>
+      [
+        ...turn.said.map((line) => `${line.who}: ${line.text}`),
+        ...(turn.reply ? [`assistant: ${turn.reply}`] : [])
+      ].join('\n')
+    )
+    .join('\n\n')
+}
+
 const REMOTE_NOT_YET =
   'the koloft command cannot start a session in a remote (SSH) workspace yet. Pick a workspace on this computer.'
 
@@ -171,9 +232,18 @@ export interface SessionVerbDeps {
   queue(tabId: string, text: string): Promise<void>
   whatIsLeft(tabId: string, session: SessionInfo): Promise<string[]>
   closeSoon(tabId: string, session: SessionInfo): void
+  conductorScope(tabId: string): string | undefined
+  sidebar(): WorkspaceRows[]
+  readTurns(key: string, n: number): Promise<Turn[]>
+  touch(tabId: string, key: string): void
 }
 
-const SESSION_USAGE = 'koloft session: use list, new, send or close. Run "koloft help" to see how.'
+const SESSION_USAGE =
+  'koloft session: use list, read, new, send or close. Run "koloft help" to see how.'
+const READ_USAGE = `koloft session read: give an id or name, and if you like --last <1 to ${MAX_READ_TURNS}>, like: koloft session read fix-login --last 3`
+const CONDUCTOR_LIST_USAGE =
+  'koloft session list: it takes no options here; it lists every session you look after.'
+export const NOT_IN_YOUR_WORKSPACE = 'That session is not in your workspace.'
 const CLOSE_USAGE =
   'koloft session close: it takes no options; it closes the session you run it in.'
 const SEND_USAGE =
@@ -234,12 +304,66 @@ async function startSibling(
   )
 }
 
+function parseReadArgs(rest: string[]): Parsed<{ ref: string; last: number }> {
+  const [ref, flag, value, ...extra] = rest
+  if (!ref || extra.length > 0) return fail(READ_USAGE)
+  if (flag === undefined) return { ok: true, value: { ref, last: 1 } }
+  const last = Number(value)
+  if (flag !== '--last' || !Number.isInteger(last) || last < 1 || last > MAX_READ_TURNS)
+    return fail(READ_USAGE)
+  return { ok: true, value: { ref, last } }
+}
+
+function matching(placed: PlacedRow[], ref: string): PlacedRow[] {
+  const byId = placed.filter((p) => p.row.id === ref || p.row.nativeSessionId === ref)
+  return byId.length > 0 ? byId : placed.filter((p) => p.title === ref)
+}
+
+async function readSession(
+  d: SessionVerbDeps,
+  rest: string[],
+  callerTabId: string
+): Promise<AgentReply> {
+  const args = parseReadArgs(rest)
+  if (!args.ok) return refused(args.error, EXIT_USAGE)
+  const { ref, last } = args.value
+  const scope = d.conductorScope(callerTabId)
+  const all = placedRows(d.sidebar(), d.allSessions())
+  const hits = matching(
+    all.filter((p) => inScope(scope, p.workspace)),
+    ref
+  )
+  if (hits.length > 1)
+    return refused(
+      `koloft session read: ${hits.length} sessions are named "${ref}". Use the id from "koloft session list".`
+    )
+  if (hits.length === 0)
+    return refused(
+      matching(all, ref).length > 0
+        ? `koloft session read: ${NOT_IN_YOUR_WORKSPACE}`
+        : `koloft session read: there is no session "${ref}". Run "koloft session list" to see them.`
+    )
+  const { row, title } = hits[0]
+  const turns = await d.readTurns(row.id, last)
+  d.touch(callerTabId, row.id)
+  return answered(turns.length > 0 ? formatTurns(turns) : `${title} has said nothing yet.`)
+}
+
 export function sessionVerb(d: SessionVerbDeps): AgentVerb {
   return async (args, caller): Promise<AgentReply> => {
     const [sub, ...rest] = args
     const ws = d.workspaceOf(caller.tabId)
     const sessionsIn = (workspace: string): SessionInfo[] =>
       d.allSessions().filter((s) => d.workspaceOf(s.tabId) === workspace)
+    const scope = d.conductorScope(caller.tabId)
+    if (sub === 'list' && scope !== undefined) {
+      if (rest.length > 0) return refused(CONDUCTOR_LIST_USAGE, EXIT_USAGE)
+      const placed = placedRows(d.sidebar(), d.allSessions()).filter((p) =>
+        inScope(scope, p.workspace)
+      )
+      return answered(formatConductorList(placed, scope === GLOBAL_SCOPE, Date.now()))
+    }
+    if (sub === 'read') return readSession(d, rest, caller.tabId)
     if (sub === 'list') {
       const listsOther = rest.length === 2 && rest[0] === '--workspace'
       if (rest.length > 0 && !listsOther) return refused(LIST_USAGE, EXIT_USAGE)
@@ -282,5 +406,32 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       )
     }
     return refused(SESSION_USAGE, EXIT_USAGE)
+  }
+}
+
+export interface WorkspaceVerbDeps {
+  conductorScope(tabId: string): string | undefined
+  sidebar(): WorkspaceRows[]
+}
+
+export const ONLY_THE_GLOBAL_CONDUCTOR =
+  'koloft workspace list: only the global conductor can list workspaces.'
+
+export function workspaceVerb(d: WorkspaceVerbDeps): AgentVerb {
+  return (args, caller) => {
+    if (args.length !== 1 || args[0] !== 'list')
+      return refused('koloft workspace: use list, like: koloft workspace list', EXIT_USAGE)
+    if (d.conductorScope(caller.tabId) !== GLOBAL_SCOPE) return refused(ONLY_THE_GLOBAL_CONDUCTOR)
+    const lines = d
+      .sidebar()
+      .map(({ workspace, rows }) =>
+        [
+          scopeName(workspace.path),
+          workspaceLabel(workspace.path),
+          `${rows.filter((r) => r.running).length} open`,
+          ...(workspace.missing ? ['folder missing'] : [])
+        ].join(' · ')
+      )
+    return answered(lines.join('\n') || "Koloft's sidebar has no workspaces.")
   }
 }

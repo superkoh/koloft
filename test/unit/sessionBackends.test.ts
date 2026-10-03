@@ -40,7 +40,8 @@ const lifecycle = () => ({
   bound: vi.fn(),
   exited: vi.fn(),
   clearAttention: vi.fn(),
-  open: vi.fn()
+  open: vi.fn(),
+  turnEnded: vi.fn()
 })
 
 const row = (id: string, mtime: number): BackendSessionRow => ({

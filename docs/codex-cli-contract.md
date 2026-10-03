@@ -646,3 +646,40 @@ Codex's own full-screen screen from one that prints and exits.
   `codex -i a.png b.png` reads as a prompt, which opens the TUI anyway.
 - That `login` opens no full-screen screen is read off its help text ("Manage login"),
   not checked by running it.
+
+## 19. What a turn said, live and read back
+
+**Checked on 2026-10-03 with Codex CLI 0.159.3, real model turns (`gpt-6.1-sol`).** A Node
+client drove `codex app-server --stdio` with its own `CODEX_HOME` (a copy of this Mac's
+login, deleted afterwards; `check_for_update_on_startup = false`; the work folder trusted),
+`thread/start` with `approvalPolicy: "never"`, `sandbox: "read-only"`. Turn 1 asked for one
+sentence, then `ls`, then `DONE`; turn 2 was sent with `thread/queue/add`.
+
+- **Every message lands as an `item/completed` on the thread, before `turn/completed`.**
+  The owner's text: `{type:"userMessage", id, clientId, content:[{type:"text", text,
+  text_elements:[]}]}`. The model's text: `{type:"agentMessage", id, text, phase, …}`.
+  `item/started` for an `agentMessage` carries `text: ""`; only `item/completed` holds the
+  words.
+- **A turn that runs a tool has more than one `agentMessage`.** Turn 1 gave two, in order:
+  `phase: "commentary"` ("I’ll list the files in this folder.") before the
+  `commandExecution` item, and `phase: "final_answer"` ("DONE\nhello.txt") after it. A turn
+  with no tool gave one `final_answer`.
+- **`turn/completed`'s `turn.items` is a summary** (`itemsView: "summary"`) holding only
+  the `final_answer` message, not the commentary nor the user message.
+- **`clientId` on a `userMessage` is the `clientUserMessageId` given to
+  `thread/queue/add`** (`"koloft-probe-1"`); a message typed in the turn's own
+  `turn/start` has `clientId: null`.
+- **`thread/read` with `includeTurns: true` returns `thread.turns[]`**, each `{id, items,
+  itemsView: "full", status, startedAt, completedAt, durationMs}`, the items in the order
+  the live frames came, with the same shapes (`commandExecution` also carries
+  `aggregatedOutput` here). The same call to a second, fresh `codex app-server` (nothing
+  loaded, `status: {type:"notLoaded"}`) returned the same turns and items.
+- **It is deprecated.** Both reads were preceded by a `deprecationNotice` notification:
+  "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set
+  it to `false`, then page with `thread/turns/list` and `thread/items/list`." (the thread
+  said `historyMode: "paginated"`). Those two methods are not on the list `CodexRpc` lets
+  through; if a later Codex drops `includeTurns`, reading a closed Codex session breaks
+  there first.
+- That the TUI's ephemeral title thread (section 17, its own `temporary-structured-…` id)
+  never sends items under the session's thread id is inferred from section 17, not
+  re-run here: no TUI was attached in this probe.

@@ -111,6 +111,16 @@ export class Conductors {
     return this.ownsTab(id) || this.discord.bindings.some((b) => b.sessionIds.includes(id))
   }
 
+  scopeOfTab(tabId: string): string | undefined {
+    return this.bindingOfTab(tabId)?.scope
+  }
+
+  touch(tabId: string, key: string): void {
+    const b = this.bindingOfTab(tabId)
+    if (b && !b.touched.includes(key))
+      this.update(b.id, (x) => ({ ...x, touched: [...x.touched, key] }))
+  }
+
   noWorkspaceReason(tabId: string): string | undefined {
     const b = this.bindingOfTab(tabId)
     if (!b) return undefined

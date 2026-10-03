@@ -1011,6 +1011,22 @@ function handleLine(line) {
     }, 250)
     return
   }
+  if (text.startsWith('/answer ')) {
+    const question = text.slice('/answer '.length)
+    fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
+    append([
+      { type: 'user', message: { role: 'user', content: question }, cwd },
+      {
+        type: 'assistant',
+        timestamp: new Date().toISOString(),
+        message: { role: 'assistant', content: [{ type: 'text', text: `Answer to: ${question}` }] },
+        cwd
+      }
+    ])
+    fireHook('stop', { hook_event_name: 'Stop' })
+    process.stdout.write(`[fake-claude] answered: ${question}\r\n> `)
+    return
+  }
   if (text === '/need-approval') {
     fireHook('notify', {
       hook_event_name: 'Notification',

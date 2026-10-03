@@ -115,6 +115,15 @@ if (argv[0] === 'app-server') {
       fs.unlinkSync(file('fake-codex-next-title'))
       thread.name = desired
     } else thread.name ||= thread.preview.slice(0, 60) || 'Codex fixture session'
+    const asked = turn.items.find((item) => item.type === 'userMessage')?.content[0].text
+    const reply = {
+      type: 'agentMessage',
+      id: crypto.randomUUID(),
+      text: `Codex fixture answered: ${asked}`,
+      phase: 'final_answer'
+    }
+    turn.items.push(reply)
+    event('item/completed', { threadId: thread.id, turnId: turn.id, item: reply })
     thread.turns.push(turn)
     status(thread, { type: 'idle' })
     event('thread/name/updated', { threadId: thread.id, threadName: thread.name })
@@ -225,6 +234,14 @@ if (argv[0] === 'app-server') {
       result(id, { turn })
       status(thread, { type: 'active', activeFlags: [] })
       event('turn/started', { threadId: thread.id, turn })
+      const asked = {
+        type: 'userMessage',
+        id: crypto.randomUUID(),
+        clientId: null,
+        content: [{ type: 'text', text, text_elements: [] }]
+      }
+      turn.items.push(asked)
+      event('item/completed', { threadId: thread.id, turnId: turn.id, item: asked })
       if (text.startsWith('open ')) {
         const shell = spawnSync('/bin/zsh', ['-lc', text], { cwd: thread.cwd, encoding: 'utf8' })
         event('item/completed', {

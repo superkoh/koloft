@@ -10,17 +10,26 @@ let encodeCwd: typeof import('../../src/main/sessionTracker').encodeCwd
 let scratchpadDirFor: typeof import('../../src/main/sessionTracker').scratchpadDirFor
 let tasksDirFor: typeof import('../../src/main/sessionTracker').tasksDirFor
 let classifyUserPrompt: typeof import('../../src/main/sessionTracker').classifyUserPrompt
+let transcriptTurns: typeof import('../../src/main/sessionTracker').transcriptTurns
 let home: string
 let projectsRoot: string
 const RELOCATE_SETTLE_STRETCHED_PAST_THE_500MS_FILE_POLL_MS = '2000'
+const TURN_TEXT_WAIT_SHORTENED_MS = 1500
 
 beforeAll(async () => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-tracker-home-'))
   process.env.HOME = home
   process.env.KOLOFT_RELOCATE_SETTLE_MS = RELOCATE_SETTLE_STRETCHED_PAST_THE_500MS_FILE_POLL_MS
+  process.env.KOLOFT_TURN_TEXT_WAIT_MS = String(TURN_TEXT_WAIT_SHORTENED_MS)
   projectsRoot = path.join(home, '.claude', 'projects')
-  ;({ SessionTracker, encodeCwd, scratchpadDirFor, tasksDirFor, classifyUserPrompt } =
-    await import('../../src/main/sessionTracker'))
+  ;({
+    SessionTracker,
+    encodeCwd,
+    scratchpadDirFor,
+    tasksDirFor,
+    classifyUserPrompt,
+    transcriptTurns
+  } = await import('../../src/main/sessionTracker'))
 })
 
 afterAll(() => {
@@ -1701,5 +1710,139 @@ describe("a tab whose claude runs on another machine: its transcript lives in a 
       })
     ])
     expect(s.lastWritten).toBe('/home/koh/api/docs/plan.md')
+  })
+})
+
+// CC§2 CC§13
+describe('SessionTracker — what each turn said: the owner, another session, and the reply', () => {
+  const at = (s: number): string => new Date(Date.UTC(2026, 9, 3, 4, 29, s)).toISOString()
+  const human = (text: string, s: number): unknown => ({
+    type: 'user',
+    origin: { kind: 'human' },
+    isSidechain: false,
+    timestamp: at(s),
+    message: { role: 'user', content: text }
+  })
+  const said = (block: unknown, s: number, over: object = {}): unknown => ({
+    type: 'assistant',
+    isSidechain: false,
+    timestamp: at(s),
+    message: { role: 'assistant', content: [block] },
+    ...over
+  })
+  const text = (t: string): unknown => ({ type: 'text', text: t })
+  const bash = { type: 'tool_use', id: 'toolu_1', name: 'Bash', input: { command: 'sleep 15' } }
+  const toolResult = (s: number): unknown => ({
+    type: 'user',
+    isSidechain: false,
+    timestamp: at(s),
+    message: { role: 'user', content: [{ tool_use_id: 'toolu_1', type: 'tool_result' }] }
+  })
+  const queued = (prompt: string, kind: string, s: number): unknown => ({
+    type: 'attachment',
+    isSidechain: false,
+    timestamp: at(s),
+    attachment: { type: 'queued_command', prompt, commandMode: 'prompt', origin: { kind } }
+  })
+  const transcript = [
+    human('Run exactly this bash command: sleep 15; echo DONE1', 1),
+    said({ type: 'thinking' }, 2),
+    said(text('Running it.'), 3),
+    said(bash, 4),
+    { type: 'queue-operation', operation: 'enqueue', content: 'say the word KIWI' },
+    toolResult(5),
+    queued('say the word KIWI', 'human', 6),
+    said(text('DONE1\n\nKIWI'), 7),
+    { type: 'system', subtype: 'stop_hook_summary', timestamp: at(8) },
+    {
+      type: 'user',
+      isMeta: true,
+      origin: { kind: 'peer', from: 'unknown', verifiedPeerPid: 66273 },
+      timestamp: at(10),
+      message: {
+        role: 'user',
+        content:
+          'Another Claude session sent a message:\nsay the word LYCHEE\n\nThis came from another Claude session — not typed by your user, but very likely working on their behalf.'
+      }
+    },
+    said(text('LYCHEE'), 11),
+    said(text('a subagent talking'), 12, { isSidechain: true }),
+    human('Run exactly this bash command: sleep 15; echo DONE2', 13),
+    said(bash, 14),
+    queued('say the word LYCHEE2', 'peer', 15),
+    toolResult(16),
+    {
+      type: 'user',
+      origin: { kind: 'task-notification' },
+      timestamp: at(17),
+      message: { role: 'user', content: '<task-notification><status>completed</status>' }
+    },
+    { type: 'user', isMeta: true, timestamp: at(18), message: { content: 'a caveat' } },
+    human('[Request interrupted by user]', 19),
+    said(text('Done. Command executed and returned DONE2.\n\nLYCHEE2'), 20)
+  ]
+
+  it('reads a transcript: a prompt typed while idle opens a turn, one typed or sent while busy joins it, and every text block of the reply is kept', async () => {
+    const cwd = makeWorkspace({})
+    const file = writeJsonl(cwd, '22222222-2222-4222-8222-222222222222', transcript)
+    const turns = await transcriptTurns(file, 20)
+    expect(
+      turns.map(({ said, reply }) => ({ said: said.map((l) => [l.who, l.text]), reply }))
+    ).toEqual([
+      {
+        said: [
+          ['owner', 'Run exactly this bash command: sleep 15; echo DONE1'],
+          ['owner', 'say the word KIWI']
+        ],
+        reply: 'Running it.\n\nDONE1\n\nKIWI'
+      },
+      { said: [['peer', 'say the word LYCHEE']], reply: 'LYCHEE' },
+      {
+        said: [
+          ['owner', 'Run exactly this bash command: sleep 15; echo DONE2'],
+          ['peer', 'say the word LYCHEE2']
+        ],
+        reply: 'Done. Command executed and returned DONE2.\n\nLYCHEE2'
+      }
+    ])
+    expect((await transcriptTurns(file, 1)).map((t) => t.said[0].text)).toEqual([
+      'Run exactly this bash command: sleep 15; echo DONE2'
+    ])
+  })
+
+  it('a Stop that comes before the reply is on disk waits for it, ends the turn once, and the live log keeps the history read at bind', async () => {
+    const cwd = makeWorkspace({})
+    const tracker = newTracker()
+    const ended: { tabId: string; turn: { said: { text: string }[]; reply: string } }[] = []
+    tracker.on('turn-ended', (e) => ended.push(e))
+    tracker.track('tabTurn', cwd)
+    const sid = '33333333-3333-4333-8333-333333333333'
+    const file = writeJsonl(cwd, sid, [
+      human('earlier question', 1),
+      said(text('earlier answer'), 2)
+    ])
+    tracker.bindSession('tabTurn', file, sid, cwd)
+    await waitFor(tracker, (x) => x.tabId === 'tabTurn' && x.status === 'waiting' && !!x.title)
+
+    fs.appendFileSync(file, JSON.stringify(human('fix the login', 30)) + '\n')
+    fs.appendFileSync(file, JSON.stringify(said(text('Looking.'), 31)) + '\n')
+    fs.appendFileSync(file, JSON.stringify(said(bash, 32)) + '\n')
+    tracker.receive('tabTurn', { type: 'stop' })
+    setTimeout(
+      () => fs.appendFileSync(file, JSON.stringify(said(text('Fixed.'), 33)) + '\n'),
+      TURN_TEXT_WAIT_SHORTENED_MS / 3
+    )
+    await expect.poll(() => ended.length, { timeout: TURN_TEXT_WAIT_SHORTENED_MS * 4 }).toBe(1)
+    expect(ended[0].tabId).toBe('tabTurn')
+    expect(ended[0].turn.said.map((l) => l.text)).toEqual(['fix the login'])
+    expect(ended[0].turn.reply).toBe('Looking.\n\nFixed.')
+
+    tracker.receive('tabTurn', { type: 'stop' })
+    await new Promise((r) => setTimeout(r, TURN_TEXT_WAIT_SHORTENED_MS * 1.5))
+    expect(ended).toHaveLength(1)
+    expect(tracker.turnsOf(sid, 5)?.map((t) => t.reply)).toEqual([
+      'earlier answer',
+      'Looking.\n\nFixed.'
+    ])
   })
 })

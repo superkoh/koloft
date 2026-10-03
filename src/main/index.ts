@@ -22,7 +22,8 @@ import { anotherLiveInstanceOwns, PtyManager } from './ptyManager'
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { FlowGate } from './flowControl'
-import { SessionTracker } from './sessionTracker'
+import { EventEmitter } from 'events'
+import { findTranscript, SessionTracker, transcriptTurns } from './sessionTracker'
 import type { StatusEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
 import { SessionBackends } from './sessionBackends'
@@ -30,8 +31,10 @@ import {
   BACKEND_LABEL,
   backendIdOf,
   capabilitiesFor,
+  identityOf,
   SUPPORTED_PAIRS
 } from '@shared/sessionBackend'
+import type { Turn, TurnEnded } from '@shared/turns'
 import { AttentionTracker, type AttentionContext } from './attention'
 import { loadLastRunAttention, saveAttention } from './attentionFile'
 import { route, dockBadgeText } from './notifyRouter'
@@ -251,7 +254,7 @@ import { runningClaudePid } from './claudeSessionRegistry'
 import { CHANNEL_LINK_PROBLEM } from '@shared/conductors'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
-import { sessionVerb } from './agentSessions'
+import { sessionVerb, workspaceVerb } from './agentSessions'
 import { closingTree, removeTree, whatIsLeft } from './sessionClose'
 import { claudePeerNames } from './claudeSessionRegistry'
 import { discordTokenRead, discordTokenWrite } from './accounts'
@@ -282,7 +285,12 @@ let flushHeldData: () => void = () => {}
 const tracker = new SessionTracker()
 let codexSessions: CodexSessions | null = null
 let codexStartupError: string | undefined
+const turnsEnded = new EventEmitter<{ 'turn-ended': [TurnEnded] }>()
 const sessionBackends = new SessionBackends({
+  turnEnded: (tabId, turn) => {
+    const sessionKey = sessionOfTab(tabId)?.sessionId
+    if (sessionKey) turnsEnded.emit('turn-ended', { ...turn, tabId, sessionKey })
+  },
   prompted: consumeOutletDedupe,
   bound: (tabId, key) => {
     attention.bound(tabId, key, attentionCtx())
@@ -299,6 +307,9 @@ const sessionBackends = new SessionBackends({
 function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
+tracker.on('turn-ended', ({ tabId, turn }: { tabId: string; turn: Turn }) =>
+  sessionBackends.observe(tabId, { type: 'turn-ended', turn })
+)
 tracker.pidOf = (tabId) => ptyMgr.pidOf(tabId)
 const dirtyTabIds = new Set<string>()
 tracker.activeTabId = () => uiActiveTabId
@@ -606,6 +617,21 @@ function notesFileOfPinned(workspace: string): string | undefined {
   return workspaceMgr?.isPinned(workspace) ? ensureNotesFile(notesBaseDir(), workspace) : undefined
 }
 
+async function readTurns(key: string, n: number): Promise<Turn[]> {
+  if (identityOf(key).backendId === 'codex') {
+    if (!codexSessions) return []
+    return codexSessions.turnsOf(key, n) ?? codexSessions.readTurns(key, n)
+  }
+  const live = tracker.turnsOf(key, n)
+  if (live) return live
+  const remote = parseRemoteKey(workspaceMgr?.workspaceOf(key) ?? '')
+  const root = remote
+    ? mirrorProjectsRoot(app.getPath('userData'), remote.host)
+    : path.join(os.homedir(), '.claude', 'projects')
+  const file = findTranscript(root, key)
+  return file ? transcriptTurns(file, n) : []
+}
+
 function unlessWorkspacelessConductor(verb: AgentVerb): AgentVerb {
   return (args, caller) => {
     const reason = conductors?.noWorkspaceReason(caller.tabId)
@@ -647,7 +673,15 @@ const agentRequests = new AgentRequests({
         setTimeout(
           () => void closeSessionFully(tabId, session),
           CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS
-        )
+        ),
+      conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
+      sidebar: () => workspaceMgr?.rows() ?? [],
+      readTurns,
+      touch: (tabId, key) => conductors?.touch(tabId, key)
+    }),
+    workspace: workspaceVerb({
+      conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
+      sidebar: () => workspaceMgr?.rows() ?? []
     })
   },
   tab: (tabId) => ptyMgr.get(tabId),

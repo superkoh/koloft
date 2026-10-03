@@ -203,6 +203,19 @@ mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
 - **Tool file paths are all but always absolute**: 17 relative out of 18,035 (0.094%),
   every one a `Read`, all in a single repository. A relative one means a file under the
   directory CC stood in on that line, so it has to be resolved as it is read, once.
+- **A message typed while claude is busy writes no `user` record.** Measured 2026-10-02,
+  CC 2.1.288, interactive session in a scratch `HOME`: a line typed during a running
+  `Bash` call left a `queue-operation` record `{operation:"enqueue", content:<text>}`,
+  then `{operation:"remove", reason:"absorbed_mid_turn"}`, then an `attachment` record
+  `{type:"queued_command", prompt:<text>, commandMode:"prompt", origin:{kind:"human"},
+  humanTurn:true}`; the reply came later in the same turn, before one Stop. A line typed
+  while idle is a plain `user` record with `origin: {kind:"human"}`. Other `user` records
+  carry `origin.kind` `task-notification` (`isMeta` false) or `channel`, and older ones no
+  `origin` at all. A sweep of 80 recent transcripts on this Mac (CC 2.1.285–2.1.288,
+  2026-10-03): `queued_command` attachments were 9 `prompt`/`human`, 2 `prompt`/`peer`
+  (§13), 3 `prompt`/`channel`, 89 `task-notification`; `user` records 261 `human`, 193
+  `task-notification`, 7 `channel` and 4 `peer`; every assistant record held at most one
+  `text` block, and no `(message.id, text)` pair repeated.
 - **CC deletes transcripts itself**: `claude project purge [path]` — "Delete all Claude
   Code state for a project (transcripts, tasks, file history, config entry)"
   (`claude project --help`, 2.1.281, 2026-09-24).
@@ -967,3 +980,14 @@ sessions.
   reply arrived in the sender. The `SendMessage` tool text says a session in a
   different permission mode holds such messages for its user's approval — read, not
   measured.
+- **How a message from another session lands in the receiver's transcript** (2026-10-02,
+  CC 2.1.288, interactive sessions in a scratch `HOME`, the message sent as one
+  `{"type":"user",…}` line to the receiver's `messagingSocketPath`, §11). When the
+  receiver was idle: a `user` record with `isMeta: true`, `origin: {kind:"peer",
+  from:"unknown", verifiedPeerPid}`, `turnOrigin: "peer"`, and the text wrapped as
+  `"Another Claude session sent a message:\n<text>\n\nThis came from another Claude
+  session — not typed by your user, …"`. When the receiver was in the middle of a turn: no
+  `user` record; a `queued_command` attachment (shape in §2) with `origin.kind: "peer"`
+  and `isMeta: true`, whose `prompt` holds the bare text. A sweep of 80 recent
+  transcripts on this Mac (CC 2.1.285–2.1.288, 2026-10-03) found 4 `user` records with
+  `origin.kind: "peer"`, all `isMeta: true`.

@@ -79,6 +79,14 @@ A workspace is a folder in Koloft's sidebar. Where a command takes --workspace, 
 
 koloft session list [--workspace <workspace>]
     List a workspace's sessions: name and state (working, waiting for the owner, or idle). For a Claude session it also prints the path of its transcript (the file that holds its conversation).
+    A conductor (the session the owner talks to through Discord) takes no options here and gets every session it looks after, open or closed: name, Claude or Codex, the machine it runs on, its state (working, waiting for the owner, idle or closed), when it was last active, and its id. The global conductor also gets each session's workspace.
+
+koloft session read <id or name> [--last <number>]
+    Print what was said in a session's last turns (1 if you leave out --last, at most 20): the owner's messages, messages from other sessions, and the session's replies. Works for Claude and Codex sessions, open or closed.
+    Example: koloft session read fix-login --last 3
+
+koloft workspace list
+    Only for the global conductor: list the workspaces in Koloft's sidebar, with each one's path and how many of its sessions are open.
 
 koloft session new [--name <name>] [--workspace <workspace>] [-w <worktree name>] [--model <model>] -- "<first message>"
     Start a sibling session of your own kind (Claude starts Claude, Codex starts Codex), and print the name to reach it by. It starts in this workspace, or in the one --workspace names; a remote (SSH) workspace is not allowed. A Codex session has no name, so you get its tab id instead; its session id shows in "koloft session list" once it starts, and "koloft session send" takes either. -w starts it in its own git worktree (a separate copy of the repository).
@@ -101,7 +109,7 @@ WEB PAGES (Claude only)
 To use the web pages in this session's Workbench, drive them with Playwright (a tool that controls a browser): the playwright-cli command or the Playwright MCP tools. When the owner allows it, they already connect to the Workbench browser; its address is in $KOLOFT_BROWSER_CDP. Codex sessions cannot do this.`
 
 export const AGENT_SKILL_DESCRIPTION =
-  'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the workspace note, list, add, change or run scheduled tasks, list and start sibling sessions, or close this session and its worktree for good. Read this before running any koloft command.'
+  'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the workspace note, list, add, change or run scheduled tasks, list and start sibling sessions, read what a session said, or close this session and its worktree for good. Read this before running any koloft command.'
 
 export function conductorRole(scope: string): string {
   const remote = parseRemoteKey(scope)

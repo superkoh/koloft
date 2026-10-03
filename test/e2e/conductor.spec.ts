@@ -1,15 +1,18 @@
 import fs from 'fs'
 import path from 'path'
-import type { Locator, Page } from '@playwright/test'
+import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
 import {
   centerTerm,
+  newSessionInWith,
   notesIsland,
   openMenu,
   readCalls,
   runIn,
+  sendShortcut,
   settingsOnDisk,
+  startSessionIn,
   waitBooted,
   waitForCalls,
   wsRows
@@ -77,7 +80,9 @@ function shownTermText(page: Page): Promise<string> {
               buffer: {
                 active: {
                   length: number
-                  getLine(i: number): { translateToString(trim?: boolean): string } | undefined
+                  getLine(
+                    i: number
+                  ): { isWrapped: boolean; translateToString(trim?: boolean): string } | undefined
                 }
               }
             }
@@ -89,20 +94,34 @@ function shownTermText(page: Page): Promise<string> {
       if (!t.element || !wrap || wrap.getClientRects().length === 0) continue
       const b = t.buffer.active
       let text = ''
-      for (let i = 0; i < b.length; i++)
-        text += (b.getLine(i)?.translateToString(true) ?? '') + '\n'
+      for (let i = 0; i < b.length; i++) {
+        const line = b.getLine(i)
+        if (line) text += (i === 0 || line.isWrapped ? '' : '\n') + line.translateToString(true)
+      }
       return text
     }
     return ''
   })
 }
 
-async function launched(env: E2EEnv): Promise<{ page: Page; close: () => Promise<void> }> {
+async function koloftSays(page: Page, args: string): Promise<string> {
+  const exits = async (): Promise<number> =>
+    (await shownTermText(page)).split('[fake-claude] koloft exit=').length
+  const before = await exits()
+  await runIn(page, centerTerm(page), `/koloft ${args}`)
+  await expect.poll(exits, { timeout: KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS }).toBe(before + 1)
+  const parts = (await shownTermText(page)).split('[fake-claude] koloft exit=')
+  return parts[parts.length - 2]
+}
+
+async function launched(
+  env: E2EEnv
+): Promise<{ app: ElectronApplication; page: Page; close: () => Promise<void> }> {
   seedSettings(env, { hintsOff: true })
   const app = await launchApp(env)
   const page = await app.firstWindow()
   await waitBooted(page)
-  return { page, close: () => quitAndClose(app) }
+  return { app, page, close: () => quitAndClose(app) }
 }
 
 test.describe('Conductors: a session bound to a Discord channel, kept in its own island and out of every workspace list', () => {
@@ -228,6 +247,74 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
       expect(readCalls(env)).toEqual([])
       await page.waitForTimeout(ROWS_RESCAN_AND_PUSH_SETTLE_MS)
       await expect(wsRows(page, 'ws-a')).toHaveCount(0)
+    } finally {
+      await close()
+    }
+  })
+
+  test('a workspace conductor lists a closed session of its workspace, reads what was said in it, marks it touched, and is refused a session of another workspace', async ({
+    env
+  }) => {
+    const { app, page, close } = await launched(env)
+    try {
+      await startSessionIn(page, 'ws-a')
+      const asked = (await waitForCalls(env, 1))[0].sessionId
+      await runIn(page, centerTerm(page), '/answer two plus two')
+      await expect.poll(() => shownTermText(page)).toContain('answered: two plus two')
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/cold/)
+      await startSessionIn(page, 'ws-b')
+      const elsewhere = (await waitForCalls(env, 2))[1].sessionId
+
+      await bindFromWorkspaceMenu(page, 'ws-a', { link: LINK_A })
+      await openConductor(page, 'ws-a')
+      const listed = await koloftSays(page, 'session list')
+      expect(listed).toContain('· Claude · local · closed · last active')
+      expect(listed).toContain(`id: ${asked}`)
+      expect(listed).not.toContain(elsewhere)
+
+      const said = await koloftSays(page, `session read ${asked}`)
+      expect(said).toContain('owner: two plus two')
+      expect(said).toContain('assistant: Answer to: two plus two')
+      expect(bindingsOnDisk(env)[0].touched).toEqual([asked])
+
+      expect(await koloftSays(page, `session read ${elsewhere}`)).toContain(
+        'That session is not in your workspace.'
+      )
+    } finally {
+      await close()
+    }
+  })
+
+  test('the global conductor lists the sidebar workspaces, and lists and reads a closed Codex session with its workspace', async ({
+    env
+  }) => {
+    installCodex(env)
+    const { app, page, close } = await launched(env)
+    try {
+      await newSessionInWith(page, 'ws-b', 'Codex')
+      await expect(wsRows(page, 'ws-b')).toHaveClass(/st-waiting/, { timeout: 60_000 })
+      const codexId = (
+        JSON.parse(
+          fs.readFileSync(path.join(env.home, 'fake-codex-calls.jsonl'), 'utf8').split('\n')[0]
+        ) as { sessionId: string }
+      ).sessionId
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(wsRows(page, 'ws-b')).toHaveClass(/cold/)
+
+      await bindFromWorkspaceMenu(page, 'ws-a', { scope: 'Global', link: LINK_A })
+      await openConductor(page, 'Global')
+      const workspaces = await koloftSays(page, 'workspace list')
+      expect(workspaces).toContain(`ws-a · ${env.workspaces.a} · 0 open`)
+      expect(workspaces).toContain(`ws-b · ${env.workspaces.b} · 0 open`)
+
+      const listed = await koloftSays(page, 'session list')
+      expect(listed).toContain('· Codex · local · closed · last active')
+      expect(listed).toContain(`id: ${codexId} · workspace: ${env.workspaces.b}`)
+
+      const said = await koloftSays(page, `session read ${codexId}`)
+      expect(said).toContain('owner: Codex fixture session')
+      expect(said).toContain('assistant: Codex fixture answered: Codex fixture session')
     } finally {
       await close()
     }
