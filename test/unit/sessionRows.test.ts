@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import type { WorkspaceRows } from '../../src/shared/types'
+import type { AttentionEvent, WorkspaceRows } from '../../src/shared/types'
 import {
   clampNotesHeight,
   isOrphanRow,
   marqueeAnim,
   mixesBackends,
+  nextWaitingTab,
   paneWidthFromDrag,
   PREVIEW_CARD_WIDTH_PX,
   previewCardFits,
@@ -435,5 +436,39 @@ describe('mixesBackends (when a row list shows method icons)', () => {
 
   it('stays off for Codex rows alone — a lone icon has nothing to contrast with', () => {
     expect(mixesBackends([{ backendId: 'codex' }])).toBe(false)
+  })
+})
+
+describe('nextWaitingTab (⌘J: the session that has waited longest for you)', () => {
+  const tabs = [{ id: 'a' }, { id: 'b' }, { id: 'c' }]
+
+  it('picks the oldest mark of any kind, whatever order the list holds them in', () => {
+    const pending: AttentionEvent[] = [
+      { tabId: 'a', kind: 'turn-done', at: 30 },
+      { tabId: 'b', kind: 'exited', at: 10 },
+      { tabId: 'c', kind: 'approval', at: 20 }
+    ]
+    expect(nextWaitingTab(pending, null, tabs)).toBe('b')
+  })
+
+  it('skips the tab you are already on', () => {
+    const pending: AttentionEvent[] = [
+      { tabId: 'a', kind: 'turn-done', at: 10 },
+      { tabId: 'b', kind: 'turn-done', at: 20 }
+    ]
+    expect(nextWaitingTab(pending, 'a', tabs)).toBe('b')
+  })
+
+  it('skips a mark whose tab is gone, so the press lands on a live session instead of silently clearing that mark', () => {
+    const pending: AttentionEvent[] = [
+      { tabId: 'gone', kind: 'turn-done', at: 1 },
+      { tabId: 'c', kind: 'approval', at: 20 }
+    ]
+    expect(nextWaitingTab(pending, null, tabs)).toBe('c')
+  })
+
+  it('answers nothing when nothing else waits', () => {
+    expect(nextWaitingTab([], null, tabs)).toBeUndefined()
+    expect(nextWaitingTab([{ tabId: 'a', kind: 'turn-done', at: 1 }], 'a', tabs)).toBeUndefined()
   })
 })

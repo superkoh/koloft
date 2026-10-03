@@ -17,6 +17,7 @@ export function setupAppMenu(
       | 'save'
       | 'toggle-keep-awake'
       | 'focus-notes'
+      | 'next-waiting-session'
       | 'toggle-sidebar'
       | 'open-settings'
   ) => void,
@@ -166,6 +167,12 @@ export function setupAppMenu(
         label: 'Notes',
         accelerator: 'Alt+CmdOrCtrl+N',
         click: () => onShortcut('focus-notes')
+      },
+      {
+        id: 'next-waiting-session',
+        label: 'Next Waiting Session',
+        accelerator: 'CmdOrCtrl+J',
+        click: () => onShortcut('next-waiting-session')
       },
       { type: 'separator' },
       browserItem('browser-new-tab', 'New Browser Tab'),

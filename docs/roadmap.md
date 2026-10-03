@@ -31,8 +31,6 @@ when it works. That is what "judged against" means.
   (Codex aside, #116). `claude -w` already copies `.worktreeinclude` files and runs
   `WorktreeCreate` hooks, so Koloft's part is the Codex worktrees it makes and the port
   offset for both.
-- **Jump to the next waiting session** — one shortcut cycles through the sessions waiting
-  for you, across workspaces (#216). A grouped sidebar view is not part of it.
 - **Broadcast input** — type once, send to the sessions you selected. The workspace →
   session tree is the first reliable "select N sessions" unit Koloft has had, so the
   scope is unambiguous: the rows you picked, nothing implied.
@@ -121,8 +119,8 @@ Reopen one of these only with new evidence, not a new argument.
 - **Auto-archive a session when its PR merges** — retention belongs to the agent's tool
   (idea 4), and a closed session is meant to stay listed as a cold row.
 - **A grouped "waiting / working / ready" sidebar view** — the sidebar carries no roll-up
-  (pinned by `attention-outlets.spec.ts`); the jump shortcut in Tier 1 answers the same
-  need.
+  (pinned by `attention-outlets.spec.ts`); ⌘J, which jumps to the session that has waited
+  longest, answers the same need.
 - **Kanban or task boards** — pulls Koloft toward a project tracker; the session tree is
   the board.
 - **Per-session sandboxing (Seatbelt, Docker)** — the tools ship their own sandboxes.

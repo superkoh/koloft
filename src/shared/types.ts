@@ -914,6 +914,7 @@ export interface KoloftApi {
   shortcuts: {
     onNewTerminalTab(cb: () => void): () => void
     onFocusNotes(cb: () => void): () => void
+    onNextWaitingSession(cb: () => void): () => void
     onToggleSidebar(cb: () => void): () => void
     onNewSession(cb: () => void): () => void
     onNewWorktreeSession(cb: () => void): () => void
