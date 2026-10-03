@@ -214,7 +214,7 @@ export function utilShellLine(s: UtilShellLineSpec): string {
   const run = `sh "$HOME/.koloft/${s.machine.name}/util.sh" ${shq(s.dir)} ${s.tabId}`
   return (
     `${machineReady(s)} || { ${COULD_NOT_CONNECT}; exit 4; }; ` +
-    `clear; ssh -t ${s.sshOptions.join(' ')} ${shq(s.host)} ${shq(run)} $COLUMNS $LINES; exit`
+    `clear; ssh -t ${s.sshOptions.join(' ')} ${shq(s.host)} ${shq(run)}" $COLUMNS $LINES"; exit`
   )
 }
 
