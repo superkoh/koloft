@@ -73,10 +73,10 @@ describe('SessionStore', () => {
     store.upsertMember(first)
     store.upsertMember(second)
     store.removeMember(first.key)
-    store.removeUnusedResource(worktree.id)
+    store.removeUnusedResourcesAt(worktree.worktreePath)
     expect(store.getResource(worktree.id)).toEqual(worktree)
     store.removeMember(second.key)
-    store.removeUnusedResource(worktree.id)
+    store.removeUnusedResourcesAt(worktree.worktreePath)
     expect(new SessionStore(filename).getResource(worktree.id)).toBeUndefined()
   })
 

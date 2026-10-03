@@ -2257,16 +2257,22 @@ function killTabPty(tabId: string): Promise<boolean> {
   )
 }
 
+function archiveSession(id: string): boolean {
+  const archived = sessionBackends.forSession(id).archive(id)
+  if (archived) attention.clearSession(id)
+  return archived
+}
+
 const CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS = 1_000
 
 async function whatClosingWouldLose(tabId: string, session: SessionInfo): Promise<string[]> {
   const tree = await closingTree(localGitOut, projectInfoFor(session.treeRoot))
   if (!tree) return []
   const sharing = allSessions().filter(
-    (s) => s.tabId !== tabId && s.alive && projectInfoFor(s.treeRoot).treeRoot === tree.dir
+    (s) => s.tabId !== tabId && s.alive && projectInfoFor(s.treeRoot).treeRoot === tree.treeRoot
   )
   return [
-    ...sharing.map((s) => `The session "${s.title}" is still open in ${tree.dir}.`),
+    ...sharing.map((s) => `The session "${s.title}" is still open in ${tree.treeRoot}.`),
     ...(await whatIsLeft(localGitOut, tree))
   ]
 }
@@ -2276,21 +2282,13 @@ async function closeSessionFully(tabId: string, session: SessionInfo): Promise<v
   sendToRenderer('tab:killedByMain', tabId)
   await killTabPty(tabId)
   const tree = await closingTree(localGitOut, info)
-  if (tree) {
-    const left = await whatIsLeft(localGitOut, tree)
-    const problem = left.length
-      ? `kept ${tree.dir}. ${left.join(' ')}`
-      : await removeTree(localGitOut, tree)
-    if (problem) {
-      sendToRenderer('cron:toast', `${session.title}: ${problem}`)
-      return
-    }
+  const problem = tree && (await removeTree(localGitOut, tree))
+  if (problem) {
+    sendToRenderer('cron:toast', `${session.title}: ${problem}`)
+    return
   }
-  if (sessionBackends.forSession(session.sessionId).archive(session.sessionId))
-    attention.clearSession(session.sessionId)
-  for (const resource of codexSessions?.store.listResources() ?? [])
-    if (resource.worktreePath === info.treeRoot)
-      codexSessions?.store.removeUnusedResource(resource.id)
+  archiveSession(session.sessionId)
+  codexSessions?.store.removeUnusedResourcesAt(info.treeRoot)
 }
 
 function worktreeHomeOf(root: string): string {
@@ -2782,9 +2780,7 @@ function registerIpc(): void {
   })
   ipcMain.handle('sessions:archive', (_e, id: unknown): boolean => {
     if (typeof id !== 'string' || !id) return false
-    const archived = sessionBackends.forSession(id).archive(id)
-    if (archived) attention.clearSession(id)
-    return archived
+    return archiveSession(id)
   })
 
   ipcMain.on('sessions:setResident', (_e, id: unknown, on: unknown) => {

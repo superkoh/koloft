@@ -156,11 +156,14 @@ export class SessionStore {
       : undefined
   }
 
-  removeUnusedResource(id: string): void {
-    if (!Object.hasOwn(this.data.resources, id)) return
-    if (Object.values(this.data.members).some((m) => m.worktreeResourceId === id)) return
+  removeUnusedResourcesAt(worktreePath: string): void {
+    const used = new Set(Object.values(this.data.members).map((m) => m.worktreeResourceId))
+    const gone = Object.values(this.data.resources).filter(
+      (r) => r.worktreePath === worktreePath && !used.has(r.id)
+    )
+    if (gone.length === 0) return
     const next = structuredClone(this.data)
-    delete next.resources[id]
+    for (const r of gone) delete next.resources[r.id]
     this.commit(next)
   }
 
