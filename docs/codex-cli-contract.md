@@ -294,6 +294,11 @@ no key.
   inside the repository folder, so whether the table covers it as a sub-folder or as a
   linked worktree was not told apart; a linked worktree outside the repository is not
   probed yet.
+- **Codex CLI 0.159.3 (2026-10-02) asks again in the linked worktree**: an e2e run on
+  the real binary, with `[projects."<repo real path>"]` `trust_level = "trusted"` in its
+  `CODEX_HOME/config.toml` (written by the test and by Koloft), showed "Folder access …
+  Trust this folder?" for `<repo>/.claude/worktrees/<name>`. A second table for the
+  worktree path itself stopped it.
 - Unanswered, the question left `config.toml` byte-for-byte unchanged.
 - What Codex writes when a person answers **No** was not tried. That it writes a
   table for the folder (so Koloft, which leaves any existing table alone, never
