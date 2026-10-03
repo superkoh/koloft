@@ -169,9 +169,13 @@ export interface SessionVerbDeps {
   peerNames(): (sessionId: string) => Promise<string | null>
   launch(options: CreateTabOptions & { kind: BackendId }): Promise<string | null>
   queue(tabId: string, text: string): Promise<void>
+  whatIsLeft(tabId: string, session: SessionInfo): Promise<string[]>
+  closeSoon(tabId: string, session: SessionInfo): void
 }
 
-const SESSION_USAGE = 'koloft session: use list, new or send. Run "koloft help" to see how.'
+const SESSION_USAGE = 'koloft session: use list, new, send or close. Run "koloft help" to see how.'
+const CLOSE_USAGE =
+  'koloft session close: it takes no options; it closes the session you run it in.'
 const SEND_USAGE =
   'koloft session send: give an id or name, then the message, like: koloft session send <id> "Tell me what you found."'
 const NO_WORKSPACE = 'koloft session: Koloft does not know which workspace this session is in.'
@@ -264,6 +268,18 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       if (!target.ok) return refused(`koloft session send: ${target.error}`)
       await d.queue(target.value.tabId, text)
       return answered(`Sent to ${target.value.title}.`)
+    }
+    if (sub === 'close') {
+      if (rest.length > 0) return refused(CLOSE_USAGE, EXIT_USAGE)
+      const left = await d.whatIsLeft(caller.tabId, caller.session)
+      if (left.length > 0)
+        return refused(
+          `koloft session close: nothing was closed.\n\n${left.join('\n\n')}\n\nCommit and push every change, end any other session in this worktree, then run koloft session close again.`
+        )
+      d.closeSoon(caller.tabId, caller.session)
+      return answered(
+        'Closing this session now: its tab, its row in the sidebar, and its git worktree and branch if it has one.'
+      )
     }
     return refused(SESSION_USAGE, EXIT_USAGE)
   }

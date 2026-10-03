@@ -247,6 +247,7 @@ import { AgentRequests, BUILTIN_VERBS } from './agentRequests'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
 import { sessionVerb } from './agentSessions'
+import { closingTree, removeTree, whatIsLeft } from './sessionClose'
 import { claudePeerNames } from './claudeSessionRegistry'
 import { writeAgentPlugin } from './agentPlugin'
 
@@ -619,7 +620,13 @@ const agentRequests = new AgentRequests({
       pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
       peerNames: () => claudePeerNames(),
       launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
-      queue: async (tabId, text) => codexSessions?.queueMessage(tabId, text)
+      queue: async (tabId, text) => codexSessions?.queueMessage(tabId, text),
+      whatIsLeft: whatClosingWouldLose,
+      closeSoon: (tabId, session) =>
+        setTimeout(
+          () => void closeSessionFully(tabId, session),
+          CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS
+        )
     })
   },
   tab: (tabId) => ptyMgr.get(tabId),
@@ -2250,6 +2257,40 @@ function killTabPty(tabId: string): Promise<boolean> {
   )
 }
 
+function archiveSession(id: string): boolean {
+  const archived = sessionBackends.forSession(id).archive(id)
+  if (archived) attention.clearSession(id)
+  return archived
+}
+
+const CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS = 1_000
+
+async function whatClosingWouldLose(tabId: string, session: SessionInfo): Promise<string[]> {
+  const tree = await closingTree(localGitOut, projectInfoFor(session.treeRoot))
+  if (!tree) return []
+  const sharing = allSessions().filter(
+    (s) => s.tabId !== tabId && s.alive && projectInfoFor(s.treeRoot).treeRoot === tree.treeRoot
+  )
+  return [
+    ...sharing.map((s) => `The session "${s.title}" is still open in ${tree.treeRoot}.`),
+    ...(await whatIsLeft(localGitOut, tree))
+  ]
+}
+
+async function closeSessionFully(tabId: string, session: SessionInfo): Promise<void> {
+  const info = projectInfoFor(session.treeRoot)
+  sendToRenderer('tab:killedByMain', tabId)
+  await killTabPty(tabId)
+  const tree = await closingTree(localGitOut, info)
+  const problem = tree && (await removeTree(localGitOut, tree))
+  if (problem) {
+    sendToRenderer('cron:toast', `${session.title}: ${problem}`)
+    return
+  }
+  archiveSession(session.sessionId)
+  codexSessions?.store.removeUnusedResourcesAt(info.treeRoot)
+}
+
 function worktreeHomeOf(root: string): string {
   return `${root}/.claude/worktrees`
 }
@@ -2739,9 +2780,7 @@ function registerIpc(): void {
   })
   ipcMain.handle('sessions:archive', (_e, id: unknown): boolean => {
     if (typeof id !== 'string' || !id) return false
-    const archived = sessionBackends.forSession(id).archive(id)
-    if (archived) attention.clearSession(id)
-    return archived
+    return archiveSession(id)
   })
 
   ipcMain.on('sessions:setResident', (_e, id: unknown, on: unknown) => {

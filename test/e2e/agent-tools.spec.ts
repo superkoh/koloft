@@ -1,10 +1,14 @@
+import fs from 'fs'
+import path from 'path'
 import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { seedSettings } from './helpers/env'
+import { runGit, setupGitFixture } from './helpers/gitFixture'
 import {
   centerTerm,
   openMenu,
   openSessionTerminal,
+  openWorktreeSession,
   panelTerm,
   readCalls,
   runIn,
@@ -157,6 +161,42 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
         timeout: KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS
       })
       .toBe('0')
+  })
+
+  test('koloft session close refuses while the worktree holds uncommitted work, then closes the session for good: tab, row, worktree and branch', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const fx = setupGitFixture(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      const dlg = await openWorktreeSession(page, 'repo')
+      await dlg.getByRole('textbox').click()
+      await page.keyboard.type('done')
+      await page.keyboard.press('Enter')
+      const rows = wsRows(page, 'repo')
+      await expect(rows).toHaveCount(1, { timeout: 60_000 })
+      await expect(rows).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const tree = path.join(fx.clone, '.claude', 'worktrees', 'done')
+      await expect.poll(() => fs.existsSync(path.join(tree, 'NOTES.md'))).toBe(true)
+
+      expect(await koloftInSession(page, 'session close')).toBe('1')
+      expect(await shownTermText(page, CENTER)).toContain('nothing was closed')
+      await expect(rows).toHaveCount(1)
+      expect(fs.existsSync(tree)).toBe(true)
+
+      fs.rmSync(path.join(tree, 'NOTES.md'))
+      await runIn(page, centerTerm(page), '/koloft session close')
+      await expect(rows).toHaveCount(0, { timeout: 30_000 })
+      await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+      expect(runGit(fx.clone, 'branch', '--list', 'worktree-done').trim()).toBe('')
+      expect(runGit(fx.clone, 'worktree', 'list')).not.toContain('done')
+    } finally {
+      await quitAndClose(app)
+    }
   })
 
   test('with agent tools off in Settings, koloft in a new session is refused', async ({ env }) => {
