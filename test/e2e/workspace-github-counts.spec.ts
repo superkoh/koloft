@@ -1,8 +1,10 @@
+import fs from 'fs'
+import path from 'path'
 import type { Page } from '@playwright/test'
 import { test, expect, quitAndClose } from './helpers/app'
 import { launchSettled } from './helpers/blackbox'
 import { seedSettings, setGithubFixture } from './helpers/env'
-import { setupGitFixture } from './helpers/gitFixture'
+import { runGit, setupGitFixture } from './helpers/gitFixture'
 import { gitInit, gitMark, openGitPanel, snap } from './helpers/p1'
 import {
   addRemoteWorkspace,
@@ -149,6 +151,46 @@ test.describe('Workspace GitHub counts · open issues and pull requests after th
       await page.mouse.move(600, 400)
       await expect.poll(running).toBe(0)
       await expect(name).not.toHaveClass(/\bmq\b/)
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+})
+
+test.describe('Workspace GitHub counts · the real gh path, no fixture', () => {
+  test('T-GH-07: an app started with launchd’s short PATH still finds gh through the login shell and asks it for this repo’s counts', async ({
+    env
+  }) => {
+    const fx = setupGitFixture(env)
+    const github = 'git@github.com:acme/repo.git'
+    runGit(fx.clone, 'remote', 'set-url', 'origin', github)
+    runGit(fx.clone, 'config', `url.file://${fx.origin}.insteadOf`, github)
+
+    const ghDir = path.join(env.home, 'login-shell-only-bin')
+    const ghLog = path.join(env.home, 'gh-calls.txt')
+    fs.mkdirSync(ghDir)
+    fs.writeFileSync(
+      path.join(ghDir, 'gh'),
+      `#!/bin/sh\necho "$*" >> ${JSON.stringify(ghLog)}\n` +
+        `printf '%s' '{"data":{"repository":{"issues":{"totalCount":7},"pullRequests":{"totalCount":2}}}}'\n`,
+      { mode: 0o755 }
+    )
+    fs.writeFileSync(path.join(env.home, '.zprofile'), `export PATH="${ghDir}:$PATH"\n`)
+    // PLATFORM§1
+    env.launchEnv.PATH = '/usr/bin:/bin:/usr/sbin:/sbin'
+    env.launchEnv.SHELL = '/bin/zsh'
+    delete env.launchEnv.ZDOTDIR
+
+    const { app, page } = await launchSettled(env)
+    try {
+      const counts = gitMark(page, 'repo').locator('.ws-gh > span')
+      await expect(counts).toHaveCount(2, { timeout: COUNTS_TIMEOUT })
+      await expect(counts.nth(0)).toHaveAttribute('aria-label', '7 open issues')
+      await expect(counts.nth(1)).toHaveAttribute('aria-label', '2 open pull requests')
+      const call = fs.readFileSync(ghLog, 'utf8')
+      expect(call).toContain('api graphql')
+      expect(call).toContain('owner=acme')
+      expect(call).toContain('name=repo')
     } finally {
       await app.close().catch(() => {})
     }
