@@ -13,8 +13,8 @@ place and edited in one place.
 3. The centre of the window is **100% the session's own tool UI** — Claude Code's or
    Codex's — with no Koloft chrome inside it.
 4. Worktree lifecycle and session retention belong to **the agent's tool**, not Koloft.
-   The one gap: Koloft makes the worktree for a Codex worktree session, and nobody
-   removes it yet (#116).
+   The one gap: Koloft makes the worktree for a Codex worktree session, and only
+   `koloft session close` removes it (#116).
 5. A file opens in the Workbench **on your intent only** — nothing follows the agent's
    writes around by itself.
 
@@ -27,8 +27,8 @@ when it works. That is what "judged against" means.
 
 - **Worktree session bootstrap** — a setup script, copying gitignored files, a port offset,
   so a fresh worktree is usable the moment its session starts (#5). Creating the worktree
-  session itself already works; cleanup afterwards is the agent's tool's, not Koloft's
-  (Codex aside, #116). `claude -w` already copies `.worktreeinclude` files and runs
+  session itself already works; cleanup afterwards is the agent's tool's, or
+  `koloft session close`'s (#116). `claude -w` already copies `.worktreeinclude` files and runs
   `WorktreeCreate` hooks, so Koloft's part is the Codex worktrees it makes and the port
   offset for both.
 - **Jump to the next waiting session** — one shortcut cycles through the sessions waiting
