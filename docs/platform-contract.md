@@ -865,6 +865,11 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   itself**; without a `.gitignore` line the parent shows an untracked `.claude/`.
   `--exclude-standard` honours an uncommitted `.gitignore`.
 - **`git worktree add <path>` refuses a path that already exists.**
+- **`git worktree remove` (no `--force`) removes a tree whose only extra files are
+  ignored** (`node_modules/`, `out/`), and refuses one with uncommitted or untracked
+  files. **It refuses a locked tree** ("cannot remove a locked working tree"), and a
+  session's worktree was seen still locked after its tab was killed, so `git worktree
+  unlock` comes first (measured, git 2.54.0, 2026-10-02, on a throwaway repo).
 - **`.git/FETCH_HEAD` is rewritten on every fetch** and a fresh clone has none, so its
   existence and mtime show whether a fetch ran.
 - **The `ext::` transport** is refused unless `protocol.ext.allow` permits it (the repo's

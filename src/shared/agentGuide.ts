@@ -90,12 +90,15 @@ koloft session send <id or name> "<message>"
     Codex only: send a message to another Codex session.
     Example: koloft session send 0199c3f2-7a41-7c30-9e55-1d2b8f6a0c11 "Tell me what you found."
 
+koloft session close
+    Close the session you run it in, for good: Koloft ends it, closes its tab and takes it off the sidebar list. If it runs in its own git worktree, Koloft also deletes that worktree and its branches. Run it as your very last step, only when the owner asked for it. If anything in the worktree is not committed, or a commit is on no remote branch, nothing is closed and Koloft lists what is left.
+
 WEB PAGES (Claude only)
 
 To use the web pages in this session's Workbench, drive them with Playwright (a tool that controls a browser): the playwright-cli command or the Playwright MCP tools. When the owner allows it, they already connect to the Workbench browser; its address is in $KOLOFT_BROWSER_CDP. Codex sessions cannot do this.`
 
 export const AGENT_SKILL_DESCRIPTION =
-  'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the workspace note, list, add, change or run scheduled tasks, or list and start sibling sessions. Read this before running any koloft command.'
+  'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the workspace note, list, add, change or run scheduled tasks, list and start sibling sessions, or close this session and its worktree for good. Read this before running any koloft command.'
 
 export const CODEX_AGENT_HINT =
   'You are running inside Koloft, an app that runs and manages coding sessions for its owner. Run "koloft help" in your shell to see what Koloft lets you do.'

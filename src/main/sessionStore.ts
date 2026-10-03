@@ -156,6 +156,14 @@ export class SessionStore {
       : undefined
   }
 
+  removeUnusedResource(id: string): void {
+    if (!Object.hasOwn(this.data.resources, id)) return
+    if (Object.values(this.data.members).some((m) => m.worktreeResourceId === id)) return
+    const next = structuredClone(this.data)
+    delete next.resources[id]
+    this.commit(next)
+  }
+
   putResource(resource: WorktreeResource): void {
     const next = structuredClone(this.data)
     next.resources[resource.id] = structuredClone(resource)

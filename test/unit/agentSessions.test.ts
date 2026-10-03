@@ -43,14 +43,17 @@ type Launch = CreateTabOptions & { kind: BackendId }
 
 function harness(
   sessions: SessionInfo[],
-  peerNames: Record<string, string> = {}
+  peerNames: Record<string, string> = {},
+  left: string[] = []
 ): {
   verb: (args: string[], from: { tabId: string; cwd: string }) => Promise<AgentReply>
   launched: Launch[]
   queued: { tabId: string; text: string }[]
+  closed: string[]
 } {
   const launched: Launch[] = []
   const queued: { tabId: string; text: string }[] = []
+  const closed: string[] = []
   const inner = sessionVerb({
     workspaceOf: (tabId) => sessions.find((s) => s.tabId === tabId)?.cwd,
     allSessions: () => sessions,
@@ -62,11 +65,15 @@ function harness(
     },
     queue: async (tabId, text) => {
       queued.push({ tabId, text })
+    },
+    whatIsLeft: async () => left,
+    closeSoon: (tabId) => {
+      closed.push(tabId)
     }
   })
   const verb = async (args: string[], from: { tabId: string; cwd: string }): Promise<AgentReply> =>
     inner(args, { ...from, session: sessions.find((s) => s.tabId === from.tabId)! })
-  return { verb, launched, queued }
+  return { verb, launched, queued, closed }
 }
 
 const from = (tabId: string): { tabId: string; cwd: string } => ({ tabId, cwd: WS })
@@ -267,5 +274,33 @@ describe('koloft session send', () => {
     expect((await verb(['send', 'nobody', 'hi'], from('me'))).exit).not.toBe(0)
     expect(await verb(['send', OTHER_THREAD], from('me'))).toMatchObject({ exit: EXIT_USAGE })
     expect(queued).toEqual([])
+  })
+})
+
+describe('koloft session close', () => {
+  it('closes the calling session, Claude or Codex, when nothing would be lost', async () => {
+    const { verb, closed } = harness([
+      session('me', 'claude'),
+      session('cx', 'codex', { nativeSessionId: CODEX_THREAD })
+    ])
+    expect((await verb(['close'], from('me'))).exit).toBe(0)
+    expect((await verb(['close'], from('cx'))).exit).toBe(0)
+    expect(closed).toEqual(['me', 'cx'])
+  })
+
+  it('closes nothing and lists what is left when something is not committed or not pushed', async () => {
+    const left = ['Changes not committed:\n?? notes.md', 'Commits on no remote branch:\nabc123 wip']
+    const { verb, closed } = harness([session('me', 'claude')], {}, left)
+    const reply = await verb(['close'], from('me'))
+    expect(reply.exit).not.toBe(0)
+    expect(reply.text).toContain('nothing was closed')
+    for (const line of left) expect(reply.text).toContain(line)
+    expect(closed).toEqual([])
+  })
+
+  it('takes no options, so it can only ever close the session it runs in', async () => {
+    const { verb, closed } = harness([session('me', 'claude'), session('other', 'claude')])
+    expect(await verb(['close', 'other'], from('me'))).toMatchObject({ exit: EXIT_USAGE })
+    expect(closed).toEqual([])
   })
 })
