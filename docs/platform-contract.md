@@ -1024,7 +1024,11 @@ command by hand:
 - Older coreutils may not know the `%.9Y` precision — inferred, not checked.
 - **The official node 22 build does not run on glibc 2.27** (Ubuntu 18.04): it unpacks,
   then `node -v` fails with ``version `GLIBC_2.28' not found``. Claude Code 2.1.288's
-  own build runs there. (2026-10-03, on a real Ubuntu 18.04 box.)
+  own build runs there. The Node project's unofficial build for old Linux,
+  `https://unofficial-builds.nodejs.org/download/release/v22.12.0/node-v22.12.0-linux-x64-glibc-217.tar.xz`,
+  does run there (`node -v` printed `v22.12.0`), and that folder has its own
+  `SHASUMS256.txt` listing it; it has no arm64 glibc-217 build. (2026-10-03, on a real
+  Ubuntu 18.04 box.)
 - **A csh-family login shell (tcsh, csh) cannot take a newline inside single quotes**
   (`Unmatched '''.`), **expands `!` even inside single quotes** (`echo 'a!b'` →
   `b: Event not found.`; `!=` is left alone), and has no `VAR=value cmd` form
