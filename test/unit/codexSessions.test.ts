@@ -584,6 +584,14 @@ describe('CodexSessions', () => {
     expect(deps.trustFolder).toHaveBeenCalledTimes(1)
   })
 
+  // ADR-0028
+  it('remembers whether Koloft launched a session with approvals and the sandbox bypassed, the mode its messages to Claude sessions claim', async () => {
+    const bypassed = await sessions.launch({ kind: 'codex', cwd: repo, permission: 'bypass' })
+    const asking = await sessions.launch({ kind: 'codex', cwd: repo })
+    expect(sessions.launchedBypassingChecks(bypassed.id)).toBe(true)
+    expect(sessions.launchedBypassingChecks(asking.id)).toBe(false)
+  })
+
   // CODEX§14
   it('a scheduled launch hands Codex its task as the first prompt with its model and thinking level, and reports the bind so the run stops counting as starting', async () => {
     const { id } = await sessions.launch({

@@ -395,6 +395,7 @@ export class ClaudeBackend implements SessionBackend {
       message?: string
       bgl?: string
       wake?: number
+      ask?: unknown
     }
     obj.tabId = this.liveTabFor(obj)
     if (!obj.tabId) return
@@ -404,7 +405,7 @@ export class ClaudeBackend implements SessionBackend {
     }
     // CC§8
     if (typeof obj.wake === 'number') this.d.tracker.setWakeupPending(obj.tabId, obj.wake === 1)
-    const event = sessionEventFromHook(obj.event, obj.message, obj.bgl)
+    const event = sessionEventFromHook(obj.event, obj.message, obj.bgl, obj.ask)
     if (event) this.d.events(obj.tabId, event)
   }
 
@@ -758,7 +759,6 @@ export class ClaudeBackend implements SessionBackend {
         return plan.launchCommand(tabId)
       },
       resumeSessionId: spec.resumeSessionId,
-      conductor: !!spec.role && !machine,
       shell: plan.shell,
       extraEnv: agentPlugin ? { ...plan.extraEnv, KOLOFT_AGENT_PLUGIN: agentPlugin } : plan.extraEnv
     })
@@ -833,5 +833,12 @@ export function machineHookSettings(
   const remoteStatusLine: StatusLineSetting | undefined = statusline
     ? { type: 'command', command: dq(`${machineDir}/statusline/run.sh`), padding: 0 }
     : undefined
-  return hookSettings(`${machineDir}/hook.sh`, REMOTE_HOOK_DIR, tabId, remoteStatusLine, dq)
+  return hookSettings(
+    `${machineDir}/hook.sh`,
+    REMOTE_HOOK_DIR,
+    tabId,
+    remoteStatusLine,
+    dq,
+    'record-only'
+  )
 }

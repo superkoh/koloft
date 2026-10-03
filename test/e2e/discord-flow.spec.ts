@@ -24,6 +24,7 @@ const CHANNEL = '222'
 const OFFLINE_REPLY = 'Koloft was offline, this message was not delivered.'
 const CONDUCTOR_STARTS_AND_ANSWERS_MS = 60_000
 const DISCORD_MESSAGE_LIMIT = 2000
+const RESUMED_SESSION_BINDS_AFTER_MS = 12_000
 
 function seedConductor(
   env: E2EEnv,
@@ -63,6 +64,53 @@ function notices(fake: FakeDiscord): string[] {
   return said(fake)
     .flatMap((p) => p.split('\n'))
     .filter((l) => /^(🔔|❓|⏹)/.test(l))
+}
+
+function transcriptText(env: E2EEnv, sessionId: string): string {
+  const root = path.join(env.home, '.claude', 'projects')
+  for (const dir of fs.readdirSync(root)) {
+    const file = path.join(root, dir, `${sessionId}.jsonl`)
+    if (fs.existsSync(file)) return fs.readFileSync(file, 'utf8')
+  }
+  return ''
+}
+
+function codexWire(env: E2EEnv): { direction: string; frame: Record<string, unknown> }[] {
+  return fs
+    .readFileSync(path.join(env.home, 'fake-codex-wire.jsonl'), 'utf8')
+    .trim()
+    .split('\n')
+    .map((l) => JSON.parse(l) as { direction: string; frame: Record<string, unknown> })
+}
+
+async function tabOf(page: Page, sessionId: string): Promise<string> {
+  const all = await page.evaluate(() => window.api.sessions.list())
+  return all.find((s) => s.sessionId === sessionId)!.tabId
+}
+
+function terminalText(page: Page, tabId: string): Promise<string> {
+  return page.evaluate((id) => {
+    const term = (
+      window as unknown as {
+        __koloftTerms?: Record<
+          string,
+          {
+            buffer: {
+              active: {
+                length: number
+                getLine(i: number): { translateToString(trim?: boolean): string } | undefined
+              }
+            }
+          }
+        >
+      }
+    ).__koloftTerms?.[id]
+    if (!term) return ''
+    const b = term.buffer.active
+    const out: string[] = []
+    for (let i = 0; i < b.length; i++) out.push(b.getLine(i)?.translateToString(true) ?? '')
+    return out.join('\n')
+  }, tabId)
 }
 
 async function connected(
@@ -408,6 +456,129 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await expect
         .poll(() => said(fake))
         .toContain('Codex fixture answered: [Discord] please approve this')
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  test('a managed Claude session’s question reaches the channel whole and the conductor answers it with koloft session answer; its command approvals are allowed by yes and refused by no', async ({
+    env
+  }) => {
+    seedConductor(env, 'claude')
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      await startSessionIn(page, 'ws-a')
+      const managed = (await waitForCalls(env, 1))[0].sessionId
+      const managedTab = await tabOf(page, managed)
+      const type = (line: string): Promise<void> =>
+        page.evaluate(([id, l]) => window.api.terminal.write(id, l + '\r'), [managedTab, line])
+      const waiting = (detail: string): Promise<void> =>
+        expect
+          .poll(() => said(fake).join('\n'))
+          .toMatch(
+            new RegExp(`(^|\\n)❓ .+ is waiting for you: ${detail.replace(/[?.]/g, '\\$&')}(\\n|$)`)
+          )
+
+      await type('/ask Which colour?|Red|Green')
+      await waiting('Which colour?\n1. Red — The Red one\n2. Green — The Green one')
+      fake.say(OWNER, `/koloft session answer ${managed} 2`)
+      await expect
+        .poll(() => transcriptText(env, managed), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('Picked: Green')
+      expect(bindingOnDisk(env)?.touched).toEqual([managed])
+
+      await type('/bash touch made.txt')
+      await waiting('Bash asks to run:\ntouch made.txt')
+      fake.say(OWNER, `/koloft session answer ${managed} yes`)
+      await expect.poll(() => transcriptText(env, managed)).toContain('Ran: touch made.txt')
+
+      await type('/bash rm -rf build')
+      await waiting('Bash asks to run:\nrm -rf build')
+      fake.say(OWNER, `/koloft session answer ${managed} no, keep it`)
+      await expect.poll(() => transcriptText(env, managed)).toContain('Denied: no, keep it')
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  test('a managed Codex session’s approval reaches the channel with its command and the conductor’s answer presses its key', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedConductor(env, 'claude')
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      await newSessionInWith(page, 'ws-a', 'Codex')
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
+      const codexId = (
+        JSON.parse(
+          fs.readFileSync(path.join(env.home, 'fake-codex-calls.jsonl'), 'utf8').split('\n')[0]
+        ) as { sessionId: string }
+      ).sessionId
+      const codexTab = (await page.evaluate(() => window.api.sessions.list())).find(
+        (s) => s.backendId === 'codex'
+      )!.tabId
+      await page.evaluate((id) => window.api.terminal.write(id, 'please approve\r'), codexTab)
+      await expect
+        .poll(() => said(fake).join('\n'))
+        .toMatch(/(^|\n)❓ .+ is waiting for you: echo approved(\n|$)/)
+
+      fake.say(OWNER, `/koloft session answer ${codexId} yes`)
+      await expect
+        .poll(
+          () =>
+            codexWire(env).filter(
+              (w) =>
+                w.direction === 'client' &&
+                (w.frame.result as { decision?: string } | undefined)?.decision
+            ),
+          { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }
+        )
+        .toEqual([
+          expect.objectContaining({
+            frame: expect.objectContaining({ result: { decision: 'accept' } })
+          })
+        ])
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  test('a send to a closed session answers the conductor at once and is delivered once the session is ready, even past the 8 s the koloft command waits', async ({
+    env
+  }) => {
+    seedConductor(env, 'claude')
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      await startSessionIn(page, 'ws-a')
+      const managed = (await waitForCalls(env, 1))[0].sessionId
+      fake.say(OWNER, `/koloft session stop ${managed}`)
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/cold/, {
+        timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+      })
+      const conductorTab = await tabOf(page, bindingOnDisk(env)!.sessionIds[0])
+      fs.writeFileSync(
+        path.join(env.home, 'fake-claude-delay'),
+        String(RESUMED_SESSION_BINDS_AFTER_MS)
+      )
+      const peerLog = path.join(env.home, 'fake-claude-peer.jsonl')
+
+      fake.say(OWNER, `/koloft session send ${managed} after the wait`)
+      await expect
+        .poll(() => terminalText(page, conductorTab))
+        .toMatch(/Will deliver when .+ is ready\./)
+      expect(fs.existsSync(peerLog)).toBe(false)
+      await expect
+        .poll(() => (fs.existsSync(peerLog) ? fs.readFileSync(peerLog, 'utf8') : ''), {
+          timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+        })
+        .toContain('(Your owner, via the Koloft conductor:) after the wait')
     } finally {
       await quitAndClose(app)
       await fake.close()

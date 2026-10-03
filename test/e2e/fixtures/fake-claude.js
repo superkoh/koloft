@@ -445,7 +445,27 @@ if (startDelay > 0) {
   startupTurn()
 }
 
+let waitingHook = null
+// CC§14
+function fireWaitingHook(event, payload) {
+  const cmd = hooks?.[EVENT_KEY[event]]?.[0]?.hooks?.[0]?.command
+  if (!cmd) return Promise.resolve('')
+  return new Promise((resolve) => {
+    const child = cp.spawn('/bin/sh', ['-c', cmd], { stdio: ['pipe', 'pipe', 'ignore'] })
+    waitingHook = child
+    let out = ''
+    child.stdout.on('data', (c) => (out += c))
+    child.on('error', () => resolve(''))
+    child.on('close', () => {
+      waitingHook = null
+      resolve(out)
+    })
+    child.stdin.end(JSON.stringify({ ...payload, session_id: sessionId }))
+  })
+}
+
 function shutdown(reason) {
+  waitingHook?.kill('SIGTERM')
   fireHook('end', { session_id: sessionId, transcript_path: transcript, cwd, reason })
   process.exit(0)
 }
@@ -1118,18 +1138,7 @@ function handleLine(line) {
     return
   }
   // CC§14
-  if (text.startsWith('/ask ')) {
-    const [question, ...labels] = text.slice('/ask '.length).split('|')
-    const input = {
-      questions: [
-        {
-          question,
-          header: 'Pick',
-          options: labels.map((label) => ({ label, description: `The ${label} one` })),
-          multiSelect: false
-        }
-      ]
-    }
+  const ask = async (name, input, allowed) => {
     const toolUseId = `toolu_ask_${Date.now()}`
     fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
     append([
@@ -1139,15 +1148,15 @@ function handleLine(line) {
         timestamp: new Date().toISOString(),
         message: {
           role: 'assistant',
-          content: [{ type: 'tool_use', id: toolUseId, name: 'AskUserQuestion', input }]
+          content: [{ type: 'tool_use', id: toolUseId, name, input }]
         },
         cwd
       }
     ])
-    process.stdout.write(`[fake-claude] asking: ${question}\r\n`)
-    const out = fireHook('ask', {
+    process.stdout.write(`[fake-claude] asking: ${name}\r\n`)
+    const out = await fireWaitingHook('ask', {
       hook_event_name: 'PermissionRequest',
-      tool_name: 'AskUserQuestion',
+      tool_name: name,
       tool_input: input
     })
     let decision = {}
@@ -1156,8 +1165,10 @@ function handleLine(line) {
     } catch {}
     const picked =
       decision.behavior === 'allow'
-        ? `Picked: ${Object.values(decision.updatedInput.answers).join(', ')}`
-        : `Not answered: ${decision.message ?? 'no hook answer'}`
+        ? allowed(decision.updatedInput)
+        : decision.behavior === 'deny'
+          ? `Denied: ${decision.message}`
+          : 'Not answered: no hook answer'
     append([
       {
         type: 'user',
@@ -1177,7 +1188,28 @@ function handleLine(line) {
     ])
     fireHook('stop', { hook_event_name: 'Stop' })
     process.stdout.write(`[fake-claude] ${picked}\r\n> `)
-    return
+  }
+  if (text.startsWith('/ask ')) {
+    const [question, ...labels] = text.slice('/ask '.length).split('|')
+    const input = {
+      questions: [
+        {
+          question,
+          header: 'Pick',
+          options: labels.map((label) => ({ label, description: `The ${label} one` })),
+          multiSelect: false
+        }
+      ]
+    }
+    return ask(
+      'AskUserQuestion',
+      input,
+      (updated) => `Picked: ${Object.values(updated.answers).join(', ')}`
+    )
+  }
+  if (text.startsWith('/bash ')) {
+    const command = text.slice('/bash '.length)
+    return ask('Bash', { command, description: 'A command' }, () => `Ran: ${command}`)
   }
   if (text === '/need-approval') {
     fireHook('notify', {

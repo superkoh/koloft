@@ -252,6 +252,8 @@ export interface SessionVerbDeps {
   typeInto(tabId: string, text: string): Promise<void>
   modeOf(tabId: string): ModeClass
   stop(tabId: string): void
+  answer(tabId: string, reply: string): Promise<string | undefined>
+  undelivered(callerTab: string, target: Target, why: string): void
   started(
     conductorTab: string,
     tabId: string,
@@ -267,11 +269,12 @@ export interface Target {
   backend: BackendId
   remote: boolean
   tabId?: string
+  bindingId?: string
   open(): Promise<string>
 }
 
 const SESSION_USAGE =
-  'koloft session: use list, read, new, send, resume, stop or close. Run "koloft help" to see how.'
+  'koloft session: use list, read, new, send, answer, resume, stop or close. Run "koloft help" to see how.'
 const READ_USAGE = `koloft session read: give an id or name, and if you like --last <1 to ${MAX_READ_TURNS}>, like: koloft session read fix-login --last 3`
 const CONDUCTOR_LIST_USAGE =
   'koloft session list: it takes no options here; it lists every session you look after.'
@@ -405,10 +408,21 @@ const REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS = 8_000
 const RESUME_USAGE =
   'koloft session resume: give an id or name, and if you like a first message after --, like: koloft session resume fix-login -- "Carry on."'
 const STOP_USAGE = 'koloft session stop: give an id or name, like: koloft session stop fix-login'
+const ANSWER_USAGE =
+  'koloft session answer: give an id or name, then an option number, yes, no or your own words, like: koloft session answer fix-login 2'
+const WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS = 10 * 60_000
+const SHOWS_NOTHING_WHILE_CLOSED = 'it is not open, so it shows no question.'
 const BACKEND_IS_FOR_CONDUCTORS = 'koloft session new: only a conductor can pick --backend.'
 const GLOBAL_NEEDS_WORKSPACE =
   'koloft session new: say which workspace with --workspace <workspace>; "koloft workspace list" shows them.'
 const ONLY_YOUR_WORKSPACE = 'koloft session new: you can only start sessions in your own workspace.'
+
+const CONDUCTOR_ACT_USAGE: Record<string, string> = {
+  send: SEND_USAGE,
+  answer: ANSWER_USAGE,
+  resume: RESUME_USAGE,
+  stop: STOP_USAGE
+}
 
 export function ownerSays(text: string): string {
   return `(Your owner, via the Koloft conductor:) ${text}`
@@ -438,38 +452,54 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
     return p
   }
 
+  const sendNow = async (
+    t: Target,
+    text: string,
+    line: string | undefined,
+    until: number
+  ): Promise<string> => {
+    const tab = t.tabId ?? (await openReady(t, until))
+    if (!tab) throw new Error(`${t.name} was resumed but did not get ready in time.`)
+    if (t.backend === 'codex') {
+      await d.queue(tab, text, `koloft-conductor-${++queued}`)
+      return `Sent to ${t.name}.`
+    }
+    if (line) {
+      await d.sendLine(tab, line)
+      return `Sent to ${t.name}.`
+    }
+    if (!(await d.ready(tab, until - Date.now(), true)))
+      throw new Error(
+        `${t.name} stayed busy. It runs on another machine, where Koloft can only type into it once its turn has ended and it shows no question.`
+      )
+    await d.typeInto(tab, text)
+    return `Typed into ${t.name}.`
+  }
+
   const deliver = async (
     verb: string,
     t: Target,
     text: string,
-    from: ModeClass
+    caller: AgentCaller
   ): Promise<AgentReply> => {
-    const until = Date.now() + REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS
-    const line = t.backend === 'claude' && !t.remote ? crossSessionLine(from, text) : undefined
+    const typed = t.backend === 'claude' && t.remote
+    const line =
+      typed || t.backend === 'codex' ? undefined : crossSessionLine(d.modeOf(caller.tabId), text)
     if (line === null)
       return refused(
         `koloft session ${verb}: the message cannot hold the text </cross-session-message>.`,
         EXIT_USAGE
       )
-    const tab = t.tabId ?? (await openReady(t, until))
-    if (!tab)
-      return refused(
-        `koloft session ${verb}: ${t.name} was resumed but was not ready in time, so nothing was sent. Send again once it shows as waiting in "koloft session list".`
+    const busy = typed && t.tabId !== undefined && !(await d.ready(t.tabId, 0, true))
+    if (t.tabId && !busy)
+      return answered(
+        await sendNow(t, text, line, Date.now() + REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS)
       )
-    if (t.backend === 'codex') {
-      await d.queue(tab, text, `koloft-conductor-${++queued}`)
-      return answered(`Sent to ${t.name}.`)
-    }
-    if (line) {
-      await d.sendLine(tab, line)
-      return answered(`Sent to ${t.name}.`)
-    }
-    if (!(await d.ready(tab, until - Date.now(), true)))
-      return refused(
-        `koloft session ${verb}: ${t.name} is busy, not sent. It runs on another machine, where Koloft can only type into it once its turn has ended and it shows no question. Try again later.`
-      )
-    await d.typeInto(tab, text)
-    return answered(`Typed into ${t.name}.`)
+    void sendNow(t, text, line, Date.now() + WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS).catch(
+      (error: unknown) =>
+        d.undelivered(caller.tabId, t, error instanceof Error ? error.message : String(error))
+    )
+    return answered(`Will deliver when ${t.name} is ready.`)
   }
 
   const rowTarget = (p: PlacedRow): Target => ({
@@ -491,11 +521,9 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
     const text = (sub === 'resume' ? (dashes >= 0 ? rest.slice(dashes + 1) : []) : words)
       .join(' ')
       .trim()
-    if (!ref || (sub === 'send' && !text) || (sub !== 'send' && words.length > 0))
-      return refused(
-        sub === 'send' ? SEND_USAGE : sub === 'stop' ? STOP_USAGE : RESUME_USAGE,
-        EXIT_USAGE
-      )
+    const takesWords = sub === 'send' || sub === 'answer'
+    if (!ref || (takesWords && !text) || (!takesWords && words.length > 0))
+      return refused(CONDUCTOR_ACT_USAGE[sub], EXIT_USAGE)
     if (isMe(ref, caller.session, d.conductorOf(ref), caller.tabId))
       return refused(`koloft session ${sub}: ${THAT_IS_YOU}`)
     const found = findInScope(d, sub, ref, caller.tabId)
@@ -507,12 +535,18 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       return answered(`Closed ${t.name}. It stays in the list and can be resumed.`)
     }
     d.touch(caller.tabId, t.key)
+    if (sub === 'answer') {
+      const error = t.tabId ? await d.answer(t.tabId, text) : SHOWS_NOTHING_WHILE_CLOSED
+      return error
+        ? refused(`koloft session answer: ${t.name}: ${error}`)
+        : answered(`Answered ${t.name}.`)
+    }
     if (sub === 'resume' && !text) {
       if (t.tabId) return answered(`${t.name} is already open.`)
       await (opening.get(t.key) ?? t.open())
       return answered(`Resumed ${t.name}.`)
     }
-    return deliver(sub, t, ownerSays(text), d.modeOf(caller.tabId))
+    return deliver(sub, t, ownerSays(text), caller)
   }
 
   return async (args, caller): Promise<AgentReply> => {
@@ -556,14 +590,14 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       if (!target.ok) return refused(`koloft session new: ${target.error}`)
       return startSibling(d, parsed.value, caller.session, target.value)
     }
-    if (scope !== undefined && (sub === 'send' || sub === 'resume' || sub === 'stop'))
+    if (scope !== undefined && Object.hasOwn(CONDUCTOR_ACT_USAGE, sub))
       return conductorAct(sub, rest, caller)
     if (sub === 'send') {
       const [ref, ...words] = rest
       const text = words.join(' ').trim()
       if (!ref || !text) return refused(SEND_USAGE, EXIT_USAGE)
       const conductor = d.conductorOf(ref)
-      if (conductor) return deliver('send', conductor, text, d.modeOf(caller.tabId))
+      if (conductor) return deliver('send', conductor, text, caller)
       if (caller.session.backendId !== 'codex')
         return refused(`koloft session send: ${CLAUDE_USES_SEND_MESSAGE}`)
       const target = findCodexTarget(d.allSessions(), ref)
@@ -571,7 +605,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       await d.queue(target.value.tabId, text)
       return answered(`Sent to ${target.value.title}.`)
     }
-    if (sub === 'resume' || sub === 'stop')
+    if (sub === 'resume' || sub === 'stop' || sub === 'answer')
       return refused(`koloft session ${sub}: ${ONLY_A_CONDUCTOR}`)
     if (sub === 'close') {
       if (rest.length > 0) return refused(CLOSE_USAGE, EXIT_USAGE)

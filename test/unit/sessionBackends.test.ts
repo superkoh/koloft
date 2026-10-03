@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { SessionBackends, type SessionBackend } from '../../src/main/sessionBackends'
+import { sessionEventFromHook } from '../../src/main/sessionTracker'
 import {
   capabilitiesFor,
   effectiveBackend,
@@ -41,7 +42,8 @@ const lifecycle = () => ({
   exited: vi.fn(),
   clearAttention: vi.fn(),
   open: vi.fn(),
-  turnEnded: vi.fn()
+  turnEnded: vi.fn(),
+  asked: vi.fn()
 })
 
 const row = (id: string, mtime: number): BackendSessionRow => ({
@@ -165,6 +167,16 @@ describe('session lifecycle tap (one place turns a bind or an exit into attentio
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  // CC§14
+  it('a dialog recorded in the status log of a session on another machine reaches the lifecycle with its whole question', () => {
+    const sink = lifecycle()
+    const registry = new SessionBackends(sink)
+    const ask = { tool_name: 'Bash', tool_input: { command: 'make' } }
+    registry.observe('tab', sessionEventFromHook('ask', undefined, undefined, ask)!)
+    expect(sink.asked).toHaveBeenCalledWith('tab', ask)
+    expect(sessionEventFromHook('ask', undefined, undefined, undefined)).toBeNull()
   })
 })
 

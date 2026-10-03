@@ -137,6 +137,10 @@ export class Conductors {
     return this.ownsTab(id) || this.discord.bindings.some((b) => b.sessionIds.includes(id))
   }
 
+  covers(workspace: string | undefined): boolean {
+    return this.discord.bindings.some((b) => b.scope === GLOBAL_SCOPE || b.scope === workspace)
+  }
+
   scopeOfTab(tabId: string): string | undefined {
     return this.bindingOfTab(tabId)?.scope
   }

@@ -1069,3 +1069,27 @@ below was one run.
 - **A hook that exits at once with no output** leaves the dialog to the person, as if
   there were no hook (recorded from the same round's notes: the dialog stayed 75 s and
   worked; not re-run here).
+- **The `Notification` hook (`permission_prompt`) comes about 6 s after
+  `PermissionRequest`** for the same dialog (7.7→13.8 s, 6.4→12.4 s, 7.0→13.0 s in three
+  runs), also for a plan in `bypassPermissions`.
+- **Koloft's own hook script and answer builder, run by a real claude** (2026-10-03, CC
+  2.1.288, scratch `HOME`, haiku, the `PermissionRequest` entry exactly as
+  `hookSettings()` writes it, the answer file written by `hookAnswer()`): with
+  `--dangerously-skip-permissions`, an `AskUserQuestion` answered `2` showed "→ Green" and
+  "Allowed by PermissionRequest hook"; with `--permission-mode default`, a `Bash` dialog
+  answered `yes` (`allow` with `updatedInput` set to the `tool_input` unchanged) ran the
+  command. Both hooks removed their files on the way out.
+- **The keys that answer a dialog in the terminal** (2026-10-03, CC 2.1.288, a pty, scratch
+  `HOME`, haiku, `--dangerously-skip-permissions`, a `PermissionRequest` hook that printed
+  nothing):
+  - an `AskUserQuestion` with one question lists its options as `1.`…`N.`, then
+    `N+1. Type something.` and `N+2. Chat about this`. A digit picks that option and sends
+    it at once. `N+1`, then the text in a second write, then CR in a third write 1 s later
+    sent the text as the answer.
+  - a plan (`ExitPlanMode`) offers `1. Yes, and switch to BYPASS PERMISSIONS …` (in a
+    session that was in bypass before plan mode; `1. Yes, auto-accept edits` in one that
+    was not), `2. Yes, manually approve edits`, `3. Tell Claude what to change`. `1`
+    approved it and the session went back to bypass; Esc rejected it ("User rejected
+    Claude's plan"), the turn ended and the session stayed in plan mode.
+  - a `Bash` dialog (`--permission-mode default`) offers `1. Yes`, `2. Yes, and always
+    allow …`, `3. No`; `1` ran it, `3` and Esc refused it (2026-10-02 round, same version).

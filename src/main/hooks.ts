@@ -55,16 +55,17 @@ case "$event" in
     ;;
   ask)
     # CC§14
-    [ -f "$reg/$tab.conductor" ] && [ -f "$reg/discord-connected" ] || exit 0
-    printf '%s' "$input" | grep -qE '"tool_name"[[:space:]]*:[[:space:]]*"(AskUserQuestion|ExitPlanMode)"' || exit 0
-    ask="$reg/$tab.ask.json"; answer="$reg/$tab.answer.json"
-    rm -f "$answer"
-    trap 'rm -f "$ask"' EXIT
+    [ -f "$reg/discord-connected" ] && [ -f "$reg/$tab.answerable" ] || exit 0
+    ask="$reg/$tab.$$.ask.json"; answer="$reg/$tab.$$.answer.json"
+    trap 'rm -f "$ask" "$answer"' EXIT
     trap 'exit 143' TERM
     printf '%s' "$input" > "$ask.tmp" && mv "$ask.tmp" "$ask"
     while [ ! -f "$answer" ]; do sleep 0.3; done
     cat "$answer"
-    rm -f "$answer"
+    ;;
+  asked)
+    # CC§14
+    printf '{"tabId":"%s","event":"ask","sessionId":"%s","tmux":"%s","ask":%s}\\n' "$tab" "$(session_id)" "$tm" "$input" >> "$reg/$tab.status.jsonl"
     ;;
   posttool)
     # PLATFORM§36
@@ -187,13 +188,16 @@ const NOTIFICATIONS_WAITING_ON_THE_PERSON = [
   'elicitation_url_dialog'
 ].join('|')
 
-// CC§6
+const ASK_WAITS_UP_TO_AN_HOUR_S = 3600
+
+// CC§6 CC§14
 export function hookSettings(
   hookScript: string,
   regDir: string,
   tabId: string,
   statusLine?: StatusLineSetting,
-  quote: (s: string) => string = shq
+  quote: (s: string) => string = shq,
+  dialogs: 'wait-for-answer' | 'record-only' = 'wait-for-answer'
 ): Record<string, unknown> {
   const cmd = (event: string): string =>
     `${quote(hookScript)} ${quote(regDir)} ${quote(tabId)} ${event}`
@@ -207,6 +211,16 @@ export function hookSettings(
         {
           matcher: NOTIFICATIONS_WAITING_ON_THE_PERSON,
           hooks: [{ type: 'command', command: cmd('notify') }]
+        }
+      ],
+      PermissionRequest: [
+        {
+          matcher: '*',
+          hooks: [
+            dialogs === 'wait-for-answer'
+              ? { type: 'command', command: cmd('ask'), timeout: ASK_WAITS_UP_TO_AN_HOUR_S }
+              : { type: 'command', command: cmd('asked') }
+          ]
         }
       ]
     }
@@ -234,41 +248,32 @@ export function removeConductorMarker(regDir: string, tabId: string): void {
   fs.rmSync(conductorMarker(regDir, tabId), { force: true })
 }
 
-export function markDiscordConnected(regDir: string, connected: boolean): void {
-  const marker = path.join(regDir, 'discord-connected')
-  if (connected) fs.writeFileSync(marker, '')
-  else fs.rmSync(marker, { force: true })
+function marker(regDir: string, name: string, on: boolean): void {
+  const file = path.join(regDir, name)
+  if (on) fs.writeFileSync(file, '')
+  else fs.rmSync(file, { force: true })
 }
 
-const ASK_WAITS_UP_TO_AN_HOUR_S = 3600
+export function markDiscordConnected(regDir: string, connected: boolean): void {
+  marker(regDir, 'discord-connected', connected)
+}
+
+export function markAnswerable(regDir: string, tabId: string, on: boolean): void {
+  marker(regDir, `${tabId}.answerable`, on)
+}
 
 // CC§6
 export function writeTabHookSettings(
   paths: HookPaths,
   tabId: string,
   statusLine?: StatusLineSetting,
-  allowKoloft = false,
-  conductor = false
+  allowKoloft = false
 ): string {
   fs.rmSync(path.join(paths.regDir, `${tabId}.status.jsonl`), { force: true })
   fs.rmSync(path.join(paths.regDir, `${tabId}.json`), { force: true })
   const settings = hookSettings(paths.hookScript, paths.regDir, tabId, statusLine)
   // CC§13
   if (allowKoloft) settings.permissions = { allow: ['Bash(koloft *)'] }
-  // CC§14
-  if (conductor)
-    (settings.hooks as Record<string, unknown>).PermissionRequest = [
-      {
-        matcher: '*',
-        hooks: [
-          {
-            type: 'command',
-            command: `${shq(paths.hookScript)} ${shq(paths.regDir)} ${shq(tabId)} ask`,
-            timeout: ASK_WAITS_UP_TO_AN_HOUR_S
-          }
-        ]
-      }
-    ]
   const out = path.join(paths.settingsDir, `${tabId}.json`)
   fs.writeFileSync(out, JSON.stringify(settings))
   return out

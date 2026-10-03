@@ -101,9 +101,13 @@ How to talk to a session you started:
 
 koloft session send <id or name> "<message>"
     Codex: send a message to another Codex session.
-    A conductor: send a message to any session it looks after. A closed one is resumed first. Your message reaches it marked as coming from the owner through you. A session on another machine only gets it once its turn has ended; while it is busy you are told so and nothing is sent.
+    A conductor: send a message to any session it looks after. Your message reaches it marked as coming from the owner through you. A closed one is resumed first, and a session on another machine only gets it once its turn has ended; then you are told "Will deliver when … is ready." at once, and if it never gets there you hear "[Koloft] Could not deliver to …" later.
     Any session: report back to the conductor that started you, with the id it gave you.
     Example: koloft session send 0199c3f2-7a41-7c30-9e55-1d2b8f6a0c11 "Tell me what you found."
+
+koloft session answer <id or name> <option number | yes | no | your own words>
+    Only for a conductor: answer the question or approval a session it looks after is showing right now, the one Koloft posted in Discord as "… is waiting for you". A number picks that option; yes or no approves or refuses; other words are the answer itself (for an approval or a plan: what to do instead). Only answer the way the owner told you.
+    Example: koloft session answer fix-login 2
 
 koloft session resume <id or name> [-- "<message>"]
     Only for a conductor: resume a closed session it looks after, and if you like send it a first message.
@@ -127,7 +131,7 @@ WEB PAGES (Claude only)
 To use the web pages in this session's Workbench, drive them with Playwright (a tool that controls a browser): the playwright-cli command or the Playwright MCP tools. When the owner allows it, they already connect to the Workbench browser; its address is in $KOLOFT_BROWSER_CDP. Codex sessions cannot do this.`
 
 export const AGENT_SKILL_DESCRIPTION =
-  'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the workspace note, list, add, change or run scheduled tasks, list, start, message, resume and stop sessions, read what a session said, or close this session and its worktree for good. Read this before running any koloft command.'
+  'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the workspace note, list, add, change or run scheduled tasks, list, start, message, answer, resume and stop sessions, read what a session said, or close this session and its worktree for good. Read this before running any koloft command.'
 
 export function conductorRole(scope: string): string {
   const remote = parseRemoteKey(scope)
@@ -135,7 +139,7 @@ export function conductorRole(scope: string): string {
     scope === GLOBAL_SCOPE
       ? 'all workspaces'
       : `the workspace ${remote ? remoteCopyText(remote.host, remote.path) : scope}`
-  return `You are Koloft's conductor for ${what}. Messages starting with [Discord] come from the owner via Discord. Use the koloft command (koloft help) to look after the sessions in your scope: koloft session list, read, new (with --backend claude|codex${scope === GLOBAL_SCOPE ? ' and --workspace' : ''}), send, resume and stop. Message every session with koloft session send, whether it is Claude or Codex. Koloft tells the owner in Discord when a session you started or messaged finishes, waits for an answer or closes, so do not repeat that. Your replies reach the owner in Discord; when the owner wants to see a file or a screenshot, send it with koloft discord send <file>.`
+  return `You are Koloft's conductor for ${what}. Messages starting with [Discord] come from the owner via Discord. Use the koloft command (koloft help) to look after the sessions in your scope: koloft session list, read, new (with --backend claude|codex${scope === GLOBAL_SCOPE ? ' and --workspace' : ''}), send, answer, resume and stop. Message every session with koloft session send, whether it is Claude or Codex. Koloft tells the owner in Discord when a session you started or messaged finishes, waits for an answer or closes, so do not repeat that; when the owner tells you how to answer a waiting session, run koloft session answer. Your replies reach the owner in Discord; when the owner wants to see a file or a screenshot, send it with koloft discord send <file>.`
 }
 
 export const CODEX_AGENT_HINT =

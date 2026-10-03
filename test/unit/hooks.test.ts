@@ -18,6 +18,7 @@ import {
   hookSettings,
   writeConductorMarker,
   removeConductorMarker,
+  markAnswerable,
   markDiscordConnected
 } from '../../src/main/hooks'
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/paths'
@@ -543,12 +544,12 @@ describe('injected hook script', () => {
     expect(hookSettings('/x/hook.sh', '/x/reg', 'tabAG3')).not.toHaveProperty('permissions')
   })
 
-  describe('the conductor’s own dialog (PermissionRequest)', () => {
+  describe('a dialog Koloft can answer from Discord (PermissionRequest)', () => {
     const ask = {
       session_id: 's1',
       hook_event_name: 'PermissionRequest',
-      tool_name: 'AskUserQuestion',
-      tool_input: { questions: [{ question: 'Which?', options: [{ label: 'A' }] }] }
+      tool_name: 'Bash',
+      tool_input: { command: 'rm -rf "build"', description: 'Clean' }
     }
     const runAsk = (tab: string): ReturnType<typeof spawn> =>
       spawn(hookScript, [regDir, tab, 'ask'], { stdio: ['pipe', 'pipe', 'ignore'] })
@@ -558,64 +559,77 @@ describe('injected hook script', () => {
       child.stdin!.end(JSON.stringify(payload))
       return new Promise((resolve) => child.on('close', () => resolve(out)))
     }
+    const hookFiles = (tab: string): string[] =>
+      fs.readdirSync(regDir).filter((f) => f.startsWith(`${tab}.`) && /\.(ask|answer)\./.test(f))
+    const askOf = (child: ReturnType<typeof spawn>, tab: string): string =>
+      path.join(regDir, `${tab}.${child.pid}.ask.json`)
 
     // CC§14
-    it('only a conductor tab, while Discord is connected, gets a PermissionRequest hook that waits up to an hour', () => {
+    it('every local tab waits up to an hour for an answer to any dialog; a tab on another machine only records it', () => {
       const read = (file: string): Record<string, Record<string, unknown>> =>
         JSON.parse(fs.readFileSync(file, 'utf8'))
-      const entry = read(writeTabHookSettings(setupHooks(), 'tabC1', undefined, false, true)).hooks
-        .PermissionRequest as { hooks: { command: string; timeout: number }[] }[]
-      expect(entry[0].hooks[0].command).toContain(' ask')
-      expect(entry[0].hooks[0].timeout).toBe(3600)
-      expect(read(writeTabHookSettings(setupHooks(), 'tabC2')).hooks).not.toHaveProperty(
-        'PermissionRequest'
-      )
+      const local = read(writeTabHookSettings(setupHooks(), 'tabC1')).hooks.PermissionRequest as {
+        matcher: string
+        hooks: { command: string; timeout: number }[]
+      }[]
+      expect(local[0].matcher).toBe('*')
+      expect(local[0].hooks[0].command).toMatch(/ ask$/)
+      expect(local[0].hooks[0].timeout).toBe(3600)
+      const remote = hookSettings('/m/hook.sh', '/m/reg', 'tabC2', undefined, dq, 'record-only')
+        .hooks as Record<string, { hooks: { command: string; timeout?: number }[] }[]>
+      expect(remote.PermissionRequest[0].hooks[0].command).toMatch(/ asked$/)
+      expect(remote.PermissionRequest[0].hooks[0]).not.toHaveProperty('timeout')
     })
 
     // CC§14
-    it('hands the question to Koloft, waits for the answer file and prints it, then cleans both files up', async () => {
-      writeConductorMarker(regDir, 'tabA1', 'role')
+    it('hands the question to Koloft in a file of its own, waits for its answer file and prints it, then cleans both files up', async () => {
+      markAnswerable(regDir, 'tabA1', true)
       markDiscordConnected(regDir, true)
       const child = runAsk('tabA1')
       const printed = feed(child, ask)
-      const askFile = path.join(regDir, 'tabA1.ask.json')
+      const askFile = askOf(child, 'tabA1')
       await vi.waitFor(() => expect(fs.existsSync(askFile)).toBe(true))
       expect(JSON.parse(fs.readFileSync(askFile, 'utf8'))).toEqual(ask)
-      fs.writeFileSync(path.join(regDir, 'tabA1.answer.json'), '{"decided":true}')
+      fs.writeFileSync(path.join(regDir, `tabA1.${child.pid}.answer.json`), '{"decided":true}')
       expect(await printed).toBe('{"decided":true}')
-      expect(fs.existsSync(askFile)).toBe(false)
-      expect(fs.existsSync(path.join(regDir, 'tabA1.answer.json'))).toBe(false)
+      expect(hookFiles('tabA1')).toEqual([])
     })
 
     // CC§14
     it('ended by claude (the person answered "No" at the Mac), it removes its question file', async () => {
-      writeConductorMarker(regDir, 'tabA2', 'role')
+      markAnswerable(regDir, 'tabA2', true)
       markDiscordConnected(regDir, true)
       const child = runAsk('tabA2')
       const closed = feed(child, ask)
-      const askFile = path.join(regDir, 'tabA2.ask.json')
-      await vi.waitFor(() => expect(fs.existsSync(askFile)).toBe(true))
+      await vi.waitFor(() => expect(fs.existsSync(askOf(child, 'tabA2'))).toBe(true))
       child.kill('SIGTERM')
       await closed
-      expect(fs.existsSync(askFile)).toBe(false)
+      expect(hookFiles('tabA2')).toEqual([])
     })
 
-    it('exits at once with no output when the tab is no conductor, Discord is not connected, or the tool is not a question or a plan', () => {
-      writeConductorMarker(regDir, 'tabA3', 'role')
-      const quiet = (tab: string, payload: unknown): string => {
+    it('exits at once with no output while Discord is not connected or the tab is in no conductor’s care', () => {
+      markAnswerable(regDir, 'tabA3', true)
+      const quiet = (tab: string): string => {
         const res = spawnSync(hookScript, [regDir, tab, 'ask'], {
-          input: JSON.stringify(payload),
+          input: JSON.stringify(ask),
           encoding: 'utf8',
           timeout: 5000
         })
         expect(res.status).toBe(0)
         return res.stdout
       }
-      expect(quiet('tabA3', ask)).toBe('')
+      expect(quiet('tabA3')).toBe('')
       markDiscordConnected(regDir, true)
-      expect(quiet('tabNotConductor', ask)).toBe('')
-      expect(quiet('tabA3', { ...ask, tool_name: 'Bash', tool_input: { command: 'ls' } })).toBe('')
+      expect(quiet('tabNotLookedAfter')).toBe('')
       expect(fs.readdirSync(regDir).filter((f) => f.includes('.ask'))).toEqual([])
+    })
+
+    // CC§14
+    it('on another machine it does not wait: it appends the whole question to the status log, which the mirror brings back', () => {
+      fire('tabR1', 'asked', ask)
+      expect(readStatusLog('tabR1')).toEqual([
+        { tabId: 'tabR1', event: 'ask', sessionId: 's1', tmux: '', ask }
+      ])
     })
   })
 

@@ -128,6 +128,7 @@ interface Run {
   resumeKey?: string
   home?: string
   account?: string
+  bypassingChecks: boolean
   releaseOpenShim(): void
 }
 
@@ -533,6 +534,10 @@ export class CodexSessions {
     return this.runs.get(tabId)?.observer.openApproval()
   }
 
+  launchedBypassingChecks(tabId: string): boolean {
+    return this.runs.get(tabId)?.bypassingChecks === true
+  }
+
   turnsOf(key: string, n: number): Turn[] | undefined {
     return [...this.runs.values()].find((r) => r.info?.sessionId === key)?.observer.turns.last(n)
   }
@@ -720,6 +725,7 @@ export class CodexSessions {
         resumeKey: opts.resumeSessionId,
         home,
         account: picked?.account,
+        bypassingChecks: opts.permission === 'bypass',
         releaseOpenShim: openShim.release
       }
       this.runs.set(handle.id, run)

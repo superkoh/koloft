@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   handoverPreamble,
   NOT_IN_YOUR_WORKSPACE,
@@ -60,8 +60,9 @@ interface Conducting {
   sidebar?: WorkspaceRows[]
   turns?: Record<string, Turn[]>
   conductors?: Record<string, Target>
-  ready?: (tabId: string, turnEnded: boolean) => boolean
+  ready?: (tabId: string, turnEnded: boolean, ms: number) => boolean | Promise<boolean>
   bypass?: string[]
+  answer?: (tabId: string, reply: string) => string | undefined
 }
 
 interface Started {
@@ -89,7 +90,11 @@ function harness(
   resumed: string[]
   stopped: string[]
   started: Started[]
+  answers: { tabId: string; reply: string }[]
+  undelivered: { callerTab: string; name: string; why: string }[]
 } {
+  const answers: { tabId: string; reply: string }[] = []
+  const undelivered: { callerTab: string; name: string; why: string }[] = []
   const launched: Launch[] = []
   const queued: { tabId: string; text: string; clientId?: string }[] = []
   const closed: string[] = []
@@ -130,7 +135,7 @@ function harness(
       resumed.push(r.id)
       return `${r.id}-tab`
     },
-    ready: async (tabId, _ms, turnEnded) => conducting.ready?.(tabId, turnEnded) ?? true,
+    ready: async (tabId, ms, turnEnded) => conducting.ready?.(tabId, turnEnded, ms) ?? true,
     sendLine: async (tabId, line) => {
       lines.push({ tabId, line })
     },
@@ -143,6 +148,13 @@ function harness(
     },
     started: (conductorTab, tabId, name, workspace, backend) => {
       started.push({ conductorTab, tabId, name, workspace, backend })
+    },
+    answer: async (tabId, reply) => {
+      answers.push({ tabId, reply })
+      return conducting.answer?.(tabId, reply)
+    },
+    undelivered: (callerTab, target, why) => {
+      undelivered.push({ callerTab, name: target.name, why })
     }
   })
   const verb = async (args: string[], from: { tabId: string; cwd: string }): Promise<AgentReply> =>
@@ -158,7 +170,9 @@ function harness(
     typed,
     resumed,
     stopped,
-    started
+    started,
+    answers,
+    undelivered
   }
 }
 
@@ -615,36 +629,91 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop 
     ])
   })
 
-  it('send types into a Claude session on another machine only once its turn has ended, and otherwise reports it busy and types nothing', async () => {
-    let ended = false
-    const { verb, typed, lines } = harness(
+  it('send types into a Claude session on another machine at once when its turn has ended; while it is busy it answers at once, types when the turn ends, and reports to the conductor a turn that never does', async () => {
+    const turnEnds: ((ended: boolean) => void)[] = []
+    const busy = harness(
       live,
       {},
       [],
-      conducting({ ready: (_tab, turnEnded) => !turnEnded || ended })
+      conducting({
+        ready: (_tab, turnEnded, ms) =>
+          !turnEnded || (ms > 0 && new Promise<boolean>((resolve) => turnEnds.push(resolve)))
+      })
     )
-    const busy = await verb(['send', 'api-fix', 'hi'], from('global'))
-    expect(busy.exit).not.toBe(0)
-    expect(busy.text).toContain('busy, not sent')
-    expect(typed).toEqual([])
-    ended = true
-    expect((await verb(['send', 'api-fix', 'hi'], from('global'))).exit).toBe(0)
-    expect(typed).toEqual([{ tabId: 'api', text: ownerSays('hi') }])
-    expect(lines).toEqual([])
+    expect(await busy.verb(['send', 'api-fix', 'hi'], from('global'))).toMatchObject({
+      exit: 0,
+      text: 'Will deliver when api-fix is ready.'
+    })
+    expect(busy.typed).toEqual([])
+    await vi.waitFor(() => expect(turnEnds).toHaveLength(1))
+    turnEnds[0](true)
+    await vi.waitFor(() => expect(busy.typed).toEqual([{ tabId: 'api', text: ownerSays('hi') }]))
+    await busy.verb(['send', 'api-fix', 'again'], from('global'))
+    await vi.waitFor(() => expect(turnEnds).toHaveLength(2))
+    turnEnds[1](false)
+    await vi.waitFor(() =>
+      expect(busy.undelivered).toEqual([
+        { callerTab: 'global', name: 'api-fix', why: expect.stringContaining('stayed busy') }
+      ])
+    )
+    expect(busy.typed).toHaveLength(1)
+    expect(busy.lines).toEqual([])
+
+    const idle = harness(live, {}, [], conducting())
+    expect((await idle.verb(['send', 'api-fix', 'hi'], from('global'))).text).toBe(
+      'Typed into api-fix.'
+    )
   })
 
-  it('send resumes a closed session first and sends once it is ready; one not ready in time gets nothing', async () => {
+  it('send to a closed session answers at once, resumes it and sends once it is ready; one that never gets ready is reported to the conductor', async () => {
     const ready = harness(live, {}, [], conducting())
-    expect((await ready.verb(['send', 'old-work', 'go'], from('wsCond'))).exit).toBe(0)
+    expect((await ready.verb(['send', 'old-work', 'go'], from('wsCond'))).text).toBe(
+      'Will deliver when old-work is ready.'
+    )
     expect(ready.resumed).toEqual(['old-id'])
-    expect(ready.lines).toEqual([
-      { tabId: 'old-id-tab', line: crossSessionLine('prompting', ownerSays('go')) }
-    ])
+    await vi.waitFor(() =>
+      expect(ready.lines).toEqual([
+        { tabId: 'old-id-tab', line: crossSessionLine('prompting', ownerSays('go')) }
+      ])
+    )
     const slow = harness(live, {}, [], conducting({ ready: () => false }))
-    const reply = await slow.verb(['send', 'old-work', 'go'], from('wsCond'))
-    expect(reply.exit).not.toBe(0)
-    expect(reply.text).toContain('not ready in time')
+    expect((await slow.verb(['send', 'old-work', 'go'], from('wsCond'))).exit).toBe(0)
+    await vi.waitFor(() =>
+      expect(slow.undelivered).toEqual([
+        { callerTab: 'wsCond', name: 'old-work', why: expect.stringContaining('not get ready') }
+      ])
+    )
     expect(slow.lines).toEqual([])
+  })
+
+  it('answer hands the reply to the dialog the session shows and touches it; a closed session, the conductor itself, a session with no dialog and a non-conductor are refused', async () => {
+    const h = harness(
+      live,
+      {},
+      [],
+      conducting({
+        answer: (tab) => (tab === 'cx' ? 'it shows no question or approval right now.' : undefined)
+      })
+    )
+    expect((await h.verb(['answer', 'fix-login', '2'], from('wsCond'))).text).toBe(
+      'Answered fix-login.'
+    )
+    expect((await h.verb(['answer', CODEX_THREAD, 'yes'], from('wsCond'))).text).toBe(
+      'koloft session answer: docs-links: it shows no question or approval right now.'
+    )
+    expect((await h.verb(['answer', 'old-work', 'yes'], from('wsCond'))).text).toContain(
+      'it is not open'
+    )
+    expect((await h.verb(['answer', 'cond-id', '1'], from('wsCond'))).text).toContain(THAT_IS_YOU)
+    expect((await h.verb(['answer', 'fix-login', '1'], from('fix'))).exit).not.toBe(0)
+    expect(await h.verb(['answer', 'fix-login'], from('wsCond'))).toMatchObject({
+      exit: EXIT_USAGE
+    })
+    expect(h.answers).toEqual([
+      { tabId: 'fix', reply: '2' },
+      { tabId: 'cx', reply: 'yes' }
+    ])
+    expect(h.touched.map((t) => t.key)).toEqual(['fix-id', CODEX_KEY, 'old-id'])
   })
 
   it('send refuses, resuming nothing, a message to a Claude session that holds the closing tag of the message envelope', async () => {
@@ -663,9 +732,11 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop 
     )
     expect((await verb(['resume', 'old-id', '--', 'carry', 'on'], from('wsCond'))).exit).toBe(0)
     expect(resumed).toEqual(['old-id', 'old-id'])
-    expect(lines).toEqual([
-      { tabId: 'old-id-tab', line: crossSessionLine('prompting', ownerSays('carry on')) }
-    ])
+    await vi.waitFor(() =>
+      expect(lines).toEqual([
+        { tabId: 'old-id-tab', line: crossSessionLine('prompting', ownerSays('carry on')) }
+      ])
+    )
     expect(touched.map((t) => t.key)).toEqual(['old-id', 'fix-id', 'old-id'])
     expect(await verb(['resume', 'old-work', 'extra'], from('wsCond'))).toMatchObject({
       exit: EXIT_USAGE
@@ -768,10 +839,12 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop 
     expect((await verb(['send', 'cond-id', 'done'], from('fix'))).exit).toBe(0)
     expect((await verb(['send', 'codex-cond', 'done'], from('cx'))).exit).toBe(0)
     expect((await verb(['send', 'closed-cond', 'done'], from('fix'))).exit).toBe(0)
-    expect(lines).toEqual([
-      { tabId: 'wsCond', line: crossSessionLine('prompting', 'done') },
-      { tabId: 'b3-tab', line: crossSessionLine('prompting', 'done') }
-    ])
+    await vi.waitFor(() =>
+      expect(lines).toEqual([
+        { tabId: 'wsCond', line: crossSessionLine('prompting', 'done') },
+        { tabId: 'b3-tab', line: crossSessionLine('prompting', 'done') }
+      ])
+    )
     expect(queued).toEqual([{ tabId: 'cc', text: 'done', clientId: 'koloft-conductor-1' }])
     expect(opened).toEqual(['b3'])
   })

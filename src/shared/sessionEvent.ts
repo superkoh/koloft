@@ -8,7 +8,14 @@ export interface ReportedTask {
   since?: number
 }
 
+// CC§14
+export interface AskPayload {
+  tool_name?: string
+  tool_input?: Record<string, unknown>
+}
+
 export type SessionEvent =
+  | { type: 'asked'; ask: AskPayload }
   | { type: 'prompt' }
   | { type: 'stop'; reported?: ReportedTask[] }
   | { type: 'notify'; need: 'approval' | 'input' }

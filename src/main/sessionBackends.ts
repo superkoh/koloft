@@ -12,7 +12,7 @@ import type {
   SessionResumeResult,
   SessionRow
 } from '@shared/types'
-import type { SessionEvent } from '@shared/sessionEvent'
+import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
 import {
   identityOf,
@@ -49,6 +49,7 @@ export interface SessionLifecycle {
   clearAttention(tabId: string): void
   open(tabId: string, target: string): void
   turnEnded(tabId: string, turn: Turn): void
+  asked(tabId: string, ask: AskPayload): void
 }
 
 const CLEAN_EXIT_HIDES_A_LATER_EXIT_MS = 30_000
@@ -71,6 +72,8 @@ export class SessionBackends {
         return this.lifecycle.open(tabId, event.target)
       case 'turn-ended':
         return this.lifecycle.turnEnded(tabId, event.turn)
+      case 'asked':
+        return this.lifecycle.asked(tabId, event.ask)
       case 'prompt':
         this.lifecycle.prompted(tabId)
     }

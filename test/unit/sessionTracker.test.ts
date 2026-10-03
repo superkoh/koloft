@@ -1880,11 +1880,11 @@ describe('SessionTracker — what each turn said: the owner, another session, an
   })
 
   // CC§14
-  it('a question answered in the terminal raises dialog-answered once its tool result lands, but one already answered before the bind does not', async () => {
+  it('any tool call, a question or a command, raises tool-done with its name and input once its result lands, but one finished before the bind does not', async () => {
     const cwd = makeWorkspace({})
     const tracker = newTracker()
-    const answered: string[] = []
-    tracker.on('dialog-answered', (e: { tabId: string }) => answered.push(e.tabId))
+    const answered: unknown[] = []
+    tracker.on('tool-done', (e: unknown) => answered.push(e))
     tracker.track('tabAsk', cwd)
     const sid = '44444444-4444-4444-8444-444444444444'
     const ask = (id: string, s: number): unknown =>
@@ -1906,6 +1906,11 @@ describe('SessionTracker — what each turn said: the owner, another session, an
     fs.appendFileSync(file, JSON.stringify(said(bash, 31)) + '\n')
     fs.appendFileSync(file, JSON.stringify(toolResult(32)) + '\n')
     fs.appendFileSync(file, JSON.stringify(result('toolu_new', 33)) + '\n')
-    await expect.poll(() => answered).toEqual(['tabAsk'])
+    await expect
+      .poll(() => answered)
+      .toEqual([
+        { tabId: 'tabAsk', name: 'Bash', input: { command: 'sleep 15' } },
+        { tabId: 'tabAsk', name: 'AskUserQuestion', input: {} }
+      ])
   })
 })
