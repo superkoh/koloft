@@ -246,7 +246,8 @@ import type {
 import { AgentRequests, BUILTIN_VERBS } from './agentRequests'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
-import { sessionVerb, StartedSessions, type ClosableSession } from './agentSessions'
+import { sessionVerb, type ClosableSession } from './agentSessions'
+import { StartedSessions } from './startedSessions'
 import { closingTree, removeTree, whatIsLeft } from './sessionClose'
 import { claudePeerNames } from './claudeSessionRegistry'
 import { writeAgentPlugin } from './agentPlugin'
@@ -276,7 +277,9 @@ let flushHeldData: () => void = () => {}
 const tracker = new SessionTracker()
 let codexSessions: CodexSessions | null = null
 let codexStartupError: string | undefined
-const startedSessions = new StartedSessions()
+const startedSessions = new StartedSessions(() =>
+  path.join(app.getPath('userData'), 'started-sessions.json')
+)
 const sessionBackends = new SessionBackends({
   prompted: consumeOutletDedupe,
   bound: (tabId, key) => {
@@ -2308,6 +2311,7 @@ async function closeSessionFully(target: ClosableSession): Promise<void> {
     return
   }
   archiveSession(target.sessionId)
+  startedSessions.forget(target.sessionId)
   codexSessions?.store.removeUnusedResourcesAt(info.treeRoot)
 }
 

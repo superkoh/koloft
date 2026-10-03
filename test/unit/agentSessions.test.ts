@@ -1,12 +1,15 @@
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 import { describe, expect, it } from 'vitest'
 import {
   handoverPreamble,
   parseNewSessionArgs,
   sessionVerb,
-  StartedSessions,
   type ClosableSession,
   type PinnedWorkspace
 } from '../../src/main/agentSessions'
+import { StartedSessions } from '../../src/main/startedSessions'
 import { EXIT_USAGE, type AgentReply } from '../../src/main/agentRequests'
 import type { BackendId, CreateTabOptions, SessionInfo } from '../../src/shared/types'
 
@@ -58,7 +61,8 @@ function harness(
   const launched: Launch[] = []
   const queued: { tabId: string; text: string }[] = []
   const closed: string[] = []
-  const started = new StartedSessions()
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-started-'))
+  const started = new StartedSessions(() => path.join(dir, 'started-sessions.json'))
   const inner = sessionVerb({
     workspaceOf: (tabId) => sessions.find((s) => s.tabId === tabId)?.cwd,
     allSessions: () => sessions,
@@ -314,7 +318,7 @@ describe('koloft session close', () => {
       treeRoot: WS
     }
     const { verb, closed, started } = harness([session('me', 'claude')], {}, [], [ended])
-    started.started('gone-tab', 'me')
+    started.started('gone-tab', 'me-session')
     started.bound('gone-tab', 'kid-session')
     expect((await verb(['close', 'Test runner'], from('me'))).exit).toBe(0)
     expect(closed).toEqual(['kid-session'])

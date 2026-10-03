@@ -241,6 +241,52 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     }
   })
 
+  test('koloft session close <child> still reaches a child its parent started before Koloft restarted, now a cold row', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const fx = setupGitFixture(env)
+    const rowOf = (page: Page, worktree: string): Locator =>
+      wsRows(page, 'repo').filter({
+        has: page.locator('.ws-tab-sub', { hasText: new RegExp(`^${worktree}$`) })
+      })
+    const before = await launchApp(env)
+    try {
+      const page = await before.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      const dlg = await openWorktreeSession(page, 'repo')
+      await dlg.getByRole('textbox').click()
+      await page.keyboard.type('parent')
+      await page.keyboard.press('Enter')
+      await expect(rowOf(page, 'parent')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      expect(await koloftInSession(page, 'session new -w kid --name kid -- hello')).toBe('0')
+      await expect(rowOf(page, 'kid')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+    } finally {
+      await quitAndClose(before)
+    }
+    const kid = readCalls(env).find((c) => c.argv.includes('kid'))!
+    const tree = path.join(fx.clone, '.claude', 'worktrees', 'kid')
+
+    const after = await launchApp(env)
+    try {
+      const page = await after.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      await expect(rowOf(page, 'kid')).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      await rowOf(page, 'parent').click()
+      await expect(rowOf(page, 'parent')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+
+      expect(await koloftInSession(page, `session close ${kid.sessionId}`)).toBe('0')
+      await expect(rowOf(page, 'kid')).toHaveCount(0, { timeout: 30_000 })
+      await expect(rowOf(page, 'parent')).toHaveCount(1)
+      await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+      expect(runGit(fx.clone, 'branch', '--list', 'worktree-kid').trim()).toBe('')
+    } finally {
+      await quitAndClose(after)
+    }
+  })
+
   test('with agent tools off in Settings, koloft in a new session is refused', async ({ env }) => {
     test.setTimeout(120_000)
     seedSettings(env, { agentTools: false })

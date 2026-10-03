@@ -13,6 +13,7 @@ import {
   type AgentVerb,
   type Parsed
 } from './agentRequests'
+import type { StartedSessions } from './startedSessions'
 
 export interface NewSessionArgs {
   name?: string
@@ -174,27 +175,6 @@ export interface ClosableSession {
 const CLOSE_USAGE =
   'koloft session close: give nothing to close this session, or the id or name of one you started with koloft session new, like: koloft session close <id or name>'
 
-export class StartedSessions {
-  private parentOfTab = new Map<string, string>()
-  private parentOfSession = new Map<string, string>()
-
-  started(childTabId: string, parentTabId: string): void {
-    this.parentOfTab.set(childTabId, parentTabId)
-  }
-
-  bound(tabId: string, sessionId: string): void {
-    const parent = this.parentOfTab.get(tabId)
-    if (parent) this.parentOfSession.set(sessionId, parent)
-  }
-
-  startedBy(target: ClosableSession, parentTabId: string): boolean {
-    return (
-      (!!target.tabId && this.parentOfTab.get(target.tabId) === parentTabId) ||
-      this.parentOfSession.get(target.sessionId) === parentTabId
-    )
-  }
-}
-
 export async function findClosable(
   sessions: ClosableSession[],
   ref: string,
@@ -261,8 +241,7 @@ async function startSibling(
   d: SessionVerbDeps,
   args: NewSessionArgs,
   me: SessionInfo,
-  workspace: string,
-  callerTabId: string
+  workspace: string
 ): Promise<AgentReply> {
   const backend = me.backendId
   if (backend === 'codex' && args.name !== undefined) return refused(CODEX_HAS_NO_NAME, EXIT_USAGE)
@@ -281,7 +260,7 @@ async function startSibling(
     firstPrompt: withHandover(caller, args.prompt)
   })
   if (!tabId) return refused('koloft session new: Koloft could not start the session.')
-  d.started.started(tabId, callerTabId)
+  d.started.started(tabId, me.sessionId)
   const listHint =
     args.workspace === undefined
       ? 'koloft session list'
@@ -312,12 +291,10 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       const parsed = parseNewSessionArgs(rest)
       if (!parsed.ok) return refused(`koloft session new: ${parsed.error}`, EXIT_USAGE)
       if (parsed.value.workspace === undefined)
-        return ws
-          ? startSibling(d, parsed.value, caller.session, ws, caller.tabId)
-          : refused(NO_WORKSPACE)
+        return ws ? startSibling(d, parsed.value, caller.session, ws) : refused(NO_WORKSPACE)
       const target = startableWorkspace(parsed.value.workspace, d.pinnedWorkspaces())
       if (!target.ok) return refused(`koloft session new: ${target.error}`)
-      return startSibling(d, parsed.value, caller.session, target.value, caller.tabId)
+      return startSibling(d, parsed.value, caller.session, target.value)
     }
     if (sub === 'send') {
       if (caller.session.backendId !== 'codex')
@@ -335,7 +312,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       const [ref] = rest
       let target: ClosableSession = caller.session
       if (ref !== undefined) {
-        const mine = d.closable().filter((s) => d.started.startedBy(s, caller.tabId))
+        const mine = d.closable().filter((s) => d.started.startedBy(s, caller.session))
         const hit = await findClosable(mine, ref, d.peerNames())
         if (!hit.ok) return refused(`koloft session close: ${hit.error}`)
         target = hit.value
