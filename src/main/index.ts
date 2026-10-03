@@ -1390,7 +1390,15 @@ app.whenReady().then(() => {
     remoteProblem: (host) => remoteSync?.problem(host),
     remoteGit: (host, p) => remoteSync?.gitInfo(host, p),
     killRemoteSession: (host, sessionId) =>
-      claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId))
+      claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId)),
+    memberDropped: (sessionId, why) => {
+      try {
+        fs.appendFileSync(
+          path.join(app.getPath('userData'), 'dropped-sessions.log'),
+          `${new Date().toISOString()} ${sessionId} ${why}\n`
+        )
+      } catch {}
+    }
   })
   remoteSync = new RemoteSync({
     run: (host, cmd) =>
