@@ -104,6 +104,12 @@ koloft session send <id or name> "<message>"
 koloft session close
     Close the session you run it in, for good: Koloft ends it, closes its tab and takes it off the sidebar list. If it runs in its own git worktree, Koloft also deletes that worktree and its branches. Run it as your very last step, only when the owner asked for it. If anything in the worktree is not committed, or a commit is on no remote branch, nothing is closed and Koloft lists what is left.
 
+DISCORD (conductors only)
+
+koloft discord send <file>... [-- "<text>"]
+    Only for a conductor: send files, pictures or screenshots to the Discord channel the owner talks to you in, with an optional line of text. Paths are relative to your current folder. At most 20 MB per file. Use it when the owner wants to see a file or a screenshot; a path you only mention in your reply is not sent.
+    Example: koloft discord send shot.png -- "The login page now."
+
 WEB PAGES (Claude only)
 
 To use the web pages in this session's Workbench, drive them with Playwright (a tool that controls a browser): the playwright-cli command or the Playwright MCP tools. When the owner allows it, they already connect to the Workbench browser; its address is in $KOLOFT_BROWSER_CDP. Codex sessions cannot do this.`
@@ -117,7 +123,7 @@ export function conductorRole(scope: string): string {
     scope === GLOBAL_SCOPE
       ? 'all workspaces'
       : `the workspace ${remote ? remoteCopyText(remote.host, remote.path) : scope}`
-  return `You are Koloft's conductor for ${what}. Messages starting with [Discord] come from the owner via Discord. Use the koloft command (koloft help) to list, start, stop, resume, read and message sessions in your scope.`
+  return `You are Koloft's conductor for ${what}. Messages starting with [Discord] come from the owner via Discord. Use the koloft command (koloft help) to list, start, stop, resume, read and message sessions in your scope. Your replies reach the owner in Discord; when the owner wants to see a file or a screenshot, send it with koloft discord send <file>.`
 }
 
 export const CODEX_AGENT_HINT =

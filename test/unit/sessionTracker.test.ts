@@ -1845,4 +1845,34 @@ describe('SessionTracker — what each turn said: the owner, another session, an
       'Looking.\n\nFixed.'
     ])
   })
+
+  // CC§14
+  it('a question answered in the terminal raises dialog-answered once its tool result lands, but one already answered before the bind does not', async () => {
+    const cwd = makeWorkspace({})
+    const tracker = newTracker()
+    const answered: string[] = []
+    tracker.on('dialog-answered', (e: { tabId: string }) => answered.push(e.tabId))
+    tracker.track('tabAsk', cwd)
+    const sid = '44444444-4444-4444-8444-444444444444'
+    const ask = (id: string, s: number): unknown =>
+      said({ type: 'tool_use', id, name: 'AskUserQuestion', input: {} }, s)
+    const result = (id: string, s: number): unknown => ({
+      type: 'user',
+      isSidechain: false,
+      timestamp: at(s),
+      message: { role: 'user', content: [{ tool_use_id: id, type: 'tool_result' }] }
+    })
+    const file = writeJsonl(cwd, sid, [
+      human('earlier', 1),
+      ask('toolu_old', 2),
+      result('toolu_old', 3)
+    ])
+    tracker.bindSession('tabAsk', file, sid, cwd)
+    await waitFor(tracker, (x) => x.tabId === 'tabAsk' && !!x.status)
+    fs.appendFileSync(file, JSON.stringify(ask('toolu_new', 30)) + '\n')
+    fs.appendFileSync(file, JSON.stringify(said(bash, 31)) + '\n')
+    fs.appendFileSync(file, JSON.stringify(toolResult(32)) + '\n')
+    fs.appendFileSync(file, JSON.stringify(result('toolu_new', 33)) + '\n')
+    await expect.poll(() => answered).toEqual(['tabAsk'])
+  })
 })

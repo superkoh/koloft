@@ -7,6 +7,7 @@ import { costUsdOf, resolvePricing } from '@shared/pricing'
 import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
 import { CODEX_OPEN_SENT } from './openShimScript'
 import { TurnLog, type SaidLine } from '@shared/turns'
+import type { CodexApproval } from './discord/dialog'
 
 export function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -129,6 +130,7 @@ export class CodexObservation {
   >()
   private approvals = new Map<string | number, string>()
   private approvalThreads = new Map<string | number, string>()
+  private approvalAsks = new Map<string | number, { command?: string; reason?: string }>()
   private generation = 0
   private threadId?: string
   private liveTurns = new Set<string>()
@@ -148,6 +150,13 @@ export class CodexObservation {
   turns = new TurnLog()
 
   constructor(private emit: (event: CodexEvent) => void) {}
+
+  // CODEX§3
+  openApproval(): CodexApproval | undefined {
+    for (const [id, method] of this.approvals)
+      if (method.endsWith('/requestApproval')) return { id, ...this.approvalAsks.get(id) }
+    return undefined
+  }
 
   receive(direction: 'client' | 'server', value: unknown): void {
     const f = record(value),
@@ -175,6 +184,7 @@ export class CodexObservation {
       if (method === 'turn/start' && p.threadId === this.threadId) this.unsubscribed = false
       if (id !== undefined && !method && this.approvals.delete(id)) {
         this.approvalThreads.delete(id)
+        this.approvalAsks.delete(id)
         if (!this.approvals.size) {
           this.waitingForInput = false
           this.mainTurn = this.liveTurns.size ? 'working' : 'ended'
@@ -209,6 +219,7 @@ export class CodexObservation {
       this.liveTurns.clear()
       this.approvals.clear()
       this.approvalThreads.clear()
+      this.approvalAsks.clear()
       this.waitingForInput = false
       this.mainTurn = 'ended'
       this.publishedTurn = undefined
@@ -251,6 +262,10 @@ export class CodexObservation {
     ) {
       this.approvals.set(id, method)
       this.approvalThreads.set(id, p.threadId as string)
+      this.approvalAsks.set(id, {
+        ...(typeof p.command === 'string' ? { command: p.command } : {}),
+        ...(typeof p.reason === 'string' ? { reason: p.reason } : {})
+      })
       this.mainTurn = method.endsWith('/requestApproval') ? 'approval' : 'input'
       this.publishActivity()
     } else if (ownedChild) {
@@ -271,6 +286,7 @@ export class CodexObservation {
         if (owner === this.threadId) {
           this.approvals.delete(id)
           this.approvalThreads.delete(id)
+          this.approvalAsks.delete(id)
         }
       }
       this.waitingForInput = false

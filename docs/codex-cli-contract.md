@@ -97,6 +97,10 @@ displayed the approval. Pressing **y** there produced a client reply with the sa
 and `{ "decision": "accept" }`; the file was then written and the turn completed.
 The relay never answered the approval itself.
 
+The approval dialog takes single keys, with no Enter after them: `y`, `1` or Enter
+approve; `3` or Esc decline. Recorded from the Discord design round's probe notes
+(2026-10-02, Codex 0.159.3, a real TUI); the setup was not re-run here.
+
 Not probed yet: the other server requests Koloft treats as waiting on the person
 (`…/requestApproval` for other item kinds, `item/tool/requestUserInput`,
 `mcpServer/elicitation/request`). None has been seen on the wire; that each is in the

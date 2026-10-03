@@ -758,6 +758,7 @@ export class ClaudeBackend implements SessionBackend {
         return plan.launchCommand(tabId)
       },
       resumeSessionId: spec.resumeSessionId,
+      conductor: !!spec.role && !machine,
       shell: plan.shell,
       extraEnv: agentPlugin ? { ...plan.extraEnv, KOLOFT_AGENT_PLUGIN: agentPlugin } : plan.extraEnv
     })

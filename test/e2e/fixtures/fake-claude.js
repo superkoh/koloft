@@ -224,21 +224,25 @@ const EVENT_KEY = {
   end: 'SessionEnd',
   prompt: 'UserPromptSubmit',
   stop: 'Stop',
-  notify: 'Notification'
+  notify: 'Notification',
+  ask: 'PermissionRequest'
 }
 function fireHook(event, payload) {
   const cmd = hooks?.[EVENT_KEY[event]]?.[0]?.hooks?.[0]?.command
-  if (!cmd) return
+  if (!cmd) return ''
   // CC§1
   const body = 'session_id' in payload ? payload : { ...payload, session_id: sessionId }
   try {
-    cp.execSync(cmd, {
+    return cp.execSync(cmd, {
       input: JSON.stringify(body),
-      stdio: ['pipe', 'ignore', 'ignore'],
+      stdio: ['pipe', 'pipe', 'ignore'],
+      encoding: 'utf8',
       // CC§1
       env: { ...process.env, CLAUDE_CODE_EXECPATH: LIVE_EXECPATH_DIFFERING_FROM_TRANSCRIPT_VERSION }
     })
-  } catch {}
+  } catch {
+    return ''
+  }
 }
 
 function append(lines) {
@@ -496,6 +500,10 @@ function handleLine(line) {
     // CC§4
     if (text === '2') removeWorktree()
     return shutdown('prompt_input_exit')
+  }
+  if (text.startsWith('[Discord] ')) {
+    const said = text.slice('[Discord] '.length)
+    return handleLine(said.startsWith('/') ? said : `/answer ${text}`)
   }
   if (text === '/exit' || text === 'exit' || text === '/quit') return exitSession()
   // CC§1 CC§2
@@ -1025,6 +1033,85 @@ function handleLine(line) {
     ])
     fireHook('stop', { hook_event_name: 'Stop' })
     process.stdout.write(`[fake-claude] answered: ${question}\r\n> `)
+    return
+  }
+  if (text.startsWith('/long ')) {
+    const lines = Number(text.slice('/long '.length)) || 1
+    fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
+    const reply = Array.from({ length: lines }, (_, i) => `line ${i + 1}`).join('\n')
+    append([
+      { type: 'user', message: { role: 'user', content: text }, cwd },
+      {
+        type: 'assistant',
+        timestamp: new Date().toISOString(),
+        message: { role: 'assistant', content: [{ type: 'text', text: reply }] },
+        cwd
+      }
+    ])
+    fireHook('stop', { hook_event_name: 'Stop' })
+    process.stdout.write(`[fake-claude] wrote ${lines} lines\r\n> `)
+    return
+  }
+  // CC§14
+  if (text.startsWith('/ask ')) {
+    const [question, ...labels] = text.slice('/ask '.length).split('|')
+    const input = {
+      questions: [
+        {
+          question,
+          header: 'Pick',
+          options: labels.map((label) => ({ label, description: `The ${label} one` })),
+          multiSelect: false
+        }
+      ]
+    }
+    const toolUseId = `toolu_ask_${Date.now()}`
+    fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
+    append([
+      { type: 'user', message: { role: 'user', content: text }, cwd },
+      {
+        type: 'assistant',
+        timestamp: new Date().toISOString(),
+        message: {
+          role: 'assistant',
+          content: [{ type: 'tool_use', id: toolUseId, name: 'AskUserQuestion', input }]
+        },
+        cwd
+      }
+    ])
+    process.stdout.write(`[fake-claude] asking: ${question}\r\n`)
+    const out = fireHook('ask', {
+      hook_event_name: 'PermissionRequest',
+      tool_name: 'AskUserQuestion',
+      tool_input: input
+    })
+    let decision = {}
+    try {
+      decision = JSON.parse(out).hookSpecificOutput.decision
+    } catch {}
+    const picked =
+      decision.behavior === 'allow'
+        ? `Picked: ${Object.values(decision.updatedInput.answers).join(', ')}`
+        : `Not answered: ${decision.message ?? 'no hook answer'}`
+    append([
+      {
+        type: 'user',
+        timestamp: new Date().toISOString(),
+        message: {
+          role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: toolUseId, content: picked }]
+        },
+        cwd
+      },
+      {
+        type: 'assistant',
+        timestamp: new Date().toISOString(),
+        message: { role: 'assistant', content: [{ type: 'text', text: picked }] },
+        cwd
+      }
+    ])
+    fireHook('stop', { hook_event_name: 'Stop' })
+    process.stdout.write(`[fake-claude] ${picked}\r\n> `)
     return
   }
   if (text === '/need-approval') {

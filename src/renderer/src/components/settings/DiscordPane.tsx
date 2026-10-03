@@ -19,10 +19,8 @@ export function DiscordPane(): JSX.Element {
   const discord = useStore((s) => s.settings.discord)
   const setBindConductor = useStore((s) => s.setBindConductor)
   const setDiscordSetupStep = useStore((s) => s.setDiscordSetupStep)
-  const status = useDiscordStatus()
+  const loaded = useDiscordStatus()
   const [token, setToken] = useState<string | null>(null)
-  const hasToken = status.phase !== 'off'
-  const next = nextSetupStep(status, discord)
 
   const saveToken = async (): Promise<void> => {
     if (!token?.trim()) return
@@ -39,6 +37,10 @@ export function DiscordPane(): JSX.Element {
       </p>
     </div>
   )
+  if (!loaded) return head
+  const status = loaded
+  const hasToken = status.phase !== 'off'
+  const next = nextSetupStep(status, discord)
   const statusLabel = (
     <div className="set-lab">
       <b>Status</b>

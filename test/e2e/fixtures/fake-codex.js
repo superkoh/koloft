@@ -137,6 +137,57 @@ if (argv[0] === 'app-server') {
       }
     })
     event('turn/completed', { threadId: thread.id, turn })
+    queued.shift()?.()
+  }
+  const queued = []
+  const startTurn = (thread, text, clientId, started) => {
+    persistTurn(thread, text)
+    const turn = { id: crypto.randomUUID(), status: 'inProgress', items: [], error: null }
+    activeTurn = turn
+    started?.(turn)
+    status(thread, { type: 'active', activeFlags: [] })
+    event('turn/started', { threadId: thread.id, turn })
+    // CODEX§19
+    const asked = {
+      type: 'userMessage',
+      id: crypto.randomUUID(),
+      clientId,
+      content: [{ type: 'text', text, text_elements: [] }]
+    }
+    turn.items.push(asked)
+    event('item/completed', { threadId: thread.id, turnId: turn.id, item: asked })
+    if (text.startsWith('open ')) {
+      const shell = spawnSync('/bin/zsh', ['-lc', text], { cwd: thread.cwd, encoding: 'utf8' })
+      event('item/completed', {
+        threadId: thread.id,
+        turnId: turn.id,
+        item: {
+          type: 'commandExecution',
+          id: 'open-' + turn.id,
+          status: shell.status === 0 ? 'completed' : 'failed',
+          exitCode: shell.status,
+          aggregatedOutput: (shell.stdout || '') + (shell.stderr || ''),
+          command: `/bin/zsh -lc '${text}'`,
+          cwd: thread.cwd,
+          commandActions: [{ type: 'unknown', command: text }]
+        }
+      })
+    }
+    if (text.includes('approve')) {
+      pendingApproval = { id: 'approval-' + turn.id, thread, turn }
+      status(thread, { type: 'active', activeFlags: ['waitingOnApproval'] })
+      emit({
+        id: pendingApproval.id,
+        method: 'item/commandExecution/requestApproval',
+        params: {
+          threadId: thread.id,
+          turnId: turn.id,
+          itemId: 'command-1',
+          command: 'echo approved',
+          cwd: thread.cwd
+        }
+      })
+    } else if (!text.includes('hold')) setTimeout(() => complete(thread, turn), 120)
   }
   const lines = readline.createInterface({ input: process.stdin })
   lines.on('line', (line) => {
@@ -221,59 +272,22 @@ if (argv[0] === 'app-server') {
       result(id, { status: 'unsubscribed' })
       return
     }
-    if (method === 'turn/start') {
+    if (method === 'turn/start' || method === 'thread/queue/add') {
       const thread = active?.id === p.threadId ? active : load(p.threadId)
       if (!thread) {
         error(id, 'Thread not found')
         return
       }
       const text = (p.input || []).map((item) => item.text || '').join('\n')
-      persistTurn(thread, text)
-      const turn = { id: crypto.randomUUID(), status: 'inProgress', items: [], error: null }
-      activeTurn = turn
-      result(id, { turn })
-      status(thread, { type: 'active', activeFlags: [] })
-      event('turn/started', { threadId: thread.id, turn })
-      const asked = {
-        type: 'userMessage',
-        id: crypto.randomUUID(),
-        clientId: null,
-        content: [{ type: 'text', text, text_elements: [] }]
+      // CODEX§17
+      if (method === 'thread/queue/add') {
+        result(id, { queuedSubmission: { id: crypto.randomUUID() } })
+        const begin = () => startTurn(thread, text, p.clientUserMessageId ?? null)
+        if (activeTurn?.status === 'inProgress') queued.push(begin)
+        else begin()
+        return
       }
-      turn.items.push(asked)
-      event('item/completed', { threadId: thread.id, turnId: turn.id, item: asked })
-      if (text.startsWith('open ')) {
-        const shell = spawnSync('/bin/zsh', ['-lc', text], { cwd: thread.cwd, encoding: 'utf8' })
-        event('item/completed', {
-          threadId: thread.id,
-          turnId: turn.id,
-          item: {
-            type: 'commandExecution',
-            id: 'open-' + turn.id,
-            status: shell.status === 0 ? 'completed' : 'failed',
-            exitCode: shell.status,
-            aggregatedOutput: (shell.stdout || '') + (shell.stderr || ''),
-            command: `/bin/zsh -lc '${text}'`,
-            cwd: thread.cwd,
-            commandActions: [{ type: 'unknown', command: text }]
-          }
-        })
-      }
-      if (text.includes('approve')) {
-        pendingApproval = { id: 'approval-' + turn.id, thread, turn }
-        status(thread, { type: 'active', activeFlags: ['waitingOnApproval'] })
-        emit({
-          id: pendingApproval.id,
-          method: 'item/commandExecution/requestApproval',
-          params: {
-            threadId: thread.id,
-            turnId: turn.id,
-            itemId: 'command-1',
-            command: 'echo approved',
-            cwd: thread.cwd
-          }
-        })
-      } else if (!text.includes('hold')) setTimeout(() => complete(thread, turn), 120)
+      startTurn(thread, text, null, (turn) => result(id, { turn }))
       return
     }
     if (method === 'turn/interrupt') {
@@ -459,6 +473,13 @@ async function startTui() {
       process.stdin.resume()
       process.stdin.on('data', (bytes) => {
         for (const ch of bytes.toString('utf8')) {
+          // CODEX§3
+          if (approval && ['y', '1', '\u001b'].includes(ch)) {
+            const decision = ch === '\u001b' ? 'decline' : 'accept'
+            ws.send(JSON.stringify({ id: approval, result: { decision } }))
+            approval = undefined
+            continue
+          }
           if (ch === '\u0003') {
             if (working) void send('turn/interrupt', { threadId: thread.id, turnId })
             else void exit()

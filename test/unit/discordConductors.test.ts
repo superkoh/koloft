@@ -109,7 +109,7 @@ describe('Conductors', () => {
     expect(resumed).toEqual(['s2'])
   })
 
-  it('a conductor that never binds before the deadline is closed and reported', async () => {
+  it('a conductor that never binds before the deadline is closed and reported, and its tab counts as the conductor’s until it is gone, so its closing is no session notice', async () => {
     vi.useFakeTimers()
     const c = make()
     c.save({ scope: 'global', backend: 'claude', channel: CHANNEL })
@@ -120,6 +120,8 @@ describe('Conductors', () => {
     vi.advanceTimersByTime(DEADLINE_MS)
     expect(killed).toEqual(['tab-1'])
     expect(toasts).toEqual(['The Global conductor did not start.'])
+    expect(c.ownsTab('tab-1')).toBe(true)
+    c.onPtyExit('tab-1')
     expect(c.ownsTab('tab-1')).toBe(false)
   })
 

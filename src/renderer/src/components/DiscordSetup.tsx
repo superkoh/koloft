@@ -3,7 +3,7 @@ import { LuArrowUpRight, LuPlus, LuX } from 'react-icons/lu'
 import type { DiscordStatus } from '@shared/types'
 import { ageLabel } from '@shared/freshnessOps'
 import { useStore } from '../store'
-import { SETUP_STEPS, useDiscordStatus } from '../discordStatus'
+import { DISCORD_OFF, SETUP_STEPS, useDiscordStatus } from '../discordStatus'
 
 const DEVELOPER_PORTAL = 'https://discord.com/developers/applications'
 const INVITE_PERMISSIONS = 101440
@@ -315,7 +315,7 @@ export function DiscordSetup(): JSX.Element | null {
   const step = useStore((s) => s.discordSetupStep)
   const setStep = useStore((s) => s.setDiscordSetupStep)
   const paired = useStore((s) => !!s.settings.discord.userId)
-  const status = useDiscordStatus()
+  const status = useDiscordStatus() ?? DISCORD_OFF
 
   useEffect(() => {
     if (step === null) return

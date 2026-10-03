@@ -55,7 +55,7 @@ import {
   standardUserAgent
 } from './browserSecurity'
 import { directoryListingHtml } from './dirListing'
-import { HOOK_SCRIPT, setupHooks, writeTabHookSettings } from './hooks'
+import { HOOK_SCRIPT, markDiscordConnected, setupHooks, writeTabHookSettings } from './hooks'
 import { formatRemoteKey, hostOf, parseRemoteKey } from '@shared/remoteKey'
 import {
   defaultControlDir,
@@ -250,8 +250,12 @@ import type {
 } from '@shared/types'
 import { AgentRequests, BUILTIN_VERBS, refused, type AgentVerb } from './agentRequests'
 import { Conductors } from './discord/conductors'
-import { DISCORD_API_URL, DiscordLink } from './discord/link'
+import { discordApiUrl, DiscordLink } from './discord/link'
 import { releaseLock, takeLock } from './discord/instanceLock'
+import { DiscordRelay } from './discord/relay'
+import { noticeKindOf, Notices, type NoticeKind } from './discord/notices'
+import { approvalDetail } from './discord/dialog'
+import { discordVerb } from './agentDiscord'
 import { runningClaudePid } from './claudeSessionRegistry'
 import { isDiscordId } from '@shared/conductors'
 import { cronVerb } from './agentCron'
@@ -534,6 +538,19 @@ function machinePackage(): MachinePackage {
 let cronRunner: CronRunner | null = null
 let conductors: Conductors | null = null
 let discordLink: DiscordLink | null = null
+let discordRelay: DiscordRelay | null = null
+let discordNotices: Notices | null = null
+
+function discordNotice(tabId: string, kind: NoticeKind): void {
+  const s = sessionOfTab(tabId)
+  if (!discordNotices || !s?.sessionId || conductors?.ownsTab(tabId)) return
+  const asked = kind === 'waiting' ? codexSessions?.openApproval(tabId) : undefined
+  discordNotices.notify(
+    { key: s.sessionId, name: s.title, workspace: sessionBackends.workspaceOfTab(tabId) },
+    kind,
+    asked && approvalDetail(asked)
+  )
+}
 
 const BOOT_TIME = Date.now()
 
@@ -685,6 +702,13 @@ const agentRequests = new AgentRequests({
     workspace: workspaceVerb({
       conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
       sidebar: () => workspaceMgr?.rows() ?? []
+    }),
+    discord: discordVerb({
+      channelOf: (tabId) => conductors?.bindingOfTab(tabId)?.channel.channelId,
+      send: async (channelId, files, text) => {
+        if (!discordRelay) throw new Error(STILL_STARTING)
+        await discordRelay.send(channelId, files, text)
+      }
     })
   },
   tab: (tabId) => ptyMgr.get(tabId),
@@ -1256,12 +1280,13 @@ app.whenReady().then(() => {
 
   const hookPaths = setupHooks()
   const statusline = setupStatusline()
-  ptyMgr.makeHookSettings = (tabId, allowKoloft) =>
+  ptyMgr.makeHookSettings = (tabId, allowKoloft, conductor) =>
     writeTabHookSettings(
       hookPaths,
       tabId,
       loadSettings().statuslineBuiltin ? statusLineSetting(statusline) : undefined,
-      allowKoloft
+      allowKoloft,
+      conductor
     )
   claudeBackend.watchLocalHooks(hookPaths.regDir)
 
@@ -1306,6 +1331,8 @@ app.whenReady().then(() => {
     sendToRenderer('terminal:cwd', c)
   })
   ptyMgr.on('exit', (e) => {
+    discordNotice(e.id, 'closed')
+    discordRelay?.forget(e.id)
     loginPtys.delete(e.id)
     const codexAccount = codexSignInPtys.get(e.id)
     if (codexAccount) {
@@ -1363,9 +1390,15 @@ app.whenReady().then(() => {
     sendToRenderer('tab:killedByMain', tabId)
     void killTabPty(tabId)
   })
+  tracker.on('dialog-answered', ({ tabId }: { tabId: string }) =>
+    discordRelay?.dialogAnswered(tabId)
+  )
   tracker.on('status', (t: StatusEdge) => {
-    const conductorTurnDone = t.next === 'waiting' && !!conductors?.ownsTab(t.tabId)
-    if (!conductorTurnDone)
+    const conductor = !!conductors?.ownsTab(t.tabId)
+    if (conductor && t.next === 'approval') discordRelay?.conductorWaiting(t.tabId)
+    const notice = noticeKindOf(t.prev, t.next)
+    if (notice) discordNotice(t.tabId, notice)
+    if (!(conductor && t.next === 'waiting'))
       attention.onStatusChange(t.tabId, t.prev, t.next, attentionCtx(), attentionSubjectOf(t.tabId))
     // ADR-0022
     cronRunner?.onStatus(t.tabId, t.prev, t.next)
@@ -1486,15 +1519,53 @@ app.whenReady().then(() => {
   })
   conductors.keepPinned(workspaceMgr.pinnedPaths().map((w) => w.path))
   const discordLockFile = path.join(userData, 'discord.lock')
-  discordLink = new DiscordLink({
-    apiUrl: process.env.KOLOFT_DISCORD_API_URL || DISCORD_API_URL,
+  let discordMarked = false
+  const link = new DiscordLink({
+    apiUrl: discordApiUrl(),
     readToken: discordTokenRead,
     takeLock: () => takeLock(discordLockFile, pidAlive),
     releaseLock: () => releaseLock(discordLockFile),
     owner: () => conductors?.owner(),
-    push: (status) => sendToRenderer('discord:status', status)
+    push: (status) => {
+      sendToRenderer('discord:status', status)
+      const connected = status.phase === 'connected'
+      if (connected === discordMarked) return
+      discordMarked = connected
+      markDiscordConnected(hookPaths.regDir, connected)
+    },
+    onMessage: (m) => discordRelay?.onMessage(m),
+    onReady: () => void discordRelay?.catchUp()
   })
-  void discordLink.connect()
+  discordLink = link
+  const conductorsNow = conductors
+  discordRelay = new DiscordRelay({
+    link,
+    download: async (url) => {
+      const res = await fetch(url)
+      if (!res.ok) throw new Error(`Discord answered ${res.status} to an attachment download.`)
+      return Buffer.from(await res.arrayBuffer())
+    },
+    conductors: conductorsNow,
+    backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
+    boundKey: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
+    status: (tabId) => tracker.statusOf(tabId),
+    alive: (tabId) => !!ptyMgr.get(tabId)?.alive,
+    write: (tabId, data) => ptyMgr.write(tabId, data),
+    queue: async (tabId, text, clientId) => {
+      if (!codexSessions) throw new Error(codexStartupError ?? 'Codex is not available.')
+      await codexSessions.queueMessage(tabId, text, clientId)
+    },
+    codexApproval: (tabId) => codexSessions?.openApproval(tabId),
+    regDir: hookPaths.regDir,
+    attachmentsDir: path.join(userData, 'discord-attachments')
+  })
+  discordRelay.watchAsks()
+  discordNotices = new Notices({
+    bindings: () => conductorsNow.bindings(),
+    post: (channelId, text) => discordRelay?.say(channelId, text)
+  })
+  turnsEnded.on('turn-ended', (turn) => discordRelay?.turnEnded(turn))
+  void link.connect()
   remoteSync = new RemoteSync({
     run: (host, cmd) =>
       loginEnvReady().then(() => runSsh(host, cmd, { controlDir: remoteControlDir })),

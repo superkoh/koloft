@@ -1,4 +1,5 @@
 const USER_AGENT = 'DiscordBot (https://github.com/superkoh/koloft, 1)'
+const NO_CONTENT = 204
 
 export class DiscordHttpError extends Error {
   constructor(
@@ -55,7 +56,7 @@ export class DiscordRest {
         continue
       }
       if (!res.ok) throw new DiscordHttpError(res.status, route)
-      return (await res.json()) as T
+      return (res.status === NO_CONTENT ? undefined : await res.json()) as T
     }
   }
 }

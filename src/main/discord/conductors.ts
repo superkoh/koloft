@@ -65,6 +65,7 @@ export class Conductors {
   private discord: DiscordSettings
   private tabs = new Map<string, string>()
   private bound = new Set<string>()
+  private stopping = new Set<string>()
   private opening = new Map<string, Promise<ConductorOpenResult>>()
   private deadlines = new Map<string, ReturnType<typeof setTimeout>>()
 
@@ -86,9 +87,30 @@ export class Conductors {
     return this.discord.bindings.find((b) => b.id === id)
   }
 
-  private bindingOfTab(tabId: string): ConductorBinding | undefined {
+  bindingOfTab(tabId: string): ConductorBinding | undefined {
     for (const [id, tab] of this.tabs) if (tab === tabId) return this.find(id)
     return undefined
+  }
+
+  bindingOfChannel(channelId: string): ConductorBinding | undefined {
+    return this.discord.bindings.find((b) => b.channel.channelId === channelId)
+  }
+
+  liveTab(id: string): string | undefined {
+    const tab = this.tabs.get(id)
+    return tab && this.d.tabAlive(tab) ? tab : undefined
+  }
+
+  setLastMessage(id: string, messageId: string): void {
+    const last = this.find(id)?.lastMessageId
+    if (last && BigInt(last) >= BigInt(messageId)) return
+    this.discord = {
+      ...this.discord,
+      bindings: this.discord.bindings.map((b) =>
+        b.id === id ? { ...b, lastMessageId: messageId } : b
+      )
+    }
+    this.d.save(this.discord)
   }
 
   private update(id: string, change: (b: ConductorBinding) => ConductorBinding): void {
@@ -96,7 +118,7 @@ export class Conductors {
   }
 
   ownsTab(tabId: string): boolean {
-    return [...this.tabs.values()].includes(tabId)
+    return this.stopping.has(tabId) || [...this.tabs.values()].includes(tabId)
   }
 
   hides(id: string): boolean {
@@ -255,6 +277,7 @@ export class Conductors {
     if (!tab) return
     this.tabs.delete(id)
     this.forgetTab(tab)
+    this.stopping.add(tab)
     this.d.kill(tab)
   }
 
@@ -283,6 +306,7 @@ export class Conductors {
   }
 
   onPtyExit(tabId: string): void {
+    this.stopping.delete(tabId)
     for (const [id, tab] of this.tabs) if (tab === tabId) this.tabs.delete(id)
     this.forgetTab(tabId)
   }

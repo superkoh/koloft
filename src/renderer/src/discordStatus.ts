@@ -13,8 +13,10 @@ const NEXT_STEP_LABEL = [
   'bind a channel'
 ]
 
-export function useDiscordStatus(): DiscordStatus {
-  const [status, setStatus] = useState<DiscordStatus>({ phase: 'off', guildNames: [] })
+export const DISCORD_OFF: DiscordStatus = { phase: 'off', guildNames: [] }
+
+export function useDiscordStatus(): DiscordStatus | null {
+  const [status, setStatus] = useState<DiscordStatus | null>(null)
   useEffect(() => {
     let alive = true
     void window.api.discord.status().then((s) => {
@@ -54,13 +56,12 @@ export function statusClass(s: DiscordStatus): string {
 }
 
 export function nextSetupStep(s: DiscordStatus, discord: DiscordSettings): number | null {
+  if (s.phase !== 'off' && discord.userId) return null
   if (s.phase === 'off') return 1
   if (s.phase === 'intents') return 2
   if (s.phase === 'token') return 3
   if (s.phase === 'connected' && s.guildNames.length === 0) return 4
-  if (!discord.userId) return 6
-  if (discord.bindings.length === 0) return 7
-  return null
+  return 6
 }
 
 export function nextStepLine(step: number): string {

@@ -170,6 +170,7 @@ const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
 const BASH_WRITES = /(^|[^0-9&])>>?\s*(?!\/dev\/null)\S|\btee\s|\bsed\s+-i\b|\btouch\s/
 const READ_TOOLS = new Set(['Read'])
 const UNACKED_TOOL_CMD_CAP = 64
+const DIALOG_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode'])
 
 const THIS_MAC_TMP: MachineTmp = { tmpRoot: TMP_ROOT, uid: process.getuid?.() ?? 0 }
 
@@ -424,6 +425,7 @@ interface Tracked {
   taskCmds: Map<string, string>
   monitorIds: Set<string>
   toolCmds: Map<string, string>
+  dialogToolIds: Set<string>
   procs: TaskProcs | null
   shellCpu: Map<string, { cpuMs: number; at: number; quiet: boolean }>
   procsAt: number
@@ -538,6 +540,7 @@ export class SessionTracker extends SessionRuntime {
       taskCmds: new Map(),
       monitorIds: new Set(),
       toolCmds: new Map(),
+      dialogToolIds: new Set(),
       procs: null,
       shellCpu: new Map(),
       procsAt: 0,
@@ -964,6 +967,7 @@ export class SessionTracker extends SessionRuntime {
     t.monitorIds = new Set()
     t.taskCmds = new Map()
     t.toolCmds = new Map()
+    t.dialogToolIds = new Set()
     t.teammateActiveMs = 0
     t.lastBgActivityTs = 0
     t.lastMainActivityTs = 0
@@ -1337,6 +1341,15 @@ export class SessionTracker extends SessionRuntime {
     if (at > t.lastBgActivityTs) t.lastBgActivityTs = at
   }
 
+  // CC§14
+  private ingestDialogAnswer(t: Tracked, obj: any): void {
+    if (!Array.isArray(obj.message?.content)) return
+    for (const b of obj.message.content) {
+      if (b?.type !== 'tool_result' || !t.dialogToolIds.delete(b.tool_use_id)) continue
+      if (t.caughtUp) this.emit('dialog-answered', { tabId: t.info.tabId })
+    }
+  }
+
   // CC§8
   private ingestTaskNotification(t: Tracked, obj: any): void {
     const text = taskNotificationText(obj)
@@ -1394,7 +1407,10 @@ export class SessionTracker extends SessionRuntime {
           t.replyDone = piece.line.who === 'assistant'
         }
       }
-      if (obj.type === 'user') this.ingestSpawnAck(t, obj)
+      if (obj.type === 'user') {
+        this.ingestSpawnAck(t, obj)
+        this.ingestDialogAnswer(t, obj)
+      }
       this.ingestTaskNotification(t, obj)
       if (obj.type === 'user' && !obj.isMeta) {
         const c = obj.message?.content
@@ -1436,6 +1452,7 @@ export class SessionTracker extends SessionRuntime {
         const liveNow = t.caughtUp || (isFinite(recTs) && recTs >= t.bindMs)
         for (const b of obj.message.content) {
           if (!b || b.type !== 'tool_use') continue
+          if (DIALOG_TOOLS.has(b.name) && typeof b.id === 'string') t.dialogToolIds.add(b.id)
           if ((b.name === 'Bash' || b.name === 'Monitor') && typeof b.input?.command === 'string') {
             if (t.toolCmds.size >= UNACKED_TOOL_CMD_CAP)
               t.toolCmds.delete(t.toolCmds.keys().next().value as string)

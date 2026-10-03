@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vites
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { spawnSync } from 'child_process'
+import { spawn, spawnSync } from 'child_process'
 
 vi.mock('electron', async () => {
   const nfs = await import('node:fs')
@@ -17,7 +17,8 @@ import {
   writeTabHookSettings,
   hookSettings,
   writeConductorMarker,
-  removeConductorMarker
+  removeConductorMarker,
+  markDiscordConnected
 } from '../../src/main/hooks'
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/paths'
 
@@ -540,6 +541,82 @@ describe('injected hook script', () => {
     )
     expect(read(writeTabHookSettings(setupHooks(), 'tabAG2'))).not.toHaveProperty('permissions')
     expect(hookSettings('/x/hook.sh', '/x/reg', 'tabAG3')).not.toHaveProperty('permissions')
+  })
+
+  describe('the conductor’s own dialog (PermissionRequest)', () => {
+    const ask = {
+      session_id: 's1',
+      hook_event_name: 'PermissionRequest',
+      tool_name: 'AskUserQuestion',
+      tool_input: { questions: [{ question: 'Which?', options: [{ label: 'A' }] }] }
+    }
+    const runAsk = (tab: string): ReturnType<typeof spawn> =>
+      spawn(hookScript, [regDir, tab, 'ask'], { stdio: ['pipe', 'pipe', 'ignore'] })
+    const feed = (child: ReturnType<typeof spawn>, payload: unknown): Promise<string> => {
+      let out = ''
+      child.stdout!.on('data', (c) => (out += c))
+      child.stdin!.end(JSON.stringify(payload))
+      return new Promise((resolve) => child.on('close', () => resolve(out)))
+    }
+
+    // CC§14
+    it('only a conductor tab, while Discord is connected, gets a PermissionRequest hook that waits up to an hour', () => {
+      const read = (file: string): Record<string, Record<string, unknown>> =>
+        JSON.parse(fs.readFileSync(file, 'utf8'))
+      const entry = read(writeTabHookSettings(setupHooks(), 'tabC1', undefined, false, true)).hooks
+        .PermissionRequest as { hooks: { command: string; timeout: number }[] }[]
+      expect(entry[0].hooks[0].command).toContain(' ask')
+      expect(entry[0].hooks[0].timeout).toBe(3600)
+      expect(read(writeTabHookSettings(setupHooks(), 'tabC2')).hooks).not.toHaveProperty(
+        'PermissionRequest'
+      )
+    })
+
+    // CC§14
+    it('hands the question to Koloft, waits for the answer file and prints it, then cleans both files up', async () => {
+      writeConductorMarker(regDir, 'tabA1', 'role')
+      markDiscordConnected(regDir, true)
+      const child = runAsk('tabA1')
+      const printed = feed(child, ask)
+      const askFile = path.join(regDir, 'tabA1.ask.json')
+      await vi.waitFor(() => expect(fs.existsSync(askFile)).toBe(true))
+      expect(JSON.parse(fs.readFileSync(askFile, 'utf8'))).toEqual(ask)
+      fs.writeFileSync(path.join(regDir, 'tabA1.answer.json'), '{"decided":true}')
+      expect(await printed).toBe('{"decided":true}')
+      expect(fs.existsSync(askFile)).toBe(false)
+      expect(fs.existsSync(path.join(regDir, 'tabA1.answer.json'))).toBe(false)
+    })
+
+    // CC§14
+    it('ended by claude (the person answered "No" at the Mac), it removes its question file', async () => {
+      writeConductorMarker(regDir, 'tabA2', 'role')
+      markDiscordConnected(regDir, true)
+      const child = runAsk('tabA2')
+      const closed = feed(child, ask)
+      const askFile = path.join(regDir, 'tabA2.ask.json')
+      await vi.waitFor(() => expect(fs.existsSync(askFile)).toBe(true))
+      child.kill('SIGTERM')
+      await closed
+      expect(fs.existsSync(askFile)).toBe(false)
+    })
+
+    it('exits at once with no output when the tab is no conductor, Discord is not connected, or the tool is not a question or a plan', () => {
+      writeConductorMarker(regDir, 'tabA3', 'role')
+      const quiet = (tab: string, payload: unknown): string => {
+        const res = spawnSync(hookScript, [regDir, tab, 'ask'], {
+          input: JSON.stringify(payload),
+          encoding: 'utf8',
+          timeout: 5000
+        })
+        expect(res.status).toBe(0)
+        return res.stdout
+      }
+      expect(quiet('tabA3', ask)).toBe('')
+      markDiscordConnected(regDir, true)
+      expect(quiet('tabNotConductor', ask)).toBe('')
+      expect(quiet('tabA3', { ...ask, tool_name: 'Bash', tool_input: { command: 'ls' } })).toBe('')
+      expect(fs.readdirSync(regDir).filter((f) => f.includes('.ask'))).toEqual([])
+    })
   })
 
   describe('U-HOOK-2: settings for a tab running on another machine', () => {

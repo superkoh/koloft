@@ -1065,3 +1065,10 @@ Gateway (the live connection that pushes events):
   client to reconnect and resume; op 9 (invalid session) with `d: false` means start
   over with identify; 4007 and 4009 also mean the session cannot be resumed; a bot API
   call must send a `User-Agent: DiscordBot (<url>, <version>)` header.
+- Also from Discord's docs, not measured here: a message's `content` holds at most 2000
+  characters; one message carries at most 10 files and one request at most 25 MiB; a
+  bot's file may be at most 20 MiB (changelog 2025-09-03); adding or removing a reaction
+  (`PUT`/`DELETE /channels/{id}/messages/{id}/reactions/{emoji}/@me`) answers 204 with no
+  body; `GET /channels/{id}/messages?after=<id>&limit=<1–100>` lists the messages after
+  that id, and an attachment in `MESSAGE_CREATE` carries `filename`, `size` and a `url`
+  that needs no token.

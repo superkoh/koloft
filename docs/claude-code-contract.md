@@ -937,7 +937,18 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
 - **Cell widths follow Unicode 11 tables** (Ink / string-width). A terminal using other
   tables makes wide CJK and emoji drift and clip at the right edge.
 - **A bare LF (`\n`, the same as Ctrl+J) inserts a newline in the input box; CR
-  submits.**
+  submits.** Measured 2026-10-03, CC 2.1.288, a pty in a scratch `HOME`: one write of
+  three lines joined by LF showed as one three-line input, and a CR in a second write
+  0.4 s later sent it as one `user` record whose `content` kept the `\n`s.
+- **Text typed into the input box and the CR that sends it must be two writes.** One
+  write of 63 bytes or more that ended in CR put a newline in the box instead of
+  sending; the text first and the CR in a second write 0.3 s later sent texts of 120 and
+  300 bytes. Recorded from the Discord design round's probe notes (2026-10-02, CC
+  2.1.286); the setup was not re-run here.
+- **Typing while claude is in the middle of a turn queues the message**: the screen
+  shows "Press up to edit queued messages", and claude takes it once the running tool
+  call ends, in the same turn (a `queued_command` attachment, §2). Recorded from the
+  same probe notes (CC 2.1.288); not re-run here.
 - **URLs and files are opened with `Bun.spawn(["open", url])`**, which looks `open` up
   on PATH, so a PATH shim can catch it.
 - **An idle claude process holds a lot of memory**: measured 185–350 MB each for idle
@@ -991,3 +1002,36 @@ sessions.
   and `isMeta: true`, whose `prompt` holds the bare text. A sweep of 80 recent
   transcripts on this Mac (CC 2.1.285–2.1.288, 2026-10-03) found 4 `user` records with
   `origin.kind: "peer"`, all `isMeta: true`.
+
+## §14 The PermissionRequest hook: answering a dialog from outside
+
+How established: 2026-10-03, CC 2.1.288, interactive claude in a pty with a scratch
+`HOME`, model haiku, a `--settings` file whose `PermissionRequest` entry (matcher `"*"`)
+ran a logging script, next to logging `PreToolUse` and `PostToolUse` hooks. Each line
+below was one run.
+
+- **It fires the moment claude draws a dialog that waits on the person.** Its input has
+  `session_id`, `transcript_path`, `cwd`, `permission_mode`, `prompt_id`,
+  `hook_event_name: "PermissionRequest"`, `tool_name` and `tool_input` — and no
+  `tool_use_id` (`PreToolUse` and `PostToolUse` carry one).
+- **With `--permission-mode bypassPermissions`, `AskUserQuestion` and `ExitPlanMode` still
+  fire it; `Bash` does not** (it ran with no dialog).
+- **An `AskUserQuestion` is answered by the hook's output, with no key press:**
+  `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":
+  "allow","updatedInput":{…tool_input,"answers":{"<question>":"<label>"}}}}}`.
+  `PostToolUse` then showed those `answers` in `tool_response`.
+- **An `ExitPlanMode` needs `updatedInput`:** a bare `{"behavior":"allow"}` was ignored
+  with no error and the dialog stayed; `allow` with `updatedInput` set to the
+  `tool_input` unchanged approved the plan, and claude went back to the mode it had
+  before plan mode.
+- **`{"behavior":"deny","message":"<text>"}`** hands claude the text; it carries on and
+  `Stop` fires at the end of the turn.
+- **A hook may wait for the answer.** One that answered after 120 s with
+  `"timeout": 900` took effect. At its `timeout` (20 s in one run) claude ends the hook
+  with SIGTERM and the dialog stays on screen; nothing is denied.
+- **When the person answers in the terminal first:** "No" or Esc ends the hook with
+  SIGTERM at once (its `EXIT` trap ran); "Yes" does not signal it, and it lived on until
+  claude exited. What it prints after that is ignored.
+- **A hook that exits at once with no output** leaves the dialog to the person, as if
+  there were no hook (recorded from the same round's notes: the dialog stayed 75 s and
+  worked; not re-run here).

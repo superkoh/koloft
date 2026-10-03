@@ -33,6 +33,7 @@ import { openDropTarget, type OpenDrop } from './openDrop'
 import { removeCodexOpenShim, writeCodexOpenShim } from './openShimScript'
 import { writeCodexAgentShim } from './agentShim'
 import { CODEX_AGENT_HINT } from '@shared/agentGuide'
+import type { CodexApproval } from './discord/dialog'
 
 const exists = (p: string): boolean => {
   try {
@@ -528,6 +529,10 @@ export class CodexSessions {
     }
   }
 
+  openApproval(tabId: string): CodexApproval | undefined {
+    return this.runs.get(tabId)?.observer.openApproval()
+  }
+
   turnsOf(key: string, n: number): Turn[] | undefined {
     return [...this.runs.values()].find((r) => r.info?.sessionId === key)?.observer.turns.last(n)
   }
@@ -791,7 +796,11 @@ export class CodexSessions {
   }
 
   // CODEX§17
-  async queueMessage(tabId: string, text: string): Promise<void> {
+  async queueMessage(
+    tabId: string,
+    text: string,
+    clientId = `koloft-${randomUUID()}`
+  ): Promise<void> {
     const run = this.runs.get(tabId)
     const threadId = run?.info?.nativeSessionId
     if (!run || !threadId) throw new Error('that Codex session has not started yet.')
@@ -799,7 +808,7 @@ export class CodexSessions {
       'thread/queue/add',
       {
         threadId,
-        clientUserMessageId: `koloft-${randomUUID()}`,
+        clientUserMessageId: clientId,
         input: [{ type: 'text', text, text_elements: [] }]
       },
       QUEUE_ANSWER_INSIDE_THE_KOLOFT_WAIT_MS

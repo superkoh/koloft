@@ -18,6 +18,7 @@ test.setTimeout(120_000)
 const OWNER = { id: '555', username: 'letian' }
 const STRANGER = { id: '556', username: 'someone' }
 const TOKEN = 'typed-token'
+const LOCK_RETRY_PLUS_ROOM_MS = 45_000
 
 function wizard(page: Page): Locator {
   return page.getByRole('dialog', { name: 'Set up Discord' })
@@ -181,28 +182,54 @@ test.describe('Discord setup: the 7-step guide checks the bot for real, learns w
     }
   })
 
-  test('a second Koloft on the same data folder leaves the bot to the first and says so, and quitting the first closes its connection cleanly', async ({
+  test('a second Koloft on the same data folder leaves the bot to the first and says so, quitting the first closes its connection cleanly, and the second then takes the bot over', async ({
     env
   }) => {
     const first = await launched(env)
+    let second: ElectronApplication | undefined
     try {
       await expect.poll(() => first.fake.identifies).toBe(1)
-      const second = await launchApp(env)
-      try {
-        const page = await second.firstWindow()
-        await waitBooted(page)
-        const pane = await discordPane(page)
-        await expect(pane.locator('.set-row', { hasText: 'Status' })).toContainText(
-          'Another Koloft is connected'
-        )
-        expect(first.fake.identifies).toBe(1)
-      } finally {
-        await quitAndClose(second)
-      }
+      second = await launchApp(env)
+      const page = await second.firstWindow()
+      await waitBooted(page)
+      const pane = await discordPane(page)
+      const status = pane.locator('.set-row', { hasText: 'Status' })
+      await expect(status).toContainText('Another Koloft is connected')
+      expect(first.fake.identifies).toBe(1)
+
       await quitAndClose(first.app)
       await expect.poll(() => first.fake.closeCodes).toEqual([1000])
+      await expect(status).toContainText(`✓ Connected as ${FAKE_BOT}`, {
+        timeout: LOCK_RETRY_PLUS_ROOM_MS
+      })
+      expect(first.fake.identifies).toBe(2)
     } finally {
-      await first.close()
+      if (second) await quitAndClose(second)
+      await quitAndClose(first.app)
+      await first.fake.close()
+    }
+  })
+
+  test('once a token and an owner are set, an error shows only on the status line and the bindings stay in view', async ({
+    env
+  }) => {
+    seedSettings(env, {
+      hintsOff: true,
+      discord: { userId: OWNER.id, userName: OWNER.username, conductorsFolded: true, bindings: [] }
+    })
+    const { page, close } = await launched(env, { closeOnIdentify: 4014 })
+    try {
+      const pane = await discordPane(page)
+      await expect(pane.locator('.set-row', { hasText: 'Status' })).toContainText(
+        'Message Content is off'
+      )
+      await expect(pane.getByRole('button', { name: 'Bind a channel…' })).toBeVisible()
+      await expect(pane.locator('.set-row', { hasText: 'Your Discord account' })).toContainText(
+        `You are ${OWNER.username}`
+      )
+      await expect(pane.getByText('Discord is not set up yet.')).toHaveCount(0)
+    } finally {
+      await close()
     }
   })
 })

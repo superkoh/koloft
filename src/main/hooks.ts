@@ -53,6 +53,19 @@ case "$event" in
     # CC§13
     if [ "$event" = "start" ] && [ -f "$reg/$tab.conductor" ]; then cat "$reg/$tab.conductor"; fi
     ;;
+  ask)
+    # CC§14
+    [ -f "$reg/$tab.conductor" ] && [ -f "$reg/discord-connected" ] || exit 0
+    printf '%s' "$input" | grep -qE '"tool_name"[[:space:]]*:[[:space:]]*"(AskUserQuestion|ExitPlanMode)"' || exit 0
+    ask="$reg/$tab.ask.json"; answer="$reg/$tab.answer.json"
+    rm -f "$answer"
+    trap 'rm -f "$ask"' EXIT
+    trap 'exit 143' TERM
+    printf '%s' "$input" > "$ask.tmp" && mv "$ask.tmp" "$ask"
+    while [ ! -f "$answer" ]; do sleep 0.3; done
+    cat "$answer"
+    rm -f "$answer"
+    ;;
   posttool)
     # PLATFORM§36
     printf '%s' "$input" | grep -qE 'gh pr (create|merge|close|reopen|ready|edit)' || exit 0
@@ -221,18 +234,41 @@ export function removeConductorMarker(regDir: string, tabId: string): void {
   fs.rmSync(conductorMarker(regDir, tabId), { force: true })
 }
 
+export function markDiscordConnected(regDir: string, connected: boolean): void {
+  const marker = path.join(regDir, 'discord-connected')
+  if (connected) fs.writeFileSync(marker, '')
+  else fs.rmSync(marker, { force: true })
+}
+
+const ASK_WAITS_UP_TO_AN_HOUR_S = 3600
+
 // CC§6
 export function writeTabHookSettings(
   paths: HookPaths,
   tabId: string,
   statusLine?: StatusLineSetting,
-  allowKoloft = false
+  allowKoloft = false,
+  conductor = false
 ): string {
   fs.rmSync(path.join(paths.regDir, `${tabId}.status.jsonl`), { force: true })
   fs.rmSync(path.join(paths.regDir, `${tabId}.json`), { force: true })
   const settings = hookSettings(paths.hookScript, paths.regDir, tabId, statusLine)
   // CC§13
   if (allowKoloft) settings.permissions = { allow: ['Bash(koloft *)'] }
+  // CC§14
+  if (conductor)
+    (settings.hooks as Record<string, unknown>).PermissionRequest = [
+      {
+        matcher: '*',
+        hooks: [
+          {
+            type: 'command',
+            command: `${shq(paths.hookScript)} ${shq(paths.regDir)} ${shq(tabId)} ask`,
+            timeout: ASK_WAITS_UP_TO_AN_HOUR_S
+          }
+        ]
+      }
+    ]
   const out = path.join(paths.settingsDir, `${tabId}.json`)
   fs.writeFileSync(out, JSON.stringify(settings))
   return out

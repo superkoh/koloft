@@ -4,15 +4,47 @@ import { DiscordHttpError, DiscordRest } from './rest'
 
 export const DISCORD_API_URL = 'https://discord.com/api/v10'
 const UNREACHABLE_RETRY_MS = 30_000
+const LOCK_RETRY_MS = 30_000
 const TEXT_CHANNEL = 0
+const FILES_PER_MESSAGE = 10
+const BYTES_PER_MESSAGE = 25 * 1024 * 1024
+export const BYTES_PER_FILE = 20 * 1024 * 1024
+
+export function discordApiUrl(): string | null {
+  const override = process.env.KOLOFT_DISCORD_API_URL
+  if (override) return override
+  return process.env.KOLOFT_TEST_BACKGROUND === '1' ? null : DISCORD_API_URL
+}
+
+export interface DiscordAttachment {
+  filename: string
+  size: number
+  url: string
+}
+
+export interface DiscordMessage {
+  id: string
+  channelId: string
+  authorId: string
+  bot: boolean
+  content: string
+  attachments: DiscordAttachment[]
+}
+
+export interface DiscordFile {
+  name: string
+  data: Buffer
+}
 
 export interface DiscordLinkDeps {
-  apiUrl: string
+  apiUrl: string | null
   readToken(): Promise<string | null>
   takeLock(): boolean
   releaseLock(): void
   owner(): string | undefined
   push(status: DiscordStatus): void
+  onMessage(m: DiscordMessage): void
+  onReady(): void
 }
 
 interface Author {
@@ -22,11 +54,48 @@ interface Author {
   bot?: boolean
 }
 
+interface RawMessage {
+  id: string
+  channel_id: string
+  guild_id?: string
+  content: string
+  author: Author
+  attachments?: DiscordAttachment[]
+}
+
 interface Candidate {
   id: string
   name: string
   text: string
   at: number
+}
+
+// PLATFORM§38
+function filesPerMessage(files: DiscordFile[]): DiscordFile[][] {
+  const out: DiscordFile[][] = []
+  let bytes = 0
+  for (const f of files) {
+    const last = out[out.length - 1]
+    if (last && last.length < FILES_PER_MESSAGE && bytes + f.data.length <= BYTES_PER_MESSAGE) {
+      last.push(f)
+      bytes += f.data.length
+    } else {
+      out.push([f])
+      bytes = f.data.length
+    }
+  }
+  return out
+}
+
+function messageOf(m: RawMessage): DiscordMessage {
+  return {
+    id: m.id,
+    channelId: m.channel_id,
+    authorId: m.author.id,
+    bot: m.author.bot === true,
+    content: m.content,
+    attachments: (m.attachments ?? []).map(({ filename, size, url }) => ({ filename, size, url }))
+  }
 }
 
 export class DiscordLink {
@@ -82,6 +151,7 @@ export class DiscordLink {
   stop(): void {
     this.drop()
     this.d.releaseLock()
+    this.set('off')
   }
 
   connect(): Promise<void> {
@@ -89,15 +159,23 @@ export class DiscordLink {
     return this.starting
   }
 
+  private retryIn(ms: number): void {
+    this.retry = setTimeout(() => void this.connect(), ms)
+  }
+
   private async start(): Promise<void> {
     this.drop()
     const generation = this.generation
-    const token = await this.d.readToken()
+    const apiUrl = this.d.apiUrl
+    const token = apiUrl ? await this.d.readToken() : null
     if (generation !== this.generation) return
-    if (!token) return this.set('off')
-    if (!this.d.takeLock()) return this.set('elsewhere')
+    if (!apiUrl || !token) return this.set('off')
+    if (!this.d.takeLock()) {
+      this.set('elsewhere')
+      return this.retryIn(LOCK_RETRY_MS)
+    }
     this.set('connecting')
-    const rest = new DiscordRest(this.d.apiUrl, token)
+    const rest = new DiscordRest(apiUrl, token)
     try {
       const me = await rest.request<{ username: string }>('GET', '/users/@me')
       const app = await rest.request<{ id: string }>('GET', '/oauth2/applications/@me')
@@ -117,7 +195,7 @@ export class DiscordLink {
       if (generation !== this.generation) return
       if (error instanceof DiscordHttpError && error.status === 401) return this.set('token')
       this.set('unreachable')
-      this.retry = setTimeout(() => void this.connect(), UNREACHABLE_RETRY_MS)
+      this.retryIn(UNREACHABLE_RETRY_MS)
     }
   }
 
@@ -125,6 +203,7 @@ export class DiscordLink {
     if (type === 'READY') {
       for (const g of (data as { guilds: { id: string }[] }).guilds)
         this.guilds.set(g.id, this.guilds.get(g.id) ?? '')
+      this.d.onReady()
     } else if (type === 'GUILD_CREATE') {
       const g = data as { id: string; name: string }
       this.guilds.set(g.id, g.name)
@@ -133,8 +212,10 @@ export class DiscordLink {
       if (g.unavailable) return
       this.guilds.delete(g.id)
     } else if (type === 'MESSAGE_CREATE') {
-      const m = data as { guild_id?: string; content: string; author: Author }
-      if (m.author.bot || !m.guild_id || this.d.owner()) return
+      const m = data as RawMessage
+      if (m.author.bot) return
+      if (this.d.owner()) return this.d.onMessage(messageOf(m))
+      if (!m.guild_id) return
       this.candidate = {
         id: m.author.id,
         name: m.author.global_name || m.author.username,
@@ -150,6 +231,59 @@ export class DiscordLink {
     this.candidate = undefined
     this.d.push(this.status())
     return isMe && picked ? { id: picked.id, name: picked.name } : null
+  }
+
+  private api(): DiscordRest {
+    if (!this.rest) throw new Error('Discord is not connected.')
+    return this.rest
+  }
+
+  post(channelId: string, content: string, replyTo?: string): Promise<unknown> {
+    return this.api().request('POST', `/channels/${channelId}/messages`, {
+      content,
+      allowed_mentions: { parse: [] },
+      ...(replyTo ? { message_reference: { message_id: replyTo, fail_if_not_exists: false } } : {})
+    })
+  }
+
+  async upload(channelId: string, files: DiscordFile[], content: string): Promise<void> {
+    const api = this.api()
+    const sends = filesPerMessage(files).map((batch, i) => {
+      const form = new FormData()
+      form.append(
+        'payload_json',
+        JSON.stringify({
+          ...(i === 0 && content ? { content } : {}),
+          allowed_mentions: { parse: [] },
+          attachments: batch.map((f, n) => ({ id: n, filename: f.name }))
+        })
+      )
+      batch.forEach((f, n) =>
+        form.append(`files[${n}]`, new Blob([new Uint8Array(f.data)]), f.name)
+      )
+      return api.request('POST', `/channels/${channelId}/messages`, form)
+    })
+    await Promise.all(sends)
+  }
+
+  react(channelId: string, messageId: string, emoji: string, on: boolean): Promise<unknown> {
+    return this.api().request(
+      on ? 'PUT' : 'DELETE',
+      `/channels/${channelId}/messages/${messageId}/reactions/${encodeURIComponent(emoji)}/@me`
+    )
+  }
+
+  async messages(
+    channelId: string,
+    after: string | undefined,
+    limit: number
+  ): Promise<DiscordMessage[]> {
+    const query = `limit=${limit}${after ? `&after=${after}` : ''}`
+    const list = await this.api().request<RawMessage[]>(
+      'GET',
+      `/channels/${channelId}/messages?${query}`
+    )
+    return list.map(messageOf)
   }
 
   async channels(): Promise<DiscordChannelChoice[]> {
