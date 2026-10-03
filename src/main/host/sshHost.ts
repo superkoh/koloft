@@ -25,7 +25,7 @@ import {
 } from '../fileEdit'
 import { GIT_TIMEOUT_MS, gitOps, type GitOps } from '../gitStatus'
 import { GithubLookup, type GithubOptions } from '../github'
-import { remoteShCommand } from '../remote/install'
+import { ptsFile, remoteShCommand } from '../remote/install'
 import {
   killSessionCmd,
   launchLine,
@@ -343,11 +343,30 @@ function skillFsOf(files: Map<string, string>): SkillFs {
 const NETWORK_GIT = `GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=false SSH_ASKPASS=false \
 SSH_ASKPASS_REQUIRE=never GIT_SSH_COMMAND="\${GIT_SSH_COMMAND:-ssh} -o BatchMode=yes" git "$@"`
 
+// PLATFORM§38
+const RESIZE_STAND_IN_TERMINAL = `f="${ptsFile('$1')}"
+[ -s "$f" ] && stty -F "$(cat "$f")" cols "$2" rows "$3" 2>/dev/null
+exit 0`
+
+const RESIZE_SETTLE_MS = 200
+
 export class SshHost implements Host {
   readonly github: GithubLookup
   private git: GitOps
   private killedSessions = new Set<string>()
   private kills = new Map<string, Promise<unknown>>()
+  private resizes = new Map<string, ReturnType<typeof setTimeout>>()
+
+  private resized = (tabId: string, cols: number, rows: number): void => {
+    clearTimeout(this.resizes.get(tabId))
+    this.resizes.set(
+      tabId,
+      setTimeout(() => {
+        this.resizes.delete(tabId)
+        void this.sh(RESIZE_STAND_IN_TERMINAL, [tabId, String(cols), String(rows)])
+      }, RESIZE_SETTLE_MS)
+    )
+  }
 
   constructor(
     readonly machine: string,
@@ -556,7 +575,7 @@ export class SshHost implements Host {
   unwatchFile(): void {}
 
   shell(cwd: string): ShellLaunch {
-    return { ...this.deps.shell(this.bare(cwd)), cwd }
+    return { ...this.deps.shell(this.bare(cwd)), cwd, resized: this.resized }
   }
 
   reveal(): void {}
@@ -639,6 +658,7 @@ export class SshHost implements Host {
           mode
         })
       },
+      resized: this.resized,
       machine: {
         tracking: {
           host: this.machine,

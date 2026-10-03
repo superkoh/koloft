@@ -981,6 +981,9 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
 - **With `mouse off`, tmux 3.6b passes the pane's mouse-mode requests (1000/1002/1006)
   to the outer terminal untouched** (measured locally in a python pty).
 - **tmux sets `TMUX` and `TMUX_PANE`** for a command inside a session.
+- **tmux 2.6 does not know `terminal-features` or `exit-empty`**: each line of a `-f`
+  config naming them is an `invalid option` error, shown over the first window. `set -q`
+  drops the error and tmux runs on (2026-10-03, Ubuntu 18.04's tmux 2.6).
 - **tmux's default server socket is `tmux-<uid>/default` under `$TMUX_TMPDIR` or
   `/tmp`, not under `$HOME`** (tmux(1)), so a fake `$HOME` does not isolate it: a real
   tmux run by any test talks to the one server this user already has, shared by every
@@ -1019,6 +1022,9 @@ command by hand:
   the login files may put a real `claude` in `/usr/local/bin` ahead of that prefix —
   inferred, not checked.
 - Older coreutils may not know the `%.9Y` precision — inferred, not checked.
+- **The official node 22 build does not run on glibc 2.27** (Ubuntu 18.04): it unpacks,
+  then `node -v` fails with ``version `GLIBC_2.28' not found``. Claude Code 2.1.288's
+  own build runs there. (2026-10-03, on a real Ubuntu 18.04 box.)
 - **A csh-family login shell (tcsh, csh) cannot take a newline inside single quotes**
   (`Unmatched '''.`), **expands `!` even inside single quotes** (`echo 'a!b'` →
   `b: Event not found.`; `!=` is left alone), and has no `VAR=value cmd` form
@@ -1032,3 +1038,25 @@ command by hand:
   (2026-09-30, fish 3.6.0 and Debian 12's tcsh as the login shell of containers
   behind a jump host: file listing and reading, a session start and the session sync
   all worked through a real sshd).
+
+## §38 ssh through a JumpServer bastion
+
+Measured 2026-10-03 from macOS 27 (OpenSSH 10.3p1) through a JumpServer bastion
+(`ssh -p 2222 user@systemuser@asset@jumpserver`) to Ubuntu 18.04 (util-linux 2.31.1,
+tmux 2.6):
+
+- **A command gets no terminal, even with `-tt`**: `ssh -tt host 'tty; echo $TERM'`
+  printed `not a tty` and `TERM=dumb`, with or without a ControlMaster. ssh shows no
+  "PTY allocation request failed", so the client still turns raw mode on. A plain
+  login with no command does get a terminal.
+- **So tmux cannot start**: `open terminal failed: not a terminal`; and with
+  `TERM=dumb` inside a terminal, `open terminal failed: terminal does not support
+  clear`.
+- **Port forwarding is off**: `ssh -W asset:22` got `administratively prohibited`, so
+  ProxyJump to the asset is no way round.
+- **util-linux `script -qfec <cmd> /dev/null` makes a terminal** for `<cmd>` (`tty`
+  printed `/dev/pts/1`; size `0 0` until set), tmux starts in it with
+  `TERM=xterm-256color`, and `-e` hands back the command's exit code (`exit 7` → 7).
+- **The bastion drops window-size changes, but `stty -F <pts> rows R cols C` run from
+  a second ssh command resizes that terminal**: `stty size` inside read `50 200`
+  afterwards.

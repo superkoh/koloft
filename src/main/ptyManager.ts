@@ -16,6 +16,7 @@ export interface PtyHandle {
   util: boolean
   resumeSessionId?: string
   ownerTabId?: string
+  resized?: (id: string, cols: number, rows: number) => void
 }
 
 interface CreateArgs {
@@ -32,6 +33,7 @@ interface CreateArgs {
   util?: boolean
   resumeSessionId?: string
   ownerTabId?: string
+  resized?: (id: string, cols: number, rows: number) => void
   extraEnv?: {
     KOLOFT_FIRST_PROMPT?: string
     KOLOFT_SESSION_NAME?: string
@@ -174,7 +176,8 @@ export class PtyManager extends EventEmitter {
       alive: true,
       util: args.util === true,
       resumeSessionId: args.resumeSessionId,
-      ownerTabId: args.ownerTabId
+      ownerTabId: args.ownerTabId,
+      resized: args.resized
     }
     this.ptys.set(id, handle)
 
@@ -254,6 +257,7 @@ export class PtyManager extends EventEmitter {
       try {
         h.proc.resize(cols, rows)
       } catch {}
+      h.resized?.(id, cols, rows)
     }
   }
 

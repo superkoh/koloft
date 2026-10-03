@@ -3,7 +3,12 @@ import fs from 'fs'
 import path from 'path'
 import type { AccountKind } from '@shared/types'
 import { shq } from '@shared/shellQuote'
-import { REMOTE_PATH_LINE, remoteShCommand } from './install'
+import {
+  REMOTE_PATH_LINE,
+  onATerminalEvenWhenSshGaveNone,
+  ptsFile,
+  remoteShCommand
+} from './install'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
 
 export function accountEnv(
@@ -106,13 +111,14 @@ export function tabScript(spec: TabSpec): string {
   return `#!/bin/sh
 M="$HOME/.koloft/${spec.machineName}"
 ${REMOTE_PATH_LINE}
-[ "$1" = attach ] && exec tmux -L koloft attach -d -t '${spec.tmuxName}'
 if [ "$1" = run ]; then
   KOLOFT_TMUX_FOLLOW=1; export KOLOFT_TMUX_FOLLOW
   unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN
   E="${T}.env"; [ -f "$E" ] && { set -a; . "$E"; set +a; rm -f "$E"; }
   exec claude --settings "${T}.json" ${spec.claudeArgs.map(shq).join(' ')}
 fi
+${onATerminalEvenWhenSshGaveNone('$2', '$3', ptsFile(spec.tabId), `sh \\"${T}.sh\\" $1`)}
+[ "$1" = attach ] && exec tmux -L koloft attach -d -t '${spec.tmuxName}'
 sh "$M/ensure.sh" || exit $?
 cd ${shq(spec.cwd)}${spec.fallbackCwd ? ` || cd ${shq(spec.fallbackCwd)}` : ''} || exit 3
 echo ${shq(spec.banner)}
@@ -188,7 +194,7 @@ export function launchLine(s: LaunchLineSpec): string {
   const pushTab =
     `COPYFILE_DISABLE=1 tar cf - -C ${shq(s.tabDir)} . | ssh ${opts} ${host} ` +
     `'umask 077; mkdir -p "$HOME/.koloft/tabs" && tar xf - -C "$HOME/.koloft/tabs"'`
-  const run = `ssh -tt ${opts} ${host} "sh \\"\\$HOME/.koloft/tabs/${s.tabId}.sh\\" $a"`
+  const run = `ssh -tt ${opts} ${host} "sh \\"\\$HOME/.koloft/tabs/${s.tabId}.sh\\" $a $COLUMNS $LINES"`
   return (
     `${machineReady(s)} && ${pushTab} ` +
     `|| { ${COULD_NOT_CONNECT}; rm -rf ${shq(s.tabDir)}; exit 4; }; ` +
@@ -209,10 +215,10 @@ export interface UtilShellLineSpec {
 
 // PLATFORM§33
 export function utilShellLine(s: UtilShellLineSpec): string {
-  const run = `sh "$HOME/.koloft/${s.machine.name}/util.sh" ${shq(s.dir)}`
+  const run = `sh "$HOME/.koloft/${s.machine.name}/util.sh" ${shq(s.dir)} ${s.tabId}`
   return (
     `${machineReady(s)} || { ${COULD_NOT_CONNECT}; exit 4; }; ` +
-    `clear; ssh -t ${s.sshOptions.join(' ')} ${shq(s.host)} ${shq(run)}; exit`
+    `clear; ssh -t ${s.sshOptions.join(' ')} ${shq(s.host)} ${shq(run)} $COLUMNS $LINES; exit`
   )
 }
 

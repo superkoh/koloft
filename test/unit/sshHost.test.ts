@@ -276,6 +276,33 @@ describe('what a remote launch hands claude', () => {
   })
 })
 
+describe("resizing a remote tab's stand-in terminal", () => {
+  it('sends the last size once the resizing settles, and only for a tab that has a stand-in terminal', async () => {
+    const bin = path.join(home, '.local', 'bin')
+    fs.mkdirSync(bin, { recursive: true })
+    const log = path.join(home, 'stty.log')
+    fs.writeFileSync(
+      path.join(bin, 'stty'),
+      `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(log)}\n`,
+      {
+        mode: 0o755
+      }
+    )
+    const tabs = path.join(home, '.koloft', 'tabs')
+    fs.mkdirSync(tabs, { recursive: true })
+    fs.writeFileSync(path.join(tabs, 'pty-1.pts'), '/dev/pts/9\n')
+    const resized = machine().shell(keyed(repo)).resized!
+
+    resized('pty-1', 100, 30)
+    resized('pty-1', 110, 35)
+    resized('pty-1', 120, 40)
+    resized('pty-2', 80, 24)
+    await new Promise((r) => setTimeout(r, 1500))
+
+    expect(fs.readFileSync(log, 'utf8')).toBe('-F /dev/pts/9 cols 120 rows 40\n')
+  })
+})
+
 describe('the utility terminal on the machine', () => {
   function guardOnPath(): { bin: string; realLog: string } {
     const guardDir = path.join(home, 'util-bin')

@@ -2520,6 +2520,7 @@ function registerIpc(): void {
         rows: opts.rows,
         setupCommand: setupLine(),
         launchCommand: launch.launchCommand,
+        resized: launch.resized,
         shell: launch.shell,
         util: opts.util === true,
         ownerTabId: typeof opts.ownerTabId === 'string' ? opts.ownerTabId : undefined
