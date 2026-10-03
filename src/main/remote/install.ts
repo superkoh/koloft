@@ -117,8 +117,8 @@ install_node() {
   rm -rf "$tmp"
 }
 node_runs() { "$HOME/.koloft/node/bin/node" -v >/dev/null 2>&1; }
-wont_run="$HOME/.koloft/node-$NODE_VERSION.no-build-runs"
-if ! node_ok && [ ! -f "$wont_run" ]; then
+no_build_runs="$HOME/.koloft/node-$NODE_VERSION.no-build-runs"
+if ! node_ok && [ ! -f "$no_build_runs" ]; then
   say "installing node $NODE_VERSION for the statusline (about 30 MB, once)"
   if ! node_platform || ! install_node "https://nodejs.org/dist/v$NODE_VERSION" "node-v$NODE_VERSION-$os-$arch"; then
     rm -rf "$HOME/.koloft/node.tmp.$$"; say "node could not be installed: this machine gets no statusline"
@@ -130,7 +130,7 @@ if ! node_ok && [ ! -f "$wont_run" ]; then
     && node_runs; then
     :
   else
-    rm -rf "$HOME/.koloft/node" "$HOME/.koloft/node.tmp.$$"; : > "$wont_run"
+    rm -rf "$HOME/.koloft/node" "$HOME/.koloft/node.tmp.$$"; : > "$no_build_runs"
     say "node $NODE_VERSION does not run on this machine (its C library is too old): this machine gets no statusline"
   fi
 fi

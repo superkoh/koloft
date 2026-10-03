@@ -56,22 +56,25 @@ beforeAll(() => {
   const uarch = spawnSync('uname', ['-m'], { encoding: 'utf8' }).stdout.trim()
   const arch = uarch === 'x86_64' || uarch === 'amd64' ? 'x64' : 'arm64'
   nodeName = `node-v${NODE_VERSION}-${uos}-${arch}`
-  const stage = path.join(fixtures, 'stage', nodeName, 'bin')
-  fs.mkdirSync(stage, { recursive: true })
-  fs.writeFileSync(path.join(stage, 'node'), `#!/bin/sh\necho v${NODE_VERSION}\n`, { mode: 0o755 })
-  const sums: string[] = []
-  for (const [e, flag] of [
-    ['tar.gz', '-czf'],
-    ['tar.xz', '-cJf']
-  ] as const) {
-    const file = path.join(fixtures, `${nodeName}.${e}`)
-    spawnSync('tar', [flag, file, '-C', path.join(fixtures, 'stage'), nodeName])
-    const sum = spawnSync('shasum', ['-a', '256', file], { encoding: 'utf8' }).stdout.split(' ')[0]
-    sums.push(`${sum}  ${nodeName}.${e}`)
-  }
-  fs.writeFileSync(path.join(fixtures, 'SHASUMS256.txt'), sums.join('\n') + '\n')
   ext = which('xz') || fs.existsSync('/opt/homebrew/bin/xz') ? 'tar.xz' : 'tar.gz'
+  buildNodeDist(fixtures, { [nodeName]: 'runs' })
 })
+
+function buildNodeDist(dist: string, builds: Record<string, 'runs' | 'will not run'>): void {
+  const sums: string[] = []
+  for (const [name, outcome] of Object.entries(builds)) {
+    const stage = path.join(dist, 'stage', name, 'bin')
+    fs.mkdirSync(stage, { recursive: true })
+    const body = outcome === 'runs' ? `echo v${NODE_VERSION}` : 'exit 1'
+    fs.writeFileSync(path.join(stage, 'node'), `#!/bin/sh\n${body}\n`, { mode: 0o755 })
+    const file = path.join(dist, `${name}.${ext}`)
+    const flag = ext === 'tar.xz' ? '-cJf' : '-czf'
+    spawnSync('tar', [flag, file, '-C', path.join(dist, 'stage'), name])
+    const sum = spawnSync('shasum', ['-a', '256', file], { encoding: 'utf8' }).stdout.split(' ')[0]
+    sums.push(`${sum}  ${name}.${ext}`)
+  }
+  fs.writeFileSync(path.join(dist, 'SHASUMS256.txt'), sums.join('\n') + '\n')
+}
 afterAll(() => {
   fs.rmSync(onlyRealUnixToolsDir, { recursive: true, force: true })
   fs.rmSync(fixtures, { recursive: true, force: true })
@@ -203,25 +206,7 @@ describe('U-ENS-1..4: ensure.sh on a remote machine never sits on a hidden passw
 
   function serveNodeBuilds(m: Machine, builds: Record<string, 'runs' | 'will not run'>): void {
     const dist = path.join(m.home, 'dist')
-    const sums: string[] = []
-    for (const [name, outcome] of Object.entries(builds)) {
-      const stage = path.join(dist, 'stage', name, 'bin')
-      fs.mkdirSync(stage, { recursive: true })
-      const body = outcome === 'runs' ? `echo v${NODE_VERSION}` : 'exit 1'
-      fs.writeFileSync(path.join(stage, 'node'), `#!/bin/sh\n${body}\n`, { mode: 0o755 })
-      const file = path.join(dist, `${name}.${ext}`)
-      spawnSync('tar', [
-        ext === 'tar.xz' ? '-cJf' : '-czf',
-        file,
-        '-C',
-        path.join(dist, 'stage'),
-        name
-      ])
-      sums.push(
-        `${spawnSync('shasum', ['-a', '256', file], { encoding: 'utf8' }).stdout.split(' ')[0]}  ${name}.${ext}`
-      )
-    }
-    fs.writeFileSync(path.join(dist, 'SHASUMS256.txt'), sums.join('\n') + '\n')
+    buildNodeDist(dist, builds)
     m.give('curl', `LOGS=${JSON.stringify(m.logs)}\nFIXTURES=${JSON.stringify(dist)}\n${CURL()}`)
   }
 
