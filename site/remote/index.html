@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Remote folders (alpha) — Koloft</title>
+    <meta
+      name="description"
+      content="Open a folder on another machine you reach by ssh. Claude Code runs there; Koloft shows its sessions and a Workbench here. Alpha, with its gaps listed."
+    />
+    <meta name="theme-color" content="#f6f1e6" />
+    <link rel="canonical" href="__SITE_URL__/remote/" />
+    <link rel="icon" href="../favicon.png" type="image/png" sizes="32x32" />
+    <link rel="icon" href="../icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Koloft" />
+    <meta property="og:title" content="Remote folders (alpha) — Koloft" />
+    <meta
+      property="og:description"
+      content="Open a folder on another machine you reach by ssh. Claude Code runs there; Koloft shows its sessions and a Workbench here. Alpha, with its gaps listed."
+    />
+    <meta property="og:url" content="__SITE_URL__/remote/" />
+    <meta property="og:image" content="__SITE_URL__/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content='Koloft on ruled paper: its icon, the line "run and manage Claude Code and Codex on your Mac", and a crop of a session with its Workbench'
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Remote folders (alpha) — Koloft" />
+    <meta
+      name="twitter:description"
+      content="Open a folder on another machine you reach by ssh. Claude Code runs there; Koloft shows its sessions and a Workbench here. Alpha, with its gaps listed."
+    />
+    <meta name="twitter:image" content="__SITE_URL__/og.png" />
+    <link
+      rel="preload"
+      href="../fonts/special-elite-latin-400-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body>
+    <div class="sheet">
+      <header class="masthead">
+        <p class="brand">
+          <a href="../"
+            ><img src="../icon.svg" alt="" width="28" height="28" /><span>Koloft</span></a
+          >
+        </p>
+        <nav class="contents" aria-label="Pages">
+          contents:
+          <a href="../">home</a> · <a href="../sessions/">sessions</a> ·
+          <a href="../workbench/">workbench</a> · <a href="../agents/">agents</a> ·
+          <a href="../scheduled/">scheduled</a> · <a href="../accounts/">accounts</a> ·
+          <a href="../remote/" aria-current="page">remote</a> ·
+          <a href="../install/">install</a>
+        </nav>
+      </header>
+
+      <main>
+        <h1 class="title">Remote folders (alpha)</h1>
+
+        <p>
+          Koloft can open a folder that lives on another computer, one you reach with
+          <code>ssh</code> (a safe way to log in to another computer over the network). Claude Code
+          runs over there. You watch it and work with it from your Mac. This part is
+          <mark class="hl">alpha</mark>: it is early, it works, and it still has gaps. The ones we
+          know are listed below.
+        </p>
+
+        <h2>Add one</h2>
+        <p>
+          Click the Add workspace button (the folder with a plus) at the top of the window, then
+          pick <code>Remote directory…</code>. Koloft asks for two things:
+        </p>
+        <ul class="dash">
+          <li>Machine: <code>user@host</code>, or a name from your ssh settings</li>
+          <li>
+            Path on the machine: the full path, starting with <code>/</code>, such as
+            <code>/home/me/project</code>
+          </li>
+        </ul>
+
+        <figure class="shot is-narrow" style="--ar: 840 / 836">
+          <div class="frame">
+            <img
+              src="../img/k-remote-dialog-abs.webp"
+              width="840"
+              height="836"
+              alt="The Remote directory dialog, marked alpha: Machine is dev@build-box, Path on the machine is /home/dev/projects/tidewatch, with Cancel and Add buttons"
+            />
+            <span class="tape" aria-hidden="true"></span>
+          </div>
+          <figcaption>the Remote directory dialog: a machine, and a full path on it</figcaption>
+        </figure>
+
+        <p>
+          Keys set in <code>~/.ssh/config</code> work everywhere. A password works too: type it once
+          in a tab, and Koloft's own checks use that login after that.
+        </p>
+
+        <h2>What happens there</h2>
+        <p>
+          Claude Code runs on the other machine. The account it uses comes from
+          <a href="../accounts/">the pool on your Mac</a>. Its transcripts (the written record of
+          each session) stay there, and <code>rsync</code> (a tool that copies files) brings copies
+          back, so the sessions list reads like a folder on your Mac.
+        </p>
+
+        <figure class="shot is-narrow" style="--ar: 558 / 526">
+          <div class="frame">
+            <img
+              src="../img/l-remote-sidebar.webp"
+              width="558"
+              height="526"
+              loading="lazy"
+              alt="The sessions list: a local folder, harbor-site, and below it a remote folder, tidewatch, tagged dev@build-box with a green dot and two sessions under it"
+            />
+            <span class="tape" aria-hidden="true"></span>
+          </div>
+          <figcaption>
+            a remote folder in the list: the machine's name beside it, a dot that is lit while
+            connected, and its sessions below, like any folder
+          </figcaption>
+        </figure>
+
+        <pre
+          class="ascii"
+          role="img"
+          aria-label="Your Mac runs Koloft. The session's tab talks over ssh to claude, which runs inside tmux on the other machine. Koloft sends the account it picked across. rsync copies the transcripts back to the Mac, and the sessions list is read from those copies."
+        >
+your Mac                     the other machine
++-----------------+          +------------------+
+| Koloft          |          | tmux             |
+|                 |   ssh    |  +------------+  |
+| the tab         | &lt;------&gt; |  |   claude   |  |
+|                 |          |  +------------+  |
+| account it      |          |                  |
+| picked          | -------&gt; | claude uses it   |
+|                 |          |                  |
+| copies of       |  rsync   | transcripts      |
+| transcripts     | &lt;------- | (the real ones)  |
+|   |             |          |                  |
+|   v             |          |                  |
+| sessions list   |          |                  |
++-----------------+          +------------------+
+</pre>
+
+        <ul class="dash">
+          <li>
+            Claude runs inside <code>tmux</code> (a program that keeps a terminal going after you
+            leave). If the link drops, Claude keeps working.
+          </li>
+          <li>
+            If the machine is missing <code>claude</code>, <code>tmux</code> or <code>rsync</code>,
+            Koloft installs them over the same link (<code>tmux</code> and <code>rsync</code> may
+            ask for that machine's sudo password, the admin password).
+          </li>
+          <li>
+            It also fetches Node, only for the status line. If that fails, the session still runs,
+            just without a status line.
+          </li>
+          <li>
+            The first session on a machine takes a few seconds longer: <code>claude</code> fetches
+            its own settings once.
+          </li>
+        </ul>
+
+        <h2>The Workbench there</h2>
+        <p>
+          The <a href="../workbench/">Workbench</a> works on a remote folder too. Its files, its
+          changes, the editor and the shell are all the machine's, not your Mac's.
+        </p>
+
+        <h2>Not there yet</h2>
+        <ul class="dash">
+          <li>Images and PDFs (document files) from the machine do not show a preview.</li>
+          <li>An agent's <code>open &lt;url&gt;</code> does not reach the Workbench.</li>
+          <li>
+            The agent cannot drive your web tabs. See
+            <a href="../agents/">Agents can use Koloft too</a>.
+          </li>
+          <li>The agent does not get the <code>koloft</code> command.</li>
+          <li>No Codex yet. A remote folder runs Claude Code only.</li>
+          <li>
+            The folder menu has no Fetch origin and no Reveal in Finder. It offers Copy path
+            instead.
+          </li>
+          <li>Koloft does not check whether the folder's branch is behind its git remote.</li>
+        </ul>
+
+        <p class="next">
+          next page -&gt; <a href="../install/">Install, update, what it talks to</a>
+        </p>
+      </main>
+
+      <footer class="signoff">
+        <p>
+          <a href="https://github.com/superkoh/koloft">source</a> ·
+          <a href="https://github.com/superkoh/koloft-releases/releases">releases</a> ·
+          <a href="https://github.com/superkoh/koloft/issues">issues</a> · GPL-3.0
+        </p>
+        <p class="fine">
+          Not made by or affiliated with Anthropic or OpenAI.<span
+            class="caret"
+            aria-hidden="true"
+          ></span>
+        </p>
+      </footer>
+    </div>
+
+    <script src="../script.js"></script>
+  </body>
+</html>
