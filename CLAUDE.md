@@ -30,7 +30,7 @@ Working principles:
   in whatever language it is writing; never pick a hard word where an easy one
   works. When a picture says it better, draw one: a chart, diagram, or graph
   (mermaid or ASCII in markdown) beats a wall of text. The first time an
-  abbreviation, shorthand or number (issue #100, step 4) appears in a reply or
+  abbreviation, shorthand or number (issue #N, step 4) appears in a reply or
   document, say what it means — e.g. "PR (pull request, a proposed code change)".
 - Build the smallest thing that solves the problem at hand — in the design, the
   code, and the tests alike. A branch, guard, fallback, or abstraction for a case
