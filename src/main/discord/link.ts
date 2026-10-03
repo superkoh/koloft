@@ -71,7 +71,7 @@ interface Candidate {
   at: number
 }
 
-// PLATFORM§38
+// PLATFORM§39
 function filesPerMessage(files: DiscordFile[]): DiscordFile[][] {
   const out: DiscordFile[][] = []
   let bytes = 0

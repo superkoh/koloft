@@ -11,7 +11,7 @@ function endsMidPair(text: string, cut: number): boolean {
   return code >= 0xd800 && code <= 0xdbff
 }
 
-// PLATFORM§38
+// PLATFORM§39
 export function splitForDiscord(text: string, limit = DISCORD_MESSAGE_LIMIT): string[] {
   const out: string[] = []
   let body = ''

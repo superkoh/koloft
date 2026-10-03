@@ -17,7 +17,7 @@ function bucketOf(route: string): string {
 
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
-// ADR-0027 PLATFORM§38
+// ADR-0027 PLATFORM§39
 export class DiscordRest {
   private queues = new Map<string, Promise<unknown>>()
 

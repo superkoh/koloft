@@ -512,7 +512,8 @@ export class ClaudeBackend implements SessionBackend {
     }
     if (hit && EVICTING_END_REASONS.has(hit.raw.reason ?? '')) {
       const stillBound = !!sid && this.d.tracker.list().some((t) => t.alive && t.sessionId === sid)
-      if (sid && !stillBound) this.d.workspaces()?.dropOwnership(sid)
+      if (sid && !stillBound)
+        this.d.workspaces()?.dropOwnership(sid, `the remote claude ended (${hit.raw.reason})`)
     }
     if (!hit && sid && this.remoteSessionGone(host, sid))
       this.d.events(tabId, { type: 'exited', clean: false, title, sessionId: sid })
@@ -555,7 +556,7 @@ export class ClaudeBackend implements SessionBackend {
         const sid = this.sessionIdOf(obj.tabId)
         tracker.untrack(obj.tabId)
         const stillBound = !!sid && tracker.list().some((s) => s.alive && s.sessionId === sid)
-        if (sid && !stillBound) workspaces?.dropOwnership(sid)
+        if (sid && !stillBound) workspaces?.dropOwnership(sid, `claude ended (${obj.reason})`)
       } else {
         // CC§1
         this.untrackIfClaudeGone(obj.tabId)
@@ -579,7 +580,7 @@ export class ClaudeBackend implements SessionBackend {
       if (tracker.remoteOf(obj.tabId)) tracker.setRemoteTmuxName(obj.tabId, tmuxSessionName(nextId))
       workspaces?.onSessionRebind(prevId, nextId, obj.source || '')
       if (replacesTheConversation(obj.source || '')) {
-        workspaces?.dropOwnership(prevId)
+        workspaces?.dropOwnership(prevId, `replaced by ${nextId} (${obj.source})`)
       }
     }
     if (nextId) workspaces?.onSessionBound(nextId)
@@ -759,6 +760,7 @@ export class ClaudeBackend implements SessionBackend {
         return plan.launchCommand(tabId)
       },
       resumeSessionId: spec.resumeSessionId,
+      resized: plan.resized,
       shell: plan.shell,
       extraEnv: agentPlugin ? { ...plan.extraEnv, KOLOFT_AGENT_PLUGIN: agentPlugin } : plan.extraEnv
     })

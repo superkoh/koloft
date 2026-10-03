@@ -92,6 +92,7 @@ export interface WorkspaceManagerDeps {
   killRemoteSession?(host: string, sessionId: string): void
   hiddenRow?(id: string): boolean
   conductorsRoot?: string
+  memberDropped?(sessionId: string, why: string): void
 }
 
 function dirExistsSync(p: string): boolean {
@@ -417,15 +418,16 @@ export class WorkspaceManager {
   archiveSession(sessionId: string): boolean {
     if (!this.layout.members.includes(sessionId)) return false
     if (this.deps.runningBindings().has(sessionId)) return false
-    this.forget(sessionId)
+    this.forget(sessionId, 'archived from the sidebar')
     return true
   }
 
-  dropOwnership(sessionId: string): void {
-    if (this.layout.members.includes(sessionId)) this.forget(sessionId)
+  dropOwnership(sessionId: string, why: string): void {
+    if (this.layout.members.includes(sessionId)) this.forget(sessionId, why)
   }
 
-  private forget(sessionId: string): void {
+  private forget(sessionId: string, why: string): void {
+    this.deps.memberDropped?.(sessionId, why)
     const panels = { ...this.layout.panels }
     delete panels[sessionId]
     this.layout = {
@@ -733,8 +735,14 @@ export class WorkspaceManager {
     for (const t of this.remoteTargets()) {
       for (const id of this.deps.remoteRunning?.(t.host) ?? []) liveIds.add(id)
     }
-    const members = this.layout.members.filter((id) => liveIds.has(id))
-    const kept = new Set([...members, ...(this.deps.additionalMembers?.() ?? [])])
+    const additional = this.deps.additionalMembers?.() ?? new Set<string>()
+    const members: string[] = []
+    for (const id of this.layout.members) {
+      if (liveIds.has(id)) members.push(id)
+      else if (!additional.has(id))
+        this.deps.memberDropped?.(id, 'no transcript found and not running')
+    }
+    const kept = new Set([...members, ...additional])
     const gc = gcSessions(this.layout.panels, kept)
     const resident = this.residentIds().filter((id) => kept.has(id))
     if (

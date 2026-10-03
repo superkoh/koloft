@@ -1,3 +1,6 @@
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 import { describe, expect, it, vi } from 'vitest'
 import {
   handoverPreamble,
@@ -8,10 +11,12 @@ import {
   sessionVerb,
   THAT_IS_YOU,
   workspaceVerb,
+  type ClosableSession,
   type PinnedWorkspace,
   type Target
 } from '../../src/main/agentSessions'
 import { crossSessionLine } from '../../src/main/crossSessionMessage'
+import { StartedSessions } from '../../src/main/startedSessions'
 import { EXIT_USAGE, type AgentReply } from '../../src/main/agentRequests'
 import type {
   BackendId,
@@ -77,7 +82,8 @@ function harness(
   sessions: SessionInfo[],
   peerNames: Record<string, string> = {},
   left: string[] = [],
-  conducting: Conducting = {}
+  conducting: Conducting = {},
+  cold: ClosableSession[] = []
 ): {
   verb: (args: string[], from: { tabId: string; cwd: string }) => Promise<AgentReply>
   launched: Launch[]
@@ -92,6 +98,7 @@ function harness(
   started: Started[]
   answers: { tabId: string; reply: string }[]
   undelivered: { callerTab: string; name: string; why: string }[]
+  startedSessions: StartedSessions
 } {
   const answers: { tabId: string; reply: string }[] = []
   const undelivered: { callerTab: string; name: string; why: string }[] = []
@@ -105,6 +112,8 @@ function harness(
   const resumed: string[] = []
   const stopped: string[] = []
   const started: Started[] = []
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-started-'))
+  const startedSessions = new StartedSessions(() => path.join(dir, 'started-sessions.json'))
   const inner = sessionVerb({
     workspaceOf: (tabId) => sessions.find((s) => s.tabId === tabId)?.cwd,
     allSessions: () => sessions,
@@ -117,9 +126,11 @@ function harness(
     queue: async (tabId, text, clientId) => {
       queued.push({ tabId, text, clientId })
     },
+    startedSessions,
+    closable: () => [...sessions, ...cold],
     whatIsLeft: async () => left,
-    closeSoon: (tabId) => {
-      closed.push(tabId)
+    closeSoon: (target) => {
+      closed.push(target.sessionId)
     },
     conductorScope: (tabId) => conducting.scopes?.[tabId],
     sidebar: () => conducting.sidebar ?? [],
@@ -172,7 +183,8 @@ function harness(
     stopped,
     started,
     answers,
-    undelivered
+    undelivered,
+    startedSessions
   }
 }
 
@@ -419,7 +431,57 @@ describe('koloft session close', () => {
     ])
     expect((await verb(['close'], from('me'))).exit).toBe(0)
     expect((await verb(['close'], from('cx'))).exit).toBe(0)
-    expect(closed).toEqual(['me', 'cx'])
+    expect(closed).toEqual(['me-session', 'cx-session'])
+  })
+
+  it('closes a session it started with koloft session new, by its title or tab id, while it is open', async () => {
+    const { verb, closed } = harness([
+      session('me', 'claude'),
+      session('new-tab', 'claude', { title: 'Docs fixer' })
+    ])
+    await verb(['new', '--name', 'docs-fixer', '--', 'go'], from('me'))
+    expect((await verb(['close', 'Docs fixer'], from('me'))).exit).toBe(0)
+    expect((await verb(['close', 'new-tab'], from('me'))).exit).toBe(0)
+    expect(closed).toEqual(['new-tab-session', 'new-tab-session'])
+  })
+
+  it('closes a session it started that has since ended and left only its sidebar row', async () => {
+    const ended: ClosableSession = {
+      sessionId: 'kid-session',
+      backendId: 'codex',
+      title: 'Test runner',
+      treeRoot: WS
+    }
+    const { verb, closed, startedSessions } = harness([session('me', 'claude')], {}, [], {}, [
+      ended
+    ])
+    startedSessions.started('gone-tab', 'me-session')
+    startedSessions.bound('gone-tab', 'kid-session')
+    expect((await verb(['close', 'Test runner'], from('me'))).exit).toBe(0)
+    expect(closed).toEqual(['kid-session'])
+  })
+
+  it('refuses, closing nothing, a session it did not start — open or ended — and a second argument', async () => {
+    const someoneElses: ClosableSession = {
+      sessionId: 'cold-session',
+      backendId: 'claude',
+      title: 'Old run',
+      treeRoot: WS
+    }
+    const { verb, closed } = harness(
+      [session('me', 'claude'), session('other', 'claude')],
+      {},
+      [],
+      {},
+      [someoneElses]
+    )
+    for (const ref of ['other', 'other title', 'Old run', 'cold-session']) {
+      const reply = await verb(['close', ref], from('me'))
+      expect(reply.exit).not.toBe(0)
+      expect(reply.text).toContain('koloft session new')
+    }
+    expect(await verb(['close', 'a', 'b'], from('me'))).toMatchObject({ exit: EXIT_USAGE })
+    expect(closed).toEqual([])
   })
 
   it('closes nothing and lists what is left when something is not committed or not pushed', async () => {
@@ -429,12 +491,6 @@ describe('koloft session close', () => {
     expect(reply.exit).not.toBe(0)
     expect(reply.text).toContain('nothing was closed')
     for (const line of left) expect(reply.text).toContain(line)
-    expect(closed).toEqual([])
-  })
-
-  it('takes no options, so it can only ever close the session it runs in', async () => {
-    const { verb, closed } = harness([session('me', 'claude'), session('other', 'claude')])
-    expect(await verb(['close', 'other'], from('me'))).toMatchObject({ exit: EXIT_USAGE })
     expect(closed).toEqual([])
   })
 })

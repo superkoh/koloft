@@ -25,6 +25,7 @@ import {
   type Parsed
 } from './agentRequests'
 import { crossSessionLine, type ModeClass } from './crossSessionMessage'
+import type { StartedSessions } from './startedSessions'
 
 export interface NewSessionArgs {
   name?: string
@@ -232,6 +233,42 @@ export function findCodexTarget(sessions: SessionInfo[], ref: string): Parsed<Se
     : fail(CLAUDE_USES_SEND_MESSAGE)
 }
 
+export interface ClosableSession {
+  sessionId: string
+  nativeSessionId?: string
+  backendId: BackendId
+  title: string
+  treeRoot: string
+  tabId?: string
+}
+
+const CLOSE_USAGE =
+  'koloft session close: give nothing to close this session, or the id or name of one you started with koloft session new, like: koloft session close <id or name>'
+
+export async function findClosable(
+  sessions: ClosableSession[],
+  ref: string,
+  nameOf: (sessionId: string) => Promise<string | null>
+): Promise<Parsed<ClosableSession>> {
+  const names = await Promise.all(
+    sessions.map((s) => (s.backendId === 'claude' ? nameOf(s.sessionId) : null))
+  )
+  const byId = sessions.find(
+    (s, i) =>
+      s.sessionId === ref || s.nativeSessionId === ref || s.tabId === ref || names[i] === ref
+  )
+  const hits = byId ? [byId] : sessions.filter((s) => s.title === ref)
+  if (hits.length > 1)
+    return fail(
+      `${hits.length} sessions are named "${ref}". Use the id from "koloft session list".`
+    )
+  if (hits.length === 0)
+    return fail(
+      `you did not start a session "${ref}". You can close only this session or one you started with koloft session new.`
+    )
+  return { ok: true, value: hits[0] }
+}
+
 export interface SessionVerbDeps {
   workspaceOf(tabId: string): string | undefined
   allSessions(): SessionInfo[]
@@ -239,8 +276,10 @@ export interface SessionVerbDeps {
   peerNames(): (sessionId: string) => Promise<string | null>
   launch(options: CreateTabOptions & { kind: BackendId }): Promise<string | null>
   queue(tabId: string, text: string, clientId?: string): Promise<void>
-  whatIsLeft(tabId: string, session: SessionInfo): Promise<string[]>
-  closeSoon(tabId: string, session: SessionInfo): void
+  startedSessions: StartedSessions
+  closable(): ClosableSession[]
+  whatIsLeft(target: ClosableSession): Promise<string[]>
+  closeSoon(target: ClosableSession): void
   conductorScope(tabId: string): string | undefined
   sidebar(): WorkspaceRows[]
   readTurns(key: string, n: number): Promise<Turn[]>
@@ -279,8 +318,6 @@ const READ_USAGE = `koloft session read: give an id or name, and if you like --l
 const CONDUCTOR_LIST_USAGE =
   'koloft session list: it takes no options here; it lists every session you look after.'
 export const NOT_IN_YOUR_WORKSPACE = 'That session is not in your workspace.'
-const CLOSE_USAGE =
-  'koloft session close: it takes no options; it closes the session you run it in.'
 const SEND_USAGE =
   'koloft session send: give an id or name, then the message, like: koloft session send <id> "Tell me what you found."'
 const NO_WORKSPACE = 'koloft session: Koloft does not know which workspace this session is in.'
@@ -329,6 +366,7 @@ async function startSibling(
     firstPrompt: withHandover(caller, backend, args.prompt)
   })
   if (!tabId) return refused('koloft session new: Koloft could not start the session.')
+  d.startedSessions.started(tabId, me.sessionId)
   if (conductorTab) {
     d.started(conductorTab, tabId, name ?? 'a Codex session', workspace, backend)
     return answered(
@@ -608,15 +646,25 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
     if (sub === 'resume' || sub === 'stop' || sub === 'answer')
       return refused(`koloft session ${sub}: ${ONLY_A_CONDUCTOR}`)
     if (sub === 'close') {
-      if (rest.length > 0) return refused(CLOSE_USAGE, EXIT_USAGE)
-      const left = await d.whatIsLeft(caller.tabId, caller.session)
+      if (rest.length > 1) return refused(CLOSE_USAGE, EXIT_USAGE)
+      const [ref] = rest
+      let target: ClosableSession = caller.session
+      if (ref !== undefined) {
+        const mine = d.closable().filter((s) => d.startedSessions.startedBy(s, caller.session))
+        const hit = await findClosable(mine, ref, d.peerNames())
+        if (!hit.ok) return refused(`koloft session close: ${hit.error}`)
+        target = hit.value
+      }
+      const left = await d.whatIsLeft(target)
       if (left.length > 0)
         return refused(
-          `koloft session close: nothing was closed.\n\n${left.join('\n\n')}\n\nCommit and push every change, end any other session in this worktree, then run koloft session close again.`
+          `koloft session close: nothing was closed.\n\n${left.join('\n\n')}\n\nCommit and push every change, end any other session in that worktree, then run koloft session close again.`
         )
-      d.closeSoon(caller.tabId, caller.session)
+      d.closeSoon(target)
       return answered(
-        'Closing this session now: its tab, its row in the sidebar, and its git worktree and branch if it has one.'
+        target.tabId === caller.tabId
+          ? 'Closing this session now: its tab, its row in the sidebar, and its git worktree and branch if it has one.'
+          : `Closing "${target.title}" now: its tab if it is open, its row in the sidebar, and its git worktree and branch if it has one.`
       )
     }
     return refused(SESSION_USAGE, EXIT_USAGE)

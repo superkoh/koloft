@@ -1,5 +1,6 @@
 import { shq } from '@shared/shellQuote'
 import { parseWorktreeEntries, type WorktreeEntry } from '../workspaceOps'
+import { remotePtsFile } from './paths'
 
 export const NODE_VERSION = '22.12.0'
 
@@ -7,12 +8,28 @@ export const NODE_VERSION = '22.12.0'
 export const REMOTE_PATH_LINE =
   'export PATH="$HOME/.local/bin:$HOME/.koloft/node/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"'
 
+// PLATFORM§38
+export function onATerminalEvenWhenSshGaveNone(
+  cols: string,
+  rows: string,
+  tabId: string,
+  then: string
+): string {
+  const pts = remotePtsFile(tabId)
+  return `[ -n "${cols}" ] && rm -f "${pts}"
+if [ -n "${cols}" ] && [ ! -t 0 ]; then
+  TERM=xterm-256color; export TERM
+  exec script -qfec "stty cols ${cols} rows ${rows}; tty > '${pts}'; exec ${then}" /dev/null
+fi`
+}
+
 // PLATFORM§33 PLATFORM§37
 export function remoteShCommand(script: string, args: string[] = []): string {
   const body = `set -- ${args.map(shq).join(' ')}\n${REMOTE_PATH_LINE}\n${script}`
   return `sh -c 'eval "$(printf %s "$0" | base64 -d)"' ${Buffer.from(body).toString('base64')}`
 }
 
+// PLATFORM§37
 export const ENSURE_SH = `#!/bin/sh
 ${REMOTE_PATH_LINE}
 NODE_VERSION=${NODE_VERSION}
@@ -75,7 +92,7 @@ node_ok() {
   v="$(node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1)"
   [ "\${v:-0}" -ge 20 ] 2>/dev/null
 }
-install_node() {
+node_platform() {
   os="$(uname -s | tr 'A-Z' 'a-z')"
   arch="$(uname -m)"
   case "$arch" in x86_64|amd64) arch=x64 ;; aarch64|arm64) arch=arm64 ;; *) say "no node build for $arch"; return 1 ;; esac
@@ -83,8 +100,11 @@ install_node() {
   if [ "$os" = linux ] && ldd --version 2>&1 | grep -qi musl; then say "musl libc: the official node build does not run here"; return 1; fi
   ext=tar.gz
   have xz && ext=tar.xz
-  name="node-v$NODE_VERSION-$os-$arch"
-  base="https://nodejs.org/dist/v$NODE_VERSION"
+  return 0
+}
+install_node() {
+  base="$1"
+  name="$2"
   tmp="$HOME/.koloft/node.tmp.$$"
   rm -rf "$tmp" && mkdir -p "$tmp/x" || return 1
   fetch "$base/$name.$ext" "$tmp/$name.$ext" || return 1
@@ -96,9 +116,23 @@ install_node() {
   rm -rf "$HOME/.koloft/node" && mv "$tmp/x/$name" "$HOME/.koloft/node" || return 1
   rm -rf "$tmp"
 }
-if ! node_ok; then
+node_runs() { "$HOME/.koloft/node/bin/node" -v >/dev/null 2>&1; }
+no_build_runs="$HOME/.koloft/node-$NODE_VERSION.no-build-runs"
+if ! node_ok && [ ! -f "$no_build_runs" ]; then
   say "installing node $NODE_VERSION for the statusline (about 30 MB, once)"
-  install_node || { rm -rf "$HOME/.koloft/node.tmp.$$"; say "node could not be installed: this machine gets no statusline"; }
+  if ! node_platform || ! install_node "https://nodejs.org/dist/v$NODE_VERSION" "node-v$NODE_VERSION-$os-$arch"; then
+    rm -rf "$HOME/.koloft/node.tmp.$$"; say "node could not be installed: this machine gets no statusline"
+  elif node_runs; then
+    :
+  elif [ "$os-$arch" = linux-x64 ] \\
+    && say "the official node build does not run here (its C library is too old); trying the build for older Linux" \\
+    && install_node "https://unofficial-builds.nodejs.org/download/release/v$NODE_VERSION" "node-v$NODE_VERSION-linux-x64-glibc-217" \\
+    && node_runs; then
+    :
+  else
+    rm -rf "$HOME/.koloft/node" "$HOME/.koloft/node.tmp.$$"; : > "$no_build_runs"
+    say "node $NODE_VERSION does not run on this machine (its C library is too old): this machine gets no statusline"
+  fi
 fi
 
 have tmux || install_pkg tmux || exit 4
@@ -113,8 +147,8 @@ set -g prefix None
 set -g prefix2 None
 set -sg escape-time 0
 set -g default-terminal tmux-256color
-set -as terminal-features ',xterm*:RGB:hyperlinks'
-set -g exit-empty on
+set -asq terminal-features ',xterm*:RGB:hyperlinks'
+set -gq exit-empty on
 set -g mouse off
 `
 
@@ -198,5 +232,6 @@ export KOLOFT_UTIL
 PATH="$M/util-bin:$PATH"
 export PATH
 cd "$1" 2>/dev/null || cd
+${onATerminalEvenWhenSshGaveNone('$3', '$4', '$2', "'${SHELL:-/bin/sh}' -l")}
 exec "\${SHELL:-/bin/sh}" -l
 `

@@ -34,7 +34,7 @@ function gatewayAddress(url: string): string {
   return u.toString()
 }
 
-// ADR-0027 PLATFORM§38
+// ADR-0027 PLATFORM§39
 export class DiscordGateway {
   private ws: WebSocket | null = null
   private seq: number | null = null

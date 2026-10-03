@@ -14,7 +14,7 @@ export interface DiscordVerbDeps {
   send(channelId: string, files: DiscordFile[], text: string): Promise<void>
 }
 
-// PLATFORM§38
+// PLATFORM§39
 export function discordVerb(d: DiscordVerbDeps): AgentVerb {
   return async (args, caller) => {
     const [sub, ...rest] = args

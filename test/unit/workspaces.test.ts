@@ -21,6 +21,7 @@ let layout: LayoutV6
 let bindings: Map<string, string>
 let pushed: WorkspaceRows[][]
 let saves: number
+let dropped: string[]
 let mgr: WorkspaceManager
 let conductorIds: Set<string>
 
@@ -90,6 +91,7 @@ beforeEach(() => {
   pushed = []
   saves = 0
   conductorIds = new Set()
+  dropped = []
   mgr = new WorkspaceManager({
     projectsRoot,
     remoteProjectsRoot: (host: string) => path.join(root, 'remote', host, 'projects'),
@@ -103,7 +105,8 @@ beforeEach(() => {
     killTab: () => {},
     pushRows: (p) => pushed.push(p),
     hiddenRow: (id) => conductorIds.has(id),
-    conductorsRoot: path.join(root, 'userData', 'conductors')
+    conductorsRoot: path.join(root, 'userData', 'conductors'),
+    memberDropped: (id, why) => dropped.push(`${id}: ${why}`)
   })
 })
 
@@ -589,7 +592,7 @@ describe('WorkspaceManager: per-session Workbench state (T-AGG-09②, T-AUX-02/0
       open: false,
       tabs: [{ kind: 'web', title: 'app', url: 'http://localhost:5173/' }]
     })
-    mgr.dropOwnership('s1')
+    mgr.dropOwnership('s1', 'test')
     expect(mgr.isMember('s1')).toBe(false)
 
     mgr.setWorkbenchState('s1', { open: true, tabs: [{ kind: 'web', title: 'late', url: 'u' }] })
@@ -609,12 +612,12 @@ describe('WorkspaceManager: working-set eviction (D1/D2)', () => {
     await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['live-1']))
 
     expect(mgr.archiveSession('live-1')).toBe(false)
-    mgr.dropOwnership('live-1')
+    mgr.dropOwnership('live-1', 'test')
     expect(layout.panels['live-1']).toBeUndefined()
     expect(mgr.isMember('live-1')).toBe(false)
 
     const before = saves
-    mgr.dropOwnership('live-1')
+    mgr.dropOwnership('live-1', 'test')
     expect(saves).toBe(before)
   })
 
@@ -626,10 +629,27 @@ describe('WorkspaceManager: working-set eviction (D1/D2)', () => {
     mgr.start()
     await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
     expect(layout.panels['fresh-1']).toEqual(SEEDED)
+    expect(dropped).toEqual([])
 
     bindings.delete('fresh-1')
     mgr.onTrackerUpdate()
     await vi.waitFor(() => expect(layout.panels['fresh-1']).toBeUndefined())
+    expect(dropped).toEqual(['fresh-1: no transcript found and not running'])
+  })
+
+  it('every session that leaves the list says why', async () => {
+    writeJsonl(repo, 'a-1')
+    writeJsonl(repo, 'b-1')
+    own('a-1', 'b-1')
+    mgr.start()
+    await vi.waitFor(() => expect(latest(repo).rows).toHaveLength(2))
+
+    expect(mgr.archiveSession('a-1')).toBe(true)
+    mgr.dropOwnership('b-1', 'claude ended (prompt_input_exit)')
+    expect(dropped).toEqual([
+      'a-1: archived from the sidebar',
+      'b-1: claude ended (prompt_input_exit)'
+    ])
   })
 
   it('leaves the jsonl behind, so the evicted session is restorable history', async () => {
@@ -639,7 +659,7 @@ describe('WorkspaceManager: working-set eviction (D1/D2)', () => {
     await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['gone-1']))
     expect(latest(repo).workspace.hasHistory).toBe(false)
 
-    mgr.dropOwnership('gone-1')
+    mgr.dropOwnership('gone-1', 'test')
     await vi.waitFor(() => expect(latest(repo).rows).toEqual([]))
     expect(latest(repo).workspace.hasHistory).toBe(true)
     expect(fs.existsSync(path.join(projectsRoot, encodeCwd(repo), 'gone-1.jsonl'))).toBe(true)

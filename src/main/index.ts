@@ -266,8 +266,9 @@ import { claudePeerNames, messagingSocketOf, runningClaudePid } from './claudeSe
 import { isDiscordId, scopeName } from '@shared/conductors'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
-import { sessionVerb, workspaceVerb, type Target } from './agentSessions'
+import { sessionVerb, workspaceVerb, type ClosableSession, type Target } from './agentSessions'
 import { writeLine } from './crossSessionMessage'
+import { StartedSessions } from './startedSessions'
 import { closingTree, removeTree, whatIsLeft } from './sessionClose'
 import { discordTokenRead, discordTokenWrite } from './accounts'
 import { writeAgentPlugin } from './agentPlugin'
@@ -298,6 +299,9 @@ const tracker = new SessionTracker()
 let codexSessions: CodexSessions | null = null
 let codexStartupError: string | undefined
 const turnsEnded = new EventEmitter<{ 'turn-ended': [TurnEnded] }>()
+const startedSessions = new StartedSessions(() =>
+  path.join(app.getPath('userData'), 'started-sessions.json')
+)
 const sessionBackends = new SessionBackends({
   turnEnded: (tabId, turn) => {
     const sessionKey = sessionOfTab(tabId)?.sessionId
@@ -308,6 +312,7 @@ const sessionBackends = new SessionBackends({
     attention.bound(tabId, key, attentionCtx())
     cronRunner?.onBound(tabId, key)
     conductors?.onBound(tabId, key)
+    startedSessions.bound(tabId, key)
   },
   exited: (tabId, subject) => attention.onExited(tabId, attentionCtx(), subject),
   asked: (tabId, ask) => discordRelay?.remoteAsked(tabId, ask),
@@ -741,12 +746,11 @@ const agentRequests = new AgentRequests({
       peerNames: () => claudePeerNames(),
       launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
       queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
+      startedSessions,
+      closable: closableSessions,
       whatIsLeft: whatClosingWouldLose,
-      closeSoon: (tabId, session) =>
-        setTimeout(
-          () => void closeSessionFully(tabId, session),
-          CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS
-        ),
+      closeSoon: (target) =>
+        setTimeout(() => void closeSessionFully(target), CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
       conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
       sidebar: () => workspaceMgr?.rows() ?? [],
       readTurns,
@@ -1593,7 +1597,15 @@ app.whenReady().then(() => {
     killRemoteSession: (host, sessionId) =>
       claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId)),
     hiddenRow: (id) => conductors?.hides(id) ?? false,
-    conductorsRoot: path.join(userData, 'conductors')
+    conductorsRoot: path.join(userData, 'conductors'),
+    memberDropped: (sessionId, why) => {
+      try {
+        fs.appendFileSync(
+          path.join(app.getPath('userData'), 'dropped-sessions.log'),
+          `${new Date().toISOString()} ${sessionId} ${why}\n`
+        )
+      } catch {}
+    }
   })
   conductors = new Conductors({
     userData,
@@ -2586,17 +2598,37 @@ function killTabPty(tabId: string): Promise<boolean> {
 
 function archiveSession(id: string): boolean {
   const archived = sessionBackends.forSession(id).archive(id)
-  if (archived) attention.clearSession(id)
+  if (archived) {
+    attention.clearSession(id)
+    startedSessions.forget(id)
+  }
   return archived
 }
 
 const CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS = 1_000
 
-async function whatClosingWouldLose(tabId: string, session: SessionInfo): Promise<string[]> {
-  const tree = await closingTree(localGitOut, projectInfoFor(session.treeRoot))
+function closableSessions(): ClosableSession[] {
+  const live: ClosableSession[] = allSessions()
+  const liveIds = new Set(live.map((s) => s.sessionId))
+  const cold: ClosableSession[] = (workspaceMgr?.rows() ?? [])
+    .flatMap((w) => w.rows)
+    .filter((r) => !liveIds.has(r.id))
+    .map((r) => ({
+      sessionId: r.id,
+      nativeSessionId: r.nativeSessionId,
+      backendId: r.backendId,
+      title: r.title,
+      treeRoot: r.cwd
+    }))
+  return [...live, ...cold]
+}
+
+async function whatClosingWouldLose(target: ClosableSession): Promise<string[]> {
+  const tree = await closingTree(localGitOut, projectInfoFor(target.treeRoot))
   if (!tree) return []
   const sharing = allSessions().filter(
-    (s) => s.tabId !== tabId && s.alive && projectInfoFor(s.treeRoot).treeRoot === tree.treeRoot
+    (s) =>
+      s.tabId !== target.tabId && s.alive && projectInfoFor(s.treeRoot).treeRoot === tree.treeRoot
   )
   return [
     ...sharing.map((s) => `The session "${s.title}" is still open in ${tree.treeRoot}.`),
@@ -2604,17 +2636,19 @@ async function whatClosingWouldLose(tabId: string, session: SessionInfo): Promis
   ]
 }
 
-async function closeSessionFully(tabId: string, session: SessionInfo): Promise<void> {
-  const info = projectInfoFor(session.treeRoot)
-  sendToRenderer('tab:killedByMain', tabId)
-  await killTabPty(tabId)
+async function closeSessionFully(target: ClosableSession): Promise<void> {
+  const info = projectInfoFor(target.treeRoot)
+  if (target.tabId) {
+    sendToRenderer('tab:killedByMain', target.tabId)
+    await killTabPty(target.tabId)
+  }
   const tree = await closingTree(localGitOut, info)
   const problem = tree && (await removeTree(localGitOut, tree))
   if (problem) {
-    sendToRenderer('cron:toast', `${session.title}: ${problem}`)
+    sendToRenderer('cron:toast', `${target.title}: ${problem}`)
     return
   }
-  archiveSession(session.sessionId)
+  archiveSession(target.sessionId)
   codexSessions?.store.removeUnusedResourcesAt(info.treeRoot)
 }
 
@@ -2889,6 +2923,7 @@ function registerIpc(): void {
         rows: opts.rows,
         setupCommand: setupLine(),
         launchCommand: launch.launchCommand,
+        resized: launch.resized,
         shell: launch.shell,
         util: opts.util === true,
         ownerTabId: typeof opts.ownerTabId === 'string' ? opts.ownerTabId : undefined

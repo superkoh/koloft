@@ -117,8 +117,9 @@ koloft session stop <id or name>
     Only for a conductor: close a session's tab. The session stays in the list and can be resumed.
     Example: koloft session stop fix-login
 
-koloft session close
-    Close the session you run it in, for good: Koloft ends it, closes its tab and takes it off the sidebar list. If it runs in its own git worktree, Koloft also deletes that worktree and its branches. Run it as your very last step, only when the owner asked for it. If anything in the worktree is not committed, or a commit is on no remote branch, nothing is closed and Koloft lists what is left.
+koloft session close [<id or name>]
+    Close a session for good: Koloft ends it, closes its tab and takes it off the sidebar list. If it runs in its own git worktree, Koloft also deletes that worktree and its branches. With no id or name it closes the session you run it in; run that as your very last step, only when the owner asked for it. With an id or name it closes a session you started with "koloft session new" (open, or already ended), once you have its result. If anything in the worktree is not committed, or a commit is on no remote branch, nothing is closed and Koloft lists what is left.
+    Example: koloft session close docs-fixer
 
 DISCORD (conductors only)
 
