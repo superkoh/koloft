@@ -231,12 +231,20 @@ export class ClaudeBackend implements SessionBackend {
     if (process.platform !== 'win32') this.startLivenessSweep()
   }
 
-  onPtyExit(tabId: string): void {
+  onPtyExit(tabId: string, crashed: boolean): void {
     const remote = this.d.tracker.remoteOf(tabId)
     if (!remote) {
       // CC§1
       this.drainExitRegistration(this.hookRegDir, tabId)
       this.dropStatusLog(this.hookRegDir, tabId)
+      const sessionId = this.sessionIdOf(tabId)
+      if (crashed && sessionId)
+        this.d.events(tabId, {
+          type: 'exited',
+          clean: false,
+          title: this.titleOf(tabId),
+          sessionId
+        })
       return
     }
     const sid = this.sessionIdOf(tabId)
