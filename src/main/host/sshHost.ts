@@ -25,9 +25,10 @@ import {
 } from '../fileEdit'
 import { GIT_TIMEOUT_MS, gitOps, type GitOps } from '../gitStatus'
 import { GithubLookup, type GithubOptions } from '../github'
-import { ptsFile, remoteShCommand } from '../remote/install'
+import { remoteShCommand } from '../remote/install'
 import {
   killSessionCmd,
+  resizeStandInCmd,
   launchLine,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
   sessionIdOfTmux,
@@ -343,11 +344,6 @@ function skillFsOf(files: Map<string, string>): SkillFs {
 const NETWORK_GIT = `GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=false SSH_ASKPASS=false \
 SSH_ASKPASS_REQUIRE=never GIT_SSH_COMMAND="\${GIT_SSH_COMMAND:-ssh} -o BatchMode=yes" git "$@"`
 
-// PLATFORM§38
-const RESIZE_STAND_IN_TERMINAL = `f="${ptsFile('$1')}"
-[ -s "$f" ] && stty -F "$(cat "$f")" cols "$2" rows "$3" 2>/dev/null
-exit 0`
-
 const RESIZE_SETTLE_MS = 200
 
 export class SshHost implements Host {
@@ -363,7 +359,7 @@ export class SshHost implements Host {
       tabId,
       setTimeout(() => {
         this.resizes.delete(tabId)
-        void this.sh(RESIZE_STAND_IN_TERMINAL, [tabId, String(cols), String(rows)])
+        void this.deps.run(resizeStandInCmd(tabId, cols, rows))
       }, RESIZE_SETTLE_MS)
     )
   }

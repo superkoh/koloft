@@ -1,5 +1,6 @@
 import { shq } from '@shared/shellQuote'
 import { parseWorktreeEntries, type WorktreeEntry } from '../workspaceOps'
+import { remotePtsFile } from './paths'
 
 export const NODE_VERSION = '22.12.0'
 
@@ -7,21 +8,18 @@ export const NODE_VERSION = '22.12.0'
 export const REMOTE_PATH_LINE =
   'export PATH="$HOME/.local/bin:$HOME/.koloft/node/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"'
 
-export function ptsFile(tabId: string): string {
-  return `$HOME/.koloft/tabs/${tabId}.pts`
-}
-
 // PLATFORM§38
 export function onATerminalEvenWhenSshGaveNone(
   cols: string,
   rows: string,
-  pts: string,
+  tabId: string,
   then: string
 ): string {
+  const pts = remotePtsFile(tabId)
   return `[ -n "${cols}" ] && rm -f "${pts}"
 if [ -n "${cols}" ] && [ ! -t 0 ]; then
   TERM=xterm-256color; export TERM
-  exec script -qfec "stty cols ${cols} rows ${rows}; tty > \\"${pts}\\"; exec ${then}" /dev/null
+  exec script -qfec "stty cols ${cols} rows ${rows}; tty > '${pts}'; exec ${then}" /dev/null
 fi`
 }
 
@@ -223,6 +221,6 @@ export KOLOFT_UTIL
 PATH="$M/util-bin:$PATH"
 export PATH
 cd "$1" 2>/dev/null || cd
-${onATerminalEvenWhenSshGaveNone('$3', '$4', ptsFile('$2'), '\\"${SHELL:-/bin/sh}\\" -l')}
+${onATerminalEvenWhenSshGaveNone('$3', '$4', '$2', "'${SHELL:-/bin/sh}' -l")}
 exec "\${SHELL:-/bin/sh}" -l
 `

@@ -3,12 +3,8 @@ import fs from 'fs'
 import path from 'path'
 import type { AccountKind } from '@shared/types'
 import { shq } from '@shared/shellQuote'
-import {
-  REMOTE_PATH_LINE,
-  onATerminalEvenWhenSshGaveNone,
-  ptsFile,
-  remoteShCommand
-} from './install'
+import { REMOTE_PATH_LINE, onATerminalEvenWhenSshGaveNone, remoteShCommand } from './install'
+import { remotePtsFile } from './paths'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
 
 export function accountEnv(
@@ -117,7 +113,7 @@ if [ "$1" = run ]; then
   E="${T}.env"; [ -f "$E" ] && { set -a; . "$E"; set +a; rm -f "$E"; }
   exec claude --settings "${T}.json" ${spec.claudeArgs.map(shq).join(' ')}
 fi
-${onATerminalEvenWhenSshGaveNone('$2', '$3', ptsFile(spec.tabId), `sh \\"${T}.sh\\" $1`)}
+${onATerminalEvenWhenSshGaveNone('$2', '$3', spec.tabId, `sh '${T}.sh' $1`)}
 [ "$1" = attach ] && exec tmux -L koloft attach -d -t '${spec.tmuxName}'
 sh "$M/ensure.sh" || exit $?
 cd ${shq(spec.cwd)}${spec.fallbackCwd ? ` || cd ${shq(spec.fallbackCwd)}` : ''} || exit 3
@@ -219,6 +215,14 @@ export function utilShellLine(s: UtilShellLineSpec): string {
   return (
     `${machineReady(s)} || { ${COULD_NOT_CONNECT}; exit 4; }; ` +
     `clear; ssh -t ${s.sshOptions.join(' ')} ${shq(s.host)} ${shq(run)} $COLUMNS $LINES; exit`
+  )
+}
+
+// PLATFORM§38
+export function resizeStandInCmd(tabId: string, cols: number, rows: number): string {
+  return remoteShCommand(
+    `f="${remotePtsFile('$1')}"\n[ -s "$f" ] && stty -F "$(cat "$f")" cols "$2" rows "$3"`,
+    [tabId, String(cols), String(rows)]
   )
 }
 

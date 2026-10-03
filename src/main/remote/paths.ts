@@ -26,4 +26,7 @@ export function remoteMachineDir(machineName: string): string {
   return `${REMOTE_HOME}/${machineName}`
 }
 export const REMOTE_HOOK_DIR = `${REMOTE_HOME}/hook-sessions`
+export function remotePtsFile(tabId: string): string {
+  return `${REMOTE_HOME}/tabs/${tabId}.pts`
+}
 export const dq = (s: string): string => `"${s}"`
