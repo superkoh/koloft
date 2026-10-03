@@ -187,6 +187,7 @@ import {
   ATTENTION_REASON,
   BROWSER_PARTITION,
   PLACEHOLDER_SESSION_TITLE,
+  exitedAbnormally,
   isHttpUrl
 } from '@shared/types'
 import {
@@ -1266,8 +1267,8 @@ app.whenReady().then(() => {
       return
     }
     if (loginWatchers.has(e.id)) failLogin(e.id, 'setup-token exited without printing a token')
-    claudeBackend.onPtyExit(e.id)
     attention.clear(e.id)
+    claudeBackend.onPtyExit(e.id, !quitCommitted && exitedAbnormally(e))
     flushData()
     // PLATFORM§21
     const held = pendingData.get(e.id)
@@ -2267,7 +2268,7 @@ function openInWorkbench(
 function killTabPty(tabId: string): Promise<boolean> {
   const owner = sessionBackends.ownerOfTab(tabId)
   const stopped = owner ? Promise.resolve(owner.stop(tabId)) : Promise.resolve(ptyMgr.kill(tabId))
-  attention.clear(tabId)
+  attention.clearKeepingExit(tabId)
   relayTabClosed(tabId)
   boundSessions.delete(tabId)
   return stopped.then(

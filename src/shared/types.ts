@@ -666,6 +666,11 @@ export interface TerminalExit {
   signal?: number
 }
 
+export function exitedAbnormally(exit: Pick<TerminalExit, 'exitCode' | 'signal'>): boolean {
+  // PLATFORM§29
+  return exit.exitCode !== 0 || !!exit.signal
+}
+
 export interface TerminalProcessTitle {
   id: string
   name: string
