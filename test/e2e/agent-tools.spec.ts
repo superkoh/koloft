@@ -216,7 +216,7 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       const rows = wsRows(page, 'repo')
       await expect(rows).toHaveCount(1, { timeout: 60_000 })
       await expect(rows).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
-      const callerTabId = await rows.first().getAttribute('data-tab-id')
+      const callerTabId = await rows.getAttribute('data-tab-id')
       expect(await koloftInSession(page, 'session new -w kid --name kid -- hello')).toBe('0')
       await expect(rows).toHaveCount(2, { timeout: 60_000 })
       const child = rows.and(page.locator(`.ws-tab:not([data-tab-id="${callerTabId}"])`))

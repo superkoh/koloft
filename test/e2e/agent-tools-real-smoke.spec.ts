@@ -113,15 +113,27 @@ async function ask(page: Page, row: Locator, text: string): Promise<void> {
   throw new Error(`the session never started on the prompt after ${ENTERS_BEFORE_GIVING_UP} Enters`)
 }
 
-async function refusedThenClosedForGood(
+interface RealWorktreeSession {
+  page: Page
+  rows: Locator
+  repo: string
+  tree: string
+}
+
+async function inARealWorktreeSession(
   env: E2EEnv,
   backend: 'default' | 'other',
-  useReal: (env: E2EEnv, trusted: string[]) => void
+  useReal: (env: E2EEnv, trusted: string[]) => void,
+  alsoTrusted: string[],
+  body: (s: RealWorktreeSession) => Promise<void>
 ): Promise<void> {
-  test.setTimeout(2 * A_REAL_MODEL_TURN_MS + 120_000)
   const fx = setupGitFixture(env)
   const tree = path.join(fx.clone, '.claude', 'worktrees', WORKTREE)
-  useReal(env, [fx.clone, tree])
+  useReal(env, [
+    fx.clone,
+    tree,
+    ...alsoTrusted.map((name) => path.join(fx.clone, '.claude', 'worktrees', name))
+  ])
   const app = await launchApp(env)
   const page = await app.firstWindow()
   try {
@@ -134,7 +146,22 @@ async function refusedThenClosedForGood(
     await expect(rows).toHaveCount(1, { timeout: 60_000 })
     await expect(rows).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 90_000 })
     expect(fs.existsSync(tree)).toBe(true)
+    await body({ page, rows, repo: fx.clone, tree })
+  } catch (e) {
+    await keepWhatTheAgentSawAndDid(page, env)
+    throw e
+  } finally {
+    await quitAndClose(app)
+  }
+}
 
+function refusedThenClosedForGood(
+  env: E2EEnv,
+  backend: 'default' | 'other',
+  useReal: (env: E2EEnv, trusted: string[]) => void
+): Promise<void> {
+  test.setTimeout(2 * A_REAL_MODEL_TURN_MS + 120_000)
+  return inARealWorktreeSession(env, backend, useReal, [], async ({ page, rows, repo, tree }) => {
     fs.writeFileSync(path.join(tree, 'left-behind.txt'), 'not committed')
     await ask(page, rows, ASK_FOR_THE_CLOSE)
     await expect
@@ -147,13 +174,8 @@ async function refusedThenClosedForGood(
     await ask(page, rows, ASK_FOR_THE_CLOSE)
     await expect(rows).toHaveCount(0, { timeout: A_REAL_MODEL_TURN_MS })
     await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
-    expect(runGit(fx.clone, 'branch', '--list', `worktree-${WORKTREE}`).trim()).toBe('')
-  } catch (e) {
-    await keepWhatTheAgentSawAndDid(page, env)
-    throw e
-  } finally {
-    await quitAndClose(app)
-  }
+    expect(runGit(repo, 'branch', '--list', `worktree-${WORKTREE}`).trim()).toBe('')
+  })
 }
 
 const CHILD = 'kid'
@@ -162,47 +184,30 @@ const START_A_CHILD_THEN_CLOSE_IT = {
   other: `Run this shell command exactly once: koloft session new -w ${CHILD} -- "Reply with the single word ok." It prints a tab id. Then run sleep 20, then run koloft session close with that tab id. Then say only what the last command printed. Do nothing else.`
 }
 
-async function closesTheSessionItStarted(
+function closesTheSessionItStarted(
   env: E2EEnv,
   backend: 'default' | 'other',
   useReal: (env: E2EEnv, trusted: string[]) => void
 ): Promise<void> {
   test.setTimeout(A_REAL_MODEL_TURN_MS + 180_000)
-  const fx = setupGitFixture(env)
-  const tree = path.join(fx.clone, '.claude', 'worktrees', WORKTREE)
-  const childTree = path.join(fx.clone, '.claude', 'worktrees', CHILD)
-  useReal(env, [fx.clone, tree, childTree])
-  const app = await launchApp(env)
-  const page = await app.firstWindow()
-  try {
-    await page.waitForLoadState('domcontentloaded')
-    await waitBooted(page)
-    const dlg = await openWorktreeSession(page, 'repo')
-    await dlg.locator('input').fill(WORKTREE)
-    await chooseBackend(page, backend)
-    const rows = wsRows(page, 'repo')
-    await expect(rows).toHaveCount(1, { timeout: 60_000 })
-    await expect(rows).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 90_000 })
-    const parentTabId = await rows.getAttribute('data-tab-id')
-
-    await ask(
-      page,
-      rows.and(page.locator(`[data-tab-id="${parentTabId}"]`)),
-      START_A_CHILD_THEN_CLOSE_IT[backend]
-    )
-    await expect(rows).toHaveCount(2, { timeout: A_REAL_MODEL_TURN_MS })
-    await expect.poll(() => fs.existsSync(childTree), { timeout: 60_000 }).toBe(true)
-    await expect(rows).toHaveCount(1, { timeout: A_REAL_MODEL_TURN_MS })
-    await expect(rows).toHaveAttribute('data-tab-id', parentTabId!)
-    await expect.poll(() => fs.existsSync(childTree), { timeout: 30_000 }).toBe(false)
-    expect(runGit(fx.clone, 'branch', '--list', `worktree-${CHILD}`).trim()).toBe('')
-    expect(fs.existsSync(tree)).toBe(true)
-  } catch (e) {
-    await keepWhatTheAgentSawAndDid(page, env)
-    throw e
-  } finally {
-    await quitAndClose(app)
-  }
+  return inARealWorktreeSession(
+    env,
+    backend,
+    useReal,
+    [CHILD],
+    async ({ page, rows, repo, tree }) => {
+      const parentTabId = await rows.getAttribute('data-tab-id')
+      const childTree = path.join(repo, '.claude', 'worktrees', CHILD)
+      await ask(page, rows, START_A_CHILD_THEN_CLOSE_IT[backend])
+      await expect(rows).toHaveCount(2, { timeout: A_REAL_MODEL_TURN_MS })
+      await expect.poll(() => fs.existsSync(childTree), { timeout: 60_000 }).toBe(true)
+      await expect(rows).toHaveCount(1, { timeout: A_REAL_MODEL_TURN_MS })
+      await expect(rows).toHaveAttribute('data-tab-id', parentTabId!)
+      await expect.poll(() => fs.existsSync(childTree), { timeout: 30_000 }).toBe(false)
+      expect(runGit(repo, 'branch', '--list', `worktree-${CHILD}`).trim()).toBe('')
+      expect(fs.existsSync(tree)).toBe(true)
+    }
+  )
 }
 
 async function keepWhatTheAgentSawAndDid(page: Page, env: E2EEnv): Promise<void> {
@@ -210,52 +215,11 @@ async function keepWhatTheAgentSawAndDid(page: Page, env: E2EEnv): Promise<void>
     body: await screen(page).catch(() => '(no terminal)'),
     contentType: 'text/plain'
   })
-  fs.writeFileSync(test.info().outputPath('claude-transcripts.txt'), claudeTranscriptSteps(env))
-}
-
-interface TranscriptBlock {
-  type?: string
-  text?: string
-  input?: { command?: string }
-  content?: unknown
-}
-
-function stepOf(block: TranscriptBlock): string | null {
-  if (block.type === 'text' && block.text) return `say: ${block.text}`
-  if (block.type === 'tool_use')
-    return `run: ${block.input?.command ?? JSON.stringify(block.input)}`
-  if (block.type === 'tool_result') return `got: ${JSON.stringify(block.content)}`
-  return null
-}
-
-function claudeTranscriptSteps(env: E2EEnv): string {
-  const root = path.join(env.home, '.claude', 'projects')
-  if (!fs.existsSync(root)) return '(no transcripts)'
-  return fs
-    .readdirSync(root)
-    .flatMap((dir) =>
-      fs
-        .readdirSync(path.join(root, dir))
-        .filter((f) => f.endsWith('.jsonl'))
-        .map((f) => path.join(root, dir, f))
-    )
-    .map((file) => {
-      const steps = fs
-        .readFileSync(file, 'utf8')
-        .split('\n')
-        .flatMap((line) => {
-          try {
-            const content = (JSON.parse(line) as { message?: { content?: unknown } }).message
-              ?.content
-            return Array.isArray(content) ? (content as TranscriptBlock[]).map(stepOf) : []
-          } catch {
-            return []
-          }
-        })
-        .filter((s): s is string => s !== null)
-      return `${file}\n${steps.join('\n')}`
-    })
-    .join('\n\n')
+  const projects = path.join(env.home, '.claude', 'projects')
+  if (!fs.existsSync(projects)) return
+  for (const slug of fs.readdirSync(projects))
+    for (const f of fs.readdirSync(path.join(projects, slug)).filter((n) => n.endsWith('.jsonl')))
+      await test.info().attach(f, { path: path.join(projects, slug, f) })
 }
 
 test.describe('`koloft session close` from a REAL agent in a worktree: opt-in cases proving the real claude and codex reach the command; they spend real money', () => {

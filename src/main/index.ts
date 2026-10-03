@@ -2267,14 +2267,7 @@ function archiveSession(id: string): boolean {
 const CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS = 1_000
 
 function closableSessions(): ClosableSession[] {
-  const live: ClosableSession[] = allSessions().map((s) => ({
-    sessionId: s.sessionId,
-    nativeSessionId: s.nativeSessionId,
-    backendId: s.backendId,
-    title: s.title,
-    treeRoot: s.treeRoot,
-    tabId: s.tabId
-  }))
+  const live: ClosableSession[] = allSessions()
   const liveIds = new Set(live.map((s) => s.sessionId))
   const cold: ClosableSession[] = (workspaceMgr?.rows() ?? [])
     .flatMap((w) => w.rows)

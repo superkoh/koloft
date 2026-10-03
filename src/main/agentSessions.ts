@@ -201,7 +201,7 @@ export async function findClosable(
   nameOf: (sessionId: string) => Promise<string | null>
 ): Promise<Parsed<ClosableSession>> {
   const names = await Promise.all(
-    sessions.map((s) => (s.tabId && s.backendId === 'claude' ? nameOf(s.sessionId) : null))
+    sessions.map((s) => (s.backendId === 'claude' ? nameOf(s.sessionId) : null))
   )
   const byId = sessions.find(
     (s, i) =>
@@ -217,17 +217,6 @@ export async function findClosable(
       `you did not start a session "${ref}". You can close only this session or one you started with koloft session new.`
     )
   return { ok: true, value: hits[0] }
-}
-
-function closableSelf(tabId: string, session: SessionInfo): ClosableSession {
-  return {
-    sessionId: session.sessionId,
-    nativeSessionId: session.nativeSessionId,
-    backendId: session.backendId,
-    title: session.title,
-    treeRoot: session.treeRoot,
-    tabId
-  }
 }
 
 export interface SessionVerbDeps {
@@ -344,7 +333,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
     if (sub === 'close') {
       if (rest.length > 1) return refused(CLOSE_USAGE, EXIT_USAGE)
       const [ref] = rest
-      let target = closableSelf(caller.tabId, caller.session)
+      let target: ClosableSession = caller.session
       if (ref !== undefined) {
         const mine = d.closable().filter((s) => d.started.startedBy(s, caller.tabId))
         const hit = await findClosable(mine, ref, d.peerNames())
