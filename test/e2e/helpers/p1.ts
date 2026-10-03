@@ -621,7 +621,12 @@ export function gitMark(page: Page, wsName: string): Locator {
 }
 
 export async function openGitPanel(page: Page, wsName: string): Promise<Locator> {
-  await gitMark(page, wsName).hover()
+  const mark = gitMark(page, wsName)
+  await expect(
+    mark,
+    'the mark drops its plain tooltip once it has a panel to open'
+  ).toHaveAttribute('title', '', { timeout: 30_000 })
+  await mark.hover()
   const panel = page.locator('.tbu-pop.fx')
   await expect(panel).toBeVisible()
   return panel
