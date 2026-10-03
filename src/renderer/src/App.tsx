@@ -1096,7 +1096,8 @@ export default function App(): JSX.Element {
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
-  const previewShown = !!panelTab && panelReady && !panelShown && previewFits
+  const panelOpenKnown = useStore((s) => !!panelTab && !!s.workbenchFetched[panelTab])
+  const previewShown = panelOpenKnown && panelReady && !panelShown && previewFits
   const SIDEBAR_MIN = 200
   const startVResize = (e: MouseEvent): void => {
     e.preventDefault()
