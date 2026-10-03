@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>#6 mockup · Command palette (⌘P) — jump to any session, reach any action</title>
+<style>
+/* ===== copied from src/renderer/src/styles.css (origin/main) ===== */
+:root {
+  --bg-0: #0d0d0f;
+  --bg-1: #161618;
+  --bg-2: #1c1c1f;
+  --bg-3: #27272c;
+  --bg-4: #34343a;
+  --bg-term: #0f0f11;
+  --line-layout: rgba(255, 255, 255, 0.06);
+  --line: rgba(255, 255, 255, 0.1);
+  --line-2: rgba(255, 255, 255, 0.17);
+  --fg: #f3f1ee;
+  --fg-dim: #bdb9b2;
+  --fg-faint: #908b84;
+  --accent: #ec9670;
+  --accent-soft: rgba(236, 150, 112, 0.18);
+  --accent-line: rgba(236, 150, 112, 0.45);
+  --good: #8fc69a;
+  --amber: #f0a830;
+  --red: #d9776a;
+  --folder: #c9a06a;
+  --fg-cold: #9a958d;
+  --danger: #f0a0a0;
+  --r: 9px;
+  --r-sm: 7px;
+  --r-lg: 12px;
+  --shadow-lg: 0 18px 56px -16px rgba(0, 0, 0, 0.7);
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --font: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+  --mono: 'JetBrainsMono Nerd Font', 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+  --titlebar-h: 46px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; font-family: var(--font); font-size: 14px; -webkit-font-smoothing: antialiased;
+  color: var(--fg); background: var(--bg-0); cursor: default; user-select: none;
+}
+.app { display: flex; flex-direction: row; height: 100vh; background: var(--bg-term); position: relative; }
+.side { flex: 0 0 auto; display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; background: var(--bg-0); border-right: 1px solid var(--line-layout); }
+.titlebar { position: relative; display: flex; align-items: center; justify-content: flex-end; gap: 8px; height: var(--titlebar-h); flex: 0 0 auto; padding: 0 8px 0 118px; }
+.tb-ico { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: none; border-radius: 8px; padding: 0; background: transparent; color: var(--fg-faint); cursor: pointer; }
+.dock-left { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.island { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.island.flat { background: transparent; border: 0; border-radius: 0; }
+.isl-sessions { flex: 1; }
+.ws { display: flex; flex-direction: column; }
+.ws-head { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 5px 9px; border-radius: var(--r-sm); cursor: pointer; color: var(--fg); position: relative; }
+.ws-head:hover { background: var(--bg-3); }
+.ws-head.active { background: var(--accent-soft); }
+.fico { flex: 0 0 auto; display: flex; color: var(--folder); cursor: pointer; border-radius: 5px; padding: 2px; margin: -2px; }
+.ws-name { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-remote { flex: 0 0 auto; display: flex; align-items: center; gap: 5px; max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 10px; line-height: 1; margin-top: 2px; color: var(--fg-faint); }
+.ws-conn { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: var(--fg-faint); }
+.ws-conn.on { background: var(--good); }
+.ws-tabs { display: flex; flex-direction: column; gap: 1px; margin: 1px 0 4px 0; padding-left: 14px; }
+.ws-tab { position: relative; display: flex; flex-direction: column; justify-content: center; gap: 3px; min-height: 46px; padding: 6px 10px 6px 18px; border-radius: var(--r-sm); cursor: pointer; color: var(--fg-dim); overflow: hidden; }
+.ws-tab::before { content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 2px; background: transparent; }
+.ws-tab.st-working::before { background: var(--accent); }
+.ws-tab.st-waiting::before { background: var(--good); }
+.ws-tab.st-approval::before { background: var(--amber); }
+.ws-tab.st-idle::before { background: var(--good); opacity: 0.4; }
+.ws-tab.active { background: var(--accent-soft); color: var(--fg); }
+.ws-tab-main { display: flex; align-items: center; gap: 8px; min-width: 0; position: relative; z-index: 1; }
+.ws-tab-title { flex: 1; font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-tab.active .ws-tab-title { font-weight: 600; }
+.ws-tab-unread { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--red); }
+.ws-tab-sub { display: flex; align-items: center; gap: 5px; min-width: 0; position: relative; z-index: 1; font-family: var(--mono); font-size: 10.5px; color: var(--fg-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session-backend-icon { display: inline-flex; flex: none; align-items: center; }
+.ws-tab.cold .ws-tab-title { font-style: italic; color: var(--fg-cold); font-weight: 400; }
+.ws-tab.cold .ws-tab-sub { opacity: 0.7; }
+.center { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
+.center-top { flex: 0 0 var(--titlebar-h); display: flex; align-items: flex-start; }
+.center-row { position: relative; display: flex; flex: 1; min-width: 0; min-height: 0; padding: 0 10px 10px 0; }
+.term-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.menu .mi .k { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--fg-faint); }
+.modal-backdrop { position: fixed; inset: 0; background: rgba(8, 8, 10, 0.55); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.modal { width: 540px; max-width: 90vw; max-height: 84vh; display: flex; flex-direction: column; background: var(--bg-2); border: 1px solid var(--line-2); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); overflow: hidden; }
+.modal-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 12.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg-dim); }
+.modal-close { display: flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 24px; height: 24px; border-radius: 6px; letter-spacing: 0; color: var(--fg-faint); cursor: pointer; }
+.modal-body { overflow-y: auto; min-height: 0; padding: 22px 20px; display: flex; flex-direction: column; gap: 22px; }
+.field-hint { font-size: 12.5px; color: var(--fg-dim); line-height: 1.6; }
+.cb-input { display: flex; align-items: center; gap: 8px; background: var(--bg-0); border: 1px solid var(--line-2); border-radius: var(--r-sm); padding: 9px 12px; }
+.cb-input.focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.cb-field { flex: 1; min-width: 0; background: none; border: none; outline: none; padding: 0; font-family: var(--mono); font-size: 13px; color: var(--fg); }
+.cb-field::placeholder { color: var(--fg-faint); }
+.cb-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 6px; font-family: var(--mono); font-size: 12.5px; color: var(--fg-dim); white-space: nowrap; cursor: pointer; }
+.cb-row.hot { background: var(--bg-3); color: var(--fg); }
+.cb-row .note { margin-left: auto; padding-left: 16px; font-size: 10.5px; color: var(--fg-faint); overflow: hidden; text-overflow: ellipsis; }
+.cb-hd { padding: 6px 10px 4px; font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--fg-faint); }
+.wspicker { width: 460px; }
+.wspicker .modal-body { gap: 10px; }
+.wsp-list { padding: 4px; max-height: 300px; overflow: hidden auto; background: var(--bg-2); border: 1px solid var(--line-2); border-radius: var(--r); }
+.wsp-list .cb-row:hover { background: var(--bg-3); color: var(--fg); }
+.wsp-name { overflow: hidden; text-overflow: ellipsis; }
+.hint { padding: 16px; color: var(--fg-dim); font-size: 13px; line-height: 1.7; }
+.hint.center { text-align: center; margin-top: 56px; }
+
+/* ===== NEW rules this design adds to styles.css (the only additions) ===== */
+.palette .cb-row .k { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--fg-faint); } /* NEW: the key hint on an action row, same look as `.menu .mi .k` */
+.modal.palette { width: 460px; }                   /* NEW: same width as .wspicker, own class so C10's `.modal.wspicker` selectors never match two dialogs */
+.palette .modal-body { gap: 10px; }                /* NEW */
+.palette .wsp-list { max-height: 360px; }          /* NEW: taller than C10's 300px — this list spans every workspace */
+.palette .cb-row .fico { color: var(--folder); }   /* NEW: folder icon on a workspace row, same colour as the sidebar head */
+.palette .cb-row.cold .wsp-name { font-style: italic; color: var(--fg-cold); } /* NEW: a cold row looks cold, as in the sidebar */
+.palette .cb-row .ws-tab-unread { margin-left: 2px; } /* NEW */
+.palette .empty { padding: 18px 10px; text-align: center; font-family: var(--mono); font-size: 12px; color: var(--fg-faint); } /* NEW */
+
+/* ===== mockup page scaffolding only (not app CSS) ===== */
+.frame { position: relative; width: 900px; height: 520px; margin: 0 0 18px; border: 1px solid var(--line-2); border-radius: 10px; overflow: hidden; }
+.frame .app { height: 100%; }
+.frame .modal-backdrop { position: absolute; } /* scaffolding: the real rule is fixed; absolute keeps it inside the frame */
+.frame .side { width: 250px; }
+.frame .term { flex: 1; margin: 0 0 0 0; border-radius: 10px; background: var(--bg-term); border: 1px solid var(--line); color: var(--fg-faint); font-family: var(--mono); font-size: 11.5px; padding: 14px; line-height: 1.6; }
+.cap { font-family: var(--mono); font-size: 11px; color: var(--fg-faint); margin: 26px 0 8px; letter-spacing: 0.06em; text-transform: uppercase; }
+.page { padding: 28px 32px 48px; }
+h1 { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+.sub { font-size: 12.5px; color: var(--fg-dim); margin: 0 0 8px; line-height: 1.6; max-width: 900px; }
+.sub code { font-family: var(--mono); font-size: 12px; background: var(--bg-2); padding: 1px 5px; border-radius: 4px; }
+svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.fico svg { width: 15px; height: 15px; }
+.session-backend-icon svg { width: 12px; height: 12px; }
+.bi { display: inline-flex; width: 12px; height: 12px; border-radius: 50%; font: 700 8px/12px var(--mono); justify-content: center; color: var(--bg-0); }
+.bi.c { background: #d97757; } .bi.o { background: #bdb9b2; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>#6 — Command palette: ⌘P jumps to any session in any workspace, or runs an action by name</h1>
+  <p class="sub">One new dialog, <code>CommandPalette.tsx</code>, built from parts that already exist: the <code>.modal</code> shell and keys (↓↑ ⏎ Esc) of the C10 workspace picker (<code>WorkspacePicker.tsx</code>), the typing box <code>.cb-input &gt; .cb-field</code> and the <code>.cb-hd</code> group headers of the C8 worktree dialog (<code>WorktreeSessionDialog.tsx</code>), and <code>.cb-row.hot</code> rows. Session rows carry the sidebar's own marks: the <code>SessionBackendIcon</code>, the red <code>.ws-tab-unread</code> dot, italic cold text. Icons here are inline stand-ins for the react-icons the app uses.</p>
+
+  <div class="cap">1 · ⌘P with nothing typed — every session, every workspace, every action; rows that need you come first (the list scrolls past its 360px)</div>
+  <div class="frame" style="height:660px">
+    <div class="app">
+      <div class="side">
+        <div class="titlebar"><button class="tb-ico"><svg viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button></div>
+        <div class="dock-left">
+          <div class="island flat isl-sessions">
+            <div class="ws">
+              <div class="ws-head active"><span class="fico"><svg viewBox="0 0 24 24"><path d="M6 14l1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></span><span class="ws-name">koloft</span></div>
+              <div class="ws-tabs">
+                <div class="ws-tab st-approval"><div class="ws-tab-main"><span class="ws-tab-title">fix remote statusline node</span><span class="ws-tab-unread"></span></div><div class="ws-tab-sub"><span class="session-backend-icon"><span class="bi c">C</span></span><span>main</span></div></div>
+                <div class="ws-tab st-working active"><div class="ws-tab-main"><span class="ws-tab-title">command palette design</span></div><div class="ws-tab-sub"><span class="session-backend-icon"><span class="bi c">C</span></span><span>issue-resolver-261003</span></div></div>
+                <div class="ws-tab cold"><div class="ws-tab-main"><span class="ws-tab-title">release v0.30.11 notes</span></div><div class="ws-tab-sub"><span class="session-backend-icon"><span class="bi o">O</span></span><span>main</span></div></div>
+              </div>
+            </div>
+            <div class="ws">
+              <div class="ws-head"><span class="fico"><svg viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span><span class="ws-name">widgets</span></div>
+            </div>
+            <div class="ws">
+              <div class="ws-head"><span class="fico"><svg viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span><span class="ws-name">api</span><span class="ws-remote">build-box<span class="ws-conn on"></span></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="center">
+        <div class="center-top"></div>
+        <div class="center-row"><div class="term-col"><div class="term">╭─ Claude Code ─────────────────────────────╮<br>│ &gt; designing the palette…                 │<br>╰───────────────────────────────────────────╯</div></div></div>
+      </div>
+
+      <div class="modal-backdrop">
+        <div class="modal palette" role="dialog" aria-label="Jump to…">
+          <div class="modal-header"><span>Jump to…</span><span class="modal-close"><svg viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></div>
+          <div class="modal-body">
+            <div class="cb-input focus"><input class="cb-field" placeholder="type a session, workspace or action…" aria-label="Jump to" /></div>
+            <div class="wsp-list" role="listbox" aria-label="Results">
+              <div class="cb-hd">Needs you</div>
+              <div class="cb-row hot" role="option" aria-selected="true"><span class="session-backend-icon"><span class="bi c">C</span></span><span class="wsp-name">fix remote statusline node</span><span class="ws-tab-unread"></span><span class="note">koloft · main · 2m ago</span></div>
+              <div class="cb-row" role="option"><span class="session-backend-icon"><span class="bi c">C</span></span><span class="wsp-name">login form a11y pass</span><span class="ws-tab-unread"></span><span class="note">widgets · main · 9m ago</span></div>
+              <div class="cb-hd">Sessions</div>
+              <div class="cb-row" role="option"><span class="session-backend-icon"><span class="bi c">C</span></span><span class="wsp-name">command palette design</span><span class="note">koloft · issue-resolver-261003 · now</span></div>
+              <div class="cb-row" role="option"><span class="session-backend-icon"><span class="bi c">C</span></span><span class="wsp-name">auth token refresh on api</span><span class="note">build-box:api · main · 5m ago</span></div>
+              <div class="cb-row cold" role="option"><span class="session-backend-icon"><span class="bi o">O</span></span><span class="wsp-name">release v0.30.11 notes</span><span class="note">koloft · main · 3h ago</span></div>
+              <div class="cb-row cold" role="option"><span class="session-backend-icon"><span class="bi o">O</span></span><span class="wsp-name">widget auth middleware</span><span class="note">widgets · feat-auth · 1d ago</span></div>
+              <div class="cb-hd">Workspaces</div>
+              <div class="cb-row" role="option"><span class="fico"><svg viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span><span class="wsp-name">koloft</span><span class="note">~/Projects/koloft</span></div>
+              <div class="cb-row" role="option"><span class="fico"><svg viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span><span class="wsp-name">widgets</span><span class="note">~/Projects/widgets</span></div>
+              <div class="cb-row" role="option"><span class="fico"><svg viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span><span class="wsp-name">api</span><span class="note">build-box:/srv/api</span></div>
+              <div class="cb-hd">Actions</div>
+              <div class="cb-row" role="option"><span class="wsp-name">New session…</span><span class="k">⌘N</span></div>
+              <div class="cb-row" role="option"><span class="wsp-name">New worktree session…</span><span class="k">⇧⌘N</span></div>
+              <div class="cb-row" role="option"><span class="wsp-name">Add workspace…</span><span class="k">⇧⌘O</span></div>
+              <div class="cb-row" role="option"><span class="wsp-name">Add remote workspace…</span></div>
+              <div class="cb-row" role="option"><span class="wsp-name">Restart session</span><span class="k">⇧⌘R</span></div>
+              <div class="cb-row" role="option"><span class="wsp-name">Toggle Workbench</span><span class="k">⇧⌘B</span></div>
+              <div class="cb-row" role="option"><span class="wsp-name">Toggle sidebar</span><span class="k">⌘B</span></div>
+              <div class="cb-row" role="option"><span class="wsp-name">Restore session…</span></div>
+              <div class="cb-row" role="option"><span class="wsp-name">Scheduled jobs…</span></div>
+              <div class="cb-row" role="option"><span class="wsp-name">Settings…</span><span class="k">⌘,</span></div>
+              <div class="cb-row" role="option"><span class="wsp-name">Check for updates…</span></div>
+            </div>
+            <p class="field-hint">↓↑ move · ⏎ open · Esc cancel</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cap">2 · Typing "auth" — one list across three workspaces (one of them on another machine); the hot row is already the one that needs you</div>
+  <div class="frame" style="height:380px">
+    <div class="app">
+      <div class="side"><div class="titlebar"></div></div>
+      <div class="center"><div class="center-top"></div><div class="center-row"><div class="term-col"><div class="term"></div></div></div></div>
+      <div class="modal-backdrop">
+        <div class="modal palette" role="dialog" aria-label="Jump to…">
+          <div class="modal-header"><span>Jump to…</span><span class="modal-close"><svg viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></div>
+          <div class="modal-body">
+            <div class="cb-input focus"><input class="cb-field" value="auth" aria-label="Jump to" /></div>
+            <div class="wsp-list" role="listbox" aria-label="Results">
+              <div class="cb-hd">Needs you</div>
+              <div class="cb-row hot" role="option" aria-selected="true"><span class="session-backend-icon"><span class="bi c">C</span></span><span class="wsp-name">login form a11y pass — auth step</span><span class="ws-tab-unread"></span><span class="note">widgets · main · 9m ago</span></div>
+              <div class="cb-hd">Sessions</div>
+              <div class="cb-row" role="option"><span class="session-backend-icon"><span class="bi c">C</span></span><span class="wsp-name">auth token refresh on api</span><span class="note">build-box:api · main · 5m ago</span></div>
+              <div class="cb-row cold" role="option"><span class="session-backend-icon"><span class="bi o">O</span></span><span class="wsp-name">widget auth middleware</span><span class="note">widgets · feat-auth · 1d ago</span></div>
+            </div>
+            <p class="field-hint">↓↑ move · ⏎ open · Esc cancel</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cap">3 · Typing "re" — actions and sessions share one list; actions always sit under the rows</div>
+  <div class="frame" style="height:500px">
+    <div class="app">
+      <div class="side"><div class="titlebar"></div></div>
+      <div class="center"><div class="center-top"></div><div class="center-row"><div class="term-col"><div class="term"></div></div></div></div>
+      <div class="modal-backdrop">
+        <div class="modal palette" role="dialog" aria-label="Jump to…">
+          <div class="modal-header"><span>Jump to…</span><span class="modal-close"><svg viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></div>
+          <div class="modal-body">
+            <div class="cb-input focus"><input class="cb-field" value="re" aria-label="Jump to" /></div>
+            <div class="wsp-list" role="listbox" aria-label="Results">
+              <div class="cb-hd">Needs you</div>
+              <div class="cb-row hot" role="option" aria-selected="true"><span class="session-backend-icon"><span class="bi c">C</span></span><span class="wsp-name">fix remote statusline node</span><span class="ws-tab-unread"></span><span class="note">koloft · main · 2m ago</span></div>
+              <div class="cb-hd">Sessions</div>
+              <div class="cb-row" role="option"><span class="session-backend-icon"><span class="bi c">C</span></span><span class="wsp-name">auth token refresh on api</span><span class="note">build-box:api · main · 5m ago</span></div>
+              <div class="cb-row cold" role="option"><span class="session-backend-icon"><span class="bi o">O</span></span><span class="wsp-name">release v0.30.11 notes</span><span class="note">koloft · main · 3h ago</span></div>
+              <div class="cb-hd">Actions</div>
+              <div class="cb-row" role="option"><span class="wsp-name">Add remote workspace…</span></div>
+              <div class="cb-row" role="option"><span class="wsp-name">Restart session</span><span class="k">⇧⌘R</span></div>
+              <div class="cb-row" role="option"><span class="wsp-name">Restore session…</span></div>
+            </div>
+            <p class="field-hint">↓↑ move · ⏎ open · Esc cancel</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cap">4 · Nothing matches</div>
+  <div class="frame" style="height:300px">
+    <div class="app">
+      <div class="side"><div class="titlebar"></div></div>
+      <div class="center"><div class="center-top"></div><div class="center-row"><div class="term-col"><div class="term"></div></div></div></div>
+      <div class="modal-backdrop">
+        <div class="modal palette" role="dialog" aria-label="Jump to…">
+          <div class="modal-header"><span>Jump to…</span><span class="modal-close"><svg viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></div>
+          <div class="modal-body">
+            <div class="cb-input focus"><input class="cb-field" value="zzq" aria-label="Jump to" /></div>
+            <div class="wsp-list" role="listbox" aria-label="Results">
+              <div class="empty">No session, workspace or action matches "zzq"</div>
+            </div>
+            <p class="field-hint">↓↑ move · ⏎ open · Esc cancel</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="sub">What Enter does: a session row runs the sidebar row's own click (today <code>clickRow</code> in <code>WorkspaceSidebar.tsx:405</code>, lifted into a shared function); a workspace row runs <code>selectWorkspace(path)</code> (<code>store.ts:793</code>), the same as clicking a <code>.ws-head</code>; an action row runs the exact handler the menu item already runs in <code>App.tsx</code>. The palette closes first, so a dialog an action opens (⌘N's picker, Settings) never sits under this backdrop.</p>
+</div>
+</body>
+</html>
