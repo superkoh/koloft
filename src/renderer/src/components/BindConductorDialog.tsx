@@ -1,18 +1,10 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
 import { LuX } from 'react-icons/lu'
 import { BACKEND_LABEL, backendAvailable, SESSION_BACKENDS } from '@shared/sessionBackend'
-import {
-  bindingProblem,
-  CHANNEL_LINK_PROBLEM,
-  channelLabel,
-  GLOBAL_SCOPE,
-  parseChannelLink,
-  scopeName
-} from '@shared/conductors'
-import type { BackendAvailability, BackendId } from '@shared/types'
+import { bindingProblem, channelLabel, GLOBAL_SCOPE, scopeName } from '@shared/conductors'
+import type { BackendAvailability, BackendId, DiscordChannelChoice } from '@shared/types'
 import { useStore } from '../store'
 import { shortenHome } from '../browseModel'
-import { isComposing } from '../keys'
 import { SessionBackendIcon } from './SessionBackendIcon'
 
 export function BindConductorDialog(): JSX.Element | null {
@@ -44,29 +36,43 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
     editing?.backend ??
       (methods.enabled[methods.defaultBackend] ? methods.defaultBackend : 'claude')
   )
-  const [link, setLink] = useState(
-    editing
-      ? `https://discord.com/channels/${editing.channel.guildId}/${editing.channel.channelId}`
-      : ''
-  )
+  const [channels, setChannels] = useState<DiscordChannelChoice[] | null>(null)
+  const [channel, setChannel] = useState<DiscordChannelChoice | undefined>()
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
   const close = (): void => setBindConductor(null)
+  const channelTakenBy = (c: DiscordChannelChoice) =>
+    bindings.find((b) => b.channel.channelId === c.channelId && b.id !== editId)
+  const editedChannelId = editing?.channel.channelId
 
   useEffect(() => {
     let alive = true
     void window.api.sessions.backends().then((list) => {
       if (alive) setDetected(list)
     })
-    inputRef.current?.focus()
+    window.api.discord.channels().then(
+      (list) => {
+        if (!alive) return
+        setChannels(list)
+        setChannel(list.find((c) => c.channelId === editedChannelId))
+      },
+      () => {
+        if (alive) setChannels([])
+      }
+    )
     return () => {
       alive = false
     }
-  }, [])
+  }, [editedChannelId])
 
+  const submitRef = useRef<() => Promise<void>>(async () => undefined)
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Enter' && !(e.target instanceof HTMLButtonElement)) {
+        e.preventDefault()
+        void submitRef.current()
+        return
+      }
       if (e.key !== 'Escape') return
       e.stopPropagation()
       setBindConductor(null)
@@ -77,18 +83,18 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
 
   const submit = async (): Promise<void> => {
     if (busy || !picked) return
-    const channel = parseChannelLink(link)
-    if (!channel) return setError(CHANNEL_LINK_PROBLEM)
+    if (!channel) return setError('Pick a channel.')
     const problem =
       issue(backend) ??
       bindingProblem(bindings, { id: editId, scope: picked, channelId: channel.channelId })
     if (problem) return setError(problem)
     setBusy(true)
-    const r = await window.api.conductors.save({ id: editId, scope: picked, backend, link })
+    const r = await window.api.conductors.save({ id: editId, scope: picked, backend, channel })
     setBusy(false)
     if (r.ok) close()
     else setError(r.error)
   }
+  submitRef.current = submit
 
   const title = editing ? 'Change Discord channel' : 'Bind a Discord channel'
 
@@ -155,29 +161,40 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
               ))}
             </div>
           </div>
-          <span className="flabel">Channel link</span>
-          <div className="cb-input focus">
-            <input
-              ref={inputRef}
-              className="cb-field"
-              spellCheck={false}
-              autoComplete="off"
-              placeholder="https://discord.com/channels/…/…"
-              aria-label="Channel link"
-              value={link}
-              onChange={(e) => {
-                setLink(e.target.value)
-                setError('')
-              }}
-              onKeyDown={(e) => {
-                if (e.key !== 'Enter' || isComposing(e)) return
-                e.preventDefault()
-                void submit()
-              }}
-            />
-          </div>
+          <span className="flabel">Channel</span>
+          {channels && channels.length > 0 && (
+            <div className="wt-list">
+              {channels.map((c) => {
+                const taken = channelTakenBy(c)
+                return (
+                  <div
+                    key={c.channelId}
+                    className={
+                      'cb-row' +
+                      (taken ? ' dim' : '') +
+                      (c.channelId === channel?.channelId ? ' hot' : '')
+                    }
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      if (taken) return
+                      setChannel(c)
+                      setError('')
+                    }}
+                  >
+                    <span className="wt-name">#{c.name}</span>
+                    {taken && <span className="note">bound to {scopeName(taken.scope)}</span>}
+                  </div>
+                )
+              })}
+            </div>
+          )}
           <p className={'field-hint' + (error ? ' bad' : '')}>
-            {error || 'Each workspace binds one channel; the global conductor binds one.'}
+            {error ||
+              (channels === null
+                ? 'Loading your channels…'
+                : channels.length === 0
+                  ? 'No channels yet. Finish Settings ▸ Discord ▸ Set up Discord… first.'
+                  : 'Channels come from your server through the bot. Each workspace binds one channel; the global conductor binds one.')}
           </p>
         </div>
         <div className="modal-foot">

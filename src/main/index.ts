@@ -250,8 +250,10 @@ import type {
 } from '@shared/types'
 import { AgentRequests, BUILTIN_VERBS, refused, type AgentVerb } from './agentRequests'
 import { Conductors } from './discord/conductors'
+import { DISCORD_API_URL, DiscordLink } from './discord/link'
+import { releaseLock, takeLock } from './discord/instanceLock'
 import { runningClaudePid } from './claudeSessionRegistry'
-import { CHANNEL_LINK_PROBLEM } from '@shared/conductors'
+import { isDiscordId } from '@shared/conductors'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
 import { sessionVerb, workspaceVerb } from './agentSessions'
@@ -531,6 +533,7 @@ function machinePackage(): MachinePackage {
 
 let cronRunner: CronRunner | null = null
 let conductors: Conductors | null = null
+let discordLink: DiscordLink | null = null
 
 const BOOT_TIME = Date.now()
 
@@ -1482,6 +1485,16 @@ app.whenReady().then(() => {
     bindDeadlineMs: cronBindDeadlineMs()
   })
   conductors.keepPinned(workspaceMgr.pinnedPaths().map((w) => w.path))
+  const discordLockFile = path.join(userData, 'discord.lock')
+  discordLink = new DiscordLink({
+    apiUrl: process.env.KOLOFT_DISCORD_API_URL || DISCORD_API_URL,
+    readToken: discordTokenRead,
+    takeLock: () => takeLock(discordLockFile, pidAlive),
+    releaseLock: () => releaseLock(discordLockFile),
+    owner: () => conductors?.owner(),
+    push: (status) => sendToRenderer('discord:status', status)
+  })
+  void discordLink.connect()
   remoteSync = new RemoteSync({
     run: (host, cmd) =>
       loginEnvReady().then(() => runSsh(host, cmd, { controlDir: remoteControlDir })),
@@ -1697,6 +1710,7 @@ app.on('before-quit', (e) => {
   }
   cronRunner?.quitSweep()
   cronRunner?.stop()
+  discordLink?.stop()
   workspaceMgr?.dispose()
   freshness?.stop()
   remoteSync?.stop()
@@ -2827,13 +2841,22 @@ function registerIpc(): void {
     for (const id of marked) attention.clearSession(id)
   })
   ipcMain.handle('conductors:save', (_e, input: ConductorSaveInput) => {
+    const channel = input?.channel
     if (
-      typeof input?.link !== 'string' ||
-      typeof input.scope !== 'string' ||
-      !backendIdOf(input.backend)
+      typeof input?.scope !== 'string' ||
+      !backendIdOf(input.backend) ||
+      !isDiscordId(channel?.guildId) ||
+      !isDiscordId(channel.channelId) ||
+      typeof channel.name !== 'string'
     )
-      return { ok: false, error: CHANNEL_LINK_PROBLEM }
-    return conductors?.save(input) ?? { ok: false, error: STILL_STARTING }
+      return { ok: false, error: 'Pick a channel.' }
+    const { guildId, channelId, name } = channel
+    return (
+      conductors?.save({ ...input, channel: { guildId, channelId, name } }) ?? {
+        ok: false,
+        error: STILL_STARTING
+      }
+    )
   })
   ipcMain.handle('conductors:unbind', (_e, id: string) => conductors?.unbind(id))
   ipcMain.handle('conductors:switchBackend', (_e, id: string) => conductors?.switchBackend(id))
@@ -2848,13 +2871,19 @@ function registerIpc(): void {
   ipcMain.handle('conductors:setFolded', (_e, folded: unknown) =>
     conductors?.setFolded(folded === true)
   )
-  ipcMain.handle('discord:hasToken', async () => !!(await discordTokenRead()))
-  ipcMain.handle('discord:setToken', (_e, token: unknown) =>
-    typeof token === 'string' && token.trim() ? discordTokenWrite(token.trim()) : false
-  )
-  ipcMain.handle('discord:setUserId', (_e, userId: unknown) =>
-    conductors?.setUserId(typeof userId === 'string' ? userId : '')
-  )
+  ipcMain.handle('discord:setToken', async (_e, token: unknown) => {
+    if (typeof token !== 'string' || !token.trim()) return false
+    const saved = await discordTokenWrite(token.trim())
+    if (saved) void discordLink?.connect()
+    return saved
+  })
+  ipcMain.handle('discord:status', () => discordLink?.status() ?? { phase: 'off', guildNames: [] })
+  ipcMain.handle('discord:pair', (_e, isMe: unknown) => {
+    const owner = discordLink?.pair(isMe === true)
+    if (owner) conductors?.setOwner(owner)
+  })
+  ipcMain.handle('discord:forgetOwner', () => conductors?.setOwner(null))
+  ipcMain.handle('discord:channels', () => discordLink?.channels() ?? [])
   ipcMain.handle('workspace:move', (_e, p: string, before: string | null) =>
     workspaceMgr?.move(p, before)
   )

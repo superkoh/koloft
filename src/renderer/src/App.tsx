@@ -97,6 +97,7 @@ import { WorkspaceSidebar } from './components/WorkspaceSidebar'
 import { NotesIsland } from './components/NotesIsland'
 import { ConductorsIsland } from './components/ConductorsIsland'
 import { BindConductorDialog } from './components/BindConductorDialog'
+import { DiscordSetup } from './components/DiscordSetup'
 import { conductorNotesWorkspace, conductorOfTab } from './conductorRows'
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
 import { RestoreDialog } from './components/RestoreDialog'
@@ -1646,6 +1647,7 @@ export default function App(): JSX.Element {
           <ResumeDialog />
           <CloseSessionDialog />
           <SettingsModal />
+          <DiscordSetup />
           <BindConductorDialog />
           <UpdateModal />
           <UnsavedDialog />

@@ -202,6 +202,7 @@ export interface ConductorBinding {
 
 export interface DiscordSettings {
   userId?: string
+  userName?: string
   conductorsFolded: boolean
   bindings: ConductorBinding[]
 }
@@ -210,7 +211,22 @@ export interface ConductorSaveInput {
   id?: string
   scope: string
   backend: BackendId
-  link: string
+  channel: DiscordChannel
+}
+
+export type DiscordPhase =
+  'off' | 'connecting' | 'connected' | 'token' | 'intents' | 'unreachable' | 'elsewhere'
+
+export interface DiscordStatus {
+  phase: DiscordPhase
+  botName?: string
+  applicationId?: string
+  guildNames: string[]
+  candidate?: { name: string; text: string; at: number }
+}
+
+export interface DiscordChannelChoice extends DiscordChannel {
+  name: string
 }
 
 export type ConductorSaveResult = { ok: true } | { ok: false; error: string }
@@ -993,9 +1009,12 @@ export interface KoloftApi {
     setFolded(folded: boolean): Promise<void>
   }
   discord: {
-    hasToken(): Promise<boolean>
     setToken(token: string): Promise<boolean>
-    setUserId(userId: string): Promise<void>
+    status(): Promise<DiscordStatus>
+    onStatus(cb: (s: DiscordStatus) => void): () => void
+    pair(isMe: boolean): Promise<void>
+    forgetOwner(): Promise<void>
+    channels(): Promise<DiscordChannelChoice[]>
   }
 }
 

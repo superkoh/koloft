@@ -5,7 +5,7 @@ import path from 'path'
 import { Conductors, conductorFolder, type ConductorDeps } from '../../src/main/discord/conductors'
 import type { DiscordSettings } from '@shared/types'
 
-const LINK = 'https://discord.com/channels/100/200'
+const CHANNEL = { guildId: '100', channelId: '200', name: 'koloft' }
 const DEADLINE_MS = 1000
 
 let userData: string
@@ -64,7 +64,7 @@ afterEach(() => {
 describe('Conductors', () => {
   it('a second open while the first is still starting waits for it and starts nothing new', async () => {
     const c = make()
-    expect(c.save({ scope: 'global', backend: 'claude', link: LINK })).toEqual({ ok: true })
+    expect(c.save({ scope: 'global', backend: 'claude', channel: CHANNEL })).toEqual({ ok: true })
     const id = c.bindings()[0].id
     const first = c.open(id)
     const second = c.open(id)
@@ -78,7 +78,7 @@ describe('Conductors', () => {
 
   it('the global conductor starts in its own folder under userData, told its role', async () => {
     const c = make()
-    c.save({ scope: 'global', backend: 'claude', link: LINK })
+    c.save({ scope: 'global', backend: 'claude', channel: CHANNEL })
     const opening = c.open(c.bindings()[0].id)
     await vi.waitFor(() => expect(started).toHaveLength(1))
     release()
@@ -90,7 +90,7 @@ describe('Conductors', () => {
 
   it('binding follows the tab: every session it binds stays hidden and the newest is the one to resume', async () => {
     const c = make()
-    c.save({ scope: '/ws/a', backend: 'claude', link: LINK })
+    c.save({ scope: '/ws/a', backend: 'claude', channel: CHANNEL })
     const id = c.bindings()[0].id
     const opening = c.open(id)
     await vi.waitFor(() => expect(started).toHaveLength(1))
@@ -112,7 +112,7 @@ describe('Conductors', () => {
   it('a conductor that never binds before the deadline is closed and reported', async () => {
     vi.useFakeTimers()
     const c = make()
-    c.save({ scope: 'global', backend: 'claude', link: LINK })
+    c.save({ scope: 'global', backend: 'claude', channel: CHANNEL })
     const opening = c.open(c.bindings()[0].id)
     await vi.waitFor(() => expect(started).toHaveLength(1))
     release()
@@ -125,7 +125,7 @@ describe('Conductors', () => {
 
   it('removing a workspace unbinds its conductor and closes its tab', async () => {
     const c = make()
-    c.save({ scope: '/ws/a', backend: 'claude', link: LINK })
+    c.save({ scope: '/ws/a', backend: 'claude', channel: CHANNEL })
     const opening = c.open(c.bindings()[0].id)
     await vi.waitFor(() => expect(started).toHaveLength(1))
     release()

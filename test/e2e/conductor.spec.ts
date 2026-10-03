@@ -17,12 +17,13 @@ import {
   waitForCalls,
   wsRows
 } from './helpers/p1'
+import { startFakeDiscord } from './helpers/fakeDiscord'
 import type { ConductorBinding, DiscordSettings } from '../../src/shared/types'
 
 test.setTimeout(120_000)
 
-const LINK_A = 'https://discord.com/channels/111/222'
-const LINK_B = 'https://discord.com/channels/111/333'
+const CHANNEL_A = 'koloft-all'
+const CHANNEL_B = 'koloft'
 const ROWS_RESCAN_AND_PUSH_SETTLE_MS = 1500
 const KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS = 30_000
 
@@ -41,7 +42,7 @@ function conductorRow(page: Page, name: string): Locator {
 async function bindFromWorkspaceMenu(
   page: Page,
   wsName: string,
-  opts: { scope?: string; backend?: 'Claude' | 'Codex'; link: string }
+  opts: { scope?: string; backend?: 'Claude' | 'Codex'; channel: string }
 ): Promise<void> {
   await openMenu(page, page.locator('.ws-head', { hasText: wsName }))
   await page.locator('.menu .mi', { hasText: 'Bind Discord channel…' }).click()
@@ -49,9 +50,15 @@ async function bindFromWorkspaceMenu(
   await expect(dlg).toBeVisible()
   if (opts.scope) await dlg.locator('.cb-row', { hasText: opts.scope }).click()
   if (opts.backend) await dlg.getByRole('button', { name: opts.backend }).click()
-  await dlg.getByLabel('Channel link').fill(opts.link)
+  await channelRow(dlg, opts.channel).click()
   await dlg.locator('.modal-foot .btn-primary').click()
   await expect(dlg).toHaveCount(0)
+}
+
+function channelRow(dlg: Locator, name: string): Locator {
+  return dlg.locator('.cb-row', {
+    has: dlg.page().locator('.wt-name', { hasText: new RegExp(`^#${name}$`) })
+  })
 }
 
 async function openConductor(page: Page, name: string): Promise<void> {
@@ -118,10 +125,18 @@ async function launched(
   env: E2EEnv
 ): Promise<{ app: ElectronApplication; page: Page; close: () => Promise<void> }> {
   seedSettings(env, { hintsOff: true })
+  const discord = await startFakeDiscord(env)
   const app = await launchApp(env)
   const page = await app.firstWindow()
   await waitBooted(page)
-  return { app, page, close: () => quitAndClose(app) }
+  return {
+    app,
+    page,
+    close: async () => {
+      await quitAndClose(app)
+      await discord.close()
+    }
+  }
 }
 
 test.describe('Conductors: a session bound to a Discord channel, kept in its own island and out of every workspace list', () => {
@@ -131,7 +146,7 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
     const { page, close } = await launched(env)
     try {
       await expect(island(page)).toHaveCount(0)
-      await bindFromWorkspaceMenu(page, 'ws-a', { link: LINK_A })
+      await bindFromWorkspaceMenu(page, 'ws-a', { channel: CHANNEL_A })
       expect(bindingsOnDisk(env)).toMatchObject([
         {
           scope: env.workspaces.a,
@@ -178,7 +193,7 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
   }) => {
     const { page, close } = await launched(env)
     try {
-      await bindFromWorkspaceMenu(page, 'ws-a', { scope: 'Global', link: LINK_A })
+      await bindFromWorkspaceMenu(page, 'ws-a', { scope: 'Global', channel: CHANNEL_A })
       expect(bindingsOnDisk(env)).toMatchObject([{ scope: 'global' }])
       await openConductor(page, 'Global')
       const call = (await waitForCalls(env, 1))[0]
@@ -194,20 +209,24 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
     }
   })
 
-  test('removing a workspace drops its conductor binding, and the second binding of a channel is refused', async ({
+  test('removing a workspace drops its conductor binding, and a channel already bound shows whose it is and cannot be picked', async ({
     env
   }) => {
     const { page, close } = await launched(env)
     try {
-      await bindFromWorkspaceMenu(page, 'ws-b', { link: LINK_B })
+      await bindFromWorkspaceMenu(page, 'ws-b', { channel: CHANNEL_B })
+      expect(bindingsOnDisk(env)).toMatchObject([
+        { channel: { guildId: '111', channelId: '333', name: CHANNEL_B } }
+      ])
       await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
       await page.locator('.menu .mi', { hasText: 'Bind Discord channel…' }).click()
       const dlg = page.getByRole('dialog', { name: 'Bind a Discord channel' })
-      await dlg.getByLabel('Channel link').fill(LINK_B)
+      await expect(channelRow(dlg, CHANNEL_B)).toHaveClass(/dim/)
+      await expect(channelRow(dlg, CHANNEL_B).locator('.note')).toHaveText('bound to ws-b')
+      await channelRow(dlg, CHANNEL_B).click()
       await dlg.locator('.modal-foot .btn-primary').click()
-      await expect(dlg.locator('.field-hint.bad')).toHaveText(
-        'That channel is already bound to the ws-b conductor.'
-      )
+      await expect(dlg.locator('.field-hint.bad')).toHaveText('Pick a channel.')
+      await expect(dlg.locator('.wt-name', { hasText: 'Lounge' })).toHaveCount(0)
       await dlg.getByRole('button', { name: 'Cancel' }).click()
 
       await openMenu(page, page.locator('.ws-head', { hasText: 'ws-b' }))
@@ -226,7 +245,7 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
     installCodex(env)
     const { page, close } = await launched(env)
     try {
-      await bindFromWorkspaceMenu(page, 'ws-a', { backend: 'Codex', link: LINK_A })
+      await bindFromWorkspaceMenu(page, 'ws-a', { backend: 'Codex', channel: CHANNEL_A })
       expect(bindingsOnDisk(env)).toMatchObject([{ backend: 'codex' }])
       await openConductor(page, 'ws-a')
       await expect.poll(() => bindingsOnDisk(env)[0]?.sessionIds.length).toBe(1)
@@ -266,7 +285,7 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
       await startSessionIn(page, 'ws-b')
       const elsewhere = (await waitForCalls(env, 2))[1].sessionId
 
-      await bindFromWorkspaceMenu(page, 'ws-a', { link: LINK_A })
+      await bindFromWorkspaceMenu(page, 'ws-a', { channel: CHANNEL_A })
       await openConductor(page, 'ws-a')
       const listed = await koloftSays(page, 'session list')
       expect(listed).toContain('· Claude · local · closed · last active')
@@ -302,7 +321,7 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(wsRows(page, 'ws-b')).toHaveClass(/cold/)
 
-      await bindFromWorkspaceMenu(page, 'ws-a', { scope: 'Global', link: LINK_A })
+      await bindFromWorkspaceMenu(page, 'ws-a', { scope: 'Global', channel: CHANNEL_A })
       await openConductor(page, 'Global')
       const workspaces = await koloftSays(page, 'workspace list')
       expect(workspaces).toContain(`ws-a · ${env.workspaces.a} · 0 open`)

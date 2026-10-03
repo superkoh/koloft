@@ -10,15 +10,7 @@ import type {
   DiscordSettings
 } from '@shared/types'
 import { BACKEND_LABEL, identityOf } from '@shared/sessionBackend'
-import {
-  bindingProblem,
-  CHANNEL_LINK_PROBLEM,
-  GLOBAL_SCOPE,
-  isDiscordId,
-  keepPinnedBindings,
-  parseChannelLink,
-  scopeName
-} from '@shared/conductors'
+import { bindingProblem, GLOBAL_SCOPE, keepPinnedBindings, scopeName } from '@shared/conductors'
 import { conductorRole } from '@shared/agentGuide'
 import { isRemoteKey } from '@shared/remoteKey'
 
@@ -129,8 +121,7 @@ export class Conductors {
   }
 
   save(input: ConductorSaveInput): ConductorSaveResult {
-    const channel = parseChannelLink(input.link)
-    if (!channel) return { ok: false, error: CHANNEL_LINK_PROBLEM }
+    const { channel } = input
     if (!this.d.backendEnabled(input.backend))
       return {
         ok: false,
@@ -178,11 +169,15 @@ export class Conductors {
     this.write({ conductorsFolded: folded })
   }
 
-  setUserId(userId: string): void {
-    const trimmed = userId.trim()
-    const { userId: dropped, ...rest } = this.discord
-    void dropped
-    this.discord = isDiscordId(trimmed) ? { ...rest, userId: trimmed } : rest
+  owner(): string | undefined {
+    return this.discord.userId
+  }
+
+  setOwner(owner: { id: string; name: string } | null): void {
+    const { userId: droppedId, userName: droppedName, ...rest } = this.discord
+    void droppedId
+    void droppedName
+    this.discord = owner ? { ...rest, userId: owner.id, userName: owner.name } : rest
     this.d.save(this.discord)
   }
 

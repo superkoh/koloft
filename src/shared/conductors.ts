@@ -5,17 +5,7 @@ import { backendIdOf } from './sessionBackend'
 
 export const GLOBAL_SCOPE = 'global'
 
-export const CHANNEL_LINK_PROBLEM =
-  'Paste a channel link like https://discord.com/channels/<server id>/<channel id>.'
-
-const CHANNEL_LINK_RE = /^https:\/\/discord\.com\/channels\/(\d{1,30})\/(\d{1,30})\/?$/
-
 const DISCORD_ID_RE = /^\d{1,30}$/
-
-export function parseChannelLink(link: string): { guildId: string; channelId: string } | null {
-  const m = CHANNEL_LINK_RE.exec(link.trim())
-  return m ? { guildId: m[1], channelId: m[2] } : null
-}
 
 export function isDiscordId(value: unknown): value is string {
   return typeof value === 'string' && DISCORD_ID_RE.test(value)
@@ -91,7 +81,12 @@ export function sanitizeDiscord(raw: unknown): DiscordSettings {
     bindings.push(b)
   }
   return {
-    ...(isDiscordId(doc.userId) ? { userId: doc.userId } : {}),
+    ...(isDiscordId(doc.userId)
+      ? {
+          userId: doc.userId,
+          ...(typeof doc.userName === 'string' ? { userName: doc.userName } : {})
+        }
+      : {}),
     conductorsFolded: typeof doc.conductorsFolded === 'boolean' ? doc.conductorsFolded : true,
     bindings
   }

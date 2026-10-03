@@ -1032,3 +1032,36 @@ command by hand:
   (2026-09-30, fish 3.6.0 and Debian 12's tcsh as the login shell of containers
   behind a jump host: file listing and reading, a session start and the session sync
   all worked through a real sshd).
+
+## §38 Discord API (v10)
+
+Measured 2026-10-03 with a real bot on a private server, by a hand-written client: Node
+`fetch` for REST with `Authorization: Bot <token>`, and the `ws` library (8.x) for the
+Gateway (the live connection that pushes events):
+
+- **REST calls a bot needs all answer 200**: `GET /users/@me` (the bot's own name and
+  id), `GET /oauth2/applications/@me` (`id` is the application id that goes in the
+  invite link; `bot_public` says whether anyone can add it), `GET /users/@me/guilds` (the
+  servers it is in), `GET /guilds/{id}/channels` (type `0` is a text channel), and
+  `GET /gateway/bot` (the Gateway `url`).
+- **Gateway handshake**: connect to `<url>/?v=10&encoding=json`; the server sends op 10
+  (hello) with `heartbeat_interval`; the client sends op 1 (heartbeat, last sequence
+  number) on that interval, and op 2 (identify) with the token and the intents
+  `GUILDS | GUILD_MESSAGES | DIRECT_MESSAGES | MESSAGE_CONTENT` (1 | 512 | 4096 | 32768).
+  Then `READY` arrives (bot user, a list of server ids), one `GUILD_CREATE` per server
+  (with its name), and `MESSAGE_CREATE` for every message in a channel the bot can see.
+- **With Message Content on, `MESSAGE_CREATE` carries the text** (`content`) and the
+  sender (`author.id`, `author.username`, `author.bot`).
+- **Sending works**: `POST /channels/{id}/messages` with JSON `{content}` answers 200; a
+  file goes as multipart with `payload_json` plus `files[0]`, also 200.
+- **Rate limit per channel: 5 messages, then 429.** In a burst of 7 posts to one
+  channel, posts 1–5 answered 200 and 6–7 answered 429 with a JSON body whose
+  `retry_after` was about 0.3 (seconds); the bucket refills in about 5 s. Waiting
+  `retry_after` and sending again works.
+- From Discord's docs, not measured here: close code 4004 means the token was refused,
+  4014 means an intent the bot is not allowed (Message Content turned off in the
+  Developer Portal); op 6 (resume) with `session_id` and the last sequence number,
+  sent to `READY`'s `resume_gateway_url`, picks up a dropped connection; op 7 asks the
+  client to reconnect and resume; op 9 (invalid session) with `d: false` means start
+  over with identify; 4007 and 4009 also mean the session cannot be resumed; a bot API
+  call must send a `User-Agent: DiscordBot (<url>, <version>)` header.

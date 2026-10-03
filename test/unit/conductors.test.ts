@@ -3,7 +3,6 @@ import {
   bindingProblem,
   GLOBAL_SCOPE,
   keepPinnedBindings,
-  parseChannelLink,
   sanitizeDiscord
 } from '@shared/conductors'
 import type { ConductorBinding } from '@shared/types'
@@ -18,21 +17,6 @@ function binding(id: string, scope: string, channelId: string): ConductorBinding
     touched: []
   }
 }
-
-describe('parseChannelLink', () => {
-  it('reads the server and channel ids from a pasted channel link', () => {
-    expect(parseChannelLink(' https://discord.com/channels/123/456 ')).toEqual({
-      guildId: '123',
-      channelId: '456'
-    })
-  })
-
-  it('refuses a message link, another site, or words', () => {
-    expect(parseChannelLink('https://discord.com/channels/123/456/789')).toBeNull()
-    expect(parseChannelLink('https://example.com/channels/123/456')).toBeNull()
-    expect(parseChannelLink('#general')).toBeNull()
-  })
-})
 
 describe('bindingProblem', () => {
   const bound = [binding('g', GLOBAL_SCOPE, '1'), binding('a', '/ws/a', '2')]

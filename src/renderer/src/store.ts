@@ -142,6 +142,7 @@ interface AppState {
   } | null
   conductorTabs: Record<string, string>
   bindConductor: { scope?: string; editId?: string } | null
+  discordSetupStep: number | null
 
   addTab: (t: Tab) => void
   addTabQuiet: (t: Tab) => void
@@ -181,6 +182,7 @@ interface AppState {
   setUnsavedPrompt: (p: AppState['unsavedPrompt']) => void
   setConductorTab: (bindingId: string, tabId: string) => void
   setBindConductor: (b: AppState['bindConductor']) => void
+  setDiscordSetupStep: (step: number | null) => void
 
   ensureWorkbench: (tabId: string) => Promise<void>
   setWorkbenchState: (tabId: string, state: SessionWorkbenchState) => void
@@ -411,6 +413,7 @@ export const useStore = create<AppState>((set, get) => ({
   unsavedPrompt: null,
   conductorTabs: {},
   bindConductor: null,
+  discordSetupStep: null,
 
   addTab: (t) => {
     set((s) => ({ tabs: [...s.tabs, t], activeTabId: t.id, resumeLaunch: null }))
@@ -693,6 +696,7 @@ export const useStore = create<AppState>((set, get) => ({
   setConductorTab: (bindingId, tabId) =>
     set((s) => ({ conductorTabs: { ...s.conductorTabs, [bindingId]: tabId } })),
   setBindConductor: (bindConductor) => set({ bindConductor }),
+  setDiscordSetupStep: (discordSetupStep) => set({ discordSetupStep }),
 
   ensureWorkbench: (tabId) => {
     if (!workbenchAllowed(get(), tabId)) return Promise.resolve()
