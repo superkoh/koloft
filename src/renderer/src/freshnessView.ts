@@ -13,10 +13,6 @@ function explainOnly(f: WorkspaceFreshness): string | null {
   return null
 }
 
-export function freshnessShown(f: WorkspaceFreshness | undefined): f is WorkspaceFreshness {
-  return !!f && f.state !== 'none'
-}
-
 export function countLabel(n: number): string {
   return n < 1000 ? `${n}` : `${Math.floor(n / 100) / 10}k`
 }

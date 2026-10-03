@@ -1,6 +1,6 @@
 import type { WorkspaceGithub } from '@shared/types'
 
-const SWEEP_INTERVAL_MS = 5 * 60_000
+const RECHECK_WELL_INSIDE_THE_LOOKUP_TTL_MS = 60_000
 const STARTUP_DELAY_MS = 3_000
 
 export interface GithubCountsDeps {
@@ -21,7 +21,7 @@ export class GithubCountsSweep {
 
   start(): void {
     setTimeout(() => void this.sweep(), STARTUP_DELAY_MS).unref()
-    setInterval(() => void this.sweep(), SWEEP_INTERVAL_MS).unref()
+    setInterval(() => void this.sweep(), RECHECK_WELL_INSIDE_THE_LOOKUP_TTL_MS).unref()
   }
 
   get(wsPath: string): WorkspaceGithub | undefined {
@@ -32,22 +32,18 @@ export class GithubCountsSweep {
     if (this.sweeping) return
     this.sweeping = true
     try {
+      const live = this.deps.workspaces().filter((ws) => !ws.missing)
+      const answers = await Promise.all(
+        live.map((ws) => this.deps.openCounts(ws.path).catch(() => null))
+      )
       let changed = false
-      const pinned = new Set<string>()
-      for (const ws of this.deps.workspaces()) {
-        if (ws.missing) continue
-        pinned.add(ws.path)
-        const next = (await this.deps.openCounts(ws.path).catch(() => null)) ?? undefined
-        if (same(this.cache.get(ws.path), next)) continue
+      live.forEach((ws, i) => {
+        const next = answers[i] ?? undefined
+        if (same(this.cache.get(ws.path), next)) return
         changed = true
         if (next) this.cache.set(ws.path, next)
         else this.cache.delete(ws.path)
-      }
-      for (const p of [...this.cache.keys()]) {
-        if (pinned.has(p)) continue
-        this.cache.delete(p)
-        changed = true
-      }
+      })
       if (changed) this.deps.onChange()
     } finally {
       this.sweeping = false

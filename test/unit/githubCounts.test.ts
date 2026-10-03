@@ -43,19 +43,13 @@ describe('GithubCountsSweep', () => {
     expect(s.asked).not.toContain('/gone')
   })
 
-  it('forgets a workspace once it is unpinned or gh stops answering', async () => {
-    const workspaces = [
-      { path: '/a', missing: false },
-      { path: '/b', missing: false }
-    ]
-    const answers: Record<string, WorkspaceGithub | null> = { '/a': KOLOFT, '/b': KOLOFT }
-    const s = sweepOver(workspaces, answers)
+  it('drops the counts once gh stops answering', async () => {
+    const answers: Record<string, WorkspaceGithub | null> = { '/a': KOLOFT }
+    const s = sweepOver([{ path: '/a', missing: false }], answers)
     await s.sweep.sweep()
-    workspaces.pop()
     answers['/a'] = null
     await s.sweep.sweep()
     expect(s.sweep.get('/a')).toBeUndefined()
-    expect(s.sweep.get('/b')).toBeUndefined()
     expect(s.pushes()).toBe(2)
   })
 })

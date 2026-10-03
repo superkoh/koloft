@@ -15,7 +15,6 @@ import { credentialGuardEnv, FETCH_TIMEOUT_MS, LOCAL_TIMEOUT_MS } from './gitFre
 const execFile = promisify(execFileCb)
 const TTL_MS = 5 * 60_000
 const MAX_BUFFER = 16 * 1024 * 1024
-const GH_TIMEOUT_MS = 15_000
 const OPEN_COUNTS_QUERY =
   'query($owner:String!,$name:String!){repository(owner:$owner,name:$name){issues(states:OPEN){totalCount} pullRequests(states:OPEN){totalCount}}}'
 
@@ -47,7 +46,7 @@ export async function ghOpenCounts(repo: GithubRepo): Promise<OpenCounts | null>
         '-f',
         `query=${OPEN_COUNTS_QUERY}`
       ],
-      { timeout: GH_TIMEOUT_MS }
+      { timeout: FETCH_TIMEOUT_MS }
     )
     return parseOpenCounts(stdout)
   } catch {
@@ -238,8 +237,8 @@ function prOf(
 
 function fixtureCounts(fx: GithubFixture, root: string): WorkspaceGithub | null {
   const f = fx[root]
-  if (!f || (f.issues === undefined && f.prs === undefined)) return null
-  return { repo: `${f.owner}/${f.repo}`, issues: f.issues ?? 0, prs: f.prs ?? 0 }
+  if (!f || f.issues === undefined || f.prs === undefined) return null
+  return { repo: `${f.owner}/${f.repo}`, issues: f.issues, prs: f.prs }
 }
 
 function fixtureInfo(fx: GithubFixture, root: string): GithubInfo | null {

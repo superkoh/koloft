@@ -1,4 +1,4 @@
-const NAME_KEEPS_PX = 44
+export const NAME_KEEPS_PX = 44
 const SUBPIXEL_SLACK_PX = 0.5
 
 export function fitGithubCounts(head: HTMLElement): void {

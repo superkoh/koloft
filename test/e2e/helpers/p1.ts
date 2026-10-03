@@ -616,8 +616,12 @@ export async function closeMenu(page: Page): Promise<void> {
   await expect(page.locator('.menu')).toHaveCount(0)
 }
 
+export function gitMark(page: Page, wsName: string): Locator {
+  return page.locator('.ws-head', { hasText: wsName }).locator(':scope > .ws-git')
+}
+
 export async function openGitPanel(page: Page, wsName: string): Promise<Locator> {
-  await page.locator('.ws-head', { hasText: wsName }).locator(':scope > .ws-git').hover()
+  await gitMark(page, wsName).hover()
   const panel = page.locator('.tbu-pop.fx')
   await expect(panel).toBeVisible()
   return panel

@@ -1,8 +1,9 @@
-import type { Locator, Page } from '@playwright/test'
-import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import type { Page } from '@playwright/test'
+import { test, expect, quitAndClose } from './helpers/app'
+import { launchSettled } from './helpers/blackbox'
 import { seedSettings, setGithubFixture } from './helpers/env'
 import { setupGitFixture } from './helpers/gitFixture'
-import { gitInit, openGitPanel, snap } from './helpers/p1'
+import { gitInit, gitMark, openGitPanel, snap } from './helpers/p1'
 import {
   addRemoteWorkspace,
   installFakeRemote,
@@ -12,23 +13,10 @@ import {
   remoteDir,
   remoteKey
 } from './helpers/remote'
+import { NAME_KEEPS_PX } from '../../src/renderer/src/wsHeadFit'
 
 const COUNTS_TIMEOUT = 30_000
 const LONG_NAME = 'payments-gateway-service'
-const NAME_KEEPS_PX = 44
-
-const strip = (page: Page, ws: string): Locator =>
-  page.locator('.ws-head', { hasText: ws }).locator(':scope > .ws-git')
-
-async function launched(env: Parameters<typeof launchApp>[0]): Promise<{
-  app: Awaited<ReturnType<typeof launchApp>>
-  page: Page
-}> {
-  const app = await launchApp(env)
-  const page = await app.firstWindow()
-  await page.waitForLoadState('domcontentloaded')
-  return { app, page }
-}
 
 function headFit(
   page: Page,
@@ -62,9 +50,9 @@ test.describe('Workspace GitHub counts · open issues and pull requests after th
   }) => {
     const fx = setupGitFixture(env)
     setGithubFixture(env, { [fx.clone]: { owner: 'acme', repo: 'repo', issues: 12, prs: 3 } })
-    const { app, page } = await launched(env)
+    const { app, page } = await launchSettled(env)
     try {
-      const counts = strip(page, 'repo').locator('.ws-gh > span')
+      const counts = gitMark(page, 'repo').locator('.ws-gh > span')
       await expect(counts).toHaveCount(2, { timeout: COUNTS_TIMEOUT })
       await expect(counts.nth(0)).toHaveAttribute('aria-label', '12 open issues')
       await expect(counts.nth(0)).toHaveText('12')
@@ -89,12 +77,12 @@ test.describe('Workspace GitHub counts · open issues and pull requests after th
   }) => {
     const fx = setupGitFixture(env)
     setGithubFixture(env, { [fx.clone]: { owner: 'acme', repo: 'repo', issues: 0, prs: 5 } })
-    const { app, page } = await launched(env)
+    const { app, page } = await launchSettled(env)
     try {
-      const counts = strip(page, 'repo').locator('.ws-gh > span')
+      const counts = gitMark(page, 'repo').locator('.ws-gh > span')
       await expect(counts).toHaveCount(1, { timeout: COUNTS_TIMEOUT })
       await expect(counts).toHaveAttribute('aria-label', '5 open pull requests')
-      await expect(strip(page, 'repo')).toHaveAttribute('title', '')
+      await expect(gitMark(page, 'repo')).toHaveAttribute('title', '')
     } finally {
       await app.close().catch(() => {})
     }
@@ -106,9 +94,9 @@ test.describe('Workspace GitHub counts · open issues and pull requests after th
     const fx = setupGitFixture(env, LONG_NAME)
     setGithubFixture(env, { [fx.clone]: { owner: 'acme', repo: LONG_NAME, issues: 128, prs: 37 } })
     seedSettings(env, { sidebarWidth: 200 })
-    const { app, page } = await launched(env)
+    const { app, page } = await launchSettled(env)
     try {
-      await expect(strip(page, LONG_NAME).locator('.ws-gh > span')).toHaveCount(2, {
+      await expect(gitMark(page, LONG_NAME).locator('.ws-gh > span')).toHaveCount(2, {
         timeout: COUNTS_TIMEOUT
       })
       const fit = await headFit(page, LONG_NAME)
@@ -127,9 +115,9 @@ test.describe('Workspace GitHub counts · open issues and pull requests after th
     const fx = setupGitFixture(env, LONG_NAME)
     setGithubFixture(env, { [fx.clone]: { owner: 'acme', repo: LONG_NAME, issues: 128, prs: 37 } })
     seedSettings(env, { sidebarWidth: 420 })
-    const { app, page } = await launched(env)
+    const { app, page } = await launchSettled(env)
     try {
-      await expect(strip(page, LONG_NAME).locator('.ws-gh > span')).toHaveCount(2, {
+      await expect(gitMark(page, LONG_NAME).locator('.ws-gh > span')).toHaveCount(2, {
         timeout: COUNTS_TIMEOUT
       })
       await expect
@@ -146,9 +134,9 @@ test.describe('Workspace GitHub counts · open issues and pull requests after th
     const fx = setupGitFixture(env, LONG_NAME)
     setGithubFixture(env, { [fx.clone]: { owner: 'acme', repo: LONG_NAME, issues: 128, prs: 37 } })
     seedSettings(env, { sidebarWidth: 200 })
-    const { app, page } = await launched(env)
+    const { app, page } = await launchSettled(env)
     try {
-      await expect(strip(page, LONG_NAME).locator('.ws-gh > span')).toHaveCount(2, {
+      await expect(gitMark(page, LONG_NAME).locator('.ws-gh > span')).toHaveCount(2, {
         timeout: COUNTS_TIMEOUT
       })
       const name = page.locator('.ws-head', { hasText: LONG_NAME }).locator('.ws-name')
@@ -180,7 +168,7 @@ test.describe('Workspace GitHub counts · a remote workspace', () => {
     const { app, page } = await launchWithRemote(env)
     try {
       await addRemoteWorkspace(page, env)
-      const counts = strip(page, REMOTE_WS_NAME).locator('.ws-gh > span')
+      const counts = gitMark(page, REMOTE_WS_NAME).locator('.ws-gh > span')
       await expect(counts).toHaveCount(1, { timeout: 60_000 })
       await expect(counts).toHaveAttribute('aria-label', '4 open pull requests')
 

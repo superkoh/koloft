@@ -481,11 +481,11 @@ let remoteSync: RemoteSync | null = null
 tracker.machineTmp = (host) => remoteSync?.machineTmp(host)
 let machinePkg: MachinePackage | null = null
 const remoteControlDir = defaultControlDir()
-let loginSshEnv: Promise<void> | null = null
+let loginEnv: Promise<void> | null = null
 
 // PLATFORM§1
-function sshEnvReady(): Promise<void> {
-  return (loginSshEnv ??= readLoginShell({ env: process.env })
+function loginEnvReady(): Promise<void> {
+  return (loginEnv ??= readLoginShell({ env: process.env })
     .then(({ env }) => void Object.assign(process.env, sshEnvFromLogin(process.env, env)))
     .catch(() => undefined))
 }
@@ -1383,9 +1383,9 @@ app.whenReady().then(() => {
   })
   remoteSync = new RemoteSync({
     run: (host, cmd) =>
-      sshEnvReady().then(() => runSsh(host, cmd, { controlDir: remoteControlDir })),
+      loginEnvReady().then(() => runSsh(host, cmd, { controlDir: remoteControlDir })),
     rsync: (host, r, l, extra) =>
-      sshEnvReady().then(() => rsyncPull(host, r, l, extra, { controlDir: remoteControlDir })),
+      loginEnvReady().then(() => rsyncPull(host, r, l, extra, { controlDir: remoteControlDir })),
     targets: () => {
       const live = new Set(
         tracker
@@ -2380,7 +2380,7 @@ function commitSettings(patch: Partial<Settings>): Settings {
 const githubOptions: GithubOptions = {
   fixture: parseGithubFixture(process.env.KOLOFT_GITHUB_FIXTURE),
   // PLATFORM§1
-  openCounts: (repo) => sshEnvReady().then(() => ghOpenCounts(repo)),
+  openCounts: (repo) => loginEnvReady().then(() => ghOpenCounts(repo)),
   signedIn: async () => {
     try {
       const jar = await session.fromPartition(BROWSER_PARTITION).cookies.get({
@@ -2401,10 +2401,10 @@ const hosts = new Hosts(
   (machine) =>
     new SshHost(machine, {
       run: (cmd, opts) =>
-        sshEnvReady().then(() =>
+        loginEnvReady().then(() =>
           runSshBytes(machine, cmd, { controlDir: remoteControlDir, ...opts })
         ),
-      sshEnvReady,
+      sshEnvReady: loginEnvReady,
       shell: (dir) => {
         ensureControlDir(remoteControlDir)
         return {

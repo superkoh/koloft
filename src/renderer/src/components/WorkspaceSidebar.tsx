@@ -51,13 +51,8 @@ import {
 import { releaseSettledResumes, resumeInFlight, resumeSession } from '../resumeFlow'
 import { adoptionSettled } from '../adoption'
 import { requestCloseTab } from '../closeFlow'
-import {
-  behindBadge,
-  countLabel,
-  freshnessShown,
-  openIssuesLabel,
-  openPullsLabel
-} from '../freshnessView'
+import { freshnessShown } from '@shared/freshnessOps'
+import { behindBadge, countLabel, openIssuesLabel, openPullsLabel } from '../freshnessView'
 import { fitGithubCounts } from '../wsHeadFit'
 import { FreshnessPopover } from './FreshnessPopover'
 import { basename } from '@shared/preview'
@@ -252,7 +247,7 @@ export function WorkspaceSidebar({
   const fitHeads = useCallback((): void => {
     listRef.current?.querySelectorAll<HTMLElement>('.ws-head').forEach(fitGithubCounts)
   }, [])
-  useLayoutEffect(fitHeads)
+  useLayoutEffect(fitHeads, [rows, fitHeads])
   useEffect(() => {
     const list = listRef.current
     if (!list) return
