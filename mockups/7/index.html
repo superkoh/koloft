@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>#7 mockup · Send one text to the sessions you picked</title>
+<style>
+/* ===== copied from src/renderer/src/styles.css (origin/main) ===== */
+:root {
+  --bg-0: #0d0d0f;
+  --bg-1: #161618;
+  --bg-2: #1c1c1f;
+  --bg-3: #27272c;
+  --bg-4: #34343a;
+  --line-layout: rgba(255, 255, 255, 0.06);
+  --line: rgba(255, 255, 255, 0.1);
+  --line-2: rgba(255, 255, 255, 0.17);
+  --fg: #f3f1ee;
+  --fg-dim: #bdb9b2;
+  --fg-faint: #908b84;
+  --accent: #ec9670;
+  --accent-press: #d97757;
+  --accent-soft: rgba(236, 150, 112, 0.18);
+  --accent-line: rgba(236, 150, 112, 0.45);
+  --good: #8fc69a;
+  --amber: #f0a830;
+  --red: #d9776a;
+  --folder: #c9a06a;
+  --fg-cold: #9a958d;
+  --danger: #f0a0a0;
+  --r: 9px;
+  --r-sm: 7px;
+  --r-lg: 12px;
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --font: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+  --mono: 'JetBrainsMono Nerd Font', 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; font-family: var(--font); font-size: 14px; -webkit-font-smoothing: antialiased;
+  color: var(--fg); background: var(--bg-0); cursor: default; user-select: none;
+}
+.toast {
+  position: fixed; top: 54px; left: 50%; transform: translateX(-50%); z-index: 120; max-width: 70vw;
+  display: flex; align-items: center; gap: 10px; padding: 11px 14px; background: var(--bg-3);
+  border: 1px solid var(--line-2); border-radius: 10px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  font-size: 13.5px; color: var(--fg);
+}
+.toast .toast-msg { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dock-left { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.island {
+  display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg-2);
+  border: 1px solid var(--line); border-radius: var(--r); overflow: hidden;
+}
+.island.flat { background: transparent; border: 0; border-radius: 0; animation: none; }
+.isl-sessions { flex: 1; }
+.isl-notes { flex: 0 0 auto; margin: 0 6px; border-color: var(--line-layout); }
+.isl-notes .wb-title .ic { flex: 0 0 auto; display: flex; align-self: center; margin-right: 6px; color: var(--fg-faint); }
+/* ADR-0012 PLATFORM§10 */
+.island.wb-col:focus-within, .island.isl-notes:focus-within, .island.wb-col.caret { border-color: var(--accent-line); }
+.gutter-h { flex: 0 0 auto; position: relative; cursor: row-resize; }
+.mini {
+  display: inline-flex; align-items: center; gap: 5px; background: var(--bg-4); color: var(--fg);
+  border: 1px solid var(--line-2); border-radius: var(--r-sm); padding: 7px 14px; font-family: var(--font);
+  font-size: 13px; font-weight: 600; line-height: 1; letter-spacing: 0; text-transform: none; cursor: pointer;
+}
+.mini:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--fg); }
+.ws-list { overflow-y: auto; flex: 1; padding: 8px 6px; display: flex; flex-direction: column; gap: 2px; }
+.ws { display: flex; flex-direction: column; }
+.ws-head {
+  display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 5px 9px; border-radius: var(--r-sm);
+  cursor: pointer; color: var(--fg); position: relative;
+}
+.ws-head:hover { background: var(--bg-3); }
+.ws-head.active { background: var(--accent-soft); }
+.fico { flex: 0 0 auto; display: flex; color: var(--folder); cursor: pointer; border-radius: 5px; padding: 2px; margin: -2px; }
+.ws-name { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-git { flex: 0 0 auto; display: flex; align-items: center; gap: 3px; color: var(--fg-faint); }
+.hact {
+  margin-left: auto; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px;
+  border: none; border-radius: 6px; padding: 0; background: transparent; color: var(--fg-faint); cursor: pointer; opacity: 0;
+}
+.ws-head:hover .hact { opacity: 1; }
+.ws-tabs { display: flex; flex-direction: column; gap: 1px; margin: 1px 0 4px 0; padding-left: 14px; }
+.ws-tab {
+  position: relative; display: flex; flex-direction: column; justify-content: center; gap: 3px; min-height: 46px;
+  padding: 6px 10px 6px 18px; border-radius: var(--r-sm); cursor: pointer; color: var(--fg-dim); overflow: hidden;
+}
+.ws-tab::before { content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 2px; background: transparent; }
+.ws-tab.st-working::before { background: var(--accent); animation: barBreathe 2.4s var(--ease) infinite; }
+.ws-tab.st-waiting::before { background: var(--good); }
+.ws-tab.st-approval::before { background: var(--amber); animation: barPump 1s var(--ease) infinite; }
+.ws-tab.st-idle::before { background: var(--good); opacity: 0.4; }
+.ws-tab:hover { background: var(--bg-3); color: var(--fg); }
+.ws-tab.active { background: var(--accent-soft); color: var(--fg); }
+.ws-tab-main { display: flex; align-items: center; gap: 8px; min-width: 0; position: relative; z-index: 1; }
+.ws-tab-title { flex: 1; font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-tab.active .ws-tab-title { font-weight: 600; }
+.ws-tab-parked {
+  flex: none; font-family: var(--mono); font-size: 10px; line-height: 14px; padding: 0 5px; border: 0; border-radius: 7px;
+  color: var(--fg-faint); background: var(--bg-3); cursor: help;
+}
+.ws-tab-unread { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--red); }
+.ws-tab-parked.ws-unread-count { font-weight: 700; color: var(--bg-0); background: var(--red); cursor: inherit; }
+.ws-tab-sub {
+  display: flex; align-items: center; gap: 5px; min-width: 0; position: relative; z-index: 1; font-family: var(--mono);
+  font-size: 10.5px; color: var(--fg-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.session-backend-icon { display: inline-flex; flex: none; align-items: center; }
+.ws-tab.cold .ws-tab-title { font-style: italic; color: var(--fg-cold); font-weight: 400; }
+.ws-tab.cold .ws-tab-sub { opacity: 0.7; }
+@keyframes barBreathe { 0%, 100% { opacity: 0.95; } 50% { opacity: 0.5; } }
+@keyframes barPump { 0%, 100% { width: 3px; box-shadow: none; } 40%, 60% { width: 8px; box-shadow: 0 0 10px 1px rgba(240, 168, 48, 0.55); } }
+.ws-tab-title i, .ws-name i { font-style: inherit; }
+.menu {
+  position: fixed; z-index: 200; width: 190px; background: var(--bg-2); border: 1px solid var(--line-2); border-radius: var(--r);
+  overflow: hidden; box-shadow: 0 14px 40px -10px rgba(0, 0, 0, 0.7); font-size: 13px;
+}
+.menu .mi { display: flex; align-items: center; gap: 8px; padding: 7px 12px; color: var(--fg-dim); cursor: pointer; white-space: nowrap; }
+.menu .mi:hover { background: var(--bg-3); color: var(--fg); }
+.menu .mi .k { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--fg-faint); }
+.field-hint { font-size: 12.5px; color: var(--fg-dim); line-height: 1.6; }
+/* CC§9 */
+.field-hint.warn { color: var(--amber); }
+.cb-input {
+  display: flex; align-items: center; gap: 8px; background: var(--bg-0); border: 1px solid var(--line-2);
+  border-radius: var(--r-sm); padding: 9px 12px;
+}
+.cb-input.focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.cb-field { flex: 1; min-width: 0; background: none; border: none; outline: none; padding: 0; font-family: var(--mono); font-size: 13px; color: var(--fg); }
+.cb-field::placeholder { color: var(--fg-faint); }
+.cb-field.task { resize: vertical; line-height: 1.4; }
+/* NEW: the hint + button line under the text box */
+.send-foot { display: flex; align-items: center; gap: 8px; }
+.btn-primary {
+  display: inline-flex; align-items: center; gap: 5px; background: var(--accent); color: #1a1208; border: 1px solid var(--accent);
+  border-radius: var(--r-sm); padding: 7px 16px; font-family: var(--font); font-size: 13px; font-weight: 600; line-height: 1; cursor: pointer;
+}
+.btn-primary:hover { background: var(--accent-press); border-color: var(--accent-press); }
+.wb-bar {
+  position: relative; flex: 0 0 auto; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 9px;
+  background: var(--bg-2); border-bottom: 1px solid var(--line);
+}
+.wb-title { flex: 1; min-width: 0; display: flex; align-items: baseline; font-family: var(--mono); font-size: 12.5px; font-weight: 600; color: var(--fg); white-space: nowrap; }
+.wb-title .dir { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--fg-faint); font-weight: 400; }
+.wb-title .nm { flex: 0 0 auto; overflow: hidden; text-overflow: ellipsis; }
+.icobtn {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: none;
+  border-radius: 6px; background: none; color: var(--fg-faint); cursor: pointer;
+}
+.icobtn:hover, .icobtn.on { color: var(--accent); }
+.ws-tab-cron, .ws-tab-resident, .ws-tab-opened { flex: 0 0 auto; display: flex; color: var(--accent); }
+.ws-remote {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 5px; max-width: 96px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; font-family: var(--mono); font-size: 10px; line-height: 1; margin-top: 2px; color: var(--fg-faint);
+}
+.ws-conn { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: var(--fg-faint); }
+.ws-conn.on { background: var(--good); }
+
+/* ===== NEW rules this design adds (the only additions to styles.css) ===== */
+/* a picked row: a thin accent ring; its check mark reuses the .ws-tab-cron rule (one selector added there) */
+.ws-tab.picked { box-shadow: inset 0 0 0 1px var(--accent-line); }
+.ws-tab-pick { flex: 0 0 auto; display: flex; color: var(--accent); }
+/* the Send island sits like .isl-notes; its focus ring joins the existing .island:focus-within selector list */
+.isl-send { flex: 0 0 auto; margin: 0 6px 6px; border-color: var(--line-layout); }
+.island.isl-send:focus-within { border-color: var(--accent-line); }
+.isl-send .wb-title .ic { flex: 0 0 auto; display: flex; align-self: center; margin-right: 6px; color: var(--accent); }
+.send-body { display: flex; flex-direction: column; gap: 8px; padding: 8px; }
+.send-body .cb-input { align-items: stretch; }
+.send-body .cb-field.task { min-height: 58px; }
+.send-body .btn-primary { margin-left: auto; white-space: nowrap; }
+
+/* ===== mockup page scaffolding only (not app CSS) ===== */
+.page { padding: 28px 32px 48px; }
+h1 { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+.sub { font-size: 12.5px; color: var(--fg-dim); margin: 0 0 8px; line-height: 1.6; max-width: 820px; }
+.sub code, .cap code { font-family: var(--mono); font-size: 11.5px; background: var(--bg-2); padding: 1px 5px; border-radius: 4px; color: var(--fg); }
+.cap { font-family: var(--mono); font-size: 11px; color: var(--fg-faint); margin: 26px 0 8px; letter-spacing: 0.06em; text-transform: uppercase; }
+.frames { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; }
+.frame { position: relative; width: 300px; height: 640px; background: var(--bg-1); border: 1px solid var(--line-2); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; }
+.frame.short { height: 330px; }
+.frame .toast { position: absolute; top: 12px; max-width: 92%; }
+.frame .menu { position: absolute; }
+.fnote { width: 300px; font-size: 12px; color: var(--fg-dim); line-height: 1.6; margin-top: 8px; }
+svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.fico svg { width: 15px; height: 15px; }
+.ws-tab-pick svg, .ws-tab-resident svg, .session-backend-icon svg { width: 12px; height: 12px; }
+.icobtn svg, .isl-send .ic svg, .isl-notes .ic svg { width: 14px; height: 14px; }
+.hact svg { width: 16px; height: 16px; }
+.session-backend-icon.oai svg { fill: currentColor; stroke: none; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>#7 — send one text to the sessions you picked</h1>
+  <p class="sub">
+    Nothing new is drawn except a thin ring and a check mark on a picked row (<code>.ws-tab.picked</code>, <code>.ws-tab-pick</code>) and one small island under the sessions list (<code>.isl-send</code>) built from the Notes island's parts: <code>.wb-bar</code> + <code>.wb-title</code> + <code>.icobtn</code> on top, the scheduled-job dialog's text box (<code>.cb-input</code> + <code>.cb-field.task</code>) in the middle, <code>.mini</code> and <code>.btn-primary</code> below. ⌘-click a running row to pick it; the island appears with the first pick and goes away after one send. Everything else is the app as it is today.
+  </p>
+
+  <div class="cap">1 · two rows picked (⌘-click) · 2 · one picked row now waits for an approval · 3 · right after Send</div>
+  <div class="frames">
+
+    <!-- FRAME 1: two rows picked, composer armed -->
+    <div class="frame">
+      <div class="dock-left">
+        <div class="island flat isl-sessions">
+          <div class="ws-list">
+            <div class="ws">
+              <div class="ws-head">
+                <span class="fico"><svg viewBox="0 0 24 24"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></span>
+                <span class="ws-name"><i>koloft</i></span>
+                <span class="ws-git"><svg viewBox="0 0 24 24"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></span>
+                <button class="hact"><svg viewBox="0 0 24 24"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M15 6a9 9 0 0 0-9 9"/><path d="M18 15v6"/><path d="M21 18h-6"/></svg></button>
+              </div>
+              <div class="ws-tabs">
+                <div class="ws-tab st-working picked">
+                  <div class="ws-tab-main">
+                    <span class="ws-tab-pick" title="picked — ⌘-click to unpick"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span>
+                    <span class="ws-tab-title"><i>fix the flaky sidebar test</i></span>
+                  </div>
+                  <div class="ws-tab-sub"><span class="session-backend-icon" title="Claude"><svg viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M4.2 7.5l15.6 9"/><path d="M4.2 16.5l15.6-9"/></svg></span><span>main</span></div>
+                </div>
+                <div class="ws-tab st-waiting active">
+                  <div class="ws-tab-main">
+                    <span class="ws-tab-title"><i>broadcast input design</i></span>
+                  </div>
+                  <div class="ws-tab-sub"><span class="session-backend-icon" title="Claude"><svg viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M4.2 7.5l15.6 9"/><path d="M4.2 16.5l15.6-9"/></svg></span><span>issue-7-design</span></div>
+                </div>
+                <div class="ws-tab st-idle picked">
+                  <div class="ws-tab-main">
+                    <span class="ws-tab-pick" title="picked — ⌘-click to unpick"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span>
+                    <span class="ws-tab-title"><i>Codex: port the release script</i></span>
+                  </div>
+                  <div class="ws-tab-sub"><span class="session-backend-icon oai" title="Codex"><svg viewBox="0 0 24 24"><path d="M12 2 20.5 7v10L12 22 3.5 17V7z"/></svg></span><span>release-script</span></div>
+                </div>
+                <div class="ws-tab cold" title="3h ago — click to resume">
+                  <div class="ws-tab-main"><span class="ws-tab-title"><i>rename the shim env keys</i></span></div>
+                  <div class="ws-tab-sub"><span class="session-backend-icon" title="Claude"><svg viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M4.2 7.5l15.6 9"/><path d="M4.2 16.5l15.6-9"/></svg></span><span>main</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="ws">
+              <div class="ws-head">
+                <span class="fico"><svg viewBox="0 0 24 24"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></span>
+                <span class="ws-name"><i>api</i></span>
+                <span class="ws-remote" title="build-box:/srv/api">build-box<span class="ws-conn on"></span></span>
+                <span class="ws-git"><svg viewBox="0 0 24 24"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></span>
+                <button class="hact"><svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
+              </div>
+              <div class="ws-tabs">
+                <div class="ws-tab st-waiting">
+                  <div class="ws-tab-main"><span class="ws-tab-title"><i>migrate the users table</i></span></div>
+                  <div class="ws-tab-sub"><span>main</span></div>
+                </div>
+                <div class="ws-tab st-working">
+                  <div class="ws-tab-main"><span class="ws-tab-title"><i>weekly dependency check</i></span><button class="ws-tab-parked">↻ 1</button></div>
+                  <div class="ws-tab-sub"><span>deps</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="island isl-send">
+          <div class="wb-bar">
+            <span class="wb-title" title="fix the flaky sidebar test · Codex: port the release script">
+              <span class="ic"><svg viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></span>
+              <span class="nm">Send to 2 sessions</span>
+              <span class="dir">&nbsp;· fix the flaky sidebar test, Codex: port the release script</span>
+            </span>
+            <button class="icobtn" title="Unpick all · Esc"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+          </div>
+          <div class="send-body">
+            <div class="cb-input focus">
+              <textarea class="cb-field task" rows="3" placeholder="One text for all 2 — ⌘⏎ sends">run the tests, then tell me the first failure</textarea>
+            </div>
+            <div class="send-foot">
+              <span class="field-hint">⌘-click more rows to add them</span>
+              <button class="btn-primary">Send to 2</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="gutter-h" style="height:10px"></div>
+        <div class="island isl-notes">
+          <div class="wb-bar">
+            <span class="wb-title"><span class="ic"><svg viewBox="0 0 24 24"><path d="M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4"/><path d="M2 6h4"/><path d="M2 10h4"/><path d="M2 14h4"/><path d="M2 18h4"/><path d="M21.4 7.4a2 2 0 0 0-2.8-2.8L12 11.2V14h2.8z"/></svg></span><span class="nm">Notes</span><span class="dir">&nbsp;· koloft</span></span>
+            <button class="icobtn"><svg viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button>
+            <button class="icobtn"><svg viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FRAME 2: one picked row now waits for an approval -->
+    <div class="frame">
+      <div class="dock-left">
+        <div class="island flat isl-sessions">
+          <div class="ws-list">
+            <div class="ws">
+              <div class="ws-head">
+                <span class="fico"><svg viewBox="0 0 24 24"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></span>
+                <span class="ws-name"><i>koloft</i></span>
+                <span class="ws-git"><svg viewBox="0 0 24 24"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></span>
+                <button class="hact"><svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
+              </div>
+              <div class="ws-tabs">
+                <div class="ws-tab st-approval picked">
+                  <div class="ws-tab-main">
+                    <span class="ws-tab-pick"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span>
+                    <span class="ws-tab-title"><i>fix the flaky sidebar test</i></span>
+                    <span class="ws-tab-unread" title="waiting for your approval"></span>
+                  </div>
+                  <div class="ws-tab-sub"><span class="session-backend-icon" title="Claude"><svg viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M4.2 7.5l15.6 9"/><path d="M4.2 16.5l15.6-9"/></svg></span><span>main</span></div>
+                </div>
+                <div class="ws-tab st-waiting active">
+                  <div class="ws-tab-main"><span class="ws-tab-title"><i>broadcast input design</i></span></div>
+                  <div class="ws-tab-sub"><span class="session-backend-icon" title="Claude"><svg viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M4.2 7.5l15.6 9"/><path d="M4.2 16.5l15.6-9"/></svg></span><span>issue-7-design</span></div>
+                </div>
+                <div class="ws-tab st-idle picked">
+                  <div class="ws-tab-main">
+                    <span class="ws-tab-pick"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span>
+                    <span class="ws-tab-title"><i>Codex: port the release script</i></span>
+                  </div>
+                  <div class="ws-tab-sub"><span class="session-backend-icon oai" title="Codex"><svg viewBox="0 0 24 24"><path d="M12 2 20.5 7v10L12 22 3.5 17V7z"/></svg></span><span>release-script</span></div>
+                </div>
+                <div class="ws-tab cold" title="3h ago — click to resume">
+                  <div class="ws-tab-main"><span class="ws-tab-title"><i>rename the shim env keys</i></span></div>
+                  <div class="ws-tab-sub"><span class="session-backend-icon" title="Claude"><svg viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M4.2 7.5l15.6 9"/><path d="M4.2 16.5l15.6-9"/></svg></span><span>main</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="ws">
+              <div class="ws-head">
+                <span class="fico"><svg viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span>
+                <span class="ws-name"><i>api</i></span>
+                <span class="ws-remote" title="build-box:/srv/api">build-box<span class="ws-conn on"></span></span>
+                <span class="ws-git"><svg viewBox="0 0 24 24"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></span>
+                <button class="hact"><svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="island isl-send">
+          <div class="wb-bar">
+            <span class="wb-title" title="fix the flaky sidebar test · Codex: port the release script · weekly dependency check">
+              <span class="ic"><svg viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></span>
+              <span class="nm">Send to 3 sessions</span>
+              <span class="dir">&nbsp;· fix the flaky sidebar test, Codex: port the release script, weekly dependency check</span>
+            </span>
+            <button class="icobtn" title="Unpick all · Esc"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+          </div>
+          <div class="send-body">
+            <div class="cb-input focus">
+              <textarea class="cb-field task" rows="3" placeholder="One text for all 3 — ⌘⏎ sends">run the tests, then tell me the first failure</textarea>
+            </div>
+            <div class="send-foot">
+              <span class="field-hint warn">1 waits for your approval — it will be skipped</span>
+              <button class="btn-primary">Send to 2</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="gutter-h" style="height:10px"></div>
+        <div class="island isl-notes">
+          <div class="wb-bar">
+            <span class="wb-title"><span class="ic"><svg viewBox="0 0 24 24"><path d="M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4"/><path d="M2 6h4"/><path d="M2 10h4"/><path d="M2 14h4"/><path d="M2 18h4"/><path d="M21.4 7.4a2 2 0 0 0-2.8-2.8L12 11.2V14h2.8z"/></svg></span><span class="nm">Notes</span><span class="dir">&nbsp;· koloft</span></span>
+            <button class="icobtn"><svg viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button>
+            <button class="icobtn"><svg viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FRAME 3: right after Send -->
+    <div class="frame">
+      <div class="toast"><span class="toast-msg">Sent to 2 sessions</span></div>
+      <div class="dock-left">
+        <div class="island flat isl-sessions">
+          <div class="ws-list">
+            <div class="ws">
+              <div class="ws-head">
+                <span class="fico"><svg viewBox="0 0 24 24"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></span>
+                <span class="ws-name"><i>koloft</i></span>
+                <span class="ws-git"><svg viewBox="0 0 24 24"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></span>
+                <button class="hact"><svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
+              </div>
+              <div class="ws-tabs">
+                <div class="ws-tab st-working">
+                  <div class="ws-tab-main"><span class="ws-tab-title"><i>fix the flaky sidebar test</i></span></div>
+                  <div class="ws-tab-sub"><span class="session-backend-icon" title="Claude"><svg viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M4.2 7.5l15.6 9"/><path d="M4.2 16.5l15.6-9"/></svg></span><span>main</span></div>
+                </div>
+                <div class="ws-tab st-waiting active">
+                  <div class="ws-tab-main"><span class="ws-tab-title"><i>broadcast input design</i></span></div>
+                  <div class="ws-tab-sub"><span class="session-backend-icon" title="Claude"><svg viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M4.2 7.5l15.6 9"/><path d="M4.2 16.5l15.6-9"/></svg></span><span>issue-7-design</span></div>
+                </div>
+                <div class="ws-tab st-working">
+                  <div class="ws-tab-main"><span class="ws-tab-title"><i>Codex: port the release script</i></span></div>
+                  <div class="ws-tab-sub"><span class="session-backend-icon oai" title="Codex"><svg viewBox="0 0 24 24"><path d="M12 2 20.5 7v10L12 22 3.5 17V7z"/></svg></span><span>release-script</span></div>
+                </div>
+                <div class="ws-tab cold" title="3h ago — click to resume">
+                  <div class="ws-tab-main"><span class="ws-tab-title"><i>rename the shim env keys</i></span></div>
+                  <div class="ws-tab-sub"><span class="session-backend-icon" title="Claude"><svg viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M4.2 7.5l15.6 9"/><path d="M4.2 16.5l15.6-9"/></svg></span><span>main</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="ws">
+              <div class="ws-head">
+                <span class="fico"><svg viewBox="0 0 24 24"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></span>
+                <span class="ws-name"><i>api</i></span>
+                <span class="ws-remote" title="build-box:/srv/api">build-box<span class="ws-conn on"></span></span>
+                <span class="ws-git"><svg viewBox="0 0 24 24"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></span>
+                <button class="hact"><svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
+              </div>
+              <div class="ws-tabs">
+                <div class="ws-tab st-waiting">
+                  <div class="ws-tab-main"><span class="ws-tab-title"><i>migrate the users table</i></span></div>
+                  <div class="ws-tab-sub"><span>main</span></div>
+                </div>
+                <div class="ws-tab st-working">
+                  <div class="ws-tab-main"><span class="ws-tab-title"><i>weekly dependency check</i></span><button class="ws-tab-parked">↻ 1</button></div>
+                  <div class="ws-tab-sub"><span>deps</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="gutter-h" style="height:10px"></div>
+        <div class="island isl-notes">
+          <div class="wb-bar">
+            <span class="wb-title"><span class="ic"><svg viewBox="0 0 24 24"><path d="M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4"/><path d="M2 6h4"/><path d="M2 10h4"/><path d="M2 14h4"/><path d="M2 18h4"/><path d="M21.4 7.4a2 2 0 0 0-2.8-2.8L12 11.2V14h2.8z"/></svg></span><span class="nm">Notes</span><span class="dir">&nbsp;· koloft</span></span>
+            <button class="icobtn"><svg viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button>
+            <button class="icobtn"><svg viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="fnote" style="width:auto;max-width:820px">
+    Frame 1: a picked row keeps its own state bar (working, idle, remote…) and gets a ring plus a check; the island names the count three times — the title, the button, the rings — and lists the picked titles. Frame 2: three picked; one is inside the folded <code>api</code> workspace (hover the title to read all names), so the list in the title is what keeps that pick visible; the row that moved to approval since it was picked stays picked, but the button count drops and an amber hint says why. Frame 3: after Send the island is gone, no row is picked, and the usual toast says what happened. The remote head (<code>build-box</code>) shows the ssh kind; its rows pick and send the same way.
+  </div>
+
+  <div class="cap">4 · the second way in: the running row's right-click menu gains one item</div>
+  <div class="frames">
+    <div class="frame short">
+      <div class="dock-left">
+        <div class="island flat isl-sessions">
+          <div class="ws-list">
+            <div class="ws">
+              <div class="ws-head">
+                <span class="fico"><svg viewBox="0 0 24 24"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></span>
+                <span class="ws-name"><i>koloft</i></span>
+                <span class="ws-git"><svg viewBox="0 0 24 24"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></span>
+              </div>
+              <div class="ws-tabs">
+                <div class="ws-tab st-working" style="background:var(--bg-3);color:var(--fg)">
+                  <div class="ws-tab-main"><span class="ws-tab-title"><i>fix the flaky sidebar test</i></span></div>
+                  <div class="ws-tab-sub"><span>main</span></div>
+                </div>
+                <div class="ws-tab st-waiting active">
+                  <div class="ws-tab-main"><span class="ws-tab-title"><i>broadcast input design</i></span></div>
+                  <div class="ws-tab-sub"><span>issue-7-design</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="menu" style="left:96px;top:70px">
+        <div class="mi">Reveal in Finder</div>
+        <div class="mi">Copy session ID</div>
+        <div class="mi">Keep running</div>
+        <div class="mi">Send text here…<span class="k">⌘click</span></div>
+        <div class="mi">Close</div>
+      </div>
+    </div>
+    <div class="fnote">
+      "Send text here…" picks this row and opens the island with the text box focused. The same item on a row already picked reads "Unpick". Cold and starting rows do not get it: they have no terminal to write to, and starting one for you would be an implied target.
+    </div>
+  </div>
+</div>
+</body>
+</html>
