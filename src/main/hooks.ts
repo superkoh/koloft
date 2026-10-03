@@ -50,6 +50,8 @@ case "$event" in
       tmux rename-session -t "$TMUX_PANE" "k-$sid" 2>/dev/null
     fi
     printf '{"tabId":"%s","event":"%s","sessionId":"%s","transcriptPath":"%s","cwd":"%s","reason":"%s","source":"%s","account":"%s","ccVersion":"%s","tmux":"%s"}\\n' "$tab" "$event" "$sid" "$tp" "$cwd" "$reason" "$src" "$acct" "$ver" "$tm" > "$reg/$tab.json"
+    # CC§13
+    if [ "$event" = "start" ] && [ -f "$reg/$tab.conductor" ]; then cat "$reg/$tab.conductor"; fi
     ;;
   posttool)
     # PLATFORM§36
@@ -203,6 +205,20 @@ export function hookSettings(
     ]
   }
   return settings
+}
+
+function conductorMarker(regDir: string, tabId: string): string {
+  return path.join(regDir, `${tabId}.conductor`)
+}
+
+// CC§13
+export function writeConductorMarker(regDir: string, tabId: string, role: string): void {
+  const output = { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: role } }
+  fs.writeFileSync(conductorMarker(regDir, tabId), JSON.stringify(output))
+}
+
+export function removeConductorMarker(regDir: string, tabId: string): void {
+  fs.rmSync(conductorMarker(regDir, tabId), { force: true })
 }
 
 // CC§6

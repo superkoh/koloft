@@ -22,6 +22,7 @@ let bindings: Map<string, string>
 let pushed: WorkspaceRows[][]
 let saves: number
 let mgr: WorkspaceManager
+let conductorIds: Set<string>
 
 const SEEDED: SessionWorkbenchState = { open: false, tabs: [] }
 
@@ -88,6 +89,7 @@ beforeEach(() => {
   bindings = new Map()
   pushed = []
   saves = 0
+  conductorIds = new Set()
   mgr = new WorkspaceManager({
     projectsRoot,
     remoteProjectsRoot: (host: string) => path.join(root, 'remote', host, 'projects'),
@@ -99,7 +101,9 @@ beforeEach(() => {
     projectInfo: projectInfoFor,
     runningBindings: () => bindings,
     killTab: () => {},
-    pushRows: (p) => pushed.push(p)
+    pushRows: (p) => pushed.push(p),
+    hiddenRow: (id) => conductorIds.has(id),
+    conductorsRoot: path.join(root, 'userData', 'conductors')
   })
 })
 
@@ -640,6 +644,32 @@ describe('WorkspaceManager: working-set eviction (D1/D2)', () => {
     expect(latest(repo).workspace.hasHistory).toBe(true)
     expect(fs.existsSync(path.join(projectsRoot, encodeCwd(repo), 'gone-1.jsonl'))).toBe(true)
     expect(mgr.historyRows(repo).map((r) => r.id)).toEqual(['gone-1'])
+  })
+})
+
+describe('WorkspaceManager: conductor sessions stay out of the workspace lists', () => {
+  it('hides a conductor’s sessions and its starting tab from the rows, the history and the restore mark, yet still knows their workspace', async () => {
+    writeJsonl(repo, 'plain-1')
+    writeJsonl(repo, 'cond-old')
+    writeJsonl(repo, 'cond-now')
+    own('plain-1', 'cond-now')
+    conductorIds = new Set(['cond-old', 'cond-now', 'cond-tab'])
+    bindings.set('cond-now', 'cond-tab')
+    mgr.start()
+    mgr.launchStarted('cond-tab', repo)
+    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+
+    expect(latest(repo).rows.map((r) => r.id)).toEqual(['plain-1'])
+    expect(mgr.historyRows(repo)).toEqual([])
+    expect(latest(repo).workspace.hasHistory).toBe(false)
+    expect(mgr.workspaceOf('cond-now')).toBe(repo)
+  })
+
+  it('never offers a conductor’s own folder as a folder to pin', () => {
+    const own = path.join(root, 'userData', 'conductors', 'global')
+    fs.mkdirSync(own, { recursive: true })
+    writeJsonl(own, 'cond-1')
+    expect(mgr.discover()).toEqual([])
   })
 })
 

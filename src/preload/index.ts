@@ -150,6 +150,19 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener('cron:toast', handler)
     }
   },
+  conductors: {
+    save: (input) => ipcRenderer.invoke('conductors:save', input),
+    unbind: (id) => ipcRenderer.invoke('conductors:unbind', id),
+    switchBackend: (id) => ipcRenderer.invoke('conductors:switchBackend', id),
+    open: (id) => ipcRenderer.invoke('conductors:open', id),
+    startFresh: (id) => ipcRenderer.invoke('conductors:startFresh', id),
+    setFolded: (folded) => ipcRenderer.invoke('conductors:setFolded', folded)
+  },
+  discord: {
+    hasToken: () => ipcRenderer.invoke('discord:hasToken'),
+    setToken: (token) => ipcRenderer.invoke('discord:setToken', token),
+    setUserId: (userId) => ipcRenderer.invoke('discord:setUserId', userId)
+  },
   attention: {
     list: () => ipcRenderer.invoke('attention:list'),
     activeTab: (id) => ipcRenderer.send('attention:active-tab', id),

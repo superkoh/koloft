@@ -20,6 +20,10 @@ describe('buildResetPatch (FR-12)', () => {
     expect(patch).not.toHaveProperty('fablePriority')
   })
 
+  it('leaves the Discord block alone, so a reset keeps every conductor binding', () => {
+    expect(buildResetPatch()).not.toHaveProperty('discord')
+  })
+
   it('carries every non-account default — browser control, keep-awake, the Notes size and the first-run welcome and tips included', () => {
     const patch = buildResetPatch()
     expect(Object.keys(patch).sort()).toEqual(
@@ -71,6 +75,11 @@ describe('sanitizeSettingsPatch (FR-13)', () => {
       skipPermissions: false,
       fontSize: 20
     })
+  })
+
+  it('strips the Discord block, which only the main process writes', () => {
+    const patch = { discord: { conductorsFolded: false, bindings: [] }, fontSize: 20 } as never
+    expect(sanitizeSettingsPatch(patch)).toEqual({ fontSize: 20 })
   })
 
   it('lets the git auto-fetch switch through untouched (no whitelist to extend)', () => {

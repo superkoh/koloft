@@ -226,6 +226,7 @@ import type {
   CreateTabOptions,
   CreateTabResult,
   CronSaveInput,
+  ConductorSaveInput,
   ProbeErrorKind,
   LeftoverProcess,
   ResumePlan,
@@ -244,12 +245,16 @@ import type {
   HostId,
   WhatsNew
 } from '@shared/types'
-import { AgentRequests, BUILTIN_VERBS } from './agentRequests'
+import { AgentRequests, BUILTIN_VERBS, refused, type AgentVerb } from './agentRequests'
+import { Conductors } from './discord/conductors'
+import { runningClaudePid } from './claudeSessionRegistry'
+import { CHANNEL_LINK_PROBLEM } from '@shared/conductors'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
 import { sessionVerb } from './agentSessions'
 import { closingTree, removeTree, whatIsLeft } from './sessionClose'
 import { claudePeerNames } from './claudeSessionRegistry'
+import { discordTokenRead, discordTokenWrite } from './accounts'
 import { writeAgentPlugin } from './agentPlugin'
 
 // PLATFORM§4
@@ -282,6 +287,7 @@ const sessionBackends = new SessionBackends({
   bound: (tabId, key) => {
     attention.bound(tabId, key, attentionCtx())
     cronRunner?.onBound(tabId, key)
+    conductors?.onBound(tabId, key)
   },
   exited: (tabId, subject) => attention.onExited(tabId, attentionCtx(), subject),
   clearAttention: (tabId) => attention.clear(tabId),
@@ -513,6 +519,7 @@ function machinePackage(): MachinePackage {
 }
 
 let cronRunner: CronRunner | null = null
+let conductors: Conductors | null = null
 
 const BOOT_TIME = Date.now()
 
@@ -599,26 +606,38 @@ function notesFileOfPinned(workspace: string): string | undefined {
   return workspaceMgr?.isPinned(workspace) ? ensureNotesFile(notesBaseDir(), workspace) : undefined
 }
 
+function unlessWorkspacelessConductor(verb: AgentVerb): AgentVerb {
+  return (args, caller) => {
+    const reason = conductors?.noWorkspaceReason(caller.tabId)
+    return reason ? refused(`koloft: ${reason}`) : verb(args, caller)
+  }
+}
+
+const notesAndWorkbenchVerbs = workbenchVerbs({
+  open: (tabId, target, view) =>
+    openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target, view),
+  notesFileOf: (tabId) => {
+    const workspace = sessionBackends.workspaceOfTab(tabId)
+    return workspace ? notesFileOfPinned(workspace) : undefined
+  }
+})
+
 const agentRequests = new AgentRequests({
   verbs: {
     ...BUILTIN_VERBS,
-    cron: cronVerb({
-      runner: () => cronRunner,
-      pinnedWorkspaceOf: pinnedWorkspaceOfTab,
-      toast: (text) => sendToRenderer('cron:toast', text),
-      now: () => new Date()
-    }),
-    ...workbenchVerbs({
-      open: (tabId, target, view) =>
-        openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target, view),
-      notesFileOf: (tabId) => {
-        const workspace = sessionBackends.workspaceOfTab(tabId)
-        return workspace ? notesFileOfPinned(workspace) : undefined
-      }
-    }),
+    cron: unlessWorkspacelessConductor(
+      cronVerb({
+        runner: () => cronRunner,
+        pinnedWorkspaceOf: pinnedWorkspaceOfTab,
+        toast: (text) => sendToRenderer('cron:toast', text),
+        now: () => new Date()
+      })
+    ),
+    ...notesAndWorkbenchVerbs,
+    note: unlessWorkspacelessConductor(notesAndWorkbenchVerbs.note),
     session: sessionVerb({
       workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
-      allSessions,
+      allSessions: () => allSessions().filter((s) => !conductors?.ownsTab(s.tabId)),
       pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
       peerNames: () => claudePeerNames(),
       launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
@@ -1280,6 +1299,7 @@ app.whenReady().then(() => {
         .catch((error) => sendToRenderer('cron:toast', String(error)))
     workspaceMgr?.launchEnded(e.id)
     cronRunner?.onPtyExit(e.id)
+    conductors?.onPtyExit(e.id)
     sendToRenderer('terminal:exit', e)
   })
   tracker.on('update', (sessions: SessionInfo[]) => {
@@ -1307,7 +1327,9 @@ app.whenReady().then(() => {
     void killTabPty(tabId)
   })
   tracker.on('status', (t: StatusEdge) => {
-    attention.onStatusChange(t.tabId, t.prev, t.next, attentionCtx(), attentionSubjectOf(t.tabId))
+    const conductorTurnDone = t.next === 'waiting' && !!conductors?.ownsTab(t.tabId)
+    if (!conductorTurnDone)
+      attention.onStatusChange(t.tabId, t.prev, t.next, attentionCtx(), attentionSubjectOf(t.tabId))
     // ADR-0022
     cronRunner?.onStatus(t.tabId, t.prev, t.next)
   })
@@ -1386,8 +1408,46 @@ app.whenReady().then(() => {
     remoteProblem: (host) => remoteSync?.problem(host),
     remoteGit: (host, p) => remoteSync?.gitInfo(host, p),
     killRemoteSession: (host, sessionId) =>
-      claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId))
+      claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId)),
+    hiddenRow: (id) => conductors?.hides(id) ?? false,
+    conductorsRoot: path.join(userData, 'conductors')
   })
+  conductors = new Conductors({
+    userData,
+    load: () => loadSettings().discord,
+    save: (discord) => void commitSettings({ discord }),
+    isPinned: (scope) => workspaceMgr?.isPinned(scope) ?? false,
+    backendEnabled: (backend) => loadSettings().sessionMethods.enabled[backend],
+    tabAlive: (tabId) => !!ptyMgr.get(tabId)?.alive,
+    liveTabFor: (backend, key) => sessionBackends.get(backend).aliveTabFor(key),
+    runningElsewhere: async (backend, key) =>
+      backend === 'claude' && (await runningClaudePid(key)) !== null,
+    transcriptExists: async (backend, key) => sessionBackends.get(backend).transcriptExists(key),
+    start: (l) => launchQuietTab({ kind: l.backend, cwd: l.cwd, role: l.role }, l.title),
+    resume: async (l) => {
+      const res = await sessionBackends
+        .get(l.backend)
+        .resume({ sessionId: l.key, cwd: l.cwd, mode: 'direct', role: l.role })
+      if (!res.ok) throw new Error(res.code === 'backend' ? res.message : couldNotStart(l.title))
+      const spawned: SpawnedTab = {
+        id: res.id,
+        kind: l.backend,
+        cwd: res.cwd,
+        title: l.title,
+        sessionId: l.key
+      }
+      sendToRenderer('terminal:spawned', spawned)
+      return res.id
+    },
+    kill: (tabId) => {
+      sendToRenderer('tab:killedByMain', tabId)
+      void killTabPty(tabId)
+    },
+    rowsChanged: () => workspaceMgr?.refresh(),
+    toast: (text) => sendToRenderer('cron:toast', text),
+    bindDeadlineMs: cronBindDeadlineMs()
+  })
+  conductors.keepPinned(workspaceMgr.pinnedPaths().map((w) => w.path))
   remoteSync = new RemoteSync({
     run: (host, cmd) =>
       loginEnvReady().then(() => runSsh(host, cmd, { controlDir: remoteControlDir })),
@@ -2393,6 +2453,8 @@ async function launchCronRun(
   }
 }
 
+const STILL_STARTING = 'Koloft is still starting — try again in a moment.'
+
 const CRON_BIND_DEADLINE_MS = 90_000
 function cronBindDeadlineMs(): number {
   return (
@@ -2711,6 +2773,7 @@ function registerIpc(): void {
     const r = workspaceMgr?.remove(p)
     if (r?.removed) {
       cronRunner?.removeWorkspace(p)
+      conductors?.removeWorkspace(p)
       for (const id of marked) attention.clearSession(id)
     }
     return r
@@ -2726,8 +2789,38 @@ function registerIpc(): void {
     const marked = markedSessionsOf(p)
     workspaceMgr?.removeConfirmed(p)
     cronRunner?.removeWorkspace(p)
+    conductors?.removeWorkspace(p)
     for (const id of marked) attention.clearSession(id)
   })
+  ipcMain.handle('conductors:save', (_e, input: ConductorSaveInput) => {
+    if (
+      typeof input?.link !== 'string' ||
+      typeof input.scope !== 'string' ||
+      !backendIdOf(input.backend)
+    )
+      return { ok: false, error: CHANNEL_LINK_PROBLEM }
+    return conductors?.save(input) ?? { ok: false, error: STILL_STARTING }
+  })
+  ipcMain.handle('conductors:unbind', (_e, id: string) => conductors?.unbind(id))
+  ipcMain.handle('conductors:switchBackend', (_e, id: string) => conductors?.switchBackend(id))
+  ipcMain.handle(
+    'conductors:open',
+    (_e, id: string) => conductors?.open(id) ?? { ok: false, error: STILL_STARTING }
+  )
+  ipcMain.handle(
+    'conductors:startFresh',
+    (_e, id: string) => conductors?.startFresh(id) ?? { ok: false, error: STILL_STARTING }
+  )
+  ipcMain.handle('conductors:setFolded', (_e, folded: unknown) =>
+    conductors?.setFolded(folded === true)
+  )
+  ipcMain.handle('discord:hasToken', async () => !!(await discordTokenRead()))
+  ipcMain.handle('discord:setToken', (_e, token: unknown) =>
+    typeof token === 'string' && token.trim() ? discordTokenWrite(token.trim()) : false
+  )
+  ipcMain.handle('discord:setUserId', (_e, userId: unknown) =>
+    conductors?.setUserId(typeof userId === 'string' ? userId : '')
+  )
   ipcMain.handle('workspace:move', (_e, p: string, before: string | null) =>
     workspaceMgr?.move(p, before)
   )
@@ -2813,13 +2906,15 @@ function registerIpc(): void {
     return sessionBackends.forSession(id).transcriptExists(id)
   })
 
-  ipcMain.handle('workspace:historyRows', (_e, p: string) =>
-    sessionBackends.historyRows(p, (id, error) =>
-      sendToRenderer(
-        'cron:toast',
-        `${BACKEND_LABEL[id]} history could not be read. Showing the rest. ${String(error)}`
+  ipcMain.handle('workspace:historyRows', async (_e, p: string) =>
+    (
+      await sessionBackends.historyRows(p, (id, error) =>
+        sendToRenderer(
+          'cron:toast',
+          `${BACKEND_LABEL[id]} history could not be read. Showing the rest. ${String(error)}`
+        )
       )
-    )
+    ).filter((r) => !conductors?.hides(r.id))
   )
 
   ipcMain.handle('sessions:leftovers', () => leftovers)

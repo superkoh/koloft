@@ -167,6 +167,9 @@ export function WorkspaceSidebar({
   const selectedWs = useStore((s) => s.selectedWs)
   const selectWorkspace = useStore((s) => s.selectWorkspace)
   const showToast = useStore((s) => s.showToast)
+  const conductorBindings = useStore((s) => s.settings.discord.bindings)
+  const setBindConductor = useStore((s) => s.setBindConductor)
+  const canBind = (wsPath: string): boolean => !conductorBindings.some((b) => b.scope === wsPath)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [menu, setMenu] = useState<MenuState | null>(null)
   const [drag, setDrag] = useState<{ path: string; over: number | null } | null>(null)
@@ -302,7 +305,7 @@ export function WorkspaceSidebar({
 
   const menuItemCount = (t: MenuTarget): number =>
     t.kind === 'workspace'
-      ? workspaceMenuCount({ missing: t.missing, isGit: t.isGit })
+      ? workspaceMenuCount({ missing: t.missing, isGit: t.isGit, canBind: canBind(t.wsPath) })
       : t.row.pending
         ? 1
         : t.row.running
@@ -577,6 +580,17 @@ export function WorkspaceSidebar({
               >
                 Scheduled jobs…
               </div>
+              {canBind(target.wsPath) && (
+                <div
+                  className="mi"
+                  onClick={() => {
+                    setMenu(null)
+                    setBindConductor({ scope: target.wsPath })
+                  }}
+                >
+                  Bind Discord channel…
+                </div>
+              )}
               <div className="sep" />
             </>
           )}

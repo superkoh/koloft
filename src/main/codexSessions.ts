@@ -51,7 +51,9 @@ const STATUS_LINE_CONFIG = `tui.status_line=${JSON.stringify([
 ])}`
 
 // CODEX§17
-const AGENT_HINT_CONFIG = `developer_instructions=${JSON.stringify(CODEX_AGENT_HINT)}`
+function developerInstructions(lines: string[]): string {
+  return `developer_instructions=${JSON.stringify(lines.join('\n\n'))}`
+}
 
 const QUEUE_ANSWER_INSIDE_THE_KOLOFT_WAIT_MS = 5_000
 
@@ -621,6 +623,7 @@ export class CodexSessions {
     this.assertStarting()
     const picked = opts.resumeSessionId ? undefined : this.deps.pickHome()
     const home = opts.resumeSessionId ? this.homeFor(opts.resumeSessionId) : picked?.home
+    if (opts.role) this.deps.trustFolder(cwd, this.envFor(home))
     let run: Run | undefined
     const observe = (event: CodexEvent): void => {
       if (event.type !== 'bound') {
@@ -639,13 +642,16 @@ export class CodexSessions {
     )
     const env = { ...this.envFor(home), ZDOTDIR: openShim.zdotDir }
     const observer = new CodexObservation(observe)
+    const instructions = [...(agent ? [CODEX_AGENT_HINT] : []), ...(opts.role ? [opts.role] : [])]
     let transport: CodexTransport | undefined
     try {
       transport = await this.startTransport({
         binary,
         env,
         cwd,
-        configOverrides: agent ? [STATUS_LINE_CONFIG, AGENT_HINT_CONFIG] : [STATUS_LINE_CONFIG],
+        configOverrides: instructions.length
+          ? [STATUS_LINE_CONFIG, developerInstructions(instructions)]
+          : [STATUS_LINE_CONFIG],
         onFrame: (direction, frame) => observer.receive(direction, frame),
         onDisconnect: () => this.markDegraded(run),
         onError: (error) => {
@@ -886,7 +892,14 @@ export class CodexSessions {
     }
     this.assertStarting()
     return this.launchRun(
-      { kind: 'codex', cwd, resumeSessionId: req.sessionId, cols: req.cols, rows: req.rows },
+      {
+        kind: 'codex',
+        cwd,
+        resumeSessionId: req.sessionId,
+        cols: req.cols,
+        rows: req.rows,
+        role: req.role
+      },
       resource
     )
   }

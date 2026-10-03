@@ -25,7 +25,7 @@ import type { ClaudeLaunch, Host } from '../host/host'
 import type { RemoteSync } from '../remote/sync'
 import { accountEnv, tmuxSessionName } from '../remote/launch'
 import { dq, mirrorHookDir, REMOTE_HOOK_DIR, tabPackageDir } from '../remote/paths'
-import { hookSettings } from '../hooks'
+import { hookSettings, removeConductorMarker, writeConductorMarker } from '../hooks'
 import type { StatusLineSetting } from '../statusline'
 import { loadSettings } from '../settings'
 import { keychainRead, listAccounts } from '../accounts'
@@ -237,6 +237,7 @@ export class ClaudeBackend implements SessionBackend {
       // CC§1
       this.drainExitRegistration(this.hookRegDir, tabId)
       this.dropStatusLog(this.hookRegDir, tabId)
+      removeConductorMarker(this.hookRegDir, tabId)
       return
     }
     const sid = this.sessionIdOf(tabId)
@@ -618,7 +619,8 @@ export class ClaudeBackend implements SessionBackend {
       firstPrompt: opts.firstPrompt,
       name: opts.name,
       cols: opts.cols,
-      rows: opts.rows
+      rows: opts.rows,
+      role: opts.role
     })
   }
 
@@ -670,7 +672,8 @@ export class ClaudeBackend implements SessionBackend {
       resumeSessionId: sid,
       worktree,
       cols: req.cols,
-      rows: req.rows
+      rows: req.rows,
+      role: req.role
     })
     return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
   }
@@ -730,10 +733,11 @@ export class ClaudeBackend implements SessionBackend {
 
   private async createTab(
     host: Host,
-    spec: ClaudeLaunch & { cols?: number; rows?: number }
+    spec: ClaudeLaunch & { cols?: number; rows?: number; role?: string }
   ): Promise<CreateTabResult> {
     const { tracker } = this.d
     const workspaces = this.d.workspaces()
+    if (spec.role) await host.trustFolder(spec.cwd ?? spec.root)
     const ws = spec.resumeSessionId ? workspaces?.workspaceOf(spec.resumeSessionId) : undefined
     const plan = await host.launch({
       ...spec,
@@ -757,6 +761,7 @@ export class ClaudeBackend implements SessionBackend {
       shell: plan.shell,
       extraEnv: agentPlugin ? { ...plan.extraEnv, KOLOFT_AGENT_PLUGIN: agentPlugin } : plan.extraEnv
     })
+    if (spec.role && !machine) writeConductorMarker(this.hookRegDir, handle.id, spec.role)
     if (machine) {
       tracker.track(handle.id, machine.cwd, machine.tracking)
       if (machine.picked) tracker.setPickedAccount(handle.id, machine.picked)

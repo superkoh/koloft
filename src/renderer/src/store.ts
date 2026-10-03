@@ -140,6 +140,8 @@ interface AppState {
     onDiscard(): void
     onSave(): void | Promise<void>
   } | null
+  conductorTabs: Record<string, string>
+  bindConductor: { scope?: string; editId?: string } | null
 
   addTab: (t: Tab) => void
   addTabQuiet: (t: Tab) => void
@@ -177,6 +179,8 @@ interface AppState {
   setResumeLaunch: (l: AppState['resumeLaunch']) => void
   setCloseConfirm: (c: AppState['closeConfirm']) => void
   setUnsavedPrompt: (p: AppState['unsavedPrompt']) => void
+  setConductorTab: (bindingId: string, tabId: string) => void
+  setBindConductor: (b: AppState['bindConductor']) => void
 
   ensureWorkbench: (tabId: string) => Promise<void>
   setWorkbenchState: (tabId: string, state: SessionWorkbenchState) => void
@@ -405,6 +409,8 @@ export const useStore = create<AppState>((set, get) => ({
   closeConfirm: null,
   cron: { jobs: [], live: [], folders: {}, notes: {} },
   unsavedPrompt: null,
+  conductorTabs: {},
+  bindConductor: null,
 
   addTab: (t) => {
     set((s) => ({ tabs: [...s.tabs, t], activeTabId: t.id, resumeLaunch: null }))
@@ -684,6 +690,9 @@ export const useStore = create<AppState>((set, get) => ({
   setResumeLaunch: (resumeLaunch) => set({ resumeLaunch }),
   setCloseConfirm: (closeConfirm) => set({ closeConfirm }),
   setUnsavedPrompt: (unsavedPrompt) => set({ unsavedPrompt }),
+  setConductorTab: (bindingId, tabId) =>
+    set((s) => ({ conductorTabs: { ...s.conductorTabs, [bindingId]: tabId } })),
+  setBindConductor: (bindConductor) => set({ bindConductor }),
 
   ensureWorkbench: (tabId) => {
     if (!workbenchAllowed(get(), tabId)) return Promise.resolve()

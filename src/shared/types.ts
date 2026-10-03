@@ -180,7 +180,42 @@ export interface Settings {
   hintsSeen: string[]
   hintsOff: boolean
   lastSeenVersion: string
+  discord: DiscordSettings
 }
+
+export interface DiscordChannel {
+  guildId: string
+  channelId: string
+  name?: string
+}
+
+export interface ConductorBinding {
+  id: string
+  scope: string
+  backend: BackendId
+  channel: DiscordChannel
+  sessionIds: string[]
+  lastSessionKey?: string
+  lastMessageId?: string
+  touched: string[]
+}
+
+export interface DiscordSettings {
+  userId?: string
+  conductorsFolded: boolean
+  bindings: ConductorBinding[]
+}
+
+export interface ConductorSaveInput {
+  id?: string
+  scope: string
+  backend: BackendId
+  link: string
+}
+
+export type ConductorSaveResult = { ok: true } | { ok: false; error: string }
+
+export type ConductorOpenResult = { ok: true; tabId: string } | { ok: false; error: string }
 
 export const HINT_IDS = ['workbench', 'approval', 'agent-web', 'worktree', 'github'] as const
 export type HintId = (typeof HINT_IDS)[number]
@@ -219,7 +254,8 @@ export const DEFAULT_SETTINGS: Settings = {
   onboardingSeen: false,
   hintsSeen: [],
   hintsOff: false,
-  lastSeenVersion: ''
+  lastSeenVersion: '',
+  discord: { conductorsFolded: true, bindings: [] }
 }
 
 export type BackendId = 'claude' | 'codex'
@@ -258,6 +294,7 @@ export interface CreateTabOptions {
   scheduled?: boolean
   util?: boolean
   ownerTabId?: string
+  role?: string
 }
 
 export type CreateTabResult =
@@ -947,6 +984,19 @@ export interface KoloftApi {
     onState(cb: (s: CronState) => void): () => void
     onToast(cb: (text: string) => void): () => void
   }
+  conductors: {
+    save(input: ConductorSaveInput): Promise<ConductorSaveResult>
+    unbind(id: string): Promise<void>
+    switchBackend(id: string): Promise<void>
+    open(id: string): Promise<ConductorOpenResult>
+    startFresh(id: string): Promise<ConductorOpenResult>
+    setFolded(folded: boolean): Promise<void>
+  }
+  discord: {
+    hasToken(): Promise<boolean>
+    setToken(token: string): Promise<boolean>
+    setUserId(userId: string): Promise<void>
+  }
 }
 
 export type Schedule =
@@ -1202,6 +1252,7 @@ export interface SessionResumeRequest {
   mode?: 'direct' | 'rebuild' | 'renamed' | 'main'
   worktree?: string
   rebuild?: { worktreePath: string; branch: string; baseRef: string }
+  role?: string
 }
 
 export type SessionResumeResult =

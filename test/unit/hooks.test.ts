@@ -12,7 +12,13 @@ vi.mock('electron', async () => {
   return { app: { getPath: () => base, isPackaged: false } }
 })
 
-import { setupHooks, writeTabHookSettings, hookSettings } from '../../src/main/hooks'
+import {
+  setupHooks,
+  writeTabHookSettings,
+  hookSettings,
+  writeConductorMarker,
+  removeConductorMarker
+} from '../../src/main/hooks'
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/paths'
 
 let hookScript: string
@@ -385,6 +391,33 @@ describe('injected hook script', () => {
     writeTabHookSettings(setupHooks(), 'pty-abc-1')
     expect(fs.existsSync(path.join(regDir, 'pty-abc-1.status.jsonl'))).toBe(false)
     expect(fs.existsSync(path.join(regDir, 'pty-abc-1.json'))).toBe(false)
+  })
+
+  describe('conductor role', () => {
+    const startOutput = (tab: string, source: string): string =>
+      spawnSync(hookScript, [regDir, tab, 'start'], {
+        input: JSON.stringify({ session_id: 's1', source }),
+        encoding: 'utf8'
+      }).stdout
+
+    it("a conductor tab's SessionStart hands claude its role as additional context, again after /clear", () => {
+      writeConductorMarker(regDir, 'tabC', 'You are the conductor.')
+      for (const source of ['startup', 'clear']) {
+        expect(JSON.parse(startOutput('tabC', source))).toEqual({
+          hookSpecificOutput: {
+            hookEventName: 'SessionStart',
+            additionalContext: 'You are the conductor.'
+          }
+        })
+      }
+    })
+
+    it('a plain tab, or a conductor tab whose marker is gone, prints nothing', () => {
+      expect(startOutput('tabP', 'startup')).toBe('')
+      writeConductorMarker(regDir, 'tabC', 'You are the conductor.')
+      removeConductorMarker(regDir, 'tabC')
+      expect(startOutput('tabC', 'startup')).toBe('')
+    })
   })
 
   it('every appended report is one whole line (concurrent hooks cannot interleave)', () => {

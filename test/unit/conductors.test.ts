@@ -1,0 +1,90 @@
+import { describe, it, expect } from 'vitest'
+import {
+  bindingProblem,
+  GLOBAL_SCOPE,
+  keepPinnedBindings,
+  parseChannelLink,
+  sanitizeDiscord
+} from '@shared/conductors'
+import type { ConductorBinding } from '@shared/types'
+
+function binding(id: string, scope: string, channelId: string): ConductorBinding {
+  return {
+    id,
+    scope,
+    backend: 'claude',
+    channel: { guildId: '100', channelId },
+    sessionIds: [],
+    touched: []
+  }
+}
+
+describe('parseChannelLink', () => {
+  it('reads the server and channel ids from a pasted channel link', () => {
+    expect(parseChannelLink(' https://discord.com/channels/123/456 ')).toEqual({
+      guildId: '123',
+      channelId: '456'
+    })
+  })
+
+  it('refuses a message link, another site, or words', () => {
+    expect(parseChannelLink('https://discord.com/channels/123/456/789')).toBeNull()
+    expect(parseChannelLink('https://example.com/channels/123/456')).toBeNull()
+    expect(parseChannelLink('#general')).toBeNull()
+  })
+})
+
+describe('bindingProblem', () => {
+  const bound = [binding('g', GLOBAL_SCOPE, '1'), binding('a', '/ws/a', '2')]
+
+  it('allows one global conductor only', () => {
+    expect(bindingProblem(bound, { scope: GLOBAL_SCOPE, channelId: '9' })).toBe(
+      'Global already has a conductor.'
+    )
+  })
+
+  it('allows one conductor per workspace', () => {
+    expect(bindingProblem(bound, { scope: '/ws/a', channelId: '9' })).toBe(
+      'a already has a conductor.'
+    )
+  })
+
+  it('allows one conductor per channel', () => {
+    expect(bindingProblem(bound, { scope: '/ws/b', channelId: '2' })).toBe(
+      'That channel is already bound to the a conductor.'
+    )
+  })
+
+  it('lets a conductor keep its own scope and channel when it changes', () => {
+    expect(bindingProblem(bound, { id: 'a', scope: '/ws/a', channelId: '2' })).toBeUndefined()
+  })
+})
+
+describe('sanitizeDiscord', () => {
+  it('starts folded with no bindings', () => {
+    expect(sanitizeDiscord(undefined)).toEqual({ conductorsFolded: true, bindings: [] })
+  })
+
+  it('drops a broken binding and a second one for a scope or channel already taken', () => {
+    const doc = sanitizeDiscord({
+      bindings: [
+        binding('a', '/ws/a', '1'),
+        binding('dup-scope', '/ws/a', '2'),
+        binding('dup-channel', '/ws/b', '1'),
+        { ...binding('bad', 'relative/path', '3') },
+        binding('b', '/ws/b', '4')
+      ]
+    })
+    expect(doc.bindings.map((b) => b.id)).toEqual(['a', 'b'])
+  })
+})
+
+describe('keepPinnedBindings', () => {
+  it('drops a workspace binding whose workspace is no longer pinned and keeps the global one', () => {
+    const kept = keepPinnedBindings(
+      [binding('g', GLOBAL_SCOPE, '1'), binding('a', '/ws/a', '2'), binding('b', '/ws/b', '3')],
+      ['/ws/b']
+    )
+    expect(kept.map((b) => b.id)).toEqual(['g', 'b'])
+  })
+})

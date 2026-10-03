@@ -1,3 +1,6 @@
+import { GLOBAL_SCOPE } from './conductors'
+import { parseRemoteKey, remoteCopyText } from './remoteKey'
+
 export const AGENT_GUIDE = `koloft lets you ask Koloft, the app this session runs in, to do things for its owner (the person you work for). Run it in your shell. Each command prints its answer; exit code 0 means it worked.
 
 RULES
@@ -99,6 +102,15 @@ To use the web pages in this session's Workbench, drive them with Playwright (a 
 
 export const AGENT_SKILL_DESCRIPTION =
   'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the workspace note, list, add, change or run scheduled tasks, list and start sibling sessions, or close this session and its worktree for good. Read this before running any koloft command.'
+
+export function conductorRole(scope: string): string {
+  const remote = parseRemoteKey(scope)
+  const what =
+    scope === GLOBAL_SCOPE
+      ? 'all workspaces'
+      : `the workspace ${remote ? remoteCopyText(remote.host, remote.path) : scope}`
+  return `You are Koloft's conductor for ${what}. Messages starting with [Discord] come from the owner via Discord. Use the koloft command (koloft help) to list, start, stop, resume, read and message sessions in your scope.`
+}
 
 export const CODEX_AGENT_HINT =
   'You are running inside Koloft, an app that runs and manages coding sessions for its owner. Run "koloft help" in your shell to see what Koloft lets you do.'

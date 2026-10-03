@@ -285,7 +285,7 @@ export function settingsOnDisk(env: E2EEnv): Record<string, unknown> {
 }
 
 export function notesIsland(page: Page): Locator {
-  return page.locator('.isl-notes')
+  return page.locator('.isl-notes:not(.isl-conductors)')
 }
 
 export function notesArea(page: Page): Locator {
