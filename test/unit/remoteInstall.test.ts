@@ -201,6 +201,37 @@ describe('U-ENS-1..4: ensure.sh on a remote machine never sits on a hidden passw
     expect(res.stdout).toContain('no statusline')
   })
 
+  it('a node build that will not run on this machine is thrown away and never fetched again', () => {
+    const m = machine()
+    complete(m, { node: '18.20.4' })
+    const dist = path.join(m.home, 'dist')
+    const stage = path.join(dist, 'stage', nodeName, 'bin')
+    fs.mkdirSync(stage, { recursive: true })
+    fs.writeFileSync(path.join(stage, 'node'), '#!/bin/sh\nexit 1\n', { mode: 0o755 })
+    const file = path.join(dist, `${nodeName}.${ext}`)
+    spawnSync('tar', [
+      ext === 'tar.xz' ? '-cJf' : '-czf',
+      file,
+      '-C',
+      path.join(dist, 'stage'),
+      nodeName
+    ])
+    const sum = spawnSync('shasum', ['-a', '256', file], { encoding: 'utf8' }).stdout.split(' ')[0]
+    fs.writeFileSync(path.join(dist, 'SHASUMS256.txt'), `${sum}  ${nodeName}.${ext}\n`)
+    m.give('curl', `LOGS=${JSON.stringify(m.logs)}\nFIXTURES=${JSON.stringify(dist)}\n${CURL()}`)
+
+    const first = m.run()
+    expect(first.status).toBe(0)
+    expect(first.stdout).toContain('does not run on this machine')
+    expect(fs.existsSync(path.join(m.home, '.koloft', 'node'))).toBe(false)
+    const fetches = m.calls('curl').length
+
+    const second = m.run()
+    expect(second.status).toBe(0)
+    expect(second.stdout).not.toContain('installing node')
+    expect(m.calls('curl')).toHaveLength(fetches)
+  })
+
   it('refreshes apt\u2019s package lists once, right before the first install: a bare Debian/Ubuntu container has none', () => {
     const m = machine()
     complete(m)
