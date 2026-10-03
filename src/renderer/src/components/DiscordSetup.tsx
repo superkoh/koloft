@@ -44,13 +44,13 @@ const PAGES: Page[] = [
         items={[
           'Click **Open Developer Portal** below. It opens in your normal browser.',
           'Log in with your Discord account.',
-          'If a "Why are you visiting the Developer Portal?" question shows up, click **Skip (跳过)**.',
-          'Click **New Application (新 APP)** at the top right.',
-          "Name it **Koloft** (any name works), tick the box that agrees to Discord's terms, click **Create (创建)**."
+          'If a "Why are you visiting the Developer Portal?" question shows up, click **Skip**.',
+          'Click **New Application** at the top right.',
+          "Name it **Koloft** (any name works), tick the box that agrees to Discord's terms, click **Create**."
         ]}
       />
     ),
-    warn: 'If something goes wrong: "Missing Access (缺少权限)" when you click Create → you are in Koloft\'s built-in browser; open the portal in Safari or Chrome instead.'
+    warn: 'If something goes wrong: "Missing Access" when you click Create → you are in Koloft\'s built-in browser; open the portal in Safari or Chrome instead.'
   },
   {
     name: 'Make the bot private and let it read messages',
@@ -58,16 +58,16 @@ const PAGES: Page[] = [
     list: (
       <Steps
         items={[
-          'In your app, open **Installation (安装)** in the left menu.',
-          'Under **Install Link (安装链接)**, change the dropdown to **None (无)**, then click **Save Changes (保存更改)** at the bottom.',
-          'Open **Bot (机器人)** in the left menu.',
-          'Under **Authorization Flow (授权流程)**, turn **Public Bot (公开 APP)** off.',
-          'Under **Privileged Gateway Intents**, turn **Message Content Intent (消息内容)** on.',
-          'Click **Save Changes (保存更改)**.'
+          'In your app, open **Installation** in the left menu.',
+          'Under **Install Link**, change the dropdown to **None**, then click **Save Changes** at the bottom.',
+          'Open **Bot** in the left menu.',
+          'Under **Authorization Flow**, turn **Public Bot** off.',
+          'Under **Privileged Gateway Intents**, turn **Message Content Intent** on.',
+          'Click **Save Changes**.'
         ]}
       />
     ),
-    warn: 'If something goes wrong: "Private application cannot have a default authorization link (私密 APP 无法拥有默认授权关联)" → do step 2 (Install Link → None) first, then turn Public Bot off.'
+    warn: 'If something goes wrong: "Private application cannot have a default authorization link" → do step 2 (Install Link → None) first, then turn Public Bot off.'
   },
   {
     name: 'Copy the bot token into Koloft',
@@ -75,8 +75,8 @@ const PAGES: Page[] = [
     list: (
       <Steps
         items={[
-          'Still on **Bot (机器人)**, click **Reset Token (重置令牌)** and confirm. Discord may ask for your password or a 2-factor code.',
-          'Click **Copy (复制)** next to the token. Discord shows it only this once.',
+          'Still on **Bot**, click **Reset Token** and confirm. Discord may ask for your password or a 2-factor code.',
+          'Click **Copy** next to the token. Discord shows it only this once.',
           'Paste it below and click **Save**.'
         ]}
       />
@@ -90,12 +90,12 @@ const PAGES: Page[] = [
         <h4>On iPhone:</h4>
         <Steps
           items={[
-            'Open Discord. In the far-left column of server icons, scroll to the bottom and tap **＋ (Add a Server)**.',
+            'Open Discord. In the far-left column of server icons, scroll to the bottom and tap **+** (Add a Server).',
             'Tap **Create My Own**, then **For me and my friends**.',
             'Name it (for example **koloft**) and tap **Create Server**.'
           ]}
         />
-        <p>{bold('On a computer: same steps — click **＋** at the bottom of the server list.')}</p>
+        <p>{bold('On a computer: same steps — click **+** at the bottom of the server list.')}</p>
         <p>Already have a server only you are in? Skip this step.</p>
       </>
     )
@@ -107,7 +107,7 @@ const PAGES: Page[] = [
       <Steps
         items={[
           'Click **Invite the bot** below. It opens Discord\'s "add an app" page with the right permissions already chosen (see channels, send messages, attach files, read message history, add reactions).',
-          'Pick your server from **Add to server (添加到服务器)**, click **Continue (继续)**, then **Authorize (授权)**, and pass the "I am human" check.',
+          'Pick your server from **Add to server**, click **Continue**, then **Authorize**, and pass the "I am human" check.',
           "In your server's member list you now see **Koloft** with a BOT tag. It shows online while Koloft runs on your Mac."
         ]}
       />
