@@ -889,6 +889,14 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   login finishes (checked by hand, signed out, on a private repo).
 - **A signed-in browser holds a `logged_in=yes` cookie**; `user_session` is the session
   cookie itself.
+- **`gh api graphql -f owner=… -f name=… -f query=…`** sends every `-f` field other than
+  `query` as a string GraphQL variable; `-F` would turn a repo named `123` into a number.
+  For a repo it can read it exits 0 and prints
+  `{"data":{"repository":{"issues":{"totalCount":N},"pullRequests":{"totalCount":M}}}}`.
+  For a repo that is missing or hidden from the login it exits 1, printing
+  `"repository":null` plus a `NOT_FOUND` error; with no login it exits 4 and prints
+  "To get started with GitHub CLI, please run: gh auth login". (2026-10-03, gh 2.89.0,
+  run by hand against a public repo, a made-up name, and an empty `GH_CONFIG_DIR`.)
 
 ## §33 ssh
 

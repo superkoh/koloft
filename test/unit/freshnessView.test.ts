@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import type { WorkspaceFreshness } from '../../src/shared/types'
-import { behindBadge, headAge, pullNote, pullToast } from '../../src/renderer/src/freshnessView'
+import {
+  behindBadge,
+  countLabel,
+  headAge,
+  pullNote,
+  pullToast
+} from '../../src/renderer/src/freshnessView'
 
 const NOW = 1_700_000_000_000
 const MIN = 60_000
@@ -145,6 +151,22 @@ describe('pullNote', () => {
       text: 'Local commits diverge from origin/main — merge or rebase outside Koloft.',
       tone: 'warn'
     })
+  })
+
+  it('nothing to pull says up to date, even over a dirty or ahead tree', () => {
+    expect(pullNote(f({ behind: 0, dirty: true, ahead: 2 }))).toEqual({
+      text: 'Up to date with origin/main.',
+      tone: 'plain'
+    })
+  })
+})
+
+describe('countLabel', () => {
+  it('keeps the exact count below a thousand and shortens from there down to one decimal', () => {
+    expect(countLabel(999)).toBe('999')
+    expect(countLabel(1000)).toBe('1k')
+    expect(countLabel(2749)).toBe('2.7k')
+    expect(countLabel(12399)).toBe('12.3k')
   })
 })
 

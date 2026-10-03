@@ -24,12 +24,7 @@ export function remoteDotTitle(r: { connected: boolean; problem?: string }): str
   return `not connected — ${r.problem ?? 'status may be stale'}`
 }
 
-export function workspaceMenuCount(t: {
-  missing: boolean
-  isGit: boolean
-  remote: boolean
-}): number {
+export function workspaceMenuCount(t: { missing: boolean; isGit: boolean }): number {
   if (t.missing) return 1
-  if (t.remote) return t.isGit ? 6 : 5
-  return t.isGit ? 7 : 5
+  return t.isGit ? 6 : 5
 }

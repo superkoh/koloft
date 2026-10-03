@@ -1,6 +1,6 @@
 import { test, expect, launchApp } from './helpers/app'
 import { setupGitFixture } from './helpers/gitFixture'
-import { closeMenu, menuItemTexts, openMenu, snap } from './helpers/p1'
+import { closeMenu, menuItemTexts, openGitPanel, openMenu, snap } from './helpers/p1'
 
 const BADGE_TIMEOUT = 30_000
 const PAST_HOVER_INTENT_DELAY_MS = 500
@@ -112,7 +112,7 @@ test.describe('Git freshness · sidebar behind badge, popover and fast-forward p
     }
   })
 
-  test('T-GF-04: a git workspace fly-out lists Fetch origin between New session and Remove', async ({
+  test('T-GF-05: with nothing to pull the git mark still opens the panel — up to date, Pull off, Fetch now on — and the fly-out has no Fetch origin', async ({
     env
   }) => {
     setupGitFixture(env)
@@ -122,16 +122,24 @@ test.describe('Git freshness · sidebar behind badge, popover and fast-forward p
     await page.waitForLoadState('domcontentloaded')
     try {
       await expect(page.locator('.ws-head')).toHaveCount(1, { timeout: 20_000 })
+      await expect(page.locator('.ws-behind')).toHaveCount(0)
+      const panel = await openGitPanel(page, 'repo')
+      await expect(panel.locator('.fx-counts').first()).toContainText('↓ 0 behind')
+      await expect(panel.locator('.fx-note')).toHaveText('Up to date with origin/main.')
+      await expect(panel.locator('.tbu-act.pull')).toBeDisabled()
+      await expect(panel.locator('.tbu-act', { hasText: 'Fetch now' })).toBeEnabled()
+      await snap(page, 'T-GF-05-panel')
+      await page.mouse.move(600, 400)
+      await expect(panel).toHaveCount(0)
+
       await openMenu(page, page.locator('.ws-head', { hasText: 'repo' }))
       expect(await menuItemTexts(page)).toEqual([
         'New session⌘N',
         'New worktree session…⇧⌘N',
         'Restore session…',
-        'Fetch origin',
         'Scheduled jobs…',
         'Remove workspace'
       ])
-      await snap(page, 'T-GF-04')
       await closeMenu(page)
     } finally {
       await app.close().catch(() => {})

@@ -8,6 +8,7 @@ import { SessionBackendIcon } from './SessionBackendIcon'
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type DragEvent,
@@ -15,7 +16,7 @@ import {
   type MouseEvent
 } from 'react'
 import { createPortal } from 'react-dom'
-import { GoGitBranch } from 'react-icons/go'
+import { GoGitBranch, GoGitPullRequest, GoIssueOpened } from 'react-icons/go'
 import {
   LuAlarmClock,
   LuCheck,
@@ -50,7 +51,14 @@ import {
 import { releaseSettledResumes, resumeInFlight, resumeSession } from '../resumeFlow'
 import { adoptionSettled } from '../adoption'
 import { requestCloseTab } from '../closeFlow'
-import { behindBadge } from '../freshnessView'
+import {
+  behindBadge,
+  countLabel,
+  freshnessShown,
+  openIssuesLabel,
+  openPullsLabel
+} from '../freshnessView'
+import { fitGithubCounts } from '../wsHeadFit'
 import { FreshnessPopover } from './FreshnessPopover'
 import { basename } from '@shared/preview'
 import { hostOf, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
@@ -87,7 +95,7 @@ const MENU_ITEM_H = 31
 const MENU_PAD_H = 10
 const NO_INHERITED_TOOLTIP = ''
 const FRESH_POP_W = 300
-const FRESH_POP_H = 170
+const FRESH_POP_H = 250
 
 type MenuTarget =
   | { kind: 'session'; wsPath: string; row: SessionRow }
@@ -233,6 +241,26 @@ export function WorkspaceSidebar({
     return () => anim.cancel()
   }, [mq])
 
+  const marqueeIfClipped = (host: HTMLElement, selector: string, id: string): void => {
+    const t = host.querySelector(selector)
+    const overflow = t ? t.scrollWidth - t.clientWidth : 0
+    if (overflow > 0) setMq({ id, overflow })
+  }
+  const stopMarquee = (id: string): void => setMq((m) => (m?.id === id ? null : m))
+
+  const listRef = useRef<HTMLDivElement>(null)
+  const fitHeads = useCallback((): void => {
+    listRef.current?.querySelectorAll<HTMLElement>('.ws-head').forEach(fitGithubCounts)
+  }, [])
+  useLayoutEffect(fitHeads)
+  useEffect(() => {
+    const list = listRef.current
+    if (!list) return
+    const ro = new ResizeObserver(fitHeads)
+    ro.observe(list)
+    return () => ro.disconnect()
+  }, [fitHeads])
+
   const clearTimers = (): void => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current)
     if (leaveTimer.current) clearTimeout(leaveTimer.current)
@@ -279,7 +307,7 @@ export function WorkspaceSidebar({
 
   const menuItemCount = (t: MenuTarget): number =>
     t.kind === 'workspace'
-      ? workspaceMenuCount({ missing: t.missing, isGit: t.isGit, remote: !!machineOf(t.wsPath) })
+      ? workspaceMenuCount({ missing: t.missing, isGit: t.isGit })
       : t.row.pending
         ? 1
         : t.row.running
@@ -495,7 +523,6 @@ export function WorkspaceSidebar({
     const { target } = menu
     const style = { left: menu.left, top: menu.top }
     if (target.kind === 'workspace') {
-      const remote = machineOf(target.wsPath)
       const newSessionItem = (label: string, backend?: BackendId, key?: string): JSX.Element => {
         const refusal = backend ? unsupportedPairMessage(backend, hostOf(target.wsPath)) : undefined
         return (
@@ -546,17 +573,6 @@ export function WorkspaceSidebar({
               >
                 Restore session…
               </div>
-              {target.isGit && !remote && (
-                <div
-                  className="mi"
-                  onClick={() => {
-                    setMenu(null)
-                    void window.api.workspace.fetchFreshness(target.wsPath)
-                  }}
-                >
-                  Fetch origin
-                </div>
-              )}
               <div
                 className="mi"
                 onClick={() => {
@@ -701,12 +717,15 @@ export function WorkspaceSidebar({
   const renderFresh = (): JSX.Element | null => {
     if (!fresh) return null
     const w = rows.find((r) => r.workspace.path === fresh.path)
-    if (!w?.workspace.freshness) return null
+    if (!w) return null
+    const f = freshnessShown(w.workspace.freshness) ? w.workspace.freshness : undefined
+    if (!f && !w.workspace.github) return null
     return (
       <FreshnessPopover
         key={fresh.path}
         wsPath={fresh.path}
-        f={w.workspace.freshness}
+        f={f}
+        github={w.workspace.github}
         rows={w.rows}
         left={fresh.left}
         top={fresh.top}
@@ -722,6 +741,7 @@ export function WorkspaceSidebar({
     <>
       <div className="island flat isl-sessions">
         <div
+          ref={listRef}
           className="ws-list"
           onScroll={closeFloating}
           onDragOver={dragOverWorkspaces}
@@ -745,6 +765,8 @@ export function WorkspaceSidebar({
               hasHistory: ws.hasHistory
             }
             const badge = behindBadge(ws.freshness, Date.now())
+            const gitPanel = freshnessShown(ws.freshness) || !!ws.github
+            const nameMq = `ws:${ws.path}`
             const door = ws.isGit
               ? {
                   title: 'New worktree session · ⇧⌘N',
@@ -789,8 +811,14 @@ export function WorkspaceSidebar({
                     selectWorkspace(ws.path)
                   }}
                   onContextMenu={(e) => openMenuNow(e, wsTarget)}
-                  onMouseEnter={(e) => armHoverMenu(e, wsTarget)}
-                  onMouseLeave={scheduleClose}
+                  onMouseEnter={(e) => {
+                    armHoverMenu(e, wsTarget)
+                    marqueeIfClipped(e.currentTarget, '.ws-name', nameMq)
+                  }}
+                  onMouseLeave={() => {
+                    scheduleClose()
+                    stopMarquee(nameMq)
+                  }}
                 >
                   <span
                     className="fico"
@@ -802,7 +830,11 @@ export function WorkspaceSidebar({
                   >
                     {open ? <LuFolderOpen size={15} /> : <LuFolder size={15} />}
                   </span>
-                  <span className="ws-name">{basename(ws.remote?.path ?? ws.path)}</span>
+                  <span className={'ws-name' + (mq?.id === nameMq ? ' mq' : '')}>
+                    <i ref={mq?.id === nameMq ? mqRef : undefined}>
+                      {basename(ws.remote?.path ?? ws.path)}
+                    </i>
+                  </span>
                   {ws.remote && (
                     <span
                       className="ws-remote"
@@ -818,12 +850,14 @@ export function WorkspaceSidebar({
                   {ws.isGit && !ws.missing && (
                     <span
                       className="ws-git"
-                      title={badge ? NO_INHERITED_TOOLTIP : 'git repository'}
+                      title={gitPanel ? NO_INHERITED_TOOLTIP : 'git repository'}
                       onMouseEnter={
-                        badge ? (e) => openCard(e.currentTarget as HTMLElement, ws.path) : undefined
+                        gitPanel
+                          ? (e) => openCard(e.currentTarget as HTMLElement, ws.path)
+                          : undefined
                       }
                       onMouseLeave={
-                        badge
+                        gitPanel
                           ? (e) => {
                               leaveCard()
                               const head = (e.currentTarget as HTMLElement).closest('.ws-head')
@@ -844,6 +878,22 @@ export function WorkspaceSidebar({
                         >
                           {badge.label}
                         </button>
+                      )}
+                      {ws.github && (ws.github.issues > 0 || ws.github.prs > 0) && (
+                        <span className="ws-gh">
+                          {ws.github.issues > 0 && (
+                            <span aria-label={openIssuesLabel(ws.github.issues)}>
+                              <GoIssueOpened size={12} />
+                              {countLabel(ws.github.issues)}
+                            </span>
+                          )}
+                          {ws.github.prs > 0 && (
+                            <span aria-label={openPullsLabel(ws.github.prs)}>
+                              <GoGitPullRequest size={12} />
+                              {countLabel(ws.github.prs)}
+                            </span>
+                          )}
+                        </span>
                       )}
                     </span>
                   )}
@@ -943,15 +993,11 @@ export function WorkspaceSidebar({
                           onContextMenu={(e) => openMenuNow(e, rowTarget)}
                           onMouseEnter={(e) => {
                             armHoverMenu(e, rowTarget)
-                            const t = (e.currentTarget as HTMLElement).querySelector(
-                              '.ws-tab-title'
-                            )
-                            const overflow = t ? t.scrollWidth - t.clientWidth : 0
-                            if (overflow > 0) setMq({ id: row.id, overflow })
+                            marqueeIfClipped(e.currentTarget, '.ws-tab-title', row.id)
                           }}
                           onMouseLeave={() => {
                             scheduleClose()
-                            setMq((m) => (m?.id === row.id ? null : m))
+                            stopMarquee(row.id)
                           }}
                         >
                           <div className="ws-tab-main">

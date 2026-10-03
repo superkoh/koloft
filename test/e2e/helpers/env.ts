@@ -198,7 +198,17 @@ export function setGuestLimit(env: E2EEnv, limit: number): void {
 
 export function setGithubFixture(
   env: E2EEnv,
-  repos: Record<string, { owner: string; repo: string; branch?: string; pr?: number } | null>
+  repos: Record<
+    string,
+    {
+      owner: string
+      repo: string
+      branch?: string
+      pr?: number
+      issues?: number
+      prs?: number
+    } | null
+  >
 ): void {
   env.launchEnv.KOLOFT_GITHUB_FIXTURE = JSON.stringify(repos)
 }

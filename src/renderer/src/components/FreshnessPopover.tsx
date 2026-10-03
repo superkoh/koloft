@@ -1,15 +1,23 @@
 import { useEffect, useState, type JSX } from 'react'
 import { LuDownload, LuRefreshCw } from 'react-icons/lu'
-import type { SessionRow, WorkspaceFreshness } from '@shared/types'
+import type { SessionRow, WorkspaceFreshness, WorkspaceGithub } from '@shared/types'
 import { canPull } from '@shared/freshnessOps'
 import { useStore } from '../store'
-import { headAge, pullNote, pullToast, type PullNote } from '../freshnessView'
+import {
+  headAge,
+  openIssuesLabel,
+  openPullsLabel,
+  pullNote,
+  pullToast,
+  type PullNote
+} from '../freshnessView'
 import { mainRunningCount } from '../newSession'
 import { PullConfirm } from './PullConfirm'
 
 export function FreshnessPopover({
   wsPath,
   f,
+  github,
   rows,
   left,
   top,
@@ -19,7 +27,8 @@ export function FreshnessPopover({
   onMouseLeave
 }: {
   wsPath: string
-  f: WorkspaceFreshness
+  f?: WorkspaceFreshness
+  github?: WorkspaceGithub
   rows: SessionRow[]
   left: number
   top: number
@@ -72,6 +81,7 @@ export function FreshnessPopover({
   }
 
   const doPull = async (): Promise<void> => {
+    if (!f) return
     setConfirm(null)
     setPulling(true)
     setFailed(null)
@@ -88,8 +98,8 @@ export function FreshnessPopover({
   }
 
   const inMain = mainRunningCount(rows)
-  const eligible = canPull(f)
-  const note: PullNote = failed ? { text: failed, tone: 'alarm' } : pullNote(f)
+  const eligible = !!f && canPull(f)
+  const note: PullNote | null = failed ? { text: failed, tone: 'alarm' } : f ? pullNote(f) : null
 
   return (
     <>
@@ -101,46 +111,68 @@ export function FreshnessPopover({
           onMouseEnter={onMouseEnter}
           onMouseLeave={failed ? undefined : onMouseLeave}
         >
-          <div className="tbu-pop-head">
-            <span>
-              {f.branch} · {f.defRef}
-            </span>
-            <span className="age">{headAge(f, Date.now())}</span>
-          </div>
-          <div className="tbu-row">
-            <div className="fx-counts">
-              <span className="b">↓ {f.behind} behind</span>
-              <span>↑ {f.ahead} ahead</span>
-            </div>
-            <div className={'fx-note' + (note.tone === 'warn' ? ' warn' : '')}>
-              {note.tone === 'alarm' ? <span className="tbu-alarm">{note.text}</span> : note.text}
-            </div>
-            {note.extra && <div className="fx-note">{note.extra}</div>}
-          </div>
-          <div className="tbu-sep" />
-          <button
-            className="tbu-act pull"
-            disabled={!eligible || pulling}
-            onClick={() => {
-              if (inMain > 0) {
-                setConfirm(inMain)
-                return
-              }
-              void doPull()
-            }}
-          >
-            <LuDownload size={14} />
-            {pulling ? 'Pulling…' : 'Pull · fast-forward'}
-            {eligible && !pulling && (
-              <span className="k">
-                {f.behind} commit{f.behind === 1 ? '' : 's'}
-              </span>
-            )}
-          </button>
-          <button className="tbu-act" disabled={fetching} onClick={() => void doFetch()}>
-            <LuRefreshCw size={14} />
-            {fetching ? 'Fetching…' : 'Fetch now'}
-          </button>
+          {f && note && (
+            <>
+              <div className="tbu-pop-head">
+                <span>
+                  {f.branch} · {f.defRef}
+                </span>
+                <span className="age">{headAge(f, Date.now())}</span>
+              </div>
+              <div className="tbu-row">
+                <div className="fx-counts">
+                  <span className={f.behind > 0 ? 'b' : undefined}>↓ {f.behind} behind</span>
+                  <span>↑ {f.ahead} ahead</span>
+                </div>
+                <div className={'fx-note' + (note.tone === 'warn' ? ' warn' : '')}>
+                  {note.tone === 'alarm' ? (
+                    <span className="tbu-alarm">{note.text}</span>
+                  ) : (
+                    note.text
+                  )}
+                </div>
+                {note.extra && <div className="fx-note">{note.extra}</div>}
+              </div>
+              <div className="tbu-sep" />
+              <button
+                className="tbu-act pull"
+                disabled={!eligible || pulling}
+                onClick={() => {
+                  if (inMain > 0) {
+                    setConfirm(inMain)
+                    return
+                  }
+                  void doPull()
+                }}
+              >
+                <LuDownload size={14} />
+                {pulling ? 'Pulling…' : 'Pull · fast-forward'}
+                {eligible && !pulling && (
+                  <span className="k">
+                    {f.behind} commit{f.behind === 1 ? '' : 's'}
+                  </span>
+                )}
+              </button>
+              <button className="tbu-act" disabled={fetching} onClick={() => void doFetch()}>
+                <LuRefreshCw size={14} />
+                {fetching ? 'Fetching…' : 'Fetch now'}
+              </button>
+            </>
+          )}
+          {f && github && <div className="tbu-sep" />}
+          {github && (
+            <>
+              <div className="tbu-pop-head">
+                <span>GitHub · {github.repo}</span>
+              </div>
+              <div className="tbu-row">
+                <div className="fx-counts">
+                  <span>{openIssuesLabel(github.issues)}</span>
+                  <span>{openPullsLabel(github.prs)}</span>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
       {confirm !== null && (

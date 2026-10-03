@@ -135,7 +135,8 @@ import { CronRunner, type LaunchRequest } from './cronRunner'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
 import { GitFreshnessEngine } from './gitFreshness'
-import { GithubLookup, parseGithubFixture, type GithubOptions } from './github'
+import { GithubLookup, ghOpenCounts, parseGithubFixture, type GithubOptions } from './github'
+import { GithubCountsSweep } from './githubCounts'
 import { restoredWindowGeometry, trackWindowState } from './windowState'
 import { fullscreenOption, windowMinWidth } from './windowBounds'
 import { closeAllFileWatchers, closeAllDirWatchers } from './fileWatch'
@@ -475,6 +476,7 @@ function requestWebglRepair(): void {
 let workspaceMgr: WorkspaceManager | null = null
 
 let freshness: GitFreshnessEngine | null = null
+let githubCounts: GithubCountsSweep | null = null
 let remoteSync: RemoteSync | null = null
 tracker.machineTmp = (host) => remoteSync?.machineTmp(host)
 let machinePkg: MachinePackage | null = null
@@ -1364,8 +1366,10 @@ app.whenReady().then(() => {
     },
     pushRows: (payload) => sendToRenderer('workspace:rows', payload),
     freshness: (wsPath) => freshness?.get(wsPath),
+    github: (wsPath) => githubCounts?.get(wsPath),
     onRescanned: (wsPaths) => {
       void freshness?.refreshLocal(wsPaths)
+      void githubCounts?.sweep()
       claudeBackend.watchRemoteHookMirrors()
     },
     jobCountFor: (wsPath) => cronRunner?.jobCountFor(wsPath) ?? 0,
@@ -1408,8 +1412,14 @@ app.whenReady().then(() => {
     autoFetch: () => loadSettings().gitAutoFetch,
     onChange: () => workspaceMgr?.restampLive()
   })
+  githubCounts = new GithubCountsSweep({
+    workspaces: () => workspaceMgr?.pinnedPaths() ?? [],
+    openCounts: (wsPath) => hosts.of(wsPath).github.openCounts(wsPath),
+    onChange: () => workspaceMgr?.restampLive()
+  })
   workspaceMgr.start()
   freshness.start()
+  githubCounts.start()
   ensureControlDir(remoteControlDir)
   remoteSync.start()
 
@@ -2369,6 +2379,8 @@ function commitSettings(patch: Partial<Settings>): Settings {
 
 const githubOptions: GithubOptions = {
   fixture: parseGithubFixture(process.env.KOLOFT_GITHUB_FIXTURE),
+  // PLATFORM§1
+  openCounts: (repo) => sshEnvReady().then(() => ghOpenCounts(repo)),
   signedIn: async () => {
     try {
       const jar = await session.fromPartition(BROWSER_PARTITION).cookies.get({
