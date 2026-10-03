@@ -246,7 +246,7 @@ import type {
 import { AgentRequests, BUILTIN_VERBS } from './agentRequests'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
-import { sessionVerb } from './agentSessions'
+import { sessionVerb, StartedSessions, type ClosableSession } from './agentSessions'
 import { closingTree, removeTree, whatIsLeft } from './sessionClose'
 import { claudePeerNames } from './claudeSessionRegistry'
 import { writeAgentPlugin } from './agentPlugin'
@@ -276,11 +276,13 @@ let flushHeldData: () => void = () => {}
 const tracker = new SessionTracker()
 let codexSessions: CodexSessions | null = null
 let codexStartupError: string | undefined
+const startedSessions = new StartedSessions()
 const sessionBackends = new SessionBackends({
   prompted: consumeOutletDedupe,
   bound: (tabId, key) => {
     attention.bound(tabId, key, attentionCtx())
     cronRunner?.onBound(tabId, key)
+    startedSessions.bound(tabId, key)
   },
   exited: (tabId, subject) => attention.onExited(tabId, attentionCtx(), subject),
   clearAttention: (tabId) => attention.clear(tabId),
@@ -621,12 +623,11 @@ const agentRequests = new AgentRequests({
       peerNames: () => claudePeerNames(),
       launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
       queue: async (tabId, text) => codexSessions?.queueMessage(tabId, text),
+      started: startedSessions,
+      closable: closableSessions,
       whatIsLeft: whatClosingWouldLose,
-      closeSoon: (tabId, session) =>
-        setTimeout(
-          () => void closeSessionFully(tabId, session),
-          CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS
-        )
+      closeSoon: (target) =>
+        setTimeout(() => void closeSessionFully(target), CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS)
     })
   },
   tab: (tabId) => ptyMgr.get(tabId),
@@ -2265,11 +2266,35 @@ function archiveSession(id: string): boolean {
 
 const CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS = 1_000
 
-async function whatClosingWouldLose(tabId: string, session: SessionInfo): Promise<string[]> {
-  const tree = await closingTree(localGitOut, projectInfoFor(session.treeRoot))
+function closableSessions(): ClosableSession[] {
+  const live: ClosableSession[] = allSessions().map((s) => ({
+    sessionId: s.sessionId,
+    nativeSessionId: s.nativeSessionId,
+    backendId: s.backendId,
+    title: s.title,
+    treeRoot: s.treeRoot,
+    tabId: s.tabId
+  }))
+  const liveIds = new Set(live.map((s) => s.sessionId))
+  const cold: ClosableSession[] = (workspaceMgr?.rows() ?? [])
+    .flatMap((w) => w.rows)
+    .filter((r) => !liveIds.has(r.id))
+    .map((r) => ({
+      sessionId: r.id,
+      nativeSessionId: r.nativeSessionId,
+      backendId: r.backendId,
+      title: r.title,
+      treeRoot: r.cwd
+    }))
+  return [...live, ...cold]
+}
+
+async function whatClosingWouldLose(target: ClosableSession): Promise<string[]> {
+  const tree = await closingTree(localGitOut, projectInfoFor(target.treeRoot))
   if (!tree) return []
   const sharing = allSessions().filter(
-    (s) => s.tabId !== tabId && s.alive && projectInfoFor(s.treeRoot).treeRoot === tree.treeRoot
+    (s) =>
+      s.tabId !== target.tabId && s.alive && projectInfoFor(s.treeRoot).treeRoot === tree.treeRoot
   )
   return [
     ...sharing.map((s) => `The session "${s.title}" is still open in ${tree.treeRoot}.`),
@@ -2277,17 +2302,19 @@ async function whatClosingWouldLose(tabId: string, session: SessionInfo): Promis
   ]
 }
 
-async function closeSessionFully(tabId: string, session: SessionInfo): Promise<void> {
-  const info = projectInfoFor(session.treeRoot)
-  sendToRenderer('tab:killedByMain', tabId)
-  await killTabPty(tabId)
+async function closeSessionFully(target: ClosableSession): Promise<void> {
+  const info = projectInfoFor(target.treeRoot)
+  if (target.tabId) {
+    sendToRenderer('tab:killedByMain', target.tabId)
+    await killTabPty(target.tabId)
+  }
   const tree = await closingTree(localGitOut, info)
   const problem = tree && (await removeTree(localGitOut, tree))
   if (problem) {
-    sendToRenderer('cron:toast', `${session.title}: ${problem}`)
+    sendToRenderer('cron:toast', `${target.title}: ${problem}`)
     return
   }
-  archiveSession(session.sessionId)
+  archiveSession(target.sessionId)
   codexSessions?.store.removeUnusedResourcesAt(info.treeRoot)
 }
 

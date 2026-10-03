@@ -162,6 +162,74 @@ export function findCodexTarget(sessions: SessionInfo[], ref: string): Parsed<Se
     : fail(CLAUDE_USES_SEND_MESSAGE)
 }
 
+export interface ClosableSession {
+  sessionId: string
+  nativeSessionId?: string
+  backendId: BackendId
+  title: string
+  treeRoot: string
+  tabId?: string
+}
+
+const CLOSE_USAGE =
+  'koloft session close: give nothing to close this session, or the id or name of one you started with koloft session new, like: koloft session close <id or name>'
+
+export class StartedSessions {
+  private parentOfTab = new Map<string, string>()
+  private parentOfSession = new Map<string, string>()
+
+  started(childTabId: string, parentTabId: string): void {
+    this.parentOfTab.set(childTabId, parentTabId)
+  }
+
+  bound(tabId: string, sessionId: string): void {
+    const parent = this.parentOfTab.get(tabId)
+    if (parent) this.parentOfSession.set(sessionId, parent)
+  }
+
+  startedBy(target: ClosableSession, parentTabId: string): boolean {
+    return (
+      (!!target.tabId && this.parentOfTab.get(target.tabId) === parentTabId) ||
+      this.parentOfSession.get(target.sessionId) === parentTabId
+    )
+  }
+}
+
+export async function findClosable(
+  sessions: ClosableSession[],
+  ref: string,
+  nameOf: (sessionId: string) => Promise<string | null>
+): Promise<Parsed<ClosableSession>> {
+  const names = await Promise.all(
+    sessions.map((s) => (s.tabId && s.backendId === 'claude' ? nameOf(s.sessionId) : null))
+  )
+  const byId = sessions.find(
+    (s, i) =>
+      s.sessionId === ref || s.nativeSessionId === ref || s.tabId === ref || names[i] === ref
+  )
+  const hits = byId ? [byId] : sessions.filter((s) => s.title === ref)
+  if (hits.length > 1)
+    return fail(
+      `${hits.length} sessions are named "${ref}". Use the id from "koloft session list".`
+    )
+  if (hits.length === 0)
+    return fail(
+      `you did not start a session "${ref}". You can close only this session or one you started with koloft session new.`
+    )
+  return { ok: true, value: hits[0] }
+}
+
+function closableSelf(tabId: string, session: SessionInfo): ClosableSession {
+  return {
+    sessionId: session.sessionId,
+    nativeSessionId: session.nativeSessionId,
+    backendId: session.backendId,
+    title: session.title,
+    treeRoot: session.treeRoot,
+    tabId
+  }
+}
+
 export interface SessionVerbDeps {
   workspaceOf(tabId: string): string | undefined
   allSessions(): SessionInfo[]
@@ -169,13 +237,13 @@ export interface SessionVerbDeps {
   peerNames(): (sessionId: string) => Promise<string | null>
   launch(options: CreateTabOptions & { kind: BackendId }): Promise<string | null>
   queue(tabId: string, text: string): Promise<void>
-  whatIsLeft(tabId: string, session: SessionInfo): Promise<string[]>
-  closeSoon(tabId: string, session: SessionInfo): void
+  started: StartedSessions
+  closable(): ClosableSession[]
+  whatIsLeft(target: ClosableSession): Promise<string[]>
+  closeSoon(target: ClosableSession): void
 }
 
 const SESSION_USAGE = 'koloft session: use list, new, send or close. Run "koloft help" to see how.'
-const CLOSE_USAGE =
-  'koloft session close: it takes no options; it closes the session you run it in.'
 const SEND_USAGE =
   'koloft session send: give an id or name, then the message, like: koloft session send <id> "Tell me what you found."'
 const NO_WORKSPACE = 'koloft session: Koloft does not know which workspace this session is in.'
@@ -204,7 +272,8 @@ async function startSibling(
   d: SessionVerbDeps,
   args: NewSessionArgs,
   me: SessionInfo,
-  workspace: string
+  workspace: string,
+  callerTabId: string
 ): Promise<AgentReply> {
   const backend = me.backendId
   if (backend === 'codex' && args.name !== undefined) return refused(CODEX_HAS_NO_NAME, EXIT_USAGE)
@@ -223,6 +292,7 @@ async function startSibling(
     firstPrompt: withHandover(caller, args.prompt)
   })
   if (!tabId) return refused('koloft session new: Koloft could not start the session.')
+  d.started.started(tabId, callerTabId)
   const listHint =
     args.workspace === undefined
       ? 'koloft session list'
@@ -253,10 +323,12 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       const parsed = parseNewSessionArgs(rest)
       if (!parsed.ok) return refused(`koloft session new: ${parsed.error}`, EXIT_USAGE)
       if (parsed.value.workspace === undefined)
-        return ws ? startSibling(d, parsed.value, caller.session, ws) : refused(NO_WORKSPACE)
+        return ws
+          ? startSibling(d, parsed.value, caller.session, ws, caller.tabId)
+          : refused(NO_WORKSPACE)
       const target = startableWorkspace(parsed.value.workspace, d.pinnedWorkspaces())
       if (!target.ok) return refused(`koloft session new: ${target.error}`)
-      return startSibling(d, parsed.value, caller.session, target.value)
+      return startSibling(d, parsed.value, caller.session, target.value, caller.tabId)
     }
     if (sub === 'send') {
       if (caller.session.backendId !== 'codex')
@@ -270,15 +342,25 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       return answered(`Sent to ${target.value.title}.`)
     }
     if (sub === 'close') {
-      if (rest.length > 0) return refused(CLOSE_USAGE, EXIT_USAGE)
-      const left = await d.whatIsLeft(caller.tabId, caller.session)
+      if (rest.length > 1) return refused(CLOSE_USAGE, EXIT_USAGE)
+      const [ref] = rest
+      let target = closableSelf(caller.tabId, caller.session)
+      if (ref !== undefined) {
+        const mine = d.closable().filter((s) => d.started.startedBy(s, caller.tabId))
+        const hit = await findClosable(mine, ref, d.peerNames())
+        if (!hit.ok) return refused(`koloft session close: ${hit.error}`)
+        target = hit.value
+      }
+      const left = await d.whatIsLeft(target)
       if (left.length > 0)
         return refused(
-          `koloft session close: nothing was closed.\n\n${left.join('\n\n')}\n\nCommit and push every change, end any other session in this worktree, then run koloft session close again.`
+          `koloft session close: nothing was closed.\n\n${left.join('\n\n')}\n\nCommit and push every change, end any other session in that worktree, then run koloft session close again.`
         )
-      d.closeSoon(caller.tabId, caller.session)
+      d.closeSoon(target)
       return answered(
-        'Closing this session now: its tab, its row in the sidebar, and its git worktree and branch if it has one.'
+        target.tabId === caller.tabId
+          ? 'Closing this session now: its tab, its row in the sidebar, and its git worktree and branch if it has one.'
+          : `Closing "${target.title}" now: its tab if it is open, its row in the sidebar, and its git worktree and branch if it has one.`
       )
     }
     return refused(SESSION_USAGE, EXIT_USAGE)

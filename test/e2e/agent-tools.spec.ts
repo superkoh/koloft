@@ -199,6 +199,48 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     }
   })
 
+  test('koloft session close <child> closes a session the caller started in a worktree, only once nothing in it would be lost, and leaves the caller open', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const fx = setupGitFixture(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      const dlg = await openWorktreeSession(page, 'repo')
+      await dlg.getByRole('textbox').click()
+      await page.keyboard.type('parent')
+      await page.keyboard.press('Enter')
+      const rows = wsRows(page, 'repo')
+      await expect(rows).toHaveCount(1, { timeout: 60_000 })
+      await expect(rows).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const callerTabId = await rows.first().getAttribute('data-tab-id')
+      expect(await koloftInSession(page, 'session new -w kid --name kid -- hello')).toBe('0')
+      await expect(rows).toHaveCount(2, { timeout: 60_000 })
+      const child = rows.and(page.locator(`.ws-tab:not([data-tab-id="${callerTabId}"])`))
+      await expect(child).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const childTabId = await child.getAttribute('data-tab-id')
+      const tree = path.join(fx.clone, '.claude', 'worktrees', 'kid')
+      expect(fs.existsSync(tree)).toBe(true)
+
+      fs.writeFileSync(path.join(tree, 'left-behind.txt'), 'not committed')
+      expect(await koloftInSession(page, `session close ${childTabId}`)).toBe('1')
+      expect(await shownTermText(page, CENTER)).toContain('left-behind.txt')
+      await expect(rows).toHaveCount(2)
+
+      fs.rmSync(path.join(tree, 'left-behind.txt'))
+      expect(await koloftInSession(page, `session close ${childTabId}`)).toBe('0')
+      await expect(rows).toHaveCount(1, { timeout: 30_000 })
+      await expect(rows).toHaveAttribute('data-tab-id', callerTabId!)
+      await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+      expect(runGit(fx.clone, 'branch', '--list', 'worktree-kid').trim()).toBe('')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('with agent tools off in Settings, koloft in a new session is refused', async ({ env }) => {
     test.setTimeout(120_000)
     seedSettings(env, { agentTools: false })
