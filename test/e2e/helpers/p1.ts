@@ -615,3 +615,26 @@ export async function closeMenu(page: Page): Promise<void> {
   await page.keyboard.press('Escape')
   await expect(page.locator('.menu')).toHaveCount(0)
 }
+
+export function gitMark(page: Page, wsName: string): Locator {
+  return page.locator('.ws-head', { hasText: wsName }).locator(':scope > .ws-git')
+}
+
+export async function openGitPanel(page: Page, wsName: string): Promise<Locator> {
+  const mark = gitMark(page, wsName)
+  await expect(
+    mark,
+    'the mark drops its plain tooltip once it has a panel to open'
+  ).toHaveAttribute('title', '', { timeout: 30_000 })
+  await mark.hover()
+  const panel = page.locator('.tbu-pop.fx')
+  await expect(panel).toBeVisible()
+  return panel
+}
+
+export async function fetchNowInGitPanel(page: Page, wsName: string): Promise<void> {
+  const panel = await openGitPanel(page, wsName)
+  await panel.locator('.tbu-act', { hasText: 'Fetch now' }).click()
+  await page.mouse.move(1, 1)
+  await expect(panel).toHaveCount(0)
+}

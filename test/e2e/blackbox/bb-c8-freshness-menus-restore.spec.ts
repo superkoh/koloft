@@ -17,6 +17,7 @@ import { fetchedAtMs } from '../helpers/gitFixture'
 import {
   closeMenu,
   FAKE_SESSION_TITLE,
+  fetchNowInGitPanel,
   killSession,
   menuItemTexts,
   openMenu,
@@ -185,13 +186,12 @@ test.describe('C8 freshness, the worktree exposure surfaces (hover buttons, cont
     try {
       await openMenu(page, page.locator('.ws-head', { hasText: 'git-menu' }))
       const gitItems = await menuItemTexts(page)
-      expect(gitItems).toHaveLength(6)
+      expect(gitItems).toHaveLength(5)
       expect(gitItems[0]).toMatch(/^New session\s*⌘N$/)
       expect(gitItems[1]).toMatch(/^New worktree session…\s*⇧⌘N$/)
       expect(gitItems[2]).toMatch(/^Restore session…$/)
-      expect(gitItems[3]).toMatch(/^Fetch origin$/)
-      expect(gitItems[4]).toMatch(/^Scheduled jobs…$/)
-      expect(gitItems[5]).toMatch(/^Remove workspace$/)
+      expect(gitItems[3]).toMatch(/^Scheduled jobs…$/)
+      expect(gitItems[4]).toMatch(/^Remove workspace$/)
       await closeMenu(page)
 
       await openMenu(page, page.locator('.ws-head', { hasText: 'plain-menu' }))
@@ -416,8 +416,7 @@ test.describe('C8 freshness, the worktree exposure surfaces (hover buttons, cont
       await startSessionIn(page, 'repo-run')
       await waitForSessionRow(page, 'repo-run', 'main')
       pinned.git['repo-run'].originAhead(3)
-      await openMenu(page, page.locator('.ws-head', { hasText: 'repo-run' }))
-      await page.locator('.menu .mi', { hasText: 'Fetch origin' }).click()
+      await fetchNowInGitPanel(page, 'repo-run')
       await waitForBehindBadge(page, 'repo-run', 3)
 
       await openWorktreeDialog(page, 'repo-run')

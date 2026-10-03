@@ -135,7 +135,8 @@ import { CronRunner, type LaunchRequest } from './cronRunner'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
 import { GitFreshnessEngine } from './gitFreshness'
-import { GithubLookup, parseGithubFixture, type GithubOptions } from './github'
+import { GithubLookup, ghOpenCounts, parseGithubFixture, type GithubOptions } from './github'
+import { GithubCountsSweep } from './githubCounts'
 import { restoredWindowGeometry, trackWindowState } from './windowState'
 import { fullscreenOption, windowMinWidth } from './windowBounds'
 import { closeAllFileWatchers, closeAllDirWatchers } from './fileWatch'
@@ -476,15 +477,16 @@ function requestWebglRepair(): void {
 let workspaceMgr: WorkspaceManager | null = null
 
 let freshness: GitFreshnessEngine | null = null
+let githubCounts: GithubCountsSweep | null = null
 let remoteSync: RemoteSync | null = null
 tracker.machineTmp = (host) => remoteSync?.machineTmp(host)
 let machinePkg: MachinePackage | null = null
 const remoteControlDir = defaultControlDir()
-let loginSshEnv: Promise<void> | null = null
+let loginEnv: Promise<void> | null = null
 
 // PLATFORM§1
-function sshEnvReady(): Promise<void> {
-  return (loginSshEnv ??= readLoginShell({ env: process.env })
+function loginEnvReady(): Promise<void> {
+  return (loginEnv ??= readLoginShell({ env: process.env })
     .then(({ env }) => void Object.assign(process.env, sshEnvFromLogin(process.env, env)))
     .catch(() => undefined))
 }
@@ -1371,8 +1373,10 @@ app.whenReady().then(() => {
     },
     pushRows: (payload) => sendToRenderer('workspace:rows', payload),
     freshness: (wsPath) => freshness?.get(wsPath),
+    github: (wsPath) => githubCounts?.get(wsPath),
     onRescanned: (wsPaths) => {
       void freshness?.refreshLocal(wsPaths)
+      void githubCounts?.sweep()
       claudeBackend.watchRemoteHookMirrors()
     },
     jobCountFor: (wsPath) => cronRunner?.jobCountFor(wsPath) ?? 0,
@@ -1386,9 +1390,9 @@ app.whenReady().then(() => {
   })
   remoteSync = new RemoteSync({
     run: (host, cmd) =>
-      sshEnvReady().then(() => runSsh(host, cmd, { controlDir: remoteControlDir })),
+      loginEnvReady().then(() => runSsh(host, cmd, { controlDir: remoteControlDir })),
     rsync: (host, r, l, extra) =>
-      sshEnvReady().then(() => rsyncPull(host, r, l, extra, { controlDir: remoteControlDir })),
+      loginEnvReady().then(() => rsyncPull(host, r, l, extra, { controlDir: remoteControlDir })),
     targets: () => {
       const live = new Set(
         tracker
@@ -1415,8 +1419,14 @@ app.whenReady().then(() => {
     autoFetch: () => loadSettings().gitAutoFetch,
     onChange: () => workspaceMgr?.restampLive()
   })
+  githubCounts = new GithubCountsSweep({
+    workspaces: () => workspaceMgr?.pinnedPaths() ?? [],
+    openCounts: (wsPath) => hosts.of(wsPath).github.openCounts(wsPath),
+    onChange: () => workspaceMgr?.restampLive()
+  })
   workspaceMgr.start()
   freshness.start()
+  githubCounts.start()
   ensureControlDir(remoteControlDir)
   remoteSync.start()
 
@@ -2410,6 +2420,8 @@ function commitSettings(patch: Partial<Settings>): Settings {
 
 const githubOptions: GithubOptions = {
   fixture: parseGithubFixture(process.env.KOLOFT_GITHUB_FIXTURE),
+  // PLATFORM§1
+  openCounts: (repo) => loginEnvReady().then(() => ghOpenCounts(repo)),
   signedIn: async () => {
     try {
       const jar = await session.fromPartition(BROWSER_PARTITION).cookies.get({
@@ -2430,10 +2442,10 @@ const hosts = new Hosts(
   (machine) =>
     new SshHost(machine, {
       run: (cmd, opts) =>
-        sshEnvReady().then(() =>
+        loginEnvReady().then(() =>
           runSshBytes(machine, cmd, { controlDir: remoteControlDir, ...opts })
         ),
-      sshEnvReady,
+      sshEnvReady: loginEnvReady,
       shell: (dir) => {
         ensureControlDir(remoteControlDir)
         return {

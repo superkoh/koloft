@@ -13,6 +13,18 @@ function explainOnly(f: WorkspaceFreshness): string | null {
   return null
 }
 
+export function countLabel(n: number): string {
+  return n < 1000 ? `${n}` : `${Math.floor(n / 100) / 10}k`
+}
+
+export function openIssuesLabel(n: number): string {
+  return `${n} open issue${n === 1 ? '' : 's'}`
+}
+
+export function openPullsLabel(n: number): string {
+  return `${n} open pull request${n === 1 ? '' : 's'}`
+}
+
 export function behindBadge(
   f: WorkspaceFreshness | undefined,
   now: number
@@ -49,6 +61,7 @@ export function pullNote(f: WorkspaceFreshness): PullNote {
   if (why) return { text: why, tone: 'plain' }
   if (f.state === 'error')
     return { text: "can't reach origin — check network or credentials.", tone: 'alarm' }
+  if (f.behind === 0) return { text: `Up to date with ${f.defRef}.`, tone: 'plain' }
   if (f.dirty)
     return {
       text: 'Koloft only pulls into a clean tree — commit or discard local changes first.',

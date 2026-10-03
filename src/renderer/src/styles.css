@@ -752,6 +752,21 @@ body {
 .ws-behind.info {
   color: var(--fg-faint);
 }
+.ws-gh {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 5px;
+}
+.ws-gh > span {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
+}
 .hact {
   -webkit-app-region: no-drag;
   margin-left: auto;
@@ -962,13 +977,16 @@ body {
     transform: translateY(30%);
   }
 }
-.ws-tab-title i {
+.ws-tab-title i,
+.ws-name i {
   font-style: inherit;
 }
-.ws-tab-title.mq {
+.ws-tab-title.mq,
+.ws-name.mq {
   text-overflow: clip;
 }
-.ws-tab-title.mq i {
+.ws-tab-title.mq i,
+.ws-name.mq i {
   display: inline-block;
   font-style: inherit;
   white-space: nowrap;

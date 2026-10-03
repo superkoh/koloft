@@ -11,6 +11,7 @@ import type {
   SessionWorkbenchState,
   WorkspaceAddResult,
   WorkspaceFreshness,
+  WorkspaceGithub,
   WorkspaceRemoveResult,
   WorkspaceRows,
   WorktreeInfo
@@ -80,6 +81,7 @@ export interface WorkspaceManagerDeps {
   killTab(tabId: string): void
   pushRows(payload: WorkspaceRows[]): void
   freshness?(wsPath: string): WorkspaceFreshness | undefined
+  github?(wsPath: string): WorkspaceGithub | undefined
   onRescanned?(wsPaths: string[]): void
   jobCountFor?(wsPath: string): number
   remoteProjectsRoot(host: string): string
@@ -742,7 +744,11 @@ export class WorkspaceManager {
     const dirOk = new Map<string, boolean>()
     return rows.map((e) => ({
       ...e,
-      workspace: { ...e.workspace, freshness: this.deps.freshness?.(e.workspace.path) },
+      workspace: {
+        ...e.workspace,
+        freshness: this.deps.freshness?.(e.workspace.path),
+        github: this.deps.github?.(e.workspace.path)
+      },
       rows: e.rows.map((r) => {
         const live = liveById.get(r.id)
         const wt = live?.relocated && !live.remote ? (live.worktree ?? 'main') : undefined
