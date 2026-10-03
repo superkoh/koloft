@@ -1,4 +1,4 @@
-import type { DiscordChannelChoice, DiscordPhase, DiscordStatus } from '@shared/types'
+import type { DiscordChannel, DiscordPhase, DiscordStatus } from '@shared/types'
 import { DiscordGateway } from './gateway'
 import { DiscordHttpError, DiscordRest } from './rest'
 
@@ -181,9 +181,11 @@ export class DiscordLink {
     this.set('connecting')
     const rest = new DiscordRest(apiUrl, token)
     try {
-      const me = await rest.request<{ username: string }>('GET', '/users/@me')
-      const app = await rest.request<{ id: string }>('GET', '/oauth2/applications/@me')
-      const { url } = await rest.request<{ url: string }>('GET', '/gateway/bot')
+      const [me, app, { url }] = await Promise.all([
+        rest.request<{ username: string }>('GET', '/users/@me'),
+        rest.request<{ id: string }>('GET', '/oauth2/applications/@me'),
+        rest.request<{ url: string }>('GET', '/gateway/bot')
+      ])
       if (generation !== this.generation) return
       this.botName = me.username
       this.applicationId = app.id
@@ -303,7 +305,7 @@ export class DiscordLink {
     return list.map(messageOf)
   }
 
-  async channels(): Promise<DiscordChannelChoice[]> {
+  async channels(): Promise<DiscordChannel[]> {
     await this.starting
     const rest = this.rest
     if (!rest) return []

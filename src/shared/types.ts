@@ -174,6 +174,7 @@ export interface Settings {
   agentTools: boolean
   notesHeight: number
   notesFolded: boolean
+  conductorsFolded: boolean
   keepAwake: boolean
   worldClocks: string[]
   onboardingSeen: boolean
@@ -186,7 +187,7 @@ export interface Settings {
 export interface DiscordChannel {
   guildId: string
   channelId: string
-  name?: string
+  name: string
 }
 
 export interface ConductorBinding {
@@ -203,7 +204,6 @@ export interface ConductorBinding {
 export interface DiscordSettings {
   userId?: string
   userName?: string
-  conductorsFolded: boolean
   bindings: ConductorBinding[]
 }
 
@@ -222,13 +222,11 @@ export interface DiscordStatus {
   botName?: string
   applicationId?: string
   guildNames: string[]
-  failing?: Record<string, string>
+  failing: Record<string, string>
   candidate?: { name: string; text: string; at: number }
 }
 
-export interface DiscordChannelChoice extends DiscordChannel {
-  name: string
-}
+export const DISCORD_OFF: DiscordStatus = { phase: 'off', guildNames: [], failing: {} }
 
 export type ConductorSaveResult = { ok: true } | { ok: false; error: string }
 
@@ -266,13 +264,14 @@ export const DEFAULT_SETTINGS: Settings = {
   agentTools: true,
   notesHeight: 260,
   notesFolded: false,
+  conductorsFolded: true,
   keepAwake: true,
   worldClocks: [],
   onboardingSeen: false,
   hintsSeen: [],
   hintsOff: false,
   lastSeenVersion: '',
-  discord: { conductorsFolded: true, bindings: [] }
+  discord: { bindings: [] }
 }
 
 export type BackendId = 'claude' | 'codex'
@@ -312,6 +311,7 @@ export interface CreateTabOptions {
   util?: boolean
   ownerTabId?: string
   role?: string
+  trustFolder?: boolean
 }
 
 export type CreateTabResult =
@@ -1007,7 +1007,6 @@ export interface KoloftApi {
     switchBackend(id: string): Promise<void>
     open(id: string): Promise<ConductorOpenResult>
     startFresh(id: string): Promise<ConductorOpenResult>
-    setFolded(folded: boolean): Promise<void>
   }
   discord: {
     setToken(token: string): Promise<boolean>
@@ -1015,7 +1014,7 @@ export interface KoloftApi {
     onStatus(cb: (s: DiscordStatus) => void): () => void
     pair(isMe: boolean): Promise<void>
     forgetOwner(): Promise<void>
-    channels(): Promise<DiscordChannelChoice[]>
+    channels(): Promise<DiscordChannel[]>
   }
 }
 
@@ -1273,6 +1272,7 @@ export interface SessionResumeRequest {
   worktree?: string
   rebuild?: { worktreePath: string; branch: string; baseRef: string }
   role?: string
+  trustFolder?: boolean
 }
 
 export type SessionResumeResult =

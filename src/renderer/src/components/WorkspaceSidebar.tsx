@@ -111,7 +111,25 @@ interface MenuState {
   top: number
 }
 
-function menuPosFor(el: HTMLElement, itemCount: number): { left: number; top: number } {
+export function useDismissOnOutside(open: boolean, dismiss: (none: null) => void): void {
+  useEffect(() => {
+    if (!open) return
+    const close = (): void => dismiss(null)
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') dismiss(null)
+    }
+    window.addEventListener('click', close)
+    window.addEventListener('blur', close)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('blur', close)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open, dismiss])
+}
+
+export function menuPosFor(el: HTMLElement, itemCount: number): { left: number; top: number } {
   const r = el.getBoundingClientRect()
   let left = r.right - 6
   if (left + MENU_W > window.innerWidth - 4) left = Math.max(4, r.left - MENU_W + 6)
@@ -266,42 +284,14 @@ export function WorkspaceSidebar({
     leaveTimer.current = null
   }
 
-  useEffect(() => {
-    if (!menu) return
-    const close = (): void => setMenu(null)
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setMenu(null)
-    }
-    window.addEventListener('click', close)
-    window.addEventListener('blur', close)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('click', close)
-      window.removeEventListener('blur', close)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [menu])
+  useDismissOnOutside(!!menu, setMenu)
 
   const parkedFor = (row: SessionRow): ReturnType<typeof sessionActivityBadge> => {
     const sess = row.running ? sessions.find((s) => s.tabId === tabIdFor(row.id)) : undefined
     return sessionActivityBadge(sess, leftovers[row.id])
   }
 
-  useEffect(() => {
-    if (!parkedPop) return
-    const close = (): void => setParkedPop(null)
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setParkedPop(null)
-    }
-    window.addEventListener('click', close)
-    window.addEventListener('blur', close)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('click', close)
-      window.removeEventListener('blur', close)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [parkedPop])
+  useDismissOnOutside(!!parkedPop, setParkedPop)
 
   const menuItemCount = (t: MenuTarget): number =>
     t.kind === 'workspace'

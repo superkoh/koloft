@@ -1,3 +1,5 @@
+import { sleep } from '../codexTransport'
+
 const USER_AGENT = 'DiscordBot (https://github.com/superkoh/koloft, 1)'
 const NO_CONTENT = 204
 
@@ -14,8 +16,6 @@ function bucketOf(route: string): string {
   const message = /^\/channels\/(\d+)\/messages/.exec(route)
   return message ? `channel:${message[1]}` : route
 }
-
-const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 // ADR-0027 PLATFORM§39
 export class DiscordRest {
@@ -52,7 +52,7 @@ export class DiscordRest {
       })
       if (res.status === 429) {
         const { retry_after } = (await res.json()) as { retry_after: number }
-        await wait(retry_after * 1000)
+        await sleep(retry_after * 1000)
         continue
       }
       if (!res.ok) throw new DiscordHttpError(res.status, route)

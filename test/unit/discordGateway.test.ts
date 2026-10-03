@@ -22,10 +22,12 @@ afterEach(async () => {
 })
 
 async function listen(
-  acks = true
+  acks = true,
+  readyOnIdentify = false
 ): Promise<{ url: string; sockets: WebSocket[]; got: Sent[]; paths: string[] }> {
   server = new WebSocketServer({ port: 0, host: '127.0.0.1' })
   await new Promise((r) => server.once('listening', r))
+  const url = `ws://127.0.0.1:${(server.address() as AddressInfo).port}`
   const sockets: WebSocket[] = []
   const got: Sent[] = []
   const paths: string[] = []
@@ -36,15 +38,12 @@ async function listen(
       const p = JSON.parse(raw.toString()) as Sent
       got.push(p)
       if (p.op === 1 && acks) ws.send(JSON.stringify({ op: 11, d: null, s: null, t: null }))
+      if (p.op === 2 && readyOnIdentify)
+        dispatch(ws, 'READY', { session_id: 's1', resume_gateway_url: url, guilds: [] }, 1)
     })
     ws.send(JSON.stringify({ op: 10, d: { heartbeat_interval: HEARTBEAT_MS }, s: null, t: null }))
   })
-  return {
-    url: `ws://127.0.0.1:${(server.address() as AddressInfo).port}`,
-    sockets,
-    got,
-    paths
-  }
+  return { url, sockets, got, paths }
 }
 
 function run(url: string): { states: GatewayState[]; events: string[] } {
@@ -108,10 +107,8 @@ describe('DiscordGateway', () => {
   })
 
   it('a heartbeat the server never acknowledges drops the connection and resumes', async () => {
-    const { url, sockets, got } = await listen(false)
+    const { url, sockets, got } = await listen(false, true)
     run(url)
-    await expect.poll(() => got.some((p) => p.op === 2)).toBe(true)
-    dispatch(sockets[0], 'READY', { session_id: 's1', resume_gateway_url: url, guilds: [] }, 1)
     await expect.poll(() => got.some((p) => p.op === 6), { timeout: 5000 }).toBe(true)
     expect(sockets.length).toBeGreaterThan(1)
   })

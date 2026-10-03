@@ -2,6 +2,7 @@ import type { ConductorBinding, DiscordSettings } from './types'
 import { basename } from './preview'
 import { isAbsoluteOnHost, parseRemoteKey } from './remoteKey'
 import { backendIdOf } from './sessionBackend'
+import { isRecord } from './workbenchState'
 
 export const GLOBAL_SCOPE = 'global'
 
@@ -11,13 +12,17 @@ export function isDiscordId(value: unknown): value is string {
   return typeof value === 'string' && DISCORD_ID_RE.test(value)
 }
 
+export function newerSnowflake(a: string, b: string): boolean {
+  return BigInt(a) > BigInt(b)
+}
+
 export function scopeName(scope: string): string {
   if (scope === GLOBAL_SCOPE) return 'Global'
   return basename(parseRemoteKey(scope)?.path ?? scope)
 }
 
 export function channelLabel(binding: Pick<ConductorBinding, 'channel'>): string {
-  return `#${binding.channel.name ?? binding.channel.channelId}`
+  return `#${binding.channel.name}`
 }
 
 export function bindingProblem(
@@ -39,31 +44,28 @@ export function keepPinnedBindings(
   return bindings.filter((b) => b.scope === GLOBAL_SCOPE || pinned.includes(b.scope))
 }
 
-function isObj(x: unknown): x is Record<string, unknown> {
-  return typeof x === 'object' && x !== null && !Array.isArray(x)
-}
-
 function strings(raw: unknown): string[] {
   return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : []
 }
 
 function cleanBinding(raw: unknown): ConductorBinding | null {
-  if (!isObj(raw)) return null
+  if (!isRecord(raw)) return null
   const { id, scope, channel, lastSessionKey, lastMessageId } = raw
   const backend = backendIdOf(raw.backend)
   if (typeof id !== 'string' || !id || !backend) return null
   if (typeof scope !== 'string' || (scope !== GLOBAL_SCOPE && !isAbsoluteOnHost(scope))) return null
-  if (!isObj(channel) || !isDiscordId(channel.guildId) || !isDiscordId(channel.channelId))
+  if (
+    !isRecord(channel) ||
+    !isDiscordId(channel.guildId) ||
+    !isDiscordId(channel.channelId) ||
+    typeof channel.name !== 'string'
+  )
     return null
   return {
     id,
     scope,
     backend,
-    channel: {
-      guildId: channel.guildId,
-      channelId: channel.channelId,
-      ...(typeof channel.name === 'string' ? { name: channel.name } : {})
-    },
+    channel: { guildId: channel.guildId, channelId: channel.channelId, name: channel.name },
     sessionIds: strings(raw.sessionIds),
     touched: strings(raw.touched),
     ...(typeof lastSessionKey === 'string' ? { lastSessionKey } : {}),
@@ -72,7 +74,7 @@ function cleanBinding(raw: unknown): ConductorBinding | null {
 }
 
 export function sanitizeDiscord(raw: unknown): DiscordSettings {
-  const doc = isObj(raw) ? raw : {}
+  const doc = isRecord(raw) ? raw : {}
   const bindings: ConductorBinding[] = []
   for (const item of Array.isArray(doc.bindings) ? doc.bindings : []) {
     const b = cleanBinding(item)
@@ -87,7 +89,6 @@ export function sanitizeDiscord(raw: unknown): DiscordSettings {
           ...(typeof doc.userName === 'string' ? { userName: doc.userName } : {})
         }
       : {}),
-    conductorsFolded: typeof doc.conductorsFolded === 'boolean' ? doc.conductorsFolded : true,
     bindings
   }
 }

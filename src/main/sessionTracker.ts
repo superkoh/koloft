@@ -21,7 +21,7 @@ import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './to
 import type { LaunchedSession } from './accountPicker'
 import type { MachineTmp } from './remote/install'
 
-const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects')
+export const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects')
 const TMP_ROOT = ((): string => {
   try {
     return fs.realpathSync('/tmp')
@@ -44,7 +44,6 @@ const PROCS_SCAN_MS = envMs('KOLOFT_PROCS_SCAN_MS', 5000)
 const RELOCATE_SETTLE_MS = envMs('KOLOFT_RELOCATE_SETTLE_MS', 1200)
 // CC§2
 const TURN_TEXT_WAIT_MS = envMs('KOLOFT_TURN_TEXT_WAIT_MS', 5000)
-const TURN_TEXT_POLL_MS = 200
 
 export { encodeCwd }
 
@@ -380,15 +379,13 @@ export function findTranscript(projectsRoot: string, sessionId: string): string 
   } catch {
     return null
   }
-  let best: { file: string; size: number } | null = null
-  for (const b of buckets) {
-    const file = path.join(projectsRoot, b, sessionId + '.jsonl')
-    try {
-      const { size } = fs.statSync(file)
-      if (!best || size > best.size) best = { file, size }
-    } catch {}
-  }
-  return best?.file ?? null
+  const hits = buckets
+    .map((b) => path.join(projectsRoot, b, sessionId + '.jsonl'))
+    .filter((file) => fs.existsSync(file))
+  if (hits.length < 2) return hits[0] ?? null
+  return hits
+    .map((file) => ({ file, size: fs.statSync(file, { throwIfNoEntry: false })?.size ?? -1 }))
+    .reduce((a, b) => (b.size > a.size ? b : a)).file
 }
 
 export interface RemoteTab {
@@ -450,6 +447,7 @@ interface Tracked {
   rootPinAwaitingCatchup: boolean
   turns: TurnLog
   replyDone: boolean
+  endingTurn?: { turn: TalkTurn; deadline: ReturnType<typeof setTimeout> }
   inode?: number
   swept?: boolean
   relocatedCwd?: string
@@ -496,6 +494,7 @@ export class SessionTracker extends SessionRuntime {
   inspect: typeof inspectTaskProcs = inspectTaskProcs
   leftBehind?: (sessionId: string) => boolean
   machineTmp?: (host: string) => MachineTmp | undefined
+  dialogsWatched: (tabId: string) => boolean = () => true
 
   track(tabId: string, cwd: string, remote?: RemoteTab): void {
     const prev = this.tracked.get(tabId)
@@ -650,18 +649,24 @@ export class SessionTracker extends SessionRuntime {
   private async endTurn(tabId: string): Promise<void> {
     const t = this.tracked.get(tabId)
     if (!t) return
-    const until = Date.now() + TURN_TEXT_WAIT_MS
-    let turn: TalkTurn | undefined
-    for (;;) {
-      await this.parse(t).catch(() => {})
-      if (this.tracked.get(tabId) !== t) return
-      turn ??= t.turns.open()
-      if (turn && (turn !== t.turns.open() || t.replyDone)) break
-      if (Date.now() >= until) break
-      await new Promise((resolve) => setTimeout(resolve, TURN_TEXT_POLL_MS))
+    await this.parse(t).catch(() => {})
+    const turn = t.turns.open()
+    if (this.tracked.get(tabId) !== t || !turn) return
+    if (t.replyDone) return this.finishTurn(t, turn)
+    clearTimeout(t.endingTurn?.deadline)
+    t.endingTurn = {
+      turn,
+      deadline: setTimeout(() => this.finishTurn(t, turn), TURN_TEXT_WAIT_MS)
     }
-    if (turn && t.turns.end(turn))
-      this.emit('turn-ended', { tabId, turn: { ...turn, said: [...turn.said] } })
+  }
+
+  private finishTurn(t: Tracked, turn: TalkTurn): void {
+    if (t.endingTurn?.turn === turn) {
+      clearTimeout(t.endingTurn.deadline)
+      t.endingTurn = undefined
+    }
+    if (this.tracked.get(t.info.tabId) === t && t.turns.end(turn))
+      this.emit('turn-ended', { tabId: t.info.tabId, turn: { ...turn, said: [...turn.said] } })
   }
 
   private judgeReported(t: Tracked): boolean {
@@ -989,6 +994,8 @@ export class SessionTracker extends SessionRuntime {
     t.lastInterruptTs = 0
     t.turns = new TurnLog()
     t.replyDone = false
+    clearTimeout(t.endingTurn?.deadline)
+    t.endingTurn = undefined
     if (!keepBindMs) t.bindMs = Date.now()
     t.resetMs = Date.now()
   }
@@ -1424,6 +1431,8 @@ export class SessionTracker extends SessionRuntime {
           t.replyDone = piece.line.who === 'assistant'
         }
       }
+      const ending = t.endingTurn?.turn
+      if (ending && (t.replyDone || ending !== t.turns.open())) this.finishTurn(t, ending)
       if (obj.type === 'user') {
         this.ingestSpawnAck(t, obj)
         this.ingestToolDone(t, obj)
@@ -1469,7 +1478,7 @@ export class SessionTracker extends SessionRuntime {
         const liveNow = t.caughtUp || (isFinite(recTs) && recTs >= t.bindMs)
         for (const b of obj.message.content) {
           if (!b || b.type !== 'tool_use') continue
-          if (liveNow && typeof b.id === 'string') {
+          if (liveNow && typeof b.id === 'string' && this.dialogsWatched(t.info.tabId)) {
             if (t.openTools.size >= UNACKED_TOOL_CMD_CAP)
               t.openTools.delete(t.openTools.keys().next().value as string)
             t.openTools.set(b.id, { name: b.name, input: b.input ?? {} })

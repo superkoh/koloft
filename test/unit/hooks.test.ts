@@ -18,8 +18,7 @@ import {
   hookSettings,
   writeConductorMarker,
   removeConductorMarker,
-  markAnswerable,
-  markDiscordConnected
+  markAnswerable
 } from '../../src/main/hooks'
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/paths'
 
@@ -584,7 +583,6 @@ describe('injected hook script', () => {
     // CC§14
     it('hands the question to Koloft in a file of its own, waits for its answer file and prints it, then cleans both files up', async () => {
       markAnswerable(regDir, 'tabA1', true)
-      markDiscordConnected(regDir, true)
       const child = runAsk('tabA1')
       const printed = feed(child, ask)
       const askFile = askOf(child, 'tabA1')
@@ -598,7 +596,6 @@ describe('injected hook script', () => {
     // CC§14
     it('ended by claude (the person answered "No" at the Mac), it removes its question file', async () => {
       markAnswerable(regDir, 'tabA2', true)
-      markDiscordConnected(regDir, true)
       const child = runAsk('tabA2')
       const closed = feed(child, ask)
       await vi.waitFor(() => expect(fs.existsSync(askOf(child, 'tabA2'))).toBe(true))
@@ -607,20 +604,14 @@ describe('injected hook script', () => {
       expect(hookFiles('tabA2')).toEqual([])
     })
 
-    it('exits at once with no output while Discord is not connected or the tab is in no conductor’s care', () => {
-      markAnswerable(regDir, 'tabA3', true)
-      const quiet = (tab: string): string => {
-        const res = spawnSync(hookScript, [regDir, tab, 'ask'], {
-          input: JSON.stringify(ask),
-          encoding: 'utf8',
-          timeout: 5000
-        })
-        expect(res.status).toBe(0)
-        return res.stdout
-      }
-      expect(quiet('tabA3')).toBe('')
-      markDiscordConnected(regDir, true)
-      expect(quiet('tabNotLookedAfter')).toBe('')
+    it('exits at once with no output for a tab Koloft cannot answer for (Discord off, or in no conductor’s care)', () => {
+      const res = spawnSync(hookScript, [regDir, 'tabNotLookedAfter', 'ask'], {
+        input: JSON.stringify(ask),
+        encoding: 'utf8',
+        timeout: 5000
+      })
+      expect(res.status).toBe(0)
+      expect(res.stdout).toBe('')
       expect(fs.readdirSync(regDir).filter((f) => f.includes('.ask'))).toEqual([])
     })
 

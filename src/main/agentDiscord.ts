@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { answered, EXIT_USAGE, refused, type AgentVerb } from './agentRequests'
+import { answered, EXIT_USAGE, refused, splitAtDashes, type AgentVerb } from './agentRequests'
 import { BYTES_PER_FILE, type DiscordFile } from './discord/link'
 
 export const DISCORD_USAGE = 'koloft: usage: koloft discord send <file>... [-- "<text>"]'
@@ -21,15 +21,7 @@ export function discordVerb(d: DiscordVerbDeps): AgentVerb {
     if (sub !== 'send') return refused(DISCORD_USAGE, EXIT_USAGE)
     const channelId = d.channelOf(caller.tabId)
     if (!channelId) return refused(NOT_A_CONDUCTOR)
-    const dashes = rest.indexOf('--')
-    const names = dashes >= 0 ? rest.slice(0, dashes) : rest
-    const text =
-      dashes >= 0
-        ? rest
-            .slice(dashes + 1)
-            .join(' ')
-            .trim()
-        : ''
+    const { before: names, after: text } = splitAtDashes(rest)
     if (!names.length && !text) return refused(DISCORD_USAGE, EXIT_USAGE)
     const files: DiscordFile[] = []
     for (const name of names) {

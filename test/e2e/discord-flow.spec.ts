@@ -36,7 +36,6 @@ function seedConductor(
     discord: {
       userId: OWNER.id,
       userName: OWNER.username,
-      conductorsFolded: true,
       bindings: [
         {
           id: 'b1',
@@ -375,7 +374,6 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       discord: {
         userId: OWNER.id,
         userName: OWNER.username,
-        conductorsFolded: true,
         bindings: [
           {
             id: 'b1',

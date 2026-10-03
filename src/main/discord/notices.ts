@@ -1,6 +1,7 @@
 import type { BackendId, ConductorBinding, SessionStatus } from '@shared/types'
 import { GLOBAL_SCOPE, scopeName } from '@shared/conductors'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
+import { edgeAttention } from '../attention'
 
 export type NoticeKind = 'finished' | 'waiting' | 'closed'
 
@@ -17,9 +18,9 @@ export function noticeKindOf(
   next: SessionStatus,
   awaitsInput: boolean
 ): NoticeKind | undefined {
-  if (next === 'approval') return 'waiting'
-  if (next === 'waiting' && (prev === 'working' || prev === 'approval'))
-    return awaitsInput ? 'waiting' : 'finished'
+  const edge = edgeAttention(prev, next)
+  if (edge === 'approval') return 'waiting'
+  if (edge === 'turn-done') return awaitsInput ? 'waiting' : 'finished'
   return undefined
 }
 
@@ -42,23 +43,59 @@ export function noticeText(kind: NoticeKind, name: string, detail?: string): str
   return detail ? `❓ ${name} is waiting for you: ${detail}` : `❓ ${name} is waiting for you.`
 }
 
+export interface NoticeDeps {
+  bindings(): ConductorBinding[]
+  post(channelId: string, text: string): void
+  subject(tabId: string): NoticeSubject | undefined
+  ownsTab(tabId: string): boolean
+  awaitsInput(tabId: string): boolean
+  detail(tabId: string): Promise<string | undefined>
+}
+
 export class Notices {
   private pending = new Map<string, string[]>()
+  private closeNoticed = new Set<string>()
+  private waitingNoticed = new Map<string, string>()
 
-  constructor(
-    private d: {
-      bindings(): ConductorBinding[]
-      post(channelId: string, text: string): void
-    }
-  ) {}
+  constructor(private d: NoticeDeps) {}
 
-  notify(subject: NoticeSubject, kind: NoticeKind, detail?: string): void {
-    const channelId = noticeChannel(this.d.bindings(), subject, kind)
-    if (channelId) this.queue(channelId, noticeText(kind, subject.name, detail))
+  onStatus(tabId: string, prev: SessionStatus | undefined, next: SessionStatus): void {
+    if (next === 'working') this.waitingNoticed.delete(tabId)
+    const kind = noticeKindOf(prev, next, this.d.awaitsInput(tabId))
+    if (kind) void this.notice(tabId, kind)
+  }
+
+  waiting(tabId: string): void {
+    void this.notice(tabId, 'waiting')
+  }
+
+  closed(tabId: string): void {
+    void this.notice(tabId, 'closed')
+  }
+
+  forget(tabId: string): void {
+    this.closeNoticed.delete(tabId)
+    this.waitingNoticed.delete(tabId)
   }
 
   started(channelId: string, name: string, workspace: string, backend: BackendId): void {
     this.queue(channelId, `▶ Started ${name} (${scopeName(workspace)}, ${BACKEND_LABEL[backend]})`)
+  }
+
+  private async notice(tabId: string, kind: NoticeKind): Promise<void> {
+    const subject = this.d.subject(tabId)
+    if (!subject || this.d.ownsTab(tabId)) return
+    let detail: string | undefined
+    if (kind === 'closed') {
+      if (this.closeNoticed.has(tabId)) return
+      this.closeNoticed.add(tabId)
+    } else if (kind === 'waiting') {
+      detail = await this.d.detail(tabId)
+      if (this.waitingNoticed.get(tabId) === (detail ?? '')) return
+      this.waitingNoticed.set(tabId, detail ?? '')
+    }
+    const channelId = noticeChannel(this.d.bindings(), subject, kind)
+    if (channelId) this.queue(channelId, noticeText(kind, subject.name, detail))
   }
 
   private queue(channelId: string, line: string): void {

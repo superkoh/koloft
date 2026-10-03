@@ -1,8 +1,13 @@
 import fs from 'fs'
 import path from 'path'
 import type { BackendId, SessionStatus } from '@shared/types'
-import type { TurnEnded } from '@shared/turns'
+import type { Turn } from '@shared/turns'
+import { newerSnowflake } from '@shared/conductors'
+import { safeDownloadName } from '@shared/downloadName'
 import { watchJsonDrops, writeWholeBeforeVisible } from '../jsonDrops'
+import { errorText } from '../agentRequests'
+import { sleep } from '../codexTransport'
+import { typeKeys } from '../ptyManager'
 import type { Conductors } from './conductors'
 import {
   BYTES_PER_FILE,
@@ -36,11 +41,8 @@ const ANSWER_SUFFIX = '.answer.json'
 const QUEUED = '⏳'
 const DELIVERED = '✅'
 const PAGE = 100
-// CC§12
-export const SUBMIT_AFTER_TEXT_MS = 300
-const READY_POLL_MS = 250
 const PROMPT_SETTLES_AFTER_BIND_MS = 1000
-const ATTACHMENTS_KEPT_MS = 7 * 24 * 60 * 60 * 1000
+const CONDUCTOR_GETS_READY_WITHIN_MS = 10 * 60_000
 
 export interface RelayDeps {
   link: Pick<DiscordLink, 'post' | 'upload' | 'react' | 'messages'>
@@ -61,21 +63,12 @@ export interface RelayDeps {
   awaitsInput(tabId: string): boolean
   waiting(tabId: string): void
   alive(tabId: string): boolean
+  ready(tabId: string, ready: () => boolean, ms: number): Promise<boolean>
   write(tabId: string, data: string): void
   queue(tabId: string, text: string, clientId: string): Promise<void>
   codexApproval(tabId: string): CodexApproval | undefined
   regDir: string
   attachmentsDir: string
-}
-
-const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
-
-function newer(a: string, b: string): boolean {
-  return BigInt(a) > BigInt(b)
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 interface Inbound {
@@ -90,6 +83,7 @@ export class DiscordRelay {
   private pumping = new Set<string>()
   private seenLive = new Set<string>()
   private asks = new Map<string, { payload: AskPayload; hook?: string; raw: string }>()
+  private askHooks = new Map<string, Set<string>>()
   private approvals = new Map<string, string | number>()
 
   constructor(private d: RelayDeps) {}
@@ -112,7 +106,7 @@ export class DiscordRelay {
   }
 
   onMessage(m: DiscordMessage): void {
-    if (m.bot || m.authorId !== this.d.conductors.owner()) return
+    if (m.authorId !== this.d.conductors.owner()) return
     const b = this.d.conductors.bindingOfChannel(m.channelId)
     if (!b) return
     this.seenLive.add(m.id)
@@ -122,12 +116,13 @@ export class DiscordRelay {
       this.d.conductors.setLastMessage(b.id, m.id)
       return
     }
-    this.react(m, QUEUED, true)
+    const waits = !tab || this.pumping.has(b.id) || !this.typable(tab)
+    if (waits) this.react(m, QUEUED, true)
     this.enqueue(b.id, {
       clientId: `koloft-discord-${m.id}`,
       text: () => this.textOf(m),
       settle: (failed) => {
-        this.react(m, QUEUED, false)
+        if (waits) this.react(m, QUEUED, false)
         if (failed) this.say(m.channelId, `${failed} This message was not delivered.`, m.id)
         else this.react(m, DELIVERED, true)
         this.d.conductors.setLastMessage(b.id, m.id)
@@ -175,9 +170,7 @@ export class DiscordRelay {
       await this.d.queue(tab, text, item.clientId)
       return
     }
-    this.d.write(tab, text)
-    await wait(SUBMIT_AFTER_TEXT_MS)
-    this.d.write(tab, '\r')
+    await typeKeys((data) => this.d.write(tab, data), [text, '\r'])
   }
 
   private async readyTab(bindingId: string): Promise<string> {
@@ -185,19 +178,32 @@ export class DiscordRelay {
     const opened = await this.d.conductors.open(bindingId)
     if (!opened.ok) throw new Error(opened.error)
     const tab = opened.tabId
-    while (!this.canType(tab)) {
-      if (!this.d.alive(tab)) throw new Error('The conductor closed before it was ready.')
-      await wait(READY_POLL_MS)
-    }
-    if (tab !== already) await wait(PROMPT_SETTLES_AFTER_BIND_MS)
+    if (!(await this.d.ready(tab, () => this.typable(tab), CONDUCTOR_GETS_READY_WITHIN_MS)))
+      throw new Error(
+        this.d.alive(tab)
+          ? 'The conductor did not get ready in time.'
+          : 'The conductor closed before it was ready.'
+      )
+    if (tab !== already) await sleep(PROMPT_SETTLES_AFTER_BIND_MS)
     return tab
   }
 
-  private canType(tab: string): boolean {
+  private typable(tab: string): boolean {
     const status = this.d.status(tab)
     return (
-      !!this.d.boundKey(tab) && status !== undefined && status !== 'approval' && !this.askOpen(tab)
+      !!this.d.boundKey(tab) &&
+      status !== undefined &&
+      status !== 'approval' &&
+      !this.hookWaits(tab)
     )
+  }
+
+  private hookWaits(tab: string): boolean {
+    const hooks = this.askHooks.get(tab)
+    if (!hooks) return false
+    for (const hook of hooks)
+      if (!fs.existsSync(this.hookFile(tab, hook, ASK_SUFFIX))) hooks.delete(hook)
+    return hooks.size > 0
   }
 
   private async textOf(m: DiscordMessage): Promise<string> {
@@ -208,32 +214,15 @@ export class DiscordRelay {
   private async fetchAttachment(messageId: string, a: DiscordAttachment): Promise<string> {
     if (a.size > BYTES_PER_FILE)
       return `(${a.filename} was not passed in: it is larger than 20 MB.)`
-    this.pruneAttachments()
     const dir = path.join(this.d.attachmentsDir, messageId)
     fs.mkdirSync(dir, { recursive: true })
-    const file = path.join(dir, path.basename(a.filename) || 'file')
+    const file = path.join(dir, safeDownloadName(a.filename))
     fs.writeFileSync(file, await this.d.download(a.url))
     return `(attached file: ${JSON.stringify(file)})`
   }
 
-  private pruneAttachments(): void {
-    let names: string[]
-    try {
-      names = fs.readdirSync(this.d.attachmentsDir)
-    } catch {
-      return
-    }
-    for (const name of names) {
-      const dir = path.join(this.d.attachmentsDir, name)
-      try {
-        if (Date.now() - fs.statSync(dir).mtimeMs > ATTACHMENTS_KEPT_MS)
-          fs.rmSync(dir, { recursive: true, force: true })
-      } catch {}
-    }
-  }
-
-  turnEnded(turn: TurnEnded): void {
-    const b = this.d.conductors.bindingOfTab(turn.tabId)
+  turnEnded(tabId: string, turn: Turn): void {
+    const b = this.d.conductors.bindingOfTab(tabId)
     if (b && turn.reply.trim()) this.say(b.channel.channelId, turn.reply)
   }
 
@@ -247,16 +236,6 @@ export class DiscordRelay {
     return fs.existsSync(this.hookFile(tab, ask.hook, ASK_SUFFIX)) ? ask : undefined
   }
 
-  private askOpen(tab: string): boolean {
-    try {
-      return fs
-        .readdirSync(this.d.regDir)
-        .some((name) => name.startsWith(`${tab}.`) && name.endsWith(ASK_SUFFIX))
-    } catch {
-      return false
-    }
-  }
-
   // CC§14
   watchAsks(): fs.FSWatcher | null {
     return watchJsonDrops(this.d.regDir, (name) => {
@@ -266,16 +245,13 @@ export class DiscordRelay {
     })
   }
 
-  remoteAsked(tab: string, payload: AskPayload): void {
-    this.onAsk(tab, payload)
-  }
-
-  private onAsk(tab: string, payload: AskPayload, hook?: string): void {
+  onAsk(tab: string, payload: AskPayload, hook?: string): void {
     const raw = JSON.stringify(payload)
     const before = this.asks.get(tab)
     if (before && before.hook === hook && before.raw === raw) return
     if (before?.hook && before.hook !== hook) this.release(tab, before.hook)
     this.asks.set(tab, { payload, hook, raw })
+    if (hook) this.askHooks.set(tab, (this.askHooks.get(tab) ?? new Set()).add(hook))
     const b = this.d.conductors.bindingOfTab(tab)
     if (b) this.say(b.channel.channelId, askText(payload))
     else this.d.waiting(tab)
@@ -324,22 +300,13 @@ export class DiscordRelay {
     const keys = claudeKeysFor(ask.payload, reply)
     if (!keys.ok) return keys.error
     this.asks.delete(tab)
-    for (const [i, key] of keys.value.entries()) {
-      if (i > 0) await wait(SUBMIT_AFTER_TEXT_MS)
-      this.d.write(tab, key)
-    }
+    await typeKeys((data) => this.d.write(tab, data), keys.value)
     return undefined
   }
 
-  conductorWaiting(tab: string): void {
+  codexAsked(tab: string, a: CodexApproval): void {
     const b = this.d.conductors.bindingOfTab(tab)
-    if (!b || this.d.backendOf(tab) !== 'codex' || this.d.status(tab) !== 'approval') return
-    const a = this.d.codexApproval(tab)
-    if (!a) {
-      setTimeout(() => this.conductorWaiting(tab), READY_POLL_MS)
-      return
-    }
-    if (this.approvals.get(tab) === a.id) return
+    if (!b || this.approvals.get(tab) === a.id) return
     this.approvals.set(tab, a.id)
     this.say(b.channel.channelId, codexApprovalText(a))
   }
@@ -370,6 +337,7 @@ export class DiscordRelay {
   forget(tab: string): void {
     this.answer(tab, {})
     this.approvals.delete(tab)
+    this.askHooks.delete(tab)
   }
 
   async catchUp(): Promise<void> {
@@ -385,7 +353,7 @@ export class DiscordRelay {
         let after = b.lastMessageId
         for (;;) {
           const page = await this.d.link.messages(channelId, after, PAGE)
-          for (const m of page.sort((x, y) => (newer(x.id, y.id) ? 1 : -1))) {
+          for (const m of page.sort((x, y) => (newerSnowflake(x.id, y.id) ? 1 : -1))) {
             if (!m.bot && m.authorId === owner && !this.seenLive.has(m.id))
               this.say(channelId, OFFLINE_REPLY, m.id)
             after = m.id

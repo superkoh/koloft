@@ -622,7 +622,8 @@ export class ClaudeBackend implements SessionBackend {
       name: opts.name,
       cols: opts.cols,
       rows: opts.rows,
-      role: opts.role
+      role: opts.role,
+      trustFolder: opts.trustFolder
     })
   }
 
@@ -675,7 +676,8 @@ export class ClaudeBackend implements SessionBackend {
       worktree,
       cols: req.cols,
       rows: req.rows,
-      role: req.role
+      role: req.role,
+      trustFolder: req.trustFolder
     })
     return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
   }
@@ -735,11 +737,11 @@ export class ClaudeBackend implements SessionBackend {
 
   private async createTab(
     host: Host,
-    spec: ClaudeLaunch & { cols?: number; rows?: number; role?: string }
+    spec: ClaudeLaunch & { cols?: number; rows?: number; role?: string; trustFolder?: boolean }
   ): Promise<CreateTabResult> {
     const { tracker } = this.d
     const workspaces = this.d.workspaces()
-    if (spec.role) await host.trustFolder(spec.cwd ?? spec.root)
+    if (spec.trustFolder) await host.trustFolder(spec.cwd ?? spec.root)
     const ws = spec.resumeSessionId ? workspaces?.workspaceOf(spec.resumeSessionId) : undefined
     const plan = await host.launch({
       ...spec,

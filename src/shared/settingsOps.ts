@@ -48,6 +48,10 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   merged.notesHeight = sanitizeNotesHeight(merged.notesHeight)
   merged.notesFolded =
     typeof merged.notesFolded === 'boolean' ? merged.notesFolded : DEFAULT_SETTINGS.notesFolded
+  merged.conductorsFolded =
+    typeof merged.conductorsFolded === 'boolean'
+      ? merged.conductorsFolded
+      : DEFAULT_SETTINGS.conductorsFolded
   merged.worldClocks = Array.isArray(merged.worldClocks)
     ? [...new Set(merged.worldClocks.filter(isZoneId))].slice(0, WORLD_CLOCK_MAX)
     : []

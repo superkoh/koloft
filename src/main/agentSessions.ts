@@ -16,14 +16,17 @@ import { ageLabel } from '@shared/freshnessOps'
 import { MAX_READ_TURNS, type Turn } from '@shared/turns'
 import {
   answered,
+  errorText,
   EXIT_USAGE,
   fail,
   refused,
+  splitAtDashes,
   type AgentCaller,
   type AgentReply,
   type AgentVerb,
   type Parsed
 } from './agentRequests'
+import { AGENT_SHIM_WAITS_MS } from './agentShim'
 import { crossSessionLine, type ModeClass } from './crossSessionMessage'
 import type { StartedSessions } from './startedSessions'
 
@@ -217,20 +220,30 @@ function startableWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<stri
 const CLAUDE_USES_SEND_MESSAGE =
   'this is for Codex sessions. A Claude session talks to another Claude session with its SendMessage tool; ListAgents shows their names.'
 
-export function findCodexTarget(sessions: SessionInfo[], ref: string): Parsed<SessionInfo> {
-  const byId = sessions.find(
-    (s) => s.nativeSessionId === ref || s.sessionId === ref || s.tabId === ref
-  )
-  const hits = byId ? [byId] : sessions.filter((s) => s.title === ref)
+function matchRef<T>(
+  items: T[],
+  ref: string,
+  isId: (item: T, i: number) => boolean,
+  titleOf: (item: T) => string
+): Parsed<T> | null {
+  const byId = items.find(isId)
+  const hits = byId ? [byId] : items.filter((item) => titleOf(item) === ref)
   if (hits.length > 1)
     return fail(
       `${hits.length} sessions are named "${ref}". Use the id from "koloft session list".`
     )
-  if (hits.length === 0)
-    return fail(`there is no open session "${ref}". Run "koloft session list" to see them.`)
-  return hits[0].backendId === 'codex'
-    ? { ok: true, value: hits[0] }
-    : fail(CLAUDE_USES_SEND_MESSAGE)
+  return hits.length ? { ok: true, value: hits[0] } : null
+}
+
+export function findCodexTarget(sessions: SessionInfo[], ref: string): Parsed<SessionInfo> {
+  const hit = matchRef(
+    sessions,
+    ref,
+    (s) => s.nativeSessionId === ref || s.sessionId === ref || s.tabId === ref,
+    (s) => s.title
+  )
+  if (!hit) return fail(`there is no open session "${ref}". Run "koloft session list" to see them.`)
+  return !hit.ok || hit.value.backendId === 'codex' ? hit : fail(CLAUDE_USES_SEND_MESSAGE)
 }
 
 export interface ClosableSession {
@@ -253,20 +266,19 @@ export async function findClosable(
   const names = await Promise.all(
     sessions.map((s) => (s.backendId === 'claude' ? nameOf(s.sessionId) : null))
   )
-  const byId = sessions.find(
+  const hit = matchRef(
+    sessions,
+    ref,
     (s, i) =>
-      s.sessionId === ref || s.nativeSessionId === ref || s.tabId === ref || names[i] === ref
+      s.sessionId === ref || s.nativeSessionId === ref || s.tabId === ref || names[i] === ref,
+    (s) => s.title
   )
-  const hits = byId ? [byId] : sessions.filter((s) => s.title === ref)
-  if (hits.length > 1)
-    return fail(
-      `${hits.length} sessions are named "${ref}". Use the id from "koloft session list".`
-    )
-  if (hits.length === 0)
-    return fail(
+  return (
+    hit ??
+    fail(
       `you did not start a session "${ref}". You can close only this session or one you started with koloft session new.`
     )
-  return { ok: true, value: hits[0] }
+  )
 }
 
 export interface SessionVerbDeps {
@@ -394,9 +406,13 @@ function parseReadArgs(rest: string[]): Parsed<{ ref: string; last: number }> {
   return { ok: true, value: { ref, last } }
 }
 
-function matching(placed: PlacedRow[], ref: string): PlacedRow[] {
-  const byId = placed.filter((p) => p.row.id === ref || p.row.nativeSessionId === ref)
-  return byId.length > 0 ? byId : placed.filter((p) => p.title === ref)
+function matchRow(placed: PlacedRow[], ref: string): Parsed<PlacedRow> | null {
+  return matchRef(
+    placed,
+    ref,
+    (p) => p.row.id === ref || p.row.nativeSessionId === ref,
+    (p) => p.title
+  )
 }
 
 function findInScope(
@@ -407,21 +423,16 @@ function findInScope(
 ): Parsed<PlacedRow> {
   const scope = d.conductorScope(callerTabId)
   const all = placedRows(d.sidebar(), d.allSessions())
-  const hits = matching(
+  const hit = matchRow(
     all.filter((p) => inScope(scope, p.workspace)),
     ref
   )
-  if (hits.length > 1)
-    return fail(
-      `koloft session ${verb}: ${hits.length} sessions are named "${ref}". Use the id from "koloft session list".`
-    )
-  if (hits.length === 0)
-    return fail(
-      matching(all, ref).length > 0
-        ? `koloft session ${verb}: ${NOT_IN_YOUR_WORKSPACE}`
-        : `koloft session ${verb}: there is no session "${ref}". Run "koloft session list" to see them.`
-    )
-  return { ok: true, value: hits[0] }
+  if (hit) return hit.ok ? hit : fail(`koloft session ${verb}: ${hit.error}`)
+  return fail(
+    matchRow(all, ref)
+      ? `koloft session ${verb}: ${NOT_IN_YOUR_WORKSPACE}`
+      : `koloft session ${verb}: there is no session "${ref}". Run "koloft session list" to see them.`
+  )
 }
 
 async function readSession(
@@ -442,7 +453,9 @@ async function readSession(
 
 export const THAT_IS_YOU = 'That is you.'
 const ONLY_A_CONDUCTOR = 'only a conductor (a session bound to a Discord channel) can do this.'
-const REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS = 8_000
+const TIME_FOR_THE_REPLY_TO_REACH_THE_SHIM_MS = 2_000
+const REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS =
+  AGENT_SHIM_WAITS_MS - TIME_FOR_THE_REPLY_TO_REACH_THE_SHIM_MS
 const RESUME_USAGE =
   'koloft session resume: give an id or name, and if you like a first message after --, like: koloft session resume fix-login -- "Carry on."'
 const STOP_USAGE = 'koloft session stop: give an id or name, like: koloft session stop fix-login'
@@ -534,8 +547,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
         await sendNow(t, text, line, Date.now() + REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS)
       )
     void sendNow(t, text, line, Date.now() + WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS).catch(
-      (error: unknown) =>
-        d.undelivered(caller.tabId, t, error instanceof Error ? error.message : String(error))
+      (error: unknown) => d.undelivered(caller.tabId, t, errorText(error))
     )
     return answered(`Will deliver when ${t.name} is ready.`)
   }
@@ -554,13 +566,12 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
     rest: string[],
     caller: AgentCaller
   ): Promise<AgentReply> => {
-    const dashes = rest.indexOf('--')
-    const [ref, ...words] = sub === 'resume' && dashes >= 0 ? rest.slice(0, dashes) : rest
-    const text = (sub === 'resume' ? (dashes >= 0 ? rest.slice(dashes + 1) : []) : words)
-      .join(' ')
-      .trim()
+    const [ref, ...tail] = rest
+    const resume = splitAtDashes(tail)
+    const text = sub === 'resume' ? resume.after : tail.join(' ').trim()
+    const extra = sub === 'resume' ? resume.before : tail
     const takesWords = sub === 'send' || sub === 'answer'
-    if (!ref || (takesWords && !text) || (!takesWords && words.length > 0))
+    if (!ref || (takesWords && !text) || (!takesWords && extra.length > 0))
       return refused(CONDUCTOR_ACT_USAGE[sub], EXIT_USAGE)
     if (isMe(ref, caller.session, d.conductorOf(ref), caller.tabId))
       return refused(`koloft session ${sub}: ${THAT_IS_YOU}`)

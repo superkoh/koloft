@@ -35,7 +35,7 @@ function setup(
     id: 'b1',
     scope: 'global',
     backend: 'claude',
-    channel: { guildId: '1', channelId: CHANNEL },
+    channel: { guildId: '1', channelId: CHANNEL, name: 'koloft' },
     sessionIds: [],
     touched: [],
     ...over
@@ -44,11 +44,12 @@ function setup(
   const writes: { data: string; at: number }[] = []
   const last: string[] = []
   const waiting: string[] = []
+  const reactions: string[] = []
   const deps: RelayDeps = {
     link: {
       post: async (_c, text, replyTo) => posts.push({ text, replyTo }),
       upload: async () => undefined,
-      react: async () => undefined,
+      react: async (_c, id, emoji, on) => void reactions.push(`${id} ${on ? '+' : '-'}${emoji}`),
       messages: async (_c, after, limit) =>
         history
           .filter((m) => !after || BigInt(m.id) > BigInt(after))
@@ -73,6 +74,10 @@ function setup(
     awaitsInput: () => false,
     waiting: (t) => waiting.push(t),
     alive: () => true,
+    ready: async (_t, ready) => {
+      while (!ready()) await new Promise((r) => setTimeout(r, 50))
+      return true
+    },
     write: (_t, data) => writes.push({ data, at: Date.now() }),
     queue: async () => undefined,
     codexApproval: () => undefined,
@@ -80,15 +85,30 @@ function setup(
     attachmentsDir: path.join(dir, 'attachments'),
     ...more
   }
-  return { relay: new DiscordRelay(deps), posts, writes, last, waiting }
+  return { relay: new DiscordRelay(deps), posts, writes, last, waiting, reactions }
 }
 
 const HOOK = '4242'
 const hookFile = (tab: string, suffix: string, hook = HOOK): string =>
   path.join(dir, `${tab}.${hook}.${suffix}.json`)
+const drop = (file: string, payload: unknown): void =>
+  fs.writeFileSync(file, JSON.stringify(payload))
 const QUESTION = {
   tool_name: 'AskUserQuestion',
   tool_input: { questions: [{ question: 'Which?', options: [{ label: 'A' }, { label: 'B' }] }] }
+}
+
+async function watchAsksOnceArmed(
+  relay: DiscordRelay,
+  waiting: string[]
+): Promise<fs.FSWatcher | null> {
+  const watcher = relay.watchAsks()
+  await vi.waitFor(() => {
+    drop(hookFile('armed', 'ask'), QUESTION)
+    expect(waiting).toContain('armed')
+  })
+  waiting.length = 0
+  return watcher
 }
 
 describe('DiscordRelay: offline catch-up', () => {
@@ -136,6 +156,23 @@ describe('DiscordRelay: typing an owner message into a Claude conductor', () => 
     await vi.waitFor(() => expect(last).toEqual(['201']))
   })
 
+  it('a message the conductor can take at once gets only ✅; one that has to wait shows ⏳ until it is typed', async () => {
+    let status: SessionStatus = 'waiting'
+    const { relay, writes, reactions } = setup({}, [], { status: () => status })
+    relay.onMessage(message('203', OWNER, 'now'))
+    await vi.waitFor(() => expect(reactions).toEqual(['203 +✅']), { timeout: 3000 })
+    status = 'approval'
+    relay.onMessage(message('204', OWNER, 'later'))
+    await new Promise((r) => setTimeout(r, 400))
+    expect(reactions).toEqual(['203 +✅', '204 +⏳'])
+    status = 'waiting'
+    await vi.waitFor(
+      () => expect(reactions).toEqual(['203 +✅', '204 +⏳', '204 -⏳', '204 +✅']),
+      { timeout: 3000 }
+    )
+    expect(writes.map((w) => w.data)).toEqual(['[Discord] now', '\r', '[Discord] later', '\r'])
+  })
+
   it('a stranger’s message is not typed', async () => {
     const { relay, writes } = setup()
     relay.onMessage(message('202', '556'))
@@ -145,11 +182,11 @@ describe('DiscordRelay: typing an owner message into a Claude conductor', () => 
 
   // CC§14
   it('answers the conductor’s own open question with the next message, and holds a later message until the question is gone', async () => {
-    const { relay, writes, posts } = setup()
+    const { relay, writes, posts, waiting } = setup()
     const askFile = hookFile(TAB, 'ask')
     const answerFile = hookFile(TAB, 'answer')
-    const watcher = relay.watchAsks()
-    fs.writeFileSync(askFile, JSON.stringify(QUESTION))
+    const watcher = await watchAsksOnceArmed(relay, waiting)
+    drop(askFile, QUESTION)
     await vi.waitFor(() =>
       expect(posts.map((p) => p.text)).toEqual([
         '❓ Which?\n1. A\n2. B\n\nReply with a number or your own answer.'
@@ -173,14 +210,11 @@ describe('DiscordRelay: typing an owner message into a Claude conductor', () => 
 
   // CC§14
   it('when the question was answered at the Mac first, the tool’s result lets the waiting hook go with an empty answer, and the next message is not taken as an answer', async () => {
-    const { relay, posts } = setup()
+    const { relay, posts, waiting } = setup()
     const askFile = hookFile(TAB, 'ask')
     const answerFile = hookFile(TAB, 'answer')
-    const watcher = relay.watchAsks()
-    fs.writeFileSync(
-      askFile,
-      JSON.stringify({ tool_name: 'ExitPlanMode', tool_input: { plan: 'p', planFilePath: '/p' } })
-    )
+    const watcher = await watchAsksOnceArmed(relay, waiting)
+    drop(askFile, { tool_name: 'ExitPlanMode', tool_input: { plan: 'p', planFilePath: '/p' } })
     await vi.waitFor(() => expect(posts).toHaveLength(1))
     relay.toolDone(TAB, { name: 'ExitPlanMode', input: {} })
     expect(JSON.parse(fs.readFileSync(answerFile, 'utf8'))).toEqual({})
@@ -200,8 +234,8 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
   // CC§14
   it('a local Claude dialog is announced as waiting with its full text, and koloft session answer writes the answer the waiting hook prints', async () => {
     const { relay, posts, waiting } = setup()
-    const watcher = relay.watchAsks()
-    fs.writeFileSync(hookFile(MANAGED, 'ask'), JSON.stringify(QUESTION))
+    const watcher = await watchAsksOnceArmed(relay, waiting)
+    drop(hookFile(MANAGED, 'ask'), QUESTION)
     await vi.waitFor(() => expect(waiting).toEqual([MANAGED]))
     expect(posts).toEqual([])
     expect(relay.dialogDetail(MANAGED)).toBe('Which?\n1. A\n2. B')
@@ -214,14 +248,14 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
 
   // CC§14
   it('an approval answered yes is allowed with its input, no is denied with the words', async () => {
-    const { relay } = setup()
-    const watcher = relay.watchAsks()
+    const { relay, waiting } = setup()
+    const watcher = await watchAsksOnceArmed(relay, waiting)
     for (const [reply, decision] of [
       ['yes', { behavior: 'allow', updatedInput: BASH.tool_input }],
       ['no, use make clean', { behavior: 'deny', message: 'no, use make clean' }]
     ] as const) {
       fs.rmSync(hookFile(MANAGED, 'answer'), { force: true })
-      fs.writeFileSync(hookFile(MANAGED, 'ask'), JSON.stringify(BASH))
+      drop(hookFile(MANAGED, 'ask'), BASH)
       await vi.waitFor(() => expect(relay.dialogDetail(MANAGED)).toBeDefined())
       expect(await relay.answerSession(MANAGED, reply)).toBeUndefined()
       expect(
@@ -235,12 +269,12 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
 
   // CC§14
   it('a newer dialog on the same tab lets the older hook, answered at the Mac, go; a result of another call leaves the open one alone', async () => {
-    const { relay } = setup()
-    const watcher = relay.watchAsks()
-    fs.writeFileSync(hookFile(MANAGED, 'ask', '1'), JSON.stringify(BASH))
+    const { relay, waiting } = setup()
+    const watcher = await watchAsksOnceArmed(relay, waiting)
+    drop(hookFile(MANAGED, 'ask', '1'), BASH)
     await vi.waitFor(() => expect(relay.dialogDetail(MANAGED)).toContain('rm -rf build'))
     const next = { tool_name: 'Bash', tool_input: { command: 'make' } }
-    fs.writeFileSync(hookFile(MANAGED, 'ask', '2'), JSON.stringify(next))
+    drop(hookFile(MANAGED, 'ask', '2'), next)
     await vi.waitFor(() => expect(fs.existsSync(hookFile(MANAGED, 'answer', '1'))).toBe(true))
     expect(JSON.parse(fs.readFileSync(hookFile(MANAGED, 'answer', '1'), 'utf8'))).toEqual({})
     relay.toolDone(MANAGED, { name: 'Bash', input: BASH.tool_input })
@@ -259,7 +293,7 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
         questions: [{ question: 'Colour?', options: [{ label: 'Red' }, { label: 'Blue' }] }]
       }
     }
-    relay.remoteAsked(MANAGED, one)
+    relay.onAsk(MANAGED, one)
     expect(waiting).toEqual([MANAGED])
     expect(await relay.answerSession(MANAGED, '2')).toBe(SHOWS_NO_DIALOG)
     status = 'approval'
@@ -268,7 +302,7 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
     expect(writes[2].at - writes[1].at).toBeGreaterThanOrEqual(290)
     expect(await relay.answerSession(MANAGED, '1')).toBe(SHOWS_NO_DIALOG)
 
-    relay.remoteAsked(MANAGED, BASH)
+    relay.onAsk(MANAGED, BASH)
     expect(await relay.answerSession(MANAGED, 'maybe later')).toContain('only answer yes or no')
     relay.toolDone(MANAGED, { name: 'Bash', input: BASH.tool_input })
     expect(await relay.answerSession(MANAGED, 'yes')).toBe(SHOWS_NO_DIALOG)

@@ -215,7 +215,7 @@ test.describe('Discord setup: the 7-step guide checks the bot for real, learns w
   }) => {
     seedSettings(env, {
       hintsOff: true,
-      discord: { userId: OWNER.id, userName: OWNER.username, conductorsFolded: true, bindings: [] }
+      discord: { userId: OWNER.id, userName: OWNER.username, bindings: [] }
     })
     const { page, close } = await launched(env, { closeOnIdentify: 4014 })
     try {

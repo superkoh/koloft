@@ -14,7 +14,7 @@ function binding(scope: string, channelId: string, touched: string[] = []): Cond
     id: `b-${channelId}`,
     scope,
     backend: 'claude',
-    channel: { guildId: '1', channelId },
+    channel: { guildId: '1', channelId, name: channelId },
     sessionIds: [],
     touched
   }
@@ -63,15 +63,24 @@ describe('Discord notices: which session state change reaches which channel', ()
     ).toBe('20')
   })
 
-  it('notices for one channel within a second go out as one message, in order', () => {
+  it('notices for one channel within a second go out as one message, in order', async () => {
     vi.useFakeTimers()
     const post = vi.fn()
-    const notices = new Notices({ bindings: () => [binding(WS, '10', ['a'])], post })
-    notices.notify({ key: 'a', name: 'alpha', workspace: WS }, 'finished')
-    notices.notify({ key: 'b', name: 'beta', workspace: WS }, 'waiting', 'npm test')
-    notices.notify({ key: 'c', name: 'gamma', workspace: WS }, 'closed')
+    const names: Record<string, string> = { a: 'alpha', b: 'beta', c: 'gamma' }
+    const notices = new Notices({
+      bindings: () => [binding(WS, '10', ['a'])],
+      post,
+      subject: (tabId) => ({ key: tabId, name: names[tabId], workspace: WS }),
+      ownsTab: () => false,
+      awaitsInput: () => false,
+      detail: async () => 'npm test'
+    })
+    notices.onStatus('a', 'working', 'waiting')
+    notices.onStatus('b', 'working', 'approval')
+    await vi.advanceTimersByTimeAsync(0)
+    notices.closed('c')
     expect(post).not.toHaveBeenCalled()
-    vi.advanceTimersByTime(NOTICE_COALESCE_MS)
+    await vi.advanceTimersByTimeAsync(NOTICE_COALESCE_MS)
     expect(post.mock.calls).toEqual([
       ['10', '🔔 alpha finished.\n❓ beta is waiting for you: npm test\n⏹ gamma closed.']
     ])

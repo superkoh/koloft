@@ -18,12 +18,17 @@ import path from 'path'
 import fs from 'fs'
 import os from 'os'
 import { pathToFileURL } from 'url'
-import { anotherLiveInstanceOwns, PtyManager } from './ptyManager'
+import { anotherLiveInstanceOwns, PtyManager, typeKeys } from './ptyManager'
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { FlowGate } from './flowControl'
-import { EventEmitter } from 'events'
-import { findTranscript, SessionTracker, transcriptTurns, type ToolCall } from './sessionTracker'
+import {
+  findTranscript,
+  PROJECTS_ROOT,
+  SessionTracker,
+  transcriptTurns,
+  type ToolCall
+} from './sessionTracker'
 import type { StatusEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
 import { SessionBackends } from './sessionBackends'
@@ -34,7 +39,7 @@ import {
   identityOf,
   SUPPORTED_PAIRS
 } from '@shared/sessionBackend'
-import type { Turn, TurnEnded } from '@shared/turns'
+import type { Turn } from '@shared/turns'
 import { AttentionTracker, type AttentionContext } from './attention'
 import { loadLastRunAttention, saveAttention } from './attentionFile'
 import { route, dockBadgeText } from './notifyRouter'
@@ -55,13 +60,7 @@ import {
   standardUserAgent
 } from './browserSecurity'
 import { directoryListingHtml } from './dirListing'
-import {
-  HOOK_SCRIPT,
-  markAnswerable,
-  markDiscordConnected,
-  setupHooks,
-  writeTabHookSettings
-} from './hooks'
+import { HOOK_SCRIPT, markAnswerable, pruneStale, setupHooks, writeTabHookSettings } from './hooks'
 import { formatRemoteKey, hostOf, parseRemoteKey } from '@shared/remoteKey'
 import {
   defaultControlDir,
@@ -195,6 +194,7 @@ import { applyWindowCommand, guestShortcut } from '@shared/shortcutDispatch'
 import {
   ATTENTION_REASON,
   BROWSER_PARTITION,
+  DISCORD_OFF,
   PLACEHOLDER_SESSION_TITLE,
   isHttpUrl
 } from '@shared/types'
@@ -258,9 +258,10 @@ import { AgentRequests, BUILTIN_VERBS, refused, type AgentVerb } from './agentRe
 import { Conductors } from './discord/conductors'
 import { discordApiUrl, DiscordLink } from './discord/link'
 import { releaseLock, takeLock } from './discord/instanceLock'
-import { DiscordRelay, SUBMIT_AFTER_TEXT_MS } from './discord/relay'
-import { noticeKindOf, Notices, type NoticeKind } from './discord/notices'
-import { approvalDetail } from './discord/dialog'
+import { DiscordRelay } from './discord/relay'
+import { Notices } from './discord/notices'
+import { approvalDetail, type CodexApproval } from './discord/dialog'
+import { sleep } from './codexTransport'
 import { discordVerb } from './agentDiscord'
 import { claudePeerNames, messagingSocketOf, runningClaudePid } from './claudeSessionRegistry'
 import { isDiscordId, scopeName } from '@shared/conductors'
@@ -298,15 +299,11 @@ let flushHeldData: () => void = () => {}
 const tracker = new SessionTracker()
 let codexSessions: CodexSessions | null = null
 let codexStartupError: string | undefined
-const turnsEnded = new EventEmitter<{ 'turn-ended': [TurnEnded] }>()
 const startedSessions = new StartedSessions(() =>
   path.join(app.getPath('userData'), 'started-sessions.json')
 )
 const sessionBackends = new SessionBackends({
-  turnEnded: (tabId, turn) => {
-    const sessionKey = sessionOfTab(tabId)?.sessionId
-    if (sessionKey) turnsEnded.emit('turn-ended', { ...turn, tabId, sessionKey })
-  },
+  turnEnded: (tabId, turn) => discordRelay?.turnEnded(tabId, turn),
   prompted: consumeOutletDedupe,
   bound: (tabId, key) => {
     attention.bound(tabId, key, attentionCtx())
@@ -315,7 +312,7 @@ const sessionBackends = new SessionBackends({
     startedSessions.bound(tabId, key)
   },
   exited: (tabId, subject) => attention.onExited(tabId, attentionCtx(), subject),
-  asked: (tabId, ask) => discordRelay?.remoteAsked(tabId, ask),
+  asked: (tabId, ask) => discordRelay?.onAsk(tabId, ask),
   clearAttention: (tabId) => attention.clear(tabId),
   open: (tabId, target) => {
     if (path.isAbsolute(target) && !fs.existsSync(target)) return
@@ -553,48 +550,23 @@ let discordLink: DiscordLink | null = null
 let discordRelay: DiscordRelay | null = null
 let discordNotices: Notices | null = null
 const skipFlagTabs = new Set<string>()
-const closeNoticed = new Set<string>()
-const waitingNoticed = new Map<string, string>()
 const answerable = new Set<string>()
 let answerableRegDir: string | undefined
-
-function waitingDetail(tabId: string): string | undefined {
-  const approval = codexSessions?.openApproval(tabId)
-  return approval ? approvalDetail(approval) : discordRelay?.dialogDetail(tabId)
-}
+let discordConnected = false
 
 const CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS = 8
+const CODEX_REQUEST_POLL_MS = 250
+const ATTACHMENTS_KEPT_MS = 7 * 24 * 60 * 60 * 1000
+const ATTACHMENTS_PRUNED_EVERY_MS = 24 * 60 * 60 * 1000
 
-function discordNotice(
-  tabId: string,
-  kind: NoticeKind,
-  polls = CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS
-): void {
-  const s = sessionOfTab(tabId)
-  if (!discordNotices || !s?.sessionId || conductors?.ownsTab(tabId)) return
-  const requestYetToCome =
-    kind === 'waiting' &&
-    tracker.statusOf(tabId) === 'approval' &&
-    !!codexSessions?.hasTab(tabId) &&
-    !codexSessions.openApproval(tabId)
-  if (requestYetToCome && polls > 0) {
-    setTimeout(() => discordNotice(tabId, kind, polls - 1), READY_POLL_MS)
-    return
+// CODEX§3
+async function codexApprovalOf(tabId: string): Promise<CodexApproval | undefined> {
+  for (let polls = CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS; ; polls--) {
+    const approval = codexSessions?.openApproval(tabId)
+    if (approval || !polls || !codexSessions?.hasTab(tabId)) return approval
+    if (tracker.statusOf(tabId) !== 'approval') return undefined
+    await sleep(CODEX_REQUEST_POLL_MS)
   }
-  if (kind === 'closed') {
-    if (closeNoticed.has(tabId)) return
-    closeNoticed.add(tabId)
-  }
-  const detail = kind === 'waiting' ? waitingDetail(tabId) : undefined
-  if (kind === 'waiting') {
-    if (waitingNoticed.get(tabId) === (detail ?? '')) return
-    waitingNoticed.set(tabId, detail ?? '')
-  }
-  discordNotices.notify(
-    { key: s.sessionId, name: s.title, workspace: sessionBackends.workspaceOfTab(tabId) },
-    kind,
-    detail
-  )
 }
 
 function syncAnswerable(): void {
@@ -602,7 +574,8 @@ function syncAnswerable(): void {
   for (const s of tracker.list()) {
     if (!s.alive || s.remote) continue
     const on =
-      conductors.ownsTab(s.tabId) || conductors.covers(sessionBackends.workspaceOfTab(s.tabId))
+      discordConnected &&
+      (conductors.ownsTab(s.tabId) || conductors.covers(sessionBackends.workspaceOfTab(s.tabId)))
     if (on === answerable.has(s.tabId)) continue
     if (on) answerable.add(s.tabId)
     else answerable.delete(s.tabId)
@@ -703,9 +676,7 @@ async function readTurns(key: string, n: number): Promise<Turn[]> {
   const live = tracker.turnsOf(key, n)
   if (live) return live
   const remote = parseRemoteKey(workspaceMgr?.workspaceOf(key) ?? '')
-  const root = remote
-    ? mirrorProjectsRoot(app.getPath('userData'), remote.host)
-    : path.join(os.homedir(), '.claude', 'projects')
+  const root = remote ? mirrorProjectsRoot(app.getPath('userData'), remote.host) : PROJECTS_ROOT
   const file = findTranscript(root, key)
   return file ? transcriptTurns(file, n) : []
 }
@@ -768,11 +739,7 @@ const agentRequests = new AgentRequests({
         if (!socket) throw new Error('Koloft could not find where that session takes messages.')
         await writeLine(socket, line)
       },
-      typeInto: async (tabId, text) => {
-        ptyMgr.write(tabId, text)
-        await new Promise((resolve) => setTimeout(resolve, SUBMIT_AFTER_TEXT_MS))
-        ptyMgr.write(tabId, '\r')
-      },
+      typeInto: (tabId, text) => typeKeys((data) => ptyMgr.write(tabId, data), [text, '\r']),
       // ADR-0028
       modeOf: (tabId) =>
         (
@@ -782,10 +749,7 @@ const agentRequests = new AgentRequests({
         )
           ? 'bypass'
           : 'prompting',
-      stop: (tabId) => {
-        sendToRenderer('tab:killedByMain', tabId)
-        void killTabPty(tabId)
-      },
+      stop: killTabFromMain,
       answer: async (tabId, reply) => {
         if (!discordRelay) return STILL_STARTING
         return discordRelay.answerSession(tabId, reply)
@@ -1439,9 +1403,8 @@ app.whenReady().then(() => {
     sendToRenderer('terminal:cwd', c)
   })
   ptyMgr.on('exit', (e) => {
-    discordNotice(e.id, 'closed')
-    closeNoticed.delete(e.id)
-    waitingNoticed.delete(e.id)
+    discordNotices?.closed(e.id)
+    discordNotices?.forget(e.id)
     discordRelay?.forget(e.id)
     if (answerable.delete(e.id) && answerableRegDir) markAnswerable(answerableRegDir, e.id, false)
     skipFlagTabs.delete(e.id)
@@ -1499,19 +1462,15 @@ app.whenReady().then(() => {
   tracker.on('relocated', (e: { tabId: string; dir: string }) => {
     sendToRenderer('session:relocated', e)
   })
-  tracker.on('auto-close', ({ tabId }: { tabId: string }) => {
-    sendToRenderer('tab:killedByMain', tabId)
-    void killTabPty(tabId)
-  })
+  tracker.on('auto-close', ({ tabId }: { tabId: string }) => killTabFromMain(tabId))
   tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) =>
     discordRelay?.toolDone(tabId, call)
   )
   tracker.on('status', (t: StatusEdge) => {
-    if (t.next === 'working') waitingNoticed.delete(t.tabId)
     const conductor = !!conductors?.ownsTab(t.tabId)
-    if (conductor && t.next === 'approval') discordRelay?.conductorWaiting(t.tabId)
-    const notice = noticeKindOf(t.prev, t.next, tracker.awaitsInput(t.tabId))
-    if (notice) discordNotice(t.tabId, notice)
+    if (conductor && t.next === 'approval')
+      void codexApprovalOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
+    discordNotices?.onStatus(t.tabId, t.prev, t.next)
     if (!(conductor && t.next === 'waiting'))
       attention.onStatusChange(t.tabId, t.prev, t.next, attentionCtx(), attentionSubjectOf(t.tabId))
     // ADR-0022
@@ -1614,6 +1573,7 @@ app.whenReady().then(() => {
       void commitSettings({ discord })
       syncAnswerable()
     },
+    saveQuietly: (discord) => void saveSettings({ discord }),
     isPinned: (scope) => workspaceMgr?.isPinned(scope) ?? false,
     backendEnabled: (backend) => loadSettings().sessionMethods.enabled[backend],
     tabAlive: (tabId) => !!ptyMgr.get(tabId)?.alive,
@@ -1627,6 +1587,7 @@ app.whenReady().then(() => {
           kind: l.backend,
           cwd: l.cwd,
           role: l.role,
+          trustFolder: true,
           name: l.backend === 'claude' ? l.title.replace(/\s+/g, '-') : undefined
         },
         l.title
@@ -1634,7 +1595,7 @@ app.whenReady().then(() => {
     resume: async (l) => {
       const res = await sessionBackends
         .get(l.backend)
-        .resume({ sessionId: l.key, cwd: l.cwd, mode: 'direct', role: l.role })
+        .resume({ sessionId: l.key, cwd: l.cwd, mode: 'direct', role: l.role, trustFolder: true })
       if (!res.ok) throw new Error(res.code === 'backend' ? res.message : couldNotStart(l.title))
       const spawned: SpawnedTab = {
         id: res.id,
@@ -1646,17 +1607,13 @@ app.whenReady().then(() => {
       sendToRenderer('terminal:spawned', spawned)
       return res.id
     },
-    kill: (tabId) => {
-      sendToRenderer('tab:killedByMain', tabId)
-      void killTabPty(tabId)
-    },
+    kill: killTabFromMain,
     rowsChanged: () => workspaceMgr?.refresh(),
     toast: (text) => sendToRenderer('cron:toast', text),
     bindDeadlineMs: cronBindDeadlineMs()
   })
   conductors.keepPinned(workspaceMgr.pinnedPaths().map((w) => w.path))
   const discordLockFile = path.join(userData, 'discord.lock')
-  let discordMarked = false
   const link = new DiscordLink({
     apiUrl: discordApiUrl(),
     readToken: discordTokenRead,
@@ -1665,10 +1622,8 @@ app.whenReady().then(() => {
     owner: () => conductors?.owner(),
     push: (status) => {
       sendToRenderer('discord:status', status)
-      const connected = status.phase === 'connected'
-      if (connected === discordMarked) return
-      discordMarked = connected
-      markDiscordConnected(hookPaths.regDir, connected)
+      discordConnected = status.phase === 'connected'
+      syncAnswerable()
     },
     onMessage: (m) => discordRelay?.onMessage(m),
     onReady: () => void discordRelay?.catchUp(),
@@ -1676,7 +1631,7 @@ app.whenReady().then(() => {
       const name = conductors?.bindingOfChannel(channelId)?.channel.name ?? channelId
       const text = `Koloft could not post to #${name} in Discord: ${error}`
       sendToRenderer('cron:toast', text)
-      const failing = link.status().failing ?? {}
+      const { failing } = link.status()
       const other = conductors
         ?.bindings()
         .find((b) => b.channel.channelId !== channelId && !failing[b.channel.channelId])
@@ -1685,6 +1640,7 @@ app.whenReady().then(() => {
   })
   discordLink = link
   const conductorsNow = conductors
+  const attachmentsDir = path.join(userData, 'discord-attachments')
   discordRelay = new DiscordRelay({
     link,
     download: async (url) => {
@@ -1697,8 +1653,9 @@ app.whenReady().then(() => {
     boundKey: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
     status: (tabId) => tracker.statusOf(tabId),
     awaitsInput: (tabId) => tracker.awaitsInput(tabId),
-    waiting: (tabId) => discordNotice(tabId, 'waiting'),
+    waiting: (tabId) => discordNotices?.waiting(tabId),
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive,
+    ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
     write: (tabId, data) => ptyMgr.write(tabId, data),
     queue: async (tabId, text, clientId) => {
       if (!codexSessions) throw new Error(codexStartupError ?? 'Codex is not available.')
@@ -1706,14 +1663,30 @@ app.whenReady().then(() => {
     },
     codexApproval: (tabId) => codexSessions?.openApproval(tabId),
     regDir: hookPaths.regDir,
-    attachmentsDir: path.join(userData, 'discord-attachments')
+    attachmentsDir
   })
   discordRelay.watchAsks()
+  const pruneAttachments = (): void => pruneStale(attachmentsDir, ATTACHMENTS_KEPT_MS, true)
+  pruneAttachments()
+  setInterval(pruneAttachments, ATTACHMENTS_PRUNED_EVERY_MS).unref()
   discordNotices = new Notices({
     bindings: () => conductorsNow.bindings(),
-    post: (channelId, text) => discordRelay?.say(channelId, text)
+    post: (channelId, text) => discordRelay?.say(channelId, text),
+    subject: (tabId) => {
+      const s = sessionOfTab(tabId)
+      return s?.sessionId
+        ? { key: s.sessionId, name: s.title, workspace: sessionBackends.workspaceOfTab(tabId) }
+        : undefined
+    },
+    ownsTab: (tabId) => conductorsNow.ownsTab(tabId),
+    awaitsInput: (tabId) => tracker.awaitsInput(tabId),
+    detail: async (tabId) => {
+      const approval = await codexApprovalOf(tabId)
+      return approval ? approvalDetail(approval) : discordRelay?.dialogDetail(tabId)
+    }
   })
-  turnsEnded.on('turn-ended', (turn) => discordRelay?.turnEnded(turn))
+  tracker.dialogsWatched = (tabId) =>
+    conductorsNow.ownsTab(tabId) || conductorsNow.covers(sessionBackends.workspaceOfTab(tabId))
   void link.connect()
   remoteSync = new RemoteSync({
     run: (host, cmd) =>
@@ -1931,6 +1904,7 @@ app.on('before-quit', (e) => {
   cronRunner?.quitSweep()
   cronRunner?.stop()
   discordLink?.stop()
+  conductors?.flush()
   workspaceMgr?.dispose()
   freshness?.stop()
   remoteSync?.stop()
@@ -2580,8 +2554,13 @@ function openInWorkbench(
   return false
 }
 
+function killTabFromMain(tabId: string): void {
+  sendToRenderer('tab:killedByMain', tabId)
+  void killTabPty(tabId)
+}
+
 function killTabPty(tabId: string): Promise<boolean> {
-  discordNotice(tabId, 'closed')
+  discordNotices?.closed(tabId)
   const owner = sessionBackends.ownerOfTab(tabId)
   const stopped = owner ? Promise.resolve(owner.stop(tabId)) : Promise.resolve(ptyMgr.kill(tabId))
   attention.clear(tabId)
@@ -2732,21 +2711,19 @@ async function restoreResident(row: SessionRow): Promise<string | undefined> {
   return resumed.ok ? undefined : resumed.error
 }
 
-const READY_POLL_MS = 250
-
-async function tabReady(tabId: string, ms: number, turnEnded: boolean): Promise<boolean> {
-  const until = Date.now() + ms
-  for (;;) {
-    const status = tracker.statusOf(tabId)
-    if (
-      sessionOfTab(tabId)?.sessionId &&
-      status !== undefined &&
-      (!turnEnded || status === 'waiting' || status === 'idle')
-    )
-      return true
-    if (!ptyMgr.get(tabId)?.alive || Date.now() >= until) return false
-    await new Promise((resolve) => setTimeout(resolve, READY_POLL_MS))
-  }
+function tabReady(tabId: string, ms: number, turnEnded: boolean): Promise<boolean> {
+  return ptyMgr.whenReady(
+    tabId,
+    () => {
+      const status = tracker.statusOf(tabId)
+      return (
+        !!sessionOfTab(tabId)?.sessionId &&
+        status !== undefined &&
+        (!turnEnded || status === 'waiting' || status === 'idle')
+      )
+    },
+    ms
+  )
 }
 
 function conductorTarget(ref: string): Target | undefined {
@@ -3162,16 +3139,13 @@ function registerIpc(): void {
     'conductors:startFresh',
     (_e, id: string) => conductors?.startFresh(id) ?? { ok: false, error: STILL_STARTING }
   )
-  ipcMain.handle('conductors:setFolded', (_e, folded: unknown) =>
-    conductors?.setFolded(folded === true)
-  )
   ipcMain.handle('discord:setToken', async (_e, token: unknown) => {
     if (typeof token !== 'string' || !token.trim()) return false
     const saved = await discordTokenWrite(token.trim())
     if (saved) void discordLink?.connect()
     return saved
   })
-  ipcMain.handle('discord:status', () => discordLink?.status() ?? { phase: 'off', guildNames: [] })
+  ipcMain.handle('discord:status', () => discordLink?.status() ?? DISCORD_OFF)
   ipcMain.handle('discord:pair', (_e, isMe: unknown) => {
     const owner = discordLink?.pair(isMe === true)
     if (owner) conductors?.setOwner(owner)

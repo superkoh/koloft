@@ -13,8 +13,6 @@ const NEXT_STEP_LABEL = [
   'bind a channel'
 ]
 
-export const DISCORD_OFF: DiscordStatus = { phase: 'off', guildNames: [] }
-
 export function useDiscordStatus(): DiscordStatus | null {
   const [status, setStatus] = useState<DiscordStatus | null>(null)
   useEffect(() => {

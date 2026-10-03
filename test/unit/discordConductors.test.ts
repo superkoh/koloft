@@ -10,6 +10,8 @@ const DEADLINE_MS = 1000
 
 let userData: string
 let saved: DiscordSettings
+let quiet: DiscordSettings[]
+let rescans: number
 let started: { cwd: string; role: string }[]
 let resumed: string[]
 let killed: string[]
@@ -22,6 +24,7 @@ function make(): Conductors {
     userData,
     load: () => saved,
     save: (d) => void (saved = d),
+    saveQuietly: (d) => void quiet.push(d),
     isPinned: (scope) => scope === '/ws/a',
     backendEnabled: () => true,
     tabAlive: (tabId) => !killed.includes(tabId),
@@ -38,7 +41,7 @@ function make(): Conductors {
       return `tab-resumed-${l.key}`
     },
     kill: (tabId) => void killed.push(tabId),
-    rowsChanged: () => {},
+    rowsChanged: () => void rescans++,
     toast: (t) => void toasts.push(t),
     bindDeadlineMs: DEADLINE_MS
   }
@@ -47,7 +50,9 @@ function make(): Conductors {
 
 beforeEach(() => {
   userData = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-conductors-'))
-  saved = { conductorsFolded: true, bindings: [] }
+  saved = { bindings: [] }
+  quiet = []
+  rescans = 0
   started = []
   resumed = []
   killed = []
@@ -123,6 +128,30 @@ describe('Conductors', () => {
     expect(c.ownsTab('tab-1')).toBe(true)
     c.onPtyExit('tab-1')
     expect(c.ownsTab('tab-1')).toBe(false)
+  })
+
+  it('a session the conductor touched is saved at once, and the last Discord message a second later or at quit, neither with a rescan of the sidebar rows', async () => {
+    const c = make()
+    c.save({ scope: 'global', backend: 'claude', channel: CHANNEL })
+    const id = c.bindings()[0].id
+    const opening = c.open(id)
+    await vi.waitFor(() => expect(started).toHaveLength(1))
+    release()
+    await opening
+    rescans = 0
+    c.touch('tab-1', 's9')
+    expect(quiet.at(-1)?.bindings[0].touched).toEqual(['s9'])
+
+    vi.useFakeTimers()
+    c.setLastMessage(id, '101')
+    c.setLastMessage(id, '102')
+    expect(quiet).toHaveLength(1)
+    vi.advanceTimersByTime(1000)
+    expect(quiet.map((d) => d.bindings[0].lastMessageId)).toEqual([undefined, '102'])
+    c.setLastMessage(id, '103')
+    c.flush()
+    expect(quiet.at(-1)?.bindings[0].lastMessageId).toBe('103')
+    expect(rescans).toBe(0)
   })
 
   it('removing a workspace unbinds its conductor and closes its tab', async () => {

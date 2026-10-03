@@ -963,7 +963,7 @@ export default function App(): JSX.Element {
   const updateOffer = useStore((s) => s.updateOffer)
   const conductorBindings = useStore((s) => s.settings.discord.bindings)
   const conductorTabs = useStore((s) => s.conductorTabs)
-  const conductorsFolded = useStore((s) => s.settings.discord.conductorsFolded)
+  const conductorsFolded = useStore((s) => s.settings.conductorsFolded)
   const activeConductor = activeTabId
     ? conductorOfTab(conductorBindings, sessions, conductorTabs, tabs, activeTabId)
     : undefined

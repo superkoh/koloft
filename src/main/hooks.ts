@@ -15,6 +15,8 @@ export const HOOK_SCRIPT = `#!/usr/bin/env bash
 reg="$1"; tab="$2"; event="$3"
 [ -z "$reg" ] && exit 0
 [ -z "$tab" ] && exit 0
+# CC§14
+[ "$event" = "ask" ] && [ ! -f "$reg/$tab.answerable" ] && exit 0
 input="$(cat | tr -d '\\n')"
 mkdir -p "$reg" 2>/dev/null
 tm=""
@@ -55,12 +57,12 @@ case "$event" in
     ;;
   ask)
     # CC§14
-    [ -f "$reg/discord-connected" ] && [ -f "$reg/$tab.answerable" ] || exit 0
-    ask="$reg/$tab.$$.ask.json"; answer="$reg/$tab.$$.answer.json"
-    trap 'rm -f "$ask" "$answer"' EXIT
+    ask="$reg/$tab.$$.ask.json"; answer="$reg/$tab.$$.answer.json"; tick="$reg/$tab.$$.tick"
+    trap 'rm -f "$ask" "$answer" "$tick"' EXIT
     trap 'exit 143' TERM
+    mkfifo "$tick" 2>/dev/null || exit 0
     printf '%s' "$input" > "$ask.tmp" && mv "$ask.tmp" "$ask"
-    while [ ! -f "$answer" ]; do sleep 0.3; done
+    while [ ! -f "$answer" ]; do read -t 1 <> "$tick"; done
     cat "$answer"
     ;;
   asked)
@@ -144,7 +146,7 @@ esac
 exit 0
 `
 
-function pruneStale(dir: string, maxAgeMs = 12 * 60 * 60 * 1000): void {
+export function pruneStale(dir: string, maxAgeMs = 12 * 60 * 60 * 1000, everyEntry = false): void {
   let names: string[]
   try {
     names = fs.readdirSync(dir)
@@ -153,10 +155,11 @@ function pruneStale(dir: string, maxAgeMs = 12 * 60 * 60 * 1000): void {
   }
   const now = Date.now()
   for (const name of names) {
-    if (!name.endsWith('.json') && !name.endsWith('.jsonl')) continue
+    if (!everyEntry && !name.endsWith('.json') && !name.endsWith('.jsonl')) continue
     const full = path.join(dir, name)
     try {
-      if (now - fs.statSync(full).mtimeMs > maxAgeMs) fs.rmSync(full, { force: true })
+      if (now - fs.statSync(full).mtimeMs > maxAgeMs)
+        fs.rmSync(full, { recursive: everyEntry, force: true })
     } catch {}
   }
 }
@@ -248,18 +251,10 @@ export function removeConductorMarker(regDir: string, tabId: string): void {
   fs.rmSync(conductorMarker(regDir, tabId), { force: true })
 }
 
-function marker(regDir: string, name: string, on: boolean): void {
-  const file = path.join(regDir, name)
+export function markAnswerable(regDir: string, tabId: string, on: boolean): void {
+  const file = path.join(regDir, `${tabId}.answerable`)
   if (on) fs.writeFileSync(file, '')
   else fs.rmSync(file, { force: true })
-}
-
-export function markDiscordConnected(regDir: string, connected: boolean): void {
-  marker(regDir, 'discord-connected', connected)
-}
-
-export function markAnswerable(regDir: string, tabId: string, on: boolean): void {
-  marker(regDir, `${tabId}.answerable`, on)
 }
 
 // CC§6

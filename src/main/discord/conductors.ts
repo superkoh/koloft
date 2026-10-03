@@ -10,9 +10,16 @@ import type {
   DiscordSettings
 } from '@shared/types'
 import { BACKEND_LABEL, identityOf } from '@shared/sessionBackend'
-import { bindingProblem, GLOBAL_SCOPE, keepPinnedBindings, scopeName } from '@shared/conductors'
+import {
+  bindingProblem,
+  GLOBAL_SCOPE,
+  keepPinnedBindings,
+  newerSnowflake,
+  scopeName
+} from '@shared/conductors'
 import { conductorRole } from '@shared/agentGuide'
 import { isRemoteKey } from '@shared/remoteKey'
+import { errorText } from '../agentRequests'
 
 export interface ConductorLaunch {
   backend: BackendId
@@ -25,6 +32,7 @@ export interface ConductorDeps {
   userData: string
   load(): DiscordSettings
   save(discord: DiscordSettings): void
+  saveQuietly(discord: DiscordSettings): void
   isPinned(scope: string): boolean
   backendEnabled(backend: BackendId): boolean
   tabAlive(tabId: string): boolean
@@ -45,6 +53,7 @@ export const REMOTE_CONDUCTOR_HAS_NO_WORKSPACE =
   'This conductor runs on this Mac, outside its remote workspace, so it has no workspace.'
 
 const FOLDER_NAME_HASH_CHARS = 16
+const LAST_MESSAGE_SAVE_DELAY_MS = 1000
 
 export function conductorFolder(userData: string, scope: string): string {
   if (scope === GLOBAL_SCOPE) return path.join(userData, 'conductors', 'global')
@@ -57,14 +66,10 @@ function refusal(error: string): ConductorOpenResult {
   return { ok: false, error }
 }
 
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
 export class Conductors {
   private discord: DiscordSettings
   private tabs = new Map<string, string>()
-  private bound = new Set<string>()
+  private pendingSave: ReturnType<typeof setTimeout> | null = null
   private stopping = new Set<string>()
   private opening = new Map<string, Promise<ConductorOpenResult>>()
   private deadlines = new Map<string, ReturnType<typeof setTimeout>>()
@@ -82,6 +87,20 @@ export class Conductors {
     this.discord = { ...this.discord, ...patch }
     this.d.save(this.discord)
     this.d.rowsChanged()
+  }
+
+  private change(id: string, change: (b: ConductorBinding) => ConductorBinding): void {
+    this.discord = {
+      ...this.discord,
+      bindings: this.discord.bindings.map((b) => (b.id === id ? change(b) : b))
+    }
+  }
+
+  flush(): void {
+    if (!this.pendingSave) return
+    clearTimeout(this.pendingSave)
+    this.pendingSave = null
+    this.d.saveQuietly(this.discord)
   }
 
   private find(id: string): ConductorBinding | undefined {
@@ -115,18 +134,15 @@ export class Conductors {
 
   setLastMessage(id: string, messageId: string): void {
     const last = this.find(id)?.lastMessageId
-    if (last && BigInt(last) >= BigInt(messageId)) return
-    this.discord = {
-      ...this.discord,
-      bindings: this.discord.bindings.map((b) =>
-        b.id === id ? { ...b, lastMessageId: messageId } : b
-      )
-    }
-    this.d.save(this.discord)
+    if (last && !newerSnowflake(messageId, last)) return
+    this.change(id, (b) => ({ ...b, lastMessageId: messageId }))
+    this.pendingSave ??= setTimeout(() => this.flush(), LAST_MESSAGE_SAVE_DELAY_MS)
   }
 
   private update(id: string, change: (b: ConductorBinding) => ConductorBinding): void {
-    this.write({ bindings: this.discord.bindings.map((b) => (b.id === id ? change(b) : b)) })
+    this.change(id, change)
+    this.d.save(this.discord)
+    this.d.rowsChanged()
   }
 
   ownsTab(tabId: string): boolean {
@@ -151,8 +167,9 @@ export class Conductors {
   }
 
   private touchFor(id: string, key: string): void {
-    if (!this.find(id)?.touched.includes(key))
-      this.update(id, (x) => ({ ...x, touched: [...x.touched, key] }))
+    if (this.find(id)?.touched.includes(key)) return
+    this.change(id, (x) => ({ ...x, touched: [...x.touched, key] }))
+    this.d.saveQuietly(this.discord)
   }
 
   noWorkspaceReason(tabId: string): string | undefined {
@@ -207,10 +224,6 @@ export class Conductors {
     return this.open(id)
   }
 
-  setFolded(folded: boolean): void {
-    this.write({ conductorsFolded: folded })
-  }
-
   owner(): string | undefined {
     return this.discord.userId
   }
@@ -257,10 +270,10 @@ export class Conductors {
       title: `${scopeName(b.scope)} conductor`
     }
     const key = b.lastSessionKey
-    const resumable = !!key && identityOf(key).backendId === b.backend
+    const resumable = key !== undefined && identityOf(key).backendId === b.backend
     let tabId: string | null
     try {
-      if (key && resumable) {
+      if (resumable) {
         const live = this.d.liveTabFor(b.backend, key)
         if (live) {
           this.tabs.set(id, live)
@@ -270,9 +283,8 @@ export class Conductors {
           return refusal('This conductor is already running in another claude process.')
       }
       const hasTranscript =
-        !!key && resumable && (await this.d.transcriptExists(b.backend, key).catch(() => false))
-      tabId =
-        key && hasTranscript ? await this.d.resume({ ...launch, key }) : await this.d.start(launch)
+        resumable && (await this.d.transcriptExists(b.backend, key).catch(() => false))
+      tabId = hasTranscript ? await this.d.resume({ ...launch, key }) : await this.d.start(launch)
     } catch (error) {
       return refusal(errorText(error))
     }
@@ -285,7 +297,7 @@ export class Conductors {
   private armDeadline(id: string, tabId: string, title: string): void {
     const timer = setTimeout(() => {
       this.deadlines.delete(tabId)
-      if (this.bound.has(tabId) || this.tabs.get(id) !== tabId) return
+      if (this.tabs.get(id) !== tabId) return
       this.stopTab(id)
       this.d.toast(`The ${title} did not start.`)
     }, this.d.bindDeadlineMs)
@@ -304,7 +316,6 @@ export class Conductors {
   private forgetTab(tabId: string): void {
     clearTimeout(this.deadlines.get(tabId))
     this.deadlines.delete(tabId)
-    this.bound.delete(tabId)
   }
 
   onBound(tabId: string, key: string): void {
@@ -321,9 +332,7 @@ export class Conductors {
       if (!b || (current && this.d.tabAlive(current))) return
       this.tabs.set(b.id, tabId)
     }
-    this.bound.add(tabId)
-    clearTimeout(this.deadlines.get(tabId))
-    this.deadlines.delete(tabId)
+    this.forgetTab(tabId)
     this.update(b.id, (x) => ({
       ...x,
       sessionIds: x.sessionIds.includes(key) ? x.sessionIds : [...x.sessionIds, key],

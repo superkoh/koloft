@@ -1,9 +1,9 @@
 import { useEffect, useState, type JSX, type ReactNode } from 'react'
 import { LuArrowUpRight, LuPlus, LuX } from 'react-icons/lu'
-import type { DiscordStatus } from '@shared/types'
+import { DISCORD_OFF, type DiscordStatus } from '@shared/types'
 import { ageLabel } from '@shared/freshnessOps'
 import { useStore } from '../store'
-import { DISCORD_OFF, SETUP_STEPS, useDiscordStatus } from '../discordStatus'
+import { SETUP_STEPS, useDiscordStatus } from '../discordStatus'
 
 const DEVELOPER_PORTAL = 'https://discord.com/developers/applications'
 const INVITE_PERMISSIONS = 101440
@@ -120,7 +120,7 @@ const PAGES: Page[] = [
       <Steps
         items={[
           'In any channel of your server, send any message — for example **hi**.',
-          "It shows up here within a few seconds, with the sender's name and picture.",
+          "It shows up here within a few seconds, with the sender's name.",
           'If it is you, click **This is me**. Koloft remembers your Discord account from now on.'
         ]}
       />
@@ -210,23 +210,6 @@ function PairStep({ status }: { status: DiscordStatus }): JSX.Element {
     <div className="acct-list">
       <div className="acct-row">
         <div className="acct-main">
-          <span
-            style={{
-              flex: 'none',
-              width: 24,
-              height: 24,
-              borderRadius: '50%',
-              background: 'var(--bg-3)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 11,
-              fontWeight: 650,
-              color: 'var(--fg-dim)'
-            }}
-          >
-            {c.name.slice(0, 1).toUpperCase()}
-          </span>
           <span className="acct-name">{c.name}</span>
           <span className="acct-note">
             “{c.text}” · {ageLabel(c.at, Date.now())}

@@ -156,8 +156,7 @@ const api: KoloftApi = {
     unbind: (id) => ipcRenderer.invoke('conductors:unbind', id),
     switchBackend: (id) => ipcRenderer.invoke('conductors:switchBackend', id),
     open: (id) => ipcRenderer.invoke('conductors:open', id),
-    startFresh: (id) => ipcRenderer.invoke('conductors:startFresh', id),
-    setFolded: (folded) => ipcRenderer.invoke('conductors:setFolded', folded)
+    startFresh: (id) => ipcRenderer.invoke('conductors:startFresh', id)
   },
   discord: {
     setToken: (token) => ipcRenderer.invoke('discord:setToken', token),

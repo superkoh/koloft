@@ -31,7 +31,7 @@ import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
 import { watchJsonDrops } from './jsonDrops'
 import { openDropTarget, type OpenDrop } from './openDrop'
 import { removeCodexOpenShim, writeCodexOpenShim } from './openShimScript'
-import { writeCodexAgentShim } from './agentShim'
+import { AGENT_SHIM_WAITS_MS, writeCodexAgentShim } from './agentShim'
 import { CODEX_AGENT_HINT } from '@shared/agentGuide'
 import type { CodexApproval } from './discord/dialog'
 
@@ -58,7 +58,7 @@ function developerInstructions(lines: string[]): string {
   return `developer_instructions=${JSON.stringify(lines.join('\n\n'))}`
 }
 
-const QUEUE_ANSWER_INSIDE_THE_KOLOFT_WAIT_MS = 5_000
+const QUEUE_ANSWER_INSIDE_THE_KOLOFT_WAIT_MS = AGENT_SHIM_WAITS_MS / 2
 
 // CODEX§1
 const NO_UPDATE_NOTICE_AT_START = 'check_for_update_on_startup=false'
@@ -258,18 +258,30 @@ export class CodexSessions {
     return new CodexRpc({ binary: this.binary!, env: this.envFor(home), cwd: os.homedir() })
   }
 
-  // CODEX§15
-  async readAccount(home: string): Promise<{ signedIn: boolean; limits?: unknown }> {
+  private async withRpc<T>(
+    home: string | undefined,
+    use: (rpc: CodexRpc) => Promise<T>
+  ): Promise<T> {
     if (!this.binary && !(await this.availability()).available)
       throw new Error('Codex CLI is unavailable.')
     const rpc = this.rpc(home)
     try {
-      const account = record(await rpc.request('account/read', {}))
-      if (!account.account) return { signedIn: false }
-      return { signedIn: true, limits: await rpc.request('account/rateLimits/read', {}) }
+      return await use(rpc)
+    } catch (error) {
+      if (binaryGone(error)) this.forgetProbe()
+      throw error
     } finally {
       await rpc.close()
     }
+  }
+
+  // CODEX§15
+  async readAccount(home: string): Promise<{ signedIn: boolean; limits?: unknown }> {
+    return this.withRpc(home, async (rpc) => {
+      const account = record(await rpc.request('account/read', {}))
+      if (!account.account) return { signedIn: false }
+      return { signedIn: true, limits: await rpc.request('account/rateLimits/read', {}) }
+    })
   }
 
   hasRuns(): boolean {
@@ -515,19 +527,11 @@ export class CodexSessions {
   async transcriptExists(key: string): Promise<boolean> {
     const id = this.nativeId(key)
     if (this.archivedIds.has(key)) return false
-    if (!this.binary && !(await this.availability()).available)
-      throw new Error('Codex CLI is unavailable.')
-    const rpc = this.rpc(this.homeFor(key))
-    try {
+    return this.withRpc(this.homeFor(key), async (rpc) => {
       const reply = record(await rpc.request('thread/read', { threadId: id, includeTurns: false }))
       const t = userThread(reply.thread)
       return !!t?.path && fs.existsSync(t.path)
-    } catch (error) {
-      if (binaryGone(error)) this.forgetProbe()
-      throw error
-    } finally {
-      await rpc.close()
-    }
+    })
   }
 
   openApproval(tabId: string): CodexApproval | undefined {
@@ -545,15 +549,10 @@ export class CodexSessions {
   // CODEX§19
   async readTurns(key: string, n: number): Promise<Turn[]> {
     const id = this.nativeId(key)
-    if (!this.binary && !(await this.availability()).available)
-      throw new Error('Codex CLI is unavailable.')
-    const rpc = this.rpc(this.homeFor(key))
-    try {
+    return this.withRpc(this.homeFor(key), async (rpc) => {
       const reply = record(await rpc.request('thread/read', { threadId: id, includeTurns: true }))
       return codexTurns(record(reply.thread).turns).last(n)
-    } finally {
-      await rpc.close()
-    }
+    })
   }
 
   archive(key: string): boolean {
@@ -653,7 +652,7 @@ export class CodexSessions {
     this.assertStarting()
     const picked = opts.resumeSessionId ? undefined : this.deps.pickHome()
     const home = opts.resumeSessionId ? this.homeFor(opts.resumeSessionId) : picked?.home
-    if (opts.role) this.deps.trustFolder(cwd, this.envFor(home))
+    if (opts.trustFolder) this.deps.trustFolder(cwd, this.envFor(home))
     let run: Run | undefined
     const observe = (event: CodexEvent): void => {
       if (event.type !== 'bound') {
@@ -933,7 +932,8 @@ export class CodexSessions {
         resumeSessionId: req.sessionId,
         cols: req.cols,
         rows: req.rows,
-        role: req.role
+        role: req.role,
+        trustFolder: req.trustFolder
       },
       resource
     )

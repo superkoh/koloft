@@ -1,4 +1,4 @@
-import { useEffect, useState, type JSX } from 'react'
+import { useState, type JSX } from 'react'
 import { createPortal } from 'react-dom'
 import { LuChevronDown, LuChevronUp, LuConciergeBell, LuPlus } from 'react-icons/lu'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
@@ -8,8 +8,9 @@ import { useStore } from '../store'
 import { rowStateClass } from '../sessionRows'
 import { conductorsNeedYou, conductorTab } from '../conductorRows'
 import { SessionBackendIcon } from './SessionBackendIcon'
+import { menuPosFor, useDismissOnOutside } from './WorkspaceSidebar'
 
-const MENU_W = 190
+const MENU_ITEMS = 5
 
 export async function openConductor(id: string, fresh = false): Promise<void> {
   const r = await (fresh ? window.api.conductors.startFresh(id) : window.api.conductors.open(id))
@@ -31,28 +32,13 @@ export function ConductorsIsland(): JSX.Element | null {
   const activeTabId = useStore((s) => s.activeTabId)
   const opened = useStore((s) => s.conductorTabs)
   const setBindConductor = useStore((s) => s.setBindConductor)
+  const folded = useStore((s) => s.settings.conductorsFolded)
   const [menu, setMenu] = useState<{ binding: ConductorBinding; left: number; top: number } | null>(
     null
   )
-
-  useEffect(() => {
-    if (!menu) return
-    const close = (): void => setMenu(null)
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setMenu(null)
-    }
-    window.addEventListener('click', close)
-    window.addEventListener('blur', close)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('click', close)
-      window.removeEventListener('blur', close)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [menu])
+  useDismissOnOutside(!!menu, setMenu)
 
   if (discord.bindings.length === 0) return null
-  const folded = discord.conductorsFolded
   const rows = discord.bindings.map((b) => {
     const tabId = conductorTab(b, sessions, opened, tabs)
     const sess = tabId ? sessions.find((s) => s.tabId === tabId) : undefined
@@ -65,8 +51,8 @@ export function ConductorsIsland(): JSX.Element | null {
 
   const setFolded = (next: boolean): void => {
     const st = useStore.getState()
-    st.setSettings({ ...st.settings, discord: { ...st.settings.discord, conductorsFolded: next } })
-    void window.api.conductors.setFolded(next)
+    st.setSettings({ ...st.settings, conductorsFolded: next })
+    void window.api.settings.set({ conductorsFolded: next })
   }
 
   const item = (label: string, run: () => void, cls = 'mi'): JSX.Element => (
@@ -158,12 +144,7 @@ export function ConductorsIsland(): JSX.Element | null {
                   onContextMenu={(e) => {
                     e.preventDefault()
                     e.stopPropagation()
-                    const r = e.currentTarget.getBoundingClientRect()
-                    const left =
-                      r.right - 6 + MENU_W > window.innerWidth - 4
-                        ? Math.max(4, r.left - MENU_W + 6)
-                        : r.right - 6
-                    setMenu({ binding: b, left, top: r.top })
+                    setMenu({ binding: b, ...menuPosFor(e.currentTarget, MENU_ITEMS) })
                   }}
                 >
                   <div className="ws-tab-main">

@@ -4,7 +4,7 @@ import os from 'os'
 import type { TabKind } from '@shared/types'
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { OscCwdParser } from './oscCwd'
-import { codexEnvironment } from './codexTransport'
+import { codexEnvironment, sleep } from './codexTransport'
 import { userShell } from './userShell'
 
 export interface PtyHandle {
@@ -42,6 +42,17 @@ interface CreateArgs {
 }
 
 const UTIL_TITLE_POLL_MS = 1500
+const TAB_READY_POLL_MS = 250
+// CC§12
+const SUBMIT_AFTER_TEXT_MS = 300
+
+// CC§12
+export async function typeKeys(write: (data: string) => void, keys: string[]): Promise<void> {
+  for (const [i, key] of keys.entries()) {
+    if (i > 0) await sleep(SUBMIT_AFTER_TEXT_MS)
+    write(key)
+  }
+}
 
 const SETUP_AFTER_RC_FILES_MS = 600
 const LAUNCH_AFTER_PATH_FIXED_MS = 1600
@@ -231,6 +242,15 @@ export class PtyManager extends EventEmitter {
 
   write(id: string, data: string): void {
     this.ptys.get(id)?.proc.write(data)
+  }
+
+  async whenReady(id: string, ready: () => boolean, ms: number): Promise<boolean> {
+    const until = Date.now() + ms
+    while (!ready()) {
+      if (!this.get(id)?.alive || Date.now() >= until) return false
+      await sleep(TAB_READY_POLL_MS)
+    }
+    return true
   }
 
   pause(id: string): void {

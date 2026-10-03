@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
 import { LuX } from 'react-icons/lu'
 import { BACKEND_LABEL, backendAvailable, SESSION_BACKENDS } from '@shared/sessionBackend'
-import { bindingProblem, channelLabel, GLOBAL_SCOPE, scopeName } from '@shared/conductors'
-import type { BackendAvailability, BackendId, DiscordChannelChoice } from '@shared/types'
+import { channelLabel, GLOBAL_SCOPE, scopeName } from '@shared/conductors'
+import type { BackendAvailability, BackendId, DiscordChannel } from '@shared/types'
 import { useStore } from '../store'
 import { shortenHome } from '../browseModel'
 import { SessionBackendIcon } from './SessionBackendIcon'
@@ -36,12 +36,12 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
     editing?.backend ??
       (methods.enabled[methods.defaultBackend] ? methods.defaultBackend : 'claude')
   )
-  const [channels, setChannels] = useState<DiscordChannelChoice[] | null>(null)
-  const [channel, setChannel] = useState<DiscordChannelChoice | undefined>()
+  const [channels, setChannels] = useState<DiscordChannel[] | null>(null)
+  const [channel, setChannel] = useState<DiscordChannel | undefined>()
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const close = (): void => setBindConductor(null)
-  const channelTakenBy = (c: DiscordChannelChoice) =>
+  const channelTakenBy = (c: DiscordChannel) =>
     bindings.find((b) => b.channel.channelId === c.channelId && b.id !== editId)
   const editedChannelId = editing?.channel.channelId
 
@@ -84,10 +84,8 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
   const submit = async (): Promise<void> => {
     if (busy || !picked) return
     if (!channel) return setError('Pick a channel.')
-    const problem =
-      issue(backend) ??
-      bindingProblem(bindings, { id: editId, scope: picked, channelId: channel.channelId })
-    if (problem) return setError(problem)
+    const unusable = issue(backend)
+    if (unusable) return setError(unusable)
     setBusy(true)
     const r = await window.api.conductors.save({ id: editId, scope: picked, backend, channel })
     setBusy(false)

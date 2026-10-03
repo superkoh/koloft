@@ -12,7 +12,7 @@ function binding(id: string, scope: string, channelId: string): ConductorBinding
     id,
     scope,
     backend: 'claude',
-    channel: { guildId: '100', channelId },
+    channel: { guildId: '100', channelId, name: `ch-${channelId}` },
     sessionIds: [],
     touched: []
   }
@@ -45,17 +45,19 @@ describe('bindingProblem', () => {
 })
 
 describe('sanitizeDiscord', () => {
-  it('starts folded with no bindings', () => {
-    expect(sanitizeDiscord(undefined)).toEqual({ conductorsFolded: true, bindings: [] })
+  it('starts with no bindings', () => {
+    expect(sanitizeDiscord(undefined)).toEqual({ bindings: [] })
   })
 
-  it('drops a broken binding and a second one for a scope or channel already taken', () => {
+  it('drops a broken binding, one whose channel has no name, and a second one for a scope or channel already taken', () => {
+    const nameless = binding('nameless', '/ws/c', '5')
     const doc = sanitizeDiscord({
       bindings: [
         binding('a', '/ws/a', '1'),
         binding('dup-scope', '/ws/a', '2'),
         binding('dup-channel', '/ws/b', '1'),
         { ...binding('bad', 'relative/path', '3') },
+        { ...nameless, channel: { guildId: '100', channelId: '5' } },
         binding('b', '/ws/b', '4')
       ]
     })

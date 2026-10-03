@@ -9,6 +9,15 @@ export const RECONSIDER_WINDOW_MS = 3000
 
 export type SavedMark = AttentionEvent & { sessionId: string }
 
+export function edgeAttention(
+  prev: SessionStatus | undefined,
+  next: SessionStatus
+): 'approval' | 'turn-done' | null {
+  if (next === 'approval') return 'approval'
+  if (next === 'waiting' && (prev === 'working' || prev === 'approval')) return 'turn-done'
+  return null
+}
+
 export class AttentionTracker {
   private pending = new Map<string, AttentionEvent>()
   private recentlySuppressed = new Map<string, AttentionEvent>()
@@ -41,9 +50,7 @@ export class AttentionTracker {
       this.clear(tabId)
       return
     }
-    let kind: AttentionKind | null = null
-    if (next === 'approval') kind = 'approval'
-    else if (next === 'waiting' && (prev === 'working' || prev === 'approval')) kind = 'turn-done'
+    const kind = edgeAttention(prev, next)
     if (!kind) return
     this.raise(tabId, kind, ctx, subject)
   }

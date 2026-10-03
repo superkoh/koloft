@@ -12,11 +12,6 @@ export interface Turn {
   at: number
 }
 
-export interface TurnEnded extends Turn {
-  tabId: string
-  sessionKey: string
-}
-
 export const MAX_READ_TURNS = 20
 
 export class TurnLog {
