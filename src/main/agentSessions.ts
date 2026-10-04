@@ -374,7 +374,8 @@ async function startSibling(
     name,
     worktree: args.worktree,
     model: args.model,
-    permission: 'default',
+    // ADR-0028
+    permission: conductorTab && d.modeOf(conductorTab) === 'bypass' ? 'bypass' : 'default',
     firstPrompt: withHandover(caller, backend, args.prompt)
   })
   if (!tabId) return refused('koloft session new: Koloft could not start the session.')

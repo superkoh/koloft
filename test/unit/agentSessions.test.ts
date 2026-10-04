@@ -871,6 +871,13 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop 
     ])
   })
 
+  it('a session a conductor starts gets the conductor’s own permission: bypass under a bypass conductor, the default otherwise', async () => {
+    const { verb, launched } = harness(live, {}, [], conducting({ bypass: ['global'] }))
+    await verb(['new', '--workspace', WS, '--backend', 'codex', '--', 'go'], from('global'))
+    await verb(['new', '--', 'go'], from('wsCond'))
+    expect(launched.map((l) => l.permission)).toEqual(['bypass', 'default'])
+  })
+
   it('any session reports back to the conductor that started it by the conductor’s id, which is hidden from every list, with its own mode and no owner label', async () => {
     const opened: string[] = []
     const { verb, lines, queued } = harness(

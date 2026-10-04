@@ -9,7 +9,10 @@ reach the socket may say what it likes.
 Koloft itself launched that sender with permission checks skipped (a Claude session with
 `--dangerously-skip-permissions`, a Codex session with approvals and the sandbox off),
 `prompting` otherwise. This holds for a conductor and for a session reporting back to
-one. A mismatch is held, the way two Claude sessions messaging each other are held.
+one. A mismatch is held, the way two Claude sessions messaging each other are held. So
+that a session's report back is not held, a session a conductor starts is launched with
+the conductor's own class (the owner's choice): a Codex session started by a bypass
+Claude conductor runs with approvals and the sandbox off.
 **Rejected**: always claiming `bypass` so every message is delivered. It would let a
 conductor that asks before each command push work into a session that never asks, which
 is the escalation Claude's hold exists to stop.
