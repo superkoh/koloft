@@ -299,7 +299,7 @@ export interface SessionVerbDeps {
   conductorOf(ref: string): Target | undefined
   resume(row: SessionRow): Promise<string>
   ready(tabId: string, ms: number, turnEnded: boolean): Promise<boolean>
-  sendLine(tabId: string, line: string): Promise<void>
+  sendLine(tabId: string, line: string, ms: number): Promise<void>
   typeInto(tabId: string, text: string): Promise<void>
   modeOf(tabId: string): ModeClass
   stop(tabId: string): void
@@ -517,7 +517,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       return `Sent to ${t.name}.`
     }
     if (line) {
-      await d.sendLine(tab, line)
+      await d.sendLine(tab, line, until - Date.now())
       return `Sent to ${t.name}.`
     }
     if (!(await d.ready(tab, until - Date.now(), true)))

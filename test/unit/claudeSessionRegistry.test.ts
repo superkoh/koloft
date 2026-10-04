@@ -5,7 +5,8 @@ import path from 'path'
 import {
   claudePeerNames,
   messagingSocketOf,
-  runningClaudePid
+  runningClaudePid,
+  whenMessagingSocket
 } from '../../src/main/claudeSessionRegistry'
 
 const SID = '1425a153-9a1b-45b1-a727-b05f5a9c490e'
@@ -83,5 +84,22 @@ describe("claude's own session registry: the socket a session takes messages on"
     const startOf = async (pid: number): Promise<string | null> => (pid === 29948 ? START : null)
     expect(await messagingSocketOf(SID, dir, startOf)).toBe('/tmp/cc-socks/29948.sock')
     expect(await messagingSocketOf(SID, dir, async () => null)).toBeNull()
+  })
+
+  it('waits for a session that binds before it registers, woken by its entry landing, and answers null at the deadline', async () => {
+    const startOf = async (): Promise<string | null> => START
+    const waiting = whenMessagingSocket(SID, 60_000, dir, startOf)
+    await new Promise((r) => setTimeout(r, 50))
+    fs.writeFileSync(
+      path.join(dir, '29948.json'),
+      JSON.stringify({
+        pid: 29948,
+        sessionId: SID,
+        procStart: START,
+        messagingSocketPath: '/tmp/cc-socks/29948.sock'
+      })
+    )
+    expect(await waiting).toBe('/tmp/cc-socks/29948.sock')
+    expect(await whenMessagingSocket('not-running', 100, dir, startOf)).toBeNull()
   })
 })

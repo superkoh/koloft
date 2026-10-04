@@ -95,6 +95,35 @@ export async function messagingSocketOf(
   return (await liveEntry(readRegistry(dir).get(sessionId), startOf))?.messagingSocketPath ?? null
 }
 
+export function whenMessagingSocket(
+  sessionId: string,
+  ms: number,
+  dir = REGISTRY_DIR,
+  startOf = processStartUtc
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    let watcher: fs.FSWatcher | undefined
+    let settled = false
+    const settle = (socket: string | null): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(deadline)
+      watcher?.close()
+      resolve(socket)
+    }
+    const check = (): void =>
+      void messagingSocketOf(sessionId, dir, startOf).then((socket) => socket && settle(socket))
+    const deadline = setTimeout(
+      () => void messagingSocketOf(sessionId, dir, startOf).then(settle),
+      Math.max(0, ms)
+    )
+    try {
+      watcher = fs.watch(dir, check)
+    } catch {}
+    check()
+  })
+}
+
 export function claudePeerNames(
   dir = REGISTRY_DIR,
   startOf = processStartUtc

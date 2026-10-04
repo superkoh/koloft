@@ -257,7 +257,7 @@ import { Notices } from './discord/notices'
 import { approvalDetail, type CodexApproval } from './discord/dialog'
 import { sleep } from './codexTransport'
 import { discordVerb } from './agentDiscord'
-import { claudePeerNames, messagingSocketOf, runningClaudePid } from './claudeSessionRegistry'
+import { claudePeerNames, runningClaudePid, whenMessagingSocket } from './claudeSessionRegistry'
 import { isDiscordId, scopeName } from '@shared/conductors'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
@@ -715,9 +715,9 @@ const agentRequests = new AgentRequests({
         return resumed.tabId
       },
       ready: tabReady,
-      sendLine: async (tabId, line) => {
+      sendLine: async (tabId, line, ms) => {
         const sessionId = sessionOfTab(tabId)?.sessionId
-        const socket = sessionId ? await messagingSocketOf(sessionId) : null
+        const socket = sessionId ? await whenMessagingSocket(sessionId, ms) : null
         if (!socket) throw new Error('Koloft could not find where that session takes messages.')
         await writeLine(socket, line)
       },
