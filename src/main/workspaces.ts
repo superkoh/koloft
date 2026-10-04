@@ -92,6 +92,7 @@ export interface WorkspaceManagerDeps {
   killRemoteSession?(host: string, sessionId: string): void
   hiddenRow?(id: string): boolean
   conductorsRoot?: string
+  sessionsOnDiskOrRunning?(ids: ReadonlySet<string>): void
   memberDropped?(sessionId: string, why: string): void
 }
 
@@ -207,7 +208,7 @@ export class WorkspaceManager {
     const { key } = this.scope(wsPath)
     if (key) for (const id of this.deps.remoteRunning?.(key.host) ?? []) running.add(id)
     return (this.allRowsCache.get(wsPath) ?? [])
-      .filter((r) => !this.isMember(r.id) && !running.has(r.id) && !this.hidden(r.id))
+      .filter((r) => !this.isMember(r.id) && !running.has(r.id))
       .sort((a, b) => b.mtime - a.mtime)
   }
 
@@ -735,6 +736,7 @@ export class WorkspaceManager {
     for (const t of this.remoteTargets()) {
       for (const id of this.deps.remoteRunning?.(t.host) ?? []) liveIds.add(id)
     }
+    this.deps.sessionsOnDiskOrRunning?.(liveIds)
     const additional = this.deps.additionalMembers?.() ?? new Set<string>()
     const members: string[] = []
     for (const id of this.layout.members) {

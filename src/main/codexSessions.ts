@@ -143,6 +143,7 @@ export class CodexSessions {
   private warnedVersion?: string
   private refreshing?: Promise<void>
   private historyError?: Error
+  private everyHomeListed = false
   private launchingKeys = new Set<string>()
   private pendingLaunches = new Set<Promise<{ id: string; cwd: string }>>()
   private shuttingDown = false
@@ -476,6 +477,7 @@ export class CodexSessions {
     this.history = seen
     this.threadHomes = homes
     this.archivedIds = archivedIds
+    this.everyHomeListed = listings.every((listing) => listing.status === 'fulfilled')
     this.historyError = undefined
     this.changed()
   }
@@ -536,6 +538,12 @@ export class CodexSessions {
 
   openApproval(tabId: string): CodexApproval | undefined {
     return this.runs.get(tabId)?.observer.openApproval()
+  }
+
+  threadGone(key: string): boolean {
+    return (
+      this.everyHomeListed && !this.refreshing && !this.history.has(key) && !this.aliveTabFor(key)
+    )
   }
 
   launchedBypassingChecks(tabId: string): boolean {

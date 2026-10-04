@@ -63,22 +63,28 @@ describe('Discord notices: which session state change reaches which channel', ()
     ).toBe('20')
   })
 
-  it('notices for one channel within a second go out as one message, in order', async () => {
+  it('notices for one channel within a second go out as one message, in order, and a conductor’s own session gives none', async () => {
     vi.useFakeTimers()
     const post = vi.fn()
-    const names: Record<string, string> = { a: 'alpha', b: 'beta', c: 'gamma' }
+    const names: Record<string, string> = { a: 'alpha', b: 'beta', c: 'gamma', d: 'conductor' }
     const notices = new Notices({
       bindings: () => [binding(WS, '10', ['a'])],
       post,
-      subject: (tabId) => ({ key: tabId, name: names[tabId], workspace: WS }),
-      ownsTab: () => false,
+      subject: (tabId) => ({
+        key: tabId,
+        name: names[tabId],
+        workspace: WS,
+        conductor: tabId === 'd' ? 'b1' : undefined
+      }),
       awaitsInput: () => false,
       detail: async () => 'npm test'
     })
     notices.onStatus('a', 'working', 'waiting')
     notices.onStatus('b', 'working', 'approval')
+    notices.onStatus('d', 'working', 'approval')
     await vi.advanceTimersByTimeAsync(0)
     notices.closed('c')
+    notices.closed('d')
     expect(post).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(NOTICE_COALESCE_MS)
     expect(post.mock.calls).toEqual([

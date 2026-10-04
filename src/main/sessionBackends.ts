@@ -21,6 +21,7 @@ import {
   unsupportedPairMessage
 } from '@shared/sessionBackend'
 import { hostOf } from '@shared/remoteKey'
+import type { ModeClass } from './crossSessionMessage'
 
 export interface SessionBackend {
   id: BackendId
@@ -40,6 +41,8 @@ export interface SessionBackend {
   occupantOf(dir: string): string | null
   accountUsable(): boolean
   trustsFolder(dir: string): boolean | Promise<boolean>
+  turns(key: string, n: number): Promise<Turn[]>
+  permissionClass(tabId: string): ModeClass
 }
 
 export interface SessionLifecycle {
@@ -57,6 +60,7 @@ const CLEAN_EXIT_HIDES_A_LATER_EXIT_MS = 30_000
 export class SessionBackends {
   private adapters = new Map<BackendId, SessionBackend>()
   private cleanExitAt = new Map<string, number>()
+  conductorOf: (tabOrSessionId: string) => string | undefined = () => undefined
 
   constructor(private lifecycle: SessionLifecycle) {}
 
@@ -140,9 +144,18 @@ export class SessionBackends {
         ...s,
         backendId: backend.id,
         host: s.remote ? 'ssh' : 'local',
-        nativeSessionId: s.nativeSessionId ?? s.sessionId
+        nativeSessionId: s.nativeSessionId ?? s.sessionId,
+        conductor: this.conductorOf(s.tabId) ?? this.conductorOf(s.sessionId)
       }))
     )
+  }
+
+  turns(key: string, n: number): Promise<Turn[]> {
+    return this.forSession(key).turns(key, n)
+  }
+
+  permissionClass(tabId: string): ModeClass {
+    return this.ownerOfTab(tabId)?.permissionClass(tabId) ?? 'prompting'
   }
 
   async historyRows(
@@ -162,7 +175,7 @@ export class SessionBackends {
     })
     if (failures.length && !rows.length) throw failures[0].error
     for (const f of failures) partlyUnread(f.id, f.error)
-    return rows.sort((a, b) => b.mtime - a.mtime)
+    return rows.filter((r) => !this.conductorOf(r.id)).sort((a, b) => b.mtime - a.mtime)
   }
 
   create(options: CreateTabOptions): Promise<CreateTabResult> {

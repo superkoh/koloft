@@ -9,6 +9,7 @@ export interface NoticeSubject {
   key: string
   name: string
   workspace?: string
+  conductor?: string
 }
 
 export const NOTICE_COALESCE_MS = 1000
@@ -47,7 +48,6 @@ export interface NoticeDeps {
   bindings(): ConductorBinding[]
   post(channelId: string, text: string): void
   subject(tabId: string): NoticeSubject | undefined
-  ownsTab(tabId: string): boolean
   awaitsInput(tabId: string): boolean
   detail(tabId: string): Promise<string | undefined>
 }
@@ -84,7 +84,7 @@ export class Notices {
 
   private async notice(tabId: string, kind: NoticeKind): Promise<void> {
     const subject = this.d.subject(tabId)
-    if (!subject || this.d.ownsTab(tabId)) return
+    if (!subject || subject.conductor) return
     let detail: string | undefined
     if (kind === 'closed') {
       if (this.closeNoticed.has(tabId)) return

@@ -510,7 +510,9 @@ export interface BackendSessionInfo {
   updatedAt: number
 }
 
-export interface SessionInfo extends BackendSessionInfo, SessionSource {}
+export interface SessionInfo extends BackendSessionInfo, SessionSource {
+  conductor?: string
+}
 
 export interface ClaudeSessionInfo extends BackendSessionInfo {
   jsonlPath: string | null

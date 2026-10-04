@@ -42,7 +42,6 @@ interface CreateArgs {
 }
 
 const UTIL_TITLE_POLL_MS = 1500
-const TAB_READY_POLL_MS = 250
 // CC§12
 const SUBMIT_AFTER_TEXT_MS = 300
 
@@ -74,6 +73,7 @@ export class PtyManager extends EventEmitter {
   makeHookSettings?: (tabId: string, allowKoloft: boolean) => string | undefined
 
   private ptys = new Map<string, PtyHandle>()
+  private readyWaiters = new Map<string, Set<() => void>>()
   private counter = 0
   private instanceTag = process.pid.toString(36)
 
@@ -206,6 +206,7 @@ export class PtyManager extends EventEmitter {
     proc.onExit(({ exitCode, signal }) => {
       handle.alive = false
       if (titlePoll) clearInterval(titlePoll)
+      this.wakeReady(id)
       this.emit('exit', { id, exitCode, signal })
     })
 
@@ -244,13 +245,29 @@ export class PtyManager extends EventEmitter {
     this.ptys.get(id)?.proc.write(data)
   }
 
-  async whenReady(id: string, ready: () => boolean, ms: number): Promise<boolean> {
-    const until = Date.now() + ms
-    while (!ready()) {
-      if (!this.get(id)?.alive || Date.now() >= until) return false
-      await sleep(TAB_READY_POLL_MS)
-    }
-    return true
+  whenReady(id: string, ready: () => boolean, ms: number): Promise<boolean> {
+    if (ready()) return Promise.resolve(true)
+    if (!this.get(id)?.alive || ms <= 0) return Promise.resolve(false)
+    return new Promise((resolve) => {
+      const waiters = this.readyWaiters.get(id) ?? new Set()
+      this.readyWaiters.set(id, waiters)
+      const settle = (result: boolean): void => {
+        clearTimeout(deadline)
+        waiters.delete(recheck)
+        if (waiters.size === 0) this.readyWaiters.delete(id)
+        resolve(result)
+      }
+      const recheck = (): void => {
+        if (ready()) settle(true)
+        else if (!this.get(id)?.alive) settle(false)
+      }
+      const deadline = setTimeout(() => settle(ready()), ms)
+      waiters.add(recheck)
+    })
+  }
+
+  wakeReady(id: string): void {
+    for (const recheck of [...(this.readyWaiters.get(id) ?? [])]) recheck()
   }
 
   pause(id: string): void {

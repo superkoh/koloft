@@ -12,7 +12,9 @@ import type {
   SessionRow
 } from '@shared/types'
 import type { SessionEvent } from '@shared/sessionEvent'
-import { formatRemoteKey, hostOf, isAbsoluteOnHost } from '@shared/remoteKey'
+import { formatRemoteKey, hostOf, isAbsoluteOnHost, parseRemoteKey } from '@shared/remoteKey'
+import type { Turn } from '@shared/turns'
+import type { ModeClass } from '../crossSessionMessage'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import type { SessionBackend } from '../sessionBackends'
 import type { PtyManager } from '../ptyManager'
@@ -24,7 +26,13 @@ import type { MachineAccount, SshHost } from '../host/sshHost'
 import type { ClaudeLaunch, Host } from '../host/host'
 import type { RemoteSync } from '../remote/sync'
 import { accountEnv, tmuxSessionName } from '../remote/launch'
-import { dq, mirrorHookDir, REMOTE_HOOK_DIR, tabPackageDir } from '../remote/paths'
+import {
+  dq,
+  mirrorHookDir,
+  mirrorProjectsRoot,
+  REMOTE_HOOK_DIR,
+  tabPackageDir
+} from '../remote/paths'
 import { hookSettings, removeConductorMarker, writeConductorMarker } from '../hooks'
 import type { StatusLineSetting } from '../statusline'
 import { loadSettings } from '../settings'
@@ -34,7 +42,13 @@ import { SESSION_ID_RE } from '../claudeArgs'
 import { probeClaude } from '../claudeProbe'
 import { runningClaudePid } from '../claudeSessionRegistry'
 import { rootsWithClaude } from '../claudeLiveness'
-import { readAppendedLines, sessionEventFromHook } from '../sessionTracker'
+import {
+  findTranscript,
+  PROJECTS_ROOT,
+  readAppendedLines,
+  sessionEventFromHook,
+  transcriptTurns
+} from '../sessionTracker'
 import {
   continuedInOf,
   conversationMovedTo,
@@ -108,6 +122,8 @@ export class ClaudeBackend implements SessionBackend {
   private statusLogDraining = new Map<string, boolean>()
   private processedRegIds = new Set<string>()
   private watchedHookMirrors = new Map<string, () => void>()
+  private pickedSkipFlag = new Set<string>()
+  private launchedBypassing = new Set<string>()
   agentPlugin?: string
 
   constructor(private d: ClaudeBackendDeps) {}
@@ -171,6 +187,26 @@ export class ClaudeBackend implements SessionBackend {
     return this.d.tracker.transcriptExists(key)
   }
 
+  async turns(key: string, n: number): Promise<Turn[]> {
+    const live = this.d.tracker.turnsOf(key, n)
+    if (live) return live
+    const remote = parseRemoteKey(this.homeOf(key) ?? '')
+    const root = remote ? mirrorProjectsRoot(this.d.userData(), remote.host) : PROJECTS_ROOT
+    const file = findTranscript(root, key)
+    return file ? transcriptTurns(file, n) : []
+  }
+
+  picked(tabId: string, skipFlag: boolean): void {
+    if (skipFlag) this.pickedSkipFlag.add(tabId)
+    else this.pickedSkipFlag.delete(tabId)
+  }
+
+  // ADR-0028
+  permissionClass(tabId: string): ModeClass {
+    const injected = this.pickedSkipFlag.has(tabId) && !!this.d.tracker.infoOf(tabId)?.account
+    return injected || this.launchedBypassing.has(tabId) ? 'bypass' : 'prompting'
+  }
+
   stop(tabId: string): void {
     const remote = this.d.tracker.remoteOf(tabId)
     if (remote) {
@@ -232,6 +268,8 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   onPtyExit(tabId: string): void {
+    this.pickedSkipFlag.delete(tabId)
+    this.launchedBypassing.delete(tabId)
     const remote = this.d.tracker.remoteOf(tabId)
     if (!remote) {
       // CC§1
@@ -767,6 +805,7 @@ export class ClaudeBackend implements SessionBackend {
       extraEnv: agentPlugin ? { ...plan.extraEnv, KOLOFT_AGENT_PLUGIN: agentPlugin } : plan.extraEnv
     })
     if (spec.role && !machine) writeConductorMarker(this.hookRegDir, handle.id, spec.role)
+    if (spec.permission === 'bypass') this.launchedBypassing.add(handle.id)
     if (machine) {
       tracker.track(handle.id, machine.cwd, machine.tracking)
       if (machine.picked) tracker.setPickedAccount(handle.id, machine.picked)

@@ -11,6 +11,8 @@ let scratchpadDirFor: typeof import('../../src/main/sessionTracker').scratchpadD
 let tasksDirFor: typeof import('../../src/main/sessionTracker').tasksDirFor
 let classifyUserPrompt: typeof import('../../src/main/sessionTracker').classifyUserPrompt
 let transcriptTurns: typeof import('../../src/main/sessionTracker').transcriptTurns
+let lastTurnsOfLines: typeof import('../../src/main/sessionTracker').lastTurnsOfLines
+let TRANSCRIPT_TAIL_FIRST_READ_BYTES: number
 let home: string
 let projectsRoot: string
 const RELOCATE_SETTLE_STRETCHED_PAST_THE_500MS_FILE_POLL_MS = '2000'
@@ -28,7 +30,9 @@ beforeAll(async () => {
     scratchpadDirFor,
     tasksDirFor,
     classifyUserPrompt,
-    transcriptTurns
+    transcriptTurns,
+    lastTurnsOfLines,
+    TRANSCRIPT_TAIL_FIRST_READ_BYTES
   } = await import('../../src/main/sessionTracker'))
 })
 
@@ -1808,6 +1812,32 @@ describe('SessionTracker — what each turn said: the owner, another session, an
     expect((await transcriptTurns(file, 1)).map((t) => t.said[0].text)).toEqual([
       'Run exactly this bash command: sleep 15; echo DONE2'
     ])
+  })
+
+  it('reading only the end of a large transcript gives the same last 1 to 20 turns as reading all of it, also when the read starts in the middle of a turn or of a character', async () => {
+    const pad = (bytes: number): string => '界'.repeat(Math.ceil(bytes / 3))
+    const lines: unknown[] = []
+    let s = 0
+    const TURNS = 45
+    for (let turn = 0; turn < TURNS; turn++) {
+      const last = turn === TURNS - 1
+      lines.push(human(`question ${turn} ${pad(100)}`, ++s))
+      if (turn % 4 === 1) lines.push(human(`and also ${turn}`, ++s))
+      const steps = last ? 3 : 1 + (turn % 5)
+      for (let step = 0; step < steps; step++) {
+        const bytes = last ? TRANSCRIPT_TAIL_FIRST_READ_BYTES * 2 : 7000 + turn * 1300
+        lines.push(said({ ...bash, input: { command: pad(bytes) } }, ++s))
+        lines.push(toolResult(++s))
+        if (step === 1) lines.push(queued(`while busy ${turn}`, turn % 2 ? 'peer' : 'human', ++s))
+        lines.push(said(text(`step ${step} of ${turn} ${pad(50)}`), ++s))
+      }
+    }
+    const cwd = makeWorkspace({})
+    const file = writeJsonl(cwd, '55555555-5555-4555-8555-555555555555', lines)
+    expect(fs.statSync(file).size).toBeGreaterThan(TRANSCRIPT_TAIL_FIRST_READ_BYTES * 16)
+    const whole = fs.readFileSync(file, 'utf8').split('\n')
+    for (let n = 1; n <= 20; n++)
+      expect(await transcriptTurns(file, n)).toEqual(lastTurnsOfLines(whole, n).turns)
   })
 
   it('a peer message wrapped in the cross-session envelope reads as its plain body, whether it arrived idle or busy', async () => {

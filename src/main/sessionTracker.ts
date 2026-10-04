@@ -356,19 +356,50 @@ function claudeTurnPieces(obj: any): TurnPiece[] {
   })
 }
 
-export async function transcriptTurns(file: string, n: number): Promise<TalkTurn[]> {
+export function lastTurnsOfLines(
+  lines: string[],
+  n: number
+): { turns: TalkTurn[]; started: number } {
   const log = new TurnLog()
-  for (const line of (await fs.promises.readFile(file, 'utf8')).split('\n')) {
+  let started = 0
+  for (const line of lines) {
     let obj: unknown
     try {
       obj = JSON.parse(line)
     } catch {
       continue
     }
-    for (const piece of claudeTurnPieces(obj))
-      if (piece !== 'tool') log.add(piece.line, piece.midTurn)
+    for (const piece of claudeTurnPieces(obj)) {
+      if (piece === 'tool') continue
+      const before = log.open()
+      log.add(piece.line, piece.midTurn)
+      if (log.open() !== before) started++
+    }
   }
-  return log.last(n)
+  return { turns: log.last(n), started }
+}
+
+export const TRANSCRIPT_TAIL_FIRST_READ_BYTES = 64 * 1024
+
+export async function transcriptTurns(file: string, n: number): Promise<TalkTurn[]> {
+  const fh = await fs.promises.open(file, 'r')
+  try {
+    let start = (await fh.stat()).size
+    let tail = Buffer.alloc(0)
+    for (let chunk = TRANSCRIPT_TAIL_FIRST_READ_BYTES; ; chunk *= 2) {
+      const from = Math.max(0, start - chunk)
+      const head = Buffer.alloc(start - from)
+      await fh.read(head, 0, head.length, from)
+      tail = Buffer.concat([head, tail])
+      start = from
+      const lines = tail.toString('utf8').split('\n')
+      const whole = start === 0 ? lines : lines.slice(1)
+      const { turns, started } = lastTurnsOfLines(whole, n)
+      if (start === 0 || started > n) return turns
+    }
+  } finally {
+    await fh.close()
+  }
 }
 
 // CC§2

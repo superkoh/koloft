@@ -22,13 +22,7 @@ import { anotherLiveInstanceOwns, PtyManager, typeKeys } from './ptyManager'
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { FlowGate } from './flowControl'
-import {
-  findTranscript,
-  PROJECTS_ROOT,
-  SessionTracker,
-  transcriptTurns,
-  type ToolCall
-} from './sessionTracker'
+import { SessionTracker, type ToolCall } from './sessionTracker'
 import type { StatusEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
 import { SessionBackends } from './sessionBackends'
@@ -310,6 +304,7 @@ const sessionBackends = new SessionBackends({
     cronRunner?.onBound(tabId, key)
     conductors?.onBound(tabId, key)
     startedSessions.bound(tabId, key)
+    ptyMgr.wakeReady(tabId)
   },
   exited: (tabId, subject) => attention.onExited(tabId, attentionCtx(), subject),
   asked: (tabId, ask) => discordRelay?.onAsk(tabId, ask),
@@ -319,6 +314,7 @@ const sessionBackends = new SessionBackends({
     openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target)
   }
 })
+sessionBackends.conductorOf = (id) => conductors?.conductorOf(id)
 function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
@@ -549,7 +545,6 @@ let conductors: Conductors | null = null
 let discordLink: DiscordLink | null = null
 let discordRelay: DiscordRelay | null = null
 let discordNotices: Notices | null = null
-const skipFlagTabs = new Set<string>()
 const answerable = new Set<string>()
 let answerableRegDir: string | undefined
 let discordConnected = false
@@ -571,11 +566,11 @@ async function codexApprovalOf(tabId: string): Promise<CodexApproval | undefined
 
 function syncAnswerable(): void {
   if (!answerableRegDir || !conductors) return
-  for (const s of tracker.list()) {
-    if (!s.alive || s.remote) continue
+  for (const s of allSessions()) {
+    if (s.backendId !== 'claude' || !s.alive || s.remote) continue
     const on =
       discordConnected &&
-      (conductors.ownsTab(s.tabId) || conductors.covers(sessionBackends.workspaceOfTab(s.tabId)))
+      (!!s.conductor || conductors.covers(sessionBackends.workspaceOfTab(s.tabId)))
     if (on === answerable.has(s.tabId)) continue
     if (on) answerable.add(s.tabId)
     else answerable.delete(s.tabId)
@@ -668,19 +663,6 @@ function notesFileOfPinned(workspace: string): string | undefined {
   return workspaceMgr?.isPinned(workspace) ? ensureNotesFile(notesBaseDir(), workspace) : undefined
 }
 
-async function readTurns(key: string, n: number): Promise<Turn[]> {
-  if (identityOf(key).backendId === 'codex') {
-    if (!codexSessions) return []
-    return codexSessions.turnsOf(key, n) ?? codexSessions.readTurns(key, n)
-  }
-  const live = tracker.turnsOf(key, n)
-  if (live) return live
-  const remote = parseRemoteKey(workspaceMgr?.workspaceOf(key) ?? '')
-  const root = remote ? mirrorProjectsRoot(app.getPath('userData'), remote.host) : PROJECTS_ROOT
-  const file = findTranscript(root, key)
-  return file ? transcriptTurns(file, n) : []
-}
-
 function unlessWorkspacelessConductor(verb: AgentVerb): AgentVerb {
   return (args, caller) => {
     const reason = conductors?.noWorkspaceReason(caller.tabId)
@@ -712,7 +694,7 @@ const agentRequests = new AgentRequests({
     note: unlessWorkspacelessConductor(notesAndWorkbenchVerbs.note),
     session: sessionVerb({
       workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
-      allSessions: () => allSessions().filter((s) => !conductors?.ownsTab(s.tabId)),
+      allSessions: () => allSessions().filter((s) => !s.conductor),
       pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
       peerNames: () => claudePeerNames(),
       launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
@@ -724,7 +706,7 @@ const agentRequests = new AgentRequests({
         setTimeout(() => void closeSessionFully(target), CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
       conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
       sidebar: () => workspaceMgr?.rows() ?? [],
-      readTurns,
+      readTurns: (key, n) => sessionBackends.turns(key, n),
       touch: (tabId, key) => conductors?.touch(tabId, key),
       conductorOf: conductorTarget,
       resume: async (row) => {
@@ -740,15 +722,7 @@ const agentRequests = new AgentRequests({
         await writeLine(socket, line)
       },
       typeInto: (tabId, text) => typeKeys((data) => ptyMgr.write(tabId, data), [text, '\r']),
-      // ADR-0028
-      modeOf: (tabId) =>
-        (
-          codexSessions?.hasTab(tabId)
-            ? codexSessions.launchedBypassingChecks(tabId)
-            : skipFlagTabs.has(tabId) && !!sessionOfTab(tabId)?.account
-        )
-          ? 'bypass'
-          : 'prompting',
+      modeOf: (tabId) => sessionBackends.permissionClass(tabId),
       stop: killTabFromMain,
       answer: async (tabId, reply) => {
         if (!discordRelay) return STILL_STARTING
@@ -813,8 +787,7 @@ async function handlePickRequest(pickDir: string, reqName: string, raw: unknown)
   const { res, endpoint } = await pickForLaunch(obj.tabId)
   const payload: Record<string, unknown> = { ...res }
   if (res.account && loadSettings().skipPermissions) payload.skipFlag = true
-  if (payload.skipFlag) skipFlagTabs.add(obj.tabId)
-  else skipFlagTabs.delete(obj.tabId)
+  claudeBackend.picked(obj.tabId, payload.skipFlag === true)
   if (endpoint?.baseUrl) payload.baseUrl = endpoint.baseUrl
   if (endpoint?.model) payload.model = endpoint.model
   const resPath = path.join(pickDir, `res-${id}.json`)
@@ -1407,7 +1380,6 @@ app.whenReady().then(() => {
     discordNotices?.forget(e.id)
     discordRelay?.forget(e.id)
     if (answerable.delete(e.id) && answerableRegDir) markAnswerable(answerableRegDir, e.id, false)
-    skipFlagTabs.delete(e.id)
     loginPtys.delete(e.id)
     const codexAccount = codexSignInPtys.get(e.id)
     if (codexAccount) {
@@ -1467,7 +1439,8 @@ app.whenReady().then(() => {
     discordRelay?.toolDone(tabId, call)
   )
   tracker.on('status', (t: StatusEdge) => {
-    const conductor = !!conductors?.ownsTab(t.tabId)
+    ptyMgr.wakeReady(t.tabId)
+    const conductor = !!conductors?.conductorOf(t.tabId)
     if (conductor && t.next === 'approval')
       void codexApprovalOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
     discordNotices?.onStatus(t.tabId, t.prev, t.next)
@@ -1555,8 +1528,13 @@ app.whenReady().then(() => {
     remoteGit: (host, p) => remoteSync?.gitInfo(host, p),
     killRemoteSession: (host, sessionId) =>
       claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId)),
-    hiddenRow: (id) => conductors?.hides(id) ?? false,
+    hiddenRow: (id) => !!conductors?.conductorOf(id),
     conductorsRoot: path.join(userData, 'conductors'),
+    sessionsOnDiskOrRunning: (ids) =>
+      conductors?.forgetGone(
+        (key) =>
+          ids.has(key) || (identityOf(key).backendId === 'codex' && !codexSessions?.threadGone(key))
+      ),
     memberDropped: (sessionId, why) => {
       try {
         fs.appendFileSync(
@@ -1656,6 +1634,7 @@ app.whenReady().then(() => {
     waiting: (tabId) => discordNotices?.waiting(tabId),
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive,
     ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
+    asksChanged: (tabId) => ptyMgr.wakeReady(tabId),
     write: (tabId, data) => ptyMgr.write(tabId, data),
     queue: async (tabId, text, clientId) => {
       if (!codexSessions) throw new Error(codexStartupError ?? 'Codex is not available.')
@@ -1675,10 +1654,14 @@ app.whenReady().then(() => {
     subject: (tabId) => {
       const s = sessionOfTab(tabId)
       return s?.sessionId
-        ? { key: s.sessionId, name: s.title, workspace: sessionBackends.workspaceOfTab(tabId) }
+        ? {
+            key: s.sessionId,
+            name: s.title,
+            workspace: sessionBackends.workspaceOfTab(tabId),
+            conductor: s.conductor
+          }
         : undefined
     },
-    ownsTab: (tabId) => conductorsNow.ownsTab(tabId),
     awaitsInput: (tabId) => tracker.awaitsInput(tabId),
     detail: async (tabId) => {
       const approval = await codexApprovalOf(tabId)
@@ -1686,7 +1669,8 @@ app.whenReady().then(() => {
     }
   })
   tracker.dialogsWatched = (tabId) =>
-    conductorsNow.ownsTab(tabId) || conductorsNow.covers(sessionBackends.workspaceOfTab(tabId))
+    !!conductorsNow.conductorOf(tabId) ||
+    conductorsNow.covers(sessionBackends.workspaceOfTab(tabId))
   void link.connect()
   remoteSync = new RemoteSync({
     run: (host, cmd) =>
@@ -3237,15 +3221,13 @@ function registerIpc(): void {
     return sessionBackends.forSession(id).transcriptExists(id)
   })
 
-  ipcMain.handle('workspace:historyRows', async (_e, p: string) =>
-    (
-      await sessionBackends.historyRows(p, (id, error) =>
-        sendToRenderer(
-          'cron:toast',
-          `${BACKEND_LABEL[id]} history could not be read. Showing the rest. ${String(error)}`
-        )
+  ipcMain.handle('workspace:historyRows', (_e, p: string) =>
+    sessionBackends.historyRows(p, (id, error) =>
+      sendToRenderer(
+        'cron:toast',
+        `${BACKEND_LABEL[id]} history could not be read. Showing the rest. ${String(error)}`
       )
-    ).filter((r) => !conductors?.hides(r.id))
+    )
   )
 
   ipcMain.handle('sessions:leftovers', () => leftovers)

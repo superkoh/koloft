@@ -105,8 +105,8 @@ describe('Conductors', () => {
     c.onBound('tab-1', 's2')
     c.onBound('tab-1', 's2')
     expect(saved.bindings[0]).toMatchObject({ sessionIds: ['s1', 's2'], lastSessionKey: 's2' })
-    expect(c.hides('s1') && c.hides('s2') && c.hides('tab-1')).toBe(true)
-    expect(c.hides('someone-else')).toBe(false)
+    expect([c.conductorOf('s1'), c.conductorOf('s2'), c.conductorOf('tab-1')]).toEqual([id, id, id])
+    expect(c.conductorOf('someone-else')).toBeUndefined()
 
     c.onPtyExit('tab-1')
     transcripts.add('s2')
@@ -118,16 +118,17 @@ describe('Conductors', () => {
     vi.useFakeTimers()
     const c = make()
     c.save({ scope: 'global', backend: 'claude', channel: CHANNEL })
-    const opening = c.open(c.bindings()[0].id)
+    const id = c.bindings()[0].id
+    const opening = c.open(id)
     await vi.waitFor(() => expect(started).toHaveLength(1))
     release()
     await opening
     vi.advanceTimersByTime(DEADLINE_MS)
     expect(killed).toEqual(['tab-1'])
     expect(toasts).toEqual(['The Global conductor did not start.'])
-    expect(c.ownsTab('tab-1')).toBe(true)
+    expect(c.conductorOf('tab-1')).toBe(id)
     c.onPtyExit('tab-1')
-    expect(c.ownsTab('tab-1')).toBe(false)
+    expect(c.conductorOf('tab-1')).toBeUndefined()
   })
 
   it('a session the conductor touched is saved at once, and the last Discord message a second later or at quit, neither with a rescan of the sidebar rows', async () => {
@@ -151,6 +152,35 @@ describe('Conductors', () => {
     c.setLastMessage(id, '103')
     c.flush()
     expect(quiet.at(-1)?.bindings[0].lastMessageId).toBe('103')
+    expect(rescans).toBe(0)
+  })
+
+  it('forgets the session ids and touched sessions whose transcript is gone, keeps the rest, and saves only when something went, without a rescan of the sidebar rows', () => {
+    saved = {
+      bindings: [
+        {
+          id: 'b1',
+          scope: 'global',
+          backend: 'claude',
+          channel: CHANNEL,
+          sessionIds: ['gone-1', 'kept-1'],
+          lastSessionKey: 'gone-1',
+          touched: ['kept-2', 'gone-2']
+        }
+      ]
+    }
+    const c = make()
+    const onDisk = new Set(['kept-1', 'kept-2'])
+    c.forgetGone((key) => onDisk.has(key))
+    expect(quiet.at(-1)?.bindings[0]).toMatchObject({
+      sessionIds: ['kept-1'],
+      lastSessionKey: 'gone-1',
+      touched: ['kept-2']
+    })
+    expect(c.conductorOf('gone-1')).toBeUndefined()
+    expect(c.conductorOf('kept-1')).toBe('b1')
+    c.forgetGone((key) => onDisk.has(key))
+    expect(quiet).toHaveLength(1)
     expect(rescans).toBe(0)
   })
 

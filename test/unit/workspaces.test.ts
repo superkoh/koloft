@@ -668,7 +668,7 @@ describe('WorkspaceManager: working-set eviction (D1/D2)', () => {
 })
 
 describe('WorkspaceManager: conductor sessions stay out of the workspace lists', () => {
-  it('hides a conductor’s sessions and its starting tab from the rows, the history and the restore mark, yet still knows their workspace', async () => {
+  it('hides a conductor’s sessions and its starting tab from the rows and the restore mark, yet still knows their workspace', async () => {
     writeJsonl(repo, 'plain-1')
     writeJsonl(repo, 'cond-old')
     writeJsonl(repo, 'cond-now')
@@ -680,7 +680,6 @@ describe('WorkspaceManager: conductor sessions stay out of the workspace lists',
     await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
 
     expect(latest(repo).rows.map((r) => r.id)).toEqual(['plain-1'])
-    expect(mgr.historyRows(repo)).toEqual([])
     expect(latest(repo).workspace.hasHistory).toBe(false)
     expect(mgr.workspaceOf('cond-now')).toBe(repo)
   })
@@ -1158,6 +1157,26 @@ describe('remote workspace: reading the mirror', () => {
     await vi.waitFor(() => expect(latest(RKEY).rows.length).toBe(1))
     await vi.waitFor(() => expect(Object.keys(layout.panels).sort()).toEqual(['abc', 'local1']))
     expect(latest(repo).rows.map((r) => r.id)).toEqual(['local1'])
+  })
+
+  it('after every rescan hands out the sessions that still have a transcript, on this Mac or in a mirror, or still run, so a conductor can forget the rest', async () => {
+    writeMirrorJsonl('abc')
+    writeJsonl(repo, 'local1')
+    writeJsonl(repo, 'deleted')
+    bindings.set('running-only', 'tab-9')
+    let reported = new Set<string>()
+    mgr = remoteMgr({
+      sessionsOnDiskOrRunning: (ids: ReadonlySet<string>) => (reported = new Set(ids))
+    })
+    mgr.start()
+    const kept = ['abc', 'local1', 'running-only']
+    await vi.waitFor(() =>
+      expect([...reported]).toEqual(expect.arrayContaining([...kept, 'deleted']))
+    )
+    fs.rmSync(path.join(projectsRoot, encodeCwd(repo), 'deleted.jsonl'))
+    mgr.refresh()
+    await vi.waitFor(() => expect(reported.has('deleted')).toBe(false))
+    expect([...reported]).toEqual(expect.arrayContaining(kept))
   })
 
   it('counts a session the machine reports as alive as running', async () => {

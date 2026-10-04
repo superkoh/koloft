@@ -64,6 +64,7 @@ export interface RelayDeps {
   waiting(tabId: string): void
   alive(tabId: string): boolean
   ready(tabId: string, ready: () => boolean, ms: number): Promise<boolean>
+  asksChanged(tabId: string): void
   write(tabId: string, data: string): void
   queue(tabId: string, text: string, clientId: string): Promise<void>
   codexApproval(tabId: string): CodexApproval | undefined
@@ -241,7 +242,11 @@ export class DiscordRelay {
     return watchJsonDrops(this.d.regDir, (name) => {
       if (!name.endsWith(ASK_SUFFIX)) return null
       const [tab, hook] = name.slice(0, -ASK_SUFFIX.length).split('.')
-      return hook ? (obj): void => this.onAsk(tab, obj as AskPayload, hook) : null
+      if (!hook) return null
+      if (fs.existsSync(path.join(this.d.regDir, name)))
+        return (obj): void => this.onAsk(tab, obj as AskPayload, hook)
+      if (this.askHooks.get(tab)?.delete(hook)) this.d.asksChanged(tab)
+      return null
     })
   }
 
@@ -252,6 +257,7 @@ export class DiscordRelay {
     if (before?.hook && before.hook !== hook) this.release(tab, before.hook)
     this.asks.set(tab, { payload, hook, raw })
     if (hook) this.askHooks.set(tab, (this.askHooks.get(tab) ?? new Set()).add(hook))
+    this.d.asksChanged(tab)
     const b = this.d.conductors.bindingOfTab(tab)
     if (b) this.say(b.channel.channelId, askText(payload))
     else this.d.waiting(tab)

@@ -193,6 +193,27 @@ describe('CodexSessions', () => {
     expect(sessions.members().has(codexSessionKey(A))).toBe(true)
   })
 
+  it('calls a thread gone only once every Codex home was listed without it, never before the first listing, after a failed home or while a listing runs', async () => {
+    const listed = codexSessionKey(A)
+    const unlisted = codexSessionKey(B)
+    expect(sessions.threadGone(unlisted)).toBe(false)
+    vi.mocked(deps.homes).mockReturnValue(['/codex-home-2'])
+    mocks.request.mockImplementation(async (_method, params, home) => {
+      if (home === '/codex-home-2') throw new Error('home 2 unreadable')
+      return { data: params.archived ? [] : [{ id: A, cwd: repo }] }
+    })
+    await sessions.refreshHistory()
+    expect(sessions.threadGone(unlisted)).toBe(false)
+    mocks.request.mockImplementation(async (_method, params) => ({
+      data: params.archived ? [] : [{ id: A, cwd: repo }]
+    }))
+    const listing = sessions.refreshHistory()
+    expect(sessions.threadGone(unlisted)).toBe(false)
+    await listing
+    expect(sessions.threadGone(listed)).toBe(false)
+    expect(sessions.threadGone(unlisted)).toBe(true)
+  })
+
   it('reports unavailable history instead of returning an empty successful listing', async () => {
     vi.mocked(sessions.availability).mockResolvedValue({
       id: 'codex',

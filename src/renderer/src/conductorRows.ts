@@ -8,9 +8,7 @@ export function conductorTab(
   opened: Record<string, string>,
   tabs: readonly { id: string; alive: boolean }[]
 ): string | undefined {
-  const bound = sessions.find(
-    (s) => s.alive && !!s.sessionId && binding.sessionIds.includes(s.sessionId)
-  )?.tabId
+  const bound = sessions.find((s) => s.alive && s.conductor === binding.id)?.tabId
   if (bound) return bound
   const tabId = opened[binding.id]
   return tabId && tabs.some((t) => t.id === tabId && t.alive) ? tabId : undefined

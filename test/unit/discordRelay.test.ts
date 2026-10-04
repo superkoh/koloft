@@ -45,6 +45,7 @@ function setup(
   const last: string[] = []
   const waiting: string[] = []
   const reactions: string[] = []
+  const asksChanged: string[] = []
   const deps: RelayDeps = {
     link: {
       post: async (_c, text, replyTo) => posts.push({ text, replyTo }),
@@ -78,6 +79,7 @@ function setup(
       while (!ready()) await new Promise((r) => setTimeout(r, 50))
       return true
     },
+    asksChanged: (t) => asksChanged.push(t),
     write: (_t, data) => writes.push({ data, at: Date.now() }),
     queue: async () => undefined,
     codexApproval: () => undefined,
@@ -85,7 +87,7 @@ function setup(
     attachmentsDir: path.join(dir, 'attachments'),
     ...more
   }
-  return { relay: new DiscordRelay(deps), posts, writes, last, waiting, reactions }
+  return { relay: new DiscordRelay(deps), posts, writes, last, waiting, reactions, asksChanged }
 }
 
 const HOOK = '4242'
@@ -181,8 +183,15 @@ describe('DiscordRelay: typing an owner message into a Claude conductor', () => 
   })
 
   // CC§14
-  it('answers the conductor’s own open question with the next message, and holds a later message until the question is gone', async () => {
-    const { relay, writes, posts, waiting } = setup()
+  it('answers the conductor’s own open question with the next message, and holds a later message until the question’s file is gone, which alone wakes the wait', async () => {
+    const wakes: (() => void)[] = []
+    const { relay, writes, posts, waiting } = setup({}, [], {
+      ready: async (_t, ready) => {
+        while (!ready()) await new Promise<void>((wake) => wakes.push(wake))
+        return true
+      },
+      asksChanged: () => wakes.splice(0).forEach((wake) => wake())
+    })
     const askFile = hookFile(TAB, 'ask')
     const answerFile = hookFile(TAB, 'answer')
     const watcher = await watchAsksOnceArmed(relay, waiting)

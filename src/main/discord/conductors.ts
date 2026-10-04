@@ -70,7 +70,7 @@ export class Conductors {
   private discord: DiscordSettings
   private tabs = new Map<string, string>()
   private pendingSave: ReturnType<typeof setTimeout> | null = null
-  private stopping = new Set<string>()
+  private stopping = new Map<string, string>()
   private opening = new Map<string, Promise<ConductorOpenResult>>()
   private deadlines = new Map<string, ReturnType<typeof setTimeout>>()
   private pendingTouch = new Map<string, string>()
@@ -145,12 +145,12 @@ export class Conductors {
     this.d.rowsChanged()
   }
 
-  ownsTab(tabId: string): boolean {
-    return this.stopping.has(tabId) || [...this.tabs.values()].includes(tabId)
-  }
-
-  hides(id: string): boolean {
-    return this.ownsTab(id) || this.discord.bindings.some((b) => b.sessionIds.includes(id))
+  conductorOf(tabOrSessionId: string): string | undefined {
+    for (const [id, tab] of this.tabs) if (tab === tabOrSessionId) return id
+    return (
+      this.stopping.get(tabOrSessionId) ??
+      this.discord.bindings.find((b) => b.sessionIds.includes(tabOrSessionId))?.id
+    )
   }
 
   covers(workspace: string | undefined): boolean {
@@ -169,6 +169,20 @@ export class Conductors {
   private touchFor(id: string, key: string): void {
     if (this.find(id)?.touched.includes(key)) return
     this.change(id, (x) => ({ ...x, touched: [...x.touched, key] }))
+    this.d.saveQuietly(this.discord)
+  }
+
+  forgetGone(stillOnDisk: (key: string) => boolean): void {
+    let changed = false
+    const bindings = this.discord.bindings.map((b) => {
+      const sessionIds = b.sessionIds.filter(stillOnDisk)
+      const touched = b.touched.filter(stillOnDisk)
+      if (sessionIds.length === b.sessionIds.length && touched.length === b.touched.length) return b
+      changed = true
+      return { ...b, sessionIds, touched }
+    })
+    if (!changed) return
+    this.discord = { ...this.discord, bindings }
     this.d.saveQuietly(this.discord)
   }
 
@@ -309,7 +323,7 @@ export class Conductors {
     if (!tab) return
     this.tabs.delete(id)
     this.forgetTab(tab)
-    this.stopping.add(tab)
+    this.stopping.set(tab, id)
     this.d.kill(tab)
   }
 
