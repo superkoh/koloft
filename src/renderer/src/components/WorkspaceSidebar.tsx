@@ -99,7 +99,6 @@ type MenuTarget =
       wsPath: string
       missing: boolean
       isGit: boolean
-      hasHistory: boolean
     }
 
 // ADR-0025
@@ -535,6 +534,9 @@ export function WorkspaceSidebar({
           </div>
         )
       }
+      const hasHistory = rows.some(
+        (r) => r.workspace.path === target.wsPath && r.workspace.hasHistory
+      )
       return (
         <div className="menu" style={style} onMouseEnter={keepMenu} onMouseLeave={scheduleClose}>
           {!target.missing && (
@@ -560,7 +562,7 @@ export function WorkspaceSidebar({
                 </div>
               )}
               <div
-                className={'mi' + (target.hasHistory ? '' : ' disabled')}
+                className={'mi' + (hasHistory ? '' : ' disabled')}
                 onClick={() => {
                   setMenu(null)
                   onRestoreSession(target.wsPath)
@@ -756,8 +758,7 @@ export function WorkspaceSidebar({
               kind: 'workspace',
               wsPath: ws.path,
               missing: ws.missing,
-              isGit: ws.isGit,
-              hasHistory: ws.hasHistory
+              isGit: ws.isGit
             }
             const badge = behindBadge(ws.freshness, Date.now())
             const gitPanel = freshnessShown(ws.freshness) || !!ws.github
