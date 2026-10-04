@@ -32,7 +32,7 @@ export function prepareCodexHome(home: string, sharedConfig: string): void {
     return
   } catch {}
   fs.mkdirSync(path.dirname(sharedConfig), { recursive: true, mode: 0o700 })
-  fs.closeSync(fs.openSync(sharedConfig, 'a', 0o600))
+  fs.writeFileSync(sharedConfig, '', { flag: 'a', mode: 0o600 })
   fs.symlinkSync(sharedConfig, config)
 }
 
