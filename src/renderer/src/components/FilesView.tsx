@@ -17,7 +17,7 @@ import type {
   GitStatusMap,
   SessionInfo
 } from '@shared/types'
-import { basename, isWebPagePath } from '@shared/preview'
+import { basename, opensAsWebTab } from '@shared/preview'
 import { parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { boundSessionId, useActiveOpenFile, useStore, type OpenFile } from '../store'
 import { ArtifactPane, NO_CAPS, sameCaps, type ArtifactCaps } from './ArtifactPane'
@@ -493,7 +493,7 @@ export function FilesBody({
 
   const openPath = useCallback(
     (path: string, line?: number): void => {
-      if (isWebPagePath(path)) {
+      if (opensAsWebTab(path)) {
         onOpenWeb(path)
         return
       }
@@ -765,7 +765,7 @@ function FilesContextMenu({
   if (!menu.isDir) {
     items.push(['Edit', onEdit])
     items.push(['Open', onOpen])
-    if (isWebPagePath(menu.path)) {
+    if (opensAsWebTab(menu.path)) {
       items.push([
         'View source',
         () => {
