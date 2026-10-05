@@ -63,7 +63,7 @@ export class Notices {
   constructor(private d: NoticeDeps) {}
 
   onStatus(tabId: string, prev: SessionStatus | undefined, next: SessionStatus): void {
-    this.subjectOf(tabId)
+    this.liveSubject(tabId)
     if (next === 'working') this.waitingNoticed.delete(tabId)
     const kind = noticeKindOf(prev, next, this.d.awaitsInput(tabId))
     if (kind) void this.notice(tabId, kind)
@@ -89,7 +89,8 @@ export class Notices {
   }
 
   private async notice(tabId: string, kind: NoticeKind): Promise<void> {
-    const subject = this.subjectOf(tabId)
+    const subject =
+      this.liveSubject(tabId) ?? (kind === 'closed' ? this.lastSubjects.get(tabId) : undefined)
     if (!subject || subject.conductor) return
     let detail: string | undefined
     if (kind === 'closed') {
@@ -106,10 +107,10 @@ export class Notices {
     this.queue(channelId, noticeText(kind, name, detail))
   }
 
-  private subjectOf(tabId: string): NoticeSubject | undefined {
+  private liveSubject(tabId: string): NoticeSubject | undefined {
     const live = this.d.subject(tabId)
     if (live) this.lastSubjects.set(tabId, live)
-    return live ?? this.lastSubjects.get(tabId)
+    return live
   }
 
   private async nameOf(tabId: string, kind: NoticeKind, title: string): Promise<string> {
