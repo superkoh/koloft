@@ -120,6 +120,10 @@ function said(fake: FakeDiscord): string[] {
   return fake.posted.filter((p) => p.channelId === CHANNEL).map((p) => p.content)
 }
 
+function ran(fake: FakeDiscord): string[] {
+  return said(fake).filter((p) => p.startsWith('⌨️ '))
+}
+
 function notices(fake: FakeDiscord): string[] {
   return said(fake)
     .flatMap((p) => p.split('\n'))
@@ -480,6 +484,50 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
           timeout: A_REAL_MODEL_TURN_MS
         })
         .toContain('DONE')
+    })
+  })
+
+  test('slash commands on the real Claude: the owner’s "/context" runs in the conductor and its report reaches the channel; /compact picked in Discord compacts a session and posts Compacted', async ({
+    env
+  }) => {
+    test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
+    test.setTimeout(3 * A_REAL_MODEL_TURN_MS + 120_000)
+    const fake = await realClaudeConductor(env)
+    await withConductor(env, fake, async (_app, page) => {
+      await answersWholeInTheChannel(fake)
+      fake.say(OWNER, '/context')
+      await expect
+        .poll(() => ran(fake), { timeout: A_REAL_MODEL_TURN_MS })
+        .toContainEqual(expect.stringMatching(/conductor ran \/context:\n## Context Usage/))
+
+      const child = await liveClaudeTab(page)
+      await typePrompt(page, child.tabId, 'Say the word MANGO and nothing else.')
+      await expect
+        .poll(() => saidBy(env, child.sessionId, 'assistant').join('\n'), {
+          timeout: A_REAL_MODEL_TURN_MS
+        })
+        .toContain('MANGO')
+      fake.interact(OWNER, 'compact', { session: child.sessionId })
+      await expect
+        .poll(() => ran(fake).at(-1), { timeout: A_REAL_MODEL_TURN_MS })
+        .toMatch(/ran \/compact:\nCompacted/)
+    })
+  })
+
+  test('a slash command on the real Codex: the owner’s "/compact" compacts the Codex conductor and the channel hears it is done', async ({
+    env
+  }) => {
+    test.skip(!HAVE_REAL_CODEX, NEEDS_REAL_CODEX)
+    test.setTimeout(2 * A_REAL_MODEL_TURN_MS + 120_000)
+    seedConductor(env, 'codex')
+    useRealCodex(env)
+    const fake = await startFakeDiscord(env)
+    await withConductor(env, fake, async () => {
+      await answersWholeInTheChannel(fake)
+      fake.say(OWNER, '/compact')
+      await expect
+        .poll(() => ran(fake), { timeout: A_REAL_MODEL_TURN_MS })
+        .toEqual([expect.stringMatching(/conductor ran \/compact:\nDone\.$/)])
     })
   })
 

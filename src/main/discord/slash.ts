@@ -71,7 +71,7 @@ function resultText(p: Pending): string | undefined {
   if (p.newKey) body.push(`It is a new conversation now, with the id ${p.newKey}.`)
   if (p.reply && !p.target.conductor) body.push(p.reply)
   else if (said.length) body.push(said.join('\n\n'))
-  if (!body.length && (p.reply || (p.worked && p.target.conductor))) return undefined
+  if (!body.length && p.reply) return undefined
   if (!body.length && p.worked) body.push('Done.')
   if (!body.length)
     body.push(
