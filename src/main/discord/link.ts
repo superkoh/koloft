@@ -42,6 +42,7 @@ export interface DiscordFile {
   data: Buffer
 }
 
+export const NO_MENTIONS = { parse: [] }
 export const COMMAND_INTERACTION = 2
 export const AUTOCOMPLETE_INTERACTION = 4
 
@@ -333,7 +334,7 @@ export class DiscordLink {
     try {
       const sent = await this.api().request('POST', `/channels/${channelId}/messages`, {
         content,
-        allowed_mentions: { parse: [] },
+        allowed_mentions: NO_MENTIONS,
         ...(replyTo
           ? { message_reference: { message_id: replyTo, fail_if_not_exists: false } }
           : {})
@@ -358,7 +359,7 @@ export class DiscordLink {
         'payload_json',
         JSON.stringify({
           ...(i === 0 && content ? { content } : {}),
-          allowed_mentions: { parse: [] },
+          allowed_mentions: NO_MENTIONS,
           attachments: batch.map((f, n) => ({ id: n, filename: f.name }))
         })
       )
@@ -385,8 +386,8 @@ export class DiscordLink {
       const route = `/applications/${appId}/guilds/${guildId}/commands`
       try {
         const there = await api.request<SlashCommandSpec[]>('GET', route)
-        for (const command of commands)
-          if (!there.some((t) => sameCommand(t, command))) await api.request('POST', route, command)
+        const missing = commands.filter((c) => !there.some((t) => sameCommand(t, c)))
+        await Promise.all(missing.map((c) => api.request('POST', route, c)))
       } catch {
         this.registered.delete(guildId)
       }

@@ -16,7 +16,7 @@ import {
   type DiscordMessage
 } from './link'
 import { splitForDiscord } from './split'
-import { slashCommandProblem } from '@shared/slashCommands'
+import { didNotRun, slashCommandProblem, waitingForAnswer } from '@shared/slashCommands'
 import type { AskPayload } from '@shared/sessionEvent'
 import type { ToolCall } from '../sessionTracker'
 import {
@@ -87,10 +87,7 @@ interface Inbound {
   settle(failed?: string): void
 }
 
-export const CONDUCTOR_ASKS_FIRST =
-  'The conductor is waiting for your answer to its question. Answer it first, then send the command again.'
-
-export function slashTextOf(content: string): string | undefined {
+function slashTextOf(content: string): string | undefined {
   const text = content.trim()
   return text.startsWith('/') ? text : undefined
 }
@@ -130,48 +127,39 @@ export class DiscordRelay {
     this.seenLive.add(m.id)
     const tab = this.d.conductors.liveTab(b.id)
     const command = m.attachments.length ? undefined : slashTextOf(m.content)
-    if (command !== undefined) return this.onCommandText(b.id, tab, m, command)
-    if (tab && this.answerDialog(tab, m)) {
-      this.react(m, DELIVERED, true)
+    const refusal = command === undefined ? undefined : this.commandRefusal(tab, command)
+    const answered = command === undefined && !!tab && this.answerDialog(tab, m)
+    if (refusal || answered) {
+      if (refusal) this.say(m.channelId, refusal, m.id)
+      else this.react(m, DELIVERED, true)
       this.d.conductors.setLastMessage(b.id, m.id)
       return
     }
-    const waits = !tab || this.pumping.has(b.id) || !this.typable(tab)
+    const takes = command === undefined ? this.typable(tab ?? '') : this.takesCommand(tab ?? '')
+    const waits = !tab || this.pumping.has(b.id) || !takes
     if (waits) this.react(m, QUEUED, true)
     this.enqueue(b.id, {
       clientId: `koloft-discord-${m.id}`,
-      text: () => this.textOf(m),
+      text: command === undefined ? () => this.textOf(m) : async () => command,
+      command: command !== undefined,
       settle: (failed) => {
         if (waits) this.react(m, QUEUED, false)
-        if (failed) this.say(m.channelId, `${failed} This message was not delivered.`, m.id)
+        if (failed)
+          this.say(
+            m.channelId,
+            command === undefined ? `${failed} This message was not delivered.` : `⚠ ${failed}`,
+            m.id
+          )
         else this.react(m, DELIVERED, true)
         this.d.conductors.setLastMessage(b.id, m.id)
       }
     })
   }
 
-  private onCommandText(
-    bindingId: string,
-    tab: string | undefined,
-    m: DiscordMessage,
-    command: string
-  ): void {
-    this.d.conductors.setLastMessage(bindingId, m.id)
-    if (tab && this.dialogOpen(tab)) return this.say(m.channelId, CONDUCTOR_ASKS_FIRST, m.id)
+  private commandRefusal(tab: string | undefined, command: string): string | undefined {
+    if (tab && this.dialogOpen(tab)) return waitingForAnswer('The conductor', command)
     const problem = slashCommandProblem(command)
-    if (problem) return this.say(m.channelId, `Koloft did not run it: ${problem}`, m.id)
-    const waits = !tab || this.pumping.has(bindingId) || !this.takesCommand(tab)
-    if (waits) this.react(m, QUEUED, true)
-    this.enqueue(bindingId, {
-      clientId: `koloft-discord-${m.id}`,
-      text: async () => command,
-      command: true,
-      settle: (failed) => {
-        if (waits) this.react(m, QUEUED, false)
-        if (failed) this.say(m.channelId, `⚠ ${failed}`, m.id)
-        else this.react(m, DELIVERED, true)
-      }
-    })
+    return problem && didNotRun(problem)
   }
 
   command(bindingId: string, command: string, channelId: string): void {

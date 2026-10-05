@@ -20,7 +20,7 @@ import { SessionRuntime, envMs, turnOf, type Turn } from './sessionRuntime'
 import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
 import type { LaunchedSession } from './accountPicker'
 import type { MachineTmp } from './remote/install'
-import { commandOutputOf } from './claudeCommandOutput'
+import { claudeWroteIt, commandOutputOf } from './claudeCommandOutput'
 
 export const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects')
 const TMP_ROOT = ((): string => {
@@ -326,7 +326,7 @@ function promptText(content: unknown): string | null {
 
 // CC§2
 function commandEcho(obj: { origin?: unknown }, raw: string | null): boolean {
-  return raw !== null && raw.startsWith('/') && obj.origin === undefined
+  return raw !== null && raw.startsWith('/') && claudeWroteIt(obj)
 }
 
 function ownerOrPeer(kind: unknown): 'owner' | 'peer' | null {
@@ -346,7 +346,13 @@ function claudeTurnPieces(obj: any): TurnPiece[] {
     const who = ownerOrPeer(obj.origin?.kind)
     if (raw === null || !who) return []
     if (who === 'peer') return [{ line: { who, text: peerText(raw), at }, midTurn: false }]
-    if (obj.isMeta || INTERRUPT_TEXTS.has(raw) || !classifyUserPrompt(raw).title) return []
+    if (
+      obj.isMeta ||
+      INTERRUPT_TEXTS.has(raw) ||
+      commandEcho(obj, raw) ||
+      !classifyUserPrompt(raw).title
+    )
+      return []
     return [{ line: { who, text: raw.trim(), at }, midTurn: false }]
   }
   if (obj.type === 'attachment') {

@@ -253,12 +253,12 @@ import type {
   WhatsNew
 } from '@shared/types'
 import { AgentRequests, BUILTIN_VERBS, errorText, refused, type AgentVerb } from './agentRequests'
-import { Conductors } from './discord/conductors'
+import { Conductors, NOT_BOUND } from './discord/conductors'
 import { discordApiUrl, DiscordLink } from './discord/link'
 import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay } from './discord/relay'
 import { Notices } from './discord/notices'
-import { SlashCommands } from './discord/slash'
+import { SlashCommands, type SlashTarget } from './discord/slash'
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
 import { typeKeys } from './typeKeys'
 import { MYSELF } from '@shared/slashCommands'
@@ -276,7 +276,7 @@ import {
   runningClaudePid,
   whenMessagingSocket
 } from './claudeSessionRegistry'
-import { isDiscordId, scopeName } from '@shared/conductors'
+import { conductorName, isDiscordId, scopeName } from '@shared/conductors'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
 import {
@@ -350,15 +350,11 @@ function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
 
-function slashAsking(tabId: string): boolean {
-  return tracker.statusOf(tabId) === 'approval' || !!discordRelay?.dialogOpen(tabId)
-}
-
 const slash = new SlashCommands({
   backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
   keyOf: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
   status: (tabId) => tracker.statusOf(tabId),
-  asking: slashAsking,
+  asking: (tabId) => tracker.statusOf(tabId) === 'approval' || !!discordRelay?.dialogOpen(tabId),
   takesTyping: (tabId) => !!discordRelay?.takesCommand(tabId),
   panelOpen: async (tabId) => {
     const s = sessionOfTab(tabId)
@@ -368,8 +364,7 @@ const slash = new SlashCommands({
   ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
   exclusive: (tabId, typing) => ptyMgr.exclusive(tabId, typing),
   typeNow: (tabId, keys) => typeKeys((data) => ptyMgr.write(tabId, data), keys),
-  post: (channelId, text) => discordRelay?.say(channelId, text),
-  skipFinished: (tabId, on) => discordNotices?.skipFinished(tabId, on)
+  post: (channelId, text) => discordRelay?.say(channelId, text)
 })
 tracker.on('turn-ended', ({ tabId, turn }: { tabId: string; turn: Turn }) =>
   sessionBackends.observe(tabId, { type: 'turn-ended', turn })
@@ -770,7 +765,7 @@ const sessionDeps: SessionVerbDeps = {
   },
   undelivered: (callerTab, target, why) => {
     const caller = conductors?.bindingOfTab(callerTab)
-    const b = caller ?? conductors?.bindings().find((x) => x.id === target.bindingId)
+    const b = caller ?? (target.bindingId ? conductors?.binding(target.bindingId) : undefined)
     const text = `Could not deliver to ${target.name}: ${why}`
     if (!b) return void sendToRenderer('cron:toast', text)
     discordRelay?.say(b.channel.channelId, `⚠ ${text}`)
@@ -785,12 +780,7 @@ const sessionDeps: SessionVerbDeps = {
   command: async (callerTab, target, text) => {
     const b = conductors?.bindingOfTab(callerTab)
     if (!b) throw new Error(STILL_STARTING)
-    if (target.bindingId === b.id) {
-      if (!discordRelay) throw new Error(STILL_STARTING)
-      discordRelay.command(b.id, text, b.channel.channelId)
-      return `Koloft will type ${text} into you once this turn ends, and post what it prints in Discord.`
-    }
-    return commandInto(b, target, text)
+    return target.bindingId === b.id ? commandIntoConductor(b, text) : commandInto(b, target, text)
   },
   screen: screenOf
 }
@@ -1702,11 +1692,7 @@ app.whenReady().then(() => {
       ...sessionChoices(sessionDeps, b.scope)
     ],
     run: async (b, session, text) => {
-      if (session === MYSELF) {
-        if (!discordRelay) throw new Error(STILL_STARTING)
-        discordRelay.command(b.id, text, b.channel.channelId)
-        return `Koloft will type ${text} into the conductor once it is idle, and post what it prints here.`
-      }
+      if (session === MYSELF) return commandIntoConductor(b, text)
       const found = await targetIn(sessionDeps, b.scope, session)
       if (!found.ok) throw new Error(found.error)
       return commandInto(b, found.value, text)
@@ -1732,13 +1718,10 @@ app.whenReady().then(() => {
     asksChanged: (tabId) => ptyMgr.wakeReady(tabId),
     type: (tabId, keys) => ptyMgr.type(tabId, keys),
     typeCommand: (bindingId, tabId, command) => {
-      const b = conductorsNow.bindings().find((x) => x.id === bindingId)
-      const name = b ? `the ${scopeName(b.scope)} conductor` : 'the conductor'
-      return slash.typeWhenIdle(
-        { name, tabId, conductor: true },
-        command,
-        b?.channel.channelId ?? ''
-      )
+      const b = conductorsNow.binding(bindingId)
+      if (!b) throw new Error(NOT_BOUND)
+      const name = `the ${conductorName(b.scope)}`
+      return slash.typeWhenIdle({ name, tabId, conductor: true }, command, b.channel.channelId)
     },
     queueDrained: (tabId) => codexSessions?.queueDrained(tabId) ?? true,
     queue: async (tabId, text, clientId) => {
@@ -1773,6 +1756,7 @@ app.whenReady().then(() => {
       return s?.backendId === 'claude' && s.sessionId ? claudePeerNames()(s.sessionId) : null
     },
     awaitsInput: (tabId) => tracker.awaitsInput(tabId),
+    commandRunning: (tabId) => slash.running(tabId),
     detail: async (tabId) => {
       const ask = await codexAskOf(tabId)
       if (!ask) return discordRelay?.dialogDetail(tabId)
@@ -2864,20 +2848,22 @@ function registerSlashCommands(): void {
 
 async function commandInto(b: ConductorBinding, t: Target, text: string): Promise<string> {
   const channelId = b.channel.channelId
-  const failed = (error: unknown): void => discordRelay?.say(channelId, `⚠ ${errorText(error)}`)
-  const typeInto = (tabId: string): Promise<void> => {
+  const target = (tabId: string): SlashTarget => {
     conductors?.touchNowAndNext(b.id, t.key, tabId)
-    return slash.typeWhenIdle({ name: t.name, tabId, conductor: false }, text, channelId)
+    return { name: t.name, tabId, conductor: false }
   }
-  if (!t.tabId) {
-    void t.open().then(typeInto).catch(failed)
-    return `${t.name} is closed; Koloft resumes it, types ${text} once it is ready, and posts what it prints in Discord.`
-  }
-  if (slashAsking(t.tabId))
-    return `${t.name} is waiting for an answer, so ${text} was not typed. Answer it first, then send the command again.`
-  const ack = slash.ack({ name: t.name, tabId: t.tabId, conductor: false }, text)
-  void typeInto(t.tabId).catch(failed)
-  return ack
+  if (t.tabId) return slash.run(target(t.tabId), text, channelId)
+  void t
+    .open()
+    .then((tabId) => slash.typeWhenIdle(target(tabId), text, channelId))
+    .catch((error: unknown) => discordRelay?.say(channelId, `⚠ ${errorText(error)}`))
+  return `${t.name} is closed; Koloft resumes it, types ${text} once it is ready, and posts what it prints in Discord.`
+}
+
+function commandIntoConductor(b: ConductorBinding, text: string): string {
+  if (!discordRelay) throw new Error(STILL_STARTING)
+  discordRelay.command(b.id, text, b.channel.channelId)
+  return `Koloft will type ${text} into the ${conductorName(b.scope)} once its turn ends, and post what it prints in Discord.`
 }
 
 function conductorTarget(ref: string): Target | undefined {
@@ -2886,7 +2872,7 @@ function conductorTarget(ref: string): Target | undefined {
   if (!all || !b) return undefined
   return {
     key: `conductor:${b.id}`,
-    name: `the ${scopeName(b.scope)} conductor`,
+    name: `the ${conductorName(b.scope)}`,
     backend: b.backend,
     remote: false,
     tabId: all.liveTab(b.id),

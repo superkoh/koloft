@@ -286,10 +286,10 @@ export class CodexObservation {
     )
       this.queued.delete(item.clientId)
     if (method === 'item/completed') {
-      if (this.noteFiles(record(p.item), true)) this.publishFiles()
-      this.observeOpen(record(p.item))
+      if (this.noteFiles(item, true)) this.publishFiles()
+      this.observeOpen(item)
       const at = typeof p.completedAtMs === 'number' ? p.completedAtMs : Date.now()
-      const line = ownedChild ? null : codexTurnLine(record(p.item), at)
+      const line = ownedChild ? null : codexTurnLine(item, at)
       if (line) this.turns.add(line, true)
     }
     // CODEX§3

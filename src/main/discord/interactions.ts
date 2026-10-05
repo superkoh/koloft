@@ -1,9 +1,10 @@
 import type { ConductorBinding } from '@shared/types'
-import { MYSELF, slashCommandProblem } from '@shared/slashCommands'
+import { didNotRun, MYSELF, slashCommandProblem } from '@shared/slashCommands'
 import { errorText } from '../agentRequests'
 import {
   AUTOCOMPLETE_INTERACTION,
   COMMAND_INTERACTION,
+  NO_MENTIONS,
   type DiscordInteraction,
   type SlashCommandSpec
 } from './link'
@@ -54,7 +55,7 @@ export const SLASH_COMMANDS: SlashCommandSpec[] = [
 
 export const ONLY_THE_OWNER = 'Only the owner Koloft is paired with can run commands here.'
 
-export function commandTextOf(i: DiscordInteraction): string {
+function commandTextOf(i: DiscordInteraction): string {
   if (i.command === 'clear') return '/clear'
   if (i.command === 'compact') {
     const focus = (i.options.focus ?? '').trim()
@@ -96,14 +97,14 @@ export class Interactions {
     if (!owner) return this.reply(i, privately(ONLY_THE_OWNER))
     const text = commandTextOf(i)
     const problem = slashCommandProblem(text)
-    if (problem) return this.reply(i, privately(`Koloft did not run it: ${problem}`))
+    if (problem) return this.reply(i, privately(didNotRun(problem)))
     let content: string
     try {
       content = await this.d.run(b, i.options.session?.trim() || MYSELF, text)
     } catch (error) {
       content = `⚠ ${errorText(error)}`
     }
-    await this.reply(i, { type: REPLY, data: { content, allowed_mentions: { parse: [] } } })
+    await this.reply(i, { type: REPLY, data: { content, allowed_mentions: NO_MENTIONS } })
   }
 
   private async reply(i: DiscordInteraction, body: unknown): Promise<void> {

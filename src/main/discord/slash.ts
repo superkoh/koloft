@@ -1,7 +1,9 @@
 import type { BackendId, SessionStatus } from '@shared/types'
 import type { Turn } from '@shared/turns'
+import { waitingForAnswer } from '@shared/slashCommands'
 import type { CommandOutput } from '../claudeCommandOutput'
 import { sleep } from '../codexTransport'
+import { errorText } from '../agentRequests'
 
 export const WAITS_FOR_IDLE_MS = 10 * 60_000
 export const NOTHING_CAME_BACK_MS = 8000
@@ -35,7 +37,6 @@ export interface SlashDeps {
   exclusive(tabId: string, typing: () => Promise<boolean>): Promise<boolean>
   typeNow(tabId: string, keys: string[]): Promise<void>
   post(channelId: string, text: string): void
-  skipFinished(tabId: string, on: boolean): void
 }
 
 interface Pending {
@@ -62,16 +63,7 @@ function busy(status: SessionStatus | undefined): boolean {
   return status === 'working' || status === 'approval'
 }
 
-export function resultText(p: {
-  target: SlashTarget
-  text: string
-  outputs: CommandOutput[]
-  worked: boolean
-  reply?: string
-  newKey?: string
-  pressedEsc: boolean
-}): string | undefined {
-  const head = `⌨️ ${p.target.name} ran ${p.text}`
+function resultText(p: Pending): string | undefined {
   const details = p.outputs.filter((o) => o.kind === 'details').map((o) => o.text)
   const printed = p.outputs.filter((o) => o.kind !== 'details').map((o) => o.text)
   const said = details.length && !p.worked ? details : printed
@@ -87,9 +79,9 @@ export function resultText(p: {
     )
   if (p.pressedEsc)
     body.push(
-      `Nothing came back within ${NOTHING_CAME_BACK_MS / 1000} seconds, so Koloft pressed Esc once to close any menu it had opened. A command that asks you to pick something needs its choice written after it, like /model haiku.`
+      `Nothing came back within ${NOTHING_CAME_BACK_MS / 1000} seconds, so Koloft pressed Esc to close any menu it had opened. A command that asks you to pick something needs its choice written after it, like /model haiku.`
     )
-  return `${head}:\n${body.join('\n\n')}`
+  return `⌨️ ${p.target.name} ran ${p.text}:\n${body.join('\n\n')}`
 }
 
 export class SlashCommands {
@@ -97,10 +89,19 @@ export class SlashCommands {
 
   constructor(private d: SlashDeps) {}
 
-  ack(target: SlashTarget, text: string): string {
-    if (!this.d.takesTyping(target.tabId))
-      return `${target.name} is busy; Koloft will type ${text} once its turn ends, and post what it prints in Discord.`
-    return `Typing ${text} into ${target.name}; Koloft posts what it prints in Discord.`
+  running(tab: string): boolean {
+    return this.pending.has(tab)
+  }
+
+  run(target: SlashTarget, text: string, channelId: string): string {
+    if (this.d.asking(target.tabId)) return waitingForAnswer(target.name, text)
+    const ack = this.d.takesTyping(target.tabId)
+      ? `Typing ${text} into ${target.name}; Koloft posts what it prints in Discord.`
+      : `${target.name} is busy; Koloft will type ${text} once its turn ends, and post what it prints in Discord.`
+    void this.typeWhenIdle(target, text, channelId).catch((error: unknown) =>
+      this.d.post(channelId, `⚠ ${errorText(error)}`)
+    )
+    return ack
   }
 
   async typeWhenIdle(target: SlashTarget, text: string, channelId: string): Promise<void> {
@@ -108,12 +109,10 @@ export class SlashCommands {
     const until = Date.now() + WAITS_FOR_IDLE_MS
     const idle = (): boolean => this.d.takesTyping(tab)
     for (;;) {
-      const left = until - Date.now()
-      if (!(await this.d.ready(tab, idle, left)))
+      if (this.d.asking(tab)) throw new Error(waitingForAnswer(target.name, text))
+      if (!(await this.d.ready(tab, () => idle() || this.d.asking(tab), until - Date.now())))
         throw new Error(
-          this.d.asking(tab)
-            ? `${target.name} is waiting for an answer, so ${text} was not typed. Answer it, then send the command again.`
-            : `${target.name} did not finish its turn within ${WAITS_FOR_IDLE_MS / 60_000} minutes, so ${text} was not typed.`
+          `${target.name} did not finish its turn within ${WAITS_FOR_IDLE_MS / 60_000} minutes, so ${text} was not typed.`
         )
       let panel = false
       const typed = await this.d.exclusive(tab, async () => {
@@ -148,7 +147,6 @@ export class SlashCommands {
     p.timers.push(setTimeout(() => void this.nothingCameBack(tab, p), NOTHING_CAME_BACK_MS))
     p.timers.push(setTimeout(() => this.finish(tab), RESULT_WITHIN_MS))
     this.pending.set(tab, p)
-    this.d.skipFinished(tab, true)
   }
 
   private async nothingCameBack(tab: string, p: Pending): Promise<void> {
@@ -217,26 +215,22 @@ export class SlashCommands {
   }
 
   closed(tab: string): void {
-    const p = this.pending.get(tab)
-    if (!p) return
-    this.pending.delete(tab)
-    this.stopTimers(p)
-    this.d.skipFinished(tab, false)
-    this.d.post(p.channelId, `⌨️ ${p.target.name} closed before ${p.text} printed anything.`)
-  }
-
-  private stopTimers(p: Pending): void {
-    for (const t of p.timers) clearTimeout(t)
-    clearTimeout(p.settle)
+    const p = this.take(tab)
+    if (p) this.d.post(p.channelId, `⌨️ ${p.target.name} closed before ${p.text} printed anything.`)
   }
 
   private finish(tab: string): void {
+    const p = this.take(tab)
+    const text = p && resultText(p)
+    if (p && text) this.d.post(p.channelId, text)
+  }
+
+  private take(tab: string): Pending | undefined {
     const p = this.pending.get(tab)
-    if (!p) return
+    if (!p) return undefined
     this.pending.delete(tab)
-    this.stopTimers(p)
-    this.d.skipFinished(tab, false)
-    const text = resultText(p)
-    if (text) this.d.post(p.channelId, text)
+    for (const t of p.timers) clearTimeout(t)
+    clearTimeout(p.settle)
+    return p
   }
 }

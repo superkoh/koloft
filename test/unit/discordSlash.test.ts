@@ -15,7 +15,6 @@ function setup(over: Partial<SlashDeps> = {}) {
   let key = 'session-1'
   const typed: string[] = []
   const posts: string[] = []
-  const skipping: boolean[] = []
   const deps: SlashDeps = {
     backendOf: () => 'claude',
     keyOf: () => key,
@@ -27,7 +26,6 @@ function setup(over: Partial<SlashDeps> = {}) {
     exclusive: (_t, typing) => typing(),
     typeNow: async (_t, keys) => void typed.push(...keys),
     post: (_c, text) => void posts.push(text),
-    skipFinished: (_t, on) => void skipping.push(on),
     ...over
   }
   const slash = new SlashCommands(deps)
@@ -35,7 +33,6 @@ function setup(over: Partial<SlashDeps> = {}) {
     slash,
     typed,
     posts,
-    skipping,
     setStatus: (s: SessionStatus) => {
       status = s
       slash.status(TAB, s)
@@ -64,14 +61,15 @@ describe('a slash command typed into a session', () => {
     expect(typed).toEqual(['\x05\x15', '/compact', '\x1b', '\r'])
   })
 
-  it('posts what the command printed once no more output follows, and holds back the finished notice meanwhile', async () => {
-    const { slash, posts, skipping } = setup()
+  it('posts what the command printed once no more output follows, and counts as running until then', async () => {
+    const { slash, posts } = setup()
     await slash.typeWhenIdle(child, '/cost', CHANNEL)
     slash.output(TAB, { kind: 'printed', text: 'Total cost: $0.01' })
     expect(posts).toEqual([])
+    expect(slash.running(TAB)).toBe(true)
     await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
     expect(posts).toEqual(['⌨️ fix-login ran /cost:\nTotal cost: $0.01'])
-    expect(skipping).toEqual([true, false])
+    expect(slash.running(TAB)).toBe(false)
   })
 
   it('prefers the clean details a command adds over what it printed on screen', async () => {
@@ -197,23 +195,22 @@ describe('a slash command typed into a session', () => {
     expect(typed).toEqual(['/compact', '\x1b', '\r'])
   })
 
-  it('gives up with the reason when the session shows a question the whole time', async () => {
-    const { slash, typed } = setup({
-      takesTyping: () => false,
-      asking: () => true,
-      ready: async () => false
-    })
+  it('a session showing a question is refused at once, by every way in, without waiting for its turn', async () => {
+    const ready = vi.fn(async () => true)
+    const { slash, typed } = setup({ takesTyping: () => false, asking: () => true, ready })
     await expect(slash.typeWhenIdle(child, '/compact', CHANNEL)).rejects.toThrow(
       /waiting for an answer/
     )
+    expect(slash.run(child, '/compact', CHANNEL)).toMatch(/waiting for an answer/)
+    expect(ready).not.toHaveBeenCalled()
     expect(typed).toEqual([])
   })
 
-  it('a session closed before the result says so and stops holding back the finished notice', async () => {
-    const { slash, posts, skipping } = setup()
+  it('a session closed before the result says so and no longer counts as running a command', async () => {
+    const { slash, posts } = setup()
     await slash.typeWhenIdle(child, '/compact', CHANNEL)
     slash.closed(TAB)
     expect(posts).toEqual(['⌨️ fix-login closed before /compact printed anything.'])
-    expect(skipping).toEqual([true, false])
+    expect(slash.running(TAB)).toBe(false)
   })
 })

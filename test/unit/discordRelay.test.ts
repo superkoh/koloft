@@ -7,13 +7,13 @@ import type { DiscordMessage } from '../../src/main/discord/link'
 import type { CodexQuestion } from '../../src/main/discord/dialog'
 import {
   CODEX_INPUT_NOT_PROBED,
-  CONDUCTOR_ASKS_FIRST,
   DiscordRelay,
   OFFLINE_REPLY,
   SHOWS_NO_DIALOG,
   type RelayDeps
 } from '../../src/main/discord/relay'
 import { typeKeys } from '../../src/main/typeKeys'
+import { waitingForAnswer } from '../../src/shared/slashCommands'
 
 const OWNER = '555'
 const CHANNEL = '222'
@@ -252,7 +252,9 @@ describe('DiscordRelay: typing an owner message into a Claude conductor', () => 
     drop(askFile, QUESTION)
     await vi.waitFor(() => expect(posts).toHaveLength(1))
     relay.onMessage(message('208', OWNER, '/clear'))
-    await vi.waitFor(() => expect(posts.map((p) => p.text)).toContain(CONDUCTOR_ASKS_FIRST))
+    await vi.waitFor(() =>
+      expect(posts.map((p) => p.text)).toContain(waitingForAnswer('The conductor', '/clear'))
+    )
     expect(fs.existsSync(hookFile(TAB, 'answer'))).toBe(false)
     expect(commands).toEqual([])
     watcher?.close()

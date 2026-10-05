@@ -50,6 +50,7 @@ export interface NoticeDeps {
   subject(tabId: string): NoticeSubject | undefined
   peerName(tabId: string): Promise<string | null>
   awaitsInput(tabId: string): boolean
+  commandRunning(tabId: string): boolean
   detail(tabId: string): Promise<string | undefined>
 }
 
@@ -59,14 +60,8 @@ export class Notices {
   private waitingNoticed = new Map<string, string>()
   private names = new Map<string, string>()
   private lastSubjects = new Map<string, NoticeSubject>()
-  private commandRunning = new Set<string>()
 
   constructor(private d: NoticeDeps) {}
-
-  skipFinished(tabId: string, on: boolean): void {
-    if (on) this.commandRunning.add(tabId)
-    else this.commandRunning.delete(tabId)
-  }
 
   onStatus(tabId: string, prev: SessionStatus | undefined, next: SessionStatus): void {
     this.liveSubject(tabId)
@@ -85,7 +80,6 @@ export class Notices {
 
   forget(tabId: string): void {
     this.closeNoticed.delete(tabId)
-    this.commandRunning.delete(tabId)
     this.waitingNoticed.delete(tabId)
     this.names.delete(tabId)
     this.lastSubjects.delete(tabId)
@@ -99,7 +93,7 @@ export class Notices {
     const subject =
       this.liveSubject(tabId) ?? (kind === 'closed' ? this.lastSubjects.get(tabId) : undefined)
     if (!subject || subject.conductor) return
-    if (kind === 'finished' && this.commandRunning.has(tabId)) return
+    if (kind === 'finished' && this.d.commandRunning(tabId)) return
     let detail: string | undefined
     if (kind === 'closed') {
       if (this.closeNoticed.has(tabId)) return

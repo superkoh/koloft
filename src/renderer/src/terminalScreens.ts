@@ -8,7 +8,7 @@ interface Shown {
 const shown = new Map<string, Shown>()
 let answering = false
 
-export function screenLines(term: Terminal): string[] {
+function screenLines(term: Terminal): string[] {
   const buffer = term.buffer.active
   const lines: string[] = []
   for (let y = buffer.baseY; y < buffer.baseY + term.rows; y++)

@@ -70,6 +70,18 @@ describe('what a Claude slash command left in the transcript', () => {
       expect(commandOutputOf(record)).toBeNull()
   })
 
+  // CC§13
+  it('nothing from a message another session sent, though Claude marks it isMeta too', () => {
+    expect(
+      commandOutputOf({
+        type: 'user',
+        isMeta: true,
+        origin: { kind: 'peer', from: 'unknown' },
+        message: { content: 'Another Claude session sent a message:\nhello' }
+      })
+    ).toBeNull()
+  })
+
   it('nothing from a subagent’s side thread', () => {
     expect(
       commandOutputOf({
