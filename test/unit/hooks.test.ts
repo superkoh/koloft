@@ -25,9 +25,10 @@ import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/pat
 let hookScript: string
 let regDir: string
 let base: string
+const noPeerInstance = (): boolean => false
 
 beforeAll(() => {
-  ;({ hookScript, regDir } = setupHooks())
+  ;({ hookScript, regDir } = setupHooks(noPeerInstance))
   base = path.dirname(path.dirname(hookScript))
   stubBin = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-hook-stub-'))
   const answeringClaudeStub = path.join(stubBin, 'claude')
@@ -389,7 +390,7 @@ describe('injected hook script', () => {
       path.join(regDir, 'pty-abc-1.json'),
       JSON.stringify({ tabId: 'pty-abc-1', event: 'end', reason: 'prompt_input_exit' })
     )
-    writeTabHookSettings(setupHooks(), 'pty-abc-1')
+    writeTabHookSettings(setupHooks(noPeerInstance), 'pty-abc-1')
     expect(fs.existsSync(path.join(regDir, 'pty-abc-1.status.jsonl'))).toBe(false)
     expect(fs.existsSync(path.join(regDir, 'pty-abc-1.json'))).toBe(false)
   })
@@ -495,13 +496,13 @@ describe('injected hook script', () => {
   it('injects a Bash-matched PostToolUse hook only when the statusline rides along', () => {
     const sl = { type: 'command' as const, command: "'/x/statusline/run.sh'", padding: 0 }
     const withSl = JSON.parse(
-      fs.readFileSync(writeTabHookSettings(setupHooks(), 'tabPT1', sl), 'utf8')
+      fs.readFileSync(writeTabHookSettings(setupHooks(noPeerInstance), 'tabPT1', sl), 'utf8')
     )
     expect(withSl.hooks.PostToolUse).toHaveLength(1)
     expect(withSl.hooks.PostToolUse[0].matcher).toBe('Bash')
     expect(withSl.hooks.PostToolUse[0].hooks[0].command).toContain(' posttool')
     const without = JSON.parse(
-      fs.readFileSync(writeTabHookSettings(setupHooks(), 'tabPT2'), 'utf8')
+      fs.readFileSync(writeTabHookSettings(setupHooks(noPeerInstance), 'tabPT2'), 'utf8')
     )
     expect(without.hooks).not.toHaveProperty('PostToolUse')
   })
@@ -510,7 +511,7 @@ describe('injected hook script', () => {
   // CC§8
   it('a Notification reaches Koloft only when claude stops to wait on the person, never for a mid-turn one', () => {
     const settings = JSON.parse(
-      fs.readFileSync(writeTabHookSettings(setupHooks(), 'tabNT'), 'utf8')
+      fs.readFileSync(writeTabHookSettings(setupHooks(noPeerInstance), 'tabNT'), 'utf8')
     )
     const types: string[] = settings.hooks.Notification[0].matcher.split('|')
     expect(types).toEqual(expect.arrayContaining(['permission_prompt', 'idle_prompt']))
@@ -521,14 +522,14 @@ describe('injected hook script', () => {
 
   it('carries a statusLine next to the hooks when the built-in statusline is on', () => {
     const sl = { type: 'command' as const, command: "'/x/statusline/run.sh'", padding: 0 }
-    const file = writeTabHookSettings(setupHooks(), 'tabSL', sl)
+    const file = writeTabHookSettings(setupHooks(noPeerInstance), 'tabSL', sl)
     const settings = JSON.parse(fs.readFileSync(file, 'utf8'))
     expect(settings.statusLine).toEqual(sl)
     expect(settings.hooks.SessionStart).toBeTruthy()
   })
 
   it('omits statusLine when the toggle is off — the user’s own settings stay in charge', () => {
-    const file = writeTabHookSettings(setupHooks(), 'tabSL2')
+    const file = writeTabHookSettings(setupHooks(noPeerInstance), 'tabSL2')
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).not.toHaveProperty('statusLine')
   })
 
@@ -536,10 +537,12 @@ describe('injected hook script', () => {
   it('lets the koloft command run without asking only when agent tools are on, and never puts that rule in the settings a remote tab shares', () => {
     const read = (file: string): Record<string, unknown> =>
       JSON.parse(fs.readFileSync(file, 'utf8'))
-    expect(read(writeTabHookSettings(setupHooks(), 'tabAG1', undefined, true)).permissions).toEqual(
-      { allow: ['Bash(koloft *)'] }
+    expect(
+      read(writeTabHookSettings(setupHooks(noPeerInstance), 'tabAG1', undefined, true)).permissions
+    ).toEqual({ allow: ['Bash(koloft *)'] })
+    expect(read(writeTabHookSettings(setupHooks(noPeerInstance), 'tabAG2'))).not.toHaveProperty(
+      'permissions'
     )
-    expect(read(writeTabHookSettings(setupHooks(), 'tabAG2'))).not.toHaveProperty('permissions')
     expect(hookSettings('/x/hook.sh', '/x/reg', 'tabAG3')).not.toHaveProperty('permissions')
   })
 
@@ -567,7 +570,8 @@ describe('injected hook script', () => {
     it('every local tab waits up to an hour for an answer to any dialog; a tab on another machine only records it', () => {
       const read = (file: string): Record<string, Record<string, unknown>> =>
         JSON.parse(fs.readFileSync(file, 'utf8'))
-      const local = read(writeTabHookSettings(setupHooks(), 'tabC1')).hooks.PermissionRequest as {
+      const local = read(writeTabHookSettings(setupHooks(noPeerInstance), 'tabC1')).hooks
+        .PermissionRequest as {
         matcher: string
         hooks: { command: string; timeout: number }[]
       }[]
@@ -668,7 +672,7 @@ describe('injected hook script', () => {
 
 describe('setupHooks at startup', () => {
   it('prunes only reports and settings older than 12 hours — a fresh one, such as another Koloft instance’s in the same folder, survives', () => {
-    const { settingsDir } = setupHooks()
+    const { settingsDir } = setupHooks(noPeerInstance)
     const hoursAgo = (h: number): Date => new Date(Date.now() - h * 60 * 60 * 1000)
     const fresh = [
       path.join(regDir, 'peer-1.json'),
@@ -684,7 +688,7 @@ describe('setupHooks at startup', () => {
     for (const f of fresh) fs.utimesSync(f, hoursAgo(11), hoursAgo(11))
     for (const f of old) fs.utimesSync(f, hoursAgo(13), hoursAgo(13))
 
-    setupHooks()
+    setupHooks(noPeerInstance)
 
     for (const f of fresh) expect(fs.existsSync(f), f).toBe(true)
     for (const f of old) expect(fs.existsSync(f), f).toBe(false)

@@ -180,7 +180,7 @@ function pruneMarkersOfDeadTabs(regDir: string, peerOwnsTab: (tabId: string) => 
   }
 }
 
-export function setupHooks(peerOwnsTab: (tabId: string) => boolean = () => false): HookPaths {
+export function setupHooks(peerOwnsTab: (tabId: string) => boolean): HookPaths {
   const base = app.getPath('userData')
   const hookDir = path.join(base, 'hooks')
   const settingsDir = path.join(hookDir, 'settings')
