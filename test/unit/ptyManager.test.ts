@@ -276,6 +276,42 @@ describe('PtyManager handles after the pty exits', () => {
   })
 })
 
+describe('PtyManager.whenReady: waiting until a tab can be typed into', () => {
+  it('checks again only when woken for that tab, answers false at its deadline, and false as soon as the pty exits', async () => {
+    vi.useFakeTimers()
+    try {
+      const mgr = new PtyManager()
+      const h = mgr.create({ kind: 'claude', cwd: os.tmpdir() })
+      let ready = false
+      let checks = 0
+      const isReady = (): boolean => {
+        checks++
+        return ready
+      }
+
+      const woken = mgr.whenReady(h.id, isReady, 60_000)
+      ready = true
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(checks).toBe(1)
+      mgr.wakeReady('another-tab')
+      mgr.wakeReady(h.id)
+      await expect(woken).resolves.toBe(true)
+
+      ready = false
+      const late = mgr.whenReady(h.id, isReady, 1000)
+      await vi.advanceTimersByTimeAsync(1000)
+      await expect(late).resolves.toBe(false)
+      await expect(mgr.whenReady(h.id, isReady, 0)).resolves.toBe(false)
+
+      const exiting = mgr.whenReady(h.id, isReady, 60_000)
+      mocks.state.exit?.({ exitCode: 0 })
+      await expect(exiting).resolves.toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
 describe('tabInstancePid', () => {
   it('answers process.pid for an id PtyManager.create() minted and null for a malformed id, so a registration from another live Koloft is left alone', () => {
     const h = new PtyManager().create({ kind: 'claude', cwd: os.tmpdir() })

@@ -41,6 +41,22 @@ export function fail<T>(error: string): Parsed<T> {
   return { ok: false, error }
 }
 
+export function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+export function splitAtDashes(args: string[]): { before: string[]; after: string } {
+  const dashes = args.indexOf('--')
+  if (dashes < 0) return { before: args, after: '' }
+  return {
+    before: args.slice(0, dashes),
+    after: args
+      .slice(dashes + 1)
+      .join(' ')
+      .trim()
+  }
+}
+
 export const BUILTIN_VERBS: AgentVerbs = {
   help: () => answered(AGENT_GUIDE)
 }
@@ -79,7 +95,7 @@ export async function dispatchAgent(
   try {
     return await run(rest, caller)
   } catch (error) {
-    return refused(`koloft: ${error instanceof Error ? error.message : String(error)}`)
+    return refused(`koloft: ${errorText(error)}`)
   }
 }
 

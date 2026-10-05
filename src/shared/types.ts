@@ -174,13 +174,63 @@ export interface Settings {
   agentTools: boolean
   notesHeight: number
   notesFolded: boolean
+  conductorsFolded: boolean
   keepAwake: boolean
   worldClocks: string[]
   onboardingSeen: boolean
   hintsSeen: string[]
   hintsOff: boolean
   lastSeenVersion: string
+  discord: DiscordSettings
 }
+
+export interface DiscordChannel {
+  guildId: string
+  channelId: string
+  name: string
+}
+
+export interface ConductorBinding {
+  id: string
+  scope: string
+  backend: BackendId
+  channel: DiscordChannel
+  sessionIds: string[]
+  lastSessionKey?: string
+  lastMessageId?: string
+  touched: string[]
+}
+
+export interface DiscordSettings {
+  userId?: string
+  userName?: string
+  bindings: ConductorBinding[]
+}
+
+export interface ConductorSaveInput {
+  id?: string
+  scope: string
+  backend: BackendId
+  channel: DiscordChannel
+}
+
+export type DiscordPhase =
+  'off' | 'connecting' | 'connected' | 'token' | 'intents' | 'unreachable' | 'elsewhere'
+
+export interface DiscordStatus {
+  phase: DiscordPhase
+  botName?: string
+  applicationId?: string
+  guildNames: string[]
+  failing: Record<string, string>
+  candidate?: { name: string; text: string; at: number }
+}
+
+export const DISCORD_OFF: DiscordStatus = { phase: 'off', guildNames: [], failing: {} }
+
+export type ConductorSaveResult = { ok: true } | { ok: false; error: string }
+
+export type ConductorOpenResult = { ok: true; tabId: string } | { ok: false; error: string }
 
 export const HINT_IDS = ['workbench', 'approval', 'agent-web', 'worktree', 'github'] as const
 export type HintId = (typeof HINT_IDS)[number]
@@ -214,12 +264,14 @@ export const DEFAULT_SETTINGS: Settings = {
   agentTools: true,
   notesHeight: 260,
   notesFolded: false,
+  conductorsFolded: true,
   keepAwake: true,
   worldClocks: [],
   onboardingSeen: false,
   hintsSeen: [],
   hintsOff: false,
-  lastSeenVersion: ''
+  lastSeenVersion: '',
+  discord: { bindings: [] }
 }
 
 export type BackendId = 'claude' | 'codex'
@@ -258,6 +310,8 @@ export interface CreateTabOptions {
   scheduled?: boolean
   util?: boolean
   ownerTabId?: string
+  role?: string
+  trustFolder?: boolean
 }
 
 export type CreateTabResult =
@@ -456,7 +510,9 @@ export interface BackendSessionInfo {
   updatedAt: number
 }
 
-export interface SessionInfo extends BackendSessionInfo, SessionSource {}
+export interface SessionInfo extends BackendSessionInfo, SessionSource {
+  conductor?: string
+}
 
 export interface ClaudeSessionInfo extends BackendSessionInfo {
   jsonlPath: string | null
@@ -947,6 +1003,21 @@ export interface KoloftApi {
     onState(cb: (s: CronState) => void): () => void
     onToast(cb: (text: string) => void): () => void
   }
+  conductors: {
+    save(input: ConductorSaveInput): Promise<ConductorSaveResult>
+    unbind(id: string): Promise<void>
+    switchBackend(id: string): Promise<void>
+    open(id: string): Promise<ConductorOpenResult>
+    startFresh(id: string): Promise<ConductorOpenResult>
+  }
+  discord: {
+    setToken(token: string): Promise<boolean>
+    status(): Promise<DiscordStatus>
+    onStatus(cb: (s: DiscordStatus) => void): () => void
+    pair(isMe: boolean): Promise<void>
+    forgetOwner(): Promise<void>
+    channels(): Promise<DiscordChannel[]>
+  }
 }
 
 export type Schedule =
@@ -1202,6 +1273,8 @@ export interface SessionResumeRequest {
   mode?: 'direct' | 'rebuild' | 'renamed' | 'main'
   worktree?: string
   rebuild?: { worktreePath: string; branch: string; baseRef: string }
+  role?: string
+  trustFolder?: boolean
 }
 
 export type SessionResumeResult =

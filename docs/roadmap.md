@@ -42,6 +42,8 @@ when it works. That is what "judged against" means.
 - **Agents use Koloft themselves** — a Claude or Codex session in Koloft already has a
   `koloft` command and a guide for it: scheduled tasks, opening a file, page or diff in
   its Workbench, the workspace note, and starting a sibling session and talking to it.
+  A conductor (a session bound to a Discord channel) also reads what a session said,
+  and sends to, resumes, stops and starts any session in its scope, Claude or Codex.
   What is left: Codex driving the Workbench browser (#119), and sessions on another
   machine over ssh, which get no `koloft` command yet.
 
@@ -74,7 +76,10 @@ when it works. That is what "judged against" means.
 - **Reopened, decision first** — steering sessions from a phone (#230), MCP / skills /
   CLAUDE.md management (#231), a saved prompt library (#232). Each was on the list below;
   each issue states what Koloft would add beyond the tool's own feature before anything
-  is built.
+  is built. For #230 the new evidence is measured: Claude's own Remote Control refuses
+  the long-lived token Koloft's account balancing injects (CC§7), so a Koloft session
+  cannot be reached from a phone through it. The Discord conductor is the answer being
+  built.
 
 ### Tier 3 — guardrails
 
@@ -97,6 +102,12 @@ Reopen one of these only with new evidence, not a new argument.
   `koloft session send` for Codex), which the receiving session sees as a message it can
   judge. Faked keystrokes land in whatever that TUI's input box holds at the time.
   Broadcast input above is a feature for the *person*, with the rows they picked.
+  One exception, the owner's decision: a conductor's `koloft session send` to a Claude
+  session on another machine over ssh is typed into its terminal, because that
+  session's message socket is on the other machine where Koloft cannot reach it. Koloft
+  types only when that session's turn has ended and it shows no dialog; its state
+  arrives a mirror pull late, so a message can still land in a turn that just began,
+  where Claude queues it.
 
 - **Checkpoints / rewind** — native in Claude Code (`/rewind`). At most, surface the list.
 - **Split panes / tiled layouts** — high cost on xterm.js for a window whose centre is

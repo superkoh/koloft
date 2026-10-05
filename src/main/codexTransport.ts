@@ -29,7 +29,8 @@ export interface CodexTransportOptions extends CodexProcessOptions {
 const DEFAULT_TIMEOUT = 15_000
 const DEFAULT_MAX_FRAME = 32 * 1024 * 1024
 const execFileAsync = promisify(execFile)
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+export const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms))
 
 // CODEX§10
 export function codexEnvironment(overrides?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

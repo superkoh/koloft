@@ -224,21 +224,25 @@ const EVENT_KEY = {
   end: 'SessionEnd',
   prompt: 'UserPromptSubmit',
   stop: 'Stop',
-  notify: 'Notification'
+  notify: 'Notification',
+  ask: 'PermissionRequest'
 }
 function fireHook(event, payload) {
   const cmd = hooks?.[EVENT_KEY[event]]?.[0]?.hooks?.[0]?.command
-  if (!cmd) return
+  if (!cmd) return ''
   // CC§1
   const body = 'session_id' in payload ? payload : { ...payload, session_id: sessionId }
   try {
-    cp.execSync(cmd, {
+    return cp.execSync(cmd, {
       input: JSON.stringify(body),
-      stdio: ['pipe', 'ignore', 'ignore'],
+      stdio: ['pipe', 'pipe', 'ignore'],
+      encoding: 'utf8',
       // CC§1
       env: { ...process.env, CLAUDE_CODE_EXECPATH: LIVE_EXECPATH_DIFFERING_FROM_TRANSCRIPT_VERSION }
     })
-  } catch {}
+  } catch {
+    return ''
+  }
 }
 
 function append(lines) {
@@ -441,7 +445,27 @@ if (startDelay > 0) {
   startupTurn()
 }
 
+let waitingHook = null
+// CC§14
+function fireWaitingHook(event, payload) {
+  const cmd = hooks?.[EVENT_KEY[event]]?.[0]?.hooks?.[0]?.command
+  if (!cmd) return Promise.resolve('')
+  return new Promise((resolve) => {
+    const child = cp.spawn('/bin/sh', ['-c', cmd], { stdio: ['pipe', 'pipe', 'ignore'] })
+    waitingHook = child
+    let out = ''
+    child.stdout.on('data', (c) => (out += c))
+    child.on('error', () => resolve(''))
+    child.on('close', () => {
+      waitingHook = null
+      resolve(out)
+    })
+    child.stdin.end(JSON.stringify({ ...payload, session_id: sessionId }))
+  })
+}
+
 function shutdown(reason) {
+  waitingHook?.kill('SIGTERM')
   fireHook('end', { session_id: sessionId, transcript_path: transcript, cwd, reason })
   process.exit(0)
 }
@@ -488,7 +512,89 @@ function openEnvRoutingPastShimToRecordingFakeOpen() {
   return { ...process.env, PATH }
 }
 
-const rl = readline.createInterface({ input: process.stdin })
+// CC§11
+const peerSocket = path.join(require('os').tmpdir(), `kfc-${process.pid}.sock`)
+const peerEntry = path.join(home, '.claude', 'sessions', `${process.pid}.json`)
+function registerPeer() {
+  const procStart = cp
+    .execFileSync('ps', ['-o', 'lstart=', '-p', String(process.pid)], {
+      env: { ...process.env, TZ: 'UTC' }
+    })
+    .toString()
+    .trim()
+  const name = argVal('--name')
+  fs.mkdirSync(path.dirname(peerEntry), { recursive: true })
+  fs.writeFileSync(
+    peerEntry,
+    JSON.stringify({
+      pid: process.pid,
+      sessionId,
+      procStart,
+      messagingSocketPath: peerSocket,
+      ...(name ? { name } : {})
+    })
+  )
+}
+// CC§13
+function peerTurn(content) {
+  fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
+  append([
+    {
+      type: 'user',
+      isMeta: true,
+      origin: { kind: 'peer', from: 'unknown' },
+      message: {
+        role: 'user',
+        content: `Another Claude session sent a message:\n${content}\n\nThis came from another Claude session — not typed by your user.`
+      },
+      cwd
+    },
+    {
+      type: 'assistant',
+      timestamp: new Date().toISOString(),
+      message: { role: 'assistant', content: [{ type: 'text', text: `Peer said: ${content}` }] },
+      cwd
+    }
+  ])
+  fireHook('stop', { hook_event_name: 'Stop' })
+  process.stdout.write('[fake-claude] took a peer message\r\n> ')
+}
+fs.rmSync(peerSocket, { force: true })
+require('net')
+  .createServer((c) => {
+    let got = ''
+    c.on('data', (b) => (got += b))
+    c.on('end', () => {
+      c.end()
+      fs.appendFileSync(path.join(home, 'fake-claude-peer.jsonl'), got)
+      for (const line of got.split('\n').filter(Boolean)) peerTurn(JSON.parse(line).message.content)
+    })
+  })
+  .listen(peerSocket, registerPeer)
+process.on('exit', () => {
+  fs.rmSync(peerEntry, { force: true })
+  fs.rmSync(peerSocket, { force: true })
+})
+
+const NOTIFICATION_TRAILS_AN_UNANSWERED_DIALOG_MS = 6000
+const typedLines = new (require('stream').PassThrough)()
+let dialogKey = null
+process.stdin.on('data', (chunk) =>
+  dialogKey ? dialogKey(String(chunk)) : typedLines.write(chunk)
+)
+process.stdin.on('end', () => typedLines.end())
+// CC§14
+function keyOnTheDialog() {
+  return new Promise((resolve) => {
+    if (process.stdin.isTTY) process.stdin.setRawMode(true)
+    dialogKey = (key) => {
+      dialogKey = null
+      if (process.stdin.isTTY) process.stdin.setRawMode(false)
+      resolve(key)
+    }
+  })
+}
+const rl = readline.createInterface({ input: typedLines })
 rl.on('line', handleLine)
 function handleLine(line) {
   const text = line.trim()
@@ -497,6 +603,10 @@ function handleLine(line) {
     if (text === '2') removeWorktree()
     return shutdown('prompt_input_exit')
   }
+  if (text.startsWith('[Discord] ')) {
+    const said = text.slice('[Discord] '.length)
+    return handleLine(said.startsWith('/') ? said : `/answer ${text}`)
+  }
   if (text === '/exit' || text === 'exit' || text === '/quit') return exitSession()
   // CC§1 CC§2
   if (text === '/clear') {
@@ -504,6 +614,7 @@ function handleLine(line) {
     sessionId = require('crypto').randomUUID()
     transcript = path.join(projDir, sessionId + '.jsonl')
     fs.writeFileSync(transcript, '')
+    registerPeer()
     fireHook('start', {
       session_id: sessionId,
       transcript_path: transcript,
@@ -1010,6 +1121,131 @@ function handleLine(line) {
       }
     }, 250)
     return
+  }
+  if (text.startsWith('/answer ')) {
+    const question = text.slice('/answer '.length)
+    fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
+    append([
+      { type: 'user', message: { role: 'user', content: question }, cwd },
+      {
+        type: 'assistant',
+        timestamp: new Date().toISOString(),
+        message: { role: 'assistant', content: [{ type: 'text', text: `Answer to: ${question}` }] },
+        cwd
+      }
+    ])
+    fireHook('stop', { hook_event_name: 'Stop' })
+    process.stdout.write(`[fake-claude] answered: ${question}\r\n> `)
+    return
+  }
+  if (text.startsWith('/long ')) {
+    const lines = Number(text.slice('/long '.length)) || 1
+    fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
+    const reply = Array.from({ length: lines }, (_, i) => `line ${i + 1}`).join('\n')
+    append([
+      { type: 'user', message: { role: 'user', content: text }, cwd },
+      {
+        type: 'assistant',
+        timestamp: new Date().toISOString(),
+        message: { role: 'assistant', content: [{ type: 'text', text: reply }] },
+        cwd
+      }
+    ])
+    fireHook('stop', { hook_event_name: 'Stop' })
+    process.stdout.write(`[fake-claude] wrote ${lines} lines\r\n> `)
+    return
+  }
+  // CC§14
+  const ask = async (name, input, allowed, keyed) => {
+    const toolUseId = `toolu_ask_${Date.now()}`
+    fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
+    append([
+      { type: 'user', message: { role: 'user', content: text }, cwd },
+      {
+        type: 'assistant',
+        timestamp: new Date().toISOString(),
+        message: {
+          role: 'assistant',
+          content: [{ type: 'tool_use', id: toolUseId, name, input }]
+        },
+        cwd
+      }
+    ])
+    process.stdout.write(`[fake-claude] asking: ${name}\r\n`)
+    const out = await fireWaitingHook('ask', {
+      hook_event_name: 'PermissionRequest',
+      tool_name: name,
+      tool_input: input
+    })
+    let decision = {}
+    try {
+      decision = JSON.parse(out).hookSpecificOutput.decision
+    } catch {}
+    let picked
+    if (decision.behavior === 'allow') picked = allowed(decision.updatedInput)
+    else if (decision.behavior === 'deny') picked = `Denied: ${decision.message}`
+    else {
+      const key = keyOnTheDialog()
+      process.stdout.write('[fake-claude] dialog on screen: press a key\r\n')
+      // CC§14
+      setTimeout(() => {
+        if (dialogKey)
+          fireHook('notify', {
+            hook_event_name: 'Notification',
+            message: `Claude needs your permission to use ${name}`
+          })
+      }, NOTIFICATION_TRAILS_AN_UNANSWERED_DIALOG_MS)
+      picked = keyed(await key)
+    }
+    append([
+      {
+        type: 'user',
+        timestamp: new Date().toISOString(),
+        message: {
+          role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: toolUseId, content: picked }]
+        },
+        cwd
+      },
+      {
+        type: 'assistant',
+        timestamp: new Date().toISOString(),
+        message: { role: 'assistant', content: [{ type: 'text', text: picked }] },
+        cwd
+      }
+    ])
+    fireHook('stop', { hook_event_name: 'Stop' })
+    process.stdout.write(`[fake-claude] ${picked}\r\n> `)
+  }
+  if (text.startsWith('/ask ')) {
+    const [question, ...labels] = text.slice('/ask '.length).split('|')
+    const input = {
+      questions: [
+        {
+          question,
+          header: 'Pick',
+          options: labels.map((label) => ({ label, description: `The ${label} one` })),
+          multiSelect: false
+        }
+      ]
+    }
+    const pickedText = (answer) => `Picked: ${answer}`
+    return ask(
+      'AskUserQuestion',
+      input,
+      (updated) => pickedText(Object.values(updated.answers).join(', ')),
+      (key) => pickedText(labels[Number(key) - 1] ?? key)
+    )
+  }
+  if (text.startsWith('/bash ')) {
+    const command = text.slice('/bash '.length)
+    const ran = `Ran: ${command}`
+    return ask(
+      'Bash',
+      { command, description: 'A command' },
+      () => ran,
+      (key) => (key === '1' ? ran : `Denied: key ${JSON.stringify(key)}`)
+    )
   }
   if (text === '/need-approval') {
     fireHook('notify', {

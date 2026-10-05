@@ -80,7 +80,14 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     typed line), `-hang` (never binds, and has no signal handler, so the SIGHUP that
     closes its tab kills it).
   - typed lines: `/write <path>` (a Write, Stop 2.5 s later — the file on disk proves
-    the transcript has it), `/busy` (a turn held open ~30 s), `/need-approval`,
+    the transcript has it), `/answer <text>` (`<text>` as the prompt, `Answer to: <text>`
+    as the reply's text, then Stop), `[Discord] <text>` (a `/…` command after the prefix runs
+    as typed, any other text is answered like `/answer` with the whole line), `/long <n>` (a
+    reply of `line 1` … `line <n>`), `/ask <question>|<option>|…` and `/bash <command>`
+    (fire PermissionRequest without blocking, and reply `Picked: <answer>` / `Ran: <command>`
+    on allow, `Denied: <message>` on deny; a hook that answers nothing — every remote tab's —
+    leaves the dialog on screen: it fires a permission Notification and takes one key, a
+    digit picks that option and `1` runs the command), `/busy` (a turn held open ~30 s), `/need-approval`,
     `/scratch <name>`, `/move-to-background` (a start for a session that never writes a
     transcript, then `continued-in` to a new id whose Stop follows), `/open <target>`, `/open-later <target>` (fires once
     `<home>/go-open` exists), `/koloft <args>` (runs the agent command, then prints its
@@ -92,6 +99,10 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     Stop.
   - every launch writes one line to `env.claudeCalls` (argv, cwd, session id,
     injected auth) before any delay.
+  - like the real one, it lists itself in `<home>/.claude/sessions/<pid>.json` with a
+    message socket (CC§11); each line written there is appended raw to
+    `<home>/fake-claude-peer.jsonl` and taken as a peer message (reply
+    `Peer said: <content>`, then Stop). A `--name` shows as its registry name.
   - its canned startup turn writes NOTES.md into its cwd, so a git fixture it runs in
     lists NOTES.md in the first commit's .gitignore.
   - its transcript lands a moment after it binds: before closing an app whose
@@ -221,6 +232,7 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `KOLOFT_BROWSER_TAB_CAP`, `KOLOFT_BROWSER_GUEST_LIMIT`, `KOLOFT_GITHUB_FIXTURE`,
   `KOLOFT_EXT_INSTALL_DIRS`, `KOLOFT_TEST_NO_ADOPT`, `KOLOFT_TEST_CLAUDE_PROBE`,
   `KOLOFT_PROBE_BASE_URL`, `KOLOFT_UPDATE_FIXTURE`, `KOLOFT_RELEASES_URL`,
+  `KOLOFT_DISCORD_API_URL` (set by `startFakeDiscord`, helpers/fakeDiscord.ts),
   `KOLOFT_CRON_BIND_DEADLINE_MS`, `KOLOFT_GIT_TIMEOUT_MS`, the session timing knobs
   (`KOLOFT_*_MS`, see Unit layer), and the fakes' `KOLOFT_FAKE_*` inputs. The files behind
   `KOLOFT_FILE_DIALOG_FILE` and `KOLOFT_UPDATE_FIXTURE` are read on every use, so a

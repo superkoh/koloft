@@ -46,13 +46,35 @@ function execSecurity(args: string[]): Promise<{ code: number; stdout: string }>
   })
 }
 
-export async function keychainRead(kind: AccountKind, name: string): Promise<string | null> {
+export function keychainRead(kind: AccountKind, name: string): Promise<string | null> {
+  return readSecret(serviceForAppNameAtCall(kind), name)
+}
+
+export function keychainWrite(kind: AccountKind, name: string, secret: string): Promise<boolean> {
+  return writeSecret(serviceForAppNameAtCall(kind), name, secret)
+}
+
+function discordBotService(): string {
+  return keychainNamespace(app.getName()) + '-discord-bot'
+}
+
+const DISCORD_BOT_ACCOUNT = 'bot'
+
+export function discordTokenRead(): Promise<string | null> {
+  return readSecret(discordBotService(), DISCORD_BOT_ACCOUNT)
+}
+
+export function discordTokenWrite(token: string): Promise<boolean> {
+  return writeSecret(discordBotService(), DISCORD_BOT_ACCOUNT, token)
+}
+
+async function readSecret(service: string, name: string): Promise<string | null> {
   const fixture = testKeychainFile()
-  if (fixture) return readFixture(fixture)[serviceForAppNameAtCall(kind)]?.[name] ?? null
+  if (fixture) return readFixture(fixture)[service]?.[name] ?? null
   const { code, stdout } = await execSecurity([
     'find-generic-password',
     '-s',
-    serviceForAppNameAtCall(kind),
+    service,
     '-a',
     name,
     '-w'
@@ -62,16 +84,11 @@ export async function keychainRead(kind: AccountKind, name: string): Promise<str
   return secret.length ? secret : null
 }
 
-export async function keychainWrite(
-  kind: AccountKind,
-  name: string,
-  secret: string
-): Promise<boolean> {
+async function writeSecret(service: string, name: string, secret: string): Promise<boolean> {
   const fixture = testKeychainFile()
   if (fixture) {
     const data = readFixture(fixture)
-    const svc = serviceForAppNameAtCall(kind)
-    data[svc] = { ...(data[svc] ?? {}), [name]: secret }
+    data[service] = { ...(data[service] ?? {}), [name]: secret }
     try {
       fs.writeFileSync(fixture, JSON.stringify(data, null, 2), { mode: 0o600 })
       return true
@@ -82,7 +99,7 @@ export async function keychainWrite(
   const { code } = await execSecurity([
     'add-generic-password',
     '-s',
-    serviceForAppNameAtCall(kind),
+    service,
     '-a',
     name,
     '-w',

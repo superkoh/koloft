@@ -27,6 +27,7 @@ import type {
   SessionInfo,
   SpawnedTab,
   CronState,
+  DiscordStatus,
   AttentionEvent,
   AccountView,
   LoginProgress,
@@ -149,6 +150,25 @@ const api: KoloftApi = {
       ipcRenderer.on('cron:toast', handler)
       return () => ipcRenderer.removeListener('cron:toast', handler)
     }
+  },
+  conductors: {
+    save: (input) => ipcRenderer.invoke('conductors:save', input),
+    unbind: (id) => ipcRenderer.invoke('conductors:unbind', id),
+    switchBackend: (id) => ipcRenderer.invoke('conductors:switchBackend', id),
+    open: (id) => ipcRenderer.invoke('conductors:open', id),
+    startFresh: (id) => ipcRenderer.invoke('conductors:startFresh', id)
+  },
+  discord: {
+    setToken: (token) => ipcRenderer.invoke('discord:setToken', token),
+    status: () => ipcRenderer.invoke('discord:status'),
+    onStatus: (cb) => {
+      const handler = (_e: unknown, s: DiscordStatus): void => cb(s)
+      ipcRenderer.on('discord:status', handler)
+      return () => ipcRenderer.removeListener('discord:status', handler)
+    },
+    pair: (isMe) => ipcRenderer.invoke('discord:pair', isMe),
+    forgetOwner: () => ipcRenderer.invoke('discord:forgetOwner'),
+    channels: () => ipcRenderer.invoke('discord:channels')
   },
   attention: {
     list: () => ipcRenderer.invoke('attention:list'),

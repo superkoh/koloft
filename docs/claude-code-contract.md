@@ -203,6 +203,19 @@ mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
 - **Tool file paths are all but always absolute**: 17 relative out of 18,035 (0.094%),
   every one a `Read`, all in a single repository. A relative one means a file under the
   directory CC stood in on that line, so it has to be resolved as it is read, once.
+- **A message typed while claude is busy writes no `user` record.** Measured 2026-10-02,
+  CC 2.1.288, interactive session in a scratch `HOME`: a line typed during a running
+  `Bash` call left a `queue-operation` record `{operation:"enqueue", content:<text>}`,
+  then `{operation:"remove", reason:"absorbed_mid_turn"}`, then an `attachment` record
+  `{type:"queued_command", prompt:<text>, commandMode:"prompt", origin:{kind:"human"},
+  humanTurn:true}`; the reply came later in the same turn, before one Stop. A line typed
+  while idle is a plain `user` record with `origin: {kind:"human"}`. Other `user` records
+  carry `origin.kind` `task-notification` (`isMeta` false) or `channel`, and older ones no
+  `origin` at all. A sweep of 80 recent transcripts on this Mac (CC 2.1.285–2.1.288,
+  2026-10-03): `queued_command` attachments were 9 `prompt`/`human`, 2 `prompt`/`peer`
+  (§13), 3 `prompt`/`channel`, 89 `task-notification`; `user` records 261 `human`, 193
+  `task-notification`, 7 `channel` and 4 `peer`; every assistant record held at most one
+  `text` block, and no `(message.id, text)` pair repeated.
 - **CC deletes transcripts itself**: `claude project purge [path]` — "Delete all Claude
   Code state for a project (transcripts, tasks, file history, config entry)"
   (`claude project --help`, 2.1.281, 2026-09-24).
@@ -530,6 +543,12 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   Apart from the 2.1.266 check: inferred, not checked.
 - **The 5h window's reset time moves forward between probes** — the window is rolling.
   (Inferred, not checked.)
+- **Remote Control refuses the long-lived token Koloft injects.** Measured 2026-10-01,
+  CC 2.1.286, in a session the shim had launched with an account's
+  `CLAUDE_CODE_OAUTH_TOKEN`: `/remote-control` answered "Remote Control requires a
+  full-scope login token. Long-lived tokens (from claude setup-token or
+  CLAUDE_CODE_OAUTH_TOKEN) are limited to inference-only…". So with Koloft's account
+  balancing on, Claude's own phone remote does not work for a Koloft session.
 - **Model prices** (USD per million tokens, input/output, and context window): Fable 5.1
   $10/$50, 1M (cache read $0.25); Fable/Mythos 5 $10/$50, 1M; Opus 5.5 $4/$20, 1M
   (cache read $0.20); Opus 5 $5/$25, 1M; Opus 4.6–4.8 $5/$25, 1M;
@@ -924,7 +943,18 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
 - **Cell widths follow Unicode 11 tables** (Ink / string-width). A terminal using other
   tables makes wide CJK and emoji drift and clip at the right edge.
 - **A bare LF (`\n`, the same as Ctrl+J) inserts a newline in the input box; CR
-  submits.**
+  submits.** Measured 2026-10-03, CC 2.1.288, a pty in a scratch `HOME`: one write of
+  three lines joined by LF showed as one three-line input, and a CR in a second write
+  0.4 s later sent it as one `user` record whose `content` kept the `\n`s.
+- **Text typed into the input box and the CR that sends it must be two writes.** One
+  write of 63 bytes or more that ended in CR put a newline in the box instead of
+  sending; the text first and the CR in a second write 0.3 s later sent texts of 120 and
+  300 bytes. Recorded from the Discord design round's probe notes (2026-10-02, CC
+  2.1.286); the setup was not re-run here.
+- **Typing while claude is in the middle of a turn queues the message**: the screen
+  shows "Press up to edit queued messages", and claude takes it once the running tool
+  call ends, in the same turn (a `queued_command` attachment, §2). Recorded from the
+  same probe notes (CC 2.1.288); not re-run here.
 - **URLs and files are opened with `Bun.spawn(["open", url])`**, which looks `open` up
   on PATH, so a PATH shim can catch it.
 - **An idle claude process holds a lot of memory**: measured 185–350 MB each for idle
@@ -967,3 +997,108 @@ sessions.
   reply arrived in the sender. The `SendMessage` tool text says a session in a
   different permission mode holds such messages for its user's approval — read, not
   measured.
+- **How a message from another session lands in the receiver's transcript** (2026-10-02,
+  CC 2.1.288, interactive sessions in a scratch `HOME`, the message sent as one
+  `{"type":"user",…}` line to the receiver's `messagingSocketPath`, §11). When the
+  receiver was idle: a `user` record with `isMeta: true`, `origin: {kind:"peer",
+  from:"unknown", verifiedPeerPid}`, `turnOrigin: "peer"`, and the text wrapped as
+  `"Another Claude session sent a message:\n<text>\n\nThis came from another Claude
+  session — not typed by your user, …"`. When the receiver was in the middle of a turn: no
+  `user` record; a `queued_command` attachment (shape in §2) with `origin.kind: "peer"`
+  and `isMeta: true`, whose `prompt` holds the bare text. A sweep of 80 recent
+  transcripts on this Mac (CC 2.1.285–2.1.288, 2026-10-03) found 4 `user` records with
+  `origin.kind: "peer"`, all `isMeta: true`.
+- **A receiver started with `--dangerously-skip-permissions` holds a message whose sender
+  does not say it runs the same way.** Measured 2026-10-02, CC 2.1.288, four interactive
+  receivers in a scratch `HOME`, each sent one line on its socket while idle; re-run
+  2026-10-03, CC 2.1.288, with Koloft's own writer (`src/main/crossSessionMessage.ts`)
+  against one logged-in receiver:
+  - content `<cross-session-message from-mode="bypass">` + `\n` + body + `\n` +
+    `</cross-session-message>`: delivered — the screen showed "Message from @peer: …" and
+    a turn started; the logged-in receiver did what the body asked. The transcript keeps
+    the envelope inside the usual "Another Claude session sent a message:" wrap.
+  - The same `bypass` line sent while that receiver was running a 15 s Bash command was
+    taken into the running turn and answered there: a `queued_command` attachment whose
+    `prompt` holds the whole envelope and whose `origin` adds `fromMode: "bypass"` and
+    `body` (the bare body).
+  - the same with `from-mode="prompting"`, or a bare body, or `"from_mode":"bypass"` as a
+    field beside `message`: held — "Held peer message … The sending session's permission
+    mode class doesn't match this session's", and a "Held message from another session"
+    dialog with two choices, "Deny" (selected) and "Deliver this message to Claude".
+  - The two classes are `bypass` and `prompting`. The 2.1.288 binary counts a session as
+    `bypass` when its mode is `bypassPermissions`, or when a second check passes that
+    takes the mode and whether bypass mode is available
+    (`e.mode==="bypassPermissions"||IW(e.mode,e.isBypassPermissionsModeAvailable)`);
+    what that second check accepts was not read.
+  - The binary only accepts the envelope when it matches its own pattern exactly
+    (attributes in a fixed order, a newline right after `>` and right before `</`).
+  - It is switched by the internal gate `tengu_harbor_kite_mode_emit`, default on
+    (`T("tengu_harbor_kite_mode_emit",!0)` in the 2.1.288 binary); recheck on upgrade.
+  - A busy receiver with a mismatched mode, and a receiver not in bypass mode, were not
+    tried.
+
+## §14 The PermissionRequest hook: answering a dialog from outside
+
+How established: 2026-10-03, CC 2.1.288, interactive claude in a pty with a scratch
+`HOME`, model haiku, a `--settings` file whose `PermissionRequest` entry (matcher `"*"`)
+ran a logging script, next to logging `PreToolUse` and `PostToolUse` hooks. Each line
+below was one run.
+
+- **It fires the moment claude draws a dialog that waits on the person.** Its input has
+  `session_id`, `transcript_path`, `cwd`, `permission_mode`, `prompt_id`,
+  `hook_event_name: "PermissionRequest"`, `tool_name` and `tool_input` — and no
+  `tool_use_id` (`PreToolUse` and `PostToolUse` carry one).
+- **With `--permission-mode bypassPermissions`, `AskUserQuestion` and `ExitPlanMode` still
+  fire it; `Bash` does not** (it ran with no dialog).
+- **An `AskUserQuestion` is answered by the hook's output, with no key press:**
+  `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":
+  "allow","updatedInput":{…tool_input,"answers":{"<question>":"<label>"}}}}}`.
+  `PostToolUse` then showed those `answers` in `tool_response`.
+- **An `ExitPlanMode` needs `updatedInput`:** a bare `{"behavior":"allow"}` was ignored
+  with no error and the dialog stayed; `allow` with `updatedInput` set to the
+  `tool_input` unchanged approved the plan, and claude went back to the mode it had
+  before plan mode.
+- **`{"behavior":"deny","message":"<text>"}`** hands claude the text; it carries on and
+  `Stop` fires at the end of the turn.
+- **A hook may wait for the answer.** One that answered after 120 s with
+  `"timeout": 900` took effect. At its `timeout` (20 s in one run) claude ends the hook
+  with SIGTERM and the dialog stays on screen; nothing is denied.
+- **When the person answers in the terminal first:** "No" or Esc ends the hook with
+  SIGTERM at once (its `EXIT` trap ran); "Yes" does not signal it, and it lived on until
+  claude exited. What it prints after that is ignored. Re-run 2026-10-04, CC 2.1.289
+  (scratch `HOME`, haiku, `--permission-mode default`, a hook that logged its start and
+  any SIGTERM and then waited): `1` on a `Bash` dialog ran the command, and 15 s later the
+  hook was still alive with no SIGTERM logged.
+- **A hook that exits at once with no output** leaves the dialog to the person, as if
+  there were no hook. Run 2026-10-04, CC 2.1.289, through Koloft (the
+  `discord-real-smoke` case "with Discord off"): Koloft's hook script left before reading
+  its input, the `AskUserQuestion` dialog drew as usual, `2` picked the second option (the
+  `tool_result` held it), and the turn ended.
+- **With no permission flag and no setting, a fresh `HOME` starts in `auto` mode**
+  (2026-10-04, CC 2.1.289: the transcript's `permission-mode` record said `"auto"`), and
+  in it a `Bash` `touch` ran with no dialog. `permissions.defaultMode: "default"` in
+  `~/.claude/settings.json` brought the dialog back.
+- **The `Notification` hook (`permission_prompt`) comes about 6 s after
+  `PermissionRequest`** for the same dialog (7.7→13.8 s, 6.4→12.4 s, 7.0→13.0 s in three
+  runs), also for a plan in `bypassPermissions`.
+- **Koloft's own hook script and answer builder, run by a real claude** (2026-10-03, CC
+  2.1.288, scratch `HOME`, haiku, the `PermissionRequest` entry exactly as
+  `hookSettings()` writes it, the answer file written by `hookAnswer()`): with
+  `--dangerously-skip-permissions`, an `AskUserQuestion` answered `2` showed "→ Green" and
+  "Allowed by PermissionRequest hook"; with `--permission-mode default`, a `Bash` dialog
+  answered `yes` (`allow` with `updatedInput` set to the `tool_input` unchanged) ran the
+  command. Both hooks removed their files on the way out.
+- **The keys that answer a dialog in the terminal** (2026-10-03, CC 2.1.288, a pty, scratch
+  `HOME`, haiku, `--dangerously-skip-permissions`, a `PermissionRequest` hook that printed
+  nothing):
+  - an `AskUserQuestion` with one question lists its options as `1.`…`N.`, then
+    `N+1. Type something.` and `N+2. Chat about this`. A digit picks that option and sends
+    it at once. `N+1`, then the text in a second write, then CR in a third write 1 s later
+    sent the text as the answer.
+  - a plan (`ExitPlanMode`) offers `1. Yes, and switch to BYPASS PERMISSIONS …` (in a
+    session that was in bypass before plan mode; `1. Yes, auto-accept edits` in one that
+    was not), `2. Yes, manually approve edits`, `3. Tell Claude what to change`. `1`
+    approved it and the session went back to bypass; Esc rejected it ("User rejected
+    Claude's plan"), the turn ended and the session stayed in plan mode.
+  - a `Bash` dialog (`--permission-mode default`) offers `1. Yes`, `2. Yes, and always
+    allow …`, `3. No`; `1` ran it, `3` and Esc refused it (2026-10-02 round, same version).

@@ -24,6 +24,7 @@ interface RegistryEntry {
   pid: number
   procStart: string
   name?: string
+  messagingSocketPath?: string
 }
 
 // CC§11
@@ -37,7 +38,13 @@ function readRegistry(dir: string): Map<string, RegistryEntry[]> {
   }
   for (const name of names) {
     if (!/^\d+\.json$/.test(name)) continue
-    let entry: { pid?: unknown; sessionId?: unknown; procStart?: unknown; name?: unknown }
+    let entry: {
+      pid?: unknown
+      sessionId?: unknown
+      procStart?: unknown
+      name?: unknown
+      messagingSocketPath?: unknown
+    }
     try {
       entry = JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8'))
     } catch {
@@ -49,7 +56,11 @@ function readRegistry(dir: string): Map<string, RegistryEntry[]> {
     entries.push({
       pid: entry.pid,
       procStart: entry.procStart,
-      name: typeof entry.name === 'string' && entry.name ? entry.name : undefined
+      name: typeof entry.name === 'string' && entry.name ? entry.name : undefined,
+      messagingSocketPath:
+        typeof entry.messagingSocketPath === 'string' && entry.messagingSocketPath
+          ? entry.messagingSocketPath
+          : undefined
     })
     bySession.set(entry.sessionId, entries)
   }
@@ -74,6 +85,43 @@ export async function runningClaudePid(
   startOf = processStartUtc
 ): Promise<number | null> {
   return (await liveEntry(readRegistry(dir).get(sessionId), startOf))?.pid ?? null
+}
+
+export async function messagingSocketOf(
+  sessionId: string,
+  dir = REGISTRY_DIR,
+  startOf = processStartUtc
+): Promise<string | null> {
+  return (await liveEntry(readRegistry(dir).get(sessionId), startOf))?.messagingSocketPath ?? null
+}
+
+export function whenMessagingSocket(
+  sessionId: string,
+  ms: number,
+  dir = REGISTRY_DIR,
+  startOf = processStartUtc
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    let watcher: fs.FSWatcher | undefined
+    let settled = false
+    const settle = (socket: string | null): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(deadline)
+      watcher?.close()
+      resolve(socket)
+    }
+    const check = (): void =>
+      void messagingSocketOf(sessionId, dir, startOf).then((socket) => socket && settle(socket))
+    const deadline = setTimeout(
+      () => void messagingSocketOf(sessionId, dir, startOf).then(settle),
+      Math.max(0, ms)
+    )
+    try {
+      watcher = fs.watch(dir, check)
+    } catch {}
+    check()
+  })
 }
 
 export function claudePeerNames(

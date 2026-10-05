@@ -151,6 +151,87 @@ describe('CodexObservation', () => {
     expect(f.raised).not.toContain('approval')
   })
 
+  // CODEX§20
+  it('holds an open question only in the two shapes that were probed, one question or one enum field with options, until the TUI answers it', () => {
+    const f = fixture()
+    f.bind()
+    f.server('turn/started', { turn: { id: 'turn' } })
+    const colours = [
+      { label: 'Red', description: 'Choose red.' },
+      { label: 'Green', description: 'Choose green.' }
+    ]
+    const asked = { question: 'Which colour do you prefer?', options: colours }
+    f.server(
+      'item/tool/requestUserInput',
+      {
+        questions: [
+          {
+            id: 'colour',
+            header: 'Colour',
+            question: asked.question,
+            isOther: true,
+            options: colours
+          }
+        ]
+      },
+      0
+    )
+    expect(f.observer.openQuestion()).toEqual({ id: 0, ...asked })
+    f.observer.receive('client', { id: 0, result: { answers: { colour: { answers: ['Green'] } } } })
+    expect(f.observer.openQuestion()).toBeUndefined()
+
+    const enumField = {
+      type: 'object',
+      properties: { colour: { type: 'string', enum: ['Red', 'Green'] } }
+    }
+    f.server(
+      'mcpServer/elicitation/request',
+      { mode: 'form', message: 'Which?', requestedSchema: enumField },
+      1
+    )
+    expect(f.observer.openQuestion()).toEqual({
+      id: 1,
+      question: 'Which?',
+      options: [{ label: 'Red' }, { label: 'Green' }]
+    })
+    f.observer.receive('client', {
+      id: 1,
+      result: { action: 'accept', content: { colour: 'Red' } }
+    })
+
+    f.server(
+      'item/tool/requestUserInput',
+      {
+        questions: [
+          { id: 'a', question: 'A?', options: colours },
+          { id: 'b', question: 'B?', options: colours }
+        ]
+      },
+      2
+    )
+    f.server(
+      'item/tool/requestUserInput',
+      { questions: [{ id: 'free', question: 'Name?', options: null }] },
+      3
+    )
+    const twoFields = {
+      type: 'object',
+      properties: { a: { type: 'string', enum: ['x'] }, b: { type: 'string' } }
+    }
+    f.server(
+      'mcpServer/elicitation/request',
+      { mode: 'form', message: 'Two?', requestedSchema: twoFields },
+      4
+    )
+    f.server(
+      'mcpServer/elicitation/request',
+      { mode: 'url', message: 'Open?', url: 'https://x' },
+      5
+    )
+    expect(f.observer.openQuestion()).toBeUndefined()
+    expect(f.status()).toBe('waiting')
+  })
+
   it('notifies once per live turn that ends, interrupted or completed, and never for a replayed completion', () => {
     const f = fixture()
     f.bind()
@@ -510,5 +591,85 @@ describe('CodexObservation', () => {
       '/repo/blocked.html',
       '/repo/no-shim.html'
     ])
+  })
+})
+
+// CODEX§19
+describe('CodexObservation — what each turn said', () => {
+  const userMessage = (text: string) => ({
+    type: 'userMessage',
+    id: 'u1',
+    clientId: null,
+    content: [{ type: 'text', text, text_elements: [] }]
+  })
+  const agentMessage = (text: string, phase: string) => ({
+    type: 'agentMessage',
+    id: `m-${phase}`,
+    text,
+    phase
+  })
+  const ended = (f: ReturnType<typeof fixture>) =>
+    f.events.flatMap((e) =>
+      e.type === 'turn-ended'
+        ? [{ said: e.turn.said.map((l) => [l.who, l.text]), reply: e.turn.reply }]
+        : []
+    )
+
+  it('ends a turn with the owner’s message and every agent message of the thread, commentary included, and nothing from another thread', () => {
+    const f = fixture()
+    f.bind()
+    f.server('turn/started', { turn: { id: 't1' } })
+    f.server('item/started', { item: { ...agentMessage('', 'commentary') } })
+    f.server('item/completed', { item: userMessage('run ls then say DONE') })
+    f.server('item/completed', { item: agentMessage('I’ll list the files.\n', 'commentary') })
+    f.server('item/completed', {
+      item: { type: 'commandExecution', id: 'c1', status: 'completed', command: 'ls' }
+    })
+    f.observer.receive('server', {
+      method: 'item/completed',
+      params: { threadId: B, item: agentMessage('A title', 'final_answer') }
+    })
+    f.server('item/completed', { item: agentMessage('DONE\nhello.txt', 'final_answer') })
+    f.server('turn/completed', {
+      turn: { id: 't1', items: [agentMessage('DONE\nhello.txt', 'final_answer')] }
+    })
+    f.server('turn/completed', { turn: { id: 't1' } })
+    expect(ended(f)).toEqual([
+      {
+        said: [['owner', 'run ls then say DONE']],
+        reply: 'I’ll list the files.\n\nDONE\nhello.txt'
+      }
+    ])
+  })
+
+  it('a resumed thread starts with the turns its resume reply carried', () => {
+    const f = fixture()
+    f.observer.receive('client', { id: 1, method: 'thread/resume' })
+    f.observer.receive('server', {
+      id: 1,
+      result: {
+        thread: {
+          ...thread(),
+          turns: [
+            {
+              id: 'old',
+              completedAt: 1791012578,
+              items: [userMessage('say MANGO'), agentMessage('MANGO', 'final_answer')]
+            }
+          ]
+        }
+      }
+    })
+    expect(f.observer.turns.last(5)).toEqual([
+      {
+        said: [{ who: 'owner', text: 'say MANGO', at: 1791012578000 }],
+        reply: 'MANGO',
+        at: 1791012578000
+      }
+    ])
+    f.server('turn/started', { turn: { id: 't2' } })
+    f.server('item/completed', { item: agentMessage('woke up', 'final_answer') })
+    f.server('turn/completed', { turn: { id: 't2' } })
+    expect(ended(f)).toEqual([{ said: [], reply: 'woke up' }])
   })
 })
