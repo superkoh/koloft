@@ -8,6 +8,7 @@ const SESSION_CANNOT_RESUME = new Set([4007, 4009])
 const CLOSE_KEEPING_SESSION = 4000
 const NORMAL_CLOSE = 1000
 const MAX_RETRY_MS = 60_000
+const MIN_HEARTBEAT_MS = 20
 const MAX_HEARTBEAT_MS = 120_000
 
 export type GatewayState = 'connecting' | 'ready' | 'token' | 'intents'
@@ -91,10 +92,10 @@ export class DiscordGateway {
     if (ws !== this.ws) return
     if (p.s !== null && p.s !== undefined) this.seq = p.s
     if (p.op === 10) {
-      const interval = Math.min(
-        (p.d as { heartbeat_interval: number }).heartbeat_interval,
-        MAX_HEARTBEAT_MS
-      )
+      const given = Number((p.d as { heartbeat_interval: unknown }).heartbeat_interval)
+      const interval = Number.isFinite(given)
+        ? Math.max(MIN_HEARTBEAT_MS, Math.min(given, MAX_HEARTBEAT_MS))
+        : MAX_HEARTBEAT_MS
       this.acked = true
       this.firstBeat = setTimeout(() => {
         this.beat(ws)
