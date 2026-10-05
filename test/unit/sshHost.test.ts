@@ -7,6 +7,8 @@ import { machineClaudeArgs, SshHost } from '../../src/main/host/sshHost'
 import { diffBase as localDiffBase } from '../../src/main/gitStatus'
 import { utilTerminalGuard } from '../../src/main/shim'
 import type { BytesResult } from '../../src/main/remote/ssh'
+import { AccountPicker, type LaunchedSession } from '../../src/main/accountPicker'
+import type { AccountMeta } from '../../src/shared/types'
 
 const MACHINE = 'devbox'
 let home: string
@@ -273,6 +275,72 @@ describe('what a remote launch hands claude', () => {
         false
       )
     ).toEqual({ ok: true, args: ['--resume', 'old1'] })
+  })
+})
+
+describe('accounts for remote launches started together', () => {
+  it('two remote launches started at once land on two accounts, as two local ones do', async () => {
+    const now = Date.now()
+    const nowSec = Math.floor(now / 1000)
+    const accounts: AccountMeta[] = ['a', 'b'].map((name) => ({
+      name,
+      kind: 'oauth',
+      enabled: true,
+      fable: 'unknown',
+      status: 'ok',
+      addedAt: 1
+    }))
+    const sessions: LaunchedSession[] = []
+    const picker = new AccountPicker({
+      listAccounts: () => accounts,
+      multiAccountOn: () => true,
+      fablePriority: () => false,
+      readSecret: async () => null,
+      probe: async () => ({ ok: false, error: 'network' }),
+      onProbeOutcome: () => {},
+      launchedSessions: () => sessions,
+      recordPick: (tabId, account) => sessions.push({ tabId, account }),
+      now: () => now
+    })
+    accounts.forEach((a, i) =>
+      picker.cacheUsage('oauth', a.name, {
+        u5: 0.3,
+        u7: 0.4,
+        uoi: 0,
+        s5: 'allowed',
+        s7: 'allowed',
+        soi: '?',
+        r5: nowSec + 36_000,
+        r7: nowSec + (i + 1) * 86_400,
+        roi: 0,
+        overage: '?',
+        hasOi: false,
+        at: now
+      })
+    )
+    const host = new SshHost(MACHINE, {
+      run: runOnMachine,
+      shell: () => ({ spawnCwd: '/' }),
+      github: {},
+      claude: {
+        userData: home,
+        controlDir: home,
+        machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
+        alive: () => new Set(),
+        realPath: (p) => p,
+        settings: () => ({ multiAccount: true, skipPermissions: false }),
+        pickAccount: async (launchKey) => {
+          const res = await picker.pick(launchKey)
+          return res.account ? { env: {}, picked: res.account, banner: '' } : undefined
+        },
+        hookSettings: () => ({})
+      }
+    })
+    const plans = await Promise.all([
+      host.launch({ root: keyed('/w') }),
+      host.launch({ root: keyed('/w') })
+    ])
+    expect(plans.map((p) => (p.ok ? p.machine?.picked : undefined)).sort()).toEqual(['a', 'b'])
   })
 })
 

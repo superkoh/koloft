@@ -809,6 +809,7 @@ export class ClaudeBackend implements SessionBackend {
     if (machine) {
       tracker.track(handle.id, machine.cwd, machine.tracking)
       if (machine.picked) tracker.setPickedAccount(handle.id, machine.picked)
+      if (machine.pickKey) tracker.forgetPick(machine.pickKey)
       if (machine.attachTo) {
         tracker.bindSession(handle.id, '', machine.attachTo, machine.cwd)
         workspaces?.onSessionBound(machine.attachTo)

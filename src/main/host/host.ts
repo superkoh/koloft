@@ -47,6 +47,7 @@ export interface MachineTab {
   hookMirror: string
   attachTo?: string
   picked?: string
+  pickKey?: string
 }
 
 export type ClaudeLaunchPlan =

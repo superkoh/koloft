@@ -2844,7 +2844,7 @@ const hosts = new Hosts(
         alive: () => remoteSync?.alive(machine) ?? new Set(),
         realPath: (p) => workspaceMgr?.realRemotePath({ host: machine, path: p }) ?? p,
         settings: loadSettings,
-        pickAccount: () => pickMachineAccount(pickForLaunch),
+        pickAccount: (launchKey) => pickMachineAccount(() => pickForLaunch(launchKey)),
         hookSettings: (tabId, dir) =>
           machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin)
       }

@@ -878,6 +878,10 @@ export class SessionTracker extends SessionRuntime {
     }
   }
 
+  forgetPick(key: string): void {
+    this.pendingPicked.delete(key)
+  }
+
   launchedSessions(): LaunchedSession[] {
     const tracked = [...this.tracked.values()]
       .filter((t) => t.info.alive)
