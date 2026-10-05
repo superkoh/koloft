@@ -164,7 +164,23 @@ export function pruneStale(dir: string, maxAgeMs = 12 * 60 * 60 * 1000, everyEnt
   }
 }
 
-export function setupHooks(): HookPaths {
+const TAB_MARKER = /^(.+)\.(answerable|conductor)$/
+
+// ADR-0004
+function pruneMarkersOfDeadTabs(regDir: string, peerOwnsTab: (tabId: string) => boolean): void {
+  let names: string[]
+  try {
+    names = fs.readdirSync(regDir)
+  } catch {
+    return
+  }
+  for (const name of names) {
+    const tabId = TAB_MARKER.exec(name)?.[1]
+    if (tabId && !peerOwnsTab(tabId)) fs.rmSync(path.join(regDir, name), { force: true })
+  }
+}
+
+export function setupHooks(peerOwnsTab: (tabId: string) => boolean = () => false): HookPaths {
   const base = app.getPath('userData')
   const hookDir = path.join(base, 'hooks')
   const settingsDir = path.join(hookDir, 'settings')
@@ -174,6 +190,7 @@ export function setupHooks(): HookPaths {
   fs.mkdirSync(regDir, { recursive: true })
   pruneStale(regDir)
   pruneStale(settingsDir)
+  pruneMarkersOfDeadTabs(regDir, peerOwnsTab)
 
   const hookScript = path.join(hookDir, 'sessionstart.sh')
   fs.writeFileSync(hookScript, HOOK_SCRIPT, { mode: 0o755 })

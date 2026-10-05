@@ -1323,7 +1323,7 @@ app.whenReady().then(() => {
   startRelay(relayDeps())
   setRelayEnabled(loadSettings().browserControl, ptyTabIds())
 
-  const hookPaths = setupHooks()
+  const hookPaths = setupHooks((tabId) => anotherLiveInstanceOwns(tabId, pidAlive))
   const statusline = setupStatusline()
   ptyMgr.makeHookSettings = (tabId, allowKoloft) =>
     writeTabHookSettings(

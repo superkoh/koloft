@@ -689,4 +689,24 @@ describe('setupHooks at startup', () => {
     for (const f of fresh) expect(fs.existsSync(f), f).toBe(true)
     for (const f of old) expect(fs.existsSync(f), f).toBe(false)
   })
+
+  it('removes the answerable and conductor markers a crash left behind, and keeps a live peer instance’s however old they are', () => {
+    const peerTab = 'pty-peer-1'
+    const crashedTab = 'pty-gone-1'
+    const markers = (tab: string): string[] => [
+      path.join(regDir, `${tab}.answerable`),
+      path.join(regDir, `${tab}.conductor`)
+    ]
+    markAnswerable(regDir, peerTab, true)
+    writeConductorMarker(regDir, peerTab, 'role')
+    markAnswerable(regDir, crashedTab, true)
+    writeConductorMarker(regDir, crashedTab, 'role')
+    const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000)
+    for (const f of markers(peerTab)) fs.utimesSync(f, twoDaysAgo, twoDaysAgo)
+
+    setupHooks((tab) => tab === peerTab)
+
+    for (const f of markers(peerTab)) expect(fs.existsSync(f), f).toBe(true)
+    for (const f of markers(crashedTab)) expect(fs.existsSync(f), f).toBe(false)
+  })
 })
