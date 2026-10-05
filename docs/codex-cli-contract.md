@@ -716,6 +716,12 @@ Koloft's (one TUI connection, one stdio app-server upstream, every frame logged)
   reasoning_effort, developer_instructions}}`, or `/plan` typed in the TUI (it sent
   `thread/settings/update` with a `collaborationMode`), raised it. The feature flag
   `default_mode_request_user_input` (under development, off) was not tried.
+- **A turn started by `thread/queue/add` keeps the Plan mode `/plan` set.** Checked on
+  2026-10-05 with Codex CLI 0.159.3 through Koloft itself (`discord-real-smoke`'s Codex
+  conductor case): a real TUI connected over `--remote` to Koloft's relay, `/plan` typed
+  in it after its first turn, then an owner message sent by Koloft with
+  `thread/queue/add`. That queued turn raised `item/tool/requestUserInput`; a digit sent
+  to the TUI answered it and the turn went on with the picked option.
 - **Its shape:** `{id: 0, method: "item/tool/requestUserInput", params: {threadId,
   turnId, itemId: "call_…", questions: [{id: "colour", header: "Colour", question:
   "Which colour do you prefer?", isOther: true, isSecret: false, options: [{label:
