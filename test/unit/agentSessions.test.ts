@@ -586,6 +586,16 @@ describe('a conductor’s view of sessions: its binding sets the scope', () => {
     ])
   })
 
+  it('a conductor finds an open Claude session by the name it was started under: the list shows the name and read takes it', async () => {
+    const { verb } = harness(live, { 'fix-id': 'helper-1a2b3c' }, [], conducting)
+    expect((await verb(['list'], from('wsCond'))).text.split('\n')[0]).toBe(
+      'fix-login · Claude · local · working · last active just now · id: fix-id · name: helper-1a2b3c'
+    )
+    expect((await verb(['read', 'helper-1a2b3c'], from('wsCond'))).text).toBe(
+      'owner: fix the login\npeer: also the tests\nassistant: Looking.\n\nFixed both.'
+    )
+  })
+
   it('a workspace conductor is told a session in another workspace is not in its workspace, and nothing is read', async () => {
     const { verb, reads, touched } = harness(live, {}, [], conducting)
     for (const ref of ['site-build', 'api-id']) {

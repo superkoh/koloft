@@ -160,10 +160,22 @@ function inScope(scope: string | undefined, workspace: string): boolean {
   return scope === undefined || scope === GLOBAL_SCOPE || scope === workspace
 }
 
-function formatConductorList(placed: PlacedRow[], withWorkspace: boolean, now: number): string {
+function peerNamesOf(d: SessionVerbDeps, placed: PlacedRow[]): Promise<(string | null)[]> {
+  const nameOf = d.peerNames()
+  return Promise.all(
+    placed.map((p) => (p.live?.backendId === 'claude' ? nameOf(p.live.sessionId) : null))
+  )
+}
+
+function formatConductorList(
+  placed: PlacedRow[],
+  names: (string | null)[],
+  withWorkspace: boolean,
+  now: number
+): string {
   if (placed.length === 0) return 'There are no sessions to look after.'
   return placed
-    .map(({ workspace, row, title, live: info }) => {
+    .map(({ workspace, row, title, live: info }, i) => {
       const parts = [
         title,
         BACKEND_LABEL[row.backendId],
@@ -172,6 +184,7 @@ function formatConductorList(placed: PlacedRow[], withWorkspace: boolean, now: n
         `last active ${ageLabel(row.mtime, now)}`,
         `id: ${row.nativeSessionId ?? row.id}`
       ]
+      if (names[i]) parts.push(`name: ${names[i]}`)
       if (withWorkspace) parts.push(`workspace: ${workspaceLabel(workspace)}`)
       return parts.join(' · ')
     })
@@ -407,27 +420,29 @@ function parseReadArgs(rest: string[]): Parsed<{ ref: string; last: number }> {
   return { ok: true, value: { ref, last } }
 }
 
-function matchRow(placed: PlacedRow[], ref: string): Parsed<PlacedRow> | null {
+function matchRow(
+  placed: PlacedRow[],
+  ref: string,
+  names: (string | null)[] = []
+): Parsed<PlacedRow> | null {
   return matchRef(
     placed,
     ref,
-    (p) => p.row.id === ref || p.row.nativeSessionId === ref,
+    (p, i) => p.row.id === ref || p.row.nativeSessionId === ref || names[i] === ref,
     (p) => p.title
   )
 }
 
-function findInScope(
+async function findInScope(
   d: SessionVerbDeps,
   verb: string,
   ref: string,
   callerTabId: string
-): Parsed<PlacedRow> {
+): Promise<Parsed<PlacedRow>> {
   const scope = d.conductorScope(callerTabId)
   const all = placedRows(d.sidebar(), d.allSessions())
-  const hit = matchRow(
-    all.filter((p) => inScope(scope, p.workspace)),
-    ref
-  )
+  const mine = all.filter((p) => inScope(scope, p.workspace))
+  const hit = matchRow(mine, ref, await peerNamesOf(d, mine))
   if (hit) return hit.ok ? hit : fail(`koloft session ${verb}: ${hit.error}`)
   return fail(
     matchRow(all, ref)
@@ -444,7 +459,7 @@ async function readSession(
   const args = parseReadArgs(rest)
   if (!args.ok) return refused(args.error, EXIT_USAGE)
   const { ref, last } = args.value
-  const found = findInScope(d, 'read', ref, callerTabId)
+  const found = await findInScope(d, 'read', ref, callerTabId)
   if (!found.ok) return refused(found.error)
   const { row, title } = found.value
   const turns = await d.readTurns(row.id, last)
@@ -576,7 +591,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       return refused(CONDUCTOR_ACT_USAGE[sub], EXIT_USAGE)
     if (isMe(ref, caller.session, d.conductorOf(ref), caller.tabId))
       return refused(`koloft session ${sub}: ${THAT_IS_YOU}`)
-    const found = findInScope(d, sub, ref, caller.tabId)
+    const found = await findInScope(d, sub, ref, caller.tabId)
     if (!found.ok) return refused(found.error)
     const t = rowTarget(found.value)
     if (sub === 'stop') {
@@ -610,7 +625,14 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       const placed = placedRows(d.sidebar(), d.allSessions()).filter((p) =>
         inScope(scope, p.workspace)
       )
-      return answered(formatConductorList(placed, scope === GLOBAL_SCOPE, Date.now()))
+      return answered(
+        formatConductorList(
+          placed,
+          await peerNamesOf(d, placed),
+          scope === GLOBAL_SCOPE,
+          Date.now()
+        )
+      )
     }
     if (sub === 'read') return readSession(d, rest, caller.tabId)
     if (sub === 'list') {
