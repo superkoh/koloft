@@ -1065,10 +1065,19 @@ below was one run.
   with SIGTERM and the dialog stays on screen; nothing is denied.
 - **When the person answers in the terminal first:** "No" or Esc ends the hook with
   SIGTERM at once (its `EXIT` trap ran); "Yes" does not signal it, and it lived on until
-  claude exited. What it prints after that is ignored.
+  claude exited. What it prints after that is ignored. Re-run 2026-10-04, CC 2.1.289
+  (scratch `HOME`, haiku, `--permission-mode default`, a hook that logged its start and
+  any SIGTERM and then waited): `1` on a `Bash` dialog ran the command, and 15 s later the
+  hook was still alive with no SIGTERM logged.
 - **A hook that exits at once with no output** leaves the dialog to the person, as if
-  there were no hook (recorded from the same round's notes: the dialog stayed 75 s and
-  worked; not re-run here).
+  there were no hook. Run 2026-10-04, CC 2.1.289, through Koloft (the
+  `discord-real-smoke` case "with Discord off"): Koloft's hook script left before reading
+  its input, the `AskUserQuestion` dialog drew as usual, `2` picked the second option (the
+  `tool_result` held it), and the turn ended.
+- **With no permission flag and no setting, a fresh `HOME` starts in `auto` mode**
+  (2026-10-04, CC 2.1.289: the transcript's `permission-mode` record said `"auto"`), and
+  in it a `Bash` `touch` ran with no dialog. `permissions.defaultMode: "default"` in
+  `~/.claude/settings.json` brought the dialog back.
 - **The `Notification` hook (`permission_prompt`) comes about 6 s after
   `PermissionRequest`** for the same dialog (7.7→13.8 s, 6.4→12.4 s, 7.0→13.0 s in three
   runs), also for a plan in `bypassPermissions`.

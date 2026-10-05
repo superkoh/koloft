@@ -4,7 +4,7 @@ import { execFileSync } from 'child_process'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
-import { gitInit, startSessionIn, waitBooted } from './helpers/p1'
+import { gitInit, startSessionIn, terminalText, waitBooted, wsRows } from './helpers/p1'
 import { startFakeDiscord, type FakeDiscord } from './helpers/fakeDiscord'
 
 function claudeTokenFromKeychain(): string {
@@ -108,8 +108,10 @@ function useRealCodex(env: E2EEnv): void {
   env.launchEnv.CODEX_HOME = home
 }
 
-function addClaudeAccountBesideTheBotToken(env: E2EEnv): void {
-  const keychain = JSON.parse(fs.readFileSync(env.keychainFile, 'utf8')) as Record<string, unknown>
+function addClaudeAccountToKeychain(env: E2EEnv): void {
+  const keychain = fs.existsSync(env.keychainFile)
+    ? (JSON.parse(fs.readFileSync(env.keychainFile, 'utf8')) as Record<string, unknown>)
+    : {}
   keychain['koloft-dev-claude-oauth'] = { alpha: CLAUDE_TOKEN }
   fs.writeFileSync(env.keychainFile, JSON.stringify(keychain))
 }
@@ -163,6 +165,14 @@ function textOf(content: unknown): string {
     .join('')
 }
 
+function toolResults(env: E2EEnv, sessionId: string): string[] {
+  return transcriptRecords(env, sessionId)
+    .filter((r) => r.type === 'user' && Array.isArray(r.message?.content))
+    .flatMap((r) => r.message!.content as { type?: string; content?: unknown }[])
+    .filter((c) => c.type === 'tool_result')
+    .map((c) => textOf(c.content))
+}
+
 function saidBy(env: E2EEnv, sessionId: string, role: 'user' | 'assistant'): string[] {
   return transcriptRecords(env, sessionId)
     .filter((r) => r.type === role)
@@ -200,8 +210,50 @@ async function realClaudeConductor(env: E2EEnv): Promise<FakeDiscord> {
   seedConductor(env, 'claude')
   useRealClaude(env)
   const fake = await startFakeDiscord(env)
-  addClaudeAccountBesideTheBotToken(env)
+  addClaudeAccountToKeychain(env)
   return fake
+}
+
+function hookDir(env: E2EEnv): string {
+  return path.join(env.userData, 'hook-sessions')
+}
+
+function hookQuestionFiles(env: E2EEnv, tabId: string): string[] {
+  return fs
+    .readdirSync(hookDir(env))
+    .filter((f) => f.startsWith(`${tabId}.`) && /\.(ask|answer)\.json$/.test(f))
+}
+
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function liveClaudeTab(page: Page): Promise<{ tabId: string; sessionId: string }> {
+  await startSessionIn(page, 'ws-a')
+  return (await page.evaluate(() => window.api.sessions.list())).find(
+    (s) => s.alive && !s.conductor
+  )!
+}
+
+const CLAUDE_INPUT_READY = /^❯/m
+// CC§12
+const CR_AFTER_TEXT_MS = 300
+let prompts = 0
+
+async function typePrompt(page: Page, tabId: string, text: string): Promise<void> {
+  const token = `KOLOFT-PROBE-${++prompts}`
+  await expect
+    .poll(() => terminalText(page, tabId), { timeout: 60_000 })
+    .toMatch(CLAUDE_INPUT_READY)
+  await page.evaluate(([id, l]) => window.api.terminal.write(id, l), [tabId, `${token} ${text}`])
+  await expect.poll(() => terminalText(page, tabId), { timeout: 30_000 }).toContain(token)
+  await page.waitForTimeout(CR_AFTER_TEXT_MS)
+  await page.evaluate((id) => window.api.terminal.write(id, '\r'), tabId)
 }
 
 async function answersWholeInTheChannel(fake: FakeDiscord): Promise<void> {
@@ -282,6 +334,106 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       await expect
         .poll(() => notices(fake), { timeout: A_REAL_MODEL_TURN_MS })
         .toContainEqual(expect.stringMatching(/^🔔 .+ finished\.$/))
+    })
+  })
+
+  // CC§14
+  test('with Discord off, a real Claude session’s question still draws and takes the digit pressed in its terminal: the dialog hook leaves at once, writes no question file, and the turn ends', async ({
+    env
+  }) => {
+    test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
+    test.setTimeout(2 * A_REAL_MODEL_TURN_MS + 120_000)
+    gitInit(env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    useRealClaude(env)
+    addClaudeAccountToKeychain(env)
+    const app = await launchApp(env)
+    const page = await app.firstWindow()
+    try {
+      await waitBooted(page)
+      const target = await liveClaudeTab(page)
+      await typePrompt(
+        page,
+        target.tabId,
+        'Use the AskUserQuestion tool once to ask me which colour I prefer, with exactly two options, Red and Green. Then reply with only the colour I picked.'
+      )
+      await expect
+        .poll(() => terminalText(page, target.tabId), { timeout: A_REAL_MODEL_TURN_MS })
+        .toMatch(/2\. Green[\s\S]*Type something/)
+      expect(fs.existsSync(path.join(hookDir(env), `${target.tabId}.answerable`))).toBe(false)
+      expect(hookQuestionFiles(env, target.tabId)).toEqual([])
+
+      await page.evaluate((id) => window.api.terminal.write(id, '2'), target.tabId)
+      await expect
+        .poll(() => toolResults(env, target.sessionId).join('\n'), {
+          timeout: A_REAL_MODEL_TURN_MS
+        })
+        .toMatch(/Green/)
+      await expect
+        .poll(() => saidBy(env, target.sessionId, 'assistant').filter(Boolean).at(-1), {
+          timeout: A_REAL_MODEL_TURN_MS
+        })
+        .toMatch(/Green/)
+      await expect(wsRows(page, 'ws-a').first()).toHaveClass(/st-waiting/, {
+        timeout: A_REAL_MODEL_TURN_MS
+      })
+      expect(hookQuestionFiles(env, target.tabId)).toEqual([])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CC§14
+  test('a real Claude session in a conductor’s care, its command dialog relayed to the channel with the hook waiting, is answered "1" at the Mac: Koloft lets the hook go once the command ran, and the session goes on', async ({
+    env
+  }) => {
+    test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
+    test.setTimeout(2 * A_REAL_MODEL_TURN_MS + 120_000)
+    const fake = await realClaudeConductor(env)
+    seedSettings(env, { skipPermissions: false })
+    fs.writeFileSync(
+      path.join(env.home, '.claude', 'settings.json'),
+      JSON.stringify({ permissions: { defaultMode: 'default' } })
+    )
+    await withConductor(env, fake, async (_app, page) => {
+      const target = await liveClaudeTab(page)
+      await typePrompt(page, target.tabId, 'Reply with only the word READY.')
+      await expect
+        .poll(() => saidBy(env, target.sessionId, 'assistant').join('\n'), {
+          timeout: A_REAL_MODEL_TURN_MS
+        })
+        .toContain('READY')
+      await expect
+        .poll(() => fs.existsSync(path.join(hookDir(env), `${target.tabId}.answerable`)))
+        .toBe(true)
+      await typePrompt(
+        page,
+        target.tabId,
+        'Run exactly this shell command with the Bash tool: touch mac-yes.txt — then reply with only the word DONE.'
+      )
+      await expect
+        .poll(() => hookQuestionFiles(env, target.tabId), { timeout: A_REAL_MODEL_TURN_MS })
+        .toEqual([expect.stringMatching(/\.ask\.json$/)])
+      const hookPid = Number(hookQuestionFiles(env, target.tabId)[0].split('.')[1])
+      await expect
+        .poll(() => notices(fake), { timeout: 30_000 })
+        .toContainEqual(expect.stringMatching(/^❓ .+ is waiting for you: Bash asks to run:$/))
+      expect(said(fake).join('\n')).toContain('touch mac-yes.txt')
+      await expect
+        .poll(() => terminalText(page, target.tabId), { timeout: 30_000 })
+        .toMatch(/1\. Yes/)
+
+      await page.evaluate((id) => window.api.terminal.write(id, '1'), target.tabId)
+      await expect
+        .poll(() => fs.existsSync(path.join(env.workspaces.a, 'mac-yes.txt')), { timeout: 30_000 })
+        .toBe(true)
+      await expect.poll(() => hookQuestionFiles(env, target.tabId), { timeout: 30_000 }).toEqual([])
+      await expect.poll(() => pidAlive(hookPid)).toBe(false)
+      await expect
+        .poll(() => saidBy(env, target.sessionId, 'assistant').join('\n'), {
+          timeout: A_REAL_MODEL_TURN_MS
+        })
+        .toContain('DONE')
     })
   })
 
