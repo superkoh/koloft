@@ -33,7 +33,7 @@ import { openDropTarget, type OpenDrop } from './openDrop'
 import { removeCodexOpenShim, writeCodexOpenShim } from './openShimScript'
 import { AGENT_SHIM_WAITS_MS, writeCodexAgentShim } from './agentShim'
 import { CODEX_AGENT_HINT } from '@shared/agentGuide'
-import type { CodexApproval } from './discord/dialog'
+import type { CodexApproval, CodexQuestion } from './discord/dialog'
 
 const exists = (p: string): boolean => {
   try {
@@ -538,6 +538,10 @@ export class CodexSessions {
 
   openApproval(tabId: string): CodexApproval | undefined {
     return this.runs.get(tabId)?.observer.openApproval()
+  }
+
+  openQuestion(tabId: string): CodexQuestion | undefined {
+    return this.runs.get(tabId)?.observer.openQuestion()
   }
 
   threadGone(key: string): boolean {

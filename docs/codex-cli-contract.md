@@ -101,10 +101,8 @@ The approval dialog takes single keys, with no Enter after them: `y`, `1` or Ent
 approve; `3` or Esc decline. Recorded from the Discord design round's probe notes
 (2026-10-02, Codex 0.159.3, a real TUI); the setup was not re-run here.
 
-Not probed yet: the other server requests Koloft treats as waiting on the person
-(`…/requestApproval` for other item kinds, `item/tool/requestUserInput`,
-`mcpServer/elicitation/request`). None has been seen on the wire; that each is in the
-0.153.4 generated schema is inferred, not checked.
+Not probed yet: `…/requestApproval` for other item kinds. `item/tool/requestUserInput`
+and `mcpServer/elicitation/request` were seen on the wire later (section 20).
 
 The real model probes used a fresh temporary `CODEX_HOME`, populated with a local copy
 of an available test login. Credentials were not printed or put in evidence files;
@@ -700,3 +698,58 @@ sentence, then `ls`, then `DONE`; turn 2 was sent with `thread/queue/add`.
 - That the TUI's ephemeral title thread (section 17, its own `temporary-structured-…` id)
   never sends items under the session's thread id is inferred from section 17, not
   re-run here: no TUI was attached in this probe.
+
+## 20. A question the model asks, and an MCP server's form
+
+**Checked on 2026-10-04 with standalone Codex CLI 0.159.3, real model turns
+(`gpt-6.1-sol`).** Each run used its own `CODEX_HOME` (a copy of this Mac's login,
+deleted afterwards; `apps` and `plugins` off; the work folder trusted). First a Node
+client drove `codex app-server --stdio` (`initialize` with `experimentalApi: true`,
+`thread/start` with `approvalPolicy: "on-request"`, `sandbox: "read-only"`). Then the
+real TUI ran in a Python pty at 120×40 with `--remote` to a Node relay shaped like
+Koloft's (one TUI connection, one stdio app-server upstream, every frame logged).
+
+- **`item/tool/requestUserInput` comes only in Plan mode.** In the default mode the
+  same prompt ("use your request_user_input tool to ask me …") made the app-server log
+  `request_user_input is unavailable in Default mode`, and the model asked in plain
+  text. A `turn/start` carrying `collaborationMode: {mode: "plan", settings: {model,
+  reasoning_effort, developer_instructions}}`, or `/plan` typed in the TUI (it sent
+  `thread/settings/update` with a `collaborationMode`), raised it. The feature flag
+  `default_mode_request_user_input` (under development, off) was not tried.
+- **Its shape:** `{id: 0, method: "item/tool/requestUserInput", params: {threadId,
+  turnId, itemId: "call_…", questions: [{id: "colour", header: "Colour", question:
+  "Which colour do you prefer?", isOther: true, isSecret: false, options: [{label:
+  "Red", description: "Choose red."}, {label: "Green", description: "Choose
+  green."}]}], isBlocking: true, autoResolutionMs: null}}`. Just before it,
+  `thread/status/changed` went `active` with `activeFlags: ["waitingOnUserInput"]`.
+- **Its answer:** `{id: 0, result: {answers: {colour: {answers: ["Green"]}}}}`. The
+  server then sent `serverRequest/resolved` `{threadId, requestId: 0}`, the flag
+  cleared, and the turn went on to its answer ("Green").
+- **The TUI draws it as "Question 1/1"** with the options as `1.`…`N.` and `N+1. None of
+  the above` (with `isOther`), "tab to add notes", "enter to submit answer". **A digit
+  picks that option and sends it at once**: `2` sent exactly the answer above, and the
+  history then read "Questions 1/1 answered … answer: Green".
+- **An answer sent upstream by the relay, not by the TUI, is a trap.** In two runs the
+  relay wrote the answer above to the app-server 8 s after the request, and dropped
+  nothing (the TUI never sent one of its own). The server took it, sent
+  `serverRequest/resolved`, and the turn finished; the TUI took the question off the
+  screen and drew the answer. But a line typed into the TUI 3 s after `turn/completed`
+  (text, then CR 0.5 s later) never reached the app-server and was not drawn, over 35 s
+  of waiting, in both runs. The same line after a digit answer started a turn at once.
+  Not tried: Esc or other keys after such an answer. So Koloft answers by the digit.
+- **`mcpServer/elicitation/request`** came from a stdio MCP server listed in
+  `config.toml` whose tool, when called, sent MCP `elicitation/create` with
+  `{message: "Which colour do you prefer?", requestedSchema: {type: "object",
+  properties: {colour: {type: "string", enum: ["Red", "Green"]}}, required:
+  ["colour"]}}` (in the default mode; the tool had `readOnlyHint: true` and needed no
+  approval). Codex passed it on as `{id: 0, method: "mcpServer/elicitation/request",
+  params: {threadId, turnId, serverName: "probe", mode: "form", _meta: null, message,
+  requestedSchema}}` with the same schema. The TUI drew "Field 1/1 (1 required
+  unanswered)", the message, the field name and its enum as `1.`…`N.`, "enter to submit",
+  "esc to cancel"; `2` sent `{id: 0, result: {action: "accept", content: {colour:
+  "Green"}, _meta: null}}`, followed by `serverRequest/resolved`, and the MCP tool got
+  `{action: "accept", content: {colour: "Green"}}`.
+- Not probed: several questions in one request, a free-text answer (`N+1` and notes),
+  `isSecret`, a form with several fields or a field that is not an enum, and an
+  elicitation `mode` other than `form`. Koloft refuses those from Discord.
+

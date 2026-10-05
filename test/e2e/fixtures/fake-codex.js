@@ -187,6 +187,34 @@ if (argv[0] === 'app-server') {
           cwd: thread.cwd
         }
       })
+    } else if (text.includes('ask me')) {
+      pendingApproval = { id: 'question-' + turn.id, thread, turn }
+      status(thread, { type: 'active', activeFlags: ['waitingOnUserInput'] })
+      // CODEX§20
+      emit({
+        id: pendingApproval.id,
+        method: 'item/tool/requestUserInput',
+        params: {
+          threadId: thread.id,
+          turnId: turn.id,
+          itemId: 'call-1',
+          questions: [
+            {
+              id: 'colour',
+              header: 'Colour',
+              question: 'Which colour do you prefer?',
+              isOther: true,
+              isSecret: false,
+              options: [
+                { label: 'Red', description: 'Choose red.' },
+                { label: 'Green', description: 'Choose green.' }
+              ]
+            }
+          ],
+          isBlocking: true,
+          autoResolutionMs: null
+        }
+      })
     } else if (!text.includes('hold')) setTimeout(() => complete(thread, turn), 120)
   }
   const lines = readline.createInterface({ input: process.stdin })
@@ -383,6 +411,7 @@ async function startTui() {
   let turnId
   let working = false
   let approval
+  let question
   let typed = ''
   const pending = new Map()
   const send = (method, params = {}) =>
@@ -439,6 +468,10 @@ async function startTui() {
     if (frame.method === 'item/commandExecution/requestApproval') {
       approval = frame.id
       process.stdout.write('\r\nApprove command? [y/n] ')
+    } else if (frame.method === 'item/tool/requestUserInput') {
+      const [q] = frame.params.questions
+      question = { id: frame.id, key: q.id, labels: q.options.map((o) => o.label) }
+      process.stdout.write('\r\n' + q.question + ' ' + question.labels.join(' / ') + ' ')
     } else if (frame.method === 'turn/started') {
       working = true
       turnId = frame.params.turn.id
@@ -478,6 +511,14 @@ async function startTui() {
             const decision = ch === '\u001b' ? 'decline' : 'accept'
             ws.send(JSON.stringify({ id: approval, result: { decision } }))
             approval = undefined
+            continue
+          }
+          // CODEX§20
+          const picked = question?.labels[Number(ch) - 1]
+          if (picked) {
+            const answers = { [question.key]: { answers: [picked] } }
+            ws.send(JSON.stringify({ id: question.id, result: { answers } }))
+            question = undefined
             continue
           }
           if (ch === '\u0003') {

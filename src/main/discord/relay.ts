@@ -24,18 +24,21 @@ import {
   claudeKeysFor,
   codexApprovalText,
   codexKeyFor,
+  codexOptionKey,
   dialogText,
   hookAnswer,
   isAskedCall,
-  type CodexApproval
+  type CodexApproval,
+  type CodexQuestion
 } from './dialog'
 
 export const OFFLINE_REPLY = 'Koloft was offline, this message was not delivered.'
 export const CODEX_NEEDS_YES_OR_NO = 'Reply yes or no.'
 export const SHOWS_NO_DIALOG = 'it shows no question or approval right now.'
 export const CODEX_INPUT_NOT_PROBED =
-  'Codex is asking for an answer that is not a yes-or-no approval. Koloft does not know yet how to answer that kind (not probed), so answer it at the Mac.'
+  'Codex is asking something Koloft cannot answer from here: it answers a yes-or-no approval, or one question that picks one option from a list. Answer this one at the Mac.'
 const CODEX_TAKES_YES_OR_NO = 'a Codex approval takes yes or no.'
+const CODEX_TAKES_AN_OPTION = 'this Codex question takes the number or the name of one option.'
 const ASK_SUFFIX = '.ask.json'
 const ANSWER_SUFFIX = '.answer.json'
 const QUEUED = '⏳'
@@ -68,6 +71,7 @@ export interface RelayDeps {
   write(tabId: string, data: string): void
   queue(tabId: string, text: string, clientId: string): Promise<void>
   codexApproval(tabId: string): CodexApproval | undefined
+  codexQuestion(tabId: string): CodexQuestion | undefined
   regDir: string
   attachmentsDir: string
 }
@@ -289,10 +293,16 @@ export class DiscordRelay {
 
   async answerSession(tab: string, reply: string): Promise<string | undefined> {
     if (this.d.backendOf(tab) === 'codex') {
-      if (!this.d.codexApproval(tab))
-        return this.d.awaitsInput(tab) ? CODEX_INPUT_NOT_PROBED : SHOWS_NO_DIALOG
-      const key = codexKeyFor(reply)
-      if (!key) return CODEX_TAKES_YES_OR_NO
+      if (this.d.codexApproval(tab)) {
+        const key = codexKeyFor(reply)
+        if (!key) return CODEX_TAKES_YES_OR_NO
+        this.d.write(tab, key)
+        return undefined
+      }
+      const question = this.d.codexQuestion(tab)
+      if (!question) return this.d.awaitsInput(tab) ? CODEX_INPUT_NOT_PROBED : SHOWS_NO_DIALOG
+      const key = codexOptionKey(question, reply)
+      if (!key) return CODEX_TAKES_AN_OPTION
       this.d.write(tab, key)
       return undefined
     }

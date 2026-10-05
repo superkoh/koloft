@@ -7,7 +7,7 @@ interface Option {
   description?: string
 }
 
-interface Question {
+export interface Question {
   question: string
   options: Option[]
 }
@@ -16,6 +16,10 @@ export interface CodexApproval {
   id: string | number
   command?: string
   reason?: string
+}
+
+export interface CodexQuestion extends Question {
+  id: string | number
 }
 
 const YES = /^(y|yes|ok|okay|approve|1)[.!]?$/i
@@ -28,22 +32,11 @@ function questionsOf(p: AskPayload): Question[] {
   return raw.flatMap((q) => {
     const r = q as { question?: unknown; options?: unknown }
     if (typeof r.question !== 'string') return []
-    const options = (Array.isArray(r.options) ? r.options : []).flatMap((o) => {
-      const x = o as { label?: unknown; description?: unknown }
-      return typeof x.label === 'string'
-        ? [
-            {
-              label: x.label,
-              ...(typeof x.description === 'string' ? { description: x.description } : {})
-            }
-          ]
-        : []
-    })
-    return [{ question: r.question, options }]
+    return [{ question: r.question, options: labelsOf(r.options) }]
   })
 }
 
-function questionText(q: Question): string {
+export function questionText(q: Question): string {
   const options = q.options.map(
     (o, i) => `${i + 1}. ${o.label}${o.description ? ` — ${o.description}` : ''}`
   )
@@ -161,4 +154,47 @@ export function codexKeyFor(reply: string): string | undefined {
   if (YES.test(text)) return 'y'
   if (NO.test(text)) return ESC
   return undefined
+}
+
+function labelsOf(raw: unknown): Option[] {
+  return (Array.isArray(raw) ? raw : []).flatMap((o) => {
+    const x = (o ?? {}) as { label?: unknown; description?: unknown }
+    if (typeof o === 'string') return [{ label: o }]
+    return typeof x.label === 'string'
+      ? [
+          {
+            label: x.label,
+            ...(typeof x.description === 'string' ? { description: x.description } : {})
+          }
+        ]
+      : []
+  })
+}
+
+// CODEX§20
+export function codexQuestionOf(method: string, p: Record<string, unknown>): Question | undefined {
+  if (method === 'item/tool/requestUserInput') {
+    const qs = Array.isArray(p.questions) ? p.questions : []
+    const q = (qs[0] ?? {}) as { question?: unknown; options?: unknown }
+    const options = labelsOf(q.options)
+    return qs.length === 1 && typeof q.question === 'string' && options.length
+      ? { question: q.question, options }
+      : undefined
+  }
+  if (method !== 'mcpServer/elicitation/request' || p.mode !== 'form') return undefined
+  const schema = (p.requestedSchema ?? {}) as { properties?: Record<string, { enum?: unknown }> }
+  const fields = Object.values(schema.properties ?? {})
+  const options = labelsOf(fields[0]?.enum)
+  return fields.length === 1 && typeof p.message === 'string' && options.length
+    ? { question: p.message, options }
+    : undefined
+}
+
+// CODEX§20
+export function codexOptionKey(q: Question, reply: string): string | undefined {
+  const text = reply.trim()
+  const pick = /^\d+$/.test(text)
+    ? Number(text)
+    : q.options.findIndex((o) => o.label.toLowerCase() === text.toLowerCase()) + 1
+  return pick >= 1 && pick <= q.options.length ? String(pick) : undefined
 }

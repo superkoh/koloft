@@ -151,6 +151,87 @@ describe('CodexObservation', () => {
     expect(f.raised).not.toContain('approval')
   })
 
+  // CODEX§20
+  it('holds an open question only in the two shapes that were probed, one question or one enum field with options, until the TUI answers it', () => {
+    const f = fixture()
+    f.bind()
+    f.server('turn/started', { turn: { id: 'turn' } })
+    const colours = [
+      { label: 'Red', description: 'Choose red.' },
+      { label: 'Green', description: 'Choose green.' }
+    ]
+    const asked = { question: 'Which colour do you prefer?', options: colours }
+    f.server(
+      'item/tool/requestUserInput',
+      {
+        questions: [
+          {
+            id: 'colour',
+            header: 'Colour',
+            question: asked.question,
+            isOther: true,
+            options: colours
+          }
+        ]
+      },
+      0
+    )
+    expect(f.observer.openQuestion()).toEqual({ id: 0, ...asked })
+    f.observer.receive('client', { id: 0, result: { answers: { colour: { answers: ['Green'] } } } })
+    expect(f.observer.openQuestion()).toBeUndefined()
+
+    const enumField = {
+      type: 'object',
+      properties: { colour: { type: 'string', enum: ['Red', 'Green'] } }
+    }
+    f.server(
+      'mcpServer/elicitation/request',
+      { mode: 'form', message: 'Which?', requestedSchema: enumField },
+      1
+    )
+    expect(f.observer.openQuestion()).toEqual({
+      id: 1,
+      question: 'Which?',
+      options: [{ label: 'Red' }, { label: 'Green' }]
+    })
+    f.observer.receive('client', {
+      id: 1,
+      result: { action: 'accept', content: { colour: 'Red' } }
+    })
+
+    f.server(
+      'item/tool/requestUserInput',
+      {
+        questions: [
+          { id: 'a', question: 'A?', options: colours },
+          { id: 'b', question: 'B?', options: colours }
+        ]
+      },
+      2
+    )
+    f.server(
+      'item/tool/requestUserInput',
+      { questions: [{ id: 'free', question: 'Name?', options: null }] },
+      3
+    )
+    const twoFields = {
+      type: 'object',
+      properties: { a: { type: 'string', enum: ['x'] }, b: { type: 'string' } }
+    }
+    f.server(
+      'mcpServer/elicitation/request',
+      { mode: 'form', message: 'Two?', requestedSchema: twoFields },
+      4
+    )
+    f.server(
+      'mcpServer/elicitation/request',
+      { mode: 'url', message: 'Open?', url: 'https://x' },
+      5
+    )
+    expect(f.observer.openQuestion()).toBeUndefined()
+    expect(f.status()).toBe('waiting')
+  })
+
   it('notifies once per live turn that ends, interrupted or completed, and never for a replayed completion', () => {
     const f = fixture()
     f.bind()

@@ -4,6 +4,7 @@ import os from 'os'
 import path from 'path'
 import type { ConductorBinding, SessionStatus } from '../../src/shared/types'
 import type { DiscordMessage } from '../../src/main/discord/link'
+import type { CodexQuestion } from '../../src/main/discord/dialog'
 import {
   CODEX_INPUT_NOT_PROBED,
   DiscordRelay,
@@ -83,6 +84,7 @@ function setup(
     write: (_t, data) => writes.push({ data, at: Date.now() }),
     queue: async () => undefined,
     codexApproval: () => undefined,
+    codexQuestion: () => undefined,
     regDir: dir,
     attachmentsDir: path.join(dir, 'attachments'),
     ...more
@@ -325,23 +327,34 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
     expect(await relay.answerSession(MANAGED, 'yes')).toBe(SHOWS_NO_DIALOG)
   })
 
-  // CODEX§3
-  it('a Codex approval is pressed y or Esc only while it is open; a question that is not an approval is refused as not probed', async () => {
+  // CODEX§3 CODEX§20
+  it('a Codex approval is pressed y or Esc only while it is open; a one-question list is pressed the digit of the option named by number or label; any other question is refused as not probed', async () => {
     let approval: { id: number } | undefined
+    let question: CodexQuestion | undefined
     let input = false
     const { relay, writes } = setup({}, [], {
       backendOf: () => 'codex',
       codexApproval: () => approval,
+      codexQuestion: () => question,
       awaitsInput: () => input
     })
     expect(await relay.answerSession(MANAGED, 'yes')).toBe(SHOWS_NO_DIALOG)
     input = true
     expect(await relay.answerSession(MANAGED, 'yes')).toBe(CODEX_INPUT_NOT_PROBED)
+    question = {
+      id: 0,
+      question: 'Which colour?',
+      options: [{ label: 'Red' }, { label: 'Green' }]
+    }
+    expect(await relay.answerSession(MANAGED, '3')).toContain('one option')
+    expect(await relay.answerSession(MANAGED, 'blue')).toContain('one option')
+    expect(await relay.answerSession(MANAGED, '2')).toBeUndefined()
+    expect(await relay.answerSession(MANAGED, ' green ')).toBeUndefined()
     approval = { id: 7 }
     expect(await relay.answerSession(MANAGED, '2')).toContain('yes or no')
     expect(await relay.answerSession(MANAGED, 'yes')).toBeUndefined()
     expect(await relay.answerSession(MANAGED, 'no')).toBeUndefined()
-    expect(writes.map((w) => w.data)).toEqual(['y', '\x1b'])
+    expect(writes.map((w) => w.data)).toEqual(['2', '2', 'y', '\x1b'])
   })
 })
 

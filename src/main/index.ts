@@ -254,7 +254,12 @@ import { discordApiUrl, DiscordLink } from './discord/link'
 import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay } from './discord/relay'
 import { Notices } from './discord/notices'
-import { approvalDetail, type CodexApproval } from './discord/dialog'
+import {
+  approvalDetail,
+  questionText,
+  type CodexApproval,
+  type CodexQuestion
+} from './discord/dialog'
 import { sleep } from './codexTransport'
 import { discordVerb } from './agentDiscord'
 import { claudePeerNames, runningClaudePid, whenMessagingSocket } from './claudeSessionRegistry'
@@ -554,12 +559,15 @@ const CODEX_REQUEST_POLL_MS = 250
 const ATTACHMENTS_KEPT_MS = 7 * 24 * 60 * 60 * 1000
 const ATTACHMENTS_PRUNED_EVERY_MS = 24 * 60 * 60 * 1000
 
-// CODEX§3
-async function codexApprovalOf(tabId: string): Promise<CodexApproval | undefined> {
+// CODEX§3 CODEX§20
+async function codexAskOf<T>(
+  tabId: string,
+  open: (codex: CodexSessions) => T | undefined
+): Promise<T | undefined> {
   for (let polls = CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS; ; polls--) {
-    const approval = codexSessions?.openApproval(tabId)
-    if (approval || !polls || !codexSessions?.hasTab(tabId)) return approval
-    if (tracker.statusOf(tabId) !== 'approval') return undefined
+    const ask = codexSessions ? open(codexSessions) : undefined
+    if (ask || !polls || !codexSessions?.hasTab(tabId)) return ask
+    if (tracker.statusOf(tabId) !== 'approval' && !tracker.awaitsInput(tabId)) return undefined
     await sleep(CODEX_REQUEST_POLL_MS)
   }
 }
@@ -1442,7 +1450,9 @@ app.whenReady().then(() => {
     ptyMgr.wakeReady(t.tabId)
     const conductor = !!conductors?.conductorOf(t.tabId)
     if (conductor && t.next === 'approval')
-      void codexApprovalOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
+      void codexAskOf(t.tabId, (codex) => codex.openApproval(t.tabId)).then(
+        (a) => a && discordRelay?.codexAsked(t.tabId, a)
+      )
     discordNotices?.onStatus(t.tabId, t.prev, t.next)
     if (!(conductor && t.next === 'waiting'))
       attention.onStatusChange(t.tabId, t.prev, t.next, attentionCtx(), attentionSubjectOf(t.tabId))
@@ -1641,6 +1651,7 @@ app.whenReady().then(() => {
       await codexSessions.queueMessage(tabId, text, clientId)
     },
     codexApproval: (tabId) => codexSessions?.openApproval(tabId),
+    codexQuestion: (tabId) => codexSessions?.openQuestion(tabId),
     regDir: hookPaths.regDir,
     attachmentsDir
   })
@@ -1668,8 +1679,12 @@ app.whenReady().then(() => {
     },
     awaitsInput: (tabId) => tracker.awaitsInput(tabId),
     detail: async (tabId) => {
-      const approval = await codexApprovalOf(tabId)
-      return approval ? approvalDetail(approval) : discordRelay?.dialogDetail(tabId)
+      const ask = await codexAskOf<CodexApproval | CodexQuestion>(
+        tabId,
+        (codex) => codex.openApproval(tabId) ?? codex.openQuestion(tabId)
+      )
+      if (!ask) return discordRelay?.dialogDetail(tabId)
+      return 'options' in ask ? questionText(ask) : approvalDetail(ask)
     }
   })
   tracker.dialogsWatched = (tabId) =>

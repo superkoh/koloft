@@ -7,7 +7,12 @@ import { costUsdOf, resolvePricing } from '@shared/pricing'
 import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
 import { CODEX_OPEN_SENT } from './openShimScript'
 import { TurnLog, type SaidLine } from '@shared/turns'
-import type { CodexApproval } from './discord/dialog'
+import {
+  codexQuestionOf,
+  type CodexApproval,
+  type CodexQuestion,
+  type Question
+} from './discord/dialog'
 
 export function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -130,7 +135,10 @@ export class CodexObservation {
   >()
   private approvals = new Map<string | number, string>()
   private approvalThreads = new Map<string | number, string>()
-  private approvalAsks = new Map<string | number, { command?: string; reason?: string }>()
+  private approvalAsks = new Map<
+    string | number,
+    { command?: string; reason?: string; question?: Question }
+  >()
   private generation = 0
   private threadId?: string
   private liveTurns = new Set<string>()
@@ -155,6 +163,15 @@ export class CodexObservation {
   openApproval(): CodexApproval | undefined {
     for (const [id, method] of this.approvals)
       if (method.endsWith('/requestApproval')) return { id, ...this.approvalAsks.get(id) }
+    return undefined
+  }
+
+  // CODEX§20
+  openQuestion(): CodexQuestion | undefined {
+    for (const id of this.approvals.keys()) {
+      const question = this.approvalAsks.get(id)?.question
+      if (question) return { id, ...question }
+    }
     return undefined
   }
 
@@ -262,9 +279,11 @@ export class CodexObservation {
     ) {
       this.approvals.set(id, method)
       this.approvalThreads.set(id, p.threadId as string)
+      const question = codexQuestionOf(method, p)
       this.approvalAsks.set(id, {
         ...(typeof p.command === 'string' ? { command: p.command } : {}),
-        ...(typeof p.reason === 'string' ? { reason: p.reason } : {})
+        ...(typeof p.reason === 'string' ? { reason: p.reason } : {}),
+        ...(question ? { question } : {})
       })
       this.mainTurn = method.endsWith('/requestApproval') ? 'approval' : 'input'
       this.publishActivity()

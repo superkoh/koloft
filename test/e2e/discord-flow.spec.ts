@@ -8,6 +8,7 @@ import {
   readCalls,
   settingsOnDisk,
   startSessionIn,
+  terminalText,
   waitBooted,
   waitForCalls,
   wsRows
@@ -85,31 +86,6 @@ function codexWire(env: E2EEnv): { direction: string; frame: Record<string, unkn
 async function tabOf(page: Page, sessionId: string): Promise<string> {
   const all = await page.evaluate(() => window.api.sessions.list())
   return all.find((s) => s.sessionId === sessionId)!.tabId
-}
-
-function terminalText(page: Page, tabId: string): Promise<string> {
-  return page.evaluate((id) => {
-    const term = (
-      window as unknown as {
-        __koloftTerms?: Record<
-          string,
-          {
-            buffer: {
-              active: {
-                length: number
-                getLine(i: number): { translateToString(trim?: boolean): string } | undefined
-              }
-            }
-          }
-        >
-      }
-    ).__koloftTerms?.[id]
-    if (!term) return ''
-    const b = term.buffer.active
-    const out: string[] = []
-    for (let i = 0; i < b.length; i++) out.push(b.getLine(i)?.translateToString(true) ?? '')
-    return out.join('\n')
-  }, tabId)
 }
 
 async function connected(
@@ -502,7 +478,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     }
   })
 
-  test('a managed Codex session’s approval reaches the channel with its command and the conductor’s answer presses its key', async ({
+  test('a managed Codex session’s approval reaches the channel with its command, and its one-question list with its options; the conductor’s answer presses the key of each', async ({
     env
   }) => {
     installCodex(env)
@@ -539,6 +515,32 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
         .toEqual([
           expect.objectContaining({
             frame: expect.objectContaining({ result: { decision: 'accept' } })
+          })
+        ])
+
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/)
+      await page.evaluate((id) => window.api.terminal.write(id, 'please ask me\r'), codexTab)
+      await expect
+        .poll(() => said(fake).join('\n'))
+        .toMatch(
+          /(^|\n)❓ .+ is waiting for you: Which colour do you prefer\?\n1\. Red — Choose red\.\n2\. Green — Choose green\.(\n|$)/
+        )
+      fake.say(OWNER, `/koloft session answer ${codexId} Green`)
+      await expect
+        .poll(
+          () =>
+            codexWire(env).filter(
+              (w) =>
+                w.direction === 'client' &&
+                (w.frame.result as { answers?: unknown } | undefined)?.answers
+            ),
+          { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }
+        )
+        .toEqual([
+          expect.objectContaining({
+            frame: expect.objectContaining({
+              result: { answers: { colour: { answers: ['Green'] } } }
+            })
           })
         ])
     } finally {
