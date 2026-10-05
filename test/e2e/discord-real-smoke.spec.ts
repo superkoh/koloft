@@ -343,6 +343,10 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
         })
         .toMatch(/green/i)
       expect(commandsRun(env, conductor.sessionId).join('\n')).toContain('koloft session answer')
+      const name = notices(fake)
+        .map((l) => /^▶ Started (.+) \(ws-a, Claude\)$/.exec(l)?.[1])
+        .find(Boolean)
+      expect(toolResults(env, conductor.sessionId)).toContain(`Answered ${name}.`)
       await expect
         .poll(() => saidBy(env, target.sessionId, 'assistant').filter(Boolean).at(-1), {
           timeout: A_REAL_MODEL_TURN_MS

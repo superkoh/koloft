@@ -442,8 +442,13 @@ async function findInScope(
   const scope = d.conductorScope(callerTabId)
   const all = placedRows(d.sidebar(), d.allSessions())
   const mine = all.filter((p) => inScope(scope, p.workspace))
-  const hit = matchRow(mine, ref, await peerNamesOf(d, mine))
-  if (hit) return hit.ok ? hit : fail(`koloft session ${verb}: ${hit.error}`)
+  const names = await peerNamesOf(d, mine)
+  const hit = matchRow(mine, ref, names)
+  if (hit && !hit.ok) return fail(`koloft session ${verb}: ${hit.error}`)
+  if (hit) {
+    const name = names[mine.indexOf(hit.value)]
+    return { ok: true, value: name ? { ...hit.value, title: name } : hit.value }
+  }
   return fail(
     matchRow(all, ref)
       ? `koloft session ${verb}: ${NOT_IN_YOUR_WORKSPACE}`
