@@ -36,6 +36,13 @@ function gatewayAddress(url: string): string {
   return u.toString()
 }
 
+function heartbeatMs(given: unknown): number {
+  const n = Number(given)
+  if (n < MIN_HEARTBEAT_MS) return MIN_HEARTBEAT_MS
+  if (n <= MAX_HEARTBEAT_MS) return n
+  return MAX_HEARTBEAT_MS
+}
+
 // ADR-0027 PLATFORM§39
 export class DiscordGateway {
   private ws: WebSocket | null = null
@@ -92,10 +99,7 @@ export class DiscordGateway {
     if (ws !== this.ws) return
     if (p.s !== null && p.s !== undefined) this.seq = p.s
     if (p.op === 10) {
-      const given = Number((p.d as { heartbeat_interval: unknown }).heartbeat_interval)
-      const interval = Number.isFinite(given)
-        ? Math.max(MIN_HEARTBEAT_MS, Math.min(given, MAX_HEARTBEAT_MS))
-        : MAX_HEARTBEAT_MS
+      const interval = heartbeatMs((p.d as { heartbeat_interval: unknown }).heartbeat_interval)
       this.acked = true
       this.firstBeat = setTimeout(() => {
         this.beat(ws)
