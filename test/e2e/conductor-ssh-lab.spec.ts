@@ -334,10 +334,16 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
 
         fake.interact(OWNER, 'compact', { session: remote.sessionId })
         await expect
-          .poll(() => said(fake).filter((p) => p.startsWith('⌨️ ')), {
-            timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
-          })
-          .toEqual([expect.stringMatching(/ran \/compact:\nCompacted/)])
+          .poll(
+            () =>
+              said(fake)
+                .filter((p) => p.startsWith('⌨️ '))
+                .at(-1),
+            {
+              timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
+            }
+          )
+          .toMatch(/ran \/compact:\nCompacted \(ctrl\+o to see full summary\)$/)
       }
     )
   })

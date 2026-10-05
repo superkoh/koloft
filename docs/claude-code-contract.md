@@ -272,7 +272,9 @@ Unless a bullet below says more, it is inferred, not checked.
   - Its output is the text inside `<local-command-stdout>…</local-command-stdout>`, in
     a `system`/`local_command` record (`/context`, `/model`, a closed picker) or in a
     `user` record's string content (`/compact`, `/model haiku`, `/mcp`); it keeps
-    the screen's colour codes. A `<command-name>` record names the command, and a
+    the screen's colour codes. After `/compact` it also holds one line per hook that
+    ran, `PreCompact [<the hook's command>] completed successfully` (seen with Koloft's
+    own hook on the Linux build over SSH, CC 2.1.289). A `<command-name>` record names the command, and a
     `user` `isMeta` record holds `<local-command-caveat>`.
   - `/context` also adds a `user` `isMeta` record whose content is the same report as
     clean markdown ("## Context Usage …").

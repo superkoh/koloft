@@ -9,9 +9,17 @@ const ESC = String.fromCharCode(27)
 const TERMINAL_CODES = new RegExp(`${ESC}\\[[0-9;?]*[A-Za-z]`, 'g')
 const PRINTED = /<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/
 
+// CC§2
+const A_HOOK_RAN = /^[A-Za-z]+ \[.*\] completed successfully$/
+
 function printed(content: unknown): CommandOutput | null {
   if (typeof content !== 'string') return null
-  const text = PRINTED.exec(content)?.[1]?.replace(TERMINAL_CODES, '').trim()
+  const text = PRINTED.exec(content)?.[1]
+    ?.replace(TERMINAL_CODES, '')
+    .split('\n')
+    .filter((line) => !A_HOOK_RAN.test(line.trim()))
+    .join('\n')
+    .trim()
   return text ? { kind: 'printed', text } : null
 }
 

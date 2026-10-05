@@ -26,6 +26,18 @@ describe('what a Claude slash command left in the transcript', () => {
     ).toEqual({ kind: 'printed', text: 'Set model to Haiku 4.5' })
   })
 
+  it('without the line Claude adds for each hook that ran, Koloft’s own PreCompact hook among them', () => {
+    expect(
+      commandOutputOf({
+        type: 'user',
+        message: {
+          content:
+            '<local-command-stdout>Compacted (ctrl+o to see full summary)\nPreCompact ["$HOME/.koloft/hook.sh" "$HOME/.koloft/hook-sessions" "pty-1" compacting] completed successfully</local-command-stdout>'
+        }
+      })
+    ).toEqual({ kind: 'printed', text: 'Compacted (ctrl+o to see full summary)' })
+  })
+
   it('an unknown command’s warning', () => {
     expect(
       commandOutputOf({
