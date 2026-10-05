@@ -123,4 +123,27 @@ describe('Discord notices: which session state change reaches which channel', ()
       ['10', '🔔 helper-1a2b3c finished.\n🔔 beta finished.\n⏹ helper-1a2b3c closed.']
     ])
   })
+
+  it('a session that already left the list when its terminal exits is still announced as closed, once, in its conductor’s channel', async () => {
+    vi.useFakeTimers()
+    const post = vi.fn()
+    const listed = new Set(['a'])
+    const notices = new Notices({
+      bindings: () => [binding('global', '20'), binding(WS, '10')],
+      post,
+      subject: (tabId) =>
+        listed.has(tabId) ? { key: tabId, name: 'alpha', workspace: WS } : undefined,
+      peerName: async () => null,
+      awaitsInput: () => false,
+      detail: async () => undefined
+    })
+    notices.onStatus('a', undefined, 'idle')
+    listed.delete('a')
+    notices.closed('a')
+    notices.closed('a')
+    notices.forget('a')
+    notices.closed('a')
+    await vi.advanceTimersByTimeAsync(NOTICE_COALESCE_MS)
+    expect(post.mock.calls).toEqual([['10', '⏹ alpha closed.']])
+  })
 })

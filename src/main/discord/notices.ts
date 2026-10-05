@@ -58,10 +58,12 @@ export class Notices {
   private closeNoticed = new Set<string>()
   private waitingNoticed = new Map<string, string>()
   private names = new Map<string, string>()
+  private lastSubjects = new Map<string, NoticeSubject>()
 
   constructor(private d: NoticeDeps) {}
 
   onStatus(tabId: string, prev: SessionStatus | undefined, next: SessionStatus): void {
+    this.subjectOf(tabId)
     if (next === 'working') this.waitingNoticed.delete(tabId)
     const kind = noticeKindOf(prev, next, this.d.awaitsInput(tabId))
     if (kind) void this.notice(tabId, kind)
@@ -79,6 +81,7 @@ export class Notices {
     this.closeNoticed.delete(tabId)
     this.waitingNoticed.delete(tabId)
     this.names.delete(tabId)
+    this.lastSubjects.delete(tabId)
   }
 
   started(channelId: string, name: string, workspace: string, backend: BackendId): void {
@@ -86,7 +89,7 @@ export class Notices {
   }
 
   private async notice(tabId: string, kind: NoticeKind): Promise<void> {
-    const subject = this.d.subject(tabId)
+    const subject = this.subjectOf(tabId)
     if (!subject || subject.conductor) return
     let detail: string | undefined
     if (kind === 'closed') {
@@ -101,6 +104,12 @@ export class Notices {
     if (!channelId) return
     const name = await this.nameOf(tabId, kind, subject.name)
     this.queue(channelId, noticeText(kind, name, detail))
+  }
+
+  private subjectOf(tabId: string): NoticeSubject | undefined {
+    const live = this.d.subject(tabId)
+    if (live) this.lastSubjects.set(tabId, live)
+    return live ?? this.lastSubjects.get(tabId)
   }
 
   private async nameOf(tabId: string, kind: NoticeKind, title: string): Promise<string> {
