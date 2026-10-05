@@ -85,7 +85,9 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     as typed, any other text is answered like `/answer` with the whole line), `/long <n>` (a
     reply of `line 1` … `line <n>`), `/ask <question>|<option>|…` and `/bash <command>`
     (fire PermissionRequest without blocking, and reply `Picked: <answer>` / `Ran: <command>`
-    on allow, `Denied: <message>` on deny), `/busy` (a turn held open ~30 s), `/need-approval`,
+    on allow, `Denied: <message>` on deny; a hook that answers nothing — every remote tab's —
+    leaves the dialog on screen: it fires a permission Notification and takes one key, a
+    digit picks that option and `1` runs the command), `/busy` (a turn held open ~30 s), `/need-approval`,
     `/scratch <name>`, `/move-to-background` (a start for a session that never writes a
     transcript, then `continued-in` to a new id whose Stop follows), `/open <target>`, `/open-later <target>` (fires once
     `<home>/go-open` exists), `/koloft <args>` (runs the agent command, then prints its

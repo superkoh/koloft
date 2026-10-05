@@ -576,7 +576,25 @@ process.on('exit', () => {
   fs.rmSync(peerSocket, { force: true })
 })
 
-const rl = readline.createInterface({ input: process.stdin })
+const NOTIFICATION_TRAILS_AN_UNANSWERED_DIALOG_MS = 6000
+const typedLines = new (require('stream').PassThrough)()
+let dialogKey = null
+process.stdin.on('data', (chunk) =>
+  dialogKey ? dialogKey(String(chunk)) : typedLines.write(chunk)
+)
+process.stdin.on('end', () => typedLines.end())
+// CC§14
+function keyOnTheDialog() {
+  return new Promise((resolve) => {
+    if (process.stdin.isTTY) process.stdin.setRawMode(true)
+    dialogKey = (key) => {
+      dialogKey = null
+      if (process.stdin.isTTY) process.stdin.setRawMode(false)
+      resolve(key)
+    }
+  })
+}
+const rl = readline.createInterface({ input: typedLines })
 rl.on('line', handleLine)
 function handleLine(line) {
   const text = line.trim()
@@ -1138,7 +1156,7 @@ function handleLine(line) {
     return
   }
   // CC§14
-  const ask = async (name, input, allowed) => {
+  const ask = async (name, input, allowed, keyed) => {
     const toolUseId = `toolu_ask_${Date.now()}`
     fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
     append([
@@ -1163,12 +1181,22 @@ function handleLine(line) {
     try {
       decision = JSON.parse(out).hookSpecificOutput.decision
     } catch {}
-    const picked =
-      decision.behavior === 'allow'
-        ? allowed(decision.updatedInput)
-        : decision.behavior === 'deny'
-          ? `Denied: ${decision.message}`
-          : 'Not answered: no hook answer'
+    let picked
+    if (decision.behavior === 'allow') picked = allowed(decision.updatedInput)
+    else if (decision.behavior === 'deny') picked = `Denied: ${decision.message}`
+    else {
+      const key = keyOnTheDialog()
+      process.stdout.write('[fake-claude] dialog on screen: press a key\r\n')
+      // CC§14
+      setTimeout(() => {
+        if (dialogKey)
+          fireHook('notify', {
+            hook_event_name: 'Notification',
+            message: `Claude needs your permission to use ${name}`
+          })
+      }, NOTIFICATION_TRAILS_AN_UNANSWERED_DIALOG_MS)
+      picked = keyed(await key)
+    }
     append([
       {
         type: 'user',
@@ -1201,15 +1229,23 @@ function handleLine(line) {
         }
       ]
     }
+    const pickedText = (answer) => `Picked: ${answer}`
     return ask(
       'AskUserQuestion',
       input,
-      (updated) => `Picked: ${Object.values(updated.answers).join(', ')}`
+      (updated) => pickedText(Object.values(updated.answers).join(', ')),
+      (key) => pickedText(labels[Number(key) - 1] ?? key)
     )
   }
   if (text.startsWith('/bash ')) {
     const command = text.slice('/bash '.length)
-    return ask('Bash', { command, description: 'A command' }, () => `Ran: ${command}`)
+    const ran = `Ran: ${command}`
+    return ask(
+      'Bash',
+      { command, description: 'A command' },
+      () => ran,
+      (key) => (key === '1' ? ran : `Denied: key ${JSON.stringify(key)}`)
+    )
   }
   if (text === '/need-approval') {
     fireHook('notify', {
