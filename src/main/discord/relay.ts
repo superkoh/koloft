@@ -25,9 +25,11 @@ import {
   codexApprovalText,
   codexKeyFor,
   codexOptionKey,
+  codexQuestionText,
   dialogText,
   hookAnswer,
   isAskedCall,
+  PICK_ONE_OPTION,
   type CodexApproval,
   type CodexQuestion
 } from './dialog'
@@ -89,7 +91,7 @@ export class DiscordRelay {
   private seenLive = new Set<string>()
   private asks = new Map<string, { payload: AskPayload; hook?: string; raw: string }>()
   private askHooks = new Map<string, Set<string>>()
-  private approvals = new Map<string, string | number>()
+  private codexAsks = new Map<string, string | number>()
 
   constructor(private d: RelayDeps) {}
 
@@ -325,11 +327,11 @@ export class DiscordRelay {
     return status === 'idle' || (status === 'waiting' && !this.d.awaitsInput(tab))
   }
 
-  codexAsked(tab: string, a: CodexApproval): void {
+  codexAsked(tab: string, a: CodexApproval | CodexQuestion): void {
     const b = this.d.conductors.bindingOfTab(tab)
-    if (!b || this.approvals.get(tab) === a.id) return
-    this.approvals.set(tab, a.id)
-    this.say(b.channel.channelId, codexApprovalText(a))
+    if (!b || this.codexAsks.get(tab) === a.id) return
+    this.codexAsks.set(tab, a.id)
+    this.say(b.channel.channelId, 'options' in a ? codexQuestionText(a) : codexApprovalText(a))
   }
 
   private answerDialog(tab: string, m: DiscordMessage): boolean {
@@ -339,25 +341,27 @@ export class DiscordRelay {
       return true
     }
     this.asks.delete(tab)
-    const asked = this.approvals.get(tab)
+    const asked = this.codexAsks.get(tab)
     if (asked === undefined) return false
-    if (this.d.codexApproval(tab)?.id !== asked) {
-      this.approvals.delete(tab)
+    const open = this.d.codexApproval(tab) ?? this.d.codexQuestion(tab)
+    if (!open || open.id !== asked) {
+      this.codexAsks.delete(tab)
       return false
     }
-    const key = codexKeyFor(m.content)
+    const question = 'options' in open
+    const key = question ? codexOptionKey(open, m.content) : codexKeyFor(m.content)
     if (!key) {
-      this.say(m.channelId, CODEX_NEEDS_YES_OR_NO, m.id)
+      this.say(m.channelId, question ? PICK_ONE_OPTION : CODEX_NEEDS_YES_OR_NO, m.id)
       return true
     }
-    this.approvals.delete(tab)
+    this.codexAsks.delete(tab)
     this.d.write(tab, key)
     return true
   }
 
   forget(tab: string): void {
     this.answer(tab, {})
-    this.approvals.delete(tab)
+    this.codexAsks.delete(tab)
     this.askHooks.delete(tab)
   }
 

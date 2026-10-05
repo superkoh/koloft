@@ -190,6 +190,13 @@ export function codexQuestionOf(method: string, p: Record<string, unknown>): Que
     : undefined
 }
 
+export const PICK_ONE_OPTION = 'Reply with the number or the name of one option.'
+
+// CODEX§20
+export function codexQuestionText(q: Question): string {
+  return `❓ ${questionText(q)}\n\n${PICK_ONE_OPTION}`
+}
+
 // CODEX§20
 export function codexOptionKey(q: Question, reply: string): string | undefined {
   const text = reply.trim()

@@ -394,7 +394,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     }
   })
 
-  test('a Codex conductor gets the owner message queued with a Discord message id, its reply comes back, and its own approval is answered by a yes from the channel', async ({
+  test('a Codex conductor gets the owner message queued with a Discord message id, its reply comes back, its own approval is answered by a yes from the channel, and its own question reaches the channel with its options and is answered by an option name', async ({
     env
   }) => {
     installCodex(env)
@@ -430,6 +430,23 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await expect
         .poll(() => said(fake))
         .toContain('Codex fixture answered: [Discord] please approve this')
+
+      fake.say(OWNER, 'please ask me')
+      await expect
+        .poll(() => said(fake))
+        .toContain(
+          '❓ Which colour do you prefer?\n1. Red — Choose red.\n2. Green — Choose green.\n\nReply with the number or the name of one option.'
+        )
+      fake.say(OWNER, 'Green')
+      await expect
+        .poll(() => said(fake))
+        .toContain('Codex fixture answered: [Discord] please ask me')
+      expect(
+        codexWire(env)
+          .filter((w) => w.direction === 'client')
+          .map((w) => w.frame.result as { answers?: unknown } | undefined)
+          .filter((r) => r?.answers)
+      ).toEqual([{ answers: { colour: { answers: ['Green'] } } }])
     } finally {
       await quitAndClose(app)
       await fake.close()

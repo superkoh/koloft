@@ -358,6 +358,46 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
   })
 })
 
+describe('DiscordRelay: a Codex conductor’s own question', () => {
+  // CODEX§20
+  it('is posted once with its options; the owner’s number or option name presses that digit while it is open, any other reply is asked again, and once it closes a message goes to the conductor as usual', async () => {
+    let question: CodexQuestion | undefined = {
+      id: 'q1',
+      question: 'Which colour do you prefer?',
+      options: [{ label: 'Red', description: 'Choose red.' }, { label: 'Green' }]
+    }
+    const queued: string[] = []
+    const { relay, posts, writes } = setup({ backend: 'codex' }, [], {
+      backendOf: () => 'codex',
+      codexQuestion: () => question,
+      queue: async (_t, text) => void queued.push(text)
+    })
+    relay.codexAsked(TAB, question!)
+    relay.codexAsked(TAB, question!)
+    await vi.waitFor(() =>
+      expect(posts.map((p) => p.text)).toEqual([
+        '❓ Which colour do you prefer?\n1. Red — Choose red.\n2. Green\n\nReply with the number or the name of one option.'
+      ])
+    )
+
+    relay.onMessage(message('501', OWNER, '3'))
+    await vi.waitFor(() =>
+      expect(posts.at(-1)).toEqual({
+        text: 'Reply with the number or the name of one option.',
+        replyTo: '501'
+      })
+    )
+    relay.onMessage(message('502', OWNER, 'green'))
+    expect(writes.map((w) => w.data)).toEqual(['2'])
+
+    relay.codexAsked(TAB, question!)
+    question = undefined
+    relay.onMessage(message('503', OWNER, '1'))
+    await vi.waitFor(() => expect(queued).toEqual(['[Discord] 1']))
+    expect(writes.map((w) => w.data)).toEqual(['2'])
+  })
+})
+
 describe('DiscordRelay: Koloft telling a conductor something', () => {
   it('goes the way an owner message does: typed, then Enter', async () => {
     const { relay, writes } = setup()
