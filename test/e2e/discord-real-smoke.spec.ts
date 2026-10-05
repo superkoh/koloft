@@ -173,6 +173,15 @@ function toolResults(env: E2EEnv, sessionId: string): string[] {
     .map((c) => textOf(c.content))
 }
 
+function commandsRun(env: E2EEnv, sessionId: string): string[] {
+  return transcriptRecords(env, sessionId)
+    .filter((r) => r.type === 'assistant' && Array.isArray(r.message?.content))
+    .flatMap((r) => r.message!.content as { type?: string; input?: { command?: unknown } }[])
+    .flatMap((c) =>
+      c.type === 'tool_use' && typeof c.input?.command === 'string' ? [c.input.command] : []
+    )
+}
+
 function saidBy(env: E2EEnv, sessionId: string, role: 'user' | 'assistant'): string[] {
   return transcriptRecords(env, sessionId)
     .filter((r) => r.type === role)
@@ -302,6 +311,44 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       await expect
         .poll(() => repliesAfter(fake, before).join('\n'), { timeout: A_REAL_MODEL_TURN_MS })
         .toContain('KIWI')
+    })
+  })
+
+  // CC§14
+  test('a real Claude conductor asked in plain words starts a Claude session whose first turn asks a question: the question reaches the channel with its options while the hook waits, the owner’s "pick green" to the conductor answers it with koloft session answer, and the session takes Green', async ({
+    env
+  }) => {
+    test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
+    test.setTimeout(5 * A_REAL_MODEL_TURN_MS + 120_000)
+    const fake = await realClaudeConductor(env)
+    await withConductor(env, fake, async (_app, page) => {
+      fake.say(
+        OWNER,
+        'Start one new Claude session in this workspace with this first message, word for word: "Right away, before anything else, use the AskUserQuestion tool once to ask me which colour I prefer, with exactly three options: Red, Green and Blue. Then reply with only the colour I picked." Then tell me you started it.'
+      )
+      await expect
+        .poll(() => notices(fake), { timeout: 2 * A_REAL_MODEL_TURN_MS })
+        .toContainEqual(expect.stringMatching(/^❓ .+ is waiting for you: /))
+      expect(said(fake).join('\n')).toMatch(/\n1\. Red\b.*\n2\. Green\b.*\n3\. Blue\b/)
+      const sessions = await page.evaluate(() => window.api.sessions.list())
+      const target = sessions.find((s) => s.alive && !s.conductor)!
+      const conductor = sessions.find((s) => s.alive && s.conductor)!
+      expect(saidBy(env, target.sessionId, 'user').filter(Boolean)).toHaveLength(1)
+      expect(hookQuestionFiles(env, target.tabId)).toEqual([expect.stringMatching(/\.ask\.json$/)])
+
+      fake.say(OWNER, 'pick green')
+      await expect
+        .poll(() => toolResults(env, target.sessionId).join('\n'), {
+          timeout: A_REAL_MODEL_TURN_MS
+        })
+        .toMatch(/green/i)
+      expect(commandsRun(env, conductor.sessionId).join('\n')).toContain('koloft session answer')
+      await expect
+        .poll(() => saidBy(env, target.sessionId, 'assistant').filter(Boolean).at(-1), {
+          timeout: A_REAL_MODEL_TURN_MS
+        })
+        .toMatch(/Green/i)
+      expect(hookQuestionFiles(env, target.tabId)).toEqual([])
     })
   })
 
@@ -442,6 +489,45 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     const fake = await startFakeDiscord(env)
     await withConductor(env, fake, async () => {
       await answersWholeInTheChannel(fake)
+    })
+  })
+
+  // CODEX§20
+  test('a real Codex conductor put in Plan mode at the Mac asks the owner a question of its own: it reaches the channel with its options, the owner’s "Green" picks that option, and the conductor goes on with Green', async ({
+    env
+  }) => {
+    test.skip(!HAVE_REAL_CODEX, NEEDS_REAL_CODEX)
+    test.setTimeout(3 * A_REAL_MODEL_TURN_MS + 120_000)
+    seedConductor(env, 'codex')
+    useRealCodex(env)
+    const fake = await startFakeDiscord(env)
+    await withConductor(env, fake, async (_app, page) => {
+      await answersWholeInTheChannel(fake)
+      const conductor = (await page.evaluate(() => window.api.sessions.list())).find(
+        (s) => s.alive && s.conductor
+      )!
+      await page.evaluate(([id, l]) => window.api.terminal.write(id, l), [conductor.tabId, '/plan'])
+      await page.waitForTimeout(CR_AFTER_TEXT_MS)
+      await page.evaluate((id) => window.api.terminal.write(id, '\r'), conductor.tabId)
+      await expect
+        .poll(() => terminalText(page, conductor.tabId), { timeout: 30_000 })
+        .toMatch(/Plan mode/i)
+
+      fake.say(
+        OWNER,
+        'Use your request_user_input tool once to ask me which colour I prefer, with exactly two options, Red and Green. After I answer, reply with only the colour I picked.'
+      )
+      await expect
+        .poll(() => said(fake).join('\n'), { timeout: A_REAL_MODEL_TURN_MS })
+        .toMatch(
+          /❓ .+\n1\. Red\b.*\n2\. Green\b.*\n\nReply with the number or the name of one option\./
+        )
+      const before = said(fake).length
+      const green = fake.say(OWNER, 'Green')
+      await expect
+        .poll(() => repliesAfter(fake, before).join('\n'), { timeout: A_REAL_MODEL_TURN_MS })
+        .toMatch(/Green/)
+      expect(fake.reactions).toContainEqual({ messageId: green, emoji: '✅', on: true })
     })
   })
 })
