@@ -1508,6 +1508,16 @@ describe('SessionTracker.launchedSessions — which account each running launch 
       { tabId: 'tabLS1', account: 'koh', status: undefined }
     ])
   })
+
+  it('a remote pick held under its launch key moves to its tab and counts once', () => {
+    const tracker = newTracker()
+    tracker.setPickedAccount('launch-sid1', 'koh')
+    tracker.track('tabLS3', '/w', { host: 'devbox', projectsRoot: '/mirror', tmuxName: 'k-sid1' })
+    tracker.movePick('launch-sid1', 'tabLS3')
+    expect(tracker.launchedSessions()).toEqual([
+      { tabId: 'tabLS3', account: 'koh', status: undefined }
+    ])
+  })
 })
 
 describe('SessionTracker.transcriptExists — the pre-kill disk truth ⇧⌘R asks before it kills anything', () => {

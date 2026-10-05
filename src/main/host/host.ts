@@ -46,7 +46,6 @@ export interface MachineTab {
   root: string
   hookMirror: string
   attachTo?: string
-  picked?: string
   pickKey?: string
 }
 

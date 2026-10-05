@@ -878,8 +878,11 @@ export class SessionTracker extends SessionRuntime {
     }
   }
 
-  forgetPick(key: string): void {
-    this.pendingPicked.delete(key)
+  movePick(from: string, to: string): void {
+    const account = this.pendingPicked.get(from)
+    if (!account) return
+    this.pendingPicked.delete(from)
+    this.setPickedAccount(to, account)
   }
 
   launchedSessions(): LaunchedSession[] {

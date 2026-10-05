@@ -45,7 +45,6 @@ import type { ClaudeLaunch, ClaudeLaunchPlan, Host, ShellLaunch } from './host'
 
 export interface MachineAccount {
   env: Record<string, string>
-  picked: string
   banner: string
 }
 
@@ -623,11 +622,11 @@ export class SshHost implements Host {
     const root = d.realPath(this.bare(spec.root))
     const cwd = spec.cwd ? this.bare(spec.cwd) : root
     const wsRoot = spec.fallbackCwd ? d.realPath(this.bare(spec.fallbackCwd)) : root
-    const pickKey = mode === 'start' && settings.multiAccount ? `launch-${sid}` : undefined
-    const account = pickKey ? await d.pickAccount(pickKey) : undefined
     const pkg = d.machinePackage()
     const machineDir = remoteMachineDir(pkg.name)
     await this.kills.get(tmuxName)
+    const pickKey = mode === 'start' && settings.multiAccount ? `launch-${sid}` : undefined
+    const account = pickKey ? await d.pickAccount(pickKey) : undefined
     return {
       ok: true,
       spawnCwd: os.homedir(),
@@ -666,7 +665,6 @@ export class SshHost implements Host {
         root,
         hookMirror: mirrorHookDir(d.userData, this.machine),
         attachTo: mode === 'attach' ? sid : undefined,
-        picked: account?.picked,
         pickKey
       }
     }

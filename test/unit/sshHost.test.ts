@@ -8,7 +8,7 @@ import { diffBase as localDiffBase } from '../../src/main/gitStatus'
 import { utilTerminalGuard } from '../../src/main/shim'
 import type { BytesResult } from '../../src/main/remote/ssh'
 import { AccountPicker, type LaunchedSession } from '../../src/main/accountPicker'
-import type { AccountMeta } from '../../src/shared/types'
+import { meta, NOW_MS, NOW_S, usage } from './helpers/accounts'
 
 const MACHINE = 'devbox'
 let home: string
@@ -280,16 +280,7 @@ describe('what a remote launch hands claude', () => {
 
 describe('accounts for remote launches started together', () => {
   it('two remote launches started at once land on two accounts, as two local ones do', async () => {
-    const now = Date.now()
-    const nowSec = Math.floor(now / 1000)
-    const accounts: AccountMeta[] = ['a', 'b'].map((name) => ({
-      name,
-      kind: 'oauth',
-      enabled: true,
-      fable: 'unknown',
-      status: 'ok',
-      addedAt: 1
-    }))
+    const accounts = ['a', 'b'].map((name) => meta({ name }))
     const sessions: LaunchedSession[] = []
     const picker = new AccountPicker({
       listAccounts: () => accounts,
@@ -300,24 +291,16 @@ describe('accounts for remote launches started together', () => {
       onProbeOutcome: () => {},
       launchedSessions: () => sessions,
       recordPick: (tabId, account) => sessions.push({ tabId, account }),
-      now: () => now
+      now: () => NOW_MS
     })
     accounts.forEach((a, i) =>
-      picker.cacheUsage('oauth', a.name, {
-        u5: 0.3,
-        u7: 0.4,
-        uoi: 0,
-        s5: 'allowed',
-        s7: 'allowed',
-        soi: '?',
-        r5: nowSec + 36_000,
-        r7: nowSec + (i + 1) * 86_400,
-        roi: 0,
-        overage: '?',
-        hasOi: false,
-        at: now
-      })
+      picker.cacheUsage(
+        'oauth',
+        a.name,
+        usage({ u5: 0.3, u7: 0.4, r5: NOW_S + 36_000, r7: NOW_S + (i + 1) * 86_400 })
+      )
     )
+    const handed: string[] = []
     const host = new SshHost(MACHINE, {
       run: runOnMachine,
       shell: () => ({ spawnCwd: '/' }),
@@ -331,16 +314,15 @@ describe('accounts for remote launches started together', () => {
         settings: () => ({ multiAccount: true, skipPermissions: false }),
         pickAccount: async (launchKey) => {
           const res = await picker.pick(launchKey)
-          return res.account ? { env: {}, picked: res.account, banner: '' } : undefined
+          if (!res.account) return undefined
+          handed.push(res.account)
+          return { env: {}, banner: '' }
         },
         hookSettings: () => ({})
       }
     })
-    const plans = await Promise.all([
-      host.launch({ root: keyed('/w') }),
-      host.launch({ root: keyed('/w') })
-    ])
-    expect(plans.map((p) => (p.ok ? p.machine?.picked : undefined)).sort()).toEqual(['a', 'b'])
+    await Promise.all([host.launch({ root: keyed('/w') }), host.launch({ root: keyed('/w') })])
+    expect(handed.sort()).toEqual(['a', 'b'])
   })
 })
 
