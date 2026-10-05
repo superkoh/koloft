@@ -1100,6 +1100,28 @@ Gateway (the live connection that pushes events):
   client to reconnect and resume; op 9 (invalid session) with `d: false` means start
   over with identify; 4007 and 4009 also mean the session cannot be resumed; a bot API
   call must send a `User-Agent: DiscordBot (<url>, <version>)` header.
+- **Slash commands (application commands)** — measured 2026-10-05 on the same private
+  server with the same bot, which was added with the `bot` scope only, and the owner's
+  Discord iOS app:
+  - `POST /applications/{app}/guilds/{guild}/commands` with `{name, description, type:
+    1, options}` answered 201; the command showed in the app's `/` list at once, so the
+    bot needed no new invite. `GET` on the same route lists them; `DELETE …/{id}` answered
+    204.
+  - Using it sent `INTERACTION_CREATE` on the existing Gateway connection, with the same
+    intents, and no Interactions Endpoint URL set: `type` 2 for the command, 4 for each
+    autocomplete keystroke, `channel_id`, `member.user.id` (the sender, in a server),
+    and `data.options` `[{name, value, type: 3, focused?}]`.
+  - `POST /interactions/{id}/{token}/callback` answered 204 for `{type: 8, data:
+    {choices}}` (the choices showed on the phone, within about 0.2 s) and for `{type: 5}`;
+    `PATCH /webhooks/{app}/{token}/messages/@original` and a follow-up `POST
+    /webhooks/{app}/{token}` with `flags: 64` (only the sender sees it) answered 200.
+  - Text typed in the box that starts with `/` but is not picked from the list, like
+    `/compact hello`, is sent as an ordinary message (`MESSAGE_CREATE`).
+  - From the docs, not measured: the first answer must come within 3 s; the token
+    works for 15 minutes; a guild can take at most 200 command creates a day; an app
+    with no answer shows "The application did not respond". That two Gateway
+    connections of one bot (two Koloft installs) both receive each interaction is
+    inferred, not checked.
 - Also from Discord's docs, not measured here: a message's `content` holds at most 2000
   characters; one message carries at most 10 files and one request at most 25 MiB; a
   bot's file may be at most 20 MiB (changelog 2025-09-03); adding or removing a reaction

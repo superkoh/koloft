@@ -39,6 +39,17 @@ binary.
   mappings; the enums are the value space.
 - **auto-compact restarts in place with the SAME session id** (E1 could not produce an
   id change).
+- **A manual `/compact` fires PreCompact, then SessionStart `compact`, and no
+  UserPromptSubmit or Stop** (2026-10-04/05, CC 2.1.289 and 2.1.290, interactive pty,
+  hooks logging their payloads). PreCompact carries `trigger: "manual"` and
+  `custom_instructions` (the text after `/compact`, or null) about 0.03 s after Enter;
+  SessionStart `compact` comes when the summary is done, 4–15 s later, same session id.
+  Typed while a turn runs, it waits for the turn: Stop, then PreCompact. The plain
+  `user` record `"/compact"` (no `origin`) is on disk at once; the `<command-name>` and
+  `<local-command-stdout>Compacted …</local-command-stdout>` records only land when it
+  ends, though they carry the Enter-time timestamp. Esc during it cancels it (no
+  SessionStart) and puts `/compact ` back in the input box. So the session is busy from
+  PreCompact to SessionStart `compact`, and no other hook says so.
 - **On exit CC prints a resume hint, and what it quotes depends on the session**:
   `Resume this session with: claude --resume <id>` for a session with no name, but
   `claude --resume "<name>"` once the session was given a `--name`, and
@@ -256,6 +267,24 @@ Unless a bullet below says more, it is inferred, not checked.
   (`claude-opus-4-20250514`, `claude-sonnet-4-20250514`).
 - **The Stop hook can fire a moment before the turn's assistant record is flushed** to
   the jsonl (seen live on 2.1.263), so a reader that trusts Stop has to poll for it.
+- **What a slash command leaves in the jsonl** (2026-10-04/05, CC 2.1.289 and 2.1.290,
+  every record of the runs read):
+  - Its output is the text inside `<local-command-stdout>…</local-command-stdout>`, in
+    a `system`/`local_command` record (`/context`, `/model`, a closed picker) or in a
+    `user` record's string content (`/compact`, `/model haiku`, `/mcp`); it keeps
+    the screen's colour codes. A `<command-name>` record names the command, and a
+    `user` `isMeta` record holds `<local-command-caveat>`.
+  - `/context` also adds a `user` `isMeta` record whose content is the same report as
+    clean markdown ("## Context Usage …").
+  - An unknown command writes one `system`/`informational` record, `level: "warning"`,
+    content "Unknown command: /x. Did you mean /y?", and nothing else.
+  - `/compact` first writes a plain `user` record whose content is `"/compact"` with no
+    `origin` (a typed prompt has `origin: {kind: "human"}`), then the summary and its
+    output records at the end (§1).
+  - A `~/.claude/commands/<n>.md` command writes a `<command-message>` user record and
+    its body as a `user` `isMeta` record, then a normal turn.
+  - `/clear` writes its `<command-name>` record and an empty stdout into the new id's
+    file.
 
 Evidence: full census of 535 on-disk transcripts, 2026-08-10 (CC 2.1.220–227), plus
 controlled experiment E2; lazy write verified live 2026-08-24. The five mid-conversation
@@ -918,6 +947,13 @@ sessions plus a tmux probe, 2026-09-23, CC 2.1.281 (bullets below).
     closed, the way Koloft's own exit closes every tab). So a Koloft that relaunches
     does not find its last run's sessions still registered.
   - A `kill -9`'d claude **leaves its entry behind**.
+  - **`status` is `waiting` exactly while a dialog, panel or menu is open** (2026-10-04/05,
+    CC 2.1.289 and 2.1.290): the `/model` and `/resume` pickers, the "Switch model?"
+    confirmation, the panels `/cost`, `/usage`, `/status`, `/help` and `/config` open,
+    and the rewind menu. It went back to `idle` about 0.1 s after the Esc that closed
+    one, and it stayed `idle` through 130 s at an idle prompt, including after the
+    `idle_prompt` Notification. `busy` while a turn, a local command or a compaction
+    runs.
   - `procStart` is `ps -o lstart=` for that pid printed in UTC (`TZ=UTC`,
     e.g. `Wed Sep 23 20:29:08 2026`). So "pid alive and its UTC `lstart` equals
     `procStart`" tells a live entry from a stale one whose pid was reused. Re-checked
@@ -955,6 +991,29 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   shows "Press up to edit queued messages", and claude takes it once the running tool
   call ends, in the same turn (a `queued_command` attachment, §2). Recorded from the
   same probe notes (CC 2.1.288); not re-run here.
+- **A slash command typed into the box runs as the command; the same text sent between
+  sessions does not** (2026-10-04/05, CC 2.1.289 and 2.1.290, real claude in a pty in a
+  scratch `HOME`, text then Enter 0.3 s later; the Linux build over `ssh -tt` into tmux
+  did the same for `/compact` and `/clear`). `/compact`, `/clear`, `/context`, `/model
+  haiku` and a `~/.claude/commands/<n>.md` command ran; one sent on the messaging socket
+  (§13) reached the model as text. Typed while a turn runs, each was queued and ran
+  right after the turn.
+- **Enter runs the command menu's highlighted entry, not the typed text**: `/co` +
+  Enter would run `/copy` and `/con` + Enter opened `/config`, with or without a
+  trailing space. A misspelling that only fuzzy-matches (`/clera`, `/contxt`) gets no
+  highlight and writes "Unknown command: /clera. Did you mean /clear?". **Esc after the
+  text closes the menu and keeps the text, and Enter then submits exactly that**:
+  `/con`, Esc, Enter gave "Unknown command: /con"; `/context`, `/clear`, `/compact `,
+  `/compact <args>` and `/model haiku` with Esc before Enter ran as typed. With no menu
+  open (a command with arguments), that Esc only shows "Esc again to clear"; one Esc at
+  an empty box does nothing, a second one opens the rewind menu.
+- **Commands that open a panel or picker write nothing until it closes**: `/cost`,
+  `/usage`, `/status`, `/help` and `/config` open a panel and leave no record at all;
+  `/model` with no argument and `/resume` open a picker; `/model sonnet` from Haiku asks
+  "Switch model?" first (option 1, Yes, highlighted; Esc or `2` keeps the model; a
+  typed Enter picks Yes). One Esc closes each, except `/config`, which takes two (the
+  first leaves its search box). A closed picker writes `Kept model as …` / `Resume
+  cancelled`.
 - **URLs and files are opened with `Bun.spawn(["open", url])`**, which looks `open` up
   on PATH, so a PATH shim can catch it.
 - **An idle claude process holds a lot of memory**: measured 185–350 MB each for idle

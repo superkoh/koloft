@@ -17,6 +17,8 @@ export interface AskPayload {
 export type SessionEvent =
   | { type: 'asked'; ask: AskPayload }
   | { type: 'prompt' }
+  | { type: 'compacting' }
+  | { type: 'compacted' }
   | { type: 'stop'; reported?: ReportedTask[] }
   | { type: 'notify'; need: 'approval' | 'input' }
   | { type: 'background-changed'; items: BackgroundItem[] }

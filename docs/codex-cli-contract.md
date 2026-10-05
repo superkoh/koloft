@@ -759,3 +759,52 @@ Koloft's (one TUI connection, one stdio app-server upstream, every frame logged)
   `isSecret`, a form with several fields or a field that is not an enum, and an
   elicitation `mode` other than `form`. Koloft refuses those from Discord.
 
+## 21. Slash commands typed into the TUI
+
+**Checked on 2026-10-04 and 2026-10-05 with Codex CLI 0.159.3, real model turns
+(`gpt-6.1-sol`, low effort).** A real TUI ran in a pty connected with `--remote` to a
+Node relay in front of `codex app-server --stdio` (section 1), with its own `CODEX_HOME`
+(a copy of this Mac's login, deleted afterwards), `approval_policy = "never"`, the work
+folder trusted. Text was typed in one write and CR in a second write 0.3–0.6 s later.
+
+- **Slash commands live only in the TUI.** No app-server method takes a slash command.
+  A `thread/queue/add` with the text `/compact` reached the model as that text and
+  compacted nothing; so did a typed `/model <name>` with an argument (a plain
+  `turn/start`). `/stauts/comapct` (two slashes) was sent to the model too.
+- **`/compact` typed while idle** sent `thread/compact/start {threadId}` (result `{}`),
+  then the server ran a turn of its own: `turn/started`, a `contextCompaction` item
+  started and completed, `turn/completed` (2.8–5.4 s), on the same thread id. No
+  `thread/compacted` notification came. The relay sending `thread/compact/start` itself
+  did the same, and the TUI drew it and kept working.
+- **`/new` and `/clear`** each sent `config/read`, `thread/start` (a new id), then
+  `thread/unsubscribe` of the old thread. `/clear` adds `sessionStartSource: "clear"`.
+  A `-c developer_instructions=…` given to the app-server still reached the model in the
+  new thread (the TUI's own `thread/start` sends `developerInstructions: null`).
+- **Typed while a turn runs, `/compact` is refused** ("'/compact' is disabled while a task
+  is in progress"), the box is emptied, and nothing runs afterwards. `/compact` then Tab
+  instead of CR queues it inside the TUI (nothing on the wire) and it runs right after
+  the turn.
+- **CR runs the popup's first entry**: `/co` + CR compacted. **Esc after typing closes
+  the popup and keeps the text, and CR then runs exactly what was typed**: `/co`, Esc,
+  CR showed "Unrecognized command '/co'" and sent nothing; `/compact`, Esc, CR and
+  `/new`, Esc, CR ran those commands. A trailing space closes the popup too (`/co `
+  + CR: Unrecognized). Esc and CR must be separate writes: `\x1b\r` in one write is read
+  as Alt+Enter and adds a line; 30 ms apart works.
+- **An unknown command** (`/comapct`, `/stauts`, with or without a trailing space) shows
+  "Unrecognized command '…'" and sends nothing, and the text stays in the box with the
+  cursor at its start. Esc leaves it there; Ctrl-E then Ctrl-U empties the box; Ctrl-U
+  alone does not, and the next typed line is joined to the leftover.
+- **Menus**: `/model` with no argument sends `model/list` and opens a picker; one Esc
+  closes it with nothing changed. Text typed into the open picker is lost and its CR
+  picks the highlighted row. `/mention` opens a picker that one Esc closes, leaving `@` in
+  the box. `/diff` runs git through `command/exec` and opens a pager that Esc does not
+  close and `q` does. `/status` shows its answer only on the screen (it only calls
+  `account/rateLimits/read`).
+- **Esc at an idle prompt**: one shows "esc again to edit previous message"; a second
+  one opens "Browsing transcript", where Enter rewinds.
+- **Queued messages and idle**: two `thread/queue/add` sent during a turn ran as two
+  more turns, one each, right after it; between turns the thread status went `idle`
+  and `active` again within 3–4 ms. Each queued `userMessage` item carried the
+  `clientUserMessageId` as `clientId`, and `thread/queue/list` was empty as soon as the
+  last one's turn started.
+

@@ -7,7 +7,6 @@ import { safeDownloadName } from '@shared/downloadName'
 import { watchJsonDrops, writeWholeBeforeVisible } from '../jsonDrops'
 import { errorText } from '../agentRequests'
 import { sleep } from '../codexTransport'
-import { typeKeys } from '../ptyManager'
 import type { Conductors } from './conductors'
 import {
   BYTES_PER_FILE,
@@ -17,6 +16,7 @@ import {
   type DiscordMessage
 } from './link'
 import { splitForDiscord } from './split'
+import { slashCommandProblem } from '@shared/slashCommands'
 import type { AskPayload } from '@shared/sessionEvent'
 import type { ToolCall } from '../sessionTracker'
 import {
@@ -70,7 +70,9 @@ export interface RelayDeps {
   alive(tabId: string): boolean
   ready(tabId: string, ready: () => boolean, ms: number): Promise<boolean>
   asksChanged(tabId: string): void
-  write(tabId: string, data: string): void
+  type(tabId: string, keys: string[]): Promise<void>
+  typeCommand(bindingId: string, tabId: string, command: string): Promise<void>
+  queueDrained(tabId: string): boolean
   queue(tabId: string, text: string, clientId: string): Promise<void>
   codexApproval(tabId: string): CodexApproval | undefined
   codexQuestion(tabId: string): CodexQuestion | undefined
@@ -81,7 +83,16 @@ export interface RelayDeps {
 interface Inbound {
   clientId: string
   text(): Promise<string>
+  command?: boolean
   settle(failed?: string): void
+}
+
+export const CONDUCTOR_ASKS_FIRST =
+  'The conductor is waiting for your answer to its question. Answer it first, then send the command again.'
+
+export function slashTextOf(content: string): string | undefined {
+  const text = content.trim()
+  return text.startsWith('/') ? text : undefined
 }
 
 export class DiscordRelay {
@@ -118,6 +129,8 @@ export class DiscordRelay {
     if (!b) return
     this.seenLive.add(m.id)
     const tab = this.d.conductors.liveTab(b.id)
+    const command = m.attachments.length ? undefined : slashTextOf(m.content)
+    if (command !== undefined) return this.onCommandText(b.id, tab, m, command)
     if (tab && this.answerDialog(tab, m)) {
       this.react(m, DELIVERED, true)
       this.d.conductors.setLastMessage(b.id, m.id)
@@ -134,6 +147,39 @@ export class DiscordRelay {
         else this.react(m, DELIVERED, true)
         this.d.conductors.setLastMessage(b.id, m.id)
       }
+    })
+  }
+
+  private onCommandText(
+    bindingId: string,
+    tab: string | undefined,
+    m: DiscordMessage,
+    command: string
+  ): void {
+    this.d.conductors.setLastMessage(bindingId, m.id)
+    if (tab && this.dialogOpen(tab)) return this.say(m.channelId, CONDUCTOR_ASKS_FIRST, m.id)
+    const problem = slashCommandProblem(command)
+    if (problem) return this.say(m.channelId, `Koloft did not run it: ${problem}`, m.id)
+    const waits = !tab || this.pumping.has(bindingId) || !this.takesCommand(tab)
+    if (waits) this.react(m, QUEUED, true)
+    this.enqueue(bindingId, {
+      clientId: `koloft-discord-${m.id}`,
+      text: async () => command,
+      command: true,
+      settle: (failed) => {
+        if (waits) this.react(m, QUEUED, false)
+        if (failed) this.say(m.channelId, `⚠ ${failed}`, m.id)
+        else this.react(m, DELIVERED, true)
+      }
+    })
+  }
+
+  command(bindingId: string, command: string, channelId: string): void {
+    this.enqueue(bindingId, {
+      clientId: `koloft-command-${++this.told}`,
+      text: async () => command,
+      command: true,
+      settle: (failed) => failed && this.say(channelId, `⚠ ${failed}`)
     })
   }
 
@@ -173,11 +219,12 @@ export class DiscordRelay {
   private async deliver(bindingId: string, item: Inbound): Promise<void> {
     const text = await item.text()
     const tab = await this.readyTab(bindingId)
+    if (item.command) return this.d.typeCommand(bindingId, tab, text)
     if (this.d.backendOf(tab) === 'codex') {
       await this.d.queue(tab, text, item.clientId)
       return
     }
-    await typeKeys((data) => this.d.write(tab, data), [text, '\r'])
+    await this.d.type(tab, [text, '\r'])
   }
 
   private async readyTab(bindingId: string): Promise<string> {
@@ -203,6 +250,20 @@ export class DiscordRelay {
       status !== 'approval' &&
       !this.hookWaits(tab)
     )
+  }
+
+  takesCommand(tab: string): boolean {
+    const status = this.d.status(tab)
+    return (
+      this.typable(tab) &&
+      (status === 'waiting' || status === 'idle') &&
+      !this.dialogOpen(tab) &&
+      this.d.queueDrained(tab)
+    )
+  }
+
+  dialogOpen(tab: string): boolean {
+    return !!this.openAsk(tab) || !!this.d.codexApproval(tab) || !!this.d.codexQuestion(tab)
   }
 
   private hookWaits(tab: string): boolean {
@@ -298,14 +359,14 @@ export class DiscordRelay {
       if (this.d.codexApproval(tab)) {
         const key = codexKeyFor(reply)
         if (!key) return CODEX_TAKES_YES_OR_NO
-        this.d.write(tab, key)
+        await this.d.type(tab, [key])
         return undefined
       }
       const question = this.d.codexQuestion(tab)
       if (!question) return this.d.awaitsInput(tab) ? CODEX_INPUT_NOT_PROBED : SHOWS_NO_DIALOG
       const key = codexOptionKey(question, reply)
       if (!key) return CODEX_TAKES_AN_OPTION
-      this.d.write(tab, key)
+      await this.d.type(tab, [key])
       return undefined
     }
     const ask = this.openAsk(tab)
@@ -318,7 +379,7 @@ export class DiscordRelay {
     const keys = claudeKeysFor(ask.payload, reply)
     if (!keys.ok) return keys.error
     this.asks.delete(tab)
-    await typeKeys((data) => this.d.write(tab, data), keys.value)
+    await this.d.type(tab, keys.value)
     return undefined
   }
 
@@ -355,7 +416,7 @@ export class DiscordRelay {
       return true
     }
     this.codexAsks.delete(tab)
-    this.d.write(tab, key)
+    void this.d.type(tab, [key])
     return true
   }
 

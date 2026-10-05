@@ -732,6 +732,17 @@ export interface TerminalCwd {
   cwd: string
 }
 
+export interface ScreenRequest {
+  requestId: string
+  tabId: string
+}
+
+export interface ScreenAnswer {
+  requestId: string
+  lines: string[] | null
+  sizedToPane: boolean
+}
+
 export interface KoloftApi {
   isDev: boolean
   domRenderer: boolean
@@ -757,6 +768,8 @@ export interface KoloftApi {
     onProcessTitle(cb: (t: TerminalProcessTitle) => void): () => void
     onCwd(cb: (c: TerminalCwd) => void): () => void
     onSpawned(cb: (t: SpawnedTab) => void): () => void
+    onScreenRequest(cb: (r: ScreenRequest) => void): () => void
+    answerScreen(a: ScreenAnswer): void
   }
   workbench: {
     get(sessionId: string): Promise<SessionWorkbenchState>

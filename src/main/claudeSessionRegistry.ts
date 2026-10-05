@@ -25,6 +25,7 @@ interface RegistryEntry {
   procStart: string
   name?: string
   messagingSocketPath?: string
+  status?: string
 }
 
 // CC§11
@@ -44,6 +45,7 @@ function readRegistry(dir: string): Map<string, RegistryEntry[]> {
       procStart?: unknown
       name?: unknown
       messagingSocketPath?: unknown
+      status?: unknown
     }
     try {
       entry = JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8'))
@@ -60,7 +62,8 @@ function readRegistry(dir: string): Map<string, RegistryEntry[]> {
       messagingSocketPath:
         typeof entry.messagingSocketPath === 'string' && entry.messagingSocketPath
           ? entry.messagingSocketPath
-          : undefined
+          : undefined,
+      status: typeof entry.status === 'string' ? entry.status : undefined
     })
     bySession.set(entry.sessionId, entries)
   }
@@ -93,6 +96,16 @@ export async function messagingSocketOf(
   startOf = processStartUtc
 ): Promise<string | null> {
   return (await liveEntry(readRegistry(dir).get(sessionId), startOf))?.messagingSocketPath ?? null
+}
+
+// CC§11
+export async function claudeShowsAPanel(
+  sessionId: string,
+  dir = REGISTRY_DIR,
+  startOf = processStartUtc
+): Promise<boolean | undefined> {
+  const status = (await liveEntry(readRegistry(dir).get(sessionId), startOf))?.status
+  return status === undefined ? undefined : status === 'waiting'
 }
 
 export function whenMessagingSocket(

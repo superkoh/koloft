@@ -22,6 +22,7 @@ import type {
   TerminalData,
   TerminalExit,
   TerminalCwd,
+  ScreenRequest,
   TerminalProcessTitle,
   LeftoverProcess,
   SessionInfo,
@@ -85,7 +86,13 @@ const api: KoloftApi = {
       const handler = (_e: unknown, t: SpawnedTab): void => cb(t)
       ipcRenderer.on('terminal:spawned', handler)
       return () => ipcRenderer.removeListener('terminal:spawned', handler)
-    }
+    },
+    onScreenRequest: (cb) => {
+      const handler = (_e: unknown, r: ScreenRequest): void => cb(r)
+      ipcRenderer.on('terminal:screen', handler)
+      return () => ipcRenderer.removeListener('terminal:screen', handler)
+    },
+    answerScreen: (a) => ipcRenderer.send('terminal:screen-done', a)
   },
   workbench: {
     get: (sessionId) => ipcRenderer.invoke('workbench:get', sessionId),

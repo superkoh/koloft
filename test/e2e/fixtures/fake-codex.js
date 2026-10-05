@@ -318,6 +318,29 @@ if (argv[0] === 'app-server') {
       startTurn(thread, text, null, (turn) => result(id, { turn }))
       return
     }
+    // CODEX§21
+    if (method === 'thread/compact/start') {
+      const thread = active?.id === p.threadId ? active : load(p.threadId)
+      if (!thread) {
+        error(id, 'Thread not found')
+        return
+      }
+      result(id, {})
+      const turn = { id: crypto.randomUUID(), status: 'inProgress', items: [], error: null }
+      const item = { type: 'contextCompaction', id: crypto.randomUUID() }
+      activeTurn = turn
+      status(thread, { type: 'active', activeFlags: [] })
+      event('turn/started', { threadId: thread.id, turn })
+      event('item/started', { threadId: thread.id, turnId: turn.id, item })
+      setTimeout(() => {
+        event('item/completed', { threadId: thread.id, turnId: turn.id, item })
+        turn.status = 'completed'
+        status(thread, { type: 'idle' })
+        event('turn/completed', { threadId: thread.id, turn })
+        queued.shift()?.()
+      }, 120)
+      return
+    }
     if (method === 'turn/interrupt') {
       result(id, {})
       pendingApproval = undefined
@@ -446,8 +469,9 @@ async function startTui() {
     if (thread) await send('thread/unsubscribe', { threadId: thread.id }).catch(() => {})
     ws.close()
   }
-  const input = async (text) => {
-    if (!text.trim()) return
+  const input = async (raw) => {
+    const text = raw.trim()
+    if (!text) return
     if (approval) {
       ws.send(
         JSON.stringify({
@@ -457,7 +481,9 @@ async function startTui() {
       )
       approval = undefined
     } else if (text === '/exit' || text === '/quit') await exit()
-    else if (text === '/new') await open('thread/start', { cwd })
+    else if (text === '/new' || text === '/clear') await open('thread/start', { cwd })
+    // CODEX§21
+    else if (text === '/compact') await send('thread/compact/start', { threadId: thread.id })
     else if (text === '/fork') await open('thread/fork', { threadId: thread.id, cwd })
     else if (text.startsWith('/resume '))
       await open('thread/resume', { threadId: text.slice(8).trim(), cwd })
@@ -532,6 +558,9 @@ async function startTui() {
             process.stdout.write('\r\n')
             void input(line).catch((error) => process.stdout.write(error.message + '\r\n'))
           } else if (ch === '\u007f') typed = typed.slice(0, -1)
+          // CODEX§21
+          else if (ch === '\u0015') typed = ''
+          else if (ch === '\u001b' || ch === '\u0005') continue
           else {
             typed += ch
             process.stdout.write(ch)

@@ -40,6 +40,21 @@ export interface FakeReaction {
   on: boolean
 }
 
+export interface FakeCommand {
+  name: string
+  description: string
+  options?: { name: string }[]
+}
+
+export interface FakeCallback {
+  interactionId: string
+  type: number
+  data: { content?: string; flags?: number; choices?: { name: string; value: string }[] }
+}
+
+export const SLASH_COMMAND = 2
+export const AUTOCOMPLETE = 4
+
 export interface FakeDiscord {
   identifies: number
   closeOnIdentify: number | null
@@ -48,15 +63,25 @@ export interface FakeDiscord {
   refusePostsIn: string[]
   reactions: FakeReaction[]
   history: Record<string, FakeHistoryMessage[]>
+  commands: FakeCommand[]
+  callbacks: FakeCallback[]
   say(
     author: FakeAuthor,
     content: string,
     opts?: { channelId?: string; attachments?: { filename: string; body: string }[] }
   ): string
+  interact(
+    author: FakeAuthor,
+    command: string,
+    options: Record<string, string>,
+    opts?: { type?: number; focused?: string; channelId?: string }
+  ): string
   close(): Promise<void>
 }
 
 const MESSAGE_ROUTE = /^\/channels\/(\d+)\/messages$/
+const COMMANDS_ROUTE = /^\/applications\/\d+\/guilds\/\d+\/commands$/
+const CALLBACK_ROUTE = /^\/interactions\/(\d+)\/[^/]+\/callback$/
 const REACTION_ROUTE = /^\/channels\/(\d+)\/messages\/(\d+)\/reactions\/([^/]+)\/@me$/
 const ATTACHMENT_ROUTE = /^\/attachments\/(.+)$/
 
@@ -109,6 +134,37 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
     refusePostsIn: [],
     reactions: [],
     history: {},
+    commands: [],
+    callbacks: [],
+    interact: (author, command, options, opts = {}) => {
+      const id = String(++nextId)
+      for (const ws of sockets)
+        ws.send(
+          JSON.stringify({
+            op: 0,
+            t: 'INTERACTION_CREATE',
+            s: ++seq,
+            d: {
+              id,
+              token: `token-${id}`,
+              type: opts.type ?? SLASH_COMMAND,
+              channel_id: opts.channelId ?? FAKE_CHANNELS[0].id,
+              guild_id: FAKE_GUILD.id,
+              member: { user: author },
+              data: {
+                name: command,
+                options: Object.entries(options).map(([name, value]) => ({
+                  name,
+                  value,
+                  type: 3,
+                  ...(name === opts.focused ? { focused: true } : {})
+                }))
+              }
+            }
+          })
+        )
+      return id
+    },
     say: (author, content, opts = {}) => {
       const id = String(++nextId)
       const listed = (opts.attachments ?? []).map((a) => {
@@ -158,6 +214,19 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
     const route = url.pathname.replace(/^\/api\/v10/, '')
     const attachment = ATTACHMENT_ROUTE.exec(route)
     if (attachment) return { status: 200, body: attachments.get(attachment[1]) ?? '' }
+    if (COMMANDS_ROUTE.test(route) && req.method === 'GET')
+      return { status: 200, body: fake.commands }
+    if (COMMANDS_ROUTE.test(route) && req.method === 'POST') {
+      const command = JSON.parse((await bodyOf(req)).toString()) as FakeCommand
+      fake.commands = [...fake.commands.filter((c) => c.name !== command.name), command]
+      return { status: 201, body: command }
+    }
+    const callback = CALLBACK_ROUTE.exec(route)
+    if (callback && req.method === 'POST') {
+      const body = JSON.parse((await bodyOf(req)).toString()) as Omit<FakeCallback, 'interactionId'>
+      fake.callbacks.push({ interactionId: callback[1], ...body })
+      return { status: 204 }
+    }
     const reaction = REACTION_ROUTE.exec(route)
     if (reaction) {
       fake.reactions.push({

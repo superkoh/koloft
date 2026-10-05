@@ -52,8 +52,16 @@ case "$event" in
       tmux rename-session -t "$TMUX_PANE" "k-$sid" 2>/dev/null
     fi
     printf '{"tabId":"%s","event":"%s","sessionId":"%s","transcriptPath":"%s","cwd":"%s","reason":"%s","source":"%s","account":"%s","ccVersion":"%s","tmux":"%s"}\\n' "$tab" "$event" "$sid" "$tp" "$cwd" "$reason" "$src" "$acct" "$ver" "$tm" > "$reg/$tab.json"
+    # CC§1
+    if [ "$event" = "start" ] && [ "$src" = "compact" ]; then
+      printf '{"tabId":"%s","event":"compacted","sessionId":"%s","tmux":"%s"}\\n' "$tab" "$sid" "$tm" >> "$reg/$tab.status.jsonl"
+    fi
     # CC§13
     if [ "$event" = "start" ] && [ -f "$reg/$tab.conductor" ]; then cat "$reg/$tab.conductor"; fi
+    ;;
+  compacting)
+    # CC§1
+    printf '{"tabId":"%s","event":"compacting","sessionId":"%s","tmux":"%s"}\\n' "$tab" "$(session_id)" "$tm" >> "$reg/$tab.status.jsonl"
     ;;
   ask)
     # CC§14
@@ -226,6 +234,7 @@ export function hookSettings(
       SessionStart: [{ hooks: [{ type: 'command', command: cmd('start') }] }],
       SessionEnd: [{ hooks: [{ type: 'command', command: cmd('end') }] }],
       UserPromptSubmit: [{ hooks: [{ type: 'command', command: cmd('prompt') }] }],
+      PreCompact: [{ hooks: [{ type: 'command', command: cmd('compacting') }] }],
       Stop: [{ hooks: [{ type: 'command', command: cmd('stop') }] }],
       Notification: [
         {

@@ -127,6 +127,11 @@ export class Conductors {
     if (b) this.pendingTouch.set(tabId, b.id)
   }
 
+  touchNowAndNext(id: string, key: string, tabId: string | undefined): void {
+    this.touchFor(id, key)
+    if (tabId) this.pendingTouch.set(tabId, id)
+  }
+
   liveTab(id: string): string | undefined {
     const tab = this.tabs.get(id)
     return tab && this.d.tabAlive(tab) ? tab : undefined

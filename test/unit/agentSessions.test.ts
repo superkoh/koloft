@@ -97,10 +97,12 @@ function harness(
   stopped: string[]
   started: Started[]
   answers: { tabId: string; reply: string }[]
+  commands: { callerTab: string; key: string; text: string }[]
   undelivered: { callerTab: string; name: string; why: string }[]
   startedSessions: StartedSessions
 } {
   const answers: { tabId: string; reply: string }[] = []
+  const commands: { callerTab: string; key: string; text: string }[] = []
   const undelivered: { callerTab: string; name: string; why: string }[] = []
   const launched: Launch[] = []
   const queued: { tabId: string; text: string; clientId?: string }[] = []
@@ -166,7 +168,13 @@ function harness(
     },
     undelivered: (callerTab, target, why) => {
       undelivered.push({ callerTab, name: target.name, why })
-    }
+    },
+    command: async (callerTab, target, text) => {
+      commands.push({ callerTab, key: target.key, text })
+      return `Typing ${text} into ${target.name}.`
+    },
+    screen: async (tabId) =>
+      tabId === 'fix' ? { lines: ['', '$ ls', 'a.txt', '', ''], notes: [] } : { error: 'no window' }
   })
   const verb = async (args: string[], from: { tabId: string; cwd: string }): Promise<AgentReply> =>
     inner(args, { ...from, session: sessions.find((s) => s.tabId === from.tabId)! })
@@ -183,6 +191,7 @@ function harness(
     stopped,
     started,
     answers,
+    commands,
     undelivered,
     startedSessions
   }
@@ -783,6 +792,43 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop 
       { tabId: 'cx', reply: 'yes' }
     ])
     expect(h.touched.map((t) => t.key)).toEqual(['fix-id', CODEX_KEY, 'old-id'])
+  })
+
+  it('command hands one slash command to Koloft for a session it looks after, or for itself with "me", and touches the session', async () => {
+    const h = harness(live, {}, [], conducting())
+    expect(
+      (await h.verb(['command', 'fix-login', '/compact', 'keep', 'the', 'plan'], from('wsCond')))
+        .text
+    ).toBe('Typing /compact keep the plan into fix-login.')
+    expect((await h.verb(['command', 'me', '/clear'], from('wsCond'))).exit).toBe(0)
+    expect((await h.verb(['command', 'app conductor', '/context'], from('wsCond'))).exit).toBe(0)
+    expect(h.commands).toEqual([
+      { callerTab: 'wsCond', key: 'fix-id', text: '/compact keep the plan' },
+      { callerTab: 'wsCond', key: 'conductor:b1', text: '/clear' },
+      { callerTab: 'wsCond', key: 'conductor:b1', text: '/context' }
+    ])
+    expect(h.touched.map((t) => t.key)).toEqual(['fix-id'])
+  })
+
+  it('command refuses text that is not a slash command, a session out of scope, and a session that is not a conductor', async () => {
+    const h = harness(live, {}, [], conducting())
+    expect(await h.verb(['command', 'fix-login', 'compact'], from('wsCond'))).toMatchObject({
+      exit: EXIT_USAGE
+    })
+    expect((await h.verb(['command', 'site-build', '/clear'], from('wsCond'))).text).toContain(
+      NOT_IN_YOUR_WORKSPACE
+    )
+    expect((await h.verb(['command', 'fix-login', '/clear'], from('fix'))).exit).not.toBe(0)
+    expect(h.commands).toEqual([])
+  })
+
+  it('screen prints an open session’s terminal without its blank edges, and says why it cannot when it cannot', async () => {
+    const h = harness(live, {}, [], conducting())
+    expect((await h.verb(['screen', 'fix-login'], from('wsCond'))).text).toBe(
+      'The screen of fix-login right now:\n```\n$ ls\na.txt\n```'
+    )
+    expect((await h.verb(['screen', 'old-work'], from('wsCond'))).text).toContain('is not open')
+    expect((await h.verb(['screen', 'me'], from('wsCond'))).text).toBe('you: no window')
   })
 
   it('send refuses, resuming nothing, a message to a Claude session that holds the closing tag of the message envelope', async () => {

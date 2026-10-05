@@ -821,15 +821,25 @@ export class CodexSessions {
     const run = this.runs.get(tabId)
     const threadId = run?.info?.nativeSessionId
     if (!run || !threadId) throw new Error('that Codex session has not started yet.')
-    await run.transport.request(
-      'thread/queue/add',
-      {
-        threadId,
-        clientUserMessageId: clientId,
-        input: [{ type: 'text', text, text_elements: [] }]
-      },
-      QUEUE_ANSWER_INSIDE_THE_KOLOFT_WAIT_MS
-    )
+    run.observer.queuedMessage(clientId)
+    try {
+      await run.transport.request(
+        'thread/queue/add',
+        {
+          threadId,
+          clientUserMessageId: clientId,
+          input: [{ type: 'text', text, text_elements: [] }]
+        },
+        QUEUE_ANSWER_INSIDE_THE_KOLOFT_WAIT_MS
+      )
+    } catch (error) {
+      run.observer.queueRefused(clientId)
+      throw error
+    }
+  }
+
+  queueDrained(tabId: string): boolean {
+    return this.runs.get(tabId)?.observer.queueDrained() ?? true
   }
 
   private markDegraded(run: Run | undefined): void {

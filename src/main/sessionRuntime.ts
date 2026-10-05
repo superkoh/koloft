@@ -69,6 +69,10 @@ export class SessionRuntime extends EventEmitter {
     return this.entries.get(tabId)?.turn === 'input'
   }
 
+  protected turnNow(tabId: string): Turn | undefined {
+    return this.entries.get(tabId)?.turn
+  }
+
   protected statusSince(tabId: string): number {
     return this.entries.get(tabId)?.since ?? 0
   }

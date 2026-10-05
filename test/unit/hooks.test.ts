@@ -104,6 +104,28 @@ describe('injected hook script', () => {
     expect(readReg('tabS1.json')).toMatchObject({ source: 'compact' })
   })
 
+  // CC§1
+  it('a compaction starts and ends in the status log, in order, since the start drop is deduped on a mirror', () => {
+    fire('tabK', 'compacting', { session_id: 's1', trigger: 'manual' })
+    fire('tabK', 'start', { session_id: 's1', source: 'compact' })
+    fire('tabK', 'start', { session_id: 's2', source: 'clear' })
+    fire('tabK', 'compacting', { session_id: 's2', trigger: 'manual' })
+    fire('tabK', 'start', { session_id: 's2', source: 'compact' })
+    expect(readStatusLog('tabK').map((r) => [r.event, r.sessionId])).toEqual([
+      ['compacting', 's1'],
+      ['compacted', 's1'],
+      ['compacting', 's2'],
+      ['compacted', 's2']
+    ])
+  })
+
+  it('every session gets the PreCompact hook', () => {
+    const settings = hookSettings('/x/hook.sh', '/x/reg', 'tabPC') as {
+      hooks: Record<string, { hooks: { command: string }[] }[]>
+    }
+    expect(settings.hooks.PreCompact[0].hooks[0].command).toMatch(/ compacting$/)
+  })
+
   it('emits an empty account when no wrapper exported one', () => {
     fire('tabA3', 'start', { session_id: 's1' }, { ANT_ACCOUNT: '' })
     expect(readReg('tabA3.json')).toMatchObject({ account: '' })

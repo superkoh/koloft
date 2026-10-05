@@ -18,11 +18,12 @@ import path from 'path'
 import fs from 'fs'
 import os from 'os'
 import { pathToFileURL } from 'url'
-import { anotherLiveInstanceOwns, PtyManager, typeKeys } from './ptyManager'
+import { anotherLiveInstanceOwns, PtyManager } from './ptyManager'
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { FlowGate } from './flowControl'
 import { SessionTracker, type ToolCall } from './sessionTracker'
+import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
 import { SessionBackends } from './sessionBackends'
@@ -221,6 +222,8 @@ import type {
   BrowserCdpAttached,
   BrowserCdpOp,
   BrowserCdpOpResult,
+  ScreenAnswer,
+  ScreenRequest,
   BrowserOpenRequest,
   BrowserOverlayOpen,
   BrowserStripTarget,
@@ -230,6 +233,7 @@ import type {
   CreateTabResult,
   CronSaveInput,
   ConductorSaveInput,
+  ConductorBinding,
   ProbeErrorKind,
   LeftoverProcess,
   ResumePlan,
@@ -248,12 +252,16 @@ import type {
   HostId,
   WhatsNew
 } from '@shared/types'
-import { AgentRequests, BUILTIN_VERBS, refused, type AgentVerb } from './agentRequests'
+import { AgentRequests, BUILTIN_VERBS, errorText, refused, type AgentVerb } from './agentRequests'
 import { Conductors } from './discord/conductors'
 import { discordApiUrl, DiscordLink } from './discord/link'
 import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay } from './discord/relay'
 import { Notices } from './discord/notices'
+import { SlashCommands } from './discord/slash'
+import { Interactions, SLASH_COMMANDS } from './discord/interactions'
+import { typeKeys } from './typeKeys'
+import { MYSELF } from '@shared/slashCommands'
 import {
   approvalDetail,
   questionText,
@@ -262,11 +270,25 @@ import {
 } from './discord/dialog'
 import { sleep } from './codexTransport'
 import { discordVerb } from './agentDiscord'
-import { claudePeerNames, runningClaudePid, whenMessagingSocket } from './claudeSessionRegistry'
+import {
+  claudePeerNames,
+  claudeShowsAPanel,
+  runningClaudePid,
+  whenMessagingSocket
+} from './claudeSessionRegistry'
 import { isDiscordId, scopeName } from '@shared/conductors'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
-import { sessionVerb, workspaceVerb, type ClosableSession, type Target } from './agentSessions'
+import {
+  sessionChoices,
+  sessionVerb,
+  targetIn,
+  workspaceVerb,
+  type ClosableSession,
+  type SessionScreen,
+  type SessionVerbDeps,
+  type Target
+} from './agentSessions'
 import { writeLine } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
 import { closingTree, removeTree, whatIsLeft } from './sessionClose'
@@ -302,13 +324,17 @@ const startedSessions = new StartedSessions(() =>
   path.join(app.getPath('userData'), 'started-sessions.json')
 )
 const sessionBackends = new SessionBackends({
-  turnEnded: (tabId, turn) => discordRelay?.turnEnded(tabId, turn),
+  turnEnded: (tabId, turn) => {
+    slash.turnEnded(tabId, turn)
+    discordRelay?.turnEnded(tabId, turn)
+  },
   prompted: consumeOutletDedupe,
   bound: (tabId, key) => {
     attention.bound(tabId, key, attentionCtx())
     cronRunner?.onBound(tabId, key)
     conductors?.onBound(tabId, key)
     startedSessions.bound(tabId, key)
+    slash.bound(tabId, key)
     ptyMgr.wakeReady(tabId)
   },
   exited: (tabId, subject) => attention.onExited(tabId, attentionCtx(), subject),
@@ -323,6 +349,28 @@ sessionBackends.conductorOf = (id) => conductors?.conductorOf(id)
 function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
+
+function slashAsking(tabId: string): boolean {
+  return tracker.statusOf(tabId) === 'approval' || !!discordRelay?.dialogOpen(tabId)
+}
+
+const slash = new SlashCommands({
+  backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
+  keyOf: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
+  status: (tabId) => tracker.statusOf(tabId),
+  asking: slashAsking,
+  takesTyping: (tabId) => !!discordRelay?.takesCommand(tabId),
+  panelOpen: async (tabId) => {
+    const s = sessionOfTab(tabId)
+    if (s?.backendId !== 'claude' || !s.sessionId || tracker.remoteOf(tabId)) return undefined
+    return claudeShowsAPanel(s.sessionId)
+  },
+  ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
+  exclusive: (tabId, typing) => ptyMgr.exclusive(tabId, typing),
+  typeNow: (tabId, keys) => typeKeys((data) => ptyMgr.write(tabId, data), keys),
+  post: (channelId, text) => discordRelay?.say(channelId, text),
+  skipFinished: (tabId, on) => discordNotices?.skipFinished(tabId, on)
+})
 tracker.on('turn-ended', ({ tabId, turn }: { tabId: string; turn: Turn }) =>
   sessionBackends.observe(tabId, { type: 'turn-ended', turn })
 )
@@ -684,6 +732,69 @@ const notesAndWorkbenchVerbs = workbenchVerbs({
   }
 })
 
+const sessionDeps: SessionVerbDeps = {
+  workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
+  allSessions: () => allSessions().filter((s) => !s.conductor),
+  pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
+  peerNames: () => claudePeerNames(),
+  launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
+  queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
+  startedSessions,
+  closable: closableSessions,
+  whatIsLeft: whatClosingWouldLose,
+  closeSoon: (target) =>
+    setTimeout(() => void closeSessionFully(target), CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
+  conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
+  sidebar: () => workspaceMgr?.rows() ?? [],
+  readTurns: (key, n) => sessionBackends.turns(key, n),
+  touch: (tabId, key) => conductors?.touch(tabId, key),
+  conductorOf: conductorTarget,
+  resume: async (row) => {
+    const resumed = await resumeRow(row)
+    if (!resumed.ok) throw new Error(resumed.error)
+    return resumed.tabId
+  },
+  ready: tabReady,
+  sendLine: async (tabId, line, ms) => {
+    const sessionId = sessionOfTab(tabId)?.sessionId
+    const socket = sessionId ? await whenMessagingSocket(sessionId, ms) : null
+    if (!socket) throw new Error('Koloft could not find where that session takes messages.')
+    await writeLine(socket, line)
+  },
+  typeInto: (tabId, text) => ptyMgr.type(tabId, [text, '\r']),
+  modeOf: (tabId) => sessionBackends.permissionClass(tabId),
+  stop: killTabFromMain,
+  answer: async (tabId, reply) => {
+    if (!discordRelay) return STILL_STARTING
+    return discordRelay.answerSession(tabId, reply)
+  },
+  undelivered: (callerTab, target, why) => {
+    const caller = conductors?.bindingOfTab(callerTab)
+    const b = caller ?? conductors?.bindings().find((x) => x.id === target.bindingId)
+    const text = `Could not deliver to ${target.name}: ${why}`
+    if (!b) return void sendToRenderer('cron:toast', text)
+    discordRelay?.say(b.channel.channelId, `⚠ ${text}`)
+    if (caller) discordRelay?.tell(caller.id, `[Koloft] ${text}`)
+  },
+  started: (conductorTab, tabId, name, workspace, backend) => {
+    const b = conductors?.bindingOfTab(conductorTab)
+    if (!b) return
+    conductors?.touchWhenBound(conductorTab, tabId)
+    discordNotices?.started(b.channel.channelId, name, workspace, backend)
+  },
+  command: async (callerTab, target, text) => {
+    const b = conductors?.bindingOfTab(callerTab)
+    if (!b) throw new Error(STILL_STARTING)
+    if (target.bindingId === b.id) {
+      if (!discordRelay) throw new Error(STILL_STARTING)
+      discordRelay.command(b.id, text, b.channel.channelId)
+      return `Koloft will type ${text} into you once this turn ends, and post what it prints in Discord.`
+    }
+    return commandInto(b, target, text)
+  },
+  screen: screenOf
+}
+
 const agentRequests = new AgentRequests({
   verbs: {
     ...BUILTIN_VERBS,
@@ -697,57 +808,7 @@ const agentRequests = new AgentRequests({
     ),
     ...notesAndWorkbenchVerbs,
     note: unlessWorkspacelessConductor(notesAndWorkbenchVerbs.note),
-    session: sessionVerb({
-      workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
-      allSessions: () => allSessions().filter((s) => !s.conductor),
-      pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
-      peerNames: () => claudePeerNames(),
-      launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
-      queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
-      startedSessions,
-      closable: closableSessions,
-      whatIsLeft: whatClosingWouldLose,
-      closeSoon: (target) =>
-        setTimeout(() => void closeSessionFully(target), CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
-      conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
-      sidebar: () => workspaceMgr?.rows() ?? [],
-      readTurns: (key, n) => sessionBackends.turns(key, n),
-      touch: (tabId, key) => conductors?.touch(tabId, key),
-      conductorOf: conductorTarget,
-      resume: async (row) => {
-        const resumed = await resumeRow(row)
-        if (!resumed.ok) throw new Error(resumed.error)
-        return resumed.tabId
-      },
-      ready: tabReady,
-      sendLine: async (tabId, line, ms) => {
-        const sessionId = sessionOfTab(tabId)?.sessionId
-        const socket = sessionId ? await whenMessagingSocket(sessionId, ms) : null
-        if (!socket) throw new Error('Koloft could not find where that session takes messages.')
-        await writeLine(socket, line)
-      },
-      typeInto: (tabId, text) => typeKeys((data) => ptyMgr.write(tabId, data), [text, '\r']),
-      modeOf: (tabId) => sessionBackends.permissionClass(tabId),
-      stop: killTabFromMain,
-      answer: async (tabId, reply) => {
-        if (!discordRelay) return STILL_STARTING
-        return discordRelay.answerSession(tabId, reply)
-      },
-      undelivered: (callerTab, target, why) => {
-        const caller = conductors?.bindingOfTab(callerTab)
-        const b = caller ?? conductors?.bindings().find((x) => x.id === target.bindingId)
-        const text = `Could not deliver to ${target.name}: ${why}`
-        if (!b) return void sendToRenderer('cron:toast', text)
-        discordRelay?.say(b.channel.channelId, `⚠ ${text}`)
-        if (caller) discordRelay?.tell(caller.id, `[Koloft] ${text}`)
-      },
-      started: (conductorTab, tabId, name, workspace, backend) => {
-        const b = conductors?.bindingOfTab(conductorTab)
-        if (!b) return
-        conductors?.touchWhenBound(conductorTab, tabId)
-        discordNotices?.started(b.channel.channelId, name, workspace, backend)
-      }
-    }),
+    session: sessionVerb(sessionDeps),
     workspace: workspaceVerb({
       conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
       sidebar: () => workspaceMgr?.rows() ?? []
@@ -1171,6 +1232,7 @@ function rendererTeardown(): void {
 
 function createWindow(): void {
   const geo = restoredWindowGeometry()
+  windowOpenedAt = Date.now()
   mainWindow = new BrowserWindow({
     ...geo.bounds,
     minWidth: windowMinWidth(geo.bounds.width),
@@ -1381,6 +1443,7 @@ app.whenReady().then(() => {
     sendToRenderer('terminal:cwd', c)
   })
   ptyMgr.on('exit', (e) => {
+    slash.closed(e.id)
     discordNotices?.closed(e.id)
     discordNotices?.forget(e.id)
     discordRelay?.forget(e.id)
@@ -1443,8 +1506,12 @@ app.whenReady().then(() => {
   tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) =>
     discordRelay?.toolDone(tabId, call)
   )
+  tracker.on('command-output', ({ tabId, ...output }: CommandOutput & { tabId: string }) =>
+    slash.output(tabId, output)
+  )
   tracker.on('status', (t: StatusEdge) => {
     ptyMgr.wakeReady(t.tabId)
+    slash.status(t.tabId, t.next)
     const conductor = !!conductors?.conductorOf(t.tabId)
     if (conductor && (t.next === 'approval' || t.next === 'waiting'))
       void codexAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
@@ -1609,7 +1676,11 @@ app.whenReady().then(() => {
       syncAnswerable()
     },
     onMessage: (m) => discordRelay?.onMessage(m),
-    onReady: () => void discordRelay?.catchUp(),
+    onInteraction: (i) => void interactions.handle(i),
+    onReady: () => {
+      void discordRelay?.catchUp()
+      registerSlashCommands()
+    },
     postFailed: (channelId, error) => {
       const name = conductors?.bindingOfChannel(channelId)?.channel.name ?? channelId
       const text = `Koloft could not post to #${name} in Discord: ${error}`
@@ -1623,6 +1694,25 @@ app.whenReady().then(() => {
   })
   discordLink = link
   const conductorsNow = conductors
+  const interactions = new Interactions({
+    owner: () => conductorsNow.owner(),
+    bindingOfChannel: (channelId) => conductorsNow.bindingOfChannel(channelId),
+    choices: (b) => [
+      { name: `This channel’s conductor (${scopeName(b.scope)})`, value: MYSELF },
+      ...sessionChoices(sessionDeps, b.scope)
+    ],
+    run: async (b, session, text) => {
+      if (session === MYSELF) {
+        if (!discordRelay) throw new Error(STILL_STARTING)
+        discordRelay.command(b.id, text, b.channel.channelId)
+        return `Koloft will type ${text} into the conductor once it is idle, and post what it prints here.`
+      }
+      const found = await targetIn(sessionDeps, b.scope, session)
+      if (!found.ok) throw new Error(found.error)
+      return commandInto(b, found.value, text)
+    },
+    respond: (i, body) => link.respond(i, body)
+  })
   const attachmentsDir = path.join(userData, 'discord-attachments')
   discordRelay = new DiscordRelay({
     link,
@@ -1640,7 +1730,17 @@ app.whenReady().then(() => {
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive,
     ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
     asksChanged: (tabId) => ptyMgr.wakeReady(tabId),
-    write: (tabId, data) => ptyMgr.write(tabId, data),
+    type: (tabId, keys) => ptyMgr.type(tabId, keys),
+    typeCommand: (bindingId, tabId, command) => {
+      const b = conductorsNow.bindings().find((x) => x.id === bindingId)
+      const name = b ? `the ${scopeName(b.scope)} conductor` : 'the conductor'
+      return slash.typeWhenIdle(
+        { name, tabId, conductor: true },
+        command,
+        b?.channel.channelId ?? ''
+      )
+    },
+    queueDrained: (tabId) => codexSessions?.queueDrained(tabId) ?? true,
     queue: async (tabId, text, clientId) => {
       if (!codexSessions) throw new Error(codexStartupError ?? 'Codex is not available.')
       await codexSessions.queueMessage(tabId, text, clientId)
@@ -2218,6 +2318,42 @@ function overlayListenerLost(): void {
 
 const cdpOps = new Map<string, (res: BrowserCdpOpResult) => void>()
 const boundSessions = new Map<string, string>()
+const screenAsks = new Map<string, (a: ScreenAnswer) => void>()
+let windowOpenedAt = 0
+const SCREEN_ANSWER_BUDGET_MS = 3000
+
+async function screenOf(tabId: string): Promise<SessionScreen> {
+  const handle = ptyMgr.get(tabId)
+  if (!handle) return { error: 'it is not open, so it has no screen.' }
+  if (!mainWindow || mainWindow.isDestroyed())
+    return {
+      error: 'the Koloft window is closed, so its screen cannot be read until it opens again.'
+    }
+  const requestId = crypto.randomUUID()
+  const answer = await new Promise<ScreenAnswer | null>((resolve) => {
+    const timer = setTimeout(() => {
+      screenAsks.delete(requestId)
+      resolve(null)
+    }, SCREEN_ANSWER_BUDGET_MS)
+    screenAsks.set(requestId, (a) => {
+      clearTimeout(timer)
+      resolve(a)
+    })
+    const request: ScreenRequest = { requestId, tabId }
+    sendToRenderer('terminal:screen', request)
+  })
+  if (!answer?.lines) return { error: 'the Koloft window did not show its screen.' }
+  const notes: string[] = []
+  if (windowOpenedAt > handle.startedAt)
+    notes.push(
+      'The Koloft window was opened again after this session started, so the screen holds only what came after that.'
+    )
+  if (!answer.sizedToPane)
+    notes.push(
+      'This tab has not been on screen since Koloft started, so its lines may wrap at a different width.'
+    )
+  return { lines: answer.lines, notes }
+}
 
 function ptyTabIds(): string[] {
   return ptyMgr
@@ -2721,6 +2857,29 @@ function tabReady(tabId: string, ms: number, turnEnded: boolean): Promise<boolea
   )
 }
 
+function registerSlashCommands(): void {
+  const guilds = new Set((conductors?.bindings() ?? []).map((b) => b.channel.guildId))
+  void discordLink?.registerCommands([...guilds], SLASH_COMMANDS)
+}
+
+async function commandInto(b: ConductorBinding, t: Target, text: string): Promise<string> {
+  const channelId = b.channel.channelId
+  const failed = (error: unknown): void => discordRelay?.say(channelId, `⚠ ${errorText(error)}`)
+  const typeInto = (tabId: string): Promise<void> => {
+    conductors?.touchNowAndNext(b.id, t.key, tabId)
+    return slash.typeWhenIdle({ name: t.name, tabId, conductor: false }, text, channelId)
+  }
+  if (!t.tabId) {
+    void t.open().then(typeInto).catch(failed)
+    return `${t.name} is closed; Koloft resumes it, types ${text} once it is ready, and posts what it prints in Discord.`
+  }
+  if (slashAsking(t.tabId))
+    return `${t.name} is waiting for an answer, so ${text} was not typed. Answer it first, then send the command again.`
+  const ack = slash.ack({ name: t.name, tabId: t.tabId, conductor: false }, text)
+  void typeInto(t.tabId).catch(failed)
+  return ack
+}
+
 function conductorTarget(ref: string): Target | undefined {
   const all = conductors
   const b = all?.bindingOfSession(ref)
@@ -3117,12 +3276,12 @@ function registerIpc(): void {
     )
       return { ok: false, error: 'Pick a channel.' }
     const { guildId, channelId, name } = channel
-    return (
-      conductors?.save({ ...input, channel: { guildId, channelId, name } }) ?? {
-        ok: false,
-        error: STILL_STARTING
-      }
-    )
+    const saved = conductors?.save({ ...input, channel: { guildId, channelId, name } }) ?? {
+      ok: false,
+      error: STILL_STARTING
+    }
+    if (saved.ok) registerSlashCommands()
+    return saved
   })
   ipcMain.handle('conductors:unbind', (_e, id: string) => conductors?.unbind(id))
   ipcMain.handle('conductors:switchBackend', (_e, id: string) => conductors?.switchBackend(id))
@@ -3295,6 +3454,14 @@ function registerIpc(): void {
   ipcMain.on('browser:strip', (_e, sessionId: unknown, targets: unknown) => {
     if (typeof sessionId !== 'string' || !Array.isArray(targets)) return
     relayStripChanged(sessionId, targets as BrowserStripTarget[])
+  })
+  ipcMain.on('terminal:screen-done', (_e, answer: unknown) => {
+    const a = answer as ScreenAnswer
+    if (!a || typeof a.requestId !== 'string') return
+    const pending = screenAsks.get(a.requestId)
+    if (!pending) return
+    screenAsks.delete(a.requestId)
+    pending(a)
   })
   ipcMain.on('browser:cdp-op-done', (_e, res: unknown) => {
     const r = res as BrowserCdpOpResult
