@@ -202,8 +202,8 @@ function formatTurns(turns: Turn[]): string {
     .join('\n\n')
 }
 
-const REMOTE_NOT_YET =
-  'the koloft command cannot start a session in a remote (SSH) workspace yet. Pick a workspace on this computer.'
+const NO_REMOTE_START =
+  'the koloft command cannot start a session in a remote (SSH) workspace. Pick a workspace on this computer.'
 
 function resolveWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<PinnedWorkspace> {
   const hits = pinned.filter(
@@ -225,7 +225,7 @@ function resolveWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<Pinned
 function startableWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<string> {
   const found = resolveWorkspace(ref, pinned)
   if (!found.ok) return fail(found.error)
-  if (isRemoteKey(found.value.path)) return fail(REMOTE_NOT_YET)
+  if (isRemoteKey(found.value.path)) return fail(NO_REMOTE_START)
   if (found.value.missing) return fail(`the folder of workspace "${found.value.path}" is missing.`)
   return { ok: true, value: found.value.path }
 }
