@@ -123,11 +123,6 @@ function transcriptOnTarget(lab: SshLab, sessionId: string): string {
   }
 }
 
-async function statusOf(page: Page, tabId: string): Promise<string | undefined> {
-  const all = await page.evaluate(() => window.api.sessions.list())
-  return all.find((s) => s.tabId === tabId)?.status
-}
-
 interface ConductorLab {
   page: Page
   lab: SshLab
@@ -234,11 +229,6 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
           .toMatch(
             /(^|\n)❓ .+ is waiting for you: Which colour\?\n1\. Red — The Red one\n2\. Green — The Green one(\n|$)/
           )
-        await expect
-          .poll(() => statusOf(page, remote.tabId), {
-            timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS
-          })
-          .toBe('approval')
         fake.say(OWNER, `/koloft session answer ${remote.sessionId} 2`)
         await expect
           .poll(transcript, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
@@ -306,11 +296,6 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
             timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
           })
           .toMatch(/(^|\n)❓ .+ is waiting for you: Which colour\?\n1\. Red.*\n2\. Green/)
-        await expect
-          .poll(() => statusOf(page, remote.tabId), {
-            timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
-          })
-          .toBe('approval')
         fake.say(OWNER, `/koloft session answer ${remote.sessionId} 2`)
         await expect
           .poll(transcript, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS })

@@ -48,6 +48,7 @@ export interface NoticeDeps {
   bindings(): ConductorBinding[]
   post(channelId: string, text: string): void
   subject(tabId: string): NoticeSubject | undefined
+  peerName(tabId: string): Promise<string | null>
   awaitsInput(tabId: string): boolean
   detail(tabId: string): Promise<string | undefined>
 }
@@ -56,6 +57,7 @@ export class Notices {
   private pending = new Map<string, string[]>()
   private closeNoticed = new Set<string>()
   private waitingNoticed = new Map<string, string>()
+  private names = new Map<string, string>()
 
   constructor(private d: NoticeDeps) {}
 
@@ -76,6 +78,7 @@ export class Notices {
   forget(tabId: string): void {
     this.closeNoticed.delete(tabId)
     this.waitingNoticed.delete(tabId)
+    this.names.delete(tabId)
   }
 
   started(channelId: string, name: string, workspace: string, backend: BackendId): void {
@@ -95,7 +98,16 @@ export class Notices {
       this.waitingNoticed.set(tabId, detail ?? '')
     }
     const channelId = noticeChannel(this.d.bindings(), subject, kind)
-    if (channelId) this.queue(channelId, noticeText(kind, subject.name, detail))
+    if (!channelId) return
+    const name = await this.nameOf(tabId, kind, subject.name)
+    this.queue(channelId, noticeText(kind, name, detail))
+  }
+
+  private async nameOf(tabId: string, kind: NoticeKind, title: string): Promise<string> {
+    if (kind === 'closed') return this.names.get(tabId) ?? title
+    const name = await this.d.peerName(tabId)
+    if (name) this.names.set(tabId, name)
+    return name ?? title
   }
 
   private queue(channelId: string, line: string): void {

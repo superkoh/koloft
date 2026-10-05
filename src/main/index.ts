@@ -1662,6 +1662,10 @@ app.whenReady().then(() => {
           }
         : undefined
     },
+    peerName: async (tabId) => {
+      const s = sessionOfTab(tabId)
+      return s?.backendId === 'claude' && s.sessionId ? claudePeerNames()(s.sessionId) : null
+    },
     awaitsInput: (tabId) => tracker.awaitsInput(tabId),
     detail: async (tabId) => {
       const approval = await codexApprovalOf(tabId)

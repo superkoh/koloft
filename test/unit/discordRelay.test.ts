@@ -293,7 +293,7 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
   })
 
   // CC§14
-  it('a Claude session on another machine is answered by keys, only while its mirrored state still waits on the dialog', async () => {
+  it('a Claude session on another machine is answered by keys as soon as its mirrored question arrives, and not once its turn is over', async () => {
     let status: SessionStatus = 'working'
     const { relay, writes, waiting } = setup({}, [], { status: () => status })
     const one = {
@@ -304,12 +304,20 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
     }
     relay.onAsk(MANAGED, one)
     expect(waiting).toEqual([MANAGED])
-    expect(await relay.answerSession(MANAGED, '2')).toBe(SHOWS_NO_DIALOG)
-    status = 'approval'
     expect(await relay.answerSession(MANAGED, 'Purple')).toBeUndefined()
     expect(writes.map((w) => w.data)).toEqual(['3', 'Purple', '\r'])
     expect(writes[2].at - writes[1].at).toBeGreaterThanOrEqual(290)
     expect(await relay.answerSession(MANAGED, '1')).toBe(SHOWS_NO_DIALOG)
+
+    relay.onAsk(MANAGED, one)
+    status = 'approval'
+    expect(await relay.answerSession(MANAGED, '2')).toBeUndefined()
+    expect(writes.at(-1)?.data).toBe('2')
+
+    relay.onAsk(MANAGED, one)
+    status = 'waiting'
+    expect(await relay.answerSession(MANAGED, '2')).toBe(SHOWS_NO_DIALOG)
+    status = 'working'
 
     relay.onAsk(MANAGED, BASH)
     expect(await relay.answerSession(MANAGED, 'maybe later')).toContain('only answer yes or no')

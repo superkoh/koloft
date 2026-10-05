@@ -76,6 +76,7 @@ describe('Discord notices: which session state change reaches which channel', ()
         workspace: WS,
         conductor: tabId === 'd' ? 'b1' : undefined
       }),
+      peerName: async () => null,
       awaitsInput: () => false,
       detail: async () => 'npm test'
     })
@@ -93,5 +94,33 @@ describe('Discord notices: which session state change reaches which channel', ()
     notices.started('10', 'docs-links', WS, 'codex')
     vi.advanceTimersByTime(NOTICE_COALESCE_MS)
     expect(post.mock.calls[1]).toEqual(['10', '▶ Started docs-links (koloft, Codex)'])
+  })
+
+  it('a session started under a name is called by that name, not by its title, and still by it once it has closed and has no name left', async () => {
+    vi.useFakeTimers()
+    const post = vi.fn()
+    let live = true
+    const notices = new Notices({
+      bindings: () => [binding(WS, '10', ['a', 'b'])],
+      post,
+      subject: (tabId) => ({
+        key: tabId,
+        name: tabId === 'a' ? 'Koloft started you because the session' : 'beta',
+        workspace: WS
+      }),
+      peerName: async (tabId) => (tabId === 'a' && live ? 'helper-1a2b3c' : null),
+      awaitsInput: () => false,
+      detail: async () => undefined
+    })
+    notices.onStatus('a', 'working', 'waiting')
+    notices.onStatus('b', 'working', 'waiting')
+    await vi.advanceTimersByTimeAsync(0)
+    live = false
+    notices.closed('a')
+    notices.forget('a')
+    await vi.advanceTimersByTimeAsync(NOTICE_COALESCE_MS)
+    expect(post.mock.calls).toEqual([
+      ['10', '🔔 helper-1a2b3c finished.\n🔔 beta finished.\n⏹ helper-1a2b3c closed.']
+    ])
   })
 })
