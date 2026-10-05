@@ -697,6 +697,7 @@ export class WorkspaceManager {
       }
       const pending = resolvePending(buckets, launches, rows, Date.now())
       for (const tabId of pending.promoted) this.launches.delete(tabId)
+      for (const r of pending.rows) wsBySession.set(r.id, ws.path)
       payload.push({
         workspace: {
           path: ws.path,

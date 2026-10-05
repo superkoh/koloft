@@ -395,6 +395,18 @@ describe('WorkspaceManager: pending launches', () => {
     expect(latest(repo).rows.some((r) => r.pending)).toBe(false)
   })
 
+  it('knows the workspace of a launched session from the moment it binds, before it writes any transcript, so a dialog in its first turn reaches a conductor', async () => {
+    mgr.start()
+    mgr.launchStarted('tab-1', repo)
+    bindings.set('first-turn', 'tab-1')
+    mgr.onSessionStart('tab-1', repo)
+    mgr.onSessionBound('first-turn')
+    await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['first-turn']))
+
+    expect(fs.existsSync(path.join(projectsRoot, encodeCwd(repo)))).toBe(false)
+    expect(mgr.workspaceOf('first-turn')).toBe(repo)
+  })
+
   it('drops the pending row when the launching pty dies (Cancel / early exit)', async () => {
     mgr.start()
     mgr.launchStarted('tab-1', repo)

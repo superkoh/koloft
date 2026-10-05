@@ -384,7 +384,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
   })
 
   // CC§14
-  test('a real Claude session in a conductor’s care, its command dialog relayed to the channel with the hook waiting, is answered "1" at the Mac: Koloft lets the hook go once the command ran, and the session goes on', async ({
+  test('a real Claude session in a conductor’s care, its command dialog in its very first turn relayed to the channel with the hook waiting, is answered "1" at the Mac: Koloft lets the hook go once the command ran, and the session goes on', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
@@ -397,12 +397,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     )
     await withConductor(env, fake, async (_app, page) => {
       const target = await liveClaudeTab(page)
-      await typePrompt(page, target.tabId, 'Reply with only the word READY.')
-      await expect
-        .poll(() => saidBy(env, target.sessionId, 'assistant').join('\n'), {
-          timeout: A_REAL_MODEL_TURN_MS
-        })
-        .toContain('READY')
+      expect(saidBy(env, target.sessionId, 'user')).toEqual([])
       await expect
         .poll(() => fs.existsSync(path.join(hookDir(env), `${target.tabId}.answerable`)))
         .toBe(true)
