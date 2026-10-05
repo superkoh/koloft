@@ -1,5 +1,5 @@
-import { fileUrlPath } from '@shared/browserRoute'
-import { isWebPagePath, opensAsWebTab, previewKindForPath } from '@shared/preview'
+import { fileUrlPath, opensAsWebTab } from '@shared/browserRoute'
+import { isWebPagePath, previewKindForPath } from '@shared/preview'
 import type { GitNumstatMap, GitStatusMap, PreviewItem } from '@shared/types'
 import type { OpenFile } from '../store'
 import { buildEntries, totalDelta, type ChangeTotals } from './changesModel'

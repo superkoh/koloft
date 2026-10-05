@@ -17,7 +17,8 @@ import type {
   GitStatusMap,
   SessionInfo
 } from '@shared/types'
-import { basename, opensAsWebTab } from '@shared/preview'
+import { opensAsWebTab } from '@shared/browserRoute'
+import { basename } from '@shared/preview'
 import { parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { boundSessionId, useActiveOpenFile, useStore, type OpenFile } from '../store'
 import { ArtifactPane, NO_CAPS, sameCaps, type ArtifactCaps } from './ArtifactPane'

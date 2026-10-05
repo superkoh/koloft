@@ -1,4 +1,3 @@
-import { isRemoteKey } from './remoteKey'
 import type { PreviewKind } from './types'
 
 const EXT_MAP: Record<string, PreviewKind> = {
@@ -41,10 +40,6 @@ const WEB_PAGE_EXTENSIONS = ['.html', '.htm']
 
 export function isWebPagePath(p: string): boolean {
   return WEB_PAGE_EXTENSIONS.includes(extOf(p))
-}
-
-export function opensAsWebTab(p: string): boolean {
-  return isWebPagePath(p) && !isRemoteKey(p)
 }
 
 export const VIEWABLE_EXTENSIONS: readonly string[] = [
