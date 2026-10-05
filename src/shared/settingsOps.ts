@@ -6,21 +6,31 @@ import {
   type Settings
 } from './types'
 import { normalizeSessionMethods } from './sessionBackend'
+import { sanitizeDiscord } from './conductors'
 
 export function buildResetPatch(): Partial<Settings> {
-  const { accounts, multiAccount, skipPermissions, fablePriority, sessionMethods, ...rest } =
-    DEFAULT_SETTINGS
+  const {
+    accounts,
+    multiAccount,
+    skipPermissions,
+    fablePriority,
+    sessionMethods,
+    discord,
+    ...rest
+  } = DEFAULT_SETTINGS
   void accounts
   void multiAccount
   void skipPermissions
   void fablePriority
   void sessionMethods
+  void discord
   return rest
 }
 
 export function sanitizeSettingsPatch(patch: Partial<Settings>): Partial<Settings> {
-  const { accounts, ...rest } = patch
+  const { accounts, discord, ...rest } = patch
   void accounts
+  void discord
   return rest
 }
 
@@ -29,6 +39,7 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   const merged = { ...DEFAULT_SETTINGS, ...doc }
   merged.sessionMethods = normalizeSessionMethods(merged.sessionMethods)
   merged.accounts = sanitizeAccountList(merged.accounts)
+  merged.discord = sanitizeDiscord(merged.discord)
   merged.workbenchWidth = sanitizeWorkbenchWidth(
     'workbenchWidth' in doc
       ? merged.workbenchWidth
@@ -37,6 +48,10 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   merged.notesHeight = sanitizeNotesHeight(merged.notesHeight)
   merged.notesFolded =
     typeof merged.notesFolded === 'boolean' ? merged.notesFolded : DEFAULT_SETTINGS.notesFolded
+  merged.conductorsFolded =
+    typeof merged.conductorsFolded === 'boolean'
+      ? merged.conductorsFolded
+      : DEFAULT_SETTINGS.conductorsFolded
   merged.worldClocks = Array.isArray(merged.worldClocks)
     ? [...new Set(merged.worldClocks.filter(isZoneId))].slice(0, WORLD_CLOCK_MAX)
     : []

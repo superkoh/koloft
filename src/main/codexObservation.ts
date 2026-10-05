@@ -6,6 +6,13 @@ import { schemeOf } from '@shared/browserRoute'
 import { costUsdOf, resolvePricing } from '@shared/pricing'
 import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
 import { CODEX_OPEN_SENT } from './openShimScript'
+import { TurnLog, type SaidLine } from '@shared/turns'
+import {
+  codexQuestionOf,
+  type CodexApproval,
+  type CodexQuestion,
+  type Question
+} from './discord/dialog'
 
 export function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -76,6 +83,34 @@ function patchDelta(kind: unknown, diff: string): { added: number; removed: numb
   }
 }
 
+// CODEX§19
+function codexTurnLine(item: Record<string, unknown>, at: number): SaidLine | null {
+  if (item.type === 'agentMessage' && typeof item.text === 'string' && item.text.trim())
+    return { who: 'assistant', text: item.text.trim(), at }
+  if (item.type !== 'userMessage' || !Array.isArray(item.content)) return null
+  const text = item.content
+    .map(record)
+    .flatMap((c) => (c.type === 'text' && typeof c.text === 'string' ? [c.text] : []))
+    .join('\n')
+    .trim()
+  return text ? { who: 'owner', text, at } : null
+}
+
+// CODEX§19
+export function codexTurns(turns: unknown): TurnLog {
+  const log = new TurnLog()
+  for (const turn of Array.isArray(turns) ? turns.map(record) : []) {
+    const at = typeof turn.completedAt === 'number' ? turn.completedAt * 1000 : 0
+    for (const item of Array.isArray(turn.items) ? turn.items.map(record) : []) {
+      const line = codexTurnLine(item, at)
+      if (line) log.add(line, true)
+    }
+    const open = log.open()
+    if (open) log.end(open)
+  }
+  return log
+}
+
 const OPEN_ONE_TARGET = /^open\s+(?:'([^']+)'|"([^"]+)"|([^\s'"-]\S*))$/
 const OPEN_RAN = ['completed', 'failed']
 
@@ -100,6 +135,10 @@ export class CodexObservation {
   >()
   private approvals = new Map<string | number, string>()
   private approvalThreads = new Map<string | number, string>()
+  private approvalAsks = new Map<
+    string | number,
+    { command?: string; reason?: string; question?: Question }
+  >()
   private generation = 0
   private threadId?: string
   private liveTurns = new Set<string>()
@@ -116,8 +155,25 @@ export class CodexObservation {
   private lastWritten?: string
   private liveWrites = 0
   unsubscribed = false
+  turns = new TurnLog()
 
   constructor(private emit: (event: CodexEvent) => void) {}
+
+  // CODEX§3
+  openApproval(): CodexApproval | undefined {
+    for (const [id, method] of this.approvals)
+      if (method.endsWith('/requestApproval')) return { id, ...this.approvalAsks.get(id) }
+    return undefined
+  }
+
+  // CODEX§20
+  openQuestion(): CodexQuestion | undefined {
+    for (const id of this.approvals.keys()) {
+      const question = this.approvalAsks.get(id)?.question
+      if (question) return { id, ...question }
+    }
+    return undefined
+  }
 
   receive(direction: 'client' | 'server', value: unknown): void {
     const f = record(value),
@@ -145,6 +201,7 @@ export class CodexObservation {
       if (method === 'turn/start' && p.threadId === this.threadId) this.unsubscribed = false
       if (id !== undefined && !method && this.approvals.delete(id)) {
         this.approvalThreads.delete(id)
+        this.approvalAsks.delete(id)
         if (!this.approvals.size) {
           this.waitingForInput = false
           this.mainTurn = this.liveTurns.size ? 'working' : 'ended'
@@ -179,6 +236,7 @@ export class CodexObservation {
       this.liveTurns.clear()
       this.approvals.clear()
       this.approvalThreads.clear()
+      this.approvalAsks.clear()
       this.waitingForInput = false
       this.mainTurn = 'ended'
       this.publishedTurn = undefined
@@ -196,6 +254,7 @@ export class CodexObservation {
         change: req.method === 'thread/start' ? 'replace' : 'switch'
       })
       this.seedFilesFromHistory(record(result.thread))
+      this.turns = codexTurns(record(result.thread).turns)
       this.status(thread.status)
       return
     }
@@ -206,6 +265,9 @@ export class CodexObservation {
     if (method === 'item/completed') {
       if (this.noteFiles(record(p.item), true)) this.publishFiles()
       this.observeOpen(record(p.item))
+      const at = typeof p.completedAtMs === 'number' ? p.completedAtMs : Date.now()
+      const line = ownedChild ? null : codexTurnLine(record(p.item), at)
+      if (line) this.turns.add(line, true)
     }
     // CODEX§3
     if (
@@ -217,6 +279,12 @@ export class CodexObservation {
     ) {
       this.approvals.set(id, method)
       this.approvalThreads.set(id, p.threadId as string)
+      const question = codexQuestionOf(method, p)
+      this.approvalAsks.set(id, {
+        ...(typeof p.command === 'string' ? { command: p.command } : {}),
+        ...(typeof p.reason === 'string' ? { reason: p.reason } : {}),
+        ...(question ? { question } : {})
+      })
       this.mainTurn = method.endsWith('/requestApproval') ? 'approval' : 'input'
       this.publishActivity()
     } else if (ownedChild) {
@@ -237,12 +305,16 @@ export class CodexObservation {
         if (owner === this.threadId) {
           this.approvals.delete(id)
           this.approvalThreads.delete(id)
+          this.approvalAsks.delete(id)
         }
       }
       this.waitingForInput = false
       this.markBackgroundCommands(this.threadId)
       this.mainTurn = this.liveTurns.size ? 'working' : 'ended'
       this.publishActivity()
+      const finished = this.turns.open()
+      if (finished && this.turns.end(finished))
+        this.emit({ type: 'turn-ended', turn: { ...finished, said: [...finished.said] } })
     } else if (method === 'thread/name/updated' && typeof p.threadName === 'string') {
       this.emit({ type: 'title', title: p.threadName })
     } else if (method === 'thread/tokenUsage/updated') {

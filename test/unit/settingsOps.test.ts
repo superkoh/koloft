@@ -20,6 +20,10 @@ describe('buildResetPatch (FR-12)', () => {
     expect(patch).not.toHaveProperty('fablePriority')
   })
 
+  it('leaves the Discord block alone, so a reset keeps every conductor binding', () => {
+    expect(buildResetPatch()).not.toHaveProperty('discord')
+  })
+
   it('carries every non-account default — browser control, keep-awake, the Notes size and the first-run welcome and tips included', () => {
     const patch = buildResetPatch()
     expect(Object.keys(patch).sort()).toEqual(
@@ -27,6 +31,7 @@ describe('buildResetPatch (FR-12)', () => {
         'agentTools',
         'browserControl',
         'browserPaneWidth',
+        'conductorsFolded',
         'dockBadge',
         'filePaneWidth',
         'fileTreeHeight',
@@ -71,6 +76,11 @@ describe('sanitizeSettingsPatch (FR-13)', () => {
       skipPermissions: false,
       fontSize: 20
     })
+  })
+
+  it('strips the Discord block, which only the main process writes', () => {
+    const patch = { discord: { bindings: [] }, fontSize: 20 } as never
+    expect(sanitizeSettingsPatch(patch)).toEqual({ fontSize: 20 })
   })
 
   it('lets the git auto-fetch switch through untouched (no whitelist to extend)', () => {
@@ -149,18 +159,21 @@ describe('sanitizeLoadedSettings and the Notes keys: a hand-edited settings.json
     expect(sanitizeLoadedSettings({ notesHeight: 320 }).notesHeight).toBe(320)
   })
 
-  it('forces notesFolded to a real boolean, keeping one that already is', () => {
+  it('forces notesFolded and conductorsFolded to a real boolean, keeping one that already is', () => {
     expect(sanitizeLoadedSettings({ notesFolded: 'yes' }).notesFolded).toBe(
       DEFAULT_SETTINGS.notesFolded
     )
     expect(sanitizeLoadedSettings({ notesFolded: true }).notesFolded).toBe(true)
     expect(sanitizeLoadedSettings({ notesFolded: false }).notesFolded).toBe(false)
+    expect(sanitizeLoadedSettings({ conductorsFolded: 'no' }).conductorsFolded).toBe(true)
+    expect(sanitizeLoadedSettings({ conductorsFolded: false }).conductorsFolded).toBe(false)
   })
 
-  it('leaves the Notes keys at their defaults when the file says nothing', () => {
+  it('leaves the Notes keys at their defaults when the file says nothing, and the Conductors island starts folded', () => {
     const loaded = sanitizeLoadedSettings({})
     expect(loaded.notesHeight).toBe(DEFAULT_SETTINGS.notesHeight)
     expect(loaded.notesFolded).toBe(DEFAULT_SETTINGS.notesFolded)
+    expect(loaded.conductorsFolded).toBe(true)
   })
 })
 

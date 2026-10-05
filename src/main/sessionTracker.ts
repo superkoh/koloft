@@ -10,6 +10,7 @@ import type {
 } from '@shared/types'
 import type { ReportedTask, SessionEvent } from '@shared/sessionEvent'
 import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
+import { TurnLog, type SaidLine, type Turn as TalkTurn } from '@shared/turns'
 import { costUsdOf, resolvePricing } from '@shared/pricing'
 import { localDayKey } from '@shared/usageFormat'
 import { encodeCwd } from '@shared/cwdKey'
@@ -20,7 +21,7 @@ import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './to
 import type { LaunchedSession } from './accountPicker'
 import type { MachineTmp } from './remote/install'
 
-const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects')
+export const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects')
 const TMP_ROOT = ((): string => {
   try {
     return fs.realpathSync('/tmp')
@@ -41,6 +42,8 @@ const TEAMMATE_QUIET_MS = envMs('KOLOFT_TEAMMATE_QUIET_MS', 60_000)
 const PROCS_SCAN_MS = envMs('KOLOFT_PROCS_SCAN_MS', 5000)
 // CC§2
 const RELOCATE_SETTLE_MS = envMs('KOLOFT_RELOCATE_SETTLE_MS', 1200)
+// CC§2
+const TURN_TEXT_WAIT_MS = envMs('KOLOFT_TURN_TEXT_WAIT_MS', 5000)
 
 export { encodeCwd }
 
@@ -65,9 +68,12 @@ export function parseReportedTasks(bgl: unknown): ReportedTask[] | undefined {
 export function sessionEventFromHook(
   event?: string,
   message?: string,
-  bgl?: unknown
+  bgl?: unknown,
+  ask?: unknown
 ): SessionEvent | null {
   switch (event) {
+    case 'ask':
+      return ask && typeof ask === 'object' ? { type: 'asked', ask } : null
     case 'prompt':
       return { type: 'prompt' }
     case 'stop':
@@ -166,6 +172,11 @@ const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
 const BASH_WRITES = /(^|[^0-9&])>>?\s*(?!\/dev\/null)\S|\btee\s|\bsed\s+-i\b|\btouch\s/
 const READ_TOOLS = new Set(['Read'])
 const UNACKED_TOOL_CMD_CAP = 64
+
+export interface ToolCall {
+  name: string
+  input: Record<string, unknown>
+}
 
 const THIS_MAC_TMP: MachineTmp = { tmpRoot: TMP_ROOT, uid: process.getuid?.() ?? 0 }
 
@@ -289,6 +300,125 @@ export function classifyUserPrompt(text: string): {
   }
 }
 
+// CC§13
+const PEER_MESSAGE = /^Another Claude session sent a message:\n([\s\S]*?)\n\nThis came from another/
+// CC§13
+const PEER_ENVELOPE = /^<cross-session-message[^>\n]*>\n([\s\S]*)\n<\/cross-session-message>$/
+
+function peerText(raw: string): string {
+  const inner = PEER_MESSAGE.exec(raw)?.[1] ?? raw
+  return (PEER_ENVELOPE.exec(inner)?.[1] ?? inner).trim()
+}
+
+function promptText(content: unknown): string | null {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return null
+  const texts = content.flatMap((b) =>
+    b?.type === 'text' && typeof b.text === 'string' ? [b.text] : []
+  )
+  return texts.length ? texts.join('\n') : null
+}
+
+function ownerOrPeer(kind: unknown): 'owner' | 'peer' | null {
+  if (kind === undefined || kind === 'human') return 'owner'
+  return kind === 'peer' ? 'peer' : null
+}
+
+type TurnPiece = { line: SaidLine; midTurn: boolean } | 'tool'
+
+// CC§2 CC§13
+function claudeTurnPieces(obj: any): TurnPiece[] {
+  if (!obj || obj.isSidechain === true) return []
+  const ts = Date.parse(obj.timestamp)
+  const at = isFinite(ts) ? ts : Date.now()
+  if (obj.type === 'user') {
+    const raw = promptText(obj.message?.content)
+    const who = ownerOrPeer(obj.origin?.kind)
+    if (raw === null || !who) return []
+    if (who === 'peer') return [{ line: { who, text: peerText(raw), at }, midTurn: false }]
+    if (obj.isMeta || INTERRUPT_TEXTS.has(raw) || !classifyUserPrompt(raw).title) return []
+    return [{ line: { who, text: raw.trim(), at }, midTurn: false }]
+  }
+  if (obj.type === 'attachment') {
+    const a = obj.attachment
+    if (a?.type !== 'queued_command' || a.commandMode !== 'prompt' || typeof a.prompt !== 'string')
+      return []
+    const who = ownerOrPeer(a.origin?.kind)
+    if (!who) return []
+    const text = who === 'peer' ? peerText(a.prompt) : a.prompt.trim()
+    return [{ line: { who, text, at }, midTurn: true }]
+  }
+  if (obj.type !== 'assistant' || !Array.isArray(obj.message?.content)) return []
+  return obj.message.content.flatMap((b: any): TurnPiece[] => {
+    if (b?.type === 'tool_use') return ['tool']
+    if (b?.type !== 'text' || typeof b.text !== 'string' || !b.text.trim()) return []
+    return [{ line: { who: 'assistant', text: b.text.trim(), at }, midTurn: true }]
+  })
+}
+
+export function lastTurnsOfLines(
+  lines: string[],
+  n: number
+): { turns: TalkTurn[]; started: number } {
+  const log = new TurnLog()
+  let started = 0
+  for (const line of lines) {
+    let obj: unknown
+    try {
+      obj = JSON.parse(line)
+    } catch {
+      continue
+    }
+    for (const piece of claudeTurnPieces(obj)) {
+      if (piece === 'tool') continue
+      const before = log.open()
+      log.add(piece.line, piece.midTurn)
+      if (log.open() !== before) started++
+    }
+  }
+  return { turns: log.last(n), started }
+}
+
+export const TRANSCRIPT_TAIL_FIRST_READ_BYTES = 64 * 1024
+
+export async function transcriptTurns(file: string, n: number): Promise<TalkTurn[]> {
+  const fh = await fs.promises.open(file, 'r')
+  try {
+    let start = (await fh.stat()).size
+    let tail = Buffer.alloc(0)
+    for (let chunk = TRANSCRIPT_TAIL_FIRST_READ_BYTES; ; chunk *= 2) {
+      const from = Math.max(0, start - chunk)
+      const head = Buffer.alloc(start - from)
+      await fh.read(head, 0, head.length, from)
+      tail = Buffer.concat([head, tail])
+      start = from
+      const lines = tail.toString('utf8').split('\n')
+      const whole = start === 0 ? lines : lines.slice(1)
+      const { turns, started } = lastTurnsOfLines(whole, n)
+      if (start === 0 || started > n) return turns
+    }
+  } finally {
+    await fh.close()
+  }
+}
+
+// CC§2
+export function findTranscript(projectsRoot: string, sessionId: string): string | null {
+  let buckets: string[]
+  try {
+    buckets = fs.readdirSync(projectsRoot)
+  } catch {
+    return null
+  }
+  const hits = buckets
+    .map((b) => path.join(projectsRoot, b, sessionId + '.jsonl'))
+    .filter((file) => fs.existsSync(file))
+  if (hits.length < 2) return hits[0] ?? null
+  return hits
+    .map((file) => ({ file, size: fs.statSync(file, { throwIfNoEntry: false })?.size ?? -1 }))
+    .reduce((a, b) => (b.size > a.size ? b : a)).file
+}
+
 export interface RemoteTab {
   host: string
   projectsRoot: string
@@ -338,6 +468,7 @@ interface Tracked {
   taskCmds: Map<string, string>
   monitorIds: Set<string>
   toolCmds: Map<string, string>
+  openTools: Map<string, ToolCall>
   procs: TaskProcs | null
   shellCpu: Map<string, { cpuMs: number; at: number; quiet: boolean }>
   procsAt: number
@@ -345,6 +476,9 @@ interface Tracked {
   teammateActiveMs: number
   lastInterruptTs: number
   rootPinAwaitingCatchup: boolean
+  turns: TurnLog
+  replyDone: boolean
+  endingTurn?: { turn: TalkTurn; deadline: ReturnType<typeof setTimeout> }
   inode?: number
   swept?: boolean
   relocatedCwd?: string
@@ -391,6 +525,7 @@ export class SessionTracker extends SessionRuntime {
   inspect: typeof inspectTaskProcs = inspectTaskProcs
   leftBehind?: (sessionId: string) => boolean
   machineTmp?: (host: string) => MachineTmp | undefined
+  dialogsWatched: (tabId: string) => boolean = () => true
 
   track(tabId: string, cwd: string, remote?: RemoteTab): void {
     const prev = this.tracked.get(tabId)
@@ -450,12 +585,15 @@ export class SessionTracker extends SessionRuntime {
       taskCmds: new Map(),
       monitorIds: new Set(),
       toolCmds: new Map(),
+      openTools: new Map(),
       procs: null,
       shellCpu: new Map(),
       procsAt: 0,
       teammateActiveMs: 0,
       lastInterruptTs: 0,
       rootPinAwaitingCatchup: false,
+      turns: new TurnLog(),
+      replyDone: false,
       remote
     }
     this.tracked.set(tabId, t)
@@ -475,6 +613,7 @@ export class SessionTracker extends SessionRuntime {
   }
 
   receive(tabId: string, event: SessionEvent): void {
+    if (event.type === 'stop') void this.endTurn(tabId)
     const turn = turnOf(event)
     if (turn === 'working' || turn === 'approval') this.recordHookTurn(tabId, turn)
     // CC§8
@@ -535,6 +674,30 @@ export class SessionTracker extends SessionRuntime {
     const busy = t.reported ? this.judgeReported(t) : this.bgBusy(t)
     if (!busy) t.bgTasks.clear()
     this.applyStatus(t, 'ended', busy)
+  }
+
+  // CC§2
+  private async endTurn(tabId: string): Promise<void> {
+    const t = this.tracked.get(tabId)
+    if (!t) return
+    await this.parse(t).catch(() => {})
+    const turn = t.turns.open()
+    if (this.tracked.get(tabId) !== t || !turn) return
+    if (t.replyDone) return this.finishTurn(t, turn)
+    clearTimeout(t.endingTurn?.deadline)
+    t.endingTurn = {
+      turn,
+      deadline: setTimeout(() => this.finishTurn(t, turn), TURN_TEXT_WAIT_MS)
+    }
+  }
+
+  private finishTurn(t: Tracked, turn: TalkTurn): void {
+    if (t.endingTurn?.turn === turn) {
+      clearTimeout(t.endingTurn.deadline)
+      t.endingTurn = undefined
+    }
+    if (this.tracked.get(t.info.tabId) === t && t.turns.end(turn))
+      this.emit('turn-ended', { tabId: t.info.tabId, turn: { ...turn, said: [...turn.said] } })
   }
 
   private judgeReported(t: Tracked): boolean {
@@ -758,13 +921,13 @@ export class SessionTracker extends SessionRuntime {
       if (t.info.sessionId !== sessionId) continue
       return !!t.info.jsonlPath && fs.existsSync(t.info.jsonlPath)
     }
-    let buckets: string[]
-    try {
-      buckets = fs.readdirSync(PROJECTS_ROOT)
-    } catch {
-      return false
-    }
-    return buckets.some((d) => fs.existsSync(path.join(PROJECTS_ROOT, d, sessionId + '.jsonl')))
+    return !!findTranscript(PROJECTS_ROOT, sessionId)
+  }
+
+  turnsOf(sessionId: string, n: number): TalkTurn[] | undefined {
+    for (const t of this.tracked.values())
+      if (t.info.alive && t.info.sessionId === sessionId) return t.turns.last(n)
+    return undefined
   }
 
   aliveTabFor(sessionId: string): string | null {
@@ -855,10 +1018,15 @@ export class SessionTracker extends SessionRuntime {
     t.monitorIds = new Set()
     t.taskCmds = new Map()
     t.toolCmds = new Map()
+    t.openTools = new Map()
     t.teammateActiveMs = 0
     t.lastBgActivityTs = 0
     t.lastMainActivityTs = 0
     t.lastInterruptTs = 0
+    t.turns = new TurnLog()
+    t.replyDone = false
+    clearTimeout(t.endingTurn?.deadline)
+    t.endingTurn = undefined
     if (!keepBindMs) t.bindMs = Date.now()
     t.resetMs = Date.now()
   }
@@ -1086,7 +1254,11 @@ export class SessionTracker extends SessionRuntime {
     if (t.rootPinAwaitingCatchup) this.setTreeRoot(t, t.info.cwd)
     if (sawInterrupt) await this.interruptTurn(t)
     else if (t.caughtUp) this.resumeWorkingIfStale(t, sawUserPrompt, sawAssistant)
-    if (!t.caughtUp) t.caughtUp = true
+    if (!t.caughtUp) {
+      const history = t.turns.open()
+      if (history && history.at < t.bindMs) t.turns.end(history)
+      t.caughtUp = true
+    }
     return true
   }
 
@@ -1222,6 +1394,17 @@ export class SessionTracker extends SessionRuntime {
     if (at > t.lastBgActivityTs) t.lastBgActivityTs = at
   }
 
+  // CC§14
+  private ingestToolDone(t: Tracked, obj: any): void {
+    if (!Array.isArray(obj.message?.content)) return
+    for (const b of obj.message.content) {
+      const call = b?.type === 'tool_result' ? t.openTools.get(b.tool_use_id) : undefined
+      if (!call) continue
+      t.openTools.delete(b.tool_use_id)
+      if (t.caughtUp) this.emit('tool-done', { tabId: t.info.tabId, ...call })
+    }
+  }
+
   // CC§8
   private ingestTaskNotification(t: Tracked, obj: any): void {
     const text = taskNotificationText(obj)
@@ -1272,7 +1455,19 @@ export class SessionTracker extends SessionRuntime {
           t.lastMainActivityTs = recTs
         }
       }
-      if (obj.type === 'user') this.ingestSpawnAck(t, obj)
+      for (const piece of claudeTurnPieces(obj)) {
+        if (piece === 'tool') t.replyDone = false
+        else {
+          t.turns.add(piece.line, piece.midTurn)
+          t.replyDone = piece.line.who === 'assistant'
+        }
+      }
+      const ending = t.endingTurn?.turn
+      if (ending && (t.replyDone || ending !== t.turns.open())) this.finishTurn(t, ending)
+      if (obj.type === 'user') {
+        this.ingestSpawnAck(t, obj)
+        this.ingestToolDone(t, obj)
+      }
       this.ingestTaskNotification(t, obj)
       if (obj.type === 'user' && !obj.isMeta) {
         const c = obj.message?.content
@@ -1314,6 +1509,11 @@ export class SessionTracker extends SessionRuntime {
         const liveNow = t.caughtUp || (isFinite(recTs) && recTs >= t.bindMs)
         for (const b of obj.message.content) {
           if (!b || b.type !== 'tool_use') continue
+          if (liveNow && typeof b.id === 'string' && this.dialogsWatched(t.info.tabId)) {
+            if (t.openTools.size >= UNACKED_TOOL_CMD_CAP)
+              t.openTools.delete(t.openTools.keys().next().value as string)
+            t.openTools.set(b.id, { name: b.name, input: b.input ?? {} })
+          }
           if ((b.name === 'Bash' || b.name === 'Monitor') && typeof b.input?.command === 'string') {
             if (t.toolCmds.size >= UNACKED_TOOL_CMD_CAP)
               t.toolCmds.delete(t.toolCmds.keys().next().value as string)

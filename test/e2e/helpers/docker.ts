@@ -275,6 +275,11 @@ export function runOnTarget(lab: SshLab, user: string, script: string): string {
   return dk(['exec', '-u', user, '-w', `/home/${user}`, lab.target, 'sh', '-c', script])
 }
 
+export function installOnTarget(lab: SshLab, file: string, at: string): void {
+  dk(['cp', file, `${lab.target}:${at}`])
+  dk(['exec', lab.target, 'chmod', '755', at])
+}
+
 export function loginsAccepted(lab: SshLab, user: string): number {
   const r = spawnSync(docker(), ['logs', lab.target], { encoding: 'utf8' })
   return `${r.stdout}${r.stderr}`

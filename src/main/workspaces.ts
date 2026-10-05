@@ -90,6 +90,9 @@ export interface WorkspaceManagerDeps {
   remoteProblem?(host: string): string | undefined
   remoteGit?(host: string, path: string): RemoteGitInfo | undefined
   killRemoteSession?(host: string, sessionId: string): void
+  hiddenRow?(id: string): boolean
+  conductorsRoot?: string
+  sessionsOnDiskOrRunning?(ids: ReadonlySet<string>): void
   memberDropped?(sessionId: string, why: string): void
 }
 
@@ -221,6 +224,14 @@ export class WorkspaceManager {
     return this.wsBySession.get(sessionId)
   }
 
+  refresh(): void {
+    this.scheduleRescan()
+  }
+
+  private hidden(id: string): boolean {
+    return this.deps.hiddenRow?.(id) ?? false
+  }
+
   remoteTargets(): { host: string; paths: string[] }[] {
     const byHost = new Map<string, Set<string>>()
     for (const ws of this.layout.workspaces) {
@@ -278,7 +289,7 @@ export class WorkspaceManager {
       if (wt !== -1) cwd = cwd.slice(0, wt)
       if (!dirExistsSync(cwd)) continue
       const root = this.deps.projectInfo(cwd).root
-      if (pinned.has(root)) continue
+      if (pinned.has(root) || this.isConductorFolder(root)) continue
       const mtime = Math.max(...files.map((f) => f.mtime))
       const prev = byRoot.get(root)
       if (prev) {
@@ -289,6 +300,11 @@ export class WorkspaceManager {
       }
     }
     return [...byRoot.values()].sort((a, b) => b.mtime - a.mtime).slice(0, DISCOVER_MAX)
+  }
+
+  private isConductorFolder(dir: string): boolean {
+    const root = this.deps.conductorsRoot
+    return !!root && (dir === root || dir.startsWith(root + path.sep))
   }
 
   async worktrees(wsPath: string): Promise<WorktreeInfo[]> {
@@ -673,13 +689,15 @@ export class WorkspaceManager {
         allRows.unshift(...additional.filter((r) => r.pending))
       }
       for (const r of allRows) wsBySession.set(r.id, ws.path)
-      const rows = filterOwned(allRows, owned, wsRunningIds)
+      const visible = allRows.filter((r) => !this.hidden(r.id))
+      const rows = filterOwned(visible, owned, wsRunningIds)
       for (const b of buckets) {
         bucketDirs.push(b.dir)
         wantedBucketDirs.add(path.join(root, b.slug))
       }
       const pending = resolvePending(buckets, launches, rows, Date.now())
       for (const tabId of pending.promoted) this.launches.delete(tabId)
+      for (const r of pending.rows) wsBySession.set(r.id, ws.path)
       payload.push({
         workspace: {
           path: ws.path,
@@ -687,7 +705,7 @@ export class WorkspaceManager {
           isGit: key
             ? (this.deps.remoteGit?.(key.host, key.path)?.isGit ?? false)
             : !missing && isGitCheckout(ws.path),
-          hasHistory: hasHistory(allRows, owned, wsRunningIds),
+          hasHistory: hasHistory(visible, owned, wsRunningIds),
           ...(key
             ? {
                 remote: {
@@ -699,7 +717,7 @@ export class WorkspaceManager {
               }
             : {})
         },
-        rows: [...pending.rows.map(claudeRow), ...rows]
+        rows: [...pending.rows.filter((r) => !this.hidden(r.id)).map(claudeRow), ...rows]
       })
     }
 
@@ -719,6 +737,7 @@ export class WorkspaceManager {
     for (const t of this.remoteTargets()) {
       for (const id of this.deps.remoteRunning?.(t.host) ?? []) liveIds.add(id)
     }
+    this.deps.sessionsOnDiskOrRunning?.(liveIds)
     const additional = this.deps.additionalMembers?.() ?? new Set<string>()
     const members: string[] = []
     for (const id of this.layout.members) {

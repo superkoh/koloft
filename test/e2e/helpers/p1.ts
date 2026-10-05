@@ -285,7 +285,7 @@ export function settingsOnDisk(env: E2EEnv): Record<string, unknown> {
 }
 
 export function notesIsland(page: Page): Locator {
-  return page.locator('.isl-notes')
+  return page.locator('.isl-notes:not(.isl-conductors)')
 }
 
 export function notesArea(page: Page): Locator {
@@ -440,6 +440,31 @@ export async function waitBooted(page: Page): Promise<void> {
     undefined,
     { timeout: 20_000 }
   )
+}
+
+export function terminalText(page: Page, tabId: string): Promise<string> {
+  return page.evaluate((id) => {
+    const term = (
+      window as unknown as {
+        __koloftTerms?: Record<
+          string,
+          {
+            buffer: {
+              active: {
+                length: number
+                getLine(i: number): { translateToString(trim?: boolean): string } | undefined
+              }
+            }
+          }
+        >
+      }
+    ).__koloftTerms?.[id]
+    if (!term) return ''
+    const b = term.buffer.active
+    const out: string[] = []
+    for (let i = 0; i < b.length; i++) out.push(b.getLine(i)?.translateToString(true) ?? '')
+    return out.join('\n')
+  }, tabId)
 }
 
 export function termIds(page: Page): Promise<string[]> {

@@ -4,7 +4,7 @@ import os from 'os'
 import type { TabKind } from '@shared/types'
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { OscCwdParser } from './oscCwd'
-import { codexEnvironment } from './codexTransport'
+import { codexEnvironment, sleep } from './codexTransport'
 import { userShell } from './userShell'
 
 export interface PtyHandle {
@@ -42,6 +42,16 @@ interface CreateArgs {
 }
 
 const UTIL_TITLE_POLL_MS = 1500
+// CC§12
+const SUBMIT_AFTER_TEXT_MS = 300
+
+// CC§12
+export async function typeKeys(write: (data: string) => void, keys: string[]): Promise<void> {
+  for (const [i, key] of keys.entries()) {
+    if (i > 0) await sleep(SUBMIT_AFTER_TEXT_MS)
+    write(key)
+  }
+}
 
 const SETUP_AFTER_RC_FILES_MS = 600
 const LAUNCH_AFTER_PATH_FIXED_MS = 1600
@@ -63,6 +73,7 @@ export class PtyManager extends EventEmitter {
   makeHookSettings?: (tabId: string, allowKoloft: boolean) => string | undefined
 
   private ptys = new Map<string, PtyHandle>()
+  private readyWaiters = new Map<string, Set<() => void>>()
   private counter = 0
   private instanceTag = process.pid.toString(36)
 
@@ -195,6 +206,7 @@ export class PtyManager extends EventEmitter {
     proc.onExit(({ exitCode, signal }) => {
       handle.alive = false
       if (titlePoll) clearInterval(titlePoll)
+      this.wakeReady(id)
       this.emit('exit', { id, exitCode, signal })
     })
 
@@ -231,6 +243,31 @@ export class PtyManager extends EventEmitter {
 
   write(id: string, data: string): void {
     this.ptys.get(id)?.proc.write(data)
+  }
+
+  whenReady(id: string, ready: () => boolean, ms: number): Promise<boolean> {
+    if (ready()) return Promise.resolve(true)
+    if (!this.get(id)?.alive || ms <= 0) return Promise.resolve(false)
+    return new Promise((resolve) => {
+      const waiters = this.readyWaiters.get(id) ?? new Set()
+      this.readyWaiters.set(id, waiters)
+      const settle = (result: boolean): void => {
+        clearTimeout(deadline)
+        waiters.delete(recheck)
+        if (waiters.size === 0) this.readyWaiters.delete(id)
+        resolve(result)
+      }
+      const recheck = (): void => {
+        if (ready()) settle(true)
+        else if (!this.get(id)?.alive) settle(false)
+      }
+      const deadline = setTimeout(() => settle(ready()), ms)
+      waiters.add(recheck)
+    })
+  }
+
+  wakeReady(id: string): void {
+    for (const recheck of [...(this.readyWaiters.get(id) ?? [])]) recheck()
   }
 
   pause(id: string): void {

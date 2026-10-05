@@ -50,6 +50,9 @@ export function codexBackend(sessions: CodexSessions, resumeProbes: ResumeProbes
     observe: (tabId, event) => sessions.observe(tabId, event),
     occupantOf: (dir) => sessions.occupantOf(dir),
     accountUsable: () => true,
-    trustsFolder: (dir) => codexTrustsFolder(codexConfigFile(sessions.defaultEnv), dir)
+    trustsFolder: (dir) => codexTrustsFolder(codexConfigFile(sessions.defaultEnv), dir),
+    turns: async (key, n) => sessions.turnsOf(key, n) ?? sessions.readTurns(key, n),
+    // ADR-0028
+    permissionClass: (tabId) => (sessions.launchedBypassingChecks(tabId) ? 'bypass' : 'prompting')
   }
 }
