@@ -1885,7 +1885,7 @@ describe('SessionTracker — what each turn said: the owner, another session, an
       said(text('earlier answer'), 2)
     ])
     tracker.bindSession('tabTurn', file, sid, cwd)
-    await waitFor(tracker, (x) => x.tabId === 'tabTurn' && x.status === 'waiting' && !!x.title)
+    await waitFor(tracker, (x) => x.tabId === 'tabTurn' && x.title === 'earlier question')
 
     fs.appendFileSync(file, JSON.stringify(human('fix the login', 30)) + '\n')
     fs.appendFileSync(file, JSON.stringify(said(text('Looking.'), 31)) + '\n')
@@ -1931,7 +1931,7 @@ describe('SessionTracker — what each turn said: the owner, another session, an
       result('toolu_old', 3)
     ])
     tracker.bindSession('tabAsk', file, sid, cwd)
-    await waitFor(tracker, (x) => x.tabId === 'tabAsk' && !!x.status)
+    await waitFor(tracker, (x) => x.tabId === 'tabAsk' && x.title === 'earlier')
     fs.appendFileSync(file, JSON.stringify(ask('toolu_new', 30)) + '\n')
     fs.appendFileSync(file, JSON.stringify(said(bash, 31)) + '\n')
     fs.appendFileSync(file, JSON.stringify(toolResult(32)) + '\n')
