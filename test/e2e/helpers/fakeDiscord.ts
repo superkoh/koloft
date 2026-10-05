@@ -149,7 +149,6 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
   const routes: Record<string, () => unknown> = {
     '/users/@me': () => ({ id: '900', username: FAKE_BOT, bot: true }),
     '/oauth2/applications/@me': () => ({ id: FAKE_APPLICATION_ID, bot_public: false }),
-    '/gateway/bot': () => ({ url: `ws://127.0.0.1:${port}` }),
     '/users/@me/guilds': () => [FAKE_GUILD],
     [`/guilds/${FAKE_GUILD.id}/channels`]: () => FAKE_CHANNELS
   }

@@ -8,6 +8,7 @@ const SESSION_CANNOT_RESUME = new Set([4007, 4009])
 const CLOSE_KEEPING_SESSION = 4000
 const NORMAL_CLOSE = 1000
 const MAX_RETRY_MS = 60_000
+const MAX_HEARTBEAT_MS = 120_000
 
 export type GatewayState = 'connecting' | 'ready' | 'token' | 'intents'
 
@@ -39,7 +40,6 @@ export class DiscordGateway {
   private ws: WebSocket | null = null
   private seq: number | null = null
   private sessionId: string | null = null
-  private resumeUrl: string | null = null
   private acked = true
   private heartbeat: ReturnType<typeof setInterval> | null = null
   private firstBeat: ReturnType<typeof setTimeout> | null = null
@@ -67,8 +67,7 @@ export class DiscordGateway {
 
   private open(): void {
     this.o.onState('connecting')
-    const resuming = !!this.sessionId && !!this.resumeUrl
-    const ws = new WebSocket(gatewayAddress(resuming ? this.resumeUrl! : this.o.url))
+    const ws = new WebSocket(gatewayAddress(this.o.url))
     this.ws = ws
     ws.on('message', (raw) => this.onPayload(ws, JSON.parse(raw.toString()) as Payload))
     ws.on('close', (code) => this.onClose(ws, code))
@@ -92,13 +91,16 @@ export class DiscordGateway {
     if (ws !== this.ws) return
     if (p.s !== null && p.s !== undefined) this.seq = p.s
     if (p.op === 10) {
-      const interval = (p.d as { heartbeat_interval: number }).heartbeat_interval
+      const interval = Math.min(
+        (p.d as { heartbeat_interval: number }).heartbeat_interval,
+        MAX_HEARTBEAT_MS
+      )
       this.acked = true
       this.firstBeat = setTimeout(() => {
         this.beat(ws)
         this.heartbeat = setInterval(() => this.beat(ws), interval)
       }, interval * Math.random())
-      if (this.sessionId && this.resumeUrl)
+      if (this.sessionId)
         this.send(ws, 6, { token: this.o.token, session_id: this.sessionId, seq: this.seq })
       else
         this.send(ws, 2, {
@@ -116,11 +118,7 @@ export class DiscordGateway {
       if (!p.d) this.forgetSession()
       ws.close(CLOSE_KEEPING_SESSION)
     } else if (p.op === 0 && p.t) {
-      if (p.t === 'READY') {
-        const d = p.d as { session_id: string; resume_gateway_url: string }
-        this.sessionId = d.session_id
-        this.resumeUrl = d.resume_gateway_url
-      }
+      if (p.t === 'READY') this.sessionId = (p.d as { session_id: string }).session_id
       if (p.t === 'READY' || p.t === 'RESUMED') {
         this.failures = 0
         this.o.onState('ready')
@@ -131,7 +129,6 @@ export class DiscordGateway {
 
   private forgetSession(): void {
     this.sessionId = null
-    this.resumeUrl = null
     this.seq = null
   }
 

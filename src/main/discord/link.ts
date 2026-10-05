@@ -10,10 +10,16 @@ const FILES_PER_MESSAGE = 10
 const BYTES_PER_MESSAGE = 25 * 1024 * 1024
 export const BYTES_PER_FILE = 20 * 1024 * 1024
 
+const DISCORD_GATEWAY_URL = 'wss://gateway.discord.gg'
+
 export function discordApiUrl(): string | null {
   const override = process.env.KOLOFT_DISCORD_API_URL
   if (override) return override
   return process.env.KOLOFT_TEST_BACKGROUND === '1' ? null : DISCORD_API_URL
+}
+
+export function discordGatewayUrl(apiUrl: string): string {
+  return apiUrl === DISCORD_API_URL ? DISCORD_GATEWAY_URL : `ws://${new URL(apiUrl).host}`
 }
 
 export interface DiscordAttachment {
@@ -181,10 +187,9 @@ export class DiscordLink {
     this.set('connecting')
     const rest = new DiscordRest(apiUrl, token)
     try {
-      const [me, app, { url }] = await Promise.all([
+      const [me, app] = await Promise.all([
         rest.request<{ username: string }>('GET', '/users/@me'),
-        rest.request<{ id: string }>('GET', '/oauth2/applications/@me'),
-        rest.request<{ url: string }>('GET', '/gateway/bot')
+        rest.request<{ id: string }>('GET', '/oauth2/applications/@me')
       ])
       if (generation !== this.generation) return
       this.botName = me.username
@@ -192,7 +197,7 @@ export class DiscordLink {
       this.rest = rest
       this.gateway = new DiscordGateway({
         token,
-        url,
+        url: discordGatewayUrl(apiUrl),
         onState: (state) => this.set(state === 'ready' ? 'connected' : state),
         onDispatch: (type, data) => this.onDispatch(type, data)
       })

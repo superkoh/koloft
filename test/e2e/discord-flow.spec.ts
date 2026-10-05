@@ -469,7 +469,9 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
         expect
           .poll(() => said(fake).join('\n'))
           .toMatch(
-            new RegExp(`(^|\\n)❓ .+ is waiting for you: ${detail.replace(/[?.]/g, '\\$&')}(\\n|$)`)
+            new RegExp(
+              `(^|\\n)❓ .+ is waiting for you: ${detail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\n|$)`
+            )
           )
 
       await type('/ask Which colour?|Red|Green')

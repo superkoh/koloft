@@ -1075,7 +1075,7 @@ Gateway (the live connection that pushes events):
   id), `GET /oauth2/applications/@me` (`id` is the application id that goes in the
   invite link; `bot_public` says whether anyone can add it), `GET /users/@me/guilds` (the
   servers it is in), `GET /guilds/{id}/channels` (type `0` is a text channel), and
-  `GET /gateway/bot` (the Gateway `url`).
+  `GET /gateway/bot` (the Gateway `url`, which was `wss://gateway.discord.gg`).
 - **Gateway handshake**: connect to `<url>/?v=10&encoding=json`; the server sends op 10
   (hello) with `heartbeat_interval`; the client sends op 1 (heartbeat, last sequence
   number) on that interval, and op 2 (identify) with the token and the intents
@@ -1093,7 +1093,10 @@ Gateway (the live connection that pushes events):
 - From Discord's docs, not measured here: close code 4004 means the token was refused,
   4014 means an intent the bot is not allowed (Message Content turned off in the
   Developer Portal); op 6 (resume) with `session_id` and the last sequence number,
-  sent to `READY`'s `resume_gateway_url`, picks up a dropped connection; op 7 asks the
+  sent to `READY`'s `resume_gateway_url`, picks up a dropped connection (Koloft resumes
+  on the fixed `wss://gateway.discord.gg` instead, so it never opens a connection to a
+  host a server response named; whether Discord accepts a resume there is not checked —
+  if it answers op 9, Koloft identifies again); op 7 asks the
   client to reconnect and resume; op 9 (invalid session) with `d: false` means start
   over with identify; 4007 and 4009 also mean the session cannot be resumed; a bot API
   call must send a `User-Agent: DiscordBot (<url>, <version>)` header.
