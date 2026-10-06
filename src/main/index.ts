@@ -2845,7 +2845,11 @@ async function closeSessionFully(
     sendToRenderer('cron:toast', `${target.title}: ${problem}`)
     return
   }
-  archiveSession(target.sessionId)
+  if (!archiveSession(target.sessionId))
+    sendToRenderer(
+      'cron:toast',
+      `Koloft could not take ${target.title} off the list: it is open again.`
+    )
   codexSessions?.store.removeUnusedResourcesAt(info.treeRoot)
 }
 

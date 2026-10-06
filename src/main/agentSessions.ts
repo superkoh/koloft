@@ -270,7 +270,7 @@ export interface ClosableSession {
 }
 
 const CLOSE_USAGE =
-  'koloft session close: give nothing to close this session, or the id or name of one you started with koloft session new, like: koloft session close <id or name>'
+  'koloft session close: give nothing to close this session, or the id or name of one you started with koloft session new (a conductor: of an ended session it looks after), like: koloft session close <id or name>'
 
 export async function findClosable(
   sessions: ClosableSession[],
@@ -519,6 +519,34 @@ async function readSession(
   return answered(turns.length > 0 ? formatTurns(turns) : `${title} has said nothing yet.`)
 }
 
+async function endedInScope(
+  d: SessionVerbDeps,
+  ref: string,
+  callerTabId: string
+): Promise<Parsed<ClosableSession>> {
+  const found = await findInScope(d, 'close', ref, callerTabId)
+  if (!found.ok) return found
+  const { row, title, live, workspace } = found.value
+  if (live)
+    return fail(
+      `koloft session close: ${title} is open. Stop it first with koloft session stop, then close it.`
+    )
+  if (isRemoteKey(workspace))
+    return fail(
+      `koloft session close: ${title} runs on another machine, where Koloft cannot check what closing it would lose.`
+    )
+  return {
+    ok: true,
+    value: {
+      sessionId: row.id,
+      nativeSessionId: row.nativeSessionId,
+      backendId: row.backendId,
+      title,
+      treeRoot: row.cwd
+    }
+  }
+}
+
 export const THAT_IS_YOU = 'That is you.'
 const ONLY_A_CONDUCTOR = 'only a conductor (a session bound to a Discord channel) can do this.'
 const TIME_FOR_THE_REPLY_TO_REACH_THE_SHIM_MS = 2_000
@@ -758,8 +786,13 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       if (ref !== undefined) {
         const mine = d.closable().filter((s) => d.startedSessions.startedBy(s, caller.session))
         const hit = await findClosable(mine, ref, d.peerNames())
-        if (!hit.ok) return refused(`koloft session close: ${hit.error}`)
-        target = hit.value
+        if (hit.ok) target = hit.value
+        else if (scope === undefined) return refused(`koloft session close: ${hit.error}`)
+        else {
+          const ended = await endedInScope(d, ref, caller.tabId)
+          if (!ended.ok) return refused(ended.error)
+          target = ended.value
+        }
       }
       const left = await d.whatIsLeft(target)
       if (left.length > 0)
