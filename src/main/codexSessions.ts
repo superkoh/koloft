@@ -10,6 +10,7 @@ import type {
   SessionResumeRequest,
   BackendSessionRow
 } from '@shared/types'
+import { CODEX_PLACEHOLDER_TITLE } from '@shared/types'
 import { identityOf } from '@shared/sessionBackend'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
@@ -402,7 +403,7 @@ export class CodexSessions {
       id: key,
       nativeSessionId: t.id,
       createdAt: (t.createdAt ?? 0) * 1000,
-      title: t.name || t.preview?.slice(0, 100) || 'Codex session',
+      title: t.name || t.preview?.slice(0, 100) || CODEX_PLACEHOLDER_TITLE,
       cwd: t.cwd,
       worktree: resource?.worktreeName ?? this.deps.projectInfo(t.cwd).worktreeName ?? 'main',
       running: !!this.aliveTabFor(key),
@@ -865,7 +866,7 @@ export class CodexSessions {
         key,
         workspacePath: run.workspace,
         cwd: run.cwd,
-        title: thread.name || thread.preview?.slice(0, 100) || m?.title || 'Codex session',
+        title: thread.name || thread.preview?.slice(0, 100) || m?.title || CODEX_PLACEHOLDER_TITLE,
         createdAt: m?.createdAt ?? (thread.createdAt ? thread.createdAt * 1000 : now),
         updatedAt: now,
         worktreeResourceId: run.resource?.id,
@@ -885,7 +886,7 @@ export class CodexSessions {
       tabId: run.tabId,
       sessionId: key,
       nativeSessionId: thread.id,
-      title: this.store.getMember(key)?.title ?? 'Codex session',
+      title: this.store.getMember(key)?.title ?? CODEX_PLACEHOLDER_TITLE,
       cwd: run.cwd,
       treeRoot: run.cwd,
       worktree: run.resource?.worktreeName,

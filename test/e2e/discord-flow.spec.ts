@@ -386,14 +386,18 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
         thread()
       )
 
-      const started = (await page.evaluate(() => window.api.sessions.list())).find(
-        (s) => s.title === thread()
-      )!
-      fake.say(OWNER, `/koloft session close ${started.sessionId}`)
+      const startedKey = bindingOnDisk(env)!.threads!.find((t) => t.threadId === opener.id)!.keys[0]
+      fake.say(OWNER, `/koloft session close ${startedKey}`)
+      const conductorTab = (await page.evaluate(() => window.api.sessions.list())).find(
+        (s) => s.conductor
+      )!.tabId
+      await expect
+        .poll(() => terminalText(page, conductorTab), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain(`Closing "${thread()}" now`)
       await expect
         .poll(async () =>
           (await page.evaluate(() => window.api.sessions.list())).some(
-            (s) => s.sessionId === started.sessionId
+            (s) => s.sessionId === startedKey
           )
         )
         .toBe(false)

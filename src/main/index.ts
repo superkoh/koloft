@@ -191,6 +191,7 @@ import {
   BROWSER_PARTITION,
   DISCORD_OFF,
   PLACEHOLDER_SESSION_TITLE,
+  CODEX_PLACEHOLDER_TITLE,
   isHttpUrl
 } from '@shared/types'
 import {
@@ -412,7 +413,8 @@ function sessionOfTab(tabId: string): SessionInfo | undefined {
   return allSessions().find((s) => s.tabId === tabId)
 }
 function sidebarTitle(s: SessionInfo): string | undefined {
-  return s.title && s.title !== PLACEHOLDER_SESSION_TITLE ? s.title : undefined
+  const placeholder = s.title === PLACEHOLDER_SESSION_TITLE || s.title === CODEX_PLACEHOLDER_TITLE
+  return s.title && !placeholder ? s.title : undefined
 }
 function retitleDiscordThreads(sessions: SessionInfo[]): void {
   if (!discordThreads) return

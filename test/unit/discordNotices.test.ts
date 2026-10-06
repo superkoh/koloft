@@ -109,8 +109,8 @@ describe('Discord notices: what each session’s thread gets', () => {
       commandRunning: (tabId) => tabId === 'e',
       subject: (tabId) => subject(tabId, tabId, { conductor: tabId === 'd' ? 'b1' : undefined })
     })
-    notices.turnEnded('a', 'All done.')
     notices.onStatus('a', 'working', 'waiting')
+    notices.turnEnded('a', 'All done.')
     notices.onStatus('e', 'working', 'waiting')
     notices.onStatus('d', 'working', 'approval')
     notices.closed('d')
@@ -122,7 +122,7 @@ describe('Discord notices: what each session’s thread gets', () => {
     ])
   })
 
-  it('"finished" carries the turn’s reply whether it arrives before or after the turn ends; with none in time it goes without one', async () => {
+  it('"finished" carries the reply that follows its turn’s end, even a late one; with none in time it goes without one', async () => {
     vi.useFakeTimers()
     const { notices, cards } = setup()
     notices.onStatus('a', 'working', 'waiting')
@@ -138,24 +138,15 @@ describe('Discord notices: what each session’s thread gets', () => {
     ])
   })
 
-  it('the reply of a turn a slash command ran is not shown with a later "finished"', async () => {
+  it('a reply that comes before its "finished" belongs to an earlier turn — one that gave no card, or the turn before flushed as the next one began — and is never shown', async () => {
     vi.useFakeTimers()
     let running = true
     const { notices, cards } = setup({ commandRunning: () => running })
-    notices.turnEnded('a', 'What /review printed.')
     notices.onStatus('a', 'working', 'waiting')
-    await vi.advanceTimersByTimeAsync(0)
-    running = false
-    notices.onStatus('a', 'approval', 'waiting')
-    await vi.advanceTimersByTimeAsync(REPLY_FOLLOWS_THE_TURN_MS)
-    expect(cards).toEqual([['thread-a', '🔔 **a** finished.']])
-  })
-
-  it('a reply from a turn that went on working is not shown with the next turn’s "finished"', async () => {
-    vi.useFakeTimers()
-    const { notices, cards } = setup()
-    notices.turnEnded('a', 'Old reply.')
+    notices.turnEnded('a', 'What /review printed.')
     notices.onStatus('a', 'waiting', 'working')
+    notices.turnEnded('a', 'From the turn before.')
+    running = false
     notices.onStatus('a', 'working', 'waiting')
     await vi.advanceTimersByTimeAsync(REPLY_FOLLOWS_THE_TURN_MS)
     expect(cards).toEqual([['thread-a', '🔔 **a** finished.']])
@@ -194,8 +185,8 @@ describe('Discord notices: what each session’s thread gets', () => {
         subject(tabId, tabId === 'a' ? 'Koloft started you because the session' : 'beta'),
       shownName: async (tabId) => (tabId === 'a' && live ? 'helper-1a2b3c' : null)
     })
-    notices.turnEnded('a', '')
     notices.onStatus('a', 'working', 'waiting')
+    notices.turnEnded('a', '')
     await vi.advanceTimersByTimeAsync(0)
     live = false
     notices.closed('a')
