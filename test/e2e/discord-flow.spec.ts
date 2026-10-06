@@ -175,7 +175,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await expect
         .poll(() => notices(fake))
         .toEqual([expect.stringMatching(/^❓ .+ is waiting for you\.$/)])
-      expect(said(fake)).toEqual([expect.stringMatching(/^🧵 \*\*.+\*\*\n-# ws-a · Claude Code$/)])
+      expect(said(fake)).toEqual([expect.stringMatching(/^🧵 \*\*.+\*\*\n-# ws-a · Claude$/)])
       expect(fake.threads).toEqual([
         expect.objectContaining({ parentId: CHANNEL, members: [OWNER.id], archived: false })
       ])
@@ -226,8 +226,9 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     const fake = await startFakeDiscord(env)
     const { app } = await connected(env, fake)
     try {
-      const asked =
-        '❓ **The conductor** is waiting for you.\nWhich colour?\n1. Red — The Red one\n2. Green — The Green one\n-# Reply with a number or your own answer.'
+      const question =
+        '❓ **The conductor** is waiting for you.\nWhich colour?\n1. Red — The Red one\n2. Green — The Green one'
+      const asked = `${question}\n-# Reply with a number or your own answer.`
       const card = (): FakePost | undefined =>
         fake.posted.filter((p) => p.channelId === CHANNEL && p.content === asked).at(-1)
       fake.say(OWNER, '/ask Which colour?|Red|Green')
@@ -236,7 +237,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       fake.press(OWNER, card()!.buttons![1], CHANNEL)
       await expect.poll(() => said(fake)).toContain('Picked: Green')
       expect(fake.callbacks.map((c) => [c.type, callbackText(c)])).toEqual([
-        [7, asked + '\n-# ✅ 2. Green']
+        [7, `${question}\n-# ✅ 2. Green`]
       ])
 
       fake.say(OWNER, '/ask Which size?|Small|Large')

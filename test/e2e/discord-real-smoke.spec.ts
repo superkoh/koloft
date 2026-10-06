@@ -308,7 +308,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       await expect
         .poll(() => notices(fake), { timeout: A_REAL_MODEL_TURN_MS })
         .toContainEqual(expect.stringMatching(/^▶ Started \*\*.+\*\*$/))
-      expect(said(fake).join('\n')).toContain('\n-# ws-a · Claude Code')
+      expect(said(fake).join('\n')).toContain('\n-# ws-a · Claude\n')
       await expect
         .poll(() => notices(fake), { timeout: A_REAL_MODEL_TURN_MS })
         .toContainEqual(expect.stringMatching(/^🔔 .+ finished\.$/))
