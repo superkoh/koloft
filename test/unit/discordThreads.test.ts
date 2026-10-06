@@ -18,7 +18,7 @@ function setup(scope = WS, fail = false) {
   const names: string[] = []
   const members: string[] = []
   const renames: string[] = []
-  const renamed: (() => void)[] = []
+  const renamed: { resolve: () => void; reject: (e: Error) => void }[] = []
   let next = 100
   const deps: ThreadDeps = {
     link: {
@@ -35,7 +35,7 @@ function setup(scope = WS, fail = false) {
       archiveThread: async () => undefined,
       renameThread: (threadId, name) => {
         renames.push(`${threadId}:${name}`)
-        return new Promise<void>((r) => renamed.push(r))
+        return new Promise<void>((resolve, reject) => renamed.push({ resolve, reject }))
       }
     },
     conductors: {
@@ -56,7 +56,11 @@ function setup(scope = WS, fail = false) {
     }
   }
   const finishRename = async (): Promise<void> => {
-    renamed.shift()?.()
+    renamed.shift()?.resolve()
+    await new Promise((r) => setTimeout(r, 0))
+  }
+  const failRename = async (): Promise<void> => {
+    renamed.shift()?.reject(new Error('Discord answered 403'))
     await new Promise((r) => setTimeout(r, 0))
   }
   return {
@@ -67,7 +71,8 @@ function setup(scope = WS, fail = false) {
     names,
     members,
     renames,
-    finishRename
+    finishRename,
+    failRename
   }
 }
 
@@ -144,6 +149,16 @@ describe('one Discord thread per session', () => {
     expect(renames).toEqual(['101:Fix the login page', '101:Fix login, phones'])
     await finishRename()
     expect(kept[0].name).toBe('Fix login, phones')
+  })
+
+  it('a rename Discord refuses is not saved as done, and is not tried again for the same title while the tab lives', async () => {
+    const { b, threads, kept, renames, failRename } = setup()
+    await threads.place(b, { tabId: 't1', key: 'k1', name: 'helper-1', backend: 'claude' })
+    threads.retitle('t1', 'Fix login')
+    await failRename()
+    threads.retitle('t1', 'Fix login')
+    expect(renames).toEqual(['101:Fix login'])
+    expect(kept[0].name).toBe('helper-1')
   })
 
   it('after a restart, a thread already named after the title is not renamed again', async () => {

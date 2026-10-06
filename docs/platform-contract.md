@@ -1162,7 +1162,8 @@ Gateway (the live connection that pushes events):
   name change within a few seconds answered `429` with `retry_after` 599.6 s, though
   the first two had failed — failed attempts count. Discord's docs give the limit as two
   name changes per ten minutes per channel. An `{archived: true}` call right after was
-  not limited.
+  not limited. Once the ten minutes had passed, `{name}` on the bot's own unarchived
+  thread answered `200` with the new name (a Chinese name kept as sent).
 - Also from Discord's docs, not measured here: a message's `content` holds at most 2000
   characters; one message carries at most 10 files and one request at most 25 MiB; a
   bot's file may be at most 20 MiB (changelog 2025-09-03); adding or removing a reaction

@@ -142,8 +142,11 @@ export class SessionThreads {
   private async rename(threadId: string): Promise<void> {
     for (;;) {
       const name = this.wanted.get(threadId)!
-      await this.d.link.renameThread(threadId, name).catch(() => undefined)
-      this.d.conductors.nameThread(threadId, name)
+      const renamed = await this.d.link.renameThread(threadId, name).then(
+        () => true,
+        () => false
+      )
+      if (renamed) this.d.conductors.nameThread(threadId, name)
       if (this.wanted.get(threadId) === name) break
     }
     this.wanted.delete(threadId)
