@@ -184,16 +184,20 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   transcriptExists(key: string): boolean {
-    return this.d.tracker.transcriptExists(key)
+    return this.d.tracker.transcriptExists(key) || !!this.storedTranscript(key)
   }
 
   async turns(key: string, n: number): Promise<Turn[]> {
     const live = this.d.tracker.turnsOf(key, n)
     if (live) return live
+    const file = this.storedTranscript(key)
+    return file ? transcriptTurns(file, n) : []
+  }
+
+  private storedTranscript(key: string): string | null {
     const remote = parseRemoteKey(this.homeOf(key) ?? '')
     const root = remote ? mirrorProjectsRoot(this.d.userData(), remote.host) : PROJECTS_ROOT
-    const file = findTranscript(root, key)
-    return file ? transcriptTurns(file, n) : []
+    return findTranscript(root, key)
   }
 
   picked(tabId: string, skipFlag: boolean): void {
