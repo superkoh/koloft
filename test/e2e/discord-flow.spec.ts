@@ -324,7 +324,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     }
   })
 
-  test('the conductor queues a message on a Codex session with a conductor message id, and a session it starts with --backend codex is announced and touched', async ({
+  test('the conductor queues a message on a Codex session with a conductor message id, and a session it starts with --backend codex is announced and touched, and its thread takes the session’s sidebar title once it has one; once the conductor closes it for good, a message in its thread is refused by that name', async ({
     env
   }) => {
     installCodex(env)
@@ -369,6 +369,40 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
         .poll(() => said(fake).join('\n'))
         .toContain('▶ Started **a Codex session**\n-# ws-a · Codex')
       await expect.poll(() => bindingOnDisk(env)?.touched.length).toBe(2)
+      const opener = fake.posted.find((p) => p.content.startsWith('▶ Started **a Codex session**'))!
+      const thread = (): string | undefined => fake.threads.find((t) => t.id === opener.id)?.name
+      await expect
+        .poll(
+          async () => {
+            const titles = (await page.evaluate(() => window.api.sessions.list())).map(
+              (s) => s.title
+            )
+            return thread() !== 'a Codex session' && titles.includes(thread() ?? '')
+          },
+          { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }
+        )
+        .toBe(true)
+      expect(bindingOnDisk(env)?.threads?.find((t) => t.threadId === opener.id)?.name).toBe(
+        thread()
+      )
+
+      const started = (await page.evaluate(() => window.api.sessions.list())).find(
+        (s) => s.title === thread()
+      )!
+      fake.say(OWNER, `/koloft session close ${started.sessionId}`)
+      await expect
+        .poll(async () =>
+          (await page.evaluate(() => window.api.sessions.list())).some(
+            (s) => s.sessionId === started.sessionId
+          )
+        )
+        .toBe(false)
+      const late = fake.say(OWNER, 'are you still there?', { channelId: opener.id })
+      await expect
+        .poll(() => fake.posted.find((p) => p.replyTo === late)?.content)
+        .toBe(
+          `${thread()} is no longer in the session list (it was closed for good), so it cannot be woken. This message was not delivered.`
+        )
     } finally {
       await quitAndClose(app)
       await fake.close()

@@ -205,6 +205,7 @@ export interface ConductorBinding {
 export interface SessionThread {
   threadId: string
   keys: string[]
+  name?: string
   lastMessageId?: string
 }
 

@@ -411,6 +411,16 @@ let activeTabBeforeReload: string | null = null
 function sessionOfTab(tabId: string): SessionInfo | undefined {
   return allSessions().find((s) => s.tabId === tabId)
 }
+function sidebarTitle(s: SessionInfo): string | undefined {
+  return s.title && s.title !== PLACEHOLDER_SESSION_TITLE ? s.title : undefined
+}
+function retitleDiscordThreads(): void {
+  if (!discordThreads) return
+  for (const s of allSessions()) {
+    const title = sidebarTitle(s)
+    if (title) discordThreads.retitle(s.tabId, title, sessionBackends.workspaceOfTab(s.tabId))
+  }
+}
 function markedSessionsOf(wsPath: string): string[] {
   return attention
     .list()
@@ -1485,6 +1495,7 @@ app.whenReady().then(() => {
     sendToRenderer('sessions:update', allSessions())
     workspaceMgr?.onTrackerUpdate()
     syncAnswerable()
+    retitleDiscordThreads()
     const seen = new Set<string>()
     for (const s of sessions) {
       seen.add(s.tabId)
@@ -1531,6 +1542,7 @@ app.whenReady().then(() => {
       changed: () => {
         sendToRenderer('sessions:update', allSessions())
         workspaceMgr?.onRemoteChanged()
+        retitleDiscordThreads()
       },
       replaced: (oldKey, newKey) => workspaceMgr?.moveResident(oldKey, newKey),
       events: (tabId, event) => sessionBackends.observe(tabId, event),
@@ -1730,7 +1742,11 @@ app.whenReady().then(() => {
     const backend = identityOf(key).backendId
     const liveTab = (): string | undefined => sessionBackends.get(backend).aliveTabFor(key)
     const live = liveTab()
-    const name = (live && sessionOfTab(live)?.title) || 'The session'
+    const shown = live && sessionOfTab(live)
+    const name =
+      (shown && sidebarTitle(shown)) ||
+      conductorsNow.threadOfChannel(threadId)?.thread.name ||
+      'The session'
     return {
       id: `thread:${threadId}`,
       name,
@@ -1740,7 +1756,10 @@ app.whenReady().then(() => {
         const open = liveTab()
         if (open) return open
         const found = await targetIn(sessionDeps, b.scope, key)
-        if (!found.ok) throw new Error(found.error)
+        if (!found.ok)
+          throw new Error(
+            `${name} is no longer in the session list (it was closed for good), so it cannot be woken.`
+          )
         return found.value.tabId ?? found.value.open()
       },
       typeCommand: (tab, command) =>
@@ -1823,8 +1842,10 @@ app.whenReady().then(() => {
           }
         : undefined
     },
-    peerName: async (tabId) => {
+    shownName: async (tabId) => {
       const s = sessionOfTab(tabId)
+      const title = s && sidebarTitle(s)
+      if (title) return title
       return s?.backendId === 'claude' && s.sessionId ? claudePeerNames()(s.sessionId) : null
     },
     awaitsInput: (tabId) => tracker.awaitsInput(tabId),

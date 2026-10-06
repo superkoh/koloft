@@ -46,7 +46,7 @@ function setup(over: Partial<NoticeDeps> = {}) {
       footer: `${card.footer ?? ''} [${view.choices.map((c) => c.label).join('|')}]`
     }),
     subject: (tabId) => subject(tabId, tabId),
-    peerName: async () => null,
+    shownName: async () => null,
     awaitsInput: () => false,
     commandRunning: () => false,
     dialog: async () => undefined,
@@ -186,13 +186,13 @@ describe('Discord notices: what each session’s thread gets', () => {
     ])
   })
 
-  it('a session started under a name is called by that name, not by its title, and still by it once it has closed and has no name left', async () => {
+  it('a session is called by the name it is shown under, and still by it once it has closed and has no name left', async () => {
     vi.useFakeTimers()
     let live = true
     const { notices, cards } = setup({
       subject: (tabId) =>
         subject(tabId, tabId === 'a' ? 'Koloft started you because the session' : 'beta'),
-      peerName: async (tabId) => (tabId === 'a' && live ? 'helper-1a2b3c' : null)
+      shownName: async (tabId) => (tabId === 'a' && live ? 'helper-1a2b3c' : null)
     })
     notices.turnEnded('a', '')
     notices.onStatus('a', 'working', 'waiting')

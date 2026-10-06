@@ -379,6 +379,13 @@ export class DiscordLink {
     return this.api().request('PUT', `/channels/${threadId}/thread-members/${userId}`)
   }
 
+  // PLATFORM§39
+  renameThread(threadId: string, name: string): Promise<unknown> {
+    return this.api().request('PATCH', `/channels/${threadId}`, {
+      name: name.slice(0, THREAD_NAME_LIMIT)
+    })
+  }
+
   archiveThread(threadId: string): Promise<unknown> {
     return this.api().request('PATCH', `/channels/${threadId}`, { archived: true })
   }

@@ -58,7 +58,7 @@ export interface NoticeDeps {
   archive(threadId: string): void
   withButtons(tabId: string, view: DialogView, card: Card): Card
   subject(tabId: string): NoticeSubject | undefined
-  peerName(tabId: string): Promise<string | null>
+  shownName(tabId: string): Promise<string | null>
   awaitsInput(tabId: string): boolean
   commandRunning(tabId: string): boolean
   dialog(tabId: string): Promise<DialogView | undefined>
@@ -168,7 +168,7 @@ export class Notices {
 
   private async nameOf(tabId: string, kind: NoticeKind, title: string): Promise<string> {
     if (kind === 'closed') return this.names.get(tabId) ?? title
-    const name = await this.d.peerName(tabId)
+    const name = await this.d.shownName(tabId)
     if (name) this.names.set(tabId, name)
     return name ?? title
   }
