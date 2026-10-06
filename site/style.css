@@ -105,18 +105,6 @@ table {
   margin: 0 0 var(--line);
 }
 
-h2,
-h3,
-.shot,
-.command,
-.typed-table,
-.ascii,
-.qa,
-.next,
-.signoff {
-  clear: both;
-}
-
 .masthead {
   margin-bottom: var(--line);
 }
@@ -153,22 +141,16 @@ h3,
 
 .contents a {
   --sep: 1.1em;
-  position: relative;
-  margin-right: var(--sep);
   font-size: 15px;
   white-space: nowrap;
   vertical-align: top;
 }
 
-.contents a:last-child {
-  margin-right: 0;
-}
-
 .contents a:not(:last-child)::after {
   content: '·';
-  position: absolute;
-  right: calc(var(--sep) / -2);
-  translate: 50%;
+  display: inline-block;
+  width: var(--sep);
+  text-align: center;
   color: var(--muted);
 }
 
@@ -200,7 +182,7 @@ h3,
 }
 
 .contents a[aria-current='page']::after {
-  right: calc(0.3em - var(--sep) / 2);
+  margin-right: calc(-1 * var(--sep));
 }
 
 .title,
@@ -334,8 +316,11 @@ button:focus-visible {
 }
 
 .frame {
+  --img-h: min(calc((var(--w) - 2 * var(--pad)) / (var(--ar-used))), var(--cap));
   position: relative;
   z-index: 1;
+  width: var(--w);
+  height: round(up, calc(var(--img-h) + 2 * var(--pad)), var(--line));
   padding: var(--pad);
   background: var(--print);
   box-shadow:
@@ -374,16 +359,6 @@ button:focus-visible {
   align-items: start;
 }
 
-.frame {
-  --img-h: min(calc((var(--w) - 2 * var(--pad)) / (var(--ar-used))), var(--cap));
-  width: var(--w);
-  height: round(up, calc(var(--img-h) + 2 * var(--pad)), var(--line));
-}
-
-.frame picture {
-  display: contents;
-}
-
 .frame img {
   display: block;
   width: 100%;
@@ -408,11 +383,6 @@ figcaption {
 
 figcaption::before {
   content: '^ ';
-}
-
-.shot.is-narrow figcaption {
-  margin: 0;
-  padding-top: var(--line);
 }
 
 .shot.is-narrow figcaption::before {
@@ -602,11 +572,6 @@ figcaption::before {
     display: block;
   }
 
-  .shot.is-narrow figcaption {
-    margin-top: var(--line);
-    padding-top: 0;
-  }
-
   .shot.is-narrow figcaption::before {
     content: '^ ';
   }
@@ -615,43 +580,45 @@ figcaption::before {
     white-space: normal;
   }
 
-  .typed-table:is(:has(th:nth-child(3)), :has(td:first-child code)) thead {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-  }
+  .typed-table.stacked {
+    thead {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
 
-  .typed-table:is(:has(th:nth-child(3)), :has(td:first-child code)) tr,
-  .typed-table:is(:has(th:nth-child(3)), :has(td:first-child code)) td {
-    display: block;
-  }
+    tr {
+      display: block;
+    }
 
-  .typed-table:is(:has(th:nth-child(3)), :has(td:first-child code)) tr + tr::before {
-    content: '';
-    display: block;
-    height: var(--line);
-    background: linear-gradient(
-      180deg,
-      transparent var(--rule-y),
-      color-mix(in srgb, var(--ink) 45%, transparent) var(--rule-y) calc(var(--rule-y) + 1px),
-      transparent calc(var(--rule-y) + 1px)
-    );
-  }
+    td {
+      display: block;
+      padding-right: 0;
+    }
 
-  .typed-table:is(:has(th:nth-child(3)), :has(td:first-child code)) td {
-    padding-right: 0;
-  }
+    tr + tr::before {
+      content: '';
+      display: block;
+      height: var(--line);
+      background: linear-gradient(
+        180deg,
+        transparent var(--rule-y),
+        color-mix(in srgb, var(--ink) 45%, transparent) var(--rule-y) calc(var(--rule-y) + 1px),
+        transparent calc(var(--rule-y) + 1px)
+      );
+    }
 
-  .typed-table:is(:has(th:nth-child(3)), :has(td:first-child code)) td + td {
-    padding-left: 2ch;
-  }
+    td + td {
+      padding-left: 2ch;
+    }
 
-  .typed-table:is(:has(th:nth-child(3)), :has(td:first-child code)) td[data-label]::before {
-    content: attr(data-label) ': ';
-    font: 400 13px / 1 var(--type);
-    color: var(--muted);
+    td[data-label]::before {
+      content: attr(data-label) ': ';
+      font: 400 13px / 1 var(--type);
+      color: var(--muted);
+    }
   }
 
   .ascii {
