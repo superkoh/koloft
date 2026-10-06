@@ -189,6 +189,27 @@ describe('Conductors', () => {
     expect(rescans).toBe(0)
   })
 
+  it('a session id is kept by one thread only: keeping it in another moves it there, once, and a thread left with no session goes', () => {
+    saved = {
+      bindings: [
+        {
+          id: 'b1',
+          scope: 'global',
+          backend: 'claude',
+          channel: CHANNEL,
+          sessionIds: [],
+          touched: [],
+          threads: [{ threadId: '7', keys: ['k1'] }]
+        }
+      ]
+    }
+    const c = make()
+    c.keepThread('b1', '8', 'k1')
+    c.keepThread('b1', '8', 'k1')
+    expect(c.bindings()[0].threads).toEqual([{ threadId: '8', keys: ['k1'] }])
+    expect(c.threadOfChannel('7')).toBeUndefined()
+  })
+
   it('removing a workspace unbinds its conductor and closes its tab', async () => {
     const c = make()
     c.save({ scope: '/ws/a', backend: 'claude', channel: CHANNEL })

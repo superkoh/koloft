@@ -6,7 +6,7 @@ import type { Conductors } from './conductors'
 import type { DiscordLink } from './link'
 
 export interface ThreadSubject {
-  tabId: string
+  tabId?: string
   key?: string
   name: string
   backend: BackendId
@@ -56,37 +56,44 @@ export class SessionThreads {
   }
 
   place(b: ConductorBinding, s: ThreadSubject, started = false): Promise<string> {
+    const slot = s.tabId ?? `key:${s.key}`
     const known = s.key ? this.d.conductors.threadOfKey(s.key) : undefined
     if (known) {
-      this.byTab.set(s.tabId, { bindingId: known.binding.id, threadId: known.thread.threadId })
+      if (s.tabId)
+        this.byTab.set(s.tabId, { bindingId: known.binding.id, threadId: known.thread.threadId })
       return Promise.resolve(known.thread.threadId)
     }
-    const mine = this.byTab.get(s.tabId)
+    const mine = s.tabId ? this.byTab.get(s.tabId) : undefined
     if (mine) {
       if (s.key) this.d.conductors.keepThread(mine.bindingId, mine.threadId, s.key)
       return Promise.resolve(mine.threadId)
     }
-    if (this.threadless.has(s.tabId)) return Promise.resolve(b.channel.channelId)
-    const inflight = this.opening.get(s.tabId)
+    if (this.threadless.has(slot)) return Promise.resolve(b.channel.channelId)
+    const inflight = this.opening.get(slot)
     if (inflight) return inflight
-    const opening = this.open(b, s, started).finally(() => this.opening.delete(s.tabId))
-    this.opening.set(s.tabId, opening)
+    const opening = this.open(b, s, slot, started).finally(() => this.opening.delete(slot))
+    this.opening.set(slot, opening)
     return opening
   }
 
-  private async open(b: ConductorBinding, s: ThreadSubject, started: boolean): Promise<string> {
+  private async open(
+    b: ConductorBinding,
+    s: ThreadSubject,
+    slot: string,
+    started: boolean
+  ): Promise<string> {
     const channelId = b.channel.channelId
     try {
       const [opener] = await this.d.link.card(channelId, openerCard(s, started))
       const threadId = await this.d.link.startThread(channelId, opener, threadName(b, s))
-      this.byTab.set(s.tabId, { bindingId: b.id, threadId })
-      const key = s.key ?? this.keyOfTab.get(s.tabId)
+      if (s.tabId) this.byTab.set(s.tabId, { bindingId: b.id, threadId })
+      const key = s.key ?? (s.tabId && this.keyOfTab.get(s.tabId))
       if (key) this.d.conductors.keepThread(b.id, threadId, key)
       const owner = this.d.conductors.owner()
       if (owner) void this.d.link.addToThread(threadId, owner).catch(() => undefined)
       return threadId
     } catch {
-      this.threadless.add(s.tabId)
+      this.threadless.add(slot)
       return channelId
     }
   }
@@ -94,13 +101,18 @@ export class SessionThreads {
   bound(tabId: string, key: string): void {
     const before = this.keyOfTab.get(tabId)
     this.keyOfTab.set(tabId, key)
-    const mine = this.byTab.get(tabId)
-    if (mine) return this.d.conductors.keepThread(mine.bindingId, mine.threadId, key)
-    const carried = before ? this.d.conductors.threadOfKey(before) : undefined
-    if (carried) {
-      this.byTab.set(tabId, { bindingId: carried.binding.id, threadId: carried.thread.threadId })
-      this.d.conductors.keepThread(carried.binding.id, carried.thread.threadId, key)
+    const own = this.d.conductors.threadOfKey(key)
+    if (own) {
+      this.byTab.set(tabId, { bindingId: own.binding.id, threadId: own.thread.threadId })
+      return
     }
+    const previous = before ? this.d.conductors.threadOfKey(before) : undefined
+    const carried =
+      this.byTab.get(tabId) ??
+      (previous && { bindingId: previous.binding.id, threadId: previous.thread.threadId })
+    if (!carried) return
+    this.byTab.set(tabId, carried)
+    this.d.conductors.keepThread(carried.bindingId, carried.threadId, key)
   }
 
   archive(threadId: string): void {

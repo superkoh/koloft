@@ -138,6 +138,19 @@ describe('Discord notices: what each session’s thread gets', () => {
     ])
   })
 
+  it('the reply of a turn a slash command ran is not shown with a later "finished"', async () => {
+    vi.useFakeTimers()
+    let running = true
+    const { notices, cards } = setup({ commandRunning: () => running })
+    notices.turnEnded('a', 'What /review printed.')
+    notices.onStatus('a', 'working', 'waiting')
+    await vi.advanceTimersByTimeAsync(0)
+    running = false
+    notices.onStatus('a', 'approval', 'waiting')
+    await vi.advanceTimersByTimeAsync(REPLY_FOLLOWS_THE_TURN_MS)
+    expect(cards).toEqual([['thread-a', '🔔 **a** finished.']])
+  })
+
   it('a reply from a turn that went on working is not shown with the next turn’s "finished"', async () => {
     vi.useFakeTimers()
     const { notices, cards } = setup()

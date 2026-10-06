@@ -132,7 +132,10 @@ export class Notices {
     const subject =
       this.liveSubject(tabId) ?? (kind === 'closed' ? this.lastSubjects.get(tabId) : undefined)
     if (!subject || subject.conductor) return
-    if (kind === 'finished' && this.d.commandRunning(tabId)) return
+    if (kind === 'finished' && this.d.commandRunning(tabId)) {
+      this.replies.delete(tabId)
+      return
+    }
     const b = noticeBinding(this.d.bindings(), subject, kind, this.d.hasThread(subject.key))
     if (!b) return
     let body: string | undefined

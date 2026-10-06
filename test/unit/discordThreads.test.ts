@@ -90,6 +90,27 @@ describe('one Discord thread per session', () => {
     expect(kept).toEqual([{ threadId: '50', keys: ['k1', 'k2'] }])
   })
 
+  it('a tab that resumes another session with a thread of its own moves to that thread, and adds nothing to its old one', async () => {
+    const { b, threads, kept } = setup()
+    await threads.place(b, { tabId: 't1', key: 'k1', name: 'a', backend: 'claude', workspace: WS })
+    kept.push({ threadId: '50', keys: ['k9'] })
+    threads.bound('t1', 'k9')
+    expect(kept).toEqual([
+      { threadId: '101', keys: ['k1'] },
+      { threadId: '50', keys: ['k9'] }
+    ])
+    expect(await threads.place(b, { tabId: 't1', name: 'a', backend: 'claude' })).toBe('50')
+  })
+
+  it('a closed session’s thread is kept by its id alone, so once that id is forgotten it no longer leads to the old thread', async () => {
+    const { b, threads, kept } = setup()
+    const closed = { key: 'k1', name: 'a', backend: 'claude' as const, workspace: WS }
+    expect(await threads.place(b, closed)).toBe('101')
+    expect(kept).toEqual([{ threadId: '101', keys: ['k1'] }])
+    kept.length = 0
+    expect(await threads.place(b, closed)).toBe('102')
+  })
+
   it('the global conductor’s threads say which workspace the session is in', async () => {
     const { b, threads, names } = setup('global')
     await threads.place(b, {

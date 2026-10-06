@@ -2943,7 +2943,7 @@ function conductorDestination(b: ConductorBinding): Destination {
 async function commandInto(b: ConductorBinding, t: Target, text: string): Promise<string> {
   const channelId =
     (await discordThreads?.place(b, {
-      tabId: t.tabId ?? `closed:${t.key}`,
+      tabId: t.tabId,
       key: t.key,
       name: t.name,
       backend: t.backend,

@@ -197,18 +197,23 @@ export class Conductors {
   }
 
   keepThread(bindingId: string, threadId: string, key: string): void {
-    const there = this.threadOfKey(key)
-    if (there?.thread.threadId === threadId) return
-    this.change(bindingId, (b) => {
-      const threads = b.threads ?? []
-      const known = threads.some((t) => t.threadId === threadId)
-      return {
-        ...b,
-        threads: known
-          ? threads.map((t) => (t.threadId === threadId ? { ...t, keys: [...t.keys, key] } : t))
-          : [...threads, { threadId, keys: [key] }]
-      }
-    })
+    if (this.threadOfKey(key)?.thread.threadId === threadId) return
+    this.discord = {
+      ...this.discord,
+      bindings: this.discord.bindings.map((b) => {
+        const others = (b.threads ?? [])
+          .map((t) => ({ ...t, keys: t.keys.filter((k) => k !== key) }))
+          .filter((t) => t.keys.length || t.threadId === threadId)
+        if (b.id !== bindingId) return { ...b, threads: others }
+        const known = others.some((t) => t.threadId === threadId)
+        return {
+          ...b,
+          threads: known
+            ? others.map((t) => (t.threadId === threadId ? { ...t, keys: [...t.keys, key] } : t))
+            : [...others, { threadId, keys: [key] }]
+        }
+      })
+    }
     this.d.saveQuietly(this.discord)
   }
 
