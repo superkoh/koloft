@@ -414,9 +414,9 @@ function sessionOfTab(tabId: string): SessionInfo | undefined {
 function sidebarTitle(s: SessionInfo): string | undefined {
   return s.title && s.title !== PLACEHOLDER_SESSION_TITLE ? s.title : undefined
 }
-function retitleDiscordThreads(): void {
+function retitleDiscordThreads(sessions: SessionInfo[]): void {
   if (!discordThreads) return
-  for (const s of allSessions()) {
+  for (const s of sessions) {
     const title = sidebarTitle(s)
     if (title) discordThreads.retitle(s.tabId, title, sessionBackends.workspaceOfTab(s.tabId))
   }
@@ -1492,10 +1492,11 @@ app.whenReady().then(() => {
     sendToRenderer('terminal:exit', e)
   })
   tracker.on('update', (sessions: SessionInfo[]) => {
-    sendToRenderer('sessions:update', allSessions())
+    const all = allSessions()
+    sendToRenderer('sessions:update', all)
     workspaceMgr?.onTrackerUpdate()
     syncAnswerable()
-    retitleDiscordThreads()
+    retitleDiscordThreads(all)
     const seen = new Set<string>()
     for (const s of sessions) {
       seen.add(s.tabId)
@@ -1540,9 +1541,10 @@ app.whenReady().then(() => {
       runtime: tracker,
       projectInfo: projectInfoFor,
       changed: () => {
-        sendToRenderer('sessions:update', allSessions())
+        const all = allSessions()
+        sendToRenderer('sessions:update', all)
         workspaceMgr?.onRemoteChanged()
-        retitleDiscordThreads()
+        retitleDiscordThreads(all)
       },
       replaced: (oldKey, newKey) => workspaceMgr?.moveResident(oldKey, newKey),
       events: (tabId, event) => sessionBackends.observe(tabId, event),
