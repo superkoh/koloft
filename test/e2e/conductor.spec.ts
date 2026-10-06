@@ -367,7 +367,7 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
     const { app, page, close } = await launched(env)
     try {
       await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/\bcold\b/, { timeout: 30_000 })
-      await startSessionIn(page, 'ws-a')
+      await startSessionIn(page, 'ws-a', { method: 'Claude' })
       const claudeId = (await waitForCalls(env, 1))[0].sessionId
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(wsRows(page, 'ws-a')).toHaveClass(/cold/)
