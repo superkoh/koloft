@@ -1122,6 +1122,33 @@ Gateway (the live connection that pushes events):
     with no answer shows "The application did not respond". That two Gateway
     connections of one bot (two Koloft installs) both receive each interaction is
     inferred, not checked.
+- **How messages look, and threads** — measured 2026-10-06 with the same bot, REST only,
+  on a server where the bot role was the one the invite gave (`101440`) and the owner
+  read each message in the Discord app:
+  - In a message's `content`, `#`, `##`, `###`, `-#` (small text), `-`/`1.` lists with
+    indented sub-lists, `>` quotes, fenced code with a language and `[text](url)` show
+    as formatting. `####`, a `| a | b |` table, `---`, `- [ ]`/`- [x]` and
+    `![alt](url)` show as the raw characters.
+  - A Components V2 message (`flags` with `1 << 15`, `components` holding a container,
+    type 17, with `accent_color`, text displays, type 10, a separator, type 14, and an
+    action row of buttons) answered 200 and showed with a coloured bar; `###` inside a
+    text display shows as a heading. One text display took 4000 characters and refused
+    4001 (`400`, code 50035, `BASE_TYPE_BAD_LENGTH`, "Must be between 1 and 4000 in
+    length"). A cap on all text displays of one message together was not measured.
+  - An embed (`embeds: [{author, color, description, footer}]`) also posted (200, the
+    embed came back), with `###` shown as a heading inside `description`.
+  - `flags` with `1 << 12` (no push) was accepted on both kinds.
+  - `POST /channels/{id}/messages/{message}/threads` with `{name, auto_archive_duration:
+    1440}` answered 201 with the thread, whose id is the message's; posting to
+    `/channels/{thread}/messages` answered 200 and showed inside the thread. The invite's
+    permissions name neither "create public threads" nor "send messages in threads";
+    that the server's default role gave them is inferred, not checked.
+  - `DELETE /channels/{thread}` answered 403 (50013, Missing Permissions); `PATCH
+    /channels/{thread}` with `{archived: true}` on the bot's own thread answered 200.
+  - Not measured: whether a message in a thread pushes to a member's phone, whether
+    `PUT /channels/{thread}/thread-members/{user}` makes the owner such a member, and a
+    button press (`INTERACTION_CREATE` type 3 with `data.custom_id`, answered by
+    callback type 7 to replace the message) — all from the docs.
 - Also from Discord's docs, not measured here: a message's `content` holds at most 2000
   characters; one message carries at most 10 files and one request at most 25 MiB; a
   bot's file may be at most 20 MiB (changelog 2025-09-03); adding or removing a reaction

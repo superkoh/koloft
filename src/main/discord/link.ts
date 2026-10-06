@@ -1,6 +1,7 @@
 import type { DiscordChannel, DiscordPhase, DiscordStatus } from '@shared/types'
 import { DiscordGateway } from './gateway'
 import { DiscordHttpError, DiscordRest } from './rest'
+import { cardMessages, NO_MENTIONS, type Card } from './cards'
 
 export const DISCORD_API_URL = 'https://discord.com/api/v10'
 const UNREACHABLE_RETRY_MS = 30_000
@@ -42,9 +43,12 @@ export interface DiscordFile {
   data: Buffer
 }
 
-export const NO_MENTIONS = { parse: [] }
+export { NO_MENTIONS }
 export const COMMAND_INTERACTION = 2
+export const COMPONENT_INTERACTION = 3
 export const AUTOCOMPLETE_INTERACTION = 4
+const PUBLIC_THREAD_KEPT_A_WEEK_MINUTES = 10080
+const THREAD_NAME_LIMIT = 100
 
 export interface DiscordInteraction {
   id: string
@@ -55,6 +59,7 @@ export interface DiscordInteraction {
   command: string
   options: Record<string, string>
   focused?: string
+  customId?: string
 }
 
 interface RawInteraction {
@@ -66,6 +71,7 @@ interface RawInteraction {
   user?: { id: string }
   data?: {
     name?: string
+    custom_id?: string
     options?: { name: string; value?: unknown; focused?: boolean }[]
   }
 }
@@ -97,10 +103,12 @@ export function sameCommand(a: SlashCommandSpec, b: SlashCommandSpec): boolean {
 // PLATFORM§39
 export function interactionOf(raw: RawInteraction): DiscordInteraction | null {
   const userId = raw.member?.user?.id ?? raw.user?.id
-  if (!raw.channel_id || !userId || !raw.data?.name) return null
+  const data = raw.data
+  const pressed = raw.type === COMPONENT_INTERACTION ? data?.custom_id : undefined
+  if (!raw.channel_id || !userId || !data || !(data.name || pressed)) return null
   const options: Record<string, string> = {}
   let focused: string | undefined
-  for (const o of raw.data.options ?? []) {
+  for (const o of data.options ?? []) {
     options[o.name] = String(o.value ?? '')
     if (o.focused) focused = o.name
   }
@@ -110,9 +118,10 @@ export function interactionOf(raw: RawInteraction): DiscordInteraction | null {
     type: raw.type,
     channelId: raw.channel_id,
     userId,
-    command: raw.data.name,
+    command: data.name ?? '',
     options,
-    focused
+    focused,
+    ...(pressed ? { customId: pressed } : {})
   }
 }
 
@@ -330,15 +339,47 @@ export class DiscordLink {
     return this.rest
   }
 
-  async post(channelId: string, content: string, replyTo?: string): Promise<unknown> {
+  post(channelId: string, content: string, replyTo?: string): Promise<unknown> {
+    return this.postMessage(channelId, {
+      content,
+      allowed_mentions: NO_MENTIONS,
+      ...(replyTo ? { message_reference: { message_id: replyTo, fail_if_not_exists: false } } : {})
+    })
+  }
+
+  async card(channelId: string, card: Card): Promise<string[]> {
+    const ids: string[] = []
+    for (const message of cardMessages(card)) {
+      const sent = (await this.postMessage(channelId, message)) as { id?: string } | undefined
+      if (sent?.id) ids.push(sent.id)
+    }
+    return ids
+  }
+
+  // PLATFORM§39
+  async startThread(channelId: string, messageId: string, name: string): Promise<string> {
+    const thread = await this.api().request<{ id: string }>(
+      'POST',
+      `/channels/${channelId}/messages/${messageId}/threads`,
+      {
+        name: name.slice(0, THREAD_NAME_LIMIT),
+        auto_archive_duration: PUBLIC_THREAD_KEPT_A_WEEK_MINUTES
+      }
+    )
+    return thread.id
+  }
+
+  addToThread(threadId: string, userId: string): Promise<unknown> {
+    return this.api().request('PUT', `/channels/${threadId}/thread-members/${userId}`)
+  }
+
+  archiveThread(threadId: string): Promise<unknown> {
+    return this.api().request('PATCH', `/channels/${threadId}`, { archived: true })
+  }
+
+  private async postMessage(channelId: string, body: unknown): Promise<unknown> {
     try {
-      const sent = await this.api().request('POST', `/channels/${channelId}/messages`, {
-        content,
-        allowed_mentions: NO_MENTIONS,
-        ...(replyTo
-          ? { message_reference: { message_id: replyTo, fail_if_not_exists: false } }
-          : {})
-      })
+      const sent = await this.api().request('POST', `/channels/${channelId}/messages`, body)
       if (this.failing.delete(channelId)) this.d.push(this.status())
       return sent
     } catch (error) {

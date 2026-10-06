@@ -13,7 +13,12 @@ import {
   waitForCalls,
   wsRows
 } from './helpers/p1'
-import { startFakeDiscord, type FakeDiscord } from './helpers/fakeDiscord'
+import {
+  callbackText,
+  startFakeDiscord,
+  type FakeDiscord,
+  type FakePost
+} from './helpers/fakeDiscord'
 import { openSettings } from './helpers/extensions'
 import type { ConductorBinding, DiscordSettings } from '../../src/shared/types'
 
@@ -60,9 +65,18 @@ function said(fake: FakeDiscord): string[] {
   return fake.posted.filter((p) => p.channelId === CHANNEL).map((p) => p.content)
 }
 
+function threadPosts(fake: FakeDiscord): FakePost[] {
+  const ids = fake.threads.filter((t) => t.parentId === CHANNEL).map((t) => t.id)
+  return fake.posted.filter((p) => ids.includes(p.channelId))
+}
+
+function inThreads(fake: FakeDiscord): string[] {
+  return threadPosts(fake).map((p) => p.content)
+}
+
 function notices(fake: FakeDiscord): string[] {
-  return said(fake)
-    .flatMap((p) => p.split('\n'))
+  return inThreads(fake)
+    .map((p) => p.split('\n')[0])
     .filter((l) => /^(🔔|❓|⏹)/.test(l))
 }
 
@@ -140,7 +154,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     }
   })
 
-  test('a managed session’s dialog and its closing reach the channel of the conductor whose scope holds it, its finished turn only once the conductor touched it; koloft discord send uploads a file', async ({
+  test('a managed session gets its own thread under the conductor’s channel, opened from a card there with the owner added: its dialog, its finished turn with the reply (only once the conductor touched it or it has a thread) and its closing go in the thread, which is then put away; koloft discord send uploads a file', async ({
     env
   }) => {
     seedConductor(env, 'claude')
@@ -161,6 +175,13 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await expect
         .poll(() => notices(fake))
         .toEqual([expect.stringMatching(/^❓ .+ is waiting for you\.$/)])
+      expect(said(fake)).toEqual([expect.stringMatching(/^🧵 \*\*.+\*\*\n-# ws-a · Claude Code$/)])
+      expect(fake.threads).toEqual([
+        expect.objectContaining({ parentId: CHANNEL, members: [OWNER.id], archived: false })
+      ])
+      expect(bindingOnDisk(env)?.threads).toEqual([
+        expect.objectContaining({ threadId: fake.threads[0].id, keys: [managed] })
+      ])
 
       fake.say(OWNER, `/koloft session read ${managed}`)
       await expect
@@ -170,16 +191,17 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await expect
         .poll(() => notices(fake))
         .toEqual([expect.stringMatching(/^❓ /), expect.stringMatching(/^🔔 .+ finished\.$/)])
+      expect(inThreads(fake).at(-1)).toMatch(/finished\.\nAnswer to: after the touch$/)
 
       fake.say(OWNER, '/koloft discord send shot.png -- here it is')
       await expect
         .poll(() => fake.posted.filter((p) => p.files.length))
         .toEqual([
-          {
+          expect.objectContaining({
             channelId: CHANNEL,
             content: 'here it is',
             files: [{ name: 'shot.png', text: 'png bytes' }]
-          }
+          })
         ])
 
       await type('/exit')
@@ -190,27 +212,37 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
           expect.stringMatching(/^🔔 /),
           expect.stringMatching(/^⏹ .+ closed\.$/)
         ])
+      await expect.poll(() => fake.threads[0].archived).toBe(true)
     } finally {
       await quitAndClose(app)
       await fake.close()
     }
   })
 
-  test('the conductor’s own question is asked in the channel with its options, and a number sent back answers it', async ({
+  test('the conductor’s own question is asked in the channel as a card with its options and a button each; a button press answers it and the card then says what was picked, and a number sent back answers the next', async ({
     env
   }) => {
     seedConductor(env, 'claude')
     const fake = await startFakeDiscord(env)
     const { app } = await connected(env, fake)
     try {
+      const asked =
+        '❓ **The conductor** is waiting for you.\nWhich colour?\n1. Red — The Red one\n2. Green — The Green one\n-# Reply with a number or your own answer.'
+      const card = (): FakePost | undefined =>
+        fake.posted.filter((p) => p.channelId === CHANNEL && p.content === asked).at(-1)
       fake.say(OWNER, '/ask Which colour?|Red|Green')
-      await expect
-        .poll(() => said(fake), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-        .toContain(
-          '❓ Which colour?\n1. Red — The Red one\n2. Green — The Green one\n\nReply with a number or your own answer.'
-        )
-      const answer = fake.say(OWNER, '2')
+      await expect.poll(card, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }).toBeTruthy()
+      expect(card()!.buttons?.map((b) => b.label)).toEqual(['1. Red', '2. Green'])
+      fake.press(OWNER, card()!.buttons![1], CHANNEL)
       await expect.poll(() => said(fake)).toContain('Picked: Green')
+      expect(fake.callbacks.map((c) => [c.type, callbackText(c)])).toEqual([
+        [7, asked + '\n-# ✅ 2. Green']
+      ])
+
+      fake.say(OWNER, '/ask Which size?|Small|Large')
+      await expect.poll(() => said(fake).join('\n')).toContain('Which size?')
+      const answer = fake.say(OWNER, '2')
+      await expect.poll(() => said(fake)).toContain('Picked: Large')
       await expect
         .poll(() => fake.reactions)
         .toContainEqual({ messageId: answer, emoji: '✅', on: true })
@@ -334,7 +366,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       fake.say(OWNER, '/koloft session new --backend codex -- list the files')
       await expect
         .poll(() => said(fake).join('\n'))
-        .toContain('▶ Started a Codex session (ws-a, Codex)')
+        .toContain('▶ Started **a Codex session**\n-# ws-a · Codex')
       await expect.poll(() => bindingOnDisk(env)?.touched.length).toBe(2)
     } finally {
       await quitAndClose(app)
@@ -425,7 +457,9 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       fake.say(OWNER, 'please approve this')
       await expect
         .poll(() => said(fake))
-        .toContain('❓ Codex asks to run: echo approved\nReply yes or no.')
+        .toContain(
+          '❓ **The conductor** is waiting for you.\nCodex asks to run: echo approved\n-# Reply yes or no.'
+        )
       fake.say(OWNER, 'yes')
       await expect
         .poll(() => said(fake))
@@ -435,7 +469,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await expect
         .poll(() => said(fake))
         .toContain(
-          '❓ Which colour do you prefer?\n1. Red — Choose red.\n2. Green — Choose green.\n\nReply with the number or the name of one option.'
+          '❓ **The conductor** is waiting for you.\nWhich colour do you prefer?\n1. Red — Choose red.\n2. Green — Choose green.\n-# Reply with the number or the name of one option.'
         )
       fake.say(OWNER, 'Green')
       await expect
@@ -453,7 +487,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     }
   })
 
-  test('a managed Claude session’s question reaches the channel whole and the conductor answers it with koloft session answer; its command approvals are allowed by yes and refused by no', async ({
+  test('a managed Claude session’s question reaches its thread whole and the conductor answers it with koloft session answer; in the thread its command approval is allowed by the Yes button and refused by the owner’s words, and the owner’s message is typed into it and its reply comes back there', async ({
     env
   }) => {
     seedConductor(env, 'claude')
@@ -465,39 +499,57 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       const managedTab = await tabOf(page, managed)
       const type = (line: string): Promise<void> =>
         page.evaluate(([id, l]) => window.api.terminal.write(id, l + '\r'), [managedTab, line])
-      const waiting = (detail: string): Promise<void> =>
-        expect
-          .poll(() => said(fake).join('\n'))
-          .toMatch(
+      const waiting = async (detail: string): Promise<FakePost> => {
+        const card = (): FakePost | undefined =>
+          threadPosts(fake).find((p) =>
             new RegExp(
-              `(^|\\n)❓ .+ is waiting for you: ${detail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\n|$)`
-            )
+              `^❓ .+ is waiting for you\\.\\n${detail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n`
+            ).test(p.content)
           )
+        await expect.poll(card).toBeTruthy()
+        return card()!
+      }
 
       await type('/ask Which colour?|Red|Green')
-      await waiting('Which colour?\n1. Red — The Red one\n2. Green — The Green one')
+      const question = await waiting(
+        'Which colour?\n1. Red — The Red one\n2. Green — The Green one'
+      )
+      expect(question.buttons?.map((b) => b.label)).toEqual(['1. Red', '2. Green'])
       fake.say(OWNER, `/koloft session answer ${managed} 2`)
       await expect
         .poll(() => transcriptText(env, managed), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toContain('Picked: Green')
       expect(bindingOnDisk(env)?.touched).toEqual([managed])
+      const thread = question.channelId
 
       await type('/bash touch made.txt')
-      await waiting('Bash asks to run:\ntouch made.txt')
-      fake.say(OWNER, `/koloft session answer ${managed} yes`)
+      const approval = await waiting('Bash asks to run:\ntouch made.txt')
+      fake.press(
+        OWNER,
+        approval.buttons!.find((b) => b.label === 'Yes')!,
+        thread
+      )
       await expect.poll(() => transcriptText(env, managed)).toContain('Ran: touch made.txt')
 
       await type('/bash rm -rf build')
       await waiting('Bash asks to run:\nrm -rf build')
-      fake.say(OWNER, `/koloft session answer ${managed} no, keep it`)
+      const refusal = fake.say(OWNER, 'no, keep it', { channelId: thread })
       await expect.poll(() => transcriptText(env, managed)).toContain('Denied: no, keep it')
+      await expect
+        .poll(() => fake.reactions)
+        .toContainEqual({ messageId: refusal, emoji: '✅', on: true })
+
+      fake.say(OWNER, '[Discord] straight from the thread', { channelId: thread })
+      await expect
+        .poll(() => inThreads(fake).join('\n'), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('finished.\nAnswer to: [Discord] straight from the thread')
     } finally {
       await quitAndClose(app)
       await fake.close()
     }
   })
 
-  test('a managed Codex session’s approval reaches the channel with its command, and its one-question list with its options; the conductor’s answer presses the key of each', async ({
+  test('a managed Codex session’s approval reaches its thread with its command and is answered by the Yes button there, and its one-question list with its options is answered by the conductor; each presses its key', async ({
     env
   }) => {
     installCodex(env)
@@ -516,11 +568,14 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
         (s) => s.backendId === 'codex'
       )!.tabId
       await page.evaluate((id) => window.api.terminal.write(id, 'please approve\r'), codexTab)
-      await expect
-        .poll(() => said(fake).join('\n'))
-        .toMatch(/(^|\n)❓ .+ is waiting for you: echo approved(\n|$)/)
+      const approval = (): FakePost | undefined =>
+        threadPosts(fake).find((p) =>
+          /^❓ .+ is waiting for you\.\necho approved\n/.test(p.content)
+        )
+      await expect.poll(approval).toBeTruthy()
+      expect(approval()!.buttons?.map((b) => b.label)).toEqual(['Yes', 'No'])
 
-      fake.say(OWNER, `/koloft session answer ${codexId} yes`)
+      fake.press(OWNER, approval()!.buttons![0], approval()!.channelId)
       await expect
         .poll(
           () =>
@@ -540,9 +595,9 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/)
       await page.evaluate((id) => window.api.terminal.write(id, 'please ask me\r'), codexTab)
       await expect
-        .poll(() => said(fake).join('\n'))
+        .poll(() => inThreads(fake).join('\n\n'))
         .toMatch(
-          /(^|\n)❓ .+ is waiting for you: Which colour do you prefer\?\n1\. Red — Choose red\.\n2\. Green — Choose green\.(\n|$)/
+          /(^|\n)❓ .+ is waiting for you\.\nWhich colour do you prefer\?\n1\. Red — Choose red\.\n2\. Green — Choose green\.\n/
         )
       fake.say(OWNER, `/koloft session answer ${codexId} Green`)
       await expect

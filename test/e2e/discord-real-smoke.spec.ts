@@ -117,7 +117,14 @@ function addClaudeAccountToKeychain(env: E2EEnv): void {
 }
 
 function said(fake: FakeDiscord): string[] {
-  return fake.posted.filter((p) => p.channelId === CHANNEL).map((p) => p.content)
+  const threads = fake.threads.filter((t) => t.parentId === CHANNEL).map((t) => t.id)
+  return fake.posted
+    .filter((p) => p.channelId === CHANNEL || threads.includes(p.channelId))
+    .map((p) => p.content)
+}
+
+function conductorSaid(fake: FakeDiscord): string[] {
+  return fake.posted.filter((p) => p.channelId === CHANNEL && !p.card).map((p) => p.content)
 }
 
 function ran(fake: FakeDiscord): string[] {
@@ -126,14 +133,12 @@ function ran(fake: FakeDiscord): string[] {
 
 function notices(fake: FakeDiscord): string[] {
   return said(fake)
-    .flatMap((p) => p.split('\n'))
+    .map((p) => p.split('\n')[0])
     .filter((l) => /^(🔔|❓|⏹|▶)/.test(l))
 }
 
 function repliesAfter(fake: FakeDiscord, count: number): string[] {
-  return said(fake)
-    .slice(count)
-    .filter((p) => !/^(🔔|❓|⏹|▶)/.test(p))
+  return conductorSaid(fake).slice(count)
 }
 
 interface Rec {
@@ -302,12 +307,13 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       )
       await expect
         .poll(() => notices(fake), { timeout: A_REAL_MODEL_TURN_MS })
-        .toContainEqual(expect.stringMatching(/^▶ Started .+ \(ws-a, Claude\)$/))
+        .toContainEqual(expect.stringMatching(/^▶ Started \*\*.+\*\*$/))
+      expect(said(fake).join('\n')).toContain('\n-# ws-a · Claude Code')
       await expect
         .poll(() => notices(fake), { timeout: A_REAL_MODEL_TURN_MS })
         .toContainEqual(expect.stringMatching(/^🔔 .+ finished\.$/))
 
-      const before = said(fake).length
+      const before = conductorSaid(fake).length
       fake.say(
         OWNER,
         'What did that session answer? Read it with koloft session read and tell me only its answer.'
@@ -332,7 +338,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       )
       await expect
         .poll(() => notices(fake), { timeout: 2 * A_REAL_MODEL_TURN_MS })
-        .toContainEqual(expect.stringMatching(/^❓ .+ is waiting for you: /))
+        .toContainEqual(expect.stringMatching(/^❓ .+ is waiting for you\.$/))
       expect(said(fake).join('\n')).toMatch(/\n1\. Red\b.*\n2\. Green\b.*\n3\. Blue\b/)
       const sessions = await page.evaluate(() => window.api.sessions.list())
       const target = sessions.find((s) => s.alive && !s.conductor)!
@@ -348,7 +354,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
         .toMatch(/green/i)
       expect(commandsRun(env, conductor.sessionId).join('\n')).toContain('koloft session answer')
       const name = notices(fake)
-        .map((l) => /^▶ Started (.+) \(ws-a, Claude\)$/.exec(l)?.[1])
+        .map((l) => /^▶ Started \*\*(.+)\*\*$/.exec(l)?.[1])
         .find(Boolean)
       expect(toolResults(env, conductor.sessionId)).toContain(`Answered ${name}.`)
       await expect
@@ -467,8 +473,8 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       const hookPid = Number(hookQuestionFiles(env, target.tabId)[0].split('.')[1])
       await expect
         .poll(() => notices(fake), { timeout: 30_000 })
-        .toContainEqual(expect.stringMatching(/^❓ .+ is waiting for you: Bash asks to run:$/))
-      expect(said(fake).join('\n')).toContain('touch mac-yes.txt')
+        .toContainEqual(expect.stringMatching(/^❓ .+ is waiting for you\.$/))
+      expect(said(fake).join('\n')).toMatch(/\nBash asks to run:\n.*touch mac-yes\.txt/)
       await expect
         .poll(() => terminalText(page, target.tabId), { timeout: 30_000 })
         .toMatch(/1\. Yes/)
@@ -572,9 +578,9 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       await expect
         .poll(() => said(fake).join('\n'), { timeout: A_REAL_MODEL_TURN_MS })
         .toMatch(
-          /❓ .+\n1\. Red\b.*\n2\. Green\b.*\n\nReply with the number or the name of one option\./
+          /❓ .+\n(.*\n)*1\. Red\b.*\n2\. Green\b.*\n-# Reply with the number or the name of one option\./
         )
-      const before = said(fake).length
+      const before = conductorSaid(fake).length
       const green = fake.say(OWNER, 'Green')
       await expect
         .poll(() => repliesAfter(fake, before).join('\n'), { timeout: A_REAL_MODEL_TURN_MS })

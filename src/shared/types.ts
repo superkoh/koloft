@@ -199,6 +199,13 @@ export interface ConductorBinding {
   lastSessionKey?: string
   lastMessageId?: string
   touched: string[]
+  threads?: SessionThread[]
+}
+
+export interface SessionThread {
+  threadId: string
+  keys: string[]
+  lastMessageId?: string
 }
 
 export interface DiscordSettings {

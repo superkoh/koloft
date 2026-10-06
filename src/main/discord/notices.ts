@@ -1,18 +1,22 @@
 import type { BackendId, ConductorBinding, SessionStatus } from '@shared/types'
-import { GLOBAL_SCOPE, scopeName } from '@shared/conductors'
-import { BACKEND_LABEL } from '@shared/sessionBackend'
+import { GLOBAL_SCOPE } from '@shared/conductors'
 import { edgeAttention } from '../attention'
+import { accentOf, type Card } from './cards'
+import type { DialogView } from './dialog'
 
 export type NoticeKind = 'finished' | 'waiting' | 'closed'
 
 export interface NoticeSubject {
+  tabId: string
   key: string
   name: string
+  backend: BackendId
   workspace?: string
   conductor?: string
 }
 
-export const NOTICE_COALESCE_MS = 1000
+export const REPLY_FOLLOWS_THE_TURN_MS = 7000
+export const ANSWER_IN_THE_THREAD = '-# Answer with a button, or write the answer here.'
 
 export function noticeKindOf(
   prev: SessionStatus | undefined,
@@ -25,49 +29,67 @@ export function noticeKindOf(
   return undefined
 }
 
-export function noticeChannel(
+export function noticeBinding(
   bindings: ConductorBinding[],
-  subject: NoticeSubject,
-  kind: NoticeKind
-): string | undefined {
+  subject: Pick<NoticeSubject, 'key' | 'workspace'>,
+  kind: NoticeKind,
+  threaded = false
+): ConductorBinding | undefined {
   const covering = bindings.filter(
     (b) =>
       (b.scope === GLOBAL_SCOPE || b.scope === subject.workspace) &&
-      (kind !== 'finished' || b.touched.includes(subject.key))
+      (kind !== 'finished' || threaded || b.touched.includes(subject.key))
   )
-  return (covering.find((b) => b.scope !== GLOBAL_SCOPE) ?? covering[0])?.channel.channelId
+  return covering.find((b) => b.scope !== GLOBAL_SCOPE) ?? covering[0]
 }
 
-export function noticeText(kind: NoticeKind, name: string, detail?: string): string {
-  if (kind === 'finished') return `🔔 ${name} finished.`
-  if (kind === 'closed') return `⏹ ${name} closed.`
-  return detail ? `❓ ${name} is waiting for you: ${detail}` : `❓ ${name} is waiting for you.`
+export function noticeCard(kind: NoticeKind, name: string, body?: string): Card {
+  const accent = accentOf(name)
+  if (kind === 'finished') return { accent, header: `🔔 **${name}** finished.`, body }
+  if (kind === 'closed') return { accent, header: `⏹ **${name}** closed.`, silent: true }
+  return { accent, header: `❓ **${name}** is waiting for you.`, body }
 }
 
 export interface NoticeDeps {
   bindings(): ConductorBinding[]
-  post(channelId: string, text: string): void
+  place(b: ConductorBinding, subject: NoticeSubject): Promise<string>
+  hasThread(key: string): boolean
+  card(channelId: string, card: Card): void
+  archive(threadId: string): void
+  withButtons(tabId: string, view: DialogView, card: Card): Card
   subject(tabId: string): NoticeSubject | undefined
   peerName(tabId: string): Promise<string | null>
   awaitsInput(tabId: string): boolean
   commandRunning(tabId: string): boolean
-  detail(tabId: string): Promise<string | undefined>
+  dialog(tabId: string): Promise<DialogView | undefined>
 }
 
 export class Notices {
-  private pending = new Map<string, string[]>()
   private closeNoticed = new Set<string>()
   private waitingNoticed = new Map<string, string>()
   private names = new Map<string, string>()
   private lastSubjects = new Map<string, NoticeSubject>()
+  private replies = new Map<string, string>()
+  private replyWaiters = new Map<string, (reply: string | undefined) => void>()
 
   constructor(private d: NoticeDeps) {}
 
   onStatus(tabId: string, prev: SessionStatus | undefined, next: SessionStatus): void {
     this.liveSubject(tabId)
-    if (next === 'working') this.waitingNoticed.delete(tabId)
+    if (next === 'working') {
+      this.waitingNoticed.delete(tabId)
+      this.replies.delete(tabId)
+    }
     const kind = noticeKindOf(prev, next, this.d.awaitsInput(tabId))
     if (kind) void this.notice(tabId, kind)
+  }
+
+  turnEnded(tabId: string, reply: string): void {
+    const waiter = this.replyWaiters.get(tabId)
+    if (waiter) {
+      this.replyWaiters.delete(tabId)
+      waiter(reply)
+    } else this.replies.set(tabId, reply)
   }
 
   waiting(tabId: string): void {
@@ -83,10 +105,27 @@ export class Notices {
     this.waitingNoticed.delete(tabId)
     this.names.delete(tabId)
     this.lastSubjects.delete(tabId)
+    this.replies.delete(tabId)
+    this.replyWaiters.get(tabId)?.(undefined)
+    this.replyWaiters.delete(tabId)
   }
 
-  started(channelId: string, name: string, workspace: string, backend: BackendId): void {
-    this.queue(channelId, `▶ Started ${name} (${scopeName(workspace)}, ${BACKEND_LABEL[backend]})`)
+  private replyOf(tabId: string): Promise<string | undefined> {
+    const had = this.replies.get(tabId)
+    if (had !== undefined) {
+      this.replies.delete(tabId)
+      return Promise.resolve(had)
+    }
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.replyWaiters.delete(tabId)
+        resolve(undefined)
+      }, REPLY_FOLLOWS_THE_TURN_MS)
+      this.replyWaiters.set(tabId, (reply) => {
+        clearTimeout(timer)
+        resolve(reply)
+      })
+    })
   }
 
   private async notice(tabId: string, kind: NoticeKind): Promise<void> {
@@ -94,19 +133,27 @@ export class Notices {
       this.liveSubject(tabId) ?? (kind === 'closed' ? this.lastSubjects.get(tabId) : undefined)
     if (!subject || subject.conductor) return
     if (kind === 'finished' && this.d.commandRunning(tabId)) return
-    let detail: string | undefined
+    const b = noticeBinding(this.d.bindings(), subject, kind, this.d.hasThread(subject.key))
+    if (!b) return
+    let body: string | undefined
+    let dialog: DialogView | undefined
     if (kind === 'closed') {
       if (this.closeNoticed.has(tabId)) return
       this.closeNoticed.add(tabId)
     } else if (kind === 'waiting') {
-      detail = await this.d.detail(tabId)
-      if (this.waitingNoticed.get(tabId) === (detail ?? '')) return
-      this.waitingNoticed.set(tabId, detail ?? '')
-    }
-    const channelId = noticeChannel(this.d.bindings(), subject, kind)
-    if (!channelId) return
+      dialog = await this.d.dialog(tabId)
+      if (this.waitingNoticed.get(tabId) === (dialog?.text ?? '')) return
+      this.waitingNoticed.set(tabId, dialog?.text ?? '')
+      body = dialog?.text
+    } else body = await this.replyOf(tabId)
     const name = await this.nameOf(tabId, kind, subject.name)
-    this.queue(channelId, noticeText(kind, name, detail))
+    const channelId = await this.d.place(b, { ...subject, name })
+    const inThread = channelId !== b.channel.channelId
+    let card = noticeCard(kind, name, body)
+    if (kind === 'waiting' && inThread) card = { ...card, footer: ANSWER_IN_THE_THREAD }
+    if (dialog?.choices.length) card = this.d.withButtons(tabId, dialog, card)
+    this.d.card(channelId, card)
+    if (kind === 'closed' && inThread) this.d.archive(channelId)
   }
 
   private liveSubject(tabId: string): NoticeSubject | undefined {
@@ -120,19 +167,5 @@ export class Notices {
     const name = await this.d.peerName(tabId)
     if (name) this.names.set(tabId, name)
     return name ?? title
-  }
-
-  private queue(channelId: string, line: string): void {
-    const lines = this.pending.get(channelId)
-    if (lines) {
-      lines.push(line)
-      return
-    }
-    this.pending.set(channelId, [line])
-    setTimeout(() => {
-      const all = this.pending.get(channelId) ?? []
-      this.pending.delete(channelId)
-      this.d.post(channelId, all.join('\n'))
-    }, NOTICE_COALESCE_MS)
   }
 }

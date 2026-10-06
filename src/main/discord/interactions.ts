@@ -4,6 +4,7 @@ import { errorText } from '../agentRequests'
 import {
   AUTOCOMPLETE_INTERACTION,
   COMMAND_INTERACTION,
+  COMPONENT_INTERACTION,
   NO_MENTIONS,
   type DiscordInteraction,
   type SlashCommandSpec
@@ -19,7 +20,7 @@ const MAX_CHOICE_CHARS = 100
 const SESSION_OPTION = {
   type: STRING_OPTION,
   name: 'session',
-  description: 'Which session; leave it out for this channel’s conductor',
+  description: 'Which session; left out: the conductor, or in a session’s thread that session',
   autocomplete: true
 }
 
@@ -69,11 +70,17 @@ export interface SessionChoice {
   value: string
 }
 
+export interface ChannelRoute {
+  binding: ConductorBinding
+  sessionKey?: string
+}
+
 export interface InteractionDeps {
   owner(): string | undefined
-  bindingOfChannel(channelId: string): ConductorBinding | undefined
+  routeOf(channelId: string): ChannelRoute | undefined
   choices(b: ConductorBinding): SessionChoice[]
   run(b: ConductorBinding, session: string, text: string): Promise<string>
+  press(i: DiscordInteraction): Promise<void>
   respond(i: DiscordInteraction, body: unknown): Promise<unknown>
 }
 
@@ -81,8 +88,10 @@ export class Interactions {
   constructor(private d: InteractionDeps) {}
 
   async handle(i: DiscordInteraction): Promise<void> {
-    const b = this.d.bindingOfChannel(i.channelId)
-    if (!b) return
+    const route = this.d.routeOf(i.channelId)
+    if (!route) return
+    if (i.type === COMPONENT_INTERACTION) return this.d.press(i).catch(() => undefined)
+    const b = route.binding
     const owner = i.userId === this.d.owner()
     if (i.type === AUTOCOMPLETE_INTERACTION) {
       const typed = (i.options[i.focused ?? ''] ?? '').toLowerCase()
@@ -100,7 +109,8 @@ export class Interactions {
     if (problem) return this.reply(i, privately(didNotRun(problem)))
     let content: string
     try {
-      content = await this.d.run(b, i.options.session?.trim() || MYSELF, text)
+      const session = i.options.session?.trim() || route.sessionKey || MYSELF
+      content = await this.d.run(b, session, text)
     } catch (error) {
       content = `⚠ ${errorText(error)}`
     }

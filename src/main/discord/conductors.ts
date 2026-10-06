@@ -7,7 +7,8 @@ import type {
   ConductorOpenResult,
   ConductorSaveInput,
   ConductorSaveResult,
-  DiscordSettings
+  DiscordSettings,
+  SessionThread
 } from '@shared/types'
 import { BACKEND_LABEL, identityOf } from '@shared/sessionBackend'
 import {
@@ -177,14 +178,72 @@ export class Conductors {
     this.d.saveQuietly(this.discord)
   }
 
+  threadOfKey(key: string): { binding: ConductorBinding; thread: SessionThread } | undefined {
+    for (const binding of this.discord.bindings) {
+      const thread = binding.threads?.find((t) => t.keys.includes(key))
+      if (thread) return { binding, thread }
+    }
+    return undefined
+  }
+
+  threadOfChannel(
+    channelId: string
+  ): { binding: ConductorBinding; thread: SessionThread } | undefined {
+    for (const binding of this.discord.bindings) {
+      const thread = binding.threads?.find((t) => t.threadId === channelId)
+      if (thread) return { binding, thread }
+    }
+    return undefined
+  }
+
+  keepThread(bindingId: string, threadId: string, key: string): void {
+    const there = this.threadOfKey(key)
+    if (there?.thread.threadId === threadId) return
+    this.change(bindingId, (b) => {
+      const threads = b.threads ?? []
+      const known = threads.some((t) => t.threadId === threadId)
+      return {
+        ...b,
+        threads: known
+          ? threads.map((t) => (t.threadId === threadId ? { ...t, keys: [...t.keys, key] } : t))
+          : [...threads, { threadId, keys: [key] }]
+      }
+    })
+    this.d.saveQuietly(this.discord)
+  }
+
+  setThreadLastMessage(threadId: string, messageId: string): void {
+    const found = this.threadOfChannel(threadId)
+    if (!found) return
+    const last = found.thread.lastMessageId
+    if (last && !newerSnowflake(messageId, last)) return
+    this.change(found.binding.id, (b) => ({
+      ...b,
+      threads: (b.threads ?? []).map((t) =>
+        t.threadId === threadId ? { ...t, lastMessageId: messageId } : t
+      )
+    }))
+    this.pendingSave ??= setTimeout(() => this.flush(), LAST_MESSAGE_SAVE_DELAY_MS)
+  }
+
   forgetGone(stillOnDisk: (key: string) => boolean): void {
     let changed = false
     const bindings = this.discord.bindings.map((b) => {
       const sessionIds = b.sessionIds.filter(stillOnDisk)
       const touched = b.touched.filter(stillOnDisk)
-      if (sessionIds.length === b.sessionIds.length && touched.length === b.touched.length) return b
+      const threads = (b.threads ?? [])
+        .map((t) => ({ ...t, keys: t.keys.filter(stillOnDisk) }))
+        .filter((t) => t.keys.length)
+      const threadKeys = (list?: SessionThread[]): number =>
+        (list ?? []).reduce((n, t) => n + t.keys.length, 0)
+      if (
+        sessionIds.length === b.sessionIds.length &&
+        touched.length === b.touched.length &&
+        threadKeys(threads) === threadKeys(b.threads)
+      )
+        return b
       changed = true
-      return { ...b, sessionIds, touched }
+      return { ...b, sessionIds, touched, threads }
     })
     if (!changed) return
     this.discord = { ...this.discord, bindings }

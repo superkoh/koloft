@@ -155,7 +155,7 @@ describe('Conductors', () => {
     expect(rescans).toBe(0)
   })
 
-  it('forgets the session ids and touched sessions whose transcript is gone, keeps the rest, and saves only when something went, without a rescan of the sidebar rows', () => {
+  it('forgets the session ids, touched sessions and threads whose transcript is gone, keeps the rest, and saves only when something went, without a rescan of the sidebar rows', () => {
     saved = {
       bindings: [
         {
@@ -165,17 +165,22 @@ describe('Conductors', () => {
           channel: CHANNEL,
           sessionIds: ['gone-1', 'kept-1'],
           lastSessionKey: 'gone-1',
-          touched: ['kept-2', 'gone-2']
+          touched: ['kept-2', 'gone-2'],
+          threads: [
+            { threadId: '7', keys: ['gone-3'] },
+            { threadId: '8', keys: ['gone-4', 'kept-3'] }
+          ]
         }
       ]
     }
     const c = make()
-    const onDisk = new Set(['kept-1', 'kept-2'])
+    const onDisk = new Set(['kept-1', 'kept-2', 'kept-3'])
     c.forgetGone((key) => onDisk.has(key))
     expect(quiet.at(-1)?.bindings[0]).toMatchObject({
       sessionIds: ['kept-1'],
       lastSessionKey: 'gone-1',
-      touched: ['kept-2']
+      touched: ['kept-2'],
+      threads: [{ threadId: '8', keys: ['kept-3'] }]
     })
     expect(c.conductorOf('gone-1')).toBeUndefined()
     expect(c.conductorOf('kept-1')).toBe('b1')
