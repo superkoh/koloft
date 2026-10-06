@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'util'
 import type { AskPayload } from '@shared/sessionEvent'
 import { fail, type Parsed } from '../agentRequests'
 import type { ToolCall } from '../sessionTracker'
@@ -86,7 +87,7 @@ export function isAskedCall(p: AskPayload, call: ToolCall): boolean {
   const asked = p.tool_input ?? {}
   return (
     p.tool_name === call.name &&
-    Object.entries(call.input).every(([k, v]) => JSON.stringify(asked[k]) === JSON.stringify(v))
+    Object.entries(call.input).every(([k, v]) => isDeepStrictEqual(asked[k], v))
   )
 }
 

@@ -25,7 +25,10 @@ binary.
   SessionEnd can never be the eviction criterion — only a reason whitelist can.
 - **Observed reason mappings** (all measured on a real claude):
   - `/exit`, Ctrl+D, worktree-session exit (either Keep/Remove choice) →
-    `prompt_input_exit` (3/3 repeats, E1/E2/E8)
+    `prompt_input_exit` (3/3 repeats, E1/E2/E8); Ctrl+C twice at an idle prompt too,
+    and both `/exit` and that Ctrl+C exit with code 0 (2026-10-06, CC 2.1.291, a pty;
+    SIGHUP gave 129). A hook still running can make an `/exit` fire no SessionEnd at
+    all (§14).
   - `logout` → `logout`
   - SIGHUP → `other` (E6); a finishing `claude -p` run → `other`
   - `/clear` → `clear` (process stays alive; a new-id SessionStart with
@@ -1130,6 +1133,20 @@ below was one run.
   (scratch `HOME`, haiku, `--permission-mode default`, a hook that logged its start and
   any SIGTERM and then waited): `1` on a `Bash` dialog ran the command, and 15 s later the
   hook was still alive with no SIGTERM logged.
+- **A hook still waiting when the session ends can make claude skip every SessionEnd
+  hook.** 2026-10-06, CC 2.1.291, a pty, haiku, `--dangerously-skip-permissions`,
+  Koloft's hook settings with the `.answerable` marker present: an `AskUserQuestion`
+  answered `1` in the terminal (Koloft's `ask` hook kept waiting), one more turn, 60 s
+  idle, then `/exit` — claude exited with code 0 after 0.5 s and no SessionEnd hook ran
+  (neither Koloft's nor a second logging one), 2 runs out of 2. The same run with the
+  waiting hook ended by SIGTERM just before `/exit` fired SessionEnd
+  `prompt_input_exit`. `/exit` 3 s after the answer, with no turn between, fired it
+  too (1 run). Seen live in Koloft three times the same night: the first `/exit` of a
+  session that had answered a question in the terminal left its row cold.
+- **The transcript's `tool_use` input and the hook's `tool_input` hold the same values
+  in a different key order.** One `AskUserQuestion`, 2026-10-06, CC 2.1.291: the hook
+  had `question, header, options, multiSelect`, the transcript `question, header,
+  multiSelect, options`. Matching the two needs a comparison that ignores key order.
 - **A hook that exits at once with no output** leaves the dialog to the person, as if
   there were no hook. Run 2026-10-04, CC 2.1.289, through Koloft (the
   `discord-real-smoke` case "with Discord off"): Koloft's hook script left before reading
