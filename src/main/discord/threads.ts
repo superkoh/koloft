@@ -15,7 +15,7 @@ export interface ThreadSubject {
 
 export interface ThreadDeps {
   link: Pick<DiscordLink, 'card' | 'startThread' | 'addToThread' | 'archiveThread'>
-  conductors: Pick<Conductors, 'owner' | 'threadOfKey' | 'threadOfChannel' | 'keepThread'>
+  conductors: Pick<Conductors, 'owner' | 'threadOfKey' | 'keepThread'>
 }
 
 interface TabThread {
@@ -49,10 +49,6 @@ export class SessionThreads {
 
   hasThread(key: string): boolean {
     return !!this.d.conductors.threadOfKey(key)
-  }
-
-  isThread(channelId: string): boolean {
-    return !!this.d.conductors.threadOfChannel(channelId)
   }
 
   place(b: ConductorBinding, s: ThreadSubject, started = false): Promise<string> {

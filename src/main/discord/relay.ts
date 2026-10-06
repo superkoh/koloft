@@ -425,16 +425,10 @@ export class DiscordRelay {
     if (!channelId || this.codexAsks.get(tab) === a.id) return
     this.codexAsks.set(tab, a.id)
     const view = codexDialog(a)
-    const card =
-      'options' in a
-        ? this.askCard(tab, view, PICK_ONE_OPTION)
-        : this.askCard(
-            tab,
-            view,
-            CODEX_NEEDS_YES_OR_NO,
-            `Codex asks to run: ${view.text || 'a command'}`
-          )
-    this.card(channelId, card)
+    const question = 'options' in a
+    const how = question ? PICK_ONE_OPTION : CODEX_NEEDS_YES_OR_NO
+    const shown = question ? view.text : `Codex asks to run: ${view.text || 'a command'}`
+    this.card(channelId, this.askCard(tab, view, how, shown))
   }
 
   private answerDialog(tab: string, m: DiscordMessage): boolean {

@@ -259,7 +259,7 @@ import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay, type Destination } from './discord/relay'
 import { Notices } from './discord/notices'
 import { SessionThreads } from './discord/threads'
-import { AskButtons, isAskButton } from './discord/buttons'
+import { AskButtons } from './discord/buttons'
 import { SlashCommands, type SlashTarget } from './discord/slash'
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
 import { typeKeys } from './typeKeys'
@@ -1711,12 +1711,7 @@ app.whenReady().then(() => {
   askButtons = buttons
   const interactions = new Interactions({
     owner: () => conductorsNow.owner(),
-    routeOf: (channelId) => {
-      const binding = conductorsNow.bindingOfChannel(channelId)
-      if (binding) return { binding }
-      const found = conductorsNow.threadOfChannel(channelId)
-      return found && { binding: found.binding, sessionKey: found.thread.keys.at(-1) }
-    },
+    routeOf: (channelId) => conductorsNow.routeOf(channelId),
     choices: (b) => [
       { name: `This channel’s conductor (${scopeName(b.scope)})`, value: MYSELF },
       ...sessionChoices(sessionDeps, b.scope)
@@ -1727,7 +1722,7 @@ app.whenReady().then(() => {
       if (!found.ok) throw new Error(found.error)
       return commandInto(b, found.value, text)
     },
-    press: (i) => (isAskButton(i) ? buttons.press(i) : Promise.resolve()),
+    press: (i) => buttons.press(i),
     respond: (i, body) => link.respond(i, body)
   })
   const sessionDestination = (b: ConductorBinding, threadId: string, key: string): Destination => {
@@ -1762,11 +1757,11 @@ app.whenReady().then(() => {
     },
     owner: () => conductorsNow.owner(),
     destinationOf: (channelId) => {
-      const b = conductorsNow.bindingOfChannel(channelId)
-      if (b) return conductorDestination(b)
-      const found = conductorsNow.threadOfChannel(channelId)
-      const key = found?.thread.keys.at(-1)
-      return found && key ? sessionDestination(found.binding, channelId, key) : undefined
+      const route = conductorsNow.routeOf(channelId)
+      if (!route) return undefined
+      return route.sessionKey
+        ? sessionDestination(route.binding, channelId, route.sessionKey)
+        : conductorDestination(route.binding)
     },
     channels: () =>
       conductorsNow.bindings().flatMap((b) => [
@@ -2941,14 +2936,7 @@ function conductorDestination(b: ConductorBinding): Destination {
 }
 
 async function commandInto(b: ConductorBinding, t: Target, text: string): Promise<string> {
-  const channelId =
-    (await discordThreads?.place(b, {
-      tabId: t.tabId,
-      key: t.key,
-      name: t.name,
-      backend: t.backend,
-      workspace: t.workspace
-    })) ?? b.channel.channelId
+  const channelId = (await discordThreads?.place(b, t)) ?? b.channel.channelId
   const target = (tabId: string): SlashTarget => {
     conductors?.touchNowAndNext(b.id, t.key, tabId)
     return { name: t.name, tabId, conductor: false }

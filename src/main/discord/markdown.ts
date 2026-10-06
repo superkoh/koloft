@@ -1,9 +1,10 @@
+import { isFence } from './split'
+
 export const TABLE_FITS_A_PHONE_COLUMNS = 40
 const COLUMN_GAP = 2
 const WIDE_CHAR =
   /[ᄀ-ᅟ⺀-〾ぁ-㏿㐀-䶿一-鿿ꀀ-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]|\p{Extended_Pictographic}/u
 
-const FENCE = /^\s*(```|~~~)/
 const TABLE_ROW = /^\s*\|.*\|\s*$/
 const TABLE_RULE = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/
 const DEEP_HEADING = /^\s{0,3}#{4,6}\s+(.*?)\s*#*\s*$/
@@ -100,18 +101,12 @@ function line(text: string): string {
 export function toDiscordMarkdown(text: string): string {
   const lines = text.split('\n')
   const out: string[] = []
-  let fence: string | null = null
+  let inCode = false
   for (let i = 0; i < lines.length; i++) {
     const current = lines[i]
-    const opens = FENCE.exec(current)
-    if (fence) {
+    if (inCode || isFence(current)) {
       out.push(current)
-      if (opens && opens[1] === fence) fence = null
-      continue
-    }
-    if (opens) {
-      fence = opens[1]
-      out.push(current)
+      if (isFence(current)) inCode = !inCode
       continue
     }
     if (TABLE_ROW.test(current) && TABLE_RULE.test(lines[i + 1] ?? '')) {

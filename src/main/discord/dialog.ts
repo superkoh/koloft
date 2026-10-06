@@ -81,11 +81,16 @@ export function optionChoices(q: Question): Choice[] {
   }))
 }
 
+function singlePick(p: AskPayload): Question | undefined {
+  const qs = questionsOf(p)
+  const raw = p.tool_input?.questions as { multiSelect?: unknown }[]
+  return qs.length === 1 && raw[0]?.multiSelect !== true ? qs[0] : undefined
+}
+
 export function choicesOf(p: AskPayload): Choice[] {
   if (p.tool_name === 'AskUserQuestion') {
-    const qs = questionsOf(p)
-    const raw = p.tool_input?.questions as { multiSelect?: unknown }[]
-    return qs.length === 1 && raw[0]?.multiSelect !== true ? optionChoices(qs[0]) : []
+    const q = singlePick(p)
+    return q ? optionChoices(q) : []
   }
   if (planOf(p) === undefined) return YES_OR_NO
   return [
@@ -170,10 +175,9 @@ const YES_OR_NO_BY_KEYS = 'on another machine Koloft can only answer yes or no t
 export function claudeKeysFor(p: AskPayload, reply: string): Parsed<string[]> {
   const text = reply.trim()
   if (p.tool_name === 'AskUserQuestion') {
-    const qs = questionsOf(p)
-    const raw = p.tool_input?.questions as { multiSelect?: unknown }[]
-    if (qs.length !== 1 || raw[0]?.multiSelect === true) return fail(ONE_QUESTION_BY_KEYS)
-    const options = qs[0].options.length
+    const q = singlePick(p)
+    if (!q) return fail(ONE_QUESTION_BY_KEYS)
+    const options = q.options.length
     const pick = /^\d+$/.test(text) ? Number(text) : 0
     if (pick >= 1 && pick <= options) return { ok: true, value: [String(pick)] }
     return { ok: true, value: [String(options + 1), text, '\r'] }

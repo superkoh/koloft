@@ -47,7 +47,13 @@ export { NO_MENTIONS }
 export const COMMAND_INTERACTION = 2
 export const COMPONENT_INTERACTION = 3
 export const AUTOCOMPLETE_INTERACTION = 4
+const REPLY_TO_INTERACTION = 4
+const ONLY_THE_SENDER_SEES_IT = 64
 const PUBLIC_THREAD_KEPT_A_WEEK_MINUTES = 10080
+
+export function privately(content: string): unknown {
+  return { type: REPLY_TO_INTERACTION, data: { content, flags: ONLY_THE_SENDER_SEES_IT } }
+}
 const THREAD_NAME_LIMIT = 100
 
 export interface DiscordInteraction {

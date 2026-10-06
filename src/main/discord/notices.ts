@@ -136,19 +136,20 @@ export class Notices {
       this.replies.delete(tabId)
       return
     }
+    if (kind === 'closed') {
+      if (this.closeNoticed.has(tabId)) return
+      this.closeNoticed.add(tabId)
+    }
     const b = noticeBinding(this.d.bindings(), subject, kind, this.d.hasThread(subject.key))
     if (!b) return
     let body: string | undefined
     let dialog: DialogView | undefined
-    if (kind === 'closed') {
-      if (this.closeNoticed.has(tabId)) return
-      this.closeNoticed.add(tabId)
-    } else if (kind === 'waiting') {
+    if (kind === 'waiting') {
       dialog = await this.d.dialog(tabId)
       if (this.waitingNoticed.get(tabId) === (dialog?.text ?? '')) return
       this.waitingNoticed.set(tabId, dialog?.text ?? '')
       body = dialog?.text
-    } else body = await this.replyOf(tabId)
+    } else if (kind === 'finished') body = await this.replyOf(tabId)
     const name = await this.nameOf(tabId, kind, subject.name)
     const channelId = await this.d.place(b, { ...subject, name })
     const inThread = channelId !== b.channel.channelId

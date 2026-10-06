@@ -1,14 +1,12 @@
 import { randomUUID } from 'crypto'
 import { cardMessages, type Card } from './cards'
 import type { Choice, DialogView } from './dialog'
-import type { DiscordInteraction } from './link'
+import { privately, type DiscordInteraction } from './link'
 
 export const NO_LONGER_OPEN = 'This question is no longer open.'
 export const ONLY_THE_OWNER_ANSWERS = 'Only the owner Koloft is paired with can answer here.'
 const ID_PREFIX = 'ask:'
 const UPDATE_MESSAGE = 7
-const REPLY = 4
-const ONLY_THE_SENDER_SEES_IT = 64
 
 interface OpenAsk {
   tabId: string
@@ -24,20 +22,13 @@ export interface ButtonDeps {
   respond(i: DiscordInteraction, body: unknown): Promise<unknown>
 }
 
-function privately(content: string): unknown {
-  return { type: REPLY, data: { content, flags: ONLY_THE_SENDER_SEES_IT } }
-}
-
-export function isAskButton(i: DiscordInteraction): boolean {
-  return !!i.customId?.startsWith(ID_PREFIX)
-}
-
 export class AskButtons {
   private asks = new Map<string, OpenAsk>()
 
   constructor(private d: ButtonDeps) {}
 
   attach(tabId: string, view: DialogView, card: Card): Card {
+    this.forget(tabId)
     const id = randomUUID()
     const withButtons: Card = {
       ...card,

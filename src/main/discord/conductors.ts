@@ -63,6 +63,21 @@ export function conductorFolder(userData: string, scope: string): string {
   return path.join(userData, 'conductors', hash)
 }
 
+interface BoundThread {
+  binding: ConductorBinding
+  thread: SessionThread
+}
+
+function keptKeys(
+  threads: SessionThread[] | undefined,
+  keep: (key: string) => boolean,
+  stays?: string
+): SessionThread[] {
+  return (threads ?? [])
+    .map((t) => ({ ...t, keys: t.keys.filter(keep) }))
+    .filter((t) => t.keys.length || t.threadId === stays)
+}
+
 function refusal(error: string): ConductorOpenResult {
   return { ok: false, error }
 }
@@ -178,22 +193,28 @@ export class Conductors {
     this.d.saveQuietly(this.discord)
   }
 
-  threadOfKey(key: string): { binding: ConductorBinding; thread: SessionThread } | undefined {
+  private findThread(match: (t: SessionThread) => boolean): BoundThread | undefined {
     for (const binding of this.discord.bindings) {
-      const thread = binding.threads?.find((t) => t.keys.includes(key))
+      const thread = binding.threads?.find(match)
       if (thread) return { binding, thread }
     }
     return undefined
   }
 
-  threadOfChannel(
-    channelId: string
-  ): { binding: ConductorBinding; thread: SessionThread } | undefined {
-    for (const binding of this.discord.bindings) {
-      const thread = binding.threads?.find((t) => t.threadId === channelId)
-      if (thread) return { binding, thread }
-    }
-    return undefined
+  threadOfKey(key: string): BoundThread | undefined {
+    return this.findThread((t) => t.keys.includes(key))
+  }
+
+  threadOfChannel(channelId: string): BoundThread | undefined {
+    return this.findThread((t) => t.threadId === channelId)
+  }
+
+  routeOf(channelId: string): { binding: ConductorBinding; sessionKey?: string } | undefined {
+    const binding = this.bindingOfChannel(channelId)
+    if (binding) return { binding }
+    const found = this.threadOfChannel(channelId)
+    const sessionKey = found?.thread.keys.at(-1)
+    return found && sessionKey ? { binding: found.binding, sessionKey } : undefined
   }
 
   keepThread(bindingId: string, threadId: string, key: string): void {
@@ -201,9 +222,7 @@ export class Conductors {
     this.discord = {
       ...this.discord,
       bindings: this.discord.bindings.map((b) => {
-        const others = (b.threads ?? [])
-          .map((t) => ({ ...t, keys: t.keys.filter((k) => k !== key) }))
-          .filter((t) => t.keys.length || t.threadId === threadId)
+        const others = keptKeys(b.threads, (k) => k !== key, threadId)
         if (b.id !== bindingId) return { ...b, threads: others }
         const known = others.some((t) => t.threadId === threadId)
         return {
@@ -236,9 +255,7 @@ export class Conductors {
     const bindings = this.discord.bindings.map((b) => {
       const sessionIds = b.sessionIds.filter(stillOnDisk)
       const touched = b.touched.filter(stillOnDisk)
-      const threads = (b.threads ?? [])
-        .map((t) => ({ ...t, keys: t.keys.filter(stillOnDisk) }))
-        .filter((t) => t.keys.length)
+      const threads = keptKeys(b.threads, stillOnDisk)
       const threadKeys = (list?: SessionThread[]): number =>
         (list ?? []).reduce((n, t) => n + t.keys.length, 0)
       if (

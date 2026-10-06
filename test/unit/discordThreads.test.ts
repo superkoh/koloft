@@ -38,10 +38,6 @@ function setup(scope = WS, fail = false) {
         const thread = threads.find((t) => t.keys.includes(key))
         return thread && { binding: b, thread }
       },
-      threadOfChannel: (id) => {
-        const thread = threads.find((t) => t.threadId === id)
-        return thread && { binding: b, thread }
-      },
       keepThread: (_b, threadId, key) => {
         const t = threads.find((x) => x.threadId === threadId)
         if (t) t.keys.push(key)

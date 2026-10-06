@@ -6,6 +6,7 @@ import {
   COMMAND_INTERACTION,
   COMPONENT_INTERACTION,
   NO_MENTIONS,
+  privately,
   type DiscordInteraction,
   type SlashCommandSpec
 } from './link'
@@ -13,7 +14,6 @@ import {
 const STRING_OPTION = 3
 const REPLY = 4
 const CHOICES = 8
-const ONLY_THE_SENDER_SEES_IT = 64
 const MAX_CHOICES = 25
 const MAX_CHOICE_CHARS = 100
 
@@ -120,8 +120,4 @@ export class Interactions {
   private async reply(i: DiscordInteraction, body: unknown): Promise<void> {
     await this.d.respond(i, body).catch(() => undefined)
   }
-}
-
-function privately(content: string): unknown {
-  return { type: REPLY, data: { content, flags: ONLY_THE_SENDER_SEES_IT } }
 }
