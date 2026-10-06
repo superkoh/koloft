@@ -1146,7 +1146,7 @@ below was one run.
 - **The transcript's `tool_use` input and the hook's `tool_input` hold the same values
   in a different key order.** One `AskUserQuestion`, 2026-10-06, CC 2.1.291: the hook
   had `question, header, options, multiSelect`, the transcript `question, header,
-  multiSelect, options`. Matching the two needs a comparison that ignores key order.
+  multiSelect, options`.
 - **A hook that exits at once with no output** leaves the dialog to the person, as if
   there were no hook. Run 2026-10-04, CC 2.1.289, through Koloft (the
   `discord-real-smoke` case "with Discord off"): Koloft's hook script left before reading

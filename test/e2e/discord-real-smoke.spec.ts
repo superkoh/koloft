@@ -237,6 +237,10 @@ function hookQuestionFiles(env: E2EEnv, tabId: string): string[] {
     .filter((f) => f.startsWith(`${tabId}.`) && /\.(ask|answer)\.json$/.test(f))
 }
 
+function answerableMarker(env: E2EEnv, tabId: string): string {
+  return path.join(hookDir(env), `${tabId}.answerable`)
+}
+
 function pidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0)
@@ -244,6 +248,18 @@ function pidAlive(pid: number): boolean {
   } catch {
     return false
   }
+}
+
+async function dialogHookWaiting(env: E2EEnv, tabId: string): Promise<number> {
+  await expect
+    .poll(() => hookQuestionFiles(env, tabId), { timeout: A_REAL_MODEL_TURN_MS })
+    .toEqual([expect.stringMatching(/\.ask\.json$/)])
+  return Number(hookQuestionFiles(env, tabId)[0].split('.')[1])
+}
+
+async function dialogHookLetGo(env: E2EEnv, tabId: string, hookPid: number): Promise<void> {
+  await expect.poll(() => hookQuestionFiles(env, tabId), { timeout: 30_000 }).toEqual([])
+  await expect.poll(() => pidAlive(hookPid)).toBe(false)
 }
 
 async function liveClaudeTab(page: Page): Promise<{ tabId: string; sessionId: string }> {
@@ -265,6 +281,12 @@ async function typePrompt(page: Page, tabId: string, text: string): Promise<void
     .toMatch(CLAUDE_INPUT_READY)
   await page.evaluate(([id, l]) => window.api.terminal.write(id, l), [tabId, `${token} ${text}`])
   await expect.poll(() => terminalText(page, tabId), { timeout: 30_000 }).toContain(token)
+  await page.waitForTimeout(CR_AFTER_TEXT_MS)
+  await page.evaluate((id) => window.api.terminal.write(id, '\r'), tabId)
+}
+
+async function typeLine(page: Page, tabId: string, text: string): Promise<void> {
+  await page.evaluate(([id, l]) => window.api.terminal.write(id, l), [tabId, text])
   await page.waitForTimeout(CR_AFTER_TEXT_MS)
   await page.evaluate((id) => window.api.terminal.write(id, '\r'), tabId)
 }
@@ -415,7 +437,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       await expect
         .poll(() => terminalText(page, target.tabId), { timeout: A_REAL_MODEL_TURN_MS })
         .toMatch(/2\. Green[\s\S]*Type something/)
-      expect(fs.existsSync(path.join(hookDir(env), `${target.tabId}.answerable`))).toBe(false)
+      expect(fs.existsSync(answerableMarker(env, target.tabId))).toBe(false)
       expect(hookQuestionFiles(env, target.tabId)).toEqual([])
 
       await page.evaluate((id) => window.api.terminal.write(id, '2'), target.tabId)
@@ -453,18 +475,13 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     await withConductor(env, fake, async (_app, page) => {
       const target = await liveClaudeTab(page)
       expect(saidBy(env, target.sessionId, 'user')).toEqual([])
-      await expect
-        .poll(() => fs.existsSync(path.join(hookDir(env), `${target.tabId}.answerable`)))
-        .toBe(true)
+      await expect.poll(() => fs.existsSync(answerableMarker(env, target.tabId))).toBe(true)
       await typePrompt(
         page,
         target.tabId,
         'Run exactly this shell command with the Bash tool: touch mac-yes.txt — then reply with only the word DONE.'
       )
-      await expect
-        .poll(() => hookQuestionFiles(env, target.tabId), { timeout: A_REAL_MODEL_TURN_MS })
-        .toEqual([expect.stringMatching(/\.ask\.json$/)])
-      const hookPid = Number(hookQuestionFiles(env, target.tabId)[0].split('.')[1])
+      const hookPid = await dialogHookWaiting(env, target.tabId)
       await expect
         .poll(() => notices(fake), { timeout: 30_000 })
         .toContainEqual(expect.stringMatching(/^❓ .+ is waiting for you: Bash asks to run:$/))
@@ -477,8 +494,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       await expect
         .poll(() => fs.existsSync(path.join(env.workspaces.a, 'mac-yes.txt')), { timeout: 30_000 })
         .toBe(true)
-      await expect.poll(() => hookQuestionFiles(env, target.tabId), { timeout: 30_000 }).toEqual([])
-      await expect.poll(() => pidAlive(hookPid)).toBe(false)
+      await dialogHookLetGo(env, target.tabId, hookPid)
       await expect
         .poll(() => saidBy(env, target.sessionId, 'assistant').join('\n'), {
           timeout: A_REAL_MODEL_TURN_MS
@@ -496,18 +512,13 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     const fake = await realClaudeConductor(env)
     await withConductor(env, fake, async (_app, page) => {
       const target = await liveClaudeTab(page)
-      await expect
-        .poll(() => fs.existsSync(path.join(hookDir(env), `${target.tabId}.answerable`)))
-        .toBe(true)
+      await expect.poll(() => fs.existsSync(answerableMarker(env, target.tabId))).toBe(true)
       await typePrompt(
         page,
         target.tabId,
         'Use the AskUserQuestion tool once to ask me which colour I prefer, with exactly two options, Red and Green. Then reply with only the colour I picked.'
       )
-      await expect
-        .poll(() => hookQuestionFiles(env, target.tabId), { timeout: A_REAL_MODEL_TURN_MS })
-        .toEqual([expect.stringMatching(/\.ask\.json$/)])
-      const hookPid = Number(hookQuestionFiles(env, target.tabId)[0].split('.')[1])
+      const hookPid = await dialogHookWaiting(env, target.tabId)
       await expect
         .poll(() => terminalText(page, target.tabId), { timeout: 30_000 })
         .toMatch(/2\. Green[\s\S]*Type something/)
@@ -516,8 +527,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       await expect
         .poll(() => toolResults(env, target.sessionId).join('\n'), { timeout: 30_000 })
         .toMatch(/Green/)
-      await expect.poll(() => hookQuestionFiles(env, target.tabId), { timeout: 30_000 }).toEqual([])
-      await expect.poll(() => pidAlive(hookPid)).toBe(false)
+      await dialogHookLetGo(env, target.tabId, hookPid)
       await expect
         .poll(() => saidBy(env, target.sessionId, 'assistant').filter(Boolean).at(-1), {
           timeout: A_REAL_MODEL_TURN_MS
@@ -528,9 +538,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       await expect
         .poll(() => terminalText(page, target.tabId), { timeout: 30_000 })
         .toMatch(CLAUDE_INPUT_READY)
-      await page.evaluate((id) => window.api.terminal.write(id, '/exit'), target.tabId)
-      await page.waitForTimeout(CR_AFTER_TEXT_MS)
-      await page.evaluate((id) => window.api.terminal.write(id, '\r'), target.tabId)
+      await typeLine(page, target.tabId, '/exit')
       await expect(wsRows(page, 'ws-a')).toHaveCount(rowsBefore - 1, { timeout: 30_000 })
     })
   })
@@ -606,9 +614,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       const conductor = (await page.evaluate(() => window.api.sessions.list())).find(
         (s) => s.alive && s.conductor
       )!
-      await page.evaluate(([id, l]) => window.api.terminal.write(id, l), [conductor.tabId, '/plan'])
-      await page.waitForTimeout(CR_AFTER_TEXT_MS)
-      await page.evaluate((id) => window.api.terminal.write(id, '\r'), conductor.tabId)
+      await typeLine(page, conductor.tabId, '/plan')
       await expect
         .poll(() => terminalText(page, conductor.tabId), { timeout: 30_000 })
         .toMatch(/Plan mode/i)

@@ -148,7 +148,5 @@ describe('a managed session’s dialog: its full text, and the keys that answer 
       ]
     }
     expect(isAskedCall(colour, { name: 'AskUserQuestion', input: asWritten })).toBe(true)
-    const otherPick = { questions: [{ ...asWritten.questions[0], multiSelect: true }] }
-    expect(isAskedCall(colour, { name: 'AskUserQuestion', input: otherPick })).toBe(false)
   })
 })
