@@ -124,6 +124,7 @@ export class ClaudeBackend implements SessionBackend {
   private watchedHookMirrors = new Map<string, () => void>()
   private pickedSkipFlag = new Set<string>()
   private launchedBypassing = new Set<string>()
+  private heldBeforeStartup = new Map<string, string>()
   agentPlugin?: string
 
   constructor(private d: ClaudeBackendDeps) {}
@@ -270,6 +271,7 @@ export class ClaudeBackend implements SessionBackend {
   onPtyExit(tabId: string): void {
     this.pickedSkipFlag.delete(tabId)
     this.launchedBypassing.delete(tabId)
+    this.heldBeforeStartup.delete(tabId)
     const remote = this.d.tracker.remoteOf(tabId)
     if (!remote) {
       // CC§1
@@ -450,10 +452,11 @@ export class ClaudeBackend implements SessionBackend {
   // CC§5
   private followMovedConversation(report: HookReport & { tabId?: string }): boolean {
     const { tracker } = this.d
-    if (!report.tabId || !report.sessionId || tracker.remoteOf(report.tabId)) return false
+    if (!report.tabId || !report.sessionId) return false
     const info = tracker.infoOf(report.tabId)
     if (!info?.jsonlPath) return false
-    const movedFile = path.join(path.dirname(info.jsonlPath), `${report.sessionId}.jsonl`)
+    const dir = path.dirname(info.jsonlPath)
+    const movedFile = path.join(dir, `${report.sessionId}.jsonl`)
     const moved = conversationMovedTo(
       report.sessionId,
       info.sessionId,
@@ -461,6 +464,8 @@ export class ClaudeBackend implements SessionBackend {
       fs.existsSync(movedFile)
     )
     if (!moved) return false
+    const heldBeforeStartup = this.heldBeforeStartup.get(report.tabId)
+    this.heldBeforeStartup.delete(report.tabId)
     this.handleHookRegistration({
       tabId: report.tabId,
       event: 'start',
@@ -469,6 +474,14 @@ export class ClaudeBackend implements SessionBackend {
       transcriptPath: movedFile,
       cwd: info.cwd
     })
+    if (report.tmux) tracker.setRemoteTmuxName(report.tabId, report.tmux)
+    if (
+      heldBeforeStartup &&
+      transcriptEnding(path.join(dir, `${heldBeforeStartup}.jsonl`)).continuedIn ===
+        report.sessionId
+    ) {
+      this.d.workspaces()?.dropOwnership(heldBeforeStartup, `continued in ${report.sessionId}`)
+    }
     return true
   }
 
@@ -615,6 +628,7 @@ export class ClaudeBackend implements SessionBackend {
     this.d.pty.clearResumeIntent(obj.tabId)
     const nextId = this.sessionIdOf(obj.tabId)
     if (prevId && nextId && nextId !== prevId) {
+      if (obj.source === 'startup') this.heldBeforeStartup.set(obj.tabId, prevId)
       if (tracker.remoteOf(obj.tabId)) tracker.setRemoteTmuxName(obj.tabId, tmuxSessionName(nextId))
       workspaces?.onSessionRebind(prevId, nextId, obj.source || '')
       if (replacesTheConversation(obj.source || '')) {

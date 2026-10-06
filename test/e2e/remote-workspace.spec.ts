@@ -31,6 +31,7 @@ import {
   openSessionTerminal,
   panelTerm,
   runIn,
+  sendShortcut,
   startSessionIn,
   waitBooted,
   waitForCalls,
@@ -420,6 +421,56 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await browseRow(page, doc).click()
       await body.locator('a.md-fileref', { hasText: 'src/b.ts:1' }).click({ timeout: 30_000 })
       await expect(title).toContainText('b.ts', { timeout: 30_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CC§5
+  test('E-RW-25: when Claude Code moves a remote conversation to a new session id (a phantom start, then continued-in), the tab follows it: one live row, bound to the new id, and ⌘W still ends its tmux session on the machine', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const rows = wsRows(page, REMOTE_WS_NAME)
+      const tabId = await rows.first().getAttribute('data-tab-id')
+      const boundOf = (): Promise<string | undefined> =>
+        page.evaluate(
+          (id) =>
+            window.api.sessions.list().then((all) => all.find((s) => s.tabId === id)?.sessionId),
+          tabId
+        )
+      await expect.poll(boundOf, { timeout: 60_000 }).toBeTruthy()
+      const before = await boundOf()
+      const beforeTranscript = path.join(
+        machineHome(env),
+        '.claude',
+        'projects',
+        encodeCwd(remoteDir(env)),
+        `${before}.jsonl`
+      )
+
+      await runIn(page, centerTerm(page), '/move-to-background')
+      const continuedIn = (): string | undefined => {
+        const last = fs.readFileSync(beforeTranscript, 'utf8').trimEnd().split('\n').pop() ?? ''
+        return last.includes('continued-in') ? JSON.parse(last).continuedInSessionId : undefined
+      }
+      await expect.poll(continuedIn, { timeout: 30_000 }).toBeTruthy()
+      await expect.poll(boundOf, { timeout: 60_000 }).toBe(continuedIn())
+      await expect
+        .poll(() => layoutOnDisk(env).members, { timeout: 30_000 })
+        .toEqual([continuedIn()])
+      await expect(rows).toHaveCount(1)
+      await expect(rows.first()).not.toHaveClass(/\bcold\b/)
+
+      await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toHaveLength(1)
+      await expect(rows.first()).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      await rows.first().click()
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toEqual([])
     } finally {
       await quitAndClose(app)
     }

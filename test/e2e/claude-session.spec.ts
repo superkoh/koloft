@@ -5,6 +5,7 @@ import {
   centerTerm,
   encodeCwd,
   FAKE_SESSION_TITLE,
+  layoutOnDisk,
   runIn,
   startSessionIn,
   waitBooted,
@@ -65,6 +66,7 @@ test('when Claude Code moves the conversation to a new session id (a phantom sta
   }
   await expect.poll(continuedIn, { timeout: 15_000 }).toBeTruthy()
   await expect.poll(boundOf, { timeout: 15_000 }).toBe(continuedIn())
+  await expect.poll(() => layoutOnDisk(env).members, { timeout: 15_000 }).toEqual([continuedIn()])
   await expect(wsRows(page, 'ws-a')).toHaveCount(1)
   await expect(wsRows(page, 'ws-a').first()).not.toHaveClass(/\bcold\b/)
 })
