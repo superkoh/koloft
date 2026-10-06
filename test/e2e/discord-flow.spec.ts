@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
 import {
   newSessionInWith,
@@ -170,7 +170,15 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       const type = (line: string): Promise<void> =>
         page.evaluate(([id, l]) => window.api.terminal.write(id, l + '\r'), [managedTab, line])
 
+      const turnDoneSince = async (since: number): Promise<boolean> =>
+        (await pendingAttention(page)).some(
+          (e) => e.tabId === managedTab && e.kind === 'turn-done' && e.at >= since
+        )
+
+      await expect.poll(() => turnDoneSince(0)).toBe(true)
+      const typedAt = await page.evaluate(() => Date.now())
       await type('/answer before any touch')
+      await expect.poll(() => turnDoneSince(typedAt)).toBe(true)
       await type('/need-approval')
       await expect
         .poll(() => notices(fake))
