@@ -307,7 +307,8 @@ interface Box {
   envAt(n: number): Record<string, string>
   tabEnvSeenAt(n: number): boolean
   order(): string[]
-  run(arg?: string): { status: number | null; stdout: string }
+  standIn(): string[]
+  run(...args: string[]): { status: number | null; stdout: string }
 }
 
 function box(s: TabSpec, opts: { ensureExit?: number } = {}): Box {
@@ -340,6 +341,14 @@ exec "$SHELL" -c "$last"
     { mode: 0o755 }
   )
   writeFishLoginShell(bin)
+  fs.writeFileSync(
+    path.join(bin, 'script'),
+    `#!/bin/sh
+printf '%s\\n' "$@" > ${JSON.stringify(path.join(logs, 'script'))}
+exec sh -c "$2" 2>/dev/null
+`,
+    { mode: 0o755 }
+  )
   fs.mkdirSync(path.join(logs, 'c'))
   const tabs = path.join(home, '.koloft', 'tabs')
   fs.writeFileSync(
@@ -385,8 +394,10 @@ exit 0
     order: () => (fs.existsSync(path.join(logs, 'order')) ? read('order').trim().split('\n') : []),
     tmux: () => (fs.existsSync(path.join(logs, 'tmux')) ? read('tmux').trim().split('\n') : []),
     ensured: () => fs.existsSync(path.join(logs, 'ensure')),
-    run: (arg) => {
-      const res = spawnSync('/bin/sh', [path.join(tabs, `${s.tabId}.sh`), ...(arg ? [arg] : [])], {
+    standIn: () =>
+      fs.existsSync(path.join(logs, 'script')) ? read('script').trim().split('\n') : [],
+    run: (...args) => {
+      const res = spawnSync('/bin/sh', [path.join(tabs, `${s.tabId}.sh`), ...args], {
         encoding: 'utf8',
         env: {
           HOME: home,
@@ -455,6 +466,18 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(res.status).toBe(0)
     expect(b.tmux()).toEqual(['-L', 'koloft', 'attach', '-d', '-t', 'k-sess1'])
     expect(b.ensured()).toBe(false)
+  })
+
+  it("on a machine whose ssh gives the command no terminal, a start and a reconnect each run inside a stand-in terminal of the tab's size, where tmux can open", () => {
+    const b = box(spec())
+    expect(b.run('start', '120', '40').status).toBe(0)
+    expect(b.standIn().join(' ')).toContain('stty cols 120 rows 40')
+    expect(b.tmux().join(' ')).toContain('new-session -A -D -s k-sess1')
+    expect(b.env().TERM).toBe('xterm-256color')
+
+    b.run('attach', '90', '30')
+    expect(b.standIn().join(' ')).toContain('stty cols 90 rows 30')
+    expect(b.tmux().slice(-6)).toEqual(['-L', 'koloft', 'attach', '-d', '-t', 'k-sess1'])
   })
 
   it("clears the tab's leftover hook reports before starting, since tab ids are reused across Koloft runs, but not on a reconnect", () => {
@@ -572,10 +595,6 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(b.run().status).toBe(0)
     expect(b.argv().slice(2)).toEqual(args)
     expect(() => tabScript(spec({ tmuxName: "k-'; id #" }))).toThrow()
-  })
-
-  it('the kill command names the tmux session, which outlives an in-TUI /clear', () => {
-    expect(killSessionCmd('k-sess1')).toContain('kill-session -t k-sess1')
   })
 })
 

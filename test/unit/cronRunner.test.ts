@@ -51,6 +51,8 @@ function makeHarness(
     account: boolean
     pinned: boolean
     folders: number
+    busy: boolean
+    left: string[]
   }
   toasts: string[]
   launches: LaunchRequest[]
@@ -58,6 +60,7 @@ function makeHarness(
   killedTabs: string[]
   launch: ReturnType<typeof vi.fn>
   killTab: ReturnType<typeof vi.fn>
+  closeForGood: ReturnType<typeof vi.fn>
   notify: ReturnType<typeof vi.fn>
   save: ReturnType<typeof vi.fn>
   branchExists: ReturnType<typeof vi.fn>
@@ -69,7 +72,16 @@ function makeHarness(
   let nextId = 1
   const timeouts = new Map<number, { at: number; cb: () => void }>()
   const intervals = new Map<number, { cb: () => void }>()
-  const flags = { ready: true, dir: true, git: true, account: true, pinned: true, folders: 0 }
+  const flags = {
+    ready: true,
+    dir: true,
+    git: true,
+    account: true,
+    pinned: true,
+    folders: 0,
+    busy: false,
+    left: [] as string[]
+  }
   const toasts: string[] = []
   const launches: LaunchRequest[] = []
   const states: CronState[] = []
@@ -80,6 +92,7 @@ function makeHarness(
     return { ok: true, tabId: `tab-${launches.length}` }
   })
   const killTab = vi.fn()
+  const closeForGood = vi.fn(async () => {})
   const notify = vi.fn()
   const save = vi.fn()
   const branchExists = vi.fn(async () => false)
@@ -99,6 +112,9 @@ function makeHarness(
     ready: () => flags.ready,
     launch,
     killTab,
+    stillWorking: async () => flags.busy,
+    whatIsLeft: async () => flags.left,
+    closeForGood,
     toast: (t: string) => {
       toasts.push(t)
     },
@@ -110,6 +126,7 @@ function makeHarness(
       killedTabs.push(id)
     },
     bindDeadlineMs: 90 * SEC,
+    closeRecheckMs: 1 * MIN,
     setInterval: ((cb: () => void) => {
       const id = nextId++
       intervals.set(id, { cb })
@@ -141,6 +158,7 @@ function makeHarness(
     killedTabs,
     launch,
     killTab,
+    closeForGood,
     notify,
     save,
     branchExists,
@@ -715,6 +733,97 @@ describe('CronRunner — a live run growing up', () => {
     expect(h.launch).toHaveBeenCalledTimes(2)
   })
 
+  it('with "Close it" on, a finished run that would lose nothing closes for good and writes "finished" once; the next due starts instead of being skipped', async () => {
+    const h = makeHarness([makeJob({ autoClose: true })])
+    await h.runner.runNow('j1')
+    h.runner.onBound('tab-1', 'sess-1')
+    h.runner.onStatus('tab-1', 'working', 'waiting')
+    await flush()
+    h.runner.onPtyExit('tab-1')
+
+    expect(h.closeForGood.mock.calls).toEqual([['tab-1', '/ws/a', 'nightly-report-260902-1000']])
+    expect(h.killTab).not.toHaveBeenCalled()
+    expect(h.jobs[0].history).toEqual([
+      { dueAt: T0, state: 'finished', worktree: 'nightly-report-260902-1000', manual: true }
+    ])
+    expect(h.runner.state().live).toEqual([])
+    expect(h.toasts.at(-1)).toBe('⏰ Nightly report finished and closed')
+
+    expect(await h.runner.runNow('j1')).toEqual({ ok: true })
+  })
+
+  it('with "Close it" on, a finished run still working in the background stays open without a word, and closes at a later check once that work is over', async () => {
+    const h = makeHarness([makeJob({ autoClose: true })])
+    h.flags.busy = true
+    await h.runner.runNow('j1')
+    h.runner.onBound('tab-1', 'sess-1')
+    h.runner.onStatus('tab-1', 'working', 'waiting')
+    await flush()
+    await h.fireTimers(T0 + 1 * MIN)
+
+    expect(h.closeForGood).not.toHaveBeenCalled()
+    expect(h.runner.state().live[0]).toMatchObject({ state: 'done' })
+    expect(h.runner.state().live[0].kept).toBeUndefined()
+    expect(h.notify).not.toHaveBeenCalled()
+
+    h.flags.busy = false
+    await h.fireTimers(T0 + 2 * MIN)
+    expect(h.closeForGood).toHaveBeenCalledTimes(1)
+    expect(h.jobs[0].history[0].state).toBe('finished')
+  })
+
+  it('with "Close it" on, a finished run that would lose work stays open, says what is left once, and closes at a later check once nothing is left', async () => {
+    const h = makeHarness([makeJob({ autoClose: true })])
+    h.flags.left = ['Changes not committed:\n?? report.md']
+    await h.runner.runNow('j1')
+    h.runner.onBound('tab-1', 'sess-1')
+    h.runner.onStatus('tab-1', 'working', 'waiting')
+    await flush()
+    await h.fireTimers(T0 + 1 * MIN)
+
+    expect(h.closeForGood).not.toHaveBeenCalled()
+    expect(h.runner.state().live[0]).toMatchObject({
+      state: 'done',
+      kept: 'Changes not committed'
+    })
+    expect(h.notify.mock.calls).toEqual([
+      ['Nightly report', 'Finished, but not closed — Changes not committed']
+    ])
+    expect(h.toasts.at(-1)).toBe(
+      '⏰ Nightly report finished but was not closed: Changes not committed'
+    )
+
+    h.flags.left = []
+    await h.fireTimers(T0 + 2 * MIN)
+    expect(h.closeForGood).toHaveBeenCalledTimes(1)
+    expect(h.runner.state().live).toEqual([])
+  })
+
+  it('with "Close it" on, a run kept open that starts a new turn drops its note and its pending check', async () => {
+    const h = makeHarness([makeJob({ autoClose: true })])
+    h.flags.left = ['Changes not committed:\n?? report.md']
+    await h.runner.runNow('j1')
+    h.runner.onBound('tab-1', 'sess-1')
+    h.runner.onStatus('tab-1', 'working', 'waiting')
+    await flush()
+    h.runner.onStatus('tab-1', 'waiting', 'working')
+    h.flags.left = []
+    await h.fireTimers(T0 + 5 * MIN)
+
+    expect(h.runner.state().live[0].state).toBe('running')
+    expect(h.runner.state().live[0].kept).toBeUndefined()
+    expect(h.closeForGood).not.toHaveBeenCalled()
+  })
+
+  it('with "Close it" on, a run waiting for permission stays open', async () => {
+    const h = makeHarness([makeJob({ autoClose: true })])
+    await h.runner.runNow('j1')
+    h.runner.onBound('tab-1', 'sess-1')
+    h.runner.onStatus('tab-1', 'working', 'approval')
+    expect(h.killTab).not.toHaveBeenCalled()
+    expect(h.runner.state().live[0].state).toBe('running')
+  })
+
   it('ignores events for a tab it does not own', async () => {
     const h = await started()
     const before = h.states.length
@@ -727,7 +836,7 @@ describe('CronRunner — a live run growing up', () => {
 })
 
 describe('CronRunner — BB-N02: the runner never writes into a session', () => {
-  it('has no write path, kills only the run that never started, and says so once', async () => {
+  it('has no write path; with the run left open when done, kills only the run that never started, and says so once', async () => {
     const h = makeHarness([makeJob()], { bindDeadlineMs: 5 * SEC })
     expect(Object.keys(h.deps).filter((k) => /write/i.test(k))).toEqual([])
 
@@ -955,7 +1064,8 @@ describe('CronRunner.save — the same rules the form uses', () => {
       task: '/x'.padEnd(4096, 'y'),
       schedule: { kind: 'weekly', days: [1, 3, 5], at: '21:00' },
       model: 'opus',
-      permission: 'skipAll'
+      permission: 'skipAll',
+      autoClose: true
     })
     expect(res.ok).toBe(true)
     if (!res.ok) return
@@ -1002,12 +1112,14 @@ describe('CronRunner.save — the same rules the form uses', () => {
     expect('model' in res.job).toBe(false)
   })
 
-  it('keeps a thinking effort on save and drops it when the edit leaves it out', () => {
+  it('keeps a thinking effort and "Close it" on save and drops them when the edit leaves them out', () => {
     const h = makeHarness([])
-    const saved = h.runner.save({ ...BASE, id: 'j1', effort: 'high' })
+    const saved = h.runner.save({ ...BASE, id: 'j1', effort: 'high', autoClose: true })
     expect(saved.ok && saved.job.effort).toBe('high')
+    expect(saved.ok && saved.job.autoClose).toBe(true)
     const again = h.runner.save({ ...BASE, id: 'j1' })
     expect(again.ok && 'effort' in again.job).toBe(false)
+    expect(again.ok && 'autoClose' in again.job).toBe(false)
   })
 
   it('trims the name and the task before it saves them', () => {

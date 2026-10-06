@@ -1,5 +1,6 @@
 import { execFile } from 'child_process'
 import fs from 'fs'
+import os from 'os'
 import { dirExists, listDir, search, searchContent } from '../fileTree'
 import { watchFile, unwatchFile, watchDir, unwatchDir } from '../fileWatch'
 import { MAX_READ_BYTES, createFile, looksBinary, openForEdit, writeText } from '../fileEdit'
@@ -16,7 +17,22 @@ import { resolveSpawnCwd } from '../projectInfo'
 import { leaveForOS, osOpenFallback } from '../osOpen'
 import { claudeArgv } from '../claudeArgs'
 import { acceptClaudeTrust, claudeJsonPath, claudeTrustsFolder } from '../claudeTrust'
+import { dirExistsSync } from '../resumePlan'
+import { listSkills, type SkillFs } from '../skillList'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host } from './host'
+
+const skillFs: SkillFs = {
+  readdir: (p) => fs.readdirSync(p),
+  readFile: (p) => fs.readFileSync(p, 'utf8'),
+  isDir: dirExistsSync,
+  isFile: (p) => {
+    try {
+      return fs.statSync(p).isFile()
+    } catch {
+      return false
+    }
+  }
+}
 
 const GIT_CALL_TIMEOUT_MS = 5000
 export function localGitOut(cwd: string, args: string[]): Promise<string | null> {
@@ -45,8 +61,8 @@ async function launchClaude(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {
     launchCommand: () => launchCommand,
     // CC§9
     extraEnv:
-      spec.firstPrompt !== undefined
-        ? { KOLOFT_FIRST_PROMPT: spec.firstPrompt, KOLOFT_SESSION_NAME: spec.name ?? '' }
+      spec.firstPrompt !== undefined || spec.name
+        ? { KOLOFT_FIRST_PROMPT: spec.firstPrompt ?? '', KOLOFT_SESSION_NAME: spec.name ?? '' }
         : undefined
   }
 }
@@ -102,6 +118,7 @@ export function localHost(github: GithubLookup): Host {
     launch: launchClaude,
     trustFolder,
     trustsFolder: async (dir) => claudeTrustsFolder(claudeJsonPath(), dir),
+    listSkills: async (root) => listSkills(skillFs, root, os.homedir()),
     keyed: (p) => p,
     gitOut: localGitOut,
     reveal: (p) => void leaveForOS(p, 'reveal'),

@@ -21,7 +21,9 @@ let layout: LayoutV6
 let bindings: Map<string, string>
 let pushed: WorkspaceRows[][]
 let saves: number
+let dropped: string[]
 let mgr: WorkspaceManager
+let conductorIds: Set<string>
 
 const SEEDED: SessionWorkbenchState = { open: false, tabs: [] }
 
@@ -88,6 +90,8 @@ beforeEach(() => {
   bindings = new Map()
   pushed = []
   saves = 0
+  conductorIds = new Set()
+  dropped = []
   mgr = new WorkspaceManager({
     projectsRoot,
     remoteProjectsRoot: (host: string) => path.join(root, 'remote', host, 'projects'),
@@ -99,7 +103,10 @@ beforeEach(() => {
     projectInfo: projectInfoFor,
     runningBindings: () => bindings,
     killTab: () => {},
-    pushRows: (p) => pushed.push(p)
+    pushRows: (p) => pushed.push(p),
+    hiddenRow: (id) => conductorIds.has(id),
+    conductorsRoot: path.join(root, 'userData', 'conductors'),
+    memberDropped: (id, why) => dropped.push(`${id}: ${why}`)
   })
 })
 
@@ -142,6 +149,62 @@ describe('WorkspaceManager: isGit', () => {
       isGit: false,
       hasHistory: false
     })
+  })
+})
+
+describe('WorkspaceManager: move (the sidebar drag order)', () => {
+  const lastOrder = (): string[] => pushed[pushed.length - 1].map((e) => e.workspace.path)
+  const savedOrder = (): string[] => layout.workspaces.map((w) => w.path)
+
+  it('puts a workspace before another or at the end, saved and pushed at once; an unknown path changes nothing', async () => {
+    const third = path.join(root, 'third')
+    fs.mkdirSync(third)
+    layout.workspaces.push({ path: third })
+    mgr.start()
+    await mgr.firstScan
+    const pushes = pushed.length
+    const saved = saves
+
+    mgr.move(third, repo)
+    expect(savedOrder()).toEqual([third, repo, plain])
+    expect(saves).toBe(saved + 1)
+    expect(pushed.length).toBe(pushes + 1)
+    expect(lastOrder()).toEqual([third, repo, plain])
+
+    mgr.move(third, null)
+    expect(savedOrder()).toEqual([repo, plain, third])
+    expect(lastOrder()).toEqual([repo, plain, third])
+
+    mgr.move(path.join(root, 'gone'), repo)
+    mgr.move(repo, path.join(root, 'gone'))
+    expect(savedOrder()).toEqual([repo, plain, third])
+    expect(saves).toBe(saved + 2)
+  })
+
+  it('a scan already running when the move lands pushes its rows in the new order', async () => {
+    mgr.start()
+    await mgr.firstScan
+    let release!: () => void
+    const held = new Promise<void>((r) => (release = r))
+    const internals = mgr as unknown as {
+      worktreeEntries(p: string): Promise<unknown>
+      rescan(): Promise<void>
+    }
+    const real = internals.worktreeEntries.bind(mgr)
+    const spy = vi.spyOn(internals, 'worktreeEntries').mockImplementationOnce(async (p) => {
+      await held
+      return real(p)
+    })
+    void internals.rescan()
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled())
+
+    mgr.move(plain, repo)
+    const afterMove = pushed.length
+    release()
+    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(afterMove))
+    for (const push of pushed.slice(afterMove - 1)) {
+      expect(push.map((e) => e.workspace.path)).toEqual([plain, repo])
+    }
   })
 })
 
@@ -330,6 +393,18 @@ describe('WorkspaceManager: pending launches', () => {
     mgr.onTrackerUpdate()
     await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.running)).toEqual([false, false]))
     expect(latest(repo).rows.some((r) => r.pending)).toBe(false)
+  })
+
+  it('knows the workspace of a launched session from the moment it binds, before it writes any transcript, so a dialog in its first turn reaches a conductor', async () => {
+    mgr.start()
+    mgr.launchStarted('tab-1', repo)
+    bindings.set('first-turn', 'tab-1')
+    mgr.onSessionStart('tab-1', repo)
+    mgr.onSessionBound('first-turn')
+    await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['first-turn']))
+
+    expect(fs.existsSync(path.join(projectsRoot, encodeCwd(repo)))).toBe(false)
+    expect(mgr.workspaceOf('first-turn')).toBe(repo)
   })
 
   it('drops the pending row when the launching pty dies (Cancel / early exit)', async () => {
@@ -529,7 +604,7 @@ describe('WorkspaceManager: per-session Workbench state (T-AGG-09②, T-AUX-02/0
       open: false,
       tabs: [{ kind: 'web', title: 'app', url: 'http://localhost:5173/' }]
     })
-    mgr.dropOwnership('s1')
+    mgr.dropOwnership('s1', 'test')
     expect(mgr.isMember('s1')).toBe(false)
 
     mgr.setWorkbenchState('s1', { open: true, tabs: [{ kind: 'web', title: 'late', url: 'u' }] })
@@ -549,12 +624,12 @@ describe('WorkspaceManager: working-set eviction (D1/D2)', () => {
     await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['live-1']))
 
     expect(mgr.archiveSession('live-1')).toBe(false)
-    mgr.dropOwnership('live-1')
+    mgr.dropOwnership('live-1', 'test')
     expect(layout.panels['live-1']).toBeUndefined()
     expect(mgr.isMember('live-1')).toBe(false)
 
     const before = saves
-    mgr.dropOwnership('live-1')
+    mgr.dropOwnership('live-1', 'test')
     expect(saves).toBe(before)
   })
 
@@ -566,10 +641,27 @@ describe('WorkspaceManager: working-set eviction (D1/D2)', () => {
     mgr.start()
     await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
     expect(layout.panels['fresh-1']).toEqual(SEEDED)
+    expect(dropped).toEqual([])
 
     bindings.delete('fresh-1')
     mgr.onTrackerUpdate()
     await vi.waitFor(() => expect(layout.panels['fresh-1']).toBeUndefined())
+    expect(dropped).toEqual(['fresh-1: no transcript found and not running'])
+  })
+
+  it('every session that leaves the list says why', async () => {
+    writeJsonl(repo, 'a-1')
+    writeJsonl(repo, 'b-1')
+    own('a-1', 'b-1')
+    mgr.start()
+    await vi.waitFor(() => expect(latest(repo).rows).toHaveLength(2))
+
+    expect(mgr.archiveSession('a-1')).toBe(true)
+    mgr.dropOwnership('b-1', 'claude ended (prompt_input_exit)')
+    expect(dropped).toEqual([
+      'a-1: archived from the sidebar',
+      'b-1: claude ended (prompt_input_exit)'
+    ])
   })
 
   it('leaves the jsonl behind, so the evicted session is restorable history', async () => {
@@ -579,11 +671,36 @@ describe('WorkspaceManager: working-set eviction (D1/D2)', () => {
     await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['gone-1']))
     expect(latest(repo).workspace.hasHistory).toBe(false)
 
-    mgr.dropOwnership('gone-1')
+    mgr.dropOwnership('gone-1', 'test')
     await vi.waitFor(() => expect(latest(repo).rows).toEqual([]))
     expect(latest(repo).workspace.hasHistory).toBe(true)
     expect(fs.existsSync(path.join(projectsRoot, encodeCwd(repo), 'gone-1.jsonl'))).toBe(true)
     expect(mgr.historyRows(repo).map((r) => r.id)).toEqual(['gone-1'])
+  })
+})
+
+describe('WorkspaceManager: conductor sessions stay out of the workspace lists', () => {
+  it('hides a conductor’s sessions and its starting tab from the rows and the restore mark, yet still knows their workspace', async () => {
+    writeJsonl(repo, 'plain-1')
+    writeJsonl(repo, 'cond-old')
+    writeJsonl(repo, 'cond-now')
+    own('plain-1', 'cond-now')
+    conductorIds = new Set(['cond-old', 'cond-now', 'cond-tab'])
+    bindings.set('cond-now', 'cond-tab')
+    mgr.start()
+    mgr.launchStarted('cond-tab', repo)
+    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+
+    expect(latest(repo).rows.map((r) => r.id)).toEqual(['plain-1'])
+    expect(latest(repo).workspace.hasHistory).toBe(false)
+    expect(mgr.workspaceOf('cond-now')).toBe(repo)
+  })
+
+  it('never offers a conductor’s own folder as a folder to pin', () => {
+    const own = path.join(root, 'userData', 'conductors', 'global')
+    fs.mkdirSync(own, { recursive: true })
+    writeJsonl(own, 'cond-1')
+    expect(mgr.discover()).toEqual([])
   })
 })
 
@@ -643,6 +760,59 @@ describe('WorkspaceManager: /clear id change (T-LIFE-07)', () => {
 
     expect(layout.members).toEqual(['old', 'fresh'])
     expect(layout.panels.fresh).toEqual(entry)
+  })
+})
+
+describe('WorkspaceManager: Keep running marks', () => {
+  it('a marked row reads resident in the push, the mark is saved, and unmarking takes it back', async () => {
+    writeJsonl(repo, 'keep-1')
+    own('keep-1')
+    mgr.start()
+    await mgr.firstScan
+
+    mgr.setResident('keep-1', true)
+    expect(layout.resident).toEqual(['keep-1'])
+    expect(latest(repo).rows.find((r) => r.id === 'keep-1')?.resident).toBe(true)
+
+    mgr.setResident('keep-1', false)
+    expect(layout.resident).toEqual([])
+    expect(latest(repo).rows.find((r) => r.id === 'keep-1')?.resident).toBeFalsy()
+  })
+
+  it('a /clear moves the mark to the new id, never leaving it on both; a /resume switch leaves it', () => {
+    own('old')
+    layout.resident = ['old']
+
+    mgr.onSessionRebind('old', 'fresh', 'clear')
+    expect(layout.resident).toEqual(['fresh'])
+
+    mgr.onSessionRebind('fresh', 'target', 'resume')
+    expect(layout.resident).toEqual(['fresh'])
+  })
+
+  it('a rescan drops the mark of a session the sidebar no longer owns, and keeps a Codex member’s', async () => {
+    mgr.dispose()
+    const codexKey = 'codex:local:00000000-0000-4000-8000-000000000001'
+    writeJsonl(repo, 'kept')
+    own('kept')
+    layout.resident = ['kept', codexKey, 'removed-from-list']
+    mgr = new WorkspaceManager({
+      projectsRoot,
+      remoteProjectsRoot: () => projectsRoot,
+      loadLayout: () => layout,
+      saveLayout: (l) => {
+        layout = l
+      },
+      projectInfo: projectInfoFor,
+      runningBindings: () => bindings,
+      killTab: () => {},
+      pushRows: (p) => pushed.push(p),
+      additionalMembers: () => new Set([codexKey])
+    })
+    mgr.start()
+    await mgr.firstScan
+
+    expect(layout.resident).toEqual(['kept', codexKey])
   })
 })
 
@@ -999,6 +1169,26 @@ describe('remote workspace: reading the mirror', () => {
     await vi.waitFor(() => expect(latest(RKEY).rows.length).toBe(1))
     await vi.waitFor(() => expect(Object.keys(layout.panels).sort()).toEqual(['abc', 'local1']))
     expect(latest(repo).rows.map((r) => r.id)).toEqual(['local1'])
+  })
+
+  it('after every rescan hands out the sessions that still have a transcript, on this Mac or in a mirror, or still run, so a conductor can forget the rest', async () => {
+    writeMirrorJsonl('abc')
+    writeJsonl(repo, 'local1')
+    writeJsonl(repo, 'deleted')
+    bindings.set('running-only', 'tab-9')
+    let reported = new Set<string>()
+    mgr = remoteMgr({
+      sessionsOnDiskOrRunning: (ids: ReadonlySet<string>) => (reported = new Set(ids))
+    })
+    mgr.start()
+    const kept = ['abc', 'local1', 'running-only']
+    await vi.waitFor(() =>
+      expect([...reported]).toEqual(expect.arrayContaining([...kept, 'deleted']))
+    )
+    fs.rmSync(path.join(projectsRoot, encodeCwd(repo), 'deleted.jsonl'))
+    mgr.refresh()
+    await vi.waitFor(() => expect(reported.has('deleted')).toBe(false))
+    expect([...reported]).toEqual(expect.arrayContaining(kept))
   })
 
   it('counts a session the machine reports as alive as running', async () => {

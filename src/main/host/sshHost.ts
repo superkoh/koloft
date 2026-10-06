@@ -8,7 +8,8 @@ import {
   type EditFingerprint,
   type EditWriteResult,
   type GitNumstatMap,
-  type GitStatusMap
+  type GitStatusMap,
+  type SkillSuggestion
 } from '@shared/types'
 import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { shq } from '@shared/shellQuote'
@@ -24,9 +25,10 @@ import {
 } from '../fileEdit'
 import { GIT_TIMEOUT_MS, gitOps, type GitOps } from '../gitStatus'
 import { GithubLookup, type GithubOptions } from '../github'
-import { REMOTE_PATH_LINE } from '../remote/install'
+import { remoteShCommand } from '../remote/install'
 import {
   killSessionCmd,
+  resizeStandInCmd,
   launchLine,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
   sessionIdOfTmux,
@@ -36,8 +38,9 @@ import {
 } from '../remote/launch'
 import { mirrorHookDir, mirrorProjectsRoot, remoteMachineDir, tabPackageDir } from '../remote/paths'
 import { launchMode } from '../remote/sync'
-import { ensureControlDir, sshOptions, type BytesResult } from '../remote/ssh'
+import { ensureControlDir, sshLinkBroke, sshOptions, type BytesResult } from '../remote/ssh'
 import { claudeArgv } from '../claudeArgs'
+import { listSkills, type SkillFs } from '../skillList'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host, ShellLaunch } from './host'
 
 export interface MachineAccount {
@@ -59,6 +62,7 @@ export interface MachineClaudeDeps {
 
 export interface SshHostDeps {
   run(cmd: string, opts?: { timeoutMs?: number; input?: Buffer }): Promise<BytesResult>
+  sshEnvReady?(): Promise<void>
   shell(dir: string): Omit<ShellLaunch, 'cwd'>
   github: GithubOptions
   claude: MachineClaudeDeps
@@ -126,11 +130,6 @@ const NOT_TRUSTED = 1
 const WITH_NODE_IN_REAL_DIR = `cd "$1" 2>/dev/null || exit ${NOT_TRUSTED}
 command -v node >/dev/null 2>&1 || exit ${NOT_TRUSTED}
 node -e "$2" "$HOME/.claude.json" "$(pwd -P)"`
-
-// PLATFORM§33
-export function remoteSh(script: string, args: string[]): string {
-  return [`sh -c ${shq(`${REMOTE_PATH_LINE}; ${script}`)} sh`, ...args.map(shq)].join(' ')
-}
 
 const NETWORK_GIT_TIMEOUT_MS = 20_000
 
@@ -312,14 +311,58 @@ fi
 g rev-parse --verify --quiet HEAD >/dev/null && printf HEAD
 exit 0`
 
+const SKILL_FILES = `printf '%s\\0' "$HOME"
+for b in "$1" "$HOME"; do
+  for f in "$b"/.claude/skills/*/SKILL.md; do
+    [ -f "$f" ] && { printf '%s\\0' "$f"; cat "$f"; printf '\\0'; }
+  done
+  for f in "$b"/.claude/commands/*.md; do
+    [ -f "$f" ] && printf '%s\\0\\0' "$f"
+  done
+done
+exit 0`
+
+function skillFsOf(files: Map<string, string>): SkillFs {
+  const children = (dir: string): string[] => {
+    const names = new Set<string>()
+    for (const f of files.keys())
+      if (f.startsWith(dir + '/')) names.add(f.slice(dir.length + 1).split('/')[0])
+    return [...names]
+  }
+  return {
+    readdir: children,
+    readFile: (p) => {
+      const text = files.get(p)
+      if (text === undefined) throw new Error('KOLOFT_READ_FAILED')
+      return text
+    },
+    isDir: (p) => children(p).length > 0,
+    isFile: (p) => files.has(p)
+  }
+}
+
 const NETWORK_GIT = `GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=false SSH_ASKPASS=false \
 SSH_ASKPASS_REQUIRE=never GIT_SSH_COMMAND="\${GIT_SSH_COMMAND:-ssh} -o BatchMode=yes" git "$@"`
+
+const RESIZE_SETTLE_MS = 200
 
 export class SshHost implements Host {
   readonly github: GithubLookup
   private git: GitOps
   private killedSessions = new Set<string>()
   private kills = new Map<string, Promise<unknown>>()
+  private resizes = new Map<string, ReturnType<typeof setTimeout>>()
+
+  private resized = (tabId: string, cols: number, rows: number): void => {
+    clearTimeout(this.resizes.get(tabId))
+    this.resizes.set(
+      tabId,
+      setTimeout(() => {
+        this.resizes.delete(tabId)
+        void this.deps.run(resizeStandInCmd(tabId, cols, rows))
+      }, RESIZE_SETTLE_MS)
+    )
+  }
 
   constructor(
     readonly machine: string,
@@ -333,7 +376,7 @@ export class SshHost implements Host {
         if (r.code === 0) return { stdout, stderr: r.stderr }
         throw Object.assign(new Error(r.stderr || 'git failed'), {
           code: r.code ?? undefined,
-          killed: r.code === null,
+          killed: sshLinkBroke(r),
           stdout,
           stderr: r.stderr
         })
@@ -374,7 +417,7 @@ export class SshHost implements Host {
   }
 
   private sh(script: string, args: string[], opts?: { timeoutMs?: number; input?: Buffer }) {
-    return this.deps.run(remoteSh(script, args), opts)
+    return this.deps.run(remoteShCommand(script, args), opts)
   }
 
   async listDir(dir: string, opts?: { showIgnored?: boolean }): Promise<DirEntry[]> {
@@ -528,7 +571,7 @@ export class SshHost implements Host {
   unwatchFile(): void {}
 
   shell(cwd: string): ShellLaunch {
-    return { ...this.deps.shell(this.bare(cwd)), cwd }
+    return { ...this.deps.shell(this.bare(cwd)), cwd, resized: this.resized }
   }
 
   reveal(): void {}
@@ -555,8 +598,19 @@ export class SshHost implements Host {
     return (await this.sh(WITH_NODE_IN_REAL_DIR, [this.bare(dir), TRUSTED_JS])).code !== NOT_TRUSTED
   }
 
+  async listSkills(root: string): Promise<SkillSuggestion[]> {
+    const bareRoot = this.bare(root)
+    const r = await this.sh(SKILL_FILES, [bareRoot])
+    if (r.code !== 0) return []
+    const [home, ...rest] = r.stdout.toString('utf8').split('\0')
+    const files = new Map<string, string>()
+    for (let i = 0; i + 1 < rest.length; i += 2) files.set(rest[i], rest[i + 1])
+    return listSkills(skillFsOf(files), bareRoot, home)
+  }
+
   async launch(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {
     const d = this.deps.claude
+    await this.deps.sshEnvReady?.()
     ensureControlDir(d.controlDir)
     const settings = d.settings()
     const sid = spec.resumeSessionId ?? crypto.randomUUID()
@@ -600,6 +654,7 @@ export class SshHost implements Host {
           mode
         })
       },
+      resized: this.resized,
       machine: {
         tracking: {
           host: this.machine,

@@ -5,42 +5,59 @@ import {
   unsupportedPairMessage
 } from '@shared/sessionBackend'
 import { SessionBackendIcon } from './SessionBackendIcon'
-import { useCallback, useEffect, useRef, useState, type JSX, type MouseEvent } from 'react'
-import { GoGitBranch } from 'react-icons/go'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type JSX,
+  type MouseEvent
+} from 'react'
+import { createPortal } from 'react-dom'
+import { GoGitBranch, GoGitPullRequest, GoIssueOpened } from 'react-icons/go'
 import {
   LuAlarmClock,
+  LuCheck,
   LuFileText,
   LuFolder,
   LuFolderOpen,
   LuGitBranchPlus,
+  LuPin,
   LuPlus,
   LuX
 } from 'react-icons/lu'
 import type { BackendId, SessionRow } from '@shared/types'
 import type { DirtyTab } from '../unsavedGuard'
-import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
+import { ATTENTION_REASON, PLACEHOLDER_SESSION_TITLE } from '@shared/types'
 import { popoverX } from '@shared/accountUsage'
 import { slugOf } from '@shared/cronNames'
 import { describeWhen } from '@shared/schedule'
 import { forecastFor } from '../cronForm'
 import { useStore } from '../store'
 import {
+  attentionOnRow,
   isOrphanRow,
   marqueeAnim,
   mixesBackends,
   sessionActivityBadge,
   leftoverLabel,
   relTime,
-  rowStateClass
+  rowStateClass,
+  sessionsNeedYou,
+  statusUnavailable
 } from '../sessionRows'
 import { releaseSettledResumes, resumeInFlight, resumeSession } from '../resumeFlow'
 import { adoptionSettled } from '../adoption'
 import { requestCloseTab } from '../closeFlow'
-import { behindBadge } from '../freshnessView'
+import { freshnessShown } from '@shared/freshnessOps'
+import { behindBadge, countLabel, openIssuesLabel, openPullsLabel } from '../freshnessView'
+import { fitGithubCounts } from '../wsHeadFit'
 import { FreshnessPopover } from './FreshnessPopover'
 import { basename } from '@shared/preview'
 import { hostOf, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
-import { workspaceMenuCount } from '../remoteWorkspace'
+import { remoteDotTitle, workspaceMenuCount } from '../remoteWorkspace'
 import {
   discardAll,
   dirtyInWorkspace,
@@ -73,7 +90,7 @@ const MENU_ITEM_H = 31
 const MENU_PAD_H = 10
 const NO_INHERITED_TOOLTIP = ''
 const FRESH_POP_W = 300
-const FRESH_POP_H = 170
+const FRESH_POP_H = 250
 
 type MenuTarget =
   | { kind: 'session'; wsPath: string; row: SessionRow }
@@ -94,7 +111,25 @@ interface MenuState {
   top: number
 }
 
-function menuPosFor(el: HTMLElement, itemCount: number): { left: number; top: number } {
+export function useDismissOnOutside(open: boolean, dismiss: (none: null) => void): void {
+  useEffect(() => {
+    if (!open) return
+    const close = (): void => dismiss(null)
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') dismiss(null)
+    }
+    window.addEventListener('click', close)
+    window.addEventListener('blur', close)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('blur', close)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open, dismiss])
+}
+
+export function menuPosFor(el: HTMLElement, itemCount: number): { left: number; top: number } {
   const r = el.getBoundingClientRect()
   let left = r.right - 6
   if (left + MENU_W > window.innerWidth - 4) left = Math.max(4, r.left - MENU_W + 6)
@@ -142,6 +177,7 @@ export function WorkspaceSidebar({
   const cron = useStore((s) => s.cron)
   const sessions = useStore((s) => s.sessions)
   const leftovers = useStore((s) => s.leftovers)
+  const attention = useStore((s) => s.attention)
   const storeTabs = useStore((s) => s.tabs)
   const activeTabId = useStore((s) => s.activeTabId)
   const resumeLaunch = useStore((s) => s.resumeLaunch)
@@ -149,8 +185,12 @@ export function WorkspaceSidebar({
   const selectedWs = useStore((s) => s.selectedWs)
   const selectWorkspace = useStore((s) => s.selectWorkspace)
   const showToast = useStore((s) => s.showToast)
+  const conductorBindings = useStore((s) => s.settings.discord.bindings)
+  const setBindConductor = useStore((s) => s.setBindConductor)
+  const canBind = (wsPath: string): boolean => !conductorBindings.some((b) => b.scope === wsPath)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [menu, setMenu] = useState<MenuState | null>(null)
+  const [drag, setDrag] = useState<{ path: string; over: number | null } | null>(null)
   const [mq, setMq] = useState<{ id: string; overflow: number } | null>(null)
   const mqRef = useRef<HTMLElement | null>(null)
   const [confirmRemove, setConfirmRemove] = useState<{
@@ -170,6 +210,15 @@ export function WorkspaceSidebar({
   const setFreshBusy = useCallback((busy: boolean) => {
     freshBusy.current = busy
   }, [])
+  const closeFloating = (): void => {
+    setMenu(null)
+    setParkedPop(null)
+    if (!freshBusy.current) setFresh(null)
+  }
+  const sidebarHidden = useStore((s) => s.settings.sidebarHidden)
+  useEffect(() => {
+    if (sidebarHidden) closeFloating()
+  }, [sidebarHidden])
   const [, bumpCronClock] = useState(0)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -180,6 +229,8 @@ export function WorkspaceSidebar({
   const tabIdFor = (sessionId: string): string | undefined =>
     sessionByIdEntries.find((s) => s.sessionId === sessionId && s.alive)?.tabId ??
     storeTabs.find((t) => t.alive && t.sessionId === sessionId)?.id
+  const tabIdOfRow = (row: SessionRow): string | undefined =>
+    row.pending ? row.id : row.running ? tabIdFor(row.id) : undefined
 
   useEffect(() => {
     const t = setInterval(() => bumpCronClock((n) => n + 1), CRON_BADGE_MS)
@@ -206,6 +257,26 @@ export function WorkspaceSidebar({
     return () => anim.cancel()
   }, [mq])
 
+  const marqueeIfClipped = (host: HTMLElement, selector: string, id: string): void => {
+    const t = host.querySelector(selector)
+    const overflow = t ? t.scrollWidth - t.clientWidth : 0
+    if (overflow > 0) setMq({ id, overflow })
+  }
+  const stopMarquee = (id: string): void => setMq((m) => (m?.id === id ? null : m))
+
+  const listRef = useRef<HTMLDivElement>(null)
+  const fitHeads = useCallback((): void => {
+    listRef.current?.querySelectorAll<HTMLElement>('.ws-head').forEach(fitGithubCounts)
+  }, [])
+  useLayoutEffect(fitHeads, [rows, fitHeads])
+  useEffect(() => {
+    const list = listRef.current
+    if (!list) return
+    const ro = new ResizeObserver(fitHeads)
+    ro.observe(list)
+    return () => ro.disconnect()
+  }, [fitHeads])
+
   const clearTimers = (): void => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current)
     if (leaveTimer.current) clearTimeout(leaveTimer.current)
@@ -213,46 +284,18 @@ export function WorkspaceSidebar({
     leaveTimer.current = null
   }
 
-  useEffect(() => {
-    if (!menu) return
-    const close = (): void => setMenu(null)
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setMenu(null)
-    }
-    window.addEventListener('click', close)
-    window.addEventListener('blur', close)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('click', close)
-      window.removeEventListener('blur', close)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [menu])
+  useDismissOnOutside(!!menu, setMenu)
 
   const parkedFor = (row: SessionRow): ReturnType<typeof sessionActivityBadge> => {
     const sess = row.running ? sessions.find((s) => s.tabId === tabIdFor(row.id)) : undefined
     return sessionActivityBadge(sess, leftovers[row.id])
   }
 
-  useEffect(() => {
-    if (!parkedPop) return
-    const close = (): void => setParkedPop(null)
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setParkedPop(null)
-    }
-    window.addEventListener('click', close)
-    window.addEventListener('blur', close)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('click', close)
-      window.removeEventListener('blur', close)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [parkedPop])
+  useDismissOnOutside(!!parkedPop, setParkedPop)
 
   const menuItemCount = (t: MenuTarget): number =>
     t.kind === 'workspace'
-      ? workspaceMenuCount({ missing: t.missing, isGit: t.isGit, remote: !!machineOf(t.wsPath) })
+      ? workspaceMenuCount({ missing: t.missing, isGit: t.isGit, canBind: canBind(t.wsPath) })
       : t.row.pending
         ? 1
         : t.row.running
@@ -264,12 +307,14 @@ export function WorkspaceSidebar({
     setMenu({ target, ...pos })
   }
 
-  const armMenu = (el: HTMLElement, target: MenuTarget): void => {
+  const armMenu = (e: MouseEvent, el: HTMLElement, target: MenuTarget): void => {
+    const draggingThrough = e.buttons !== 0
+    if (draggingThrough) return
     hoverTimer.current = setTimeout(() => openMenuAt(el, target), HOVER_MENU_MS)
   }
   const armHoverMenu = (e: MouseEvent, target: MenuTarget): void => {
     clearTimers()
-    armMenu(e.currentTarget as HTMLElement, target)
+    armMenu(e, e.currentTarget as HTMLElement, target)
   }
   const scheduleClose = (): void => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current)
@@ -286,6 +331,36 @@ export function WorkspaceSidebar({
     e.stopPropagation()
     clearTimers()
     openMenuAt(e.currentTarget as HTMLElement, target)
+  }
+
+  const wsPaths = rows.map((r) => r.workspace.path)
+  const startWorkspaceDrag = (e: DragEvent<HTMLElement>, path: string): void => {
+    clearTimers()
+    closeFloating()
+    e.dataTransfer.effectAllowed = 'move'
+    // PLATFORM§10
+    e.dataTransfer.setData('text/plain', path)
+    setDrag({ path, over: null })
+  }
+  const dragOverWorkspaces = (e: DragEvent<HTMLElement>): void => {
+    if (!drag) return
+    e.preventDefault()
+    const block = (e.target as Element).closest<HTMLElement>('.ws[data-ws-path]')
+    let over: number | null = null
+    if (block) {
+      const box = block.getBoundingClientRect()
+      const below = e.clientY >= box.top + box.height / 2
+      const slot = wsPaths.indexOf(block.dataset.wsPath ?? '') + (below ? 1 : 0)
+      const from = wsPaths.indexOf(drag.path)
+      if (slot !== from && slot !== from + 1) over = slot
+    }
+    if (drag.over !== over) setDrag({ ...drag, over })
+  }
+  const dropWorkspace = (e: DragEvent<HTMLElement>): void => {
+    e.preventDefault()
+    setDrag(null)
+    if (drag?.over == null) return
+    void window.api.workspace.move(drag.path, wsPaths[drag.over] ?? null)
   }
 
   const keepCard = (): void => {
@@ -414,12 +489,28 @@ export function WorkspaceSidebar({
     )
   }
 
+  const keepRunningItem = (row: SessionRow): JSX.Element => (
+    <div
+      className="mi"
+      onClick={() => {
+        setMenu(null)
+        window.api.sessions.setResident(row.id, !row.resident)
+      }}
+    >
+      Keep running
+      {row.resident && (
+        <span className="k on">
+          <LuCheck size={14} />
+        </span>
+      )}
+    </div>
+  )
+
   const renderMenu = (): JSX.Element | null => {
     if (!menu) return null
     const { target } = menu
     const style = { left: menu.left, top: menu.top }
     if (target.kind === 'workspace') {
-      const remote = machineOf(target.wsPath)
       const newSessionItem = (label: string, backend?: BackendId, key?: string): JSX.Element => {
         const refusal = backend ? unsupportedPairMessage(backend, hostOf(target.wsPath)) : undefined
         return (
@@ -470,17 +561,6 @@ export function WorkspaceSidebar({
               >
                 Restore session…
               </div>
-              {target.isGit && !remote && (
-                <div
-                  className="mi"
-                  onClick={() => {
-                    setMenu(null)
-                    void window.api.workspace.fetchFreshness(target.wsPath)
-                  }}
-                >
-                  Fetch origin
-                </div>
-              )}
               <div
                 className="mi"
                 onClick={() => {
@@ -490,6 +570,17 @@ export function WorkspaceSidebar({
               >
                 Scheduled jobs…
               </div>
+              {canBind(target.wsPath) && (
+                <div
+                  className="mi"
+                  onClick={() => {
+                    setMenu(null)
+                    setBindConductor({ scope: target.wsPath })
+                  }}
+                >
+                  Bind Discord channel…
+                </div>
+              )}
               <div className="sep" />
             </>
           )}
@@ -534,6 +625,7 @@ export function WorkspaceSidebar({
           >
             Copy session ID
           </div>
+          {keepRunningItem(row)}
           <div
             className="mi"
             onClick={() => {
@@ -570,6 +662,7 @@ export function WorkspaceSidebar({
         >
           Copy session ID
         </div>
+        {keepRunningItem(row)}
         <div
           className="mi"
           onClick={() => {
@@ -623,12 +716,15 @@ export function WorkspaceSidebar({
   const renderFresh = (): JSX.Element | null => {
     if (!fresh) return null
     const w = rows.find((r) => r.workspace.path === fresh.path)
-    if (!w?.workspace.freshness) return null
+    if (!w) return null
+    const f = freshnessShown(w.workspace.freshness) ? w.workspace.freshness : undefined
+    if (!f && !w.workspace.github) return null
     return (
       <FreshnessPopover
         key={fresh.path}
         wsPath={fresh.path}
-        f={w.workspace.freshness}
+        f={f}
+        github={w.workspace.github}
         rows={w.rows}
         left={fresh.left}
         top={fresh.top}
@@ -644,12 +740,11 @@ export function WorkspaceSidebar({
     <>
       <div className="island flat isl-sessions">
         <div
+          ref={listRef}
           className="ws-list"
-          onScroll={() => {
-            setMenu(null)
-            setParkedPop(null)
-            if (!freshBusy.current) setFresh(null)
-          }}
+          onScroll={closeFloating}
+          onDragOver={dragOverWorkspaces}
+          onDrop={dropWorkspace}
         >
           {rows.length === 0 && !welcomeActive && (
             <div className="hint">
@@ -659,7 +754,7 @@ export function WorkspaceSidebar({
             </div>
           )}
 
-          {rows.map(({ workspace: ws, rows: sessionRows }) => {
+          {rows.map(({ workspace: ws, rows: sessionRows }, wsIndex) => {
             const open = !collapsed[ws.path]
             const wsTarget: MenuTarget = {
               kind: 'workspace',
@@ -669,6 +764,8 @@ export function WorkspaceSidebar({
               hasHistory: ws.hasHistory
             }
             const badge = behindBadge(ws.freshness, Date.now())
+            const gitPanel = freshnessShown(ws.freshness) || !!ws.github
+            const nameMq = `ws:${ws.path}`
             const door = ws.isGit
               ? {
                   title: 'New worktree session · ⇧⌘N',
@@ -682,10 +779,22 @@ export function WorkspaceSidebar({
               if (ws.isGit) onNewWorktreeSession(ws.path)
               else onNewSession(ws.path)
             }
+            const callingInside = open
+              ? 0
+              : sessionRows.filter((r) => attentionOnRow(r.id, tabIdOfRow(r), attention)).length
             const cronNow = new Date()
             const soon = ws.missing || !open ? null : forecastFor(cron.jobs, ws.path, cronNow)
             return (
-              <div className="ws" key={ws.path}>
+              <div
+                className={
+                  'ws' +
+                  (drag?.path === ws.path ? ' dragging' : '') +
+                  (drag?.over === wsIndex ? ' dropbefore' : '') +
+                  (drag?.over === rows.length && wsIndex === rows.length - 1 ? ' dropafter' : '')
+                }
+                key={ws.path}
+                data-ws-path={ws.path}
+              >
                 <div
                   className={
                     'ws-head' +
@@ -693,13 +802,22 @@ export function WorkspaceSidebar({
                     (selectedWs === ws.path && activeTabId === null ? ' active' : '')
                   }
                   title={ws.missing ? 'folder deleted' : ws.path}
+                  draggable
+                  onDragStart={(e) => startWorkspaceDrag(e, ws.path)}
+                  onDragEnd={() => setDrag(null)}
                   onClick={() => {
                     if (ws.missing) return
                     selectWorkspace(ws.path)
                   }}
                   onContextMenu={(e) => openMenuNow(e, wsTarget)}
-                  onMouseEnter={(e) => armHoverMenu(e, wsTarget)}
-                  onMouseLeave={scheduleClose}
+                  onMouseEnter={(e) => {
+                    armHoverMenu(e, wsTarget)
+                    marqueeIfClipped(e.currentTarget, '.ws-name', nameMq)
+                  }}
+                  onMouseLeave={() => {
+                    scheduleClose()
+                    stopMarquee(nameMq)
+                  }}
                 >
                   <span
                     className="fico"
@@ -711,7 +829,11 @@ export function WorkspaceSidebar({
                   >
                     {open ? <LuFolderOpen size={15} /> : <LuFolder size={15} />}
                   </span>
-                  <span className="ws-name">{basename(ws.remote?.path ?? ws.path)}</span>
+                  <span className={'ws-name' + (mq?.id === nameMq ? ' mq' : '')}>
+                    <i ref={mq?.id === nameMq ? mqRef : undefined}>
+                      {basename(ws.remote?.path ?? ws.path)}
+                    </i>
+                  </span>
                   {ws.remote && (
                     <span
                       className="ws-remote"
@@ -720,25 +842,25 @@ export function WorkspaceSidebar({
                       {ws.remote.host}
                       <span
                         className={'ws-conn' + (ws.remote.connected ? ' on' : '')}
-                        title={
-                          ws.remote.connected ? 'connected' : 'not connected — status may be stale'
-                        }
+                        title={remoteDotTitle(ws.remote)}
                       />
                     </span>
                   )}
                   {ws.isGit && !ws.missing && (
                     <span
                       className="ws-git"
-                      title={badge ? NO_INHERITED_TOOLTIP : 'git repository'}
+                      title={gitPanel ? NO_INHERITED_TOOLTIP : 'git repository'}
                       onMouseEnter={
-                        badge ? (e) => openCard(e.currentTarget as HTMLElement, ws.path) : undefined
+                        gitPanel
+                          ? (e) => openCard(e.currentTarget as HTMLElement, ws.path)
+                          : undefined
                       }
                       onMouseLeave={
-                        badge
+                        gitPanel
                           ? (e) => {
                               leaveCard()
                               const head = (e.currentTarget as HTMLElement).closest('.ws-head')
-                              armMenu(head as HTMLElement, wsTarget)
+                              armMenu(e, head as HTMLElement, wsTarget)
                             }
                           : undefined
                       }
@@ -756,6 +878,30 @@ export function WorkspaceSidebar({
                           {badge.label}
                         </button>
                       )}
+                      {ws.github && (ws.github.issues > 0 || ws.github.prs > 0) && (
+                        <span className="ws-gh">
+                          {ws.github.issues > 0 && (
+                            <span aria-label={openIssuesLabel(ws.github.issues)}>
+                              <GoIssueOpened size={12} />
+                              {countLabel(ws.github.issues)}
+                            </span>
+                          )}
+                          {ws.github.prs > 0 && (
+                            <span aria-label={openPullsLabel(ws.github.prs)}>
+                              <GoGitPullRequest size={12} />
+                              {countLabel(ws.github.prs)}
+                            </span>
+                          )}
+                        </span>
+                      )}
+                    </span>
+                  )}
+                  {callingInside > 0 && (
+                    <span
+                      className="ws-tab-parked ws-unread-count"
+                      title={sessionsNeedYou(callingInside)}
+                    >
+                      {callingInside}
                     </span>
                   )}
                   {!ws.missing && (
@@ -796,16 +942,12 @@ export function WorkspaceSidebar({
                       </div>
                     )}
                     {sessionRows.map((row) => {
-                      const tabId = row.pending
-                        ? row.id
-                        : row.running
-                          ? tabIdFor(row.id)
-                          : undefined
+                      const tabId = tabIdOfRow(row)
+                      const calling = attentionOnRow(row.id, tabId, attention)
                       const sess = tabId ? sessions.find((s) => s.tabId === tabId) : undefined
-                      const stateCls =
-                        sess?.details?.codex?.observation === 'degraded'
-                          ? ''
-                          : rowStateClass(row.running, sess?.status, row.pending)
+                      const stateCls = statusUnavailable(sess)
+                        ? ''
+                        : rowStateClass(row.running, sess?.status, row.pending)
                       const badge = sessionActivityBadge(sess, leftovers[row.id])
                       const launching = resumeLaunch?.id === row.id
                       const active =
@@ -850,21 +992,25 @@ export function WorkspaceSidebar({
                           onContextMenu={(e) => openMenuNow(e, rowTarget)}
                           onMouseEnter={(e) => {
                             armHoverMenu(e, rowTarget)
-                            const t = (e.currentTarget as HTMLElement).querySelector(
-                              '.ws-tab-title'
-                            )
-                            const overflow = t ? t.scrollWidth - t.clientWidth : 0
-                            if (overflow > 0) setMq({ id: row.id, overflow })
+                            marqueeIfClipped(e.currentTarget, '.ws-tab-title', row.id)
                           }}
                           onMouseLeave={() => {
                             scheduleClose()
-                            setMq((m) => (m?.id === row.id ? null : m))
+                            stopMarquee(row.id)
                           }}
                         >
                           <div className="ws-tab-main">
                             {isCronRow && (
                               <span className="ws-tab-cron" title="started by a scheduled job">
                                 <LuAlarmClock size={12} />
+                              </span>
+                            )}
+                            {row.resident && (
+                              <span
+                                className="ws-tab-resident"
+                                title="Keep running — starts again each time Koloft opens"
+                              >
+                                <LuPin size={12} />
                               </span>
                             )}
                             <span className={'ws-tab-title' + (mq?.id === row.id ? ' mq' : '')}>
@@ -875,6 +1021,12 @@ export function WorkspaceSidebar({
                               </i>
                             </span>
                             {tabId && <UnseenFileMark tabId={tabId} />}
+                            {calling && (
+                              <span
+                                className="ws-tab-unread"
+                                title={ATTENTION_REASON[calling.kind]}
+                              />
+                            )}
                             {badge && (
                               <button
                                 className="ws-tab-parked"
@@ -917,109 +1069,115 @@ export function WorkspaceSidebar({
         </div>
       </div>
 
-      {renderMenu()}
-      {renderFresh()}
-      {renderParked()}
+      {/* ADR-0013 */}
+      {createPortal(
+        <>
+          {renderMenu()}
+          {renderFresh()}
+          {renderParked()}
 
-      {confirmRemove && (
-        <div className="modal-backdrop" onClick={() => !removing && setConfirmRemove(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              Remove workspace
-              <span
-                className="modal-close"
-                onClick={() => !removing && setConfirmRemove(null)}
-                aria-label="Close"
-              >
-                <LuX size={16} />
-              </span>
-            </div>
-            <div className="modal-body">
-              <div className="field-hint">
-                {removeConfirmText(confirmRemove.running, confirmRemove.jobs)}
-                {confirmRemove.dirty.length > 0 &&
-                  ' ' + removeUnsavedNote(confirmRemove.dirty.length)}
-              </div>
-            </div>
-            <div className="modal-foot">
-              <button
-                ref={removeCancelRef}
-                className="mini"
-                disabled={removing}
-                onClick={() => setConfirmRemove(null)}
-              >
-                Cancel
-              </button>
-              <button
-                className="btn-primary"
-                disabled={removing}
-                onClick={() => {
-                  discardAll(confirmRemove.dirty)
-                  const p = confirmRemove.path
-                  setConfirmRemove(null)
-                  void window.api.workspace.removeConfirmed(p)
-                }}
-              >
-                {confirmRemove.dirty.length > 0 ? 'Discard & remove' : 'Close & remove'}
-              </button>
-              {confirmRemove.dirty.length > 0 && (
-                <button
-                  className="btn-primary"
-                  disabled={removing}
-                  onClick={() => {
-                    const { path: p, dirty } = confirmRemove
-                    setRemoving(true)
-                    void saveAll(dirty).then((ok) => {
-                      setRemoving(false)
+          {confirmRemove && (
+            <div className="modal-backdrop" onClick={() => !removing && setConfirmRemove(null)}>
+              <div className="modal" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-header">
+                  Remove workspace
+                  <span
+                    className="modal-close"
+                    onClick={() => !removing && setConfirmRemove(null)}
+                    aria-label="Close"
+                  >
+                    <LuX size={16} />
+                  </span>
+                </div>
+                <div className="modal-body">
+                  <div className="field-hint">
+                    {removeConfirmText(confirmRemove.running, confirmRemove.jobs)}
+                    {confirmRemove.dirty.length > 0 &&
+                      ' ' + removeUnsavedNote(confirmRemove.dirty.length)}
+                  </div>
+                </div>
+                <div className="modal-foot">
+                  <button
+                    ref={removeCancelRef}
+                    className="mini"
+                    disabled={removing}
+                    onClick={() => setConfirmRemove(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="btn-primary"
+                    disabled={removing}
+                    onClick={() => {
+                      discardAll(confirmRemove.dirty)
+                      const p = confirmRemove.path
                       setConfirmRemove(null)
-                      if (ok) void window.api.workspace.removeConfirmed(p)
-                    })
-                  }}
-                >
-                  Save &amp; remove
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {confirmOrphan && (
-        <div className="modal-backdrop" onClick={() => setConfirmOrphan(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              Session unreachable
-              <span
-                className="modal-close"
-                onClick={() => setConfirmOrphan(null)}
-                aria-label="Close"
-              >
-                <LuX size={16} />
-              </span>
-            </div>
-            <div className="modal-body">
-              <div className="field-hint">
-                This session is running but its tab could not be re-adopted. Force close it to make
-                the row resumable — its in-flight work will stop.
+                      void window.api.workspace.removeConfirmed(p)
+                    }}
+                  >
+                    {confirmRemove.dirty.length > 0 ? 'Discard & remove' : 'Close & remove'}
+                  </button>
+                  {confirmRemove.dirty.length > 0 && (
+                    <button
+                      className="btn-primary"
+                      disabled={removing}
+                      onClick={() => {
+                        const { path: p, dirty } = confirmRemove
+                        setRemoving(true)
+                        void saveAll(dirty).then((ok) => {
+                          setRemoving(false)
+                          setConfirmRemove(null)
+                          if (ok) void window.api.workspace.removeConfirmed(p)
+                        })
+                      }}
+                    >
+                      Save &amp; remove
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
-            <div className="modal-foot">
-              <button className="mini" onClick={() => setConfirmOrphan(null)}>
-                Cancel
-              </button>
-              <button
-                className="btn-primary"
-                onClick={() => {
-                  const id = confirmOrphan
-                  setConfirmOrphan(null)
-                  void forceCloseSession(id)
-                }}
-              >
-                Force Close
-              </button>
+          )}
+
+          {confirmOrphan && (
+            <div className="modal-backdrop" onClick={() => setConfirmOrphan(null)}>
+              <div className="modal" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-header">
+                  Session unreachable
+                  <span
+                    className="modal-close"
+                    onClick={() => setConfirmOrphan(null)}
+                    aria-label="Close"
+                  >
+                    <LuX size={16} />
+                  </span>
+                </div>
+                <div className="modal-body">
+                  <div className="field-hint">
+                    This session is running but its tab could not be re-adopted. Force close it to
+                    make the row resumable — its in-flight work will stop.
+                  </div>
+                </div>
+                <div className="modal-foot">
+                  <button className="mini" onClick={() => setConfirmOrphan(null)}>
+                    Cancel
+                  </button>
+                  <button
+                    className="btn-primary"
+                    onClick={() => {
+                      const id = confirmOrphan
+                      setConfirmOrphan(null)
+                      void forceCloseSession(id)
+                    }}
+                  >
+                    Force Close
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          )}
+        </>,
+        document.body
       )}
     </>
   )

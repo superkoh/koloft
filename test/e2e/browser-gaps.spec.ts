@@ -28,6 +28,7 @@ import {
   guestByUrl,
   guestContents,
   guestPages,
+  navButton,
   newWebTab,
   openBrowser,
   openTabs,
@@ -235,6 +236,62 @@ test.describe('Workbench browser cases between the other browser specs: agent op
       await expect(rowB).toHaveClass(/\bactive\b/, { timeout: 20_000 })
       await showWorkbench(page)
       await expect.poll(() => wbTabTitles(page)).toEqual([PINNED_FILES_TAB_LABEL, 'Z'])
+    } finally {
+      await server.close()
+    }
+  })
+
+  test("BB-M04e: the address bar offers this project's pages first by their visits, then other projects' by theirs, and a reload is no visit", async ({
+    page
+  }) => {
+    test.setTimeout(360_000)
+    const server = await startEchoServer()
+    const suggestedPaths = async (): Promise<string[]> =>
+      (await page.locator(BROWSER.suggestRow).allTextContents()).map(
+        (t) => t.match(/\/zebra-[a-z]+/)?.[0] ?? t
+      )
+    try {
+      await startSessionIn(page, 'ws-a')
+      await startSessionIn(page, 'ws-b')
+      const rowA = wsRows(page, 'ws-a').first()
+      const rowB = wsRows(page, 'ws-b').first()
+
+      await rowA.click()
+      await expect(rowA).toHaveClass(/\bactive\b/, { timeout: 20_000 })
+      await showWorkbench(page)
+      await openLoadedTab(page, server, 'Zebra-often')
+      await typeInAddressBar(page, server.page('/yak', titled('Yak')))
+      await expect(page.locator(`${BROWSER.tabActive} ${BROWSER.tabLabel}`)).toHaveText('Yak', {
+        timeout: 30_000
+      })
+      await typeInAddressBar(page, server.page('/zebra-often', titled('Zebra-often')))
+      await expect.poll(() => server.count('/zebra-often'), { timeout: 20_000 }).toBe(2)
+
+      await openLoadedTab(page, server, 'Zebra-reloaded')
+      for (let n = 2; n <= 4; n++) {
+        await navButton(page, 'Reload').click()
+        await expect.poll(() => server.count('/zebra-reloaded'), { timeout: 20_000 }).toBe(n)
+      }
+
+      await rowB.click()
+      await expect(rowB).toHaveClass(/\bactive\b/, { timeout: 20_000 })
+      await showWorkbench(page)
+      await openLoadedTab(page, server, 'Zebra-b')
+      await newWebTab(page)
+      await typeInAddressBar(page, 'zebra', { submit: false })
+      await expect
+        .poll(suggestedPaths, { timeout: 20_000 })
+        .toEqual(['/zebra-b', '/zebra-often', '/zebra-reloaded'])
+      await page.keyboard.press('Escape')
+
+      await rowA.click()
+      await expect(rowA).toHaveClass(/\bactive\b/, { timeout: 20_000 })
+      await showWorkbench(page)
+      await newWebTab(page)
+      await typeInAddressBar(page, 'zebra', { submit: false })
+      await expect
+        .poll(suggestedPaths, { timeout: 20_000 })
+        .toEqual(['/zebra-often', '/zebra-reloaded', '/zebra-b'])
     } finally {
       await server.close()
     }

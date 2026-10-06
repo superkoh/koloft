@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { test, expect, launchApp, pretendWindowFocused, quitAndClose } from './helpers/app'
 import {
   addRemoteWorkspace,
   breakConnection,
@@ -15,6 +15,7 @@ import {
   type ClaudeCall,
   centerTerm,
   processAlive,
+  readCalls,
   runIn,
   startSessionIn,
   waitBooted,
@@ -112,6 +113,89 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
       await runIn(page2, centerTerm(page2), TURN_LONGER_THAN_ONE_MIRROR_PULL)
       await expect(row).toHaveClass(/\bst-working\b/, { timeout: 60_000 })
       await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 90_000 })
+    } finally {
+      await quitAndClose(app2)
+    }
+  })
+
+  test('a remote session’s unread red dot survives a Koloft restart, and clicking the row in a focused window clears it', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await runIn(page, centerTerm(page), TURN_LONGER_THAN_ONE_MIRROR_PULL)
+      await expect(row).toHaveClass(/\bst-working\b/, { timeout: 60_000 })
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 90_000 })
+      await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
+    } finally {
+      await quitAndClose(app)
+    }
+
+    const app2 = await launchApp(env)
+    try {
+      const page2 = await app2.firstWindow()
+      await page2.waitForLoadState('domcontentloaded')
+      await waitBooted(page2)
+      const row = wsRows(page2, REMOTE_WS_NAME).first()
+      await expect(row).not.toHaveClass(/\bcold\b/, {
+        timeout: IDLE_20S_HEARTBEAT_ROUND_TIMEOUT_MS
+      })
+      await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
+
+      await pretendWindowFocused(app2)
+      await row.click()
+      await expect(centerTerm(page2)).toBeVisible({ timeout: 30_000 })
+      await expect(row.locator('.ws-tab-unread')).toHaveCount(0, { timeout: 30_000 })
+    } finally {
+      await quitAndClose(app2)
+    }
+  })
+
+  test('a remote session marked Keep running is attached by itself after a Koloft restart — the same claude, never a second one', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    let first!: ClaudeCall
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      ;[first] = await waitForCalls(env, 1)
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await row.click({ button: 'right' })
+      await page.locator('.menu .mi', { hasText: 'Keep running' }).click()
+      await expect(row.locator('.ws-tab-resident')).toBeVisible()
+      await page.waitForTimeout(LAYOUT_SAVE_DEBOUNCE_SETTLE_MS)
+    } finally {
+      await quitAndClose(app)
+    }
+    expect(processAlive(first.pid)).toBe(true)
+
+    const app2 = await launchApp(env)
+    try {
+      const page2 = await app2.firstWindow()
+      await page2.waitForLoadState('domcontentloaded')
+      await waitBooted(page2)
+
+      const row = wsRows(page2, REMOTE_WS_NAME).first()
+      await expect
+        .poll(() => sshCommands(env).filter((c) => /tabs\/[^"]+\.sh"?\s+attach/.test(c)).length, {
+          timeout: 60_000
+        })
+        .toBeGreaterThanOrEqual(1)
+      await expect(row).toHaveClass(/\bst-(working|waiting|idle)\b/, {
+        timeout: IDLE_20S_HEARTBEAT_ROUND_TIMEOUT_MS
+      })
+      await expect(page2.locator('.ws-tab.active')).toHaveCount(0)
+      await page2.waitForTimeout(TMUX_ATTACH_SETTLE_MS)
+      expect(processAlive(first.pid)).toBe(true)
+      expect(readCalls(env)).toHaveLength(1)
+      const starts = sshCommands(env).filter((c) => /tabs\/[^"]+\.sh"?\s+start/.test(c))
+      expect(starts).toHaveLength(1)
     } finally {
       await quitAndClose(app2)
     }

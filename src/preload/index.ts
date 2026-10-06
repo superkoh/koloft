@@ -22,11 +22,13 @@ import type {
   TerminalData,
   TerminalExit,
   TerminalCwd,
+  ScreenRequest,
   TerminalProcessTitle,
   LeftoverProcess,
   SessionInfo,
   SpawnedTab,
   CronState,
+  DiscordStatus,
   AttentionEvent,
   AccountView,
   LoginProgress,
@@ -84,7 +86,13 @@ const api: KoloftApi = {
       const handler = (_e: unknown, t: SpawnedTab): void => cb(t)
       ipcRenderer.on('terminal:spawned', handler)
       return () => ipcRenderer.removeListener('terminal:spawned', handler)
-    }
+    },
+    onScreenRequest: (cb) => {
+      const handler = (_e: unknown, r: ScreenRequest): void => cb(r)
+      ipcRenderer.on('terminal:screen', handler)
+      return () => ipcRenderer.removeListener('terminal:screen', handler)
+    },
+    answerScreen: (a) => ipcRenderer.send('terminal:screen-done', a)
   },
   workbench: {
     get: (sessionId) => ipcRenderer.invoke('workbench:get', sessionId),
@@ -120,6 +128,7 @@ const api: KoloftApi = {
     resumePlan: (id) => ipcRenderer.invoke('sessions:resumePlan', id),
     resume: (req) => ipcRenderer.invoke('sessions:resume', req),
     archive: (id) => ipcRenderer.invoke('sessions:archive', id),
+    setResident: (id, on) => ipcRenderer.send('sessions:setResident', id, on),
     forceClose: (id) => ipcRenderer.invoke('sessions:forceClose', id),
     transcriptExists: (id) => ipcRenderer.invoke('sessions:transcriptExists', id),
     leftovers: () => ipcRenderer.invoke('sessions:leftovers'),
@@ -149,6 +158,25 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener('cron:toast', handler)
     }
   },
+  conductors: {
+    save: (input) => ipcRenderer.invoke('conductors:save', input),
+    unbind: (id) => ipcRenderer.invoke('conductors:unbind', id),
+    switchBackend: (id) => ipcRenderer.invoke('conductors:switchBackend', id),
+    open: (id) => ipcRenderer.invoke('conductors:open', id),
+    startFresh: (id) => ipcRenderer.invoke('conductors:startFresh', id)
+  },
+  discord: {
+    setToken: (token) => ipcRenderer.invoke('discord:setToken', token),
+    status: () => ipcRenderer.invoke('discord:status'),
+    onStatus: (cb) => {
+      const handler = (_e: unknown, s: DiscordStatus): void => cb(s)
+      ipcRenderer.on('discord:status', handler)
+      return () => ipcRenderer.removeListener('discord:status', handler)
+    },
+    pair: (isMe) => ipcRenderer.invoke('discord:pair', isMe),
+    forgetOwner: () => ipcRenderer.invoke('discord:forgetOwner'),
+    channels: () => ipcRenderer.invoke('discord:channels')
+  },
   attention: {
     list: () => ipcRenderer.invoke('attention:list'),
     activeTab: (id) => ipcRenderer.send('attention:active-tab', id),
@@ -157,6 +185,11 @@ const api: KoloftApi = {
       const handler = (_e: unknown, p: { tabId: string }): void => cb(p.tabId)
       ipcRenderer.on('attention:activate-tab', handler)
       return () => ipcRenderer.removeListener('attention:activate-tab', handler)
+    },
+    onChanged: (cb) => {
+      const handler = (_e: unknown, pending: AttentionEvent[]): void => cb(pending)
+      ipcRenderer.on('attention:changed', handler)
+      return () => ipcRenderer.removeListener('attention:changed', handler)
     }
   },
   preview: {
@@ -332,6 +365,7 @@ const api: KoloftApi = {
     add: (p) => ipcRenderer.invoke('workspace:add', p),
     remove: (p) => ipcRenderer.invoke('workspace:remove', p),
     removeConfirmed: (p) => ipcRenderer.invoke('workspace:removeConfirmed', p),
+    move: (p, before) => ipcRenderer.invoke('workspace:move', p, before),
     worktrees: (p) => ipcRenderer.invoke('workspace:worktrees', p),
     historyRows: (p) => ipcRenderer.invoke('workspace:historyRows', p),
     rows: () => ipcRenderer.invoke('workspace:rows'),
@@ -400,6 +434,14 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener('window:focus', handler)
     }
   },
+  windowFullscreen: {
+    get: () => ipcRenderer.invoke('window:isFullScreen'),
+    onChange: (cb) => {
+      const handler = (_e: unknown, on: boolean): void => cb(on)
+      ipcRenderer.on('window:fullscreen', handler)
+      return () => ipcRenderer.removeListener('window:fullscreen', handler)
+    }
+  },
   shortcuts: {
     onNewTerminalTab: (cb) => {
       const handler = (): void => cb()
@@ -410,6 +452,11 @@ const api: KoloftApi = {
       const handler = (): void => cb()
       ipcRenderer.on('shortcut:focus-notes', handler)
       return () => ipcRenderer.removeListener('shortcut:focus-notes', handler)
+    },
+    onToggleSidebar: (cb) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('shortcut:toggle-sidebar', handler)
+      return () => ipcRenderer.removeListener('shortcut:toggle-sidebar', handler)
     },
     onNewSession: (cb) => {
       const handler = (): void => cb()

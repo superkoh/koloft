@@ -2,7 +2,6 @@ import { useEffect, useRef, type JSX } from 'react'
 import { useStore } from '../store'
 import {
   cancelResume,
-  evidenceLines,
   existingRequest,
   mainRequest,
   renamedRequest,
@@ -71,16 +70,18 @@ export function ResumeDialog(): JSX.Element | null {
     `Resume "${target.title}"`,
     <>
       <p className="field-hint">
-        This session&apos;s worktree <code>{plan.evidence.worktreeName}</code> currently exists, but
-        it doesn&apos;t look the way this session left it. Choose where to resume:
+        Another running session is working in this session&apos;s worktree{' '}
+        <code>{plan.worktreeName}</code>. Choose where to resume:
       </p>
       <div className="ev-meta">
-        {evidenceLines(plan.evidence).map((l) => (
-          <div className="ev-row" key={l.label}>
-            <span className="ev-label">{l.label}</span>
-            <span className={'ev-text' + (l.tone ? ' ev-' + l.tone : '')}>{l.text}</span>
-          </div>
-        ))}
+        <div className="ev-row">
+          <span className="ev-label">worktree</span>
+          <span className="ev-text">{plan.worktreePath}</span>
+        </div>
+        <div className="ev-row">
+          <span className="ev-label">in use</span>
+          <span className="ev-text ev-danger">{plan.occupiedBy}</span>
+        </div>
       </div>
     </>,
     <>
@@ -89,10 +90,10 @@ export function ResumeDialog(): JSX.Element | null {
       </button>
       <button
         className="mini danger"
-        title="May reset the worktree to this session's baseline"
+        title="Both sessions will edit the same files"
         onClick={() => void runResume(target, existingRequest(target, plan))}
       >
-        Resume in existing worktree — may reset it
+        Resume in the same worktree
       </button>
       <button
         ref={safeRef}

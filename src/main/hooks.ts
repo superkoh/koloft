@@ -15,6 +15,8 @@ export const HOOK_SCRIPT = `#!/usr/bin/env bash
 reg="$1"; tab="$2"; event="$3"
 [ -z "$reg" ] && exit 0
 [ -z "$tab" ] && exit 0
+# CC§14
+[ "$event" = "ask" ] && [ ! -f "$reg/$tab.answerable" ] && exit 0
 input="$(cat | tr -d '\\n')"
 mkdir -p "$reg" 2>/dev/null
 tm=""
@@ -50,6 +52,30 @@ case "$event" in
       tmux rename-session -t "$TMUX_PANE" "k-$sid" 2>/dev/null
     fi
     printf '{"tabId":"%s","event":"%s","sessionId":"%s","transcriptPath":"%s","cwd":"%s","reason":"%s","source":"%s","account":"%s","ccVersion":"%s","tmux":"%s"}\\n' "$tab" "$event" "$sid" "$tp" "$cwd" "$reason" "$src" "$acct" "$ver" "$tm" > "$reg/$tab.json"
+    # CC§1
+    if [ "$event" = "start" ] && [ "$src" = "compact" ]; then
+      printf '{"tabId":"%s","event":"compacted","sessionId":"%s","tmux":"%s"}\\n' "$tab" "$sid" "$tm" >> "$reg/$tab.status.jsonl"
+    fi
+    # CC§13
+    if [ "$event" = "start" ] && [ -f "$reg/$tab.conductor" ]; then cat "$reg/$tab.conductor"; fi
+    ;;
+  compacting)
+    # CC§1
+    printf '{"tabId":"%s","event":"compacting","sessionId":"%s","tmux":"%s"}\\n' "$tab" "$(session_id)" "$tm" >> "$reg/$tab.status.jsonl"
+    ;;
+  ask)
+    # CC§14
+    ask="$reg/$tab.$$.ask.json"; answer="$reg/$tab.$$.answer.json"; tick="$reg/$tab.$$.tick"
+    trap 'rm -f "$ask" "$answer" "$tick"' EXIT
+    trap 'exit 143' TERM
+    mkfifo "$tick" 2>/dev/null || exit 0
+    printf '%s' "$input" > "$ask.tmp" && mv "$ask.tmp" "$ask"
+    while [ ! -f "$answer" ]; do read -t 1 <> "$tick"; done
+    cat "$answer"
+    ;;
+  asked)
+    # CC§14
+    printf '{"tabId":"%s","event":"ask","sessionId":"%s","tmux":"%s","ask":%s}\\n' "$tab" "$(session_id)" "$tm" "$input" >> "$reg/$tab.status.jsonl"
     ;;
   posttool)
     # PLATFORM§36
@@ -128,7 +154,7 @@ esac
 exit 0
 `
 
-function pruneStale(dir: string, maxAgeMs = 12 * 60 * 60 * 1000): void {
+export function pruneStale(dir: string, maxAgeMs = 12 * 60 * 60 * 1000, everyEntry = false): void {
   let names: string[]
   try {
     names = fs.readdirSync(dir)
@@ -137,15 +163,32 @@ function pruneStale(dir: string, maxAgeMs = 12 * 60 * 60 * 1000): void {
   }
   const now = Date.now()
   for (const name of names) {
-    if (!name.endsWith('.json') && !name.endsWith('.jsonl')) continue
+    if (!everyEntry && !name.endsWith('.json') && !name.endsWith('.jsonl')) continue
     const full = path.join(dir, name)
     try {
-      if (now - fs.statSync(full).mtimeMs > maxAgeMs) fs.rmSync(full, { force: true })
+      if (now - fs.statSync(full).mtimeMs > maxAgeMs)
+        fs.rmSync(full, { recursive: everyEntry, force: true })
     } catch {}
   }
 }
 
-export function setupHooks(): HookPaths {
+const TAB_MARKER = /^(.+)\.(answerable|conductor)$/
+
+// ADR-0004
+function pruneMarkersOfDeadTabs(regDir: string, peerOwnsTab: (tabId: string) => boolean): void {
+  let names: string[]
+  try {
+    names = fs.readdirSync(regDir)
+  } catch {
+    return
+  }
+  for (const name of names) {
+    const tabId = TAB_MARKER.exec(name)?.[1]
+    if (tabId && !peerOwnsTab(tabId)) fs.rmSync(path.join(regDir, name), { force: true })
+  }
+}
+
+export function setupHooks(peerOwnsTab: (tabId: string) => boolean): HookPaths {
   const base = app.getPath('userData')
   const hookDir = path.join(base, 'hooks')
   const settingsDir = path.join(hookDir, 'settings')
@@ -155,6 +198,7 @@ export function setupHooks(): HookPaths {
   fs.mkdirSync(regDir, { recursive: true })
   pruneStale(regDir)
   pruneStale(settingsDir)
+  pruneMarkersOfDeadTabs(regDir, peerOwnsTab)
 
   const hookScript = path.join(hookDir, 'sessionstart.sh')
   fs.writeFileSync(hookScript, HOOK_SCRIPT, { mode: 0o755 })
@@ -172,13 +216,16 @@ const NOTIFICATIONS_WAITING_ON_THE_PERSON = [
   'elicitation_url_dialog'
 ].join('|')
 
-// CC§6
+const ASK_WAITS_UP_TO_AN_HOUR_S = 3600
+
+// CC§6 CC§14
 export function hookSettings(
   hookScript: string,
   regDir: string,
   tabId: string,
   statusLine?: StatusLineSetting,
-  quote: (s: string) => string = shq
+  quote: (s: string) => string = shq,
+  dialogs: 'wait-for-answer' | 'record-only' = 'wait-for-answer'
 ): Record<string, unknown> {
   const cmd = (event: string): string =>
     `${quote(hookScript)} ${quote(regDir)} ${quote(tabId)} ${event}`
@@ -187,11 +234,22 @@ export function hookSettings(
       SessionStart: [{ hooks: [{ type: 'command', command: cmd('start') }] }],
       SessionEnd: [{ hooks: [{ type: 'command', command: cmd('end') }] }],
       UserPromptSubmit: [{ hooks: [{ type: 'command', command: cmd('prompt') }] }],
+      PreCompact: [{ hooks: [{ type: 'command', command: cmd('compacting') }] }],
       Stop: [{ hooks: [{ type: 'command', command: cmd('stop') }] }],
       Notification: [
         {
           matcher: NOTIFICATIONS_WAITING_ON_THE_PERSON,
           hooks: [{ type: 'command', command: cmd('notify') }]
+        }
+      ],
+      PermissionRequest: [
+        {
+          matcher: '*',
+          hooks: [
+            dialogs === 'wait-for-answer'
+              ? { type: 'command', command: cmd('ask'), timeout: ASK_WAITS_UP_TO_AN_HOUR_S }
+              : { type: 'command', command: cmd('asked') }
+          ]
         }
       ]
     }
@@ -203,6 +261,26 @@ export function hookSettings(
     ]
   }
   return settings
+}
+
+function conductorMarker(regDir: string, tabId: string): string {
+  return path.join(regDir, `${tabId}.conductor`)
+}
+
+// CC§13
+export function writeConductorMarker(regDir: string, tabId: string, role: string): void {
+  const output = { hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: role } }
+  fs.writeFileSync(conductorMarker(regDir, tabId), JSON.stringify(output))
+}
+
+export function removeConductorMarker(regDir: string, tabId: string): void {
+  fs.rmSync(conductorMarker(regDir, tabId), { force: true })
+}
+
+export function markAnswerable(regDir: string, tabId: string, on: boolean): void {
+  const file = path.join(regDir, `${tabId}.answerable`)
+  if (on) fs.writeFileSync(file, '')
+  else fs.rmSync(file, { force: true })
 }
 
 // CC§6

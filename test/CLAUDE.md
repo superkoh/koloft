@@ -80,18 +80,32 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     typed line), `-hang` (never binds, and has no signal handler, so the SIGHUP that
     closes its tab kills it).
   - typed lines: `/write <path>` (a Write, Stop 2.5 s later — the file on disk proves
-    the transcript has it), `/busy` (a turn held open ~30 s), `/need-approval`,
+    the transcript has it), `/answer <text>` (`<text>` as the prompt, `Answer to: <text>`
+    as the reply's text, then Stop), `[Discord] <text>` (answered like `/answer` with the
+    whole line), `/long <n>` (a
+    reply of `line 1` … `line <n>`), `/ask <question>|<option>|…` and `/bash <command>`
+    (fire PermissionRequest without blocking, and reply `Picked: <answer>` / `Ran: <command>`
+    on allow, `Denied: <message>` on deny; a hook that answers nothing — every remote tab's —
+    leaves the dialog on screen: it fires a permission Notification and takes one key, a
+    digit picks that option and `1` runs the command), `/busy` (a turn held open ~30 s), `/need-approval`,
     `/scratch <name>`, `/move-to-background` (a start for a session that never writes a
     transcript, then `continued-in` to a new id whose Stop follows), `/open <target>`, `/open-later <target>` (fires once
     `<home>/go-open` exists), `/koloft <args>` (runs the agent command, then prints its
-    output and `koloft exit=<code>`), `/clear`, `/compact`, `/resume <id>`, `/exit` (also
+    output and `koloft exit=<code>`, with no hook and no transcript line), `/clear`,
+    `/compact` (PreCompact, a compact SessionStart, then the "Compacted" line Claude
+    writes), `/context` (the two records Claude writes for it), `/resume <id>`, `/exit` (also
     `exit` and `/quit`; in a `-w` worktree with uncommitted files it first asks keep or
     remove, and a typed `2` removes),
     `/enter-worktree <name>`, `/exit-worktree`, `/bg-work`, `/bg-reported`,
     `/bg-monitor`, `/bg-shell`. Any other line is a prompt answered by a Read and a
-    Stop.
+    Stop. Esc keystrokes are dropped from a typed line (its pty hands over whole lines,
+    so an Esc Koloft presses lands inside the next one).
   - every launch writes one line to `env.claudeCalls` (argv, cwd, session id,
     injected auth) before any delay.
+  - like the real one, it lists itself in `<home>/.claude/sessions/<pid>.json` with a
+    message socket (CC§11); each line written there is appended raw to
+    `<home>/fake-claude-peer.jsonl` and taken as a peer message (reply
+    `Peer said: <content>`, then Stop). A `--name` shows as its registry name.
   - its canned startup turn writes NOTES.md into its cwd, so a git fixture it runs in
     lists NOTES.md in the first commit's .gitignore.
   - its transcript lands a moment after it binds: before closing an app whose
@@ -128,6 +142,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   late, so drive working → waiting with `/busy`, not a short turn.
 - Codex sessions: the `codex` is fixtures/fake-codex.js, installed per case by
   `installCodex` (helpers/env.ts) (it sets `KOLOFT_CODEX_CMD` and `CODEX_HOME`).
+  Without it, `KOLOFT_CODEX_CMD` is a bare name, not a path, so Codex reads as not
+  installed whatever the developer's own login shell has.
 
 ### Keys, focus and the hidden window
 
@@ -143,7 +159,9 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `document.activeElement`, never `document.hasFocus()` (platform ledger §10). For the
   same reason no tab is ever "watched": every finished turn leaves an attention mark,
   seen only through `pendingAttention(page)`, and main's `__koloftOsNotifCount` must
-  stay 0.
+  stay 0. A case about what a focused user clears calls `pretendWindowFocused(app)`
+  (helpers/app.ts): main then reads its window as focused, and the click it makes
+  counts as "watching".
 - Never reach real OS UI or the developer's own state. No native dialog: stub and count
   it (restart-session `countConfirmationsInsteadOfShowingThem`). File pickers answer
   from a queue (`answerFileDialog`; an empty queue means "cancelled"); add workspaces
@@ -210,14 +228,14 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `src/preload/index.ts` for the renderer — so grep its name. All are inert in
   production.
 - Always on (set by `helpers/env.ts`): `KOLOFT_TEST_BACKGROUND`, `KOLOFT_DOM_RENDERER`,
-  `KOLOFT_CLAUDE_CMD`, `KOLOFT_KEYCHAIN_FILE`, `KOLOFT_SCRATCHPAD_BASE`,
+  `KOLOFT_CLAUDE_CMD`, `KOLOFT_CODEX_CMD`, `KOLOFT_KEYCHAIN_FILE`, `KOLOFT_SCRATCHPAD_BASE`,
   `KOLOFT_SUPPRESS_OS_OPEN`, `KOLOFT_EXTERNAL_OPENS_FILE`, `KOLOFT_DOWNLOAD_DIR`,
   `KOLOFT_CDP_LOG`, `KOLOFT_FILE_DIALOG_FILE`.
 - Per spec, read once at startup, so set in `env.launchEnv` before launching by hand:
   `KOLOFT_BROWSER_TAB_CAP`, `KOLOFT_BROWSER_GUEST_LIMIT`, `KOLOFT_GITHUB_FIXTURE`,
   `KOLOFT_EXT_INSTALL_DIRS`, `KOLOFT_TEST_NO_ADOPT`, `KOLOFT_TEST_CLAUDE_PROBE`,
-  `KOLOFT_CODEX_CMD`,
   `KOLOFT_PROBE_BASE_URL`, `KOLOFT_UPDATE_FIXTURE`, `KOLOFT_RELEASES_URL`,
+  `KOLOFT_DISCORD_API_URL` (set by `startFakeDiscord`, helpers/fakeDiscord.ts),
   `KOLOFT_CRON_BIND_DEADLINE_MS`, `KOLOFT_GIT_TIMEOUT_MS`, the session timing knobs
   (`KOLOFT_*_MS`, see Unit layer), and the fakes' `KOLOFT_FAKE_*` inputs. The files behind
   `KOLOFT_FILE_DIALOG_FILE` and `KOLOFT_UPDATE_FIXTURE` are read on every use, so a

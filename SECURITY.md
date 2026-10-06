@@ -61,6 +61,9 @@ Reports about these will be closed as working-as-intended:
   treated as vulnerabilities.
 - **An agent driving the in-app browser sees the pages you are signed into.** That is
   the feature. The switch in Settings ▸ Extensions is the control.
+- **A `file://` page open in the in-app browser can read any local file** with `fetch`,
+  XHR or an iframe, outside its own folder too. Koloft ships Electron's default
+  `GrantFileProtocolExtraPrivileges` fuse on, and keeps it that way on purpose.
 - **Settings ▸ Accounts ▸ Skip permission prompts** adds
   `--dangerously-skip-permissions` to the Claude launches Koloft injects an account into. That
   is what the switch is for, and it does what its name says. It never overrides a

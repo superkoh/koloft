@@ -18,10 +18,12 @@ import {
   type JSX,
   type MouseEvent
 } from 'react'
+import { createPortal } from 'react-dom'
 import {
   LuSettings,
   LuFolderPlus,
   LuPanelRight,
+  LuPanelLeft,
   LuAppWindow,
   LuCoffee,
   LuCircleArrowUp,
@@ -51,12 +53,17 @@ import { WORKBENCH_PANE_MIN } from './auxSurface'
 import {
   clampNotesHeight,
   currentWorkspace,
+  rowIdOfTab,
+  workspaceOfTab,
   DOCK_GUTTER_PX,
   mixesBackends,
   notesHeightFromDrag,
   paneWidthFromDrag,
+  PREVIEW_CARD_WIDTH_PX,
+  previewCardFits,
   relTime,
   selectionRoot,
+  sessionsNeedYou,
   welcomeQuietLine,
   welcomeTarget
 } from './sessionRows'
@@ -88,12 +95,17 @@ import { TerminalView } from './components/TerminalView'
 import { repairAllWebgl, scheduleWebglRepair } from './webglRepair'
 import { WorkspaceSidebar } from './components/WorkspaceSidebar'
 import { NotesIsland } from './components/NotesIsland'
+import { ConductorsIsland } from './components/ConductorsIsland'
+import { BindConductorDialog } from './components/BindConductorDialog'
+import { DiscordSetup } from './components/DiscordSetup'
+import { conductorNotesWorkspace, conductorOfTab } from './conductorRows'
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
 import { RestoreDialog } from './components/RestoreDialog'
 import { CronJobsDialog } from './components/CronJobsDialog'
 import { RemoteWorkspaceDialog } from './components/RemoteWorkspaceDialog'
 import { hostOf } from '@shared/remoteKey'
 import { WorkbenchPane } from './components/WorkbenchPane'
+import { WorkbenchPreview } from './components/WorkbenchPreview'
 import type { WorkbenchCommandSignal } from './components/workbenchCommands'
 import { ExtensionConfirm } from './components/ExtensionConfirm'
 import { tabLabel } from './components/workbenchTabs'
@@ -106,6 +118,7 @@ import { Onboarding } from './components/Onboarding'
 import { BrowserOverlay } from './components/BrowserOverlay'
 import { Hint } from './components/Hint'
 import { useHints } from './useHints'
+import { updateSettings } from './components/settings/useSettingsUpdate'
 
 const RECENT_MAX = 3
 
@@ -126,8 +139,10 @@ function focusedWorkbench(): HTMLElement | null {
   return (document.activeElement?.closest('.wb-panel[data-surface]') as HTMLElement | null) ?? null
 }
 
+const NOTES_ISLAND = '.isl-notes:not(.isl-conductors)'
+
 function caretInNote(): boolean {
-  return !!document.activeElement?.matches('.isl-notes .ed-area')
+  return !!document.activeElement?.matches(`${NOTES_ISLAND} .ed-area`)
 }
 
 // PLATFORM§10
@@ -243,6 +258,8 @@ export default function App(): JSX.Element {
   const notesHeight = useStore((s) => s.notesHeight)
   const setNotesHeight = useStore((s) => s.setNotesHeight)
   const notesFolded = useStore((s) => s.settings.notesFolded)
+  const sidebarHidden = useStore((s) => s.settings.sidebarHidden)
+  const callingCount = useStore((s) => (s.settings.sidebarHidden ? s.attention.length : 0))
   const selectedWs = useStore((s) => s.selectedWs)
   const [notesFocus, setNotesFocus] = useState(0)
   const [nbDragging, setNbDragging] = useState(false)
@@ -444,7 +461,7 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     const closeActive = (): void => {
-      if (document.activeElement?.closest('.isl-notes')) return
+      if (document.activeElement?.closest(NOTES_ISLAND)) return
       if (focusedWorkbench()) {
         dispatchPanel('browser-close-tab')
         return
@@ -573,17 +590,33 @@ export default function App(): JSX.Element {
     void window.api.settings.set({ notesFolded: folded })
   }, [])
 
+  const setSidebarHidden = useCallback(
+    (hidden: boolean): void => {
+      const st = useStore.getState()
+      if (st.settings.sidebarHidden === hidden) return
+      if (hidden && document.activeElement?.closest('.side')) returnFocus()
+      updateSettings({ sidebarHidden: hidden })
+    },
+    [returnFocus]
+  )
+  const toggleSidebar = useCallback(
+    (): void => setSidebarHidden(!useStore.getState().settings.sidebarHidden),
+    [setSidebarHidden]
+  )
+  useEffect(() => window.api.shortcuts.onToggleSidebar(toggleSidebar), [toggleSidebar])
+
   useEffect(() => {
     return window.api.shortcuts.onFocusNotes(() => {
-      if (!document.querySelector('.isl-notes')) return
+      if (!document.querySelector(NOTES_ISLAND)) return
       if (caretInNote()) {
         returnFocus()
         return
       }
+      setSidebarHidden(false)
       setNotesFolded(false)
       setNotesFocus((n) => n + 1)
     })
-  }, [returnFocus, setNotesFolded])
+  }, [returnFocus, setNotesFolded, setSidebarHidden])
 
   useEffect(() => {
     return window.api.shortcuts.onFindFiles(() => {
@@ -698,15 +731,17 @@ export default function App(): JSX.Element {
     const r = await window.api.workspace.add(picked)
     if (r.code === 'rejected-worktree') showToast('Pick the repo root instead')
     else if (r.code === 'not-found') showToast('That folder does not exist')
+    else if (r.code === 'added') setSidebarHidden(false)
     return r.code === 'added' || r.code === 'exists'
-  }, [showToast])
+  }, [showToast, setSidebarHidden])
   const addRemoteWorkspace = useCallback(
     async (key: string): Promise<void> => {
       setRemoteDialog(false)
       const r = await window.api.workspace.add(key)
       if (r.code === 'exists') showToast('Already added')
+      else if (r.code === 'added') setSidebarHidden(false)
     },
-    [showToast]
+    [showToast, setSidebarHidden]
   )
   useEffect(() => window.api.shortcuts.onAddWorkspace(() => void addWorkspace()), [addWorkspace])
   useEffect(() => {
@@ -779,16 +814,18 @@ export default function App(): JSX.Element {
   )
 
   useEffect(() => {
-    const offSpawned = window.api.terminal.onSpawned((t) =>
+    const offSpawned = window.api.terminal.onSpawned((t) => {
+      if (t.sessionId) rearmResume(t.sessionId)
       useStore.getState().addTabQuiet({
         id: t.id,
         kind: t.kind,
         title: t.title,
         cwd: t.cwd,
         alive: true,
-        jobId: t.jobId
+        jobId: t.jobId,
+        ...(t.sessionId ? { sessionId: t.sessionId, resuming: true } : {})
       })
-    )
+    })
     let pushed = false
     const offState = window.api.cron.onState((s) => {
       pushed = true
@@ -820,6 +857,13 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     return window.api.attention.onActivateTab((tabId) => useStore.getState().activateTab(tabId))
+  }, [])
+
+  useEffect(() => {
+    const set = useStore.getState().setAttention
+    const off = window.api.attention.onChanged(set)
+    void window.api.attention.list().then(set)
+    return off
   }, [])
 
   useEffect(() => {
@@ -904,10 +948,8 @@ export default function App(): JSX.Element {
   const lastWsPath = useStore((s) => s.lastWsPath)
   const setLastWsPath = useStore((s) => s.setLastWsPath)
   useEffect(() => {
-    if (!activeTabId) return
-    const sid = sessions.find((s) => s.tabId === activeTabId)?.sessionId
-    const ws = workspaceRows.find((w) => w.rows.some((r) => r.id === (sid ?? activeTabId)))
-    if (ws) setLastWsPath(ws.workspace.path)
+    const ws = activeTabId && workspaceOfTab(workspaceRows, sessions, activeTabId)
+    if (ws) setLastWsPath(ws)
   }, [activeTabId, sessions, workspaceRows, setLastWsPath])
   const welcomeWs = welcomeTarget(workspaceRows, lastWsPath)
   const welcomeActive = useStore((s) => s.welcomeActive)
@@ -919,12 +961,20 @@ export default function App(): JSX.Element {
     else if (rowsLoaded && noWorkspaces) setWelcomeActive(true)
   }, [rowsLoaded, onboardingSeen, noWorkspaces, setWelcomeActive])
   const updateOffer = useStore((s) => s.updateOffer)
-  const notesWs = currentWorkspace(
-    workspaceRows,
-    activeTabId ? (sessions.find((s) => s.tabId === activeTabId)?.sessionId ?? activeTabId) : null,
-    selectedWs,
-    lastWsPath
-  )
+  const conductorBindings = useStore((s) => s.settings.discord.bindings)
+  const conductorTabs = useStore((s) => s.conductorTabs)
+  const conductorsFolded = useStore((s) => s.settings.conductorsFolded)
+  const activeConductor = activeTabId
+    ? conductorOfTab(conductorBindings, sessions, conductorTabs, tabs, activeTabId)
+    : undefined
+  const notesWs = activeConductor
+    ? conductorNotesWorkspace(activeConductor)
+    : currentWorkspace(
+        workspaceRows,
+        activeTabId ? rowIdOfTab(sessions, activeTabId) : null,
+        selectedWs,
+        lastWsPath
+      )
   notesWsRef.current = notesWs
   const [notesFocusWs, setNotesFocusWs] = useState(notesWs)
   if (notesFocusWs !== notesWs) {
@@ -1052,6 +1102,16 @@ export default function App(): JSX.Element {
     return () => ro.disconnect()
   }, [panelMounted])
   const centerRef = useRef<HTMLDivElement>(null)
+  const [previewFits, setPreviewFits] = useState(false)
+  useEffect(() => {
+    const el = centerRef.current
+    if (!el) return undefined
+    const ro = new ResizeObserver(() => setPreviewFits(previewCardFits(el.offsetWidth)))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  const panelOpenKnown = useStore((s) => !!panelTab && !!s.workbenchFetched[panelTab])
+  const previewShown = panelOpenKnown && panelReady && !panelShown && previewFits
   const SIDEBAR_MIN = 200
   const startVResize = (e: MouseEvent): void => {
     e.preventDefault()
@@ -1111,9 +1171,9 @@ export default function App(): JSX.Element {
     setNbDragging(true)
     const box = dockRef.current?.getBoundingClientRect()
     const bottom = box?.bottom ?? window.innerHeight
-    const dockHeight = box?.height ?? window.innerHeight
+    const room = (box?.height ?? window.innerHeight) - conductorsHeight
     const onMove = (ev: globalThis.MouseEvent): void => {
-      setNotesHeight(notesHeightFromDrag(bottom, dockHeight, ev.clientY))
+      setNotesHeight(notesHeightFromDrag(bottom, room, ev.clientY))
     }
     const onUp = (): void => {
       document.removeEventListener('mousemove', onMove)
@@ -1132,12 +1192,24 @@ export default function App(): JSX.Element {
     measure()
     window.addEventListener('resize', measure)
     return () => window.removeEventListener('resize', measure)
+  }, [sidebarHidden])
+  const [conductorsHeight, setConductorsHeight] = useState(0)
+  useLayoutEffect(() => {
+    const island = dockRef.current?.querySelector('.isl-conductors')
+    setConductorsHeight(island ? island.getBoundingClientRect().height + DOCK_GUTTER_PX : 0)
+  }, [conductorBindings.length, conductorsFolded, sidebarHidden])
+  const notesRoom = dockHeight - conductorsHeight
+
+  const [osFullscreen, setOsFullscreen] = useState(false)
+  useEffect(() => {
+    void window.api.windowFullscreen.get().then(setOsFullscreen)
+    return window.api.windowFullscreen.onChange(setOsFullscreen)
   }, [])
 
   const hint = useHints()
 
   return (
-    <div className="app">
+    <div className={'app' + (sidebarHidden ? ' sb-off' : '') + (osFullscreen ? ' os-full' : '')}>
       {toast && (
         <div
           className={'toast' + (toastReveal ? ' link' : '')}
@@ -1231,6 +1303,7 @@ export default function App(): JSX.Element {
               <LuChevronRight size={15} />
             </button>
           )}
+          <ConductorsIsland />
           {notesWs && (
             <div
               className={'gutter-h' + (nbDragging ? ' active' : '') + (notesFolded ? ' idle' : '')}
@@ -1241,7 +1314,7 @@ export default function App(): JSX.Element {
           )}
           <NotesIsland
             wsPath={notesWs}
-            height={dockHeight ? clampNotesHeight(notesHeight, dockHeight) : notesHeight}
+            height={dockHeight ? clampNotesHeight(notesHeight, notesRoom) : notesHeight}
             folded={notesFolded}
             focusNonce={notesFocus}
             onToggleFold={() => {
@@ -1287,6 +1360,7 @@ export default function App(): JSX.Element {
       {(sbDragging || nbDragging || vDragging) && <div className="drag-overlay" />}
       <div className="center" ref={centerRef}>
         <div className="center-row">
+          {sidebarHidden && panelFull && <div className="wb-full-drag" />}
           <div className="term-col" style={{ display: panelFull ? 'none' : undefined }}>
             <div className="center-top">
               <WorldClock />
@@ -1491,6 +1565,14 @@ export default function App(): JSX.Element {
               )}
             </div>
           )}
+          {previewShown && panelTab && (
+            <WorkbenchPreview
+              tabId={panelTab}
+              root={fileTreeRoot}
+              session={landedSession ?? null}
+              width={PREVIEW_CARD_WIDTH_PX}
+            />
+          )}
 
           <div className="aux-icons">
             {(!landedTab || hasWorkbench(landedTab)) && (
@@ -1507,51 +1589,71 @@ export default function App(): JSX.Element {
           </div>
         </div>
       </div>
-      {newRequest && (
-        <NewSessionDialog
-          key={newRequest.id}
-          mode={newRequest.mode}
-          initialPath={newRequest.path}
-          rows={workspaceRows}
-          onClose={() => setNewRequest(null)}
-          onStart={startSession}
-          launchLock={newSessionLocked}
-        />
+      {/* PLATFORM§24 */}
+      <button
+        className={'aux-ico sb-toggle' + (sidebarHidden ? '' : ' on')}
+        onClick={toggleSidebar}
+        title={'Sidebar (⌘B)' + (callingCount ? ` — ${sessionsNeedYou(callingCount)}` : '')}
+        aria-label="Sidebar"
+        aria-pressed={!sidebarHidden}
+      >
+        <LuPanelLeft size={18} />
+        {callingCount > 0 && <span className="ws-tab-parked ws-unread-count">{callingCount}</span>}
+      </button>
+      {/* ADR-0013 */}
+      {createPortal(
+        <>
+          {newRequest && (
+            <NewSessionDialog
+              key={newRequest.id}
+              mode={newRequest.mode}
+              initialPath={newRequest.path}
+              rows={workspaceRows}
+              onClose={() => setNewRequest(null)}
+              onStart={startSession}
+              launchLock={newSessionLocked}
+            />
+          )}
+          {restoreWs && workspaceRows.some((w) => w.workspace.path === restoreWs) && (
+            <RestoreDialog
+              key={restoreWs}
+              wsPath={restoreWs}
+              onClose={() => setRestoreWs(null)}
+              onRestore={(row) => {
+                setRestoreWs(null)
+                void resumeSession({
+                  id: row.id,
+                  backendId: row.backendId,
+                  title: row.title,
+                  restore: true
+                })
+              }}
+            />
+          )}
+          {remoteDialog && (
+            <RemoteWorkspaceDialog
+              onAdd={(key) => void addRemoteWorkspace(key)}
+              onClose={() => setRemoteDialog(false)}
+            />
+          )}
+          {cronWs && (
+            <CronJobsDialog
+              key={cronWs.path}
+              wsPath={cronWs.path}
+              initialJobId={cronWs.jobId}
+              onClose={() => setCronWs(null)}
+            />
+          )}
+          <ResumeDialog />
+          <CloseSessionDialog />
+          <SettingsModal />
+          <DiscordSetup />
+          <BindConductorDialog />
+          <UpdateModal />
+          <UnsavedDialog />
+        </>,
+        document.body
       )}
-      {restoreWs && workspaceRows.some((w) => w.workspace.path === restoreWs) && (
-        <RestoreDialog
-          key={restoreWs}
-          wsPath={restoreWs}
-          onClose={() => setRestoreWs(null)}
-          onRestore={(row) => {
-            setRestoreWs(null)
-            void resumeSession({
-              id: row.id,
-              backendId: row.backendId,
-              title: row.title,
-              restore: true
-            })
-          }}
-        />
-      )}
-      {remoteDialog && (
-        <RemoteWorkspaceDialog
-          onAdd={(key) => void addRemoteWorkspace(key)}
-          onClose={() => setRemoteDialog(false)}
-        />
-      )}
-      {cronWs && (
-        <CronJobsDialog
-          key={cronWs.path}
-          wsPath={cronWs.path}
-          initialJobId={cronWs.jobId}
-          onClose={() => setCronWs(null)}
-        />
-      )}
-      <ResumeDialog />
-      <CloseSessionDialog />
-      <SettingsModal />
-      <UpdateModal />
       {overlay?.open && <BrowserOverlay url={overlay.url} onClose={closeOverlay} />}
       {extAsks[0] && (
         <ExtensionConfirm
@@ -1563,7 +1665,6 @@ export default function App(): JSX.Element {
           }}
         />
       )}
-      <UnsavedDialog />
       {hint && <Hint {...hint} />}
     </div>
   )

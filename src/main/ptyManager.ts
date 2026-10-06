@@ -6,6 +6,7 @@ import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { OscCwdParser } from './oscCwd'
 import { codexEnvironment } from './codexTransport'
 import { userShell } from './userShell'
+import { typeKeys } from './typeKeys'
 
 export interface PtyHandle {
   id: string
@@ -16,6 +17,8 @@ export interface PtyHandle {
   util: boolean
   resumeSessionId?: string
   ownerTabId?: string
+  resized?: (id: string, cols: number, rows: number) => void
+  startedAt: number
 }
 
 interface CreateArgs {
@@ -32,6 +35,7 @@ interface CreateArgs {
   util?: boolean
   resumeSessionId?: string
   ownerTabId?: string
+  resized?: (id: string, cols: number, rows: number) => void
   extraEnv?: {
     KOLOFT_FIRST_PROMPT?: string
     KOLOFT_SESSION_NAME?: string
@@ -61,6 +65,8 @@ export class PtyManager extends EventEmitter {
   makeHookSettings?: (tabId: string, allowKoloft: boolean) => string | undefined
 
   private ptys = new Map<string, PtyHandle>()
+  private readyWaiters = new Map<string, Set<() => void>>()
+  private typing = new Map<string, Promise<void>>()
   private counter = 0
   private instanceTag = process.pid.toString(36)
 
@@ -174,7 +180,9 @@ export class PtyManager extends EventEmitter {
       alive: true,
       util: args.util === true,
       resumeSessionId: args.resumeSessionId,
-      ownerTabId: args.ownerTabId
+      ownerTabId: args.ownerTabId,
+      resized: args.resized,
+      startedAt: Date.now()
     }
     this.ptys.set(id, handle)
 
@@ -192,6 +200,7 @@ export class PtyManager extends EventEmitter {
     proc.onExit(({ exitCode, signal }) => {
       handle.alive = false
       if (titlePoll) clearInterval(titlePoll)
+      this.wakeReady(id)
       this.emit('exit', { id, exitCode, signal })
     })
 
@@ -230,6 +239,48 @@ export class PtyManager extends EventEmitter {
     this.ptys.get(id)?.proc.write(data)
   }
 
+  exclusive<T>(id: string, typing: () => Promise<T>): Promise<T> {
+    const turn = (this.typing.get(id) ?? Promise.resolve()).then(typing)
+    const done = turn.then(
+      () => undefined,
+      () => undefined
+    )
+    this.typing.set(id, done)
+    void done.then(() => {
+      if (this.typing.get(id) === done) this.typing.delete(id)
+    })
+    return turn
+  }
+
+  type(id: string, keys: string[]): Promise<void> {
+    return this.exclusive(id, () => typeKeys((data) => this.write(id, data), keys))
+  }
+
+  whenReady(id: string, ready: () => boolean, ms: number): Promise<boolean> {
+    if (ready()) return Promise.resolve(true)
+    if (!this.get(id)?.alive || ms <= 0) return Promise.resolve(false)
+    return new Promise((resolve) => {
+      const waiters = this.readyWaiters.get(id) ?? new Set()
+      this.readyWaiters.set(id, waiters)
+      const settle = (result: boolean): void => {
+        clearTimeout(deadline)
+        waiters.delete(recheck)
+        if (waiters.size === 0) this.readyWaiters.delete(id)
+        resolve(result)
+      }
+      const recheck = (): void => {
+        if (ready()) settle(true)
+        else if (!this.get(id)?.alive) settle(false)
+      }
+      const deadline = setTimeout(() => settle(ready()), ms)
+      waiters.add(recheck)
+    })
+  }
+
+  wakeReady(id: string): void {
+    for (const recheck of [...(this.readyWaiters.get(id) ?? [])]) recheck()
+  }
+
   pause(id: string): void {
     const h = this.ptys.get(id)
     if (h && h.alive) {
@@ -254,6 +305,7 @@ export class PtyManager extends EventEmitter {
       try {
         h.proc.resize(cols, rows)
       } catch {}
+      h.resized?.(id, cols, rows)
     }
   }
 

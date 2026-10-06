@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { SessionBackends, type SessionBackend } from '../../src/main/sessionBackends'
+import { sessionEventFromHook } from '../../src/main/sessionTracker'
 import {
   capabilitiesFor,
   effectiveBackend,
@@ -31,7 +32,9 @@ function stubBackend(
     observe: () => {},
     occupantOf: () => null,
     accountUsable: () => true,
-    trustsFolder: () => true
+    trustsFolder: () => true,
+    turns: async () => [],
+    permissionClass: () => 'prompting' as const
   } satisfies SessionBackend
 }
 
@@ -40,7 +43,9 @@ const lifecycle = () => ({
   bound: vi.fn(),
   exited: vi.fn(),
   clearAttention: vi.fn(),
-  open: vi.fn()
+  open: vi.fn(),
+  turnEnded: vi.fn(),
+  asked: vi.fn()
 })
 
 const row = (id: string, mtime: number): BackendSessionRow => ({
@@ -95,6 +100,29 @@ describe('session backend boundary', () => {
     ])
   })
 
+  it('marks a conductor’s session, by its tab or its session id, with the conductor it belongs to, and never offers a conductor’s session from history', async () => {
+    const registry = new SessionBackends(lifecycle())
+    registry.conductorOf = (id) => ({ 'conductor-tab': 'b1', 'old-conductor-session': 'b2' })[id]
+    const session = (tabId: string, sessionId: string): BackendSessionInfo => ({
+      tabId,
+      sessionId,
+      title: tabId,
+      cwd: '/repo',
+      treeRoot: '/repo',
+      alive: true,
+      updatedAt: 1
+    })
+    registry.register(
+      stubBackend('claude', async () => [row('old-conductor-session', 1), row('plain', 2)], [
+        session('conductor-tab', 'new'),
+        session('t2', 'old-conductor-session'),
+        session('t3', 'x')
+      ])
+    )
+    expect(registry.list().map((s) => s.conductor)).toEqual(['b1', 'b2', undefined])
+    expect((await registry.historyRows('/repo', () => {})).map((r) => r.id)).toEqual(['plain'])
+  })
+
   it('fails the history read when no method could read anything', async () => {
     const registry = new SessionBackends(lifecycle())
     registry.register(
@@ -146,16 +174,34 @@ describe('session lifecycle tap (one place turns a bind or an exit into attentio
       expect(sink.exited).not.toHaveBeenCalled()
 
       registry.observe('tab', { type: 'bound', key: 'next' })
-      registry.observe('tab', { type: 'exited', clean: false, title: 'after bind' })
-      expect(sink.exited).toHaveBeenLastCalledWith('tab', 'after bind')
+      registry.observe('tab', {
+        type: 'exited',
+        clean: false,
+        title: 'after bind',
+        sessionId: 'next-sid'
+      })
+      expect(sink.exited).toHaveBeenLastCalledWith('tab', {
+        title: 'after bind',
+        sessionId: 'next-sid'
+      })
 
       registry.observe('other', { type: 'exited', clean: true })
       vi.advanceTimersByTime(30_001)
       registry.observe('other', { type: 'exited', clean: false, title: 'much later' })
-      expect(sink.exited).toHaveBeenLastCalledWith('other', 'much later')
+      expect(sink.exited).toHaveBeenLastCalledWith('other', { title: 'much later' })
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  // CC§14
+  it('a dialog recorded in the status log of a session on another machine reaches the lifecycle with its whole question', () => {
+    const sink = lifecycle()
+    const registry = new SessionBackends(sink)
+    const ask = { tool_name: 'Bash', tool_input: { command: 'make' } }
+    registry.observe('tab', sessionEventFromHook('ask', undefined, undefined, ask)!)
+    expect(sink.asked).toHaveBeenCalledWith('tab', ask)
+    expect(sessionEventFromHook('ask', undefined, undefined, undefined)).toBeNull()
   })
 })
 

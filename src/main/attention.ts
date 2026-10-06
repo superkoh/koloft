@@ -1,4 +1,4 @@
-import type { AttentionEvent, AttentionKind, SessionStatus } from '@shared/types'
+import type { AttentionEvent, AttentionKind, AttentionSubject, SessionStatus } from '@shared/types'
 
 export interface AttentionContext {
   windowFocused: boolean
@@ -7,35 +7,56 @@ export interface AttentionContext {
 
 export const RECONSIDER_WINDOW_MS = 3000
 
+export type SavedMark = AttentionEvent & { sessionId: string }
+
+export function edgeAttention(
+  prev: SessionStatus | undefined,
+  next: SessionStatus
+): 'approval' | 'turn-done' | null {
+  if (next === 'approval') return 'approval'
+  if (next === 'waiting' && (prev === 'working' || prev === 'approval')) return 'turn-done'
+  return null
+}
+
 export class AttentionTracker {
   private pending = new Map<string, AttentionEvent>()
   private recentlySuppressed = new Map<string, AttentionEvent>()
 
   constructor(
-    private readonly onChange: (pending: AttentionEvent[], event: AttentionEvent | null) => void
-  ) {}
+    private readonly onChange: (pending: AttentionEvent[], event: AttentionEvent | null) => void,
+    lastRun: SavedMark[] = []
+  ) {
+    for (const { tabId, kind, at, title, sessionId } of lastRun) {
+      const deadKind = kind === 'approval' ? 'turn-done' : kind
+      this.pending.set(tabId, { tabId, kind: deadKind, at, title, sessionId })
+    }
+  }
+
+  bound(tabId: string, sessionId: string, ctx: AttentionContext): void {
+    const carried = this.list().find((e) => e.sessionId === sessionId)
+    this.clearSession(sessionId)
+    if (carried) this.raise(tabId, 'turn-done', ctx, { title: carried.title, sessionId }, true)
+  }
 
   onStatusChange(
     tabId: string,
     prev: SessionStatus | undefined,
     next: SessionStatus,
     ctx: AttentionContext,
-    title?: string
+    subject: AttentionSubject = {}
   ): void {
     if (next === 'working') {
       this.recentlySuppressed.delete(tabId)
       this.clear(tabId)
       return
     }
-    let kind: AttentionKind | null = null
-    if (next === 'approval') kind = 'approval'
-    else if (next === 'waiting' && (prev === 'working' || prev === 'approval')) kind = 'turn-done'
+    const kind = edgeAttention(prev, next)
     if (!kind) return
-    this.raise(tabId, kind, ctx, title)
+    this.raise(tabId, kind, ctx, subject)
   }
 
-  onExited(tabId: string, ctx: AttentionContext, title?: string): void {
-    this.raise(tabId, 'exited', ctx, title)
+  onExited(tabId: string, ctx: AttentionContext, subject: AttentionSubject = {}): void {
+    this.raise(tabId, 'exited', ctx, subject)
   }
 
   clear(tabId: string): void {
@@ -43,12 +64,18 @@ export class AttentionTracker {
     if (this.pending.delete(tabId)) this.onChange(this.list(), null)
   }
 
+  clearSession(sessionId: string): void {
+    const stale = this.list().filter((e) => e.sessionId === sessionId)
+    for (const e of stale) this.pending.delete(e.tabId)
+    if (stale.length) this.onChange(this.list(), null)
+  }
+
   reconsider(tabId: string, ctx: AttentionContext, maxAgeMs = RECONSIDER_WINDOW_MS): void {
     const ev = this.recentlySuppressed.get(tabId)
     if (!ev) return
     this.recentlySuppressed.delete(tabId)
     if (Date.now() - ev.at > maxAgeMs) return
-    this.raise(tabId, ev.kind, ctx, ev.title, true)
+    this.raise(tabId, ev.kind, ctx, ev, true)
   }
 
   list(): AttentionEvent[] {
@@ -59,10 +86,10 @@ export class AttentionTracker {
     tabId: string,
     kind: AttentionKind,
     ctx: AttentionContext,
-    title?: string,
+    subject: AttentionSubject,
     resurrected?: boolean
   ): void {
-    const event: AttentionEvent = { tabId, kind, at: Date.now(), title, resurrected }
+    const event: AttentionEvent = { ...subject, tabId, kind, at: Date.now(), resurrected }
     if (ctx.windowFocused && ctx.activeTabId === tabId) {
       this.recentlySuppressed.set(tabId, event)
       return

@@ -10,6 +10,7 @@ import {
   launchWithRemote,
   liveTmuxSessions,
   REMOTE_WS_NAME,
+  remoteCommandText,
   sshCalls,
   sshCommands
 } from './helpers/remote'
@@ -148,7 +149,7 @@ test.describe('who ends the claude on the other machine: every way of ending a r
     }
   })
 
-  test('E-RW-20: a remote claude that dies without an end report raises the “exited” mark once the machine’s tmux list has lost it', async ({
+  test('E-RW-20: a remote claude that dies without an end report raises the “exited” mark, drawn as a red dot on its row, once the machine’s tmux list has lost it', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -166,6 +167,7 @@ test.describe('who ends the claude on the other machine: every way of ending a r
       await expect
         .poll(async () => (await pendingAttention(page)).map((a) => a.kind), { timeout: 60_000 })
         .toContain('exited')
+      await expect(wsRows(page, REMOTE_WS_NAME).locator('.ws-tab-unread')).toHaveCount(1)
       expect(killLines(env, first.sessionId)).toEqual([])
     } finally {
       await quitAndClose(app)
@@ -189,9 +191,7 @@ test.describe('who ends the claude on the other machine: every way of ending a r
             sshCalls(env).filter(
               (c) =>
                 c.phase === 'end' &&
-                (c.argv[c.argv.length - 1] ?? '').includes(
-                  `kill-session -t ${tmuxName(first.sessionId)}`
-                )
+                remoteCommandText(c.argv).includes(`kill-session -t ${tmuxName(first.sessionId)}`)
             ).length,
           { timeout: 30_000 }
         )
@@ -199,7 +199,7 @@ test.describe('who ends the claude on the other machine: every way of ending a r
       const kills = sshCalls(env).filter(
         (c) =>
           c.phase === 'end' &&
-          (c.argv[c.argv.length - 1] ?? '').includes(`kill-session -t ${tmuxName(first.sessionId)}`)
+          remoteCommandText(c.argv).includes(`kill-session -t ${tmuxName(first.sessionId)}`)
       )
       expect(kills.every((k) => k.exit === 255)).toBe(true)
 

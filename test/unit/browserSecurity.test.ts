@@ -259,15 +259,13 @@ describe('enforceGuestAttach (SEC-5/SEC-6: what a <webview> may attach as)', () 
     const prefs = {
       nodeIntegration: true,
       contextIsolation: false,
-      webSecurity: false,
-      allowFileAccessFromFileUrls: true
+      webSecurity: false
     }
     expect(enforceGuestAttach(prefs, browserParams(), HOST_PRELOAD)).toBe(true)
     expect(prefs).toEqual({
       nodeIntegration: false,
       contextIsolation: true,
       webSecurity: true,
-      allowFileAccessFromFileUrls: false,
       autoplayPolicy: 'document-user-activation-required',
       disablePopups: false
     })

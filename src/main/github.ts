@@ -1,6 +1,6 @@
 import { execFile as execFileCb } from 'child_process'
 import { promisify } from 'util'
-import type { GithubInfo, GithubTarget } from '@shared/types'
+import type { GithubInfo, GithubTarget, WorkspaceGithub } from '@shared/types'
 import type { GithubRepo } from '@shared/githubUrl'
 import {
   loginUrlFor,
@@ -15,6 +15,44 @@ import { credentialGuardEnv, FETCH_TIMEOUT_MS, LOCAL_TIMEOUT_MS } from './gitFre
 const execFile = promisify(execFileCb)
 const TTL_MS = 5 * 60_000
 const MAX_BUFFER = 16 * 1024 * 1024
+const OPEN_COUNTS_QUERY =
+  'query($owner:String!,$name:String!){repository(owner:$owner,name:$name){issues(states:OPEN){totalCount} pullRequests(states:OPEN){totalCount}}}'
+
+export type OpenCounts = Pick<WorkspaceGithub, 'issues' | 'prs'>
+
+export function parseOpenCounts(stdout: string): OpenCounts | null {
+  try {
+    const r = JSON.parse(stdout)?.data?.repository
+    const issues = r?.issues?.totalCount
+    const prs = r?.pullRequests?.totalCount
+    return Number.isInteger(issues) && Number.isInteger(prs) ? { issues, prs } : null
+  } catch {
+    return null
+  }
+}
+
+// PLATFORM§32
+export async function ghOpenCounts(repo: GithubRepo): Promise<OpenCounts | null> {
+  try {
+    const { stdout } = await execFile(
+      'gh',
+      [
+        'api',
+        'graphql',
+        '-f',
+        `owner=${repo.owner}`,
+        '-f',
+        `name=${repo.repo}`,
+        '-f',
+        `query=${OPEN_COUNTS_QUERY}`
+      ],
+      { timeout: FETCH_TIMEOUT_MS }
+    )
+    return parseOpenCounts(stdout)
+  } catch {
+    return null
+  }
+}
 
 interface Entry {
   at: number
@@ -33,7 +71,14 @@ export interface GithubAnswer {
 }
 
 export interface GithubFixture {
-  [root: string]: { owner: string; repo: string; branch?: string | null; pr?: number | null } | null
+  [root: string]: {
+    owner: string
+    repo: string
+    branch?: string | null
+    pr?: number | null
+    issues?: number
+    prs?: number
+  } | null
 }
 
 export function parseGithubFixture(raw: string | undefined): GithubFixture | null {
@@ -51,6 +96,7 @@ export interface GithubOptions {
   fixture?: GithubFixture | null
   gitBin?: string
   git?: (root: string, args: string[], network: boolean) => Promise<string | null>
+  openCounts?: (repo: GithubRepo) => Promise<OpenCounts | null>
   now?: () => number
 }
 
@@ -60,6 +106,7 @@ export class GithubLookup {
   private repos = new Map<string, { at: number; repo: GithubRepo | null }>()
   private inflight = new Map<string, Promise<Entry>>()
   private newest = new Map<string, number>()
+  private counted = new Map<string, { at: number; counts: OpenCounts | null }>()
   private signedIn: () => Promise<boolean>
   private fixture: GithubFixture | null
   private gitBin: string
@@ -93,7 +140,20 @@ export class GithubLookup {
     }
   }
 
-  private async local(root: string, force: boolean): Promise<Local | null> {
+  async openCounts(root: string): Promise<WorkspaceGithub | null> {
+    if (this.fixture) return fixtureCounts(this.fixture, root)
+    const repo = await this.repoOf(root, false)
+    if (!repo || !this.opts.openCounts) return null
+    const key = `${repo.owner}/${repo.repo}`
+    let known = this.counted.get(key)
+    if (!known || this.now() - known.at >= TTL_MS) {
+      known = { at: this.now(), counts: await this.opts.openCounts(repo) }
+      this.counted.set(key, known)
+    }
+    return known.counts && { repo: key, ...known.counts }
+  }
+
+  private async repoOf(root: string, force: boolean): Promise<GithubRepo | null> {
     let known = this.repos.get(root)
     if (force || !known || this.now() - known.at >= TTL_MS) {
       const out = await this.git(root, ['config', '--get-regexp', '^remote\\..*\\.url'])
@@ -101,9 +161,14 @@ export class GithubLookup {
       known = { at: this.now(), repo: url ? parseGithubRemote(url) : null }
       this.repos.set(root, known)
     }
-    if (!known.repo) return null
+    return known.repo
+  }
+
+  private async local(root: string, force: boolean): Promise<Local | null> {
+    const repo = await this.repoOf(root, force)
+    if (!repo) return null
     const head = (await this.git(root, ['rev-parse', '--abbrev-ref', 'HEAD']))?.trim() ?? ''
-    return { repo: known.repo, branch: head && head !== 'HEAD' ? head : null }
+    return { repo, branch: head && head !== 'HEAD' ? head : null }
   }
 
   async target(root: string, what: GithubTarget): Promise<string | null> {
@@ -168,6 +233,12 @@ function prOf(
   branch: string | null
 ): Pick<GithubInfo, 'pr' | 'pending' | 'failed'> {
   return { pr: (e && branch && e.prs.get(branch)) || null, pending: false, failed: !!e?.failed }
+}
+
+function fixtureCounts(fx: GithubFixture, root: string): WorkspaceGithub | null {
+  const f = fx[root]
+  if (!f || f.issues === undefined || f.prs === undefined) return null
+  return { repo: `${f.owner}/${f.repo}`, issues: f.issues, prs: f.prs }
 }
 
 function fixtureInfo(fx: GithubFixture, root: string): GithubInfo | null {

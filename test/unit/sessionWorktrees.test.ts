@@ -103,11 +103,20 @@ describe('SessionWorktrees', () => {
     expect(store.listResources()).toHaveLength(2)
   })
 
-  it('refuses branch drift and locked missing worktrees without modifying them', async () => {
+  it('recovers a worktree that moved to another branch in place, and remembers that branch for later rebuilds', async () => {
     const resource = await worktrees.create(repo, 'one')
-    git('-C', resource.worktreePath, 'switch', '-c', 'changed-branch')
-    await expect(worktrees.rebuild(resource.id)).rejects.toThrow('branch has changed')
-    expect(git('-C', resource.worktreePath, 'branch', '--show-current')).toBe('changed-branch')
+    git('-C', resource.worktreePath, 'switch', '-c', 'pr-branch')
+    const recovered = await worktrees.rebuild(resource.id)
+    expect(recovered.id).toBe(resource.id)
+    expect(recovered.worktreeBranch).toBe('pr-branch')
+    expect(git('-C', resource.worktreePath, 'branch', '--show-current')).toBe('pr-branch')
+    fs.rmSync(resource.worktreePath, { recursive: true })
+    const rebuilt = await worktrees.rebuild(resource.id)
+    expect(git('-C', rebuilt.worktreePath, 'branch', '--show-current')).toBe('pr-branch')
+  })
+
+  it('refuses a locked missing worktree without modifying it', async () => {
+    const resource = await worktrees.create(repo, 'one')
     git('worktree', 'lock', resource.worktreePath)
     fs.rmSync(resource.worktreePath, { recursive: true })
     await expect(worktrees.rebuild(resource.id)).rejects.toThrow('locked')

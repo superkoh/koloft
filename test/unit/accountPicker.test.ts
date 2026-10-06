@@ -3,8 +3,10 @@ import type { AccountMeta, UsageSnapshot } from '../../src/shared/types'
 import {
   AccountPicker,
   FABLE_EXHAUSTED_LINE,
+  liveSessionsPerAccount,
   PICK_BUDGET_MS,
   PROBE_TIMEOUT_MS,
+  type LaunchedSession,
   type PickDeps
 } from '../../src/main/accountPicker'
 import type { ProbeResult } from '../../src/main/usageProbe'
@@ -63,6 +65,7 @@ function makeHarness(
   const probeCalls: string[] = []
   const secretOf = new Map(accounts.map((a) => [`${a.kind}:${a.name}`, `tok-${a.name}`]))
   let clock = NOW_MS
+  const sessions: LaunchedSession[] = []
   const deps: PickDeps = {
     listAccounts: () => accounts,
     multiAccountOn: () => opts?.multiAccount !== false,
@@ -75,6 +78,8 @@ function makeHarness(
       return r.ok && r.usage ? { ...r, usage: { ...r.usage, at: clock } } : r
     },
     onProbeOutcome: () => {},
+    launchedSessions: () => sessions,
+    recordPick: (tabId, account) => sessions.push({ tabId, account }),
     now: () => clock
   }
   return {
@@ -308,6 +313,57 @@ describe('U4 · fable-host routing (rev2 D17/D19)', () => {
     const first = await h.picker.pick()
     const second = await h.picker.pick()
     expect([first.account, second.account].sort()).toEqual(['a', 'b'])
+  })
+})
+
+describe('U4 · sessions already running on an account', () => {
+  const DAY_S = 86_400
+
+  function evenPool(names: string[]): Harness {
+    const h = makeHarness(names.map((name) => meta({ name })))
+    names.forEach((name, i) =>
+      h.setProbe(name, {
+        ok: true,
+        usage: usage({ u5: 0.3, u7: 0.4, r5: NOW_S + 36_000, r7: NOW_S + (i + 1) * DAY_S })
+      })
+    )
+    return h
+  }
+
+  it('a burst of launches spreads over even accounts instead of piling onto the one whose week resets first', async () => {
+    const h = evenPool(['a', 'b', 'c', 'd'])
+    const picks: (string | null)[] = []
+    for (let i = 0; i < 8; i++) picks.push((await h.picker.pick(`tab-${i}`)).account)
+    expect(picks.sort()).toEqual(['a', 'a', 'b', 'b', 'c', 'c', 'd', 'd'])
+  })
+
+  it('launches that all wait on the first probe round still spread', async () => {
+    const h = evenPool(['a', 'b'])
+    const [first, second] = await Promise.all([h.picker.pick('tab-1'), h.picker.pick('tab-2')])
+    expect([first.account, second.account].sort()).toEqual(['a', 'b'])
+  })
+
+  it('a clearly less used account keeps taking launches while it holds a session', async () => {
+    const h = makeHarness([meta({ name: 'light' }), meta({ name: 'heavy' })])
+    h.setProbe('light', { ok: true, usage: usage({ u5: 0.1, u7: 0.2 }) })
+    h.setProbe('heavy', { ok: true, usage: usage({ u5: 0.6, u7: 0.6 }) })
+    expect((await h.picker.pick('tab-1')).account).toBe('light')
+    expect((await h.picker.pick('tab-2')).account).toBe('light')
+  })
+
+  it('counts a session by account name in any case, and skips the launching tab and idle sessions', () => {
+    const counts = liveSessionsPerAccount(
+      [
+        { tabId: 'just-launched', account: 'Koh' },
+        { tabId: 'resting', account: 'koh', status: 'waiting' },
+        { tabId: 'mid-turn', account: 'koh', status: 'working' },
+        { tabId: 'idle', account: 'koh', status: 'idle' },
+        { tabId: 'self', account: 'koh' },
+        { tabId: 'no-account' }
+      ],
+      'self'
+    )
+    expect([...counts]).toEqual([['koh', 3]])
   })
 })
 

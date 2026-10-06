@@ -44,8 +44,6 @@ import type {
   BrowserPermissionRefusal,
   EditFingerprint,
   GitFileStatus,
-  GitNumstatMap,
-  GitStatusMap,
   GithubInfo,
   GithubTarget,
   SessionInfo
@@ -66,6 +64,7 @@ import {
 import { FindBar } from './FindBar'
 import { NO_FOCUS_SIGNAL, TerminalView } from './TerminalView'
 import { FilesBar, FilesBody, useFilesController } from './FilesView'
+import { useGitChangeSet, useWatchlessRefresh } from './gitChangeSet'
 import { GIT_LETTER, relOf, splitPath } from './filesModel'
 import { ArtifactPane, NO_CAPS, sameCaps, type ArtifactCaps } from './ArtifactPane'
 import { EditPane, editRefusal, useEditProbe } from './EditPane'
@@ -80,7 +79,8 @@ import {
   setEditingActive,
   subscribeDirty
 } from '../editRegistry'
-import { loadHistory, remember, saveHistory } from '../browserHistory'
+import { historyKey, loadHistory, remember, saveHistory } from '../browserHistory'
+import { workspaceOfTab } from '../sessionRows'
 import { boundSessionId, useStore } from '../store'
 import {
   FILES_TAB_ID,
@@ -189,19 +189,6 @@ function guestUrl(el: GuestElement | undefined): string {
 
 function isCertFailure(fail: GuestFailure): boolean {
   return /^ERR_(CERT|SSL)/.test(fail.description)
-}
-
-function sameMap<V>(
-  a: Record<string, V>,
-  b: Record<string, V>,
-  eq: (x: V, y: V) => boolean
-): boolean {
-  const keys = Object.keys(a)
-  if (keys.length !== Object.keys(b).length) return false
-  for (const k of keys) {
-    if (!(k in b) || !eq(a[k], b[k])) return false
-  }
-  return true
 }
 
 export interface WorkbenchPaneProps {
@@ -347,14 +334,15 @@ export function WorkbenchPane({
   const [editFocus, setEditFocus] = useState<Record<string, number>>({})
   const [, bumpEdit] = useReducer((n: number) => n + 1, 0)
   useEffect(() => subscribeDirty(bumpEdit), [])
-  const [git, setGit] = useState<GitStatusMap>({})
-  const [numstat, setNumstat] = useState<GitNumstatMap>({})
-  const [base, setBase] = useState<string | null | undefined>(undefined)
-  const [rootMissing, setRootMissing] = useState(false)
-  const [watchDead, setWatchDead] = useState(false)
 
   const files = useFilesController(ownerTab, treeRoot)
   const refreshFiles = files.refresh
+  const { git, numstat, base, rootMissing, watchDead, reread } = useGitChangeSet(
+    treeRoot,
+    visible,
+    files.baseChoice,
+    files.refreshNonce
+  )
 
   const addressRef = useRef<HTMLInputElement>(null)
   const findInputRef = useRef<HTMLInputElement>(null)
@@ -403,6 +391,10 @@ export function WorkbenchPane({
   const pinnedIds = useMemo(() => new Set(Object.values(pinned).flat()), [pinned])
   const pinnedRef = useRef(pinnedIds)
   pinnedRef.current = pinnedIds
+  const countedUrl = useRef(new Map<string, string>())
+  const panelWorkspace = useStore((s) =>
+    ownerTab ? workspaceOfTab(s.workspaceRows, s.sessions, ownerTab) : null
+  )
 
   // PLATFORM§9
   const [staged, setStaged] = useState<ReadonlySet<string>>(() => new Set())
@@ -1354,87 +1346,11 @@ export function WorkbenchPane({
     return () => el.removeEventListener('found-in-page', onFound)
   }, [findOpen, activeTab?.id, live])
 
-  const baseChoice = files.baseChoice
-  const refreshNonce = files.refreshNonce
-  useEffect(() => {
-    setGit({})
-    setNumstat({})
-    setBase(undefined)
-    setRootMissing(false)
-    setWatchDead(false)
-  }, [treeRoot])
-
-  useEffect(() => {
-    if (visible) return
-    setGit({})
-    setNumstat({})
-    setBase(undefined)
-  }, [visible])
-
-  useEffect(() => {
-    if (!visible || !treeRoot) return
-    const root = treeRoot
-    let seq = 0
-    const fetchGit = (): void => {
-      const mine = ++seq
-      const resolve: Promise<string | null> =
-        baseChoice === 'head' ? Promise.resolve('HEAD') : window.api.fs.diffBase(root)
-      resolve
-        .catch(() => null)
-        .then((b) => {
-          if (mine !== seq) return undefined
-          setBase(b)
-          const arg = b ?? undefined
-          return Promise.all([
-            window.api.fs.gitStatus(root, arg),
-            window.api.fs.gitNumstat(root, arg),
-            window.api.fs.dirExists(root).then((ok) => !ok)
-          ])
-        })
-        .then((r) => {
-          if (!r || mine !== seq) return
-          const [g, ns, missing] = r
-          setGit((prev) => (sameMap(prev, g, (x, y) => x === y) ? prev : g))
-          setNumstat((prev) =>
-            sameMap(prev, ns, (x, y) => x.added === y.added && x.removed === y.removed) ? prev : ns
-          )
-          setRootMissing(missing)
-        })
-        .catch(() => {
-          if (mine !== seq) return
-        })
-    }
-    fetchGit()
-    let watching = true
-    window.api.fs.watchDir(root).then((live) => {
-      if (watching) setWatchDead(!live)
-    })
-    const off = window.api.fs.onDirChange((changed) => {
-      if (changed === root) fetchGit()
-    })
-    return () => {
-      seq++
-      watching = false
-      off()
-      window.api.fs.unwatchDir(root)
-    }
-  }, [visible, treeRoot, baseChoice, refreshNonce])
-
-  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const refresh = files.refresh
-  useEffect(() => {
-    if (!watchDead || !visible || refreshTimer.current) return
-    refreshTimer.current = setTimeout(() => {
-      refreshTimer.current = null
-      refresh()
-    }, WATCHLESS_REFRESH_THROTTLE_MS)
-  }, [watchDead, visible, session?.updatedAt, refresh])
-  useEffect(
-    () => () => {
-      if (refreshTimer.current) clearTimeout(refreshTimer.current)
-      refreshTimer.current = null
-    },
-    [watchDead, visible, treeRoot]
+  useWatchlessRefresh(
+    watchDead && visible,
+    session?.updatedAt,
+    WATCHLESS_REFRESH_THROTTLE_MS,
+    reread
   )
 
   const reportCaps = useCallback((tabId: string, next: ArtifactCaps): void => {
@@ -1508,7 +1424,17 @@ export function WorkbenchPane({
     [ownerTab, onUpdate]
   )
 
-  const recordVisit = (tab: WorkbenchTab, url: string, title?: string): void => {
+  const recordVisit = (owner: string, tab: WorkbenchTab, url: string): void => {
+    if (pinnedRef.current.has(tab.id)) return
+    const key = historyKey(url)
+    if (countedUrl.current.get(tab.id) === key) return
+    countedUrl.current.set(tab.id, key)
+    const { workspaceRows, sessions } = useStore.getState()
+    const ws = workspaceOfTab(workspaceRows, sessions, owner) ?? undefined
+    saveHistory(remember(loadHistory(), url, '', ws))
+  }
+
+  const recordTitle = (tab: WorkbenchTab, url: string, title: string): void => {
     if (!pinnedRef.current.has(tab.id)) saveHistory(remember(loadHistory(), url, title))
   }
 
@@ -1519,6 +1445,7 @@ export function WorkbenchPane({
         return
       }
       els.current.delete(tab.id)
+      countedUrl.current.delete(tab.id)
       setAudio((prev) => {
         if (!(tab.id in prev)) return prev
         const rest = { ...prev }
@@ -1558,12 +1485,12 @@ export function WorkbenchPane({
         ...history(guestOf(tab.id))
       })
       onUpdate(owner, (prev) => navigateTab(prev, tab.id, url))
-      recordVisit(tab, url)
+      recordVisit(owner, tab, url)
     },
     onTitle: (title: string): void => {
       onUpdate(owner, (prev) => retitleTab(prev, tab.id, title))
       const url = guestUrl(guestOf(tab.id))
-      if (url) recordVisit(tab, url, title)
+      if (url) recordTitle(tab, url, title)
     },
     onFail: (fail: GuestFailure): void => {
       patchRuntime(tab.id, { fail, loading: false })
@@ -1965,6 +1892,7 @@ export function WorkbenchPane({
       {activeKind === 'web' ? (
         <BrowserAddressBar
           url={activeTab?.url ?? ''}
+          workspace={panelWorkspace}
           loading={activeRuntime.loading}
           canBack={activeRuntime.canBack}
           canForward={activeRuntime.canForward}

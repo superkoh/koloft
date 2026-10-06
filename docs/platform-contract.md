@@ -21,6 +21,14 @@ method. A recheck adds its date, version and command to the bullet.
 - No locale is set either, so a shell started from the app runs in the C locale: CJK
   text is garbled and wcwidth counts a wide character as 1 cell, which breaks the
   layout of Claude Code's TUI (text user interface).
+- **`SSH_AUTH_SOCK` is launchd's own agent**, not one a shell rc file exports (gpg-agent,
+  a YubiKey, 1Password set through the environment). An `ssh` the app runs itself sees
+  neither that agent nor a Homebrew tool a `ProxyCommand` calls: ssh runs the
+  `ProxyCommand` through `$SHELL -c` with the app's PATH, which printed
+  `zsh:1: command not found: brew`. (2026-09-29, macOS 27.0: `ps eww` on the installed
+  Koloft showed `PATH=/usr/bin:/bin:/usr/sbin:/sbin` and
+  `SSH_AUTH_SOCK=/var/run/com.apple.launchd.…/Listeners`; the ProxyCommand line came
+  from `/usr/bin/ssh` run with that PATH.)
 
 ## §2 Shells: login shells, PATH order, bash, and OSC 7
 
@@ -229,11 +237,18 @@ method. A recheck adds its date, version and command to the bullet.
 - **Popups**: without the `allowpopups` attribute (`disablePopups` true) Electron drops
   `window.open` in the browser process, before any window-open handler runs (seen in a
   spike, no date). The `webPreferences` in `will-attach-webview` carry `disablePopups`,
-  which is not in Electron's typings. Which file-access key, if any, Electron reads
-  there is inferred, not checked: the Electron 43.7.3 framework binary holds
-  `disablePopups` and Blink's `allowFileAccessFromFileURLs` (capital `URLs`) but no
-  `allowFileAccessFromFileUrls` and no `allowFileAccessFromFiles` (2026-09-24,
-  `grep -a` on `Electron Framework`). Its `params`
+  which is not in Electron's typings. They carry no file-access key at all (keys seen:
+  `contextIsolation, disableBlinkFeatures, disablePopups, enableBlinkFeatures,
+  nodeIntegration, nodeIntegrationInSubFrames, nodeIntegrationInWorker, partition,
+  plugins, sandbox, webSecurity, zoomFactor`), and setting `allowFileAccessFromFileUrls`,
+  `allowFileAccessFromFiles` or `allowFileAccessFromFileURLs` either way changes nothing.
+  Whether a `file://` page in a guest can read other `file://` URLs is decided by the
+  `GrantFileProtocolExtraPrivileges` fuse, which Koloft ships on (Electron's default;
+  nothing in the build changes fuses): on, XHR, `fetch` and an iframe all read any local
+  path, including outside the page's folder; off, all three are blocked and only
+  `webSecurity: false` lets them through (2026-10-01, Electron 43.7.3, hidden-window probe
+  plus a fuse-flipped copy via `@electron/fuses`; in the built app a `file://` page in the
+  browser partition fetched a file under `~/.ssh`). Koloft keeps this on purpose. Its `params`
   always carry a `disablewebsecurity` key, even for a guest that never asked, and
   attribute values arrive as strings, so only `String(value) === 'true'` means it is set.
 - **Zoom**: a guest takes on its embedder's zoom (measured: window and guest go 1 →
@@ -294,6 +309,19 @@ method. A recheck adds its date, version and command to the bullet.
   nobody can see.
 - **While the pointer is over a guest (or an xterm canvas) the host gets no
   `mousemove`**, so a drag needs a transparent fixed overlay.
+- **A mouse release inside a guest is often sent to the host too, at the guest-local
+  point** (measured on Electron 43.7.3, 2026-10-02: main's `before-mouse-event` on both
+  webContents while a person drag-selected text in a page). The host webContents gets a
+  `mouseUp` with the very coordinates the guest got, in the same millisecond and with
+  no `mouseDown` of its own before it; its page then fires `mouseover` (`buttons` 0)
+  and `mouseup` on whatever host element sits at that point — with a `<webview>` at
+  (1175, 83), a release at guest (169, 455) hovered a sidebar row. Not every guest
+  release is echoed. Dropping the host `mouseUp` with `preventDefault()` in
+  `before-mouse-event` stops both events. Playwright's `page.mouse` never produces the
+  echo; a raw `Input.dispatchMouseEvent` `mouseReleased` on the host page passes through
+  `before-mouse-event` the same way.
+- **A drag that starts in a guest and leaves it sends the host every move with
+  `buttons` 1**, both from a real mouse and from Playwright.
 - **An HTML drag with no `dataTransfer` payload fires no `dragover`**; at least one
   `setData` call is needed.
 
@@ -685,6 +713,11 @@ inferred, not checked.
   segment cannot be read (seen in a manual round).
 - **`-webkit-app-region: drag` does not follow a scrolled container** (electron#40610):
   a stale drag rectangle stays, and a tab under it loses clicks to window drags.
+- **Where a `drag` and a `no-drag` region overlap, the element later in the document
+  wins, whatever the stacking order**: an absolutely placed `no-drag` button with the
+  higher `z-index`, placed before a `drag` title bar in the DOM, got neither hover nor
+  clicks; moved after it, both worked (seen in a manual round, 2026-09-30, Electron
+  43.7, macOS).
 - **`getComputedStyle().borderColor` is `''` when the four sides differ**, and
   `getPropertyValue('--token')` returns the token's raw text; assigning it to
   `border-top-color` on a probe element normalises it.
@@ -832,6 +865,11 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   itself**; without a `.gitignore` line the parent shows an untracked `.claude/`.
   `--exclude-standard` honours an uncommitted `.gitignore`.
 - **`git worktree add <path>` refuses a path that already exists.**
+- **`git worktree remove` (no `--force`) removes a tree whose only extra files are
+  ignored** (`node_modules/`, `out/`), and refuses one with uncommitted or untracked
+  files. **It refuses a locked tree** ("cannot remove a locked working tree"), and a
+  session's worktree was seen still locked after its tab was killed, so `git worktree
+  unlock` comes first (measured, git 2.54.0, 2026-10-02, on a throwaway repo).
 - **`.git/FETCH_HEAD` is rewritten on every fetch** and a fresh clone has none, so its
   existence and mtime show whether a fetch ran.
 - **The `ext::` transport** is refused unless `protocol.ext.allow` permits it (the repo's
@@ -856,6 +894,14 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   login finishes (checked by hand, signed out, on a private repo).
 - **A signed-in browser holds a `logged_in=yes` cookie**; `user_session` is the session
   cookie itself.
+- **`gh api graphql -f owner=… -f name=… -f query=…`** sends every `-f` field other than
+  `query` as a string GraphQL variable; `-F` would turn a repo named `123` into a number.
+  For a repo it can read it exits 0 and prints
+  `{"data":{"repository":{"issues":{"totalCount":N},"pullRequests":{"totalCount":M}}}}`.
+  For a repo that is missing or hidden from the login it exits 1, printing
+  `"repository":null` plus a `NOT_FOUND` error; with no login it exits 4 and prints
+  "To get started with GitHub CLI, please run: gh auth login". (2026-10-03, gh 2.89.0,
+  run by hand against a public repo, a made-up name, and an empty `GH_CONFIG_DIR`.)
 
 ## §33 ssh
 
@@ -870,6 +916,26 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   host, `/opt/homebrew/bin` are not on PATH there, and `{ }`, `$$` and `export` are not
   safe syntax.
 - **ssh exits 255 when the host cannot be reached**, and rsync over ssh does the same.
+- **A `RemoteCommand` in `~/.ssh/config` makes every ssh that also names a command
+  fail** with `Cannot execute command-line and remote command.` (exit 255);
+  `-o RemoteCommand=none` placed first wins over the config and the command runs.
+  (2026-09-29, OpenSSH_10.3p1 on macOS 27 to Ubuntu 24.04.)
+- **`RequestTTY force` in the config gives even `ssh -n host cmd` a terminal**, and the
+  terminal turns each `\n` of the output into `\r\n` (`printf "a\nb"` came back as
+  `a \r \n b`), and a `tar | ssh host 'tar xf -'` push through it fails; `-o
+  RequestTTY=no` first keeps the bytes as sent. The single-letter
+  `-t` / `-tt` beats `-o RequestTTY=` in either order (`ssh -G` printed
+  `requesttty force` for `-tt` with `-o RequestTTY=no` before or after it). (Same date
+  and versions.)
+- **One connection holds at most `MaxSessions` commands (sshd's default is 10)**, and
+  every open `ssh -tt` riding a ControlMaster holds one for its whole life. Past the
+  limit the master refuses (`mux_client_request_session: session request failed:
+  Session open refused by peer`) and ssh quietly makes a new connection of its own,
+  logging in again — which a `BatchMode` command cannot do for a password login.
+  (2026-09-29 on an Ubuntu 24.04 box with the stock `sshd_config`: with 14 sessions
+  held, the 15th printed that line and then `Authenticated … using "publickey"`; with
+  10 held, the 11th still rode the master, so the real limit there was not pinned
+  down.)
 
 ## §34 rsync
 
@@ -888,6 +954,21 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   project. Measured 2026-09-24 with this Mac's openrsync (2.6.9 compatible) pulling
   from GNU rsync 3.2.7 on Ubuntu 24.04, and openrsync on both ends locally, over a
   scratch tree.
+- **The remote end is started through the user's login shell**, so a shell that prints
+  anything as it starts (a greeting in `~/.bashrc`) breaks the protocol: openrsync
+  stopped with `error: unexpected tag 103` (2026-09-29, a fake remote shell that echoes
+  a line and then runs the command, locally; the same against a Debian 12 container
+  whose `.bashrc` echoes, through a real sshd).
+- **openrsync splits `--rsync-path` into words and drops its quotes**, single and double,
+  before ssh joins them back with spaces. So no quoted remote command survives: `sh -c
+  'PATH=… exec rsync "$@"' sh` arrived as `sh -c PATH=…:$PATH exec rsync "$@" sh …`, and
+  `env "PATH=…:$PATH" rsync` lost its quotes too. Unquoted, fish expands a list `$PATH`
+  inside `PATH=…:$PATH` into one word per entry, and `env` keeps only the last
+  (`/opt/homebrew/bin:/usr/local/bin:/bin`); tcsh has no `VAR=value cmd` form at all. A
+  bare `rsync` is found on every login shell's non-login PATH: `/usr/bin/rsync` on
+  macOS, and on Debian 12 under bash, tcsh and fish. (2026-09-30: this Mac's openrsync
+  through a stand-in ssh that logs its argv; Debian 12 `node:22-bookworm-slim`
+  containers.)
 
 ## §35 tmux
 
@@ -900,6 +981,9 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
 - **With `mouse off`, tmux 3.6b passes the pane's mouse-mode requests (1000/1002/1006)
   to the outer terminal untouched** (measured locally in a python pty).
 - **tmux sets `TMUX` and `TMUX_PANE`** for a command inside a session.
+- **tmux 2.6 does not know `terminal-features` or `exit-empty`**: each line of a `-f`
+  config naming them is an `invalid option` error, shown over the first window. `set -q`
+  drops the error and tmux runs on (2026-10-03, Ubuntu 18.04's tmux 2.6).
 - **tmux's default server socket is `tmux-<uid>/default` under `$TMUX_TMPDIR` or
   `/tmp`, not under `$HOME`** (tmux(1)), so a fake `$HOME` does not isolate it: a real
   tmux run by any test talks to the one server this user already has, shared by every
@@ -938,5 +1022,152 @@ command by hand:
   the login files may put a real `claude` in `/usr/local/bin` ahead of that prefix —
   inferred, not checked.
 - Older coreutils may not know the `%.9Y` precision — inferred, not checked.
-- Wrapping each command in `sh -c '…'` keeps it safe when the user's shell is fish —
-  inferred, not checked (neither box has fish).
+- **The official node 22 build does not run on glibc 2.27** (Ubuntu 18.04): it unpacks,
+  then `node -v` fails with ``version `GLIBC_2.28' not found``. Claude Code 2.1.288's
+  own build runs there. The Node project's unofficial build for old Linux,
+  `https://unofficial-builds.nodejs.org/download/release/v22.12.0/node-v22.12.0-linux-x64-glibc-217.tar.xz`,
+  does run there (`node -v` printed `v22.12.0`), and that folder has its own
+  `SHASUMS256.txt` listing it; it has no arm64 glibc-217 build. (2026-10-03, on a real
+  Ubuntu 18.04 box.)
+- **A csh-family login shell (tcsh, csh) cannot take a newline inside single quotes**
+  (`Unmatched '''.`), **expands `!` even inside single quotes** (`echo 'a!b'` →
+  `b: Event not found.`; `!=` is left alone), and has no `VAR=value cmd` form
+  (`PATH=…: Command not found.`). So `sh -c '<multi-line script>'`, an argument holding
+  `!`, and `--rsync-path=PATH=… rsync` all fail there. A command made only of
+  `sh -c '…'` around base64 text (`[A-Za-z0-9+/=]`), which `sh` decodes and runs, gets
+  through unchanged. `base64 -d` decodes on GNU coreutils and macOS 27. (2026-09-29:
+  every remote command Koloft sends, run with `/bin/tcsh -c` and `/bin/csh -c` on
+  macOS 27.)
+- **Wrapping each command in `sh -c '…'` keeps it safe when the user's shell is fish**
+  (2026-09-30, fish 3.6.0 and Debian 12's tcsh as the login shell of containers
+  behind a jump host: file listing and reading, a session start and the session sync
+  all worked through a real sshd).
+
+## §38 ssh through a JumpServer bastion
+
+Measured 2026-10-03 from macOS 27 (OpenSSH 10.3p1) through a JumpServer bastion
+(`ssh -p 2222 user@systemuser@asset@jumpserver`) to Ubuntu 18.04 (util-linux 2.31.1,
+tmux 2.6):
+
+- **A command gets no terminal, even with `-tt`**: `ssh -tt host 'tty; echo $TERM'`
+  printed `not a tty` and `TERM=dumb`, with or without a ControlMaster. ssh shows no
+  "PTY allocation request failed", so the client still turns raw mode on. A plain
+  login with no command does get a terminal.
+- **So tmux cannot start**: `open terminal failed: not a terminal`; and with
+  `TERM=dumb` inside a terminal, `open terminal failed: terminal does not support
+  clear`.
+- **Port forwarding is off**: `ssh -W asset:22` got `administratively prohibited`, so
+  ProxyJump to the asset is no way round.
+- **util-linux `script -qfec <cmd> /dev/null` makes a terminal** for `<cmd>` (`tty`
+  printed `/dev/pts/1`; size `0 0` until set), tmux starts in it with
+  `TERM=xterm-256color`, and `-e` hands back the command's exit code (`exit 7` → 7).
+- **The bastion drops window-size changes, but `stty -F <pts> rows R cols C` run from
+  a second ssh command resizes that terminal**: `stty size` inside read `50 200`
+  afterwards.
+
+## §39 Discord API (v10)
+
+Measured 2026-10-03 with a real bot on a private server, by a hand-written client: Node
+`fetch` for REST with `Authorization: Bot <token>`, and the `ws` library (8.x) for the
+Gateway (the live connection that pushes events):
+
+- **REST calls a bot needs all answer 200**: `GET /users/@me` (the bot's own name and
+  id), `GET /oauth2/applications/@me` (`id` is the application id that goes in the
+  invite link; `bot_public` says whether anyone can add it), `GET /users/@me/guilds` (the
+  servers it is in), `GET /guilds/{id}/channels` (type `0` is a text channel), and
+  `GET /gateway/bot` (the Gateway `url`, which was `wss://gateway.discord.gg`).
+- **Gateway handshake**: connect to `<url>/?v=10&encoding=json`; the server sends op 10
+  (hello) with `heartbeat_interval`; the client sends op 1 (heartbeat, last sequence
+  number) on that interval, and op 2 (identify) with the token and the intents
+  `GUILDS | GUILD_MESSAGES | DIRECT_MESSAGES | MESSAGE_CONTENT` (1 | 512 | 4096 | 32768).
+  Then `READY` arrives (bot user, a list of server ids), one `GUILD_CREATE` per server
+  (with its name), and `MESSAGE_CREATE` for every message in a channel the bot can see.
+- **With Message Content on, `MESSAGE_CREATE` carries the text** (`content`) and the
+  sender (`author.id`, `author.username`, `author.bot`).
+- **Sending works**: `POST /channels/{id}/messages` with JSON `{content}` answers 200; a
+  file goes as multipart with `payload_json` plus `files[0]`, also 200.
+- **Rate limit per channel: 5 messages, then 429.** In a burst of 7 posts to one
+  channel, posts 1–5 answered 200 and 6–7 answered 429 with a JSON body whose
+  `retry_after` was about 0.3 (seconds); the bucket refills in about 5 s. Waiting
+  `retry_after` and sending again works.
+- From Discord's docs, not measured here: close code 4004 means the token was refused,
+  4014 means an intent the bot is not allowed (Message Content turned off in the
+  Developer Portal); op 6 (resume) with `session_id` and the last sequence number,
+  sent to `READY`'s `resume_gateway_url`, picks up a dropped connection (Koloft resumes
+  on the fixed `wss://gateway.discord.gg` instead, so it never opens a connection to a
+  host a server response named; whether Discord accepts a resume there is not checked —
+  if it answers op 9, Koloft identifies again); op 7 asks the
+  client to reconnect and resume; op 9 (invalid session) with `d: false` means start
+  over with identify; 4007 and 4009 also mean the session cannot be resumed; a bot API
+  call must send a `User-Agent: DiscordBot (<url>, <version>)` header.
+- **Slash commands (application commands)** — measured 2026-10-05 on the same private
+  server with the same bot, which was added with the `bot` scope only, and the owner's
+  Discord iOS app:
+  - `POST /applications/{app}/guilds/{guild}/commands` with `{name, description, type:
+    1, options}` answered 201; the command showed in the app's `/` list at once, so the
+    bot needed no new invite. `GET` on the same route lists them; `DELETE …/{id}` answered
+    204.
+  - Using it sent `INTERACTION_CREATE` on the existing Gateway connection, with the same
+    intents, and no Interactions Endpoint URL set: `type` 2 for the command, 4 for each
+    autocomplete keystroke, `channel_id`, `member.user.id` (the sender, in a server),
+    and `data.options` `[{name, value, type: 3, focused?}]`.
+  - `POST /interactions/{id}/{token}/callback` answered 204 for `{type: 8, data:
+    {choices}}` (the choices showed on the phone, within about 0.2 s) and for `{type: 5}`;
+    `PATCH /webhooks/{app}/{token}/messages/@original` and a follow-up `POST
+    /webhooks/{app}/{token}` with `flags: 64` (only the sender sees it) answered 200.
+  - Text typed in the box that starts with `/` but is not picked from the list, like
+    `/compact hello`, is sent as an ordinary message (`MESSAGE_CREATE`).
+  - From the docs, not measured: the first answer must come within 3 s; the token
+    works for 15 minutes; a guild can take at most 200 command creates a day; an app
+    with no answer shows "The application did not respond". That two Gateway
+    connections of one bot (two Koloft installs) both receive each interaction is
+    inferred, not checked.
+- **How messages look, and threads** — measured 2026-10-06 with the same bot, REST only,
+  on a server where the bot role was the one the invite gave (`101440`) and the owner
+  read each message in the Discord app:
+  - In a message's `content`, `#`, `##`, `###`, `-#` (small text), `-`/`1.` lists with
+    indented sub-lists, `>` quotes, fenced code with a language and `[text](url)` show
+    as formatting. `####`, a `| a | b |` table, `---`, `- [ ]`/`- [x]` and
+    `![alt](url)` show as the raw characters.
+  - A Components V2 message (`flags` with `1 << 15`, `components` holding a container,
+    type 17, with `accent_color`, text displays, type 10, a separator, type 14, and an
+    action row of buttons) answered 200 and showed with a coloured bar; `###` inside a
+    text display shows as a heading. One text display took 4000 characters and refused
+    4001 (`400`, code 50035, `BASE_TYPE_BAD_LENGTH`, "Must be between 1 and 4000 in
+    length"). A cap on all text displays of one message together was not measured.
+  - An embed (`embeds: [{author, color, description, footer}]`) also posted (200, the
+    embed came back), with `###` shown as a heading inside `description`.
+  - `flags` with `1 << 12` (no push) was accepted on both kinds.
+  - `POST /channels/{id}/messages/{message}/threads` with `{name, auto_archive_duration:
+    1440}` answered 201 with the thread, whose id is the message's; posting to
+    `/channels/{thread}/messages` answered 200 and showed inside the thread. The invite's
+    permissions name neither "create public threads" nor "send messages in threads";
+    that the server's default role gave them is inferred, not checked.
+  - `DELETE /channels/{thread}` answered 403 (50013, Missing Permissions); `PATCH
+    /channels/{thread}` with `{archived: true}` on the bot's own thread answered 200.
+- **Threads, buttons and tables on the owner's phone** — Koloft 0.32.1, 2026-10-06, the
+  owner reading the Discord iOS app, one case at a time:
+  - A card posted in a bot-made thread the owner was added to
+    (`PUT /channels/{thread}/thread-members/{user}`) made the locked phone ring.
+  - A button press reached Koloft as `INTERACTION_CREATE` type 3 with `data.custom_id`,
+    and callback type 7 replaced the card: the buttons went and the new text showed.
+  - A message the owner posted in an archived thread went through, and the thread came
+    back into the list.
+  - A fenced code block does not keep columns on a phone held upright: a table with
+    Chinese cells did not line up, and a 39-character-wide one wrapped and did not line
+    up either. A table written as a bold line per row with a `>` quote line per cell
+    read well.
+- **Renaming a thread** (`PATCH /channels/{thread}` with `{name}`), same bot, 2026-10-06:
+  on an archived thread it answered `400`, code 50083 "Thread is archived"; the third
+  name change within a few seconds answered `429` with `retry_after` 599.6 s, though
+  the first two had failed — failed attempts count. Discord's docs give the limit as two
+  name changes per ten minutes per channel. An `{archived: true}` call right after was
+  not limited. Once the ten minutes had passed, `{name}` on the bot's own unarchived
+  thread answered `200` with the new name (a Chinese name kept as sent).
+- Also from Discord's docs, not measured here: a message's `content` holds at most 2000
+  characters; one message carries at most 10 files and one request at most 25 MiB; a
+  bot's file may be at most 20 MiB (changelog 2025-09-03); adding or removing a reaction
+  (`PUT`/`DELETE /channels/{id}/messages/{id}/reactions/{emoji}/@me`) answers 204 with no
+  body; `GET /channels/{id}/messages?after=<id>&limit=<1–100>` lists the messages after
+  that id, and an attachment in `MESSAGE_CREATE` carries `filename`, `size` and a `url`
+  that needs no token.

@@ -157,6 +157,16 @@ describe('CodexSessions', () => {
     expect(sessions.rows(repo).some((row) => row.id === codexSessionKey(A))).toBe(true)
   })
 
+  it('names the session a native new replaced, so its Keep running mark can follow; a switch names none', async () => {
+    deps.replaced = vi.fn()
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    bind()
+    bind(0, B, repo, 2)
+    expect(deps.replaced).toHaveBeenCalledWith(codexSessionKey(A), codexSessionKey(B))
+    bind(0, A, repo, 3, 'thread/resume')
+    expect(deps.replaced).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps a bound run visible if saving its member fails', async () => {
     await sessions.launch({ kind: 'codex', cwd: repo })
     vi.spyOn(sessions.store, 'upsertMember').mockImplementation(() => {
@@ -181,6 +191,27 @@ describe('CodexSessions', () => {
     await expect(sessions.historyRows(repo)).rejects.toThrow('page failed')
     expect(sessions.rows(repo).map((row) => row.id)).toEqual([codexSessionKey(A)])
     expect(sessions.members().has(codexSessionKey(A))).toBe(true)
+  })
+
+  it('calls a thread gone only once every Codex home was listed without it, never before the first listing, after a failed home or while a listing runs', async () => {
+    const listed = codexSessionKey(A)
+    const unlisted = codexSessionKey(B)
+    expect(sessions.threadGone(unlisted)).toBe(false)
+    vi.mocked(deps.homes).mockReturnValue(['/codex-home-2'])
+    mocks.request.mockImplementation(async (_method, params, home) => {
+      if (home === '/codex-home-2') throw new Error('home 2 unreadable')
+      return { data: params.archived ? [] : [{ id: A, cwd: repo }] }
+    })
+    await sessions.refreshHistory()
+    expect(sessions.threadGone(unlisted)).toBe(false)
+    mocks.request.mockImplementation(async (_method, params) => ({
+      data: params.archived ? [] : [{ id: A, cwd: repo }]
+    }))
+    const listing = sessions.refreshHistory()
+    expect(sessions.threadGone(unlisted)).toBe(false)
+    await listing
+    expect(sessions.threadGone(listed)).toBe(false)
+    expect(sessions.threadGone(unlisted)).toBe(true)
   })
 
   it('reports unavailable history instead of returning an empty successful listing', async () => {
@@ -572,6 +603,14 @@ describe('CodexSessions', () => {
 
     await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1', scheduled: true })
     expect(deps.trustFolder).toHaveBeenCalledTimes(1)
+  })
+
+  // ADR-0028
+  it('remembers whether Koloft launched a session with approvals and the sandbox bypassed, the mode its messages to Claude sessions claim', async () => {
+    const bypassed = await sessions.launch({ kind: 'codex', cwd: repo, permission: 'bypass' })
+    const asking = await sessions.launch({ kind: 'codex', cwd: repo })
+    expect(sessions.launchedBypassingChecks(bypassed.id)).toBe(true)
+    expect(sessions.launchedBypassingChecks(asking.id)).toBe(false)
   })
 
   // CODEX§14

@@ -1,4 +1,5 @@
 import type {
+  AttentionSubject,
   BackendAvailability,
   BackendId,
   BackendSessionInfo,
@@ -11,7 +12,8 @@ import type {
   SessionResumeResult,
   SessionRow
 } from '@shared/types'
-import type { SessionEvent } from '@shared/sessionEvent'
+import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
+import type { Turn } from '@shared/turns'
 import {
   identityOf,
   sourceOf,
@@ -19,6 +21,7 @@ import {
   unsupportedPairMessage
 } from '@shared/sessionBackend'
 import { hostOf } from '@shared/remoteKey'
+import type { ModeClass } from './crossSessionMessage'
 
 export interface SessionBackend {
   id: BackendId
@@ -38,14 +41,18 @@ export interface SessionBackend {
   occupantOf(dir: string): string | null
   accountUsable(): boolean
   trustsFolder(dir: string): boolean | Promise<boolean>
+  turns(key: string, n: number): Promise<Turn[]>
+  permissionClass(tabId: string): ModeClass
 }
 
 export interface SessionLifecycle {
   prompted(tabId: string): void
   bound(tabId: string, key: string): void
-  exited(tabId: string, title?: string): void
+  exited(tabId: string, subject: AttentionSubject): void
   clearAttention(tabId: string): void
   open(tabId: string, target: string): void
+  turnEnded(tabId: string, turn: Turn): void
+  asked(tabId: string, ask: AskPayload): void
 }
 
 const CLEAN_EXIT_HIDES_A_LATER_EXIT_MS = 30_000
@@ -53,6 +60,7 @@ const CLEAN_EXIT_HIDES_A_LATER_EXIT_MS = 30_000
 export class SessionBackends {
   private adapters = new Map<BackendId, SessionBackend>()
   private cleanExitAt = new Map<string, number>()
+  conductorOf: (tabOrSessionId: string) => string | undefined = () => undefined
 
   constructor(private lifecycle: SessionLifecycle) {}
 
@@ -63,16 +71,20 @@ export class SessionBackends {
         this.lifecycle.clearAttention(tabId)
         return this.lifecycle.bound(tabId, event.key)
       case 'exited':
-        return this.exited(tabId, event.clean, event.title)
+        return this.exited(tabId, event.clean, { title: event.title, sessionId: event.sessionId })
       case 'open':
         return this.lifecycle.open(tabId, event.target)
+      case 'turn-ended':
+        return this.lifecycle.turnEnded(tabId, event.turn)
+      case 'asked':
+        return this.lifecycle.asked(tabId, event.ask)
       case 'prompt':
         this.lifecycle.prompted(tabId)
     }
     this.ownerOfTab(tabId)?.observe(tabId, event)
   }
 
-  private exited(tabId: string, clean: boolean, title?: string): void {
+  private exited(tabId: string, clean: boolean, subject: AttentionSubject): void {
     const now = Date.now()
     for (const [id, at] of this.cleanExitAt) {
       if (now - at > CLEAN_EXIT_HIDES_A_LATER_EXIT_MS) this.cleanExitAt.delete(id)
@@ -80,7 +92,7 @@ export class SessionBackends {
     if (clean) {
       this.cleanExitAt.set(tabId, now)
       this.lifecycle.clearAttention(tabId)
-    } else if (!this.cleanExitAt.has(tabId)) this.lifecycle.exited(tabId, title)
+    } else if (!this.cleanExitAt.has(tabId)) this.lifecycle.exited(tabId, subject)
   }
 
   register(adapter: SessionBackend): void {
@@ -132,9 +144,18 @@ export class SessionBackends {
         ...s,
         backendId: backend.id,
         host: s.remote ? 'ssh' : 'local',
-        nativeSessionId: s.nativeSessionId ?? s.sessionId
+        nativeSessionId: s.nativeSessionId ?? s.sessionId,
+        conductor: this.conductorOf(s.tabId) ?? this.conductorOf(s.sessionId)
       }))
     )
+  }
+
+  turns(key: string, n: number): Promise<Turn[]> {
+    return this.forSession(key).turns(key, n)
+  }
+
+  permissionClass(tabId: string): ModeClass {
+    return this.ownerOfTab(tabId)?.permissionClass(tabId) ?? 'prompting'
   }
 
   async historyRows(
@@ -154,7 +175,7 @@ export class SessionBackends {
     })
     if (failures.length && !rows.length) throw failures[0].error
     for (const f of failures) partlyUnread(f.id, f.error)
-    return rows.sort((a, b) => b.mtime - a.mtime)
+    return rows.filter((r) => !this.conductorOf(r.id)).sort((a, b) => b.mtime - a.mtime)
   }
 
   create(options: CreateTabOptions): Promise<CreateTabResult> {

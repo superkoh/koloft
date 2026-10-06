@@ -285,7 +285,7 @@ export function settingsOnDisk(env: E2EEnv): Record<string, unknown> {
 }
 
 export function notesIsland(page: Page): Locator {
-  return page.locator('.isl-notes')
+  return page.locator('.isl-notes:not(.isl-conductors)')
 }
 
 export function notesArea(page: Page): Locator {
@@ -440,6 +440,31 @@ export async function waitBooted(page: Page): Promise<void> {
     undefined,
     { timeout: 20_000 }
   )
+}
+
+export function terminalText(page: Page, tabId: string): Promise<string> {
+  return page.evaluate((id) => {
+    const term = (
+      window as unknown as {
+        __koloftTerms?: Record<
+          string,
+          {
+            buffer: {
+              active: {
+                length: number
+                getLine(i: number): { translateToString(trim?: boolean): string } | undefined
+              }
+            }
+          }
+        >
+      }
+    ).__koloftTerms?.[id]
+    if (!term) return ''
+    const b = term.buffer.active
+    const out: string[] = []
+    for (let i = 0; i < b.length; i++) out.push(b.getLine(i)?.translateToString(true) ?? '')
+    return out.join('\n')
+  }, tabId)
 }
 
 export function termIds(page: Page): Promise<string[]> {
@@ -614,4 +639,27 @@ export async function menuItemTexts(page: Page): Promise<string[]> {
 export async function closeMenu(page: Page): Promise<void> {
   await page.keyboard.press('Escape')
   await expect(page.locator('.menu')).toHaveCount(0)
+}
+
+export function gitMark(page: Page, wsName: string): Locator {
+  return page.locator('.ws-head', { hasText: wsName }).locator(':scope > .ws-git')
+}
+
+export async function openGitPanel(page: Page, wsName: string): Promise<Locator> {
+  const mark = gitMark(page, wsName)
+  await expect(
+    mark,
+    'the mark drops its plain tooltip once it has a panel to open'
+  ).toHaveAttribute('title', '', { timeout: 30_000 })
+  await mark.hover()
+  const panel = page.locator('.tbu-pop.fx')
+  await expect(panel).toBeVisible()
+  return panel
+}
+
+export async function fetchNowInGitPanel(page: Page, wsName: string): Promise<void> {
+  const panel = await openGitPanel(page, wsName)
+  await panel.locator('.tbu-act', { hasText: 'Fetch now' }).click()
+  await page.mouse.move(1, 1)
+  await expect(panel).toHaveCount(0)
 }

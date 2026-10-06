@@ -11,6 +11,7 @@ import type {
   SessionWorkbenchState,
   WorkspaceAddResult,
   WorkspaceFreshness,
+  WorkspaceGithub,
   WorkspaceRemoveResult,
   WorkspaceRows,
   WorktreeInfo
@@ -39,6 +40,7 @@ import {
   type WorktreeEntry
 } from './workspaceOps'
 import { encodeCwd } from './sessionTracker'
+import { replacesTheConversation } from './hookRouting'
 import { isGitCheckout } from './projectInfo'
 import { isRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { sourceOf } from '@shared/sessionBackend'
@@ -79,13 +81,19 @@ export interface WorkspaceManagerDeps {
   killTab(tabId: string): void
   pushRows(payload: WorkspaceRows[]): void
   freshness?(wsPath: string): WorkspaceFreshness | undefined
+  github?(wsPath: string): WorkspaceGithub | undefined
   onRescanned?(wsPaths: string[]): void
   jobCountFor?(wsPath: string): number
   remoteProjectsRoot(host: string): string
   remoteRunning?(host: string): Set<string>
   remoteConnected?(host: string): boolean
+  remoteProblem?(host: string): string | undefined
   remoteGit?(host: string, path: string): RemoteGitInfo | undefined
   killRemoteSession?(host: string, sessionId: string): void
+  hiddenRow?(id: string): boolean
+  conductorsRoot?: string
+  sessionsOnDiskOrRunning?(ids: ReadonlySet<string>): void
+  memberDropped?(sessionId: string, why: string): void
 }
 
 function dirExistsSync(p: string): boolean {
@@ -216,6 +224,14 @@ export class WorkspaceManager {
     return this.wsBySession.get(sessionId)
   }
 
+  refresh(): void {
+    this.scheduleRescan()
+  }
+
+  private hidden(id: string): boolean {
+    return this.deps.hiddenRow?.(id) ?? false
+  }
+
   remoteTargets(): { host: string; paths: string[] }[] {
     const byHost = new Map<string, Set<string>>()
     for (const ws of this.layout.workspaces) {
@@ -273,7 +289,7 @@ export class WorkspaceManager {
       if (wt !== -1) cwd = cwd.slice(0, wt)
       if (!dirExistsSync(cwd)) continue
       const root = this.deps.projectInfo(cwd).root
-      if (pinned.has(root)) continue
+      if (pinned.has(root) || this.isConductorFolder(root)) continue
       const mtime = Math.max(...files.map((f) => f.mtime))
       const prev = byRoot.get(root)
       if (prev) {
@@ -284,6 +300,11 @@ export class WorkspaceManager {
       }
     }
     return [...byRoot.values()].sort((a, b) => b.mtime - a.mtime).slice(0, DISCOVER_MAX)
+  }
+
+  private isConductorFolder(dir: string): boolean {
+    const root = this.deps.conductorsRoot
+    return !!root && (dir === root || dir.startsWith(root + path.sep))
   }
 
   async worktrees(wsPath: string): Promise<WorktreeInfo[]> {
@@ -324,6 +345,25 @@ export class WorkspaceManager {
     this.deps.saveLayout(this.layout)
     this.scheduleRescan()
     return { code: 'added', path: rawPath }
+  }
+
+  move(wsPath: string, before: string | null): void {
+    const moving = this.layout.workspaces.find((w) => w.path === wsPath)
+    if (!moving) return
+    const rest = this.layout.workspaces.filter((w) => w !== moving)
+    const at = before === null ? rest.length : rest.findIndex((w) => w.path === before)
+    if (at === -1) return
+    this.layout.workspaces = [...rest.slice(0, at), moving, ...rest.slice(at)]
+    this.deps.saveLayout(this.layout)
+    this.rowsCache = this.inLayoutOrder(this.rowsCache)
+    this.deps.pushRows(this.rowsCache)
+  }
+
+  private inLayoutOrder(rows: WorkspaceRows[]): WorkspaceRows[] {
+    const order = this.layout.workspaces.map((w) => w.path)
+    return [...rows].sort(
+      (a, b) => order.indexOf(a.workspace.path) - order.indexOf(b.workspace.path)
+    )
   }
 
   remove(wsPath: string): WorkspaceRemoveResult {
@@ -379,15 +419,16 @@ export class WorkspaceManager {
   archiveSession(sessionId: string): boolean {
     if (!this.layout.members.includes(sessionId)) return false
     if (this.deps.runningBindings().has(sessionId)) return false
-    this.forget(sessionId)
+    this.forget(sessionId, 'archived from the sidebar')
     return true
   }
 
-  dropOwnership(sessionId: string): void {
-    if (this.layout.members.includes(sessionId)) this.forget(sessionId)
+  dropOwnership(sessionId: string, why: string): void {
+    if (this.layout.members.includes(sessionId)) this.forget(sessionId, why)
   }
 
-  private forget(sessionId: string): void {
+  private forget(sessionId: string, why: string): void {
+    this.deps.memberDropped?.(sessionId, why)
     const panels = { ...this.layout.panels }
     delete panels[sessionId]
     this.layout = {
@@ -414,10 +455,39 @@ export class WorkspaceManager {
   }
 
   onSessionRebind(prevId: string, nextId: string, source: string): void {
+    if (replacesTheConversation(source)) this.moveResident(prevId, nextId)
     const next = carrySessionWorkbench(this.layout.panels, prevId, nextId, source)
     if (!next.changed) return
     this.layout = { ...this.layout, panels: next.sessions }
     this.deps.saveLayout(this.layout)
+  }
+
+  residentIds(): string[] {
+    return [...(this.layout.resident ?? [])]
+  }
+
+  isResident(sessionId: string): boolean {
+    return !!this.layout.resident?.includes(sessionId)
+  }
+
+  setResident(sessionId: string, on: boolean): void {
+    if (this.isResident(sessionId) === on) return
+    const rest = this.residentIds().filter((id) => id !== sessionId)
+    this.saveResident(on ? [...rest, sessionId] : rest)
+  }
+
+  moveResident(prevId: string, nextId: string): void {
+    if (!this.isResident(prevId)) return
+    this.saveResident([
+      ...this.residentIds().filter((id) => id !== prevId && id !== nextId),
+      nextId
+    ])
+  }
+
+  private saveResident(resident: string[]): void {
+    this.layout = { ...this.layout, resident }
+    this.deps.saveLayout(this.layout)
+    this.restampLive()
   }
 
   onTrackerUpdate(): void {
@@ -619,13 +689,15 @@ export class WorkspaceManager {
         allRows.unshift(...additional.filter((r) => r.pending))
       }
       for (const r of allRows) wsBySession.set(r.id, ws.path)
-      const rows = filterOwned(allRows, owned, wsRunningIds)
+      const visible = allRows.filter((r) => !this.hidden(r.id))
+      const rows = filterOwned(visible, owned, wsRunningIds)
       for (const b of buckets) {
         bucketDirs.push(b.dir)
         wantedBucketDirs.add(path.join(root, b.slug))
       }
       const pending = resolvePending(buckets, launches, rows, Date.now())
       for (const tabId of pending.promoted) this.launches.delete(tabId)
+      for (const r of pending.rows) wsBySession.set(r.id, ws.path)
       payload.push({
         workspace: {
           path: ws.path,
@@ -633,18 +705,19 @@ export class WorkspaceManager {
           isGit: key
             ? (this.deps.remoteGit?.(key.host, key.path)?.isGit ?? false)
             : !missing && isGitCheckout(ws.path),
-          hasHistory: hasHistory(allRows, owned, wsRunningIds),
+          hasHistory: hasHistory(visible, owned, wsRunningIds),
           ...(key
             ? {
                 remote: {
                   host: key.host,
                   path: key.path,
-                  connected: this.deps.remoteConnected?.(key.host) ?? false
+                  connected: this.deps.remoteConnected?.(key.host) ?? false,
+                  problem: this.deps.remoteProblem?.(key.host)
                 }
               }
             : {})
         },
-        rows: [...pending.rows.map(claudeRow), ...rows]
+        rows: [...pending.rows.filter((r) => !this.hidden(r.id)).map(claudeRow), ...rows]
       })
     }
 
@@ -664,18 +737,28 @@ export class WorkspaceManager {
     for (const t of this.remoteTargets()) {
       for (const id of this.deps.remoteRunning?.(t.host) ?? []) liveIds.add(id)
     }
-    const members = this.layout.members.filter((id) => liveIds.has(id))
-    const gc = gcSessions(
-      this.layout.panels,
-      new Set([...members, ...(this.deps.additionalMembers?.() ?? [])])
-    )
-    if (gc.changed || members.length !== this.layout.members.length) {
-      this.layout = { ...this.layout, members, panels: gc.sessions }
+    this.deps.sessionsOnDiskOrRunning?.(liveIds)
+    const additional = this.deps.additionalMembers?.() ?? new Set<string>()
+    const members: string[] = []
+    for (const id of this.layout.members) {
+      if (liveIds.has(id)) members.push(id)
+      else if (!additional.has(id))
+        this.deps.memberDropped?.(id, 'no transcript found and not running')
+    }
+    const kept = new Set([...members, ...additional])
+    const gc = gcSessions(this.layout.panels, kept)
+    const resident = this.residentIds().filter((id) => kept.has(id))
+    if (
+      gc.changed ||
+      members.length !== this.layout.members.length ||
+      resident.length !== this.residentIds().length
+    ) {
+      this.layout = { ...this.layout, members, panels: gc.sessions, resident }
       this.deps.saveLayout(this.layout)
     }
 
     this.bucketDirById = bucketDirById
-    this.rowsCache = this.stampLive(payload)
+    this.rowsCache = this.stampLive(this.inLayoutOrder(payload))
     this.allRowsCache = allRowsByWs
     this.wsBySession = wsBySession
     this.deps.pushRows(this.rowsCache)
@@ -688,14 +771,24 @@ export class WorkspaceManager {
     const dirOk = new Map<string, boolean>()
     return rows.map((e) => ({
       ...e,
-      workspace: { ...e.workspace, freshness: this.deps.freshness?.(e.workspace.path) },
+      workspace: {
+        ...e.workspace,
+        freshness: this.deps.freshness?.(e.workspace.path),
+        github: this.deps.github?.(e.workspace.path)
+      },
       rows: e.rows.map((r) => {
         const live = liveById.get(r.id)
         const wt = live?.relocated && !live.remote ? (live.worktree ?? 'main') : undefined
         const revealDir = this.revealDirOf(r.id, live, !!e.workspace.remote, dirOk)
         const moved = wt && wt !== r.worktree
-        if (!moved && revealDir === r.revealDir) return r
-        return { ...r, ...(moved ? { worktree: wt } : {}), revealDir }
+        const resident = this.isResident(r.id)
+        if (!moved && revealDir === r.revealDir && resident === !!r.resident) return r
+        return {
+          ...r,
+          ...(moved ? { worktree: wt } : {}),
+          revealDir,
+          resident: resident || undefined
+        }
       })
     }))
   }

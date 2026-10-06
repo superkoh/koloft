@@ -26,9 +26,10 @@ describe('remoteKeyFromForm', () => {
     expect(remoteKeyFromForm('   ', '/home/koh')).toEqual({ ok: false, message: MACHINE_EMPTY })
   })
 
-  it('refuses a machine name ssh would not take verbatim', () => {
+  it('refuses a machine name ssh would not take verbatim, or would read as one of its options', () => {
     expect(remoteKeyFromForm('dev box', '/home/koh')).toEqual({ ok: false, message: MACHINE_BAD })
     expect(remoteKeyFromForm('dev/box', '/home/koh')).toEqual({ ok: false, message: MACHINE_BAD })
+    expect(remoteKeyFromForm('-F', '/tmp/x')).toEqual({ ok: false, message: MACHINE_BAD })
   })
 
   it('refuses a path that is not an absolute directory over there', () => {
@@ -39,17 +40,16 @@ describe('remoteKeyFromForm', () => {
 })
 
 describe('workspaceMenuCount', () => {
-  it('keeps Scheduled jobs for a remote workspace', () => {
-    expect(workspaceMenuCount({ missing: false, isGit: false, remote: true })).toBe(5)
+  it('adds only the worktree item for a checkout — fetching lives in the git panel', () => {
+    expect(workspaceMenuCount({ missing: false, isGit: true, canBind: false })).toBe(6)
+    expect(workspaceMenuCount({ missing: false, isGit: false, canBind: false })).toBe(5)
   })
 
-  it('keeps the worktree item and drops Fetch origin when the remote folder is a checkout', () => {
-    expect(workspaceMenuCount({ missing: false, isGit: true, remote: true })).toBe(6)
+  it('a workspace with no conductor yet also offers to bind a Discord channel', () => {
+    expect(workspaceMenuCount({ missing: false, isGit: true, canBind: true })).toBe(7)
   })
 
-  it('is unchanged for local workspaces', () => {
-    expect(workspaceMenuCount({ missing: false, isGit: true, remote: false })).toBe(7)
-    expect(workspaceMenuCount({ missing: false, isGit: false, remote: false })).toBe(5)
-    expect(workspaceMenuCount({ missing: true, isGit: false, remote: false })).toBe(1)
+  it('a deleted folder offers only Remove', () => {
+    expect(workspaceMenuCount({ missing: true, isGit: false, canBind: true })).toBe(1)
   })
 })

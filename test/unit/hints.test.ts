@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   firedHints,
   rowSelector,
+  selectorOf,
   wbTabSelector,
   type HintSnapshot
 } from '../../src/renderer/src/hints'
@@ -118,6 +119,22 @@ describe('firedHints — approval', () => {
       sessions: [{ tabId: 't2', status: 'approval', liveWrites: 1 }]
     })
     expect(firedHints(prev, next)).toEqual([])
+  })
+})
+
+describe('selectorOf — a card whose target is hidden points at the button that shows it', () => {
+  it('a sidebar row card points at the sidebar button while the sidebar is hidden, and at the row once shown', () => {
+    for (const id of ['approval', 'worktree'] as const) {
+      const fire = { id, selector: rowSelector('t2') }
+      expect(selectorOf(fire, true, true)).toBe('.aux-ico.sb-toggle')
+      expect(selectorOf(fire, true, false)).toBe(rowSelector('t2'))
+    }
+  })
+
+  it('a Workbench card ignores the sidebar', () => {
+    const fire = { id: 'agent-web' as const, selector: wbTabSelector('wb-9') }
+    expect(selectorOf(fire, false, true)).toBe('.aux-ico.wb-toggle')
+    expect(selectorOf(fire, true, true)).toBe(wbTabSelector('wb-9'))
   })
 })
 

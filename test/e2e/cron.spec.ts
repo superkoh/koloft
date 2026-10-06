@@ -4,12 +4,14 @@ import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   addRemoteWorkspace,
+  installFakeRemote,
   killFakeRemote,
   launchWithRemote,
   REMOTE_WS_NAME,
   remoteDir
 } from './helpers/remote'
 import { seedSettings, type E2EEnv } from './helpers/env'
+import { runGit } from './helpers/gitFixture'
 import {
   auxIcon,
   centerTerm,
@@ -179,6 +181,7 @@ const EVERY_MINUTE_DUE_PLUS_TICK_MS = 120_000
 const DUE_PLUS_WINDOW_FIRST_TICKS_MS = 150_000
 const A_LATER_END_OF_THE_FINISHED_RUN_WOULD_HAVE_SHOWN_BY_MS = 5_000
 const ROOM_FOR_A_WRONG_WORKTREE_REMOVAL_MS = 5_000
+const CLOSE_RECHECK_MS = 2_000
 
 async function waitTurnStopSoTheTranscriptExistsBeforeClose(
   page: Page,
@@ -489,6 +492,58 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       const resume = await waitNewCall(env, before)
       expect(resumedId(resume)).toBe(call.sessionId)
       await waitRunStateBound(row)
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
+  test('BB-M18: with "Close it" on, a run that left a file uncommitted stays open and says so; once the file is gone it closes for good: tab, row, worktree and branch', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    gitInit(env.workspaces.a)
+    env.launchEnv.KOLOFT_CRON_CLOSE_RECHECK_MS = String(CLOSE_RECHECK_MS)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+
+      const dlg = await openCron(page, 'ws-a')
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await fillForm(dlg, { name: 'Nightly report', task: '/write report.md' })
+      await expect(dlg.locator('.chip.on', { hasText: 'Leave it open' })).toHaveCount(1)
+      await dlg.locator('.chip', { hasText: 'Close it' }).click()
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await expect(card(page, 'Nightly report').locator('.job-task')).toContainText(
+        'closes when done'
+      )
+      await clickRunNow(page, 'Nightly report')
+
+      const call = await waitNewCall(env, 0)
+      const wt = worktreeOf(call)
+      const tree = path.join(env.workspaces.a, '.claude', 'worktrees', wt)
+      const report = path.join(tree, 'report.md')
+      await expect.poll(() => fs.existsSync(report), { timeout: 60_000 }).toBe(true)
+      await expect
+        .poll(async () => (await histLines(page))[0]?.state, { timeout: 60_000 })
+        .toBe('Done — not closed: Changes not committed')
+      const row = cronRows(page, 'ws-a')
+      await expect(row).toHaveCount(1)
+      expect(await tabDisplays(page)).toHaveLength(1)
+
+      fs.rmSync(report)
+      await expect
+        .poll(async () => (await histLines(page))[0]?.state, { timeout: 30_000 })
+        .toBe('Done — closed itself')
+      expect((await histLines(page))[0].wt).toBe(` · ${wt}`)
+      await expect(card(page, 'Nightly report').locator('.job-last')).toContainText(
+        'done — closed itself'
+      )
+      await expect.poll(() => tabDisplays(page), { timeout: 30_000 }).toHaveLength(0)
+      await expect(row).toHaveCount(0, { timeout: 30_000 })
+      await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+      expect(runGit(env.workspaces.a, 'branch', '--list', `worktree-${wt}`).trim()).toBe('')
     } finally {
       await app.close().catch(() => {})
     }
@@ -817,6 +872,41 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       expect(call.argv[call.argv.indexOf('--permission-mode') + 1]).toBe('acceptEdits')
 
       await waitTurnStopSoTheTranscriptExistsBeforeClose(page, 'Remote report')
+    } finally {
+      await quitAndClose(app)
+      killFakeRemote(env)
+    }
+  })
+
+  test('BB-M19: a remote job set to "Close it" closes for good once its turn ends: tab, row, and its worktree on the machine', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    installFakeRemote(env)
+    gitInit(remoteDir(env))
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await expect(page.locator('.ws-head', { hasText: REMOTE_WS_NAME })).toBeVisible({
+        timeout: 20_000
+      })
+
+      const dlg = await openCron(page, REMOTE_WS_NAME)
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await fillForm(dlg, { name: 'Remote report', task: '/daily-report' })
+      await dlg.locator('.chip', { hasText: 'Close it' }).click()
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await clickRunNow(page, 'Remote report')
+
+      const call = await waitNewCall(env, 0, 120_000)
+      const tree = path.join(remoteDir(env), '.claude', 'worktrees', worktreeOf(call))
+      await expect.poll(() => fs.existsSync(tree), { timeout: 60_000 }).toBe(true)
+      await expect
+        .poll(async () => (await histLines(page))[0]?.state, { timeout: 90_000 })
+        .toBe('Done — closed itself')
+      await expect.poll(() => tabDisplays(page), { timeout: 30_000 }).toHaveLength(0)
+      await expect(wsRows(page, REMOTE_WS_NAME)).toHaveCount(0, { timeout: 30_000 })
+      await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
     } finally {
       await quitAndClose(app)
       killFakeRemote(env)

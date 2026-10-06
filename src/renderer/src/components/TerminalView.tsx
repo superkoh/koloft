@@ -11,6 +11,7 @@ import { isLayoutDragging, onLayoutDragEnd } from '../resizeGate'
 import { exitSyncWindow } from '../syncOutput'
 import { acquireWebgl, releaseWebgl, touchWebgl } from '../webglPool'
 import { registerWebglRepair, unregisterWebglRepair } from '../webglRepair'
+import { registerScreen, screenSizedToPane } from '../terminalScreens'
 
 const RESIZE_QUIET_MS = 100
 const ADOPTED_REPAINT_AFTER_MS = 1000
@@ -84,6 +85,7 @@ export function TerminalView({
       exitSyncWindow(term)
       fit.fit()
       window.api.terminal.resize(id, term.cols, term.rows)
+      screenSizedToPane(id)
       // ADR-0007
       if (consumeAdoptedNudge(id)) {
         setTimeout(() => {
@@ -144,6 +146,7 @@ export function TerminalView({
       ).__koloftTerms ??= {})
       reg[id] = term
     }
+    const unregisterScreen = registerScreen(id, term)
     repaintedRef.current = false
 
     // PLATFORM§20
@@ -369,6 +372,7 @@ export function TerminalView({
       ro.disconnect()
       vis.disconnect()
       delete (window as unknown as { __koloftTerms?: Record<string, Terminal> }).__koloftTerms?.[id]
+      unregisterScreen()
       dprCleanup?.()
       unregisterWebglRepair(id)
       releaseWebgl(id)

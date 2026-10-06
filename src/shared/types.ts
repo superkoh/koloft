@@ -155,6 +155,7 @@ export interface Settings {
   browserPaneWidth: number
   fileTreeHeight: number
   sidebarWidth: number
+  sidebarHidden: boolean
   multiAccount: boolean
   skipPermissions: boolean
   fablePriority: boolean
@@ -173,13 +174,71 @@ export interface Settings {
   agentTools: boolean
   notesHeight: number
   notesFolded: boolean
+  conductorsFolded: boolean
   keepAwake: boolean
   worldClocks: string[]
   onboardingSeen: boolean
   hintsSeen: string[]
   hintsOff: boolean
   lastSeenVersion: string
+  discord: DiscordSettings
 }
+
+export interface DiscordChannel {
+  guildId: string
+  channelId: string
+  name: string
+}
+
+export interface ConductorBinding {
+  id: string
+  scope: string
+  backend: BackendId
+  channel: DiscordChannel
+  sessionIds: string[]
+  lastSessionKey?: string
+  lastMessageId?: string
+  touched: string[]
+  threads?: SessionThread[]
+}
+
+export interface SessionThread {
+  threadId: string
+  keys: string[]
+  name?: string
+  lastMessageId?: string
+}
+
+export interface DiscordSettings {
+  userId?: string
+  userName?: string
+  bindings: ConductorBinding[]
+}
+
+export interface ConductorSaveInput {
+  id?: string
+  scope: string
+  backend: BackendId
+  channel: DiscordChannel
+}
+
+export type DiscordPhase =
+  'off' | 'connecting' | 'connected' | 'token' | 'intents' | 'unreachable' | 'elsewhere'
+
+export interface DiscordStatus {
+  phase: DiscordPhase
+  botName?: string
+  applicationId?: string
+  guildNames: string[]
+  failing: Record<string, string>
+  candidate?: { name: string; text: string; at: number }
+}
+
+export const DISCORD_OFF: DiscordStatus = { phase: 'off', guildNames: [], failing: {} }
+
+export type ConductorSaveResult = { ok: true } | { ok: false; error: string }
+
+export type ConductorOpenResult = { ok: true; tabId: string } | { ok: false; error: string }
 
 export const HINT_IDS = ['workbench', 'approval', 'agent-web', 'worktree', 'github'] as const
 export type HintId = (typeof HINT_IDS)[number]
@@ -196,6 +255,7 @@ export const DEFAULT_SETTINGS: Settings = {
   browserPaneWidth: 560,
   fileTreeHeight: 260,
   sidebarWidth: 280,
+  sidebarHidden: false,
   multiAccount: false,
   skipPermissions: true,
   fablePriority: true,
@@ -212,12 +272,14 @@ export const DEFAULT_SETTINGS: Settings = {
   agentTools: true,
   notesHeight: 260,
   notesFolded: false,
+  conductorsFolded: true,
   keepAwake: true,
   worldClocks: [],
   onboardingSeen: false,
   hintsSeen: [],
   hintsOff: false,
-  lastSeenVersion: ''
+  lastSeenVersion: '',
+  discord: { bindings: [] }
 }
 
 export type BackendId = 'claude' | 'codex'
@@ -256,6 +318,8 @@ export interface CreateTabOptions {
   scheduled?: boolean
   util?: boolean
   ownerTabId?: string
+  role?: string
+  trustFolder?: boolean
 }
 
 export type CreateTabResult =
@@ -292,6 +356,7 @@ export interface PreviewItem {
   access?: FileAccess
   added?: number
   removed?: number
+  wroteAt?: number
 }
 
 export type GitFileStatus = 'modified' | 'added' | 'deleted' | 'untracked' | 'renamed' | 'conflict'
@@ -355,12 +420,22 @@ export interface ContentHit {
 
 export type AttentionKind = 'turn-done' | 'approval' | 'exited'
 
-export interface AttentionEvent {
+export interface AttentionSubject {
+  title?: string
+  sessionId?: string
+}
+
+export interface AttentionEvent extends AttentionSubject {
   tabId: string
   kind: AttentionKind
   at: number
-  title?: string
   resurrected?: boolean
+}
+
+export const ATTENTION_REASON: Record<AttentionKind, string> = {
+  'turn-done': 'turn done — your move',
+  approval: 'waiting for your approval',
+  exited: 'session exited unexpectedly'
 }
 
 export interface FlowStats {
@@ -404,6 +479,7 @@ export interface SessionUsage {
 }
 
 export const PLACEHOLDER_SESSION_TITLE = 'Claude session'
+export const CODEX_PLACEHOLDER_TITLE = 'Codex session'
 
 export const PENDING_SESSION_TITLE = 'Starting…'
 
@@ -443,7 +519,9 @@ export interface BackendSessionInfo {
   updatedAt: number
 }
 
-export interface SessionInfo extends BackendSessionInfo, SessionSource {}
+export interface SessionInfo extends BackendSessionInfo, SessionSource {
+  conductor?: string
+}
 
 export interface ClaudeSessionInfo extends BackendSessionInfo {
   jsonlPath: string | null
@@ -663,6 +741,17 @@ export interface TerminalCwd {
   cwd: string
 }
 
+export interface ScreenRequest {
+  requestId: string
+  tabId: string
+}
+
+export interface ScreenAnswer {
+  requestId: string
+  lines: string[] | null
+  sizedToPane: boolean
+}
+
 export interface KoloftApi {
   isDev: boolean
   domRenderer: boolean
@@ -688,6 +777,8 @@ export interface KoloftApi {
     onProcessTitle(cb: (t: TerminalProcessTitle) => void): () => void
     onCwd(cb: (c: TerminalCwd) => void): () => void
     onSpawned(cb: (t: SpawnedTab) => void): () => void
+    onScreenRequest(cb: (r: ScreenRequest) => void): () => void
+    answerScreen(a: ScreenAnswer): void
   }
   workbench: {
     get(sessionId: string): Promise<SessionWorkbenchState>
@@ -710,6 +801,7 @@ export interface KoloftApi {
     resumePlan(sessionId: string): Promise<ResumePlan>
     resume(req: SessionResumeRequest): Promise<SessionResumeResult>
     archive(id: string): Promise<boolean>
+    setResident(id: string, on: boolean): void
     forceClose(id: string): Promise<{ ok: boolean }>
     // CC§2
     transcriptExists(sessionId: string): Promise<boolean>
@@ -722,6 +814,7 @@ export interface KoloftApi {
     activeTab(id: string | null): void
     visit(id: string): void
     onActivateTab(cb: (tabId: string) => void): () => void
+    onChanged(cb: (pending: AttentionEvent[]) => void): () => void
   }
   preview: {
     readText(path: string): Promise<string>
@@ -840,6 +933,7 @@ export interface KoloftApi {
     add(path: string): Promise<WorkspaceAddResult>
     remove(path: string): Promise<WorkspaceRemoveResult>
     removeConfirmed(path: string): Promise<void>
+    move(path: string, before: string | null): Promise<void>
     worktrees(path: string): Promise<WorktreeInfo[]>
     historyRows(path: string): Promise<SessionRow[]>
     rows(): Promise<WorkspaceRows[]>
@@ -891,9 +985,14 @@ export interface KoloftApi {
   windowFocus: {
     onChange(cb: (focused: boolean) => void): () => void
   }
+  windowFullscreen: {
+    get(): Promise<boolean>
+    onChange(cb: (on: boolean) => void): () => void
+  }
   shortcuts: {
     onNewTerminalTab(cb: () => void): () => void
     onFocusNotes(cb: () => void): () => void
+    onToggleSidebar(cb: () => void): () => void
     onNewSession(cb: () => void): () => void
     onNewWorktreeSession(cb: () => void): () => void
     onCloseTab(cb: () => void): () => void
@@ -926,6 +1025,21 @@ export interface KoloftApi {
     onState(cb: (s: CronState) => void): () => void
     onToast(cb: (text: string) => void): () => void
   }
+  conductors: {
+    save(input: ConductorSaveInput): Promise<ConductorSaveResult>
+    unbind(id: string): Promise<void>
+    switchBackend(id: string): Promise<void>
+    open(id: string): Promise<ConductorOpenResult>
+    startFresh(id: string): Promise<ConductorOpenResult>
+  }
+  discord: {
+    setToken(token: string): Promise<boolean>
+    status(): Promise<DiscordStatus>
+    onStatus(cb: (s: DiscordStatus) => void): () => void
+    pair(isMe: boolean): Promise<void>
+    forgetOwner(): Promise<void>
+    channels(): Promise<DiscordChannel[]>
+  }
 }
 
 export type Schedule =
@@ -951,12 +1065,13 @@ export interface CronJob {
   model?: string
   effort?: CronEffort
   permission: CronPermission
+  autoClose?: true
   enabled: boolean
   createdAt: number
   history: HistoryLine[]
 }
 
-export type HistoryState = 'closed' | 'failed' | 'ended' | 'skipped' | 'missed'
+export type HistoryState = 'closed' | 'finished' | 'failed' | 'ended' | 'skipped' | 'missed'
 
 export interface HistoryLine {
   dueAt: number
@@ -984,6 +1099,7 @@ export interface LiveRun {
   startedAt: number
   dueAt: number
   manual?: true
+  kept?: string
 }
 
 export interface CronState {
@@ -1005,6 +1121,7 @@ export interface SpawnedTab {
   cwd: string
   title: string
   jobId?: string
+  sessionId?: string
 }
 
 export type CronSaveInput = Omit<CronJob, 'history' | 'createdAt' | 'id'> & { id?: string }
@@ -1076,6 +1193,7 @@ export type LayoutV5 = Omit<LayoutV4, 'version'> & { version: 5; members: string
 export type LayoutV6 = Omit<LayoutV5, 'version' | 'sessions'> & {
   version: 6
   panels: LayoutV5['sessions']
+  resident?: string[]
 }
 
 // CC§2
@@ -1103,7 +1221,9 @@ export interface BackendSessionRow {
   revealDir?: string
 }
 
-export interface SessionRow extends BackendSessionRow, SessionSource {}
+export interface SessionRow extends BackendSessionRow, SessionSource {
+  resident?: boolean
+}
 
 export interface WorkspaceFreshness {
   state: 'ok' | 'none' | 'error'
@@ -1136,9 +1256,16 @@ export interface WorkspaceRows {
     isGit: boolean
     hasHistory: boolean
     freshness?: WorkspaceFreshness
-    remote?: { host: string; path: string; connected: boolean }
+    github?: WorkspaceGithub
+    remote?: { host: string; path: string; connected: boolean; problem?: string }
   }
   rows: SessionRow[]
+}
+
+export interface WorkspaceGithub {
+  repo: string
+  issues: number
+  prs: number
 }
 
 export interface WorktreeInfo {
@@ -1169,22 +1296,14 @@ export interface SessionResumeRequest {
   mode?: 'direct' | 'rebuild' | 'renamed' | 'main'
   worktree?: string
   rebuild?: { worktreePath: string; branch: string; baseRef: string }
+  role?: string
+  trustFolder?: boolean
 }
 
 export type SessionResumeResult =
   | { ok: true; id: string; cwd: string; kind?: TabKind }
   | { ok: false; code: 'cwd-missing' | 'invalid-args' | 'rebuild-failed' }
   | { ok: false; code: 'backend'; message: string }
-
-export interface ResumeEvidence {
-  worktreePath: string
-  worktreeName: string
-  expectedBranch: string
-  currentBranch: string | null
-  branchMatches: boolean
-  dirty: boolean
-  occupiedBy: string | null
-}
 
 export type ResumePlan =
   | { action: 'direct'; cwd: string }
@@ -1196,5 +1315,12 @@ export type ResumePlan =
       baseRef: string
       resumeCwd: string
     }
-  | { action: 'dialog'; evidence: ResumeEvidence; resumeCwd: string; renamedName: string }
+  | {
+      action: 'dialog'
+      worktreePath: string
+      worktreeName: string
+      occupiedBy: string
+      resumeCwd: string
+      renamedName: string
+    }
   | { action: 'unavailable'; reason: 'no-cwd' | 'not-found' | 'running' }

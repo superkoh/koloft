@@ -12,7 +12,7 @@ import {
 const PAST_TWO_LIVENESS_SWEEPS_MS = 6_000
 
 test.describe('attention markers come from real session-status transitions (shim → hooks → tracker → attention set)', () => {
-  test('a finished turn pends attention even with the window unfocused, and visiting the tab clears it', async ({
+  test('a finished turn pends attention and a red dot on its row even with the window unfocused, and visiting the tab clears both', async ({
     page
   }) => {
     await waitBooted(page)
@@ -23,15 +23,22 @@ test.describe('attention markers come from real session-status transitions (shim
     await expect
       .poll(() => pendingAttention(page), { timeout: 10_000 })
       .toMatchObject([{ kind: 'turn-done', title: expect.stringContaining('project notes') }])
+    await expect(page.locator('.ws-tab.st-waiting .ws-tab-unread')).toHaveCount(1)
+
+    const head = page.locator('.ws-head', { hasText: 'ws-a' })
+    await head.locator('.fico').click()
+    await expect(head.locator('.ws-unread-count')).toHaveText('1')
+    await head.locator('.fico').click()
+    await expect(head.locator('.ws-unread-count')).toHaveCount(0)
 
     await expect(page.locator('.needs')).toHaveCount(0)
     await expect(page.locator('.sb-rollup')).toHaveCount(0)
-    await expect(page.locator('.ws-badge')).toHaveCount(0)
     await expect(page.locator('.toast')).toHaveCount(0)
 
     await page.locator('.ws-tab').first().click()
     await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
     await expect(page.locator('.ws-tab.st-waiting')).toBeVisible()
+    await expect(page.locator('.ws-tab-unread')).toHaveCount(0)
   })
 
   test('a graceful /exit clears pending and never raises exited, not even after two liveness sweeps', async ({

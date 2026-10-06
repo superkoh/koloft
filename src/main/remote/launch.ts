@@ -3,7 +3,9 @@ import fs from 'fs'
 import path from 'path'
 import type { AccountKind } from '@shared/types'
 import { shq } from '@shared/shellQuote'
-import { REMOTE_PATH_LINE } from './install'
+import { REMOTE_PATH_LINE, onATerminalEvenWhenSshGaveNone, remoteShCommand } from './install'
+import { remotePtsFile } from './paths'
+import { SSH_LINK_BROKE_EXIT } from './ssh'
 
 export function accountEnv(
   kind: AccountKind,
@@ -105,13 +107,14 @@ export function tabScript(spec: TabSpec): string {
   return `#!/bin/sh
 M="$HOME/.koloft/${spec.machineName}"
 ${REMOTE_PATH_LINE}
-[ "$1" = attach ] && exec tmux -L koloft attach -d -t '${spec.tmuxName}'
 if [ "$1" = run ]; then
   KOLOFT_TMUX_FOLLOW=1; export KOLOFT_TMUX_FOLLOW
   unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN
   E="${T}.env"; [ -f "$E" ] && { set -a; . "$E"; set +a; rm -f "$E"; }
   exec claude --settings "${T}.json" ${spec.claudeArgs.map(shq).join(' ')}
 fi
+${onATerminalEvenWhenSshGaveNone('$2', '$3', spec.tabId, `sh '${T}.sh' $1`)}
+[ "$1" = attach ] && exec tmux -L koloft attach -d -t '${spec.tmuxName}'
 sh "$M/ensure.sh" || exit $?
 cd ${shq(spec.cwd)}${spec.fallbackCwd ? ` || cd ${shq(spec.fallbackCwd)}` : ''} || exit 3
 echo ${shq(spec.banner)}
@@ -158,8 +161,6 @@ export interface LaunchLineSpec {
   mode: 'start' | 'attach'
 }
 
-const SSH_LINK_BROKE_EXIT = 255
-
 const TURN_OFF_MOUSE_PASTE_AND_ALT_SCREEN = `printf '\\033[?1000l\\033[?1002l\\033[?1003l\\033[?1006l\\033[?2004l\\033[?25h\\033[?1049l'`
 
 function machineReady(s: {
@@ -189,7 +190,7 @@ export function launchLine(s: LaunchLineSpec): string {
   const pushTab =
     `COPYFILE_DISABLE=1 tar cf - -C ${shq(s.tabDir)} . | ssh ${opts} ${host} ` +
     `'umask 077; mkdir -p "$HOME/.koloft/tabs" && tar xf - -C "$HOME/.koloft/tabs"'`
-  const run = `ssh -tt ${opts} ${host} "sh \\"\\$HOME/.koloft/tabs/${s.tabId}.sh\\" $a"`
+  const run = `ssh -tt ${opts} ${host} "sh \\"\\$HOME/.koloft/tabs/${s.tabId}.sh\\" $a $COLUMNS $LINES"`
   return (
     `${machineReady(s)} && ${pushTab} ` +
     `|| { ${COULD_NOT_CONNECT}; rm -rf ${shq(s.tabDir)}; exit 4; }; ` +
@@ -210,14 +211,22 @@ export interface UtilShellLineSpec {
 
 // PLATFORM§33
 export function utilShellLine(s: UtilShellLineSpec): string {
-  const run = `sh "$HOME/.koloft/${s.machine.name}/util.sh" ${shq(s.dir)}`
+  const run = `sh "$HOME/.koloft/${s.machine.name}/util.sh" ${shq(s.dir)} ${s.tabId}`
   return (
     `${machineReady(s)} || { ${COULD_NOT_CONNECT}; exit 4; }; ` +
-    `clear; ssh -t ${s.sshOptions.join(' ')} ${shq(s.host)} ${shq(run)}; exit`
+    `clear; ssh -t ${s.sshOptions.join(' ')} ${shq(s.host)} ${shq(run)}" $COLUMNS $LINES"; exit`
   )
 }
 
-// PLATFORM§33
+// PLATFORM§38
+export function resizeStandInCmd(tabId: string, cols: number, rows: number): string {
+  return remoteShCommand(
+    `f="${remotePtsFile('$1')}"\n[ -s "$f" ] && stty -F "$(cat "$f")" cols "$2" rows "$3"`,
+    [tabId, String(cols), String(rows)]
+  )
+}
+
 export function killSessionCmd(tmuxName: string): string {
-  return `sh -c '${REMOTE_PATH_LINE}; tmux -L koloft kill-session -t ${tmuxName}'`
+  if (!NEEDS_NO_QUOTING_RE.test(tmuxName)) throw new Error('unsafe tab/session name')
+  return remoteShCommand(`tmux -L koloft kill-session -t ${tmuxName}`)
 }

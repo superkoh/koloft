@@ -8,7 +8,8 @@ import type {
   GitNumstatMap,
   GitStatusMap,
   LaunchPermission,
-  SearchHit
+  SearchHit,
+  SkillSuggestion
 } from '@shared/types'
 import type { DiffResult, GitDiffResult } from '../gitStatus'
 import type { GithubLookup } from '../github'
@@ -23,6 +24,7 @@ export interface ShellLaunch {
   cwd: string
   shell?: string
   launchCommand?: (tabId: string) => string
+  resized?: (tabId: string, cols: number, rows: number) => void
 }
 
 export interface ClaudeLaunch {
@@ -55,6 +57,7 @@ export type ClaudeLaunchPlan =
       cwd: string
       shell?: string
       launchCommand: (tabId: string) => string
+      resized?: (tabId: string, cols: number, rows: number) => void
       extraEnv?: { KOLOFT_FIRST_PROMPT?: string; KOLOFT_SESSION_NAME?: string }
       machine?: MachineTab
     }
@@ -98,6 +101,7 @@ export interface Host {
   launch(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan>
   trustFolder(dir: string): Promise<void>
   trustsFolder(dir: string): Promise<boolean>
+  listSkills(root: string): Promise<SkillSuggestion[]>
   keyed(p: string): string
   gitOut(root: string, args: string[]): Promise<string | null>
   reveal(p: string): void

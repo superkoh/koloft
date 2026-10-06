@@ -12,7 +12,9 @@ import type {
   SessionRow
 } from '@shared/types'
 import type { SessionEvent } from '@shared/sessionEvent'
-import { formatRemoteKey, hostOf, isAbsoluteOnHost } from '@shared/remoteKey'
+import { formatRemoteKey, hostOf, isAbsoluteOnHost, parseRemoteKey } from '@shared/remoteKey'
+import type { Turn } from '@shared/turns'
+import type { ModeClass } from '../crossSessionMessage'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import type { SessionBackend } from '../sessionBackends'
 import type { PtyManager } from '../ptyManager'
@@ -24,8 +26,14 @@ import type { MachineAccount, SshHost } from '../host/sshHost'
 import type { ClaudeLaunch, Host } from '../host/host'
 import type { RemoteSync } from '../remote/sync'
 import { accountEnv, tmuxSessionName } from '../remote/launch'
-import { dq, mirrorHookDir, REMOTE_HOOK_DIR, tabPackageDir } from '../remote/paths'
-import { hookSettings } from '../hooks'
+import {
+  dq,
+  mirrorHookDir,
+  mirrorProjectsRoot,
+  REMOTE_HOOK_DIR,
+  tabPackageDir
+} from '../remote/paths'
+import { hookSettings, removeConductorMarker, writeConductorMarker } from '../hooks'
 import type { StatusLineSetting } from '../statusline'
 import { loadSettings } from '../settings'
 import { keychainRead, listAccounts } from '../accounts'
@@ -34,7 +42,13 @@ import { SESSION_ID_RE } from '../claudeArgs'
 import { probeClaude } from '../claudeProbe'
 import { runningClaudePid } from '../claudeSessionRegistry'
 import { rootsWithClaude } from '../claudeLiveness'
-import { readAppendedLines, sessionEventFromHook } from '../sessionTracker'
+import {
+  findTranscript,
+  PROJECTS_ROOT,
+  readAppendedLines,
+  sessionEventFromHook,
+  transcriptTurns
+} from '../sessionTracker'
 import {
   continuedInOf,
   conversationMovedTo,
@@ -108,6 +122,8 @@ export class ClaudeBackend implements SessionBackend {
   private statusLogDraining = new Map<string, boolean>()
   private processedRegIds = new Set<string>()
   private watchedHookMirrors = new Map<string, () => void>()
+  private pickedSkipFlag = new Set<string>()
+  private launchedBypassing = new Set<string>()
   agentPlugin?: string
 
   constructor(private d: ClaudeBackendDeps) {}
@@ -171,6 +187,26 @@ export class ClaudeBackend implements SessionBackend {
     return this.d.tracker.transcriptExists(key)
   }
 
+  async turns(key: string, n: number): Promise<Turn[]> {
+    const live = this.d.tracker.turnsOf(key, n)
+    if (live) return live
+    const remote = parseRemoteKey(this.homeOf(key) ?? '')
+    const root = remote ? mirrorProjectsRoot(this.d.userData(), remote.host) : PROJECTS_ROOT
+    const file = findTranscript(root, key)
+    return file ? transcriptTurns(file, n) : []
+  }
+
+  picked(tabId: string, skipFlag: boolean): void {
+    if (skipFlag) this.pickedSkipFlag.add(tabId)
+    else this.pickedSkipFlag.delete(tabId)
+  }
+
+  // ADR-0028
+  permissionClass(tabId: string): ModeClass {
+    const injected = this.pickedSkipFlag.has(tabId) && !!this.d.tracker.infoOf(tabId)?.account
+    return injected || this.launchedBypassing.has(tabId) ? 'bypass' : 'prompting'
+  }
+
   stop(tabId: string): void {
     const remote = this.d.tracker.remoteOf(tabId)
     if (remote) {
@@ -232,11 +268,14 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   onPtyExit(tabId: string): void {
+    this.pickedSkipFlag.delete(tabId)
+    this.launchedBypassing.delete(tabId)
     const remote = this.d.tracker.remoteOf(tabId)
     if (!remote) {
       // CC§1
       this.drainExitRegistration(this.hookRegDir, tabId)
       this.dropStatusLog(this.hookRegDir, tabId)
+      removeConductorMarker(this.hookRegDir, tabId)
       return
     }
     const sid = this.sessionIdOf(tabId)
@@ -274,7 +313,12 @@ export class ClaudeBackend implements SessionBackend {
           const strikes = (goneStrikes.get(tabId) ?? 0) + 1
           if (strikes >= MISSED_SWEEPS_BEFORE_UNTRACK) {
             goneStrikes.delete(tabId)
-            this.d.events(tabId, { type: 'exited', clean: false, title: this.titleOf(tabId) })
+            this.d.events(tabId, {
+              type: 'exited',
+              clean: false,
+              title: this.titleOf(tabId),
+              sessionId: this.sessionIdOf(tabId)
+            })
             this.d.tracker.untrack(tabId)
           } else {
             goneStrikes.set(tabId, strikes)
@@ -389,6 +433,7 @@ export class ClaudeBackend implements SessionBackend {
       message?: string
       bgl?: string
       wake?: number
+      ask?: unknown
     }
     obj.tabId = this.liveTabFor(obj)
     if (!obj.tabId) return
@@ -398,7 +443,7 @@ export class ClaudeBackend implements SessionBackend {
     }
     // CC§8
     if (typeof obj.wake === 'number') this.d.tracker.setWakeupPending(obj.tabId, obj.wake === 1)
-    const event = sessionEventFromHook(obj.event, obj.message, obj.bgl)
+    const event = sessionEventFromHook(obj.event, obj.message, obj.bgl, obj.ask)
     if (event) this.d.events(obj.tabId, event)
   }
 
@@ -456,7 +501,12 @@ export class ClaudeBackend implements SessionBackend {
           .list()
           .some((t) => t.tabId === tabId && t.alive && t.sessionId === sessionId)
         if (!still || !this.remoteSessionGone(host, sessionId)) return
-        this.d.events(tabId, { type: 'exited', clean: false, title: this.titleOf(tabId) })
+        this.d.events(tabId, {
+          type: 'exited',
+          clean: false,
+          title: this.titleOf(tabId),
+          sessionId
+        })
         tracker.untrack(tabId)
       }, REMOTE_EXIT_WAIT_MS).unref()
     }
@@ -500,10 +550,11 @@ export class ClaudeBackend implements SessionBackend {
     }
     if (hit && EVICTING_END_REASONS.has(hit.raw.reason ?? '')) {
       const stillBound = !!sid && this.d.tracker.list().some((t) => t.alive && t.sessionId === sid)
-      if (sid && !stillBound) this.d.workspaces()?.dropOwnership(sid)
+      if (sid && !stillBound)
+        this.d.workspaces()?.dropOwnership(sid, `the remote claude ended (${hit.raw.reason})`)
     }
     if (!hit && sid && this.remoteSessionGone(host, sid))
-      this.d.events(tabId, { type: 'exited', clean: false, title })
+      this.d.events(tabId, { type: 'exited', clean: false, title, sessionId: sid })
     for (const name of new Set([`${tabId}.json`, hit?.name ?? ''])) {
       if (name) fs.rmSync(path.join(mirrorDir, name), { force: true })
     }
@@ -543,7 +594,7 @@ export class ClaudeBackend implements SessionBackend {
         const sid = this.sessionIdOf(obj.tabId)
         tracker.untrack(obj.tabId)
         const stillBound = !!sid && tracker.list().some((s) => s.alive && s.sessionId === sid)
-        if (sid && !stillBound) workspaces?.dropOwnership(sid)
+        if (sid && !stillBound) workspaces?.dropOwnership(sid, `claude ended (${obj.reason})`)
       } else {
         // CC§1
         this.untrackIfClaudeGone(obj.tabId)
@@ -567,7 +618,7 @@ export class ClaudeBackend implements SessionBackend {
       if (tracker.remoteOf(obj.tabId)) tracker.setRemoteTmuxName(obj.tabId, tmuxSessionName(nextId))
       workspaces?.onSessionRebind(prevId, nextId, obj.source || '')
       if (replacesTheConversation(obj.source || '')) {
-        workspaces?.dropOwnership(prevId)
+        workspaces?.dropOwnership(prevId, `replaced by ${nextId} (${obj.source})`)
       }
     }
     if (nextId) workspaces?.onSessionBound(nextId)
@@ -608,7 +659,9 @@ export class ClaudeBackend implements SessionBackend {
       firstPrompt: opts.firstPrompt,
       name: opts.name,
       cols: opts.cols,
-      rows: opts.rows
+      rows: opts.rows,
+      role: opts.role,
+      trustFolder: opts.trustFolder
     })
   }
 
@@ -660,7 +713,9 @@ export class ClaudeBackend implements SessionBackend {
       resumeSessionId: sid,
       worktree,
       cols: req.cols,
-      rows: req.rows
+      rows: req.rows,
+      role: req.role,
+      trustFolder: req.trustFolder
     })
     return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
   }
@@ -720,10 +775,11 @@ export class ClaudeBackend implements SessionBackend {
 
   private async createTab(
     host: Host,
-    spec: ClaudeLaunch & { cols?: number; rows?: number }
+    spec: ClaudeLaunch & { cols?: number; rows?: number; role?: string; trustFolder?: boolean }
   ): Promise<CreateTabResult> {
     const { tracker } = this.d
     const workspaces = this.d.workspaces()
+    if (spec.trustFolder) await host.trustFolder(spec.cwd ?? spec.root)
     const ws = spec.resumeSessionId ? workspaces?.workspaceOf(spec.resumeSessionId) : undefined
     const plan = await host.launch({
       ...spec,
@@ -744,15 +800,19 @@ export class ClaudeBackend implements SessionBackend {
         return plan.launchCommand(tabId)
       },
       resumeSessionId: spec.resumeSessionId,
+      resized: plan.resized,
       shell: plan.shell,
       extraEnv: agentPlugin ? { ...plan.extraEnv, KOLOFT_AGENT_PLUGIN: agentPlugin } : plan.extraEnv
     })
+    if (spec.role && !machine) writeConductorMarker(this.hookRegDir, handle.id, spec.role)
+    if (spec.permission === 'bypass') this.launchedBypassing.add(handle.id)
     if (machine) {
       tracker.track(handle.id, machine.cwd, machine.tracking)
       if (machine.picked) tracker.setPickedAccount(handle.id, machine.picked)
       if (machine.attachTo) {
         tracker.bindSession(handle.id, '', machine.attachTo, machine.cwd)
         workspaces?.onSessionBound(machine.attachTo)
+        this.d.events(handle.id, { type: 'bound', key: machine.attachTo })
       } else if (!spec.resumeSessionId) {
         workspaces?.launchStarted(handle.id, machine.root, spec.worktree, machine.tracking.host)
       }
@@ -816,5 +876,12 @@ export function machineHookSettings(
   const remoteStatusLine: StatusLineSetting | undefined = statusline
     ? { type: 'command', command: dq(`${machineDir}/statusline/run.sh`), padding: 0 }
     : undefined
-  return hookSettings(`${machineDir}/hook.sh`, REMOTE_HOOK_DIR, tabId, remoteStatusLine, dq)
+  return hookSettings(
+    `${machineDir}/hook.sh`,
+    REMOTE_HOOK_DIR,
+    tabId,
+    remoteStatusLine,
+    dq,
+    'record-only'
+  )
 }

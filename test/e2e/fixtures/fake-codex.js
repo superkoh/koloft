@@ -115,6 +115,15 @@ if (argv[0] === 'app-server') {
       fs.unlinkSync(file('fake-codex-next-title'))
       thread.name = desired
     } else thread.name ||= thread.preview.slice(0, 60) || 'Codex fixture session'
+    const asked = turn.items.find((item) => item.type === 'userMessage')?.content[0].text
+    const reply = {
+      type: 'agentMessage',
+      id: crypto.randomUUID(),
+      text: `Codex fixture answered: ${asked}`,
+      phase: 'final_answer'
+    }
+    turn.items.push(reply)
+    event('item/completed', { threadId: thread.id, turnId: turn.id, item: reply })
     thread.turns.push(turn)
     status(thread, { type: 'idle' })
     event('thread/name/updated', { threadId: thread.id, threadName: thread.name })
@@ -128,6 +137,85 @@ if (argv[0] === 'app-server') {
       }
     })
     event('turn/completed', { threadId: thread.id, turn })
+    queued.shift()?.()
+  }
+  const queued = []
+  const startTurn = (thread, text, clientId, started) => {
+    persistTurn(thread, text)
+    const turn = { id: crypto.randomUUID(), status: 'inProgress', items: [], error: null }
+    activeTurn = turn
+    started?.(turn)
+    status(thread, { type: 'active', activeFlags: [] })
+    event('turn/started', { threadId: thread.id, turn })
+    // CODEX§19
+    const asked = {
+      type: 'userMessage',
+      id: crypto.randomUUID(),
+      clientId,
+      content: [{ type: 'text', text, text_elements: [] }]
+    }
+    turn.items.push(asked)
+    event('item/completed', { threadId: thread.id, turnId: turn.id, item: asked })
+    if (text.startsWith('open ')) {
+      const shell = spawnSync('/bin/zsh', ['-lc', text], { cwd: thread.cwd, encoding: 'utf8' })
+      event('item/completed', {
+        threadId: thread.id,
+        turnId: turn.id,
+        item: {
+          type: 'commandExecution',
+          id: 'open-' + turn.id,
+          status: shell.status === 0 ? 'completed' : 'failed',
+          exitCode: shell.status,
+          aggregatedOutput: (shell.stdout || '') + (shell.stderr || ''),
+          command: `/bin/zsh -lc '${text}'`,
+          cwd: thread.cwd,
+          commandActions: [{ type: 'unknown', command: text }]
+        }
+      })
+    }
+    if (text.includes('approve')) {
+      pendingApproval = { id: 'approval-' + turn.id, thread, turn }
+      status(thread, { type: 'active', activeFlags: ['waitingOnApproval'] })
+      emit({
+        id: pendingApproval.id,
+        method: 'item/commandExecution/requestApproval',
+        params: {
+          threadId: thread.id,
+          turnId: turn.id,
+          itemId: 'command-1',
+          command: 'echo approved',
+          cwd: thread.cwd
+        }
+      })
+    } else if (text.includes('ask me')) {
+      pendingApproval = { id: 'question-' + turn.id, thread, turn }
+      status(thread, { type: 'active', activeFlags: ['waitingOnUserInput'] })
+      // CODEX§20
+      emit({
+        id: pendingApproval.id,
+        method: 'item/tool/requestUserInput',
+        params: {
+          threadId: thread.id,
+          turnId: turn.id,
+          itemId: 'call-1',
+          questions: [
+            {
+              id: 'colour',
+              header: 'Colour',
+              question: 'Which colour do you prefer?',
+              isOther: true,
+              isSecret: false,
+              options: [
+                { label: 'Red', description: 'Choose red.' },
+                { label: 'Green', description: 'Choose green.' }
+              ]
+            }
+          ],
+          isBlocking: true,
+          autoResolutionMs: null
+        }
+      })
+    } else if (!text.includes('hold')) setTimeout(() => complete(thread, turn), 120)
   }
   const lines = readline.createInterface({ input: process.stdin })
   lines.on('line', (line) => {
@@ -212,51 +300,45 @@ if (argv[0] === 'app-server') {
       result(id, { status: 'unsubscribed' })
       return
     }
-    if (method === 'turn/start') {
+    if (method === 'turn/start' || method === 'thread/queue/add') {
       const thread = active?.id === p.threadId ? active : load(p.threadId)
       if (!thread) {
         error(id, 'Thread not found')
         return
       }
       const text = (p.input || []).map((item) => item.text || '').join('\n')
-      persistTurn(thread, text)
+      // CODEX§17
+      if (method === 'thread/queue/add') {
+        result(id, { queuedSubmission: { id: crypto.randomUUID() } })
+        const begin = () => startTurn(thread, text, p.clientUserMessageId ?? null)
+        if (activeTurn?.status === 'inProgress') queued.push(begin)
+        else begin()
+        return
+      }
+      startTurn(thread, text, null, (turn) => result(id, { turn }))
+      return
+    }
+    // CODEX§21
+    if (method === 'thread/compact/start') {
+      const thread = active?.id === p.threadId ? active : load(p.threadId)
+      if (!thread) {
+        error(id, 'Thread not found')
+        return
+      }
+      result(id, {})
       const turn = { id: crypto.randomUUID(), status: 'inProgress', items: [], error: null }
+      const item = { type: 'contextCompaction', id: crypto.randomUUID() }
       activeTurn = turn
-      result(id, { turn })
       status(thread, { type: 'active', activeFlags: [] })
       event('turn/started', { threadId: thread.id, turn })
-      if (text.startsWith('open ')) {
-        const shell = spawnSync('/bin/zsh', ['-lc', text], { cwd: thread.cwd, encoding: 'utf8' })
-        event('item/completed', {
-          threadId: thread.id,
-          turnId: turn.id,
-          item: {
-            type: 'commandExecution',
-            id: 'open-' + turn.id,
-            status: shell.status === 0 ? 'completed' : 'failed',
-            exitCode: shell.status,
-            aggregatedOutput: (shell.stdout || '') + (shell.stderr || ''),
-            command: `/bin/zsh -lc '${text}'`,
-            cwd: thread.cwd,
-            commandActions: [{ type: 'unknown', command: text }]
-          }
-        })
-      }
-      if (text.includes('approve')) {
-        pendingApproval = { id: 'approval-' + turn.id, thread, turn }
-        status(thread, { type: 'active', activeFlags: ['waitingOnApproval'] })
-        emit({
-          id: pendingApproval.id,
-          method: 'item/commandExecution/requestApproval',
-          params: {
-            threadId: thread.id,
-            turnId: turn.id,
-            itemId: 'command-1',
-            command: 'echo approved',
-            cwd: thread.cwd
-          }
-        })
-      } else if (!text.includes('hold')) setTimeout(() => complete(thread, turn), 120)
+      event('item/started', { threadId: thread.id, turnId: turn.id, item })
+      setTimeout(() => {
+        event('item/completed', { threadId: thread.id, turnId: turn.id, item })
+        turn.status = 'completed'
+        status(thread, { type: 'idle' })
+        event('turn/completed', { threadId: thread.id, turn })
+        queued.shift()?.()
+      }, 120)
       return
     }
     if (method === 'turn/interrupt') {
@@ -352,6 +434,7 @@ async function startTui() {
   let turnId
   let working = false
   let approval
+  let question
   let typed = ''
   const pending = new Map()
   const send = (method, params = {}) =>
@@ -386,8 +469,9 @@ async function startTui() {
     if (thread) await send('thread/unsubscribe', { threadId: thread.id }).catch(() => {})
     ws.close()
   }
-  const input = async (text) => {
-    if (!text.trim()) return
+  const input = async (raw) => {
+    const text = raw.trim()
+    if (!text) return
     if (approval) {
       ws.send(
         JSON.stringify({
@@ -397,7 +481,9 @@ async function startTui() {
       )
       approval = undefined
     } else if (text === '/exit' || text === '/quit') await exit()
-    else if (text === '/new') await open('thread/start', { cwd })
+    else if (text === '/new' || text === '/clear') await open('thread/start', { cwd })
+    // CODEX§21
+    else if (text === '/compact') await send('thread/compact/start', { threadId: thread.id })
     else if (text === '/fork') await open('thread/fork', { threadId: thread.id, cwd })
     else if (text.startsWith('/resume '))
       await open('thread/resume', { threadId: text.slice(8).trim(), cwd })
@@ -408,6 +494,10 @@ async function startTui() {
     if (frame.method === 'item/commandExecution/requestApproval') {
       approval = frame.id
       process.stdout.write('\r\nApprove command? [y/n] ')
+    } else if (frame.method === 'item/tool/requestUserInput') {
+      const [q] = frame.params.questions
+      question = { id: frame.id, key: q.id, labels: q.options.map((o) => o.label) }
+      process.stdout.write('\r\n' + q.question + ' ' + question.labels.join(' / ') + ' ')
     } else if (frame.method === 'turn/started') {
       working = true
       turnId = frame.params.turn.id
@@ -442,6 +532,21 @@ async function startTui() {
       process.stdin.resume()
       process.stdin.on('data', (bytes) => {
         for (const ch of bytes.toString('utf8')) {
+          // CODEX§3
+          if (approval && ['y', '1', '\u001b'].includes(ch)) {
+            const decision = ch === '\u001b' ? 'decline' : 'accept'
+            ws.send(JSON.stringify({ id: approval, result: { decision } }))
+            approval = undefined
+            continue
+          }
+          // CODEX§20
+          const picked = question?.labels[Number(ch) - 1]
+          if (picked) {
+            const answers = { [question.key]: { answers: [picked] } }
+            ws.send(JSON.stringify({ id: question.id, result: { answers } }))
+            question = undefined
+            continue
+          }
           if (ch === '\u0003') {
             if (working) void send('turn/interrupt', { threadId: thread.id, turnId })
             else void exit()
@@ -453,6 +558,9 @@ async function startTui() {
             process.stdout.write('\r\n')
             void input(line).catch((error) => process.stdout.write(error.message + '\r\n'))
           } else if (ch === '\u007f') typed = typed.slice(0, -1)
+          // CODEX§21
+          else if (ch === '\u0015') typed = ''
+          else if (ch === '\u001b' || ch === '\u0005') continue
           else {
             typed += ch
             process.stdout.write(ch)

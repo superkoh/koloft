@@ -3,7 +3,7 @@ import path from 'path'
 import { execFileSync } from 'child_process'
 import type { Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention } from './helpers/app'
-import type { E2EEnv } from './helpers/env'
+import { seedSettings, type E2EEnv } from './helpers/env'
 import {
   centerTerm,
   closeMenu,
@@ -14,6 +14,7 @@ import {
   layoutOnDisk,
   menuItemTexts,
   openMenu,
+  openWorktreeSession,
   processAlive,
   readCalls,
   resumedId,
@@ -236,13 +237,19 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
   }) => {
     test.setTimeout(120_000)
     gitInit(env.workspaces.a)
-    const wt = gitWorktreeAdd(env.workspaces.a, 'slow')
+    execFileSync('git', ['branch', 'worktree-slow'], { cwd: env.workspaces.a })
+    const wt = path.join(env.workspaces.a, '.claude', 'worktrees', 'slow')
     const id = seedJsonl(env, env.workspaces.a, {
       summary: 'Slow to plan session',
       cwd: env.workspaces.a,
       worktreeState: { worktreeName: 'slow', worktreePath: wt, originalCwd: env.workspaces.a }
     })
-    const stallDone = installStallingGit(env, { root: wt, subcommand: 'symbolic-ref', ms: 3000 })
+    const stallDone = installStallingGit(env, {
+      root: env.workspaces.a,
+      subcommand: 'rev-parse',
+      lastArg: 'refs/heads/worktree-slow',
+      ms: 3000
+    })
 
     const app = await launchApp(env)
     try {
@@ -271,14 +278,16 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     }
   })
 
-  test('the worktree-anomaly resume dialog focuses "Resume in new worktree", never the destructive button, and Esc cancels the resume', async ({
+  // CC§3
+  test('a worktree session whose worktree moved to another branch and holds uncommitted work resumes straight away, with no dialog', async ({
     env
   }) => {
     test.setTimeout(120_000)
     gitInit(env.workspaces.a)
     const wt = gitWorktreeAdd(env.workspaces.a, 'drifted')
     execFileSync('git', ['checkout', '-q', '-b', 'somewhere-else'], { cwd: wt })
-    seedJsonl(env, env.workspaces.a, {
+    fs.writeFileSync(path.join(wt, 'half-done.txt'), 'uncommitted\n')
+    const id = seedJsonl(env, env.workspaces.a, {
       summary: 'Drifted worktree session',
       cwd: env.workspaces.a,
       worktreeState: { worktreeName: 'drifted', worktreePath: wt, originalCwd: env.workspaces.a }
@@ -292,11 +301,49 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
       await row.click()
 
+      const calls = await waitForCalls(env, 1)
+      expect(resumedId(calls[0])).toBe(id)
+      await expect(page.locator('.modal.lifecycle-modal')).toHaveCount(0)
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
+  test('the worktree-in-use resume dialog focuses "Resume in new worktree", never the destructive button, and Esc cancels the resume', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    gitInit(env.workspaces.a)
+    const wt = gitWorktreeAdd(env.workspaces.a, 'shared')
+    seedSettings(env, { hintsOff: true })
+    seedJsonl(env, env.workspaces.a, {
+      summary: 'Shared worktree session',
+      cwd: env.workspaces.a,
+      worktreeState: { worktreeName: 'shared', worktreePath: wt, originalCwd: env.workspaces.a }
+    })
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      const row = page.locator('.ws-tab', { hasText: 'Shared worktree session' })
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      await waitBooted(page)
+
+      const c8 = await openWorktreeSession(page, 'ws-a')
+      await c8.getByRole('textbox').click()
+      await page.keyboard.type('shared')
+      await page.keyboard.press('Enter')
+      await expect(c8).toHaveCount(0)
+      await expect(page.locator('.ws-tab:not(.cold):not(.st-pending)')).toHaveCount(1, {
+        timeout: 60_000
+      })
+
+      await row.click()
       const dialog = page.locator('.modal.lifecycle-modal')
-      await expect(dialog.locator('.modal-header')).toHaveText(
-        'Resume "Drifted worktree session"',
-        { timeout: 20_000 }
-      )
+      await expect(dialog.locator('.modal-header')).toHaveText('Resume "Shared worktree session"', {
+        timeout: 20_000
+      })
       await expect(dialog.getByRole('button', { name: /^Resume in new worktree/ })).toBeFocused()
 
       await page.keyboard.press('Escape')
@@ -305,7 +352,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
         page.locator('.terminals .empty', { hasText: 'Resuming Claude session…' })
       ).toHaveCount(0)
       await expect(row).toHaveClass(/\bcold\b/)
-      expect(readCalls(env)).toHaveLength(0)
+      expect(readCalls(env)).toHaveLength(1)
     } finally {
       await app.close().catch(() => {})
     }
@@ -390,6 +437,89 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     }
   })
 
+  test('Keep running: a marked session starts again by itself when Koloft reopens — same id, shown resuming, nothing selected — and an unmarked one stays cold', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const app1 = await launchApp(env)
+    let resident: string
+    try {
+      const page1 = await app1.firstWindow()
+      await page1.waitForLoadState('domcontentloaded')
+      await startSession(page1, env, { title: 'Resident session' })
+      await startSession(page1, env, { title: 'Plain session', wsName: 'ws-b' })
+      const [first] = await waitForCalls(env, 2)
+      resident = first.sessionId
+      const residentRow = page1.locator('.ws-tab', { hasText: 'Resident session' })
+      await expect(residentRow).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+      await expect(page1.locator('.ws-tab', { hasText: 'Plain session' })).toHaveClass(
+        /\bst-waiting\b/,
+        { timeout: 30_000 }
+      )
+
+      await openMenu(page1, residentRow)
+      await page1.locator('.menu .mi', { hasText: 'Keep running' }).click()
+      await expect(residentRow.locator('.ws-tab-resident')).toBeVisible()
+      await expect.poll(() => layoutOnDisk(env).resident).toEqual([resident])
+    } finally {
+      await app1.close()
+    }
+
+    fs.writeFileSync(env.claudeDelayFile, '3000')
+    const app2 = await launchApp(env)
+    try {
+      const page2 = await app2.firstWindow()
+      await page2.waitForLoadState('domcontentloaded')
+      const residentRow = page2.locator('.ws-tab', { hasText: 'Resident session' })
+      await expect(residentRow).toHaveClass(/\bst-pending\b/, { timeout: 30_000 })
+      const calls = await waitForCalls(env, 3)
+      expect(resumedId(calls[2])).toBe(resident)
+
+      await expect(residentRow).toHaveClass(/\bst-(working|waiting|idle)\b/, { timeout: 30_000 })
+      await expect(page2.locator('.ws-tab.active')).toHaveCount(0)
+      await expect(page2.locator('.ws-tab', { hasText: 'Plain session' })).toHaveClass(/\bcold\b/)
+      await page2.waitForTimeout(ROOM_FOR_A_RESPAWN_MS)
+      expect(readCalls(env)).toHaveLength(3)
+    } finally {
+      await app2.close().catch(() => {})
+    }
+  })
+
+  test('Keep running never resumes unattended a session whose worktree needs a person: the row stays cold, a toast names it, and no claude starts', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    gitInit(env.workspaces.a)
+    const id = seedJsonl(env, env.workspaces.a, {
+      summary: 'Gone-worktree resident session',
+      cwd: env.workspaces.a,
+      worktreeState: {
+        worktreeName: 'deleted',
+        worktreePath: path.join(env.workspaces.a, '.claude', 'worktrees', 'deleted'),
+        originalCwd: env.workspaces.a
+      }
+    })
+    const layoutFile = path.join(env.userData, 'layout.json')
+    fs.writeFileSync(layoutFile, JSON.stringify({ ...layoutOnDisk(env), resident: [id] }))
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await expect(
+        page.locator('.toast-msg', { hasText: /“Gone-worktree resident session” needs you/ })
+      ).toBeVisible({ timeout: 30_000 })
+      const row = page.locator('.ws-tab', { hasText: 'Gone-worktree resident session' })
+      await expect(row).toHaveClass(/\bcold\b/)
+      await expect(row.locator('.ws-tab-resident')).toBeVisible()
+      await expect(page.locator('.modal')).toHaveCount(0)
+      await page.waitForTimeout(ROOM_FOR_A_RESPAWN_MS)
+      expect(readCalls(env)).toHaveLength(0)
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
   test('T-LIFE-10: a bound session that never reports a run-state shows the st-idle bar', async ({
     app,
     page,
@@ -435,14 +565,20 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
 
       await openMenu(page, page.locator('.ws-tab', { hasText: 'Running menu session' }))
       const running = await menuItemTexts(page)
-      expect(running).toEqual(['Reveal in Finder', 'Copy session ID', 'Close'])
+      expect(running).toEqual(['Reveal in Finder', 'Copy session ID', 'Keep running', 'Close'])
       noForbidden(running)
       await closeMenu(page)
 
       const coldMenu = await openMenu(page, coldRow)
       expect((await coldMenu.locator('.mi.head').textContent())?.trim()).toMatch(/^\d+[smhd] ago$/)
       const cold = await menuItemTexts(page)
-      expect(cold).toEqual(['Resume↩', 'Reveal in Finder', 'Copy session ID', 'Remove from list'])
+      expect(cold).toEqual([
+        'Resume↩',
+        'Reveal in Finder',
+        'Copy session ID',
+        'Keep running',
+        'Remove from list'
+      ])
       for (const t of cold) expect(t).not.toMatch(/close|delete/i)
       noForbidden(cold)
       await snap(page, 'T-LIFE-11')
@@ -454,6 +590,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
         'New session⌘N',
         'Restore session…',
         'Scheduled jobs…',
+        'Bind Discord channel…',
         'Remove workspace'
       ])
       noForbidden(ws)

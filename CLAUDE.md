@@ -30,8 +30,8 @@ Working principles:
   in whatever language it is writing; never pick a hard word where an easy one
   works. When a picture says it better, draw one: a chart, diagram, or graph
   (mermaid or ASCII in markdown) beats a wall of text. The first time an
-  abbreviation or shorthand appears in a document or in a session reply, spell it
-  out and say what it means — e.g. "PR (pull request, a proposed code change)".
+  abbreviation, shorthand or number (issue #N, step 4) appears in a reply or
+  document, say what it means — e.g. "PR (pull request, a proposed code change)".
 - Build the smallest thing that solves the problem at hand — in the design, the
   code, and the tests alike. A branch, guard, fallback, or abstraction for a case
   that is merely imaginable, and unlikely to ever happen, is cost with no payoff:
@@ -49,10 +49,17 @@ Working principles:
   permission you have not tried. What a command can answer is never asked of the owner.
   Nothing is called impossible, unsupported or "works this way" — in a plan, a
   question or a PR — before a probe has run; until then it is "not probed yet".
-- Extend the existing UI when adding a feature. Reuse its components, layouts,
-  interactions, state treatments and CSS classes. When the app already has a style
-  or state for the same purpose, use it exactly; do not invent a parallel version
-  or replace the existing screen to add another session backend.
+- Extend the existing UI when adding a feature: reuse its components, layouts,
+  interactions, state treatments and CSS classes exactly; never invent a parallel
+  version or replace a screen for another session backend. A plan that changes a
+  screen shows it as a local HTML mockup built from the app's CSS.
+- Every feature covers every kind of session tab: Claude Code and Codex, each in a
+  local workspace and in a remote one reached over SSH (Secure Shell) — four kinds.
+  A plan, design or PR says what each of the four does: the same thing, a named
+  difference, or left out with the probe or missing data that forces it. A feature
+  built and checked for local Claude Code alone is not done, and the e2e flows picked
+  for a change include the Codex and remote specs whenever the change reaches those
+  tabs.
 - Comments: none. In `.ts/.tsx/.js/.mjs/.cjs/.css` — and in the `#` lines of a
   `#!/` script written as a template string — `npm run check:comments` (CI, plus an
   after-edit hook) rejects every comment except two kinds, each with nothing else in it:
@@ -128,9 +135,10 @@ Working principles:
   - **Runtime code** — +N/−M lines under `src/`, tests, docs and fixtures not counted.
   - **How to see it in the shipped app** — what to click in an installed build, or
     "no way from the app".
-  - **Confidence to ship as-is** — high / medium / low, and the one fact that sets it.
-  - **Hand-test before merging** — no, or yes: what to try, and why neither a suite
-    nor a dev build you drove yourself could answer it — try that first.
+  - **Confidence to ship as-is** — high / medium / low, and the one fact that sets it,
+    never a check you could still run.
+  - **Hand-test before merging** — no, or yes: what to try, and why no suite or dev
+    build you drove could answer it.
 
   Then a table of what ran (suite · result · why that one), what did not run and
   why, and `Out of scope`: each cut, and each claim still "inferred, not checked",

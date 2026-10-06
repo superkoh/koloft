@@ -3,7 +3,14 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import { execFileSync } from 'child_process'
 import type { Locator, Page } from '@playwright/test'
-import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import {
+  test,
+  expect,
+  launchApp,
+  pendingAttention,
+  pretendWindowFocused,
+  quitAndClose
+} from './helpers/app'
 import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
 import { WORKBENCH, wbUnreadTabs } from './helpers/workbench'
 import {
@@ -34,6 +41,7 @@ test.setTimeout(120_000)
 const LONGER_THAN_OLD_15S_RESUME_DEADLINE_MS = 16_000
 const SLOW_VERSION_PROBE_MS = 10_000
 const LAUNCH_MUST_NOT_WAIT_FOR_PROBE_MS = 4000
+const CODEX_TRANSPORT_STOP_WORST_CASE_MS = 4000
 
 interface CodexCall {
   pid: number
@@ -517,6 +525,25 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
+  test('a Codex that fails before any session binds leaves no mark behind once its tab has closed itself, so the Dock badge counts nothing no row can show', async ({
+    env
+  }) => {
+    installCodex(env)
+    fs.writeFileSync(path.join(env.home, 'fake-codex-exit'), '3')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, 'ws-a', 'Codex')
+      await expect(page.locator('.toast-msg')).toContainText('exit code 3', { timeout: 20_000 })
+      await expect.poll(() => termIds(page)).toHaveLength(0)
+      await page.waitForTimeout(CODEX_TRANSPORT_STOP_WORST_CASE_MS)
+      expect(await pendingAttention(page)).toEqual([])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('Codex unavailable status uses the existing detail badge and keeps the terminal accessible', async ({
     env
   }) => {
@@ -679,6 +706,64 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect.poll(() => codexCalls(env).length).toBe(4)
       expect(codexCalls(env)[3].sessionId).toBe(member.sessionId)
       await expect(codexRows(page)).toHaveCount(2)
+      expect(readCalls(env)).toHaveLength(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a Codex session’s unread red dot survives a Koloft restart on its cold row, and clicking the row in a focused window clears it', async ({
+    env
+  }) => {
+    installCodex(env)
+    let app = await launchApp(env)
+    try {
+      let page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await expect(codexRows(page).locator('.ws-tab-unread')).toHaveCount(1)
+      await quitAndClose(app)
+
+      app = await launchApp(env)
+      page = await app.firstWindow()
+      await waitBooted(page)
+      await expect(codexRows(page)).toHaveClass(/cold/)
+      await expect(codexRows(page).locator('.ws-tab-unread')).toHaveCount(1)
+
+      await pretendWindowFocused(app)
+      await codexRows(page).click()
+      await expect.poll(() => codexCalls(env).length).toBe(2)
+      await expect(codexRows(page)).toHaveClass(/st-waiting/)
+      await expect(codexRows(page).locator('.ws-tab-unread')).toHaveCount(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a Codex session marked Keep running starts again by itself when Koloft reopens, with its native identity, and selects nothing', async ({
+    env
+  }) => {
+    installCodex(env)
+    let app = await launchApp(env)
+    try {
+      let page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      const first = codexCalls(env)[0]
+      await openMenu(page, codexRows(page))
+      await page.locator('.menu .mi', { hasText: 'Keep running' }).click()
+      await expect(codexRows(page).locator('.ws-tab-resident')).toBeVisible()
+      await quitAndClose(app)
+      await expect.poll(() => processAlive(first.pid)).toBe(false)
+
+      app = await launchApp(env)
+      page = await app.firstWindow()
+      await waitBooted(page)
+      await expect.poll(() => codexCalls(env).length, { timeout: 30_000 }).toBe(2)
+      expect(codexCalls(env)[1].sessionId).toBe(first.sessionId)
+      await expect(codexRows(page)).toHaveClass(/st-(working|waiting|idle)/, { timeout: 30_000 })
+      await expect(codexRows(page).locator('.ws-tab-resident')).toBeVisible()
+      await expect(wsRows(page, 'ws-a').and(page.locator('.active'))).toHaveCount(0)
       expect(readCalls(env)).toHaveLength(0)
     } finally {
       await quitAndClose(app)
@@ -973,6 +1058,46 @@ test.describe('Codex sessions through the real method chooser, process transport
           { timeout: 30_000 }
         )
         .toEqual([expect.stringMatching(/^(running|done)$/)])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a Codex job set to "Close it" closes for good once Codex finishes the turn: tab, row and worktree', async ({
+    env
+  }) => {
+    installCodex(env)
+    gitInit(env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    fs.mkdirSync(path.join(env.home, '.codex'), { recursive: true })
+    fs.writeFileSync(
+      path.join(env.home, '.codex', 'config.toml'),
+      `[projects.${JSON.stringify(fs.realpathSync(env.workspaces.a))}]\ntrust_level = "trusted"\n`
+    )
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await page.locator('.menu .mi', { hasText: 'Scheduled jobs' }).click()
+      const dlg = page.locator('.modal.cronjobs')
+      await dlg.locator('button.mini', { hasText: 'New job' }).click()
+      await dlg.locator('.chip', { hasText: /^Codex$/ }).click()
+      await dlg.locator('input[aria-label="Name"]').fill('Nightly report')
+      await dlg.locator('[aria-label="What to run"]').fill('/daily-report now')
+      await dlg.locator('.chip', { hasText: 'Close it' }).click()
+      await dlg.locator('.modal-foot .btn-primary').click()
+      await dlg.locator('.job-row button.mini', { hasText: 'Run now' }).click()
+
+      await expect.poll(() => codexCalls(env).length, { timeout: 30_000 }).toBe(1)
+      await expect(dlg.locator('.hist-row').first()).toContainText('Done — closed itself', {
+        timeout: 30_000
+      })
+      const tree = codexCalls(env)[0].cwd
+      expect(tree).not.toBe(env.workspaces.a)
+      await expect(page.locator('.terminals .term-wrap')).toHaveCount(0, { timeout: 30_000 })
+      await expect(wsRows(page, 'ws-a')).toHaveCount(0, { timeout: 30_000 })
+      await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
     } finally {
       await quitAndClose(app)
     }

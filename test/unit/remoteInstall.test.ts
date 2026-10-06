@@ -56,22 +56,25 @@ beforeAll(() => {
   const uarch = spawnSync('uname', ['-m'], { encoding: 'utf8' }).stdout.trim()
   const arch = uarch === 'x86_64' || uarch === 'amd64' ? 'x64' : 'arm64'
   nodeName = `node-v${NODE_VERSION}-${uos}-${arch}`
-  const stage = path.join(fixtures, 'stage', nodeName, 'bin')
-  fs.mkdirSync(stage, { recursive: true })
-  fs.writeFileSync(path.join(stage, 'node'), `#!/bin/sh\necho v${NODE_VERSION}\n`, { mode: 0o755 })
-  const sums: string[] = []
-  for (const [e, flag] of [
-    ['tar.gz', '-czf'],
-    ['tar.xz', '-cJf']
-  ] as const) {
-    const file = path.join(fixtures, `${nodeName}.${e}`)
-    spawnSync('tar', [flag, file, '-C', path.join(fixtures, 'stage'), nodeName])
-    const sum = spawnSync('shasum', ['-a', '256', file], { encoding: 'utf8' }).stdout.split(' ')[0]
-    sums.push(`${sum}  ${nodeName}.${e}`)
-  }
-  fs.writeFileSync(path.join(fixtures, 'SHASUMS256.txt'), sums.join('\n') + '\n')
   ext = which('xz') || fs.existsSync('/opt/homebrew/bin/xz') ? 'tar.xz' : 'tar.gz'
+  buildNodeDist(fixtures, { [nodeName]: 'runs' })
 })
+
+function buildNodeDist(dist: string, builds: Record<string, 'runs' | 'will not run'>): void {
+  const sums: string[] = []
+  for (const [name, outcome] of Object.entries(builds)) {
+    const stage = path.join(dist, 'stage', name, 'bin')
+    fs.mkdirSync(stage, { recursive: true })
+    const body = outcome === 'runs' ? `echo v${NODE_VERSION}` : 'exit 1'
+    fs.writeFileSync(path.join(stage, 'node'), `#!/bin/sh\n${body}\n`, { mode: 0o755 })
+    const file = path.join(dist, `${name}.${ext}`)
+    const flag = ext === 'tar.xz' ? '-cJf' : '-czf'
+    spawnSync('tar', [flag, file, '-C', path.join(dist, 'stage'), name])
+    const sum = spawnSync('shasum', ['-a', '256', file], { encoding: 'utf8' }).stdout.split(' ')[0]
+    sums.push(`${sum}  ${name}.${ext}`)
+  }
+  fs.writeFileSync(path.join(dist, 'SHASUMS256.txt'), sums.join('\n') + '\n')
+}
 afterAll(() => {
   fs.rmSync(onlyRealUnixToolsDir, { recursive: true, force: true })
   fs.rmSync(fixtures, { recursive: true, force: true })
@@ -201,6 +204,59 @@ describe('U-ENS-1..4: ensure.sh on a remote machine never sits on a hidden passw
     expect(res.stdout).toContain('no statusline')
   })
 
+  function serveNodeBuilds(m: Machine, builds: Record<string, 'runs' | 'will not run'>): void {
+    const dist = path.join(m.home, 'dist')
+    buildNodeDist(dist, builds)
+    m.give('curl', `LOGS=${JSON.stringify(m.logs)}\nFIXTURES=${JSON.stringify(dist)}\n${CURL()}`)
+  }
+
+  const onLinuxX64 = (m: Machine): void =>
+    m.give('uname', '[ "$1" = -s ] && echo Linux\n[ "$1" = -m ] && echo x86_64\nexit 0')
+
+  // PLATFORM§37
+  it('on a Linux too old for the official node build, the build for older Linux is fetched, checked and kept', () => {
+    const m = machine()
+    complete(m, { node: '18.20.4' })
+    onLinuxX64(m)
+    serveNodeBuilds(m, {
+      [`node-v${NODE_VERSION}-linux-x64`]: 'will not run',
+      [`node-v${NODE_VERSION}-linux-x64-glibc-217`]: 'runs'
+    })
+
+    const res = m.run()
+    expect(res.status).toBe(0)
+    expect(res.stdout).not.toContain('no statusline')
+    expect(m.calls('curl').join('\n')).toContain(
+      `https://unofficial-builds.nodejs.org/download/release/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64-glibc-217.${ext}`
+    )
+    const node = path.join(m.home, '.koloft', 'node', 'bin', 'node')
+    expect(spawnSync(node, ['-v'], { encoding: 'utf8' }).stdout.trim()).toBe(`v${NODE_VERSION}`)
+    expect(
+      fs.readdirSync(path.join(m.home, '.koloft')).filter((n) => n.startsWith('node.tmp'))
+    ).toEqual([])
+  })
+
+  it('a machine where no node build runs is told once, keeps no node, and never fetches again', () => {
+    const m = machine()
+    complete(m, { node: '18.20.4' })
+    onLinuxX64(m)
+    serveNodeBuilds(m, {
+      [`node-v${NODE_VERSION}-linux-x64`]: 'will not run',
+      [`node-v${NODE_VERSION}-linux-x64-glibc-217`]: 'will not run'
+    })
+
+    const first = m.run()
+    expect(first.status).toBe(0)
+    expect(first.stdout).toContain('does not run on this machine')
+    expect(fs.existsSync(path.join(m.home, '.koloft', 'node'))).toBe(false)
+    const fetches = m.calls('curl').length
+
+    const second = m.run()
+    expect(second.status).toBe(0)
+    expect(second.stdout).not.toContain('installing node')
+    expect(m.calls('curl')).toHaveLength(fetches)
+  })
+
   it('refreshes apt\u2019s package lists once, right before the first install: a bare Debian/Ubuntu container has none', () => {
     const m = machine()
     complete(m)
@@ -325,6 +381,30 @@ describe('the heartbeat question', () => {
     const nasty = path.join(dir, "it's $here")
     fs.mkdirSync(path.join(nasty, '.git'), { recursive: true })
     expect(ask([nasty]).git.get(nasty)?.isGit).toBe(true)
+  })
+
+  // CC§2
+  it("tells the machine's resolved /tmp and its user id, where claude keeps each session's scratchpad", () => {
+    expect(ask([]).tmp).toEqual({ tmpRoot: fs.realpathSync('/tmp'), uid: process.getuid!() })
+  })
+
+  it("on Linux claude's scratchpad base follows CLAUDE_CODE_TMPDIR, then TMPDIR, as the Linux build reads os.tmpdir()", () => {
+    const fakeBin = path.join(dir, 'linux-bin')
+    fs.mkdirSync(fakeBin)
+    fs.writeFileSync(path.join(fakeBin, 'uname'), '#!/bin/sh\necho Linux\n', { mode: 0o755 })
+    const tmpdir = path.join(dir, 'tmpdir')
+    const ccTmp = path.join(dir, 'cc-tmp')
+    fs.mkdirSync(tmpdir)
+    fs.mkdirSync(ccTmp)
+    const onLinux = (env: Record<string, string>): string | undefined => {
+      const res = spawnSync('sh', ['-c', heartbeatCmd([])], {
+        encoding: 'utf8',
+        env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}`, ...env }
+      })
+      return parseHeartbeat(res.stdout).tmp?.tmpRoot
+    }
+    expect(onLinux({ TMPDIR: tmpdir })).toBe(fs.realpathSync(tmpdir))
+    expect(onLinux({ TMPDIR: tmpdir, CLAUDE_CODE_TMPDIR: ccTmp })).toBe(fs.realpathSync(ccTmp))
   })
 
   it('reads the lines before the first folder as tmux session names', () => {

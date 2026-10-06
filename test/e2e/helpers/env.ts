@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
+import type { GithubFixture } from '../../../src/main/github'
 
 export interface E2EEnv {
   home: string
@@ -135,6 +136,7 @@ export function setupE2EEnv(): E2EEnv {
     HOME: home,
     PATH: `${fakeBin}:${nodeDir}:/usr/bin:/bin:/usr/sbin:/sbin`,
     KOLOFT_CLAUDE_CMD: 'claude',
+    KOLOFT_CODEX_CMD: 'codex-not-installed',
     KOLOFT_KEYCHAIN_FILE: keychainFile,
     // CC§2
     KOLOFT_SCRATCHPAD_BASE: scratchpadBase,
@@ -195,10 +197,7 @@ export function setGuestLimit(env: E2EEnv, limit: number): void {
   env.launchEnv.KOLOFT_BROWSER_GUEST_LIMIT = String(limit)
 }
 
-export function setGithubFixture(
-  env: E2EEnv,
-  repos: Record<string, { owner: string; repo: string; branch?: string; pr?: number } | null>
-): void {
+export function setGithubFixture(env: E2EEnv, repos: GithubFixture): void {
   env.launchEnv.KOLOFT_GITHUB_FIXTURE = JSON.stringify(repos)
 }
 

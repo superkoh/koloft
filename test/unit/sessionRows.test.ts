@@ -6,6 +6,8 @@ import {
   marqueeAnim,
   mixesBackends,
   paneWidthFromDrag,
+  PREVIEW_CARD_WIDTH_PX,
+  previewCardFits,
   currentWorkspace,
   notesHeightFromDrag,
   parkedBadge,
@@ -268,6 +270,14 @@ describe('paneWidthFromDrag (right-side aux pane, gutter on its left edge)', () 
 
   it('ceiling leaves the TUI its 360px (+20 chrome) between dock and pane', () => {
     expect(paneWidthFromDrag(1000, 100, 200)).toBe(520)
+  })
+})
+
+describe('previewCardFits (the collapsed Workbench preview card)', () => {
+  it('shows the card only while the terminal keeps its 360px (+20 chrome) beside it', () => {
+    const exact = 380 + 10 + PREVIEW_CARD_WIDTH_PX
+    expect(previewCardFits(exact)).toBe(true)
+    expect(previewCardFits(exact - 1)).toBe(false)
   })
 })
 
