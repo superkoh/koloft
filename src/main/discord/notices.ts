@@ -50,6 +50,7 @@ export interface NoticeDeps {
   subject(tabId: string): NoticeSubject | undefined
   peerName(tabId: string): Promise<string | null>
   awaitsInput(tabId: string): boolean
+  commandRunning(tabId: string): boolean
   detail(tabId: string): Promise<string | undefined>
 }
 
@@ -92,6 +93,7 @@ export class Notices {
     const subject =
       this.liveSubject(tabId) ?? (kind === 'closed' ? this.lastSubjects.get(tabId) : undefined)
     if (!subject || subject.conductor) return
+    if (kind === 'finished' && this.d.commandRunning(tabId)) return
     let detail: string | undefined
     if (kind === 'closed') {
       if (this.closeNoticed.has(tabId)) return

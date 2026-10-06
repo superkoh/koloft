@@ -61,6 +61,39 @@ function fixture() {
   }
 }
 
+// CODEX§17 CODEX§21
+describe('CodexObservation: messages Koloft queued', () => {
+  const userMessage = (clientId: string) => ({
+    item: { type: 'userMessage', id: `u-${clientId}`, clientId, content: [] }
+  })
+
+  it('are still queued through the idle moment between two queued turns, and gone once the last one is taken', () => {
+    const f = fixture()
+    f.bind()
+    f.observer.queuedMessage('koloft-a')
+    f.observer.queuedMessage('koloft-b')
+    f.server('turn/completed', { turn: { id: 't1' } })
+    expect(f.observer.queueDrained()).toBe(false)
+    f.server('turn/started', { turn: { id: 't2' } })
+    f.server('item/started', userMessage('koloft-a'))
+    expect(f.observer.queueDrained()).toBe(false)
+    f.server('turn/started', { turn: { id: 't3' } })
+    f.server('item/started', userMessage('koloft-b'))
+    expect(f.observer.queueDrained()).toBe(true)
+  })
+
+  it('a refused one, or one left on a thread the session moved away from, does not hold the queue open', () => {
+    const f = fixture()
+    f.bind()
+    f.observer.queuedMessage('koloft-a')
+    f.observer.queueRefused('koloft-a')
+    expect(f.observer.queueDrained()).toBe(true)
+    f.observer.queuedMessage('koloft-b')
+    f.bind(B, 2)
+    expect(f.observer.queueDrained()).toBe(true)
+  })
+})
+
 describe('CodexObservation', () => {
   it('binds only foreground user threads with valid identities', () => {
     for (const extra of [

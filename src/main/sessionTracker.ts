@@ -20,6 +20,7 @@ import { SessionRuntime, envMs, turnOf, type Turn } from './sessionRuntime'
 import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
 import type { LaunchedSession } from './accountPicker'
 import type { MachineTmp } from './remote/install'
+import { claudeWroteIt, commandOutputOf } from './claudeCommandOutput'
 
 export const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects')
 const TMP_ROOT = ((): string => {
@@ -76,6 +77,10 @@ export function sessionEventFromHook(
       return ask && typeof ask === 'object' ? { type: 'asked', ask } : null
     case 'prompt':
       return { type: 'prompt' }
+    case 'compacting':
+      return { type: 'compacting' }
+    case 'compacted':
+      return { type: 'compacted' }
     case 'stop':
       return { type: 'stop', reported: parseReportedTasks(bgl) }
     case 'notify': {
@@ -319,6 +324,11 @@ function promptText(content: unknown): string | null {
   return texts.length ? texts.join('\n') : null
 }
 
+// CC§2
+function commandEcho(obj: { origin?: unknown }, raw: string | null): boolean {
+  return raw !== null && raw.startsWith('/') && claudeWroteIt(obj)
+}
+
 function ownerOrPeer(kind: unknown): 'owner' | 'peer' | null {
   if (kind === undefined || kind === 'human') return 'owner'
   return kind === 'peer' ? 'peer' : null
@@ -336,7 +346,13 @@ function claudeTurnPieces(obj: any): TurnPiece[] {
     const who = ownerOrPeer(obj.origin?.kind)
     if (raw === null || !who) return []
     if (who === 'peer') return [{ line: { who, text: peerText(raw), at }, midTurn: false }]
-    if (obj.isMeta || INTERRUPT_TEXTS.has(raw) || !classifyUserPrompt(raw).title) return []
+    if (
+      obj.isMeta ||
+      INTERRUPT_TEXTS.has(raw) ||
+      commandEcho(obj, raw) ||
+      !classifyUserPrompt(raw).title
+    )
+      return []
     return [{ line: { who, text: raw.trim(), at }, midTurn: false }]
   }
   if (obj.type === 'attachment') {
@@ -427,6 +443,7 @@ export interface RemoteTab {
 
 interface Tracked {
   info: SessionInfo
+  compactingFrom?: Turn
   launchCwd: string
   readOffset: number
   tailBuf: Buffer
@@ -613,12 +630,31 @@ export class SessionTracker extends SessionRuntime {
   }
 
   receive(tabId: string, event: SessionEvent): void {
+    const t = this.tracked.get(tabId)
+    if (event.type === 'compacting' || event.type === 'compacted') {
+      if (t) this.compaction(t, event.type)
+      return
+    }
+    if (t && turnOf(event)) t.compactingFrom = undefined
     if (event.type === 'stop') void this.endTurn(tabId)
     const turn = turnOf(event)
     if (turn === 'working' || turn === 'approval') this.recordHookTurn(tabId, turn)
     // CC§8
     else if (turn)
       void this.reportTurnEnd(tabId, event.type === 'stop' ? event.reported : undefined)
+  }
+
+  // CC§1
+  private compaction(t: Tracked, phase: 'compacting' | 'compacted'): void {
+    const tabId = t.info.tabId
+    if (phase === 'compacting') {
+      t.compactingFrom = this.turnNow(tabId) ?? 'ended'
+      this.recordHookTurn(tabId, 'working')
+      return
+    }
+    const from = t.compactingFrom
+    t.compactingFrom = undefined
+    if (from && this.turnNow(tabId) === 'working') this.recordHookTurn(tabId, from)
   }
 
   setStatus(tabId: string, status: SessionStatus): void {
@@ -1469,6 +1505,8 @@ export class SessionTracker extends SessionRuntime {
         this.ingestToolDone(t, obj)
       }
       this.ingestTaskNotification(t, obj)
+      const output = t.caughtUp ? commandOutputOf(obj) : null
+      if (output) this.emit('command-output', { tabId: t.info.tabId, ...output })
       if (obj.type === 'user' && !obj.isMeta) {
         const c = obj.message?.content
         let raw: string | null = null
@@ -1491,7 +1529,7 @@ export class SessionTracker extends SessionRuntime {
         if (cls?.title && !t.firstPrompt) t.firstPrompt = cls.title
         if (cls?.commandArgs && !t.commandArgsTitle) t.commandArgsTitle = cls.commandArgs
         if (cls?.commandName && !t.commandTitle) t.commandTitle = cls.commandName
-        if ((cls?.genuine || hasImage) && mainThread) {
+        if ((cls?.genuine || hasImage) && mainThread && !commandEcho(obj, raw)) {
           activity = 'user'
           if (
             (t.caughtUp || (isFinite(recTs) && recTs >= t.resetMs)) &&

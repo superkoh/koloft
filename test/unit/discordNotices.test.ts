@@ -63,12 +63,19 @@ describe('Discord notices: which session state change reaches which channel', ()
     ).toBe('20')
   })
 
-  it('notices for one channel within a second go out as one message, in order, and a conductor’s own session gives none', async () => {
+  it('notices for one channel within a second go out as one message, in order; a conductor’s own session gives none, nor a turn a slash command Koloft typed is running', async () => {
     vi.useFakeTimers()
     const post = vi.fn()
-    const names: Record<string, string> = { a: 'alpha', b: 'beta', c: 'gamma', d: 'conductor' }
+    const names: Record<string, string> = {
+      a: 'alpha',
+      b: 'beta',
+      c: 'gamma',
+      d: 'conductor',
+      e: 'epsilon'
+    }
     const notices = new Notices({
-      bindings: () => [binding(WS, '10', ['a'])],
+      bindings: () => [binding(WS, '10', ['a', 'e'])],
+      commandRunning: (tabId) => tabId === 'e',
       post,
       subject: (tabId) => ({
         key: tabId,
@@ -81,6 +88,7 @@ describe('Discord notices: which session state change reaches which channel', ()
       detail: async () => 'npm test'
     })
     notices.onStatus('a', 'working', 'waiting')
+    notices.onStatus('e', 'working', 'waiting')
     notices.onStatus('b', 'working', 'approval')
     notices.onStatus('d', 'working', 'approval')
     await vi.advanceTimersByTimeAsync(0)
@@ -110,6 +118,7 @@ describe('Discord notices: which session state change reaches which channel', ()
       }),
       peerName: async (tabId) => (tabId === 'a' && live ? 'helper-1a2b3c' : null),
       awaitsInput: () => false,
+      commandRunning: () => false,
       detail: async () => undefined
     })
     notices.onStatus('a', 'working', 'waiting')
@@ -135,6 +144,7 @@ describe('Discord notices: which session state change reaches which channel', ()
         listed.has(tabId) ? { key: tabId, name: 'alpha', workspace: WS } : undefined,
       peerName: async () => null,
       awaitsInput: () => false,
+      commandRunning: () => false,
       detail: async () => undefined
     })
     notices.onStatus('a', undefined, 'idle')

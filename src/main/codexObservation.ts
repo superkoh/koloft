@@ -154,10 +154,24 @@ export class CodexObservation {
   private lastTouched?: string
   private lastWritten?: string
   private liveWrites = 0
+  private queued = new Set<string>()
   unsubscribed = false
   turns = new TurnLog()
 
   constructor(private emit: (event: CodexEvent) => void) {}
+
+  // CODEX§17
+  queuedMessage(clientId: string): void {
+    this.queued.add(clientId)
+  }
+
+  queueRefused(clientId: string): void {
+    this.queued.delete(clientId)
+  }
+
+  queueDrained(): boolean {
+    return this.queued.size === 0
+  }
 
   // CODEX§3
   openApproval(): CodexApproval | undefined {
@@ -234,6 +248,7 @@ export class CodexObservation {
       this.roots.add(thread.id)
       this.unsubscribed = false
       this.liveTurns.clear()
+      this.queued.clear()
       this.approvals.clear()
       this.approvalThreads.clear()
       this.approvalAsks.clear()
@@ -262,11 +277,19 @@ export class CodexObservation {
     const ownedChild =
       typeof p.threadId === 'string' && this.childRoots.get(p.threadId) === this.threadId
     if (!this.threadId || (p.threadId !== this.threadId && !ownedChild)) return
+    const item = record(p.item)
+    // CODEX§17
+    if (
+      (method === 'item/started' || method === 'item/completed') &&
+      item.type === 'userMessage' &&
+      typeof item.clientId === 'string'
+    )
+      this.queued.delete(item.clientId)
     if (method === 'item/completed') {
-      if (this.noteFiles(record(p.item), true)) this.publishFiles()
-      this.observeOpen(record(p.item))
+      if (this.noteFiles(item, true)) this.publishFiles()
+      this.observeOpen(item)
       const at = typeof p.completedAtMs === 'number' ? p.completedAtMs : Date.now()
-      const line = ownedChild ? null : codexTurnLine(record(p.item), at)
+      const line = ownedChild ? null : codexTurnLine(item, at)
       if (line) this.turns.add(line, true)
     }
     // CODEX§3

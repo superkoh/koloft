@@ -1694,3 +1694,62 @@ describe('auto-closing an idle session: every reason to keep it is read fresh at
     await expectStays(closes)
   }, 10_000)
 })
+
+// CC§1
+describe('a compaction the owner asked for', () => {
+  const hook = (event: string) => sessionEventFromHook(event)!
+
+  it('shows the session working while it compacts, then back to how it was', async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    await bindCaughtUp(tracker, 'tabK1', cwd, initialLines(cwd))
+    tracker.setStatus('tabK1', 'waiting')
+    tracker.receive('tabK1', hook('compacting'))
+    expect(status(tracker, 'tabK1')).toBe('working')
+    tracker.receive('tabK1', hook('compacted'))
+    expect(status(tracker, 'tabK1')).toBe('waiting')
+  })
+
+  it('a turn that starts before the compaction ends is not undone by it', async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    await bindCaughtUp(tracker, 'tabK2', cwd, initialLines(cwd))
+    tracker.setStatus('tabK2', 'waiting')
+    tracker.receive('tabK2', hook('compacting'))
+    tracker.receive('tabK2', hook('prompt'))
+    tracker.receive('tabK2', hook('compacted'))
+    expect(status(tracker, 'tabK2')).toBe('working')
+  })
+
+  it('the "/compact" line Claude writes into the transcript is not a new prompt, so it cannot outlast the compaction as working', async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    const file = await bindCaughtUp(tracker, 'tabK4', cwd, initialLines(cwd))
+    tracker.setStatus('tabK4', 'waiting')
+    appendJsonl(file, [{ type: 'user', message: { role: 'user', content: '/compact' }, cwd }])
+    await sleep(RESUME_MS * 2)
+    expect(status(tracker, 'tabK4')).toBe('waiting')
+    tracker.receive('tabK4', hook('compacting'))
+    tracker.receive('tabK4', hook('compacted'))
+    expect(status(tracker, 'tabK4')).toBe('waiting')
+    appendJsonl(file, [
+      {
+        type: 'user',
+        message: { role: 'user', content: 'a typed prompt' },
+        origin: { kind: 'human' },
+        cwd
+      }
+    ])
+    await waitFor(tracker, (s) => s.tabId === 'tabK4' && s.status === 'working')
+  })
+
+  it('a compaction in the middle of a turn leaves it working', async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    await bindCaughtUp(tracker, 'tabK3', cwd, initialLines(cwd))
+    tracker.setStatus('tabK3', 'working')
+    tracker.receive('tabK3', hook('compacting'))
+    tracker.receive('tabK3', hook('compacted'))
+    expect(status(tracker, 'tabK3')).toBe('working')
+  })
+})

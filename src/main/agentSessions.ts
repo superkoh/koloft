@@ -14,6 +14,7 @@ import { basename } from '@shared/preview'
 import { GLOBAL_SCOPE, scopeName } from '@shared/conductors'
 import { ageLabel } from '@shared/freshnessOps'
 import { MAX_READ_TURNS, type Turn } from '@shared/turns'
+import { MYSELF, slashCommandProblem } from '@shared/slashCommands'
 import {
   answered,
   errorText,
@@ -318,6 +319,8 @@ export interface SessionVerbDeps {
   stop(tabId: string): void
   answer(tabId: string, reply: string): Promise<string | undefined>
   undelivered(callerTab: string, target: Target, why: string): void
+  command(callerTab: string, target: Target, text: string): Promise<string>
+  screen(tabId: string): Promise<SessionScreen>
   started(
     conductorTab: string,
     tabId: string,
@@ -326,6 +329,8 @@ export interface SessionVerbDeps {
     backend: BackendId
   ): void
 }
+
+export type SessionScreen = { lines: string[]; notes: string[] } | { error: string }
 
 export interface Target {
   key: string
@@ -338,7 +343,7 @@ export interface Target {
 }
 
 const SESSION_USAGE =
-  'koloft session: use list, read, new, send, answer, resume, stop or close. Run "koloft help" to see how.'
+  'koloft session: use list, read, new, send, command, screen, answer, resume, stop or close. Run "koloft help" to see how.'
 const READ_USAGE = `koloft session read: give an id or name, and if you like --last <1 to ${MAX_READ_TURNS}>, like: koloft session read fix-login --last 3`
 const CONDUCTOR_LIST_USAGE =
   'koloft session list: it takes no options here; it lists every session you look after.'
@@ -433,13 +438,53 @@ function matchRow(
   )
 }
 
-async function findInScope(
+function findInScope(
   d: SessionVerbDeps,
   verb: string,
   ref: string,
   callerTabId: string
 ): Promise<Parsed<PlacedRow>> {
-  const scope = d.conductorScope(callerTabId)
+  return findIn(d, verb, ref, d.conductorScope(callerTabId))
+}
+
+function rowTarget(d: SessionVerbDeps, p: PlacedRow): Target {
+  return {
+    key: p.row.id,
+    name: p.title,
+    backend: p.row.backendId,
+    remote: isRemoteKey(p.workspace),
+    tabId: p.live?.tabId,
+    open: () => d.resume(p.row)
+  }
+}
+
+export async function targetIn(
+  d: SessionVerbDeps,
+  scope: string,
+  ref: string
+): Promise<Parsed<Target>> {
+  const found = await findIn(d, 'command', ref, scope)
+  return found.ok ? { ok: true, value: rowTarget(d, found.value) } : found
+}
+
+export function sessionChoices(
+  d: SessionVerbDeps,
+  scope: string
+): { name: string; value: string }[] {
+  return placedRows(d.sidebar(), d.allSessions())
+    .filter((p) => inScope(scope, p.workspace))
+    .map((p) => ({
+      name: `${p.title} · ${BACKEND_LABEL[p.row.backendId]}${scope === GLOBAL_SCOPE ? ` · ${scopeName(p.workspace)}` : ''}`,
+      value: p.row.id
+    }))
+}
+
+async function findIn(
+  d: SessionVerbDeps,
+  verb: string,
+  ref: string,
+  scope: string | undefined
+): Promise<Parsed<PlacedRow>> {
   const all = placedRows(d.sidebar(), d.allSessions())
   const mine = all.filter((p) => inScope(scope, p.workspace))
   const names = await peerNamesOf(d, mine)
@@ -489,11 +534,25 @@ const GLOBAL_NEEDS_WORKSPACE =
   'koloft session new: say which workspace with --workspace <workspace>; "koloft workspace list" shows them.'
 const ONLY_YOUR_WORKSPACE = 'koloft session new: you can only start sessions in your own workspace.'
 
+const COMMAND_USAGE = `koloft session command: give an id or name (or "me" for yourself), then one slash command, like: koloft session command fix-login /compact`
+const SCREEN_USAGE = `koloft session screen: give an id or name (or "me" for yourself), like: koloft session screen fix-login`
+
 const CONDUCTOR_ACT_USAGE: Record<string, string> = {
   send: SEND_USAGE,
+  command: COMMAND_USAGE,
+  screen: SCREEN_USAGE,
   answer: ANSWER_USAGE,
   resume: RESUME_USAGE,
   stop: STOP_USAGE
+}
+
+export function formatScreen(name: string, screen: SessionScreen): string {
+  if ('error' in screen) return `${name}: ${screen.error}`
+  const lines = [...screen.lines]
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop()
+  while (lines.length && !lines[0].trim()) lines.shift()
+  const shown = lines.length ? `\`\`\`\n${lines.join('\n')}\n\`\`\`` : '(the screen is empty)'
+  return [`The screen of ${name} right now:`, shown, ...screen.notes].join('\n')
 }
 
 export function ownerSays(text: string): string {
@@ -573,15 +632,6 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
     return answered(`Will deliver when ${t.name} is ready.`)
   }
 
-  const rowTarget = (p: PlacedRow): Target => ({
-    key: p.row.id,
-    name: p.title,
-    backend: p.row.backendId,
-    remote: isRemoteKey(p.workspace),
-    tabId: p.live?.tabId,
-    open: () => d.resume(p.row)
-  })
-
   const conductorAct = async (
     sub: string,
     rest: string[],
@@ -591,20 +641,35 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
     const resume = splitAtDashes(tail)
     const text = sub === 'resume' ? resume.after : tail.join(' ').trim()
     const extra = sub === 'resume' ? resume.before : tail
-    const takesWords = sub === 'send' || sub === 'answer'
+    const takesWords = sub === 'send' || sub === 'answer' || sub === 'command'
     if (!ref || (takesWords && !text) || (!takesWords && extra.length > 0))
       return refused(CONDUCTOR_ACT_USAGE[sub], EXIT_USAGE)
-    if (isMe(ref, caller.session, d.conductorOf(ref), caller.tabId))
-      return refused(`koloft session ${sub}: ${THAT_IS_YOU}`)
+    if (sub === 'command') {
+      const problem = slashCommandProblem(text)
+      if (problem) return refused(`koloft session command: ${problem}`, EXIT_USAGE)
+    }
+    const self = ref === MYSELF || isMe(ref, caller.session, d.conductorOf(ref), caller.tabId)
+    if (self && sub === 'screen') return answered(formatScreen('you', await d.screen(caller.tabId)))
+    if (self && sub === 'command') {
+      const me = d.conductorOf(caller.session.sessionId)
+      if (!me) return refused(`koloft session command: ${ONLY_A_CONDUCTOR}`)
+      return answered(await d.command(caller.tabId, me, text))
+    }
+    if (self) return refused(`koloft session ${sub}: ${THAT_IS_YOU}`)
     const found = await findInScope(d, sub, ref, caller.tabId)
     if (!found.ok) return refused(found.error)
-    const t = rowTarget(found.value)
+    const t = rowTarget(d, found.value)
+    if (sub === 'screen')
+      return t.tabId
+        ? answered(formatScreen(t.name, await d.screen(t.tabId)))
+        : refused(`koloft session screen: ${t.name} is not open, so it has no screen.`)
     if (sub === 'stop') {
       if (!t.tabId) return refused(`koloft session stop: ${t.name} is not open.`)
       d.stop(t.tabId)
       return answered(`Closed ${t.name}. It stays in the list and can be resumed.`)
     }
     d.touch(caller.tabId, t.key)
+    if (sub === 'command') return answered(await d.command(caller.tabId, t, text))
     if (sub === 'answer') {
       const error = t.tabId ? await d.answer(t.tabId, text) : SHOWS_NOTHING_WHILE_CLOSED
       return error
@@ -682,7 +747,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       await d.queue(target.value.tabId, text)
       return answered(`Sent to ${target.value.title}.`)
     }
-    if (sub === 'resume' || sub === 'stop' || sub === 'answer')
+    if (Object.hasOwn(CONDUCTOR_ACT_USAGE, sub))
       return refused(`koloft session ${sub}: ${ONLY_A_CONDUCTOR}`)
     if (sub === 'close') {
       if (rest.length > 1) return refused(CLOSE_USAGE, EXIT_USAGE)

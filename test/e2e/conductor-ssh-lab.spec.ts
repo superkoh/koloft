@@ -244,6 +244,32 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
     )
   })
 
+  test('E-SSH-C3: the owner’s /run and /compact are typed into the remote session, and what it printed comes back through the mirror', async ({
+    env
+  }) => {
+    await withRemoteWorkspaceConductor(
+      env,
+      () => undefined,
+      async ({ page, fake }) => {
+        await startSessionIn(page, 'kt-key', { remote: true })
+        const remote = (await page.evaluate(() => window.api.sessions.list())).find(
+          (s) => s.alive && !s.conductor
+        )!
+        const ran = (): string[] => said(fake).filter((p) => p.startsWith('⌨️ '))
+
+        fake.interact(OWNER, 'run', { command: '/context', session: remote.sessionId })
+        await expect
+          .poll(ran, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+          .toEqual([expect.stringMatching(/ran \/context:\n## Context Usage/)])
+
+        fake.interact(OWNER, 'compact', { session: remote.sessionId })
+        await expect
+          .poll(() => ran().at(-1), { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+          .toMatch(/ran \/compact:\nCompacted/)
+      }
+    )
+  })
+
   test('E-SSH-C2: the same with a REAL claude on the machine (opt-in, spends real money): a typed message is answered, and its own question is answered by koloft session answer', async ({
     env
   }) => {
@@ -251,7 +277,7 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
       !HAVE_LINUX_CLAUDE,
       'set KOLOFT_SMOKE_CLAUDE_LINUX (a Linux claude binary for the lab machine’s CPU) and KOLOFT_SMOKE_OAUTH_TOKEN or KOLOFT_SMOKE_ACCOUNT'
     )
-    test.setTimeout(4 * A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS + 180_000)
+    test.setTimeout(5 * A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS + 180_000)
     await withRemoteWorkspaceConductor(
       env,
       (lab) => useRealClaudeOnTheMachine(env, lab),
@@ -305,6 +331,19 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
             timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
           })
           .toBe(2)
+
+        fake.interact(OWNER, 'compact', { session: remote.sessionId })
+        await expect
+          .poll(
+            () =>
+              said(fake)
+                .filter((p) => p.startsWith('⌨️ '))
+                .at(-1),
+            {
+              timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
+            }
+          )
+          .toMatch(/ran \/compact:\nCompacted \(ctrl\+o to see full summary\)$/)
       }
     )
   })

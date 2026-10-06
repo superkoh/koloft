@@ -15,7 +15,7 @@ import {
   GLOBAL_SCOPE,
   keepPinnedBindings,
   newerSnowflake,
-  scopeName
+  conductorName
 } from '@shared/conductors'
 import { conductorRole } from '@shared/agentGuide'
 import { isRemoteKey } from '@shared/remoteKey'
@@ -103,12 +103,12 @@ export class Conductors {
     this.d.saveQuietly(this.discord)
   }
 
-  private find(id: string): ConductorBinding | undefined {
+  binding(id: string): ConductorBinding | undefined {
     return this.discord.bindings.find((b) => b.id === id)
   }
 
   bindingOfTab(tabId: string): ConductorBinding | undefined {
-    for (const [id, tab] of this.tabs) if (tab === tabId) return this.find(id)
+    for (const [id, tab] of this.tabs) if (tab === tabId) return this.binding(id)
     return undefined
   }
 
@@ -127,13 +127,18 @@ export class Conductors {
     if (b) this.pendingTouch.set(tabId, b.id)
   }
 
+  touchNowAndNext(id: string, key: string, tabId: string | undefined): void {
+    this.touchFor(id, key)
+    if (tabId) this.pendingTouch.set(tabId, id)
+  }
+
   liveTab(id: string): string | undefined {
     const tab = this.tabs.get(id)
     return tab && this.d.tabAlive(tab) ? tab : undefined
   }
 
   setLastMessage(id: string, messageId: string): void {
-    const last = this.find(id)?.lastMessageId
+    const last = this.binding(id)?.lastMessageId
     if (last && !newerSnowflake(messageId, last)) return
     this.change(id, (b) => ({ ...b, lastMessageId: messageId }))
     this.pendingSave ??= setTimeout(() => this.flush(), LAST_MESSAGE_SAVE_DELAY_MS)
@@ -167,7 +172,7 @@ export class Conductors {
   }
 
   private touchFor(id: string, key: string): void {
-    if (this.find(id)?.touched.includes(key)) return
+    if (this.binding(id)?.touched.includes(key)) return
     this.change(id, (x) => ({ ...x, touched: [...x.touched, key] }))
     this.d.saveQuietly(this.discord)
   }
@@ -200,7 +205,7 @@ export class Conductors {
         ok: false,
         error: `${BACKEND_LABEL[input.backend]} is turned off in Settings ▸ Sessions.`
       }
-    const current = input.id ? this.find(input.id) : undefined
+    const current = input.id ? this.binding(input.id) : undefined
     if (input.id && !current) return { ok: false, error: NOT_BOUND }
     const scope = current?.scope ?? input.scope
     if (scope !== GLOBAL_SCOPE && !this.d.isPinned(scope))
@@ -232,7 +237,7 @@ export class Conductors {
   }
 
   startFresh(id: string): Promise<ConductorOpenResult> {
-    if (!this.find(id)) return Promise.resolve(refusal(NOT_BOUND))
+    if (!this.binding(id)) return Promise.resolve(refusal(NOT_BOUND))
     this.stopTab(id)
     this.update(id, (b) => ({ ...b, lastSessionKey: undefined }))
     return this.open(id)
@@ -269,7 +274,7 @@ export class Conductors {
   }
 
   private async openNow(id: string): Promise<ConductorOpenResult> {
-    const b = this.find(id)
+    const b = this.binding(id)
     if (!b) return refusal(NOT_BOUND)
     const tab = this.tabs.get(id)
     if (tab && this.d.tabAlive(tab)) return { ok: true, tabId: tab }
@@ -281,7 +286,7 @@ export class Conductors {
       backend: b.backend,
       cwd,
       role: conductorRole(b.scope),
-      title: `${scopeName(b.scope)} conductor`
+      title: conductorName(b.scope)
     }
     const key = b.lastSessionKey
     const resumable = key !== undefined && identityOf(key).backendId === b.backend

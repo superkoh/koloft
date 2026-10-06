@@ -42,6 +42,80 @@ export interface DiscordFile {
   data: Buffer
 }
 
+export const NO_MENTIONS = { parse: [] }
+export const COMMAND_INTERACTION = 2
+export const AUTOCOMPLETE_INTERACTION = 4
+
+export interface DiscordInteraction {
+  id: string
+  token: string
+  type: number
+  channelId: string
+  userId: string
+  command: string
+  options: Record<string, string>
+  focused?: string
+}
+
+interface RawInteraction {
+  id: string
+  token: string
+  type: number
+  channel_id?: string
+  member?: { user?: { id: string } }
+  user?: { id: string }
+  data?: {
+    name?: string
+    options?: { name: string; value?: unknown; focused?: boolean }[]
+  }
+}
+
+export interface SlashCommandSpec {
+  name: string
+  description: string
+  options?: {
+    type: number
+    name: string
+    description: string
+    required?: boolean
+    autocomplete?: boolean
+  }[]
+}
+
+function shapeOf(c: SlashCommandSpec): string {
+  return JSON.stringify([
+    c.name,
+    c.description,
+    (c.options ?? []).map((o) => [o.name, o.description, !!o.required, !!o.autocomplete])
+  ])
+}
+
+export function sameCommand(a: SlashCommandSpec, b: SlashCommandSpec): boolean {
+  return shapeOf(a) === shapeOf(b)
+}
+
+// PLATFORM§39
+export function interactionOf(raw: RawInteraction): DiscordInteraction | null {
+  const userId = raw.member?.user?.id ?? raw.user?.id
+  if (!raw.channel_id || !userId || !raw.data?.name) return null
+  const options: Record<string, string> = {}
+  let focused: string | undefined
+  for (const o of raw.data.options ?? []) {
+    options[o.name] = String(o.value ?? '')
+    if (o.focused) focused = o.name
+  }
+  return {
+    id: raw.id,
+    token: raw.token,
+    type: raw.type,
+    channelId: raw.channel_id,
+    userId,
+    command: raw.data.name,
+    options,
+    focused
+  }
+}
+
 export interface DiscordLinkDeps {
   apiUrl: string | null
   readToken(): Promise<string | null>
@@ -50,6 +124,7 @@ export interface DiscordLinkDeps {
   owner(): string | undefined
   push(status: DiscordStatus): void
   onMessage(m: DiscordMessage): void
+  onInteraction(i: DiscordInteraction): void
   onReady(): void
   postFailed(channelId: string, error: string): void
 }
@@ -110,6 +185,7 @@ export class DiscordLink {
   private botName?: string
   private applicationId?: string
   private guilds = new Map<string, string>()
+  private registered = new Set<string>()
   private failing = new Map<string, string>()
   private candidate?: Candidate
   private rest: DiscordRest | null = null
@@ -154,6 +230,7 @@ export class DiscordLink {
     this.botName = undefined
     this.applicationId = undefined
     this.guilds.clear()
+    this.registered.clear()
     this.failing.clear()
     this.candidate = undefined
   }
@@ -222,6 +299,10 @@ export class DiscordLink {
       const g = data as { id: string; unavailable?: boolean }
       if (g.unavailable) return
       this.guilds.delete(g.id)
+    } else if (type === 'INTERACTION_CREATE') {
+      const i = interactionOf(data as RawInteraction)
+      if (i) this.d.onInteraction(i)
+      return
     } else if (type === 'MESSAGE_CREATE') {
       const m = data as RawMessage
       if (m.author.bot) return
@@ -253,7 +334,7 @@ export class DiscordLink {
     try {
       const sent = await this.api().request('POST', `/channels/${channelId}/messages`, {
         content,
-        allowed_mentions: { parse: [] },
+        allowed_mentions: NO_MENTIONS,
         ...(replyTo
           ? { message_reference: { message_id: replyTo, fail_if_not_exists: false } }
           : {})
@@ -278,7 +359,7 @@ export class DiscordLink {
         'payload_json',
         JSON.stringify({
           ...(i === 0 && content ? { content } : {}),
-          allowed_mentions: { parse: [] },
+          allowed_mentions: NO_MENTIONS,
           attachments: batch.map((f, n) => ({ id: n, filename: f.name }))
         })
       )
@@ -288,6 +369,29 @@ export class DiscordLink {
       return api.request('POST', `/channels/${channelId}/messages`, form)
     })
     await Promise.all(sends)
+  }
+
+  respond(i: DiscordInteraction, body: unknown): Promise<unknown> {
+    return this.api().request('POST', `/interactions/${i.id}/${i.token}/callback`, body)
+  }
+
+  // PLATFORM§39
+  async registerCommands(guildIds: string[], commands: SlashCommandSpec[]): Promise<void> {
+    const appId = this.applicationId
+    const api = this.rest
+    if (!appId || !api) return
+    for (const guildId of guildIds) {
+      if (this.registered.has(guildId)) continue
+      this.registered.add(guildId)
+      const route = `/applications/${appId}/guilds/${guildId}/commands`
+      try {
+        const there = await api.request<SlashCommandSpec[]>('GET', route)
+        const missing = commands.filter((c) => !there.some((t) => sameCommand(t, c)))
+        await Promise.all(missing.map((c) => api.request('POST', route, c)))
+      } catch {
+        this.registered.delete(guildId)
+      }
+    }
   }
 
   react(channelId: string, messageId: string, emoji: string, on: boolean): Promise<unknown> {

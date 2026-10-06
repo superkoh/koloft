@@ -12,6 +12,8 @@ import {
   SHOWS_NO_DIALOG,
   type RelayDeps
 } from '../../src/main/discord/relay'
+import { typeKeys } from '../../src/main/typeKeys'
+import { waitingForAnswer } from '../../src/shared/slashCommands'
 
 const OWNER = '555'
 const CHANNEL = '222'
@@ -47,6 +49,7 @@ function setup(
   const waiting: string[] = []
   const reactions: string[] = []
   const asksChanged: string[] = []
+  const commands: string[] = []
   const deps: RelayDeps = {
     link: {
       post: async (_c, text, replyTo) => posts.push({ text, replyTo }),
@@ -81,7 +84,9 @@ function setup(
       return true
     },
     asksChanged: (t) => asksChanged.push(t),
-    write: (_t, data) => writes.push({ data, at: Date.now() }),
+    type: (_t, keys) => typeKeys((data) => writes.push({ data, at: Date.now() }), keys),
+    typeCommand: async (_b, _t, command) => void commands.push(command),
+    queueDrained: () => true,
     queue: async () => undefined,
     codexApproval: () => undefined,
     codexQuestion: () => undefined,
@@ -89,7 +94,16 @@ function setup(
     attachmentsDir: path.join(dir, 'attachments'),
     ...more
   }
-  return { relay: new DiscordRelay(deps), posts, writes, last, waiting, reactions, asksChanged }
+  return {
+    relay: new DiscordRelay(deps),
+    posts,
+    writes,
+    last,
+    waiting,
+    reactions,
+    asksChanged,
+    commands
+  }
 }
 
 const HOOK = '4242'
@@ -182,6 +196,68 @@ describe('DiscordRelay: typing an owner message into a Claude conductor', () => 
     relay.onMessage(message('202', '556'))
     await new Promise((r) => setTimeout(r, 400))
     expect(writes).toEqual([])
+  })
+
+  it('a message that starts with a slash is run as a command in the conductor, not handed to its model', async () => {
+    const { relay, writes, commands, reactions, last } = setup()
+    relay.onMessage(message('205', OWNER, '  /compact keep the plan '))
+    await vi.waitFor(() => expect(commands).toEqual(['/compact keep the plan']))
+    await vi.waitFor(() => expect(reactions).toEqual(['205 +✅']))
+    expect(writes).toEqual([])
+    expect(last).toEqual(['205'])
+  })
+
+  it('a slash message that comes with a file is an ordinary message', async () => {
+    const { relay, writes, commands } = setup()
+    relay.onMessage({
+      ...message('206', OWNER, '/look at this'),
+      attachments: [{ filename: 'a.txt', size: 1, url: 'http://x/a.txt' }]
+    })
+    await vi.waitFor(() => expect(writes).toHaveLength(2), { timeout: 3000 })
+    expect(writes[0].data).toMatch(/^\[Discord\] \/look at this/)
+    expect(commands).toEqual([])
+  })
+
+  it('a slash command sent while the conductor is busy shows ⏳ until it is typed, and holds later messages behind it', async () => {
+    let status: SessionStatus = 'working'
+    const typedCommands: string[] = []
+    const { relay, writes, reactions } = setup({}, [], {
+      status: () => status,
+      typeCommand: async (_b, _t, command) => {
+        while (status === 'working') await new Promise((r) => setTimeout(r, 50))
+        typedCommands.push(command)
+      }
+    })
+    relay.onMessage(message('207', OWNER, '/clear'))
+    relay.onMessage(message('209', OWNER, 'then this'))
+    await new Promise((r) => setTimeout(r, 400))
+    expect(reactions).toEqual(['207 +⏳', '209 +⏳'])
+    expect(writes).toEqual([])
+    status = 'waiting'
+    await vi.waitFor(() => expect(typedCommands).toEqual(['/clear']))
+    await vi.waitFor(
+      () => expect(writes.map((w) => w.data)).toEqual(['[Discord] then this', '\r']),
+      {
+        timeout: 3000
+      }
+    )
+    expect(reactions.slice(0, 4)).toEqual(['207 +⏳', '209 +⏳', '207 -⏳', '207 +✅'])
+  })
+
+  // CC§14
+  it('a slash command while the conductor shows a question is not taken as the answer', async () => {
+    const { relay, posts, waiting, commands } = setup()
+    const askFile = hookFile(TAB, 'ask')
+    const watcher = await watchAsksOnceArmed(relay, waiting)
+    drop(askFile, QUESTION)
+    await vi.waitFor(() => expect(posts).toHaveLength(1))
+    relay.onMessage(message('208', OWNER, '/clear'))
+    await vi.waitFor(() =>
+      expect(posts.map((p) => p.text)).toContain(waitingForAnswer('The conductor', '/clear'))
+    )
+    expect(fs.existsSync(hookFile(TAB, 'answer'))).toBe(false)
+    expect(commands).toEqual([])
+    watcher?.close()
   })
 
   // CC§14

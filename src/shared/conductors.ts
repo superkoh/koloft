@@ -21,6 +21,10 @@ export function scopeName(scope: string): string {
   return basename(parseRemoteKey(scope)?.path ?? scope)
 }
 
+export function conductorName(scope: string): string {
+  return `${scopeName(scope)} conductor`
+}
+
 export function channelLabel(binding: Pick<ConductorBinding, 'channel'>): string {
   return `#${binding.channel.name}`
 }
