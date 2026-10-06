@@ -20,7 +20,9 @@ import {
 } from './helpers/remote'
 import {
   auxIcon,
+  boundSessionId,
   centerTerm,
+  continuedInOf,
   encodeCwd,
   FAKE_SESSION_TITLE,
   gitCommitAll,
@@ -33,6 +35,7 @@ import {
   runIn,
   sendShortcut,
   startSessionIn,
+  transcriptFile,
   waitBooted,
   waitForCalls,
   wsRows
@@ -437,27 +440,13 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
       const rows = wsRows(page, REMOTE_WS_NAME)
       const tabId = await rows.first().getAttribute('data-tab-id')
-      const boundOf = (): Promise<string | undefined> =>
-        page.evaluate(
-          (id) =>
-            window.api.sessions.list().then((all) => all.find((s) => s.tabId === id)?.sessionId),
-          tabId
-        )
+      const boundOf = (): Promise<string | undefined> => boundSessionId(page, tabId)
       await expect.poll(boundOf, { timeout: 60_000 }).toBeTruthy()
       const before = await boundOf()
-      const beforeTranscript = path.join(
-        machineHome(env),
-        '.claude',
-        'projects',
-        encodeCwd(remoteDir(env)),
-        `${before}.jsonl`
-      )
+      const beforeTranscript = transcriptFile(machineHome(env), remoteDir(env), before ?? '')
 
       await runIn(page, centerTerm(page), '/move-to-background')
-      const continuedIn = (): string | undefined => {
-        const last = fs.readFileSync(beforeTranscript, 'utf8').trimEnd().split('\n').pop() ?? ''
-        return last.includes('continued-in') ? JSON.parse(last).continuedInSessionId : undefined
-      }
+      const continuedIn = (): string | undefined => continuedInOf(beforeTranscript)
       await expect.poll(continuedIn, { timeout: 30_000 }).toBeTruthy()
       await expect.poll(boundOf, { timeout: 60_000 }).toBe(continuedIn())
       await expect

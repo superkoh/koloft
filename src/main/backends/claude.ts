@@ -474,7 +474,6 @@ export class ClaudeBackend implements SessionBackend {
       transcriptPath: movedFile,
       cwd: info.cwd
     })
-    if (report.tmux) tracker.setRemoteTmuxName(report.tabId, report.tmux)
     if (
       heldBeforeStartup &&
       transcriptEnding(path.join(dir, `${heldBeforeStartup}.jsonl`)).continuedIn ===
@@ -629,7 +628,9 @@ export class ClaudeBackend implements SessionBackend {
     const nextId = this.sessionIdOf(obj.tabId)
     if (prevId && nextId && nextId !== prevId) {
       if (obj.source === 'startup') this.heldBeforeStartup.set(obj.tabId, prevId)
-      if (tracker.remoteOf(obj.tabId)) tracker.setRemoteTmuxName(obj.tabId, tmuxSessionName(nextId))
+      else this.heldBeforeStartup.delete(obj.tabId)
+      if (tracker.remoteOf(obj.tabId) && obj.source !== MOVED_CONVERSATION_SOURCE)
+        tracker.setRemoteTmuxName(obj.tabId, tmuxSessionName(nextId))
       workspaces?.onSessionRebind(prevId, nextId, obj.source || '')
       if (replacesTheConversation(obj.source || '')) {
         workspaces?.dropOwnership(prevId, `replaced by ${nextId} (${obj.source})`)
