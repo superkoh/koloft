@@ -71,7 +71,13 @@ describe('closing a session that runs in its own worktree', () => {
     expect(git(repo, 'worktree', 'list', '--porcelain')).not.toContain('run-1')
   })
 
-  it('names an uncommitted change and a new file, and a commit that is on no remote branch', async () => {
+  it('a commit another local branch also holds loses nothing, though no remote has it', async () => {
+    commit(tree, 'merged.txt', 'merged into main, never pushed')
+    git(repo, 'merge', '-q', '--ff-only', 'worktree-run-1')
+    expect(await whatIsLeft(localGitOut, await treeOf(tree))).toEqual([])
+  })
+
+  it('names an uncommitted change and a new file, and a commit that is on no other branch and no remote branch', async () => {
     commit(tree, 'local.txt', 'never pushed')
     fs.writeFileSync(path.join(tree, '.gitignore'), 'changed\n')
     fs.writeFileSync(path.join(tree, 'new.txt'), 'untracked')

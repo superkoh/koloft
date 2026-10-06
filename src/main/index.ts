@@ -122,7 +122,7 @@ import { loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
 import { WorkspaceManager, type LiveSession } from './workspaces'
 import { sanitizeSessionWorkbench } from '@shared/workbenchState'
-import { dirExistsSync, gitProbes, type ResumeProbes } from './resumePlan'
+import { dirExistsSync, gitProbes, type GitOut, type ResumeProbes } from './resumePlan'
 import { ClaudeBackend, machineHookSettings, pickMachineAccount } from './backends/claude'
 import { codexBackend, trustCodexFolder } from './backends/codex'
 import { codexConfigFile } from './codexTrust'
@@ -237,6 +237,7 @@ import type {
   ProbeErrorKind,
   LeftoverProcess,
   ResumePlan,
+  ProjectInfo,
   SessionInfo,
   AttentionEvent,
   AttentionSubject,
@@ -1829,19 +1830,22 @@ app.whenReady().then(() => {
     dirExists: (p) => hosts.of(p).dirExists(p),
     gitDirExists: (root) => hosts.of(root).dirExists(`${root}/.git`),
     worktreeDirExists: (root, name) => hosts.of(root).dirExists(`${worktreeHomeOf(root)}/${name}`),
-    branchExists: (root, branch) =>
-      gitProbes((dir, args) => hosts.of(dir).gitOut(dir, args)).branchExists(root, branch),
+    branchExists: (root, branch) => gitProbes(hostGitOut).branchExists(root, branch),
     countRunFolders,
     accountUsable: (backend) => sessionBackends.get(backend).accountUsable(),
     trusted: (wsPath, backend) => sessionBackends.get(backend).trustsFolder(wsPath),
     ready: () => rendererReady && BrowserWindow.getAllWindows().length > 0,
     launch: launchCronRun,
     killTab: (tabId) => void killTabPty(tabId),
+    stillWorking: (tabId) => tracker.stillWorking(tabId),
+    whatIsLeft: whatClosingTheRunWouldLose,
+    closeForGood: closeTheRunFully,
     toast: (text) => sendToRenderer('cron:toast', text),
     notify: notifyPlain,
     push: (state) => sendToRenderer('cron:state', state),
     killed: (tabId) => sendToRenderer('tab:killedByMain', tabId),
     bindDeadlineMs: cronBindDeadlineMs(),
+    closeRecheckMs: cronTestMs('KOLOFT_CRON_CLOSE_RECHECK_MS', CRON_CLOSE_RECHECK_MS),
     setInterval,
     clearInterval,
     setTimeout,
@@ -2717,8 +2721,13 @@ function closableSessions(): ClosableSession[] {
   return [...live, ...cold]
 }
 
-async function whatClosingWouldLose(target: ClosableSession): Promise<string[]> {
-  const tree = await closingTree(localGitOut, projectInfoFor(target.treeRoot))
+const hostGitOut: GitOut = (dir, args) => hosts.of(dir).gitOut(dir, args)
+
+async function whatClosingWouldLose(
+  target: ClosableSession,
+  info = projectInfoFor(target.treeRoot)
+): Promise<string[]> {
+  const tree = await closingTree(hostGitOut, info)
   if (!tree) return []
   const sharing = allSessions().filter(
     (s) =>
@@ -2726,18 +2735,20 @@ async function whatClosingWouldLose(target: ClosableSession): Promise<string[]> 
   )
   return [
     ...sharing.map((s) => `The session "${s.title}" is still open in ${tree.treeRoot}.`),
-    ...(await whatIsLeft(localGitOut, tree))
+    ...(await whatIsLeft(hostGitOut, tree))
   ]
 }
 
-async function closeSessionFully(target: ClosableSession): Promise<void> {
-  const info = projectInfoFor(target.treeRoot)
+async function closeSessionFully(
+  target: ClosableSession,
+  info = projectInfoFor(target.treeRoot)
+): Promise<void> {
   if (target.tabId) {
     sendToRenderer('tab:killedByMain', target.tabId)
     await killTabPty(target.tabId)
   }
-  const tree = await closingTree(localGitOut, info)
-  const problem = tree && (await removeTree(localGitOut, tree))
+  const tree = await closingTree(hostGitOut, info)
+  const problem = tree && (await removeTree(hostGitOut, tree))
   if (problem) {
     sendToRenderer('cron:toast', `${target.title}: ${problem}`)
     return
@@ -2748,6 +2759,29 @@ async function closeSessionFully(target: ClosableSession): Promise<void> {
 
 function worktreeHomeOf(root: string): string {
   return `${root}/.claude/worktrees`
+}
+
+function cronRunTree(root: string, worktree?: string): ProjectInfo {
+  return worktree
+    ? { root, treeRoot: `${worktreeHomeOf(root)}/${worktree}`, worktreeName: worktree }
+    : { root, treeRoot: root }
+}
+
+const NO_SESSION_FOR_THE_RUN = "Koloft cannot find this run's session."
+
+async function whatClosingTheRunWouldLose(
+  tabId: string,
+  root: string,
+  worktree?: string
+): Promise<string[]> {
+  const session = sessionOfTab(tabId)
+  if (!session) return [NO_SESSION_FOR_THE_RUN]
+  return whatClosingWouldLose(session, cronRunTree(root, worktree))
+}
+
+async function closeTheRunFully(tabId: string, root: string, worktree?: string): Promise<void> {
+  const session = sessionOfTab(tabId)
+  if (session) await closeSessionFully(session, cronRunTree(root, worktree))
 }
 
 async function countRunFolders(root: string, slug: string): Promise<number> {
@@ -2914,12 +2948,12 @@ async function launchCronRun(
 const STILL_STARTING = 'Koloft is still starting — try again in a moment.'
 
 const CRON_BIND_DEADLINE_MS = 90_000
+const CRON_CLOSE_RECHECK_MS = 60_000
+function cronTestMs(name: string, dflt: number): number {
+  return (BACKGROUND_TEST && Number(process.env[name])) || dflt
+}
 function cronBindDeadlineMs(): number {
-  return (
-    (process.env.KOLOFT_TEST_BACKGROUND === '1' &&
-      Number(process.env.KOLOFT_CRON_BIND_DEADLINE_MS)) ||
-    CRON_BIND_DEADLINE_MS
-  )
+  return cronTestMs('KOLOFT_CRON_BIND_DEADLINE_MS', CRON_BIND_DEADLINE_MS)
 }
 
 const resumeProbes: ResumeProbes = {
