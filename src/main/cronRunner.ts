@@ -227,8 +227,7 @@ export class CronRunner {
   private live = new Map<string, LiveRun>()
   private launching = new Set<string>()
   private held = new Map<string, Due[]>()
-  private deadlines = new Map<string, ReturnType<typeof setTimeout>>()
-  private closeChecks = new Map<string, ReturnType<typeof setTimeout>>()
+  private timers = new Map<string, ReturnType<typeof setTimeout>>()
   private lastDue = new Map<string, number>()
   private timer: ReturnType<typeof setInterval> | null = null
   private resumeAt = 0
@@ -255,10 +254,8 @@ export class CronRunner {
   }
 
   private clearTimers(): void {
-    for (const t of [...this.deadlines.values(), ...this.closeChecks.values()])
-      this.d.clearTimeout(t)
-    this.deadlines.clear()
-    this.closeChecks.clear()
+    for (const t of this.timers.values()) this.d.clearTimeout(t)
+    this.timers.clear()
   }
 
   onResume(): void {
@@ -401,7 +398,7 @@ export class CronRunner {
       }
       this.live.set(res.tabId, run)
       this.d.toast(`⏰ ${job.name} started`)
-      this.armDeadline(res.tabId)
+      this.armTimer(res.tabId, this.d.bindDeadlineMs, () => this.onDeadline(res.tabId))
       this.refreshFolders()
       this.push()
       return { ok: true }
@@ -420,19 +417,20 @@ export class CronRunner {
     this.d.toast(`⏰ ${job.name} could not start: ${note}`)
   }
 
-  private armDeadline(tabId: string): void {
+  private armTimer(tabId: string, ms: number, then: () => void): void {
+    this.clearTimer(tabId)
     const t = this.d.setTimeout(() => {
-      this.deadlines.delete(tabId)
-      this.onDeadline(tabId)
-    }, this.d.bindDeadlineMs)
-    this.deadlines.set(tabId, t)
+      this.timers.delete(tabId)
+      then()
+    }, ms)
+    this.timers.set(tabId, t)
   }
 
-  private clearDeadline(tabId: string): void {
-    const t = this.deadlines.get(tabId)
+  private clearTimer(tabId: string): void {
+    const t = this.timers.get(tabId)
     if (t === undefined) return
     this.d.clearTimeout(t)
-    this.deadlines.delete(tabId)
+    this.timers.delete(tabId)
   }
 
   private onDeadline(tabId: string): void {
@@ -463,7 +461,7 @@ export class CronRunner {
     // CC§1
     if (run.state === 'launching') {
       run.state = 'running'
-      this.clearDeadline(tabId)
+      this.clearTimer(tabId)
     }
     this.push()
   }
@@ -482,12 +480,12 @@ export class CronRunner {
     } else if (next === 'working' && run.state === 'done') {
       run.state = 'running'
       delete run.kept
-      this.clearCloseCheck(tabId)
+      this.clearTimer(tabId)
       changed = true
     }
     if (!changed) return
     this.push()
-    if (run.state === 'done' && this.byId(run.jobId)?.autoClose) void this.closeIfFinished(run)
+    if (run.state === 'done') void this.closeIfFinished(run)
   }
 
   private killRun(tabId: string): void {
@@ -501,22 +499,21 @@ export class CronRunner {
     const { tabId } = run
     const job = this.byId(run.jobId)
     if (!job?.autoClose || !this.isStillDone(run)) return
-    const left = (await this.d.stillWorking(tabId))
-      ? null
-      : await this.d.whatIsLeft(tabId, job.workspacePath, run.worktree)
+    const busy = await this.d.stillWorking(tabId)
+    const left = busy ? [] : await this.d.whatIsLeft(tabId, job.workspacePath, run.worktree)
     if (!this.isStillDone(run)) return
-    if (left?.length === 0) {
-      this.clearCloseCheck(tabId)
+    if (!busy && left.length === 0) {
       this.live.delete(tabId)
-      void this.d
-        .closeForGood(tabId, job.workspacePath, run.worktree)
-        .then(() => this.refreshFolders())
+      void this.d.closeForGood(tabId, job.workspacePath, run.worktree).then(
+        () => this.refreshFolders(),
+        (error) => this.d.toast(`⏰ ${job.name} could not be closed: ${String(error)}`)
+      )
       this.writeHistory(job, { ...lineOf(run), state: 'finished' })
       this.d.toast(`⏰ ${job.name} finished and closed`)
       return
     }
-    if (left) this.keepOpen(run, job, left)
-    this.armCloseCheck(run)
+    if (left.length > 0) this.keepOpen(run, job, left)
+    this.armTimer(tabId, this.d.closeRecheckMs, () => void this.closeIfFinished(run))
   }
 
   private isStillDone(run: LiveRun): boolean {
@@ -532,27 +529,10 @@ export class CronRunner {
     this.push()
   }
 
-  private armCloseCheck(run: LiveRun): void {
-    this.clearCloseCheck(run.tabId)
-    const t = this.d.setTimeout(() => {
-      this.closeChecks.delete(run.tabId)
-      void this.closeIfFinished(run)
-    }, this.d.closeRecheckMs)
-    this.closeChecks.set(run.tabId, t)
-  }
-
-  private clearCloseCheck(tabId: string): void {
-    const t = this.closeChecks.get(tabId)
-    if (t === undefined) return
-    this.d.clearTimeout(t)
-    this.closeChecks.delete(tabId)
-  }
-
   onPtyExit(tabId: string): void {
     const run = this.live.get(tabId)
     if (!run) return
-    this.clearDeadline(tabId)
-    this.clearCloseCheck(tabId)
+    this.clearTimer(tabId)
     this.live.delete(tabId)
     this.refreshFolders()
     const job = this.byId(run.jobId)
@@ -687,7 +667,7 @@ export class CronRunner {
     this.lastDue.delete(jobId)
     this.held.delete(jobId)
     delete this.notes[jobId]
-    for (const run of this.live.values()) if (run.jobId === jobId) this.clearDeadline(run.tabId)
+    for (const run of this.live.values()) if (run.jobId === jobId) this.clearTimer(run.tabId)
   }
 
   private pushLine(job: CronJob, line: HistoryLine): void {

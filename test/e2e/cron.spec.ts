@@ -1,4 +1,3 @@
-import { execFileSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import type { Locator, Page } from '@playwright/test'
@@ -12,6 +11,7 @@ import {
   remoteDir
 } from './helpers/remote'
 import { seedSettings, type E2EEnv } from './helpers/env'
+import { runGit } from './helpers/gitFixture'
 import {
   auxIcon,
   centerTerm,
@@ -543,11 +543,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await expect.poll(() => tabDisplays(page), { timeout: 30_000 }).toHaveLength(0)
       await expect(row).toHaveCount(0, { timeout: 30_000 })
       await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
-      expect(
-        execFileSync('git', ['-C', env.workspaces.a, 'branch', '--list', `worktree-${wt}`], {
-          encoding: 'utf8'
-        }).trim()
-      ).toBe('')
+      expect(runGit(env.workspaces.a, 'branch', '--list', `worktree-${wt}`).trim()).toBe('')
     } finally {
       await app.close().catch(() => {})
     }

@@ -125,8 +125,12 @@ export class SessionRuntime extends EventEmitter {
   async stillWorking(tabId: string): Promise<boolean> {
     const e = this.entries.get(tabId)
     if (!e) return false
-    if (e.turn !== 'ended' || e.wakeupPending || e.background.length > 0) return true
+    if (e.turn !== 'ended' || this.holdsWork(e)) return true
     return this.workStillRunning(tabId)
+  }
+
+  private holdsWork(e: RuntimeEntry): boolean {
+    return e.wakeupPending || e.background.length > 0
   }
 
   private entry(tabId: string): RuntimeEntry {
@@ -179,8 +183,7 @@ export class SessionRuntime extends EventEmitter {
     e.closeTimer = undefined
     const held =
       tabId === this.activeTabId?.() ||
-      e.wakeupPending ||
-      e.background.length > 0 ||
+      this.holdsWork(e) ||
       !!this.heldTabs?.().has(tabId) ||
       !!this.needsUser?.(tabId)
     if (held) {

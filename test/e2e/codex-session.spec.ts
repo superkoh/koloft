@@ -1093,17 +1093,11 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(dlg.locator('.hist-row').first()).toContainText('Done — closed itself', {
         timeout: 30_000
       })
-      const wt = (await dlg.locator('.hist-row').first().locator('.hist-wt').innerText())
-        .replace('·', '')
-        .trim()
-      expect(wt).not.toBe('')
+      const tree = codexCalls(env)[0].cwd
+      expect(tree).not.toBe(env.workspaces.a)
       await expect(page.locator('.terminals .term-wrap')).toHaveCount(0, { timeout: 30_000 })
       await expect(wsRows(page, 'ws-a')).toHaveCount(0, { timeout: 30_000 })
-      await expect
-        .poll(() => fs.existsSync(path.join(env.workspaces.a, '.claude', 'worktrees', wt)), {
-          timeout: 30_000
-        })
-        .toBe(false)
+      await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
     } finally {
       await quitAndClose(app)
     }

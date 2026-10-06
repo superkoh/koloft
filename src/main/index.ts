@@ -2782,7 +2782,6 @@ async function whatClosingTheRunWouldLose(
 async function closeTheRunFully(tabId: string, root: string, worktree?: string): Promise<void> {
   const session = sessionOfTab(tabId)
   if (session) await closeSessionFully(session, cronRunTree(root, worktree))
-  else killTabFromMain(tabId)
 }
 
 async function countRunFolders(root: string, slug: string): Promise<number> {
@@ -2951,7 +2950,7 @@ const STILL_STARTING = 'Koloft is still starting — try again in a moment.'
 const CRON_BIND_DEADLINE_MS = 90_000
 const CRON_CLOSE_RECHECK_MS = 60_000
 function cronTestMs(name: string, dflt: number): number {
-  return (process.env.KOLOFT_TEST_BACKGROUND === '1' && Number(process.env[name])) || dflt
+  return (BACKGROUND_TEST && Number(process.env[name])) || dflt
 }
 function cronBindDeadlineMs(): number {
   return cronTestMs('KOLOFT_CRON_BIND_DEADLINE_MS', CRON_BIND_DEADLINE_MS)
