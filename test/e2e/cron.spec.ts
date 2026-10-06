@@ -239,7 +239,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
         .evaluate((el) =>
           Array.from(el.children).map((c) => (c.classList.contains('sep') ? 'sep' : 'mi'))
         )
-      expect(shape).toEqual(['mi', 'mi', 'mi', 'mi', 'sep', 'mi'])
+      expect(shape).toEqual(['mi', 'mi', 'mi', 'mi', 'mi', 'sep', 'mi'])
 
       await page.locator('.menu .mi', { hasText: 'Scheduled jobs' }).click()
       await expect(cronDialog(page)).toBeVisible()
