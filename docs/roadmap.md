@@ -78,8 +78,7 @@ when it works. That is what "judged against" means.
   each issue states what Koloft would add beyond the tool's own feature before anything
   is built. For #230 the new evidence is measured: Claude's own Remote Control refuses
   the long-lived token Koloft's account balancing injects (CC§7), so a Koloft session
-  cannot be reached from a phone through it. The Discord conductor is the answer being
-  built.
+  cannot be reached from a phone through it. The Discord conductor is the answer.
 
 ### Tier 3 — guardrails
 
