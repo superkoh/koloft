@@ -308,7 +308,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       await expect
         .poll(() => notices(fake), { timeout: A_REAL_MODEL_TURN_MS })
         .toContainEqual(expect.stringMatching(/^▶ Started \*\*.+\*\*$/))
-      expect(said(fake).join('\n')).toContain('\n-# ws-a · Claude\n')
+      expect(said(fake).join('\n')).toMatch(/\n-# ws-a · Claude(\n|$)/)
       await expect
         .poll(() => notices(fake), { timeout: A_REAL_MODEL_TURN_MS })
         .toContainEqual(expect.stringMatching(/^🔔 .+ finished\.$/))
@@ -356,7 +356,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       const name = notices(fake)
         .map((l) => /^▶ Started \*\*(.+)\*\*$/.exec(l)?.[1])
         .find(Boolean)
-      expect(toolResults(env, conductor.sessionId)).toContain(`Answered ${name}.`)
+      expect(toolResults(env, conductor.sessionId).join('\n')).toContain(`Answered ${name}.`)
       await expect
         .poll(() => saidBy(env, target.sessionId, 'assistant').filter(Boolean).at(-1), {
           timeout: A_REAL_MODEL_TURN_MS
@@ -504,7 +504,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       fake.say(OWNER, '/context')
       await expect
         .poll(() => ran(fake), { timeout: A_REAL_MODEL_TURN_MS })
-        .toContainEqual(expect.stringMatching(/conductor ran \/context:\n## Context Usage/))
+        .toContainEqual(expect.stringMatching(/conductor\*\* ran \/context:\n## Context Usage/))
 
       const child = await liveClaudeTab(page)
       await typePrompt(page, child.tabId, 'Say the word MANGO and nothing else.')
@@ -533,7 +533,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       fake.say(OWNER, '/compact')
       await expect
         .poll(() => ran(fake), { timeout: A_REAL_MODEL_TURN_MS })
-        .toEqual([expect.stringMatching(/conductor ran \/compact:\nDone\.$/)])
+        .toEqual([expect.stringMatching(/conductor\*\* ran \/compact:\nDone\.$/)])
     })
   })
 
