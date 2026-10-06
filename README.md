@@ -273,16 +273,18 @@ Everything lives in **Settings** (⌘, or the gear at the left of the title bar)
 
 ## What it talks to
 
-Koloft has no analytics and no telemetry — it reports nothing about you anywhere. The
-only hosts it ever reaches on its own are:
+Koloft has no analytics and no telemetry — it reports nothing about you anywhere, unless
+you turn on the Discord butler: then your messages and your sessions' replies, questions
+and approvals go to your own bot. The only hosts it ever reaches on its own are:
 
 | Host | Why |
 | --- | --- |
-| `api.anthropic.com` | reads each account's remaining rate-limit allowance, so the balancer can pick the least-loaded one |
-| `api.github.com`, `github.com` | checks for a newer Koloft and downloads its `.dmg` |
-| `claude.ai`, `nodejs.org` | only for a **remote** workspace, and only to install what that machine is missing — `claude` from the first, Node from the second |
+| `api.anthropic.com` | sends each subscription account a one-token message and reads its remaining rate-limit allowance off the reply, as a session starts and every 5 minutes, so the balancer can pick the least-loaded one; an API key or custom endpoint is only checked that it still works |
+| `api.github.com`, `github.com` | checks for a newer Koloft and downloads its `.dmg`; through `gh`, reads a GitHub workspace's open issue and pull request counts, and the statusline asks `gh` about the branch's pull request |
 | your workspace's git remote (often `github.com`) | every 5 minutes, to see whether the branch is behind — `Settings ▸ Appearance` turns auto-fetch off |
-| `clients2.google.com`, `update.googleapis.com` | only once you install a Chrome extension for the in-app browser: the first serves the extension, the second checks once per launch for a newer one |
+| `claude.ai`, `nodejs.org`, `unofficial-builds.nodejs.org` | only for a **remote** workspace, and only to install what that machine is missing — `claude` from the first, Node from the second (or, on an old Linux, the third); `bash`, `tmux` and `rsync` come from the machine's own package manager |
+| `chromewebstore.google.com`, `clients2.google.com`, `update.googleapis.com` | only for Chrome extensions in the in-app browser: the store page, the extension download, and a once-per-launch update check |
+| `discord.com`, `gateway.discord.gg` | only once a bot token is set in `Settings ▸ Discord`; files sent from Discord are fetched from Discord's own file host |
 | `duckduckgo.com` | whatever you type in the browser's address bar that is not a URL |
 
 A remote workspace also reaches the machine you named, over `ssh` and `rsync`.

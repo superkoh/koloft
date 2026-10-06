@@ -7,5 +7,6 @@
   <url><loc>__SITE_URL__/scheduled/</loc></url>
   <url><loc>__SITE_URL__/accounts/</loc></url>
   <url><loc>__SITE_URL__/remote/</loc></url>
+  <url><loc>__SITE_URL__/discord/</loc></url>
   <url><loc>__SITE_URL__/install/</loc></url>
 </urlset>

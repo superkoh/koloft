@@ -77,7 +77,7 @@
           <a href="./" aria-current="page">home</a> · <a href="sessions/">sessions</a> ·
           <a href="workbench/">workbench</a> · <a href="agents/">agents</a> ·
           <a href="scheduled/">scheduled</a> · <a href="accounts/">accounts</a> ·
-          <a href="remote/">remote</a> ·
+          <a href="remote/">remote</a> · <a href="discord/">discord</a> ·
           <a href="install/">install</a>
         </nav>
       </header>
@@ -95,7 +95,7 @@
         <div class="quick">
           <!-- prettier-ignore -->
           <p class="command">
-            <code id="cmd"><span class="swipe">curl -fsSL https://raw.githubusercontent.com/superkoh/koloft-releases/main/install.sh | bash</span></code>
+            <code id="cmd"><span class="swipe">curl -fsSL https://<wbr>raw.githubusercontent.com/<wbr>superkoh/<wbr>koloft-releases/<wbr>main/<wbr>install.sh | bash</span></code>
             <button type="button" class="copy" data-copy="cmd">Copy</button>
           </p>
           <p class="quick-note">
@@ -104,27 +104,39 @@
           </p>
         </div>
 
-        <figure class="shot" style="--ar: 2640 / 1100">
+        <figure class="shot" style="--ar: 2640 / 1100; --ar-phone: 780 / 996">
           <div class="frame">
-            <img
-              src="img/hero-2176.webp"
-              srcset="img/hero-1088.webp 1088w, img/hero-2176.webp 2176w"
-              sizes="(max-width: 760px) calc(100vw - 48px), 1064px"
-              width="2176"
-              height="907"
-              fetchpriority="high"
-              alt="Koloft: the running Claude Code session on the left, and its Workbench on the right showing the changes the agent made"
-            />
+            <picture>
+              <source
+                media="(max-width: 760px)"
+                srcset="img/hero-phone.webp"
+                width="780"
+                height="996"
+              />
+              <img
+                src="img/hero-2176.webp"
+                srcset="img/hero-1088.webp 1088w, img/hero-2176.webp 2176w"
+                sizes="1064px"
+                width="2176"
+                height="907"
+                fetchpriority="high"
+                alt="Koloft: the running Claude Code session on the left, and its Workbench on the right showing the changes the agent made"
+              />
+            </picture>
             <span class="tape" aria-hidden="true"></span>
           </div>
-          <figcaption>the agent's own terminal, and its Workbench with the diffs</figcaption>
+          <figcaption>
+            the agent's own terminal, and its Workbench with the diffs<span class="phone-only">
+              (on a phone: the left part of the session)</span
+            >
+          </figcaption>
         </figure>
 
         <h2>What's inside</h2>
         <ul class="dash">
           <li>
             <a href="sessions/">Folders and their sessions</a>
-            <span class="why">— the list, start and resume, worktree sessions</span>
+            <span class="why">— the list, red dots, start and resume, worktree sessions</span>
           </li>
           <li>
             <a href="workbench/">The Workbench</a>
@@ -146,6 +158,10 @@
             <a href="remote/">Remote folders</a>
             <span class="why">— a folder on a machine you reach by ssh (alpha)</span>
           </li>
+          <li>
+            <a href="discord/">A butler on Discord</a>
+            <span class="why">— talk to your sessions from your phone</span>
+          </li>
           <li><a href="install/">Install, update, what it talks to</a></li>
         </ul>
 
@@ -161,8 +177,9 @@
           <li>
             <s class="struck">send anything about you</s>
             <span class="why"
-              >(no tracking;
-              <a href="install/#what-it-talks-to">the few places it talks to</a>)</span
+              >(no tracking; <a href="install/#what-it-talks-to">the few places it talks to</a> —
+              and, only if you turn on the Discord butler, your own Discord bot: see
+              <a href="discord/">discord</a>)</span
             >
           </li>
           <li><s class="struck">ask you to sign up</s> <span class="why">(no account)</span></li>
@@ -172,10 +189,18 @@
           </li>
         </ul>
 
-        <p class="aside">
-          also: a status line, notifications, keep-awake, a shortcuts page, world clocks, an update
-          banner.
-        </p>
+        <h2>Small things</h2>
+        <ul class="dash">
+          <li><a href="sessions/#red-dots">red dots</a> for sessions that need you</li>
+          <li><a href="sessions/#keep-running">sessions that keep running</a></li>
+          <li>a <a href="sessions/#the-sidebar">sidebar you can hide</a> (<kbd>⌘B</kbd>)</li>
+          <li>a status line</li>
+          <li>notifications</li>
+          <li>keep-awake</li>
+          <li>a shortcuts page</li>
+          <li>world clocks</li>
+          <li>an update banner</li>
+        </ul>
 
         <p class="next">start reading -&gt; <a href="sessions/">Folders and their sessions</a></p>
       </main>

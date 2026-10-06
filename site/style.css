@@ -107,7 +107,7 @@ table {
 
 h2,
 h3,
-.shot:not(.is-narrow),
+.shot,
 .command,
 .typed-table,
 .ascii,
@@ -147,12 +147,29 @@ h3,
 
 .contents {
   margin: 0;
-  font-size: 15px;
-  color: var(--muted);
+  font-size: 0;
+  text-wrap: balance;
 }
 
 .contents a {
+  --sep: 1.1em;
+  position: relative;
+  margin-right: var(--sep);
+  font-size: 15px;
   white-space: nowrap;
+  vertical-align: top;
+}
+
+.contents a:last-child {
+  margin-right: 0;
+}
+
+.contents a:not(:last-child)::after {
+  content: '·';
+  position: absolute;
+  right: calc(var(--sep) / -2);
+  translate: 50%;
+  color: var(--muted);
 }
 
 .contents a[aria-current='page'],
@@ -172,9 +189,18 @@ h3,
 }
 
 .contents a[aria-current='page'] {
-  margin: 0 -0.3em;
+  margin-left: -0.3em;
+  margin-right: calc(var(--sep) - 0.3em);
   color: var(--ink);
   text-decoration: none;
+}
+
+.contents a[aria-current='page']:last-child {
+  margin-right: -0.3em;
+}
+
+.contents a[aria-current='page']::after {
+  right: calc(0.3em - var(--sep) / 2);
 }
 
 .title,
@@ -214,6 +240,10 @@ kbd {
   white-space: nowrap;
 }
 
+.phone-only {
+  display: none;
+}
+
 .hl {
   color: inherit;
   padding: 0 0.2em;
@@ -246,7 +276,6 @@ button:focus-visible {
   outline-offset: 3px;
 }
 
-.aside,
 .why,
 .signoff .fine {
   color: var(--muted);
@@ -273,26 +302,17 @@ button:focus-visible {
 
 .command {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 16px;
 }
 
 .command code {
   flex: 1 1 auto;
   min-width: 0;
-  height: var(--line);
-  overflow-x: auto;
-  overflow-y: hidden;
-  white-space: pre;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
   font-size: 15px;
   line-height: var(--line);
-  scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 3ch), transparent);
-  mask-image: linear-gradient(90deg, #000 calc(100% - 3ch), transparent);
-}
-
-.command code::-webkit-scrollbar {
-  display: none;
 }
 
 .copy {
@@ -341,19 +361,27 @@ button:focus-visible {
 .shot {
   --w: 100cqw;
   --cap: calc(var(--line) * 15 - 2 * var(--pad));
+  --ar-used: var(--ar);
   margin: calc(var(--line) * 2) 0 var(--line);
 }
 
 .shot.is-narrow {
   --w: min(300px, 100cqw);
   --cap: 100vh;
-  display: contents;
+  display: grid;
+  grid-template-columns: var(--w) minmax(0, 1fr);
+  column-gap: 3ch;
+  align-items: start;
 }
 
 .frame {
-  --img-h: min(calc((var(--w) - 2 * var(--pad)) / (var(--ar))), var(--cap));
+  --img-h: min(calc((var(--w) - 2 * var(--pad)) / (var(--ar-used))), var(--cap));
   width: var(--w);
   height: round(up, calc(var(--img-h) + 2 * var(--pad)), var(--line));
+}
+
+.frame picture {
+  display: contents;
 }
 
 .frame img {
@@ -362,11 +390,6 @@ button:focus-visible {
   height: var(--img-h);
   object-fit: cover;
   object-position: var(--pos, 50% 0%);
-}
-
-.shot.is-narrow .frame {
-  float: left;
-  margin: var(--line) 3ch var(--line) 0;
 }
 
 .frame .tape {
@@ -388,7 +411,7 @@ figcaption::before {
 }
 
 .shot.is-narrow figcaption {
-  margin: 0 0 var(--line);
+  margin: 0;
   padding-top: var(--line);
 }
 
@@ -548,8 +571,18 @@ figcaption::before {
     left: -6px;
   }
 
-  .shot.no-phone {
-    display: none;
+  .contents a {
+    --sep: 0.9em;
+    font-size: 14px;
+  }
+
+  .phone-only {
+    display: inline;
+  }
+
+  .shot {
+    --ar-used: var(--ar-phone, var(--ar));
+    --cap: 100vh;
   }
 
   .title,
@@ -565,9 +598,8 @@ figcaption::before {
     top: -12px;
   }
 
-  .shot.is-narrow .frame {
-    float: none;
-    margin: calc(var(--line) * 2) 0 0;
+  .shot.is-narrow {
+    display: block;
   }
 
   .shot.is-narrow figcaption {
@@ -579,7 +611,11 @@ figcaption::before {
     content: '^ ';
   }
 
-  .typed-table thead {
+  .typed-table td:first-child {
+    white-space: normal;
+  }
+
+  .typed-table:is(:has(th:nth-child(3)), :has(td:first-child code)) thead {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -587,12 +623,12 @@ figcaption::before {
     clip-path: inset(50%);
   }
 
-  .typed-table tr,
-  .typed-table td {
+  .typed-table:is(:has(th:nth-child(3)), :has(td:first-child code)) tr,
+  .typed-table:is(:has(th:nth-child(3)), :has(td:first-child code)) td {
     display: block;
   }
 
-  .typed-table tr + tr::before {
+  .typed-table:is(:has(th:nth-child(3)), :has(td:first-child code)) tr + tr::before {
     content: '';
     display: block;
     height: var(--line);
@@ -604,19 +640,15 @@ figcaption::before {
     );
   }
 
-  .typed-table td {
+  .typed-table:is(:has(th:nth-child(3)), :has(td:first-child code)) td {
     padding-right: 0;
   }
 
-  .typed-table td:first-child {
-    white-space: normal;
-  }
-
-  .typed-table td + td {
+  .typed-table:is(:has(th:nth-child(3)), :has(td:first-child code)) td + td {
     padding-left: 2ch;
   }
 
-  .typed-table td[data-label]::before {
+  .typed-table:is(:has(th:nth-child(3)), :has(td:first-child code)) td[data-label]::before {
     content: attr(data-label) ': ';
     font: 400 13px / 1 var(--type);
     color: var(--muted);

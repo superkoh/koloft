@@ -57,7 +57,7 @@
           <a href="../">home</a> · <a href="../sessions/">sessions</a> ·
           <a href="../workbench/">workbench</a> · <a href="../agents/">agents</a> ·
           <a href="../scheduled/">scheduled</a> · <a href="../accounts/">accounts</a> ·
-          <a href="../remote/" aria-current="page">remote</a> ·
+          <a href="../remote/" aria-current="page">remote</a> · <a href="../discord/">discord</a> ·
           <a href="../install/">install</a>
         </nav>
       </header>
@@ -89,7 +89,7 @@
         <figure class="shot is-narrow" style="--ar: 840 / 836">
           <div class="frame">
             <img
-              src="../img/k-remote-dialog-abs.webp"
+              src="../img/k-remote-dialog.webp"
               width="840"
               height="836"
               alt="The Remote directory dialog, marked alpha: Machine is dev@build-box, Path on the machine is /home/dev/projects/tidewatch, with Cancel and Add buttons"
@@ -103,6 +103,14 @@
           Keys set in <code>~/.ssh/config</code> work everywhere. A password works too: type it once
           in a tab, and Koloft's own checks use that login after that.
         </p>
+        <p>These work too:</p>
+        <ul class="dash">
+          <li>a company jump host, the computer you must pass through to reach the others</li>
+          <li>a gateway computer that gives you no real terminal, such as JumpServer</li>
+          <li>a login shell that is <code>tcsh</code>, <code>csh</code> or <code>fish</code></li>
+          <li>a <code>RemoteCommand</code> or <code>RequestTTY</code> line in your ssh settings</li>
+          <li>keys from an ssh agent that your login shell starts</li>
+        </ul>
 
         <h2>What happens there</h2>
         <p>
@@ -119,13 +127,14 @@
               width="558"
               height="526"
               loading="lazy"
-              alt="The sessions list: a local folder, harbor-site, and below it a remote folder, tidewatch, tagged dev@build-box with a green dot and two sessions under it"
+              alt="The sessions list: a local folder, harbor-site, and below it a remote folder, tidewatch, tagged dev@build-box with a green dot and two sessions under it, each with a small red dot"
             />
             <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>
-            a remote folder in the list: the machine's name beside it, a dot that is lit while
-            connected, and its sessions below, like any folder
+            a remote folder in the list: the machine's name beside it, a dot lit while connected,
+            and its sessions below. When the dot is dark, hover it: it shows ssh's own reason, and
+            says when signing in from a session tab would fix it.
           </figcaption>
         </figure>
 
@@ -154,28 +163,54 @@ your Mac                     the other machine
         <ul class="dash">
           <li>
             Claude runs inside <code>tmux</code> (a program that keeps a terminal going after you
-            leave). If the link drops, Claude keeps working.
-          </li>
-          <li>
-            If the machine is missing <code>claude</code>, <code>tmux</code> or <code>rsync</code>,
-            Koloft installs them over the same link (<code>tmux</code> and <code>rsync</code> may
-            ask for that machine's sudo password, the admin password).
-          </li>
-          <li>
-            It also fetches Node, only for the status line. If that fails, the session still runs,
-            just without a status line.
+            leave). If the link drops, Claude keeps working. Koloft keeps trying to reach the
+            machine: soon at first, then less and less often, down to once a minute.
           </li>
           <li>
             The first session on a machine takes a few seconds longer: <code>claude</code> fetches
             its own settings once.
           </li>
+          <li>
+            A Discord butler can look after a remote folder's sessions too. The butler itself runs
+            on your Mac, not on the machine. See <a href="../discord/">A butler on Discord</a>.
+          </li>
+        </ul>
+
+        <h3>What Koloft installs there</h3>
+        <ul class="dash">
+          <li>
+            <code>bash</code>, <code>claude</code>, <code>tmux</code> and <code>rsync</code>, if the
+            machine is missing them, over the same link
+          </li>
+          <li>
+            <code>bash</code>, <code>tmux</code> and <code>rsync</code> come from the machine's own
+            package manager, which may ask for its sudo password (the admin password)
+          </li>
+          <li>
+            Node, only for the status line; if that fails, the session still runs, just without a
+            status line
+          </li>
+          <li>
+            on an old Linux, where the usual Node build will not run, one more Node build made for
+            older Linux, from <code>unofficial-builds.nodejs.org</code>
+          </li>
         </ul>
 
         <h2>The Workbench there</h2>
         <p>
-          The <a href="../workbench/">Workbench</a> works on a remote folder too. Its files, its
-          changes, the editor and the shell are all the machine's, not your Mac's.
+          The <a href="../workbench/">Workbench</a> works on a remote folder too. These are all the
+          machine's, not your Mac's:
         </p>
+        <ul class="dash">
+          <li>its files and its changes</li>
+          <li>the editor and the shell</li>
+          <li>the Scratchpad</li>
+          <li>links inside a Markdown file, and <code>path:line</code> links</li>
+          <li>the card you see with the Workbench folded</li>
+        </ul>
+        <p>An HTML file in that card opens as its source, not as a page.</p>
+        <p>The count of changed files there catches up at most every 10 seconds.</p>
+        <p>If ssh drops for a moment, Files keeps what it showed and Changes offers Retry.</p>
 
         <h2>Not there yet</h2>
         <ul class="dash">
@@ -188,15 +223,17 @@ your Mac                     the other machine
           <li>The agent does not get the <code>koloft</code> command.</li>
           <li>No Codex yet. A remote folder runs Claude Code only.</li>
           <li>
-            The folder menu has no Fetch origin and no Reveal in Finder. It offers Copy path
-            instead.
+            A session row's menu offers Copy path (<code>machine:/path</code>) instead of Reveal in
+            Finder. The panel you get by hovering the small branch icon beside the folder's name
+            shows no Pull and no Fetch now.
           </li>
-          <li>Koloft does not check whether the folder's branch is behind its git remote.</li>
+          <li>
+            Koloft does not check whether the folder's branch is behind its git remote. The open
+            issue and pull request counts of a GitHub repo do show.
+          </li>
         </ul>
 
-        <p class="next">
-          next page -&gt; <a href="../install/">Install, update, what it talks to</a>
-        </p>
+        <p class="next">next page -&gt; <a href="../discord/">A butler on Discord</a></p>
       </main>
 
       <footer class="signoff">

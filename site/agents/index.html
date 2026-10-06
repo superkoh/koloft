@@ -58,7 +58,7 @@
           <a href="../workbench/">workbench</a> ·
           <a href="../agents/" aria-current="page">agents</a> ·
           <a href="../scheduled/">scheduled</a> · <a href="../accounts/">accounts</a> ·
-          <a href="../remote/">remote</a> ·
+          <a href="../remote/">remote</a> · <a href="../discord/">discord</a> ·
           <a href="../install/">install</a>
         </nav>
       </header>
@@ -93,7 +93,9 @@
         <ul class="dash">
           <li>
             <code>koloft cron</code> — list, show, add, change, remove, turn on or off, or run a job
-            now; each job has its own timer, tool, model, effort and permission
+            now; each job has its own timer, tool, model, effort and permission, and says whether
+            its run closes itself when done (<code class="nowrap">--when-done open</code> or
+            <code>close</code>; see <a href="../scheduled/">Sessions on a timer</a>)
           </li>
         </ul>
 
@@ -108,24 +110,58 @@
             starts Claude, Codex starts Codex), in its own git worktree if asked
           </li>
           <li>
-            <code>koloft session send</code> — Codex only: message another Codex session (a Claude
-            session uses its own SendMessage tool)
+            <code>koloft session read</code> — print what a session said in its last turns, open or
+            closed
+          </li>
+          <li>
+            <code>koloft session send</code> — Codex: message another Codex session (a Claude
+            session uses its own SendMessage tool). Any session: report back to the conductor that
+            started it.
+          </li>
+          <li>
+            <code>koloft session close</code> — close itself, or a session it started, for good: its
+            tab, its row in the sidebar, and its worktree and branches if it had one. Koloft says
+            no, and lists what is left, while:
+            <ul class="dash">
+              <li>a file is not committed</li>
+              <li>a commit is not on the remote yet</li>
+              <li>another open session uses that worktree</li>
+            </ul>
           </li>
         </ul>
+        <p>
+          <code class="nowrap">session list</code> and <code class="nowrap">session new</code> take
+          <code class="nowrap">--workspace &lt;folder&gt;</code> to reach another folder in the
+          sidebar, by its name or its full path. A new session cannot be started in a remote folder
+          this way.
+        </p>
         <p>
           Each command prints its answer, so the agent sees what happened. The agent runs
           <code>koloft help</code> for the rest.
         </p>
+        <p>
+          A conductor, the session you talk to from Discord, gets a few more: it can answer a
+          session's question, resume it, stop it, run a slash command in it, see its screen, and
+          send you files. See <a href="../discord/">A butler on Discord</a>.
+        </p>
 
-        <figure class="shot" style="--ar: 1760 / 880">
+        <figure class="shot" style="--ar: 1760 / 880; --ar-phone: 710 / 590">
           <div class="frame">
-            <img
-              src="../img/i-settings-extensions.webp"
-              width="1760"
-              height="1240"
-              loading="lazy"
-              alt="Koloft's Settings, Extensions page: two switches, both on. Let agents drive this Browser, and Let agents use Koloft."
-            />
+            <picture>
+              <source
+                media="(max-width: 760px)"
+                srcset="../img/i-settings-extensions-phone2.webp"
+                width="710"
+                height="590"
+              />
+              <img
+                src="../img/i-settings-extensions.webp"
+                width="1760"
+                height="1240"
+                loading="lazy"
+                alt="Koloft's Settings, Extensions page: two switches, both on. Let agents drive this Browser, and Let agents use Koloft."
+              />
+            </picture>
             <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>
@@ -210,12 +246,12 @@
         <h3>If you run tools another way</h3>
         <ul class="dash">
           <li>
-            an explicit <code>--cdp-endpoint</code> wins, so you can point one tool at another
-            browser without the switch
+            an explicit <code class="nowrap">--cdp-endpoint</code> wins, so you can point one tool
+            at another browser without the switch
           </li>
           <li>
-            <code>--isolated</code> does not get a tool out: the address Koloft set still wins, and
-            the switch is the way out
+            <code class="nowrap">--isolated</code> does not get a tool out: the address Koloft set
+            still wins, and the switch is the way out
           </li>
         </ul>
 

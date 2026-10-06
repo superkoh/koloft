@@ -58,7 +58,7 @@
           <a href="../workbench/">workbench</a> · <a href="../agents/">agents</a> ·
           <a href="../scheduled/">scheduled</a> ·
           <a href="../accounts/" aria-current="page">accounts</a> ·
-          <a href="../remote/">remote</a> ·
+          <a href="../remote/">remote</a> · <a href="../discord/">discord</a> ·
           <a href="../install/">install</a>
         </nav>
       </header>
@@ -72,14 +72,22 @@
           new session starts on <mark class="hl">the one with the most room</mark> left.
         </p>
 
-        <figure class="shot" style="--ar: 1760 / 940">
+        <figure class="shot" style="--ar: 1290 / 760; --ar-phone: 710 / 914">
           <div class="frame">
-            <img
-              src="../img/h-settings-accounts.webp"
-              width="1760"
-              height="940"
-              alt="Koloft's Settings, Accounts page: Multi-account mode on, two Claude accounts named Personal and Work with their five-hour and seven-day use, and Sign in and Paste token buttons"
-            />
+            <picture>
+              <source
+                media="(max-width: 760px)"
+                srcset="../img/h-settings-accounts-phone2.webp"
+                width="710"
+                height="914"
+              />
+              <img
+                src="../img/h-settings-accounts-pane.webp"
+                width="1290"
+                height="760"
+                alt="Koloft's Settings, Accounts page: Multi-account mode on, two Claude accounts named Personal and Work with their five-hour, seven-day and fable use, and Sign in, Paste token and Refresh usage buttons"
+              />
+            </picture>
             <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>
@@ -118,16 +126,27 @@
  the one with                API key or
  the most room               custom endpoint
 </pre>
+        <h3>How it picks</h3>
         <ul class="dash">
           <li>
-            Koloft checks each account's limits as a session starts; a reading from the last 30
-            seconds is reused
+            Koloft asks each account how much is left as a session starts (a reading from the last
+            30 seconds is reused), every 5 minutes while it is open, and when you click Refresh
+            usage
           </li>
           <li>
             with "Prefer accounts with fable allowance" on, an account that still has fable
-            allowance wins first
+            allowance wins first (fable is Claude's biggest model; some plans give it its own weekly
+            budget)
+          </li>
+          <li>
+            Claude sessions you open one after another spread over your accounts, instead of piling
+            onto one (Codex sessions do not spread this way)
           </li>
           <li>if no account can be read, Koloft picks the next one in order</li>
+        </ul>
+
+        <h3>Good to know</h3>
+        <ul class="dash">
           <li>tokens and keys are kept in the macOS Keychain</li>
           <li>the top bar shows how much room your Claude accounts have left</li>
           <li>

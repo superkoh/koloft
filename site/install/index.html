@@ -57,7 +57,7 @@
           <a href="../">home</a> · <a href="../sessions/">sessions</a> ·
           <a href="../workbench/">workbench</a> · <a href="../agents/">agents</a> ·
           <a href="../scheduled/">scheduled</a> · <a href="../accounts/">accounts</a> ·
-          <a href="../remote/">remote</a> ·
+          <a href="../remote/">remote</a> · <a href="../discord/">discord</a> ·
           <a href="../install/" aria-current="page">install</a>
         </nav>
       </header>
@@ -78,7 +78,7 @@
         </p>
         <!-- prettier-ignore -->
         <p class="command">
-          <code id="cmd-install">curl -fsSL https://raw.githubusercontent.com/superkoh/koloft-releases/main/install.sh | bash</code>
+          <code id="cmd-install">curl -fsSL https://<wbr>raw.githubusercontent.com/<wbr>superkoh/<wbr>koloft-releases/<wbr>main/<wbr>install.sh | bash</code>
           <button type="button" class="copy" data-copy="cmd-install">Copy</button>
         </p>
 
@@ -100,8 +100,9 @@
           <a href="https://github.com/superkoh/koloft-releases/releases">Releases</a>. Drag Koloft
           to Applications. Then clear the mark once:
         </p>
+        <!-- prettier-ignore -->
         <p class="command">
-          <code id="cmd-xattr">xattr -dr com.apple.quarantine /Applications/Koloft.app</code>
+          <code id="cmd-xattr">xattr -dr com.apple.quarantine /<wbr>Applications/<wbr>Koloft.app</code>
           <button type="button" class="copy" data-copy="cmd-xattr">Copy</button>
         </p>
 
@@ -109,6 +110,13 @@
         <ul class="dash">
           <li>a Mac with Apple Silicon (M1 or later)</li>
           <li>Claude Code, or the Codex CLI (command-line tool), already installed</li>
+          <li>
+            if you like: <code>gh</code>, GitHub's own command-line tool, signed in, for a folder's
+            open issue and pull request counts
+          </li>
+          <li>
+            if you like: a Discord account, for the <a href="../discord/">butler on Discord</a>
+          </li>
         </ul>
 
         <h3>Updates</h3>
@@ -120,8 +128,10 @@
 
         <h2 id="what-it-talks-to">What it talks to</h2>
         <p>
-          Koloft never counts, tracks or reports what you do. Nothing about you is sent anywhere.
-          These are the only hosts it ever reaches on its own:
+          Koloft never counts, tracks or reports what you do. Nothing about you is sent anywhere,
+          unless you turn on the Discord butler: then what
+          <a href="../discord/">A butler on Discord</a> lists goes to your own bot. These are the
+          only hosts it ever reaches on its own:
         </p>
         <div class="typed-table">
           <table>
@@ -133,49 +143,81 @@
             </thead>
             <tbody>
               <tr>
-                <td><code>api.anthropic.com</code></td>
                 <td>
-                  sends each account a tiny message and reads how much room is left from the reply.
-                  An account on your own endpoint is asked there instead
+                  <code>api.anthropic.com</code>
+                </td>
+                <td>each account's room left, as a session starts and every 5 minutes</td>
+              </tr>
+              <tr>
+                <td><code>api.github.com,</code><br /><code>github.com</code></td>
+                <td>
+                  a newer Koloft and its <code>.dmg</code>; through <code>gh</code>, issue and pull
+                  request counts
                 </td>
               </tr>
               <tr>
-                <td><code>api.github.com</code>, <code>github.com</code></td>
-                <td>checks for a newer Koloft and downloads its <code>.dmg</code></td>
-              </tr>
-              <tr>
-                <td>your folder's git remote</td>
+                <td>your folder's<br />git remote</td>
                 <td>
-                  often <code>github.com</code>; asked every 5 minutes, to see if your branch is
-                  behind. Turn it off in Settings ▸ Appearance ▸ Auto-fetch git remotes
+                  often <code>github.com</code>; every 5 minutes, to see if your branch is behind
                 </td>
               </tr>
               <tr>
-                <td><code>claude.ai</code>, <code>nodejs.org</code></td>
                 <td>
-                  only for a remote folder, and only to install what that machine is missing:
-                  <code>claude</code> from the first, Node from the second; <code>tmux</code> and
-                  <code>rsync</code> come from that machine's own package manager, which may ask for
-                  its sudo password (the admin password)
+                  <code>claude.ai,</code><br /><code>nodejs.org,</code><br /><code
+                    >unofficial-builds.nodejs.org</code
+                  >
+                </td>
+                <td>
+                  only to put <code>claude</code> and Node on a remote folder's machine (the third
+                  on an old Linux)
                 </td>
               </tr>
               <tr>
-                <td><code>clients2.google.com</code>,<br /><code>update.googleapis.com</code></td>
                 <td>
-                  only if you installed a Chrome extension in the in-app browser: the first gives
-                  the extension, the second checks once per launch for a newer one
+                  <code>chromewebstore.google.com,</code><br /><code>clients2.google.com,</code
+                  ><br /><code>update.googleapis.com</code>
+                </td>
+                <td>Chrome extensions only: the store, the download, a check once per launch</td>
+              </tr>
+              <tr>
+                <td><code>discord.com,</code><br /><code>gateway.discord.gg</code></td>
+                <td>
+                  only once you paste a bot token; see <a href="../discord/">A butler on Discord</a>
                 </td>
               </tr>
               <tr>
-                <td><code>duckduckgo.com</code></td>
                 <td>
-                  when you type words, not a URL (a web address), into the in-app browser, they go
-                  here as a search
+                  <code>duckduckgo.com</code>
                 </td>
+                <td>words, not a web address, typed into the in-app browser, as a search</td>
               </tr>
             </tbody>
           </table>
         </div>
+        <p>A few more details:</p>
+        <ul class="dash">
+          <li>
+            an API key, or an account on your own endpoint, gets the same tiny message there, only
+            to check it still works
+          </li>
+          <li>
+            the status line under each session asks <code>gh</code> about the branch's pull request
+          </li>
+          <li>the git check can be turned off in Settings ▸ Appearance ▸ Auto-fetch git remotes</li>
+          <li>
+            for a remote folder, <code>bash</code>, <code>tmux</code> and <code>rsync</code> come
+            from that machine's own package manager, which may ask for its sudo password (the admin
+            password)
+          </li>
+          <li>
+            the store page loads only when you click Open Chrome Web Store in Settings ▸ Extensions
+          </li>
+          <li>
+            with a bot token pasted in Settings ▸ Discord, your messages, and your sessions'
+            replies, questions and approvals, go to your own bot; files you send are fetched from
+            the address Discord gives for them (its own file host)
+          </li>
+        </ul>
         <p>
           A <a href="../remote/">remote folder</a> also reaches the machine you named, over
           <code>ssh</code> (a safe way to log in to another computer) and <code>rsync</code> (a tool
