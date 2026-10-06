@@ -487,6 +487,54 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     })
   })
 
+  // CC§14
+  test('a real Claude session in a conductor’s care, its question relayed to the channel with the hook waiting, is answered "2" at the Mac: Koloft lets the hook go, and a later /exit takes the row off the list', async ({
+    env
+  }) => {
+    test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
+    test.setTimeout(2 * A_REAL_MODEL_TURN_MS + 120_000)
+    const fake = await realClaudeConductor(env)
+    await withConductor(env, fake, async (_app, page) => {
+      const target = await liveClaudeTab(page)
+      await expect
+        .poll(() => fs.existsSync(path.join(hookDir(env), `${target.tabId}.answerable`)))
+        .toBe(true)
+      await typePrompt(
+        page,
+        target.tabId,
+        'Use the AskUserQuestion tool once to ask me which colour I prefer, with exactly two options, Red and Green. Then reply with only the colour I picked.'
+      )
+      await expect
+        .poll(() => hookQuestionFiles(env, target.tabId), { timeout: A_REAL_MODEL_TURN_MS })
+        .toEqual([expect.stringMatching(/\.ask\.json$/)])
+      const hookPid = Number(hookQuestionFiles(env, target.tabId)[0].split('.')[1])
+      await expect
+        .poll(() => terminalText(page, target.tabId), { timeout: 30_000 })
+        .toMatch(/2\. Green[\s\S]*Type something/)
+
+      await page.evaluate((id) => window.api.terminal.write(id, '2'), target.tabId)
+      await expect
+        .poll(() => toolResults(env, target.sessionId).join('\n'), { timeout: 30_000 })
+        .toMatch(/Green/)
+      await expect.poll(() => hookQuestionFiles(env, target.tabId), { timeout: 30_000 }).toEqual([])
+      await expect.poll(() => pidAlive(hookPid)).toBe(false)
+      await expect
+        .poll(() => saidBy(env, target.sessionId, 'assistant').filter(Boolean).at(-1), {
+          timeout: A_REAL_MODEL_TURN_MS
+        })
+        .toMatch(/Green/)
+
+      const rowsBefore = await wsRows(page, 'ws-a').count()
+      await expect
+        .poll(() => terminalText(page, target.tabId), { timeout: 30_000 })
+        .toMatch(CLAUDE_INPUT_READY)
+      await page.evaluate((id) => window.api.terminal.write(id, '/exit'), target.tabId)
+      await page.waitForTimeout(CR_AFTER_TEXT_MS)
+      await page.evaluate((id) => window.api.terminal.write(id, '\r'), target.tabId)
+      await expect(wsRows(page, 'ws-a')).toHaveCount(rowsBefore - 1, { timeout: 30_000 })
+    })
+  })
+
   test('slash commands on the real Claude: the owner’s "/context" runs in the conductor and its report reaches the channel; /compact picked in Discord compacts a session and posts Compacted', async ({
     env
   }) => {
