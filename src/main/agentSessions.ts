@@ -337,6 +337,7 @@ export interface Target {
   name: string
   backend: BackendId
   remote: boolean
+  workspace?: string
   tabId?: string
   bindingId?: string
   open(): Promise<string>
@@ -453,6 +454,7 @@ function rowTarget(d: SessionVerbDeps, p: PlacedRow): Target {
     name: p.title,
     backend: p.row.backendId,
     remote: isRemoteKey(p.workspace),
+    workspace: p.workspace,
     tabId: p.live?.tabId,
     open: () => d.resume(p.row)
   }

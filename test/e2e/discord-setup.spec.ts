@@ -111,7 +111,7 @@ test.describe('Discord setup: the 7-step guide checks the bot for real, learns w
       await expect
         .poll(() => externalOpens(env))
         .toContain(
-          `https://discord.com/oauth2/authorize?client_id=${FAKE_APPLICATION_ID}&permissions=101440&scope=bot`
+          `https://discord.com/oauth2/authorize?client_id=${FAKE_APPLICATION_ID}&permissions=309237746752&scope=bot`
         )
 
       await next(page, 6)

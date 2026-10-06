@@ -12,7 +12,12 @@ import {
   waitForCalls,
   wsRows
 } from './helpers/p1'
-import { AUTOCOMPLETE, startFakeDiscord, type FakeDiscord } from './helpers/fakeDiscord'
+import {
+  AUTOCOMPLETE,
+  startFakeDiscord,
+  type FakeDiscord,
+  type FakePost
+} from './helpers/fakeDiscord'
 import type { ConductorBinding, DiscordSettings } from '../../src/shared/types'
 
 test.setTimeout(120_000)
@@ -51,8 +56,16 @@ function said(fake: FakeDiscord): string[] {
   return fake.posted.filter((p) => p.channelId === CHANNEL).map((p) => p.content)
 }
 
+function ranPosts(fake: FakeDiscord): FakePost[] {
+  return fake.posted.filter((p) => p.content.startsWith('⌨️ '))
+}
+
 function ran(fake: FakeDiscord): string[] {
-  return said(fake).filter((p) => p.startsWith('⌨️ '))
+  return ranPosts(fake).map((p) => p.content)
+}
+
+function threadUnderChannel(fake: FakeDiscord, channelId: string): boolean {
+  return fake.threads.some((t) => t.id === channelId && t.parentId === CHANNEL)
 }
 
 function replyTo(fake: FakeDiscord, interactionId: string): string | undefined {
@@ -88,7 +101,7 @@ async function choices(
 }
 
 test.describe('Discord slash commands: the owner runs /clear, /compact and any slash command in a session, or in the conductor', () => {
-  test('D-CMD-1: Koloft registers /run, /clear and /compact; /run types a command into a Claude session picked from autocomplete and posts what it printed; /compact posts Compacted; someone else is refused privately', async ({
+  test('D-CMD-1: Koloft registers /run, /clear and /compact; /run types a command into a Claude session picked from autocomplete and posts what it printed in that session’s thread; /compact sent in that thread with no session picked runs in it and posts Compacted; someone else is refused privately', async ({
     env
   }) => {
     seedConductor(env)
@@ -113,11 +126,14 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
         .toEqual([
           expect.stringMatching(/ran \/context:\n## Context Usage\n\n\*\*Tokens:\*\* 28\.5k/)
         ])
+      const thread = ranPosts(fake)[0].channelId
+      expect(threadUnderChannel(fake, thread)).toBe(true)
 
-      fake.interact(OWNER, 'compact', { session: child })
+      fake.interact(OWNER, 'compact', {}, { channelId: thread })
       await expect
         .poll(() => ran(fake).at(-1), { timeout: 30_000 })
         .toMatch(/ran \/compact:\nCompacted \(ctrl\+o to see full summary\)$/)
+      expect(ranPosts(fake).at(-1)?.channelId).toBe(thread)
       await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 30_000 })
 
       const refused = fake.interact(STRANGER, 'clear', { session: child })
@@ -148,7 +164,10 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
       fake.say(OWNER, '/clear')
       await expect
         .poll(() => ran(fake), { timeout: 30_000 })
-        .toEqual([expect.stringMatching(/conductor ran \/clear:\nIt is a new conversation now/)])
+        .toEqual([
+          expect.stringMatching(/conductor\*\* ran \/clear:\nIt is a new conversation now/)
+        ])
+      expect(ranPosts(fake)[0].channelId).toBe(CHANNEL)
       await expect.poll(() => bindingOnDisk(env)?.lastSessionKey).not.toBe(before)
       expect(said(fake).join('\n')).not.toContain('[Discord] /clear')
     } finally {

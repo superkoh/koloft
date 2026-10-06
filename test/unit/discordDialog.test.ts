@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  askText,
+  askHow,
+  claudeDialog,
   claudeKeysFor,
   codexKeyFor,
   dialogText,
@@ -38,11 +39,41 @@ function decisionOf(out: Record<string, unknown>): Record<string, unknown> {
 }
 
 describe('the conductor’s own dialog, asked in Discord and answered from there', () => {
-  it('shows the question and every option, numbered', () => {
-    expect(askText(colour)).toBe(
-      '❓ Which colour?\n1. Red — The red one\n2. Green — The green one\n3. No\n\nReply with a number or your own answer.'
-    )
-    expect(askText(plan)).toContain('Create plan-ok.txt.')
+  it('shows the question and every option, numbered, with a button per option that answers its number', () => {
+    expect(claudeDialog(colour)).toEqual({
+      text: 'Which colour?\n1. Red — The red one\n2. Green — The green one\n3. No',
+      choices: [
+        { label: '1. Red', reply: '1', style: 'secondary' },
+        { label: '2. Green', reply: '2', style: 'secondary' },
+        { label: '3. No', reply: '3', style: 'secondary' }
+      ]
+    })
+    expect(askHow(colour)).toBe('Reply with a number or your own answer.')
+    expect(claudeDialog(plan).text).toContain('Create plan-ok.txt.')
+    expect(claudeDialog(plan).choices.map((c) => [c.label, c.reply])).toEqual([
+      ['Approve', 'yes'],
+      ['Reject', 'no']
+    ])
+  })
+
+  it('gets no buttons when one button cannot hold the whole answer: several questions, or several picks', () => {
+    const two = {
+      tool_name: 'AskUserQuestion',
+      tool_input: {
+        questions: [
+          { question: 'A?', options: [{ label: 'x' }] },
+          { question: 'B?', options: [{ label: 'y' }] }
+        ]
+      }
+    }
+    const many = {
+      tool_name: 'AskUserQuestion',
+      tool_input: {
+        questions: [{ question: 'Which?', options: [{ label: 'x' }], multiSelect: true }]
+      }
+    }
+    expect(claudeDialog(two).choices).toEqual([])
+    expect(claudeDialog(many).choices).toEqual([])
   })
 
   it('a number picks that option’s label, and any other text is the answer itself', () => {

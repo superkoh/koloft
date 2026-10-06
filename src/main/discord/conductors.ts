@@ -7,7 +7,8 @@ import type {
   ConductorOpenResult,
   ConductorSaveInput,
   ConductorSaveResult,
-  DiscordSettings
+  DiscordSettings,
+  SessionThread
 } from '@shared/types'
 import { BACKEND_LABEL, identityOf } from '@shared/sessionBackend'
 import {
@@ -60,6 +61,21 @@ export function conductorFolder(userData: string, scope: string): string {
   if (!isRemoteKey(scope)) return scope
   const hash = createHash('sha256').update(scope).digest('hex').slice(0, FOLDER_NAME_HASH_CHARS)
   return path.join(userData, 'conductors', hash)
+}
+
+interface BoundThread {
+  binding: ConductorBinding
+  thread: SessionThread
+}
+
+function keptKeys(
+  threads: SessionThread[] | undefined,
+  keep: (key: string) => boolean,
+  stays?: string
+): SessionThread[] {
+  return (threads ?? [])
+    .map((t) => ({ ...t, keys: t.keys.filter(keep) }))
+    .filter((t) => t.keys.length || t.threadId === stays)
 }
 
 function refusal(error: string): ConductorOpenResult {
@@ -177,14 +193,79 @@ export class Conductors {
     this.d.saveQuietly(this.discord)
   }
 
+  private findThread(match: (t: SessionThread) => boolean): BoundThread | undefined {
+    for (const binding of this.discord.bindings) {
+      const thread = binding.threads?.find(match)
+      if (thread) return { binding, thread }
+    }
+    return undefined
+  }
+
+  threadOfKey(key: string): BoundThread | undefined {
+    return this.findThread((t) => t.keys.includes(key))
+  }
+
+  threadOfChannel(channelId: string): BoundThread | undefined {
+    return this.findThread((t) => t.threadId === channelId)
+  }
+
+  routeOf(channelId: string): { binding: ConductorBinding; sessionKey?: string } | undefined {
+    const binding = this.bindingOfChannel(channelId)
+    if (binding) return { binding }
+    const found = this.threadOfChannel(channelId)
+    const sessionKey = found?.thread.keys.at(-1)
+    return found && sessionKey ? { binding: found.binding, sessionKey } : undefined
+  }
+
+  keepThread(bindingId: string, threadId: string, key: string): void {
+    if (this.threadOfKey(key)?.thread.threadId === threadId) return
+    this.discord = {
+      ...this.discord,
+      bindings: this.discord.bindings.map((b) => {
+        const others = keptKeys(b.threads, (k) => k !== key, threadId)
+        if (b.id !== bindingId) return { ...b, threads: others }
+        const known = others.some((t) => t.threadId === threadId)
+        return {
+          ...b,
+          threads: known
+            ? others.map((t) => (t.threadId === threadId ? { ...t, keys: [...t.keys, key] } : t))
+            : [...others, { threadId, keys: [key] }]
+        }
+      })
+    }
+    this.d.saveQuietly(this.discord)
+  }
+
+  setThreadLastMessage(threadId: string, messageId: string): void {
+    const found = this.threadOfChannel(threadId)
+    if (!found) return
+    const last = found.thread.lastMessageId
+    if (last && !newerSnowflake(messageId, last)) return
+    this.change(found.binding.id, (b) => ({
+      ...b,
+      threads: (b.threads ?? []).map((t) =>
+        t.threadId === threadId ? { ...t, lastMessageId: messageId } : t
+      )
+    }))
+    this.pendingSave ??= setTimeout(() => this.flush(), LAST_MESSAGE_SAVE_DELAY_MS)
+  }
+
   forgetGone(stillOnDisk: (key: string) => boolean): void {
     let changed = false
     const bindings = this.discord.bindings.map((b) => {
       const sessionIds = b.sessionIds.filter(stillOnDisk)
       const touched = b.touched.filter(stillOnDisk)
-      if (sessionIds.length === b.sessionIds.length && touched.length === b.touched.length) return b
+      const threads = keptKeys(b.threads, stillOnDisk)
+      const threadKeys = (list?: SessionThread[]): number =>
+        (list ?? []).reduce((n, t) => n + t.keys.length, 0)
+      if (
+        sessionIds.length === b.sessionIds.length &&
+        touched.length === b.touched.length &&
+        threadKeys(threads) === threadKeys(b.threads)
+      )
+        return b
       changed = true
-      return { ...b, sessionIds, touched }
+      return { ...b, sessionIds, touched, threads }
     })
     if (!changed) return
     this.discord = { ...this.discord, bindings }

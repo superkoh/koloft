@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from 'util'
 import type { AskPayload } from '@shared/sessionEvent'
 import { fail, type Parsed } from '../agentRequests'
 import type { ToolCall } from '../sessionTracker'
+import type { CardButton } from './cards'
 
 interface Option {
   label: string
@@ -62,18 +63,66 @@ export function dialogText(p: AskPayload): string {
   return plan === undefined ? toolText(p) : `Approve this plan?\n\n${plan}`
 }
 
-export function askText(p: AskPayload): string {
+export interface Choice {
+  label: string
+  reply: string
+  style: CardButton['style']
+}
+
+export const YES_OR_NO: Choice[] = [
+  { label: 'Yes', reply: 'yes', style: 'success' },
+  { label: 'No', reply: 'no', style: 'danger' }
+]
+
+export function optionChoices(q: Question): Choice[] {
+  return q.options.map((o, i) => ({
+    label: `${i + 1}. ${o.label}`,
+    reply: String(i + 1),
+    style: 'secondary'
+  }))
+}
+
+function singlePick(p: AskPayload): Question | undefined {
+  const qs = questionsOf(p)
+  const raw = p.tool_input?.questions as { multiSelect?: unknown }[]
+  return qs.length === 1 && raw[0]?.multiSelect !== true ? qs[0] : undefined
+}
+
+export function choicesOf(p: AskPayload): Choice[] {
   if (p.tool_name === 'AskUserQuestion') {
-    const qs = questionsOf(p)
-    const how =
-      qs.length > 1
-        ? 'Reply with one line per question: a number or your own answer.'
-        : 'Reply with a number or your own answer.'
-    return [...qs.map((q) => `❓ ${questionText(q)}`), how].join('\n\n')
+    const q = singlePick(p)
+    return q ? optionChoices(q) : []
   }
-  const how =
-    planOf(p) === undefined ? 'Reply yes or no.' : 'Reply yes to approve, or say what to change.'
-  return `❓ ${dialogText(p)}\n\n${how}`
+  if (planOf(p) === undefined) return YES_OR_NO
+  return [
+    { label: 'Approve', reply: 'yes', style: 'success' },
+    { label: 'Reject', reply: 'no', style: 'danger' }
+  ]
+}
+
+export interface DialogView {
+  text: string
+  choices: Choice[]
+}
+
+export function claudeDialog(p: AskPayload): DialogView {
+  return { text: dialogText(p), choices: choicesOf(p) }
+}
+
+export function codexDialog(a: CodexApproval | CodexQuestion): DialogView {
+  return 'options' in a
+    ? { text: questionText(a), choices: optionChoices(a) }
+    : { text: approvalDetail(a) ?? '', choices: YES_OR_NO }
+}
+
+export function askHow(p: AskPayload): string {
+  if (p.tool_name === 'AskUserQuestion')
+    return questionsOf(p).length > 1
+      ? 'Reply with one line per question: a number or your own answer.'
+      : 'Reply with a number or your own answer.'
+  return planOf(p) === undefined
+    ? 'Reply yes or no.'
+    : 'Reply yes to approve, or say what to change.'
 }
 
 function answerOf(q: Question, line: string): string {
@@ -127,10 +176,9 @@ const YES_OR_NO_BY_KEYS = 'on another machine Koloft can only answer yes or no t
 export function claudeKeysFor(p: AskPayload, reply: string): Parsed<string[]> {
   const text = reply.trim()
   if (p.tool_name === 'AskUserQuestion') {
-    const qs = questionsOf(p)
-    const raw = p.tool_input?.questions as { multiSelect?: unknown }[]
-    if (qs.length !== 1 || raw[0]?.multiSelect === true) return fail(ONE_QUESTION_BY_KEYS)
-    const options = qs[0].options.length
+    const q = singlePick(p)
+    if (!q) return fail(ONE_QUESTION_BY_KEYS)
+    const options = q.options.length
     const pick = /^\d+$/.test(text) ? Number(text) : 0
     if (pick >= 1 && pick <= options) return { ok: true, value: [String(pick)] }
     return { ok: true, value: [String(options + 1), text, '\r'] }
@@ -143,10 +191,6 @@ export function claudeKeysFor(p: AskPayload, reply: string): Parsed<string[]> {
 export function approvalDetail(a: CodexApproval): string | undefined {
   if (!a.command) return a.reason
   return a.reason ? `${a.command} (${a.reason})` : a.command
-}
-
-export function codexApprovalText(a: CodexApproval): string {
-  return `❓ Codex asks to run: ${approvalDetail(a) ?? 'a command'}\nReply yes or no.`
 }
 
 // CODEX§3
@@ -192,11 +236,6 @@ export function codexQuestionOf(method: string, p: Record<string, unknown>): Que
 }
 
 export const PICK_ONE_OPTION = 'Reply with the number or the name of one option.'
-
-// CODEX§20
-export function codexQuestionText(q: Question): string {
-  return `❓ ${questionText(q)}\n\n${PICK_ONE_OPTION}`
-}
 
 // CODEX§20
 export function codexOptionKey(q: Question, reply: string): string | undefined {

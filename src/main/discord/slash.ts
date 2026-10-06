@@ -4,6 +4,7 @@ import { waitingForAnswer } from '@shared/slashCommands'
 import type { CommandOutput } from '../claudeCommandOutput'
 import { sleep } from '../codexTransport'
 import { errorText } from '../agentRequests'
+import { accentOf, CONDUCTOR_ACCENT, type Card } from './cards'
 
 export const WAITS_FOR_IDLE_MS = 10 * 60_000
 export const NOTHING_CAME_BACK_MS = 8000
@@ -37,6 +38,7 @@ export interface SlashDeps {
   exclusive(tabId: string, typing: () => Promise<boolean>): Promise<boolean>
   typeNow(tabId: string, keys: string[]): Promise<void>
   post(channelId: string, text: string): void
+  card(channelId: string, card: Card): void
 }
 
 interface Pending {
@@ -63,7 +65,7 @@ function busy(status: SessionStatus | undefined): boolean {
   return status === 'working' || status === 'approval'
 }
 
-function resultText(p: Pending): string | undefined {
+function resultCard(p: Pending): Card | undefined {
   const details = p.outputs.filter((o) => o.kind === 'details').map((o) => o.text)
   const printed = p.outputs.filter((o) => o.kind !== 'details').map((o) => o.text)
   const said = details.length && !p.worked ? details : printed
@@ -81,7 +83,11 @@ function resultText(p: Pending): string | undefined {
     body.push(
       `Nothing came back within ${NOTHING_CAME_BACK_MS / 1000} seconds, so Koloft pressed Esc to close any menu it had opened. A command that asks you to pick something needs its choice written after it, like /model haiku.`
     )
-  return `⌨️ ${p.target.name} ran ${p.text}:\n${body.join('\n\n')}`
+  return {
+    accent: p.target.conductor ? CONDUCTOR_ACCENT : accentOf(p.target.name),
+    header: `⌨️ **${p.target.name}** ran ${p.text}:`,
+    body: body.join('\n\n')
+  }
 }
 
 export class SlashCommands {
@@ -221,8 +227,8 @@ export class SlashCommands {
 
   private finish(tab: string): void {
     const p = this.take(tab)
-    const text = p && resultText(p)
-    if (p && text) this.d.post(p.channelId, text)
+    const card = p && resultCard(p)
+    if (p && card) this.d.card(p.channelId, card)
   }
 
   private take(tab: string): Pending | undefined {

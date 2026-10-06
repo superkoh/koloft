@@ -10,6 +10,7 @@ import { interactionOf, sameCommand, type DiscordInteraction } from '../../src/m
 
 const OWNER = '555'
 const CHANNEL = '222'
+const THREAD = '333'
 
 const binding: ConductorBinding = {
   id: 'b1',
@@ -36,9 +37,12 @@ function interaction(over: Partial<DiscordInteraction>): DiscordInteraction {
 function setup(over: Partial<InteractionDeps> = {}) {
   const replies: unknown[] = []
   const runs: { session: string; text: string }[] = []
+  const pressed: DiscordInteraction[] = []
   const deps: InteractionDeps = {
     owner: () => OWNER,
-    bindingOfChannel: (c) => (c === CHANNEL ? binding : undefined),
+    routeOf: (c) =>
+      c === CHANNEL ? { binding } : c === THREAD ? { binding, sessionKey: 'k1' } : undefined,
+    press: async (i) => void pressed.push(i),
     choices: () => [
       { name: 'This channel’s conductor (Global)', value: 'me' },
       { name: 'fix-login · Claude', value: 'k1' },
@@ -51,7 +55,7 @@ function setup(over: Partial<InteractionDeps> = {}) {
     respond: async (_i, body) => void replies.push(body),
     ...over
   }
-  return { interactions: new Interactions(deps), replies, runs }
+  return { interactions: new Interactions(deps), replies, runs, pressed }
 }
 
 describe('Discord slash commands', () => {
@@ -68,6 +72,20 @@ describe('Discord slash commands', () => {
     const { interactions, runs } = setup()
     await interactions.handle(interaction({ command: 'clear' }))
     expect(runs).toEqual([{ session: 'me', text: '/clear' }])
+  })
+
+  it('in a session’s thread, with no session picked, the command goes to that session', async () => {
+    const { interactions, runs } = setup()
+    await interactions.handle(interaction({ channelId: THREAD, command: 'clear' }))
+    expect(runs).toEqual([{ session: 'k1', text: '/clear' }])
+  })
+
+  it('a button pressed in a channel or thread Koloft knows is handed on as a press, never run as a command', async () => {
+    const { interactions, runs, pressed } = setup()
+    await interactions.handle(interaction({ channelId: THREAD, type: 3, customId: 'ask:x:0' }))
+    await interactions.handle(interaction({ channelId: '999', type: 3, customId: 'ask:y:0' }))
+    expect(pressed.map((i) => i.customId)).toEqual(['ask:x:0'])
+    expect(runs).toEqual([])
   })
 
   it('/compact passes its focus on as the command’s argument', async () => {
@@ -156,6 +174,19 @@ describe('reading an interaction from the Gateway', () => {
       options: { command: '/x', session: 'fi' },
       focused: 'session'
     })
+  })
+
+  it('a button press carries its custom id and no command name', () => {
+    expect(
+      interactionOf({
+        id: '2',
+        token: 't',
+        type: 3,
+        channel_id: CHANNEL,
+        member: { user: { id: OWNER } },
+        data: { custom_id: 'ask:x:1' }
+      })
+    ).toMatchObject({ type: 3, command: '', customId: 'ask:x:1' })
   })
 
   it('a command Discord already has with the same shape is not created again', () => {

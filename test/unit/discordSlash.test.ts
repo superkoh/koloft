@@ -26,6 +26,7 @@ function setup(over: Partial<SlashDeps> = {}) {
     exclusive: (_t, typing) => typing(),
     typeNow: async (_t, keys) => void typed.push(...keys),
     post: (_c, text) => void posts.push(text),
+    card: (_c, card) => void posts.push(`${card.header}\n${card.body}`),
     ...over
   }
   const slash = new SlashCommands(deps)
@@ -68,7 +69,7 @@ describe('a slash command typed into a session', () => {
     expect(posts).toEqual([])
     expect(slash.running(TAB)).toBe(true)
     await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
-    expect(posts).toEqual(['⌨️ fix-login ran /cost:\nTotal cost: $0.01'])
+    expect(posts).toEqual(['⌨️ **fix-login** ran /cost:\nTotal cost: $0.01'])
     expect(slash.running(TAB)).toBe(false)
   })
 
@@ -78,7 +79,9 @@ describe('a slash command typed into a session', () => {
     slash.output(TAB, { kind: 'printed', text: 'Context Usage ⛁ ⛁ ⛀' })
     slash.output(TAB, { kind: 'details', text: '## Context Usage\n**Tokens:** 28.5k / 200k' })
     await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
-    expect(posts[0]).toBe('⌨️ fix-login ran /context:\n## Context Usage\n**Tokens:** 28.5k / 200k')
+    expect(posts[0]).toBe(
+      '⌨️ **fix-login** ran /context:\n## Context Usage\n**Tokens:** 28.5k / 200k'
+    )
   })
 
   it('waits for a turn the command started and posts its reply', async () => {
@@ -90,7 +93,7 @@ describe('a slash command typed into a session', () => {
     slash.turnEnded(TAB, { said: [], reply: 'All good.', at: 0 })
     setStatus('waiting')
     await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
-    expect(posts).toEqual(['⌨️ fix-login ran /review:\nAll good.'])
+    expect(posts).toEqual(['⌨️ **fix-login** ran /review:\nAll good.'])
   })
 
   it('a turn with nothing said, like a Codex compaction, is reported as done', async () => {
@@ -99,7 +102,7 @@ describe('a slash command typed into a session', () => {
     setStatus('working')
     setStatus('waiting')
     await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
-    expect(posts).toEqual(['⌨️ fix-login ran /compact:\nDone.'])
+    expect(posts).toEqual(['⌨️ **fix-login** ran /compact:\nDone.'])
   })
 
   it('/clear reports the new conversation id', async () => {
@@ -109,7 +112,7 @@ describe('a slash command typed into a session', () => {
     slash.bound(TAB, 'session-2')
     await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
     expect(posts).toEqual([
-      '⌨️ fix-login ran /clear:\nIt is a new conversation now, with the id session-2.'
+      '⌨️ **fix-login** ran /clear:\nIt is a new conversation now, with the id session-2.'
     ])
   })
 
@@ -121,7 +124,7 @@ describe('a slash command typed into a session', () => {
     slash.output(TAB, { kind: 'printed', text: 'Kept model as Haiku 4.5' })
     await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
     expect(posts[0]).toMatch(
-      /^⌨️ fix-login ran \/model:\nKept model as Haiku 4\.5\n\nNothing came back/
+      /^⌨️ \*\*fix-login\*\* ran \/model:\nKept model as Haiku 4\.5\n\nNothing came back/
     )
   })
 
