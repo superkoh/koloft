@@ -89,7 +89,6 @@ function harness(
   launched: Launch[]
   queued: { tabId: string; text: string; clientId?: string }[]
   closed: string[]
-  checked: string[]
   touched: { tabId: string; key: string }[]
   reads: { key: string; n: number }[]
   lines: { tabId: string; line: string }[]
@@ -108,7 +107,6 @@ function harness(
   const launched: Launch[] = []
   const queued: { tabId: string; text: string; clientId?: string }[] = []
   const closed: string[] = []
-  const checked: string[] = []
   const touched: { tabId: string; key: string }[] = []
   const reads: { key: string; n: number }[] = []
   const lines: { tabId: string; line: string }[] = []
@@ -132,10 +130,7 @@ function harness(
     },
     startedSessions,
     closable: () => [...sessions, ...cold],
-    whatIsLeft: async (target) => {
-      checked.push(target.treeRoot)
-      return left
-    },
+    whatIsLeft: async () => left,
     closeSoon: (target) => {
       closed.push(target.sessionId)
     },
@@ -188,7 +183,6 @@ function harness(
     launched,
     queued,
     closed,
-    checked,
     touched,
     reads,
     lines,
@@ -881,26 +875,37 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     expect(touched).toEqual([])
   })
 
-  it('close takes an ended session on this computer, Claude or Codex, off the list after checking its own folder for left work, and refuses, closing nothing, an open one, one on another machine and one outside its scope', async () => {
-    const ENDED_CODEX = `codex:local:${OTHER_THREAD}`
-    const OLD_TREE = `${WS}/.claude/worktrees/old`
+  const ENDED_CODEX = `codex:local:${OTHER_THREAD}`
+  const ended = (sessionId: string, backendId: BackendId, title: string): ClosableSession => ({
+    sessionId,
+    backendId,
+    title,
+    treeRoot: WS
+  })
+  const ENDED = [
+    ended('old-id', 'claude', 'old-work'),
+    ended(ENDED_CODEX, 'codex', 'docs-check'),
+    ended('api-old', 'claude', 'api-old'),
+    ended('site-id', 'claude', 'site-build')
+  ]
+
+  it('close takes an ended session on this computer, Claude or Codex, off the list, and refuses, closing nothing, an open one, one on another machine and one outside its scope', async () => {
     const withEnded = sidebar([
       [
         WS,
         [
           row('fix-id', { running: true }),
-          row('old-id', { title: 'old-work', cwd: OLD_TREE }),
+          row('old-id', { title: 'old-work' }),
           row(ENDED_CODEX, { backendId: 'codex', nativeSessionId: OTHER_THREAD })
         ]
       ],
       ['ssh://box/srv/api', [row('api-old', { title: 'api-old', host: 'ssh' })]],
       [OTHER_WS, [row('site-id', { title: 'site-build' })]]
     ])
-    const { verb, closed, checked } = harness(live, {}, [], conducting({ sidebar: withEnded }))
+    const { verb, closed } = harness(live, {}, [], conducting({ sidebar: withEnded }), ENDED)
     expect((await verb(['close', 'old-work'], from('wsCond'))).exit).toBe(0)
     expect((await verb(['close', OTHER_THREAD], from('global'))).exit).toBe(0)
     expect(closed).toEqual(['old-id', ENDED_CODEX])
-    expect(checked).toEqual([OLD_TREE, WS])
     expect((await verb(['close', 'fix-login'], from('wsCond'))).text).toContain('is open')
     expect((await verb(['close', 'api-old'], from('global'))).text).toContain('another machine')
     expect((await verb(['close', 'site-build'], from('wsCond'))).text).toContain(
@@ -913,7 +918,7 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
 
   it('close from a conductor closes nothing and lists what is left when an ended session’s worktree holds work', async () => {
     const left = ['Changes not committed:\n?? notes.md']
-    const { verb, closed } = harness(live, {}, left, conducting())
+    const { verb, closed } = harness(live, {}, left, conducting(), ENDED)
     const reply = await verb(['close', 'old-work'], from('wsCond'))
     expect(reply.exit).not.toBe(0)
     expect(reply.text).toContain(left[0])

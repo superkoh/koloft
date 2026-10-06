@@ -22,7 +22,7 @@ import { startFakeDiscord } from './helpers/fakeDiscord'
 import {
   installFakeRemote,
   killFakeRemote,
-  REMOTE_HOST,
+  mirrorProjectDir,
   REMOTE_WS_NAME,
   remoteDir,
   seedRemoteWorkspace
@@ -38,6 +38,14 @@ const KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS = 30_000
 
 function bindingsOnDisk(env: E2EEnv): ConductorBinding[] {
   return (settingsOnDisk(env).discord as DiscordSettings | undefined)?.bindings ?? []
+}
+
+function firstCodexId(env: E2EEnv): string {
+  return (
+    JSON.parse(
+      fs.readFileSync(path.join(env.home, 'fake-codex-calls.jsonl'), 'utf8').split('\n')[0]
+    ) as { sessionId: string }
+  ).sessionId
 }
 
 function island(page: Page): Locator {
@@ -322,11 +330,7 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
     try {
       await newSessionInWith(page, 'ws-b', 'Codex')
       await expect(wsRows(page, 'ws-b')).toHaveClass(/st-waiting/, { timeout: 60_000 })
-      const codexId = (
-        JSON.parse(
-          fs.readFileSync(path.join(env.home, 'fake-codex-calls.jsonl'), 'utf8').split('\n')[0]
-        ) as { sessionId: string }
-      ).sessionId
+      const codexId = firstCodexId(env)
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(wsRows(page, 'ws-b')).toHaveClass(/cold/)
 
@@ -356,7 +360,7 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
     installFakeRemote(env)
     seedRemoteWorkspace(env)
     seedJsonl(env, remoteDir(env), {
-      root: path.join(env.userData, 'remote', REMOTE_HOST, 'projects'),
+      root: path.dirname(mirrorProjectDir(env)),
       cwd: remoteDir(env),
       summary: 'Yesterday on the build machine'
     })
@@ -369,11 +373,7 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
       await expect(wsRows(page, 'ws-a')).toHaveClass(/cold/)
       await newSessionInWith(page, 'ws-b', 'Codex')
       await expect(wsRows(page, 'ws-b')).toHaveClass(/st-waiting/, { timeout: 60_000 })
-      const codexId = (
-        JSON.parse(
-          fs.readFileSync(path.join(env.home, 'fake-codex-calls.jsonl'), 'utf8').split('\n')[0]
-        ) as { sessionId: string }
-      ).sessionId
+      const codexId = firstCodexId(env)
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(wsRows(page, 'ws-b')).toHaveClass(/cold/)
 

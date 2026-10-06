@@ -2838,6 +2838,9 @@ async function closeSessionFully(
   if (target.tabId) {
     sendToRenderer('tab:killedByMain', target.tabId)
     await killTabPty(target.tabId)
+  } else if (allSessions().some((s) => s.alive && s.sessionId === target.sessionId)) {
+    sendToRenderer('cron:toast', `${target.title} was opened again, so Koloft did not close it.`)
+    return
   }
   const tree = await closingTree(hostGitOut, info)
   const problem = tree && (await removeTree(hostGitOut, tree))
@@ -2845,11 +2848,7 @@ async function closeSessionFully(
     sendToRenderer('cron:toast', `${target.title}: ${problem}`)
     return
   }
-  if (!archiveSession(target.sessionId))
-    sendToRenderer(
-      'cron:toast',
-      `Koloft could not take ${target.title} off the list: it is open again.`
-    )
+  archiveSession(target.sessionId)
   codexSessions?.store.removeUnusedResourcesAt(info.treeRoot)
 }
 
