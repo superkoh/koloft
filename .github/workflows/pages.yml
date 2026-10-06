@@ -1,0 +1,48 @@
+name: Website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'build/icon.svg'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - run: cp build/icon.svg site/
+
+      - id: pages
+        uses: actions/configure-pages@v6
+
+      # Absolute links (canonical, og:image, sitemap) carry __SITE_URL__, so they follow
+      # the custom domain once one is set in the repo's Pages settings.
+      - env:
+          BASE_URL: ${{ steps.pages.outputs.base_url }}
+        run: |
+          find site -type f \( -name '*.html' -o -name 'sitemap.xml' -o -name 'robots.txt' \) -print0 \
+            | xargs -0 sed -i "s|__SITE_URL__|${BASE_URL%/}|g"
+          ! grep -rIl __SITE_URL__ site
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v5
