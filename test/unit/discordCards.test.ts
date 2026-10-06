@@ -47,6 +47,6 @@ describe('a card is a Components V2 message', () => {
       header: 'h',
       body: '| a | b |\n|---|---|\n| 1 | 2 |'
     })
-    expect(texts(message)[1]).toBe('```\na  b\n─  ─\n1  2\n```')
+    expect(texts(message)[1]).toBe('**1**\n> b: 2')
   })
 })

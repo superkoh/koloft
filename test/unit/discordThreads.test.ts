@@ -17,6 +17,8 @@ function setup(scope = WS, fail = false) {
   const openers: string[] = []
   const names: string[] = []
   const members: string[] = []
+  const renames: string[] = []
+  const renamed: { resolve: () => void; reject: (e: Error) => void }[] = []
   let next = 100
   const deps: ThreadDeps = {
     link: {
@@ -30,7 +32,11 @@ function setup(scope = WS, fail = false) {
         return messageId
       },
       addToThread: async (threadId, userId) => void members.push(`${threadId}:${userId}`),
-      archiveThread: async () => undefined
+      archiveThread: async () => undefined,
+      renameThread: (threadId, name) => {
+        renames.push(`${threadId}:${name}`)
+        return new Promise<void>((resolve, reject) => renamed.push({ resolve, reject }))
+      }
     },
     conductors: {
       owner: () => '555',
@@ -42,10 +48,32 @@ function setup(scope = WS, fail = false) {
         const t = threads.find((x) => x.threadId === threadId)
         if (t) t.keys.push(key)
         else threads.push({ threadId, keys: [key] })
+      },
+      nameThread: (threadId, name) => {
+        const t = threads.find((x) => x.threadId === threadId)
+        if (t) t.name = name
       }
     }
   }
-  return { b, threads: new SessionThreads(deps), kept: threads, openers, names, members }
+  const finishRename = async (): Promise<void> => {
+    renamed.shift()?.resolve()
+    await new Promise((r) => setTimeout(r, 0))
+  }
+  const failRename = async (): Promise<void> => {
+    renamed.shift()?.reject(new Error('Discord answered 403'))
+    await new Promise((r) => setTimeout(r, 0))
+  }
+  return {
+    b,
+    threads: new SessionThreads(deps),
+    kept: threads,
+    openers,
+    names,
+    members,
+    renames,
+    finishRename,
+    failRename
+  }
 }
 
 describe('one Discord thread per session', () => {
@@ -65,7 +93,7 @@ describe('one Discord thread per session', () => {
     expect(openers).toEqual(['🧵 **fix-login**'])
     expect(names).toEqual(['fix-login'])
     expect(members).toEqual(['101:555'])
-    expect(kept).toEqual([{ threadId: '101', keys: ['k1'] }])
+    expect(kept).toEqual([{ threadId: '101', keys: ['k1'], name: 'fix-login' }])
   })
 
   it('a session the conductor starts gets its thread before it has an id, and keeps it once the id and, after /clear, a new id arrive', async () => {
@@ -75,7 +103,7 @@ describe('one Discord thread per session', () => {
     expect(kept).toEqual([])
     threads.bound('t1', 'k1')
     threads.bound('t1', 'k2')
-    expect(kept).toEqual([{ threadId: '101', keys: ['k1', 'k2'] }])
+    expect(kept).toEqual([{ threadId: '101', keys: ['k1', 'k2'], name: 'docs' }])
   })
 
   it('after a restart, a resumed session cleared with /clear carries its thread over to the new id', async () => {
@@ -92,7 +120,7 @@ describe('one Discord thread per session', () => {
     kept.push({ threadId: '50', keys: ['k9'] })
     threads.bound('t1', 'k9')
     expect(kept).toEqual([
-      { threadId: '101', keys: ['k1'] },
+      { threadId: '101', keys: ['k1'], name: 'a' },
       { threadId: '50', keys: ['k9'] }
     ])
     expect(await threads.place(b, { tabId: 't1', name: 'a', backend: 'claude' })).toBe('50')
@@ -102,9 +130,56 @@ describe('one Discord thread per session', () => {
     const { b, threads, kept } = setup()
     const closed = { key: 'k1', name: 'a', backend: 'claude' as const, workspace: WS }
     expect(await threads.place(b, closed)).toBe('101')
-    expect(kept).toEqual([{ threadId: '101', keys: ['k1'] }])
+    expect(kept).toEqual([{ threadId: '101', keys: ['k1'], name: 'a' }])
     kept.length = 0
     expect(await threads.place(b, closed)).toBe('102')
+  })
+
+  it('a thread follows the session’s title: renamed once per new title, the latest title wins while a rename waits, and nothing is sent when the name already matches', async () => {
+    const { b, threads, kept, renames, finishRename } = setup()
+    await threads.place(b, { tabId: 't1', key: 'k1', name: 'helper-1', backend: 'claude' }, true)
+    threads.retitle('t1', 'helper-1')
+    expect(renames).toEqual([])
+    threads.retitle('t1', 'Fix the login page')
+    threads.retitle('t1', 'Fix the login page')
+    threads.retitle('t1', 'Fix login on phones')
+    threads.retitle('t1', 'Fix login, phones')
+    expect(renames).toEqual(['101:Fix the login page'])
+    await finishRename()
+    expect(renames).toEqual(['101:Fix the login page', '101:Fix login, phones'])
+    await finishRename()
+    expect(kept[0].name).toBe('Fix login, phones')
+  })
+
+  it('a rename Discord refuses is not saved as done, and is not tried again for the same title while the tab lives', async () => {
+    const { b, threads, kept, renames, failRename } = setup()
+    await threads.place(b, { tabId: 't1', key: 'k1', name: 'helper-1', backend: 'claude' })
+    threads.retitle('t1', 'Fix login')
+    await failRename()
+    threads.retitle('t1', 'Fix login')
+    expect(renames).toEqual(['101:Fix login'])
+    expect(kept[0].name).toBe('helper-1')
+  })
+
+  it('after a restart, a thread already named after the title is not renamed again', async () => {
+    const { threads, kept, renames } = setup()
+    kept.push({ threadId: '50', keys: ['k1'], name: 'Fix login' })
+    threads.bound('t2', 'k1')
+    threads.retitle('t2', 'Fix login')
+    expect(renames).toEqual([])
+  })
+
+  it('the global conductor’s thread keeps the workspace in its name when it follows the title', async () => {
+    const { b, threads, renames } = setup('global')
+    await threads.place(b, {
+      tabId: 't1',
+      key: 'k1',
+      name: 'helper-1',
+      backend: 'claude',
+      workspace: WS
+    })
+    threads.retitle('t1', 'Fix login', WS)
+    expect(renames).toEqual(['101:Fix login · koloft'])
   })
 
   it('the global conductor’s threads say which workspace the session is in', async () => {

@@ -58,7 +58,7 @@ export interface NoticeDeps {
   archive(threadId: string): void
   withButtons(tabId: string, view: DialogView, card: Card): Card
   subject(tabId: string): NoticeSubject | undefined
-  peerName(tabId: string): Promise<string | null>
+  shownName(tabId: string): Promise<string | null>
   awaitsInput(tabId: string): boolean
   commandRunning(tabId: string): boolean
   dialog(tabId: string): Promise<DialogView | undefined>
@@ -69,27 +69,21 @@ export class Notices {
   private waitingNoticed = new Map<string, string>()
   private names = new Map<string, string>()
   private lastSubjects = new Map<string, NoticeSubject>()
-  private replies = new Map<string, string>()
   private replyWaiters = new Map<string, (reply: string | undefined) => void>()
 
   constructor(private d: NoticeDeps) {}
 
   onStatus(tabId: string, prev: SessionStatus | undefined, next: SessionStatus): void {
     this.liveSubject(tabId)
-    if (next === 'working') {
-      this.waitingNoticed.delete(tabId)
-      this.replies.delete(tabId)
-    }
+    if (next === 'working') this.waitingNoticed.delete(tabId)
     const kind = noticeKindOf(prev, next, this.d.awaitsInput(tabId))
     if (kind) void this.notice(tabId, kind)
   }
 
   turnEnded(tabId: string, reply: string): void {
     const waiter = this.replyWaiters.get(tabId)
-    if (waiter) {
-      this.replyWaiters.delete(tabId)
-      waiter(reply)
-    } else this.replies.set(tabId, reply)
+    this.replyWaiters.delete(tabId)
+    waiter?.(reply)
   }
 
   waiting(tabId: string): void {
@@ -105,17 +99,11 @@ export class Notices {
     this.waitingNoticed.delete(tabId)
     this.names.delete(tabId)
     this.lastSubjects.delete(tabId)
-    this.replies.delete(tabId)
     this.replyWaiters.get(tabId)?.(undefined)
     this.replyWaiters.delete(tabId)
   }
 
   private replyOf(tabId: string): Promise<string | undefined> {
-    const had = this.replies.get(tabId)
-    if (had !== undefined) {
-      this.replies.delete(tabId)
-      return Promise.resolve(had)
-    }
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
         this.replyWaiters.delete(tabId)
@@ -132,10 +120,7 @@ export class Notices {
     const subject =
       this.liveSubject(tabId) ?? (kind === 'closed' ? this.lastSubjects.get(tabId) : undefined)
     if (!subject || subject.conductor) return
-    if (kind === 'finished' && this.d.commandRunning(tabId)) {
-      this.replies.delete(tabId)
-      return
-    }
+    if (kind === 'finished' && this.d.commandRunning(tabId)) return
     if (kind === 'closed') {
       if (this.closeNoticed.has(tabId)) return
       this.closeNoticed.add(tabId)
@@ -168,7 +153,7 @@ export class Notices {
 
   private async nameOf(tabId: string, kind: NoticeKind, title: string): Promise<string> {
     if (kind === 'closed') return this.names.get(tabId) ?? title
-    const name = await this.d.peerName(tabId)
+    const name = await this.d.shownName(tabId)
     if (name) this.names.set(tabId, name)
     return name ?? title
   }
