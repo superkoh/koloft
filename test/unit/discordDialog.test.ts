@@ -138,4 +138,15 @@ describe('a managed session’s dialog: its full text, and the keys that answer 
     expect(isAskedCall(bash, { name: 'Bash', input: { command: 'ls' } })).toBe(false)
     expect(isAskedCall(bash, { name: 'Read', input: {} })).toBe(false)
   })
+
+  // CC§14
+  it('a question answered in the terminal is the asked call, though the transcript orders its keys differently from the hook', () => {
+    const [q] = colour.tool_input.questions
+    const asWritten = {
+      questions: [
+        { question: q.question, header: q.header, multiSelect: q.multiSelect, options: q.options }
+      ]
+    }
+    expect(isAskedCall(colour, { name: 'AskUserQuestion', input: asWritten })).toBe(true)
+  })
 })
