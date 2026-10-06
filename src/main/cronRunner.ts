@@ -111,11 +111,15 @@ export interface RunnerDeps {
   ready(): boolean
   launch(req: LaunchRequest): LaunchResult | Promise<LaunchResult>
   killTab(tabId: string): void
+  stillWorking(tabId: string): Promise<boolean>
+  whatIsLeft(tabId: string, root: string, worktree?: string): Promise<string[]>
+  closeForGood(tabId: string, root: string, worktree?: string): Promise<void>
   toast(text: string): void
   notify(title: string, body: string): void
   push(state: CronState): void
   killed(tabId: string): void
   bindDeadlineMs: number
+  closeRecheckMs: number
   setInterval: typeof setInterval
   clearInterval: typeof clearInterval
   setTimeout: typeof setTimeout
@@ -224,6 +228,7 @@ export class CronRunner {
   private launching = new Set<string>()
   private held = new Map<string, Due[]>()
   private deadlines = new Map<string, ReturnType<typeof setTimeout>>()
+  private closeChecks = new Map<string, ReturnType<typeof setTimeout>>()
   private lastDue = new Map<string, number>()
   private timer: ReturnType<typeof setInterval> | null = null
   private resumeAt = 0
@@ -246,8 +251,14 @@ export class CronRunner {
   stop(): void {
     if (this.timer !== null) this.d.clearInterval(this.timer)
     this.timer = null
-    for (const t of this.deadlines.values()) this.d.clearTimeout(t)
+    this.clearTimers()
+  }
+
+  private clearTimers(): void {
+    for (const t of [...this.deadlines.values(), ...this.closeChecks.values()])
+      this.d.clearTimeout(t)
     this.deadlines.clear()
+    this.closeChecks.clear()
   }
 
   onResume(): void {
@@ -470,12 +481,13 @@ export class CronRunner {
       changed = true
     } else if (next === 'working' && run.state === 'done') {
       run.state = 'running'
+      delete run.kept
+      this.clearCloseCheck(tabId)
       changed = true
     }
     if (!changed) return
-    const job = this.byId(run.jobId)
-    if (run.state === 'done' && job?.autoClose) this.closeFinished(tabId, run, job)
-    else this.push()
+    this.push()
+    if (run.state === 'done' && this.byId(run.jobId)?.autoClose) void this.closeIfFinished(run)
   }
 
   private killRun(tabId: string): void {
@@ -485,16 +497,62 @@ export class CronRunner {
     this.refreshFolders()
   }
 
-  private closeFinished(tabId: string, run: LiveRun, job: CronJob): void {
-    this.killRun(tabId)
-    this.writeHistory(job, { ...lineOf(run), state: 'finished' })
-    this.d.toast(`⏰ ${job.name} finished and closed`)
+  private async closeIfFinished(run: LiveRun): Promise<void> {
+    const { tabId } = run
+    const job = this.byId(run.jobId)
+    if (!job?.autoClose || !this.isStillDone(run)) return
+    const left = (await this.d.stillWorking(tabId))
+      ? null
+      : await this.d.whatIsLeft(tabId, job.workspacePath, run.worktree)
+    if (!this.isStillDone(run)) return
+    if (left?.length === 0) {
+      this.clearCloseCheck(tabId)
+      this.live.delete(tabId)
+      void this.d
+        .closeForGood(tabId, job.workspacePath, run.worktree)
+        .then(() => this.refreshFolders())
+      this.writeHistory(job, { ...lineOf(run), state: 'finished' })
+      this.d.toast(`⏰ ${job.name} finished and closed`)
+      return
+    }
+    if (left) this.keepOpen(run, job, left)
+    this.armCloseCheck(run)
+  }
+
+  private isStillDone(run: LiveRun): boolean {
+    return this.live.get(run.tabId) === run && run.state === 'done'
+  }
+
+  private keepOpen(run: LiveRun, job: CronJob, left: string[]): void {
+    const kept = left.map((l) => l.split('\n')[0].replace(/:$/, '')).join('; ')
+    if (run.kept === kept) return
+    run.kept = kept
+    this.d.toast(`⏰ ${job.name} finished but was not closed: ${kept}`)
+    this.d.notify(job.name, `Finished, but not closed — ${kept}`)
+    this.push()
+  }
+
+  private armCloseCheck(run: LiveRun): void {
+    this.clearCloseCheck(run.tabId)
+    const t = this.d.setTimeout(() => {
+      this.closeChecks.delete(run.tabId)
+      void this.closeIfFinished(run)
+    }, this.d.closeRecheckMs)
+    this.closeChecks.set(run.tabId, t)
+  }
+
+  private clearCloseCheck(tabId: string): void {
+    const t = this.closeChecks.get(tabId)
+    if (t === undefined) return
+    this.d.clearTimeout(t)
+    this.closeChecks.delete(tabId)
   }
 
   onPtyExit(tabId: string): void {
     const run = this.live.get(tabId)
     if (!run) return
     this.clearDeadline(tabId)
+    this.clearCloseCheck(tabId)
     this.live.delete(tabId)
     this.refreshFolders()
     const job = this.byId(run.jobId)
@@ -513,8 +571,7 @@ export class CronRunner {
   }
 
   quitSweep(): void {
-    for (const t of this.deadlines.values()) this.d.clearTimeout(t)
-    this.deadlines.clear()
+    this.clearTimers()
     if (this.live.size === 0) return
     for (const run of this.live.values()) {
       const job = this.byId(run.jobId)

@@ -1090,6 +1090,7 @@ export interface LiveRun {
   startedAt: number
   dueAt: number
   manual?: true
+  kept?: string
 }
 
 export interface CronState {

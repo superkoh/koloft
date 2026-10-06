@@ -43,7 +43,7 @@ Options: --backend claude|codex, --model <model>, --effort low|medium|high|xhigh
     same: the same permission as a session started from the sidebar's + button.
     acceptEdits: may change files without asking.
     skipAll: never asks for permission.
-    --when-done close: the run's tab closes once it finishes its work, so the next run is not skipped. The default, open, leaves it open for you.
+    --when-done close: once the run has finished all its work, its tab, its sidebar row and its worktree go, so the next run is not skipped. A run that asks something, still has work running, or would lose a change or a commit stays open. The default, open, leaves it open for you.
 
 koloft cron list
     List this workspace's tasks: number, name, when it runs, on or off, next run, last result.

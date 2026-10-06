@@ -1063,7 +1063,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('a Codex job set to "Close it" closes its tab once Codex finishes the turn', async ({
+  test('a Codex job set to "Close it" closes for good once Codex finishes the turn: tab, row and worktree', async ({
     env
   }) => {
     installCodex(env)
@@ -1093,7 +1093,17 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(dlg.locator('.hist-row').first()).toContainText('Done — closed itself', {
         timeout: 30_000
       })
+      const wt = (await dlg.locator('.hist-row').first().locator('.hist-wt').innerText())
+        .replace('·', '')
+        .trim()
+      expect(wt).not.toBe('')
       await expect(page.locator('.terminals .term-wrap')).toHaveCount(0, { timeout: 30_000 })
+      await expect(wsRows(page, 'ws-a')).toHaveCount(0, { timeout: 30_000 })
+      await expect
+        .poll(() => fs.existsSync(path.join(env.workspaces.a, '.claude', 'worktrees', wt)), {
+          timeout: 30_000
+        })
+        .toBe(false)
     } finally {
       await quitAndClose(app)
     }

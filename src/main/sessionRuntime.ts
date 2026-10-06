@@ -122,6 +122,13 @@ export class SessionRuntime extends EventEmitter {
     return false
   }
 
+  async stillWorking(tabId: string): Promise<boolean> {
+    const e = this.entries.get(tabId)
+    if (!e) return false
+    if (e.turn !== 'ended' || e.wakeupPending || e.background.length > 0) return true
+    return this.workStillRunning(tabId)
+  }
+
   private entry(tabId: string): RuntimeEntry {
     let e = this.entries.get(tabId)
     if (!e) {
