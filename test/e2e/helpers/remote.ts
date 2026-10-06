@@ -101,15 +101,8 @@ export function breakConnection(env: E2EEnv): void {
   fs.writeFileSync(path.join(stateDir(env), 'hb-fail'), '')
 }
 
-export function dropTabLinkWhileItsSessionDies(env: E2EEnv, sessionId: string, pid: number): void {
+export function dropTabLinkWhileItsSessionDies(env: E2EEnv, pid: number): void {
   fs.writeFileSync(path.join(stateDir(env), 'tab-link-drop'), '')
-  for (const line of execFileSync('ps', ['-eo', 'pid=,command='], { encoding: 'utf8' }).split(
-    '\n'
-  )) {
-    if (!line.includes('fake-tmux.js') || !line.includes(`k-${sessionId}`)) continue
-    const client = Number(line.trim().split(/\s+/)[0])
-    if (client) process.kill(client, 'SIGKILL')
-  }
   killSession(pid, env)
 }
 

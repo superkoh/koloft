@@ -189,7 +189,7 @@ test.describe('who ends the claude on the other machine: every way of ending a r
       await expect(row).toHaveClass(/st-waiting|st-idle/, { timeout: 60_000 })
       const tabId = (await row.getAttribute('data-tab-id')) ?? ''
 
-      dropTabLinkWhileItsSessionDies(env, first.sessionId, first.pid)
+      dropTabLinkWhileItsSessionDies(env, first.pid)
 
       await expect
         .poll(() => terminalText(page, tabId), { timeout: 60_000 })
