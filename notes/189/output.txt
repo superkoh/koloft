@@ -1,0 +1,68 @@
+probe 189 · 2026-10-06T12:15:25.266Z · host darwin 27.0.0
+local ssh: OpenSSH_10.3p1, LibreSSL 3.3.6
+image: koloft-e2e-sshd:189ea20b98c3
+target: git version 2.39.5 | OpenSSH_9.2p1 Debian-2+deb12u10, OpenSSL 3.0.22 25 Aug 2026 | authorized_keys | /bin/false
+target has no ssh key / agent: ls: cannot access '/home/kuser/.ssh/id_*': No such file or directory | SSH_AUTH_SOCK=
+target credential helper: rc=1
+
+=== A1 ssh origin, no github.com in known_hosts, no key (Koloft guard)
+remote: NETWORK_GIT -C /home/kuser/sshNoKnownHosts fetch --quiet --no-auto-maintenance origin main
+exit=128 time=406ms
+stderr:
+Host key verification failed.
+fatal: Could not read from remote repository.
+
+Please make sure you have the correct access rights
+and the repository exists.
+FETCH_HEAD written: yes, 0 bytes
+
+known_hosts lines after ssh-keyscan github.com: 1
+
+=== A2 ssh origin, github.com trusted, no key (Koloft guard)
+remote: NETWORK_GIT -C /home/kuser/sshKnownHosts fetch --quiet --no-auto-maintenance origin main
+exit=128 time=631ms
+stderr:
+git@github.com: Permission denied (publickey).
+fatal: Could not read from remote repository.
+
+Please make sure you have the correct access rights
+and the repository exists.
+FETCH_HEAD written: yes, 0 bytes
+
+=== A3 ssh origin, github.com trusted, no key (bare git, no guard)
+remote: GIT -C /home/kuser/sshKnownHostsBare fetch --quiet --no-auto-maintenance origin main
+exit=128 time=719ms
+stderr:
+git@github.com: Permission denied (publickey).
+fatal: Could not read from remote repository.
+
+Please make sure you have the correct access rights
+and the repository exists.
+FETCH_HEAD written: yes, 0 bytes
+
+lab image has no CA bundle (not a real-machine trait), so ca-certificates was installed for the https cases: /etc/ssl/certs/ca-certificates.crt
+
+=== B1 https origin, repo needs a login, no credential helper (Koloft guard)
+remote: NETWORK_GIT -C /home/kuser/httpsNoCreds fetch --quiet --no-auto-maintenance origin main
+exit=128 time=295ms
+stderr:
+error: unable to read askpass response from 'false'
+fatal: could not read Username for 'https://github.com': terminal prompts disabled
+FETCH_HEAD written: yes, 0 bytes
+
+=== B2 https origin, repo needs a login, no credential helper (bare git, no guard)
+remote: GIT -C /home/kuser/httpsNoCredsBare fetch --quiet --no-auto-maintenance origin main
+exit=128 time=261ms
+stderr:
+fatal: could not read Username for 'https://github.com': No such device or address
+FETCH_HEAD written: yes, 0 bytes
+
+=== C1 https public origin, no credentials needed (Koloft guard) — happy path
+remote: NETWORK_GIT -C /home/kuser/httpsPublic fetch --quiet --no-auto-maintenance origin main
+exit=0 time=1626ms
+stderr:
+(empty)
+FETCH_HEAD written: yes, 94 bytes
+after C1, origin/main on the target: 127 | 4858578fea2b5c013221bb892b31b3c62c73c871 commit	refs/remotes/origin/main
+
+containers left with label koloft-probe-189: none
