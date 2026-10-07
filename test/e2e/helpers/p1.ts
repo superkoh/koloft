@@ -135,6 +135,23 @@ export function encodeCwd(cwd: string): string {
   return cwd.replace(/[^a-zA-Z0-9]/g, '-')
 }
 
+export function transcriptFile(home: string, cwd: string, sessionId: string): string {
+  return path.join(home, '.claude', 'projects', encodeCwd(cwd), `${sessionId}.jsonl`)
+}
+
+// CC§5
+export function continuedInOf(transcript: string): string | undefined {
+  const last = fs.readFileSync(transcript, 'utf8').trimEnd().split('\n').pop() ?? ''
+  return last.includes('continued-in') ? JSON.parse(last).continuedInSessionId : undefined
+}
+
+export function boundSessionId(page: Page, tabId: string | null): Promise<string | undefined> {
+  return page.evaluate(
+    (id) => window.api.sessions.list().then((all) => all.find((s) => s.tabId === id)?.sessionId),
+    tabId
+  )
+}
+
 export interface SeedOptions {
   id?: string
   summary?: string
