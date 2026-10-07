@@ -6842,15 +6842,17 @@ body { padding: 28px 32px 60px; background: var(--bg-0); color: var(--fg); }
       </div>
       <div class="mk-note">
         The icon sits where the "a file was opened here" icon already sits, in the warning colour the
-        approval bar uses. No toast, no red dot, no badge. It leaves both rows when one session ends,
-        types <code>/clear</code>, or is closed.
+        approval bar uses. No toast, no red dot, no badge. It leaves both rows when one session ends
+        or is closed, and on <code>/clear</code> once the small main fix in design.md lands (today the
+        old file list stays on screen after a <code>/clear</code> until the next write). A resumed
+        session counts every file it ever wrote, so an old committed edit can still clash.
       </div>
     </section>
   </div>
 
   <div class="mk-row mk-row-b">
     <section class="mk-frame mk-frame-b">
-      <div class="mk-label">Option B only — the file's own row in Workbench ▸ Files ▸ Changes gets the same icon</div>
+      <div class="mk-label">Option B — on top of the sidebar icon, the file's own row in Workbench ▸ Files ▸ Changes gets the same icon</div>
       <div class="mk-app">
         <div class="fv-changes" style="width: 300px; height: 96px; display: flex">
           <div class="cv-side" style="flex-basis: 300px">
