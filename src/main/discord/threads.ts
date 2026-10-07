@@ -194,7 +194,10 @@ export class SessionThreads {
     const b = this.d.conductors.binding(t.bindingId)
     if (!b) return
     this.d.link.deleteThread(b.channel.channelId, t.threadId).then(
-      () => this.d.conductors.dropThread(t.threadId),
+      () => {
+        this.d.conductors.dropThread(t.threadId)
+        for (const k of keys) this.offTheSidebar.delete(k)
+      },
       (error: unknown) => {
         this.archive(t.threadId)
         this.d.deleteFailed(t.name ?? t.threadId, error)

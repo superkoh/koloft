@@ -257,7 +257,6 @@ import type {
 import { AgentRequests, BUILTIN_VERBS, errorText, refused, type AgentVerb } from './agentRequests'
 import { Conductors } from './discord/conductors'
 import { discordApiUrl, DiscordLink } from './discord/link'
-import { DiscordHttpError } from './discord/rest'
 import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay, type Destination } from './discord/relay'
 import { Notices } from './discord/notices'
@@ -1719,11 +1718,7 @@ app.whenReady().then(() => {
     deleteFailed: (threadName, error) =>
       sendToRenderer(
         'cron:toast',
-        `Koloft could not delete the Discord thread "${threadName}", so it only archived it: ${String(error)}${
-          error instanceof DiscordHttpError && error.status === 403
-            ? '. Give the bot the Manage Threads permission in the server’s settings.'
-            : ''
-        }`
+        `Koloft could not delete the Discord thread "${threadName}", so it only archived it: ${errorText(error)}`
       )
   })
   discordThreads = threads

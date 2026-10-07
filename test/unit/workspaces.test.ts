@@ -1191,6 +1191,23 @@ describe('remote workspace: reading the mirror', () => {
     expect([...reported]).toEqual(expect.arrayContaining(kept))
   })
 
+  it('a member whose transcript is gone is reported dropped before the conductors hear which sessions are left, so its Discord thread can still be found', async () => {
+    writeJsonl(repo, 'local1')
+    own('local1')
+    const order: string[] = []
+    mgr = remoteMgr({
+      memberDropped: (id: string) => order.push(`dropped ${id}`),
+      sessionsOnDiskOrRunning: (ids: ReadonlySet<string>) =>
+        order.push(ids.has('local1') ? 'listed' : 'gone')
+    })
+    mgr.start()
+    await vi.waitFor(() => expect(order).toContain('listed'))
+    fs.rmSync(path.join(projectsRoot, encodeCwd(repo), 'local1.jsonl'))
+    mgr.refresh()
+    await vi.waitFor(() => expect(order).toContain('gone'))
+    expect(order.slice(order.indexOf('dropped local1'))).toEqual(['dropped local1', 'gone'])
+  })
+
   it('counts a session the machine reports as alive as running', async () => {
     writeMirrorJsonl('abc')
     own('abc')

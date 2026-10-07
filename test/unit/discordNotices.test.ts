@@ -230,6 +230,17 @@ describe('Discord notices: what each session’s thread gets', () => {
     expect(archived).toEqual(['thread-a'])
   })
 
+  it('a "finished" still waiting for its reply when the tab closes is dropped, so nothing lands after the "closed" card and opens the archived thread again', async () => {
+    vi.useFakeTimers()
+    const { notices, cards, archived } = setup()
+    notices.onStatus('a', 'working', 'waiting')
+    notices.closed('a')
+    notices.forget('a')
+    await vi.advanceTimersByTimeAsync(REPLY_FOLLOWS_THE_TURN_MS)
+    expect(cards).toEqual([['thread-a', '⏹ **a** closed.']])
+    expect(archived).toEqual(['thread-a'])
+  })
+
   it('a session with no thread, or whose thread went with it off the sidebar, gets no "closed" card and no thread is opened for one', async () => {
     vi.useFakeTimers()
     const placed: string[] = []
