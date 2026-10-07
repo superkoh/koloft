@@ -81,6 +81,10 @@ export function routeFor(target: string, source: RouteSource): RouteDecision {
   }
 }
 
+export function opensAsWebTab(path: string): boolean {
+  return routeFor(path, 'user').dest === 'browser'
+}
+
 export function canOpenExternally(target: string): boolean {
   const scheme = schemeOf(target.trim())
   return scheme === 'http:' || scheme === 'https:' || scheme === 'mailto:' || scheme === 'tel:'
