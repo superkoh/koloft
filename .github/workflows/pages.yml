@@ -32,12 +32,15 @@ jobs:
         uses: actions/configure-pages@v6
 
       # Absolute links (canonical, og:image, sitemap) carry __SITE_URL__, so they follow
-      # the custom domain once one is set in the repo's Pages settings.
+      # the custom domain once one is set in the repo's Pages settings. Forced to https:
+      # koloft.ai sits behind Cloudflare's proxy, so GitHub issues it no certificate and
+      # base_url says http, while visitors reach the site over https through Cloudflare.
       - env:
           BASE_URL: ${{ steps.pages.outputs.base_url }}
         run: |
+          SITE_URL="https://${BASE_URL#*://}"
           find site -type f \( -name '*.html' -o -name 'sitemap.xml' -o -name 'robots.txt' \) -print0 \
-            | xargs -0 sed -i "s|__SITE_URL__|${BASE_URL%/}|g"
+            | xargs -0 sed -i "s|__SITE_URL__|${SITE_URL%/}|g"
           ! grep -rIl __SITE_URL__ site
 
       - uses: actions/upload-pages-artifact@v5
