@@ -6754,6 +6754,9 @@ body { padding: 24px; background: var(--bg-0); user-select: text; }
 .mock-app .menu { position: absolute; }
 .mock-app .ws-tab.mock-target { outline: 1px dashed var(--accent-line); outline-offset: -1px; }
 .mock-app .mi.mock-new { box-shadow: inset 3px 0 0 var(--accent); }
+.mock-app.mock-tall { height: 440px; }
+.mock-app .modal-backdrop.mock-backdrop { position: absolute; inset: 0; }
+.mock-app .modal.worktreesess { width: 400px; max-width: 94%; }
 
     </style>
   </head>
@@ -6969,7 +6972,7 @@ body { padding: 24px; background: var(--bg-0); user-select: text; }
                 </div>
                 <div class="ws-tabs">
                   <div class="ws-tab st-pending active">
-                    <div class="ws-tab-main"><span class="ws-tab-title"><i>Claude session</i></span></div>
+                    <div class="ws-tab-main"><span class="ws-tab-title"><i>Starting…</i></span></div>
                     <div class="ws-tab-sub"><span>main</span></div>
                   </div>
                   <div class="ws-tab st-waiting">
@@ -6987,12 +6990,69 @@ body { padding: 24px; background: var(--bg-0); user-select: text; }
         </div>
       </div>
     </section>
+
+    <!-- Frame 6: option 2, C8 pre-filled -->
+    <section class="mock-frame">
+      <div class="mock-label">Option 2 (not recommended) — "Fork…" opens the New Worktree Session dialog (C8) with the fork in mind; the fork lands in a fresh worktree</div>
+      <div class="app mock-app mock-tall">
+        <div class="side" style="width: 268px">
+          <div class="island flat isl-sessions">
+            <div class="ws-list">
+              <div class="ws">
+                <div class="ws-head" title="/Users/me/code/shop">
+                  <span class="fico" title="Fold">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>
+                  </span>
+                  <span class="ws-name"><i>shop</i></span>
+                </div>
+                <div class="ws-tabs">
+                  <div class="ws-tab st-waiting active mock-target">
+                    <div class="ws-tab-main"><span class="ws-tab-title"><i>Add a retry to the checkout call</i></span></div>
+                    <div class="ws-tab-sub"><span>main</span></div>
+                  </div>
+                  <div class="ws-tab cold" title="2h ago — click to resume">
+                    <div class="ws-tab-main"><span class="ws-tab-title"><i>Fix the login redirect loop</i></span></div>
+                    <div class="ws-tab-sub"><span>main</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-backdrop mock-backdrop">
+          <div class="modal worktreesess" role="dialog" aria-label="New Worktree Session · shop">
+            <div class="modal-header">
+              <span>New Worktree Session · shop</span>
+              <span class="modal-close" aria-label="Close">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+              </span>
+            </div>
+            <div class="modal-body">
+              <span class="flabel">Worktree</span>
+              <div class="cb-input focus">
+                <input class="cb-field" spellcheck="false" autocomplete="off" aria-label="Worktree" value="retry-v2" />
+              </div>
+              <p class="field-hint">Create a worktree named <code>retry-v2</code> from the repo root and fork "Add a retry to the checkout call" into it.</p>
+              <div class="wt-list">
+                <div class="cb-hd">Worktrees</div>
+                <div class="cb-row dim"><span class="wt-name">login-fix</span><span class="note">branch worktree-login-fix</span></div>
+              </div>
+            </div>
+            <div class="modal-foot">
+              <button class="mini">Cancel</button>
+              <button class="btn-primary">Fork into worktree<span class="k">⏎</span></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   </div>
 
   <p class="mock-note">
-    Row order, the pending bar and the placeholder title "Claude session" are what the app already does
-    for any new session; the Fork row inherits the real title once Claude Code or Codex names it. A Codex
-    row looks the same (the Codex icon shows only when a workspace mixes both tools).
+    Row order, the pending bar and the "Starting…" title are what the app already does for any new
+    session, Claude Code and Codex alike; the Fork row gets the real title once the tool names it. A
+    Codex row is drawn the same way (the Codex icon shows only when a workspace mixes both tools).
+    Frame 6 is option 2 of the design's owner question, not the recommended one.
   </p>
 </div>
 
