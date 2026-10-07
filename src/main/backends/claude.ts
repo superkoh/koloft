@@ -812,7 +812,7 @@ export class ClaudeBackend implements SessionBackend {
     if (spec.permission === 'bypass') this.launchedBypassing.add(handle.id)
     if (machine) {
       tracker.track(handle.id, machine.cwd, machine.tracking)
-      if (machine.picked) tracker.setPickedAccount(handle.id, machine.picked)
+      if (machine.pickKey) tracker.movePick(machine.pickKey, handle.id)
       if (machine.attachTo) {
         tracker.bindSession(handle.id, '', machine.attachTo, machine.cwd)
         workspaces?.onSessionBound(machine.attachTo)
@@ -867,7 +867,6 @@ export async function pickMachineAccount(
   if (!secret) return undefined
   return {
     env: accountEnv(res.kind, res.account, secret, endpoint),
-    picked: res.account,
     banner: res.warning ? `${res.banner}\n${res.warning}` : res.banner
   }
 }
