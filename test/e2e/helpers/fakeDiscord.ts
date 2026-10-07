@@ -113,6 +113,7 @@ export interface FakeDiscord {
   refuseThreads: boolean
   threads: FakeThread[]
   deleted: string[]
+  lost: string[]
   reactions: FakeReaction[]
   history: Record<string, FakeHistoryMessage[]>
   commands: FakeCommand[]
@@ -198,6 +199,7 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
     refuseThreads: false,
     threads: [],
     deleted: [],
+    lost: [],
     reactions: [],
     history: {},
     commands: [],
@@ -352,6 +354,10 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
       return { status: 200, body: { id: channel[1] } }
     }
     const message = MESSAGE_ROUTE.exec(route)
+    if (message && req.method === 'POST' && fake.deleted.includes(`/channels/${message[1]}`)) {
+      fake.lost.push((await postOf('lost', message[1], req)).content)
+      return { status: 404, body: { message: 'Unknown Channel', code: 10003 } }
+    }
     if (message && req.method === 'POST' && fake.refusePostsIn.includes(message[1])) {
       await bodyOf(req)
       return { status: 403, body: { message: 'Missing Permissions', code: 50013 } }

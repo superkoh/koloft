@@ -395,6 +395,7 @@ export class DiscordLink {
   // PLATFORM§39
   async deleteThread(channelId: string, threadId: string): Promise<void> {
     await this.starting
+    await this.api().sent(`/channels/${threadId}/messages`)
     await this.api()
       .request('DELETE', `/channels/${threadId}`)
       .catch((error: unknown) => {

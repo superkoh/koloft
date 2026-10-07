@@ -154,7 +154,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     }
   })
 
-  test('a managed session gets its own thread under the conductor’s channel, opened from a card there with the owner added: its dialog, its finished turn with the reply (only once the conductor touched it or it has a thread) go in the thread; koloft discord send uploads a file; once /exit takes the session off the sidebar, its thread and the card it hangs from are deleted', async ({
+  test('a managed session gets its own thread under the conductor’s channel, opened from a card there with the owner added: its dialog, its finished turn with the reply (only once the conductor touched it or it has a thread) go in the thread; koloft discord send uploads a file; once /exit takes the session off the sidebar, its thread and the card it hangs from are deleted, never before a card already on its way there', async ({
     env
   }) => {
     seedConductor(env, 'claude')
@@ -217,8 +217,8 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await expect
         .poll(() => fake.deleted)
         .toEqual([`/channels/${thread}`, `/channels/${CHANNEL}/messages/${thread}`])
-      expect(notices(fake)).toEqual([expect.stringMatching(/^❓ /), expect.stringMatching(/^🔔 /)])
       await expect.poll(() => bindingOnDisk(env)?.threads).toEqual([])
+      expect(fake.lost).toEqual([])
     } finally {
       await quitAndClose(app)
       await fake.close()
