@@ -1173,7 +1173,14 @@ Gateway (the live connection that pushes events):
   archive landed first. Nothing else posted there afterwards.
 - **Deleting a thread needs Manage Threads** (bit 34, `1 << 34`): the bot role the
   invite gave (`101440`) lacks it, and so did the server's `@everyone`; `DELETE
-  /channels/{thread}` without it answered 403 (above).
+  /channels/{thread}` without it answered 403 (above). Measured 2026-10-07 on the
+  owner's server once the owner had turned Manage Threads on for the bot's role by
+  hand (role permissions then `17179970624`), on 26 of the bot's own public threads,
+  archived and open: `DELETE /channels/{thread}` answered `200` each time; the
+  thread's opener message in the parent channel was still there afterwards (`GET
+  /channels/{parent}/messages/{thread}` answered 200), and `DELETE` on it answered
+  `204`. Whether re-inviting the bot with a link that asks for more permissions
+  updates an existing bot role was not probed.
 - Also from Discord's docs, not measured here: a message's `content` holds at most 2000
   characters; one message carries at most 10 files and one request at most 25 MiB; a
   bot's file may be at most 20 MiB (changelog 2025-09-03); adding or removing a reaction
