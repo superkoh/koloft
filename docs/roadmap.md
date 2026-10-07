@@ -104,12 +104,14 @@ Reopen one of these only with new evidence, not a new argument.
   `koloft session send` for Codex), which the receiving session sees as a message it can
   judge. Faked keystrokes land in whatever that TUI's input box holds at the time.
   Broadcast input above is a feature for the *person*, with the rows they picked.
-  One exception, the owner's decision: a conductor's `koloft session send` to a Claude
-  session on another machine over ssh is typed into its terminal, because that
-  session's message socket is on the other machine where Koloft cannot reach it. Koloft
-  types only when that session's turn has ended and it shows no dialog; its state
+  Two exceptions, both the owner's decisions. First, a conductor's `koloft session send`
+  to a Claude session on another machine over ssh is typed into its terminal, because
+  that session's message socket is on the other machine where Koloft cannot reach it.
+  Koloft types only when that session's turn has ended and it shows no dialog; its state
   arrives a mirror pull late, so a message can still land in a turn that just began,
-  where Claude queues it.
+  where Claude queues it. Second, a conductor's `koloft session command` types a slash
+  command, because a message delivers `/compact` as plain text (CC§12, CODEX§21); Koloft
+  types it only when that session is idle with no question or menu showing.
 
 - **Checkpoints / rewind** — native in Claude Code (`/rewind`). At most, surface the list.
 - **Split panes / tiled layouts** — high cost on xterm.js for a window whose centre is
