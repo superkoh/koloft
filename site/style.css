@@ -33,6 +33,7 @@
   --print: #fffdf8;
   --shadow: var(--ink);
   --tape: rgba(247, 238, 212, 0.62);
+  --tape-edge: rgba(255, 255, 255, 0.35);
   --type: 'Special Elite', 'Courier New', monospace;
   --mono: 'Courier Prime', 'Courier New', monospace;
   --line: 28px;
@@ -52,6 +53,7 @@
     --print: #2a2622;
     --shadow: #000;
     --tape: rgba(247, 238, 212, 0.3);
+    --tape-edge: rgba(255, 255, 255, 0.12);
   }
 }
 
@@ -352,8 +354,8 @@ button:focus-visible {
   width: 140px;
   height: 32px;
   background: var(--tape);
-  border-left: 1px dashed rgba(255, 255, 255, 0.35);
-  border-right: 1px dashed rgba(255, 255, 255, 0.35);
+  border-left: 1px dashed var(--tape-edge);
+  border-right: 1px dashed var(--tape-edge);
   box-shadow: 0 1px 2px color-mix(in srgb, var(--shadow) 12%, transparent);
   translate: -50%;
   transform: rotate(-2.5deg);
