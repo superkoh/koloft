@@ -4,7 +4,7 @@ import { execFileSync } from 'child_process'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
-import { gitInit, startSessionIn, terminalText, waitBooted, wsRows } from './helpers/p1'
+import { gitInit, seedJsonl, startSessionIn, terminalText, waitBooted, wsRows } from './helpers/p1'
 import { startFakeDiscord, type FakeDiscord } from './helpers/fakeDiscord'
 
 function claudeTokenFromKeychain(): string {
@@ -296,6 +296,24 @@ async function typeLine(page: Page, tabId: string, text: string): Promise<void> 
   await page.evaluate((id) => window.api.terminal.write(id, '\r'), tabId)
 }
 
+const ENDED_TITLE = 'Old notes cleanup'
+
+async function closesTheEndedSessionItIsAskedTo(
+  env: E2EEnv,
+  fake: FakeDiscord,
+  page: Page,
+  endedId: string
+): Promise<void> {
+  const seeded = transcriptRecords(env, endedId).length
+  await expect(wsRows(page, 'ws-a')).toHaveCount(1, { timeout: 30_000 })
+  fake.say(
+    OWNER,
+    `The session "${ENDED_TITLE}" in this workspace has ended and I do not need it any more. Take it off the Koloft list for good.`
+  )
+  await expect(wsRows(page, 'ws-a')).toHaveCount(0, { timeout: A_REAL_MODEL_TURN_MS })
+  expect(transcriptRecords(env, endedId)).toHaveLength(seeded)
+}
+
 async function answersWholeInTheChannel(fake: FakeDiscord): Promise<void> {
   const asked = fake.say(OWNER, ASK_FOR_TWO_LINES)
   await expect
@@ -385,6 +403,22 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
         })
         .toMatch(/Green/i)
       expect(hookQuestionFiles(env, target.tabId)).toEqual([])
+    })
+  })
+
+  test('a real Claude conductor asked in plain words to drop an ended session closes it with koloft session close, without resuming it', async ({
+    env
+  }) => {
+    test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
+    test.setTimeout(A_REAL_MODEL_TURN_MS + 120_000)
+    const endedId = seedJsonl(env, env.workspaces.a, { summary: ENDED_TITLE })
+    const fake = await realClaudeConductor(env)
+    await withConductor(env, fake, async (_app, page) => {
+      await closesTheEndedSessionItIsAskedTo(env, fake, page, endedId)
+      const conductor = (await page.evaluate(() => window.api.sessions.list())).find(
+        (s) => s.alive && s.conductor
+      )!
+      expect(commandsRun(env, conductor.sessionId).join('\n')).toContain('koloft session close')
     })
   })
 
@@ -603,6 +637,20 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     const fake = await startFakeDiscord(env)
     await withConductor(env, fake, async () => {
       await answersWholeInTheChannel(fake)
+    })
+  })
+
+  test('a real Codex conductor asked in plain words to drop an ended session closes it without resuming it', async ({
+    env
+  }) => {
+    test.skip(!HAVE_REAL_CODEX, NEEDS_REAL_CODEX)
+    test.setTimeout(A_REAL_MODEL_TURN_MS + 120_000)
+    const endedId = seedJsonl(env, env.workspaces.a, { summary: ENDED_TITLE })
+    seedConductor(env, 'codex')
+    useRealCodex(env)
+    const fake = await startFakeDiscord(env)
+    await withConductor(env, fake, async (_app, page) => {
+      await closesTheEndedSessionItIsAskedTo(env, fake, page, endedId)
     })
   })
 

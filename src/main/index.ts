@@ -2838,6 +2838,9 @@ async function closeSessionFully(
   if (target.tabId) {
     sendToRenderer('tab:killedByMain', target.tabId)
     await killTabPty(target.tabId)
+  } else if (allSessions().some((s) => s.alive && s.sessionId === target.sessionId)) {
+    sendToRenderer('cron:toast', `${target.title} was opened again, so Koloft did not close it.`)
+    return
   }
   const tree = await closingTree(hostGitOut, info)
   const problem = tree && (await removeTree(hostGitOut, tree))
