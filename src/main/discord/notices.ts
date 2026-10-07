@@ -53,8 +53,8 @@ export function noticeCard(kind: NoticeKind, name: string, body?: string): Card 
 export interface NoticeDeps {
   bindings(): ConductorBinding[]
   place(b: ConductorBinding, subject: NoticeSubject): Promise<string>
-  hasThread(key: string): boolean
-  card(channelId: string, card: Card): void
+  threadOf(key: string): string | undefined
+  card(channelId: string, card: Card): Promise<void>
   archive(threadId: string): void
   withButtons(tabId: string, view: DialogView, card: Card): Card
   subject(tabId: string): NoticeSubject | undefined
@@ -120,12 +120,9 @@ export class Notices {
     const subject =
       this.liveSubject(tabId) ?? (kind === 'closed' ? this.lastSubjects.get(tabId) : undefined)
     if (!subject || subject.conductor) return
+    if (kind === 'closed') return this.closedNotice(tabId, subject)
     if (kind === 'finished' && this.d.commandRunning(tabId)) return
-    if (kind === 'closed') {
-      if (this.closeNoticed.has(tabId)) return
-      this.closeNoticed.add(tabId)
-    }
-    const b = noticeBinding(this.d.bindings(), subject, kind, this.d.hasThread(subject.key))
+    const b = noticeBinding(this.d.bindings(), subject, kind, !!this.d.threadOf(subject.key))
     if (!b) return
     let body: string | undefined
     let dialog: DialogView | undefined
@@ -135,14 +132,23 @@ export class Notices {
       this.waitingNoticed.set(tabId, dialog?.text ?? '')
       body = dialog?.text
     } else if (kind === 'finished') body = await this.replyOf(tabId)
-    const name = await this.nameOf(tabId, kind, subject.name)
+    const name = await this.nameOf(tabId, subject.name)
     const channelId = await this.d.place(b, { ...subject, name })
     const inThread = channelId !== b.channel.channelId
     let card = noticeCard(kind, name, body)
     if (kind === 'waiting' && inThread) card = { ...card, footer: ANSWER_IN_THE_THREAD }
     if (dialog?.choices.length) card = this.d.withButtons(tabId, dialog, card)
-    this.d.card(channelId, card)
-    if (kind === 'closed' && inThread) this.d.archive(channelId)
+    void this.d.card(channelId, card)
+  }
+
+  // PLATFORM§39
+  private async closedNotice(tabId: string, subject: NoticeSubject): Promise<void> {
+    if (this.closeNoticed.has(tabId)) return
+    this.closeNoticed.add(tabId)
+    const threadId = this.d.threadOf(subject.key)
+    if (!threadId) return
+    await this.d.card(threadId, noticeCard('closed', this.names.get(tabId) ?? subject.name))
+    this.d.archive(threadId)
   }
 
   private liveSubject(tabId: string): NoticeSubject | undefined {
@@ -151,8 +157,7 @@ export class Notices {
     return live
   }
 
-  private async nameOf(tabId: string, kind: NoticeKind, title: string): Promise<string> {
-    if (kind === 'closed') return this.names.get(tabId) ?? title
+  private async nameOf(tabId: string, title: string): Promise<string> {
     const name = await this.d.shownName(tabId)
     if (name) this.names.set(tabId, name)
     return name ?? title

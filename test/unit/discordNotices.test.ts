@@ -38,8 +38,8 @@ function setup(over: Partial<NoticeDeps> = {}) {
   const deps: NoticeDeps = {
     bindings: () => [binding(WS, '10', ['a', 'b', 'c', 'e'])],
     place: async (_b, s) => `thread-${s.key}`,
-    hasThread: () => false,
-    card: (channelId, card) => void cards.push([channelId, shown(card)]),
+    threadOf: (key) => `thread-${key}`,
+    card: async (channelId, card) => void cards.push([channelId, shown(card)]),
     archive: (threadId) => void archived.push(threadId),
     withButtons: (_t, view, card) => ({
       ...card,
@@ -214,5 +214,36 @@ describe('Discord notices: what each session’s thread gets', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(cards).toEqual([['thread-a', '⏹ **alpha** closed.']])
     expect(archived).toEqual(['thread-a'])
+  })
+
+  it('a thread is archived only once its "closed" card has posted, since a card posted into an archived thread opens it again', async () => {
+    vi.useFakeTimers()
+    let posted = (): void => undefined
+    const { notices, archived } = setup({
+      card: () => new Promise<void>((resolve) => (posted = resolve))
+    })
+    notices.closed('a')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(archived).toEqual([])
+    posted()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(archived).toEqual(['thread-a'])
+  })
+
+  it('a session with no thread, or whose thread went with it off the sidebar, gets no "closed" card and no thread is opened for one', async () => {
+    vi.useFakeTimers()
+    const placed: string[] = []
+    const { notices, cards, archived } = setup({
+      threadOf: () => undefined,
+      place: async (_b, s) => {
+        placed.push(s.key)
+        return `thread-${s.key}`
+      }
+    })
+    notices.closed('a')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(placed).toEqual([])
+    expect(cards).toEqual([])
+    expect(archived).toEqual([])
   })
 })

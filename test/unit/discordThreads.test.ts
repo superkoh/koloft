@@ -4,7 +4,7 @@ import { SessionThreads, type ThreadDeps } from '../../src/main/discord/threads'
 
 const WS = '/Users/me/koloft'
 
-function setup(scope = WS, fail = false) {
+function setup(scope = WS, fail = false, refuseDelete = false) {
   const b: ConductorBinding = {
     id: 'b1',
     scope,
@@ -19,6 +19,9 @@ function setup(scope = WS, fail = false) {
   const members: string[] = []
   const renames: string[] = []
   const renamed: { resolve: () => void; reject: (e: Error) => void }[] = []
+  const deleted: string[] = []
+  const archived: string[] = []
+  const failures: string[] = []
   let next = 100
   const deps: ThreadDeps = {
     link: {
@@ -32,17 +35,30 @@ function setup(scope = WS, fail = false) {
         return messageId
       },
       addToThread: async (threadId, userId) => void members.push(`${threadId}:${userId}`),
-      archiveThread: async () => undefined,
+      archiveThread: async (threadId) => void archived.push(threadId),
       renameThread: (threadId, name) => {
         renames.push(`${threadId}:${name}`)
         return new Promise<void>((resolve, reject) => renamed.push({ resolve, reject }))
+      },
+      deleteThread: async (channelId, threadId) => {
+        if (refuseDelete) throw new Error('Discord answered 403')
+        deleted.push(`${channelId}:${threadId}`)
       }
     },
     conductors: {
       owner: () => '555',
+      binding: (id) => (id === b.id ? b : undefined),
       threadOfKey: (key) => {
         const thread = threads.find((t) => t.keys.includes(key))
         return thread && { binding: b, thread }
+      },
+      threadOfChannel: (threadId) => {
+        const thread = threads.find((t) => t.threadId === threadId)
+        return thread && { binding: b, thread }
+      },
+      dropThread: (threadId) => {
+        const i = threads.findIndex((x) => x.threadId === threadId)
+        if (i >= 0) threads.splice(i, 1)
       },
       keepThread: (_b, threadId, key) => {
         const t = threads.find((x) => x.threadId === threadId)
@@ -53,7 +69,8 @@ function setup(scope = WS, fail = false) {
         const t = threads.find((x) => x.threadId === threadId)
         if (t) t.name = name
       }
-    }
+    },
+    deleteFailed: (threadName) => void failures.push(threadName)
   }
   const finishRename = async (): Promise<void> => {
     renamed.shift()?.resolve()
@@ -71,10 +88,15 @@ function setup(scope = WS, fail = false) {
     names,
     members,
     renames,
+    deleted,
+    archived,
+    failures,
     finishRename,
     failRename
   }
 }
+
+const settled = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
 
 describe('one Discord thread per session', () => {
   it('a session first heard from gets an opener card in the channel and a thread on it, with the owner added; later notices reuse it', async () => {
@@ -206,5 +228,77 @@ describe('one Discord thread per session', () => {
     expect(await threads.place(b, s)).toBe('10')
     expect(await threads.place(b, s)).toBe('10')
     expect(openers).toHaveLength(1)
+  })
+})
+
+describe('a session that leaves the sidebar takes its Discord thread with it', () => {
+  const s = { tabId: 't1', key: 'k1', name: 'a', backend: 'claude' as const, workspace: WS }
+
+  it('a closed session taken off the sidebar has its thread deleted, and Koloft forgets it', async () => {
+    const { b, threads, kept, deleted } = setup()
+    await threads.place(b, s)
+    threads.forget('t1')
+    expect(deleted).toEqual([])
+    threads.left('k1')
+    await settled()
+    expect(deleted).toEqual(['10:101'])
+    expect(kept).toEqual([])
+  })
+
+  it('a session that leaves the sidebar while its tab still runs (/exit) keeps its thread until the tab is gone', async () => {
+    const { b, threads, kept, deleted } = setup()
+    await threads.place(b, s)
+    threads.left('k1')
+    await settled()
+    expect(deleted).toEqual([])
+    threads.forget('t1')
+    await settled()
+    expect(deleted).toEqual(['10:101'])
+    expect(kept).toEqual([])
+  })
+
+  it('/clear takes the old id off the sidebar, but the thread moves to the new id and stays', async () => {
+    const { b, threads, kept, deleted } = setup()
+    await threads.place(b, s)
+    threads.bound('t1', 'k1')
+    threads.left('k1')
+    threads.bound('t1', 'k2')
+    threads.forget('t1')
+    await settled()
+    expect(deleted).toEqual([])
+    expect(kept).toEqual([{ threadId: '101', keys: ['k1', 'k2'], name: 'a' }])
+  })
+
+  it('a thread is kept while another session it serves is still on the sidebar', async () => {
+    const { threads, kept, deleted } = setup()
+    kept.push({ threadId: '50', keys: ['k1', 'k9'] })
+    threads.left('k9')
+    await settled()
+    expect(deleted).toEqual([])
+    expect(kept).toHaveLength(1)
+  })
+
+  it('a thread Discord refuses to delete is archived instead, the owner is told, and Koloft still knows whose it was', async () => {
+    const { b, threads, kept, deleted, archived, failures } = setup(WS, false, true)
+    await threads.place(b, { ...s, tabId: undefined })
+    threads.left('k1')
+    await settled()
+    expect(deleted).toEqual([])
+    expect(archived).toEqual(['101'])
+    expect(failures).toEqual(['a'])
+    expect(kept).toEqual([{ threadId: '101', keys: ['k1'], name: 'a' }])
+    expect(threads.threadOf('k1')).toBeUndefined()
+  })
+
+  it('a session put back on the sidebar after its thread could not be deleted keeps that thread when its tab closes', async () => {
+    const { b, threads, archived } = setup(WS, false, true)
+    await threads.place(b, { ...s, tabId: undefined })
+    threads.left('k1')
+    await settled()
+    threads.bound('t2', 'k1')
+    expect(threads.threadOf('k1')).toBe('101')
+    threads.forget('t2')
+    await settled()
+    expect(archived).toEqual(['101'])
   })
 })

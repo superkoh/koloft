@@ -1164,6 +1164,16 @@ Gateway (the live connection that pushes events):
   name changes per ten minutes per channel. An `{archived: true}` call right after was
   not limited. Once the ten minutes had passed, `{name}` on the bot's own unarchived
   thread answered `200` with the new name (a Chinese name kept as sent).
+- **A bot's own message opens its archived thread again** — read 2026-10-07 off the
+  owner's server, Koloft 0.32.3, REST `GET` only: of 29 bot-made threads, 6 were open
+  although Koloft had archived them; in each the last message was the bot's "closed"
+  card, and the thread's `thread_metadata.archive_timestamp` (when it last changed
+  between archived and open) lay within 0.12 s of that card's own time. The archive
+  `PATCH` and the card `POST` had been sent at once, in two separate queues, so the
+  archive landed first. Nothing else posted there afterwards.
+- **Deleting a thread needs Manage Threads** (bit 34, `1 << 34`): the bot role the
+  invite gave (`101440`) lacks it, and so did the server's `@everyone`; `DELETE
+  /channels/{thread}` without it answered 403 (above).
 - Also from Discord's docs, not measured here: a message's `content` holds at most 2000
   characters; one message carries at most 10 files and one request at most 25 MiB; a
   bot's file may be at most 20 MiB (changelog 2025-09-03); adding or removing a reaction

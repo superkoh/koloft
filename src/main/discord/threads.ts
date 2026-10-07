@@ -14,8 +14,21 @@ export interface ThreadSubject {
 }
 
 export interface ThreadDeps {
-  link: Pick<DiscordLink, 'card' | 'startThread' | 'addToThread' | 'archiveThread' | 'renameThread'>
-  conductors: Pick<Conductors, 'owner' | 'threadOfKey' | 'keepThread' | 'nameThread'>
+  link: Pick<
+    DiscordLink,
+    'card' | 'startThread' | 'addToThread' | 'archiveThread' | 'renameThread' | 'deleteThread'
+  >
+  conductors: Pick<
+    Conductors,
+    | 'owner'
+    | 'binding'
+    | 'threadOfKey'
+    | 'threadOfChannel'
+    | 'keepThread'
+    | 'nameThread'
+    | 'dropThread'
+  >
+  deleteFailed(threadName: string, error: unknown): void
 }
 
 interface TabThread {
@@ -55,11 +68,13 @@ export class SessionThreads {
   private opening = new Map<string, Promise<string>>()
   private threadless = new Set<string>()
   private wanted = new Map<string, string>()
+  private offTheSidebar = new Set<string>()
 
   constructor(private d: ThreadDeps) {}
 
-  hasThread(key: string): boolean {
-    return !!this.d.conductors.threadOfKey(key)
+  threadOf(key: string): string | undefined {
+    if (this.offTheSidebar.has(key)) return undefined
+    return this.d.conductors.threadOfKey(key)?.thread.threadId
   }
 
   place(b: ConductorBinding, s: ThreadSubject, started = false): Promise<string> {
@@ -112,6 +127,7 @@ export class SessionThreads {
   }
 
   bound(tabId: string, key: string): void {
+    this.offTheSidebar.delete(key)
     const before = this.keyOfTab.get(tabId)
     this.keyOfTab.set(tabId, key)
     const own = this.d.conductors.threadOfKey(key)
@@ -156,9 +172,33 @@ export class SessionThreads {
     void this.d.link.archiveThread(threadId).catch(() => undefined)
   }
 
+  left(key: string): void {
+    const found = this.d.conductors.threadOfKey(key)
+    if (!found) return
+    this.offTheSidebar.add(key)
+    this.deleteIfUnused(tabThread(found.binding, found.thread))
+  }
+
   forget(tabId: string): void {
+    const t = this.byTab.get(tabId)
     this.byTab.delete(tabId)
     this.keyOfTab.delete(tabId)
     this.threadless.delete(tabId)
+    if (t) this.deleteIfUnused(t)
+  }
+
+  private deleteIfUnused(t: TabThread): void {
+    const keys = this.d.conductors.threadOfChannel(t.threadId)?.thread.keys ?? []
+    if (keys.some((k) => !this.offTheSidebar.has(k))) return
+    if ([...this.byTab.values()].some((held) => held.threadId === t.threadId)) return
+    const b = this.d.conductors.binding(t.bindingId)
+    if (!b) return
+    this.d.link.deleteThread(b.channel.channelId, t.threadId).then(
+      () => this.d.conductors.dropThread(t.threadId),
+      (error: unknown) => {
+        this.archive(t.threadId)
+        this.d.deleteFailed(t.name ?? t.threadId, error)
+      }
+    )
   }
 }

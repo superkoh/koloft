@@ -112,6 +112,7 @@ export interface FakeDiscord {
   refusePostsIn: string[]
   refuseThreads: boolean
   threads: FakeThread[]
+  deleted: string[]
   reactions: FakeReaction[]
   history: Record<string, FakeHistoryMessage[]>
   commands: FakeCommand[]
@@ -135,6 +136,7 @@ const MESSAGE_ROUTE = /^\/channels\/(\d+)\/messages$/
 const THREAD_ROUTE = /^\/channels\/(\d+)\/messages\/(\d+)\/threads$/
 const MEMBER_ROUTE = /^\/channels\/(\d+)\/thread-members\/(\d+)$/
 const CHANNEL_ROUTE = /^\/channels\/(\d+)$/
+const ONE_MESSAGE_ROUTE = /^\/channels\/\d+\/messages\/\d+$/
 const COMMANDS_ROUTE = /^\/applications\/\d+\/guilds\/\d+\/commands$/
 const CALLBACK_ROUTE = /^\/interactions\/(\d+)\/[^/]+\/callback$/
 const REACTION_ROUTE = /^\/channels\/(\d+)\/messages\/(\d+)\/reactions\/([^/]+)\/@me$/
@@ -195,6 +197,7 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
     refusePostsIn: [],
     refuseThreads: false,
     threads: [],
+    deleted: [],
     reactions: [],
     history: {},
     commands: [],
@@ -334,6 +337,10 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
       return { status: 204 }
     }
     const channel = CHANNEL_ROUTE.exec(route)
+    if ((channel || ONE_MESSAGE_ROUTE.test(route)) && req.method === 'DELETE') {
+      fake.deleted.push(route)
+      return { status: 204 }
+    }
     if (channel && req.method === 'PATCH') {
       const { archived, name } = JSON.parse((await bodyOf(req)).toString()) as {
         archived?: boolean
