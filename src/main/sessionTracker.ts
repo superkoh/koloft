@@ -914,6 +914,13 @@ export class SessionTracker extends SessionRuntime {
     }
   }
 
+  movePick(from: string, to: string): void {
+    const account = this.pendingPicked.get(from)
+    if (!account) return
+    this.pendingPicked.delete(from)
+    this.setPickedAccount(to, account)
+  }
+
   launchedSessions(): LaunchedSession[] {
     const tracked = [...this.tracked.values()]
       .filter((t) => t.info.alive)

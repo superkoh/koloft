@@ -1,4 +1,4 @@
-import type { BackendId, ConductorBinding } from '@shared/types'
+import type { BackendId, ConductorBinding, SessionThread } from '@shared/types'
 import { GLOBAL_SCOPE, scopeName } from '@shared/conductors'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { accentOf, type Card } from './cards'
@@ -14,13 +14,15 @@ export interface ThreadSubject {
 }
 
 export interface ThreadDeps {
-  link: Pick<DiscordLink, 'card' | 'startThread' | 'addToThread' | 'archiveThread'>
-  conductors: Pick<Conductors, 'owner' | 'threadOfKey' | 'keepThread'>
+  link: Pick<DiscordLink, 'card' | 'startThread' | 'addToThread' | 'archiveThread' | 'renameThread'>
+  conductors: Pick<Conductors, 'owner' | 'threadOfKey' | 'keepThread' | 'nameThread'>
 }
 
 interface TabThread {
   bindingId: string
   threadId: string
+  global: boolean
+  name?: string
 }
 
 export function openerCard(s: ThreadSubject, started: boolean): Card {
@@ -35,8 +37,16 @@ export function openerCard(s: ThreadSubject, started: boolean): Card {
   }
 }
 
+function named(global: boolean, name: string, workspace?: string): string {
+  return global && workspace ? `${name} · ${scopeName(workspace)}` : name
+}
+
 export function threadName(b: ConductorBinding, s: ThreadSubject): string {
-  return b.scope === GLOBAL_SCOPE && s.workspace ? `${s.name} · ${scopeName(s.workspace)}` : s.name
+  return named(b.scope === GLOBAL_SCOPE, s.name, s.workspace)
+}
+
+function tabThread(b: ConductorBinding, t: Pick<SessionThread, 'threadId' | 'name'>): TabThread {
+  return { bindingId: b.id, threadId: t.threadId, global: b.scope === GLOBAL_SCOPE, name: t.name }
 }
 
 export class SessionThreads {
@@ -44,6 +54,7 @@ export class SessionThreads {
   private keyOfTab = new Map<string, string>()
   private opening = new Map<string, Promise<string>>()
   private threadless = new Set<string>()
+  private wanted = new Map<string, string>()
 
   constructor(private d: ThreadDeps) {}
 
@@ -55,13 +66,12 @@ export class SessionThreads {
     const slot = s.tabId ?? `key:${s.key}`
     const known = s.key ? this.d.conductors.threadOfKey(s.key) : undefined
     if (known) {
-      if (s.tabId)
-        this.byTab.set(s.tabId, { bindingId: known.binding.id, threadId: known.thread.threadId })
+      if (s.tabId) this.byTab.set(s.tabId, tabThread(known.binding, known.thread))
       return Promise.resolve(known.thread.threadId)
     }
     const mine = s.tabId ? this.byTab.get(s.tabId) : undefined
     if (mine) {
-      if (s.key) this.d.conductors.keepThread(mine.bindingId, mine.threadId, s.key)
+      if (s.key) this.keep(mine, s.key)
       return Promise.resolve(mine.threadId)
     }
     if (this.threadless.has(slot)) return Promise.resolve(b.channel.channelId)
@@ -72,6 +82,11 @@ export class SessionThreads {
     return opening
   }
 
+  private keep(t: TabThread, key: string): void {
+    this.d.conductors.keepThread(t.bindingId, t.threadId, key)
+    if (t.name) this.d.conductors.nameThread(t.threadId, t.name)
+  }
+
   private async open(
     b: ConductorBinding,
     s: ThreadSubject,
@@ -80,11 +95,13 @@ export class SessionThreads {
   ): Promise<string> {
     const channelId = b.channel.channelId
     try {
+      const name = threadName(b, s)
       const [opener] = await this.d.link.card(channelId, openerCard(s, started))
-      const threadId = await this.d.link.startThread(channelId, opener, threadName(b, s))
-      if (s.tabId) this.byTab.set(s.tabId, { bindingId: b.id, threadId })
+      const threadId = await this.d.link.startThread(channelId, opener, name)
+      const t = tabThread(b, { threadId, name })
+      if (s.tabId) this.byTab.set(s.tabId, t)
       const key = s.key ?? (s.tabId && this.keyOfTab.get(s.tabId))
-      if (key) this.d.conductors.keepThread(b.id, threadId, key)
+      if (key) this.keep(t, key)
       const owner = this.d.conductors.owner()
       if (owner) void this.d.link.addToThread(threadId, owner).catch(() => undefined)
       return threadId
@@ -99,16 +116,40 @@ export class SessionThreads {
     this.keyOfTab.set(tabId, key)
     const own = this.d.conductors.threadOfKey(key)
     if (own) {
-      this.byTab.set(tabId, { bindingId: own.binding.id, threadId: own.thread.threadId })
+      this.byTab.set(tabId, tabThread(own.binding, own.thread))
       return
     }
     const previous = before ? this.d.conductors.threadOfKey(before) : undefined
     const carried =
-      this.byTab.get(tabId) ??
-      (previous && { bindingId: previous.binding.id, threadId: previous.thread.threadId })
+      this.byTab.get(tabId) ?? (previous && tabThread(previous.binding, previous.thread))
     if (!carried) return
     this.byTab.set(tabId, carried)
-    this.d.conductors.keepThread(carried.bindingId, carried.threadId, key)
+    this.keep(carried, key)
+  }
+
+  retitle(tabId: string, title: string, workspace?: string): void {
+    const t = this.byTab.get(tabId)
+    if (!t) return
+    const name = named(t.global, title, workspace)
+    if (t.name === name) return
+    t.name = name
+    const idle = !this.wanted.has(t.threadId)
+    this.wanted.set(t.threadId, name)
+    if (idle) void this.rename(t.threadId)
+  }
+
+  // PLATFORM§39
+  private async rename(threadId: string): Promise<void> {
+    for (;;) {
+      const name = this.wanted.get(threadId)!
+      const renamed = await this.d.link.renameThread(threadId, name).then(
+        () => true,
+        () => false
+      )
+      if (renamed) this.d.conductors.nameThread(threadId, name)
+      if (this.wanted.get(threadId) === name) break
+    }
+    this.wanted.delete(threadId)
   }
 
   archive(threadId: string): void {

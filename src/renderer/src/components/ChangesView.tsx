@@ -12,7 +12,7 @@ import {
   type RefObject
 } from 'react'
 import type { ArtifactView, GitNumstatMap, GitStatusMap, SessionInfo } from '@shared/types'
-import { isWebPagePath } from '@shared/preview'
+import { opensAsWebTab } from '@shared/browserRoute'
 import { parseUnifiedDiff, type ParsedDiff } from '../inlineDiff'
 import { highlightCode, langForPath } from '../highlight'
 import { InlineDiff, MAX_INLINE_ROWS } from './InlineDiff'
@@ -392,7 +392,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
 
   const split = useCallback(
     (path: string, view: 'diff' | 'source', offset: number): void => {
-      if (isWebPagePath(path)) {
+      if (opensAsWebTab(path)) {
         onOpenWeb(path)
         return
       }

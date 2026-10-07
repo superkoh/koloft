@@ -205,6 +205,7 @@ export interface ConductorBinding {
 export interface SessionThread {
   threadId: string
   keys: string[]
+  name?: string
   lastMessageId?: string
 }
 
@@ -478,6 +479,7 @@ export interface SessionUsage {
 }
 
 export const PLACEHOLDER_SESSION_TITLE = 'Claude session'
+export const CODEX_PLACEHOLDER_TITLE = 'Codex session'
 
 export const PENDING_SESSION_TITLE = 'Starting…'
 
@@ -727,6 +729,11 @@ export interface TerminalExit {
   id: string
   exitCode: number
   signal?: number
+}
+
+export function exitedAbnormally(exit: Pick<TerminalExit, 'exitCode' | 'signal'>): boolean {
+  // PLATFORM§29
+  return exit.exitCode !== 0 || !!exit.signal
 }
 
 export interface TerminalProcessTitle {

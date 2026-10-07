@@ -236,18 +236,27 @@ export class Conductors {
     this.d.saveQuietly(this.discord)
   }
 
+  private changeThread(bindingId: string, threadId: string, patch: Partial<SessionThread>): void {
+    this.change(bindingId, (b) => ({
+      ...b,
+      threads: (b.threads ?? []).map((t) => (t.threadId === threadId ? { ...t, ...patch } : t))
+    }))
+  }
+
   setThreadLastMessage(threadId: string, messageId: string): void {
     const found = this.threadOfChannel(threadId)
     if (!found) return
     const last = found.thread.lastMessageId
     if (last && !newerSnowflake(messageId, last)) return
-    this.change(found.binding.id, (b) => ({
-      ...b,
-      threads: (b.threads ?? []).map((t) =>
-        t.threadId === threadId ? { ...t, lastMessageId: messageId } : t
-      )
-    }))
+    this.changeThread(found.binding.id, threadId, { lastMessageId: messageId })
     this.pendingSave ??= setTimeout(() => this.flush(), LAST_MESSAGE_SAVE_DELAY_MS)
+  }
+
+  nameThread(threadId: string, name: string): void {
+    const found = this.threadOfChannel(threadId)
+    if (!found || found.thread.name === name) return
+    this.changeThread(found.binding.id, threadId, { name })
+    this.d.saveQuietly(this.discord)
   }
 
   forgetGone(stillOnDisk: (key: string) => boolean): void {

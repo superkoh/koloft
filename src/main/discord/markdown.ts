@@ -1,9 +1,6 @@
 import { isFence } from './split'
 
-export const TABLE_FITS_A_PHONE_COLUMNS = 40
-const COLUMN_GAP = 2
-const WIDE_CHAR =
-  /[ᄀ-ᅟ⺀-〾ぁ-㏿㐀-䶿一-鿿ꀀ-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]|\p{Extended_Pictographic}/u
+const TAKES_A_FULL_WIDTH_COLON = /[ᄀ-ᅟ⺀-〾ぁ-㏿㐀-䶿一-鿿ꀀ-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/u
 
 const TABLE_ROW = /^\s*\|.*\|\s*$/
 const TABLE_RULE = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/
@@ -11,16 +8,6 @@ const DEEP_HEADING = /^\s{0,3}#{4,6}\s+(.*?)\s*#*\s*$/
 const RULE = /^\s{0,3}([-*_])(\s*\1){2,}\s*$/
 const TASK = /^(\s*[-*+]\s+)\[([ xX])\]\s/
 const IMAGE = /!\[([^\]]*)\]\(([^)\s]+)[^)]*\)/g
-
-function widthOf(text: string): number {
-  let width = 0
-  for (const ch of text) width += WIDE_CHAR.test(ch) ? 2 : 1
-  return width
-}
-
-function padTo(text: string, width: number): string {
-  return text + ' '.repeat(Math.max(0, width - widthOf(text)))
-}
 
 function cellsOf(row: string): string[] {
   const inner = row.trim().replace(/^\|/, '').replace(/\|$/, '')
@@ -50,42 +37,26 @@ function plain(cell: string): string {
     .replace(/(^|[^\w*])\*([^*\s][^*]*?)\*(?!\w)/g, '$1$2')
 }
 
-function tableAsCode(header: string[], rows: string[][]): string[] | undefined {
-  const all = [header, ...rows].map((r) => r.map(plain))
-  const columns = header.length
-  const widths = Array.from({ length: columns }, (_, c) =>
-    Math.max(1, ...all.map((r) => widthOf(r[c] ?? '')))
+function labelled(name: string, cell: string): string {
+  if (!name) return cell
+  return `${name}${TAKES_A_FULL_WIDTH_COLON.test(name.slice(-1)) ? '：' : ': '}${cell}`
+}
+
+function row(header: string[], cells: string[]): string[] {
+  const [first, ...rest] = cells
+  const fields = rest.flatMap((cell, i) =>
+    cell ? [`> ${labelled(plain(header[i + 1] ?? ''), cell)}`] : []
   )
-  const total = widths.reduce((a, b) => a + b, 0) + COLUMN_GAP * (columns - 1)
-  if (total > TABLE_FITS_A_PHONE_COLUMNS) return undefined
-  const gap = ' '.repeat(COLUMN_GAP)
-  const line = (r: string[]): string =>
-    widths
-      .map((w, c) => padTo(r[c] ?? '', w))
-      .join(gap)
-      .trimEnd()
-  const rule = widths.map((w) => '─'.repeat(w)).join(gap)
-  return ['```', line(all[0]), rule, ...all.slice(1).map(line), '```']
+  return first ? [`**${plain(first)}**`, ...fields] : fields
 }
 
-function tableAsList(header: string[], rows: string[][]): string[] {
-  return rows.map((r) => {
-    const [first, ...rest] = r
-    const pairs = rest.flatMap((cell, i) => {
-      if (!cell) return []
-      const name = plain(header[i + 1] ?? '')
-      return [name ? `${name}: ${cell}` : cell]
-    })
-    const title = first ? `**${plain(first)}**` : ''
-    if (!pairs.length) return `- ${title}`
-    return title ? `- ${title}\n  ${pairs.join(' · ')}` : `- ${pairs.join(' · ')}`
-  })
-}
-
+// PLATFORM§39
 function table(lines: string[]): string[] {
   const header = cellsOf(lines[0])
-  const rows = lines.slice(2).map(cellsOf)
-  return tableAsCode(header, rows) ?? tableAsList(header, rows)
+  return lines
+    .slice(2)
+    .map(cellsOf)
+    .flatMap((cells, i) => [...(i ? [''] : []), ...row(header, cells)])
 }
 
 function line(text: string): string {

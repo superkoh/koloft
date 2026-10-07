@@ -335,9 +335,13 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
     }
     const channel = CHANNEL_ROUTE.exec(route)
     if (channel && req.method === 'PATCH') {
-      const { archived } = JSON.parse((await bodyOf(req)).toString()) as { archived?: boolean }
+      const { archived, name } = JSON.parse((await bodyOf(req)).toString()) as {
+        archived?: boolean
+        name?: string
+      }
       const t = fake.threads.find((x) => x.id === channel[1])
       if (t && archived !== undefined) t.archived = archived
+      if (t && name !== undefined) t.name = name
       return { status: 200, body: { id: channel[1] } }
     }
     const message = MESSAGE_ROUTE.exec(route)

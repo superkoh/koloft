@@ -1145,10 +1145,25 @@ Gateway (the live connection that pushes events):
     that the server's default role gave them is inferred, not checked.
   - `DELETE /channels/{thread}` answered 403 (50013, Missing Permissions); `PATCH
     /channels/{thread}` with `{archived: true}` on the bot's own thread answered 200.
-  - Not measured: whether a message in a thread pushes to a member's phone, whether
-    `PUT /channels/{thread}/thread-members/{user}` makes the owner such a member, and a
-    button press (`INTERACTION_CREATE` type 3 with `data.custom_id`, answered by
-    callback type 7 to replace the message) — all from the docs.
+- **Threads, buttons and tables on the owner's phone** — Koloft 0.32.1, 2026-10-06, the
+  owner reading the Discord iOS app, one case at a time:
+  - A card posted in a bot-made thread the owner was added to
+    (`PUT /channels/{thread}/thread-members/{user}`) made the locked phone ring.
+  - A button press reached Koloft as `INTERACTION_CREATE` type 3 with `data.custom_id`,
+    and callback type 7 replaced the card: the buttons went and the new text showed.
+  - A message the owner posted in an archived thread went through, and the thread came
+    back into the list.
+  - A fenced code block does not keep columns on a phone held upright: a table with
+    Chinese cells did not line up, and a 39-character-wide one wrapped and did not line
+    up either. A table written as a bold line per row with a `>` quote line per cell
+    read well.
+- **Renaming a thread** (`PATCH /channels/{thread}` with `{name}`), same bot, 2026-10-06:
+  on an archived thread it answered `400`, code 50083 "Thread is archived"; the third
+  name change within a few seconds answered `429` with `retry_after` 599.6 s, though
+  the first two had failed — failed attempts count. Discord's docs give the limit as two
+  name changes per ten minutes per channel. An `{archived: true}` call right after was
+  not limited. Once the ten minutes had passed, `{name}` on the bot's own unarchived
+  thread answered `200` with the new name (a Chinese name kept as sent).
 - Also from Discord's docs, not measured here: a message's `content` holds at most 2000
   characters; one message carries at most 10 files and one request at most 25 MiB; a
   bot's file may be at most 20 MiB (changelog 2025-09-03); adding or removing a reaction

@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Folders and their sessions — Koloft</title>
+    <meta
+      name="description"
+      content="Koloft lists each folder's Claude Code and Codex sessions from the tools' own files, starts and resumes them, and can give each its own git worktree."
+    />
+    <meta name="theme-color" content="#f6f1e6" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1c1a17" media="(prefers-color-scheme: dark)" />
+    <link rel="canonical" href="__SITE_URL__/sessions/" />
+    <link rel="icon" href="../favicon.png" type="image/png" sizes="32x32" />
+    <link rel="icon" href="../icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Koloft" />
+    <meta property="og:title" content="Folders and their sessions — Koloft" />
+    <meta
+      property="og:description"
+      content="Koloft lists each folder's Claude Code and Codex sessions from the tools' own files, starts and resumes them, and can give each its own git worktree."
+    />
+    <meta property="og:url" content="__SITE_URL__/sessions/" />
+    <meta property="og:image" content="__SITE_URL__/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content='Koloft on ruled paper: its icon, the line "run and manage Claude Code and Codex on your Mac", and a crop of a session with its Workbench'
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Folders and their sessions — Koloft" />
+    <meta
+      name="twitter:description"
+      content="Koloft lists each folder's Claude Code and Codex sessions from the tools' own files, starts and resumes them, and can give each its own git worktree."
+    />
+    <meta name="twitter:image" content="__SITE_URL__/og.png" />
+    <link
+      rel="preload"
+      href="../fonts/special-elite-latin-400-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body>
+    <div class="sheet">
+      <header class="masthead">
+        <p class="brand">
+          <a href="../"
+            ><img src="../icon.svg" alt="" width="28" height="28" /><span>Koloft</span></a
+          >
+        </p>
+        <nav class="contents" aria-label="Pages">
+          <a href="../">home</a>
+          <a href="../sessions/" aria-current="page">sessions</a>
+          <a href="../workbench/">workbench</a>
+          <a href="../agents/">agents</a>
+          <a href="../scheduled/">scheduled</a>
+          <a href="../accounts/">accounts</a>
+          <a href="../remote/">remote</a>
+          <a href="../discord/">discord</a>
+          <a href="../install/">install</a>
+        </nav>
+      </header>
+
+      <main>
+        <h1 class="title">Folders and their sessions</h1>
+
+        <figure class="shot is-narrow" style="--ar: 558 / 800">
+          <div class="frame">
+            <img
+              src="../img/a-sidebar.webp"
+              width="558"
+              height="800"
+              alt="The sidebar: the folder tidewatch with a branch sign, 2 behind, 7 open issues and 2 open pull requests, five sessions under it with their branch names, two of them with a red dot; below it the folder harbor-site with one session"
+            />
+            <span class="tape" aria-hidden="true"></span>
+          </div>
+          <figcaption>
+            two folders and their sessions. The bars on the left are the lights; the red dots mark
+            two sessions that need you. The 2 by the branch sign means tidewatch is two steps behind
+            the shared copy it came from (origin). The 7 and the 2 after it are its open issues and
+            pull requests.
+          </figcaption>
+        </figure>
+
+        <p>
+          Run a few agents for a week and you have dozens of old chats in many folders. Which one
+          fixed the login bug? Which one is waiting for you right now? Koloft puts every folder in
+          one list, with <mark class="hl">its sessions</mark> under it. You click a row to go back
+          to it.
+        </p>
+
+        <h2>Where the list comes from</h2>
+        <p>
+          Claude Code and Codex already keep every session in their own files. Koloft reads the
+          chats from there and keeps only a short list of which ones belong to Koloft. Add a folder
+          with <kbd>⇧⌘O</kbd> and its sessions show up under it.
+        </p>
+        <p>
+          A session you started in a plain terminal is not listed by itself. To bring it back,
+          right-click the folder and pick <code>Restore session…</code>.
+        </p>
+
+        <h2>Start and resume</h2>
+        <ul class="dash">
+          <li>
+            <kbd>⌘N</kbd> starts a new session. Pick the tool it uses by default in Settings ▸
+            Sessions.
+          </li>
+          <li>Click an old row to resume that session.</li>
+          <li>
+            About half an hour after a session goes quiet (its light turns dim green), its tab
+            closes by itself. It stays open while you look at it, while it still has a red dot, or
+            while a shell tab or an unsaved file is open in it. The row stays, so you can resume it.
+            A session marked Keep running never closes this way (see
+            <a href="#keep-running">below</a>).
+          </li>
+        </ul>
+        <p>A running session has a light on its row. A row with no light is not running.</p>
+        <div class="typed-table">
+          <table>
+            <thead>
+              <tr>
+                <th>light</th>
+                <th>what it means</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>orange</td>
+                <td>the agent is working</td>
+              </tr>
+              <tr>
+                <td>amber</td>
+                <td>it needs your OK</td>
+              </tr>
+              <tr>
+                <td>green</td>
+                <td>its turn is done</td>
+              </tr>
+              <tr>
+                <td>dim green</td>
+                <td>done a while ago, nothing new</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="red-dots">Red dots</h2>
+        <ul class="dash">
+          <li>
+            A small <mark class="hl">red dot</mark> after a session's name means it is calling you:
+            its turn is done, it waits for your OK, or it quit on its own. Hover the dot to see
+            which. It sits beside the light; it does not replace it.
+          </li>
+          <li>
+            Click the row and the dot goes. It is still there after you quit and reopen Koloft
+            (after a restart it always reads "turn done").
+          </li>
+          <li>
+            The number on the Dock icon counts these dots. Turn off Dock badge in Settings ▸
+            Notifications and the number goes, but the dots stay.
+          </li>
+          <li>A folded folder shows how many of its sessions are calling.</li>
+        </ul>
+
+        <h2 id="keep-running">Keep running</h2>
+        <figure class="shot is-narrow" style="--ar: 554 / 578">
+          <div class="frame">
+            <img
+              src="../img/p-keep-running.webp"
+              width="554"
+              height="578"
+              loading="lazy"
+              alt="The tidewatch sessions; the row Fix tide times near midnight has a small pin before its name"
+            />
+            <span class="tape" aria-hidden="true"></span>
+          </div>
+          <figcaption>the pin on a row marked Keep running</figcaption>
+        </figure>
+        <p>
+          Some sessions should always be there, like a helper you talk to all day. Right-click the
+          row and pick <code>Keep running</code>. A tick shows it is on, and a small pin sits on the
+          row. Each time Koloft opens, the session starts again in the background. It does not pull
+          you over to it.
+        </p>
+        <p>
+          If its worktree has changed, the session stays closed and Koloft says
+          <code>“…” needs you — its worktree changed. Click it to resume.</code> If its folder is
+          gone: <code>Could not start “…” — its folder is gone.</code> If it crashes while Koloft is
+          open, Koloft does not start it again.
+        </p>
+        <ul class="dash">
+          <li>Claude: after <code>/clear</code>, the mark moves to the new chat in that tab.</li>
+          <li>Codex: when the session starts a new thread, the mark moves to it.</li>
+          <li>
+            Remote Claude: if the <code>claude</code> is still running in <code>tmux</code> (a
+            program that keeps a terminal alive after you disconnect) on the machine, Koloft joins
+            it; it never starts a second one. If it has gone, Koloft resumes it there.
+          </li>
+        </ul>
+
+        <h2>A tab is not a session</h2>
+        <p>
+          The tab is the terminal the agent runs in. The session is the chat inside it. Some things
+          swap the chat but keep the tab: <code>/clear</code>, a resume, or a restart
+          (<kbd>⇧⌘R</kbd>). The Workbench belongs to the tab, so your open files, web pages and
+          shell stay put.
+        </p>
+
+        <pre
+          class="ascii"
+          role="img"
+          aria-label="One tab holds session A; after /clear it holds session B; the Workbench stays with the tab the whole time"
+        >
+ +-- one tab ------------------------------+
+ |                                         |
+ |  session A --/clear--> session B        |
+ |                                         |
+ |  Workbench: same files, pages, shell    |
+ +-----------------------------------------+
+</pre>
+
+        <h2>Worktree sessions</h2>
+        <p>
+          Two agents in one folder can step on each other's files.
+          <kbd>⇧⌘N</kbd> starts a session in <mark class="hl">its own git worktree</mark>, a second
+          copy of the repo on its own branch.
+        </p>
+        <ul class="dash">
+          <li>
+            Claude Code removes its worktree when it exits, if nothing in it changed. If something
+            did, Claude asks you: keep it or remove it.
+          </li>
+          <li>
+            A Codex worktree stays until you remove it yourself, or until the session is closed with
+            <code>koloft session close</code> (see <a href="../agents/">agents</a>).
+          </li>
+        </ul>
+
+        <h2 id="the-sidebar">The sidebar</h2>
+        <p>
+          Drag a folder's name up or down to reorder the list. The number keys 1 to 9 in the
+          <kbd>⌘N</kbd> folder picker follow the new order.
+        </p>
+        <p>
+          <kbd>⌘B</kbd>, or the button right of the window's traffic lights, hides the whole
+          sidebar; the button then shows how many sessions are calling you. Press it again and the
+          sidebar comes back as wide as it was. It stays hidden after a restart, if you left it
+          hidden.
+        </p>
+
+        <h2>Right-click a folder</h2>
+        <ul class="dash">
+          <li>
+            New session <kbd>⌘N</kbd> — or, when both tools are on in Settings ▸ Sessions, New
+            Claude session and New Codex session, the default one with <kbd>⌘N</kbd>
+          </li>
+          <li>New worktree session… <kbd>⇧⌘N</kbd> <span class="why">(in a git folder)</span></li>
+          <li>
+            Restore session… <span class="why">— bring back a session that is not listed</span>
+          </li>
+          <li>
+            <a href="../scheduled/">Scheduled jobs…</a>
+            <span class="why">— sessions on a timer</span>
+          </li>
+          <li>
+            Bind Discord channel…
+            <span class="why"
+              >— give this folder its own butler (see <a href="../discord/">discord</a>)</span
+            >
+          </li>
+          <li>Remove workspace <span class="why">— take the folder off the list</span></li>
+        </ul>
+
+        <h2>Right-click a session</h2>
+        <figure class="shot" style="--ar: 912 / 290; --w: min(456px, 100cqw)">
+          <div class="frame">
+            <img
+              src="../img/p-keep-running-menu2.webp"
+              width="912"
+              height="290"
+              loading="lazy"
+              alt="The row Add storm alerts endpoint with its right-click menu open: Reveal in Finder, Copy session ID, Keep running, Close"
+            />
+            <span class="tape" aria-hidden="true"></span>
+          </div>
+          <figcaption>the menu of a running session</figcaption>
+        </figure>
+        <ul class="dash">
+          <li>Resume ↩ <span class="why">(on a closed row)</span></li>
+          <li>
+            Reveal in Finder
+            <span class="why">— on a remote folder, Copy path (machine:/path) instead</span>
+          </li>
+          <li>Copy session ID</li>
+          <li><a href="#keep-running">Keep running</a></li>
+          <li>
+            Close <span class="why">(on a running row)</span>, or Remove from list
+            <span class="why">(on a closed row)</span>
+          </li>
+        </ul>
+
+        <h2>The git panel</h2>
+        <p>Hover a folder's branch sign and its git panel opens.</p>
+        <ul class="dash">
+          <li>
+            Behind and ahead: how far your main branch is from origin. When it is behind, the number
+            also shows by the branch sign.
+          </li>
+          <li>
+            <code class="nowrap">Pull · fast-forward</code> catches up; it never merges. Koloft
+            pulls only the main branch, and only when you have no uncommitted changes and nothing
+            you have not pushed yet.
+          </li>
+          <li><code>Fetch now</code> asks origin what is new.</li>
+          <li>
+            On github.com, with <code>gh</code> (GitHub's command-line tool) signed in: the open
+            issues and pull requests. Their two counts also sit after the branch sign (a count of 0
+            is not drawn).
+          </li>
+        </ul>
+        <figure class="shot" style="--ar: 740 / 612; --w: min(370px, 100cqw)">
+          <div class="frame">
+            <img
+              src="../img/o-branch-panel.webp"
+              width="740"
+              height="612"
+              loading="lazy"
+              alt="The git panel under the tidewatch folder: main · origin/main, fetched just now, 2 behind, 0 ahead, a note that Koloft only pulls into a clean tree, Pull · fast-forward greyed out, Fetch now, and GitHub · tidewatch-labs/tidewatch with 7 open issues and 2 open pull requests"
+            />
+            <span class="tape" aria-hidden="true"></span>
+          </div>
+          <figcaption>
+            the git panel. Pull is greyed out here, and the panel says why: Koloft only pulls into a
+            clean tree.
+          </figcaption>
+        </figure>
+        <p>
+          Koloft fetches by itself every five minutes, so the numbers stay fresh. Switch off
+          <code>Auto-fetch git remotes</code> in Settings ▸ Appearance to stop that;
+          <code>Fetch now</code> still works.
+        </p>
+        <p>
+          On a <a href="../remote/">remote folder</a> the panel shows only the GitHub part: the
+          issue and pull request counts, but no Pull, no Fetch now and no behind number.
+        </p>
+
+        <p class="next">next page -&gt; <a href="../workbench/">The Workbench</a></p>
+      </main>
+
+      <footer class="signoff">
+        <p>
+          <a href="https://github.com/superkoh/koloft">source</a> ·
+          <a href="https://github.com/superkoh/koloft-releases/releases">releases</a> ·
+          <a href="../changelog/">changelog</a> ·
+          <a href="https://github.com/superkoh/koloft/issues">issues</a> · GPL-3.0
+        </p>
+        <p class="fine">
+          Not made by or affiliated with Anthropic or OpenAI.<span
+            class="caret"
+            aria-hidden="true"
+          ></span>
+        </p>
+      </footer>
+    </div>
+
+    <script src="../script.js"></script>
+  </body>
+</html>
