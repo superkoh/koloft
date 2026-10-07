@@ -9,4 +9,5 @@
   <url><loc>__SITE_URL__/remote/</loc></url>
   <url><loc>__SITE_URL__/discord/</loc></url>
   <url><loc>__SITE_URL__/install/</loc></url>
+  <url><loc>__SITE_URL__/changelog/</loc></url>
 </urlset>
