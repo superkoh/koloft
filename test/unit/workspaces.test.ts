@@ -72,6 +72,23 @@ function latest(wsPath: string): WorkspaceRows {
   return entry
 }
 
+async function holdNextRescan(): Promise<() => void> {
+  let release!: () => void
+  const held = new Promise<void>((r) => (release = r))
+  const internals = mgr as unknown as {
+    worktreeEntries(p: string): Promise<unknown>
+    rescan(): Promise<void>
+  }
+  const real = internals.worktreeEntries.bind(mgr)
+  const spy = vi.spyOn(internals, 'worktreeEntries').mockImplementationOnce(async (p) => {
+    await held
+    return real(p)
+  })
+  void internals.rescan()
+  await vi.waitFor(() => expect(spy).toHaveBeenCalled())
+  return release
+}
+
 beforeEach(() => {
   root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-wsmgr-')))
   projectsRoot = path.join(root, 'projects')
@@ -184,19 +201,7 @@ describe('WorkspaceManager: move (the sidebar drag order)', () => {
   it('a scan already running when the move lands pushes its rows in the new order', async () => {
     mgr.start()
     await mgr.firstScan
-    let release!: () => void
-    const held = new Promise<void>((r) => (release = r))
-    const internals = mgr as unknown as {
-      worktreeEntries(p: string): Promise<unknown>
-      rescan(): Promise<void>
-    }
-    const real = internals.worktreeEntries.bind(mgr)
-    const spy = vi.spyOn(internals, 'worktreeEntries').mockImplementationOnce(async (p) => {
-      await held
-      return real(p)
-    })
-    void internals.rescan()
-    await vi.waitFor(() => expect(spy).toHaveBeenCalled())
+    const release = await holdNextRescan()
 
     mgr.move(plain, repo)
     const afterMove = pushed.length
@@ -653,19 +658,7 @@ describe('WorkspaceManager: working-set eviction (D1/D2)', () => {
     writeJsonl(repo, 'anchor-1')
     mgr.start()
     await mgr.firstScan
-    let release!: () => void
-    const held = new Promise<void>((r) => (release = r))
-    const internals = mgr as unknown as {
-      worktreeEntries(p: string): Promise<unknown>
-      rescan(): Promise<void>
-    }
-    const real = internals.worktreeEntries.bind(mgr)
-    const spy = vi.spyOn(internals, 'worktreeEntries').mockImplementationOnce(async (p) => {
-      await held
-      return real(p)
-    })
-    void internals.rescan()
-    await vi.waitFor(() => expect(spy).toHaveBeenCalled())
+    const release = await holdNextRescan()
 
     bindings.set('fresh-2', 'tab-2')
     mgr.onSessionBound('fresh-2')
