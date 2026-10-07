@@ -25,6 +25,7 @@ interface RegistryEntry {
   procStart: string
   name?: string
   messagingSocketPath?: string
+  status?: string
 }
 
 // CC§11
@@ -44,6 +45,7 @@ function readRegistry(dir: string): Map<string, RegistryEntry[]> {
       procStart?: unknown
       name?: unknown
       messagingSocketPath?: unknown
+      status?: unknown
     }
     try {
       entry = JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8'))
@@ -60,7 +62,8 @@ function readRegistry(dir: string): Map<string, RegistryEntry[]> {
       messagingSocketPath:
         typeof entry.messagingSocketPath === 'string' && entry.messagingSocketPath
           ? entry.messagingSocketPath
-          : undefined
+          : undefined,
+      status: typeof entry.status === 'string' ? entry.status : undefined
     })
     bySession.set(entry.sessionId, entries)
   }
@@ -79,12 +82,20 @@ async function liveEntry(
   return null
 }
 
+function liveEntryOf(
+  sessionId: string,
+  dir: string,
+  startOf: typeof processStartUtc
+): Promise<RegistryEntry | null> {
+  return liveEntry(readRegistry(dir).get(sessionId), startOf)
+}
+
 export async function runningClaudePid(
   sessionId: string,
   dir = REGISTRY_DIR,
   startOf = processStartUtc
 ): Promise<number | null> {
-  return (await liveEntry(readRegistry(dir).get(sessionId), startOf))?.pid ?? null
+  return (await liveEntryOf(sessionId, dir, startOf))?.pid ?? null
 }
 
 export async function messagingSocketOf(
@@ -92,7 +103,17 @@ export async function messagingSocketOf(
   dir = REGISTRY_DIR,
   startOf = processStartUtc
 ): Promise<string | null> {
-  return (await liveEntry(readRegistry(dir).get(sessionId), startOf))?.messagingSocketPath ?? null
+  return (await liveEntryOf(sessionId, dir, startOf))?.messagingSocketPath ?? null
+}
+
+// CC§11
+export async function claudeShowsAPanel(
+  sessionId: string,
+  dir = REGISTRY_DIR,
+  startOf = processStartUtc
+): Promise<boolean | undefined> {
+  const status = (await liveEntryOf(sessionId, dir, startOf))?.status
+  return status === undefined ? undefined : status === 'waiting'
 }
 
 export function whenMessagingSocket(

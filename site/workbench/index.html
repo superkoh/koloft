@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The Workbench — Koloft</title>
+    <meta
+      name="description"
+      content="Each Koloft session tab gets a Workbench beside it: the files the session changed, a file browser, web tabs, a shell, and one plain-text note per folder."
+    />
+    <meta name="theme-color" content="#f6f1e6" />
+    <link rel="canonical" href="__SITE_URL__/workbench/" />
+    <link rel="icon" href="../favicon.png" type="image/png" sizes="32x32" />
+    <link rel="icon" href="../icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Koloft" />
+    <meta property="og:title" content="The Workbench — Koloft" />
+    <meta
+      property="og:description"
+      content="Each Koloft session tab gets a Workbench beside it: the files the session changed, a file browser, web tabs, a shell, and one plain-text note per folder."
+    />
+    <meta property="og:url" content="__SITE_URL__/workbench/" />
+    <meta property="og:image" content="__SITE_URL__/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content='Koloft on ruled paper: its icon, the line "run and manage Claude Code and Codex on your Mac", and a crop of a session with its Workbench'
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="The Workbench — Koloft" />
+    <meta
+      name="twitter:description"
+      content="Each Koloft session tab gets a Workbench beside it: the files the session changed, a file browser, web tabs, a shell, and one plain-text note per folder."
+    />
+    <meta name="twitter:image" content="__SITE_URL__/og.png" />
+    <link
+      rel="preload"
+      href="../fonts/special-elite-latin-400-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body>
+    <div class="sheet">
+      <header class="masthead">
+        <p class="brand">
+          <a href="../"
+            ><img src="../icon.svg" alt="" width="28" height="28" /><span>Koloft</span></a
+          >
+        </p>
+        <nav class="contents" aria-label="Pages">
+          <a href="../">home</a>
+          <a href="../sessions/">sessions</a>
+          <a href="../workbench/" aria-current="page">workbench</a>
+          <a href="../agents/">agents</a>
+          <a href="../scheduled/">scheduled</a>
+          <a href="../accounts/">accounts</a>
+          <a href="../remote/">remote</a>
+          <a href="../discord/">discord</a>
+          <a href="../install/">install</a>
+        </nav>
+      </header>
+
+      <main>
+        <h1 class="title">The Workbench</h1>
+
+        <p>
+          An agent edits files, starts a server, tells you to look at a page. In a plain terminal
+          you open a second window for each of those, and lose track of which belongs to which chat.
+          In Koloft every session tab has a Workbench beside it. The agent's own terminal stays
+          <mark class="hl">untouched</mark> next to it.
+        </p>
+        <p>
+          The Workbench does not jump around while the agent works. Nothing follows the agent's
+          writes by itself. A file opens when you click it, or when the agent asks for it on purpose
+          (see <a href="../agents/">agents</a>). <kbd>⌘⏎</kbd> makes the Workbench full width and
+          back.
+        </p>
+
+        <h2>Folded down</h2>
+        <figure class="shot is-narrow" style="--ar: 572 / 350">
+          <div class="frame">
+            <img
+              src="../img/n-preview-card.webp"
+              width="572"
+              height="350"
+              alt="The folded Workbench card: 6 files, +7 −2, and under Docs three Markdown files: release-0.5.md, storm-alerts.md and NOTES.md"
+            />
+            <span class="tape" aria-hidden="true"></span>
+          </div>
+          <figcaption>the card you see with the Workbench folded</figcaption>
+        </figure>
+        <p>
+          <kbd>⇧⌘B</kbd> folds the Workbench down to a small card beside the terminal: how many
+          files this session changed, and the Markdown or HTML files it wrote. Click the diff line
+          to open Changes, a file to open it.
+        </p>
+        <ul class="dash">
+          <li>
+            Files: <code>N files</code> with the lines added and removed, or
+            <code>No changes</code>.
+          </li>
+          <li>
+            Docs: the Markdown and HTML files the agent wrote, or opened for you with
+            <code>koloft open</code>, newest first, plus the file you have open right now. The
+            agent's own notes to itself, such as <code>CLAUDE.md</code>, <code>AGENTS.md</code> and
+            its skills, are left out.
+          </li>
+          <li>
+            A Markdown file opens in Browse, shown the way it looks. An HTML file opens as a web
+            tab.
+          </li>
+          <li>When the window is too narrow for the card and the terminal both, the card hides.</li>
+        </ul>
+        <p>
+          A Codex session gets the same card. On a <a href="../remote/">remote folder</a> the line
+          count catches up at most every ten seconds, and an HTML file opens as its source, not as a
+          page.
+        </p>
+
+        <h2>Files ▸ Changes</h2>
+        <p>
+          The files this session touched, each with its diff right there. You read what the agent
+          did without typing <code>git diff</code>. The <code>base</code> switch picks what to
+          compare with: changes since the branch started, or only the ones not committed yet.
+        </p>
+
+        <figure class="shot" style="--ar: 1322 / 792; --ar-phone: 756 / 1292">
+          <div class="frame">
+            <picture>
+              <source
+                media="(max-width: 760px)"
+                srcset="../img/b-changes-pane-phone.webp"
+                width="756"
+                height="1292"
+              />
+              <img
+                src="../img/b-changes.webp"
+                width="1322"
+                height="792"
+                loading="lazy"
+                alt="The Changes list: four files the session touched on the left, and the diffs of forecast.ts and server.ts on the right, added lines in green and removed lines in red"
+              />
+            </picture>
+            <span class="tape" aria-hidden="true"></span>
+          </div>
+          <figcaption>
+            the four files this session touched, with every diff in one scroll; the one you click is
+            scrolled to<span class="phone-only"> (on a phone: the diff pane only)</span>
+          </figcaption>
+        </figure>
+
+        <h2>Files ▸ Browse</h2>
+        <p>
+          The whole folder as a tree. A switch shows the files git ignores too. Once a Claude
+          session writes to its scratchpad (its own folder for working files), that folder shows
+          here too, on a remote machine as well.
+        </p>
+
+        <figure class="shot" style="--ar: 1322 / 792; --ar-phone: 756 / 870">
+          <div class="frame">
+            <picture>
+              <source
+                media="(max-width: 760px)"
+                srcset="../img/c-browse-pane-phone.webp"
+                width="756"
+                height="870"
+              />
+              <img
+                src="../img/c-browse.webp"
+                width="1322"
+                height="792"
+                loading="lazy"
+                alt="The Browse tree of the tidewatch folder on the left, and README.md shown as a rendered page on the right"
+              />
+            </picture>
+            <span class="tape" aria-hidden="true"></span>
+          </div>
+          <figcaption>
+            the folder tree, with README.md open as a rendered page<span class="phone-only">
+              (on a phone: the rendered README only)</span
+            >
+          </figcaption>
+        </figure>
+
+        <h2>File tabs</h2>
+        <ul class="dash">
+          <li>
+            Markdown, images and PDF, shown the way they look. An HTML file opens as a web tab.
+          </li>
+          <li>the diff, or the plain source</li>
+          <li>
+            an editor: <kbd>⌘S</kbd> saves. If the file changed on disk meanwhile, it will not
+            quietly write over it.
+          </li>
+        </ul>
+
+        <h2>Web tabs</h2>
+        <p>
+          A real browser, not a preview. Logins stay, downloads work, popups open, and Chrome
+          extensions run. When the agent runs <code>open &lt;url&gt;</code>, the page lands as a tab
+          in the background with an unread dot. It does not pull you away from what you are doing.
+          The page is not loaded until you click it. Eight tabs per session; a ninth pushes out the
+          one you used longest ago.
+        </p>
+        <p>
+          Typing in the address bar suggests this project's pages first, the ones you visit most on
+          top (up to six).
+        </p>
+
+        <figure class="shot" style="--ar: 1322 / 792; --ar-phone: 776 / 960">
+          <div class="frame">
+            <picture>
+              <source
+                media="(max-width: 760px)"
+                srcset="../img/d-web-tab-pane-phone.webp"
+                width="776"
+                height="960"
+              />
+              <img
+                src="../img/d-web-tab.webp"
+                width="1322"
+                height="792"
+                loading="lazy"
+                alt="A web tab in the Workbench showing a local API docs page at localhost:4173, with an address bar and back, forward and reload buttons"
+              />
+            </picture>
+            <span class="tape" aria-hidden="true"></span>
+          </div>
+          <figcaption>
+            the project's own docs page, served on localhost, in a web tab<span class="phone-only">
+              (on a phone: the page only)</span
+            >
+          </figcaption>
+        </figure>
+
+        <h2>Terminal tabs</h2>
+        <p>
+          While the session is running, <kbd>⌃`</kbd> opens a shell in its folder (up to eight). Run
+          a test or check git there, and leave the agent's terminal to the agent.
+        </p>
+
+        <figure class="shot" style="--ar: 1720 / 600; --ar-phone: 730 / 440">
+          <div class="frame">
+            <picture>
+              <source
+                media="(max-width: 760px)"
+                srcset="../img/e-terminal-tab-pane-phone.webp"
+                width="730"
+                height="440"
+              />
+              <img
+                src="../img/e-terminal-tab-short.webp"
+                width="1322"
+                height="461"
+                loading="lazy"
+                alt="A terminal tab named zsh in the tidewatch folder, after running ls and git log"
+              />
+            </picture>
+            <span class="tape" aria-hidden="true"></span>
+          </div>
+          <figcaption>
+            a shell of your own, in the same folder as the session<span class="phone-only">
+              (on a phone: the shell lines only)</span
+            >
+          </figcaption>
+        </figure>
+
+        <h2>The GitHub button</h2>
+        <p>
+          In a GitHub project a GitHub button sits next to Files. Click it to open the branch's pull
+          request in a web tab, or the repo page when there is none yet. Right-click it for more:
+        </p>
+        <ul class="dash">
+          <li>Open repository</li>
+          <li>Open pull requests</li>
+          <li>Open pull request #… <span class="why">(when there is one)</span></li>
+        </ul>
+
+        <h2>The note</h2>
+        <p>One plain-text note per folder. Sessions come and go; the note stays.</p>
+        <figure class="shot is-narrow" style="--ar: 530 / 600">
+          <div class="frame">
+            <img
+              src="../img/f-notes.webp"
+              width="530"
+              height="600"
+              loading="lazy"
+              alt="The note for the tidewatch folder: a short plain-text to-do list"
+            />
+            <span class="tape" aria-hidden="true"></span>
+          </div>
+          <figcaption>
+            the note sits under the folder's sessions. <kbd>⌥⌘N</kbd> jumps into it. It saves itself
+            as you type (<kbd>⌘S</kbd> saves right now).
+          </figcaption>
+        </figure>
+
+        <h2>What it won't do</h2>
+        <ul class="dash">
+          <li>
+            <s class="struck">follow the agent's writes</s>
+            <span class="why">(a file opens when you or the agent ask)</span>
+          </li>
+          <li>
+            <s class="struck">cover the agent's terminal</s>
+            <span class="why">(it sits beside it)</span>
+          </li>
+          <li>
+            <s class="struck">show a Codex scratchpad</s>
+            <span class="why">(only Claude sessions have one)</span>
+          </li>
+        </ul>
+
+        <p class="next">next page -&gt; <a href="../agents/">Agents can use Koloft too</a></p>
+      </main>
+
+      <footer class="signoff">
+        <p>
+          <a href="https://github.com/superkoh/koloft">source</a> ·
+          <a href="https://github.com/superkoh/koloft-releases/releases">releases</a> ·
+          <a href="../changelog/">changelog</a> ·
+          <a href="https://github.com/superkoh/koloft/issues">issues</a> · GPL-3.0
+        </p>
+        <p class="fine">
+          Not made by or affiliated with Anthropic or OpenAI.<span
+            class="caret"
+            aria-hidden="true"
+          ></span>
+        </p>
+      </footer>
+    </div>
+
+    <script src="../script.js"></script>
+  </body>
+</html>

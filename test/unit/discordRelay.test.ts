@@ -7,11 +7,15 @@ import type { DiscordMessage } from '../../src/main/discord/link'
 import type { CodexQuestion } from '../../src/main/discord/dialog'
 import {
   CODEX_INPUT_NOT_PROBED,
+  CONDUCTOR_ASKS,
   DiscordRelay,
   OFFLINE_REPLY,
   SHOWS_NO_DIALOG,
+  type Destination,
   type RelayDeps
 } from '../../src/main/discord/relay'
+import { typeKeys } from '../../src/main/typeKeys'
+import { waitingForAnswer } from '../../src/shared/slashCommands'
 
 const OWNER = '555'
 const CHANNEL = '222'
@@ -30,7 +34,8 @@ function message(id: string, authorId = OWNER, content = `said ${id}`): DiscordM
 function setup(
   over: Partial<ConductorBinding> = {},
   history: DiscordMessage[] = [],
-  more: Partial<RelayDeps> = {}
+  more: Partial<RelayDeps> = {},
+  dest: Partial<Destination> = {}
 ) {
   const bound: ConductorBinding = {
     id: 'b1',
@@ -47,9 +52,24 @@ function setup(
   const waiting: string[] = []
   const reactions: string[] = []
   const asksChanged: string[] = []
+  const commands: string[] = []
+  const conductor: Destination = {
+    id: bound.id,
+    name: 'The conductor',
+    conductor: true,
+    liveTab: () => TAB,
+    open: async () => TAB,
+    typeCommand: async (_t, command) => void commands.push(command),
+    seen: (id) => void last.push(id),
+    ...dest
+  }
   const deps: RelayDeps = {
     link: {
       post: async (_c, text, replyTo) => posts.push({ text, replyTo }),
+      card: async (_c, card) => {
+        posts.push({ text: [card.header, card.body, card.footer].filter(Boolean).join('\n') })
+        return []
+      },
       upload: async () => undefined,
       react: async (_c, id, emoji, on) => void reactions.push(`${id} ${on ? '+' : '-'}${emoji}`),
       messages: async (_c, after, limit) =>
@@ -59,17 +79,17 @@ function setup(
           .slice(0, limit)
     },
     download: async () => Buffer.from(''),
-    conductors: {
-      owner: () => OWNER,
-      bindings: () => [bound],
-      bindingOfChannel: (c) => (c === CHANNEL ? bound : undefined),
-      bindingOfTab: (t) => (t === TAB ? bound : undefined),
-      liveTab: () => TAB,
-      open: async () => ({ ok: true, tabId: TAB }),
-      setLastMessage: (_b, id) => {
-        last.push(id)
-      }
-    },
+    owner: () => OWNER,
+    destinationOf: (c) => (c === CHANNEL ? conductor : undefined),
+    channels: () => [
+      { channelId: CHANNEL, lastMessageId: bound.lastMessageId, seen: (id) => last.push(id) }
+    ],
+    conductorChannelOf: (t) => (t === TAB ? CHANNEL : undefined),
+    withButtons: (_t, view, card) => ({
+      ...card,
+      buttons: view.choices.map((c, n) => ({ label: c.label, style: c.style, id: `b${n}` }))
+    }),
+    remote: () => false,
     backendOf: () => 'claude',
     boundKey: () => 'session-1',
     status: (): SessionStatus => 'waiting',
@@ -81,7 +101,8 @@ function setup(
       return true
     },
     asksChanged: (t) => asksChanged.push(t),
-    write: (_t, data) => writes.push({ data, at: Date.now() }),
+    type: (_t, keys) => typeKeys((data) => writes.push({ data, at: Date.now() }), keys),
+    queueDrained: () => true,
     queue: async () => undefined,
     codexApproval: () => undefined,
     codexQuestion: () => undefined,
@@ -89,7 +110,17 @@ function setup(
     attachmentsDir: path.join(dir, 'attachments'),
     ...more
   }
-  return { relay: new DiscordRelay(deps), posts, writes, last, waiting, reactions, asksChanged }
+  return {
+    relay: new DiscordRelay(deps),
+    conductor,
+    posts,
+    writes,
+    last,
+    waiting,
+    reactions,
+    asksChanged,
+    commands
+  }
 }
 
 const HOOK = '4242'
@@ -184,6 +215,72 @@ describe('DiscordRelay: typing an owner message into a Claude conductor', () => 
     expect(writes).toEqual([])
   })
 
+  it('a message that starts with a slash is run as a command in the conductor, not handed to its model', async () => {
+    const { relay, writes, commands, reactions, last } = setup()
+    relay.onMessage(message('205', OWNER, '  /compact keep the plan '))
+    await vi.waitFor(() => expect(commands).toEqual(['/compact keep the plan']))
+    await vi.waitFor(() => expect(reactions).toEqual(['205 +✅']))
+    expect(writes).toEqual([])
+    expect(last).toEqual(['205'])
+  })
+
+  it('a slash message that comes with a file is an ordinary message', async () => {
+    const { relay, writes, commands } = setup()
+    relay.onMessage({
+      ...message('206', OWNER, '/look at this'),
+      attachments: [{ filename: 'a.txt', size: 1, url: 'http://x/a.txt' }]
+    })
+    await vi.waitFor(() => expect(writes).toHaveLength(2), { timeout: 3000 })
+    expect(writes[0].data).toMatch(/^\[Discord\] \/look at this/)
+    expect(commands).toEqual([])
+  })
+
+  it('a slash command sent while the conductor is busy shows ⏳ until it is typed, and holds later messages behind it', async () => {
+    let status: SessionStatus = 'working'
+    const typedCommands: string[] = []
+    const { relay, writes, reactions } = setup(
+      {},
+      [],
+      { status: () => status },
+      {
+        typeCommand: async (_t, command) => {
+          while (status === 'working') await new Promise((r) => setTimeout(r, 50))
+          typedCommands.push(command)
+        }
+      }
+    )
+    relay.onMessage(message('207', OWNER, '/clear'))
+    relay.onMessage(message('209', OWNER, 'then this'))
+    await new Promise((r) => setTimeout(r, 400))
+    expect(reactions).toEqual(['207 +⏳', '209 +⏳'])
+    expect(writes).toEqual([])
+    status = 'waiting'
+    await vi.waitFor(() => expect(typedCommands).toEqual(['/clear']))
+    await vi.waitFor(
+      () => expect(writes.map((w) => w.data)).toEqual(['[Discord] then this', '\r']),
+      {
+        timeout: 3000
+      }
+    )
+    expect(reactions.slice(0, 4)).toEqual(['207 +⏳', '209 +⏳', '207 -⏳', '207 +✅'])
+  })
+
+  // CC§14
+  it('a slash command while the conductor shows a question is not taken as the answer', async () => {
+    const { relay, posts, waiting, commands } = setup()
+    const askFile = hookFile(TAB, 'ask')
+    const watcher = await watchAsksOnceArmed(relay, waiting)
+    drop(askFile, QUESTION)
+    await vi.waitFor(() => expect(posts).toHaveLength(1))
+    relay.onMessage(message('208', OWNER, '/clear'))
+    await vi.waitFor(() =>
+      expect(posts.map((p) => p.text)).toContain(waitingForAnswer('The conductor', '/clear'))
+    )
+    expect(fs.existsSync(hookFile(TAB, 'answer'))).toBe(false)
+    expect(commands).toEqual([])
+    watcher?.close()
+  })
+
   // CC§14
   it('answers the conductor’s own open question with the next message, and holds a later message until the question’s file is gone, which alone wakes the wait', async () => {
     const wakes: (() => void)[] = []
@@ -200,7 +297,7 @@ describe('DiscordRelay: typing an owner message into a Claude conductor', () => 
     drop(askFile, QUESTION)
     await vi.waitFor(() =>
       expect(posts.map((p) => p.text)).toEqual([
-        '❓ Which?\n1. A\n2. B\n\nReply with a number or your own answer.'
+        `${CONDUCTOR_ASKS}\nWhich?\n1. A\n2. B\n-# Reply with a number or your own answer.`
       ])
     )
     relay.onMessage(message('301', OWNER, '2'))
@@ -249,7 +346,7 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
     drop(hookFile(MANAGED, 'ask'), QUESTION)
     await vi.waitFor(() => expect(waiting).toEqual([MANAGED]))
     expect(posts).toEqual([])
-    expect(relay.dialogDetail(MANAGED)).toBe('Which?\n1. A\n2. B')
+    expect(relay.dialog(MANAGED)?.text).toBe('Which?\n1. A\n2. B')
     expect(await relay.answerSession(MANAGED, '2')).toBeUndefined()
     expect(JSON.parse(fs.readFileSync(hookFile(MANAGED, 'answer'), 'utf8'))).toMatchObject({
       hookSpecificOutput: { decision: { updatedInput: { answers: { 'Which?': 'B' } } } }
@@ -267,7 +364,7 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
     ] as const) {
       fs.rmSync(hookFile(MANAGED, 'answer'), { force: true })
       drop(hookFile(MANAGED, 'ask'), BASH)
-      await vi.waitFor(() => expect(relay.dialogDetail(MANAGED)).toBeDefined())
+      await vi.waitFor(() => expect(relay.dialog(MANAGED)).toBeDefined())
       expect(await relay.answerSession(MANAGED, reply)).toBeUndefined()
       expect(
         JSON.parse(fs.readFileSync(hookFile(MANAGED, 'answer'), 'utf8')).hookSpecificOutput.decision
@@ -283,14 +380,14 @@ describe('DiscordRelay: a dialog of a session a conductor looks after', () => {
     const { relay, waiting } = setup()
     const watcher = await watchAsksOnceArmed(relay, waiting)
     drop(hookFile(MANAGED, 'ask', '1'), BASH)
-    await vi.waitFor(() => expect(relay.dialogDetail(MANAGED)).toContain('rm -rf build'))
+    await vi.waitFor(() => expect(relay.dialog(MANAGED)?.text).toContain('rm -rf build'))
     const next = { tool_name: 'Bash', tool_input: { command: 'make' } }
     drop(hookFile(MANAGED, 'ask', '2'), next)
     await vi.waitFor(() => expect(fs.existsSync(hookFile(MANAGED, 'answer', '1'))).toBe(true))
     expect(JSON.parse(fs.readFileSync(hookFile(MANAGED, 'answer', '1'), 'utf8'))).toEqual({})
     relay.toolDone(MANAGED, { name: 'Bash', input: BASH.tool_input })
     expect(fs.existsSync(hookFile(MANAGED, 'answer', '2'))).toBe(false)
-    expect(relay.dialogDetail(MANAGED)).toBe('Bash asks to run:\nmake')
+    expect(relay.dialog(MANAGED)?.text).toBe('Bash asks to run:\nmake')
     watcher?.close()
   })
 
@@ -376,7 +473,7 @@ describe('DiscordRelay: a Codex conductor’s own question', () => {
     relay.codexAsked(TAB, question!)
     await vi.waitFor(() =>
       expect(posts.map((p) => p.text)).toEqual([
-        '❓ Which colour do you prefer?\n1. Red — Choose red.\n2. Green\n\nReply with the number or the name of one option.'
+        `${CONDUCTOR_ASKS}\nWhich colour do you prefer?\n1. Red — Choose red.\n2. Green\n-# Reply with the number or the name of one option.`
       ])
     )
 
@@ -398,10 +495,69 @@ describe('DiscordRelay: a Codex conductor’s own question', () => {
   })
 })
 
+describe('DiscordRelay: the owner writing in a session’s thread', () => {
+  const THREAD = '333'
+  const SESSION_TAB = 'pty-x-3'
+
+  function threadSetup(more: Partial<RelayDeps> = {}) {
+    const seen: string[] = []
+    const session: Destination = {
+      id: `thread:${THREAD}`,
+      name: 'fix-login',
+      conductor: false,
+      liveTab: () => SESSION_TAB,
+      open: async () => SESSION_TAB,
+      typeCommand: async () => undefined,
+      seen: (id) => void seen.push(id)
+    }
+    const made = setup({}, [], {
+      destinationOf: (c) => (c === THREAD ? session : undefined),
+      ...more
+    })
+    return { ...made, seen }
+  }
+  const inThread = (id: string, content: string): DiscordMessage => ({
+    ...message(id, OWNER, content),
+    channelId: THREAD
+  })
+
+  it('is typed into that session as the owner wrote it, with no [Discord] mark, and gets ✅', async () => {
+    const { relay, writes, reactions, seen } = threadSetup()
+    relay.onMessage(inThread('601', 'use plan B'))
+    await vi.waitFor(() => expect(writes.map((w) => w.data)).toEqual(['use plan B', '\r']), {
+      timeout: 3000
+    })
+    await vi.waitFor(() => expect(reactions).toContain('601 +✅'))
+    expect(seen).toEqual(['601'])
+  })
+
+  // CC§14
+  it('answers the question that session shows, instead of being typed', async () => {
+    const { relay, writes, reactions } = threadSetup({ status: () => 'approval' })
+    relay.onAsk(SESSION_TAB, QUESTION)
+    relay.onMessage(inThread('602', '2'))
+    await vi.waitFor(() => expect(reactions).toContain('602 +✅'))
+    expect(writes.map((w) => w.data)).toEqual(['2'])
+  })
+
+  it('a file sent to a session on another machine is named, not passed in as a path it cannot open', async () => {
+    const { relay, writes } = threadSetup({ remote: () => true })
+    relay.onMessage({
+      ...inThread('603', 'see this'),
+      attachments: [{ filename: 'shot.png', size: 1, url: 'http://x/shot.png' }]
+    })
+    await vi.waitFor(() =>
+      expect(writes[0]?.data).toBe(
+        'see this (shot.png was not passed in: this session runs on another machine.)'
+      )
+    )
+  })
+})
+
 describe('DiscordRelay: Koloft telling a conductor something', () => {
   it('goes the way an owner message does: typed, then Enter', async () => {
-    const { relay, writes } = setup()
-    relay.tell('b1', '[Koloft] Could not deliver to fix-login: it closed.')
+    const { relay, writes, conductor } = setup()
+    relay.tell(conductor, '[Koloft] Could not deliver to fix-login: it closed.')
     await vi.waitFor(() =>
       expect(writes.map((w) => w.data)).toEqual([
         '[Koloft] Could not deliver to fix-login: it closed.',

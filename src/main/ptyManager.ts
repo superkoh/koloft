@@ -4,8 +4,9 @@ import os from 'os'
 import type { TabKind } from '@shared/types'
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { OscCwdParser } from './oscCwd'
-import { codexEnvironment, sleep } from './codexTransport'
+import { codexEnvironment } from './codexTransport'
 import { userShell } from './userShell'
+import { typeKeys } from './typeKeys'
 
 export interface PtyHandle {
   id: string
@@ -17,6 +18,7 @@ export interface PtyHandle {
   resumeSessionId?: string
   ownerTabId?: string
   resized?: (id: string, cols: number, rows: number) => void
+  startedAt: number
 }
 
 interface CreateArgs {
@@ -42,16 +44,6 @@ interface CreateArgs {
 }
 
 const UTIL_TITLE_POLL_MS = 1500
-// CC§12
-const SUBMIT_AFTER_TEXT_MS = 300
-
-// CC§12
-export async function typeKeys(write: (data: string) => void, keys: string[]): Promise<void> {
-  for (const [i, key] of keys.entries()) {
-    if (i > 0) await sleep(SUBMIT_AFTER_TEXT_MS)
-    write(key)
-  }
-}
 
 const SETUP_AFTER_RC_FILES_MS = 600
 const LAUNCH_AFTER_PATH_FIXED_MS = 1600
@@ -74,6 +66,7 @@ export class PtyManager extends EventEmitter {
 
   private ptys = new Map<string, PtyHandle>()
   private readyWaiters = new Map<string, Set<() => void>>()
+  private typing = new Map<string, Promise<void>>()
   private counter = 0
   private instanceTag = process.pid.toString(36)
 
@@ -188,7 +181,8 @@ export class PtyManager extends EventEmitter {
       util: args.util === true,
       resumeSessionId: args.resumeSessionId,
       ownerTabId: args.ownerTabId,
-      resized: args.resized
+      resized: args.resized,
+      startedAt: Date.now()
     }
     this.ptys.set(id, handle)
 
@@ -243,6 +237,23 @@ export class PtyManager extends EventEmitter {
 
   write(id: string, data: string): void {
     this.ptys.get(id)?.proc.write(data)
+  }
+
+  exclusive<T>(id: string, typing: () => Promise<T>): Promise<T> {
+    const turn = (this.typing.get(id) ?? Promise.resolve()).then(typing)
+    const done = turn.then(
+      () => undefined,
+      () => undefined
+    )
+    this.typing.set(id, done)
+    void done.then(() => {
+      if (this.typing.get(id) === done) this.typing.delete(id)
+    })
+    return turn
+  }
+
+  type(id: string, keys: string[]): Promise<void> {
+    return this.exclusive(id, () => typeKeys((data) => this.write(id, data), keys))
   }
 
   whenReady(id: string, ready: () => boolean, ms: number): Promise<boolean> {

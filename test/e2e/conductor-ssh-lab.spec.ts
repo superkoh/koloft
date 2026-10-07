@@ -15,7 +15,7 @@ import {
   stopSshLab,
   type SshLab
 } from './helpers/docker'
-import { startFakeDiscord, type FakeDiscord } from './helpers/fakeDiscord'
+import { startFakeDiscord, type FakeDiscord, type FakePost } from './helpers/fakeDiscord'
 
 function claudeTokenFromKeychain(): string {
   const account = process.env.KOLOFT_SMOKE_ACCOUNT
@@ -51,14 +51,19 @@ test.beforeAll(() =>
   test.skip(!dockerAvailable(), 'needs a running Docker (for example `colima start`)')
 )
 
+function heard(fake: FakeDiscord): FakePost[] {
+  const threads = fake.threads.filter((t) => t.parentId === CHANNEL).map((t) => t.id)
+  return fake.posted.filter((p) => p.channelId === CHANNEL || threads.includes(p.channelId))
+}
+
 function said(fake: FakeDiscord): string[] {
-  return fake.posted.filter((p) => p.channelId === CHANNEL).map((p) => p.content)
+  return heard(fake).map((p) => p.content)
 }
 
 function notices(fake: FakeDiscord): string[] {
   return said(fake)
-    .flatMap((p) => p.split('\n'))
-    .filter((l) => /^(🔔|❓|⏹|▶)/.test(l))
+    .map((p) => p.split('\n')[0])
+    .filter((l) => /^(🔔|❓|⏹)/.test(l))
 }
 
 function channelRow(dlg: Locator, name: string): Locator {
@@ -197,7 +202,7 @@ async function typeIntoRemote(page: Page, tabId: string, text: string): Promise<
 }
 
 test.describe('A conductor on this Mac looking after a Claude session on an SSH machine (Docker)', () => {
-  test('E-SSH-C1: the conductor types a message into the remote session and hears it finished; the session’s question reaches the channel whole, and koloft session answer presses the key that answers it', async ({
+  test('E-SSH-C1: the conductor types a message into the remote session and hears it finished in the session’s thread; the session’s question reaches the thread whole, and its button presses the key that answers it; the owner’s message in the thread is typed into the remote session and its reply comes back there', async ({
     env
   }) => {
     await withRemoteWorkspaceConductor(
@@ -222,14 +227,18 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
           ([id, line]) => window.api.terminal.write(id, line),
           [remote.tabId, '/ask Which colour?|Red|Green\r']
         )
-        await expect
-          .poll(() => said(fake).join('\n'), {
-            timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS
-          })
-          .toMatch(
-            /(^|\n)❓ .+ is waiting for you: Which colour\?\n1\. Red — The Red one\n2\. Green — The Green one(\n|$)/
+        const question = (): FakePost | undefined =>
+          heard(fake).find((p) =>
+            /^❓ .+ is waiting for you\.\nWhich colour\?\n1\. Red — The Red one\n2\. Green — The Green one\n/.test(
+              p.content
+            )
           )
-        fake.say(OWNER, `/koloft session answer ${remote.sessionId} 2`)
+        await expect
+          .poll(question, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+          .toBeTruthy()
+        const thread = question()!.channelId
+        expect(fake.threads.map((t) => t.id)).toContain(thread)
+        fake.press(OWNER, question()!.buttons![1], thread)
         await expect
           .poll(transcript, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
           .toContain('Picked: Green')
@@ -240,6 +249,39 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
             expect.stringMatching(/^❓ /),
             expect.stringMatching(/^🔔 .+ finished\.$/)
           ])
+
+        fake.say(OWNER, '[Discord] typed in the thread', { channelId: thread })
+        await expect
+          .poll(() => said(fake).join('\n'), {
+            timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS
+          })
+          .toContain('finished.\nAnswer to: [Discord] typed in the thread')
+      }
+    )
+  })
+
+  test('E-SSH-C3: the owner’s /run and /compact are typed into the remote session, and what it printed comes back through the mirror', async ({
+    env
+  }) => {
+    await withRemoteWorkspaceConductor(
+      env,
+      () => undefined,
+      async ({ page, fake }) => {
+        await startSessionIn(page, 'kt-key', { remote: true })
+        const remote = (await page.evaluate(() => window.api.sessions.list())).find(
+          (s) => s.alive && !s.conductor
+        )!
+        const ran = (): string[] => said(fake).filter((p) => p.startsWith('⌨️ '))
+
+        fake.interact(OWNER, 'run', { command: '/context', session: remote.sessionId })
+        await expect
+          .poll(ran, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+          .toEqual([expect.stringMatching(/ran \/context:\n## Context Usage/)])
+
+        fake.interact(OWNER, 'compact', { session: remote.sessionId })
+        await expect
+          .poll(() => ran().at(-1), { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+          .toMatch(/ran \/compact:\nCompacted/)
       }
     )
   })
@@ -251,7 +293,7 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
       !HAVE_LINUX_CLAUDE,
       'set KOLOFT_SMOKE_CLAUDE_LINUX (a Linux claude binary for the lab machine’s CPU) and KOLOFT_SMOKE_OAUTH_TOKEN or KOLOFT_SMOKE_ACCOUNT'
     )
-    test.setTimeout(4 * A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS + 180_000)
+    test.setTimeout(5 * A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS + 180_000)
     await withRemoteWorkspaceConductor(
       env,
       (lab) => useRealClaudeOnTheMachine(env, lab),
@@ -295,7 +337,7 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
           .poll(() => said(fake).join('\n'), {
             timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
           })
-          .toMatch(/(^|\n)❓ .+ is waiting for you: Which colour\?\n1\. Red.*\n2\. Green/)
+          .toMatch(/(^|\n)❓ .+ is waiting for you\.\nWhich colour\?\n1\. Red.*\n2\. Green/)
         fake.say(OWNER, `/koloft session answer ${remote.sessionId} 2`)
         await expect
           .poll(transcript, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS })
@@ -305,6 +347,19 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
             timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
           })
           .toBe(2)
+
+        fake.interact(OWNER, 'compact', { session: remote.sessionId })
+        await expect
+          .poll(
+            () =>
+              said(fake)
+                .filter((p) => p.startsWith('⌨️ '))
+                .at(-1),
+            {
+              timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
+            }
+          )
+          .toMatch(/ran \/compact:\nCompacted \(ctrl\+o to see full summary\)$/)
       }
     )
   })

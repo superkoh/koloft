@@ -1100,6 +1100,70 @@ Gateway (the live connection that pushes events):
   client to reconnect and resume; op 9 (invalid session) with `d: false` means start
   over with identify; 4007 and 4009 also mean the session cannot be resumed; a bot API
   call must send a `User-Agent: DiscordBot (<url>, <version>)` header.
+- **Slash commands (application commands)** — measured 2026-10-05 on the same private
+  server with the same bot, which was added with the `bot` scope only, and the owner's
+  Discord iOS app:
+  - `POST /applications/{app}/guilds/{guild}/commands` with `{name, description, type:
+    1, options}` answered 201; the command showed in the app's `/` list at once, so the
+    bot needed no new invite. `GET` on the same route lists them; `DELETE …/{id}` answered
+    204.
+  - Using it sent `INTERACTION_CREATE` on the existing Gateway connection, with the same
+    intents, and no Interactions Endpoint URL set: `type` 2 for the command, 4 for each
+    autocomplete keystroke, `channel_id`, `member.user.id` (the sender, in a server),
+    and `data.options` `[{name, value, type: 3, focused?}]`.
+  - `POST /interactions/{id}/{token}/callback` answered 204 for `{type: 8, data:
+    {choices}}` (the choices showed on the phone, within about 0.2 s) and for `{type: 5}`;
+    `PATCH /webhooks/{app}/{token}/messages/@original` and a follow-up `POST
+    /webhooks/{app}/{token}` with `flags: 64` (only the sender sees it) answered 200.
+  - Text typed in the box that starts with `/` but is not picked from the list, like
+    `/compact hello`, is sent as an ordinary message (`MESSAGE_CREATE`).
+  - From the docs, not measured: the first answer must come within 3 s; the token
+    works for 15 minutes; a guild can take at most 200 command creates a day; an app
+    with no answer shows "The application did not respond". That two Gateway
+    connections of one bot (two Koloft installs) both receive each interaction is
+    inferred, not checked.
+- **How messages look, and threads** — measured 2026-10-06 with the same bot, REST only,
+  on a server where the bot role was the one the invite gave (`101440`) and the owner
+  read each message in the Discord app:
+  - In a message's `content`, `#`, `##`, `###`, `-#` (small text), `-`/`1.` lists with
+    indented sub-lists, `>` quotes, fenced code with a language and `[text](url)` show
+    as formatting. `####`, a `| a | b |` table, `---`, `- [ ]`/`- [x]` and
+    `![alt](url)` show as the raw characters.
+  - A Components V2 message (`flags` with `1 << 15`, `components` holding a container,
+    type 17, with `accent_color`, text displays, type 10, a separator, type 14, and an
+    action row of buttons) answered 200 and showed with a coloured bar; `###` inside a
+    text display shows as a heading. One text display took 4000 characters and refused
+    4001 (`400`, code 50035, `BASE_TYPE_BAD_LENGTH`, "Must be between 1 and 4000 in
+    length"). A cap on all text displays of one message together was not measured.
+  - An embed (`embeds: [{author, color, description, footer}]`) also posted (200, the
+    embed came back), with `###` shown as a heading inside `description`.
+  - `flags` with `1 << 12` (no push) was accepted on both kinds.
+  - `POST /channels/{id}/messages/{message}/threads` with `{name, auto_archive_duration:
+    1440}` answered 201 with the thread, whose id is the message's; posting to
+    `/channels/{thread}/messages` answered 200 and showed inside the thread. The invite's
+    permissions name neither "create public threads" nor "send messages in threads";
+    that the server's default role gave them is inferred, not checked.
+  - `DELETE /channels/{thread}` answered 403 (50013, Missing Permissions); `PATCH
+    /channels/{thread}` with `{archived: true}` on the bot's own thread answered 200.
+- **Threads, buttons and tables on the owner's phone** — Koloft 0.32.1, 2026-10-06, the
+  owner reading the Discord iOS app, one case at a time:
+  - A card posted in a bot-made thread the owner was added to
+    (`PUT /channels/{thread}/thread-members/{user}`) made the locked phone ring.
+  - A button press reached Koloft as `INTERACTION_CREATE` type 3 with `data.custom_id`,
+    and callback type 7 replaced the card: the buttons went and the new text showed.
+  - A message the owner posted in an archived thread went through, and the thread came
+    back into the list.
+  - A fenced code block does not keep columns on a phone held upright: a table with
+    Chinese cells did not line up, and a 39-character-wide one wrapped and did not line
+    up either. A table written as a bold line per row with a `>` quote line per cell
+    read well.
+- **Renaming a thread** (`PATCH /channels/{thread}` with `{name}`), same bot, 2026-10-06:
+  on an archived thread it answered `400`, code 50083 "Thread is archived"; the third
+  name change within a few seconds answered `429` with `retry_after` 599.6 s, though
+  the first two had failed — failed attempts count. Discord's docs give the limit as two
+  name changes per ten minutes per channel. An `{archived: true}` call right after was
+  not limited. Once the ten minutes had passed, `{name}` on the bot's own unarchived
+  thread answered `200` with the new name (a Chinese name kept as sent).
 - Also from Discord's docs, not measured here: a message's `content` holds at most 2000
   characters; one message carries at most 10 files and one request at most 25 MiB; a
   bot's file may be at most 20 MiB (changelog 2025-09-03); adding or removing a reaction

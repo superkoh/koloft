@@ -1,4 +1,4 @@
-import type { ConductorBinding, DiscordSettings } from './types'
+import type { ConductorBinding, DiscordSettings, SessionThread } from './types'
 import { basename } from './preview'
 import { isAbsoluteOnHost, parseRemoteKey } from './remoteKey'
 import { backendIdOf } from './sessionBackend'
@@ -19,6 +19,10 @@ export function newerSnowflake(a: string, b: string): boolean {
 export function scopeName(scope: string): string {
   if (scope === GLOBAL_SCOPE) return 'Global'
   return basename(parseRemoteKey(scope)?.path ?? scope)
+}
+
+export function conductorName(scope: string): string {
+  return `${scopeName(scope)} conductor`
 }
 
 export function channelLabel(binding: Pick<ConductorBinding, 'channel'>): string {
@@ -48,10 +52,28 @@ function strings(raw: unknown): string[] {
   return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : []
 }
 
+function cleanThreads(raw: unknown): SessionThread[] {
+  if (!Array.isArray(raw)) return []
+  return raw.flatMap((t: unknown) => {
+    if (!isRecord(t) || !isDiscordId(t.threadId)) return []
+    const keys = strings(t.keys)
+    if (!keys.length) return []
+    return [
+      {
+        threadId: t.threadId,
+        keys,
+        ...(typeof t.name === 'string' ? { name: t.name } : {}),
+        ...(isDiscordId(t.lastMessageId) ? { lastMessageId: t.lastMessageId } : {})
+      }
+    ]
+  })
+}
+
 function cleanBinding(raw: unknown): ConductorBinding | null {
   if (!isRecord(raw)) return null
   const { id, scope, channel, lastSessionKey, lastMessageId } = raw
   const backend = backendIdOf(raw.backend)
+  const threads = cleanThreads(raw.threads)
   if (typeof id !== 'string' || !id || !backend) return null
   if (typeof scope !== 'string' || (scope !== GLOBAL_SCOPE && !isAbsoluteOnHost(scope))) return null
   if (
@@ -68,6 +90,7 @@ function cleanBinding(raw: unknown): ConductorBinding | null {
     channel: { guildId: channel.guildId, channelId: channel.channelId, name: channel.name },
     sessionIds: strings(raw.sessionIds),
     touched: strings(raw.touched),
+    ...(threads.length ? { threads } : {}),
     ...(typeof lastSessionKey === 'string' ? { lastSessionKey } : {}),
     ...(isDiscordId(lastMessageId) ? { lastMessageId } : {})
   }

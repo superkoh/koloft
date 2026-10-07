@@ -18,11 +18,12 @@ import path from 'path'
 import fs from 'fs'
 import os from 'os'
 import { pathToFileURL } from 'url'
-import { anotherLiveInstanceOwns, PtyManager, typeKeys } from './ptyManager'
+import { anotherLiveInstanceOwns, PtyManager } from './ptyManager'
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { FlowGate } from './flowControl'
 import { SessionTracker, type ToolCall } from './sessionTracker'
+import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
 import { SessionBackends } from './sessionBackends'
@@ -121,7 +122,7 @@ import { loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
 import { WorkspaceManager, type LiveSession } from './workspaces'
 import { sanitizeSessionWorkbench } from '@shared/workbenchState'
-import { dirExistsSync, gitProbes, type ResumeProbes } from './resumePlan'
+import { dirExistsSync, gitProbes, type GitOut, type ResumeProbes } from './resumePlan'
 import { ClaudeBackend, machineHookSettings, pickMachineAccount } from './backends/claude'
 import { codexBackend, trustCodexFolder } from './backends/codex'
 import { codexConfigFile } from './codexTrust'
@@ -190,6 +191,7 @@ import {
   BROWSER_PARTITION,
   DISCORD_OFF,
   PLACEHOLDER_SESSION_TITLE,
+  CODEX_PLACEHOLDER_TITLE,
   exitedAbnormally,
   isHttpUrl
 } from '@shared/types'
@@ -222,6 +224,8 @@ import type {
   BrowserCdpAttached,
   BrowserCdpOp,
   BrowserCdpOpResult,
+  ScreenAnswer,
+  ScreenRequest,
   BrowserOpenRequest,
   BrowserOverlayOpen,
   BrowserStripTarget,
@@ -231,9 +235,11 @@ import type {
   CreateTabResult,
   CronSaveInput,
   ConductorSaveInput,
+  ConductorBinding,
   ProbeErrorKind,
   LeftoverProcess,
   ResumePlan,
+  ProjectInfo,
   SessionInfo,
   AttentionEvent,
   AttentionSubject,
@@ -249,25 +255,45 @@ import type {
   HostId,
   WhatsNew
 } from '@shared/types'
-import { AgentRequests, BUILTIN_VERBS, refused, type AgentVerb } from './agentRequests'
+import { AgentRequests, BUILTIN_VERBS, errorText, refused, type AgentVerb } from './agentRequests'
 import { Conductors } from './discord/conductors'
 import { discordApiUrl, DiscordLink } from './discord/link'
 import { releaseLock, takeLock } from './discord/instanceLock'
-import { DiscordRelay } from './discord/relay'
+import { DiscordRelay, type Destination } from './discord/relay'
 import { Notices } from './discord/notices'
+import { SessionThreads } from './discord/threads'
+import { AskButtons } from './discord/buttons'
+import { SlashCommands, type SlashTarget } from './discord/slash'
+import { Interactions, SLASH_COMMANDS } from './discord/interactions'
+import { typeKeys } from './typeKeys'
+import { MYSELF } from '@shared/slashCommands'
 import {
-  approvalDetail,
-  questionText,
+  codexDialog,
   type CodexApproval,
-  type CodexQuestion
+  type CodexQuestion,
+  type DialogView
 } from './discord/dialog'
 import { sleep } from './codexTransport'
 import { discordVerb } from './agentDiscord'
-import { claudePeerNames, runningClaudePid, whenMessagingSocket } from './claudeSessionRegistry'
-import { isDiscordId, scopeName } from '@shared/conductors'
+import {
+  claudePeerNames,
+  claudeShowsAPanel,
+  runningClaudePid,
+  whenMessagingSocket
+} from './claudeSessionRegistry'
+import { conductorName, isDiscordId, scopeName } from '@shared/conductors'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
-import { sessionVerb, workspaceVerb, type ClosableSession, type Target } from './agentSessions'
+import {
+  sessionChoices,
+  sessionVerb,
+  targetIn,
+  workspaceVerb,
+  type ClosableSession,
+  type SessionScreen,
+  type SessionVerbDeps,
+  type Target
+} from './agentSessions'
 import { writeLine } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
 import { closingTree, removeTree, whatIsLeft } from './sessionClose'
@@ -303,13 +329,19 @@ const startedSessions = new StartedSessions(() =>
   path.join(app.getPath('userData'), 'started-sessions.json')
 )
 const sessionBackends = new SessionBackends({
-  turnEnded: (tabId, turn) => discordRelay?.turnEnded(tabId, turn),
+  turnEnded: (tabId, turn) => {
+    slash.turnEnded(tabId, turn)
+    discordRelay?.turnEnded(tabId, turn)
+    discordNotices?.turnEnded(tabId, turn.reply)
+  },
   prompted: consumeOutletDedupe,
   bound: (tabId, key) => {
     attention.bound(tabId, key, attentionCtx())
     cronRunner?.onBound(tabId, key)
     conductors?.onBound(tabId, key)
+    discordThreads?.bound(tabId, key)
     startedSessions.bound(tabId, key)
+    slash.bound(tabId, key)
     ptyMgr.wakeReady(tabId)
   },
   exited: (tabId, subject) => attention.onExited(tabId, attentionCtx(), subject),
@@ -324,6 +356,24 @@ sessionBackends.conductorOf = (id) => conductors?.conductorOf(id)
 function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
+
+const slash = new SlashCommands({
+  backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
+  keyOf: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
+  status: (tabId) => tracker.statusOf(tabId),
+  asking: (tabId) => tracker.statusOf(tabId) === 'approval' || !!discordRelay?.dialogOpen(tabId),
+  takesTyping: (tabId) => !!discordRelay?.takesCommand(tabId),
+  panelOpen: async (tabId) => {
+    const s = sessionOfTab(tabId)
+    if (s?.backendId !== 'claude' || !s.sessionId || tracker.remoteOf(tabId)) return undefined
+    return claudeShowsAPanel(s.sessionId)
+  },
+  ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
+  exclusive: (tabId, typing) => ptyMgr.exclusive(tabId, typing),
+  typeNow: (tabId, keys) => typeKeys((data) => ptyMgr.write(tabId, data), keys),
+  post: (channelId, text) => discordRelay?.say(channelId, text),
+  card: (channelId, card) => discordRelay?.card(channelId, card)
+})
 tracker.on('turn-ended', ({ tabId, turn }: { tabId: string; turn: Turn }) =>
   sessionBackends.observe(tabId, { type: 'turn-ended', turn })
 )
@@ -362,6 +412,17 @@ let uiActiveTabId: string | null = null
 let activeTabBeforeReload: string | null = null
 function sessionOfTab(tabId: string): SessionInfo | undefined {
   return allSessions().find((s) => s.tabId === tabId)
+}
+function sidebarTitle(s: SessionInfo): string | undefined {
+  const placeholder = s.title === PLACEHOLDER_SESSION_TITLE || s.title === CODEX_PLACEHOLDER_TITLE
+  return s.title && !placeholder ? s.title : undefined
+}
+function retitleDiscordThreads(sessions: SessionInfo[]): void {
+  if (!discordThreads) return
+  for (const s of sessions) {
+    const title = sidebarTitle(s)
+    if (title) discordThreads.retitle(s.tabId, title, sessionBackends.workspaceOfTab(s.tabId))
+  }
 }
 function markedSessionsOf(wsPath: string): string[] {
   return attention
@@ -551,6 +612,8 @@ let conductors: Conductors | null = null
 let discordLink: DiscordLink | null = null
 let discordRelay: DiscordRelay | null = null
 let discordNotices: Notices | null = null
+let discordThreads: SessionThreads | null = null
+let askButtons: AskButtons | null = null
 const answerable = new Set<string>()
 let answerableRegDir: string | undefined
 let discordConnected = false
@@ -685,6 +748,64 @@ const notesAndWorkbenchVerbs = workbenchVerbs({
   }
 })
 
+const sessionDeps: SessionVerbDeps = {
+  workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
+  allSessions: () => allSessions().filter((s) => !s.conductor),
+  pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
+  peerNames: () => claudePeerNames(),
+  launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
+  queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
+  startedSessions,
+  closable: closableSessions,
+  whatIsLeft: whatClosingWouldLose,
+  closeSoon: (target) =>
+    setTimeout(() => void closeSessionFully(target), CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
+  conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
+  sidebar: () => workspaceMgr?.rows() ?? [],
+  readTurns: (key, n) => sessionBackends.turns(key, n),
+  touch: (tabId, key) => conductors?.touch(tabId, key),
+  conductorOf: conductorTarget,
+  resume: async (row) => {
+    const resumed = await resumeRow(row)
+    if (!resumed.ok) throw new Error(resumed.error)
+    return resumed.tabId
+  },
+  ready: tabReady,
+  sendLine: async (tabId, line, ms) => {
+    const sessionId = sessionOfTab(tabId)?.sessionId
+    const socket = sessionId ? await whenMessagingSocket(sessionId, ms) : null
+    if (!socket) throw new Error('Koloft could not find where that session takes messages.')
+    await writeLine(socket, line)
+  },
+  typeInto: (tabId, text) => ptyMgr.type(tabId, [text, '\r']),
+  modeOf: (tabId) => sessionBackends.permissionClass(tabId),
+  stop: killTabFromMain,
+  answer: async (tabId, reply) => {
+    if (!discordRelay) return STILL_STARTING
+    return discordRelay.answerSession(tabId, reply)
+  },
+  undelivered: (callerTab, target, why) => {
+    const caller = conductors?.bindingOfTab(callerTab)
+    const b = caller ?? (target.bindingId ? conductors?.binding(target.bindingId) : undefined)
+    const text = `Could not deliver to ${target.name}: ${why}`
+    if (!b) return void sendToRenderer('cron:toast', text)
+    discordRelay?.say(b.channel.channelId, `⚠ ${text}`)
+    if (caller) discordRelay?.tell(conductorDestination(caller), `[Koloft] ${text}`)
+  },
+  started: (conductorTab, tabId, name, workspace, backend) => {
+    const b = conductors?.bindingOfTab(conductorTab)
+    if (!b) return
+    conductors?.touchWhenBound(conductorTab, tabId)
+    void discordThreads?.place(b, { tabId, name, workspace, backend }, true)
+  },
+  command: async (callerTab, target, text) => {
+    const b = conductors?.bindingOfTab(callerTab)
+    if (!b) throw new Error(STILL_STARTING)
+    return target.bindingId === b.id ? commandIntoConductor(b, text) : commandInto(b, target, text)
+  },
+  screen: screenOf
+}
+
 const agentRequests = new AgentRequests({
   verbs: {
     ...BUILTIN_VERBS,
@@ -698,57 +819,7 @@ const agentRequests = new AgentRequests({
     ),
     ...notesAndWorkbenchVerbs,
     note: unlessWorkspacelessConductor(notesAndWorkbenchVerbs.note),
-    session: sessionVerb({
-      workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
-      allSessions: () => allSessions().filter((s) => !s.conductor),
-      pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
-      peerNames: () => claudePeerNames(),
-      launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
-      queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
-      startedSessions,
-      closable: closableSessions,
-      whatIsLeft: whatClosingWouldLose,
-      closeSoon: (target) =>
-        setTimeout(() => void closeSessionFully(target), CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
-      conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
-      sidebar: () => workspaceMgr?.rows() ?? [],
-      readTurns: (key, n) => sessionBackends.turns(key, n),
-      touch: (tabId, key) => conductors?.touch(tabId, key),
-      conductorOf: conductorTarget,
-      resume: async (row) => {
-        const resumed = await resumeRow(row)
-        if (!resumed.ok) throw new Error(resumed.error)
-        return resumed.tabId
-      },
-      ready: tabReady,
-      sendLine: async (tabId, line, ms) => {
-        const sessionId = sessionOfTab(tabId)?.sessionId
-        const socket = sessionId ? await whenMessagingSocket(sessionId, ms) : null
-        if (!socket) throw new Error('Koloft could not find where that session takes messages.')
-        await writeLine(socket, line)
-      },
-      typeInto: (tabId, text) => typeKeys((data) => ptyMgr.write(tabId, data), [text, '\r']),
-      modeOf: (tabId) => sessionBackends.permissionClass(tabId),
-      stop: killTabFromMain,
-      answer: async (tabId, reply) => {
-        if (!discordRelay) return STILL_STARTING
-        return discordRelay.answerSession(tabId, reply)
-      },
-      undelivered: (callerTab, target, why) => {
-        const caller = conductors?.bindingOfTab(callerTab)
-        const b = caller ?? conductors?.bindings().find((x) => x.id === target.bindingId)
-        const text = `Could not deliver to ${target.name}: ${why}`
-        if (!b) return void sendToRenderer('cron:toast', text)
-        discordRelay?.say(b.channel.channelId, `⚠ ${text}`)
-        if (caller) discordRelay?.tell(caller.id, `[Koloft] ${text}`)
-      },
-      started: (conductorTab, tabId, name, workspace, backend) => {
-        const b = conductors?.bindingOfTab(conductorTab)
-        if (!b) return
-        conductors?.touchWhenBound(conductorTab, tabId)
-        discordNotices?.started(b.channel.channelId, name, workspace, backend)
-      }
-    }),
+    session: sessionVerb(sessionDeps),
     workspace: workspaceVerb({
       conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
       sidebar: () => workspaceMgr?.rows() ?? []
@@ -1172,6 +1243,7 @@ function rendererTeardown(): void {
 
 function createWindow(): void {
   const geo = restoredWindowGeometry()
+  windowOpenedAt = Date.now()
   mainWindow = new BrowserWindow({
     ...geo.bounds,
     minWidth: windowMinWidth(geo.bounds.width),
@@ -1382,9 +1454,12 @@ app.whenReady().then(() => {
     sendToRenderer('terminal:cwd', c)
   })
   ptyMgr.on('exit', (e) => {
+    slash.closed(e.id)
     discordNotices?.closed(e.id)
     discordNotices?.forget(e.id)
     discordRelay?.forget(e.id)
+    discordThreads?.forget(e.id)
+    askButtons?.forget(e.id)
     if (answerable.delete(e.id) && answerableRegDir) markAnswerable(answerableRegDir, e.id, false)
     loginPtys.delete(e.id)
     const codexAccount = codexSignInPtys.get(e.id)
@@ -1420,9 +1495,11 @@ app.whenReady().then(() => {
     sendToRenderer('terminal:exit', e)
   })
   tracker.on('update', (sessions: SessionInfo[]) => {
-    sendToRenderer('sessions:update', allSessions())
+    const all = allSessions()
+    sendToRenderer('sessions:update', all)
     workspaceMgr?.onTrackerUpdate()
     syncAnswerable()
+    retitleDiscordThreads(all)
     const seen = new Set<string>()
     for (const s of sessions) {
       seen.add(s.tabId)
@@ -1444,8 +1521,12 @@ app.whenReady().then(() => {
   tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) =>
     discordRelay?.toolDone(tabId, call)
   )
+  tracker.on('command-output', ({ tabId, ...output }: CommandOutput & { tabId: string }) =>
+    slash.output(tabId, output)
+  )
   tracker.on('status', (t: StatusEdge) => {
     ptyMgr.wakeReady(t.tabId)
+    slash.status(t.tabId, t.next)
     const conductor = !!conductors?.conductorOf(t.tabId)
     if (conductor && (t.next === 'approval' || t.next === 'waiting'))
       void codexAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
@@ -1463,8 +1544,10 @@ app.whenReady().then(() => {
       runtime: tracker,
       projectInfo: projectInfoFor,
       changed: () => {
-        sendToRenderer('sessions:update', allSessions())
+        const all = allSessions()
+        sendToRenderer('sessions:update', all)
         workspaceMgr?.onRemoteChanged()
+        retitleDiscordThreads(all)
       },
       replaced: (oldKey, newKey) => workspaceMgr?.moveResident(oldKey, newKey),
       events: (tabId, event) => sessionBackends.observe(tabId, event),
@@ -1610,7 +1693,11 @@ app.whenReady().then(() => {
       syncAnswerable()
     },
     onMessage: (m) => discordRelay?.onMessage(m),
-    onReady: () => void discordRelay?.catchUp(),
+    onInteraction: (i) => void interactions.handle(i),
+    onReady: () => {
+      void discordRelay?.catchUp()
+      registerSlashCommands()
+    },
     postFailed: (channelId, error) => {
       const name = conductors?.bindingOfChannel(channelId)?.channel.name ?? channelId
       const text = `Koloft could not post to #${name} in Discord: ${error}`
@@ -1624,6 +1711,67 @@ app.whenReady().then(() => {
   })
   discordLink = link
   const conductorsNow = conductors
+  const threads = new SessionThreads({ link, conductors: conductorsNow })
+  discordThreads = threads
+  const dialogOf = async (tabId: string): Promise<DialogView | undefined> => {
+    const ask = await codexAskOf(tabId)
+    return ask ? codexDialog(ask) : discordRelay?.dialog(tabId)
+  }
+  const buttons = new AskButtons({
+    owner: () => conductorsNow.owner(),
+    dialogText: async (tabId) => (await dialogOf(tabId))?.text,
+    answer: async (tabId, reply) => {
+      if (!discordRelay) return STILL_STARTING
+      return discordRelay.answerSession(tabId, reply)
+    },
+    respond: (i, body) => link.respond(i, body)
+  })
+  askButtons = buttons
+  const interactions = new Interactions({
+    owner: () => conductorsNow.owner(),
+    routeOf: (channelId) => conductorsNow.routeOf(channelId),
+    choices: (b) => [
+      { name: `This channel’s conductor (${scopeName(b.scope)})`, value: MYSELF },
+      ...sessionChoices(sessionDeps, b.scope)
+    ],
+    run: async (b, session, text) => {
+      if (session === MYSELF) return commandIntoConductor(b, text)
+      const found = await targetIn(sessionDeps, b.scope, session)
+      if (!found.ok) throw new Error(found.error)
+      return commandInto(b, found.value, text)
+    },
+    press: (i) => buttons.press(i),
+    respond: (i, body) => link.respond(i, body)
+  })
+  const sessionDestination = (b: ConductorBinding, threadId: string, key: string): Destination => {
+    const backend = identityOf(key).backendId
+    const liveTab = (): string | undefined => sessionBackends.get(backend).aliveTabFor(key)
+    const live = liveTab()
+    const shown = live && sessionOfTab(live)
+    const name =
+      (shown && sidebarTitle(shown)) ||
+      conductorsNow.threadOfChannel(threadId)?.thread.name ||
+      'The session'
+    return {
+      id: `thread:${threadId}`,
+      name,
+      conductor: false,
+      liveTab,
+      open: async () => {
+        const open = liveTab()
+        if (open) return open
+        const found = await targetIn(sessionDeps, b.scope, key)
+        if (!found.ok)
+          throw new Error(
+            `${name} is no longer in the session list (it was closed for good), so it cannot be woken.`
+          )
+        return found.value.tabId ?? found.value.open()
+      },
+      typeCommand: (tab, command) =>
+        slash.typeWhenIdle({ name, tabId: tab, conductor: false }, command, threadId),
+      seen: (id) => conductorsNow.setThreadLastMessage(threadId, id)
+    }
+  }
   const attachmentsDir = path.join(userData, 'discord-attachments')
   discordRelay = new DiscordRelay({
     link,
@@ -1632,7 +1780,30 @@ app.whenReady().then(() => {
       if (!res.ok) throw new Error(`Discord answered ${res.status} to an attachment download.`)
       return Buffer.from(await res.arrayBuffer())
     },
-    conductors: conductorsNow,
+    owner: () => conductorsNow.owner(),
+    destinationOf: (channelId) => {
+      const route = conductorsNow.routeOf(channelId)
+      if (!route) return undefined
+      return route.sessionKey
+        ? sessionDestination(route.binding, channelId, route.sessionKey)
+        : conductorDestination(route.binding)
+    },
+    channels: () =>
+      conductorsNow.bindings().flatMap((b) => [
+        {
+          channelId: b.channel.channelId,
+          lastMessageId: b.lastMessageId,
+          seen: (id: string) => conductorsNow.setLastMessage(b.id, id)
+        },
+        ...(b.threads ?? []).map((t) => ({
+          channelId: t.threadId,
+          lastMessageId: t.lastMessageId,
+          seen: (id: string) => conductorsNow.setThreadLastMessage(t.threadId, id)
+        }))
+      ]),
+    conductorChannelOf: (tabId) => conductorsNow.bindingOfTab(tabId)?.channel.channelId,
+    withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
+    remote: (tabId) => !!tracker.remoteOf(tabId),
     backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
     boundKey: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
     status: (tabId) => tracker.statusOf(tabId),
@@ -1641,7 +1812,8 @@ app.whenReady().then(() => {
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive,
     ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
     asksChanged: (tabId) => ptyMgr.wakeReady(tabId),
-    write: (tabId, data) => ptyMgr.write(tabId, data),
+    type: (tabId, keys) => ptyMgr.type(tabId, keys),
+    queueDrained: (tabId) => codexSessions?.queueDrained(tabId) ?? true,
     queue: async (tabId, text, clientId) => {
       if (!codexSessions) throw new Error(codexStartupError ?? 'Codex is not available.')
       await codexSessions.queueMessage(tabId, text, clientId)
@@ -1657,28 +1829,33 @@ app.whenReady().then(() => {
   setInterval(pruneAttachments, ATTACHMENTS_PRUNED_EVERY_MS).unref()
   discordNotices = new Notices({
     bindings: () => conductorsNow.bindings(),
-    post: (channelId, text) => discordRelay?.say(channelId, text),
+    place: (b, subject) => threads.place(b, subject),
+    hasThread: (key) => threads.hasThread(key),
+    card: (channelId, card) => discordRelay?.card(channelId, card),
+    archive: (threadId) => threads.archive(threadId),
+    withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
     subject: (tabId) => {
       const s = sessionOfTab(tabId)
       return s?.sessionId
         ? {
+            tabId,
             key: s.sessionId,
             name: s.title,
+            backend: s.backendId,
             workspace: sessionBackends.workspaceOfTab(tabId),
             conductor: s.conductor
           }
         : undefined
     },
-    peerName: async (tabId) => {
+    shownName: async (tabId) => {
       const s = sessionOfTab(tabId)
+      const title = s && sidebarTitle(s)
+      if (title) return title
       return s?.backendId === 'claude' && s.sessionId ? claudePeerNames()(s.sessionId) : null
     },
     awaitsInput: (tabId) => tracker.awaitsInput(tabId),
-    detail: async (tabId) => {
-      const ask = await codexAskOf(tabId)
-      if (!ask) return discordRelay?.dialogDetail(tabId)
-      return 'options' in ask ? questionText(ask) : approvalDetail(ask)
-    }
+    commandRunning: (tabId) => slash.running(tabId),
+    dialog: dialogOf
   })
   tracker.dialogsWatched = (tabId) =>
     !!conductorsNow.conductorOf(tabId) ||
@@ -1746,19 +1923,22 @@ app.whenReady().then(() => {
     dirExists: (p) => hosts.of(p).dirExists(p),
     gitDirExists: (root) => hosts.of(root).dirExists(`${root}/.git`),
     worktreeDirExists: (root, name) => hosts.of(root).dirExists(`${worktreeHomeOf(root)}/${name}`),
-    branchExists: (root, branch) =>
-      gitProbes((dir, args) => hosts.of(dir).gitOut(dir, args)).branchExists(root, branch),
+    branchExists: (root, branch) => gitProbes(hostGitOut).branchExists(root, branch),
     countRunFolders,
     accountUsable: (backend) => sessionBackends.get(backend).accountUsable(),
     trusted: (wsPath, backend) => sessionBackends.get(backend).trustsFolder(wsPath),
     ready: () => rendererReady && BrowserWindow.getAllWindows().length > 0,
     launch: launchCronRun,
     killTab: (tabId) => void killTabPty(tabId),
+    stillWorking: (tabId) => tracker.stillWorking(tabId),
+    whatIsLeft: whatClosingTheRunWouldLose,
+    closeForGood: closeTheRunFully,
     toast: (text) => sendToRenderer('cron:toast', text),
     notify: notifyPlain,
     push: (state) => sendToRenderer('cron:state', state),
     killed: (tabId) => sendToRenderer('tab:killedByMain', tabId),
     bindDeadlineMs: cronBindDeadlineMs(),
+    closeRecheckMs: cronTestMs('KOLOFT_CRON_CLOSE_RECHECK_MS', CRON_CLOSE_RECHECK_MS),
     setInterval,
     clearInterval,
     setTimeout,
@@ -2219,6 +2399,42 @@ function overlayListenerLost(): void {
 
 const cdpOps = new Map<string, (res: BrowserCdpOpResult) => void>()
 const boundSessions = new Map<string, string>()
+const screenAsks = new Map<string, (a: ScreenAnswer) => void>()
+let windowOpenedAt = 0
+const SCREEN_ANSWER_BUDGET_MS = 3000
+
+async function screenOf(tabId: string): Promise<SessionScreen> {
+  const handle = ptyMgr.get(tabId)
+  if (!handle) return { error: 'it is not open, so it has no screen.' }
+  if (!mainWindow || mainWindow.isDestroyed())
+    return {
+      error: 'the Koloft window is closed, so its screen cannot be read until it opens again.'
+    }
+  const requestId = crypto.randomUUID()
+  const answer = await new Promise<ScreenAnswer | null>((resolve) => {
+    const timer = setTimeout(() => {
+      screenAsks.delete(requestId)
+      resolve(null)
+    }, SCREEN_ANSWER_BUDGET_MS)
+    screenAsks.set(requestId, (a) => {
+      clearTimeout(timer)
+      resolve(a)
+    })
+    const request: ScreenRequest = { requestId, tabId }
+    sendToRenderer('terminal:screen', request)
+  })
+  if (!answer?.lines) return { error: 'the Koloft window did not show its screen.' }
+  const notes: string[] = []
+  if (windowOpenedAt > handle.startedAt)
+    notes.push(
+      'The Koloft window was opened again after this session started, so the screen holds only what came after that.'
+    )
+  if (!answer.sizedToPane)
+    notes.push(
+      'This tab has not been on screen since Koloft started, so its lines may wrap at a different width.'
+    )
+  return { lines: answer.lines, notes }
+}
 
 function ptyTabIds(): string[] {
   return ptyMgr
@@ -2598,8 +2814,13 @@ function closableSessions(): ClosableSession[] {
   return [...live, ...cold]
 }
 
-async function whatClosingWouldLose(target: ClosableSession): Promise<string[]> {
-  const tree = await closingTree(localGitOut, projectInfoFor(target.treeRoot))
+const hostGitOut: GitOut = (dir, args) => hosts.of(dir).gitOut(dir, args)
+
+async function whatClosingWouldLose(
+  target: ClosableSession,
+  info = projectInfoFor(target.treeRoot)
+): Promise<string[]> {
+  const tree = await closingTree(hostGitOut, info)
   if (!tree) return []
   const sharing = allSessions().filter(
     (s) =>
@@ -2607,18 +2828,23 @@ async function whatClosingWouldLose(target: ClosableSession): Promise<string[]> 
   )
   return [
     ...sharing.map((s) => `The session "${s.title}" is still open in ${tree.treeRoot}.`),
-    ...(await whatIsLeft(localGitOut, tree))
+    ...(await whatIsLeft(hostGitOut, tree))
   ]
 }
 
-async function closeSessionFully(target: ClosableSession): Promise<void> {
-  const info = projectInfoFor(target.treeRoot)
+async function closeSessionFully(
+  target: ClosableSession,
+  info = projectInfoFor(target.treeRoot)
+): Promise<void> {
   if (target.tabId) {
     sendToRenderer('tab:killedByMain', target.tabId)
     await killTabPty(target.tabId)
+  } else if (allSessions().some((s) => s.alive && s.sessionId === target.sessionId)) {
+    sendToRenderer('cron:toast', `${target.title} was opened again, so Koloft did not close it.`)
+    return
   }
-  const tree = await closingTree(localGitOut, info)
-  const problem = tree && (await removeTree(localGitOut, tree))
+  const tree = await closingTree(hostGitOut, info)
+  const problem = tree && (await removeTree(hostGitOut, tree))
   if (problem) {
     sendToRenderer('cron:toast', `${target.title}: ${problem}`)
     return
@@ -2629,6 +2855,29 @@ async function closeSessionFully(target: ClosableSession): Promise<void> {
 
 function worktreeHomeOf(root: string): string {
   return `${root}/.claude/worktrees`
+}
+
+function cronRunTree(root: string, worktree?: string): ProjectInfo {
+  return worktree
+    ? { root, treeRoot: `${worktreeHomeOf(root)}/${worktree}`, worktreeName: worktree }
+    : { root, treeRoot: root }
+}
+
+const NO_SESSION_FOR_THE_RUN = "Koloft cannot find this run's session."
+
+async function whatClosingTheRunWouldLose(
+  tabId: string,
+  root: string,
+  worktree?: string
+): Promise<string[]> {
+  const session = sessionOfTab(tabId)
+  if (!session) return [NO_SESSION_FOR_THE_RUN]
+  return whatClosingWouldLose(session, cronRunTree(root, worktree))
+}
+
+async function closeTheRunFully(tabId: string, root: string, worktree?: string): Promise<void> {
+  const session = sessionOfTab(tabId)
+  if (session) await closeSessionFully(session, cronRunTree(root, worktree))
 }
 
 async function countRunFolders(root: string, slug: string): Promise<number> {
@@ -2722,13 +2971,60 @@ function tabReady(tabId: string, ms: number, turnEnded: boolean): Promise<boolea
   )
 }
 
+function registerSlashCommands(): void {
+  const guilds = new Set((conductors?.bindings() ?? []).map((b) => b.channel.guildId))
+  void discordLink?.registerCommands([...guilds], SLASH_COMMANDS)
+}
+
+function conductorDestination(b: ConductorBinding): Destination {
+  return {
+    id: b.id,
+    name: 'The conductor',
+    conductor: true,
+    liveTab: () => conductors?.liveTab(b.id),
+    open: async () => {
+      const opened = await conductors?.open(b.id)
+      if (!opened) throw new Error(STILL_STARTING)
+      if (!opened.ok) throw new Error(opened.error)
+      return opened.tabId
+    },
+    typeCommand: (tabId, command) =>
+      slash.typeWhenIdle(
+        { name: `the ${conductorName(b.scope)}`, tabId, conductor: true },
+        command,
+        b.channel.channelId
+      ),
+    seen: (id) => conductors?.setLastMessage(b.id, id)
+  }
+}
+
+async function commandInto(b: ConductorBinding, t: Target, text: string): Promise<string> {
+  const channelId = (await discordThreads?.place(b, t)) ?? b.channel.channelId
+  const target = (tabId: string): SlashTarget => {
+    conductors?.touchNowAndNext(b.id, t.key, tabId)
+    return { name: t.name, tabId, conductor: false }
+  }
+  if (t.tabId) return slash.run(target(t.tabId), text, channelId)
+  void t
+    .open()
+    .then((tabId) => slash.typeWhenIdle(target(tabId), text, channelId))
+    .catch((error: unknown) => discordRelay?.say(channelId, `⚠ ${errorText(error)}`))
+  return `${t.name} is closed; Koloft resumes it, types ${text} once it is ready, and posts what it prints in Discord.`
+}
+
+function commandIntoConductor(b: ConductorBinding, text: string): string {
+  if (!discordRelay) throw new Error(STILL_STARTING)
+  discordRelay.command(conductorDestination(b), text, b.channel.channelId)
+  return `Koloft will type ${text} into the ${conductorName(b.scope)} once its turn ends, and post what it prints in Discord.`
+}
+
 function conductorTarget(ref: string): Target | undefined {
   const all = conductors
   const b = all?.bindingOfSession(ref)
   if (!all || !b) return undefined
   return {
     key: `conductor:${b.id}`,
-    name: `the ${scopeName(b.scope)} conductor`,
+    name: `the ${conductorName(b.scope)}`,
     backend: b.backend,
     remote: false,
     tabId: all.liveTab(b.id),
@@ -2770,12 +3066,12 @@ async function launchCronRun(
 const STILL_STARTING = 'Koloft is still starting — try again in a moment.'
 
 const CRON_BIND_DEADLINE_MS = 90_000
+const CRON_CLOSE_RECHECK_MS = 60_000
+function cronTestMs(name: string, dflt: number): number {
+  return (BACKGROUND_TEST && Number(process.env[name])) || dflt
+}
 function cronBindDeadlineMs(): number {
-  return (
-    (process.env.KOLOFT_TEST_BACKGROUND === '1' &&
-      Number(process.env.KOLOFT_CRON_BIND_DEADLINE_MS)) ||
-    CRON_BIND_DEADLINE_MS
-  )
+  return cronTestMs('KOLOFT_CRON_BIND_DEADLINE_MS', CRON_BIND_DEADLINE_MS)
 }
 
 const resumeProbes: ResumeProbes = {
@@ -3118,12 +3414,12 @@ function registerIpc(): void {
     )
       return { ok: false, error: 'Pick a channel.' }
     const { guildId, channelId, name } = channel
-    return (
-      conductors?.save({ ...input, channel: { guildId, channelId, name } }) ?? {
-        ok: false,
-        error: STILL_STARTING
-      }
-    )
+    const saved = conductors?.save({ ...input, channel: { guildId, channelId, name } }) ?? {
+      ok: false,
+      error: STILL_STARTING
+    }
+    if (saved.ok) registerSlashCommands()
+    return saved
   })
   ipcMain.handle('conductors:unbind', (_e, id: string) => conductors?.unbind(id))
   ipcMain.handle('conductors:switchBackend', (_e, id: string) => conductors?.switchBackend(id))
@@ -3296,6 +3592,14 @@ function registerIpc(): void {
   ipcMain.on('browser:strip', (_e, sessionId: unknown, targets: unknown) => {
     if (typeof sessionId !== 'string' || !Array.isArray(targets)) return
     relayStripChanged(sessionId, targets as BrowserStripTarget[])
+  })
+  ipcMain.on('terminal:screen-done', (_e, answer: unknown) => {
+    const a = answer as ScreenAnswer
+    if (!a || typeof a.requestId !== 'string') return
+    const pending = screenAsks.get(a.requestId)
+    if (!pending) return
+    screenAsks.delete(a.requestId)
+    pending(a)
   })
   ipcMain.on('browser:cdp-op-done', (_e, res: unknown) => {
     const r = res as BrowserCdpOpResult

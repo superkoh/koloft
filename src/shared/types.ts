@@ -199,6 +199,14 @@ export interface ConductorBinding {
   lastSessionKey?: string
   lastMessageId?: string
   touched: string[]
+  threads?: SessionThread[]
+}
+
+export interface SessionThread {
+  threadId: string
+  keys: string[]
+  name?: string
+  lastMessageId?: string
 }
 
 export interface DiscordSettings {
@@ -471,6 +479,7 @@ export interface SessionUsage {
 }
 
 export const PLACEHOLDER_SESSION_TITLE = 'Claude session'
+export const CODEX_PLACEHOLDER_TITLE = 'Codex session'
 
 export const PENDING_SESSION_TITLE = 'Starting…'
 
@@ -737,6 +746,17 @@ export interface TerminalCwd {
   cwd: string
 }
 
+export interface ScreenRequest {
+  requestId: string
+  tabId: string
+}
+
+export interface ScreenAnswer {
+  requestId: string
+  lines: string[] | null
+  sizedToPane: boolean
+}
+
 export interface KoloftApi {
   isDev: boolean
   domRenderer: boolean
@@ -762,6 +782,8 @@ export interface KoloftApi {
     onProcessTitle(cb: (t: TerminalProcessTitle) => void): () => void
     onCwd(cb: (c: TerminalCwd) => void): () => void
     onSpawned(cb: (t: SpawnedTab) => void): () => void
+    onScreenRequest(cb: (r: ScreenRequest) => void): () => void
+    answerScreen(a: ScreenAnswer): void
   }
   workbench: {
     get(sessionId: string): Promise<SessionWorkbenchState>
@@ -1082,6 +1104,7 @@ export interface LiveRun {
   startedAt: number
   dueAt: number
   manual?: true
+  kept?: string
 }
 
 export interface CronState {

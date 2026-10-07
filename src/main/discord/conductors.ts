@@ -7,7 +7,8 @@ import type {
   ConductorOpenResult,
   ConductorSaveInput,
   ConductorSaveResult,
-  DiscordSettings
+  DiscordSettings,
+  SessionThread
 } from '@shared/types'
 import { BACKEND_LABEL, identityOf } from '@shared/sessionBackend'
 import {
@@ -15,7 +16,7 @@ import {
   GLOBAL_SCOPE,
   keepPinnedBindings,
   newerSnowflake,
-  scopeName
+  conductorName
 } from '@shared/conductors'
 import { conductorRole } from '@shared/agentGuide'
 import { isRemoteKey } from '@shared/remoteKey'
@@ -62,6 +63,21 @@ export function conductorFolder(userData: string, scope: string): string {
   return path.join(userData, 'conductors', hash)
 }
 
+interface BoundThread {
+  binding: ConductorBinding
+  thread: SessionThread
+}
+
+function keptKeys(
+  threads: SessionThread[] | undefined,
+  keep: (key: string) => boolean,
+  stays?: string
+): SessionThread[] {
+  return (threads ?? [])
+    .map((t) => ({ ...t, keys: t.keys.filter(keep) }))
+    .filter((t) => t.keys.length || t.threadId === stays)
+}
+
 function refusal(error: string): ConductorOpenResult {
   return { ok: false, error }
 }
@@ -103,12 +119,12 @@ export class Conductors {
     this.d.saveQuietly(this.discord)
   }
 
-  private find(id: string): ConductorBinding | undefined {
+  binding(id: string): ConductorBinding | undefined {
     return this.discord.bindings.find((b) => b.id === id)
   }
 
   bindingOfTab(tabId: string): ConductorBinding | undefined {
-    for (const [id, tab] of this.tabs) if (tab === tabId) return this.find(id)
+    for (const [id, tab] of this.tabs) if (tab === tabId) return this.binding(id)
     return undefined
   }
 
@@ -127,13 +143,18 @@ export class Conductors {
     if (b) this.pendingTouch.set(tabId, b.id)
   }
 
+  touchNowAndNext(id: string, key: string, tabId: string | undefined): void {
+    this.touchFor(id, key)
+    if (tabId) this.pendingTouch.set(tabId, id)
+  }
+
   liveTab(id: string): string | undefined {
     const tab = this.tabs.get(id)
     return tab && this.d.tabAlive(tab) ? tab : undefined
   }
 
   setLastMessage(id: string, messageId: string): void {
-    const last = this.find(id)?.lastMessageId
+    const last = this.binding(id)?.lastMessageId
     if (last && !newerSnowflake(messageId, last)) return
     this.change(id, (b) => ({ ...b, lastMessageId: messageId }))
     this.pendingSave ??= setTimeout(() => this.flush(), LAST_MESSAGE_SAVE_DELAY_MS)
@@ -167,8 +188,74 @@ export class Conductors {
   }
 
   private touchFor(id: string, key: string): void {
-    if (this.find(id)?.touched.includes(key)) return
+    if (this.binding(id)?.touched.includes(key)) return
     this.change(id, (x) => ({ ...x, touched: [...x.touched, key] }))
+    this.d.saveQuietly(this.discord)
+  }
+
+  private findThread(match: (t: SessionThread) => boolean): BoundThread | undefined {
+    for (const binding of this.discord.bindings) {
+      const thread = binding.threads?.find(match)
+      if (thread) return { binding, thread }
+    }
+    return undefined
+  }
+
+  threadOfKey(key: string): BoundThread | undefined {
+    return this.findThread((t) => t.keys.includes(key))
+  }
+
+  threadOfChannel(channelId: string): BoundThread | undefined {
+    return this.findThread((t) => t.threadId === channelId)
+  }
+
+  routeOf(channelId: string): { binding: ConductorBinding; sessionKey?: string } | undefined {
+    const binding = this.bindingOfChannel(channelId)
+    if (binding) return { binding }
+    const found = this.threadOfChannel(channelId)
+    const sessionKey = found?.thread.keys.at(-1)
+    return found && sessionKey ? { binding: found.binding, sessionKey } : undefined
+  }
+
+  keepThread(bindingId: string, threadId: string, key: string): void {
+    if (this.threadOfKey(key)?.thread.threadId === threadId) return
+    this.discord = {
+      ...this.discord,
+      bindings: this.discord.bindings.map((b) => {
+        const others = keptKeys(b.threads, (k) => k !== key, threadId)
+        if (b.id !== bindingId) return { ...b, threads: others }
+        const known = others.some((t) => t.threadId === threadId)
+        return {
+          ...b,
+          threads: known
+            ? others.map((t) => (t.threadId === threadId ? { ...t, keys: [...t.keys, key] } : t))
+            : [...others, { threadId, keys: [key] }]
+        }
+      })
+    }
+    this.d.saveQuietly(this.discord)
+  }
+
+  private changeThread(bindingId: string, threadId: string, patch: Partial<SessionThread>): void {
+    this.change(bindingId, (b) => ({
+      ...b,
+      threads: (b.threads ?? []).map((t) => (t.threadId === threadId ? { ...t, ...patch } : t))
+    }))
+  }
+
+  setThreadLastMessage(threadId: string, messageId: string): void {
+    const found = this.threadOfChannel(threadId)
+    if (!found) return
+    const last = found.thread.lastMessageId
+    if (last && !newerSnowflake(messageId, last)) return
+    this.changeThread(found.binding.id, threadId, { lastMessageId: messageId })
+    this.pendingSave ??= setTimeout(() => this.flush(), LAST_MESSAGE_SAVE_DELAY_MS)
+  }
+
+  nameThread(threadId: string, name: string): void {
+    const found = this.threadOfChannel(threadId)
+    if (!found || found.thread.name === name) return
+    this.changeThread(found.binding.id, threadId, { name })
     this.d.saveQuietly(this.discord)
   }
 
@@ -177,9 +264,17 @@ export class Conductors {
     const bindings = this.discord.bindings.map((b) => {
       const sessionIds = b.sessionIds.filter(stillOnDisk)
       const touched = b.touched.filter(stillOnDisk)
-      if (sessionIds.length === b.sessionIds.length && touched.length === b.touched.length) return b
+      const threads = keptKeys(b.threads, stillOnDisk)
+      const threadKeys = (list?: SessionThread[]): number =>
+        (list ?? []).reduce((n, t) => n + t.keys.length, 0)
+      if (
+        sessionIds.length === b.sessionIds.length &&
+        touched.length === b.touched.length &&
+        threadKeys(threads) === threadKeys(b.threads)
+      )
+        return b
       changed = true
-      return { ...b, sessionIds, touched }
+      return { ...b, sessionIds, touched, threads }
     })
     if (!changed) return
     this.discord = { ...this.discord, bindings }
@@ -200,7 +295,7 @@ export class Conductors {
         ok: false,
         error: `${BACKEND_LABEL[input.backend]} is turned off in Settings ▸ Sessions.`
       }
-    const current = input.id ? this.find(input.id) : undefined
+    const current = input.id ? this.binding(input.id) : undefined
     if (input.id && !current) return { ok: false, error: NOT_BOUND }
     const scope = current?.scope ?? input.scope
     if (scope !== GLOBAL_SCOPE && !this.d.isPinned(scope))
@@ -232,7 +327,7 @@ export class Conductors {
   }
 
   startFresh(id: string): Promise<ConductorOpenResult> {
-    if (!this.find(id)) return Promise.resolve(refusal(NOT_BOUND))
+    if (!this.binding(id)) return Promise.resolve(refusal(NOT_BOUND))
     this.stopTab(id)
     this.update(id, (b) => ({ ...b, lastSessionKey: undefined }))
     return this.open(id)
@@ -269,7 +364,7 @@ export class Conductors {
   }
 
   private async openNow(id: string): Promise<ConductorOpenResult> {
-    const b = this.find(id)
+    const b = this.binding(id)
     if (!b) return refusal(NOT_BOUND)
     const tab = this.tabs.get(id)
     if (tab && this.d.tabAlive(tab)) return { ok: true, tabId: tab }
@@ -281,7 +376,7 @@ export class Conductors {
       backend: b.backend,
       cwd,
       role: conductorRole(b.scope),
-      title: `${scopeName(b.scope)} conductor`
+      title: conductorName(b.scope)
     }
     const key = b.lastSessionKey
     const resumable = key !== undefined && identityOf(key).backendId === b.backend

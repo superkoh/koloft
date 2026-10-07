@@ -27,11 +27,50 @@ export interface FakeHistoryMessage {
   author: FakeAuthor
 }
 
+export interface FakeButton {
+  label: string
+  id: string
+}
+
 export interface FakePost {
+  id: string
   channelId: string
   content: string
   replyTo?: string
   files: { name: string; text: string }[]
+  card?: boolean
+  flags?: number
+  buttons?: FakeButton[]
+}
+
+export interface FakeThread {
+  id: string
+  parentId: string
+  name: string
+  members: string[]
+  archived: boolean
+}
+
+interface RawComponent {
+  type: number
+  content?: string
+  label?: string
+  custom_id?: string
+  components?: RawComponent[]
+}
+
+function cardText(components: RawComponent[]): { text: string; buttons: FakeButton[] } {
+  const texts: string[] = []
+  const buttons: FakeButton[] = []
+  const walk = (list: RawComponent[]): void => {
+    for (const c of list) {
+      if (c.content !== undefined) texts.push(c.content)
+      if (c.custom_id) buttons.push({ label: c.label ?? '', id: c.custom_id })
+      if (c.components) walk(c.components)
+    }
+  }
+  walk(components)
+  return { text: texts.join('\n'), buttons }
 }
 
 export interface FakeReaction {
@@ -40,23 +79,64 @@ export interface FakeReaction {
   on: boolean
 }
 
+export interface FakeCommand {
+  name: string
+  description: string
+  options?: { name: string }[]
+}
+
+export interface FakeCallback {
+  interactionId: string
+  type: number
+  data: {
+    content?: string
+    flags?: number
+    choices?: { name: string; value: string }[]
+    components?: RawComponent[]
+  }
+}
+
+export const SLASH_COMMAND = 2
+export const BUTTON_PRESS = 3
+export const AUTOCOMPLETE = 4
+
+export function callbackText(c: FakeCallback): string {
+  return c.data.components ? cardText(c.data.components).text : (c.data.content ?? '')
+}
+
 export interface FakeDiscord {
   identifies: number
   closeOnIdentify: number | null
   closeCodes: number[]
   posted: FakePost[]
   refusePostsIn: string[]
+  refuseThreads: boolean
+  threads: FakeThread[]
   reactions: FakeReaction[]
   history: Record<string, FakeHistoryMessage[]>
+  commands: FakeCommand[]
+  callbacks: FakeCallback[]
+  press(author: FakeAuthor, button: FakeButton, channelId: string): string
   say(
     author: FakeAuthor,
     content: string,
     opts?: { channelId?: string; attachments?: { filename: string; body: string }[] }
   ): string
+  interact(
+    author: FakeAuthor,
+    command: string,
+    options: Record<string, string>,
+    opts?: { type?: number; focused?: string; channelId?: string }
+  ): string
   close(): Promise<void>
 }
 
 const MESSAGE_ROUTE = /^\/channels\/(\d+)\/messages$/
+const THREAD_ROUTE = /^\/channels\/(\d+)\/messages\/(\d+)\/threads$/
+const MEMBER_ROUTE = /^\/channels\/(\d+)\/thread-members\/(\d+)$/
+const CHANNEL_ROUTE = /^\/channels\/(\d+)$/
+const COMMANDS_ROUTE = /^\/applications\/\d+\/guilds\/\d+\/commands$/
+const CALLBACK_ROUTE = /^\/interactions\/(\d+)\/[^/]+\/callback$/
 const REACTION_ROUTE = /^\/channels\/(\d+)\/messages\/(\d+)\/reactions\/([^/]+)\/@me$/
 const ATTACHMENT_ROUTE = /^\/attachments\/(.+)$/
 
@@ -68,19 +148,25 @@ function bodyOf(req: http.IncomingMessage): Promise<Buffer> {
   })
 }
 
-async function postOf(channelId: string, req: http.IncomingMessage): Promise<FakePost> {
+async function postOf(id: string, channelId: string, req: http.IncomingMessage): Promise<FakePost> {
   const raw = await bodyOf(req)
   const type = req.headers['content-type'] ?? ''
   if (!type.startsWith('multipart/form-data')) {
     const json = JSON.parse(raw.toString()) as {
-      content: string
+      content?: string
+      flags?: number
+      components?: RawComponent[]
       message_reference?: { message_id: string }
     }
+    const card = json.components ? cardText(json.components) : undefined
     return {
+      id,
       channelId,
-      content: json.content,
+      content: card ? card.text : (json.content ?? ''),
       replyTo: json.message_reference?.message_id,
-      files: []
+      files: [],
+      ...(card ? { card: true, buttons: card.buttons } : {}),
+      ...(json.flags === undefined ? {} : { flags: json.flags })
     }
   }
   const form = await new Request('http://fake/', {
@@ -93,7 +179,7 @@ async function postOf(channelId: string, req: http.IncomingMessage): Promise<Fak
   for (const [key, value] of form.entries())
     if (key.startsWith('files[') && typeof value !== 'string')
       files.push({ name: value.name, text: await value.text() })
-  return { channelId, content: payload.content ?? '', files }
+  return { id, channelId, content: payload.content ?? '', files }
 }
 
 export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promise<FakeDiscord> {
@@ -107,8 +193,62 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
     closeCodes: [],
     posted: [],
     refusePostsIn: [],
+    refuseThreads: false,
+    threads: [],
     reactions: [],
     history: {},
+    commands: [],
+    callbacks: [],
+    press: (author, button, channelId) => {
+      const id = String(++nextId)
+      for (const ws of sockets)
+        ws.send(
+          JSON.stringify({
+            op: 0,
+            t: 'INTERACTION_CREATE',
+            s: ++seq,
+            d: {
+              id,
+              token: `token-${id}`,
+              type: BUTTON_PRESS,
+              channel_id: channelId,
+              guild_id: FAKE_GUILD.id,
+              member: { user: author },
+              data: { custom_id: button.id, component_type: 2 }
+            }
+          })
+        )
+      return id
+    },
+    interact: (author, command, options, opts = {}) => {
+      const id = String(++nextId)
+      for (const ws of sockets)
+        ws.send(
+          JSON.stringify({
+            op: 0,
+            t: 'INTERACTION_CREATE',
+            s: ++seq,
+            d: {
+              id,
+              token: `token-${id}`,
+              type: opts.type ?? SLASH_COMMAND,
+              channel_id: opts.channelId ?? FAKE_CHANNELS[0].id,
+              guild_id: FAKE_GUILD.id,
+              member: { user: author },
+              data: {
+                name: command,
+                options: Object.entries(options).map(([name, value]) => ({
+                  name,
+                  value,
+                  type: 3,
+                  ...(name === opts.focused ? { focused: true } : {})
+                }))
+              }
+            }
+          })
+        )
+      return id
+    },
     say: (author, content, opts = {}) => {
       const id = String(++nextId)
       const listed = (opts.attachments ?? []).map((a) => {
@@ -158,6 +298,19 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
     const route = url.pathname.replace(/^\/api\/v10/, '')
     const attachment = ATTACHMENT_ROUTE.exec(route)
     if (attachment) return { status: 200, body: attachments.get(attachment[1]) ?? '' }
+    if (COMMANDS_ROUTE.test(route) && req.method === 'GET')
+      return { status: 200, body: fake.commands }
+    if (COMMANDS_ROUTE.test(route) && req.method === 'POST') {
+      const command = JSON.parse((await bodyOf(req)).toString()) as FakeCommand
+      fake.commands = [...fake.commands.filter((c) => c.name !== command.name), command]
+      return { status: 201, body: command }
+    }
+    const callback = CALLBACK_ROUTE.exec(route)
+    if (callback && req.method === 'POST') {
+      const body = JSON.parse((await bodyOf(req)).toString()) as Omit<FakeCallback, 'interactionId'>
+      fake.callbacks.push({ interactionId: callback[1], ...body })
+      return { status: 204 }
+    }
     const reaction = REACTION_ROUTE.exec(route)
     if (reaction) {
       fake.reactions.push({
@@ -167,14 +320,41 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
       })
       return { status: 204 }
     }
+    const thread = THREAD_ROUTE.exec(route)
+    if (thread && req.method === 'POST') {
+      const { name } = JSON.parse((await bodyOf(req)).toString()) as { name: string }
+      if (fake.refuseThreads)
+        return { status: 403, body: { message: 'Missing Permissions', code: 50013 } }
+      fake.threads.push({ id: thread[2], parentId: thread[1], name, members: [], archived: false })
+      return { status: 201, body: { id: thread[2], name } }
+    }
+    const member = MEMBER_ROUTE.exec(route)
+    if (member && req.method === 'PUT') {
+      fake.threads.find((t) => t.id === member[1])?.members.push(member[2])
+      return { status: 204 }
+    }
+    const channel = CHANNEL_ROUTE.exec(route)
+    if (channel && req.method === 'PATCH') {
+      const { archived, name } = JSON.parse((await bodyOf(req)).toString()) as {
+        archived?: boolean
+        name?: string
+      }
+      const t = fake.threads.find((x) => x.id === channel[1])
+      if (t && archived !== undefined) t.archived = archived
+      if (t && name !== undefined) t.name = name
+      return { status: 200, body: { id: channel[1] } }
+    }
     const message = MESSAGE_ROUTE.exec(route)
     if (message && req.method === 'POST' && fake.refusePostsIn.includes(message[1])) {
       await bodyOf(req)
       return { status: 403, body: { message: 'Missing Permissions', code: 50013 } }
     }
     if (message && req.method === 'POST') {
-      fake.posted.push(await postOf(message[1], req))
-      return { status: 200, body: { id: String(++nextId) } }
+      const id = String(++nextId)
+      fake.posted.push(await postOf(id, message[1], req))
+      const t = fake.threads.find((x) => x.id === message[1])
+      if (t) t.archived = false
+      return { status: 200, body: { id } }
     }
     if (message) {
       const after = url.searchParams.get('after')

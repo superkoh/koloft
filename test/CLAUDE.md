@@ -81,8 +81,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     closes its tab kills it).
   - typed lines: `/write <path>` (a Write, Stop 2.5 s later — the file on disk proves
     the transcript has it), `/answer <text>` (`<text>` as the prompt, `Answer to: <text>`
-    as the reply's text, then Stop), `[Discord] <text>` (a `/…` command after the prefix runs
-    as typed, any other text is answered like `/answer` with the whole line), `/long <n>` (a
+    as the reply's text, then Stop), `[Discord] <text>` (answered like `/answer` with the
+    whole line), `/long <n>` (a
     reply of `line 1` … `line <n>`), `/ask <question>|<option>|…` and `/bash <command>`
     (fire PermissionRequest without blocking, and reply `Picked: <answer>` / `Ran: <command>`
     on allow, `Denied: <message>` on deny; a hook that answers nothing — every remote tab's —
@@ -91,12 +91,15 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     `/scratch <name>`, `/move-to-background` (a start for a session that never writes a
     transcript, then `continued-in` to a new id whose Stop follows), `/open <target>`, `/open-later <target>` (fires once
     `<home>/go-open` exists), `/koloft <args>` (runs the agent command, then prints its
-    output and `koloft exit=<code>`), `/clear`, `/compact`, `/resume <id>`, `/exit` (also
+    output and `koloft exit=<code>`, with no hook and no transcript line), `/clear`,
+    `/compact` (PreCompact, a compact SessionStart, then the "Compacted" line Claude
+    writes), `/context` (the two records Claude writes for it), `/resume <id>`, `/exit` (also
     `exit` and `/quit`; in a `-w` worktree with uncommitted files it first asks keep or
     remove, and a typed `2` removes),
     `/enter-worktree <name>`, `/exit-worktree`, `/bg-work`, `/bg-reported`,
     `/bg-monitor`, `/bg-shell`. Any other line is a prompt answered by a Read and a
-    Stop.
+    Stop. Esc keystrokes are dropped from a typed line (its pty hands over whole lines,
+    so an Esc Koloft presses lands inside the next one).
   - every launch writes one line to `env.claudeCalls` (argv, cwd, session id,
     injected auth) before any delay.
   - like the real one, it lists itself in `<home>/.claude/sessions/<pid>.json` with a

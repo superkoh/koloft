@@ -2,7 +2,7 @@ export const DISCORD_MESSAGE_LIMIT = 2000
 
 const CLOSE_FENCE = '\n```'
 
-function isFence(line: string): boolean {
+export function isFence(line: string): boolean {
   return line.trimStart().startsWith('```')
 }
 

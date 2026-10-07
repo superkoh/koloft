@@ -225,7 +225,8 @@ const EVENT_KEY = {
   prompt: 'UserPromptSubmit',
   stop: 'Stop',
   notify: 'Notification',
-  ask: 'PermissionRequest'
+  ask: 'PermissionRequest',
+  compacting: 'PreCompact'
 }
 function fireHook(event, payload) {
   const cmd = hooks?.[EVENT_KEY[event]]?.[0]?.hooks?.[0]?.command
@@ -579,6 +580,7 @@ process.on('exit', () => {
 const NOTIFICATION_TRAILS_AN_UNANSWERED_DIALOG_MS = 6000
 const typedLines = new (require('stream').PassThrough)()
 let dialogKey = null
+const ESC = /\x1b/g
 process.stdin.on('data', (chunk) =>
   dialogKey ? dialogKey(String(chunk)) : typedLines.write(chunk)
 )
@@ -597,16 +599,13 @@ function keyOnTheDialog() {
 const rl = readline.createInterface({ input: typedLines })
 rl.on('line', handleLine)
 function handleLine(line) {
-  const text = line.trim()
+  const text = line.replace(ESC, '').trim()
   if (worktreeChoicePending) {
     // CC§4
     if (text === '2') removeWorktree()
     return shutdown('prompt_input_exit')
   }
-  if (text.startsWith('[Discord] ')) {
-    const said = text.slice('[Discord] '.length)
-    return handleLine(said.startsWith('/') ? said : `/answer ${text}`)
-  }
+  if (text.startsWith('[Discord] ')) return handleLine(`/answer ${text}`)
   if (text === '/exit' || text === 'exit' || text === '/quit') return exitSession()
   // CC§1 CC§2
   if (text === '/clear') {
@@ -691,6 +690,7 @@ function handleLine(line) {
   }
   // CC§1
   if (text === '/compact') {
+    fireHook('compacting', { hook_event_name: 'PreCompact', trigger: 'manual' })
     fireHook('end', { session_id: sessionId, transcript_path: transcript, cwd, reason: 'other' })
     fireHook('start', {
       session_id: sessionId,
@@ -699,7 +699,36 @@ function handleLine(line) {
       hook_event_name: 'SessionStart',
       source: 'compact'
     })
+    append([
+      { type: 'user', message: { role: 'user', content: '/compact' }, cwd },
+      {
+        type: 'system',
+        subtype: 'local_command',
+        content:
+          '<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>',
+        cwd
+      }
+    ])
     process.stdout.write(`\r\n[fake-claude] compacted -> session ${sessionId}\r\n> `)
+    return
+  }
+  // CC§2
+  if (text === '/context') {
+    append([
+      {
+        type: 'system',
+        subtype: 'local_command',
+        content: '<local-command-stdout>Context Usage 14%</local-command-stdout>',
+        cwd
+      },
+      {
+        type: 'user',
+        isMeta: true,
+        message: { role: 'user', content: '## Context Usage\n\n**Tokens:** 28.5k / 200k (14%)' },
+        cwd
+      }
+    ])
+    process.stdout.write('\r\n[fake-claude] context shown\r\n> ')
     return
   }
   // CC§1

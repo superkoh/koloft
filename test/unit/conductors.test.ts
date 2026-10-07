@@ -63,6 +63,24 @@ describe('sanitizeDiscord', () => {
     })
     expect(doc.bindings.map((b) => b.id)).toEqual(['a', 'b'])
   })
+
+  it('keeps each session’s thread across a restart, and drops one with no thread id or no session', () => {
+    const doc = sanitizeDiscord({
+      bindings: [
+        {
+          ...binding('a', '/ws/a', '1'),
+          threads: [
+            { threadId: '9', keys: ['k1', 'k2'], name: 'Fix login', lastMessageId: '12' },
+            { threadId: 'nope', keys: ['k3'] },
+            { threadId: '10', keys: [] }
+          ]
+        }
+      ]
+    })
+    expect(doc.bindings[0].threads).toEqual([
+      { threadId: '9', keys: ['k1', 'k2'], name: 'Fix login', lastMessageId: '12' }
+    ])
+  })
 })
 
 describe('keepPinnedBindings', () => {

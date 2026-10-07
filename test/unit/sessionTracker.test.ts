@@ -1814,6 +1814,18 @@ describe('SessionTracker — what each turn said: the owner, another session, an
     ])
   })
 
+  // CC§2
+  it('the "/compact" line Claude writes for a compaction is not something the owner said', async () => {
+    const cwd = makeWorkspace({})
+    const file = writeJsonl(cwd, '66666666-6666-4666-8666-666666666666', [
+      { type: 'user', timestamp: at(1), message: { role: 'user', content: '/compact' } },
+      human('what changed?', 2),
+      said(text('Nothing yet.'), 3)
+    ])
+    const turns = await transcriptTurns(file, 20)
+    expect(turns.map((t) => t.said.map((l) => l.text))).toEqual([['what changed?']])
+  })
+
   it('reading only the end of a large transcript gives the same last 1 to 20 turns as reading all of it, also when the read starts in the middle of a turn or of a character', async () => {
     const pad = (bytes: number): string => '界'.repeat(Math.ceil(bytes / 3))
     const lines: unknown[] = []

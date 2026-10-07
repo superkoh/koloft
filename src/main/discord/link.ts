@@ -1,6 +1,7 @@
 import type { DiscordChannel, DiscordPhase, DiscordStatus } from '@shared/types'
 import { DiscordGateway } from './gateway'
 import { DiscordHttpError, DiscordRest } from './rest'
+import { cardMessages, NO_MENTIONS, type Card } from './cards'
 
 export const DISCORD_API_URL = 'https://discord.com/api/v10'
 const UNREACHABLE_RETRY_MS = 30_000
@@ -42,6 +43,94 @@ export interface DiscordFile {
   data: Buffer
 }
 
+export { NO_MENTIONS }
+export const COMMAND_INTERACTION = 2
+export const COMPONENT_INTERACTION = 3
+export const AUTOCOMPLETE_INTERACTION = 4
+const REPLY_TO_INTERACTION = 4
+const ONLY_THE_SENDER_SEES_IT = 64
+const PUBLIC_THREAD_KEPT_A_WEEK_MINUTES = 10080
+
+export function privately(content: string): unknown {
+  return { type: REPLY_TO_INTERACTION, data: { content, flags: ONLY_THE_SENDER_SEES_IT } }
+}
+const THREAD_NAME_LIMIT = 100
+
+export interface DiscordInteraction {
+  id: string
+  token: string
+  type: number
+  channelId: string
+  userId: string
+  command: string
+  options: Record<string, string>
+  focused?: string
+  customId?: string
+}
+
+interface RawInteraction {
+  id: string
+  token: string
+  type: number
+  channel_id?: string
+  member?: { user?: { id: string } }
+  user?: { id: string }
+  data?: {
+    name?: string
+    custom_id?: string
+    options?: { name: string; value?: unknown; focused?: boolean }[]
+  }
+}
+
+export interface SlashCommandSpec {
+  name: string
+  description: string
+  options?: {
+    type: number
+    name: string
+    description: string
+    required?: boolean
+    autocomplete?: boolean
+  }[]
+}
+
+function shapeOf(c: SlashCommandSpec): string {
+  return JSON.stringify([
+    c.name,
+    c.description,
+    (c.options ?? []).map((o) => [o.name, o.description, !!o.required, !!o.autocomplete])
+  ])
+}
+
+export function sameCommand(a: SlashCommandSpec, b: SlashCommandSpec): boolean {
+  return shapeOf(a) === shapeOf(b)
+}
+
+// PLATFORM§39
+export function interactionOf(raw: RawInteraction): DiscordInteraction | null {
+  const userId = raw.member?.user?.id ?? raw.user?.id
+  const data = raw.data
+  const pressed = raw.type === COMPONENT_INTERACTION ? data?.custom_id : undefined
+  if (!raw.channel_id || !userId || !data || !(data.name || pressed)) return null
+  const options: Record<string, string> = {}
+  let focused: string | undefined
+  for (const o of data.options ?? []) {
+    options[o.name] = String(o.value ?? '')
+    if (o.focused) focused = o.name
+  }
+  return {
+    id: raw.id,
+    token: raw.token,
+    type: raw.type,
+    channelId: raw.channel_id,
+    userId,
+    command: data.name ?? '',
+    options,
+    focused,
+    ...(pressed ? { customId: pressed } : {})
+  }
+}
+
 export interface DiscordLinkDeps {
   apiUrl: string | null
   readToken(): Promise<string | null>
@@ -50,6 +139,7 @@ export interface DiscordLinkDeps {
   owner(): string | undefined
   push(status: DiscordStatus): void
   onMessage(m: DiscordMessage): void
+  onInteraction(i: DiscordInteraction): void
   onReady(): void
   postFailed(channelId: string, error: string): void
 }
@@ -110,6 +200,7 @@ export class DiscordLink {
   private botName?: string
   private applicationId?: string
   private guilds = new Map<string, string>()
+  private registered = new Set<string>()
   private failing = new Map<string, string>()
   private candidate?: Candidate
   private rest: DiscordRest | null = null
@@ -154,6 +245,7 @@ export class DiscordLink {
     this.botName = undefined
     this.applicationId = undefined
     this.guilds.clear()
+    this.registered.clear()
     this.failing.clear()
     this.candidate = undefined
   }
@@ -222,6 +314,10 @@ export class DiscordLink {
       const g = data as { id: string; unavailable?: boolean }
       if (g.unavailable) return
       this.guilds.delete(g.id)
+    } else if (type === 'INTERACTION_CREATE') {
+      const i = interactionOf(data as RawInteraction)
+      if (i) this.d.onInteraction(i)
+      return
     } else if (type === 'MESSAGE_CREATE') {
       const m = data as RawMessage
       if (m.author.bot) return
@@ -249,15 +345,54 @@ export class DiscordLink {
     return this.rest
   }
 
-  async post(channelId: string, content: string, replyTo?: string): Promise<unknown> {
+  post(channelId: string, content: string, replyTo?: string): Promise<unknown> {
+    return this.postMessage(channelId, {
+      content,
+      allowed_mentions: NO_MENTIONS,
+      ...(replyTo ? { message_reference: { message_id: replyTo, fail_if_not_exists: false } } : {})
+    })
+  }
+
+  async card(channelId: string, card: Card): Promise<string[]> {
+    const ids: string[] = []
+    for (const message of cardMessages(card)) {
+      const sent = (await this.postMessage(channelId, message)) as { id?: string } | undefined
+      if (sent?.id) ids.push(sent.id)
+    }
+    return ids
+  }
+
+  // PLATFORM§39
+  async startThread(channelId: string, messageId: string, name: string): Promise<string> {
+    const thread = await this.api().request<{ id: string }>(
+      'POST',
+      `/channels/${channelId}/messages/${messageId}/threads`,
+      {
+        name: name.slice(0, THREAD_NAME_LIMIT),
+        auto_archive_duration: PUBLIC_THREAD_KEPT_A_WEEK_MINUTES
+      }
+    )
+    return thread.id
+  }
+
+  addToThread(threadId: string, userId: string): Promise<unknown> {
+    return this.api().request('PUT', `/channels/${threadId}/thread-members/${userId}`)
+  }
+
+  // PLATFORM§39
+  renameThread(threadId: string, name: string): Promise<unknown> {
+    return this.api().request('PATCH', `/channels/${threadId}`, {
+      name: name.slice(0, THREAD_NAME_LIMIT)
+    })
+  }
+
+  archiveThread(threadId: string): Promise<unknown> {
+    return this.api().request('PATCH', `/channels/${threadId}`, { archived: true })
+  }
+
+  private async postMessage(channelId: string, body: unknown): Promise<unknown> {
     try {
-      const sent = await this.api().request('POST', `/channels/${channelId}/messages`, {
-        content,
-        allowed_mentions: { parse: [] },
-        ...(replyTo
-          ? { message_reference: { message_id: replyTo, fail_if_not_exists: false } }
-          : {})
-      })
+      const sent = await this.api().request('POST', `/channels/${channelId}/messages`, body)
       if (this.failing.delete(channelId)) this.d.push(this.status())
       return sent
     } catch (error) {
@@ -278,7 +413,7 @@ export class DiscordLink {
         'payload_json',
         JSON.stringify({
           ...(i === 0 && content ? { content } : {}),
-          allowed_mentions: { parse: [] },
+          allowed_mentions: NO_MENTIONS,
           attachments: batch.map((f, n) => ({ id: n, filename: f.name }))
         })
       )
@@ -288,6 +423,29 @@ export class DiscordLink {
       return api.request('POST', `/channels/${channelId}/messages`, form)
     })
     await Promise.all(sends)
+  }
+
+  respond(i: DiscordInteraction, body: unknown): Promise<unknown> {
+    return this.api().request('POST', `/interactions/${i.id}/${i.token}/callback`, body)
+  }
+
+  // PLATFORM§39
+  async registerCommands(guildIds: string[], commands: SlashCommandSpec[]): Promise<void> {
+    const appId = this.applicationId
+    const api = this.rest
+    if (!appId || !api) return
+    for (const guildId of guildIds) {
+      if (this.registered.has(guildId)) continue
+      this.registered.add(guildId)
+      const route = `/applications/${appId}/guilds/${guildId}/commands`
+      try {
+        const there = await api.request<SlashCommandSpec[]>('GET', route)
+        const missing = commands.filter((c) => !there.some((t) => sameCommand(t, c)))
+        await Promise.all(missing.map((c) => api.request('POST', route, c)))
+      } catch {
+        this.registered.delete(guildId)
+      }
+    }
   }
 
   react(channelId: string, messageId: string, emoji: string, on: boolean): Promise<unknown> {
