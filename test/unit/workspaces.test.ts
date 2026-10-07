@@ -72,6 +72,23 @@ function latest(wsPath: string): WorkspaceRows {
   return entry
 }
 
+async function holdNextRescan(): Promise<() => void> {
+  let release!: () => void
+  const held = new Promise<void>((r) => (release = r))
+  const internals = mgr as unknown as {
+    worktreeEntries(p: string): Promise<unknown>
+    rescan(): Promise<void>
+  }
+  const real = internals.worktreeEntries.bind(mgr)
+  const spy = vi.spyOn(internals, 'worktreeEntries').mockImplementationOnce(async (p) => {
+    await held
+    return real(p)
+  })
+  void internals.rescan()
+  await vi.waitFor(() => expect(spy).toHaveBeenCalled())
+  return release
+}
+
 beforeEach(() => {
   root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-wsmgr-')))
   projectsRoot = path.join(root, 'projects')
@@ -184,19 +201,7 @@ describe('WorkspaceManager: move (the sidebar drag order)', () => {
   it('a scan already running when the move lands pushes its rows in the new order', async () => {
     mgr.start()
     await mgr.firstScan
-    let release!: () => void
-    const held = new Promise<void>((r) => (release = r))
-    const internals = mgr as unknown as {
-      worktreeEntries(p: string): Promise<unknown>
-      rescan(): Promise<void>
-    }
-    const real = internals.worktreeEntries.bind(mgr)
-    const spy = vi.spyOn(internals, 'worktreeEntries').mockImplementationOnce(async (p) => {
-      await held
-      return real(p)
-    })
-    void internals.rescan()
-    await vi.waitFor(() => expect(spy).toHaveBeenCalled())
+    const release = await holdNextRescan()
 
     mgr.move(plain, repo)
     const afterMove = pushed.length
@@ -647,6 +652,22 @@ describe('WorkspaceManager: working-set eviction (D1/D2)', () => {
     mgr.onTrackerUpdate()
     await vi.waitFor(() => expect(layout.panels['fresh-1']).toBeUndefined())
     expect(dropped).toEqual(['fresh-1: no transcript found and not running'])
+  })
+
+  it('GC spares a session that binds while a rescan is already under way, before its jsonl is born', async () => {
+    writeJsonl(repo, 'anchor-1')
+    mgr.start()
+    await mgr.firstScan
+    const release = await holdNextRescan()
+
+    bindings.set('fresh-2', 'tab-2')
+    mgr.onSessionBound('fresh-2')
+    const beforeRelease = pushed.length
+    release()
+    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(beforeRelease))
+
+    expect(dropped).toEqual([])
+    expect(mgr.isMember('fresh-2')).toBe(true)
   })
 
   it('every session that leaves the list says why', async () => {

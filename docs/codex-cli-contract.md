@@ -511,6 +511,19 @@ the link too (and so keeps settings shared) is **inferred, not checked**. Koloft
 trust writer replaces the file it is given with a new one, so Koloft hands it the shared
 file, never an account home's link.
 
+**Who first writes a home's config.toml.** Checked 2026-10-04 with Codex CLI 0.159.3, no
+model turn, each run in a fresh temporary `CODEX_HOME` and `HOME`, signed in with a dummy
+API key. `codex login status`, `codex login --with-api-key` and a `codex app-server` that
+answered `initialize`, `account/read` and `config/read` left the home with no
+`config.toml`. The full-screen `codex`, started in a folder with no trust table, wrote
+one **as it started**, before the trust question was answered (`[tui]
+screen_reader_detection_done = true` and a `[tui.model_availability_nux]` table), and
+added the folder's trust table to it on Enter. So a home that is not linked before its
+first Codex start gets a file of its own and never shares settings or trust after that.
+With `config.toml` a link to an empty shared file, the same start-up write and the trust
+answer both went into the shared file and the link stayed a link. Hence Koloft makes an
+empty shared file when there is none, rather than skip the link.
+
 Not tried, because they need a second real login or would open a browser on this Mac:
 - that `codex login` with `CODEX_HOME` set signs in only that home and exits 0 once
   done (Koloft types `codex login && exit` into the sign-in terminal, so the tab closes

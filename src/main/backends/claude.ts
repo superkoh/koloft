@@ -124,6 +124,7 @@ export class ClaudeBackend implements SessionBackend {
   private watchedHookMirrors = new Map<string, () => void>()
   private pickedSkipFlag = new Set<string>()
   private launchedBypassing = new Set<string>()
+  private heldBeforeStartup = new Map<string, string>()
   agentPlugin?: string
 
   constructor(private d: ClaudeBackendDeps) {}
@@ -184,16 +185,20 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   transcriptExists(key: string): boolean {
-    return this.d.tracker.transcriptExists(key)
+    return this.d.tracker.transcriptExists(key) || !!this.storedTranscript(key)
   }
 
   async turns(key: string, n: number): Promise<Turn[]> {
     const live = this.d.tracker.turnsOf(key, n)
     if (live) return live
+    const file = this.storedTranscript(key)
+    return file ? transcriptTurns(file, n) : []
+  }
+
+  private storedTranscript(key: string): string | null {
     const remote = parseRemoteKey(this.homeOf(key) ?? '')
     const root = remote ? mirrorProjectsRoot(this.d.userData(), remote.host) : PROJECTS_ROOT
-    const file = findTranscript(root, key)
-    return file ? transcriptTurns(file, n) : []
+    return findTranscript(root, key)
   }
 
   picked(tabId: string, skipFlag: boolean): void {
@@ -267,19 +272,22 @@ export class ClaudeBackend implements SessionBackend {
     if (process.platform !== 'win32') this.startLivenessSweep()
   }
 
-  onPtyExit(tabId: string): void {
+  onPtyExit(tabId: string, crashed: boolean): void {
     this.pickedSkipFlag.delete(tabId)
     this.launchedBypassing.delete(tabId)
+    this.heldBeforeStartup.delete(tabId)
     const remote = this.d.tracker.remoteOf(tabId)
-    if (!remote) {
-      // CC§1
-      this.drainExitRegistration(this.hookRegDir, tabId)
-      this.dropStatusLog(this.hookRegDir, tabId)
-      removeConductorMarker(this.hookRegDir, tabId)
-      return
-    }
     const sid = this.sessionIdOf(tabId)
     const title = this.titleOf(tabId)
+    if (!remote) {
+      // CC§1
+      const reportedEnd = this.drainExitRegistration(this.hookRegDir, tabId)
+      this.dropStatusLog(this.hookRegDir, tabId)
+      removeConductorMarker(this.hookRegDir, tabId)
+      if (crashed && sid && !reportedEnd)
+        this.d.events(tabId, { type: 'exited', clean: false, title, sessionId: sid })
+      return
+    }
     this.d.tracker.untrack(tabId)
     const userData = this.d.userData()
     fs.rmSync(tabPackageDir(userData, tabId), { recursive: true, force: true })
@@ -450,10 +458,11 @@ export class ClaudeBackend implements SessionBackend {
   // CC§5
   private followMovedConversation(report: HookReport & { tabId?: string }): boolean {
     const { tracker } = this.d
-    if (!report.tabId || !report.sessionId || tracker.remoteOf(report.tabId)) return false
+    if (!report.tabId || !report.sessionId) return false
     const info = tracker.infoOf(report.tabId)
     if (!info?.jsonlPath) return false
-    const movedFile = path.join(path.dirname(info.jsonlPath), `${report.sessionId}.jsonl`)
+    const dir = path.dirname(info.jsonlPath)
+    const movedFile = path.join(dir, `${report.sessionId}.jsonl`)
     const moved = conversationMovedTo(
       report.sessionId,
       info.sessionId,
@@ -461,6 +470,8 @@ export class ClaudeBackend implements SessionBackend {
       fs.existsSync(movedFile)
     )
     if (!moved) return false
+    const heldBeforeStartup = this.heldBeforeStartup.get(report.tabId)
+    this.heldBeforeStartup.delete(report.tabId)
     this.handleHookRegistration({
       tabId: report.tabId,
       event: 'start',
@@ -469,6 +480,13 @@ export class ClaudeBackend implements SessionBackend {
       transcriptPath: movedFile,
       cwd: info.cwd
     })
+    if (
+      heldBeforeStartup &&
+      transcriptEnding(path.join(dir, `${heldBeforeStartup}.jsonl`)).continuedIn ===
+        report.sessionId
+    ) {
+      this.d.workspaces()?.dropOwnership(heldBeforeStartup, `continued in ${report.sessionId}`)
+    }
     return true
   }
 
@@ -561,16 +579,17 @@ export class ClaudeBackend implements SessionBackend {
     this.dropStatusLog(mirrorDir, tabId)
   }
 
-  private drainExitRegistration(regDir: string, tabId: string): void {
+  private drainExitRegistration(regDir: string, tabId: string): boolean {
     let raw: { event?: string; reason?: string }
     try {
       raw = JSON.parse(fs.readFileSync(path.join(regDir, `${tabId}.json`), 'utf8'))
     } catch {
-      return
+      return false
     }
     if (raw.event === 'end' && EVICTING_END_REASONS.has(raw.reason ?? '')) {
       this.handleHookRegistration(raw)
     }
+    return raw.event === 'end'
   }
 
   private handleHookRegistration(raw: unknown): void {
@@ -615,7 +634,10 @@ export class ClaudeBackend implements SessionBackend {
     this.d.pty.clearResumeIntent(obj.tabId)
     const nextId = this.sessionIdOf(obj.tabId)
     if (prevId && nextId && nextId !== prevId) {
-      if (tracker.remoteOf(obj.tabId)) tracker.setRemoteTmuxName(obj.tabId, tmuxSessionName(nextId))
+      if (obj.source === 'startup') this.heldBeforeStartup.set(obj.tabId, prevId)
+      else this.heldBeforeStartup.delete(obj.tabId)
+      if (tracker.remoteOf(obj.tabId) && obj.source !== MOVED_CONVERSATION_SOURCE)
+        tracker.setRemoteTmuxName(obj.tabId, tmuxSessionName(nextId))
       workspaces?.onSessionRebind(prevId, nextId, obj.source || '')
       if (replacesTheConversation(obj.source || '')) {
         workspaces?.dropOwnership(prevId, `replaced by ${nextId} (${obj.source})`)
@@ -808,7 +830,7 @@ export class ClaudeBackend implements SessionBackend {
     if (spec.permission === 'bypass') this.launchedBypassing.add(handle.id)
     if (machine) {
       tracker.track(handle.id, machine.cwd, machine.tracking)
-      if (machine.picked) tracker.setPickedAccount(handle.id, machine.picked)
+      if (machine.pickKey) tracker.movePick(machine.pickKey, handle.id)
       if (machine.attachTo) {
         tracker.bindSession(handle.id, '', machine.attachTo, machine.cwd)
         workspaces?.onSessionBound(machine.attachTo)
@@ -863,7 +885,6 @@ export async function pickMachineAccount(
   if (!secret) return undefined
   return {
     env: accountEnv(res.kind, res.account, secret, endpoint),
-    picked: res.account,
     banner: res.warning ? `${res.banner}\n${res.warning}` : res.banner
   }
 }

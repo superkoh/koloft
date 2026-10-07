@@ -729,7 +729,7 @@ export class WorkspaceManager {
     this.statByFile.clear()
 
     // CC§2
-    const liveIds = new Set<string>(runningIds)
+    const liveIds = new Set<string>(this.deps.runningBindings().keys())
     for (const root of this.roots()) {
       for (const slug of slugsOf(root))
         for (const id of this.listJsonlIds(root, slug)) liveIds.add(id)

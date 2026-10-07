@@ -10,39 +10,7 @@ import {
   type PickDeps
 } from '../../src/main/accountPicker'
 import type { ProbeResult } from '../../src/main/usageProbe'
-
-const NOW_S = 1_700_000_000
-const NOW_MS = NOW_S * 1000
-
-function meta(p: Partial<AccountMeta>): AccountMeta {
-  return {
-    name: 'a',
-    kind: 'oauth',
-    enabled: true,
-    fable: 'unknown',
-    status: 'ok',
-    addedAt: 1,
-    ...p
-  }
-}
-
-function usage(p: Partial<UsageSnapshot>): UsageSnapshot {
-  return {
-    u5: 0,
-    u7: 0,
-    uoi: 0,
-    s5: 'allowed',
-    s7: 'allowed',
-    soi: '?',
-    r5: 0,
-    r7: 0,
-    roi: 0,
-    overage: '?',
-    hasOi: false,
-    at: NOW_MS,
-    ...p
-  }
-}
+import { meta, NOW_MS, NOW_S, usage } from './helpers/accounts'
 
 const FABLE_GONE = FABLE_EXHAUSTED_LINE
 
