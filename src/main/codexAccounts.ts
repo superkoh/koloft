@@ -27,13 +27,13 @@ export function codexHomes(userData: string): string[] {
 export function prepareCodexHome(home: string, sharedConfig: string): void {
   fs.mkdirSync(home, { recursive: true, mode: 0o700 })
   const config = path.join(home, 'config.toml')
-  let present = true
   try {
     fs.lstatSync(config)
-  } catch {
-    present = false
-  }
-  if (!present && fs.existsSync(sharedConfig)) fs.symlinkSync(sharedConfig, config)
+    return
+  } catch {}
+  fs.mkdirSync(path.dirname(sharedConfig), { recursive: true, mode: 0o700 })
+  fs.writeFileSync(sharedConfig, '', { flag: 'a', mode: 0o600 })
+  fs.symlinkSync(sharedConfig, config)
 }
 
 function limitWindow(value: unknown): CodexLimitWindow | undefined {
