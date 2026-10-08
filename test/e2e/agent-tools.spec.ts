@@ -4,6 +4,7 @@ import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { installCodex, seedSettings } from './helpers/env'
 import { runGit, setupGitFixture } from './helpers/gitFixture'
+import { installStallingGit } from './helpers/gitSpawnLog'
 import {
   centerTerm,
   newSessionInWith,
@@ -24,6 +25,7 @@ const CENTER = '.term-island .term-wrap'
 const PANEL = '.wb-panel .wb-term'
 const KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS = 30_000
 const HOLD_KID_BEFORE_IT_BINDS_MS = 5_000
+const A_WORKTREE_REMOVAL_SLOWER_THAN_A_QUICK_GIT_CALL_MS = 7_000
 
 function shownTermText(page: Page, box: string): Promise<string> {
   return page.evaluate((sel) => {
@@ -213,7 +215,7 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       .toBe('0')
   })
 
-  test('koloft session close refuses while the worktree holds uncommitted work, then closes the session for good: tab, row, worktree and branch', async ({
+  test('koloft session close refuses while the worktree holds uncommitted work, then closes the session for good: tab, row, worktree and branch, even when removing the worktree takes longer than a few seconds', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -239,8 +241,14 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       expect(fs.existsSync(tree)).toBe(true)
 
       fs.rmSync(path.join(tree, 'NOTES.md'))
+      installStallingGit(env, {
+        root: fx.clone,
+        subcommand: 'worktree',
+        lastArg: tree,
+        ms: A_WORKTREE_REMOVAL_SLOWER_THAN_A_QUICK_GIT_CALL_MS
+      })
       await runIn(page, centerTerm(page), '/koloft session close')
-      await expect(rows).toHaveCount(0, { timeout: 30_000 })
+      await expect(rows).toHaveCount(0, { timeout: 60_000 })
       await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
       expect(runGit(fx.clone, 'branch', '--list', 'worktree-done').trim()).toBe('')
       expect(runGit(fx.clone, 'worktree', 'list')).not.toContain('done')

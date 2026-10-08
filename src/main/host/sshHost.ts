@@ -388,14 +388,24 @@ export class SshHost implements Host {
     })
     this.github = new GithubLookup({
       ...deps.github,
-      git: (root, args, network) => this.gitOut(root, args, network)
+      git: (root, args, network) =>
+        network
+          ? this.runGit(NETWORK_GIT, root, args, NETWORK_GIT_TIMEOUT_MS)
+          : this.gitOut(root, args)
     })
   }
 
-  async gitOut(root: string, args: string[], network = false): Promise<string | null> {
-    const r = await this.sh(network ? NETWORK_GIT : GIT, ['-C', this.bare(root), ...args], {
-      timeoutMs: network ? NETWORK_GIT_TIMEOUT_MS : undefined
-    })
+  gitOut(root: string, args: string[], timeoutMs?: number): Promise<string | null> {
+    return this.runGit(GIT, root, args, timeoutMs)
+  }
+
+  private async runGit(
+    script: string,
+    root: string,
+    args: string[],
+    timeoutMs?: number
+  ): Promise<string | null> {
+    const r = await this.sh(script, ['-C', this.bare(root), ...args], { timeoutMs })
     return r.code === 0 ? r.stdout.toString('utf8') : null
   }
 
