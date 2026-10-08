@@ -105,7 +105,7 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     ).toHaveCount(1)
   })
 
-  test('koloft session new starts a named sibling in the same workspace, nested under the caller while it is still starting, and leaves the caller on screen', async ({
+  test('koloft session new starts a named sibling in the same workspace, titled by its task, nested under the caller while it is still starting, and leaves the caller on screen', async ({
     page,
     env
   }) => {
@@ -130,6 +130,9 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     expect(kid.argv[kid.argv.indexOf('--name') + 1]).toBe('kid')
     expect(kid.firstPrompt).toMatch(/\n\nhello$/)
     await expect(nested).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+    await expect(nested.locator('.ws-tab-title', { hasText: /^hello$/ })).toHaveCount(1, {
+      timeout: 30_000
+    })
     await expect(wsGroup(page, 'ws-a').locator('.ws-tab.active')).toHaveAttribute(
       'data-tab-id',
       callerTabId!

@@ -606,6 +606,16 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   The line lands at the top of the thread's developer message. That it replaces a
   `developer_instructions` in the user's `config.toml` rather than adding to it is
   inferred, not checked.
+- **The developer instructions are saved with the thread and outlive a resume without
+  them**, and **Codex names a thread from its first message, instructions left out.**
+  Checked on 2026-10-07 with Codex CLI 0.159.3 and a real model: an app-server started
+  with `-c developer_instructions=` naming a made-up parent session answered that name;
+  the rollout file held the text; a second app-server started without the flag
+  `thread/resume`d the thread and still answered the name. In a real TUI started by
+  `koloft session new` with Koloft's handover note written before the task in the first
+  message, Codex named the thread "Acknowledge session handoff" — a name drawn from the
+  note, not the task (`agent-tools-real-smoke.spec.ts`). That the title thread never
+  reads the developer instructions is inferred, not checked, beyond that spec passing.
 - **Skills:** a folder under `$CODEX_HOME/skills/<n>/SKILL.md` was listed by
   `skills/list` (scope `user`) and used by the model. `-c 'skills.config=[{path=…}]'`
   with a path to a folder, or to a `SKILL.md`, outside those roots added nothing to

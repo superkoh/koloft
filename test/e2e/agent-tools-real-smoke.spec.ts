@@ -179,9 +179,33 @@ function refusedThenClosedForGood(
 }
 
 const CHILD = 'kid'
+const CHILD_TASK = 'Reply with the single word ok.'
 const START_A_CHILD_THEN_CLOSE_IT = {
-  default: `Run these shell commands one after another, each exactly once: koloft session new -w ${CHILD} --name ${CHILD} -- "Reply with the single word ok." — then sleep 20 — then koloft session close ${CHILD}. Then say only what the last command printed. Do nothing else.`,
-  other: `Run this shell command exactly once: koloft session new -w ${CHILD} -- "Reply with the single word ok." It prints a tab id. Then run sleep 20, then run koloft session close with that tab id. Then say only what the last command printed. Do nothing else.`
+  default: `Run these shell commands one after another, each exactly once: koloft session new -w ${CHILD} --name ${CHILD} -- "${CHILD_TASK}" — then sleep 20 — then koloft session close ${CHILD}. Then say only what the last command printed. Do nothing else.`,
+  other: `Run this shell command exactly once: koloft session new -w ${CHILD} -- "${CHILD_TASK}" It prints a tab id. Then run sleep 20, then run koloft session close with that tab id. Then say only what the last command printed. Do nothing else.`
+}
+const TITLE_SAMPLE_EVERY_MS = 250
+// CODEX§17
+const TITLE_DRAWN_FROM_THE_HANDOVER = /Koloft started you|hand-?off|hand-?over/i
+
+async function titlesSeenUntilOneRowIsLeft(rows: Locator, parentTabId: string): Promise<string[]> {
+  const seen = new Set<string>()
+  await expect
+    .poll(
+      async () => {
+        const tabs = await rows.evaluateAll((els) =>
+          els.map((el) => ({
+            tabId: el.getAttribute('data-tab-id'),
+            title: el.querySelector('.ws-tab-title')?.textContent ?? ''
+          }))
+        )
+        for (const t of tabs) if (t.tabId !== parentTabId) seen.add(t.title)
+        return tabs.length
+      },
+      { intervals: [TITLE_SAMPLE_EVERY_MS], timeout: A_REAL_MODEL_TURN_MS }
+    )
+    .toBe(1)
+  return [...seen]
 }
 
 function closesTheSessionItStarted(
@@ -201,7 +225,10 @@ function closesTheSessionItStarted(
       await ask(page, rows, START_A_CHILD_THEN_CLOSE_IT[backend])
       await expect(rows).toHaveCount(2, { timeout: A_REAL_MODEL_TURN_MS })
       await expect.poll(() => fs.existsSync(childTree), { timeout: 60_000 }).toBe(true)
-      await expect(rows).toHaveCount(1, { timeout: A_REAL_MODEL_TURN_MS })
+      const childTitles = await titlesSeenUntilOneRowIsLeft(rows, parentTabId!)
+      await test.info().attach('child-titles', { body: childTitles.join('\n') })
+      if (backend === 'default') expect(childTitles).toContain(CHILD_TASK)
+      expect(childTitles.join('\n')).not.toMatch(TITLE_DRAWN_FROM_THE_HANDOVER)
       await expect(rows).toHaveAttribute('data-tab-id', parentTabId!)
       await expect.poll(() => fs.existsSync(childTree), { timeout: 30_000 }).toBe(false)
       expect(runGit(repo, 'branch', '--list', `worktree-${CHILD}`).trim()).toBe('')
