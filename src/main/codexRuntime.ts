@@ -3,7 +3,7 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { codexEnvironment } from './codexTransport'
 import { LoginShellError, readLoginShell } from './loginShell'
-import { MIN_CODEX_VERSION } from './cliMinimums'
+import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from './cliMinimums'
 import { isNewer } from './releaseNotes'
 
 const exec = promisify(execFile)
@@ -64,7 +64,7 @@ export async function resolveCodexRuntime(
     binary,
     env,
     version: `${major}.${minor}.${patch}`,
-    verified: major === 0 && minor === 153
+    verified: `${major}.${minor}` === TESTED_CODEX_LINE
   }
 }
 

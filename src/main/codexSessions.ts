@@ -27,7 +27,7 @@ import { SessionStore, codexSessionKey, type WorktreeResource } from './sessionS
 import { SessionWorktrees } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
 import { codexTooOld, resolveCodexRuntime, updateCodex, type CodexRuntime } from './codexRuntime'
-import { MIN_CODEX_VERSION } from './cliMinimums'
+import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from './cliMinimums'
 import { occupantName } from './resumePlan'
 import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
 import { watchJsonDrops } from './jsonDrops'
@@ -248,7 +248,7 @@ export class CodexSessions {
     if (this.warnedVersion === available.version) return
     this.warnedVersion = available.version
     this.deps.error(
-      `Codex ${available.version} is newer than the version Koloft was tested with (0.153.x). It may misbehave.`
+      `Codex ${available.version} is newer than the version Koloft was tested with (${TESTED_CODEX_LINE}.x). It may misbehave.`
     )
   }
 

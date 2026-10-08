@@ -1,6 +1,7 @@
 // CC§16 CODEX§7
-export const MIN_CLAUDE_VERSION = '2.1.259'
-export const MIN_CODEX_VERSION = '0.153.4'
+export const MIN_CLAUDE_VERSION = '2.1.293'
+export const MIN_CODEX_VERSION = '0.161.0'
+export const TESTED_CODEX_LINE = MIN_CODEX_VERSION.split('.').slice(0, 2).join('.')
 
 export const ENSURE_CLAUDE_MINIMUM_FN = `claude_meets_minimum() {
   kmin_v="$("$1" --version 2>/dev/null | sed -n '1s/^\\([0-9][0-9]*\\.[0-9][0-9]*\\.[0-9][0-9]*\\).*/\\1/p')"
