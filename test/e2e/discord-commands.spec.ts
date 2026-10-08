@@ -4,7 +4,6 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
 import {
-  backgroundCount,
   newSessionInWith,
   settingsOnDisk,
   startSessionIn,
@@ -15,7 +14,6 @@ import {
 } from './helpers/p1'
 import {
   AUTOCOMPLETE,
-  replyTo,
   startFakeDiscord,
   type FakeDiscord,
   type FakePost
@@ -29,6 +27,7 @@ const STRANGER = { id: '556', username: 'someone' }
 const CHANNEL = '222'
 const CONDUCTOR_STARTS_AND_ANSWERS_MS = 60_000
 const ONLY_THE_SENDER_SEES_IT = 64
+const BACKGROUND_OUTLASTS_THE_CASE_MS = 90_000
 
 function seedConductor(env: E2EEnv): void {
   seedSettings(env, {
@@ -68,6 +67,10 @@ function ran(fake: FakeDiscord): string[] {
 
 function threadUnderChannel(fake: FakeDiscord, channelId: string): boolean {
   return fake.threads.some((t) => t.id === channelId && t.parentId === CHANNEL)
+}
+
+function replyTo(fake: FakeDiscord, interactionId: string): string | undefined {
+  return fake.callbacks.find((c) => c.interactionId === interactionId)?.data.content
 }
 
 async function connected(
@@ -218,15 +221,20 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
       const tab = (await page.evaluate(() => window.api.sessions.list())).find(
         (s) => s.sessionId === child
       )!.tabId
+      fs.writeFileSync(
+        path.join(env.home, 'fake-claude-bg-ms'),
+        String(BACKGROUND_OUTLASTS_THE_CASE_MS)
+      )
       await page.evaluate((id) => window.api.terminal.write(id, '/bg-reported\r'), tab)
-      await expect.poll(() => backgroundCount(page, tab)).toBeGreaterThan(0)
+      await expect.poll(() => terminalText(page, tab)).toContain('bg-reported running')
       await expect(wsRows(page, 'ws-a')).toHaveClass(/st-working/)
 
-      const asked = fake.interact(OWNER, 'run', { command: '/context', session: child })
-      await expect.poll(() => replyTo(fake, asked)).toMatch(/^Typing \/context into /)
+      fake.interact(OWNER, 'run', { command: '/context', session: child })
       await expect
         .poll(() => ran(fake), { timeout: 30_000 })
         .toEqual([expect.stringMatching(/ran \/context:\n## Context Usage/)])
+      expect(await terminalText(page, tab)).not.toContain('bg-reported finished')
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-working/)
     } finally {
       await quitAndClose(app)
       await fake.close()

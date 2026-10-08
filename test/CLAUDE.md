@@ -78,7 +78,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     fresh launch, used once), `-no-status` (binds but never reports a run-state),
     `-exit` (exits with that code, no hook), `-lazy` (no transcript until the first
     typed line), `-hang` (never binds, and has no signal handler, so the SIGHUP that
-    closes its tab kills it).
+    closes its tab kills it), `-bg-ms` (how long `/bg-reported`'s background work runs,
+    5 s when absent).
   - typed lines: `/write <path>` (a Write, Stop 2.5 s later — the file on disk proves
     the transcript has it), `/answer <text>` (`<text>` as the prompt, `Answer to: <text>`
     as the reply's text, then Stop), `[Discord] <text>` (answered like `/answer` with the

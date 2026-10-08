@@ -4,16 +4,8 @@ import { execFileSync } from 'child_process'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
-import {
-  backgroundCount,
-  gitInit,
-  seedJsonl,
-  startSessionIn,
-  terminalText,
-  waitBooted,
-  wsRows
-} from './helpers/p1'
-import { replyTo, startFakeDiscord, type FakeDiscord } from './helpers/fakeDiscord'
+import { gitInit, seedJsonl, startSessionIn, terminalText, waitBooted, wsRows } from './helpers/p1'
+import { startFakeDiscord, type FakeDiscord } from './helpers/fakeDiscord'
 import type { SessionInfo } from '../../src/shared/types'
 
 function claudeTokenFromKeychain(): string {
@@ -138,6 +130,11 @@ function conductorSaid(fake: FakeDiscord): string[] {
 
 function ran(fake: FakeDiscord): string[] {
   return said(fake).filter((p) => p.startsWith('⌨️ '))
+}
+
+async function statusOf(page: Page, tabId: string): Promise<string | undefined> {
+  return (await page.evaluate(() => window.api.sessions.list())).find((s) => s.tabId === tabId)
+    ?.status
 }
 
 const BACKGROUND_SLEEP_SECONDS = 600
@@ -656,7 +653,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
   })
 
   // CC§8
-  test('a real Claude session whose turn is over but whose background command still runs takes a /run /context from Discord at once, and its report reaches the channel', async ({
+  test('a real Claude session whose turn is over but whose background command still runs, so it shows working, takes a /run /context from Discord, and its report reaches the channel while the command still runs', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
@@ -666,14 +663,16 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       const child = await liveClaudeTab(page)
       await typePrompt(page, child.tabId, BACKGROUND_SLEEP_PROMPT)
       await expect
-        .poll(() => backgroundCount(page, child.tabId), { timeout: A_REAL_MODEL_TURN_MS })
-        .toBeGreaterThan(0)
-      const asked = fake.interact(OWNER, 'run', { command: '/context', session: child.sessionId })
-      await expect.poll(() => replyTo(fake, asked)).toMatch(/^Typing \/context into /)
+        .poll(() => saidBy(env, child.sessionId, 'assistant').join('\n'), {
+          timeout: A_REAL_MODEL_TURN_MS
+        })
+        .toContain('BG-STARTED')
+      await expect.poll(() => statusOf(page, child.tabId)).toBe('working')
+      fake.interact(OWNER, 'run', { command: '/context', session: child.sessionId })
       await expect
         .poll(() => ran(fake), { timeout: A_REAL_MODEL_TURN_MS })
         .toContainEqual(expect.stringMatching(/ran \/context:\n## Context Usage/))
-      expect(await backgroundCount(page, child.tabId)).toBeGreaterThan(0)
+      expect(await statusOf(page, child.tabId)).toBe('working')
     })
   })
 
@@ -701,11 +700,11 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
         })
         .toBeGreaterThan(0)
       const target = (await child())!
-      const asked = fake.interact(OWNER, 'compact', { session: target.sessionId })
-      await expect.poll(() => replyTo(fake, asked)).toMatch(/^Typing \/compact into /)
+      fake.interact(OWNER, 'compact', { session: target.sessionId })
       await expect
         .poll(() => ran(fake), { timeout: A_REAL_MODEL_TURN_MS })
         .toContainEqual(expect.stringMatching(/ran \/compact:\n/))
+      expect((await child())?.background?.length ?? 0).toBeGreaterThan(0)
     })
   })
 
