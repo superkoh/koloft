@@ -1205,5 +1205,8 @@ with `koloft`, and printed nothing for that one. The prompt asked for a Bash
 - **A `deny` stopped the call in that mode**: neither file was written, and claude got
   the reason back as `PreToolUse:Bash hook error: <text>` and went on to the next step.
 - **Printing nothing let the call run** (`koloft help` ran).
-- Not run: an interactive session (only `-p`), and a `Task` subagent's own tool calls
-  under the hook.
+- **The same holds in an interactive session.** 2026-10-08, CC 2.1.294, the
+  `discord-real-smoke` case for a Claude conductor: Koloft's own gate, a pty session
+  with `--dangerously-skip-permissions`, asked to write a file — the file was not
+  written and the transcript held `PreToolUse:<tool> hook error`.
+- Not run: a `Task` subagent's own tool calls under the hook.
