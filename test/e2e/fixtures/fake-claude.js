@@ -612,7 +612,18 @@ function keyOnTheDialog() {
   })
 }
 const rl = readline.createInterface({ input: typedLines })
-rl.on('line', handleLine)
+const PASTE_START = '\x1b[200~'
+const PASTE_END = '\x1b[201~'
+let pasted = null
+// CC§17
+rl.on('line', (line) => {
+  if (pasted === null && !line.includes(PASTE_START)) return handleLine(line)
+  pasted = pasted === null ? line.replace(PASTE_START, '') : pasted + '\n' + line
+  if (!pasted.includes(PASTE_END)) return
+  const whole = pasted.replace(PASTE_END, '')
+  pasted = null
+  handleLine(whole)
+})
 function handleLine(line) {
   const text = line.replace(ESC, '').trim()
   if (worktreeChoicePending) {

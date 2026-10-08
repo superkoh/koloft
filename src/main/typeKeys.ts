@@ -10,3 +10,8 @@ export async function typeKeys(write: (data: string) => void, keys: string[]): P
     write(key)
   }
 }
+
+// CC§17 CODEX§23
+export function bracketedPaste(text: string): string {
+  return `\x1b[200~${text}\x1b[201~`
+}

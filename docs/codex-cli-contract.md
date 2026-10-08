@@ -876,3 +876,17 @@ How established: 2026-10-08 on this Mac, each run in a fresh temporary `HOME` wi
   user's own `CODEX_HOME`, never an account home (§15). `current` moves to
   `releases/0.161.0-…` and `releases/0.153.4-…` stays.
 
+## 23. A bracketed paste lands in the composer unsent
+
+How established: recorded from the issue #4 design round's probe notes (Codex CLI
+0.159.3, the real TUI in a pty, early October 2026); a second reader re-ran them then.
+Not re-run here.
+
+- **The TUI turns bracketed paste on at startup** (it writes `ESC[?2004h`).
+- **A write wrapped in `ESC[200~` … `ESC[201~` lands in the composer and is not sent**;
+  no `turn/start` goes out until the person presses Enter. How many lines the probe
+  pasted, and which byte separated them, is not recorded; LF inside the markers sending
+  nothing is inferred, not checked.
+- Codex on a remote machine is not a tab Koloft starts yet (§16), so the paste over ssh
+  and tmux is not probed for Codex.
+

@@ -1546,6 +1546,7 @@ export default function App(): JSX.Element {
                   if (workbenchFull) setWorkbenchFull(false)
                   else returnFocus()
                 }}
+                onReturnFocus={returnFocus}
                 pinned={cdpAttached}
                 tabForSession={(sid) => tabForSession(useStore.getState(), sid)}
                 cdpOps={cdpOps}

@@ -1242,3 +1242,22 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   (`downloads.claude.ai/claude-code-releases/latest` said 2.1.294; npm dist-tags said
   `latest` 2.1.293, `next` 2.1.294, `stable` 2.1.285). A minimum above npm's `latest`
   would leave an npm install that `claude update` cannot lift to it.
+
+## §17 A bracketed paste lands in the input box unsent
+
+How established: recorded from the issue #4 design round's probe notes (CC 2.1.287, real
+claude in a pty, early October 2026); a second reader re-ran them then. Not re-run here.
+
+- **claude turns bracketed paste on at startup** (it writes `ESC[?2004h`).
+- **A write wrapped in `ESC[200~` … `ESC[201~` lands as one block and is not sent.** 7
+  lines and 85 lines each showed as one `[Pasted text #1 +N lines]` in the input box,
+  with nothing submitted. The person's own Enter sends it; a CR written right after the
+  paste was not probed.
+- **The same 85 lines written raw, with no markers, split into two blocks**, so a raw
+  write is not one paste.
+- Which byte separated the lines in the probe is not recorded. Koloft sends LF, which
+  §12 shows only adds a line even when typed, so LF inside the markers sending nothing
+  is inferred, not checked.
+- Over ssh into tmux, tmux hands the markers on to a pane only when the program in it
+  turned bracketed paste on; claude does, so the paste arriving whole is inferred, not
+  checked on a real remote tab.

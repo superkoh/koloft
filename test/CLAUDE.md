@@ -101,7 +101,10 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     `/enter-worktree <name>`, `/exit-worktree`, `/bg-work`, `/bg-reported`,
     `/bg-monitor`, `/bg-shell`. Any other line is a prompt answered by a Read and a
     Stop. Esc keystrokes are dropped from a typed line (its pty hands over whole lines,
-    so an Esc Koloft presses lands inside the next one).
+    so an Esc Koloft presses lands inside the next one). A bracketed paste
+    (`ESC[200~` … `ESC[201~`) waits, as in the real input box, until the Enter after
+    it, and is then one prompt together with what was typed after it; fake-codex
+    keeps one in its composer the same way.
   - every launch writes one line to `env.claudeCalls` (argv, cwd, session id,
     injected auth) before any delay.
   - like the real one, it lists itself in `<home>/.claude/sessions/<pid>.json` with a

@@ -146,6 +146,24 @@ export function splitHunks(section: string): DiffHunk[] {
   return out
 }
 
+export function fenceFor(text: string): string {
+  const longest = (text.match(/`+/g) ?? []).reduce((n, run) => Math.max(n, run.length), 0)
+  return '`'.repeat(Math.max(3, longest + 1))
+}
+
+export function hunkPrompt(rel: string, hunk: string, note: string): string {
+  const diff = hunk.replace(/\n+$/, '')
+  const fence = fenceFor(diff)
+  const said = note.trim()
+  return [rel, fence + 'diff', diff, fence, ...(said ? ['', said] : [])].join('\n')
+}
+
+export function commentBlocked(session: SessionInfo | null): string | null {
+  if (!session?.alive) return CHANGES_MSG.commentNoSession
+  if (session.status === 'approval') return CHANGES_MSG.commentApproval
+  return null
+}
+
 export function writtenPaths(session: SessionInfo | null): Set<string> {
   const out = new Set<string>()
   for (const f of session?.files ?? []) if (f.access === 'wrote') out.add(f.src)
@@ -297,6 +315,9 @@ export const CHANGES_MSG = {
   cutOff: 'Not shown — the change set was truncated.',
   fileCutOff: 'This file’s diff was truncated — showing what fits.',
   noDiff: 'No diff available.',
+  comment: 'Comment on this hunk and put it in the session’s input box',
+  commentNoSession: 'No running session to put it in',
+  commentApproval: 'The session is waiting for an approval — answer it in the session first',
   totals: (t: ChangeTotals): string => {
     const one = t.files === 1
     let s = `${t.files} ${one ? 'file' : 'files'} listed · ${t.added} added, ${t.removed} removed.`
