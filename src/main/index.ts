@@ -1763,7 +1763,8 @@ app.whenReady().then(() => {
     },
     status: (tabId) => tracker.statusOf(tabId),
     awaitsInput: (tabId) => tracker.awaitsInput(tabId),
-    unknown: (tabId) => statusUnavailable(sessionOfTab(tabId))
+    unknown: (tabId) => statusUnavailable(sessionOfTab(tabId)),
+    alive: (tabId) => !!ptyMgr.get(tabId)?.alive
   })
   const dialogOf = async (tabId: string): Promise<DialogView | undefined> => {
     const ask = await codexAskOf(tabId)

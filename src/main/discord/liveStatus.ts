@@ -15,6 +15,7 @@ export interface LiveStatusDeps {
   status(tabId: string): SessionStatus | undefined
   awaitsInput(tabId: string): boolean
   unknown(tabId: string): boolean
+  alive(tabId: string): boolean
 }
 
 // PLATFORM§39
@@ -75,6 +76,7 @@ export class LiveStatus {
   constructor(private d: LiveStatusDeps) {}
 
   async refresh(tabId: string): Promise<void> {
+    if (!this.d.alive(tabId)) return
     const opener = this.d.openerOf(tabId)
     if (!opener && !this.d.conductorChannelOf(tabId) && !this.tabs.has(tabId)) return
     const entry = this.entryOf(tabId)

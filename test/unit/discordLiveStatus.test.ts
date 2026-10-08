@@ -17,6 +17,7 @@ function setup() {
   const openers = new Map<string, { channelId: string; threadId: string }>()
   const conductorChannels = new Map<string, string>()
   const names = new Map<string, string>()
+  const gone = new Set<string>()
   const edits: { channelId: string; messageId: string; header: string }[] = []
   const typed: string[] = []
   let holdEdits = false
@@ -38,7 +39,8 @@ function setup() {
       names.has(tabId) ? { name: names.get(tabId)!, backend: 'claude', workspace: WS } : undefined,
     status: (tabId) => status.get(tabId),
     awaitsInput: (tabId) => asking.has(tabId),
-    unknown: (tabId) => unknown.has(tabId)
+    unknown: (tabId) => unknown.has(tabId),
+    alive: (tabId) => !gone.has(tabId)
   })
   const withThread = (tabId: string, name: string, threadId: string): void => {
     names.set(tabId, name)
@@ -59,6 +61,7 @@ function setup() {
     openers,
     conductorChannels,
     names,
+    gone,
     edits,
     typed,
     withThread,
@@ -237,6 +240,19 @@ describe('"Koloft is typing…" shows while a session or a conductor works', () 
     t.unknown.add('t2')
     await t.live.refresh('t2')
     await vi.advanceTimersByTimeAsync(TYPING_RENEWED_EVERY_MS)
+    expect(t.typed).toEqual([])
+  })
+
+  it('a "working" that lands after a conductor’s terminal is gone starts no typing that nothing would stop', async () => {
+    vi.useFakeTimers()
+    const t = setup()
+    t.conductorChannels.set('c1', '10')
+    t.live.closed('c1')
+    t.live.forget('c1')
+    t.gone.add('c1')
+    t.status.set('c1', 'working')
+    await t.live.refresh('c1')
+    await vi.advanceTimersByTimeAsync(TYPING_RENEWED_EVERY_MS * 2)
     expect(t.typed).toEqual([])
   })
 })
