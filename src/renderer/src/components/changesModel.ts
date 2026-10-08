@@ -146,7 +146,7 @@ export function splitHunks(section: string): DiffHunk[] {
   return out
 }
 
-export function fenceFor(text: string): string {
+function fenceFor(text: string): string {
   const longest = (text.match(/`+/g) ?? []).reduce((n, run) => Math.max(n, run.length), 0)
   return '`'.repeat(Math.max(3, longest + 1))
 }

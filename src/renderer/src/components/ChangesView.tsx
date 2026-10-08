@@ -536,7 +536,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
                     (load.pending || (load.backfill && e.status === 'untracked')))
                 }
                 observe={observe}
-                commentBlocked={blocked}
+                blocked={blocked}
                 onToggleExpand={toggleExpand}
                 onToggleOpen={toggleOpen}
                 onSetView={setView}
@@ -562,7 +562,7 @@ interface BlockProps {
   cut: boolean
   loading: boolean
   observe: (el: HTMLElement) => () => void
-  commentBlocked: string | null
+  blocked: string | null
   onToggleExpand: (path: string) => void
   onToggleOpen: (path: string) => void
   onSetView: (path: string, v: 'diff' | 'source') => void
@@ -583,7 +583,7 @@ const ChangeBlock = memo(function ChangeBlock({
   cut,
   loading,
   observe,
-  commentBlocked,
+  blocked,
   onToggleExpand,
   onToggleOpen,
   onSetView,
@@ -638,7 +638,7 @@ const ChangeBlock = memo(function ChangeBlock({
               entry={entry}
               seen={seen}
               expanded={isExpanded}
-              commentBlocked={commentBlocked}
+              blocked={blocked}
               onToggleExpand={onToggleExpand}
               onComment={onComment}
             />
@@ -664,7 +664,7 @@ const ChangeBlock = memo(function ChangeBlock({
         entry={entry}
         seen={seen}
         expanded={isExpanded}
-        commentBlocked={commentBlocked}
+        blocked={blocked}
         onToggleExpand={onToggleExpand}
         onComment={onComment}
       />
@@ -734,7 +734,7 @@ function Hunks({
   entry,
   seen,
   expanded,
-  commentBlocked,
+  blocked,
   onToggleExpand,
   onComment
 }: {
@@ -742,11 +742,17 @@ function Hunks({
   entry: ChangeEntry
   seen: boolean
   expanded: boolean
-  commentBlocked: string | null
+  blocked: string | null
   onToggleExpand: (path: string) => void
   onComment: (text: string) => Promise<void>
 }): JSX.Element {
-  const [commenting, setCommenting] = useState<number | null>(null)
+  const [commentedHunk, setCommentedHunk] = useState<string | null>(null)
+  const commenting = hunks.findIndex((h) => h.text === commentedHunk)
+  const [note, setNote] = useState('')
+  const openComment = (text: string | null): void => {
+    setCommentedHunk(text)
+    setNote('')
+  }
   return (
     <>
       {hunks.map((h, i) => (
@@ -766,19 +772,21 @@ function Hunks({
             <button
               className="cv-exp cv-cmt"
               aria-pressed={commenting === i}
-              disabled={!!commentBlocked}
-              title={commentBlocked ?? MSG.comment}
-              onClick={() => setCommenting(commenting === i ? null : i)}
+              disabled={!!blocked}
+              title={blocked ?? MSG.comment}
+              onClick={() => openComment(commenting === i ? null : h.text)}
             >
               ✎ comment
             </button>
           </div>
           {commenting === i && (
             <CommentBox
-              blocked={commentBlocked}
-              onClose={() => setCommenting(null)}
-              onPut={(note) => {
-                setCommenting(null)
+              blocked={blocked}
+              note={note}
+              setNote={setNote}
+              onClose={() => openComment(null)}
+              onPut={() => {
+                openComment(null)
                 void onComment(hunkPrompt(entry.rel, h.text, note))
               }}
             />
@@ -792,16 +800,19 @@ function Hunks({
 
 function CommentBox({
   blocked,
+  note,
+  setNote,
   onClose,
   onPut
 }: {
   blocked: string | null
+  note: string
+  setNote: (note: string) => void
   onClose: () => void
-  onPut: (note: string) => void
+  onPut: () => void
 }): JSX.Element {
-  const [note, setNote] = useState('')
   const put = (): void => {
-    if (!blocked) onPut(note)
+    if (!blocked) onPut()
   }
   return (
     <form
@@ -813,7 +824,7 @@ function CommentBox({
       }}
     >
       <textarea
-        className="ed-area cv-comment-text"
+        className="ed-area"
         rows={3}
         autoFocus
         placeholder="Your note on this hunk…"
