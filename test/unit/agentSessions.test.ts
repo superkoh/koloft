@@ -3,7 +3,6 @@ import os from 'os'
 import path from 'path'
 import { describe, expect, it, vi } from 'vitest'
 import {
-  handoverPreamble,
   NOT_IN_YOUR_WORKSPACE,
   ONLY_THE_GLOBAL_CONDUCTOR,
   ownerSays,
@@ -16,6 +15,7 @@ import {
   type Target
 } from '../../src/main/agentSessions'
 import { crossSessionLine } from '../../src/main/crossSessionMessage'
+import { handoverPreamble } from '../../src/main/handover'
 import { StartedSessions } from '../../src/main/startedSessions'
 import { EXIT_USAGE, type AgentReply } from '../../src/main/agentRequests'
 import type {
@@ -347,11 +347,15 @@ describe('koloft session new', () => {
     expect(launched[0].firstPrompt).toContain('"me title"')
   })
 
-  it('a Codex caller starts a Codex sibling told to report back to its thread id, and gets the tab id to reach it by', async () => {
+  it('a Codex caller starts a Codex sibling told, beside its first message, to report back to its thread id, so the task alone is what Codex names the thread by; the caller gets the tab id to reach it by', async () => {
     const { verb, launched } = harness([session('me', 'codex', { nativeSessionId: CODEX_THREAD })])
     const reply = await verb(['new', '--', 'Check the tests.'], from('me'))
-    expect(launched[0]).toMatchObject({ kind: 'codex', name: undefined })
-    expect(launched[0].firstPrompt).toContain(`koloft session send ${CODEX_THREAD}`)
+    expect(launched[0]).toMatchObject({
+      kind: 'codex',
+      name: undefined,
+      firstPrompt: 'Check the tests.'
+    })
+    expect(launched[0].role).toContain(`koloft session send ${CODEX_THREAD}`)
     expect(reply.text).toContain('new-tab')
   })
 
@@ -960,7 +964,7 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
       ['codex', OTHER_WS],
       ['claude', WS]
     ])
-    expect(launched[0].firstPrompt).toContain('koloft session send global-id')
+    expect(launched[0].role).toContain('koloft session send global-id')
     expect(launched[1].firstPrompt).toContain('"app-conductor" with your SendMessage tool')
     expect(started).toEqual([
       {
