@@ -5,7 +5,7 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
 import { gitInit, seedJsonl, startSessionIn, terminalText, waitBooted, wsRows } from './helpers/p1'
-import { openerNow, startFakeDiscord, type FakeDiscord } from './helpers/fakeDiscord'
+import { openerNow, startFakeDiscord, type FakeDiscord, type FakePost } from './helpers/fakeDiscord'
 
 function claudeTokenFromKeychain(): string {
   const account = process.env.KOLOFT_SMOKE_ACCOUNT
@@ -350,7 +350,10 @@ async function answersWholeInTheChannel(fake: FakeDiscord): Promise<void> {
 }
 
 async function startedSessionsCardFollowsIt(fake: FakeDiscord, backend: string): Promise<void> {
-  const opener = fake.posted.find((p) => p.channelId === CHANNEL && p.content.startsWith('▶ '))!
+  const started = (): FakePost | undefined =>
+    fake.posted.find((p) => p.channelId === CHANNEL && p.content.startsWith('▶ '))
+  await expect.poll(started, { timeout: A_REAL_MODEL_TURN_MS }).toBeTruthy()
+  const opener = started()!
   const states = (): string[] =>
     fake.edits
       .filter((e) => e.channelId === CHANNEL && e.id === opener.id)
