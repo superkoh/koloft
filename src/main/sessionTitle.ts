@@ -1,6 +1,5 @@
 import { execFile } from 'node:child_process'
 import os from 'node:os'
-import type { AccountKind } from '@shared/types'
 
 const NAME_MAX_CHARS = 40
 const TASK_MAX_CHARS_SENT_FOR_A_TITLE = 4000
@@ -29,7 +28,7 @@ const TITLE_ARGV = [
   ''
 ]
 
-export function firstLineName(text: string): string {
+function firstLineName(text: string): string {
   const line = text
     .split('\n')
     .map((l) => l.trim())
@@ -40,13 +39,13 @@ export function firstLineName(text: string): string {
     .trim()
 }
 
-export function nameFromReply(reply: string): string {
+function nameFromReply(reply: string): string {
   return firstLineName(reply)
     .replace(/^["'“‘「『]+|["'”’」』。.!！]+$/g, '')
     .trim()
 }
 
-export function distinctName(name: string, taken: Set<string>): string {
+function distinctName(name: string, taken: Set<string>): string {
   if (!taken.has(name)) return name
   let n = 2
   while (taken.has(`${name} ${n}`)) n++
@@ -64,21 +63,6 @@ export async function nameForTask(
   return distinctName((reply && nameFromReply(reply)) || firstLineName(task), taken)
 }
 
-export function accountAuthEnv(
-  kind: AccountKind,
-  secret: string,
-  endpoint?: { baseUrl?: string; model?: string }
-): NodeJS.ProcessEnv {
-  if (kind === 'oauth') return { CLAUDE_CODE_OAUTH_TOKEN: secret }
-  if (kind === 'apikey') return { ANTHROPIC_API_KEY: secret }
-  // CC§7
-  return {
-    ANTHROPIC_AUTH_TOKEN: secret,
-    ...(endpoint?.baseUrl ? { ANTHROPIC_BASE_URL: endpoint.baseUrl } : {}),
-    ...(endpoint?.model ? { ANTHROPIC_DEFAULT_HAIKU_MODEL: endpoint.model } : {})
-  }
-}
-
 const AUTH_VARS = ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN']
 
 export function claudeTitleModel(
@@ -86,16 +70,15 @@ export function claudeTitleModel(
   auth: () => Promise<NodeJS.ProcessEnv>
 ): TitleModel {
   return async (prompt) => {
-    const picked = await auth().catch(() => ({}))
+    const picked = await auth()
     const env = { ...process.env }
-    if (Object.keys(picked).some((k) => AUTH_VARS.includes(k))) {
-      for (const k of AUTH_VARS) delete env[k]
-    }
+    if (Object.keys(picked).length) for (const k of AUTH_VARS) delete env[k]
+    Object.assign(env, picked)
     return new Promise((resolve) => {
       const child = execFile(
         claude(),
         TITLE_ARGV,
-        { env: { ...env, ...picked }, cwd: os.tmpdir(), timeout: TITLE_TIMEOUT_MS },
+        { env, cwd: os.tmpdir(), timeout: TITLE_TIMEOUT_MS },
         (err, stdout) => resolve(err ? null : stdout)
       )
       child.stdin?.on('error', () => {})

@@ -296,7 +296,7 @@ import {
 } from './agentSessions'
 import { writeLine } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
-import { accountAuthEnv, claudeTitleModel } from './sessionTitle'
+import { claudeTitleModel } from './sessionTitle'
 import { closingTree, removeTree, whatIsLeft } from './sessionClose'
 import { discordTokenRead, discordTokenWrite } from './accounts'
 import { writeAgentPlugin } from './agentPlugin'
@@ -866,10 +866,7 @@ async function pickForLaunch(tabId?: string): Promise<{
 
 async function pickedAccountEnv(): Promise<NodeJS.ProcessEnv> {
   await loginEnvReady()
-  const { res, endpoint } = await pickForLaunch()
-  if (!res.account) return {}
-  const secret = await keychainRead(res.kind, res.account)
-  return secret ? accountAuthEnv(res.kind, secret, endpoint) : {}
+  return (await pickMachineAccount(() => pickForLaunch()))?.env ?? {}
 }
 
 async function handlePickRequest(pickDir: string, reqName: string, raw: unknown): Promise<void> {

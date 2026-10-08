@@ -131,12 +131,7 @@ export function extractJsonlMeta(lines: Iterable<string>): Partial<SessionMeta> 
       meta.summary = obj.summary
     }
     // CC§9
-    if (
-      meta.customTitle === undefined &&
-      obj.type === 'custom-title' &&
-      typeof obj.customTitle === 'string' &&
-      obj.customTitle
-    ) {
+    if (obj.type === 'custom-title' && typeof obj.customTitle === 'string' && obj.customTitle) {
       meta.customTitle = obj.customTitle
     }
     // CC§2
