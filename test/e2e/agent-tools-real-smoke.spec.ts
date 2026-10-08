@@ -13,10 +13,12 @@ import {
   waitBooted,
   wsRows
 } from './helpers/p1'
+import { portOffset } from '../../src/shared/worktreeName'
 import {
   WORKBENCH,
   claudePromptsIn,
   claudeRepliesIn,
+  claudeToolResultsIn,
   outsideThePaste,
   putCommentOnFirstHunkInSession,
   showBrowse
@@ -140,9 +142,11 @@ async function inARealWorktreeSession(
   backend: 'default' | 'other',
   useReal: (env: E2EEnv, trusted: string[]) => void,
   alsoTrusted: string[],
-  body: (s: RealWorktreeSession) => Promise<void>
+  body: (s: RealWorktreeSession) => Promise<void>,
+  seedRepo?: (repo: string) => void
 ): Promise<void> {
   const fx = setupGitFixture(env)
+  seedRepo?.(fx.clone)
   const tree = path.join(fx.clone, '.claude', 'worktrees', WORKTREE)
   useReal(env, [
     fx.clone,
@@ -317,6 +321,14 @@ function jsonLines(file: string): Record<string, unknown>[] {
 interface CodexItem {
   type?: string
   content?: { text?: unknown }[]
+  aggregated_output?: unknown
+}
+
+function contentText(item: CodexItem): string {
+  return (item.content ?? [])
+    .map((c) => c.text)
+    .filter((t) => typeof t === 'string')
+    .join('')
 }
 
 function rolloutThreadId(file: string): string {
@@ -325,21 +337,19 @@ function rolloutThreadId(file: string): string {
   )
 }
 
-function codexItems(env: E2EEnv, sessionId: string, itemType: string): string[] {
+function codexItems(
+  env: E2EEnv,
+  sessionId: string,
+  itemType: string,
+  textOf: (item: CodexItem) => string = contentText
+): string[] {
   return codexRollouts(env)
     .filter((f) => !!rolloutThreadId(f) && sessionId.endsWith(rolloutThreadId(f)))
     .flatMap(jsonLines)
     .flatMap((r) => {
       const payload = r.payload as { type?: string; item?: CodexItem } | undefined
       const item = r.type === 'event_msg' && payload?.type === 'item_completed' && payload.item
-      return item && item.type === itemType
-        ? [
-            (item.content ?? [])
-              .map((c) => c.text)
-              .filter((t) => typeof t === 'string')
-              .join('')
-          ]
-        : []
+      return item && item.type === itemType ? [textOf(item)] : []
     })
 }
 
@@ -426,6 +436,114 @@ function aHunkCommentWaitsForEnterThenGoesAsOneMessage(
     expect(transcript.prompts(env, sessionId)).toHaveLength(promptsBefore + 1)
   })
 }
+
+const ECHO_THE_PORT_OFFSET = {
+  default:
+    'Run this shell command exactly once with your Bash tool: echo "$KOLOFT_PORT_OFFSET" — then reply with only the number it printed. Do nothing else.',
+  other:
+    'Run this shell command exactly once with your shell tool: echo "$KOLOFT_PORT_OFFSET" — then reply with only the number it printed. Do nothing else.'
+}
+const IGNORED_FILE_THE_WORKTREE_INCLUDE_LISTS = '.env'
+const IGNORED_FILE_TEXT = 'PORT=3000\n'
+
+function ignoredEnvFileListedInWorktreeInclude(repo: string): void {
+  fs.writeFileSync(path.join(repo, '.gitignore'), `${IGNORED_FILE_THE_WORKTREE_INCLUDE_LISTS}\n`)
+  fs.writeFileSync(
+    path.join(repo, '.worktreeinclude'),
+    `${IGNORED_FILE_THE_WORKTREE_INCLUDE_LISTS}\n`
+  )
+  runGit(repo, 'add', '-A')
+  runGit(repo, 'commit', '-q', '-m', 'worktreeinclude')
+  fs.writeFileSync(path.join(repo, IGNORED_FILE_THE_WORKTREE_INCLUDE_LISTS), IGNORED_FILE_TEXT)
+}
+
+interface ShellTranscript {
+  replies: (env: E2EEnv, sessionId: string) => string[]
+  shellOutputs: (env: E2EEnv, sessionId: string) => string[]
+}
+
+const CLAUDE_SHELL_TRANSCRIPT: ShellTranscript = {
+  replies: CLAUDE_TRANSCRIPT.replies,
+  shellOutputs: (env, sessionId) => claudeToolResultsIn(claudeTranscript(env, sessionId))
+}
+
+const CODEX_SHELL_TRANSCRIPT: ShellTranscript = {
+  replies: CODEX_TRANSCRIPT.replies,
+  shellOutputs: (env, sessionId) =>
+    codexItems(env, sessionId, 'CommandExecution', (item) => String(item.aggregated_output ?? ''))
+}
+
+function theAgentsOwnShellSeesItsWorktreesPortOffset(
+  env: E2EEnv,
+  backend: 'default' | 'other',
+  useReal: (env: E2EEnv, trusted: string[]) => void,
+  transcript: ShellTranscript,
+  withWorktreeInclude = false
+): Promise<void> {
+  test.setTimeout(A_REAL_MODEL_TURN_MS + 180_000)
+  return inARealWorktreeSession(
+    env,
+    backend,
+    useReal,
+    [],
+    async ({ page, rows, tree }) => {
+      if (withWorktreeInclude)
+        expect(
+          fs.readFileSync(path.join(tree, IGNORED_FILE_THE_WORKTREE_INCLUDE_LISTS), 'utf8')
+        ).toBe(IGNORED_FILE_TEXT)
+      const sessionId =
+        (await boundSessionId(page, (await rows.getAttribute('data-tab-id'))!)) ?? ''
+      expect(sessionId).not.toBe('')
+      await ask(page, rows, ECHO_THE_PORT_OFFSET[backend])
+      await expect(rows).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: A_REAL_MODEL_TURN_MS })
+      await expect
+        .poll(() => transcript.replies(env, sessionId).length, { timeout: 30_000 })
+        .toBeGreaterThan(0)
+      const replies = transcript.replies(env, sessionId)
+      const outputs = transcript.shellOutputs(env, sessionId)
+      await test.info().attach('the-reply', { body: replies.join('\n') })
+      await test.info().attach('the-shell-output', { body: outputs.join('\n') })
+      console.log(`reply: ${JSON.stringify(replies.at(-1))} shell: ${JSON.stringify(outputs)}`)
+      const offset = String(portOffset(WORKTREE))
+      expect(replies.at(-1)?.trim()).toBe(offset)
+      expect(outputs.map((o) => o.trim())).toContain(offset)
+    },
+    withWorktreeInclude ? ignoredEnvFileListedInWorktreeInclude : undefined
+  )
+}
+
+test.describe('KOLOFT_PORT_OFFSET reaches the REAL agent’s own shell in a worktree session: opt-in cases; they spend real money', () => {
+  test('a real Claude Code in a worktree session echoes, with its Bash tool, the port offset of that worktree’s name', async ({
+    env
+  }) => {
+    test.skip(
+      !HAVE_REAL_CLAUDE,
+      'set KOLOFT_SMOKE_CLAUDE (absolute path of a real claude binary) and KOLOFT_SMOKE_OAUTH_TOKEN or KOLOFT_SMOKE_ACCOUNT (a Settings ▸ Accounts name, read off the Keychain)'
+    )
+    await theAgentsOwnShellSeesItsWorktreesPortOffset(
+      env,
+      'default',
+      useRealClaude,
+      CLAUDE_SHELL_TRANSCRIPT
+    )
+  })
+
+  test('a real Codex in a worktree Koloft made gets the ignored files .worktreeinclude lists, and echoes, with its shell tool, the port offset of that worktree’s name', async ({
+    env
+  }) => {
+    test.skip(
+      !HAVE_REAL_CODEX,
+      'set KOLOFT_SMOKE_CODEX (absolute path of a real codex binary) and KOLOFT_SMOKE_CODEX_HOME (a signed-in CODEX_HOME; only its auth.json is copied)'
+    )
+    await theAgentsOwnShellSeesItsWorktreesPortOffset(
+      env,
+      'other',
+      useRealCodex,
+      CODEX_SHELL_TRANSCRIPT,
+      true
+    )
+  })
+})
 
 test.describe('`koloft session close` from a REAL agent in a worktree: opt-in cases proving the real claude and codex reach the command; they spend real money', () => {
   test('a real Claude Code starts a child session in a worktree, then closes it for good while it stays open itself', async ({

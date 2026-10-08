@@ -9,6 +9,7 @@ import {
   WORKBENCH,
   claudePromptsIn,
   claudeRepliesIn,
+  claudeToolResultsIn,
   layoutState,
   outsideThePaste,
   putCommentOnFirstHunkInSession,
@@ -17,11 +18,15 @@ import {
   waitPanelAttached
 } from './helpers/workbench'
 import { defaultControlDir } from '../../src/main/remote/ssh'
+import { portOffset } from '../../src/shared/worktreeName'
 import {
   addWorkspace,
   centerTerm,
+  closeMenu,
   FAKE_SESSION_TITLE,
+  menuItemTexts,
   openMenu,
+  openWorktreeSession,
   runIn,
   startSessionIn,
   waitBooted,
@@ -52,6 +57,11 @@ const README = (user: string): string => `# Lab project\n\nkoloft-ssh-lab marker
 const A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS = 180_000
 const A_PASTE_THAT_SENT_ITSELF_WOULD_HAVE_STARTED_A_TURN_BY_MS = 5_000
 const REPLY_WORD = 'PLUM'
+const ECHO_THE_PORT_OFFSET_WITH_BASH =
+  'Run this shell command exactly once with your Bash tool: echo "$KOLOFT_PORT_OFFSET" — then reply with only the number it printed. Do nothing else.'
+const ENTERS_BEFORE_GIVING_UP = 3
+const TYPED_TEXT_SETTLES_IN_THE_INPUT_BOX_MS = 1_000
+const A_SUBMITTED_PROMPT_REACHES_THE_TRANSCRIPT_MS = 15_000
 const COMMIT_THE_PROJECT_THEN_EDIT_THE_README =
   'cd proj && printf "NOTES.md\\n" > .gitignore && git init -q && git add -A' +
   ' && git -c user.email=lab@koloft.test -c user.name=lab commit -qm base' +
@@ -352,6 +362,81 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         expect(prompts()).toHaveLength(promptsBefore + 1)
       },
       (lab) => useRealClaudeOnTheMachine(env, lab)
+    )
+  })
+
+  test('E-SSH-11: a REAL claude on the machine, in a worktree session made there through ssh and tmux, echoes with its Bash tool the port offset of that worktree’s name (opt-in, spends real money)', async ({
+    env
+  }) => {
+    test.skip(!HAVE_LINUX_CLAUDE, NEEDS_LINUX_CLAUDE)
+    test.setTimeout(2 * A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS + 120_000)
+    seedSettings(env, { hintsOff: true })
+    const worktree = 'lab-ports'
+    await withLab(
+      env,
+      async ({ page, lab }) => {
+        runOnTarget(lab, 'kuser', COMMIT_THE_PROJECT_THEN_EDIT_THE_README)
+        await addMachine(page, 'kt-key', 'kuser')
+        await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+        await expect
+          .poll(
+            async () => {
+              await openMenu(page, page.locator('.ws-head', { hasText: 'kt-key' }))
+              const items = await menuItemTexts(page)
+              await closeMenu(page)
+              return items.join(' | ')
+            },
+            { timeout: 60_000 }
+          )
+          .toContain('New worktree session')
+        const dlg = await openWorktreeSession(page, 'kt-key')
+        await dlg.getByRole('textbox').click()
+        await page.keyboard.type(worktree)
+        await page.keyboard.press('Enter')
+        await expect(dlg).toHaveCount(0)
+        const bound = async (): Promise<{ tabId: string; sessionId: string } | undefined> =>
+          (await page.evaluate(() => window.api.sessions.list())).find(
+            (s) => s.alive && s.sessionId
+          )
+        await expect
+          .poll(async () => (await bound())?.sessionId ?? '', {
+            timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
+          })
+          .not.toBe('')
+        const { tabId, sessionId } = (await bound())!
+        const transcript = (): string => transcriptOnTarget(lab, sessionId)
+        const write = (data: string): Promise<void> =>
+          page.evaluate(([id, d]) => window.api.terminal.write(id, d), [tabId, data])
+
+        await write(ECHO_THE_PORT_OFFSET_WITH_BASH)
+        for (let i = 0; i < ENTERS_BEFORE_GIVING_UP; i++) {
+          await page.waitForTimeout(TYPED_TEXT_SETTLES_IN_THE_INPUT_BOX_MS)
+          await write('\r')
+          const sent = await expect
+            .poll(() => claudePromptsIn(transcript()).length, {
+              timeout: A_SUBMITTED_PROMPT_REACHES_THE_TRANSCRIPT_MS
+            })
+            .toBeGreaterThan(0)
+            .then(() => true)
+            .catch(() => false)
+          if (sent) break
+        }
+        const offset = String(portOffset(worktree))
+        await expect
+          .poll(() => claudeRepliesIn(transcript()).at(-1)?.trim(), {
+            timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
+          })
+          .toBe(offset)
+        const outputs = claudeToolResultsIn(transcript())
+        await test.info().attach('the-reply', { body: claudeRepliesIn(transcript()).join('\n') })
+        await test.info().attach('the-shell-output', { body: outputs.join('\n') })
+        console.log(
+          `reply: ${JSON.stringify(claudeRepliesIn(transcript()).at(-1))} shell: ${JSON.stringify(outputs)}`
+        )
+        expect(outputs.map((o) => o.trim())).toContain(offset)
+      },
+      (lab) =>
+        useRealClaudeOnTheMachine(env, lab, [`/home/kuser/proj/.claude/worktrees/${worktree}`])
     )
   })
 

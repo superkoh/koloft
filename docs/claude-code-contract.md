@@ -361,6 +361,18 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
   ("configure WorktreeCreate and WorktreeRemove hooks in settings.json for another
   version-control system"; "Provides the absolute path to the created worktree
   directory"); that the copy is then off was not re-read there.
+- **CC's Bash tool runs its commands with the env `claude` was started with**, so a
+  variable set on the launch reaches the model's shell in a `-w` worktree session:
+  `KOLOFT_PORT_OFFSET` set in the pty env on this Mac, and exported by the remote tab
+  script right before `exec claude` inside tmux on a Linux machine over ssh. In both, the
+  model ran `echo "$KOLOFT_PORT_OFFSET"`, the tool result held the worktree name's
+  offset, and the model replied with it. Measured 2026-10-08 with claude 2.1.294 (macOS,
+  and Linux in the Docker ssh lab, Debian bookworm's tmux), real model turns; established
+  by `agent-tools-real-smoke.spec.ts` › "a real Claude Code in a worktree session echoes,
+  with its Bash tool, the port offset of that worktree’s name" and
+  `remote-ssh-lab.spec.ts` › "E-SSH-11: a REAL claude on the machine, in a worktree
+  session made there through ssh and tmux, echoes with its Bash tool the port offset of
+  that worktree’s name (opt-in, spends real money)".
 - **CC's background retention sweep leaves hand-made worktrees under
   `.claude/worktrees/` alone from 2.1.246 on** (changelog, read 2026-09-18, not
   measured). Before that it could remove them.
