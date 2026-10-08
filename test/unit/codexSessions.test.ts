@@ -7,15 +7,22 @@ import { CodexSessions, type CodexSessionDeps } from '../../src/main/codexSessio
 import { codexSessionKey, type WorktreeResource } from '../../src/main/sessionStore'
 import type { CodexTransportOptions } from '../../src/main/codexTransport'
 import { SessionRuntime } from '../../src/main/sessionRuntime'
+import { CodexTooOld } from '../../src/main/codexRuntime'
+import { MIN_CODEX_VERSION } from '../../src/main/cliMinimums'
 
 const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   request: vi.fn(),
   close: vi.fn(),
   runtime: vi.fn(),
+  update: vi.fn(),
   rpcHomes: [] as (string | undefined)[]
 }))
-vi.mock('../../src/main/codexRuntime', () => ({ resolveCodexRuntime: mocks.runtime }))
+vi.mock('../../src/main/codexRuntime', async (importOriginal) => ({
+  CodexTooOld: (await importOriginal<typeof import('../../src/main/codexRuntime')>()).CodexTooOld,
+  resolveCodexRuntime: mocks.runtime,
+  updateCodex: mocks.update
+}))
 vi.mock('../../src/main/codexTransport', () => ({
   createCodexTransport: mocks.create,
   CodexRpc: class {
@@ -721,6 +728,32 @@ describe('CodexSessions', () => {
     vi.advanceTimersByTime(2_000)
     await fresh.availability()
     expect(mocks.runtime).toHaveBeenCalledTimes(2)
+  })
+
+  it('a Codex older than the minimum is updated once, even when two checks ask at the same moment, and is then offered', async () => {
+    const fresh = new CodexSessions(path.join(directory, 'probe.json'), deps)
+    const tooOld = new CodexTooOld('/fixture/codex', {}, '0.150.0')
+    mocks.runtime.mockRejectedValueOnce(tooOld)
+    const [first, second] = await Promise.all([fresh.availability(), fresh.availability()])
+    expect(first).toMatchObject({ available: true, version: '0.153.4' })
+    expect(second).toBe(first)
+    expect(mocks.update).toHaveBeenCalledOnce()
+    expect(mocks.update).toHaveBeenCalledWith(tooOld)
+    expect(vi.mocked(deps.error).mock.calls[0][0]).toContain(`older than ${MIN_CODEX_VERSION}`)
+  })
+
+  it('a Codex the update cannot lift stays unavailable, says to run codex update, and is not updated again', async () => {
+    vi.useFakeTimers()
+    const fresh = new CodexSessions(path.join(directory, 'probe.json'), deps)
+    mocks.runtime.mockRejectedValue(new CodexTooOld('/fixture/codex', {}, '0.150.0'))
+    const reply = await fresh.availability()
+    expect(reply).toMatchObject({ available: false })
+    expect(reply.reason).toContain('codex update')
+    expect(vi.mocked(deps.error).mock.lastCall?.[0]).toContain('codex update')
+    vi.advanceTimersByTime(61_000)
+    await fresh.availability()
+    expect(mocks.runtime).toHaveBeenCalledTimes(3)
+    expect(mocks.update).toHaveBeenCalledOnce()
   })
 
   it('gives up on a run that never finishes stopping so the app can quit', async () => {

@@ -26,7 +26,8 @@ import { CodexRpc, createCodexTransport, type CodexTransport } from './codexTran
 import { SessionStore, codexSessionKey, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
-import { resolveCodexRuntime } from './codexRuntime'
+import { CodexTooOld, resolveCodexRuntime, updateCodex, type CodexRuntime } from './codexRuntime'
+import { MIN_CODEX_VERSION } from './cliMinimums'
 import { occupantName } from './resumePlan'
 import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
 import { watchJsonDrops } from './jsonDrops'
@@ -145,6 +146,8 @@ export class CodexSessions {
   private binary?: string
   private processEnv?: NodeJS.ProcessEnv
   private probed?: { at: number; reply: CodexAvailability }
+  private probing?: Promise<CodexAvailability>
+  private updateTried = false
   private warnedVersion?: string
   private refreshing?: Promise<void>
   private historyError?: Error
@@ -193,9 +196,33 @@ export class CodexSessions {
       (probed.reply.available || Date.now() - probed.at < AVAILABILITY_FAILURE_MS)
     )
       return probed.reply
+    this.probing ??= this.probe().finally(() => (this.probing = undefined))
+    return this.probing
+  }
+
+  private async resolveUpdatingOnce(): Promise<CodexRuntime> {
+    try {
+      return await resolveCodexRuntime()
+    } catch (error) {
+      if (!(error instanceof CodexTooOld) || this.updateTried) throw error
+      this.updateTried = true
+      this.deps.error(
+        `Codex ${error.version} is older than ${MIN_CODEX_VERSION}, the oldest this Koloft supports. Updating it now…`
+      )
+      await updateCodex(error)
+      try {
+        return await resolveCodexRuntime()
+      } catch (after) {
+        this.deps.error(after instanceof Error ? after.message : String(after))
+        throw after
+      }
+    }
+  }
+
+  private async probe(): Promise<CodexAvailability> {
     let reply: CodexAvailability
     try {
-      const runtime = await resolveCodexRuntime()
+      const runtime = await this.resolveUpdatingOnce()
       this.binary = runtime.binary
       this.processEnv = runtime.env
       reply = {

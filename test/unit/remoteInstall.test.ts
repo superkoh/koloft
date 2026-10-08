@@ -10,10 +10,12 @@ import {
   heartbeatCmd,
   parseHeartbeat
 } from '../../src/main/remote/install'
+import { MIN_CLAUDE_VERSION } from '../../src/main/cliMinimums'
 
 const REAL_TOOLS = [
   'sh',
   'sed',
+  'awk',
   'grep',
   'cut',
   'tr',
@@ -312,6 +314,52 @@ exec "$@"`
     const printed = res.stdout.split('\n').find((l) => l.startsWith('  sudo '))
     expect(printed).toBe('  sudo apt-get install -y rsync')
     expect(m.calls('apt-get')).toEqual([])
+  })
+})
+
+describe('ensure.sh holds a remote Claude Code to the minimum this Koloft supports', () => {
+  const OLDER_YET_LATER_AS_TEXT = '2.1.99'
+  const claudeAt = (m: Machine, version: string, updatesTo?: string): void => {
+    const file = path.join(m.home, 'claude-version')
+    fs.writeFileSync(file, version)
+    const bump = updatesTo ? `printf '%s' ${updatesTo} > ${JSON.stringify(file)}` : ':'
+    m.give(
+      'claude',
+      `case "$1" in
+--version) printf '%s (Claude Code)\\n' "$(cat ${JSON.stringify(file)})" ;;
+update) printf 'update\\n' >> ${JSON.stringify(path.join(m.logs, 'claude.log'))}; ${bump} ;;
+esac
+exit 0`
+    )
+  }
+
+  it('an older one is updated before the session starts', () => {
+    const m = machine()
+    complete(m)
+    claudeAt(m, OLDER_YET_LATER_AS_TEXT, '99.0.0')
+    const res = m.run()
+    expect(res.status).toBe(0)
+    expect(m.calls('claude')).toEqual(['update'])
+    expect(res.stderr).toContain(`older than ${MIN_CLAUDE_VERSION}`)
+  })
+
+  it('one the update cannot lift stops the session and says to run claude update', () => {
+    const m = machine()
+    complete(m)
+    claudeAt(m, OLDER_YET_LATER_AS_TEXT)
+    const res = m.run()
+    expect(res.status).toBe(4)
+    expect(m.calls('claude')).toEqual(['update'])
+    expect(res.stderr).toContain('Run "claude update" yourself')
+  })
+
+  it('one at exactly the minimum is left alone', () => {
+    const m = machine()
+    complete(m)
+    claudeAt(m, MIN_CLAUDE_VERSION, '99.0.0')
+    const res = m.run()
+    expect(res.status).toBe(0)
+    expect(m.calls('claude')).toEqual([])
   })
 })
 

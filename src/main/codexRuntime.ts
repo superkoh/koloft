@@ -3,6 +3,7 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { codexEnvironment } from './codexTransport'
 import { LoginShellError, readLoginShell } from './loginShell'
+import { MIN_CODEX_VERSION, versionBelow } from './cliMinimums'
 
 const exec = promisify(execFile)
 
@@ -44,7 +45,7 @@ export async function resolveCodexRuntime(
     }
   }
   if (!binary || !path.isAbsolute(binary)) {
-    throw new Error('Install Codex CLI 0.153.4 or newer to start Codex sessions.')
+    throw new Error(`Install Codex CLI ${MIN_CODEX_VERSION} or newer to start Codex sessions.`)
   }
   const env = codexEnvironment(resolved)
   let stdout: string
@@ -58,13 +59,35 @@ export async function resolveCodexRuntime(
   const parsed = /codex-cli (\d+)\.(\d+)\.(\d+)/.exec(stdout)
   if (!parsed) throw new Error('Codex CLI did not report a version Koloft understands.')
   const [major, minor, patch] = parsed.slice(1, 4).map(Number)
-  if (major === 0 && (minor < 153 || (minor === 153 && patch < 4))) {
-    throw new Error('Koloft needs Codex CLI 0.153.4 or newer. Update Codex to start a session.')
-  }
+  const version = `${major}.${minor}.${patch}`
+  if (versionBelow(version, MIN_CODEX_VERSION)) throw new CodexTooOld(binary, env, version)
   return {
     binary,
     env,
-    version: `${major}.${minor}.${patch}`,
+    version,
     verified: major === 0 && minor === 153
   }
+}
+
+export class CodexTooOld extends Error {
+  constructor(
+    readonly binary: string,
+    readonly env: NodeJS.ProcessEnv,
+    readonly version: string
+  ) {
+    super(
+      `Koloft needs Codex CLI ${MIN_CODEX_VERSION} or newer, and this Mac has ${version}. Run "codex update", then try again.`
+    )
+  }
+}
+
+const CODEX_UPDATE_TIMEOUT_MS = 5 * 60_000
+
+// CODEX§22
+export async function updateCodex(tooOld: CodexTooOld): Promise<void> {
+  await exec(tooOld.binary, ['update'], {
+    env: tooOld.env,
+    timeout: CODEX_UPDATE_TIMEOUT_MS,
+    maxBuffer: 1024 * 1024
+  }).catch(() => undefined)
 }

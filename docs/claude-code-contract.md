@@ -1210,3 +1210,25 @@ with `koloft`, and printed nothing for that one. The prompt asked for a Bash
   with `--dangerously-skip-permissions`, asked to write a file — the file was not
   written and the transcript held `PreToolUse:<tool> hook error`.
 - Not run: a `Task` subagent's own tool calls under the hook.
+
+## §16 `claude --version` and `claude update`
+
+How established: 2026-10-08 on this Mac, each run in a fresh temporary `HOME` with
+stdin closed. A native install of 2.1.250 (`bash install.sh 2.1.250`, §10), and an npm
+one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable prefix).
+
+- **`claude --version` prints `2.1.294 (Claude Code)`** — the version first, then a
+  space — and returns at once (`time` shows 0.00 s), so a check on every launch costs
+  nothing.
+- **`claude update` asks nothing and exits 0.** Native: 2.1.250 → 2.1.294; the
+  `~/.local/bin/claude` link moves to `versions/2.1.294` and `versions/2.1.250` stays,
+  so a session already running on the old file keeps going. npm: 2.1.250 → **2.1.293**,
+  one behind the native channel that day, after printing "npm global folder isn't
+  writable" and then updating anyway. With an npm prefix that really needs `sudo`, the
+  update failing is inferred, not checked. A Homebrew install was not run.
+- **The oldest version Koloft's code leans on is 2.1.259**: concurrent sessions stop
+  reverting each other's `~/.claude.json` writes from then on (§2), which the folder
+  trust written before each launch needs; `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` (§7) needs
+  2.1.257. The release that added `--name`, `--effort`, `--plugin-dir`, the §11 session
+  registry or the `PermissionRequest` hook is not recorded here; that all predate
+  2.1.259 is inferred, not checked.
