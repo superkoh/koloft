@@ -111,7 +111,11 @@ describe('Codex stdio reads', () => {
   it('reads a frame spanning many pipe reads in time that grows with its size, not its square (catches O(n²), never pins speed)', async () => {
     const SMALL_BYTES = 12 * 1024 * 1024
     const SIZE_RATIO = 8
-    const client = rpc({ maxFrameBytes: 2 * SIZE_RATIO * SMALL_BYTES, timeoutMs: 120_000 })
+    const JSON_ENVELOPE_ROOM_BYTES = 1024
+    const client = rpc({
+      maxFrameBytes: SIZE_RATIO * SMALL_BYTES + JSON_ENVELOPE_ROOM_BYTES,
+      timeoutMs: 120_000
+    })
     await client.request('thread/read', { mode: 'big', bytes: 1024 })
     const readMs = async (bytes: number): Promise<number> => {
       const started = performance.now()
