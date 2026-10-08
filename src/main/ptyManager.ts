@@ -41,6 +41,7 @@ interface CreateArgs {
     KOLOFT_FIRST_PROMPT?: string
     KOLOFT_SESSION_NAME?: string
     KOLOFT_AGENT_PLUGIN?: string
+    KOLOFT_PORT_OFFSET?: string
   }
 }
 
@@ -117,6 +118,7 @@ export class PtyManager extends EventEmitter {
         key === 'KOLOFT_CDP_DIR' ||
         key === 'KOLOFT_AGENT_DIR' ||
         key === 'KOLOFT_AGENT_PLUGIN' ||
+        key === 'KOLOFT_PORT_OFFSET' ||
         key === 'ANT_ACCOUNT' ||
         (BROWSER_TAB_ENV as readonly string[]).includes(key)
       ) {
@@ -151,7 +153,8 @@ export class PtyManager extends EventEmitter {
       for (const k of [
         'KOLOFT_FIRST_PROMPT',
         'KOLOFT_SESSION_NAME',
-        'KOLOFT_AGENT_PLUGIN'
+        'KOLOFT_AGENT_PLUGIN',
+        'KOLOFT_PORT_OFFSET'
       ] as const) {
         const v = args.extraEnv[k]
         if (v !== undefined) env[k] = v

@@ -8,6 +8,7 @@ import { codexSessionKey, type WorktreeResource } from '../../src/main/sessionSt
 import type { CodexTransportOptions } from '../../src/main/codexTransport'
 import { SessionRuntime } from '../../src/main/sessionRuntime'
 import { MIN_CODEX_VERSION } from '../../src/main/cliMinimums'
+import { portOffset } from '@shared/worktreeName'
 
 const TOO_OLD = { binary: '/fixture/codex', env: {}, version: '0.150.0', verified: false }
 
@@ -611,6 +612,24 @@ describe('CodexSessions', () => {
 
     await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1', scheduled: true })
     expect(deps.trustFolder).toHaveBeenCalledTimes(1)
+  })
+
+  it("a worktree launch's app-server gets that worktree's port offset, and a launch in the main checkout gets none", async () => {
+    const worktree = path.join(repo, '.claude', 'worktrees', 'w1')
+    fs.mkdirSync(worktree, { recursive: true })
+    vi.spyOn(sessions.worktrees, 'create').mockResolvedValue({
+      id: randomUUID(),
+      originalCwd: repo,
+      worktreePath: worktree,
+      worktreeName: 'w1',
+      worktreeBranch: 'worktree-w1'
+    } as WorktreeResource)
+    await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1' })
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    const sessionEnvs = mocks.create.mock.calls.map(
+      (call) => (call[0] as CodexTransportOptions).sessionEnv
+    )
+    expect(sessionEnvs).toEqual([{ KOLOFT_PORT_OFFSET: String(portOffset('w1')) }, undefined])
   })
 
   // ADR-0029 CODEX§12

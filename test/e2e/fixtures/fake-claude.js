@@ -72,7 +72,8 @@ function writeCallLog(effCwd) {
         apiKey: process.env.ANTHROPIC_API_KEY || null,
         cdpEndpoint: process.env.KOLOFT_BROWSER_CDP || null,
         playwrightMcpEndpoint: process.env.PLAYWRIGHT_MCP_CDP_ENDPOINT || null,
-        playwrightCliSession: process.env.PLAYWRIGHT_CLI_SESSION || null
+        playwrightCliSession: process.env.PLAYWRIGHT_CLI_SESSION || null,
+        portOffset: process.env.KOLOFT_PORT_OFFSET || null
       }) + '\n'
     )
   } catch {}

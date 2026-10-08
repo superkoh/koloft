@@ -328,32 +328,41 @@ describe("BB-E27: a scheduled run's first prompt and session name reach only the
     return (mocks.spawn.mock.calls[call][2] as { env: Record<string, string> }).env
   }
 
-  it('never lets an inherited first prompt or session name reach an ordinary tab', () => {
+  it('never lets an inherited first prompt, session name or port offset reach an ordinary tab', () => {
     process.env.KOLOFT_FIRST_PROMPT = '/oops'
     process.env.KOLOFT_SESSION_NAME = 'x'
+    process.env.KOLOFT_PORT_OFFSET = '7'
     try {
       const mgr = new PtyManager()
       mgr.create({ kind: 'claude', cwd: os.tmpdir() })
       expect(spawnedEnv().KOLOFT_FIRST_PROMPT).toBeUndefined()
       expect(spawnedEnv().KOLOFT_SESSION_NAME).toBeUndefined()
+      expect(spawnedEnv().KOLOFT_PORT_OFFSET).toBeUndefined()
     } finally {
       delete process.env.KOLOFT_FIRST_PROMPT
       delete process.env.KOLOFT_SESSION_NAME
+      delete process.env.KOLOFT_PORT_OFFSET
     }
   })
 
-  it('gives the asking tab those two keys and the next tab none of them', () => {
+  it('gives the asking tab its own keys and the next tab none of them', () => {
     const mgr = new PtyManager()
     mgr.create({
       kind: 'claude',
       cwd: os.tmpdir(),
-      extraEnv: { KOLOFT_FIRST_PROMPT: '/daily-report', KOLOFT_SESSION_NAME: 'Nightly report' }
+      extraEnv: {
+        KOLOFT_FIRST_PROMPT: '/daily-report',
+        KOLOFT_SESSION_NAME: 'Nightly report',
+        KOLOFT_PORT_OFFSET: '42'
+      }
     })
     mgr.create({ kind: 'claude', cwd: os.tmpdir() })
     expect(envOf(0).KOLOFT_FIRST_PROMPT).toBe('/daily-report')
     expect(envOf(0).KOLOFT_SESSION_NAME).toBe('Nightly report')
+    expect(envOf(0).KOLOFT_PORT_OFFSET).toBe('42')
     expect(envOf(1).KOLOFT_FIRST_PROMPT).toBeUndefined()
     expect(envOf(1).KOLOFT_SESSION_NAME).toBeUndefined()
+    expect(envOf(1).KOLOFT_PORT_OFFSET).toBeUndefined()
   })
 
   it('ignores any other key someone puts in that object, so a PATH there cannot undo the shim line', () => {

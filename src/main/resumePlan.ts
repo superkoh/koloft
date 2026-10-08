@@ -41,6 +41,13 @@ export function worktreeHomeRoot(worktreePath: string): string | null {
   return path.join(root, '.claude', 'worktrees') === home ? root : null
 }
 
+export function worktreeNameAround(dir: string): string | undefined {
+  for (let d = dir; path.dirname(d) !== d; d = path.dirname(d)) {
+    if (worktreeHomeRoot(d)) return path.basename(d)
+  }
+  return undefined
+}
+
 const RENAME_SUFFIX_CAP = 100
 
 // CC§3

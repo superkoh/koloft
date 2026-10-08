@@ -17,7 +17,8 @@ import { resolveSpawnCwd } from '../projectInfo'
 import { leaveForOS, osOpenFallback } from '../osOpen'
 import { claudeArgv } from '../claudeArgs'
 import { acceptClaudeTrust, claudeJsonPath, claudeTrustsFolder } from '../claudeTrust'
-import { dirExistsSync } from '../resumePlan'
+import { dirExistsSync, worktreeNameAround } from '../resumePlan'
+import { portOffset } from '@shared/worktreeName'
 import { listSkills, type SkillFs } from '../skillList'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host } from './host'
 
@@ -54,16 +55,19 @@ async function launchClaude(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {
   if (!args.ok) return args
   const cwd = resolveSpawnCwd(spec.cwd ?? spec.root)
   const launchCommand = `exec ${args.argv.join(' ')}`
+  const worktree = spec.worktree ?? worktreeNameAround(cwd)
   return {
     ok: true,
     spawnCwd: cwd,
     cwd,
     launchCommand: () => launchCommand,
-    // CC§9
-    extraEnv:
-      spec.firstPrompt !== undefined || spec.name
+    extraEnv: {
+      // CC§9
+      ...(spec.firstPrompt !== undefined || spec.name
         ? { KOLOFT_FIRST_PROMPT: spec.firstPrompt ?? '', KOLOFT_SESSION_NAME: spec.name ?? '' }
-        : undefined
+        : {}),
+      ...(worktree ? { KOLOFT_PORT_OFFSET: String(portOffset(worktree)) } : {})
+    }
   }
 }
 

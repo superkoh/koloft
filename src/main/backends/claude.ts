@@ -60,6 +60,7 @@ import {
 } from '../hookRouting'
 import { registeredByTabRoot } from '../shim'
 import { watchJsonDrops } from '../jsonDrops'
+import { copyWorktreeIncludes } from '../sessionWorktrees'
 import {
   dirExistsSync,
   gitProbes,
@@ -102,7 +103,8 @@ async function rebuildWorktree(
     branch: string
     baseRef: string
   },
-  git: GitOut
+  git: GitOut,
+  onThisMac: boolean
 ): Promise<boolean> {
   const root = worktreeHomeRoot(spec.worktreePath)
   if (!root) return false
@@ -112,7 +114,9 @@ async function rebuildWorktree(
   const args = branchLives
     ? ['worktree', 'add', spec.worktreePath, spec.branch]
     : ['worktree', 'add', '-b', spec.branch, spec.worktreePath, spec.baseRef]
-  return (await git(root, args)) !== null
+  if ((await git(root, args)) === null) return false
+  if (onThisMac) await copyWorktreeIncludes(root, spec.worktreePath)
+  return true
 }
 
 export class ClaudeBackend implements SessionBackend {
@@ -716,7 +720,7 @@ export class ClaudeBackend implements SessionBackend {
         plan.action !== 'rebuild' ||
         !GIT_REF_RE.test(plan.branch) ||
         !GIT_REF_RE.test(plan.baseRef) ||
-        !(await rebuildWorktree(plan, hostGit(host)))
+        !(await rebuildWorktree(plan, hostGit(host), !home))
       ) {
         return { ok: false, code: 'rebuild-failed' }
       }

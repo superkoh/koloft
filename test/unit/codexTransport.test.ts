@@ -52,7 +52,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
    process.stdout.write(bytes.subarray(0,offset));
    setTimeout(()=>process.stdout.write(bytes.subarray(offset)),15);return;
  }
- out({id:f.id,result:{data:[],params:f.params,env:{home:process.env.CODEX_HOME,key:process.env.OPENAI_API_KEY,thread:process.env.CODEX_THREAD_ID,tab:process.env.KOLOFT_TAB_ID}}});
+ out({id:f.id,result:{data:[],params:f.params,env:{home:process.env.CODEX_HOME,key:process.env.OPENAI_API_KEY,thread:process.env.CODEX_THREAD_ID,tab:process.env.KOLOFT_TAB_ID,offset:process.env.KOLOFT_PORT_OFFSET}}});
 });
 process.stdin.on('end',()=>process.exit(0));
 `,
@@ -171,6 +171,25 @@ describe('Codex stdio reads', () => {
     })
     expect(config.CODEX_CUSTOM_CONFIG).toBe('keep')
     expect(config.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
+  })
+
+  it("runs the app-server, where Codex runs its commands, with the session's own port offset and never an inherited one", async () => {
+    const inherited = { CODEX_HOME: directory, KOLOFT_PORT_OFFSET: '7' }
+    const own = new CodexRpc({
+      binary,
+      cwd: directory,
+      env: inherited,
+      sessionEnv: { KOLOFT_PORT_OFFSET: '42' }
+    })
+    const plain = new CodexRpc({ binary, cwd: directory, env: inherited })
+    cleanups.push(
+      () => own.close(),
+      () => plain.close()
+    )
+    const offsetOf = async (client: CodexRpc): Promise<unknown> =>
+      (await client.request<{ env: { offset?: string } }>('thread/list')).env.offset
+    expect(await offsetOf(own)).toBe('42')
+    expect(await offsetOf(plain)).toBeUndefined()
   })
 
   // CODEX§5

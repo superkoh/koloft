@@ -35,6 +35,7 @@ import { openDropTarget, type OpenDrop } from './openDrop'
 import { removeCodexOpenShim, writeCodexOpenShim } from './openShimScript'
 import { AGENT_SHIM_WAITS_MS, writeCodexAgentShim } from './agentShim'
 import { CODEX_AGENT_HINT } from '@shared/agentGuide'
+import { portOffset } from '@shared/worktreeName'
 import type { CodexApproval, CodexQuestion } from './discord/dialog'
 
 const exists = (p: string): boolean => {
@@ -726,6 +727,9 @@ export class CodexSessions {
       transport = await this.startTransport({
         binary,
         env,
+        sessionEnv: resource
+          ? { KOLOFT_PORT_OFFSET: String(portOffset(resource.worktreeName)) }
+          : undefined,
         cwd,
         configOverrides: instructions.length
           ? [STATUS_LINE_CONFIG, developerInstructions(instructions)]

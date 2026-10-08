@@ -15,6 +15,7 @@ export interface CodexProcessOptions {
   binary: string
   cwd: string
   env?: NodeJS.ProcessEnv
+  sessionEnv?: Record<string, string>
   configOverrides?: readonly string[]
   timeoutMs?: number
   maxFrameBytes?: number
@@ -151,7 +152,7 @@ class CodexProcess {
     const configArgs = (options.configOverrides ?? []).flatMap((value) => ['-c', value])
     this.child = spawn(options.binary, ['app-server', '--stdio', ...configArgs], {
       cwd: options.cwd,
-      env: codexEnvironment(options.env),
+      env: { ...codexEnvironment(options.env), ...options.sessionEnv },
       detached: true,
       stdio: 'pipe'
     })

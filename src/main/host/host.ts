@@ -58,7 +58,11 @@ export type ClaudeLaunchPlan =
       shell?: string
       launchCommand: (tabId: string) => string
       resized?: (tabId: string, cols: number, rows: number) => void
-      extraEnv?: { KOLOFT_FIRST_PROMPT?: string; KOLOFT_SESSION_NAME?: string }
+      extraEnv?: {
+        KOLOFT_FIRST_PROMPT?: string
+        KOLOFT_SESSION_NAME?: string
+        KOLOFT_PORT_OFFSET?: string
+      }
       machine?: MachineTab
     }
 

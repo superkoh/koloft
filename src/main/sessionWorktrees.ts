@@ -69,6 +69,46 @@ function validName(name: string): void {
   if (!isValidWorktreeName(name)) throw new Error('Invalid worktree name')
 }
 
+const NOTHING_IGNORED_EXIT = 1
+
+function gitIgnoredAmong(root: string, paths: string[]): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    const child = execFile(
+      'git',
+      ['-C', root, 'check-ignore', '-z', '--stdin'],
+      { maxBuffer: 4 * 1024 * 1024 },
+      (error, stdout) => {
+        if (error && error.code !== NOTHING_IGNORED_EXIT) reject(error)
+        else resolve(stdout.split('\0').filter(Boolean))
+      }
+    )
+    child.stdin?.end(paths.map((p) => p + '\0').join(''))
+  })
+}
+
+// CC§3
+export async function copyWorktreeIncludes(root: string, worktreePath: string): Promise<void> {
+  try {
+    const includeFile = path.join(root, '.worktreeinclude')
+    if (!fs.existsSync(includeFile)) return
+    const listed = (
+      await git(root, ['ls-files', '-z', '--others', '--ignored', `--exclude-from=${includeFile}`])
+    )
+      .split('\0')
+      .filter(Boolean)
+    if (!listed.length) return
+    for (const rel of await gitIgnoredAmong(root, listed)) {
+      const from = path.join(root, rel)
+      const to = path.join(worktreePath, rel)
+      if (!fs.lstatSync(from).isFile() || fs.existsSync(to)) continue
+      fs.mkdirSync(path.dirname(to), { recursive: true })
+      fs.copyFileSync(from, to)
+    }
+  } catch (error) {
+    console.error('[koloft] could not copy the .worktreeinclude files into', worktreePath, error)
+  }
+}
+
 export class SessionWorktrees {
   private readonly preparing = new Set<string>()
 
@@ -200,6 +240,7 @@ export class SessionWorktrees {
           : ['worktree', 'add', '-b', branch, resource.worktreePath, resource.originalHeadCommit]
         : ['worktree', 'add', '--detach', resource.worktreePath, resource.originalHeadCommit]
       await git(root, args)
+      await copyWorktreeIncludes(root, resource.worktreePath)
       const ready: WorktreeResource = { ...pending, state: 'ready' }
       this.store.putResource(ready)
       return ready
