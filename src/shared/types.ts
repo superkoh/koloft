@@ -319,6 +319,7 @@ export interface CreateTabOptions {
   util?: boolean
   ownerTabId?: string
   role?: string
+  conductor?: boolean
   trustFolder?: boolean
 }
 
@@ -1303,6 +1304,7 @@ export interface SessionResumeRequest {
   worktree?: string
   rebuild?: { worktreePath: string; branch: string; baseRef: string }
   role?: string
+  conductor?: boolean
   trustFolder?: boolean
 }
 

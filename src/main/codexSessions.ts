@@ -71,6 +71,9 @@ const PERMISSION_ARGS: Record<LaunchPermission, string[]> = {
   bypass: ['-a', 'never', '-s', 'danger-full-access']
 }
 
+// ADR-0029 CODEX§12
+const CONDUCTOR_ARGS = ['-a', 'never', '-s', 'workspace-write']
+
 // CODEX§14
 function launchChoiceArgs(opts: CreateTabOptions): string[] {
   return [
@@ -718,7 +721,7 @@ export class CodexSessions {
         STATUS_LINE_CONFIG,
         '-c',
         NO_UPDATE_NOTICE_AT_START,
-        ...PERMISSION_ARGS[opts.permission ?? 'default'],
+        ...(opts.conductor ? CONDUCTOR_ARGS : PERMISSION_ARGS[opts.permission ?? 'default']),
         ...launchChoiceArgs(opts)
       ]
       if (opts.resumeSessionId) argv.push('resume', this.nativeId(opts.resumeSessionId))
@@ -963,6 +966,7 @@ export class CodexSessions {
         cols: req.cols,
         rows: req.rows,
         role: req.role,
+        conductor: req.conductor,
         trustFolder: req.trustFolder
       },
       resource

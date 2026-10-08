@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import { spawnSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
@@ -40,12 +41,23 @@ function bindingsOnDisk(env: E2EEnv): ConductorBinding[] {
   return (settingsOnDisk(env).discord as DiscordSettings | undefined)?.bindings ?? []
 }
 
-function firstCodexId(env: E2EEnv): string {
-  return (
-    JSON.parse(
-      fs.readFileSync(path.join(env.home, 'fake-codex-calls.jsonl'), 'utf8').split('\n')[0]
-    ) as { sessionId: string }
-  ).sessionId
+function firstCodexCall(env: E2EEnv): { sessionId: string; argv: string[]; cwd: string } {
+  return JSON.parse(
+    fs.readFileSync(path.join(env.home, 'fake-codex-calls.jsonl'), 'utf8').split('\n')[0]
+  )
+}
+
+function gateSays(call: { argv: string[] }, event: unknown): string {
+  const settings = JSON.parse(
+    fs.readFileSync(call.argv[call.argv.indexOf('--settings') + 1], 'utf8')
+  ) as { hooks: Record<string, { hooks: { command: string }[] }[] | undefined> }
+  const command = settings.hooks.PreToolUse?.[0].hooks[0].command
+  if (!command) return 'no gate'
+  const res = spawnSync('/bin/sh', ['-c', command], {
+    input: JSON.stringify(event),
+    encoding: 'utf8'
+  })
+  return res.stdout === '' ? 'allow' : JSON.parse(res.stdout).hookSpecificOutput.permissionDecision
 }
 
 function island(page: Page): Locator {
@@ -157,7 +169,8 @@ async function launched(
 }
 
 test.describe('Conductors: a session bound to a Discord channel, kept in its own island and out of every workspace list', () => {
-  test('a workspace conductor bound through the dialog opens in its workspace folder, stays out of the workspace rows across /clear, raises no turn-done mark, and unbinding closes it', async ({
+  // ADR-0029
+  test('a workspace conductor bound through the dialog opens in a folder of its own yet keeps its workspace note, may only read and run koloft, stays out of the workspace rows across /clear, raises no turn-done mark, and unbinding closes it', async ({
     env
   }) => {
     const { page, close } = await launched(env)
@@ -176,9 +189,17 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
 
       await openConductor(page, 'ws-a')
       const call = (await waitForCalls(env, 1))[0]
-      expect(call.cwd).toBe(env.workspaces.a)
+      expect(path.dirname(call.cwd)).toBe(path.join(env.userData, 'conductors'))
       await expect.poll(() => bindingsOnDisk(env)[0]?.sessionIds.length).toBe(1)
       await expect(notesIsland(page).locator('.wb-title')).toHaveText('Notes · ws-a')
+      const write = {
+        tool_name: 'Write',
+        tool_input: { file_path: path.join(env.workspaces.a, 'x') }
+      }
+      expect(gateSays(call, write)).toBe('deny')
+      expect(gateSays(call, { tool_name: 'Bash', tool_input: { command: 'koloft help' } })).toBe(
+        'allow'
+      )
 
       await page.waitForTimeout(ROWS_RESCAN_AND_PUSH_SETTLE_MS)
       await expect(wsRows(page, 'ws-a')).toHaveCount(0)
@@ -256,7 +277,8 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
     }
   })
 
-  test('a Codex conductor gets its role as developer instructions and its session stays out of the workspace rows', async ({
+  // ADR-0029
+  test('a Codex conductor gets its role as developer instructions, runs in a folder of its own with approvals off and the workspace-write sandbox, and its session stays out of the workspace rows', async ({
     env
   }) => {
     installCodex(env)
@@ -280,6 +302,10 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
           )
         )
       ).toBe(true)
+      const tui = firstCodexCall(env)
+      expect(path.dirname(tui.cwd)).toBe(path.join(env.userData, 'conductors'))
+      expect(tui.argv[tui.argv.indexOf('-s') + 1]).toBe('workspace-write')
+      expect(tui.argv[tui.argv.indexOf('-a') + 1]).toBe('never')
       expect(readCalls(env)).toEqual([])
       await page.waitForTimeout(ROWS_RESCAN_AND_PUSH_SETTLE_MS)
       await expect(wsRows(page, 'ws-a')).toHaveCount(0)
@@ -330,7 +356,7 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
     try {
       await newSessionInWith(page, 'ws-b', 'Codex')
       await expect(wsRows(page, 'ws-b')).toHaveClass(/st-waiting/, { timeout: 60_000 })
-      const codexId = firstCodexId(env)
+      const codexId = firstCodexCall(env).sessionId
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(wsRows(page, 'ws-b')).toHaveClass(/cold/)
 
@@ -373,7 +399,7 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
       await expect(wsRows(page, 'ws-a')).toHaveClass(/cold/)
       await newSessionInWith(page, 'ws-b', 'Codex')
       await expect(wsRows(page, 'ws-b')).toHaveClass(/st-waiting/, { timeout: 60_000 })
-      const codexId = firstCodexId(env)
+      const codexId = firstCodexCall(env).sessionId
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(wsRows(page, 'ws-b')).toHaveClass(/cold/)
 

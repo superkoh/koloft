@@ -3,9 +3,11 @@ import fs from 'fs'
 import path from 'path'
 import type { StatusLineSetting } from './statusline'
 import { shq } from '@shared/shellQuote'
+import { CONDUCTOR_GATE_SCRIPT, conductorGateCommand } from './conductorGate'
 
 export interface HookPaths {
   hookScript: string
+  gateScript: string
   settingsDir: string
   regDir: string
 }
@@ -203,8 +205,10 @@ export function setupHooks(peerOwnsTab: (tabId: string) => boolean): HookPaths {
   const hookScript = path.join(hookDir, 'sessionstart.sh')
   fs.writeFileSync(hookScript, HOOK_SCRIPT, { mode: 0o755 })
   fs.chmodSync(hookScript, 0o755)
+  const gateScript = path.join(hookDir, 'conductor-gate.js')
+  fs.writeFileSync(gateScript, CONDUCTOR_GATE_SCRIPT)
 
-  return { hookScript, settingsDir, regDir }
+  return { hookScript, gateScript, settingsDir, regDir }
 }
 
 // CC§8
@@ -288,13 +292,22 @@ export function writeTabHookSettings(
   paths: HookPaths,
   tabId: string,
   statusLine?: StatusLineSetting,
-  allowKoloft = false
+  allowKoloft = false,
+  conductor = false
 ): string {
   fs.rmSync(path.join(paths.regDir, `${tabId}.status.jsonl`), { force: true })
   fs.rmSync(path.join(paths.regDir, `${tabId}.json`), { force: true })
   const settings = hookSettings(paths.hookScript, paths.regDir, tabId, statusLine)
   // CC§13
   if (allowKoloft) settings.permissions = { allow: ['Bash(koloft *)'] }
+  // ADR-0029 CC§15
+  if (conductor)
+    (settings.hooks as Record<string, unknown>).PreToolUse = [
+      {
+        matcher: '*',
+        hooks: [{ type: 'command', command: conductorGateCommand(paths.gateScript) }]
+      }
+    ]
   const out = path.join(paths.settingsDir, `${tabId}.json`)
   fs.writeFileSync(out, JSON.stringify(settings))
   return out

@@ -682,6 +682,7 @@ export class ClaudeBackend implements SessionBackend {
       cols: opts.cols,
       rows: opts.rows,
       role: opts.role,
+      conductor: opts.conductor,
       trustFolder: opts.trustFolder
     })
   }
@@ -736,6 +737,7 @@ export class ClaudeBackend implements SessionBackend {
       cols: req.cols,
       rows: req.rows,
       role: req.role,
+      conductor: req.conductor,
       trustFolder: req.trustFolder
     })
     return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
@@ -796,7 +798,13 @@ export class ClaudeBackend implements SessionBackend {
 
   private async createTab(
     host: Host,
-    spec: ClaudeLaunch & { cols?: number; rows?: number; role?: string; trustFolder?: boolean }
+    spec: ClaudeLaunch & {
+      cols?: number
+      rows?: number
+      role?: string
+      conductor?: boolean
+      trustFolder?: boolean
+    }
   ): Promise<CreateTabResult> {
     const { tracker } = this.d
     const workspaces = this.d.workspaces()
@@ -821,6 +829,7 @@ export class ClaudeBackend implements SessionBackend {
         return plan.launchCommand(tabId)
       },
       resumeSessionId: spec.resumeSessionId,
+      conductor: spec.conductor,
       resized: plan.resized,
       shell: plan.shell,
       extraEnv: agentPlugin ? { ...plan.extraEnv, KOLOFT_AGENT_PLUGIN: agentPlugin } : plan.extraEnv

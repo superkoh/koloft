@@ -605,6 +605,25 @@ describe('CodexSessions', () => {
     expect(deps.trustFolder).toHaveBeenCalledTimes(1)
   })
 
+  // ADR-0029 CODEX§12
+  it('a conductor starts and resumes with approvals off and the workspace-write sandbox, so it can write only its own folder and /tmp, and claims no bypass', async () => {
+    const first = await sessions.launch({ kind: 'codex', cwd: repo, conductor: true })
+    bind()
+    await sessions.stop(first.id)
+    const again = await sessions.resume({
+      sessionId: codexSessionKey(A),
+      cwd: repo,
+      conductor: true
+    })
+    for (const [call] of vi.mocked(deps.pty.create).mock.calls) {
+      const argv = call.argv!
+      expect(argv[argv.indexOf('-s') + 1]).toBe('workspace-write')
+      expect(argv[argv.indexOf('-a') + 1]).toBe('never')
+    }
+    expect(vi.mocked(deps.pty.create).mock.calls).toHaveLength(2)
+    expect(sessions.launchedBypassingChecks(again.id)).toBe(false)
+  })
+
   // ADR-0028
   it('remembers whether Koloft launched a session with approvals and the sandbox bypassed, the mode its messages to Claude sessions claim', async () => {
     const bypassed = await sessions.launch({ kind: 'codex', cwd: repo, permission: 'bypass' })

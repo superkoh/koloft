@@ -303,7 +303,9 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
 
 - **Resume by explicit id is a global lookup, across projects**: `claude --resume <id>`
   from an unrelated directory successfully continues a session living elsewhere, same
-  id, no fork (E3).
+  id, no fork (E3). Rechecked 2026-10-08, CC 2.1.294, `claude -p` through Koloft's shim:
+  a session started in folder A, resumed with `--resume <id>` from folder B, kept its id
+  and said back a word only folder A's turn held.
 - **`--resume <id> -w <name>` compose**: CC creates (or enters) the named worktree and
   resumes there with full history (E4); an existing name is entered and used as-is.
 - **Resume with a binding, worktree present** → CC re-enters it; **worktree missing** →
@@ -1186,3 +1188,25 @@ below was one run.
     Claude's plan"), the turn ended and the session stayed in plan mode.
   - a `Bash` dialog (`--permission-mode default`) offers `1. Yes`, `2. Yes, and always
     allow …`, `3. No`; `1` ran it, `3` and Esc refused it (2026-10-02 round, same version).
+
+## §15 The PreToolUse hook stops a tool even when permission checks are skipped
+
+How established: 2026-10-08, CC 2.1.294, one `claude -p` run on this Mac through
+Koloft's shim (an account picked by the balancer), `--dangerously-skip-permissions`,
+model haiku, an empty MCP config, and a `--settings` file whose `PreToolUse` entry
+(matcher `"*"`) ran a logging node script. The script printed
+`{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny",
+"permissionDecisionReason":"<text>"}}` for every call except a Bash command starting
+with `koloft`, and printed nothing for that one. The prompt asked for a Bash
+`echo x > <file>`, a Write of a second file, then Bash `koloft help`.
+
+- **The hook ran for every tool call, and its input said `permission_mode:
+  "bypassPermissions"`.**
+- **A `deny` stopped the call in that mode**: neither file was written, and claude got
+  the reason back as `PreToolUse:Bash hook error: <text>` and went on to the next step.
+- **Printing nothing let the call run** (`koloft help` ran).
+- **The same holds in an interactive session.** 2026-10-08, CC 2.1.294, the
+  `discord-real-smoke` case for a Claude conductor: Koloft's own gate, a pty session
+  with `--dangerously-skip-permissions`, asked to write a file — the file was not
+  written and the transcript held `PreToolUse:<tool> hook error`.
+- Not run: a `Task` subagent's own tool calls under the hook.

@@ -131,7 +131,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
         .poll(() => fake.reactions)
         .toContainEqual({ messageId: hello, emoji: '✅', on: true })
       expect(readCalls(env)).toHaveLength(1)
-      expect(readCalls(env)[0].cwd).toBe(env.workspaces.a)
+      expect(path.dirname(readCalls(env)[0].cwd)).toBe(path.join(env.userData, 'conductors'))
 
       fake.say(OWNER, '/long 600')
       const lines = Array.from({ length: 600 }, (_, i) => `line ${i + 1}`).join('\n')
@@ -201,7 +201,10 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
         .toEqual([expect.stringMatching(/^❓ /), expect.stringMatching(/^🔔 .+ finished\.$/)])
       expect(inThreads(fake).at(-1)).toMatch(/finished\.\nAnswer to: after the touch$/)
 
-      fake.say(OWNER, '/koloft discord send shot.png -- here it is')
+      fake.say(
+        OWNER,
+        `/koloft discord send ${path.join(env.workspaces.a, 'shot.png')} -- here it is`
+      )
       await expect
         .poll(() => fake.posted.filter((p) => p.files.length))
         .toEqual([

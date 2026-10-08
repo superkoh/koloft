@@ -56,9 +56,9 @@ export const REMOTE_CONDUCTOR_HAS_NO_WORKSPACE =
 const FOLDER_NAME_HASH_CHARS = 16
 const LAST_MESSAGE_SAVE_DELAY_MS = 1000
 
+// ADR-0029 CC§3 CODEX§2
 export function conductorFolder(userData: string, scope: string): string {
   if (scope === GLOBAL_SCOPE) return path.join(userData, 'conductors', 'global')
-  if (!isRemoteKey(scope)) return scope
   const hash = createHash('sha256').update(scope).digest('hex').slice(0, FOLDER_NAME_HASH_CHARS)
   return path.join(userData, 'conductors', hash)
 }
@@ -180,6 +180,12 @@ export class Conductors {
 
   scopeOfTab(tabId: string): string | undefined {
     return this.bindingOfTab(tabId)?.scope
+  }
+
+  // ADR-0029
+  workspaceOfTab(tabId: string): string | undefined {
+    const b = this.bindingOfTab(tabId)
+    return b && !this.noWorkspaceReason(tabId) ? b.scope : undefined
   }
 
   touch(tabId: string, key: string): void {
@@ -381,7 +387,7 @@ export class Conductors {
     if (!this.d.backendEnabled(b.backend))
       return refusal(`${BACKEND_LABEL[b.backend]} is turned off in Settings ▸ Sessions.`)
     const cwd = conductorFolder(this.d.userData, b.scope)
-    if (cwd !== b.scope) fs.mkdirSync(cwd, { recursive: true })
+    fs.mkdirSync(cwd, { recursive: true })
     const launch: ConductorLaunch = {
       backend: b.backend,
       cwd,
