@@ -136,6 +136,7 @@ interface AppState {
   unsavedPrompt: {
     files: string[]
     jobs?: number
+    ended?: string
     onCancel(): void
     onDiscard(): void
     onSave(): void | Promise<void>

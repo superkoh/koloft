@@ -73,12 +73,14 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   - flags: `-w <name>` makes a real `.claude/worktrees/<name>` on branch
     `worktree-<name>`; `-- <text>` types `<text>` first, in place of the canned
     startup turn (ADR-0020); `setup-token` prints a login token the way the real one
-    does (`KOLOFT_FAKE_SETUP_TOKEN`, `KOLOFT_FAKE_SETUP_URL`).
+    does (`KOLOFT_FAKE_SETUP_TOKEN`, `KOLOFT_FAKE_SETUP_URL`); `--version` prints a
+    version above any minimum, so the shim's version check never updates it.
   - files: `fake-claude-delay` (ms before it binds), `-next-title` (title of the next
     fresh launch, used once), `-no-status` (binds but never reports a run-state),
     `-exit` (exits with that code, no hook), `-lazy` (no transcript until the first
     typed line), `-hang` (never binds, and has no signal handler, so the SIGHUP that
-    closes its tab kills it).
+    closes its tab kills it), `-bg-ms` (how long `/bg-reported`'s background work runs,
+    5 s when absent).
   - typed lines: `/write <path>` (a Write, Stop 2.5 s later — the file on disk proves
     the transcript has it), `/answer <text>` (`<text>` as the prompt, `Answer to: <text>`
     as the reply's text, then Stop), `[Discord] <text>` (answered like `/answer` with the

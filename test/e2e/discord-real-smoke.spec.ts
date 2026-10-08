@@ -131,6 +131,16 @@ function ran(fake: FakeDiscord): string[] {
   return said(fake).filter((p) => p.startsWith('⌨️ '))
 }
 
+async function statusOf(page: Page, tabId: string): Promise<string | undefined> {
+  return (await page.evaluate(() => window.api.sessions.list())).find((s) => s.tabId === tabId)
+    ?.status
+}
+
+const BACKGROUND_SUBAGENT_SLEEPS_S = 300
+const BASH_TIMEOUT_MS_OUTLASTING_THE_SLEEP = (BACKGROUND_SUBAGENT_SLEEPS_S + 60) * 1000
+// CC§8
+const BACKGROUND_SUBAGENT_PROMPT = `Use the Agent tool with run_in_background set to true to start one subagent whose task is: run the shell command 'perl -e "sleep ${BACKGROUND_SUBAGENT_SLEEPS_S}"' with the Bash tool in the foreground (never with run_in_background, and with its timeout set to ${BASH_TIMEOUT_MS_OUTLASTING_THE_SLEEP}) and wait for it to finish, then reply DONE. Do not wait for the subagent or check on it. Then reply with only BG-STARTED and end your turn.`
+
 function notices(fake: FakeDiscord): string[] {
   return said(fake)
     .map((p) => p.split('\n')[0])
@@ -640,6 +650,30 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       await expect
         .poll(() => ran(fake).at(-1), { timeout: A_REAL_MODEL_TURN_MS })
         .toMatch(/ran \/compact:\nCompacted/)
+    })
+  })
+
+  // CC§8
+  test('a real Claude session whose turn is over but whose background subagent still runs, so it shows working, takes a /run /context from Discord, and its report reaches the channel while the subagent still runs', async ({
+    env
+  }) => {
+    test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
+    test.setTimeout(2 * A_REAL_MODEL_TURN_MS + 120_000)
+    const fake = await realClaudeConductor(env)
+    await withConductor(env, fake, async (_app, page) => {
+      const child = await liveClaudeTab(page)
+      await typePrompt(page, child.tabId, BACKGROUND_SUBAGENT_PROMPT)
+      await expect
+        .poll(() => saidBy(env, child.sessionId, 'assistant').join('\n'), {
+          timeout: A_REAL_MODEL_TURN_MS
+        })
+        .toContain('BG-STARTED')
+      await expect.poll(() => statusOf(page, child.tabId)).toBe('working')
+      fake.interact(OWNER, 'run', { command: '/context', session: child.sessionId })
+      await expect
+        .poll(() => ran(fake), { timeout: A_REAL_MODEL_TURN_MS })
+        .toContainEqual(expect.stringMatching(/ran \/context:\n(## )?Context Usage/))
+      expect(await statusOf(page, child.tabId)).toBe('working')
     })
   })
 

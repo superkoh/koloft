@@ -401,7 +401,7 @@ describe('injected hook script', () => {
     expect(readStatusLog('tabH')[0].message).toContain('permission')
   })
 
-  // CC§16
+  // CC§17
   it('every prompt hands Claude the reply-language reminder; Stop and Notification print nothing', () => {
     const out = fire('tabLang', 'prompt', { hook_event_name: 'UserPromptSubmit', prompt: '你好' })
     expect(JSON.parse(out)).toEqual({

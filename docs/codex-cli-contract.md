@@ -209,17 +209,17 @@ branch and HEAD were still present and unchanged.
 
 ## 7. Rechecking a CLI upgrade
 
-Measured version: **0.153.4** only; each dated section names the binary it ran. Koloft
-treats every 0.153.x as verified (`verified` in `src/main/codexRuntime.ts`, pinned by
-`test/unit/codexRuntime.test.ts`); later 0.153 patches are inferred, not checked. Before
-widening that rule to a newer line, redo the live checks the code leans on: section 1
-(handshake and the update-notice key), 2, 3, 4, 5, 8 (status-line item ids), 9 (the trust
-question before connecting), 11 (trust table, approval flags), 12 (`fileChange` /
-`commandActions` shapes, the `open` shim), 13 (token-usage fields), 14 (first prompt,
-`-m`, `model_reasoning_effort`) and 15 (`account/read`, `account/rateLimits/read`,
-per-home state). Then change that rule, the "(0.153.x)" in the warning in
-`src/main/codexSessions.ts`, the cases in `test/unit/codexRuntime.test.ts`, and this line
-together.
+Each dated section names the binary it ran: mostly 0.153.4, some 0.159.3. Koloft treats
+the minor line of its minimum (`MIN_CODEX_VERSION` in `src/main/cliMinimums.ts`) as
+verified (`verified` in `src/main/codexRuntime.ts`, pinned by
+`test/unit/codexRuntime.test.ts`) and warns on anything newer. **The owner raised the
+minimum from 0.153.4 to 0.161.0 on 2026-10-08 without redoing the live checks below on
+0.161**; that the sections still hold on 0.161 is inferred, not checked. Those checks
+are: section 1 (handshake and the update-notice key), 2, 3, 4, 5, 8 (status-line item
+ids), 9 (the trust question before connecting), 11 (trust table, approval flags), 12
+(`fileChange` / `commandActions` shapes, the `open` shim), 13 (token-usage fields), 14
+(first prompt, `-m`, `model_reasoning_effort`) and 15 (`account/read`,
+`account/rateLimits/read`, per-home state).
 
 Keep worktree tests inside a temporary repository. Record version, executable source,
 matching request IDs, thread IDs and event order; redact login/account contents. Fixture
@@ -856,4 +856,23 @@ folder trusted. Text was typed in one write and CR in a second write 0.3–0.6 s
   and `active` again within 3–4 ms. Each queued `userMessage` item carried the
   `clientUserMessageId` as `clientId`, and `thread/queue/list` was empty as soon as the
   last one's turn started.
+
+## 22. `codex update`
+
+How established: 2026-10-08 on this Mac, each run in a fresh temporary `HOME` with
+`CODEX_HOME` unset and stdin closed. A standalone install of 0.153.4
+(`CODEX_RELEASE=0.153.4 CODEX_NON_INTERACTIVE=1 sh install.sh`, the script at
+`https://chatgpt.com/codex/install.sh`), and an npm one
+(`npm install -g @openai/codex@0.153.4` into a user-writable prefix).
+
+- **`codex update` asks nothing and exits 0**, and picks the way to update from how
+  Codex was installed: standalone runs
+  `curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh`, npm
+  runs `npm install -g @openai/codex`. Both went 0.153.4 → 0.161.0. The binary also
+  names `brew upgrade --cask codex`, `bun`, `pnpm` and `vp` ways (read with `strings`);
+  none was run.
+- **The standalone install lives under `$CODEX_HOME/packages/standalone`** (install.sh
+  reads `CODEX_HOME`, falling back to `~/.codex`), so the update must run with the
+  user's own `CODEX_HOME`, never an account home (§15). `current` moves to
+  `releases/0.161.0-…` and `releases/0.153.4-…` stays.
 

@@ -15,7 +15,7 @@ export interface HookPaths {
 export const REPLY_LANGUAGE_REMINDER =
   "Reply in the language of the user's latest message, whatever language tool output, files or your earlier replies use."
 
-// CC§16
+// CC§17
 const PROMPT_HOOK_OUTPUT = JSON.stringify({
   hookSpecificOutput: {
     hookEventName: 'UserPromptSubmit',
@@ -162,7 +162,7 @@ case "$event" in
       *'"session_crons":['*) wake=',"wake":1' ;;
     esac
     printf '{"tabId":"%s","event":"%s","sessionId":"%s","message":"%s","tmux":"%s"%s%s}\\n' "$tab" "$event" "$sid" "$msg" "$tm" "$bgl" "$wake" >> "$reg/$tab.status.jsonl"
-    # CC§16
+    # CC§17
     if [ "$event" = "prompt" ]; then printf '%s\\n' ${shq(PROMPT_HOOK_OUTPUT)}; fi
     ;;
 esac

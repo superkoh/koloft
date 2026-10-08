@@ -623,6 +623,23 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   "prompt":"/loop …"}]` and `"background_tasks":[]`, in compact JSON. So a session
   whose last turn-end carried a non-empty `session_crons` will wake itself up, even
   though it looks idle. 209 sessions on the dev Mac had called `ScheduleWakeup`.
+- **A subagent's own background shell is in its `SubagentStop` list, not in the main
+  session's `Stop` list.** Measured 2026-10-08 on CC 2.1.294 (`claude -p`, temp HOME,
+  both hooks saving their input): a subagent that started `sleep 120` with
+  `run_in_background: true` and returned fired `SubagentStop` with
+  `background_tasks: [{"type":"shell","status":"running","command":"sleep 120",…}]`, and
+  the main `Stop` right after carried `[]`. The main transcript's `<task-notification>`
+  for such a subagent says `<status>completed</status>` with the note "This agent
+  stopped with background work of its own still running … the result below may be
+  interim" (seen in a real interactive run the same day). Whether interactive mode's
+  `Stop` lists it is inferred from that run, not probed.
+- **The Bash tool refuses a long leading `sleep`.** Read from the 2.1.294 binary
+  (`strings`): when a command's first part matches `^sleep\s+<n>\s*$` and `<n>` is at
+  least a threshold (a minified constant, not read), the call is refused with "standalone
+  sleep <n>" or "sleep <n> followed by: …", and the model is told to use Monitor or
+  `run_in_background`. Seen the same day: a subagent told to run `sleep 300` in the
+  foreground was refused, and one left free to choose ran it in the background instead.
+  `perl -e "sleep 300"` does not match the check.
 - **An idle teammate is still `running`**. CC's own activity checks use
   `status === 'running' && !isIdle`; hooks never see `isIdle`. On disk the idle edge
   is a user record in the lead's transcript — `Another Claude session sent a
@@ -1108,6 +1125,12 @@ sessions.
     (`T("tengu_harbor_kite_mode_emit",!0)` in the 2.1.288 binary); recheck on upgrade.
   - A busy receiver with a mismatched mode, and a receiver not in bypass mode, were not
     tried.
+- **A message reaches a receiver whose turn ended with background work still running.**
+  2026-10-08, CC 2.1.294, interactive receivers in a pty with a scratch `HOME` and an
+  OAuth token, `--dangerously-skip-permissions`, model haiku. One receiver's first turn
+  started `sleep 90` with the Bash tool's `run_in_background: true` and ended; 5 s later a
+  `bypass` envelope written to its socket was answered 1.3 s after the write. A control
+  receiver with no background work answered in 1.0 s.
 
 ## §14 The PermissionRequest hook: answering a dialog from outside
 
@@ -1211,7 +1234,33 @@ with `koloft`, and printed nothing for that one. The prompt asked for a Bash
   written and the transcript held `PreToolUse:<tool> hook error`.
 - Not run: a `Task` subagent's own tool calls under the hook.
 
-## §16 The UserPromptSubmit hook adds text beside every prompt
+## §16 `claude --version` and `claude update`
+
+How established: 2026-10-08 on this Mac, each run in a fresh temporary `HOME` with
+stdin closed. A native install of 2.1.250 (`bash install.sh 2.1.250`, §10), and an npm
+one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable prefix).
+
+- **`claude --version` prints `2.1.294 (Claude Code)`** — the version first, then a
+  space — and returns at once (`time` shows 0.00 s native, 0.12 s for the npm install),
+  so a check on every launch costs next to nothing.
+- **`claude update` asks nothing and exits 0.** Native: 2.1.250 → 2.1.294; the
+  `~/.local/bin/claude` link moves to `versions/2.1.294` and `versions/2.1.250` stays,
+  so a session already running on the old file keeps going. npm: 2.1.250 → **2.1.293**,
+  one behind the native channel that day, after printing "npm global folder isn't
+  writable" and then updating anyway. With an npm prefix that really needs `sudo`, the
+  update failing is inferred, not checked. A Homebrew install was not run.
+- **The oldest version Koloft's code leans on is 2.1.259**: concurrent sessions stop
+  reverting each other's `~/.claude.json` writes from then on (§2), which the folder
+  trust written before each launch needs; `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` (§7) needs
+  2.1.257. The release that added `--name`, `--effort`, `--plugin-dir`, the §11 session
+  registry or the `PermissionRequest` hook is not recorded here; that all predate
+  2.1.259 is inferred, not checked.
+- **The minimum is 2.1.293, the newest every channel offered on 2026-10-08**
+  (`downloads.claude.ai/claude-code-releases/latest` said 2.1.294; npm dist-tags said
+  `latest` 2.1.293, `next` 2.1.294, `stable` 2.1.285). A minimum above npm's `latest`
+  would leave an npm install that `claude update` cannot lift to it.
+
+## §17 The UserPromptSubmit hook adds text beside every prompt
 
 How established: 2026-10-08, CC 2.1.294, on this Mac, model haiku, an empty MCP config,
 and a `--settings` file whose `UserPromptSubmit` entry ran a script that printed

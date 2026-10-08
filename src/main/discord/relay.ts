@@ -80,6 +80,7 @@ export interface RelayDeps {
   boundKey(tabId: string): string | undefined
   status(tabId: string): SessionStatus | undefined
   awaitsInput(tabId: string): boolean
+  turnOver(tabId: string): boolean
   waiting(tabId: string): void
   alive(tabId: string): boolean
   ready(tabId: string, ready: () => boolean, ms: number): Promise<boolean>
@@ -270,12 +271,8 @@ export class DiscordRelay {
   }
 
   takesCommand(tab: string): boolean {
-    const status = this.d.status(tab)
     return (
-      this.typable(tab) &&
-      (status === 'waiting' || status === 'idle') &&
-      !this.dialogOpen(tab) &&
-      this.d.queueDrained(tab)
+      this.typable(tab) && this.d.turnOver(tab) && !this.dialogOpen(tab) && this.d.queueDrained(tab)
     )
   }
 
@@ -410,17 +407,12 @@ export class DiscordRelay {
       this.answer(tab, hookAnswer(ask.payload, reply))
       return undefined
     }
-    if (this.turnOver(tab)) return SHOWS_NO_DIALOG
+    if (this.d.turnOver(tab) && !this.d.awaitsInput(tab)) return SHOWS_NO_DIALOG
     const keys = claudeKeysFor(ask.payload, reply)
     if (!keys.ok) return keys.error
     this.asks.delete(tab)
     await this.d.type(tab, keys.value)
     return undefined
-  }
-
-  private turnOver(tab: string): boolean {
-    const status = this.d.status(tab)
-    return status === 'idle' || (status === 'waiting' && !this.d.awaitsInput(tab))
   }
 
   codexAsked(tab: string, a: CodexApproval | CodexQuestion): void {
