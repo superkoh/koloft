@@ -14,17 +14,19 @@ function setup() {
   const status = new Map<string, SessionStatus>()
   const asking = new Set<string>()
   const unknown = new Set<string>()
-  const openers = new Map<string, { channelId: string; messageId: string }>()
+  const openers = new Map<string, { channelId: string; threadId: string }>()
   const conductorChannels = new Map<string, string>()
   const names = new Map<string, string>()
   const edits: { channelId: string; messageId: string; header: string }[] = []
   const typed: string[] = []
   let holdEdits = false
+  let refuseEdits = false
   const held: (() => void)[] = []
   const live = new LiveStatus({
     link: {
       editCard: (channelId: string, messageId: string, card: Card) => {
         edits.push({ channelId, messageId, header: card.header })
+        if (refuseEdits) return Promise.reject(new Error('Discord answered 404'))
         if (!holdEdits) return Promise.resolve()
         return new Promise<void>((resolve) => held.push(resolve))
       },
@@ -38,9 +40,9 @@ function setup() {
     awaitsInput: (tabId) => asking.has(tabId),
     unknown: (tabId) => unknown.has(tabId)
   })
-  const withThread = (tabId: string, name: string, messageId: string): void => {
+  const withThread = (tabId: string, name: string, threadId: string): void => {
     names.set(tabId, name)
-    openers.set(tabId, { channelId: '10', messageId })
+    openers.set(tabId, { channelId: '10', threadId })
   }
   const releaseEdits = async (): Promise<void> => {
     holdEdits = false
@@ -61,6 +63,7 @@ function setup() {
     typed,
     withThread,
     holdEdits: () => void (holdEdits = true),
+    refuseEdits: (on: boolean) => void (refuseEdits = on),
     releaseEdits
   }
 }
@@ -157,7 +160,7 @@ describe('a session’s Discord opener card follows its sidebar light', () => {
     t.status.set('t1', 'approval')
     await t.live.refresh('t1')
     expect(t.edits).toEqual([])
-    t.openers.set('t1', { channelId: '10', messageId: '101' })
+    t.openers.set('t1', { channelId: '10', threadId: '101' })
     await t.live.refresh('t1')
     t.live.sessionChanged('t1', 'a', false)
     await settled()
@@ -178,10 +181,9 @@ describe('a session’s Discord opener card follows its sidebar light', () => {
     t.status.set('t1', 'working')
     await t.live.refresh('t1')
     t.names.delete('t1')
-    const late = t.live.refresh('t1')
+    t.live.sessionChanged('t1', 'renamed', false)
     t.live.closed('t1')
     t.live.forget('t1')
-    await late
     await settled()
     expect(headers(t.edits).map((h) => h.split(' · ')[1])).toEqual([
       expect.stringMatching(/^working/),
@@ -192,26 +194,12 @@ describe('a session’s Discord opener card follows its sidebar light', () => {
   it('an edit Discord refuses is not counted as shown, so the same state is sent again next time', async () => {
     const t = setup()
     t.withThread('t1', 'a', '101')
-    let refuse = true
-    const live = new LiveStatus({
-      link: {
-        editCard: async (_c: string, _m: string, card: Card) => {
-          t.edits.push({ channelId: _c, messageId: _m, header: card.header })
-          if (refuse) throw new Error('Discord answered 404')
-        },
-        typing: async () => undefined
-      },
-      openerOf: (tabId) => t.openers.get(tabId),
-      conductorChannelOf: () => undefined,
-      subject: async () => ({ name: 'a', backend: 'claude' }),
-      status: () => 'waiting',
-      awaitsInput: () => false,
-      unknown: () => false
-    })
-    await live.refresh('t1')
+    t.status.set('t1', 'waiting')
+    t.refuseEdits(true)
+    await t.live.refresh('t1')
     await settled()
-    refuse = false
-    await live.refresh('t1')
+    t.refuseEdits(false)
+    await t.live.refresh('t1')
     await settled()
     expect(t.edits).toHaveLength(2)
   })

@@ -15,6 +15,7 @@ import {
 } from './helpers/p1'
 import {
   callbackText,
+  openerNow,
   startFakeDiscord,
   type FakeDiscord,
   type FakePost
@@ -79,10 +80,6 @@ function notices(fake: FakeDiscord): string[] {
   return inThreads(fake)
     .map((p) => p.split('\n')[0])
     .filter((l) => /^(🔔|❓|⏹)/.test(l))
-}
-
-function openerNow(fake: FakeDiscord, threadId: string): string | undefined {
-  return fake.edits.filter((e) => e.channelId === CHANNEL && e.id === threadId).at(-1)?.content
 }
 
 function transcriptText(env: E2EEnv, sessionId: string): string {
@@ -198,7 +195,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       ])
       const opener = fake.threads[0].id
       await expect
-        .poll(() => openerNow(fake, opener))
+        .poll(() => openerNow(fake, CHANNEL, opener))
         .toMatch(/^❓ \*\*.+\*\* · needs you, asked <t:\d+:R>\n-# ws-a · Claude$/)
 
       fake.say(OWNER, `/koloft session read ${managed}`)
@@ -212,7 +209,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       expect(inThreads(fake).at(-1)).toMatch(/finished\.\nAnswer to: after the touch$/)
       expect(fake.typing).toContain(opener)
       await expect
-        .poll(() => openerNow(fake, opener))
+        .poll(() => openerNow(fake, CHANNEL, opener))
         .toMatch(/^✅ \*\*.+\*\* · turn done <t:\d+:R>/)
       expect(fake.edits.every((e) => e.flags! & SILENT_FLAG)).toBe(true)
 
@@ -336,7 +333,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await expect(wsRows(page, 'ws-a')).toHaveClass(/cold/)
       await expect.poll(() => fake.threads[0].archived).toBe(true)
       await expect
-        .poll(() => openerNow(fake, fake.threads[0].id))
+        .poll(() => openerNow(fake, CHANNEL, fake.threads[0].id))
         .toMatch(/^⏹ \*\*.+\*\* · closed <t:\d+:R>\n-# ws-a · Claude$/)
       expect(fake.deleted).toEqual([])
 
@@ -415,9 +412,11 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
         thread()
       )
       await expect
-        .poll(() => openerNow(fake, opener.id)?.split(' · ')[0])
+        .poll(() => openerNow(fake, CHANNEL, opener.id)?.split(' · ')[0])
         .toBe(`✅ **${thread()}**`)
-      expect(openerNow(fake, opener.id)).toMatch(/ · turn done <t:\d+:R>\n-# ws-a · Codex$/)
+      expect(openerNow(fake, CHANNEL, opener.id)).toMatch(
+        / · turn done <t:\d+:R>\n-# ws-a · Codex$/
+      )
       expect(fake.typing).toContain(opener.id)
 
       const startedKey = bindingOnDisk(env)!.threads!.find((t) => t.threadId === opener.id)!.keys[0]

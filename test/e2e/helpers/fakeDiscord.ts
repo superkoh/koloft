@@ -96,6 +96,14 @@ export interface FakeCallback {
   }
 }
 
+export function openerNow(
+  fake: Pick<FakeDiscord, 'edits'>,
+  channelId: string,
+  threadId: string
+): string | undefined {
+  return fake.edits.filter((e) => e.channelId === channelId && e.id === threadId).at(-1)?.content
+}
+
 export const SLASH_COMMAND = 2
 export const BUTTON_PRESS = 3
 export const AUTOCOMPLETE = 4

@@ -238,9 +238,9 @@ describe('one Discord thread per session', () => {
     const s = { tabId: 't1', key: 'k1', name: 'a', backend: 'claude' as const, workspace: WS }
     expect(threads.openerOf('t1')).toBeUndefined()
     await threads.place(b, s)
-    expect(threads.openerOf('t1')).toEqual({ channelId: '10', messageId: '101' })
+    expect(threads.openerOf('t1')).toEqual({ channelId: '10', threadId: '101' })
     threads.bound('t2', 'k1')
-    expect(threads.openerOf('t2')).toEqual({ channelId: '10', messageId: '101' })
+    expect(threads.openerOf('t2')).toEqual({ channelId: '10', threadId: '101' })
     expect(opened).toEqual(['t1', 't2'])
     threads.left('k1')
     expect(threads.openerOf('t2')).toBeUndefined()

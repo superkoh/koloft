@@ -1,7 +1,18 @@
-import type { BackendAvailability, BackendId, HostId, SessionMethods, SessionSource } from './types'
+import type {
+  BackendAvailability,
+  BackendId,
+  HostId,
+  SessionInfo,
+  SessionMethods,
+  SessionSource
+} from './types'
 import { hostOf } from './remoteKey'
 
 export const SESSION_BACKENDS: BackendId[] = ['claude', 'codex']
+
+export function statusUnavailable(session?: Pick<SessionInfo, 'details'>): boolean {
+  return session?.details?.codex?.observation === 'degraded'
+}
 
 export function backendIdOf(value: unknown): BackendId | undefined {
   return SESSION_BACKENDS.find((b) => b === value)

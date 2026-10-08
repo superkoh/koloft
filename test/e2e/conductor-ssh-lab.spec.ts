@@ -15,7 +15,7 @@ import {
   stopSshLab,
   type SshLab
 } from './helpers/docker'
-import { startFakeDiscord, type FakeDiscord, type FakePost } from './helpers/fakeDiscord'
+import { openerNow, startFakeDiscord, type FakeDiscord, type FakePost } from './helpers/fakeDiscord'
 
 function claudeTokenFromKeychain(): string {
   const account = process.env.KOLOFT_SMOKE_ACCOUNT
@@ -238,8 +238,7 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
           .toBeTruthy()
         const thread = question()!.channelId
         expect(fake.threads.map((t) => t.id)).toContain(thread)
-        const opener = (): string | undefined =>
-          fake.edits.filter((e) => e.channelId === CHANNEL && e.id === thread).at(-1)?.content
+        const opener = (): string | undefined => openerNow(fake, CHANNEL, thread)
         await expect
           .poll(opener, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
           .toMatch(/^❓ \*\*.+\*\* · needs you, asked <t:\d+:R>\n-# .+ · Claude$/)

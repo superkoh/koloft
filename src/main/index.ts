@@ -32,6 +32,7 @@ import {
   backendIdOf,
   capabilitiesFor,
   identityOf,
+  statusUnavailable,
   SUPPORTED_PAIRS
 } from '@shared/sessionBackend'
 import type { Turn } from '@shared/turns'
@@ -419,21 +420,17 @@ function sidebarTitle(s: SessionInfo): string | undefined {
   const placeholder = s.title === PLACEHOLDER_SESSION_TITLE || s.title === CODEX_PLACEHOLDER_TITLE
   return s.title && !placeholder ? s.title : undefined
 }
-async function discordShownName(tabId: string): Promise<string | null> {
-  const s = sessionOfTab(tabId)
+async function discordShownName(s: SessionInfo | undefined): Promise<string | null> {
   const title = s && sidebarTitle(s)
   if (title) return title
   return s?.backendId === 'claude' && s.sessionId ? claudePeerNames()(s.sessionId) : null
-}
-function codexStatusUnavailable(s: SessionInfo | undefined): boolean {
-  return s?.details?.codex?.observation === 'degraded'
 }
 function retitleDiscordThreads(sessions: SessionInfo[]): void {
   if (!discordThreads) return
   for (const s of sessions) {
     const title = sidebarTitle(s)
     if (title) discordThreads.retitle(s.tabId, title, sessionBackends.workspaceOfTab(s.tabId))
-    discordLive?.sessionChanged(s.tabId, title, codexStatusUnavailable(s))
+    discordLive?.sessionChanged(s.tabId, title, statusUnavailable(s))
   }
 }
 function markedSessionsOf(wsPath: string): string[] {
@@ -1752,19 +1749,21 @@ app.whenReady().then(() => {
     opened: (tabId) => void discordLive?.refresh(tabId)
   })
   discordThreads = threads
+  const conductorChannelOf = (tabId: string): string | undefined =>
+    conductorsNow.bindingOfTab(tabId)?.channel.channelId
   discordLive = new LiveStatus({
     link,
     openerOf: (tabId) => threads.openerOf(tabId),
-    conductorChannelOf: (tabId) => conductorsNow.bindingOfTab(tabId)?.channel.channelId,
+    conductorChannelOf,
     subject: async (tabId) => {
       const s = sessionOfTab(tabId)
       if (!s) return undefined
-      const name = (await discordShownName(tabId)) ?? s.title
+      const name = (await discordShownName(s)) ?? s.title
       return { name, backend: s.backendId, workspace: sessionBackends.workspaceOfTab(tabId) }
     },
     status: (tabId) => tracker.statusOf(tabId),
     awaitsInput: (tabId) => tracker.awaitsInput(tabId),
-    unknown: (tabId) => codexStatusUnavailable(sessionOfTab(tabId))
+    unknown: (tabId) => statusUnavailable(sessionOfTab(tabId))
   })
   const dialogOf = async (tabId: string): Promise<DialogView | undefined> => {
     const ask = await codexAskOf(tabId)
@@ -1854,7 +1853,7 @@ app.whenReady().then(() => {
           seen: (id: string) => conductorsNow.setThreadLastMessage(t.threadId, id)
         }))
       ]),
-    conductorChannelOf: (tabId) => conductorsNow.bindingOfTab(tabId)?.channel.channelId,
+    conductorChannelOf,
     withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
     remote: (tabId) => !!tracker.remoteOf(tabId),
     backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
@@ -1904,7 +1903,7 @@ app.whenReady().then(() => {
           }
         : undefined
     },
-    shownName: discordShownName,
+    shownName: (tabId) => discordShownName(sessionOfTab(tabId)),
     awaitsInput: (tabId) => tracker.awaitsInput(tabId),
     commandRunning: (tabId) => slash.running(tabId),
     dialog: dialogOf

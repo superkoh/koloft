@@ -81,19 +81,24 @@ export class SessionThreads {
   }
 
   // PLATFORM§39
-  openerOf(tabId: string): { channelId: string; messageId: string } | undefined {
+  openerOf(tabId: string): { channelId: string; threadId: string } | undefined {
     const t = this.byTab.get(tabId)
     const key = this.keyOfTab.get(tabId)
     if (!t || (key && this.offTheSidebar.has(key))) return undefined
     const b = this.d.conductors.binding(t.bindingId)
-    return b && { channelId: b.channel.channelId, messageId: t.threadId }
+    return b && { channelId: b.channel.channelId, threadId: t.threadId }
+  }
+
+  private adopt(tabId: string, t: TabThread): void {
+    this.byTab.set(tabId, t)
+    this.d.opened(tabId)
   }
 
   place(b: ConductorBinding, s: ThreadSubject, started = false): Promise<string> {
     const slot = s.tabId ?? `key:${s.key}`
     const known = s.key ? this.d.conductors.threadOfKey(s.key) : undefined
     if (known) {
-      if (s.tabId) this.byTab.set(s.tabId, tabThread(known.binding, known.thread))
+      if (s.tabId) this.adopt(s.tabId, tabThread(known.binding, known.thread))
       return Promise.resolve(known.thread.threadId)
     }
     const mine = s.tabId ? this.byTab.get(s.tabId) : undefined
@@ -126,12 +131,11 @@ export class SessionThreads {
       const [opener] = await this.d.link.card(channelId, openerCard(s, started))
       const threadId = await this.d.link.startThread(channelId, opener, name)
       const t = tabThread(b, { threadId, name })
-      if (s.tabId) this.byTab.set(s.tabId, t)
       const key = s.key ?? (s.tabId && this.keyOfTab.get(s.tabId))
       if (key) this.keep(t, key)
+      if (s.tabId) this.adopt(s.tabId, t)
       const owner = this.d.conductors.owner()
       if (owner) void this.d.link.addToThread(threadId, owner).catch(() => undefined)
-      if (s.tabId) this.d.opened(s.tabId)
       return threadId
     } catch {
       this.threadless.add(slot)
@@ -145,16 +149,15 @@ export class SessionThreads {
     this.keyOfTab.set(tabId, key)
     const own = this.d.conductors.threadOfKey(key)
     if (own) {
-      this.byTab.set(tabId, tabThread(own.binding, own.thread))
-      this.d.opened(tabId)
+      this.adopt(tabId, tabThread(own.binding, own.thread))
       return
     }
     const previous = before ? this.d.conductors.threadOfKey(before) : undefined
     const carried =
       this.byTab.get(tabId) ?? (previous && tabThread(previous.binding, previous.thread))
     if (!carried) return
-    this.byTab.set(tabId, carried)
     this.keep(carried, key)
+    this.adopt(tabId, carried)
   }
 
   retitle(tabId: string, title: string, workspace?: string): void {
