@@ -24,13 +24,13 @@ function toHtml(text) {
 }
 
 function changesOf(body) {
-  const groups = { new: [], fixed: [], also: [] }
+  const groups = { new: [], fixed: [], faster: [], also: [] }
+  const groupOfType = { feat: 'new', fix: 'fixed', perf: 'faster' }
   for (const line of (body ?? '').split(INSTALL_MARKER)[0].split('\n')) {
     const item = line.match(/^- (.+)$/)?.[1]
     if (!item) continue
-    const typed = item.match(/^(feat|fix)(?:\(([^)]*)\))?: (.+)$/)
-    if (typed)
-      groups[typed[1] === 'feat' ? 'new' : 'fixed'].push({ scope: typed[2], text: typed[3] })
+    const typed = item.match(/^(feat|fix|perf)(?:\(([^)]*)\))?: (.+)$/)
+    if (typed) groups[groupOfType[typed[1]]].push({ scope: typed[2], text: typed[3] })
     else groups.also.push({ text: item })
   }
   return groups

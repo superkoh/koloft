@@ -30,13 +30,14 @@ const release = (tag: string, published: string, lines: string[]) => ({
 })
 
 describe('site-changelog.mjs', () => {
-  it('lists releases newest first: feat under new, fix under fixed, every other line under also, the install block left out, the text shown as written', () => {
+  it('lists releases newest first: feat under new, fix under fixed, perf under faster, every other line under also, the install block left out, the text shown as written', () => {
     const { status, page } = run('<main><!-- releases --></main>', [
       [
         release('v1.0.0', '2026-01-01T00:00:00Z', ['feat(cron): an old feature (#1)']),
         release('v1.1.0', '2026-02-03T00:00:00Z', [
           'feat(agent): koloft session close <id or name> (#20)',
           'fix(remote): a fix for issue #9 (#21)',
+          'perf(codex): output reads in linear time (#22)',
           'build: strip paths',
           'Koloft is open source: "https://github.com/superkoh/koloft" costs $$ nothing $&'
         ])
@@ -49,6 +50,10 @@ describe('site-changelog.mjs', () => {
     expect(newer).toMatch(/<h3>new<\/h3>[\s\S]*koloft session close &lt;id or name&gt;/)
     expect(newer).toContain('href="https://github.com/superkoh/koloft/issues/20">#20</a>')
     expect(newer).toMatch(/<h3>fixed<\/h3>[\s\S]*issue <a href="[^"]*\/issues\/9">#9<\/a>/)
+    expect(newer).toMatch(
+      /<h3>faster<\/h3>\n<ul class="dash">\n<li><span class="why">codex ·<\/span> output reads in linear time/
+    )
+    expect(newer).not.toContain('perf(')
     expect(newer).toMatch(/<h3>also<\/h3>[\s\S]*build: strip paths/)
     expect(newer).toContain(
       '&quot;<a href="https://github.com/superkoh/koloft">https://github.com/superkoh/koloft</a>&quot; costs $$ nothing $&amp;'
