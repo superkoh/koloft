@@ -190,19 +190,22 @@ const TITLE_DRAWN_FROM_THE_HANDOVER = /Koloft started you|hand-?off|hand-?over/i
 
 async function titlesSeenUntilOneRowIsLeft(rows: Locator, parentTabId: string): Promise<string[]> {
   const seen = new Set<string>()
-  const deadline = Date.now() + A_REAL_MODEL_TURN_MS
-  while (Date.now() < deadline) {
-    const tabs = await rows.evaluateAll((els) =>
-      els.map((el) => ({
-        tabId: el.getAttribute('data-tab-id'),
-        title: el.querySelector('.ws-tab-title')?.textContent ?? ''
-      }))
+  await expect
+    .poll(
+      async () => {
+        const tabs = await rows.evaluateAll((els) =>
+          els.map((el) => ({
+            tabId: el.getAttribute('data-tab-id'),
+            title: el.querySelector('.ws-tab-title')?.textContent ?? ''
+          }))
+        )
+        for (const t of tabs) if (t.tabId !== parentTabId) seen.add(t.title)
+        return tabs.length
+      },
+      { intervals: [TITLE_SAMPLE_EVERY_MS], timeout: A_REAL_MODEL_TURN_MS }
     )
-    if (tabs.length === 1) return [...seen]
-    for (const t of tabs) if (t.tabId !== parentTabId) seen.add(t.title)
-    await new Promise((resolve) => setTimeout(resolve, TITLE_SAMPLE_EVERY_MS))
-  }
-  throw new Error(`the child never closed; its titles were: ${[...seen].join(' | ')}`)
+    .toBe(1)
+  return [...seen]
 }
 
 function closesTheSessionItStarted(

@@ -573,17 +573,19 @@ describe('extractJsonlMeta', () => {
     expect(meta.firstUserText).toBe('the actual ask')
   })
 
-  it('a session another session started with koloft session new is titled by its task, not by the handover Koloft put before it', () => {
-    const task = 'Look into why the sidebar is slow.\n\nStart with the profiler.'
-    for (const [caller, child] of [
-      [{ name: 'Global-conductor', id: 'c1' }, 'claude'],
-      [{ id: '019a-codex-thread' }, 'claude'],
-      [{ name: 'Fix login\n\nthen deploy', id: 'p2' }, 'claude']
-    ] as const)
-      expect(extractJsonlMeta([userLine(withHandover(caller, child, task))]).firstUserText).toBe(
+  it.each([
+    { name: 'Global-conductor', id: 'c1' },
+    { id: '019a-codex-thread' },
+    { name: 'Fix login\n\nthen deploy', id: 'p2' }
+  ])(
+    'a session that %j started with koloft session new is titled by its task, not by the handover Koloft put before it',
+    (caller) => {
+      const task = 'Look into why the sidebar is slow.\n\nStart with the profiler.'
+      expect(extractJsonlMeta([userLine(withHandover(caller, 'claude', task))]).firstUserText).toBe(
         task
       )
-  })
+    }
+  )
 
   it('returns {} when nothing usable appears', () => {
     expect(extractJsonlMeta([])).toEqual({})

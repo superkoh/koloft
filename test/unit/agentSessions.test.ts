@@ -324,7 +324,7 @@ describe('koloft session list', () => {
 })
 
 describe('koloft session new', () => {
-  it('a Claude caller starts a named Claude sibling in its workspace whose first message says who to report to', async () => {
+  it('a Claude caller starts a named Claude sibling in its workspace whose first message says who to report to, since the transcript replays that message on every resume while a SessionStart note lives only as long as its tab', async () => {
     const { verb, launched } = harness([session('me', 'claude')], { 'me-session': 'planner' })
     const reply = await verb(['new', '-w', 'links', '--', 'Fix the links.'], from('me'))
     expect(launched).toHaveLength(1)
