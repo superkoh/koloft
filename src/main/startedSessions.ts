@@ -48,6 +48,15 @@ export class StartedSessions {
     )
   }
 
+  parentOfRow(rowId: string): string | undefined {
+    const parents = this.parents()
+    if (Object.hasOwn(parents, rowId)) return parents[rowId]
+    const waiting = this.parentOfWaitingTab.get(rowId)
+    if (waiting) return waiting
+    const boundSession = this.sessionOfTab.get(rowId)
+    return boundSession && Object.hasOwn(parents, boundSession) ? parents[boundSession] : undefined
+  }
+
   forget(sessionId: string): void {
     const parents = this.parents()
     if (!(sessionId in parents)) return

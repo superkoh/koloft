@@ -1618,6 +1618,7 @@ app.whenReady().then(() => {
     killRemoteSession: (host, sessionId) =>
       claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId)),
     hiddenRow: (id) => !!conductors?.conductorOf(id),
+    parentOf: (rowId) => startedSessions.parentOfRow(rowId),
     conductorsRoot: path.join(userData, 'conductors'),
     sessionsOnDiskOrRunning: (ids) =>
       conductors?.forgetGone(

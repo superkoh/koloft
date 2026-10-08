@@ -3,7 +3,7 @@ const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
 const readline = require('readline')
-const { spawnSync } = require('child_process')
+const { execFile, spawnSync } = require('child_process')
 const WebSocket = require('ws')
 
 const argv = process.argv.slice(2)
@@ -487,6 +487,12 @@ async function startTui() {
     else if (text === '/fork') await open('thread/fork', { threadId: thread.id, cwd })
     else if (text.startsWith('/resume '))
       await open('thread/resume', { threadId: text.slice(8).trim(), cwd })
+    else if (text.startsWith('/koloft '))
+      execFile('/bin/sh', ['-c', `koloft ${text.slice(8).trim()}`], { cwd }, (e, out, err) => {
+        const code = e ? (typeof e.code === 'number' ? e.code : 1) : 0
+        const said = `${out}${err}`.replace(/\r?\n/g, '\r\n')
+        process.stdout.write(`\r\n${said}[fake-codex] koloft exit=${code}\r\n> `)
+      })
     else await prompt(text)
   }
   ws.on('message', (bytes) => {
