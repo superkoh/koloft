@@ -857,3 +857,22 @@ folder trusted. Text was typed in one write and CR in a second write 0.3–0.6 s
   `clientUserMessageId` as `clientId`, and `thread/queue/list` was empty as soon as the
   last one's turn started.
 
+## 22. `codex update`
+
+How established: 2026-10-08 on this Mac, each run in a fresh temporary `HOME` with
+`CODEX_HOME` unset and stdin closed. A standalone install of 0.153.4
+(`CODEX_RELEASE=0.153.4 CODEX_NON_INTERACTIVE=1 sh install.sh`, the script at
+`https://chatgpt.com/codex/install.sh`), and an npm one
+(`npm install -g @openai/codex@0.153.4` into a user-writable prefix).
+
+- **`codex update` asks nothing and exits 0**, and picks the way to update from how
+  Codex was installed: standalone runs
+  `curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh`, npm
+  runs `npm install -g @openai/codex`. Both went 0.153.4 → 0.161.0. The binary also
+  names `brew upgrade --cask codex`, `bun`, `pnpm` and `vp` ways (read with `strings`);
+  none was run.
+- **The standalone install lives under `$CODEX_HOME/packages/standalone`** (install.sh
+  reads `CODEX_HOME`, falling back to `~/.codex`), so the update must run with the
+  user's own `CODEX_HOME`, never an account home (§15). `current` moves to
+  `releases/0.161.0-…` and `releases/0.153.4-…` stays.
+

@@ -73,7 +73,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   - flags: `-w <name>` makes a real `.claude/worktrees/<name>` on branch
     `worktree-<name>`; `-- <text>` types `<text>` first, in place of the canned
     startup turn (ADR-0020); `setup-token` prints a login token the way the real one
-    does (`KOLOFT_FAKE_SETUP_TOKEN`, `KOLOFT_FAKE_SETUP_URL`).
+    does (`KOLOFT_FAKE_SETUP_TOKEN`, `KOLOFT_FAKE_SETUP_URL`); `--version` prints a
+    version above any minimum, so the shim's version check never updates it.
   - files: `fake-claude-delay` (ms before it binds), `-next-title` (title of the next
     fresh launch, used once), `-no-status` (binds but never reports a run-state),
     `-exit` (exits with that code, no hook), `-lazy` (no transcript until the first

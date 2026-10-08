@@ -13,6 +13,7 @@ vi.mock('electron', async () => {
 })
 
 import { registeredByTabRoot, setupShim } from '../../src/main/shim'
+import { MIN_CLAUDE_VERSION } from '../../src/main/cliMinimums'
 
 let shimDir: string
 let regDir: string
@@ -814,6 +815,65 @@ describe('claude shim (scheduled jobs: first prompt + session name ride env vars
     expect(r.status).toBe(1)
     expect(r.stderr).toContain('⛔ Koloft')
     expect(r.realArgs0).toBeNull()
+  })
+})
+
+describe('claude shim (holds Claude Code to the minimum this Koloft supports)', () => {
+  const OLDER_YET_LATER_AS_TEXT = '2.1.99'
+  let versionedBin: string
+  let versionFile: string
+  let calls: string
+
+  beforeAll(() => {
+    versionedBin = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-versioned-'))
+    versionFile = path.join(versionedBin, 'version')
+    calls = path.join(versionedBin, 'calls')
+    fs.writeFileSync(
+      path.join(versionedBin, 'claude'),
+      '#!/usr/bin/env bash\ncase "$1" in\n' +
+        `  --version) printf '%s (Claude Code)\\n' "$(cat ${versionFile})"; exit 0 ;;\n` +
+        `  update) echo update >> ${calls}; [ -n "$UPDATES_TO" ] && printf '%s' "$UPDATES_TO" > ${versionFile}; exit 0 ;;\n` +
+        `esac\necho "launch $*" >> ${calls}\n`,
+      { mode: 0o755 }
+    )
+  })
+
+  afterAll(() => fs.rmSync(versionedBin, { recursive: true, force: true }))
+
+  const launch = (
+    version: string,
+    args: string[],
+    updatesTo = ''
+  ): ShimRun & { calls: string[] } => {
+    fs.writeFileSync(versionFile, version)
+    fs.rmSync(calls, { force: true })
+    const r = runShim(args, {
+      PATH: `${shimDir}:${versionedBin}:/usr/bin:/bin`,
+      UPDATES_TO: updatesTo
+    })
+    const logged = fs.existsSync(calls) ? fs.readFileSync(calls, 'utf8').trim().split('\n') : []
+    return { ...r, calls: logged.map((l) => l.split(' ')[0]) }
+  }
+
+  it('an older one is updated, then the session starts on the new one', () => {
+    const r = launch(OLDER_YET_LATER_AS_TEXT, [], '99.0.0')
+    expect(r.calls).toEqual(['update', 'launch'])
+    expect(r.stderr).toContain(`older than ${MIN_CLAUDE_VERSION}`)
+  })
+
+  it('one the update cannot lift never starts: the shim exits 1 and says to run claude update', () => {
+    const r = launch(OLDER_YET_LATER_AS_TEXT, [])
+    expect(r.status).toBe(1)
+    expect(r.calls).toEqual(['update'])
+    expect(r.stderr).toContain('Run "claude update" yourself')
+  })
+
+  it('one at exactly the minimum starts with no update', () => {
+    expect(launch(MIN_CLAUDE_VERSION, [], '99.0.0').calls).toEqual(['launch'])
+  })
+
+  it('a launch the shim passes straight through (claude -p) is never checked', () => {
+    expect(launch(OLDER_YET_LATER_AS_TEXT, ['-p', 'hi'], '99.0.0').calls).toEqual(['launch'])
   })
 })
 

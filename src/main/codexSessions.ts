@@ -26,7 +26,8 @@ import { CodexRpc, createCodexTransport, type CodexTransport } from './codexTran
 import { SessionStore, codexSessionKey, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
-import { resolveCodexRuntime } from './codexRuntime'
+import { codexTooOld, resolveCodexRuntime, updateCodex, type CodexRuntime } from './codexRuntime'
+import { MIN_CODEX_VERSION } from './cliMinimums'
 import { occupantName } from './resumePlan'
 import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
 import { watchJsonDrops } from './jsonDrops'
@@ -145,6 +146,8 @@ export class CodexSessions {
   private binary?: string
   private processEnv?: NodeJS.ProcessEnv
   private probed?: { at: number; reply: CodexAvailability }
+  private probing?: Promise<CodexAvailability>
+  private updateTried = false
   private warnedVersion?: string
   private refreshing?: Promise<void>
   private historyError?: Error
@@ -193,9 +196,32 @@ export class CodexSessions {
       (probed.reply.available || Date.now() - probed.at < AVAILABILITY_FAILURE_MS)
     )
       return probed.reply
+    this.probing ??= this.probe().finally(() => (this.probing = undefined))
+    return this.probing
+  }
+
+  private async resolveUpdatingOnce(): Promise<CodexRuntime> {
+    let runtime = await resolveCodexRuntime()
+    if (!codexTooOld(runtime)) return runtime
+    const updating = !this.updateTried
+    if (updating) {
+      this.updateTried = true
+      this.deps.error(
+        `Codex ${runtime.version} is older than ${MIN_CODEX_VERSION}, the oldest this Koloft supports. Updating it now…`
+      )
+      await updateCodex(runtime)
+      runtime = await resolveCodexRuntime()
+      if (!codexTooOld(runtime)) return runtime
+    }
+    const stillOld = `Koloft needs Codex CLI ${MIN_CODEX_VERSION} or newer, and this Mac has ${runtime.version}. Run "codex update", then try again.`
+    if (updating) this.deps.error(stillOld)
+    throw new Error(stillOld)
+  }
+
+  private async probe(): Promise<CodexAvailability> {
     let reply: CodexAvailability
     try {
-      const runtime = await resolveCodexRuntime()
+      const runtime = await this.resolveUpdatingOnce()
       this.binary = runtime.binary
       this.processEnv = runtime.env
       reply = {
