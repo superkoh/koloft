@@ -2,7 +2,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { resolveCodexRuntime } from '../../src/main/codexRuntime'
+import { codexTooOld, resolveCodexRuntime } from '../../src/main/codexRuntime'
 import { PtyManager } from '../../src/main/ptyManager'
 
 const fake = vi.hoisted(() => ({ spawn: vi.fn() }))
@@ -96,22 +96,18 @@ describe('Codex shell runtime', () => {
   })
 
   it.each([
-    { printed: '0.153.3', runs: false, verified: false },
-    { printed: '0.153.4', runs: true, verified: true },
-    { printed: '0.154.0', runs: true, verified: false }
-  ])('runs Codex $printed: $runs (verified $verified)', async ({ printed, runs, verified }) => {
-    fs.writeFileSync(binary, `#!/bin/sh\nprintf "codex-cli ${printed}\\n"\n`, { mode: 0o700 })
-    if (!runs) {
-      await expect(resolveCodexRuntime({ env: environment })).rejects.toThrow(
-        'Codex CLI 0.153.4 or newer'
-      )
-      return
+    { printed: '0.153.3', tooOld: true, verified: true },
+    { printed: '0.153.4', tooOld: false, verified: true },
+    { printed: '0.154.0', tooOld: false, verified: false }
+  ])(
+    'reads Codex $printed: too old $tooOld (verified $verified)',
+    async ({ printed, tooOld, verified }) => {
+      fs.writeFileSync(binary, `#!/bin/sh\nprintf "codex-cli ${printed}\\n"\n`, { mode: 0o700 })
+      const runtime = await resolveCodexRuntime({ env: environment })
+      expect(runtime).toMatchObject({ version: printed, verified })
+      expect(codexTooOld(runtime)).toBe(tooOld)
     }
-    await expect(resolveCodexRuntime({ env: environment })).resolves.toMatchObject({
-      version: printed,
-      verified
-    })
-  })
+  )
 
   it('passes the same resolved user configuration to the native PTY without Claude integration', async () => {
     const runtime = await resolveCodexRuntime({ env: environment })

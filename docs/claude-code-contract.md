@@ -1218,8 +1218,8 @@ stdin closed. A native install of 2.1.250 (`bash install.sh 2.1.250`, §10), and
 one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable prefix).
 
 - **`claude --version` prints `2.1.294 (Claude Code)`** — the version first, then a
-  space — and returns at once (`time` shows 0.00 s), so a check on every launch costs
-  nothing.
+  space — and returns at once (`time` shows 0.00 s native, 0.12 s for the npm install),
+  so a check on every launch costs next to nothing.
 - **`claude update` asks nothing and exits 0.** Native: 2.1.250 → 2.1.294; the
   `~/.local/bin/claude` link moves to `versions/2.1.294` and `versions/2.1.250` stays,
   so a session already running on the old file keeps going. npm: 2.1.250 → **2.1.293**,

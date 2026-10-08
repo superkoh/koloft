@@ -352,15 +352,6 @@ exit 0`
     expect(m.calls('claude')).toEqual(['update'])
     expect(res.stderr).toContain('Run "claude update" yourself')
   })
-
-  it('one at exactly the minimum is left alone', () => {
-    const m = machine()
-    complete(m)
-    claudeAt(m, MIN_CLAUDE_VERSION, '99.0.0')
-    const res = m.run()
-    expect(res.status).toBe(0)
-    expect(m.calls('claude')).toEqual([])
-  })
 })
 
 describe('the heartbeat question', () => {

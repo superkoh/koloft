@@ -2,13 +2,6 @@
 export const MIN_CLAUDE_VERSION = '2.1.259'
 export const MIN_CODEX_VERSION = '0.153.4'
 
-export function versionBelow(version: string, minimum: string): boolean {
-  const have = version.split('.').map(Number)
-  const need = minimum.split('.').map(Number)
-  for (let i = 0; i < need.length; i++) if (have[i] !== need[i]) return have[i] < need[i]
-  return false
-}
-
 export const ENSURE_CLAUDE_MINIMUM_FN = `claude_meets_minimum() {
   kmin_v="$("$1" --version 2>/dev/null | sed -n '1s/^\\([0-9][0-9]*\\.[0-9][0-9]*\\.[0-9][0-9]*\\).*/\\1/p')"
   [ -z "$kmin_v" ] && return 0

@@ -26,7 +26,7 @@ import { CodexRpc, createCodexTransport, type CodexTransport } from './codexTran
 import { SessionStore, codexSessionKey, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
-import { CodexTooOld, resolveCodexRuntime, updateCodex, type CodexRuntime } from './codexRuntime'
+import { codexTooOld, resolveCodexRuntime, updateCodex, type CodexRuntime } from './codexRuntime'
 import { MIN_CODEX_VERSION } from './cliMinimums'
 import { occupantName } from './resumePlan'
 import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
@@ -201,22 +201,21 @@ export class CodexSessions {
   }
 
   private async resolveUpdatingOnce(): Promise<CodexRuntime> {
-    try {
-      return await resolveCodexRuntime()
-    } catch (error) {
-      if (!(error instanceof CodexTooOld) || this.updateTried) throw error
+    let runtime = await resolveCodexRuntime()
+    if (!codexTooOld(runtime)) return runtime
+    const updating = !this.updateTried
+    if (updating) {
       this.updateTried = true
       this.deps.error(
-        `Codex ${error.version} is older than ${MIN_CODEX_VERSION}, the oldest this Koloft supports. Updating it now…`
+        `Codex ${runtime.version} is older than ${MIN_CODEX_VERSION}, the oldest this Koloft supports. Updating it now…`
       )
-      await updateCodex(error)
-      try {
-        return await resolveCodexRuntime()
-      } catch (after) {
-        this.deps.error(after instanceof Error ? after.message : String(after))
-        throw after
-      }
+      await updateCodex(runtime)
+      runtime = await resolveCodexRuntime()
+      if (!codexTooOld(runtime)) return runtime
     }
+    const stillOld = `Koloft needs Codex CLI ${MIN_CODEX_VERSION} or newer, and this Mac has ${runtime.version}. Run "codex update", then try again.`
+    if (updating) this.deps.error(stillOld)
+    throw new Error(stillOld)
   }
 
   private async probe(): Promise<CodexAvailability> {
