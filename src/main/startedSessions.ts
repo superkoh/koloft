@@ -41,10 +41,8 @@ export class StartedSessions {
   }
 
   startedBy(target: { sessionId: string; tabId?: string }, caller: { sessionId: string }): boolean {
-    return (
-      (target.tabId !== undefined &&
-        this.parentOfWaitingTab.get(target.tabId) === caller.sessionId) ||
-      this.parents()[target.sessionId] === caller.sessionId
+    return [target.sessionId, target.tabId].some(
+      (rowId) => rowId !== undefined && this.parentOfRow(rowId) === caller.sessionId
     )
   }
 

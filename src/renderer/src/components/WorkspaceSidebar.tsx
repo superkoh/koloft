@@ -238,6 +238,8 @@ export function WorkspaceSidebar({
     storeTabs.find((t) => t.alive && t.sessionId === sessionId)?.id
   const tabIdOfRow = (row: SessionRow): string | undefined =>
     row.pending ? row.id : row.running ? tabIdFor(row.id) : undefined
+  const callingAmong = (rows: SessionRow[]): number =>
+    rows.filter((r) => attentionOnRow(r.id, tabIdOfRow(r), attention)).length
 
   useEffect(() => {
     const t = setInterval(() => bumpCronClock((n) => n + 1), CRON_BADGE_MS)
@@ -788,9 +790,7 @@ export function WorkspaceSidebar({
               if (ws.isGit) onNewWorktreeSession(ws.path)
               else onNewSession(ws.path)
             }
-            const callingInside = open
-              ? 0
-              : sessionRows.filter((r) => attentionOnRow(r.id, tabIdOfRow(r), attention)).length
+            const callingInside = open ? 0 : callingAmong(sessionRows)
             const cronNow = new Date()
             const soon = ws.missing || !open ? null : forecastFor(cron.jobs, ws.path, cronNow)
             const sessionRow = (node: RowNode<SessionRow>): JSX.Element => {
@@ -824,118 +824,112 @@ export function WorkspaceSidebar({
                     )))
               const folded = node.children.length > 0 && !!foldedRows[row.id]
               const hidden = folded ? rowsUnder(node) : []
-              const callingHidden = hidden.filter((r) =>
-                attentionOnRow(r.id, tabIdOfRow(r), attention)
-              ).length
+              const callingHidden = callingAmong(hidden)
               return (
-                <div
-                  className={'ws-tab ' + shownCls + (active ? ' active' : '')}
-                  data-tab-id={tabId}
-                  title={
-                    row.running || row.pending
-                      ? undefined
-                      : relTime(row.mtime, Date.now()) +
-                        (row.invalidCwd
-                          ? ' — worktree deleted; click to rebuild and resume'
-                          : ' — click to resume')
-                  }
-                  onClick={() => clickRow(row, ws.path)}
-                  onContextMenu={(e) => openMenuNow(e, rowTarget)}
-                  onMouseEnter={(e) => {
-                    armHoverMenu(e, rowTarget)
-                    marqueeIfClipped(e.currentTarget, '.ws-tab-title', row.id)
-                  }}
-                  onMouseLeave={() => {
-                    scheduleClose()
-                    stopMarquee(row.id)
-                  }}
-                >
-                  <div className="ws-tab-main">
-                    {isCronRow && (
-                      <span className="ws-tab-cron" title="started by a scheduled job">
-                        <LuAlarmClock size={12} />
+                <Fragment key={row.id}>
+                  <div
+                    className={'ws-tab ' + shownCls + (active ? ' active' : '')}
+                    data-tab-id={tabId}
+                    title={
+                      row.running || row.pending
+                        ? undefined
+                        : relTime(row.mtime, Date.now()) +
+                          (row.invalidCwd
+                            ? ' — worktree deleted; click to rebuild and resume'
+                            : ' — click to resume')
+                    }
+                    onClick={() => clickRow(row, ws.path)}
+                    onContextMenu={(e) => openMenuNow(e, rowTarget)}
+                    onMouseEnter={(e) => {
+                      armHoverMenu(e, rowTarget)
+                      marqueeIfClipped(e.currentTarget, '.ws-tab-title', row.id)
+                    }}
+                    onMouseLeave={() => {
+                      scheduleClose()
+                      stopMarquee(row.id)
+                    }}
+                  >
+                    <div className="ws-tab-main">
+                      {isCronRow && (
+                        <span className="ws-tab-cron" title="started by a scheduled job">
+                          <LuAlarmClock size={12} />
+                        </span>
+                      )}
+                      {row.resident && (
+                        <span
+                          className="ws-tab-resident"
+                          title="Keep running — starts again each time Koloft opens"
+                        >
+                          <LuPin size={12} />
+                        </span>
+                      )}
+                      <span className={'ws-tab-title' + (mq?.id === row.id ? ' mq' : '')}>
+                        <i ref={mq?.id === row.id ? mqRef : undefined}>
+                          {sess?.title && sess.title !== PLACEHOLDER_SESSION_TITLE
+                            ? sess.title
+                            : row.title}
+                        </i>
                       </span>
-                    )}
-                    {row.resident && (
-                      <span
-                        className="ws-tab-resident"
-                        title="Keep running — starts again each time Koloft opens"
-                      >
-                        <LuPin size={12} />
-                      </span>
-                    )}
-                    <span className={'ws-tab-title' + (mq?.id === row.id ? ' mq' : '')}>
-                      <i ref={mq?.id === row.id ? mqRef : undefined}>
-                        {sess?.title && sess.title !== PLACEHOLDER_SESSION_TITLE
-                          ? sess.title
-                          : row.title}
-                      </i>
-                    </span>
-                    {tabId && <UnseenFileMark tabId={tabId} />}
-                    {calling && (
-                      <span className="ws-tab-unread" title={ATTENTION_REASON[calling.kind]} />
-                    )}
-                    {badge && (
-                      <button
-                        className="ws-tab-parked"
-                        title={badge.lines.join('\n')}
-                        aria-label={badge.heading}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          clearTimers()
-                          setMenu(null)
-                          setParkedPop({
-                            rowId: row.id,
-                            ...cardPosFor(e.currentTarget as HTMLElement)
-                          })
-                        }}
-                      >
-                        {badge.text}
-                      </button>
-                    )}
-                    {callingHidden > 0 && (
-                      <span
-                        className="ws-tab-parked ws-unread-count"
-                        title={sessionsNeedYou(callingHidden)}
-                      >
-                        {callingHidden}
-                      </span>
-                    )}
-                    {folded && (
-                      <span className="ws-tab-parked" title={sessionsInside(hidden.length)}>
-                        {hidden.length}
-                      </span>
-                    )}
-                    {node.children.length > 0 && (
-                      <button
-                        className="ws-tab-fold"
-                        title={folded ? 'Unfold' : 'Fold'}
-                        aria-label={folded ? 'Unfold' : 'Fold'}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setFoldedRows((f) => ({ ...f, [row.id]: !f[row.id] }))
-                        }}
-                      >
-                        {folded ? <LuChevronRight size={12} /> : <LuChevronDown size={12} />}
-                      </button>
-                    )}
+                      {tabId && <UnseenFileMark tabId={tabId} />}
+                      {calling && (
+                        <span className="ws-tab-unread" title={ATTENTION_REASON[calling.kind]} />
+                      )}
+                      {badge && (
+                        <button
+                          className="ws-tab-parked"
+                          title={badge.lines.join('\n')}
+                          aria-label={badge.heading}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            clearTimers()
+                            setMenu(null)
+                            setParkedPop({
+                              rowId: row.id,
+                              ...cardPosFor(e.currentTarget as HTMLElement)
+                            })
+                          }}
+                        >
+                          {badge.text}
+                        </button>
+                      )}
+                      {callingHidden > 0 && (
+                        <span
+                          className="ws-tab-parked ws-unread-count"
+                          title={sessionsNeedYou(callingHidden)}
+                        >
+                          {callingHidden}
+                        </span>
+                      )}
+                      {folded && (
+                        <span className="ws-tab-parked" title={sessionsInside(hidden.length)}>
+                          {hidden.length}
+                        </span>
+                      )}
+                      {node.children.length > 0 && (
+                        <button
+                          className="icobtn ws-tab-fold"
+                          title={folded ? 'Unfold' : 'Fold'}
+                          aria-label={folded ? 'Unfold' : 'Fold'}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setFoldedRows((f) => ({ ...f, [row.id]: !f[row.id] }))
+                          }}
+                        >
+                          {folded ? <LuChevronRight size={12} /> : <LuChevronDown size={12} />}
+                        </button>
+                      )}
+                    </div>
+                    <div className="ws-tab-sub">
+                      {mixesBackends(sessionRows) && <SessionBackendIcon backend={row.backendId} />}
+                      <span>{row.worktree}</span>
+                    </div>
                   </div>
-                  <div className="ws-tab-sub">
-                    {mixesBackends(sessionRows) && <SessionBackendIcon backend={row.backendId} />}
-                    <span>{row.worktree}</span>
-                  </div>
-                </div>
-              )
-            }
-            const rowNodes = (nodes: RowNode<SessionRow>[]): JSX.Element[] =>
-              nodes.map((node) => (
-                <Fragment key={node.row.id}>
-                  {sessionRow(node)}
-                  {node.children.length > 0 && !foldedRows[node.row.id] && (
-                    <div className="ws-subtabs">{rowNodes(node.children)}</div>
+                  {node.children.length > 0 && !folded && (
+                    <div className="ws-subtabs">{node.children.map(sessionRow)}</div>
                   )}
                 </Fragment>
-              ))
+              )
+            }
             return (
               <div
                 className={
@@ -1093,7 +1087,7 @@ export function WorkspaceSidebar({
                         </span>
                       </div>
                     )}
-                    {rowNodes(sessionTree(sessionRows))}
+                    {sessionTree(sessionRows).map(sessionRow)}
                     {sessionRows.length === 0 && !ws.missing && (
                       <div className="ws-empty" title={door.title} onClick={openDoor}>
                         <door.Icon size={12} />

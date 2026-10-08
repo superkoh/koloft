@@ -132,10 +132,10 @@ export interface RowNode<R extends { id: string; parentId?: string }> {
 
 function leadsBackToItself<R extends { id: string; parentId?: string }>(
   row: R,
-  byId: Map<string, R>
+  nodes: Map<string, RowNode<R>>
 ): boolean {
   const seen = new Set<string>()
-  for (let at = row.parentId; at !== undefined && !seen.has(at); at = byId.get(at)?.parentId) {
+  for (let at = row.parentId; at !== undefined && !seen.has(at); at = nodes.get(at)?.row.parentId) {
     if (at === row.id) return true
     seen.add(at)
   }
@@ -143,12 +143,11 @@ function leadsBackToItself<R extends { id: string; parentId?: string }>(
 }
 
 export function sessionTree<R extends { id: string; parentId?: string }>(rows: R[]): RowNode<R>[] {
-  const byId = new Map(rows.map((row) => [row.id, row]))
   const nodes = new Map(rows.map((row) => [row.id, { row, children: [] as RowNode<R>[] }]))
   const roots: RowNode<R>[] = []
   for (const node of nodes.values()) {
     const parent = node.row.parentId ? nodes.get(node.row.parentId) : undefined
-    if (parent && !leadsBackToItself(node.row, byId)) parent.children.push(node)
+    if (parent && !leadsBackToItself(node.row, nodes)) parent.children.push(node)
     else roots.push(node)
   }
   return roots

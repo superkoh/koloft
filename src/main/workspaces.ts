@@ -233,13 +233,12 @@ export class WorkspaceManager {
     return this.deps.hiddenRow?.(id) ?? false
   }
 
-  private withVisibleParents(rows: SessionRow[]): SessionRow[] {
+  private withParents(rows: SessionRow[]): SessionRow[] {
     const parentOf = this.deps.parentOf
     if (!parentOf) return rows
-    const listed = new Set(rows.map((r) => r.id))
     return rows.map((r) => {
       const parentId = parentOf(r.id)
-      return parentId && listed.has(parentId) ? { ...r, parentId } : r
+      return parentId ? { ...r, parentId } : r
     })
   }
 
@@ -728,7 +727,7 @@ export class WorkspaceManager {
               }
             : {})
         },
-        rows: this.withVisibleParents([
+        rows: this.withParents([
           ...pending.rows.filter((r) => !this.hidden(r.id)).map(claudeRow),
           ...rows
         ])
