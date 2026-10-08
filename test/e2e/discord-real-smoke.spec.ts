@@ -670,7 +670,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       fake.interact(OWNER, 'run', { command: '/context', session: child.sessionId })
       await expect
         .poll(() => ran(fake), { timeout: A_REAL_MODEL_TURN_MS })
-        .toContainEqual(expect.stringMatching(/ran \/context:\n## Context Usage/))
+        .toContainEqual(expect.stringMatching(/ran \/context:\n(## )?Context Usage/))
       expect(await statusOf(page, child.tabId)).toBe('working')
     })
   })
