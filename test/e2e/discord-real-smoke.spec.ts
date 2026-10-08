@@ -139,7 +139,7 @@ async function statusOf(page: Page, tabId: string): Promise<string | undefined> 
 const BACKGROUND_SUBAGENT_SLEEPS_S = 300
 const BASH_TIMEOUT_MS_OUTLASTING_THE_SLEEP = (BACKGROUND_SUBAGENT_SLEEPS_S + 60) * 1000
 // CC§8
-const BACKGROUND_SUBAGENT_PROMPT = `Use the Agent tool with run_in_background set to true to start one subagent whose task is: run the shell command "sleep ${BACKGROUND_SUBAGENT_SLEEPS_S}" with the Bash tool in the foreground (never with run_in_background, and with its timeout set to ${BASH_TIMEOUT_MS_OUTLASTING_THE_SLEEP}) and wait for it to finish, then reply DONE. Do not wait for the subagent or check on it. Then reply with only BG-STARTED and end your turn.`
+const BACKGROUND_SUBAGENT_PROMPT = `Use the Agent tool with run_in_background set to true to start one subagent whose task is: run the shell command 'perl -e "sleep ${BACKGROUND_SUBAGENT_SLEEPS_S}"' with the Bash tool in the foreground (never with run_in_background, and with its timeout set to ${BASH_TIMEOUT_MS_OUTLASTING_THE_SLEEP}) and wait for it to finish, then reply DONE. Do not wait for the subagent or check on it. Then reply with only BG-STARTED and end your turn.`
 
 function notices(fake: FakeDiscord): string[] {
   return said(fake)

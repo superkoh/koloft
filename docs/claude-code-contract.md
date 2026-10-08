@@ -633,6 +633,13 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   stopped with background work of its own still running … the result below may be
   interim" (seen in a real interactive run the same day). Whether interactive mode's
   `Stop` lists it is inferred from that run, not probed.
+- **The Bash tool refuses a long leading `sleep`.** Read from the 2.1.294 binary
+  (`strings`): when a command's first part matches `^sleep\s+<n>\s*$` and `<n>` is at
+  least a threshold (a minified constant, not read), the call is refused with "standalone
+  sleep <n>" or "sleep <n> followed by: …", and the model is told to use Monitor or
+  `run_in_background`. Seen the same day: a subagent told to run `sleep 300` in the
+  foreground was refused, and one left free to choose ran it in the background instead.
+  `perl -e "sleep 300"` does not match the check.
 - **An idle teammate is still `running`**. CC's own activity checks use
   `status === 'running' && !isIdle`; hooks never see `isIdle`. On disk the idle edge
   is a user record in the lead's transcript — `Another Claude session sent a
