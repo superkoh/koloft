@@ -5,7 +5,7 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
 import { gitInit, seedJsonl, startSessionIn, terminalText, waitBooted, wsRows } from './helpers/p1'
-import { startFakeDiscord, type FakeDiscord } from './helpers/fakeDiscord'
+import { openerNow, startFakeDiscord, type FakeDiscord } from './helpers/fakeDiscord'
 
 function claudeTokenFromKeychain(): string {
   const account = process.env.KOLOFT_SMOKE_ACCOUNT
@@ -346,6 +346,20 @@ async function answersWholeInTheChannel(fake: FakeDiscord): Promise<void> {
     .poll(() => said(fake).map((p) => p.trim()), { timeout: A_REAL_MODEL_TURN_MS })
     .toContain(TWO_LINE_REPLY)
   expect(fake.reactions).toContainEqual({ messageId: asked, emoji: '✅', on: true })
+  expect(fake.typing).toContain(CHANNEL)
+}
+
+async function startedSessionsCardFollowsIt(fake: FakeDiscord, backend: string): Promise<void> {
+  const opener = fake.posted.find((p) => p.channelId === CHANNEL && p.content.startsWith('▶ '))!
+  const states = (): string[] =>
+    fake.edits
+      .filter((e) => e.channelId === CHANNEL && e.id === opener.id)
+      .map((e) => e.content.split(' · ')[1]?.replace(/ <t:\d+:R>[\s\S]*$/, ''))
+  await expect
+    .poll(states, { timeout: A_REAL_MODEL_TURN_MS })
+    .toEqual(expect.arrayContaining(['working, started', 'turn done']))
+  expect(openerNow(fake, CHANNEL, opener.id)).toMatch(new RegExp(`\\n-# ws-a · ${backend}$`))
+  expect(fake.typing).toContain(opener.id)
 }
 
 test.describe('Discord conductors on the REAL claude and codex, with a fake Discord: opt-in cases that spend real money', () => {
@@ -395,6 +409,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       await expect
         .poll(() => notices(fake), { timeout: A_REAL_MODEL_TURN_MS })
         .toContainEqual(expect.stringMatching(/^🔔 .+ finished\.$/))
+      await startedSessionsCardFollowsIt(fake, 'Claude')
 
       const before = conductorSaid(fake).length
       fake.say(
@@ -704,6 +719,22 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     const fake = await startFakeDiscord(env)
     await withConductor(env, fake, async () => {
       await answersWholeInTheChannel(fake)
+    })
+  })
+
+  test('a real Claude conductor asked in plain words starts a real Codex session; the session’s card in the channel goes from working to turn done, and Koloft types in its thread while it works', async ({
+    env
+  }) => {
+    test.skip(!HAVE_REAL_CLAUDE || !HAVE_REAL_CODEX, `${NEEDS_REAL_CLAUDE}; ${NEEDS_REAL_CODEX}`)
+    test.setTimeout(3 * A_REAL_MODEL_TURN_MS + 120_000)
+    const fake = await realClaudeConductor(env)
+    useRealCodex(env)
+    await withConductor(env, fake, async () => {
+      fake.say(
+        OWNER,
+        'Start one new Codex session (koloft session new --backend codex) in this workspace whose task is: "Reply with the word KIWI and nothing else." Then tell me you started it.'
+      )
+      await startedSessionsCardFollowsIt(fake, 'Codex')
     })
   })
 
