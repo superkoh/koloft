@@ -442,6 +442,74 @@ describe('injected hook script', () => {
       removeConductorMarker(regDir, 'tabC')
       expect(startOutput('tabC', 'startup')).toBe('')
     })
+
+    type Hooks = Record<string, { matcher?: string; hooks: { command: string }[] }[]>
+    const hooksOf = (conductor: boolean): Hooks =>
+      JSON.parse(
+        fs.readFileSync(
+          writeTabHookSettings(setupHooks(noPeerInstance), 'tabG', undefined, true, conductor),
+          'utf8'
+        )
+      ).hooks
+
+    it('only a conductor tab gets the gate, a PreToolUse hook on every tool', () => {
+      expect(hooksOf(false)).not.toHaveProperty('PreToolUse')
+      expect(hooksOf(true).PreToolUse).toEqual([
+        { matcher: '*', hooks: [{ type: 'command', command: expect.any(String) }] }
+      ])
+    })
+
+    // ADR-0029 CC§15
+    describe('the gate lets a conductor read, ask the owner and run one plain koloft command, and nothing else', () => {
+      const gate = (event: unknown): 'allow' | 'deny' => {
+        const command = hooksOf(true).PreToolUse[0].hooks[0].command
+        const res = spawnSync('/bin/sh', ['-c', command], {
+          input: typeof event === 'string' ? event : JSON.stringify(event),
+          encoding: 'utf8'
+        })
+        if (res.status !== 0) throw new Error(`gate exited ${res.status}: ${res.stderr}`)
+        if (res.stdout === '') return 'allow'
+        expect(JSON.parse(res.stdout).hookSpecificOutput).toMatchObject({
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny'
+        })
+        return 'deny'
+      }
+      const bash = (command: string): unknown => ({ tool_name: 'Bash', tool_input: { command } })
+
+      it.each([
+        ['Read', { tool_name: 'Read', tool_input: { file_path: '/ws/a/README.md' } }],
+        ['Grep', { tool_name: 'Grep', tool_input: { pattern: 'x' } }],
+        ['a question to the owner', { tool_name: 'AskUserQuestion', tool_input: {} }],
+        ['koloft help', bash('koloft help')],
+        ['a koloft command with spaces around it', bash('  koloft session list \n')],
+        ['operators inside quotes', bash('koloft session send a -- "fix x; then y && z | w"')],
+        ['a multi-line single-quoted message', bash("koloft session send a -- 'one\ntwo $HOME'")],
+        ['an escaped quote', bash('koloft session send a -- "say \\"hi\\" now"')]
+      ])('allows %s', (_name, event) => {
+        expect(gate(event)).toBe('allow')
+      })
+
+      it.each([
+        ['Write', { tool_name: 'Write', tool_input: { file_path: '/ws/a/x', content: 'x' } }],
+        ['Edit', { tool_name: 'Edit', tool_input: { file_path: '/ws/a/x' } }],
+        ['a subagent', { tool_name: 'Agent', tool_input: { prompt: 'fix it' } }],
+        ['WebFetch', { tool_name: 'WebFetch', tool_input: { url: 'https://x' } }],
+        ['a command that is not koloft', bash('echo x > /ws/a/x')],
+        ['a name that only starts with koloft', bash('koloftx help')],
+        ['a chained command', bash('koloft help && rm -rf /ws/a')],
+        ['a second command after ;', bash('koloft help; ls')],
+        ['a second command on a new line', bash('koloft help\nrm -rf /ws/a')],
+        ['a pipe', bash('koloft help | sh')],
+        ['a redirect', bash('koloft session read a > /ws/a/out')],
+        ['command substitution in double quotes', bash('koloft session send a -- "$(rm x)"')],
+        ['backticks', bash('koloft session send a -- `rm x`')],
+        ['an unclosed quote', bash("koloft session send a -- 'oops")],
+        ['input that is not JSON', 'not json']
+      ])('denies %s', (_name, event) => {
+        expect(gate(event)).toBe('deny')
+      })
+    })
   })
 
   it('every appended report is one whole line (concurrent hooks cannot interleave)', () => {

@@ -1186,3 +1186,22 @@ below was one run.
     Claude's plan"), the turn ended and the session stayed in plan mode.
   - a `Bash` dialog (`--permission-mode default`) offers `1. Yes`, `2. Yes, and always
     allow …`, `3. No`; `1` ran it, `3` and Esc refused it (2026-10-02 round, same version).
+
+## §15 The PreToolUse hook stops a tool even when permission checks are skipped
+
+How established: 2026-10-08, CC 2.1.294, one `claude -p` run on this Mac through
+Koloft's shim (an account picked by the balancer), `--dangerously-skip-permissions`,
+model haiku, an empty MCP config, and a `--settings` file whose `PreToolUse` entry
+(matcher `"*"`) ran a logging node script. The script printed
+`{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny",
+"permissionDecisionReason":"<text>"}}` for every call except a Bash command starting
+with `koloft`, and printed nothing for that one. The prompt asked for a Bash
+`echo x > <file>`, a Write of a second file, then Bash `koloft help`.
+
+- **The hook ran for every tool call, and its input said `permission_mode:
+  "bypassPermissions"`.**
+- **A `deny` stopped the call in that mode**: neither file was written, and claude got
+  the reason back as `PreToolUse:Bash hook error: <text>` and went on to the next step.
+- **Printing nothing let the call run** (`koloft help` ran).
+- Not run: an interactive session (only `-p`), and a `Task` subagent's own tool calls
+  under the hook.

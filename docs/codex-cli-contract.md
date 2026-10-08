@@ -79,6 +79,16 @@ that the session is archived and must first be unarchived with `codex unarchive`
 It did not automatically send `thread/unarchive`. So a record that `thread/list`
 returns with `archived:true` cannot be resumed as it is.
 
+**A thread resumes in another folder without a question.** Checked 2026-10-08 with
+codex-cli 0.159.3: `codex exec` (own `CODEX_HOME` with a copy of this Mac's login and
+trust tables for two folders, deleted afterwards) started a thread in folder A; the
+real TUI in a Python PTY then ran `codex -C <folder B> resume <id>` (no `--remote`).
+It showed "Resuming session…", drew the old turn, and its footer named folder B; no
+question about which folder to use came up in 12 s. The binary also holds a
+`tui.resume_cwd` setting (`"session"` / `"current"`) and the labels "Always use session
+directory" / "Always use current directory", so a question does exist somewhere; when
+it shows was not found. The same line with `--remote` was not run.
+
 **Native input and resize were checked separately.** Sending first-line text, LF,
 second-line text, then CR through the PTY produced one user `turn/start`; its text
 contained the two lines separated by `\n`: LF adds a line, CR submits. A `TIOCSWINSZ` change to 26 rows × 90 columns kept the TUI responsive,
@@ -406,6 +416,22 @@ system `open`, and prints `koloft-open:sent`, and Koloft then skips that item's 
 `read-only` the shim can write nowhere, prints `koloft-open:blocked`, and Koloft opens the
 file from the `item/completed` frame. A shell that is not zsh never reaches the shim, so
 its item has neither line and Koloft opens from the frame too.
+
+**Where a command may write, by sandbox.** Checked 2026-10-08 with codex-cli 0.159.3, one
+real model turn each through `codex exec --ephemeral --ignore-user-config -C <folder>
+-s <mode>`, running a script that wrote into a `/tmp/koloft-cx-open-*` folder, into
+a folder outside `/tmp` that was not `-C`, and into the `-C` folder:
+
+| `-s` | `/tmp` folder | other folder | `-C` folder |
+| --- | --- | --- | --- |
+| `read-only` | refused | refused | refused |
+| `workspace-write` | written | refused | written |
+
+A refused write failed with `Operation not permitted`. On 0.159.3, `codex sandbox -C
+<dir>` stops with "the following required arguments were not provided:
+--permission-profile <NAME>", and `-P read-only` with "default_permissions requires a
+`[permissions]` table", so the no-model route used on 2026-09-25 no longer takes a
+folder.
 
 Browser control (an agent driving a Workbench web tab through Koloft's CDP (Chrome DevTools
 Protocol) relay) was not tried for Codex. Whether a command inside Codex's sandbox can

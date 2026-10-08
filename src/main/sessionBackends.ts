@@ -61,6 +61,7 @@ export class SessionBackends {
   private adapters = new Map<BackendId, SessionBackend>()
   private cleanExitAt = new Map<string, number>()
   conductorOf: (tabOrSessionId: string) => string | undefined = () => undefined
+  conductorWorkspaceOf: (tabId: string) => string | undefined = () => undefined
 
   constructor(private lifecycle: SessionLifecycle) {}
 
@@ -124,7 +125,7 @@ export class SessionBackends {
   }
 
   workspaceOfTab(tabId: string): string | undefined {
-    return this.ownerOfTab(tabId)?.workspaceOfTab(tabId)
+    return this.conductorWorkspaceOf(tabId) ?? this.ownerOfTab(tabId)?.workspaceOfTab(tabId)
   }
 
   availability(

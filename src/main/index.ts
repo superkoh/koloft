@@ -353,6 +353,7 @@ const sessionBackends = new SessionBackends({
   }
 })
 sessionBackends.conductorOf = (id) => conductors?.conductorOf(id)
+sessionBackends.conductorWorkspaceOf = (tabId) => conductors?.workspaceOfTab(tabId)
 function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
@@ -1403,12 +1404,13 @@ app.whenReady().then(() => {
 
   const hookPaths = setupHooks((tabId) => anotherLiveInstanceOwns(tabId, pidAlive))
   const statusline = setupStatusline()
-  ptyMgr.makeHookSettings = (tabId, allowKoloft) =>
+  ptyMgr.makeHookSettings = (tabId, allowKoloft, conductor) =>
     writeTabHookSettings(
       hookPaths,
       tabId,
       loadSettings().statuslineBuiltin ? statusLineSetting(statusline) : undefined,
-      allowKoloft
+      allowKoloft,
+      conductor
     )
   answerableRegDir = hookPaths.regDir
   claudeBackend.watchLocalHooks(hookPaths.regDir)
@@ -1657,15 +1659,21 @@ app.whenReady().then(() => {
           kind: l.backend,
           cwd: l.cwd,
           role: l.role,
+          conductor: true,
           trustFolder: true,
           name: l.backend === 'claude' ? l.title.replace(/\s+/g, '-') : undefined
         },
         l.title
       ),
     resume: async (l) => {
-      const res = await sessionBackends
-        .get(l.backend)
-        .resume({ sessionId: l.key, cwd: l.cwd, mode: 'direct', role: l.role, trustFolder: true })
+      const res = await sessionBackends.get(l.backend).resume({
+        sessionId: l.key,
+        cwd: l.cwd,
+        mode: 'direct',
+        role: l.role,
+        conductor: true,
+        trustFolder: true
+      })
       if (!res.ok) throw new Error(res.code === 'backend' ? res.message : couldNotStart(l.title))
       const spawned: SpawnedTab = {
         id: res.id,

@@ -35,6 +35,7 @@ interface CreateArgs {
   util?: boolean
   resumeSessionId?: string
   ownerTabId?: string
+  conductor?: boolean
   resized?: (id: string, cols: number, rows: number) => void
   extraEnv?: {
     KOLOFT_FIRST_PROMPT?: string
@@ -62,7 +63,7 @@ export class PtyManager extends EventEmitter {
   cdpDir?: string
   agentDir?: string
   multiAccountOn?: () => boolean
-  makeHookSettings?: (tabId: string, allowKoloft: boolean) => string | undefined
+  makeHookSettings?: (tabId: string, allowKoloft: boolean, conductor: boolean) => string | undefined
 
   private ptys = new Map<string, PtyHandle>()
   private readyWaiters = new Map<string, Set<() => void>>()
@@ -138,7 +139,11 @@ export class PtyManager extends EventEmitter {
     const hookSettings =
       args.util || args.kind === 'codex'
         ? undefined
-        : this.makeHookSettings?.(id, args.extraEnv?.KOLOFT_AGENT_PLUGIN !== undefined)
+        : this.makeHookSettings?.(
+            id,
+            args.extraEnv?.KOLOFT_AGENT_PLUGIN !== undefined,
+            args.conductor === true
+          )
     if (hookSettings) env.KOLOFT_HOOK_SETTINGS = hookSettings
     if (this.shimDir && !isWin && args.kind !== 'codex')
       env.PATH = `${this.shimDir}:${process.env.PATH ?? ''}`

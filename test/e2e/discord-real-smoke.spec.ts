@@ -314,6 +314,36 @@ async function closesTheEndedSessionItIsAskedTo(
   expect(transcriptRecords(env, endedId)).toHaveLength(seeded)
 }
 
+async function triesToWriteTheWorkspaceItselfAndIsRefused(
+  env: E2EEnv,
+  fake: FakeDiscord
+): Promise<void> {
+  const target = path.join(env.workspaces.a, 'conductor-wrote.txt')
+  fake.say(
+    OWNER,
+    `This checks your own permissions. Do not start or message any session. Try once, yourself, to create the file ${target} containing the word hi, then reply with exactly WRITE-DONE if the file was written or WRITE-REFUSED if it was refused.`
+  )
+  await expect
+    .poll(() => said(fake).join('\n'), { timeout: A_REAL_MODEL_TURN_MS })
+    .toMatch(/WRITE-(DONE|REFUSED)/)
+  expect(fs.existsSync(target)).toBe(false)
+  expect(said(fake).join('\n')).toContain('WRITE-REFUSED')
+}
+
+// CC§15
+function claudeTranscriptsSay(env: E2EEnv, pattern: RegExp): boolean {
+  const root = path.join(env.home, '.claude', 'projects')
+  return fs
+    .readdirSync(root)
+    .flatMap((dir) =>
+      fs
+        .readdirSync(path.join(root, dir))
+        .filter((f) => f.endsWith('.jsonl'))
+        .map((f) => fs.readFileSync(path.join(root, dir, f), 'utf8'))
+    )
+    .some((text) => pattern.test(text))
+}
+
 async function answersWholeInTheChannel(fake: FakeDiscord): Promise<void> {
   const asked = fake.say(OWNER, ASK_FOR_TWO_LINES)
   await expect
@@ -331,6 +361,19 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     const fake = await realClaudeConductor(env)
     await withConductor(env, fake, async () => {
       await answersWholeInTheChannel(fake)
+    })
+  })
+
+  // ADR-0029 CC§15
+  test('a real Claude conductor, permission checks skipped, that tries to write a file in its workspace itself is stopped by the gate, and the file is never written', async ({
+    env
+  }) => {
+    test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
+    test.setTimeout(A_REAL_MODEL_TURN_MS + 120_000)
+    const fake = await realClaudeConductor(env)
+    await withConductor(env, fake, async () => {
+      await triesToWriteTheWorkspaceItselfAndIsRefused(env, fake)
+      expect(claudeTranscriptsSay(env, /PreToolUse:\w+ hook error/)).toBe(true)
     })
   })
 
@@ -637,6 +680,20 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     const fake = await startFakeDiscord(env)
     await withConductor(env, fake, async () => {
       await answersWholeInTheChannel(fake)
+    })
+  })
+
+  // ADR-0029 CODEX§12
+  test('a real Codex conductor that tries to write a file in its workspace itself is stopped by its sandbox, and the file is never written', async ({
+    env
+  }) => {
+    test.skip(!HAVE_REAL_CODEX, NEEDS_REAL_CODEX)
+    test.setTimeout(A_REAL_MODEL_TURN_MS + 120_000)
+    seedConductor(env, 'codex')
+    useRealCodex(env)
+    const fake = await startFakeDiscord(env)
+    await withConductor(env, fake, async () => {
+      await triesToWriteTheWorkspaceItselfAndIsRefused(env, fake)
     })
   })
 
