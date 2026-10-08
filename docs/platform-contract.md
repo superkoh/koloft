@@ -875,8 +875,9 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   3.8 s, and 250k files outran a 5 s `execFile` timeout. **Killed mid-delete, it leaves
   a half-removed tree**: the folder keeps whatever it had not deleted yet, the worktree
   stays registered in `git worktree list`, and its branch stays. Which files go first
-  follows the folder's read order, not the name order. (Measured, git 2.54.0, macOS
-  APFS, 2026-10-08, on a throwaway repo.)
+  follows the folder's read order, not the name order: killed at 5 s, a tree of `.git`,
+  `a.txt` and `node_modules/` still had `.git` and `a.txt` while `node_modules/` was half
+  gone. (Measured, git 2.54.0, macOS APFS, 2026-10-08, on a throwaway repo.)
 - **`.git/FETCH_HEAD` is rewritten on every fetch** and a fresh clone has none, so its
   existence and mtime show whether a fetch ran.
 - **The `ext::` transport** is refused unless `protocol.ext.allow` permits it (the repo's
