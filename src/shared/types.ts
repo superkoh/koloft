@@ -1228,6 +1228,7 @@ export interface BackendSessionRow {
 
 export interface SessionRow extends BackendSessionRow, SessionSource {
   resident?: boolean
+  parentId?: string
 }
 
 export interface WorkspaceFreshness {

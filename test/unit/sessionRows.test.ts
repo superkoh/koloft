@@ -15,9 +15,57 @@ import {
   relTime,
   rowStateClass,
   selectionRoot,
+  sessionTree,
+  rowsUnder,
   welcomeQuietLine,
-  welcomeTarget
+  welcomeTarget,
+  type RowNode
 } from '../../src/renderer/src/sessionRows'
+
+type Row = { id: string; parentId?: string }
+
+function shape(nodes: RowNode<Row>[]): unknown[] {
+  return nodes.map((n) => (n.children.length ? { [n.row.id]: shape(n.children) } : n.row.id))
+}
+
+describe('sessionTree: a session started by another hangs under it in the sidebar', () => {
+  it('nests children and grandchildren under their parent, keeping the order the rows came in', () => {
+    const rows: Row[] = [
+      { id: 'grandkid', parentId: 'kid-b' },
+      { id: 'other' },
+      { id: 'kid-b', parentId: 'parent' },
+      { id: 'kid-a', parentId: 'parent' },
+      { id: 'parent' }
+    ]
+    expect(shape(sessionTree(rows))).toEqual([
+      'other',
+      { parent: [{ 'kid-b': ['grandkid'] }, 'kid-a'] }
+    ])
+  })
+
+  it('a row whose parent is not in the list is a root', () => {
+    expect(shape(sessionTree([{ id: 'kid', parentId: 'gone' }]))).toEqual(['kid'])
+  })
+
+  it('never loses a row whose parent chain leads back to itself', () => {
+    const rows: Row[] = [
+      { id: 'self', parentId: 'self' },
+      { id: 'a', parentId: 'b' },
+      { id: 'b', parentId: 'a' },
+      { id: 'c', parentId: 'a' }
+    ]
+    expect(shape(sessionTree(rows))).toEqual(['self', { a: ['c'] }, 'b'])
+  })
+
+  it('counts every row under a node, at any depth, for a folded parent', () => {
+    const [parent] = sessionTree<Row>([
+      { id: 'parent' },
+      { id: 'kid', parentId: 'parent' },
+      { id: 'grandkid', parentId: 'kid' }
+    ])
+    expect(rowsUnder(parent).map((r) => r.id)).toEqual(['kid', 'grandkid'])
+  })
+})
 
 describe('relTime (cold menu header / tooltip)', () => {
   const now = 100_000_000_000

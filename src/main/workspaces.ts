@@ -91,6 +91,7 @@ export interface WorkspaceManagerDeps {
   remoteGit?(host: string, path: string): RemoteGitInfo | undefined
   killRemoteSession?(host: string, sessionId: string): void
   hiddenRow?(id: string): boolean
+  parentOf?(rowId: string): string | undefined
   conductorsRoot?: string
   sessionsOnDiskOrRunning?(ids: ReadonlySet<string>): void
   memberDropped?(sessionId: string, why: string): void
@@ -230,6 +231,15 @@ export class WorkspaceManager {
 
   private hidden(id: string): boolean {
     return this.deps.hiddenRow?.(id) ?? false
+  }
+
+  private withParents(rows: SessionRow[]): SessionRow[] {
+    const parentOf = this.deps.parentOf
+    if (!parentOf) return rows
+    return rows.map((r) => {
+      const parentId = parentOf(r.id)
+      return parentId ? { ...r, parentId } : r
+    })
   }
 
   remoteTargets(): { host: string; paths: string[] }[] {
@@ -717,7 +727,10 @@ export class WorkspaceManager {
               }
             : {})
         },
-        rows: [...pending.rows.filter((r) => !this.hidden(r.id)).map(claudeRow), ...rows]
+        rows: this.withParents([
+          ...pending.rows.filter((r) => !this.hidden(r.id)).map(claudeRow),
+          ...rows
+        ])
       })
     }
 

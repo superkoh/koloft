@@ -800,6 +800,19 @@ body {
   margin: 1px 0 4px 0;
   padding-left: 14px;
 }
+.ws-subtabs {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-left: 8px;
+  padding-left: 5px;
+  border-left: 1px solid var(--line);
+}
+.icobtn.ws-tab-fold {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+}
 .ws-tab,
 .recent-row {
   -webkit-app-region: no-drag;

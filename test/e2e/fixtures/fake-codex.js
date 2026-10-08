@@ -3,7 +3,7 @@ const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
 const readline = require('readline')
-const { spawnSync } = require('child_process')
+const { execFile, spawnSync } = require('child_process')
 const WebSocket = require('ws')
 
 const argv = process.argv.slice(2)
@@ -172,6 +172,28 @@ if (argv[0] === 'app-server') {
           commandActions: [{ type: 'unknown', command: text }]
         }
       })
+    }
+    if (text.startsWith('/koloft ')) {
+      const command = `koloft ${text.slice('/koloft '.length).trim()}`
+      execFile('/bin/zsh', ['-lc', command], { cwd: thread.cwd }, (e, out, err) => {
+        const exitCode = e ? (typeof e.code === 'number' ? e.code : 1) : 0
+        event('item/completed', {
+          threadId: thread.id,
+          turnId: turn.id,
+          item: {
+            type: 'commandExecution',
+            id: 'koloft-' + turn.id,
+            status: exitCode === 0 ? 'completed' : 'failed',
+            exitCode,
+            aggregatedOutput: `${out}${err}`,
+            command: `/bin/zsh -lc '${command}'`,
+            cwd: thread.cwd,
+            commandActions: [{ type: 'unknown', command }]
+          }
+        })
+        complete(thread, turn)
+      })
+      return
     }
     if (text.includes('approve')) {
       pendingApproval = { id: 'approval-' + turn.id, thread, turn }
@@ -498,6 +520,10 @@ async function startTui() {
       const [q] = frame.params.questions
       question = { id: frame.id, key: q.id, labels: q.options.map((o) => o.label) }
       process.stdout.write('\r\n' + q.question + ' ' + question.labels.join(' / ') + ' ')
+    } else if (frame.method === 'item/completed' && frame.params.item.id.startsWith('koloft-')) {
+      const { aggregatedOutput, exitCode } = frame.params.item
+      const said = aggregatedOutput.replace(/\r?\n/g, '\r\n')
+      process.stdout.write(`\r\n${said}[fake-codex] koloft exit=${exitCode}\r\n> `)
     } else if (frame.method === 'turn/started') {
       working = true
       turnId = frame.params.turn.id
