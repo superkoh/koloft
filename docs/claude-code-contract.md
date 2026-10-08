@@ -1108,6 +1108,12 @@ sessions.
     (`T("tengu_harbor_kite_mode_emit",!0)` in the 2.1.288 binary); recheck on upgrade.
   - A busy receiver with a mismatched mode, and a receiver not in bypass mode, were not
     tried.
+- **A message reaches a receiver whose turn ended with background work still running.**
+  2026-10-08, CC 2.1.294, interactive receivers in a pty with a scratch `HOME` and an
+  OAuth token, `--dangerously-skip-permissions`, model haiku. One receiver's first turn
+  started `sleep 90` with the Bash tool's `run_in_background: true` and ended; 5 s later a
+  `bypass` envelope written to its socket was answered 1.3 s after the write. A control
+  receiver with no background work answered in 1.0 s.
 
 ## §14 The PermissionRequest hook: answering a dialog from outside
 

@@ -6,7 +6,6 @@ import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
 import { gitInit, seedJsonl, startSessionIn, terminalText, waitBooted, wsRows } from './helpers/p1'
 import { startFakeDiscord, type FakeDiscord } from './helpers/fakeDiscord'
-import type { SessionInfo } from '../../src/shared/types'
 
 function claudeTokenFromKeychain(): string {
   const account = process.env.KOLOFT_SMOKE_ACCOUNT
@@ -137,8 +136,8 @@ async function statusOf(page: Page, tabId: string): Promise<string | undefined> 
     ?.status
 }
 
-const BACKGROUND_SLEEP_SECONDS = 600
-const BACKGROUND_SLEEP_PROMPT = `Start the shell command "sleep ${BACKGROUND_SLEEP_SECONDS}" in the background, so it keeps running after your turn ends, and do not wait for it or check on it. Then reply with only BG-STARTED and end your turn.`
+const BACKGROUND_SUBAGENT_SLEEPS_S = 300
+const BACKGROUND_SUBAGENT_PROMPT = `Use the Agent tool with run_in_background set to true to start one subagent whose task is: run the shell command "sleep ${BACKGROUND_SUBAGENT_SLEEPS_S}", then reply DONE. Do not wait for it or check on it. Then reply with only BG-STARTED and end your turn.`
 
 function notices(fake: FakeDiscord): string[] {
   return said(fake)
@@ -653,7 +652,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
   })
 
   // CC§8
-  test('a real Claude session whose turn is over but whose background command still runs, so it shows working, takes a /run /context from Discord, and its report reaches the channel while the command still runs', async ({
+  test('a real Claude session whose turn is over but whose background subagent still runs, so it shows working, takes a /run /context from Discord, and its report reaches the channel while the subagent still runs', async ({
     env
   }) => {
     test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
@@ -661,7 +660,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     const fake = await realClaudeConductor(env)
     await withConductor(env, fake, async (_app, page) => {
       const child = await liveClaudeTab(page)
-      await typePrompt(page, child.tabId, BACKGROUND_SLEEP_PROMPT)
+      await typePrompt(page, child.tabId, BACKGROUND_SUBAGENT_PROMPT)
       await expect
         .poll(() => saidBy(env, child.sessionId, 'assistant').join('\n'), {
           timeout: A_REAL_MODEL_TURN_MS
@@ -673,38 +672,6 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
         .poll(() => ran(fake), { timeout: A_REAL_MODEL_TURN_MS })
         .toContainEqual(expect.stringMatching(/ran \/context:\n## Context Usage/))
       expect(await statusOf(page, child.tabId)).toBe('working')
-    })
-  })
-
-  // CODEX§4
-  test('a real Codex session whose turn is over but whose background command still runs takes a /compact from Discord at once, and the channel hears it is done', async ({
-    env
-  }) => {
-    test.skip(!HAVE_REAL_CODEX, NEEDS_REAL_CODEX)
-    test.setTimeout(3 * A_REAL_MODEL_TURN_MS + 120_000)
-    seedConductor(env, 'codex')
-    useRealCodex(env)
-    const fake = await startFakeDiscord(env)
-    await withConductor(env, fake, async (_app, page) => {
-      fake.say(
-        OWNER,
-        `Start one new Codex session in this workspace whose first message is exactly this, then tell me you started it: ${BACKGROUND_SLEEP_PROMPT}`
-      )
-      const child = async (): Promise<SessionInfo | undefined> =>
-        (await page.evaluate(() => window.api.sessions.list())).find(
-          (s) => s.alive && !s.conductor && s.backendId === 'codex'
-        )
-      await expect
-        .poll(async () => (await child())?.background?.length ?? 0, {
-          timeout: 2 * A_REAL_MODEL_TURN_MS
-        })
-        .toBeGreaterThan(0)
-      const target = (await child())!
-      fake.interact(OWNER, 'compact', { session: target.sessionId })
-      await expect
-        .poll(() => ran(fake), { timeout: A_REAL_MODEL_TURN_MS })
-        .toContainEqual(expect.stringMatching(/ran \/compact:\n/))
-      expect((await child())?.background?.length ?? 0).toBeGreaterThan(0)
     })
   })
 

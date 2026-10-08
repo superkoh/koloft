@@ -45,6 +45,7 @@ interface Pending {
   target: SlashTarget
   text: string
   channelId: string
+  typedAt: number
   keyBefore?: string
   outputs: CommandOutput[]
   worked: boolean
@@ -140,6 +141,7 @@ export class SlashCommands {
       target,
       text,
       channelId,
+      typedAt: Date.now(),
       keyBefore: this.d.keyOf(tab),
       outputs: [],
       worked: false,
@@ -206,7 +208,7 @@ export class SlashCommands {
 
   turnEnded(tab: string, turn: Turn): void {
     const p = this.pending.get(tab)
-    if (p && turn.reply.trim()) p.reply = turn.reply
+    if (p && turn.reply.trim() && turn.at >= p.typedAt) p.reply = turn.reply
   }
 
   bound(tab: string, key: string): void {

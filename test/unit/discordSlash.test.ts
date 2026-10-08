@@ -91,10 +91,23 @@ describe('a slash command typed into a session', () => {
     setStatus('working')
     await vi.advanceTimersByTimeAsync(NOTHING_CAME_BACK_MS + MORE_OUTPUT_SETTLES_MS)
     expect(posts).toEqual([])
-    slash.turnEnded(TAB, { said: [], reply: 'All good.', at: 0 })
+    slash.turnEnded(TAB, { said: [], reply: 'All good.', at: Date.now() })
     setStatus('waiting')
     await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
     expect(posts).toEqual(['⌨️ **fix-login** ran /review:\nAll good.'])
+  })
+
+  it('does not take the reply of the turn before it, whose end Koloft learns only after the command was typed', async () => {
+    const { slash, posts, setStatus } = setup()
+    const before = Date.now()
+    await vi.advanceTimersByTimeAsync(1000)
+    await slash.typeWhenIdle(child, '/compact', CHANNEL)
+    slash.output(TAB, { kind: 'printed', text: 'Compacted' })
+    slash.turnEnded(TAB, { said: [], reply: 'MANGO', at: before })
+    setStatus('working')
+    setStatus('waiting')
+    await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
+    expect(posts).toEqual(['⌨️ **fix-login** ran /compact:\nCompacted'])
   })
 
   it('a turn with nothing said, like a Codex compaction, is reported as done', async () => {
@@ -175,7 +188,7 @@ describe('a slash command typed into a session', () => {
     await slash.typeWhenIdle({ ...child, conductor: true }, '/review', CHANNEL)
     slash.output(TAB, { kind: 'details', text: 'Review the changes on this branch.' })
     setStatus('working')
-    slash.turnEnded(TAB, { said: [], reply: 'All good.', at: 0 })
+    slash.turnEnded(TAB, { said: [], reply: 'All good.', at: Date.now() })
     setStatus('waiting')
     await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
     expect(posts).toEqual([])

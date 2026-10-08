@@ -772,6 +772,7 @@ const sessionDeps: SessionVerbDeps = {
     return resumed.tabId
   },
   ready: tabReady,
+  // CC§13
   sendLine: async (tabId, line, ms) => {
     const sessionId = sessionOfTab(tabId)?.sessionId
     const socket = sessionId ? await whenMessagingSocket(sessionId, ms) : null
