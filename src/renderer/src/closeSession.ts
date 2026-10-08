@@ -48,6 +48,10 @@ export function unsavedBody(files: string[]): string {
   return `Unsaved changes in ${unsavedFilesPhrase(files)}. Closing loses them — Koloft keeps no drafts.`
 }
 
+export function sessionEndedBody(title: string, files: string[]): string {
+  return `"${title}" ended with unsaved changes in ${unsavedFilesPhrase(files)}. Keep for later holds them until you quit Koloft, which asks again.`
+}
+
 export function unexpectedExitNotice(
   exit: { exitCode: number; signal?: number },
   backend: SessionBackend
