@@ -92,8 +92,6 @@ when it works. That is what "judged against" means.
   unbounded. Measure before folding.
 - **PDF previews outside the guest budget** — one PDFium process per changed PDF, not
   counted against the 12-guest cap.
-- **An orphaned edit buffer** — a dirty buffer on a tab that the agent's own exit closed
-  has no owner afterwards.
 
 ## Deliberately not doing
 
