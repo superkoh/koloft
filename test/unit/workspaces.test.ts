@@ -302,6 +302,25 @@ describe('WorkspaceManager: cold-row title parity with the live tracker', () => 
     mgr.start()
     await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.title)).toEqual(['Fresh AI name']))
   })
+
+  it('names a closed session by its latest session name, so a /rename past the head scan still shows after a restart', async () => {
+    writeJsonl(repo, 's1')
+    const file = path.join(projectsRoot, encodeCwd(repo), 's1.jsonl')
+    const PAST_THE_HEAD_SCAN = 'x'.repeat(300 * 1024)
+    fs.appendFileSync(
+      file,
+      [
+        { type: 'custom-title', customTitle: 'helper-1a2b3c' },
+        { type: 'user', cwd: repo, message: { content: PAST_THE_HEAD_SCAN } },
+        { type: 'custom-title', customTitle: '改名后的标题' }
+      ]
+        .map((r) => JSON.stringify(r))
+        .join('\n') + '\n'
+    )
+    own('s1')
+    mgr.start()
+    await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.title)).toEqual(['改名后的标题']))
+  })
 })
 
 describe('WorkspaceManager: which transcript writes rescan the list', () => {

@@ -30,6 +30,14 @@ if (argv[0] === '--version') {
   process.exit(0)
 }
 
+// CC§9
+if (argv[0] === '-p') {
+  const task = fs.readFileSync(0, 'utf8').split('Task:\n').pop()
+  const firstLine = task.split('\n').find((l) => l.trim()) ?? ''
+  process.stdout.write(`${firstLine.trim()} (titled)\n`)
+  process.exit(0)
+}
+
 // CC§7
 if (argv[0] === 'setup-token') {
   const tok = process.env.KOLOFT_FAKE_SETUP_TOKEN || FULL_LENGTH_108_CHAR_SETUP_TOKEN
@@ -410,6 +418,14 @@ function startupTurn() {
     hook_event_name: 'SessionStart',
     source: 'startup'
   })
+  // CC§9
+  const launchName = argVal('--name')
+  if (launchName && !resumeId) {
+    append([
+      { type: 'custom-title', customTitle: launchName, sessionId },
+      { type: 'agent-name', agentName: launchName, sessionId }
+    ])
+  }
   if (wtName) appendWorktreeState()
 
   // ADR-0020

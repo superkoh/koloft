@@ -87,15 +87,23 @@ function parseRecord(line: string): Record<string, unknown> | null {
 export interface JsonlTail {
   worktreeState?: WorktreeStateMeta | null
   relocatedCwd?: string
+  customTitle?: string
 }
 
-// CC§2 CC§4
+// CC§2 CC§4 CC§9
 export function extractJsonlTail(lines: Iterable<string>): JsonlTail {
   const tail: JsonlTail = {}
   for (const line of lines) {
-    if (!line.includes('"worktree-state"') && !line.includes('"relocated"')) continue
+    if (
+      !line.includes('"worktree-state"') &&
+      !line.includes('"relocated"') &&
+      !line.includes('"custom-title"')
+    )
+      continue
     const obj = parseRecord(line)
-    if (obj?.type === 'worktree-state') {
+    if (obj?.type === 'custom-title' && typeof obj.customTitle === 'string' && obj.customTitle) {
+      tail.customTitle = obj.customTitle
+    } else if (obj?.type === 'worktree-state') {
       const ws = obj.worktreeSession === null ? null : readWorktreeState(obj)
       if (ws !== undefined) tail.worktreeState = ws
     } else if (
@@ -121,6 +129,15 @@ export function extractJsonlMeta(lines: Iterable<string>): Partial<SessionMeta> 
       obj.summary
     ) {
       meta.summary = obj.summary
+    }
+    // CC§9
+    if (
+      meta.customTitle === undefined &&
+      obj.type === 'custom-title' &&
+      typeof obj.customTitle === 'string' &&
+      obj.customTitle
+    ) {
+      meta.customTitle = obj.customTitle
     }
     // CC§2
     if (
@@ -180,6 +197,7 @@ export function extractJsonlMeta(lines: Iterable<string>): Partial<SessionMeta> 
 }
 
 export interface SessionMeta {
+  customTitle?: string
   aiTitle?: string
   summary?: string
   firstUserText?: string
@@ -209,6 +227,7 @@ function relativeAgo(tsMs: number, nowMs: number): string {
 }
 
 function titleFor(meta: SessionMeta, nowMs: number): string {
+  if (meta.customTitle) return meta.customTitle
   if (meta.aiTitle) return meta.aiTitle
   if (meta.summary) return meta.summary
   if (meta.firstUserText) {

@@ -1120,11 +1120,16 @@ export class WorkspaceManager {
         partial.cwd = tail.relocatedCwd
       } else if (tail.worktreeState) partial.worktreeState = tail.worktreeState
     }
+    // CC§9
+    if (partial.customTitle) {
+      const renamed = (await this.scanTail(file)).customTitle
+      if (renamed) partial.customTitle = renamed
+    }
     try {
       const sidecar = (
         await fs.promises.readFile(file.replace(/\.jsonl$/, '.title'), 'utf8')
       ).trim()
-      if (sidecar) partial.aiTitle = sidecar
+      if (sidecar) partial.customTitle = sidecar
     } catch {}
     let timestamp = partial.timestamp
     if (!timestamp) {

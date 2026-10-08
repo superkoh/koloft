@@ -459,6 +459,7 @@ interface Tracked {
   launchCwd: string
   readOffset: number
   tailBuf: Buffer
+  customTitle: string | null
   title: string | null
   firstPrompt: string | null
   commandArgsTitle: string | null
@@ -584,6 +585,7 @@ export class SessionTracker extends SessionRuntime {
       launchCwd: remote ? cwd : realpathSafe(cwd),
       readOffset: 0,
       tailBuf: Buffer.alloc(0),
+      customTitle: null,
       title: null,
       firstPrompt: null,
       commandArgsTitle: null,
@@ -1076,6 +1078,7 @@ export class SessionTracker extends SessionRuntime {
   private resetParseState(t: Tracked, keepBindMs = false): void {
     t.readOffset = 0
     t.tailBuf = Buffer.alloc(0)
+    t.customTitle = null
     t.title = null
     t.firstPrompt = null
     t.commandArgsTitle = null
@@ -1544,6 +1547,9 @@ export class SessionTracker extends SessionRuntime {
         if (!t.remote && !fs.existsSync(t.info.treeRoot)) this.setTreeRoot(t, obj.cwd)
       }
       if (obj.type === 'ai-title' && typeof obj.aiTitle === 'string') t.title = obj.aiTitle
+      // CC§9
+      if (obj.type === 'custom-title' && typeof obj.customTitle === 'string' && obj.customTitle)
+        t.customTitle = obj.customTitle
       // CC§2
       if (obj.type === 'relocated' && typeof obj.relocatedCwd === 'string' && obj.relocatedCwd) {
         t.relocatedCwd = obj.relocatedCwd
@@ -1746,6 +1752,7 @@ export class SessionTracker extends SessionRuntime {
 
     t.info.title =
       t.sidecarTitle ||
+      t.customTitle ||
       t.title ||
       (t.firstPrompt ? t.firstPrompt.slice(0, 60) : null) ||
       (t.commandArgsTitle ? t.commandArgsTitle.slice(0, 60) : null) ||

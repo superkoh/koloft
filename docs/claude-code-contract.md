@@ -813,8 +813,29 @@ other bullets of §9 were not re-measured on this build.
   every main transcript then on disk (CC 2.1.263 to 2.1.293): of the 127 whose first
   record is the `custom-title` that `--name` writes, 0 carried an `ai-title`; of the 311
   that start without one, 84 did. So the only words naming such a session, besides its
-  `--name`, are its first prompt. That `--name` itself is what stops the title, rather
-  than something else Koloft's named launches share, is inferred, not checked.
+  `--name`, are its first prompt. **`--name` itself is what stops the title** — checked
+  2026-10-08 on CC 2.1.295 with a pair of pty launches in an empty folder, the same
+  first message, nothing else different: without `--name` the transcript got
+  `ai-title` "Koloft 侧栏会话标题过长"; with `--name title-probe-n` it got only the
+  `custom-title` / `agent-name` pair, no `ai-title`.
+- **`/rename <text>` renames both the title and the address.** Same build and setup: a
+  session started with `--name rename-probe-a` and then sent `/rename 改名后的标题`
+  appended a new `custom-title` *and* a new `agent-name` with the new text, and still no
+  `ai-title`. So the latest `custom-title` is the session's name, and a peer that kept
+  the old name no longer reaches it by that name.
+- **A name may hold spaces and CJK text and still be a message address.** Same build:
+  `--name "带 空格 的 名字"` was listed by ListAgents under that name, and a
+  SendMessage to that bare name was delivered (its transcript holds the reply
+  `GOT PROBE-SPACE-123`).
+- **A one-shot `claude -p --model haiku` makes a usable title in 2–5 s.** Measured
+  2026-10-08, CC 2.1.295, through Koloft's shim with the account balancer: 20 real
+  first messages of agent-started sessions, task on stdin, each answered in 2.1–5.0 s
+  with a short title in the task's language. With the default system prompt and setting
+  sources one call read ~5.7k input tokens (≈ $0.001); with `--system-prompt` set and
+  `--setting-sources ''` it read ~750 (≈ $0.00024) and still answered. With
+  `--no-session-persistence` it left no transcript in its cwd's project folder. Behind
+  an expired login it prints `Failed to authenticate: …` on stdout and exits 1, so only
+  the exit code tells a title from an error.
 - **Spawn to SessionStart is well under a second on this machine**: 0.250 / 0.272 /
   0.293 / 0.265 / 0.381 s over six launches with the user's real MCP config loaded (no
   `--strict-mcp-config`), 0.429 s through Koloft's own shim with the account balancer

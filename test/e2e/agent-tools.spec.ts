@@ -107,7 +107,7 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     ).toHaveCount(1)
   })
 
-  test('koloft session new starts a named sibling in the same workspace, titled by its task, nested under the caller while it is still starting, and leaves the caller on screen', async ({
+  test('koloft session new starts a sibling in the same workspace, named and titled by a short title made from its task, nested under the caller while it is still starting, and leaves the caller on screen', async ({
     page,
     env
   }) => {
@@ -123,18 +123,21 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     )
     fs.writeFileSync(path.join(env.home, 'fake-claude-delay'), String(HOLD_KID_BEFORE_IT_BINDS_MS))
 
-    expect(await koloftInSession(page, 'session new --name kid -- hello')).toBe('0')
+    expect(await koloftInSession(page, 'session new -- hello')).toBe('0')
 
     await expect(nested).toHaveClass(/\bst-pending\b/, { timeout: 30_000 })
     await expect(wsRows(page, 'ws-a')).toHaveCount(2)
     const calls = await waitForCalls(env, callsBefore + 1, 60_000)
     const kid = calls[calls.length - 1]
-    expect(kid.argv[kid.argv.indexOf('--name') + 1]).toBe('kid')
+    expect(kid.argv[kid.argv.indexOf('--name') + 1]).toBe('hello (titled)')
     expect(kid.firstPrompt).toMatch(/\n\nhello$/)
     await expect(nested).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
-    await expect(nested.locator('.ws-tab-title', { hasText: /^hello$/ })).toHaveCount(1, {
-      timeout: 30_000
-    })
+    await expect(nested.locator('.ws-tab-title', { hasText: /^hello \(titled\)$/ })).toHaveCount(
+      1,
+      {
+        timeout: 30_000
+      }
+    )
     await expect(wsGroup(page, 'ws-a').locator('.ws-tab.active')).toHaveAttribute(
       'data-tab-id',
       callerTabId!

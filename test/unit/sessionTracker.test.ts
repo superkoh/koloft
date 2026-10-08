@@ -293,6 +293,28 @@ describe('SessionTracker — title resolution priority', () => {
     expect(s.title).toBe('Sidecar Name')
   })
 
+  it('a session name (custom-title, from --name or /rename) beats the first prompt, the latest one wins, and the sidecar still beats it', async () => {
+    const cwd = makeWorkspace({})
+    const tracker = newTracker()
+    tracker.track('tabT2n', cwd)
+    const file = writeJsonl(cwd, SID, [
+      { type: 'custom-title', customTitle: 'rental-watch' },
+      { type: 'user', message: { content: '租房监控更新：进入 /Users/x/rental-watch，严格' }, cwd }
+    ])
+    tracker.bindSession('tabT2n', file, SID, cwd)
+    await waitFor(tracker, (x) => x.tabId === 'tabT2n' && x.title === 'rental-watch')
+
+    fs.appendFileSync(
+      file,
+      JSON.stringify({ type: 'custom-title', customTitle: '改名后的标题' }) + '\n'
+    )
+    await waitFor(tracker, (x) => x.tabId === 'tabT2n' && x.title === '改名后的标题')
+
+    fs.writeFileSync(file.replace(/\.jsonl$/, '.title'), 'Sidecar Name\n')
+    const s = await waitFor(tracker, (x) => x.tabId === 'tabT2n' && x.title === 'Sidecar Name')
+    expect(s.title).toBe('Sidecar Name')
+  })
+
   it('slash-command prompts use <command-args>; isMeta lines are skipped for the title', async () => {
     const cwd = makeWorkspace({})
     const tracker = newTracker()
