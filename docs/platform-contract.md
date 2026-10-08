@@ -1196,8 +1196,8 @@ Gateway (the live connection that pushes events):
     `accent_color`, another header) answered 200, with or without `flags` in the body.
     Edits share one limit per channel across its messages: two cards edited in turn
     answered 200 five times, then 429 (`retry_after` 0.3–0.6 s), the bucket filling
-    again in about 5 s. Edits have a different bucket from posts, but `DiscordRest` puts
-    both on one queue per channel.
+    again in about 5 s. Edits have a different bucket (`x-ratelimit-bucket`) from posts
+    to the same channel.
   - Editing the opener of an archived thread answered 200 and left the thread archived
     (`thread_metadata.archived` still `true`); editing a message inside the archived
     thread answered 400, code 50083 "Thread is archived".
