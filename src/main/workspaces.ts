@@ -1,7 +1,6 @@
 import fs from 'fs'
 import path from 'path'
 import { execFile } from 'child_process'
-import { StringDecoder } from 'string_decoder'
 import type {
   DiscoveredFolder,
   LayoutV6,
@@ -41,6 +40,8 @@ import {
   type WorktreeEntry
 } from './workspaceOps'
 import { encodeCwd } from './sessionTracker'
+import { dirExists } from './fileTree'
+import { isGitCheckoutAsync } from './projectInfo'
 import { replacesTheConversation } from './hookRouting'
 import { isRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { sourceOf } from '@shared/sessionBackend'
@@ -106,23 +107,6 @@ function dirExistsSync(p: string): boolean {
   }
 }
 
-async function dirExists(p: string): Promise<boolean> {
-  try {
-    return (await fs.promises.stat(p)).isDirectory()
-  } catch {
-    return false
-  }
-}
-
-async function pathExists(p: string): Promise<boolean> {
-  try {
-    await fs.promises.access(p)
-    return true
-  } catch {
-    return false
-  }
-}
-
 async function mapAtMost<T, R>(
   items: T[],
   limit: number,
@@ -155,27 +139,21 @@ async function readJsonlHeadMeta(
     return { meta: {}, opened: false, eof: false }
   }
   try {
-    const buf = Buffer.alloc(64 * 1024)
-    const decoder = new StringDecoder('utf8')
-    const lines: string[] = []
-    let tail = ''
+    const buf = Buffer.allocUnsafe(JSONL_SCAN_CAP)
     let total = 0
-    for (;;) {
-      const probe = { exhausted: false }
-      const meta = extractJsonlMeta(linesUntilExhausted(lines, probe))
-      if (!probe.exhausted) return { meta, opened: true, eof: false }
-      if (total >= JSONL_SCAN_CAP) {
-        return { meta: extractJsonlMeta(tail ? [...lines, tail] : lines), opened: true, eof: false }
-      }
-      const { bytesRead } = await fh.read(buf, 0, buf.length, null)
+    let hitEnd = false
+    while (total < JSONL_SCAN_CAP) {
+      const { bytesRead } = await fh.read(buf, total, JSONL_SCAN_CAP - total, null)
       if (bytesRead <= 0) {
-        return { meta: extractJsonlMeta(tail ? [...lines, tail] : lines), opened: true, eof: true }
+        hitEnd = true
+        break
       }
       total += bytesRead
-      const parts = (tail + decoder.write(buf.subarray(0, bytesRead))).split('\n')
-      tail = parts.pop() ?? ''
-      lines.push(...parts)
     }
+    const probe = { exhausted: false }
+    const lines = buf.toString('utf8', 0, total).split('\n')
+    const meta = extractJsonlMeta(linesUntilExhausted(lines, probe))
+    return { meta, opened: true, eof: probe.exhausted && hitEnd }
   } finally {
     await fh.close()
   }
@@ -773,7 +751,7 @@ export class WorkspaceManager {
           missing,
           isGit: key
             ? (this.deps.remoteGit?.(key.host, key.path)?.isGit ?? false)
-            : !missing && (await pathExists(path.join(ws.path, '.git'))),
+            : !missing && (await isGitCheckoutAsync(ws.path)),
           hasHistory: hasHistory(visible, owned, wsRunningIds),
           ...(key
             ? {
@@ -1150,12 +1128,7 @@ export class WorkspaceManager {
     } catch {}
     let timestamp = partial.timestamp
     if (!timestamp) {
-      try {
-        const mtimeMs = this.statByFile.get(file)?.mtimeMs ?? (await fs.promises.stat(file)).mtimeMs
-        timestamp = new Date(mtimeMs).toISOString()
-      } catch {
-        timestamp = new Date(0).toISOString()
-      }
+      timestamp = new Date(this.statByFile.get(file)?.mtimeMs ?? 0).toISOString()
     }
     return { ...partial, cwd: partial.cwd ?? bucketDir, timestamp }
   }

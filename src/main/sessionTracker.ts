@@ -463,6 +463,7 @@ interface Tracked {
   caughtUp: boolean
   jsonlListener?: () => void
   titleListener?: () => void
+  sidecarTitle: string | null
   usageSeen: Set<string>
   usageAny: boolean
   usageInTok: number
@@ -579,6 +580,7 @@ export class SessionTracker extends SessionRuntime {
       candidates: new Map(),
       fileCache: new Map(),
       canonPending: new Set(),
+      sidecarTitle: null,
       lastTouchedAbs: null,
       lastWrittenAbs: null,
       parseAgain: false,
@@ -1084,10 +1086,25 @@ export class SessionTracker extends SessionRuntime {
       if (t.titleListener) fs.unwatchFile(this.sidecarOf(t.info.jsonlPath), t.titleListener)
     }
     t.info.jsonlPath = file
+    t.sidecarTitle = null
     t.jsonlListener ??= (): void => void this.parse(t)
-    t.titleListener ??= (): void => this.recompute(t)
+    t.titleListener ??= (): void => void this.readSidecarTitle(t)
     fs.watchFile(file, { interval: 500 }, t.jsonlListener)
     fs.watchFile(this.sidecarOf(file), { interval: 500 }, t.titleListener)
+    void this.readSidecarTitle(t)
+  }
+
+  private async readSidecarTitle(t: Tracked): Promise<void> {
+    const file = t.info.jsonlPath
+    if (!file) return
+    let title: string | null = null
+    try {
+      title = (await fs.promises.readFile(this.sidecarOf(file), 'utf8')).trim() || null
+    } catch {}
+    if (t.info.jsonlPath !== file || this.tracked.get(t.info.tabId) !== t) return
+    if (title === t.sidecarTitle) return
+    t.sidecarTitle = title
+    this.recompute(t)
   }
 
   private bind(t: Tracked, file: string): void {
@@ -1666,15 +1683,6 @@ export class SessionTracker extends SessionRuntime {
     return jsonlPath.replace(/\.jsonl$/, '.title')
   }
 
-  private titleFromSidecar(jsonlPath: string): string | null {
-    try {
-      const text = fs.readFileSync(this.sidecarOf(jsonlPath), 'utf8').trim()
-      return text || null
-    } catch {
-      return null
-    }
-  }
-
   private recompute(t: Tracked): void {
     const byCanon = new Map<string, PreviewItem>()
     for (const [abs, acc] of t.candidates) {
@@ -1694,9 +1702,8 @@ export class SessionTracker extends SessionRuntime {
     }
     const files = capTouched([...byCanon.values()])
 
-    const sidecarTitle = t.info.jsonlPath ? this.titleFromSidecar(t.info.jsonlPath) : null
     t.info.title =
-      sidecarTitle ||
+      t.sidecarTitle ||
       t.title ||
       (t.firstPrompt ? t.firstPrompt.slice(0, 60) : null) ||
       (t.commandArgsTitle ? t.commandArgsTitle.slice(0, 60) : null) ||
@@ -1732,7 +1739,7 @@ export class SessionTracker extends SessionRuntime {
       if ((await fs.promises.stat(abs)).isFile()) real = await fs.promises.realpath(abs)
     } catch {}
     t.canonPending.delete(abs)
-    if (real === undefined || ![...this.tracked.values()].includes(t)) return
+    if (real === undefined || this.tracked.get(t.info.tabId) !== t) return
     t.fileCache.set(abs, real)
     this.recompute(t)
   }

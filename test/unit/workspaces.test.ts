@@ -289,6 +289,7 @@ describe('WorkspaceManager: a rescan never blocks the main process on the transc
     const underProjects = spies.flatMap((s) =>
       s.mock.calls.map((c) => String(c[0])).filter((p) => p.startsWith(projectsRoot))
     )
+    for (const s of spies) s.mockRestore()
     expect(underProjects).toEqual([])
   })
 })
