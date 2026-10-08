@@ -184,8 +184,8 @@ export class Conductors {
 
   // ADR-0029
   workspaceOfTab(tabId: string): string | undefined {
-    const scope = this.scopeOfTab(tabId)
-    return scope && scope !== GLOBAL_SCOPE && !isRemoteKey(scope) ? scope : undefined
+    const b = this.bindingOfTab(tabId)
+    return b && !this.noWorkspaceReason(tabId) ? b.scope : undefined
   }
 
   touch(tabId: string, key: string): void {

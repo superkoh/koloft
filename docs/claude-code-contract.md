@@ -303,7 +303,9 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
 
 - **Resume by explicit id is a global lookup, across projects**: `claude --resume <id>`
   from an unrelated directory successfully continues a session living elsewhere, same
-  id, no fork (E3).
+  id, no fork (E3). Rechecked 2026-10-08, CC 2.1.294, `claude -p` through Koloft's shim:
+  a session started in folder A, resumed with `--resume <id>` from folder B, kept its id
+  and said back a word only folder A's turn held.
 - **`--resume <id> -w <name>` compose**: CC creates (or enters) the named worktree and
   resumes there with full history (E4); an existing name is entered and used as-is.
 - **Resume with a binding, worktree present** → CC re-enters it; **worktree missing** →

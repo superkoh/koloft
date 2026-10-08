@@ -461,8 +461,11 @@ describe('injected hook script', () => {
 
     // ADR-0029 CC§15
     describe('the gate lets a conductor read, ask the owner and run one plain koloft command, and nothing else', () => {
+      let command: string
+      beforeAll(() => {
+        command = hooksOf(true).PreToolUse[0].hooks[0].command
+      })
       const gate = (event: unknown): 'allow' | 'deny' => {
-        const command = hooksOf(true).PreToolUse[0].hooks[0].command
         const res = spawnSync('/bin/sh', ['-c', command], {
           input: typeof event === 'string' ? event : JSON.stringify(event),
           encoding: 'utf8'

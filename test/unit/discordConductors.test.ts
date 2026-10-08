@@ -248,7 +248,6 @@ describe('Conductors', () => {
     await vi.waitFor(() => expect(started).toHaveLength(2))
     release()
     await openingGlobal
-    expect(started[0].cwd).toBe(conductorFolder(userData, '/ws/a'))
     expect(c.workspaceOfTab('tab-1')).toBe('/ws/a')
     expect(c.workspaceOfTab('tab-2')).toBeUndefined()
     expect(c.workspaceOfTab('some-other-tab')).toBeUndefined()

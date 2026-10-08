@@ -41,12 +41,10 @@ function bindingsOnDisk(env: E2EEnv): ConductorBinding[] {
   return (settingsOnDisk(env).discord as DiscordSettings | undefined)?.bindings ?? []
 }
 
-function firstCodexId(env: E2EEnv): string {
-  return (
-    JSON.parse(
-      fs.readFileSync(path.join(env.home, 'fake-codex-calls.jsonl'), 'utf8').split('\n')[0]
-    ) as { sessionId: string }
-  ).sessionId
+function firstCodexCall(env: E2EEnv): { sessionId: string; argv: string[]; cwd: string } {
+  return JSON.parse(
+    fs.readFileSync(path.join(env.home, 'fake-codex-calls.jsonl'), 'utf8').split('\n')[0]
+  )
 }
 
 function gateSays(call: { argv: string[] }, event: unknown): string {
@@ -304,9 +302,7 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
           )
         )
       ).toBe(true)
-      const tui = JSON.parse(
-        fs.readFileSync(path.join(env.home, 'fake-codex-calls.jsonl'), 'utf8').split('\n')[0]
-      ) as { argv: string[]; cwd: string }
+      const tui = firstCodexCall(env)
       expect(path.dirname(tui.cwd)).toBe(path.join(env.userData, 'conductors'))
       expect(tui.argv[tui.argv.indexOf('-s') + 1]).toBe('workspace-write')
       expect(tui.argv[tui.argv.indexOf('-a') + 1]).toBe('never')
@@ -360,7 +356,7 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
     try {
       await newSessionInWith(page, 'ws-b', 'Codex')
       await expect(wsRows(page, 'ws-b')).toHaveClass(/st-waiting/, { timeout: 60_000 })
-      const codexId = firstCodexId(env)
+      const codexId = firstCodexCall(env).sessionId
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(wsRows(page, 'ws-b')).toHaveClass(/cold/)
 
@@ -403,7 +399,7 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
       await expect(wsRows(page, 'ws-a')).toHaveClass(/cold/)
       await newSessionInWith(page, 'ws-b', 'Codex')
       await expect(wsRows(page, 'ws-b')).toHaveClass(/st-waiting/, { timeout: 60_000 })
-      const codexId = firstCodexId(env)
+      const codexId = firstCodexCall(env).sessionId
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(wsRows(page, 'ws-b')).toHaveClass(/cold/)
 

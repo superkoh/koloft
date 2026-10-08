@@ -330,20 +330,6 @@ async function triesToWriteTheWorkspaceItselfAndIsRefused(
   expect(said(fake).join('\n')).toContain('WRITE-REFUSED')
 }
 
-// CC§15
-function claudeTranscriptsSay(env: E2EEnv, pattern: RegExp): boolean {
-  const root = path.join(env.home, '.claude', 'projects')
-  return fs
-    .readdirSync(root)
-    .flatMap((dir) =>
-      fs
-        .readdirSync(path.join(root, dir))
-        .filter((f) => f.endsWith('.jsonl'))
-        .map((f) => fs.readFileSync(path.join(root, dir, f), 'utf8'))
-    )
-    .some((text) => pattern.test(text))
-}
-
 async function answersWholeInTheChannel(fake: FakeDiscord): Promise<void> {
   const asked = fake.say(OWNER, ASK_FOR_TWO_LINES)
   await expect
@@ -371,9 +357,13 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
     test.setTimeout(A_REAL_MODEL_TURN_MS + 120_000)
     const fake = await realClaudeConductor(env)
-    await withConductor(env, fake, async () => {
+    await withConductor(env, fake, async (_app, page) => {
       await triesToWriteTheWorkspaceItselfAndIsRefused(env, fake)
-      expect(claudeTranscriptsSay(env, /PreToolUse:\w+ hook error/)).toBe(true)
+      const conductor = (await page.evaluate(() => window.api.sessions.list())).find(
+        (s) => s.alive && s.conductor
+      )!
+      // CC§15
+      expect(toolResults(env, conductor.sessionId).join('\n')).toMatch(/PreToolUse:\w+ hook error/)
     })
   })
 
