@@ -1,7 +1,7 @@
 import fs from 'fs'
 import type { Page, TestInfo } from '@playwright/test'
 import { test, expect, pendingAttention } from './helpers/app'
-import { centerTerm, runIn, startSessionIn, waitBooted } from './helpers/p1'
+import { centerTerm, oneStillRunning, runIn, startSessionIn, waitBooted } from './helpers/p1'
 
 const SLOW_GREEN_RUN_WORTH_A_DUMP_MS = 20_000
 const DRAIN_MAY_LAND_ON_THE_26S_BACKSTOP_MS = 60_000
@@ -77,8 +77,7 @@ async function dumpState(page: Page, steps: Step[], info: TestInfo, home: string
   })
 }
 
-const greenWithRunningMarker = (page: Page) =>
-  page.locator('.ws-tab.st-waiting .ws-tab-parked.bg-run', { hasText: /^↻ 1$/ })
+const greenWithRunningMarker = (page: Page) => oneStillRunning(page.locator('.ws-tab.st-waiting'))
 
 async function expectGreenAndRunningThroughTheFixtures5sBackgroundWindow(
   page: Page

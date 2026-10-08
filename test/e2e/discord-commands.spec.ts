@@ -10,7 +10,8 @@ import {
   terminalText,
   waitBooted,
   waitForCalls,
-  wsRows
+  wsRows,
+  oneStillRunning
 } from './helpers/p1'
 import {
   AUTOCOMPLETE,
@@ -227,14 +228,14 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
       )
       await page.evaluate((id) => window.api.terminal.write(id, '/bg-reported\r'), tab)
       await expect.poll(() => terminalText(page, tab)).toContain('bg-reported running')
-      await expect(wsRows(page, 'ws-a').locator('.ws-tab-parked.bg-run')).toBeVisible()
+      await expect(oneStillRunning(wsRows(page, 'ws-a'))).toBeVisible()
 
       fake.interact(OWNER, 'run', { command: '/context', session: child })
       await expect
         .poll(() => ran(fake), { timeout: 30_000 })
         .toEqual([expect.stringMatching(/ran \/context:\n## Context Usage/)])
       expect(await terminalText(page, tab)).not.toContain('bg-reported finished')
-      await expect(wsRows(page, 'ws-a').locator('.ws-tab-parked.bg-run')).toBeVisible()
+      await expect(oneStillRunning(wsRows(page, 'ws-a'))).toBeVisible()
     } finally {
       await quitAndClose(app)
       await fake.close()

@@ -1151,13 +1151,19 @@ function stageProcs(
   })
 }
 
-function commandUseRec(toolUseId: string, cwd: string, command: string, name = 'Bash'): unknown {
+function commandUseRec(
+  toolUseId: string,
+  cwd: string,
+  command: string | Record<string, unknown>,
+  name = 'Bash'
+): unknown {
+  const input = typeof command === 'string' ? { command } : command
   return {
     type: 'assistant',
     timestamp: new Date().toISOString(),
     message: {
       role: 'assistant',
-      content: [{ type: 'tool_use', id: toolUseId, name, input: { command } }]
+      content: [{ type: 'tool_use', id: toolUseId, name, input }]
     },
     cwd
   }
@@ -1308,22 +1314,7 @@ describe('run-state from the typed task list: each task judged by what it is, an
     const file = await bindCaughtUp(tracker, 'tabL7', cwd, initialLines(cwd))
     tracker.setStatus('tabL7', 'working')
     appendJsonl(file, [
-      {
-        type: 'assistant',
-        timestamp: new Date().toISOString(),
-        message: {
-          role: 'assistant',
-          content: [
-            {
-              type: 'tool_use',
-              id: 'toolu_ag',
-              name: 'Agent',
-              input: { description: 'Review the diff' }
-            }
-          ]
-        },
-        cwd
-      },
+      commandUseRec('toolu_ag', cwd, { description: 'Review the diff' }, 'Agent'),
       spawnRec('toolu_ag', cwd)
     ])
     await tracker.reportTurnEnd('tabL7', [{ id: 'atoolu_ag', type: 'subagent' }])

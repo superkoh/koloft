@@ -21,6 +21,7 @@ import {
   dialogPrimary,
   gitInit,
   newSessionInWith,
+  oneStillRunning,
   openMenu,
   pickerDialog,
   processAlive,
@@ -579,7 +580,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       await row.click()
       await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
       await runIn(page, centerTerm(page), 'spawn child')
-      const running = row.locator('.ws-tab-parked.bg-run', { hasText: /^↻ 1$/ })
+      const running = oneStillRunning(row)
       await expect(running).toBeVisible()
       await expect(row).toHaveClass(/st-waiting/)
       expect(await pendingAttention(page)).toHaveLength(0)

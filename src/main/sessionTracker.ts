@@ -183,7 +183,12 @@ const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
 // CC§2
 const BASH_WRITES = /(^|[^0-9&])>>?\s*(?!\/dev\/null)\S|\btee\s|\bsed\s+-i\b|\btouch\s/
 const READ_TOOLS = new Set(['Read'])
-const UNACKED_TOOL_CMD_CAP = 64
+const TASK_LABEL_FIELD: Record<string, string> = {
+  Bash: 'command',
+  Monitor: 'command',
+  Agent: 'description'
+}
+const UNACKED_TOOL_CAP = 64
 
 export interface ToolCall {
   name: string
@@ -491,9 +496,9 @@ interface Tracked {
   resetMs: number
   reported: ReportedTask[] | null
   reportedAt: number
-  taskCmds: Map<string, string>
+  taskLabels: Map<string, string>
   monitorIds: Set<string>
-  toolCmds: Map<string, string>
+  toolLabels: Map<string, string>
   openTools: Map<string, ToolCall>
   procs: TaskProcs | null
   shellCpu: Map<string, { cpuMs: number; at: number; quiet: boolean }>
@@ -610,9 +615,9 @@ export class SessionTracker extends SessionRuntime {
       resetMs: Date.now(),
       reported: null,
       reportedAt: 0,
-      taskCmds: new Map(),
+      taskLabels: new Map(),
       monitorIds: new Set(),
-      toolCmds: new Map(),
+      toolLabels: new Map(),
       openTools: new Map(),
       procs: null,
       shellCpu: new Map(),
@@ -692,6 +697,10 @@ export class SessionTracker extends SessionRuntime {
     this.emitUpdate()
   }
 
+  protected override turnOverChanged(): void {
+    this.emitUpdate()
+  }
+
   protected override async workStillRunning(tabId: string): Promise<boolean> {
     const t = this.tracked.get(tabId)
     if (!t) return false
@@ -718,6 +727,10 @@ export class SessionTracker extends SessionRuntime {
       await this.refreshProcs(t, true)
       if (this.tracked.get(tabId) !== t || t.statusSeq !== seq) return
     }
+    this.endTurnHeldByWhatRuns(t)
+  }
+
+  private endTurnHeldByWhatRuns(t: Tracked): void {
     const busy = this.judgeHold(t)
     if (!busy) t.bgTasks.clear()
     this.applyStatus(t, 'ended', busy)
@@ -772,7 +785,7 @@ export class SessionTracker extends SessionRuntime {
     let idleTeammates = 0
     for (const task of list) {
       if (task.type === 'shell') {
-        const label = t.taskCmds.get(task.id) ?? task.id
+        const label = t.taskLabels.get(task.id) ?? task.id
         if (t.monitorIds.has(task.id)) {
           parked.push({ id: task.id, kind: 'monitor', label, state: 'waiting' })
         } else if (!procs) {
@@ -803,7 +816,7 @@ export class SessionTracker extends SessionRuntime {
       } else if (AGENT_TYPES.has(task.type)) {
         if (agentsFresh || toolCallInFlight) {
           observed = true
-          run(task, 'agent', t.taskCmds.get(task.id) ?? task.type)
+          run(task, 'agent', t.taskLabels.get(task.id) ?? task.type)
         }
       } else if (task.type === 'teammate') {
         if (teammatesFresh || toolCallInFlight) {
@@ -1092,8 +1105,8 @@ export class SessionTracker extends SessionRuntime {
     t.info.usage = undefined
     t.bgTasks = new Set()
     t.monitorIds = new Set()
-    t.taskCmds = new Map()
-    t.toolCmds = new Map()
+    t.taskLabels = new Map()
+    t.toolLabels = new Map()
     t.openTools = new Map()
     t.teammateActiveMs = 0
     t.lastBgActivityTs = 0
@@ -1363,9 +1376,7 @@ export class SessionTracker extends SessionRuntime {
       await this.refreshProcs(t, true)
       if (this.tracked.get(tabId) !== t || this.statusSince(tabId) > t.lastInterruptTs) return
     }
-    const busy = this.judgeHold(t)
-    if (!busy) t.bgTasks.clear()
-    this.applyStatus(t, 'ended', busy)
+    this.endTurnHeldByWhatRuns(t)
   }
 
   private async tailSubagents(t: Tracked): Promise<boolean> {
@@ -1475,13 +1486,13 @@ export class SessionTracker extends SessionRuntime {
       task = { id: r.agentId, type: r.status === 'remote_launched' ? 'cloud-session' : 'subagent' }
     }
     if (task) {
-      const cmd = toolUseIds.map((id) => t.toolCmds.get(id)).find((c) => c)
-      if (cmd) t.taskCmds.set(task.id, cmd)
+      const cmd = toolUseIds.map((id) => t.toolLabels.get(id)).find((c) => c)
+      if (cmd) t.taskLabels.set(task.id, cmd)
       if (t.reported && !t.reported.some((x) => x.id === task.id)) {
         t.reported.push({ ...task, since: Date.now() })
       }
     }
-    for (const id of toolUseIds) t.toolCmds.delete(id)
+    for (const id of toolUseIds) t.toolLabels.delete(id)
     const at = Math.min(isFinite(ts) ? ts : Date.now(), Date.now())
     if (at > t.lastBgActivityTs) t.lastBgActivityTs = at
   }
@@ -1513,7 +1524,7 @@ export class SessionTracker extends SessionRuntime {
     if (t.reported && gone.size) t.reported = t.reported.filter((x) => !gone.has(x.id))
     for (const id of gone) {
       t.monitorIds.delete(id)
-      t.taskCmds.delete(id)
+      t.taskLabels.delete(id)
     }
     t.bgTasks.delete(BG_PROMOTED)
   }
@@ -1604,20 +1615,16 @@ export class SessionTracker extends SessionRuntime {
         for (const b of obj.message.content) {
           if (!b || b.type !== 'tool_use') continue
           if (liveNow && typeof b.id === 'string' && this.dialogsWatched(t.info.tabId)) {
-            if (t.openTools.size >= UNACKED_TOOL_CMD_CAP)
+            if (t.openTools.size >= UNACKED_TOOL_CAP)
               t.openTools.delete(t.openTools.keys().next().value as string)
             t.openTools.set(b.id, { name: b.name, input: b.input ?? {} })
           }
-          const label =
-            b.name === 'Bash' || b.name === 'Monitor'
-              ? b.input?.command
-              : b.name === 'Agent'
-                ? b.input?.description
-                : undefined
+          const labelField = TASK_LABEL_FIELD[b.name]
+          const label = labelField ? b.input?.[labelField] : undefined
           if (typeof label === 'string') {
-            if (t.toolCmds.size >= UNACKED_TOOL_CMD_CAP)
-              t.toolCmds.delete(t.toolCmds.keys().next().value as string)
-            t.toolCmds.set(b.id, label.replace(/\s+/g, ' ').trim().slice(0, 120))
+            if (t.toolLabels.size >= UNACKED_TOOL_CAP)
+              t.toolLabels.delete(t.toolLabels.keys().next().value as string)
+            t.toolLabels.set(b.id, label.replace(/\s+/g, ' ').trim().slice(0, 120))
             if (b.name === 'Bash' && liveNow && BASH_WRITES.test(label)) {
               t.info.liveWrites = (t.info.liveWrites ?? 0) + 1
             }

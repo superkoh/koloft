@@ -354,8 +354,9 @@ const sessionBackends = new SessionBackends({
 })
 sessionBackends.conductorOf = (id) => conductors?.conductorOf(id)
 sessionBackends.conductorWorkspaceOf = (tabId) => conductors?.workspaceOfTab(tabId)
+sessionBackends.turnOver = (tabId) => tracker.turnOver(tabId)
 function allSessions(): SessionInfo[] {
-  return sessionBackends.list().map((s) => ({ ...s, turnOver: tracker.turnOver(s.tabId) }))
+  return sessionBackends.list()
 }
 
 const slash = new SlashCommands({
@@ -1530,7 +1531,6 @@ app.whenReady().then(() => {
   tracker.on('turn-over', ({ tabId, over }: TurnOverEdge) => {
     ptyMgr.wakeReady(tabId)
     slash.turnOver(tabId, over)
-    sendToRenderer('sessions:update', allSessions())
   })
   tracker.on('status', (t: StatusEdge) => {
     ptyMgr.wakeReady(t.tabId)

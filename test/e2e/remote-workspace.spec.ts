@@ -29,6 +29,7 @@ import {
   gitInit,
   layoutOnDisk,
   menuItemTexts,
+  oneStillRunning,
   openMenu,
   openSessionTerminal,
   panelTerm,
@@ -476,7 +477,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 90_000 })
       fs.writeFileSync(path.join(machineHome(env), 'fake-claude-bg-ms'), '20000')
       await runIn(page, centerTerm(page), '/bg-reported')
-      const running = row.locator('.ws-tab-parked.bg-run', { hasText: /^↻ 1$/ })
+      const running = oneStillRunning(row)
       await expect(running).toBeVisible({ timeout: 60_000 })
       await expect(row).toHaveClass(/\bst-waiting\b/)
       await expect(running).toHaveCount(0, { timeout: 90_000 })
