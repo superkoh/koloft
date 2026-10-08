@@ -277,6 +277,45 @@ describe('WorkspaceManager: cold-row title parity with the live tracker', () => 
   })
 })
 
+describe('WorkspaceManager: which transcript writes rescan the list', () => {
+  const PAST_RESCAN_DEBOUNCE_AND_FS_EVENT_LATENCY_MS = 1000
+  const settle = (): Promise<void> =>
+    new Promise((r) => setTimeout(r, PAST_RESCAN_DEBOUNCE_AND_FS_EVENT_LATENCY_MS))
+
+  it("a line appended to a running local session's transcript rescans nothing; one appended to a stopped session's still does", async () => {
+    writeJsonl(repo, 'live')
+    writeJsonl(repo, 'cold')
+    own('live', 'cold')
+    bindings.set('live', 'tab-live')
+    mgr.start()
+    await vi.waitFor(() =>
+      expect(
+        latest(repo)
+          .rows.map((r) => r.id)
+          .sort()
+      ).toEqual(['cold', 'live'])
+    )
+    const append = (id: string): void =>
+      fs.appendFileSync(
+        path.join(projectsRoot, encodeCwd(repo), id + '.jsonl'),
+        JSON.stringify({ type: 'assistant' }) + '\n'
+      )
+
+    let before = pushed.length
+    append('cold')
+    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(before))
+    await settle()
+
+    before = pushed.length
+    append('live')
+    await settle()
+    expect(pushed.length).toBe(before)
+
+    append('cold')
+    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(before))
+  })
+})
+
 describe('WorkspaceManager: orphan worktree bucket (D2)', () => {
   // CC§4
   it('shows an owned session whose worktree was removed as a greyed row under its old name', async () => {

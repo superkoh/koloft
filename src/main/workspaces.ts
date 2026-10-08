@@ -190,6 +190,7 @@ export class WorkspaceManager {
   private headScans = new Map<string, HeadScan>()
   private headScansSeen = new Set<string>()
   private statByFile = new Map<string, { size: number; mtimeMs: number }>()
+  private knownTranscripts = new Set<string>()
 
   constructor(private deps: WorkspaceManagerDeps) {
     this.layout = deps.loadLayout()
@@ -739,6 +740,7 @@ export class WorkspaceManager {
     for (const file of this.headScans.keys()) {
       if (!this.headScansSeen.has(file)) this.headScans.delete(file)
     }
+    this.knownTranscripts = new Set(this.statByFile.keys())
     this.statByFile.clear()
 
     // CC§2
@@ -860,7 +862,11 @@ export class WorkspaceManager {
     for (const dir of wanted) {
       if (this.bucketWatchers.has(dir)) continue
       try {
-        const watcher = fs.watch(dir, () => this.scheduleRescan())
+        // PLATFORM§40
+        const watcher = fs.watch(dir, (_event, filename) => {
+          if (filename && this.isLiveLocalTranscript(path.join(dir, filename.toString()))) return
+          this.scheduleRescan()
+        })
         watcher.on('error', () => {
           watcher.close()
           this.bucketWatchers.delete(dir)
@@ -868,6 +874,12 @@ export class WorkspaceManager {
         this.bucketWatchers.set(dir, watcher)
       } catch {}
     }
+  }
+
+  private isLiveLocalTranscript(file: string): boolean {
+    if (!this.knownTranscripts.has(file)) return false
+    if (path.dirname(path.dirname(file)) !== path.resolve(this.deps.projectsRoot)) return false
+    return this.deps.runningBindings().has(path.basename(file, '.jsonl'))
   }
 
   private scope(wsPath: string): {
