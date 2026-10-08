@@ -18,6 +18,7 @@ interface Git {
 
 let git: Git | null = null
 let stepEffort: string | undefined
+let session = { version: '', account: '', home: '', effortLevel: '' }
 
 const shortstatCount = (stat: string, word: string): number =>
   Number(new RegExp(`(\\d+) ${word}`).exec(stat)?.[1] ?? 0)
@@ -40,42 +41,52 @@ const modelName = (id: string): string => {
   return `${family.charAt(0).toUpperCase()}${family.slice(1)} ${numbers}`.trim()
 }
 
-async function refreshGit($: EngineInterface): Promise<void> {
-  try {
-    const branch = await $.process.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'])
-    if (branch.exitCode !== 0) {
-      git = null
-    } else {
-      const [gitDir, unstaged, staged] = await Promise.all([
-        $.process.run(['git', 'rev-parse', '--git-dir']),
-        $.process.run(['git', 'diff', '--shortstat']),
-        $.process.run(['git', 'diff', '--cached', '--shortstat'])
-      ])
-      git = {
-        branch: branch.stdout.trim(),
-        worktree: worktreeName(gitDir.stdout.trim()),
-        added:
-          shortstatCount(unstaged.stdout, 'insertion') + shortstatCount(staged.stdout, 'insertion'),
-        removed:
-          shortstatCount(unstaged.stdout, 'deletion') + shortstatCount(staged.stdout, 'deletion')
-      }
-    }
-  } catch {
-    git = null
+async function readGit($: EngineInterface): Promise<Git | null> {
+  const [branch, gitDir, unstaged, staged] = await Promise.all([
+    $.process.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD']),
+    $.process.run(['git', 'rev-parse', '--git-dir']),
+    $.process.run(['git', 'diff', '--shortstat']),
+    $.process.run(['git', 'diff', '--cached', '--shortstat'])
+  ])
+  if (branch.exitCode !== 0) return null
+  return {
+    branch: branch.stdout.trim(),
+    worktree: worktreeName(gitDir.stdout.trim()),
+    added:
+      shortstatCount(unstaged.stdout, 'insertion') + shortstatCount(staged.stdout, 'insertion'),
+    removed: shortstatCount(unstaged.stdout, 'deletion') + shortstatCount(staged.stdout, 'deletion')
   }
+}
+
+async function refreshGit($: EngineInterface): Promise<void> {
+  const fresh = await readGit($).catch(() => null)
+  if (JSON.stringify(fresh) === JSON.stringify(git)) return
+  git = fresh
   $.ui.invalidate('ui.render')
 }
 
 export const register: Register = (on) => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
+    const [version, account, home, settings] = await Promise.all([
+      $.session.version(),
+      $.env.get('ANT_ACCOUNT'),
+      $.env.get('HOME'),
+      $.settings.read()
+    ])
+    session = {
+      version: version.version,
+      account: account ?? '',
+      home: home ?? '',
+      effortLevel: typeof settings.effortLevel === 'string' ? settings.effortLevel : ''
+    }
     await refreshGit($)
     return started
   })
 
   on('turn.step', async function* ($, e, next) {
     const effort = e.effort === undefined ? undefined : String(e.effort)
-    if (effort !== stepEffort) {
+    if (e.agentId === undefined && effort !== stepEffort) {
       stepEffort = effort
       $.ui.invalidate('ui.render')
     }
@@ -84,34 +95,30 @@ export const register: Register = (on) => {
 
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)
-    await refreshGit($)
+    if (e.agentId === undefined) await refreshGit($)
     return done
   })
 
   on('ui.render', { component: 'PromptHint' }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
-    const [usage, model, version, cwd, account, home, settings] = await Promise.all([
+    const [usage, model, cwd] = await Promise.all([
       $.session.usage(),
       $.session.model(),
-      $.session.version(),
-      $.session.cwd(),
-      $.env.get('ANT_ACCOUNT'),
-      $.env.get('HOME'),
-      $.settings.read()
+      $.session.cwd()
     ])
-    const effort =
-      stepEffort ?? (typeof settings.effortLevel === 'string' ? settings.effortLevel : '')
+    const { version, account, home, effortLevel } = session
+    const effort = stepEffort ?? effortLevel
     const percent = usage.context.percent
     const cost = usage.cost?.usd
     const rows: string[][] = [
       [
-        account ?? '',
+        account,
         percent === undefined ? '' : `${percent.toFixed(1)}%`,
         git ? `(+${git.added},-${git.removed})` : '',
         git?.branch ?? '',
         git?.worktree ?? ''
       ],
-      [version.version, modelName(model), effort, cost === undefined ? '' : `$${cost.toFixed(2)}`],
+      [version, modelName(model), effort, cost === undefined ? '' : `$${cost.toFixed(2)}`],
       [home && cwd.startsWith(home) ? `~${cwd.slice(home.length)}` : cwd]
     ].map((row) => row.filter((part) => part !== ''))
     const powerline = (parts: string[]) =>
@@ -122,13 +129,9 @@ export const register: Register = (on) => {
           <Text bold color={color.fg} backgroundColor={color.bg}>
             {` ${part} `}
           </Text>,
-          i === parts.length - 1 ? (
-            <Text color={color.bg}>{POWERLINE_ARROW}</Text>
-          ) : (
-            <Text color={color.bg} backgroundColor={after.bg}>
-              {POWERLINE_ARROW}
-            </Text>
-          )
+          <Text color={color.bg} backgroundColor={i === parts.length - 1 ? undefined : after.bg}>
+            {POWERLINE_ARROW}
+          </Text>
         ]
       })
     return (

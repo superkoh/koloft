@@ -222,6 +222,16 @@ const NOTIFICATIONS_WAITING_ON_THE_PERSON = [
 
 const ASK_WAITS_UP_TO_AN_HOUR_S = 3600
 
+export function hookCommand(
+  hookScript: string,
+  regDir: string,
+  tabId: string,
+  event: string,
+  quote: (s: string) => string = shq
+): string {
+  return `${quote(hookScript)} ${quote(regDir)} ${quote(tabId)} ${event}`
+}
+
 // CC§6 CC§14
 export function hookSettings(
   hookScript: string,
@@ -231,8 +241,7 @@ export function hookSettings(
   quote: (s: string) => string = shq,
   dialogs: 'wait-for-answer' | 'record-only' = 'wait-for-answer'
 ): Record<string, unknown> {
-  const cmd = (event: string): string =>
-    `${quote(hookScript)} ${quote(regDir)} ${quote(tabId)} ${event}`
+  const cmd = (event: string): string => hookCommand(hookScript, regDir, tabId, event, quote)
   const settings: Record<string, unknown> = {
     hooks: {
       SessionStart: [{ hooks: [{ type: 'command', command: cmd('start') }] }],
@@ -258,12 +267,7 @@ export function hookSettings(
       ]
     }
   }
-  if (statusLine) {
-    settings.statusLine = statusLine
-    ;(settings.hooks as Record<string, unknown>).PostToolUse = [
-      { matcher: 'Bash', hooks: [{ type: 'command', command: cmd('posttool') }] }
-    ]
-  }
+  if (statusLine) settings.statusLine = statusLine
   return settings
 }
 
@@ -297,8 +301,12 @@ export function writeTabHookSettings(
 ): string {
   fs.rmSync(path.join(paths.regDir, `${tabId}.status.jsonl`), { force: true })
   fs.rmSync(path.join(paths.regDir, `${tabId}.json`), { force: true })
-  const settings = hookSettings(paths.hookScript, paths.regDir, tabId)
-  if (modDrawsStatusLine) settings.statusLine = HIDES_THE_USERS_OWN_STATUS_LINE
+  const settings = hookSettings(
+    paths.hookScript,
+    paths.regDir,
+    tabId,
+    modDrawsStatusLine ? HIDES_THE_USERS_OWN_STATUS_LINE : undefined
+  )
   // CC§13
   if (allowKoloft) settings.permissions = { allow: ['Bash(koloft *)'] }
   // ADR-0029 CC§15

@@ -33,7 +33,7 @@ import {
   REMOTE_HOOK_DIR,
   tabPackageDir
 } from '../remote/paths'
-import { hookSettings, removeConductorMarker, writeConductorMarker } from '../hooks'
+import { hookCommand, hookSettings, removeConductorMarker, writeConductorMarker } from '../hooks'
 import type { StatusLineSetting } from '../statusline'
 import { loadSettings } from '../settings'
 import { keychainRead, listAccounts } from '../accounts'
@@ -905,12 +905,27 @@ export function machineHookSettings(
   const remoteStatusLine: StatusLineSetting | undefined = statusline
     ? { type: 'command', command: dq(`${machineDir}/statusline/run.sh`), padding: 0 }
     : undefined
-  return hookSettings(
-    `${machineDir}/hook.sh`,
+  const hookScript = `${machineDir}/hook.sh`
+  const settings = hookSettings(
+    hookScript,
     REMOTE_HOOK_DIR,
     tabId,
     remoteStatusLine,
     dq,
     'record-only'
   )
+  // PLATFORM§36
+  if (statusline)
+    (settings.hooks as Record<string, unknown>).PostToolUse = [
+      {
+        matcher: 'Bash',
+        hooks: [
+          {
+            type: 'command',
+            command: hookCommand(hookScript, REMOTE_HOOK_DIR, tabId, 'posttool', dq)
+          }
+        ]
+      }
+    ]
+  return settings
 }

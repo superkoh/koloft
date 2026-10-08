@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import { writeWholeBeforeVisible } from './jsonDrops'
 import { REMOTE_PATH_LINE } from './remote/install'
 import modManifest from './statuslineMod/.claude-plugin/plugin.json?raw'
 import modHooks from './statuslineMod/hooks/hooks.json?raw'
@@ -40,7 +41,7 @@ export function writeStatuslineMod(userData: string): string {
     const file = path.join(dir, rel)
     if (readOrNull(file) === text) continue
     fs.mkdirSync(path.dirname(file), { recursive: true })
-    fs.writeFileSync(file, text)
+    writeWholeBeforeVisible(file, text)
   }
   return dir
 }

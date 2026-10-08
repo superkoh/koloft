@@ -64,7 +64,12 @@ export class PtyManager extends EventEmitter {
   agentDir?: string
   multiAccountOn?: () => boolean
   statuslineMod?: () => string | undefined
-  makeHookSettings?: (tabId: string, allowKoloft: boolean, conductor: boolean) => string | undefined
+  makeHookSettings?: (
+    tabId: string,
+    allowKoloft: boolean,
+    conductor: boolean,
+    modDrawsStatusLine: boolean
+  ) => string | undefined
 
   private ptys = new Map<string, PtyHandle>()
   private readyWaiters = new Map<string, Set<() => void>>()
@@ -138,19 +143,18 @@ export class PtyManager extends EventEmitter {
     }
     if (process.env.KOLOFT_TEST_BACKGROUND !== '1') delete env.KOLOFT_KEYCHAIN_FILE
     env.KOLOFT_PID = String(process.pid)
-    const hookSettings =
-      args.util || args.kind === 'codex'
-        ? undefined
-        : this.makeHookSettings?.(
-            id,
-            args.extraEnv?.KOLOFT_AGENT_PLUGIN !== undefined,
-            args.conductor === true
-          )
-    if (hookSettings) {
-      env.KOLOFT_HOOK_SETTINGS = hookSettings
-      const statuslineMod = this.statuslineMod?.()
-      if (statuslineMod) env.KOLOFT_STATUSLINE_MOD = statuslineMod
-    }
+    const takesHooks = !args.util && args.kind !== 'codex'
+    const statuslineMod = takesHooks ? this.statuslineMod?.() : undefined
+    const hookSettings = takesHooks
+      ? this.makeHookSettings?.(
+          id,
+          args.extraEnv?.KOLOFT_AGENT_PLUGIN !== undefined,
+          args.conductor === true,
+          statuslineMod !== undefined
+        )
+      : undefined
+    if (hookSettings) env.KOLOFT_HOOK_SETTINGS = hookSettings
+    if (hookSettings && statuslineMod) env.KOLOFT_STATUSLINE_MOD = statuslineMod
     if (this.shimDir && !isWin && args.kind !== 'codex')
       env.PATH = `${this.shimDir}:${process.env.PATH ?? ''}`
     if (args.extraEnv) {

@@ -21,6 +21,7 @@ import {
   markAnswerable
 } from '../../src/main/hooks'
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/paths'
+import { machineHookSettings } from '../../src/main/backends/claude'
 
 let hookScript: string
 let regDir: string
@@ -586,15 +587,15 @@ describe('injected hook script', () => {
     })
   })
 
-  it('injects a Bash-matched PostToolUse hook only when ccstatusline rides along, never for the local mod', () => {
-    const sl = { type: 'command' as const, command: "'/x/statusline/run.sh'", padding: 0 }
-    const withSl = hookSettings(hookScript, regDir, 'tabPT1', sl)
-    const postToolUse = (
-      withSl.hooks as Record<string, { matcher: string; hooks: { command: string }[] }[]>
-    ).PostToolUse
-    expect(postToolUse).toHaveLength(1)
-    expect(postToolUse?.[0]?.matcher).toBe('Bash')
-    expect(postToolUse?.[0]?.hooks[0]?.command).toContain(' posttool')
+  it('injects a Bash-matched PostToolUse hook only when the remote ccstatusline rides along, never for the local mod', () => {
+    const machine = remoteMachineDir('m-pt')
+    const postToolUse = (s: Record<string, unknown>) =>
+      (s.hooks as Record<string, { matcher: string; hooks: { command: string }[] }[]>).PostToolUse
+    const remote = postToolUse(machineHookSettings('tabPT1', machine, true))
+    expect(remote).toHaveLength(1)
+    expect(remote?.[0]?.matcher).toBe('Bash')
+    expect(remote?.[0]?.hooks[0]?.command).toContain(' posttool')
+    expect(postToolUse(machineHookSettings('tabPT1', machine, false))).toBeUndefined()
     const withMod = JSON.parse(
       fs.readFileSync(writeTabHookSettings(setupHooks(noPeerInstance), 'tabPT2', true), 'utf8')
     )

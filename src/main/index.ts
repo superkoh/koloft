@@ -1399,8 +1399,8 @@ app.whenReady().then(() => {
   const hookPaths = setupHooks((tabId) => anotherLiveInstanceOwns(tabId, pidAlive))
   const statuslineMod = writeStatuslineMod(app.getPath('userData'))
   ptyMgr.statuslineMod = () => (loadSettings().statuslineBuiltin ? statuslineMod : undefined)
-  ptyMgr.makeHookSettings = (tabId, allowKoloft, conductor) =>
-    writeTabHookSettings(hookPaths, tabId, loadSettings().statuslineBuiltin, allowKoloft, conductor)
+  ptyMgr.makeHookSettings = (tabId, allowKoloft, conductor, modDrawsStatusLine) =>
+    writeTabHookSettings(hookPaths, tabId, modDrawsStatusLine, allowKoloft, conductor)
   answerableRegDir = hookPaths.regDir
   claudeBackend.watchLocalHooks(hookPaths.regDir)
 
