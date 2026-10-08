@@ -25,9 +25,6 @@ electronLanguages:
 
 asarUnpack:
   - '**/node_modules/node-pty/**'
-  # executed by an external bash wrapper (src/main/statusline.ts) via
-  # ELECTRON_RUN_AS_NODE — must exist as real files, not asar entries
-  - '**/node_modules/ccstatusline/**'
 
 mac:
   target:

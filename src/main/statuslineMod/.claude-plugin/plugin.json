@@ -1,0 +1,5 @@
+{
+  "name": "koloft-statusline",
+  "version": "1.0.0",
+  "description": "Koloft's status line under the prompt of every Claude Code tab."
+}

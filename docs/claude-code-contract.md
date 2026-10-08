@@ -504,8 +504,8 @@ never wrote a transcript.
 
 Evidence: binary reading, the CLI reference and two local experiments, 2026-08-07, CC
 2.1.224; render latency measured in live testing (date and CC version not recorded).
-Koloft dependents: `src/main/statusline.ts` (its wrapper script is marked `CC§6`; the
-ccstatusline side is platform ledger §36), `writeTabHookSettings` in
+Koloft dependents: `src/main/statusline.ts` (the remote wrapper script is marked
+`CC§6`; the ccstatusline side is platform ledger §36), `writeTabHookSettings` in
 `src/main/hooks.ts`, `test/e2e/statusline.spec.ts`.
 
 ## §7 Anthropic API: usage headers, auth env, model fallback
@@ -1210,3 +1210,50 @@ with `koloft`, and printed nothing for that one. The prompt asked for a Bash
   with `--dangerously-skip-permissions`, asked to write a file — the file was not
   written and the transcript held `PreToolUse:<tool> hook error`.
 - Not run: a `Task` subagent's own tool calls under the hook.
+
+## §16 Function-hook mods: what one can draw, and from which version
+
+How established: 2026-10-08, real `claude` binaries on this Mac (2.1.294 and 2.1.292
+from the native install, 2.1.287 / 2.1.286 / 2.1.285 / 2.1.283 / 2.1.280 from
+`npm pack @anthropic-ai/claude-code-darwin-arm64@<v>`), each driven in a 140×40 pty
+with a temporary `HOME` (onboarding and folder trust pre-accepted, not logged in), a
+`settings.json` there whose `statusLine` command printed a marker, and
+`--plugin-dir <folder>` holding a probe mod. The raw pty output was read byte by byte
+and replayed through `pyte` to get the final screen. The mod API's own declarations
+(`claude-code.d.ts`, written by 2.1.294) call it "EARLY ACCESS: this surface may change
+between releases without notice".
+
+- **`--plugin-dir` loads a function-hook mod with no question asked**, in an
+  interactive session.
+- **2.1.286 is the first version that runs one.** 2.1.285, 2.1.283 and 2.1.280 start
+  normally and ignore the mod without a word: no hook runs, nothing is drawn.
+- **`$.ui.status(text)` is one plain line**, drawn in claude's own amber, prefixed
+  `⚠ <plugin name>:`. An ESC byte and a `\n` in the text each come out as U+FFFD, so
+  it carries no colour and no second row.
+- **A `ui.render` hook on `PromptHint` that returns its own tree is drawn under the
+  prompt**, where a `statusLine` row sits: several rows, truecolor `backgroundColor`
+  and `bold` kept. Claude's permission-mode pill (`⏵⏵ auto mode on ·`) still leads
+  the first row, rows after the first start about 20 columns in, and the hint text
+  claude would have drawn there (`e.props.hint`, which carries its "PR status" and
+  shortcut hints) is gone unless the tree draws it. The hook runs again when the
+  hint changes and after `$.ui.invalidate('ui.render')`.
+- **A `turn.step` hook (an `async function*` passing `yield* next(e)`) sees the
+  effort of each model request**, as `e.effort`; it ran even when the request then
+  failed for want of a login.
+- **A `statusLine` and a mod's drawing both show**: the command's row first, then the
+  mod's. A `--settings` file with `statusLine.command: "true"` over a user's own
+  `statusLine` leaves no row and no blank line.
+- **A render hook may read** `$.session.usage()`, `.model()`, `.version()`, `.cwd()`,
+  `$.env.get(...)` and `$.settings.read()` while drawing. Before the first answer
+  `usage().context` holds only `window` (no `percent`). `$.env.get('ANT_ACCOUNT')`
+  returns the value claude was launched with.
+- **`$.process.run(['git', …])` runs in the session's working directory.**
+- **A live session reloads the mod on any write into its `--plugin-dir` folder, even
+  one that leaves the text the same**: `session.start` ran again about a second after
+  each write, and the transcript showed `<plugin>: reloaded (1 hook: session.start)`.
+- Not run: a logged-in session (context percent, cost after a real turn, the hint
+  while a turn runs), a remote machine, two mods hooking `PromptHint` at once.
+
+Koloft dependents: `src/main/statusline.ts` (`writeStatuslineMod`,
+`HIDES_THE_USERS_OWN_STATUS_LINE`), `src/main/statuslineMod/`, the shim's
+`KOLOFT_STATUSLINE_MOD` line in `src/main/shim.ts`.

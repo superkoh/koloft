@@ -20,6 +20,7 @@
     "vitest.config.ts",
     "playwright.config.ts",
     "src/renderer/src/global.d.ts",
+    "src/main/rawImports.d.ts",
     "src/renderer/src/markdown/shims.d.ts"
   ]
 }

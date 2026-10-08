@@ -62,6 +62,7 @@ function writeCallLog(effCwd) {
         firstPrompt,
         ts: Date.now(),
         oauthToken: process.env.CLAUDE_CODE_OAUTH_TOKEN || null,
+        account: process.env.ANT_ACCOUNT || null,
         apiKey: process.env.ANTHROPIC_API_KEY || null,
         cdpEndpoint: process.env.KOLOFT_BROWSER_CDP || null,
         playwrightMcpEndpoint: process.env.PLAYWRIGHT_MCP_CDP_ENDPOINT || null,

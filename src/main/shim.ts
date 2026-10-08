@@ -224,6 +224,8 @@ pre=()
 [ -n "$KOLOFT_HOOK_SETTINGS" ] && pre=(--settings "$KOLOFT_HOOK_SETTINGS")
 # CC§13
 [ -n "$KOLOFT_AGENT_PLUGIN" ] && pre+=(--plugin-dir "$KOLOFT_AGENT_PLUGIN")
+# CC§16
+[ -n "$KOLOFT_STATUSLINE_MOD" ] && pre+=(--plugin-dir "$KOLOFT_STATUSLINE_MOD")
 
 ${NEWID_FN}
 

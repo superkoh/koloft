@@ -118,9 +118,10 @@ export function AppearancePane(): JSX.Element {
         <div className="set-lab">
           <b>Built-in Claude statusline</b>
           <small>
-            Renders Koloft&rsquo;s bundled <code>ccstatusline</code> under the prompt of every
-            Claude session started in a tab, overriding your own <code>statusLine</code> setting for
-            that session. Applies to newly started sessions; off leaves your own settings in charge.
+            Draws Koloft&rsquo;s status line under the prompt of every Claude session started in a
+            tab, hiding your own <code>statusLine</code> setting for that session. Needs Claude Code
+            2.1.286 or newer. Applies to newly started sessions; off leaves your own settings in
+            charge.
           </small>
         </div>
         <Switch

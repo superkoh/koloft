@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import type { StatusLineSetting } from './statusline'
+import { HIDES_THE_USERS_OWN_STATUS_LINE, type StatusLineSetting } from './statusline'
 import { shq } from '@shared/shellQuote'
 import { CONDUCTOR_GATE_SCRIPT, conductorGateCommand } from './conductorGate'
 
@@ -291,13 +291,14 @@ export function markAnswerable(regDir: string, tabId: string, on: boolean): void
 export function writeTabHookSettings(
   paths: HookPaths,
   tabId: string,
-  statusLine?: StatusLineSetting,
+  modDrawsStatusLine = false,
   allowKoloft = false,
   conductor = false
 ): string {
   fs.rmSync(path.join(paths.regDir, `${tabId}.status.jsonl`), { force: true })
   fs.rmSync(path.join(paths.regDir, `${tabId}.json`), { force: true })
-  const settings = hookSettings(paths.hookScript, paths.regDir, tabId, statusLine)
+  const settings = hookSettings(paths.hookScript, paths.regDir, tabId)
+  if (modDrawsStatusLine) settings.statusLine = HIDES_THE_USERS_OWN_STATUS_LINE
   // CC§13
   if (allowKoloft) settings.permissions = { allow: ['Bash(koloft *)'] }
   // ADR-0029 CC§15

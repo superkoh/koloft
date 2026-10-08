@@ -1,9 +1,9 @@
-import { app } from 'electron'
-import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
-import { shq } from '@shared/shellQuote'
 import { REMOTE_PATH_LINE } from './remote/install'
+import modManifest from './statuslineMod/.claude-plugin/plugin.json?raw'
+import modHooks from './statuslineMod/hooks/hooks.json?raw'
+import modRegister from './statuslineMod/hooks/register.tsx?raw'
 
 // CC§6
 export interface StatusLineSetting {
@@ -12,9 +12,37 @@ export interface StatusLineSetting {
   padding: number
 }
 
-export interface StatuslinePaths {
-  wrapper: string
-  config: string
+// CC§16
+export const HIDES_THE_USERS_OWN_STATUS_LINE: StatusLineSetting = {
+  type: 'command',
+  command: 'true',
+  padding: 0
+}
+
+const STATUSLINE_MOD_FILES: Record<string, string> = {
+  '.claude-plugin/plugin.json': modManifest,
+  'hooks/hooks.json': modHooks,
+  'hooks/register.tsx': modRegister
+}
+
+function readOrNull(file: string): string | null {
+  try {
+    return fs.readFileSync(file, 'utf8')
+  } catch {
+    return null
+  }
+}
+
+// CC§16 ADR-0004
+export function writeStatuslineMod(userData: string): string {
+  const dir = path.join(userData, 'statusline-mod')
+  for (const [rel, text] of Object.entries(STATUSLINE_MOD_FILES)) {
+    const file = path.join(dir, rel)
+    if (readOrNull(file) === text) continue
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(file, text)
+  }
+  return dir
 }
 
 // CC§6
@@ -80,9 +108,8 @@ export const DEFAULT_THEME = {
   }
 }
 
-// PLATFORM§4
 export function bundlePath(): string {
-  const raw = path.resolve(
+  return path.resolve(
     __dirname,
     '..',
     '..',
@@ -91,108 +118,25 @@ export function bundlePath(): string {
     'dist',
     'ccstatusline.js'
   )
-  return app.isPackaged
-    ? raw.replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`)
-    : raw
 }
 
-// ADR-0004
-function perInstallWrapperName(): string {
-  return `run-${crypto.createHash('sha256').update(process.execPath).digest('hex').slice(0, 10)}.sh`
-}
-
-const EXEC_MARKER = '# koloft-exec: '
-
-interface WrapperParts {
-  head: string
-  node: string
-  bundle: string
-  config: string
-  cacheDir: string
-}
-
-function wrapperScript(p: WrapperParts): string {
+export function remoteWrapperScript(): string {
   return `#!/usr/bin/env bash
-${p.head}
+${REMOTE_PATH_LINE}
+D="$(cd "$(dirname "$0")" && pwd)"
+node="$HOME/.koloft/node/bin/node"
+[ -x "$node" ] || node="$(command -v node 2>/dev/null)"
+[ -n "$node" ] || exit 0
 # PLATFORM§36
-export NODE_COMPILE_CACHE=${p.cacheDir}
+export NODE_COMPILE_CACHE="$HOME/.koloft/vcache"
 # CC§6 PLATFORM§36
 [ -n "$COLUMNS" ] && export CCSTATUSLINE_WIDTH="$COLUMNS"
 # CC§6 PLATFORM§2 PLATFORM§36
-${p.node} ${p.bundle} --config ${p.config} <&0 &
+"$node" "$D/ccstatusline.js" --config "$D/theme.json" <&0 &
 pid=$!
 ( sleep 10; kill "$pid" 2>/dev/null ) >/dev/null 2>&1 & wd=$!
 wait "$pid"; rc=$?
 kill "$wd" 2>/dev/null
 exit $rc
 `
-}
-
-function localWrapperScript(config: string, cacheDir: string): string {
-  return wrapperScript({
-    head: `${EXEC_MARKER}${process.execPath}\nexport ELECTRON_RUN_AS_NODE=1`,
-    node: shq(process.execPath),
-    bundle: shq(bundlePath()),
-    config: shq(config),
-    cacheDir: shq(cacheDir)
-  })
-}
-
-export function remoteWrapperScript(): string {
-  return wrapperScript({
-    head: `${REMOTE_PATH_LINE}
-D="$(cd "$(dirname "$0")" && pwd)"
-node="$HOME/.koloft/node/bin/node"
-[ -x "$node" ] || node="$(command -v node 2>/dev/null)"
-[ -n "$node" ] || exit 0`,
-    node: '"$node"',
-    bundle: '"$D/ccstatusline.js"',
-    config: '"$D/theme.json"',
-    cacheDir: '"$HOME/.koloft/vcache"'
-  })
-}
-
-// ADR-0004
-function pruneDeadWrappers(dir: string, keep: string): void {
-  let names: string[]
-  try {
-    names = fs.readdirSync(dir)
-  } catch {
-    return
-  }
-  for (const name of names) {
-    if (name === keep || !/^run-[0-9a-f]+\.sh$/.test(name)) continue
-    const full = path.join(dir, name)
-    try {
-      const marker = fs
-        .readFileSync(full, 'utf8')
-        .split('\n')
-        .find((l) => l.startsWith(EXEC_MARKER))
-      if (marker && !fs.existsSync(marker.slice(EXEC_MARKER.length))) {
-        fs.rmSync(full, { force: true })
-      }
-    } catch {}
-  }
-}
-
-export function setupStatusline(): StatuslinePaths {
-  const dir = path.join(app.getPath('userData'), 'statusline')
-  const cacheDir = path.join(dir, 'vcache')
-  fs.mkdirSync(cacheDir, { recursive: true })
-
-  const config = path.join(dir, 'settings.json')
-  fs.writeFileSync(config, JSON.stringify(DEFAULT_THEME, null, 2))
-
-  const name = perInstallWrapperName()
-  const wrapper = path.join(dir, name)
-  fs.writeFileSync(wrapper, localWrapperScript(config, cacheDir), { mode: 0o755 })
-  fs.chmodSync(wrapper, 0o755)
-  pruneDeadWrappers(dir, name)
-
-  return { wrapper, config }
-}
-
-// CC§6
-export function statusLineSetting(paths: StatuslinePaths): StatusLineSetting {
-  return { type: 'command', command: shq(paths.wrapper), padding: 0 }
 }

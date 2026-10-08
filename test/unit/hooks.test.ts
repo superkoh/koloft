@@ -586,18 +586,19 @@ describe('injected hook script', () => {
     })
   })
 
-  it('injects a Bash-matched PostToolUse hook only when the statusline rides along', () => {
+  it('injects a Bash-matched PostToolUse hook only when ccstatusline rides along, never for the local mod', () => {
     const sl = { type: 'command' as const, command: "'/x/statusline/run.sh'", padding: 0 }
-    const withSl = JSON.parse(
-      fs.readFileSync(writeTabHookSettings(setupHooks(noPeerInstance), 'tabPT1', sl), 'utf8')
+    const withSl = hookSettings(hookScript, regDir, 'tabPT1', sl)
+    const postToolUse = (
+      withSl.hooks as Record<string, { matcher: string; hooks: { command: string }[] }[]>
+    ).PostToolUse
+    expect(postToolUse).toHaveLength(1)
+    expect(postToolUse?.[0]?.matcher).toBe('Bash')
+    expect(postToolUse?.[0]?.hooks[0]?.command).toContain(' posttool')
+    const withMod = JSON.parse(
+      fs.readFileSync(writeTabHookSettings(setupHooks(noPeerInstance), 'tabPT2', true), 'utf8')
     )
-    expect(withSl.hooks.PostToolUse).toHaveLength(1)
-    expect(withSl.hooks.PostToolUse[0].matcher).toBe('Bash')
-    expect(withSl.hooks.PostToolUse[0].hooks[0].command).toContain(' posttool')
-    const without = JSON.parse(
-      fs.readFileSync(writeTabHookSettings(setupHooks(noPeerInstance), 'tabPT2'), 'utf8')
-    )
-    expect(without.hooks).not.toHaveProperty('PostToolUse')
+    expect(withMod.hooks).not.toHaveProperty('PostToolUse')
   })
 
   // CC§8
@@ -613,11 +614,13 @@ describe('injected hook script', () => {
     }
   })
 
-  it('carries a statusLine next to the hooks when the built-in statusline is on', () => {
-    const sl = { type: 'command' as const, command: "'/x/statusline/run.sh'", padding: 0 }
-    const file = writeTabHookSettings(setupHooks(noPeerInstance), 'tabSL', sl)
+  // CC§16
+  it('hides the user’s own statusLine behind one that prints nothing when the mod draws the status line', () => {
+    const file = writeTabHookSettings(setupHooks(noPeerInstance), 'tabSL', true)
     const settings = JSON.parse(fs.readFileSync(file, 'utf8'))
-    expect(settings.statusLine).toEqual(sl)
+    const run = spawnSync('/bin/sh', ['-c', settings.statusLine.command], { encoding: 'utf8' })
+    expect(run.status).toBe(0)
+    expect(run.stdout).toBe('')
     expect(settings.hooks.SessionStart).toBeTruthy()
   })
 

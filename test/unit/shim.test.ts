@@ -237,6 +237,23 @@ describe('claude shim (registration — unchanged behavior)', () => {
     expect(runShim([], { ...plugin, CLAUDECODE: '1' }).realArgs).toEqual([])
   })
 
+  // CC§16
+  it('hands claude the statusline mod beside the skill plugin on the tab’s own launches, but not on -p', () => {
+    const both = {
+      KOLOFT_AGENT_PLUGIN: '/koloft/agent-plugin',
+      KOLOFT_STATUSLINE_MOD: '/koloft/statusline-mod'
+    }
+    for (const args of [[], ['--resume', 'abcdef01-2345-4678-8abc-def012345678']]) {
+      const dirs = runShim(args, both)
+        .realArgs!.map((a, i, all) => (all[i - 1] === '--plugin-dir' ? a : null))
+        .filter(Boolean)
+      expect(dirs, args.join(' ')).toEqual(['/koloft/agent-plugin', '/koloft/statusline-mod'])
+    }
+    expect(
+      runShim(['-p', 'hello'], { KOLOFT_STATUSLINE_MOD: '/koloft/statusline-mod' }).realArgs
+    ).toEqual(['-p', 'hello'])
+  })
+
   it('subcommands (mcp) are passed through untouched', () => {
     const { reg, realArgs } = runShim(['mcp', 'list'])
     expect(reg).toBeNull()

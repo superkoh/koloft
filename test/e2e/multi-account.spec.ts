@@ -19,7 +19,6 @@ const UNPACKAGED_BUILD_APIKEY_SVC_SPELLED_OUT_NOT_IMPORTED = 'koloft-dev-anthrop
 const UNPACKAGED_BUILD_CUSTOM_SVC_SPELLED_OUT_NOT_IMPORTED = 'koloft-dev-custom-endpoint'
 
 const LET_THE_FIRST_SESSION_EXIT_MS = 800
-const COLD_STATUSLINE_RENDER_MS = 40_000
 const ROOM_FOR_A_WRONG_REFETCH_MS = 1_000
 
 function seedKeychain(env: E2EEnv): void {
@@ -119,6 +118,7 @@ interface CallRecord {
   argv: string[]
   sessionId: string
   oauthToken: string | null
+  account: string | null
   apiKey: string | null
 }
 
@@ -317,10 +317,10 @@ test('E3: picks the least-loaded account; the shim banner says so', async ({ env
   }
 })
 
-test('E12: the picked account reaches the embedded statusline’s account segment — the shim re-exports it, since ptyManager strips the old wrapper tag', async ({
+// CC§16
+test('E12: the picked account reaches the statusline mod as ANT_ACCOUNT — the shim re-exports it, since ptyManager strips the old tag', async ({
   env
 }) => {
-  test.setTimeout(120_000)
   const mock = await startProbeMock()
   mock.script.set(TOKENS.alpha, { u5: 0.9 })
   mock.script.set(TOKENS.bravo, { u5: 0.1 })
@@ -333,20 +333,7 @@ test('E12: the picked account reaches the embedded statusline’s account segmen
     await startSessionIn(page, 'ws-a')
     const [call] = await waitForCalls(env, 1)
     expect(call.oauthToken).toBe(TOKENS.bravo)
-
-    const out = path.join(env.home, 'fake-claude-statusline.out')
-    await expect
-      .poll(
-        () => {
-          try {
-            return fs.readFileSync(out, 'utf8')
-          } catch {
-            return ''
-          }
-        },
-        { timeout: COLD_STATUSLINE_RENDER_MS }
-      )
-      .toContain('bravo')
+    expect(call.account).toContain('bravo')
   } finally {
     await app.close().catch(() => {})
     await mock.close()

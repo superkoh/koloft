@@ -63,6 +63,7 @@ export class PtyManager extends EventEmitter {
   cdpDir?: string
   agentDir?: string
   multiAccountOn?: () => boolean
+  statuslineMod?: () => string | undefined
   makeHookSettings?: (tabId: string, allowKoloft: boolean, conductor: boolean) => string | undefined
 
   private ptys = new Map<string, PtyHandle>()
@@ -117,6 +118,7 @@ export class PtyManager extends EventEmitter {
         key === 'KOLOFT_CDP_DIR' ||
         key === 'KOLOFT_AGENT_DIR' ||
         key === 'KOLOFT_AGENT_PLUGIN' ||
+        key === 'KOLOFT_STATUSLINE_MOD' ||
         key === 'ANT_ACCOUNT' ||
         (BROWSER_TAB_ENV as readonly string[]).includes(key)
       ) {
@@ -144,7 +146,11 @@ export class PtyManager extends EventEmitter {
             args.extraEnv?.KOLOFT_AGENT_PLUGIN !== undefined,
             args.conductor === true
           )
-    if (hookSettings) env.KOLOFT_HOOK_SETTINGS = hookSettings
+    if (hookSettings) {
+      env.KOLOFT_HOOK_SETTINGS = hookSettings
+      const statuslineMod = this.statuslineMod?.()
+      if (statuslineMod) env.KOLOFT_STATUSLINE_MOD = statuslineMod
+    }
     if (this.shimDir && !isWin && args.kind !== 'codex')
       env.PATH = `${this.shimDir}:${process.env.PATH ?? ''}`
     if (args.extraEnv) {

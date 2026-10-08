@@ -78,13 +78,7 @@ import { machinePackageBase, mirrorHookDir, mirrorProjectsRoot } from './remote/
 import { RemoteSync } from './remote/sync'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
 import { readJsonDrop, watchJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
-import {
-  bundlePath,
-  DEFAULT_THEME,
-  remoteWrapperScript,
-  setupStatusline,
-  statusLineSetting
-} from './statusline'
+import { bundlePath, DEFAULT_THEME, remoteWrapperScript, writeStatuslineMod } from './statusline'
 import {
   setFindAvailable,
   setKeepAwakeChecked,
@@ -1403,15 +1397,10 @@ app.whenReady().then(() => {
   setRelayEnabled(loadSettings().browserControl, ptyTabIds())
 
   const hookPaths = setupHooks((tabId) => anotherLiveInstanceOwns(tabId, pidAlive))
-  const statusline = setupStatusline()
+  const statuslineMod = writeStatuslineMod(app.getPath('userData'))
+  ptyMgr.statuslineMod = () => (loadSettings().statuslineBuiltin ? statuslineMod : undefined)
   ptyMgr.makeHookSettings = (tabId, allowKoloft, conductor) =>
-    writeTabHookSettings(
-      hookPaths,
-      tabId,
-      loadSettings().statuslineBuiltin ? statusLineSetting(statusline) : undefined,
-      allowKoloft,
-      conductor
-    )
+    writeTabHookSettings(hookPaths, tabId, loadSettings().statuslineBuiltin, allowKoloft, conductor)
   answerableRegDir = hookPaths.regDir
   claudeBackend.watchLocalHooks(hookPaths.regDir)
 
