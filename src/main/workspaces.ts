@@ -191,6 +191,7 @@ export class WorkspaceManager {
   private headScansSeen = new Set<string>()
   private statByFile = new Map<string, { size: number; mtimeMs: number }>()
   private knownTranscripts = new Set<string>()
+  private lastAdditionalKey = ''
 
   constructor(private deps: WorkspaceManagerDeps) {
     this.layout = deps.loadLayout()
@@ -262,6 +263,19 @@ export class WorkspaceManager {
 
   onRemoteChanged(): void {
     this.scheduleRescan()
+  }
+
+  onAdditionalSessionsChanged(): void {
+    const key = this.additionalKey()
+    if (key === this.lastAdditionalKey) return
+    this.lastAdditionalKey = key
+    this.scheduleRescan()
+  }
+
+  private additionalKey(): string {
+    const rows = this.layout.workspaces.map((w) => this.deps.additionalRows?.(w.path) ?? [])
+    const members = [...(this.deps.additionalMembers?.() ?? [])].sort()
+    return JSON.stringify([rows, members])
   }
 
   bucketDirOf(sessionId: string): string | undefined {
@@ -859,12 +873,15 @@ export class WorkspaceManager {
         this.bucketWatchers.delete(dir)
       }
     }
+    const localRoot = path.resolve(this.deps.projectsRoot)
     for (const dir of wanted) {
       if (this.bucketWatchers.has(dir)) continue
+      const local = path.dirname(dir) === localRoot
       try {
         // PLATFORM§40
         const watcher = fs.watch(dir, (_event, filename) => {
-          if (filename && this.isLiveLocalTranscript(path.join(dir, filename.toString()))) return
+          if (local && filename && this.isLiveTranscript(path.join(dir, filename.toString())))
+            return
           this.scheduleRescan()
         })
         watcher.on('error', () => {
@@ -876,9 +893,8 @@ export class WorkspaceManager {
     }
   }
 
-  private isLiveLocalTranscript(file: string): boolean {
+  private isLiveTranscript(file: string): boolean {
     if (!this.knownTranscripts.has(file)) return false
-    if (path.dirname(path.dirname(file)) !== path.resolve(this.deps.projectsRoot)) return false
     return this.deps.runningBindings().has(path.basename(file, '.jsonl'))
   }
 

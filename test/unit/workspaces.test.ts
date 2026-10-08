@@ -301,18 +301,57 @@ describe('WorkspaceManager: which transcript writes rescan the list', () => {
         JSON.stringify({ type: 'assistant' }) + '\n'
       )
 
-    let before = pushed.length
-    append('cold')
-    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(before))
     await settle()
 
-    before = pushed.length
+    const before = pushed.length
     append('live')
     await settle()
     expect(pushed.length).toBe(before)
 
     append('cold')
     await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(before))
+  })
+
+  it('a Codex change that leaves every Codex row as it was rescans nothing; one that changes a row does', async () => {
+    const codexRow = {
+      id: 'codex:local:t1',
+      title: 'Codex task',
+      cwd: repo,
+      worktree: 'main',
+      running: true,
+      invalidCwd: false,
+      mtime: 1
+    }
+    mgr.dispose()
+    mgr = new WorkspaceManager({
+      projectsRoot,
+      remoteProjectsRoot: () => projectsRoot,
+      loadLayout: () => layout,
+      saveLayout: (l) => {
+        layout = l
+      },
+      projectInfo: projectInfoFor,
+      runningBindings: () => bindings,
+      killTab: () => {},
+      pushRows: (p) => pushed.push(p),
+      additionalRows: (ws) => (ws === repo ? [{ ...codexRow }] : []),
+      additionalMembers: () => new Set([codexRow.id])
+    })
+    mgr.start()
+    await mgr.firstScan
+    mgr.onAdditionalSessionsChanged()
+    await settle()
+
+    const before = pushed.length
+    mgr.onAdditionalSessionsChanged()
+    await settle()
+    expect(pushed.length).toBe(before)
+
+    codexRow.title = 'Codex task, renamed'
+    mgr.onAdditionalSessionsChanged()
+    await vi.waitFor(() =>
+      expect(latest(repo).rows.find((r) => r.id === codexRow.id)?.title).toBe('Codex task, renamed')
+    )
   })
 })
 
