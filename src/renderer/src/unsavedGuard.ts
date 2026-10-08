@@ -101,17 +101,14 @@ export function labelPaths(tabs: DirtyTab[]): string[] {
 }
 
 const waitingToAsk: { ownerTabId: string; title: string }[] = []
-let watchingPrompts = false
+let stopWatchingPrompts: (() => void) | null = null
 
 export function askAboutLeftEdits(tab: { id: string; title: string; cwd: string }): void {
   if (dirtyIn(tab.id).length === 0) return
   const session = useStore.getState().sessions.find((s) => s.tabId === tab.id)
   closedRoots.set(tab.id, session?.treeRoot ?? tab.cwd)
   waitingToAsk.push({ ownerTabId: tab.id, title: session?.title || tab.title })
-  if (!watchingPrompts) {
-    watchingPrompts = true
-    useStore.subscribe(askNextLeft)
-  }
+  stopWatchingPrompts ??= useStore.subscribe(askNextLeft)
   askNextLeft()
 }
 
@@ -120,7 +117,11 @@ function askNextLeft(): void {
     const st = useStore.getState()
     if (st.unsavedPrompt || st.closeConfirm) return
     const next = waitingToAsk.shift()
-    if (!next) return
+    if (!next) {
+      stopWatchingPrompts?.()
+      stopWatchingPrompts = null
+      return
+    }
     const dirty = dirtyIn(next.ownerTabId)
     if (dirty.length === 0) continue
     const files = dirty.map(bareLabel)
