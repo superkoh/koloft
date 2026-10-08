@@ -464,6 +464,28 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
   })
 
   // CC§5
+  test('E-RW-28: a remote turn that ends while its reported background work still runs shows green with ↻ until the work drains', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      expect(await addRemoteWorkspace(page, env)).toEqual({ code: 'added', path: remoteKey(env) })
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 90_000 })
+      fs.writeFileSync(path.join(machineHome(env), 'fake-claude-bg-ms'), '20000')
+      await runIn(page, centerTerm(page), '/bg-reported')
+      const running = row.locator('.ws-tab-parked.bg-run', { hasText: /^↻ 1$/ })
+      await expect(running).toBeVisible({ timeout: 60_000 })
+      await expect(row).toHaveClass(/\bst-waiting\b/)
+      await expect(running).toHaveCount(0, { timeout: 90_000 })
+      await expect(row).toHaveClass(/\bst-waiting\b/)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('E-RW-27: when Claude Code moves a remote conversation to a new session id (a phantom start, then continued-in), the tab follows it: one live row, bound to the new id, and ⌘W still ends its tmux session on the machine', async ({
     env
   }) => {

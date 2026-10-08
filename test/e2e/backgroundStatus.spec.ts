@@ -77,17 +77,30 @@ async function dumpState(page: Page, steps: Step[], info: TestInfo, home: string
   })
 }
 
-async function expectStillWorkingThroughTheFixtures5sBackgroundWindow(page: Page): Promise<void> {
+const greenWithRunningMarker = (page: Page) =>
+  page.locator('.ws-tab.st-waiting .ws-tab-parked.bg-run', { hasText: /^↻ 1$/ })
+
+async function expectGreenAndRunningThroughTheFixtures5sBackgroundWindow(
+  page: Page
+): Promise<void> {
   for (let i = 0; i < 3; i++) {
     await page.waitForTimeout(700)
-    await expect(page.locator('.ws-tab.st-waiting')).toHaveCount(0)
+    await expect(page.locator('.ws-tab.st-working')).toHaveCount(0)
     expect(await pendingAttention(page)).toHaveLength(0)
-    await expect(page.locator('.ws-tab.st-working')).toBeVisible()
+    await expect(greenWithRunningMarker(page)).toBeVisible()
   }
 }
 
-test.describe('background work (subagents, shells, CC-reported tasks) holds the status dot at working until it drains', () => {
-  test('background subagent work holds the dot at working, with no turn-done attention, until it drains', async ({
+async function expectDrainedThenTurnDone(page: Page, timeout: number): Promise<void> {
+  await expect(page.locator('.ws-tab .ws-tab-parked')).toHaveCount(0, { timeout })
+  await expect(page.locator('.ws-tab.st-waiting')).toBeVisible()
+  await expect
+    .poll(() => pendingAttention(page), { timeout: 10_000 })
+    .toMatchObject([{ kind: 'turn-done' }])
+}
+
+test.describe('background work (subagents, shells, CC-reported tasks) after the turn ends: the lamp is green with a ↻ marker, and turn-done waits until it drains', () => {
+  test('background subagent work shows green with ↻, with no turn-done attention, until it drains', async ({
     page,
     env
   }) => {
@@ -105,32 +118,26 @@ test.describe('background work (subagents, shells, CC-reported tasks) holds the 
     stamp(steps, 'attention consumed')
 
     await runIn(page, centerTerm(page), '/bg-work')
-    await expect(page.locator('.ws-tab.st-working')).toBeVisible({ timeout: 15_000 })
-    stamp(steps, 'working dot up')
+    await expect(greenWithRunningMarker(page)).toBeVisible({ timeout: 15_000 })
+    stamp(steps, 'running marker up')
 
-    await expectStillWorkingThroughTheFixtures5sBackgroundWindow(page)
+    await expectGreenAndRunningThroughTheFixtures5sBackgroundWindow(page)
 
     stamp(steps, 'sampling done')
     try {
-      await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({
-        timeout: DRAIN_MAY_LAND_ON_THE_26S_BACKSTOP_MS
-      })
-      stamp(steps, 'drained, dot rested')
+      await expectDrainedThenTurnDone(page, DRAIN_MAY_LAND_ON_THE_26S_BACKSTOP_MS)
+      stamp(steps, 'drained, turn-done pending')
     } catch (e) {
-      stamp(steps, 'GAVE UP waiting for the dot to rest')
+      stamp(steps, 'GAVE UP waiting for the work to drain')
       await dumpState(page, steps, test.info(), env.home)
       throw e
     }
-    await expect
-      .poll(() => pendingAttention(page), { timeout: 10_000 })
-      .toMatchObject([{ kind: 'turn-done' }])
-    stamp(steps, 'turn-done pending')
     if (steps[steps.length - 1].at - steps[0].at > SLOW_GREEN_RUN_WORTH_A_DUMP_MS) {
       await dumpState(page, steps, test.info(), env.home)
     }
   })
 
-  test('a background shell the model is parked on holds the dot at working through the spawn-ack ledger alone, with nothing written to disk', async ({
+  test('a background shell the model is parked on shows green with ↻ through the spawn-ack ledger alone, with nothing written to disk', async ({
     page
   }) => {
     test.setTimeout(120_000)
@@ -142,18 +149,15 @@ test.describe('background work (subagents, shells, CC-reported tasks) holds the 
     await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
 
     await runIn(page, centerTerm(page), '/bg-shell')
-    await expect(page.locator('.ws-tab.st-working')).toBeVisible({ timeout: 15_000 })
+    await expect(greenWithRunningMarker(page)).toBeVisible({ timeout: 15_000 })
 
-    await expectStillWorkingThroughTheFixtures5sBackgroundWindow(page)
+    await expectGreenAndRunningThroughTheFixtures5sBackgroundWindow(page)
 
-    await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 30_000 })
-    await expect
-      .poll(() => pendingAttention(page), { timeout: 10_000 })
-      .toMatchObject([{ kind: 'turn-done' }])
+    await expectDrainedThenTurnDone(page, 30_000)
   })
 
   // CC§8
-  test('a turn-end whose Stop payload reports its own live background_tasks holds the dot, with no ack on disk', async ({
+  test('a turn-end whose Stop payload reports its own live background_tasks shows green with ↻ naming the task, with no ack on disk', async ({
     page
   }) => {
     test.setTimeout(120_000)
@@ -165,14 +169,17 @@ test.describe('background work (subagents, shells, CC-reported tasks) holds the 
     await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
 
     await runIn(page, centerTerm(page), '/bg-reported')
-    await expect(page.locator('.ws-tab.st-working')).toBeVisible({ timeout: 15_000 })
+    await expect(greenWithRunningMarker(page)).toBeVisible({ timeout: 15_000 })
+    await greenWithRunningMarker(page).click()
+    const card = page.locator('.tbu-pop.parked')
+    await expect(card).toContainText('Turn done · still running')
+    await expect(card).toContainText('agent · subagent · working')
+    await page.keyboard.press('Escape')
+    await expect(card).toHaveCount(0)
 
-    await expectStillWorkingThroughTheFixtures5sBackgroundWindow(page)
+    await expectGreenAndRunningThroughTheFixtures5sBackgroundWindow(page)
 
-    await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 30_000 })
-    await expect
-      .poll(() => pendingAttention(page), { timeout: 10_000 })
-      .toMatchObject([{ kind: 'turn-done' }])
+    await expectDrainedThenTurnDone(page, 30_000)
   })
 
   // CC§8

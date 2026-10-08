@@ -136,7 +136,7 @@ export function ConductorsIsland(): JSX.Element | null {
                   key={b.id}
                   className={
                     'ws-tab ' +
-                    rowStateClass(!!tabId, sess?.status, !!tabId && !sess) +
+                    rowStateClass(!!tabId, sess?.status, !!tabId && !sess, sess?.turnOver) +
                     (tabId && tabId === activeTabId ? ' active' : '')
                   }
                   data-tab-id={tabId}

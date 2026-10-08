@@ -208,7 +208,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
   })
 
   // CC§8
-  test('D-CMD-5: a slash command is typed into a session at once when its turn is over, though background work it left running keeps it shown as working', async ({
+  test('D-CMD-5: a slash command is typed into a session at once when its turn is over, though background work it left running still shows ↻ on its row', async ({
     env
   }) => {
     seedConductor(env)
@@ -227,14 +227,14 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
       )
       await page.evaluate((id) => window.api.terminal.write(id, '/bg-reported\r'), tab)
       await expect.poll(() => terminalText(page, tab)).toContain('bg-reported running')
-      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-working/)
+      await expect(wsRows(page, 'ws-a').locator('.ws-tab-parked.bg-run')).toBeVisible()
 
       fake.interact(OWNER, 'run', { command: '/context', session: child })
       await expect
         .poll(() => ran(fake), { timeout: 30_000 })
         .toEqual([expect.stringMatching(/ran \/context:\n## Context Usage/)])
       expect(await terminalText(page, tab)).not.toContain('bg-reported finished')
-      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-working/)
+      await expect(wsRows(page, 'ws-a').locator('.ws-tab-parked.bg-run')).toBeVisible()
     } finally {
       await quitAndClose(app)
       await fake.close()

@@ -54,6 +54,12 @@ function num(x: unknown): number {
 }
 
 const BG_PROMOTED = '\x00promoted'
+const UNLISTED_BACKGROUND_WORK: BackgroundItem = {
+  id: 'unlisted',
+  kind: 'command',
+  label: 'background work',
+  state: 'working'
+}
 
 // CC§8
 export function parseReportedTasks(bgl: unknown): ReportedTask[] | undefined {
@@ -712,7 +718,7 @@ export class SessionTracker extends SessionRuntime {
       await this.refreshProcs(t, true)
       if (this.tracked.get(tabId) !== t || t.statusSeq !== seq) return
     }
-    const busy = t.reported ? this.judgeReported(t) : this.bgBusy(t)
+    const busy = this.judgeHold(t)
     if (!busy) t.bgTasks.clear()
     this.applyStatus(t, 'ended', busy)
   }
@@ -741,11 +747,22 @@ export class SessionTracker extends SessionRuntime {
       this.emit('turn-ended', { tabId: t.info.tabId, turn: { ...turn, said: [...turn.said] } })
   }
 
-  private judgeReported(t: Tracked): boolean {
+  private judgeHold(t: Tracked): boolean {
+    if (t.reported) return this.judgeReported(t)
+    const busy = this.bgBusy(t)
+    this.setBackgroundItems(t, busy ? [UNLISTED_BACKGROUND_WORK] : [])
+    return busy
+  }
+
+  private judgeReported(t: Tracked, holding = true): boolean {
     const now = Date.now()
     const list = t.reported ?? []
     const procs = t.procs
     const parked: BackgroundItem[] = []
+    const running: BackgroundItem[] = []
+    const run = (task: ReportedTask, kind: BackgroundItem['kind'], label: string): void => {
+      running.push({ id: task.id, kind, label, state: 'working' })
+    }
     let observed = false
     let trusted = false
     const reportedIds = new Set(list.map((x) => x.id))
@@ -760,10 +777,14 @@ export class SessionTracker extends SessionRuntime {
           parked.push({ id: task.id, kind: 'monitor', label, state: 'waiting' })
         } else if (!procs) {
           trusted = true
+          run(task, 'command', label)
         } else {
           const sh = procs.shells.get(task.id)
           if (!sh) {
-            if ((task.since ?? 0) > t.procsAt) observed = true
+            if ((task.since ?? 0) > t.procsAt) {
+              observed = true
+              run(task, 'command', label)
+            }
             continue
           }
           if (sh.listening && t.shellCpu.get(task.id)?.quiet) {
@@ -774,13 +795,21 @@ export class SessionTracker extends SessionRuntime {
               state: 'waiting',
               ageMs: Math.floor(sh.ageMs / 60_000) * 60_000
             })
-          } else observed = true
+          } else {
+            observed = true
+            run(task, 'command', label)
+          }
         }
       } else if (AGENT_TYPES.has(task.type)) {
-        if (agentsFresh || toolCallInFlight) observed = true
+        if (agentsFresh || toolCallInFlight) {
+          observed = true
+          run(task, 'agent', t.taskCmds.get(task.id) ?? task.type)
+        }
       } else if (task.type === 'teammate') {
-        if (teammatesFresh || toolCallInFlight) observed = true
-        else idleTeammates++
+        if (teammatesFresh || toolCallInFlight) {
+          observed = true
+          run(task, 'agent', 'teammate')
+        } else idleTeammates++
       }
     }
     if (idleTeammates)
@@ -790,13 +819,12 @@ export class SessionTracker extends SessionRuntime {
         label: `${idleTeammates} idle`,
         state: 'waiting'
       })
-    this.setParked(t, parked)
-    if (observed) return true
-    if (!trusted) return false
-    return this.quietMs(t) < BG_SILENCE_MAX_MS
+    const busy = observed || (trusted && this.quietMs(t) < BG_SILENCE_MAX_MS)
+    this.setBackgroundItems(t, busy && holding ? [...running, ...parked] : parked)
+    return busy
   }
 
-  private setParked(t: Tracked, items: BackgroundItem[]): void {
+  private setBackgroundItems(t: Tracked, items: BackgroundItem[]): void {
     if (this.tracked.get(t.info.tabId) !== t || !this.setBackground(t.info.tabId, items)) return
     t.info.background = items.length ? items : undefined
     t.info.updatedAt = Date.now()
@@ -901,7 +929,7 @@ export class SessionTracker extends SessionRuntime {
     if (file && file !== t.info.jsonlPath) this.bind(t, file)
     if (source !== 'compact') {
       t.reported = null
-      this.setParked(t, [])
+      this.setBackgroundItems(t, [])
       this.setStatus(tabId, 'waiting')
     }
   }
@@ -1283,10 +1311,10 @@ export class SessionTracker extends SessionRuntime {
       return
     }
     if (!this.isHeldByBackground(t.info.tabId)) {
-      if (t.reported && s !== 'working' && s !== 'approval') this.judgeReported(t)
+      if (t.reported && s !== 'working' && s !== 'approval') this.judgeReported(t, false)
       return
     }
-    const busy = t.reported ? this.judgeReported(t) : this.bgBusy(t)
+    const busy = this.judgeHold(t)
     if (!busy) {
       if (Date.now() - t.lastMainActivityTs < STOP_HOLD_MS) return
       t.bgTasks.clear()
@@ -1335,7 +1363,7 @@ export class SessionTracker extends SessionRuntime {
       await this.refreshProcs(t, true)
       if (this.tracked.get(tabId) !== t || this.statusSince(tabId) > t.lastInterruptTs) return
     }
-    const busy = t.reported ? this.judgeReported(t) : this.bgBusy(t)
+    const busy = this.judgeHold(t)
     if (!busy) t.bgTasks.clear()
     this.applyStatus(t, 'ended', busy)
   }
@@ -1580,11 +1608,17 @@ export class SessionTracker extends SessionRuntime {
               t.openTools.delete(t.openTools.keys().next().value as string)
             t.openTools.set(b.id, { name: b.name, input: b.input ?? {} })
           }
-          if ((b.name === 'Bash' || b.name === 'Monitor') && typeof b.input?.command === 'string') {
+          const label =
+            b.name === 'Bash' || b.name === 'Monitor'
+              ? b.input?.command
+              : b.name === 'Agent'
+                ? b.input?.description
+                : undefined
+          if (typeof label === 'string') {
             if (t.toolCmds.size >= UNACKED_TOOL_CMD_CAP)
               t.toolCmds.delete(t.toolCmds.keys().next().value as string)
-            t.toolCmds.set(b.id, b.input.command.replace(/\s+/g, ' ').trim().slice(0, 120))
-            if (b.name === 'Bash' && liveNow && BASH_WRITES.test(b.input.command)) {
+            t.toolCmds.set(b.id, label.replace(/\s+/g, ' ').trim().slice(0, 120))
+            if (b.name === 'Bash' && liveNow && BASH_WRITES.test(label)) {
               t.info.liveWrites = (t.info.liveWrites ?? 0) + 1
             }
           }

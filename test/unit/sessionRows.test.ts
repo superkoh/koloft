@@ -102,6 +102,11 @@ describe('rowStateClass (C2 lightbar)', () => {
     expect(rowStateClass(true, undefined)).toBe('st-idle')
   })
 
+  it('a session still working only in the background after its turn ended reads green, like a finished turn', () => {
+    expect(rowStateClass(true, 'working', false, true)).toBe('st-waiting')
+    expect(rowStateClass(true, 'approval', false, true)).toBe('st-approval')
+  })
+
   it('cold rows carry no bar class — just cold', () => {
     expect(rowStateClass(false, undefined)).toBe('cold')
     expect(rowStateClass(false, 'working')).toBe('cold')
@@ -436,6 +441,18 @@ describe('session background activity', () => {
     expect(badge.lines).toEqual(['command · npm run build · state unknown'])
     expect(badge.hint).toContain('may still be running')
     expect(badge.lines.join(' ')).not.toMatch(/idle|server/)
+  })
+
+  it('work still running after the turn ended is headed "Turn done · still running" and marks the badge running', () => {
+    const badge = sessionActivityBadge({
+      backendId: 'claude',
+      turnOver: true,
+      background: [{ id: 'b1', kind: 'command', label: 'npm test', state: 'working' }]
+    })!
+    expect(badge.heading).toBe('Turn done · still running')
+    expect(badge.text).toBe('↻ 1')
+    expect(badge.running).toBe(true)
+    expect(badge.hint).toContain('you can type')
   })
 
   it('reports agents and commands with their distinct states', () => {

@@ -800,7 +800,7 @@ export function WorkspaceSidebar({
               const sess = tabId ? sessions.find((s) => s.tabId === tabId) : undefined
               const stateCls = statusUnavailable(sess)
                 ? ''
-                : rowStateClass(row.running, sess?.status, row.pending)
+                : rowStateClass(row.running, sess?.status, row.pending, sess?.turnOver)
               const badge = sessionActivityBadge(sess, leftovers[row.id])
               const launching = resumeLaunch?.id === row.id
               const active = launching || (!resumeLaunch && !!tabId && tabId === activeTabId)
@@ -876,7 +876,7 @@ export function WorkspaceSidebar({
                       )}
                       {badge && (
                         <button
-                          className="ws-tab-parked"
+                          className={'ws-tab-parked' + (badge.running ? ' bg-run' : '')}
                           title={badge.lines.join('\n')}
                           aria-label={badge.heading}
                           onClick={(e) => {
