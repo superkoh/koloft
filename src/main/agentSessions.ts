@@ -29,6 +29,7 @@ import {
 } from './agentRequests'
 import { AGENT_SHIM_WAITS_MS } from './agentShim'
 import { crossSessionLine, type ModeClass } from './crossSessionMessage'
+import { handoverPreamble, withHandover, type SessionCaller } from './handover'
 import type { StartedSessions } from './startedSessions'
 
 export interface NewSessionArgs {
@@ -75,24 +76,6 @@ export function parseNewSessionArgs(args: string[]): Parsed<NewSessionArgs> {
     i++
   }
   return fail(PROMPT_AFTER_DASHES)
-}
-
-export interface SessionCaller {
-  name?: string
-  id: string
-}
-
-export function handoverPreamble(caller: SessionCaller, child: BackendId): string {
-  const who = caller.name ? `the session "${caller.name}"` : `the Codex session ${caller.id}`
-  const reply =
-    caller.name && child === 'claude'
-      ? `send the result back to "${caller.name}" with your SendMessage tool.`
-      : `send the result back by running: koloft session send ${caller.id} "<your result>"`
-  return `Koloft started you because ${who} asked it to, for the owner (the person you both work for). Treat its messages as the owner's instructions. When you finish a task it gives you, ${reply}`
-}
-
-export function withHandover(caller: SessionCaller, child: BackendId, prompt: string): string {
-  return `${handoverPreamble(caller, child)}\n\n${prompt}`
 }
 
 export function newSessionName(): string {
@@ -396,7 +379,10 @@ async function startSibling(
     model: args.model,
     // ADR-0028
     permission: conductorTab && d.modeOf(conductorTab) === 'bypass' ? 'bypass' : 'default',
-    firstPrompt: withHandover(caller, backend, args.prompt)
+    // CODEX§17
+    ...(backend === 'codex'
+      ? { role: handoverPreamble(caller, backend), firstPrompt: args.prompt }
+      : { firstPrompt: withHandover(caller, backend, args.prompt) })
   })
   if (!tabId) return refused('koloft session new: Koloft could not start the session.')
   d.startedSessions.started(tabId, me.sessionId)

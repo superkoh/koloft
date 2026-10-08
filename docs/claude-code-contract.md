@@ -779,6 +779,12 @@ other bullets of §9 were not re-measured on this build.
   lists the session under that title (an unnamed session shows an auto summary there
   instead). Help text: `-n, --name <name>  Set a display name for this session (shown
   in the prompt box, /resume picker, and terminal title)`.
+- **A session started with `--name` never gets an `ai-title`.** A sweep on 2026-10-07 of
+  every main transcript then on disk (CC 2.1.263 to 2.1.293): of the 127 whose first
+  record is the `custom-title` that `--name` writes, 0 carried an `ai-title`; of the 311
+  that start without one, 84 did. So the only words naming such a session, besides its
+  `--name`, are its first prompt. That `--name` itself is what stops the title, rather
+  than something else Koloft's named launches share, is inferred, not checked.
 - **Spawn to SessionStart is well under a second on this machine**: 0.250 / 0.272 /
   0.293 / 0.265 / 0.381 s over six launches with the user's real MCP config loaded (no
   `--strict-mcp-config`), 0.429 s through Koloft's own shim with the account balancer

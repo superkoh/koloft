@@ -21,6 +21,7 @@ import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './to
 import type { LaunchedSession } from './accountPicker'
 import type { MachineTmp } from './remote/install'
 import { claudeWroteIt, commandOutputOf } from './claudeCommandOutput'
+import { withoutHandover } from './handover'
 
 export const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects')
 const TMP_ROOT = ((): string => {
@@ -291,7 +292,7 @@ export function classifyUserPrompt(text: string): {
   ) {
     return { genuine: false, title: null, commandArgs: null, commandName: null }
   } else {
-    candidate = text
+    candidate = withoutHandover(text)
   }
   const genuine = candidate.trim().length > 0
   const stripped = candidate.replace(IMAGE_PLACEHOLDER, '')
