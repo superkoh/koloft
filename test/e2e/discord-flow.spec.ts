@@ -212,6 +212,13 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
         .poll(() => openerNow(fake, CHANNEL, opener))
         .toMatch(/^✅ \*\*.+\*\* · turn done <t:\d+:R>/)
       expect(fake.edits.every((e) => e.flags! & SILENT_FLAG)).toBe(true)
+      await type('/bg-reported')
+      await expect
+        .poll(() => openerNow(fake, CHANNEL, opener))
+        .toMatch(/^✅ \*\*.+\*\* · turn done <t:\d+:R> · work still running\n/)
+      await expect
+        .poll(() => openerNow(fake, CHANNEL, opener), { timeout: 30_000 })
+        .toMatch(/^✅ \*\*.+\*\* · turn done <t:\d+:R>\n/)
 
       fake.say(
         OWNER,

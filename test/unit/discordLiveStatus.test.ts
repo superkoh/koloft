@@ -13,6 +13,7 @@ const WS = '/Users/me/koloft'
 function setup() {
   const status = new Map<string, SessionStatus>()
   const asking = new Set<string>()
+  const over = new Set<string>()
   const unknown = new Set<string>()
   const openers = new Map<string, { channelId: string; threadId: string }>()
   const conductorChannels = new Map<string, string>()
@@ -39,6 +40,7 @@ function setup() {
       names.has(tabId) ? { name: names.get(tabId)!, backend: 'claude', workspace: WS } : undefined,
     status: (tabId) => status.get(tabId),
     awaitsInput: (tabId) => asking.has(tabId),
+    turnOver: (tabId) => over.has(tabId),
     unknown: (tabId) => unknown.has(tabId),
     alive: (tabId) => !gone.has(tabId)
   })
@@ -57,6 +59,7 @@ function setup() {
     live,
     status,
     asking,
+    over,
     unknown,
     openers,
     conductorChannels,
@@ -79,15 +82,16 @@ afterEach(() => {
 })
 
 describe('a session’s Discord opener card follows its sidebar light', () => {
-  it('each light has its own state: a question or approval is "needs you", a turn that ended is "done", a long rest is "idle", and a Codex session Koloft cannot read is "unknown"', () => {
-    expect(liveStateOf('working', false, false)).toBe('working')
-    expect(liveStateOf('approval', false, false)).toBe('needs-you')
-    expect(liveStateOf('waiting', true, false)).toBe('needs-you')
-    expect(liveStateOf('idle', true, false)).toBe('needs-you')
-    expect(liveStateOf('waiting', false, false)).toBe('turn-done')
-    expect(liveStateOf('idle', false, false)).toBe('idle')
-    expect(liveStateOf('working', false, true)).toBe('unknown')
-    expect(liveStateOf(undefined, false, false)).toBeUndefined()
+  it('each light has its own state: a question or approval is "needs you", a turn that ended is "done" — "still running" while its background work goes on — a long rest is "idle", and a Codex session Koloft cannot read is "unknown"', () => {
+    expect(liveStateOf('working', false, false, false)).toBe('working')
+    expect(liveStateOf('working', false, true, false)).toBe('still-running')
+    expect(liveStateOf('approval', false, false, false)).toBe('needs-you')
+    expect(liveStateOf('waiting', true, true, false)).toBe('needs-you')
+    expect(liveStateOf('idle', true, true, false)).toBe('needs-you')
+    expect(liveStateOf('waiting', false, true, false)).toBe('turn-done')
+    expect(liveStateOf('idle', false, true, false)).toBe('idle')
+    expect(liveStateOf('working', false, false, true)).toBe('unknown')
+    expect(liveStateOf(undefined, false, false, false)).toBeUndefined()
   })
 
   it('the card names the session, says its state with the moment it began as a Discord timestamp that counts up by itself, keeps where it runs, and never rings', () => {
@@ -122,21 +126,27 @@ describe('a session’s Discord opener card follows its sidebar light', () => {
     ])
   })
 
-  it('a change that shows nothing new sends no edit, and an idle session keeps the moment its turn ended', async () => {
+  it('a change that shows nothing new sends no edit, and a turn whose work still runs, then drains, then rests keeps the moment the turn ended', async () => {
     vi.useFakeTimers({ now: 1_000_000, toFake: ['Date'] })
     const t = setup()
     t.withThread('t1', 'a', '101')
+    t.status.set('t1', 'working')
+    t.over.add('t1')
+    await t.live.refresh('t1')
+    await t.live.refresh('t1')
+    vi.setSystemTime(1_060_000)
     t.status.set('t1', 'waiting')
     await t.live.refresh('t1')
-    await t.live.refresh('t1')
-    vi.setSystemTime(1_240_000)
+    vi.setSystemTime(1_300_000)
     t.status.set('t1', 'idle')
     await t.live.refresh('t1')
     await settled()
     expect(headers(t.edits)).toEqual([
+      '✅ **a** · turn done <t:1000:R> · work still running',
       '✅ **a** · turn done <t:1000:R>',
       '💤 **a** · idle, done <t:1000:R>'
     ])
+    expect(t.typed).toEqual(['101'])
   })
 
   it('while an edit is on its way, only the newest state follows it, and one the card already shows is skipped', async () => {

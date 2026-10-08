@@ -1542,6 +1542,7 @@ app.whenReady().then(() => {
   tracker.on('turn-over', ({ tabId, over }: TurnOverEdge) => {
     ptyMgr.wakeReady(tabId)
     slash.turnOver(tabId, over)
+    void discordLive?.refresh(tabId)
   })
   tracker.on('status', (t: StatusEdge) => {
     ptyMgr.wakeReady(t.tabId)
@@ -1764,6 +1765,7 @@ app.whenReady().then(() => {
     },
     status: (tabId) => tracker.statusOf(tabId),
     awaitsInput: (tabId) => tracker.awaitsInput(tabId),
+    turnOver: (tabId) => tracker.turnOver(tabId),
     unknown: (tabId) => statusUnavailable(sessionOfTab(tabId)),
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive
   })

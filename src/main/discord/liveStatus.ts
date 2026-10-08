@@ -3,7 +3,11 @@ import type { Card } from './cards'
 import type { DiscordLink } from './link'
 import { whereOf, type ThreadSubject } from './threads'
 
-export type LiveState = 'working' | 'needs-you' | 'turn-done' | 'idle' | 'closed' | 'unknown'
+export type LiveState =
+  'working' | 'still-running' | 'needs-you' | 'turn-done' | 'idle' | 'closed' | 'unknown'
+
+const TURN_OVER: ReadonlySet<LiveState> = new Set(['still-running', 'turn-done', 'idle'])
+const TYPES_WHILE: ReadonlySet<LiveState> = new Set(['working', 'still-running'])
 
 export type StatusSubject = Pick<ThreadSubject, 'name' | 'backend' | 'workspace'>
 
@@ -14,6 +18,7 @@ export interface LiveStatusDeps {
   subject(tabId: string): Promise<StatusSubject | undefined>
   status(tabId: string): SessionStatus | undefined
   awaitsInput(tabId: string): boolean
+  turnOver(tabId: string): boolean
   unknown(tabId: string): boolean
   alive(tabId: string): boolean
 }
@@ -21,8 +26,14 @@ export interface LiveStatusDeps {
 // PLATFORM§39
 export const TYPING_RENEWED_EVERY_MS = 8000
 
-const LOOK: Record<LiveState, { emoji: string; words: string; accent: number }> = {
+const LOOK: Record<LiveState, { emoji: string; words: string; accent: number; after?: string }> = {
   working: { emoji: '🔄', words: 'working, started', accent: 0xec9670 },
+  'still-running': {
+    emoji: '✅',
+    words: 'turn done',
+    accent: 0x8fc69a,
+    after: ' · work still running'
+  },
   'needs-you': { emoji: '❓', words: 'needs you, asked', accent: 0xf0a830 },
   'turn-done': { emoji: '✅', words: 'turn done', accent: 0x8fc69a },
   idle: { emoji: '💤', words: 'idle, done', accent: 0x5d7a63 },
@@ -33,12 +44,14 @@ const LOOK: Record<LiveState, { emoji: string; words: string; accent: number }> 
 export function liveStateOf(
   status: SessionStatus | undefined,
   awaitsInput: boolean,
+  turnOver: boolean,
   unknown: boolean
 ): LiveState | undefined {
   if (unknown) return 'unknown'
   if (status === 'approval' || ((status === 'waiting' || status === 'idle') && awaitsInput))
     return 'needs-you'
   if (status === 'waiting') return 'turn-done'
+  if (status === 'working' && turnOver) return 'still-running'
   return status
 }
 
@@ -47,7 +60,7 @@ export function statusCard(s: StatusSubject, state: LiveState, since: number): C
   const when = state === 'unknown' ? '' : ` <t:${Math.floor(since / 1000)}:R>`
   return {
     accent: look.accent,
-    header: `${look.emoji} **${s.name}** · ${look.words}${when}`,
+    header: `${look.emoji} **${s.name}** · ${look.words}${when}${look.after ?? ''}`,
     body: whereOf(s),
     silent: true
   }
@@ -90,10 +103,11 @@ export class LiveStatus {
     const state = liveStateOf(
       this.d.status(tabId),
       this.d.awaitsInput(tabId),
+      this.d.turnOver(tabId),
       this.d.unknown(tabId)
     )
     if (state) this.enter(entry, state)
-    this.typeWhile(tabId, state === 'working')
+    this.typeWhile(tabId, !!state && TYPES_WHILE.has(state))
     this.show(tabId, entry)
   }
 
@@ -129,8 +143,8 @@ export class LiveStatus {
 
   private enter(entry: TabEntry, state: LiveState): void {
     if (entry.state === state) return
-    const stillDone = state === 'idle' && entry.state === 'turn-done'
-    if (!stillDone) entry.since = Date.now()
+    const sameTurnEnd = !!entry.state && TURN_OVER.has(entry.state) && TURN_OVER.has(state)
+    if (!sameTurnEnd) entry.since = Date.now()
     entry.state = state
   }
 
