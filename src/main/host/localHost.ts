@@ -61,8 +61,8 @@ async function launchClaude(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {
     launchCommand: () => launchCommand,
     // CC§9
     extraEnv:
-      spec.firstPrompt !== undefined
-        ? { KOLOFT_FIRST_PROMPT: spec.firstPrompt, KOLOFT_SESSION_NAME: spec.name ?? '' }
+      spec.firstPrompt !== undefined || spec.name
+        ? { KOLOFT_FIRST_PROMPT: spec.firstPrompt ?? '', KOLOFT_SESSION_NAME: spec.name ?? '' }
         : undefined
   }
 }

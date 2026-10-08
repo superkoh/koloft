@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
@@ -10,17 +10,30 @@ let encodeCwd: typeof import('../../src/main/sessionTracker').encodeCwd
 let scratchpadDirFor: typeof import('../../src/main/sessionTracker').scratchpadDirFor
 let tasksDirFor: typeof import('../../src/main/sessionTracker').tasksDirFor
 let classifyUserPrompt: typeof import('../../src/main/sessionTracker').classifyUserPrompt
+let transcriptTurns: typeof import('../../src/main/sessionTracker').transcriptTurns
+let lastTurnsOfLines: typeof import('../../src/main/sessionTracker').lastTurnsOfLines
+let TRANSCRIPT_TAIL_FIRST_READ_BYTES: number
 let home: string
 let projectsRoot: string
 const RELOCATE_SETTLE_STRETCHED_PAST_THE_500MS_FILE_POLL_MS = '2000'
+const TURN_TEXT_WAIT_SHORTENED_MS = 1500
 
 beforeAll(async () => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-tracker-home-'))
   process.env.HOME = home
   process.env.KOLOFT_RELOCATE_SETTLE_MS = RELOCATE_SETTLE_STRETCHED_PAST_THE_500MS_FILE_POLL_MS
+  process.env.KOLOFT_TURN_TEXT_WAIT_MS = String(TURN_TEXT_WAIT_SHORTENED_MS)
   projectsRoot = path.join(home, '.claude', 'projects')
-  ;({ SessionTracker, encodeCwd, scratchpadDirFor, tasksDirFor, classifyUserPrompt } =
-    await import('../../src/main/sessionTracker'))
+  ;({
+    SessionTracker,
+    encodeCwd,
+    scratchpadDirFor,
+    tasksDirFor,
+    classifyUserPrompt,
+    transcriptTurns,
+    lastTurnsOfLines,
+    TRANSCRIPT_TAIL_FIRST_READ_BYTES
+  } = await import('../../src/main/sessionTracker'))
 })
 
 afterAll(() => {
@@ -107,6 +120,33 @@ function repoWithWorktree(name: string): { repo: string; wt: string } {
 }
 
 const SID = '11111111-1111-4111-8111-111111111111'
+
+describe('SessionTracker — touched files never block the main process', () => {
+  it('lists a file the session read under its real path without a blocking stat or realpath of it', async () => {
+    const cwd = makeWorkspace({ 'seen.md': '# seen\n' })
+    const real = fs.realpathSync(path.join(cwd, 'seen.md'))
+    const blockingStat = vi.spyOn(fs, 'statSync')
+    const blockingReal = vi.spyOn(fs, 'realpathSync')
+    const tracker = newTracker()
+    tracker.track('tabNB', cwd)
+    const file = writeJsonl(cwd, SID, [
+      {
+        type: 'assistant',
+        message: { content: [{ type: 'tool_use', name: 'Read', input: { file_path: 'seen.md' } }] },
+        cwd
+      }
+    ])
+    tracker.bindSession('tabNB', file, SID, cwd)
+    const s = await waitFor(tracker, (x) => x.tabId === 'tabNB' && x.files.length === 1)
+    const touchedSeen = [...blockingStat.mock.calls, ...blockingReal.mock.calls]
+      .map((c) => String(c[0]))
+      .filter((p) => p.endsWith('seen.md'))
+    blockingStat.mockRestore()
+    blockingReal.mockRestore()
+    expect(s.files[0].src).toBe(real)
+    expect(touchedSeen).toEqual([])
+  })
+})
 
 describe('SessionTracker — file extraction from tool_use', () => {
   it('tags writes vs reads, sums line deltas, tracks last-touched/last-written, and counts only live writes, shell writes to a real file included', async () => {
@@ -1495,6 +1535,16 @@ describe('SessionTracker.launchedSessions — which account each running launch 
       { tabId: 'tabLS1', account: 'koh', status: undefined }
     ])
   })
+
+  it('a remote pick held under its launch key moves to its tab and counts once', () => {
+    const tracker = newTracker()
+    tracker.setPickedAccount('launch-sid1', 'koh')
+    tracker.track('tabLS3', '/w', { host: 'devbox', projectsRoot: '/mirror', tmuxName: 'k-sid1' })
+    tracker.movePick('launch-sid1', 'tabLS3')
+    expect(tracker.launchedSessions()).toEqual([
+      { tabId: 'tabLS3', account: 'koh', status: undefined }
+    ])
+  })
 })
 
 describe('SessionTracker.transcriptExists — the pre-kill disk truth ⇧⌘R asks before it kills anything', () => {
@@ -1701,5 +1751,245 @@ describe("a tab whose claude runs on another machine: its transcript lives in a 
       })
     ])
     expect(s.lastWritten).toBe('/home/koh/api/docs/plan.md')
+  })
+})
+
+// CC§2 CC§13
+describe('SessionTracker — what each turn said: the owner, another session, and the reply', () => {
+  const at = (s: number): string => new Date(Date.UTC(2026, 9, 3, 4, 29, s)).toISOString()
+  const human = (text: string, s: number): unknown => ({
+    type: 'user',
+    origin: { kind: 'human' },
+    isSidechain: false,
+    timestamp: at(s),
+    message: { role: 'user', content: text }
+  })
+  const said = (block: unknown, s: number, over: object = {}): unknown => ({
+    type: 'assistant',
+    isSidechain: false,
+    timestamp: at(s),
+    message: { role: 'assistant', content: [block] },
+    ...over
+  })
+  const text = (t: string): unknown => ({ type: 'text', text: t })
+  const bash = { type: 'tool_use', id: 'toolu_1', name: 'Bash', input: { command: 'sleep 15' } }
+  const toolResult = (s: number): unknown => ({
+    type: 'user',
+    isSidechain: false,
+    timestamp: at(s),
+    message: { role: 'user', content: [{ tool_use_id: 'toolu_1', type: 'tool_result' }] }
+  })
+  const queued = (prompt: string, kind: string, s: number): unknown => ({
+    type: 'attachment',
+    isSidechain: false,
+    timestamp: at(s),
+    attachment: { type: 'queued_command', prompt, commandMode: 'prompt', origin: { kind } }
+  })
+  const transcript = [
+    human('Run exactly this bash command: sleep 15; echo DONE1', 1),
+    said({ type: 'thinking' }, 2),
+    said(text('Running it.'), 3),
+    said(bash, 4),
+    { type: 'queue-operation', operation: 'enqueue', content: 'say the word KIWI' },
+    toolResult(5),
+    queued('say the word KIWI', 'human', 6),
+    said(text('DONE1\n\nKIWI'), 7),
+    { type: 'system', subtype: 'stop_hook_summary', timestamp: at(8) },
+    {
+      type: 'user',
+      isMeta: true,
+      origin: { kind: 'peer', from: 'unknown', verifiedPeerPid: 66273 },
+      timestamp: at(10),
+      message: {
+        role: 'user',
+        content:
+          'Another Claude session sent a message:\nsay the word LYCHEE\n\nThis came from another Claude session — not typed by your user, but very likely working on their behalf.'
+      }
+    },
+    said(text('LYCHEE'), 11),
+    said(text('a subagent talking'), 12, { isSidechain: true }),
+    human('Run exactly this bash command: sleep 15; echo DONE2', 13),
+    said(bash, 14),
+    queued('say the word LYCHEE2', 'peer', 15),
+    toolResult(16),
+    {
+      type: 'user',
+      origin: { kind: 'task-notification' },
+      timestamp: at(17),
+      message: { role: 'user', content: '<task-notification><status>completed</status>' }
+    },
+    { type: 'user', isMeta: true, timestamp: at(18), message: { content: 'a caveat' } },
+    human('[Request interrupted by user]', 19),
+    said(text('Done. Command executed and returned DONE2.\n\nLYCHEE2'), 20)
+  ]
+
+  it('reads a transcript: a prompt typed while idle opens a turn, one typed or sent while busy joins it, and every text block of the reply is kept', async () => {
+    const cwd = makeWorkspace({})
+    const file = writeJsonl(cwd, '22222222-2222-4222-8222-222222222222', transcript)
+    const turns = await transcriptTurns(file, 20)
+    expect(
+      turns.map(({ said, reply }) => ({ said: said.map((l) => [l.who, l.text]), reply }))
+    ).toEqual([
+      {
+        said: [
+          ['owner', 'Run exactly this bash command: sleep 15; echo DONE1'],
+          ['owner', 'say the word KIWI']
+        ],
+        reply: 'Running it.\n\nDONE1\n\nKIWI'
+      },
+      { said: [['peer', 'say the word LYCHEE']], reply: 'LYCHEE' },
+      {
+        said: [
+          ['owner', 'Run exactly this bash command: sleep 15; echo DONE2'],
+          ['peer', 'say the word LYCHEE2']
+        ],
+        reply: 'Done. Command executed and returned DONE2.\n\nLYCHEE2'
+      }
+    ])
+    expect((await transcriptTurns(file, 1)).map((t) => t.said[0].text)).toEqual([
+      'Run exactly this bash command: sleep 15; echo DONE2'
+    ])
+  })
+
+  // CC§2
+  it('the "/compact" line Claude writes for a compaction is not something the owner said', async () => {
+    const cwd = makeWorkspace({})
+    const file = writeJsonl(cwd, '66666666-6666-4666-8666-666666666666', [
+      { type: 'user', timestamp: at(1), message: { role: 'user', content: '/compact' } },
+      human('what changed?', 2),
+      said(text('Nothing yet.'), 3)
+    ])
+    const turns = await transcriptTurns(file, 20)
+    expect(turns.map((t) => t.said.map((l) => l.text))).toEqual([['what changed?']])
+  })
+
+  it('reading only the end of a large transcript gives the same last 1 to 20 turns as reading all of it, also when the read starts in the middle of a turn or of a character', async () => {
+    const pad = (bytes: number): string => '界'.repeat(Math.ceil(bytes / 3))
+    const lines: unknown[] = []
+    let s = 0
+    const TURNS = 45
+    for (let turn = 0; turn < TURNS; turn++) {
+      const last = turn === TURNS - 1
+      lines.push(human(`question ${turn} ${pad(100)}`, ++s))
+      if (turn % 4 === 1) lines.push(human(`and also ${turn}`, ++s))
+      const steps = last ? 3 : 1 + (turn % 5)
+      for (let step = 0; step < steps; step++) {
+        const bytes = last ? TRANSCRIPT_TAIL_FIRST_READ_BYTES * 2 : 7000 + turn * 1300
+        lines.push(said({ ...bash, input: { command: pad(bytes) } }, ++s))
+        lines.push(toolResult(++s))
+        if (step === 1) lines.push(queued(`while busy ${turn}`, turn % 2 ? 'peer' : 'human', ++s))
+        lines.push(said(text(`step ${step} of ${turn} ${pad(50)}`), ++s))
+      }
+    }
+    const cwd = makeWorkspace({})
+    const file = writeJsonl(cwd, '55555555-5555-4555-8555-555555555555', lines)
+    expect(fs.statSync(file).size).toBeGreaterThan(TRANSCRIPT_TAIL_FIRST_READ_BYTES * 16)
+    const whole = fs.readFileSync(file, 'utf8').split('\n')
+    for (let n = 1; n <= 20; n++)
+      expect(await transcriptTurns(file, n)).toEqual(lastTurnsOfLines(whole, n).turns)
+  })
+
+  it('a peer message wrapped in the cross-session envelope reads as its plain body, whether it arrived idle or busy', async () => {
+    const wrapped =
+      '<cross-session-message from-mode="bypass">\nsay the word LYCHEE7\n</cross-session-message>'
+    const cwd = makeWorkspace({})
+    const file = writeJsonl(cwd, '44444444-4444-4444-8444-444444444444', [
+      {
+        type: 'user',
+        isMeta: true,
+        origin: { kind: 'peer', from: 'unknown', verifiedPeerPid: 10917 },
+        timestamp: at(1),
+        message: {
+          role: 'user',
+          content: `Another Claude session sent a message:\n${wrapped}\n\nThis came from another Claude session — not typed by your user.`
+        }
+      },
+      said(text('LYCHEE7'), 2),
+      human('Run exactly this bash command: sleep 15', 3),
+      said(bash, 4),
+      queued(wrapped, 'peer', 5),
+      toolResult(6),
+      said(text('done'), 7)
+    ])
+    expect((await transcriptTurns(file, 2)).map((t) => t.said.map((l) => [l.who, l.text]))).toEqual(
+      [
+        [['peer', 'say the word LYCHEE7']],
+        [
+          ['owner', 'Run exactly this bash command: sleep 15'],
+          ['peer', 'say the word LYCHEE7']
+        ]
+      ]
+    )
+  })
+
+  it('a Stop that comes before the reply is on disk waits for it, ends the turn once, and the live log keeps the history read at bind', async () => {
+    const cwd = makeWorkspace({})
+    const tracker = newTracker()
+    const ended: { tabId: string; turn: { said: { text: string }[]; reply: string } }[] = []
+    tracker.on('turn-ended', (e) => ended.push(e))
+    tracker.track('tabTurn', cwd)
+    const sid = '33333333-3333-4333-8333-333333333333'
+    const file = writeJsonl(cwd, sid, [
+      human('earlier question', 1),
+      said(text('earlier answer'), 2)
+    ])
+    tracker.bindSession('tabTurn', file, sid, cwd)
+    await waitFor(tracker, (x) => x.tabId === 'tabTurn' && x.title === 'earlier question')
+
+    fs.appendFileSync(file, JSON.stringify(human('fix the login', 30)) + '\n')
+    fs.appendFileSync(file, JSON.stringify(said(text('Looking.'), 31)) + '\n')
+    fs.appendFileSync(file, JSON.stringify(said(bash, 32)) + '\n')
+    tracker.receive('tabTurn', { type: 'stop' })
+    setTimeout(
+      () => fs.appendFileSync(file, JSON.stringify(said(text('Fixed.'), 33)) + '\n'),
+      TURN_TEXT_WAIT_SHORTENED_MS / 3
+    )
+    await expect.poll(() => ended.length, { timeout: TURN_TEXT_WAIT_SHORTENED_MS * 4 }).toBe(1)
+    expect(ended[0].tabId).toBe('tabTurn')
+    expect(ended[0].turn.said.map((l) => l.text)).toEqual(['fix the login'])
+    expect(ended[0].turn.reply).toBe('Looking.\n\nFixed.')
+
+    tracker.receive('tabTurn', { type: 'stop' })
+    await new Promise((r) => setTimeout(r, TURN_TEXT_WAIT_SHORTENED_MS * 1.5))
+    expect(ended).toHaveLength(1)
+    expect(tracker.turnsOf(sid, 5)?.map((t) => t.reply)).toEqual([
+      'earlier answer',
+      'Looking.\n\nFixed.'
+    ])
+  })
+
+  // CC§14
+  it('any tool call, a question or a command, raises tool-done with its name and input once its result lands, but one finished before the bind does not', async () => {
+    const cwd = makeWorkspace({})
+    const tracker = newTracker()
+    const answered: unknown[] = []
+    tracker.on('tool-done', (e: unknown) => answered.push(e))
+    tracker.track('tabAsk', cwd)
+    const sid = '44444444-4444-4444-8444-444444444444'
+    const ask = (id: string, s: number): unknown =>
+      said({ type: 'tool_use', id, name: 'AskUserQuestion', input: {} }, s)
+    const result = (id: string, s: number): unknown => ({
+      type: 'user',
+      isSidechain: false,
+      timestamp: at(s),
+      message: { role: 'user', content: [{ tool_use_id: id, type: 'tool_result' }] }
+    })
+    const file = writeJsonl(cwd, sid, [
+      human('earlier', 1),
+      ask('toolu_old', 2),
+      result('toolu_old', 3)
+    ])
+    tracker.bindSession('tabAsk', file, sid, cwd)
+    await waitFor(tracker, (x) => x.tabId === 'tabAsk' && x.title === 'earlier')
+    fs.appendFileSync(file, JSON.stringify(ask('toolu_new', 30)) + '\n')
+    fs.appendFileSync(file, JSON.stringify(said(bash, 31)) + '\n')
+    fs.appendFileSync(file, JSON.stringify(toolResult(32)) + '\n')
+    fs.appendFileSync(file, JSON.stringify(result('toolu_new', 33)) + '\n')
+    await expect
+      .poll(() => answered)
+      .toEqual([
+        { tabId: 'tabAsk', name: 'Bash', input: { command: 'sleep 15' } },
+        { tabId: 'tabAsk', name: 'AskUserQuestion', input: {} }
+      ])
   })
 })

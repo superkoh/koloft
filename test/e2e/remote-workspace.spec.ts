@@ -20,7 +20,9 @@ import {
 } from './helpers/remote'
 import {
   auxIcon,
+  boundSessionId,
   centerTerm,
+  continuedInOf,
   encodeCwd,
   FAKE_SESSION_TITLE,
   gitCommitAll,
@@ -31,7 +33,9 @@ import {
   openSessionTerminal,
   panelTerm,
   runIn,
+  sendShortcut,
   startSessionIn,
+  transcriptFile,
   waitBooted,
   waitForCalls,
   wsRows
@@ -420,6 +424,76 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await browseRow(page, doc).click()
       await body.locator('a.md-fileref', { hasText: 'src/b.ts:1' }).click({ timeout: 30_000 })
       await expect(title).toContainText('b.ts', { timeout: 30_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-25: a page on the machine opens as source in the reading area, from a Browse row and from a markdown link', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      fs.writeFileSync(path.join(dir, 'page.html'), '<h1>on the machine</h1>\n')
+      fs.writeFileSync(path.join(dir, 'doc.md'), '# Doc\n\n[the page](page.html)\n')
+
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      await wsRows(page, REMOTE_WS_NAME).first().click()
+
+      const title = page.locator(WORKBENCH.readingTitle)
+      const source = page.locator(`${WORKBENCH.readingBody} .code-body`)
+
+      await openInBrowse(page, `${remoteKey(env)}/page.html`)
+      await expect(title).toContainText('page.html', { timeout: 30_000 })
+      await expect(source).toContainText('on the machine', { timeout: 30_000 })
+
+      await showBrowse(page)
+      await browseRow(page, `${remoteKey(env)}/doc.md`).click()
+      await expect(title).toContainText('doc.md', { timeout: 30_000 })
+      await page
+        .locator(`${WORKBENCH.readingBody} .md-body a`, { hasText: 'the page' })
+        .click({ timeout: 30_000 })
+      await expect(title).toContainText('page.html', { timeout: 30_000 })
+      await expect(source).toContainText('on the machine', { timeout: 30_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CC§5
+  test('E-RW-27: when Claude Code moves a remote conversation to a new session id (a phantom start, then continued-in), the tab follows it: one live row, bound to the new id, and ⌘W still ends its tmux session on the machine', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const rows = wsRows(page, REMOTE_WS_NAME)
+      const tabId = await rows.first().getAttribute('data-tab-id')
+      const boundOf = (): Promise<string | undefined> => boundSessionId(page, tabId)
+      await expect.poll(boundOf, { timeout: 60_000 }).toBeTruthy()
+      const before = await boundOf()
+      const beforeTranscript = transcriptFile(machineHome(env), remoteDir(env), before ?? '')
+
+      await runIn(page, centerTerm(page), '/move-to-background')
+      const continuedIn = (): string | undefined => continuedInOf(beforeTranscript)
+      await expect.poll(continuedIn, { timeout: 30_000 }).toBeTruthy()
+      await expect.poll(boundOf, { timeout: 60_000 }).toBe(continuedIn())
+      await expect
+        .poll(() => layoutOnDisk(env).members, { timeout: 30_000 })
+        .toEqual([continuedIn()])
+      await expect(rows).toHaveCount(1)
+      await expect(rows.first()).not.toHaveClass(/\bcold\b/)
+
+      await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toHaveLength(1)
+      await expect(rows.first()).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      await rows.first().click()
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toEqual([])
     } finally {
       await quitAndClose(app)
     }

@@ -10,7 +10,8 @@ import {
 } from 'react'
 import { LuX } from 'react-icons/lu'
 import type { ArtifactView } from '@shared/types'
-import { basename, isWebPagePath, previewKindForPath } from '@shared/preview'
+import { opensAsWebTab } from '@shared/browserRoute'
+import { basename, previewKindForPath } from '@shared/preview'
 import { resolveOnHost } from '@shared/remoteKey'
 import { openWebPage, previewLinkTarget } from '../store'
 import { PreviewViewer, type MdHeading } from './PreviewViewer'
@@ -523,7 +524,7 @@ export function ArtifactPane({
     }
     const inside = insideWorkspaceFence(previewLinkTarget(href, path))
     if (!inside) return
-    if (isWebPagePath(inside)) openWebPage(inside, tabId)
+    if (opensAsWebTab(inside)) openWebPage(inside, tabId)
     else onNavigate(tabId, inside)
   }
 

@@ -24,6 +24,7 @@ export interface ShellLaunch {
   cwd: string
   shell?: string
   launchCommand?: (tabId: string) => string
+  resized?: (tabId: string, cols: number, rows: number) => void
 }
 
 export interface ClaudeLaunch {
@@ -45,7 +46,7 @@ export interface MachineTab {
   root: string
   hookMirror: string
   attachTo?: string
-  picked?: string
+  pickKey?: string
 }
 
 export type ClaudeLaunchPlan =
@@ -56,6 +57,7 @@ export type ClaudeLaunchPlan =
       cwd: string
       shell?: string
       launchCommand: (tabId: string) => string
+      resized?: (tabId: string, cols: number, rows: number) => void
       extraEnv?: { KOLOFT_FIRST_PROMPT?: string; KOLOFT_SESSION_NAME?: string }
       machine?: MachineTab
     }

@@ -865,6 +865,11 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   itself**; without a `.gitignore` line the parent shows an untracked `.claude/`.
   `--exclude-standard` honours an uncommitted `.gitignore`.
 - **`git worktree add <path>` refuses a path that already exists.**
+- **`git worktree remove` (no `--force`) removes a tree whose only extra files are
+  ignored** (`node_modules/`, `out/`), and refuses one with uncommitted or untracked
+  files. **It refuses a locked tree** ("cannot remove a locked working tree"), and a
+  session's worktree was seen still locked after its tab was killed, so `git worktree
+  unlock` comes first (measured, git 2.54.0, 2026-10-02, on a throwaway repo).
 - **`.git/FETCH_HEAD` is rewritten on every fetch** and a fresh clone has none, so its
   existence and mtime show whether a fetch ran.
 - **The `ext::` transport** is refused unless `protocol.ext.allow` permits it (the repo's
@@ -889,6 +894,14 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   login finishes (checked by hand, signed out, on a private repo).
 - **A signed-in browser holds a `logged_in=yes` cookie**; `user_session` is the session
   cookie itself.
+- **`gh api graphql -f owner=… -f name=… -f query=…`** sends every `-f` field other than
+  `query` as a string GraphQL variable; `-F` would turn a repo named `123` into a number.
+  For a repo it can read it exits 0 and prints
+  `{"data":{"repository":{"issues":{"totalCount":N},"pullRequests":{"totalCount":M}}}}`.
+  For a repo that is missing or hidden from the login it exits 1, printing
+  `"repository":null` plus a `NOT_FOUND` error; with no login it exits 4 and prints
+  "To get started with GitHub CLI, please run: gh auth login". (2026-10-03, gh 2.89.0,
+  run by hand against a public repo, a made-up name, and an empty `GH_CONFIG_DIR`.)
 
 ## §33 ssh
 
@@ -968,6 +981,9 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
 - **With `mouse off`, tmux 3.6b passes the pane's mouse-mode requests (1000/1002/1006)
   to the outer terminal untouched** (measured locally in a python pty).
 - **tmux sets `TMUX` and `TMUX_PANE`** for a command inside a session.
+- **tmux 2.6 does not know `terminal-features` or `exit-empty`**: each line of a `-f`
+  config naming them is an `invalid option` error, shown over the first window. `set -q`
+  drops the error and tmux runs on (2026-10-03, Ubuntu 18.04's tmux 2.6).
 - **tmux's default server socket is `tmux-<uid>/default` under `$TMUX_TMPDIR` or
   `/tmp`, not under `$HOME`** (tmux(1)), so a fake `$HOME` does not isolate it: a real
   tmux run by any test talks to the one server this user already has, shared by every
@@ -1006,6 +1022,13 @@ command by hand:
   the login files may put a real `claude` in `/usr/local/bin` ahead of that prefix —
   inferred, not checked.
 - Older coreutils may not know the `%.9Y` precision — inferred, not checked.
+- **The official node 22 build does not run on glibc 2.27** (Ubuntu 18.04): it unpacks,
+  then `node -v` fails with ``version `GLIBC_2.28' not found``. Claude Code 2.1.288's
+  own build runs there. The Node project's unofficial build for old Linux,
+  `https://unofficial-builds.nodejs.org/download/release/v22.12.0/node-v22.12.0-linux-x64-glibc-217.tar.xz`,
+  does run there (`node -v` printed `v22.12.0`), and that folder has its own
+  `SHASUMS256.txt` listing it; it has no arm64 glibc-217 build. (2026-10-03, on a real
+  Ubuntu 18.04 box.)
 - **A csh-family login shell (tcsh, csh) cannot take a newline inside single quotes**
   (`Unmatched '''.`), **expands `!` even inside single quotes** (`echo 'a!b'` →
   `b: Event not found.`; `!=` is left alone), and has no `VAR=value cmd` form
@@ -1019,3 +1042,164 @@ command by hand:
   (2026-09-30, fish 3.6.0 and Debian 12's tcsh as the login shell of containers
   behind a jump host: file listing and reading, a session start and the session sync
   all worked through a real sshd).
+
+## §38 ssh through a JumpServer bastion
+
+Measured 2026-10-03 from macOS 27 (OpenSSH 10.3p1) through a JumpServer bastion
+(`ssh -p 2222 user@systemuser@asset@jumpserver`) to Ubuntu 18.04 (util-linux 2.31.1,
+tmux 2.6):
+
+- **A command gets no terminal, even with `-tt`**: `ssh -tt host 'tty; echo $TERM'`
+  printed `not a tty` and `TERM=dumb`, with or without a ControlMaster. ssh shows no
+  "PTY allocation request failed", so the client still turns raw mode on. A plain
+  login with no command does get a terminal.
+- **So tmux cannot start**: `open terminal failed: not a terminal`; and with
+  `TERM=dumb` inside a terminal, `open terminal failed: terminal does not support
+  clear`.
+- **Port forwarding is off**: `ssh -W asset:22` got `administratively prohibited`, so
+  ProxyJump to the asset is no way round.
+- **util-linux `script -qfec <cmd> /dev/null` makes a terminal** for `<cmd>` (`tty`
+  printed `/dev/pts/1`; size `0 0` until set), tmux starts in it with
+  `TERM=xterm-256color`, and `-e` hands back the command's exit code (`exit 7` → 7).
+- **The bastion drops window-size changes, but `stty -F <pts> rows R cols C` run from
+  a second ssh command resizes that terminal**: `stty size` inside read `50 200`
+  afterwards.
+
+## §39 Discord API (v10)
+
+Measured 2026-10-03 with a real bot on a private server, by a hand-written client: Node
+`fetch` for REST with `Authorization: Bot <token>`, and the `ws` library (8.x) for the
+Gateway (the live connection that pushes events):
+
+- **REST calls a bot needs all answer 200**: `GET /users/@me` (the bot's own name and
+  id), `GET /oauth2/applications/@me` (`id` is the application id that goes in the
+  invite link; `bot_public` says whether anyone can add it), `GET /users/@me/guilds` (the
+  servers it is in), `GET /guilds/{id}/channels` (type `0` is a text channel), and
+  `GET /gateway/bot` (the Gateway `url`, which was `wss://gateway.discord.gg`).
+- **Gateway handshake**: connect to `<url>/?v=10&encoding=json`; the server sends op 10
+  (hello) with `heartbeat_interval`; the client sends op 1 (heartbeat, last sequence
+  number) on that interval, and op 2 (identify) with the token and the intents
+  `GUILDS | GUILD_MESSAGES | DIRECT_MESSAGES | MESSAGE_CONTENT` (1 | 512 | 4096 | 32768).
+  Then `READY` arrives (bot user, a list of server ids), one `GUILD_CREATE` per server
+  (with its name), and `MESSAGE_CREATE` for every message in a channel the bot can see.
+- **With Message Content on, `MESSAGE_CREATE` carries the text** (`content`) and the
+  sender (`author.id`, `author.username`, `author.bot`).
+- **Sending works**: `POST /channels/{id}/messages` with JSON `{content}` answers 200; a
+  file goes as multipart with `payload_json` plus `files[0]`, also 200.
+- **Rate limit per channel: 5 messages, then 429.** In a burst of 7 posts to one
+  channel, posts 1–5 answered 200 and 6–7 answered 429 with a JSON body whose
+  `retry_after` was about 0.3 (seconds); the bucket refills in about 5 s. Waiting
+  `retry_after` and sending again works.
+- From Discord's docs, not measured here: close code 4004 means the token was refused,
+  4014 means an intent the bot is not allowed (Message Content turned off in the
+  Developer Portal); op 6 (resume) with `session_id` and the last sequence number,
+  sent to `READY`'s `resume_gateway_url`, picks up a dropped connection (Koloft resumes
+  on the fixed `wss://gateway.discord.gg` instead, so it never opens a connection to a
+  host a server response named; whether Discord accepts a resume there is not checked —
+  if it answers op 9, Koloft identifies again); op 7 asks the
+  client to reconnect and resume; op 9 (invalid session) with `d: false` means start
+  over with identify; 4007 and 4009 also mean the session cannot be resumed; a bot API
+  call must send a `User-Agent: DiscordBot (<url>, <version>)` header.
+- **Slash commands (application commands)** — measured 2026-10-05 on the same private
+  server with the same bot, which was added with the `bot` scope only, and the owner's
+  Discord iOS app:
+  - `POST /applications/{app}/guilds/{guild}/commands` with `{name, description, type:
+    1, options}` answered 201; the command showed in the app's `/` list at once, so the
+    bot needed no new invite. `GET` on the same route lists them; `DELETE …/{id}` answered
+    204.
+  - Using it sent `INTERACTION_CREATE` on the existing Gateway connection, with the same
+    intents, and no Interactions Endpoint URL set: `type` 2 for the command, 4 for each
+    autocomplete keystroke, `channel_id`, `member.user.id` (the sender, in a server),
+    and `data.options` `[{name, value, type: 3, focused?}]`.
+  - `POST /interactions/{id}/{token}/callback` answered 204 for `{type: 8, data:
+    {choices}}` (the choices showed on the phone, within about 0.2 s) and for `{type: 5}`;
+    `PATCH /webhooks/{app}/{token}/messages/@original` and a follow-up `POST
+    /webhooks/{app}/{token}` with `flags: 64` (only the sender sees it) answered 200.
+  - Text typed in the box that starts with `/` but is not picked from the list, like
+    `/compact hello`, is sent as an ordinary message (`MESSAGE_CREATE`).
+  - From the docs, not measured: the first answer must come within 3 s; the token
+    works for 15 minutes; a guild can take at most 200 command creates a day; an app
+    with no answer shows "The application did not respond". That two Gateway
+    connections of one bot (two Koloft installs) both receive each interaction is
+    inferred, not checked.
+- **How messages look, and threads** — measured 2026-10-06 with the same bot, REST only,
+  on a server where the bot role was the one the invite gave (`101440`) and the owner
+  read each message in the Discord app:
+  - In a message's `content`, `#`, `##`, `###`, `-#` (small text), `-`/`1.` lists with
+    indented sub-lists, `>` quotes, fenced code with a language and `[text](url)` show
+    as formatting. `####`, a `| a | b |` table, `---`, `- [ ]`/`- [x]` and
+    `![alt](url)` show as the raw characters.
+  - A Components V2 message (`flags` with `1 << 15`, `components` holding a container,
+    type 17, with `accent_color`, text displays, type 10, a separator, type 14, and an
+    action row of buttons) answered 200 and showed with a coloured bar; `###` inside a
+    text display shows as a heading. One text display took 4000 characters and refused
+    4001 (`400`, code 50035, `BASE_TYPE_BAD_LENGTH`, "Must be between 1 and 4000 in
+    length"). A cap on all text displays of one message together was not measured.
+  - An embed (`embeds: [{author, color, description, footer}]`) also posted (200, the
+    embed came back), with `###` shown as a heading inside `description`.
+  - `flags` with `1 << 12` (no push) was accepted on both kinds.
+  - `POST /channels/{id}/messages/{message}/threads` with `{name, auto_archive_duration:
+    1440}` answered 201 with the thread, whose id is the message's; posting to
+    `/channels/{thread}/messages` answered 200 and showed inside the thread. The invite's
+    permissions name neither "create public threads" nor "send messages in threads";
+    that the server's default role gave them is inferred, not checked.
+  - `DELETE /channels/{thread}` answered 403 (50013, Missing Permissions); `PATCH
+    /channels/{thread}` with `{archived: true}` on the bot's own thread answered 200.
+- **Threads, buttons and tables on the owner's phone** — Koloft 0.32.1, 2026-10-06, the
+  owner reading the Discord iOS app, one case at a time:
+  - A card posted in a bot-made thread the owner was added to
+    (`PUT /channels/{thread}/thread-members/{user}`) made the locked phone ring.
+  - A button press reached Koloft as `INTERACTION_CREATE` type 3 with `data.custom_id`,
+    and callback type 7 replaced the card: the buttons went and the new text showed.
+  - A message the owner posted in an archived thread went through, and the thread came
+    back into the list.
+  - A fenced code block does not keep columns on a phone held upright: a table with
+    Chinese cells did not line up, and a 39-character-wide one wrapped and did not line
+    up either. A table written as a bold line per row with a `>` quote line per cell
+    read well.
+- **Renaming a thread** (`PATCH /channels/{thread}` with `{name}`), same bot, 2026-10-06:
+  on an archived thread it answered `400`, code 50083 "Thread is archived"; the third
+  name change within a few seconds answered `429` with `retry_after` 599.6 s, though
+  the first two had failed — failed attempts count. Discord's docs give the limit as two
+  name changes per ten minutes per channel. An `{archived: true}` call right after was
+  not limited. Once the ten minutes had passed, `{name}` on the bot's own unarchived
+  thread answered `200` with the new name (a Chinese name kept as sent).
+- **A bot's own message opens its archived thread again** — read 2026-10-07 off the
+  owner's server, Koloft 0.32.3, REST `GET` only: of 29 bot-made threads, 6 were open
+  although Koloft had archived them; in each the last message was the bot's "closed"
+  card, and the thread's `thread_metadata.archive_timestamp` (when it last changed
+  between archived and open) lay within 0.12 s of that card's own time. The archive
+  `PATCH` and the card `POST` had been sent at once, in two separate queues, so the
+  archive landed first. Nothing else posted there afterwards.
+- **Deleting a thread needs Manage Threads** (bit 34, `1 << 34`): the bot role the
+  invite gave (`101440`) lacks it, and so did the server's `@everyone`; `DELETE
+  /channels/{thread}` without it answered 403 (above). Measured 2026-10-07 on the
+  owner's server once the owner had turned Manage Threads on for the bot's role by
+  hand (role permissions then `17179970624`), on 26 of the bot's own public threads,
+  archived and open: `DELETE /channels/{thread}` answered `200` each time; the
+  thread's opener message in the parent channel was still there afterwards (`GET
+  /channels/{parent}/messages/{thread}` answered 200), and `DELETE` on it answered
+  `204`. Whether re-inviting the bot with a link that asks for more permissions
+  updates an existing bot role was not probed.
+- Also from Discord's docs, not measured here: a message's `content` holds at most 2000
+  characters; one message carries at most 10 files and one request at most 25 MiB; a
+  bot's file may be at most 20 MiB (changelog 2025-09-03); adding or removing a reaction
+  (`PUT`/`DELETE /channels/{id}/messages/{id}/reactions/{emoji}/@me`) answers 204 with no
+  body; `GET /channels/{id}/messages?after=<id>&limit=<1–100>` lists the messages after
+  that id, and an attachment in `MESSAGE_CREATE` carries `filename`, `size` and a `url`
+  that needs no token.
+
+## §40 Node `fs.watch` on a macOS directory
+
+- **Every event names the file, and appending to a file already there fires one too.**
+  Measured 2026-10-07 on macOS 27.0.1 (APFS) with a Node script, once under Node 24.13 and once under
+  Electron 43's own Node 24.21 (`ELECTRON_RUN_AS_NODE=1`). It watched a directory without
+  `recursive` and appended to a file already in it, created, renamed and deleted files,
+  and wrote a file inside a subdirectory. Each step gave events whose `filename` was the
+  touched file's base name (a rename gave both the old and the new name). Twenty quick
+  appends to one file were folded into a single event.
+- **The event type cannot tell an append from a create or a delete.** Under Node every
+  step reported `rename`, appends included; under Electron the twenty quick appends
+  reported `change` and the single ones `rename`. A watcher that must know what
+  happened has to look at the file itself.
+- A write inside a subdirectory gave no event at all; creating the subdirectory gave one.

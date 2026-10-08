@@ -18,7 +18,6 @@ import {
   centerTerm,
   chooseBackend,
   clickAppMenuItem,
-  closeMenu,
   dialogPrimary,
   gitInit,
   newSessionInWith,
@@ -79,17 +78,11 @@ function codexRows(page: Page): Locator {
     hasNot: page.getByRole('img', { name: 'Claude', exact: true })
   })
 }
-async function restoreOnceHistoryLoadedAfterLaunch(page: Page): Promise<void> {
-  await expect
-    .poll(async () => {
-      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
-      const loaded =
-        (await page.locator('.menu .mi.disabled', { hasText: 'Restore session' }).count()) === 0
-      if (!loaded) await closeMenu(page)
-      return loaded
-    })
-    .toBe(true)
-  await page.locator('.menu .mi', { hasText: 'Restore session' }).click()
+async function restoreFromTheFirstMenuOpenedAfterLaunch(page: Page): Promise<void> {
+  await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+  const restore = page.locator('.menu .mi', { hasText: 'Restore session' })
+  await expect(restore).not.toHaveClass(/disabled/)
+  await restore.click()
 }
 async function newIn(
   page: Page,
@@ -696,7 +689,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(codexRows(page)).toHaveClass(/cold/)
       expect(await termIds(page)).toHaveLength(0)
       expect(codexCalls(env)).toHaveLength(2)
-      await restoreOnceHistoryLoadedAfterLaunch(page)
+      await restoreFromTheFirstMenuOpenedAfterLaunch(page)
       const history = page.getByRole('dialog', { name: 'Restore session · ws-a', exact: true })
       await history.getByRole('button').filter({ hasText: 'Codex fixture session' }).click()
       await expect.poll(() => codexCalls(env).length).toBe(3)
@@ -1063,7 +1056,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('a Codex job set to "Close it" closes its tab once Codex finishes the turn', async ({
+  test('a Codex job set to "Close it" closes for good once Codex finishes the turn: tab, row and worktree', async ({
     env
   }) => {
     installCodex(env)
@@ -1093,7 +1086,11 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(dlg.locator('.hist-row').first()).toContainText('Done — closed itself', {
         timeout: 30_000
       })
+      const tree = codexCalls(env)[0].cwd
+      expect(tree).not.toBe(env.workspaces.a)
       await expect(page.locator('.terminals .term-wrap')).toHaveCount(0, { timeout: 30_000 })
+      await expect(wsRows(page, 'ws-a')).toHaveCount(0, { timeout: 30_000 })
+      await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
     } finally {
       await quitAndClose(app)
     }

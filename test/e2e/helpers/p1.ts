@@ -135,6 +135,23 @@ export function encodeCwd(cwd: string): string {
   return cwd.replace(/[^a-zA-Z0-9]/g, '-')
 }
 
+export function transcriptFile(home: string, cwd: string, sessionId: string): string {
+  return path.join(home, '.claude', 'projects', encodeCwd(cwd), `${sessionId}.jsonl`)
+}
+
+// CC§5
+export function continuedInOf(transcript: string): string | undefined {
+  const last = fs.readFileSync(transcript, 'utf8').trimEnd().split('\n').pop() ?? ''
+  return last.includes('continued-in') ? JSON.parse(last).continuedInSessionId : undefined
+}
+
+export function boundSessionId(page: Page, tabId: string | null): Promise<string | undefined> {
+  return page.evaluate(
+    (id) => window.api.sessions.list().then((all) => all.find((s) => s.tabId === id)?.sessionId),
+    tabId
+  )
+}
+
 export interface SeedOptions {
   id?: string
   summary?: string
@@ -285,7 +302,7 @@ export function settingsOnDisk(env: E2EEnv): Record<string, unknown> {
 }
 
 export function notesIsland(page: Page): Locator {
-  return page.locator('.isl-notes')
+  return page.locator('.isl-notes:not(.isl-conductors)')
 }
 
 export function notesArea(page: Page): Locator {
@@ -440,6 +457,31 @@ export async function waitBooted(page: Page): Promise<void> {
     undefined,
     { timeout: 20_000 }
   )
+}
+
+export function terminalText(page: Page, tabId: string): Promise<string> {
+  return page.evaluate((id) => {
+    const term = (
+      window as unknown as {
+        __koloftTerms?: Record<
+          string,
+          {
+            buffer: {
+              active: {
+                length: number
+                getLine(i: number): { translateToString(trim?: boolean): string } | undefined
+              }
+            }
+          }
+        >
+      }
+    ).__koloftTerms?.[id]
+    if (!term) return ''
+    const b = term.buffer.active
+    const out: string[] = []
+    for (let i = 0; i < b.length; i++) out.push(b.getLine(i)?.translateToString(true) ?? '')
+    return out.join('\n')
+  }, tabId)
 }
 
 export function termIds(page: Page): Promise<string[]> {
@@ -614,4 +656,27 @@ export async function menuItemTexts(page: Page): Promise<string[]> {
 export async function closeMenu(page: Page): Promise<void> {
   await page.keyboard.press('Escape')
   await expect(page.locator('.menu')).toHaveCount(0)
+}
+
+export function gitMark(page: Page, wsName: string): Locator {
+  return page.locator('.ws-head', { hasText: wsName }).locator(':scope > .ws-git')
+}
+
+export async function openGitPanel(page: Page, wsName: string): Promise<Locator> {
+  const mark = gitMark(page, wsName)
+  await expect(
+    mark,
+    'the mark drops its plain tooltip once it has a panel to open'
+  ).toHaveAttribute('title', '', { timeout: 30_000 })
+  await mark.hover()
+  const panel = page.locator('.tbu-pop.fx')
+  await expect(panel).toBeVisible()
+  return panel
+}
+
+export async function fetchNowInGitPanel(page: Page, wsName: string): Promise<void> {
+  const panel = await openGitPanel(page, wsName)
+  await panel.locator('.tbu-act', { hasText: 'Fetch now' }).click()
+  await page.mouse.move(1, 1)
+  await expect(panel).toHaveCount(0)
 }

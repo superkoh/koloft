@@ -4,6 +4,7 @@ import path from 'path'
 import type { LayoutV6 } from '@shared/types'
 import { migrateLayout, serializeLayout, type MigrateDeps } from './layoutMigrate'
 import { projectInfoFor } from './projectInfo'
+import { BackgroundFile } from './backgroundFile'
 
 function layoutFile(): string {
   return path.join(app.getPath('userData'), 'layout.json')
@@ -33,8 +34,12 @@ export function loadLayout(): LayoutV6 {
   return layout
 }
 
+const layoutOnDisk = new BackgroundFile(layoutFile)
+
 export function saveLayout(layout: LayoutV6): void {
-  try {
-    fs.writeFileSync(layoutFile(), serializeLayout(layout))
-  } catch {}
+  layoutOnDisk.write(serializeLayout(layout))
+}
+
+export function flushLayout(): void {
+  layoutOnDisk.flushSync()
 }

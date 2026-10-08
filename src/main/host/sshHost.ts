@@ -28,6 +28,7 @@ import { GithubLookup, type GithubOptions } from '../github'
 import { remoteShCommand } from '../remote/install'
 import {
   killSessionCmd,
+  resizeStandInCmd,
   launchLine,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
   sessionIdOfTmux,
@@ -44,7 +45,6 @@ import type { ClaudeLaunch, ClaudeLaunchPlan, Host, ShellLaunch } from './host'
 
 export interface MachineAccount {
   env: Record<string, string>
-  picked: string
   banner: string
 }
 
@@ -55,7 +55,7 @@ export interface MachineClaudeDeps {
   alive(): ReadonlySet<string>
   realPath(p: string): string
   settings(): { multiAccount: boolean; skipPermissions: boolean }
-  pickAccount(): Promise<MachineAccount | undefined>
+  pickAccount(launchKey: string): Promise<MachineAccount | undefined>
   hookSettings(tabId: string, machineDir: string): Record<string, unknown>
 }
 
@@ -343,11 +343,25 @@ function skillFsOf(files: Map<string, string>): SkillFs {
 const NETWORK_GIT = `GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=false SSH_ASKPASS=false \
 SSH_ASKPASS_REQUIRE=never GIT_SSH_COMMAND="\${GIT_SSH_COMMAND:-ssh} -o BatchMode=yes" git "$@"`
 
+const RESIZE_SETTLE_MS = 200
+
 export class SshHost implements Host {
   readonly github: GithubLookup
   private git: GitOps
   private killedSessions = new Set<string>()
   private kills = new Map<string, Promise<unknown>>()
+  private resizes = new Map<string, ReturnType<typeof setTimeout>>()
+
+  private resized = (tabId: string, cols: number, rows: number): void => {
+    clearTimeout(this.resizes.get(tabId))
+    this.resizes.set(
+      tabId,
+      setTimeout(() => {
+        this.resizes.delete(tabId)
+        void this.deps.run(resizeStandInCmd(tabId, cols, rows))
+      }, RESIZE_SETTLE_MS)
+    )
+  }
 
   constructor(
     readonly machine: string,
@@ -556,7 +570,7 @@ export class SshHost implements Host {
   unwatchFile(): void {}
 
   shell(cwd: string): ShellLaunch {
-    return { ...this.deps.shell(this.bare(cwd)), cwd }
+    return { ...this.deps.shell(this.bare(cwd)), cwd, resized: this.resized }
   }
 
   reveal(): void {}
@@ -608,10 +622,11 @@ export class SshHost implements Host {
     const root = d.realPath(this.bare(spec.root))
     const cwd = spec.cwd ? this.bare(spec.cwd) : root
     const wsRoot = spec.fallbackCwd ? d.realPath(this.bare(spec.fallbackCwd)) : root
-    const account = mode === 'start' && settings.multiAccount ? await d.pickAccount() : undefined
     const pkg = d.machinePackage()
     const machineDir = remoteMachineDir(pkg.name)
     await this.kills.get(tmuxName)
+    const pickKey = mode === 'start' && settings.multiAccount ? `launch-${sid}` : undefined
+    const account = pickKey ? await d.pickAccount(pickKey) : undefined
     return {
       ok: true,
       spawnCwd: os.homedir(),
@@ -639,6 +654,7 @@ export class SshHost implements Host {
           mode
         })
       },
+      resized: this.resized,
       machine: {
         tracking: {
           host: this.machine,
@@ -649,7 +665,7 @@ export class SshHost implements Host {
         root,
         hookMirror: mirrorHookDir(d.userData, this.machine),
         attachTo: mode === 'attach' ? sid : undefined,
-        picked: account?.picked
+        pickKey
       }
     }
   }

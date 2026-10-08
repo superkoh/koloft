@@ -1,7 +1,14 @@
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect } from '../helpers/app'
 import { seedSettings } from '../helpers/env'
-import { dialogPrimary, openMenu, pickerDialog, startSessionIn, wsGroup } from '../helpers/p1'
+import {
+  dialogPrimary,
+  fetchNowInGitPanel,
+  openMenu,
+  pickerDialog,
+  startSessionIn,
+  wsGroup
+} from '../helpers/p1'
 import {
   behindBadge,
   launchSettled,
@@ -324,8 +331,7 @@ test.describe('Per-workspace direct-launch surfaces and the Pull & Start gate', 
       await startSessionIn(page, 'ws-repo')
       await waitForSessionRow(page, 'ws-repo', 'main')
       pinned.git['ws-repo'].originAhead(3)
-      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-repo' }))
-      await page.locator('.menu .mi', { hasText: 'Fetch origin' }).click()
+      await fetchNowInGitPanel(page, 'ws-repo')
       await waitForBehindBadge(page, 'ws-repo', 3)
 
       await pressNewSession(app, page)

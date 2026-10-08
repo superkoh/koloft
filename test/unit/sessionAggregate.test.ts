@@ -14,6 +14,7 @@ import {
   type SessionMeta,
   type RescanState
 } from '../../src/main/sessionAggregate'
+import { withHandover } from '../../src/main/handover'
 import { PENDING_SESSION_TITLE, PLACEHOLDER_SESSION_TITLE, type SessionRow } from '@shared/types'
 
 const WS = '/Users/dev/proj'
@@ -571,6 +572,20 @@ describe('extractJsonlMeta', () => {
     expect(meta.commandArgsText).toBe('opus')
     expect(meta.firstUserText).toBe('the actual ask')
   })
+
+  it.each([
+    { name: 'Global-conductor', id: 'c1' },
+    { id: '019a-codex-thread' },
+    { name: 'Fix login\n\nthen deploy', id: 'p2' }
+  ])(
+    'a session that %j started with koloft session new is titled by its task, not by the handover Koloft put before it',
+    (caller) => {
+      const task = 'Look into why the sidebar is slow.\n\nStart with the profiler.'
+      expect(extractJsonlMeta([userLine(withHandover(caller, 'claude', task))]).firstUserText).toBe(
+        task
+      )
+    }
+  )
 
   it('returns {} when nothing usable appears', () => {
     expect(extractJsonlMeta([])).toEqual({})

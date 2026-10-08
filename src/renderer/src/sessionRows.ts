@@ -121,6 +121,42 @@ export function sessionsNeedYou(n: number): string {
   return n > 1 ? `${n} sessions need you` : '1 session needs you'
 }
 
+export function sessionsInside(n: number): string {
+  return n > 1 ? `${n} sessions inside` : '1 session inside'
+}
+
+export interface RowNode<R extends { id: string; parentId?: string }> {
+  row: R
+  children: RowNode<R>[]
+}
+
+function leadsBackToItself<R extends { id: string; parentId?: string }>(
+  row: R,
+  nodes: Map<string, RowNode<R>>
+): boolean {
+  const seen = new Set<string>()
+  for (let at = row.parentId; at !== undefined && !seen.has(at); at = nodes.get(at)?.row.parentId) {
+    if (at === row.id) return true
+    seen.add(at)
+  }
+  return false
+}
+
+export function sessionTree<R extends { id: string; parentId?: string }>(rows: R[]): RowNode<R>[] {
+  const nodes = new Map(rows.map((row) => [row.id, { row, children: [] as RowNode<R>[] }]))
+  const roots: RowNode<R>[] = []
+  for (const node of nodes.values()) {
+    const parent = node.row.parentId ? nodes.get(node.row.parentId) : undefined
+    if (parent && !leadsBackToItself(node.row, nodes)) parent.children.push(node)
+    else roots.push(node)
+  }
+  return roots
+}
+
+export function rowsUnder<R extends { id: string; parentId?: string }>(node: RowNode<R>): R[] {
+  return node.children.flatMap((child) => [child.row, ...rowsUnder(child)])
+}
+
 export function attentionOnRow(
   rowId: string,
   tabId: string | undefined,

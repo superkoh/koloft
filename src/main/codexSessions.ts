@@ -10,10 +10,13 @@ import type {
   SessionResumeRequest,
   BackendSessionRow
 } from '@shared/types'
+import { CODEX_PLACEHOLDER_TITLE } from '@shared/types'
 import { identityOf } from '@shared/sessionBackend'
 import type { SessionEvent } from '@shared/sessionEvent'
+import type { Turn } from '@shared/turns'
 import {
   CodexObservation,
+  codexTurns,
   record,
   userThread,
   type CodexEvent,
@@ -23,14 +26,16 @@ import { CodexRpc, createCodexTransport, type CodexTransport } from './codexTran
 import { SessionStore, codexSessionKey, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
-import { resolveCodexRuntime } from './codexRuntime'
+import { codexTooOld, resolveCodexRuntime, updateCodex, type CodexRuntime } from './codexRuntime'
+import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from './cliMinimums'
 import { occupantName } from './resumePlan'
 import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
 import { watchJsonDrops } from './jsonDrops'
 import { openDropTarget, type OpenDrop } from './openDrop'
 import { removeCodexOpenShim, writeCodexOpenShim } from './openShimScript'
-import { writeCodexAgentShim } from './agentShim'
+import { AGENT_SHIM_WAITS_MS, writeCodexAgentShim } from './agentShim'
 import { CODEX_AGENT_HINT } from '@shared/agentGuide'
+import type { CodexApproval, CodexQuestion } from './discord/dialog'
 
 const exists = (p: string): boolean => {
   try {
@@ -51,9 +56,11 @@ const STATUS_LINE_CONFIG = `tui.status_line=${JSON.stringify([
 ])}`
 
 // CODEX§17
-const AGENT_HINT_CONFIG = `developer_instructions=${JSON.stringify(CODEX_AGENT_HINT)}`
+function developerInstructions(lines: string[]): string {
+  return `developer_instructions=${JSON.stringify(lines.join('\n\n'))}`
+}
 
-const QUEUE_ANSWER_INSIDE_THE_KOLOFT_WAIT_MS = 5_000
+const QUEUE_ANSWER_INSIDE_THE_KOLOFT_WAIT_MS = AGENT_SHIM_WAITS_MS / 2
 
 // CODEX§1
 const NO_UPDATE_NOTICE_AT_START = 'check_for_update_on_startup=false'
@@ -64,6 +71,9 @@ const PERMISSION_ARGS: Record<LaunchPermission, string[]> = {
   acceptEdits: ['-a', 'on-request', '-s', 'workspace-write'],
   bypass: ['-a', 'never', '-s', 'danger-full-access']
 }
+
+// ADR-0029 CODEX§12
+const CONDUCTOR_ARGS = ['-a', 'never', '-s', 'workspace-write']
 
 // CODEX§14
 function launchChoiceArgs(opts: CreateTabOptions): string[] {
@@ -93,6 +103,7 @@ export interface CodexSessionDeps {
   projectInfo(p: string): ProjectInfo
   changed(): void
   replaced?(oldKey: string, newKey: string): void
+  memberRemoved?(key: string): void
   events(tabId: string, event: SessionEvent): void
   error(message: string): void
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
@@ -123,6 +134,7 @@ interface Run {
   resumeKey?: string
   home?: string
   account?: string
+  bypassingChecks: boolean
   releaseOpenShim(): void
 }
 
@@ -134,9 +146,12 @@ export class CodexSessions {
   private binary?: string
   private processEnv?: NodeJS.ProcessEnv
   private probed?: { at: number; reply: CodexAvailability }
+  private probing?: Promise<CodexAvailability>
+  private updateTried = false
   private warnedVersion?: string
   private refreshing?: Promise<void>
   private historyError?: Error
+  private everyHomeListed = false
   private launchingKeys = new Set<string>()
   private pendingLaunches = new Set<Promise<{ id: string; cwd: string }>>()
   private shuttingDown = false
@@ -181,9 +196,32 @@ export class CodexSessions {
       (probed.reply.available || Date.now() - probed.at < AVAILABILITY_FAILURE_MS)
     )
       return probed.reply
+    this.probing ??= this.probe().finally(() => (this.probing = undefined))
+    return this.probing
+  }
+
+  private async resolveUpdatingOnce(): Promise<CodexRuntime> {
+    let runtime = await resolveCodexRuntime()
+    if (!codexTooOld(runtime)) return runtime
+    const updating = !this.updateTried
+    if (updating) {
+      this.updateTried = true
+      this.deps.error(
+        `Codex ${runtime.version} is older than ${MIN_CODEX_VERSION}, the oldest this Koloft supports. Updating it now…`
+      )
+      await updateCodex(runtime)
+      runtime = await resolveCodexRuntime()
+      if (!codexTooOld(runtime)) return runtime
+    }
+    const stillOld = `Koloft needs Codex CLI ${MIN_CODEX_VERSION} or newer, and this Mac has ${runtime.version}. Run "codex update", then try again.`
+    if (updating) this.deps.error(stillOld)
+    throw new Error(stillOld)
+  }
+
+  private async probe(): Promise<CodexAvailability> {
     let reply: CodexAvailability
     try {
-      const runtime = await resolveCodexRuntime()
+      const runtime = await this.resolveUpdatingOnce()
       this.binary = runtime.binary
       this.processEnv = runtime.env
       reply = {
@@ -210,7 +248,7 @@ export class CodexSessions {
     if (this.warnedVersion === available.version) return
     this.warnedVersion = available.version
     this.deps.error(
-      `Codex ${available.version} is newer than the version Koloft was tested with (0.153.x). It may misbehave.`
+      `Codex ${available.version} is newer than the version Koloft was tested with (${TESTED_CODEX_LINE}.x). It may misbehave.`
     )
   }
 
@@ -252,18 +290,30 @@ export class CodexSessions {
     return new CodexRpc({ binary: this.binary!, env: this.envFor(home), cwd: os.homedir() })
   }
 
-  // CODEX§15
-  async readAccount(home: string): Promise<{ signedIn: boolean; limits?: unknown }> {
+  private async withRpc<T>(
+    home: string | undefined,
+    use: (rpc: CodexRpc) => Promise<T>
+  ): Promise<T> {
     if (!this.binary && !(await this.availability()).available)
       throw new Error('Codex CLI is unavailable.')
     const rpc = this.rpc(home)
     try {
-      const account = record(await rpc.request('account/read', {}))
-      if (!account.account) return { signedIn: false }
-      return { signedIn: true, limits: await rpc.request('account/rateLimits/read', {}) }
+      return await use(rpc)
+    } catch (error) {
+      if (binaryGone(error)) this.forgetProbe()
+      throw error
     } finally {
       await rpc.close()
     }
+  }
+
+  // CODEX§15
+  async readAccount(home: string): Promise<{ signedIn: boolean; limits?: unknown }> {
+    return this.withRpc(home, async (rpc) => {
+      const account = record(await rpc.request('account/read', {}))
+      if (!account.account) return { signedIn: false }
+      return { signedIn: true, limits: await rpc.request('account/rateLimits/read', {}) }
+    })
   }
 
   hasRuns(): boolean {
@@ -383,7 +433,7 @@ export class CodexSessions {
       id: key,
       nativeSessionId: t.id,
       createdAt: (t.createdAt ?? 0) * 1000,
-      title: t.name || t.preview?.slice(0, 100) || 'Codex session',
+      title: t.name || t.preview?.slice(0, 100) || CODEX_PLACEHOLDER_TITLE,
       cwd: t.cwd,
       worktree: resource?.worktreeName ?? this.deps.projectInfo(t.cwd).worktreeName ?? 'main',
       running: !!this.aliveTabFor(key),
@@ -458,6 +508,7 @@ export class CodexSessions {
     this.history = seen
     this.threadHomes = homes
     this.archivedIds = archivedIds
+    this.everyHomeListed = listings.every((listing) => listing.status === 'fulfilled')
     this.historyError = undefined
     this.changed()
   }
@@ -509,25 +560,54 @@ export class CodexSessions {
   async transcriptExists(key: string): Promise<boolean> {
     const id = this.nativeId(key)
     if (this.archivedIds.has(key)) return false
-    if (!this.binary && !(await this.availability()).available)
-      throw new Error('Codex CLI is unavailable.')
-    const rpc = this.rpc(this.homeFor(key))
-    try {
+    return this.withRpc(this.homeFor(key), async (rpc) => {
       const reply = record(await rpc.request('thread/read', { threadId: id, includeTurns: false }))
       const t = userThread(reply.thread)
       return !!t?.path && fs.existsSync(t.path)
-    } catch (error) {
-      if (binaryGone(error)) this.forgetProbe()
-      throw error
-    } finally {
-      await rpc.close()
-    }
+    })
+  }
+
+  openApproval(tabId: string): CodexApproval | undefined {
+    return this.runs.get(tabId)?.observer.openApproval()
+  }
+
+  openQuestion(tabId: string): CodexQuestion | undefined {
+    return this.runs.get(tabId)?.observer.openQuestion()
+  }
+
+  threadGone(key: string): boolean {
+    return (
+      this.everyHomeListed && !this.refreshing && !this.history.has(key) && !this.aliveTabFor(key)
+    )
+  }
+
+  launchedBypassingChecks(tabId: string): boolean {
+    return this.runs.get(tabId)?.bypassingChecks === true
+  }
+
+  turnsOf(key: string, n: number): Turn[] | undefined {
+    return [...this.runs.values()].find((r) => r.info?.sessionId === key)?.observer.turns.last(n)
+  }
+
+  // CODEX§19
+  async readTurns(key: string, n: number): Promise<Turn[]> {
+    const id = this.nativeId(key)
+    return this.withRpc(this.homeFor(key), async (rpc) => {
+      const reply = record(await rpc.request('thread/read', { threadId: id, includeTurns: true }))
+      return codexTurns(record(reply.thread).turns).last(n)
+    })
   }
 
   archive(key: string): boolean {
     if (this.aliveTabFor(key)) return false
-    const removed = this.store.removeMember(key)
+    const removed = this.removeMember(key)
     this.changed()
+    return removed
+  }
+
+  private removeMember(key: string): boolean {
+    const removed = this.store.removeMember(key)
+    if (removed) this.deps.memberRemoved?.(key)
     return removed
   }
 
@@ -621,6 +701,7 @@ export class CodexSessions {
     this.assertStarting()
     const picked = opts.resumeSessionId ? undefined : this.deps.pickHome()
     const home = opts.resumeSessionId ? this.homeFor(opts.resumeSessionId) : picked?.home
+    if (opts.trustFolder) this.deps.trustFolder(cwd, this.envFor(home))
     let run: Run | undefined
     const observe = (event: CodexEvent): void => {
       if (event.type !== 'bound') {
@@ -639,13 +720,16 @@ export class CodexSessions {
     )
     const env = { ...this.envFor(home), ZDOTDIR: openShim.zdotDir }
     const observer = new CodexObservation(observe)
+    const instructions = [...(agent ? [CODEX_AGENT_HINT] : []), ...(opts.role ? [opts.role] : [])]
     let transport: CodexTransport | undefined
     try {
       transport = await this.startTransport({
         binary,
         env,
         cwd,
-        configOverrides: agent ? [STATUS_LINE_CONFIG, AGENT_HINT_CONFIG] : [STATUS_LINE_CONFIG],
+        configOverrides: instructions.length
+          ? [STATUS_LINE_CONFIG, developerInstructions(instructions)]
+          : [STATUS_LINE_CONFIG],
         onFrame: (direction, frame) => observer.receive(direction, frame),
         onDisconnect: () => this.markDegraded(run),
         onError: (error) => {
@@ -663,7 +747,7 @@ export class CodexSessions {
         STATUS_LINE_CONFIG,
         '-c',
         NO_UPDATE_NOTICE_AT_START,
-        ...PERMISSION_ARGS[opts.permission ?? 'default'],
+        ...(opts.conductor ? CONDUCTOR_ARGS : PERMISSION_ARGS[opts.permission ?? 'default']),
         ...launchChoiceArgs(opts)
       ]
       if (opts.resumeSessionId) argv.push('resume', this.nativeId(opts.resumeSessionId))
@@ -689,6 +773,7 @@ export class CodexSessions {
         resumeKey: opts.resumeSessionId,
         home,
         account: picked?.account,
+        bypassingChecks: opts.permission === 'bypass',
         releaseOpenShim: openShim.release
       }
       this.runs.set(handle.id, run)
@@ -765,19 +850,33 @@ export class CodexSessions {
   }
 
   // CODEX§17
-  async queueMessage(tabId: string, text: string): Promise<void> {
+  async queueMessage(
+    tabId: string,
+    text: string,
+    clientId = `koloft-${randomUUID()}`
+  ): Promise<void> {
     const run = this.runs.get(tabId)
     const threadId = run?.info?.nativeSessionId
     if (!run || !threadId) throw new Error('that Codex session has not started yet.')
-    await run.transport.request(
-      'thread/queue/add',
-      {
-        threadId,
-        clientUserMessageId: `koloft-${randomUUID()}`,
-        input: [{ type: 'text', text, text_elements: [] }]
-      },
-      QUEUE_ANSWER_INSIDE_THE_KOLOFT_WAIT_MS
-    )
+    run.observer.queuedMessage(clientId)
+    try {
+      await run.transport.request(
+        'thread/queue/add',
+        {
+          threadId,
+          clientUserMessageId: clientId,
+          input: [{ type: 'text', text, text_elements: [] }]
+        },
+        QUEUE_ANSWER_INSIDE_THE_KOLOFT_WAIT_MS
+      )
+    } catch (error) {
+      run.observer.queueRefused(clientId)
+      throw error
+    }
+  }
+
+  queueDrained(tabId: string): boolean {
+    return this.runs.get(tabId)?.observer.queueDrained() ?? true
   }
 
   private markDegraded(run: Run | undefined): void {
@@ -803,7 +902,7 @@ export class CodexSessions {
         key,
         workspacePath: run.workspace,
         cwd: run.cwd,
-        title: thread.name || thread.preview?.slice(0, 100) || m?.title || 'Codex session',
+        title: thread.name || thread.preview?.slice(0, 100) || m?.title || CODEX_PLACEHOLDER_TITLE,
         createdAt: m?.createdAt ?? (thread.createdAt ? thread.createdAt * 1000 : now),
         updatedAt: now,
         worktreeResourceId: run.resource?.id,
@@ -812,7 +911,7 @@ export class CodexSessions {
       if (change === 'replace' && old && old !== key) {
         this.deps.replaced?.(old, key)
         if (![...this.runs.values()].some((r) => r !== run && r.info?.sessionId === old))
-          this.store.removeMember(old)
+          this.removeMember(old)
       }
     } catch (e) {
       this.deps.error(String(e))
@@ -823,7 +922,7 @@ export class CodexSessions {
       tabId: run.tabId,
       sessionId: key,
       nativeSessionId: thread.id,
-      title: this.store.getMember(key)?.title ?? 'Codex session',
+      title: this.store.getMember(key)?.title ?? CODEX_PLACEHOLDER_TITLE,
       cwd: run.cwd,
       treeRoot: run.cwd,
       worktree: run.resource?.worktreeName,
@@ -886,7 +985,16 @@ export class CodexSessions {
     }
     this.assertStarting()
     return this.launchRun(
-      { kind: 'codex', cwd, resumeSessionId: req.sessionId, cols: req.cols, rows: req.rows },
+      {
+        kind: 'codex',
+        cwd,
+        resumeSessionId: req.sessionId,
+        cols: req.cols,
+        rows: req.rows,
+        role: req.role,
+        conductor: req.conductor,
+        trustFolder: req.trustFolder
+      },
       resource
     )
   }
@@ -915,7 +1023,7 @@ export class CodexSessions {
         this.runs.delete(tabId)
         if (nativeExit && run.info && !this.aliveTabFor(run.info.sessionId)) {
           try {
-            this.store.removeMember(run.info.sessionId)
+            this.removeMember(run.info.sessionId)
           } catch (error) {
             this.deps.error(String(error))
           }

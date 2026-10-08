@@ -64,6 +64,22 @@ describe('SessionStore', () => {
     expect(new SessionStore(filename).getMember(session.key)).toEqual(session)
   })
 
+  it('drops a worktree’s recovery record once no member uses it, and keeps it while one still does', () => {
+    const store = new SessionStore(filename)
+    const worktree = resource()
+    const first = { ...member(), worktreeResourceId: worktree.id }
+    const second = { ...member(), worktreeResourceId: worktree.id }
+    store.putResource(worktree)
+    store.upsertMember(first)
+    store.upsertMember(second)
+    store.removeMember(first.key)
+    store.removeUnusedResourcesAt(worktree.worktreePath)
+    expect(store.getResource(worktree.id)).toEqual(worktree)
+    store.removeMember(second.key)
+    store.removeUnusedResourcesAt(worktree.worktreePath)
+    expect(new SessionStore(filename).getResource(worktree.id)).toBeUndefined()
+  })
+
   it('updates members separately without exposing mutable store objects', () => {
     const store = new SessionStore(filename)
     const first = member()

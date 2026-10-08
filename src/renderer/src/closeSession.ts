@@ -1,6 +1,6 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { isSessionKind, type SessionBackend } from './agentUi'
-import type { SessionInfo, TabKind } from '@shared/types'
+import { exitedAbnormally, type SessionInfo, type TabKind } from '@shared/types'
 
 export type CloseIntent =
   | { kind: 'none' }
@@ -65,7 +65,6 @@ export function unexpectedExitWanted<
   exit: { exitCode: number; signal?: number }
 ): tab is T & { kind: SessionBackend } {
   if (!tab || !isSessionKind(tab.kind)) return false
-  // PLATFORM§29
-  if (exit.exitCode === 0 && !exit.signal) return false
+  if (!exitedAbnormally(exit)) return false
   return !(tab.jobId !== undefined && tab.sessionId === undefined)
 }

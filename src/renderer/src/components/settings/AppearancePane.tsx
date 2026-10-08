@@ -133,8 +133,8 @@ export function AppearancePane(): JSX.Element {
           <b>Auto-fetch git remotes</b>
           <small>
             Runs <code>git fetch</code> for each workspace in the background so the sidebar can show
-            how far the checkout is behind. Off stops every automatic fetch — the workspace
-            menu&rsquo;s <i>Fetch origin</i> still works on demand.
+            how far the checkout is behind. Off stops every automatic fetch — <i>Fetch now</i>, in
+            the panel that opens over a workspace&rsquo;s git mark, still works on demand.
           </small>
         </div>
         <Switch checked={settings.gitAutoFetch} onChange={(on) => update({ gitAutoFetch: on })} />

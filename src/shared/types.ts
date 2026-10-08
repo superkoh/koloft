@@ -174,13 +174,71 @@ export interface Settings {
   agentTools: boolean
   notesHeight: number
   notesFolded: boolean
+  conductorsFolded: boolean
   keepAwake: boolean
   worldClocks: string[]
   onboardingSeen: boolean
   hintsSeen: string[]
   hintsOff: boolean
   lastSeenVersion: string
+  discord: DiscordSettings
 }
+
+export interface DiscordChannel {
+  guildId: string
+  channelId: string
+  name: string
+}
+
+export interface ConductorBinding {
+  id: string
+  scope: string
+  backend: BackendId
+  channel: DiscordChannel
+  sessionIds: string[]
+  lastSessionKey?: string
+  lastMessageId?: string
+  touched: string[]
+  threads?: SessionThread[]
+}
+
+export interface SessionThread {
+  threadId: string
+  keys: string[]
+  name?: string
+  lastMessageId?: string
+}
+
+export interface DiscordSettings {
+  userId?: string
+  userName?: string
+  bindings: ConductorBinding[]
+}
+
+export interface ConductorSaveInput {
+  id?: string
+  scope: string
+  backend: BackendId
+  channel: DiscordChannel
+}
+
+export type DiscordPhase =
+  'off' | 'connecting' | 'connected' | 'token' | 'intents' | 'unreachable' | 'elsewhere'
+
+export interface DiscordStatus {
+  phase: DiscordPhase
+  botName?: string
+  applicationId?: string
+  guildNames: string[]
+  failing: Record<string, string>
+  candidate?: { name: string; text: string; at: number }
+}
+
+export const DISCORD_OFF: DiscordStatus = { phase: 'off', guildNames: [], failing: {} }
+
+export type ConductorSaveResult = { ok: true } | { ok: false; error: string }
+
+export type ConductorOpenResult = { ok: true; tabId: string } | { ok: false; error: string }
 
 export const HINT_IDS = ['workbench', 'approval', 'agent-web', 'worktree', 'github'] as const
 export type HintId = (typeof HINT_IDS)[number]
@@ -214,12 +272,14 @@ export const DEFAULT_SETTINGS: Settings = {
   agentTools: true,
   notesHeight: 260,
   notesFolded: false,
+  conductorsFolded: true,
   keepAwake: true,
   worldClocks: [],
   onboardingSeen: false,
   hintsSeen: [],
   hintsOff: false,
-  lastSeenVersion: ''
+  lastSeenVersion: '',
+  discord: { bindings: [] }
 }
 
 export type BackendId = 'claude' | 'codex'
@@ -258,6 +318,9 @@ export interface CreateTabOptions {
   scheduled?: boolean
   util?: boolean
   ownerTabId?: string
+  role?: string
+  conductor?: boolean
+  trustFolder?: boolean
 }
 
 export type CreateTabResult =
@@ -417,6 +480,7 @@ export interface SessionUsage {
 }
 
 export const PLACEHOLDER_SESSION_TITLE = 'Claude session'
+export const CODEX_PLACEHOLDER_TITLE = 'Codex session'
 
 export const PENDING_SESSION_TITLE = 'Starting…'
 
@@ -456,7 +520,9 @@ export interface BackendSessionInfo {
   updatedAt: number
 }
 
-export interface SessionInfo extends BackendSessionInfo, SessionSource {}
+export interface SessionInfo extends BackendSessionInfo, SessionSource {
+  conductor?: string
+}
 
 export interface ClaudeSessionInfo extends BackendSessionInfo {
   jsonlPath: string | null
@@ -666,6 +732,11 @@ export interface TerminalExit {
   signal?: number
 }
 
+export function exitedAbnormally(exit: Pick<TerminalExit, 'exitCode' | 'signal'>): boolean {
+  // PLATFORM§29
+  return exit.exitCode !== 0 || !!exit.signal
+}
+
 export interface TerminalProcessTitle {
   id: string
   name: string
@@ -674,6 +745,17 @@ export interface TerminalProcessTitle {
 export interface TerminalCwd {
   id: string
   cwd: string
+}
+
+export interface ScreenRequest {
+  requestId: string
+  tabId: string
+}
+
+export interface ScreenAnswer {
+  requestId: string
+  lines: string[] | null
+  sizedToPane: boolean
 }
 
 export interface KoloftApi {
@@ -701,6 +783,8 @@ export interface KoloftApi {
     onProcessTitle(cb: (t: TerminalProcessTitle) => void): () => void
     onCwd(cb: (c: TerminalCwd) => void): () => void
     onSpawned(cb: (t: SpawnedTab) => void): () => void
+    onScreenRequest(cb: (r: ScreenRequest) => void): () => void
+    answerScreen(a: ScreenAnswer): void
   }
   workbench: {
     get(sessionId: string): Promise<SessionWorkbenchState>
@@ -947,6 +1031,21 @@ export interface KoloftApi {
     onState(cb: (s: CronState) => void): () => void
     onToast(cb: (text: string) => void): () => void
   }
+  conductors: {
+    save(input: ConductorSaveInput): Promise<ConductorSaveResult>
+    unbind(id: string): Promise<void>
+    switchBackend(id: string): Promise<void>
+    open(id: string): Promise<ConductorOpenResult>
+    startFresh(id: string): Promise<ConductorOpenResult>
+  }
+  discord: {
+    setToken(token: string): Promise<boolean>
+    status(): Promise<DiscordStatus>
+    onStatus(cb: (s: DiscordStatus) => void): () => void
+    pair(isMe: boolean): Promise<void>
+    forgetOwner(): Promise<void>
+    channels(): Promise<DiscordChannel[]>
+  }
 }
 
 export type Schedule =
@@ -1006,6 +1105,7 @@ export interface LiveRun {
   startedAt: number
   dueAt: number
   manual?: true
+  kept?: string
 }
 
 export interface CronState {
@@ -1129,6 +1229,7 @@ export interface BackendSessionRow {
 
 export interface SessionRow extends BackendSessionRow, SessionSource {
   resident?: boolean
+  parentId?: string
 }
 
 export interface WorkspaceFreshness {
@@ -1162,9 +1263,16 @@ export interface WorkspaceRows {
     isGit: boolean
     hasHistory: boolean
     freshness?: WorkspaceFreshness
+    github?: WorkspaceGithub
     remote?: { host: string; path: string; connected: boolean; problem?: string }
   }
   rows: SessionRow[]
+}
+
+export interface WorkspaceGithub {
+  repo: string
+  issues: number
+  prs: number
 }
 
 export interface WorktreeInfo {
@@ -1195,6 +1303,9 @@ export interface SessionResumeRequest {
   mode?: 'direct' | 'rebuild' | 'renamed' | 'main'
   worktree?: string
   rebuild?: { worktreePath: string; branch: string; baseRef: string }
+  role?: string
+  conductor?: boolean
+  trustFolder?: boolean
 }
 
 export type SessionResumeResult =

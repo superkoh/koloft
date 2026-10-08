@@ -1,3 +1,6 @@
+import { GLOBAL_SCOPE } from './conductors'
+import { parseRemoteKey, remoteCopyText } from './remoteKey'
+
 export const AGENT_GUIDE = `koloft lets you ask Koloft, the app this session runs in, to do things for its owner (the person you work for). Run it in your shell. Each command prints its answer; exit code 0 means it worked.
 
 RULES
@@ -40,7 +43,7 @@ Options: --backend claude|codex, --model <model>, --effort low|medium|high|xhigh
     same: the same permission as a session started from the sidebar's + button.
     acceptEdits: may change files without asking.
     skipAll: never asks for permission.
-    --when-done close: the run's tab closes once it finishes its work, so the next run is not skipped. The default, open, leaves it open for you.
+    --when-done close: once the run has finished all its work, its tab, its sidebar row and its worktree go, so the next run is not skipped. A run that asks something, still has work running, or would lose a change or a commit stays open. The default, open, leaves it open for you.
 
 koloft cron list
     List this workspace's tasks: number, name, when it runs, on or off, next run, last result.
@@ -76,26 +79,79 @@ A workspace is a folder in Koloft's sidebar. Where a command takes --workspace, 
 
 koloft session list [--workspace <workspace>]
     List a workspace's sessions: name and state (working, waiting for the owner, or idle). For a Claude session it also prints the path of its transcript (the file that holds its conversation).
+    A conductor (the session the owner talks to through Discord) takes no options here and gets every session it looks after, open or closed: name, Claude or Codex, the machine it runs on, its state (working, waiting for the owner, idle or closed), when it was last active, and its id. The global conductor also gets each session's workspace.
+
+koloft session read <id or name> [--last <number>]
+    Print what was said in a session's last turns (1 if you leave out --last, at most 20): the owner's messages, messages from other sessions, and the session's replies. Works for Claude and Codex sessions, open or closed.
+    Example: koloft session read fix-login --last 3
+
+koloft workspace list
+    Only for the global conductor: list the workspaces in Koloft's sidebar, with each one's path and how many of its sessions are open.
 
 koloft session new [--name <name>] [--workspace <workspace>] [-w <worktree name>] [--model <model>] -- "<first message>"
     Start a sibling session of your own kind (Claude starts Claude, Codex starts Codex), and print the name to reach it by. It starts in this workspace, or in the one --workspace names; a remote (SSH) workspace is not allowed. A Codex session has no name, so you get its tab id instead; its session id shows in "koloft session list" once it starts, and "koloft session send" takes either. -w starts it in its own git worktree (a separate copy of the repository).
     Example: koloft session new --name docs-fixer -- "Fix the broken links in docs/."
     Example: koloft session new --workspace koloft-releases -- "Check that the latest release has all its files."
+    A conductor may also pick --backend claude|codex (its own kind if left out). The global conductor must give --workspace; a workspace conductor can only start sessions in its own workspace. The new session is told to report back to the conductor.
 
 How to talk to a session you started:
     Claude: use your SendMessage tool with its name. ListAgents shows the sessions on this machine.
     Codex: use "koloft session send".
+    A conductor: use "koloft session send" for every session, Claude or Codex.
 
 koloft session send <id or name> "<message>"
-    Codex only: send a message to another Codex session.
+    Codex: send a message to another Codex session.
+    A conductor: send a message to any session it looks after. Your message reaches it marked as coming from the owner through you. A closed one is resumed first, and a session on another machine only gets it once its turn has ended; then you are told "Will deliver when … is ready." at once, and if it never gets there you hear "[Koloft] Could not deliver to …" later.
+    Any session: report back to the conductor that started you, with the id it gave you.
     Example: koloft session send 0199c3f2-7a41-7c30-9e55-1d2b8f6a0c11 "Tell me what you found."
+
+koloft session command <id or name | me> /<command> [arguments]
+    Only for a conductor: run one slash command (like /compact, /clear or /context) in a session it looks after, or in yourself with "me". Koloft waits until that session is idle with no question showing, types the command, and posts what it printed in Discord itself; you only hear that it was handed over. After /clear (or /new in Codex) the session gets a new id: reach it by its name, or run koloft session list again. A command that opens a menu is closed with Esc, so give the command its arguments (like /model haiku).
+    Example: koloft session command fix-login /compact keep the test plan
+
+koloft session screen <id or name | me>
+    Only for a conductor: print what an open session's terminal shows right now. Use it when the owner asks what a command showed that Koloft could only see on the screen.
+    Example: koloft session screen fix-login
+
+koloft session answer <id or name> <option number | yes | no | your own words>
+    Only for a conductor: answer the question or approval a session it looks after is showing right now, the one Koloft posted in Discord as "… is waiting for you". A number picks that option; yes or no approves or refuses; other words are the answer itself (for an approval or a plan: what to do instead). Only answer the way the owner told you.
+    Example: koloft session answer fix-login 2
+
+koloft session resume <id or name> [-- "<message>"]
+    Only for a conductor: resume a closed session it looks after, and if you like send it a first message.
+    Example: koloft session resume fix-login -- "Carry on with the tests."
+
+koloft session stop <id or name>
+    Only for a conductor: close a session's tab. The session stays in the list and can be resumed.
+    Example: koloft session stop fix-login
+
+koloft session close [<id or name>]
+    Close a session for good: Koloft ends it, closes its tab and takes it off the sidebar list. If it runs in its own git worktree, Koloft also deletes that worktree and its branches. With no id or name it closes the session you run it in; run that as your very last step, only when the owner asked for it. With an id or name it closes a session you started with "koloft session new" (open, or already ended), once you have its result. A conductor may also close, when the owner asks, any ended session it looks after on this computer: an open one is refused (stop it first), and so is one on another machine. Do not resume a session to ask it to close itself. If anything in the worktree is not committed, or a commit is on no remote branch, nothing is closed and Koloft lists what is left.
+    Example: koloft session close docs-fixer
+
+DISCORD (conductors only)
+
+koloft discord send <file>... [-- "<text>"]
+    Only for a conductor: send files, pictures or screenshots to the Discord channel the owner talks to you in, with an optional line of text. Paths are relative to your current folder. At most 20 MB per file. Use it when the owner wants to see a file or a screenshot; a path you only mention in your reply is not sent.
+    Example: koloft discord send shot.png -- "The login page now."
 
 WEB PAGES (Claude only)
 
 To use the web pages in this session's Workbench, drive them with Playwright (a tool that controls a browser): the playwright-cli command or the Playwright MCP tools. When the owner allows it, they already connect to the Workbench browser; its address is in $KOLOFT_BROWSER_CDP. Codex sessions cannot do this.`
 
 export const AGENT_SKILL_DESCRIPTION =
-  'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the workspace note, list, add, change or run scheduled tasks, or list and start sibling sessions. Read this before running any koloft command.'
+  'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the workspace note, list, add, change or run scheduled tasks, list, start, message, run slash commands in, answer, resume and stop sessions, read what a session said, or close this session and its worktree for good. Read this before running any koloft command.'
+
+export function conductorRole(scope: string): string {
+  const remote = parseRemoteKey(scope)
+  const what =
+    scope === GLOBAL_SCOPE
+      ? 'all workspaces'
+      : `the workspace ${remote ? remoteCopyText(remote.host, remote.path) : scope}`
+  return `You are Koloft's conductor for ${what}. Messages starting with [Discord] come from the owner via Discord. Use the koloft command (koloft help) to look after the sessions in your scope: koloft session list, read, new (with --backend claude|codex${scope === GLOBAL_SCOPE ? ' and --workspace' : ''}), send, command, screen, answer, resume, stop and close. Message every session with koloft session send, whether it is Claude or Codex; run a slash command in a session, or in yourself, with koloft session command. Koloft gives each such session its own Discord thread, where it tells the owner when the session finishes (with its reply), waits for an answer or closes, and where the owner can talk to the session directly, so do not repeat that; when the owner tells you how to answer a waiting session, run koloft session answer. Your replies reach the owner in Discord; when the owner wants to see a file or a screenshot, send it with koloft discord send <file>.
+
+You only pass work on; you never do it yourself. Do not write or change files, run builds, tests, scripts or any command but koloft, take screenshots or dig through code to answer a question: for any of that, start a session with koloft session new or message one with koloft session send, then pass its answer back. Koloft enforces this, so such attempts are refused. You run in a folder of your own, not in ${scope === GLOBAL_SCOPE ? 'a workspace' : 'the workspace'}, so give koloft discord send a full path.`
+}
 
 export const CODEX_AGENT_HINT =
   'You are running inside Koloft, an app that runs and manages coding sessions for its owner. Run "koloft help" in your shell to see what Koloft lets you do.'

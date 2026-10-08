@@ -29,7 +29,8 @@ export interface CodexTransportOptions extends CodexProcessOptions {
 const DEFAULT_TIMEOUT = 15_000
 const DEFAULT_MAX_FRAME = 32 * 1024 * 1024
 const execFileAsync = promisify(execFile)
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+export const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms))
 
 // CODEX§10
 export function codexEnvironment(overrides?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -135,6 +136,7 @@ class CodexProcess {
   readonly ready: Promise<void>
   private decoder = new StringDecoder('utf8')
   private tail = ''
+  private tailBytes = 0
   private stopping?: Promise<void>
   private failed = false
   private exited = false
@@ -170,15 +172,20 @@ class CodexProcess {
     this.child.stdout.on('data', (chunk: Buffer) => {
       if (this.failed || this.stopping) return
       try {
-        this.tail += this.decoder.write(chunk)
+        const text = this.decoder.write(chunk)
+        let start = 0
         let newline: number
-        while ((newline = this.tail.indexOf('\n')) !== -1) {
-          const raw = this.tail.slice(0, newline)
-          this.tail = this.tail.slice(newline + 1)
+        while ((newline = text.indexOf('\n', start)) !== -1) {
+          const raw = this.tail + text.slice(start, newline)
+          this.tail = ''
+          this.tailBytes = 0
+          start = newline + 1
           if (raw.trim()) this.frame(raw, parseFrame(raw, this.limit))
         }
-        if (Buffer.byteLength(this.tail) > this.limit)
-          throw new Error('Codex frame exceeds the size limit')
+        const rest = text.slice(start)
+        this.tail += rest
+        this.tailBytes += Buffer.byteLength(rest)
+        if (this.tailBytes > this.limit) throw new Error('Codex frame exceeds the size limit')
       } catch (error) {
         this.fail(asError(error))
       }
