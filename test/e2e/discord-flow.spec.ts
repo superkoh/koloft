@@ -31,6 +31,7 @@ const OFFLINE_REPLY = 'Koloft was offline, this message was not delivered.'
 const CONDUCTOR_STARTS_AND_ANSWERS_MS = 60_000
 const DISCORD_MESSAGE_LIMIT = 2000
 const RESUMED_SESSION_BINDS_AFTER_MS = 12_000
+const SILENT_FLAG = 1 << 12
 
 function seedConductor(
   env: E2EEnv,
@@ -80,6 +81,10 @@ function notices(fake: FakeDiscord): string[] {
     .filter((l) => /^(🔔|❓|⏹)/.test(l))
 }
 
+function openerNow(fake: FakeDiscord, threadId: string): string | undefined {
+  return fake.edits.filter((e) => e.channelId === CHANNEL && e.id === threadId).at(-1)?.content
+}
+
 function transcriptText(env: E2EEnv, sessionId: string): string {
   const root = path.join(env.home, '.claude', 'projects')
   for (const dir of fs.readdirSync(root)) {
@@ -126,6 +131,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await expect
         .poll(() => said(fake), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toContain('Answer to: [Discord] hello there')
+      expect(fake.typing).toContain(CHANNEL)
       expect(said(fake).join('\n')).not.toContain('not the owner')
       await expect
         .poll(() => fake.reactions)
@@ -190,6 +196,10 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       expect(bindingOnDisk(env)?.threads).toEqual([
         expect.objectContaining({ threadId: fake.threads[0].id, keys: [managed] })
       ])
+      const opener = fake.threads[0].id
+      await expect
+        .poll(() => openerNow(fake, opener))
+        .toMatch(/^❓ \*\*.+\*\* · needs you, asked <t:\d+:R>\n-# ws-a · Claude$/)
 
       fake.say(OWNER, `/koloft session read ${managed}`)
       await expect
@@ -200,6 +210,11 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
         .poll(() => notices(fake))
         .toEqual([expect.stringMatching(/^❓ /), expect.stringMatching(/^🔔 .+ finished\.$/)])
       expect(inThreads(fake).at(-1)).toMatch(/finished\.\nAnswer to: after the touch$/)
+      expect(fake.typing).toContain(opener)
+      await expect
+        .poll(() => openerNow(fake, opener))
+        .toMatch(/^✅ \*\*.+\*\* · turn done <t:\d+:R>/)
+      expect(fake.edits.every((e) => e.flags! & SILENT_FLAG)).toBe(true)
 
       fake.say(
         OWNER,
@@ -320,6 +335,9 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
         .toEqual([expect.stringMatching(/^🔔 /), expect.stringMatching(/^⏹ .+ closed\.$/)])
       await expect(wsRows(page, 'ws-a')).toHaveClass(/cold/)
       await expect.poll(() => fake.threads[0].archived).toBe(true)
+      await expect
+        .poll(() => openerNow(fake, fake.threads[0].id))
+        .toMatch(/^⏹ \*\*.+\*\* · closed <t:\d+:R>\n-# ws-a · Claude$/)
       expect(fake.deleted).toEqual([])
 
       fake.say(OWNER, `/koloft session resume ${managed} -- carry on`)
@@ -396,6 +414,11 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       expect(bindingOnDisk(env)?.threads?.find((t) => t.threadId === opener.id)?.name).toBe(
         thread()
       )
+      await expect
+        .poll(() => openerNow(fake, opener.id)?.split(' · ')[0])
+        .toBe(`✅ **${thread()}**`)
+      expect(openerNow(fake, opener.id)).toMatch(/ · turn done <t:\d+:R>\n-# ws-a · Codex$/)
+      expect(fake.typing).toContain(opener.id)
 
       const startedKey = bindingOnDisk(env)!.threads!.find((t) => t.threadId === opener.id)!.keys[0]
       fake.say(OWNER, `/koloft session close ${startedKey}`)

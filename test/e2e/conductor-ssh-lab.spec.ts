@@ -238,6 +238,11 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
           .toBeTruthy()
         const thread = question()!.channelId
         expect(fake.threads.map((t) => t.id)).toContain(thread)
+        const opener = (): string | undefined =>
+          fake.edits.filter((e) => e.channelId === CHANNEL && e.id === thread).at(-1)?.content
+        await expect
+          .poll(opener, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+          .toMatch(/^❓ \*\*.+\*\* · needs you, asked <t:\d+:R>\n-# .+ · Claude$/)
         fake.press(OWNER, question()!.buttons![1], thread)
         await expect
           .poll(transcript, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
@@ -256,6 +261,10 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
             timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS
           })
           .toContain('finished.\nAnswer to: [Discord] typed in the thread')
+        expect(fake.typing).toContain(thread)
+        await expect
+          .poll(opener, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+          .toMatch(/^✅ \*\*.+\*\* · turn done <t:\d+:R>/)
       }
     )
   })

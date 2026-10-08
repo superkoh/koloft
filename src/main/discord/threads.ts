@@ -29,6 +29,7 @@ export interface ThreadDeps {
     | 'dropThread'
   >
   deleteFailed(threadName: string, error: unknown): void
+  opened(tabId: string): void
 }
 
 interface TabThread {
@@ -38,14 +39,16 @@ interface TabThread {
   name?: string
 }
 
-export function openerCard(s: ThreadSubject, started: boolean): Card {
+export function whereOf(s: Pick<ThreadSubject, 'backend' | 'workspace'>): string {
   const where = [s.workspace && scopeName(s.workspace), BACKEND_LABEL[s.backend]]
-    .filter(Boolean)
-    .join(' · ')
+  return `-# ${where.filter(Boolean).join(' · ')}`
+}
+
+export function openerCard(s: ThreadSubject, started: boolean): Card {
   return {
     accent: accentOf(s.name),
     header: `${started ? '▶ Started' : '🧵'} **${s.name}**`,
-    body: `-# ${where}`,
+    body: whereOf(s),
     silent: true
   }
 }
@@ -75,6 +78,15 @@ export class SessionThreads {
   threadOf(key: string): string | undefined {
     if (this.offTheSidebar.has(key)) return undefined
     return this.d.conductors.threadOfKey(key)?.thread.threadId
+  }
+
+  // PLATFORM§39
+  openerOf(tabId: string): { channelId: string; messageId: string } | undefined {
+    const t = this.byTab.get(tabId)
+    const key = this.keyOfTab.get(tabId)
+    if (!t || (key && this.offTheSidebar.has(key))) return undefined
+    const b = this.d.conductors.binding(t.bindingId)
+    return b && { channelId: b.channel.channelId, messageId: t.threadId }
   }
 
   place(b: ConductorBinding, s: ThreadSubject, started = false): Promise<string> {
@@ -119,6 +131,7 @@ export class SessionThreads {
       if (key) this.keep(t, key)
       const owner = this.d.conductors.owner()
       if (owner) void this.d.link.addToThread(threadId, owner).catch(() => undefined)
+      if (s.tabId) this.d.opened(s.tabId)
       return threadId
     } catch {
       this.threadless.add(slot)
@@ -133,6 +146,7 @@ export class SessionThreads {
     const own = this.d.conductors.threadOfKey(key)
     if (own) {
       this.byTab.set(tabId, tabThread(own.binding, own.thread))
+      this.d.opened(tabId)
       return
     }
     const previous = before ? this.d.conductors.threadOfKey(before) : undefined

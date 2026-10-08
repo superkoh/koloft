@@ -1181,6 +1181,32 @@ Gateway (the live connection that pushes events):
   /channels/{parent}/messages/{thread}` answered 200), and `DELETE` on it answered
   `204`. Whether re-inviting the bot with a link that asks for more permissions
   updates an existing bot role was not probed.
+- **Showing a state that keeps changing** — measured 2026-10-08 with the same bot on
+  the owner's server, REST only, in a channel no conductor is bound to, with a Components
+  V2 card (`flags` `1 << 15 | 1 << 12`) that had a thread on it:
+  - `PATCH /channels/{channel}/messages/{opener}` with new `components` (another
+    `accent_color`, another header) answered 200, with or without `flags` in the body.
+    Edits share one limit per channel across its messages: two cards edited in turn
+    answered 200 five times, then 429 (`retry_after` 0.3–0.6 s), the bucket filling
+    again in about 5 s. Edits have a different bucket from posts, but `DiscordRest` puts
+    both on one queue per channel.
+  - Editing the opener of an archived thread answered 200 and left the thread archived
+    (`thread_metadata.archived` still `true`); editing a message inside the archived
+    thread answered 400, code 50083 "Thread is archived".
+  - A `<t:{unix seconds}:R>` in a text display was stored as sent. That the app shows
+    it as a relative time ("3 minutes ago") that counts up by itself is from Discord's
+    docs, not seen on a phone.
+  - `POST /channels/{id}/typing` answered 204, five per channel per about 5 s, then
+    429 (`retry_after` 0.3); a thread and its parent count apart. It answered 204 on an
+    archived thread too, and the thread stayed archived. That it shows for about 10 s,
+    stops when the bot posts, and sends no push is from Discord's docs.
+  - Reactions on one message: one per 0.25 s (`x-ratelimit-limit` 1); every other
+    call of a burst answered 429. A reaction on an archived thread's opener left it
+    archived.
+  - `PUT /channels/{thread}/messages/pins/{id}` answered 403 (50013) with the bot
+    role the invite gives.
+  - That an edit or a typing call rings the phone or marks the channel unread was not
+    checked (Discord's docs say neither does).
 - Also from Discord's docs, not measured here: a message's `content` holds at most 2000
   characters; one message carries at most 10 files and one request at most 25 MiB; a
   bot's file may be at most 20 MiB (changelog 2025-09-03); adding or removing a reaction
