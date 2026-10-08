@@ -6,6 +6,8 @@ const readline = require('readline')
 const { execFile, spawnSync } = require('child_process')
 const WebSocket = require('ws')
 
+const VERSION_AT_KOLOFTS_MINIMUM = '0.161.0'
+
 const argv = process.argv.slice(2)
 const home = process.env.HOME
 const codexHome = process.env.CODEX_HOME || path.join(home, '.codex')
@@ -53,7 +55,7 @@ const newThread = (cwd, predecessor) => {
     preview: predecessor?.preview || '',
     createdAt: now,
     updatedAt: now,
-    cliVersion: '0.161.0',
+    cliVersion: VERSION_AT_KOLOFTS_MINIMUM,
     model: 'gpt-5.5',
     modelProvider: 'openai',
     source: 'cli',
@@ -69,7 +71,7 @@ if (argv.includes('--version')) {
   const versionProbeBlockingDelayMs = Number(read('fake-codex-version-delay')) || 0
   if (versionProbeBlockingDelayMs > 0)
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, versionProbeBlockingDelayMs)
-  console.log('codex-cli 0.161.0')
+  console.log(`codex-cli ${VERSION_AT_KOLOFTS_MINIMUM}`)
   process.exit(0)
 }
 
@@ -250,7 +252,7 @@ if (argv[0] === 'app-server') {
     append('fake-codex-wire.jsonl', { direction: 'client', frame })
     const { id, method, params: p = {} } = frame
     if (method === 'initialize') {
-      result(id, { userAgent: 'fake-codex/0.161.0', platformFamily: 'unix' })
+      result(id, { userAgent: `fake-codex/${VERSION_AT_KOLOFTS_MINIMUM}`, platformFamily: 'unix' })
       return
     }
     if (method === 'initialized') {
@@ -545,7 +547,7 @@ async function startTui() {
   ws.on('open', async () => {
     try {
       await send('initialize', {
-        clientInfo: { name: 'codex_cli_rs', version: '0.161.0' },
+        clientInfo: { name: 'codex_cli_rs', version: VERSION_AT_KOLOFTS_MINIMUM },
         capabilities: { experimentalApi: true }
       })
       ws.send(JSON.stringify({ method: 'initialized' }))

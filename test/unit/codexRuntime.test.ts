@@ -4,6 +4,7 @@ import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { codexTooOld, resolveCodexRuntime } from '../../src/main/codexRuntime'
 import { PtyManager } from '../../src/main/ptyManager'
+import { MIN_CODEX_VERSION } from '../../src/main/cliMinimums'
 
 const fake = vi.hoisted(() => ({ spawn: vi.fn() }))
 vi.mock('node-pty', () => ({ spawn: fake.spawn }))
@@ -17,7 +18,9 @@ beforeEach(() => {
   const bin = path.join(directory, 'bin')
   fs.mkdirSync(bin)
   binary = path.join(bin, 'codex')
-  fs.writeFileSync(binary, '#!/bin/sh\nprintf "codex-cli 0.161.0\\n"\n', { mode: 0o700 })
+  fs.writeFileSync(binary, `#!/bin/sh\nprintf "codex-cli ${MIN_CODEX_VERSION}\\n"\n`, {
+    mode: 0o700
+  })
   environment = {
     PATH: '/usr/bin:/bin',
     SHELL: '/bin/zsh',
@@ -46,7 +49,7 @@ describe('Codex shell runtime', () => {
   it('loads login and interactive configuration while excluding profile noise and runtime markers', async () => {
     const runtime = await resolveCodexRuntime({ env: environment })
     expect(runtime.binary).toBe(binary)
-    expect(runtime.version).toBe('0.161.0')
+    expect(runtime.version).toBe(MIN_CODEX_VERSION)
     expect(runtime.env.CODEX_HOME).toBe(path.join(directory, 'codex home'))
     expect(runtime.env.OPENAI_API_KEY).toBe('profile-fixture-key')
     expect(runtime.env.CODEX_CUSTOM_OPTION).toBe('normal-config')

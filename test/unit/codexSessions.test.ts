@@ -102,7 +102,7 @@ beforeEach(() => {
   mocks.runtime.mockResolvedValue({
     binary: '/fixture/codex',
     env: {},
-    version: '0.161.0',
+    version: MIN_CODEX_VERSION,
     verified: true
   })
   let tab = 0
@@ -706,7 +706,7 @@ describe('CodexSessions', () => {
     const fresh = new CodexSessions(path.join(directory, 'probe.json'), deps)
     expect(await fresh.availability()).toMatchObject({
       available: true,
-      version: '0.161.0',
+      version: MIN_CODEX_VERSION,
       verified: true
     })
     await fresh.availability()
@@ -735,7 +735,7 @@ describe('CodexSessions', () => {
     const fresh = new CodexSessions(path.join(directory, 'probe.json'), deps)
     mocks.runtime.mockResolvedValueOnce(TOO_OLD)
     const [first, second] = await Promise.all([fresh.availability(), fresh.availability()])
-    expect(first).toMatchObject({ available: true, version: '0.161.0' })
+    expect(first).toMatchObject({ available: true, version: MIN_CODEX_VERSION })
     expect(second).toBe(first)
     expect(mocks.update).toHaveBeenCalledOnce()
     expect(mocks.update).toHaveBeenCalledWith(TOO_OLD)

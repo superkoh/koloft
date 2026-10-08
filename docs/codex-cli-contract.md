@@ -210,8 +210,8 @@ branch and HEAD were still present and unchanged.
 ## 7. Rechecking a CLI upgrade
 
 Each dated section names the binary it ran: mostly 0.153.4, some 0.159.3. Koloft treats
-the minor line of its minimum (`MIN_CODEX_VERSION` in `src/main/cliMinimums.ts`, today
-0.161) as verified (`verified` in `src/main/codexRuntime.ts`, pinned by
+the minor line of its minimum (`MIN_CODEX_VERSION` in `src/main/cliMinimums.ts`) as
+verified (`verified` in `src/main/codexRuntime.ts`, pinned by
 `test/unit/codexRuntime.test.ts`) and warns on anything newer. **The owner raised the
 minimum from 0.153.4 to 0.161.0 on 2026-10-08 without redoing the live checks below on
 0.161**; that the sections still hold on 0.161 is inferred, not checked. Those checks
