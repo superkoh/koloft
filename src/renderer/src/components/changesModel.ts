@@ -151,11 +151,16 @@ function fenceFor(text: string): string {
   return '`'.repeat(Math.max(3, longest + 1))
 }
 
-export function hunkPrompt(rel: string, hunk: string, note: string): string {
+export interface HunkPrompt {
+  pasted: string
+  typed: string
+}
+
+// CC§17
+export function hunkPrompt(rel: string, hunk: string, note: string): HunkPrompt {
   const diff = hunk.replace(/\n+$/, '')
   const fence = fenceFor(diff)
-  const said = note.trim()
-  return [rel, fence + 'diff', diff, fence, ...(said ? ['', said] : [])].join('\n')
+  return { pasted: [rel, fence + 'diff', diff, fence].join('\n') + '\n\n', typed: note.trim() }
 }
 
 export function commentBlocked(session: SessionInfo | null): string | null {

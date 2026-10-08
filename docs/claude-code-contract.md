@@ -1269,7 +1269,23 @@ earlier assertion that the model obey the note, the paste facts held in all thre
 - **The model may not take words inside a paste as the person's own.** Asked inside the
   paste to reply with one word, it did in 4 of 7 runs; in the other 3 it said the line
   "came from the pasted text and not from you" and did not act on it.
+- **Text typed right after the paste's `ESC[201~` stays outside the tags**, after
+  `</pasted_content …>\n\n`, and the model took it as the person's words: it replied the
+  one word asked for in 11 of 11 runs. Measured 2026-10-08, CC 2.1.294, a python `pty`
+  probe in a scratch `HOME` (only `.claude.json` with trust and onboarding, auth in
+  `CLAUDE_CODE_OAUTH_TOKEN`): the paste, then the note in the same write, in one write
+  0.3 s later, or in pieces; then a CR 4 s later.
+- **One raw write longer than about 800 bytes is taken as a second paste**, wrapped in its
+  own tags and shown as `[Pasted text #2]`: a 900-byte piece did that, and a
+  1,150-byte write was split at 1,024 bytes with the first part wrapped. Pieces of 512
+  bytes 10 ms apart, and of 128 characters 0.3 s apart, stayed typed text.
+- **A raw LF in the typed text adds a line and does not send**, both inside one write of
+  nine lines and as a lone LF written 0.3 s after the line before it (2.1.294, same
+  probe; the 2.1.288 measurement is in §12).
 - **The same 85 lines written raw, with no markers, split into two blocks** (2.1.287),
   so a raw write is not one paste.
 - **Over ssh into tmux the paste arrives whole and waits the same way**: the remote tab
-  showed one `[Pasted text #1 +9 lines]` and the CR sent one message, as on the Mac.
+  showed one `[Pasted text #1 +9 lines]` and the CR sent one message, as on the Mac. A
+  two-line note typed after it (Koloft's ✎ comment, 128-character pieces 0.3 s apart)
+  stayed outside the tags and was obeyed in 3 of 3 E-SSH-10 runs (2026-10-08, 2.1.294
+  linux-arm64); the same held in 3 of 3 runs of the local real case.

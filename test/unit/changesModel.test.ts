@@ -330,9 +330,9 @@ describe('writtenPaths', () => {
 describe('hunkPrompt — what a ✎ comment puts in the session’s input box', () => {
   const hunk = '@@ -1,2 +1,2 @@ greet()\n-  return "hi"\n+  return "hello"\n'
 
-  it('gives the path, then the hunk with its @@ line in a diff fence, then the note', () => {
-    expect(hunkPrompt('src/greet.ts', hunk, '  keep "hi"  ')).toBe(
-      [
+  it('pastes the path, then the hunk with its @@ line in a diff fence, then a blank line; the note is typed after it, not pasted, so claude takes it as the person’s own words', () => {
+    expect(hunkPrompt('src/greet.ts', hunk, '  keep "hi"\n  and say why  ')).toEqual({
+      pasted: [
         'src/greet.ts',
         '```diff',
         '@@ -1,2 +1,2 @@ greet()',
@@ -340,20 +340,22 @@ describe('hunkPrompt — what a ✎ comment puts in the session’s input box', 
         '+  return "hello"',
         '```',
         '',
-        'keep "hi"'
-      ].join('\n')
-    )
+        ''
+      ].join('\n'),
+      typed: 'keep "hi"\n  and say why'
+    })
   })
 
-  it('leaves the note out when it is blank', () => {
-    expect(hunkPrompt('a.md', '@@ -1 +1 @@\n-a\n+b', ' \n ')).toBe(
-      'a.md\n```diff\n@@ -1 +1 @@\n-a\n+b\n```'
-    )
+  it('types nothing when the note is blank', () => {
+    expect(hunkPrompt('a.md', '@@ -1 +1 @@\n-a\n+b', ' \n ')).toEqual({
+      pasted: 'a.md\n```diff\n@@ -1 +1 @@\n-a\n+b\n```\n\n',
+      typed: ''
+    })
   })
 
   it('fences with more backticks than the longest run in the hunk, so a ``` context line cannot close it', () => {
     const withFences = '@@ -1,3 +1,3 @@\n ```ts\n-a\n+b\n ````'
-    const out = hunkPrompt('README.md', withFences, 'note').split('\n')
+    const out = hunkPrompt('README.md', withFences, 'note').pasted.split('\n')
     expect(out[1]).toBe('`````diff')
     expect(out[out.length - 3]).toBe('`````')
   })

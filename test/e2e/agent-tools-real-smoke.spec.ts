@@ -17,6 +17,7 @@ import {
   WORKBENCH,
   claudePromptsIn,
   claudeRepliesIn,
+  outsideThePaste,
   putCommentOnFirstHunkInSession,
   showBrowse
 } from './helpers/workbench'
@@ -342,7 +343,7 @@ const CLAUDE_TRANSCRIPT: RealTranscript = {
 const HUNK_FILE = 'README.md'
 const LINE_THE_HUNK_ADDS = 'a line for the hunk comment'
 const REPLY_WORD = 'KIWI'
-const NOTE_ASKING_FOR_ONE_WORD = `Koloft paste check: reply with only the word ${REPLY_WORD}.`
+const NOTE_ASKING_FOR_ONE_WORD = `Koloft paste check.\nReply with only the word ${REPLY_WORD}.`
 
 const CODEX_TRANSCRIPT: RealTranscript = {
   prompts: (env, sessionId) => codexItems(env, sessionId, 'UserMessage'),
@@ -387,12 +388,14 @@ function aHunkCommentWaitsForEnterThenGoesAsOneMessage(
     await test.info().attach('the-one-message', { body: sent })
     expect(sent).toContain(head)
     expect(sent).toContain(`+${LINE_THE_HUNK_ADDS}`)
-    expect(sent).toContain(NOTE_ASKING_FOR_ONE_WORD)
+    expect(outsideThePaste(sent)).toContain(NOTE_ASKING_FOR_ONE_WORD)
     await expect
       .poll(() => transcript.replies(env, sessionId).length, { timeout: A_REAL_MODEL_TURN_MS })
       .toBeGreaterThan(repliesBefore)
-    await test.info().attach('the-reply', { body: transcript.replies(env, sessionId).join('\n') })
     await expect(rows).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: A_REAL_MODEL_TURN_MS })
+    const replies = transcript.replies(env, sessionId).slice(repliesBefore)
+    await test.info().attach('the-reply', { body: replies.join('\n') })
+    expect(replies.at(-1)?.trim()).toBe(REPLY_WORD)
     expect(transcript.prompts(env, sessionId)).toHaveLength(promptsBefore + 1)
   })
 }
@@ -440,7 +443,7 @@ test.describe('`koloft session close` from a REAL agent in a worktree: opt-in ca
 })
 
 test.describe('✎ comment on a Changes hunk with the REAL claude and codex: opt-in cases proving the paste waits in the input box; they spend real money', () => {
-  test('a real Claude Code holds the hunk comment in its input box unsent, and the next Enter sends path, diff fence, hunk and note as one message', async ({
+  test('a real Claude Code holds the hunk comment in its input box unsent, and the next Enter sends path, diff fence and hunk as a paste and the two-line note as typed words in one message, which the model obeys', async ({
     env
   }) => {
     test.skip(
@@ -455,7 +458,7 @@ test.describe('✎ comment on a Changes hunk with the REAL claude and codex: opt
     )
   })
 
-  test('a real Codex holds the hunk comment in its composer unsent, and the next Enter sends path, diff fence, hunk and note as one message', async ({
+  test('a real Codex holds the hunk comment in its composer unsent, and the next Enter sends path, diff fence, hunk and the two-line note as one message, which the model obeys', async ({
     env
   }) => {
     test.skip(

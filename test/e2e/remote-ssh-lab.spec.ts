@@ -10,6 +10,7 @@ import {
   claudePromptsIn,
   claudeRepliesIn,
   layoutState,
+  outsideThePaste,
   putCommentOnFirstHunkInSession,
   seedWorkbenchDefault,
   showBrowse,
@@ -50,6 +51,7 @@ const LOGINS_OF_THE_FIRST_FULL_ROUND_SETTLE_MS = 5000
 const README = (user: string): string => `# Lab project\n\nkoloft-ssh-lab marker for ${user}.\n`
 const A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS = 180_000
 const A_PASTE_THAT_SENT_ITSELF_WOULD_HAVE_STARTED_A_TURN_BY_MS = 5_000
+const REPLY_WORD = 'PLUM'
 const COMMIT_THE_PROJECT_THEN_EDIT_THE_README =
   'cd proj && printf "NOTES.md\\n" > .gitignore && git init -q && git add -A' +
   ' && git -c user.email=lab@koloft.test -c user.name=lab commit -qm base' +
@@ -287,13 +289,13 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
-  test('E-SSH-10: ✎ comment on a remote Changes hunk reaches a REAL claude on the machine through ssh and tmux as one paste that waits in its input box, and the next Enter sends path, diff fence, hunk and note as one message (opt-in, spends real money)', async ({
+  test('E-SSH-10: ✎ comment on a remote Changes hunk reaches a REAL claude on the machine through ssh and tmux as one paste that waits in its input box, and the next Enter sends path, diff fence and hunk as a paste and the two-line note as typed words in one message, which the model obeys (opt-in, spends real money)', async ({
     env
   }) => {
     test.skip(!HAVE_LINUX_CLAUDE, NEEDS_LINUX_CLAUDE)
     test.setTimeout(3 * A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS + 120_000)
     seedSettings(env, { hintsOff: true })
-    const note = 'Koloft paste check over ssh: reply with only the word PLUM.'
+    const note = `Koloft paste check over ssh.\nReply with only the word ${REPLY_WORD}.`
     await withLab(
       env,
       async ({ page, lab }) => {
@@ -340,12 +342,13 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         await test.info().attach('the-one-message', { body: sent })
         expect(sent).toContain(head)
         expect(sent).toContain('+edited')
-        expect(sent).toContain(note)
+        expect(outsideThePaste(sent)).toContain(note)
         const replies = (): string[] => claudeRepliesIn(transcript())
         await expect
           .poll(() => replies().length, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS })
           .toBeGreaterThan(0)
         await test.info().attach('the-reply', { body: replies().join('\n') })
+        expect(replies().at(-1)?.trim()).toBe(REPLY_WORD)
         expect(prompts()).toHaveLength(promptsBefore + 1)
       },
       (lab) => useRealClaudeOnTheMachine(env, lab)

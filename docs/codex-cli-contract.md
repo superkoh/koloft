@@ -899,6 +899,15 @@ message" (3 runs).
   `event_msg` `item_completed` whose `item.type` is `UserMessage` and whose text is the
   pasted text exactly, with no wrapping. The model followed the one-word request in the
   paste in 3 of 3 runs.
+- **Text typed right after the paste's `ESC[201~` joins it in the composer** and is sent
+  with it as one `UserMessage`, unwrapped; the model replied the one word asked for in 8
+  of 8 runs. A raw LF in that text adds a line and does not send, inside one write and
+  as a lone LF written 0.3 s after the line before it. One raw write of 1,148
+  characters showed as `[Pasted Content 1148 chars]` in the composer and was still sent
+  whole and unwrapped; the same text in pieces of 128 characters 0.3 s apart showed as
+  text. Measured 2026-10-08, Codex CLI 0.161.0 (the standalone install above), a python
+  `pty` probe in a scratch `HOME` whose `CODEX_HOME` held only a copied `auth.json` and
+  a `config.toml` trusting the folder; a CR 4 s after the note.
 - Codex on a remote machine is not a tab Koloft starts yet (§16), so the paste over ssh
   and tmux is not probed for Codex.
 

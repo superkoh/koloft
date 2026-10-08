@@ -1119,7 +1119,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('✎ comment on a Changes hunk lands in the Codex composer as one paste, unsent until the person presses Enter', async ({
+  test('✎ comment on a Changes hunk lands in the Codex composer as a paste with the note typed after it, unsent until the person presses Enter', async ({
     env
   }) => {
     installCodex(env)

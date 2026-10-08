@@ -40,7 +40,8 @@ import {
   totalDelta,
   writtenPaths,
   type ChangeEntry,
-  type DiffSection
+  type DiffSection,
+  type HunkPrompt
 } from './changesModel'
 import '../changesView.css'
 
@@ -417,9 +418,9 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
   const pasteTab = session?.tabId ?? null
   const blocked = commentBlocked(session)
   const putInSession = useCallback(
-    async (text: string): Promise<void> => {
+    async ({ pasted, typed }: HunkPrompt): Promise<void> => {
       if (!pasteTab) return
-      await window.api.terminal.paste(pasteTab, text)
+      await window.api.terminal.paste(pasteTab, pasted, typed)
       onReturnFocus()
     },
     [pasteTab, onReturnFocus]
@@ -568,7 +569,7 @@ interface BlockProps {
   onSetView: (path: string, v: 'diff' | 'source') => void
   onSplit: (path: string, view: 'diff' | 'source', el: HTMLElement | null) => void
   onContextMenu: (e: ReactMouseEvent, path: string, isDir: boolean) => void
-  onComment: (text: string) => Promise<void>
+  onComment: (prompt: HunkPrompt) => Promise<void>
 }
 
 const ChangeBlock = memo(function ChangeBlock({
@@ -744,7 +745,7 @@ function Hunks({
   expanded: boolean
   blocked: string | null
   onToggleExpand: (path: string) => void
-  onComment: (text: string) => Promise<void>
+  onComment: (prompt: HunkPrompt) => Promise<void>
 }): JSX.Element {
   const [commentedHunk, setCommentedHunk] = useState<string | null>(null)
   const commenting = hunks.findIndex((h) => h.text === commentedHunk)

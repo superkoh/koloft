@@ -260,7 +260,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     expect(await y.locator(CV.diffRow).count()).toBe(compactY)
   })
 
-  test('WB-C19: ✎ comment puts the path, the hunk in a diff fence and the note into the session’s input box as one paste, unsent, with the caret in the session; it is greyed while an approval is up', async ({
+  test('WB-C19: ✎ comment pastes the path and the hunk in a diff fence into the session’s input box and types the note after it, unsent, with the caret in the session; it is greyed while an approval is up', async ({
     page,
     env
   }) => {

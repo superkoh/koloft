@@ -773,7 +773,7 @@ export interface KoloftApi {
   terminal: {
     create(opts: CreateTabOptions): Promise<CreateTabResult>
     write(id: string, data: string): void
-    paste(id: string, text: string): Promise<void>
+    paste(id: string, text: string, typedAfter?: string): Promise<void>
     ack(id: string, utf16Units: number): void
     attach(id: string): void
     flowStats(): Promise<FlowStats[]>

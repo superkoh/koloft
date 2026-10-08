@@ -296,7 +296,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
-  test('E-RW-28: ✎ comment on a remote Changes hunk reaches claude on the machine as one paste through ssh and tmux, unsent until the person presses Enter', async ({
+  test('E-RW-28: ✎ comment on a remote Changes hunk reaches claude on the machine through ssh and tmux as a paste with the note typed after it, unsent until the person presses Enter', async ({
     env
   }) => {
     test.setTimeout(300_000)
