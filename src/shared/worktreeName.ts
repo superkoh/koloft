@@ -6,13 +6,10 @@ export function isValidWorktreeName(name: string): boolean {
   return true
 }
 
+import { fnv1a32 } from './fnv1a'
+
 const PORT_OFFSETS = 99
 
 export function portOffset(worktreeName: string): number {
-  let hash = 0x811c9dc5
-  for (let i = 0; i < worktreeName.length; i++) {
-    hash ^= worktreeName.charCodeAt(i)
-    hash = Math.imul(hash, 0x01000193) >>> 0
-  }
-  return (hash % PORT_OFFSETS) + 1
+  return (fnv1a32(worktreeName) % PORT_OFFSETS) + 1
 }

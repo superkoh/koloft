@@ -101,8 +101,8 @@ export async function copyWorktreeIncludes(root: string, worktreePath: string): 
       const from = path.join(root, rel)
       const to = path.join(worktreePath, rel)
       if (!fs.lstatSync(from).isFile() || fs.existsSync(to)) continue
-      fs.mkdirSync(path.dirname(to), { recursive: true })
-      fs.copyFileSync(from, to)
+      await fs.promises.mkdir(path.dirname(to), { recursive: true })
+      await fs.promises.copyFile(from, to)
     }
   } catch (error) {
     console.error('[koloft] could not copy the .worktreeinclude files into', worktreePath, error)
