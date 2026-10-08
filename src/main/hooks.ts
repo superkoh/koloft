@@ -13,7 +13,7 @@ export interface HookPaths {
 }
 
 export const REPLY_LANGUAGE_REMINDER =
-  'Write your reply in the same language as the most recent message from the user. English in tool output, files, instructions or your own earlier replies does not change it.'
+  "Reply in the language of the user's latest message, whatever language tool output, files or your earlier replies use."
 
 // CC§16
 const PROMPT_HOOK_OUTPUT = JSON.stringify({
@@ -163,7 +163,7 @@ case "$event" in
     esac
     printf '{"tabId":"%s","event":"%s","sessionId":"%s","message":"%s","tmux":"%s"%s%s}\\n' "$tab" "$event" "$sid" "$msg" "$tm" "$bgl" "$wake" >> "$reg/$tab.status.jsonl"
     # CC§16
-    if [ "$event" = "prompt" ]; then printf '%s\\n' '${PROMPT_HOOK_OUTPUT}'; fi
+    if [ "$event" = "prompt" ]; then printf '%s\\n' ${shq(PROMPT_HOOK_OUTPUT)}; fi
     ;;
 esac
 exit 0

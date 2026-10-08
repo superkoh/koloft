@@ -553,8 +553,8 @@ describe('injected hook script', () => {
       fs.writeFileSync(entry('git-review-aaaa.json.lock'), '')
     })
 
-    const firePosttool = (command: string): void =>
-      void fire(
+    const firePosttool = (command: string): string =>
+      fire(
         'tabPT',
         'posttool',
         {
