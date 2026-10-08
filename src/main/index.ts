@@ -24,7 +24,7 @@ import { allowCrashReload } from './crashGuard'
 import { FlowGate } from './flowControl'
 import { SessionTracker, type ToolCall } from './sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
-import type { StatusEdge } from './sessionRuntime'
+import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
 import { SessionBackends } from './sessionBackends'
 import {
@@ -361,7 +361,7 @@ function allSessions(): SessionInfo[] {
 const slash = new SlashCommands({
   backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
   keyOf: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
-  status: (tabId) => tracker.statusOf(tabId),
+  turnOver: (tabId) => tracker.turnOver(tabId),
   asking: (tabId) => tracker.statusOf(tabId) === 'approval' || !!discordRelay?.dialogOpen(tabId),
   takesTyping: (tabId) => !!discordRelay?.takesCommand(tabId),
   panelOpen: async (tabId) => {
@@ -772,6 +772,7 @@ const sessionDeps: SessionVerbDeps = {
     return resumed.tabId
   },
   ready: tabReady,
+  // CC§13
   sendLine: async (tabId, line, ms) => {
     const sessionId = sessionOfTab(tabId)?.sessionId
     const socket = sessionId ? await whenMessagingSocket(sessionId, ms) : null
@@ -1526,9 +1527,12 @@ app.whenReady().then(() => {
   tracker.on('command-output', ({ tabId, ...output }: CommandOutput & { tabId: string }) =>
     slash.output(tabId, output)
   )
+  tracker.on('turn-over', ({ tabId, over }: TurnOverEdge) => {
+    ptyMgr.wakeReady(tabId)
+    slash.turnOver(tabId, over)
+  })
   tracker.on('status', (t: StatusEdge) => {
     ptyMgr.wakeReady(t.tabId)
-    slash.status(t.tabId, t.next)
     const conductor = !!conductors?.conductorOf(t.tabId)
     if (conductor && (t.next === 'approval' || t.next === 'waiting'))
       void codexAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
@@ -1827,6 +1831,7 @@ app.whenReady().then(() => {
     boundKey: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
     status: (tabId) => tracker.statusOf(tabId),
     awaitsInput: (tabId) => tracker.awaitsInput(tabId),
+    turnOver: (tabId) => tracker.turnOver(tabId),
     waiting: (tabId) => discordNotices?.waiting(tabId),
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive,
     ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
@@ -2980,14 +2985,10 @@ async function restoreResident(row: SessionRow): Promise<string | undefined> {
 function tabReady(tabId: string, ms: number, turnEnded: boolean): Promise<boolean> {
   return ptyMgr.whenReady(
     tabId,
-    () => {
-      const status = tracker.statusOf(tabId)
-      return (
-        !!sessionOfTab(tabId)?.sessionId &&
-        status !== undefined &&
-        (!turnEnded || status === 'waiting' || status === 'idle')
-      )
-    },
+    () =>
+      !!sessionOfTab(tabId)?.sessionId &&
+      tracker.statusOf(tabId) !== undefined &&
+      (!turnEnded || tracker.turnOver(tabId)),
     ms
   )
 }

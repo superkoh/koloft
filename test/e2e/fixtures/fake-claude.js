@@ -174,6 +174,14 @@ function delayMs() {
   return Number(process.env.KOLOFT_FAKE_START_DELAY_MS || 0) || 0
 }
 
+function reportedBackgroundMs() {
+  try {
+    const v = fs.readFileSync(path.join(home, 'fake-claude-bg-ms'), 'utf8').trim()
+    if (v) return Number(v) || SECOND_STOP_AFTER_MS_OUTLASTING_A_MISSED_WATCH_POLL
+  } catch {}
+  return SECOND_STOP_AFTER_MS_OUTLASTING_A_MISSED_WATCH_POLL
+}
+
 function nextFreshLaunchTitleFromFile() {
   if (argVal('--resume')) return null
   const f = path.join(home, 'fake-claude-next-title')
@@ -890,7 +898,7 @@ function handleLine(line) {
       ])
       fireHook('stop', { hook_event_name: 'Stop', background_tasks: [] })
       process.stdout.write('[fake-claude] bg-reported finished\r\n> ')
-    }, SECOND_STOP_AFTER_MS_OUTLASTING_A_MISSED_WATCH_POLL)
+    }, reportedBackgroundMs())
     process.stdout.write('[fake-claude] bg-reported running\r\n> ')
     return
   }
