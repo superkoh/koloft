@@ -181,12 +181,34 @@ function refusedThenClosedForGood(
 const CHILD = 'kid'
 const CHILD_TASK = 'Reply with the single word ok.'
 const START_A_CHILD_THEN_CLOSE_IT = {
-  default: `Run these shell commands one after another, each exactly once: koloft session new -w ${CHILD} --name ${CHILD} -- "${CHILD_TASK}" — then sleep 20 — then koloft session close ${CHILD}. Then say only what the last command printed. Do nothing else.`,
+  default: `Run these shell commands one after another, each exactly once: koloft session new -w ${CHILD} -- "${CHILD_TASK}" — it prints the new session's name in quotes — then sleep 20 — then koloft session close with that name in quotes. Then say only what the last command printed. Do nothing else.`,
   other: `Run this shell command exactly once: koloft session new -w ${CHILD} -- "${CHILD_TASK}" It prints a tab id. Then run sleep 20, then run koloft session close with that tab id. Then say only what the last command printed. Do nothing else.`
 }
 const TITLE_SAMPLE_EVERY_MS = 250
 // CODEX§17
 const TITLE_DRAWN_FROM_THE_HANDOVER = /Koloft started you|hand-?off|hand-?over/i
+
+// CC§9
+function launchNameOfTheChild(env: E2EEnv): string | undefined {
+  const projects = path.join(env.home, '.claude', 'projects')
+  for (const slug of fs.readdirSync(projects))
+    for (const f of fs.readdirSync(path.join(projects, slug)).filter((n) => n.endsWith('.jsonl'))) {
+      const text = fs.readFileSync(path.join(projects, slug, f), 'utf8')
+      if (!text.includes(CHILD_TASK)) continue
+      const named = text
+        .split('\n')
+        .map((l) => {
+          try {
+            return JSON.parse(l)
+          } catch {
+            return null
+          }
+        })
+        .find((r) => r?.type === 'custom-title')
+      if (named) return named.customTitle
+    }
+  return undefined
+}
 
 async function titlesSeenUntilOneRowIsLeft(rows: Locator, parentTabId: string): Promise<string[]> {
   const seen = new Set<string>()
@@ -227,7 +249,12 @@ function closesTheSessionItStarted(
       await expect.poll(() => fs.existsSync(childTree), { timeout: 60_000 }).toBe(true)
       const childTitles = await titlesSeenUntilOneRowIsLeft(rows, parentTabId!)
       await test.info().attach('child-titles', { body: childTitles.join('\n') })
-      if (backend === 'default') expect(childTitles).toContain(CHILD_TASK)
+      if (backend === 'default') {
+        const name = launchNameOfTheChild(env)
+        expect(name).toBeTruthy()
+        expect(name).not.toBe(CHILD_TASK)
+        expect(childTitles).toContain(name)
+      }
       expect(childTitles.join('\n')).not.toMatch(TITLE_DRAWN_FROM_THE_HANDOVER)
       await expect(rows).toHaveAttribute('data-tab-id', parentTabId!)
       await expect.poll(() => fs.existsSync(childTree), { timeout: 30_000 }).toBe(false)

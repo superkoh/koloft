@@ -68,6 +68,7 @@ interface Conducting {
   ready?: (tabId: string, turnEnded: boolean, ms: number) => boolean | Promise<boolean>
   bypass?: string[]
   answer?: (tabId: string, reply: string) => string | undefined
+  titleReply?: string | null
 }
 
 interface Started {
@@ -125,6 +126,7 @@ function harness(
       launched.push(spec)
       return 'new-tab'
     },
+    titleModel: async () => conducting.titleReply ?? null,
     queue: async (tabId, text, clientId) => {
       queued.push({ tabId, text, clientId })
     },
@@ -330,7 +332,6 @@ describe('koloft session new', () => {
     expect(launched).toHaveLength(1)
     const [spec] = launched
     expect(spec).toMatchObject({ kind: 'claude', cwd: WS, worktree: 'links' })
-    expect(spec.name).toMatch(/^helper-/)
     expect(
       spec.firstPrompt?.startsWith(
         handoverPreamble({ name: 'planner', id: 'me-session' }, 'claude')
@@ -340,8 +341,37 @@ describe('koloft session new', () => {
     expect(reply.text).toContain(`"${spec.name}"`)
   })
 
-  it('a Claude caller with no registry name hands over under its Koloft title', async () => {
+  it('a Claude sibling with no --name is named by the title model from its task, since --name stops Claude titling the session itself and the name is what every surface shows', async () => {
+    const { verb, launched } = harness([session('me', 'claude')], {}, [], {
+      titleReply: '「修复侧栏标题」\n'
+    })
+    const reply = await verb(
+      ['new', '--', '修一个问题并发 PR：侧栏标题太长。\n\n背景：…'],
+      from('me')
+    )
+    expect(launched[0].name).toBe('修复侧栏标题')
+    expect(reply.text).toContain('"修复侧栏标题"')
+  })
+
+  it('a sibling whose title model gives nothing is named by the first line of its task, without the lines after it', async () => {
     const { verb, launched } = harness([session('me', 'claude')])
+    await verb(['new', '--', '让 agent 开的会话标题更好读\n背景：PR #357 之后…'], from('me'))
+    expect(launched[0].name).toBe('让 agent 开的会话标题更好读')
+  })
+
+  it('a made-up name already shown by a live session gets a number, so a message to it reaches one session', async () => {
+    const { verb, launched } = harness(
+      [session('me', 'claude'), session('rel', 'claude', { title: '发布新版本' })],
+      {},
+      [],
+      { titleReply: '发布新版本' }
+    )
+    await verb(['new', '--', '发一个新版本。'], from('me'))
+    expect(launched[0].name).toBe('发布新版本 2')
+  })
+
+  it('a Claude caller with no registry name hands over under its Koloft title, and its own --name is kept', async () => {
+    const { verb, launched } = harness([session('me', 'claude')], {}, [], { titleReply: 'other' })
     await verb(['new', '--name', 'docs-fixer', '--', 'go'], from('me'))
     expect(launched[0].name).toBe('docs-fixer')
     expect(launched[0].firstPrompt).toContain('"me title"')

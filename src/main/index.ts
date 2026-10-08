@@ -296,6 +296,7 @@ import {
 } from './agentSessions'
 import { writeLine } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
+import { claudeTitleModel } from './sessionTitle'
 import { closingTree, removeTree, whatIsLeft } from './sessionClose'
 import { discordTokenRead, discordTokenWrite } from './accounts'
 import { writeAgentPlugin } from './agentPlugin'
@@ -756,6 +757,10 @@ const sessionDeps: SessionVerbDeps = {
   pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
   peerNames: () => claudePeerNames(),
   launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
+  titleModel: claudeTitleModel(
+    () => (ptyMgr.shimDir ? path.join(ptyMgr.shimDir, 'claude') : 'claude'),
+    pickedAccountEnv
+  ),
   queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
   startedSessions,
   closable: closableSessions,
@@ -857,6 +862,11 @@ async function pickForLaunch(tabId?: string): Promise<{
   if (!res.account || res.kind !== 'custom') return { res }
   const meta = findAccount(res.account, 'custom')
   return { res, endpoint: { baseUrl: meta?.baseUrl, model: meta?.model } }
+}
+
+async function pickedAccountEnv(): Promise<NodeJS.ProcessEnv> {
+  await loginEnvReady()
+  return (await pickMachineAccount(() => pickForLaunch()))?.env ?? {}
 }
 
 async function handlePickRequest(pickDir: string, reqName: string, raw: unknown): Promise<void> {
