@@ -348,17 +348,19 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
   does.** The file sits at the repo root and holds `.gitignore`-style patterns (blank
   lines and `#` lines skipped); a file is copied only when it matches a pattern AND git
   ignores it (`git ls-files --others --ignored --exclude-standard`). A symbolic link is
-  skipped ("Skipping symlink in .worktreeinclude"). An existing worktree entered with
-  `-w` is reused as-is, so a worktree rebuilt by someone else's `git worktree add` gets no
-  copy. Read 2026-10-08 from the claude 2.1.294 binary (`strings`, the function that
-  reads `.worktreeinclude`).
+  skipped ("Skipping symlink in .worktreeinclude"). Read 2026-10-08 from the claude
+  2.1.294 binary (`strings`, the function that reads `.worktreeinclude`). That an
+  existing worktree entered with `-w` is reused as-is, so a worktree rebuilt by someone
+  else's `git worktree add` gets no copy, comes from the #5 probe on 2.1.287 (binary
+  strings + docs).
 - **A `WorktreeCreate` hook is not a setup step: it REPLACES `git worktree add`.** It is
   meant for other version-control systems; the hook must make the folder and print its
   path, and with the hook set the `.worktreeinclude` copy does not run. Setup work in a
-  new worktree belongs in a `SessionStart` hook. Probed on claude 2.1.287 (binary
-  strings + docs), and the 2.1.294 strings agree ("configure WorktreeCreate and
-  WorktreeRemove hooks in settings.json for another version-control system";
-  "Provides the absolute path to the created worktree directory").
+  new worktree belongs in a `SessionStart` hook. Probed for #5 on claude 2.1.287 (binary
+  strings + docs). The 2.1.294 strings agree that the hook makes the worktree
+  ("configure WorktreeCreate and WorktreeRemove hooks in settings.json for another
+  version-control system"; "Provides the absolute path to the created worktree
+  directory"); that the copy is then off was not re-read there.
 - **CC's background retention sweep leaves hand-made worktrees under
   `.claude/worktrees/` alone from 2.1.246 on** (changelog, read 2026-09-18, not
   measured). Before that it could remove them.
