@@ -62,9 +62,8 @@ when it works. That is what "judged against" means.
   loop that a session started from an issue or PR (#218) begins.
 - **Point the agent at things** — pick an element in the Workbench browser (#217); a
   one-click review by a sibling session (#222).
-- **Many sessions, one change** — race one prompt across N new worktree sessions and keep
-  the best (#223); warn when two sessions write the same file (#221); each session's
-  listening ports, opened in the Workbench browser (#224).
+- **Many sessions, one change** — warn when two sessions write the same file (#221); each
+  session's listening ports, opened in the Workbench browser (#224).
 - **Finding and branching sessions** — full-text search across transcripts (#220); fork a
   session from the sidebar (#219).
 - **Usage and accounts** — cost history by session, workspace, model and day (#225); pick
@@ -76,12 +75,6 @@ when it works. That is what "judged against" means.
 - **Sessions that survive quit and update** (#228) — when an update interrupting a working
   session shows up as a real complaint.
 - **Windows, Linux and Intel Mac builds** (#229) — when user demand shows up.
-- **Reopened, decision first** — steering sessions from a phone (#230), MCP / skills /
-  CLAUDE.md management (#231), a saved prompt library (#232). Each was on the list below;
-  each issue states what Koloft would add beyond the tool's own feature before anything
-  is built. For #230 the new evidence is measured: Claude's own Remote Control refuses
-  the long-lived token Koloft's account balancing injects (CC§7), so a Koloft session
-  cannot be reached from a phone through it. The Discord conductor is the answer.
 
 ### Tier 3 — guardrails
 
