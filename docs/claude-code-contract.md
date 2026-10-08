@@ -676,6 +676,17 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   scripts). CPU does tell them apart: over 60 s an idle `python3 -m http.server` used
   0.01 s of CPU per minute, while a test run uses tens of seconds per minute. A busy
   emulator (qemu) also used 24.5 s per minute, so it reads as work too.
+- **A background subagent's own background shell stays in the MAIN session's Stop list
+  after the subagent ends — in interactive mode.** Measured 2026-10-08 on CC 2.1.295,
+  interactive TUI driven through a pty, with Stop/SubagentStop hooks that saved their input:
+  the subagent ran `perl -e "sleep 100"` with `run_in_background` and returned at once. Its
+  SubagentStop listed the shell (`{"id":"b3u7bx7sz","type":"shell","status":"running",…}`);
+  the main session's next Stop listed the same id, and the shell was a `zsh -c … eval` child
+  of the main claude with fd 1 on `<scratch>/tasks/b3u7bx7sz.output` — the same shape as a
+  main-thread background shell. When it ended, the subagent woke (another SubagentStop), then
+  the main session took one more turn whose Stop listed `[]`. A `claude -p` run on 2.1.294
+  (issue #382) listed `[]` at the main Stop instead; whether the difference is the mode or the
+  version is not probed yet.
 - **`Notification` payloads carry no task list** (124 "Claude is waiting for your
   input" nudges, none with `background_tasks`), and `-p` mode exits with a background
   shell still running, firing one Stop.

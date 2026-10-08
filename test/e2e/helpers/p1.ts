@@ -344,6 +344,10 @@ export function wsRows(page: Page, wsName: string): Locator {
   return wsGroup(page, wsName).locator('.ws-tab')
 }
 
+export function oneStillRunning(scope: Page | Locator): Locator {
+  return scope.locator('.ws-tab-parked.bg-run', { hasText: /^↻ 1$/ })
+}
+
 export function auxIcon(page: Page, which: 'Preview' | 'Workbench' | 'Terminal'): Locator {
   return page.locator(`.aux-ico[aria-label="${which}"]`)
 }

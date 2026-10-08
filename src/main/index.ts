@@ -354,6 +354,7 @@ const sessionBackends = new SessionBackends({
 })
 sessionBackends.conductorOf = (id) => conductors?.conductorOf(id)
 sessionBackends.conductorWorkspaceOf = (tabId) => conductors?.workspaceOfTab(tabId)
+sessionBackends.turnOver = (tabId) => tracker.turnOver(tabId)
 function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
