@@ -109,8 +109,10 @@
             working, waiting for you, or idle
           </li>
           <li>
-            <code>koloft session new</code> — start a sibling session of the same kind (Claude
-            starts Claude, Codex starts Codex), in its own git worktree if asked
+            <code>koloft session new</code> — start a session of the same kind (Claude starts
+            Claude, Codex starts Codex), in its own git worktree if asked. Its row hangs under the
+            session that started it (see <a href="../sessions/#the-sidebar">the sidebar</a>) and is
+            named after the task it was given.
           </li>
           <li>
             <code>koloft session read</code> — print what a session said in its last turns, open or
@@ -135,8 +137,9 @@
         <p>
           <code class="nowrap">session list</code> and <code class="nowrap">session new</code> take
           <code class="nowrap">--workspace &lt;folder&gt;</code> to reach another folder in the
-          sidebar, by its name or its full path. A new session cannot be started in a remote folder
-          this way.
+          sidebar, by its name or its full path. A session started into another folder this way sits
+          at the top of that folder's list, not under its starter. A new session cannot be started
+          in a remote folder this way.
         </p>
         <p>
           Each command prints its answer, so the agent sees what happened. The agent runs
@@ -145,7 +148,7 @@
         <p>
           A conductor, the session you talk to from Discord, gets a few more: it can answer a
           session's question, resume it, stop it, close it once it has ended, run a slash command in
-          it, see its screen, and send you files. See
+          it, see its screen, and send you files. It only passes work on; see
           <a href="../discord/">A butler on Discord</a>.
         </p>
 
