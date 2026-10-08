@@ -22,6 +22,7 @@ function setup(scope = WS, fail = false, refuseDelete = false) {
   const deleted: string[] = []
   const archived: string[] = []
   const failures: string[] = []
+  const opened: string[] = []
   let next = 100
   const deps: ThreadDeps = {
     link: {
@@ -70,7 +71,8 @@ function setup(scope = WS, fail = false, refuseDelete = false) {
         if (t) t.name = name
       }
     },
-    deleteFailed: (threadName) => void failures.push(threadName)
+    deleteFailed: (threadName) => void failures.push(threadName),
+    opened: (tabId) => void opened.push(tabId)
   }
   const finishRename = async (): Promise<void> => {
     renamed.shift()?.resolve()
@@ -91,6 +93,7 @@ function setup(scope = WS, fail = false, refuseDelete = false) {
     deleted,
     archived,
     failures,
+    opened,
     finishRename,
     failRename
   }
@@ -228,6 +231,23 @@ describe('one Discord thread per session', () => {
     expect(await threads.place(b, s)).toBe('10')
     expect(await threads.place(b, s)).toBe('10')
     expect(openers).toHaveLength(1)
+  })
+
+  it('a tab’s live status card is its thread’s opener in the conductor channel, announced when the thread opens or the tab finds it again; a tab with no thread, or whose session left the sidebar, has none', async () => {
+    const { b, threads, opened } = setup()
+    const s = { tabId: 't1', key: 'k1', name: 'a', backend: 'claude' as const, workspace: WS }
+    expect(threads.openerOf('t1')).toBeUndefined()
+    await threads.place(b, s)
+    expect(threads.openerOf('t1')).toEqual({ channelId: '10', threadId: '101' })
+    threads.bound('t2', 'k1')
+    expect(threads.openerOf('t2')).toEqual({ channelId: '10', threadId: '101' })
+    expect(opened).toEqual(['t1', 't2'])
+    threads.left('k1')
+    expect(threads.openerOf('t2')).toBeUndefined()
+    const refused = setup(WS, true)
+    await refused.threads.place(refused.b, s)
+    expect(refused.threads.openerOf('t1')).toBeUndefined()
+    expect(refused.opened).toEqual([])
   })
 })
 

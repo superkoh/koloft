@@ -9,6 +9,9 @@ import type {
   WorkspaceRows
 } from '@shared/types'
 import { NOTES_HEIGHT_FLOOR } from '@shared/settingsOps'
+import { statusUnavailable } from '@shared/sessionBackend'
+
+export { statusUnavailable }
 
 export function relTime(mtimeMs: number, nowMs: number): string {
   const s = Math.floor(Math.max(0, nowMs - mtimeMs) / 1000)
@@ -56,10 +59,6 @@ export function parkedBadge(
         ? 'Stop these tasks in the Codex session to free the resources.'
         : 'Stop them in the session (ctrl+b lists background tasks) to free the resources.'
   }
-}
-
-export function statusUnavailable(session?: Pick<SessionInfo, 'details'>): boolean {
-  return session?.details?.codex?.observation === 'degraded'
 }
 
 export function sessionActivityBadge(

@@ -365,6 +365,17 @@ export class DiscordLink {
   }
 
   // PLATFORM§39
+  async editCard(channelId: string, messageId: string, card: Card): Promise<void> {
+    const [message] = cardMessages(card)
+    await this.api().request('PATCH', `/channels/${channelId}/messages/${messageId}`, message)
+  }
+
+  // PLATFORM§39
+  async typing(channelId: string): Promise<void> {
+    await this.api().request('POST', `/channels/${channelId}/typing`)
+  }
+
+  // PLATFORM§39
   async startThread(channelId: string, messageId: string, name: string): Promise<string> {
     const thread = await this.api().request<{ id: string }>(
       'POST',

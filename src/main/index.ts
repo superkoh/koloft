@@ -32,6 +32,7 @@ import {
   backendIdOf,
   capabilitiesFor,
   identityOf,
+  statusUnavailable,
   SUPPORTED_PAIRS
 } from '@shared/sessionBackend'
 import type { Turn } from '@shared/turns'
@@ -262,6 +263,7 @@ import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay, type Destination } from './discord/relay'
 import { Notices } from './discord/notices'
 import { SessionThreads } from './discord/threads'
+import { LiveStatus } from './discord/liveStatus'
 import { AskButtons } from './discord/buttons'
 import { SlashCommands, type SlashTarget } from './discord/slash'
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
@@ -420,11 +422,17 @@ function sidebarTitle(s: SessionInfo): string | undefined {
   const placeholder = s.title === PLACEHOLDER_SESSION_TITLE || s.title === CODEX_PLACEHOLDER_TITLE
   return s.title && !placeholder ? s.title : undefined
 }
+async function discordShownName(s: SessionInfo | undefined): Promise<string | null> {
+  const title = s && sidebarTitle(s)
+  if (title) return title
+  return s?.backendId === 'claude' && s.sessionId ? claudePeerNames()(s.sessionId) : null
+}
 function retitleDiscordThreads(sessions: SessionInfo[]): void {
   if (!discordThreads) return
   for (const s of sessions) {
     const title = sidebarTitle(s)
     if (title) discordThreads.retitle(s.tabId, title, sessionBackends.workspaceOfTab(s.tabId))
+    discordLive?.sessionChanged(s.tabId, title, statusUnavailable(s))
   }
 }
 function markedSessionsOf(wsPath: string): string[] {
@@ -616,6 +624,7 @@ let discordLink: DiscordLink | null = null
 let discordRelay: DiscordRelay | null = null
 let discordNotices: Notices | null = null
 let discordThreads: SessionThreads | null = null
+let discordLive: LiveStatus | null = null
 let askButtons: AskButtons | null = null
 const answerable = new Set<string>()
 let answerableRegDir: string | undefined
@@ -1470,6 +1479,8 @@ app.whenReady().then(() => {
   ptyMgr.on('exit', (e) => {
     slash.closed(e.id)
     discordNotices?.closed(e.id)
+    discordLive?.closed(e.id)
+    discordLive?.forget(e.id)
     discordNotices?.forget(e.id)
     discordRelay?.forget(e.id)
     discordThreads?.forget(e.id)
@@ -1541,6 +1552,7 @@ app.whenReady().then(() => {
   tracker.on('turn-over', ({ tabId, over }: TurnOverEdge) => {
     ptyMgr.wakeReady(tabId)
     slash.turnOver(tabId, over)
+    void discordLive?.refresh(tabId)
   })
   tracker.on('status', (t: StatusEdge) => {
     ptyMgr.wakeReady(t.tabId)
@@ -1548,6 +1560,7 @@ app.whenReady().then(() => {
     if (conductor && (t.next === 'approval' || t.next === 'waiting'))
       void codexAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
     discordNotices?.onStatus(t.tabId, t.prev, t.next)
+    void discordLive?.refresh(t.tabId)
     if (!(conductor && t.next === 'waiting'))
       attention.onStatusChange(t.tabId, t.prev, t.next, attentionCtx(), attentionSubjectOf(t.tabId))
     // ADR-0022
@@ -1744,9 +1757,28 @@ app.whenReady().then(() => {
       sendToRenderer(
         'cron:toast',
         `Koloft could not delete the Discord thread "${threadName}", so it only archived it: ${errorText(error)}`
-      )
+      ),
+    opened: (tabId) => void discordLive?.refresh(tabId)
   })
   discordThreads = threads
+  const conductorChannelOf = (tabId: string): string | undefined =>
+    conductorsNow.bindingOfTab(tabId)?.channel.channelId
+  discordLive = new LiveStatus({
+    link,
+    openerOf: (tabId) => threads.openerOf(tabId),
+    conductorChannelOf,
+    subject: async (tabId) => {
+      const s = sessionOfTab(tabId)
+      if (!s) return undefined
+      const name = (await discordShownName(s)) ?? s.title
+      return { name, backend: s.backendId, workspace: sessionBackends.workspaceOfTab(tabId) }
+    },
+    status: (tabId) => tracker.statusOf(tabId),
+    awaitsInput: (tabId) => tracker.awaitsInput(tabId),
+    turnOver: (tabId) => tracker.turnOver(tabId),
+    unknown: (tabId) => statusUnavailable(sessionOfTab(tabId)),
+    alive: (tabId) => !!ptyMgr.get(tabId)?.alive
+  })
   const dialogOf = async (tabId: string): Promise<DialogView | undefined> => {
     const ask = await codexAskOf(tabId)
     return ask ? codexDialog(ask) : discordRelay?.dialog(tabId)
@@ -1835,7 +1867,7 @@ app.whenReady().then(() => {
           seen: (id: string) => conductorsNow.setThreadLastMessage(t.threadId, id)
         }))
       ]),
-    conductorChannelOf: (tabId) => conductorsNow.bindingOfTab(tabId)?.channel.channelId,
+    conductorChannelOf,
     withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
     remote: (tabId) => !!tracker.remoteOf(tabId),
     backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
@@ -1843,7 +1875,10 @@ app.whenReady().then(() => {
     status: (tabId) => tracker.statusOf(tabId),
     awaitsInput: (tabId) => tracker.awaitsInput(tabId),
     turnOver: (tabId) => tracker.turnOver(tabId),
-    waiting: (tabId) => discordNotices?.waiting(tabId),
+    waiting: (tabId) => {
+      discordNotices?.waiting(tabId)
+      void discordLive?.refresh(tabId)
+    },
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive,
     ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
     asksChanged: (tabId) => ptyMgr.wakeReady(tabId),
@@ -1882,12 +1917,7 @@ app.whenReady().then(() => {
           }
         : undefined
     },
-    shownName: async (tabId) => {
-      const s = sessionOfTab(tabId)
-      const title = s && sidebarTitle(s)
-      if (title) return title
-      return s?.backendId === 'claude' && s.sessionId ? claudePeerNames()(s.sessionId) : null
-    },
+    shownName: (tabId) => discordShownName(sessionOfTab(tabId)),
     awaitsInput: (tabId) => tracker.awaitsInput(tabId),
     commandRunning: (tabId) => slash.running(tabId),
     dialog: dialogOf
@@ -2810,6 +2840,7 @@ function killTabFromMain(tabId: string): void {
 
 function killTabPty(tabId: string): Promise<boolean> {
   discordNotices?.closed(tabId)
+  discordLive?.closed(tabId)
   const owner = sessionBackends.ownerOfTab(tabId)
   const stopped = owner ? Promise.resolve(owner.stop(tabId)) : Promise.resolve(ptyMgr.kill(tabId))
   attention.clearKeepingExit(tabId)

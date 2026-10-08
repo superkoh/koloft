@@ -53,6 +53,32 @@ describe('DiscordRest', () => {
     expect([...auth]).toEqual(['Bot tok'])
   })
 
+  it('edits to a channel’s messages wait in a queue of their own, so a held-up edit never holds back a post there', async () => {
+    let release: () => void = () => undefined
+    const editHeld = new Promise<void>((r) => (release = r))
+    const order: string[] = []
+    server = http.createServer((req, res) => {
+      const done = (): void => {
+        order.push(req.method!)
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end('{}')
+      }
+      if (req.method === 'PATCH') void editHeld.then(done)
+      else done()
+      req.resume()
+    })
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
+    const rest = new DiscordRest(
+      `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+      'tok'
+    )
+    const edit = rest.request('PATCH', '/channels/9/messages/1', { components: [] })
+    await rest.request('POST', '/channels/9/messages', { content: 'reply' })
+    release()
+    await edit
+    expect(order).toEqual(['POST', 'PATCH'])
+  })
+
   it('a refused token surfaces as a 401 error and the queue keeps going for the next call', async () => {
     let calls = 0
     const url = await fakeDiscord(() =>

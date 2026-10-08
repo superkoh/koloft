@@ -15,7 +15,7 @@ import {
   useRealClaudeOnTheMachine,
   type SshLab
 } from './helpers/docker'
-import { startFakeDiscord, type FakeDiscord, type FakePost } from './helpers/fakeDiscord'
+import { openerNow, startFakeDiscord, type FakeDiscord, type FakePost } from './helpers/fakeDiscord'
 
 const OWNER = { id: '555', username: 'letian' }
 const CHANNEL = '222'
@@ -184,6 +184,10 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
           .toBeTruthy()
         const thread = question()!.channelId
         expect(fake.threads.map((t) => t.id)).toContain(thread)
+        const opener = (): string | undefined => openerNow(fake, CHANNEL, thread)
+        await expect
+          .poll(opener, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+          .toMatch(/^❓ \*\*.+\*\* · needs you, asked <t:\d+:R>\n-# .+ · Claude$/)
         fake.press(OWNER, question()!.buttons![1], thread)
         await expect
           .poll(transcript, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
@@ -202,6 +206,10 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
             timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS
           })
           .toContain('finished.\nAnswer to: [Discord] typed in the thread')
+        expect(fake.typing).toContain(thread)
+        await expect
+          .poll(opener, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+          .toMatch(/^✅ \*\*.+\*\* · turn done <t:\d+:R>/)
       }
     )
   })
