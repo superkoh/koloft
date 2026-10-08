@@ -137,7 +137,7 @@ async function statusOf(page: Page, tabId: string): Promise<string | undefined> 
 }
 
 const BACKGROUND_SUBAGENT_SLEEPS_S = 300
-const BACKGROUND_SUBAGENT_PROMPT = `Use the Agent tool with run_in_background set to true to start one subagent whose task is: run the shell command "sleep ${BACKGROUND_SUBAGENT_SLEEPS_S}", then reply DONE. Do not wait for it or check on it. Then reply with only BG-STARTED and end your turn.`
+const BACKGROUND_SUBAGENT_PROMPT = `Use the Agent tool with run_in_background set to true to start one subagent whose task is: run the shell command "sleep ${BACKGROUND_SUBAGENT_SLEEPS_S}" with the Bash tool in the foreground (never with run_in_background) and wait for it to finish, then reply DONE. Do not wait for the subagent or check on it. Then reply with only BG-STARTED and end your turn.`
 
 function notices(fake: FakeDiscord): string[] {
   return said(fake)
