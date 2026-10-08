@@ -16,9 +16,16 @@ interface Git {
   removed: number
 }
 
+interface Fixed {
+  version: string
+  account: string
+  home: string
+  effortLevel: string
+}
+
 let git: Git | null = null
 let stepEffort: string | undefined
-let session = { version: '', account: '', home: '', effortLevel: '' }
+let fixed: Fixed | undefined
 
 const shortstatCount = (stat: string, word: string): number =>
   Number(new RegExp(`(\\d+) ${word}`).exec(stat)?.[1] ?? 0)
@@ -65,21 +72,24 @@ async function refreshGit($: EngineInterface): Promise<void> {
   $.ui.invalidate('ui.render')
 }
 
+async function readFixed($: EngineInterface): Promise<Fixed> {
+  const [version, account, home, settings] = await Promise.all([
+    $.session.version(),
+    $.env.get('ANT_ACCOUNT'),
+    $.env.get('HOME'),
+    $.settings.read()
+  ])
+  return {
+    version: version.version,
+    account: account ?? '',
+    home: home ?? '',
+    effortLevel: typeof settings.effortLevel === 'string' ? settings.effortLevel : ''
+  }
+}
+
 export const register: Register = (on) => {
   on('session.start', async ($, e, next) => {
     const started = await next(e)
-    const [version, account, home, settings] = await Promise.all([
-      $.session.version(),
-      $.env.get('ANT_ACCOUNT'),
-      $.env.get('HOME'),
-      $.settings.read()
-    ])
-    session = {
-      version: version.version,
-      account: account ?? '',
-      home: home ?? '',
-      effortLevel: typeof settings.effortLevel === 'string' ? settings.effortLevel : ''
-    }
     await refreshGit($)
     return started
   })
@@ -99,14 +109,16 @@ export const register: Register = (on) => {
     return done
   })
 
-  on('ui.render', { component: 'PromptHint' }, async ($, e) => {
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (e.props.hasSurvey) return next(e)
     const { Box, Text } = $.ui.resolve(e)
+    fixed ??= await readFixed($)
     const [usage, model, cwd] = await Promise.all([
       $.session.usage(),
       $.session.model(),
       $.session.cwd()
     ])
-    const { version, account, home, effortLevel } = session
+    const { version, account, home, effortLevel } = fixed
     const effort = stepEffort ?? effortLevel
     const percent = usage.context.percent
     const cost = usage.cost?.usd
@@ -141,7 +153,6 @@ export const register: Register = (on) => {
           .map((row) => (
             <Box>{powerline(row)}</Box>
           ))}
-        <Text dimColor>{e.props.hint}</Text>
       </Box>
     )
   })

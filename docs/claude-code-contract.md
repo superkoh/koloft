@@ -1236,7 +1236,15 @@ between releases without notice".
   the first row, rows after the first start about 20 columns in, and the hint text
   claude would have drawn there (`e.props.hint`, which carries its "PR status" and
   shortcut hints) is gone unless the tree draws it. The hook runs again when the
-  hint changes and after `$.ui.invalidate('ui.render')`.
+  hint changes and after `$.ui.invalidate('ui.render')`. A `position: "absolute"` Box
+  with a negative `left` inside that tree is not drawn at all, so nothing gets under
+  the pill.
+- **A `ui.render` hook on `AbovePrompt` draws a full-width band above the input box**:
+  from column 0, truecolor and bold kept, claude's own `[-]` at the right end
+  (`e.props.bodyColumns` is the width left for the tree), and one blank row between
+  the band and the input box's top rule.
+- **A render hook can run before `session.start` has finished**; a value only
+  `session.start` fills stays empty on screen until something redraws.
 - **A `turn.step` hook (an `async function*` passing `yield* next(e)`) sees the
   effort of each model request**, as `e.effort`; it ran even when the request then
   failed for want of a login.
@@ -1252,7 +1260,8 @@ between releases without notice".
   one that leaves the text the same**: `session.start` ran again about a second after
   each write, and the transcript showed `<plugin>: reloaded (1 hook: session.start)`.
 - Not run: a logged-in session (context percent, cost after a real turn, the hint
-  while a turn runs), a remote machine, two mods hooking `PromptHint` at once.
+  while a turn runs), a remote machine, two mods drawing the same site at once, the band
+  while a feedback survey holds it.
 
 Koloft dependents: `src/main/statusline.ts` (`writeStatuslineMod`,
 `HIDES_THE_USERS_OWN_STATUS_LINE`), `src/main/statuslineMod/`, the shim's
