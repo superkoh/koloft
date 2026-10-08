@@ -1188,3 +1188,18 @@ Gateway (the live connection that pushes events):
   body; `GET /channels/{id}/messages?after=<id>&limit=<1–100>` lists the messages after
   that id, and an attachment in `MESSAGE_CREATE` carries `filename`, `size` and a `url`
   that needs no token.
+
+## §40 Node `fs.watch` on a macOS directory
+
+- **Every event names the file, and appending to a file already there fires one too.**
+  Measured 2026-10-07 on macOS 27.0.1 (APFS) with a Node script, once under Node 24.13 and once under
+  Electron 43's own Node 24.21 (`ELECTRON_RUN_AS_NODE=1`). It watched a directory without
+  `recursive` and appended to a file already in it, created, renamed and deleted files,
+  and wrote a file inside a subdirectory. Each step gave events whose `filename` was the
+  touched file's base name (a rename gave both the old and the new name). Twenty quick
+  appends to one file were folded into a single event.
+- **The event type cannot tell an append from a create or a delete.** Under Node every
+  step reported `rename`, appends included; under Electron the twenty quick appends
+  reported `change` and the single ones `rename`. A watcher that must know what
+  happened has to look at the file itself.
+- A write inside a subdirectory gave no event at all; creating the subdirectory gave one.

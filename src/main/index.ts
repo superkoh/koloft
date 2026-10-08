@@ -1546,7 +1546,7 @@ app.whenReady().then(() => {
       changed: () => {
         const all = allSessions()
         sendToRenderer('sessions:update', all)
-        workspaceMgr?.onRemoteChanged()
+        workspaceMgr?.onAdditionalSessionsChanged()
         retitleDiscordThreads(all)
       },
       replaced: (oldKey, newKey) => workspaceMgr?.moveResident(oldKey, newKey),

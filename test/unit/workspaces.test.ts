@@ -277,6 +277,84 @@ describe('WorkspaceManager: cold-row title parity with the live tracker', () => 
   })
 })
 
+describe('WorkspaceManager: which transcript writes rescan the list', () => {
+  const PAST_RESCAN_DEBOUNCE_AND_FS_EVENT_LATENCY_MS = 1000
+  const settle = (): Promise<void> =>
+    new Promise((r) => setTimeout(r, PAST_RESCAN_DEBOUNCE_AND_FS_EVENT_LATENCY_MS))
+
+  it("a line appended to a running local session's transcript rescans nothing; one appended to a stopped session's still does", async () => {
+    writeJsonl(repo, 'live')
+    writeJsonl(repo, 'cold')
+    own('live', 'cold')
+    bindings.set('live', 'tab-live')
+    mgr.start()
+    await vi.waitFor(() =>
+      expect(
+        latest(repo)
+          .rows.map((r) => r.id)
+          .sort()
+      ).toEqual(['cold', 'live'])
+    )
+    const append = (id: string): void =>
+      fs.appendFileSync(
+        path.join(projectsRoot, encodeCwd(repo), id + '.jsonl'),
+        JSON.stringify({ type: 'assistant' }) + '\n'
+      )
+
+    await settle()
+
+    const before = pushed.length
+    append('live')
+    await settle()
+    expect(pushed.length).toBe(before)
+
+    append('cold')
+    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(before))
+  })
+
+  it('a Codex change that leaves every Codex row as it was rescans nothing; one that changes a row does', async () => {
+    const codexRow = {
+      id: 'codex:local:t1',
+      title: 'Codex task',
+      cwd: repo,
+      worktree: 'main',
+      running: true,
+      invalidCwd: false,
+      mtime: 1
+    }
+    mgr.dispose()
+    mgr = new WorkspaceManager({
+      projectsRoot,
+      remoteProjectsRoot: () => projectsRoot,
+      loadLayout: () => layout,
+      saveLayout: (l) => {
+        layout = l
+      },
+      projectInfo: projectInfoFor,
+      runningBindings: () => bindings,
+      killTab: () => {},
+      pushRows: (p) => pushed.push(p),
+      additionalRows: (ws) => (ws === repo ? [{ ...codexRow }] : []),
+      additionalMembers: () => new Set([codexRow.id])
+    })
+    mgr.start()
+    await mgr.firstScan
+    mgr.onAdditionalSessionsChanged()
+    await settle()
+
+    const before = pushed.length
+    mgr.onAdditionalSessionsChanged()
+    await settle()
+    expect(pushed.length).toBe(before)
+
+    codexRow.title = 'Codex task, renamed'
+    mgr.onAdditionalSessionsChanged()
+    await vi.waitFor(() =>
+      expect(latest(repo).rows.find((r) => r.id === codexRow.id)?.title).toBe('Codex task, renamed')
+    )
+  })
+})
+
 describe('WorkspaceManager: orphan worktree bucket (D2)', () => {
   // CC§4
   it('shows an owned session whose worktree was removed as a greyed row under its old name', async () => {
