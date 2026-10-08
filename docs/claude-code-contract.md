@@ -623,6 +623,23 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   "prompt":"/loop …"}]` and `"background_tasks":[]`, in compact JSON. So a session
   whose last turn-end carried a non-empty `session_crons` will wake itself up, even
   though it looks idle. 209 sessions on the dev Mac had called `ScheduleWakeup`.
+- **A subagent's own background shell is in its `SubagentStop` list, not in the main
+  session's `Stop` list.** Measured 2026-10-08 on CC 2.1.294 (`claude -p`, temp HOME,
+  both hooks saving their input): a subagent that started `sleep 120` with
+  `run_in_background: true` and returned fired `SubagentStop` with
+  `background_tasks: [{"type":"shell","status":"running","command":"sleep 120",…}]`, and
+  the main `Stop` right after carried `[]`. The main transcript's `<task-notification>`
+  for such a subagent says `<status>completed</status>` with the note "This agent
+  stopped with background work of its own still running … the result below may be
+  interim" (seen in a real interactive run the same day). Whether interactive mode's
+  `Stop` lists it is inferred from that run, not probed.
+- **The Bash tool refuses a long leading `sleep`.** Read from the 2.1.294 binary
+  (`strings`): when a command's first part matches `^sleep\s+<n>\s*$` and `<n>` is at
+  least a threshold (a minified constant, not read), the call is refused with "standalone
+  sleep <n>" or "sleep <n> followed by: …", and the model is told to use Monitor or
+  `run_in_background`. Seen the same day: a subagent told to run `sleep 300` in the
+  foreground was refused, and one left free to choose ran it in the background instead.
+  `perl -e "sleep 300"` does not match the check.
 - **An idle teammate is still `running`**. CC's own activity checks use
   `status === 'running' && !isIdle`; hooks never see `isIdle`. On disk the idle edge
   is a user record in the lead's transcript — `Another Claude session sent a
