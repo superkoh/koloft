@@ -54,6 +54,12 @@ function num(x: unknown): number {
 }
 
 const BG_PROMOTED = '\x00promoted'
+const UNLISTED_BACKGROUND_WORK: BackgroundItem = {
+  id: 'unlisted',
+  kind: 'command',
+  label: 'background work',
+  state: 'working'
+}
 
 // CC§8
 export function parseReportedTasks(bgl: unknown): ReportedTask[] | undefined {
@@ -177,7 +183,12 @@ const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
 // CC§2
 const BASH_WRITES = /(^|[^0-9&])>>?\s*(?!\/dev\/null)\S|\btee\s|\bsed\s+-i\b|\btouch\s/
 const READ_TOOLS = new Set(['Read'])
-const UNACKED_TOOL_CMD_CAP = 64
+const TASK_LABEL_FIELD: Record<string, string> = {
+  Bash: 'command',
+  Monitor: 'command',
+  Agent: 'description'
+}
+const UNACKED_TOOL_CAP = 64
 
 export interface ToolCall {
   name: string
@@ -485,9 +496,9 @@ interface Tracked {
   resetMs: number
   reported: ReportedTask[] | null
   reportedAt: number
-  taskCmds: Map<string, string>
+  taskLabels: Map<string, string>
   monitorIds: Set<string>
-  toolCmds: Map<string, string>
+  toolLabels: Map<string, string>
   openTools: Map<string, ToolCall>
   procs: TaskProcs | null
   shellCpu: Map<string, { cpuMs: number; at: number; quiet: boolean }>
@@ -604,9 +615,9 @@ export class SessionTracker extends SessionRuntime {
       resetMs: Date.now(),
       reported: null,
       reportedAt: 0,
-      taskCmds: new Map(),
+      taskLabels: new Map(),
       monitorIds: new Set(),
-      toolCmds: new Map(),
+      toolLabels: new Map(),
       openTools: new Map(),
       procs: null,
       shellCpu: new Map(),
@@ -686,6 +697,10 @@ export class SessionTracker extends SessionRuntime {
     this.emitUpdate()
   }
 
+  protected override turnOverChanged(): void {
+    this.emitUpdate()
+  }
+
   protected override async workStillRunning(tabId: string): Promise<boolean> {
     const t = this.tracked.get(tabId)
     if (!t) return false
@@ -712,7 +727,11 @@ export class SessionTracker extends SessionRuntime {
       await this.refreshProcs(t, true)
       if (this.tracked.get(tabId) !== t || t.statusSeq !== seq) return
     }
-    const busy = t.reported ? this.judgeReported(t) : this.bgBusy(t)
+    this.endTurnHeldByWhatRuns(t)
+  }
+
+  private endTurnHeldByWhatRuns(t: Tracked): void {
+    const busy = this.judgeHold(t)
     if (!busy) t.bgTasks.clear()
     this.applyStatus(t, 'ended', busy)
   }
@@ -741,11 +760,22 @@ export class SessionTracker extends SessionRuntime {
       this.emit('turn-ended', { tabId: t.info.tabId, turn: { ...turn, said: [...turn.said] } })
   }
 
-  private judgeReported(t: Tracked): boolean {
+  private judgeHold(t: Tracked): boolean {
+    if (t.reported) return this.judgeReported(t)
+    const busy = this.bgBusy(t)
+    this.setBackgroundItems(t, busy ? [UNLISTED_BACKGROUND_WORK] : [])
+    return busy
+  }
+
+  private judgeReported(t: Tracked, holding = true): boolean {
     const now = Date.now()
     const list = t.reported ?? []
     const procs = t.procs
     const parked: BackgroundItem[] = []
+    const running: BackgroundItem[] = []
+    const run = (task: ReportedTask, kind: BackgroundItem['kind'], label: string): void => {
+      running.push({ id: task.id, kind, label, state: 'working' })
+    }
     let observed = false
     let trusted = false
     const reportedIds = new Set(list.map((x) => x.id))
@@ -755,15 +785,19 @@ export class SessionTracker extends SessionRuntime {
     let idleTeammates = 0
     for (const task of list) {
       if (task.type === 'shell') {
-        const label = t.taskCmds.get(task.id) ?? task.id
+        const label = t.taskLabels.get(task.id) ?? task.id
         if (t.monitorIds.has(task.id)) {
           parked.push({ id: task.id, kind: 'monitor', label, state: 'waiting' })
         } else if (!procs) {
           trusted = true
+          run(task, 'command', label)
         } else {
           const sh = procs.shells.get(task.id)
           if (!sh) {
-            if ((task.since ?? 0) > t.procsAt) observed = true
+            if ((task.since ?? 0) > t.procsAt) {
+              observed = true
+              run(task, 'command', label)
+            }
             continue
           }
           if (sh.listening && t.shellCpu.get(task.id)?.quiet) {
@@ -774,13 +808,21 @@ export class SessionTracker extends SessionRuntime {
               state: 'waiting',
               ageMs: Math.floor(sh.ageMs / 60_000) * 60_000
             })
-          } else observed = true
+          } else {
+            observed = true
+            run(task, 'command', label)
+          }
         }
       } else if (AGENT_TYPES.has(task.type)) {
-        if (agentsFresh || toolCallInFlight) observed = true
+        if (agentsFresh || toolCallInFlight) {
+          observed = true
+          run(task, 'agent', t.taskLabels.get(task.id) ?? task.type)
+        }
       } else if (task.type === 'teammate') {
-        if (teammatesFresh || toolCallInFlight) observed = true
-        else idleTeammates++
+        if (teammatesFresh || toolCallInFlight) {
+          observed = true
+          run(task, 'agent', 'teammate')
+        } else idleTeammates++
       }
     }
     if (idleTeammates)
@@ -790,13 +832,12 @@ export class SessionTracker extends SessionRuntime {
         label: `${idleTeammates} idle`,
         state: 'waiting'
       })
-    this.setParked(t, parked)
-    if (observed) return true
-    if (!trusted) return false
-    return this.quietMs(t) < BG_SILENCE_MAX_MS
+    const busy = observed || (trusted && this.quietMs(t) < BG_SILENCE_MAX_MS)
+    this.setBackgroundItems(t, busy && holding ? [...running, ...parked] : parked)
+    return busy
   }
 
-  private setParked(t: Tracked, items: BackgroundItem[]): void {
+  private setBackgroundItems(t: Tracked, items: BackgroundItem[]): void {
     if (this.tracked.get(t.info.tabId) !== t || !this.setBackground(t.info.tabId, items)) return
     t.info.background = items.length ? items : undefined
     t.info.updatedAt = Date.now()
@@ -901,7 +942,7 @@ export class SessionTracker extends SessionRuntime {
     if (file && file !== t.info.jsonlPath) this.bind(t, file)
     if (source !== 'compact') {
       t.reported = null
-      this.setParked(t, [])
+      this.setBackgroundItems(t, [])
       this.setStatus(tabId, 'waiting')
     }
   }
@@ -1064,8 +1105,8 @@ export class SessionTracker extends SessionRuntime {
     t.info.usage = undefined
     t.bgTasks = new Set()
     t.monitorIds = new Set()
-    t.taskCmds = new Map()
-    t.toolCmds = new Map()
+    t.taskLabels = new Map()
+    t.toolLabels = new Map()
     t.openTools = new Map()
     t.teammateActiveMs = 0
     t.lastBgActivityTs = 0
@@ -1283,10 +1324,10 @@ export class SessionTracker extends SessionRuntime {
       return
     }
     if (!this.isHeldByBackground(t.info.tabId)) {
-      if (t.reported && s !== 'working' && s !== 'approval') this.judgeReported(t)
+      if (t.reported && s !== 'working' && s !== 'approval') this.judgeReported(t, false)
       return
     }
-    const busy = t.reported ? this.judgeReported(t) : this.bgBusy(t)
+    const busy = this.judgeHold(t)
     if (!busy) {
       if (Date.now() - t.lastMainActivityTs < STOP_HOLD_MS) return
       t.bgTasks.clear()
@@ -1335,9 +1376,7 @@ export class SessionTracker extends SessionRuntime {
       await this.refreshProcs(t, true)
       if (this.tracked.get(tabId) !== t || this.statusSince(tabId) > t.lastInterruptTs) return
     }
-    const busy = t.reported ? this.judgeReported(t) : this.bgBusy(t)
-    if (!busy) t.bgTasks.clear()
-    this.applyStatus(t, 'ended', busy)
+    this.endTurnHeldByWhatRuns(t)
   }
 
   private async tailSubagents(t: Tracked): Promise<boolean> {
@@ -1447,13 +1486,13 @@ export class SessionTracker extends SessionRuntime {
       task = { id: r.agentId, type: r.status === 'remote_launched' ? 'cloud-session' : 'subagent' }
     }
     if (task) {
-      const cmd = toolUseIds.map((id) => t.toolCmds.get(id)).find((c) => c)
-      if (cmd) t.taskCmds.set(task.id, cmd)
+      const cmd = toolUseIds.map((id) => t.toolLabels.get(id)).find((c) => c)
+      if (cmd) t.taskLabels.set(task.id, cmd)
       if (t.reported && !t.reported.some((x) => x.id === task.id)) {
         t.reported.push({ ...task, since: Date.now() })
       }
     }
-    for (const id of toolUseIds) t.toolCmds.delete(id)
+    for (const id of toolUseIds) t.toolLabels.delete(id)
     const at = Math.min(isFinite(ts) ? ts : Date.now(), Date.now())
     if (at > t.lastBgActivityTs) t.lastBgActivityTs = at
   }
@@ -1485,7 +1524,7 @@ export class SessionTracker extends SessionRuntime {
     if (t.reported && gone.size) t.reported = t.reported.filter((x) => !gone.has(x.id))
     for (const id of gone) {
       t.monitorIds.delete(id)
-      t.taskCmds.delete(id)
+      t.taskLabels.delete(id)
     }
     t.bgTasks.delete(BG_PROMOTED)
   }
@@ -1576,15 +1615,17 @@ export class SessionTracker extends SessionRuntime {
         for (const b of obj.message.content) {
           if (!b || b.type !== 'tool_use') continue
           if (liveNow && typeof b.id === 'string' && this.dialogsWatched(t.info.tabId)) {
-            if (t.openTools.size >= UNACKED_TOOL_CMD_CAP)
+            if (t.openTools.size >= UNACKED_TOOL_CAP)
               t.openTools.delete(t.openTools.keys().next().value as string)
             t.openTools.set(b.id, { name: b.name, input: b.input ?? {} })
           }
-          if ((b.name === 'Bash' || b.name === 'Monitor') && typeof b.input?.command === 'string') {
-            if (t.toolCmds.size >= UNACKED_TOOL_CMD_CAP)
-              t.toolCmds.delete(t.toolCmds.keys().next().value as string)
-            t.toolCmds.set(b.id, b.input.command.replace(/\s+/g, ' ').trim().slice(0, 120))
-            if (b.name === 'Bash' && liveNow && BASH_WRITES.test(b.input.command)) {
+          const labelField = TASK_LABEL_FIELD[b.name]
+          const label = labelField ? b.input?.[labelField] : undefined
+          if (typeof label === 'string') {
+            if (t.toolLabels.size >= UNACKED_TOOL_CAP)
+              t.toolLabels.delete(t.toolLabels.keys().next().value as string)
+            t.toolLabels.set(b.id, label.replace(/\s+/g, ' ').trim().slice(0, 120))
+            if (b.name === 'Bash' && liveNow && BASH_WRITES.test(label)) {
               t.info.liveWrites = (t.info.liveWrites ?? 0) + 1
             }
           }

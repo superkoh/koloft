@@ -239,6 +239,27 @@ if (argv[0] === 'app-server') {
           autoResolutionMs: null
         }
       })
+    } else if (text.includes('spawn child')) {
+      // CODEX§4
+      const childId = crypto.randomUUID()
+      event('item/completed', {
+        threadId: thread.id,
+        turnId: turn.id,
+        item: {
+          type: 'collabAgentToolCall',
+          id: 'spawn-' + turn.id,
+          tool: 'spawnAgent',
+          status: 'completed',
+          senderThreadId: thread.id,
+          receiverThreadIds: [childId],
+          agentsStates: { [childId]: { status: 'pendingInit' } }
+        }
+      })
+      setTimeout(() => complete(thread, turn), 120)
+      setTimeout(
+        () => event('thread/status/changed', { threadId: childId, status: { type: 'idle' } }),
+        Number(read('fake-codex-child-ms', '4000'))
+      )
     } else if (!text.includes('hold')) setTimeout(() => complete(thread, turn), 120)
   }
   const lines = readline.createInterface({ input: process.stdin })

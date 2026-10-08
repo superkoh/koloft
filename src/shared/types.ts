@@ -522,6 +522,7 @@ export interface BackendSessionInfo {
 
 export interface SessionInfo extends BackendSessionInfo, SessionSource {
   conductor?: string
+  turnOver?: boolean
 }
 
 export interface ClaudeSessionInfo extends BackendSessionInfo {

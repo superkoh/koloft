@@ -62,9 +62,9 @@ export function parkedBadge(
 }
 
 export function sessionActivityBadge(
-  session?: Pick<SessionInfo, 'background' | 'backendId' | 'details'>,
+  session?: Pick<SessionInfo, 'background' | 'backendId' | 'details' | 'turnOver'>,
   leftovers: LeftoverProcess[] = []
-): (ReturnType<typeof parkedBadge> & { heading: string }) | null {
+): (ReturnType<typeof parkedBadge> & { heading: string; running?: boolean }) | null {
   if (statusUnavailable(session))
     return {
       text: '?',
@@ -87,26 +87,31 @@ export function sessionActivityBadge(
     (item) =>
       `${item.kind === 'agent' ? 'agent' : 'command'} · ${item.label} · ${item.state === 'unknown' ? 'state unknown' : item.state}`
   )
+  const afterTurn = working && !!session?.turnOver
   return {
     text: `${working ? '↻' : unknown ? '?' : '⏸'} ${background.length}${parked ? ` ${parked.text}` : ''}`,
-    heading: 'Background activity',
+    heading: afterTurn ? 'Turn done · still running' : 'Background activity',
     lines: [...lines, ...(parked?.lines ?? [])],
     hint: unknown
       ? 'Unknown activity may still be running. Check the session before stopping it.'
-      : 'Manage these tasks in the session.'
+      : afterTurn
+        ? 'This turn is over and you can type. The work above keeps going.'
+        : 'Manage these tasks in the session.',
+    running: working
   }
 }
 
 export function rowStateClass(
   running: boolean,
   status: SessionStatus | undefined,
-  pending?: boolean
+  pending?: boolean,
+  turnOver?: boolean
 ): string {
   if (pending) return 'st-pending'
   if (!running) return 'cold'
   switch (status) {
     case 'working':
-      return 'st-working'
+      return turnOver ? 'st-waiting' : 'st-working'
     case 'waiting':
       return 'st-waiting'
     case 'approval':

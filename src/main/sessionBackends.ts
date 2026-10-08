@@ -62,6 +62,7 @@ export class SessionBackends {
   private cleanExitAt = new Map<string, number>()
   conductorOf: (tabOrSessionId: string) => string | undefined = () => undefined
   conductorWorkspaceOf: (tabId: string) => string | undefined = () => undefined
+  turnOver: (tabId: string) => boolean = () => false
 
   constructor(private lifecycle: SessionLifecycle) {}
 
@@ -146,7 +147,8 @@ export class SessionBackends {
         backendId: backend.id,
         host: s.remote ? 'ssh' : 'local',
         nativeSessionId: s.nativeSessionId ?? s.sessionId,
-        conductor: this.conductorOf(s.tabId) ?? this.conductorOf(s.sessionId)
+        conductor: this.conductorOf(s.tabId) ?? this.conductorOf(s.sessionId),
+        turnOver: this.turnOver(s.tabId)
       }))
     )
   }
