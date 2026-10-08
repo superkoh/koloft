@@ -18,7 +18,7 @@ import {
   type FakeDiscord,
   type FakePost
 } from './helpers/fakeDiscord'
-import type { ConductorBinding, DiscordSettings } from '../../src/shared/types'
+import type { ConductorBinding, DiscordSettings, SessionInfo } from '../../src/shared/types'
 
 test.setTimeout(120_000)
 
@@ -200,6 +200,35 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
       await expect
         .poll(() => ran(fake).at(-1), { timeout: 30_000 })
         .toMatch(/ran \/clear:\nIt is a new conversation now/)
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  // CC§8
+  test('D-CMD-5: a slash command is typed into a session at once when its turn is over, though background work it left running keeps it shown as working', async ({
+    env
+  }) => {
+    seedConductor(env)
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      await startSessionIn(page, 'ws-a')
+      const child = (await waitForCalls(env, 1))[0].sessionId
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 30_000 })
+      const childNow = async (): Promise<SessionInfo | undefined> =>
+        (await page.evaluate(() => window.api.sessions.list())).find((s) => s.sessionId === child)
+      const tab = (await childNow())!.tabId
+      await page.evaluate((id) => window.api.terminal.write(id, '/bg-reported\r'), tab)
+      await expect.poll(async () => (await childNow())?.background?.length ?? 0).toBeGreaterThan(0)
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-working/)
+
+      const asked = fake.interact(OWNER, 'run', { command: '/context', session: child })
+      await expect.poll(() => replyTo(fake, asked)).toMatch(/^Typing \/context into /)
+      await expect
+        .poll(() => ran(fake), { timeout: 30_000 })
+        .toEqual([expect.stringMatching(/ran \/context:\n## Context Usage/)])
     } finally {
       await quitAndClose(app)
       await fake.close()

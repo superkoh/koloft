@@ -69,6 +69,11 @@ export class SessionRuntime extends EventEmitter {
     return this.entries.get(tabId)?.turn === 'input'
   }
 
+  turnOver(tabId: string): boolean {
+    const turn = this.entries.get(tabId)?.turn
+    return turn === 'ended' || turn === 'input'
+  }
+
   protected turnNow(tabId: string): Turn | undefined {
     return this.entries.get(tabId)?.turn
   }
@@ -84,11 +89,14 @@ export class SessionRuntime extends EventEmitter {
 
   recordTurn(tabId: string, turn: Turn, heldByBackground = false): void {
     const e = this.entry(tabId)
+    const wasOver = this.turnOver(tabId)
     e.turn = turn
     e.heldByBackground = heldByBackground
     e.restingSince = undefined
     this.disarmClose(e)
     this.evaluate(tabId, e, Date.now())
+    const over = this.turnOver(tabId)
+    if (over !== wasOver) this.emit('turn-over', { tabId, over })
   }
 
   setBackground(tabId: string, items: BackgroundItem[]): boolean {

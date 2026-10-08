@@ -18,7 +18,7 @@ function setup(over: Partial<SlashDeps> = {}) {
   const deps: SlashDeps = {
     backendOf: () => 'claude',
     keyOf: () => key,
-    status: () => status,
+    turnOver: () => status === 'waiting' || status === 'idle',
     asking: () => false,
     takesTyping: () => status === 'waiting' || status === 'idle',
     panelOpen: async () => undefined,
@@ -36,7 +36,7 @@ function setup(over: Partial<SlashDeps> = {}) {
     posts,
     setStatus: (s: SessionStatus) => {
       status = s
-      slash.status(TAB, s)
+      slash.turnOver(TAB, s === 'waiting' || s === 'idle')
     },
     setKey: (k: string) => {
       key = k

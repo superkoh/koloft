@@ -33,3 +33,21 @@ describe('a session has finished all its work only once its turn ended and nothi
     expect(await runtime.stillWorking(TAB)).toBe(true)
   })
 })
+
+describe('a session takes typing once its turn is over, whatever background work it left running', () => {
+  it('a turn that ended with background work running still shows working, yet its turn is over and that edge is told', () => {
+    const edges: boolean[] = []
+    const listen = ({ tabId, over }: { tabId: string; over: boolean }): void => {
+      if (tabId === TAB) edges.push(over)
+    }
+    runtime.on('turn-over', listen)
+    runtime.recordTurn(TAB, 'working')
+    expect(runtime.turnOver(TAB)).toBe(false)
+    runtime.recordTurn(TAB, 'ended', true)
+    expect(runtime.statusOf(TAB)).toBe('working')
+    expect(runtime.turnOver(TAB)).toBe(true)
+    runtime.recordTurn(TAB, 'ended')
+    expect(edges).toEqual([true])
+    runtime.off('turn-over', listen)
+  })
+})

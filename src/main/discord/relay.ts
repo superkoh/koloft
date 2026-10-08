@@ -80,6 +80,7 @@ export interface RelayDeps {
   boundKey(tabId: string): string | undefined
   status(tabId: string): SessionStatus | undefined
   awaitsInput(tabId: string): boolean
+  turnOver(tabId: string): boolean
   waiting(tabId: string): void
   alive(tabId: string): boolean
   ready(tabId: string, ready: () => boolean, ms: number): Promise<boolean>
@@ -270,12 +271,8 @@ export class DiscordRelay {
   }
 
   takesCommand(tab: string): boolean {
-    const status = this.d.status(tab)
     return (
-      this.typable(tab) &&
-      (status === 'waiting' || status === 'idle') &&
-      !this.dialogOpen(tab) &&
-      this.d.queueDrained(tab)
+      this.typable(tab) && this.d.turnOver(tab) && !this.dialogOpen(tab) && this.d.queueDrained(tab)
     )
   }
 

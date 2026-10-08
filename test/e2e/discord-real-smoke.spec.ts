@@ -131,6 +131,18 @@ function ran(fake: FakeDiscord): string[] {
   return said(fake).filter((p) => p.startsWith('⌨️ '))
 }
 
+function replyTo(fake: FakeDiscord, interactionId: string): string | undefined {
+  return fake.callbacks.find((c) => c.interactionId === interactionId)?.data.content
+}
+
+const BACKGROUND_SLEEP_SECONDS = 600
+const BACKGROUND_SLEEP_PROMPT = `Start the shell command "sleep ${BACKGROUND_SLEEP_SECONDS}" in the background, so it keeps running after your turn ends, and do not wait for it or check on it. Then reply with only BG-STARTED and end your turn.`
+
+async function backgroundOf(page: Page, tabId: string): Promise<number> {
+  const s = (await page.evaluate(() => window.api.sessions.list())).find((x) => x.tabId === tabId)
+  return s?.background?.length ?? 0
+}
+
 function notices(fake: FakeDiscord): string[] {
   return said(fake)
     .map((p) => p.split('\n')[0])
@@ -640,6 +652,60 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       await expect
         .poll(() => ran(fake).at(-1), { timeout: A_REAL_MODEL_TURN_MS })
         .toMatch(/ran \/compact:\nCompacted/)
+    })
+  })
+
+  // CC§8
+  test('a real Claude session whose turn is over but whose background command still runs takes a /run /context from Discord at once, and its report reaches the channel', async ({
+    env
+  }) => {
+    test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
+    test.setTimeout(2 * A_REAL_MODEL_TURN_MS + 120_000)
+    const fake = await realClaudeConductor(env)
+    await withConductor(env, fake, async (_app, page) => {
+      const child = await liveClaudeTab(page)
+      await typePrompt(page, child.tabId, BACKGROUND_SLEEP_PROMPT)
+      await expect
+        .poll(() => backgroundOf(page, child.tabId), { timeout: A_REAL_MODEL_TURN_MS })
+        .toBeGreaterThan(0)
+      const asked = fake.interact(OWNER, 'run', { command: '/context', session: child.sessionId })
+      await expect.poll(() => replyTo(fake, asked)).toMatch(/^Typing \/context into /)
+      await expect
+        .poll(() => ran(fake), { timeout: A_REAL_MODEL_TURN_MS })
+        .toContainEqual(expect.stringMatching(/ran \/context:\n## Context Usage/))
+      expect(await backgroundOf(page, child.tabId)).toBeGreaterThan(0)
+    })
+  })
+
+  // CODEX§4
+  test('a real Codex session whose turn is over but whose background command still runs takes a /compact from Discord at once, and the channel hears it is done', async ({
+    env
+  }) => {
+    test.skip(!HAVE_REAL_CODEX, NEEDS_REAL_CODEX)
+    test.setTimeout(3 * A_REAL_MODEL_TURN_MS + 120_000)
+    seedConductor(env, 'codex')
+    useRealCodex(env)
+    const fake = await startFakeDiscord(env)
+    await withConductor(env, fake, async (_app, page) => {
+      fake.say(
+        OWNER,
+        `Start one new Codex session in this workspace whose first message is exactly this, then tell me you started it: ${BACKGROUND_SLEEP_PROMPT}`
+      )
+      const child = async (): Promise<{ tabId: string; sessionId: string } | undefined> =>
+        (await page.evaluate(() => window.api.sessions.list())).find(
+          (s) => s.alive && !s.conductor && s.backendId === 'codex'
+        )
+      await expect
+        .poll(async () => backgroundOf(page, (await child())?.tabId ?? ''), {
+          timeout: 2 * A_REAL_MODEL_TURN_MS
+        })
+        .toBeGreaterThan(0)
+      const target = (await child())!
+      const asked = fake.interact(OWNER, 'compact', { session: target.sessionId })
+      await expect.poll(() => replyTo(fake, asked)).toMatch(/^Typing \/compact into /)
+      await expect
+        .poll(() => ran(fake), { timeout: A_REAL_MODEL_TURN_MS })
+        .toContainEqual(expect.stringMatching(/ran \/compact:\n/))
     })
   })
 
