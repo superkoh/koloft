@@ -4,6 +4,7 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
 import {
+  backgroundCount,
   newSessionInWith,
   settingsOnDisk,
   startSessionIn,
@@ -14,11 +15,12 @@ import {
 } from './helpers/p1'
 import {
   AUTOCOMPLETE,
+  replyTo,
   startFakeDiscord,
   type FakeDiscord,
   type FakePost
 } from './helpers/fakeDiscord'
-import type { ConductorBinding, DiscordSettings, SessionInfo } from '../../src/shared/types'
+import type { ConductorBinding, DiscordSettings } from '../../src/shared/types'
 
 test.setTimeout(120_000)
 
@@ -66,10 +68,6 @@ function ran(fake: FakeDiscord): string[] {
 
 function threadUnderChannel(fake: FakeDiscord, channelId: string): boolean {
   return fake.threads.some((t) => t.id === channelId && t.parentId === CHANNEL)
-}
-
-function replyTo(fake: FakeDiscord, interactionId: string): string | undefined {
-  return fake.callbacks.find((c) => c.interactionId === interactionId)?.data.content
 }
 
 async function connected(
@@ -217,11 +215,11 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
       await startSessionIn(page, 'ws-a')
       const child = (await waitForCalls(env, 1))[0].sessionId
       await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 30_000 })
-      const childNow = async (): Promise<SessionInfo | undefined> =>
-        (await page.evaluate(() => window.api.sessions.list())).find((s) => s.sessionId === child)
-      const tab = (await childNow())!.tabId
+      const tab = (await page.evaluate(() => window.api.sessions.list())).find(
+        (s) => s.sessionId === child
+      )!.tabId
       await page.evaluate((id) => window.api.terminal.write(id, '/bg-reported\r'), tab)
-      await expect.poll(async () => (await childNow())?.background?.length ?? 0).toBeGreaterThan(0)
+      await expect.poll(() => backgroundCount(page, tab)).toBeGreaterThan(0)
       await expect(wsRows(page, 'ws-a')).toHaveClass(/st-working/)
 
       const asked = fake.interact(OWNER, 'run', { command: '/context', session: child })

@@ -4,8 +4,17 @@ import { execFileSync } from 'child_process'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
-import { gitInit, seedJsonl, startSessionIn, terminalText, waitBooted, wsRows } from './helpers/p1'
-import { startFakeDiscord, type FakeDiscord } from './helpers/fakeDiscord'
+import {
+  backgroundCount,
+  gitInit,
+  seedJsonl,
+  startSessionIn,
+  terminalText,
+  waitBooted,
+  wsRows
+} from './helpers/p1'
+import { replyTo, startFakeDiscord, type FakeDiscord } from './helpers/fakeDiscord'
+import type { SessionInfo } from '../../src/shared/types'
 
 function claudeTokenFromKeychain(): string {
   const account = process.env.KOLOFT_SMOKE_ACCOUNT
@@ -131,17 +140,8 @@ function ran(fake: FakeDiscord): string[] {
   return said(fake).filter((p) => p.startsWith('⌨️ '))
 }
 
-function replyTo(fake: FakeDiscord, interactionId: string): string | undefined {
-  return fake.callbacks.find((c) => c.interactionId === interactionId)?.data.content
-}
-
 const BACKGROUND_SLEEP_SECONDS = 600
 const BACKGROUND_SLEEP_PROMPT = `Start the shell command "sleep ${BACKGROUND_SLEEP_SECONDS}" in the background, so it keeps running after your turn ends, and do not wait for it or check on it. Then reply with only BG-STARTED and end your turn.`
-
-async function backgroundOf(page: Page, tabId: string): Promise<number> {
-  const s = (await page.evaluate(() => window.api.sessions.list())).find((x) => x.tabId === tabId)
-  return s?.background?.length ?? 0
-}
 
 function notices(fake: FakeDiscord): string[] {
   return said(fake)
@@ -666,14 +666,14 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       const child = await liveClaudeTab(page)
       await typePrompt(page, child.tabId, BACKGROUND_SLEEP_PROMPT)
       await expect
-        .poll(() => backgroundOf(page, child.tabId), { timeout: A_REAL_MODEL_TURN_MS })
+        .poll(() => backgroundCount(page, child.tabId), { timeout: A_REAL_MODEL_TURN_MS })
         .toBeGreaterThan(0)
       const asked = fake.interact(OWNER, 'run', { command: '/context', session: child.sessionId })
       await expect.poll(() => replyTo(fake, asked)).toMatch(/^Typing \/context into /)
       await expect
         .poll(() => ran(fake), { timeout: A_REAL_MODEL_TURN_MS })
         .toContainEqual(expect.stringMatching(/ran \/context:\n## Context Usage/))
-      expect(await backgroundOf(page, child.tabId)).toBeGreaterThan(0)
+      expect(await backgroundCount(page, child.tabId)).toBeGreaterThan(0)
     })
   })
 
@@ -691,12 +691,12 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
         OWNER,
         `Start one new Codex session in this workspace whose first message is exactly this, then tell me you started it: ${BACKGROUND_SLEEP_PROMPT}`
       )
-      const child = async (): Promise<{ tabId: string; sessionId: string } | undefined> =>
+      const child = async (): Promise<SessionInfo | undefined> =>
         (await page.evaluate(() => window.api.sessions.list())).find(
           (s) => s.alive && !s.conductor && s.backendId === 'codex'
         )
       await expect
-        .poll(async () => backgroundOf(page, (await child())?.tabId ?? ''), {
+        .poll(async () => (await child())?.background?.length ?? 0, {
           timeout: 2 * A_REAL_MODEL_TURN_MS
         })
         .toBeGreaterThan(0)

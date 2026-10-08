@@ -152,6 +152,16 @@ export function boundSessionId(page: Page, tabId: string | null): Promise<string
   )
 }
 
+export function backgroundCount(page: Page, tabId: string): Promise<number> {
+  return page.evaluate(
+    (id) =>
+      window.api.sessions
+        .list()
+        .then((all) => all.find((s) => s.tabId === id)?.background?.length ?? 0),
+    tabId
+  )
+}
+
 export interface SeedOptions {
   id?: string
   summary?: string

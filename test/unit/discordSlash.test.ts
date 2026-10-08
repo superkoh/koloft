@@ -8,6 +8,7 @@ import {
 } from '../../src/main/discord/slash'
 
 const TAB = 'pty-child-1'
+const turnIsOver = (s: SessionStatus): boolean => s === 'waiting' || s === 'idle'
 const CHANNEL = '222'
 
 function setup(over: Partial<SlashDeps> = {}) {
@@ -18,9 +19,9 @@ function setup(over: Partial<SlashDeps> = {}) {
   const deps: SlashDeps = {
     backendOf: () => 'claude',
     keyOf: () => key,
-    turnOver: () => status === 'waiting' || status === 'idle',
+    turnOver: () => turnIsOver(status),
     asking: () => false,
-    takesTyping: () => status === 'waiting' || status === 'idle',
+    takesTyping: () => turnIsOver(status),
     panelOpen: async () => undefined,
     ready: async (_t, ready) => ready(),
     exclusive: (_t, typing) => typing(),
@@ -36,7 +37,7 @@ function setup(over: Partial<SlashDeps> = {}) {
     posts,
     setStatus: (s: SessionStatus) => {
       status = s
-      slash.turnOver(TAB, s === 'waiting' || s === 'idle')
+      slash.turnOver(TAB, turnIsOver(s))
     },
     setKey: (k: string) => {
       key = k

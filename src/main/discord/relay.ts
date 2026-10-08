@@ -407,17 +407,12 @@ export class DiscordRelay {
       this.answer(tab, hookAnswer(ask.payload, reply))
       return undefined
     }
-    if (this.turnOver(tab)) return SHOWS_NO_DIALOG
+    if (this.d.turnOver(tab) && !this.d.awaitsInput(tab)) return SHOWS_NO_DIALOG
     const keys = claudeKeysFor(ask.payload, reply)
     if (!keys.ok) return keys.error
     this.asks.delete(tab)
     await this.d.type(tab, keys.value)
     return undefined
-  }
-
-  private turnOver(tab: string): boolean {
-    const status = this.d.status(tab)
-    return status === 'idle' || (status === 'waiting' && !this.d.awaitsInput(tab))
   }
 
   codexAsked(tab: string, a: CodexApproval | CodexQuestion): void {

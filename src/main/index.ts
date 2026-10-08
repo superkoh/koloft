@@ -24,7 +24,7 @@ import { allowCrashReload } from './crashGuard'
 import { FlowGate } from './flowControl'
 import { SessionTracker, type ToolCall } from './sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
-import type { StatusEdge } from './sessionRuntime'
+import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
 import { SessionBackends } from './sessionBackends'
 import {
@@ -1526,7 +1526,7 @@ app.whenReady().then(() => {
   tracker.on('command-output', ({ tabId, ...output }: CommandOutput & { tabId: string }) =>
     slash.output(tabId, output)
   )
-  tracker.on('turn-over', ({ tabId, over }: { tabId: string; over: boolean }) => {
+  tracker.on('turn-over', ({ tabId, over }: TurnOverEdge) => {
     ptyMgr.wakeReady(tabId)
     slash.turnOver(tabId, over)
   })

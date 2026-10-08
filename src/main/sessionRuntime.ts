@@ -47,6 +47,11 @@ export interface StatusEdge {
   next: SessionStatus
 }
 
+export interface TurnOverEdge {
+  tabId: string
+  over: boolean
+}
+
 interface RuntimeEntry extends StatusSignals {
   status?: SessionStatus
   since: number
@@ -96,7 +101,7 @@ export class SessionRuntime extends EventEmitter {
     this.disarmClose(e)
     this.evaluate(tabId, e, Date.now())
     const over = this.turnOver(tabId)
-    if (over !== wasOver) this.emit('turn-over', { tabId, over })
+    if (over !== wasOver) this.emit('turn-over', { tabId, over } satisfies TurnOverEdge)
   }
 
   setBackground(tabId: string, items: BackgroundItem[]): boolean {

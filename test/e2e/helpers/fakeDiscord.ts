@@ -104,6 +104,10 @@ export function callbackText(c: FakeCallback): string {
   return c.data.components ? cardText(c.data.components).text : (c.data.content ?? '')
 }
 
+export function replyTo(fake: FakeDiscord, interactionId: string): string | undefined {
+  return fake.callbacks.find((c) => c.interactionId === interactionId)?.data.content
+}
+
 export interface FakeDiscord {
   identifies: number
   closeOnIdentify: number | null
