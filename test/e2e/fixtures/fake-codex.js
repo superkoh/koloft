@@ -173,6 +173,28 @@ if (argv[0] === 'app-server') {
         }
       })
     }
+    if (text.startsWith('/koloft ')) {
+      const command = `koloft ${text.slice('/koloft '.length).trim()}`
+      execFile('/bin/zsh', ['-lc', command], { cwd: thread.cwd }, (e, out, err) => {
+        const exitCode = e ? (typeof e.code === 'number' ? e.code : 1) : 0
+        event('item/completed', {
+          threadId: thread.id,
+          turnId: turn.id,
+          item: {
+            type: 'commandExecution',
+            id: 'koloft-' + turn.id,
+            status: exitCode === 0 ? 'completed' : 'failed',
+            exitCode,
+            aggregatedOutput: `${out}${err}`,
+            command: `/bin/zsh -lc '${command}'`,
+            cwd: thread.cwd,
+            commandActions: [{ type: 'unknown', command }]
+          }
+        })
+        complete(thread, turn)
+      })
+      return
+    }
     if (text.includes('approve')) {
       pendingApproval = { id: 'approval-' + turn.id, thread, turn }
       status(thread, { type: 'active', activeFlags: ['waitingOnApproval'] })
@@ -487,12 +509,6 @@ async function startTui() {
     else if (text === '/fork') await open('thread/fork', { threadId: thread.id, cwd })
     else if (text.startsWith('/resume '))
       await open('thread/resume', { threadId: text.slice(8).trim(), cwd })
-    else if (text.startsWith('/koloft '))
-      execFile('/bin/sh', ['-c', `koloft ${text.slice(8).trim()}`], { cwd }, (e, out, err) => {
-        const code = e ? (typeof e.code === 'number' ? e.code : 1) : 0
-        const said = `${out}${err}`.replace(/\r?\n/g, '\r\n')
-        process.stdout.write(`\r\n${said}[fake-codex] koloft exit=${code}\r\n> `)
-      })
     else await prompt(text)
   }
   ws.on('message', (bytes) => {
@@ -504,6 +520,10 @@ async function startTui() {
       const [q] = frame.params.questions
       question = { id: frame.id, key: q.id, labels: q.options.map((o) => o.label) }
       process.stdout.write('\r\n' + q.question + ' ' + question.labels.join(' / ') + ' ')
+    } else if (frame.method === 'item/completed' && frame.params.item.id.startsWith('koloft-')) {
+      const { aggregatedOutput, exitCode } = frame.params.item
+      const said = aggregatedOutput.replace(/\r?\n/g, '\r\n')
+      process.stdout.write(`\r\n${said}[fake-codex] koloft exit=${exitCode}\r\n> `)
     } else if (frame.method === 'turn/started') {
       working = true
       turnId = frame.params.turn.id
