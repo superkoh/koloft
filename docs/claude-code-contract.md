@@ -1238,3 +1238,7 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   2.1.257. The release that added `--name`, `--effort`, `--plugin-dir`, the §11 session
   registry or the `PermissionRequest` hook is not recorded here; that all predate
   2.1.259 is inferred, not checked.
+- **The minimum is 2.1.293, the newest every channel offered on 2026-10-08**
+  (`downloads.claude.ai/claude-code-releases/latest` said 2.1.294; npm dist-tags said
+  `latest` 2.1.293, `next` 2.1.294, `stable` 2.1.285). A minimum above npm's `latest`
+  would leave an npm install that `claude update` cannot lift to it.

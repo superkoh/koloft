@@ -17,7 +17,7 @@ beforeEach(() => {
   const bin = path.join(directory, 'bin')
   fs.mkdirSync(bin)
   binary = path.join(bin, 'codex')
-  fs.writeFileSync(binary, '#!/bin/sh\nprintf "codex-cli 0.153.4\\n"\n', { mode: 0o700 })
+  fs.writeFileSync(binary, '#!/bin/sh\nprintf "codex-cli 0.161.0\\n"\n', { mode: 0o700 })
   environment = {
     PATH: '/usr/bin:/bin',
     SHELL: '/bin/zsh',
@@ -46,7 +46,7 @@ describe('Codex shell runtime', () => {
   it('loads login and interactive configuration while excluding profile noise and runtime markers', async () => {
     const runtime = await resolveCodexRuntime({ env: environment })
     expect(runtime.binary).toBe(binary)
-    expect(runtime.version).toBe('0.153.4')
+    expect(runtime.version).toBe('0.161.0')
     expect(runtime.env.CODEX_HOME).toBe(path.join(directory, 'codex home'))
     expect(runtime.env.OPENAI_API_KEY).toBe('profile-fixture-key')
     expect(runtime.env.CODEX_CUSTOM_OPTION).toBe('normal-config')
@@ -96,9 +96,10 @@ describe('Codex shell runtime', () => {
   })
 
   it.each([
-    { printed: '0.153.3', tooOld: true, verified: true },
-    { printed: '0.153.4', tooOld: false, verified: true },
-    { printed: '0.154.0', tooOld: false, verified: false }
+    { printed: '0.160.9', tooOld: true, verified: false },
+    { printed: '0.161.0', tooOld: false, verified: true },
+    { printed: '0.161.3', tooOld: false, verified: true },
+    { printed: '0.162.0', tooOld: false, verified: false }
   ])(
     'reads Codex $printed: too old $tooOld (verified $verified)',
     async ({ printed, tooOld, verified }) => {
