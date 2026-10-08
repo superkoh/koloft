@@ -750,7 +750,6 @@ export class WorkspaceManager {
     for (const t of this.remoteTargets()) {
       for (const id of this.deps.remoteRunning?.(t.host) ?? []) liveIds.add(id)
     }
-    this.deps.sessionsOnDiskOrRunning?.(liveIds)
     const additional = this.deps.additionalMembers?.() ?? new Set<string>()
     const members: string[] = []
     for (const id of this.layout.members) {
@@ -758,6 +757,7 @@ export class WorkspaceManager {
       else if (!additional.has(id))
         this.deps.memberDropped?.(id, 'no transcript found and not running')
     }
+    this.deps.sessionsOnDiskOrRunning?.(liveIds)
     const kept = new Set([...members, ...additional])
     const gc = gcSessions(this.layout.panels, kept)
     const resident = this.residentIds().filter((id) => kept.has(id))

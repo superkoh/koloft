@@ -121,8 +121,11 @@ export class DiscordRelay {
       void this.d.link.post(channelId, part, replyTo).catch(() => undefined)
   }
 
-  card(channelId: string, card: Card): void {
-    void this.d.link.card(channelId, card).catch(() => undefined)
+  card(channelId: string, card: Card): Promise<void> {
+    return this.d.link.card(channelId, card).then(
+      () => undefined,
+      () => undefined
+    )
   }
 
   async send(channelId: string, files: DiscordFile[], text: string): Promise<void> {

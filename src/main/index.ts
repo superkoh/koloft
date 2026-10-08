@@ -1550,6 +1550,7 @@ app.whenReady().then(() => {
         retitleDiscordThreads(all)
       },
       replaced: (oldKey, newKey) => workspaceMgr?.moveResident(oldKey, newKey),
+      memberRemoved: (key) => discordThreads?.left(key),
       events: (tabId, event) => sessionBackends.observe(tabId, event),
       error: (message) => sendToRenderer('cron:toast', message),
       trustFolder: trustCodexFolder,
@@ -1626,6 +1627,7 @@ app.whenReady().then(() => {
           ids.has(key) || (identityOf(key).backendId === 'codex' && !codexSessions?.threadGone(key))
       ),
     memberDropped: (sessionId, why) => {
+      discordThreads?.left(sessionId)
       try {
         fs.appendFileSync(
           path.join(app.getPath('userData'), 'dropped-sessions.log'),
@@ -1712,7 +1714,15 @@ app.whenReady().then(() => {
   })
   discordLink = link
   const conductorsNow = conductors
-  const threads = new SessionThreads({ link, conductors: conductorsNow })
+  const threads = new SessionThreads({
+    link,
+    conductors: conductorsNow,
+    deleteFailed: (threadName, error) =>
+      sendToRenderer(
+        'cron:toast',
+        `Koloft could not delete the Discord thread "${threadName}", so it only archived it: ${errorText(error)}`
+      )
+  })
   discordThreads = threads
   const dialogOf = async (tabId: string): Promise<DialogView | undefined> => {
     const ask = await codexAskOf(tabId)
@@ -1831,8 +1841,8 @@ app.whenReady().then(() => {
   discordNotices = new Notices({
     bindings: () => conductorsNow.bindings(),
     place: (b, subject) => threads.place(b, subject),
-    hasThread: (key) => threads.hasThread(key),
-    card: (channelId, card) => discordRelay?.card(channelId, card),
+    threadOf: (key) => threads.threadOf(key),
+    card: async (channelId, card) => discordRelay?.card(channelId, card),
     archive: (threadId) => threads.archive(threadId),
     withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
     subject: (tabId) => {

@@ -259,6 +259,16 @@ export class Conductors {
     this.d.saveQuietly(this.discord)
   }
 
+  dropThread(threadId: string): void {
+    const found = this.threadOfChannel(threadId)
+    if (!found) return
+    this.change(found.binding.id, (b) => ({
+      ...b,
+      threads: (b.threads ?? []).filter((t) => t.threadId !== threadId)
+    }))
+    this.d.saveQuietly(this.discord)
+  }
+
   forgetGone(stillOnDisk: (key: string) => boolean): void {
     let changed = false
     const bindings = this.discord.bindings.map((b) => {

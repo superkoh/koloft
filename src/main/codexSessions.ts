@@ -99,6 +99,7 @@ export interface CodexSessionDeps {
   projectInfo(p: string): ProjectInfo
   changed(): void
   replaced?(oldKey: string, newKey: string): void
+  memberRemoved?(key: string): void
   events(tabId: string, event: SessionEvent): void
   error(message: string): void
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
@@ -570,8 +571,14 @@ export class CodexSessions {
 
   archive(key: string): boolean {
     if (this.aliveTabFor(key)) return false
-    const removed = this.store.removeMember(key)
+    const removed = this.removeMember(key)
     this.changed()
+    return removed
+  }
+
+  private removeMember(key: string): boolean {
+    const removed = this.store.removeMember(key)
+    if (removed) this.deps.memberRemoved?.(key)
     return removed
   }
 
@@ -875,7 +882,7 @@ export class CodexSessions {
       if (change === 'replace' && old && old !== key) {
         this.deps.replaced?.(old, key)
         if (![...this.runs.values()].some((r) => r !== run && r.info?.sessionId === old))
-          this.store.removeMember(old)
+          this.removeMember(old)
       }
     } catch (e) {
       this.deps.error(String(e))
@@ -986,7 +993,7 @@ export class CodexSessions {
         this.runs.delete(tabId)
         if (nativeExit && run.info && !this.aliveTabFor(run.info.sessionId)) {
           try {
-            this.store.removeMember(run.info.sessionId)
+            this.removeMember(run.info.sessionId)
           } catch (error) {
             this.deps.error(String(error))
           }
