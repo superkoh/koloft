@@ -70,10 +70,11 @@
         <h1 class="title">A butler on Discord</h1>
 
         <p>
-          Discord is a chat app for your phone and your computer. A conductor is a normal Claude or
-          Codex session on your Mac, tied to one Discord channel (a chat room). You write to the
-          conductor from your phone. It starts your other sessions, reads them, sends them messages,
-          and answers their questions the way you tell it to.
+          Discord is a chat app for your phone and your computer. A conductor is a Claude or Codex
+          session on your Mac, tied to one Discord channel (a chat room). You write to the conductor
+          from your phone. It starts your other sessions, reads them, sends them messages, and
+          answers their questions the way you tell it to. It never does the work itself: Koloft lets
+          it only read, whatever your permission setting, so it passes each job on to a session.
         </p>
 
         <pre
@@ -139,7 +140,12 @@ your Mac
             Make a private server, in the Discord app. A server is your own space in Discord, with
             channels in it. Only you are in this one.
           </li>
-          <li>Add the bot to your server. Click Invite the bot.</li>
+          <li>
+            Add the bot to your server. Click Invite the bot. The invite asks for the rights the bot
+            needs, Manage Threads among them. If you added the bot before this, its role does not
+            get the new right on its own: open Server Settings ▸ Roles, pick the bot's role, and
+            under Permissions turn on Manage Threads.
+          </li>
           <li>
             Tell Koloft who you are. Send any message in your server, like "hi". It shows up in
             Koloft with the sender's name. Click This is me (or Not me).
@@ -251,6 +257,7 @@ your Mac
         </ul>
         <p>
           The conductor always runs on your Mac, even for a <a href="../remote/">remote folder</a>.
+          It runs in a folder of its own under Koloft's data folder, not in your workspace.
         </p>
 
         <h2>From your phone</h2>
@@ -311,7 +318,13 @@ your Mac
             The thread takes the session's title from the sidebar, and changes when the title does.
             After <code>/clear</code>, the session stays in the same thread.
           </li>
-          <li>When the session closes, its thread is put away (archived).</li>
+          <li>When the session's tab closes, its thread is put away (archived).</li>
+          <li>
+            When the session leaves the sidebar (Remove from list, <code>/exit</code>, or
+            <code>koloft session close</code>), its thread and its card are deleted. If the bot may
+            not delete threads, Koloft archives it instead and a small message asks you to give the
+            bot Manage Threads (step 5 above). This is the same for every kind of session.
+          </li>
         </ul>
 
         <h3>Buttons</h3>
@@ -350,9 +363,9 @@ your Mac
         <h3>Files out</h3>
         <p>
           The conductor can send you files. It runs
-          <code>koloft discord send &lt;file&gt;... -- "&lt;text&gt;"</code>, and the text part may
-          be left out. Each file can be up to 20 MB (megabytes). Discord takes 10 files and 25 MB
-          per message, so a bigger batch goes out as several messages.
+          <code>koloft discord send &lt;file&gt;... -- "&lt;text&gt;"</code> with each file's full
+          path, and the text part may be left out. Each file can be up to 20 MB (megabytes). Discord
+          takes 10 files and 25 MB per message, so a bigger batch goes out as several messages.
         </p>
 
         <h3>What the conductor can do</h3>
@@ -370,6 +383,13 @@ your Mac
         </ul>
         <p>It cannot:</p>
         <ul class="dash">
+          <li>
+            change your files, take a screenshot or drive a browser itself
+            <span class="why"
+              >(a Claude conductor is told no, with a message; a Codex conductor is held in its
+              sandbox, a box it cannot reach out of; either one asks a session to do it)</span
+            >
+          </li>
           <li>close an open session it did not start <span class="why">(stop it first)</span></li>
           <li>
             close a session on another machine
@@ -379,15 +399,13 @@ your Mac
             touch scheduled jobs or notes, if it is the Global conductor or a remote folder's
             <span class="why">(a local folder's conductor can)</span>
           </li>
-          <li>
-            give a session it starts more freedom than it has itself
-            <span class="why"
-              >(that session skips permission checks only if the conductor does; otherwise it asks
-              as usual)</span
-            >
-          </li>
         </ul>
-        <p>The conductor itself uses your usual permission setting.</p>
+        <p>
+          A Claude session the conductor starts follows your Skip permission prompts setting
+          (Settings ▸ Accounts), like any Claude session. A Codex session it starts runs with no
+          approvals and no sandbox if a Claude conductor started it with that setting on; otherwise
+          it starts the ordinary way, like one you start yourself.
+        </p>
         <p>
           A message you send while Koloft is closed gets one answer: "Koloft was offline, this
           message was not delivered."

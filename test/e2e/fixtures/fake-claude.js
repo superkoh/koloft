@@ -615,7 +615,7 @@ const rl = readline.createInterface({ input: typedLines })
 const PASTE_START = '\x1b[200~'
 const PASTE_END = '\x1b[201~'
 let pasted = null
-// CC§17
+// CC§18
 rl.on('line', (line) => {
   if (pasted === null && !line.includes(PASTE_START)) return handleLine(line)
   pasted = pasted === null ? line.replace(PASTE_START, '') : pasted + '\n' + line

@@ -1127,6 +1127,7 @@ export class SessionTracker extends SessionRuntime {
     }
     if (t.subagentTimer) clearInterval(t.subagentTimer)
     t.subagentTimer = setInterval(() => void this.parse(t), SUBAGENT_SCAN_MS)
+    this.recompute(t)
     void this.parse(t)
   }
 

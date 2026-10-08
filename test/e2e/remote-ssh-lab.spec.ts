@@ -326,7 +326,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         const head = await putCommentOnFirstHunkInSession(page, 'README.md', note)
         const screen = (): Promise<string> =>
           page.locator('.term-island .term-wrap:visible').innerText()
-        // CC§17
+        // CC§18
         await expect
           .poll(screen, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS })
           .toMatch(/\[Pasted text #\d+ \+\d+ lines\]/)

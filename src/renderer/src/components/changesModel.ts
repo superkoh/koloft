@@ -156,7 +156,7 @@ export interface HunkPrompt {
   typed: string
 }
 
-// CC§17
+// CC§18
 export function hunkPrompt(rel: string, hunk: string, note: string): HunkPrompt {
   const diff = hunk.replace(/\n+$/, '')
   const fence = fenceFor(diff)

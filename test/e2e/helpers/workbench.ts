@@ -342,7 +342,7 @@ export async function expectOnePromptFromTheComment(
   expect(prompt.endsWith('\n```\n\n' + note + TYPED_AFTER_THE_PASTE)).toBe(true)
 }
 
-// CC§17
+// CC§18
 export function outsideThePaste(prompt: string): string {
   return prompt.replace(/<pasted_content id="([^"]+)">[\s\S]*?<\/pasted_content id="\1">/g, '')
 }

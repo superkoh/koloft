@@ -2890,12 +2890,14 @@ function cronRunTree(root: string, worktree?: string): ProjectInfo {
 }
 
 const NO_SESSION_FOR_THE_RUN = "Koloft cannot find this run's session."
+const RUN_HAS_UNSAVED_EDITS = 'its Workbench has unsaved edits'
 
 async function whatClosingTheRunWouldLose(
   tabId: string,
   root: string,
   worktree?: string
 ): Promise<string[]> {
+  if (dirtyTabIds.has(tabId)) return [RUN_HAS_UNSAVED_EDITS]
   const session = sessionOfTab(tabId)
   if (!session) return [NO_SESSION_FOR_THE_RUN]
   return whatClosingWouldLose(session, cronRunTree(root, worktree))

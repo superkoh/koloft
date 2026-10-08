@@ -336,7 +336,7 @@ interface RealTranscript {
 const CLAUDE_TRANSCRIPT: RealTranscript = {
   prompts: (env, sessionId) => claudePromptsIn(claudeTranscript(env, sessionId)),
   replies: (env, sessionId) => claudeRepliesIn(claudeTranscript(env, sessionId)),
-  // CC§17
+  // CC§18
   pasteOnScreen: /\[Pasted text #\d+ \+\d+ lines\]/
 }
 

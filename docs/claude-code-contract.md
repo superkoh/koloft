@@ -623,6 +623,23 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   "prompt":"/loop …"}]` and `"background_tasks":[]`, in compact JSON. So a session
   whose last turn-end carried a non-empty `session_crons` will wake itself up, even
   though it looks idle. 209 sessions on the dev Mac had called `ScheduleWakeup`.
+- **A subagent's own background shell is in its `SubagentStop` list, not in the main
+  session's `Stop` list.** Measured 2026-10-08 on CC 2.1.294 (`claude -p`, temp HOME,
+  both hooks saving their input): a subagent that started `sleep 120` with
+  `run_in_background: true` and returned fired `SubagentStop` with
+  `background_tasks: [{"type":"shell","status":"running","command":"sleep 120",…}]`, and
+  the main `Stop` right after carried `[]`. The main transcript's `<task-notification>`
+  for such a subagent says `<status>completed</status>` with the note "This agent
+  stopped with background work of its own still running … the result below may be
+  interim" (seen in a real interactive run the same day). Whether interactive mode's
+  `Stop` lists it is inferred from that run, not probed.
+- **The Bash tool refuses a long leading `sleep`.** Read from the 2.1.294 binary
+  (`strings`): when a command's first part matches `^sleep\s+<n>\s*$` and `<n>` is at
+  least a threshold (a minified constant, not read), the call is refused with "standalone
+  sleep <n>" or "sleep <n> followed by: …", and the model is told to use Monitor or
+  `run_in_background`. Seen the same day: a subagent told to run `sleep 300` in the
+  foreground was refused, and one left free to choose ran it in the background instead.
+  `perl -e "sleep 300"` does not match the check.
 - **An idle teammate is still `running`**. CC's own activity checks use
   `status === 'running' && !isIdle`; hooks never see `isIdle`. On disk the idle edge
   is a user record in the lead's transcript — `Another Claude session sent a
@@ -1243,7 +1260,27 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   `latest` 2.1.293, `next` 2.1.294, `stable` 2.1.285). A minimum above npm's `latest`
   would leave an npm install that `claude update` cannot lift to it.
 
-## §17 A bracketed paste lands in the input box unsent
+## §17 The UserPromptSubmit hook adds text beside every prompt
+
+How established: 2026-10-08, CC 2.1.294, on this Mac, model haiku, an empty MCP config,
+and a `--settings` file whose `UserPromptSubmit` entry ran a script that printed
+`{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"<text>"}}`
+where `<text>` held a made-up word. Run as `claude -p`, and as an interactive claude in
+a pty (Koloft's `KOLOFT_HOOK_SETTINGS` and the inherited `CLAUDE_CODE_CHILD_SESSION`
+unset), its prompt both typed and given as the launch argument.
+
+- **The text reaches the model on that turn**: asked for the word, it said it back, in
+  `-p` and in the interactive session (transcript `entrypoint: "cli"`).
+- **It lands in the transcript as its own record**, not inside the user message:
+  `{"type":"attachment","attachment":{"type":"hook_additional_context","content":["<text>"],
+  "hookName":"UserPromptSubmit","hookEvent":"UserPromptSubmit",…},"rendered":[{"content":
+  "<system-reminder>\nUserPromptSubmit hook additional context: <text>\n</system-reminder>"}],
+  "renderedRole":"system"}`, written right after the prompt.
+- **The interactive screen does not show the text.** While the hook runs, the spinner line
+  reads `(running UserPromptSubmit hook · 0s)`; after that only the prompt and the reply
+  are drawn.
+
+## §18 A bracketed paste lands in the input box unsent
 
 How established: first from the issue #4 design round's probe notes (CC 2.1.287, real
 claude in a pty, early October 2026; a second reader re-ran them then). Re-run on
