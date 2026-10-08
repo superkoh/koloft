@@ -29,6 +29,7 @@ import {
   gitInit,
   layoutOnDisk,
   menuItemTexts,
+  oneStillRunning,
   openMenu,
   openSessionTerminal,
   panelTerm,
@@ -40,7 +41,15 @@ import {
   waitForCalls,
   wsRows
 } from './helpers/p1'
-import { WORKBENCH, browseRow, openInBrowse, showBrowse } from './helpers/workbench'
+import {
+  WORKBENCH,
+  browseRow,
+  claudePrompts,
+  commentOnFirstHunk,
+  expectOnePromptFromTheComment,
+  openInBrowse,
+  showBrowse
+} from './helpers/workbench'
 
 const LAYOUT_SAVE_DEBOUNCE_SETTLE_MS = 3000
 const TURN_LONGER_THAN_ONE_MIRROR_PULL = '/busy'
@@ -269,7 +278,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
         .filter({ hasText: 'Changes' })
         .click()
 
-      const expand = page.locator('.wb-panel .cv-blk[data-path="tracked.txt"] .cv-exp')
+      const expand = page.locator('.wb-panel .cv-blk[data-path="tracked.txt"] .cv-exp:not(.cv-cmt)')
       await expect(expand).toBeVisible({ timeout: 30_000 })
       await expand.click()
       await expect(expand).toHaveAttribute('aria-pressed', 'true')
@@ -283,6 +292,47 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
 
       await page.locator('.wb-bar .icobtn[aria-label="Reload"]').click()
       await expect(expand).toHaveAttribute('aria-pressed', 'false', { timeout: 20_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-28: ✎ comment on a remote Changes hunk reaches claude on the machine through ssh and tmux as a paste with the note typed after it, unsent until the person presses Enter', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      fs.writeFileSync(path.join(dir, '.gitignore'), 'NOTES.md\n')
+      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\n')
+      gitInit(dir)
+      gitCommitAll(dir)
+      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\ntwo\n')
+
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await row.click()
+      const tabId = await row.getAttribute('data-tab-id')
+      await expect.poll(() => boundSessionId(page, tabId), { timeout: 60_000 }).toBeTruthy()
+      const transcript = transcriptFile(
+        machineHome(env),
+        dir,
+        (await boundSessionId(page, tabId)) ?? ''
+      )
+      await showBrowse(page)
+      await page
+        .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
+        .filter({ hasText: 'Changes' })
+        .click()
+      await expect(page.locator('.wb-panel .cv-blk[data-path="tracked.txt"] .cv-cmt')).toBeVisible({
+        timeout: 30_000
+      })
+
+      const note = 'E-RW-28 say why two'
+      const head = await commentOnFirstHunk(page, 'tracked.txt', note)
+      await expectOnePromptFromTheComment(() => claudePrompts(transcript), head, note)
     } finally {
       await quitAndClose(app)
     }
@@ -464,6 +514,28 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
   })
 
   // CC§5
+  test('E-RW-28: a remote turn that ends while its reported background work still runs shows green with ↻ until the work drains', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      expect(await addRemoteWorkspace(page, env)).toEqual({ code: 'added', path: remoteKey(env) })
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 90_000 })
+      fs.writeFileSync(path.join(machineHome(env), 'fake-claude-bg-ms'), '20000')
+      await runIn(page, centerTerm(page), '/bg-reported')
+      const running = oneStillRunning(row)
+      await expect(running).toBeVisible({ timeout: 60_000 })
+      await expect(row).toHaveClass(/\bst-waiting\b/)
+      await expect(running).toHaveCount(0, { timeout: 90_000 })
+      await expect(row).toHaveClass(/\bst-waiting\b/)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('E-RW-27: when Claude Code moves a remote conversation to a new session id (a phantom start, then continued-in), the tab follows it: one live row, bound to the new id, and ⌘W still ends its tmux session on the machine', async ({
     env
   }) => {

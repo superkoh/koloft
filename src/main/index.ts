@@ -296,6 +296,7 @@ import {
 } from './agentSessions'
 import { writeLine } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
+import { claudeTitleModel } from './sessionTitle'
 import { closingTree, removeTree, whatIsLeft } from './sessionClose'
 import { discordTokenRead, discordTokenWrite } from './accounts'
 import { writeAgentPlugin } from './agentPlugin'
@@ -354,6 +355,7 @@ const sessionBackends = new SessionBackends({
 })
 sessionBackends.conductorOf = (id) => conductors?.conductorOf(id)
 sessionBackends.conductorWorkspaceOf = (tabId) => conductors?.workspaceOfTab(tabId)
+sessionBackends.turnOver = (tabId) => tracker.turnOver(tabId)
 function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
@@ -755,6 +757,10 @@ const sessionDeps: SessionVerbDeps = {
   pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
   peerNames: () => claudePeerNames(),
   launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
+  titleModel: claudeTitleModel(
+    () => (ptyMgr.shimDir ? path.join(ptyMgr.shimDir, 'claude') : 'claude'),
+    pickedAccountEnv
+  ),
   queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
   startedSessions,
   closable: closableSessions,
@@ -856,6 +862,11 @@ async function pickForLaunch(tabId?: string): Promise<{
   if (!res.account || res.kind !== 'custom') return { res }
   const meta = findAccount(res.account, 'custom')
   return { res, endpoint: { baseUrl: meta?.baseUrl, model: meta?.model } }
+}
+
+async function pickedAccountEnv(): Promise<NodeJS.ProcessEnv> {
+  await loginEnvReady()
+  return (await pickMachineAccount(() => pickForLaunch()))?.env ?? {}
 }
 
 async function handlePickRequest(pickDir: string, reqName: string, raw: unknown): Promise<void> {
@@ -2840,7 +2851,7 @@ function closableSessions(): ClosableSession[] {
   return [...live, ...cold]
 }
 
-const hostGitOut: GitOut = (dir, args) => hosts.of(dir).gitOut(dir, args)
+const hostGitOut: GitOut = (dir, args, timeoutMs) => hosts.of(dir).gitOut(dir, args, timeoutMs)
 
 async function whatClosingWouldLose(
   target: ClosableSession,
@@ -2890,12 +2901,14 @@ function cronRunTree(root: string, worktree?: string): ProjectInfo {
 }
 
 const NO_SESSION_FOR_THE_RUN = "Koloft cannot find this run's session."
+const RUN_HAS_UNSAVED_EDITS = 'its Workbench has unsaved edits'
 
 async function whatClosingTheRunWouldLose(
   tabId: string,
   root: string,
   worktree?: string
 ): Promise<string[]> {
+  if (dirtyTabIds.has(tabId)) return [RUN_HAS_UNSAVED_EDITS]
   const session = sessionOfTab(tabId)
   if (!session) return [NO_SESSION_FOR_THE_RUN]
   return whatClosingWouldLose(session, cronRunTree(root, worktree))
@@ -3225,6 +3238,9 @@ function registerIpc(): void {
   )
 
   ipcMain.on('terminal:write', (_e, id: string, data: string) => ptyMgr.write(id, data))
+  ipcMain.handle('terminal:paste', (_e, id: string, text: string, typedAfter?: string) =>
+    ptyMgr.paste(id, text, typedAfter)
+  )
   // PLATFORM§21
   ipcMain.on('sessions:activity', (_e, id: unknown) => {
     if (typeof id === 'string' && id) tracker.noteActivity(id)

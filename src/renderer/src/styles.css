@@ -860,6 +860,11 @@ body {
   background: var(--good);
   opacity: 0.4;
 }
+.ws-tab.cold::before,
+.ob-bar.cold {
+  background: var(--fg-cold);
+  opacity: 0.35;
+}
 .ws-tab.st-pending::before {
   background: linear-gradient(180deg, var(--accent), transparent 70%);
   animation: barFlow 1.2s linear infinite;
@@ -908,6 +913,10 @@ body {
   background: var(--bg-3);
   cursor: pointer;
   cursor: help;
+}
+.ws-tab-parked.bg-run {
+  color: var(--accent);
+  animation: barBreathe 2.4s var(--ease) infinite;
 }
 .ws-tab-unread {
   flex: none;
@@ -1005,7 +1014,8 @@ body {
   white-space: nowrap;
 }
 @media (prefers-reduced-motion: reduce) {
-  .ws-tab::before {
+  .ws-tab::before,
+  .ws-tab-parked.bg-run {
     animation: none !important;
   }
 }

@@ -107,7 +107,7 @@ export interface Host {
   trustsFolder(dir: string): Promise<boolean>
   listSkills(root: string): Promise<SkillSuggestion[]>
   keyed(p: string): string
-  gitOut(root: string, args: string[]): Promise<string | null>
+  gitOut(root: string, args: string[], timeoutMs?: number): Promise<string | null>
   reveal(p: string): void
   osOpen(p: string): void
   github: GithubLookup

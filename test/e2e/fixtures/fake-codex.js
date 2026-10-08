@@ -243,6 +243,27 @@ if (argv[0] === 'app-server') {
           autoResolutionMs: null
         }
       })
+    } else if (text.includes('spawn child')) {
+      // CODEX§4
+      const childId = crypto.randomUUID()
+      event('item/completed', {
+        threadId: thread.id,
+        turnId: turn.id,
+        item: {
+          type: 'collabAgentToolCall',
+          id: 'spawn-' + turn.id,
+          tool: 'spawnAgent',
+          status: 'completed',
+          senderThreadId: thread.id,
+          receiverThreadIds: [childId],
+          agentsStates: { [childId]: { status: 'pendingInit' } }
+        }
+      })
+      setTimeout(() => complete(thread, turn), 120)
+      setTimeout(
+        () => event('thread/status/changed', { threadId: childId, status: { type: 'idle' } }),
+        Number(read('fake-codex-child-ms', '4000'))
+      )
     } else if (!text.includes('hold')) setTimeout(() => complete(thread, turn), 120)
   }
   const lines = readline.createInterface({ input: process.stdin })
@@ -562,8 +583,8 @@ async function startTui() {
       )
       process.stdin.setRawMode?.(true)
       process.stdin.resume()
-      process.stdin.on('data', (bytes) => {
-        for (const ch of bytes.toString('utf8')) {
+      const typeIn = (part) => {
+        for (const ch of part) {
           // CODEX§3
           if (approval && ['y', '1', '\u001b'].includes(ch)) {
             const decision = ch === '\u001b' ? 'decline' : 'accept'
@@ -582,7 +603,7 @@ async function startTui() {
           if (ch === '\u0003') {
             if (working) void send('turn/interrupt', { threadId: thread.id, turnId })
             else void exit()
-            return
+            return 'stop'
           }
           if (ch === '\r' || ch === '\n') {
             const line = typed
@@ -597,6 +618,18 @@ async function startTui() {
             typed += ch
             process.stdout.write(ch)
           }
+        }
+      }
+      let pasting = false
+      process.stdin.on('data', (bytes) => {
+        // CODEX§23
+        for (const part of bytes.toString('utf8').split(/(\x1b\[20[01]~)/)) {
+          if (part === '\x1b[200~' || part === '\x1b[201~') {
+            pasting = part === '\x1b[200~'
+          } else if (pasting) {
+            typed += part
+            process.stdout.write(part.replace(/\n/g, '\r\n'))
+          } else if (typeIn(part) === 'stop') return
         }
       })
     } catch (error) {

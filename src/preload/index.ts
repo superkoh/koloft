@@ -57,6 +57,7 @@ const api: KoloftApi = {
   terminal: {
     create: (opts: CreateTabOptions) => ipcRenderer.invoke('terminal:create', opts),
     write: (id, data) => ipcRenderer.send('terminal:write', id, data),
+    paste: (id, text, typedAfter) => ipcRenderer.invoke('terminal:paste', id, text, typedAfter),
     ack: (id, utf16Units) => ipcRenderer.send('terminal:ack', id, utf16Units),
     attach: (id) => ipcRenderer.send('terminal:attach', id),
     flowStats: () => ipcRenderer.invoke('terminal:flowStats'),

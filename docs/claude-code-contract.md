@@ -641,6 +641,23 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   "prompt":"/loop …"}]` and `"background_tasks":[]`, in compact JSON. So a session
   whose last turn-end carried a non-empty `session_crons` will wake itself up, even
   though it looks idle. 209 sessions on the dev Mac had called `ScheduleWakeup`.
+- **A subagent's own background shell is in its `SubagentStop` list, not in the main
+  session's `Stop` list.** Measured 2026-10-08 on CC 2.1.294 (`claude -p`, temp HOME,
+  both hooks saving their input): a subagent that started `sleep 120` with
+  `run_in_background: true` and returned fired `SubagentStop` with
+  `background_tasks: [{"type":"shell","status":"running","command":"sleep 120",…}]`, and
+  the main `Stop` right after carried `[]`. The main transcript's `<task-notification>`
+  for such a subagent says `<status>completed</status>` with the note "This agent
+  stopped with background work of its own still running … the result below may be
+  interim" (seen in a real interactive run the same day). Whether interactive mode's
+  `Stop` lists it is inferred from that run, not probed.
+- **The Bash tool refuses a long leading `sleep`.** Read from the 2.1.294 binary
+  (`strings`): when a command's first part matches `^sleep\s+<n>\s*$` and `<n>` is at
+  least a threshold (a minified constant, not read), the call is refused with "standalone
+  sleep <n>" or "sleep <n> followed by: …", and the model is told to use Monitor or
+  `run_in_background`. Seen the same day: a subagent told to run `sleep 300` in the
+  foreground was refused, and one left free to choose ran it in the background instead.
+  `perl -e "sleep 300"` does not match the check.
 - **An idle teammate is still `running`**. CC's own activity checks use
   `status === 'running' && !isIdle`; hooks never see `isIdle`. On disk the idle edge
   is a user record in the lead's transcript — `Another Claude session sent a
@@ -677,6 +694,17 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   scripts). CPU does tell them apart: over 60 s an idle `python3 -m http.server` used
   0.01 s of CPU per minute, while a test run uses tens of seconds per minute. A busy
   emulator (qemu) also used 24.5 s per minute, so it reads as work too.
+- **A background subagent's own background shell stays in the MAIN session's Stop list
+  after the subagent ends — in interactive mode.** Measured 2026-10-08 on CC 2.1.295,
+  interactive TUI driven through a pty, with Stop/SubagentStop hooks that saved their input:
+  the subagent ran `perl -e "sleep 100"` with `run_in_background` and returned at once. Its
+  SubagentStop listed the shell (`{"id":"b3u7bx7sz","type":"shell","status":"running",…}`);
+  the main session's next Stop listed the same id, and the shell was a `zsh -c … eval` child
+  of the main claude with fd 1 on `<scratch>/tasks/b3u7bx7sz.output` — the same shape as a
+  main-thread background shell. When it ended, the subagent woke (another SubagentStop), then
+  the main session took one more turn whose Stop listed `[]`. A `claude -p` run on 2.1.294
+  (issue #382) listed `[]` at the main Stop instead; whether the difference is the mode or the
+  version is not probed yet.
 - **`Notification` payloads carry no task list** (124 "Claude is waiting for your
   input" nudges, none with `background_tasks`), and `-p` mode exits with a background
   shell still running, firing one Stop.
@@ -803,8 +831,29 @@ other bullets of §9 were not re-measured on this build.
   every main transcript then on disk (CC 2.1.263 to 2.1.293): of the 127 whose first
   record is the `custom-title` that `--name` writes, 0 carried an `ai-title`; of the 311
   that start without one, 84 did. So the only words naming such a session, besides its
-  `--name`, are its first prompt. That `--name` itself is what stops the title, rather
-  than something else Koloft's named launches share, is inferred, not checked.
+  `--name`, are its first prompt. **`--name` itself is what stops the title** — checked
+  2026-10-08 on CC 2.1.295 with a pair of pty launches in an empty folder, the same
+  first message, nothing else different: without `--name` the transcript got
+  `ai-title` "Koloft 侧栏会话标题过长"; with `--name title-probe-n` it got only the
+  `custom-title` / `agent-name` pair, no `ai-title`.
+- **`/rename <text>` renames both the title and the address.** Same build and setup: a
+  session started with `--name rename-probe-a` and then sent `/rename 改名后的标题`
+  appended a new `custom-title` *and* a new `agent-name` with the new text, and still no
+  `ai-title`. So the latest `custom-title` is the session's name, and a peer that kept
+  the old name no longer reaches it by that name.
+- **A name may hold spaces and CJK text and still be a message address.** Same build:
+  `--name "带 空格 的 名字"` was listed by ListAgents under that name, and a
+  SendMessage to that bare name was delivered (its transcript holds the reply
+  `GOT PROBE-SPACE-123`).
+- **A one-shot `claude -p --model haiku` makes a usable title in 2–5 s.** Measured
+  2026-10-08, CC 2.1.295, through Koloft's shim with the account balancer: 20 real
+  first messages of agent-started sessions, task on stdin, each answered in 2.1–5.0 s
+  with a short title in the task's language. With the default system prompt and setting
+  sources one call read ~5.7k input tokens (≈ $0.001); with `--system-prompt` set and
+  `--setting-sources ''` it read ~750 (≈ $0.00024) and still answered. With
+  `--no-session-persistence` it left no transcript in its cwd's project folder. Behind
+  an expired login it prints `Failed to authenticate: …` on stdout and exits 1, so only
+  the exit code tells a title from an error.
 - **Spawn to SessionStart is well under a second on this machine**: 0.250 / 0.272 /
   0.293 / 0.265 / 0.381 s over six launches with the user's real MCP config loaded (no
   `--strict-mcp-config`), 0.429 s through Koloft's own shim with the account balancer
@@ -1260,3 +1309,70 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
   (`downloads.claude.ai/claude-code-releases/latest` said 2.1.294; npm dist-tags said
   `latest` 2.1.293, `next` 2.1.294, `stable` 2.1.285). A minimum above npm's `latest`
   would leave an npm install that `claude update` cannot lift to it.
+
+## §17 The UserPromptSubmit hook adds text beside every prompt
+
+How established: 2026-10-08, CC 2.1.294, on this Mac, model haiku, an empty MCP config,
+and a `--settings` file whose `UserPromptSubmit` entry ran a script that printed
+`{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"<text>"}}`
+where `<text>` held a made-up word. Run as `claude -p`, and as an interactive claude in
+a pty (Koloft's `KOLOFT_HOOK_SETTINGS` and the inherited `CLAUDE_CODE_CHILD_SESSION`
+unset), its prompt both typed and given as the launch argument.
+
+- **The text reaches the model on that turn**: asked for the word, it said it back, in
+  `-p` and in the interactive session (transcript `entrypoint: "cli"`).
+- **It lands in the transcript as its own record**, not inside the user message:
+  `{"type":"attachment","attachment":{"type":"hook_additional_context","content":["<text>"],
+  "hookName":"UserPromptSubmit","hookEvent":"UserPromptSubmit",…},"rendered":[{"content":
+  "<system-reminder>\nUserPromptSubmit hook additional context: <text>\n</system-reminder>"}],
+  "renderedRole":"system"}`, written right after the prompt.
+- **The interactive screen does not show the text.** While the hook runs, the spinner line
+  reads `(running UserPromptSubmit hook · 0s)`; after that only the prompt and the reply
+  are drawn.
+
+## §18 A bracketed paste lands in the input box unsent
+
+How established: first from the issue #4 design round's probe notes (CC 2.1.287, real
+claude in a pty, early October 2026; a second reader re-ran them then). Re-run on
+2026-10-08 with Claude Code 2.1.294 through Koloft's own ✎ comment, on this Mac and, as
+linux-arm64, on a Docker lab machine reached over real ssh into tmux 3.3a: one write of
+8 lines with 7 LFs (Mac) or 10 lines with 9 LFs (lab) inside the markers, a 5 s wait,
+then one CR written to the tab. Established by `agent-tools-real-smoke.spec.ts` › "a
+real Claude Code holds the hunk comment in its input box unsent, and the next Enter
+sends path, diff fence, hunk and note as one message" (4 runs) and
+`remote-ssh-lab.spec.ts` › "E-SSH-10: ✎ comment on a remote Changes hunk reaches a REAL
+claude on the machine through ssh and tmux …" (3 runs; one of them failed only on an
+earlier assertion that the model obey the note, the paste facts held in all three).
+
+- **claude turns bracketed paste on at startup** (it writes `ESC[?2004h`; 2.1.287 notes).
+- **A write wrapped in `ESC[200~` … `ESC[201~` lands as one block and is not sent.** On
+  2.1.287, 7 lines and 85 lines each showed as one `[Pasted text #1 +N lines]` in the
+  input box. On 2.1.294, the paste showed as `[Pasted text #1 +7 lines]` (`+9 lines` on
+  the lab machine), one per LF, and 5 s later the transcript still held no user message:
+  LF inside the markers sends nothing.
+- **The next CR sends it as one user message.** The transcript's `user` record has a
+  string `content` with the paste wrapped in tags:
+  `\n\n<pasted_content id="<4 hex>">\n<the pasted text>\n</pasted_content id="<4 hex>">\n`.
+- **The model may not take words inside a paste as the person's own.** Asked inside the
+  paste to reply with one word, it did in 4 of 7 runs; in the other 3 it said the line
+  "came from the pasted text and not from you" and did not act on it.
+- **Text typed right after the paste's `ESC[201~` stays outside the tags**, after
+  `</pasted_content …>\n\n`, and the model took it as the person's words: it replied the
+  one word asked for in 11 of 11 runs. Measured 2026-10-08, CC 2.1.294, a python `pty`
+  probe in a scratch `HOME` (only `.claude.json` with trust and onboarding, auth in
+  `CLAUDE_CODE_OAUTH_TOKEN`): the paste, then the note in the same write, in one write
+  0.3 s later, or in pieces; then a CR 4 s later.
+- **One raw write longer than about 800 bytes is taken as a second paste**, wrapped in its
+  own tags and shown as `[Pasted text #2]`: a 900-byte piece did that, and a
+  1,150-byte write was split at 1,024 bytes with the first part wrapped. Pieces of 512
+  bytes 10 ms apart, and of 128 characters 0.3 s apart, stayed typed text.
+- **A raw LF in the typed text adds a line and does not send**, both inside one write of
+  nine lines and as a lone LF written 0.3 s after the line before it (2.1.294, same
+  probe; the 2.1.288 measurement is in §12).
+- **The same 85 lines written raw, with no markers, split into two blocks** (2.1.287),
+  so a raw write is not one paste.
+- **Over ssh into tmux the paste arrives whole and waits the same way**: the remote tab
+  showed one `[Pasted text #1 +9 lines]` and the CR sent one message, as on the Mac. A
+  two-line note typed after it (Koloft's ✎ comment, 128-character pieces 0.3 s apart)
+  stayed outside the tags and was obeyed in 3 of 3 E-SSH-10 runs (2026-10-08, 2.1.294
+  linux-arm64); the same held in 3 of 3 runs of the local real case.

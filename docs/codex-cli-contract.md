@@ -876,3 +876,38 @@ How established: 2026-10-08 on this Mac, each run in a fresh temporary `HOME` wi
   user's own `CODEX_HOME`, never an account home (§15). `current` moves to
   `releases/0.161.0-…` and `releases/0.153.4-…` stays.
 
+## 23. A bracketed paste lands in the composer unsent
+
+How established: first from the issue #4 design round's probe notes (Codex CLI 0.159.3,
+the real TUI in a pty, early October 2026; a second reader re-ran them then). Re-run on
+2026-10-08 with Codex CLI 0.161.0 (a standalone install made by the official
+`install.sh` with `CODEX_RELEASE=0.161.0` into a scratch `CODEX_HOME`; Koloft refuses
+this Mac's 0.159.3 as older than its minimum) through Koloft's own ✎ comment: one write
+of 8 lines with 7 LFs inside the markers, a 5 s wait, then one CR written to the tab.
+Established by `agent-tools-real-smoke.spec.ts` › "a real Codex holds the hunk comment
+in its composer unsent, and the next Enter sends path, diff fence, hunk and note as one
+message" (3 runs).
+
+- **The TUI turns bracketed paste on at startup** (it writes `ESC[?2004h`; 0.159.3
+  notes).
+- **A write wrapped in `ESC[200~` … `ESC[201~` lands in the composer and is not sent.**
+  The 8 lines (about 140 characters) showed in the composer as text, line by line, but
+  for the one empty line, which the composer did not draw; 5 s later the rollout held no
+  user message: LF inside the markers sends nothing.
+- **The next CR sends it as one user message**: the rollout
+  (`$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<time>-<thread id>.jsonl`) gained one
+  `event_msg` `item_completed` whose `item.type` is `UserMessage` and whose text is the
+  pasted text exactly, with no wrapping. The model followed the one-word request in the
+  paste in 3 of 3 runs.
+- **Text typed right after the paste's `ESC[201~` joins it in the composer** and is sent
+  with it as one `UserMessage`, unwrapped; the model replied the one word asked for in 8
+  of 8 runs. A raw LF in that text adds a line and does not send, inside one write and
+  as a lone LF written 0.3 s after the line before it. One raw write of 1,148
+  characters showed as `[Pasted Content 1148 chars]` in the composer and was still sent
+  whole and unwrapped; the same text in pieces of 128 characters 0.3 s apart showed as
+  text. Measured 2026-10-08, Codex CLI 0.161.0 (the standalone install above), a python
+  `pty` probe in a scratch `HOME` whose `CODEX_HOME` held only a copied `auth.json` and
+  a `config.toml` trusting the folder; a CR 4 s after the note.
+- Codex on a remote machine is not a tab Koloft starts yet (§16), so the paste over ssh
+  and tmux is not probed for Codex.
+

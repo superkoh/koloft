@@ -1,4 +1,3 @@
-import { randomBytes } from 'crypto'
 import type {
   BackendId,
   CreateTabOptions,
@@ -30,6 +29,7 @@ import {
 import { AGENT_SHIM_WAITS_MS } from './agentShim'
 import { crossSessionLine, type ModeClass } from './crossSessionMessage'
 import { handoverPreamble, withHandover, type SessionCaller } from './handover'
+import { nameForTask, type TitleModel } from './sessionTitle'
 import type { StartedSessions } from './startedSessions'
 
 export interface NewSessionArgs {
@@ -76,10 +76,6 @@ export function parseNewSessionArgs(args: string[]): Parsed<NewSessionArgs> {
     i++
   }
   return fail(PROMPT_AFTER_DASHES)
-}
-
-export function newSessionName(): string {
-  return `helper-${randomBytes(3).toString('hex')}`
 }
 
 const STATE_WORDS: Record<SessionStatus, string> = {
@@ -285,6 +281,7 @@ export interface SessionVerbDeps {
   pinnedWorkspaces(): PinnedWorkspace[]
   peerNames(): (sessionId: string) => Promise<string | null>
   launch(options: CreateTabOptions & { kind: BackendId }): Promise<string | null>
+  titleModel: TitleModel
   queue(tabId: string, text: string, clientId?: string): Promise<void>
   startedSessions: StartedSessions
   closable(): ClosableSession[]
@@ -370,7 +367,15 @@ async function startSibling(
     name: me.backendId === 'claude' ? ((await d.peerNames()(me.sessionId)) ?? me.title) : undefined,
     id: me.nativeSessionId ?? me.sessionId
   }
-  const name = backend === 'claude' ? (args.name ?? newSessionName()) : undefined
+  const name =
+    backend === 'claude'
+      ? (args.name ??
+        (await nameForTask(
+          args.prompt,
+          d.titleModel,
+          new Set(d.allSessions().map((s) => s.title))
+        )))
+      : undefined
   const tabId = await d.launch({
     kind: backend,
     cwd: workspace,

@@ -12,7 +12,14 @@ import {
   quitAndClose
 } from './helpers/app'
 import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
-import { WORKBENCH, wbUnreadTabs } from './helpers/workbench'
+import {
+  WORKBENCH,
+  commentOnFirstHunk,
+  expectOnePromptFromTheComment,
+  showBrowse,
+  wbUnreadTabs
+} from './helpers/workbench'
+import { setupChangeFixture } from './helpers/filesFixture'
 import { portOffset } from '../../src/shared/worktreeName'
 import {
   addWorkspace,
@@ -23,6 +30,7 @@ import {
   gitCommitAll,
   gitInit,
   newSessionInWith,
+  oneStillRunning,
   openMenu,
   pickerDialog,
   processAlive,
@@ -59,6 +67,22 @@ function codexOpenOutputs(env: E2EEnv): string[] {
     .map((line) => JSON.parse(line).frame?.params?.item)
     .filter((item) => item?.type === 'commandExecution' && item.id.startsWith('open-'))
     .map((item) => item.aggregatedOutput)
+}
+function codexPrompts(env: E2EEnv): string[] {
+  const file = path.join(env.home, 'fake-codex-wire.jsonl')
+  if (!fs.existsSync(file)) return []
+  return fs
+    .readFileSync(file, 'utf8')
+    .split('\n')
+    .flatMap((line) => {
+      try {
+        const { direction, frame } = JSON.parse(line)
+        const text = frame?.method === 'turn/start' ? frame.params?.input?.[0]?.text : undefined
+        return direction === 'client' && typeof text === 'string' ? [text] : []
+      } catch {
+        return []
+      }
+    })
 }
 function codexCalls(env: E2EEnv): CodexCall[] {
   const file = path.join(env.home, 'fake-codex-calls.jsonl')
@@ -579,6 +603,37 @@ test.describe('Codex sessions through the real method chooser, process transport
       await runIn(page, centerTerm(page), '/new')
       await expect(row).toHaveClass(/st-waiting/)
       await expect(badge).toHaveCount(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a Codex turn that ends while its child agent still runs shows green with ↻, and turn-done waits for the child', async ({
+    env
+  }) => {
+    installCodex(env)
+    fs.writeFileSync(path.join(env.home, 'fake-codex-child-ms'), '6000')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      const row = codexRows(page)
+      await row.click()
+      await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
+      await runIn(page, centerTerm(page), 'spawn child')
+      const running = oneStillRunning(row)
+      await expect(running).toBeVisible()
+      await expect(row).toHaveClass(/st-waiting/)
+      expect(await pendingAttention(page)).toHaveLength(0)
+      await running.click()
+      await expect(page.locator('.tbu-pop.parked')).toContainText('Turn done · still running')
+      await page.keyboard.press('Escape')
+      await expect(running).toHaveCount(0, { timeout: 15_000 })
+      await expect(row).toHaveClass(/st-waiting/)
+      await expect
+        .poll(() => pendingAttention(page), { timeout: 10_000 })
+        .toMatchObject([{ kind: 'turn-done' }])
     } finally {
       await quitAndClose(app)
     }
@@ -1110,6 +1165,31 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(page.locator('.terminals .term-wrap')).toHaveCount(0, { timeout: 30_000 })
       await expect(wsRows(page, 'ws-a')).toHaveCount(0, { timeout: 30_000 })
       await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('✎ comment on a Changes hunk lands in the Codex composer as a paste with the note typed after it, unsent until the person presses Enter', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedSettings(env, { hintsOff: true })
+    setupChangeFixture(env.workspaces.a).modifyTracked(1)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await showBrowse(page)
+      await page
+        .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
+        .filter({ hasText: 'Changes' })
+        .click()
+
+      const note = 'Codex keep the old name'
+      const head = await commentOnFirstHunk(page, 'src/change-1.ts', note)
+      await expectOnePromptFromTheComment(() => codexPrompts(env), head, note)
     } finally {
       await quitAndClose(app)
     }

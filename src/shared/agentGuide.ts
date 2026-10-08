@@ -89,8 +89,8 @@ koloft workspace list
     Only for the global conductor: list the workspaces in Koloft's sidebar, with each one's path and how many of its sessions are open.
 
 koloft session new [--name <name>] [--workspace <workspace>] [-w <worktree name>] [--model <model>] -- "<first message>"
-    Start a sibling session of your own kind (Claude starts Claude, Codex starts Codex), and print the name to reach it by. It starts in this workspace, or in the one --workspace names; a remote (SSH) workspace is not allowed. A Codex session has no name, so you get its tab id instead; its session id shows in "koloft session list" once it starts, and "koloft session send" takes either. -w starts it in its own git worktree (a separate copy of the repository).
-    Example: koloft session new --name docs-fixer -- "Fix the broken links in docs/."
+    Start a sibling session of your own kind (Claude starts Claude, Codex starts Codex), and print the name to reach it by. A Claude session's name is also the title the owner sees in Koloft and Discord: leave --name out and Koloft makes a short title from the first message, or give a short phrase in the owner's language. It starts in this workspace, or in the one --workspace names; a remote (SSH) workspace is not allowed. A Codex session has no name, so you get its tab id instead; its session id shows in "koloft session list" once it starts, and "koloft session send" takes either. -w starts it in its own git worktree (a separate copy of the repository).
+    Example: koloft session new --name "Fix docs links" -- "Fix the broken links in docs/."
     Example: koloft session new --workspace koloft-releases -- "Check that the latest release has all its files."
     A conductor may also pick --backend claude|codex (its own kind if left out). The global conductor must give --workspace; a workspace conductor can only start sessions in its own workspace. The new session is told to report back to the conductor.
 
@@ -127,7 +127,7 @@ koloft session stop <id or name>
 
 koloft session close [<id or name>]
     Close a session for good: Koloft ends it, closes its tab and takes it off the sidebar list. If it runs in its own git worktree, Koloft also deletes that worktree and its branches. With no id or name it closes the session you run it in; run that as your very last step, only when the owner asked for it. With an id or name it closes a session you started with "koloft session new" (open, or already ended), once you have its result. A conductor may also close, when the owner asks, any ended session it looks after on this computer: an open one is refused (stop it first), and so is one on another machine. Do not resume a session to ask it to close itself. If anything in the worktree is not committed, or a commit is on no remote branch, nothing is closed and Koloft lists what is left.
-    Example: koloft session close docs-fixer
+    Example: koloft session close "Fix docs links"
 
 DISCORD (conductors only)
 

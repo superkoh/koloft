@@ -36,9 +36,13 @@ const skillFs: SkillFs = {
 }
 
 const GIT_CALL_TIMEOUT_MS = 5000
-export function localGitOut(cwd: string, args: string[]): Promise<string | null> {
+export function localGitOut(
+  cwd: string,
+  args: string[],
+  timeoutMs = GIT_CALL_TIMEOUT_MS
+): Promise<string | null> {
   return new Promise((resolve) => {
-    execFile('git', ['-C', cwd, ...args], { timeout: GIT_CALL_TIMEOUT_MS }, (err, stdout) =>
+    execFile('git', ['-C', cwd, ...args], { timeout: timeoutMs }, (err, stdout) =>
       resolve(err ? null : stdout)
     )
   })
