@@ -244,11 +244,12 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       installStallingGit(env, {
         root: fx.clone,
         subcommand: 'worktree',
+        verb: 'remove',
         lastArg: tree,
         ms: A_WORKTREE_REMOVAL_SLOWER_THAN_A_QUICK_GIT_CALL_MS
       })
       await runIn(page, centerTerm(page), '/koloft session close')
-      await expect(rows).toHaveCount(0, { timeout: 60_000 })
+      await expect(rows).toHaveCount(0, { timeout: 30_000 })
       await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
       expect(runGit(fx.clone, 'branch', '--list', 'worktree-done').trim()).toBe('')
       expect(runGit(fx.clone, 'worktree', 'list')).not.toContain('done')
