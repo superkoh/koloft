@@ -2869,7 +2869,7 @@ function closableSessions(): ClosableSession[] {
   return [...live, ...cold]
 }
 
-const hostGitOut: GitOut = (dir, args) => hosts.of(dir).gitOut(dir, args)
+const hostGitOut: GitOut = (dir, args, timeoutMs) => hosts.of(dir).gitOut(dir, args, timeoutMs)
 
 async function whatClosingWouldLose(
   target: ClosableSession,

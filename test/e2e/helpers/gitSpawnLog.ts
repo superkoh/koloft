@@ -112,16 +112,17 @@ export async function waitGitQuiet(
 
 export function installStallingGit(
   env: E2EEnv,
-  stall: { root: string; subcommand: string; lastArg?: string; ms: number }
+  stall: { root: string; subcommand: string; verb?: string; lastArg?: string; ms: number }
 ): string {
   const wrapper = path.join(env.fakeBin, 'git')
   const real = realGitPath(env)
   const marker = path.join(env.home, 'git-stall-done')
+  const verbTest = stall.verb ? ` && [ "$4" = "${stall.verb}" ]` : ''
   const lastArgTest = stall.lastArg ? ` && [ "\${@: -1}" = "${stall.lastArg}" ]` : ''
   fs.writeFileSync(
     wrapper,
     `#!/usr/bin/env bash\n` +
-      `if [ "$1" = "-C" ] && [ "$2" = "${stall.root}" ] && [ "$3" = "${stall.subcommand}" ]${lastArgTest}; then\n` +
+      `if [ "$1" = "-C" ] && [ "$2" = "${stall.root}" ] && [ "$3" = "${stall.subcommand}" ]${verbTest}${lastArgTest}; then\n` +
       `  sleep ${stall.ms / 1000}\n` +
       `  : > "${marker}"\n` +
       `fi\n` +
