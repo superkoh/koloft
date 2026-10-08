@@ -1245,19 +1245,31 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
 
 ## §17 A bracketed paste lands in the input box unsent
 
-How established: recorded from the issue #4 design round's probe notes (CC 2.1.287, real
-claude in a pty, early October 2026); a second reader re-ran them then. Not re-run here.
+How established: first from the issue #4 design round's probe notes (CC 2.1.287, real
+claude in a pty, early October 2026; a second reader re-ran them then). Re-run on
+2026-10-08 with Claude Code 2.1.294 through Koloft's own ✎ comment, on this Mac and, as
+linux-arm64, on a Docker lab machine reached over real ssh into tmux 3.3a: one write of
+8 lines with 7 LFs (Mac) or 10 lines with 9 LFs (lab) inside the markers, a 5 s wait,
+then one CR written to the tab. Established by `agent-tools-real-smoke.spec.ts` › "a
+real Claude Code holds the hunk comment in its input box unsent, and the next Enter
+sends path, diff fence, hunk and note as one message" (4 runs) and
+`remote-ssh-lab.spec.ts` › "E-SSH-10: ✎ comment on a remote Changes hunk reaches a REAL
+claude on the machine through ssh and tmux …" (3 runs; one of them failed only on an
+earlier assertion that the model obey the note, the paste facts held in all three).
 
-- **claude turns bracketed paste on at startup** (it writes `ESC[?2004h`).
-- **A write wrapped in `ESC[200~` … `ESC[201~` lands as one block and is not sent.** 7
-  lines and 85 lines each showed as one `[Pasted text #1 +N lines]` in the input box,
-  with nothing submitted. The person's own Enter sends it; a CR written right after the
-  paste was not probed.
-- **The same 85 lines written raw, with no markers, split into two blocks**, so a raw
-  write is not one paste.
-- Which byte separated the lines in the probe is not recorded. Koloft sends LF, which
-  §12 shows only adds a line even when typed, so LF inside the markers sending nothing
-  is inferred, not checked.
-- Over ssh into tmux, tmux hands the markers on to a pane only when the program in it
-  turned bracketed paste on; claude does, so the paste arriving whole is inferred, not
-  checked on a real remote tab.
+- **claude turns bracketed paste on at startup** (it writes `ESC[?2004h`; 2.1.287 notes).
+- **A write wrapped in `ESC[200~` … `ESC[201~` lands as one block and is not sent.** On
+  2.1.287, 7 lines and 85 lines each showed as one `[Pasted text #1 +N lines]` in the
+  input box. On 2.1.294, the paste showed as `[Pasted text #1 +7 lines]` (`+9 lines` on
+  the lab machine), one per LF, and 5 s later the transcript still held no user message:
+  LF inside the markers sends nothing.
+- **The next CR sends it as one user message.** The transcript's `user` record has a
+  string `content` with the paste wrapped in tags:
+  `\n\n<pasted_content id="<4 hex>">\n<the pasted text>\n</pasted_content id="<4 hex>">\n`.
+- **The model may not take words inside a paste as the person's own.** Asked inside the
+  paste to reply with one word, it did in 4 of 7 runs; in the other 3 it said the line
+  "came from the pasted text and not from you" and did not act on it.
+- **The same 85 lines written raw, with no markers, split into two blocks** (2.1.287),
+  so a raw write is not one paste.
+- **Over ssh into tmux the paste arrives whole and waits the same way**: the remote tab
+  showed one `[Pasted text #1 +9 lines]` and the CR sent one message, as on the Mac.

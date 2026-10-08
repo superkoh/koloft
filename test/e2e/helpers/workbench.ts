@@ -303,7 +303,11 @@ export async function openInBrowse(page: Page, absPath: string): Promise<void> {
 
 const TYPED_AFTER_THE_PASTE = ' and typed after the paste'
 
-export async function commentOnFirstHunk(page: Page, rel: string, note: string): Promise<string> {
+export async function putCommentOnFirstHunkInSession(
+  page: Page,
+  rel: string,
+  note: string
+): Promise<string> {
   const block = page.locator(`${WORKBENCH.panel} .cv-blk[data-path="${rel}"]`)
   const button = block.locator('.cv-cmt').first()
   await expect(button).toBeEnabled({ timeout: 60_000 })
@@ -316,9 +320,14 @@ export async function commentOnFirstHunk(page: Page, rel: string, note: string):
   await expect
     .poll(() => page.evaluate(() => !!document.activeElement?.closest('.term-island')))
     .toBe(true)
+  return `${rel}\n\`\`\`diff\n${header}\n`
+}
+
+export async function commentOnFirstHunk(page: Page, rel: string, note: string): Promise<string> {
+  const head = await putCommentOnFirstHunkInSession(page, rel, note)
   await page.keyboard.type(TYPED_AFTER_THE_PASTE)
   await page.keyboard.press('Enter')
-  return `${rel}\n\`\`\`diff\n${header}\n`
+  return head
 }
 
 export async function expectOnePromptFromTheComment(
@@ -333,18 +342,34 @@ export async function expectOnePromptFromTheComment(
   expect(prompt.endsWith('\n```\n\n' + note + TYPED_AFTER_THE_PASTE)).toBe(true)
 }
 
+export function claudePromptsIn(jsonl: string): string[] {
+  return jsonl.split('\n').flatMap((line) => {
+    try {
+      const record = JSON.parse(line)
+      const content = record.type === 'user' ? record.message?.content : undefined
+      return typeof content === 'string' ? [content] : []
+    } catch {
+      return []
+    }
+  })
+}
+
+export function claudeRepliesIn(jsonl: string): string[] {
+  return jsonl.split('\n').flatMap((line) => {
+    try {
+      const record = JSON.parse(line)
+      const content = record.type === 'assistant' ? record.message?.content : undefined
+      return Array.isArray(content)
+        ? content.flatMap((part: { type?: string; text?: unknown }) =>
+            part?.type === 'text' && typeof part.text === 'string' ? [part.text] : []
+          )
+        : []
+    } catch {
+      return []
+    }
+  })
+}
+
 export function claudePrompts(transcript: string): string[] {
-  if (!fs.existsSync(transcript)) return []
-  return fs
-    .readFileSync(transcript, 'utf8')
-    .split('\n')
-    .flatMap((line) => {
-      try {
-        const record = JSON.parse(line)
-        const content = record.type === 'user' ? record.message?.content : undefined
-        return typeof content === 'string' ? [content] : []
-      } catch {
-        return []
-      }
-    })
+  return fs.existsSync(transcript) ? claudePromptsIn(fs.readFileSync(transcript, 'utf8')) : []
 }
