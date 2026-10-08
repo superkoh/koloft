@@ -362,15 +362,14 @@ export class ClaudeBackend implements SessionBackend {
       })
     } catch {}
     const poll = setInterval(() => {
-      let names: string[]
-      try {
-        names = fs.readdirSync(dir)
-      } catch {
-        return
-      }
-      for (const name of names) {
-        if (name.endsWith('.status.jsonl')) void this.drainStatusLog(path.join(dir, name))
-      }
+      void fs.promises.readdir(dir).then(
+        (names) => {
+          for (const name of names) {
+            if (name.endsWith('.status.jsonl')) void this.drainStatusLog(path.join(dir, name))
+          }
+        },
+        () => {}
+      )
     }, STATUS_LOG_POLL_MS)
     return () => {
       watcher?.close()
