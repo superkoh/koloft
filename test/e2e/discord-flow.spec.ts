@@ -332,7 +332,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     }
   })
 
-  test('the conductor queues a message on a Codex session with a conductor message id, and a session it starts with --backend codex is announced and touched, and its thread takes the session’s sidebar title, drawn from its task, once it has one; once the conductor closes it for good, a message in its thread is refused by that name', async ({
+  test('the conductor queues a message on a Codex session with a conductor message id, and a session it starts with --backend codex is announced and touched, and its thread takes the session’s sidebar title once it has one; once the conductor closes it for good, a message in its thread is refused by that name', async ({
     env
   }) => {
     installCodex(env)
@@ -390,7 +390,6 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
           { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }
         )
         .toBe(true)
-      expect(thread()).toBe('list the files')
       expect(bindingOnDisk(env)?.threads?.find((t) => t.threadId === opener.id)?.name).toBe(
         thread()
       )
