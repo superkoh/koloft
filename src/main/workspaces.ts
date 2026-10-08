@@ -25,6 +25,7 @@ import {
   hasHistory,
   resolveBuckets,
   resolvePending,
+  type Bucket,
   type JsonlTail,
   type PendingLaunch,
   type RescanState,
@@ -41,7 +42,6 @@ import {
 } from './workspaceOps'
 import { encodeCwd } from './sessionTracker'
 import { replacesTheConversation } from './hookRouting'
-import { isGitCheckout } from './projectInfo'
 import { isRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { sourceOf } from '@shared/sessionBackend'
 import type { RemoteGitInfo } from './remote/install'
@@ -52,6 +52,7 @@ const JSONL_SCAN_CAP = 256 * 1024
 // CC§2
 const JSONL_TAIL_BYTES = 64 * 1024
 const DISCOVER_MAX = 8
+const TRANSCRIPTS_OPEN_AT_ONCE = 16
 
 interface HeadScan {
   size: number
@@ -105,52 +106,97 @@ function dirExistsSync(p: string): boolean {
   }
 }
 
-function* jsonlHeadLines(file: string, probe = { opened: false, eof: false }): Generator<string> {
-  let fd: number
+async function dirExists(p: string): Promise<boolean> {
   try {
-    fd = fs.openSync(file, 'r')
+    return (await fs.promises.stat(p)).isDirectory()
   } catch {
-    return
-  }
-  probe.opened = true
-  try {
-    const buf = Buffer.alloc(64 * 1024)
-    const decoder = new StringDecoder('utf8')
-    let tail = ''
-    let total = 0
-    while (total < JSONL_SCAN_CAP) {
-      const n = fs.readSync(fd, buf, 0, buf.length, null)
-      if (n <= 0) {
-        probe.eof = true
-        break
-      }
-      total += n
-      const parts = (tail + decoder.write(buf.subarray(0, n))).split('\n')
-      tail = parts.pop() ?? ''
-      yield* parts
-    }
-    if (tail) yield tail
-  } finally {
-    fs.closeSync(fd)
+    return false
   }
 }
 
-function jsonlTailLines(file: string): string[] {
-  let fd: number
+async function pathExists(p: string): Promise<boolean> {
   try {
-    fd = fs.openSync(file, 'r')
+    await fs.promises.access(p)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function mapAtMost<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const out = new Array<R>(items.length)
+  let next = 0
+  const lane = async (): Promise<void> => {
+    while (next < items.length) {
+      const i = next++
+      out[i] = await fn(items[i])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, lane))
+  return out
+}
+
+function* linesUntilExhausted(lines: string[], probe: { exhausted: boolean }): Generator<string> {
+  yield* lines
+  probe.exhausted = true
+}
+
+async function readJsonlHeadMeta(
+  file: string
+): Promise<{ meta: Partial<SessionMeta>; opened: boolean; eof: boolean }> {
+  let fh: fs.promises.FileHandle
+  try {
+    fh = await fs.promises.open(file, 'r')
+  } catch {
+    return { meta: {}, opened: false, eof: false }
+  }
+  try {
+    const buf = Buffer.alloc(64 * 1024)
+    const decoder = new StringDecoder('utf8')
+    const lines: string[] = []
+    let tail = ''
+    let total = 0
+    for (;;) {
+      const probe = { exhausted: false }
+      const meta = extractJsonlMeta(linesUntilExhausted(lines, probe))
+      if (!probe.exhausted) return { meta, opened: true, eof: false }
+      if (total >= JSONL_SCAN_CAP) {
+        return { meta: extractJsonlMeta(tail ? [...lines, tail] : lines), opened: true, eof: false }
+      }
+      const { bytesRead } = await fh.read(buf, 0, buf.length, null)
+      if (bytesRead <= 0) {
+        return { meta: extractJsonlMeta(tail ? [...lines, tail] : lines), opened: true, eof: true }
+      }
+      total += bytesRead
+      const parts = (tail + decoder.write(buf.subarray(0, bytesRead))).split('\n')
+      tail = parts.pop() ?? ''
+      lines.push(...parts)
+    }
+  } finally {
+    await fh.close()
+  }
+}
+
+async function readJsonlTailLines(file: string): Promise<string[]> {
+  let fh: fs.promises.FileHandle
+  try {
+    fh = await fs.promises.open(file, 'r')
   } catch {
     return []
   }
   try {
-    const size = fs.fstatSync(fd).size
+    const size = (await fh.stat()).size
     const start = Math.max(0, size - JSONL_TAIL_BYTES)
     const buf = Buffer.allocUnsafe(size - start)
-    fs.readSync(fd, buf, 0, buf.length, start)
+    await fh.read(buf, 0, buf.length, start)
     const lines = buf.toString('utf8').split('\n')
     return start > 0 ? lines.slice(1) : lines
   } finally {
-    fs.closeSync(fd)
+    await fh.close()
   }
 }
 
@@ -295,24 +341,24 @@ export class WorkspaceManager {
   pinnedPaths(): { path: string; missing: boolean }[] {
     return this.layout.workspaces.map((ws) => ({
       path: ws.path,
-      missing: this.scope(ws.path).missing
+      missing: !isRemoteKey(ws.path) && !dirExistsSync(ws.path)
     }))
   }
 
   // CC§2
-  discover(): DiscoveredFolder[] {
+  async discover(): Promise<DiscoveredFolder[]> {
     const pinned = new Set(this.layout.workspaces.map((w) => w.path))
     const byRoot = new Map<string, DiscoveredFolder>()
     const stats = new Map<string, { size: number; mtimeMs: number }>()
     const wtMark = `${path.sep}.claude${path.sep}worktrees${path.sep}`
     const projects = this.deps.projectsRoot
-    for (const slug of this.listProjectSlugs(projects)) {
-      const files = this.listJsonl(projects, slug, stats)
-      let cwd = this.readFirstCwd(projects, slug, files, stats)
+    for (const slug of await this.listProjectSlugs(projects)) {
+      const files = await this.listJsonl(projects, slug, stats)
+      let cwd = await this.readFirstCwd(projects, slug, files, stats)
       if (!cwd) continue
       const wt = cwd.indexOf(wtMark)
       if (wt !== -1) cwd = cwd.slice(0, wt)
-      if (!dirExistsSync(cwd)) continue
+      if (!(await dirExists(cwd))) continue
       const root = this.deps.projectInfo(cwd).root
       if (pinned.has(root) || this.isConductorFolder(root)) continue
       const mtime = Math.max(...files.map((f) => f.mtime))
@@ -340,9 +386,9 @@ export class WorkspaceManager {
   }
 
   private async worktreeEntries(wsPath: string): Promise<WorktreeEntry[]> {
-    const { key, missing } = this.scope(wsPath)
+    const { key } = this.scope(wsPath)
     if (key) return this.deps.remoteGit?.(key.host, key.path)?.worktrees ?? []
-    return missing ? [] : gitWorktreeEntries(wsPath)
+    return (await this.missing(wsPath)) ? [] : gitWorktreeEntries(wsPath)
   }
 
   add(rawPath: string): WorkspaceAddResult {
@@ -633,8 +679,8 @@ export class WorkspaceManager {
 
     this.headScansSeen.clear()
     this.statByFile.clear()
-    const slugsByRoot = new Map<string, string[]>()
-    const slugsOf = (root: string): string[] => {
+    const slugsByRoot = new Map<string, Promise<string[]>>()
+    const slugsOf = (root: string): Promise<string[]> => {
       let v = slugsByRoot.get(root)
       if (!v) slugsByRoot.set(root, (v = this.listProjectSlugs(root)))
       return v
@@ -658,15 +704,12 @@ export class WorkspaceManager {
 
     const owned = new Set([...this.layout.members, ...(this.deps.additionalMembers?.() ?? [])])
     for (const ws of this.layout.workspaces) {
-      const { key, root, scanPath, missing } = this.scope(ws.path)
+      const { key, root, scanPath } = this.scope(ws.path)
+      const missing = await this.missing(ws.path)
       workspaceSlugs.push(encodeCwd(scanPath))
-      const slugs = slugsOf(root)
+      const slugs = await slugsOf(root)
       const wtDirs = (await this.worktreeEntries(ws.path)).map((e) => e.dir)
-      const buckets = resolveBuckets(scanPath, {
-        gitWorktreeList: () => wtDirs,
-        listProjectSlugs: () => slugs,
-        readFirstCwd: (slug) => this.readFirstCwd(root, slug)
-      })
+      const buckets = await this.resolveBucketsReadingAhead(root, scanPath, wtDirs, slugs)
       if (key) for (const b of buckets) b.host = key.host
       if (key && scanPath !== key.path) {
         for (const l of launches) if (l.host === key.host && l.cwd === key.path) l.cwd = scanPath
@@ -679,9 +722,10 @@ export class WorkspaceManager {
         ...r,
         ...sourceOf('claude', ws.path)
       })
+      const disk = await this.readBuckets(root, scanPath, buckets, dirBySlug, !key)
       const allRows = aggregateSessions(buckets, {
         listJsonl: (slug) => {
-          const files = this.listJsonl(root, slug)
+          const files = disk.files.get(slug) ?? []
           const dir = dirBySlug.get(slug)
           if (dir) {
             for (const f of files) {
@@ -694,9 +738,9 @@ export class WorkspaceManager {
           }
           return files
         },
-        readMeta: (slug, id) => this.readMeta(root, slug, id, dirBySlug.get(slug) ?? scanPath),
+        readMeta: (slug, id) => disk.meta.get(path.join(slug, id))!,
         runningIds: wsRunningIds,
-        dirExists: key ? () => true : dirExistsSync,
+        dirExists: key ? () => true : (dir) => disk.dirs.get(dir) ?? false,
         now: Date.now
       }).map(claudeRow)
       allRowsByWs.set(ws.path, [...allRows])
@@ -729,7 +773,7 @@ export class WorkspaceManager {
           missing,
           isGit: key
             ? (this.deps.remoteGit?.(key.host, key.path)?.isGit ?? false)
-            : !missing && isGitCheckout(ws.path),
+            : !missing && (await pathExists(path.join(ws.path, '.git'))),
           hasHistory: hasHistory(visible, owned, wsRunningIds),
           ...(key
             ? {
@@ -760,8 +804,9 @@ export class WorkspaceManager {
     // CC§2
     const liveIds = new Set<string>(this.deps.runningBindings().keys())
     for (const root of this.roots()) {
-      for (const slug of slugsOf(root))
-        for (const id of this.listJsonlIds(root, slug)) liveIds.add(id)
+      const slugs = await slugsOf(root)
+      for (const ids of await Promise.all(slugs.map((slug) => this.listJsonlIds(root, slug))))
+        for (const id of ids) liveIds.add(id)
     }
     for (const t of this.remoteTargets()) {
       for (const id of this.deps.remoteRunning?.(t.host) ?? []) liveIds.add(id)
@@ -787,7 +832,8 @@ export class WorkspaceManager {
     }
 
     this.bucketDirById = bucketDirById
-    this.rowsCache = this.stampLive(this.inLayoutOrder(payload))
+    const ordered = this.inLayoutOrder(payload)
+    this.rowsCache = this.stampLive(ordered, await this.revealDirsExisting(ordered))
     this.allRowsCache = allRowsByWs
     this.wsBySession = wsBySession
     this.deps.pushRows(this.rowsCache)
@@ -795,9 +841,78 @@ export class WorkspaceManager {
     this.deps.onRescanned?.(this.layout.workspaces.map((w) => w.path))
   }
 
-  private stampLive(rows: WorkspaceRows[]): WorkspaceRows[] {
+  private async resolveBucketsReadingAhead(
+    root: string,
+    scanPath: string,
+    wtDirs: string[],
+    slugs: string[]
+  ): Promise<Bucket[]> {
+    const firstCwd = new Map<string, string | null>()
+    for (;;) {
+      const asked = new Set<string>()
+      const buckets = resolveBuckets(scanPath, {
+        gitWorktreeList: () => wtDirs,
+        listProjectSlugs: () => slugs,
+        readFirstCwd: (slug) => {
+          const cwd = firstCwd.get(slug)
+          if (cwd === undefined) asked.add(slug)
+          return cwd ?? null
+        }
+      })
+      if (!asked.size) return buckets
+      await mapAtMost([...asked], TRANSCRIPTS_OPEN_AT_ONCE, async (slug) =>
+        firstCwd.set(slug, await this.readFirstCwd(root, slug))
+      )
+    }
+  }
+
+  private async readBuckets(
+    root: string,
+    scanPath: string,
+    buckets: Bucket[],
+    dirBySlug: Map<string, string>,
+    local: boolean
+  ): Promise<{
+    files: Map<string, { id: string; mtime: number }[]>
+    meta: Map<string, SessionMeta>
+    dirs: Map<string, boolean>
+  }> {
+    const slugs = [...new Set(buckets.map((b) => b.slug))]
+    const files = new Map(
+      await Promise.all(slugs.map(async (s) => [s, await this.listJsonl(root, s)] as const))
+    )
+    const transcripts = slugs.flatMap((s) => (files.get(s) ?? []).map((f) => [s, f.id] as const))
+    const meta = new Map(
+      await mapAtMost(
+        transcripts,
+        TRANSCRIPTS_OPEN_AT_ONCE,
+        async ([s, id]) =>
+          [
+            path.join(s, id),
+            await this.readMeta(root, s, id, dirBySlug.get(s) ?? scanPath)
+          ] as const
+      )
+    )
+    const cwds = local ? [...new Set([...meta.values()].map((m) => m.cwd))] : []
+    const dirs = new Map(await Promise.all(cwds.map(async (d) => [d, await dirExists(d)] as const)))
+    return { files, meta, dirs }
+  }
+
+  private async revealDirsExisting(rows: WorkspaceRows[]): Promise<Map<string, boolean>> {
     const liveById = this.deps.liveSessions?.() ?? new Map<string, LiveSession>()
-    const dirOk = new Map<string, boolean>()
+    const dirs = new Set<string>()
+    for (const e of rows) {
+      if (e.workspace.remote) continue
+      for (const r of e.rows) {
+        const dir = liveById.get(r.id)?.treeRoot ?? this.bucketDirOf(r.id)
+        if (dir) dirs.add(dir)
+      }
+    }
+    return new Map(await Promise.all([...dirs].map(async (d) => [d, await dirExists(d)] as const)))
+  }
+
+  private stampLive(rows: WorkspaceRows[], dirOk = new Map<string, boolean>()): WorkspaceRows[] {
+    const liveById = this.deps.liveSessions?.() ?? new Map<string, LiveSession>()
     return rows.map((e) => ({
       ...e,
       workspace: {
@@ -902,21 +1017,22 @@ export class WorkspaceManager {
     key: RemoteKey | null
     root: string
     scanPath: string
-    missing: boolean
   } {
     const key = parseRemoteKey(wsPath)
     return {
       key,
       root: key ? this.deps.remoteProjectsRoot(key.host) : this.deps.projectsRoot,
-      scanPath: key ? this.realRemotePath(key) : wsPath,
-      missing: key ? false : !dirExistsSync(wsPath)
+      scanPath: key ? this.realRemotePath(key) : wsPath
     }
   }
 
-  private listProjectSlugs(root: string): string[] {
+  private async missing(wsPath: string): Promise<boolean> {
+    return !isRemoteKey(wsPath) && !(await dirExists(wsPath))
+  }
+
+  private async listProjectSlugs(root: string): Promise<string[]> {
     try {
-      return fs
-        .readdirSync(root, { withFileTypes: true })
+      return (await fs.promises.readdir(root, { withFileTypes: true }))
         .filter((e) => e.isDirectory())
         .map((e) => e.name)
     } catch {
@@ -924,35 +1040,38 @@ export class WorkspaceManager {
     }
   }
 
-  private listJsonl(
+  private async listJsonl(
     root: string,
     slug: string,
     stats = this.statByFile
-  ): { id: string; mtime: number }[] {
+  ): Promise<{ id: string; mtime: number }[]> {
     const dir = path.join(root, slug)
     let names: fs.Dirent[]
     try {
-      names = fs.readdirSync(dir, { withFileTypes: true })
+      names = await fs.promises.readdir(dir, { withFileTypes: true })
     } catch {
       return []
     }
-    const out: { id: string; mtime: number }[] = []
-    for (const e of names) {
-      if (!e.isFile() || !e.name.endsWith('.jsonl')) continue
-      try {
-        const file = path.join(dir, e.name)
-        const st = fs.statSync(file)
-        stats.set(file, { size: st.size, mtimeMs: st.mtimeMs })
-        out.push({ id: e.name.slice(0, -'.jsonl'.length), mtime: st.mtimeMs })
-      } catch {}
-    }
-    return out
+    const found = await Promise.all(
+      names
+        .filter((e) => e.isFile() && e.name.endsWith('.jsonl'))
+        .map(async (e) => {
+          const file = path.join(dir, e.name)
+          try {
+            const st = await fs.promises.stat(file)
+            stats.set(file, { size: st.size, mtimeMs: st.mtimeMs })
+            return { id: e.name.slice(0, -'.jsonl'.length), mtime: st.mtimeMs }
+          } catch {
+            return null
+          }
+        })
+    )
+    return found.filter((f): f is { id: string; mtime: number } => f !== null)
   }
 
-  private listJsonlIds(root: string, slug: string): string[] {
+  private async listJsonlIds(root: string, slug: string): Promise<string[]> {
     try {
-      return fs
-        .readdirSync(path.join(root, slug), { withFileTypes: true })
+      return (await fs.promises.readdir(path.join(root, slug), { withFileTypes: true }))
         .filter((e) => e.isFile() && e.name.endsWith('.jsonl'))
         .map((e) => e.name.slice(0, -'.jsonl'.length))
     } catch {
@@ -960,12 +1079,12 @@ export class WorkspaceManager {
     }
   }
 
-  private scanHead(file: string, stats = this.statByFile): Partial<SessionMeta> {
+  private async scanHead(file: string, stats = this.statByFile): Promise<Partial<SessionMeta>> {
     this.headScansSeen.add(file)
     let st = stats.get(file)
     if (!st) {
       try {
-        const s = fs.statSync(file)
+        const s = await fs.promises.stat(file)
         st = { size: s.size, mtimeMs: s.mtimeMs }
       } catch {
         st = undefined
@@ -978,55 +1097,62 @@ export class WorkspaceManager {
         : st.size === prev.size && st.mtimeMs === prev.mtimeMs
       if (same) return prev.meta
     }
-    const probe = { opened: false, eof: false }
-    const meta = extractJsonlMeta(jsonlHeadLines(file, probe))
-    if (st && probe.opened) this.headScans.set(file, { ...st, meta, final: !probe.eof })
+    const { meta, opened, eof } = await readJsonlHeadMeta(file)
+    if (st && opened) this.headScans.set(file, { ...st, meta, final: !eof })
     return meta
   }
 
-  private scanTail(file: string): JsonlTail {
+  private async scanTail(file: string): Promise<JsonlTail> {
     const st = this.statByFile.get(file)
     const head = this.headScans.get(file)
     const prev = head?.tail
     if (prev && st && prev.size === st.size && prev.mtimeMs === st.mtimeMs) return prev.tail
-    const tail = extractJsonlTail(jsonlTailLines(file))
+    const tail = extractJsonlTail(await readJsonlTailLines(file))
     if (head && st) head.tail = { ...st, tail }
     return tail
   }
 
   // CC§2
-  private readFirstCwd(
+  private async readFirstCwd(
     root: string,
     slug: string,
-    files = this.listJsonl(root, slug),
+    files?: { id: string; mtime: number }[],
     stats = this.statByFile
-  ): string | null {
-    for (const f of files.slice(0, 3)) {
-      const cwd = this.scanHead(path.join(root, slug, f.id + '.jsonl'), stats).cwd
+  ): Promise<string | null> {
+    for (const f of (files ?? (await this.listJsonl(root, slug, stats))).slice(0, 3)) {
+      const cwd = (await this.scanHead(path.join(root, slug, f.id + '.jsonl'), stats)).cwd
       if (cwd) return cwd
     }
     return null
   }
 
-  private readMeta(root: string, slug: string, id: string, bucketDir: string): SessionMeta {
+  private async readMeta(
+    root: string,
+    slug: string,
+    id: string,
+    bucketDir: string
+  ): Promise<SessionMeta> {
     const file = path.join(root, slug, id + '.jsonl')
-    const partial: Partial<SessionMeta> = { ...this.scanHead(file) }
+    const partial: Partial<SessionMeta> = { ...(await this.scanHead(file)) }
     // CC§4
     if (partial.worktreeState) {
-      const tail = this.scanTail(file)
+      const tail = await this.scanTail(file)
       if (tail.worktreeState === null) {
         partial.worktreeState = undefined
         partial.cwd = tail.relocatedCwd
       } else if (tail.worktreeState) partial.worktreeState = tail.worktreeState
     }
     try {
-      const sidecar = fs.readFileSync(file.replace(/\.jsonl$/, '.title'), 'utf8').trim()
+      const sidecar = (
+        await fs.promises.readFile(file.replace(/\.jsonl$/, '.title'), 'utf8')
+      ).trim()
       if (sidecar) partial.aiTitle = sidecar
     } catch {}
     let timestamp = partial.timestamp
     if (!timestamp) {
       try {
-        timestamp = new Date(fs.statSync(file).mtimeMs).toISOString()
+        const mtimeMs = this.statByFile.get(file)?.mtimeMs ?? (await fs.promises.stat(file)).mtimeMs
+        timestamp = new Date(mtimeMs).toISOString()
       } catch {
         timestamp = new Date(0).toISOString()
       }

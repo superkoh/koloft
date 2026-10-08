@@ -267,6 +267,32 @@ describe('WorkspaceManager: owned-only sidebar (decided 2026-08-09)', () => {
   })
 })
 
+describe('WorkspaceManager: a rescan never blocks the main process on the transcript storage', () => {
+  it('reads every bucket, head, tail, sidecar and folder it needs without one blocking file call under the projects root', async () => {
+    writeJsonl(repo, 's1')
+    fs.writeFileSync(path.join(projectsRoot, encodeCwd(repo), 's1.title'), 'Named\n')
+    writeJsonl(plain, 's2')
+    own('s1', 's2')
+    const blocking = [
+      'statSync',
+      'lstatSync',
+      'readdirSync',
+      'openSync',
+      'readSync',
+      'readFileSync',
+      'existsSync'
+    ] as const
+    const spies = blocking.map((name) => vi.spyOn(fs, name))
+    mgr.start()
+    await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.title)).toEqual(['Named']))
+    expect(latest(plain).rows.map((r) => r.id)).toEqual(['s2'])
+    const underProjects = spies.flatMap((s) =>
+      s.mock.calls.map((c) => String(c[0])).filter((p) => p.startsWith(projectsRoot))
+    )
+    expect(underProjects).toEqual([])
+  })
+})
+
 describe('WorkspaceManager: cold-row title parity with the live tracker', () => {
   it('prefers the `<id>.title` sidecar over the jsonl-head title', async () => {
     writeJsonl(repo, 's1')
@@ -795,11 +821,11 @@ describe('WorkspaceManager: conductor sessions stay out of the workspace lists',
     expect(mgr.workspaceOf('cond-now')).toBe(repo)
   })
 
-  it('never offers a conductor’s own folder as a folder to pin', () => {
+  it('never offers a conductor’s own folder as a folder to pin', async () => {
     const own = path.join(root, 'userData', 'conductors', 'global')
     fs.mkdirSync(own, { recursive: true })
     writeJsonl(own, 'cond-1')
-    expect(mgr.discover()).toEqual([])
+    expect(await mgr.discover()).toEqual([])
   })
 })
 
@@ -971,7 +997,7 @@ describe('WorkspaceManager: a rescan re-reads only the transcript heads that cha
     expect(titleOf('settled-1')).toBe('Settled name')
     expect(titleOf('grows-1')).not.toBe('later summary')
 
-    const opened = vi.spyOn(fs, 'openSync')
+    const opened = vi.spyOn(fs.promises, 'open')
     const jsonlOpened = (): string[] => [
       ...new Set(
         opened.mock.calls
@@ -1037,7 +1063,7 @@ describe('WorkspaceManager: discover (U-OB-01, the welcome’s folders-you-alrea
   }
 
   // CC§2
-  it('collapses a repo’s slugs and drops the ones that are not offerable', () => {
+  it('collapses a repo’s slugs and drops the ones that are not offerable', async () => {
     const a = path.join(root, 'a')
     const sub = path.join(a, 'sub')
     fs.mkdirSync(path.join(a, '.git'), { recursive: true })
@@ -1076,20 +1102,20 @@ describe('WorkspaceManager: discover (U-OB-01, the welcome’s folders-you-alrea
     fs.mkdirSync(e)
     writeCwdlessJsonl(e, 'e-1')
 
-    expect(mgr.discover()).toEqual([
+    expect(await mgr.discover()).toEqual([
       { path: a, sessions: 3, mtime: 9000_000 },
       { path: c, sessions: 3, mtime: 700_000 }
     ])
   })
 
-  it('offers at most 8 folders, newest first', () => {
+  it('offers at most 8 folders, newest first', async () => {
     for (let i = 0; i < 9; i++) {
       const dir = path.join(root, 'p' + i)
       fs.mkdirSync(dir)
       writeJsonl(dir, 'p' + i + '-1')
       setMtime(dir, 'p' + i + '-1', 1000 + i)
     }
-    const found = mgr.discover()
+    const found = await mgr.discover()
     expect(found).toHaveLength(8)
     expect(found.map((f) => path.basename(f.path))).toEqual([
       'p8',

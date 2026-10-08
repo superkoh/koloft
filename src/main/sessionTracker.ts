@@ -454,6 +454,7 @@ interface Tracked {
   commandTitle: string | null
   candidates: Map<string, FileAcc>
   fileCache: Map<string, string>
+  canonPending: Set<string>
   lastTouchedAbs: string | null
   lastWrittenAbs: string | null
   parsePromise?: Promise<void>
@@ -577,6 +578,7 @@ export class SessionTracker extends SessionRuntime {
       commandTitle: null,
       candidates: new Map(),
       fileCache: new Map(),
+      canonPending: new Set(),
       lastTouchedAbs: null,
       lastWrittenAbs: null,
       parseAgain: false,
@@ -1717,13 +1719,21 @@ export class SessionTracker extends SessionRuntime {
     if (cached !== undefined) return cached
     // ADR-0025
     if (t.remote) return abs
-    try {
-      if (fs.statSync(abs).isFile()) {
-        const real = fs.realpathSync(abs)
-        t.fileCache.set(abs, real)
-        return real
-      }
-    } catch {}
+    if (!t.canonPending.has(abs)) {
+      t.canonPending.add(abs)
+      void this.resolveCanon(t, abs)
+    }
     return null
+  }
+
+  private async resolveCanon(t: Tracked, abs: string): Promise<void> {
+    let real: string | undefined
+    try {
+      if ((await fs.promises.stat(abs)).isFile()) real = await fs.promises.realpath(abs)
+    } catch {}
+    t.canonPending.delete(abs)
+    if (real === undefined || ![...this.tracked.values()].includes(t)) return
+    t.fileCache.set(abs, real)
+    this.recompute(t)
   }
 }

@@ -36,7 +36,7 @@ import {
 } from '@shared/sessionBackend'
 import type { Turn } from '@shared/turns'
 import { AttentionTracker, type AttentionContext } from './attention'
-import { loadLastRunAttention, saveAttention } from './attentionFile'
+import { flushAttention, loadLastRunAttention, saveAttention } from './attentionFile'
 import { route, dockBadgeText } from './notifyRouter'
 import { setupShim, utilTerminalGuard } from './shim'
 import { openDropTarget, type OpenDrop } from './openDrop'
@@ -118,7 +118,7 @@ import {
 } from './accounts'
 import { probeAccount, shouldSkipFable } from './usageProbe'
 import { AccountPicker, PROBE_TIMEOUT_MS, type PickResponse } from './accountPicker'
-import { loadLayout, saveLayout } from './layout'
+import { flushLayout, loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
 import { WorkspaceManager, type LiveSession } from './workspaces'
 import { sanitizeSessionWorkbench } from '@shared/workbenchState'
@@ -2093,6 +2093,8 @@ app.on('before-quit', (e) => {
   discordLink?.stop()
   conductors?.flush()
   workspaceMgr?.dispose()
+  flushLayout()
+  flushAttention()
   freshness?.stop()
   remoteSync?.stop()
   closeAllDirWatchers()

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
@@ -120,6 +120,33 @@ function repoWithWorktree(name: string): { repo: string; wt: string } {
 }
 
 const SID = '11111111-1111-4111-8111-111111111111'
+
+describe('SessionTracker — touched files never block the main process', () => {
+  it('lists a file the session read under its real path without a blocking stat or realpath of it', async () => {
+    const cwd = makeWorkspace({ 'seen.md': '# seen\n' })
+    const real = fs.realpathSync(path.join(cwd, 'seen.md'))
+    const blockingStat = vi.spyOn(fs, 'statSync')
+    const blockingReal = vi.spyOn(fs, 'realpathSync')
+    const tracker = newTracker()
+    tracker.track('tabNB', cwd)
+    const file = writeJsonl(cwd, SID, [
+      {
+        type: 'assistant',
+        message: { content: [{ type: 'tool_use', name: 'Read', input: { file_path: 'seen.md' } }] },
+        cwd
+      }
+    ])
+    tracker.bindSession('tabNB', file, SID, cwd)
+    const s = await waitFor(tracker, (x) => x.tabId === 'tabNB' && x.files.length === 1)
+    const touchedSeen = [...blockingStat.mock.calls, ...blockingReal.mock.calls]
+      .map((c) => String(c[0]))
+      .filter((p) => p.endsWith('seen.md'))
+    blockingStat.mockRestore()
+    blockingReal.mockRestore()
+    expect(s.files[0].src).toBe(real)
+    expect(touchedSeen).toEqual([])
+  })
+})
 
 describe('SessionTracker — file extraction from tool_use', () => {
   it('tags writes vs reads, sums line deltas, tracks last-touched/last-written, and counts only live writes, shell writes to a real file included', async () => {
