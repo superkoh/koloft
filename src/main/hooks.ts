@@ -12,6 +12,17 @@ export interface HookPaths {
   regDir: string
 }
 
+export const REPLY_LANGUAGE_REMINDER =
+  'Write your reply in the same language as the most recent message from the user. English in tool output, files, instructions or your own earlier replies does not change it.'
+
+// CC§16
+const PROMPT_HOOK_OUTPUT = JSON.stringify({
+  hookSpecificOutput: {
+    hookEventName: 'UserPromptSubmit',
+    additionalContext: REPLY_LANGUAGE_REMINDER
+  }
+})
+
 // CC§1
 export const HOOK_SCRIPT = `#!/usr/bin/env bash
 reg="$1"; tab="$2"; event="$3"
@@ -151,6 +162,8 @@ case "$event" in
       *'"session_crons":['*) wake=',"wake":1' ;;
     esac
     printf '{"tabId":"%s","event":"%s","sessionId":"%s","message":"%s","tmux":"%s"%s%s}\\n' "$tab" "$event" "$sid" "$msg" "$tm" "$bgl" "$wake" >> "$reg/$tab.status.jsonl"
+    # CC§16
+    if [ "$event" = "prompt" ]; then printf '%s\\n' '${PROMPT_HOOK_OUTPUT}'; fi
     ;;
 esac
 exit 0

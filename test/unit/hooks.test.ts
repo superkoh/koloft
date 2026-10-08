@@ -18,7 +18,8 @@ import {
   hookSettings,
   writeConductorMarker,
   removeConductorMarker,
-  markAnswerable
+  markAnswerable,
+  REPLY_LANGUAGE_REMINDER
 } from '../../src/main/hooks'
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/paths'
 
@@ -48,13 +49,14 @@ function fire(
   event: string,
   payload: unknown,
   extraEnv?: Record<string, string>
-): void {
+): string {
   const res = spawnSync(hookScript, [regDir, tab, event], {
     input: JSON.stringify(payload),
     encoding: 'utf8',
     env: { ...process.env, ...extraEnv, PATH: `${stubBin}:${process.env.PATH}` }
   })
   if (res.status !== 0) throw new Error(`hook exited ${res.status}: ${res.stderr}`)
+  return res.stdout
 }
 const readReg = (name: string): Record<string, string> =>
   JSON.parse(fs.readFileSync(path.join(regDir, name), 'utf8'))
@@ -399,6 +401,19 @@ describe('injected hook script', () => {
     expect(readStatusLog('tabH')[0].message).toContain('permission')
   })
 
+  // CC§16
+  it('every prompt hands Claude the reply-language reminder; Stop and Notification print nothing', () => {
+    const out = fire('tabLang', 'prompt', { hook_event_name: 'UserPromptSubmit', prompt: '你好' })
+    expect(JSON.parse(out)).toEqual({
+      hookSpecificOutput: {
+        hookEventName: 'UserPromptSubmit',
+        additionalContext: REPLY_LANGUAGE_REMINDER
+      }
+    })
+    expect(fire('tabLang', 'stop', { hook_event_name: 'Stop' })).toBe('')
+    expect(fire('tabLang', 'notify', { message: 'Claude is waiting for your input' })).toBe('')
+  })
+
   it('run-state reports APPEND — a whole turn survives, not just its last edge', () => {
     fire('tabT', 'prompt', { hook_event_name: 'UserPromptSubmit' })
     fire('tabT', 'stop', { hook_event_name: 'Stop' })
@@ -539,7 +554,7 @@ describe('injected hook script', () => {
     })
 
     const firePosttool = (command: string): void =>
-      fire(
+      void fire(
         'tabPT',
         'posttool',
         {

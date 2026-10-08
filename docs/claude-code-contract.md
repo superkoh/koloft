@@ -1210,3 +1210,23 @@ with `koloft`, and printed nothing for that one. The prompt asked for a Bash
   with `--dangerously-skip-permissions`, asked to write a file — the file was not
   written and the transcript held `PreToolUse:<tool> hook error`.
 - Not run: a `Task` subagent's own tool calls under the hook.
+
+## §16 The UserPromptSubmit hook adds text beside every prompt
+
+How established: 2026-10-08, CC 2.1.294, on this Mac, model haiku, an empty MCP config,
+and a `--settings` file whose `UserPromptSubmit` entry ran a script that printed
+`{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"<text>"}}`
+where `<text>` held a made-up word. Run as `claude -p`, and as an interactive claude in
+a pty (Koloft's `KOLOFT_HOOK_SETTINGS` and the inherited `CLAUDE_CODE_CHILD_SESSION`
+unset), its prompt both typed and given as the launch argument.
+
+- **The text reaches the model on that turn**: asked for the word, it said it back, in
+  `-p` and in the interactive session (transcript `entrypoint: "cli"`).
+- **It lands in the transcript as its own record**, not inside the user message:
+  `{"type":"attachment","attachment":{"type":"hook_additional_context","content":["<text>"],
+  "hookName":"UserPromptSubmit","hookEvent":"UserPromptSubmit",…},"rendered":[{"content":
+  "<system-reminder>\nUserPromptSubmit hook additional context: <text>\n</system-reminder>"}],
+  "renderedRole":"system"}`, written right after the prompt.
+- **The interactive screen does not show the text.** While the hook runs, the spinner line
+  reads `(running UserPromptSubmit hook · 0s)`; after that only the prompt and the reply
+  are drawn.
