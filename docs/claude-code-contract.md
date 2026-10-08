@@ -1311,3 +1311,50 @@ unset), its prompt both typed and given as the launch argument.
 - **The interactive screen does not show the text.** While the hook runs, the spinner line
   reads `(running UserPromptSubmit hook · 0s)`; after that only the prompt and the reply
   are drawn.
+
+## §18 A bracketed paste lands in the input box unsent
+
+How established: first from the issue #4 design round's probe notes (CC 2.1.287, real
+claude in a pty, early October 2026; a second reader re-ran them then). Re-run on
+2026-10-08 with Claude Code 2.1.294 through Koloft's own ✎ comment, on this Mac and, as
+linux-arm64, on a Docker lab machine reached over real ssh into tmux 3.3a: one write of
+8 lines with 7 LFs (Mac) or 10 lines with 9 LFs (lab) inside the markers, a 5 s wait,
+then one CR written to the tab. Established by `agent-tools-real-smoke.spec.ts` › "a
+real Claude Code holds the hunk comment in its input box unsent, and the next Enter
+sends path, diff fence, hunk and note as one message" (4 runs) and
+`remote-ssh-lab.spec.ts` › "E-SSH-10: ✎ comment on a remote Changes hunk reaches a REAL
+claude on the machine through ssh and tmux …" (3 runs; one of them failed only on an
+earlier assertion that the model obey the note, the paste facts held in all three).
+
+- **claude turns bracketed paste on at startup** (it writes `ESC[?2004h`; 2.1.287 notes).
+- **A write wrapped in `ESC[200~` … `ESC[201~` lands as one block and is not sent.** On
+  2.1.287, 7 lines and 85 lines each showed as one `[Pasted text #1 +N lines]` in the
+  input box. On 2.1.294, the paste showed as `[Pasted text #1 +7 lines]` (`+9 lines` on
+  the lab machine), one per LF, and 5 s later the transcript still held no user message:
+  LF inside the markers sends nothing.
+- **The next CR sends it as one user message.** The transcript's `user` record has a
+  string `content` with the paste wrapped in tags:
+  `\n\n<pasted_content id="<4 hex>">\n<the pasted text>\n</pasted_content id="<4 hex>">\n`.
+- **The model may not take words inside a paste as the person's own.** Asked inside the
+  paste to reply with one word, it did in 4 of 7 runs; in the other 3 it said the line
+  "came from the pasted text and not from you" and did not act on it.
+- **Text typed right after the paste's `ESC[201~` stays outside the tags**, after
+  `</pasted_content …>\n\n`, and the model took it as the person's words: it replied the
+  one word asked for in 11 of 11 runs. Measured 2026-10-08, CC 2.1.294, a python `pty`
+  probe in a scratch `HOME` (only `.claude.json` with trust and onboarding, auth in
+  `CLAUDE_CODE_OAUTH_TOKEN`): the paste, then the note in the same write, in one write
+  0.3 s later, or in pieces; then a CR 4 s later.
+- **One raw write longer than about 800 bytes is taken as a second paste**, wrapped in its
+  own tags and shown as `[Pasted text #2]`: a 900-byte piece did that, and a
+  1,150-byte write was split at 1,024 bytes with the first part wrapped. Pieces of 512
+  bytes 10 ms apart, and of 128 characters 0.3 s apart, stayed typed text.
+- **A raw LF in the typed text adds a line and does not send**, both inside one write of
+  nine lines and as a lone LF written 0.3 s after the line before it (2.1.294, same
+  probe; the 2.1.288 measurement is in §12).
+- **The same 85 lines written raw, with no markers, split into two blocks** (2.1.287),
+  so a raw write is not one paste.
+- **Over ssh into tmux the paste arrives whole and waits the same way**: the remote tab
+  showed one `[Pasted text #1 +9 lines]` and the CR sent one message, as on the Mac. A
+  two-line note typed after it (Koloft's ✎ comment, 128-character pieces 0.3 s apart)
+  stayed outside the tags and was obeyed in 3 of 3 E-SSH-10 runs (2026-10-08, 2.1.294
+  linux-arm64); the same held in 3 of 3 runs of the local real case.

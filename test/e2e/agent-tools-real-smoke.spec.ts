@@ -5,7 +5,22 @@ import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
 import { runGit, setupGitFixture } from './helpers/gitFixture'
-import { centerTerm, chooseBackend, openWorktreeSession, waitBooted, wsRows } from './helpers/p1'
+import {
+  boundSessionId,
+  centerTerm,
+  chooseBackend,
+  openWorktreeSession,
+  waitBooted,
+  wsRows
+} from './helpers/p1'
+import {
+  WORKBENCH,
+  claudePromptsIn,
+  claudeRepliesIn,
+  outsideThePaste,
+  putCommentOnFirstHunkInSession,
+  showBrowse
+} from './helpers/workbench'
 
 function claudeTokenFromKeychain(): string {
   const account = process.env.KOLOFT_SMOKE_ACCOUNT
@@ -270,10 +285,146 @@ async function keepWhatTheAgentSawAndDid(page: Page, env: E2EEnv): Promise<void>
     contentType: 'text/plain'
   })
   const projects = path.join(env.home, '.claude', 'projects')
-  if (!fs.existsSync(projects)) return
-  for (const slug of fs.readdirSync(projects))
-    for (const f of fs.readdirSync(path.join(projects, slug)).filter((n) => n.endsWith('.jsonl')))
-      await test.info().attach(f, { path: path.join(projects, slug, f) })
+  if (fs.existsSync(projects))
+    for (const slug of fs.readdirSync(projects))
+      for (const f of fs.readdirSync(path.join(projects, slug)).filter((n) => n.endsWith('.jsonl')))
+        await test.info().attach(f, { path: path.join(projects, slug, f) })
+  for (const f of codexRollouts(env)) await test.info().attach(path.basename(f), { path: f })
+}
+
+function codexRollouts(env: E2EEnv): string[] {
+  const root = path.join(env.home, '.codex', 'sessions')
+  if (!fs.existsSync(root)) return []
+  return fs
+    .readdirSync(root, { recursive: true, encoding: 'utf8' })
+    .filter((f) => /(^|\/)rollout-[^/]*\.jsonl$/.test(f))
+    .map((f) => path.join(root, f))
+}
+
+function jsonLines(file: string): Record<string, unknown>[] {
+  return fs
+    .readFileSync(file, 'utf8')
+    .split('\n')
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line) as Record<string, unknown>]
+      } catch {
+        return []
+      }
+    })
+}
+
+interface CodexItem {
+  type?: string
+  content?: { text?: unknown }[]
+}
+
+function rolloutThreadId(file: string): string {
+  return (
+    /-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/.exec(file)?.[1] ?? ''
+  )
+}
+
+function codexItems(env: E2EEnv, sessionId: string, itemType: string): string[] {
+  return codexRollouts(env)
+    .filter((f) => !!rolloutThreadId(f) && sessionId.endsWith(rolloutThreadId(f)))
+    .flatMap(jsonLines)
+    .flatMap((r) => {
+      const payload = r.payload as { type?: string; item?: CodexItem } | undefined
+      const item = r.type === 'event_msg' && payload?.type === 'item_completed' && payload.item
+      return item && item.type === itemType
+        ? [
+            (item.content ?? [])
+              .map((c) => c.text)
+              .filter((t) => typeof t === 'string')
+              .join('')
+          ]
+        : []
+    })
+}
+
+function claudeTranscript(env: E2EEnv, sessionId: string): string {
+  const projects = path.join(env.home, '.claude', 'projects')
+  if (!fs.existsSync(projects)) return ''
+  return fs
+    .readdirSync(projects)
+    .map((slug) => path.join(projects, slug, `${sessionId}.jsonl`))
+    .filter((f) => fs.existsSync(f))
+    .map((f) => fs.readFileSync(f, 'utf8'))
+    .join('\n')
+}
+
+interface RealTranscript {
+  prompts: (env: E2EEnv, sessionId: string) => string[]
+  replies: (env: E2EEnv, sessionId: string) => string[]
+  pasteOnScreen: RegExp
+}
+
+const CLAUDE_TRANSCRIPT: RealTranscript = {
+  prompts: (env, sessionId) => claudePromptsIn(claudeTranscript(env, sessionId)),
+  replies: (env, sessionId) => claudeRepliesIn(claudeTranscript(env, sessionId)),
+  // CC§18
+  pasteOnScreen: /\[Pasted text #\d+ \+\d+ lines\]/
+}
+
+const HUNK_FILE = 'README.md'
+const LINE_THE_HUNK_ADDS = 'a line for the hunk comment'
+const REPLY_WORD = 'KIWI'
+const NOTE_ASKING_FOR_ONE_WORD = `Koloft paste check.\nReply with only the word ${REPLY_WORD}.`
+
+const CODEX_TRANSCRIPT: RealTranscript = {
+  prompts: (env, sessionId) => codexItems(env, sessionId, 'UserMessage'),
+  replies: (env, sessionId) => codexItems(env, sessionId, 'AgentMessage'),
+  pasteOnScreen: new RegExp(REPLY_WORD)
+}
+
+const A_PASTE_THAT_SENT_ITSELF_WOULD_HAVE_STARTED_A_TURN_BY_MS = 5_000
+
+function aHunkCommentWaitsForEnterThenGoesAsOneMessage(
+  env: E2EEnv,
+  backend: 'default' | 'other',
+  useReal: (env: E2EEnv, trusted: string[]) => void,
+  transcript: RealTranscript
+): Promise<void> {
+  test.setTimeout(A_REAL_MODEL_TURN_MS + 180_000)
+  return inARealWorktreeSession(env, backend, useReal, [], async ({ page, rows, tree }) => {
+    fs.appendFileSync(path.join(tree, HUNK_FILE), `${LINE_THE_HUNK_ADDS}\n`)
+    const tabId = (await rows.getAttribute('data-tab-id'))!
+    const sessionId = (await boundSessionId(page, tabId)) ?? ''
+    expect(sessionId).not.toBe('')
+    await showBrowse(page)
+    await page
+      .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
+      .filter({ hasText: 'Changes' })
+      .click()
+    const promptsBefore = transcript.prompts(env, sessionId).length
+    const repliesBefore = transcript.replies(env, sessionId).length
+
+    const head = await putCommentOnFirstHunkInSession(page, HUNK_FILE, NOTE_ASKING_FOR_ONE_WORD)
+    await expect.poll(() => screen(page), { timeout: 30_000 }).toMatch(transcript.pasteOnScreen)
+    await page.waitForTimeout(A_PASTE_THAT_SENT_ITSELF_WOULD_HAVE_STARTED_A_TURN_BY_MS)
+    await test.info().attach('screen-before-enter', { body: await screen(page) })
+    expect(transcript.prompts(env, sessionId)).toHaveLength(promptsBefore)
+    await expect(rows).not.toHaveClass(/\bst-working\b/)
+
+    await page.evaluate((id) => window.api.terminal.write(id, '\r'), tabId)
+    await expect
+      .poll(() => transcript.prompts(env, sessionId).length, { timeout: A_REAL_MODEL_TURN_MS })
+      .toBe(promptsBefore + 1)
+    const sent = transcript.prompts(env, sessionId).at(-1)!
+    await test.info().attach('the-one-message', { body: sent })
+    expect(sent).toContain(head)
+    expect(sent).toContain(`+${LINE_THE_HUNK_ADDS}`)
+    expect(outsideThePaste(sent)).toContain(NOTE_ASKING_FOR_ONE_WORD)
+    await expect
+      .poll(() => transcript.replies(env, sessionId).length, { timeout: A_REAL_MODEL_TURN_MS })
+      .toBeGreaterThan(repliesBefore)
+    await expect(rows).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: A_REAL_MODEL_TURN_MS })
+    const replies = transcript.replies(env, sessionId).slice(repliesBefore)
+    await test.info().attach('the-reply', { body: replies.join('\n') })
+    expect(replies.at(-1)?.trim()).toBe(REPLY_WORD)
+    expect(transcript.prompts(env, sessionId)).toHaveLength(promptsBefore + 1)
+  })
 }
 
 test.describe('`koloft session close` from a REAL agent in a worktree: opt-in cases proving the real claude and codex reach the command; they spend real money', () => {
@@ -315,5 +466,37 @@ test.describe('`koloft session close` from a REAL agent in a worktree: opt-in ca
       'set KOLOFT_SMOKE_CODEX (absolute path of a real codex binary) and KOLOFT_SMOKE_CODEX_HOME (a signed-in CODEX_HOME; only its auth.json is copied)'
     )
     await refusedThenClosedForGood(env, 'other', useRealCodex)
+  })
+})
+
+test.describe('✎ comment on a Changes hunk with the REAL claude and codex: opt-in cases proving the paste waits in the input box; they spend real money', () => {
+  test('a real Claude Code holds the hunk comment in its input box unsent, and the next Enter sends path, diff fence and hunk as a paste and the two-line note as typed words in one message, which the model obeys', async ({
+    env
+  }) => {
+    test.skip(
+      !HAVE_REAL_CLAUDE,
+      'set KOLOFT_SMOKE_CLAUDE (absolute path of a real claude binary) and KOLOFT_SMOKE_OAUTH_TOKEN or KOLOFT_SMOKE_ACCOUNT (a Settings ▸ Accounts name, read off the Keychain)'
+    )
+    await aHunkCommentWaitsForEnterThenGoesAsOneMessage(
+      env,
+      'default',
+      useRealClaude,
+      CLAUDE_TRANSCRIPT
+    )
+  })
+
+  test('a real Codex holds the hunk comment in its composer unsent, and the next Enter sends path, diff fence, hunk and the two-line note as one message, which the model obeys', async ({
+    env
+  }) => {
+    test.skip(
+      !HAVE_REAL_CODEX,
+      'set KOLOFT_SMOKE_CODEX (absolute path of a real codex binary) and KOLOFT_SMOKE_CODEX_HOME (a signed-in CODEX_HOME; only its auth.json is copied)'
+    )
+    await aHunkCommentWaitsForEnterThenGoesAsOneMessage(
+      env,
+      'other',
+      useRealCodex,
+      CODEX_TRANSCRIPT
+    )
   })
 })

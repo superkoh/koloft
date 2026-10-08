@@ -212,6 +212,7 @@ export interface WorkbenchPaneProps {
   onToggleFull: () => void
   panelFocus: number
   onEscapeFellThrough: () => void
+  onReturnFocus: () => void
   treeRoot: string | null
   session: SessionInfo | null
   activeTabId: string | null
@@ -298,6 +299,7 @@ export function WorkbenchPane({
   onToggleFull,
   panelFocus,
   onEscapeFellThrough,
+  onReturnFocus,
   treeRoot,
   session,
   activeTabId,
@@ -2197,6 +2199,7 @@ export function WorkbenchPane({
             onZoomImage={setZoom}
             zoom={activeKind === 'files' ? zoom : null}
             onCloseZoom={closeZoom}
+            onReturnFocus={onReturnFocus}
           />
         </div>
 

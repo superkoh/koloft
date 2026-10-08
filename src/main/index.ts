@@ -3238,6 +3238,9 @@ function registerIpc(): void {
   )
 
   ipcMain.on('terminal:write', (_e, id: string, data: string) => ptyMgr.write(id, data))
+  ipcMain.handle('terminal:paste', (_e, id: string, text: string, typedAfter?: string) =>
+    ptyMgr.paste(id, text, typedAfter)
+  )
   // PLATFORM§21
   ipcMain.on('sessions:activity', (_e, id: unknown) => {
     if (typeof id === 'string' && id) tracker.noteActivity(id)

@@ -6,7 +6,7 @@ import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { OscCwdParser } from './oscCwd'
 import { codexEnvironment } from './codexTransport'
 import { userShell } from './userShell'
-import { typeKeys } from './typeKeys'
+import { bracketedPaste, typeKeys, typedPieces } from './typeKeys'
 
 export interface PtyHandle {
   id: string
@@ -259,6 +259,10 @@ export class PtyManager extends EventEmitter {
 
   type(id: string, keys: string[]): Promise<void> {
     return this.exclusive(id, () => typeKeys((data) => this.write(id, data), keys))
+  }
+
+  paste(id: string, text: string, typedAfter = ''): Promise<void> {
+    return this.type(id, [bracketedPaste(text), ...typedPieces(typedAfter)])
   }
 
   whenReady(id: string, ready: () => boolean, ms: number): Promise<boolean> {

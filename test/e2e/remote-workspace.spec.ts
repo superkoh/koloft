@@ -41,7 +41,15 @@ import {
   waitForCalls,
   wsRows
 } from './helpers/p1'
-import { WORKBENCH, browseRow, openInBrowse, showBrowse } from './helpers/workbench'
+import {
+  WORKBENCH,
+  browseRow,
+  claudePrompts,
+  commentOnFirstHunk,
+  expectOnePromptFromTheComment,
+  openInBrowse,
+  showBrowse
+} from './helpers/workbench'
 
 const LAYOUT_SAVE_DEBOUNCE_SETTLE_MS = 3000
 const TURN_LONGER_THAN_ONE_MIRROR_PULL = '/busy'
@@ -270,7 +278,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
         .filter({ hasText: 'Changes' })
         .click()
 
-      const expand = page.locator('.wb-panel .cv-blk[data-path="tracked.txt"] .cv-exp')
+      const expand = page.locator('.wb-panel .cv-blk[data-path="tracked.txt"] .cv-exp:not(.cv-cmt)')
       await expect(expand).toBeVisible({ timeout: 30_000 })
       await expand.click()
       await expect(expand).toHaveAttribute('aria-pressed', 'true')
@@ -284,6 +292,47 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
 
       await page.locator('.wb-bar .icobtn[aria-label="Reload"]').click()
       await expect(expand).toHaveAttribute('aria-pressed', 'false', { timeout: 20_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-28: ✎ comment on a remote Changes hunk reaches claude on the machine through ssh and tmux as a paste with the note typed after it, unsent until the person presses Enter', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      fs.writeFileSync(path.join(dir, '.gitignore'), 'NOTES.md\n')
+      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\n')
+      gitInit(dir)
+      gitCommitAll(dir)
+      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\ntwo\n')
+
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await row.click()
+      const tabId = await row.getAttribute('data-tab-id')
+      await expect.poll(() => boundSessionId(page, tabId), { timeout: 60_000 }).toBeTruthy()
+      const transcript = transcriptFile(
+        machineHome(env),
+        dir,
+        (await boundSessionId(page, tabId)) ?? ''
+      )
+      await showBrowse(page)
+      await page
+        .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
+        .filter({ hasText: 'Changes' })
+        .click()
+      await expect(page.locator('.wb-panel .cv-blk[data-path="tracked.txt"] .cv-cmt')).toBeVisible({
+        timeout: 30_000
+      })
+
+      const note = 'E-RW-28 say why two'
+      const head = await commentOnFirstHunk(page, 'tracked.txt', note)
+      await expectOnePromptFromTheComment(() => claudePrompts(transcript), head, note)
     } finally {
       await quitAndClose(app)
     }

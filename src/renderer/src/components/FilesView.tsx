@@ -426,6 +426,7 @@ export interface FilesBodyProps {
   onZoomImage: (src: string) => void
   zoom: string | null
   onCloseZoom: () => void
+  onReturnFocus: () => void
 }
 
 export function FilesBody({
@@ -443,7 +444,8 @@ export function FilesBody({
   onEdit,
   onZoomImage,
   zoom,
-  onCloseZoom
+  onCloseZoom,
+  onReturnFocus
 }: FilesBodyProps): JSX.Element {
   const contentRef = useRef<HTMLDivElement>(null)
   const [newFileDir, setNewFileDir] = useState<string | null>(null)
@@ -547,6 +549,7 @@ export function FilesBody({
           onSplit={onSplit}
           onContextMenu={openContextMenu}
           onScrollRequest={c.scrollToFile}
+          onReturnFocus={onReturnFocus}
           streamRef={contentRef}
         />
       ) : (

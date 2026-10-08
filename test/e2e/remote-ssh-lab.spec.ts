@@ -7,8 +7,13 @@ import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
 import {
   WORKBENCH,
+  claudePromptsIn,
+  claudeRepliesIn,
   layoutState,
+  outsideThePaste,
+  putCommentOnFirstHunkInSession,
   seedWorkbenchDefault,
+  showBrowse,
   waitPanelAttached
 } from './helpers/workbench'
 import { defaultControlDir } from '../../src/main/remote/ssh'
@@ -24,6 +29,8 @@ import {
   wsRows
 } from './helpers/p1'
 import {
+  HAVE_LINUX_CLAUDE,
+  NEEDS_LINUX_CLAUDE,
   dockerAvailable,
   installLabSsh,
   LAB_PASSWORD,
@@ -32,6 +39,8 @@ import {
   runOnTarget,
   startSshLab,
   stopSshLab,
+  transcriptOnTarget,
+  useRealClaudeOnTheMachine,
   type LabAlias,
   type SshLab
 } from './helpers/docker'
@@ -40,6 +49,13 @@ const BACKGROUND_CONNECT_MS = 45_000
 const TEN_SYNC_ROUNDS_WITH_TABS_OPEN_MS = 20_000
 const LOGINS_OF_THE_FIRST_FULL_ROUND_SETTLE_MS = 5000
 const README = (user: string): string => `# Lab project\n\nkoloft-ssh-lab marker for ${user}.\n`
+const A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS = 180_000
+const A_PASTE_THAT_SENT_ITSELF_WOULD_HAVE_STARTED_A_TURN_BY_MS = 5_000
+const REPLY_WORD = 'PLUM'
+const COMMIT_THE_PROJECT_THEN_EDIT_THE_README =
+  'cd proj && printf "NOTES.md\\n" > .gitignore && git init -q && git add -A' +
+  ' && git -c user.email=lab@koloft.test -c user.name=lab commit -qm base' +
+  ' && printf "edited\\n" >> README.md'
 
 test.describe.configure({ timeout: 420_000 })
 test.beforeAll(() =>
@@ -239,13 +255,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     const scratch = `/tmp/koloft-lab-${crypto.randomBytes(4).toString('hex')}.md`
     expect(fs.existsSync(scratch)).toBe(false)
     await withLab(env, async ({ page, lab }) => {
-      runOnTarget(
-        lab,
-        'kuser',
-        'cd proj && printf "NOTES.md\\n" > .gitignore && git init -q && git add -A' +
-          ' && git -c user.email=lab@koloft.test -c user.name=lab commit -qm base' +
-          ' && printf "edited\\n" >> README.md'
-      )
+      runOnTarget(lab, 'kuser', COMMIT_THE_PROJECT_THEN_EDIT_THE_README)
       await addMachine(page, 'kt-key', 'kuser')
       await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
       await startSessionIn(page, 'kt-key', { remote: true })
@@ -277,6 +287,72 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         page.locator(`${WORKBENCH.panel} .fv-artifact-hd .seg[aria-label="View mode"] .on`)
       ).toHaveText('Source')
     })
+  })
+
+  test('E-SSH-10: ✎ comment on a remote Changes hunk reaches a REAL claude on the machine through ssh and tmux as one paste that waits in its input box, and the next Enter sends path, diff fence and hunk as a paste and the two-line note as typed words in one message, which the model obeys (opt-in, spends real money)', async ({
+    env
+  }) => {
+    test.skip(!HAVE_LINUX_CLAUDE, NEEDS_LINUX_CLAUDE)
+    test.setTimeout(3 * A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS + 120_000)
+    seedSettings(env, { hintsOff: true })
+    const note = `Koloft paste check over ssh.\nReply with only the word ${REPLY_WORD}.`
+    await withLab(
+      env,
+      async ({ page, lab }) => {
+        runOnTarget(lab, 'kuser', COMMIT_THE_PROJECT_THEN_EDIT_THE_README)
+        await addMachine(page, 'kt-key', 'kuser')
+        await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+        await openMenu(page, page.locator('.ws-head', { hasText: 'kt-key' }))
+        await page.locator('.menu .mi', { hasText: 'New session' }).click()
+        const bound = async (): Promise<{ tabId: string; sessionId: string } | undefined> =>
+          (await page.evaluate(() => window.api.sessions.list())).find(
+            (s) => s.alive && s.sessionId
+          )
+        await expect
+          .poll(async () => (await bound())?.sessionId ?? '', {
+            timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
+          })
+          .not.toBe('')
+        const { tabId, sessionId } = (await bound())!
+        const transcript = (): string => transcriptOnTarget(lab, sessionId)
+        const prompts = (): string[] => claudePromptsIn(transcript())
+        await showBrowse(page)
+        await page
+          .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
+          .filter({ hasText: 'Changes' })
+          .click()
+        const promptsBefore = prompts().length
+
+        const head = await putCommentOnFirstHunkInSession(page, 'README.md', note)
+        const screen = (): Promise<string> =>
+          page.locator('.term-island .term-wrap:visible').innerText()
+        // CC§18
+        await expect
+          .poll(screen, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS })
+          .toMatch(/\[Pasted text #\d+ \+\d+ lines\]/)
+        await page.waitForTimeout(A_PASTE_THAT_SENT_ITSELF_WOULD_HAVE_STARTED_A_TURN_BY_MS)
+        await test.info().attach('screen-before-enter', { body: await screen() })
+        expect(prompts()).toHaveLength(promptsBefore)
+
+        await page.evaluate((id) => window.api.terminal.write(id, '\r'), tabId)
+        await expect
+          .poll(() => prompts().length, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS })
+          .toBe(promptsBefore + 1)
+        const sent = prompts().at(-1)!
+        await test.info().attach('the-one-message', { body: sent })
+        expect(sent).toContain(head)
+        expect(sent).toContain('+edited')
+        expect(outsideThePaste(sent)).toContain(note)
+        const replies = (): string[] => claudeRepliesIn(transcript())
+        await expect
+          .poll(() => replies().length, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS })
+          .toBeGreaterThan(0)
+        await test.info().attach('the-reply', { body: replies().join('\n') })
+        expect(replies().at(-1)?.trim()).toBe(REPLY_WORD)
+        expect(prompts()).toHaveLength(promptsBefore + 1)
+      },
+      (lab) => useRealClaudeOnTheMachine(env, lab)
+    )
   })
 
   // PLATFORM§34

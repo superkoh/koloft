@@ -12,7 +12,14 @@ import {
   quitAndClose
 } from './helpers/app'
 import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
-import { WORKBENCH, wbUnreadTabs } from './helpers/workbench'
+import {
+  WORKBENCH,
+  commentOnFirstHunk,
+  expectOnePromptFromTheComment,
+  showBrowse,
+  wbUnreadTabs
+} from './helpers/workbench'
+import { setupChangeFixture } from './helpers/filesFixture'
 import {
   addWorkspace,
   centerTerm,
@@ -58,6 +65,22 @@ function codexOpenOutputs(env: E2EEnv): string[] {
     .map((line) => JSON.parse(line).frame?.params?.item)
     .filter((item) => item?.type === 'commandExecution' && item.id.startsWith('open-'))
     .map((item) => item.aggregatedOutput)
+}
+function codexPrompts(env: E2EEnv): string[] {
+  const file = path.join(env.home, 'fake-codex-wire.jsonl')
+  if (!fs.existsSync(file)) return []
+  return fs
+    .readFileSync(file, 'utf8')
+    .split('\n')
+    .flatMap((line) => {
+      try {
+        const { direction, frame } = JSON.parse(line)
+        const text = frame?.method === 'turn/start' ? frame.params?.input?.[0]?.text : undefined
+        return direction === 'client' && typeof text === 'string' ? [text] : []
+      } catch {
+        return []
+      }
+    })
 }
 function codexCalls(env: E2EEnv): CodexCall[] {
   const file = path.join(env.home, 'fake-codex-calls.jsonl')
@@ -1123,6 +1146,31 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(page.locator('.terminals .term-wrap')).toHaveCount(0, { timeout: 30_000 })
       await expect(wsRows(page, 'ws-a')).toHaveCount(0, { timeout: 30_000 })
       await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('✎ comment on a Changes hunk lands in the Codex composer as a paste with the note typed after it, unsent until the person presses Enter', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedSettings(env, { hintsOff: true })
+    setupChangeFixture(env.workspaces.a).modifyTracked(1)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await showBrowse(page)
+      await page
+        .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
+        .filter({ hasText: 'Changes' })
+        .click()
+
+      const note = 'Codex keep the old name'
+      const head = await commentOnFirstHunk(page, 'src/change-1.ts', note)
+      await expectOnePromptFromTheComment(() => codexPrompts(env), head, note)
     } finally {
       await quitAndClose(app)
     }
