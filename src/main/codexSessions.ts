@@ -286,7 +286,9 @@ export class CodexSessions {
     options: Parameters<typeof createCodexTransport>[0]
   ): Promise<CodexTransport> {
     // CODEX§5
-    await (this.crashLeftoversEnded ??= endCodexAppServersLeftByACrash(STATUS_LINE_CONFIG))
+    await (this.crashLeftoversEnded ??= endCodexAppServersLeftByACrash(STATUS_LINE_CONFIG).catch(
+      () => {}
+    ))
     try {
       return await createCodexTransport(options)
     } catch (error) {
