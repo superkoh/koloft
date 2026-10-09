@@ -35,7 +35,6 @@ import type {
   BrowserJsDialog,
   ExtensionPermissionRequest,
   SessionRow,
-  WorkbenchWindowState,
   WorkspaceRows
 } from '@shared/types'
 import {
@@ -110,9 +109,9 @@ import { WorkbenchPane } from './components/WorkbenchPane'
 import {
   forgetWorkbenchWindow,
   openWorkbenchWindow,
-  useWorkbenchMoves,
   placeWorkbench,
   setWorkbenchWindowFocused,
+  useFocusedDocument,
   workbenchDoc,
   workbenchHasKeyboard,
   workbenchHost,
@@ -145,8 +144,8 @@ function relocatedNotice(dir: string): string {
   return `Workbench followed Claude to ${basename(dir)}`
 }
 
-function caretInShell(doc: Document = document): boolean {
-  return !!doc.activeElement?.closest('.xterm')
+function caretInWorkbenchShell(): boolean {
+  return !!workbenchDoc().activeElement?.closest('.xterm')
 }
 
 function focusedWorkbench(): HTMLElement | null {
@@ -159,12 +158,12 @@ function focusedWorkbench(): HTMLElement | null {
 const AGENT_DRIVING_NOTICE =
   'An agent is using a page in the Workbench — move it once the agent is done'
 
-function agentDrivingPages(): boolean {
-  return Object.values(useStore.getState().cdpAttached).some((ids) => ids.length > 0)
+function anyAttached(cdpAttached: Record<string, string[]>): boolean {
+  return Object.values(cdpAttached).some((ids) => ids.length > 0)
 }
 
-function withPortal(node: JSX.Element, into: HTMLElement | null): JSX.Element {
-  return into ? createPortal(node, into) : node
+function FocusedWindowPortal({ children }: { children: JSX.Element }): JSX.Element {
+  return createPortal(children, useFocusedDocument().body)
 }
 
 function WorkbenchSlot(): JSX.Element {
@@ -336,17 +335,11 @@ export default function App(): JSX.Element {
   const auxWinRef = useRef<WorkbenchWindow | null>(null)
   auxWinRef.current = auxWin
   const popped = !!auxWin
-  const [auxState, setAuxState] = useState<WorkbenchWindowState>({
-    open: false,
-    focused: false,
-    fullScreen: false
-  })
   const [homeKnown, setHomeKnown] = useState(false)
-  const hostEpoch = useWorkbenchMoves()
 
   const popOut = useCallback((): void => {
     if (auxWinRef.current) return
-    if (agentDrivingPages()) {
+    if (anyAttached(useStore.getState().cdpAttached)) {
       useStore.getState().showToast(AGENT_DRIVING_NOTICE)
       return
     }
@@ -374,8 +367,8 @@ export default function App(): JSX.Element {
       useStore.getState().showToast(AGENT_DRIVING_NOTICE)
     )
     const offState = window.api.workbenchWindow.onState((s) => {
-      setAuxState(s)
       setWorkbenchWindowFocused(s.focused)
+      auxWinRef.current?.shell.classList.toggle('os-full', s.fullScreen)
       if (!s.open) setAuxWin(null)
     })
     return () => {
@@ -384,10 +377,6 @@ export default function App(): JSX.Element {
       offState()
     }
   }, [])
-
-  useEffect(() => {
-    auxWin?.shell.classList.toggle('os-full', auxState.fullScreen)
-  }, [auxWin, auxState.fullScreen])
 
   const hadAux = useRef<WorkbenchWindow | null>(null)
   useEffect(() => {
@@ -400,7 +389,7 @@ export default function App(): JSX.Element {
 
   const toggleWorkbench = useCallback((): void => {
     if (auxWinRef.current) {
-      window.api.workbenchWindow.raise()
+      window.api.workbenchWindow.raise(true)
       return
     }
     const st = useStore.getState()
@@ -608,7 +597,7 @@ export default function App(): JSX.Element {
         return
       }
       if (e.key === 'Escape') {
-        if (!focusedWorkbench() || caretInShell(workbenchDoc())) return
+        if (!focusedWorkbench() || caretInWorkbenchShell()) return
         e.preventDefault()
         dispatchPanel('escape')
         return
@@ -1199,10 +1188,7 @@ export default function App(): JSX.Element {
     setCdpOps((q) => q.filter((o) => o.opId !== opId))
   }, [])
   // PLATFORM§9
-  const staged =
-    !popped &&
-    !panelShown &&
-    (cdpOps.length > 0 || Object.values(cdpAttached).some((ids) => ids.length > 0))
+  const staged = !popped && !panelShown && (cdpOps.length > 0 || anyAttached(cdpAttached))
 
   const [panelMounted, setPanelMounted] = useState(false)
   useEffect(() => {
@@ -1210,7 +1196,7 @@ export default function App(): JSX.Element {
   }, [panelShown, popped])
 
   useEffect(() => {
-    if (workbenchLoad && auxWinRef.current) window.api.workbenchWindow.reveal()
+    if (workbenchLoad && auxWinRef.current) window.api.workbenchWindow.raise(false)
   }, [workbenchLoad])
 
   // PLATFORM§20 PLATFORM§23
@@ -1243,7 +1229,7 @@ export default function App(): JSX.Element {
     return () => ro.disconnect()
   }, [])
   const panelOpenKnown = useStore((s) => !!panelTab && !!s.workbenchFetched[panelTab])
-  const previewShown = panelOpenKnown && panelReady && !panelShown && !popped && previewFits
+  const previewShown = panelOpenKnown && panelReady && !panelShown && previewFits
   const SIDEBAR_MIN = 200
   const startVResize = (e: MouseEvent): void => {
     e.preventDefault()
@@ -1342,8 +1328,8 @@ export default function App(): JSX.Element {
 
   return (
     <div className={'app' + (sidebarHidden ? ' sb-off' : '') + (osFullscreen ? ' os-full' : '')}>
-      {toast &&
-        withPortal(
+      {toast && (
+        <FocusedWindowPortal>
           <div
             className={'toast' + (toastReveal ? ' link' : '')}
             onClick={() => {
@@ -1353,9 +1339,9 @@ export default function App(): JSX.Element {
             }}
           >
             <span className="toast-msg">{toast}</span>
-          </div>,
-          auxWin && auxState.focused ? auxWin.win.document.body : null
-        )}
+          </div>
+        </FocusedWindowPortal>
+      )}
 
       <div className="side" style={{ width: sidebarWidth }}>
         <div className="titlebar">
@@ -1697,7 +1683,6 @@ export default function App(): JSX.Element {
                 visible={panelOnScreen}
                 full={panelFull}
                 popped={popped}
-                hostEpoch={hostEpoch}
                 onPopOut={popOut}
                 onDock={dock}
                 load={workbenchLoad?.ownerTabId === panelTab ? workbenchLoad : null}
@@ -1823,10 +1808,9 @@ export default function App(): JSX.Element {
         </>,
         document.body
       )}
-      {createPortal(
-        <UnsavedDialog />,
-        (auxWin && auxState.focused ? auxWin.win.document : document).body
-      )}
+      <FocusedWindowPortal>
+        <UnsavedDialog />
+      </FocusedWindowPortal>
       {overlay?.open && <BrowserOverlay url={overlay.url} onClose={closeOverlay} />}
       {extAsks[0] && (
         <ExtensionConfirm

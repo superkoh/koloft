@@ -196,7 +196,7 @@ export function PreviewViewer({
 
     // PLATFORM§41
     const win = windowOf(body)
-    const io = new win.IntersectionObserver(
+    const io = new IntersectionObserver(
       (entries) => {
         for (const e of entries) {
           if (!e.isIntersecting) continue

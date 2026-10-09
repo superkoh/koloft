@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { createPortal } from 'react-dom'
 import { popoverX } from '@shared/accountUsage'
 import { HINT_IDS, type HintId } from '@shared/types'
@@ -213,7 +213,7 @@ export function Hint({ id, selector, n, onDone, onOff }: ActiveHint): JSX.Elemen
   const cardH = useRef(0)
   const boxRef = useRef<Box | null>(null)
   const [box, setBox] = useState<Box | null>(null)
-  const doc = querySelectorAnywhere(selector)?.ownerDocument ?? document
+  const doc = useMemo(() => querySelectorAnywhere(selector)?.ownerDocument ?? document, [selector])
   const win = windowOf(doc.body)
 
   const measure = useCallback((): boolean => {

@@ -390,6 +390,10 @@ export function relayStripChanged(sessionId: string, next: RelayTarget[]): void 
   for (const targetId of diff.destroyed) client.protocol.targetDestroyed(targetId)
 }
 
+export function anyGuestDriven(): boolean {
+  return [...clients.values()].some((c) => c.attached.size > 0)
+}
+
 export function sessionDrivingGuest(guestId: number): string | null {
   for (const client of clients.values()) {
     for (const held of client.attached.values()) {

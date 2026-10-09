@@ -9,6 +9,7 @@ host.className = 'wb-host-root'
 let auxFocused = false
 let headMirror: MutationObserver | null = null
 const moveListeners = new Set<(win: HostWindow) => void>()
+const focusListeners = new Set<() => void>()
 
 export function workbenchHost(): HTMLDivElement {
   return host
@@ -18,16 +19,14 @@ export function workbenchDoc(): Document {
   return host.ownerDocument
 }
 
-export function workbenchWin(): HostWindow {
-  return (host.ownerDocument.defaultView as HostWindow | null) ?? window
-}
-
 export function windowOf(node: Node | null | undefined): HostWindow {
   return (node?.ownerDocument?.defaultView as HostWindow | null | undefined) ?? window
 }
 
 export function querySelectorAnywhere(selector: string): Element | null {
-  return document.querySelector(selector) ?? workbenchDoc().querySelector(selector)
+  const found = document.querySelector(selector)
+  if (found || !workbenchPopped()) return found
+  return workbenchDoc().querySelector(selector)
 }
 
 export function workbenchPopped(): boolean {
@@ -35,11 +34,26 @@ export function workbenchPopped(): boolean {
 }
 
 export function setWorkbenchWindowFocused(focused: boolean): void {
+  if (auxFocused === focused) return
   auxFocused = focused
+  for (const cb of [...focusListeners]) cb()
 }
 
 export function workbenchHasKeyboard(): boolean {
   return !workbenchPopped() || auxFocused
+}
+
+function onFocusChange(cb: () => void): () => void {
+  focusListeners.add(cb)
+  return () => focusListeners.delete(cb)
+}
+
+export function useFocusedDocument(): Document {
+  const inWorkbenchWindow = useSyncExternalStore(
+    onFocusChange,
+    () => auxFocused && workbenchPopped()
+  )
+  return inWorkbenchWindow ? workbenchDoc() : document
 }
 
 export function onWorkbenchMoved(cb: (win: HostWindow) => void): () => void {
@@ -59,7 +73,7 @@ export function placeWorkbench(slot: HTMLElement): void {
   slot.appendChild(host)
   if (host.ownerDocument === from) return
   moves++
-  const win = workbenchWin()
+  const win = windowOf(host)
   for (const cb of [...moveListeners]) cb(win)
 }
 
@@ -104,5 +118,5 @@ export function openWorkbenchWindow(): WorkbenchWindow | null {
 export function forgetWorkbenchWindow(): void {
   headMirror?.disconnect()
   headMirror = null
-  auxFocused = false
+  setWorkbenchWindowFocused(false)
 }

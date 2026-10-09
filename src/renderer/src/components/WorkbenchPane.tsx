@@ -107,7 +107,7 @@ import {
 } from './workbenchTabs'
 import type { WorkbenchCommandSignal } from './workbenchCommands'
 import { useDomFind, type FindCount } from '../useDomFind'
-import { workbenchDoc } from '../workbenchHost'
+import { useWorkbenchMoves, workbenchDoc } from '../workbenchHost'
 
 function globalLiveGuestLimit(): number {
   return window.api.browserGuestLimit
@@ -201,7 +201,6 @@ export interface WorkbenchPaneProps {
   visible: boolean
   full: boolean
   popped: boolean
-  hostEpoch: number
   onPopOut: () => void
   onDock: () => void
   load: { tabId: string; nonce: number } | null
@@ -296,7 +295,6 @@ export function WorkbenchPane({
   visible,
   full,
   popped,
-  hostEpoch,
   onPopOut,
   onDock,
   load,
@@ -321,6 +319,7 @@ export function WorkbenchPane({
   onCdpCreate
 }: WorkbenchPaneProps): JSX.Element {
   const termFocus = useStore((s) => s.termFocus)
+  const hostEpoch = useWorkbenchMoves()
   const [live, setLive] = useState<string[]>([])
   const [runtime, setRuntime] = useState<Record<string, TabRuntime>>({})
   const [attached, setAttached] = useState(0)

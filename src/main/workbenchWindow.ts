@@ -1,7 +1,7 @@
 import { BrowserWindow, screen, type Display, type WebContents } from 'electron'
 import { WORKBENCH_WINDOW_NAME, type WorkbenchWindowState } from '@shared/types'
 import { setWorkbenchPopped, trackWorkbenchWindow, workbenchWindowPlacement } from './windowState'
-import { displayContaining, type WinBounds } from './windowBounds'
+import { displayContaining, koloftWindowChrome, type WinBounds } from './windowBounds'
 import { WORKBENCH_WIDTH_FLOOR } from '@shared/settingsOps'
 
 export interface WorkbenchWindowDeps {
@@ -63,11 +63,8 @@ export function workbenchWindowOpenResponse(
       ...bounds,
       minWidth: WORKBENCH_WIDTH_FLOOR,
       minHeight: WORKBENCH_WINDOW_MIN_HEIGHT,
-      show: !d.background,
+      ...koloftWindowChrome(d.background),
       title: 'Workbench',
-      backgroundColor: '#0e0e10',
-      titleBarStyle: 'hiddenInset',
-      trafficLightPosition: { x: 18, y: 18 },
       webPreferences: {
         webviewTag: true,
         // PLATFORM§5
@@ -128,31 +125,24 @@ export function releaseWorkbenchWindow(): void {
 }
 
 export function dropWorkbenchWindow(): void {
-  const w = workbenchWindow()
-  if (!w) return
-  released = true
-  w.destroy()
+  workbenchWindow()?.destroy()
 }
 
-export function raiseWorkbenchWindow(): void {
+export function raiseWorkbenchWindow(takeFocus: boolean): void {
   const w = workbenchWindow()
   if (!w || deps?.background) return
   if (w.isMinimized()) w.restore()
+  if (!takeFocus) {
+    w.moveTop()
+    return
+  }
   w.show()
   w.focus()
 }
 
-export function revealWorkbenchWindow(): void {
-  const w = workbenchWindow()
-  if (!w || deps?.background) return
-  if (w.isMinimized()) w.restore()
-  w.moveTop()
-}
-
 function onDisplayRemoved(display: Display): void {
-  const w = workbenchWindow()
-  if (!w || !settledBounds) return
-  if (displayContaining(settledBounds, [display.bounds]) !== display.bounds) return
+  if (!workbenchWindow() || !settledBounds) return
+  if (!displayContaining(settledBounds, [display.bounds])) return
   if (deps?.agentDriving()) return
   requestDock()
 }

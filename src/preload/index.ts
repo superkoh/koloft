@@ -109,8 +109,7 @@ const api: KoloftApi = {
     wasPopped: () => ipcRenderer.invoke('workbench-window:was-popped'),
     requestDock: () => ipcRenderer.send('workbench-window:request-dock'),
     released: () => ipcRenderer.send('workbench-window:released'),
-    raise: () => ipcRenderer.send('workbench-window:raise'),
-    reveal: () => ipcRenderer.send('workbench-window:reveal'),
+    raise: (takeFocus) => ipcRenderer.send('workbench-window:raise', takeFocus),
     onDock: (cb) => {
       const handler = (): void => cb()
       ipcRenderer.on('workbench-window:dock', handler)

@@ -154,13 +154,12 @@ import {
   raiseWorkbenchWindow,
   releaseWorkbenchWindow,
   requestDock,
-  revealWorkbenchWindow,
   setupWorkbenchWindow,
   workbenchWindow,
   workbenchWindowMinimized,
   workbenchWindowOpenResponse
 } from './workbenchWindow'
-import { fullscreenOption, windowMinWidth } from './windowBounds'
+import { fullscreenOption, koloftWindowChrome, windowMinWidth } from './windowBounds'
 import { closeAllFileWatchers, closeAllDirWatchers } from './fileWatch'
 import { sanitizeBase } from './gitStatus'
 import { Hosts } from './host/hosts'
@@ -190,6 +189,7 @@ import {
   relayTabClosed,
   relayTabRebound,
   sessionDrivingGuest,
+  anyGuestDriven,
   setRelayEnabled,
   startRelay,
   writeRelayEnv,
@@ -1338,11 +1338,8 @@ function createWindow(): void {
     minWidth: windowMinWidth(geo.bounds.width),
     minHeight: 560,
     ...fullscreenOption(geo.fullScreen && !BACKGROUND_TEST),
-    show: !BACKGROUND_TEST,
+    ...koloftWindowChrome(BACKGROUND_TEST),
     title: 'Koloft',
-    backgroundColor: '#0e0e10',
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 18, y: 18 },
     webPreferences: {
       preload: hostPreload(),
       sandbox: false,
@@ -1430,7 +1427,7 @@ app.whenReady().then(() => {
     guardHost: guardGuestHost,
     watchFocus: watchAppFocus,
     send: sendToRenderer,
-    agentDriving: () => [...cdpDriven.values()].some((ids) => ids.length > 0),
+    agentDriving: anyGuestDriven,
     quitting: () => quitCommitted
   })
   setupExtensions({
@@ -2591,7 +2588,6 @@ function cdpOp(
   })
 }
 
-const cdpDriven = new Map<string, string[]>()
 const WORKBENCH_MINIMIZED_REFUSAL =
   'the Workbench window is minimized, so its pages cannot be captured until the owner restores it'
 
@@ -2620,7 +2616,6 @@ function relayDeps(): RelayDeps {
       await cdpOp('stage', sessionId, { targetId })
     },
     setAttached: (sessionId, targetIds) => {
-      cdpDriven.set(sessionId, targetIds)
       const payload: BrowserCdpAttached = { sessionId, targetIds }
       sendToRenderer('browser:cdp-attached', payload)
     }
@@ -3637,8 +3632,9 @@ function registerIpc(): void {
   ipcMain.handle('workbench-window:was-popped', () => workbenchWasPopped())
   ipcMain.on('workbench-window:request-dock', requestDock)
   ipcMain.on('workbench-window:released', releaseWorkbenchWindow)
-  ipcMain.on('workbench-window:raise', raiseWorkbenchWindow)
-  ipcMain.on('workbench-window:reveal', revealWorkbenchWindow)
+  ipcMain.on('workbench-window:raise', (_e, takeFocus: unknown) =>
+    raiseWorkbenchWindow(takeFocus === true)
+  )
   ipcMain.on('workbench:available', (_e, available: unknown, terminal: unknown) => {
     setWorkbenchAvailable(available === true, terminal === true)
   })

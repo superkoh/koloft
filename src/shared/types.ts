@@ -808,8 +808,7 @@ export interface KoloftApi {
     wasPopped(): Promise<boolean>
     requestDock(): void
     released(): void
-    raise(): void
-    reveal(): void
+    raise(takeFocus: boolean): void
     onDock(cb: () => void): () => void
     onRefused(cb: () => void): () => void
     onState(cb: (s: WorkbenchWindowState) => void): () => void

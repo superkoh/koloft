@@ -17,18 +17,23 @@ function stateFile(): string {
   return path.join(app.getPath('userData'), 'window-state.json')
 }
 
-function loadState(): SavedWindowState {
+let loaded: SavedWindowState | null = null
+
+function state(): SavedWindowState {
+  if (loaded) return loaded
   try {
     const parsed = JSON.parse(fs.readFileSync(stateFile(), 'utf8')) as SavedWindowState
-    return parsed && typeof parsed === 'object' ? parsed : {}
+    loaded = parsed && typeof parsed === 'object' ? parsed : {}
   } catch {
-    return {}
+    loaded = {}
   }
+  return loaded
 }
 
 function mergeState(patch: SavedWindowState): void {
+  loaded = { ...state(), ...patch }
   try {
-    fs.writeFileSync(stateFile(), JSON.stringify({ ...loadState(), ...patch }, null, 2))
+    fs.writeFileSync(stateFile(), JSON.stringify(loaded, null, 2))
   } catch {}
 }
 
@@ -41,7 +46,7 @@ export function restoredWindowGeometry(): {
   maximized: boolean
   fullScreen: boolean
 } {
-  const st = loadState()
+  const st = state()
   const bounds = usableBounds(st.bounds, displayAreas())
   return {
     bounds: bounds ?? DEFAULT_SIZE,
@@ -50,12 +55,24 @@ export function restoredWindowGeometry(): {
   }
 }
 
+function writeOnSettle(win: BrowserWindow, write: () => void): void {
+  let timer: NodeJS.Timeout | null = null
+  const writeSoon = (): void => {
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(write, DRAG_SETTLE_MS)
+  }
+  win.on('resize', writeSoon)
+  win.on('move', writeSoon)
+  win.on('close', () => {
+    if (timer) clearTimeout(timer)
+    write()
+  })
+}
+
 export function trackWindowState(
   win: BrowserWindow,
   pinnedFlags?: { maximized: boolean; fullScreen: boolean }
 ): void {
-  let timer: NodeJS.Timeout | null = null
-
   const write = (): void => {
     if (win.isDestroyed()) return
     mergeState({
@@ -64,25 +81,15 @@ export function trackWindowState(
       fullScreen: pinnedFlags ? pinnedFlags.fullScreen : win.isFullScreen()
     })
   }
-  const writeSoon = (): void => {
-    if (timer) clearTimeout(timer)
-    timer = setTimeout(write, DRAG_SETTLE_MS)
-  }
-
-  win.on('resize', writeSoon)
-  win.on('move', writeSoon)
+  writeOnSettle(win, write)
   win.on('maximize', write)
   win.on('unmaximize', write)
   win.on('enter-full-screen', write)
   win.on('leave-full-screen', write)
-  win.on('close', () => {
-    if (timer) clearTimeout(timer)
-    write()
-  })
 }
 
 function savedWorkbench(): SavedWorkbenchWindow {
-  const wb = loadState().workbench
+  const wb = state().workbench
   return wb && typeof wb === 'object' ? wb : {}
 }
 
@@ -107,22 +114,12 @@ export function trackWorkbenchWindow(
   win: BrowserWindow,
   onSettled: (bounds: WinBounds) => void
 ): void {
-  let timer: NodeJS.Timeout | null = null
   const write = (): void => {
     if (win.isDestroyed()) return
     const bounds = win.getNormalBounds()
     saveWorkbench({ bounds })
     onSettled(bounds)
   }
-  const writeSoon = (): void => {
-    if (timer) clearTimeout(timer)
-    timer = setTimeout(write, DRAG_SETTLE_MS)
-  }
-  win.on('resize', writeSoon)
-  win.on('move', writeSoon)
-  win.on('close', () => {
-    if (timer) clearTimeout(timer)
-    write()
-  })
+  writeOnSettle(win, write)
   write()
 }

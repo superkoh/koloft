@@ -19,6 +19,20 @@ export interface SavedWindowState {
   workbench?: SavedWorkbenchWindow
 }
 
+export function koloftWindowChrome(background: boolean): {
+  show: boolean
+  backgroundColor: string
+  titleBarStyle: 'hiddenInset'
+  trafficLightPosition: { x: number; y: number }
+} {
+  return {
+    show: !background,
+    backgroundColor: '#0e0e10',
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 18, y: 18 }
+  }
+}
+
 export function fullscreenOption(fullScreen: boolean): { fullscreen?: true } {
   return fullScreen ? { fullscreen: true } : {}
 }
