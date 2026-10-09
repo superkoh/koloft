@@ -34,6 +34,7 @@ export interface SlashDeps {
   asking(tabId: string): boolean
   takesTyping(tabId: string): boolean
   panelOpen(tabId: string): Promise<boolean | undefined>
+  nextMirrorPull(tabId: string): Promise<void> | undefined
   ready(tabId: string, ready: () => boolean, ms: number): Promise<boolean>
   exclusive(tabId: string, typing: () => Promise<boolean>): Promise<boolean>
   typeNow(tabId: string, keys: string[]): Promise<void>
@@ -54,6 +55,7 @@ interface Pending {
   pressedEsc: boolean
   timers: ReturnType<typeof setTimeout>[]
   settle?: ReturnType<typeof setTimeout>
+  mirrorPull?: Promise<void>
 }
 
 // CC§12 CODEX§21
@@ -186,8 +188,19 @@ export class SlashCommands {
   private settleSoon(tab: string, p: Pending): void {
     clearTimeout(p.settle)
     p.settle = setTimeout(() => {
-      if (this.pending.get(tab) === p && this.d.turnOver(tab)) this.finish(tab)
+      if (this.pending.get(tab) === p && !p.mirrorPull && this.d.turnOver(tab)) this.finish(tab)
     }, MORE_OUTPUT_SETTLES_MS)
+  }
+
+  private settleAfterMirrorPull(tab: string, p: Pending): void {
+    const pull = this.d.nextMirrorPull(tab)
+    p.mirrorPull = pull
+    if (!pull) return this.settleSoon(tab, p)
+    void pull.then(() => {
+      if (p.mirrorPull !== pull) return
+      p.mirrorPull = undefined
+      if (this.pending.get(tab) === p) this.settleSoon(tab, p)
+    })
   }
 
   output(tab: string, output: CommandOutput): void {
@@ -203,7 +216,7 @@ export class SlashCommands {
     if (!over) {
       p.worked = true
       clearTimeout(p.settle)
-    } else if (p.worked) this.settleSoon(tab, p)
+    } else if (p.worked) this.settleAfterMirrorPull(tab, p)
   }
 
   turnEnded(tab: string, turn: Turn): void {

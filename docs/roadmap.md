@@ -13,10 +13,13 @@ place and edited in one place.
 3. The centre of the window is **100% the session's own tool UI** — Claude Code's or
    Codex's — with no Koloft chrome inside it.
 4. Worktree lifecycle and session retention belong to **the agent's tool**, not Koloft.
-   Two gaps, both run on the owner's word: Koloft makes the worktree for a Codex
-   worktree session, and only `koloft session close` removes it (#116); and a conductor
-   may `koloft session close` an ended local session in its scope (#337), relaying what
-   the owner said — Koloft never decides on its own that a session goes.
+   Three gaps, all run on the owner's word: Koloft makes the worktree for a Codex
+   worktree session, and only `koloft session close` removes it (#116); Koloft makes the
+   `pr-<n>` worktree for a session started from a pull request, on that pull request's
+   own branch, because `claude -w` only makes a worktree on a new `worktree-<name>`
+   branch (#218); and a conductor may `koloft session close` an ended local session in
+   its scope (#337), relaying what the owner said — Koloft never decides on its own that
+   a session goes.
 5. A file opens in the Workbench **on your intent only** — nothing follows the agent's
    writes around by itself.
 
@@ -50,10 +53,6 @@ when it works. That is what "judged against" means.
 
 - **Jump to the turn behind a hunk** — from a hunk in the Changes view to the agent turn
   that produced it.
-- **Plan-mode surfacing** — read-only rendering of a plan first; approve/reject only once
-  the TUI's input mapping is proven against the fake-claude harness.
-- **Start a session from an issue or PR** — a worktree session whose first message is the
-  issue's text (#218).
 - **Point the agent at things** — pick an element in the Workbench browser (#217).
 - **Many sessions, one change** — warn when two sessions write the same file (#221); each
   session's listening ports, opened in the Workbench browser (#224).
@@ -136,6 +135,8 @@ Reopen one of these only with new evidence, not a new argument.
 - **Voice input** — macOS dictation already reaches the terminal.
 - **Approve or deny from Koloft's own UI** — answering for the TUI from outside is
   keystroke-faking by another name; the prompt is answered where it appears.
+- **A separate Plan view** (#8) — a Claude plan is a file that already opens from the
+  Workbench Docs row, and both tools show the plan in the terminal.
 - **Desktop pets, theme stores, Office previews** — decoration, or another previewer.
 
 ## How much to trust the order

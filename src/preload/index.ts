@@ -365,7 +365,9 @@ const api: KoloftApi = {
     checks: (root, pr) => ipcRenderer.invoke('github:checks', root, pr),
     failingChecksText: (root, pr) => ipcRenderer.invoke('github:failing-checks-text', root, pr),
     commit: (root, message) => ipcRenderer.invoke('github:commit', root, message),
-    push: (root) => ipcRenderer.invoke('github:push', root)
+    push: (root) => ipcRenderer.invoke('github:push', root),
+    openItems: (root) => ipcRenderer.invoke('github:open-items', root),
+    prWorktree: (root, pr, branch) => ipcRenderer.invoke('github:pr-worktree', root, pr, branch)
   },
   workspace: {
     pickFolder: () => ipcRenderer.invoke('workspace:pickFolder'),
@@ -494,6 +496,11 @@ const api: KoloftApi = {
       const handler = (): void => cb()
       ipcRenderer.on('shortcut:open-settings', handler)
       return () => ipcRenderer.removeListener('shortcut:open-settings', handler)
+    },
+    onCommandPalette: (cb) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('shortcut:command-palette', handler)
+      return () => ipcRenderer.removeListener('shortcut:command-palette', handler)
     },
     onRestartSession: (cb) => {
       const handler = (): void => cb()

@@ -956,7 +956,8 @@ body {
   align-items: center;
 }
 .ws-tab.cold .ws-tab-title,
-.recent-row .ws-tab-title {
+.recent-row .ws-tab-title,
+.palette .cb-row.cold .wsp-name {
   font-style: italic;
   color: var(--fg-cold);
   font-weight: 400;
@@ -1045,7 +1046,8 @@ body {
   background: var(--bg-3);
   color: var(--fg);
 }
-.menu .mi .k {
+.menu .mi .k,
+.palette .cb-row .k {
   margin-left: auto;
   font-family: var(--mono);
   font-size: 10.5px;
@@ -2037,11 +2039,23 @@ body {
 .field-hint.bad {
   color: var(--danger);
 }
-.wspicker {
+.wspicker,
+.modal.palette {
   width: 460px;
 }
-.wspicker .modal-body {
+.wspicker .modal-body,
+.palette .modal-body {
   gap: 10px;
+}
+.palette .wsp-list {
+  max-height: 360px;
+}
+.cb-empty {
+  padding: 18px 10px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--fg-faint);
 }
 .wspicker .btn-primary .k {
   font-family: var(--mono);
@@ -2089,7 +2103,8 @@ body {
   border: 1px solid var(--line-2);
   border-radius: var(--r);
 }
-.wt-list .cb-row.dim {
+.wt-list .cb-row.dim,
+.palette .cb-row.dim {
   opacity: 0.45;
 }
 .wt-list .cb-row:hover {
@@ -2099,6 +2114,9 @@ body {
 .wt-name {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.gh-items .cb-row .note {
+  flex: none;
 }
 
 .lifecycle-modal .modal-header {

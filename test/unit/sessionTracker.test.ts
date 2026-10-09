@@ -1865,12 +1865,18 @@ describe('SessionTracker — what each turn said: the owner, another session, an
   })
 
   // CC§2
-  it('the "/compact" line Claude writes for a compaction is not something the owner said', async () => {
+  it('neither the "/compact" line nor the summary Claude writes for a compaction is something the owner said', async () => {
     const cwd = makeWorkspace({})
     const file = writeJsonl(cwd, '66666666-6666-4666-8666-666666666666', [
       { type: 'user', timestamp: at(1), message: { role: 'user', content: '/compact' } },
-      human('what changed?', 2),
-      said(text('Nothing yet.'), 3)
+      {
+        type: 'user',
+        isCompactSummary: true,
+        timestamp: at(2),
+        message: { role: 'user', content: 'This session is being continued from a previous …' }
+      },
+      human('what changed?', 3),
+      said(text('Nothing yet.'), 4)
     ])
     const turns = await transcriptTurns(file, 20)
     expect(turns.map((t) => t.said.map((l) => l.text))).toEqual([['what changed?']])
