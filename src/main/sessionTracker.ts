@@ -506,6 +506,7 @@ interface Tracked {
   inode?: number
   swept?: boolean
   relocatedCwd?: string
+  lastWorktreeStateInBatch?: string
   landTimer?: ReturnType<typeof setTimeout>
   remote?: RemoteTab
   subagentTimer?: ReturnType<typeof setInterval>
@@ -1041,6 +1042,15 @@ export class SessionTracker extends SessionRuntime {
     )
   }
 
+  // CC§1 CC§2 CC§3 ADR-0025
+  private followWorktreeState(t: Tracked): void {
+    const bound = t.lastWorktreeStateInBatch
+    t.lastWorktreeStateInBatch = undefined
+    if (!bound || t.remote || t.landTimer || bound === t.info.treeRoot || !fs.existsSync(bound))
+      return
+    this.setTreeRoot(t, bound)
+  }
+
   private setTreeRoot(t: Tracked, root: string): void {
     t.rootPinAwaitingCatchup = false
     if (!root || t.info.treeRoot === root) return
@@ -1080,6 +1090,7 @@ export class SessionTracker extends SessionRuntime {
     t.lastTouchedAbs = null
     t.lastWrittenAbs = null
     t.relocatedCwd = undefined
+    t.lastWorktreeStateInBatch = undefined
     t.info.lastTouched = undefined
     t.info.lastWritten = undefined
     t.caughtUp = false
@@ -1352,6 +1363,7 @@ export class SessionTracker extends SessionRuntime {
       else if (activity === 'interrupt') sawInterrupt = true
     }
     if (t.rootPinAwaitingCatchup) this.setTreeRoot(t, t.info.cwd)
+    this.followWorktreeState(t)
     if (sawInterrupt) await this.interruptTurn(t)
     else if (t.caughtUp) this.resumeWorkingIfStale(t, sawUserPrompt, sawAssistant)
     if (!t.caughtUp) {
@@ -1545,6 +1557,10 @@ export class SessionTracker extends SessionRuntime {
       // CC§2
       if (obj.type === 'relocated' && typeof obj.relocatedCwd === 'string' && obj.relocatedCwd) {
         t.relocatedCwd = obj.relocatedCwd
+      }
+      if (obj.type === 'worktree-state') {
+        const bound = obj.worktreeSession?.worktreePath
+        t.lastWorktreeStateInBatch = typeof bound === 'string' && bound ? bound : undefined
       }
       // CC§2
       const recTs = Math.min(Date.parse(obj.timestamp), Date.now())
