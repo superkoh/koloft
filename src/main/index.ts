@@ -2298,8 +2298,8 @@ function setupGuestUnload(): void {
 const guestGestures = new WeakMap<WebContents, number>()
 const guestOwners = new WeakMap<WebContents, string>()
 
-function tabOwningGuest(guest?: WebContents): string | null {
-  return (guest && guestOwners.get(guest)) || uiActiveTabId
+function tabOwningGuest(guest: WebContents): string | null {
+  return guestOwners.get(guest) ?? uiActiveTabId
 }
 const CHROMIUM_USER_ACTIVATION_INPUTS = new Set(['mouseDown', 'keyDown'])
 
@@ -2394,13 +2394,14 @@ function setupGuestBackgroundOpen(): void {
       routeGuestPopup(url.slice(0, 4096), e.sender)
       return
     }
-    const tabId = tabOwningGuest(e.sender)
-    if (!tabId) return
     const decision = routeFor(url.slice(0, 4096), 'user')
     if (decision.dest !== 'browser') {
       routeGuestPopup(url, e.sender)
       return
     }
+    if (openAsDrivingAgentsTab(e.sender, decision.target)) return
+    const tabId = tabOwningGuest(e.sender)
+    if (!tabId) return
     const payload: BrowserOpenRequest = { tabId, url: decision.target, source: 'agent' }
     sendToRenderer('browser:open', payload)
   })
@@ -2570,21 +2571,25 @@ function relayDeps(): RelayDeps {
   }
 }
 
-function routeGuestPopup(url: string, from?: WebContents): void {
-  if (from && isOverlayGuest(from)) {
+function openAsDrivingAgentsTab(from: WebContents, url: string): boolean {
+  const driver = sessionDrivingGuest(from.id)
+  if (driver) void cdpOp('create', driver, { url })
+  return driver !== null
+}
+
+function routeGuestPopup(url: string, from: WebContents): void {
+  if (isOverlayGuest(from)) {
     const decision = routeFor(url, 'user')
     if (decision.dest === 'browser') sendOverlayOpen(decision.target, 'now')
     else if (decision.dest === 'system') openUrlExternally(decision.target)
     else sendToRenderer('browser:blocked-scheme', url)
     return
   }
+  const decision = routeFor(url, 'user')
+  if (decision.dest === 'browser' && openAsDrivingAgentsTab(from, decision.target)) return
   const tabId = tabOwningGuest(from)
   if (!tabId) return
-  const decision = routeFor(url, 'user')
-  const driver = from ? sessionDrivingGuest(from.id) : null
-  if (decision.dest === 'browser' && driver) {
-    void cdpOp('create', driver, { url: decision.target })
-  } else if (decision.dest === 'browser') {
+  if (decision.dest === 'browser') {
     const payload: BrowserOpenRequest = { tabId, url: decision.target, source: 'user' }
     sendToRenderer('browser:open', payload)
   } else if (decision.dest === 'preview' && fs.existsSync(decision.target)) {
