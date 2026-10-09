@@ -148,7 +148,7 @@ import {
 } from './github'
 import { GithubCountsSweep } from './githubCounts'
 import { runGh } from './prChecks'
-import { commitAll, pushBranch } from './gitSteps'
+import { addPrWorktree, commitAll, GIT_REF_RE, pushBranch } from './gitSteps'
 import { restoredWindowGeometry, trackWindowState } from './windowState'
 import { fullscreenOption, windowMinWidth } from './windowBounds'
 import { closeAllFileWatchers, closeAllDirWatchers } from './fileWatch'
@@ -195,6 +195,8 @@ import {
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import { CDP_OP_BUDGET_MS } from '@shared/cdpBudget'
 import { scanLeftovers, stopLeftover } from './leftovers'
+import { SessionSearch } from './sessionSearch'
+import createTranscriptSearchWorker from './transcriptSearchWorker?nodeWorker'
 import { applyWindowCommand, guestShortcut } from '@shared/shortcutDispatch'
 import {
   ATTENTION_REASON,
@@ -255,6 +257,7 @@ import type {
   AttentionSubject,
   SessionResumeRequest,
   SessionRow,
+  SearchSnippet,
   SpawnedTab,
   TabInventoryReply,
   OpenRequest,
@@ -265,8 +268,10 @@ import type {
   HostId,
   WhatsNew,
   GitStepResult,
-  PrChecks
+  PrChecks,
+  PrWorktreeResult
 } from '@shared/types'
+import { copyWorktreeIncludes } from './sessionWorktrees'
 import { AgentRequests, BUILTIN_VERBS, errorText, refused, type AgentVerb } from './agentRequests'
 import { Conductors } from './discord/conductors'
 import { discordApiUrl, DiscordLink } from './discord/link'
@@ -385,6 +390,10 @@ const slash = new SlashCommands({
     const s = sessionOfTab(tabId)
     if (s?.backendId !== 'claude' || !s.sessionId || tracker.remoteOf(tabId)) return undefined
     return claudeShowsAPanel(s.sessionId)
+  },
+  nextMirrorPull: (tabId) => {
+    const remote = tracker.remoteOf(tabId)
+    return remote && remoteSync?.nextPullDone(remote.host)
   },
   ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
   exclusive: (tabId, typing) => ptyMgr.exclusive(tabId, typing),
@@ -3231,7 +3240,7 @@ function commitSettings(patch: Partial<Settings>): Settings {
   return s
 }
 
-const BAD_GIT_STEP: GitStepResult = { ok: false, reason: 'bad request' }
+const BAD_GIT_STEP: { ok: false; reason: string } = { ok: false, reason: 'bad request' }
 
 const githubOptions: GithubOptions = {
   fixture: parseGithubFixture(process.env.KOLOFT_GITHUB_FIXTURE),
@@ -3685,6 +3694,37 @@ function registerIpc(): void {
     )
   )
 
+  const sessionSearch = new SessionSearch({
+    candidates: () => {
+      const localPins = (workspaceMgr?.pinnedPaths() ?? [])
+        .map((w) => w.path)
+        .filter((p) => !parseRemoteKey(p))
+      return [
+        ...(workspaceMgr?.searchableRows() ?? []),
+        ...(codexSessions?.searchable(localPins) ?? [])
+      ]
+    },
+    codexSnippets: async (term) => (await codexSessions?.searchSnippets(term)) ?? [],
+    hidden: (id) => !!sessionBackends.conductorOf(id),
+    scan: (files, term, found) => {
+      // PLATFORM§4
+      const worker = createTranscriptSearchWorker({ workerData: { files, term } })
+      worker.on('message', (hit: { id: string; snippet: SearchSnippet }) =>
+        found(hit.id, hit.snippet)
+      )
+      worker.on('error', (error) => console.error('[koloft] session search failed', error))
+      return {
+        done: new Promise((resolve) => worker.once('exit', () => resolve())),
+        stop: () => void worker.terminate()
+      }
+    },
+    send: (found) => sendToRenderer('sessions:search-hits', found)
+  })
+  ipcMain.on('sessions:search', (_e, searchId: unknown, term: unknown) => {
+    if (typeof searchId !== 'number' || typeof term !== 'string') return
+    sessionSearch.start(searchId, term)
+  })
+
   ipcMain.handle('sessions:leftovers', () => leftovers)
   ipcMain.handle('sessions:stopLeftover', async (_e, sessionId: unknown, pid: unknown) => {
     if (typeof sessionId !== 'string' || typeof pid !== 'number') return false
@@ -4019,6 +4059,32 @@ function registerIpc(): void {
     const host = hosts.of(root)
     return pushBranch((args, network) => host.gitRun(root, args, network))
   })
+  ipcMain.handle('github:open-items', (_e, root: unknown) => {
+    if (typeof root !== 'string' || !root) return { state: 'no-repo' }
+    return hosts.of(root).github.openItems(root)
+  })
+  ipcMain.handle(
+    'github:pr-worktree',
+    async (_e, root: unknown, pr: unknown, branch: unknown): Promise<PrWorktreeResult> => {
+      if (
+        typeof root !== 'string' ||
+        !root ||
+        !Number.isInteger(pr) ||
+        typeof branch !== 'string' ||
+        !GIT_REF_RE.test(branch)
+      ) {
+        return BAD_GIT_STEP
+      }
+      const host = hosts.of(root)
+      const r = await addPrWorktree(
+        (args, network) => host.gitRun(root, args, network),
+        pr as number,
+        branch
+      )
+      if (r.ok && hostOf(root) === 'local') await copyWorktreeIncludes(root, r.dir)
+      return r
+    }
+  )
   ipcMain.handle('preview:openFileDialog', async () => {
     const stub = process.env.KOLOFT_FILE_DIALOG_FILE
     if (stub) return takeStubbedDialogPick(stub)

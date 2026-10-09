@@ -22,6 +22,7 @@ import type { LaunchedSession } from './accountPicker'
 import type { MachineTmp } from './remote/install'
 import { claudeWroteIt, commandOutputOf } from './claudeCommandOutput'
 import { withoutHandover } from './handover'
+import { messageText } from './messageText'
 
 export const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects')
 const TMP_ROOT = ((): string => {
@@ -321,18 +322,14 @@ function peerText(raw: string): string {
   return (PEER_ENVELOPE.exec(inner)?.[1] ?? inner).trim()
 }
 
-function promptText(content: unknown): string | null {
-  if (typeof content === 'string') return content
-  if (!Array.isArray(content)) return null
-  const texts = content.flatMap((b) =>
-    b?.type === 'text' && typeof b.text === 'string' ? [b.text] : []
-  )
-  return texts.length ? texts.join('\n') : null
-}
-
 // CC§2
 function commandEcho(obj: { origin?: unknown }, raw: string | null): boolean {
   return raw !== null && raw.startsWith('/') && claudeWroteIt(obj)
+}
+
+// CC§1
+export function compactionSummary(obj: { isCompactSummary?: unknown }): boolean {
+  return obj.isCompactSummary === true
 }
 
 function ownerOrPeer(kind: unknown): 'owner' | 'peer' | null {
@@ -348,12 +345,13 @@ function claudeTurnPieces(obj: any): TurnPiece[] {
   const ts = Date.parse(obj.timestamp)
   const at = isFinite(ts) ? ts : Date.now()
   if (obj.type === 'user') {
-    const raw = promptText(obj.message?.content)
+    const raw = messageText(obj.message?.content)
     const who = ownerOrPeer(obj.origin?.kind)
     if (raw === null || !who) return []
     if (who === 'peer') return [{ line: { who, text: peerText(raw), at }, midTurn: false }]
     if (
       obj.isMeta ||
+      compactionSummary(obj) ||
       INTERRUPT_TEXTS.has(raw) ||
       commandEcho(obj, raw) ||
       !classifyUserPrompt(raw).title
@@ -508,6 +506,7 @@ interface Tracked {
   inode?: number
   swept?: boolean
   relocatedCwd?: string
+  lastWorktreeStateInBatch?: string
   landTimer?: ReturnType<typeof setTimeout>
   remote?: RemoteTab
   subagentTimer?: ReturnType<typeof setInterval>
@@ -1043,6 +1042,15 @@ export class SessionTracker extends SessionRuntime {
     )
   }
 
+  // CC§1 CC§2 CC§3 ADR-0025
+  private followWorktreeState(t: Tracked): void {
+    const bound = t.lastWorktreeStateInBatch
+    t.lastWorktreeStateInBatch = undefined
+    if (!bound || t.remote || t.landTimer || bound === t.info.treeRoot || !fs.existsSync(bound))
+      return
+    this.setTreeRoot(t, bound)
+  }
+
   private setTreeRoot(t: Tracked, root: string): void {
     t.rootPinAwaitingCatchup = false
     if (!root || t.info.treeRoot === root) return
@@ -1082,6 +1090,7 @@ export class SessionTracker extends SessionRuntime {
     t.lastTouchedAbs = null
     t.lastWrittenAbs = null
     t.relocatedCwd = undefined
+    t.lastWorktreeStateInBatch = undefined
     t.info.lastTouched = undefined
     t.info.lastWritten = undefined
     t.caughtUp = false
@@ -1354,6 +1363,7 @@ export class SessionTracker extends SessionRuntime {
       else if (activity === 'interrupt') sawInterrupt = true
     }
     if (t.rootPinAwaitingCatchup) this.setTreeRoot(t, t.info.cwd)
+    this.followWorktreeState(t)
     if (sawInterrupt) await this.interruptTurn(t)
     else if (t.caughtUp) this.resumeWorkingIfStale(t, sawUserPrompt, sawAssistant)
     if (!t.caughtUp) {
@@ -1548,6 +1558,10 @@ export class SessionTracker extends SessionRuntime {
       if (obj.type === 'relocated' && typeof obj.relocatedCwd === 'string' && obj.relocatedCwd) {
         t.relocatedCwd = obj.relocatedCwd
       }
+      if (obj.type === 'worktree-state') {
+        const bound = obj.worktreeSession?.worktreePath
+        t.lastWorktreeStateInBatch = typeof bound === 'string' && bound ? bound : undefined
+      }
       // CC§2
       const recTs = Math.min(Date.parse(obj.timestamp), Date.now())
       const mainThread = obj.isSidechain !== true
@@ -1574,7 +1588,7 @@ export class SessionTracker extends SessionRuntime {
       this.ingestTaskNotification(t, obj)
       const output = t.caughtUp ? commandOutputOf(obj) : null
       if (output) this.emit('command-output', { tabId: t.info.tabId, ...output })
-      if (obj.type === 'user' && !obj.isMeta) {
+      if (obj.type === 'user' && !obj.isMeta && !compactionSummary(obj)) {
         const c = obj.message?.content
         let raw: string | null = null
         let hasImage = false

@@ -3,6 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { GithubLookup, parseOpenCounts } from '../../src/main/github'
+import { GH_SIGNED_OUT, type Gh, type GhResult } from '../../src/main/prChecks'
 import type { GithubInfo } from '@shared/types'
 
 let tmp: string
@@ -344,6 +345,111 @@ describe('GithubLookup.openCounts', () => {
     const gh = counting({ issues: 1, prs: 1 })
     expect(await make({ openCounts: gh.openCounts }).openCounts(root)).toBeNull()
     expect(gh.asked).toHaveLength(0)
+  })
+})
+
+describe('GithubLookup.openItems', () => {
+  const answer = (over: Partial<GhResult> = {}): GhResult => ({
+    code: 0,
+    stdout: '[]',
+    stderr: '',
+    missing: false,
+    ...over
+  })
+
+  function listing(issues: GhResult, prs: GhResult): { asked: string[][]; gh: Gh } {
+    const asked: string[][] = []
+    return {
+      asked,
+      gh: async (args) => {
+        asked.push(args)
+        return args[0] === 'issue' ? issues : prs
+      }
+    }
+  }
+
+  it('lists open issues and pull requests, most recently changed first, each pull request with the branch it checks out — a fork’s as pr-<n>', async () => {
+    const { asked, gh } = listing(
+      answer({
+        stdout: JSON.stringify([
+          { number: 5, title: 'Old bug', url: 'u5', updatedAt: '2026-10-01T00:00:00Z' },
+          { number: 8, title: 'New bug', url: 'u8', updatedAt: '2026-10-08T00:00:00Z' }
+        ])
+      }),
+      answer({
+        stdout: JSON.stringify([
+          {
+            number: 12,
+            title: 'Ours',
+            url: 'u12',
+            updatedAt: '2026-10-02T00:00:00Z',
+            headRefName: 'fix/login',
+            isCrossRepository: false
+          },
+          {
+            number: 13,
+            title: 'From a fork',
+            url: 'u13',
+            updatedAt: '2026-10-03T00:00:00Z',
+            headRefName: 'main',
+            isCrossRepository: true
+          }
+        ])
+      })
+    )
+    expect(await make({ gh }).openItems(root)).toEqual({
+      state: 'items',
+      repo: 'acme/widgets',
+      issues: [
+        {
+          kind: 'issue',
+          number: 8,
+          title: 'New bug',
+          url: 'u8',
+          updatedAt: '2026-10-08T00:00:00Z'
+        },
+        { kind: 'issue', number: 5, title: 'Old bug', url: 'u5', updatedAt: '2026-10-01T00:00:00Z' }
+      ],
+      prs: [
+        {
+          kind: 'pr',
+          number: 13,
+          title: 'From a fork',
+          url: 'u13',
+          updatedAt: '2026-10-03T00:00:00Z',
+          branch: 'pr-13'
+        },
+        {
+          kind: 'pr',
+          number: 12,
+          title: 'Ours',
+          url: 'u12',
+          updatedAt: '2026-10-02T00:00:00Z',
+          branch: 'fix/login'
+        }
+      ]
+    })
+    expect(asked.map((a) => a.slice(0, 8).join(' ')).sort()).toEqual([
+      'issue list --repo acme/widgets --state open --limit 50',
+      'pr list --repo acme/widgets --state open --limit 50'
+    ])
+  })
+
+  it('tells a missing gh, a signed-out gh and an answer it cannot read apart', async () => {
+    const items = (issues: GhResult, prs = answer()): Promise<unknown> =>
+      make({ gh: listing(issues, prs).gh }).openItems(root)
+    expect(await items(answer({ code: null, missing: true }))).toEqual({ state: 'no-gh' })
+    expect(await items(answer({ code: GH_SIGNED_OUT, stdout: '' }))).toEqual({
+      state: 'signed-out'
+    })
+    expect(await items(answer({ code: 1, stdout: '' }))).toEqual({ state: 'failed' })
+  })
+
+  it('never asks gh outside a GitHub repository', async () => {
+    stage({ remote: 'remote.origin.url git@gitlab.com:acme/widgets.git\n' })
+    const { asked, gh } = listing(answer(), answer())
+    expect(await make({ gh }).openItems(root)).toEqual({ state: 'no-repo' })
+    expect(asked).toHaveLength(0)
   })
 })
 

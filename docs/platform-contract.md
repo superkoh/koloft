@@ -131,7 +131,11 @@ method. A recheck adds its date, version and command to the bullet.
   app's. A bare `electron out/main/index.js` launch reports `out/main` as
   `app.getAppPath()`.
 - **Only Electron can open files inside `app.asar`.** bash or node must use the
-  `asarUnpack`'d copy under `app.asar.unpacked`.
+  `asarUnpack`'d copy under `app.asar.unpacked`. A `worker_threads` Worker the main
+  process starts counts as Electron: it loads its script from inside `app.asar`, by
+  path or by `file:` URL (Electron 43.7.3, 2026-10-09: a one-line worker packed with
+  `@electron/asar`, started from a bare `electron main.js` after `app.whenReady`,
+  posted its message back both ways).
 - **`app.setActivationPolicy('accessory')` must be set before any window exists**, or
   the first window show still makes the app active and takes focus.
 - **A Notification that nothing holds on to can be garbage-collected** while its banner
@@ -838,6 +842,15 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   name. Fast pipelines hit the gap within seconds (seen: a poll that read it raised
   Electron's error dialog every 1500 ms).
 - **Resizing a pty to the size it already has sends no SIGWINCH.**
+- **Node opens a terminal again by name the first time it makes `process.stdin`,
+  `stdout` or `stderr` on a tty, and that `open()` waits for good once the pty's master
+  side is closed.** A JS `SIGHUP` handler cannot free it (the thread that would run the
+  handler is the one stuck); with no JS handler the default `SIGHUP` kills it. Measured
+  2026-10-08 (Node 24.13.0, macOS 27.0) with a Python script that starts `node` on a pty
+  and closes the master 0.3 s later; seen in the e2e suite as leftover fake claudes stuck
+  in `uv_tty_init` → `open` (`sample`), with parent pid 1, on 2026-10-08 and 2026-10-09.
+  Making all three handles at startup, before any `SIGHUP` handler, removed the stuck
+  child in the probe.
 
 ## §30 git
 
@@ -963,6 +976,16 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   superkoh/koloft --json number --jq '$ENV.HOME'` printed the home folder. So a `--jq`
   given by someone else can print any secret in that environment. (2026-10-09, gh 2.89.0,
   run by hand.)
+- **`gh issue list` / `gh pr list --repo o/r --state open --json …`** print a JSON array
+  of objects with the fields asked for (`number`, `title`, `url`, `updatedAt` as an ISO
+  time; a pull request also has `headRefName` and `isCrossRepository`), newest created
+  first, and exit 0. Signed out, each exits 4 with the `gh auth login` line. A pull
+  request from a fork has `isCrossRepository: true` and a `headRefName` that names a
+  branch of the fork, not of the repo — so the same name may be a different branch here.
+  GitHub keeps `refs/pull/<n>/head` for a fork's pull request and a same-repo one alike
+  (`git ls-remote https://github.com/cli/cli refs/pull/14629/head refs/pull/14580/head`
+  listed both). (2026-10-09, gh 2.89.0, by hand against superkoh/koloft and cli/cli, and
+  an empty `GH_CONFIG_DIR` with a scratch `HOME`.)
 
 ## §33 ssh
 

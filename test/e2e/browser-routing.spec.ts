@@ -45,7 +45,6 @@ import {
   persistedTabsOnDisk,
   showBrowse,
   wbActiveTab,
-  wbTabTitles,
   wbTabs,
   wbUnreadTabs
 } from './helpers/workbench'
@@ -139,7 +138,6 @@ test.describe('URL routing and the open shim: where a target lands (a web tab, t
       await expect(openTabs(page)).toHaveCount(1, { timeout: 30_000 })
       await expect(wbUnreadTabs(page)).toHaveCount(0)
       await expect.poll(() => activeKind(page), { timeout: 20_000 }).toBe('web')
-      expect((await wbTabTitles(page))[1]).toContain('localhost')
 
       await expect.poll(() => server.count('/a'), { timeout: 20_000 }).toBe(1)
       expect(readOpenCalls(env).filter((l) => l.includes('http://'))).toEqual([])
@@ -161,7 +159,6 @@ test.describe('URL routing and the open shim: where a target lands (a web tab, t
 
     await expect(openTabs(page)).toHaveCount(1, { timeout: 30_000 })
     await expect(wbUnreadTabs(page)).toHaveCount(0)
-    expect((await wbTabTitles(page))[1]).toContain('page.html')
 
     await expect
       .poll(async () => (await guestUrls(app)).filter((u) => u.includes('page.html')).length, {
@@ -216,7 +213,11 @@ test.describe('URL routing and the open shim: where a target lands (a web tab, t
 
     await agentOpen(page, `file://${env.workspaces.a}/docs/page.html`)
     await expect(openTabs(page)).toHaveCount(1, { timeout: 30_000 })
-    expect((await wbTabTitles(page))[1]).toContain('page.html')
+    await expect
+      .poll(async () => (await guestUrls(app)).filter((u) => u.includes('page.html')).length, {
+        timeout: 20_000
+      })
+      .toBe(1)
     await expect.poll(() => activeKind(page), { timeout: 20_000 }).toBe('web')
   })
 

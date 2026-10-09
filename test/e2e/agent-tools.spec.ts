@@ -261,6 +261,49 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     }
   })
 
+  test('koloft session close in a worktree session that Koloft resumed from the repo root after a restart still removes its worktree and branch', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const fx = setupGitFixture(env)
+    const tree = path.join(fx.clone, '.claude', 'worktrees', 'again')
+    const before = await launchApp(env)
+    try {
+      const page = await before.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      const dlg = await openWorktreeSession(page, 'repo')
+      await dlg.getByRole('textbox').click()
+      await page.keyboard.type('again')
+      await page.keyboard.press('Enter')
+      await expect(wsRows(page, 'repo')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+    } finally {
+      await quitAndClose(before)
+    }
+
+    const after = await launchApp(env)
+    try {
+      const page = await after.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      const rows = wsRows(page, 'repo')
+      await expect(rows).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      await rows.click()
+      await expect(rows).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const resumed = readCalls(env).at(-1)!
+      expect(resumed.argv).toContain('--resume')
+      expect(resumed.cwd).toBe(fs.realpathSync(fx.clone))
+
+      fs.rmSync(path.join(tree, 'NOTES.md'), { force: true })
+      await runIn(page, centerTerm(page), '/koloft session close')
+      await expect(rows).toHaveCount(0, { timeout: 30_000 })
+      await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+      expect(runGit(fx.clone, 'branch', '--list', 'worktree-again').trim()).toBe('')
+    } finally {
+      await quitAndClose(after)
+    }
+  })
+
   test('koloft session close <child> closes a session the caller started in a worktree, only once nothing in it would be lost, and leaves the caller open', async ({
     env
   }) => {

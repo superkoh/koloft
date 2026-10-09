@@ -31,7 +31,7 @@ if (argv[0] === '--version') {
 }
 
 // CC§9
-if (argv[0] === '-p') {
+if (argv[0] === '-p' && !require('tty').isatty(0)) {
   const task = fs.readFileSync(0, 'utf8').split('Task:\n').pop()
   const firstLine = task.split('\n').find((l) => l.trim()) ?? ''
   process.stdout.write(`${firstLine.trim()} (titled)\n`)
@@ -56,6 +56,13 @@ if (argv[0] === 'setup-token') {
   )
   process.exit(0)
 }
+
+// PLATFORM§29
+const stdioOpenedBeforeTheSighupHandlerSoAHungUpPtyStillKillsUs = [
+  process.stdin,
+  process.stdout,
+  process.stderr
+]
 
 let sessionId = argVal('--session-id') || argVal('--resume') || require('crypto').randomUUID()
 const settingsPath = argVal('--settings')
@@ -761,6 +768,16 @@ function handleLine(line) {
     })
     append([
       { type: 'user', message: { role: 'user', content: '/compact' }, cwd },
+      {
+        type: 'user',
+        isCompactSummary: true,
+        isVisibleInTranscriptOnly: true,
+        message: {
+          role: 'user',
+          content: 'This session is being continued from a previous conversation.'
+        },
+        cwd
+      },
       {
         type: 'system',
         subtype: 'local_command',

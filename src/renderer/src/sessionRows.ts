@@ -8,6 +8,8 @@ import type {
   TabKind,
   WorkspaceRows
 } from '@shared/types'
+import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
+import { basename } from '@shared/preview'
 import { NOTES_HEIGHT_FLOOR } from '@shared/settingsOps'
 import { statusUnavailable } from '@shared/sessionBackend'
 
@@ -167,6 +169,35 @@ export function attentionOnRow(
   pending: AttentionEvent[]
 ): AttentionEvent | undefined {
   return pending.find((e) => e.sessionId === rowId || e.tabId === tabId)
+}
+
+// CODEX§9
+export function liveTabOf(
+  sessionId: string,
+  sessions: readonly { sessionId: string; tabId: string; alive: boolean }[],
+  tabs: readonly { id: string; sessionId?: string; alive: boolean }[]
+): string | undefined {
+  return (
+    sessions.find((s) => s.sessionId === sessionId && s.alive)?.tabId ??
+    tabs.find((t) => t.alive && t.sessionId === sessionId)?.id
+  )
+}
+
+export function tabOfRow(
+  row: { id: string; running: boolean; pending?: boolean },
+  sessions: readonly { sessionId: string; tabId: string; alive: boolean }[],
+  tabs: readonly { id: string; sessionId?: string; alive: boolean }[]
+): string | undefined {
+  if (row.pending) return row.id
+  return row.running ? liveTabOf(row.id, sessions, tabs) : undefined
+}
+
+export function shownTitle(rowTitle: string, liveTitle: string | undefined): string {
+  return liveTitle && liveTitle !== PLACEHOLDER_SESSION_TITLE ? liveTitle : rowTitle
+}
+
+export function workspaceName(ws: WorkspaceRows['workspace']): string {
+  return basename(ws.remote?.path ?? ws.path)
 }
 
 export function isOrphanRow(
