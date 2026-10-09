@@ -764,6 +764,14 @@ sentence, then `ls`, then `DONE`; turn 2 was sent with `thread/queue/add`.
   said `historyMode: "paginated"`). Those two methods are not on the list `CodexRpc` lets
   through; if a later Codex drops `includeTurns`, reading a closed Codex session breaks
   there first.
+- **A Plan-mode turn writes no plan file; the plan is a `plan` item** `{type, id, text}`
+  on `item/completed`, streamed before that by `item/plan/delta` (72 deltas adding up to
+  the same 362 characters). It is not `turn/plan/updated`, which is `update_plan`'s step
+  list. The saved rollout holds the plan twice: an `item_completed` event whose
+  `item.text` is the plan, and the final assistant message, which wraps it in
+  `<proposed_plan>` tags. Checked 2026-10-03 with Codex 0.159.3: one `turn/start` with
+  `collaborationMode: {mode: "plan", …}` in a fresh `CODEX_HOME`, in a folder holding
+  only `README.md`; `collaborationMode/list` answered `Plan` and `Default`.
 - That the TUI's ephemeral title thread (section 17, its own `temporary-structured-…` id)
   never sends items under the session's thread id is inferred from section 17, not
   re-run here: no TUI was attached in this probe.
