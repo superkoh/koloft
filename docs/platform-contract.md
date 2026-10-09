@@ -67,15 +67,20 @@ method. A recheck adds its date, version and command to the bullet.
   `ESC [ ? 2004 h` (bracketed paste on) the moment their line editor starts waiting for a
   line, after every rc file has run; macOS's own `/bin/bash` 3.2 writes none, but its
   readline writes `ESC [ ? 1034 h` (meta key on, from the `xterm-256color` terminfo) at
-  the same moment. Each byte came out exactly when the tty left canonical mode (`ICANON`
-  off, read with `tcgetattr` on the pty master every 3 ms). Text typed before then is
-  not lost: a line written 0.3 s into a `.zshrc` / `.bash_profile` that sleeps 3 s still
+  the same moment. For zsh and bash it came out exactly when the tty left canonical mode
+  (`ICANON` off, read with `tcgetattr` on the pty master every 3 ms); fish leaves
+  canonical mode earlier, to read the terminal's answers to its queries, and writes the
+  signal once its prompt is drawn. fish 4 first asks the terminal `ESC [ 0 c` and shows
+  no prompt — and runs no typed line — until it is answered (the probe answered
+  `ESC [ ? 1 ; 2 c`, as xterm.js does). Text typed before the prompt is not lost: a line
+  written 0.3 s into a `.zshrc` / `.bash_profile` / `config.fish` that sleeps 3 s still
   ran once the prompt came. Two lines written together at the signal — the PATH line
-  ending in `clear`, then the launch line — both ran in order. (2026-10-09, Python `pty`
-  probe: macOS 27.0.1 `/bin/zsh` 5.9 and `/bin/bash` 3.2.57; Ubuntu 24.04 in Docker:
-  fish 3.7.0 and 4.9.3, bash 5.2.21, zsh 5.9. fish 4 first asks the terminal
-  `ESC [ 0 c` and shows no prompt — and runs no typed line — until it is answered; the
-  probe answered `ESC [ ? 1 ; 2 c`.)
+  ending in `clear`, then the launch line — both ran in order. powerlevel10k's instant
+  prompt writes the signal at the top of `.zshrc`, before the rest of it runs; two lines
+  written then, with 2 s of `.zshrc` still to go, both ran in order once zsh's own prompt
+  came. (2026-10-09, Python `pty` probe: macOS 27.0.1 `/bin/zsh` 5.9, `/bin/bash`
+  3.2.57 and fish 4.9.3 (the release's macOS app); Ubuntu 24.04 in Docker: fish 3.7.0
+  and 4.9.3, bash 5.2.21, zsh 5.9; powerlevel10k `master` of that day.)
 - **bash `$!` and the subshell fold.** After `( … ) &`, `$!` is the subshell's pid. Bash
   folds the subshell into its last command only when that command stands alone; a
   `umask` before it prevents the fold. Without `exec`, killing `$!` kills only the
