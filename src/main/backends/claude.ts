@@ -128,6 +128,7 @@ export class ClaudeBackend implements SessionBackend {
   private pickedSkipFlag = new Set<string>()
   private launchedBypassing = new Set<string>()
   private heldBeforeStartup = new Map<string, string>()
+  private startsBeforeRegistration = new Map<string, unknown>()
   agentPlugin?: string
 
   constructor(private d: ClaudeBackendDeps) {}
@@ -266,6 +267,9 @@ export class ClaudeBackend implements SessionBackend {
     this.processedRegIds.add(obj.regId)
     const cwd = obj.cwd && obj.cwd.length ? obj.cwd : os.homedir()
     this.d.tracker.track(obj.tabId, cwd)
+    const early = this.startsBeforeRegistration.get(obj.tabId)
+    this.startsBeforeRegistration.delete(obj.tabId)
+    if (early) this.handleHookRegistration(early)
   }
 
   watchLocalHooks(regDir: string): void {
@@ -279,6 +283,7 @@ export class ClaudeBackend implements SessionBackend {
     this.pickedSkipFlag.delete(tabId)
     this.launchedBypassing.delete(tabId)
     this.heldBeforeStartup.delete(tabId)
+    this.startsBeforeRegistration.delete(tabId)
     const remote = this.d.tracker.remoteOf(tabId)
     const sid = this.sessionIdOf(tabId)
     const title = this.titleOf(tabId)
@@ -607,6 +612,10 @@ export class ClaudeBackend implements SessionBackend {
     }
     obj.tabId = this.liveTabFor(obj)
     if (!obj.tabId) return
+    if (obj.event !== 'end' && !tracker.infoOf(obj.tabId)) {
+      this.startsBeforeRegistration.set(obj.tabId, raw)
+      return
+    }
     // CC§5
     if (!ownsHookReport(obj, this.sessionIdOf(obj.tabId))) return
     if (obj.event === 'end') {
