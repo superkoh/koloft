@@ -23,9 +23,8 @@ interface FakeGuest {
     on(event: string, fn: (...a: never[]) => void): void
     once(event: string, fn: (...a: never[]) => void): void
     off(event: string, fn: (...a: never[]) => void): void
-    sendCommand(method: string, params?: unknown, sessionId?: string): Promise<unknown>
+    sendCommand: ReturnType<typeof vi.fn>
   }
-  sent: string[]
   reload: ReturnType<typeof vi.fn>
   reloadIgnoringCache: ReturnType<typeof vi.fn>
   listenerCount(): number
@@ -41,10 +40,8 @@ function fakeGuest(id: number, opts: { holdFrameTree?: boolean } = {}): FakeGues
     if (!listeners.has(event)) listeners.set(event, new Set())
     listeners.get(event)?.add(fn)
   }
-  const sent: string[] = []
   const guest: FakeGuest = {
     isDestroyed: () => false,
-    sent,
     reload: vi.fn(),
     reloadIgnoringCache: vi.fn(),
     debugger: {
@@ -58,14 +55,13 @@ function fakeGuest(id: number, opts: { holdFrameTree?: boolean } = {}): FakeGues
       on: add,
       once: add,
       off: (event, fn) => void listeners.get(event)?.delete(fn),
-      sendCommand: async (method: string) => {
-        sent.push(method)
+      sendCommand: vi.fn(async (method: string) => {
         if (method === 'Page.getFrameTree') {
           if (opts.holdFrameTree) await new Promise<void>((r) => (release = r))
           return { frameTree: { frame: { id: `frame-${id}` } } }
         }
         return {}
-      }
+      })
     },
     listenerCount: () => [...listeners.values()].reduce((n, s) => n + s.size, 0),
     releaseFrameTree: () => release(),
@@ -352,6 +348,6 @@ describe('a client reloading a page', () => {
 
     expect(guest.reload).toHaveBeenCalledTimes(1)
     expect(guest.reloadIgnoringCache).toHaveBeenCalledTimes(1)
-    expect(guest.sent).not.toContain('Page.reload')
+    expect(guest.debugger.sendCommand.mock.calls.map((c) => c[0])).not.toContain('Page.reload')
   })
 })

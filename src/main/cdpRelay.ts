@@ -203,7 +203,7 @@ function backendFor(client: Client): RelayBackend {
       const wc = guestOf(guestId)
       // PLATFORM§16
       if (method === 'Page.reload' && !sessionId) {
-        if ((params as { ignoreCache?: boolean } | undefined)?.ignoreCache) {
+        if ((params as { ignoreCache?: boolean }).ignoreCache) {
           wc.reloadIgnoringCache()
         } else wc.reload()
         return {}
