@@ -3,6 +3,7 @@ import type { PreviewItem } from '@shared/types'
 import { WebView } from './WebView'
 import { renderMarkdown } from '../markdown'
 import { MERMAID_MAX_TEXT_SIZE, renderDiagram } from '../mermaidRender'
+import { useWorkbenchMoves, windowOf } from '../workbenchHost'
 
 export interface MdHeading {
   id: string
@@ -111,6 +112,7 @@ export function PreviewViewer({
   const token = useRef('')
   const [zoom, setZoom] = useState<{ code: string; svg: string } | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
+  const moves = useWorkbenchMoves()
   const salvage = useRef<Salvage | null>(null)
   const zoomFrom = useRef<HTMLElement | null>(null)
 
@@ -192,7 +194,9 @@ export function PreviewViewer({
       el.dataset.state = 'done'
     }
 
-    const io = new IntersectionObserver(
+    // PLATFORM§41
+    const win = windowOf(body)
+    const io = new win.IntersectionObserver(
       (entries) => {
         for (const e of entries) {
           if (!e.isIntersecting) continue
@@ -204,7 +208,7 @@ export function PreviewViewer({
     )
     for (const el of pending) io.observe(el)
 
-    const ro = new ResizeObserver(() => {
+    const ro = new win.ResizeObserver(() => {
       if (disposed || !body.clientHeight) return
       const view = body.getBoundingClientRect()
       for (const el of pending) {
@@ -229,7 +233,7 @@ export function PreviewViewer({
       io.disconnect()
       ro.disconnect()
     }
-  }, [html, item.kind])
+  }, [html, item.kind, moves])
 
   useEffect(() => {
     const body = bodyRef.current
@@ -283,8 +287,9 @@ export function PreviewViewer({
       setZoom(null)
       zoomFrom.current?.focus()
     }
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
+    const win = windowOf(bodyRef.current)
+    win.addEventListener('keydown', onKey, true)
+    return () => win.removeEventListener('keydown', onKey, true)
   }, [zoom])
 
   // PLATFORM§25
@@ -332,7 +337,8 @@ export function PreviewViewer({
         </div>
       )
     case 'pdf':
-      return <WebView src={window.api.preview.fileUrl(item.src)} reloadToken={tick} />
+      // PLATFORM§41
+      return <WebView key={moves} src={window.api.preview.fileUrl(item.src)} reloadToken={tick} />
     default:
       return <div className="hint">Unsupported preview type.</div>
   }

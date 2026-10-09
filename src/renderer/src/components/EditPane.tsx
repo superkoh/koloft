@@ -383,7 +383,7 @@ export function EditPane({
           const el = e.currentTarget
           if (el.readOnly) return
           e.preventDefault()
-          if (document.execCommand('insertText', false, TAB_TEXT)) return
+          if (el.ownerDocument.execCommand('insertText', false, TAB_TEXT)) return
           const { caret } = insertTab(el.value, el.selectionStart, el.selectionEnd)
           el.setRangeText(TAB_TEXT, el.selectionStart, el.selectionEnd)
           el.setSelectionRange(caret, caret)

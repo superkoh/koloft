@@ -12,6 +12,7 @@ import { exitSyncWindow } from '../syncOutput'
 import { acquireWebgl, releaseWebgl, touchWebgl } from '../webglPool'
 import { registerWebglRepair, unregisterWebglRepair } from '../webglRepair'
 import { registerScreen, screenSizedToPane } from '../terminalScreens'
+import { onWorkbenchMoved, windowOf } from '../workbenchHost'
 
 const RESIZE_QUIET_MS = 100
 const ADOPTED_REPAINT_AFTER_MS = 1000
@@ -151,6 +152,7 @@ export function TerminalView({
 
     // PLATFORM§20
     let dprCleanup: (() => void) | undefined
+    let rebindToWindow: (() => void) | undefined
     if (!window.api.domRenderer) {
       const attachWebgl = (): void => {
         const t = termRef.current
@@ -192,11 +194,17 @@ export function TerminalView({
       }
       const armDpr = (): void => {
         dprMql?.removeEventListener('change', onDpr)
-        dprMql = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`)
+        const win = windowOf(ref.current)
+        dprMql = win.matchMedia(`(resolution: ${win.devicePixelRatio}dppx)`)
         dprMql.addEventListener('change', onDpr)
       }
       armDpr()
       dprCleanup = (): void => dprMql?.removeEventListener('change', onDpr)
+      rebindToWindow = (): void => {
+        detachWebgl()
+        attachWebgl()
+        armDpr()
+      }
     }
 
     const wrapper = ref.current!
@@ -334,8 +342,19 @@ export function TerminalView({
       clearTimeout(fitTimer)
       fitTimer = setTimeout(fitWhenSettled, RESIZE_QUIET_MS)
     }
-    const ro = new ResizeObserver(scheduleFit)
-    ro.observe(ref.current!)
+    // PLATFORM§41
+    let ro = new (windowOf(wrapper).ResizeObserver)(scheduleFit)
+    ro.observe(wrapper)
+    const offMoved = onWorkbenchMoved((win) => {
+      if (wrapper.ownerDocument !== win.document) return
+      term.open(wrapper)
+      ro.disconnect()
+      ro = new win.ResizeObserver(scheduleFit)
+      ro.observe(wrapper)
+      rebindToWindow?.()
+      repaintedRef.current = false
+      forceRepaint()
+    })
     const offDragEnd = onLayoutDragEnd(() => {
       if (deferredByDrag) scheduleFit()
     })
@@ -370,6 +389,7 @@ export function TerminalView({
       ta?.removeEventListener('compositionstart', onCompStart)
       ta?.removeEventListener('compositionend', onCompEnd)
       ro.disconnect()
+      offMoved()
       vis.disconnect()
       delete (window as unknown as { __koloftTerms?: Record<string, Terminal> }).__koloftTerms?.[id]
       unregisterScreen()

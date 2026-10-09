@@ -7,10 +7,16 @@ export interface WinBounds {
   height: number
 }
 
+export interface SavedWorkbenchWindow {
+  bounds?: WinBounds
+  popped?: boolean
+}
+
 export interface SavedWindowState {
   bounds?: WinBounds
   maximized?: boolean
   fullScreen?: boolean
+  workbench?: SavedWorkbenchWindow
 }
 
 export function fullscreenOption(fullScreen: boolean): { fullscreen?: true } {
@@ -48,4 +54,48 @@ export function usableBounds(raw: unknown, displays: WinBounds[]): WinBounds | n
     }
   }
   return null
+}
+
+const WORKBENCH_WINDOW_PREFERRED = { width: 960, height: 900 }
+const WORKBENCH_WINDOW_SHARE_OF_SHARED_SCREEN = 0.5
+
+function contains(area: WinBounds, x: number, y: number): boolean {
+  return x >= area.x && x < area.x + area.width && y >= area.y && y < area.y + area.height
+}
+
+export function displayContaining(win: WinBounds, displays: WinBounds[]): WinBounds | undefined {
+  const cx = win.x + win.width / 2
+  const cy = win.y + win.height / 2
+  return displays.find((d) => contains(d, cx, cy))
+}
+
+export function workbenchWindowBounds(
+  saved: unknown,
+  displays: WinBounds[],
+  mainBounds: WinBounds
+): WinBounds {
+  const kept = usableBounds(saved, displays)
+  if (kept) return kept
+  const mainDisplay = displayContaining(mainBounds, displays) ?? displays[0] ?? mainBounds
+  const other = displays.find((d) => d !== mainDisplay)
+  if (other) {
+    const width = Math.min(WORKBENCH_WINDOW_PREFERRED.width, other.width)
+    const height = Math.min(WORKBENCH_WINDOW_PREFERRED.height, other.height)
+    return {
+      x: Math.round(other.x + (other.width - width) / 2),
+      y: Math.round(other.y + (other.height - height) / 2),
+      width,
+      height
+    }
+  }
+  const width = Math.max(
+    WORKBENCH_WIDTH_FLOOR,
+    Math.round(mainDisplay.width * WORKBENCH_WINDOW_SHARE_OF_SHARED_SCREEN)
+  )
+  return {
+    x: mainDisplay.x + mainDisplay.width - width,
+    y: mainDisplay.y,
+    width,
+    height: mainDisplay.height
+  }
 }

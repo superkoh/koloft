@@ -4886,6 +4886,28 @@ input.switch:focus-visible {
 .wb-col.full {
   margin-left: 10px;
 }
+.wb-host-root,
+.wb-slot {
+  display: contents;
+}
+.wb-aux {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 0 10px 10px 0;
+  background: var(--bg-term);
+}
+.wb-aux-bar {
+  flex: 0 0 auto;
+  height: calc(var(--titlebar-h) - 10px);
+  -webkit-app-region: drag;
+}
+.wb-aux.os-full .wb-aux-bar {
+  height: 0;
+}
+.wb-aux > .wb-col {
+  flex: 1 1 auto;
+}
 .wb-tabs .wb-spill {
   padding-right: 33px;
 }

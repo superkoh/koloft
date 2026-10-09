@@ -759,6 +759,14 @@ export interface ScreenAnswer {
   sizedToPane: boolean
 }
 
+export const WORKBENCH_WINDOW_NAME = 'koloft-workbench'
+
+export interface WorkbenchWindowState {
+  open: boolean
+  focused: boolean
+  fullScreen: boolean
+}
+
 export interface KoloftApi {
   isDev: boolean
   domRenderer: boolean
@@ -795,6 +803,16 @@ export interface KoloftApi {
     setFindAvailable(available: boolean): void
     setSaveAvailable(available: boolean): void
     setDirtyTabs(ids: string[]): void
+  }
+  workbenchWindow: {
+    wasPopped(): Promise<boolean>
+    requestDock(): void
+    released(): void
+    raise(): void
+    reveal(): void
+    onDock(cb: () => void): () => void
+    onRefused(cb: () => void): () => void
+    onState(cb: (s: WorkbenchWindowState) => void): () => void
   }
   tabs: {
     list(): Promise<TabInventoryReply>

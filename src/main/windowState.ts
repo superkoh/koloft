@@ -1,7 +1,13 @@
 import { app, screen, type BrowserWindow } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { usableBounds, type SavedWindowState, type WinBounds } from './windowBounds'
+import {
+  usableBounds,
+  workbenchWindowBounds,
+  type SavedWindowState,
+  type SavedWorkbenchWindow,
+  type WinBounds
+} from './windowBounds'
 
 const DEFAULT_SIZE = { width: 1440, height: 920 }
 const DRAG_SETTLE_MS = 400
@@ -20,14 +26,23 @@ function loadState(): SavedWindowState {
   }
 }
 
+function mergeState(patch: SavedWindowState): void {
+  try {
+    fs.writeFileSync(stateFile(), JSON.stringify({ ...loadState(), ...patch }, null, 2))
+  } catch {}
+}
+
+function displayAreas(): WinBounds[] {
+  return screen.getAllDisplays().map((d) => d.workArea)
+}
+
 export function restoredWindowGeometry(): {
   bounds: Partial<WinBounds> & { width: number; height: number }
   maximized: boolean
   fullScreen: boolean
 } {
   const st = loadState()
-  const displays = screen.getAllDisplays().map((d) => d.workArea)
-  const bounds = usableBounds(st.bounds, displays)
+  const bounds = usableBounds(st.bounds, displayAreas())
   return {
     bounds: bounds ?? DEFAULT_SIZE,
     maximized: st.maximized === true,
@@ -43,14 +58,11 @@ export function trackWindowState(
 
   const write = (): void => {
     if (win.isDestroyed()) return
-    const st: SavedWindowState = {
+    mergeState({
       bounds: win.getNormalBounds(),
       maximized: pinnedFlags ? pinnedFlags.maximized : win.isMaximized(),
       fullScreen: pinnedFlags ? pinnedFlags.fullScreen : win.isFullScreen()
-    }
-    try {
-      fs.writeFileSync(stateFile(), JSON.stringify(st, null, 2))
-    } catch {}
+    })
   }
   const writeSoon = (): void => {
     if (timer) clearTimeout(timer)
@@ -67,4 +79,50 @@ export function trackWindowState(
     if (timer) clearTimeout(timer)
     write()
   })
+}
+
+function savedWorkbench(): SavedWorkbenchWindow {
+  const wb = loadState().workbench
+  return wb && typeof wb === 'object' ? wb : {}
+}
+
+function saveWorkbench(patch: SavedWorkbenchWindow): void {
+  mergeState({ workbench: { ...savedWorkbench(), ...patch } })
+}
+
+export function workbenchWasPopped(): boolean {
+  const wb = savedWorkbench()
+  return wb.popped === true && usableBounds(wb.bounds, displayAreas()) !== null
+}
+
+export function setWorkbenchPopped(popped: boolean): void {
+  saveWorkbench({ popped })
+}
+
+export function workbenchWindowPlacement(mainBounds: WinBounds): WinBounds {
+  return workbenchWindowBounds(savedWorkbench().bounds, displayAreas(), mainBounds)
+}
+
+export function trackWorkbenchWindow(
+  win: BrowserWindow,
+  onSettled: (bounds: WinBounds) => void
+): void {
+  let timer: NodeJS.Timeout | null = null
+  const write = (): void => {
+    if (win.isDestroyed()) return
+    const bounds = win.getNormalBounds()
+    saveWorkbench({ bounds })
+    onSettled(bounds)
+  }
+  const writeSoon = (): void => {
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(write, DRAG_SETTLE_MS)
+  }
+  win.on('resize', writeSoon)
+  win.on('move', writeSoon)
+  win.on('close', () => {
+    if (timer) clearTimeout(timer)
+    write()
+  })
+  write()
 }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { windowOf, type HostWindow } from './workbenchHost'
 
 const HL_ALL = 'find-all'
 const HL_ACTIVE = 'find-active'
@@ -35,7 +36,8 @@ function foldCaseKeepingLength(s: string): string {
 function computeMatchRanges(root: HTMLElement, query: string): Range[] {
   if (!query) return []
 
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+  const doc = root.ownerDocument
+  const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
       const el = node.parentElement
       if (!el) return NodeFilter.FILTER_REJECT
@@ -64,7 +66,7 @@ function computeMatchRanges(root: HTMLElement, query: string): Range[] {
     const s = locate(spans, i)
     const e = locate(spans, i + needle.length)
     if (s && e) {
-      const r = document.createRange()
+      const r = doc.createRange()
       r.setStart(s.node, s.offset)
       r.setEnd(e.node, e.offset)
       ranges.push(r)
@@ -125,33 +127,41 @@ export function useDomFind(getRoot: () => HTMLElement | null): FindBackend {
     setCount((c) => (c.current === current && c.total === total ? c : { current, total }))
   }, [])
 
+  const paintedIn = useRef<HostWindow>(window)
+  const unpaint = useCallback(() => {
+    paintedIn.current.CSS.highlights.delete(HL_ALL)
+    paintedIn.current.CSS.highlights.delete(HL_ACTIVE)
+  }, [])
+
   const render = useCallback(() => {
     const ranges = rangesRef.current
+    unpaint()
     if (ranges.length === 0) {
-      CSS.highlights.delete(HL_ALL)
-      CSS.highlights.delete(HL_ACTIVE)
       setCountIfChanged(0, 0)
       return
     }
     if (activeRef.current >= ranges.length) activeRef.current = 0
     const active = activeRef.current
+    // PLATFORM§41
+    const win = windowOf(ranges[active].startContainer)
+    paintedIn.current = win
 
-    const all = new Highlight()
+    const all = new win.Highlight()
     ranges.forEach((r, i) => {
       if (i !== active) all.add(r)
     })
     all.priority = 0
-    CSS.highlights.set(HL_ALL, all)
+    win.CSS.highlights.set(HL_ALL, all)
 
-    const hot = new Highlight(ranges[active])
+    const hot = new win.Highlight(ranges[active])
     hot.priority = 1
-    CSS.highlights.set(HL_ACTIVE, hot)
+    win.CSS.highlights.set(HL_ACTIVE, hot)
 
     setCountIfChanged(active + 1, ranges.length)
     const root = getRoot()
     const scroller = root ? nearestVerticalScroller(ranges[active], root) : null
     if (scroller) scrollRangeIntoView(ranges[active], scroller)
-  }, [getRoot, setCountIfChanged])
+  }, [getRoot, setCountIfChanged, unpaint])
 
   const recompute = useCallback(() => {
     const root = getRoot()
@@ -195,10 +205,9 @@ export function useDomFind(getRoot: () => HTMLElement | null): FindBackend {
     rangesRef.current = []
     activeRef.current = 0
     queryRef.current = ''
-    CSS.highlights.delete(HL_ALL)
-    CSS.highlights.delete(HL_ACTIVE)
+    unpaint()
     setCount({ current: 0, total: 0 })
-  }, [])
+  }, [unpaint])
 
   useEffect(() => clear, [clear])
 

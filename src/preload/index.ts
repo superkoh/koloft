@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { injectBrowserAction } from 'electron-chrome-extensions/browser-action'
 import type {
   WorkbenchShortcut,
+  WorkbenchWindowState,
   BrowserAuthChallenge,
   BrowserCommand,
   BrowserAudioState,
@@ -103,6 +104,28 @@ const api: KoloftApi = {
     setFindAvailable: (available) => ipcRenderer.send('workbench:findAvailable', available),
     setSaveAvailable: (available) => ipcRenderer.send('workbench:saveAvailable', available),
     setDirtyTabs: (ids) => ipcRenderer.send('workbench:dirtyTabs', ids)
+  },
+  workbenchWindow: {
+    wasPopped: () => ipcRenderer.invoke('workbench-window:was-popped'),
+    requestDock: () => ipcRenderer.send('workbench-window:request-dock'),
+    released: () => ipcRenderer.send('workbench-window:released'),
+    raise: () => ipcRenderer.send('workbench-window:raise'),
+    reveal: () => ipcRenderer.send('workbench-window:reveal'),
+    onDock: (cb) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('workbench-window:dock', handler)
+      return () => ipcRenderer.removeListener('workbench-window:dock', handler)
+    },
+    onRefused: (cb) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('workbench-window:refused', handler)
+      return () => ipcRenderer.removeListener('workbench-window:refused', handler)
+    },
+    onState: (cb) => {
+      const handler = (_e: unknown, s: WorkbenchWindowState): void => cb(s)
+      ipcRenderer.on('workbench-window:state', handler)
+      return () => ipcRenderer.removeListener('workbench-window:state', handler)
+    }
   },
   tabs: {
     list: () => ipcRenderer.invoke('tabs:list'),

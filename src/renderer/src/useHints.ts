@@ -3,6 +3,7 @@ import type { HintId } from '@shared/types'
 import { firedHints, selectorOf, type ActiveHint, type HintFire, type HintSnapshot } from './hints'
 import { panelIsOpen, panelTabId, useStore } from './store'
 import { updateSettings } from './components/settings/useSettingsUpdate'
+import { querySelectorAnywhere, workbenchPopped } from './workbenchHost'
 
 const HINT_GAP_AFTER_DISMISS_MS = 2000
 
@@ -60,10 +61,10 @@ export function useHints(): ActiveHint | null {
       if (st.settingsOpen || st.update.open) return
       if (next.id === 'workbench') {
         if (!mainHasAnsweredPanelState(st)) return
-        if (panelShownOf(st)) return drop()
+        if (panelShownOf(st) || workbenchPopped()) return drop()
       }
-      if (!document.querySelector(selectorOf(next, panelShownOf(st), st.settings.sidebarHidden)))
-        return
+      const at = selectorOf(next, panelShownOf(st), st.settings.sidebarHidden)
+      if (!querySelectorAnywhere(at)) return
       const seen = st.settings.hintsSeen
       drop()
       updateSettings({ hintsSeen: [...seen, next.id] })

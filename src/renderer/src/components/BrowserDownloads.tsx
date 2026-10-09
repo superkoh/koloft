@@ -44,11 +44,12 @@ export function BrowserDownloads({
       if (target?.closest(OPENER_BUTTON_IS_NOT_OUTSIDE)) return
       onClose()
     }
-    document.addEventListener('keydown', onKey, true)
-    document.addEventListener('mousedown', onDown, true)
+    const doc = ref.current?.ownerDocument ?? document
+    doc.addEventListener('keydown', onKey, true)
+    doc.addEventListener('mousedown', onDown, true)
     return () => {
-      document.removeEventListener('keydown', onKey, true)
-      document.removeEventListener('mousedown', onDown, true)
+      doc.removeEventListener('keydown', onKey, true)
+      doc.removeEventListener('mousedown', onDown, true)
     }
   }, [onClose])
 
