@@ -177,11 +177,14 @@ export interface Settings {
   keepAwake: boolean
   worldClocks: string[]
   onboardingSeen: boolean
+  assist: AssistSetting
   hintsSeen: string[]
   hintsOff: boolean
   lastSeenVersion: string
   discord: DiscordSettings
 }
+
+export type AssistSetting = { on: boolean; backend: BackendId } | null
 
 export interface DiscordChannel {
   guildId: string
@@ -274,6 +277,7 @@ export const DEFAULT_SETTINGS: Settings = {
   keepAwake: true,
   worldClocks: [],
   onboardingSeen: false,
+  assist: null,
   hintsSeen: [],
   hintsOff: false,
   lastSeenVersion: '',

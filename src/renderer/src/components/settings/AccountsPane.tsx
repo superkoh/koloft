@@ -189,7 +189,7 @@ export function AccountsPane(): JSX.Element {
 }
 
 // CC§7
-function LoginDialog(): JSX.Element | null {
+export function LoginDialog(): JSX.Element | null {
   const login = useStore((s) => s.accountLogin)
   const addTab = useStore((s) => s.addTab)
   const setSettingsOpen = useStore((s) => s.setSettingsOpen)
@@ -325,7 +325,13 @@ function LoginDialog(): JSX.Element | null {
 }
 
 // CODEX§15
-function CodexSignInDialog({ again, onClose }: { again?: string; onClose(): void }): JSX.Element {
+export function CodexSignInDialog({
+  again,
+  onClose
+}: {
+  again?: string
+  onClose(): void
+}): JSX.Element {
   const addTab = useStore((s) => s.addTab)
   const setSettingsOpen = useStore((s) => s.setSettingsOpen)
   const [name, setName] = useState(again ?? '')
@@ -532,7 +538,13 @@ function AccountRow({
   )
 }
 
-function AddAccountDialog({ kind, onClose }: { kind: AccountKind; onClose(): void }): JSX.Element {
+export function AddAccountDialog({
+  kind,
+  onClose
+}: {
+  kind: AccountKind
+  onClose(): void
+}): JSX.Element {
   const [name, setName] = useState('')
   const [secret, setSecret] = useState('')
   const [baseUrl, setBaseUrl] = useState('')

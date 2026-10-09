@@ -94,7 +94,8 @@ export function setupE2EEnv(): E2EEnv {
     path.join(userData, 'settings.json'),
     JSON.stringify({
       onboardingSeen: false,
-      accounts: [seededAccount(E2E_CLAUDE_ACCOUNT, 'apikey')]
+      accounts: [seededAccount(E2E_CLAUDE_ACCOUNT, 'apikey')],
+      assist: { on: true, backend: 'claude' }
     })
   )
   // CC§9

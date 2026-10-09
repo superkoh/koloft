@@ -5907,6 +5907,26 @@ input.ft-newfile {
 .ob-warn {
   color: var(--amber);
 }
+.assist-setup {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.assist-setup .acct-add {
+  align-self: stretch;
+}
+.assist-modal .assist-setup .quiet {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--fg-faint);
+}
+.assist-modal .assist-setup .quiet b {
+  color: var(--fg-dim);
+  font-weight: 650;
+}
+.assist-modal .ob-cmd,
 .onboarding .ob-cmd {
   display: block;
   margin-top: 5px;

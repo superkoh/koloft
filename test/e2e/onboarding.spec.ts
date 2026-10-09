@@ -1,4 +1,6 @@
 import fs from 'fs'
+import http from 'http'
+import type { AddressInfo } from 'net'
 import path from 'path'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
@@ -26,6 +28,19 @@ function firstRun(env: E2EEnv, settings: Record<string, unknown> = {}): void {
     })
   )
   seedSettings(env, { onboardingSeen: false, ...settings })
+}
+
+async function answerEveryProbeOk(): Promise<{ base: string; close(): Promise<void> }> {
+  const server = http.createServer((req, res) => {
+    req.resume()
+    req.on('end', () => res.writeHead(200, { 'content-type': 'application/json' }).end('{}'))
+  })
+  await new Promise<void>((ok) => server.listen(0, '127.0.0.1', ok))
+  const { port } = server.address() as AddressInfo
+  return {
+    base: `http://127.0.0.1:${port}`,
+    close: () => new Promise<void>((ok) => server.close(() => ok()))
+  }
 }
 
 function welcome(page: Page): Locator {
@@ -147,7 +162,9 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
     }
   })
 
-  test('T-OB-04: Skip hands the slot back to the plain panel, for good', async ({ env }) => {
+  test('T-OB-04: Skip jumps to the account step, which has none; Not now on the last step hands the slot back to the plain panel, for good', async ({
+    env
+  }) => {
     test.setTimeout(180_000)
     firstRun(env)
 
@@ -157,6 +174,11 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
       await page.waitForLoadState('domcontentloaded')
       await expect(welcome(page)).toBeVisible({ timeout: 20_000 })
       await welcome(page).locator('.ob-skip').click()
+      await expectStep(page, 3)
+      await expect(welcome(page).locator('.ob-skip')).toHaveCount(0)
+      await clickPrimary(page)
+      await expectStep(page, 4)
+      await welcome(page).locator('.ob-skip', { hasText: 'Not now' }).click()
 
       await expect(welcome(page)).toHaveCount(0)
       await expect(page.locator('.w-empty .big')).toHaveText('No workspace yet')
@@ -239,11 +261,14 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
     }
   })
 
-  test('T-OB-07: picking the balancing card ends in Settings ▸ Accounts — no launch, no setting changed', async ({
+  // ADR-0030
+  test('T-OB-07: with no Koloft account the welcome stops at step 3 — no Skip, Continue shut — and goes on once an account is added and Assist picked', async ({
     env
   }) => {
     test.setTimeout(120_000)
-    firstRun(env)
+    firstRun(env, { accounts: [], assist: null })
+    const probe = await answerEveryProbeOk()
+    env.launchEnv.KOLOFT_PROBE_BASE_URL = probe.base
     seedJsonl(env, env.workspaces.a, { summary: 'A one', mtime: Date.now() - 60_000 })
 
     const app = await launchApp(env)
@@ -252,34 +277,33 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
       await page.waitForLoadState('domcontentloaded')
       await advanceTo(page, 3)
 
-      const choices = welcome(page).locator('.ob-choices .choice')
-      await expect(choices.nth(0)).toHaveClass(/\bon\b/)
-      await choices.nth(1).click()
-      await expect(choices.nth(1)).toHaveClass(/\bon\b/)
-      await expect(choices.nth(0)).not.toHaveClass(/\bon\b/)
+      const cards = welcome(page).locator('.assist-setup .choice')
+      const primary = welcome(page).locator('.btn-primary')
+      await expect(cards.nth(0)).toContainText('No account yet')
+      await expect(welcome(page).locator('.ob-skip')).toHaveCount(0)
+      await expect(primary).toBeDisabled()
+
+      await page.evaluate(() => window.api.accounts.add('work', 'apikey', 'sk-ant-api03-fixture'))
+      await expect(cards.nth(0)).toContainText('Signed in', { timeout: 20_000 })
+      await expect(primary).toBeDisabled()
+      await cards.nth(0).click()
+      await expect(cards.nth(0)).toHaveClass(/\bon\b/)
+      await expect(primary).toBeEnabled()
+      await snap(page, 'T-OB-07')
       await clickPrimary(page)
       await expectStep(page, 4)
-
-      await expect(welcome(page).locator('.btn-primary')).toHaveText('Set up accounts', {
-        timeout: 20_000
-      })
-      await clickPrimary(page)
-      await expect(page.locator('.settings-modal')).toBeVisible({ timeout: 20_000 })
-      await expect(page.locator('.set-ni.on')).toHaveText('Accounts')
-      await snap(page, 'T-OB-07')
-      await expect.poll(() => settingsOnDisk(env).onboardingSeen, { timeout: 20_000 }).toBe(true)
-      expect(settingsOnDisk(env).multiAccount).toBe(false)
-      expect(fs.existsSync(env.claudeCalls)).toBe(false)
+      expect(settingsOnDisk(env).assist).toEqual({ on: true, backend: 'claude' })
     } finally {
       await quitAndClose(app)
+      await probe.close()
     }
   })
 
-  test('T-OB-11: with only Codex on this Mac the balancing card still ends in Settings ▸ Accounts, where Codex accounts are added', async ({
+  test('T-OB-11: with only Codex on this Mac step 3 offers only Codex, and Assist can run on it', async ({
     env
   }) => {
     test.setTimeout(120_000)
-    firstRun(env)
+    firstRun(env, { assist: null })
     installCodex(env)
     env.launchEnv.KOLOFT_TEST_CLAUDE_PROBE = 'missing'
     seedJsonl(env, env.workspaces.a, { summary: 'A one', mtime: Date.now() - 60_000 })
@@ -290,23 +314,70 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
       await page.waitForLoadState('domcontentloaded')
       await advanceTo(page, 3)
 
-      await welcome(page).locator('.ob-choices .choice').nth(1).click()
+      const cards = welcome(page).locator('.assist-setup .choice')
+      await expect(cards).toHaveCount(1, { timeout: 20_000 })
+      await expect(cards.nth(0).locator('.choice-t')).toHaveText('Codex')
+      await expect(cards.nth(0)).toContainText('Signed in')
+      await cards.nth(0).click()
       await clickPrimary(page)
       await expectStep(page, 4)
-
-      await expect(welcome(page).locator('.btn-primary')).toHaveText('Set up accounts', {
-        timeout: 20_000
-      })
-      await expect(welcome(page).locator('.ob-warn')).toHaveCount(0)
-      await clickPrimary(page)
-      await expect(page.locator('.settings-modal')).toBeVisible({ timeout: 20_000 })
-      await expect(page.locator('.set-ni.on')).toHaveText('Accounts')
-      await expect(
-        page.locator('.settings-modal button', { hasText: 'Sign in to Codex' })
-      ).toBeVisible()
+      expect(settingsOnDisk(env).assist).toEqual({ on: true, backend: 'codex' })
       await snap(page, 'T-OB-11')
     } finally {
       await quitAndClose(app)
+    }
+  })
+
+  // ADR-0030 CC§9
+  test("T-OB-12: an upgrade from before Koloft Assist asks once, after What's new — it cannot be waved away, asks about skipping permission prompts, and is gone for good once answered", async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    withWhatsNew(env, [['0.1.2', 'the newer thing']])
+    seedSettings(env, { onboardingSeen: true, lastSeenVersion: '0.1.0', assist: null })
+    const claudeSettings = path.join(env.home, '.claude', 'settings.json')
+    fs.writeFileSync(claudeSettings, JSON.stringify({ model: 'opus' }))
+
+    const app1 = await launchApp(env)
+    try {
+      const page = await app1.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      const whatsNew = page.locator('.update-modal')
+      const assist = page.locator('.assist-modal')
+      await expect(whatsNew).toBeVisible({ timeout: 30_000 })
+      await expect(assist).toHaveCount(0)
+      await whatsNew.locator('.update-actions .btn-primary').click()
+
+      await expect(assist).toBeVisible({ timeout: 20_000 })
+      await page.keyboard.press('Escape')
+      await expect(assist).toBeVisible()
+      await snap(page, 'T-OB-12')
+
+      await assist.locator('.choice', { hasText: 'Yes, don’t ask' }).click()
+      await expect
+        .poll(() => JSON.parse(fs.readFileSync(claudeSettings, 'utf8')), { timeout: 20_000 })
+        .toEqual({ model: 'opus', skipDangerousModePermissionPrompt: true })
+      await expect(assist.locator('.choice', { hasText: 'Yes, don’t ask' })).toHaveCount(0)
+
+      await assist
+        .locator('.choice')
+        .filter({ has: page.locator('.choice-t', { hasText: /^Claude$/ }) })
+        .click()
+      await expect(assist).toHaveCount(0)
+      expect(settingsOnDisk(env).assist).toEqual({ on: true, backend: 'claude' })
+    } finally {
+      await quitAndClose(app1)
+    }
+
+    const app2 = await launchApp(env)
+    try {
+      const page = await app2.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await expect(page.locator('.ws-head').first()).toBeVisible({ timeout: 30_000 })
+      await page.waitForTimeout(BEAT_FOR_A_MODAL_THAT_MUST_NOT_OPEN_MS)
+      await expect(page.locator('.assist-modal')).toHaveCount(0)
+    } finally {
+      await quitAndClose(app2)
     }
   })
 

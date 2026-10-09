@@ -313,7 +313,7 @@ import {
 } from './agentSessions'
 import { writeLine } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
-import { claudeTitleModel } from './sessionTitle'
+import { koloftAssist } from './assist'
 import { closingTree, removeTree, whatIsLeft } from './sessionClose'
 import { discordTokenRead, discordTokenWrite } from './accounts'
 import { writeAgentPlugin } from './agentPlugin'
@@ -780,10 +780,21 @@ const sessionDeps: SessionVerbDeps = {
   pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
   peerNames: () => claudePeerNames(),
   launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
-  titleModel: claudeTitleModel(
-    () => (ptyMgr.shimDir ? path.join(ptyMgr.shimDir, 'claude') : 'claude'),
-    pickedAccountEnv
-  ),
+  assist: koloftAssist({
+    setting: () => loadSettings().assist,
+    claude: async () => {
+      const env = await pickedAccountEnv()
+      if (!env) return null
+      return { binary: ptyMgr.shimDir ? path.join(ptyMgr.shimDir, 'claude') : 'claude', env }
+    },
+    codex: async () => {
+      const picked = pickCodexHome()
+      if (!picked || !codexSessions || !(await codexSessions.availability()).available) return null
+      const binary = codexSessions.cliBinary
+      if (!binary) return null
+      return { binary, env: { ...codexSessions.defaultEnv, CODEX_HOME: picked.home } }
+    }
+  }),
   queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
   startedSessions,
   closable: closableSessions,
@@ -894,11 +905,20 @@ async function pickForLaunch(tabId?: string): Promise<{
   return { res, endpoint: { baseUrl: meta?.baseUrl, model: meta?.model } }
 }
 
-async function pickedAccountEnv(): Promise<NodeJS.ProcessEnv> {
+const AUTH_VARS_A_PICKED_ACCOUNT_REPLACES = [
+  'CLAUDE_CODE_OAUTH_TOKEN',
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN'
+]
+
+async function pickedAccountEnv(): Promise<NodeJS.ProcessEnv | null> {
   await loginEnvReady()
   const picked = await pickMachineAccount(() => pickForLaunch())
+  if (!picked) return null
+  const env = { ...process.env }
+  for (const k of AUTH_VARS_A_PICKED_ACCOUNT_REPLACES) delete env[k]
   // ADR-0030
-  return picked ? { ...picked.env, KOLOFT_ACCOUNT_PICKED: '1' } : {}
+  return { ...env, ...picked.env, KOLOFT_ACCOUNT_PICKED: '1' }
 }
 
 async function handlePickRequest(pickDir: string, reqName: string, raw: unknown): Promise<void> {

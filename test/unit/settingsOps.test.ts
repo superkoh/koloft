@@ -194,6 +194,21 @@ describe('U-OB-03: sanitizeLoadedSettings and the onboarding keys', () => {
   })
 })
 
+describe('sanitizeLoadedSettings and the Assist choice', () => {
+  it('keeps a valid choice, and reads anything else — or none at all, as after an upgrade — as not chosen yet', () => {
+    expect(sanitizeLoadedSettings({ assist: { on: false, backend: 'codex' } }).assist).toEqual({
+      on: false,
+      backend: 'codex'
+    })
+    for (const assist of [undefined, 'claude', { on: 'yes', backend: 'claude' }, { on: true }])
+      expect(sanitizeLoadedSettings({ fontSize: 13, assist }).assist).toBeNull()
+  })
+
+  it('About ▸ Reset leaves the choice alone', () => {
+    expect(buildResetPatch()).not.toHaveProperty('assist')
+  })
+})
+
 describe('sanitizeLoadedSettings and the account list', () => {
   it('merges accounts that differ only in letter case within one kind, keeping the first, and keeps the same name under another kind', () => {
     const base = { enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }

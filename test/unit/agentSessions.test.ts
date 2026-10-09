@@ -126,7 +126,7 @@ function harness(
       launched.push(spec)
       return 'new-tab'
     },
-    titleModel: async () => conducting.titleReply ?? null,
+    assist: async () => conducting.titleReply ?? null,
     queue: async (tabId, text, clientId) => {
       queued.push({ tabId, text, clientId })
     },
