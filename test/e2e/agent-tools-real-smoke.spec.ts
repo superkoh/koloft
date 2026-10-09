@@ -212,7 +212,7 @@ function refusedThenClosedForGood(
 const CHILD = 'kid'
 const CHILD_TASK = 'Reply with the single word ok.'
 const START_A_CHILD_THEN_CLOSE_IT = {
-  default: `Run these shell commands one after another, each exactly once: koloft session new -w ${CHILD} -- "${CHILD_TASK}" — it prints the new session's name in quotes — then sleep 20 — then koloft session close with that name in quotes. Then say only what the last command printed. Do nothing else.`,
+  default: `Run these shell commands one after another, each exactly once: koloft session new -w ${CHILD} -- "${CHILD_TASK}" — it prints the new session's name in quotes — then sleep 20 — then koloft session close followed by that name with the quotes left out, its words as separate arguments. Then say only what the last command printed. Do nothing else.`,
   other: `Run this shell command exactly once: koloft session new -w ${CHILD} -- "${CHILD_TASK}" It prints a tab id. Then run sleep 20, then run koloft session close with that tab id. Then say only what the last command printed. Do nothing else.`
 }
 const TITLE_SAMPLE_EVERY_MS = 250
@@ -284,6 +284,7 @@ function closesTheSessionItStarted(
         const name = launchNameOfTheChild(env)
         expect(name).toBeTruthy()
         expect(name).not.toBe(CHILD_TASK)
+        expect(name).toMatch(/\s/)
         expect(childTitles).toContain(name)
       }
       expect(childTitles.join('\n')).not.toMatch(TITLE_DRAWN_FROM_THE_HANDOVER)
@@ -642,7 +643,7 @@ test.describe('KOLOFT_PORT_OFFSET reaches the REAL agent’s own shell in a work
 })
 
 test.describe('`koloft session close` from a REAL agent in a worktree: opt-in cases proving the real claude and codex reach the command; they spend real money', () => {
-  test('a real Claude Code starts a child session in a worktree, then closes it for good while it stays open itself', async ({
+  test('a real Claude Code starts a child session in a worktree, then closes it for good by its made-up name with spaces given without quotes, while it stays open itself', async ({
     env
   }) => {
     test.skip(
