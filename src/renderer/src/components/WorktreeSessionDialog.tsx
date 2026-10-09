@@ -135,8 +135,8 @@ export function WorktreeSessionDialog({
 
   const listed = useMemo(() => sortWorktrees(worktrees, rowsAtOpen.current), [worktrees])
   const ghItems = useMemo(
-    () => (items?.state === 'items' ? [...items.issues, ...items.prs] : []),
-    [items]
+    () => (loaded && items?.state === 'items' ? [...items.issues, ...items.prs] : []),
+    [items, loaded]
   )
   const names = useMemo(
     () => [...listed.map((w) => w.name), ...ghItems.map(itemFilterText)],
@@ -411,7 +411,7 @@ export function WorktreeSessionDialog({
 
   const githubBox = (): JSX.Element | null => {
     if (!isGit || items?.state === 'no-repo') return null
-    if (!items) return <p className="field-hint">Loading issues and pull requests…</p>
+    if (!items || !loaded) return <p className="field-hint">Loading issues and pull requests…</p>
     if (items.state !== 'items')
       return (
         <p className="field-hint">

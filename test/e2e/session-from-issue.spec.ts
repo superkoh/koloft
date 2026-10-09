@@ -69,10 +69,12 @@ function itemRow(dlg: Locator, n: number): Locator {
   return dlg.locator('.gh-items .cb-row', { hasText: `#${n} ` })
 }
 
-async function pickWithKeys(page: Page, dlg: Locator, typed: string): Promise<void> {
+async function pickWithKeys(page: Page, dlg: Locator, n: number): Promise<void> {
+  await expect(itemRow(dlg, n)).toBeVisible({ timeout: 15_000 })
   await dlg.getByRole('textbox').click()
-  await page.keyboard.type(typed)
+  await page.keyboard.type(`#${n}`)
   await page.keyboard.press('ArrowDown')
+  await expect(itemRow(dlg, n)).toHaveClass(/\bhot\b/)
 }
 
 function textAfterDashes(call: ClaudeCall): string {
@@ -107,9 +109,8 @@ test.describe('starting a worktree session from a GitHub issue or pull request (
       await expect(itemRow(dlg, 218).locator('.wt-name')).toHaveText(`#218 ${ISSUE.title}`)
       await expect(itemRow(dlg, 329).locator('.note')).toHaveText('branch fix/restart')
 
-      await pickWithKeys(page, dlg, '#218')
+      await pickWithKeys(page, dlg, 218)
       await expect(dlg.getByText('Only letters, digits, . _ -')).toHaveCount(0)
-      await expect(itemRow(dlg, 218)).toHaveClass(/\bhot\b/)
       await expect(itemRow(dlg, 329)).toHaveClass(/\bdim\b/)
       await expect(dialogPrimary(dlg)).toContainText('Create from #218')
       await expect(dlg.locator('.field-hint').first()).toContainText(
@@ -125,7 +126,7 @@ test.describe('starting a worktree session from a GitHub issue or pull request (
       await waitForSessionRow(page, 'ws-a', 'issue-218')
 
       dlg = await openWorktreeSession(page, 'ws-a')
-      await pickWithKeys(page, dlg, '#218')
+      await pickWithKeys(page, dlg, 218)
       await expect(dialogPrimary(dlg)).toContainText('Open issue-218 for #218')
       await page.keyboard.press('Enter')
       await expect(dlg).toHaveCount(0)
@@ -169,7 +170,7 @@ test.describe('starting a worktree session from a GitHub issue or pull request (
       await waitBooted(page)
 
       let dlg = await openWorktreeSession(page, 'ws-a')
-      await pickWithKeys(page, dlg, '#329')
+      await pickWithKeys(page, dlg, 329)
       await expect(dialogPrimary(dlg)).toContainText('Open fix-190 for #329')
       await expect(dlg.locator('.field-hint').first()).toContainText(
         "it is already on #329's branch fix/restart"
@@ -184,7 +185,7 @@ test.describe('starting a worktree session from a GitHub issue or pull request (
       await waitForSessionRow(page, 'ws-a', 'fix-190')
 
       dlg = await openWorktreeSession(page, 'ws-a')
-      await pickWithKeys(page, dlg, '#330')
+      await pickWithKeys(page, dlg, 330)
       await expect(dialogPrimary(dlg)).toContainText('Create from #330')
       await page.keyboard.press('Enter')
       await expect(dlg).toHaveCount(0)
@@ -213,7 +214,7 @@ test.describe('starting a worktree session from a GitHub issue or pull request (
       const page = await app.firstWindow()
       await waitBooted(page)
       const dlg = await openWorktreeSession(page, 'ws-a')
-      await pickWithKeys(page, dlg, '#218')
+      await pickWithKeys(page, dlg, 218)
       await expect(dlg.locator('.modal-foot button[data-default="false"]')).toHaveText(
         'Create from #218 · Codex⇧⏎'
       )
@@ -257,7 +258,7 @@ test.describe('starting a worktree session from a GitHub issue or pull request (
 
       const dlg = await openWorktreeSession(page, REMOTE_WS_NAME)
       await expect(dlg.locator('.gh-items .cb-hd').first()).toHaveText('Open issues · acme/app')
-      await pickWithKeys(page, dlg, '#218')
+      await pickWithKeys(page, dlg, 218)
       await expect(dialogPrimary(dlg)).toContainText('Create from #218')
       await page.keyboard.press('Enter')
       await expect(dlg).toHaveCount(0)
