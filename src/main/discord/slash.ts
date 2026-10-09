@@ -196,7 +196,6 @@ export class SlashCommands {
     const pull = this.d.nextMirrorPull(tab)
     p.mirrorPull = pull
     if (!pull) return this.settleSoon(tab, p)
-    clearTimeout(p.settle)
     void pull.then(() => {
       if (p.mirrorPull !== pull) return
       p.mirrorPull = undefined
