@@ -11,6 +11,16 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
     title: 'Sessions & workspaces',
     items: [
       {
+        keys: ['⌘P'],
+        name: 'Jump to',
+        uses: [
+          {
+            what: 'Opens a list of every session, every workspace and the app actions. Type a few letters, ⏎ opens the one picked.'
+          },
+          { where: 'Dialog', what: 'Nothing.' }
+        ]
+      },
+      {
         keys: ['⌘N'],
         name: 'New session',
         uses: [

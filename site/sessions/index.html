@@ -80,10 +80,10 @@
             <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>
-            two folders and their sessions. The bars on the left are the lights; the red dots mark
-            two sessions that need you. The 2 by the branch sign means tidewatch is two steps behind
-            the shared copy it came from (origin). The 7 and the 2 after it are its open issues and
-            pull requests.
+            two folders and their sessions. The bars on the left are the lights: green for a turn
+            that is done, grey for a closed session. The red dots mark two sessions that need you.
+            The 2 by the branch sign means tidewatch is two steps behind the shared copy it came
+            from (origin). The 7 and the 2 after it are its open issues and pull requests.
           </figcaption>
         </figure>
 
@@ -120,8 +120,8 @@
             <a href="#keep-running">below</a>).
           </li>
         </ul>
-        <p>A running session has a light on its row. A row with no light is not running.</p>
-        <div class="typed-table">
+        <p>Every row has a light on its left. The colour says what the session is doing.</p>
+        <div class="typed-table" id="lights">
           <table>
             <thead>
               <tr>
@@ -143,8 +143,19 @@
                 <td>its turn is done</td>
               </tr>
               <tr>
+                <td>green with <code>↻ N</code></td>
+                <td>
+                  its turn is done, but N things it started still run in the background. Hover the
+                  mark to see them.
+                </td>
+              </tr>
+              <tr>
                 <td>dim green</td>
                 <td>done a while ago, nothing new</td>
+              </tr>
+              <tr>
+                <td>grey</td>
+                <td>closed</td>
               </tr>
             </tbody>
           </table>
@@ -241,6 +252,20 @@
             <code>koloft session close</code> (see <a href="../agents/">agents</a>).
           </li>
         </ul>
+        <p>
+          Two worktrees often want the same port for the server a project runs while you work on it.
+          So every session in a worktree gets <code>KOLOFT_PORT_OFFSET</code>, a number from 1 to 99
+          that is always the same for one worktree name. A project can add it to its base port, like
+          <code class="nowrap">PORT=$((3000 + KOLOFT_PORT_OFFSET))</code>. Claude Code, Codex and
+          Claude Code on a <a href="../remote/">remote folder</a> all get it.
+        </p>
+        <p>
+          A new worktree has none of the files git ignores, such as <code>.env</code>. List the ones
+          you want in a <code>.worktreeinclude</code> file at the root of the repo, and they are
+          copied into each worktree. Claude Code copies them into the worktrees it makes. Koloft
+          copies them into a Codex worktree, and into a worktree it rebuilds for a resumed Claude
+          session. Not on a <a href="../remote/">remote folder</a> yet.
+        </p>
 
         <h2 id="the-sidebar">The sidebar</h2>
         <p>

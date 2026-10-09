@@ -608,6 +608,21 @@ export type PrChecks =
 
 export type GitStepResult = { ok: true } | { ok: false; reason: string }
 
+export interface GithubItem {
+  kind: 'issue' | 'pr'
+  number: number
+  title: string
+  url: string
+  updatedAt: string
+  branch?: string
+}
+
+export type GithubOpenItems =
+  | { state: 'no-repo' | 'no-gh' | 'signed-out' | 'failed' }
+  | { state: 'items'; repo: string; issues: GithubItem[]; prs: GithubItem[] }
+
+export type PrWorktreeResult = { ok: true; dir: string } | { ok: false; reason: string }
+
 // PLATFORM§15
 export interface ExtensionInfo {
   id: string
@@ -956,6 +971,8 @@ export interface KoloftApi {
     failingChecksText(root: string, pr: number): Promise<string | null>
     commit(root: string, message: string): Promise<GitStepResult>
     push(root: string): Promise<GitStepResult>
+    openItems(root: string): Promise<GithubOpenItems>
+    prWorktree(root: string, pr: number, branch: string): Promise<PrWorktreeResult>
   }
   workspace: {
     pickFolder(): Promise<string | null>
@@ -1028,6 +1045,7 @@ export interface KoloftApi {
     onFind(cb: () => void): () => void
     onCheckUpdate(cb: () => void): () => void
     onOpenSettings(cb: () => void): () => void
+    onCommandPalette(cb: () => void): () => void
     onRestartSession(cb: () => void): () => void
     onAddWorkspace(cb: () => void): () => void
     onSave(cb: () => void): () => void

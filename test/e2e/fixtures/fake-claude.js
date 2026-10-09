@@ -745,6 +745,16 @@ function handleLine(line) {
     append([
       { type: 'user', message: { role: 'user', content: '/compact' }, cwd },
       {
+        type: 'user',
+        isCompactSummary: true,
+        isVisibleInTranscriptOnly: true,
+        message: {
+          role: 'user',
+          content: 'This session is being continued from a previous conversation.'
+        },
+        cwd
+      },
+      {
         type: 'system',
         subtype: 'local_command',
         content:

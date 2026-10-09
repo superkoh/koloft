@@ -327,6 +327,11 @@ function commandEcho(obj: { origin?: unknown }, raw: string | null): boolean {
   return raw !== null && raw.startsWith('/') && claudeWroteIt(obj)
 }
 
+// CC§1
+export function compactionSummary(obj: { isCompactSummary?: unknown }): boolean {
+  return obj.isCompactSummary === true
+}
+
 function ownerOrPeer(kind: unknown): 'owner' | 'peer' | null {
   if (kind === undefined || kind === 'human') return 'owner'
   return kind === 'peer' ? 'peer' : null
@@ -346,6 +351,7 @@ function claudeTurnPieces(obj: any): TurnPiece[] {
     if (who === 'peer') return [{ line: { who, text: peerText(raw), at }, midTurn: false }]
     if (
       obj.isMeta ||
+      compactionSummary(obj) ||
       INTERRUPT_TEXTS.has(raw) ||
       commandEcho(obj, raw) ||
       !classifyUserPrompt(raw).title
@@ -1566,7 +1572,7 @@ export class SessionTracker extends SessionRuntime {
       this.ingestTaskNotification(t, obj)
       const output = t.caughtUp ? commandOutputOf(obj) : null
       if (output) this.emit('command-output', { tabId: t.info.tabId, ...output })
-      if (obj.type === 'user' && !obj.isMeta) {
+      if (obj.type === 'user' && !obj.isMeta && !compactionSummary(obj)) {
         const c = obj.message?.content
         let raw: string | null = null
         let hasImage = false

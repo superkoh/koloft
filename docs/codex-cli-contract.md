@@ -764,6 +764,14 @@ sentence, then `ls`, then `DONE`; turn 2 was sent with `thread/queue/add`.
   said `historyMode: "paginated"`). Those two methods are not on the list `CodexRpc` lets
   through; if a later Codex drops `includeTurns`, reading a closed Codex session breaks
   there first.
+- **A Plan-mode turn writes no plan file; the plan is a `plan` item** `{type, id, text}`
+  on `item/completed`, streamed before that by `item/plan/delta` (72 deltas adding up to
+  the same 362 characters). It is not `turn/plan/updated`, which is `update_plan`'s step
+  list. The saved rollout holds the plan twice: an `item_completed` event whose
+  `item.text` is the plan, and the final assistant message, which wraps it in
+  `<proposed_plan>` tags. Checked 2026-10-03 with Codex 0.159.3: one `turn/start` with
+  `collaborationMode: {mode: "plan", …}` in a fresh `CODEX_HOME`, in a folder holding
+  only `README.md`; `collaborationMode/list` answered `Plan` and `Default`.
 - That the TUI's ephemeral title thread (section 17, its own `temporary-structured-…` id)
   never sends items under the session's thread id is inferred from section 17, not
   re-run here: no TUI was attached in this probe.
@@ -845,6 +853,12 @@ folder trusted. Text was typed in one write and CR in a second write 0.3–0.6 s
   started and completed, `turn/completed` (2.8–5.4 s), on the same thread id. No
   `thread/compacted` notification came. The relay sending `thread/compact/start` itself
   did the same, and the TUI drew it and kept working.
+- **An automatic compaction stays inside the turn it interrupts** (2026-10-09, Codex CLI
+  0.162.0, `codex app-server` on stdio driven by a Node script, a temporary `CODEX_HOME`
+  with `model_auto_compact_token_limit = 30000`, one real turn of four `seq` commands):
+  after the third command a `contextCompaction` item started and completed (10.6 s), the
+  fourth command and the reply followed, and one `turn/completed` for the same turn id
+  ended it. No other turn started and no user message was added.
 - **`/new` and `/clear`** each sent `config/read`, `thread/start` (a new id), then
   `thread/unsubscribe` of the old thread. `/clear` adds `sessionStartSource: "clear"`.
   A `-c developer_instructions=…` given to the app-server still reached the model in the
