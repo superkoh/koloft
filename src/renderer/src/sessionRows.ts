@@ -9,6 +9,7 @@ import type {
   WorkspaceRows
 } from '@shared/types'
 import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
+import { basename } from '@shared/preview'
 import { NOTES_HEIGHT_FLOOR } from '@shared/settingsOps'
 import { statusUnavailable } from '@shared/sessionBackend'
 
@@ -193,6 +194,10 @@ export function tabOfRow(
 
 export function shownTitle(rowTitle: string, liveTitle: string | undefined): string {
   return liveTitle && liveTitle !== PLACEHOLDER_SESSION_TITLE ? liveTitle : rowTitle
+}
+
+export function workspaceName(ws: WorkspaceRows['workspace']): string {
+  return basename(ws.remote?.path ?? ws.path)
 }
 
 export function isOrphanRow(

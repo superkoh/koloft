@@ -39,7 +39,6 @@ export function CommandPalette({
   const showBackend = mixesBackends(sessionItems.map((s) => s.row))
   const groups = paletteGroups(sessionItems, workspaceItems, actions, query)
   const visible = groups.flatMap((g) => g.items)
-  const indexOf = new Map(visible.map((item, i) => [item, i]))
   const at = Math.min(hot, Math.max(0, visible.length - 1))
 
   const open = (item: PaletteItem | undefined): void => {
@@ -83,7 +82,7 @@ export function CommandPalette({
   }
 
   const rowOf = (item: PaletteItem): JSX.Element => {
-    const i = indexOf.get(item) ?? -1
+    const i = visible.indexOf(item)
     const cold = item.kind === 'session' && !item.row.running && !item.row.pending
     const dim = item.kind === 'action' && item.disabled
     return (
@@ -96,10 +95,7 @@ export function CommandPalette({
         aria-selected={i === at}
         aria-disabled={dim || undefined}
         onMouseDown={(e) => e.preventDefault()}
-        onClick={() => {
-          setHot(i)
-          open(item)
-        }}
+        onClick={() => open(item)}
       >
         {item.kind === 'session' && (
           <>
@@ -167,7 +163,7 @@ export function CommandPalette({
               </div>
             ))}
             {visible.length === 0 && (
-              <div className="empty">No session, workspace or action matches “{query}”</div>
+              <div className="cb-empty">No session, workspace or action matches “{query}”</div>
             )}
           </div>
           <p className="field-hint">↓↑ move · ⏎ open · Esc cancel</p>

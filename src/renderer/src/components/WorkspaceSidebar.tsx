@@ -56,6 +56,7 @@ import {
   shownTitle,
   statusUnavailable,
   tabOfRow,
+  workspaceName,
   type RowNode
 } from '../sessionRows'
 import { releaseSettledResumes } from '../resumeFlow'
@@ -932,9 +933,7 @@ export function WorkspaceSidebar({
                     {open ? <LuFolderOpen size={15} /> : <LuFolder size={15} />}
                   </span>
                   <span className={'ws-name' + (mq?.id === nameMq ? ' mq' : '')}>
-                    <i ref={mq?.id === nameMq ? mqRef : undefined}>
-                      {basename(ws.remote?.path ?? ws.path)}
-                    </i>
+                    <i ref={mq?.id === nameMq ? mqRef : undefined}>{workspaceName(ws)}</i>
                   </span>
                   {ws.remote && (
                     <span

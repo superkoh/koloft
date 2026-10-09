@@ -1,8 +1,14 @@
 import type { AttentionEvent, SessionInfo, SessionRow, WorkspaceRows } from '@shared/types'
-import { basename } from '@shared/preview'
 import { remoteCopyText } from '@shared/remoteKey'
 import { shortenHome } from './browseModel'
-import { attentionOnRow, rowsUnder, sessionTree, shownTitle, tabOfRow } from './sessionRows'
+import {
+  attentionOnRow,
+  rowsUnder,
+  sessionTree,
+  shownTitle,
+  tabOfRow,
+  workspaceName
+} from './sessionRows'
 
 export interface PaletteSession {
   kind: 'session'
@@ -21,7 +27,6 @@ export interface PaletteWorkspace {
   wsPath: string
   name: string
   note: string
-  text: string
 }
 
 export interface PaletteAction {
@@ -48,9 +53,6 @@ export function matchesQuery(text: string, query: string): boolean {
     .filter(Boolean)
     .every((word) => hay.includes(word))
 }
-
-const workspaceName = (ws: WorkspaceRows['workspace']): string =>
-  basename(ws.remote?.path ?? ws.path)
 
 export function paletteSessions(
   rows: WorkspaceRows[],
@@ -89,7 +91,7 @@ export function paletteWorkspaces(rows: WorkspaceRows[], home: string): PaletteW
       const note = ws.remote
         ? remoteCopyText(ws.remote.host, ws.remote.path)
         : shortenHome(ws.path, home)
-      return { kind: 'workspace', key: `w:${ws.path}`, wsPath: ws.path, name, note, text: note }
+      return { kind: 'workspace', key: `w:${ws.path}`, wsPath: ws.path, name, note }
     })
 }
 
@@ -101,7 +103,7 @@ export function paletteGroups(
 ): PaletteGroup[] {
   const groups: PaletteGroup[] = [
     { title: 'Sessions', items: sessions.filter((s) => matchesQuery(s.text, query)) },
-    { title: 'Workspaces', items: workspaces.filter((w) => matchesQuery(w.text, query)) },
+    { title: 'Workspaces', items: workspaces.filter((w) => matchesQuery(w.note, query)) },
     { title: 'Actions', items: actions.filter((a) => matchesQuery(a.label, query)) }
   ]
   return groups.filter((g) => g.items.length > 0)

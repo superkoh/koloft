@@ -2050,7 +2050,7 @@ body {
 .palette .wsp-list {
   max-height: 360px;
 }
-.palette .empty {
+.cb-empty {
   padding: 18px 10px;
   text-align: center;
   font-family: var(--mono);

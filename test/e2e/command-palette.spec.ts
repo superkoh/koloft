@@ -92,8 +92,10 @@ test.describe('the command palette (⌘P) jumps to any session, workspace or act
 
       await openPalette(app, page)
       await page.keyboard.type('zzq')
-      await expect(palette(page).locator('.empty')).toContainText('No session, workspace or action')
-      await expect(palette(page).locator('.empty')).toContainText('zzq')
+      await expect(palette(page).locator('.cb-empty')).toContainText(
+        'No session, workspace or action'
+      )
+      await expect(palette(page).locator('.cb-empty')).toContainText('zzq')
       await expect(paletteRows(page)).toHaveCount(0)
       await page.keyboard.press('Escape')
       await expect(palette(page)).toHaveCount(0)

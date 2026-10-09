@@ -1,5 +1,5 @@
 import type { SessionRow } from '@shared/types'
-import { parseRemoteKey } from '@shared/remoteKey'
+import { isRemoteKey } from '@shared/remoteKey'
 import { adoptionSettled } from './adoption'
 import { resumeInFlight, resumeSession } from './resumeFlow'
 import { isOrphanRow, liveTabOf } from './sessionRows'
@@ -25,7 +25,7 @@ export function openSessionRow(row: SessionRow, wsPath: string): void {
   if (row.running) {
     if (isOrphanRow(row, st.sessions, st.tabs)) {
       // ADR-0025
-      if (parseRemoteKey(wsPath)) {
+      if (isRemoteKey(wsPath)) {
         void resumeSession(row)
         return
       }
