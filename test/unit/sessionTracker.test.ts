@@ -8,7 +8,6 @@ import type { ClaudeSessionInfo as SessionInfo } from '@shared/types'
 let SessionTracker: typeof import('../../src/main/sessionTracker').SessionTracker
 let encodeCwd: typeof import('../../src/main/sessionTracker').encodeCwd
 let scratchpadDirFor: typeof import('../../src/main/sessionTracker').scratchpadDirFor
-let tasksDirsFor: typeof import('../../src/main/sessionTracker').tasksDirsFor
 let classifyUserPrompt: typeof import('../../src/main/sessionTracker').classifyUserPrompt
 let transcriptTurns: typeof import('../../src/main/sessionTracker').transcriptTurns
 let lastTurnsOfLines: typeof import('../../src/main/sessionTracker').lastTurnsOfLines
@@ -28,7 +27,6 @@ beforeAll(async () => {
     SessionTracker,
     encodeCwd,
     scratchpadDirFor,
-    tasksDirsFor,
     classifyUserPrompt,
     transcriptTurns,
     lastTurnsOfLines,
@@ -1485,19 +1483,6 @@ describe('scratchpadDirFor — Claude Code per-session scratchpad', () => {
       '/b/-r--claude-worktrees-w/sid/scratchpad'
     )
   })
-
-  it('looks for tasks/ both beside the transcript and under the folder claude started in, since -w and EnterWorktree sessions put it in different ones', () => {
-    process.env.KOLOFT_SCRATCHPAD_BASE = '/b'
-    const inWorktree = '/h/.claude/projects/-r--claude-worktrees-w/sid.jsonl'
-    expect(tasksDirsFor(inWorktree, '/r')).toEqual([
-      '/b/-r--claude-worktrees-w/sid/tasks',
-      '/b/-r/sid/tasks'
-    ])
-    expect(tasksDirsFor(inWorktree, '/r/.claude/worktrees/w')).toEqual([
-      '/b/-r--claude-worktrees-w/sid/tasks'
-    ])
-    expect(tasksDirsFor(null, '/r')).toEqual([])
-  })
 })
 
 // CC§2
@@ -1539,31 +1524,6 @@ describe('SessionTracker — scratchpad dir on the emitted session', () => {
       tracker.bindSession('tabSPW', file, SID, wt)
       const s = await waitFor(tracker, (x) => x.tabId === 'tabSPW' && !!x.jsonlPath)
       expect(s.scratchpadDir).toBe(path.join(base, encodeCwd(repo), SID, 'scratchpad'))
-    } finally {
-      delete process.env.KOLOFT_SCRATCHPAD_BASE
-    }
-  })
-
-  it('looks for a worktree session background shells under the folder claude started in too', async () => {
-    const base = fs.mkdtempSync(path.join(home, 'spbase-'))
-    process.env.KOLOFT_SCRATCHPAD_BASE = base
-    try {
-      const { repo, wt } = repoWithWorktree('tasks-wt')
-      const file = writeJsonl(wt, SID, [
-        { type: 'user', message: { role: 'user', content: 'hi' }, cwd: wt }
-      ])
-      const tracker = newTracker()
-      const asked: string[][] = []
-      tracker.pidOf = () => 4242
-      tracker.inspect = async (_root, dirs) => {
-        asked.push(dirs)
-        return { shells: new Map() }
-      }
-      tracker.track('tabTW', repo)
-      tracker.bindSession('tabTW', file, SID, wt)
-      await waitFor(tracker, (x) => x.tabId === 'tabTW' && !!x.jsonlPath)
-      await tracker.reportTurnEnd('tabTW', [{ id: 'bsh', type: 'shell' }])
-      expect(asked.at(-1)).toContain(path.join(base, encodeCwd(repo), SID, 'tasks'))
     } finally {
       delete process.env.KOLOFT_SCRATCHPAD_BASE
     }

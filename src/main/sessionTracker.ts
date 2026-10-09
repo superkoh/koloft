@@ -225,12 +225,6 @@ export function scratchpadDirFor(
   return dir && path.join(dir, 'scratchpad')
 }
 
-// CC§2
-export function tasksDirsFor(jsonlPath: string | null, launchCwd?: string): string[] {
-  const dirs = new Set([sessionTmpDir(jsonlPath), sessionTmpDir(jsonlPath, launchCwd)])
-  return [...dirs].filter((d) => d !== null).map((d) => path.join(d, 'tasks'))
-}
-
 interface SubagentFile {
   offset: number
   tail: Buffer
@@ -709,9 +703,9 @@ export class SessionTracker extends SessionRuntime {
     if (this.leftBehind?.(t.info.sessionId)) return true
     if (t.remote) return false
     const root = this.pidOf?.(tabId)
-    const tasksDirs = tasksDirsFor(t.info.jsonlPath, t.launchCwd)
-    if (!root || !tasksDirs.length) return true
-    const procs = await this.inspect(root, tasksDirs)
+    const sessionId = t.info.sessionId
+    if (!root || !sessionId) return true
+    const procs = await this.inspect(root, sessionId)
     return !procs || procs.shells.size > 0
   }
 
@@ -855,11 +849,11 @@ export class SessionTracker extends SessionRuntime {
     if (t.procsPromise) await t.procsPromise
     if (!force && Date.now() - t.procsAt < PROCS_SCAN_MS) return
     const root = this.pidOf?.(t.info.tabId)
-    const tasksDirs = tasksDirsFor(t.info.jsonlPath, t.launchCwd)
-    if (!root || !tasksDirs.length) return
+    const sessionId = t.info.sessionId
+    if (!root || !sessionId) return
     t.procsPromise = (async () => {
       try {
-        const procs = await this.inspect(root, tasksDirs)
+        const procs = await this.inspect(root, sessionId)
         if (this.tracked.get(t.info.tabId) !== t) return
         t.procs = procs
         t.procsAt = Date.now()

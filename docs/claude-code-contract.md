@@ -176,7 +176,8 @@ mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
   session started from the main checkout, with its scratchpad under the main checkout,
   was told by its own Bash tool that a background command wrote to
   `<worktree slug>/<id>/tasks/<task>.output`. So which slug holds `tasks/` cannot be read
-  from the transcript or the launch folder alone: look under both.
+  from the transcript's folder or the launch folder; only the `<sessionId>/tasks/` end of
+  the path is fixed.
   The per-user folder is `realpath(<base>/claude-<uid>)` (mode 0700). `<base>` differs by
   OS. macOS build: `$CLAUDE_CODE_TMPDIR`, else a fixed `/tmp` — `$TMPDIR` is ignored
   (CC 2.1.286 and 2.1.287 macOS binaries:
