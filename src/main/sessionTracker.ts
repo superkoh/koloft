@@ -514,7 +514,7 @@ interface Tracked {
   inode?: number
   swept?: boolean
   relocatedCwd?: string
-  lastWorktreeStateInBatch?: string | null
+  lastWorktreeStateInBatch?: string
   landTimer?: ReturnType<typeof setTimeout>
   remote?: RemoteTab
   subagentTimer?: ReturnType<typeof setInterval>
@@ -1054,7 +1054,8 @@ export class SessionTracker extends SessionRuntime {
   private followWorktreeState(t: Tracked): void {
     const bound = t.lastWorktreeStateInBatch
     t.lastWorktreeStateInBatch = undefined
-    if (!bound || t.remote || t.landTimer || !fs.existsSync(bound)) return
+    if (!bound || t.remote || t.landTimer || bound === t.info.treeRoot || !fs.existsSync(bound))
+      return
     this.setTreeRoot(t, bound)
   }
 
@@ -1097,6 +1098,7 @@ export class SessionTracker extends SessionRuntime {
     t.lastTouchedAbs = null
     t.lastWrittenAbs = null
     t.relocatedCwd = undefined
+    t.lastWorktreeStateInBatch = undefined
     t.info.lastTouched = undefined
     t.info.lastWritten = undefined
     t.caughtUp = false
@@ -1564,9 +1566,9 @@ export class SessionTracker extends SessionRuntime {
       if (obj.type === 'relocated' && typeof obj.relocatedCwd === 'string' && obj.relocatedCwd) {
         t.relocatedCwd = obj.relocatedCwd
       }
-      if (obj.type === 'worktree-state' && obj.worktreeSession !== undefined) {
+      if (obj.type === 'worktree-state') {
         const bound = obj.worktreeSession?.worktreePath
-        t.lastWorktreeStateInBatch = typeof bound === 'string' && bound ? bound : null
+        t.lastWorktreeStateInBatch = typeof bound === 'string' && bound ? bound : undefined
       }
       // CC§2
       const recTs = Math.min(Date.parse(obj.timestamp), Date.now())
