@@ -1,4 +1,5 @@
 import type { BackgroundItem, PreviewItem, SessionUsage } from './types'
+import type { Turn } from './turns'
 
 // CC§8
 export interface ReportedTask {
@@ -7,8 +8,17 @@ export interface ReportedTask {
   since?: number
 }
 
+// CC§14
+export interface AskPayload {
+  tool_name?: string
+  tool_input?: Record<string, unknown>
+}
+
 export type SessionEvent =
+  | { type: 'asked'; ask: AskPayload }
   | { type: 'prompt' }
+  | { type: 'compacting' }
+  | { type: 'compacted' }
   | { type: 'stop'; reported?: ReportedTask[] }
   | { type: 'notify'; need: 'approval' | 'input' }
   | { type: 'background-changed'; items: BackgroundItem[] }
@@ -18,6 +28,7 @@ export type SessionEvent =
   | { type: 'open'; target: string }
   | { type: 'bound'; key: string }
   | { type: 'exited'; clean: boolean; title?: string; sessionId?: string }
+  | { type: 'turn-ended'; turn: Turn }
   | {
       type: 'files-changed'
       files: PreviewItem[]

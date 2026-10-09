@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => {
     onExit: (cb: (e: { exitCode: number; signal?: number }) => void) => {
       state.exit = cb
     },
-    write: () => {},
+    write: (_data: string) => {},
     resize: () => {},
     kill: () => {},
     get process(): string {
@@ -276,6 +276,85 @@ describe('PtyManager handles after the pty exits', () => {
   })
 })
 
+describe('PtyManager.whenReady: waiting until a tab can be typed into', () => {
+  it('checks again only when woken for that tab, answers false at its deadline, and false as soon as the pty exits', async () => {
+    vi.useFakeTimers()
+    try {
+      const mgr = new PtyManager()
+      const h = mgr.create({ kind: 'claude', cwd: os.tmpdir() })
+      let ready = false
+      let checks = 0
+      const isReady = (): boolean => {
+        checks++
+        return ready
+      }
+
+      const woken = mgr.whenReady(h.id, isReady, 60_000)
+      ready = true
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(checks).toBe(1)
+      mgr.wakeReady('another-tab')
+      mgr.wakeReady(h.id)
+      await expect(woken).resolves.toBe(true)
+
+      ready = false
+      const late = mgr.whenReady(h.id, isReady, 1000)
+      await vi.advanceTimersByTimeAsync(1000)
+      await expect(late).resolves.toBe(false)
+      await expect(mgr.whenReady(h.id, isReady, 0)).resolves.toBe(false)
+
+      const exiting = mgr.whenReady(h.id, isReady, 60_000)
+      mocks.state.exit?.({ exitCode: 0 })
+      await expect(exiting).resolves.toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('PtyManager.paste: a ✎ comment reaches the tool with the hunk pasted and the note typed', () => {
+  it('writes the pasted part as one bracketed paste and nothing else when there is nothing to type after it', async () => {
+    const write = vi.spyOn(mocks.proc, 'write')
+    try {
+      const mgr = new PtyManager()
+      const h = mgr.create({ kind: 'claude', cwd: os.tmpdir() })
+      write.mockClear()
+      await mgr.paste(h.id, 'a.md\n```diff\n+b\n```\n')
+      expect(write.mock.calls.map(([d]) => d)).toEqual([
+        '\x1b[200~a.md\n```diff\n+b\n```\n\x1b[201~'
+      ])
+    } finally {
+      write.mockRestore()
+    }
+  })
+
+  it('types the note after the paste ends, in writes short enough that claude takes them as typing, without splitting a character or losing one', async () => {
+    vi.useFakeTimers()
+    const write = vi.spyOn(mocks.proc, 'write')
+    try {
+      const mgr = new PtyManager()
+      const h = mgr.create({ kind: 'claude', cwd: os.tmpdir() })
+      write.mockClear()
+      const note = 'keep the old name 🙂 because\n'.repeat(12) + 'reply with one word'
+      const done = mgr.paste(h.id, 'hunk\n\n', note)
+      await vi.runAllTimersAsync()
+      await done
+      const [pasted, ...typed] = write.mock.calls.map(([d]) => d)
+      expect(pasted).toBe('\x1b[200~hunk\n\n\x1b[201~')
+      expect(typed.length).toBeGreaterThan(1)
+      expect(typed.join('')).toBe(note)
+      for (const piece of typed) {
+        expect(Array.from(piece).length).toBeLessThanOrEqual(128)
+        expect(piece).not.toContain('\x1b')
+        expect(Buffer.from(piece).toString()).toBe(piece)
+      }
+    } finally {
+      write.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+})
+
 describe('tabInstancePid', () => {
   it('answers process.pid for an id PtyManager.create() minted and null for a malformed id, so a registration from another live Koloft is left alone', () => {
     const h = new PtyManager().create({ kind: 'claude', cwd: os.tmpdir() })
@@ -292,32 +371,41 @@ describe("BB-E27: a scheduled run's first prompt and session name reach only the
     return (mocks.spawn.mock.calls[call][2] as { env: Record<string, string> }).env
   }
 
-  it('never lets an inherited first prompt or session name reach an ordinary tab', () => {
+  it('never lets an inherited first prompt, session name or port offset reach an ordinary tab', () => {
     process.env.KOLOFT_FIRST_PROMPT = '/oops'
     process.env.KOLOFT_SESSION_NAME = 'x'
+    process.env.KOLOFT_PORT_OFFSET = '7'
     try {
       const mgr = new PtyManager()
       mgr.create({ kind: 'claude', cwd: os.tmpdir() })
       expect(spawnedEnv().KOLOFT_FIRST_PROMPT).toBeUndefined()
       expect(spawnedEnv().KOLOFT_SESSION_NAME).toBeUndefined()
+      expect(spawnedEnv().KOLOFT_PORT_OFFSET).toBeUndefined()
     } finally {
       delete process.env.KOLOFT_FIRST_PROMPT
       delete process.env.KOLOFT_SESSION_NAME
+      delete process.env.KOLOFT_PORT_OFFSET
     }
   })
 
-  it('gives the asking tab those two keys and the next tab none of them', () => {
+  it('gives the asking tab its own keys and the next tab none of them', () => {
     const mgr = new PtyManager()
     mgr.create({
       kind: 'claude',
       cwd: os.tmpdir(),
-      extraEnv: { KOLOFT_FIRST_PROMPT: '/daily-report', KOLOFT_SESSION_NAME: 'Nightly report' }
+      extraEnv: {
+        KOLOFT_FIRST_PROMPT: '/daily-report',
+        KOLOFT_SESSION_NAME: 'Nightly report',
+        KOLOFT_PORT_OFFSET: '42'
+      }
     })
     mgr.create({ kind: 'claude', cwd: os.tmpdir() })
     expect(envOf(0).KOLOFT_FIRST_PROMPT).toBe('/daily-report')
     expect(envOf(0).KOLOFT_SESSION_NAME).toBe('Nightly report')
+    expect(envOf(0).KOLOFT_PORT_OFFSET).toBe('42')
     expect(envOf(1).KOLOFT_FIRST_PROMPT).toBeUndefined()
     expect(envOf(1).KOLOFT_SESSION_NAME).toBeUndefined()
+    expect(envOf(1).KOLOFT_PORT_OFFSET).toBeUndefined()
   })
 
   it('ignores any other key someone puts in that object, so a PATH there cannot undo the shim line', () => {

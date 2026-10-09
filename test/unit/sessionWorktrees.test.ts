@@ -115,6 +115,34 @@ describe('SessionWorktrees', () => {
     expect(git('-C', rebuilt.worktreePath, 'branch', '--show-current')).toBe('pr-branch')
   })
 
+  it('copies into a new or rebuilt checkout exactly the files .worktreeinclude lists that git ignores, never a link', async () => {
+    const write = (rel: string, text: string): void => {
+      fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true })
+      fs.writeFileSync(path.join(repo, rel), text)
+    }
+    write('.gitignore', '.env\nsecrets/\nbuild/\nlink.env\n')
+    write('.worktreeinclude', '.env\nsecrets/\nnotes.txt\nlink.env\n')
+    git('add', '.gitignore', '.worktreeinclude')
+    git('commit', '-m', 'Ignore rules')
+    write('.env', 'PORT=3000\n')
+    write('secrets/key.txt', 'k')
+    write('build/out.js', 'built')
+    write('notes.txt', 'untracked, not ignored')
+    fs.symlinkSync('.env', path.join(repo, 'link.env'))
+    const copied = (worktreePath: string): string[] =>
+      ['.env', 'secrets/key.txt', 'build/out.js', 'notes.txt', 'link.env'].filter((rel) =>
+        fs.existsSync(path.join(worktreePath, rel))
+      )
+
+    const resource = await worktrees.create(repo, 'one')
+    expect(copied(resource.worktreePath)).toEqual(['.env', 'secrets/key.txt'])
+    expect(fs.readFileSync(path.join(resource.worktreePath, '.env'), 'utf8')).toBe('PORT=3000\n')
+
+    fs.rmSync(resource.worktreePath, { recursive: true })
+    const rebuilt = await worktrees.rebuild(resource.id)
+    expect(copied(rebuilt.worktreePath)).toEqual(['.env', 'secrets/key.txt'])
+  })
+
   it('refuses a locked missing worktree without modifying it', async () => {
     const resource = await worktrees.create(repo, 'one')
     git('worktree', 'lock', resource.worktreePath)

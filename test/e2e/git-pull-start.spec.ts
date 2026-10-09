@@ -3,7 +3,7 @@ import { seedSettings } from './helpers/env'
 import { hasFetched, setupGitFixture } from './helpers/gitFixture'
 import {
   dialogPrimary,
-  openMenu,
+  fetchNowInGitPanel,
   openPicker,
   openWorktreeSession,
   snap,
@@ -93,7 +93,7 @@ test.describe('Git freshness · Pull & Start on the ⌘N picker, and the explain
     }
   })
 
-  test('T-GP-03: with auto-fetch off C8 fetches nothing, and menu Fetch origin still finds the drift', async ({
+  test('T-GP-03: with auto-fetch off C8 fetches nothing, and the git panel’s Fetch now still finds the drift', async ({
     env
   }) => {
     const fx = setupGitFixture(env)
@@ -119,8 +119,7 @@ test.describe('Git freshness · Pull & Start on the ⌘N picker, and the explain
 
       await page.keyboard.press('Escape')
       await expect(dlg).toHaveCount(0)
-      await openMenu(page, page.locator('.ws-head', { hasText: 'repo' }))
-      await page.locator('.menu .mi', { hasText: 'Fetch origin' }).click()
+      await fetchNowInGitPanel(page, 'repo')
       await expect(page.locator('.ws-behind')).toHaveText('3', { timeout: BADGE_TIMEOUT })
       expect(hasFetched(fx)).toBe(true)
       await snap(page, 'T-GP-03-manual-fetch')

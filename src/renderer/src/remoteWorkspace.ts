@@ -27,9 +27,8 @@ export function remoteDotTitle(r: { connected: boolean; problem?: string }): str
 export function workspaceMenuCount(t: {
   missing: boolean
   isGit: boolean
-  remote: boolean
+  canBind: boolean
 }): number {
   if (t.missing) return 1
-  if (t.remote) return t.isGit ? 6 : 5
-  return t.isGit ? 7 : 5
+  return (t.isGit ? 6 : 5) + (t.canBind ? 1 : 0)
 }

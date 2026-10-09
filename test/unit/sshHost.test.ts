@@ -7,6 +7,8 @@ import { machineClaudeArgs, SshHost } from '../../src/main/host/sshHost'
 import { diffBase as localDiffBase } from '../../src/main/gitStatus'
 import { utilTerminalGuard } from '../../src/main/shim'
 import type { BytesResult } from '../../src/main/remote/ssh'
+import { AccountPicker, type LaunchedSession } from '../../src/main/accountPicker'
+import { meta, NOW_MS, NOW_S, usage } from './helpers/accounts'
 
 const MACHINE = 'devbox'
 let home: string
@@ -273,6 +275,81 @@ describe('what a remote launch hands claude', () => {
         false
       )
     ).toEqual({ ok: true, args: ['--resume', 'old1'] })
+  })
+})
+
+describe('accounts for remote launches started together', () => {
+  it('two remote launches started at once land on two accounts, as two local ones do', async () => {
+    const accounts = ['a', 'b'].map((name) => meta({ name }))
+    const sessions: LaunchedSession[] = []
+    const picker = new AccountPicker({
+      listAccounts: () => accounts,
+      multiAccountOn: () => true,
+      fablePriority: () => false,
+      readSecret: async () => null,
+      probe: async () => ({ ok: false, error: 'network' }),
+      onProbeOutcome: () => {},
+      launchedSessions: () => sessions,
+      recordPick: (tabId, account) => sessions.push({ tabId, account }),
+      now: () => NOW_MS
+    })
+    accounts.forEach((a, i) =>
+      picker.cacheUsage(
+        'oauth',
+        a.name,
+        usage({ u5: 0.3, u7: 0.4, r5: NOW_S + 36_000, r7: NOW_S + (i + 1) * 86_400 })
+      )
+    )
+    const handed: string[] = []
+    const host = new SshHost(MACHINE, {
+      run: runOnMachine,
+      shell: () => ({ spawnCwd: '/' }),
+      github: {},
+      claude: {
+        userData: home,
+        controlDir: home,
+        machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
+        alive: () => new Set(),
+        realPath: (p) => p,
+        settings: () => ({ multiAccount: true, skipPermissions: false }),
+        pickAccount: async (launchKey) => {
+          const res = await picker.pick(launchKey)
+          if (!res.account) return undefined
+          handed.push(res.account)
+          return { env: {}, banner: '' }
+        },
+        hookSettings: () => ({})
+      }
+    })
+    await Promise.all([host.launch({ root: keyed('/w') }), host.launch({ root: keyed('/w') })])
+    expect(handed.sort()).toEqual(['a', 'b'])
+  })
+})
+
+describe("resizing a remote tab's stand-in terminal", () => {
+  it('sends the last size once the resizing settles, and only for a tab that has a stand-in terminal', async () => {
+    const bin = path.join(home, '.local', 'bin')
+    fs.mkdirSync(bin, { recursive: true })
+    const log = path.join(home, 'stty.log')
+    fs.writeFileSync(
+      path.join(bin, 'stty'),
+      `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(log)}\n`,
+      {
+        mode: 0o755
+      }
+    )
+    const tabs = path.join(home, '.koloft', 'tabs')
+    fs.mkdirSync(tabs, { recursive: true })
+    fs.writeFileSync(path.join(tabs, 'pty-1.pts'), '/dev/pts/9\n')
+    const resized = machine().shell(keyed(repo)).resized!
+
+    resized('pty-1', 100, 30)
+    resized('pty-1', 110, 35)
+    resized('pty-1', 120, 40)
+    resized('pty-2', 80, 24)
+    await new Promise((r) => setTimeout(r, 1500))
+
+    expect(fs.readFileSync(log, 'utf8')).toBe('-F /dev/pts/9 cols 120 rows 40\n')
   })
 })
 

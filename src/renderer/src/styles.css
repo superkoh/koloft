@@ -752,6 +752,21 @@ body {
 .ws-behind.info {
   color: var(--fg-faint);
 }
+.ws-gh {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 5px;
+}
+.ws-gh > span {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
+}
 .hact {
   -webkit-app-region: no-drag;
   margin-left: auto;
@@ -784,6 +799,19 @@ body {
   gap: 1px;
   margin: 1px 0 4px 0;
   padding-left: 14px;
+}
+.ws-subtabs {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-left: 8px;
+  padding-left: 5px;
+  border-left: 1px solid var(--line);
+}
+.icobtn.ws-tab-fold {
+  width: 16px;
+  height: 16px;
+  padding: 0;
 }
 .ws-tab,
 .recent-row {
@@ -831,6 +859,11 @@ body {
 .ob-bar.st-idle {
   background: var(--good);
   opacity: 0.4;
+}
+.ws-tab.cold::before,
+.ob-bar.cold {
+  background: var(--fg-cold);
+  opacity: 0.35;
 }
 .ws-tab.st-pending::before {
   background: linear-gradient(180deg, var(--accent), transparent 70%);
@@ -880,6 +913,10 @@ body {
   background: var(--bg-3);
   cursor: pointer;
   cursor: help;
+}
+.ws-tab-parked.bg-run {
+  color: var(--accent);
+  animation: barBreathe 2.4s var(--ease) infinite;
 }
 .ws-tab-unread {
   flex: none;
@@ -962,19 +999,23 @@ body {
     transform: translateY(30%);
   }
 }
-.ws-tab-title i {
+.ws-tab-title i,
+.ws-name i {
   font-style: inherit;
 }
-.ws-tab-title.mq {
+.ws-tab-title.mq,
+.ws-name.mq {
   text-overflow: clip;
 }
-.ws-tab-title.mq i {
+.ws-tab-title.mq i,
+.ws-name.mq i {
   display: inline-block;
   font-style: inherit;
   white-space: nowrap;
 }
 @media (prefers-reduced-motion: reduce) {
-  .ws-tab::before {
+  .ws-tab::before,
+  .ws-tab-parked.bg-run {
     animation: none !important;
   }
 }
@@ -4244,6 +4285,21 @@ input.switch:focus-visible {
 }
 .wb-gh.pending {
   opacity: 0.45;
+}
+.wb-gh .ci {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.wb-gh .ci.pass {
+  background: var(--good);
+}
+.wb-gh .ci.fail {
+  background: var(--red);
+}
+.wb-gh .ci.pending {
+  background: var(--amber);
 }
 .wb-gh:hover {
   background: var(--bg-3);

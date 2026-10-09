@@ -2,6 +2,10 @@ import type { WorkspaceFreshness } from './types'
 
 const FRESH_WINDOW_MS = 15 * 60_000
 
+export function freshnessShown(f: WorkspaceFreshness | null | undefined): f is WorkspaceFreshness {
+  return !!f && f.state !== 'none'
+}
+
 export function canPull(f: WorkspaceFreshness): boolean {
   return f.state === 'ok' && f.behind > 0 && f.ahead === 0 && !f.dirty && f.onDefault && !f.linked
 }
@@ -17,7 +21,7 @@ export function freshLineState(
 ): FreshLineState {
   if (choiceKind === 'existing') return 'hidden'
   if (inFlight) return 'checking'
-  if (!f || f.state === 'none') return 'hidden'
+  if (!freshnessShown(f)) return 'hidden'
   if (f.state === 'error') return f.behind > 0 ? 'offline' : 'hidden'
   if (f.behind === 0) {
     return f.fetchedAt !== null && now - f.fetchedAt <= FRESH_WINDOW_MS ? 'ok' : 'hidden'

@@ -13,6 +13,7 @@ import type {
 } from '@shared/types'
 import type { DiffResult, GitDiffResult } from '../gitStatus'
 import type { GithubLookup } from '../github'
+import type { GitRunResult } from '../gitSteps'
 import type { RemoteTab } from '../sessionTracker'
 
 export interface ShowIgnored {
@@ -24,6 +25,7 @@ export interface ShellLaunch {
   cwd: string
   shell?: string
   launchCommand?: (tabId: string) => string
+  resized?: (tabId: string, cols: number, rows: number) => void
 }
 
 export interface ClaudeLaunch {
@@ -45,7 +47,7 @@ export interface MachineTab {
   root: string
   hookMirror: string
   attachTo?: string
-  picked?: string
+  pickKey?: string
 }
 
 export type ClaudeLaunchPlan =
@@ -56,7 +58,12 @@ export type ClaudeLaunchPlan =
       cwd: string
       shell?: string
       launchCommand: (tabId: string) => string
-      extraEnv?: { KOLOFT_FIRST_PROMPT?: string; KOLOFT_SESSION_NAME?: string }
+      resized?: (tabId: string, cols: number, rows: number) => void
+      extraEnv?: {
+        KOLOFT_FIRST_PROMPT?: string
+        KOLOFT_SESSION_NAME?: string
+        KOLOFT_PORT_OFFSET?: string
+      }
       machine?: MachineTab
     }
 
@@ -101,7 +108,8 @@ export interface Host {
   trustsFolder(dir: string): Promise<boolean>
   listSkills(root: string): Promise<SkillSuggestion[]>
   keyed(p: string): string
-  gitOut(root: string, args: string[]): Promise<string | null>
+  gitOut(root: string, args: string[], timeoutMs?: number): Promise<string | null>
+  gitRun(root: string, args: string[], network?: boolean): Promise<GitRunResult>
   reveal(p: string): void
   osOpen(p: string): void
   github: GithubLookup

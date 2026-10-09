@@ -9,6 +9,9 @@ import type {
   WorkspaceRows
 } from '@shared/types'
 import { NOTES_HEIGHT_FLOOR } from '@shared/settingsOps'
+import { statusUnavailable } from '@shared/sessionBackend'
+
+export { statusUnavailable }
 
 export function relTime(mtimeMs: number, nowMs: number): string {
   const s = Math.floor(Math.max(0, nowMs - mtimeMs) / 1000)
@@ -58,14 +61,10 @@ export function parkedBadge(
   }
 }
 
-export function statusUnavailable(session?: Pick<SessionInfo, 'details'>): boolean {
-  return session?.details?.codex?.observation === 'degraded'
-}
-
 export function sessionActivityBadge(
-  session?: Pick<SessionInfo, 'background' | 'backendId' | 'details'>,
+  session?: Pick<SessionInfo, 'background' | 'backendId' | 'details' | 'turnOver'>,
   leftovers: LeftoverProcess[] = []
-): (ReturnType<typeof parkedBadge> & { heading: string }) | null {
+): (ReturnType<typeof parkedBadge> & { heading: string; running?: boolean }) | null {
   if (statusUnavailable(session))
     return {
       text: '?',
@@ -88,26 +87,31 @@ export function sessionActivityBadge(
     (item) =>
       `${item.kind === 'agent' ? 'agent' : 'command'} · ${item.label} · ${item.state === 'unknown' ? 'state unknown' : item.state}`
   )
+  const afterTurn = working && !!session?.turnOver
   return {
     text: `${working ? '↻' : unknown ? '?' : '⏸'} ${background.length}${parked ? ` ${parked.text}` : ''}`,
-    heading: 'Background activity',
+    heading: afterTurn ? 'Turn done · still running' : 'Background activity',
     lines: [...lines, ...(parked?.lines ?? [])],
     hint: unknown
       ? 'Unknown activity may still be running. Check the session before stopping it.'
-      : 'Manage these tasks in the session.'
+      : afterTurn
+        ? 'This turn is over and you can type. The work above keeps going.'
+        : 'Manage these tasks in the session.',
+    running: working
   }
 }
 
 export function rowStateClass(
   running: boolean,
   status: SessionStatus | undefined,
-  pending?: boolean
+  pending?: boolean,
+  turnOver?: boolean
 ): string {
   if (pending) return 'st-pending'
   if (!running) return 'cold'
   switch (status) {
     case 'working':
-      return 'st-working'
+      return turnOver ? 'st-waiting' : 'st-working'
     case 'waiting':
       return 'st-waiting'
     case 'approval':
@@ -119,6 +123,42 @@ export function rowStateClass(
 
 export function sessionsNeedYou(n: number): string {
   return n > 1 ? `${n} sessions need you` : '1 session needs you'
+}
+
+export function sessionsInside(n: number): string {
+  return n > 1 ? `${n} sessions inside` : '1 session inside'
+}
+
+export interface RowNode<R extends { id: string; parentId?: string }> {
+  row: R
+  children: RowNode<R>[]
+}
+
+function leadsBackToItself<R extends { id: string; parentId?: string }>(
+  row: R,
+  nodes: Map<string, RowNode<R>>
+): boolean {
+  const seen = new Set<string>()
+  for (let at = row.parentId; at !== undefined && !seen.has(at); at = nodes.get(at)?.row.parentId) {
+    if (at === row.id) return true
+    seen.add(at)
+  }
+  return false
+}
+
+export function sessionTree<R extends { id: string; parentId?: string }>(rows: R[]): RowNode<R>[] {
+  const nodes = new Map(rows.map((row) => [row.id, { row, children: [] as RowNode<R>[] }]))
+  const roots: RowNode<R>[] = []
+  for (const node of nodes.values()) {
+    const parent = node.row.parentId ? nodes.get(node.row.parentId) : undefined
+    if (parent && !leadsBackToItself(node.row, nodes)) parent.children.push(node)
+    else roots.push(node)
+  }
+  return roots
+}
+
+export function rowsUnder<R extends { id: string; parentId?: string }>(node: RowNode<R>): R[] {
+  return node.children.flatMap((child) => [child.row, ...rowsUnder(child)])
 }
 
 export function attentionOnRow(

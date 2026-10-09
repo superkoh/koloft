@@ -58,6 +58,15 @@ export function isGitCheckout(dir: string): boolean {
   return fs.existsSync(path.join(dir, '.git'))
 }
 
+export async function isGitCheckoutAsync(dir: string): Promise<boolean> {
+  try {
+    await fs.promises.access(path.join(dir, '.git'))
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function resolveSpawnCwd(requested: string | undefined): string {
   if (requested && fs.existsSync(requested)) return requested
   if (requested) {

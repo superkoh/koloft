@@ -16,9 +16,57 @@ import {
   relTime,
   rowStateClass,
   selectionRoot,
+  sessionTree,
+  rowsUnder,
   welcomeQuietLine,
-  welcomeTarget
+  welcomeTarget,
+  type RowNode
 } from '../../src/renderer/src/sessionRows'
+
+type Row = { id: string; parentId?: string }
+
+function shape(nodes: RowNode<Row>[]): unknown[] {
+  return nodes.map((n) => (n.children.length ? { [n.row.id]: shape(n.children) } : n.row.id))
+}
+
+describe('sessionTree: a session started by another hangs under it in the sidebar', () => {
+  it('nests children and grandchildren under their parent, keeping the order the rows came in', () => {
+    const rows: Row[] = [
+      { id: 'grandkid', parentId: 'kid-b' },
+      { id: 'other' },
+      { id: 'kid-b', parentId: 'parent' },
+      { id: 'kid-a', parentId: 'parent' },
+      { id: 'parent' }
+    ]
+    expect(shape(sessionTree(rows))).toEqual([
+      'other',
+      { parent: [{ 'kid-b': ['grandkid'] }, 'kid-a'] }
+    ])
+  })
+
+  it('a row whose parent is not in the list is a root', () => {
+    expect(shape(sessionTree([{ id: 'kid', parentId: 'gone' }]))).toEqual(['kid'])
+  })
+
+  it('never loses a row whose parent chain leads back to itself', () => {
+    const rows: Row[] = [
+      { id: 'self', parentId: 'self' },
+      { id: 'a', parentId: 'b' },
+      { id: 'b', parentId: 'a' },
+      { id: 'c', parentId: 'a' }
+    ]
+    expect(shape(sessionTree(rows))).toEqual(['self', { a: ['c'] }, 'b'])
+  })
+
+  it('counts every row under a node, at any depth, for a folded parent', () => {
+    const [parent] = sessionTree<Row>([
+      { id: 'parent' },
+      { id: 'kid', parentId: 'parent' },
+      { id: 'grandkid', parentId: 'kid' }
+    ])
+    expect(rowsUnder(parent).map((r) => r.id)).toEqual(['kid', 'grandkid'])
+  })
+})
 
 describe('relTime (cold menu header / tooltip)', () => {
   const now = 100_000_000_000
@@ -53,6 +101,11 @@ describe('rowStateClass (C2 lightbar)', () => {
 
   it('treats a bound-but-statusless running session as idle (logic.md §4)', () => {
     expect(rowStateClass(true, undefined)).toBe('st-idle')
+  })
+
+  it('a session still working only in the background after its turn ended reads green, like a finished turn', () => {
+    expect(rowStateClass(true, 'working', false, true)).toBe('st-waiting')
+    expect(rowStateClass(true, 'approval', false, true)).toBe('st-approval')
   })
 
   it('cold rows carry no bar class — just cold', () => {
@@ -389,6 +442,18 @@ describe('session background activity', () => {
     expect(badge.lines).toEqual(['command · npm run build · state unknown'])
     expect(badge.hint).toContain('may still be running')
     expect(badge.lines.join(' ')).not.toMatch(/idle|server/)
+  })
+
+  it('work still running after the turn ended is headed "Turn done · still running" and marks the badge running', () => {
+    const badge = sessionActivityBadge({
+      backendId: 'claude',
+      turnOver: true,
+      background: [{ id: 'b1', kind: 'command', label: 'npm test', state: 'working' }]
+    })!
+    expect(badge.heading).toBe('Turn done · still running')
+    expect(badge.text).toBe('↻ 1')
+    expect(badge.running).toBe(true)
+    expect(badge.hint).toContain('you can type')
   })
 
   it('reports agents and commands with their distinct states', () => {

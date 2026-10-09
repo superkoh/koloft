@@ -4,7 +4,7 @@ import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { launchApp } from './app'
 import type { E2EEnv } from './env'
-import { encodeCwd, waitBooted } from './p1'
+import { encodeCwd, killSession, waitBooted } from './p1'
 
 export const REMOTE_HOST = 'devbox'
 
@@ -99,6 +99,11 @@ export function liveTmuxSessions(env: E2EEnv): string[] {
 
 export function breakConnection(env: E2EEnv): void {
   fs.writeFileSync(path.join(stateDir(env), 'hb-fail'), '')
+}
+
+export function dropTabLinkWhileItsSessionDies(env: E2EEnv, pid: number): void {
+  fs.writeFileSync(path.join(stateDir(env), 'tab-link-drop'), '')
+  killSession(pid, env)
 }
 
 export function healConnection(env: E2EEnv): void {

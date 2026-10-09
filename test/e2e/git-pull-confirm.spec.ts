@@ -1,6 +1,13 @@
 import { test, expect, launchApp } from './helpers/app'
 import { setupGitFixture } from './helpers/gitFixture'
-import { dialogPrimary, openMenu, openPicker, snap, startSessionIn, wsRows } from './helpers/p1'
+import {
+  dialogPrimary,
+  fetchNowInGitPanel,
+  openPicker,
+  snap,
+  startSessionIn,
+  wsRows
+} from './helpers/p1'
 
 test.describe('Git freshness · Pull & Start confirms over a running root session (a reminder, not a veto)', () => {
   test('T-GP-05: a running root session makes Pull & Start confirm once — Cancel restores the picker, Pull anyway pulls and launches', async ({
@@ -19,8 +26,7 @@ test.describe('Git freshness · Pull & Start confirms over a running root sessio
       await expect(rows).toHaveCount(1)
 
       fx.originAhead(3)
-      await openMenu(page, page.locator('.ws-head', { hasText: 'repo' }))
-      await page.locator('.menu .mi', { hasText: 'Fetch origin' }).click()
+      await fetchNowInGitPanel(page, 'repo')
       await expect(page.locator('.ws-behind')).toHaveText('3', { timeout: 30_000 })
 
       const dlg = await openPicker(app, page)

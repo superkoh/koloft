@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { GithubLookup } from '../../src/main/github'
+import { GithubLookup, parseOpenCounts } from '../../src/main/github'
 import type { GithubInfo } from '@shared/types'
 
 let tmp: string
@@ -260,6 +260,15 @@ describe('GithubLookup.target', () => {
     expect(await gh.target(root, 'pulls')).toBe('https://github.com/acme/widgets/pulls')
   })
 
+  it("sends Open pull request… to GitHub's compare page for the branch, its slashes kept as path", async () => {
+    stage({ branch: 'feature/login\n' })
+    const gh = make()
+    await settled(gh, root)
+    expect(await gh.target(root, 'compare')).toBe(
+      'https://github.com/acme/widgets/compare/feature/login?expand=1'
+    )
+  })
+
   it('answers without waiting on the network, even once the table has aged out and refreshes behind the click', async () => {
     let now = 1_000_000
     const gh = make({ now: () => now })
@@ -293,7 +302,83 @@ describe('GithubLookup.target', () => {
   })
 })
 
+describe('GithubLookup.openCounts', () => {
+  function counting(answer: { issues: number; prs: number } | null): {
+    asked: string[]
+    openCounts: (repo: { owner: string; repo: string }) => Promise<typeof answer>
+  } {
+    const asked: string[] = []
+    return {
+      asked,
+      openCounts: async (r) => {
+        asked.push(`${r.owner}/${r.repo}`)
+        return answer
+      }
+    }
+  }
+
+  it('asks gh once per repository for five minutes, whichever worktree asks', async () => {
+    let now = 1_000_000
+    const gh = counting({ issues: 12, prs: 3 })
+    const lookup = make({ now: () => now, openCounts: gh.openCounts })
+    const other = path.join(tmp, 'worktree')
+    fs.mkdirSync(other)
+    expect(await lookup.openCounts(root)).toEqual({ repo: 'acme/widgets', issues: 12, prs: 3 })
+    expect(await lookup.openCounts(other)).toEqual({ repo: 'acme/widgets', issues: 12, prs: 3 })
+    expect(gh.asked).toEqual(['acme/widgets'])
+    now += 5 * 60_000
+    await lookup.openCounts(root)
+    expect(gh.asked).toHaveLength(2)
+  })
+
+  it('remembers for the same five minutes that gh had no answer', async () => {
+    const gh = counting(null)
+    const lookup = make({ openCounts: gh.openCounts })
+    expect(await lookup.openCounts(root)).toBeNull()
+    expect(await lookup.openCounts(root)).toBeNull()
+    expect(gh.asked).toHaveLength(1)
+  })
+
+  it('never asks gh outside a GitHub repository', async () => {
+    stage({ remote: 'remote.origin.url git@gitlab.com:acme/widgets.git\n' })
+    const gh = counting({ issues: 1, prs: 1 })
+    expect(await make({ openCounts: gh.openCounts }).openCounts(root)).toBeNull()
+    expect(gh.asked).toHaveLength(0)
+  })
+})
+
+describe('parseOpenCounts', () => {
+  it('reads the totals gh prints for a repo it can see', () => {
+    expect(
+      parseOpenCounts(
+        '{"data":{"repository":{"issues":{"totalCount":106},"pullRequests":{"totalCount":2}}}}'
+      )
+    ).toEqual({ issues: 106, prs: 2 })
+  })
+
+  it('reads nothing from a NOT_FOUND answer or a login prompt', () => {
+    expect(
+      parseOpenCounts(
+        '{"data":{"repository":null},"errors":[{"type":"NOT_FOUND","path":["repository"]}]}'
+      )
+    ).toBeNull()
+    expect(parseOpenCounts('To get started with GitHub CLI, please run:  gh auth login')).toBeNull()
+  })
+})
+
 describe('the e2e fixture seam', () => {
+  it('answers open counts only for a fixture entry that names them', async () => {
+    const gh = make({
+      fixture: {
+        [root]: { owner: 'acme', repo: 'widgets', issues: 12, prs: 0 },
+        [path.join(tmp, 'plain')]: { owner: 'acme', repo: 'plain' }
+      }
+    })
+    expect(await gh.openCounts(root)).toEqual({ repo: 'acme/widgets', issues: 12, prs: 0 })
+    expect(await gh.openCounts(path.join(tmp, 'plain'))).toBeNull()
+    expect(calls()).toHaveLength(0)
+  })
+
   it('answers from the fixture, runs no git, and skips the login detour', async () => {
     const gh = make({
       fixture: { [root]: { owner: 'acme', repo: 'widgets', branch: 'feature', pr: 42 } },

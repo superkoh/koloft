@@ -73,6 +73,7 @@ import { unexpectedExitNotice, unexpectedExitWanted } from './closeSession'
 import { requestCloseTab } from './closeFlow'
 import {
   allDirty,
+  askAboutLeftEdits,
   discardAll,
   flushNotes,
   labelPaths,
@@ -96,6 +97,10 @@ import { TerminalView } from './components/TerminalView'
 import { repairAllWebgl, scheduleWebglRepair } from './webglRepair'
 import { WorkspaceSidebar } from './components/WorkspaceSidebar'
 import { NotesIsland } from './components/NotesIsland'
+import { ConductorsIsland } from './components/ConductorsIsland'
+import { BindConductorDialog } from './components/BindConductorDialog'
+import { DiscordSetup } from './components/DiscordSetup'
+import { conductorNotesWorkspace, conductorOfTab } from './conductorRows'
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
 import { RestoreDialog } from './components/RestoreDialog'
 import { CronJobsDialog } from './components/CronJobsDialog'
@@ -136,8 +141,10 @@ function focusedWorkbench(): HTMLElement | null {
   return (document.activeElement?.closest('.wb-panel[data-surface]') as HTMLElement | null) ?? null
 }
 
+const NOTES_ISLAND = '.isl-notes:not(.isl-conductors)'
+
 function caretInNote(): boolean {
-  return !!document.activeElement?.matches('.isl-notes .ed-area')
+  return !!document.activeElement?.matches(`${NOTES_ISLAND} .ed-area`)
 }
 
 // PLATFORM§10
@@ -226,7 +233,6 @@ export default function App(): JSX.Element {
   const workbench = useStore((s) => s.workbench)
   const workbenchOpen = useStore((s) => s.workbenchOpen)
   const workbenchFull = useStore((s) => s.workbenchFull)
-  const workbenchLoad = useStore((s) => s.workbenchLoad)
   const sidebarWidth = useStore((s) => s.sidebarWidth)
   const workspaceRows = useStore((s) => s.workspaceRows)
   const toast = useStore((s) => s.toast)
@@ -456,7 +462,7 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     const closeActive = (): void => {
-      if (document.activeElement?.closest('.isl-notes')) return
+      if (document.activeElement?.closest(NOTES_ISLAND)) return
       if (focusedWorkbench()) {
         dispatchPanel('browser-close-tab')
         return
@@ -602,7 +608,7 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     return window.api.shortcuts.onFocusNotes(() => {
-      if (!document.querySelector('.isl-notes')) return
+      if (!document.querySelector(NOTES_ISLAND)) return
       if (caretInNote()) {
         returnFocus()
         return
@@ -851,7 +857,12 @@ export default function App(): JSX.Element {
   }, [])
 
   useEffect(() => {
-    return window.api.tabs.onKilledByMain((tabId) => useStore.getState().removeTab(tabId))
+    return window.api.tabs.onKilledByMain((tabId) => {
+      const st = useStore.getState()
+      const tab = st.tabs.find((t) => t.id === tabId)
+      if (tab) askAboutLeftEdits(tab)
+      st.removeTab(tabId)
+    })
   }, [])
 
   useEffect(() => {
@@ -880,6 +891,7 @@ export default function App(): JSX.Element {
       if (unexpectedExitWanted(tab, e)) {
         useStore.getState().showToast(unexpectedExitNotice(e, tab.kind))
       }
+      if (tab) askAboutLeftEdits(tab)
       closeTab(e.id)
     })
     return off
@@ -964,12 +976,20 @@ export default function App(): JSX.Element {
     else if (rowsLoaded && noWorkspaces) setWelcomeActive(true)
   }, [rowsLoaded, onboardingSeen, noWorkspaces, setWelcomeActive])
   const updateOffer = useStore((s) => s.updateOffer)
-  const notesWs = currentWorkspace(
-    workspaceRows,
-    activeTabId ? rowIdOfTab(sessions, activeTabId) : null,
-    selectedWs,
-    lastWsPath
-  )
+  const conductorBindings = useStore((s) => s.settings.discord.bindings)
+  const conductorTabs = useStore((s) => s.conductorTabs)
+  const conductorsFolded = useStore((s) => s.settings.conductorsFolded)
+  const activeConductor = activeTabId
+    ? conductorOfTab(conductorBindings, sessions, conductorTabs, tabs, activeTabId)
+    : undefined
+  const notesWs = activeConductor
+    ? conductorNotesWorkspace(activeConductor)
+    : currentWorkspace(
+        workspaceRows,
+        activeTabId ? rowIdOfTab(sessions, activeTabId) : null,
+        selectedWs,
+        lastWsPath
+      )
   notesWsRef.current = notesWs
   const [notesFocusWs, setNotesFocusWs] = useState(notesWs)
   if (notesFocusWs !== notesWs) {
@@ -1105,7 +1125,8 @@ export default function App(): JSX.Element {
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
-  const previewShown = !!panelTab && panelReady && !panelShown && previewFits
+  const panelOpenKnown = useStore((s) => !!panelTab && !!s.workbenchFetched[panelTab])
+  const previewShown = panelOpenKnown && panelReady && !panelShown && previewFits
   const SIDEBAR_MIN = 200
   const startVResize = (e: MouseEvent): void => {
     e.preventDefault()
@@ -1165,9 +1186,9 @@ export default function App(): JSX.Element {
     setNbDragging(true)
     const box = dockRef.current?.getBoundingClientRect()
     const bottom = box?.bottom ?? window.innerHeight
-    const dockHeight = box?.height ?? window.innerHeight
+    const room = (box?.height ?? window.innerHeight) - conductorsHeight
     const onMove = (ev: globalThis.MouseEvent): void => {
-      setNotesHeight(notesHeightFromDrag(bottom, dockHeight, ev.clientY))
+      setNotesHeight(notesHeightFromDrag(bottom, room, ev.clientY))
     }
     const onUp = (): void => {
       document.removeEventListener('mousemove', onMove)
@@ -1187,6 +1208,12 @@ export default function App(): JSX.Element {
     window.addEventListener('resize', measure)
     return () => window.removeEventListener('resize', measure)
   }, [sidebarHidden])
+  const [conductorsHeight, setConductorsHeight] = useState(0)
+  useLayoutEffect(() => {
+    const island = dockRef.current?.querySelector('.isl-conductors')
+    setConductorsHeight(island ? island.getBoundingClientRect().height + DOCK_GUTTER_PX : 0)
+  }, [conductorBindings.length, conductorsFolded, sidebarHidden])
+  const notesRoom = dockHeight - conductorsHeight
 
   const [osFullscreen, setOsFullscreen] = useState(false)
   useEffect(() => {
@@ -1291,6 +1318,7 @@ export default function App(): JSX.Element {
               <LuChevronRight size={15} />
             </button>
           )}
+          <ConductorsIsland />
           {notesWs && (
             <div
               className={'gutter-h' + (nbDragging ? ' active' : '') + (notesFolded ? ' idle' : '')}
@@ -1301,7 +1329,7 @@ export default function App(): JSX.Element {
           )}
           <NotesIsland
             wsPath={notesWs}
-            height={dockHeight ? clampNotesHeight(notesHeight, dockHeight) : notesHeight}
+            height={dockHeight ? clampNotesHeight(notesHeight, notesRoom) : notesHeight}
             folded={notesFolded}
             focusNonce={notesFocus}
             onToggleFold={() => {
@@ -1511,7 +1539,6 @@ export default function App(): JSX.Element {
                 liveTabs={liveTabs}
                 visible={panelOnScreen}
                 full={panelFull}
-                load={workbenchLoad?.ownerTabId === panelTab ? workbenchLoad : null}
                 command={panelCmd}
                 dialog={browserDialog}
                 treeRoot={fileTreeRoot}
@@ -1533,6 +1560,7 @@ export default function App(): JSX.Element {
                   if (workbenchFull) setWorkbenchFull(false)
                   else returnFocus()
                 }}
+                onReturnFocus={returnFocus}
                 pinned={cdpAttached}
                 tabForSession={(sid) => tabForSession(useStore.getState(), sid)}
                 cdpOps={cdpOps}
@@ -1634,6 +1662,8 @@ export default function App(): JSX.Element {
           <ResumeDialog />
           <CloseSessionDialog />
           <SettingsModal />
+          <DiscordSetup />
+          <BindConductorDialog />
           <UpdateModal />
           <UnsavedDialog />
         </>,

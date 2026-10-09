@@ -21,6 +21,8 @@ import { NotificationsPane } from './NotificationsPane'
 import { ExtensionsPane } from './ExtensionsPane'
 import { AboutPane } from './AboutPane'
 import { WelcomePane } from './WelcomePane'
+import { DiscordPane } from './DiscordPane'
+import { BsDiscord } from 'react-icons/bs'
 
 type PaneId =
   | 'welcome'
@@ -29,6 +31,7 @@ type PaneId =
   | 'appearance'
   | 'shortcuts'
   | 'notifications'
+  | 'discord'
   | 'extensions'
   | 'about'
 
@@ -78,6 +81,7 @@ const PANES: { id: PaneId; label: string; Icon: typeof LuUsers }[] = [
   { id: 'accounts', label: 'Accounts', Icon: LuUsers },
   { id: 'appearance', label: 'Appearance', Icon: LuPalette },
   { id: 'shortcuts', label: 'Shortcuts', Icon: LuKeyboard },
+  { id: 'discord', label: 'Discord', Icon: BsDiscord },
   { id: 'notifications', label: 'Notifications', Icon: LuBell },
   { id: 'extensions', label: 'Extensions', Icon: LuPuzzle },
   { id: 'about', label: 'About', Icon: LuInfo }
@@ -203,6 +207,7 @@ export function SettingsModal(): JSX.Element | null {
             {pane === 'appearance' && <AppearancePane />}
             {pane === 'shortcuts' && <ShortcutsPane />}
             {pane === 'notifications' && <NotificationsPane />}
+            {pane === 'discord' && <DiscordPane />}
             {pane === 'extensions' && <ExtensionsPane />}
             {pane === 'about' && <AboutPane />}
           </EscScope.Provider>
