@@ -17,6 +17,7 @@ import {
   commentOnFirstHunk,
   expectOnePromptFromTheComment,
   showBrowse,
+  wbActiveTab,
   wbUnreadTabs
 } from './helpers/workbench'
 import { setupChangeFixture } from './helpers/filesFixture'
@@ -441,7 +442,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('a page Codex opens with `open` lands as an unread web tab in its own Workbench, and the agent-web hint names Codex', async ({
+  test('a page Codex opens with `open` comes up in front in its own Workbench, and the agent-web hint names Codex', async ({
     env
   }) => {
     installCodex(env)
@@ -455,9 +456,8 @@ test.describe('Codex sessions through the real method chooser, process transport
       const hint = page.locator('.hint-card[data-hint="agent-web"] .h')
       await expect(hint).toContainText('Codex')
       await expect(hint).not.toContainText('Claude')
-      const toggle = page.getByRole('button', { name: 'Workbench', exact: true })
-      if (!(await toggle.getAttribute('class'))?.includes(' on')) await toggle.click()
-      await expect(wbUnreadTabs(page)).toHaveCount(1)
+      await expect(wbActiveTab(page)).toHaveAttribute('title', /codex-opened/)
+      await expect(wbUnreadTabs(page)).toHaveCount(0)
     } finally {
       await quitAndClose(app)
     }

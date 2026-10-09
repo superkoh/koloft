@@ -67,7 +67,7 @@ test.describe('Workbench tab lifecycle: an open forks by target (a web url lands
       await agentOpen(page, srv.url('/beta'))
 
       await expect(wbTabs(page)).toHaveCount(3)
-      await expect(wbActiveTab(page)).toHaveText(/beta/)
+      await expect(wbActiveTab(page)).toHaveAttribute('title', /\/beta$/)
       await expect(wbUnreadTabs(page)).toHaveCount(0)
       await expect.poll(() => srv.count('/beta'), { timeout: 20_000 }).toBe(1)
       expect(await focusOwner(page)).toBe('tui')
@@ -131,7 +131,7 @@ test.describe('Workbench tab lifecycle: an open forks by target (a web url lands
 
       await rowA.click()
       await expect(rowA).toHaveClass(/\bactive\b/)
-      await expect(wbActiveTab(page)).toHaveText(/later/, { timeout: 30_000 })
+      await expect(wbActiveTab(page)).toHaveAttribute('title', /\/later$/, { timeout: 30_000 })
       await expect(workbenchPanel(page)).toBeVisible()
       await expect.poll(() => srv.count('/later'), { timeout: 20_000 }).toBe(1)
     } finally {
@@ -162,6 +162,8 @@ test.describe('Workbench tab lifecycle: an open forks by target (a web url lands
     await expect(page.locator('.wb-panel .fv')).toHaveAttribute('data-view', 'browse')
     await expect(page.locator('.wb-panel .fv-artifact-hd .wb-title')).toContainText(rel)
 
+    await wbTabs(page).last().click()
+    await expect(panelTerm(page)).toBeVisible()
     await runIn(page, panelTerm(page), `${leaveTimeToCollapseBeforeOpenLands}open ${abs}`)
     await clickAppMenuItem(app, page, 'toggle-browser')
     await expect(workbenchPanel(page)).toBeHidden()
