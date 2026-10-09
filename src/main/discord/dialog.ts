@@ -169,8 +169,8 @@ export function hookAnswer(p: AskPayload, reply: string): Record<string, unknown
 
 const ESC = '\x1b'
 const ONE_QUESTION_BY_KEYS =
-  'on another machine Koloft can only answer a dialog with one question that takes one option. The conductor can still answer this one by pressing its keys.'
-const YES_OR_NO_BY_KEYS = 'on another machine Koloft can only answer yes or no to this dialog.'
+  'Koloft answers this dialog by its keys, so it can only answer one question that takes one option. The conductor can still answer this one by pressing its keys.'
+const YES_OR_NO_BY_KEYS = 'Koloft answers this dialog by its keys, so it can only answer yes or no.'
 
 // CC§14
 export function claudeKeysFor(p: AskPayload, reply: string): Parsed<string[]> {
