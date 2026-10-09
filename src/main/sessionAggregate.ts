@@ -5,7 +5,7 @@ import {
   type BackendSessionRow,
   type WorktreeStateMeta
 } from '@shared/types'
-import { classifyUserPrompt, encodeCwd, INTERRUPT_TEXTS } from './sessionTracker'
+import { classifyUserPrompt, compactionSummary, encodeCwd, INTERRUPT_TEXTS } from './sessionTracker'
 
 export interface Bucket {
   slug: string
@@ -152,7 +152,12 @@ export function extractJsonlMeta(lines: Iterable<string>): Partial<SessionMeta> 
     if (meta.timestamp === undefined && typeof obj.timestamp === 'string' && obj.timestamp) {
       meta.timestamp = obj.timestamp
     }
-    if (meta.firstUserText === undefined && obj.type === 'user' && !obj.isMeta) {
+    if (
+      meta.firstUserText === undefined &&
+      obj.type === 'user' &&
+      !obj.isMeta &&
+      !compactionSummary(obj)
+    ) {
       const msg = obj.message as { content?: unknown } | undefined
       const c = msg?.content
       let text = ''

@@ -23,6 +23,7 @@ const CHANNEL_NAME = 'koloft-all'
 const BACKGROUND_CONNECT_MS = 45_000
 const A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS = 60_000
 const A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS = 180_000
+const PAST_TWO_IDLE_MIRROR_PULLS_YET_BEFORE_CLAUDES_IDLE_NOTICE_MS = 45_000
 const CONDUCTOR_SCREEN_DRAWS_AFTER_IT_IS_SHOWN_MS = 2000
 const PAST_THE_PASTE_THAT_SWALLOWS_AN_EARLY_ENTER_MS = 1000
 
@@ -240,7 +241,7 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
     )
   })
 
-  test('E-SSH-C2: the same with a REAL claude on the machine (opt-in, spends real money): a typed message is answered, and its own question is answered by koloft session answer', async ({
+  test('E-SSH-C2: the same with a REAL claude on the machine (opt-in, spends real money): a typed message is answered, its own question is answered by koloft session answer, and after a /compact it shows done again, not working', async ({
     env
   }) => {
     test.skip(!HAVE_LINUX_CLAUDE, NEEDS_LINUX_CLAUDE)
@@ -311,6 +312,15 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
             }
           )
           .toMatch(/ran \/compact:\nCompacted \(ctrl\+o to see full summary\)$/)
+        const remoteStatus = async (): Promise<string | undefined> =>
+          (await page.evaluate(() => window.api.sessions.list())).find(
+            (s) => s.sessionId === remote.sessionId
+          )?.status
+        await expect
+          .poll(remoteStatus, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+          .toMatch(/^(waiting|idle)$/)
+        await page.waitForTimeout(PAST_TWO_IDLE_MIRROR_PULLS_YET_BEFORE_CLAUDES_IDLE_NOTICE_MS)
+        expect(await remoteStatus()).toMatch(/^(waiting|idle)$/)
       }
     )
   })

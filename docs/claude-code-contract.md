@@ -53,6 +53,30 @@ binary.
   ends, though they carry the Enter-time timestamp. Esc during it cancels it (no
   SessionStart) and puts `/compact ` back in the input box. So the session is busy from
   PreCompact to SessionStart `compact`, and no other hook says so.
+- **An automatic compaction fires the same two hooks, with `trigger: "auto"`, inside the
+  turn it interrupts** (2026-10-09, CC 2.1.295, interactive pty,
+  `CLAUDE_CODE_AUTO_COMPACT_WINDOW=50000`, model haiku, hooks logging their payloads; two
+  runs). Mid-turn: UserPromptSubmit, tool calls, PreCompact, SessionStart `compact`,
+  PostCompact, more tool calls, Stop. At the start of a prompt: UserPromptSubmit, then
+  PreCompact, SessionStart `compact`, PostCompact, the reply, Stop. Every hook carries the
+  turn's `prompt_id`, and the turn's own Stop ends it.
+- **Claude also compacts while idle, with no prompt and no Stop around it.** Seen in two
+  real sessions (2026-10-08/09, CC 2.1.29x, Koloft's hook log and the transcript): Stop,
+  the `idle_prompt` Notification, then about 55 minutes later PreCompact and SessionStart
+  `compact`; the transcript gets `compact_boundary` (`trigger: "auto"`), the summary
+  record below, and a `system`/`informational` record "Compacted while idle, before the
+  prompt cache expired". When it fires was read off the 2.1.295 binary's strings, not
+  probed: a server-side flag, at least 100 000 context tokens
+  (`CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` can raise it), at a fraction (0.5–0.95, default
+  0.9) of the prompt cache's lifetime, and only after 60 s with nothing typed.
+- **Every compaction ends by writing a summary record**, at about the moment SessionStart
+  `compact` fires (2026-10-09, CC 2.1.295, manual and automatic): `type: "user"`, string
+  content "This session is being continued from a previous conversation that ran out of
+  context. …", `isCompactSummary: true`, `isVisibleInTranscriptOnly: true`, no `origin`,
+  no `isMeta`. It is not something anyone typed. Koloft reads hooks at once but the
+  transcript on a 500 ms poll, so the summary is usually read after the compaction has
+  ended: two dev-build runs of `/compact` with the real binary, read before this rule,
+  both showed the row go back to working about 0.5 s after it went back to waiting.
 - **On exit CC prints a resume hint, and what it quotes depends on the session**:
   `Resume this session with: claude --resume <id>` for a session with no name, but
   `claude --resume "<name>"` once the session was given a `--name`, and
