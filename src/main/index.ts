@@ -1600,7 +1600,9 @@ app.whenReady().then(() => {
       error: (message) => sendToRenderer('cron:toast', message),
       trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
-      homes: () => codexHomes(userData),
+      shareHomes: () => {
+        for (const home of codexHomes(userData)) prepareCodexHome(home, codexSharedConfig())
+      },
       openShimRoot: path.join(userData, 'codex-open'),
       agent: {
         enabled: () => agentToolsFor('codex', 'local'),

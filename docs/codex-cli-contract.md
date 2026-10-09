@@ -570,6 +570,29 @@ With `config.toml` a link to an empty shared file, the same start-up write and t
 answer both went into the shared file and the link stayed a link. Hence Koloft makes an
 empty shared file when there is none, rather than skip the link.
 
+**A home finds a session by the file under its own `sessions/`, wherever that folder
+really is.** Checked 2026-10-08 with Codex CLI 0.162.0, no model turn, no login in any
+home. A Node script ran `codex app-server` on three throwaway `CODEX_HOME`s and sent
+`thread/list`, `thread/read` and `thread/resume` for one real interactive (`source:
+"vscode"`) rollout copied from this Mac's `~/.codex/sessions/YYYY/MM/DD/` (copies deleted
+afterwards):
+
+| home | listed | `thread/read` | `thread/resume` |
+|---|---|---|---|
+| empty | no | `-32600` "thread not loaded" | `-32600` "no rollout found for thread id" |
+| rollout copied under `sessions/` | yes | ok | ok |
+| `sessions/` a symlink to a folder holding it | yes | ok | ok |
+
+A home whose `state_5.sqlite` had already been built from its own `sessions/`, with that
+folder then swapped for a link to a shared one holding another rollout, listed both. So
+Koloft links every account home's `sessions/` and `archived_sessions/` to the default
+home's, lists history once from the default home, and resumes a session in whichever
+account the picker chooses. A `codex exec` rollout (`source: "exec"`) is not in the
+default listing, which asks for interactive sources only. That a model turn then runs
+when the resuming login is not the one that started the session (each rollout's
+`session_meta` names its `creator_account_id`) is **inferred, not checked** — it needs
+two different Codex logins.
+
 Not tried, because they need a second real login or would open a browser on this Mac:
 - that `codex login` with `CODEX_HOME` set signs in only that home and exits 0 once
   done (Koloft types `codex login && exit` into the sign-in terminal, so the tab closes

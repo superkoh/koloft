@@ -94,6 +94,42 @@ describe('prepareCodexHome', () => {
     fs.rmSync(dir, { recursive: true, force: true })
   })
 
+  // CODEX§15
+  it("links a home's sessions and archived_sessions to the default home's, so any account lists and resumes every session", () => {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-')))
+    const shared = path.join(dir, 'dot-codex', 'config.toml')
+    const home = path.join(dir, 'homes', 'work')
+    prepareCodexHome(home, shared)
+    for (const folder of ['sessions', 'archived_sessions']) {
+      expect(fs.readlinkSync(path.join(home, folder))).toBe(path.join(dir, 'dot-codex', folder))
+      expect(fs.statSync(path.join(dir, 'dot-codex', folder)).isDirectory()).toBe(true)
+    }
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+
+  // CODEX§15
+  it("moves a home's own sessions into the shared folder by date before linking it, keeping what is already there", () => {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-')))
+    const shared = path.join(dir, 'dot-codex', 'config.toml')
+    const day = path.join('2026', '10', '05')
+    fs.mkdirSync(path.join(dir, 'dot-codex', 'sessions', day), { recursive: true })
+    fs.writeFileSync(path.join(dir, 'dot-codex', 'sessions', day, 'rollout-a.jsonl'), 'default')
+    const home = path.join(dir, 'homes', 'work')
+    fs.mkdirSync(path.join(home, 'sessions', day), { recursive: true })
+    fs.writeFileSync(path.join(home, 'sessions', day, 'rollout-a.jsonl'), 'own copy')
+    fs.writeFileSync(path.join(home, 'sessions', day, 'rollout-b.jsonl'), 'own')
+
+    prepareCodexHome(home, shared)
+
+    const sharedDay = path.join(dir, 'dot-codex', 'sessions', day)
+    expect(fs.readFileSync(path.join(sharedDay, 'rollout-a.jsonl'), 'utf8')).toBe('default')
+    expect(fs.readFileSync(path.join(sharedDay, 'rollout-b.jsonl'), 'utf8')).toBe('own')
+    expect(fs.readFileSync(path.join(home, 'sessions', day, 'rollout-b.jsonl'), 'utf8')).toBe('own')
+    prepareCodexHome(home, shared)
+    expect(fs.readdirSync(sharedDay).sort()).toEqual(['rollout-a.jsonl', 'rollout-b.jsonl'])
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+
   it('links a new home even before the shared config.toml exists, by making it empty, so the first Codex start cannot write a home-only file', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-'))
     const shared = path.join(dir, 'dot-codex', 'config.toml')
