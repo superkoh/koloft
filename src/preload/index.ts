@@ -26,6 +26,7 @@ import type {
   TerminalProcessTitle,
   LeftoverProcess,
   SessionInfo,
+  SessionSearchHits,
   SpawnedTab,
   CronState,
   DiscordStatus,
@@ -138,7 +139,13 @@ const api: KoloftApi = {
       ipcRenderer.on('sessions:leftovers', handler)
       return () => ipcRenderer.removeListener('sessions:leftovers', handler)
     },
-    stopLeftover: (sessionId, pid) => ipcRenderer.invoke('sessions:stopLeftover', sessionId, pid)
+    stopLeftover: (sessionId, pid) => ipcRenderer.invoke('sessions:stopLeftover', sessionId, pid),
+    search: (searchId, term) => ipcRenderer.send('sessions:search', searchId, term),
+    onSearchHits: (cb) => {
+      const handler = (_e: unknown, found: SessionSearchHits): void => cb(found)
+      ipcRenderer.on('sessions:search-hits', handler)
+      return () => ipcRenderer.removeListener('sessions:search-hits', handler)
+    }
   },
   cron: {
     list: () => ipcRenderer.invoke('cron:list'),
@@ -521,6 +528,11 @@ const api: KoloftApi = {
       const handler = (): void => cb()
       ipcRenderer.on('shortcut:find-files', handler)
       return () => ipcRenderer.removeListener('shortcut:find-files', handler)
+    },
+    onSearchSessions: (cb) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('shortcut:search-sessions', handler)
+      return () => ipcRenderer.removeListener('shortcut:search-sessions', handler)
     },
     onWorkbenchShortcut: (cb) => {
       const handler = (_e: unknown, cmd: WorkbenchShortcut): void => cb(cmd)

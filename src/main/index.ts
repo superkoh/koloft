@@ -195,6 +195,8 @@ import {
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import { CDP_OP_BUDGET_MS } from '@shared/cdpBudget'
 import { scanLeftovers, stopLeftover } from './leftovers'
+import { SessionSearch } from './sessionSearch'
+import createTranscriptSearchWorker from './transcriptSearchWorker?nodeWorker'
 import { applyWindowCommand, guestShortcut } from '@shared/shortcutDispatch'
 import {
   ATTENTION_REASON,
@@ -255,6 +257,7 @@ import type {
   AttentionSubject,
   SessionResumeRequest,
   SessionRow,
+  SearchSnippet,
   SpawnedTab,
   TabInventoryReply,
   OpenRequest,
@@ -3647,6 +3650,37 @@ function registerIpc(): void {
       )
     )
   )
+
+  const sessionSearch = new SessionSearch({
+    candidates: () => {
+      const localPins = (workspaceMgr?.pinnedPaths() ?? [])
+        .map((w) => w.path)
+        .filter((p) => !parseRemoteKey(p))
+      return [
+        ...(workspaceMgr?.searchableRows() ?? []),
+        ...(codexSessions?.searchable(localPins) ?? [])
+      ]
+    },
+    codexSnippets: async (term) => (await codexSessions?.searchSnippets(term)) ?? [],
+    hidden: (id) => !!sessionBackends.conductorOf(id),
+    scan: (files, term, found) => {
+      // PLATFORM§4
+      const worker = createTranscriptSearchWorker({ workerData: { files, term } })
+      worker.on('message', (hit: { id: string; snippet: SearchSnippet }) =>
+        found(hit.id, hit.snippet)
+      )
+      worker.on('error', (error) => console.error('[koloft] session search failed', error))
+      return {
+        done: new Promise((resolve) => worker.once('exit', () => resolve())),
+        stop: () => void worker.terminate()
+      }
+    },
+    send: (found) => sendToRenderer('sessions:search-hits', found)
+  })
+  ipcMain.on('sessions:search', (_e, searchId: unknown, term: unknown) => {
+    if (typeof searchId !== 'number' || typeof term !== 'string') return
+    sessionSearch.start(searchId, term)
+  })
 
   ipcMain.handle('sessions:leftovers', () => leftovers)
   ipcMain.handle('sessions:stopLeftover', async (_e, sessionId: unknown, pid: unknown) => {

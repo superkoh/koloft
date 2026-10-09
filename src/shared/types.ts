@@ -845,6 +845,8 @@ export interface KoloftApi {
     leftovers(): Promise<Record<string, LeftoverProcess[]>>
     onLeftovers(cb: (leftovers: Record<string, LeftoverProcess[]>) => void): () => void
     stopLeftover(sessionId: string, pid: number): Promise<boolean>
+    search(searchId: number, term: string): void
+    onSearchHits(cb: (found: SessionSearchHits) => void): () => void
   }
   attention: {
     list(): Promise<AttentionEvent[]>
@@ -1048,6 +1050,7 @@ export interface KoloftApi {
     onAddWorkspace(cb: () => void): () => void
     onSave(cb: () => void): () => void
     onFindFiles(cb: () => void): () => void
+    onSearchSessions(cb: () => void): () => void
     // PLATFORM§7
     onBrowserCommand(cb: (cmd: BrowserCommand) => void): () => void
     // PLATFORM§7
@@ -1269,6 +1272,24 @@ export interface BackendSessionRow {
 export interface SessionRow extends BackendSessionRow, SessionSource {
   resident?: boolean
   parentId?: string
+}
+
+export interface SearchSnippet {
+  before: string
+  match: string
+  after: string
+}
+
+export interface SessionSearchHit {
+  row: SessionRow
+  workspacePath: string
+  snippet?: SearchSnippet
+}
+
+export interface SessionSearchHits {
+  searchId: number
+  hits: SessionSearchHit[]
+  done: boolean
 }
 
 export interface WorkspaceFreshness {

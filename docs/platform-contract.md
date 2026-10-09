@@ -131,7 +131,11 @@ method. A recheck adds its date, version and command to the bullet.
   app's. A bare `electron out/main/index.js` launch reports `out/main` as
   `app.getAppPath()`.
 - **Only Electron can open files inside `app.asar`.** bash or node must use the
-  `asarUnpack`'d copy under `app.asar.unpacked`.
+  `asarUnpack`'d copy under `app.asar.unpacked`. A `worker_threads` Worker the main
+  process starts counts as Electron: it loads its script from inside `app.asar`, by
+  path or by `file:` URL (Electron 43.7.3, 2026-10-09: a one-line worker packed with
+  `@electron/asar`, started from a bare `electron main.js` after `app.whenReady`,
+  posted its message back both ways).
 - **`app.setActivationPolicy('accessory')` must be set before any window exists**, or
   the first window show still makes the app active and takes focus.
 - **A Notification that nothing holds on to can be garbage-collected** while its banner

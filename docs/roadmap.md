@@ -56,8 +56,7 @@ when it works. That is what "judged against" means.
 - **Point the agent at things** — pick an element in the Workbench browser (#217).
 - **Many sessions, one change** — warn when two sessions write the same file (#221); each
   session's listening ports, opened in the Workbench browser (#224).
-- **Finding and branching sessions** — full-text search across transcripts (#220); fork a
-  session from the sidebar (#219).
+- **Branching sessions** — fork a session from the sidebar (#219).
 - **Usage and accounts** — cost history by session, workspace, model and day (#225); pick
   or pin a custom-endpoint account for a session (#226).
 

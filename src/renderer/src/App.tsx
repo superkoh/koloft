@@ -36,6 +36,7 @@ import type {
   BrowserJsDialog,
   ExtensionPermissionRequest,
   SessionRow,
+  SessionSearchHit,
   WorkspaceRows
 } from '@shared/types'
 import {
@@ -57,6 +58,7 @@ import {
   rowIdOfTab,
   workspaceOfTab,
   DOCK_GUTTER_PX,
+  liveTabOf,
   mixesBackends,
   notesHeightFromDrag,
   paneWidthFromDrag,
@@ -103,6 +105,7 @@ import { DiscordSetup } from './components/DiscordSetup'
 import { conductorNotesWorkspace, conductorOfTab } from './conductorRows'
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
 import { RestoreDialog } from './components/RestoreDialog'
+import { SearchSessionsDialog } from './components/SearchSessionsDialog'
 import { CronJobsDialog } from './components/CronJobsDialog'
 import { RemoteWorkspaceDialog } from './components/RemoteWorkspaceDialog'
 import { hostOf } from '@shared/remoteKey'
@@ -280,6 +283,7 @@ export default function App(): JSX.Element {
     path?: string
   } | null>(null)
   const [restoreWs, setRestoreWs] = useState<string | null>(null)
+  const [searchOpen, setSearchOpen] = useState(false)
   const [cronWs, setCronWs] = useState<{ path: string; jobId?: string } | null>(null)
   const [addMenu, setAddMenu] = useState(false)
   const [remoteDialog, setRemoteDialog] = useState(false)
@@ -633,6 +637,23 @@ export default function App(): JSX.Element {
       dispatchPanel('find-files')
     })
   }, [dispatchPanel])
+
+  useEffect(() => window.api.shortcuts.onSearchSessions(() => setSearchOpen(true)), [])
+
+  const closeSearch = useCallback(() => setSearchOpen(false), [])
+  const openSearchHit = useCallback((hit: SessionSearchHit): void => {
+    setSearchOpen(false)
+    const st = useStore.getState()
+    const tabId = liveTabOf(hit.row.id, st.sessions, st.tabs)
+    if (tabId) {
+      window.api.attention.visit(tabId)
+      st.activateTab(tabId)
+      return
+    }
+    const { id, backendId, title } = hit.row
+    const listed = st.workspaceRows.some((w) => w.rows.some((r) => r.id === id))
+    void resumeSession({ id, backendId, title, restore: !listed })
+  }, [])
 
   useEffect(() => {
     return window.api.browser.onOpenRequest((r) => {
@@ -1698,6 +1719,7 @@ export default function App(): JSX.Element {
               }}
             />
           )}
+          {searchOpen && <SearchSessionsDialog onClose={closeSearch} onOpen={openSearchHit} />}
           {remoteDialog && (
             <RemoteWorkspaceDialog
               onAdd={(key) => void addRemoteWorkspace(key)}
