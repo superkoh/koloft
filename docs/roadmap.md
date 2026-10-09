@@ -13,10 +13,13 @@ place and edited in one place.
 3. The centre of the window is **100% the session's own tool UI** — Claude Code's or
    Codex's — with no Koloft chrome inside it.
 4. Worktree lifecycle and session retention belong to **the agent's tool**, not Koloft.
-   Two gaps, both run on the owner's word: Koloft makes the worktree for a Codex
-   worktree session, and only `koloft session close` removes it (#116); and a conductor
-   may `koloft session close` an ended local session in its scope (#337), relaying what
-   the owner said — Koloft never decides on its own that a session goes.
+   Three gaps, all run on the owner's word: Koloft makes the worktree for a Codex
+   worktree session, and only `koloft session close` removes it (#116); Koloft makes the
+   `pr-<n>` worktree for a session started from a pull request, on that pull request's
+   own branch, because `claude -w` only makes a worktree on a new `worktree-<name>`
+   branch (#218); and a conductor may `koloft session close` an ended local session in
+   its scope (#337), relaying what the owner said — Koloft never decides on its own that
+   a session goes.
 5. A file opens in the Workbench **on your intent only** — nothing follows the agent's
    writes around by itself.
 

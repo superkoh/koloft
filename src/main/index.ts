@@ -148,7 +148,7 @@ import {
 } from './github'
 import { GithubCountsSweep } from './githubCounts'
 import { runGh } from './prChecks'
-import { commitAll, pushBranch } from './gitSteps'
+import { addPrWorktree, commitAll, GIT_REF_RE, pushBranch } from './gitSteps'
 import { restoredWindowGeometry, trackWindowState } from './windowState'
 import { fullscreenOption, windowMinWidth } from './windowBounds'
 import { closeAllFileWatchers, closeAllDirWatchers } from './fileWatch'
@@ -265,8 +265,10 @@ import type {
   HostId,
   WhatsNew,
   GitStepResult,
-  PrChecks
+  PrChecks,
+  PrWorktreeResult
 } from '@shared/types'
+import { copyWorktreeIncludes } from './sessionWorktrees'
 import { AgentRequests, BUILTIN_VERBS, errorText, refused, type AgentVerb } from './agentRequests'
 import { Conductors } from './discord/conductors'
 import { discordApiUrl, DiscordLink } from './discord/link'
@@ -3192,7 +3194,7 @@ function commitSettings(patch: Partial<Settings>): Settings {
   return s
 }
 
-const BAD_GIT_STEP: GitStepResult = { ok: false, reason: 'bad request' }
+const BAD_GIT_STEP: { ok: false; reason: string } = { ok: false, reason: 'bad request' }
 
 const githubOptions: GithubOptions = {
   fixture: parseGithubFixture(process.env.KOLOFT_GITHUB_FIXTURE),
@@ -3980,6 +3982,32 @@ function registerIpc(): void {
     const host = hosts.of(root)
     return pushBranch((args, network) => host.gitRun(root, args, network))
   })
+  ipcMain.handle('github:open-items', (_e, root: unknown) => {
+    if (typeof root !== 'string' || !root) return { state: 'no-repo' }
+    return hosts.of(root).github.openItems(root)
+  })
+  ipcMain.handle(
+    'github:pr-worktree',
+    async (_e, root: unknown, pr: unknown, branch: unknown): Promise<PrWorktreeResult> => {
+      if (
+        typeof root !== 'string' ||
+        !root ||
+        !Number.isInteger(pr) ||
+        typeof branch !== 'string' ||
+        !GIT_REF_RE.test(branch)
+      ) {
+        return BAD_GIT_STEP
+      }
+      const host = hosts.of(root)
+      const r = await addPrWorktree(
+        (args, network) => host.gitRun(root, args, network),
+        pr as number,
+        branch
+      )
+      if (r.ok && hostOf(root) === 'local') await copyWorktreeIncludes(root, r.dir)
+      return r
+    }
+  )
   ipcMain.handle('preview:openFileDialog', async () => {
     const stub = process.env.KOLOFT_FILE_DIALOG_FILE
     if (stub) return takeStubbedDialogPick(stub)

@@ -963,6 +963,16 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   superkoh/koloft --json number --jq '$ENV.HOME'` printed the home folder. So a `--jq`
   given by someone else can print any secret in that environment. (2026-10-09, gh 2.89.0,
   run by hand.)
+- **`gh issue list` / `gh pr list --repo o/r --state open --json …`** print a JSON array
+  of objects with the fields asked for (`number`, `title`, `url`, `updatedAt` as an ISO
+  time; a pull request also has `headRefName` and `isCrossRepository`), newest created
+  first, and exit 0. Signed out, each exits 4 with the `gh auth login` line. A pull
+  request from a fork has `isCrossRepository: true` and a `headRefName` that names a
+  branch of the fork, not of the repo — so the same name may be a different branch here.
+  GitHub keeps `refs/pull/<n>/head` for a fork's pull request and a same-repo one alike
+  (`git ls-remote https://github.com/cli/cli refs/pull/14629/head refs/pull/14580/head`
+  listed both). (2026-10-09, gh 2.89.0, by hand against superkoh/koloft and cli/cli, and
+  an empty `GH_CONFIG_DIR` with a scratch `HOME`.)
 
 ## §33 ssh
 

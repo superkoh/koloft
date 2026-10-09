@@ -418,6 +418,22 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
 - **CC's background retention sweep leaves hand-made worktrees under
   `.claude/worktrees/` alone from 2.1.246 on** (changelog, read 2026-09-18, not
   measured). Before that it could remove them.
+- **`-w <name>` re-enters a `.claude/worktrees/<name>` that someone else made on another
+  branch, but writes down the wrong branch, and a clean `/exit` removes the folder.**
+  Koloft-style setup: `git worktree add .claude/worktrees/pr-329 fix/pr-branch`, then
+  `claude -w pr-329` from the repo root. The session started in that folder (the
+  SessionStart hook's `cwd`), the checkout stayed on `fix/pr-branch`, no
+  `worktree-pr-329` branch was made, and the tree was locked. But `~/.claude.json`'s
+  `activeWorktreeSession` and the transcript's `worktree-state` both say
+  `"worktreeBranch":"worktree-pr-329"` (with `"resumedExisting":true`). A first message
+  after `--` still arrived as the first turn. `/exit` with no changes printed "Worktree
+  removed (no changes)": the folder and its registration were gone, `fix/pr-branch` was
+  kept. So a worktree on a branch of its own name (a pull request's branch) is opened by
+  starting bare `claude` inside it, never with `-w`, as for any existing worktree.
+  Measured 2026-10-09, claude 2.1.295 (the real binary, not the shim), a throwaway
+  one-commit repo with no `origin`, a scratch `HOME` whose `~/.claude.json` trusted the
+  repo, no login (the worktree step runs before any model call), driven in a python pty
+  with a `--settings` SessionStart hook, then `git worktree list` and `git branch`.
 - **A worktree name is refused when only its branch is left.** If a person deletes
   `.claude/worktrees/<n>` but keeps the branch `worktree-<n>`, `claude -w <n>` refuses
   that name. (Inferred, not checked.)

@@ -3,7 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { execFileSync } from 'child_process'
-import { commitAll, pushBranch, type GitRun } from '../../src/main/gitSteps'
+import { addPrWorktree, commitAll, pushBranch, type GitRun } from '../../src/main/gitSteps'
 import { localGitRun } from '../../src/main/host/localHost'
 
 const ID = ['-c', 'user.email=unit@koloft.test', '-c', 'user.name=koloft-unit']
@@ -59,6 +59,39 @@ describe('Commit…', () => {
       ok: false,
       reason: 'nothing to commit, working tree clean'
     })
+  })
+})
+
+describe('a worktree for a pull request', () => {
+  const branchOf = (dir: string): string => git(dir, 'rev-parse', '--abbrev-ref', 'HEAD')
+
+  it('checks out a branch this repo already has into .claude/worktrees/pr-<n>, fetching nothing', async () => {
+    git(repo, 'branch', 'fix/login-copy')
+    git(repo, 'remote', 'set-url', 'origin', path.join(path.dirname(origin), 'missing.git'))
+    const r = await addPrWorktree(run, 7, 'fix/login-copy')
+    const dir = path.join(repo, '.claude', 'worktrees', 'pr-7')
+    expect(r).toEqual({ ok: true, dir })
+    expect(branchOf(dir)).toBe('fix/login-copy')
+  })
+
+  it("fetches the pull request's head into its branch when this repo does not have the branch", async () => {
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'from the pull request\n')
+    git(repo, 'commit', '-q', '-am', 'pr work')
+    git(repo, 'push', '-q', 'origin', 'HEAD:refs/pull/9/head')
+    const prHead = git(repo, 'rev-parse', 'HEAD')
+    git(repo, 'reset', '-q', '--hard', 'HEAD~1')
+    const r = await addPrWorktree(run, 9, 'someone/feature')
+    expect(r.ok).toBe(true)
+    const dir = path.join(repo, '.claude', 'worktrees', 'pr-9')
+    expect(branchOf(dir)).toBe('someone/feature')
+    expect(git(dir, 'rev-parse', 'HEAD')).toBe(prHead)
+  })
+
+  it("names git's error and makes no worktree when GitHub has no such pull request", async () => {
+    const r = await addPrWorktree(run, 404, 'gone/branch')
+    expect(r.ok).toBe(false)
+    expect(!r.ok && r.reason).toMatch(/pull\/404\/head/)
+    expect(fs.existsSync(path.join(repo, '.claude', 'worktrees', 'pr-404'))).toBe(false)
   })
 })
 

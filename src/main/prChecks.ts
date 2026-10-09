@@ -15,7 +15,7 @@ export type Gh = (args: string[]) => Promise<GhResult>
 export const FAILED_LOG_LIMIT = 6000
 const LINES_KEPT_AFTER_FIRST_ERROR = 3
 const GH_MAX_BUFFER = 64 * 1024 * 1024
-const GH_SIGNED_OUT = 4
+export const GH_SIGNED_OUT = 4
 const BUCKETS: readonly PrCheckBucket[] = ['pass', 'fail', 'pending', 'skipping', 'cancel']
 
 export function runGh(args: string[]): Promise<GhResult> {
@@ -37,18 +37,23 @@ export function runGh(args: string[]): Promise<GhResult> {
   })
 }
 
-function slug(repo: GithubRepo): string {
+export function slug(repo: GithubRepo): string {
   return `${repo.owner}/${repo.repo}`
 }
 
-function checksOf(stdout: string): PrCheck[] | null {
+export function ghJsonArray(stdout: string): any[] | null {
   let v: unknown
   try {
     v = JSON.parse(stdout)
   } catch {
     return null
   }
-  if (!Array.isArray(v)) return null
+  return Array.isArray(v) ? v : null
+}
+
+function checksOf(stdout: string): PrCheck[] | null {
+  const v = ghJsonArray(stdout)
+  if (!v) return null
   return v.flatMap((c) =>
     c && typeof c.name === 'string' && BUCKETS.includes(c.bucket)
       ? [
