@@ -565,6 +565,40 @@ describe('extractJsonlMeta', () => {
     expect(meta.firstUserText).toBeUndefined()
   })
 
+  // CC§2 CC§8
+  it('a session opened by /goal whose next plain user line is a background task’s notice is titled by the command’s args, not the notice', () => {
+    const args = 'make the control session drive worker sessions, then open a PR'
+    const meta = extractJsonlMeta([
+      userLine(
+        `<command-name>/goal</command-name>\n            <command-message>goal</command-message>\n            <command-args>${args}</command-args>`,
+        ',"userType":"external","version":"2.1.295"'
+      ),
+      userLine(`<local-command-stdout>Goal set: ${args}</local-command-stdout>`),
+      userLine(
+        '<task-notification>\n<task-id>a36ec0ae0498f615b</task-id>\n<tool-use-id>toolu_01XPzwyfzjUKUPL9iepJvBN9</tool-use-id>\n<status>completed</status>\n<summary>Agent "Simplify review: simplification" finished</summary>\n</task-notification>',
+        ',"origin":{"kind":"task-notification","producer":"session-task","runId":"0mv0t1som-054cd057"},"version":"2.1.295"'
+      )
+    ])
+    expect(meta.firstUserText).toBeUndefined()
+    expect(meta.commandArgsText).toBe(args)
+  })
+
+  // CC§2
+  it('a <system-reminder> or <teammate-message> line an older Claude Code wrote with no origin never titles a session', () => {
+    const meta = extractJsonlMeta([
+      userLine(
+        '<system-reminder>\nYou are running in non-interactive mode.\n</system-reminder>',
+        ',"version":"2.1.111"'
+      ),
+      userLine(
+        '<teammate-message teammate_id="scout3" color="blue">\n{"type":"idle_notification"}\n</teammate-message>',
+        ',"version":"2.1.111"'
+      ),
+      userLine('the actual ask')
+    ])
+    expect(meta.firstUserText).toBe('the actual ask')
+  })
+
   it('a command wrapper WITH args fills commandArgsText, leaving firstUserText to the real ask', () => {
     const meta = extractJsonlMeta([
       userLine('<command-name>/model</command-name><command-args>opus</command-args>'),

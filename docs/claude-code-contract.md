@@ -280,6 +280,10 @@ mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
   (§13), 3 `prompt`/`channel`, 89 `task-notification`; `user` records 261 `human`, 193
   `task-notification`, 7 `channel` and 4 `peer`; every assistant record held at most one
   `text` block, and no `(message.id, text)` pair repeated.
+- **Not every non-meta `user` record with no `origin` was typed by a person.** A sweep of
+  the 487 main transcripts on this Mac (2026-10-09) found, among those, one opening with
+  `<system-reminder>` and three with `<teammate-message teammate_id=…>` (all CC 2.1.111);
+  no `<task-notification>` text came without its `origin`.
 - **CC deletes transcripts itself**: `claude project purge [path]` — "Delete all Claude
   Code state for a project (transcripts, tasks, file history, config entry)"
   (`claude project --help`, 2.1.281, 2026-09-24).
@@ -857,8 +861,14 @@ inferred, not checked.
   `<task-id>`. It is written three ways: a `queue-operation` record (`operation:
   'enqueue'`, content = the notification) when the task reports, removed when
   delivered; then an `attachment` record (`type: 'queued_command'`,
-  `commandMode: 'task-notification'`) — the current shapes; and, before 2.1.18x, a user
-  record with `origin.kind: 'task-notification'`. Terminal `<status>` values are
+  `commandMode: 'task-notification'`); or a user record with `origin.kind:
+  'task-notification'`, `isMeta` unset, whose text opens with `<task-notification>`. That
+  user record is still written by 2.1.295–2.1.296 (sweep of the 487 main transcripts on
+  this Mac, 2026-10-09: 1,047 such records, every one carrying that `origin`). A probe
+  the same day (2.1.296, scratch `HOME`, `/goal` asking for a `run_in_background` Bash
+  and an end of turn) wrote it for a task that finished while CC sat idle, right after
+  the `queue-operation` pair; that session, opened by `/goal`, got no `ai-title`.
+  Which shape a task finishing mid-turn gets is not probed yet. Terminal `<status>` values are
   `completed`, `failed`, `killed`, `stopped`, `cancelled`, `canceled`; `stopped` comes
   for a task killed from the UI, by a Monitor timeout, or by agent teardown. Long-lived
   tasks (Monitor, teammate) also send progress notifications with the same tool-use-id.
