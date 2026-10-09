@@ -1,5 +1,6 @@
 import { NewSessionDialog } from './components/NewSessionDialog'
 import { SessionBackendIcon } from './components/SessionBackendIcon'
+import type { SessionLaunchOptions } from './components/SessionLaunchButtons'
 import {
   backendAvailable,
   BACKEND_LABEL,
@@ -35,6 +36,7 @@ import type {
   BrowserJsDialog,
   ExtensionPermissionRequest,
   SessionRow,
+  SessionSearchHit,
   WorkspaceRows
 } from '@shared/types'
 import {
@@ -56,6 +58,7 @@ import {
   rowIdOfTab,
   workspaceOfTab,
   DOCK_GUTTER_PX,
+  liveTabOf,
   mixesBackends,
   notesHeightFromDrag,
   paneWidthFromDrag,
@@ -102,6 +105,7 @@ import { DiscordSetup } from './components/DiscordSetup'
 import { conductorNotesWorkspace, conductorOfTab } from './conductorRows'
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
 import { RestoreDialog } from './components/RestoreDialog'
+import { SearchSessionsDialog } from './components/SearchSessionsDialog'
 import { CronJobsDialog } from './components/CronJobsDialog'
 import { RemoteWorkspaceDialog } from './components/RemoteWorkspaceDialog'
 import { hostOf } from '@shared/remoteKey'
@@ -132,6 +136,8 @@ import { BrowserOverlay } from './components/BrowserOverlay'
 import { Hint } from './components/Hint'
 import { useHints } from './useHints'
 import { updateSettings } from './components/settings/useSettingsUpdate'
+import { CommandPalette } from './components/CommandPalette'
+import type { PaletteAction } from './palette'
 
 const RECENT_MAX = 3
 
@@ -175,6 +181,10 @@ function WorkbenchSlot(): JSX.Element {
 }
 
 const NOTES_ISLAND = '.isl-notes:not(.isl-conductors)'
+
+function aDialogIsOpen(): boolean {
+  return !!document.querySelector('.modal-backdrop, .bmodal-backdrop')
+}
 
 function caretInNote(): boolean {
   return !!document.activeElement?.matches(`${NOTES_ISLAND} .ed-area`)
@@ -268,7 +278,6 @@ export default function App(): JSX.Element {
   const workbench = useStore((s) => s.workbench)
   const workbenchOpen = useStore((s) => s.workbenchOpen)
   const workbenchFull = useStore((s) => s.workbenchFull)
-  const workbenchLoad = useStore((s) => s.workbenchLoad)
   const sidebarWidth = useStore((s) => s.sidebarWidth)
   const workspaceRows = useStore((s) => s.workspaceRows)
   const toast = useStore((s) => s.toast)
@@ -310,9 +319,12 @@ export default function App(): JSX.Element {
     path?: string
   } | null>(null)
   const [restoreWs, setRestoreWs] = useState<string | null>(null)
+  const [searchOpen, setSearchOpen] = useState(false)
   const [cronWs, setCronWs] = useState<{ path: string; jobId?: string } | null>(null)
   const [addMenu, setAddMenu] = useState(false)
   const [remoteDialog, setRemoteDialog] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const closePalette = useCallback((): void => setPaletteOpen(false), [])
   const [panelCmd, setPanelCmd] = useState<WorkbenchCommandSignal | null>(null)
   const [browserDialog, setBrowserDialog] = useState<BrowserAuthChallenge | BrowserJsDialog | null>(
     null
@@ -448,10 +460,7 @@ export default function App(): JSX.Element {
   }, [probed, sessionMethods])
 
   const startSession = useCallback(
-    async (
-      opts: { cwd: string; worktree?: string; worktreeResourceId?: string },
-      backend: SessionBackend
-    ): Promise<void> => {
+    async (opts: SessionLaunchOptions, backend: SessionBackend): Promise<void> => {
       const res = await window.api.terminal.create({ kind: backend, ...opts })
       if (!res.ok) throw new Error(LAUNCH_REFUSED_NOTICE)
       addTab({
@@ -737,6 +746,23 @@ export default function App(): JSX.Element {
     })
   }, [dispatchPanel])
 
+  useEffect(() => window.api.shortcuts.onSearchSessions(() => setSearchOpen(true)), [])
+
+  const closeSearch = useCallback(() => setSearchOpen(false), [])
+  const openSearchHit = useCallback((hit: SessionSearchHit): void => {
+    setSearchOpen(false)
+    const st = useStore.getState()
+    const tabId = liveTabOf(hit.row.id, st.sessions, st.tabs)
+    if (tabId) {
+      window.api.attention.visit(tabId)
+      st.activateTab(tabId)
+      return
+    }
+    const { id, backendId, title } = hit.row
+    const listed = st.workspaceRows.some((w) => w.rows.some((r) => r.id === id))
+    void resumeSession({ id, backendId, title, restore: !listed })
+  }, [])
+
   useEffect(() => {
     return window.api.browser.onOpenRequest((r) => {
       const st = useStore.getState()
@@ -862,6 +888,13 @@ export default function App(): JSX.Element {
   useEffect(
     () => window.api.shortcuts.onOpenSettings(() => setSettingsOpen(true)),
     [setSettingsOpen]
+  )
+  useEffect(
+    () =>
+      window.api.shortcuts.onCommandPalette(() => {
+        if (rowsLoaded && !aDialogIsOpen()) setPaletteOpen(true)
+      }),
+    [rowsLoaded]
   )
 
   useEffect(() => {
@@ -1082,14 +1115,13 @@ export default function App(): JSX.Element {
   const activeConductor = activeTabId
     ? conductorOfTab(conductorBindings, sessions, conductorTabs, tabs, activeTabId)
     : undefined
-  const notesWs = activeConductor
-    ? conductorNotesWorkspace(activeConductor)
-    : currentWorkspace(
-        workspaceRows,
-        activeTabId ? rowIdOfTab(sessions, activeTabId) : null,
-        selectedWs,
-        lastWsPath
-      )
+  const currentWs = currentWorkspace(
+    workspaceRows,
+    activeTabId ? rowIdOfTab(sessions, activeTabId) : null,
+    selectedWs,
+    lastWsPath
+  )
+  const notesWs = activeConductor ? conductorNotesWorkspace(activeConductor) : currentWs
   notesWsRef.current = notesWs
   const [notesFocusWs, setNotesFocusWs] = useState(notesWs)
   if (notesFocusWs !== notesWs) {
@@ -1105,6 +1137,55 @@ export default function App(): JSX.Element {
   const resumeRecent = useCallback((row: SessionRow): void => {
     void resumeSession({ id: row.id, backendId: row.backendId, title: row.title })
   }, [])
+
+  const paletteActions = (): PaletteAction[] => {
+    const hasHistory = workspaceRows.some(
+      (w) => w.workspace.path === currentWs && w.workspace.hasHistory
+    )
+    const actions: Omit<PaletteAction, 'kind'>[] = [
+      { key: 'new-session', label: 'New session…', keys: '⌘N', run: () => globalNew('main') },
+      {
+        key: 'new-worktree-session',
+        label: 'New worktree session…',
+        keys: '⇧⌘N',
+        run: () => globalNew('worktree')
+      },
+      {
+        key: 'add-workspace',
+        label: 'Add workspace…',
+        keys: '⇧⌘O',
+        run: () => void addWorkspace()
+      },
+      { key: 'add-remote', label: 'Add remote workspace…', run: () => setRemoteDialog(true) },
+      {
+        key: 'restart-session',
+        label: 'Restart session',
+        keys: '⇧⌘R',
+        run: () => useStore.getState().restartActiveSession()
+      },
+      { key: 'toggle-workbench', label: 'Toggle Workbench', keys: '⇧⌘B', run: toggleWorkbench },
+      { key: 'toggle-sidebar', label: 'Toggle sidebar', keys: '⌘B', run: toggleSidebar },
+      {
+        key: 'restore-session',
+        label: 'Restore session…',
+        disabled: !hasHistory,
+        run: () => setRestoreWs(currentWs)
+      },
+      {
+        key: 'scheduled-jobs',
+        label: 'Scheduled jobs…',
+        disabled: !currentWs,
+        run: () => currentWs && setCronWs({ path: currentWs })
+      },
+      { key: 'open-settings', label: 'Settings…', keys: '⌘,', run: () => setSettingsOpen(true) },
+      {
+        key: 'check-update',
+        label: 'Check for updates…',
+        run: () => useStore.getState().openUpdateCheck()
+      }
+    ]
+    return actions.map((a) => ({ ...a, kind: 'action' }))
+  }
 
   const activeTab = tabs.find((t) => t.id === activeTabId)
   const activeSession = activeTab ? sessions.find((s) => s.tabId === activeTab.id) : undefined
@@ -1195,9 +1276,14 @@ export default function App(): JSX.Element {
     if (panelShown || popped) setPanelMounted(true)
   }, [panelShown, popped])
 
-  useEffect(() => {
-    if (workbenchLoad && auxWinRef.current) window.api.workbenchWindow.raise(false)
-  }, [workbenchLoad])
+  useEffect(
+    () =>
+      useStore.subscribe((s, prev) => {
+        if (s.workbenchLoad !== prev.workbenchLoad && auxWinRef.current)
+          window.api.workbenchWindow.raise(false)
+      }),
+    []
+  )
 
   // PLATFORM§20 PLATFORM§23
   useEffect(() => {
@@ -1685,7 +1771,6 @@ export default function App(): JSX.Element {
                 popped={popped}
                 onPopOut={popOut}
                 onDock={dock}
-                load={workbenchLoad?.ownerTabId === panelTab ? workbenchLoad : null}
                 command={panelCmd}
                 dialog={browserDialog}
                 treeRoot={fileTreeRoot}
@@ -1758,6 +1843,7 @@ export default function App(): JSX.Element {
       {/* ADR-0013 */}
       {createPortal(
         <>
+          {paletteOpen && <CommandPalette actions={paletteActions()} onClose={closePalette} />}
           {newRequest && (
             <NewSessionDialog
               key={newRequest.id}
@@ -1785,6 +1871,7 @@ export default function App(): JSX.Element {
               }}
             />
           )}
+          {searchOpen && <SearchSessionsDialog onClose={closeSearch} onOpen={openSearchHit} />}
           {remoteDialog && (
             <RemoteWorkspaceDialog
               onAdd={(key) => void addRemoteWorkspace(key)}

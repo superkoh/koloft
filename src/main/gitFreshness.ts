@@ -27,7 +27,7 @@ export function parseLeftRight(out: string): { ahead: number; behind: number } |
 }
 
 // PLATFORM§30
-export function pullErrorReason(stderr: string, stdout = ''): string {
+export function pullErrorReason(stderr: string, stdout = '', fallback = 'pull failed'): string {
   const lines = (stderr.trim() ? stderr : stdout)
     .split('\n')
     .map((l) => l.trim())
@@ -38,7 +38,7 @@ export function pullErrorReason(stderr: string, stdout = ''): string {
   for (let i = lines.length - 1; i >= 0; i--) {
     if (!lines[i].startsWith('hint:')) return lines[i]
   }
-  return 'pull failed'
+  return fallback
 }
 
 // PLATFORM§30
@@ -82,7 +82,7 @@ interface NetResult {
 }
 
 // PLATFORM§27
-function networkGit(
+export function networkGit(
   bin: string,
   root: string,
   args: string[],

@@ -36,6 +36,12 @@ const save = (thread) => {
   fs.writeFileSync(target + '.tmp', JSON.stringify(thread))
   fs.renameSync(target + '.tmp', target)
 }
+const savedThreads = () =>
+  fs
+    .readdirSync(sessions)
+    .filter((n) => n.endsWith('.json'))
+    .map((n) => load(n.slice(0, -5)))
+    .filter(Boolean)
 const persistTurn = (thread, text) => {
   thread.path = path.join(sessions, thread.id + '.jsonl')
   thread.preview ||= text
@@ -300,14 +306,25 @@ if (argv[0] === 'app-server') {
         error(id, 'History is unavailable')
         return
       }
-      const data = p.archived
-        ? []
-        : fs
-            .readdirSync(sessions)
-            .filter((n) => n.endsWith('.json'))
-            .map((n) => load(n.slice(0, -5)))
-            .filter(Boolean)
-      result(id, { data, nextCursor: null })
+      result(id, { data: p.archived ? [] : savedThreads(), nextCursor: null })
+      return
+    }
+    if (method === 'thread/search') {
+      const term = String(p.searchTerm).toLowerCase()
+      const said = (thread) =>
+        thread.turns
+          .flatMap((turn) => turn.items)
+          .map((item) =>
+            item.type === 'agentMessage'
+              ? item.text
+              : (item.content ?? []).map((c) => c.text).join(' ')
+          )
+          .find((text) => text?.toLowerCase().includes(term))
+      const data = (p.archived ? [] : savedThreads()).flatMap((thread) => {
+        const snippet = said(thread)
+        return snippet ? [{ snippet, thread }] : []
+      })
+      result(id, { data, nextCursor: null, backwardsCursor: null })
       return
     }
     if (method === 'thread/read') {

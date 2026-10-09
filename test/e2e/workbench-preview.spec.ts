@@ -94,7 +94,7 @@ test.describe('Workbench preview: the card beside the terminal while the Workben
     }
   })
 
-  test('WB-P02: an HTML page the agent opened with koloft open joins the list, newest first', async ({
+  test('WB-P02: an HTML page the agent opened with koloft open comes up in the Workbench, and once it is collapsed again the page heads the list', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -106,9 +106,13 @@ test.describe('Workbench preview: the card beside the terminal while the Workben
       await runIn(page, centerTerm(page), '/write docs/plan.md')
       await expect(docRows(page)).toHaveCount(2, { timeout: 30_000 })
       await runIn(page, centerTerm(page), '/koloft open report.html')
+      await expect.poll(() => layoutState(page), { timeout: 30_000 }).toBe('T2')
+      await expect(wbActiveTab(page)).toHaveAttribute('title', /report\.html$/)
+
+      await page.locator('.aux-ico.wb-toggle').click()
+      await expect.poll(() => layoutState(page)).toBe('T1')
       await expect(docRows(page)).toHaveCount(3, { timeout: 30_000 })
       expect(await docNames(page)).toEqual(['report.html', 'plan.md', CANNED_STARTUP_TURN_WRITES])
-      expect(await layoutState(page)).toBe('T1')
     } finally {
       await quitAndClose(app)
     }

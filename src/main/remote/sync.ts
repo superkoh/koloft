@@ -57,6 +57,7 @@ interface HostState {
   timer?: ReturnType<typeof setTimeout>
   running: boolean
   again: boolean
+  waitingForNextPull: (() => void)[]
 }
 
 function gitKey(git: Map<string, RemoteGitInfo>): string {
@@ -101,6 +102,10 @@ export class RemoteSync {
     return this.hosts.get(host)?.problem
   }
 
+  nextPullDone(host: string): Promise<void> {
+    return new Promise((done) => this.state(host).waitingForNextPull.push(done))
+  }
+
   pokeNow(host: string): void {
     if (this.stopped) return
     const st = this.state(host)
@@ -127,7 +132,8 @@ export class RemoteSync {
           connected: false,
           failures: 0,
           running: false,
-          again: false
+          again: false,
+          waitingForNextPull: []
         })
       )
     return st
@@ -159,6 +165,7 @@ export class RemoteSync {
     const target = this.deps.targets().find((t) => t.host === host)
     if (!target) return
     st.running = true
+    const waiting = st.waitingForNextPull.splice(0)
     try {
       const before = {
         connected: st.connected,
@@ -213,6 +220,7 @@ export class RemoteSync {
       }
     } finally {
       st.running = false
+      for (const done of waiting) done()
       if (this.stopped) return
       const again = st.again
       st.again = false

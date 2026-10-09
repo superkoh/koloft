@@ -129,6 +129,13 @@
           did without typing <code>git diff</code>. The <code>base</code> switch picks what to
           compare with: changes since the branch started, or only the ones not committed yet.
         </p>
+        <p>
+          Each hunk (one block of changed lines) has <code>✎ comment</code> in its header. Click it,
+          write a note, press <kbd>⏎</kbd>: the file path, the hunk and your note land in the
+          session's input box, not sent. You read it over and press <kbd>⏎</kbd> there. The same in
+          a Codex session and on a remote folder. While the session waits for your OK on something,
+          or has ended, the button is greyed and says why.
+        </p>
 
         <figure class="shot" style="--ar: 1322 / 792; --ar-phone: 756 / 1292">
           <div class="frame">
@@ -196,17 +203,21 @@
           <li>the diff, or the plain source</li>
           <li>
             an editor: <kbd>⌘S</kbd> saves. If the file changed on disk meanwhile, it will not
-            quietly write over it.
+            quietly write over it. If the session ends while a file is not saved, a box asks at
+            once: Keep for later, Discard or Save.
           </li>
         </ul>
 
-        <h2>Web tabs</h2>
+        <h2 id="web-tabs">Web tabs</h2>
         <p>
           A real browser, not a preview. Logins stay, downloads work, popups open, and Chrome
-          extensions run. When the agent runs <code>open &lt;url&gt;</code>, the page lands as a tab
-          in the background with an unread dot. It does not pull you away from what you are doing.
-          The page is not loaded until you click it. Eight tabs per session; a ninth pushes out the
-          one you used longest ago.
+          extensions run. When the agent runs <code>open &lt;url&gt;</code>, the Workbench opens on
+          that page, and your cursor stays in the terminal. If the agent's session is not the one on
+          screen, you are not pulled over: the page waits in front when you click that row. A page
+          you open with <kbd>⌘</kbd>-click lands in the background with an unread dot, and so does
+          one an agent opens while driving the browser (see <a href="../agents/">agents</a>).
+          Neither is loaded until you click it. Eight tabs per session; a ninth pushes out the one
+          you used longest ago.
         </p>
         <p>
           Typing in the address bar suggests this project's pages first, the ones you visit most on
@@ -274,13 +285,46 @@
         <h2>The GitHub button</h2>
         <p>
           In a GitHub project a GitHub button sits next to Files. Click it to open the branch's pull
-          request in a web tab, or the repo page when there is none yet. Right-click it for more:
+          request in a web tab, or the repo page when there is none yet. When the branch has a pull
+          request, the button shows its number and a dot: green, its checks passed; amber, still
+          running; red, one failed. Right-click it for more:
         </p>
         <ul class="dash">
           <li>Open repository</li>
           <li>Open pull requests</li>
           <li>Open pull request #… <span class="why">(when there is one)</span></li>
+          <li>Checks · N failing of M <span class="why">(or passed, or running)</span></li>
+          <li>
+            Send failing checks
+            <span class="why"
+              >(under Checks, when one fails) — puts each failing check's name, its link and the log
+              around its first error into the session's input box, unsent, the same way as a hunk
+              comment</span
+            >
+          </li>
+          <li>
+            Commit…
+            <span class="why"
+              >— a small box for your message; it commits every change not committed yet, new files
+              too</span
+            >
+          </li>
+          <li>Push</li>
+          <li>
+            Open pull request…
+            <span class="why"
+              >(when there is none yet) — pushes, then opens GitHub's compare page in a web
+              tab</span
+            >
+          </li>
+          <li>Check again</li>
         </ul>
+        <p>
+          The checks need <code>gh</code> (GitHub's command-line tool) signed in; without it the
+          line says <code>Checks · install gh</code> or <code>Checks · run gh auth login</code>. The
+          same on a Codex session. On a <a href="../remote/">remote folder</a> the commit and push
+          run on the remote machine, and <code>gh</code> runs on your Mac.
+        </p>
 
         <h2>The note</h2>
         <p>One plain-text note per folder. Sessions come and go; the note stays.</p>

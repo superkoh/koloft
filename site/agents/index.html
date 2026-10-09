@@ -87,7 +87,10 @@
 
         <h3>Workbench and note</h3>
         <ul class="dash">
-          <li><code>koloft open</code> — show you a file or a web page in its Workbench</li>
+          <li>
+            <code>koloft open</code> — show you a file or a web page in its Workbench, in front (see
+            <a href="../workbench/#web-tabs">web tabs</a>)
+          </li>
           <li><code>koloft diff</code> — show you what changed in a file since the last commit</li>
           <li><code>koloft note</code> — read the folder's note, or add a line to the end of it</li>
         </ul>
@@ -110,9 +113,13 @@
           </li>
           <li>
             <code>koloft session new</code> — start a session of the same kind (Claude starts
-            Claude, Codex starts Codex), in its own git worktree if asked. Its row hangs under the
-            session that started it (see <a href="../sessions/#the-sidebar">the sidebar</a>) and is
-            named after the task it was given.
+            Claude, Codex starts Codex), in its own git worktree if asked. Only a conductor (see
+            below) can pick the other kind, with <code class="nowrap">--backend</code>. Its row
+            hangs under the session that started it (see
+            <a href="../sessions/#session-tree">sessions an agent starts</a>). A Claude session it
+            starts gets a short title made from its task by a small model (the same title in the
+            sidebar, in <code class="nowrap">session list</code> and in Discord), or the name the
+            agent gave it with <code class="nowrap">--name</code>. Codex names it itself.
           </li>
           <li>
             <code>koloft session read</code> — print what a session said in its last turns, open or
@@ -138,8 +145,9 @@
           <code class="nowrap">session list</code> and <code class="nowrap">session new</code> take
           <code class="nowrap">--workspace &lt;folder&gt;</code> to reach another folder in the
           sidebar, by its name or its full path. A session started into another folder this way sits
-          at the top of that folder's list, not under its starter. A new session cannot be started
-          in a remote folder this way.
+          at the top of that folder's list (see
+          <a href="../sessions/#session-tree">sessions an agent starts</a>). A new session cannot be
+          started in a remote folder this way.
         </p>
         <p>
           Each command prints its answer, so the agent sees what happened. The agent runs
@@ -148,8 +156,9 @@
         <p>
           A conductor, the session you talk to from Discord, gets a few more: it can answer a
           session's question, resume it, stop it, close it once it has ended, run a slash command in
-          it, see its screen, and send you files. It only passes work on; see
-          <a href="../discord/">A butler on Discord</a>.
+          it, see its screen, send you files, and ask GitHub questions with
+          <code>koloft gh</code> (<code>gh</code> is GitHub's command-line tool). It only passes
+          work on; see <a href="../discord/">A butler on Discord</a>.
         </p>
 
         <figure class="shot" style="--ar: 1322 / 661; --ar-phone: 710 / 590">
@@ -219,8 +228,9 @@
               <tr>
                 <td>pages it opens</td>
                 <td>
-                  Background web tabs with an unread dot, like an agent's <code>open</code>. No pane
-                  opens by itself, and the tab it is driving is marked.
+                  Background web tabs with an unread dot, not in front like
+                  <code>koloft open</code>, since a tool driving a browser may open many pages at
+                  once. No pane opens by itself, and the tab it is driving is marked.
                 </td>
               </tr>
               <tr>

@@ -10,6 +10,7 @@ export function setupAppMenu(
       | 'close-tab'
       | 'find'
       | 'find-files'
+      | 'search-sessions'
       | 'check-update'
       | 'restart-session'
       | 'add-workspace'
@@ -19,6 +20,7 @@ export function setupAppMenu(
       | 'focus-notes'
       | 'toggle-sidebar'
       | 'open-settings'
+      | 'command-palette'
   ) => void,
   onBrowserCommand: (cmd: BrowserCommand) => void,
   keepAwake = false
@@ -139,6 +141,12 @@ export function setupAppMenu(
         label: 'Search Files',
         accelerator: isMac ? 'Shift+CmdOrCtrl+F' : undefined,
         click: () => onShortcut('find-files')
+      },
+      {
+        id: 'search-sessions',
+        label: 'Search Sessions',
+        accelerator: isMac ? 'Alt+CmdOrCtrl+F' : undefined,
+        click: () => onShortcut('search-sessions')
       }
     ]
   }
@@ -147,6 +155,13 @@ export function setupAppMenu(
   const viewMenu: MenuItemConstructorOptions = {
     label: 'View',
     submenu: [
+      {
+        id: 'command-palette',
+        label: 'Command Palette…',
+        accelerator: 'CmdOrCtrl+P',
+        click: () => onShortcut('command-palette')
+      },
+      { type: 'separator' },
       {
         id: 'new-terminal-tab',
         label: 'New Terminal Tab',

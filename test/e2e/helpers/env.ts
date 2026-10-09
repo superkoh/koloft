@@ -201,6 +201,87 @@ export function setGithubFixture(env: E2EEnv, repos: GithubFixture): void {
   env.launchEnv.KOLOFT_GITHUB_FIXTURE = JSON.stringify(repos)
 }
 
+export interface FakeGhCheck {
+  name: string
+  bucket: 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel'
+  link: string
+  workflow: string
+}
+
+export const GH_SIGNED_OUT = 4
+
+export interface FakeGhItem {
+  number: number
+  title: string
+  url: string
+  updatedAt: string
+  headRefName?: string
+  isCrossRepository?: boolean
+}
+
+export function installFakeGh(
+  env: E2EEnv,
+  answer: {
+    checks?: FakeGhCheck[]
+    failedLog?: string
+    exitCode?: number
+    issues?: FakeGhItem[]
+    prs?: FakeGhItem[]
+  }
+): void {
+  const checks = path.join(env.home, 'fake-gh-checks.json')
+  const log = path.join(env.home, 'fake-gh-log.txt')
+  const issues = path.join(env.home, 'fake-gh-issues.json')
+  const prs = path.join(env.home, 'fake-gh-prs.json')
+  fs.writeFileSync(checks, JSON.stringify(answer.checks ?? []))
+  fs.writeFileSync(log, answer.failedLog ?? '')
+  fs.writeFileSync(issues, JSON.stringify(answer.issues ?? []))
+  fs.writeFileSync(prs, JSON.stringify(answer.prs ?? []))
+  fs.writeFileSync(
+    path.join(env.fakeBin, 'gh'),
+    `#!/bin/sh\n` +
+      `printf '%s\\n' "$*" >> ${JSON.stringify(path.join(env.home, 'fake-gh-calls.txt'))}\n` +
+      (answer.exitCode
+        ? `echo "To get started with GitHub CLI, please run:  gh auth login" >&2; exit ${answer.exitCode}\n`
+        : '') +
+      `case "$1 $2" in\n` +
+      `  "pr checks") cat ${JSON.stringify(checks)}; exit 0;;\n` +
+      `  "run view") cat ${JSON.stringify(log)}; exit 0;;\n` +
+      `  "issue list") cat ${JSON.stringify(issues)}; exit 0;;\n` +
+      `  "pr list") cat ${JSON.stringify(prs)}; exit 0;;\n` +
+      `esac\n` +
+      `echo "fake gh answers only pr checks, run view, issue list and pr list: $*" >&2\n` +
+      `exit 1\n`,
+    { mode: 0o755 }
+  )
+}
+
+const REAL_GH = process.env.KOLOFT_SMOKE_GH ?? ''
+export const HAVE_REAL_GH = fs.existsSync(REAL_GH)
+export const NEEDS_REAL_GH =
+  'set KOLOFT_SMOKE_GH (absolute path of a gh signed in to github.com; only its read-only `pr checks` and `run view` are let through)'
+
+// PLATFORM§32
+export function installRealGhThatOnlyReads(env: E2EEnv): void {
+  fs.writeFileSync(
+    path.join(env.fakeBin, 'gh'),
+    `#!/bin/sh\n` +
+      `case "$1 $2" in\n` +
+      `  "pr checks"|"run view") HOME=${JSON.stringify(os.userInfo().homedir)} exec ${JSON.stringify(REAL_GH)} "$@";;\n` +
+      `esac\n` +
+      `echo "this gh only reads checks and logs: $*" >&2\n` +
+      `exit 1\n`,
+    { mode: 0o755 }
+  )
+}
+
+export function writeGitIdentity(home: string): void {
+  fs.writeFileSync(
+    path.join(home, '.gitconfig'),
+    '[user]\n\temail = e2e@koloft.test\n\tname = koloft-e2e\n'
+  )
+}
+
 export function installGhForWorkspaceA(env: E2EEnv, prints: string): string {
   setGithubFixture(env, { [env.workspaces.a]: { owner: 'acme', repo: 'app' } })
   const log = path.join(env.home, 'gh-calls.txt')
