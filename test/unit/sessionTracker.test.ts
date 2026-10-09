@@ -950,6 +950,21 @@ describe('SessionTracker — a session that moved: EnterWorktree / ExitWorktree 
     expect(after.cwd).toBe(wt)
   })
 
+  it('a resume launched from the repo root, whose SessionStart names that root, is rooted in the worktree its last worktree-state says Claude Code re-entered', async () => {
+    const { repo, wt } = repoWithWorktree('resumed')
+    const tracker = newTracker()
+    tracker.track('tabM6', repo)
+    const file = writeJsonl(repo, SID, [
+      wtState(wt),
+      { type: 'user', message: { content: 'hi' }, cwd: wt },
+      wtState(wt)
+    ])
+    tracker.bindSession('tabM6', file, SID, repo, '', '', 'resume')
+
+    const s = await waitFor(tracker, (x) => x.tabId === 'tabM6' && x.treeRoot === wt)
+    expect(s.worktree).toBe('resumed')
+  })
+
   it('coalesces a burst of moves: one landing, one notice (R8)', async () => {
     const { repo, wt } = repoWithWorktree('burst')
     const other = repoWithWorktree('burst2')

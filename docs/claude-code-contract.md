@@ -59,7 +59,13 @@ binary.
   `claude --worktree <name> --resume "<name>"` after a keep-the-worktree exit
   (measured 2026-09-03 on 2.1.259 — four exits, named and unnamed, §4).
 - **A resumed session's SessionStart hook reports the LAUNCH directory as cwd, not the
-  worktree** — the re-enter happens after the hook (E8).
+  worktree** — the re-enter happens after the hook (E8). Seen again 2026-10-09 on CC
+  2.1.295, real sessions on the dev Mac that Koloft resumed from the repo root after a
+  restart: one's SessionStart record (`source: resume`) named the root while it worked in
+  its worktree; another, a `-w` session whose transcript sat in the root's slug, went on
+  writing records whose `cwd` and `worktree-state` named the worktree, with no
+  `relocated` record and no transcript move until it left, so only those records said
+  it was back in the worktree.
 - **A running SessionStart hook is visible and can be cut short** (changelog, read
   2026-09-18, not measured): 2.1.268 — `--continue`/`--resume` show the conversation at
   once instead of waiting for SessionStart hooks; 2.1.271 — the spinner names the
@@ -91,7 +97,9 @@ binary.
 
 Evidence: live experiments E1–E8, 2026-08-10, claude 2.1.227; enums read from CC 2.1.238 source on 2026-08-22. Koloft dependents: the `EVICTING_END_REASONS` whitelist
 in `src/main/backends/claude.ts` (marked `CC§1`); `sessionTracker.bindSession` (it takes
-the hook's `cwd` — the launch-directory entry above); `test/e2e/fixtures/fake-claude.js`
+the hook's `cwd` — the launch-directory entry above) and `followWorktreeState` (which
+then moves the root to the worktree the last `worktree-state` names);
+`test/e2e/fixtures/fake-claude.js`
 mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
 
 ## §2 Transcript on disk
