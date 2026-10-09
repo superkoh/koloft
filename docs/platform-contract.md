@@ -838,6 +838,15 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   name. Fast pipelines hit the gap within seconds (seen: a poll that read it raised
   Electron's error dialog every 1500 ms).
 - **Resizing a pty to the size it already has sends no SIGWINCH.**
+- **Node opens a terminal again by name the first time it makes `process.stdin`,
+  `stdout` or `stderr` on a tty, and that `open()` waits for good once the pty's master
+  side is closed.** A JS `SIGHUP` handler cannot free it (the thread that would run the
+  handler is the one stuck); with no JS handler the default `SIGHUP` kills it. Measured
+  2026-10-08 (Node 24.13.0, macOS 27.0) with a Python script that starts `node` on a pty
+  and closes the master 0.3 s later; seen in the e2e suite as leftover fake claudes stuck
+  in `uv_tty_init` → `open` (`sample`), with parent pid 1, on 2026-10-08 and 2026-10-09.
+  Making all three handles at startup, before any `SIGHUP` handler, removed the stuck
+  child in the probe.
 
 ## §30 git
 
