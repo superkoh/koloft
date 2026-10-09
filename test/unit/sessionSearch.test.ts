@@ -29,8 +29,8 @@ function harness(candidates: SearchCandidate[], overrides: Partial<SessionSearch
     stop: ReturnType<typeof vi.fn>
   }[] = []
   const deps: SessionSearchDeps = {
-    claudeRows: () => candidates,
-    codexHits: async () => [],
+    candidates: () => candidates,
+    codexSnippets: async () => [],
     hidden: () => false,
     scan: (files, _term, found) => {
       let finish!: () => void
@@ -89,27 +89,43 @@ describe('SessionSearch', () => {
     expect(sent).toEqual([])
   })
 
-  it('leaves out the sessions the sidebar hides, from both backends', async () => {
+  it('joins what Codex found to the Codex rows offered, once each, and drops threads that are not offered or that the sidebar hides', async () => {
+    const codexRow = (id: string, title: string): SearchCandidate => ({
+      row: { ...row(id, title, 1), backendId: 'codex' },
+      workspacePath: '/repo'
+    })
     const { search, sent, scans } = harness(
-      [{ row: row('conductor', 'needle', 1), workspacePath: '/repo', file: '/t/c.jsonl' }],
+      [
+        { row: row('conductor', 'needle', 1), workspacePath: '/repo', file: '/t/c.jsonl' },
+        codexRow('codex:titled', 'A needle in the title'),
+        codexRow('codex:said', 'Quiet'),
+        codexRow('codex:hidden', 'Quiet')
+      ],
       {
         hidden: (id) => id === 'conductor' || id === 'codex:hidden',
-        codexHits: async () => [
-          { row: { ...row('codex:hidden', 'needle', 1), backendId: 'codex' }, workspacePath: '/r' },
-          { row: { ...row('codex:shown', 'x', 2), backendId: 'codex' }, workspacePath: '/r' }
+        codexSnippets: async () => [
+          { id: 'codex:said', snippet: '... the NEEDLE moved' },
+          { id: 'codex:said', snippet: 'needle again from another home' },
+          { id: 'codex:hidden', snippet: 'needle' },
+          { id: 'codex:elsewhere', snippet: 'needle' }
         ]
       }
     )
     search.start(1, 'needle')
+    expect(scans[0].files).toEqual([])
     scans[0].finish()
     await vi.waitFor(() => expect(sent.at(-1)?.done).toBe(true))
-    expect(ids(sent)).toEqual(['codex:shown'])
+    const hits = sent.flatMap((s) => s.hits)
+    expect(hits.map((h) => [h.row.id, h.snippet?.match])).toEqual([
+      ['codex:titled', undefined],
+      ['codex:said', 'NEEDLE']
+    ])
   })
 
   it('a Codex search that fails still ends the search with the Claude hits', async () => {
     const { search, sent, scans } = harness(
       [{ row: row('a', 'A', 1), workspacePath: '/repo', file: '/t/a.jsonl' }],
-      { codexHits: async () => Promise.reject(new Error('app-server gone')) }
+      { codexSnippets: async () => Promise.reject(new Error('app-server gone')) }
     )
     search.start(1, 'needle')
     scans[0].found('a', snippet('needle'))

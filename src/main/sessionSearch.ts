@@ -13,8 +13,8 @@ export interface TranscriptScan {
 }
 
 export interface SessionSearchDeps {
-  claudeRows(): SearchCandidate[]
-  codexHits(term: string): Promise<SessionSearchHit[]>
+  candidates(): SearchCandidate[]
+  codexSnippets(term: string): Promise<{ id: string; snippet: string }[]>
   hidden(id: string): boolean
   scan(
     files: TranscriptFile[],
@@ -33,7 +33,6 @@ export class SessionSearch {
 
   start(searchId: number, term: string): void {
     this.stopCurrent()
-    this.stopCurrent = () => {}
     const wanted = term.trim()
     if (!wanted) return
     let live = true
@@ -46,27 +45,33 @@ export class SessionSearch {
       this.deps.send({ searchId, hits: queued, done })
       queued = []
     }
-    const found = (hits: SessionSearchHit[]): void => {
+    const found = (hit: SessionSearchHit): void => {
       if (!live) return
-      queued.push(...hits.filter((h) => !this.deps.hidden(h.row.id)))
-      if (queued.length) timer ??= setTimeout(() => flush(false), HITS_BATCH_MS)
+      queued.push(hit)
+      timer ??= setTimeout(() => flush(false), HITS_BATCH_MS)
     }
 
     const unread = new Map<string, SearchCandidate>()
-    const titled: SessionSearchHit[] = []
-    for (const { row, workspacePath, file } of this.deps.claudeRows()) {
-      if (snippetAround(row.title, wanted)) titled.push({ row, workspacePath })
-      else if (file) unread.set(row.id, { row, workspacePath, file })
+    const seen = new Set<string>()
+    for (const { row, workspacePath, file } of this.deps.candidates()) {
+      if (this.deps.hidden(row.id) || seen.has(row.id)) continue
+      seen.add(row.id)
+      if (snippetAround(row.title, wanted)) found({ row, workspacePath })
+      else unread.set(row.id, { row, workspacePath, file })
     }
-    found(titled)
-    const files = [...unread.values()]
-      .sort((a, b) => b.row.mtime - a.row.mtime)
-      .map((c) => ({ id: c.row.id, file: c.file! }))
-    const scan = this.deps.scan(files, wanted, (id, snippet) => {
+    const foundIn = (id: string, snippet: SearchSnippet | undefined): void => {
       const c = unread.get(id)
-      if (c) found([{ row: c.row, workspacePath: c.workspacePath, snippet }])
+      if (!c) return
+      unread.delete(id)
+      found({ row: c.row, workspacePath: c.workspacePath, snippet })
+    }
+    const files = [...unread.values()]
+      .flatMap(({ row, file }) => (file ? [{ id: row.id, file, mtime: row.mtime }] : []))
+      .sort((a, b) => b.mtime - a.mtime)
+    const scan = this.deps.scan(files, wanted, foundIn)
+    const codex = this.deps.codexSnippets(wanted).then((said) => {
+      for (const { id, snippet } of said) foundIn(id, snippetAround(snippet, wanted))
     })
-    const codex = this.deps.codexHits(wanted).then(found)
     this.stopCurrent = () => {
       live = false
       clearTimeout(timer)

@@ -342,7 +342,7 @@ describe('CodexSessions', () => {
   })
 
   // CODEX§24
-  it('a search finds threads of pinned workspaces by their words through thread/search in every home and by their title, leaving out other folders, archived threads and a home that fails', async () => {
+  it('a search offers the threads of the given workspaces but no archived one, and asks thread/search in every home, keeping the homes that answer', async () => {
     const C = '33333333-3333-4333-8333-333333333333'
     const D = '44444444-4444-4444-8444-444444444444'
     vi.mocked(deps.homes).mockReturnValue(['/homes/work'])
@@ -367,15 +367,21 @@ describe('CodexSessions', () => {
       }
     })
     await sessions.refreshHistory()
-    const hits = await sessions.search('parser', [repo])
     expect(
-      hits.map((h) => [h.row.id, h.row.backendId, h.workspacePath, h.snippet?.match]).sort()
+      sessions
+        .searchable([repo])
+        .map((c) => [c.row.id, c.row.backendId, c.workspacePath])
+        .sort()
     ).toEqual(
       [
-        [codexSessionKey(A), 'codex', repo, undefined],
-        [codexSessionKey(B), 'codex', repo, 'PARSER']
+        [codexSessionKey(A), 'codex', repo],
+        [codexSessionKey(B), 'codex', repo]
       ].sort()
     )
+    expect(await sessions.searchSnippets('parser')).toEqual([
+      { id: codexSessionKey(B), snippet: '... the PARSER crashed on an empty file' },
+      { id: codexSessionKey(C), snippet: 'parser here too' }
+    ])
     expect(mocks.request).toHaveBeenCalledWith(
       'thread/search',
       expect.objectContaining({ searchTerm: 'parser', archived: false }),

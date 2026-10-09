@@ -22,6 +22,7 @@ import type { LaunchedSession } from './accountPicker'
 import type { MachineTmp } from './remote/install'
 import { claudeWroteIt, commandOutputOf } from './claudeCommandOutput'
 import { withoutHandover } from './handover'
+import { messageText } from './messageText'
 
 export const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects')
 const TMP_ROOT = ((): string => {
@@ -321,15 +322,6 @@ function peerText(raw: string): string {
   return (PEER_ENVELOPE.exec(inner)?.[1] ?? inner).trim()
 }
 
-function promptText(content: unknown): string | null {
-  if (typeof content === 'string') return content
-  if (!Array.isArray(content)) return null
-  const texts = content.flatMap((b) =>
-    b?.type === 'text' && typeof b.text === 'string' ? [b.text] : []
-  )
-  return texts.length ? texts.join('\n') : null
-}
-
 // CC§2
 function commandEcho(obj: { origin?: unknown }, raw: string | null): boolean {
   return raw !== null && raw.startsWith('/') && claudeWroteIt(obj)
@@ -348,7 +340,7 @@ function claudeTurnPieces(obj: any): TurnPiece[] {
   const ts = Date.parse(obj.timestamp)
   const at = isFinite(ts) ? ts : Date.now()
   if (obj.type === 'user') {
-    const raw = promptText(obj.message?.content)
+    const raw = messageText(obj.message?.content)
     const who = ownerOrPeer(obj.origin?.kind)
     if (raw === null || !who) return []
     if (who === 'peer') return [{ line: { who, text: peerText(raw), at }, midTurn: false }]

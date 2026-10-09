@@ -638,21 +638,14 @@ export default function App(): JSX.Element {
   const openSearchHit = useCallback((hit: SessionSearchHit): void => {
     setSearchOpen(false)
     const st = useStore.getState()
-    const row = st.workspaceRows
-      .find((w) => w.workspace.path === hit.workspacePath)
-      ?.rows.find((r) => r.id === hit.row.id)
-    if (!row) {
-      const { id, backendId, title } = hit.row
-      void resumeSession({ id, backendId, title, restore: true })
-      return
-    }
-    const tabId = liveTabIdFor(st.sessions, st.tabs, row.id)
+    const tabId = liveTabIdFor(st.sessions, st.tabs, hit.row.id)
     if (tabId) {
       window.api.attention.visit(tabId)
       st.activateTab(tabId)
       return
     }
-    void resumeSession(row)
+    const listed = st.workspaceRows.some((w) => w.rows.some((r) => r.id === hit.row.id))
+    void resumeSession({ ...hit.row, restore: !listed })
   }, [])
 
   useEffect(() => {

@@ -1,6 +1,8 @@
 import fs from 'fs'
 import readline from 'readline'
 import type { SearchSnippet } from '@shared/types'
+import { mapAtMost } from './mapAtMost'
+import { messageText } from './messageText'
 
 export interface TranscriptFile {
   id: string
@@ -16,9 +18,9 @@ function anyCase(literal: string): RegExp {
   return new RegExp(literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
 }
 
-export function snippetAround(text: string, term: string): SearchSnippet | null {
+export function snippetAround(text: string, term: string): SearchSnippet | undefined {
   const found = anyCase(term).exec(text)
-  if (!found) return null
+  if (!found) return undefined
   const at = found.index
   const start = Math.max(0, at - SNIPPET_SIDE_CHARS)
   const end = Math.min(text.length, at + found[0].length + SNIPPET_SIDE_CHARS)
@@ -40,16 +42,7 @@ function spokenText(line: string): string | null {
   if (!record || typeof record !== 'object') return null
   const r = record as { type?: unknown; isMeta?: unknown; message?: { content?: unknown } }
   if ((r.type !== 'user' && r.type !== 'assistant') || r.isMeta === true) return null
-  const content = r.message?.content
-  if (typeof content === 'string') return content
-  if (!Array.isArray(content)) return null
-  return content
-    .filter(
-      (b): b is { text: string } =>
-        !!b && b.type === 'text' && typeof (b as { text?: unknown }).text === 'string'
-    )
-    .map((b) => b.text)
-    .join('\n')
+  return messageText(r.message?.content)
 }
 
 export async function searchTranscript(file: string, term: string): Promise<SearchSnippet | null> {
@@ -60,7 +53,7 @@ export async function searchTranscript(file: string, term: string): Promise<Sear
     for await (const line of lines) {
       if (!inRawLine.test(line)) continue
       const text = spokenText(line)
-      const hit = text ? snippetAround(text, term) : null
+      const hit = text && snippetAround(text, term)
       if (hit) return hit
     }
     return null
@@ -77,15 +70,8 @@ export async function searchTranscripts(
   term: string,
   found: (id: string, snippet: SearchSnippet) => void
 ): Promise<void> {
-  let next = 0
-  const lane = async (): Promise<void> => {
-    while (next < files.length) {
-      const { id, file } = files[next++]
-      const hit = await searchTranscript(file, term)
-      if (hit) found(id, hit)
-    }
-  }
-  await Promise.all(
-    Array.from({ length: Math.min(TRANSCRIPTS_SEARCHED_AT_ONCE, files.length) }, lane)
-  )
+  await mapAtMost(files, TRANSCRIPTS_SEARCHED_AT_ONCE, async ({ id, file }) => {
+    const hit = await searchTranscript(file, term)
+    if (hit) found(id, hit)
+  })
 }

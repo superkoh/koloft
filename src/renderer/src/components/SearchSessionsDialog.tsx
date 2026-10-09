@@ -1,5 +1,5 @@
 import { SessionBackendIcon } from './SessionBackendIcon'
-import { useEffect, useRef, useState, type JSX } from 'react'
+import { useEffect, useState, type JSX } from 'react'
 import { LuX } from 'react-icons/lu'
 import type { SessionSearchHit } from '@shared/types'
 import { basename } from '@shared/preview'
@@ -28,18 +28,11 @@ export function SearchSessionsDialog({
   const [term, setTerm] = useState('')
   const [hits, setHits] = useState<SessionSearchHit[]>([])
   const [phase, setPhase] = useState<'idle' | 'searching' | 'done'>('idle')
-  const searchId = useRef(0)
-
   useEffect(() => {
     const off = window.api.sessions.onSearchHits((found) => {
-      if (found.searchId !== searchId.current) return
+      if (found.searchId !== lastSearchId) return
       if (found.hits.length)
-        setHits((had) => {
-          const seen = new Set(had.map((h) => h.row.id))
-          return [...had, ...found.hits.filter((h) => !seen.has(h.row.id))].sort(
-            (a, b) => b.row.mtime - a.row.mtime
-          )
-        })
+        setHits((had) => [...had, ...found.hits].sort((a, b) => b.row.mtime - a.row.mtime))
       if (found.done) setPhase('done')
     })
     return () => {
@@ -57,10 +50,9 @@ export function SearchSessionsDialog({
   }, [onClose])
 
   const search = (): void => {
-    searchId.current = ++lastSearchId
     setHits([])
     setPhase(term.trim() ? 'searching' : 'idle')
-    window.api.sessions.search(searchId.current, term)
+    window.api.sessions.search(++lastSearchId, term)
   }
 
   const now = Date.now()

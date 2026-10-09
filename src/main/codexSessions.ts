@@ -8,12 +8,11 @@ import type {
   ProjectInfo,
   BackendSessionInfo,
   SessionResumeRequest,
-  SessionSearchHit,
   BackendSessionRow
 } from '@shared/types'
 import { CODEX_PLACEHOLDER_TITLE } from '@shared/types'
 import { identityOf, sourceOf } from '@shared/sessionBackend'
-import { snippetAround } from './transcriptSearch'
+import type { SearchCandidate } from './sessionSearch'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
 import {
@@ -554,45 +553,35 @@ export class CodexSessions {
     }
   }
 
+  searchable(workspaces: string[]): SearchCandidate[] {
+    return workspaces.flatMap((workspacePath) =>
+      this.rows(workspacePath)
+        .filter((row) => !row.pending && !this.archivedIds.has(row.id))
+        .map((row) => ({ row: { ...row, ...sourceOf('codex', workspacePath) }, workspacePath }))
+    )
+  }
+
   // CODEX§24
-  async search(term: string, workspaces: string[]): Promise<SessionSearchHit[]> {
+  async searchSnippets(term: string): Promise<{ id: string; snippet: string }[]> {
     if (!(await this.availability()).available) return []
-    const listed = new Map<string, SessionSearchHit>()
-    for (const workspacePath of workspaces) {
-      for (const row of this.rows(workspacePath)) {
-        if (row.pending || this.archivedIds.has(row.id)) continue
-        listed.set(row.id, { row: { ...row, ...sourceOf('codex', workspacePath) }, workspacePath })
-      }
-    }
-    const hits = new Map<string, SessionSearchHit>()
     const homes = [undefined, ...this.deps.homes()]
-    for (const reply of await Promise.allSettled(homes.map((h) => this.searchHome(h, term)))) {
-      if (reply.status === 'rejected') continue
-      for (const { key, snippet } of reply.value) {
-        const hit = listed.get(key)
-        if (hit && !hits.has(key))
-          hits.set(key, { ...hit, snippet: snippetAround(snippet, term) ?? undefined })
-      }
-    }
-    for (const [key, hit] of listed) {
-      if (!hits.has(key) && snippetAround(hit.row.title, term)) hits.set(key, hit)
-    }
-    return [...hits.values()]
+    const replies = await Promise.allSettled(homes.map((h) => this.searchHome(h, term)))
+    return replies.flatMap((reply) => (reply.status === 'fulfilled' ? reply.value : []))
   }
 
   private searchHome(
     home: string | undefined,
     term: string
-  ): Promise<{ key: string; snippet: string }[]> {
+  ): Promise<{ id: string; snippet: string }[]> {
     return this.withRpc(home, async (rpc) => {
-      const found: { key: string; snippet: string }[] = []
+      const found: { id: string; snippet: string }[] = []
       const params = { searchTerm: term, archived: false, sourceKinds }
       for await (const value of everyPage(rpc, 'thread/search', params)) {
         const item = record(value)
         const thread = userThread(item.thread)
         if (thread)
           found.push({
-            key: codexSessionKey(thread.id),
+            id: codexSessionKey(thread.id),
             snippet: typeof item.snippet === 'string' ? item.snippet : ''
           })
       }

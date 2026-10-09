@@ -3646,10 +3646,16 @@ function registerIpc(): void {
   )
 
   const sessionSearch = new SessionSearch({
-    claudeRows: () => workspaceMgr?.searchableRows() ?? [],
-    codexHits: async (term) =>
-      (await codexSessions?.search(term, workspaceMgr?.pinnedPaths().map((w) => w.path) ?? [])) ??
-      [],
+    candidates: () => {
+      const localPins = (workspaceMgr?.pinnedPaths() ?? [])
+        .map((w) => w.path)
+        .filter((p) => !parseRemoteKey(p))
+      return [
+        ...(workspaceMgr?.searchableRows() ?? []),
+        ...(codexSessions?.searchable(localPins) ?? [])
+      ]
+    },
+    codexSnippets: async (term) => (await codexSessions?.searchSnippets(term)) ?? [],
     hidden: (id) => !!sessionBackends.conductorOf(id),
     scan: (files, term, found) => {
       const worker = createTranscriptSearchWorker({ workerData: { files, term } })

@@ -47,6 +47,7 @@ import { isRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { sourceOf } from '@shared/sessionBackend'
 import type { RemoteGitInfo } from './remote/install'
 import type { SearchCandidate } from './sessionSearch'
+import { mapAtMost } from './mapAtMost'
 
 const RESCAN_DEBOUNCE_MS = 250
 const PANEL_SAVE_DEBOUNCE_MS = 600
@@ -106,23 +107,6 @@ function dirExistsSync(p: string): boolean {
   } catch {
     return false
   }
-}
-
-async function mapAtMost<T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<R>
-): Promise<R[]> {
-  const out = new Array<R>(items.length)
-  let next = 0
-  const lane = async (): Promise<void> => {
-    while (next < items.length) {
-      const i = next++
-      out[i] = await fn(items[i])
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, lane))
-  return out
 }
 
 function* linesUntilExhausted(lines: string[], probe: { exhausted: boolean }): Generator<string> {
