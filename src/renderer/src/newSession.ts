@@ -1,5 +1,11 @@
 import { ageLabel, type FreshLineState } from '@shared/freshnessOps'
-import type { SessionRow, WorkspaceFreshness, WorktreeInfo } from '@shared/types'
+import type {
+  CreateTabOptions,
+  GithubItem,
+  SessionRow,
+  WorkspaceFreshness,
+  WorktreeInfo
+} from '@shared/types'
 import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { isValidWorktreeName } from '@shared/worktreeName'
 
@@ -41,6 +47,7 @@ export type WtAim =
   | { kind: 'recover'; name: string; dir: string; recoveryResourceId: string }
   | { kind: 'reserved'; name: string }
   | { kind: 'invalid'; name: string }
+  | { kind: 'item'; item: GithubItem; name: string; dir: string | null }
 
 function existingWorktreeAim(w: WorktreeInfo): WtAim {
   return w.recoveryResourceId
@@ -49,7 +56,36 @@ function existingWorktreeAim(w: WorktreeInfo): WtAim {
 }
 
 export function worktreeBaseMode(aim: WtAim): 'existing' | 'create' {
+  if (aim.kind === 'item')
+    return aim.dir === null && aim.item.kind === 'issue' ? 'create' : 'existing'
   return aim.kind === 'open' || aim.kind === 'recover' ? 'existing' : 'create'
+}
+
+export function itemLabel(item: GithubItem): string {
+  return `#${item.number} ${item.title}`
+}
+
+export function itemFilterText(item: GithubItem): string {
+  return item.branch ? `${itemLabel(item)} ${item.branch}` : itemLabel(item)
+}
+
+export function itemAim(item: GithubItem, worktrees: WorktreeInfo[]): WtAim {
+  const name = `${item.kind}-${item.number}`
+  const hit =
+    (item.branch && worktrees.find((w) => w.branch === item.branch)) ||
+    worktrees.find((w) => w.name === name)
+  return hit
+    ? { kind: 'item', item, name: hit.name, dir: hit.dir }
+    : { kind: 'item', item, name, dir: null }
+}
+
+export function itemLaunchExtras(
+  item: GithubItem
+): Pick<CreateTabOptions, 'firstPrompt' | 'name' | 'trustFolder'> {
+  const [what, view] =
+    item.kind === 'pr' ? ['pull request', 'gh pr view'] : ['issue', 'gh issue view']
+  const firstPrompt = `${itemLabel(item)}\n${item.url}\n\nRead this ${what} and its comments yourself (${view} ${item.number} --comments), then work on it.`
+  return { firstPrompt, name: itemLabel(item), trustFolder: true }
 }
 
 export function worktreeAim(worktrees: WorktreeInfo[], query: string, hot: WtHot): WtAim {
@@ -61,6 +97,7 @@ export function worktreeAim(worktrees: WorktreeInfo[], query: string, hot: WtHot
   if (!name) return { kind: 'none' }
   const hit = worktrees.find((w) => w.name.toLowerCase() === name.toLowerCase())
   if (hit) return existingWorktreeAim(hit)
+  if (name.startsWith('#')) return { kind: 'none' }
   if (name.toLowerCase() === 'main') return { kind: 'reserved', name }
   return isValidWorktreeName(name) ? { kind: 'create', name } : { kind: 'invalid', name }
 }
@@ -115,6 +152,15 @@ export interface WtAction {
   verb: 'Create' | 'Open' | 'Recover'
   name: string | null
   ref?: string
+  item?: number
+}
+
+export function actionText(wt: WtAction, withName: boolean): string {
+  if (wt.item !== undefined) {
+    return wt.verb === 'Open' ? `Open ${wt.name} for #${wt.item}` : `Create from #${wt.item}`
+  }
+  if (!withName) return wt.verb
+  return wt.name === null ? `${wt.verb} worktree` : `${wt.verb} worktree “${wt.name}”`
 }
 
 export function primaryLabel(kind: PrimaryKind, wt?: WtAction, backend?: string): string {
@@ -125,11 +171,7 @@ export function primaryLabel(kind: PrimaryKind, wt?: WtAction, backend?: string)
     return named('Start')
   }
   if (kind === 'pulling') return wt.ref ? `Pulling ${wt.ref}…` : 'Pulling…'
-  const act = backend
-    ? wt.verb
-    : wt.name === null
-      ? `${wt.verb} worktree`
-      : `${wt.verb} worktree “${wt.name}”`
+  const act = actionText(wt, !backend)
   return named(kind === 'pull' ? `Pull & ${act}` : act)
 }
 

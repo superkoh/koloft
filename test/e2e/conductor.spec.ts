@@ -323,6 +323,7 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
       const asked = (await waitForCalls(env, 1))[0].sessionId
       await runIn(page, centerTerm(page), '/answer two plus two')
       await expect.poll(() => shownTermText(page)).toContain('answered: two plus two')
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-waiting\b/)
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(wsRows(page, 'ws-a')).toHaveClass(/cold/)
       await startSessionIn(page, 'ws-b')

@@ -106,7 +106,9 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     it, and is then one prompt together with what was typed after it; fake-codex
     keeps one in its composer the same way.
   - every launch writes one line to `env.claudeCalls` (argv, cwd, session id,
-    injected auth) before any delay.
+    injected auth) before any delay — except Koloft's title call (`-p` with the task
+    piped on stdin), which prints `<first line of the task> (titled)` and exits
+    unlogged; a `-p` typed in a terminal is logged like any launch.
   - like the real one, it lists itself in `<home>/.claude/sessions/<pid>.json` with a
     message socket (CC§11); each line written there is appended raw to
     `<home>/fake-claude-peer.jsonl` and taken as a peer message (reply

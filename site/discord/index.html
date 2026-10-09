@@ -266,11 +266,12 @@ your Mac
           <pre
             class="ascii"
             role="img"
-            aria-label="A sketch of the tidewatch channel. A small card for the session fix flaky test says tidewatch, Claude. Its thread holds a card: fix flaky test is waiting for you. Bash asks to run: npm test. Answer with a button, or write the answer here. Under it, two buttons, Yes and No. After you press Yes, the buttons go and the card ends with a tick and Yes."
+            aria-label="A sketch of the tidewatch channel. A small card for the session fix flaky test says needs you, asked 2 minutes ago, tidewatch, Claude. Its thread holds a card: fix flaky test is waiting for you. Bash asks to run: npm test. Answer with a button, or write the answer here. Under it, two buttons, Yes and No. After you press Yes, the buttons go and the card ends with a tick and Yes."
           >
 #tidewatch            (the channel)
 
-🧵 fix flaky test
+❓ fix flaky test · needs you,
+   asked 2 minutes ago
    tidewatch · Claude
    |
    +-- thread: fix flaky test
@@ -308,6 +309,53 @@ your Mac
           gets its own. The channel shows one small card per session: its title, its folder, and
           Claude or Codex. Under that card, the session's thread holds its news: finished, waiting
           for you, closed, and the results of commands.
+        </p>
+        <p>
+          The card follows the session's light in the sidebar, and says how long ago that began:
+        </p>
+        <div class="typed-table stacked">
+          <table>
+            <thead>
+              <tr>
+                <th>card</th>
+                <th><a href="../sessions/#lights">sidebar light</a></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>🔄 working, started …</td>
+                <td>orange</td>
+              </tr>
+              <tr>
+                <td>❓ needs you, asked …</td>
+                <td>amber, or green with a <a href="../sessions/#red-dots">red dot</a></td>
+              </tr>
+              <tr>
+                <td>✅ turn done …</td>
+                <td>
+                  green; with "· work still running" when things it started still run in the
+                  background
+                </td>
+              </tr>
+              <tr>
+                <td>💤 idle, done …</td>
+                <td>dim green</td>
+              </tr>
+              <tr>
+                <td>⏹ closed …</td>
+                <td>grey</td>
+              </tr>
+              <tr>
+                <td>⚪ status unknown</td>
+                <td>a Codex session whose state Koloft cannot read</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          While a session works, its thread shows the bot typing; while the conductor works, its
+          channel does. For a session on another machine, the card is a few seconds behind, like
+          <a href="../remote/">the sidebar</a>.
         </p>
         <ul class="dash">
           <li>
@@ -380,6 +428,22 @@ your Mac
           <li>close the sessions it started</li>
           <li>close any ended session it looks after on your Mac, when you ask</li>
           <li>list your folders <span class="why">(Global only)</span></li>
+          <li>
+            check GitHub itself with <code>koloft gh</code>: is a pull request merged, how did its
+            checks go, what does an issue say
+            <span class="why"
+              >(Koloft runs <code>gh</code>, GitHub's command-line tool, for it, and only the
+              reading commands: pr view, list, checks, diff; issue view, list; run view, list. A
+              folder's conductor gets that folder's repository filled in; the Global one names it
+              with <code class="nowrap">--repo</code>)</span
+            >
+          </li>
+          <li>
+            keep its own memory
+            <span class="why"
+              >(a Claude conductor may write in its own memory folder, and nowhere else)</span
+            >
+          </li>
         </ul>
         <p>It cannot:</p>
         <ul class="dash">
@@ -389,6 +453,10 @@ your Mac
               >(a Claude conductor is told no, with a message; a Codex conductor is held in its
               sandbox, a box it cannot reach out of; either one asks a session to do it)</span
             >
+          </li>
+          <li>
+            merge, comment or change anything on GitHub
+            <span class="why">(<code>koloft gh</code> refuses every command that writes)</span>
           </li>
           <li>close an open session it did not start <span class="why">(stop it first)</span></li>
           <li>
@@ -457,8 +525,12 @@ your Mac
                 </td>
               </tr>
               <tr>
-                <td>names</td>
-                <td>Session titles and folder names, on the cards and in thread names.</td>
+                <td>session cards</td>
+                <td>
+                  The session's title and folder (also in thread names), Claude or Codex, and its
+                  state (see the table above), edited each time the state changes. While it works, a
+                  typing signal every 8 seconds.
+                </td>
               </tr>
               <tr>
                 <td>errors</td>
@@ -556,8 +628,11 @@ your Mac
             >
           </li>
           <li>
-            <s class="struck">ring on start or close</s>
-            <span class="why">(the "started" and "closed" cards are silent)</span>
+            <s class="struck">ring on start, close or a new state</s>
+            <span class="why"
+              >(the "started" and "closed" cards, and every edit of a session's card, are
+              silent)</span
+            >
           </li>
           <li>
             <s class="struck">answer Codex forms</s>

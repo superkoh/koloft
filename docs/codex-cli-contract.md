@@ -764,6 +764,14 @@ sentence, then `ls`, then `DONE`; turn 2 was sent with `thread/queue/add`.
   said `historyMode: "paginated"`). Those two methods are not on the list `CodexRpc` lets
   through; if a later Codex drops `includeTurns`, reading a closed Codex session breaks
   there first.
+- **A Plan-mode turn writes no plan file; the plan is a `plan` item** `{type, id, text}`
+  on `item/completed`, streamed before that by `item/plan/delta` (72 deltas adding up to
+  the same 362 characters). It is not `turn/plan/updated`, which is `update_plan`'s step
+  list. The saved rollout holds the plan twice: an `item_completed` event whose
+  `item.text` is the plan, and the final assistant message, which wraps it in
+  `<proposed_plan>` tags. Checked 2026-10-03 with Codex 0.159.3: one `turn/start` with
+  `collaborationMode: {mode: "plan", …}` in a fresh `CODEX_HOME`, in a folder holding
+  only `README.md`; `collaborationMode/list` answered `Plan` and `Default`.
 - That the TUI's ephemeral title thread (section 17, its own `temporary-structured-…` id)
   never sends items under the session's thread id is inferred from section 17, not
   re-run here: no TUI was attached in this probe.
@@ -845,6 +853,12 @@ folder trusted. Text was typed in one write and CR in a second write 0.3–0.6 s
   started and completed, `turn/completed` (2.8–5.4 s), on the same thread id. No
   `thread/compacted` notification came. The relay sending `thread/compact/start` itself
   did the same, and the TUI drew it and kept working.
+- **An automatic compaction stays inside the turn it interrupts** (2026-10-09, Codex CLI
+  0.162.0, `codex app-server` on stdio driven by a Node script, a temporary `CODEX_HOME`
+  with `model_auto_compact_token_limit = 30000`, one real turn of four `seq` commands):
+  after the third command a `contextCompaction` item started and completed (10.6 s), the
+  fourth command and the reply followed, and one `turn/completed` for the same turn id
+  ended it. No other turn started and no user message was added.
 - **`/new` and `/clear`** each sent `config/read`, `thread/start` (a new id), then
   `thread/unsubscribe` of the old thread. `/clear` adds `sessionStartSource: "clear"`.
   A `-c developer_instructions=…` given to the app-server still reached the model in the
@@ -938,7 +952,44 @@ message" (3 runs).
 - Codex on a remote machine is not a tab Koloft starts yet (§16), so the paste over ssh
   and tmux is not probed for Codex.
 
-## 24. The keys the TUI takes
+## 24. Searching the words of every thread
+
+How established: 2026-10-09 on this Mac, Codex CLI 0.162.0. The schema from
+`codex app-server generate-json-schema --experimental` (`v2/ThreadSearchParams.json`,
+`ThreadSearchResponse.json`), then a Node client on `codex app-server --stdio` in a
+scratch `CODEX_HOME` holding only a copied `auth.json` and a `config.toml` (update check
+off, the work folder trusted), deleted afterwards. One real turn (`thread/start` with
+`approvalPolicy: "never"`, `sandbox: "read-only"`) asked the model to reply with the
+word made of "ban" and "jo", with the marker `zebrafinch42` in the prompt; it answered
+`banjo`.
+
+- **`thread/search` takes `{ searchTerm, cursor, limit, archived, sourceKinds, sortKey,
+  sortDirection }`** (only `searchTerm` required; `sortKey` `created_at` by default,
+  `sortDirection` `desc`) **and answers `{ data: [{ snippet, thread }], nextCursor,
+  backwardsCursor }`**; `thread` has the shape `thread/list` returns, and the pages
+  follow `nextCursor` the same way.
+- **It matches what the person typed and what the model answered, in any case.**
+  `zebrafinch42` (only in the prompt), `banjo` (only in the reply) and `ZEBRAFINCH42`
+  each returned the thread; a word in neither returned `{data: [], nextCursor: null,
+  backwardsCursor: null}`. Each call took about 6–8 ms on the one-thread home (150 ms
+  for the first call right after the turn).
+- **One hit per thread.** `ban`, in both the prompt and the reply, gave one hit, whose
+  snippet came from the prompt.
+- **The snippet is plain text with no match range**: `... ban" followed by "jo", and
+  nothing else. Marker: zebrafinch42`, cut with `... ` at the front and ` ...` at the end,
+  not centred on the match. Whoever shows the match finds the term in it again.
+- **The thread's name is not searched.** After `thread/name/set` named it "Pelican title
+  only", `pelican` returned nothing; so a search by title is the caller's own.
+- **It also matches text Codex adds itself**: the term `e` hit inside the
+  `<environment_context>` block Codex puts before the first turn.
+- **`archived` picks one side**: the schema says `true` gives archived threads only and
+  `false` or null the rest; `archived: true` with `banjo` returned nothing, the thread
+  not being archived. That `false` hides an archived thread was not run. An empty
+  `searchTerm` is refused with `-32600 "thread/search requires a non-empty searchTerm"`.
+- Not probed: how long it takes on a home with thousands of threads (no real home was
+  searched), and Codex on a remote machine (§16).
+
+## 25. The keys the TUI takes
 
 How established: 2026-10-09, Codex CLI 0.162.0, this Mac's own login, `codex --no-daemon`
 in a python `pty` (100×40) in a fresh scratch folder, each key one write about 1 s after

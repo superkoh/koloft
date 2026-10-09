@@ -25,7 +25,7 @@ export function typedPieces(text: string): string[] {
   return text.match(TYPED_PIECE) ?? []
 }
 
-// CC§12 CODEX§24
+// CC§12 CODEX§25
 const NAMED_KEYS = new Map([
   ['enter', '\r'],
   ['esc', '\x1b'],
