@@ -390,6 +390,15 @@ export function relayStripChanged(sessionId: string, next: RelayTarget[]): void 
   for (const targetId of diff.destroyed) client.protocol.targetDestroyed(targetId)
 }
 
+export function sessionDrivingGuest(guestId: number): string | null {
+  for (const client of clients.values()) {
+    for (const held of client.attached.values()) {
+      if (held.guestId === guestId && client.sessionId) return client.sessionId
+    }
+  }
+  return null
+}
+
 export function relayTabRebound(tabId: string, sessionId: string | null): void {
   const client = clients.get(tabId)
   if (!client) return

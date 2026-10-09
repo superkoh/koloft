@@ -13,7 +13,9 @@ import {
   panelTerm,
   runIn,
   startSessionIn,
-  waitBooted
+  waitBooted,
+  waitForCalls,
+  wsRows
 } from './helpers/p1'
 import {
   OVERLAY,
@@ -40,6 +42,7 @@ import {
 import {
   WORKBENCH,
   openInBrowse,
+  persistedTabsOnDisk,
   showBrowse,
   wbActiveTab,
   wbTabTitles,
@@ -417,6 +420,35 @@ test.describe('URL routing and the open shim: where a target lands (a web tab, t
       expect(await page.locator(BROWSER.tabActive).innerText()).toBe(activeBefore)
       expect(guest.url()).toContain('/link')
       await expect.poll(() => addressText(page)).toContain('/link')
+    } finally {
+      await server.close()
+    }
+  })
+
+  test('a pop-up from a page in a session that is not on screen opens in that page’s own session, and the session on screen stays as it was', async ({
+    app,
+    page,
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const server = await startEchoServer()
+    try {
+      await addressBarSession(page)
+      const sessionA = (await waitForCalls(env, 1))[0].sessionId
+      await typeInAddressBar(page, server.page('/owner-a', '<title>OwnerA</title>a'))
+      const guest = await guestByUrl(app, '/owner-a')
+      await startSessionIn(page, 'ws-b')
+      await expect(wsRows(page, 'ws-b').first()).toHaveClass(/\bactive\b/)
+
+      const popup = server.page('/popped', '<title>Popped</title>p')
+      await guest.evaluate((u) => void window.open(u), popup)
+
+      await expect
+        .poll(() => persistedTabsOnDisk(env, sessionA).map((t) => t.url), { timeout: 30_000 })
+        .toContain(popup)
+      await expect(wsRows(page, 'ws-b').first()).toHaveClass(/\bactive\b/)
+      await openBrowser(page)
+      await expect(openTabs(page)).toHaveCount(0)
     } finally {
       await server.close()
     }

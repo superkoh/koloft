@@ -1456,6 +1456,10 @@ export function WorkbenchPane({
       })
     },
     onAttached: (): void => {
+      waitGuestId(tab.id).then(
+        (gid) => window.api.browser.setGuestOwner(gid, owner),
+        () => {}
+      )
       setAttached((n) => n + 1)
       const waiting = pendingMounts.current.get(tab.id)
       if (waiting) {
