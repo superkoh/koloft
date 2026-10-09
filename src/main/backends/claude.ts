@@ -84,7 +84,7 @@ export interface ClaudeBackendDeps {
   events(tabId: string, event: SessionEvent): void
 }
 
-const GIT_REF_RE = /^[A-Za-z0-9._][A-Za-z0-9._/-]{0,120}$/
+export const GIT_REF_RE = /^[A-Za-z0-9._][A-Za-z0-9._/-]{0,120}$/
 
 // PLATFORM§28
 const STATUS_LOG_POLL_MS = 2000

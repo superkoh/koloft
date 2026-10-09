@@ -1,5 +1,6 @@
 import { NewSessionDialog } from './components/NewSessionDialog'
 import { SessionBackendIcon } from './components/SessionBackendIcon'
+import type { SessionLaunchOptions } from './components/SessionLaunchButtons'
 import {
   backendAvailable,
   BACKEND_LABEL,
@@ -350,10 +351,7 @@ export default function App(): JSX.Element {
   }, [probed, sessionMethods])
 
   const startSession = useCallback(
-    async (
-      opts: { cwd: string; worktree?: string; worktreeResourceId?: string },
-      backend: SessionBackend
-    ): Promise<void> => {
+    async (opts: SessionLaunchOptions, backend: SessionBackend): Promise<void> => {
       const res = await window.api.terminal.create({ kind: backend, ...opts })
       if (!res.ok) throw new Error(LAUNCH_REFUSED_NOTICE)
       addTab({

@@ -2100,6 +2100,9 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.gh-items .cb-row .note {
+  flex: none;
+}
 
 .lifecycle-modal .modal-header {
   font-family: var(--font);

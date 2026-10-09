@@ -1,6 +1,13 @@
 import { execFile as execFileCb } from 'child_process'
 import { promisify } from 'util'
-import type { GithubInfo, GithubTarget, PrChecks, WorkspaceGithub } from '@shared/types'
+import type {
+  GithubInfo,
+  GithubItem,
+  GithubOpenItems,
+  GithubTarget,
+  PrChecks,
+  WorkspaceGithub
+} from '@shared/types'
 import type { GithubRepo } from '@shared/githubUrl'
 import {
   compareUrlOf,
@@ -12,7 +19,7 @@ import {
   repoUrlOf
 } from '@shared/githubUrl'
 import { credentialGuardEnv, FETCH_TIMEOUT_MS, LOCAL_TIMEOUT_MS } from './gitFreshness'
-import { failingChecksText, prChecks, type Gh } from './prChecks'
+import { failingChecksText, GH_SIGNED_OUT, prChecks, type Gh, type GhResult } from './prChecks'
 
 const execFile = promisify(execFileCb)
 const TTL_MS = 5 * 60_000
@@ -46,6 +53,70 @@ export async function ghOpenCounts(repo: GithubRepo): Promise<OpenCounts | null>
     `query=${OPEN_COUNTS_QUERY}`
   ])
   return ok ? parseOpenCounts(out) : null
+}
+
+const OPEN_ITEMS_LIMIT = 50
+
+function itemsOf(stdout: string, kind: GithubItem['kind']): GithubItem[] | null {
+  let v: unknown
+  try {
+    v = JSON.parse(stdout)
+  } catch {
+    return null
+  }
+  if (!Array.isArray(v)) return null
+  return v
+    .filter(
+      (x) =>
+        x &&
+        Number.isInteger(x.number) &&
+        typeof x.title === 'string' &&
+        typeof x.url === 'string' &&
+        typeof x.updatedAt === 'string' &&
+        (kind === 'issue' || typeof x.headRefName === 'string')
+    )
+    .map((x) => ({
+      kind,
+      number: x.number,
+      title: x.title,
+      url: x.url,
+      updatedAt: x.updatedAt,
+      ...(kind === 'pr'
+        ? { branch: x.isCrossRepository === true ? `pr-${x.number}` : x.headRefName }
+        : {})
+    }))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+}
+
+// PLATFORM§32
+export function parseOpenItems(repo: string, issues: GhResult, prs: GhResult): GithubOpenItems {
+  if (issues.missing || prs.missing) return { state: 'no-gh' }
+  if (issues.code === GH_SIGNED_OUT || prs.code === GH_SIGNED_OUT) return { state: 'signed-out' }
+  const i = itemsOf(issues.stdout, 'issue')
+  const p = itemsOf(prs.stdout, 'pr')
+  return i && p ? { state: 'items', repo, issues: i, prs: p } : { state: 'failed' }
+}
+
+export async function listOpenItems(gh: Gh, repo: GithubRepo): Promise<GithubOpenItems> {
+  const slug = `${repo.owner}/${repo.repo}`
+  const list = (what: 'issue' | 'pr', fields: string): Promise<GhResult> =>
+    gh([
+      what,
+      'list',
+      '--repo',
+      slug,
+      '--state',
+      'open',
+      '--limit',
+      String(OPEN_ITEMS_LIMIT),
+      '--json',
+      fields
+    ])
+  const [issues, prs] = await Promise.all([
+    list('issue', 'number,title,url,updatedAt'),
+    list('pr', 'number,title,url,updatedAt,headRefName,isCrossRepository')
+  ])
+  return parseOpenItems(slug, issues, prs)
 }
 
 export async function ghRead(args: string[]): Promise<{ ok: boolean; out: string }> {
@@ -205,6 +276,12 @@ export class GithubLookup {
     const repo = await this.repoFor(root)
     if (!repo || !this.opts.gh) return { state: 'failed' }
     return prChecks(this.opts.gh, repo, pr)
+  }
+
+  async openItems(root: string): Promise<GithubOpenItems> {
+    const repo = await this.repoFor(root)
+    if (!repo || !this.opts.gh) return { state: 'no-repo' }
+    return listOpenItems(this.opts.gh, repo)
   }
 
   async failingChecksText(root: string, pr: number): Promise<string | null> {

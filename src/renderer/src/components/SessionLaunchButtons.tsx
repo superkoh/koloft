@@ -5,12 +5,15 @@ import {
   SESSION_BACKENDS,
   unsupportedPairMessage
 } from '@shared/sessionBackend'
-import type { BackendId, HostId } from '@shared/types'
+import type { BackendId, CreateTabOptions, HostId } from '@shared/types'
 import { launchErrorMessage } from '../agentUi'
 import { useStore } from '../store'
 import { SessionBackendIcon } from './SessionBackendIcon'
 
-export type SessionLaunchOptions = { cwd: string; worktree?: string; worktreeResourceId?: string }
+export type SessionLaunchOptions = Pick<
+  CreateTabOptions,
+  'worktree' | 'worktreeResourceId' | 'firstPrompt' | 'name' | 'trustFolder'
+> & { cwd: string }
 export type StartSession = (opts: SessionLaunchOptions, backend: BackendId) => Promise<void>
 
 export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: () => void) {
@@ -58,13 +61,16 @@ export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: (
     const result = found(backend)
     return !detected || result?.available ? '' : result?.reason || 'Not installed'
   }
-  const launch = async (opts: SessionLaunchOptions, backend: BackendId): Promise<void> => {
+  const launch = async (
+    opts: SessionLaunchOptions | (() => Promise<SessionLaunchOptions>),
+    backend: BackendId
+  ): Promise<void> => {
     if (submitting.current) return
     submitting.current = true
     setStarting(true)
     setError('')
     try {
-      await onStart(opts, backend)
+      await onStart(typeof opts === 'function' ? await opts() : opts, backend)
       if (live.current) onClose()
     } catch (e) {
       if (live.current) setError(launchErrorMessage(e))
