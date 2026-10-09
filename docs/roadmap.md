@@ -167,4 +167,6 @@ would settle Tier 1 against Tier 2.
   free-floating shell, which is a non-goal.
 - **Anti-patterns with a track record of backlash**: telemetry, forced login, hiding the
   terminal, auto-hide-on-blur without an opt-out, ambiguous broadcast scope. Koloft has
-  none of the first three and will not add them.
+  none of the first three and will not add them. The one sign-in it does ask for is a
+  Claude or Codex account added in Settings ▸ Accounts, which every session runs on
+  (ADR-0030) — the tools' own sign-in, never an account with Koloft.
