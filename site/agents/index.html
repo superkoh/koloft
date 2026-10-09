@@ -113,11 +113,11 @@
           </li>
           <li>
             <code>koloft session new</code> — start a session of the same kind (Claude starts
-            Claude, Codex starts Codex; only a Discord butler may pick the other kind, with
-            <code class="nowrap">--backend</code>), in its own git worktree if asked. Its row hangs
-            under the session that started it (see
-            <a href="../sessions/#session-tree">sessions started by a session</a>). A Claude session
-            it starts gets a short title made from its task by a small model (the same title in the
+            Claude, Codex starts Codex), in its own git worktree if asked. Only a conductor (see
+            below) can pick the other kind, with <code class="nowrap">--backend</code>. Its row
+            hangs under the session that started it (see
+            <a href="../sessions/#session-tree">sessions an agent starts</a>). A Claude session it
+            starts gets a short title made from its task by a small model (the same title in the
             sidebar, in <code class="nowrap">session list</code> and in Discord), or the name the
             agent gave it with <code class="nowrap">--name</code>. Codex names it itself.
           </li>
@@ -145,8 +145,9 @@
           <code class="nowrap">session list</code> and <code class="nowrap">session new</code> take
           <code class="nowrap">--workspace &lt;folder&gt;</code> to reach another folder in the
           sidebar, by its name or its full path. A session started into another folder this way sits
-          at the top of that folder's list, not under its starter. A new session cannot be started
-          in a remote folder this way.
+          at the top of that folder's list (see
+          <a href="../sessions/#session-tree">sessions an agent starts</a>). A new session cannot be
+          started in a remote folder this way.
         </p>
         <p>
           Each command prints its answer, so the agent sees what happened. The agent runs

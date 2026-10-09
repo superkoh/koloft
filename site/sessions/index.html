@@ -267,14 +267,13 @@
           session. Not on a <a href="../remote/">remote folder</a> yet.
         </p>
 
-        <h2 id="session-tree">Sessions started by a session</h2>
+        <h2 id="session-tree">Sessions an agent starts</h2>
         <p>
           An agent can start sessions of its own, with <code>koloft session new</code> (see
-          <a href="../agents/">agents</a>). Each one
+          <a href="../agents/">agents</a>, which also says how each one gets its name). Each one
           <mark class="hl">hangs under the session that started it</mark>, set in a little, with a
           thin line down its left. A session that one of those starts hangs one level deeper. The
-          row is there from the moment it reads Starting…, and the
-          <a href="../agents/">agents</a> page says how it gets its name.
+          row is there from the moment it reads Starting….
         </p>
         <figure class="shot is-narrow" style="--ar: 558 / 578">
           <div class="frame">
@@ -283,7 +282,7 @@
               width="558"
               height="578"
               loading="lazy"
-              alt="The folder tidewatch: the session Add storm alerts endpoint with two sessions set in under it, Update the API docs and Write the storm alert tests, and under the second of those, one level deeper, Check the test fixtures; below them all, Fix tide times near midnight on its own. A small down arrow sits on the right of each row that has sessions under it"
+              alt="The folder tidewatch: the session Add storm alerts endpoint with two sessions set in under it, Update the API docs and Write the storm alert tests, and under the second of those, one level deeper, Check the test fixtures; below them all, Fix tide times near midnight on its own"
             />
             <span class="tape" aria-hidden="true"></span>
           </div>
@@ -291,8 +290,9 @@
         </figure>
         <p>
           A row with sessions under it gets a small arrow on the right. Click it to fold them away.
-          Folded, the row shows a red count of the hidden sessions that need you, the way a folded
-          folder does, and a grey count of all the hidden ones. Click the arrow again to see them.
+          Folded, the row shows a red count of the hidden sessions that need you, the way a
+          <a href="#red-dots">folded folder</a> does, and a grey count of all the hidden ones. Click
+          the arrow again to see them.
         </p>
         <figure class="shot is-narrow" style="--ar: 558 / 296">
           <div class="frame">
@@ -310,20 +310,21 @@
         <ul class="dash">
           <li>Claude and Codex both do this.</li>
           <li>
-            If the session on top is closed, the ones under it stay under it, now a closed row. If
-            it is gone from the list, they move up to the top. None of them closes with it.
+            If the session that started them ends but its row stays in the list, they stay under
+            that row, now shown as closed. Nothing under a session closes with it, however it is
+            closed.
           </li>
           <li>
-            A session started into another folder (<code class="nowrap">--workspace</code>) sits at
-            the top of that folder's list, not under its starter. So does a session a
-            <a href="../discord/">Discord butler</a> starts.
+            A row hangs under its starter only while the starter is in the same folder's list.
+            Otherwise it sits at the top of that list: when its starter is gone from the list, when
+            it was started into another folder with <code class="nowrap">--workspace</code>, when a
+            <a href="../discord/">Discord butler</a> started it, and always for a session on another
+            machine.
           </li>
-          <li>A session on another machine is always a top-level row.</li>
           <li>
-            Switching to a session hidden inside a folded row does not unfold it, the same as a
-            folded folder.
+            A folded row works like a folded folder: switching to a session inside does not unfold
+            it, and the fold is forgotten when Koloft restarts.
           </li>
-          <li>Which rows are folded is forgotten when Koloft restarts.</li>
         </ul>
 
         <h2 id="the-sidebar">The sidebar</h2>
