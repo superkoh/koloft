@@ -965,6 +965,9 @@ export interface KoloftApi {
     remove(name: string, kind: AccountKind): Promise<void>
     toggle(name: string, kind: AccountKind, enabled: boolean): Promise<void>
     probe(): Promise<AccountView[]>
+    // CC§9
+    bypassAccepted(): Promise<boolean>
+    acceptBypass(): Promise<boolean>
     // CC§7
     startLogin(
       name: string,

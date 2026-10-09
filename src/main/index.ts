@@ -128,6 +128,12 @@ import { ClaudeBackend, machineHookSettings, pickMachineAccount } from './backen
 import { codexBackend, trustCodexFolder } from './backends/codex'
 import { codexConfigFile } from './codexTrust'
 import {
+  acceptBypassWarning,
+  bypassWarningAccepted,
+  claudeJsonPath,
+  claudeSettingsPath
+} from './claudeTrust'
+import {
   CodexAccountPicker,
   codexHomeOf,
   codexHomes,
@@ -3449,6 +3455,10 @@ function registerIpc(): void {
     pushAccounts()
   })
   ipcMain.handle('accounts:probe', () => probeAllForPanel())
+  ipcMain.handle('accounts:bypass-accepted', () =>
+    bypassWarningAccepted(claudeJsonPath(), claudeSettingsPath())
+  )
+  ipcMain.handle('accounts:accept-bypass', () => acceptBypassWarning(claudeSettingsPath()))
   ipcMain.handle('accounts:start-login', (_e, name: string, reauth?: boolean) => {
     const v = reauth
       ? findAccount(name, 'oauth')
