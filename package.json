@@ -26,7 +26,7 @@
     "preview": "electron-vite preview",
     "rebuild": "electron-rebuild -f -w node-pty",
     "dist:mac": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --arm64",
-    "dist:dmg": "npm run build && APPLE_KEYCHAIN_PROFILE=koloft electron-builder --mac --arm64 --dir -c.forceCodeSigning=true && APPLE_KEYCHAIN_PROFILE=koloft bash scripts/make-dmg.sh",
+    "dist:dmg": "npm run build && bash scripts/make-dmg.sh",
     "dist:beta": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --arm64 --dir -c.extraMetadata.name=koloft-beta -c.productName=Koloft-Beta -c.appId=ai.koloft.app.beta -c.directories.output=release-beta",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",

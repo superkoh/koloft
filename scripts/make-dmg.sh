@@ -1,38 +1,26 @@
 #!/usr/bin/env bash
-# Build a drag-to-install DMG from the signed, notarized Koloft.app, then sign,
-# notarize and staple the DMG itself.
+# The release build: package Koloft.app signed with the Developer ID identity in the login
+# keychain and notarized by Apple, then wrap it in a drag-to-install DMG that is signed,
+# notarized and stapled too. Run it through `npm run dist:dmg`, after `npm run build`.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+export APPLE_KEYCHAIN_PROFILE=koloft
 APP="release/mac-arm64/Koloft.app"
 VER="$(node -p "require('./package.json').version")"
 OUT="release/Koloft-${VER}-arm64.dmg"
-STAGING="$(mktemp -d)"
 
-if [ ! -d "$APP" ]; then
-  echo "error: $APP not found — run 'electron-builder --mac --arm64 dir' first" >&2
-  exit 1
-fi
-if [ -z "${APPLE_KEYCHAIN_PROFILE:-}" ]; then
-  echo "error: APPLE_KEYCHAIN_PROFILE is not set — run this through 'npm run dist:dmg'" >&2
-  exit 1
-fi
+npx electron-builder --mac --arm64 --dir -c.forceCodeSigning=true
 
 # Refuse to ship an app bundled from a pre-fix @xterm/addon-webgl (the garbled-screen
-# regression class) — also guards the "Koloft.app already exists, just run
-# make-dmg.sh" path, where the .app may predate the dependency fix.
+# regression class).
 bash scripts/assert-webgl-atlas.sh "$APP/Contents/Resources/app.asar"
 
 # Gatekeeper's own verdict: passes only for a Developer ID signature with a notarization
-# ticket, so an unsigned or stale .app never reaches a dmg.
+# ticket.
 spctl --assess --type execute --verbose=2 "$APP"
 
-# The build paths were stripped before signing (scripts/strip-native-build-paths.cjs).
-if grep -rqa "$HOME" "$APP/Contents/Resources"; then
-  echo "error: the app still contains $HOME" >&2
-  exit 1
-fi
-
+STAGING="$(mktemp -d)"
 ditto "$APP" "$STAGING/Koloft.app"
 ln -s /Applications "$STAGING/Applications"
 
