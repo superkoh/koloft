@@ -1026,6 +1026,7 @@ export interface KoloftApi {
     onFind(cb: () => void): () => void
     onCheckUpdate(cb: () => void): () => void
     onOpenSettings(cb: () => void): () => void
+    onCommandPalette(cb: () => void): () => void
     onRestartSession(cb: () => void): () => void
     onAddWorkspace(cb: () => void): () => void
     onSave(cb: () => void): () => void

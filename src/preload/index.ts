@@ -495,6 +495,11 @@ const api: KoloftApi = {
       ipcRenderer.on('shortcut:open-settings', handler)
       return () => ipcRenderer.removeListener('shortcut:open-settings', handler)
     },
+    onCommandPalette: (cb) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('shortcut:command-palette', handler)
+      return () => ipcRenderer.removeListener('shortcut:command-palette', handler)
+    },
     onRestartSession: (cb) => {
       const handler = (): void => cb()
       ipcRenderer.on('shortcut:restart-session', handler)
