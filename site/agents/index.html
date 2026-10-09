@@ -113,12 +113,13 @@
           </li>
           <li>
             <code>koloft session new</code> — start a session of the same kind (Claude starts
-            Claude, Codex starts Codex), in its own git worktree if asked. Its row hangs under the
-            session that started it (see <a href="../sessions/#the-sidebar">the sidebar</a>). A
-            Claude session it starts gets a short title made from its task by a small model (the
-            same title in the sidebar, in <code class="nowrap">session list</code> and in Discord),
-            or the name the agent gave it with <code class="nowrap">--name</code>. Codex names it
-            itself.
+            Claude, Codex starts Codex; only a Discord butler may pick the other kind, with
+            <code class="nowrap">--backend</code>), in its own git worktree if asked. Its row hangs
+            under the session that started it (see
+            <a href="../sessions/#session-tree">sessions started by a session</a>). A Claude session
+            it starts gets a short title made from its task by a small model (the same title in the
+            sidebar, in <code class="nowrap">session list</code> and in Discord), or the name the
+            agent gave it with <code class="nowrap">--name</code>. Codex names it itself.
           </li>
           <li>
             <code>koloft session read</code> — print what a session said in its last turns, open or
