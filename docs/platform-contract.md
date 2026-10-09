@@ -480,6 +480,14 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   fill went into the TUI the user was typing in). A real `Input.dispatchMouseEvent`
   mousedown makes the guest the window's focused frame and takes the host's focus
   (measured). An in-page `focus()` moves nothing in the host.
+- **`Page.reload` sent to a guest's `webContents.debugger` reloads the whole Koloft
+  window, not the guest**; the guest goes with it. Measured 2026-10-08, Electron 43.7.3 /
+  Chromium 150.0.7871.250, by watching the host's main-frame `did-start-navigation` in an
+  e2e run: a bare `sendCommand('Page.reload')` from main, Playwright's `page.reload()`
+  and the real `playwright-cli reload` (0.1.18) each reloaded the host. The guest's own
+  `webContents.reload()` / `reloadIgnoringCache()`, an in-page `location.reload()`,
+  `Page.navigate`, `Page.stopLoading`, Playwright's back/forward and DevTools' own reload
+  of that guest each left the host alone.
 - **A second `about:blank` load is a second navigation**: a CDP client that grabbed the
   page between the two is left holding a detached frame (measured with a real client).
 - **`webContents.debugger` and the DevTools window can hold one guest at the same time**,
@@ -951,6 +959,10 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   (2 runs). GitHub keeps Actions logs for 90 days by default, so job 107036731098's log is
   expected to go around 2026-12-22 and these cases to fail on it then (inferred, not
   checked).
+- **`--jq` can read the environment of the `gh` process**: `gh pr view 389 --repo
+  superkoh/koloft --json number --jq '$ENV.HOME'` printed the home folder. So a `--jq`
+  given by someone else can print any secret in that environment. (2026-10-09, gh 2.89.0,
+  run by hand.)
 
 ## §33 ssh
 

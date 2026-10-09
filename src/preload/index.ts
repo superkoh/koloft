@@ -279,6 +279,8 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener('browser:overlay-open', handler)
     },
     setOverlayGuest: (guestId, on) => ipcRenderer.send('browser:overlay-guest', guestId, on),
+    setGuestOwner: (guestId, ownerTabId) =>
+      ipcRenderer.send('browser:guest-owner', guestId, ownerTabId),
     reportStrip: (sessionId, targets) => ipcRenderer.send('browser:strip', sessionId, targets),
     onCdpOp: (cb) => {
       const handler = (_e: unknown, op: BrowserCdpOp): void => cb(op)

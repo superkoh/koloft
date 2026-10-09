@@ -139,7 +139,13 @@ import { CronRunner, type LaunchRequest } from './cronRunner'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
 import { GitFreshnessEngine } from './gitFreshness'
-import { GithubLookup, ghOpenCounts, parseGithubFixture, type GithubOptions } from './github'
+import {
+  GithubLookup,
+  ghOpenCounts,
+  ghRead,
+  parseGithubFixture,
+  type GithubOptions
+} from './github'
 import { GithubCountsSweep } from './githubCounts'
 import { runGh } from './prChecks'
 import { commitAll, pushBranch } from './gitSteps'
@@ -173,6 +179,7 @@ import {
   relayStripChanged,
   relayTabClosed,
   relayTabRebound,
+  sessionDrivingGuest,
   setRelayEnabled,
   startRelay,
   writeRelayEnv,
@@ -281,13 +288,14 @@ import {
 } from './discord/dialog'
 import { sleep } from './codexTransport'
 import { discordVerb } from './agentDiscord'
+import { githubVerb } from './agentGithub'
 import {
   claudePeerNames,
   claudeShowsAPanel,
   runningClaudePid,
   whenMessagingSocket
 } from './claudeSessionRegistry'
-import { conductorName, isDiscordId, scopeName } from '@shared/conductors'
+import { conductorName, GLOBAL_SCOPE, isDiscordId, scopeName } from '@shared/conductors'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
 import {
@@ -851,6 +859,13 @@ const agentRequests = new AgentRequests({
         if (!discordRelay) throw new Error(STILL_STARTING)
         await discordRelay.send(channelId, files, text)
       }
+    }),
+    gh: githubVerb({
+      scopeOf: (tabId) => conductors?.scopeOfTab(tabId),
+      repoOf: async (scope) =>
+        scope === GLOBAL_SCOPE ? null : hosts.of(scope).github.ownerSlashName(scope),
+      // PLATFORM§1
+      run: (args) => loginEnvReady().then(() => ghRead(args))
     })
   },
   tab: (tabId) => ptyMgr.get(tabId),
@@ -2299,6 +2314,11 @@ function setupGuestUnload(): void {
 }
 
 const guestGestures = new WeakMap<WebContents, number>()
+const guestOwners = new WeakMap<WebContents, string>()
+
+function tabOwningGuest(guest: WebContents): string | null {
+  return guestOwners.get(guest) ?? uiActiveTabId
+}
 const CHROMIUM_USER_ACTIVATION_INPUTS = new Set(['mouseDown', 'keyDown'])
 
 function setupGuestGestures(): void {
@@ -2392,13 +2412,14 @@ function setupGuestBackgroundOpen(): void {
       routeGuestPopup(url.slice(0, 4096), e.sender)
       return
     }
-    const tabId = uiActiveTabId
-    if (!tabId) return
     const decision = routeFor(url.slice(0, 4096), 'user')
     if (decision.dest !== 'browser') {
       routeGuestPopup(url, e.sender)
       return
     }
+    if (openAsDrivingAgentsTab(e.sender, decision.target)) return
+    const tabId = tabOwningGuest(e.sender)
+    if (!tabId) return
     const payload: BrowserOpenRequest = { tabId, url: decision.target, source: 'agent' }
     sendToRenderer('browser:open', payload)
   })
@@ -2568,17 +2589,24 @@ function relayDeps(): RelayDeps {
   }
 }
 
-function routeGuestPopup(url: string, from?: WebContents): void {
-  if (from && isOverlayGuest(from)) {
+function openAsDrivingAgentsTab(from: WebContents, url: string): boolean {
+  const driver = sessionDrivingGuest(from.id)
+  if (driver) void cdpOp('create', driver, { url })
+  return driver !== null
+}
+
+function routeGuestPopup(url: string, from: WebContents): void {
+  if (isOverlayGuest(from)) {
     const decision = routeFor(url, 'user')
     if (decision.dest === 'browser') sendOverlayOpen(decision.target, 'now')
     else if (decision.dest === 'system') openUrlExternally(decision.target)
     else sendToRenderer('browser:blocked-scheme', url)
     return
   }
-  const tabId = uiActiveTabId
-  if (!tabId) return
   const decision = routeFor(url, 'user')
+  if (decision.dest === 'browser' && openAsDrivingAgentsTab(from, decision.target)) return
+  const tabId = tabOwningGuest(from)
+  if (!tabId) return
   if (decision.dest === 'browser') {
     const payload: BrowserOpenRequest = { tabId, url: decision.target, source: 'user' }
     sendToRenderer('browser:open', payload)
@@ -3660,6 +3688,11 @@ function registerIpc(): void {
     if (typeof guestId !== 'number') return
     if (on) overlayGuests.add(guestId)
     else overlayGuests.delete(guestId)
+  })
+  ipcMain.on('browser:guest-owner', (_e, guestId: unknown, ownerTabId: unknown) => {
+    if (typeof guestId !== 'number' || typeof ownerTabId !== 'string') return
+    const guest = webContents.fromId(guestId)
+    if (guest) guestOwners.set(guest, ownerTabId)
   })
   ipcMain.on('browser:overlay-ready', () => {
     overlayListening = true
