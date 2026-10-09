@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { inspectTaskProcs, makeExec, parsePsDuration } from '../../src/main/taskProcs'
 
-const TASKS = '/tmp/claude-502/proj/sid/tasks'
+const SID = 'sid'
+const TASKS = `/tmp/claude-502/proj/${SID}/tasks`
 const SNAP = '/Users/me/.claude/shell-snapshots/snapshot-zsh-1.sh'
 
 const OWN_STOP_HOOK_IN_FLIGHT =
@@ -70,7 +71,7 @@ describe('taskProcs', () => {
       ].join('\n'),
       listen: 'p4401\nf12\n'
     })
-    const r = await inspectTaskProcs(4242, TASKS, s.exec)
+    const r = await inspectTaskProcs(4242, SID, s.exec)
     expect(r).not.toBeNull()
     expect([...r!.shells.keys()].sort()).toEqual(['bgit', 'bsleep', 'bsrv'])
     expect(r!.shells.get('bsleep')).toEqual({
@@ -91,8 +92,8 @@ describe('taskProcs', () => {
   })
 
   it('answers null — unknown, never "nothing running" — when ps fails or the root is not a claude', async () => {
-    expect(await inspectTaskProcs(4242, TASKS, stub({ ps: '' }).exec)).toBeNull()
-    expect(await inspectTaskProcs(9999, TASKS, stub({}).exec)).toBeNull()
+    expect(await inspectTaskProcs(4242, SID, stub({ ps: '' }).exec)).toBeNull()
+    expect(await inspectTaskProcs(9999, SID, stub({}).exec)).toBeNull()
   })
 
   it('a run cut short by its deadline answers nothing, not the part it managed to print, while a plain non-zero exit keeps its output', async () => {
@@ -102,19 +103,34 @@ describe('taskProcs', () => {
   })
 
   it('answers null when lsof prints nothing for live tool shells (it failed, they did not all close stdout)', async () => {
-    expect(await inspectTaskProcs(4242, TASKS, stub({ fd1: '' }).exec)).toBeNull()
+    expect(await inspectTaskProcs(4242, SID, stub({ fd1: '' }).exec)).toBeNull()
   })
 
   it('a claude with no tool shells is an empty view, with no lsof asked', async () => {
     const s = stub({ ps: ' 4242     1 01:00 0:00.00 /Users/me/.local/bin/claude\n' })
-    const r = await inspectTaskProcs(4242, TASKS, s.exec)
+    const r = await inspectTaskProcs(4242, SID, s.exec)
     expect(r).toEqual({ shells: new Map() })
     expect(s.calls.map((c) => c[0])).toEqual(['ps'])
   })
 
-  it('an output file outside the session tasks dir is not one of ours', async () => {
-    const s = stub({ fd1: `p4300\nf1\nn/tmp/claude-502/other/sid/tasks/bx.output\n` })
-    const r = await inspectTaskProcs(4242, TASKS, s.exec)
+  it('an output file in another session tasks dir is not one of ours', async () => {
+    const s = stub({ fd1: `p4300\nf1\nn/tmp/claude-502/proj/other-sid/tasks/bx.output\n` })
+    const r = await inspectTaskProcs(4242, SID, s.exec)
     expect(r!.shells.size).toBe(0)
+  })
+
+  it('counts a shell under any folder slug, since -w and EnterWorktree sessions put tasks/ under different ones', async () => {
+    const s = stub({
+      fd1: [
+        'p4300',
+        'f1',
+        `n/tmp/claude-502/proj/${SID}/tasks/bsleep.output`,
+        'p4400',
+        'f1',
+        `n/tmp/claude-502/proj--claude-worktrees-w/${SID}/tasks/bsrv.output`
+      ].join('\n')
+    })
+    const r = await inspectTaskProcs(4242, SID, s.exec)
+    expect([...r!.shells.keys()].sort()).toEqual(['bsleep', 'bsrv'])
   })
 })

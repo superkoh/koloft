@@ -166,6 +166,18 @@ mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
   many times from inside the worktree) had both under the worktree. (`claude -p` names
   no scratchpad at all.) Older versions not checked. `tasks/` holds full subagent
   transcripts (single files reach MBs).
+  **On CC 2.1.295 an EnterWorktree session keeps `tasks/` under `<main checkout slug>`
+  too**, while a `-w` session still keeps it under `<worktree slug>`. Measured
+  2026-10-08: a session started in the main checkout that called EnterWorktree, then ran
+  two `run_in_background` Bash calls 2 s and 66 min later, had both
+  `<id>.output` files (and its subagents' `.output` links) under
+  `/private/tmp/claude-501/<main checkout slug>/<id>/tasks/`, with `lsof` showing the
+  live shell's fd 1 there, and no `<worktree slug>/<id>` folder at all; a `claude -w`
+  session started from the main checkout, with its scratchpad under the main checkout,
+  was told by its own Bash tool that a background command wrote to
+  `<worktree slug>/<id>/tasks/<task>.output`. So which slug holds `tasks/` cannot be read
+  from the transcript's folder or the launch folder; only the `<sessionId>/tasks/` end of
+  the path is fixed.
   The per-user folder is `realpath(<base>/claude-<uid>)` (mode 0700). `<base>` differs by
   OS. macOS build: `$CLAUDE_CODE_TMPDIR`, else a fixed `/tmp` — `$TMPDIR` is ignored
   (CC 2.1.286 and 2.1.287 macOS binaries:
