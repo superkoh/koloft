@@ -807,6 +807,7 @@ const sessionDeps: SessionVerbDeps = {
     await writeLine(socket, line)
   },
   typeInto: (tabId, text) => ptyMgr.type(tabId, [text, '\r']),
+  press: (tabId, keys) => ptyMgr.type(tabId, keys),
   modeOf: (tabId) => sessionBackends.permissionClass(tabId),
   stop: killTabFromMain,
   answer: async (tabId, reply) => {

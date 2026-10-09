@@ -240,6 +240,34 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
     )
   })
 
+  test('E-SSH-C4: the conductor answers the remote session’s question with koloft session keys, pressed through ssh and tmux', async ({
+    env
+  }) => {
+    await withRemoteWorkspaceConductor(
+      env,
+      () => undefined,
+      async ({ page, lab, fake }) => {
+        await startSessionIn(page, 'kt-key', { remote: true })
+        const remote = (await page.evaluate(() => window.api.sessions.list())).find(
+          (s) => s.alive && !s.conductor
+        )!
+        await page.evaluate(
+          ([id, line]) => window.api.terminal.write(id, line),
+          [remote.tabId, '/ask Which colour?|Red|Green\r']
+        )
+        await expect
+          .poll(() => notices(fake), { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+          .toContainEqual(expect.stringMatching(/^❓ /))
+        fake.say(OWNER, `/koloft session keys ${remote.sessionId} 2`)
+        await expect
+          .poll(() => transcriptOnTarget(lab, remote.sessionId), {
+            timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS
+          })
+          .toContain('Picked: Green')
+      }
+    )
+  })
+
   test('E-SSH-C2: the same with a REAL claude on the machine (opt-in, spends real money): a typed message is answered, and its own question is answered by koloft session answer', async ({
     env
   }) => {

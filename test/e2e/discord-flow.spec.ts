@@ -628,6 +628,92 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     }
   })
 
+  test('a managed Claude session’s question that Koloft did not catch is still answered by the conductor: koloft session answer is refused with how to see the screen and press the keys, and koloft session keys picks the option', async ({
+    env
+  }) => {
+    seedConductor(env, 'claude')
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      await startSessionIn(page, 'ws-a')
+      const managed = (await waitForCalls(env, 1))[0].sessionId
+      const managedTab = await tabOf(page, managed)
+      const marker = path.join(env.userData, 'hook-sessions', `${managedTab}.answerable`)
+      await expect.poll(() => fs.existsSync(marker)).toBe(true)
+      fs.rmSync(marker)
+      await page.evaluate(
+        ([id, l]) => window.api.terminal.write(id, l),
+        [managedTab, '/ask Which colour?|Red|Green\r']
+      )
+      await expect
+        .poll(() => terminalText(page, managedTab))
+        .toContain('dialog on screen: press a key')
+
+      fake.say(OWNER, `/koloft session answer ${managed} 2`)
+      const conductorTab =
+        (await page.evaluate(() => window.api.sessions.list())).find((s) => s.conductor)?.tabId ??
+        ''
+      await expect
+        .poll(() => terminalText(page, conductorTab), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain(`press the keys with koloft session keys ${managed}`)
+      expect(transcriptText(env, managed)).not.toContain('Picked:')
+
+      fake.say(OWNER, `/koloft session keys ${managed} 2`)
+      await expect
+        .poll(() => transcriptText(env, managed), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('Picked: Green')
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  test('the conductor answers a managed Codex session’s question with koloft session keys', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedConductor(env, 'claude')
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      await newSessionInWith(page, 'ws-a', 'Codex')
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
+      const codexId = (
+        JSON.parse(
+          fs.readFileSync(path.join(env.home, 'fake-codex-calls.jsonl'), 'utf8').split('\n')[0]
+        ) as { sessionId: string }
+      ).sessionId
+      const codexTab = (await page.evaluate(() => window.api.sessions.list())).find(
+        (s) => s.backendId === 'codex'
+      )!.tabId
+      await page.evaluate((id) => window.api.terminal.write(id, 'please ask me\r'), codexTab)
+      await expect
+        .poll(() => inThreads(fake).join('\n\n'))
+        .toMatch(/(^|\n)❓ .+ is waiting for you\.\nWhich colour do you prefer\?\n/)
+      fake.say(OWNER, `/koloft session keys ${codexId} 2`)
+      await expect
+        .poll(
+          () =>
+            codexWire(env).filter(
+              (w) =>
+                w.direction === 'client' &&
+                (w.frame.result as { answers?: unknown } | undefined)?.answers
+            ),
+          { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }
+        )
+        .toEqual([
+          expect.objectContaining({
+            frame: expect.objectContaining({
+              result: { answers: { colour: { answers: ['Green'] } } }
+            })
+          })
+        ])
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
   test('a managed Codex session’s approval reaches its thread with its command and is answered by the Yes button there, and its one-question list with its options is answered by the conductor; each presses its key', async ({
     env
   }) => {

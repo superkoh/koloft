@@ -938,3 +938,22 @@ message" (3 runs).
 - Codex on a remote machine is not a tab Koloft starts yet (§16), so the paste over ssh
   and tmux is not probed for Codex.
 
+## 24. The keys the TUI takes
+
+How established: 2026-10-09, Codex CLI 0.162.0, this Mac's own login, `codex --no-daemon`
+in a python `pty` (100×40) in a fresh scratch folder, each key one write about 1 s after
+the one before, the screen read back through `pyte`.
+
+- **In the composer:** `abcd`, then `ESC[D` twice and `DEL` (0x7f) left `acd`; `ESC[C`,
+  `X`, a space and `Y` made `acX Yd`. Left, Right and Backspace move and delete as
+  typed.
+- **`/mod` then Tab** completed to `/model`; CR opened the "Select Model and Effort"
+  list.
+- **In a list:** `ESC[B` moved the `›` mark down one entry, `ESC[A` back up; in the
+  three-entry "Background server" prompt `ESC[B` from the last entry wrapped to the
+  first. ESC closed the model list and left the composer empty.
+- **Shift+Tab (`ESC[Z`)** at the empty composer switched the session to Plan mode ("Model
+  changed to … for Plan mode").
+- Not run: the same keys through ssh and tmux, since Koloft starts no remote Codex tab
+  (§16).
+

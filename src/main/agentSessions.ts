@@ -30,6 +30,7 @@ import { AGENT_SHIM_WAITS_MS } from './agentShim'
 import { crossSessionLine, type ModeClass } from './crossSessionMessage'
 import { handoverPreamble, withHandover, type SessionCaller } from './handover'
 import { nameForTask, type TitleModel } from './sessionTitle'
+import { keysFor } from './typeKeys'
 import type { StartedSessions } from './startedSessions'
 
 export interface NewSessionArgs {
@@ -296,6 +297,7 @@ export interface SessionVerbDeps {
   ready(tabId: string, ms: number, turnEnded: boolean): Promise<boolean>
   sendLine(tabId: string, line: string, ms: number): Promise<void>
   typeInto(tabId: string, text: string): Promise<void>
+  press(tabId: string, keys: string[]): Promise<void>
   modeOf(tabId: string): ModeClass
   stop(tabId: string): void
   answer(tabId: string, reply: string): Promise<string | undefined>
@@ -325,7 +327,7 @@ export interface Target {
 }
 
 const SESSION_USAGE =
-  'koloft session: use list, read, new, send, command, screen, answer, resume, stop or close. Run "koloft help" to see how.'
+  'koloft session: use list, read, new, send, command, screen, keys, answer, resume, stop or close. Run "koloft help" to see how.'
 const READ_USAGE = `koloft session read: give an id or name, and if you like --last <1 to ${MAX_READ_TURNS}>, like: koloft session read fix-login --last 3`
 const CONDUCTOR_LIST_USAGE =
   'koloft session list: it takes no options here; it lists every session you look after.'
@@ -550,11 +552,17 @@ const ONLY_YOUR_WORKSPACE = 'koloft session new: you can only start sessions in 
 
 const COMMAND_USAGE = `koloft session command: give an id or name (or "me" for yourself), then one slash command, like: koloft session command fix-login /compact`
 const SCREEN_USAGE = `koloft session screen: give an id or name (or "me" for yourself), like: koloft session screen fix-login`
+const KEYS_USAGE = `koloft session keys: give an id or name, then the keys to press in order, like: koloft session keys fix-login Down Enter`
+
+function seeAndPress(ref: string): string {
+  return `To answer it anyway, see what it shows with koloft session screen ${ref}, then press the keys with koloft session keys ${ref} <keys>.`
+}
 
 const CONDUCTOR_ACT_USAGE: Record<string, string> = {
   send: SEND_USAGE,
   command: COMMAND_USAGE,
   screen: SCREEN_USAGE,
+  keys: KEYS_USAGE,
   answer: ANSWER_USAGE,
   resume: RESUME_USAGE,
   stop: STOP_USAGE
@@ -655,7 +663,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
     const resume = splitAtDashes(tail)
     const text = sub === 'resume' ? resume.after : tail.join(' ').trim()
     const extra = sub === 'resume' ? resume.before : tail
-    const takesWords = sub === 'send' || sub === 'answer' || sub === 'command'
+    const takesWords = sub === 'send' || sub === 'answer' || sub === 'command' || sub === 'keys'
     if (!ref || (takesWords && !text) || (!takesWords && extra.length > 0))
       return refused(CONDUCTOR_ACT_USAGE[sub], EXIT_USAGE)
     if (sub === 'command') {
@@ -684,10 +692,19 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
     }
     d.touch(caller.tabId, t.key)
     if (sub === 'command') return answered(await d.command(caller.tabId, t, text))
+    if (sub === 'keys') {
+      if (!t.tabId) return refused(`koloft session keys: ${t.name} is not open.`)
+      await d.press(t.tabId, keysFor(tail))
+      return answered(
+        `Pressed ${tail.join(' ')} in ${t.name}. See what it shows now with koloft session screen ${ref}.`
+      )
+    }
     if (sub === 'answer') {
-      const error = t.tabId ? await d.answer(t.tabId, text) : SHOWS_NOTHING_WHILE_CLOSED
+      if (!t.tabId)
+        return refused(`koloft session answer: ${t.name}: ${SHOWS_NOTHING_WHILE_CLOSED}`)
+      const error = await d.answer(t.tabId, text)
       return error
-        ? refused(`koloft session answer: ${t.name}: ${error}`)
+        ? refused(`koloft session answer: ${t.name}: ${error} ${seeAndPress(ref)}`)
         : answered(`Answered ${t.name}.`)
     }
     if (sub === 'resume' && !text) {
