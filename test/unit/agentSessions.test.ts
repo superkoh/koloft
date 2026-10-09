@@ -93,7 +93,7 @@ function harness(
   touched: { tabId: string; key: string }[]
   reads: { key: string; n: number }[]
   lines: { tabId: string; line: string }[]
-  typed: { tabId: string; text: string }[]
+  pressed: { tabId: string; keys: string[] }[]
   resumed: string[]
   stopped: string[]
   started: Started[]
@@ -111,7 +111,7 @@ function harness(
   const touched: { tabId: string; key: string }[] = []
   const reads: { key: string; n: number }[] = []
   const lines: { tabId: string; line: string }[] = []
-  const typed: { tabId: string; text: string }[] = []
+  const pressed: { tabId: string; keys: string[] }[] = []
   const resumed: string[] = []
   const stopped: string[] = []
   const started: Started[] = []
@@ -154,8 +154,8 @@ function harness(
     sendLine: async (tabId, line) => {
       lines.push({ tabId, line })
     },
-    typeInto: async (tabId, text) => {
-      typed.push({ tabId, text })
+    press: async (tabId, keys) => {
+      pressed.push({ tabId, keys })
     },
     modeOf: (tabId) => (conducting.bypass?.includes(tabId) ? 'bypass' : 'prompting'),
     stop: (tabId) => {
@@ -188,7 +188,7 @@ function harness(
     touched,
     reads,
     lines,
-    typed,
+    pressed,
     resumed,
     stopped,
     started,
@@ -756,10 +756,12 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
       exit: 0,
       text: 'Will deliver when api-fix is ready.'
     })
-    expect(busy.typed).toEqual([])
+    expect(busy.pressed).toEqual([])
     await vi.waitFor(() => expect(turnEnds).toHaveLength(1))
     turnEnds[0](true)
-    await vi.waitFor(() => expect(busy.typed).toEqual([{ tabId: 'api', text: ownerSays('hi') }]))
+    await vi.waitFor(() =>
+      expect(busy.pressed).toEqual([{ tabId: 'api', keys: [ownerSays('hi'), '\r'] }])
+    )
     await busy.verb(['send', 'api-fix', 'again'], from('global'))
     await vi.waitFor(() => expect(turnEnds).toHaveLength(2))
     turnEnds[1](false)
@@ -768,7 +770,7 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
         { callerTab: 'global', name: 'api-fix', why: expect.stringContaining('stayed busy') }
       ])
     )
-    expect(busy.typed).toHaveLength(1)
+    expect(busy.pressed).toHaveLength(1)
     expect(busy.lines).toEqual([])
 
     const idle = harness(live, {}, [], conducting())
@@ -798,20 +800,20 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     expect(slow.lines).toEqual([])
   })
 
-  it('answer hands the reply to the dialog the session shows and touches it; a closed session, the conductor itself, a session with no dialog and a non-conductor are refused', async () => {
+  it('answer hands the reply to the dialog the session shows and touches it; a closed session, the conductor itself, a session with no dialog and a non-conductor are refused, and an open session Koloft cannot answer is refused with how to see its screen and press its keys', async () => {
     const h = harness(
       live,
       {},
       [],
       conducting({
-        answer: (tab) => (tab === 'cx' ? 'it shows no question or approval right now.' : undefined)
+        answer: (tab) => (tab === 'cx' ? 'Koloft sees no question.' : undefined)
       })
     )
     expect((await h.verb(['answer', 'fix-login', '2'], from('wsCond'))).text).toBe(
       'Answered fix-login.'
     )
     expect((await h.verb(['answer', CODEX_THREAD, 'yes'], from('wsCond'))).text).toBe(
-      'koloft session answer: docs-links: it shows no question or approval right now.'
+      `koloft session answer: docs-links: Koloft sees no question. To answer it anyway, see what it shows with koloft session screen ${CODEX_THREAD}, then press the keys with koloft session keys ${CODEX_THREAD} <keys>.`
     )
     expect((await h.verb(['answer', 'old-work', 'yes'], from('wsCond'))).text).toContain(
       'it is not open'
@@ -863,6 +865,40 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     )
     expect((await h.verb(['screen', 'old-work'], from('wsCond'))).text).toContain('is not open')
     expect((await h.verb(['screen', 'me'], from('wsCond'))).text).toBe('you: no window')
+  })
+
+  it('keys presses named keys, in any case, and types every other word as it is, in order, into an open session it looks after, and touches it; a closed session, the conductor itself, a session out of scope, no keys and a non-conductor are refused', async () => {
+    const h = harness(live, {}, [], conducting())
+    const reply = await h.verb(
+      ['keys', 'fix-login', '2', 'Down', 'SPACE', 'shift-tab', 'use the blue one', 'Enter'],
+      from('wsCond')
+    )
+    expect(reply.text).toBe(
+      'Pressed 2 Down SPACE shift-tab use the blue one Enter in fix-login. See what it shows now with koloft session screen fix-login.'
+    )
+    expect(
+      (
+        await h.verb(
+          ['keys', CODEX_THREAD, 'Esc', 'Up', 'Left', 'Right', 'Tab', 'Backspace'],
+          from('wsCond')
+        )
+      ).exit
+    ).toBe(0)
+    expect(h.pressed).toEqual([
+      { tabId: 'fix', keys: ['2', '\x1b[B', ' ', '\x1b[Z', 'use the blue one', '\r'] },
+      { tabId: 'cx', keys: ['\x1b', '\x1b[A', '\x1b[D', '\x1b[C', '\t', '\x7f'] }
+    ])
+    expect((await h.verb(['keys', 'old-work', 'Enter'], from('wsCond'))).text).toContain(
+      'is not open'
+    )
+    expect((await h.verb(['keys', 'me', 'Enter'], from('wsCond'))).text).toContain(THAT_IS_YOU)
+    expect((await h.verb(['keys', 'site-build', 'Enter'], from('wsCond'))).text).toContain(
+      NOT_IN_YOUR_WORKSPACE
+    )
+    expect(await h.verb(['keys', 'fix-login'], from('wsCond'))).toMatchObject({ exit: EXIT_USAGE })
+    expect((await h.verb(['keys', 'fix-login', 'Enter'], from('fix'))).exit).not.toBe(0)
+    expect(h.pressed).toHaveLength(2)
+    expect(h.touched.map((t) => t.key)).toEqual(['fix-id', CODEX_KEY])
   })
 
   it('send refuses, resuming nothing, a message to a Claude session that holds the closing tag of the message envelope', async () => {

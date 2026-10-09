@@ -1196,6 +1196,15 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   typed Enter picks Yes). One Esc closes each, except `/config`, which takes two (the
   first leaves its search box). A closed picker writes `Kept model as …` / `Resume
   cancelled`.
+- **The keys the TUI takes, one write each** (2026-10-09, CC 2.1.295, a python `pty`
+  (100×40) in a scratch folder, through Koloft's shim with `KOLOFT_HOOK_SETTINGS` unset,
+  about 1 s between writes, the screen read back through `pyte`): in the input box
+  `abcd`, `ESC[D` twice and `DEL` (0x7f) left `acd`; `ESC[C`, `X`, a space and `Y` made
+  `acX Yd`. `ESC[Z` (Shift+Tab) moved the footer from "bypass permissions on" to "auto
+  mode on". `/mod` then Tab completed to `/model `; CR opened its picker, where `ESC[B`
+  moved the `❯` mark down one entry (from the last entry it wrapped to the first),
+  `ESC[A` moved it up, and ESC closed it with "Kept model as …". The same keys through
+  ssh and tmux to a remote claude are not probed.
 - **URLs and files are opened with `Bun.spawn(["open", url])`**, which looks `open` up
   on PATH, so a PATH shim can catch it.
 - **An idle claude process holds a lot of memory**: measured 185–350 MB each for idle
