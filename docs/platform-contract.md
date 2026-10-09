@@ -1237,3 +1237,15 @@ Gateway (the live connection that pushes events):
   reported `change` and the single ones `rename`. A watcher that must know what
   happened has to look at the file itself.
 - A write inside a subdirectory gave no event at all; creating the subdirectory gave one.
+
+## §41 What an Electron app's quit does to its children
+
+- **A program running in a node-pty terminal gets SIGHUP when the app quits.** Nothing has
+  to kill it: the app's exit closes the terminal and the program's HUP trap fires within
+  the same second.
+- **A child spawned with `detached: true` and `unref()` keeps running after the quit.** It
+  can wait for the pty program's pid to disappear (`kill -0` in a loop) and then go on
+  working; three seconds later it was still alive and finished its script.
+- Measured 2026-10-09 on macOS 27.0.1 with a bare Electron 43.7.3 app (node-pty from the
+  repo, no window): one pty child running `sh` with HUP/TERM traps, one detached `sh`
+  helper, then `app.quit()` one second in.

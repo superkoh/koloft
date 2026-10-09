@@ -424,12 +424,36 @@ the same files into a worktree Koloft makes or rebuilds itself.
   "no directory ever again" no longer holds. A session that leaves
   and then enters a worktree again mid-conversation (§2) is outside both sets.
 
+- **Removing happens before the exit, in the open, and can take seconds.** After a Remove
+  (or a silent clean removal) CC leaves its screen, writes `ESC ] 0 ; BEL` (an empty
+  window title) followed at once by the line `Removing worktree…` (U+2026), deletes the
+  folder, deletes the branch `worktree-<name>`, prints one result line, runs the
+  SessionEnd hooks and only then exits. Success lines start with `Worktree removed`
+  (`Worktree removed (no changes)`, `Worktree removed.`, `Worktree removed. Uncommitted
+  changes were discarded.`); the others name the trouble (`Could not finish removing the
+  worktree at …`, `Removing the worktree at … did not finish within …`, `Stopped waiting
+  for the removal of the worktree at …`, `Worktree could not be removed — kept at …`).
+  CC waits at most 10 minutes. Time grows with the files in the folder: 27k files (a
+  Koloft worktree with `node_modules`) took 3.5 s from `/exit` to exit, 2.6 s of it the
+  delete, under the owner's own settings (fullscreen, Koloft's hooks and plugin);
+  250k files took 9.5 s. The same title-then-line bytes came in normal and fullscreen
+  mode. Through Koloft's remote tmux (3.3a) the title code is not passed on, and the
+  line arrives as a redrawn screen row (`ESC[H` … `ESC[K`), like any other.
+- **A SIGHUP during the delete cuts it off half way.** CC stops waiting and exits; the
+  folder keeps what was not deleted yet (213,696 of 250,000 files), the worktree stays
+  in `git worktree list` and its branch stays. `git worktree remove --force --force`
+  and `git branch -D worktree-<name>` finish the job.
+- Measured 2026-10-09 on CC 2.1.295 (strings and code of the binary, a pty-driven `-w`
+  session in a throwaway repo, `--debug-file` timings, the raw pty bytes); the tmux row
+  in the e2e SSH lab image.
+
 Evidence: experiments E2/E8, 2026-08-10, claude 2.1.227; four live worktree exits on
 2026-09-03, claude 2.1.259 (`-w n5/n6/n7/n8/n9` in a throwaway repo, driven in a pty,
 checked with `git worktree list`, `git branch` and `ls ~/.claude/projects/<slug>`); the
 unchanged-tree removal on 2026-09-08, claude 2.1.265.
 Koloft dependents: the §1 whitelist eviction path; `fake-claude.js`'s dirty-tree exit
-prompt emulation.
+prompt and removal emulation; `src/main/claudeWorktreeExit.ts`, which hides a local tab
+the moment its CC starts removing and finishes the removal if Koloft quits first.
 
 ## §5 fork and background sessions (claude daemon)
 
