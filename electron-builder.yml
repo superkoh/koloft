@@ -46,7 +46,7 @@ mac:
   # `dist:dmg` signs with the Developer ID identity in the login keychain and refuses to
   # build without one; `dist:mac` and `dist:beta` stay unsigned. Hardened runtime is
   # electron-builder's default. camera + audio-input: a Workbench web page can ask for
-  # the mic or camera, and under the hardened runtime macOS refuses both without these.
+  # the mic or camera, and these let the hardened runtime grant them.
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   artifactName: ${productName}-${version}-${arch}.${ext}
