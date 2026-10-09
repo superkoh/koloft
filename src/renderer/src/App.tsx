@@ -1019,7 +1019,7 @@ export default function App(): JSX.Element {
     !assistSetupLater &&
     !welcomeActive &&
     !whatsNewOpen &&
-    activeTabId !== signInTabId
+    !(signInTabId && activeTabId === signInTabId)
   const landedTab = tabs.find((t) => t.id === shown.id) ?? activeTab
   const landedSession = landedTab ? sessions.find((s) => s.tabId === landedTab.id) : undefined
   const panelTab = hasWorkbench(landedTab) ? landedTab?.id : undefined

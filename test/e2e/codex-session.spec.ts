@@ -970,7 +970,9 @@ test.describe('Codex sessions through the real method chooser, process transport
       let page = await app.firstWindow()
       await waitBooted(page)
       await sendShortcut(app, 'shortcut:open-settings')
-      await expect(page.locator('.set-main')).toContainText('Codex uses its own login on this Mac.')
+      await expect(page.locator('.set-main')).toContainText(
+        'Codex sessions start only once there is one.'
+      )
       await page.getByRole('tab', { name: 'Sessions', exact: true }).click()
       await expect(page.getByRole('button', { name: 'Use Claude by default' })).toHaveAttribute(
         'aria-pressed',

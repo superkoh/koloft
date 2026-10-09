@@ -32,7 +32,8 @@ if (argv[0] === '--version') {
 
 // CC§9
 if (argv[0] === '-p') {
-  const task = fs.readFileSync(0, 'utf8').split('Task:\n').pop()
+  const promptArg = argv[1] && !argv[1].startsWith('-') ? argv[1] : undefined
+  const task = (promptArg ?? fs.readFileSync(0, 'utf8')).split('Task:\n').pop()
   const firstLine = task.split('\n').find((l) => l.trim()) ?? ''
   process.stdout.write(`${firstLine.trim()} (titled)\n`)
   process.exit(0)

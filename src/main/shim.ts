@@ -6,7 +6,7 @@ import { NEWID_FN, OPEN_SHIM_HEAD, OPEN_SHIM_TARGET } from './openShimScript'
 import { CLAUDE_AGENT_SHIM } from './agentShim'
 import { ENSURE_CLAUDE_MINIMUM_FN } from './cliMinimums'
 import { CLAUDE_AUTH_ENV_VARS } from './remote/launch'
-import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
+import { NO_USABLE_ACCOUNT, SHIM_FOUND_NO_ACCOUNT_EXIT } from '@shared/accountUsage'
 
 export interface ShimPaths {
   shimDir: string
@@ -275,7 +275,7 @@ for a in "$@"; do
   esac
 done
 # ADR-0030
-refuse() { echo "koloft: $1" >&2; exit 1; }
+refuse() { echo "koloft: $1" >&2; exit ${SHIM_FOUND_NO_ACCOUNT_EXIT}; }
 if [ "$noinj" = "0" ] && [ "$KOLOFT_ACCOUNT_PICKED" != "1" ]; then
   unset ${CLAUDE_AUTH_ENV_VARS.join(' ')}
   [ -n "$KOLOFT_PICK_DIR" ] && [ -n "$KOLOFT_TAB_ID" ] && [ -n "$KOLOFT_PID" ] && kill -0 "$KOLOFT_PID" 2>/dev/null ||

@@ -209,6 +209,20 @@ export function setupE2EEnv(): E2EEnv {
   }
 }
 
+export function addKeychainEntry(
+  env: E2EEnv,
+  service: string,
+  account: string,
+  secret: string
+): void {
+  const all = JSON.parse(fs.readFileSync(env.keychainFile, 'utf8')) as Record<
+    string,
+    Record<string, string>
+  >
+  all[service] = { ...all[service], [account]: secret }
+  fs.writeFileSync(env.keychainFile, JSON.stringify(all))
+}
+
 export function seedSettings(env: E2EEnv, patch: Record<string, unknown>): void {
   const file = path.join(env.userData, 'settings.json')
   const current = fs.existsSync(file)

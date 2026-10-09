@@ -14,7 +14,7 @@ vi.mock('electron', async () => {
 
 import { registeredByTabRoot, setupShim } from '../../src/main/shim'
 import { MIN_CLAUDE_VERSION } from '../../src/main/cliMinimums'
-import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
+import { NO_USABLE_ACCOUNT, SHIM_FOUND_NO_ACCOUNT_EXIT } from '../../src/shared/accountUsage'
 
 let shimDir: string
 let regDir: string
@@ -279,7 +279,7 @@ describe('claude shim (multi-account pick section — U5)', () => {
     expect(elapsed).toBeLessThan(CAPPED_NOT_HUNG_BOUND_FOR_A_SLOW_CI_RUNNER_MS)
     expect(r.stderr).toContain('could not read the sign-in of bravo')
     expect(startedClaude(r)).toBe(false)
-    expect(r.status).toBe(1)
+    expect(r.status).toBe(SHIM_FOUND_NO_ACCOUNT_EXIT)
   }, 30_000)
 
   // PLATFORM§2
@@ -341,7 +341,7 @@ describe('claude shim (multi-account pick section — U5)', () => {
   // ADR-0030
   it('outside a Koloft tab (no pick watcher) claude does not start, rather than run on the login this Mac has', () => {
     const r = runShim([], NO_ACCOUNT_PICKED_YET)
-    expect(r.status).toBe(1)
+    expect(r.status).toBe(SHIM_FOUND_NO_ACCOUNT_EXIT)
     expect(startedClaude(r)).toBe(false)
     expect(r.stderr).toContain('only inside a Koloft tab')
   })
@@ -355,7 +355,7 @@ describe('claude shim (multi-account pick section — U5)', () => {
     })
     expect(Date.now() - t0).toBeLessThan(2500)
     expect(fs.readdirSync(pickDir)).toHaveLength(0)
-    expect(r.status).toBe(1)
+    expect(r.status).toBe(SHIM_FOUND_NO_ACCOUNT_EXIT)
     expect(startedClaude(r)).toBe(false)
   })
 
@@ -505,7 +505,7 @@ describe('claude shim (multi-account pick section — U5)', () => {
     })
     const elapsed = Date.now() - t0
     expect(elapsed).toBeGreaterThan(2500)
-    expect(r.status).toBe(1)
+    expect(r.status).toBe(SHIM_FOUND_NO_ACCOUNT_EXIT)
     expect(startedClaude(r)).toBe(false)
     expect(r.stderr).toContain('took too long')
     expect(fs.readdirSync(pickDir).filter((f) => f.startsWith('req-'))).toHaveLength(0)
@@ -514,7 +514,7 @@ describe('claude shim (multi-account pick section — U5)', () => {
   // ADR-0030
   it('missing keychain entry → refused with the reason, claude never starts', async () => {
     const r = await runShimPick([], { account: 'ghost', kind: 'oauth', banner: 'koloft: → ghost' })
-    expect(r.status).toBe(1)
+    expect(r.status).toBe(SHIM_FOUND_NO_ACCOUNT_EXIT)
     expect(startedClaude(r)).toBe(false)
     expect(r.stderr).toContain('could not read the sign-in of ghost')
   })
@@ -522,7 +522,7 @@ describe('claude shim (multi-account pick section — U5)', () => {
   // ADR-0030
   it('no usable account → refused with a pointer to Settings ▸ Accounts', async () => {
     const r = await runShimPick([], { account: null, reason: 'no-accounts' })
-    expect(r.status).toBe(1)
+    expect(r.status).toBe(SHIM_FOUND_NO_ACCOUNT_EXIT)
     expect(startedClaude(r)).toBe(false)
     expect(r.stderr).toContain(NO_USABLE_ACCOUNT.claude)
   })

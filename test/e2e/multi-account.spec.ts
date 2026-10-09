@@ -6,6 +6,7 @@ import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp } from './helpers/app'
 import { seededAccount as acct, seedSettings, type E2EEnv } from './helpers/env'
 import { centerTerm, openMenu, startSessionIn, waitBooted } from './helpers/p1'
+import { SHIM_FOUND_NO_ACCOUNT_NOTICE } from '../../src/shared/accountUsage'
 
 const TOKENS: Record<string, string> = {
   alpha: 'sk-ant-oat01-fixture-alpha',
@@ -190,7 +191,7 @@ test('E1: settings CRUD — no launch-command field, only the verifiable add ent
   test.setTimeout(120_000)
   const mock = await startProbeMock()
   env.launchEnv.KOLOFT_PROBE_BASE_URL = mock.base
-  seedSettings(env, { claudeCommand: 'stale-wrapper' })
+  seedSettings(env, { claudeCommand: 'stale-wrapper', accounts: [acct('e2e-codex', 'codex-home')] })
   seedKeychain(env)
 
   let app = await launchApp(env)
@@ -220,7 +221,7 @@ test('E1: settings CRUD — no launch-command field, only the verifiable add ent
     await page.locator('.acct-add input[type="text"]').fill('bravo')
     await page.locator('.acct-add input[type="password"]').fill(TOKENS.bravo)
     await page.locator('.acct-add-actions button', { hasText: 'Verify and save' }).click()
-    await expect(page.locator('.acct-row')).toHaveCount(1, { timeout: 15_000 })
+    await expect(claudeAccounts(page).locator('.acct-row')).toHaveCount(1, { timeout: 15_000 })
     await expect(page.locator('.acct-name')).toHaveText('bravo')
     await expect(page.locator('.acct-badge.fable')).toBeVisible()
 
@@ -249,9 +250,9 @@ test('E1: settings CRUD — no launch-command field, only the verifiable add ent
       timeout: 15_000
     })
 
-    await page.locator('.acct-x').click()
+    await claudeAccounts(page).locator('.acct-x').click()
     await page.locator('.acct-confirm button', { hasText: 'Delete' }).click()
-    await expect(page.locator('.acct-row')).toHaveCount(0)
+    await expect(claudeAccounts(page).locator('.acct-row')).toHaveCount(0)
     const kc2 = JSON.parse(fs.readFileSync(env.keychainFile, 'utf8'))
     expect(kc2[UNPACKAGED_BUILD_OAUTH_SVC_SPELLED_OUT_NOT_IMPORTED].bravo).toBeUndefined()
 
@@ -263,7 +264,7 @@ test('E1: settings CRUD — no launch-command field, only the verifiable add ent
 })
 
 // ADR-0030
-test('E2: a session whose Koloft account cannot be read does not start, and its terminal says why — it never runs on the login this Mac has', async ({
+test('E2: a session whose Koloft account cannot be read does not start, and says it lacked an account — it never runs on the login this Mac has', async ({
   env
 }) => {
   test.setTimeout(120_000)
@@ -273,7 +274,7 @@ test('E2: a session whose Koloft account cannot be read does not start, and its 
     await waitBooted(page)
     await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
     await page.locator('.menu .mi', { hasText: 'New session' }).click()
-    await expect(centerTerm(page)).toContainText('could not read the sign-in of ghost', {
+    await expect(page.locator('.toast')).toContainText(SHIM_FOUND_NO_ACCOUNT_NOTICE, {
       timeout: 30_000
     })
     expect(readCalls(env)).toEqual([])
@@ -714,7 +715,8 @@ test('E7: leak scan — no token bytes in the renderer, the scrollback or userDa
   }
 })
 
-test('E8: a token exported by the user’s shell rc (downstream of main’s env scrub) is used verbatim, with a warning', async ({
+// ADR-0030
+test('E8: a token exported by the user’s shell rc never stands in for a Koloft account — the shim drops it and picks from the pool', async ({
   env
 }) => {
   test.setTimeout(150_000)
@@ -731,8 +733,7 @@ test('E8: a token exported by the user’s shell rc (downstream of main’s env 
     await waitBooted(page)
     await startSessionIn(page, 'ws-a')
     const [call] = await waitForCalls(env, 1)
-    expect(call.oauthToken).toBe('zzz-wrapper-token')
-    await expect(centerTerm(page)).toContainText('skipping balancing', { timeout: 10_000 })
+    expect(Object.values(TOKENS)).toContain(call.oauthToken)
   } finally {
     await app.close().catch(() => {})
     await mock.close()
