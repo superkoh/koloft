@@ -373,12 +373,12 @@ describe('PtyManager types the PATH line and the launch line once the login shel
 
   const BOTH = [SETUP + '\r' + LAUNCH + '\r']
   const typed = (): string[] => write.mock.calls.map(([d]) => d)
-  const launch = (): void => {
+  const launch = (launchCommand = LAUNCH): void => {
     new PtyManager().create({
       kind: 'claude',
       cwd: os.tmpdir(),
       setupCommand: SETUP,
-      launchCommand: () => LAUNCH
+      launchCommand: () => launchCommand
     })
   }
 
@@ -419,12 +419,7 @@ describe('PtyManager types the PATH line and the launch line once the login shel
 
   it('types a command too long for one line of a busy tty as a file the shell sources, and removes the file when the pty exits', async () => {
     const remoteLine = 'h=$(ssh -n host true); ' + 'x'.repeat(1100)
-    new PtyManager().create({
-      kind: 'claude',
-      cwd: os.tmpdir(),
-      setupCommand: SETUP,
-      launchCommand: () => remoteLine
-    })
+    launch(remoteLine)
     mocks.state.data?.(ZSH_PROMPT)
     const [line] = typed()
     const file = /^[^\r]*\r\. '([^']+)'\r$/.exec(line)?.[1] ?? ''

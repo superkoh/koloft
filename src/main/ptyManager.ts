@@ -62,14 +62,15 @@ function typeOnceTheShellReads(
   write: (text: string) => void,
   text: string
 ): (output: string) => void {
-  let typed = text === ''
+  if (text === '') return () => {}
+  let typed = false
   let tail = ''
   const type = (): void => {
     if (typed) return
     typed = true
     write(text)
   }
-  if (!typed) setTimeout(type, TYPE_EVEN_WITHOUT_A_SIGNAL_AFTER_MS)
+  setTimeout(type, TYPE_EVEN_WITHOUT_A_SIGNAL_AFTER_MS)
   return (output) => {
     if (typed) return
     const seen = tail + output

@@ -254,7 +254,7 @@ export class ClaudeBackend implements SessionBackend {
     setInterval(
       () =>
         sweepJsonDrops(regDir, (name) =>
-          this.processedRegIds.has(name.slice(0, -'.json'.length)) ? null : handle
+          this.processedRegIds.has(path.basename(name, '.json')) ? null : handle
         ),
       SWEEP_FOR_A_LOST_DROP_MS
     ).unref()
@@ -359,20 +359,18 @@ export class ClaudeBackend implements SessionBackend {
 
   private watchHookRegistrations(dir: string, mirror = false): () => void {
     const isNews = mirror ? makeDropDedupe() : null
-    const notYetHandled = makeDropDedupe()
-    const handle = (obj: unknown, full: string, sweeping: boolean): void => {
-      const text = JSON.stringify(obj)
-      if (!notYetHandled(full, text) && sweeping) return
-      if (isNews && !isNews(full, text)) return
+    const handle = (obj: unknown, full: string): void => {
+      if (isNews && !isNews(full, JSON.stringify(obj))) return
       this.handleHookRegistration(obj)
     }
-    const drops = watchJsonDrops(dir, () => (obj, full) => handle(obj, full, false))
+    const drops = watchJsonDrops(dir, () => handle)
+    const unboundTabNote = (name: string): typeof handle | null => {
+      const tabId = path.basename(name, '.json')
+      return this.d.pty.get(tabId) && !this.sessionIdOf(tabId) ? handle : null
+    }
     const sweep = mirror
       ? undefined
-      : setInterval(
-          () => sweepJsonDrops(dir, () => (obj, full) => handle(obj, full, true)),
-          SWEEP_FOR_A_LOST_DROP_MS
-        )
+      : setInterval(() => sweepJsonDrops(dir, unboundTabNote), SWEEP_FOR_A_LOST_DROP_MS)
     const logs = this.watchStatusLogs(dir)
     return () => {
       drops?.close()

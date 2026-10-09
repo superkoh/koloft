@@ -25,35 +25,27 @@ export function writeWholeBeforeVisible(dest: string, text: string): void {
   fs.renameSync(tmp, dest)
 }
 
-export function sweepJsonDrops(
-  dir: string,
-  handlerFor: (name: string) => ((obj: unknown, full: string) => void) | null
-): void {
+type DropHandlerFor = (name: string) => ((obj: unknown, full: string) => void) | null
+
+function readNamedDrop(dir: string, name: string, handlerFor: DropHandlerFor): void {
+  if (!name.endsWith('.json')) return
+  const handle = handlerFor(name)
+  if (!handle) return
+  const full = path.join(dir, name)
+  readJsonDrop(full, 0, (obj) => handle(obj, full))
+}
+
+export function sweepJsonDrops(dir: string, handlerFor: DropHandlerFor): void {
   fs.readdir(dir, (err, names) => {
     if (err) return
-    for (const name of names) {
-      if (!name.endsWith('.json')) continue
-      const handle = handlerFor(name)
-      if (!handle) continue
-      const full = path.join(dir, name)
-      readJsonDrop(full, 0, (obj) => handle(obj, full))
-    }
+    for (const name of names) readNamedDrop(dir, name, handlerFor)
   })
 }
 
-export function watchJsonDrops(
-  dir: string,
-  handlerFor: (name: string) => ((obj: unknown, full: string) => void) | null
-): fs.FSWatcher | null {
+export function watchJsonDrops(dir: string, handlerFor: DropHandlerFor): fs.FSWatcher | null {
   try {
     return fs.watch(dir, (_event, filename) => {
-      if (!filename) return
-      const name = filename.toString()
-      if (!name.endsWith('.json')) return
-      const handle = handlerFor(name)
-      if (!handle) return
-      const full = path.join(dir, name)
-      readJsonDrop(full, 0, (obj) => handle(obj, full))
+      if (filename) readNamedDrop(dir, filename.toString(), handlerFor)
     })
   } catch {
     return null
