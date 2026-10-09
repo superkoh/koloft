@@ -57,6 +57,7 @@ if (argv[0] === 'setup-token') {
   process.exit(0)
 }
 
+// PLATFORM§29
 const stdioOpenedBeforeTheSighupHandlerSoAHungUpPtyStillKillsUs = [
   process.stdin,
   process.stdout,
