@@ -341,6 +341,7 @@ async function triesToWriteTheWorkspaceItselfAndIsRefused(
 }
 
 const PR_TITLE_ONLY_GH_KNOWS = 'PLUM-58 tidy the docs'
+const ISSUE_ONLY_GH_KNOWS = 'https://github.com/acme/app/issues/4242'
 
 function fakeGhSaysMerged(env: E2EEnv): string {
   return installGhForWorkspaceA(
@@ -358,6 +359,31 @@ async function checksGithubItself(fake: FakeDiscord, log: string): Promise<void>
     .poll(() => conductorSaid(fake).join('\n'), { timeout: A_REAL_MODEL_TURN_MS })
     .toContain('PLUM-58')
   expect(fs.readFileSync(log, 'utf8')).toMatch(/^pr (view|list|checks) .*--repo acme\/app$/m)
+}
+
+function fakeGhOpensIssue(env: E2EEnv): string {
+  const log = installGhForWorkspaceA(env, '[]')
+  fs.writeFileSync(
+    path.join(env.fakeBin, 'gh'),
+    `#!/bin/sh\necho "$*" >> ${JSON.stringify(log)}\nif [ "$1 $2" = "issue create" ]; then echo ${ISSUE_ONLY_GH_KNOWS}; else echo '[]'; fi\n`,
+    { mode: 0o755 }
+  )
+  return log
+}
+
+async function opensAnIssueItself(fake: FakeDiscord, log: string): Promise<void> {
+  fake.say(
+    OWNER,
+    '请在这个仓库开一个 GitHub issue：搜索框输入第一个字以后就失去焦点。不要开会话，也不要叫别的会话做，你自己开，然后把 issue 地址回给我。'
+  )
+  await expect
+    .poll(() => conductorSaid(fake).join('\n'), { timeout: A_REAL_MODEL_TURN_MS })
+    .toContain(ISSUE_ONLY_GH_KNOWS)
+  const calls = fs.readFileSync(log, 'utf8').trim().split('\n')
+  const created = calls.findIndex((c) => c.startsWith('issue create '))
+  expect(calls[created]).toMatch(/^issue create .*--title=.+--repo acme\/app$/)
+  expect(calls[created]).not.toMatch(/[　-鿿＀-￯]/)
+  expect(calls.slice(0, created).some((c) => c.startsWith('issue list '))).toBe(true)
 }
 
 async function answersWholeInTheChannel(fake: FakeDiscord): Promise<void> {
@@ -424,6 +450,19 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     const log = fakeGhSaysMerged(env)
     await withConductor(env, fake, async () => {
       await checksGithubItself(fake, log)
+    })
+  })
+
+  // ADR-0029
+  test('a real Claude conductor asked in Chinese to open an issue itself looks for one already open, then opens it in English with koloft gh, and Koloft adds its workspace’s repository', async ({
+    env
+  }) => {
+    test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
+    test.setTimeout(A_REAL_MODEL_TURN_MS + 120_000)
+    const fake = await realClaudeConductor(env)
+    const log = fakeGhOpensIssue(env)
+    await withConductor(env, fake, async () => {
+      await opensAnIssueItself(fake, log)
     })
   })
 
@@ -832,6 +871,21 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     const fake = await startFakeDiscord(env)
     await withConductor(env, fake, async () => {
       await checksGithubItself(fake, log)
+    })
+  })
+
+  // ADR-0029 CODEX§12
+  test('a real Codex conductor asked in Chinese to open an issue itself looks for one already open, then opens it in English with koloft gh, and Koloft adds its workspace’s repository', async ({
+    env
+  }) => {
+    test.skip(!HAVE_REAL_CODEX, NEEDS_REAL_CODEX)
+    test.setTimeout(A_REAL_MODEL_TURN_MS + 120_000)
+    seedConductor(env, 'codex')
+    useRealCodex(env)
+    const log = fakeGhOpensIssue(env)
+    const fake = await startFakeDiscord(env)
+    await withConductor(env, fake, async () => {
+      await opensAnIssueItself(fake, log)
     })
   })
 

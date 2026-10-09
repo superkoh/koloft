@@ -766,5 +766,42 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
         await fake.close()
       }
     })
+
+    test(`a ${backend} conductor opens a GitHub issue through koloft gh: Koloft adds the workspace’s repository, reads --body-file only from the conductor’s own folder, and refuses an assignee without running gh`, async ({
+      env
+    }) => {
+      if (backend === 'codex') installCodex(env)
+      seedConductor(env, backend)
+      const ghLog = installGhForWorkspaceA(env, 'https://github.com/acme/app/issues/7')
+      const ghSaid = (): string => (fs.existsSync(ghLog) ? fs.readFileSync(ghLog, 'utf8') : '')
+      const fake = await startFakeDiscord(env)
+      const { app } = await connected(env, fake)
+      try {
+        fake.say(OWNER, '/koloft gh issue create --title "Login stays blank" --assignee someone')
+        fake.say(
+          OWNER,
+          '/koloft gh issue create --title "Login stays blank" --body "- open /login"'
+        )
+        await expect
+          .poll(ghSaid, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+          .toBe('issue create --title=Login stays blank --body=- open /login --repo acme/app\n')
+
+        const conductors = path.join(env.userData, 'conductors')
+        const ownFolder = path.join(conductors, fs.readdirSync(conductors)[0])
+        fs.writeFileSync(path.join(ownFolder, 'body.md'), 'Steps: open /login.')
+        fs.writeFileSync(path.join(env.home, 'secret.txt'), 'not for GitHub')
+        fake.say(OWNER, `/koloft gh issue create --title "Leak" --body-file ${env.home}/secret.txt`)
+        fake.say(OWNER, '/koloft gh issue create --title "From a file" --body-file body.md')
+        await expect
+          .poll(ghSaid, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+          .toContain('issue create --title=From a file --body-file=')
+        expect(ghSaid().split('\n')[1]).toBe(
+          `issue create --title=From a file --body-file=${fs.realpathSync(path.join(ownFolder, 'body.md'))} --repo acme/app`
+        )
+      } finally {
+        await quitAndClose(app)
+        await fake.close()
+      }
+    })
   }
 })
