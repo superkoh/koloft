@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { createPortal } from 'react-dom'
 import { popoverX } from '@shared/accountUsage'
 import { HINT_IDS, type HintId } from '@shared/types'
@@ -7,6 +7,7 @@ import { useStore } from '../store'
 import { isSessionKind } from '../agentUi'
 import { BACKEND_LABEL, capabilitiesFor } from '@shared/sessionBackend'
 import { hostOf } from '@shared/remoteKey'
+import { querySelectorAnywhere, windowOf } from '../workbenchHost'
 
 const CAPTURE_BEFORE_XTERM = true
 const CARD_W = 268
@@ -184,12 +185,12 @@ const CONTENT: Record<HintId, HintWords | ((agent: AgentWords) => HintWords)> = 
   }
 }
 
-function place(r: DOMRect, cardH: number): { left: number; top: number } {
-  const vh = window.innerHeight
+function place(r: DOMRect, cardH: number, win: Window): { left: number; top: number } {
+  const vh = win.innerHeight
   const below = r.bottom + GAP
   const wanted = below + cardH <= vh - GAP ? below : r.top - GAP - cardH
   return {
-    left: popoverX(r.left + r.width / 2, CARD_W, window.innerWidth, GAP),
+    left: popoverX(r.left + r.width / 2, CARD_W, win.innerWidth, GAP),
     top: Math.min(Math.max(GAP, wanted), vh - cardH - GAP)
   }
 }
@@ -212,9 +213,11 @@ export function Hint({ id, selector, n, onDone, onOff }: ActiveHint): JSX.Elemen
   const cardH = useRef(0)
   const boxRef = useRef<Box | null>(null)
   const [box, setBox] = useState<Box | null>(null)
+  const doc = useMemo(() => querySelectorAnywhere(selector)?.ownerDocument ?? document, [selector])
+  const win = windowOf(doc.body)
 
   const measure = useCallback((): boolean => {
-    const el = document.querySelector(selector)
+    const el = doc.querySelector(selector)
     if (!el) {
       if (!boxRef.current) return true
       boxRef.current = null
@@ -223,39 +226,39 @@ export function Hint({ id, selector, n, onDone, onOff }: ActiveHint): JSX.Elemen
     }
     if (!cardH.current) cardH.current = cardRef.current?.offsetHeight ?? 0
     const rect = el.getBoundingClientRect()
-    const pos = place(rect, cardH.current)
+    const pos = place(rect, cardH.current, win)
     if (boxRef.current && sameBox(boxRef.current, rect, pos)) return true
     boxRef.current = { rect, ...pos }
     setBox(boxRef.current)
     return false
-  }, [selector])
+  }, [selector, doc, win])
 
   useLayoutEffect(() => {
     let raf = 0
     let still = 0
     const tick = (): void => {
       still = measure() ? still + 1 : 0
-      raf = still >= STILL_FRAMES ? 0 : requestAnimationFrame(tick)
+      raf = still >= STILL_FRAMES ? 0 : win.requestAnimationFrame(tick)
     }
     const burst = (): void => {
       still = measure() ? 1 : 0
-      if (!raf) raf = requestAnimationFrame(tick)
+      if (!raf) raf = win.requestAnimationFrame(tick)
     }
     burst()
     const mo = new MutationObserver(burst)
     for (const root of ['.side', '.wb-tabs']) {
-      const el = document.querySelector(root)
+      const el = doc.querySelector(root)
       if (el) mo.observe(el, { childList: true, subtree: true, attributes: true })
     }
-    window.addEventListener('resize', burst)
-    window.addEventListener('scroll', burst, true)
+    win.addEventListener('resize', burst)
+    win.addEventListener('scroll', burst, true)
     return () => {
-      if (raf) cancelAnimationFrame(raf)
+      if (raf) win.cancelAnimationFrame(raf)
       mo.disconnect()
-      window.removeEventListener('resize', burst)
-      window.removeEventListener('scroll', burst, true)
+      win.removeEventListener('resize', burst)
+      win.removeEventListener('scroll', burst, true)
     }
-  }, [measure])
+  }, [measure, doc, win])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -264,13 +267,13 @@ export function Hint({ id, selector, n, onDone, onOff }: ActiveHint): JSX.Elemen
     const onDown = (e: MouseEvent): void => {
       if (!cardRef.current?.contains(e.target as Node)) onDone()
     }
-    window.addEventListener('keydown', onKey, CAPTURE_BEFORE_XTERM)
-    window.addEventListener('mousedown', onDown, CAPTURE_BEFORE_XTERM)
+    win.addEventListener('keydown', onKey, CAPTURE_BEFORE_XTERM)
+    win.addEventListener('mousedown', onDown, CAPTURE_BEFORE_XTERM)
     return () => {
-      window.removeEventListener('keydown', onKey, CAPTURE_BEFORE_XTERM)
-      window.removeEventListener('mousedown', onDown, CAPTURE_BEFORE_XTERM)
+      win.removeEventListener('keydown', onKey, CAPTURE_BEFORE_XTERM)
+      win.removeEventListener('mousedown', onDown, CAPTURE_BEFORE_XTERM)
     }
-  }, [onDone])
+  }, [onDone, win])
 
   const session = useStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const content = CONTENT[id]
@@ -327,6 +330,6 @@ export function Hint({ id, selector, n, onDone, onOff }: ActiveHint): JSX.Elemen
         </div>
       </div>
     </>,
-    document.body
+    doc.body
   )
 }

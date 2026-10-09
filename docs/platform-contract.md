@@ -1325,3 +1325,36 @@ Gateway (the live connection that pushes events):
 - Measured 2026-10-09 on macOS 27.0.1 with a bare Electron 43.7.3 app (node-pty from the
   repo, no window): one pty child running `sh` with HUP/TERM traps, one detached `sh`
   helper, then `app.quit()` one second in.
+
+## §42 Electron: a second window opened by the renderer (`window.open`)
+
+Measured 2026-10-08 on Electron 43.7.3 with hidden-window probe scripts (two windows,
+a temporary userData, nothing shown), unless a bullet says otherwise.
+
+- **A same-origin `window.open('about:blank')` child shares the opener's renderer
+  process and its JavaScript.** Same OS process id; the opener can build the child's
+  DOM directly. Opening one at startup, with no user gesture, is allowed (seen in
+  `workbench-window.spec.ts` WB-W02). Its `will-attach-webview` fires on the child's
+  own webContents, with the same `webPreferences` keys as §8, and
+  `BrowserWindow.fromWebContents(guest)` returns the child.
+- **A node moved into the other window's document keeps working.** A React portal
+  container moved there and back was not mounted again (one mount), and clicks and keys
+  in either window reached its handlers.
+- **A `<webview>` moved into the other document dies.** Its guest is destroyed at once
+  (a debugger attached to it is gone with it) and the element never attaches again: every
+  call then fails with `Invalid guestInstanceId` in main, and moving it back does not
+  help. A `<webview>` created in the child's document works. Moving one inside its own
+  document with `moveBefore` reloads it too (§9). A `<webview>` whose ancestor is moved
+  again right after it was inserted, while it is still attaching, never loads its page
+  (seen in a `workbench-window.spec.ts` run).
+- **Observers are per window.** A `ResizeObserver` made in the main window, observing an
+  element in the child's document, fired 0 times across two resizes while the child's own
+  fired 5 times; an `IntersectionObserver` from the main window fired normally.
+- **xterm moved into the child keeps its screen, its input and its WebGL context.**
+  Calling `term.open()` again on an opened terminal switches xterm's own window (its rAF,
+  device-pixel-ratio watch and IntersectionObserver) to the element's new window (read in
+  the 6.1.0-beta.302 source).
+- **A `WebContentsView` moved between two windows** (`addChildView` on the other one)
+  keeps its webContents id, its page and an attached debugger.
+- That `CSS.highlights` ranges in the child's document paint only when set in the
+  child's own registry is inferred, not checked.

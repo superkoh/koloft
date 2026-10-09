@@ -26,6 +26,7 @@ import { useEditProbe } from './EditPane'
 import { ChangesView } from './ChangesView'
 import { BrowseView } from './BrowseView'
 import { clampSideWidth, readSideWidth, storeSideWidth } from './filesSide'
+import { useWorkbenchMoves, windowOf, workbenchDoc } from '../workbenchHost'
 import {
   DEFAULT_FILTERS,
   GIT_LETTER,
@@ -454,16 +455,18 @@ export function FilesBody({
   const setOpenFile = useStore((s) => s.setOpenFile)
 
   const fvRef = useRef<HTMLDivElement>(null)
+  const moves = useWorkbenchMoves()
   const [sideWidth, setSideWidth] = useState(readSideWidth)
   const [sideDragging, setSideDragging] = useState(false)
   const [fvWidth, setFvWidth] = useState<number | null>(null)
   useEffect(() => {
     const el = fvRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver(() => setFvWidth(el.getBoundingClientRect().width))
+    // PLATFORM§42
+    const ro = new (windowOf(el).ResizeObserver)(() => setFvWidth(el.getBoundingClientRect().width))
     ro.observe(el)
     return () => ro.disconnect()
-  }, [root, rootMissing])
+  }, [root, rootMissing, moves])
   const shownSideWidth = fvWidth ? clampSideWidth(sideWidth, fvWidth) : sideWidth
   const endDrag = useRef<(() => void) | null>(null)
   useEffect(() => () => endDrag.current?.(), [])
@@ -472,21 +475,22 @@ export function FilesBody({
     const box = fvRef.current?.getBoundingClientRect()
     if (!box) return
     setSideDragging(true)
+    const doc = workbenchDoc()
     let last: number | null = null
     const onMove = (ev: MouseEvent): void => {
       last = clampSideWidth(ev.clientX - box.left, box.width)
       setSideWidth(last)
     }
     const onUp = (): void => {
-      document.removeEventListener('mousemove', onMove)
-      document.removeEventListener('mouseup', onUp)
+      doc.removeEventListener('mousemove', onMove)
+      doc.removeEventListener('mouseup', onUp)
       endDrag.current = null
       setSideDragging(false)
       if (last !== null) storeSideWidth(last)
     }
     endDrag.current = onUp
-    document.addEventListener('mousemove', onMove)
-    document.addEventListener('mouseup', onUp)
+    doc.addEventListener('mousemove', onMove)
+    doc.addEventListener('mouseup', onUp)
   }, [])
 
   useEffect(() => {
@@ -827,6 +831,6 @@ function FilesContextMenu({
         </div>
       ))}
     </div>,
-    document.body
+    workbenchDoc().body
   )
 }

@@ -202,6 +202,42 @@ test.describe('real third-party tools (playwright-mcp, playwright-cli), unmodifi
     }
   })
 
+  test('BB-57: with the Workbench in a window of its own, the Playwright CLI drives a page there and gets a real screenshot', async ({
+    app,
+    page,
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const server = await startEchoServer()
+    try {
+      const url = await drivenSession(page, env)
+      await page.locator('.wb-panel button[aria-label="Move to its own window"]').first().click()
+      await expect.poll(() => app.windows().filter((p) => p.url() === 'about:blank').length).toBe(1)
+
+      expect((await cli(['attach', `--cdp=${url}`], env.home)).code).toBe(0)
+      const target = server.page('/popped', '<title>Popped</title><body><h1>popped</h1></body>')
+      expect((await cli(['goto', target], env.home)).code).toBe(0)
+      expect((await cli(['snapshot'], env.home)).out).toContain('popped')
+      expect((await cli(['screenshot'], env.home)).code).toBe(0)
+      const shots = fs
+        .readdirSync(path.join(env.home, '.playwright-cli'))
+        .filter((f) => f.endsWith('.png'))
+      const bytes = fs.statSync(path.join(env.home, '.playwright-cli', shots[0])).size
+      expect(bytes).toBeGreaterThan(LARGER_THAN_A_BLANK_SCREENSHOT_BYTES)
+      expect(
+        await app.evaluate(({ BrowserWindow, webContents }) => {
+          const guest = webContents
+            .getAllWebContents()
+            .find((w) => w.getType() === 'webview' && w.getURL().includes('/popped'))
+          return guest ? BrowserWindow.fromWebContents(guest)?.webContents.getURL() : null
+        })
+      ).toBe('about:blank')
+      await cli(['close'], env.home)
+    } finally {
+      await server.close()
+    }
+  })
+
   test('BB-57: `playwright-cli open` with only the injected variable drives Koloft, not a browser of its own', async ({
     page,
     env

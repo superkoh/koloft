@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
+import { windowOf } from '../workbenchHost'
 
 export interface BrowserDialog {
   id: string
@@ -28,6 +29,7 @@ export function BrowserModal({
   const [user, setUser] = useState('')
   const [pass, setPass] = useState('')
   const firstField = useRef<HTMLInputElement>(null)
+  const backdrop = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     firstField.current?.focus()
@@ -46,12 +48,13 @@ export function BrowserModal({
       e.preventDefault()
       cancel()
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    const win = windowOf(backdrop.current)
+    win.addEventListener('keydown', onKey)
+    return () => win.removeEventListener('keydown', onKey)
   })
 
   return (
-    <div className="bmodal-backdrop" onMouseDown={cancel}>
+    <div className="bmodal-backdrop" ref={backdrop} onMouseDown={cancel}>
       <div
         className="bmodal"
         role="dialog"

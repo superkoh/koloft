@@ -126,7 +126,7 @@ const CONTENT_SEARCH_HIT_CAP = 300
 
 const AT_SIGN_PLUS_TRAILING_SPACE = 2
 
-const panelOwnedWidthToggle = /^(Full width|Restore)/
+const panelOwnedWidthToggle = /^(Full width|Restore|Move to its own window|Put back beside)/
 
 test.describe('Workbench files tab: the Browse half — lazy tree, virtual roots, search, decorations, row menu, keyboard and per-workspace memory', () => {
   test('WB-B01: Browse lists one level at a time, hides gitignored and heavy dirs, and a file click shows the file without making a tab', async ({

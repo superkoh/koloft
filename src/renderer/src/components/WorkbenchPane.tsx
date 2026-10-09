@@ -27,6 +27,8 @@ import {
   LuPlus,
   LuRotateCw,
   LuSend,
+  LuSquareArrowDownLeft,
+  LuSquareArrowOutUpRight,
   LuTerminal,
   LuVolume2,
   LuVolumeX,
@@ -114,6 +116,7 @@ import {
 } from './workbenchTabs'
 import type { WorkbenchCommandSignal } from './workbenchCommands'
 import { useDomFind, type FindCount } from '../useDomFind'
+import { useWorkbenchMoves, workbenchDoc } from '../workbenchHost'
 
 function globalLiveGuestLimit(): number {
   return window.api.browserGuestLimit
@@ -212,6 +215,9 @@ export interface WorkbenchPaneProps {
   liveTabs: ReadonlySet<string>
   visible: boolean
   full: boolean
+  popped: boolean
+  onPopOut: () => void
+  onDock: () => void
   command: WorkbenchCommandSignal | null
   dialog: BrowserDialog | null
   onUpdate: (
@@ -323,6 +329,9 @@ export function WorkbenchPane({
   liveTabs,
   visible,
   full,
+  popped,
+  onPopOut,
+  onDock,
   command,
   dialog,
   onUpdate,
@@ -344,6 +353,7 @@ export function WorkbenchPane({
   onCdpCreate
 }: WorkbenchPaneProps): JSX.Element {
   const termFocus = useStore((s) => s.termFocus)
+  const hostEpoch = useWorkbenchMoves()
   const load = useStore((s) => (ownerTab ? s.workbenchLoad[ownerTab] : undefined))
   const [live, setLive] = useState<string[]>([])
   const [runtime, setRuntime] = useState<Record<string, TabRuntime>>({})
@@ -513,7 +523,7 @@ export function WorkbenchPane({
 
   // PLATFORM§10
   const keepCaret = useCallback((): (() => void) => {
-    const had = !!rootRef.current?.contains(document.activeElement)
+    const had = !!rootRef.current?.contains(workbenchDoc().activeElement)
     return () => {
       if (had) rootRef.current?.focus()
     }
@@ -1049,7 +1059,7 @@ export function WorkbenchPane({
       return
     }
     if (files.searchOpen) {
-      const inSearchRow = !!document.activeElement?.closest?.('.ft-search')
+      const inSearchRow = !!workbenchDoc().activeElement?.closest?.('.ft-search')
       if (!inSearchRow) files.toggleSearch()
       rootRef.current?.focus()
       return
@@ -1162,7 +1172,8 @@ export function WorkbenchPane({
     if (set.tabs.some((t) => t.id === seen.id)) return
     activate(set.activeId)
     // PLATFORM§10
-    if (document.activeElement === document.body) rootRef.current?.focus()
+    const doc = workbenchDoc()
+    if (doc.activeElement === doc.body) rootRef.current?.focus()
   }, [set.activeId, ownerTab, activate])
 
   const lastLoad = useRef<Record<string, number>>({})
@@ -1247,9 +1258,10 @@ export function WorkbenchPane({
       const el = activeTab ? els.current.get(activeTab.id) : null
       el?.executeJavaScript('document.exitFullscreen?.()').catch(() => {})
     }
-    document.addEventListener('keydown', onKey, true)
-    return () => document.removeEventListener('keydown', onKey, true)
-  }, [pageFullscreen, activeTab])
+    const doc = workbenchDoc()
+    doc.addEventListener('keydown', onKey, true)
+    return () => doc.removeEventListener('keydown', onKey, true)
+  }, [pageFullscreen, activeTab, hostEpoch])
 
   useEffect(() => {
     if (!permRefusal) return
@@ -1792,16 +1804,35 @@ export function WorkbenchPane({
     </button>
   ) : null
 
-  const fullBtn = (
+  const fullBtn = popped ? (
     <button
       className="icobtn"
-      aria-label={full ? 'Restore ⌘⏎' : 'Full width ⌘⏎'}
-      aria-pressed={full}
-      title={full ? 'Restore ⌘⏎' : 'Full width ⌘⏎'}
-      onClick={onToggleFull}
+      aria-label="Put back beside the session"
+      title="Put back beside the session"
+      onClick={onDock}
     >
-      {full ? <LuMinimize2 size={14} /> : <LuMaximize2 size={14} />}
+      <LuSquareArrowDownLeft size={14} />
     </button>
+  ) : (
+    <>
+      <button
+        className="icobtn"
+        aria-label="Move to its own window"
+        title="Move to its own window"
+        onClick={onPopOut}
+      >
+        <LuSquareArrowOutUpRight size={14} />
+      </button>
+      <button
+        className="icobtn"
+        aria-label={full ? 'Restore ⌘⏎' : 'Full width ⌘⏎'}
+        aria-pressed={full}
+        title={full ? 'Restore ⌘⏎' : 'Full width ⌘⏎'}
+        onClick={onToggleFull}
+      >
+        {full ? <LuMinimize2 size={14} /> : <LuMaximize2 size={14} />}
+      </button>
+    </>
   )
 
   return (
@@ -2248,12 +2279,12 @@ export function WorkbenchPane({
       />
 
       <div className="wb-body">
-        {/* PLATFORM§9 */}
+        {/* PLATFORM§9 PLATFORM§42 */}
         {mountedWebTabs.map(({ owner, tab }) => {
           const onScreen = visible && owner === ownerTab && tab.id === set.activeId && !sessionCold
           return (
             <BrowserGuest
-              key={`${tab.id}:${runtime[tab.id]?.mountToken ?? 0}`}
+              key={`${tab.id}:${runtime[tab.id]?.mountToken ?? 0}:${hostEpoch}`}
               url={runtime[tab.id]?.pendingUrl || tab.url || ''}
               /* PLATFORM§9 */
               visible={onScreen || staged.has(tab.id)}

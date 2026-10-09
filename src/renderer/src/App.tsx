@@ -110,6 +110,18 @@ import { CronJobsDialog } from './components/CronJobsDialog'
 import { RemoteWorkspaceDialog } from './components/RemoteWorkspaceDialog'
 import { hostOf } from '@shared/remoteKey'
 import { WorkbenchPane } from './components/WorkbenchPane'
+import {
+  forgetWorkbenchWindow,
+  openWorkbenchWindow,
+  placeWorkbench,
+  setWorkbenchWindowFocused,
+  useFocusedDocument,
+  workbenchDoc,
+  workbenchHasKeyboard,
+  workbenchHost,
+  type HostWindow,
+  type WorkbenchWindow
+} from './workbenchHost'
 import { WorkbenchPreview } from './components/WorkbenchPreview'
 import type { WorkbenchCommandSignal } from './components/workbenchCommands'
 import { ExtensionConfirm } from './components/ExtensionConfirm'
@@ -138,12 +150,34 @@ function relocatedNotice(dir: string): string {
   return `Workbench followed Claude to ${basename(dir)}`
 }
 
-function caretInShell(): boolean {
-  return !!document.activeElement?.closest('.xterm')
+function caretInWorkbenchShell(): boolean {
+  return !!workbenchDoc().activeElement?.closest('.xterm')
 }
 
 function focusedWorkbench(): HTMLElement | null {
-  return (document.activeElement?.closest('.wb-panel[data-surface]') as HTMLElement | null) ?? null
+  if (!workbenchHasKeyboard()) return null
+  return (
+    (workbenchDoc().activeElement?.closest('.wb-panel[data-surface]') as HTMLElement | null) ?? null
+  )
+}
+
+const AGENT_DRIVING_NOTICE =
+  'An agent is using a page in the Workbench — move it once the agent is done'
+
+function anyAttached(cdpAttached: Record<string, string[]>): boolean {
+  return Object.values(cdpAttached).some((ids) => ids.length > 0)
+}
+
+function FocusedWindowPortal({ children }: { children: JSX.Element }): JSX.Element {
+  return createPortal(children, useFocusedDocument().body)
+}
+
+function WorkbenchSlot(): JSX.Element {
+  const ref = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    if (ref.current) placeWorkbench(ref.current)
+  })
+  return <div ref={ref} className="wb-slot" />
 }
 
 const NOTES_ISLAND = '.isl-notes:not(.isl-conductors)'
@@ -159,6 +193,8 @@ function caretInNote(): boolean {
 // PLATFORM§10
 let windowFocused = true
 function guestHasCaret(): boolean {
+  const doc = workbenchDoc()
+  if (doc !== document) return workbenchHasKeyboard() && doc.activeElement?.tagName === 'WEBVIEW'
   return windowFocused && document.activeElement?.tagName === 'WEBVIEW'
 }
 
@@ -307,7 +343,67 @@ export default function App(): JSX.Element {
     else (document.querySelector('.w-empty') as HTMLElement | null)?.focus()
   }, [])
 
+  const [auxWin, setAuxWin] = useState<WorkbenchWindow | null>(null)
+  const auxWinRef = useRef<WorkbenchWindow | null>(null)
+  auxWinRef.current = auxWin
+  const popped = !!auxWin
+  const [homeKnown, setHomeKnown] = useState(false)
+
+  const popOut = useCallback((): void => {
+    if (auxWinRef.current) return
+    if (anyAttached(useStore.getState().cdpAttached)) {
+      useStore.getState().showToast(AGENT_DRIVING_NOTICE)
+      return
+    }
+    const st = useStore.getState()
+    if (st.workbenchFull) st.setWorkbenchFull(false)
+    setAuxWin(openWorkbenchWindow())
+  }, [])
+  const dock = useCallback((): void => window.api.workbenchWindow.requestDock(), [])
+
+  useEffect(() => {
+    let live = true
+    void window.api.workbenchWindow.wasPopped().then((was) => {
+      if (!live) return
+      if (was) setAuxWin(openWorkbenchWindow())
+      setHomeKnown(true)
+    })
+    return () => {
+      live = false
+    }
+  }, [])
+
+  useEffect(() => {
+    const offDock = window.api.workbenchWindow.onDock(() => setAuxWin(null))
+    const offRefused = window.api.workbenchWindow.onRefused(() =>
+      useStore.getState().showToast(AGENT_DRIVING_NOTICE)
+    )
+    const offState = window.api.workbenchWindow.onState((s) => {
+      setWorkbenchWindowFocused(s.focused)
+      auxWinRef.current?.shell.classList.toggle('os-full', s.fullScreen)
+      if (!s.open) setAuxWin(null)
+    })
+    return () => {
+      offDock()
+      offRefused()
+      offState()
+    }
+  }, [])
+
+  const hadAux = useRef<WorkbenchWindow | null>(null)
+  useEffect(() => {
+    const was = hadAux.current
+    hadAux.current = auxWin
+    if (!was || auxWin) return
+    forgetWorkbenchWindow()
+    if (!was.win.closed) window.api.workbenchWindow.released()
+  }, [auxWin])
+
   const toggleWorkbench = useCallback((): void => {
+    if (auxWinRef.current) {
+      window.api.workbenchWindow.raise(true)
+      return
+    }
     const st = useStore.getState()
     const tabId = panelActionTab()
     if (!tabId) return
@@ -320,6 +416,7 @@ export default function App(): JSX.Element {
   }, [returnFocus])
 
   const toggleFull = useCallback((): void => {
+    if (auxWinRef.current) return
     const st = useStore.getState()
     const tabId = panelActionTab()
     if (!tabId) return
@@ -438,24 +535,34 @@ export default function App(): JSX.Element {
       window.clearTimeout(queued)
       queued = window.setTimeout(() => setGuestLit(guestHasCaret()), 0)
     }
-    document.addEventListener('focusin', recheck, true)
-    document.addEventListener('focusout', recheck, true)
-    window.addEventListener('blur', recheck)
-    window.addEventListener('focus', recheck)
+    const wins: HostWindow[] = auxWin ? [window, auxWin.win] : [window]
+    for (const w of wins) {
+      w.document.addEventListener('focusin', recheck, true)
+      w.document.addEventListener('focusout', recheck, true)
+      w.addEventListener('blur', recheck)
+      w.addEventListener('focus', recheck)
+    }
     // PLATFORM§10
     const offWindowFocus = window.api.windowFocus.onChange((focused) => {
       windowFocused = focused
       recheck()
     })
+    const offAuxFocus = window.api.workbenchWindow.onState(recheck)
     return () => {
       window.clearTimeout(queued)
-      document.removeEventListener('focusin', recheck, true)
-      document.removeEventListener('focusout', recheck, true)
-      window.removeEventListener('blur', recheck)
-      window.removeEventListener('focus', recheck)
+      for (const w of wins) {
+        w.document.removeEventListener('focusin', recheck, true)
+        w.document.removeEventListener('focusout', recheck, true)
+        w.removeEventListener('blur', recheck)
+        w.removeEventListener('focus', recheck)
+      }
       offWindowFocus()
+      offAuxFocus()
     }
-  }, [])
+  }, [auxWin])
+  useEffect(() => {
+    auxWin?.column.classList.toggle('caret', guestLit)
+  }, [auxWin, guestLit])
   useEffect(() => {
     if (!panelFocus) return undefined
     // PLATFORM§25
@@ -499,7 +606,7 @@ export default function App(): JSX.Element {
         return
       }
       if (e.key === 'Escape') {
-        if (!focusedWorkbench() || caretInShell()) return
+        if (!focusedWorkbench() || caretInWorkbenchShell()) return
         e.preventDefault()
         dispatchPanel('escape')
         return
@@ -510,18 +617,19 @@ export default function App(): JSX.Element {
       e.preventDefault()
       dispatchPanel('browser-new-tab')
     }
-    document.addEventListener('keydown', onKeyDown, true)
+    const docs = auxWin ? [document, auxWin.win.document] : [document]
+    for (const doc of docs) doc.addEventListener('keydown', onKeyDown, true)
     // PLATFORM§6
     ;(window as unknown as { __koloftShortcutsReady?: boolean }).__koloftShortcutsReady = true
     return () => {
-      document.removeEventListener('keydown', onKeyDown, true)
+      for (const doc of docs) doc.removeEventListener('keydown', onKeyDown, true)
       offNewSession()
       offNewWorktree()
       offClose()
       offRestart()
       offNewTerminal()
     }
-  }, [newTerminalTab, dispatchPanel, globalNew])
+  }, [newTerminalTab, dispatchPanel, globalNew, auxWin])
 
   useEffect(() => {
     return window.api.shortcuts.onBrowserCommand((cmd) => {
@@ -1111,8 +1219,8 @@ export default function App(): JSX.Element {
   const terminalReady = panelReady && !!(landedSession?.alive && landedSession.sessionId)
 
   useEffect(() => {
-    window.api.workbench.setAvailable(panelReady, terminalReady)
-  }, [panelReady, terminalReady])
+    window.api.workbench.setAvailable(panelReady && !popped, terminalReady)
+  }, [panelReady, terminalReady, popped])
 
   useEffect(() => {
     return subscribeMenuFlags(({ editing, anyDirty }) => {
@@ -1137,8 +1245,8 @@ export default function App(): JSX.Element {
   )
 
   const panelOpen = panelIsOpen({ workbenchOpen }, panelTab)
-  const panelFull = panelOpen && workbenchFull
-  const panelShown = panelOpen || panelFull
+  const panelFull = !popped && panelOpen && workbenchFull
+  const panelShown = popped ? !!panelTab : panelOpen || panelFull
   // ADR-0011
   const [panelVisible, setPanelVisible] = useState({ on: panelShown, tab: panelTab })
   useEffect(() => {
@@ -1161,13 +1269,21 @@ export default function App(): JSX.Element {
     setCdpOps((q) => q.filter((o) => o.opId !== opId))
   }, [])
   // PLATFORM§9
-  const staged =
-    !panelShown && (cdpOps.length > 0 || Object.values(cdpAttached).some((ids) => ids.length > 0))
+  const staged = !popped && !panelShown && (cdpOps.length > 0 || anyAttached(cdpAttached))
 
   const [panelMounted, setPanelMounted] = useState(false)
   useEffect(() => {
-    if (panelShown) setPanelMounted(true)
-  }, [panelShown])
+    if (panelShown || popped) setPanelMounted(true)
+  }, [panelShown, popped])
+
+  useEffect(
+    () =>
+      useStore.subscribe((s, prev) => {
+        if (s.workbenchLoad !== prev.workbenchLoad && auxWinRef.current)
+          window.api.workbenchWindow.raise(false)
+      }),
+    []
+  )
 
   // PLATFORM§20 PLATFORM§23
   useEffect(() => {
@@ -1299,16 +1415,18 @@ export default function App(): JSX.Element {
   return (
     <div className={'app' + (sidebarHidden ? ' sb-off' : '') + (osFullscreen ? ' os-full' : '')}>
       {toast && (
-        <div
-          className={'toast' + (toastReveal ? ' link' : '')}
-          onClick={() => {
-            if (!toastReveal) return
-            window.api.fs.reveal(toastReveal)
-            dismissToast()
-          }}
-        >
-          <span className="toast-msg">{toast}</span>
-        </div>
+        <FocusedWindowPortal>
+          <div
+            className={'toast' + (toastReveal ? ' link' : '')}
+            onClick={() => {
+              if (!toastReveal) return
+              window.api.fs.reveal(toastReveal)
+              dismissToast()
+            }}
+          >
+            <span className="toast-msg">{toast}</span>
+          </div>
+        </FocusedWindowPortal>
       )}
 
       <div className="side" style={{ width: sidebarWidth }}>
@@ -1573,7 +1691,7 @@ export default function App(): JSX.Element {
               </div>
             </div>
           </div>
-          {panelShown && !panelFull && (
+          {panelShown && !panelFull && !popped && (
             <div
               className={'gutter-v' + (vDragging ? ' active' : '')}
               onMouseDown={startVResize}
@@ -1581,7 +1699,7 @@ export default function App(): JSX.Element {
             />
           )}
           {/* PLATFORM§9 */}
-          {panelMounted && (
+          {homeKnown && panelMounted && !popped && (
             <div
               className={
                 'island wb-col' +
@@ -1606,12 +1724,53 @@ export default function App(): JSX.Element {
                       : { width: 0 })
               }}
             >
+              <WorkbenchSlot />
+              {switching && !staged && activeTab && (
+                <ResumingMask
+                  title={activeSession?.title ?? activeTab.title}
+                  label="Loading session…"
+                  late
+                />
+              )}
+            </div>
+          )}
+          {auxWin &&
+            createPortal(
+              <>
+                {!panelTab && (
+                  <div className="empty">
+                    <div>No session on screen</div>
+                    <button
+                      className="mini"
+                      aria-label="Put back beside the session"
+                      onClick={dock}
+                    >
+                      Put back
+                    </button>
+                  </div>
+                )}
+                {switching && panelTab && activeTab && (
+                  <ResumingMask
+                    title={activeSession?.title ?? activeTab.title}
+                    label="Loading session…"
+                    late
+                  />
+                )}
+              </>,
+              auxWin.column
+            )}
+          {homeKnown &&
+            (panelMounted || popped) &&
+            createPortal(
               <WorkbenchPane
                 tabId={panelTab ?? null}
                 states={workbench}
                 liveTabs={liveTabs}
                 visible={panelOnScreen}
                 full={panelFull}
+                popped={popped}
+                onPopOut={popOut}
+                onDock={dock}
                 command={panelCmd}
                 dialog={browserDialog}
                 treeRoot={fileTreeRoot}
@@ -1643,16 +1802,9 @@ export default function App(): JSX.Element {
                   const owner = tabForSession(st, sid)
                   return owner ? st.openCdpTab(owner, url) : Promise.resolve(null)
                 }}
-              />
-              {switching && !staged && activeTab && (
-                <ResumingMask
-                  title={activeSession?.title ?? activeTab.title}
-                  label="Loading session…"
-                  late
-                />
-              )}
-            </div>
-          )}
+              />,
+              workbenchHost()
+            )}
           {previewShown && panelTab && (
             <WorkbenchPreview
               tabId={panelTab}
@@ -1740,10 +1892,12 @@ export default function App(): JSX.Element {
           <DiscordSetup />
           <BindConductorDialog />
           <UpdateModal />
-          <UnsavedDialog />
         </>,
         document.body
       )}
+      <FocusedWindowPortal>
+        <UnsavedDialog />
+      </FocusedWindowPortal>
       {overlay?.open && <BrowserOverlay url={overlay.url} onClose={closeOverlay} />}
       {extAsks[0] && (
         <ExtensionConfirm

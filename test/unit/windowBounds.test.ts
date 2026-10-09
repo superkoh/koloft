@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import {
+  displayContaining,
   fullscreenOption,
   usableBounds,
   windowMinWidth,
+  workbenchWindowBounds,
   type WinBounds
 } from '../../src/main/windowBounds'
 
@@ -52,6 +54,33 @@ describe('windowState: saved bounds are restored only while they stay on-screen'
     expect(usableBounds({ x: '10', y: 10, width: 1200, height: 800 }, [LAPTOP_WORKAREA])).toBeNull()
     expect(usableBounds({ x: 10, y: 10, width: NaN, height: 800 }, [LAPTOP_WORKAREA])).toBeNull()
     expect(usableBounds({ x: 10, y: 10, width: 50, height: 50 }, [LAPTOP_WORKAREA])).toBeNull()
+  })
+})
+
+describe('Workbench window placement: it goes to the other screen unless it was put somewhere still on screen', () => {
+  const main = { x: 100, y: 60, width: 1400, height: 900 }
+
+  it('opens centred on a screen other than the main window’s', () => {
+    const b = workbenchWindowBounds(undefined, [LAPTOP_WORKAREA, EXTERNAL_TO_THE_RIGHT], main)
+    expect(displayContaining(b, [LAPTOP_WORKAREA, EXTERNAL_TO_THE_RIGHT])).toBe(
+      EXTERNAL_TO_THE_RIGHT
+    )
+  })
+
+  it('with one screen, opens on the right half of it', () => {
+    const b = workbenchWindowBounds(undefined, [LAPTOP_WORKAREA], main)
+    expect(b.x + b.width).toBe(LAPTOP_WORKAREA.x + LAPTOP_WORKAREA.width)
+    expect(b.width).toBe(LAPTOP_WORKAREA.width / 2)
+  })
+
+  it('reopens where it was left while that spot is on screen, and picks afresh once it is not', () => {
+    const left = { x: 2000, y: 100, width: 900, height: 800 }
+    expect(workbenchWindowBounds(left, [LAPTOP_WORKAREA, EXTERNAL_TO_THE_RIGHT], main)).toEqual(
+      left
+    )
+    expect(
+      displayContaining(workbenchWindowBounds(left, [LAPTOP_WORKAREA], main), [LAPTOP_WORKAREA])
+    ).toBe(LAPTOP_WORKAREA)
   })
 })
 

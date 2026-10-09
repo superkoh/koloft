@@ -1,6 +1,7 @@
 import { useEffect, useRef, type JSX } from 'react'
 import { LuFileText, LuTrash2 } from 'react-icons/lu'
 import type { DownloadItem, DownloadList } from './downloadList'
+import { windowOf } from '../workbenchHost'
 
 const OPENER_BUTTON_IS_NOT_OUTSIDE = '[data-panel-toggle="downloads"]'
 
@@ -44,11 +45,12 @@ export function BrowserDownloads({
       if (target?.closest(OPENER_BUTTON_IS_NOT_OUTSIDE)) return
       onClose()
     }
-    document.addEventListener('keydown', onKey, true)
-    document.addEventListener('mousedown', onDown, true)
+    const doc = windowOf(ref.current).document
+    doc.addEventListener('keydown', onKey, true)
+    doc.addEventListener('mousedown', onDown, true)
     return () => {
-      document.removeEventListener('keydown', onKey, true)
-      document.removeEventListener('mousedown', onDown, true)
+      doc.removeEventListener('keydown', onKey, true)
+      doc.removeEventListener('mousedown', onDown, true)
     }
   }, [onClose])
 

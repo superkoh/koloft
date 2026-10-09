@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type JSX } from 'react'
 import { useStore } from '../store'
 import { unsavedBody, UNSAVED_TITLE } from '../closeSession'
 import { removeJobsNote } from '../unsavedGuard'
+import { windowOf } from '../workbenchHost'
 
 export function UnsavedDialog(): JSX.Element | null {
   const prompt = useStore((s) => s.unsavedPrompt)
@@ -28,12 +29,13 @@ export function UnsavedDialog(): JSX.Element | null {
       }
       if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
       const row = [cancelRef.current, discardRef.current, saveRef.current]
-      const at = row.indexOf(document.activeElement as HTMLButtonElement)
+      const at = row.indexOf(win.document.activeElement as HTMLButtonElement)
       const next = at < 0 ? row.length - 1 : at + (e.key === 'ArrowRight' ? 1 : -1)
       row[Math.max(0, Math.min(row.length - 1, next))]?.focus()
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    const win = windowOf(saveRef.current)
+    win.addEventListener('keydown', onKey)
+    return () => win.removeEventListener('keydown', onKey)
   }, [prompt, saveInFlight])
 
   if (!prompt) return null

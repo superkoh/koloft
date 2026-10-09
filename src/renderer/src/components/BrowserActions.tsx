@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
 import { LuPuzzle } from 'react-icons/lu'
 import { BROWSER_PARTITION } from '@shared/types'
 import { actionView, splitActions, type ActionRowState, type ActionView } from './extensionActions'
+import { useWorkbenchMoves, windowOf } from '../workbenchHost'
 
 const ICON_32PX_SCALED_DOWN_TO_FIT = '/32/2'
 const PLATFORM_CURRENT_TAB = -1
@@ -42,6 +43,7 @@ export function BrowserActions(): JSX.Element | null {
   const [state, setState] = useState<ActionRowState>({ actions: [] })
   const [menuOpen, setMenuOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
+  const moves = useWorkbenchMoves()
   const popupArmed = useRef(false)
 
   useEffect(() => {
@@ -75,13 +77,14 @@ export function BrowserActions(): JSX.Element | null {
       setMenuOpen(false)
       dismissPopup()
     }
-    window.addEventListener('mousedown', onDown, CAPTURE_BEFORE_XTERM_SWALLOWS_ESC)
-    window.addEventListener('keydown', onKey, CAPTURE_BEFORE_XTERM_SWALLOWS_ESC)
+    const win = windowOf(root.current)
+    win.addEventListener('mousedown', onDown, CAPTURE_BEFORE_XTERM_SWALLOWS_ESC)
+    win.addEventListener('keydown', onKey, CAPTURE_BEFORE_XTERM_SWALLOWS_ESC)
     return () => {
-      window.removeEventListener('mousedown', onDown, CAPTURE_BEFORE_XTERM_SWALLOWS_ESC)
-      window.removeEventListener('keydown', onKey, CAPTURE_BEFORE_XTERM_SWALLOWS_ESC)
+      win.removeEventListener('mousedown', onDown, CAPTURE_BEFORE_XTERM_SWALLOWS_ESC)
+      win.removeEventListener('keydown', onKey, CAPTURE_BEFORE_XTERM_SWALLOWS_ESC)
     }
-  }, [dismissPopup, menuOpen])
+  }, [dismissPopup, menuOpen, moves])
 
   const activate = useCallback(async (id: string, from: HTMLElement): Promise<void> => {
     const rect = from.getBoundingClientRect()

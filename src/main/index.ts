@@ -149,8 +149,19 @@ import {
 import { GithubCountsSweep } from './githubCounts'
 import { runGh } from './prChecks'
 import { addPrWorktree, commitAll, GIT_REF_RE, pushBranch } from './gitSteps'
-import { restoredWindowGeometry, trackWindowState } from './windowState'
-import { fullscreenOption, windowMinWidth } from './windowBounds'
+import { restoredWindowGeometry, trackWindowState, workbenchWasPopped } from './windowState'
+import {
+  adoptWorkbenchWindow,
+  dropWorkbenchWindow,
+  raiseWorkbenchWindow,
+  releaseWorkbenchWindow,
+  requestDock,
+  setupWorkbenchWindow,
+  workbenchWindow,
+  workbenchWindowMinimized,
+  workbenchWindowOpenResponse
+} from './workbenchWindow'
+import { fullscreenOption, koloftWindowChrome, windowMinWidth } from './windowBounds'
 import { closeAllFileWatchers, closeAllDirWatchers } from './fileWatch'
 import { sanitizeBase } from './gitStatus'
 import { Hosts } from './host/hosts'
@@ -180,6 +191,7 @@ import {
   relayTabClosed,
   relayTabRebound,
   sessionDrivingGuest,
+  anyGuestDriven,
   setRelayEnabled,
   startRelay,
   writeRelayEnv,
@@ -497,7 +509,9 @@ function attentionSubjectOf(tabId: string): AttentionSubject {
 function attentionCtx(): AttentionContext {
   let focused = false
   try {
-    focused = !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()
+    focused =
+      (!!mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()) ||
+      !!workbenchWindow()?.isFocused()
   } catch {}
   return { windowFocused: focused, activeTabId: uiActiveTabId }
 }
@@ -1316,6 +1330,44 @@ function rendererTeardown(): void {
   for (const h of ptyMgr.list()) if (h.util) teardownKilledPtys.add(h.id)
   ptyMgr.killUtilOrphans()
   ptyMgr.reapDead()
+  dropWorkbenchWindow()
+}
+
+function guardGuestHost(wc: WebContents): void {
+  wc.on('will-attach-webview', (e, webPreferences, params) => {
+    if (!enforceGuestAttach(webPreferences, params, hostPreload())) e.preventDefault()
+  })
+  // PLATFORM§10
+  let pressedInHost = false
+  wc.on('before-mouse-event', (e, mouse) => {
+    if (mouse.type === 'mouseDown') pressedInHost = true
+    if (mouse.type !== 'mouseUp') return
+    const releaseWithoutHostPress = !pressedInHost
+    pressedInHost = false
+    if (releaseWithoutHostPress) e.preventDefault()
+  })
+}
+
+// PLATFORM§20
+const WEBGL_REPAIR_BLUR_MS = 30_000
+function watchAppFocus(win: BrowserWindow, report: (focused: boolean) => void): void {
+  let blurredAt = 0
+  win.on('restore', requestWebglRepair)
+  win.on('focus', () => {
+    report(true)
+    if (blurredAt && Date.now() - blurredAt > WEBGL_REPAIR_BLUR_MS) requestWebglRepair()
+    blurredAt = 0
+    if (uiActiveTabId) {
+      consumeOutletDedupe(uiActiveTabId)
+      attention.clear(uiActiveTabId)
+    }
+    void freshness?.sweep()
+  })
+  win.on('blur', () => {
+    report(false)
+    blurredAt = Date.now()
+    if (uiActiveTabId) attention.reconsider(uiActiveTabId, attentionCtx())
+  })
 }
 
 function createWindow(): void {
@@ -1326,11 +1378,8 @@ function createWindow(): void {
     minWidth: windowMinWidth(geo.bounds.width),
     minHeight: 560,
     ...fullscreenOption(geo.fullScreen && !BACKGROUND_TEST),
-    show: !BACKGROUND_TEST,
+    ...koloftWindowChrome(BACKGROUND_TEST),
     title: 'Koloft',
-    backgroundColor: '#0e0e10',
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 18, y: 18 },
     webPreferences: {
       preload: hostPreload(),
       sandbox: false,
@@ -1341,22 +1390,14 @@ function createWindow(): void {
     }
   })
   const appUrl = rendererUrl()
-  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-  mainWindow.webContents.on('will-attach-webview', (e, webPreferences, params) => {
-    if (!enforceGuestAttach(webPreferences, params, hostPreload())) e.preventDefault()
-  })
+  mainWindow.webContents.setWindowOpenHandler(({ frameName, url }) =>
+    workbenchWindowOpenResponse(frameName, url)
+  )
+  mainWindow.webContents.on('did-create-window', adoptWorkbenchWindow)
   mainWindow.webContents.on('will-navigate', (e, url) => {
     if (!isAppNavigation(url, appUrl)) e.preventDefault()
   })
-  // PLATFORM§10
-  let pressedInHost = false
-  mainWindow.webContents.on('before-mouse-event', (e, mouse) => {
-    if (mouse.type === 'mouseDown') pressedInHost = true
-    if (mouse.type !== 'mouseUp') return
-    const releaseWithoutHostPress = !pressedInHost
-    pressedInHost = false
-    if (releaseWithoutHostPress) e.preventDefault()
-  })
+  guardGuestHost(mainWindow.webContents)
   // PLATFORM§5
   if (!BACKGROUND_TEST && geo.maximized && !geo.fullScreen) mainWindow.maximize()
   trackWindowState(
@@ -1370,8 +1411,8 @@ function createWindow(): void {
     rendererTeardown()
   })
   mainWindow.on('closed', () => {
-    rendererTeardown()
     mainWindow = null
+    rendererTeardown()
   })
   // PLATFORM§5
   const crashReloads: number[] = []
@@ -1385,28 +1426,10 @@ function createWindow(): void {
     crashReloads.push(now)
     if (mainWindow && !mainWindow.webContents.isDestroyed()) mainWindow.webContents.reload()
   })
-  // PLATFORM§20
-  const WEBGL_REPAIR_BLUR_MS = 30_000
-  let blurredAt = 0
-  mainWindow.on('restore', requestWebglRepair)
   mainWindow.on('enter-full-screen', () => sendToRenderer('window:fullscreen', true))
   mainWindow.on('leave-full-screen', () => sendToRenderer('window:fullscreen', false))
-  mainWindow.on('focus', () => {
-    // PLATFORM§10
-    sendToRenderer('window:focus', true)
-    if (blurredAt && Date.now() - blurredAt > WEBGL_REPAIR_BLUR_MS) requestWebglRepair()
-    blurredAt = 0
-    if (uiActiveTabId) {
-      consumeOutletDedupe(uiActiveTabId)
-      attention.clear(uiActiveTabId)
-    }
-    void freshness?.sweep()
-  })
-  mainWindow.on('blur', () => {
-    sendToRenderer('window:focus', false)
-    blurredAt = Date.now()
-    if (uiActiveTabId) attention.reconsider(uiActiveTabId, attentionCtx())
-  })
+  // PLATFORM§10
+  watchAppFocus(mainWindow, (focused) => sendToRenderer('window:focus', focused))
 
   const devUrl = process.env['ELECTRON_RENDERER_URL']
   if (devUrl) {
@@ -1438,8 +1461,17 @@ app.whenReady().then(() => {
   setupBrowserPartition()
   updateDockBadge(attention.list())
   // PLATFORM§15
+  setupWorkbenchWindow({
+    main: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null),
+    background: BACKGROUND_TEST,
+    guardHost: guardGuestHost,
+    watchFocus: watchAppFocus,
+    send: sendToRenderer,
+    agentDriving: anyGuestDriven,
+    quitting: () => quitCommitted
+  })
   setupExtensions({
-    window: () => mainWindow,
+    window: () => workbenchWindow() ?? mainWindow,
     openTab: openExtensionTab,
     ask: (request) => sendToRenderer('ext:permission-request', request)
   })
@@ -2612,6 +2644,9 @@ function cdpOp(
   })
 }
 
+const WORKBENCH_MINIMIZED_REFUSAL =
+  'the Workbench window is minimized, so its pages cannot be captured until the owner restores it'
+
 function relayDeps(): RelayDeps {
   return {
     sessionForTab: (tabId) => claudeBackend.sessionIdOf(tabId) ?? null,
@@ -2632,6 +2667,8 @@ function relayDeps(): RelayDeps {
       await cdpOp('close', sessionId, { targetId })
     },
     stage: async (sessionId, targetId) => {
+      // PLATFORM§9
+      if (workbenchWindowMinimized()) throw new Error(WORKBENCH_MINIMIZED_REFUSAL)
       await cdpOp('stage', sessionId, { targetId })
     },
     setAttached: (sessionId, targetIds) => {
@@ -2713,8 +2750,11 @@ const downloadSources = new Map<string, string>()
 const retryTargets = new Map<string, string>()
 
 // PLATFORM§8
-function allowPageFullscreenWithoutTheWindow(callback: (granted: boolean) => void): void {
-  const win = mainWindow
+function allowPageFullscreenWithoutTheWindow(
+  guest: WebContents,
+  callback: (granted: boolean) => void
+): void {
+  const win = BrowserWindow.fromWebContents(guest) ?? mainWindow
   win?.setFullScreenable(false)
   callback(true)
   setImmediate(() => {
@@ -2732,7 +2772,7 @@ function setupBrowserPartition(): void {
       return
     }
     if (decision.kind === 'allow') {
-      if (permission === 'fullscreen') allowPageFullscreenWithoutTheWindow(callback)
+      if (permission === 'fullscreen') allowPageFullscreenWithoutTheWindow(_wc, callback)
       else callback(true)
       return
     }
@@ -3648,6 +3688,12 @@ function registerIpc(): void {
       sanitizeSessionWorkbench(state, workspaceMgr.defaultOpen())
     )
   })
+  ipcMain.handle('workbench-window:was-popped', () => workbenchWasPopped())
+  ipcMain.on('workbench-window:request-dock', requestDock)
+  ipcMain.on('workbench-window:released', releaseWorkbenchWindow)
+  ipcMain.on('workbench-window:raise', (_e, takeFocus: unknown) =>
+    raiseWorkbenchWindow(takeFocus === true)
+  )
   ipcMain.on('workbench:available', (_e, available: unknown, terminal: unknown) => {
     setWorkbenchAvailable(available === true, terminal === true)
   })
@@ -3762,7 +3808,9 @@ function registerIpc(): void {
     declineQuit()
   })
 
-  ipcMain.on('shortcut:window', (e, cmd: WindowCommand) => applyWindowCommand(e.sender, cmd))
+  ipcMain.on('shortcut:window', (e, cmd: WindowCommand) =>
+    applyWindowCommand(BrowserWindow.getFocusedWindow()?.webContents ?? e.sender, cmd)
+  )
 
   ipcMain.on('browser:guest-limit', (e) => {
     e.returnValue = browserGuestLimit()
@@ -4088,8 +4136,9 @@ function registerIpc(): void {
   ipcMain.handle('preview:openFileDialog', async () => {
     const stub = process.env.KOLOFT_FILE_DIALOG_FILE
     if (stub) return takeStubbedDialogPick(stub)
-    if (!mainWindow) return null
-    const res = await dialog.showOpenDialog(mainWindow, { properties: ['openFile'] })
+    const parent = workbenchWindow() ?? mainWindow
+    if (!parent) return null
+    const res = await dialog.showOpenDialog(parent, { properties: ['openFile'] })
     if (res.canceled || res.filePaths.length === 0) return null
     return res.filePaths[0]
   })

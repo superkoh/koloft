@@ -1,6 +1,7 @@
 import { useState, type JSX } from 'react'
 import { createPortal } from 'react-dom'
 import { LuX } from 'react-icons/lu'
+import { workbenchDoc } from '../workbenchHost'
 
 export function CommitDialog({
   branch,
@@ -65,6 +66,6 @@ export function CommitDialog({
         </div>
       </div>
     </div>,
-    document.body
+    workbenchDoc().body
   )
 }
