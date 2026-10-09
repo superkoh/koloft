@@ -23,6 +23,10 @@ electronLanguages:
   - en
   - zh_CN
 
+# Runs after the app is assembled and before it is signed, so the signature covers the
+# stripped native binaries.
+afterPack: scripts/strip-native-build-paths.cjs
+
 asarUnpack:
   - '**/node_modules/node-pty/**'
   # executed by an external bash wrapper (src/main/statusline.ts) via
@@ -39,8 +43,12 @@ mac:
         - arm64
   category: public.app-category.developer-tools
   icon: build/icon.icns
-  # personal / local build — no code signing or notarization
-  identity: null
+  # `dist:dmg` signs with the Developer ID identity in the login keychain and refuses to
+  # build without one; `dist:mac` and `dist:beta` stay unsigned. Hardened runtime is
+  # electron-builder's default. camera + audio-input: a Workbench web page can ask for
+  # the mic or camera, and under the hardened runtime macOS refuses both without these.
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
   artifactName: ${productName}-${version}-${arch}.${ext}
 
 dmg:

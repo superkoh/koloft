@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
-# Build a drag-to-install DMG from the packaged Koloft.app using hdiutil makehybrid.
-# Unlike `electron-builder`'s dmg target, makehybrid reads the source folder
-# directly and never needs a writable disk-image mount, so it also works in
-# sandboxed/CI environments where mounting images read-write is blocked.
+# Build a drag-to-install DMG from the signed, notarized Koloft.app, then sign,
+# notarize and staple the DMG itself.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 APP="release/mac-arm64/Koloft.app"
 VER="$(node -p "require('./package.json').version")"
 OUT="release/Koloft-${VER}-arm64.dmg"
-TMP_RO="$(mktemp -u /tmp/koloft-ro-XXXX.dmg)"
 STAGING="$(mktemp -d)"
 
 if [ ! -d "$APP" ]; then
   echo "error: $APP not found — run 'electron-builder --mac --arm64 dir' first" >&2
+  exit 1
+fi
+if [ -z "${APPLE_KEYCHAIN_PROFILE:-}" ]; then
+  echo "error: APPLE_KEYCHAIN_PROFILE is not set — run this through 'npm run dist:dmg'" >&2
   exit 1
 fi
 
@@ -22,26 +23,28 @@ fi
 # make-dmg.sh" path, where the .app may predate the dependency fix.
 bash scripts/assert-webgl-atlas.sh "$APP/Contents/Resources/app.asar"
 
-cp -R "$APP" "$STAGING/Koloft.app"
-ln -s /Applications "$STAGING/Applications"
+# Gatekeeper's own verdict: passes only for a Developer ID signature with a notarization
+# ticket, so an unsigned or stale .app never reaches a dmg.
+spctl --assess --type execute --verbose=2 "$APP"
 
-# Native modules compiled on this machine (npm run rebuild) keep its absolute build paths in
-# their debug entries. Strip those from the shipped copy, then re-sign ad hoc: arm64 macOS
-# refuses to load code whose signature no longer matches.
-find "$STAGING/Koloft.app/Contents/Resources/app.asar.unpacked" -type f \
-  -path '*/build/Release/*' \( -name '*.node' -o -name spawn-helper \) -print0 |
-  while IFS= read -r -d '' bin; do
-    strip -S "$bin"
-    codesign -s - -f "$bin" 2>/dev/null
-  done
-if grep -rqa "$HOME" "$STAGING/Koloft.app/Contents/Resources"; then
+# The build paths were stripped before signing (scripts/strip-native-build-paths.cjs).
+if grep -rqa "$HOME" "$APP/Contents/Resources"; then
   echo "error: the app still contains $HOME" >&2
   exit 1
 fi
 
-rm -f "$OUT" "$TMP_RO"
-hdiutil makehybrid -hfs -hfs-volume-name "Koloft" -o "$TMP_RO" "$STAGING" >/dev/null
-hdiutil convert "$TMP_RO" -format UDZO -o "$OUT" >/dev/null
+ditto "$APP" "$STAGING/Koloft.app"
+ln -s /Applications "$STAGING/Applications"
 
-rm -rf "$STAGING" "$TMP_RO"
+# PLATFORM§3
+rm -f "$OUT"
+hdiutil create -volname "Koloft" -srcfolder "$STAGING" -fs HFS+ -format UDZO "$OUT" >/dev/null
+rm -rf "$STAGING"
+
+IDENTITY="$(codesign -dvv "$APP" 2>&1 | sed -n 's/^Authority=\(Developer ID Application: .*\)$/\1/p')"
+codesign --sign "$IDENTITY" --timestamp "$OUT"
+xcrun notarytool submit "$OUT" --keychain-profile "$APPLE_KEYCHAIN_PROFILE" --wait
+xcrun stapler staple "$OUT"
+spctl --assess --type open --context context:primary-signature --verbose=2 "$OUT"
+
 echo "Created $OUT"
