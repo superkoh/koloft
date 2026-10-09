@@ -2202,6 +2202,22 @@ body {
   border-radius: 4px;
   padding: 1px 6px;
 }
+.restore-snippet {
+  max-width: 100%;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.restore-snippet b {
+  color: var(--accent);
+  font-weight: 600;
+}
+.restoresess .find-input {
+  width: 100%;
+}
 
 .update-modal .modal-body {
   gap: 16px;

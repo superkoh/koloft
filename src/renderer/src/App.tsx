@@ -35,6 +35,7 @@ import type {
   BrowserJsDialog,
   ExtensionPermissionRequest,
   SessionRow,
+  SessionSearchHit,
   WorkspaceRows
 } from '@shared/types'
 import {
@@ -56,6 +57,7 @@ import {
   rowIdOfTab,
   workspaceOfTab,
   DOCK_GUTTER_PX,
+  liveTabIdFor,
   mixesBackends,
   notesHeightFromDrag,
   paneWidthFromDrag,
@@ -102,6 +104,7 @@ import { DiscordSetup } from './components/DiscordSetup'
 import { conductorNotesWorkspace, conductorOfTab } from './conductorRows'
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
 import { RestoreDialog } from './components/RestoreDialog'
+import { SearchSessionsDialog } from './components/SearchSessionsDialog'
 import { CronJobsDialog } from './components/CronJobsDialog'
 import { RemoteWorkspaceDialog } from './components/RemoteWorkspaceDialog'
 import { hostOf } from '@shared/remoteKey'
@@ -273,6 +276,7 @@ export default function App(): JSX.Element {
     path?: string
   } | null>(null)
   const [restoreWs, setRestoreWs] = useState<string | null>(null)
+  const [searchOpen, setSearchOpen] = useState(false)
   const [cronWs, setCronWs] = useState<{ path: string; jobId?: string } | null>(null)
   const [addMenu, setAddMenu] = useState(false)
   const [remoteDialog, setRemoteDialog] = useState(false)
@@ -627,6 +631,29 @@ export default function App(): JSX.Element {
       dispatchPanel('find-files')
     })
   }, [dispatchPanel])
+
+  useEffect(() => window.api.shortcuts.onSearchSessions(() => setSearchOpen(true)), [])
+
+  const closeSearch = useCallback(() => setSearchOpen(false), [])
+  const openSearchHit = useCallback((hit: SessionSearchHit): void => {
+    setSearchOpen(false)
+    const st = useStore.getState()
+    const row = st.workspaceRows
+      .find((w) => w.workspace.path === hit.workspacePath)
+      ?.rows.find((r) => r.id === hit.row.id)
+    if (!row) {
+      const { id, backendId, title } = hit.row
+      void resumeSession({ id, backendId, title, restore: true })
+      return
+    }
+    const tabId = liveTabIdFor(st.sessions, st.tabs, row.id)
+    if (tabId) {
+      window.api.attention.visit(tabId)
+      st.activateTab(tabId)
+      return
+    }
+    void resumeSession(row)
+  }, [])
 
   useEffect(() => {
     return window.api.browser.onOpenRequest((r) => {
@@ -1636,6 +1663,7 @@ export default function App(): JSX.Element {
               }}
             />
           )}
+          {searchOpen && <SearchSessionsDialog onClose={closeSearch} onOpen={openSearchHit} />}
           {remoteDialog && (
             <RemoteWorkspaceDialog
               onAdd={(key) => void addRemoteWorkspace(key)}

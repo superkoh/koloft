@@ -67,6 +67,16 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
         ]
       },
       {
+        keys: ['⌥⌘F'],
+        name: 'Search sessions',
+        uses: [
+          {
+            what: 'Lists every session, in every workspace, whose conversation or title holds the words.'
+          },
+          { where: 'No workspace', what: 'No matches.' }
+        ]
+      },
+      {
         keys: ['⌘B'],
         name: 'Toggle Sidebar',
         uses: [

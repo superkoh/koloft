@@ -46,6 +46,7 @@ import { replacesTheConversation } from './hookRouting'
 import { isRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { sourceOf } from '@shared/sessionBackend'
 import type { RemoteGitInfo } from './remote/install'
+import type { SearchCandidate } from './sessionSearch'
 
 const RESCAN_DEBOUNCE_MS = 250
 const PANEL_SAVE_DEBOUNCE_MS = 600
@@ -200,6 +201,7 @@ export class WorkspaceManager {
   private allRowsCache = new Map<string, SessionRow[]>()
   private wsBySession = new Map<string, string>()
   private bucketDirById = new Map<string, string>()
+  private transcriptFileById = new Map<string, string>()
   private state: RescanState = { bucketDirs: [], workspaceSlugs: [] }
   private launches = new Map<string, PendingLaunch>()
   private rootWatchers = new Map<string, fs.FSWatcher>()
@@ -237,6 +239,12 @@ export class WorkspaceManager {
     return (this.allRowsCache.get(wsPath) ?? [])
       .filter((r) => !this.isMember(r.id) && !running.has(r.id))
       .sort((a, b) => b.mtime - a.mtime)
+  }
+
+  searchableRows(): SearchCandidate[] {
+    return [...this.allRowsCache].flatMap(([workspacePath, rows]) =>
+      rows.map((row) => ({ row, workspacePath, file: this.transcriptFileById.get(row.id) }))
+    )
   }
 
   findRow(sessionId: string): SessionRow | undefined {
@@ -675,6 +683,7 @@ export class WorkspaceManager {
     const allRowsByWs = new Map<string, SessionRow[]>()
     const wsBySession = new Map<string, string>()
     const bucketDirById = new Map<string, string>()
+    const transcriptFileById = new Map<string, string>()
     const bucketMtimeById = new Map<string, number>()
     const bucketDirs: string[] = []
     const workspaceSlugs: string[] = []
@@ -711,6 +720,7 @@ export class WorkspaceManager {
               if (prev === undefined || f.mtime > prev) {
                 bucketMtimeById.set(f.id, f.mtime)
                 bucketDirById.set(f.id, dir)
+                transcriptFileById.set(f.id, path.join(root, slug, f.id + '.jsonl'))
               }
             }
           }
@@ -810,6 +820,7 @@ export class WorkspaceManager {
     }
 
     this.bucketDirById = bucketDirById
+    this.transcriptFileById = transcriptFileById
     const ordered = this.inLayoutOrder(payload)
     this.rowsCache = this.stampLive(ordered, await this.revealDirsExisting(ordered))
     this.allRowsCache = allRowsByWs

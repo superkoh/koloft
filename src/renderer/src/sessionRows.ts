@@ -179,6 +179,18 @@ export function isOrphanRow(
   return !tabs.some((t) => t.alive && (t.id === bound || t.sessionId === row.id))
 }
 
+// CODEX§9
+export function liveTabIdFor(
+  sessions: { sessionId: string; tabId: string; alive: boolean }[],
+  tabs: { id: string; sessionId?: string; alive: boolean }[],
+  sessionId: string
+): string | undefined {
+  return (
+    sessions.find((s) => s.sessionId === sessionId && s.alive)?.tabId ??
+    tabs.find((t) => t.alive && t.sessionId === sessionId)?.id
+  )
+}
+
 export function mixesBackends(rows: { backendId: SessionBackend }[]): boolean {
   return new Set(rows.map((r) => r.backendId)).size > 1
 }
