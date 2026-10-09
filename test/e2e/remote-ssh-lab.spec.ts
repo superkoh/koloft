@@ -4,8 +4,20 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { seedSettings, type E2EEnv } from './helpers/env'
 import {
+  HAVE_REAL_GH,
+  NEEDS_REAL_GH,
+  installRealGhThatOnlyReads,
+  seedSettings,
+  setGithubFixture,
+  type E2EEnv
+} from './helpers/env'
+import {
+  PR_3_CHECKS_LINE,
+  PR_3_FAILING_CHECK_PASTE_HEAD,
+  PR_3_FIRST_ERROR_LINE,
+  PR_3_NPM_ERROR,
+  PR_3_OF_KOLOFT,
   WORKBENCH,
   claudePromptsIn,
   claudeRepliesIn,
@@ -437,6 +449,130 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       },
       (lab) =>
         useRealClaudeOnTheMachine(env, lab, [`/home/kuser/proj/.claude/worktrees/${worktree}`])
+    )
+  })
+
+  test('E-SSH-12: the GitHub button on a session on the machine commits and pushes there with real git to an origin on the machine, and the failing checks the REAL gh reads on this Mac reach a REAL claude there through ssh and tmux as one paste that waits for the question typed after it (opt-in, spends real money)', async ({
+    env
+  }) => {
+    test.skip(!HAVE_LINUX_CLAUDE, NEEDS_LINUX_CLAUDE)
+    test.skip(!HAVE_REAL_GH, NEEDS_REAL_GH)
+    test.setTimeout(3 * A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS + 120_000)
+    seedSettings(env, { hintsOff: true })
+    const branch = PR_3_OF_KOLOFT.branch
+    const message = 'E-SSH-12 commit on the machine'
+    const question = 'Reply with only the npm error code.'
+    await withLab(
+      env,
+      async ({ page, lab }) => {
+        runOnTarget(
+          lab,
+          'kuser',
+          'git config --global user.email lab@koloft.test && git config --global user.name lab' +
+            ' && git init -q --bare origin.git && cd proj && printf "NOTES.md\\n" > .gitignore' +
+            ' && git init -q && git add -A && git commit -qm base' +
+            ` && git remote add origin /home/kuser/origin.git && git switch -q -c ${branch}`
+        )
+        await addMachine(page, 'kt-key', 'kuser')
+        await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+        await openMenu(page, page.locator('.ws-head', { hasText: 'kt-key' }))
+        await page.locator('.menu .mi', { hasText: 'New session' }).click()
+        const bound = async (): Promise<{ tabId: string; sessionId: string } | undefined> =>
+          (await page.evaluate(() => window.api.sessions.list())).find(
+            (s) => s.alive && s.sessionId
+          )
+        await expect
+          .poll(async () => (await bound())?.sessionId ?? '', {
+            timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
+          })
+          .not.toBe('')
+        const { tabId, sessionId } = (await bound())!
+        const transcript = (): string => transcriptOnTarget(lab, sessionId)
+        const prompts = (): string[] => claudePromptsIn(transcript())
+        const ghButton = page.locator('.wb-gh')
+        await expect(ghButton.locator('.ci')).toHaveClass(/\bfail\b/, { timeout: 60_000 })
+
+        runOnTarget(lab, 'kuser', 'printf "new\\n" > proj/ssh12.txt')
+        await ghButton.click({ button: 'right' })
+        await page.locator('.wb-ghmenu .mi', { hasText: 'Commit…' }).click()
+        const dialog = page.locator('.modal', { hasText: 'Commit changes' })
+        await dialog.getByLabel('Commit message').fill(message)
+        await dialog.getByLabel('Commit message').press('Enter')
+        await expect(dialog).toHaveCount(0, { timeout: 60_000 })
+        expect(runOnTarget(lab, 'kuser', 'git -C proj log -1 --format=%s').trim()).toBe(message)
+        expect(runOnTarget(lab, 'kuser', 'git -C proj show --name-only --format= HEAD')).toContain(
+          'ssh12.txt'
+        )
+
+        await ghButton.click({ button: 'right' })
+        await page.locator('.wb-ghmenu .mi', { hasText: 'Push' }).click()
+        const head = runOnTarget(lab, 'kuser', 'git -C proj rev-parse HEAD').trim()
+        await expect
+          .poll(
+            () =>
+              runOnTarget(
+                lab,
+                'kuser',
+                `git -C origin.git for-each-ref --format=%\\(objectname\\) refs/heads/${branch}`
+              ).trim(),
+            { timeout: 60_000 }
+          )
+          .toBe(head)
+        expect(
+          runOnTarget(lab, 'kuser', 'git -C proj rev-parse --abbrev-ref @{upstream}').trim()
+        ).toBe(`origin/${branch}`)
+
+        const promptsBefore = prompts().length
+        await ghButton.click({ button: 'right' })
+        await expect(page.locator('.wb-ghmenu .mi.head')).toHaveText(PR_3_CHECKS_LINE)
+        await page.locator('.wb-ghmenu .mi', { hasText: 'Send failing checks' }).click()
+        const screen = (): Promise<string> =>
+          page.locator('.term-island .term-wrap:visible').innerText()
+        // CC§18
+        await expect
+          .poll(screen, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS })
+          .toMatch(/\[Pasted text #\d+ \+\d+ lines\]/)
+        await page.waitForTimeout(A_PASTE_THAT_SENT_ITSELF_WOULD_HAVE_STARTED_A_TURN_BY_MS)
+        await test.info().attach('screen-before-the-question', { body: await screen() })
+        expect(prompts()).toHaveLength(promptsBefore)
+
+        const write = (data: string): Promise<void> =>
+          page.evaluate(([id, d]) => window.api.terminal.write(id, d), [tabId, data])
+        await write(question)
+        for (let i = 0; i < ENTERS_BEFORE_GIVING_UP; i++) {
+          await page.waitForTimeout(TYPED_TEXT_SETTLES_IN_THE_INPUT_BOX_MS)
+          await write('\r')
+          const sent = await expect
+            .poll(() => prompts().length, {
+              timeout: A_SUBMITTED_PROMPT_REACHES_THE_TRANSCRIPT_MS
+            })
+            .toBeGreaterThan(promptsBefore)
+            .then(() => true)
+            .catch(() => false)
+          if (sent) break
+        }
+        expect(prompts()).toHaveLength(promptsBefore + 1)
+        const sent = prompts().at(-1)!
+        await test.info().attach('the-one-message', { body: sent })
+        expect(sent).toContain(PR_3_FAILING_CHECK_PASTE_HEAD)
+        expect(sent).toContain(PR_3_NPM_ERROR)
+        expect(sent).toContain(PR_3_FIRST_ERROR_LINE)
+        expect(outsideThePaste(sent)).toContain(question)
+        const replies = (): string[] => claudeRepliesIn(transcript())
+        await expect
+          .poll(() => replies().length, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS })
+          .toBeGreaterThan(0)
+        console.log(
+          `message: ${JSON.stringify(sent.slice(0, 160))} … ${JSON.stringify(sent.slice(-140))} reply: ${JSON.stringify(replies().at(-1))}`
+        )
+        expect(replies().at(-1)?.trim()).toBe('ERESOLVE')
+        expect(prompts()).toHaveLength(promptsBefore + 1)
+      },
+      (lab) => {
+        useRealClaudeOnTheMachine(env, lab)
+        installRealGhThatOnlyReads(env)
+        setGithubFixture(env, { [remoteKeyFor('kt-key', 'kuser')]: PR_3_OF_KOLOFT })
+      }
     )
   })
 

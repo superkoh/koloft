@@ -361,7 +361,11 @@ const api: KoloftApi = {
       const handler = (_e: unknown, root: string, info: GithubInfo): void => cb(root, info)
       ipcRenderer.on('github:info', handler)
       return () => ipcRenderer.removeListener('github:info', handler)
-    }
+    },
+    checks: (root, pr) => ipcRenderer.invoke('github:checks', root, pr),
+    failingChecksText: (root, pr) => ipcRenderer.invoke('github:failing-checks-text', root, pr),
+    commit: (root, message) => ipcRenderer.invoke('github:commit', root, message),
+    push: (root) => ipcRenderer.invoke('github:push', root)
   },
   workspace: {
     pickFolder: () => ipcRenderer.invoke('workspace:pickFolder'),

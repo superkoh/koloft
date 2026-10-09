@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { Locator, Page } from '@playwright/test'
 import { expect } from './app'
-import type { E2EEnv } from './env'
+import type { E2EEnv, FakeGhCheck } from './env'
 import { encodeCwd, layoutOnDisk, withMember } from './p1'
 import { assertFixtureDir } from './fixtureGuard'
 import { PNG_1X1 } from './filesFixture'
@@ -397,6 +397,72 @@ export function claudeToolResultsIn(jsonl: string): string[] {
       return []
     }
   })
+}
+
+export const ONE_FAILING_OF_FIVE: FakeGhCheck[] = [
+  {
+    name: 'check',
+    bucket: 'fail',
+    link: 'https://github.com/acme/widgets/actions/runs/36829650571/job/110263090912',
+    workflow: 'CI'
+  },
+  ...['lint', 'build', 'docs', 'e2e'].map((name): FakeGhCheck => ({
+    name,
+    bucket: 'pass',
+    link: 'https://github.com/acme/widgets/actions/runs/36829650571/job/1',
+    workflow: 'CI'
+  }))
+]
+
+export const FAILED_LOG =
+  'check\tRun npm test\t2026-10-07T13:25:40.0000000Z AssertionError: expected 1 to be 2\n' +
+  'check\tRun npm test\t2026-10-07T13:25:40.1000000Z ##[error]Process completed with exit code 1.\n'
+
+export const FAILING_CHECK_PASTE_HEAD =
+  'CI check "check" (workflow CI) failed on pull request #265 of acme/widgets.\n' +
+  'Full log: https://github.com/acme/widgets/actions/runs/36829650571/job/110263090912\n\n' +
+  '--- log excerpt (around the first error) ---\n' +
+  'AssertionError: expected 1 to be 2\n' +
+  '##[error]Process completed with exit code 1.'
+
+export const PR_3_OF_KOLOFT = {
+  owner: 'superkoh',
+  repo: 'koloft',
+  branch: 'dependabot/npm_and_yarn/vitejs/plugin-react-6.1.1',
+  pr: 3
+}
+
+export const PR_3_CHECKS_LINE = 'Checks · 1 failing of 2'
+
+export const PR_3_FAILING_CHECK_PASTE_HEAD =
+  'CI check "check" (workflow CI) failed on pull request #3 of superkoh/koloft.\n' +
+  'Full log: https://github.com/superkoh/koloft/actions/runs/35815732286/job/107036731098\n\n' +
+  '--- log excerpt (around the first error) ---\n' +
+  '##[group]Run npm ci\n' +
+  'npm ci\n'
+
+export const PR_3_NPM_ERROR = 'npm error code ERESOLVE'
+export const PR_3_FIRST_ERROR_LINE = '##[error]Process completed with exit code 1.'
+
+export async function sendFailingChecks(page: Page): Promise<void> {
+  await page.locator('.wb-gh').click({ button: 'right' })
+  await page.locator('.wb-ghmenu .mi', { hasText: 'Send failing checks' }).click()
+  await expect
+    .poll(() => page.evaluate(() => !!document.activeElement?.closest('.term-island')))
+    .toBe(true)
+  await page.keyboard.type(TYPED_AFTER_THE_PASTE)
+  await page.keyboard.press('Enter')
+}
+
+export async function expectOnePromptFromTheChecks(
+  prompts: () => string[],
+  head = FAILING_CHECK_PASTE_HEAD
+): Promise<string> {
+  const fromChecks = (): string[] => prompts().filter((p) => p.startsWith(head))
+  await expect.poll(fromChecks, { timeout: 30_000 }).toHaveLength(1)
+  const [prompt] = fromChecks()
+  expect(prompt.endsWith('\n\n' + TYPED_AFTER_THE_PASTE)).toBe(true)
+  return prompt
 }
 
 export function claudePrompts(transcript: string): string[] {

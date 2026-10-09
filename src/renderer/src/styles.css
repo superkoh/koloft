@@ -4286,6 +4286,21 @@ input.switch:focus-visible {
 .wb-gh.pending {
   opacity: 0.45;
 }
+.wb-gh .ci {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.wb-gh .ci.pass {
+  background: var(--good);
+}
+.wb-gh .ci.fail {
+  background: var(--red);
+}
+.wb-gh .ci.pending {
+  background: var(--amber);
+}
 .wb-gh:hover {
   background: var(--bg-3);
   color: var(--fg);

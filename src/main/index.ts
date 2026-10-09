@@ -147,6 +147,8 @@ import {
   type GithubOptions
 } from './github'
 import { GithubCountsSweep } from './githubCounts'
+import { runGh } from './prChecks'
+import { commitAll, pushBranch } from './gitSteps'
 import { restoredWindowGeometry, trackWindowState } from './windowState'
 import { fullscreenOption, windowMinWidth } from './windowBounds'
 import { closeAllFileWatchers, closeAllDirWatchers } from './fileWatch'
@@ -261,7 +263,9 @@ import type {
   SessionWorkbenchState,
   Settings,
   HostId,
-  WhatsNew
+  WhatsNew,
+  GitStepResult,
+  PrChecks
 } from '@shared/types'
 import { AgentRequests, BUILTIN_VERBS, errorText, refused, type AgentVerb } from './agentRequests'
 import { Conductors } from './discord/conductors'
@@ -3184,10 +3188,13 @@ function commitSettings(patch: Partial<Settings>): Settings {
   return s
 }
 
+const BAD_GIT_STEP: GitStepResult = { ok: false, reason: 'bad request' }
+
 const githubOptions: GithubOptions = {
   fixture: parseGithubFixture(process.env.KOLOFT_GITHUB_FIXTURE),
   // PLATFORM§1
   openCounts: (repo) => loginEnvReady().then(() => ghOpenCounts(repo)),
+  gh: (args) => loginEnvReady().then(() => runGh(args)),
   signedIn: async () => {
     try {
       const jar = await session.fromPartition(BROWSER_PARTITION).cookies.get({
@@ -3946,8 +3953,28 @@ function registerIpc(): void {
   })
   ipcMain.handle('github:target', (_e, root: unknown, what: unknown) => {
     if (typeof root !== 'string' || !root) return null
-    if (what !== 'repo' && what !== 'pulls' && what !== 'pr') return null
+    if (what !== 'repo' && what !== 'pulls' && what !== 'pr' && what !== 'compare') return null
     return hosts.of(root).github.target(root, what)
+  })
+  ipcMain.handle('github:checks', (_e, root: unknown, pr: unknown): Promise<PrChecks> => {
+    if (typeof root !== 'string' || !root || !Number.isInteger(pr)) {
+      return Promise.resolve({ state: 'failed' })
+    }
+    return hosts.of(root).github.checks(root, pr as number)
+  })
+  ipcMain.handle('github:failing-checks-text', (_e, root: unknown, pr: unknown) => {
+    if (typeof root !== 'string' || !root || !Number.isInteger(pr)) return null
+    return hosts.of(root).github.failingChecksText(root, pr as number)
+  })
+  ipcMain.handle('github:commit', (_e, root: unknown, message: unknown) => {
+    if (typeof root !== 'string' || !root || typeof message !== 'string') return BAD_GIT_STEP
+    const host = hosts.of(root)
+    return commitAll((args, network) => host.gitRun(root, args, network), message)
+  })
+  ipcMain.handle('github:push', (_e, root: unknown) => {
+    if (typeof root !== 'string' || !root) return BAD_GIT_STEP
+    const host = hosts.of(root)
+    return pushBranch((args, network) => host.gitRun(root, args, network))
   })
   ipcMain.handle('preview:openFileDialog', async () => {
     const stub = process.env.KOLOFT_FILE_DIALOG_FILE

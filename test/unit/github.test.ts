@@ -260,6 +260,15 @@ describe('GithubLookup.target', () => {
     expect(await gh.target(root, 'pulls')).toBe('https://github.com/acme/widgets/pulls')
   })
 
+  it("sends Open pull request… to GitHub's compare page for the branch, its slashes kept as path", async () => {
+    stage({ branch: 'feature/login\n' })
+    const gh = make()
+    await settled(gh, root)
+    expect(await gh.target(root, 'compare')).toBe(
+      'https://github.com/acme/widgets/compare/feature/login?expand=1'
+    )
+  })
+
   it('answers without waiting on the network, even once the table has aged out and refreshes behind the click', async () => {
     let now = 1_000_000
     const gh = make({ now: () => now })
