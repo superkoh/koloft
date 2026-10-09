@@ -472,10 +472,14 @@ export const useStore = create<AppState>((set, get) => ({
       const workbenchOpen = { ...s.workbenchOpen }
       const workbenchFetched = { ...s.workbenchFetched }
       const workbenchWidths = { ...s.workbenchWidths }
+      const workbenchLoad = { ...s.workbenchLoad }
+      const filesReveal = { ...s.filesReveal }
       delete workbench[id]
       delete workbenchOpen[id]
       delete workbenchFetched[id]
       delete workbenchWidths[id]
+      delete workbenchLoad[id]
+      delete filesReveal[id]
       return {
         tabs,
         openFiles,
@@ -483,7 +487,9 @@ export const useStore = create<AppState>((set, get) => ({
         workbench,
         workbenchOpen,
         workbenchFetched,
-        workbenchWidths
+        workbenchWidths,
+        workbenchLoad,
+        filesReveal
       }
     })
   },
@@ -751,8 +757,8 @@ export const useStore = create<AppState>((set, get) => ({
       set((st) => ({ workbench: { ...st.workbench, [tabId]: r.set } }))
       persistWorkbench(tabId)
       if (r.evicted) s.showToast(tabEvictedNotice(tabLabel(r.set, r.evicted)))
-      if (opts.source !== 'user' && !opts.fromShim) return
-      if (opts.fromShim)
+      if (opts.source !== 'user') {
+        if (!opts.fromShim) return
         set((st) => ({
           agentOpen: {
             ownerTabId: tabId,
@@ -760,6 +766,7 @@ export const useStore = create<AppState>((set, get) => ({
             nonce: (st.agentOpen?.nonce ?? 0) + 1
           }
         }))
+      }
       if (!s.workbenchOpen[tabId]) get().setWorkbenchOpen(tabId, true)
       set((st) => ({
         workbenchLoad: {

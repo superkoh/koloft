@@ -197,7 +197,6 @@ export interface WorkbenchPaneProps {
   liveTabs: ReadonlySet<string>
   visible: boolean
   full: boolean
-  load: { tabId: string; nonce: number } | null
   command: WorkbenchCommandSignal | null
   dialog: BrowserDialog | null
   onUpdate: (
@@ -288,7 +287,6 @@ export function WorkbenchPane({
   liveTabs,
   visible,
   full,
-  load,
   command,
   dialog,
   onUpdate,
@@ -310,6 +308,7 @@ export function WorkbenchPane({
   onCdpCreate
 }: WorkbenchPaneProps): JSX.Element {
   const termFocus = useStore((s) => s.termFocus)
+  const load = useStore((s) => (ownerTab ? s.workbenchLoad[ownerTab] : undefined))
   const [live, setLive] = useState<string[]>([])
   const [runtime, setRuntime] = useState<Record<string, TabRuntime>>({})
   const [attached, setAttached] = useState(0)
