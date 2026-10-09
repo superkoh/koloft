@@ -84,7 +84,7 @@ export function adoptWorkbenchWindow(w: BrowserWindow): void {
   d.main()?.webContents.setBackgroundThrottling(false)
   w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   w.webContents.on('will-navigate', (e) => e.preventDefault())
-  // PLATFORM§41
+  // PLATFORM§42
   d.guardHost(w.webContents)
   d.watchFocus(w, report)
   w.on('enter-full-screen', report)

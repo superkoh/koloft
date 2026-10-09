@@ -142,7 +142,7 @@ export function useDomFind(getRoot: () => HTMLElement | null): FindBackend {
     }
     if (activeRef.current >= ranges.length) activeRef.current = 0
     const active = activeRef.current
-    // PLATFORM§41
+    // PLATFORM§42
     const win = windowOf(ranges[active].startContainer)
     paintedIn.current = win
 

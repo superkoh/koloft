@@ -748,3 +748,73 @@ test.describe('GitHub button ▸ Send failing checks with the REAL gh, claude an
     )
   })
 })
+
+const IGNORED_FILES_THAT_TAKE_CLAUDE_SECONDS_TO_DELETE = { dirs: 2500, filesEach: 100 }
+const A_SLASH_COMMAND_MENU_SETTLES_MS = 1_000
+
+function ignoreNodeModules(repo: string): void {
+  fs.writeFileSync(path.join(repo, '.gitignore'), 'node_modules/\n.claude/\n')
+  runGit(repo, 'add', '.gitignore')
+  runGit(repo, 'commit', '-q', '-m', 'ignore node_modules')
+}
+
+function fillNodeModules(tree: string): void {
+  const { dirs, filesEach } = IGNORED_FILES_THAT_TAKE_CLAUDE_SECONDS_TO_DELETE
+  for (let d = 0; d < dirs; d++) {
+    const dir = path.join(tree, 'node_modules', `pkg${d}`)
+    fs.mkdirSync(dir, { recursive: true })
+    for (let f = 0; f < filesEach; f++) fs.writeFileSync(path.join(dir, `f${f}.js`), '1\n')
+  }
+}
+
+// CC§4
+test.describe('/exit from a REAL Claude Code worktree session: an opt-in case; it asks the model nothing', () => {
+  test('the row goes the moment the real Claude Code starts removing a worktree full of ignored files, and the worktree and its branch are gone once it ends', async ({
+    env
+  }) => {
+    test.skip(
+      !HAVE_REAL_CLAUDE,
+      'set KOLOFT_SMOKE_CLAUDE (absolute path of a real claude binary) and KOLOFT_SMOKE_OAUTH_TOKEN or KOLOFT_SMOKE_ACCOUNT (a Settings ▸ Accounts name, read off the Keychain)'
+    )
+    test.setTimeout(300_000)
+    await inARealWorktreeSession(
+      env,
+      'default',
+      useRealClaude,
+      [],
+      async ({ page, rows, repo, tree }) => {
+        fillNodeModules(tree)
+        await centerTerm(page).click()
+        await page.keyboard.type('/exit')
+        for (let i = 0; i < ENTERS_BEFORE_GIVING_UP; i++) {
+          await page.waitForTimeout(A_SLASH_COMMAND_MENU_SETTLES_MS)
+          await page.keyboard.press('Enter')
+          const next = await expect
+            .poll(
+              async () =>
+                (await rows.count()) === 0
+                  ? 'gone'
+                  : /Exiting worktree session/.test(await screen(page))
+                    ? 'asked'
+                    : 'typed',
+              { timeout: 5_000 }
+            )
+            .not.toBe('typed')
+            .then(() => true)
+            .catch(() => false)
+          if (!next) continue
+          if ((await rows.count()) > 0) {
+            await page.keyboard.press('ArrowDown')
+            await page.keyboard.press('Enter')
+          }
+          break
+        }
+        await expect(rows).toHaveCount(0, { timeout: 5_000 })
+        expect(fs.existsSync(tree)).toBe(true)
+        await expect.poll(() => fs.existsSync(tree), { timeout: 120_000 }).toBe(false)
+        expect(runGit(repo, 'branch', '--list', `worktree-${WORKTREE}`).trim()).toBe('')
+      },
+      ignoreNodeModules
+    )
+  })
+})

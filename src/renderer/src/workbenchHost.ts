@@ -92,7 +92,7 @@ export interface WorkbenchWindow {
   column: HTMLDivElement
 }
 
-// PLATFORM§41
+// PLATFORM§42
 export function openWorkbenchWindow(): WorkbenchWindow | null {
   const opened = window.open('about:blank', WORKBENCH_WINDOW_NAME) as HostWindow | null
   if (!opened) return null

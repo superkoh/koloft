@@ -194,7 +194,7 @@ export function PreviewViewer({
       el.dataset.state = 'done'
     }
 
-    // PLATFORM§41
+    // PLATFORM§42
     const win = windowOf(body)
     const io = new IntersectionObserver(
       (entries) => {
@@ -337,7 +337,7 @@ export function PreviewViewer({
         </div>
       )
     case 'pdf':
-      // PLATFORM§41
+      // PLATFORM§42
       return <WebView key={moves} src={window.api.preview.fileUrl(item.src)} reloadToken={tick} />
     default:
       return <div className="hint">Unsupported preview type.</div>

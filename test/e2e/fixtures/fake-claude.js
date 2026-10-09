@@ -514,9 +514,29 @@ function dirtyCount() {
   return git('status --porcelain', cwd).split('\n').filter(Boolean).length
 }
 
-function removeWorktree() {
-  git(`worktree remove --force ${JSON.stringify(cwd)}`, launchCwd)
-  git(`branch -D ${JSON.stringify('worktree-' + wtName)}`, launchCwd)
+function removalMs() {
+  try {
+    return Number(fs.readFileSync(path.join(home, 'fake-claude-remove-ms'), 'utf8').trim()) || 0
+  } catch {
+    return 0
+  }
+}
+
+// CC§4
+function removeWorktree(then) {
+  process.stdout.write('\x1b]0;\x07Removing worktree…\r\n')
+  setTimeout(() => {
+    if (fs.existsSync(path.join(home, 'fake-claude-remove-fails'))) {
+      process.stdout.write(
+        `Could not finish removing the worktree at ${cwd}; it may be partly deleted. Delete the folder if you no longer need it.\r\n`
+      )
+      return then()
+    }
+    git(`worktree remove --force ${JSON.stringify(cwd)}`, launchCwd)
+    git(`branch -D ${JSON.stringify('worktree-' + wtName)}`, launchCwd)
+    process.stdout.write('Worktree removed.\r\n')
+    then()
+  }, removalMs())
 }
 
 let worktreeChoicePending = false
@@ -524,10 +544,7 @@ let worktreeChoicePending = false
 function exitSession() {
   if (!wtName) return shutdown('prompt_input_exit')
   const dirty = dirtyCount()
-  if (!dirty) {
-    removeWorktree()
-    return shutdown('prompt_input_exit')
-  }
+  if (!dirty) return removeWorktree(() => shutdown('prompt_input_exit'))
   worktreeChoicePending = true
   process.stdout.write(
     `\r\nExiting worktree session\r\n` +
@@ -652,7 +669,7 @@ function handleLine(line) {
   const text = line.replace(ESC, '').trim()
   if (worktreeChoicePending) {
     // CC§4
-    if (text === '2') removeWorktree()
+    if (text === '2') return removeWorktree(() => shutdown('prompt_input_exit'))
     return shutdown('prompt_input_exit')
   }
   if (text.startsWith('[Discord] ')) return handleLine(`/answer ${text}`)

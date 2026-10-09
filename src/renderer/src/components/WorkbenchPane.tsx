@@ -2279,7 +2279,7 @@ export function WorkbenchPane({
       />
 
       <div className="wb-body">
-        {/* PLATFORM§9 PLATFORM§41 */}
+        {/* PLATFORM§9 PLATFORM§42 */}
         {mountedWebTabs.map(({ owner, tab }) => {
           const onScreen = visible && owner === ownerTab && tab.id === set.activeId && !sessionCold
           return (

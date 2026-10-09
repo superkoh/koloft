@@ -342,7 +342,7 @@ export function TerminalView({
       clearTimeout(fitTimer)
       fitTimer = setTimeout(fitWhenSettled, RESIZE_QUIET_MS)
     }
-    // PLATFORM§41
+    // PLATFORM§42
     let ro = new (windowOf(wrapper).ResizeObserver)(scheduleFit)
     ro.observe(wrapper)
     const offMoved = onWorkbenchMoved((win) => {

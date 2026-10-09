@@ -462,7 +462,7 @@ export function FilesBody({
   useEffect(() => {
     const el = fvRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
-    // PLATFORM§41
+    // PLATFORM§42
     const ro = new (windowOf(el).ResizeObserver)(() => setFvWidth(el.getBoundingClientRect().width))
     ro.observe(el)
     return () => ro.disconnect()
