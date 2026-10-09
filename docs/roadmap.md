@@ -27,15 +27,6 @@ when it works. That is what "judged against" means.
 
 ### Tier 1 — orchestration: the session is the unit
 
-- **Worktree session bootstrap** — a setup script, copying gitignored files, a port offset,
-  so a fresh worktree is usable the moment its session starts (#5). Creating the worktree
-  session itself already works; cleanup afterwards is the agent's tool's, or
-  `koloft session close`'s (#116). `claude -w` already copies `.worktreeinclude` files; a
-  `WorktreeCreate` hook is not a setup step (it replaces `git worktree add` and turns that
-  copy off), so a setup script is left to each tool's own hooks (Claude Code
-  `SessionStart`). Koloft's part is the copy for the worktrees it makes or rebuilds
-  itself, and the port offset (`KOLOFT_PORT_OFFSET`) for every tab kind but remote Codex
-  (#99).
 - **Jump to the next waiting session** — one shortcut cycles through the sessions waiting
   for you, across workspaces (#216). A grouped sidebar view is not part of it.
 - **Broadcast input** — type once, send to the sessions you selected. The workspace →
@@ -57,14 +48,12 @@ when it works. That is what "judged against" means.
 
 ### Tier 2 — review: where Koloft can still grow
 
-- **Comment back into the session** — the aggregated diff already exists in the Changes
-  view; the missing half is sending a hunk plus a note back into the conversation, and
-  jumping to the agent turn that produced a hunk.
+- **Jump to the turn behind a hunk** — from a hunk in the Changes view to the agent turn
+  that produced it.
 - **Plan-mode surfacing** — read-only rendering of a plan first; approve/reject only once
   the TUI's input mapping is proven against the fake-claude harness.
-- **PR and CI inside the session** — the session's PR and check status, failing checks
-  sent back to the session, commit / push / open PR from Koloft (#215). The end of the
-  loop that a session started from an issue or PR (#218) begins.
+- **Start a session from an issue or PR** — a worktree session whose first message is the
+  issue's text (#218).
 - **Point the agent at things** — pick an element in the Workbench browser (#217).
 - **Many sessions, one change** — warn when two sessions write the same file (#221); each
   session's listening ports, opened in the Workbench browser (#224).
