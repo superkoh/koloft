@@ -385,6 +385,10 @@ const slash = new SlashCommands({
     if (s?.backendId !== 'claude' || !s.sessionId || tracker.remoteOf(tabId)) return undefined
     return claudeShowsAPanel(s.sessionId)
   },
+  nextMirrorPull: (tabId) => {
+    const remote = tracker.remoteOf(tabId)
+    return remote && remoteSync?.nextPullDone(remote.host)
+  },
   ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
   exclusive: (tabId, typing) => ptyMgr.exclusive(tabId, typing),
   typeNow: (tabId, keys) => typeKeys((data) => ptyMgr.write(tabId, data), keys),
