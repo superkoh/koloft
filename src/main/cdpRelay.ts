@@ -201,6 +201,13 @@ function backendFor(client: Client): RelayBackend {
         await d.stage(client.sessionId, tabIdFor(targetId))
       }
       const wc = guestOf(guestId)
+      // PLATFORM§16
+      if (method === 'Page.reload' && !sessionId) {
+        if ((params as { ignoreCache?: boolean } | undefined)?.ignoreCache) {
+          wc.reloadIgnoringCache()
+        } else wc.reload()
+        return {}
+      }
       const frameId = frameIds.get(targetId)
       const emulated = inputEmulation(method, params)
       const sendMethod = emulated ? 'Runtime.evaluate' : method

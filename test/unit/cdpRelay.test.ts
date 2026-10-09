@@ -25,6 +25,9 @@ interface FakeGuest {
     off(event: string, fn: (...a: never[]) => void): void
     sendCommand(method: string, params?: unknown, sessionId?: string): Promise<unknown>
   }
+  sent: string[]
+  reload: ReturnType<typeof vi.fn>
+  reloadIgnoringCache: ReturnType<typeof vi.fn>
   listenerCount(): number
   releaseFrameTree(): void
   emit(event: string, ...args: unknown[]): void
@@ -38,8 +41,12 @@ function fakeGuest(id: number, opts: { holdFrameTree?: boolean } = {}): FakeGues
     if (!listeners.has(event)) listeners.set(event, new Set())
     listeners.get(event)?.add(fn)
   }
+  const sent: string[] = []
   const guest: FakeGuest = {
     isDestroyed: () => false,
+    sent,
+    reload: vi.fn(),
+    reloadIgnoringCache: vi.fn(),
     debugger: {
       attach: vi.fn(() => {
         attached = true
@@ -52,6 +59,7 @@ function fakeGuest(id: number, opts: { holdFrameTree?: boolean } = {}): FakeGues
       once: add,
       off: (event, fn) => void listeners.get(event)?.delete(fn),
       sendCommand: async (method: string) => {
+        sent.push(method)
         if (method === 'Page.getFrameTree') {
           if (opts.holdFrameTree) await new Promise<void>((r) => (release = r))
           return { frameTree: { frame: { id: `frame-${id}` } } }
@@ -106,7 +114,7 @@ const sockets: WebSocket[] = []
 interface Conn {
   ws: WebSocket
   closed: Promise<string>
-  cmd(method: string, params?: unknown): Promise<Record<string, unknown>>
+  cmd(method: string, params?: unknown, sessionId?: string): Promise<Record<string, unknown>>
   events: Record<string, unknown>[]
 }
 
@@ -130,12 +138,13 @@ function connect(): Conn {
     ws,
     closed,
     events,
-    cmd: (method, params) =>
+    cmd: (method, params, sessionId) =>
       new Promise<Record<string, unknown>>((resolve, reject) => {
         const id = nextId++
         replies.set(id, resolve)
         closed.then(() => reject(new Error('socket closed before the reply')))
-        const send = (): void => ws.send(JSON.stringify({ id, method, params: params ?? {} }))
+        const send = (): void =>
+          ws.send(JSON.stringify({ id, method, params: params ?? {}, sessionId }))
         if (ws.readyState === WebSocket.OPEN) send()
         else ws.on('open', send)
       })
@@ -320,5 +329,29 @@ describe('a socket that closes while its tab is still binding', () => {
 
     const b = connect()
     expect(await b.cmd('Browser.getVersion')).toHaveProperty('result')
+  })
+})
+
+// PLATFORM§16
+describe('a client reloading a page', () => {
+  it('reloads that guest by itself and never sends Page.reload to its debugger, which reloads the whole Koloft window', async () => {
+    const guest = fakeGuest(11)
+    const a = await registered()
+    const listed = (await a.cmd('Target.getTargets')).result as {
+      targetInfos: { targetId: string }[]
+    }
+    const targetId = listed.targetInfos[0]?.targetId ?? ''
+    const attached = (await a.cmd('Target.attachToTarget', { targetId })).result as {
+      sessionId: string
+    }
+
+    expect(await a.cmd('Page.reload', {}, attached.sessionId)).toHaveProperty('result')
+    expect(await a.cmd('Page.reload', { ignoreCache: true }, attached.sessionId)).toHaveProperty(
+      'result'
+    )
+
+    expect(guest.reload).toHaveBeenCalledTimes(1)
+    expect(guest.reloadIgnoringCache).toHaveBeenCalledTimes(1)
+    expect(guest.sent).not.toContain('Page.reload')
   })
 })
