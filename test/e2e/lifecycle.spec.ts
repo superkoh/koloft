@@ -8,6 +8,7 @@ import {
   centerTerm,
   closeMenu,
   FAKE_SESSION_TITLE,
+  type ClaudeCall,
   gitInit,
   gitWorktreeAdd,
   killSession,
@@ -41,6 +42,7 @@ const ROOM_FOR_A_LATER_TRANSITION_MS = 3000
 const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_SLEEP_MS = 3000
 const NO_SLEEP_DURING_THE_CHECKS_MS = 600_000
+const BIND_LATER_THAN_THE_QUIT_MS = 15_000
 
 function openTabsOnDisk(env: E2EEnv): unknown {
   try {
@@ -491,6 +493,49 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
         const layout = layoutOnDisk(env)
         expect(layout.version).toBe(6)
         expect(layout).not.toHaveProperty('tabs')
+      } finally {
+        await app2.close().catch(() => {})
+      }
+    })
+  }
+
+  for (const ending of ['quits', 'crashes'] as const) {
+    test(`a session still resuming when Koloft ${ending} — not yet bound — comes back running when Koloft opens again`, async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      const app1 = await launchApp(env)
+      let first: ClaudeCall
+      try {
+        const page1 = await app1.firstWindow()
+        await page1.waitForLoadState('domcontentloaded')
+        await startSession(page1, env)
+        ;[first] = await waitForCalls(env, 1)
+        const row = page1.locator('.ws-tab', { hasText: FAKE_SESSION_TITLE })
+        await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+        await openMenu(page1, row)
+        await page1.locator('.menu .mi', { hasText: /^Close$/ }).click()
+        await expect(row).toHaveClass(/\bcold\b/)
+        fs.writeFileSync(env.claudeDelayFile, String(BIND_LATER_THAN_THE_QUIT_MS))
+        await row.click()
+        await waitForCalls(env, 2)
+        await expect.poll(() => JSON.stringify(openTabsOnDisk(env))).toContain(first.sessionId)
+        if (ending === 'crashes') process.kill(app1.process().pid!, 'SIGKILL')
+        else await quitAndClose(app1)
+      } finally {
+        await app1.close().catch(() => {})
+      }
+
+      fs.rmSync(env.claudeDelayFile, { force: true })
+      const app2 = await launchApp(env)
+      try {
+        const page2 = await app2.firstWindow()
+        await page2.waitForLoadState('domcontentloaded')
+        const calls = await waitForCalls(env, 3)
+        expect(resumedId(calls[2])).toBe(first!.sessionId)
+        const row = page2.locator('.ws-tab', { hasText: FAKE_SESSION_TITLE })
+        await expect(row).toHaveClass(/\bst-(working|waiting|idle)\b/, { timeout: 30_000 })
+        await expect(row).toHaveClass(/\bactive\b/)
       } finally {
         await app2.close().catch(() => {})
       }

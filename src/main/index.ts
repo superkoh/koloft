@@ -503,9 +503,21 @@ function openTabOf(s: SessionInfo): OpenTab {
 function rememberOpenTabs(all = allSessions()): void {
   if (!openTabsFile || !openTabsRestored || quitCommitted) return
   const live = all.filter((s) => s.alive && s.sessionId).map(openTabOf)
+  for (const h of ptyMgr.list()) {
+    if (!h.alive || !h.resumeSessionId || (h.kind !== 'claude' && h.kind !== 'codex')) continue
+    const remote = tracker.remoteOf(h.id)
+    live.push({
+      sessionId: h.resumeSessionId,
+      kind: h.kind,
+      title: '',
+      cwd: remote ? formatRemoteKey(remote.host, h.cwd) : h.cwd
+    })
+  }
   const activeTab = uiActiveTabId ?? activeTabBeforeReload
   const active = activeTab
-    ? all.find((s) => s.tabId === activeTab)?.sessionId || sleepers.get(activeTab)?.sessionId
+    ? all.find((s) => s.tabId === activeTab)?.sessionId ||
+      ptyMgr.get(activeTab)?.resumeSessionId ||
+      sleepers.get(activeTab)?.sessionId
     : undefined
   openTabsFile.write(openTabsNow(live, [...sleepers.values()], active))
 }
