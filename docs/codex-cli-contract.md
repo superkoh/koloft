@@ -845,6 +845,12 @@ folder trusted. Text was typed in one write and CR in a second write 0.3–0.6 s
   started and completed, `turn/completed` (2.8–5.4 s), on the same thread id. No
   `thread/compacted` notification came. The relay sending `thread/compact/start` itself
   did the same, and the TUI drew it and kept working.
+- **An automatic compaction stays inside the turn it interrupts** (2026-10-09, Codex CLI
+  0.162.0, `codex app-server` on stdio driven by a Node script, a temporary `CODEX_HOME`
+  with `model_auto_compact_token_limit = 30000`, one real turn of four `seq` commands):
+  after the third command a `contextCompaction` item started and completed (10.6 s), the
+  fourth command and the reply followed, and one `turn/completed` for the same turn id
+  ended it. No other turn started and no user message was added.
 - **`/new` and `/clear`** each sent `config/read`, `thread/start` (a new id), then
   `thread/unsubscribe` of the old thread. `/clear` adds `sessionStartSource: "clear"`.
   A `-c developer_instructions=…` given to the app-server still reached the model in the
