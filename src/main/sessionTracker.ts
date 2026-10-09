@@ -225,12 +225,6 @@ export function scratchpadDirFor(
   return dir && path.join(dir, 'scratchpad')
 }
 
-// CC§2
-export function tasksDirFor(jsonlPath: string | null): string | null {
-  const dir = sessionTmpDir(jsonlPath)
-  return dir && path.join(dir, 'tasks')
-}
-
 interface SubagentFile {
   offset: number
   tail: Buffer
@@ -341,6 +335,11 @@ function commandEcho(obj: { origin?: unknown }, raw: string | null): boolean {
   return raw !== null && raw.startsWith('/') && claudeWroteIt(obj)
 }
 
+// CC§1
+export function compactionSummary(obj: { isCompactSummary?: unknown }): boolean {
+  return obj.isCompactSummary === true
+}
+
 function ownerOrPeer(kind: unknown): 'owner' | 'peer' | null {
   if (kind === undefined || kind === 'human') return 'owner'
   return kind === 'peer' ? 'peer' : null
@@ -360,6 +359,7 @@ function claudeTurnPieces(obj: any): TurnPiece[] {
     if (who === 'peer') return [{ line: { who, text: peerText(raw), at }, midTurn: false }]
     if (
       obj.isMeta ||
+      compactionSummary(obj) ||
       INTERRUPT_TEXTS.has(raw) ||
       commandEcho(obj, raw) ||
       !classifyUserPrompt(raw).title
@@ -710,9 +710,9 @@ export class SessionTracker extends SessionRuntime {
     if (this.leftBehind?.(t.info.sessionId)) return true
     if (t.remote) return false
     const root = this.pidOf?.(tabId)
-    const tasksDir = tasksDirFor(t.info.jsonlPath)
-    if (!root || !tasksDir) return true
-    const procs = await this.inspect(root, tasksDir)
+    const sessionId = t.info.sessionId
+    if (!root || !sessionId) return true
+    const procs = await this.inspect(root, sessionId)
     return !procs || procs.shells.size > 0
   }
 
@@ -856,11 +856,11 @@ export class SessionTracker extends SessionRuntime {
     if (t.procsPromise) await t.procsPromise
     if (!force && Date.now() - t.procsAt < PROCS_SCAN_MS) return
     const root = this.pidOf?.(t.info.tabId)
-    const tasksDir = tasksDirFor(t.info.jsonlPath)
-    if (!root || !tasksDir) return
+    const sessionId = t.info.sessionId
+    if (!root || !sessionId) return
     t.procsPromise = (async () => {
       try {
-        const procs = await this.inspect(root, tasksDir)
+        const procs = await this.inspect(root, sessionId)
         if (this.tracked.get(t.info.tabId) !== t) return
         t.procs = procs
         t.procsAt = Date.now()
@@ -1596,7 +1596,7 @@ export class SessionTracker extends SessionRuntime {
       this.ingestTaskNotification(t, obj)
       const output = t.caughtUp ? commandOutputOf(obj) : null
       if (output) this.emit('command-output', { tabId: t.info.tabId, ...output })
-      if (obj.type === 'user' && !obj.isMeta) {
+      if (obj.type === 'user' && !obj.isMeta && !compactionSummary(obj)) {
         const c = obj.message?.content
         let raw: string | null = null
         let hasImage = false
