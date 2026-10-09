@@ -65,7 +65,7 @@ body:
     attributes:
       label: Codex version
       description: 'Only when the problem is in a Codex session: run `codex --version`.'
-      placeholder: codex-cli 0.153.4
+      placeholder: codex-cli 0.161.0
     validations:
       required: false
 

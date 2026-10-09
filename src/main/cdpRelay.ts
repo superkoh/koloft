@@ -201,6 +201,13 @@ function backendFor(client: Client): RelayBackend {
         await d.stage(client.sessionId, tabIdFor(targetId))
       }
       const wc = guestOf(guestId)
+      // PLATFORM§16
+      if (method === 'Page.reload' && !sessionId) {
+        if ((params as { ignoreCache?: boolean }).ignoreCache) {
+          wc.reloadIgnoringCache()
+        } else wc.reload()
+        return {}
+      }
       const frameId = frameIds.get(targetId)
       const emulated = inputEmulation(method, params)
       const sendMethod = emulated ? 'Runtime.evaluate' : method
@@ -381,6 +388,15 @@ export function relayStripChanged(sessionId: string, next: RelayTarget[]): void 
   for (const t of diff.created) void client.protocol.targetCreated(t)
   for (const t of diff.changed) client.protocol.targetInfoChanged(t)
   for (const targetId of diff.destroyed) client.protocol.targetDestroyed(targetId)
+}
+
+export function sessionDrivingGuest(guestId: number): string | null {
+  for (const client of clients.values()) {
+    for (const held of client.attached.values()) {
+      if (held.guestId === guestId && client.sessionId) return client.sessionId
+    }
+  }
+  return null
 }
 
 export function relayTabRebound(tabId: string, sessionId: string | null): void {

@@ -3,7 +3,8 @@ import path from 'path'
 import { shq } from '@shared/shellQuote'
 import { NEWID_FN } from './openShimScript'
 
-const TEN_SECONDS_OF_50MS_TICKS = 200
+export const AGENT_SHIM_WAITS_MS = 10_000
+const SHIM_POLL_MS = 50
 
 const HEAD = `#!/usr/bin/env bash
 : koloft agent shim
@@ -33,7 +34,7 @@ if ! printf '{%s"argv":[%s],"cwd":"%s"}\\n' "$tabfield" "$args" "$(jstr "$PWD")"
   exit 1
 fi
 waits=0
-while [ ! -f "$res" ] && [ "$waits" -lt ${TEN_SECONDS_OF_50MS_TICKS} ]; do sleep 0.05; waits=$((waits+1)); done
+while [ ! -f "$res" ] && [ "$waits" -lt ${AGENT_SHIM_WAITS_MS / SHIM_POLL_MS} ]; do sleep ${SHIM_POLL_MS / 1000}; waits=$((waits+1)); done
 if [ ! -f "$res" ]; then
   rm -f "$req" 2>/dev/null
   echo "koloft: Koloft did not answer." >&2

@@ -6,6 +6,7 @@ import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { OscCwdParser } from './oscCwd'
 import { codexEnvironment } from './codexTransport'
 import { userShell } from './userShell'
+import { bracketedPaste, typeKeys, typedPieces } from './typeKeys'
 
 export interface PtyHandle {
   id: string
@@ -17,6 +18,7 @@ export interface PtyHandle {
   resumeSessionId?: string
   ownerTabId?: string
   resized?: (id: string, cols: number, rows: number) => void
+  startedAt: number
 }
 
 interface CreateArgs {
@@ -33,11 +35,13 @@ interface CreateArgs {
   util?: boolean
   resumeSessionId?: string
   ownerTabId?: string
+  conductor?: boolean
   resized?: (id: string, cols: number, rows: number) => void
   extraEnv?: {
     KOLOFT_FIRST_PROMPT?: string
     KOLOFT_SESSION_NAME?: string
     KOLOFT_AGENT_PLUGIN?: string
+    KOLOFT_PORT_OFFSET?: string
   }
 }
 
@@ -60,9 +64,11 @@ export class PtyManager extends EventEmitter {
   cdpDir?: string
   agentDir?: string
   multiAccountOn?: () => boolean
-  makeHookSettings?: (tabId: string, allowKoloft: boolean) => string | undefined
+  makeHookSettings?: (tabId: string, allowKoloft: boolean, conductor: boolean) => string | undefined
 
   private ptys = new Map<string, PtyHandle>()
+  private readyWaiters = new Map<string, Set<() => void>>()
+  private typing = new Map<string, Promise<void>>()
   private counter = 0
   private instanceTag = process.pid.toString(36)
 
@@ -112,6 +118,7 @@ export class PtyManager extends EventEmitter {
         key === 'KOLOFT_CDP_DIR' ||
         key === 'KOLOFT_AGENT_DIR' ||
         key === 'KOLOFT_AGENT_PLUGIN' ||
+        key === 'KOLOFT_PORT_OFFSET' ||
         key === 'ANT_ACCOUNT' ||
         (BROWSER_TAB_ENV as readonly string[]).includes(key)
       ) {
@@ -134,7 +141,11 @@ export class PtyManager extends EventEmitter {
     const hookSettings =
       args.util || args.kind === 'codex'
         ? undefined
-        : this.makeHookSettings?.(id, args.extraEnv?.KOLOFT_AGENT_PLUGIN !== undefined)
+        : this.makeHookSettings?.(
+            id,
+            args.extraEnv?.KOLOFT_AGENT_PLUGIN !== undefined,
+            args.conductor === true
+          )
     if (hookSettings) env.KOLOFT_HOOK_SETTINGS = hookSettings
     if (this.shimDir && !isWin && args.kind !== 'codex')
       env.PATH = `${this.shimDir}:${process.env.PATH ?? ''}`
@@ -142,7 +153,8 @@ export class PtyManager extends EventEmitter {
       for (const k of [
         'KOLOFT_FIRST_PROMPT',
         'KOLOFT_SESSION_NAME',
-        'KOLOFT_AGENT_PLUGIN'
+        'KOLOFT_AGENT_PLUGIN',
+        'KOLOFT_PORT_OFFSET'
       ] as const) {
         const v = args.extraEnv[k]
         if (v !== undefined) env[k] = v
@@ -177,7 +189,8 @@ export class PtyManager extends EventEmitter {
       util: args.util === true,
       resumeSessionId: args.resumeSessionId,
       ownerTabId: args.ownerTabId,
-      resized: args.resized
+      resized: args.resized,
+      startedAt: Date.now()
     }
     this.ptys.set(id, handle)
 
@@ -195,6 +208,7 @@ export class PtyManager extends EventEmitter {
     proc.onExit(({ exitCode, signal }) => {
       handle.alive = false
       if (titlePoll) clearInterval(titlePoll)
+      this.wakeReady(id)
       this.emit('exit', { id, exitCode, signal })
     })
 
@@ -231,6 +245,52 @@ export class PtyManager extends EventEmitter {
 
   write(id: string, data: string): void {
     this.ptys.get(id)?.proc.write(data)
+  }
+
+  exclusive<T>(id: string, typing: () => Promise<T>): Promise<T> {
+    const turn = (this.typing.get(id) ?? Promise.resolve()).then(typing)
+    const done = turn.then(
+      () => undefined,
+      () => undefined
+    )
+    this.typing.set(id, done)
+    void done.then(() => {
+      if (this.typing.get(id) === done) this.typing.delete(id)
+    })
+    return turn
+  }
+
+  type(id: string, keys: string[]): Promise<void> {
+    return this.exclusive(id, () => typeKeys((data) => this.write(id, data), keys))
+  }
+
+  paste(id: string, text: string, typedAfter = ''): Promise<void> {
+    return this.type(id, [bracketedPaste(text), ...typedPieces(typedAfter)])
+  }
+
+  whenReady(id: string, ready: () => boolean, ms: number): Promise<boolean> {
+    if (ready()) return Promise.resolve(true)
+    if (!this.get(id)?.alive || ms <= 0) return Promise.resolve(false)
+    return new Promise((resolve) => {
+      const waiters = this.readyWaiters.get(id) ?? new Set()
+      this.readyWaiters.set(id, waiters)
+      const settle = (result: boolean): void => {
+        clearTimeout(deadline)
+        waiters.delete(recheck)
+        if (waiters.size === 0) this.readyWaiters.delete(id)
+        resolve(result)
+      }
+      const recheck = (): void => {
+        if (ready()) settle(true)
+        else if (!this.get(id)?.alive) settle(false)
+      }
+      const deadline = setTimeout(() => settle(ready()), ms)
+      waiters.add(recheck)
+    })
+  }
+
+  wakeReady(id: string): void {
+    for (const recheck of [...(this.readyWaiters.get(id) ?? [])]) recheck()
   }
 
   pause(id: string): void {

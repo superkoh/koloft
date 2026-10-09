@@ -84,12 +84,23 @@ describe('prepareCodexHome', () => {
     const home = path.join(dir, 'homes', 'work')
     prepareCodexHome(home, shared)
     expect(fs.readlinkSync(path.join(home, 'config.toml'))).toBe(shared)
+    expect(fs.readFileSync(shared, 'utf8')).toBe('model = "gpt-5"\n')
 
     const own = path.join(dir, 'homes', 'own')
     fs.mkdirSync(own, { recursive: true })
     fs.writeFileSync(path.join(own, 'config.toml'), 'model = "o3"\n')
     prepareCodexHome(own, shared)
     expect(fs.lstatSync(path.join(own, 'config.toml')).isSymbolicLink()).toBe(false)
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('links a new home even before the shared config.toml exists, by making it empty, so the first Codex start cannot write a home-only file', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-'))
+    const shared = path.join(dir, 'dot-codex', 'config.toml')
+    const home = path.join(dir, 'homes', 'work')
+    prepareCodexHome(home, shared)
+    expect(fs.readlinkSync(path.join(home, 'config.toml'))).toBe(shared)
+    expect(fs.readFileSync(shared, 'utf8')).toBe('')
     fs.rmSync(dir, { recursive: true, force: true })
   })
 })

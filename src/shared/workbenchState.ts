@@ -6,7 +6,7 @@ export const DEFAULT_PANEL_OPEN = false
 
 const VIEWS: readonly ArtifactView[] = ['render', 'diff', 'source']
 
-function isRecord(v: unknown): v is Record<string, unknown> {
+export function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null
 }
 

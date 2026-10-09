@@ -1,6 +1,6 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { isSessionKind, type SessionBackend } from './agentUi'
-import type { SessionInfo, TabKind } from '@shared/types'
+import { exitedAbnormally, type SessionInfo, type TabKind } from '@shared/types'
 
 export type CloseIntent =
   | { kind: 'none' }
@@ -48,6 +48,10 @@ export function unsavedBody(files: string[]): string {
   return `Unsaved changes in ${unsavedFilesPhrase(files)}. Closing loses them — Koloft keeps no drafts.`
 }
 
+export function sessionEndedBody(title: string, files: string[]): string {
+  return `"${title}" ended with unsaved changes in ${unsavedFilesPhrase(files)}. Keep for later holds them until you quit Koloft, which asks again.`
+}
+
 export function unexpectedExitNotice(
   exit: { exitCode: number; signal?: number },
   backend: SessionBackend
@@ -65,7 +69,6 @@ export function unexpectedExitWanted<
   exit: { exitCode: number; signal?: number }
 ): tab is T & { kind: SessionBackend } {
   if (!tab || !isSessionKind(tab.kind)) return false
-  // PLATFORM§29
-  if (exit.exitCode === 0 && !exit.signal) return false
+  if (!exitedAbnormally(exit)) return false
   return !(tab.jobId !== undefined && tab.sessionId === undefined)
 }

@@ -62,6 +62,11 @@ if (argv.includes('-tt')) {
       KOLOFT_SCRATCHPAD_BASE: cfg.scratchpadBase
     })
   })
+  const linkDrop = path.join(STATE, 'tab-link-drop')
+  if (fs.existsSync(linkDrop)) {
+    fs.rmSync(linkDrop, { force: true })
+    done(SSH_UNREACHABLE_EXIT)
+  }
   done(r.status == null ? 1 : r.status)
 }
 

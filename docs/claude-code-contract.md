@@ -25,7 +25,10 @@ binary.
   SessionEnd can never be the eviction criterion — only a reason whitelist can.
 - **Observed reason mappings** (all measured on a real claude):
   - `/exit`, Ctrl+D, worktree-session exit (either Keep/Remove choice) →
-    `prompt_input_exit` (3/3 repeats, E1/E2/E8)
+    `prompt_input_exit` (3/3 repeats, E1/E2/E8); Ctrl+C twice at an idle prompt too,
+    and both `/exit` and that Ctrl+C exit with code 0 (2026-10-06, CC 2.1.291, a pty;
+    SIGHUP gave 129). A hook still running can make an `/exit` fire no SessionEnd at
+    all (§14).
   - `logout` → `logout`
   - SIGHUP → `other` (E6); a finishing `claude -p` run → `other`
   - `/clear` → `clear` (process stays alive; a new-id SessionStart with
@@ -39,6 +42,17 @@ binary.
   mappings; the enums are the value space.
 - **auto-compact restarts in place with the SAME session id** (E1 could not produce an
   id change).
+- **A manual `/compact` fires PreCompact, then SessionStart `compact`, and no
+  UserPromptSubmit or Stop** (2026-10-04/05, CC 2.1.289 and 2.1.290, interactive pty,
+  hooks logging their payloads). PreCompact carries `trigger: "manual"` and
+  `custom_instructions` (the text after `/compact`, or null) about 0.03 s after Enter;
+  SessionStart `compact` comes when the summary is done, 4–15 s later, same session id.
+  Typed while a turn runs, it waits for the turn: Stop, then PreCompact. The plain
+  `user` record `"/compact"` (no `origin`) is on disk at once; the `<command-name>` and
+  `<local-command-stdout>Compacted …</local-command-stdout>` records only land when it
+  ends, though they carry the Enter-time timestamp. Esc during it cancels it (no
+  SessionStart) and puts `/compact ` back in the input box. So the session is busy from
+  PreCompact to SessionStart `compact`, and no other hook says so.
 - **On exit CC prints a resume hint, and what it quotes depends on the session**:
   `Resume this session with: claude --resume <id>` for a session with no name, but
   `claude --resume "<name>"` once the session was given a `--name`, and
@@ -152,6 +166,18 @@ mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
   many times from inside the worktree) had both under the worktree. (`claude -p` names
   no scratchpad at all.) Older versions not checked. `tasks/` holds full subagent
   transcripts (single files reach MBs).
+  **On CC 2.1.295 an EnterWorktree session keeps `tasks/` under `<main checkout slug>`
+  too**, while a `-w` session still keeps it under `<worktree slug>`. Measured
+  2026-10-08: a session started in the main checkout that called EnterWorktree, then ran
+  two `run_in_background` Bash calls 2 s and 66 min later, had both
+  `<id>.output` files (and its subagents' `.output` links) under
+  `/private/tmp/claude-501/<main checkout slug>/<id>/tasks/`, with `lsof` showing the
+  live shell's fd 1 there, and no `<worktree slug>/<id>` folder at all; a `claude -w`
+  session started from the main checkout, with its scratchpad under the main checkout,
+  was told by its own Bash tool that a background command wrote to
+  `<worktree slug>/<id>/tasks/<task>.output`. So which slug holds `tasks/` cannot be read
+  from the transcript's folder or the launch folder; only the `<sessionId>/tasks/` end of
+  the path is fixed.
   The per-user folder is `realpath(<base>/claude-<uid>)` (mode 0700). `<base>` differs by
   OS. macOS build: `$CLAUDE_CODE_TMPDIR`, else a fixed `/tmp` — `$TMPDIR` is ignored
   (CC 2.1.286 and 2.1.287 macOS binaries:
@@ -203,6 +229,19 @@ mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
 - **Tool file paths are all but always absolute**: 17 relative out of 18,035 (0.094%),
   every one a `Read`, all in a single repository. A relative one means a file under the
   directory CC stood in on that line, so it has to be resolved as it is read, once.
+- **A message typed while claude is busy writes no `user` record.** Measured 2026-10-02,
+  CC 2.1.288, interactive session in a scratch `HOME`: a line typed during a running
+  `Bash` call left a `queue-operation` record `{operation:"enqueue", content:<text>}`,
+  then `{operation:"remove", reason:"absorbed_mid_turn"}`, then an `attachment` record
+  `{type:"queued_command", prompt:<text>, commandMode:"prompt", origin:{kind:"human"},
+  humanTurn:true}`; the reply came later in the same turn, before one Stop. A line typed
+  while idle is a plain `user` record with `origin: {kind:"human"}`. Other `user` records
+  carry `origin.kind` `task-notification` (`isMeta` false) or `channel`, and older ones no
+  `origin` at all. A sweep of 80 recent transcripts on this Mac (CC 2.1.285–2.1.288,
+  2026-10-03): `queued_command` attachments were 9 `prompt`/`human`, 2 `prompt`/`peer`
+  (§13), 3 `prompt`/`channel`, 89 `task-notification`; `user` records 261 `human`, 193
+  `task-notification`, 7 `channel` and 4 `peer`; every assistant record held at most one
+  `text` block, and no `(message.id, text)` pair repeated.
 - **CC deletes transcripts itself**: `claude project purge [path]` — "Delete all Claude
   Code state for a project (transcripts, tasks, file history, config entry)"
   (`claude project --help`, 2.1.281, 2026-09-24).
@@ -243,6 +282,26 @@ Unless a bullet below says more, it is inferred, not checked.
   (`claude-opus-4-20250514`, `claude-sonnet-4-20250514`).
 - **The Stop hook can fire a moment before the turn's assistant record is flushed** to
   the jsonl (seen live on 2.1.263), so a reader that trusts Stop has to poll for it.
+- **What a slash command leaves in the jsonl** (2026-10-04/05, CC 2.1.289 and 2.1.290,
+  every record of the runs read):
+  - Its output is the text inside `<local-command-stdout>…</local-command-stdout>`, in
+    a `system`/`local_command` record (`/context`, `/model`, a closed picker) or in a
+    `user` record's string content (`/compact`, `/model haiku`, `/mcp`); it keeps
+    the screen's colour codes. After `/compact` it also holds one line per hook that
+    ran, `PreCompact [<the hook's command>] completed successfully` (seen with Koloft's
+    own hook on the Linux build over SSH, CC 2.1.289). A `<command-name>` record names the command, and a
+    `user` `isMeta` record holds `<local-command-caveat>`.
+  - `/context` also adds a `user` `isMeta` record whose content is the same report as
+    clean markdown ("## Context Usage …").
+  - An unknown command writes one `system`/`informational` record, `level: "warning"`,
+    content "Unknown command: /x. Did you mean /y?", and nothing else.
+  - `/compact` first writes a plain `user` record whose content is `"/compact"` with no
+    `origin` (a typed prompt has `origin: {kind: "human"}`), then the summary and its
+    output records at the end (§1).
+  - A `~/.claude/commands/<n>.md` command writes a `<command-message>` user record and
+    its body as a `user` `isMeta` record, then a normal turn.
+  - `/clear` writes its `<command-name>` record and an empty stdout into the new id's
+    file.
 
 Evidence: full census of 535 on-disk transcripts, 2026-08-10 (CC 2.1.220–227), plus
 controlled experiment E2; lazy write verified live 2026-08-24. The five mid-conversation
@@ -256,7 +315,9 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
 
 - **Resume by explicit id is a global lookup, across projects**: `claude --resume <id>`
   from an unrelated directory successfully continues a session living elsewhere, same
-  id, no fork (E3).
+  id, no fork (E3). Rechecked 2026-10-08, CC 2.1.294, `claude -p` through Koloft's shim:
+  a session started in folder A, resumed with `--resume <id>` from folder B, kept its id
+  and said back a word only folder A's turn held.
 - **`--resume <id> -w <name>` compose**: CC creates (or enters) the named worktree and
   resumes there with full history (E4); an existing name is entered and used as-is.
 - **Resume with a binding, worktree present** → CC re-enters it; **worktree missing** →
@@ -295,6 +356,35 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
   any other path mis-creates a same-named NEW worktree — so "open an existing
   worktree" must cd into its checkout and run bare `claude`, never `-w`. A bare
   `-w` with no name invents a random three-word name.
+- **`-w` copies the files `.worktreeinclude` names into a NEW worktree; nothing else
+  does.** The file sits at the repo root and holds `.gitignore`-style patterns (blank
+  lines and `#` lines skipped); a file is copied only when it matches a pattern AND git
+  ignores it (`git ls-files --others --ignored --exclude-standard`). A symbolic link is
+  skipped ("Skipping symlink in .worktreeinclude"). Read 2026-10-08 from the claude
+  2.1.294 binary (`strings`, the function that reads `.worktreeinclude`). That an
+  existing worktree entered with `-w` is reused as-is, so a worktree rebuilt by someone
+  else's `git worktree add` gets no copy, comes from the #5 probe on 2.1.287 (binary
+  strings + docs).
+- **A `WorktreeCreate` hook is not a setup step: it REPLACES `git worktree add`.** It is
+  meant for other version-control systems; the hook must make the folder and print its
+  path, and with the hook set the `.worktreeinclude` copy does not run. Setup work in a
+  new worktree belongs in a `SessionStart` hook. Probed for #5 on claude 2.1.287 (binary
+  strings + docs). The 2.1.294 strings agree that the hook makes the worktree
+  ("configure WorktreeCreate and WorktreeRemove hooks in settings.json for another
+  version-control system"; "Provides the absolute path to the created worktree
+  directory"); that the copy is then off was not re-read there.
+- **CC's Bash tool runs its commands with the env `claude` was started with**, so a
+  variable set on the launch reaches the model's shell in a `-w` worktree session:
+  `KOLOFT_PORT_OFFSET` set in the pty env on this Mac, and exported by the remote tab
+  script right before `exec claude` inside tmux on a Linux machine over ssh. In both, the
+  model ran `echo "$KOLOFT_PORT_OFFSET"`, the tool result held the worktree name's
+  offset, and the model replied with it. Measured 2026-10-08 with claude 2.1.294 (macOS,
+  and Linux in the Docker ssh lab, Debian bookworm's tmux), real model turns; established
+  by `agent-tools-real-smoke.spec.ts` › "a real Claude Code in a worktree session echoes,
+  with its Bash tool, the port offset of that worktree’s name" and
+  `remote-ssh-lab.spec.ts` › "E-SSH-11: a REAL claude on the machine, in a worktree
+  session made there through ssh and tmux, echoes with its Bash tool the port offset of
+  that worktree’s name (opt-in, spends real money)".
 - **CC's background retention sweep leaves hand-made worktrees under
   `.claude/worktrees/` alone from 2.1.246 on** (changelog, read 2026-09-18, not
   measured). Before that it could remove them.
@@ -305,7 +395,8 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
 Evidence: experiments E3/E4/E8, 2026-08-10, plus `strings` analysis of the claude
 2.1.227 binary. Koloft dependents: the resume decision tree in `src/main/resumePlan.ts`
 (behind `sessions:resumePlan`); `claudeArgv` in `src/main/claudeArgs.ts`, which composes
-`--resume`/`-w`.
+`--resume`/`-w`; `copyWorktreeIncludes` in `src/main/sessionWorktrees.ts`, which copies
+the same files into a worktree Koloft makes or rebuilds itself.
 
 ## §4 Worktree session exit
 
@@ -530,6 +621,12 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   Apart from the 2.1.266 check: inferred, not checked.
 - **The 5h window's reset time moves forward between probes** — the window is rolling.
   (Inferred, not checked.)
+- **Remote Control refuses the long-lived token Koloft injects.** Measured 2026-10-01,
+  CC 2.1.286, in a session the shim had launched with an account's
+  `CLAUDE_CODE_OAUTH_TOKEN`: `/remote-control` answered "Remote Control requires a
+  full-scope login token. Long-lived tokens (from claude setup-token or
+  CLAUDE_CODE_OAUTH_TOKEN) are limited to inference-only…". So with Koloft's account
+  balancing on, Claude's own phone remote does not work for a Koloft session.
 - **Model prices** (USD per million tokens, input/output, and context window): Fable 5.1
   $10/$50, 1M (cache read $0.25); Fable/Mythos 5 $10/$50, 1M; Opus 5.5 $4/$20, 1M
   (cache read $0.20); Opus 5 $5/$25, 1M; Opus 4.6–4.8 $5/$25, 1M;
@@ -568,6 +665,23 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   "prompt":"/loop …"}]` and `"background_tasks":[]`, in compact JSON. So a session
   whose last turn-end carried a non-empty `session_crons` will wake itself up, even
   though it looks idle. 209 sessions on the dev Mac had called `ScheduleWakeup`.
+- **A subagent's own background shell is in its `SubagentStop` list, not in the main
+  session's `Stop` list.** Measured 2026-10-08 on CC 2.1.294 (`claude -p`, temp HOME,
+  both hooks saving their input): a subagent that started `sleep 120` with
+  `run_in_background: true` and returned fired `SubagentStop` with
+  `background_tasks: [{"type":"shell","status":"running","command":"sleep 120",…}]`, and
+  the main `Stop` right after carried `[]`. The main transcript's `<task-notification>`
+  for such a subagent says `<status>completed</status>` with the note "This agent
+  stopped with background work of its own still running … the result below may be
+  interim" (seen in a real interactive run the same day). Whether interactive mode's
+  `Stop` lists it is inferred from that run, not probed.
+- **The Bash tool refuses a long leading `sleep`.** Read from the 2.1.294 binary
+  (`strings`): when a command's first part matches `^sleep\s+<n>\s*$` and `<n>` is at
+  least a threshold (a minified constant, not read), the call is refused with "standalone
+  sleep <n>" or "sleep <n> followed by: …", and the model is told to use Monitor or
+  `run_in_background`. Seen the same day: a subagent told to run `sleep 300` in the
+  foreground was refused, and one left free to choose ran it in the background instead.
+  `perl -e "sleep 300"` does not match the check.
 - **An idle teammate is still `running`**. CC's own activity checks use
   `status === 'running' && !isIdle`; hooks never see `isIdle`. On disk the idle edge
   is a user record in the lead's transcript — `Another Claude session sent a
@@ -604,6 +718,17 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   scripts). CPU does tell them apart: over 60 s an idle `python3 -m http.server` used
   0.01 s of CPU per minute, while a test run uses tens of seconds per minute. A busy
   emulator (qemu) also used 24.5 s per minute, so it reads as work too.
+- **A background subagent's own background shell stays in the MAIN session's Stop list
+  after the subagent ends — in interactive mode.** Measured 2026-10-08 on CC 2.1.295,
+  interactive TUI driven through a pty, with Stop/SubagentStop hooks that saved their input:
+  the subagent ran `perl -e "sleep 100"` with `run_in_background` and returned at once. Its
+  SubagentStop listed the shell (`{"id":"b3u7bx7sz","type":"shell","status":"running",…}`);
+  the main session's next Stop listed the same id, and the shell was a `zsh -c … eval` child
+  of the main claude with fd 1 on `<scratch>/tasks/b3u7bx7sz.output` — the same shape as a
+  main-thread background shell. When it ended, the subagent woke (another SubagentStop), then
+  the main session took one more turn whose Stop listed `[]`. A `claude -p` run on 2.1.294
+  (issue #382) listed `[]` at the main Stop instead; whether the difference is the mode or the
+  version is not probed yet.
 - **`Notification` payloads carry no task list** (124 "Claude is waiting for your
   input" nudges, none with `background_tasks`), and `-p` mode exits with a background
   shell still running, firing one Stop.
@@ -726,6 +851,33 @@ other bullets of §9 were not re-measured on this build.
   lists the session under that title (an unnamed session shows an auto summary there
   instead). Help text: `-n, --name <name>  Set a display name for this session (shown
   in the prompt box, /resume picker, and terminal title)`.
+- **A session started with `--name` never gets an `ai-title`.** A sweep on 2026-10-07 of
+  every main transcript then on disk (CC 2.1.263 to 2.1.293): of the 127 whose first
+  record is the `custom-title` that `--name` writes, 0 carried an `ai-title`; of the 311
+  that start without one, 84 did. So the only words naming such a session, besides its
+  `--name`, are its first prompt. **`--name` itself is what stops the title** — checked
+  2026-10-08 on CC 2.1.295 with a pair of pty launches in an empty folder, the same
+  first message, nothing else different: without `--name` the transcript got
+  `ai-title` "Koloft 侧栏会话标题过长"; with `--name title-probe-n` it got only the
+  `custom-title` / `agent-name` pair, no `ai-title`.
+- **`/rename <text>` renames both the title and the address.** Same build and setup: a
+  session started with `--name rename-probe-a` and then sent `/rename 改名后的标题`
+  appended a new `custom-title` *and* a new `agent-name` with the new text, and still no
+  `ai-title`. So the latest `custom-title` is the session's name, and a peer that kept
+  the old name no longer reaches it by that name.
+- **A name may hold spaces and CJK text and still be a message address.** Same build:
+  `--name "带 空格 的 名字"` was listed by ListAgents under that name, and a
+  SendMessage to that bare name was delivered (its transcript holds the reply
+  `GOT PROBE-SPACE-123`).
+- **A one-shot `claude -p --model haiku` makes a usable title in 2–5 s.** Measured
+  2026-10-08, CC 2.1.295, through Koloft's shim with the account balancer: 20 real
+  first messages of agent-started sessions, task on stdin, each answered in 2.1–5.0 s
+  with a short title in the task's language. With the default system prompt and setting
+  sources one call read ~5.7k input tokens (≈ $0.001); with `--system-prompt` set and
+  `--setting-sources ''` it read ~750 (≈ $0.00024) and still answered. With
+  `--no-session-persistence` it left no transcript in its cwd's project folder. Behind
+  an expired login it prints `Failed to authenticate: …` on stdout and exits 1, so only
+  the exit code tells a title from an error.
 - **Spawn to SessionStart is well under a second on this machine**: 0.250 / 0.272 /
   0.293 / 0.265 / 0.381 s over six launches with the user's real MCP config loaded (no
   `--strict-mcp-config`), 0.429 s through Koloft's own shim with the account balancer
@@ -899,6 +1051,13 @@ sessions plus a tmux probe, 2026-09-23, CC 2.1.281 (bullets below).
     closed, the way Koloft's own exit closes every tab). So a Koloft that relaunches
     does not find its last run's sessions still registered.
   - A `kill -9`'d claude **leaves its entry behind**.
+  - **`status` is `waiting` exactly while a dialog, panel or menu is open** (2026-10-04/05,
+    CC 2.1.289 and 2.1.290): the `/model` and `/resume` pickers, the "Switch model?"
+    confirmation, the panels `/cost`, `/usage`, `/status`, `/help` and `/config` open,
+    and the rewind menu. It went back to `idle` about 0.1 s after the Esc that closed
+    one, and it stayed `idle` through 130 s at an idle prompt, including after the
+    `idle_prompt` Notification. `busy` while a turn, a local command or a compaction
+    runs.
   - `procStart` is `ps -o lstart=` for that pid printed in UTC (`TZ=UTC`,
     e.g. `Wed Sep 23 20:29:08 2026`). So "pid alive and its UTC `lstart` equals
     `procStart`" tells a live entry from a stale one whose pid was reused. Re-checked
@@ -924,7 +1083,41 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
 - **Cell widths follow Unicode 11 tables** (Ink / string-width). A terminal using other
   tables makes wide CJK and emoji drift and clip at the right edge.
 - **A bare LF (`\n`, the same as Ctrl+J) inserts a newline in the input box; CR
-  submits.**
+  submits.** Measured 2026-10-03, CC 2.1.288, a pty in a scratch `HOME`: one write of
+  three lines joined by LF showed as one three-line input, and a CR in a second write
+  0.4 s later sent it as one `user` record whose `content` kept the `\n`s.
+- **Text typed into the input box and the CR that sends it must be two writes.** One
+  write of 63 bytes or more that ended in CR put a newline in the box instead of
+  sending; the text first and the CR in a second write 0.3 s later sent texts of 120 and
+  300 bytes. Recorded from the Discord design round's probe notes (2026-10-02, CC
+  2.1.286); the setup was not re-run here.
+- **Typing while claude is in the middle of a turn queues the message**: the screen
+  shows "Press up to edit queued messages", and claude takes it once the running tool
+  call ends, in the same turn (a `queued_command` attachment, §2). Recorded from the
+  same probe notes (CC 2.1.288); not re-run here.
+- **A slash command typed into the box runs as the command; the same text sent between
+  sessions does not** (2026-10-04/05, CC 2.1.289 and 2.1.290, real claude in a pty in a
+  scratch `HOME`, text then Enter 0.3 s later; the Linux build over `ssh -tt` into tmux
+  did the same for `/compact` and `/clear`). `/compact`, `/clear`, `/context`, `/model
+  haiku` and a `~/.claude/commands/<n>.md` command ran; one sent on the messaging socket
+  (§13) reached the model as text. Typed while a turn runs, each was queued and ran
+  right after the turn.
+- **Enter runs the command menu's highlighted entry, not the typed text**: `/co` +
+  Enter would run `/copy` and `/con` + Enter opened `/config`, with or without a
+  trailing space. A misspelling that only fuzzy-matches (`/clera`, `/contxt`) gets no
+  highlight and writes "Unknown command: /clera. Did you mean /clear?". **Esc after the
+  text closes the menu and keeps the text, and Enter then submits exactly that**:
+  `/con`, Esc, Enter gave "Unknown command: /con"; `/context`, `/clear`, `/compact `,
+  `/compact <args>` and `/model haiku` with Esc before Enter ran as typed. With no menu
+  open (a command with arguments), that Esc only shows "Esc again to clear"; one Esc at
+  an empty box does nothing, a second one opens the rewind menu.
+- **Commands that open a panel or picker write nothing until it closes**: `/cost`,
+  `/usage`, `/status`, `/help` and `/config` open a panel and leave no record at all;
+  `/model` with no argument and `/resume` open a picker; `/model sonnet` from Haiku asks
+  "Switch model?" first (option 1, Yes, highlighted; Esc or `2` keeps the model; a
+  typed Enter picks Yes). One Esc closes each, except `/config`, which takes two (the
+  first leaves its search box). A closed picker writes `Kept model as …` / `Resume
+  cancelled`.
 - **URLs and files are opened with `Bun.spawn(["open", url])`**, which looks `open` up
   on PATH, so a PATH shim can catch it.
 - **An idle claude process holds a lot of memory**: measured 185–350 MB each for idle
@@ -967,3 +1160,250 @@ sessions.
   reply arrived in the sender. The `SendMessage` tool text says a session in a
   different permission mode holds such messages for its user's approval — read, not
   measured.
+- **How a message from another session lands in the receiver's transcript** (2026-10-02,
+  CC 2.1.288, interactive sessions in a scratch `HOME`, the message sent as one
+  `{"type":"user",…}` line to the receiver's `messagingSocketPath`, §11). When the
+  receiver was idle: a `user` record with `isMeta: true`, `origin: {kind:"peer",
+  from:"unknown", verifiedPeerPid}`, `turnOrigin: "peer"`, and the text wrapped as
+  `"Another Claude session sent a message:\n<text>\n\nThis came from another Claude
+  session — not typed by your user, …"`. When the receiver was in the middle of a turn: no
+  `user` record; a `queued_command` attachment (shape in §2) with `origin.kind: "peer"`
+  and `isMeta: true`, whose `prompt` holds the bare text. A sweep of 80 recent
+  transcripts on this Mac (CC 2.1.285–2.1.288, 2026-10-03) found 4 `user` records with
+  `origin.kind: "peer"`, all `isMeta: true`.
+- **A receiver started with `--dangerously-skip-permissions` holds a message whose sender
+  does not say it runs the same way.** Measured 2026-10-02, CC 2.1.288, four interactive
+  receivers in a scratch `HOME`, each sent one line on its socket while idle; re-run
+  2026-10-03, CC 2.1.288, with Koloft's own writer (`src/main/crossSessionMessage.ts`)
+  against one logged-in receiver:
+  - content `<cross-session-message from-mode="bypass">` + `\n` + body + `\n` +
+    `</cross-session-message>`: delivered — the screen showed "Message from @peer: …" and
+    a turn started; the logged-in receiver did what the body asked. The transcript keeps
+    the envelope inside the usual "Another Claude session sent a message:" wrap.
+  - The same `bypass` line sent while that receiver was running a 15 s Bash command was
+    taken into the running turn and answered there: a `queued_command` attachment whose
+    `prompt` holds the whole envelope and whose `origin` adds `fromMode: "bypass"` and
+    `body` (the bare body).
+  - the same with `from-mode="prompting"`, or a bare body, or `"from_mode":"bypass"` as a
+    field beside `message`: held — "Held peer message … The sending session's permission
+    mode class doesn't match this session's", and a "Held message from another session"
+    dialog with two choices, "Deny" (selected) and "Deliver this message to Claude".
+  - The two classes are `bypass` and `prompting`. The 2.1.288 binary counts a session as
+    `bypass` when its mode is `bypassPermissions`, or when a second check passes that
+    takes the mode and whether bypass mode is available
+    (`e.mode==="bypassPermissions"||IW(e.mode,e.isBypassPermissionsModeAvailable)`);
+    what that second check accepts was not read.
+  - The binary only accepts the envelope when it matches its own pattern exactly
+    (attributes in a fixed order, a newline right after `>` and right before `</`).
+  - It is switched by the internal gate `tengu_harbor_kite_mode_emit`, default on
+    (`T("tengu_harbor_kite_mode_emit",!0)` in the 2.1.288 binary); recheck on upgrade.
+  - A busy receiver with a mismatched mode, and a receiver not in bypass mode, were not
+    tried.
+- **A message reaches a receiver whose turn ended with background work still running.**
+  2026-10-08, CC 2.1.294, interactive receivers in a pty with a scratch `HOME` and an
+  OAuth token, `--dangerously-skip-permissions`, model haiku. One receiver's first turn
+  started `sleep 90` with the Bash tool's `run_in_background: true` and ended; 5 s later a
+  `bypass` envelope written to its socket was answered 1.3 s after the write. A control
+  receiver with no background work answered in 1.0 s.
+
+## §14 The PermissionRequest hook: answering a dialog from outside
+
+How established: 2026-10-03, CC 2.1.288, interactive claude in a pty with a scratch
+`HOME`, model haiku, a `--settings` file whose `PermissionRequest` entry (matcher `"*"`)
+ran a logging script, next to logging `PreToolUse` and `PostToolUse` hooks. Each line
+below was one run.
+
+- **It fires the moment claude draws a dialog that waits on the person.** Its input has
+  `session_id`, `transcript_path`, `cwd`, `permission_mode`, `prompt_id`,
+  `hook_event_name: "PermissionRequest"`, `tool_name` and `tool_input` — and no
+  `tool_use_id` (`PreToolUse` and `PostToolUse` carry one).
+- **With `--permission-mode bypassPermissions`, `AskUserQuestion` and `ExitPlanMode` still
+  fire it; `Bash` does not** (it ran with no dialog).
+- **An `AskUserQuestion` is answered by the hook's output, with no key press:**
+  `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":
+  "allow","updatedInput":{…tool_input,"answers":{"<question>":"<label>"}}}}}`.
+  `PostToolUse` then showed those `answers` in `tool_response`.
+- **An `ExitPlanMode` needs `updatedInput`:** a bare `{"behavior":"allow"}` was ignored
+  with no error and the dialog stayed; `allow` with `updatedInput` set to the
+  `tool_input` unchanged approved the plan, and claude went back to the mode it had
+  before plan mode.
+- **`{"behavior":"deny","message":"<text>"}`** hands claude the text; it carries on and
+  `Stop` fires at the end of the turn.
+- **A hook may wait for the answer.** One that answered after 120 s with
+  `"timeout": 900` took effect. At its `timeout` (20 s in one run) claude ends the hook
+  with SIGTERM and the dialog stays on screen; nothing is denied.
+- **When the person answers in the terminal first:** "No" or Esc ends the hook with
+  SIGTERM at once (its `EXIT` trap ran); "Yes" does not signal it, and it lived on until
+  claude exited. What it prints after that is ignored. Re-run 2026-10-04, CC 2.1.289
+  (scratch `HOME`, haiku, `--permission-mode default`, a hook that logged its start and
+  any SIGTERM and then waited): `1` on a `Bash` dialog ran the command, and 15 s later the
+  hook was still alive with no SIGTERM logged.
+- **A hook still waiting when the session ends can make claude skip every SessionEnd
+  hook.** 2026-10-06, CC 2.1.291, a pty, haiku, `--dangerously-skip-permissions`,
+  Koloft's hook settings with the `.answerable` marker present: an `AskUserQuestion`
+  answered `1` in the terminal (Koloft's `ask` hook kept waiting), one more turn, 60 s
+  idle, then `/exit` — claude exited with code 0 after 0.5 s and no SessionEnd hook ran
+  (neither Koloft's nor a second logging one), 2 runs out of 2. The same run with the
+  waiting hook ended by SIGTERM just before `/exit` fired SessionEnd
+  `prompt_input_exit`. `/exit` 3 s after the answer, with no turn between, fired it
+  too (1 run). Seen live in Koloft three times the same night: the first `/exit` of a
+  session that had answered a question in the terminal left its row cold.
+- **The transcript's `tool_use` input and the hook's `tool_input` hold the same values
+  in a different key order.** One `AskUserQuestion`, 2026-10-06, CC 2.1.291: the hook
+  had `question, header, options, multiSelect`, the transcript `question, header,
+  multiSelect, options`.
+- **A hook that exits at once with no output** leaves the dialog to the person, as if
+  there were no hook. Run 2026-10-04, CC 2.1.289, through Koloft (the
+  `discord-real-smoke` case "with Discord off"): Koloft's hook script left before reading
+  its input, the `AskUserQuestion` dialog drew as usual, `2` picked the second option (the
+  `tool_result` held it), and the turn ended.
+- **With no permission flag and no setting, a fresh `HOME` starts in `auto` mode**
+  (2026-10-04, CC 2.1.289: the transcript's `permission-mode` record said `"auto"`), and
+  in it a `Bash` `touch` ran with no dialog. `permissions.defaultMode: "default"` in
+  `~/.claude/settings.json` brought the dialog back.
+- **The `Notification` hook (`permission_prompt`) comes about 6 s after
+  `PermissionRequest`** for the same dialog (7.7→13.8 s, 6.4→12.4 s, 7.0→13.0 s in three
+  runs), also for a plan in `bypassPermissions`.
+- **Koloft's own hook script and answer builder, run by a real claude** (2026-10-03, CC
+  2.1.288, scratch `HOME`, haiku, the `PermissionRequest` entry exactly as
+  `hookSettings()` writes it, the answer file written by `hookAnswer()`): with
+  `--dangerously-skip-permissions`, an `AskUserQuestion` answered `2` showed "→ Green" and
+  "Allowed by PermissionRequest hook"; with `--permission-mode default`, a `Bash` dialog
+  answered `yes` (`allow` with `updatedInput` set to the `tool_input` unchanged) ran the
+  command. Both hooks removed their files on the way out.
+- **The keys that answer a dialog in the terminal** (2026-10-03, CC 2.1.288, a pty, scratch
+  `HOME`, haiku, `--dangerously-skip-permissions`, a `PermissionRequest` hook that printed
+  nothing):
+  - an `AskUserQuestion` with one question lists its options as `1.`…`N.`, then
+    `N+1. Type something.` and `N+2. Chat about this`. A digit picks that option and sends
+    it at once. `N+1`, then the text in a second write, then CR in a third write 1 s later
+    sent the text as the answer.
+  - a plan (`ExitPlanMode`) offers `1. Yes, and switch to BYPASS PERMISSIONS …` (in a
+    session that was in bypass before plan mode; `1. Yes, auto-accept edits` in one that
+    was not), `2. Yes, manually approve edits`, `3. Tell Claude what to change`. `1`
+    approved it and the session went back to bypass; Esc rejected it ("User rejected
+    Claude's plan"), the turn ended and the session stayed in plan mode.
+  - a `Bash` dialog (`--permission-mode default`) offers `1. Yes`, `2. Yes, and always
+    allow …`, `3. No`; `1` ran it, `3` and Esc refused it (2026-10-02 round, same version).
+
+## §15 The PreToolUse hook stops a tool even when permission checks are skipped
+
+How established: 2026-10-08, CC 2.1.294, one `claude -p` run on this Mac through
+Koloft's shim (an account picked by the balancer), `--dangerously-skip-permissions`,
+model haiku, an empty MCP config, and a `--settings` file whose `PreToolUse` entry
+(matcher `"*"`) ran a logging node script. The script printed
+`{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny",
+"permissionDecisionReason":"<text>"}}` for every call except a Bash command starting
+with `koloft`, and printed nothing for that one. The prompt asked for a Bash
+`echo x > <file>`, a Write of a second file, then Bash `koloft help`.
+
+- **The hook ran for every tool call, and its input said `permission_mode:
+  "bypassPermissions"`.**
+- **A `deny` stopped the call in that mode**: neither file was written, and claude got
+  the reason back as `PreToolUse:Bash hook error: <text>` and went on to the next step.
+- **Printing nothing let the call run** (`koloft help` ran).
+- **The same holds in an interactive session.** 2026-10-08, CC 2.1.294, the
+  `discord-real-smoke` case for a Claude conductor: Koloft's own gate, a pty session
+  with `--dangerously-skip-permissions`, asked to write a file — the file was not
+  written and the transcript held `PreToolUse:<tool> hook error`.
+- **The hook's input names the transcript.** 2026-10-09, CC 2.1.295, `claude -p` with a
+  `PreToolUse` hook that logged its input, asked to Write a file then Edit it: each
+  input held `session_id`, `transcript_path` (absolute,
+  `~/.claude/projects/<folder>/<session id>.jsonl`), `cwd`, `permission_mode`,
+  `hook_event_name`, `tool_name`, `tool_input` (`file_path` absolute for Write and Edit)
+  and `tool_use_id`. The auto-memory folder is `memory/` beside that transcript (seen
+  for Koloft's global conductor).
+- Not run: a `Task` subagent's own tool calls under the hook.
+
+## §16 `claude --version` and `claude update`
+
+How established: 2026-10-08 on this Mac, each run in a fresh temporary `HOME` with
+stdin closed. A native install of 2.1.250 (`bash install.sh 2.1.250`, §10), and an npm
+one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable prefix).
+
+- **`claude --version` prints `2.1.294 (Claude Code)`** — the version first, then a
+  space — and returns at once (`time` shows 0.00 s native, 0.12 s for the npm install),
+  so a check on every launch costs next to nothing.
+- **`claude update` asks nothing and exits 0.** Native: 2.1.250 → 2.1.294; the
+  `~/.local/bin/claude` link moves to `versions/2.1.294` and `versions/2.1.250` stays,
+  so a session already running on the old file keeps going. npm: 2.1.250 → **2.1.293**,
+  one behind the native channel that day, after printing "npm global folder isn't
+  writable" and then updating anyway. With an npm prefix that really needs `sudo`, the
+  update failing is inferred, not checked. A Homebrew install was not run.
+- **The oldest version Koloft's code leans on is 2.1.259**: concurrent sessions stop
+  reverting each other's `~/.claude.json` writes from then on (§2), which the folder
+  trust written before each launch needs; `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` (§7) needs
+  2.1.257. The release that added `--name`, `--effort`, `--plugin-dir`, the §11 session
+  registry or the `PermissionRequest` hook is not recorded here; that all predate
+  2.1.259 is inferred, not checked.
+- **The minimum is 2.1.293, the newest every channel offered on 2026-10-08**
+  (`downloads.claude.ai/claude-code-releases/latest` said 2.1.294; npm dist-tags said
+  `latest` 2.1.293, `next` 2.1.294, `stable` 2.1.285). A minimum above npm's `latest`
+  would leave an npm install that `claude update` cannot lift to it.
+
+## §17 The UserPromptSubmit hook adds text beside every prompt
+
+How established: 2026-10-08, CC 2.1.294, on this Mac, model haiku, an empty MCP config,
+and a `--settings` file whose `UserPromptSubmit` entry ran a script that printed
+`{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"<text>"}}`
+where `<text>` held a made-up word. Run as `claude -p`, and as an interactive claude in
+a pty (Koloft's `KOLOFT_HOOK_SETTINGS` and the inherited `CLAUDE_CODE_CHILD_SESSION`
+unset), its prompt both typed and given as the launch argument.
+
+- **The text reaches the model on that turn**: asked for the word, it said it back, in
+  `-p` and in the interactive session (transcript `entrypoint: "cli"`).
+- **It lands in the transcript as its own record**, not inside the user message:
+  `{"type":"attachment","attachment":{"type":"hook_additional_context","content":["<text>"],
+  "hookName":"UserPromptSubmit","hookEvent":"UserPromptSubmit",…},"rendered":[{"content":
+  "<system-reminder>\nUserPromptSubmit hook additional context: <text>\n</system-reminder>"}],
+  "renderedRole":"system"}`, written right after the prompt.
+- **The interactive screen does not show the text.** While the hook runs, the spinner line
+  reads `(running UserPromptSubmit hook · 0s)`; after that only the prompt and the reply
+  are drawn.
+
+## §18 A bracketed paste lands in the input box unsent
+
+How established: first from the issue #4 design round's probe notes (CC 2.1.287, real
+claude in a pty, early October 2026; a second reader re-ran them then). Re-run on
+2026-10-08 with Claude Code 2.1.294 through Koloft's own ✎ comment, on this Mac and, as
+linux-arm64, on a Docker lab machine reached over real ssh into tmux 3.3a: one write of
+8 lines with 7 LFs (Mac) or 10 lines with 9 LFs (lab) inside the markers, a 5 s wait,
+then one CR written to the tab. Established by `agent-tools-real-smoke.spec.ts` › "a
+real Claude Code holds the hunk comment in its input box unsent, and the next Enter
+sends path, diff fence, hunk and note as one message" (4 runs) and
+`remote-ssh-lab.spec.ts` › "E-SSH-10: ✎ comment on a remote Changes hunk reaches a REAL
+claude on the machine through ssh and tmux …" (3 runs; one of them failed only on an
+earlier assertion that the model obey the note, the paste facts held in all three).
+
+- **claude turns bracketed paste on at startup** (it writes `ESC[?2004h`; 2.1.287 notes).
+- **A write wrapped in `ESC[200~` … `ESC[201~` lands as one block and is not sent.** On
+  2.1.287, 7 lines and 85 lines each showed as one `[Pasted text #1 +N lines]` in the
+  input box. On 2.1.294, the paste showed as `[Pasted text #1 +7 lines]` (`+9 lines` on
+  the lab machine), one per LF, and 5 s later the transcript still held no user message:
+  LF inside the markers sends nothing.
+- **The next CR sends it as one user message.** The transcript's `user` record has a
+  string `content` with the paste wrapped in tags:
+  `\n\n<pasted_content id="<4 hex>">\n<the pasted text>\n</pasted_content id="<4 hex>">\n`.
+- **The model may not take words inside a paste as the person's own.** Asked inside the
+  paste to reply with one word, it did in 4 of 7 runs; in the other 3 it said the line
+  "came from the pasted text and not from you" and did not act on it.
+- **Text typed right after the paste's `ESC[201~` stays outside the tags**, after
+  `</pasted_content …>\n\n`, and the model took it as the person's words: it replied the
+  one word asked for in 11 of 11 runs. Measured 2026-10-08, CC 2.1.294, a python `pty`
+  probe in a scratch `HOME` (only `.claude.json` with trust and onboarding, auth in
+  `CLAUDE_CODE_OAUTH_TOKEN`): the paste, then the note in the same write, in one write
+  0.3 s later, or in pieces; then a CR 4 s later.
+- **One raw write longer than about 800 bytes is taken as a second paste**, wrapped in its
+  own tags and shown as `[Pasted text #2]`: a 900-byte piece did that, and a
+  1,150-byte write was split at 1,024 bytes with the first part wrapped. Pieces of 512
+  bytes 10 ms apart, and of 128 characters 0.3 s apart, stayed typed text.
+- **A raw LF in the typed text adds a line and does not send**, both inside one write of
+  nine lines and as a lone LF written 0.3 s after the line before it (2.1.294, same
+  probe; the 2.1.288 measurement is in §12).
+- **The same 85 lines written raw, with no markers, split into two blocks** (2.1.287),
+  so a raw write is not one paste.
+- **Over ssh into tmux the paste arrives whole and waits the same way**: the remote tab
+  showed one `[Pasted text #1 +9 lines]` and the CR sent one message, as on the Mac. A
+  two-line note typed after it (Koloft's ✎ comment, 128-character pieces 0.3 s apart)
+  stayed outside the tags and was obeyed in 3 of 3 E-SSH-10 runs (2026-10-08, 2.1.294
+  linux-arm64); the same held in 3 of 3 runs of the local real case.

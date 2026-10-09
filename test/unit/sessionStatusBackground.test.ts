@@ -1151,13 +1151,19 @@ function stageProcs(
   })
 }
 
-function commandUseRec(toolUseId: string, cwd: string, command: string, name = 'Bash'): unknown {
+function commandUseRec(
+  toolUseId: string,
+  cwd: string,
+  command: string | Record<string, unknown>,
+  name = 'Bash'
+): unknown {
+  const input = typeof command === 'string' ? { command } : command
   return {
     type: 'assistant',
     timestamp: new Date().toISOString(),
     message: {
       role: 'assistant',
-      content: [{ type: 'tool_use', id: toolUseId, name, input: { command } }]
+      content: [{ type: 'tool_use', id: toolUseId, name, input }]
     },
     cwd
   }
@@ -1213,7 +1219,7 @@ describe('run-state from the typed task list: each task judged by what it is, an
     ])
   })
 
-  it('a reported shell holds working while a tool shell holds its output file, and rests once it is gone', async () => {
+  it('a reported shell holds working and is listed as running while a tool shell holds its output file, and both clear once it is gone', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     const file = await bindCaughtUp(tracker, 'tabL2', cwd, initialLines(cwd))
@@ -1222,9 +1228,13 @@ describe('run-state from the typed task list: each task judged by what it is, an
     stageProcs(tracker, { btoolu_sh: { ageMs: 0 } })
     await tracker.reportTurnEnd('tabL2', [{ id: 'btoolu_sh', type: 'shell' }])
     expect(status(tracker, 'tabL2')).toBe('working')
-    expect(parked(tracker, 'tabL2')).toBeUndefined()
+    expect(tracker.turnOver('tabL2')).toBe(true)
+    expect(parked(tracker, 'tabL2')).toEqual([
+      { id: 'btoolu_sh', kind: 'command', label: 'npm test', state: 'working' }
+    ])
     stageProcs(tracker, {})
     await waitFor(tracker, (s) => s.tabId === 'tabL2' && s.status === 'waiting', 6000)
+    expect(parked(tracker, 'tabL2')).toBeUndefined()
   }, 10_000)
 
   it('a reported shell that listens on a port and has gone quiet is a server: parked, and the turn-end lands', async () => {
@@ -1270,7 +1280,9 @@ describe('run-state from the typed task list: each task judged by what it is, an
     await tracker.reportTurnEnd('tabL4', [{ id: 'btoolu_e2e', type: 'shell' }])
     await sleep(SERVER_QUIET_MS * 4 + SCAN_MS * 2)
     expect(status(tracker, 'tabL4')).toBe('working')
-    expect(parked(tracker, 'tabL4')).toBeUndefined()
+    expect(parked(tracker, 'tabL4')).toEqual([
+      { id: 'btoolu_e2e', kind: 'command', label: 'npx playwright test', state: 'working' }
+    ])
   }, 10_000)
 
   it('a long job that listens on nothing is work however old it is', async () => {
@@ -1286,8 +1298,31 @@ describe('run-state from the typed task list: each task judged by what it is, an
     await tracker.reportTurnEnd('tabL6', [{ id: 'btoolu_wait', type: 'shell' }])
     await sleep(SERVER_QUIET_MS * 4 + SCAN_MS * 2)
     expect(status(tracker, 'tabL6')).toBe('working')
-    expect(parked(tracker, 'tabL6')).toBeUndefined()
+    expect(parked(tracker, 'tabL6')).toEqual([
+      {
+        id: 'btoolu_wait',
+        kind: 'command',
+        label: 'until ! pgrep -f vitest; do sleep 5; done',
+        state: 'working'
+      }
+    ])
   }, 10_000)
+
+  it('a running background subagent is listed by the description its Agent call gave', async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    const file = await bindCaughtUp(tracker, 'tabL7', cwd, initialLines(cwd))
+    tracker.setStatus('tabL7', 'working')
+    appendJsonl(file, [
+      commandUseRec('toolu_ag', cwd, { description: 'Review the diff' }, 'Agent'),
+      spawnRec('toolu_ag', cwd)
+    ])
+    await tracker.reportTurnEnd('tabL7', [{ id: 'atoolu_ag', type: 'subagent' }])
+    expect(status(tracker, 'tabL7')).toBe('working')
+    expect(parked(tracker, 'tabL7')).toEqual([
+      { id: 'atoolu_ag', kind: 'agent', label: 'Review the diff', state: 'working' }
+    ])
+  })
 
   it('a reported shell is trusted when the OS cannot be asked (no pid wired)', async () => {
     const cwd = makeWorkspace()
@@ -1693,4 +1728,63 @@ describe('auto-closing an idle session: every reason to keep it is read fresh at
     tracker.setStatus('tabA10', 'working')
     await expectStays(closes)
   }, 10_000)
+})
+
+// CC§1
+describe('a compaction the owner asked for', () => {
+  const hook = (event: string) => sessionEventFromHook(event)!
+
+  it('shows the session working while it compacts, then back to how it was', async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    await bindCaughtUp(tracker, 'tabK1', cwd, initialLines(cwd))
+    tracker.setStatus('tabK1', 'waiting')
+    tracker.receive('tabK1', hook('compacting'))
+    expect(status(tracker, 'tabK1')).toBe('working')
+    tracker.receive('tabK1', hook('compacted'))
+    expect(status(tracker, 'tabK1')).toBe('waiting')
+  })
+
+  it('a turn that starts before the compaction ends is not undone by it', async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    await bindCaughtUp(tracker, 'tabK2', cwd, initialLines(cwd))
+    tracker.setStatus('tabK2', 'waiting')
+    tracker.receive('tabK2', hook('compacting'))
+    tracker.receive('tabK2', hook('prompt'))
+    tracker.receive('tabK2', hook('compacted'))
+    expect(status(tracker, 'tabK2')).toBe('working')
+  })
+
+  it('the "/compact" line Claude writes into the transcript is not a new prompt, so it cannot outlast the compaction as working', async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    const file = await bindCaughtUp(tracker, 'tabK4', cwd, initialLines(cwd))
+    tracker.setStatus('tabK4', 'waiting')
+    appendJsonl(file, [{ type: 'user', message: { role: 'user', content: '/compact' }, cwd }])
+    await sleep(RESUME_MS * 2)
+    expect(status(tracker, 'tabK4')).toBe('waiting')
+    tracker.receive('tabK4', hook('compacting'))
+    tracker.receive('tabK4', hook('compacted'))
+    expect(status(tracker, 'tabK4')).toBe('waiting')
+    appendJsonl(file, [
+      {
+        type: 'user',
+        message: { role: 'user', content: 'a typed prompt' },
+        origin: { kind: 'human' },
+        cwd
+      }
+    ])
+    await waitFor(tracker, (s) => s.tabId === 'tabK4' && s.status === 'working')
+  })
+
+  it('a compaction in the middle of a turn leaves it working', async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    await bindCaughtUp(tracker, 'tabK3', cwd, initialLines(cwd))
+    tracker.setStatus('tabK3', 'working')
+    tracker.receive('tabK3', hook('compacting'))
+    tracker.receive('tabK3', hook('compacted'))
+    expect(status(tracker, 'tabK3')).toBe('working')
+  })
 })

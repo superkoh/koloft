@@ -1,7 +1,10 @@
+import fs from 'fs'
+import path from 'path'
 import { chromium, type Browser, type Page } from '@playwright/test'
 import { test, expect, launchApp } from './helpers/app'
 import { setGuestLimit, type E2EEnv } from './helpers/env'
-import { centerTerm, runIn, startSessionIn, waitBooted } from './helpers/p1'
+import { centerTerm, runIn, startSessionIn, waitBooted, waitForCalls, wsRows } from './helpers/p1'
+import { persistedTabsOnDisk } from './helpers/workbench'
 import {
   BROWSER,
   addressField,
@@ -65,9 +68,14 @@ test.describe('CDP target list: what a client is shown, what it costs, and what 
     const server = await startEchoServer()
     try {
       const url = await session(page, env)
-      await openViaAgent(page, server.url('/a'))
-      await openBrowser(page)
-      await expect(openTabs(page)).toHaveCount(1, { timeout: 40_000 })
+      const [a] = await waitForCalls(env, 1)
+      await runIn(page, centerTerm(page), `/open-later ${server.url('/a')}`)
+      await expect(centerTerm(page)).toContainText('armed open', { timeout: 30_000 })
+      await startSessionIn(page, 'ws-b')
+      fs.writeFileSync(path.join(env.home, 'go-open'), '')
+      await expect
+        .poll(() => persistedTabsOnDisk(env, a.sessionId).map((t) => t.url), { timeout: 40_000 })
+        .toContain(server.url('/a'))
       expect(server.count('/a')).toBe(0)
 
       const client = await bareWebSocketClientThatNeverAutoAttaches(page, url)
@@ -87,7 +95,7 @@ test.describe('CDP target list: what a client is shown, what it costs, and what 
         expect(attached.result?.sessionId).toBeTruthy()
 
         await expect.poll(() => server.count('/a'), { timeout: 40_000 }).toBeGreaterThan(0)
-        await expect(page.locator(BROWSER.tabAgent)).toHaveCount(1)
+        await expect(wsRows(page, 'ws-b').first()).toHaveClass(/\bactive\b/)
       } finally {
         client.close()
       }
@@ -329,7 +337,6 @@ test.describe('CDP target list: what a client is shown, what it costs, and what 
           page,
           server.page(`/${name.toLowerCase()}`, `<title>${name}</title><body>${name}</body>`)
         )
-        await page.locator(BROWSER.tabAgent).last().click()
         await expect(tabByTitle(page, name)).toHaveCount(1, { timeout: 30_000 })
       }
 

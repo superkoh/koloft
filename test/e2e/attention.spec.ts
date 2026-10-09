@@ -72,4 +72,26 @@ test.describe('attention markers come from real session-status transitions (shim
     await expect(page.locator('.ws-tab.st-waiting')).toHaveCount(0)
     await expect(page.locator('.ws-tab.st-approval')).toHaveCount(0)
   })
+
+  test('a local claude that dies without an end report raises the “exited” mark, drawn as a red dot on its cold row, and closing its dead tab keeps it', async ({
+    page,
+    env
+  }) => {
+    test.setTimeout(150_000)
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 25_000 })
+    await page.locator('.ws-tab').first().click()
+    await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
+
+    const [call] = await waitForCalls(env, 1)
+    killSession(call.pid, env)
+
+    const row = page.locator('.ws-tab', { hasText: FAKE_SESSION_TITLE })
+    await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+    await expect
+      .poll(async () => (await pendingAttention(page)).map((a) => a.kind), { timeout: 10_000 })
+      .toEqual(['exited'])
+    await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
+  })
 })

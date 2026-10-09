@@ -32,7 +32,7 @@ beforeEach(() => {
     workbench: {},
     workbenchFetched: PANEL_ALREADY_READ_AT_MOUNT,
     workbenchOpen: PANEL_COLLAPSED,
-    workbenchLoad: null,
+    workbenchLoad: {},
     toast: null
   })
 })
@@ -46,7 +46,7 @@ describe('activateTerminalLink: a URL clicked in the terminal is a user open (§
     expect(set.activeId).toBe(set.tabs[1].id)
     expect(set.tabs[1].unread).toBe(false)
     expect(useStore.getState().workbenchOpen[TAB]).toBe(true)
-    expect(useStore.getState().workbenchLoad?.tabId).toBe(set.tabs[1].id)
+    expect(useStore.getState().workbenchLoad[TAB]?.tabId).toBe(set.tabs[1].id)
   })
 
   it('never hands the URL to the OS opener, the web-links addon default', () => {
