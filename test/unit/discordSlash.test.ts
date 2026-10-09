@@ -130,8 +130,10 @@ describe('a slash command typed into a session', () => {
     setStatus('waiting')
     await vi.advanceTimersByTimeAsync(NOTHING_CAME_BACK_MS + MORE_OUTPUT_SETTLES_MS)
     expect(posts).toEqual([])
-    pulled()
     slash.output(TAB, { kind: 'printed', text: 'Compacted (ctrl+o to see full summary)' })
+    await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
+    expect(posts).toEqual([])
+    pulled()
     await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
     expect(posts).toEqual([
       '⌨️ **fix-login** ran /compact:\nCompacted (ctrl+o to see full summary)'
