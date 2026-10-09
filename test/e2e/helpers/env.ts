@@ -235,6 +235,25 @@ export function installFakeGh(
   )
 }
 
+const REAL_GH = process.env.KOLOFT_SMOKE_GH ?? ''
+export const HAVE_REAL_GH = fs.existsSync(REAL_GH)
+export const NEEDS_REAL_GH =
+  'set KOLOFT_SMOKE_GH (absolute path of a gh signed in to github.com; only its read-only `pr checks` and `run view` are let through)'
+
+// PLATFORM§32
+export function installRealGhThatOnlyReads(env: E2EEnv): void {
+  fs.writeFileSync(
+    path.join(env.fakeBin, 'gh'),
+    `#!/bin/sh\n` +
+      `case "$1 $2" in\n` +
+      `  "pr checks"|"run view") HOME=${JSON.stringify(os.userInfo().homedir)} exec ${JSON.stringify(REAL_GH)} "$@";;\n` +
+      `esac\n` +
+      `echo "this gh only reads checks and logs: $*" >&2\n` +
+      `exit 1\n`,
+    { mode: 0o755 }
+  )
+}
+
 export function writeGitIdentity(home: string): void {
   fs.writeFileSync(
     path.join(home, '.gitconfig'),

@@ -5,7 +5,10 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp } from './helpers/app'
 import {
   GH_SIGNED_OUT,
+  HAVE_REAL_GH,
+  NEEDS_REAL_GH,
   installFakeGh,
+  installRealGhThatOnlyReads,
   setGithubFixture,
   writeGitIdentity,
   type FakeGhCheck
@@ -28,6 +31,11 @@ import { newWebTab, openBrowser } from './helpers/browser'
 import {
   FAILED_LOG,
   ONE_FAILING_OF_FIVE,
+  PR_3_CHECKS_LINE,
+  PR_3_FAILING_CHECK_PASTE_HEAD,
+  PR_3_FIRST_ERROR_LINE,
+  PR_3_NPM_ERROR,
+  PR_3_OF_KOLOFT,
   WORKBENCH,
   claudePrompts,
   expectOnePromptFromTheChecks,
@@ -377,6 +385,46 @@ test.describe('Workbench · GitHub button (github.com is pinned to loopback, so 
       expect(gitOut(origin, 'rev-parse', 'refs/heads/feature/login')).toBe(
         gitOut(env.workspaces.a, 'rev-parse', 'HEAD')
       )
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+})
+
+test.describe('Workbench · GitHub button against the REAL gh and GitHub: opt-in; the pull request number comes from the fixture because PR #3’s branch is gone from GitHub', () => {
+  test('G13: the real gh reads superkoh/koloft PR #3 as one failing check of two, and Send failing checks pastes its name, job link and the npm ERESOLVE excerpt up to the first ##[error] line, with the runner’s line prefixes, byte-order mark and colours stripped', async ({
+    env
+  }) => {
+    test.skip(!HAVE_REAL_GH, NEEDS_REAL_GH)
+    test.setTimeout(240_000)
+    installRealGhThatOnlyReads(env)
+    setGithubFixture(env, { [env.workspaces.a]: PR_3_OF_KOLOFT })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a')
+      await waitPanelAttached(page)
+      await expect(ghButton(page).locator('.ci')).toHaveClass(/\bfail\b/, { timeout: 60_000 })
+      await expect(ghButton(page)).toHaveAttribute('aria-label', /checks failing/)
+      await ghButton(page).click({ button: 'right' })
+      await expect(page.locator('.wb-ghmenu .mi.head')).toHaveText(PR_3_CHECKS_LINE)
+      expect(await ghMenuItems(page)).toContain('Send failing checks')
+      await page.keyboard.press('Escape')
+
+      const tabId = await wsRows(page, 'ws-a').first().getAttribute('data-tab-id')
+      const sessionId = (await boundSessionId(page, tabId)) ?? ''
+      const transcript = transcriptFile(env.home, env.workspaces.a, sessionId)
+      await sendFailingChecks(page)
+      const prompt = await expectOnePromptFromTheChecks(
+        () => claudePrompts(transcript),
+        PR_3_FAILING_CHECK_PASTE_HEAD
+      )
+      await test.info().attach('the-pasted-checks', { body: prompt })
+      expect(prompt).toContain(`\n${PR_3_NPM_ERROR}\n`)
+      expect(prompt).toContain(`\n${PR_3_FIRST_ERROR_LINE}\n\n`)
+      expect(prompt).not.toMatch(/\t\d{4}-\d\d-\d\dT|\x1b\[|﻿/)
     } finally {
       await app.close().catch(() => {})
     }

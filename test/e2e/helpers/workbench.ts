@@ -425,6 +425,25 @@ export const FAILING_CHECK_PASTE_HEAD =
   'AssertionError: expected 1 to be 2\n' +
   '##[error]Process completed with exit code 1.'
 
+export const PR_3_OF_KOLOFT = {
+  owner: 'superkoh',
+  repo: 'koloft',
+  branch: 'dependabot/npm_and_yarn/vitejs/plugin-react-6.1.1',
+  pr: 3
+}
+
+export const PR_3_CHECKS_LINE = 'Checks · 1 failing of 2'
+
+export const PR_3_FAILING_CHECK_PASTE_HEAD =
+  'CI check "check" (workflow CI) failed on pull request #3 of superkoh/koloft.\n' +
+  'Full log: https://github.com/superkoh/koloft/actions/runs/35815732286/job/107036731098\n\n' +
+  '--- log excerpt (around the first error) ---\n' +
+  '##[group]Run npm ci\n' +
+  'npm ci\n'
+
+export const PR_3_NPM_ERROR = 'npm error code ERESOLVE'
+export const PR_3_FIRST_ERROR_LINE = '##[error]Process completed with exit code 1.'
+
 export async function sendFailingChecks(page: Page): Promise<void> {
   await page.locator('.wb-gh').click({ button: 'right' })
   await page.locator('.wb-ghmenu .mi', { hasText: 'Send failing checks' }).click()
@@ -435,10 +454,15 @@ export async function sendFailingChecks(page: Page): Promise<void> {
   await page.keyboard.press('Enter')
 }
 
-export async function expectOnePromptFromTheChecks(prompts: () => string[]): Promise<void> {
-  const fromChecks = (): string[] => prompts().filter((p) => p.startsWith(FAILING_CHECK_PASTE_HEAD))
+export async function expectOnePromptFromTheChecks(
+  prompts: () => string[],
+  head = FAILING_CHECK_PASTE_HEAD
+): Promise<string> {
+  const fromChecks = (): string[] => prompts().filter((p) => p.startsWith(head))
   await expect.poll(fromChecks, { timeout: 30_000 }).toHaveLength(1)
-  expect(fromChecks()[0].endsWith('\n\n' + TYPED_AFTER_THE_PASTE)).toBe(true)
+  const [prompt] = fromChecks()
+  expect(prompt.endsWith('\n\n' + TYPED_AFTER_THE_PASTE)).toBe(true)
+  return prompt
 }
 
 export function claudePrompts(transcript: string): string[] {

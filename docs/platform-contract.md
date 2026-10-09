@@ -926,7 +926,31 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   the failed step (118 KB for one failed `format:check`), one line each as
   `<job>\t<step>\t<ISO time> <text>`, with the step often `UNKNOWN STEP`, ANSI colour
   codes left in, and the failure marked by a `##[error]` line. (2026-10-08, gh 2.89.0,
-  job 112815692712 of superkoh/koloft.)
+  job 112815692712 of superkoh/koloft.) Where the step is named it printed only that
+  step: job 107036731098 (PR #3, `npm ci`) came back as 38 lines, 3,366 bytes, all
+  `check\tRun npm ci\t…`, with `##[error]Process completed with exit code 1.` as the last
+  line (that the step name decides this is inferred, not checked). **The first line's
+  time starts with a UTF-8 byte-order mark** (`﻿2026-09-23T03:47:43.4098300Z`).
+- **`gh pr checks` reads a closed pull request the same way**: PR #3 (closed) printed
+  `check` as `fail` and `close` as `skipping` (workflow "Pull requests are not open yet"),
+  exit 0, so Koloft's menu reads `Checks · 1 failing of 2`.
+- **gh finds its token in the login keychain only under the real `HOME`**: with a scratch
+  `HOME`, `gh pr checks` exits 4 with the `gh auth login` line; with a scratch `HOME` but
+  `GH_CONFIG_DIR` set to the real `~/.config/gh` it exits 1 with "HTTP 401: Requires
+  authentication". So an e2e app, whose `HOME` is a scratch folder, reaches the signed-in
+  gh only through a `gh` on its PATH that sets the real `HOME`.
+- The three bullets above: 2026-10-08, gh 2.89.0, by hand (`gh pr checks 3 --repo
+  superkoh/koloft --json name,bucket,link,workflow`, `gh run view --job 107036731098
+  --log-failed`, a node probe with a scratch `HOME`), and established in the real app by
+  `github-button.spec.ts` › "G13: the real gh reads superkoh/koloft PR #3 as one failing
+  check of two, and Send failing checks pastes its name, job link and the npm ERESOLVE
+  excerpt …" (2 runs), `agent-tools-real-smoke.spec.ts` › "a real Claude Code holds the
+  failing checks of PR #3 in its input box unsent …" (3 runs) and "a real Codex holds the
+  failing checks of PR #3 in its composer unsent …" (5 runs), and `remote-ssh-lab.spec.ts`
+  › "E-SSH-12: the GitHub button on a session on the machine commits and pushes there …"
+  (2 runs). GitHub keeps Actions logs for 90 days by default, so job 107036731098's log is
+  expected to go around 2026-12-22 and these cases to fail on it then (inferred, not
+  checked).
 
 ## §33 ssh
 
