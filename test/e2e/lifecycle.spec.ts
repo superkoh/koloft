@@ -435,12 +435,15 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
         await openMenu(page1, row1(page1, 'Closed D'))
         await page1.locator('.menu .mi', { hasText: /^Close$/ }).click()
         await expect(row1(page1, 'Closed D')).toHaveClass(/\bcold\b/)
-        await startSession(page1, env, { title: 'Asleep B', wsName: 'ws-b' })
         await startSession(page1, env, { title: 'Running C', wsName: 'ws-b' })
         await runIn(page1, centerTerm(page1), '/need-approval')
         await expect(row1(page1, 'Running C')).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
         await startSession(page1, env, { title: 'Running A' })
-        const [, b, c, a] = await waitForCalls(env, 4)
+        await startSession(page1, env, { title: 'Asleep B', wsName: 'ws-b' })
+        const [, c, a, b] = await waitForCalls(env, 4)
+        await expect(row1(page1, 'Asleep B')).toHaveClass(/\bst-(waiting|idle)\b/, {
+          timeout: 30_000
+        })
         await row1(page1, 'Asleep B').click()
         await row1(page1, 'Running A').click()
         await expect(row1(page1, 'Running A')).toHaveClass(/\bactive\b/)
@@ -472,7 +475,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
         const row = (title: string) => row1(page2, title)
         const calls = await waitForCalls(env, 6)
         expect(calls.slice(4).map(resumedId).sort()).toEqual(
-          [calls[3].sessionId, calls[2].sessionId].sort()
+          [calls[1].sessionId, calls[2].sessionId].sort()
         )
         await expect(row('Running A')).toHaveClass(/\bactive\b/, { timeout: 30_000 })
         await expect(row('Running A')).toHaveClass(/\bst-(working|waiting|idle)\b/)
@@ -485,7 +488,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
 
         await row('Asleep B').click()
         const woken = await waitForCalls(env, 7)
-        expect(resumedId(woken[6])).toBe(calls[1].sessionId)
+        expect(resumedId(woken[6])).toBe(calls[3].sessionId)
         await expect(row('Asleep B')).toHaveClass(/\bactive\b/)
         await expect(row('Asleep B')).toHaveClass(/\bst-(working|waiting|idle)\b/)
         await expect(row('Closed D')).toHaveClass(/\bcold\b/)
