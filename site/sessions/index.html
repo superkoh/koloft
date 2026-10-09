@@ -267,6 +267,66 @@
           session. Not on a <a href="../remote/">remote folder</a> yet.
         </p>
 
+        <h2 id="session-tree">Sessions an agent starts</h2>
+        <p>
+          An agent can start sessions of its own, with <code>koloft session new</code> (see
+          <a href="../agents/">agents</a>, which also says how each one gets its name). Each one
+          <mark class="hl">hangs under the session that started it</mark>, set in a little, with a
+          thin line down its left. A session that one of those starts hangs one level deeper. The
+          row is there from the moment it reads Starting….
+        </p>
+        <figure class="shot is-narrow" style="--ar: 558 / 578">
+          <div class="frame">
+            <img
+              src="../img/v-session-tree.webp"
+              width="558"
+              height="578"
+              loading="lazy"
+              alt="The folder tidewatch: the session Add storm alerts endpoint with two sessions set in under it, Update the API docs and Write the storm alert tests, and under the second of those, one level deeper, Check the test fixtures; below them all, Fix tide times near midnight on its own"
+            />
+            <span class="tape" aria-hidden="true"></span>
+          </div>
+          <figcaption>one session started two, and one of those started one more</figcaption>
+        </figure>
+        <p>
+          A row with sessions under it gets a small arrow on the right. Click it to fold them away.
+          Folded, the row shows a red count of the hidden sessions that need you, the way a
+          <a href="#red-dots">folded folder</a> does, and a grey count of all the hidden ones. Click
+          the arrow again to see them.
+        </p>
+        <figure class="shot is-narrow" style="--ar: 558 / 296">
+          <div class="frame">
+            <img
+              src="../img/v-session-tree-folded.webp"
+              width="558"
+              height="296"
+              loading="lazy"
+              alt="The same folder with Add storm alerts endpoint folded: a red 2 and a grey 3 at the right of its name, and the arrow now points right"
+            />
+            <span class="tape" aria-hidden="true"></span>
+          </div>
+          <figcaption>folded: 2 of the 3 sessions inside need you</figcaption>
+        </figure>
+        <ul class="dash">
+          <li>Claude and Codex both do this.</li>
+          <li>
+            If the session that started them ends but its row stays in the list, they stay under
+            that row, now shown as closed. Nothing under a session closes with it, however it is
+            closed.
+          </li>
+          <li>
+            A row hangs under its starter only while the starter is in the same folder's list.
+            Otherwise it sits at the top of that list: when its starter is gone from the list, when
+            it was started into another folder with <code class="nowrap">--workspace</code>, when a
+            <a href="../discord/">Discord butler</a> started it, and always for a session on another
+            machine.
+          </li>
+          <li>
+            A folded row works like a folded folder: switching to a session inside does not unfold
+            it, and the fold is forgotten when Koloft restarts.
+          </li>
+        </ul>
+
         <h2 id="the-sidebar">The sidebar</h2>
         <p>
           Drag a folder's name up or down to reorder the list. The number keys 1 to 9 in the
@@ -278,15 +338,6 @@
           sidebar comes back as wide as it was. It stays hidden after a restart, if you left it
           hidden.
         </p>
-        <p>
-          A session that another session started (with <code>koloft session new</code>, see
-          <a href="../agents/">agents</a>) hangs under its starter, set in a little, with a thin
-          line down its left. A row with sessions under it gets a small arrow on the right: click it
-          to fold them away. Folded, the row shows a red count of hidden sessions that need you, the
-          way a folded folder does, and a grey count of all hidden ones. Claude and Codex both do
-          this. A session on another machine is always a top-level row.
-        </p>
-
         <h2>Right-click a folder</h2>
         <ul class="dash">
           <li>

@@ -210,26 +210,47 @@ export interface FakeGhCheck {
 
 export const GH_SIGNED_OUT = 4
 
+export interface FakeGhItem {
+  number: number
+  title: string
+  url: string
+  updatedAt: string
+  headRefName?: string
+  isCrossRepository?: boolean
+}
+
 export function installFakeGh(
   env: E2EEnv,
-  answer: { checks?: FakeGhCheck[]; failedLog?: string; exitCode?: number }
+  answer: {
+    checks?: FakeGhCheck[]
+    failedLog?: string
+    exitCode?: number
+    issues?: FakeGhItem[]
+    prs?: FakeGhItem[]
+  }
 ): void {
   const checks = path.join(env.home, 'fake-gh-checks.json')
   const log = path.join(env.home, 'fake-gh-log.txt')
+  const issues = path.join(env.home, 'fake-gh-issues.json')
+  const prs = path.join(env.home, 'fake-gh-prs.json')
   fs.writeFileSync(checks, JSON.stringify(answer.checks ?? []))
   fs.writeFileSync(log, answer.failedLog ?? '')
+  fs.writeFileSync(issues, JSON.stringify(answer.issues ?? []))
+  fs.writeFileSync(prs, JSON.stringify(answer.prs ?? []))
   fs.writeFileSync(
     path.join(env.fakeBin, 'gh'),
     `#!/bin/sh\n` +
       `printf '%s\\n' "$*" >> ${JSON.stringify(path.join(env.home, 'fake-gh-calls.txt'))}\n` +
-      `case "$1 $2" in\n` +
-      `  "pr checks")\n` +
       (answer.exitCode
-        ? `    echo "To get started with GitHub CLI, please run:  gh auth login" >&2; exit ${answer.exitCode};;\n`
-        : `    cat ${JSON.stringify(checks)}; exit 0;;\n`) +
+        ? `echo "To get started with GitHub CLI, please run:  gh auth login" >&2; exit ${answer.exitCode}\n`
+        : '') +
+      `case "$1 $2" in\n` +
+      `  "pr checks") cat ${JSON.stringify(checks)}; exit 0;;\n` +
       `  "run view") cat ${JSON.stringify(log)}; exit 0;;\n` +
+      `  "issue list") cat ${JSON.stringify(issues)}; exit 0;;\n` +
+      `  "pr list") cat ${JSON.stringify(prs)}; exit 0;;\n` +
       `esac\n` +
-      `echo "fake gh answers only pr checks and run view: $*" >&2\n` +
+      `echo "fake gh answers only pr checks, run view, issue list and pr list: $*" >&2\n` +
       `exit 1\n`,
     { mode: 0o755 }
   )

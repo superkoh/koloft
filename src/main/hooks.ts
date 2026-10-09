@@ -29,7 +29,7 @@ reg="$1"; tab="$2"; event="$3"
 [ -z "$reg" ] && exit 0
 [ -z "$tab" ] && exit 0
 # CC§14
-[ "$event" = "ask" ] && [ ! -f "$reg/$tab.answerable" ] && exit 0
+[ "$event" = "ask" ] && [ ! -f "$reg/$tab.answerable" ] && event="asked"
 input="$(cat | tr -d '\\n')"
 mkdir -p "$reg" 2>/dev/null
 tm=""

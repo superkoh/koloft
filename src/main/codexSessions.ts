@@ -11,7 +11,8 @@ import type {
   BackendSessionRow
 } from '@shared/types'
 import { CODEX_PLACEHOLDER_TITLE } from '@shared/types'
-import { identityOf } from '@shared/sessionBackend'
+import { identityOf, sourceOf } from '@shared/sessionBackend'
+import type { SearchCandidate } from './sessionSearch'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
 import {
@@ -106,6 +107,26 @@ const EMIT_THROTTLE_MS = 500
 
 const binaryGone = (error: unknown): boolean =>
   (error as NodeJS.ErrnoException | null)?.code === 'ENOENT'
+
+const sourceKinds = ['cli', 'vscode', 'appServer']
+
+async function* everyPage(
+  rpc: CodexRpc,
+  method: string,
+  params: Record<string, unknown>
+): AsyncGenerator<unknown> {
+  let cursor: string | undefined
+  const cursors = new Set<string>()
+  do {
+    const reply = record(await rpc.request(method, { limit: 100, cursor, ...params }))
+    if (!Array.isArray(reply.data))
+      throw new Error('Codex history returned an unsupported response.')
+    yield* reply.data
+    cursor = typeof reply.nextCursor === 'string' && reply.nextCursor ? reply.nextCursor : undefined
+    if (cursor && cursors.has(cursor)) throw new Error('Codex history repeated a page.')
+    if (cursor) cursors.add(cursor)
+  } while (cursor)
+}
 
 export interface CodexSessionDeps {
   pty: PtyManager
@@ -530,33 +551,51 @@ export class CodexSessions {
     const threads: { key: string; thread: CodexThread; archived: boolean }[] = []
     try {
       for (const archived of [false, true]) {
-        let cursor: string | undefined
-        const cursors = new Set<string>()
-        do {
-          const reply = record(
-            await rpc.request('thread/list', {
-              limit: 100,
-              cursor,
-              archived,
-              sourceKinds: ['cli', 'vscode', 'appServer']
-            })
-          )
-          if (!Array.isArray(reply.data))
-            throw new Error('Codex history returned an unsupported response.')
-          for (const value of reply.data) {
-            const thread = userThread(value)
-            if (thread) threads.push({ key: codexSessionKey(thread.id), thread, archived })
-          }
-          cursor =
-            typeof reply.nextCursor === 'string' && reply.nextCursor ? reply.nextCursor : undefined
-          if (cursor && cursors.has(cursor)) throw new Error('Codex history repeated a page.')
-          if (cursor) cursors.add(cursor)
-        } while (cursor)
+        for await (const value of everyPage(rpc, 'thread/list', { archived, sourceKinds })) {
+          const thread = userThread(value)
+          if (thread) threads.push({ key: codexSessionKey(thread.id), thread, archived })
+        }
       }
       return threads
     } finally {
       await rpc.close()
     }
+  }
+
+  searchable(workspaces: string[]): SearchCandidate[] {
+    return workspaces.flatMap((workspacePath) =>
+      this.rows(workspacePath)
+        .filter((row) => !row.pending && !this.archivedIds.has(row.id))
+        .map((row) => ({ row: { ...row, ...sourceOf('codex', workspacePath) }, workspacePath }))
+    )
+  }
+
+  // CODEX§24
+  async searchSnippets(term: string): Promise<{ id: string; snippet: string }[]> {
+    if (!(await this.availability()).available) return []
+    const homes = [undefined, ...this.deps.homes()]
+    const replies = await Promise.allSettled(homes.map((h) => this.searchHome(h, term)))
+    return replies.flatMap((reply) => (reply.status === 'fulfilled' ? reply.value : []))
+  }
+
+  private searchHome(
+    home: string | undefined,
+    term: string
+  ): Promise<{ id: string; snippet: string }[]> {
+    return this.withRpc(home, async (rpc) => {
+      const found: { id: string; snippet: string }[] = []
+      const params = { searchTerm: term, archived: false, sourceKinds }
+      for await (const value of everyPage(rpc, 'thread/search', params)) {
+        const item = record(value)
+        const thread = userThread(item.thread)
+        if (thread)
+          found.push({
+            id: codexSessionKey(thread.id),
+            snippet: typeof item.snippet === 'string' ? item.snippet : ''
+          })
+      }
+      return found
+    })
   }
 
   async historyRows(workspace: string): Promise<BackendSessionRow[]> {

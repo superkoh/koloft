@@ -146,6 +146,7 @@ interface AppState {
   conductorTabs: Record<string, string>
   bindConductor: { scope?: string; editId?: string } | null
   discordSetupStep: number | null
+  orphanConfirm: string | null
 
   addTab: (t: Tab) => void
   addTabQuiet: (t: Tab) => void
@@ -187,6 +188,7 @@ interface AppState {
   setConductorTab: (bindingId: string, tabId: string) => void
   setBindConductor: (b: AppState['bindConductor']) => void
   setDiscordSetupStep: (step: number | null) => void
+  setOrphanConfirm: (rowId: string | null) => void
 
   ensureWorkbench: (tabId: string) => Promise<void>
   setWorkbenchState: (tabId: string, state: SessionWorkbenchState) => void
@@ -476,6 +478,7 @@ export const useStore = create<AppState>((set, get) => ({
   conductorTabs: {},
   bindConductor: null,
   discordSetupStep: null,
+  orphanConfirm: null,
 
   addTab: (t) => {
     const asleep = asleepTabFor(get(), t)
@@ -770,6 +773,7 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => ({ conductorTabs: { ...s.conductorTabs, [bindingId]: tabId } })),
   setBindConductor: (bindConductor) => set({ bindConductor }),
   setDiscordSetupStep: (discordSetupStep) => set({ discordSetupStep }),
+  setOrphanConfirm: (orphanConfirm) => set({ orphanConfirm }),
 
   ensureWorkbench: (tabId) => {
     if (!workbenchAllowed(get(), tabId)) return Promise.resolve()

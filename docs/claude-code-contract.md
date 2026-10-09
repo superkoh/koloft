@@ -53,13 +53,43 @@ binary.
   ends, though they carry the Enter-time timestamp. Esc during it cancels it (no
   SessionStart) and puts `/compact ` back in the input box. So the session is busy from
   PreCompact to SessionStart `compact`, and no other hook says so.
+- **An automatic compaction fires the same two hooks, with `trigger: "auto"`, inside the
+  turn it interrupts** (2026-10-09, CC 2.1.295, interactive pty,
+  `CLAUDE_CODE_AUTO_COMPACT_WINDOW=50000`, model haiku, hooks logging their payloads; two
+  runs). Mid-turn: UserPromptSubmit, tool calls, PreCompact, SessionStart `compact`,
+  PostCompact, more tool calls, Stop. At the start of a prompt: UserPromptSubmit, then
+  PreCompact, SessionStart `compact`, PostCompact, the reply, Stop. Every hook carries the
+  turn's `prompt_id`, and the turn's own Stop ends it.
+- **Claude also compacts while idle, with no prompt and no Stop around it.** Seen in two
+  real sessions (2026-10-08/09, CC 2.1.29x, Koloft's hook log and the transcript): Stop,
+  the `idle_prompt` Notification, then about 55 minutes later PreCompact and SessionStart
+  `compact`; the transcript gets `compact_boundary` (`trigger: "auto"`), the summary
+  record below, and a `system`/`informational` record "Compacted while idle, before the
+  prompt cache expired". When it fires was read off the 2.1.295 binary's strings, not
+  probed: a server-side flag, at least 100 000 context tokens
+  (`CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` can raise it), at a fraction (0.5–0.95, default
+  0.9) of the prompt cache's lifetime, and only after 60 s with nothing typed.
+- **Every compaction ends by writing a summary record**, at about the moment SessionStart
+  `compact` fires (2026-10-09, CC 2.1.295, manual and automatic): `type: "user"`, string
+  content "This session is being continued from a previous conversation that ran out of
+  context. …", `isCompactSummary: true`, `isVisibleInTranscriptOnly: true`, no `origin`,
+  no `isMeta`. It is not something anyone typed. Koloft reads hooks at once but the
+  transcript on a 500 ms poll, so the summary is usually read after the compaction has
+  ended: two dev-build runs of `/compact` with the real binary, read before this rule,
+  both showed the row go back to working about 0.5 s after it went back to waiting.
 - **On exit CC prints a resume hint, and what it quotes depends on the session**:
   `Resume this session with: claude --resume <id>` for a session with no name, but
   `claude --resume "<name>"` once the session was given a `--name`, and
   `claude --worktree <name> --resume "<name>"` after a keep-the-worktree exit
   (measured 2026-09-03 on 2.1.259 — four exits, named and unnamed, §4).
 - **A resumed session's SessionStart hook reports the LAUNCH directory as cwd, not the
-  worktree** — the re-enter happens after the hook (E8).
+  worktree** — the re-enter happens after the hook (E8). Seen again 2026-10-09 on CC
+  2.1.295, real sessions on the dev Mac that Koloft resumed from the repo root after a
+  restart: one's SessionStart record (`source: resume`) named the root while it worked in
+  its worktree; another, a `-w` session whose transcript sat in the root's slug, went on
+  writing records whose `cwd` and `worktree-state` named the worktree, with no
+  `relocated` record and no transcript move until it left, so only those records said
+  it was back in the worktree.
 - **A running SessionStart hook is visible and can be cut short** (changelog, read
   2026-09-18, not measured): 2.1.268 — `--continue`/`--resume` show the conversation at
   once instead of waiting for SessionStart hooks; 2.1.271 — the spinner names the
@@ -91,7 +121,9 @@ binary.
 
 Evidence: live experiments E1–E8, 2026-08-10, claude 2.1.227; enums read from CC 2.1.238 source on 2026-08-22. Koloft dependents: the `EVICTING_END_REASONS` whitelist
 in `src/main/backends/claude.ts` (marked `CC§1`); `sessionTracker.bindSession` (it takes
-the hook's `cwd` — the launch-directory entry above); `test/e2e/fixtures/fake-claude.js`
+the hook's `cwd` — the launch-directory entry above) and `followWorktreeState` (which
+then moves the root to the worktree the last `worktree-state` names);
+`test/e2e/fixtures/fake-claude.js`
 mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
 
 ## §2 Transcript on disk
@@ -130,6 +162,12 @@ mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
   Write/Edit tools, so memory files land in the transcript's file writes like any
   other. A sweep on 2026-10-01 (CC up to 2.1.287) of the 398 transcripts touched in the
   last 30 days found 927 Write/Edit calls on files under such a `memory/` folder.
+- **A plan-mode plan is a file in `~/.claude/plans/<slug>.md`, written with the ordinary
+  Write tool**, after which CC calls `ExitPlanMode` with input `{plan, planFilePath}`;
+  `plan` is the file's text. So a plan file lands in the transcript's file writes like
+  any other. Seen in a real plan turn (CC 2.1.286, transcript re-read 2026-10-09); the
+  2.1.288 binary's strings agree and also hold a `plansDirectory` setting and a
+  `<slug>.workshop.md` name, neither seen in use.
 
 - **Message-line field vocabulary**: jsonl message lines carry
   `cwd / gitBranch / timestamp / sessionId / version`; a `summary` record is NOT
@@ -388,6 +426,22 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
 - **CC's background retention sweep leaves hand-made worktrees under
   `.claude/worktrees/` alone from 2.1.246 on** (changelog, read 2026-09-18, not
   measured). Before that it could remove them.
+- **`-w <name>` re-enters a `.claude/worktrees/<name>` that someone else made on another
+  branch, but writes down the wrong branch, and a clean `/exit` removes the folder.**
+  Koloft-style setup: `git worktree add .claude/worktrees/pr-329 fix/pr-branch`, then
+  `claude -w pr-329` from the repo root. The session started in that folder (the
+  SessionStart hook's `cwd`), the checkout stayed on `fix/pr-branch`, no
+  `worktree-pr-329` branch was made, and the tree was locked. But `~/.claude.json`'s
+  `activeWorktreeSession` and the transcript's `worktree-state` both say
+  `"worktreeBranch":"worktree-pr-329"` (with `"resumedExisting":true`). A first message
+  after `--` still arrived as the first turn. `/exit` with no changes printed "Worktree
+  removed (no changes)": the folder and its registration were gone, `fix/pr-branch` was
+  kept. So a worktree on a branch of its own name (a pull request's branch) is opened by
+  starting bare `claude` inside it, never with `-w`, as for any existing worktree.
+  Measured 2026-10-09, claude 2.1.295 (the real binary, not the shim), a throwaway
+  one-commit repo with no `origin`, a scratch `HOME` whose `~/.claude.json` trusted the
+  repo, no login (the worktree step runs before any model call), driven in a python pty
+  with a `--settings` SessionStart hook, then `git worktree list` and `git branch`.
 - **A worktree name is refused when only its branch is left.** If a person deletes
   `.claude/worktrees/<n>` but keeps the branch `worktree-<n>`, `claude -w <n>` refuses
   that name. (Inferred, not checked.)
@@ -436,12 +490,36 @@ the same files into a worktree Koloft makes or rebuilds itself.
   "no directory ever again" no longer holds. A session that leaves
   and then enters a worktree again mid-conversation (§2) is outside both sets.
 
+- **Removing happens before the exit, in the open, and can take seconds.** After a Remove
+  (or a silent clean removal) CC leaves its screen, writes `ESC ] 0 ; BEL` (an empty
+  window title) followed at once by the line `Removing worktree…` (U+2026), deletes the
+  folder, deletes the branch `worktree-<name>`, prints one result line, runs the
+  SessionEnd hooks and only then exits. Success lines start with `Worktree removed`
+  (`Worktree removed (no changes)`, `Worktree removed.`, `Worktree removed. Uncommitted
+  changes were discarded.`); the others name the trouble (`Could not finish removing the
+  worktree at …`, `Removing the worktree at … did not finish within …`, `Stopped waiting
+  for the removal of the worktree at …`, `Worktree could not be removed — kept at …`).
+  CC waits at most 10 minutes. Time grows with the files in the folder: 27k files (a
+  Koloft worktree with `node_modules`) took 3.5 s from `/exit` to exit, 2.6 s of it the
+  delete, under the owner's own settings (fullscreen, Koloft's hooks and plugin);
+  250k files took 9.5 s. The same title-then-line bytes came in normal and fullscreen
+  mode. Through Koloft's remote tmux (3.3a) the title code is not passed on, and the
+  line arrives as a redrawn screen row (`ESC[H` … `ESC[K`), like any other.
+- **A SIGHUP during the delete cuts it off half way.** CC stops waiting and exits; the
+  folder keeps what was not deleted yet (213,696 of 250,000 files), the worktree stays
+  in `git worktree list` and its branch stays. `git worktree remove --force --force`
+  and `git branch -D worktree-<name>` finish the job.
+- Measured 2026-10-09 on CC 2.1.295 (strings and code of the binary, a pty-driven `-w`
+  session in a throwaway repo, `--debug-file` timings, the raw pty bytes); the tmux row
+  in the e2e SSH lab image.
+
 Evidence: experiments E2/E8, 2026-08-10, claude 2.1.227; four live worktree exits on
 2026-09-03, claude 2.1.259 (`-w n5/n6/n7/n8/n9` in a throwaway repo, driven in a pty,
 checked with `git worktree list`, `git branch` and `ls ~/.claude/projects/<slug>`); the
 unchanged-tree removal on 2026-09-08, claude 2.1.265.
 Koloft dependents: the §1 whitelist eviction path; `fake-claude.js`'s dirty-tree exit
-prompt emulation.
+prompt and removal emulation; `src/main/claudeWorktreeExit.ts`, which hides a local tab
+the moment its CC starts removing and finishes the removal if Koloft quits first.
 
 ## §5 fork and background sessions (claude daemon)
 
@@ -1123,6 +1201,15 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   terminal left the alternate screen, and the normal buffer showed `Resume this session
   with:` / `claude --resume <id>` under the launch line. So the last frame of the
   conversation is gone from a terminal that keeps reading after the kill.
+- **The keys the TUI takes, one write each** (2026-10-09, CC 2.1.295, a python `pty`
+  (100×40) in a scratch folder, through Koloft's shim with `KOLOFT_HOOK_SETTINGS` unset,
+  about 1 s between writes, the screen read back through `pyte`): in the input box
+  `abcd`, `ESC[D` twice and `DEL` (0x7f) left `acd`; `ESC[C`, `X`, a space and `Y` made
+  `acX Yd`. `ESC[Z` (Shift+Tab) moved the footer from "bypass permissions on" to "auto
+  mode on". `/mod` then Tab completed to `/model `; CR opened its picker, where `ESC[B`
+  moved the `❯` mark down one entry (from the last entry it wrapped to the first),
+  `ESC[A` moved it up, and ESC closed it with "Kept model as …". The same keys through
+  ssh and tmux to a remote claude are not probed.
 - **URLs and files are opened with `Bun.spawn(["open", url])`**, which looks `open` up
   on PATH, so a PATH shim can catch it.
 - **An idle claude process holds a lot of memory**: measured 185–350 MB each for idle

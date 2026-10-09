@@ -149,7 +149,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     await expect(row).toHaveClass(/\bcold\b/)
   })
 
-  test('T-LIFE-16: /compact restarts the session in place and the row does not move', async ({
+  test('T-LIFE-16: /compact restarts the session in place, the row does not move, and it ends done, not working', async ({
     app,
     page,
     env
@@ -169,6 +169,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     await page.waitForTimeout(ROOM_FOR_A_WRONG_REMOVAL_OR_REBIND_MS)
     await expect(page.locator('.ws-tab')).toHaveCount(1)
     await expect(row).not.toHaveClass(/\bcold\b/)
+    await expect(row).toHaveClass(/\bst-waiting\b/)
     expect(readCalls(env)).toHaveLength(1)
     expect(layoutOnDisk(env).members).toContain(call.sessionId)
   })

@@ -566,7 +566,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     }
   })
 
-  test('a managed Claude session’s question reaches its thread whole and the conductor answers it with koloft session answer; in the thread its command approval is allowed by the Yes button and refused by the owner’s words, and the owner’s message is typed into it and its reply comes back there', async ({
+  test('a managed Claude session’s question reaches its thread whole and the conductor answers it with koloft session answer; in the thread its command approval is allowed by the Yes button and refused by the owner’s words, and the owner’s message is typed into it and its reply comes back there; a question asked while the session has lost its answerable marker still reaches the thread and is answered by koloft session answer, and koloft session keys picks the option of the next one', async ({
     env
   }) => {
     seedConductor(env, 'claude')
@@ -622,13 +622,24 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await expect
         .poll(() => inThreads(fake).join('\n'), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toContain('finished.\nAnswer to: [Discord] straight from the thread')
+
+      fs.rmSync(path.join(env.userData, 'hook-sessions', `${managedTab}.answerable`))
+      await type('/ask Which size?|Small|Large')
+      await waiting('Which size?\n1. Small — The Small one\n2. Large — The Large one')
+      fake.say(OWNER, `/koloft session answer ${managed} 2`)
+      await expect.poll(() => transcriptText(env, managed)).toContain('Picked: Large')
+
+      await type('/ask Which shape?|Round|Square')
+      await waiting('Which shape?\n1. Round — The Round one\n2. Square — The Square one')
+      fake.say(OWNER, `/koloft session keys ${managed} 1`)
+      await expect.poll(() => transcriptText(env, managed)).toContain('Picked: Round')
     } finally {
       await quitAndClose(app)
       await fake.close()
     }
   })
 
-  test('a managed Codex session’s approval reaches its thread with its command and is answered by the Yes button there, and its one-question list with its options is answered by the conductor; each presses its key', async ({
+  test('a managed Codex session’s approval reaches its thread with its command and is answered by the Yes button there, and its one-question list with its options is answered by the conductor, once with koloft session answer and once with koloft session keys; each presses its key', async ({
     env
   }) => {
     installCodex(env)
@@ -679,22 +690,29 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
           /(^|\n)❓ .+ is waiting for you\.\nWhich colour do you prefer\?\n1\. Red — Choose red\.\n2\. Green — Choose green\.\n/
         )
       fake.say(OWNER, `/koloft session answer ${codexId} Green`)
+      const answers = (): unknown[] =>
+        codexWire(env)
+          .filter(
+            (w) =>
+              w.direction === 'client' &&
+              (w.frame.result as { answers?: unknown } | undefined)?.answers
+          )
+          .map((w) => w.frame.result)
       await expect
-        .poll(
-          () =>
-            codexWire(env).filter(
-              (w) =>
-                w.direction === 'client' &&
-                (w.frame.result as { answers?: unknown } | undefined)?.answers
-            ),
-          { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }
-        )
+        .poll(answers, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toEqual([{ answers: { colour: { answers: ['Green'] } } }])
+
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/)
+      await page.evaluate((id) => window.api.terminal.write(id, 'please ask me\r'), codexTab)
+      await expect
+        .poll(() => inThreads(fake).filter((p) => p.includes('Which colour do you prefer?')))
+        .toHaveLength(2)
+      fake.say(OWNER, `/koloft session keys ${codexId} 1`)
+      await expect
+        .poll(answers)
         .toEqual([
-          expect.objectContaining({
-            frame: expect.objectContaining({
-              result: { answers: { colour: { answers: ['Green'] } } }
-            })
-          })
+          { answers: { colour: { answers: ['Green'] } } },
+          { answers: { colour: { answers: ['Red'] } } }
         ])
     } finally {
       await quitAndClose(app)
