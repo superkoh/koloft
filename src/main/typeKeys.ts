@@ -26,7 +26,7 @@ export function typedPieces(text: string): string[] {
 }
 
 // CC§12 CODEX§24
-export const NAMED_KEYS = new Map([
+const NAMED_KEYS = new Map([
   ['enter', '\r'],
   ['esc', '\x1b'],
   ['tab', '\t'],

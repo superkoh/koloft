@@ -746,7 +746,8 @@ describe('injected hook script', () => {
       expect(hookFiles('tabA2')).toEqual([])
     })
 
-    it('exits at once with no output for a tab Koloft cannot answer for (Discord off, or in no conductor’s care)', () => {
+    // CC§14
+    it('for a tab not marked answerable (Discord off, in no conductor’s care, or a marker lost while Discord reconnected) it does not wait: it exits at once with no output and records the question in the status log, as on another machine', () => {
       const res = spawnSync(hookScript, [regDir, 'tabNotLookedAfter', 'ask'], {
         input: JSON.stringify(ask),
         encoding: 'utf8',
@@ -755,6 +756,9 @@ describe('injected hook script', () => {
       expect(res.status).toBe(0)
       expect(res.stdout).toBe('')
       expect(fs.readdirSync(regDir).filter((f) => f.includes('.ask'))).toEqual([])
+      expect(readStatusLog('tabNotLookedAfter')).toEqual([
+        { tabId: 'tabNotLookedAfter', event: 'ask', sessionId: 's1', tmux: '', ask }
+      ])
     })
 
     // CC§14

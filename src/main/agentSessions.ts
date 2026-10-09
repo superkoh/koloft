@@ -296,7 +296,6 @@ export interface SessionVerbDeps {
   resume(row: SessionRow): Promise<string>
   ready(tabId: string, ms: number, turnEnded: boolean): Promise<boolean>
   sendLine(tabId: string, line: string, ms: number): Promise<void>
-  typeInto(tabId: string, text: string): Promise<void>
   press(tabId: string, keys: string[]): Promise<void>
   modeOf(tabId: string): ModeClass
   stop(tabId: string): void
@@ -625,7 +624,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       throw new Error(
         `${t.name} stayed busy. It runs on another machine, where Koloft can only type into it once its turn has ended and it shows no question.`
       )
-    await d.typeInto(tab, text)
+    await d.press(tab, [text, '\r'])
     return `Typed into ${t.name}.`
   }
 
@@ -690,13 +689,13 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       d.stop(t.tabId)
       return answered(`Closed ${t.name}. It stays in the list and can be resumed.`)
     }
+    if (sub === 'keys' && !t.tabId) return refused(`koloft session keys: ${t.name} is not open.`)
     d.touch(caller.tabId, t.key)
     if (sub === 'command') return answered(await d.command(caller.tabId, t, text))
-    if (sub === 'keys') {
-      if (!t.tabId) return refused(`koloft session keys: ${t.name} is not open.`)
+    if (sub === 'keys' && t.tabId) {
       await d.press(t.tabId, keysFor(tail))
       return answered(
-        `Pressed ${tail.join(' ')} in ${t.name}. See what it shows now with koloft session screen ${ref}.`
+        `Pressed ${text} in ${t.name}. See what it shows now with koloft session screen ${ref}.`
       )
     }
     if (sub === 'answer') {

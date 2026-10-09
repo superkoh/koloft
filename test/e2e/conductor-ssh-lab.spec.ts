@@ -148,7 +148,7 @@ async function typeIntoRemote(page: Page, tabId: string, text: string): Promise<
 }
 
 test.describe('A conductor on this Mac looking after a Claude session on an SSH machine (Docker)', () => {
-  test('E-SSH-C1: the conductor types a message into the remote session and hears it finished in the session’s thread; the session’s question reaches the thread whole, and its button presses the key that answers it; the owner’s message in the thread is typed into the remote session and its reply comes back there', async ({
+  test('E-SSH-C1: the conductor types a message into the remote session and hears it finished in the session’s thread; the session’s question reaches the thread whole, and its button presses the key that answers it; the owner’s message in the thread is typed into the remote session and its reply comes back there; the next question is answered by the conductor with koloft session keys, pressed through ssh and tmux', async ({
     env
   }) => {
     await withRemoteWorkspaceConductor(
@@ -210,6 +210,20 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
         await expect
           .poll(opener, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
           .toMatch(/^✅ \*\*.+\*\* · turn done <t:\d+:R>/)
+
+        await page.evaluate(
+          ([id, line]) => window.api.terminal.write(id, line),
+          [remote.tabId, '/ask Which size?|Small|Large\r']
+        )
+        await expect
+          .poll(() => notices(fake).filter((l) => l.startsWith('❓ ')), {
+            timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS
+          })
+          .toHaveLength(2)
+        fake.say(OWNER, `/koloft session keys ${remote.sessionId} 1`)
+        await expect
+          .poll(transcript, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+          .toContain('Picked: Small')
       }
     )
   })
@@ -236,34 +250,6 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
         await expect
           .poll(() => ran().at(-1), { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
           .toMatch(/ran \/compact:\nCompacted/)
-      }
-    )
-  })
-
-  test('E-SSH-C4: the conductor answers the remote session’s question with koloft session keys, pressed through ssh and tmux', async ({
-    env
-  }) => {
-    await withRemoteWorkspaceConductor(
-      env,
-      () => undefined,
-      async ({ page, lab, fake }) => {
-        await startSessionIn(page, 'kt-key', { remote: true })
-        const remote = (await page.evaluate(() => window.api.sessions.list())).find(
-          (s) => s.alive && !s.conductor
-        )!
-        await page.evaluate(
-          ([id, line]) => window.api.terminal.write(id, line),
-          [remote.tabId, '/ask Which colour?|Red|Green\r']
-        )
-        await expect
-          .poll(() => notices(fake), { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
-          .toContainEqual(expect.stringMatching(/^❓ /))
-        fake.say(OWNER, `/koloft session keys ${remote.sessionId} 2`)
-        await expect
-          .poll(() => transcriptOnTarget(lab, remote.sessionId), {
-            timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS
-          })
-          .toContain('Picked: Green')
       }
     )
   })
