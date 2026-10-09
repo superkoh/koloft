@@ -918,6 +918,47 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   `"repository":null` plus a `NOT_FOUND` error; with no login it exits 4 and prints
   "To get started with GitHub CLI, please run: gh auth login". (2026-10-03, gh 2.89.0,
   run by hand against a public repo, a made-up name, and an empty `GH_CONFIG_DIR`.)
+- **`gh pr checks <n> --repo o/r --json name,bucket,link,workflow`** prints a JSON array
+  and exits 0 even when a check failed. `bucket` is one of `pass`, `fail`, `pending`,
+  `skipping`, `cancel`. A check from GitHub Actions links to
+  `…/actions/runs/<run>/job/<job>`; one from an app outside Actions (CodeQL's own
+  check-run) links to `…/runs/<id>` with `workflow` empty. A number with no pull request
+  exits 1 with "GraphQL: Could not resolve to a PullRequest…" (a branch name: "no pull
+  requests found for branch …"); a pull request whose repo runs no checks exits 1 with
+  "no checks reported on the '<branch>' branch"; signed out it exits 4 with the
+  `gh auth login` line. `--help` says exit 8 means "checks pending" — not seen with
+  `--json` (inferred, not checked). (2026-10-08, gh 2.89.0, by hand against
+  superkoh/koloft #385/#387, PR 999999, octocat/Hello-World #11472, an empty
+  `GH_CONFIG_DIR`.)
+- **`gh run view --job <job> --repo o/r --log-failed`** prints the whole job, not only
+  the failed step (118 KB for one failed `format:check`), one line each as
+  `<job>\t<step>\t<ISO time> <text>`, with the step often `UNKNOWN STEP`, ANSI colour
+  codes left in, and the failure marked by a `##[error]` line. (2026-10-08, gh 2.89.0,
+  job 112815692712 of superkoh/koloft.) Where the step is named it printed only that
+  step: job 107036731098 (PR #3, `npm ci`) came back as 38 lines, 3,366 bytes, all
+  `check\tRun npm ci\t…`, with `##[error]Process completed with exit code 1.` as the last
+  line (that the step name decides this is inferred, not checked). **The first line's
+  time starts with a UTF-8 byte-order mark** (`﻿2026-09-23T03:47:43.4098300Z`).
+- **`gh pr checks` reads a closed pull request the same way**: PR #3 (closed) printed
+  `check` as `fail` and `close` as `skipping` (workflow "Pull requests are not open yet"),
+  exit 0, so Koloft's menu reads `Checks · 1 failing of 2`.
+- **gh finds its token in the login keychain only under the real `HOME`**: with a scratch
+  `HOME`, `gh pr checks` exits 4 with the `gh auth login` line; with a scratch `HOME` but
+  `GH_CONFIG_DIR` set to the real `~/.config/gh` it exits 1 with "HTTP 401: Requires
+  authentication". So an e2e app, whose `HOME` is a scratch folder, reaches the signed-in
+  gh only through a `gh` on its PATH that sets the real `HOME`.
+- The three bullets above: 2026-10-08, gh 2.89.0, by hand (`gh pr checks 3 --repo
+  superkoh/koloft --json name,bucket,link,workflow`, `gh run view --job 107036731098
+  --log-failed`, a node probe with a scratch `HOME`), and established in the real app by
+  `github-button.spec.ts` › "G13: the real gh reads superkoh/koloft PR #3 as one failing
+  check of two, and Send failing checks pastes its name, job link and the npm ERESOLVE
+  excerpt …" (2 runs), `agent-tools-real-smoke.spec.ts` › "a real Claude Code holds the
+  failing checks of PR #3 in its input box unsent …" (3 runs) and "a real Codex holds the
+  failing checks of PR #3 in its composer unsent …" (5 runs), and `remote-ssh-lab.spec.ts`
+  › "E-SSH-12: the GitHub button on a session on the machine commits and pushes there …"
+  (2 runs). GitHub keeps Actions logs for 90 days by default, so job 107036731098's log is
+  expected to go around 2026-12-22 and these cases to fail on it then (inferred, not
+  checked).
 - **`--jq` can read the environment of the `gh` process**: `gh pr view 389 --repo
   superkoh/koloft --json number --jq '$ENV.HOME'` printed the home folder. So a `--jq`
   given by someone else can print any secret in that environment. (2026-10-09, gh 2.89.0,

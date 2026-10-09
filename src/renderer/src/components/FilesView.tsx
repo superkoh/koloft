@@ -135,16 +135,16 @@ export function useFilesController(tabId: string | null, root: string | null): F
     setOutlineOpen(false)
   }, [src, askedView])
 
-  const filesReveal = useStore((s) => s.filesReveal)
-  const revealed = useRef(0)
+  const filesReveal = useStore((s) => (tabId ? s.filesReveal[tabId] : undefined))
+  const revealed = useRef<Record<string, number>>({})
   useEffect(() => {
-    if (!filesReveal || filesReveal.nonce === revealed.current) return
-    if (filesReveal.tabId !== tabId) return
-    revealed.current = filesReveal.nonce
+    if (!tabId || !filesReveal || filesReveal.nonce === revealed.current[tabId]) return
+    revealed.current[tabId] = filesReveal.nonce
     setViewRaw(filesReveal.view)
     if (filesReveal.view !== 'browse') return
-    const src = useStore.getState().openFiles[filesReveal.tabId]?.src
-    if (!root || !src) return
+    const opened = useStore.getState().openFiles[tabId]
+    const src = opened?.src
+    if (!root || !src || opened.source === 'intercept') return
     setRecents((prevList) => {
       const next = pushRecent(prevList, src)
       saveList(recentKey(root), next)

@@ -234,7 +234,6 @@ export default function App(): JSX.Element {
   const workbench = useStore((s) => s.workbench)
   const workbenchOpen = useStore((s) => s.workbenchOpen)
   const workbenchFull = useStore((s) => s.workbenchFull)
-  const workbenchLoad = useStore((s) => s.workbenchLoad)
   const sidebarWidth = useStore((s) => s.sidebarWidth)
   const workspaceRows = useStore((s) => s.workspaceRows)
   const toast = useStore((s) => s.toast)
@@ -1545,7 +1544,6 @@ export default function App(): JSX.Element {
                 liveTabs={liveTabs}
                 visible={panelOnScreen}
                 full={panelFull}
-                load={workbenchLoad?.ownerTabId === panelTab ? workbenchLoad : null}
                 command={panelCmd}
                 dialog={browserDialog}
                 treeRoot={fileTreeRoot}

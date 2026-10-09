@@ -27,6 +27,7 @@ import {
 } from '../fileEdit'
 import { GIT_TIMEOUT_MS, gitOps, type GitOps } from '../gitStatus'
 import { GithubLookup, type GithubOptions } from '../github'
+import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
 import { remoteShCommand } from '../remote/install'
 import {
   killSessionCmd,
@@ -408,6 +409,13 @@ export class SshHost implements Host {
   ): Promise<string | null> {
     const r = await this.sh(script, ['-C', this.bare(root), ...args], { timeoutMs })
     return r.code === 0 ? r.stdout.toString('utf8') : null
+  }
+
+  async gitRun(root: string, args: string[], network = false): Promise<GitRunResult> {
+    const r = await this.sh(network ? NETWORK_GIT : GIT, ['-C', this.bare(root), ...args], {
+      timeoutMs: GIT_STEP_TIMEOUT_MS
+    })
+    return { code: r.code, stdout: r.stdout.toString('utf8'), stderr: r.stderr }
   }
 
   private bare(p: string): string {

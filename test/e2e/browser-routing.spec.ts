@@ -46,6 +46,7 @@ import {
   showBrowse,
   wbActiveTab,
   wbTabTitles,
+  wbTabs,
   wbUnreadTabs
 } from './helpers/workbench'
 import { hostResolverSwitch, startEchoServer } from './helpers/fixtureServer'
@@ -124,7 +125,7 @@ async function seedWorkspaceFile(
 }
 
 test.describe('URL routing and the open shim: where a target lands (a web tab, the reading area, the OS, or nowhere) and who may put it there', () => {
-  test('BB-M01: agent `open http://localhost:PORT` lands a background Browser tab and never reaches the system browser', async ({
+  test('BB-M01: agent `open http://localhost:PORT` lands a foreground Browser tab and never reaches the system browser', async ({
     app,
     page,
     env
@@ -136,10 +137,11 @@ test.describe('URL routing and the open shim: where a target lands (a web tab, t
       await agentOpen(page, server.localhostUrl('/a'))
 
       await expect(openTabs(page)).toHaveCount(1, { timeout: 30_000 })
-      await expect(wbUnreadTabs(page)).toHaveCount(1)
+      await expect(wbUnreadTabs(page)).toHaveCount(0)
+      await expect.poll(() => activeKind(page), { timeout: 20_000 }).toBe('web')
       expect((await wbTabTitles(page))[1]).toContain('localhost')
 
-      expect(server.count()).toBe(0)
+      await expect.poll(() => server.count('/a'), { timeout: 20_000 }).toBe(1)
       expect(readOpenCalls(env).filter((l) => l.includes('http://'))).toEqual([])
       expect(await page.locator(OVERLAY.root).count()).toBe(0)
       expect(await page.locator(OVERLAY.entry).count()).toBe(0)
@@ -148,7 +150,7 @@ test.describe('URL routing and the open shim: where a target lands (a web tab, t
     }
   })
 
-  test('BB-M28: agent `open <bare .html path>` lands a background Browser tab, never Safari', async ({
+  test('BB-M28: agent `open <bare .html path>` lands a foreground Browser tab, never Safari', async ({
     app,
     page,
     env
@@ -158,14 +160,18 @@ test.describe('URL routing and the open shim: where a target lands (a web tab, t
     await agentOpen(page, 'docs/page.html')
 
     await expect(openTabs(page)).toHaveCount(1, { timeout: 30_000 })
-    await expect(wbUnreadTabs(page)).toHaveCount(1)
+    await expect(wbUnreadTabs(page)).toHaveCount(0)
     expect((await wbTabTitles(page))[1]).toContain('page.html')
 
-    expect((await guestUrls(app)).filter((u) => u.includes('page.html'))).toEqual([])
+    await expect
+      .poll(async () => (await guestUrls(app)).filter((u) => u.includes('page.html')).length, {
+        timeout: 20_000
+      })
+      .toBe(1)
     expect(readOpenCalls(env).filter((l) => l.includes('page.html'))).toEqual([])
   })
 
-  test('BB-C11: an agent file-open never takes the panel away from the active web tab, while a user `open` of the same file from a shell still lands in Files', async ({
+  test('BB-C11: an agent file-open turns the panel from the active web tab to Files, keeping the web tab, and a user `open` of the same file from a shell lands in Files too', async ({
     app,
     page,
     env
@@ -176,13 +182,14 @@ test.describe('URL routing and the open shim: where a target lands (a web tab, t
     const tabsBefore = await openTabs(page).count()
 
     await agentOpen(page, 'README.md')
-    await page.waitForTimeout(NO_ROUTE_SETTLE_MS)
 
-    expect(await activeKind(page)).toBe('web')
+    await expect.poll(() => activeKind(page), { timeout: 20_000 }).toBe('files')
+    await expect(page.locator(WORKBENCH.readingTitle)).toHaveText('README.md', { timeout: 30_000 })
     expect(await openTabs(page).count()).toBe(tabsBefore)
-    await expect(browserSurface(page)).toBeVisible()
     expect(await globeHasUnread(page)).toBe(false)
 
+    await wbTabs(page).nth(1).click()
+    await expect.poll(() => activeKind(page), { timeout: 20_000 }).toBe('web')
     await openSessionTerminal(app, page)
     // PLATFORM§2
     await runIn(
@@ -210,7 +217,7 @@ test.describe('URL routing and the open shim: where a target lands (a web tab, t
     await agentOpen(page, `file://${env.workspaces.a}/docs/page.html`)
     await expect(openTabs(page)).toHaveCount(1, { timeout: 30_000 })
     expect((await wbTabTitles(page))[1]).toContain('page.html')
-    await expect(wbUnreadTabs(page)).toHaveCount(1)
+    await expect.poll(() => activeKind(page), { timeout: 20_000 }).toBe('web')
   })
 
   test('BB-C13: agent `open` of a non-http scheme still passes through to the OS unchanged', async ({
