@@ -25,6 +25,22 @@ export function writeWholeBeforeVisible(dest: string, text: string): void {
   fs.renameSync(tmp, dest)
 }
 
+export function sweepJsonDrops(
+  dir: string,
+  handlerFor: (name: string) => ((obj: unknown, full: string) => void) | null
+): void {
+  fs.readdir(dir, (err, names) => {
+    if (err) return
+    for (const name of names) {
+      if (!name.endsWith('.json')) continue
+      const handle = handlerFor(name)
+      if (!handle) continue
+      const full = path.join(dir, name)
+      readJsonDrop(full, 0, (obj) => handle(obj, full))
+    }
+  })
+}
+
 export function watchJsonDrops(
   dir: string,
   handlerFor: (name: string) => ((obj: unknown, full: string) => void) | null

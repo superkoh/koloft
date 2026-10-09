@@ -852,6 +852,14 @@ inferred, not checked.
   watcher writes it again until it is seen.
 - **A recursive folder watcher cannot be trusted to report the removal of the watched
   folder itself.**
+- **A session's two start notes can go unreported.** With the launch line typed about
+  0.2 s after the pty opens, the shim's registration or claude's SessionStart drop was
+  never reported by its folder watch in 4 to 7 of about 195 e2e tests (4 workers),
+  while the files were on disk; the tab then never bound. A worktree-exit case that
+  lost one in 3 of 16 runs passed 9 of 9 with the old 1.6 s wait. A 1 s sweep of both
+  folders finds them.
+  (2026-10-09, Node 24.13.0 in Electron 43, macOS 27.0.1; files listed from the e2e
+  when a row stayed pending.)
 
 ## §29 node-pty and ptys
 

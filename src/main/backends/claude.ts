@@ -59,7 +59,7 @@ import {
   type HookReport
 } from '../hookRouting'
 import { registeredByTabRoot } from '../shim'
-import { watchJsonDrops } from '../jsonDrops'
+import { sweepJsonDrops, watchJsonDrops } from '../jsonDrops'
 import { copyWorktreeIncludes } from '../sessionWorktrees'
 import { GIT_REF_RE } from '../gitSteps'
 import {
@@ -87,6 +87,8 @@ export interface ClaudeBackendDeps {
 
 // PLATFORM§28
 const STATUS_LOG_POLL_MS = 2000
+// PLATFORM§28
+const SWEEP_FOR_A_LOST_DROP_MS = 1000
 // CC§1
 const SESSION_END_SETTLE_MS = 800
 // CC§1
@@ -247,7 +249,15 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   watchShimRegistrations(regDir: string): void {
-    watchJsonDrops(regDir, () => (raw) => this.handleRegistration(raw))
+    const handle = (raw: unknown): void => this.handleRegistration(raw)
+    watchJsonDrops(regDir, () => handle)
+    setInterval(
+      () =>
+        sweepJsonDrops(regDir, (name) =>
+          this.processedRegIds.has(name.slice(0, -'.json'.length)) ? null : handle
+        ),
+      SWEEP_FOR_A_LOST_DROP_MS
+    ).unref()
   }
 
   private handleRegistration(raw: unknown): void {
@@ -349,13 +359,22 @@ export class ClaudeBackend implements SessionBackend {
 
   private watchHookRegistrations(dir: string, mirror = false): () => void {
     const isNews = mirror ? makeDropDedupe() : null
-    const drops = watchJsonDrops(dir, () => (obj, full) => {
-      if (isNews && !isNews(full, JSON.stringify(obj))) return
+    const notYetHandled = makeDropDedupe()
+    const handle = (obj: unknown, full: string, sweeping: boolean): void => {
+      const text = JSON.stringify(obj)
+      if (!notYetHandled(full, text) && sweeping) return
+      if (isNews && !isNews(full, text)) return
       this.handleHookRegistration(obj)
-    })
+    }
+    const drops = watchJsonDrops(dir, () => (obj, full) => handle(obj, full, false))
+    const sweep = setInterval(
+      () => sweepJsonDrops(dir, () => (obj, full) => handle(obj, full, true)),
+      SWEEP_FOR_A_LOST_DROP_MS
+    )
     const logs = this.watchStatusLogs(dir)
     return () => {
       drops?.close()
+      clearInterval(sweep)
       logs()
     }
   }

@@ -27,36 +27,69 @@ function fakeTracker(): ClaudeBackendDeps['tracker'] {
   } as unknown as ClaudeBackendDeps['tracker']
 }
 
-describe('ClaudeBackend: a local tab binds whichever of its two start notes Koloft reads first', () => {
+const NOTES_LONG_SETTLED_BEFORE_THE_WATCH_MS = 1500
+const tabId = 'pty-x-1'
+const sessionId = '3c4ac765-c402-4d6d-88ac-dca81e2a35f1'
+
+function backendWithDirs(): {
+  backend: ClaudeBackend
+  events: unknown[]
+  writeHookStart(): void
+  writeShimRegistration(): void
+  watch(): void
+} {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-backend-dirs-'))
+  const shimRegDir = path.join(root, 'sessions')
+  const hookRegDir = path.join(root, 'hook-sessions')
+  fs.mkdirSync(shimRegDir)
+  fs.mkdirSync(hookRegDir)
+  const events: unknown[] = []
+  const backend = new ClaudeBackend({
+    pty: { get: () => ({}), pidOf: () => 4242, clearResumeIntent: () => {} },
+    tracker: fakeTracker(),
+    workspaces: () => null,
+    events: (id: string, event: unknown) => events.push([id, event])
+  } as unknown as ClaudeBackendDeps)
+  return {
+    backend,
+    events,
+    writeHookStart: () =>
+      fs.writeFileSync(
+        path.join(hookRegDir, `${tabId}.json`),
+        JSON.stringify({ tabId, event: 'start', source: 'startup', sessionId, cwd: root })
+      ),
+    writeShimRegistration: () =>
+      fs.writeFileSync(
+        path.join(shimRegDir, `${sessionId}.json`),
+        JSON.stringify({ tabId, regId: sessionId, sessionId, cwd: root, pid: 4242 })
+      ),
+    watch: () => {
+      backend.watchShimRegistrations(shimRegDir)
+      backend.watchLocalHooks(hookRegDir)
+    }
+  }
+}
+
+describe('ClaudeBackend: a local tab binds once both of its start notes are on disk', () => {
   it("binds the session when claude's SessionStart is read before the shim's registration of the tab", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-backend-dirs-'))
-    const shimRegDir = path.join(root, 'sessions')
-    const hookRegDir = path.join(root, 'hook-sessions')
-    fs.mkdirSync(shimRegDir)
-    fs.mkdirSync(hookRegDir)
-    const tabId = 'pty-x-1'
-    const sessionId = '3c4ac765-c402-4d6d-88ac-dca81e2a35f1'
-    const events: unknown[] = []
-    const backend = new ClaudeBackend({
-      pty: { get: () => ({}), pidOf: () => 4242, clearResumeIntent: () => {} },
-      tracker: fakeTracker(),
-      workspaces: () => null,
-      events: (id: string, event: unknown) => events.push([id, event])
-    } as unknown as ClaudeBackendDeps)
-    backend.watchShimRegistrations(shimRegDir)
-    backend.watchLocalHooks(hookRegDir)
-
-    fs.writeFileSync(
-      path.join(hookRegDir, `${tabId}.json`),
-      JSON.stringify({ tabId, event: 'start', source: 'startup', sessionId, cwd: root })
-    )
+    const t = backendWithDirs()
+    t.watch()
+    t.writeHookStart()
     await new Promise((r) => setTimeout(r, 300))
-    expect(events).toEqual([])
-    fs.writeFileSync(
-      path.join(shimRegDir, `${sessionId}.json`),
-      JSON.stringify({ tabId, regId: sessionId, sessionId, cwd: root, pid: 4242 })
-    )
+    expect(t.events).toEqual([])
+    t.writeShimRegistration()
+    await vi.waitFor(() => expect(t.events).toEqual([[tabId, { type: 'bound', key: sessionId }]]))
+  })
 
-    await vi.waitFor(() => expect(events).toEqual([[tabId, { type: 'bound', key: sessionId }]]))
+  // PLATFORM§28
+  it('binds the session when the folder watch never reports either note', async () => {
+    const t = backendWithDirs()
+    t.writeShimRegistration()
+    t.writeHookStart()
+    await new Promise((r) => setTimeout(r, NOTES_LONG_SETTLED_BEFORE_THE_WATCH_MS))
+    t.watch()
+    await vi.waitFor(() => expect(t.events).toEqual([[tabId, { type: 'bound', key: sessionId }]]), {
+      timeout: 5000
+    })
   })
 })
