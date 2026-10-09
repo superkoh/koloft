@@ -12,20 +12,23 @@ import {
   type RefObject
 } from 'react'
 import type { ArtifactView, GitNumstatMap, GitStatusMap, SessionInfo } from '@shared/types'
-import { isWebPagePath } from '@shared/preview'
+import { opensAsWebTab } from '@shared/browserRoute'
 import { parseUnifiedDiff, type ParsedDiff } from '../inlineDiff'
 import { highlightCode, langForPath } from '../highlight'
 import { InlineDiff, MAX_INLINE_ROWS } from './InlineDiff'
 import { GIT_LETTER, type ChangeFilters } from './filesModel'
 import { installSlideOnHover } from './filesSide'
+import { isComposing } from '../keys'
 import {
   CHANGES_MSG,
   HIGHLIGHT_LEAD_IN,
   baseArg,
   baseUnresolved,
   buildEntries,
+  commentBlocked,
   emptyStreamMessage,
   groupByDir,
+  hunkPrompt,
   isBigDiff,
   mergeSections,
   nearViewport,
@@ -37,7 +40,8 @@ import {
   totalDelta,
   writtenPaths,
   type ChangeEntry,
-  type DiffSection
+  type DiffSection,
+  type HunkPrompt
 } from './changesModel'
 import '../changesView.css'
 
@@ -56,6 +60,7 @@ export interface ChangesViewProps {
   onSplit: (path: string, view: ArtifactView, scrollTop: number) => void
   onContextMenu: (e: ReactMouseEvent, path: string, isDir: boolean) => void
   onScrollRequest: (rel: string) => void
+  onReturnFocus: () => void
   streamRef: RefObject<HTMLDivElement | null>
 }
 
@@ -104,6 +109,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
     onSplit,
     onContextMenu,
     onScrollRequest,
+    onReturnFocus,
     streamRef
   } = props
 
@@ -392,7 +398,7 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
 
   const split = useCallback(
     (path: string, view: 'diff' | 'source', offset: number): void => {
-      if (isWebPagePath(path)) {
+      if (opensAsWebTab(path)) {
         onOpenWeb(path)
         return
       }
@@ -407,6 +413,17 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
       onScrollRequest(e.rel)
     },
     [onScrollRequest]
+  )
+
+  const pasteTab = session?.tabId ?? null
+  const blocked = commentBlocked(session)
+  const putInSession = useCallback(
+    async ({ pasted, typed }: HunkPrompt): Promise<void> => {
+      if (!pasteTab) return
+      await window.api.terminal.paste(pasteTab, pasted, typed)
+      onReturnFocus()
+    },
+    [pasteTab, onReturnFocus]
   )
 
   const listEl = useRef<HTMLDivElement>(null)
@@ -520,11 +537,13 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
                     (load.pending || (load.backfill && e.status === 'untracked')))
                 }
                 observe={observe}
+                blocked={blocked}
                 onToggleExpand={toggleExpand}
                 onToggleOpen={toggleOpen}
                 onSetView={setView}
                 onSplit={splitBlock}
                 onContextMenu={onContextMenu}
+                onComment={putInSession}
               />
             ))}
       </div>
@@ -544,11 +563,13 @@ interface BlockProps {
   cut: boolean
   loading: boolean
   observe: (el: HTMLElement) => () => void
+  blocked: string | null
   onToggleExpand: (path: string) => void
   onToggleOpen: (path: string) => void
   onSetView: (path: string, v: 'diff' | 'source') => void
   onSplit: (path: string, view: 'diff' | 'source', el: HTMLElement | null) => void
   onContextMenu: (e: ReactMouseEvent, path: string, isDir: boolean) => void
+  onComment: (prompt: HunkPrompt) => Promise<void>
 }
 
 const ChangeBlock = memo(function ChangeBlock({
@@ -563,11 +584,13 @@ const ChangeBlock = memo(function ChangeBlock({
   cut,
   loading,
   observe,
+  blocked,
   onToggleExpand,
   onToggleOpen,
   onSetView,
   onSplit,
-  onContextMenu
+  onContextMenu,
+  onComment
 }: BlockProps): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
@@ -616,7 +639,9 @@ const ChangeBlock = memo(function ChangeBlock({
               entry={entry}
               seen={seen}
               expanded={isExpanded}
+              blocked={blocked}
               onToggleExpand={onToggleExpand}
+              onComment={onComment}
             />
           )}
         </>
@@ -640,7 +665,9 @@ const ChangeBlock = memo(function ChangeBlock({
         entry={entry}
         seen={seen}
         expanded={isExpanded}
+        blocked={blocked}
         onToggleExpand={onToggleExpand}
+        onComment={onComment}
       />
     )
   })()
@@ -708,14 +735,25 @@ function Hunks({
   entry,
   seen,
   expanded,
-  onToggleExpand
+  blocked,
+  onToggleExpand,
+  onComment
 }: {
   hunks: { header: string; text: string }[]
   entry: ChangeEntry
   seen: boolean
   expanded: boolean
+  blocked: string | null
   onToggleExpand: (path: string) => void
+  onComment: (prompt: HunkPrompt) => Promise<void>
 }): JSX.Element {
+  const [commentedHunk, setCommentedHunk] = useState<string | null>(null)
+  const commenting = hunks.findIndex((h) => h.text === commentedHunk)
+  const [note, setNote] = useState('')
+  const openComment = (text: string | null): void => {
+    setCommentedHunk(text)
+    setNote('')
+  }
   return (
     <>
       {hunks.map((h, i) => (
@@ -732,11 +770,87 @@ function Hunks({
                 {expanded ? '⤡ default context' : '⤢ expand context'}
               </button>
             )}
+            <button
+              className="cv-exp cv-cmt"
+              aria-pressed={commenting === i}
+              disabled={!!blocked}
+              title={blocked ?? MSG.comment}
+              onClick={() => openComment(commenting === i ? null : h.text)}
+            >
+              ✎ comment
+            </button>
           </div>
+          {commenting === i && (
+            <CommentBox
+              blocked={blocked}
+              note={note}
+              setNote={setNote}
+              onClose={() => openComment(null)}
+              onPut={() => {
+                openComment(null)
+                void onComment(hunkPrompt(entry.rel, h.text, note))
+              }}
+            />
+          )}
           <DiffRows text={h.text} path={entry.path} seen={seen} />
         </Fragment>
       ))}
     </>
+  )
+}
+
+function CommentBox({
+  blocked,
+  note,
+  setNote,
+  onClose,
+  onPut
+}: {
+  blocked: string | null
+  note: string
+  setNote: (note: string) => void
+  onClose: () => void
+  onPut: () => void
+}): JSX.Element {
+  const put = (): void => {
+    if (!blocked) onPut()
+  }
+  return (
+    <form
+      className="cv-comment"
+      aria-label="Comment on this hunk"
+      onSubmit={(e) => {
+        e.preventDefault()
+        put()
+      }}
+    >
+      <textarea
+        className="ed-area"
+        rows={3}
+        autoFocus
+        placeholder="Your note on this hunk…"
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') onClose()
+          if (e.key !== 'Enter' || e.shiftKey || isComposing(e)) return
+          e.preventDefault()
+          put()
+        }}
+      />
+      <div className="cv-comment-row">
+        <span className="cv-comment-hint">
+          {blocked ??
+            'Lands in the session’s input box with the hunk — you press ⏎ there to send it. ⏎ here · ⇧⏎ new line · Esc closes'}
+        </span>
+        <button type="button" className="cv-retry" onClick={onClose}>
+          Cancel
+        </button>
+        <button type="submit" className="btn-primary" disabled={!!blocked}>
+          Put in session
+        </button>
+      </div>
+    </form>
   )
 }
 

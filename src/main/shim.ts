@@ -4,6 +4,7 @@ import path from 'path'
 import { keychainNamespace } from '@shared/types'
 import { NEWID_FN, OPEN_SHIM_HEAD, OPEN_SHIM_TARGET } from './openShimScript'
 import { CLAUDE_AGENT_SHIM } from './agentShim'
+import { ENSURE_CLAUDE_MINIMUM_FN } from './cliMinimums'
 
 export interface ShimPaths {
   shimDir: string
@@ -218,6 +219,10 @@ case "$1" in ""|-*) ;; *) skip=1 ;; esac
 [ -n "$CLAUDECODE" ] && skip=1
 
 ${UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE}
+
+# CC§16
+${ENSURE_CLAUDE_MINIMUM_FN}
+if [ "$skip" = "0" ]; then ensure_claude_minimum "$real" || exit 1; fi
 
 # CC§6
 pre=()

@@ -41,11 +41,18 @@ export class StartedSessions {
   }
 
   startedBy(target: { sessionId: string; tabId?: string }, caller: { sessionId: string }): boolean {
-    return (
-      (target.tabId !== undefined &&
-        this.parentOfWaitingTab.get(target.tabId) === caller.sessionId) ||
-      this.parents()[target.sessionId] === caller.sessionId
+    return [target.sessionId, target.tabId].some(
+      (rowId) => rowId !== undefined && this.parentOfRow(rowId) === caller.sessionId
     )
+  }
+
+  parentOfRow(rowId: string): string | undefined {
+    const parents = this.parents()
+    if (Object.hasOwn(parents, rowId)) return parents[rowId]
+    const waiting = this.parentOfWaitingTab.get(rowId)
+    if (waiting) return waiting
+    const boundSession = this.sessionOfTab.get(rowId)
+    return boundSession && Object.hasOwn(parents, boundSession) ? parents[boundSession] : undefined
   }
 
   forget(sessionId: string): void {

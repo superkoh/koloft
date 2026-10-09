@@ -11,17 +11,37 @@ import {
   pretendWindowFocused,
   quitAndClose
 } from './helpers/app'
-import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
-import { WORKBENCH, wbUnreadTabs } from './helpers/workbench'
+import {
+  installCodex,
+  installFakeGh,
+  seedSettings,
+  setGithubFixture,
+  type E2EEnv
+} from './helpers/env'
+import {
+  FAILED_LOG,
+  ONE_FAILING_OF_FIVE,
+  WORKBENCH,
+  commentOnFirstHunk,
+  expectOnePromptFromTheChecks,
+  expectOnePromptFromTheComment,
+  sendFailingChecks,
+  showBrowse,
+  wbActiveTab,
+  wbUnreadTabs
+} from './helpers/workbench'
+import { setupChangeFixture } from './helpers/filesFixture'
+import { portOffset } from '../../src/shared/worktreeName'
 import {
   addWorkspace,
   centerTerm,
   chooseBackend,
   clickAppMenuItem,
-  closeMenu,
   dialogPrimary,
+  gitCommitAll,
   gitInit,
   newSessionInWith,
+  oneStillRunning,
   openMenu,
   pickerDialog,
   processAlive,
@@ -59,6 +79,22 @@ function codexOpenOutputs(env: E2EEnv): string[] {
     .filter((item) => item?.type === 'commandExecution' && item.id.startsWith('open-'))
     .map((item) => item.aggregatedOutput)
 }
+function codexPrompts(env: E2EEnv): string[] {
+  const file = path.join(env.home, 'fake-codex-wire.jsonl')
+  if (!fs.existsSync(file)) return []
+  return fs
+    .readFileSync(file, 'utf8')
+    .split('\n')
+    .flatMap((line) => {
+      try {
+        const { direction, frame } = JSON.parse(line)
+        const text = frame?.method === 'turn/start' ? frame.params?.input?.[0]?.text : undefined
+        return direction === 'client' && typeof text === 'string' ? [text] : []
+      } catch {
+        return []
+      }
+    })
+}
 function codexCalls(env: E2EEnv): CodexCall[] {
   const file = path.join(env.home, 'fake-codex-calls.jsonl')
   if (!fs.existsSync(file)) return []
@@ -79,17 +115,11 @@ function codexRows(page: Page): Locator {
     hasNot: page.getByRole('img', { name: 'Claude', exact: true })
   })
 }
-async function restoreOnceHistoryLoadedAfterLaunch(page: Page): Promise<void> {
-  await expect
-    .poll(async () => {
-      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
-      const loaded =
-        (await page.locator('.menu .mi.disabled', { hasText: 'Restore session' }).count()) === 0
-      if (!loaded) await closeMenu(page)
-      return loaded
-    })
-    .toBe(true)
-  await page.locator('.menu .mi', { hasText: 'Restore session' }).click()
+async function restoreFromTheFirstMenuOpenedAfterLaunch(page: Page): Promise<void> {
+  await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+  const restore = page.locator('.menu .mi', { hasText: 'Restore session' })
+  await expect(restore).not.toHaveClass(/disabled/)
+  await restore.click()
 }
 async function newIn(
   page: Page,
@@ -422,7 +452,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('a page Codex opens with `open` lands as an unread web tab in its own Workbench, and the agent-web hint names Codex', async ({
+  test('a page Codex opens with `open` comes up in front in its own Workbench, and the agent-web hint names Codex', async ({
     env
   }) => {
     installCodex(env)
@@ -436,17 +466,23 @@ test.describe('Codex sessions through the real method chooser, process transport
       const hint = page.locator('.hint-card[data-hint="agent-web"] .h')
       await expect(hint).toContainText('Codex')
       await expect(hint).not.toContainText('Claude')
-      const toggle = page.getByRole('button', { name: 'Workbench', exact: true })
-      if (!(await toggle.getAttribute('class'))?.includes(' on')) await toggle.click()
-      await expect(wbUnreadTabs(page)).toHaveCount(1)
+      await expect(wbActiveTab(page)).toHaveAttribute('title', /codex-opened/)
+      await expect(wbUnreadTabs(page)).toHaveCount(0)
     } finally {
       await quitAndClose(app)
     }
   })
 
-  test('Codex worktree survives close and can be rebuilt on resume', async ({ env }) => {
+  test('Codex worktree survives close and can be rebuilt on resume; each time it is made it gets the .worktreeinclude files, and every run in it the same port offset', async ({
+    env
+  }) => {
     installCodex(env)
     gitInit(env.workspaces.a)
+    fs.writeFileSync(path.join(env.workspaces.a, '.gitignore'), 'NOTES.md\n.env\n')
+    fs.writeFileSync(path.join(env.workspaces.a, '.worktreeinclude'), '.env\n')
+    gitCommitAll(env.workspaces.a)
+    fs.writeFileSync(path.join(env.workspaces.a, '.env'), 'PORT=3000\n')
+    const includedIn = (dir: string): boolean => fs.existsSync(path.join(dir, '.env'))
     const app = await launchApp(env)
     try {
       const page = await app.firstWindow()
@@ -461,6 +497,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       const first = codexCalls(env)[0]
       expect(first.cwd).not.toBe(env.workspaces.a)
       expect(fs.existsSync(first.cwd)).toBe(true)
+      expect(includedIn(first.cwd)).toBe(true)
       let menu = await openMenu(page, codexRows(page))
       await expect(menu.locator('.mi', { hasText: 'Reveal in Finder' })).not.toHaveClass(/disabled/)
       await page.keyboard.press('Escape')
@@ -485,7 +522,16 @@ test.describe('Codex sessions through the real method chooser, process transport
       expect(codexCalls(env)[2].cwd).toBe(first.cwd)
       expect(codexCalls(env)[2].sessionId).toBe(first.sessionId)
       expect(fs.existsSync(first.cwd)).toBe(true)
+      expect(includedIn(first.cwd)).toBe(true)
       expect(readCalls(env)).toHaveLength(0)
+      const offsets = fs
+        .readFileSync(path.join(env.home, 'fake-codex-server-calls.jsonl'), 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => (JSON.parse(line) as { portOffset: string | null }).portOffset)
+        .filter((offset) => offset !== null)
+      const offset = String(portOffset('codex-feature'))
+      expect(offsets).toEqual([offset, offset, offset])
     } finally {
       await quitAndClose(app)
     }
@@ -567,6 +613,37 @@ test.describe('Codex sessions through the real method chooser, process transport
       await runIn(page, centerTerm(page), '/new')
       await expect(row).toHaveClass(/st-waiting/)
       await expect(badge).toHaveCount(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a Codex turn that ends while its child agent still runs shows green with ↻, and turn-done waits for the child', async ({
+    env
+  }) => {
+    installCodex(env)
+    fs.writeFileSync(path.join(env.home, 'fake-codex-child-ms'), '6000')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      const row = codexRows(page)
+      await row.click()
+      await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
+      await runIn(page, centerTerm(page), 'spawn child')
+      const running = oneStillRunning(row)
+      await expect(running).toBeVisible()
+      await expect(row).toHaveClass(/st-waiting/)
+      expect(await pendingAttention(page)).toHaveLength(0)
+      await running.click()
+      await expect(page.locator('.tbu-pop.parked')).toContainText('Turn done · still running')
+      await page.keyboard.press('Escape')
+      await expect(running).toHaveCount(0, { timeout: 15_000 })
+      await expect(row).toHaveClass(/st-waiting/)
+      await expect
+        .poll(() => pendingAttention(page), { timeout: 10_000 })
+        .toMatchObject([{ kind: 'turn-done' }])
     } finally {
       await quitAndClose(app)
     }
@@ -696,7 +773,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(codexRows(page)).toHaveClass(/cold/)
       expect(await termIds(page)).toHaveLength(0)
       expect(codexCalls(env)).toHaveLength(2)
-      await restoreOnceHistoryLoadedAfterLaunch(page)
+      await restoreFromTheFirstMenuOpenedAfterLaunch(page)
       const history = page.getByRole('dialog', { name: 'Restore session · ws-a', exact: true })
       await history.getByRole('button').filter({ hasText: 'Codex fixture session' }).click()
       await expect.poll(() => codexCalls(env).length).toBe(3)
@@ -1063,7 +1140,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('a Codex job set to "Close it" closes its tab once Codex finishes the turn', async ({
+  test('a Codex job set to "Close it" closes for good once Codex finishes the turn: tab, row and worktree', async ({
     env
   }) => {
     installCodex(env)
@@ -1093,7 +1170,58 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(dlg.locator('.hist-row').first()).toContainText('Done — closed itself', {
         timeout: 30_000
       })
+      const tree = codexCalls(env)[0].cwd
+      expect(tree).not.toBe(env.workspaces.a)
       await expect(page.locator('.terminals .term-wrap')).toHaveCount(0, { timeout: 30_000 })
+      await expect(wsRows(page, 'ws-a')).toHaveCount(0, { timeout: 30_000 })
+      await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('✎ comment on a Changes hunk lands in the Codex composer as a paste with the note typed after it, unsent until the person presses Enter', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedSettings(env, { hintsOff: true })
+    setupChangeFixture(env.workspaces.a).modifyTracked(1)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await showBrowse(page)
+      await page
+        .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
+        .filter({ hasText: 'Changes' })
+        .click()
+
+      const note = 'Codex keep the old name'
+      const head = await commentOnFirstHunk(page, 'src/change-1.ts', note)
+      await expectOnePromptFromTheComment(() => codexPrompts(env), head, note)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('GitHub button ▸ Send failing checks lands in the Codex composer as one paste, unsent until the person presses Enter, with gh run on this Mac', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedSettings(env, { hintsOff: true })
+    installFakeGh(env, { checks: ONE_FAILING_OF_FIVE, failedLog: FAILED_LOG })
+    setGithubFixture(env, {
+      [env.workspaces.a]: { owner: 'acme', repo: 'widgets', branch: 'feature/login', pr: 265 }
+    })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await expect(page.locator('.wb-gh .ci')).toHaveClass(/\bfail\b/, { timeout: 30_000 })
+      await sendFailingChecks(page)
+      await expectOnePromptFromTheChecks(() => codexPrompts(env))
     } finally {
       await quitAndClose(app)
     }

@@ -138,6 +138,7 @@ test.describe('Git freshness · sidebar behind badge, popover and fast-forward p
         'New worktree session…⇧⌘N',
         'Restore session…',
         'Scheduled jobs…',
+        'Bind Discord channel…',
         'Remove workspace'
       ])
       await closeMenu(page)

@@ -1,12 +1,13 @@
-import fs from 'fs'
-import path from 'path'
 import { test, expect } from './helpers/app'
 import {
+  boundSessionId,
   centerTerm,
-  encodeCwd,
+  continuedInOf,
   FAKE_SESSION_TITLE,
+  layoutOnDisk,
   runIn,
   startSessionIn,
+  transcriptFile,
   waitBooted,
   wsRows
 } from './helpers/p1'
@@ -43,28 +44,16 @@ test('when Claude Code moves the conversation to a new session id (a phantom sta
   await startSessionIn(page, 'ws-a')
   await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 15_000 })
   const tabId = await wsRows(page, 'ws-a').first().getAttribute('data-tab-id')
-  const boundOf = (): Promise<string | undefined> =>
-    page.evaluate(
-      (id) => window.api.sessions.list().then((all) => all.find((s) => s.tabId === id)?.sessionId),
-      tabId
-    )
+  const boundOf = (): Promise<string | undefined> => boundSessionId(page, tabId)
   const before = await boundOf()
   expect(before).toBeTruthy()
-  const beforeTranscript = path.join(
-    env.home,
-    '.claude',
-    'projects',
-    encodeCwd(env.workspaces.a),
-    `${before}.jsonl`
-  )
+  const beforeTranscript = transcriptFile(env.home, env.workspaces.a, before ?? '')
 
   await runIn(page, centerTerm(page), '/move-to-background')
-  const continuedIn = (): string | undefined => {
-    const last = fs.readFileSync(beforeTranscript, 'utf8').trimEnd().split('\n').pop() ?? ''
-    return last.includes('continued-in') ? JSON.parse(last).continuedInSessionId : undefined
-  }
+  const continuedIn = (): string | undefined => continuedInOf(beforeTranscript)
   await expect.poll(continuedIn, { timeout: 15_000 }).toBeTruthy()
   await expect.poll(boundOf, { timeout: 15_000 }).toBe(continuedIn())
+  await expect.poll(() => layoutOnDisk(env).members, { timeout: 15_000 }).toEqual([continuedIn()])
   await expect(wsRows(page, 'ws-a')).toHaveCount(1)
   await expect(wsRows(page, 'ws-a').first()).not.toHaveClass(/\bcold\b/)
 })

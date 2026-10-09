@@ -1,4 +1,5 @@
 import DOMPurify from 'dompurify'
+import { fnv1a32 } from '@shared/fnv1a'
 
 type MermaidApi = (typeof import('mermaid'))['default']
 
@@ -8,12 +9,7 @@ export const MERMAID_MAX_TEXT_SIZE = 50000
 const CACHE_LIMIT = 50
 
 export function hashCode(s: string): string {
-  let h = 0x811c9dc5
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i)
-    h = Math.imul(h, 0x01000193)
-  }
-  return `${(h >>> 0).toString(36)}-${s.length.toString(36)}`
+  return `${fnv1a32(s).toString(36)}-${s.length.toString(36)}`
 }
 
 export interface DiagramCache {

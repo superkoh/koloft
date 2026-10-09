@@ -3,6 +3,7 @@ import {
   dirtyTabsOf,
   discardTab,
   editingActive,
+  endEditsOf,
   getEntry,
   saveTab,
   subscribeDirty,
@@ -10,6 +11,7 @@ import {
 } from './editRegistry'
 import { NOTES_OWNER_PREFIX, notesOwner } from '@shared/cwdKey'
 import { relOf } from './components/filesModel'
+import { sessionEndedBody } from './closeSession'
 import { activateTab } from './components/workbenchTabs'
 import { useStore } from './store'
 
@@ -75,12 +77,74 @@ export function dirtyInWorkspace(path: string): DirtyTab[] {
   return [...sessionBuffers, ...dirtyTabsOf(notesOwner(path))]
 }
 
+const closedRoots = new Map<string, string>()
+
+function ownerIsClosed(ownerTabId: string): boolean {
+  return !useStore.getState().tabs.some((t) => t.id === ownerTabId)
+}
+
+function bareLabel(t: DirtyTab): string {
+  if (t.ownerTabId.startsWith(NOTES_OWNER_PREFIX)) return 'notes.md'
+  const root =
+    useStore.getState().sessions.find((s) => s.tabId === t.ownerTabId)?.treeRoot ??
+    closedRoots.get(t.ownerTabId) ??
+    null
+  return relOf(t.path, root)
+}
+
 export function labelPaths(tabs: DirtyTab[]): string[] {
-  const sessions = useStore.getState().sessions
-  return tabs.map((t) => {
-    if (t.ownerTabId.startsWith(NOTES_OWNER_PREFIX)) return 'notes.md'
-    return relOf(t.path, sessions.find((s) => s.tabId === t.ownerTabId)?.treeRoot ?? null)
-  })
+  return tabs.map((t) =>
+    t.ownerTabId.startsWith(NOTES_OWNER_PREFIX) || !ownerIsClosed(t.ownerTabId)
+      ? bareLabel(t)
+      : `${bareLabel(t)} (from a closed session)`
+  )
+}
+
+const waitingToAsk: { ownerTabId: string; title: string }[] = []
+let stopWatchingPrompts: (() => void) | null = null
+
+export function askAboutLeftEdits(tab: { id: string; title: string; cwd: string }): void {
+  if (dirtyIn(tab.id).length === 0) return
+  const session = useStore.getState().sessions.find((s) => s.tabId === tab.id)
+  closedRoots.set(tab.id, session?.treeRoot ?? tab.cwd)
+  waitingToAsk.push({ ownerTabId: tab.id, title: session?.title || tab.title })
+  stopWatchingPrompts ??= useStore.subscribe(askNextLeft)
+  askNextLeft()
+}
+
+function askNextLeft(): void {
+  for (;;) {
+    const st = useStore.getState()
+    if (st.unsavedPrompt || st.closeConfirm) return
+    const next = waitingToAsk.shift()
+    if (!next) {
+      stopWatchingPrompts?.()
+      stopWatchingPrompts = null
+      return
+    }
+    const dirty = dirtyIn(next.ownerTabId)
+    if (dirty.length === 0) continue
+    const files = dirty.map(bareLabel)
+    const forget = (): void => {
+      endEditsOf(next.ownerTabId)
+      closedRoots.delete(next.ownerTabId)
+    }
+    st.setUnsavedPrompt({
+      files,
+      ended: sessionEndedBody(next.title, files),
+      onCancel: () => {},
+      onDiscard: () => {
+        discardAll(dirty)
+        forget()
+      },
+      onSave: async () => {
+        const ok = await saveAll(dirty)
+        useStore.getState().setUnsavedPrompt(null)
+        if (ok) forget()
+      }
+    })
+    return
+  }
 }
 
 export function dirtyIn(tabId: string | undefined): DirtyTab[] {
@@ -118,8 +182,9 @@ export async function saveAll(tabs: DirtyTab[]): Promise<boolean> {
   if (at < 0) return true
   const t = tabs[at]
   const note = t.ownerTabId.startsWith(NOTES_OWNER_PREFIX)
+  const closed = !note && ownerIsClosed(t.ownerTabId)
   if (note) revealNote(t)
-  else revealTab(t)
+  else if (!closed) revealTab(t)
   const failure = getEntry(t.ownerTabId, t.tabId)?.error
   useStore
     .getState()
@@ -127,7 +192,9 @@ export async function saveAll(tabs: DirtyTab[]): Promise<boolean> {
       results[at] === 'stale'
         ? note
           ? 'Not saved — notes.md changed on disk. The Notes island shows the difference.'
-          : 'Not saved — this file changed on disk. The tab shows the difference.'
+          : closed
+            ? 'Not saved — this file changed on disk, and its session is closed, so no tab can show the difference.'
+            : 'Not saved — this file changed on disk. The tab shows the difference.'
         : note
           ? (failure ?? 'notes.md could not be saved — see the Notes island.')
           : (failure ?? 'Could not save this file.')

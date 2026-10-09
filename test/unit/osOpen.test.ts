@@ -63,6 +63,7 @@ describe('leaveForOS', () => {
 
     leaveForOS('/tmp/report.pdf', 'path')
     expect(calls.paths).toEqual(['/tmp/report.pdf'])
+    expect(await loggedInAnyOrder(2)).toEqual(['/tmp/report.pdf', 'https://koloft.test/a'])
   })
 
   it('reveals a file without opening it (the download toast may not launch anything)', async () => {

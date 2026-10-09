@@ -11,7 +11,7 @@ import {
   startSessionIn,
   waitBooted
 } from './helpers/p1'
-import { layoutState, seedWorkbenchDefault, wbUnreadTabs, WORKBENCH } from './helpers/workbench'
+import { layoutState, seedWorkbenchDefault, WORKBENCH } from './helpers/workbench'
 
 const BACKDROP_OUTSET_PX = 4
 const QUEUED_HINT_HOLD_BACK_MS = 1900
@@ -253,7 +253,9 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
     }
   })
 
-  test('T-HN-03: the agent-web hint follows the page onto the Browser tab', async ({ env }) => {
+  test('T-HN-03: the agent-web hint points at the page’s tab in the Workbench the open brought up', async ({
+    env
+  }) => {
     test.setTimeout(240_000)
     const { app, page } = await start(env, { hintsSeen: ['workbench'], panelOpen: false })
     try {
@@ -265,14 +267,11 @@ test.describe('Contextual hints · one card at a time, anchored at its subject, 
 
       await expect(card(page, 'agent-web')).toBeVisible({ timeout: 30_000 })
       await expect(card(page, 'agent-web').locator('.h')).toHaveText('Claude opened this page here')
-      await expectAnchoredAt(page, WORKBENCH.titlebarIcon)
-      await snap(page, 'T-HN-03')
-
-      await toggleWorkbenchWithoutClicking(app, page)
       await expect.poll(() => layoutState(page), { timeout: 30_000 }).toBe('T2')
-      await expect(wbUnreadTabs(page)).toHaveCount(1)
-      const landed = await wbUnreadTabs(page).getAttribute('data-wb-tab-id')
+      await expect(page.locator(WORKBENCH.tabActive)).toHaveAttribute('title', /hinted/)
+      const landed = await page.locator(WORKBENCH.tabActive).getAttribute('data-wb-tab-id')
       await expectAnchoredAt(page, `.wb-tab[data-wb-tab-id="${landed}"]`)
+      await snap(page, 'T-HN-03')
     } finally {
       await quitAndClose(app)
     }

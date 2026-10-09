@@ -14,6 +14,7 @@ import {
 import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { shq } from '@shared/shellQuote'
 import { EDIT_OPEN_MAX_BYTES, EDIT_WRITE_MAX_BYTES } from '@shared/editLimits'
+import { portOffset } from '@shared/worktreeName'
 import { contentHitsOf, gitGrepArgs, rankFiles, rgArgs, visibleEntries } from '../fileTree'
 import {
   MAX_READ_BYTES,
@@ -25,6 +26,7 @@ import {
 } from '../fileEdit'
 import { GIT_TIMEOUT_MS, gitOps, type GitOps } from '../gitStatus'
 import { GithubLookup, type GithubOptions } from '../github'
+import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
 import { remoteShCommand } from '../remote/install'
 import {
   killSessionCmd,
@@ -41,11 +43,11 @@ import { launchMode } from '../remote/sync'
 import { ensureControlDir, sshLinkBroke, sshOptions, type BytesResult } from '../remote/ssh'
 import { claudeArgv } from '../claudeArgs'
 import { listSkills, type SkillFs } from '../skillList'
+import { worktreeNameAround } from '../resumePlan'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host, ShellLaunch } from './host'
 
 export interface MachineAccount {
   env: Record<string, string>
-  picked: string
   banner: string
 }
 
@@ -56,7 +58,7 @@ export interface MachineClaudeDeps {
   alive(): ReadonlySet<string>
   realPath(p: string): string
   settings(): { multiAccount: boolean; skipPermissions: boolean }
-  pickAccount(): Promise<MachineAccount | undefined>
+  pickAccount(launchKey: string): Promise<MachineAccount | undefined>
   hookSettings(tabId: string, machineDir: string): Record<string, unknown>
 }
 
@@ -389,15 +391,32 @@ export class SshHost implements Host {
     })
     this.github = new GithubLookup({
       ...deps.github,
-      git: (root, args, network) => this.gitOut(root, args, network)
+      git: (root, args, network) =>
+        network
+          ? this.runGit(NETWORK_GIT, root, args, NETWORK_GIT_TIMEOUT_MS)
+          : this.gitOut(root, args)
     })
   }
 
-  async gitOut(root: string, args: string[], network = false): Promise<string | null> {
-    const r = await this.sh(network ? NETWORK_GIT : GIT, ['-C', this.bare(root), ...args], {
-      timeoutMs: network ? NETWORK_GIT_TIMEOUT_MS : undefined
-    })
+  gitOut(root: string, args: string[], timeoutMs?: number): Promise<string | null> {
+    return this.runGit(GIT, root, args, timeoutMs)
+  }
+
+  private async runGit(
+    script: string,
+    root: string,
+    args: string[],
+    timeoutMs?: number
+  ): Promise<string | null> {
+    const r = await this.sh(script, ['-C', this.bare(root), ...args], { timeoutMs })
     return r.code === 0 ? r.stdout.toString('utf8') : null
+  }
+
+  async gitRun(root: string, args: string[], network = false): Promise<GitRunResult> {
+    const r = await this.sh(network ? NETWORK_GIT : GIT, ['-C', this.bare(root), ...args], {
+      timeoutMs: GIT_STEP_TIMEOUT_MS
+    })
+    return { code: r.code, stdout: r.stdout.toString('utf8'), stderr: r.stderr }
   }
 
   private bare(p: string): string {
@@ -623,10 +642,12 @@ export class SshHost implements Host {
     const root = d.realPath(this.bare(spec.root))
     const cwd = spec.cwd ? this.bare(spec.cwd) : root
     const wsRoot = spec.fallbackCwd ? d.realPath(this.bare(spec.fallbackCwd)) : root
-    const account = mode === 'start' && settings.multiAccount ? await d.pickAccount() : undefined
+    const worktree = spec.worktree ?? worktreeNameAround(cwd)
     const pkg = d.machinePackage()
     const machineDir = remoteMachineDir(pkg.name)
     await this.kills.get(tmuxName)
+    const pickKey = mode === 'start' && settings.multiAccount ? `launch-${sid}` : undefined
+    const account = pickKey ? await d.pickAccount(pickKey) : undefined
     return {
       ok: true,
       spawnCwd: os.homedir(),
@@ -642,6 +663,7 @@ export class SshHost implements Host {
           fallbackCwd: wsRoot !== cwd ? wsRoot : undefined,
           banner: account?.banner ?? OWN_LOGIN_BANNER,
           env: account?.env,
+          portOffset: worktree ? portOffset(worktree) : undefined,
           settings: d.hookSettings(tabId, machineDir),
           claudeArgs: args.args
         })
@@ -665,7 +687,7 @@ export class SshHost implements Host {
         root,
         hookMirror: mirrorHookDir(d.userData, this.machine),
         attachTo: mode === 'attach' ? sid : undefined,
-        picked: account?.picked
+        pickKey
       }
     }
   }
