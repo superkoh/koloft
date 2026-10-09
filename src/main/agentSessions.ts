@@ -229,13 +229,17 @@ function matchRef<T>(
   return hits.length ? { ok: true, value: hits[0] } : null
 }
 
-export function findCodexTarget(sessions: SessionInfo[], ref: string): Parsed<SessionInfo> {
-  const hit = matchRef(
+function matchOpen(sessions: SessionInfo[], ref: string): Parsed<SessionInfo> | null {
+  return matchRef(
     sessions,
     ref,
     (s) => s.nativeSessionId === ref || s.sessionId === ref || s.tabId === ref,
     (s) => s.title
   )
+}
+
+export function findCodexTarget(sessions: SessionInfo[], ref: string): Parsed<SessionInfo> {
+  const hit = matchOpen(sessions, ref)
   if (!hit) return fail(`there is no open session "${ref}". Run "koloft session list" to see them.`)
   return !hit.ok || hit.value.backendId === 'codex' ? hit : fail(CLAUDE_USES_SEND_MESSAGE)
 }
@@ -248,9 +252,6 @@ export interface ClosableSession {
   treeRoot: string
   tabId?: string
 }
-
-const CLOSE_USAGE =
-  'koloft session close: give nothing to close this session, or the id or name of one you started with koloft session new (a conductor: of an ended session it looks after), like: koloft session close <id or name>'
 
 export async function findClosable(
   sessions: ClosableSession[],
@@ -410,13 +411,37 @@ async function startSibling(
 }
 
 function parseReadArgs(rest: string[]): Parsed<{ ref: string; last: number }> {
-  const [ref, flag, value, ...extra] = rest
-  if (!ref || extra.length > 0) return fail(READ_USAGE)
-  if (flag === undefined) return { ok: true, value: { ref, last: 1 } }
+  const flag = rest.indexOf('--last')
+  const ref = (flag < 0 ? rest : rest.slice(0, flag)).join(' ')
+  if (!ref) return fail(READ_USAGE)
+  if (flag < 0) return { ok: true, value: { ref, last: 1 } }
+  const [value, ...extra] = rest.slice(flag + 1)
   const last = Number(value)
-  if (flag !== '--last' || !Number.isInteger(last) || last < 1 || last > MAX_READ_TURNS)
+  if (extra.length > 0 || !Number.isInteger(last) || last < 1 || last > MAX_READ_TURNS)
     return fail(READ_USAGE)
   return { ok: true, value: { ref, last } }
+}
+
+function nameThenWords(
+  words: string[],
+  isName: (ref: string) => boolean
+): Parsed<{ ref: string; tail: string[] }> {
+  const heads = words.slice(0, -1).map((_, i) => words.slice(0, i + 1).join(' '))
+  const named = heads.filter(isName)
+  if (named.length > 1)
+    return fail(
+      `${named.map((n) => `"${n}"`).join(' and ')} are all session names, so Koloft cannot tell where the name ends. Give the session's id from "koloft session list" instead.`
+    )
+  const count = named.length ? heads.indexOf(named[0]) + 1 : 1
+  return { ok: true, value: { ref: words.slice(0, count).join(' '), tail: words.slice(count) } }
+}
+
+function wholeName(words: string[]): Parsed<{ ref: string; tail: string[] }> {
+  return { ok: true, value: { ref: words.join(' '), tail: [] } }
+}
+
+function asArgument(ref: string): string {
+  return /\s/.test(ref) ? JSON.stringify(ref) : ref
 }
 
 function matchRow(
@@ -554,7 +579,8 @@ const SCREEN_USAGE = `koloft session screen: give an id or name (or "me" for you
 const KEYS_USAGE = `koloft session keys: give an id or name, then the keys to press in order, like: koloft session keys fix-login Down Enter`
 
 function seeAndPress(ref: string): string {
-  return `To answer it anyway, see what it shows with koloft session screen ${ref}, then press the keys with koloft session keys ${ref} <keys>.`
+  const arg = asArgument(ref)
+  return `To answer it anyway, see what it shows with koloft session screen ${arg}, then press the keys with koloft session keys ${arg} <keys>.`
 }
 
 const CONDUCTOR_ACT_USAGE: Record<string, string> = {
@@ -587,6 +613,19 @@ function isMe(
   callerTabId: string
 ): boolean {
   return mine?.tabId === callerTabId || [me.sessionId, me.nativeSessionId, me.title].includes(ref)
+}
+
+async function conductorNames(
+  d: SessionVerbDeps,
+  me: SessionInfo
+): Promise<(ref: string) => boolean> {
+  const all = placedRows(d.sidebar(), d.allSessions())
+  const names = await peerNamesOf(d, all)
+  return (ref) =>
+    ref === MYSELF ||
+    [me.sessionId, me.nativeSessionId, me.title].includes(ref) ||
+    d.conductorOf(ref) !== undefined ||
+    matchRow(all, ref, names) !== null
 }
 
 export function sessionVerb(d: SessionVerbDeps): AgentVerb {
@@ -658,13 +697,15 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
     rest: string[],
     caller: AgentCaller
   ): Promise<AgentReply> => {
-    const [ref, ...tail] = rest
-    const resume = splitAtDashes(tail)
-    const text = sub === 'resume' ? resume.after : tail.join(' ').trim()
-    const extra = sub === 'resume' ? resume.before : tail
     const takesWords = sub === 'send' || sub === 'answer' || sub === 'command' || sub === 'keys'
-    if (!ref || (takesWords && !text) || (!takesWords && extra.length > 0))
-      return refused(CONDUCTOR_ACT_USAGE[sub], EXIT_USAGE)
+    const resume = splitAtDashes(rest)
+    const split = takesWords
+      ? nameThenWords(rest, await conductorNames(d, caller.session))
+      : wholeName(sub === 'resume' ? resume.before : rest)
+    if (!split.ok) return refused(`koloft session ${sub}: ${split.error}`, EXIT_USAGE)
+    const { ref, tail } = split.value
+    const text = sub === 'resume' ? resume.after : tail.join(' ').trim()
+    if (!ref || (takesWords && !text)) return refused(CONDUCTOR_ACT_USAGE[sub], EXIT_USAGE)
     if (sub === 'command') {
       const problem = slashCommandProblem(text)
       if (problem) return refused(`koloft session command: ${problem}`, EXIT_USAGE)
@@ -695,7 +736,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
     if (sub === 'keys' && t.tabId) {
       await d.press(t.tabId, keysFor(tail))
       return answered(
-        `Pressed ${text} in ${t.name}. See what it shows now with koloft session screen ${ref}.`
+        `Pressed ${text} in ${t.name}. See what it shows now with koloft session screen ${asArgument(ref)}.`
       )
     }
     if (sub === 'answer') {
@@ -765,8 +806,14 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
     if (scope !== undefined && Object.hasOwn(CONDUCTOR_ACT_USAGE, sub))
       return conductorAct(sub, rest, caller)
     if (sub === 'send') {
-      const [ref, ...words] = rest
-      const text = words.join(' ').trim()
+      const open = d.allSessions()
+      const split = nameThenWords(
+        rest,
+        (ref) => d.conductorOf(ref) !== undefined || matchOpen(open, ref) !== null
+      )
+      if (!split.ok) return refused(`koloft session send: ${split.error}`, EXIT_USAGE)
+      const { ref, tail } = split.value
+      const text = tail.join(' ').trim()
       if (!ref || !text) return refused(SEND_USAGE, EXIT_USAGE)
       const conductor = d.conductorOf(ref)
       if (conductor) return deliver('send', conductor, text, caller)
@@ -780,8 +827,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
     if (Object.hasOwn(CONDUCTOR_ACT_USAGE, sub))
       return refused(`koloft session ${sub}: ${ONLY_A_CONDUCTOR}`)
     if (sub === 'close') {
-      if (rest.length > 1) return refused(CLOSE_USAGE, EXIT_USAGE)
-      const [ref] = rest
+      const ref = rest.length > 0 ? rest.join(' ') : undefined
       let target: ClosableSession = caller.session
       if (ref !== undefined) {
         const mine = d.closable().filter((s) => d.startedSessions.startedBy(s, caller.session))

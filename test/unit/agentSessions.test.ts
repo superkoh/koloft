@@ -431,11 +431,11 @@ describe('koloft session send', () => {
     session('cc', 'claude', { title: 'Planner' })
   ]
 
-  it('queues the message on the Codex session found by id, tab id or title', async () => {
+  it('queues the message on the Codex session found by id, tab id or title, a title with spaces quoted or not', async () => {
     const { verb, queued } = harness(sessions())
-    for (const ref of [OTHER_THREAD, 'cx', 'Test runner'])
-      expect((await verb(['send', ref, 'What', 'did you find?'], from('me'))).exit).toBe(0)
-    expect(queued).toEqual(Array(3).fill({ tabId: 'cx', text: 'What did you find?' }))
+    for (const ref of [[OTHER_THREAD], ['cx'], ['Test runner'], ['Test', 'runner']])
+      expect((await verb(['send', ...ref, 'What', 'did you find?'], from('me'))).exit).toBe(0)
+    expect(queued).toEqual(Array(4).fill({ tabId: 'cx', text: 'What did you find?' }))
   })
 
   it('points a Claude caller, or a Claude target, to SendMessage and sends nothing', async () => {
@@ -477,15 +477,16 @@ describe('koloft session close', () => {
     expect(closed).toEqual(['me-session', 'cx-session'])
   })
 
-  it('closes a session it started with koloft session new, by its title or tab id, while it is open', async () => {
+  it('closes a session it started with koloft session new, by its title, quoted or not, or tab id, while it is open', async () => {
     const { verb, closed } = harness([
       session('me', 'claude'),
       session('new-tab', 'claude', { title: 'Docs fixer' })
     ])
     await verb(['new', '--name', 'docs-fixer', '--', 'go'], from('me'))
     expect((await verb(['close', 'Docs fixer'], from('me'))).exit).toBe(0)
+    expect((await verb(['close', 'Docs', 'fixer'], from('me'))).exit).toBe(0)
     expect((await verb(['close', 'new-tab'], from('me'))).exit).toBe(0)
-    expect(closed).toEqual(['new-tab-session', 'new-tab-session'])
+    expect(closed).toEqual(Array(3).fill('new-tab-session'))
   })
 
   it('closes a session it started that has since ended and left only its sidebar row', async () => {
@@ -504,7 +505,7 @@ describe('koloft session close', () => {
     expect(closed).toEqual(['kid-session'])
   })
 
-  it('refuses, closing nothing, a session it did not start — open or ended — and a second argument', async () => {
+  it('refuses, closing nothing, a session it did not start — open or ended', async () => {
     const someoneElses: ClosableSession = {
       sessionId: 'cold-session',
       backendId: 'claude',
@@ -523,7 +524,6 @@ describe('koloft session close', () => {
       expect(reply.exit).not.toBe(0)
       expect(reply.text).toContain('koloft session new')
     }
-    expect(await verb(['close', 'a', 'b'], from('me'))).toMatchObject({ exit: EXIT_USAGE })
     expect(closed).toEqual([])
   })
 
@@ -659,7 +659,8 @@ describe('a conductor’s view of sessions: its binding sets the scope', () => {
       ['read'],
       ['read', 'fix-id', '--last', '0'],
       ['read', 'fix-id', '--last', '21'],
-      ['read', 'fix-id', '--first', '2']
+      ['read', 'fix-id', '--last', '2', 'more'],
+      ['read', '--last', '2']
     ])
       expect(await verb(args, from('global'))).toMatchObject({ exit: EXIT_USAGE })
     for (const ref of ['nobody', 'starting-tab'])
@@ -923,9 +924,6 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
       ])
     )
     expect(touched.map((t) => t.key)).toEqual(['old-id', 'fix-id', 'old-id'])
-    expect(await verb(['resume', 'old-work', 'extra'], from('wsCond'))).toMatchObject({
-      exit: EXIT_USAGE
-    })
   })
 
   it('stop closes an open session’s tab without touching it, and refuses the conductor itself, a closed session, one outside its scope and another conductor', async () => {
@@ -1089,6 +1087,121 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     )
     expect(queued).toEqual([{ tabId: 'cc', text: 'done', clientId: 'koloft-conductor-1' }])
     expect(opened).toEqual(['b3'])
+  })
+})
+
+describe('a conductor given a session name with spaces and no quotes', () => {
+  const CODEX_KEY = `codex:local:${CODEX_THREAD}`
+  const MERGE = '更新 PR415 并合并'
+  const live = [
+    session('cond', 'claude', {
+      sessionId: 'cond-id',
+      title: 'app conductor',
+      cwd: '/conductors/global'
+    }),
+    session('fix', 'claude', { sessionId: 'fix-id', title: MERGE }),
+    session('cx', 'codex', {
+      sessionId: CODEX_KEY,
+      nativeSessionId: CODEX_THREAD,
+      title: 'Check the docs'
+    }),
+    session('api', 'claude', {
+      sessionId: 'api-id',
+      title: 'Fix the api',
+      host: 'ssh',
+      remote: { host: 'box' }
+    })
+  ]
+  const conducting: Conducting = {
+    scopes: { cond: 'global' },
+    sidebar: sidebar([
+      [
+        WS,
+        [
+          row('fix-id', { running: true }),
+          row(CODEX_KEY, { backendId: 'codex', nativeSessionId: CODEX_THREAD, running: true }),
+          row('docs-id', { title: 'Fix docs' }),
+          row('links-id', { title: 'Fix docs links' })
+        ]
+      ],
+      ['ssh://box/srv/api', [row('api-id', { title: 'Fix the api', host: 'ssh', running: true })]]
+    ]),
+    conductors: {
+      'cond-id': {
+        key: 'conductor:b1',
+        name: 'the conductor',
+        backend: 'claude',
+        remote: false,
+        tabId: 'cond',
+        open: async () => 'cond'
+      }
+    }
+  }
+  const words = (text: string): string[] => text.split(' ')
+
+  it('send, answer, command and keys take the first words that make up a session’s name as the name and the rest as the text, for a local and a remote Claude session and a Codex one', async () => {
+    const h = harness(live, {}, [], conducting)
+    for (const line of [
+      `send ${MERGE} fix the tests`,
+      'send Check the docs check the links',
+      'send Fix the api go on',
+      `answer ${MERGE} 2`,
+      `command ${MERGE} /compact keep it`
+    ])
+      expect((await h.verb(words(line), from('cond'))).exit).toBe(0)
+    expect(h.lines).toEqual([
+      { tabId: 'fix', line: crossSessionLine('prompting', ownerSays('fix the tests')) }
+    ])
+    expect(h.queued).toEqual([
+      { tabId: 'cx', text: ownerSays('check the links'), clientId: 'koloft-conductor-1' }
+    ])
+    expect(h.answers).toEqual([{ tabId: 'fix', reply: '2' }])
+    expect(h.commands).toEqual([{ callerTab: 'cond', key: 'fix-id', text: '/compact keep it' }])
+    const keys = await h.verb(words('keys Check the docs Down Enter'), from('cond'))
+    expect(keys.text).toBe(
+      'Pressed Down Enter in Check the docs. See what it shows now with koloft session screen "Check the docs".'
+    )
+    expect(h.pressed).toEqual([
+      { tabId: 'api', keys: [ownerSays('go on'), '\r'] },
+      { tabId: 'cx', keys: ['\x1b[B', '\r'] }
+    ])
+  })
+
+  it('stop, screen, resume, read and close take every word before -- or --last as the name', async () => {
+    const cold: ClosableSession[] = [
+      { sessionId: 'links-id', backendId: 'claude', title: 'Fix docs links', treeRoot: WS }
+    ]
+    const h = harness(live, {}, [], conducting, cold)
+    expect((await h.verb(words(`screen ${MERGE}`), from('cond'))).text).toBe(
+      `The screen of ${MERGE} right now:\n\`\`\`\n$ ls\na.txt\n\`\`\``
+    )
+    expect((await h.verb(words('read Fix docs links --last 2'), from('cond'))).exit).toBe(0)
+    expect(h.reads).toEqual([{ key: 'links-id', n: 2 }])
+    expect((await h.verb(words('resume Fix docs -- carry on'), from('cond'))).exit).toBe(0)
+    expect(h.resumed).toEqual(['docs-id'])
+    expect((await h.verb(words('close Fix docs links'), from('cond'))).exit).toBe(0)
+    expect(h.closed).toEqual(['links-id'])
+    expect((await h.verb(words(`stop ${MERGE}`), from('cond'))).exit).toBe(0)
+    expect((await h.verb(words('stop app conductor'), from('cond'))).text).toContain(THAT_IS_YOU)
+    expect((await h.verb(words('stop No such one'), from('cond'))).text).toContain(
+      'there is no session "No such one"'
+    )
+    expect(h.stopped).toEqual(['fix'])
+  })
+
+  it('a message whose first words fit two sessions’ names is sent nowhere and the id is asked for; quoting the name and the message makes it clear', async () => {
+    const h = harness(live, {}, [], conducting)
+    const reply = await h.verb(words('send Fix docs links please'), from('cond'))
+    expect(reply).toMatchObject({ exit: EXIT_USAGE })
+    expect(reply.text).toContain('"Fix docs" and "Fix docs links"')
+    expect(reply.text).toContain('id')
+    expect(h.resumed).toEqual([])
+    for (const quoted of [
+      ['send', 'Fix docs links', 'please'],
+      ['send', 'Fix docs', 'links please']
+    ])
+      expect((await h.verb(quoted, from('cond'))).exit).toBe(0)
+    await vi.waitFor(() => expect(h.resumed).toEqual(['links-id', 'docs-id']))
   })
 })
 

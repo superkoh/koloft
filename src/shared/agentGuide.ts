@@ -78,13 +78,15 @@ SESSIONS
 
 A workspace is a folder in Koloft's sidebar. Where a command takes --workspace, give its folder name or its full path; leave it out to mean this session's workspace.
 
+A session's name often has spaces: put it in quotes, like "Fix docs links". If you forget, Koloft still finds it: where a command takes only a name, all the words are the name; where a message or keys come after the name, the name is the first words that make up a session's name. If two sessions' names could both fit, nothing is done and you are asked for the id.
+
 koloft session list [--workspace <workspace>]
     List a workspace's sessions: name and state (working, waiting for the owner, or idle). For a Claude session it also prints the path of its transcript (the file that holds its conversation).
     A conductor (the session the owner talks to through Discord) takes no options here and gets every session it looks after, open or closed: name, Claude or Codex, the machine it runs on, its state (working, waiting for the owner, idle or closed), when it was last active, and its id. The global conductor also gets each session's workspace.
 
 koloft session read <id or name> [--last <number>]
     Print what was said in a session's last turns (1 if you leave out --last, at most 20): the owner's messages, messages from other sessions, and the session's replies. Works for Claude and Codex sessions, open or closed.
-    Example: koloft session read fix-login --last 3
+    Example: koloft session read "Fix docs links" --last 3
 
 koloft workspace list
     Only for the global conductor: list the workspaces in Koloft's sidebar, with each one's path and how many of its sessions are open.
@@ -112,7 +114,7 @@ koloft session command <id or name | me> /<command> [arguments]
 
 koloft session screen <id or name | me>
     Only for a conductor: print what an open session's terminal shows right now: a question, a menu, a list of options, an error. Use it to see what a session is waiting on, or when the owner asks what a command showed that Koloft could only see on the screen.
-    Example: koloft session screen fix-login
+    Example: koloft session screen "Fix docs links"
 
 koloft session keys <id or name> <key>...
     Only for a conductor: press keys in an open session it looks after, in order, as the owner would at the Mac. With screen, this lets you do anything the owner could do in that session: pick an option, answer every part of a question with several parts, move through a menu, approve, refuse or cancel. Key names: Enter, Esc, Tab, Shift-Tab, Up, Down, Left, Right, Space, Backspace. Any other word is typed as it is; put text with spaces in quotes. After pressing keys, run screen to see what changed.
@@ -122,15 +124,15 @@ koloft session keys <id or name> <key>...
 
 koloft session answer <id or name> <option number | yes | no | your own words>
     Only for a conductor: answer the question or approval a session it looks after is showing right now, the one Koloft posted in Discord as "… is waiting for you". A number picks that option; yes or no approves or refuses; other words are the answer itself (for an approval or a plan: what to do instead). Only answer the way the owner told you. If it is refused while the session is still waiting, run screen and answer with keys.
-    Example: koloft session answer fix-login 2
+    Example: koloft session answer "Fix docs links" 2
 
 koloft session resume <id or name> [-- "<message>"]
     Only for a conductor: resume a closed session it looks after, and if you like send it a first message.
-    Example: koloft session resume fix-login -- "Carry on with the tests."
+    Example: koloft session resume "Fix docs links" -- "Carry on with the tests."
 
 koloft session stop <id or name>
     Only for a conductor: close a session's tab. The session stays in the list and can be resumed.
-    Example: koloft session stop fix-login
+    Example: koloft session stop "Fix docs links"
 
 koloft session close [<id or name>]
     Close a session for good: Koloft ends it, closes its tab and takes it off the sidebar list. If it runs in its own git worktree, Koloft also deletes that worktree and its branches. With no id or name it closes the session you run it in; run that as your very last step, only when the owner asked for it. With an id or name it closes a session you started with "koloft session new" (open, or already ended), once you have its result. A conductor may also close, when the owner asks, any ended session it looks after on this computer: an open one is refused (stop it first), and so is one on another machine. Do not resume a session to ask it to close itself. If anything in the worktree is not committed, or a commit is on no remote branch, nothing is closed and Koloft lists what is left.
