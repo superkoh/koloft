@@ -46,6 +46,7 @@ import {
   mixesBackends,
   sessionActivityBadge,
   leftoverLabel,
+  liveTabIdFor,
   relTime,
   rowStateClass,
   rowsUnder,
@@ -231,11 +232,8 @@ export function WorkspaceSidebar({
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const cardTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const sessionByIdEntries = sessions.filter((s) => s.sessionId)
-  // CODEX§9
   const tabIdFor = (sessionId: string): string | undefined =>
-    sessionByIdEntries.find((s) => s.sessionId === sessionId && s.alive)?.tabId ??
-    storeTabs.find((t) => t.alive && t.sessionId === sessionId)?.id
+    liveTabIdFor(sessions, storeTabs, sessionId)
   const tabIdOfRow = (row: SessionRow): string | undefined =>
     row.pending ? row.id : row.running ? tabIdFor(row.id) : undefined
   const callingAmong = (rows: SessionRow[]): number =>

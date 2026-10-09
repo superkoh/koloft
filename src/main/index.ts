@@ -3658,6 +3658,7 @@ function registerIpc(): void {
     codexSnippets: async (term) => (await codexSessions?.searchSnippets(term)) ?? [],
     hidden: (id) => !!sessionBackends.conductorOf(id),
     scan: (files, term, found) => {
+      // PLATFORM§4
       const worker = createTranscriptSearchWorker({ workerData: { files, term } })
       worker.on('message', (hit: { id: string; snippet: SearchSnippet }) =>
         found(hit.id, hit.snippet)
