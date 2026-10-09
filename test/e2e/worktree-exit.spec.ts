@@ -1,9 +1,9 @@
-import { execFileSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import type { Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import type { E2EEnv } from './helpers/env'
+import { rowsWithSub } from './helpers/blackbox'
+import { runGit } from './helpers/gitFixture'
 import {
   FAKE_SESSION_TITLE,
   gitInit,
@@ -17,7 +17,7 @@ const REMOVAL_STILL_RUNNING_FOR_MS = 8000
 const REMOVAL_KOLOFT_QUITS_DURING_MS = 60_000
 
 function worktreeRow(page: Page, name: string) {
-  return page.locator('.ws-tab', { has: page.locator('.ws-tab-sub', { hasText: name }) })
+  return rowsWithSub(page, 'ws-a', name)
 }
 
 async function startWorktreeSession(page: Page, name: string): Promise<string> {
@@ -34,13 +34,10 @@ async function startWorktreeSession(page: Page, name: string): Promise<string> {
 }
 
 function type(page: Page, tabId: string, line: string): Promise<void> {
-  return page.evaluate(
-    ([id, text]) =>
-      (
-        window as unknown as { api: { terminal: { write(id: string, d: string): void } } }
-      ).api.terminal.write(id, text + '\r'),
-    [tabId, line] as const
-  )
+  return page.evaluate(([id, text]) => window.api.terminal.write(id, text + '\r'), [
+    tabId,
+    line
+  ] as const)
 }
 
 async function exitChoosingRemove(page: Page, tabId: string): Promise<void> {
@@ -51,13 +48,8 @@ async function exitChoosingRemove(page: Page, tabId: string): Promise<void> {
   await type(page, tabId, '2')
 }
 
-function branchExists(env: E2EEnv, branch: string): boolean {
-  return (
-    execFileSync('git', ['branch', '--list', branch], {
-      cwd: env.workspaces.a,
-      encoding: 'utf8'
-    }).trim() !== ''
-  )
+function branchExists(repo: string, branch: string): boolean {
+  return runGit(repo, 'branch', '--list', branch).trim() !== ''
 }
 
 // CC§4
@@ -88,7 +80,7 @@ test.describe('leaving a worktree session with /exit', () => {
       ).toHaveText('main')
 
       await expect.poll(() => fs.existsSync(wt), { timeout: 30_000 }).toBe(false)
-      expect(branchExists(env, 'worktree-leaving')).toBe(false)
+      expect(branchExists(env.workspaces.a, 'worktree-leaving')).toBe(false)
       await expect(worktreeRow(page, 'leaving')).toHaveCount(0)
     } finally {
       await quitAndClose(app).catch(() => {})
@@ -142,12 +134,11 @@ test.describe('leaving a worktree session with /exit', () => {
 
     await quitAndClose(app)
     await expect.poll(() => fs.existsSync(wt), { timeout: 30_000 }).toBe(false)
-    await expect.poll(() => branchExists(env, 'worktree-cut'), { timeout: 10_000 }).toBe(false)
-    expect(
-      execFileSync('git', ['worktree', 'list', '--porcelain'], {
-        cwd: env.workspaces.a,
-        encoding: 'utf8'
-      })
-    ).not.toContain(path.join(fs.realpathSync(env.workspaces.a), '.claude', 'worktrees', 'cut'))
+    await expect
+      .poll(() => branchExists(env.workspaces.a, 'worktree-cut'), { timeout: 10_000 })
+      .toBe(false)
+    expect(runGit(env.workspaces.a, 'worktree', 'list', '--porcelain')).not.toContain(
+      path.join(fs.realpathSync(env.workspaces.a), '.claude', 'worktrees', 'cut')
+    )
   })
 })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { claudeWorktreeAt, WorktreeRemovalWatch } from '../../src/main/claudeWorktreeExit'
+import { WorktreeRemovalWatch } from '../../src/main/claudeWorktreeExit'
 
 const CLAUDE_STARTS_REMOVING = '\x1b[?25h\x1b7\x1b[r\x1b8\x1b]0;\x07Removing worktree…\r\n'
 
@@ -35,21 +35,5 @@ describe('telling that Claude Code has started removing its worktree', () => {
     expect(watch.failure()).toBe(
       'Could not finish removing the worktree at /r/.claude/worktrees/x; it may be partly deleted.'
     )
-  })
-})
-
-// CC§3
-describe('the worktree Koloft can finish removing after it quits', () => {
-  it('is one Claude made under <repo>/.claude/worktrees, on its worktree-<name> branch', () => {
-    expect(claudeWorktreeAt('/r/.claude/worktrees/feat')).toEqual({
-      root: '/r',
-      worktree: '/r/.claude/worktrees/feat',
-      branch: 'worktree-feat'
-    })
-  })
-
-  it('is none for a checkout anywhere else', () => {
-    expect(claudeWorktreeAt('/r/worktrees/feat')).toBeUndefined()
-    expect(claudeWorktreeAt('/r')).toBeUndefined()
   })
 })
