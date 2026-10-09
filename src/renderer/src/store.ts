@@ -105,9 +105,9 @@ interface AppState {
   workbenchOpen: Record<string, boolean>
   workbench: Record<string, WorkbenchTabSet>
   workbenchFetched: Record<string, true>
-  workbenchLoad: { ownerTabId: string; tabId: string; nonce: number } | null
+  workbenchLoad: Record<string, { tabId: string; nonce: number }>
   agentOpen: { ownerTabId: string; tabId: string; nonce: number } | null
-  filesReveal: { tabId: string; nonce: number; view: FilesTab } | null
+  filesReveal: Record<string, { nonce: number; view: FilesTab }>
   changesBase: Record<string, BaseChoice>
   workbenchFull: boolean
   overlay: { url: string; unread: boolean; open: boolean } | null
@@ -392,9 +392,9 @@ export const useStore = create<AppState>((set, get) => ({
   workbenchOpen: {},
   workbench: {},
   workbenchFetched: {},
-  workbenchLoad: null,
+  workbenchLoad: {},
   agentOpen: null,
-  filesReveal: null,
+  filesReveal: {},
   changesBase: {},
   workbenchFull: false,
   overlay: null,
@@ -659,7 +659,7 @@ export const useStore = create<AppState>((set, get) => ({
     const s = get()
     const id = tabId ?? s.activeTabId
     if (!id) return
-    if (f && f.source !== 'intercept') revealFiles(id, 'browse')
+    if (f) revealFiles(id, 'browse')
     set((st) => ({ openFiles: { ...st.openFiles, [id]: f } }))
   },
   openChanges: (tabId) => revealFiles(tabId, 'changes'),
@@ -751,23 +751,20 @@ export const useStore = create<AppState>((set, get) => ({
       set((st) => ({ workbench: { ...st.workbench, [tabId]: r.set } }))
       persistWorkbench(tabId)
       if (r.evicted) s.showToast(tabEvictedNotice(tabLabel(r.set, r.evicted)))
-      if (opts.source !== 'user') {
-        if (opts.fromShim)
-          set((st) => ({
-            agentOpen: {
-              ownerTabId: tabId,
-              tabId: r.tabId,
-              nonce: (st.agentOpen?.nonce ?? 0) + 1
-            }
-          }))
-        return
-      }
+      if (opts.source !== 'user' && !opts.fromShim) return
+      if (opts.fromShim)
+        set((st) => ({
+          agentOpen: {
+            ownerTabId: tabId,
+            tabId: r.tabId,
+            nonce: (st.agentOpen?.nonce ?? 0) + 1
+          }
+        }))
       if (!s.workbenchOpen[tabId]) get().setWorkbenchOpen(tabId, true)
       set((st) => ({
         workbenchLoad: {
-          ownerTabId: tabId,
-          tabId: r.tabId,
-          nonce: (st.workbenchLoad?.nonce ?? 0) + 1
+          ...st.workbenchLoad,
+          [tabId]: { tabId: r.tabId, nonce: (st.workbenchLoad[tabId]?.nonce ?? 0) + 1 }
         }
       }))
     }),
@@ -1007,7 +1004,10 @@ function revealFiles(tabId: string, view: FilesTab): void {
   s.updateWorkbenchTabs(tabId, (prev) => activateWbTab(prev, FILES_TAB_ID))
   if (!s.workbenchOpen[tabId]) s.setWorkbenchOpen(tabId, true)
   useStore.setState((st) => ({
-    filesReveal: { tabId, view, nonce: (st.filesReveal?.nonce ?? 0) + 1 }
+    filesReveal: {
+      ...st.filesReveal,
+      [tabId]: { view, nonce: (st.filesReveal[tabId]?.nonce ?? 0) + 1 }
+    }
   }))
 }
 

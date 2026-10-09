@@ -1531,7 +1531,7 @@ export default function App(): JSX.Element {
                 liveTabs={liveTabs}
                 visible={panelOnScreen}
                 full={panelFull}
-                load={workbenchLoad?.ownerTabId === panelTab ? workbenchLoad : null}
+                load={panelTab ? (workbenchLoad[panelTab] ?? null) : null}
                 command={panelCmd}
                 dialog={browserDialog}
                 treeRoot={fileTreeRoot}
