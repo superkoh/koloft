@@ -201,6 +201,47 @@ export function setGithubFixture(env: E2EEnv, repos: GithubFixture): void {
   env.launchEnv.KOLOFT_GITHUB_FIXTURE = JSON.stringify(repos)
 }
 
+export interface FakeGhCheck {
+  name: string
+  bucket: 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel'
+  link: string
+  workflow: string
+}
+
+export const GH_SIGNED_OUT = 4
+
+export function installFakeGh(
+  env: E2EEnv,
+  answer: { checks?: FakeGhCheck[]; failedLog?: string; exitCode?: number }
+): void {
+  const checks = path.join(env.home, 'fake-gh-checks.json')
+  const log = path.join(env.home, 'fake-gh-log.txt')
+  fs.writeFileSync(checks, JSON.stringify(answer.checks ?? []))
+  fs.writeFileSync(log, answer.failedLog ?? '')
+  fs.writeFileSync(
+    path.join(env.fakeBin, 'gh'),
+    `#!/bin/sh\n` +
+      `printf '%s\\n' "$*" >> ${JSON.stringify(path.join(env.home, 'fake-gh-calls.txt'))}\n` +
+      `case "$1 $2" in\n` +
+      `  "pr checks")\n` +
+      (answer.exitCode
+        ? `    echo "To get started with GitHub CLI, please run:  gh auth login" >&2; exit ${answer.exitCode};;\n`
+        : `    cat ${JSON.stringify(checks)}; exit 0;;\n`) +
+      `  "run view") cat ${JSON.stringify(log)}; exit 0;;\n` +
+      `esac\n` +
+      `echo "fake gh answers only pr checks and run view: $*" >&2\n` +
+      `exit 1\n`,
+    { mode: 0o755 }
+  )
+}
+
+export function writeGitIdentity(home: string): void {
+  fs.writeFileSync(
+    path.join(home, '.gitconfig'),
+    '[user]\n\temail = e2e@koloft.test\n\tname = koloft-e2e\n'
+  )
+}
+
 // PLATFORM§2
 export function writeClaudeWrapper(env: E2EEnv, name = 'koloft-e2e-wrapper'): string {
   const file = path.join(env.fakeBin, name)

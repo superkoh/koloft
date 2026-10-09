@@ -1,8 +1,9 @@
 import { execFile as execFileCb } from 'child_process'
 import { promisify } from 'util'
-import type { GithubInfo, GithubTarget, WorkspaceGithub } from '@shared/types'
+import type { GithubInfo, GithubTarget, PrChecks, WorkspaceGithub } from '@shared/types'
 import type { GithubRepo } from '@shared/githubUrl'
 import {
+  compareUrlOf,
   loginUrlFor,
   parseGithubRemote,
   pickRemoteUrl,
@@ -11,6 +12,7 @@ import {
   repoUrlOf
 } from '@shared/githubUrl'
 import { credentialGuardEnv, FETCH_TIMEOUT_MS, LOCAL_TIMEOUT_MS } from './gitFreshness'
+import { failingChecksText, prChecks, type Gh } from './prChecks'
 
 const execFile = promisify(execFileCb)
 const TTL_MS = 5 * 60_000
@@ -97,6 +99,7 @@ export interface GithubOptions {
   gitBin?: string
   git?: (root: string, args: string[], network: boolean) => Promise<string | null>
   openCounts?: (repo: GithubRepo) => Promise<OpenCounts | null>
+  gh?: Gh
   now?: () => number
 }
 
@@ -179,11 +182,31 @@ export class GithubLookup {
         ? now.repoUrl
         : what === 'pulls'
           ? now.pullsUrl
-          : now.pr
-            ? `${now.repoUrl}/pull/${now.pr}`
-            : now.repoUrl
+          : what === 'compare' && now.branch
+            ? compareUrlOf(now.repoUrl, now.branch)
+            : what === 'pr' && now.pr
+              ? `${now.repoUrl}/pull/${now.pr}`
+              : now.repoUrl
     if (this.fixture) return url
     return (await this.signedIn()) ? url : loginUrlFor(url)
+  }
+
+  async checks(root: string, pr: number): Promise<PrChecks> {
+    const repo = await this.repoFor(root)
+    if (!repo || !this.opts.gh) return { state: 'failed' }
+    return prChecks(this.opts.gh, repo, pr)
+  }
+
+  async failingChecksText(root: string, pr: number): Promise<string | null> {
+    const repo = await this.repoFor(root)
+    if (!repo || !this.opts.gh) return null
+    return failingChecksText(this.opts.gh, repo, pr)
+  }
+
+  private async repoFor(root: string): Promise<GithubRepo | null> {
+    if (!this.fixture) return this.repoOf(root, false)
+    const f = this.fixture[root]
+    return f ? { owner: f.owner, repo: f.repo } : null
   }
 
   private lookup(key: string, root: string, force = false): Promise<Entry> {

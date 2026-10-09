@@ -910,6 +910,23 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   `"repository":null` plus a `NOT_FOUND` error; with no login it exits 4 and prints
   "To get started with GitHub CLI, please run: gh auth login". (2026-10-03, gh 2.89.0,
   run by hand against a public repo, a made-up name, and an empty `GH_CONFIG_DIR`.)
+- **`gh pr checks <n> --repo o/r --json name,bucket,link,workflow`** prints a JSON array
+  and exits 0 even when a check failed. `bucket` is one of `pass`, `fail`, `pending`,
+  `skipping`, `cancel`. A check from GitHub Actions links to
+  `…/actions/runs/<run>/job/<job>`; one from an app outside Actions (CodeQL's own
+  check-run) links to `…/runs/<id>` with `workflow` empty. A number with no pull request
+  exits 1 with "GraphQL: Could not resolve to a PullRequest…" (a branch name: "no pull
+  requests found for branch …"); a pull request whose repo runs no checks exits 1 with
+  "no checks reported on the '<branch>' branch"; signed out it exits 4 with the
+  `gh auth login` line. `--help` says exit 8 means "checks pending" — not seen with
+  `--json` (inferred, not checked). (2026-10-08, gh 2.89.0, by hand against
+  superkoh/koloft #385/#387, PR 999999, octocat/Hello-World #11472, an empty
+  `GH_CONFIG_DIR`.)
+- **`gh run view --job <job> --repo o/r --log-failed`** prints the whole job, not only
+  the failed step (118 KB for one failed `format:check`), one line each as
+  `<job>\t<step>\t<ISO time> <text>`, with the step often `UNKNOWN STEP`, ANSI colour
+  codes left in, and the failure marked by a `##[error]` line. (2026-10-08, gh 2.89.0,
+  job 112815692712 of superkoh/koloft.)
 
 ## §33 ssh
 

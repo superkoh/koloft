@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { Locator, Page } from '@playwright/test'
 import { expect } from './app'
-import type { E2EEnv } from './env'
+import type { E2EEnv, FakeGhCheck } from './env'
 import { encodeCwd, layoutOnDisk, withMember } from './p1'
 import { assertFixtureDir } from './fixtureGuard'
 import { PNG_1X1 } from './filesFixture'
@@ -397,6 +397,48 @@ export function claudeToolResultsIn(jsonl: string): string[] {
       return []
     }
   })
+}
+
+export const ONE_FAILING_OF_FIVE: FakeGhCheck[] = [
+  {
+    name: 'check',
+    bucket: 'fail',
+    link: 'https://github.com/acme/widgets/actions/runs/36829650571/job/110263090912',
+    workflow: 'CI'
+  },
+  ...['lint', 'build', 'docs', 'e2e'].map((name): FakeGhCheck => ({
+    name,
+    bucket: 'pass',
+    link: 'https://github.com/acme/widgets/actions/runs/36829650571/job/1',
+    workflow: 'CI'
+  }))
+]
+
+export const FAILED_LOG =
+  'check\tRun npm test\t2026-10-07T13:25:40.0000000Z AssertionError: expected 1 to be 2\n' +
+  'check\tRun npm test\t2026-10-07T13:25:40.1000000Z ##[error]Process completed with exit code 1.\n'
+
+export const FAILING_CHECK_PASTE_HEAD =
+  'CI check "check" (workflow CI) failed on pull request #265 of acme/widgets.\n' +
+  'Full log: https://github.com/acme/widgets/actions/runs/36829650571/job/110263090912\n\n' +
+  '--- log excerpt (around the first error) ---\n' +
+  'AssertionError: expected 1 to be 2\n' +
+  '##[error]Process completed with exit code 1.'
+
+export async function sendFailingChecks(page: Page): Promise<void> {
+  await page.locator('.wb-gh').click({ button: 'right' })
+  await page.locator('.wb-ghmenu .mi', { hasText: 'Send failing checks' }).click()
+  await expect
+    .poll(() => page.evaluate(() => !!document.activeElement?.closest('.term-island')))
+    .toBe(true)
+  await page.keyboard.type(TYPED_AFTER_THE_PASTE)
+  await page.keyboard.press('Enter')
+}
+
+export async function expectOnePromptFromTheChecks(prompts: () => string[]): Promise<void> {
+  const fromChecks = (): string[] => prompts().filter((p) => p.startsWith(FAILING_CHECK_PASTE_HEAD))
+  await expect.poll(fromChecks, { timeout: 30_000 }).toHaveLength(1)
+  expect(fromChecks()[0].endsWith('\n\n' + TYPED_AFTER_THE_PASTE)).toBe(true)
 }
 
 export function claudePrompts(transcript: string): string[] {
