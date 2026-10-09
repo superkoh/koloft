@@ -5,7 +5,13 @@ import {
   type BackendSessionRow,
   type WorktreeStateMeta
 } from '@shared/types'
-import { classifyUserPrompt, compactionSummary, encodeCwd, INTERRUPT_TEXTS } from './sessionTracker'
+import {
+  classifyUserPrompt,
+  compactionSummary,
+  encodeCwd,
+  INTERRUPT_TEXTS,
+  whoTyped
+} from './sessionTracker'
 
 export interface Bucket {
   slug: string
@@ -172,7 +178,7 @@ export function extractJsonlMeta(lines: Iterable<string>): Partial<SessionMeta> 
         )
         if (block) text = block.text
       }
-      if (text && !INTERRUPT_TEXTS.has(text)) {
+      if (text && !INTERRUPT_TEXTS.has(text) && whoTyped(obj, text)) {
         const cls = classifyUserPrompt(text)
         if (cls.title) meta.firstUserText = cls.title
         if (meta.commandArgsText === undefined && cls.commandArgs) {
