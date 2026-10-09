@@ -130,6 +130,12 @@ mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
   Write/Edit tools, so memory files land in the transcript's file writes like any
   other. A sweep on 2026-10-01 (CC up to 2.1.287) of the 398 transcripts touched in the
   last 30 days found 927 Write/Edit calls on files under such a `memory/` folder.
+- **A plan-mode plan is a file in `~/.claude/plans/<slug>.md`, written with the ordinary
+  Write tool**, after which CC calls `ExitPlanMode` with input `{plan, planFilePath}`;
+  `plan` is the file's text. So a plan file lands in the transcript's file writes like
+  any other. Seen in a real plan turn (CC 2.1.286, transcript re-read 2026-10-09); the
+  2.1.288 binary's strings agree and also hold a `plansDirectory` setting and a
+  `<slug>.workshop.md` name, neither seen in use.
 
 - **Message-line field vocabulary**: jsonl message lines carry
   `cwd / gitBranch / timestamp / sessionId / version`; a `summary` record is NOT

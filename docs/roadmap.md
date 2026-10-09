@@ -60,8 +60,6 @@ when it works. That is what "judged against" means.
 - **Comment back into the session** — the aggregated diff already exists in the Changes
   view; the missing half is sending a hunk plus a note back into the conversation, and
   jumping to the agent turn that produced a hunk.
-- **Plan-mode surfacing** — read-only rendering of a plan first; approve/reject only once
-  the TUI's input mapping is proven against the fake-claude harness.
 - **PR and CI inside the session** — the session's PR and check status, failing checks
   sent back to the session, commit / push / open PR from Koloft (#215). The end of the
   loop that a session started from an issue or PR (#218) begins.
@@ -147,6 +145,8 @@ Reopen one of these only with new evidence, not a new argument.
 - **Voice input** — macOS dictation already reaches the terminal.
 - **Approve or deny from Koloft's own UI** — answering for the TUI from outside is
   keystroke-faking by another name; the prompt is answered where it appears.
+- **A separate Plan view** (#8) — a Claude plan is a file that already opens from the
+  Workbench Docs row, and both tools show the plan in the terminal.
 - **Desktop pets, theme stores, Office previews** — decoration, or another previewer.
 
 ## How much to trust the order
