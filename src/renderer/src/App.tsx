@@ -644,8 +644,9 @@ export default function App(): JSX.Element {
       st.activateTab(tabId)
       return
     }
-    const listed = st.workspaceRows.some((w) => w.rows.some((r) => r.id === hit.row.id))
-    void resumeSession({ ...hit.row, restore: !listed })
+    const { id, backendId, title } = hit.row
+    const listed = st.workspaceRows.some((w) => w.rows.some((r) => r.id === id))
+    void resumeSession({ id, backendId, title, restore: !listed })
   }, [])
 
   useEffect(() => {
