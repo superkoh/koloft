@@ -50,6 +50,29 @@ const UTIL_TITLE_POLL_MS = 1500
 const SETUP_AFTER_RC_FILES_MS = 600
 const LAUNCH_AFTER_PATH_FIXED_MS = 1600
 
+// PLATFORM§2
+const LINE_EDITOR_STARTS_READING = /\x1b\[\?(?:2004|1034)h/
+const SIGNAL_LENGTH_LESS_ONE = '\x1b[?2004h'.length - 1
+
+function typeOnceTheShellReads(
+  write: (text: string) => void,
+  lines: { text: string; fallbackMs: number }[]
+): (output: string) => void {
+  let typed = 0
+  let tail = ''
+  const typeThrough = (count: number): void => {
+    for (; typed < count; typed++) write(lines[typed].text + '\r')
+    if (typed === lines.length) for (const t of fallbacks) clearTimeout(t)
+  }
+  const fallbacks = lines.map((line, i) => setTimeout(() => typeThrough(i + 1), line.fallbackMs))
+  return (output) => {
+    if (typed === lines.length) return
+    const seen = tail + output
+    if (LINE_EDITOR_STARTS_READING.test(seen)) typeThrough(lines.length)
+    else tail = seen.slice(-SIGNAL_LENGTH_LESS_ONE)
+  }
+}
+
 export function foregroundName(reported: unknown): string | null {
   if (typeof reported !== 'string') return null
   const name = reported.slice(reported.lastIndexOf('/') + 1)
@@ -196,8 +219,23 @@ export class PtyManager extends EventEmitter {
 
     let titlePoll: ReturnType<typeof setInterval> | undefined
 
+    const launchCommand =
+      typeof args.launchCommand === 'function' ? args.launchCommand(id) : args.launchCommand
+    const watchForReadyShell = typeOnceTheShellReads(
+      (text) => {
+        try {
+          proc.write(text)
+        } catch {}
+      },
+      [
+        { text: args.setupCommand, fallbackMs: SETUP_AFTER_RC_FILES_MS },
+        { text: launchCommand, fallbackMs: LAUNCH_AFTER_PATH_FIXED_MS }
+      ].filter((line): line is { text: string; fallbackMs: number } => !!line.text)
+    )
+
     const cwdParser = args.util ? new OscCwdParser() : undefined
     proc.onData((data) => {
+      watchForReadyShell(data)
       this.emit('data', { id, data })
       const cwd = cwdParser?.push(data)
       if (cwd && cwd !== handle.cwd) {
@@ -227,18 +265,6 @@ export class PtyManager extends EventEmitter {
         this.emit('process-title', { id, name })
       }, UTIL_TITLE_POLL_MS)
     }
-
-    const send = (text: string, delay: number): void => {
-      setTimeout(() => {
-        try {
-          proc.write(text + '\r')
-        } catch {}
-      }, delay)
-    }
-    if (args.setupCommand) send(args.setupCommand, SETUP_AFTER_RC_FILES_MS)
-    const launchCommand =
-      typeof args.launchCommand === 'function' ? args.launchCommand(id) : args.launchCommand
-    if (launchCommand) send(launchCommand, LAUNCH_AFTER_PATH_FIXED_MS)
 
     return handle
   }

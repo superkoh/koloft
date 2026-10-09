@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest'
 import os from 'os'
 
 const mocks = vi.hoisted(() => {
@@ -352,6 +352,74 @@ describe('PtyManager.paste: a ✎ comment reaches the tool with the hunk pasted 
       write.mockRestore()
       vi.useRealTimers()
     }
+  })
+})
+
+describe('PtyManager types the PATH line and the launch line once the login shell reads', () => {
+  const SETUP = 'export PATH="/koloft/shim:$PATH"; hash -r 2>/dev/null; clear'
+  const LAUNCH = 'exec claude --resume abc'
+  const ZSH_PROMPT = '\x1b[0m\x1b[27m\x1b[24m\x1b[Jme@mac ~ % \x1b[K\x1b[?2004h'
+
+  let write: MockInstance<typeof mocks.proc.write>
+  beforeEach(() => {
+    vi.useFakeTimers()
+    write = vi.spyOn(mocks.proc, 'write')
+  })
+  afterEach(() => {
+    write.mockRestore()
+    vi.useRealTimers()
+  })
+
+  const typed = (): string[] => write.mock.calls.map(([d]) => d)
+  const launch = (): void => {
+    new PtyManager().create({
+      kind: 'claude',
+      cwd: os.tmpdir(),
+      setupCommand: SETUP,
+      launchCommand: () => LAUNCH
+    })
+  }
+
+  it('types nothing while the rc files still run, then both lines in order the moment the line editor turns on bracketed paste, and nothing again', () => {
+    launch()
+    mocks.state.data?.('Last login: Fri Oct  9 on ttys004\r\nrc output\r\n')
+    expect(typed()).toEqual([])
+    mocks.state.data?.(ZSH_PROMPT)
+    expect(typed()).toEqual([SETUP + '\r', LAUNCH + '\r'])
+    mocks.state.data?.('\x1b[?2004h')
+    vi.runAllTimers()
+    expect(typed()).toEqual([SETUP + '\r', LAUNCH + '\r'])
+  })
+
+  it('still sees the signal when the pty splits it across two chunks', () => {
+    launch()
+    mocks.state.data?.(ZSH_PROMPT.slice(0, -4))
+    expect(typed()).toEqual([])
+    mocks.state.data?.(ZSH_PROMPT.slice(-4))
+    expect(typed()).toEqual([SETUP + '\r', LAUNCH + '\r'])
+  })
+
+  it("takes macOS bash 3.2's meta-key switch as the same signal, since its readline has no bracketed paste", () => {
+    launch()
+    mocks.state.data?.('\x1b[?1034hMac:~ me$ ')
+    expect(typed()).toEqual([SETUP + '\r', LAUNCH + '\r'])
+  })
+
+  it('falls back to the fixed timers when the shell never signals, PATH line first, each line once even if the signal comes late', () => {
+    launch()
+    vi.advanceTimersToNextTimer()
+    expect(typed()).toEqual([SETUP + '\r'])
+    mocks.state.data?.('\x1b[?2004h')
+    expect(typed()).toEqual([SETUP + '\r', LAUNCH + '\r'])
+    vi.runAllTimers()
+    expect(typed()).toEqual([SETUP + '\r', LAUNCH + '\r'])
+  })
+
+  it('types nothing into a pty Koloft did not start a shell in', () => {
+    new PtyManager().create({ kind: 'codex', cwd: os.tmpdir(), executable: '/bin/codex' })
+    mocks.state.data?.('\x1b[?2004h')
+    vi.runAllTimers()
+    expect(typed()).toEqual([])
   })
 })
 
