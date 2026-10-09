@@ -17,7 +17,6 @@ import {
   typeInAddressBar,
   windowStates
 } from './helpers/browser'
-import { wbUnreadTabs } from './helpers/workbench'
 import { startEchoServer } from './helpers/fixtureServer'
 
 const DEVTOOLS_MAY_NEVER_APPEAR_MS = 3000
@@ -54,7 +53,8 @@ test.describe("Session Browser stays unnoticeable on the developer's own machine
 
       await openViaAgent(page, server.url('/a'))
 
-      await expect(wbUnreadTabs(page)).toHaveCount(1, { timeout: 30_000 })
+      await guestByUrl(app, '/a', { timeout: 30_000 })
+      await expect.poll(() => server.count('/a'), { timeout: 30_000 }).toBe(1)
 
       for (const w of await windowFocusStates(app)) {
         expect(w.visible).toBe(false)

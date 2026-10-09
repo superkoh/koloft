@@ -26,7 +26,7 @@ vi.stubGlobal('window', {
   }
 })
 
-const { useStore, previewLinkTarget, openWebPage, tabEvictedNotice } =
+const { useStore, previewLinkTarget, openWebPage, openInterceptedFile, tabEvictedNotice } =
   await import('../../src/renderer/src/store')
 const { beginEdit, endEdit, getEntry, setText, allDirtyTabs } =
   await import('../../src/renderer/src/editRegistry')
@@ -88,7 +88,8 @@ beforeEach(() => {
     workbench: {},
     workbenchFetched: { [TAB]: true, [TAB2]: true },
     workbenchOpen: { [TAB]: false },
-    workbenchLoad: null,
+    workbenchLoad: {},
+    filesReveal: {},
     workbenchFull: false,
     toast: null,
     overlay: null,
@@ -105,13 +106,10 @@ describe('openWorkbenchTarget (FR-13/15/57 — one dedup, one cap, one source fo
     expect(set.activeId).toBe(set.tabs[1].id)
     expect(set.tabs[1].unread).toBe(false)
     expect(useStore.getState().workbenchOpen[TAB]).toBe(true)
-    expect(useStore.getState().workbenchLoad).toMatchObject({
-      ownerTabId: TAB,
-      tabId: set.tabs[1].id
-    })
+    expect(useStore.getState().workbenchLoad[TAB]).toMatchObject({ tabId: set.tabs[1].id })
   })
 
-  it('FR-13: an agent open builds an unread tab and touches nothing else (WB-T02/K07)', () => {
+  it('FR-13: a background open (a ⌘-click in a page) builds an unread tab and touches nothing else', () => {
     openWeb('http://localhost:1/a', 'agent')
 
     const set = strip()
@@ -120,7 +118,32 @@ describe('openWorkbenchTarget (FR-13/15/57 — one dedup, one cap, one source fo
     expect(set.tabs[1].title).toBe('')
     expect(set.activeId).toBe(FILES_TAB_ID)
     expect(useStore.getState().workbenchOpen[TAB]).toBe(false)
-    expect(useStore.getState().workbenchLoad).toBeNull()
+    expect(useStore.getState().workbenchLoad).toEqual({})
+  })
+
+  it('an agent’s own open expands that session’s panel and asks it to show the page, without switching sessions (WB-T02)', () => {
+    useStore.getState().openWorkbenchTarget(TAB2, {
+      url: 'http://localhost:1/a',
+      source: 'agent',
+      fromShim: true
+    })
+
+    const set = strip(TAB2)
+    expect(useStore.getState().activeTabId).toBe(TAB)
+    expect(useStore.getState().workbenchOpen[TAB2]).toBe(true)
+    expect(useStore.getState().workbenchLoad[TAB2]).toMatchObject({ tabId: set.tabs[1].id })
+    expect(useStore.getState().workbenchLoad[TAB]).toBeUndefined()
+  })
+
+  it('a page an agent opens in another session waits for that session, whatever opens meanwhile elsewhere', () => {
+    useStore.getState().openWorkbenchTarget(TAB2, {
+      url: 'http://localhost:1/a',
+      source: 'agent',
+      fromShim: true
+    })
+    openWeb('http://localhost:1/mine', 'user')
+
+    expect(useStore.getState().workbenchLoad[TAB2]).toMatchObject({ tabId: strip(TAB2).tabs[1].id })
   })
 
   it('the agent owns a tab only when its open command or a CDP page made it — a user open, and a ⌘-click that opens in the background, stay the user’s', async () => {
@@ -148,10 +171,10 @@ describe('openWorkbenchTarget (FR-13/15/57 — one dedup, one cap, one source fo
 
     expect(strip().tabs).toHaveLength(2)
     expect(strip().activeId).toBe(first)
-    expect(useStore.getState().workbenchLoad?.nonce).toBe(2)
+    expect(useStore.getState().workbenchLoad[TAB]?.nonce).toBe(2)
   })
 
-  it('FR-15: an agent re-open only re-lights unread and never switches away (WB-T03)', () => {
+  it('FR-15: a background re-open only re-lights unread and never switches away', () => {
     openWeb('http://localhost:1/a', 'agent')
     const tabId = strip().tabs[1].id
     gesture((prev) => activateTab(prev, tabId))
@@ -163,7 +186,7 @@ describe('openWorkbenchTarget (FR-13/15/57 — one dedup, one cap, one source fo
     expect(strip().tabs).toHaveLength(2)
     expect(strip().tabs[1].unread).toBe(true)
     expect(strip().activeId).toBe(FILES_TAB_ID)
-    expect(useStore.getState().workbenchLoad).toBeNull()
+    expect(useStore.getState().workbenchLoad).toEqual({})
   })
 
   it('FR-22/23: the 9th web tab evicts the least-recently-viewed, named in a toast (WB-T10)', () => {
@@ -209,14 +232,14 @@ describe('openWorkbenchTarget (FR-13/15/57 — one dedup, one cap, one source fo
   })
 })
 
-describe('setOpenFile (the source fork, FR-14/51/57): an agent open lights no signal, even while the panel is collapsed', () => {
-  function seedWebActive(): string {
-    useStore.getState().setWorkbenchState(TAB, {
+describe('a file open shows in its session’s Browse view, the agent’s as much as the user’s', () => {
+  function seedWebActive(tabId = TAB): string {
+    useStore.getState().setWorkbenchState(tabId, {
       open: false,
       tabs: [{ kind: 'web', title: 'A', url: 'http://localhost:1/a' }]
     })
-    const web = strip().tabs[1].id
-    gesture((prev) => activateTab(prev, web))
+    const web = strip(tabId).tabs[1].id
+    gesture((prev) => activateTab(prev, web), tabId)
     setState.mockClear()
     return web
   }
@@ -231,28 +254,28 @@ describe('setOpenFile (the source fork, FR-14/51/57): an agent open lights no si
     expect(useStore.getState().openFiles[TAB]?.src).toBe('/ws/a.md')
   })
 
-  it('FR-14/51: an intercepted open changes NOTHING visible, and lights no signal (WB-T22/K07)', () => {
-    const web = seedWebActive()
-    const before = strip()
-
-    useStore.getState().setOpenFile({ src: '/ws/a.md', label: 'a.md', source: 'intercept' })
-
-    expect(strip()).toBe(before)
-    expect(strip().activeId).toBe(web)
-    expect(strip().tabs.some((t) => t.unread)).toBe(false)
-    expect(useStore.getState().workbenchOpen[TAB]).toBe(false)
-    expect(setState).not.toHaveBeenCalled()
-    expect(useStore.getState().openFiles[TAB]?.src).toBe('/ws/a.md')
-  })
-
-  it('FR-14: the silent agent open never blocks the user’s own (WB-T22 barrier)', () => {
+  it('an agent open in the session on screen activates `files`, expands the panel and reveals Browse (WB-T22)', () => {
     seedWebActive()
-    useStore.getState().setOpenFile({ src: '/ws/a.md', label: 'a.md', source: 'intercept' })
 
-    useStore.getState().setOpenFile({ src: '/ws/a.md', label: 'a.md' })
+    openInterceptedFile(TAB, '/ws/a.md', 'agent')
 
     expect(strip().activeId).toBe(FILES_TAB_ID)
     expect(useStore.getState().workbenchOpen[TAB]).toBe(true)
+    expect(useStore.getState().filesReveal[TAB]?.view).toBe('browse')
+    expect(useStore.getState().openFiles[TAB]?.src).toBe('/ws/a.md')
+  })
+
+  it('an agent open in another session readies that session’s Browse view and marks it unseen, without switching sessions', () => {
+    seedWebActive(TAB2)
+
+    openInterceptedFile(TAB2, '/ws/a.md', 'agent')
+
+    expect(useStore.getState().activeTabId).toBe(TAB)
+    expect(strip(TAB2).activeId).toBe(FILES_TAB_ID)
+    expect(useStore.getState().workbenchOpen[TAB2]).toBe(true)
+    expect(useStore.getState().filesReveal[TAB2]?.view).toBe('browse')
+    expect(useStore.getState().filesReveal[TAB]).toBeUndefined()
+    expect(useStore.getState().openFiles[TAB2]).toMatchObject({ src: '/ws/a.md', unseen: true })
   })
 })
 
@@ -266,7 +289,7 @@ describe('setWorkbenchState (§Data Model — the restore report)', () => {
     expect(first.tabs.map((t) => t.title)).toEqual(['Files', 'A'])
     expect(first.activeId).toBe(FILES_TAB_ID)
     expect(first.tabs.some((t) => t.unread)).toBe(false)
-    expect(useStore.getState().workbenchLoad).toBeNull()
+    expect(useStore.getState().workbenchLoad).toEqual({})
     expect(useStore.getState().workbenchOpen[TAB]).toBe(true)
 
     gesture((prev) => closeTab(prev, first.tabs[1].id))
@@ -439,7 +462,7 @@ describe('an unfetched session is read before anything is written (the data-loss
     expect(strip().activeId).toBe(FILES_TAB_ID)
   })
 
-  it('an agent open reads first: the new tab joins the saved ones and `open` stays as saved', async () => {
+  it('a background open reads first: the new tab joins the saved ones and `open` stays as saved', async () => {
     openWeb('http://localhost:1/c', 'agent', TAB2)
     expect(strip(TAB2)).toBeUndefined()
     expect(setState).not.toHaveBeenCalled()
@@ -456,7 +479,7 @@ describe('an unfetched session is read before anything is written (the data-loss
       ]
     ])
     expect(useStore.getState().workbenchOpen[TAB2]).toBe(false)
-    expect(useStore.getState().workbenchLoad).toBeNull()
+    expect(useStore.getState().workbenchLoad).toEqual({})
     expect(strip(TAB2).tabs.at(-1)?.unread).toBe(true)
   })
 
@@ -504,7 +527,7 @@ describe('an unfetched session is read before anything is written (the data-loss
     for (const [, state] of setState.mock.calls) {
       expect(state.tabs.slice(0, SAVED.tabs.length)).toEqual(SAVED.tabs)
     }
-    expect(useStore.getState().workbenchLoad?.ownerTabId).toBe(TAB2)
+    expect(useStore.getState().workbenchLoad[TAB2]).toBeDefined()
   })
 
   it('a gesture before the read does not record the session as known-empty', async () => {

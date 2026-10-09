@@ -197,7 +197,6 @@ export interface WorkbenchPaneProps {
   liveTabs: ReadonlySet<string>
   visible: boolean
   full: boolean
-  load: { tabId: string; nonce: number } | null
   command: WorkbenchCommandSignal | null
   dialog: BrowserDialog | null
   onUpdate: (
@@ -288,7 +287,6 @@ export function WorkbenchPane({
   liveTabs,
   visible,
   full,
-  load,
   command,
   dialog,
   onUpdate,
@@ -310,6 +308,7 @@ export function WorkbenchPane({
   onCdpCreate
 }: WorkbenchPaneProps): JSX.Element {
   const termFocus = useStore((s) => s.termFocus)
+  const load = useStore((s) => (ownerTab ? s.workbenchLoad[ownerTab] : undefined))
   const [live, setLive] = useState<string[]>([])
   const [runtime, setRuntime] = useState<Record<string, TabRuntime>>({})
   const [attached, setAttached] = useState(0)
@@ -1128,12 +1127,12 @@ export function WorkbenchPane({
     if (document.activeElement === document.body) rootRef.current?.focus()
   }, [set.activeId, ownerTab, activate])
 
-  const lastLoad = useRef(0)
+  const lastLoad = useRef<Record<string, number>>({})
   useEffect(() => {
-    if (!load || load.nonce === lastLoad.current) return
-    lastLoad.current = load.nonce
+    if (!load || !ownerTab || load.nonce === lastLoad.current[ownerTab]) return
+    lastLoad.current[ownerTab] = load.nonce
     activate(load.tabId)
-  }, [load, activate])
+  }, [load, ownerTab, activate])
 
   useEffect(() => {
     return window.api.browser.onDownloadEvent((event) => {
