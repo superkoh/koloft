@@ -4,7 +4,7 @@ import http from 'http'
 import type { AddressInfo } from 'net'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp } from './helpers/app'
-import { seedSettings, type E2EEnv } from './helpers/env'
+import { seededAccount as acct, seedSettings, type E2EEnv } from './helpers/env'
 import { centerTerm, openMenu, startSessionIn, waitBooted } from './helpers/p1'
 
 const TOKENS: Record<string, string> = {
@@ -35,14 +35,9 @@ function seedKeychain(env: E2EEnv): void {
   )
 }
 
-function acct(name: string, kind: 'oauth' | 'apikey' = 'oauth'): Record<string, unknown> {
-  return { name, kind, enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }
-}
-
 function seedPool(env: E2EEnv, extra: Record<string, unknown> = {}): void {
   seedKeychain(env)
   seedSettings(env, {
-    multiAccount: true,
     accounts: [acct('alpha'), acct('bravo'), acct('charlie'), acct('api-main', 'apikey')],
     ...extra
   })
@@ -195,7 +190,7 @@ test('E1: settings CRUD — no launch-command field, only the verifiable add ent
   test.setTimeout(120_000)
   const mock = await startProbeMock()
   env.launchEnv.KOLOFT_PROBE_BASE_URL = mock.base
-  seedSettings(env, { claudeCommand: 'stale-wrapper', multiAccount: true })
+  seedSettings(env, { claudeCommand: 'stale-wrapper' })
   seedKeychain(env)
 
   let app = await launchApp(env)
@@ -796,7 +791,6 @@ test('E11: an expired account recovers in place via “Sign in again”, keeping
     JSON.stringify({ [UNPACKAGED_BUILD_OAUTH_SVC_SPELLED_OUT_NOT_IMPORTED]: { bravo: 'stale' } })
   )
   seedSettings(env, {
-    multiAccount: true,
     accounts: [
       { ...acct('alpha'), enabled: true },
       {
@@ -853,7 +847,7 @@ test('E10: guided login captures the printed token (even wrapped at 80 columns) 
   const AUTH_URL = 'https://example.invalid/oauth/authorize?state=e10'
   env.launchEnv.KOLOFT_FAKE_SETUP_URL = AUTH_URL
   fs.writeFileSync(env.keychainFile, JSON.stringify({}))
-  seedSettings(env, { multiAccount: true, accounts: [] })
+  seedSettings(env, { accounts: [] })
 
   const { app, page } = await launchConfigured(env)
   try {
@@ -908,7 +902,7 @@ test('guided login: a captured token the probe rejects as expired reports failur
   env.launchEnv.KOLOFT_PROBE_BASE_URL = mock.base
   env.launchEnv.KOLOFT_FAKE_SETUP_TOKEN = REJECTED_TOKEN
   fs.writeFileSync(env.keychainFile, JSON.stringify({}))
-  seedSettings(env, { multiAccount: true, accounts: [] })
+  seedSettings(env, { accounts: [] })
 
   const { app, page } = await launchConfigured(env)
   try {
@@ -978,7 +972,6 @@ test('panel probe: a custom-endpoint account is probed with its own model, not t
     })
   )
   seedSettings(env, {
-    multiAccount: true,
     accounts: [
       {
         name: 'glm',

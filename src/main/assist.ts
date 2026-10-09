@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import os from 'node:os'
-import type { AssistSetting, BackendId } from '@shared/types'
+import type { AssistSetting } from '@shared/types'
 
 export interface AssistJob {
   system: string
@@ -44,13 +44,6 @@ const CODEX_ONE_SHOT = [
   '-'
 ]
 
-interface AssistRun {
-  binary: string
-  argv: string[]
-  env: NodeJS.ProcessEnv
-  input: string
-}
-
 export interface AssistTarget {
   binary: string
   env: NodeJS.ProcessEnv
@@ -62,23 +55,17 @@ export interface AssistDeps {
   codex(): Promise<AssistTarget | null>
 }
 
-function runOnce({ binary, argv, env, input }: AssistRun): Promise<string | null> {
+function runOnce(target: AssistTarget, argv: string[], input: string): Promise<string | null> {
   return new Promise((resolve) => {
     const child = execFile(
-      binary,
+      target.binary,
       argv,
-      { env, cwd: os.tmpdir(), timeout: ASSIST_TIMEOUT_MS },
+      { env: target.env, cwd: os.tmpdir(), timeout: ASSIST_TIMEOUT_MS },
       (err, stdout) => resolve(err ? null : stdout)
     )
     child.stdin?.on('error', () => {})
     child.stdin?.end(input)
   })
-}
-
-function runFor(backend: BackendId, job: AssistJob, target: AssistTarget): AssistRun {
-  return backend === 'claude'
-    ? { ...target, argv: CLAUDE_ONE_SHOT(job.system), input: job.prompt }
-    : { ...target, argv: CODEX_ONE_SHOT, input: `${job.system}\n\n${job.prompt}` }
 }
 
 export function koloftAssist(deps: AssistDeps): Assist {
@@ -87,6 +74,8 @@ export function koloftAssist(deps: AssistDeps): Assist {
     if (!setting?.on) return null
     const target = await deps[setting.backend]()
     if (!target) return null
-    return runOnce(runFor(setting.backend, job, target))
+    return setting.backend === 'claude'
+      ? runOnce(target, CLAUDE_ONE_SHOT(job.system), job.prompt)
+      : runOnce(target, CODEX_ONE_SHOT, `${job.system}\n\n${job.prompt}`)
   }
 }

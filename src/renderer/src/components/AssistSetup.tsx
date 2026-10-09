@@ -1,6 +1,6 @@
 import { useState, type JSX } from 'react'
 import type { BackendId } from '@shared/types'
-import { BACKEND_LABEL, SESSION_BACKENDS, backendAvailable } from '@shared/sessionBackend'
+import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { useStore } from '../store'
 import type { AssistSetupState } from '../useAssistSetup'
 import { AddAccountDialog, CodexSignInDialog, LoginDialog } from './settings/AccountsPane'
@@ -15,6 +15,16 @@ export const ASSIST_RUNS_ON: Record<BackendId, string> = {
 export const ASSIST_COST_LINE =
   'Each Assist job costs a tiny bit of that account’s plan or API balance — far less than one cent.'
 
+export function InstallHint({ children }: { children: string }): JSX.Element {
+  return (
+    <div className="quiet ob-warn">
+      {children}
+      <code className="ob-cmd">npm install -g @anthropic-ai/claude-code</code>
+      <code className="ob-cmd">npm install -g @openai/codex</code>
+    </div>
+  )
+}
+
 // ADR-0030
 export function AssistSetup({ setup }: { setup: AssistSetupState }): JSX.Element {
   const assist = useStore((s) => s.settings.assist)
@@ -25,9 +35,6 @@ export function AssistSetup({ setup }: { setup: AssistSetupState }): JSX.Element
   const [codexSignIn, setCodexSignIn] = useState(false)
   const [pasting, setPasting] = useState(false)
 
-  const tools = SESSION_BACKENDS.filter(
-    (b) => setup.installed === null || backendAvailable(setup.installed, b)
-  )
   const pick = (b: BackendId): void => {
     if (setup.usable[b]) update({ assist: { on: true, backend: b } })
     else if (b === 'claude') beginLogin()
@@ -38,14 +45,10 @@ export function AssistSetup({ setup }: { setup: AssistSetupState }): JSX.Element
     else update({ skipPermissions: false })
   }
 
-  if (tools.length === 0)
+  if (setup.noTool)
     return (
       <div className="assist-setup">
-        <div className="quiet ob-warn">
-          Install Claude Code or Codex first, then come back to sign in.
-          <code className="ob-cmd">npm install -g @anthropic-ai/claude-code</code>
-          <code className="ob-cmd">npm install -g @openai/codex</code>
-        </div>
+        <InstallHint>Install Claude Code or Codex first, then come back to sign in.</InstallHint>
       </div>
     )
 
@@ -57,7 +60,7 @@ export function AssistSetup({ setup }: { setup: AssistSetupState }): JSX.Element
         That is <b>Koloft Assist</b>.
       </div>
       <div className="ob-choices">
-        {tools.map((b) => (
+        {setup.tools.map((b) => (
           <button
             key={b}
             className={'choice' + (assist?.backend === b && setup.usable[b] ? ' on' : '')}

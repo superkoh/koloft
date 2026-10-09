@@ -14,6 +14,7 @@ vi.mock('electron', async () => {
 
 import { registeredByTabRoot, setupShim } from '../../src/main/shim'
 import { MIN_CLAUDE_VERSION } from '../../src/main/cliMinimums'
+import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 
 let shimDir: string
 let regDir: string
@@ -523,7 +524,7 @@ describe('claude shim (multi-account pick section — U5)', () => {
     const r = await runShimPick([], { account: null, reason: 'no-accounts' })
     expect(r.status).toBe(1)
     expect(startedClaude(r)).toBe(false)
-    expect(r.stderr).toContain('no Claude account in Koloft can be used')
+    expect(r.stderr).toContain(NO_USABLE_ACCOUNT.claude)
   })
 
   it('hostile account name in the res: quoted everywhere, no side effects, never starts', async () => {

@@ -93,7 +93,6 @@ function useRealClaude(env: E2EEnv, trusted: string[]): void {
     })
   )
   seedSettings(env, {
-    multiAccount: true,
     skipPermissions: true,
     accounts: [
       { name: 'alpha', kind: 'oauth', enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }

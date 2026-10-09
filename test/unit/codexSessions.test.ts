@@ -120,7 +120,6 @@ beforeEach(() => {
     error: vi.fn(),
     trustFolder: vi.fn(),
     pickHome: vi.fn(() => ({ account: 'work', home: '/homes/work' })),
-    shareHomes: vi.fn(),
     openShimRoot: path.join(directory, 'codex-open'),
     agent: { enabled: () => false, answer: vi.fn() }
   }
@@ -285,7 +284,6 @@ describe('CodexSessions', () => {
 
   // CODEX§15
   it('a launch and a resume both run in the account home the picker chose, since every home shares one sessions folder', async () => {
-    vi.mocked(deps.pickHome).mockReturnValue({ account: 'work', home: '/homes/work' })
     const first = await sessions.launch({ kind: 'codex', cwd: repo })
     expect(transports[0].options.env?.CODEX_HOME).toBe('/homes/work')
     expect(vi.mocked(deps.pty.create).mock.calls[0][0].processEnv?.CODEX_HOME).toBe('/homes/work')
@@ -299,13 +297,11 @@ describe('CodexSessions', () => {
   })
 
   // CODEX§15
-  it('makes every account home share the sessions folder, then lists and reads history once, from the default home', async () => {
-    vi.mocked(deps.shareHomes).mockImplementation(() => expect(mocks.rpcHomes).toEqual([]))
+  it('lists and reads history once, from the default home every account home shares', async () => {
     mocks.request.mockImplementation(async (_method, params) =>
       params.archived ? { data: [] } : { data: [{ id: A, cwd: repo }] }
     )
     expect((await sessions.historyRows(repo)).map((row) => row.id)).toEqual([codexSessionKey(A)])
-    expect(deps.shareHomes).toHaveBeenCalledTimes(1)
     expect(mocks.rpcHomes).toEqual([undefined])
     mocks.request.mockResolvedValue({ thread: { id: A, cwd: repo, path: null } })
     await sessions.transcriptExists(codexSessionKey(A))

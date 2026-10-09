@@ -192,6 +192,7 @@ export function AccountsPane(): JSX.Element {
 export function LoginDialog(): JSX.Element | null {
   const login = useStore((s) => s.accountLogin)
   const addTab = useStore((s) => s.addTab)
+  const setSignInTabId = useStore((s) => s.setSignInTabId)
   const setSettingsOpen = useStore((s) => s.setSettingsOpen)
   const beginLogin = useStore((s) => s.beginLogin)
   const setLoginProgress = useStore((s) => s.setLoginProgress)
@@ -226,6 +227,7 @@ export function LoginDialog(): JSX.Element | null {
 
   const showTerminal = (): void => {
     if (!progress?.tabId) return
+    setSignInTabId(progress.tabId)
     addTab({
       id: progress.tabId,
       kind: 'shell',
@@ -333,6 +335,7 @@ export function CodexSignInDialog({
   onClose(): void
 }): JSX.Element {
   const addTab = useStore((s) => s.addTab)
+  const setSignInTabId = useStore((s) => s.setSignInTabId)
   const setSettingsOpen = useStore((s) => s.setSettingsOpen)
   const [name, setName] = useState(again ?? '')
   const [busy, setBusy] = useState(false)
@@ -354,6 +357,7 @@ export function CodexSignInDialog({
       )
       return
     }
+    setSignInTabId(r.tabId)
     addTab({
       id: r.tabId,
       kind: 'shell',

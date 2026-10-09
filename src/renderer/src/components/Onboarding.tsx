@@ -7,7 +7,7 @@ import { useStore } from '../store'
 import { relTime } from '../sessionRows'
 import { useSettingsUpdate } from './settings/useSettingsUpdate'
 import { useAssistSetup } from '../useAssistSetup'
-import { AssistSetup } from './AssistSetup'
+import { AssistSetup, InstallHint } from './AssistSetup'
 
 const PIC_ROWS: { color: string; title: string; state: string; cold?: boolean }[] = [
   { color: 'var(--accent)', title: 'Fix login bug', state: 'working' },
@@ -184,7 +184,7 @@ export function Onboarding({
   const step = useStore((s) => s.onboardingStep)
   const setStep = useStore((s) => s.setOnboardingStep)
   const setup = useAssistSetup()
-  const noTool = setup.installed?.every((b) => !b.available) ?? false
+  const noTool = setup.noTool
 
   const [found, setFound] = useState<DiscoveredFolder[] | null>(null)
   const [checked, setChecked] = useState<string[]>([])
@@ -353,11 +353,9 @@ export function Onboarding({
               notification (Settings ▸ Notifications).
             </div>
             {probe === 'missing' && !codexFound ? (
-              <div className="quiet ob-warn">
+              <InstallHint>
                 Install Claude Code or a supported Codex CLI to start a session.
-                <code className="ob-cmd">npm install -g @anthropic-ai/claude-code</code>
-                <code className="ob-cmd">npm install -g @openai/codex</code>
-              </div>
+              </InstallHint>
             ) : (
               <div className="quiet">
                 {codexFound ? 'The CLI' : 'Claude itself'} may ask a thing or two first: theme, or

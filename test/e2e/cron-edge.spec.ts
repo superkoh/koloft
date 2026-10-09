@@ -481,7 +481,7 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
   test('BB-E09: no usable account means no launch', async ({ env }) => {
     test.setTimeout(180_000)
     gitInit(env.workspaces.a)
-    seedSettings(env, { multiAccount: true, accounts: [] })
+    seedSettings(env, { accounts: [] })
 
     const { app, page } = await edLaunch(env)
     try {
@@ -770,7 +770,6 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
     test.setTimeout(120_000)
     gitInit(env.workspaces.a)
     seedSettings(env, {
-      multiAccount: true,
       skipPermissions: true,
       accounts: [
         { name: 'alpha', kind: 'oauth', enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }
@@ -795,12 +794,12 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
     }
   })
 
-  test('BB-E25: without multi-account, the Permissions row says what this Mac really does', async ({
+  test('BB-E25: with skip permission prompts off, the Permissions row says Claude asks before risky steps', async ({
     env
   }) => {
     test.setTimeout(120_000)
     gitInit(env.workspaces.a)
-    seedSettings(env, { multiAccount: false, skipPermissions: true })
+    seedSettings(env, { skipPermissions: false })
 
     const { app, page } = await edLaunch(env)
     try {

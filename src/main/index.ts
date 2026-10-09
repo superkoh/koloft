@@ -73,6 +73,7 @@ import {
   tmuxSessionName,
   UTIL_BIN_DIR,
   utilShellLine,
+  CLAUDE_AUTH_ENV_VARS,
   type MachinePackage
 } from './remote/launch'
 import { machinePackageBase, mirrorHookDir, mirrorProjectsRoot } from './remote/paths'
@@ -144,7 +145,6 @@ import { shq } from '@shared/shellQuote'
 import { CronRunner, type LaunchRequest } from './cronRunner'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
-import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import { GitFreshnessEngine } from './gitFreshness'
 import {
   GithubLookup,
@@ -909,18 +909,12 @@ async function pickForLaunch(tabId?: string): Promise<{
   return { res, endpoint: { baseUrl: meta?.baseUrl, model: meta?.model } }
 }
 
-const AUTH_VARS_A_PICKED_ACCOUNT_REPLACES = [
-  'CLAUDE_CODE_OAUTH_TOKEN',
-  'ANTHROPIC_API_KEY',
-  'ANTHROPIC_AUTH_TOKEN'
-]
-
 async function pickedAccountEnv(): Promise<NodeJS.ProcessEnv | null> {
   await loginEnvReady()
   const picked = await pickMachineAccount(() => pickForLaunch())
   if (!picked) return null
   const env = { ...process.env }
-  for (const k of AUTH_VARS_A_PICKED_ACCOUNT_REPLACES) delete env[k]
+  for (const k of CLAUDE_AUTH_ENV_VARS) delete env[k]
   // ADR-0030
   return { ...env, ...picked.env, KOLOFT_ACCOUNT_PICKED: '1' }
 }
@@ -1628,9 +1622,6 @@ app.whenReady().then(() => {
       error: (message) => sendToRenderer('cron:toast', message),
       trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
-      shareHomes: () => {
-        for (const home of codexHomes(userData)) prepareCodexHome(home, codexSharedConfig())
-      },
       openShimRoot: path.join(userData, 'codex-open'),
       agent: {
         enabled: () => agentToolsFor('codex', 'local'),
@@ -1644,7 +1635,12 @@ app.whenReady().then(() => {
     sessionBackends.register(codexBackend(codexSessions, resumeProbes))
     void codexSessions
       .availability()
-      .then((codex) => (codex.available ? codexSessions!.refreshHistory() : undefined))
+      .then((codex) => {
+        if (!codex.available) return
+        // CODEX§15
+        for (const home of codexHomes(userData)) prepareCodexHome(home, codexSharedConfig())
+        return codexSessions!.refreshHistory()
+      })
       .catch((error) => sendToRenderer('cron:toast', String(error)))
   }
   workspaceMgr = new WorkspaceManager({
@@ -3018,9 +3014,6 @@ async function launchQuietTab(
   title: string,
   jobId?: string
 ): Promise<string | null> {
-  // ADR-0030
-  if (!sessionBackends.get(options.kind).accountUsable())
-    throw new Error(NO_USABLE_ACCOUNT[options.kind])
   const r = await sessionBackends.create(options)
   if (!r.ok) return null
   const spawned: SpawnedTab = { id: r.id, kind: options.kind, cwd: r.cwd, title, jobId }

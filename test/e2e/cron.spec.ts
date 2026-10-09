@@ -770,7 +770,6 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     test.setTimeout(180_000)
     gitInit(env.workspaces.a)
     seedSettings(env, {
-      multiAccount: true,
       skipPermissions: true,
       accounts: [
         { name: 'alpha', kind: 'oauth', enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }

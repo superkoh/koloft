@@ -1055,7 +1055,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     env
   }) => {
     installCodex(env)
-    seedSettings(env, { hintsOff: true, multiAccount: true })
+    seedSettings(env, { hintsOff: true })
     const app = await launchApp(env)
     try {
       const page = await app.firstWindow()

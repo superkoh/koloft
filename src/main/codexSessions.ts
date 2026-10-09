@@ -110,7 +110,6 @@ export interface CodexSessionDeps {
   error(message: string): void
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
   pickHome(): { account: string; home: string } | undefined
-  shareHomes(): void
   openShimRoot: string
   agent: {
     enabled(): boolean
@@ -473,7 +472,6 @@ export class CodexSessions {
     if (this.shuttingDown) return
     let threads: { key: string; thread: CodexThread; archived: boolean }[]
     try {
-      this.deps.shareHomes()
       threads = await this.listThreads()
     } catch (error) {
       if (binaryGone(error)) this.forgetProbe()

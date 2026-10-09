@@ -35,13 +35,13 @@ const FAKE_MIC_AND_CAMERA_BEHIND_THE_PERMISSION_PROMPT = '--use-fake-device-for-
 const FAKE_CLAUDE_SRC = path.join(__dirname, '..', 'fixtures', 'fake-claude.js')
 
 const UNPACKAGED_BUILD_APIKEY_SVC = 'koloft-dev-anthropic-api'
-export const E2E_CLAUDE_ACCOUNT = 'e2e-key'
-export const E2E_CLAUDE_ACCOUNT_KEY = 'sk-ant-api03-e2e-fixture'
-export const E2E_CODEX_ACCOUNT = 'e2e-codex'
+const E2E_CLAUDE_ACCOUNT = 'e2e-key'
+const E2E_CLAUDE_ACCOUNT_KEY = 'sk-ant-api03-e2e-fixture'
+const E2E_CODEX_ACCOUNT = 'e2e-codex'
 
 export function seededAccount(
   name: string,
-  kind: 'oauth' | 'apikey' | 'codex-home'
+  kind: 'oauth' | 'apikey' | 'codex-home' = 'oauth'
 ): Record<string, unknown> {
   return { name, kind, enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }
 }

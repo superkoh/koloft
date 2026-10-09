@@ -10,7 +10,6 @@ export function AssistDialog({
   setup: AssistSetupState
   onNotNow(): void
 }): JSX.Element {
-  const noTool = setup.installed?.every((b) => !b.available) ?? false
   return (
     <div className="modal-backdrop">
       <div className="modal assist-modal" role="dialog" aria-label="Koloft Assist">
@@ -18,7 +17,7 @@ export function AssistDialog({
         <div className="modal-body">
           <AssistSetup setup={setup} />
         </div>
-        {noTool && (
+        {setup.noTool && (
           <div className="modal-foot">
             <button className="mini" onClick={onNotNow}>
               Not now
