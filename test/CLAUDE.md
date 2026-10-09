@@ -73,12 +73,14 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   - flags: `-w <name>` makes a real `.claude/worktrees/<name>` on branch
     `worktree-<name>`; `-- <text>` types `<text>` first, in place of the canned
     startup turn (ADR-0020); `setup-token` prints a login token the way the real one
-    does (`KOLOFT_FAKE_SETUP_TOKEN`, `KOLOFT_FAKE_SETUP_URL`).
+    does (`KOLOFT_FAKE_SETUP_TOKEN`, `KOLOFT_FAKE_SETUP_URL`); `--version` prints a
+    version above any minimum, so the shim's version check never updates it.
   - files: `fake-claude-delay` (ms before it binds), `-next-title` (title of the next
     fresh launch, used once), `-no-status` (binds but never reports a run-state),
     `-exit` (exits with that code, no hook), `-lazy` (no transcript until the first
     typed line), `-hang` (never binds, and has no signal handler, so the SIGHUP that
-    closes its tab kills it).
+    closes its tab kills it), `-bg-ms` (how long `/bg-reported`'s background work runs,
+    5 s when absent).
   - typed lines: `/write <path>` (a Write, Stop 2.5 s later — the file on disk proves
     the transcript has it), `/answer <text>` (`<text>` as the prompt, `Answer to: <text>`
     as the reply's text, then Stop), `[Discord] <text>` (answered like `/answer` with the
@@ -99,7 +101,10 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     `/enter-worktree <name>`, `/exit-worktree`, `/bg-work`, `/bg-reported`,
     `/bg-monitor`, `/bg-shell`. Any other line is a prompt answered by a Read and a
     Stop. Esc keystrokes are dropped from a typed line (its pty hands over whole lines,
-    so an Esc Koloft presses lands inside the next one).
+    so an Esc Koloft presses lands inside the next one). A bracketed paste
+    (`ESC[200~` … `ESC[201~`) waits, as in the real input box, until the Enter after
+    it, and is then one prompt together with what was typed after it; fake-codex
+    keeps one in its composer the same way.
   - every launch writes one line to `env.claudeCalls` (argv, cwd, session id,
     injected auth) before any delay.
   - like the real one, it lists itself in `<home>/.claude/sessions/<pid>.json` with a

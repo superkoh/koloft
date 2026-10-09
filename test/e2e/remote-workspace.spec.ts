@@ -1,6 +1,8 @@
 import fs from 'fs'
 import path from 'path'
+import { execFileSync } from 'child_process'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { installFakeGh, setGithubFixture, writeGitIdentity } from './helpers/env'
 import {
   addRemoteWorkspace,
   breakConnection,
@@ -20,23 +22,40 @@ import {
 } from './helpers/remote'
 import {
   auxIcon,
+  boundSessionId,
   centerTerm,
+  continuedInOf,
   encodeCwd,
   FAKE_SESSION_TITLE,
   gitCommitAll,
   gitInit,
   layoutOnDisk,
   menuItemTexts,
+  oneStillRunning,
   openMenu,
   openSessionTerminal,
   panelTerm,
   runIn,
+  sendShortcut,
   startSessionIn,
+  transcriptFile,
   waitBooted,
   waitForCalls,
   wsRows
 } from './helpers/p1'
-import { WORKBENCH, browseRow, openInBrowse, showBrowse } from './helpers/workbench'
+import {
+  FAILED_LOG,
+  ONE_FAILING_OF_FIVE,
+  WORKBENCH,
+  browseRow,
+  claudePrompts,
+  commentOnFirstHunk,
+  expectOnePromptFromTheChecks,
+  expectOnePromptFromTheComment,
+  sendFailingChecks,
+  openInBrowse,
+  showBrowse
+} from './helpers/workbench'
 
 const LAYOUT_SAVE_DEBOUNCE_SETTLE_MS = 3000
 const TURN_LONGER_THAN_ONE_MIRROR_PULL = '/busy'
@@ -265,7 +284,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
         .filter({ hasText: 'Changes' })
         .click()
 
-      const expand = page.locator('.wb-panel .cv-blk[data-path="tracked.txt"] .cv-exp')
+      const expand = page.locator('.wb-panel .cv-blk[data-path="tracked.txt"] .cv-exp:not(.cv-cmt)')
       await expect(expand).toBeVisible({ timeout: 30_000 })
       await expand.click()
       await expect(expand).toHaveAttribute('aria-pressed', 'true')
@@ -279,6 +298,107 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
 
       await page.locator('.wb-bar .icobtn[aria-label="Reload"]').click()
       await expect(expand).toHaveAttribute('aria-pressed', 'false', { timeout: 20_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-28: ✎ comment on a remote Changes hunk reaches claude on the machine through ssh and tmux as a paste with the note typed after it, unsent until the person presses Enter', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      fs.writeFileSync(path.join(dir, '.gitignore'), 'NOTES.md\n')
+      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\n')
+      gitInit(dir)
+      gitCommitAll(dir)
+      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'one\ntwo\n')
+
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await row.click()
+      const tabId = await row.getAttribute('data-tab-id')
+      await expect.poll(() => boundSessionId(page, tabId), { timeout: 60_000 }).toBeTruthy()
+      const transcript = transcriptFile(
+        machineHome(env),
+        dir,
+        (await boundSessionId(page, tabId)) ?? ''
+      )
+      await showBrowse(page)
+      await page
+        .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
+        .filter({ hasText: 'Changes' })
+        .click()
+      await expect(page.locator('.wb-panel .cv-blk[data-path="tracked.txt"] .cv-cmt')).toBeVisible({
+        timeout: 30_000
+      })
+
+      const note = 'E-RW-28 say why two'
+      const head = await commentOnFirstHunk(page, 'tracked.txt', note)
+      await expectOnePromptFromTheComment(() => claudePrompts(transcript), head, note)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-29: the GitHub button on a remote session commits and pushes on the machine, while gh runs on this Mac and its failing checks reach claude on the machine as one unsent paste', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    installFakeGh(env, { checks: ONE_FAILING_OF_FIVE, failedLog: FAILED_LOG })
+    setGithubFixture(env, {
+      [remoteKey(env)]: { owner: 'acme', repo: 'widgets', branch: 'feature/login', pr: 265 }
+    })
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      const origin = path.join(machineHome(env), 'widgets-origin.git')
+      writeGitIdentity(machineHome(env))
+      fs.writeFileSync(path.join(dir, '.gitignore'), 'NOTES.md\n')
+      gitInit(dir)
+      execFileSync('git', ['init', '-q', '--bare', origin])
+      execFileSync('git', ['remote', 'add', 'origin', origin], { cwd: dir })
+      execFileSync('git', ['switch', '-q', '-c', 'feature/login'], { cwd: dir })
+
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await row.click()
+      const tabId = await row.getAttribute('data-tab-id')
+      await expect.poll(() => boundSessionId(page, tabId), { timeout: 60_000 }).toBeTruthy()
+      const transcript = transcriptFile(
+        machineHome(env),
+        dir,
+        (await boundSessionId(page, tabId)) ?? ''
+      )
+      await expect(page.locator('.wb-gh .ci')).toHaveClass(/\bfail\b/, { timeout: 30_000 })
+
+      fs.writeFileSync(path.join(dir, 'rw29.txt'), 'new\n')
+      await page.locator('.wb-gh').click({ button: 'right' })
+      await page.locator('.wb-ghmenu .mi', { hasText: 'Commit…' }).click()
+      const dialog = page.locator('.modal', { hasText: 'Commit changes' })
+      await dialog.getByLabel('Commit message').fill('E-RW-29 commit on the machine')
+      await dialog.getByLabel('Commit message').press('Enter')
+      await expect(dialog).toHaveCount(0, { timeout: 60_000 })
+      const git = (cwd: string, ...args: string[]): string =>
+        execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
+      expect(git(dir, 'log', '-1', '--format=%s')).toBe('E-RW-29 commit on the machine')
+      expect(git(dir, 'show', '--name-only', '--format=', 'HEAD')).toContain('rw29.txt')
+
+      await page.locator('.wb-gh').click({ button: 'right' })
+      await page.locator('.wb-ghmenu .mi', { hasText: 'Push' }).click()
+      await expect
+        .poll(
+          () => git(origin, 'for-each-ref', '--format=%(objectname)', 'refs/heads/feature/login'),
+          { timeout: 60_000 }
+        )
+        .toBe(git(dir, 'rev-parse', 'HEAD'))
+
+      await sendFailingChecks(page)
+      await expectOnePromptFromTheChecks(() => claudePrompts(transcript))
     } finally {
       await quitAndClose(app)
     }
@@ -420,6 +540,98 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await browseRow(page, doc).click()
       await body.locator('a.md-fileref', { hasText: 'src/b.ts:1' }).click({ timeout: 30_000 })
       await expect(title).toContainText('b.ts', { timeout: 30_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-25: a page on the machine opens as source in the reading area, from a Browse row and from a markdown link', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      fs.writeFileSync(path.join(dir, 'page.html'), '<h1>on the machine</h1>\n')
+      fs.writeFileSync(path.join(dir, 'doc.md'), '# Doc\n\n[the page](page.html)\n')
+
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      await wsRows(page, REMOTE_WS_NAME).first().click()
+
+      const title = page.locator(WORKBENCH.readingTitle)
+      const source = page.locator(`${WORKBENCH.readingBody} .code-body`)
+
+      await openInBrowse(page, `${remoteKey(env)}/page.html`)
+      await expect(title).toContainText('page.html', { timeout: 30_000 })
+      await expect(source).toContainText('on the machine', { timeout: 30_000 })
+
+      await showBrowse(page)
+      await browseRow(page, `${remoteKey(env)}/doc.md`).click()
+      await expect(title).toContainText('doc.md', { timeout: 30_000 })
+      await page
+        .locator(`${WORKBENCH.readingBody} .md-body a`, { hasText: 'the page' })
+        .click({ timeout: 30_000 })
+      await expect(title).toContainText('page.html', { timeout: 30_000 })
+      await expect(source).toContainText('on the machine', { timeout: 30_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CC§5
+  test('E-RW-28: a remote turn that ends while its reported background work still runs shows green with ↻ until the work drains', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      expect(await addRemoteWorkspace(page, env)).toEqual({ code: 'added', path: remoteKey(env) })
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 90_000 })
+      fs.writeFileSync(path.join(machineHome(env), 'fake-claude-bg-ms'), '20000')
+      await runIn(page, centerTerm(page), '/bg-reported')
+      const running = oneStillRunning(row)
+      await expect(running).toBeVisible({ timeout: 60_000 })
+      await expect(row).toHaveClass(/\bst-waiting\b/)
+      await expect(running).toHaveCount(0, { timeout: 90_000 })
+      await expect(row).toHaveClass(/\bst-waiting\b/)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-27: when Claude Code moves a remote conversation to a new session id (a phantom start, then continued-in), the tab follows it: one live row, bound to the new id, and ⌘W still ends its tmux session on the machine', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const rows = wsRows(page, REMOTE_WS_NAME)
+      const tabId = await rows.first().getAttribute('data-tab-id')
+      const boundOf = (): Promise<string | undefined> => boundSessionId(page, tabId)
+      await expect.poll(boundOf, { timeout: 60_000 }).toBeTruthy()
+      const before = await boundOf()
+      const beforeTranscript = transcriptFile(machineHome(env), remoteDir(env), before ?? '')
+
+      await runIn(page, centerTerm(page), '/move-to-background')
+      const continuedIn = (): string | undefined => continuedInOf(beforeTranscript)
+      await expect.poll(continuedIn, { timeout: 30_000 }).toBeTruthy()
+      await expect.poll(boundOf, { timeout: 60_000 }).toBe(continuedIn())
+      await expect
+        .poll(() => layoutOnDisk(env).members, { timeout: 30_000 })
+        .toEqual([continuedIn()])
+      await expect(rows).toHaveCount(1)
+      await expect(rows.first()).not.toHaveClass(/\bcold\b/)
+
+      await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toHaveLength(1)
+      await expect(rows.first()).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      await rows.first().click()
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect.poll(() => liveTmuxSessions(env), { timeout: 30_000 }).toEqual([])
     } finally {
       await quitAndClose(app)
     }

@@ -8,7 +8,8 @@
       name="description"
       content="Koloft lists each folder's Claude Code and Codex sessions from the tools' own files, starts and resumes them, and can give each its own git worktree."
     />
-    <meta name="theme-color" content="#f6f1e6" />
+    <meta name="theme-color" content="#f6f1e6" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1c1a17" media="(prefers-color-scheme: dark)" />
     <link rel="canonical" href="__SITE_URL__/sessions/" />
     <link rel="icon" href="../favicon.png" type="image/png" sizes="32x32" />
     <link rel="icon" href="../icon.svg" type="image/svg+xml" />
@@ -236,8 +237,8 @@
             did, Claude asks you: keep it or remove it.
           </li>
           <li>
-            A Codex worktree stays until you remove it yourself, or until the session closes itself
-            with <code>koloft session close</code> (see <a href="../agents/">agents</a>).
+            A Codex worktree stays until you remove it yourself, or until the session is closed with
+            <code>koloft session close</code> (see <a href="../agents/">agents</a>).
           </li>
         </ul>
 
@@ -251,6 +252,14 @@
           sidebar; the button then shows how many sessions are calling you. Press it again and the
           sidebar comes back as wide as it was. It stays hidden after a restart, if you left it
           hidden.
+        </p>
+        <p>
+          A session that another session started (with <code>koloft session new</code>, see
+          <a href="../agents/">agents</a>) hangs under its starter, set in a little, with a thin
+          line down its left. A row with sessions under it gets a small arrow on the right: click it
+          to fold them away. Folded, the row shows a red count of hidden sessions that need you, the
+          way a folded folder does, and a grey count of all hidden ones. Claude and Codex both do
+          this. A session on another machine is always a top-level row.
         </p>
 
         <h2>Right-click a folder</h2>

@@ -8,7 +8,8 @@
       name="description"
       content="Install Koloft with one Terminal line, why it is a Terminal line, how it updates, and every host it ever talks to."
     />
-    <meta name="theme-color" content="#f6f1e6" />
+    <meta name="theme-color" content="#f6f1e6" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1c1a17" media="(prefers-color-scheme: dark)" />
     <link rel="canonical" href="__SITE_URL__/install/" />
     <link rel="icon" href="../favicon.png" type="image/png" sizes="32x32" />
     <link rel="icon" href="../icon.svg" type="image/svg+xml" />
@@ -112,7 +113,11 @@
         <h3>What you need</h3>
         <ul class="dash">
           <li>a Mac with Apple Silicon (M1 or later)</li>
-          <li>Claude Code, or the Codex CLI (command-line tool), already installed</li>
+          <li>
+            Claude Code, or the Codex CLI (command-line tool), already installed. Each Koloft
+            version names the oldest Claude Code and Codex it works with, and updates an older one
+            for you (see <a href="#updates">Updates</a> below).
+          </li>
           <li>
             if you like: <code>gh</code>, GitHub's own command-line tool, signed in, for a folder's
             open issue and pull request counts
@@ -122,12 +127,19 @@
           </li>
         </ul>
 
-        <h3>Updates</h3>
+        <h3 id="updates">Updates</h3>
         <p>
           <code>Koloft ▸ Check for Updates…</code> opens a window. Download &amp; Restart fetches
           the new version, quits Koloft, swaps it in and opens it again. A banner in the sidebar
           tells you when a newer one is out. What changed in each version is in the
           <a href="../changelog/">changelog</a>.
+        </p>
+        <p>
+          Koloft also keeps Claude Code and Codex new enough. If yours is older than this version
+          works with, Koloft runs <code>claude update</code> or <code>codex update</code> for you.
+          For Claude, this runs in the tab each time a session starts. For Codex, it runs once each
+          time Koloft opens, with a small message. If that does not bring it up to date, Koloft asks
+          you to run the update yourself.
         </p>
 
         <h2 id="what-it-talks-to">What it talks to</h2>
@@ -208,6 +220,10 @@
             the status line under each session asks <code>gh</code> about the branch's pull request
           </li>
           <li>the git check can be turned off in Settings ▸ Appearance ▸ Auto-fetch git remotes</li>
+          <li>
+            when Koloft runs <code>claude update</code> or <code>codex update</code> for you, the
+            tool fetches its own update, from the place it was installed from
+          </li>
           <li>
             for a remote folder, <code>bash</code>, <code>tmux</code> and <code>rsync</code> come
             from that machine's own package manager, which may ask for its sudo password (the admin

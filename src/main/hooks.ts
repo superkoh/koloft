@@ -3,12 +3,25 @@ import fs from 'fs'
 import path from 'path'
 import type { StatusLineSetting } from './statusline'
 import { shq } from '@shared/shellQuote'
+import { CONDUCTOR_GATE_SCRIPT, conductorGateCommand } from './conductorGate'
 
 export interface HookPaths {
   hookScript: string
+  gateScript: string
   settingsDir: string
   regDir: string
 }
+
+export const REPLY_LANGUAGE_REMINDER =
+  "Reply in the language of the user's latest message, whatever language tool output, files or your earlier replies use."
+
+// CC§17
+const PROMPT_HOOK_OUTPUT = JSON.stringify({
+  hookSpecificOutput: {
+    hookEventName: 'UserPromptSubmit',
+    additionalContext: REPLY_LANGUAGE_REMINDER
+  }
+})
 
 // CC§1
 export const HOOK_SCRIPT = `#!/usr/bin/env bash
@@ -149,6 +162,8 @@ case "$event" in
       *'"session_crons":['*) wake=',"wake":1' ;;
     esac
     printf '{"tabId":"%s","event":"%s","sessionId":"%s","message":"%s","tmux":"%s"%s%s}\\n' "$tab" "$event" "$sid" "$msg" "$tm" "$bgl" "$wake" >> "$reg/$tab.status.jsonl"
+    # CC§17
+    if [ "$event" = "prompt" ]; then printf '%s\\n' ${shq(PROMPT_HOOK_OUTPUT)}; fi
     ;;
 esac
 exit 0
@@ -203,8 +218,10 @@ export function setupHooks(peerOwnsTab: (tabId: string) => boolean): HookPaths {
   const hookScript = path.join(hookDir, 'sessionstart.sh')
   fs.writeFileSync(hookScript, HOOK_SCRIPT, { mode: 0o755 })
   fs.chmodSync(hookScript, 0o755)
+  const gateScript = path.join(hookDir, 'conductor-gate.js')
+  fs.writeFileSync(gateScript, CONDUCTOR_GATE_SCRIPT)
 
-  return { hookScript, settingsDir, regDir }
+  return { hookScript, gateScript, settingsDir, regDir }
 }
 
 // CC§8
@@ -288,13 +305,22 @@ export function writeTabHookSettings(
   paths: HookPaths,
   tabId: string,
   statusLine?: StatusLineSetting,
-  allowKoloft = false
+  allowKoloft = false,
+  conductor = false
 ): string {
   fs.rmSync(path.join(paths.regDir, `${tabId}.status.jsonl`), { force: true })
   fs.rmSync(path.join(paths.regDir, `${tabId}.json`), { force: true })
   const settings = hookSettings(paths.hookScript, paths.regDir, tabId, statusLine)
   // CC§13
   if (allowKoloft) settings.permissions = { allow: ['Bash(koloft *)'] }
+  // ADR-0029 CC§15
+  if (conductor)
+    (settings.hooks as Record<string, unknown>).PreToolUse = [
+      {
+        matcher: '*',
+        hooks: [{ type: 'command', command: conductorGateCommand(paths.gateScript) }]
+      }
+    ]
   const out = path.join(paths.settingsDir, `${tabId}.json`)
   fs.writeFileSync(out, JSON.stringify(settings))
   return out

@@ -5,6 +5,7 @@ import type { Page } from '@playwright/test'
 import {
   centerTerm,
   clickAppMenuItem,
+  focusOwner,
   openSessionTerminal,
   panelTerm,
   runIn,
@@ -29,7 +30,7 @@ function filesHalf(page: Page, name: 'Changes' | 'Browse'): ReturnType<Page['loc
 }
 
 test.describe("`open <file>` inside a Koloft tab: previewable types render in Koloft's reading area instead of the OS app, everything else reaches the real `open` untouched", () => {
-  test('an agent open <previewable file> renders in the Koloft reading area, not the OS app, yet moves nothing on screen: no tab, no unread mark, the Files half stays on Changes until the user opens Browse', async ({
+  test('an agent open <previewable file> shows at once in the Koloft reading area, not the OS app: Browse comes up, no tab is minted, and the caret stays in the terminal', async ({
     page,
     env
   }) => {
@@ -40,14 +41,14 @@ test.describe("`open <file>` inside a Koloft tab: previewable types render in Ko
     await runIn(page, centerTerm(page), '/open README.md')
     await expect(centerTerm(page)).toContainText('opened README.md', { timeout: 30_000 })
 
-    await expect.poll(() => wbTabs(page).count()).toBe(tabsBefore)
-    await expect(page.locator(WORKBENCH.tabUnread)).toHaveCount(0)
-    await expect(filesHalf(page, 'Changes')).toHaveAttribute('aria-pressed', 'true')
-    await expect(readingTitle(page)).toHaveCount(0)
-
-    await filesHalf(page, 'Browse').click()
+    await expect(filesHalf(page, 'Browse')).toHaveAttribute('aria-pressed', 'true', {
+      timeout: 15_000
+    })
     await expect(readingTitle(page)).toHaveText('README.md', { timeout: 15_000 })
     await expect(readingArea(page)).toContainText('koloft-e2e-alpha')
+    await expect.poll(() => wbTabs(page).count()).toBe(tabsBefore)
+    await expect(page.locator(WORKBENCH.tabUnread)).toHaveCount(0)
+    expect(await focusOwner(page)).toBe('tui')
 
     expect(fs.existsSync(env.openCalls)).toBe(false)
   })
@@ -69,7 +70,7 @@ test.describe("`open <file>` inside a Koloft tab: previewable types render in Ko
     expect(await readingTitle(page).count()).toBe(0)
   })
 
-  test('an agent open fired from a background tab leaves the person where they are, marks that session row, and the preview is waiting once they switch there', async ({
+  test('an agent open fired from a background tab leaves the person where they are, marks that session row, and the file is on screen in Browse once they switch there', async ({
     page,
     env
   }) => {
@@ -92,7 +93,9 @@ test.describe("`open <file>` inside a Koloft tab: previewable types render in Ko
     await rowA.click()
     await expect(rowA).toHaveClass(/\bactive\b/)
     await expect(rowA.locator('.ws-tab-opened')).toHaveCount(0)
-    await filesHalf(page, 'Browse').click()
+    await expect(filesHalf(page, 'Browse')).toHaveAttribute('aria-pressed', 'true', {
+      timeout: TWO_LAUNCHES_AND_A_PANEL_SWAP_MS
+    })
     await expect(readingTitle(page)).toHaveText('README.md', {
       timeout: TWO_LAUNCHES_AND_A_PANEL_SWAP_MS
     })

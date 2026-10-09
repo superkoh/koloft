@@ -96,6 +96,14 @@ export interface FakeCallback {
   }
 }
 
+export function openerNow(
+  fake: Pick<FakeDiscord, 'edits'>,
+  channelId: string,
+  threadId: string
+): string | undefined {
+  return fake.edits.filter((e) => e.channelId === channelId && e.id === threadId).at(-1)?.content
+}
+
 export const SLASH_COMMAND = 2
 export const BUTTON_PRESS = 3
 export const AUTOCOMPLETE = 4
@@ -112,7 +120,11 @@ export interface FakeDiscord {
   refusePostsIn: string[]
   refuseThreads: boolean
   threads: FakeThread[]
+  deleted: string[]
+  lost: string[]
   reactions: FakeReaction[]
+  edits: FakePost[]
+  typing: string[]
   history: Record<string, FakeHistoryMessage[]>
   commands: FakeCommand[]
   callbacks: FakeCallback[]
@@ -135,6 +147,8 @@ const MESSAGE_ROUTE = /^\/channels\/(\d+)\/messages$/
 const THREAD_ROUTE = /^\/channels\/(\d+)\/messages\/(\d+)\/threads$/
 const MEMBER_ROUTE = /^\/channels\/(\d+)\/thread-members\/(\d+)$/
 const CHANNEL_ROUTE = /^\/channels\/(\d+)$/
+const ONE_MESSAGE_ROUTE = /^\/channels\/(\d+)\/messages\/(\d+)$/
+const TYPING_ROUTE = /^\/channels\/(\d+)\/typing$/
 const COMMANDS_ROUTE = /^\/applications\/\d+\/guilds\/\d+\/commands$/
 const CALLBACK_ROUTE = /^\/interactions\/(\d+)\/[^/]+\/callback$/
 const REACTION_ROUTE = /^\/channels\/(\d+)\/messages\/(\d+)\/reactions\/([^/]+)\/@me$/
@@ -195,7 +209,11 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
     refusePostsIn: [],
     refuseThreads: false,
     threads: [],
+    deleted: [],
+    lost: [],
     reactions: [],
+    edits: [],
+    typing: [],
     history: {},
     commands: [],
     callbacks: [],
@@ -334,6 +352,20 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
       return { status: 204 }
     }
     const channel = CHANNEL_ROUTE.exec(route)
+    if ((channel || ONE_MESSAGE_ROUTE.test(route)) && req.method === 'DELETE') {
+      fake.deleted.push(route)
+      return { status: 204 }
+    }
+    const edited = ONE_MESSAGE_ROUTE.exec(route)
+    if (edited && req.method === 'PATCH') {
+      fake.edits.push(await postOf(edited[2], edited[1], req))
+      return { status: 200, body: { id: edited[2] } }
+    }
+    const typing = TYPING_ROUTE.exec(route)
+    if (typing && req.method === 'POST') {
+      fake.typing.push(typing[1])
+      return { status: 204 }
+    }
     if (channel && req.method === 'PATCH') {
       const { archived, name } = JSON.parse((await bodyOf(req)).toString()) as {
         archived?: boolean
@@ -345,6 +377,10 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
       return { status: 200, body: { id: channel[1] } }
     }
     const message = MESSAGE_ROUTE.exec(route)
+    if (message && req.method === 'POST' && fake.deleted.includes(`/channels/${message[1]}`)) {
+      fake.lost.push((await postOf('lost', message[1], req)).content)
+      return { status: 404, body: { message: 'Unknown Channel', code: 10003 } }
+    }
     if (message && req.method === 'POST' && fake.refusePostsIn.includes(message[1])) {
       await bodyOf(req)
       return { status: 403, body: { message: 'Missing Permissions', code: 50013 } }

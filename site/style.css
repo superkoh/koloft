@@ -23,6 +23,7 @@
 }
 
 :root {
+  color-scheme: light dark;
   --paper: #f6f1e6;
   --ink: #2a2622;
   --muted: color-mix(in srgb, var(--ink) 72%, var(--paper));
@@ -30,6 +31,9 @@
   --rule: #9c958a;
   --link: #c8642f;
   --print: #fffdf8;
+  --shadow: var(--ink);
+  --tape: rgba(247, 238, 212, 0.62);
+  --tape-edge: rgba(255, 255, 255, 0.35);
   --type: 'Special Elite', 'Courier New', monospace;
   --mono: 'Courier Prime', 'Courier New', monospace;
   --line: 28px;
@@ -37,6 +41,20 @@
   --col: 66ch;
   --gutter: 16px;
   --pad: 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #1c1a17;
+    --ink: #e6dfd0;
+    --marker: #b4552c;
+    --rule: #6b645a;
+    --link: #e8895a;
+    --print: #2a2622;
+    --shadow: #000;
+    --tape: rgba(247, 238, 212, 0.3);
+    --tape-edge: rgba(255, 255, 255, 0.12);
+  }
 }
 
 *,
@@ -324,8 +342,8 @@ button:focus-visible {
   padding: var(--pad);
   background: var(--print);
   box-shadow:
-    0 1px 1px color-mix(in srgb, var(--ink) 14%, transparent),
-    0 10px 20px -12px color-mix(in srgb, var(--ink) 40%, transparent);
+    0 1px 1px color-mix(in srgb, var(--shadow) 14%, transparent),
+    0 10px 20px -12px color-mix(in srgb, var(--shadow) 40%, transparent);
 }
 
 .tape {
@@ -335,10 +353,10 @@ button:focus-visible {
   left: 50%;
   width: 140px;
   height: 32px;
-  background: rgba(247, 238, 212, 0.62);
-  border-left: 1px dashed rgba(255, 255, 255, 0.35);
-  border-right: 1px dashed rgba(255, 255, 255, 0.35);
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 12%, transparent);
+  background: var(--tape);
+  border-left: 1px dashed var(--tape-edge);
+  border-right: 1px dashed var(--tape-edge);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--shadow) 12%, transparent);
   translate: -50%;
   transform: rotate(-2.5deg);
 }

@@ -8,7 +8,8 @@
       name="description"
       content="Open a folder on another machine you reach by ssh. Claude Code runs there; Koloft shows its sessions and a Workbench here. Alpha, with its gaps listed."
     />
-    <meta name="theme-color" content="#f6f1e6" />
+    <meta name="theme-color" content="#f6f1e6" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1c1a17" media="(prefers-color-scheme: dark)" />
     <link rel="canonical" href="__SITE_URL__/remote/" />
     <link rel="icon" href="../favicon.png" type="image/png" sizes="32x32" />
     <link rel="icon" href="../icon.svg" type="image/svg+xml" />
@@ -184,6 +185,11 @@ your Mac                     the other machine
           <li>
             <code>bash</code>, <code>claude</code>, <code>tmux</code> and <code>rsync</code>, if the
             machine is missing them, over the same link
+          </li>
+          <li>
+            if the <code>claude</code> there is older than this Koloft needs, it gets
+            <code>claude update</code> before the session starts; if that does not bring it up to
+            date, the session does not start and the tab asks you to run the update yourself
           </li>
           <li>
             <code>bash</code>, <code>tmux</code> and <code>rsync</code> come from the machine's own

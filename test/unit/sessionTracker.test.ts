@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
@@ -8,7 +8,6 @@ import type { ClaudeSessionInfo as SessionInfo } from '@shared/types'
 let SessionTracker: typeof import('../../src/main/sessionTracker').SessionTracker
 let encodeCwd: typeof import('../../src/main/sessionTracker').encodeCwd
 let scratchpadDirFor: typeof import('../../src/main/sessionTracker').scratchpadDirFor
-let tasksDirFor: typeof import('../../src/main/sessionTracker').tasksDirFor
 let classifyUserPrompt: typeof import('../../src/main/sessionTracker').classifyUserPrompt
 let transcriptTurns: typeof import('../../src/main/sessionTracker').transcriptTurns
 let lastTurnsOfLines: typeof import('../../src/main/sessionTracker').lastTurnsOfLines
@@ -28,7 +27,6 @@ beforeAll(async () => {
     SessionTracker,
     encodeCwd,
     scratchpadDirFor,
-    tasksDirFor,
     classifyUserPrompt,
     transcriptTurns,
     lastTurnsOfLines,
@@ -120,6 +118,33 @@ function repoWithWorktree(name: string): { repo: string; wt: string } {
 }
 
 const SID = '11111111-1111-4111-8111-111111111111'
+
+describe('SessionTracker — touched files never block the main process', () => {
+  it('lists a file the session read under its real path without a blocking stat or realpath of it', async () => {
+    const cwd = makeWorkspace({ 'seen.md': '# seen\n' })
+    const real = fs.realpathSync(path.join(cwd, 'seen.md'))
+    const blockingStat = vi.spyOn(fs, 'statSync')
+    const blockingReal = vi.spyOn(fs, 'realpathSync')
+    const tracker = newTracker()
+    tracker.track('tabNB', cwd)
+    const file = writeJsonl(cwd, SID, [
+      {
+        type: 'assistant',
+        message: { content: [{ type: 'tool_use', name: 'Read', input: { file_path: 'seen.md' } }] },
+        cwd
+      }
+    ])
+    tracker.bindSession('tabNB', file, SID, cwd)
+    const s = await waitFor(tracker, (x) => x.tabId === 'tabNB' && x.files.length === 1)
+    const touchedSeen = [...blockingStat.mock.calls, ...blockingReal.mock.calls]
+      .map((c) => String(c[0]))
+      .filter((p) => p.endsWith('seen.md'))
+    blockingStat.mockRestore()
+    blockingReal.mockRestore()
+    expect(s.files[0].src).toBe(real)
+    expect(touchedSeen).toEqual([])
+  })
+})
 
 describe('SessionTracker — file extraction from tool_use', () => {
   it('tags writes vs reads, sums line deltas, tracks last-touched/last-written, and counts only live writes, shell writes to a real file included', async () => {
@@ -263,6 +288,28 @@ describe('SessionTracker — title resolution priority', () => {
 
     fs.writeFileSync(file.replace(/\.jsonl$/, '.title'), 'Sidecar Name\n')
     const s = await waitFor(tracker, (x) => x.tabId === 'tabT2' && x.title === 'Sidecar Name')
+    expect(s.title).toBe('Sidecar Name')
+  })
+
+  it('a session name (custom-title, from --name or /rename) beats the first prompt, the latest one wins, and the sidecar still beats it', async () => {
+    const cwd = makeWorkspace({})
+    const tracker = newTracker()
+    tracker.track('tabT2n', cwd)
+    const file = writeJsonl(cwd, SID, [
+      { type: 'custom-title', customTitle: 'rental-watch' },
+      { type: 'user', message: { content: '租房监控更新：进入 /Users/x/rental-watch，严格' }, cwd }
+    ])
+    tracker.bindSession('tabT2n', file, SID, cwd)
+    await waitFor(tracker, (x) => x.tabId === 'tabT2n' && x.title === 'rental-watch')
+
+    fs.appendFileSync(
+      file,
+      JSON.stringify({ type: 'custom-title', customTitle: '改名后的标题' }) + '\n'
+    )
+    await waitFor(tracker, (x) => x.tabId === 'tabT2n' && x.title === '改名后的标题')
+
+    fs.writeFileSync(file.replace(/\.jsonl$/, '.title'), 'Sidecar Name\n')
+    const s = await waitFor(tracker, (x) => x.tabId === 'tabT2n' && x.title === 'Sidecar Name')
     expect(s.title).toBe('Sidecar Name')
   })
 
@@ -1436,13 +1483,6 @@ describe('scratchpadDirFor — Claude Code per-session scratchpad', () => {
       '/b/-r--claude-worktrees-w/sid/scratchpad'
     )
   })
-
-  it('keeps tasks/ beside the transcript, whatever folder claude started in', () => {
-    process.env.KOLOFT_SCRATCHPAD_BASE = '/b'
-    expect(tasksDirFor('/h/.claude/projects/-r--claude-worktrees-w/sid.jsonl')).toBe(
-      '/b/-r--claude-worktrees-w/sid/tasks'
-    )
-  })
 })
 
 // CC§2
@@ -1506,6 +1546,16 @@ describe('SessionTracker.launchedSessions — which account each running launch 
     tracker.setAlive('tabLS2', false)
     expect(tracker.launchedSessions()).toEqual([
       { tabId: 'tabLS1', account: 'koh', status: undefined }
+    ])
+  })
+
+  it('a remote pick held under its launch key moves to its tab and counts once', () => {
+    const tracker = newTracker()
+    tracker.setPickedAccount('launch-sid1', 'koh')
+    tracker.track('tabLS3', '/w', { host: 'devbox', projectsRoot: '/mirror', tmuxName: 'k-sid1' })
+    tracker.movePick('launch-sid1', 'tabLS3')
+    expect(tracker.launchedSessions()).toEqual([
+      { tabId: 'tabLS3', account: 'koh', status: undefined }
     ])
   })
 })

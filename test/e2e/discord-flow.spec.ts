@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
-import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
+import { installCodex, installGhForWorkspaceA, seedSettings, type E2EEnv } from './helpers/env'
 import {
   newSessionInWith,
   readCalls,
@@ -15,6 +15,7 @@ import {
 } from './helpers/p1'
 import {
   callbackText,
+  openerNow,
   startFakeDiscord,
   type FakeDiscord,
   type FakePost
@@ -31,6 +32,7 @@ const OFFLINE_REPLY = 'Koloft was offline, this message was not delivered.'
 const CONDUCTOR_STARTS_AND_ANSWERS_MS = 60_000
 const DISCORD_MESSAGE_LIMIT = 2000
 const RESUMED_SESSION_BINDS_AFTER_MS = 12_000
+const SILENT_FLAG = 1 << 12
 
 function seedConductor(
   env: E2EEnv,
@@ -126,12 +128,13 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await expect
         .poll(() => said(fake), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toContain('Answer to: [Discord] hello there')
+      expect(fake.typing).toContain(CHANNEL)
       expect(said(fake).join('\n')).not.toContain('not the owner')
       await expect
         .poll(() => fake.reactions)
         .toContainEqual({ messageId: hello, emoji: '✅', on: true })
       expect(readCalls(env)).toHaveLength(1)
-      expect(readCalls(env)[0].cwd).toBe(env.workspaces.a)
+      expect(path.dirname(readCalls(env)[0].cwd)).toBe(path.join(env.userData, 'conductors'))
 
       fake.say(OWNER, '/long 600')
       const lines = Array.from({ length: 600 }, (_, i) => `line ${i + 1}`).join('\n')
@@ -154,7 +157,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     }
   })
 
-  test('a managed session gets its own thread under the conductor’s channel, opened from a card there with the owner added: its dialog, its finished turn with the reply (only once the conductor touched it or it has a thread) and its closing go in the thread, which is then put away; koloft discord send uploads a file', async ({
+  test('a managed session gets its own thread under the conductor’s channel, opened from a card there with the owner added: its dialog, its finished turn with the reply (only once the conductor touched it or it has a thread) go in the thread; koloft discord send uploads a file; once /exit takes the session off the sidebar, its thread and the card it hangs from are deleted, never before a card already on its way there', async ({
     env
   }) => {
     seedConductor(env, 'claude')
@@ -190,6 +193,10 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       expect(bindingOnDisk(env)?.threads).toEqual([
         expect.objectContaining({ threadId: fake.threads[0].id, keys: [managed] })
       ])
+      const opener = fake.threads[0].id
+      await expect
+        .poll(() => openerNow(fake, CHANNEL, opener))
+        .toMatch(/^❓ \*\*.+\*\* · needs you, asked <t:\d+:R>\n-# ws-a · Claude$/)
 
       fake.say(OWNER, `/koloft session read ${managed}`)
       await expect
@@ -200,8 +207,23 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
         .poll(() => notices(fake))
         .toEqual([expect.stringMatching(/^❓ /), expect.stringMatching(/^🔔 .+ finished\.$/)])
       expect(inThreads(fake).at(-1)).toMatch(/finished\.\nAnswer to: after the touch$/)
+      expect(fake.typing).toContain(opener)
+      await expect
+        .poll(() => openerNow(fake, CHANNEL, opener))
+        .toMatch(/^✅ \*\*.+\*\* · turn done <t:\d+:R>/)
+      expect(fake.edits.every((e) => e.flags! & SILENT_FLAG)).toBe(true)
+      await type('/bg-reported')
+      await expect
+        .poll(() => openerNow(fake, CHANNEL, opener))
+        .toMatch(/^✅ \*\*.+\*\* · turn done <t:\d+:R> · work still running\n/)
+      await expect
+        .poll(() => openerNow(fake, CHANNEL, opener), { timeout: 30_000 })
+        .toMatch(/^✅ \*\*.+\*\* · turn done <t:\d+:R>\n/)
 
-      fake.say(OWNER, '/koloft discord send shot.png -- here it is')
+      fake.say(
+        OWNER,
+        `/koloft discord send ${path.join(env.workspaces.a, 'shot.png')} -- here it is`
+      )
       await expect
         .poll(() => fake.posted.filter((p) => p.files.length))
         .toEqual([
@@ -212,15 +234,13 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
           })
         ])
 
+      const thread = fake.threads[0].id
       await type('/exit')
       await expect
-        .poll(() => notices(fake))
-        .toEqual([
-          expect.stringMatching(/^❓ /),
-          expect.stringMatching(/^🔔 /),
-          expect.stringMatching(/^⏹ .+ closed\.$/)
-        ])
-      await expect.poll(() => fake.threads[0].archived).toBe(true)
+        .poll(() => fake.deleted)
+        .toEqual([`/channels/${thread}`, `/channels/${CHANNEL}/messages/${thread}`])
+      await expect.poll(() => bindingOnDisk(env)?.threads).toEqual([])
+      expect(fake.lost).toEqual([])
     } finally {
       await quitAndClose(app)
       await fake.close()
@@ -285,7 +305,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     }
   })
 
-  test('the conductor sends to a local Claude session through its message socket as the owner’s words, stops it, and resumes it with a first message; the session is touched', async ({
+  test('the conductor sends to a local Claude session through its message socket as the owner’s words, stops it — the session stays on the sidebar, so its thread is only archived, after its "closed" card — and resumes it with a first message; the session is touched', async ({
     env
   }) => {
     seedConductor(env, 'claude')
@@ -318,6 +338,11 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
         .poll(() => notices(fake))
         .toEqual([expect.stringMatching(/^🔔 /), expect.stringMatching(/^⏹ .+ closed\.$/)])
       await expect(wsRows(page, 'ws-a')).toHaveClass(/cold/)
+      await expect.poll(() => fake.threads[0].archived).toBe(true)
+      await expect
+        .poll(() => openerNow(fake, CHANNEL, fake.threads[0].id))
+        .toMatch(/^⏹ \*\*.+\*\* · closed <t:\d+:R>\n-# ws-a · Claude$/)
+      expect(fake.deleted).toEqual([])
 
       fake.say(OWNER, `/koloft session resume ${managed} -- carry on`)
       await expect
@@ -332,7 +357,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     }
   })
 
-  test('the conductor queues a message on a Codex session with a conductor message id, and a session it starts with --backend codex is announced and touched, and its thread takes the session’s sidebar title once it has one; once the conductor closes it for good, a message in its thread is refused by that name', async ({
+  test('the conductor queues a message on a Codex session with a conductor message id, and a session it starts with --backend codex is announced and touched, and its thread takes the session’s sidebar title once it has one; once the conductor closes it for good, its thread and the card it hangs from are deleted', async ({
     env
   }) => {
     installCodex(env)
@@ -393,6 +418,13 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       expect(bindingOnDisk(env)?.threads?.find((t) => t.threadId === opener.id)?.name).toBe(
         thread()
       )
+      await expect
+        .poll(() => openerNow(fake, CHANNEL, opener.id)?.split(' · ')[0])
+        .toBe(`✅ **${thread()}**`)
+      expect(openerNow(fake, CHANNEL, opener.id)).toMatch(
+        / · turn done <t:\d+:R>\n-# ws-a · Codex$/
+      )
+      expect(fake.typing).toContain(opener.id)
 
       const startedKey = bindingOnDisk(env)!.threads!.find((t) => t.threadId === opener.id)!.keys[0]
       fake.say(OWNER, `/koloft session close ${startedKey}`)
@@ -409,12 +441,12 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
           )
         )
         .toBe(false)
-      const late = fake.say(OWNER, 'are you still there?', { channelId: opener.id })
       await expect
-        .poll(() => fake.posted.find((p) => p.replyTo === late)?.content)
-        .toBe(
-          `${thread()} is no longer in the session list (it was closed for good), so it cannot be woken. This message was not delivered.`
-        )
+        .poll(() => fake.deleted)
+        .toEqual([`/channels/${opener.id}`, `/channels/${CHANNEL}/messages/${opener.id}`])
+      await expect
+        .poll(() => bindingOnDisk(env)?.threads?.some((t) => t.threadId === opener.id))
+        .toBe(false)
     } finally {
       await quitAndClose(app)
       await fake.close()
@@ -705,4 +737,34 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await fake.close()
     }
   })
+
+  for (const backend of ['claude', 'codex'] as const) {
+    test(`a ${backend} conductor reads GitHub through koloft gh: Koloft runs gh with the workspace’s repository added, and refuses a command that would write without running gh`, async ({
+      env
+    }) => {
+      if (backend === 'codex') installCodex(env)
+      seedConductor(env, backend)
+      const ghLog = installGhForWorkspaceA(env, '{"state":"MERGED"}')
+      const fake = await startFakeDiscord(env)
+      const { app, page } = await connected(env, fake)
+      try {
+        fake.say(OWNER, '/koloft gh pr merge 389')
+        fake.say(OWNER, '/koloft gh pr view 389 --json state')
+        await expect
+          .poll(() => (fs.existsSync(ghLog) ? fs.readFileSync(ghLog, 'utf8') : ''), {
+            timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+          })
+          .toBe('pr view 389 --json state --repo acme/app\n')
+        if (backend === 'claude') {
+          const conductorTab = await tabOf(page, bindingOnDisk(env)!.sessionIds[0])
+          await expect
+            .poll(() => terminalText(page, conductorTab))
+            .toMatch(/koloft: usage: koloft gh pr view[\s\S]*\{"state":"MERGED"\}/)
+        }
+      } finally {
+        await quitAndClose(app)
+        await fake.close()
+      }
+    })
+  }
 })

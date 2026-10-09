@@ -79,6 +79,16 @@ that the session is archived and must first be unarchived with `codex unarchive`
 It did not automatically send `thread/unarchive`. So a record that `thread/list`
 returns with `archived:true` cannot be resumed as it is.
 
+**A thread resumes in another folder without a question.** Checked 2026-10-08 with
+codex-cli 0.159.3: `codex exec` (own `CODEX_HOME` with a copy of this Mac's login and
+trust tables for two folders, deleted afterwards) started a thread in folder A; the
+real TUI in a Python PTY then ran `codex -C <folder B> resume <id>` (no `--remote`).
+It showed "Resuming session…", drew the old turn, and its footer named folder B; no
+question about which folder to use came up in 12 s. The binary also holds a
+`tui.resume_cwd` setting (`"session"` / `"current"`) and the labels "Always use session
+directory" / "Always use current directory", so a question does exist somewhere; when
+it shows was not found. The same line with `--remote` was not run.
+
 **Native input and resize were checked separately.** Sending first-line text, LF,
 second-line text, then CR through the PTY produced one user `turn/start`; its text
 contained the two lines separated by `\n`: LF adds a line, CR submits. A `TIOCSWINSZ` change to 26 rows × 90 columns kept the TUI responsive,
@@ -199,17 +209,17 @@ branch and HEAD were still present and unchanged.
 
 ## 7. Rechecking a CLI upgrade
 
-Measured version: **0.153.4** only; each dated section names the binary it ran. Koloft
-treats every 0.153.x as verified (`verified` in `src/main/codexRuntime.ts`, pinned by
-`test/unit/codexRuntime.test.ts`); later 0.153 patches are inferred, not checked. Before
-widening that rule to a newer line, redo the live checks the code leans on: section 1
-(handshake and the update-notice key), 2, 3, 4, 5, 8 (status-line item ids), 9 (the trust
-question before connecting), 11 (trust table, approval flags), 12 (`fileChange` /
-`commandActions` shapes, the `open` shim), 13 (token-usage fields), 14 (first prompt,
-`-m`, `model_reasoning_effort`) and 15 (`account/read`, `account/rateLimits/read`,
-per-home state). Then change that rule, the "(0.153.x)" in the warning in
-`src/main/codexSessions.ts`, the cases in `test/unit/codexRuntime.test.ts`, and this line
-together.
+Each dated section names the binary it ran: mostly 0.153.4, some 0.159.3. Koloft treats
+the minor line of its minimum (`MIN_CODEX_VERSION` in `src/main/cliMinimums.ts`) as
+verified (`verified` in `src/main/codexRuntime.ts`, pinned by
+`test/unit/codexRuntime.test.ts`) and warns on anything newer. **The owner raised the
+minimum from 0.153.4 to 0.161.0 on 2026-10-08 without redoing the live checks below on
+0.161**; that the sections still hold on 0.161 is inferred, not checked. Those checks
+are: section 1 (handshake and the update-notice key), 2, 3, 4, 5, 8 (status-line item
+ids), 9 (the trust question before connecting), 11 (trust table, approval flags), 12
+(`fileChange` / `commandActions` shapes, the `open` shim), 13 (token-usage fields), 14
+(first prompt, `-m`, `model_reasoning_effort`) and 15 (`account/read`,
+`account/rateLimits/read`, per-home state).
 
 Keep worktree tests inside a temporary repository. Record version, executable source,
 matching request IDs, thread IDs and event order; redact login/account contents. Fixture
@@ -278,6 +288,18 @@ Checked 2026-09-24 with `strings` on the standalone codex-cli 0.153.4 binary: it
 `CODEX_APP_TOOLS_PIPE_PATH`, `CODEX_MCP_NODE_PATH`,
 `CODEX_SAGE_BACKFILL_TRACKER_TAB_REUSE` or `CODEX_SHELL`; that the CLI does not read
 those four, and what sets them, is inferred, not checked.
+
+**The model's shell commands run with the env the app-server was started with.**
+Measured 2026-10-08 with Codex CLI 0.161.0, a real model turn, a `CODEX_HOME` whose
+`config.toml` set only folder trust (no `shell_environment_policy`, from there or from
+Koloft's `-c` overrides): with
+`KOLOFT_PORT_OFFSET` in the `codex app-server` spawn env, the model's
+`echo "$KOLOFT_PORT_OFFSET"` ran as `["/bin/zsh","-lc",…]` in the thread's worktree and
+printed the value; the rollout's `item_completed` event holds it as a `CommandExecution`
+item with `aggregated_output` (also `stdout`, `formatted_output`). Established by
+`agent-tools-real-smoke.spec.ts` › "a real Codex in a worktree Koloft made gets the
+ignored files .worktreeinclude lists, and echoes, with its shell tool, the port offset of
+that worktree’s name".
 
 ## 11. Folder trust and the approval flags
 
@@ -407,6 +429,30 @@ system `open`, and prints `koloft-open:sent`, and Koloft then skips that item's 
 file from the `item/completed` frame. A shell that is not zsh never reaches the shim, so
 its item has neither line and Koloft opens from the frame too.
 
+**Where a command may write, by sandbox.** Checked 2026-10-08 with codex-cli 0.159.3, one
+real model turn each through `codex exec --ephemeral --ignore-user-config -C <folder>
+-s <mode>`, running a script that wrote into a `/tmp/koloft-cx-open-*` folder, into
+a folder outside `/tmp` that was not `-C`, and into the `-C` folder:
+
+| `-s` | `/tmp` folder | other folder | `-C` folder |
+| --- | --- | --- | --- |
+| `read-only` | refused | refused | refused |
+| `workspace-write` | written | refused | written |
+
+A refused write failed with `Operation not permitted`. On 0.159.3, `codex sandbox -C
+<dir>` stops with "the following required arguments were not provided:
+--permission-profile <NAME>", and `-P read-only` with "default_permissions requires a
+`[permissions]` table", so the no-model route used on 2026-09-25 no longer takes a
+folder.
+
+**`workspace-write` has no network; reading files outside it works.** Checked 2026-10-09
+with codex-cli 0.159.3, one real turn through `codex exec -s workspace-write
+--skip-git-repo-check -C <scratch folder>` (approval `never`), this Mac's own config:
+`gh pr view 389 --repo superkoh/koloft --json state,mergedAt` exited 1 with "error
+connecting to api.github.com", and `git -C <a repo outside the folder> log -1 --oneline`
+printed the commit. Through the app-server (`thread/start` with the same sandbox), as a
+conductor runs: **inferred, not checked**.
+
 Browser control (an agent driving a Workbench web tab through Koloft's CDP (Chrome DevTools
 Protocol) relay) was not tried for Codex. Whether a command inside Codex's sandbox can
 reach the relay's local socket at all is **inferred, not checked** either way, so browser
@@ -511,6 +557,19 @@ the link too (and so keeps settings shared) is **inferred, not checked**. Koloft
 trust writer replaces the file it is given with a new one, so Koloft hands it the shared
 file, never an account home's link.
 
+**Who first writes a home's config.toml.** Checked 2026-10-04 with Codex CLI 0.159.3, no
+model turn, each run in a fresh temporary `CODEX_HOME` and `HOME`, signed in with a dummy
+API key. `codex login status`, `codex login --with-api-key` and a `codex app-server` that
+answered `initialize`, `account/read` and `config/read` left the home with no
+`config.toml`. The full-screen `codex`, started in a folder with no trust table, wrote
+one **as it started**, before the trust question was answered (`[tui]
+screen_reader_detection_done = true` and a `[tui.model_availability_nux]` table), and
+added the folder's trust table to it on Enter. So a home that is not linked before its
+first Codex start gets a file of its own and never shares settings or trust after that.
+With `config.toml` a link to an empty shared file, the same start-up write and the trust
+answer both went into the shared file and the link stayed a link. Hence Koloft makes an
+empty shared file when there is none, rather than skip the link.
+
 Not tried, because they need a second real login or would open a browser on this Mac:
 - that `codex login` with `CODEX_HOME` set signs in only that home and exits 0 once
   done (Koloft types `codex login && exit` into the sign-in terminal, so the tab closes
@@ -593,6 +652,16 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   The line lands at the top of the thread's developer message. That it replaces a
   `developer_instructions` in the user's `config.toml` rather than adding to it is
   inferred, not checked.
+- **The developer instructions are saved with the thread and outlive a resume without
+  them**, and **Codex names a thread from its first message, instructions left out.**
+  Checked on 2026-10-07 with Codex CLI 0.159.3 and a real model: an app-server started
+  with `-c developer_instructions=` naming a made-up parent session answered that name;
+  the rollout file held the text; a second app-server started without the flag
+  `thread/resume`d the thread and still answered the name. In a real TUI started by
+  `koloft session new` with Koloft's handover note written before the task in the first
+  message, Codex named the thread "Acknowledge session handoff" — a name drawn from the
+  note, not the task (`agent-tools-real-smoke.spec.ts`). That the title thread never
+  reads the developer instructions is inferred, not checked, beyond that spec passing.
 - **Skills:** a folder under `$CODEX_HOME/skills/<n>/SKILL.md` was listed by
   `skills/list` (scope `user`) and used by the model. `-c 'skills.config=[{path=…}]'`
   with a path to a folder, or to a `SKILL.md`, outside those roots added nothing to
@@ -807,4 +876,65 @@ folder trusted. Text was typed in one write and CR in a second write 0.3–0.6 s
   and `active` again within 3–4 ms. Each queued `userMessage` item carried the
   `clientUserMessageId` as `clientId`, and `thread/queue/list` was empty as soon as the
   last one's turn started.
+
+## 22. `codex update`
+
+How established: 2026-10-08 on this Mac, each run in a fresh temporary `HOME` with
+`CODEX_HOME` unset and stdin closed. A standalone install of 0.153.4
+(`CODEX_RELEASE=0.153.4 CODEX_NON_INTERACTIVE=1 sh install.sh`, the script at
+`https://chatgpt.com/codex/install.sh`), and an npm one
+(`npm install -g @openai/codex@0.153.4` into a user-writable prefix).
+
+- **`codex update` asks nothing and exits 0**, and picks the way to update from how
+  Codex was installed: standalone runs
+  `curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh`, npm
+  runs `npm install -g @openai/codex`. Both went 0.153.4 → 0.161.0. The binary also
+  names `brew upgrade --cask codex`, `bun`, `pnpm` and `vp` ways (read with `strings`);
+  none was run.
+- **The standalone install lives under `$CODEX_HOME/packages/standalone`** (install.sh
+  reads `CODEX_HOME`, falling back to `~/.codex`), so the update must run with the
+  user's own `CODEX_HOME`, never an account home (§15). `current` moves to
+  `releases/0.161.0-…` and `releases/0.153.4-…` stays.
+
+## 23. A bracketed paste lands in the composer unsent
+
+How established: first from the issue #4 design round's probe notes (Codex CLI 0.159.3,
+the real TUI in a pty, early October 2026; a second reader re-ran them then). Re-run on
+2026-10-08 with Codex CLI 0.161.0 (a standalone install made by the official
+`install.sh` with `CODEX_RELEASE=0.161.0` into a scratch `CODEX_HOME`; Koloft refuses
+this Mac's 0.159.3 as older than its minimum) through Koloft's own ✎ comment: one write
+of 8 lines with 7 LFs inside the markers, a 5 s wait, then one CR written to the tab.
+Established by `agent-tools-real-smoke.spec.ts` › "a real Codex holds the hunk comment
+in its composer unsent, and the next Enter sends path, diff fence, hunk and note as one
+message" (3 runs).
+
+- **The TUI turns bracketed paste on at startup** (it writes `ESC[?2004h`; 0.159.3
+  notes).
+- **A write wrapped in `ESC[200~` … `ESC[201~` lands in the composer and is not sent.**
+  The 8 lines (about 140 characters) showed in the composer as text, line by line, but
+  for the one empty line, which the composer did not draw; 5 s later the rollout held no
+  user message: LF inside the markers sends nothing.
+- **The next CR sends it as one user message**: the rollout
+  (`$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<time>-<thread id>.jsonl`) gained one
+  `event_msg` `item_completed` whose `item.type` is `UserMessage` and whose text is the
+  pasted text exactly, with no wrapping. The model followed the one-word request in the
+  paste in 3 of 3 runs.
+- **Text typed right after the paste's `ESC[201~` joins it in the composer** and is sent
+  with it as one `UserMessage`, unwrapped; the model replied the one word asked for in 8
+  of 8 runs. A raw LF in that text adds a line and does not send, inside one write and
+  as a lone LF written 0.3 s after the line before it. One raw write of 1,148
+  characters showed as `[Pasted Content 1148 chars]` in the composer and was still sent
+  whole and unwrapped; the same text in pieces of 128 characters 0.3 s apart showed as
+  text. Measured 2026-10-08, Codex CLI 0.161.0 (the standalone install above), a python
+  `pty` probe in a scratch `HOME` whose `CODEX_HOME` held only a copied `auth.json` and
+  a `config.toml` trusting the folder; a CR 4 s after the note.
+- **A longer bracketed paste shows as `[Pasted Content N chars]`** and still waits:
+  Koloft's Send failing checks for superkoh/koloft PR #3 (43 line breaks, the npm
+  ERESOLVE log; claude showed the same paste as `[Pasted text #1 +43 lines]`) showed as `[Pasted Content 1817 chars]`, the rollout held no user message 5 s
+  later, and the question typed after it went with it as one unwrapped `UserMessage` on
+  the next Enter, answered `ERESOLVE` in 5 of 5 runs (2026-10-08, Codex CLI 0.161.0;
+  established by `agent-tools-real-smoke.spec.ts` › "a real Codex holds the failing
+  checks of PR #3 in its composer unsent …").
+- Codex on a remote machine is not a tab Koloft starts yet (§16), so the paste over ssh
+  and tmux is not probed for Codex.
 

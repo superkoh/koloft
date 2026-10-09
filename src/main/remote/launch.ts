@@ -87,6 +87,7 @@ export interface TabSpec {
   fallbackCwd?: string
   banner: string
   env?: Record<string, string>
+  portOffset?: number
   settings: Record<string, unknown>
   claudeArgs: string[]
 }
@@ -111,7 +112,7 @@ if [ "$1" = run ]; then
   KOLOFT_TMUX_FOLLOW=1; export KOLOFT_TMUX_FOLLOW
   unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN
   E="${T}.env"; [ -f "$E" ] && { set -a; . "$E"; set +a; rm -f "$E"; }
-  exec claude --settings "${T}.json" ${spec.claudeArgs.map(shq).join(' ')}
+${spec.portOffset ? `  KOLOFT_PORT_OFFSET=${spec.portOffset}; export KOLOFT_PORT_OFFSET\n` : ''}  exec claude --settings "${T}.json" ${spec.claudeArgs.map(shq).join(' ')}
 fi
 ${onATerminalEvenWhenSshGaveNone('$2', '$3', spec.tabId, `sh '${T}.sh' $1`)}
 [ "$1" = attach ] && exec tmux -L koloft attach -d -t '${spec.tmuxName}'

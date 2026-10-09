@@ -26,7 +26,8 @@ import { CodexRpc, createCodexTransport, type CodexTransport } from './codexTran
 import { SessionStore, codexSessionKey, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
-import { resolveCodexRuntime } from './codexRuntime'
+import { codexTooOld, resolveCodexRuntime, updateCodex, type CodexRuntime } from './codexRuntime'
+import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from './cliMinimums'
 import { occupantName } from './resumePlan'
 import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
 import { watchJsonDrops } from './jsonDrops'
@@ -34,6 +35,7 @@ import { openDropTarget, type OpenDrop } from './openDrop'
 import { removeCodexOpenShim, writeCodexOpenShim } from './openShimScript'
 import { AGENT_SHIM_WAITS_MS, writeCodexAgentShim } from './agentShim'
 import { CODEX_AGENT_HINT } from '@shared/agentGuide'
+import { portOffset } from '@shared/worktreeName'
 import type { CodexApproval, CodexQuestion } from './discord/dialog'
 
 const exists = (p: string): boolean => {
@@ -71,6 +73,9 @@ const PERMISSION_ARGS: Record<LaunchPermission, string[]> = {
   bypass: ['-a', 'never', '-s', 'danger-full-access']
 }
 
+// ADR-0029 CODEX§12
+const CONDUCTOR_ARGS = ['-a', 'never', '-s', 'workspace-write']
+
 // CODEX§14
 function launchChoiceArgs(opts: CreateTabOptions): string[] {
   return [
@@ -99,6 +104,7 @@ export interface CodexSessionDeps {
   projectInfo(p: string): ProjectInfo
   changed(): void
   replaced?(oldKey: string, newKey: string): void
+  memberRemoved?(key: string): void
   events(tabId: string, event: SessionEvent): void
   error(message: string): void
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
@@ -141,6 +147,8 @@ export class CodexSessions {
   private binary?: string
   private processEnv?: NodeJS.ProcessEnv
   private probed?: { at: number; reply: CodexAvailability }
+  private probing?: Promise<CodexAvailability>
+  private updateTried = false
   private warnedVersion?: string
   private refreshing?: Promise<void>
   private historyError?: Error
@@ -189,9 +197,32 @@ export class CodexSessions {
       (probed.reply.available || Date.now() - probed.at < AVAILABILITY_FAILURE_MS)
     )
       return probed.reply
+    this.probing ??= this.probe().finally(() => (this.probing = undefined))
+    return this.probing
+  }
+
+  private async resolveUpdatingOnce(): Promise<CodexRuntime> {
+    let runtime = await resolveCodexRuntime()
+    if (!codexTooOld(runtime)) return runtime
+    const updating = !this.updateTried
+    if (updating) {
+      this.updateTried = true
+      this.deps.error(
+        `Codex ${runtime.version} is older than ${MIN_CODEX_VERSION}, the oldest this Koloft supports. Updating it now…`
+      )
+      await updateCodex(runtime)
+      runtime = await resolveCodexRuntime()
+      if (!codexTooOld(runtime)) return runtime
+    }
+    const stillOld = `Koloft needs Codex CLI ${MIN_CODEX_VERSION} or newer, and this Mac has ${runtime.version}. Run "codex update", then try again.`
+    if (updating) this.deps.error(stillOld)
+    throw new Error(stillOld)
+  }
+
+  private async probe(): Promise<CodexAvailability> {
     let reply: CodexAvailability
     try {
-      const runtime = await resolveCodexRuntime()
+      const runtime = await this.resolveUpdatingOnce()
       this.binary = runtime.binary
       this.processEnv = runtime.env
       reply = {
@@ -218,7 +249,7 @@ export class CodexSessions {
     if (this.warnedVersion === available.version) return
     this.warnedVersion = available.version
     this.deps.error(
-      `Codex ${available.version} is newer than the version Koloft was tested with (0.153.x). It may misbehave.`
+      `Codex ${available.version} is newer than the version Koloft was tested with (${TESTED_CODEX_LINE}.x). It may misbehave.`
     )
   }
 
@@ -570,8 +601,14 @@ export class CodexSessions {
 
   archive(key: string): boolean {
     if (this.aliveTabFor(key)) return false
-    const removed = this.store.removeMember(key)
+    const removed = this.removeMember(key)
     this.changed()
+    return removed
+  }
+
+  private removeMember(key: string): boolean {
+    const removed = this.store.removeMember(key)
+    if (removed) this.deps.memberRemoved?.(key)
     return removed
   }
 
@@ -690,6 +727,9 @@ export class CodexSessions {
       transport = await this.startTransport({
         binary,
         env,
+        sessionEnv: resource
+          ? { KOLOFT_PORT_OFFSET: String(portOffset(resource.worktreeName)) }
+          : undefined,
         cwd,
         configOverrides: instructions.length
           ? [STATUS_LINE_CONFIG, developerInstructions(instructions)]
@@ -711,7 +751,7 @@ export class CodexSessions {
         STATUS_LINE_CONFIG,
         '-c',
         NO_UPDATE_NOTICE_AT_START,
-        ...PERMISSION_ARGS[opts.permission ?? 'default'],
+        ...(opts.conductor ? CONDUCTOR_ARGS : PERMISSION_ARGS[opts.permission ?? 'default']),
         ...launchChoiceArgs(opts)
       ]
       if (opts.resumeSessionId) argv.push('resume', this.nativeId(opts.resumeSessionId))
@@ -875,7 +915,7 @@ export class CodexSessions {
       if (change === 'replace' && old && old !== key) {
         this.deps.replaced?.(old, key)
         if (![...this.runs.values()].some((r) => r !== run && r.info?.sessionId === old))
-          this.store.removeMember(old)
+          this.removeMember(old)
       }
     } catch (e) {
       this.deps.error(String(e))
@@ -956,6 +996,7 @@ export class CodexSessions {
         cols: req.cols,
         rows: req.rows,
         role: req.role,
+        conductor: req.conductor,
         trustFolder: req.trustFolder
       },
       resource
@@ -986,7 +1027,7 @@ export class CodexSessions {
         this.runs.delete(tabId)
         if (nativeExit && run.info && !this.aliveTabFor(run.info.sessionId)) {
           try {
-            this.store.removeMember(run.info.sessionId)
+            this.removeMember(run.info.sessionId)
           } catch (error) {
             this.deps.error(String(error))
           }

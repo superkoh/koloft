@@ -6,7 +6,7 @@ import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { OscCwdParser } from './oscCwd'
 import { codexEnvironment } from './codexTransport'
 import { userShell } from './userShell'
-import { typeKeys } from './typeKeys'
+import { bracketedPaste, typeKeys, typedPieces } from './typeKeys'
 
 export interface PtyHandle {
   id: string
@@ -35,11 +35,13 @@ interface CreateArgs {
   util?: boolean
   resumeSessionId?: string
   ownerTabId?: string
+  conductor?: boolean
   resized?: (id: string, cols: number, rows: number) => void
   extraEnv?: {
     KOLOFT_FIRST_PROMPT?: string
     KOLOFT_SESSION_NAME?: string
     KOLOFT_AGENT_PLUGIN?: string
+    KOLOFT_PORT_OFFSET?: string
   }
 }
 
@@ -62,7 +64,7 @@ export class PtyManager extends EventEmitter {
   cdpDir?: string
   agentDir?: string
   multiAccountOn?: () => boolean
-  makeHookSettings?: (tabId: string, allowKoloft: boolean) => string | undefined
+  makeHookSettings?: (tabId: string, allowKoloft: boolean, conductor: boolean) => string | undefined
 
   private ptys = new Map<string, PtyHandle>()
   private readyWaiters = new Map<string, Set<() => void>>()
@@ -116,6 +118,7 @@ export class PtyManager extends EventEmitter {
         key === 'KOLOFT_CDP_DIR' ||
         key === 'KOLOFT_AGENT_DIR' ||
         key === 'KOLOFT_AGENT_PLUGIN' ||
+        key === 'KOLOFT_PORT_OFFSET' ||
         key === 'ANT_ACCOUNT' ||
         (BROWSER_TAB_ENV as readonly string[]).includes(key)
       ) {
@@ -138,7 +141,11 @@ export class PtyManager extends EventEmitter {
     const hookSettings =
       args.util || args.kind === 'codex'
         ? undefined
-        : this.makeHookSettings?.(id, args.extraEnv?.KOLOFT_AGENT_PLUGIN !== undefined)
+        : this.makeHookSettings?.(
+            id,
+            args.extraEnv?.KOLOFT_AGENT_PLUGIN !== undefined,
+            args.conductor === true
+          )
     if (hookSettings) env.KOLOFT_HOOK_SETTINGS = hookSettings
     if (this.shimDir && !isWin && args.kind !== 'codex')
       env.PATH = `${this.shimDir}:${process.env.PATH ?? ''}`
@@ -146,7 +153,8 @@ export class PtyManager extends EventEmitter {
       for (const k of [
         'KOLOFT_FIRST_PROMPT',
         'KOLOFT_SESSION_NAME',
-        'KOLOFT_AGENT_PLUGIN'
+        'KOLOFT_AGENT_PLUGIN',
+        'KOLOFT_PORT_OFFSET'
       ] as const) {
         const v = args.extraEnv[k]
         if (v !== undefined) env[k] = v
@@ -254,6 +262,10 @@ export class PtyManager extends EventEmitter {
 
   type(id: string, keys: string[]): Promise<void> {
     return this.exclusive(id, () => typeKeys((data) => this.write(id, data), keys))
+  }
+
+  paste(id: string, text: string, typedAfter = ''): Promise<void> {
+    return this.type(id, [bracketedPaste(text), ...typedPieces(typedAfter)])
   }
 
   whenReady(id: string, ready: () => boolean, ms: number): Promise<boolean> {

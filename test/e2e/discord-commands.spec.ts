@@ -10,7 +10,8 @@ import {
   terminalText,
   waitBooted,
   waitForCalls,
-  wsRows
+  wsRows,
+  oneStillRunning
 } from './helpers/p1'
 import {
   AUTOCOMPLETE,
@@ -27,6 +28,7 @@ const STRANGER = { id: '556', username: 'someone' }
 const CHANNEL = '222'
 const CONDUCTOR_STARTS_AND_ANSWERS_MS = 60_000
 const ONLY_THE_SENDER_SEES_IT = 64
+const BACKGROUND_OUTLASTS_THE_CASE_MS = 90_000
 
 function seedConductor(env: E2EEnv): void {
   seedSettings(env, {
@@ -200,6 +202,40 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
       await expect
         .poll(() => ran(fake).at(-1), { timeout: 30_000 })
         .toMatch(/ran \/clear:\nIt is a new conversation now/)
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
+  // CC§8
+  test('D-CMD-5: a slash command is typed into a session at once when its turn is over, though background work it left running still shows ↻ on its row', async ({
+    env
+  }) => {
+    seedConductor(env)
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      await startSessionIn(page, 'ws-a')
+      const child = (await waitForCalls(env, 1))[0].sessionId
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 30_000 })
+      const tab = (await page.evaluate(() => window.api.sessions.list())).find(
+        (s) => s.sessionId === child
+      )!.tabId
+      fs.writeFileSync(
+        path.join(env.home, 'fake-claude-bg-ms'),
+        String(BACKGROUND_OUTLASTS_THE_CASE_MS)
+      )
+      await page.evaluate((id) => window.api.terminal.write(id, '/bg-reported\r'), tab)
+      await expect.poll(() => terminalText(page, tab)).toContain('bg-reported running')
+      await expect(oneStillRunning(wsRows(page, 'ws-a'))).toBeVisible()
+
+      fake.interact(OWNER, 'run', { command: '/context', session: child })
+      await expect
+        .poll(() => ran(fake), { timeout: 30_000 })
+        .toEqual([expect.stringMatching(/ran \/context:\n## Context Usage/)])
+      expect(await terminalText(page, tab)).not.toContain('bg-reported finished')
+      await expect(oneStillRunning(wsRows(page, 'ws-a'))).toBeVisible()
     } finally {
       await quitAndClose(app)
       await fake.close()

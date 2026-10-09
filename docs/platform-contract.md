@@ -480,6 +480,14 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   fill went into the TUI the user was typing in). A real `Input.dispatchMouseEvent`
   mousedown makes the guest the window's focused frame and takes the host's focus
   (measured). An in-page `focus()` moves nothing in the host.
+- **`Page.reload` sent to a guest's `webContents.debugger` reloads the whole Koloft
+  window, not the guest**; the guest goes with it. Measured 2026-10-08, Electron 43.7.3 /
+  Chromium 150.0.7871.250, by watching the host's main-frame `did-start-navigation` in an
+  e2e run: a bare `sendCommand('Page.reload')` from main, Playwright's `page.reload()`
+  and the real `playwright-cli reload` (0.1.18) each reloaded the host. The guest's own
+  `webContents.reload()` / `reloadIgnoringCache()`, an in-page `location.reload()`,
+  `Page.navigate`, `Page.stopLoading`, Playwright's back/forward and DevTools' own reload
+  of that guest each left the host alone.
 - **A second `about:blank` load is a second navigation**: a CDP client that grabbed the
   page between the two is left holding a detached frame (measured with a real client).
 - **`webContents.debugger` and the DevTools window can hold one guest at the same time**,
@@ -870,6 +878,14 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   files. **It refuses a locked tree** ("cannot remove a locked working tree"), and a
   session's worktree was seen still locked after its tab was killed, so `git worktree
   unlock` comes first (measured, git 2.54.0, 2026-10-02, on a throwaway repo).
+- **`git worktree remove` deletes the ignored files too, so its time grows with
+  `node_modules`**: 24k files (Koloft's own `node_modules`) took 1.1 s, 100k files
+  3.8 s, and 250k files outran a 5 s `execFile` timeout. **Killed mid-delete, it leaves
+  a half-removed tree**: the folder keeps whatever it had not deleted yet, the worktree
+  stays registered in `git worktree list`, and its branch stays. Which files go first
+  follows the folder's read order, not the name order: killed at 5 s, a tree of `.git`,
+  `a.txt` and `node_modules/` still had `.git` and `a.txt` while `node_modules/` was half
+  gone. (Measured, git 2.54.0, macOS APFS, 2026-10-08, on a throwaway repo.)
 - **`.git/FETCH_HEAD` is rewritten on every fetch** and a fresh clone has none, so its
   existence and mtime show whether a fetch ran.
 - **The `ext::` transport** is refused unless `protocol.ext.allow` permits it (the repo's
@@ -902,6 +918,51 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   `"repository":null` plus a `NOT_FOUND` error; with no login it exits 4 and prints
   "To get started with GitHub CLI, please run: gh auth login". (2026-10-03, gh 2.89.0,
   run by hand against a public repo, a made-up name, and an empty `GH_CONFIG_DIR`.)
+- **`gh pr checks <n> --repo o/r --json name,bucket,link,workflow`** prints a JSON array
+  and exits 0 even when a check failed. `bucket` is one of `pass`, `fail`, `pending`,
+  `skipping`, `cancel`. A check from GitHub Actions links to
+  `…/actions/runs/<run>/job/<job>`; one from an app outside Actions (CodeQL's own
+  check-run) links to `…/runs/<id>` with `workflow` empty. A number with no pull request
+  exits 1 with "GraphQL: Could not resolve to a PullRequest…" (a branch name: "no pull
+  requests found for branch …"); a pull request whose repo runs no checks exits 1 with
+  "no checks reported on the '<branch>' branch"; signed out it exits 4 with the
+  `gh auth login` line. `--help` says exit 8 means "checks pending" — not seen with
+  `--json` (inferred, not checked). (2026-10-08, gh 2.89.0, by hand against
+  superkoh/koloft #385/#387, PR 999999, octocat/Hello-World #11472, an empty
+  `GH_CONFIG_DIR`.)
+- **`gh run view --job <job> --repo o/r --log-failed`** prints the whole job, not only
+  the failed step (118 KB for one failed `format:check`), one line each as
+  `<job>\t<step>\t<ISO time> <text>`, with the step often `UNKNOWN STEP`, ANSI colour
+  codes left in, and the failure marked by a `##[error]` line. (2026-10-08, gh 2.89.0,
+  job 112815692712 of superkoh/koloft.) Where the step is named it printed only that
+  step: job 107036731098 (PR #3, `npm ci`) came back as 38 lines, 3,366 bytes, all
+  `check\tRun npm ci\t…`, with `##[error]Process completed with exit code 1.` as the last
+  line (that the step name decides this is inferred, not checked). **The first line's
+  time starts with a UTF-8 byte-order mark** (`﻿2026-09-23T03:47:43.4098300Z`).
+- **`gh pr checks` reads a closed pull request the same way**: PR #3 (closed) printed
+  `check` as `fail` and `close` as `skipping` (workflow "Pull requests are not open yet"),
+  exit 0, so Koloft's menu reads `Checks · 1 failing of 2`.
+- **gh finds its token in the login keychain only under the real `HOME`**: with a scratch
+  `HOME`, `gh pr checks` exits 4 with the `gh auth login` line; with a scratch `HOME` but
+  `GH_CONFIG_DIR` set to the real `~/.config/gh` it exits 1 with "HTTP 401: Requires
+  authentication". So an e2e app, whose `HOME` is a scratch folder, reaches the signed-in
+  gh only through a `gh` on its PATH that sets the real `HOME`.
+- The three bullets above: 2026-10-08, gh 2.89.0, by hand (`gh pr checks 3 --repo
+  superkoh/koloft --json name,bucket,link,workflow`, `gh run view --job 107036731098
+  --log-failed`, a node probe with a scratch `HOME`), and established in the real app by
+  `github-button.spec.ts` › "G13: the real gh reads superkoh/koloft PR #3 as one failing
+  check of two, and Send failing checks pastes its name, job link and the npm ERESOLVE
+  excerpt …" (2 runs), `agent-tools-real-smoke.spec.ts` › "a real Claude Code holds the
+  failing checks of PR #3 in its input box unsent …" (3 runs) and "a real Codex holds the
+  failing checks of PR #3 in its composer unsent …" (5 runs), and `remote-ssh-lab.spec.ts`
+  › "E-SSH-12: the GitHub button on a session on the machine commits and pushes there …"
+  (2 runs). GitHub keeps Actions logs for 90 days by default, so job 107036731098's log is
+  expected to go around 2026-12-22 and these cases to fail on it then (inferred, not
+  checked).
+- **`--jq` can read the environment of the `gh` process**: `gh pr view 389 --repo
+  superkoh/koloft --json number --jq '$ENV.HOME'` printed the home folder. So a `--jq`
+  given by someone else can print any secret in that environment. (2026-10-09, gh 2.89.0,
+  run by hand.)
 
 ## §33 ssh
 
@@ -1164,6 +1225,49 @@ Gateway (the live connection that pushes events):
   name changes per ten minutes per channel. An `{archived: true}` call right after was
   not limited. Once the ten minutes had passed, `{name}` on the bot's own unarchived
   thread answered `200` with the new name (a Chinese name kept as sent).
+- **A bot's own message opens its archived thread again** — read 2026-10-07 off the
+  owner's server, Koloft 0.32.3, REST `GET` only: of 29 bot-made threads, 6 were open
+  although Koloft had archived them; in each the last message was the bot's "closed"
+  card, and the thread's `thread_metadata.archive_timestamp` (when it last changed
+  between archived and open) lay within 0.12 s of that card's own time. The archive
+  `PATCH` and the card `POST` had been sent at once, in two separate queues, so the
+  archive landed first. Nothing else posted there afterwards.
+- **Deleting a thread needs Manage Threads** (bit 34, `1 << 34`): the bot role the
+  invite gave (`101440`) lacks it, and so did the server's `@everyone`; `DELETE
+  /channels/{thread}` without it answered 403 (above). Measured 2026-10-07 on the
+  owner's server once the owner had turned Manage Threads on for the bot's role by
+  hand (role permissions then `17179970624`), on 26 of the bot's own public threads,
+  archived and open: `DELETE /channels/{thread}` answered `200` each time; the
+  thread's opener message in the parent channel was still there afterwards (`GET
+  /channels/{parent}/messages/{thread}` answered 200), and `DELETE` on it answered
+  `204`. Whether re-inviting the bot with a link that asks for more permissions
+  updates an existing bot role was not probed.
+- **Showing a state that keeps changing** — measured 2026-10-08 with the same bot on
+  the owner's server, REST only, in a channel no conductor is bound to, with a Components
+  V2 card (`flags` `1 << 15 | 1 << 12`) that had a thread on it:
+  - `PATCH /channels/{channel}/messages/{opener}` with new `components` (another
+    `accent_color`, another header) answered 200, with or without `flags` in the body.
+    Edits share one limit per channel across its messages: two cards edited in turn
+    answered 200 five times, then 429 (`retry_after` 0.3–0.6 s), the bucket filling
+    again in about 5 s. Edits have a different bucket (`x-ratelimit-bucket`) from posts
+    to the same channel.
+  - Editing the opener of an archived thread answered 200 and left the thread archived
+    (`thread_metadata.archived` still `true`); editing a message inside the archived
+    thread answered 400, code 50083 "Thread is archived".
+  - A `<t:{unix seconds}:R>` in a text display was stored as sent. That the app shows
+    it as a relative time ("3 minutes ago") that counts up by itself is from Discord's
+    docs, not seen on a phone.
+  - `POST /channels/{id}/typing` answered 204, five per channel per about 5 s, then
+    429 (`retry_after` 0.3); a thread and its parent count apart. It answered 204 on an
+    archived thread too, and the thread stayed archived. That it shows for about 10 s,
+    stops when the bot posts, and sends no push is from Discord's docs.
+  - Reactions on one message: one per 0.25 s (`x-ratelimit-limit` 1); every other
+    call of a burst answered 429. A reaction on an archived thread's opener left it
+    archived.
+  - `PUT /channels/{thread}/messages/pins/{id}` answered 403 (50013) with the bot
+    role the invite gives.
+  - That an edit or a typing call rings the phone or marks the channel unread was not
+    checked (Discord's docs say neither does).
 - Also from Discord's docs, not measured here: a message's `content` holds at most 2000
   characters; one message carries at most 10 files and one request at most 25 MiB; a
   bot's file may be at most 20 MiB (changelog 2025-09-03); adding or removing a reaction
@@ -1171,3 +1275,18 @@ Gateway (the live connection that pushes events):
   body; `GET /channels/{id}/messages?after=<id>&limit=<1–100>` lists the messages after
   that id, and an attachment in `MESSAGE_CREATE` carries `filename`, `size` and a `url`
   that needs no token.
+
+## §40 Node `fs.watch` on a macOS directory
+
+- **Every event names the file, and appending to a file already there fires one too.**
+  Measured 2026-10-07 on macOS 27.0.1 (APFS) with a Node script, once under Node 24.13 and once under
+  Electron 43's own Node 24.21 (`ELECTRON_RUN_AS_NODE=1`). It watched a directory without
+  `recursive` and appended to a file already in it, created, renamed and deleted files,
+  and wrote a file inside a subdirectory. Each step gave events whose `filename` was the
+  touched file's base name (a rename gave both the old and the new name). Twenty quick
+  appends to one file were folded into a single event.
+- **The event type cannot tell an append from a create or a delete.** Under Node every
+  step reported `rename`, appends included; under Electron the twenty quick appends
+  reported `change` and the single ones `rename`. A watcher that must know what
+  happened has to look at the file itself.
+- A write inside a subdirectory gave no event at all; creating the subdirectory gave one.

@@ -12,8 +12,10 @@ import {
   baseUnresolved,
   buildEntries,
   classifyKind,
+  commentBlocked,
   emptyStreamMessage,
   groupByDir,
+  hunkPrompt,
   isBigDiff,
   mergeSections,
   nearViewport,
@@ -322,6 +324,57 @@ describe('writtenPaths', () => {
     } as unknown as SessionInfo
     expect([...writtenPaths(session)]).toEqual(['/w/a.ts'])
     expect(writtenPaths(null).size).toBe(0)
+  })
+})
+
+describe('hunkPrompt — what a ✎ comment puts in the session’s input box', () => {
+  const hunk = '@@ -1,2 +1,2 @@ greet()\n-  return "hi"\n+  return "hello"\n'
+
+  it('pastes the path, then the hunk with its @@ line in a diff fence, then a blank line; the note is typed after it, not pasted, so claude takes it as the person’s own words', () => {
+    expect(hunkPrompt('src/greet.ts', hunk, '  keep "hi"\n  and say why  ')).toEqual({
+      pasted: [
+        'src/greet.ts',
+        '```diff',
+        '@@ -1,2 +1,2 @@ greet()',
+        '-  return "hi"',
+        '+  return "hello"',
+        '```',
+        '',
+        ''
+      ].join('\n'),
+      typed: 'keep "hi"\n  and say why'
+    })
+  })
+
+  it('types nothing when the note is blank', () => {
+    expect(hunkPrompt('a.md', '@@ -1 +1 @@\n-a\n+b', ' \n ')).toEqual({
+      pasted: 'a.md\n```diff\n@@ -1 +1 @@\n-a\n+b\n```\n\n',
+      typed: ''
+    })
+  })
+
+  it('fences with more backticks than the longest run in the hunk, so a ``` context line cannot close it', () => {
+    const withFences = '@@ -1,3 +1,3 @@\n ```ts\n-a\n+b\n ````'
+    const out = hunkPrompt('README.md', withFences, 'note').pasted.split('\n')
+    expect(out[1]).toBe('`````diff')
+    expect(out[out.length - 3]).toBe('`````')
+  })
+})
+
+describe('commentBlocked — a comment only goes to a running session that is not asking for an approval', () => {
+  const session = (over: Partial<SessionInfo>): SessionInfo =>
+    ({ tabId: 't', alive: true, status: 'idle', ...over }) as SessionInfo
+
+  it('takes one while the session is idle, waiting or working', () => {
+    expect(commentBlocked(session({ status: 'idle' }))).toBeNull()
+    expect(commentBlocked(session({ status: 'waiting' }))).toBeNull()
+    expect(commentBlocked(session({ status: 'working' }))).toBeNull()
+  })
+
+  it('refuses one while an approval is up, or once the session has ended or there is none', () => {
+    expect(commentBlocked(session({ status: 'approval' }))).toBe(CHANGES_MSG.commentApproval)
+    expect(commentBlocked(session({ alive: false }))).toBe(CHANGES_MSG.commentNoSession)
+    expect(commentBlocked(null)).toBe(CHANGES_MSG.commentNoSession)
   })
 })
 

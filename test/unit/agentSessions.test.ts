@@ -3,7 +3,6 @@ import os from 'os'
 import path from 'path'
 import { describe, expect, it, vi } from 'vitest'
 import {
-  handoverPreamble,
   NOT_IN_YOUR_WORKSPACE,
   ONLY_THE_GLOBAL_CONDUCTOR,
   ownerSays,
@@ -16,6 +15,7 @@ import {
   type Target
 } from '../../src/main/agentSessions'
 import { crossSessionLine } from '../../src/main/crossSessionMessage'
+import { handoverPreamble } from '../../src/main/handover'
 import { StartedSessions } from '../../src/main/startedSessions'
 import { EXIT_USAGE, type AgentReply } from '../../src/main/agentRequests'
 import type {
@@ -68,6 +68,7 @@ interface Conducting {
   ready?: (tabId: string, turnEnded: boolean, ms: number) => boolean | Promise<boolean>
   bypass?: string[]
   answer?: (tabId: string, reply: string) => string | undefined
+  titleReply?: string | null
 }
 
 interface Started {
@@ -125,6 +126,7 @@ function harness(
       launched.push(spec)
       return 'new-tab'
     },
+    titleModel: async () => conducting.titleReply ?? null,
     queue: async (tabId, text, clientId) => {
       queued.push({ tabId, text, clientId })
     },
@@ -324,13 +326,12 @@ describe('koloft session list', () => {
 })
 
 describe('koloft session new', () => {
-  it('a Claude caller starts a named Claude sibling in its workspace whose first message says who to report to', async () => {
+  it('a Claude caller starts a named Claude sibling in its workspace whose first message says who to report to, since the transcript replays that message on every resume while a SessionStart note lives only as long as its tab', async () => {
     const { verb, launched } = harness([session('me', 'claude')], { 'me-session': 'planner' })
     const reply = await verb(['new', '-w', 'links', '--', 'Fix the links.'], from('me'))
     expect(launched).toHaveLength(1)
     const [spec] = launched
     expect(spec).toMatchObject({ kind: 'claude', cwd: WS, worktree: 'links' })
-    expect(spec.name).toMatch(/^helper-/)
     expect(
       spec.firstPrompt?.startsWith(
         handoverPreamble({ name: 'planner', id: 'me-session' }, 'claude')
@@ -340,18 +341,51 @@ describe('koloft session new', () => {
     expect(reply.text).toContain(`"${spec.name}"`)
   })
 
-  it('a Claude caller with no registry name hands over under its Koloft title', async () => {
+  it('a Claude sibling with no --name is named by the title model from its task, since --name stops Claude titling the session itself and the name is what every surface shows', async () => {
+    const { verb, launched } = harness([session('me', 'claude')], {}, [], {
+      titleReply: '「修复侧栏标题」\n'
+    })
+    const reply = await verb(
+      ['new', '--', '修一个问题并发 PR：侧栏标题太长。\n\n背景：…'],
+      from('me')
+    )
+    expect(launched[0].name).toBe('修复侧栏标题')
+    expect(reply.text).toContain('"修复侧栏标题"')
+  })
+
+  it('a sibling whose title model gives nothing is named by the first line of its task, without the lines after it', async () => {
     const { verb, launched } = harness([session('me', 'claude')])
+    await verb(['new', '--', '让 agent 开的会话标题更好读\n背景：PR #357 之后…'], from('me'))
+    expect(launched[0].name).toBe('让 agent 开的会话标题更好读')
+  })
+
+  it('a made-up name already shown by a live session gets a number, so a message to it reaches one session', async () => {
+    const { verb, launched } = harness(
+      [session('me', 'claude'), session('rel', 'claude', { title: '发布新版本' })],
+      {},
+      [],
+      { titleReply: '发布新版本' }
+    )
+    await verb(['new', '--', '发一个新版本。'], from('me'))
+    expect(launched[0].name).toBe('发布新版本 2')
+  })
+
+  it('a Claude caller with no registry name hands over under its Koloft title, and its own --name is kept', async () => {
+    const { verb, launched } = harness([session('me', 'claude')], {}, [], { titleReply: 'other' })
     await verb(['new', '--name', 'docs-fixer', '--', 'go'], from('me'))
     expect(launched[0].name).toBe('docs-fixer')
     expect(launched[0].firstPrompt).toContain('"me title"')
   })
 
-  it('a Codex caller starts a Codex sibling told to report back to its thread id, and gets the tab id to reach it by', async () => {
+  it('a Codex caller starts a Codex sibling told, beside its first message, to report back to its thread id, so the task alone is what Codex names the thread by; the caller gets the tab id to reach it by', async () => {
     const { verb, launched } = harness([session('me', 'codex', { nativeSessionId: CODEX_THREAD })])
     const reply = await verb(['new', '--', 'Check the tests.'], from('me'))
-    expect(launched[0]).toMatchObject({ kind: 'codex', name: undefined })
-    expect(launched[0].firstPrompt).toContain(`koloft session send ${CODEX_THREAD}`)
+    expect(launched[0]).toMatchObject({
+      kind: 'codex',
+      name: undefined,
+      firstPrompt: 'Check the tests.'
+    })
+    expect(launched[0].role).toContain(`koloft session send ${CODEX_THREAD}`)
     expect(reply.text).toContain('new-tab')
   })
 
@@ -960,7 +994,7 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
       ['codex', OTHER_WS],
       ['claude', WS]
     ])
-    expect(launched[0].firstPrompt).toContain('koloft session send global-id')
+    expect(launched[0].role).toContain('koloft session send global-id')
     expect(launched[1].firstPrompt).toContain('"app-conductor" with your SendMessage tool')
     expect(started).toEqual([
       {

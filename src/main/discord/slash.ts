@@ -1,4 +1,4 @@
-import type { BackendId, SessionStatus } from '@shared/types'
+import type { BackendId } from '@shared/types'
 import type { Turn } from '@shared/turns'
 import { waitingForAnswer } from '@shared/slashCommands'
 import type { CommandOutput } from '../claudeCommandOutput'
@@ -30,7 +30,7 @@ export interface SlashTarget {
 export interface SlashDeps {
   backendOf(tabId: string): BackendId | undefined
   keyOf(tabId: string): string | undefined
-  status(tabId: string): SessionStatus | undefined
+  turnOver(tabId: string): boolean
   asking(tabId: string): boolean
   takesTyping(tabId: string): boolean
   panelOpen(tabId: string): Promise<boolean | undefined>
@@ -45,6 +45,7 @@ interface Pending {
   target: SlashTarget
   text: string
   channelId: string
+  typedAt: number
   keyBefore?: string
   outputs: CommandOutput[]
   worked: boolean
@@ -59,10 +60,6 @@ interface Pending {
 export function commandKeys(text: string, backend: BackendId | undefined): string[] {
   const typed = [text, CLOSE_THE_COMMAND_MENU, '\r']
   return backend === 'codex' ? [TO_LINE_END + CLEAR_TO_LINE_START, ...typed] : typed
-}
-
-function busy(status: SessionStatus | undefined): boolean {
-  return status === 'working' || status === 'approval'
 }
 
 function resultCard(p: Pending): Card | undefined {
@@ -144,6 +141,7 @@ export class SlashCommands {
       target,
       text,
       channelId,
+      typedAt: Date.now(),
       keyBefore: this.d.keyOf(tab),
       outputs: [],
       worked: false,
@@ -161,7 +159,7 @@ export class SlashCommands {
       !p.outputs.length &&
       !p.worked &&
       !p.newKey &&
-      !busy(this.d.status(tab))
+      this.d.turnOver(tab)
     if (!quiet()) return
     let panel = await this.d.panelOpen(tab)
     if (!quiet()) return
@@ -188,7 +186,7 @@ export class SlashCommands {
   private settleSoon(tab: string, p: Pending): void {
     clearTimeout(p.settle)
     p.settle = setTimeout(() => {
-      if (this.pending.get(tab) === p && !busy(this.d.status(tab))) this.finish(tab)
+      if (this.pending.get(tab) === p && this.d.turnOver(tab)) this.finish(tab)
     }, MORE_OUTPUT_SETTLES_MS)
   }
 
@@ -199,10 +197,10 @@ export class SlashCommands {
     this.settleSoon(tab, p)
   }
 
-  status(tab: string, next: SessionStatus): void {
+  turnOver(tab: string, over: boolean): void {
     const p = this.pending.get(tab)
     if (!p) return
-    if (busy(next)) {
+    if (!over) {
       p.worked = true
       clearTimeout(p.settle)
     } else if (p.worked) this.settleSoon(tab, p)
@@ -210,7 +208,7 @@ export class SlashCommands {
 
   turnEnded(tab: string, turn: Turn): void {
     const p = this.pending.get(tab)
-    if (p && turn.reply.trim()) p.reply = turn.reply
+    if (p && turn.reply.trim() && turn.at >= p.typedAt) p.reply = turn.reply
   }
 
   bound(tab: string, key: string): void {

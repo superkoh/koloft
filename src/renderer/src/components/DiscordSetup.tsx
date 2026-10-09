@@ -6,7 +6,7 @@ import { useStore } from '../store'
 import { SETUP_STEPS, useDiscordStatus } from '../discordStatus'
 
 const DEVELOPER_PORTAL = 'https://discord.com/developers/applications'
-const INVITE_PERMISSIONS = 309237746752
+const INVITE_PERMISSIONS = 326417615936
 
 function inviteLink(applicationId: string): string {
   return `https://discord.com/oauth2/authorize?client_id=${applicationId}&permissions=${INVITE_PERMISSIONS}&scope=bot`
@@ -106,9 +106,10 @@ const PAGES: Page[] = [
     list: (
       <Steps
         items={[
-          'Click **Invite the bot** below. It opens Discord\'s "add an app" page with the right permissions already chosen (see channels, send messages, attach files, read message history, add reactions, start threads and talk in them).',
+          'Click **Invite the bot** below. It opens Discord\'s "add an app" page with the right permissions already chosen (see channels, send messages, attach files, read message history, add reactions, start threads, talk in them and delete them).',
           'Pick your server from **Add to server**, click **Continue**, then **Authorize**, and pass the "I am human" check.',
-          "In your server's member list you now see **Koloft** with a BOT tag. It shows online while Koloft runs on your Mac."
+          "In your server's member list you now see **Koloft** with a BOT tag. It shows online while Koloft runs on your Mac.",
+          "Added the bot before? Its role does not gain new permissions by itself: open **Server Settings ▸ Roles**, pick the bot's role (named after the bot), and under **Permissions** turn on **Manage Threads**, so Koloft can delete a session's thread once the session leaves the sidebar."
         ]}
       />
     )

@@ -1,45 +1,25 @@
-import fs from 'fs'
-import { execFileSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
 import { defaultControlDir } from '../../src/main/remote/ssh'
 import { addWorkspace, openMenu, startSessionIn, waitBooted, wsGroup } from './helpers/p1'
 import {
+  HAVE_LINUX_CLAUDE,
+  NEEDS_LINUX_CLAUDE,
   dockerAvailable,
   installLabSsh,
-  installOnTarget,
   remoteKeyFor,
-  runOnTarget,
   startSshLab,
   stopSshLab,
+  transcriptOnTarget,
+  useRealClaudeOnTheMachine,
   type SshLab
 } from './helpers/docker'
-import { startFakeDiscord, type FakeDiscord, type FakePost } from './helpers/fakeDiscord'
-
-function claudeTokenFromKeychain(): string {
-  const account = process.env.KOLOFT_SMOKE_ACCOUNT
-  if (!account) return ''
-  const service = process.env.KOLOFT_SMOKE_KEYCHAIN_SERVICE ?? 'koloft-claude-oauth'
-  try {
-    return execFileSync('security', ['find-generic-password', '-s', service, '-a', account, '-w'], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore']
-    }).replace(/\n$/, '')
-  } catch {
-    return ''
-  }
-}
-
-const LINUX_CLAUDE = process.env.KOLOFT_SMOKE_CLAUDE_LINUX ?? ''
-const CLAUDE_TOKEN = process.env.KOLOFT_SMOKE_OAUTH_TOKEN || claudeTokenFromKeychain()
-const HAVE_LINUX_CLAUDE = fs.existsSync(LINUX_CLAUDE) && !!CLAUDE_TOKEN
+import { openerNow, startFakeDiscord, type FakeDiscord, type FakePost } from './helpers/fakeDiscord'
 
 const OWNER = { id: '555', username: 'letian' }
 const CHANNEL = '222'
 const CHANNEL_NAME = 'koloft-all'
-const REMOTE_HOME = '/home/kuser'
-const REMOTE_WORKSPACE = `${REMOTE_HOME}/proj`
 const BACKGROUND_CONNECT_MS = 45_000
 const A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS = 60_000
 const A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS = 180_000
@@ -120,14 +100,6 @@ async function allTerminals(page: Page): Promise<string> {
     .catch(() => '(no terminals)')
 }
 
-function transcriptOnTarget(lab: SshLab, sessionId: string): string {
-  try {
-    return runOnTarget(lab, 'kuser', `cat .claude/projects/*/${sessionId}.jsonl`)
-  } catch {
-    return ''
-  }
-}
-
 interface ConductorLab {
   page: Page
   lab: SshLab
@@ -167,32 +139,6 @@ async function withRemoteWorkspaceConductor(
     stopSshLab(lab, defaultControlDir())
     await fake.close()
   }
-}
-
-function useRealClaudeOnTheMachine(env: E2EEnv, lab: SshLab): void {
-  installOnTarget(lab, LINUX_CLAUDE, '/usr/local/bin/claude')
-  // CC§9 CC§10
-  runOnTarget(
-    lab,
-    'kuser',
-    `printf '%s' ${JSON.stringify(
-      JSON.stringify({
-        hasCompletedOnboarding: true,
-        bypassPermissionsModeAccepted: true,
-        projects: { [REMOTE_WORKSPACE]: { hasTrustDialogAccepted: true } }
-      })
-    )} > .claude.json`
-  )
-  seedSettings(env, {
-    multiAccount: true,
-    skipPermissions: true,
-    accounts: [
-      { name: 'alpha', kind: 'oauth', enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }
-    ]
-  })
-  const keychain = JSON.parse(fs.readFileSync(env.keychainFile, 'utf8')) as Record<string, unknown>
-  keychain['koloft-dev-claude-oauth'] = { alpha: CLAUDE_TOKEN }
-  fs.writeFileSync(env.keychainFile, JSON.stringify(keychain))
 }
 
 async function typeIntoRemote(page: Page, tabId: string, text: string): Promise<void> {
@@ -238,6 +184,10 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
           .toBeTruthy()
         const thread = question()!.channelId
         expect(fake.threads.map((t) => t.id)).toContain(thread)
+        const opener = (): string | undefined => openerNow(fake, CHANNEL, thread)
+        await expect
+          .poll(opener, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+          .toMatch(/^❓ \*\*.+\*\* · needs you, asked <t:\d+:R>\n-# .+ · Claude$/)
         fake.press(OWNER, question()!.buttons![1], thread)
         await expect
           .poll(transcript, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
@@ -256,6 +206,10 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
             timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS
           })
           .toContain('finished.\nAnswer to: [Discord] typed in the thread')
+        expect(fake.typing).toContain(thread)
+        await expect
+          .poll(opener, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+          .toMatch(/^✅ \*\*.+\*\* · turn done <t:\d+:R>/)
       }
     )
   })
@@ -289,10 +243,7 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
   test('E-SSH-C2: the same with a REAL claude on the machine (opt-in, spends real money): a typed message is answered, and its own question is answered by koloft session answer', async ({
     env
   }) => {
-    test.skip(
-      !HAVE_LINUX_CLAUDE,
-      'set KOLOFT_SMOKE_CLAUDE_LINUX (a Linux claude binary for the lab machine’s CPU) and KOLOFT_SMOKE_OAUTH_TOKEN or KOLOFT_SMOKE_ACCOUNT'
-    )
+    test.skip(!HAVE_LINUX_CLAUDE, NEEDS_LINUX_CLAUDE)
     test.setTimeout(5 * A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS + 180_000)
     await withRemoteWorkspaceConductor(
       env,

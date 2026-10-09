@@ -7,6 +7,8 @@ export const DISCORD_API_URL = 'https://discord.com/api/v10'
 const UNREACHABLE_RETRY_MS = 30_000
 const LOCK_RETRY_MS = 30_000
 const TEXT_CHANNEL = 0
+const NOT_FOUND = 404
+const MISSING_PERMISSIONS = 403
 const FILES_PER_MESSAGE = 10
 const BYTES_PER_MESSAGE = 25 * 1024 * 1024
 export const BYTES_PER_FILE = 20 * 1024 * 1024
@@ -363,6 +365,17 @@ export class DiscordLink {
   }
 
   // PLATFORM§39
+  async editCard(channelId: string, messageId: string, card: Card): Promise<void> {
+    const [message] = cardMessages(card)
+    await this.api().request('PATCH', `/channels/${channelId}/messages/${messageId}`, message)
+  }
+
+  // PLATFORM§39
+  async typing(channelId: string): Promise<void> {
+    await this.api().request('POST', `/channels/${channelId}/typing`)
+  }
+
+  // PLATFORM§39
   async startThread(channelId: string, messageId: string, name: string): Promise<string> {
     const thread = await this.api().request<{ id: string }>(
       'POST',
@@ -388,6 +401,26 @@ export class DiscordLink {
 
   archiveThread(threadId: string): Promise<unknown> {
     return this.api().request('PATCH', `/channels/${threadId}`, { archived: true })
+  }
+
+  // PLATFORM§39
+  async deleteThread(channelId: string, threadId: string): Promise<void> {
+    await this.starting
+    await this.api().sent(`/channels/${threadId}/messages`)
+    await this.api()
+      .request('DELETE', `/channels/${threadId}`)
+      .catch((error: unknown) => {
+        if (!(error instanceof DiscordHttpError)) throw error
+        if (error.status === NOT_FOUND) return
+        if (error.status === MISSING_PERMISSIONS)
+          throw new Error(
+            `${error.message}. Give the bot the Manage Threads permission in the server’s settings.`
+          )
+        throw error
+      })
+    await this.api()
+      .request('DELETE', `/channels/${channelId}/messages/${threadId}`)
+      .catch(() => undefined)
   }
 
   private async postMessage(channelId: string, body: unknown): Promise<unknown> {
