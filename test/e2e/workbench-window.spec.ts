@@ -357,4 +357,93 @@ test.describe('Workbench window: the whole Workbench moves to a window of its ow
       await quitAndClose(app)
     }
   })
+
+  test('WB-W09: in the Workbench window a page’s dialog, the downloads list and a file row’s menu open in that window and close with Esc there', async ({
+    app,
+    page,
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const server = await startEchoServer()
+    try {
+      const fx = setupChangeFixture(env.workspaces.a)
+      fx.modifyTracked(1)
+      await startSessionIn(page, 'ws-a')
+      await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })
+      const aux = await popOut(app, page)
+
+      await openViaAgent(page, server.url('/dialogs'))
+      await aux.locator(BROWSER.tabAgent).click()
+      const guest = await guestByUrl(app, '/dialogs')
+      const alerted = guest.locator('#do-alert').click()
+      const modal = aux.locator(BROWSER.modal)
+      await expect(modal).toContainText('koloft alert', { timeout: 30_000 })
+      expect(await page.locator(BROWSER.modal).count()).toBe(0)
+      await modal.locator('button').last().click()
+      await alerted
+      await expect(modal).toHaveCount(0)
+
+      await guest.evaluate(() => {
+        location.href = '/download?name=popped-download.txt'
+      })
+      await aux.locator(BROWSER.downloadButton).click({ timeout: 30_000 })
+      await expect(aux.locator(BROWSER.downloadRow)).toContainText('popped-download.txt')
+      expect(await page.locator(BROWSER.downloadPanel).count()).toBe(0)
+      await aux.locator(BROWSER.downloadPanel).press('Escape')
+      await expect(aux.locator(BROWSER.downloadPanel)).toHaveCount(0)
+
+      await showFilesView(aux, 'Changes')
+      await aux.locator(CHANGE_ROW).first().click({ button: 'right' })
+      const menu = aux.locator('.ft-ctx')
+      await expect(menu).toBeVisible({ timeout: 10_000 })
+      expect(await page.locator('.ft-ctx').count()).toBe(0)
+      await menu.press('Escape')
+      await expect(menu).toHaveCount(0)
+    } finally {
+      await server.close()
+    }
+  })
+
+  test('WB-W10: the Workbench window reopens where it was left, at the size it was left', async ({
+    env
+  }) => {
+    let app = await launchApp(env)
+    let page = await app.firstWindow()
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })
+    await popOut(app, page)
+    const placed = await app.evaluate(({ BrowserWindow, screen }) => {
+      const area = screen.getPrimaryDisplay().workArea
+      const b = { x: area.x + 40, y: area.y + 40, width: 820, height: 640 }
+      BrowserWindow.getAllWindows()
+        .find((w) => w.webContents.getURL() === 'about:blank')
+        ?.setBounds(b)
+      return b
+    })
+    const stateFile = path.join(env.userData, 'window-state.json')
+    await expect
+      .poll(() => {
+        try {
+          return JSON.parse(fs.readFileSync(stateFile, 'utf8')).workbench?.bounds
+        } catch {
+          return null
+        }
+      })
+      .toEqual(placed)
+    await quitAndClose(app)
+
+    app = await launchApp(env)
+    page = await app.firstWindow()
+    await waitBooted(page)
+    await workbenchWindowPage(app)
+    expect(
+      await app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()
+          .find((w) => w.webContents.getURL() === 'about:blank')
+          ?.getBounds()
+      )
+    ).toEqual(placed)
+    await quitAndClose(app)
+  })
 })
