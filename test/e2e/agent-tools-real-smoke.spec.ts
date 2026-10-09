@@ -749,6 +749,59 @@ test.describe('GitHub button ▸ Send failing checks with the REAL gh, claude an
   })
 })
 
+const GOAL_THAT_WAITS_ON_A_BACKGROUND_TASK =
+  'Use your Bash tool with run_in_background set to true to run: sleep 8; echo BGDONE . Do not wait or poll for it; end your turn right away. When its completion notice arrives, reply with exactly the word DONE.'
+const TITLE_MAX = 60
+const THE_TRACKER_HAS_READ_THE_LAST_LINES_WITHIN_MS = 3_000
+
+// CC§8
+function repliedAfterATaskNoticeWrittenAsAUserRecord(transcript: string): boolean {
+  const lines = transcript.split('\n')
+  const notice = lines.findIndex(
+    (l) => /"type":"user"/.test(l) && /"kind":"task-notification"/.test(l)
+  )
+  return notice >= 0 && claudeRepliesIn(lines.slice(notice + 1).join('\n')).includes('DONE')
+}
+
+// CC§2 CC§8
+test.describe('a REAL Claude Code session opened by /goal: an opt-in case; it spends real money', () => {
+  test('a background task’s notice never becomes the title: the goal titles the live row, and the row read back from disk after a relaunch', async ({
+    env
+  }) => {
+    test.skip(
+      !HAVE_REAL_CLAUDE,
+      'set KOLOFT_SMOKE_CLAUDE (absolute path of a real claude binary) and KOLOFT_SMOKE_OAUTH_TOKEN or KOLOFT_SMOKE_ACCOUNT (a Settings ▸ Accounts name, read off the Keychain)'
+    )
+    test.setTimeout(A_REAL_MODEL_TURN_MS + 180_000)
+    await inARealWorktreeSession(env, 'default', useRealClaude, [], async ({ page, rows }) => {
+      await ask(page, rows, `/goal ${GOAL_THAT_WAITS_ON_A_BACKGROUND_TASK}`)
+      const sessionId = (await boundSessionId(page, await rows.getAttribute('data-tab-id'))) ?? ''
+      await expect
+        .poll(() => repliedAfterATaskNoticeWrittenAsAUserRecord(claudeTranscript(env, sessionId)), {
+          timeout: A_REAL_MODEL_TURN_MS
+        })
+        .toBe(true)
+      await page.waitForTimeout(THE_TRACKER_HAS_READ_THE_LAST_LINES_WITHIN_MS)
+      await expect(rows.locator('.ws-tab-title')).toHaveText(
+        GOAL_THAT_WAITS_ON_A_BACKGROUND_TASK.slice(0, TITLE_MAX)
+      )
+    })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      const row = wsRows(page, 'repo')
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      await expect(row.locator('.ws-tab-title')).toHaveText(
+        `${GOAL_THAT_WAITS_ON_A_BACKGROUND_TASK.slice(0, TITLE_MAX)}…`
+      )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+})
+
 const IGNORED_FILES_THAT_TAKE_CLAUDE_SECONDS_TO_DELETE = { dirs: 2500, filesEach: 100 }
 const A_SLASH_COMMAND_MENU_SETTLES_MS = 1_000
 
