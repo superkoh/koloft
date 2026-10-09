@@ -6,6 +6,7 @@ import { installCodex, installGhForWorkspaceA, seedSettings, type E2EEnv } from 
 import {
   newSessionInWith,
   readCalls,
+  setNextSessionTitle,
   settingsOnDisk,
   startSessionIn,
   terminalText,
@@ -305,15 +306,18 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     }
   })
 
-  test('the conductor sends to a local Claude session through its message socket as the owner’s words, stops it — the session stays on the sidebar, so its thread is only archived, after its "closed" card — and resumes it with a first message; the session is touched', async ({
+  test('the conductor sends to a local Claude session through its message socket as the owner’s words, stops it — the session stays on the sidebar, so its thread is only archived, after its "closed" card — and resumes it with a first message, each time naming it by its title with spaces and no quotes; the session is touched', async ({
     env
   }) => {
     seedConductor(env, 'claude')
     const fake = await startFakeDiscord(env)
     const { app, page } = await connected(env, fake)
     try {
+      const title = '更新 PR415 并合并'
+      setNextSessionTitle(env, title)
       await startSessionIn(page, 'ws-a')
       const managed = (await waitForCalls(env, 1))[0].sessionId
+      await expect(wsRows(page, 'ws-a')).toContainText(title)
       const peerLog = path.join(env.home, 'fake-claude-peer.jsonl')
       const peerLines = (): string[] =>
         fs.existsSync(peerLog) ? fs.readFileSync(peerLog, 'utf8').split('\n').filter(Boolean) : []
@@ -326,14 +330,14 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
           }
         })
 
-      fake.say(OWNER, `/koloft session send ${managed} fix the tests`)
+      fake.say(OWNER, `/koloft session send ${title} fix the tests`)
       await expect
         .poll(peerLines, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toEqual([sent('fix the tests')])
       await expect.poll(() => bindingOnDisk(env)?.touched).toEqual([managed])
       await expect.poll(() => notices(fake)).toEqual([expect.stringMatching(/^🔔 .+ finished\.$/)])
 
-      fake.say(OWNER, `/koloft session stop ${managed}`)
+      fake.say(OWNER, `/koloft session stop ${title}`)
       await expect
         .poll(() => notices(fake))
         .toEqual([expect.stringMatching(/^🔔 /), expect.stringMatching(/^⏹ .+ closed\.$/)])
@@ -344,7 +348,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
         .toMatch(/^⏹ \*\*.+\*\* · closed <t:\d+:R>\n-# ws-a · Claude$/)
       expect(fake.deleted).toEqual([])
 
-      fake.say(OWNER, `/koloft session resume ${managed} -- carry on`)
+      fake.say(OWNER, `/koloft session resume ${title} -- carry on`)
       await expect
         .poll(peerLines, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toEqual([sent('fix the tests'), sent('carry on')])
@@ -779,6 +783,42 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
             .poll(() => terminalText(page, conductorTab))
             .toMatch(/koloft: usage: koloft gh pr view[\s\S]*\{"state":"MERGED"\}/)
         }
+      } finally {
+        await quitAndClose(app)
+        await fake.close()
+      }
+    })
+
+    test(`a ${backend} conductor opens a GitHub issue through koloft gh: Koloft adds the workspace’s repository, and reads --body-file only from the conductor’s own folder`, async ({
+      env
+    }) => {
+      if (backend === 'codex') installCodex(env)
+      seedConductor(env, backend)
+      const ghLog = installGhForWorkspaceA(env, 'https://github.com/acme/app/issues/7')
+      const ghSaid = (): string => (fs.existsSync(ghLog) ? fs.readFileSync(ghLog, 'utf8') : '')
+      const fake = await startFakeDiscord(env)
+      const { app } = await connected(env, fake)
+      try {
+        fake.say(
+          OWNER,
+          '/koloft gh issue create --title "Login stays blank" --body "- open /login"'
+        )
+        await expect
+          .poll(ghSaid, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+          .toBe('issue create --title=Login stays blank --body=- open /login --repo acme/app\n')
+
+        const conductors = path.join(env.userData, 'conductors')
+        const ownFolder = path.join(conductors, fs.readdirSync(conductors)[0])
+        fs.writeFileSync(path.join(ownFolder, 'body.md'), 'Steps: open /login.')
+        fs.writeFileSync(path.join(env.home, 'secret.txt'), 'not for GitHub')
+        fake.say(OWNER, `/koloft gh issue create --title "Leak" --body-file ${env.home}/secret.txt`)
+        fake.say(OWNER, '/koloft gh issue create --title "From a file" --body-file body.md')
+        await expect
+          .poll(() => ghSaid().split('\n')[1], { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+          .toBe(
+            `issue create --title=From a file --body-file=${fs.realpathSync(path.join(ownFolder, 'body.md'))} --repo acme/app`
+          )
+        expect(ghSaid()).not.toContain('Leak')
       } finally {
         await quitAndClose(app)
         await fake.close()

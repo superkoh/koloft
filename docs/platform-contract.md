@@ -1013,6 +1013,12 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   (`git ls-remote https://github.com/cli/cli refs/pull/14629/head refs/pull/14580/head`
   listed both). (2026-10-09, gh 2.89.0, by hand against superkoh/koloft and cli/cli, and
   an empty `GH_CONFIG_DIR` with a scratch `HOME`.)
+- **`gh issue create` with no terminal never prompts**: missing `--title` it exits 1 at
+  once with "must provide `--title` and `--body` when not running interactively" and
+  creates nothing. A flag given as `--flag=value` keeps a value that starts with `-`
+  (`gh issue list --search=-label:bug` listed issues without the label). What a
+  successful create prints is not probed (no test repository was used). (2026-10-09, gh
+  2.89.0, by hand against superkoh/koloft, stdin from `/dev/null`.)
 
 ## §33 ssh
 
