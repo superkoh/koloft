@@ -72,6 +72,7 @@ import { unexpectedExitNotice, unexpectedExitWanted } from './closeSession'
 import { requestCloseTab } from './closeFlow'
 import {
   allDirty,
+  askAboutLeftEdits,
   discardAll,
   flushNotes,
   labelPaths,
@@ -231,7 +232,6 @@ export default function App(): JSX.Element {
   const workbench = useStore((s) => s.workbench)
   const workbenchOpen = useStore((s) => s.workbenchOpen)
   const workbenchFull = useStore((s) => s.workbenchFull)
-  const workbenchLoad = useStore((s) => s.workbenchLoad)
   const sidebarWidth = useStore((s) => s.sidebarWidth)
   const workspaceRows = useStore((s) => s.workspaceRows)
   const toast = useStore((s) => s.toast)
@@ -848,7 +848,12 @@ export default function App(): JSX.Element {
   }, [])
 
   useEffect(() => {
-    return window.api.tabs.onKilledByMain((tabId) => useStore.getState().removeTab(tabId))
+    return window.api.tabs.onKilledByMain((tabId) => {
+      const st = useStore.getState()
+      const tab = st.tabs.find((t) => t.id === tabId)
+      if (tab) askAboutLeftEdits(tab)
+      st.removeTab(tabId)
+    })
   }, [])
 
   useEffect(() => {
@@ -877,6 +882,7 @@ export default function App(): JSX.Element {
       if (unexpectedExitWanted(tab, e)) {
         useStore.getState().showToast(unexpectedExitNotice(e, tab.kind))
       }
+      if (tab) askAboutLeftEdits(tab)
       closeTab(e.id)
     })
     return off
@@ -1524,7 +1530,6 @@ export default function App(): JSX.Element {
                 liveTabs={liveTabs}
                 visible={panelOnScreen}
                 full={panelFull}
-                load={workbenchLoad?.ownerTabId === panelTab ? workbenchLoad : null}
                 command={panelCmd}
                 dialog={browserDialog}
                 treeRoot={fileTreeRoot}
@@ -1546,6 +1551,7 @@ export default function App(): JSX.Element {
                   if (workbenchFull) setWorkbenchFull(false)
                   else returnFocus()
                 }}
+                onReturnFocus={returnFocus}
                 pinned={cdpAttached}
                 tabForSession={(sid) => tabForSession(useStore.getState(), sid)}
                 cdpOps={cdpOps}

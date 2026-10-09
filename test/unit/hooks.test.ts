@@ -18,7 +18,8 @@ import {
   hookSettings,
   writeConductorMarker,
   removeConductorMarker,
-  markAnswerable
+  markAnswerable,
+  REPLY_LANGUAGE_REMINDER
 } from '../../src/main/hooks'
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/paths'
 
@@ -48,13 +49,14 @@ function fire(
   event: string,
   payload: unknown,
   extraEnv?: Record<string, string>
-): void {
+): string {
   const res = spawnSync(hookScript, [regDir, tab, event], {
     input: JSON.stringify(payload),
     encoding: 'utf8',
     env: { ...process.env, ...extraEnv, PATH: `${stubBin}:${process.env.PATH}` }
   })
   if (res.status !== 0) throw new Error(`hook exited ${res.status}: ${res.stderr}`)
+  return res.stdout
 }
 const readReg = (name: string): Record<string, string> =>
   JSON.parse(fs.readFileSync(path.join(regDir, name), 'utf8'))
@@ -399,6 +401,19 @@ describe('injected hook script', () => {
     expect(readStatusLog('tabH')[0].message).toContain('permission')
   })
 
+  // CC§17
+  it('every prompt hands Claude the reply-language reminder; Stop and Notification print nothing', () => {
+    const out = fire('tabLang', 'prompt', { hook_event_name: 'UserPromptSubmit', prompt: '你好' })
+    expect(JSON.parse(out)).toEqual({
+      hookSpecificOutput: {
+        hookEventName: 'UserPromptSubmit',
+        additionalContext: REPLY_LANGUAGE_REMINDER
+      }
+    })
+    expect(fire('tabLang', 'stop', { hook_event_name: 'Stop' })).toBe('')
+    expect(fire('tabLang', 'notify', { message: 'Claude is waiting for your input' })).toBe('')
+  })
+
   it('run-state reports APPEND — a whole turn survives, not just its last edge', () => {
     fire('tabT', 'prompt', { hook_event_name: 'UserPromptSubmit' })
     fire('tabT', 'stop', { hook_event_name: 'Stop' })
@@ -442,6 +457,107 @@ describe('injected hook script', () => {
       removeConductorMarker(regDir, 'tabC')
       expect(startOutput('tabC', 'startup')).toBe('')
     })
+
+    type Hooks = Record<string, { matcher?: string; hooks: { command: string }[] }[]>
+    const hooksOf = (conductor: boolean): Hooks =>
+      JSON.parse(
+        fs.readFileSync(
+          writeTabHookSettings(setupHooks(noPeerInstance), 'tabG', undefined, true, conductor),
+          'utf8'
+        )
+      ).hooks
+
+    it('only a conductor tab gets the gate, a PreToolUse hook on every tool', () => {
+      expect(hooksOf(false)).not.toHaveProperty('PreToolUse')
+      expect(hooksOf(true).PreToolUse).toEqual([
+        { matcher: '*', hooks: [{ type: 'command', command: expect.any(String) }] }
+      ])
+    })
+
+    // ADR-0029 CC§15
+    describe('the gate lets a conductor read, write its own memory folder, ask the owner and run one plain koloft command, and nothing else', () => {
+      let command: string
+      beforeAll(() => {
+        command = hooksOf(true).PreToolUse[0].hooks[0].command
+      })
+      const gate = (event: unknown): 'allow' | 'deny' => {
+        const res = spawnSync('/bin/sh', ['-c', command], {
+          input: typeof event === 'string' ? event : JSON.stringify(event),
+          encoding: 'utf8'
+        })
+        if (res.status !== 0) throw new Error(`gate exited ${res.status}: ${res.stderr}`)
+        if (res.stdout === '') return 'allow'
+        expect(JSON.parse(res.stdout).hookSpecificOutput).toMatchObject({
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny'
+        })
+        return 'deny'
+      }
+      const bash = (command: string): unknown => ({ tool_name: 'Bash', tool_input: { command } })
+      const transcript_path = '/home/o/.claude/projects/-conductors-global/c1.jsonl'
+      const write = (tool_name: string, file_path: string): unknown => ({
+        tool_name,
+        transcript_path,
+        tool_input: { file_path, content: 'x' }
+      })
+
+      it.each([
+        ['Read', { tool_name: 'Read', tool_input: { file_path: '/ws/a/README.md' } }],
+        ['Grep', { tool_name: 'Grep', tool_input: { pattern: 'x' } }],
+        ['a question to the owner', { tool_name: 'AskUserQuestion', tool_input: {} }],
+        ['koloft help', bash('koloft help')],
+        ['a koloft command with spaces around it', bash('  koloft session list \n')],
+        ['operators inside quotes', bash('koloft session send a -- "fix x; then y && z | w"')],
+        ['a multi-line single-quoted message', bash("koloft session send a -- 'one\ntwo $HOME'")],
+        ['an escaped quote', bash('koloft session send a -- "say \\"hi\\" now"')],
+        [
+          'a Write into its own memory folder',
+          write('Write', '/home/o/.claude/projects/-conductors-global/memory/MEMORY.md')
+        ],
+        [
+          'an Edit in its own memory folder',
+          write('Edit', '/home/o/.claude/projects/-conductors-global/memory/a/b.md')
+        ]
+      ])('allows %s', (_name, event) => {
+        expect(gate(event)).toBe('allow')
+      })
+
+      it.each([
+        ['Write', { tool_name: 'Write', tool_input: { file_path: '/ws/a/x', content: 'x' } }],
+        ['Edit', { tool_name: 'Edit', tool_input: { file_path: '/ws/a/x' } }],
+        ['a subagent', { tool_name: 'Agent', tool_input: { prompt: 'fix it' } }],
+        ['WebFetch', { tool_name: 'WebFetch', tool_input: { url: 'https://x' } }],
+        ['a command that is not koloft', bash('echo x > /ws/a/x')],
+        ['a name that only starts with koloft', bash('koloftx help')],
+        ['a chained command', bash('koloft help && rm -rf /ws/a')],
+        ['a second command after ;', bash('koloft help; ls')],
+        ['a second command on a new line', bash('koloft help\nrm -rf /ws/a')],
+        ['a pipe', bash('koloft help | sh')],
+        ['a redirect', bash('koloft session read a > /ws/a/out')],
+        ['command substitution in double quotes', bash('koloft session send a -- "$(rm x)"')],
+        ['backticks', bash('koloft session send a -- `rm x`')],
+        ['an unclosed quote', bash("koloft session send a -- 'oops")],
+        ['input that is not JSON', 'not json'],
+        [
+          'a Write beside its memory folder, onto its transcript',
+          write('Write', '/home/o/.claude/projects/-conductors-global/c1.jsonl')
+        ],
+        [
+          'a Write that climbs out of its memory folder',
+          write('Write', '/home/o/.claude/projects/-conductors-global/memory/../../x/memory/a.md')
+        ],
+        [
+          'a folder whose name only starts like its memory folder',
+          write('Write', '/home/o/.claude/projects/-conductors-global/memory-x/a.md')
+        ],
+        [
+          'another session’s memory folder',
+          write('Edit', '/home/o/.claude/projects/-ws-a/memory/a.md')
+        ]
+      ])('denies %s', (_name, event) => {
+        expect(gate(event)).toBe('deny')
+      })
+    })
   })
 
   it('every appended report is one whole line (concurrent hooks cannot interleave)', () => {
@@ -467,7 +583,7 @@ describe('injected hook script', () => {
       fs.writeFileSync(entry('git-review-aaaa.json.lock'), '')
     })
 
-    const firePosttool = (command: string): void =>
+    const firePosttool = (command: string): string =>
       fire(
         'tabPT',
         'posttool',

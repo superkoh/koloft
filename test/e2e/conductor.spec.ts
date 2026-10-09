@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import { spawnSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
@@ -10,6 +11,7 @@ import {
   openMenu,
   readCalls,
   runIn,
+  seedJsonl,
   sendShortcut,
   settingsOnDisk,
   startSessionIn,
@@ -18,6 +20,14 @@ import {
   wsRows
 } from './helpers/p1'
 import { startFakeDiscord } from './helpers/fakeDiscord'
+import {
+  installFakeRemote,
+  killFakeRemote,
+  mirrorProjectDir,
+  REMOTE_WS_NAME,
+  remoteDir,
+  seedRemoteWorkspace
+} from './helpers/remote'
 import type { ConductorBinding, DiscordSettings } from '../../src/shared/types'
 
 test.setTimeout(120_000)
@@ -29,6 +39,25 @@ const KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS = 30_000
 
 function bindingsOnDisk(env: E2EEnv): ConductorBinding[] {
   return (settingsOnDisk(env).discord as DiscordSettings | undefined)?.bindings ?? []
+}
+
+function firstCodexCall(env: E2EEnv): { sessionId: string; argv: string[]; cwd: string } {
+  return JSON.parse(
+    fs.readFileSync(path.join(env.home, 'fake-codex-calls.jsonl'), 'utf8').split('\n')[0]
+  )
+}
+
+function gateSays(call: { argv: string[] }, event: unknown): string {
+  const settings = JSON.parse(
+    fs.readFileSync(call.argv[call.argv.indexOf('--settings') + 1], 'utf8')
+  ) as { hooks: Record<string, { hooks: { command: string }[] }[] | undefined> }
+  const command = settings.hooks.PreToolUse?.[0].hooks[0].command
+  if (!command) return 'no gate'
+  const res = spawnSync('/bin/sh', ['-c', command], {
+    input: JSON.stringify(event),
+    encoding: 'utf8'
+  })
+  return res.stdout === '' ? 'allow' : JSON.parse(res.stdout).hookSpecificOutput.permissionDecision
 }
 
 function island(page: Page): Locator {
@@ -140,7 +169,8 @@ async function launched(
 }
 
 test.describe('Conductors: a session bound to a Discord channel, kept in its own island and out of every workspace list', () => {
-  test('a workspace conductor bound through the dialog opens in its workspace folder, stays out of the workspace rows across /clear, raises no turn-done mark, and unbinding closes it', async ({
+  // ADR-0029
+  test('a workspace conductor bound through the dialog opens in a folder of its own yet keeps its workspace note, may only read and run koloft, stays out of the workspace rows across /clear, raises no turn-done mark, and unbinding closes it', async ({
     env
   }) => {
     const { page, close } = await launched(env)
@@ -159,9 +189,17 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
 
       await openConductor(page, 'ws-a')
       const call = (await waitForCalls(env, 1))[0]
-      expect(call.cwd).toBe(env.workspaces.a)
+      expect(path.dirname(call.cwd)).toBe(path.join(env.userData, 'conductors'))
       await expect.poll(() => bindingsOnDisk(env)[0]?.sessionIds.length).toBe(1)
       await expect(notesIsland(page).locator('.wb-title')).toHaveText('Notes · ws-a')
+      const write = {
+        tool_name: 'Write',
+        tool_input: { file_path: path.join(env.workspaces.a, 'x') }
+      }
+      expect(gateSays(call, write)).toBe('deny')
+      expect(gateSays(call, { tool_name: 'Bash', tool_input: { command: 'koloft help' } })).toBe(
+        'allow'
+      )
 
       await page.waitForTimeout(ROWS_RESCAN_AND_PUSH_SETTLE_MS)
       await expect(wsRows(page, 'ws-a')).toHaveCount(0)
@@ -239,7 +277,8 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
     }
   })
 
-  test('a Codex conductor gets its role as developer instructions and its session stays out of the workspace rows', async ({
+  // ADR-0029
+  test('a Codex conductor gets its role as developer instructions, runs in a folder of its own with approvals off and the workspace-write sandbox, and its session stays out of the workspace rows', async ({
     env
   }) => {
     installCodex(env)
@@ -263,6 +302,10 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
           )
         )
       ).toBe(true)
+      const tui = firstCodexCall(env)
+      expect(path.dirname(tui.cwd)).toBe(path.join(env.userData, 'conductors'))
+      expect(tui.argv[tui.argv.indexOf('-s') + 1]).toBe('workspace-write')
+      expect(tui.argv[tui.argv.indexOf('-a') + 1]).toBe('never')
       expect(readCalls(env)).toEqual([])
       await page.waitForTimeout(ROWS_RESCAN_AND_PUSH_SETTLE_MS)
       await expect(wsRows(page, 'ws-a')).toHaveCount(0)
@@ -313,11 +356,7 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
     try {
       await newSessionInWith(page, 'ws-b', 'Codex')
       await expect(wsRows(page, 'ws-b')).toHaveClass(/st-waiting/, { timeout: 60_000 })
-      const codexId = (
-        JSON.parse(
-          fs.readFileSync(path.join(env.home, 'fake-codex-calls.jsonl'), 'utf8').split('\n')[0]
-        ) as { sessionId: string }
-      ).sessionId
+      const codexId = firstCodexCall(env).sessionId
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(wsRows(page, 'ws-b')).toHaveClass(/cold/)
 
@@ -336,6 +375,48 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
       expect(said).toContain('assistant: Codex fixture answered: Codex fixture session')
     } finally {
       await close()
+    }
+  })
+
+  test('the global conductor closes an ended Claude session and an ended Codex session for good, and is refused an ended session on another machine, which stays listed', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    installCodex(env)
+    installFakeRemote(env)
+    seedRemoteWorkspace(env)
+    seedJsonl(env, remoteDir(env), {
+      root: path.dirname(mirrorProjectDir(env)),
+      cwd: remoteDir(env),
+      summary: 'Yesterday on the build machine'
+    })
+    const { app, page, close } = await launched(env)
+    try {
+      await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      await startSessionIn(page, 'ws-a', { method: 'Claude' })
+      const claudeId = (await waitForCalls(env, 1))[0].sessionId
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/cold/)
+      await newSessionInWith(page, 'ws-b', 'Codex')
+      await expect(wsRows(page, 'ws-b')).toHaveClass(/st-waiting/, { timeout: 60_000 })
+      const codexId = firstCodexCall(env).sessionId
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(wsRows(page, 'ws-b')).toHaveClass(/cold/)
+
+      await bindFromWorkspaceMenu(page, 'ws-a', { scope: 'Global', channel: CHANNEL_A })
+      await openConductor(page, 'Global')
+      expect(await koloftSays(page, `session close ${claudeId}`)).toContain('now')
+      await expect(wsRows(page, 'ws-a')).toHaveCount(0)
+      expect(await koloftSays(page, `session close ${codexId}`)).toContain('now')
+      await expect(wsRows(page, 'ws-b')).toHaveCount(0)
+
+      expect(await koloftSays(page, "session close 'Yesterday on the build machine'")).toContain(
+        'runs on another machine'
+      )
+      await expect(wsRows(page, REMOTE_WS_NAME)).toHaveCount(1)
+    } finally {
+      await close()
+      killFakeRemote(env)
     }
   })
 })

@@ -454,10 +454,14 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(res.stdout).toContain('koloft: bravo')
   })
 
-  it('hands claude the -w name for a worktree session', () => {
-    const b = box(spec({ claudeArgs: ['--session-id', 'sess1', '-w', 'my.feature-1'] }))
+  it("hands claude the -w name and the worktree's port offset for a worktree session, and no offset to any other", () => {
+    const b = box(
+      spec({ claudeArgs: ['--session-id', 'sess1', '-w', 'my.feature-1'], portOffset: 42 })
+    )
     expect(b.run().status).toBe(0)
     expect(b.argv().slice(-3)).toEqual(['sess1', '-w', 'my.feature-1'])
+    expect(b.env().KOLOFT_PORT_OFFSET).toBe('42')
+    expect(claudeEnvOf(spec()).KOLOFT_PORT_OFFSET).toBeUndefined()
   })
 
   it('a reconnect attaches to the running session and installs nothing', () => {

@@ -3,8 +3,10 @@ const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
 const readline = require('readline')
-const { spawnSync } = require('child_process')
+const { execFile, spawnSync } = require('child_process')
 const WebSocket = require('ws')
+
+const VERSION_AT_KOLOFTS_MINIMUM = '0.161.0'
 
 const argv = process.argv.slice(2)
 const home = process.env.HOME
@@ -53,7 +55,7 @@ const newThread = (cwd, predecessor) => {
     preview: predecessor?.preview || '',
     createdAt: now,
     updatedAt: now,
-    cliVersion: '0.153.4',
+    cliVersion: VERSION_AT_KOLOFTS_MINIMUM,
     model: 'gpt-5.5',
     modelProvider: 'openai',
     source: 'cli',
@@ -69,7 +71,7 @@ if (argv.includes('--version')) {
   const versionProbeBlockingDelayMs = Number(read('fake-codex-version-delay')) || 0
   if (versionProbeBlockingDelayMs > 0)
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, versionProbeBlockingDelayMs)
-  console.log('codex-cli 0.153.4')
+  console.log(`codex-cli ${VERSION_AT_KOLOFTS_MINIMUM}`)
   process.exit(0)
 }
 
@@ -89,7 +91,11 @@ function signIn() {
 }
 
 if (argv[0] === 'app-server') {
-  append('fake-codex-server-calls.jsonl', { argv, cwd: process.cwd() })
+  append('fake-codex-server-calls.jsonl', {
+    argv,
+    cwd: process.cwd(),
+    portOffset: process.env.KOLOFT_PORT_OFFSET || null
+  })
   let initialized = false
   let active
   let activeTurn
@@ -173,6 +179,28 @@ if (argv[0] === 'app-server') {
         }
       })
     }
+    if (text.startsWith('/koloft ')) {
+      const command = `koloft ${text.slice('/koloft '.length).trim()}`
+      execFile('/bin/zsh', ['-lc', command], { cwd: thread.cwd }, (e, out, err) => {
+        const exitCode = e ? (typeof e.code === 'number' ? e.code : 1) : 0
+        event('item/completed', {
+          threadId: thread.id,
+          turnId: turn.id,
+          item: {
+            type: 'commandExecution',
+            id: 'koloft-' + turn.id,
+            status: exitCode === 0 ? 'completed' : 'failed',
+            exitCode,
+            aggregatedOutput: `${out}${err}`,
+            command: `/bin/zsh -lc '${command}'`,
+            cwd: thread.cwd,
+            commandActions: [{ type: 'unknown', command }]
+          }
+        })
+        complete(thread, turn)
+      })
+      return
+    }
     if (text.includes('approve')) {
       pendingApproval = { id: 'approval-' + turn.id, thread, turn }
       status(thread, { type: 'active', activeFlags: ['waitingOnApproval'] })
@@ -215,6 +243,27 @@ if (argv[0] === 'app-server') {
           autoResolutionMs: null
         }
       })
+    } else if (text.includes('spawn child')) {
+      // CODEX§4
+      const childId = crypto.randomUUID()
+      event('item/completed', {
+        threadId: thread.id,
+        turnId: turn.id,
+        item: {
+          type: 'collabAgentToolCall',
+          id: 'spawn-' + turn.id,
+          tool: 'spawnAgent',
+          status: 'completed',
+          senderThreadId: thread.id,
+          receiverThreadIds: [childId],
+          agentsStates: { [childId]: { status: 'pendingInit' } }
+        }
+      })
+      setTimeout(() => complete(thread, turn), 120)
+      setTimeout(
+        () => event('thread/status/changed', { threadId: childId, status: { type: 'idle' } }),
+        Number(read('fake-codex-child-ms', '4000'))
+      )
     } else if (!text.includes('hold')) setTimeout(() => complete(thread, turn), 120)
   }
   const lines = readline.createInterface({ input: process.stdin })
@@ -228,7 +277,7 @@ if (argv[0] === 'app-server') {
     append('fake-codex-wire.jsonl', { direction: 'client', frame })
     const { id, method, params: p = {} } = frame
     if (method === 'initialize') {
-      result(id, { userAgent: 'fake-codex/0.153.4', platformFamily: 'unix' })
+      result(id, { userAgent: `fake-codex/${VERSION_AT_KOLOFTS_MINIMUM}`, platformFamily: 'unix' })
       return
     }
     if (method === 'initialized') {
@@ -498,6 +547,10 @@ async function startTui() {
       const [q] = frame.params.questions
       question = { id: frame.id, key: q.id, labels: q.options.map((o) => o.label) }
       process.stdout.write('\r\n' + q.question + ' ' + question.labels.join(' / ') + ' ')
+    } else if (frame.method === 'item/completed' && frame.params.item.id.startsWith('koloft-')) {
+      const { aggregatedOutput, exitCode } = frame.params.item
+      const said = aggregatedOutput.replace(/\r?\n/g, '\r\n')
+      process.stdout.write(`\r\n${said}[fake-codex] koloft exit=${exitCode}\r\n> `)
     } else if (frame.method === 'turn/started') {
       working = true
       turnId = frame.params.turn.id
@@ -519,7 +572,7 @@ async function startTui() {
   ws.on('open', async () => {
     try {
       await send('initialize', {
-        clientInfo: { name: 'codex_cli_rs', version: '0.153.4' },
+        clientInfo: { name: 'codex_cli_rs', version: VERSION_AT_KOLOFTS_MINIMUM },
         capabilities: { experimentalApi: true }
       })
       ws.send(JSON.stringify({ method: 'initialized' }))
@@ -530,8 +583,8 @@ async function startTui() {
       )
       process.stdin.setRawMode?.(true)
       process.stdin.resume()
-      process.stdin.on('data', (bytes) => {
-        for (const ch of bytes.toString('utf8')) {
+      const typeIn = (part) => {
+        for (const ch of part) {
           // CODEX§3
           if (approval && ['y', '1', '\u001b'].includes(ch)) {
             const decision = ch === '\u001b' ? 'decline' : 'accept'
@@ -550,7 +603,7 @@ async function startTui() {
           if (ch === '\u0003') {
             if (working) void send('turn/interrupt', { threadId: thread.id, turnId })
             else void exit()
-            return
+            return 'stop'
           }
           if (ch === '\r' || ch === '\n') {
             const line = typed
@@ -565,6 +618,18 @@ async function startTui() {
             typed += ch
             process.stdout.write(ch)
           }
+        }
+      }
+      let pasting = false
+      process.stdin.on('data', (bytes) => {
+        // CODEX§23
+        for (const part of bytes.toString('utf8').split(/(\x1b\[20[01]~)/)) {
+          if (part === '\x1b[200~' || part === '\x1b[201~') {
+            pasting = part === '\x1b[200~'
+          } else if (pasting) {
+            typed += part
+            process.stdout.write(part.replace(/\n/g, '\r\n'))
+          } else if (typeIn(part) === 'stop') return
         }
       })
     } catch (error) {

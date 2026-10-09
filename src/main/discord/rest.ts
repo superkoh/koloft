@@ -12,9 +12,11 @@ export class DiscordHttpError extends Error {
   }
 }
 
-function bucketOf(route: string): string {
+// PLATFORM§39
+function bucketOf(route: string, method = 'POST'): string {
   const message = /^\/channels\/(\d+)\/messages/.exec(route)
-  return message ? `channel:${message[1]}` : route
+  if (!message) return route
+  return method === 'PATCH' ? `edits:${message[1]}` : `channel:${message[1]}`
 }
 
 // ADR-0027 PLATFORM§39
@@ -27,7 +29,7 @@ export class DiscordRest {
   ) {}
 
   request<T>(method: string, route: string, body?: unknown): Promise<T> {
-    const bucket = bucketOf(route)
+    const bucket = bucketOf(route, method)
     const sent = (this.queues.get(bucket) ?? Promise.resolve()).then(() =>
       this.send<T>(method, route, body)
     )
@@ -36,6 +38,10 @@ export class DiscordRest {
       sent.catch(() => undefined)
     )
     return sent
+  }
+
+  sent(route: string): Promise<unknown> {
+    return this.queues.get(bucketOf(route)) ?? Promise.resolve()
   }
 
   private async send<T>(method: string, route: string, body?: unknown): Promise<T> {

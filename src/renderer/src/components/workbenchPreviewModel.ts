@@ -1,6 +1,5 @@
-import { fileUrlPath } from '@shared/browserRoute'
+import { fileUrlPath, opensAsWebTab } from '@shared/browserRoute'
 import { isWebPagePath, previewKindForPath } from '@shared/preview'
-import { isRemoteKey } from '@shared/remoteKey'
 import type { GitNumstatMap, GitStatusMap, PreviewItem } from '@shared/types'
 import type { OpenFile } from '../store'
 import { buildEntries, totalDelta, type ChangeTotals } from './changesModel'
@@ -55,7 +54,7 @@ export function previewDocs(input: {
 
 export function docLanding(doc: PreviewDoc): 'reading-rendered' | 'reading-source' | 'web-tab' {
   if (doc.kind === 'markdown') return 'reading-rendered'
-  return isRemoteKey(doc.src) ? 'reading-source' : 'web-tab'
+  return opensAsWebTab(doc.src) ? 'web-tab' : 'reading-source'
 }
 
 export function changeTotals(

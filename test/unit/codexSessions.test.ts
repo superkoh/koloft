@@ -7,15 +7,24 @@ import { CodexSessions, type CodexSessionDeps } from '../../src/main/codexSessio
 import { codexSessionKey, type WorktreeResource } from '../../src/main/sessionStore'
 import type { CodexTransportOptions } from '../../src/main/codexTransport'
 import { SessionRuntime } from '../../src/main/sessionRuntime'
+import { MIN_CODEX_VERSION } from '../../src/main/cliMinimums'
+import { portOffset } from '@shared/worktreeName'
+
+const TOO_OLD = { binary: '/fixture/codex', env: {}, version: '0.150.0', verified: false }
 
 const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   request: vi.fn(),
   close: vi.fn(),
   runtime: vi.fn(),
+  update: vi.fn(),
   rpcHomes: [] as (string | undefined)[]
 }))
-vi.mock('../../src/main/codexRuntime', () => ({ resolveCodexRuntime: mocks.runtime }))
+vi.mock('../../src/main/codexRuntime', async (importOriginal) => ({
+  codexTooOld: (await importOriginal<typeof import('../../src/main/codexRuntime')>()).codexTooOld,
+  resolveCodexRuntime: mocks.runtime,
+  updateCodex: mocks.update
+}))
 vi.mock('../../src/main/codexTransport', () => ({
   createCodexTransport: mocks.create,
   CodexRpc: class {
@@ -94,7 +103,7 @@ beforeEach(() => {
   mocks.runtime.mockResolvedValue({
     binary: '/fixture/codex',
     env: {},
-    version: '0.153.4',
+    version: MIN_CODEX_VERSION,
     verified: true
   })
   let tab = 0
@@ -605,6 +614,43 @@ describe('CodexSessions', () => {
     expect(deps.trustFolder).toHaveBeenCalledTimes(1)
   })
 
+  it("a worktree launch's app-server gets that worktree's port offset, and a launch in the main checkout gets none", async () => {
+    const worktree = path.join(repo, '.claude', 'worktrees', 'w1')
+    fs.mkdirSync(worktree, { recursive: true })
+    vi.spyOn(sessions.worktrees, 'create').mockResolvedValue({
+      id: randomUUID(),
+      originalCwd: repo,
+      worktreePath: worktree,
+      worktreeName: 'w1',
+      worktreeBranch: 'worktree-w1'
+    } as WorktreeResource)
+    await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1' })
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    const sessionEnvs = mocks.create.mock.calls.map(
+      (call) => (call[0] as CodexTransportOptions).sessionEnv
+    )
+    expect(sessionEnvs).toEqual([{ KOLOFT_PORT_OFFSET: String(portOffset('w1')) }, undefined])
+  })
+
+  // ADR-0029 CODEX§12
+  it('a conductor starts and resumes with approvals off and the workspace-write sandbox, so it can write only its own folder and /tmp, and claims no bypass', async () => {
+    const first = await sessions.launch({ kind: 'codex', cwd: repo, conductor: true })
+    bind()
+    await sessions.stop(first.id)
+    const again = await sessions.resume({
+      sessionId: codexSessionKey(A),
+      cwd: repo,
+      conductor: true
+    })
+    for (const [call] of vi.mocked(deps.pty.create).mock.calls) {
+      const argv = call.argv!
+      expect(argv[argv.indexOf('-s') + 1]).toBe('workspace-write')
+      expect(argv[argv.indexOf('-a') + 1]).toBe('never')
+    }
+    expect(vi.mocked(deps.pty.create).mock.calls).toHaveLength(2)
+    expect(sessions.launchedBypassingChecks(again.id)).toBe(false)
+  })
+
   // ADR-0028
   it('remembers whether Koloft launched a session with approvals and the sandbox bypassed, the mode its messages to Claude sessions claim', async () => {
     const bypassed = await sessions.launch({ kind: 'codex', cwd: repo, permission: 'bypass' })
@@ -679,7 +725,7 @@ describe('CodexSessions', () => {
     const fresh = new CodexSessions(path.join(directory, 'probe.json'), deps)
     expect(await fresh.availability()).toMatchObject({
       available: true,
-      version: '0.153.4',
+      version: MIN_CODEX_VERSION,
       verified: true
     })
     await fresh.availability()
@@ -702,6 +748,32 @@ describe('CodexSessions', () => {
     vi.advanceTimersByTime(2_000)
     await fresh.availability()
     expect(mocks.runtime).toHaveBeenCalledTimes(2)
+  })
+
+  it('a Codex older than the minimum is updated once, even when two checks ask at the same moment, and is then offered', async () => {
+    const fresh = new CodexSessions(path.join(directory, 'probe.json'), deps)
+    mocks.runtime.mockResolvedValueOnce(TOO_OLD)
+    const [first, second] = await Promise.all([fresh.availability(), fresh.availability()])
+    expect(first).toMatchObject({ available: true, version: MIN_CODEX_VERSION })
+    expect(second).toBe(first)
+    expect(mocks.update).toHaveBeenCalledOnce()
+    expect(mocks.update).toHaveBeenCalledWith(TOO_OLD)
+    expect(vi.mocked(deps.error).mock.calls[0][0]).toContain(`older than ${MIN_CODEX_VERSION}`)
+  })
+
+  it('a Codex the update cannot lift stays unavailable, says to run codex update, and is not updated again', async () => {
+    vi.useFakeTimers()
+    const fresh = new CodexSessions(path.join(directory, 'probe.json'), deps)
+    mocks.runtime.mockResolvedValue(TOO_OLD)
+    const reply = await fresh.availability()
+    expect(reply).toMatchObject({ available: false })
+    expect(reply.reason).toContain('codex update')
+    expect(vi.mocked(deps.error).mock.lastCall?.[0]).toContain('codex update')
+    vi.advanceTimersByTime(61_000)
+    await fresh.availability()
+    expect(mocks.runtime).toHaveBeenCalledTimes(3)
+    expect(mocks.update).toHaveBeenCalledOnce()
+    expect(deps.error).toHaveBeenCalledTimes(2)
   })
 
   it('gives up on a run that never finishes stopping so the app can quit', async () => {

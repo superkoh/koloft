@@ -6,6 +6,7 @@ import type { E2EEnv } from './helpers/env'
 import {
   addRemoteWorkspace,
   breakConnection,
+  dropTabLinkWhileItsSessionDies,
   killFakeRemote,
   launchWithRemote,
   liveTmuxSessions,
@@ -23,6 +24,7 @@ import {
   sendShortcut,
   startSessionIn,
   termIds,
+  terminalText,
   waitForCalls,
   resumedId,
   readCalls,
@@ -169,6 +171,38 @@ test.describe('who ends the claude on the other machine: every way of ending a r
         .toContain('exited')
       await expect(wsRows(page, REMOTE_WS_NAME).locator('.ws-tab-unread')).toHaveCount(1)
       expect(killLines(env, first.sessionId)).toEqual([])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-26: ⇧⌘R on a remote tab whose claude died while its ssh link was down resumes the same conversation', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const [first] = await waitForCalls(env, 1)
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await expect(row).toHaveClass(/st-waiting|st-idle/, { timeout: 60_000 })
+      const tabId = (await row.getAttribute('data-tab-id')) ?? ''
+
+      dropTabLinkWhileItsSessionDies(env, first.pid)
+
+      await expect
+        .poll(() => terminalText(page, tabId), { timeout: 60_000 })
+        .toContain('press Enter to close')
+      await expect
+        .poll(async () => (await pendingAttention(page)).map((a) => a.kind), { timeout: 60_000 })
+        .toContain('exited')
+
+      await centerTerm(page).click()
+      await sendShortcut(app, 'shortcut:restart-session')
+
+      const calls = await waitForCalls(env, 2, 90_000)
+      expect(resumedId(calls[calls.length - 1])).toBe(first.sessionId)
     } finally {
       await quitAndClose(app)
     }

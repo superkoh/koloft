@@ -30,6 +30,7 @@ export interface ClaudeCall {
   cdpEndpoint?: string | null
   playwrightMcpEndpoint?: string | null
   playwrightCliSession?: string | null
+  portOffset: string | null
 }
 
 export function readCalls(env: E2EEnv): ClaudeCall[] {
@@ -133,6 +134,23 @@ export function gitWorktreeAdd(repo: string, name: string): string {
 // CC§2
 export function encodeCwd(cwd: string): string {
   return cwd.replace(/[^a-zA-Z0-9]/g, '-')
+}
+
+export function transcriptFile(home: string, cwd: string, sessionId: string): string {
+  return path.join(home, '.claude', 'projects', encodeCwd(cwd), `${sessionId}.jsonl`)
+}
+
+// CC§5
+export function continuedInOf(transcript: string): string | undefined {
+  const last = fs.readFileSync(transcript, 'utf8').trimEnd().split('\n').pop() ?? ''
+  return last.includes('continued-in') ? JSON.parse(last).continuedInSessionId : undefined
+}
+
+export function boundSessionId(page: Page, tabId: string | null): Promise<string | undefined> {
+  return page.evaluate(
+    (id) => window.api.sessions.list().then((all) => all.find((s) => s.tabId === id)?.sessionId),
+    tabId
+  )
 }
 
 export interface SeedOptions {
@@ -325,6 +343,10 @@ export function wsGroup(page: Page, wsName: string): Locator {
 
 export function wsRows(page: Page, wsName: string): Locator {
   return wsGroup(page, wsName).locator('.ws-tab')
+}
+
+export function oneStillRunning(scope: Page | Locator): Locator {
+  return scope.locator('.ws-tab-parked.bg-run', { hasText: /^↻ 1$/ })
 }
 
 export function auxIcon(page: Page, which: 'Preview' | 'Workbench' | 'Terminal'): Locator {

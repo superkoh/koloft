@@ -205,6 +205,7 @@ export interface ConductorBinding {
 export interface SessionThread {
   threadId: string
   keys: string[]
+  name?: string
   lastMessageId?: string
 }
 
@@ -318,6 +319,7 @@ export interface CreateTabOptions {
   util?: boolean
   ownerTabId?: string
   role?: string
+  conductor?: boolean
   trustFolder?: boolean
 }
 
@@ -478,6 +480,7 @@ export interface SessionUsage {
 }
 
 export const PLACEHOLDER_SESSION_TITLE = 'Claude session'
+export const CODEX_PLACEHOLDER_TITLE = 'Codex session'
 
 export const PENDING_SESSION_TITLE = 'Starting…'
 
@@ -519,6 +522,7 @@ export interface BackendSessionInfo {
 
 export interface SessionInfo extends BackendSessionInfo, SessionSource {
   conductor?: string
+  turnOver?: boolean
 }
 
 export interface ClaudeSessionInfo extends BackendSessionInfo {
@@ -588,7 +592,21 @@ export interface GithubInfo {
   failed: boolean
 }
 
-export type GithubTarget = 'repo' | 'pulls' | 'pr'
+export type GithubTarget = 'repo' | 'pulls' | 'pr' | 'compare'
+
+export type PrCheckBucket = 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel'
+
+export interface PrCheck {
+  name: string
+  bucket: PrCheckBucket
+  link: string
+  workflow: string
+}
+
+export type PrChecks =
+  { state: 'ok'; checks: PrCheck[] } | { state: 'no-gh' | 'signed-out' | 'no-pr' | 'failed' }
+
+export type GitStepResult = { ok: true } | { ok: false; reason: string }
 
 // PLATFORM§15
 export interface ExtensionInfo {
@@ -729,6 +747,11 @@ export interface TerminalExit {
   signal?: number
 }
 
+export function exitedAbnormally(exit: Pick<TerminalExit, 'exitCode' | 'signal'>): boolean {
+  // PLATFORM§29
+  return exit.exitCode !== 0 || !!exit.signal
+}
+
 export interface TerminalProcessTitle {
   id: string
   name: string
@@ -765,6 +788,7 @@ export interface KoloftApi {
   terminal: {
     create(opts: CreateTabOptions): Promise<CreateTabResult>
     write(id: string, data: string): void
+    paste(id: string, text: string, typedAfter?: string): Promise<void>
     ack(id: string, utf16Units: number): void
     attach(id: string): void
     flowStats(): Promise<FlowStats[]>
@@ -846,6 +870,7 @@ export interface KoloftApi {
     onOverlayOpen(cb: (o: BrowserOverlayOpen) => void): () => void
     overlayReady(): void
     setOverlayGuest(guestId: number, on: boolean): void
+    setGuestOwner(guestId: number, ownerTabId: string): void
     reportStrip(sessionId: string, targets: BrowserStripTarget[]): void
     onCdpOp(cb: (op: BrowserCdpOp) => void): () => void
     answerCdpOp(res: BrowserCdpOpResult): void
@@ -925,6 +950,10 @@ export interface KoloftApi {
     info(root: string, force?: boolean): Promise<GithubInfo | null>
     target(root: string, what: GithubTarget): Promise<string | null>
     onInfo(cb: (root: string, info: GithubInfo) => void): () => void
+    checks(root: string, pr: number): Promise<PrChecks>
+    failingChecksText(root: string, pr: number): Promise<string | null>
+    commit(root: string, message: string): Promise<GitStepResult>
+    push(root: string): Promise<GitStepResult>
   }
   workspace: {
     pickFolder(): Promise<string | null>
@@ -1221,6 +1250,7 @@ export interface BackendSessionRow {
 
 export interface SessionRow extends BackendSessionRow, SessionSource {
   resident?: boolean
+  parentId?: string
 }
 
 export interface WorkspaceFreshness {
@@ -1295,6 +1325,7 @@ export interface SessionResumeRequest {
   worktree?: string
   rebuild?: { worktreePath: string; branch: string; baseRef: string }
   role?: string
+  conductor?: boolean
   trustFolder?: boolean
 }
 

@@ -1,4 +1,3 @@
-import { randomBytes } from 'crypto'
 import type {
   BackendId,
   CreateTabOptions,
@@ -29,6 +28,8 @@ import {
 } from './agentRequests'
 import { AGENT_SHIM_WAITS_MS } from './agentShim'
 import { crossSessionLine, type ModeClass } from './crossSessionMessage'
+import { handoverPreamble, withHandover, type SessionCaller } from './handover'
+import { nameForTask, type TitleModel } from './sessionTitle'
 import type { StartedSessions } from './startedSessions'
 
 export interface NewSessionArgs {
@@ -75,28 +76,6 @@ export function parseNewSessionArgs(args: string[]): Parsed<NewSessionArgs> {
     i++
   }
   return fail(PROMPT_AFTER_DASHES)
-}
-
-export interface SessionCaller {
-  name?: string
-  id: string
-}
-
-export function handoverPreamble(caller: SessionCaller, child: BackendId): string {
-  const who = caller.name ? `the session "${caller.name}"` : `the Codex session ${caller.id}`
-  const reply =
-    caller.name && child === 'claude'
-      ? `send the result back to "${caller.name}" with your SendMessage tool.`
-      : `send the result back by running: koloft session send ${caller.id} "<your result>"`
-  return `Koloft started you because ${who} asked it to, for the owner (the person you both work for). Treat its messages as the owner's instructions. When you finish a task it gives you, ${reply}`
-}
-
-export function withHandover(caller: SessionCaller, child: BackendId, prompt: string): string {
-  return `${handoverPreamble(caller, child)}\n\n${prompt}`
-}
-
-export function newSessionName(): string {
-  return `helper-${randomBytes(3).toString('hex')}`
 }
 
 const STATE_WORDS: Record<SessionStatus, string> = {
@@ -270,7 +249,7 @@ export interface ClosableSession {
 }
 
 const CLOSE_USAGE =
-  'koloft session close: give nothing to close this session, or the id or name of one you started with koloft session new, like: koloft session close <id or name>'
+  'koloft session close: give nothing to close this session, or the id or name of one you started with koloft session new (a conductor: of an ended session it looks after), like: koloft session close <id or name>'
 
 export async function findClosable(
   sessions: ClosableSession[],
@@ -287,10 +266,11 @@ export async function findClosable(
       s.sessionId === ref || s.nativeSessionId === ref || s.tabId === ref || names[i] === ref,
     (s) => s.title
   )
+  if (hit && !hit.ok) return fail(`koloft session close: ${hit.error}`)
   return (
     hit ??
     fail(
-      `you did not start a session "${ref}". You can close only this session or one you started with koloft session new.`
+      `koloft session close: you did not start a session "${ref}". You can close only this session or one you started with koloft session new.`
     )
   )
 }
@@ -301,6 +281,7 @@ export interface SessionVerbDeps {
   pinnedWorkspaces(): PinnedWorkspace[]
   peerNames(): (sessionId: string) => Promise<string | null>
   launch(options: CreateTabOptions & { kind: BackendId }): Promise<string | null>
+  titleModel: TitleModel
   queue(tabId: string, text: string, clientId?: string): Promise<void>
   startedSessions: StartedSessions
   closable(): ClosableSession[]
@@ -386,7 +367,15 @@ async function startSibling(
     name: me.backendId === 'claude' ? ((await d.peerNames()(me.sessionId)) ?? me.title) : undefined,
     id: me.nativeSessionId ?? me.sessionId
   }
-  const name = backend === 'claude' ? (args.name ?? newSessionName()) : undefined
+  const name =
+    backend === 'claude'
+      ? (args.name ??
+        (await nameForTask(
+          args.prompt,
+          d.titleModel,
+          new Set(d.allSessions().map((s) => s.title))
+        )))
+      : undefined
   const tabId = await d.launch({
     kind: backend,
     cwd: workspace,
@@ -395,7 +384,10 @@ async function startSibling(
     model: args.model,
     // ADR-0028
     permission: conductorTab && d.modeOf(conductorTab) === 'bypass' ? 'bypass' : 'default',
-    firstPrompt: withHandover(caller, backend, args.prompt)
+    // CODEX§17
+    ...(backend === 'codex'
+      ? { role: handoverPreamble(caller, backend), firstPrompt: args.prompt }
+      : { firstPrompt: withHandover(caller, backend, args.prompt) })
   })
   if (!tabId) return refused('koloft session new: Koloft could not start the session.')
   d.startedSessions.started(tabId, me.sessionId)
@@ -517,6 +509,26 @@ async function readSession(
   const turns = await d.readTurns(row.id, last)
   d.touch(callerTabId, row.id)
   return answered(turns.length > 0 ? formatTurns(turns) : `${title} has said nothing yet.`)
+}
+
+async function endedInScope(
+  d: SessionVerbDeps,
+  ref: string,
+  scope: string
+): Promise<Parsed<ClosableSession>> {
+  const found = await findIn(d, 'close', ref, scope)
+  if (!found.ok) return found
+  const { row, title, live, workspace } = found.value
+  if (live)
+    return fail(
+      `koloft session close: ${title} is open. Stop it first with koloft session stop, then close it.`
+    )
+  if (isRemoteKey(workspace))
+    return fail(
+      `koloft session close: ${title} runs on another machine, where Koloft cannot check what closing it would lose.`
+    )
+  const ended = d.closable().find((s) => s.sessionId === row.id)
+  return ended ? { ok: true, value: ended } : fail(`koloft session close: ${title} is gone.`)
 }
 
 export const THAT_IS_YOU = 'That is you.'
@@ -757,8 +769,9 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       let target: ClosableSession = caller.session
       if (ref !== undefined) {
         const mine = d.closable().filter((s) => d.startedSessions.startedBy(s, caller.session))
-        const hit = await findClosable(mine, ref, d.peerNames())
-        if (!hit.ok) return refused(`koloft session close: ${hit.error}`)
+        let hit = await findClosable(mine, ref, d.peerNames())
+        if (!hit.ok && scope !== undefined) hit = await endedInScope(d, ref, scope)
+        if (!hit.ok) return refused(hit.error)
         target = hit.value
       }
       const left = await d.whatIsLeft(target)

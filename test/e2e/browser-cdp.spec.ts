@@ -331,6 +331,36 @@ test.describe('CDP relay driven by a real Playwright client over the endpoint Ko
     })
   })
 
+  // PLATFORM§16
+  test('a client’s page.reload() reloads only that page — the Koloft window around it stays up', async ({
+    page,
+    env
+  }) => {
+    test.setTimeout(240_000)
+    await withServer(async (server) => {
+      const url = await drivenSession(page, env)
+      const browser = await connect(page, url)
+      try {
+        const p = await browser.contexts()[0].newPage()
+        await p.goto(server.page('/reloaded', '<title>Reloaded</title><body>r</body>'))
+        await page.evaluate(() => ((window as unknown as { __hostMark: number }).__hostMark = 1))
+        await p.evaluate(() => ((window as unknown as { __pageMark: number }).__pageMark = 1))
+
+        await p.reload()
+
+        expect(
+          await p.evaluate(() => (window as unknown as { __pageMark?: number }).__pageMark)
+        ).toBeUndefined()
+        expect(await p.title()).toBe('Reloaded')
+        expect(
+          await page.evaluate(() => (window as unknown as { __hostMark?: number }).__hostMark)
+        ).toBe(1)
+      } finally {
+        await browser.close().catch(() => {})
+      }
+    })
+  })
+
   test('the stage is given back when the client lets go of the page', async ({ page, env }) => {
     test.setTimeout(240_000)
     await withServer(async (server) => {

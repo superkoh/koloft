@@ -24,7 +24,7 @@ import { allowCrashReload } from './crashGuard'
 import { FlowGate } from './flowControl'
 import { SessionTracker, type ToolCall } from './sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
-import type { StatusEdge } from './sessionRuntime'
+import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
 import { SessionBackends } from './sessionBackends'
 import {
@@ -32,11 +32,12 @@ import {
   backendIdOf,
   capabilitiesFor,
   identityOf,
+  statusUnavailable,
   SUPPORTED_PAIRS
 } from '@shared/sessionBackend'
 import type { Turn } from '@shared/turns'
 import { AttentionTracker, type AttentionContext } from './attention'
-import { loadLastRunAttention, saveAttention } from './attentionFile'
+import { flushAttention, loadLastRunAttention, saveAttention } from './attentionFile'
 import { route, dockBadgeText } from './notifyRouter'
 import { setupShim, utilTerminalGuard } from './shim'
 import { openDropTarget, type OpenDrop } from './openDrop'
@@ -118,7 +119,7 @@ import {
 } from './accounts'
 import { probeAccount, shouldSkipFable } from './usageProbe'
 import { AccountPicker, PROBE_TIMEOUT_MS, type PickResponse } from './accountPicker'
-import { loadLayout, saveLayout } from './layout'
+import { flushLayout, loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
 import { WorkspaceManager, type LiveSession } from './workspaces'
 import { sanitizeSessionWorkbench } from '@shared/workbenchState'
@@ -138,8 +139,16 @@ import { CronRunner, type LaunchRequest } from './cronRunner'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
 import { GitFreshnessEngine } from './gitFreshness'
-import { GithubLookup, ghOpenCounts, parseGithubFixture, type GithubOptions } from './github'
+import {
+  GithubLookup,
+  ghOpenCounts,
+  ghRead,
+  parseGithubFixture,
+  type GithubOptions
+} from './github'
 import { GithubCountsSweep } from './githubCounts'
+import { runGh } from './prChecks'
+import { commitAll, pushBranch } from './gitSteps'
 import { restoredWindowGeometry, trackWindowState } from './windowState'
 import { fullscreenOption, windowMinWidth } from './windowBounds'
 import { closeAllFileWatchers, closeAllDirWatchers } from './fileWatch'
@@ -170,6 +179,7 @@ import {
   relayStripChanged,
   relayTabClosed,
   relayTabRebound,
+  sessionDrivingGuest,
   setRelayEnabled,
   startRelay,
   writeRelayEnv,
@@ -191,6 +201,8 @@ import {
   BROWSER_PARTITION,
   DISCORD_OFF,
   PLACEHOLDER_SESSION_TITLE,
+  CODEX_PLACEHOLDER_TITLE,
+  exitedAbnormally,
   isHttpUrl
 } from '@shared/types'
 import {
@@ -251,7 +263,9 @@ import type {
   SessionWorkbenchState,
   Settings,
   HostId,
-  WhatsNew
+  WhatsNew,
+  GitStepResult,
+  PrChecks
 } from '@shared/types'
 import { AgentRequests, BUILTIN_VERBS, errorText, refused, type AgentVerb } from './agentRequests'
 import { Conductors } from './discord/conductors'
@@ -260,6 +274,7 @@ import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay, type Destination } from './discord/relay'
 import { Notices } from './discord/notices'
 import { SessionThreads } from './discord/threads'
+import { LiveStatus } from './discord/liveStatus'
 import { AskButtons } from './discord/buttons'
 import { SlashCommands, type SlashTarget } from './discord/slash'
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
@@ -273,13 +288,14 @@ import {
 } from './discord/dialog'
 import { sleep } from './codexTransport'
 import { discordVerb } from './agentDiscord'
+import { githubVerb } from './agentGithub'
 import {
   claudePeerNames,
   claudeShowsAPanel,
   runningClaudePid,
   whenMessagingSocket
 } from './claudeSessionRegistry'
-import { conductorName, isDiscordId, scopeName } from '@shared/conductors'
+import { conductorName, GLOBAL_SCOPE, isDiscordId, scopeName } from '@shared/conductors'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
 import {
@@ -294,6 +310,7 @@ import {
 } from './agentSessions'
 import { writeLine } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
+import { claudeTitleModel } from './sessionTitle'
 import { closingTree, removeTree, whatIsLeft } from './sessionClose'
 import { discordTokenRead, discordTokenWrite } from './accounts'
 import { writeAgentPlugin } from './agentPlugin'
@@ -351,6 +368,8 @@ const sessionBackends = new SessionBackends({
   }
 })
 sessionBackends.conductorOf = (id) => conductors?.conductorOf(id)
+sessionBackends.conductorWorkspaceOf = (tabId) => conductors?.workspaceOfTab(tabId)
+sessionBackends.turnOver = (tabId) => tracker.turnOver(tabId)
 function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
@@ -358,7 +377,7 @@ function allSessions(): SessionInfo[] {
 const slash = new SlashCommands({
   backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
   keyOf: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
-  status: (tabId) => tracker.statusOf(tabId),
+  turnOver: (tabId) => tracker.turnOver(tabId),
   asking: (tabId) => tracker.statusOf(tabId) === 'approval' || !!discordRelay?.dialogOpen(tabId),
   takesTyping: (tabId) => !!discordRelay?.takesCommand(tabId),
   panelOpen: async (tabId) => {
@@ -410,6 +429,23 @@ let uiActiveTabId: string | null = null
 let activeTabBeforeReload: string | null = null
 function sessionOfTab(tabId: string): SessionInfo | undefined {
   return allSessions().find((s) => s.tabId === tabId)
+}
+function sidebarTitle(s: SessionInfo): string | undefined {
+  const placeholder = s.title === PLACEHOLDER_SESSION_TITLE || s.title === CODEX_PLACEHOLDER_TITLE
+  return s.title && !placeholder ? s.title : undefined
+}
+async function discordShownName(s: SessionInfo | undefined): Promise<string | null> {
+  const title = s && sidebarTitle(s)
+  if (title) return title
+  return s?.backendId === 'claude' && s.sessionId ? claudePeerNames()(s.sessionId) : null
+}
+function retitleDiscordThreads(sessions: SessionInfo[]): void {
+  if (!discordThreads) return
+  for (const s of sessions) {
+    const title = sidebarTitle(s)
+    if (title) discordThreads.retitle(s.tabId, title, sessionBackends.workspaceOfTab(s.tabId))
+    discordLive?.sessionChanged(s.tabId, title, statusUnavailable(s))
+  }
 }
 function markedSessionsOf(wsPath: string): string[] {
   return attention
@@ -600,6 +636,7 @@ let discordLink: DiscordLink | null = null
 let discordRelay: DiscordRelay | null = null
 let discordNotices: Notices | null = null
 let discordThreads: SessionThreads | null = null
+let discordLive: LiveStatus | null = null
 let askButtons: AskButtons | null = null
 const answerable = new Set<string>()
 let answerableRegDir: string | undefined
@@ -741,6 +778,10 @@ const sessionDeps: SessionVerbDeps = {
   pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
   peerNames: () => claudePeerNames(),
   launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
+  titleModel: claudeTitleModel(
+    () => (ptyMgr.shimDir ? path.join(ptyMgr.shimDir, 'claude') : 'claude'),
+    pickedAccountEnv
+  ),
   queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
   startedSessions,
   closable: closableSessions,
@@ -758,6 +799,7 @@ const sessionDeps: SessionVerbDeps = {
     return resumed.tabId
   },
   ready: tabReady,
+  // CC§13
   sendLine: async (tabId, line, ms) => {
     const sessionId = sessionOfTab(tabId)?.sessionId
     const socket = sessionId ? await whenMessagingSocket(sessionId, ms) : null
@@ -817,6 +859,13 @@ const agentRequests = new AgentRequests({
         if (!discordRelay) throw new Error(STILL_STARTING)
         await discordRelay.send(channelId, files, text)
       }
+    }),
+    gh: githubVerb({
+      scopeOf: (tabId) => conductors?.scopeOfTab(tabId),
+      repoOf: async (scope) =>
+        scope === GLOBAL_SCOPE ? null : hosts.of(scope).github.ownerSlashName(scope),
+      // PLATFORM§1
+      run: (args) => loginEnvReady().then(() => ghRead(args))
     })
   },
   tab: (tabId) => ptyMgr.get(tabId),
@@ -841,6 +890,11 @@ async function pickForLaunch(tabId?: string): Promise<{
   if (!res.account || res.kind !== 'custom') return { res }
   const meta = findAccount(res.account, 'custom')
   return { res, endpoint: { baseUrl: meta?.baseUrl, model: meta?.model } }
+}
+
+async function pickedAccountEnv(): Promise<NodeJS.ProcessEnv> {
+  await loginEnvReady()
+  return (await pickMachineAccount(() => pickForLaunch()))?.env ?? {}
 }
 
 async function handlePickRequest(pickDir: string, reqName: string, raw: unknown): Promise<void> {
@@ -1390,12 +1444,13 @@ app.whenReady().then(() => {
 
   const hookPaths = setupHooks((tabId) => anotherLiveInstanceOwns(tabId, pidAlive))
   const statusline = setupStatusline()
-  ptyMgr.makeHookSettings = (tabId, allowKoloft) =>
+  ptyMgr.makeHookSettings = (tabId, allowKoloft, conductor) =>
     writeTabHookSettings(
       hookPaths,
       tabId,
       loadSettings().statuslineBuiltin ? statusLineSetting(statusline) : undefined,
-      allowKoloft
+      allowKoloft,
+      conductor
     )
   answerableRegDir = hookPaths.regDir
   claudeBackend.watchLocalHooks(hookPaths.regDir)
@@ -1443,6 +1498,8 @@ app.whenReady().then(() => {
   ptyMgr.on('exit', (e) => {
     slash.closed(e.id)
     discordNotices?.closed(e.id)
+    discordLive?.closed(e.id)
+    discordLive?.forget(e.id)
     discordNotices?.forget(e.id)
     discordRelay?.forget(e.id)
     discordThreads?.forget(e.id)
@@ -1460,8 +1517,8 @@ app.whenReady().then(() => {
       return
     }
     if (loginWatchers.has(e.id)) failLogin(e.id, 'setup-token exited without printing a token')
-    claudeBackend.onPtyExit(e.id)
     attention.clear(e.id)
+    claudeBackend.onPtyExit(e.id, !quitCommitted && exitedAbnormally(e))
     flushData()
     // PLATFORM§21
     const held = pendingData.get(e.id)
@@ -1482,9 +1539,11 @@ app.whenReady().then(() => {
     sendToRenderer('terminal:exit', e)
   })
   tracker.on('update', (sessions: SessionInfo[]) => {
-    sendToRenderer('sessions:update', allSessions())
+    const all = allSessions()
+    sendToRenderer('sessions:update', all)
     workspaceMgr?.onTrackerUpdate()
     syncAnswerable()
+    retitleDiscordThreads(all)
     const seen = new Set<string>()
     for (const s of sessions) {
       seen.add(s.tabId)
@@ -1509,13 +1568,18 @@ app.whenReady().then(() => {
   tracker.on('command-output', ({ tabId, ...output }: CommandOutput & { tabId: string }) =>
     slash.output(tabId, output)
   )
+  tracker.on('turn-over', ({ tabId, over }: TurnOverEdge) => {
+    ptyMgr.wakeReady(tabId)
+    slash.turnOver(tabId, over)
+    void discordLive?.refresh(tabId)
+  })
   tracker.on('status', (t: StatusEdge) => {
     ptyMgr.wakeReady(t.tabId)
-    slash.status(t.tabId, t.next)
     const conductor = !!conductors?.conductorOf(t.tabId)
     if (conductor && (t.next === 'approval' || t.next === 'waiting'))
       void codexAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
     discordNotices?.onStatus(t.tabId, t.prev, t.next)
+    void discordLive?.refresh(t.tabId)
     if (!(conductor && t.next === 'waiting'))
       attention.onStatusChange(t.tabId, t.prev, t.next, attentionCtx(), attentionSubjectOf(t.tabId))
     // ADR-0022
@@ -1529,10 +1593,13 @@ app.whenReady().then(() => {
       runtime: tracker,
       projectInfo: projectInfoFor,
       changed: () => {
-        sendToRenderer('sessions:update', allSessions())
-        workspaceMgr?.onRemoteChanged()
+        const all = allSessions()
+        sendToRenderer('sessions:update', all)
+        workspaceMgr?.onAdditionalSessionsChanged()
+        retitleDiscordThreads(all)
       },
       replaced: (oldKey, newKey) => workspaceMgr?.moveResident(oldKey, newKey),
+      memberRemoved: (key) => discordThreads?.left(key),
       events: (tabId, event) => sessionBackends.observe(tabId, event),
       error: (message) => sendToRenderer('cron:toast', message),
       trustFolder: trustCodexFolder,
@@ -1601,6 +1668,7 @@ app.whenReady().then(() => {
     killRemoteSession: (host, sessionId) =>
       claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId)),
     hiddenRow: (id) => !!conductors?.conductorOf(id),
+    parentOf: (rowId) => startedSessions.parentOfRow(rowId),
     conductorsRoot: path.join(userData, 'conductors'),
     sessionsOnDiskOrRunning: (ids) =>
       conductors?.forgetGone(
@@ -1608,6 +1676,7 @@ app.whenReady().then(() => {
           ids.has(key) || (identityOf(key).backendId === 'codex' && !codexSessions?.threadGone(key))
       ),
     memberDropped: (sessionId, why) => {
+      discordThreads?.left(sessionId)
       try {
         fs.appendFileSync(
           path.join(app.getPath('userData'), 'dropped-sessions.log'),
@@ -1637,15 +1706,21 @@ app.whenReady().then(() => {
           kind: l.backend,
           cwd: l.cwd,
           role: l.role,
+          conductor: true,
           trustFolder: true,
           name: l.backend === 'claude' ? l.title.replace(/\s+/g, '-') : undefined
         },
         l.title
       ),
     resume: async (l) => {
-      const res = await sessionBackends
-        .get(l.backend)
-        .resume({ sessionId: l.key, cwd: l.cwd, mode: 'direct', role: l.role, trustFolder: true })
+      const res = await sessionBackends.get(l.backend).resume({
+        sessionId: l.key,
+        cwd: l.cwd,
+        mode: 'direct',
+        role: l.role,
+        conductor: true,
+        trustFolder: true
+      })
       if (!res.ok) throw new Error(res.code === 'backend' ? res.message : couldNotStart(l.title))
       const spawned: SpawnedTab = {
         id: res.id,
@@ -1694,8 +1769,35 @@ app.whenReady().then(() => {
   })
   discordLink = link
   const conductorsNow = conductors
-  const threads = new SessionThreads({ link, conductors: conductorsNow })
+  const threads = new SessionThreads({
+    link,
+    conductors: conductorsNow,
+    deleteFailed: (threadName, error) =>
+      sendToRenderer(
+        'cron:toast',
+        `Koloft could not delete the Discord thread "${threadName}", so it only archived it: ${errorText(error)}`
+      ),
+    opened: (tabId) => void discordLive?.refresh(tabId)
+  })
   discordThreads = threads
+  const conductorChannelOf = (tabId: string): string | undefined =>
+    conductorsNow.bindingOfTab(tabId)?.channel.channelId
+  discordLive = new LiveStatus({
+    link,
+    openerOf: (tabId) => threads.openerOf(tabId),
+    conductorChannelOf,
+    subject: async (tabId) => {
+      const s = sessionOfTab(tabId)
+      if (!s) return undefined
+      const name = (await discordShownName(s)) ?? s.title
+      return { name, backend: s.backendId, workspace: sessionBackends.workspaceOfTab(tabId) }
+    },
+    status: (tabId) => tracker.statusOf(tabId),
+    awaitsInput: (tabId) => tracker.awaitsInput(tabId),
+    turnOver: (tabId) => tracker.turnOver(tabId),
+    unknown: (tabId) => statusUnavailable(sessionOfTab(tabId)),
+    alive: (tabId) => !!ptyMgr.get(tabId)?.alive
+  })
   const dialogOf = async (tabId: string): Promise<DialogView | undefined> => {
     const ask = await codexAskOf(tabId)
     return ask ? codexDialog(ask) : discordRelay?.dialog(tabId)
@@ -1730,7 +1832,11 @@ app.whenReady().then(() => {
     const backend = identityOf(key).backendId
     const liveTab = (): string | undefined => sessionBackends.get(backend).aliveTabFor(key)
     const live = liveTab()
-    const name = (live && sessionOfTab(live)?.title) || 'The session'
+    const shown = live && sessionOfTab(live)
+    const name =
+      (shown && sidebarTitle(shown)) ||
+      conductorsNow.threadOfChannel(threadId)?.thread.name ||
+      'The session'
     return {
       id: `thread:${threadId}`,
       name,
@@ -1740,7 +1846,10 @@ app.whenReady().then(() => {
         const open = liveTab()
         if (open) return open
         const found = await targetIn(sessionDeps, b.scope, key)
-        if (!found.ok) throw new Error(found.error)
+        if (!found.ok)
+          throw new Error(
+            `${name} is no longer in the session list (it was closed for good), so it cannot be woken.`
+          )
         return found.value.tabId ?? found.value.open()
       },
       typeCommand: (tab, command) =>
@@ -1777,14 +1886,18 @@ app.whenReady().then(() => {
           seen: (id: string) => conductorsNow.setThreadLastMessage(t.threadId, id)
         }))
       ]),
-    conductorChannelOf: (tabId) => conductorsNow.bindingOfTab(tabId)?.channel.channelId,
+    conductorChannelOf,
     withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
     remote: (tabId) => !!tracker.remoteOf(tabId),
     backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
     boundKey: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
     status: (tabId) => tracker.statusOf(tabId),
     awaitsInput: (tabId) => tracker.awaitsInput(tabId),
-    waiting: (tabId) => discordNotices?.waiting(tabId),
+    turnOver: (tabId) => tracker.turnOver(tabId),
+    waiting: (tabId) => {
+      discordNotices?.waiting(tabId)
+      void discordLive?.refresh(tabId)
+    },
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive,
     ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
     asksChanged: (tabId) => ptyMgr.wakeReady(tabId),
@@ -1806,8 +1919,8 @@ app.whenReady().then(() => {
   discordNotices = new Notices({
     bindings: () => conductorsNow.bindings(),
     place: (b, subject) => threads.place(b, subject),
-    hasThread: (key) => threads.hasThread(key),
-    card: (channelId, card) => discordRelay?.card(channelId, card),
+    threadOf: (key) => threads.threadOf(key),
+    card: async (channelId, card) => discordRelay?.card(channelId, card),
     archive: (threadId) => threads.archive(threadId),
     withButtons: (tabId, view, card) => buttons.attach(tabId, view, card),
     subject: (tabId) => {
@@ -1823,10 +1936,7 @@ app.whenReady().then(() => {
           }
         : undefined
     },
-    peerName: async (tabId) => {
-      const s = sessionOfTab(tabId)
-      return s?.backendId === 'claude' && s.sessionId ? claudePeerNames()(s.sessionId) : null
-    },
+    shownName: (tabId) => discordShownName(sessionOfTab(tabId)),
     awaitsInput: (tabId) => tracker.awaitsInput(tabId),
     commandRunning: (tabId) => slash.running(tabId),
     dialog: dialogOf
@@ -2056,6 +2166,8 @@ app.on('before-quit', (e) => {
   discordLink?.stop()
   conductors?.flush()
   workspaceMgr?.dispose()
+  flushLayout()
+  flushAttention()
   freshness?.stop()
   remoteSync?.stop()
   closeAllDirWatchers()
@@ -2202,6 +2314,11 @@ function setupGuestUnload(): void {
 }
 
 const guestGestures = new WeakMap<WebContents, number>()
+const guestOwners = new WeakMap<WebContents, string>()
+
+function tabOwningGuest(guest: WebContents): string | null {
+  return guestOwners.get(guest) ?? uiActiveTabId
+}
 const CHROMIUM_USER_ACTIVATION_INPUTS = new Set(['mouseDown', 'keyDown'])
 
 function setupGuestGestures(): void {
@@ -2295,13 +2412,14 @@ function setupGuestBackgroundOpen(): void {
       routeGuestPopup(url.slice(0, 4096), e.sender)
       return
     }
-    const tabId = uiActiveTabId
-    if (!tabId) return
     const decision = routeFor(url.slice(0, 4096), 'user')
     if (decision.dest !== 'browser') {
       routeGuestPopup(url, e.sender)
       return
     }
+    if (openAsDrivingAgentsTab(e.sender, decision.target)) return
+    const tabId = tabOwningGuest(e.sender)
+    if (!tabId) return
     const payload: BrowserOpenRequest = { tabId, url: decision.target, source: 'agent' }
     sendToRenderer('browser:open', payload)
   })
@@ -2471,17 +2589,24 @@ function relayDeps(): RelayDeps {
   }
 }
 
-function routeGuestPopup(url: string, from?: WebContents): void {
-  if (from && isOverlayGuest(from)) {
+function openAsDrivingAgentsTab(from: WebContents, url: string): boolean {
+  const driver = sessionDrivingGuest(from.id)
+  if (driver) void cdpOp('create', driver, { url })
+  return driver !== null
+}
+
+function routeGuestPopup(url: string, from: WebContents): void {
+  if (isOverlayGuest(from)) {
     const decision = routeFor(url, 'user')
     if (decision.dest === 'browser') sendOverlayOpen(decision.target, 'now')
     else if (decision.dest === 'system') openUrlExternally(decision.target)
     else sendToRenderer('browser:blocked-scheme', url)
     return
   }
-  const tabId = uiActiveTabId
-  if (!tabId) return
   const decision = routeFor(url, 'user')
+  if (decision.dest === 'browser' && openAsDrivingAgentsTab(from, decision.target)) return
+  const tabId = tabOwningGuest(from)
+  if (!tabId) return
   if (decision.dest === 'browser') {
     const payload: BrowserOpenRequest = { tabId, url: decision.target, source: 'user' }
     sendToRenderer('browser:open', payload)
@@ -2747,9 +2872,10 @@ function killTabFromMain(tabId: string): void {
 
 function killTabPty(tabId: string): Promise<boolean> {
   discordNotices?.closed(tabId)
+  discordLive?.closed(tabId)
   const owner = sessionBackends.ownerOfTab(tabId)
   const stopped = owner ? Promise.resolve(owner.stop(tabId)) : Promise.resolve(ptyMgr.kill(tabId))
-  attention.clear(tabId)
+  attention.clearKeepingExit(tabId)
   relayTabClosed(tabId)
   boundSessions.delete(tabId)
   return stopped.then(
@@ -2788,7 +2914,7 @@ function closableSessions(): ClosableSession[] {
   return [...live, ...cold]
 }
 
-const hostGitOut: GitOut = (dir, args) => hosts.of(dir).gitOut(dir, args)
+const hostGitOut: GitOut = (dir, args, timeoutMs) => hosts.of(dir).gitOut(dir, args, timeoutMs)
 
 async function whatClosingWouldLose(
   target: ClosableSession,
@@ -2813,6 +2939,9 @@ async function closeSessionFully(
   if (target.tabId) {
     sendToRenderer('tab:killedByMain', target.tabId)
     await killTabPty(target.tabId)
+  } else if (allSessions().some((s) => s.alive && s.sessionId === target.sessionId)) {
+    sendToRenderer('cron:toast', `${target.title} was opened again, so Koloft did not close it.`)
+    return
   }
   const tree = await closingTree(hostGitOut, info)
   const problem = tree && (await removeTree(hostGitOut, tree))
@@ -2835,12 +2964,14 @@ function cronRunTree(root: string, worktree?: string): ProjectInfo {
 }
 
 const NO_SESSION_FOR_THE_RUN = "Koloft cannot find this run's session."
+const RUN_HAS_UNSAVED_EDITS = 'its Workbench has unsaved edits'
 
 async function whatClosingTheRunWouldLose(
   tabId: string,
   root: string,
   worktree?: string
 ): Promise<string[]> {
+  if (dirtyTabIds.has(tabId)) return [RUN_HAS_UNSAVED_EDITS]
   const session = sessionOfTab(tabId)
   if (!session) return [NO_SESSION_FOR_THE_RUN]
   return whatClosingWouldLose(session, cronRunTree(root, worktree))
@@ -2930,14 +3061,10 @@ async function restoreResident(row: SessionRow): Promise<string | undefined> {
 function tabReady(tabId: string, ms: number, turnEnded: boolean): Promise<boolean> {
   return ptyMgr.whenReady(
     tabId,
-    () => {
-      const status = tracker.statusOf(tabId)
-      return (
-        !!sessionOfTab(tabId)?.sessionId &&
-        status !== undefined &&
-        (!turnEnded || status === 'waiting' || status === 'idle')
-      )
-    },
+    () =>
+      !!sessionOfTab(tabId)?.sessionId &&
+      tracker.statusOf(tabId) !== undefined &&
+      (!turnEnded || tracker.turnOver(tabId)),
     ms
   )
 }
@@ -3061,10 +3188,13 @@ function commitSettings(patch: Partial<Settings>): Settings {
   return s
 }
 
+const BAD_GIT_STEP: GitStepResult = { ok: false, reason: 'bad request' }
+
 const githubOptions: GithubOptions = {
   fixture: parseGithubFixture(process.env.KOLOFT_GITHUB_FIXTURE),
   // PLATFORM§1
   openCounts: (repo) => loginEnvReady().then(() => ghOpenCounts(repo)),
+  gh: (args) => loginEnvReady().then(() => runGh(args)),
   signedIn: async () => {
     try {
       const jar = await session.fromPartition(BROWSER_PARTITION).cookies.get({
@@ -3112,7 +3242,7 @@ const hosts = new Hosts(
         alive: () => remoteSync?.alive(machine) ?? new Set(),
         realPath: (p) => workspaceMgr?.realRemotePath({ host: machine, path: p }) ?? p,
         settings: loadSettings,
-        pickAccount: () => pickMachineAccount(pickForLaunch),
+        pickAccount: (launchKey) => pickMachineAccount(() => pickForLaunch(launchKey)),
         hookSettings: (tabId, dir) =>
           machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin)
       }
@@ -3174,6 +3304,9 @@ function registerIpc(): void {
   )
 
   ipcMain.on('terminal:write', (_e, id: string, data: string) => ptyMgr.write(id, data))
+  ipcMain.handle('terminal:paste', (_e, id: string, text: string, typedAfter?: string) =>
+    ptyMgr.paste(id, text, typedAfter)
+  )
   // PLATFORM§21
   ipcMain.on('sessions:activity', (_e, id: unknown) => {
     if (typeof id === 'string' && id) tracker.noteActivity(id)
@@ -3556,6 +3689,11 @@ function registerIpc(): void {
     if (on) overlayGuests.add(guestId)
     else overlayGuests.delete(guestId)
   })
+  ipcMain.on('browser:guest-owner', (_e, guestId: unknown, ownerTabId: unknown) => {
+    if (typeof guestId !== 'number' || typeof ownerTabId !== 'string') return
+    const guest = webContents.fromId(guestId)
+    if (guest) guestOwners.set(guest, ownerTabId)
+  })
   ipcMain.on('browser:overlay-ready', () => {
     overlayListening = true
     flushOverlayOpens()
@@ -3815,8 +3953,28 @@ function registerIpc(): void {
   })
   ipcMain.handle('github:target', (_e, root: unknown, what: unknown) => {
     if (typeof root !== 'string' || !root) return null
-    if (what !== 'repo' && what !== 'pulls' && what !== 'pr') return null
+    if (what !== 'repo' && what !== 'pulls' && what !== 'pr' && what !== 'compare') return null
     return hosts.of(root).github.target(root, what)
+  })
+  ipcMain.handle('github:checks', (_e, root: unknown, pr: unknown): Promise<PrChecks> => {
+    if (typeof root !== 'string' || !root || !Number.isInteger(pr)) {
+      return Promise.resolve({ state: 'failed' })
+    }
+    return hosts.of(root).github.checks(root, pr as number)
+  })
+  ipcMain.handle('github:failing-checks-text', (_e, root: unknown, pr: unknown) => {
+    if (typeof root !== 'string' || !root || !Number.isInteger(pr)) return null
+    return hosts.of(root).github.failingChecksText(root, pr as number)
+  })
+  ipcMain.handle('github:commit', (_e, root: unknown, message: unknown) => {
+    if (typeof root !== 'string' || !root || typeof message !== 'string') return BAD_GIT_STEP
+    const host = hosts.of(root)
+    return commitAll((args, network) => host.gitRun(root, args, network), message)
+  })
+  ipcMain.handle('github:push', (_e, root: unknown) => {
+    if (typeof root !== 'string' || !root) return BAD_GIT_STEP
+    const host = hosts.of(root)
+    return pushBranch((args, network) => host.gitRun(root, args, network))
   })
   ipcMain.handle('preview:openFileDialog', async () => {
     const stub = process.env.KOLOFT_FILE_DIALOG_FILE

@@ -38,15 +38,15 @@ function setup(over: Partial<NoticeDeps> = {}) {
   const deps: NoticeDeps = {
     bindings: () => [binding(WS, '10', ['a', 'b', 'c', 'e'])],
     place: async (_b, s) => `thread-${s.key}`,
-    hasThread: () => false,
-    card: (channelId, card) => void cards.push([channelId, shown(card)]),
+    threadOf: (key) => `thread-${key}`,
+    card: async (channelId, card) => void cards.push([channelId, shown(card)]),
     archive: (threadId) => void archived.push(threadId),
     withButtons: (_t, view, card) => ({
       ...card,
       footer: `${card.footer ?? ''} [${view.choices.map((c) => c.label).join('|')}]`
     }),
     subject: (tabId) => subject(tabId, tabId),
-    peerName: async () => null,
+    shownName: async () => null,
     awaitsInput: () => false,
     commandRunning: () => false,
     dialog: async () => undefined,
@@ -109,8 +109,8 @@ describe('Discord notices: what each session’s thread gets', () => {
       commandRunning: (tabId) => tabId === 'e',
       subject: (tabId) => subject(tabId, tabId, { conductor: tabId === 'd' ? 'b1' : undefined })
     })
-    notices.turnEnded('a', 'All done.')
     notices.onStatus('a', 'working', 'waiting')
+    notices.turnEnded('a', 'All done.')
     notices.onStatus('e', 'working', 'waiting')
     notices.onStatus('d', 'working', 'approval')
     notices.closed('d')
@@ -122,7 +122,7 @@ describe('Discord notices: what each session’s thread gets', () => {
     ])
   })
 
-  it('"finished" carries the turn’s reply whether it arrives before or after the turn ends; with none in time it goes without one', async () => {
+  it('"finished" carries the reply that follows its turn’s end, even a late one; with none in time it goes without one', async () => {
     vi.useFakeTimers()
     const { notices, cards } = setup()
     notices.onStatus('a', 'working', 'waiting')
@@ -138,24 +138,15 @@ describe('Discord notices: what each session’s thread gets', () => {
     ])
   })
 
-  it('the reply of a turn a slash command ran is not shown with a later "finished"', async () => {
+  it('a reply that comes before its "finished" belongs to an earlier turn — one that gave no card, or the turn before flushed as the next one began — and is never shown', async () => {
     vi.useFakeTimers()
     let running = true
     const { notices, cards } = setup({ commandRunning: () => running })
-    notices.turnEnded('a', 'What /review printed.')
     notices.onStatus('a', 'working', 'waiting')
-    await vi.advanceTimersByTimeAsync(0)
-    running = false
-    notices.onStatus('a', 'approval', 'waiting')
-    await vi.advanceTimersByTimeAsync(REPLY_FOLLOWS_THE_TURN_MS)
-    expect(cards).toEqual([['thread-a', '🔔 **a** finished.']])
-  })
-
-  it('a reply from a turn that went on working is not shown with the next turn’s "finished"', async () => {
-    vi.useFakeTimers()
-    const { notices, cards } = setup()
-    notices.turnEnded('a', 'Old reply.')
+    notices.turnEnded('a', 'What /review printed.')
     notices.onStatus('a', 'waiting', 'working')
+    notices.turnEnded('a', 'From the turn before.')
+    running = false
     notices.onStatus('a', 'working', 'waiting')
     await vi.advanceTimersByTimeAsync(REPLY_FOLLOWS_THE_TURN_MS)
     expect(cards).toEqual([['thread-a', '🔔 **a** finished.']])
@@ -186,16 +177,16 @@ describe('Discord notices: what each session’s thread gets', () => {
     ])
   })
 
-  it('a session started under a name is called by that name, not by its title, and still by it once it has closed and has no name left', async () => {
+  it('a session is called by the name it is shown under, and still by it once it has closed and has no name left', async () => {
     vi.useFakeTimers()
     let live = true
     const { notices, cards } = setup({
       subject: (tabId) =>
         subject(tabId, tabId === 'a' ? 'Koloft started you because the session' : 'beta'),
-      peerName: async (tabId) => (tabId === 'a' && live ? 'helper-1a2b3c' : null)
+      shownName: async (tabId) => (tabId === 'a' && live ? 'helper-1a2b3c' : null)
     })
-    notices.turnEnded('a', '')
     notices.onStatus('a', 'working', 'waiting')
+    notices.turnEnded('a', '')
     await vi.advanceTimersByTimeAsync(0)
     live = false
     notices.closed('a')
@@ -223,5 +214,47 @@ describe('Discord notices: what each session’s thread gets', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(cards).toEqual([['thread-a', '⏹ **alpha** closed.']])
     expect(archived).toEqual(['thread-a'])
+  })
+
+  it('a thread is archived only once its "closed" card has posted, since a card posted into an archived thread opens it again', async () => {
+    vi.useFakeTimers()
+    let posted = (): void => undefined
+    const { notices, archived } = setup({
+      card: () => new Promise<void>((resolve) => (posted = resolve))
+    })
+    notices.closed('a')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(archived).toEqual([])
+    posted()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(archived).toEqual(['thread-a'])
+  })
+
+  it('a "finished" still waiting for its reply when the tab closes is dropped, so nothing lands after the "closed" card and opens the archived thread again', async () => {
+    vi.useFakeTimers()
+    const { notices, cards, archived } = setup()
+    notices.onStatus('a', 'working', 'waiting')
+    notices.closed('a')
+    notices.forget('a')
+    await vi.advanceTimersByTimeAsync(REPLY_FOLLOWS_THE_TURN_MS)
+    expect(cards).toEqual([['thread-a', '⏹ **a** closed.']])
+    expect(archived).toEqual(['thread-a'])
+  })
+
+  it('a session with no thread, or whose thread went with it off the sidebar, gets no "closed" card and no thread is opened for one', async () => {
+    vi.useFakeTimers()
+    const placed: string[] = []
+    const { notices, cards, archived } = setup({
+      threadOf: () => undefined,
+      place: async (_b, s) => {
+        placed.push(s.key)
+        return `thread-${s.key}`
+      }
+    })
+    notices.closed('a')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(placed).toEqual([])
+    expect(cards).toEqual([])
+    expect(archived).toEqual([])
   })
 })

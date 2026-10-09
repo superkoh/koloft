@@ -61,6 +61,8 @@ export class SessionBackends {
   private adapters = new Map<BackendId, SessionBackend>()
   private cleanExitAt = new Map<string, number>()
   conductorOf: (tabOrSessionId: string) => string | undefined = () => undefined
+  conductorWorkspaceOf: (tabId: string) => string | undefined = () => undefined
+  turnOver: (tabId: string) => boolean = () => false
 
   constructor(private lifecycle: SessionLifecycle) {}
 
@@ -124,7 +126,7 @@ export class SessionBackends {
   }
 
   workspaceOfTab(tabId: string): string | undefined {
-    return this.ownerOfTab(tabId)?.workspaceOfTab(tabId)
+    return this.conductorWorkspaceOf(tabId) ?? this.ownerOfTab(tabId)?.workspaceOfTab(tabId)
   }
 
   availability(
@@ -145,7 +147,8 @@ export class SessionBackends {
         backendId: backend.id,
         host: s.remote ? 'ssh' : 'local',
         nativeSessionId: s.nativeSessionId ?? s.sessionId,
-        conductor: this.conductorOf(s.tabId) ?? this.conductorOf(s.sessionId)
+        conductor: this.conductorOf(s.tabId) ?? this.conductorOf(s.sessionId),
+        turnOver: this.turnOver(s.tabId)
       }))
     )
   }

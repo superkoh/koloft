@@ -72,6 +72,23 @@ function latest(wsPath: string): WorkspaceRows {
   return entry
 }
 
+async function holdNextRescan(): Promise<() => void> {
+  let release!: () => void
+  const held = new Promise<void>((r) => (release = r))
+  const internals = mgr as unknown as {
+    worktreeEntries(p: string): Promise<unknown>
+    rescan(): Promise<void>
+  }
+  const real = internals.worktreeEntries.bind(mgr)
+  const spy = vi.spyOn(internals, 'worktreeEntries').mockImplementationOnce(async (p) => {
+    await held
+    return real(p)
+  })
+  void internals.rescan()
+  await vi.waitFor(() => expect(spy).toHaveBeenCalled())
+  return release
+}
+
 beforeEach(() => {
   root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-wsmgr-')))
   projectsRoot = path.join(root, 'projects')
@@ -184,19 +201,7 @@ describe('WorkspaceManager: move (the sidebar drag order)', () => {
   it('a scan already running when the move lands pushes its rows in the new order', async () => {
     mgr.start()
     await mgr.firstScan
-    let release!: () => void
-    const held = new Promise<void>((r) => (release = r))
-    const internals = mgr as unknown as {
-      worktreeEntries(p: string): Promise<unknown>
-      rescan(): Promise<void>
-    }
-    const real = internals.worktreeEntries.bind(mgr)
-    const spy = vi.spyOn(internals, 'worktreeEntries').mockImplementationOnce(async (p) => {
-      await held
-      return real(p)
-    })
-    void internals.rescan()
-    await vi.waitFor(() => expect(spy).toHaveBeenCalled())
+    const release = await holdNextRescan()
 
     mgr.move(plain, repo)
     const afterMove = pushed.length
@@ -262,6 +267,33 @@ describe('WorkspaceManager: owned-only sidebar (decided 2026-08-09)', () => {
   })
 })
 
+describe('WorkspaceManager: a rescan never blocks the main process on the transcript storage', () => {
+  it('reads every bucket, head, tail, sidecar and folder it needs without one blocking file call under the projects root', async () => {
+    writeJsonl(repo, 's1')
+    fs.writeFileSync(path.join(projectsRoot, encodeCwd(repo), 's1.title'), 'Named\n')
+    writeJsonl(plain, 's2')
+    own('s1', 's2')
+    const blocking = [
+      'statSync',
+      'lstatSync',
+      'readdirSync',
+      'openSync',
+      'readSync',
+      'readFileSync',
+      'existsSync'
+    ] as const
+    const spies = blocking.map((name) => vi.spyOn(fs, name))
+    mgr.start()
+    await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.title)).toEqual(['Named']))
+    expect(latest(plain).rows.map((r) => r.id)).toEqual(['s2'])
+    const underProjects = spies.flatMap((s) =>
+      s.mock.calls.map((c) => String(c[0])).filter((p) => p.startsWith(projectsRoot))
+    )
+    for (const s of spies) s.mockRestore()
+    expect(underProjects).toEqual([])
+  })
+})
+
 describe('WorkspaceManager: cold-row title parity with the live tracker', () => {
   it('prefers the `<id>.title` sidecar over the jsonl-head title', async () => {
     writeJsonl(repo, 's1')
@@ -269,6 +301,103 @@ describe('WorkspaceManager: cold-row title parity with the live tracker', () => 
     own('s1')
     mgr.start()
     await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.title)).toEqual(['Fresh AI name']))
+  })
+
+  it('names a closed session by its latest session name, so a /rename past the head scan still shows after a restart', async () => {
+    writeJsonl(repo, 's1')
+    const file = path.join(projectsRoot, encodeCwd(repo), 's1.jsonl')
+    const PAST_THE_HEAD_SCAN = 'x'.repeat(300 * 1024)
+    fs.appendFileSync(
+      file,
+      [
+        { type: 'custom-title', customTitle: 'helper-1a2b3c' },
+        { type: 'user', cwd: repo, message: { content: PAST_THE_HEAD_SCAN } },
+        { type: 'custom-title', customTitle: '改名后的标题' }
+      ]
+        .map((r) => JSON.stringify(r))
+        .join('\n') + '\n'
+    )
+    own('s1')
+    mgr.start()
+    await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.title)).toEqual(['改名后的标题']))
+  })
+})
+
+describe('WorkspaceManager: which transcript writes rescan the list', () => {
+  const PAST_RESCAN_DEBOUNCE_AND_FS_EVENT_LATENCY_MS = 1000
+  const settle = (): Promise<void> =>
+    new Promise((r) => setTimeout(r, PAST_RESCAN_DEBOUNCE_AND_FS_EVENT_LATENCY_MS))
+
+  it("a line appended to a running local session's transcript rescans nothing; one appended to a stopped session's still does", async () => {
+    writeJsonl(repo, 'live')
+    writeJsonl(repo, 'cold')
+    own('live', 'cold')
+    bindings.set('live', 'tab-live')
+    mgr.start()
+    await vi.waitFor(() =>
+      expect(
+        latest(repo)
+          .rows.map((r) => r.id)
+          .sort()
+      ).toEqual(['cold', 'live'])
+    )
+    const append = (id: string): void =>
+      fs.appendFileSync(
+        path.join(projectsRoot, encodeCwd(repo), id + '.jsonl'),
+        JSON.stringify({ type: 'assistant' }) + '\n'
+      )
+
+    await settle()
+
+    const before = pushed.length
+    append('live')
+    await settle()
+    expect(pushed.length).toBe(before)
+
+    append('cold')
+    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(before))
+  })
+
+  it('a Codex change that leaves every Codex row as it was rescans nothing; one that changes a row does', async () => {
+    const codexRow = {
+      id: 'codex:local:t1',
+      title: 'Codex task',
+      cwd: repo,
+      worktree: 'main',
+      running: true,
+      invalidCwd: false,
+      mtime: 1
+    }
+    mgr.dispose()
+    mgr = new WorkspaceManager({
+      projectsRoot,
+      remoteProjectsRoot: () => projectsRoot,
+      loadLayout: () => layout,
+      saveLayout: (l) => {
+        layout = l
+      },
+      projectInfo: projectInfoFor,
+      runningBindings: () => bindings,
+      killTab: () => {},
+      pushRows: (p) => pushed.push(p),
+      additionalRows: (ws) => (ws === repo ? [{ ...codexRow }] : []),
+      additionalMembers: () => new Set([codexRow.id])
+    })
+    mgr.start()
+    await mgr.firstScan
+    mgr.onAdditionalSessionsChanged()
+    await settle()
+
+    const before = pushed.length
+    mgr.onAdditionalSessionsChanged()
+    await settle()
+    expect(pushed.length).toBe(before)
+
+    codexRow.title = 'Codex task, renamed'
+    mgr.onAdditionalSessionsChanged()
+    await vi.waitFor(() =>
+      expect(latest(repo).rows.find((r) => r.id === codexRow.id)?.title).toBe('Codex task, renamed')
+    )
   })
 })
 
@@ -649,6 +778,22 @@ describe('WorkspaceManager: working-set eviction (D1/D2)', () => {
     expect(dropped).toEqual(['fresh-1: no transcript found and not running'])
   })
 
+  it('GC spares a session that binds while a rescan is already under way, before its jsonl is born', async () => {
+    writeJsonl(repo, 'anchor-1')
+    mgr.start()
+    await mgr.firstScan
+    const release = await holdNextRescan()
+
+    bindings.set('fresh-2', 'tab-2')
+    mgr.onSessionBound('fresh-2')
+    const beforeRelease = pushed.length
+    release()
+    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(beforeRelease))
+
+    expect(dropped).toEqual([])
+    expect(mgr.isMember('fresh-2')).toBe(true)
+  })
+
   it('every session that leaves the list says why', async () => {
     writeJsonl(repo, 'a-1')
     writeJsonl(repo, 'b-1')
@@ -696,11 +841,11 @@ describe('WorkspaceManager: conductor sessions stay out of the workspace lists',
     expect(mgr.workspaceOf('cond-now')).toBe(repo)
   })
 
-  it('never offers a conductor’s own folder as a folder to pin', () => {
+  it('never offers a conductor’s own folder as a folder to pin', async () => {
     const own = path.join(root, 'userData', 'conductors', 'global')
     fs.mkdirSync(own, { recursive: true })
     writeJsonl(own, 'cond-1')
-    expect(mgr.discover()).toEqual([])
+    expect(await mgr.discover()).toEqual([])
   })
 })
 
@@ -872,7 +1017,7 @@ describe('WorkspaceManager: a rescan re-reads only the transcript heads that cha
     expect(titleOf('settled-1')).toBe('Settled name')
     expect(titleOf('grows-1')).not.toBe('later summary')
 
-    const opened = vi.spyOn(fs, 'openSync')
+    const opened = vi.spyOn(fs.promises, 'open')
     const jsonlOpened = (): string[] => [
       ...new Set(
         opened.mock.calls
@@ -938,7 +1083,7 @@ describe('WorkspaceManager: discover (U-OB-01, the welcome’s folders-you-alrea
   }
 
   // CC§2
-  it('collapses a repo’s slugs and drops the ones that are not offerable', () => {
+  it('collapses a repo’s slugs and drops the ones that are not offerable', async () => {
     const a = path.join(root, 'a')
     const sub = path.join(a, 'sub')
     fs.mkdirSync(path.join(a, '.git'), { recursive: true })
@@ -977,20 +1122,20 @@ describe('WorkspaceManager: discover (U-OB-01, the welcome’s folders-you-alrea
     fs.mkdirSync(e)
     writeCwdlessJsonl(e, 'e-1')
 
-    expect(mgr.discover()).toEqual([
+    expect(await mgr.discover()).toEqual([
       { path: a, sessions: 3, mtime: 9000_000 },
       { path: c, sessions: 3, mtime: 700_000 }
     ])
   })
 
-  it('offers at most 8 folders, newest first', () => {
+  it('offers at most 8 folders, newest first', async () => {
     for (let i = 0; i < 9; i++) {
       const dir = path.join(root, 'p' + i)
       fs.mkdirSync(dir)
       writeJsonl(dir, 'p' + i + '-1')
       setMtime(dir, 'p' + i + '-1', 1000 + i)
     }
-    const found = mgr.discover()
+    const found = await mgr.discover()
     expect(found).toHaveLength(8)
     expect(found.map((f) => path.basename(f.path))).toEqual([
       'p8',
@@ -1189,6 +1334,23 @@ describe('remote workspace: reading the mirror', () => {
     mgr.refresh()
     await vi.waitFor(() => expect(reported.has('deleted')).toBe(false))
     expect([...reported]).toEqual(expect.arrayContaining(kept))
+  })
+
+  it('a member whose transcript is gone is reported dropped before the conductors hear which sessions are left, so its Discord thread can still be found', async () => {
+    writeJsonl(repo, 'local1')
+    own('local1')
+    const order: string[] = []
+    mgr = remoteMgr({
+      memberDropped: (id: string) => order.push(`dropped ${id}`),
+      sessionsOnDiskOrRunning: (ids: ReadonlySet<string>) =>
+        order.push(ids.has('local1') ? 'listed' : 'gone')
+    })
+    mgr.start()
+    await vi.waitFor(() => expect(order).toContain('listed'))
+    fs.rmSync(path.join(projectsRoot, encodeCwd(repo), 'local1.jsonl'))
+    mgr.refresh()
+    await vi.waitFor(() => expect(order).toContain('gone'))
+    expect(order.slice(order.indexOf('dropped local1'))).toEqual(['dropped local1', 'gone'])
   })
 
   it('counts a session the machine reports as alive as running', async () => {

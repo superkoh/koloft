@@ -62,6 +62,7 @@ function cleanThreads(raw: unknown): SessionThread[] {
       {
         threadId: t.threadId,
         keys,
+        ...(typeof t.name === 'string' ? { name: t.name } : {}),
         ...(isDiscordId(t.lastMessageId) ? { lastMessageId: t.lastMessageId } : {})
       }
     ]

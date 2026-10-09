@@ -7,6 +7,7 @@ const readline = require('readline')
 const LIVE_EXECPATH_DIFFERING_FROM_TRANSCRIPT_VERSION = '/fake/versions/8.8.8'
 const TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE = '9.9.9-fake'
 const PRICED_MODEL_ID = 'claude-opus-4-8'
+const VERSION_ABOVE_ANY_MINIMUM = '99.0.0'
 
 const FULL_LENGTH_108_CHAR_SETUP_TOKEN =
   'sk-ant-oat01-A1b2C3d4E5f6G7h8I9j0A1b2C3d4E5f6G7h8I9j0A1b2C3d4E5f6G7h8I9j0A1b2C3d4E5f6G7h8I9j0K1L2M3N4O5P6Q7R'
@@ -21,6 +22,20 @@ const firstPrompt = dashDashAt >= 0 ? rawArgv.slice(dashDashAt + 1).join(' ') : 
 const argVal = (flag) => {
   const i = argv.indexOf(flag)
   return i >= 0 ? argv[i + 1] : undefined
+}
+
+// CC§16
+if (argv[0] === '--version') {
+  process.stdout.write(`${VERSION_ABOVE_ANY_MINIMUM} (Claude Code)\n`)
+  process.exit(0)
+}
+
+// CC§9
+if (argv[0] === '-p') {
+  const task = fs.readFileSync(0, 'utf8').split('Task:\n').pop()
+  const firstLine = task.split('\n').find((l) => l.trim()) ?? ''
+  process.stdout.write(`${firstLine.trim()} (titled)\n`)
+  process.exit(0)
 }
 
 // CC§7
@@ -65,7 +80,8 @@ function writeCallLog(effCwd) {
         apiKey: process.env.ANTHROPIC_API_KEY || null,
         cdpEndpoint: process.env.KOLOFT_BROWSER_CDP || null,
         playwrightMcpEndpoint: process.env.PLAYWRIGHT_MCP_CDP_ENDPOINT || null,
-        playwrightCliSession: process.env.PLAYWRIGHT_CLI_SESSION || null
+        playwrightCliSession: process.env.PLAYWRIGHT_CLI_SESSION || null,
+        portOffset: process.env.KOLOFT_PORT_OFFSET || null
       }) + '\n'
     )
   } catch {}
@@ -172,6 +188,14 @@ function delayMs() {
     if (v) return Number(v) || 0
   } catch {}
   return Number(process.env.KOLOFT_FAKE_START_DELAY_MS || 0) || 0
+}
+
+function reportedBackgroundMs() {
+  try {
+    const v = fs.readFileSync(path.join(home, 'fake-claude-bg-ms'), 'utf8').trim()
+    if (v) return Number(v) || SECOND_STOP_AFTER_MS_OUTLASTING_A_MISSED_WATCH_POLL
+  } catch {}
+  return SECOND_STOP_AFTER_MS_OUTLASTING_A_MISSED_WATCH_POLL
 }
 
 function nextFreshLaunchTitleFromFile() {
@@ -395,6 +419,14 @@ function startupTurn() {
     hook_event_name: 'SessionStart',
     source: 'startup'
   })
+  // CC§9
+  const launchName = argVal('--name')
+  if (launchName && !resumeId) {
+    append([
+      { type: 'custom-title', customTitle: launchName, sessionId },
+      { type: 'agent-name', agentName: launchName, sessionId }
+    ])
+  }
   if (wtName) appendWorktreeState()
 
   // ADR-0020
@@ -597,7 +629,18 @@ function keyOnTheDialog() {
   })
 }
 const rl = readline.createInterface({ input: typedLines })
-rl.on('line', handleLine)
+const PASTE_START = '\x1b[200~'
+const PASTE_END = '\x1b[201~'
+let pasted = null
+// CC§18
+rl.on('line', (line) => {
+  if (pasted === null && !line.includes(PASTE_START)) return handleLine(line)
+  pasted = pasted === null ? line.replace(PASTE_START, '') : pasted + '\n' + line
+  if (!pasted.includes(PASTE_END)) return
+  const whole = pasted.replace(PASTE_END, '')
+  pasted = null
+  handleLine(whole)
+})
 function handleLine(line) {
   const text = line.replace(ESC, '').trim()
   if (worktreeChoicePending) {
@@ -890,7 +933,7 @@ function handleLine(line) {
       ])
       fireHook('stop', { hook_event_name: 'Stop', background_tasks: [] })
       process.stdout.write('[fake-claude] bg-reported finished\r\n> ')
-    }, SECOND_STOP_AFTER_MS_OUTLASTING_A_MISSED_WATCH_POLL)
+    }, reportedBackgroundMs())
     process.stdout.write('[fake-claude] bg-reported running\r\n> ')
     return
   }
