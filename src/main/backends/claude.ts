@@ -272,9 +272,9 @@ export class ClaudeBackend implements SessionBackend {
     }
     if (!obj.tabId || !obj.regId) return
     if (this.processedRegIds.has(obj.regId)) return
+    this.processedRegIds.add(obj.regId)
     if (!this.d.pty.get(obj.tabId)) return
     if (!registeredByTabRoot(obj.pid, this.d.pty.pidOf(obj.tabId))) return
-    this.processedRegIds.add(obj.regId)
     const cwd = obj.cwd && obj.cwd.length ? obj.cwd : os.homedir()
     this.d.tracker.track(obj.tabId, cwd)
     const early = this.startsBeforeRegistration.get(obj.tabId)
@@ -367,10 +367,12 @@ export class ClaudeBackend implements SessionBackend {
       this.handleHookRegistration(obj)
     }
     const drops = watchJsonDrops(dir, () => (obj, full) => handle(obj, full, false))
-    const sweep = setInterval(
-      () => sweepJsonDrops(dir, () => (obj, full) => handle(obj, full, true)),
-      SWEEP_FOR_A_LOST_DROP_MS
-    )
+    const sweep = mirror
+      ? undefined
+      : setInterval(
+          () => sweepJsonDrops(dir, () => (obj, full) => handle(obj, full, true)),
+          SWEEP_FOR_A_LOST_DROP_MS
+        )
     const logs = this.watchStatusLogs(dir)
     return () => {
       drops?.close()
