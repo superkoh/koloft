@@ -373,11 +373,13 @@ async function opensAnIssueItself(fake: FakeDiscord, log: string): Promise<void>
   await expect
     .poll(() => conductorSaid(fake).join('\n'), { timeout: A_REAL_MODEL_TURN_MS })
     .toContain(ISSUE_ONLY_GH_KNOWS)
-  const calls = fs.readFileSync(log, 'utf8').trim().split('\n')
-  const created = calls.findIndex((c) => c.startsWith('issue create '))
-  expect(calls[created]).toMatch(/^issue create .*--title=.+--repo acme\/app$/)
-  expect(calls[created]).not.toMatch(/[　-鿿＀-￯]/)
-  expect(calls.slice(0, created).some((c) => c.startsWith('issue list '))).toBe(true)
+  const calls = fs.readFileSync(log, 'utf8')
+  const created = /^issue create [\s\S]*?(?=^(?:issue|pr|run) |(?![\s\S]))/m.exec(calls)
+  expect(created).not.toBeNull()
+  expect(created![0]).toMatch(/--title=/)
+  expect(created![0]).toMatch(/--repo[= ]acme\/app\b/)
+  expect(created![0]).not.toMatch(/[　-鿿＀-￯]/)
+  expect(calls.slice(0, created!.index)).toMatch(/^issue list /m)
 }
 
 async function answersWholeInTheChannel(fake: FakeDiscord): Promise<void> {
