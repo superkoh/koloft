@@ -308,6 +308,58 @@ describe('CodexSessions', () => {
     expect(mocks.rpcHomes).toEqual([undefined, undefined])
   })
 
+  // CODEX§24
+  it('a search offers the threads of the given workspaces but no archived one, and asks thread/search once, in the default home every account shares', async () => {
+    const C = '33333333-3333-4333-8333-333333333333'
+    const D = '44444444-4444-4444-8444-444444444444'
+    mocks.request.mockImplementation(async (method, params) => {
+      if (method === 'thread/list')
+        return params.archived
+          ? { data: [{ id: D, cwd: repo, name: 'Parser, archived' }] }
+          : {
+              data: [
+                { id: A, cwd: repo, name: 'Parser plan' },
+                { id: B, cwd: repo, name: 'Quiet title' },
+                { id: C, cwd: other, name: 'Elsewhere' }
+              ]
+            }
+      return {
+        data: [
+          { snippet: '... the PARSER crashed on an empty file', thread: { id: B, cwd: repo } },
+          { snippet: 'parser here too', thread: { id: C, cwd: other } }
+        ],
+        nextCursor: null
+      }
+    })
+    await sessions.refreshHistory()
+    expect(
+      sessions
+        .searchable([repo])
+        .map((c) => [c.row.id, c.row.backendId, c.workspacePath])
+        .sort()
+    ).toEqual(
+      [
+        [codexSessionKey(A), 'codex', repo],
+        [codexSessionKey(B), 'codex', repo]
+      ].sort()
+    )
+    expect(await sessions.searchSnippets('parser')).toEqual([
+      { id: codexSessionKey(B), snippet: '... the PARSER crashed on an empty file' },
+      { id: codexSessionKey(C), snippet: 'parser here too' }
+    ])
+    expect(mocks.request).toHaveBeenCalledWith(
+      'thread/search',
+      expect.objectContaining({ searchTerm: 'parser', archived: false }),
+      undefined
+    )
+    expect(mocks.request.mock.calls.filter(([method]) => method === 'thread/search')).toHaveLength(
+      1
+    )
+
+    mocks.request.mockRejectedValue(new Error('state database locked'))
+    expect(await sessions.searchSnippets('parser')).toEqual([])
+  })
+
   it('waits for an in-flight stop before restarting and prevents duplicate resume', async () => {
     const launched = await sessions.launch({ kind: 'codex', cwd: repo })
     bind()

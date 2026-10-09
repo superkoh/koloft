@@ -533,10 +533,11 @@ describe('extractJsonlMeta', () => {
     expect(meta.firstUserText).toBe('array text')
   })
 
-  it('skips isMeta lines, argless command wrappers, and tool-result-only user lines for the title', () => {
+  it('skips isMeta lines, argless command wrappers, tool-result-only user lines and the summary a compaction writes for the title', () => {
     const meta = extractJsonlMeta([
       userLine('<command-message>clear</command-message><command-name>/clear</command-name>'),
       '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"out"}]},"cwd":"/ws","timestamp":"2026-08-08T09:01:00.000Z"}',
+      userLine('This session is being continued from a previous …', ',"isCompactSummary":true'),
       userLine('the actual ask')
     ])
     expect(meta.firstUserText).toBe('the actual ask')

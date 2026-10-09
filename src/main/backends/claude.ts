@@ -62,6 +62,7 @@ import {
 import { registeredByTabRoot } from '../shim'
 import { watchJsonDrops } from '../jsonDrops'
 import { copyWorktreeIncludes } from '../sessionWorktrees'
+import { GIT_REF_RE } from '../gitSteps'
 import {
   dirExistsSync,
   gitProbes,
@@ -84,8 +85,6 @@ export interface ClaudeBackendDeps {
   resumeProbes: ResumeProbes
   events(tabId: string, event: SessionEvent): void
 }
-
-const GIT_REF_RE = /^[A-Za-z0-9._][A-Za-z0-9._/-]{0,120}$/
 
 // PLATFORM§28
 const STATUS_LOG_POLL_MS = 2000

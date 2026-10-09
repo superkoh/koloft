@@ -26,6 +26,7 @@ import type {
   TerminalProcessTitle,
   LeftoverProcess,
   SessionInfo,
+  SessionSearchHits,
   SpawnedTab,
   CronState,
   DiscordStatus,
@@ -138,7 +139,13 @@ const api: KoloftApi = {
       ipcRenderer.on('sessions:leftovers', handler)
       return () => ipcRenderer.removeListener('sessions:leftovers', handler)
     },
-    stopLeftover: (sessionId, pid) => ipcRenderer.invoke('sessions:stopLeftover', sessionId, pid)
+    stopLeftover: (sessionId, pid) => ipcRenderer.invoke('sessions:stopLeftover', sessionId, pid),
+    search: (searchId, term) => ipcRenderer.send('sessions:search', searchId, term),
+    onSearchHits: (cb) => {
+      const handler = (_e: unknown, found: SessionSearchHits): void => cb(found)
+      ipcRenderer.on('sessions:search-hits', handler)
+      return () => ipcRenderer.removeListener('sessions:search-hits', handler)
+    }
   },
   cron: {
     list: () => ipcRenderer.invoke('cron:list'),
@@ -365,7 +372,9 @@ const api: KoloftApi = {
     checks: (root, pr) => ipcRenderer.invoke('github:checks', root, pr),
     failingChecksText: (root, pr) => ipcRenderer.invoke('github:failing-checks-text', root, pr),
     commit: (root, message) => ipcRenderer.invoke('github:commit', root, message),
-    push: (root) => ipcRenderer.invoke('github:push', root)
+    push: (root) => ipcRenderer.invoke('github:push', root),
+    openItems: (root) => ipcRenderer.invoke('github:open-items', root),
+    prWorktree: (root, pr, branch) => ipcRenderer.invoke('github:pr-worktree', root, pr, branch)
   },
   workspace: {
     pickFolder: () => ipcRenderer.invoke('workspace:pickFolder'),
@@ -497,6 +506,11 @@ const api: KoloftApi = {
       ipcRenderer.on('shortcut:open-settings', handler)
       return () => ipcRenderer.removeListener('shortcut:open-settings', handler)
     },
+    onCommandPalette: (cb) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('shortcut:command-palette', handler)
+      return () => ipcRenderer.removeListener('shortcut:command-palette', handler)
+    },
     onRestartSession: (cb) => {
       const handler = (): void => cb()
       ipcRenderer.on('shortcut:restart-session', handler)
@@ -516,6 +530,11 @@ const api: KoloftApi = {
       const handler = (): void => cb()
       ipcRenderer.on('shortcut:find-files', handler)
       return () => ipcRenderer.removeListener('shortcut:find-files', handler)
+    },
+    onSearchSessions: (cb) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('shortcut:search-sessions', handler)
+      return () => ipcRenderer.removeListener('shortcut:search-sessions', handler)
     },
     onWorkbenchShortcut: (cb) => {
       const handler = (_e: unknown, cmd: WorkbenchShortcut): void => cb(cmd)

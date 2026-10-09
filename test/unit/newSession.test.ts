@@ -3,6 +3,9 @@ import {
   escPeel,
   freshLineCopy,
   isDimmed,
+  itemAim,
+  itemFilterText,
+  itemLaunchExtras,
   mainRunningCount,
   moveHot,
   primaryKind,
@@ -16,7 +19,7 @@ import {
   type WtHot
 } from '../../src/renderer/src/newSession'
 import { freshLineState, type FreshLineState } from '@shared/freshnessOps'
-import type { SessionRow, WorkspaceFreshness } from '@shared/types'
+import type { GithubItem, SessionRow, WorkspaceFreshness } from '@shared/types'
 
 const NOW = 1_700_000_000_000
 const MIN = 60_000
@@ -293,6 +296,10 @@ describe('worktreeAim (D5 — what the primary acts on)', () => {
     expect(worktreeAim(trees, '   ', field)).toEqual({ kind: 'none' })
   })
 
+  it('takes a typed #number as a filter for the issue list, not as a bad worktree name', () => {
+    expect(worktreeAim(trees, '#218', field)).toEqual({ kind: 'none' })
+  })
+
   it('follows hot into the list, whatever the field says', () => {
     expect(worktreeAim(trees, 'payment-retry', { where: 'list', index: 1 })).toEqual({
       kind: 'open',
@@ -300,6 +307,81 @@ describe('worktreeAim (D5 — what the primary acts on)', () => {
       dir: '/repo/.claude/worktrees/alpha'
     })
     expect(worktreeAim(trees, 'x', { where: 'list', index: 9 })).toEqual({ kind: 'none' })
+  })
+})
+
+describe('itemAim (#218 — where an issue or pull request session starts)', () => {
+  const issue: GithubItem = {
+    kind: 'issue',
+    number: 218,
+    title: 'Start a session from an issue',
+    url: 'https://github.com/acme/app/issues/218',
+    updatedAt: '2026-10-09T00:00:00Z'
+  }
+  const pr: GithubItem = {
+    kind: 'pr',
+    number: 329,
+    title: 'Fix the restart',
+    url: 'https://github.com/acme/app/pull/329',
+    updatedAt: '2026-10-09T00:00:00Z',
+    branch: 'fix/190-restart'
+  }
+  const onPrBranch = { name: 'fix-190', dir: '/repo/.claude/worktrees/fix-190', branch: pr.branch }
+
+  it('makes issue-<n> from the repo root the first time, and opens it when it is already there', () => {
+    expect(itemAim(issue, [wt('alpha')])).toEqual({
+      kind: 'item',
+      item: issue,
+      name: 'issue-218',
+      dir: null
+    })
+    expect(worktreeBaseMode(itemAim(issue, [wt('alpha')]))).toBe('create')
+    expect(itemAim(issue, [wt('issue-218')])).toMatchObject({
+      name: 'issue-218',
+      dir: '/repo/.claude/worktrees/issue-218'
+    })
+  })
+
+  it("opens the worktree already on a pull request's branch, else its pr-<n>, else makes pr-<n> — never from main's HEAD", () => {
+    expect(itemAim(pr, [wt('pr-329'), onPrBranch])).toMatchObject({
+      name: 'fix-190',
+      dir: onPrBranch.dir
+    })
+    expect(itemAim(pr, [wt('pr-329')])).toMatchObject({ name: 'pr-329' })
+    const fresh = itemAim(pr, [wt('alpha')])
+    expect(fresh).toMatchObject({ name: 'pr-329', dir: null })
+    expect(worktreeBaseMode(fresh)).toBe('existing')
+  })
+
+  it('names the session after the issue and sends only its title and link, asking the agent to read the rest itself', () => {
+    const extras = itemLaunchExtras(issue)
+    expect(extras.name).toBe('#218 Start a session from an issue')
+    expect(extras.trustFolder).toBe(true)
+    const lines = extras.firstPrompt!.split('\n')
+    expect(lines.slice(0, 2)).toEqual([
+      '#218 Start a session from an issue',
+      'https://github.com/acme/app/issues/218'
+    ])
+    expect(extras.firstPrompt).toMatch(/gh issue view 218 --comments/)
+    expect(itemLaunchExtras(pr).firstPrompt).toMatch(/gh pr view 329 --comments/)
+  })
+
+  it('labels the primary with the number it acts on', () => {
+    expect(primaryLabel('start', { verb: 'Create', name: 'issue-218', item: 218 }, 'Claude')).toBe(
+      'Create from #218 · Claude'
+    )
+    expect(primaryLabel('pull', { verb: 'Create', name: 'issue-218', item: 218 })).toBe(
+      'Pull & Create from #218'
+    )
+    expect(primaryLabel('start', { verb: 'Open', name: 'fix-190', item: 329 }, 'Codex')).toBe(
+      'Open fix-190 for #329 · Codex'
+    )
+  })
+
+  it('lets a typed word find a pull request by its branch as well as by number and title', () => {
+    expect(isDimmed(itemFilterText(pr), '190')).toBe(false)
+    expect(isDimmed(itemFilterText(pr), '#329')).toBe(false)
+    expect(isDimmed(itemFilterText(issue), '190')).toBe(true)
   })
 })
 
