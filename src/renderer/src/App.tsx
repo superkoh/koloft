@@ -1012,8 +1012,9 @@ export default function App(): JSX.Element {
   }, [])
 
   const paletteActions = (): PaletteAction[] => {
-    const ws = currentWs
-    const hasHistory = workspaceRows.some((w) => w.workspace.path === ws && w.workspace.hasHistory)
+    const hasHistory = workspaceRows.some(
+      (w) => w.workspace.path === currentWs && w.workspace.hasHistory
+    )
     const actions: Omit<PaletteAction, 'kind'>[] = [
       { key: 'new-session', label: 'New session…', keys: '⌘N', run: () => globalNew('main') },
       {
@@ -1041,13 +1042,13 @@ export default function App(): JSX.Element {
         key: 'restore-session',
         label: 'Restore session…',
         disabled: !hasHistory,
-        run: () => setRestoreWs(ws)
+        run: () => setRestoreWs(currentWs)
       },
       {
         key: 'scheduled-jobs',
         label: 'Scheduled jobs…',
-        disabled: !ws,
-        run: () => ws && setCronWs({ path: ws })
+        disabled: !currentWs,
+        run: () => currentWs && setCronWs({ path: currentWs })
       },
       { key: 'open-settings', label: 'Settings…', keys: '⌘,', run: () => setSettingsOpen(true) },
       {
