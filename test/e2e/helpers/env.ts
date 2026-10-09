@@ -223,6 +223,10 @@ export function addKeychainEntry(
   fs.writeFileSync(env.keychainFile, JSON.stringify(all))
 }
 
+export function seedNoClaudeAccountButStillSetUp(env: E2EEnv): void {
+  seedSettings(env, { accounts: [seededAccount(E2E_CODEX_ACCOUNT, 'codex-home')] })
+}
+
 export function seedSettings(env: E2EEnv, patch: Record<string, unknown>): void {
   const file = path.join(env.userData, 'settings.json')
   const current = fs.existsSync(file)

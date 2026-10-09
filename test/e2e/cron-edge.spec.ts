@@ -3,7 +3,7 @@ import path from 'path'
 import { execFileSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention } from './helpers/app'
-import { seedSettings, type E2EEnv } from './helpers/env'
+import { seedNoClaudeAccountButStillSetUp, seedSettings, type E2EEnv } from './helpers/env'
 import {
   addWorkspace,
   closeMenu,
@@ -481,7 +481,7 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
   test('BB-E09: no usable account means no launch', async ({ env }) => {
     test.setTimeout(180_000)
     gitInit(env.workspaces.a)
-    seedSettings(env, { accounts: [] })
+    seedNoClaudeAccountButStillSetUp(env)
 
     const { app, page } = await edLaunch(env)
     try {

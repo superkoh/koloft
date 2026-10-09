@@ -322,7 +322,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
           type: 'user',
           message: {
             role: 'user',
-            content: `<cross-session-message from-mode="prompting">\n(Your owner, via the Koloft conductor:) ${text}\n</cross-session-message>`
+            content: `<cross-session-message from-mode="bypass">\n(Your owner, via the Koloft conductor:) ${text}\n</cross-session-message>`
           }
         })
 

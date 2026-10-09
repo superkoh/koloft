@@ -3,8 +3,14 @@ import path from 'path'
 import http from 'http'
 import type { AddressInfo } from 'net'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
+import type { AccountView } from '../../src/shared/types'
 import { test, expect, launchApp } from './helpers/app'
-import { seededAccount as acct, seedSettings, type E2EEnv } from './helpers/env'
+import {
+  seededAccount as acct,
+  seedNoClaudeAccountButStillSetUp,
+  seedSettings,
+  type E2EEnv
+} from './helpers/env'
 import { centerTerm, openMenu, startSessionIn, waitBooted } from './helpers/p1'
 import { SHIM_FOUND_NO_ACCOUNT_NOTICE } from '../../src/shared/accountUsage'
 
@@ -181,6 +187,11 @@ function scanForTokens(root: string, skip: (p: string) => boolean): string[] {
   return hits
 }
 
+async function claudeAccountList(page: Page): Promise<AccountView[]> {
+  const all = await page.evaluate(() => window.api.accounts.list())
+  return all.filter((a) => a.kind !== 'codex-home')
+}
+
 function claudeAccounts(page: Page): Locator {
   return page.locator('.acct-section').first()
 }
@@ -191,7 +202,8 @@ test('E1: settings CRUD — no launch-command field, only the verifiable add ent
   test.setTimeout(120_000)
   const mock = await startProbeMock()
   env.launchEnv.KOLOFT_PROBE_BASE_URL = mock.base
-  seedSettings(env, { claudeCommand: 'stale-wrapper', accounts: [acct('e2e-codex', 'codex-home')] })
+  seedSettings(env, { claudeCommand: 'stale-wrapper' })
+  seedNoClaudeAccountButStillSetUp(env)
   seedKeychain(env)
 
   let app = await launchApp(env)
@@ -222,7 +234,7 @@ test('E1: settings CRUD — no launch-command field, only the verifiable add ent
     await page.locator('.acct-add input[type="password"]').fill(TOKENS.bravo)
     await page.locator('.acct-add-actions button', { hasText: 'Verify and save' }).click()
     await expect(claudeAccounts(page).locator('.acct-row')).toHaveCount(1, { timeout: 15_000 })
-    await expect(page.locator('.acct-name')).toHaveText('bravo')
+    await expect(claudeAccounts(page).locator('.acct-name')).toHaveText('bravo')
     await expect(page.locator('.acct-badge.fable')).toBeVisible()
 
     await page.locator('.acct-row input[type="checkbox"]').first().uncheck()
@@ -848,7 +860,7 @@ test('E10: guided login captures the printed token (even wrapped at 80 columns) 
   const AUTH_URL = 'https://example.invalid/oauth/authorize?state=e10'
   env.launchEnv.KOLOFT_FAKE_SETUP_URL = AUTH_URL
   fs.writeFileSync(env.keychainFile, JSON.stringify({}))
-  seedSettings(env, { accounts: [] })
+  seedNoClaudeAccountButStillSetUp(env)
 
   const { app, page } = await launchConfigured(env)
   try {
@@ -863,18 +875,16 @@ test('E10: guided login captures the printed token (even wrapped at 80 columns) 
     await expect(claudeAccounts(page)).toBeVisible()
 
     await expect
-      .poll(
-        async () =>
-          (await page.evaluate(() => window.api.accounts.list())).map((a) => a.name).join(','),
-        { timeout: 45_000 }
-      )
+      .poll(async () => (await claudeAccountList(page)).map((a) => a.name).join(','), {
+        timeout: 45_000
+      })
       .toBe('bravo')
 
     const kc = JSON.parse(fs.readFileSync(env.keychainFile, 'utf8'))
     expect(kc[UNPACKAGED_BUILD_OAUTH_SVC_SPELLED_OUT_NOT_IMPORTED].bravo).toBe(
       TOKEN_LONG_ENOUGH_TO_WRAP_AT_80_COLUMNS
     )
-    const [acct] = await page.evaluate(() => window.api.accounts.list())
+    const [acct] = await claudeAccountList(page)
     expect(acct.status).toBe('ok')
     expect(acct.fable).toBe('yes')
 
@@ -903,7 +913,7 @@ test('guided login: a captured token the probe rejects as expired reports failur
   env.launchEnv.KOLOFT_PROBE_BASE_URL = mock.base
   env.launchEnv.KOLOFT_FAKE_SETUP_TOKEN = REJECTED_TOKEN
   fs.writeFileSync(env.keychainFile, JSON.stringify({}))
-  seedSettings(env, { accounts: [] })
+  seedNoClaudeAccountButStillSetUp(env)
 
   const { app, page } = await launchConfigured(env)
   try {
@@ -916,7 +926,7 @@ test('guided login: a captured token the probe rejects as expired reports failur
       timeout: 45_000
     })
     expect(mock.requests).toContain(REJECTED_TOKEN)
-    expect(await page.evaluate(() => window.api.accounts.list())).toEqual([])
+    expect(await claudeAccountList(page)).toEqual([])
     expect(fs.readFileSync(env.keychainFile, 'utf8')).not.toContain(REJECTED_TOKEN)
   } finally {
     await app.close().catch(() => {})
