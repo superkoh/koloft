@@ -83,7 +83,13 @@ import {
 import { browserOpenTargetSession, overlayPresentation } from './browserOpenTarget'
 
 const FIXED_VIEWPORT_FOR_OFFSCREEN_DRIVEN_PAGE = { width: 1000, height: 700 }
-import { rearmResume, releaseResume, resumeSession, RESTORE_FAILED_NOTICE } from './resumeFlow'
+import {
+  rearmResume,
+  releaseResume,
+  resumeSession,
+  RESTORE_FAILED_NOTICE,
+  wakeTab
+} from './resumeFlow'
 import { adoptionIsSettled, adoptionSettled, markAdoptionSettled, preAdoptExits } from './adoption'
 import { CloseSessionDialog } from './components/CloseSessionDialog'
 import { UnsavedDialog } from './components/UnsavedDialog'
@@ -209,9 +215,10 @@ export default function App(): JSX.Element {
   }
   const [shown, setShown] = useState({ id: activeTabId, gen: 0 })
   const [paintedGen, setPaintedGen] = useState(0)
+  const wokeInPlace = !!shown.id && tabs.some((t) => t.id === activeTabId && t.ghost === shown.id)
   useEffect(() => {
     if (shown.gen === switchGen) return
-    if (shown.id === activeTabId) {
+    if (shown.id === activeTabId || wokeInPlace) {
       setShown({ id: activeTabId, gen: switchGen })
       setPaintedGen(switchGen)
       return
@@ -224,8 +231,9 @@ export default function App(): JSX.Element {
       cancelAnimationFrame(outer)
       cancelAnimationFrame(inner)
     }
-  }, [activeTabId, switchGen, shown.gen])
-  const switching = activeTabId !== null && (shown.gen !== switchGen || paintedGen !== switchGen)
+  }, [activeTabId, switchGen, shown.gen, wokeInPlace])
+  const switching =
+    activeTabId !== null && !wokeInPlace && (shown.gen !== switchGen || paintedGen !== switchGen)
   const sessions = useStore((s) => s.sessions)
   const workbenchWidth = useStore((s) => s.workbenchWidth)
   const workbenchWidths = useStore((s) => s.workbenchWidths)
@@ -856,6 +864,13 @@ export default function App(): JSX.Element {
     })
   }, [])
 
+  useEffect(() => window.api.tabs.onSlept((tabId) => useStore.getState().setTabAsleep(tabId)), [])
+
+  useEffect(() => {
+    const tab = useStore.getState().tabs.find((t) => t.id === activeTabId)
+    if (tab?.asleep) void wakeTab(tab)
+  }, [activeTabId])
+
   useEffect(() => {
     window.api.attention.activeTab(activeTabId)
   }, [activeTabId])
@@ -873,6 +888,7 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     const off = window.api.terminal.onExit((e) => {
+      if (useStore.getState().tabs.some((t) => t.id === e.id && t.asleep)) return
       if (!adoptionIsSettled()) preAdoptExits.add(e.id)
       if (useStore.getState().terminalExited(e.id)) return
       if (consumeRestartExit(e.id)) return
@@ -1373,15 +1389,36 @@ export default function App(): JSX.Element {
             </div>
             <div className="island flat term-island">
               <div className="terminals">
-                {tabs.map((t) => (
+                {tabs.flatMap((t) => [
+                  ...(t.ghost
+                    ? [
+                        <div
+                          key={t.ghost}
+                          className="term-wrap"
+                          style={{
+                            display: t.id === shown.id || t.ghost === shown.id ? 'block' : 'none'
+                          }}
+                        >
+                          <TerminalView
+                            id={t.ghost}
+                            active={t.id === shown.id || t.ghost === shown.id}
+                            scrollbar={false}
+                            focusSignal={tuiFocus}
+                          />
+                        </div>
+                      ]
+                    : []),
                   <div
                     key={t.id}
                     className="term-wrap"
-                    style={{ display: t.id === shown.id ? 'block' : 'none' }}
+                    style={{
+                      display: t.id === shown.id ? 'block' : 'none',
+                      visibility: t.ghost ? 'hidden' : undefined
+                    }}
                   >
                     <TerminalView
                       id={t.id}
-                      active={t.id === shown.id}
+                      active={t.id === shown.id && !t.ghost}
                       scrollbar={false}
                       onUserInput={
                         isSessionKind(t.kind)
@@ -1396,7 +1433,7 @@ export default function App(): JSX.Element {
                     {/* CODEX§9 */}
                     {t.resuming && t.kind !== 'codex' && <ResumingMask title={t.title} />}
                   </div>
-                ))}
+                ])}
                 {switching && activeTab && (
                   <ResumingMask
                     title={activeSession?.title ?? activeTab.title}

@@ -110,6 +110,11 @@ const api: KoloftApi = {
       const handler = (_e: unknown, tabId: string): void => cb(tabId)
       ipcRenderer.on('tab:killedByMain', handler)
       return () => ipcRenderer.removeListener('tab:killedByMain', handler)
+    },
+    onSlept: (cb) => {
+      const handler = (_e: unknown, tabId: string): void => cb(tabId)
+      ipcRenderer.on('tab:slept', handler)
+      return () => ipcRenderer.removeListener('tab:slept', handler)
     }
   },
   sessions: {

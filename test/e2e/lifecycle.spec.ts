@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { execFileSync } from 'child_process'
 import type { Page } from '@playwright/test'
-import { test, expect, launchApp, pendingAttention } from './helpers/app'
+import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
 import {
   centerTerm,
@@ -36,9 +36,11 @@ import {
 
 const SILENCE_LONGER_THAN_TWO_LIVENESS_SWEEPS_OF_2500_MS = 8000
 const ROOM_FOR_A_WRONG_REMOVAL_OR_REBIND_MS = 5000
-const DEBOUNCED_WRITES_LAND_MS = 1500
 const ROOM_FOR_A_RESPAWN_MS = 2000
 const ROOM_FOR_A_LATER_TRANSITION_MS = 3000
+const WAITING_TO_IDLE_MS = 1000
+const IDLE_TO_SLEEP_MS = 3000
+const NO_SLEEP_DURING_THE_CHECKS_MS = 600_000
 
 async function startSession(
   page: Page,
@@ -399,45 +401,78 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     }
   })
 
-  test('T-LIFE-09: after an app restart nothing runs, nothing is selected, nothing was persisted', async ({
-    env
-  }) => {
-    test.setTimeout(180_000)
-    const app1 = await launchApp(env)
-    const page1 = await app1.firstWindow()
-    await page1.waitForLoadState('domcontentloaded')
-    await startSession(page1, env)
-    await page1.waitForTimeout(DEBOUNCED_WRITES_LAND_MS)
-    await app1.close()
+  for (const ending of ['quits', 'crashes'] as const) {
+    test(`T-LIFE-09: after Koloft ${ending} and opens again, every session is as it was — a running one runs again (and is selected if it was), a sleeping one stays asleep until clicked, a closed one stays cold`, async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+      env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+      seedSettings(env, { hintsOff: true })
+      const app1 = await launchApp(env)
+      const row1 = (page: Page, title: string) => page.locator('.ws-tab', { hasText: title })
+      try {
+        const page1 = await app1.firstWindow()
+        await page1.waitForLoadState('domcontentloaded')
+        await startSession(page1, env, { title: 'Closed D' })
+        await expect(row1(page1, 'Closed D')).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+        await openMenu(page1, row1(page1, 'Closed D'))
+        await page1.locator('.menu .mi', { hasText: /^Close$/ }).click()
+        await expect(row1(page1, 'Closed D')).toHaveClass(/\bcold\b/)
+        await startSession(page1, env, { title: 'Asleep B', wsName: 'ws-b' })
+        await startSession(page1, env, { title: 'Running C', wsName: 'ws-b' })
+        await startSession(page1, env, { title: 'Running A' })
+        const [, b, c, a] = await waitForCalls(env, 4)
+        await expect.poll(() => pendingAttention(page1), { timeout: 25_000 }).toHaveLength(3)
+        await row1(page1, 'Asleep B').click()
+        await row1(page1, 'Running A').click()
+        await expect(row1(page1, 'Running A')).toHaveClass(/\bactive\b/)
+        await expect.poll(() => processAlive(b.pid), { timeout: 40_000 }).toBe(false)
+        await expect(row1(page1, 'Asleep B')).toHaveClass(/\bst-idle\b/)
+        expect(processAlive(a.pid) && processAlive(c.pid)).toBe(true)
+        if (ending === 'crashes') process.kill(app1.process().pid!, 'SIGKILL')
+        else await quitAndClose(app1)
+        await expect.poll(() => processAlive(a.pid) || processAlive(c.pid)).toBe(false)
+      } finally {
+        await app1.close().catch(() => {})
+      }
 
-    const app2 = await launchApp(env)
-    try {
-      const page2 = await app2.firstWindow()
-      await page2.waitForLoadState('domcontentloaded')
-      const row = page2.locator('.ws-tab', { hasText: 'Fake session: project notes' })
-      await expect(row).toBeVisible({ timeout: 20_000 })
-      await expect(row).toHaveClass(/\bcold\b/)
-      await expect(page2.locator('.ws-tab.active')).toHaveCount(0)
-      await expect(
-        page2.locator(
-          '.ws-tab.st-working, .ws-tab.st-waiting, .ws-tab.st-approval, .ws-tab.st-idle'
+      env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(NO_SLEEP_DURING_THE_CHECKS_MS)
+      const app2 = await launchApp(env)
+      try {
+        const page2 = await app2.firstWindow()
+        await page2.waitForLoadState('domcontentloaded')
+        const row = (title: string) => row1(page2, title)
+        const calls = await waitForCalls(env, 6)
+        expect(calls.slice(4).map(resumedId).sort()).toEqual(
+          [calls[3].sessionId, calls[2].sessionId].sort()
         )
-      ).toHaveCount(0)
-      await expect(page2.locator('.center')).toContainText('No running session')
-      await page2.waitForTimeout(ROOM_FOR_A_RESPAWN_MS)
-      expect(readCalls(env)).toHaveLength(1)
+        await expect(row('Running A')).toHaveClass(/\bactive\b/, { timeout: 30_000 })
+        await expect(row('Running A')).toHaveClass(/\bst-(working|waiting|idle)\b/)
+        await expect(row('Running C')).toHaveClass(/\bst-(working|waiting|idle)\b/)
+        await expect(row('Asleep B')).toHaveClass(/\bst-idle\b/)
+        await expect(row('Asleep B')).not.toHaveClass(/\bactive\b/)
+        await expect(row('Closed D')).toHaveClass(/\bcold\b/)
+        await page2.waitForTimeout(ROOM_FOR_A_RESPAWN_MS)
+        expect(readCalls(env)).toHaveLength(6)
 
-      const layout = layoutOnDisk(env)
-      expect(layout.version).toBe(6)
-      expect(layout).not.toHaveProperty('activeSessionId')
-      expect(layout).not.toHaveProperty('tabs')
-      await snap(page2, 'T-LIFE-09')
-    } finally {
-      await app2.close().catch(() => {})
-    }
-  })
+        await row('Asleep B').click()
+        const woken = await waitForCalls(env, 7)
+        expect(resumedId(woken[6])).toBe(calls[1].sessionId)
+        await expect(row('Asleep B')).toHaveClass(/\bactive\b/)
+        await expect(row('Asleep B')).toHaveClass(/\bst-(working|waiting|idle)\b/)
+        await expect(row('Closed D')).toHaveClass(/\bcold\b/)
 
-  test('Keep running: a marked session starts again by itself when Koloft reopens — same id, shown resuming, nothing selected — and an unmarked one stays cold', async ({
+        const layout = layoutOnDisk(env)
+        expect(layout.version).toBe(6)
+        expect(layout).not.toHaveProperty('tabs')
+      } finally {
+        await app2.close().catch(() => {})
+      }
+    })
+  }
+
+  test('Keep running: a marked session starts again by itself when Koloft reopens even though its tab was closed — same id, shown resuming, nothing selected — and an unmarked closed one stays cold', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -461,6 +496,11 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       await page1.locator('.menu .mi', { hasText: 'Keep running' }).click()
       await expect(residentRow.locator('.ws-tab-resident')).toBeVisible()
       await expect.poll(() => layoutOnDisk(env).resident).toEqual([resident])
+      for (const title of ['Resident session', 'Plain session']) {
+        await openMenu(page1, page1.locator('.ws-tab', { hasText: title }))
+        await page1.locator('.menu .mi', { hasText: /^Close$/ }).click()
+        await expect(page1.locator('.ws-tab', { hasText: title })).toHaveClass(/\bcold\b/)
+      }
     } finally {
       await app1.close()
     }

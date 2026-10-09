@@ -55,7 +55,7 @@ import {
   statusUnavailable,
   type RowNode
 } from '../sessionRows'
-import { releaseSettledResumes, resumeInFlight, resumeSession } from '../resumeFlow'
+import { releaseSettledResumes, resumeInFlight, resumeSession, wakeTab } from '../resumeFlow'
 import { adoptionSettled } from '../adoption'
 import { requestCloseTab } from '../closeFlow'
 import { freshnessShown } from '@shared/freshnessOps'
@@ -235,7 +235,7 @@ export function WorkspaceSidebar({
   // CODEX§9
   const tabIdFor = (sessionId: string): string | undefined =>
     sessionByIdEntries.find((s) => s.sessionId === sessionId && s.alive)?.tabId ??
-    storeTabs.find((t) => t.alive && t.sessionId === sessionId)?.id
+    storeTabs.find((t) => (t.alive || t.asleep) && t.sessionId === sessionId)?.id
   const tabIdOfRow = (row: SessionRow): string | undefined =>
     row.pending ? row.id : row.running ? tabIdFor(row.id) : undefined
   const callingAmong = (rows: SessionRow[]): number =>
@@ -423,6 +423,8 @@ export function WorkspaceSidebar({
       if (tabId) {
         window.api.attention.visit(tabId)
         activateTab(tabId)
+        const tab = storeTabs.find((t) => t.id === tabId)
+        if (tab?.asleep) void wakeTab(tab)
       }
       return
     }
@@ -858,7 +860,7 @@ export function WorkspaceSidebar({
                       {row.resident && (
                         <span
                           className="ws-tab-resident"
-                          title="Keep running — starts again each time Koloft opens"
+                          title="Keep running — never sleeps, and starts again each time Koloft opens"
                         >
                           <LuPin size={12} />
                         </span>

@@ -132,6 +132,44 @@ function signal(pid: number, value: NodeJS.Signals): void {
   }
 }
 
+function running(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+const ADOPTED_BY_LAUNCHD = 1
+const WAIT_FOR_LEFTOVER_EXIT_MS = 3000
+const LEFTOVER_EXIT_POLL_MS = 100
+
+// CODEX§5
+export async function endAppServersLeftByACrash(marker: string): Promise<void> {
+  let stdout = ''
+  try {
+    ;({ stdout } = await execFileAsync('/bin/ps', ['-axo', 'pid=,ppid=,command='], {
+      timeout: 2000,
+      maxBuffer: 4 * 1024 * 1024
+    }))
+  } catch {
+    return
+  }
+  const leftovers = stdout.split('\n').flatMap((line) => {
+    const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/)
+    return match &&
+      +match[2] === ADOPTED_BY_LAUNCHD &&
+      match[3].includes('app-server --stdio') &&
+      match[3].includes(marker)
+      ? [+match[1]]
+      : []
+  })
+  for (const pid of leftovers) signal(pid, 'SIGKILL')
+  const until = Date.now() + WAIT_FOR_LEFTOVER_EXIT_MS
+  while (leftovers.some(running) && Date.now() < until) await sleep(LEFTOVER_EXIT_POLL_MS)
+}
+
 class CodexProcess {
   readonly child: ChildProcessWithoutNullStreams
   readonly ready: Promise<void>

@@ -160,7 +160,7 @@ function formatConductorList(
         title,
         BACKEND_LABEL[row.backendId],
         parseRemoteKey(workspace)?.host ?? 'local',
-        info ? STATE_WORDS[info.status ?? 'idle'] : 'closed',
+        info || row.running ? STATE_WORDS[info?.status ?? 'idle'] : 'closed',
         `last active ${ageLabel(row.mtime, now)}`,
         `id: ${row.nativeSessionId ?? row.id}`
       ]

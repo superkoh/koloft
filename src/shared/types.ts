@@ -339,6 +339,7 @@ export interface AdoptableTab {
   sessionId?: string
   resumeSessionId?: string
   title?: string
+  asleep?: true
 }
 
 export interface TabInventoryReply {
@@ -813,6 +814,7 @@ export interface KoloftApi {
   tabs: {
     list(): Promise<TabInventoryReply>
     onKilledByMain(cb: (tabId: string) => void): () => void
+    onSlept(cb: (tabId: string) => void): () => void
   }
   sessions: {
     backends(): Promise<BackendAvailability[]>

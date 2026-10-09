@@ -25,7 +25,16 @@ import { FlowGate } from './flowControl'
 import { SessionTracker, type ToolCall } from './sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
-import { CodexSessions } from './codexSessions'
+import { CodexSessions, endCodexLeftByACrash } from './codexSessions'
+import {
+  OpenTabsFile,
+  openTabsNow,
+  readOpenTabs,
+  restorePlan,
+  type LiveTab,
+  type OpenTab,
+  type OpenTabs
+} from './openTabs'
 import { SessionBackends } from './sessionBackends'
 import {
   BACKEND_LABEL,
@@ -256,6 +265,7 @@ import type {
   SessionResumeRequest,
   SessionRow,
   SpawnedTab,
+  AdoptableTab,
   TabInventoryReply,
   OpenRequest,
   UsageSnapshot,
@@ -278,7 +288,7 @@ import { LiveStatus } from './discord/liveStatus'
 import { AskButtons } from './discord/buttons'
 import { SlashCommands, type SlashTarget } from './discord/slash'
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
-import { typeKeys } from './typeKeys'
+import { bracketedPaste, typeKeys } from './typeKeys'
 import { MYSELF } from '@shared/slashCommands'
 import {
   codexDialog,
@@ -433,6 +443,108 @@ function sessionOfTab(tabId: string): SessionInfo | undefined {
 function sidebarTitle(s: SessionInfo): string | undefined {
   const placeholder = s.title === PLACEHOLDER_SESSION_TITLE || s.title === CODEX_PLACEHOLDER_TITLE
   return s.title && !placeholder ? s.title : undefined
+}
+
+const sleepers = new Map<string, OpenTab>()
+const typedWhileAsleep = new Map<string, string>()
+const wokenAs = new Map<string, string>()
+const restoringSessions = new Map<string, OpenTab>()
+let sleeperSeq = 0
+let openTabsFile: OpenTabsFile | undefined
+let savedOpenTabs: OpenTabs = { tabs: [] }
+let openTabsRestored = false
+const WOKEN_TAB_READY_MS = 30_000
+
+function tabCwdOf(s: SessionInfo): string {
+  return s.remote ? formatRemoteKey(s.remote.host, s.cwd) : s.cwd
+}
+
+function liveOpenTabs(): LiveTab[] {
+  return allSessions()
+    .filter((s) => s.alive && s.sessionId)
+    .map((s) => ({
+      sessionId: s.sessionId,
+      kind: s.backendId,
+      title: sidebarTitle(s) ?? s.title,
+      cwd: tabCwdOf(s)
+    }))
+}
+
+function rememberOpenTabs(): void {
+  if (!openTabsFile || !openTabsRestored || quitCommitted) return
+  const live = liveOpenTabs()
+  for (const t of live) restoringSessions.delete(t.sessionId)
+  const activeTab = uiActiveTabId ?? activeTabBeforeReload
+  const active = activeTab
+    ? sessionOfTab(activeTab)?.sessionId || sleepers.get(activeTab)?.sessionId
+    : undefined
+  openTabsFile.write(
+    openTabsNow([...live, ...restoringSessions.values()], [...sleepers.values()], active)
+  )
+}
+
+function asleepTab(id: string, t: OpenTab): AdoptableTab {
+  return { id, kind: t.kind, cwd: t.cwd, sessionId: t.sessionId, title: t.title, asleep: true }
+}
+
+function addSleeper(tabId: string, t: OpenTab): void {
+  sleepers.set(tabId, t)
+  typedWhileAsleep.set(tabId, '')
+}
+
+function sleepTab(tabId: string): void {
+  const s = sessionOfTab(tabId)
+  if (!s?.sessionId) return killTabFromMain(tabId)
+  addSleeper(tabId, {
+    sessionId: s.sessionId,
+    kind: s.backendId,
+    title: sidebarTitle(s) ?? s.title,
+    cwd: tabCwdOf(s)
+  })
+  sendToRenderer('tab:slept', tabId)
+  void stopTabProcess(tabId)
+  workspaceMgr?.onTrackerUpdate()
+  rememberOpenTabs()
+}
+
+function forgetSleeper(tabId: string): void {
+  sleepers.delete(tabId)
+  typedWhileAsleep.delete(tabId)
+  sendToRenderer('tab:killedByMain', tabId)
+  workspaceMgr?.onTrackerUpdate()
+  rememberOpenTabs()
+}
+
+function settleWokenSleepers(): void {
+  if (!sleepers.size) return
+  const tabOfSession = new Map<string, string>()
+  for (const s of allSessions()) if (s.alive && s.sessionId) tabOfSession.set(s.sessionId, s.tabId)
+  let woke = false
+  for (const [oldId, t] of sleepers) {
+    const newId = tabOfSession.get(t.sessionId)
+    if (!newId || newId === oldId) continue
+    sleepers.delete(oldId)
+    wokenAs.set(oldId, newId)
+    woke = true
+    void handOverTyping(oldId, newId)
+  }
+  if (woke) workspaceMgr?.onTrackerUpdate()
+}
+
+const PASTE_OR_ENTER = /(\x1b\[200~[\s\S]*?\x1b\[201~|\r)/
+
+// CC§12
+async function handOverTyping(oldId: string, newId: string): Promise<void> {
+  const ready = await tabReady(newId, WOKEN_TAB_READY_MS, false)
+  const typed = typedWhileAsleep.get(oldId) ?? ''
+  typedWhileAsleep.delete(oldId)
+  if (ready && typed) void ptyMgr.type(newId, typed.split(PASTE_OR_ENTER).filter(Boolean))
+}
+
+function writeToTab(id: string, data: string): void {
+  const typed = typedWhileAsleep.get(id)
+  if (typed !== undefined) typedWhileAsleep.set(id, typed + data)
+  else ptyMgr.write(wokenAs.get(id) ?? id, data)
 }
 async function discordShownName(s: SessionInfo | undefined): Promise<string | null> {
   const title = s && sidebarTitle(s)
@@ -1485,6 +1597,8 @@ app.whenReady().then(() => {
     if (!flushTimer) flushTimer = setTimeout(flushData, 0)
   }
   ptyMgr.on('data', (d: { id: string; data: string }) => {
+    // CC§12
+    if (sleepers.has(d.id)) return
     if (loginWatchers.size) feedLoginWatcher(d.id, d.data)
     pendingData.set(d.id, (pendingData.get(d.id) ?? '') + d.data)
     if (!flushTimer) flushTimer = setTimeout(flushData, PTY_OUTPUT_COALESCE_ONE_FRAME_MS)
@@ -1497,8 +1611,14 @@ app.whenReady().then(() => {
   })
   ptyMgr.on('exit', (e) => {
     slash.closed(e.id)
-    discordNotices?.closed(e.id)
-    discordLive?.closed(e.id)
+    if (!sleepers.has(e.id)) {
+      discordNotices?.closed(e.id)
+      discordLive?.closed(e.id)
+    }
+    for (const [oldId, newId] of wokenAs) if (newId === e.id) wokenAs.delete(oldId)
+    const wakeThatDied = ptyMgr.get(e.id)?.resumeSessionId
+    for (const [id, t] of sleepers)
+      if (id !== e.id && t.sessionId === wakeThatDied) forgetSleeper(id)
     discordLive?.forget(e.id)
     discordNotices?.forget(e.id)
     discordRelay?.forget(e.id)
@@ -1524,7 +1644,7 @@ app.whenReady().then(() => {
     const held = pendingData.get(e.id)
     if (held !== undefined) {
       pendingData.delete(e.id)
-      sendToRenderer('terminal:data', { id: e.id, data: held })
+      if (!sleepers.has(e.id)) sendToRenderer('terminal:data', { id: e.id, data: held })
     }
     flowGates.get(e.id)?.reset()
     flowGates.delete(e.id)
@@ -1539,6 +1659,8 @@ app.whenReady().then(() => {
     sendToRenderer('terminal:exit', e)
   })
   tracker.on('update', (sessions: SessionInfo[]) => {
+    settleWokenSleepers()
+    rememberOpenTabs()
     const all = allSessions()
     sendToRenderer('sessions:update', all)
     workspaceMgr?.onTrackerUpdate()
@@ -1561,7 +1683,7 @@ app.whenReady().then(() => {
   tracker.on('relocated', (e: { tabId: string; dir: string }) => {
     sendToRenderer('session:relocated', e)
   })
-  tracker.on('auto-close', ({ tabId }: { tabId: string }) => killTabFromMain(tabId))
+  tracker.on('auto-close', ({ tabId }: { tabId: string }) => sleepTab(tabId))
   tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) =>
     discordRelay?.toolDone(tabId, call)
   )
@@ -1587,12 +1709,17 @@ app.whenReady().then(() => {
   })
 
   const userData = app.getPath('userData')
+  const openTabsPath = path.join(userData, 'open-tabs.json')
+  savedOpenTabs = readOpenTabs(openTabsPath)
+  openTabsFile = new OpenTabsFile(openTabsPath)
   try {
     codexSessions = new CodexSessions(path.join(userData, 'sessions.json'), {
       pty: ptyMgr,
       runtime: tracker,
       projectInfo: projectInfoFor,
       changed: () => {
+        settleWokenSleepers()
+        rememberOpenTabs()
         const all = allSessions()
         sendToRenderer('sessions:update', all)
         workspaceMgr?.onAdditionalSessionsChanged()
@@ -1632,6 +1759,7 @@ app.whenReady().then(() => {
       const m = new Map<string, string>()
       for (const s of allSessions()) if (s.alive && s.sessionId) m.set(s.sessionId, s.tabId)
       for (const [key, tabId] of codexSessions?.runningBindings() ?? []) m.set(key, tabId)
+      for (const [tabId, t] of sleepers) if (!m.has(t.sessionId)) m.set(t.sessionId, tabId)
       return m
     },
     killTab: (tabId) => void killTabPty(tabId),
@@ -2871,8 +2999,16 @@ function killTabFromMain(tabId: string): void {
 }
 
 function killTabPty(tabId: string): Promise<boolean> {
+  if (sleepers.has(tabId)) {
+    forgetSleeper(tabId)
+    return Promise.resolve(true)
+  }
   discordNotices?.closed(tabId)
   discordLive?.closed(tabId)
+  return stopTabProcess(tabId)
+}
+
+function stopTabProcess(tabId: string): Promise<boolean> {
   const owner = sessionBackends.ownerOfTab(tabId)
   const stopped = owner ? Promise.resolve(owner.stop(tabId)) : Promise.resolve(ptyMgr.kill(tabId))
   attention.clearKeepingExit(tabId)
@@ -2999,20 +3135,48 @@ async function launchQuietTab(
   return r.id
 }
 
-let residentsRestored = false
-async function restoreResidentSessions(): Promise<void> {
-  if (residentsRestored || !workspaceMgr) return
-  residentsRestored = true
-  await workspaceMgr.firstScan
-  for (const id of workspaceMgr.residentIds()) {
-    const row = workspaceMgr
-      .rows()
-      .flatMap((w) => w.rows)
-      .find((r) => r.id === id)
-    if (!row) continue
-    const notice = await restoreResident(row).catch(() => couldNotStart(row.title))
-    if (notice) sendToRenderer('cron:toast', notice)
+const RESUMES_AT_ONCE = 4
+const RESTORED_TAB_READY_MS = 30_000
+
+function restoreOpenTabs(): string | undefined {
+  if (openTabsRestored || !workspaceMgr) return undefined
+  openTabsRestored = true
+  const plan = restorePlan(savedOpenTabs, workspaceMgr.residentIds())
+  let activeAsleep: string | undefined
+  for (const t of plan.asleep) {
+    const id = `asleep-${++sleeperSeq}`
+    addSleeper(id, t)
+    if (t.sessionId === savedOpenTabs.active) activeAsleep = id
   }
+  for (const t of savedOpenTabs.tabs)
+    if (plan.awake.includes(t.sessionId)) restoringSessions.set(t.sessionId, t)
+  void resumeAwake(plan.awake, savedOpenTabs.active)
+  workspaceMgr.onTrackerUpdate()
+  rememberOpenTabs()
+  return activeAsleep
+}
+
+async function resumeAwake(ids: string[], active: string | undefined): Promise<void> {
+  if (!workspaceMgr || !ids.length) return
+  await workspaceMgr.firstScan
+  if (ids.some((id) => identityOf(id).backendId === 'codex')) await endCodexLeftByACrash()
+  const rows = workspaceMgr.rows().flatMap((w) => w.rows)
+  const resumeOne = async (id: string): Promise<void> => {
+    const row = rows.find((r) => r.id === id)
+    const resumed = row
+      ? await resumeRow(row).catch(() => ({ ok: false as const, error: couldNotStart(row.title) }))
+      : undefined
+    if (!resumed?.ok) {
+      restoringSessions.delete(id)
+      rememberOpenTabs()
+      if (resumed) sendToRenderer('cron:toast', resumed.error)
+      return
+    }
+    if (id === active) sendToRenderer('attention:activate-tab', { tabId: resumed.tabId })
+    await tabReady(resumed.tabId, RESTORED_TAB_READY_MS, false)
+  }
+  for (let i = 0; i < ids.length; i += RESUMES_AT_ONCE)
+    await Promise.all(ids.slice(i, i + RESUMES_AT_ONCE).map(resumeOne))
 }
 
 function couldNotStart(title: string): string {
@@ -3051,11 +3215,6 @@ async function resumeRow(
   }
   sendToRenderer('terminal:spawned', spawned)
   return { ok: true, tabId: res.id }
-}
-
-async function restoreResident(row: SessionRow): Promise<string | undefined> {
-  const resumed = await resumeRow(row)
-  return resumed.ok ? undefined : resumed.error
 }
 
 function tabReady(tabId: string, ms: number, turnEnded: boolean): Promise<boolean> {
@@ -3303,10 +3462,11 @@ function registerIpc(): void {
     }
   )
 
-  ipcMain.on('terminal:write', (_e, id: string, data: string) => ptyMgr.write(id, data))
-  ipcMain.handle('terminal:paste', (_e, id: string, text: string, typedAfter?: string) =>
-    ptyMgr.paste(id, text, typedAfter)
-  )
+  ipcMain.on('terminal:write', (_e, id: string, data: string) => writeToTab(id, data))
+  ipcMain.handle('terminal:paste', (_e, id: string, text: string, typedAfter?: string) => {
+    if (typedWhileAsleep.has(id)) return writeToTab(id, bracketedPaste(text) + (typedAfter ?? ''))
+    return ptyMgr.paste(wokenAs.get(id) ?? id, text, typedAfter)
+  })
   // PLATFORM§21
   ipcMain.on('sessions:activity', (_e, id: unknown) => {
     if (typeof id === 'string' && id) tracker.noteActivity(id)
@@ -3346,8 +3506,8 @@ function registerIpc(): void {
   ipcMain.handle('tabs:list', (): TabInventoryReply => {
     rendererReady = true
     cronRunner?.onRendererReady()
-    void restoreResidentSessions()
-    const active = activeTabBeforeReload
+    const activeAsleep = restoreOpenTabs()
+    const active = activeAsleep ?? activeTabBeforeReload
     activeTabBeforeReload = null
     if (process.env.KOLOFT_TEST_NO_ADOPT === '1') return { tabs: [], activeTabBeforeReload: null }
     // CC§7
@@ -3364,7 +3524,8 @@ function registerIpc(): void {
     )
     // ADR-0007
     shrinkAdoptedClaudePtysOneRowSoFitRepaints(tabs)
-    return { tabs, activeTabBeforeReload: active }
+    const asleep = [...sleepers].map(([id, t]) => asleepTab(id, t))
+    return { tabs: [...tabs, ...asleep], activeTabBeforeReload: active }
   })
   ipcMain.on('attention:active-tab', (_e, id: string | null) => {
     const prevActive = uiActiveTabId
@@ -3376,6 +3537,7 @@ function registerIpc(): void {
       attention.clear(uiActiveTabId)
     }
     if (prevActive && prevActive !== uiActiveTabId) attention.reconsider(prevActive, ctx)
+    rememberOpenTabs()
   })
   ipcMain.on('attention:visit', (_e, id: string) => {
     if (typeof id !== 'string' || !id) return

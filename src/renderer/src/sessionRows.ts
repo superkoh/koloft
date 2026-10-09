@@ -172,11 +172,15 @@ export function attentionOnRow(
 export function isOrphanRow(
   row: { id: string; running: boolean },
   sessions: { sessionId: string; tabId: string; alive: boolean }[],
-  tabs: { id: string; sessionId?: string; alive: boolean }[]
+  tabs: { id: string; sessionId?: string; alive: boolean; asleep?: true }[]
 ): boolean {
   if (!row.running) return false
   const bound = sessions.find((s) => s.sessionId === row.id && s.alive)?.tabId
-  return !tabs.some((t) => t.alive && (t.id === bound || t.sessionId === row.id))
+  return !tabs.some(
+    (t) =>
+      (t.alive && (t.id === bound || t.sessionId === row.id)) ||
+      (t.asleep && t.sessionId === row.id)
+  )
 }
 
 export function mixesBackends(rows: { backendId: SessionBackend }[]): boolean {

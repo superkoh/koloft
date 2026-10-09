@@ -22,7 +22,12 @@ import {
   type CodexEvent,
   type CodexThread
 } from './codexObservation'
-import { CodexRpc, createCodexTransport, type CodexTransport } from './codexTransport'
+import {
+  CodexRpc,
+  createCodexTransport,
+  endAppServersLeftByACrash,
+  type CodexTransport
+} from './codexTransport'
 import { SessionStore, codexSessionKey, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
@@ -55,6 +60,10 @@ const STATUS_LINE_CONFIG = `tui.status_line=${JSON.stringify([
   'pull-request-number',
   'current-dir'
 ])}`
+
+export function endCodexLeftByACrash(): Promise<void> {
+  return endAppServersLeftByACrash(STATUS_LINE_CONFIG)
+}
 
 // CODEX§17
 function developerInstructions(lines: string[]): string {

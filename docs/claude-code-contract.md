@@ -1118,12 +1118,20 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   typed Enter picks Yes). One Esc closes each, except `/config`, which takes two (the
   first leaves its search box). A closed picker writes `Kept model as …` / `Resume
   cancelled`.
+- **A claude ended by a signal leaves the full screen and prints how to resume.**
+  Measured 2026-10-09, CC 2.1.295 logged in, inside a Koloft tab: after SIGTERM the
+  terminal left the alternate screen, and the normal buffer showed `Resume this session
+  with:` / `claude --resume <id>` under the launch line. So the last frame of the
+  conversation is gone from a terminal that keeps reading after the kill.
 - **URLs and files are opened with `Bun.spawn(["open", url])`**, which looks `open` up
   on PATH, so a PATH shim can catch it.
 - **An idle claude process holds a lot of memory**: measured 185–350 MB each for idle
   processes about two days old (date and CC version not recorded). On 2026-09-24, CC
   2.1.281, four live sessions (not idle, 20 min to 4 h old) held 196–403 MB each
-  (`ps -o rss`).
+  (`ps -o rss`). On 2026-10-09 (CC 2.1.295 on PATH), seven idle sessions 1–8 h old held
+  211–307 MB RSS (three of them measured with `footprint`: 255–271 MB) and used 1.8–5.3 s
+  of CPU in 5 minutes (0.6–1.8% of one core) — the process, not Koloft's watching of it,
+  is what an idle session costs.
 
 ## §13 Handing a session extra skills, context and a command allow rule; messaging between sessions
 

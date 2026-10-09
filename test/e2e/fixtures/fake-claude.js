@@ -1352,8 +1352,13 @@ function handleLine(line) {
 }
 // CC§1
 rl.on('close', () => shutdown('other'))
-process.on('SIGTERM', () => shutdown('other'))
-process.on('SIGHUP', () => shutdown('other'))
+// CC§12
+function shutdownBySignal() {
+  process.stdout.write(`\r\nResume this session with:\r\nclaude --resume ${sessionId}\r\n`)
+  shutdown('other')
+}
+process.on('SIGTERM', shutdownBySignal)
+process.on('SIGHUP', shutdownBySignal)
 process.on('SIGWINCH', () => {
   process.stdout.write(`[fake-claude] winch ${process.stdout.columns}x${process.stdout.rows}\r\n> `)
 })
