@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
-import { installCodex, seedSettings, setGithubFixture, type E2EEnv } from './helpers/env'
+import { installCodex, installGhForWorkspaceA, seedSettings, type E2EEnv } from './helpers/env'
 import {
   newSessionInWith,
   readCalls,
@@ -744,13 +744,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     }) => {
       if (backend === 'codex') installCodex(env)
       seedConductor(env, backend)
-      setGithubFixture(env, { [env.workspaces.a]: { owner: 'acme', repo: 'app' } })
-      const ghLog = path.join(env.home, 'gh-calls.txt')
-      fs.writeFileSync(
-        path.join(env.fakeBin, 'gh'),
-        `#!/bin/sh\necho "$*" >> ${JSON.stringify(ghLog)}\necho '{"state":"MERGED"}'\n`,
-        { mode: 0o755 }
-      )
+      const ghLog = installGhForWorkspaceA(env, '{"state":"MERGED"}')
       const fake = await startFakeDiscord(env)
       const { app, page } = await connected(env, fake)
       try {

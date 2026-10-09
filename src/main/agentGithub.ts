@@ -1,40 +1,13 @@
+import { GH_FLAGS, GH_READS, GH_READS_TEXT } from '@shared/githubReads'
 import { answered, EXIT_USAGE, refused, type AgentVerb } from './agentRequests'
 
-export const GH_USAGE =
-  'koloft: usage: koloft gh pr view|list|checks|diff, koloft gh issue view|list or koloft gh run view|list, with a number or URL and the flags --json, --repo, --state, --limit, --search, --label, --author, --assignee, --base, --head, --branch, --status, --workflow, --commit, --job, --comments, --name-only, --required or --log-failed.'
+export const GH_USAGE = `koloft: usage: koloft gh ${GH_READS_TEXT} [<number or URL>] [flags], with only the flags ${GH_FLAGS.join(', ')}.`
 export const GH_ONLY_A_CONDUCTOR =
   'koloft: only a conductor (a session bound to a Discord channel) can run koloft gh; a session runs gh itself.'
 export const GH_NEEDS_A_REPO =
   'koloft: this conductor has no workspace to take the repository from; add --repo <owner>/<name>, or give a full GitHub URL.'
 
-const READS: Record<string, string[]> = {
-  pr: ['view', 'list', 'checks', 'diff'],
-  issue: ['view', 'list'],
-  run: ['view', 'list']
-}
-
-// PLATFORM§32
-const FLAGS = new Set([
-  '--json',
-  '--repo',
-  '--state',
-  '--limit',
-  '--search',
-  '--label',
-  '--author',
-  '--assignee',
-  '--base',
-  '--head',
-  '--branch',
-  '--status',
-  '--workflow',
-  '--commit',
-  '--job',
-  '--comments',
-  '--name-only',
-  '--required',
-  '--log-failed'
-])
+const FLAGS = new Set(GH_FLAGS)
 
 const REPLY_CHARS_A_CONDUCTOR_TURN_HOLDS = 20_000
 
@@ -53,12 +26,12 @@ function flagName(arg: string): string {
 export function githubVerb(d: GithubVerbDeps): AgentVerb {
   return async (args, caller) => {
     const [noun, action, ...rest] = args
-    if (!noun || !action || !READS[noun]?.includes(action)) return refused(GH_USAGE, EXIT_USAGE)
+    if (!noun || !action || !GH_READS[noun]?.includes(action)) return refused(GH_USAGE, EXIT_USAGE)
     if (rest.some((a) => a.startsWith('-') && !FLAGS.has(flagName(a))))
       return refused(GH_USAGE, EXIT_USAGE)
     const scope = d.scopeOf(caller.tabId)
     if (scope === undefined) return refused(GH_ONLY_A_CONDUCTOR)
-    const gh = [noun, action, ...rest]
+    const gh = [...args]
     if (!rest.some((a) => flagName(a) === '--repo' || a.startsWith('https://'))) {
       const repo = await d.repoOf(scope)
       if (!repo) return refused(GH_NEEDS_A_REPO)

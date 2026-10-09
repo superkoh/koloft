@@ -3,7 +3,7 @@ import path from 'path'
 import { execFileSync } from 'child_process'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { seedSettings, setGithubFixture, type E2EEnv } from './helpers/env'
+import { installGhForWorkspaceA, seedSettings, type E2EEnv } from './helpers/env'
 import { gitInit, seedJsonl, startSessionIn, terminalText, waitBooted, wsRows } from './helpers/p1'
 import { openerNow, startFakeDiscord, type FakeDiscord, type FakePost } from './helpers/fakeDiscord'
 
@@ -343,15 +343,10 @@ async function triesToWriteTheWorkspaceItselfAndIsRefused(
 const PR_TITLE_ONLY_GH_KNOWS = 'PLUM-58 tidy the docs'
 
 function fakeGhSaysMerged(env: E2EEnv): string {
-  setGithubFixture(env, { [env.workspaces.a]: { owner: 'acme', repo: 'app' } })
-  const log = path.join(env.home, 'gh-calls.txt')
-  fs.writeFileSync(
-    path.join(env.fakeBin, 'gh'),
-    `#!/bin/sh\necho "$*" >> ${JSON.stringify(log)}\n` +
-      `echo '{"number":389,"state":"MERGED","title":"${PR_TITLE_ONLY_GH_KNOWS}"}'\n`,
-    { mode: 0o755 }
+  return installGhForWorkspaceA(
+    env,
+    `{"number":389,"state":"MERGED","title":"${PR_TITLE_ONLY_GH_KNOWS}"}`
   )
-  return log
 }
 
 async function checksGithubItself(fake: FakeDiscord, log: string): Promise<void> {

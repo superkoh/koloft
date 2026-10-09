@@ -33,39 +33,29 @@ export function parseOpenCounts(stdout: string): OpenCounts | null {
 
 // PLATFORM§32
 export async function ghOpenCounts(repo: GithubRepo): Promise<OpenCounts | null> {
-  try {
-    const { stdout } = await execFile(
-      'gh',
-      [
-        'api',
-        'graphql',
-        '-f',
-        `owner=${repo.owner}`,
-        '-f',
-        `name=${repo.repo}`,
-        '-f',
-        `query=${OPEN_COUNTS_QUERY}`
-      ],
-      { timeout: FETCH_TIMEOUT_MS }
-    )
-    return parseOpenCounts(stdout)
-  } catch {
-    return null
-  }
+  const { ok, out } = await ghRead([
+    'api',
+    'graphql',
+    '-f',
+    `owner=${repo.owner}`,
+    '-f',
+    `name=${repo.repo}`,
+    '-f',
+    `query=${OPEN_COUNTS_QUERY}`
+  ])
+  return ok ? parseOpenCounts(out) : null
 }
-
-const A_GITHUB_READ_ANSWERS_WITHIN_MS = 30_000
 
 export async function ghRead(args: string[]): Promise<{ ok: boolean; out: string }> {
   try {
     const { stdout } = await execFile('gh', args, {
-      timeout: A_GITHUB_READ_ANSWERS_WITHIN_MS,
+      timeout: FETCH_TIMEOUT_MS,
       maxBuffer: MAX_BUFFER
     })
     return { ok: true, out: stdout }
   } catch (error) {
-    const e = error as { stderr?: string; message?: string }
-    return { ok: false, out: e.stderr?.trim() || e.message || String(error) }
+    const e = error as Error & { stderr?: string }
+    return { ok: false, out: e.stderr?.trim() || e.message }
   }
 }
 
@@ -168,9 +158,9 @@ export class GithubLookup {
     return known.counts && { repo: key, ...known.counts }
   }
 
-  repo(root: string): Promise<GithubRepo | null> {
-    if (this.fixture) return Promise.resolve(fixtureRepo(this.fixture, root))
-    return this.repoOf(root, false)
+  async ownerSlashName(root: string): Promise<string | null> {
+    const repo = this.fixture ? this.fixture[root] : await this.repoOf(root, false)
+    return repo ? `${repo.owner}/${repo.repo}` : null
   }
 
   private async repoOf(root: string, force: boolean): Promise<GithubRepo | null> {
@@ -259,11 +249,6 @@ function fixtureCounts(fx: GithubFixture, root: string): WorkspaceGithub | null 
   const f = fx[root]
   if (!f || f.issues === undefined || f.prs === undefined) return null
   return { repo: `${f.owner}/${f.repo}`, issues: f.issues, prs: f.prs }
-}
-
-function fixtureRepo(fx: GithubFixture, root: string): GithubRepo | null {
-  const f = fx[root]
-  return f ? { owner: f.owner, repo: f.repo } : null
 }
 
 function fixtureInfo(fx: GithubFixture, root: string): GithubInfo | null {

@@ -1,4 +1,5 @@
 import { GLOBAL_SCOPE } from './conductors'
+import { GH_FLAGS, GH_READS_TEXT } from './githubReads'
 import { parseRemoteKey, remoteCopyText } from './remoteKey'
 
 export const AGENT_GUIDE = `koloft lets you ask Koloft, the app this session runs in, to do things for its owner (the person you work for). Run it in your shell. Each command prints its answer; exit code 0 means it worked.
@@ -137,8 +138,8 @@ koloft discord send <file>... [-- "<text>"]
 
 GITHUB (conductors only)
 
-koloft gh pr view|list|checks|diff | issue view|list | run view|list [<number or URL>] [flags]
-    Only for a conductor: Koloft runs that gh command for you and prints what it said, so you can check whether a pull request is merged, how its checks went, or what an issue says. It only reads: other gh commands are refused, and so are flags but --json, --repo, --state, --limit, --search, --label, --author, --assignee, --base, --head, --branch, --status, --workflow, --commit, --job, --comments, --name-only, --required and --log-failed. A workspace conductor's repository is filled in for it; the global conductor adds --repo <owner>/<name>, or gives a full GitHub URL.
+koloft gh ${GH_READS_TEXT} [<number or URL>] [flags]
+    Only for a conductor: Koloft runs that gh command for you and prints what it said, so you can check whether a pull request is merged, how its checks went, or what an issue says. It only reads: other gh commands are refused, and so are flags but ${GH_FLAGS.join(', ')}. A workspace conductor's repository is filled in for it; the global conductor adds --repo <owner>/<name>, or gives a full GitHub URL.
     Example: koloft gh pr view 389 --repo octo/app --json state,mergedAt
 
 WEB PAGES (Claude only)

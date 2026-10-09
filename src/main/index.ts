@@ -857,11 +857,8 @@ const agentRequests = new AgentRequests({
     }),
     gh: githubVerb({
       scopeOf: (tabId) => conductors?.scopeOfTab(tabId),
-      repoOf: async (scope) => {
-        if (scope === GLOBAL_SCOPE) return null
-        const repo = await hosts.of(scope).github.repo(scope)
-        return repo && `${repo.owner}/${repo.repo}`
-      },
+      repoOf: async (scope) =>
+        scope === GLOBAL_SCOPE ? null : hosts.of(scope).github.ownerSlashName(scope),
       // PLATFORM§1
       run: (args) => loginEnvReady().then(() => ghRead(args))
     })

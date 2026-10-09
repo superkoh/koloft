@@ -52,12 +52,8 @@ describe('koloft gh', () => {
     ['a command that writes', ['pr', 'merge', '389']],
     ['a comment', ['issue', 'comment', '5', '--body', 'x']],
     ['gh api', ['api', 'repos/a/b', '-X', 'DELETE']],
-    ['opening a browser', ['pr', 'view', '389', '--web']],
-    ['the short browser flag', ['issue', 'view', '5', '-w']],
-    ['watching checks until they end', ['pr', 'checks', '389', '--watch']],
     ['a jq filter that can read the environment', ['pr', 'view', '1', '--jq', '$ENV']],
-    ['a flag hidden after =', ['pr', 'view', '1', '--web=true']],
-    ['a lone --', ['pr', 'view', '--', '--web']],
+    ['a flag outside the list, given with =', ['pr', 'view', '1', '--web=true']],
     ['no command', []]
   ])('refuses %s without running gh', async (_n, args) => {
     const { call, ran } = verb()

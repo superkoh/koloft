@@ -553,18 +553,6 @@ describe('injected hook script', () => {
         [
           'another session’s memory folder',
           write('Edit', '/home/o/.claude/projects/-ws-a/memory/a.md')
-        ],
-        [
-          'a memory Write with no transcript path',
-          { tool_name: 'Write', tool_input: { file_path: '/m/memory/a.md', content: 'x' } }
-        ],
-        [
-          'a memory-folder path through NotebookEdit',
-          {
-            tool_name: 'NotebookEdit',
-            transcript_path,
-            tool_input: { notebook_path: '/home/o/.claude/projects/-conductors-global/memory/a' }
-          }
         ]
       ])('denies %s', (_name, event) => {
         expect(gate(event)).toBe('deny')

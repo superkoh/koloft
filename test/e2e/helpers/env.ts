@@ -201,6 +201,17 @@ export function setGithubFixture(env: E2EEnv, repos: GithubFixture): void {
   env.launchEnv.KOLOFT_GITHUB_FIXTURE = JSON.stringify(repos)
 }
 
+export function installGhForWorkspaceA(env: E2EEnv, prints: string): string {
+  setGithubFixture(env, { [env.workspaces.a]: { owner: 'acme', repo: 'app' } })
+  const log = path.join(env.home, 'gh-calls.txt')
+  fs.writeFileSync(
+    path.join(env.fakeBin, 'gh'),
+    `#!/bin/sh\necho "$*" >> ${JSON.stringify(log)}\necho '${prints}'\n`,
+    { mode: 0o755 }
+  )
+  return log
+}
+
 // PLATFORM§2
 export function writeClaudeWrapper(env: E2EEnv, name = 'koloft-e2e-wrapper'): string {
   const file = path.join(env.fakeBin, name)
