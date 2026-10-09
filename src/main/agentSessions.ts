@@ -499,15 +499,32 @@ export function sessionChoices(
     }))
 }
 
+interface ScopedRows {
+  all: PlacedRow[]
+  mine: PlacedRow[]
+  names: (string | null)[]
+}
+
+async function rowsIn(d: SessionVerbDeps, scope: string | undefined): Promise<ScopedRows> {
+  const all = placedRows(d.sidebar(), d.allSessions())
+  const mine = all.filter((p) => inScope(scope, p.workspace))
+  return { all, mine, names: await peerNamesOf(d, mine) }
+}
+
+function namesARow({ all, mine, names }: ScopedRows, ref: string): boolean {
+  return matchRow(mine, ref, names) !== null || matchRow(all, ref) !== null
+}
+
 async function findIn(
   d: SessionVerbDeps,
   verb: string,
   ref: string,
   scope: string | undefined
 ): Promise<Parsed<PlacedRow>> {
-  const all = placedRows(d.sidebar(), d.allSessions())
-  const mine = all.filter((p) => inScope(scope, p.workspace))
-  const names = await peerNamesOf(d, mine)
+  return findAmong(await rowsIn(d, scope), verb, ref)
+}
+
+function findAmong({ all, mine, names }: ScopedRows, verb: string, ref: string): Parsed<PlacedRow> {
   const hit = matchRow(mine, ref, names)
   if (hit && !hit.ok) return fail(`koloft session ${verb}: ${hit.error}`)
   if (hit) {
@@ -612,20 +629,10 @@ function isMe(
   mine: Target | undefined,
   callerTabId: string
 ): boolean {
-  return mine?.tabId === callerTabId || [me.sessionId, me.nativeSessionId, me.title].includes(ref)
-}
-
-async function conductorNames(
-  d: SessionVerbDeps,
-  me: SessionInfo
-): Promise<(ref: string) => boolean> {
-  const all = placedRows(d.sidebar(), d.allSessions())
-  const names = await peerNamesOf(d, all)
-  return (ref) =>
-    ref === MYSELF ||
-    [me.sessionId, me.nativeSessionId, me.title].includes(ref) ||
-    d.conductorOf(ref) !== undefined ||
-    matchRow(all, ref, names) !== null
+  return (
+    mine?.tabId === callerTabId ||
+    [MYSELF, me.sessionId, me.nativeSessionId, me.title].includes(ref)
+  )
 }
 
 export function sessionVerb(d: SessionVerbDeps): AgentVerb {
@@ -699,8 +706,15 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
   ): Promise<AgentReply> => {
     const takesWords = sub === 'send' || sub === 'answer' || sub === 'command' || sub === 'keys'
     const resume = splitAtDashes(rest)
+    const rows = await rowsIn(d, d.conductorScope(caller.tabId))
     const split = takesWords
-      ? nameThenWords(rest, await conductorNames(d, caller.session))
+      ? nameThenWords(
+          rest,
+          (r) =>
+            isMe(r, caller.session, d.conductorOf(r), caller.tabId) ||
+            d.conductorOf(r) !== undefined ||
+            namesARow(rows, r)
+        )
       : wholeName(sub === 'resume' ? resume.before : rest)
     if (!split.ok) return refused(`koloft session ${sub}: ${split.error}`, EXIT_USAGE)
     const { ref, tail } = split.value
@@ -710,7 +724,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       const problem = slashCommandProblem(text)
       if (problem) return refused(`koloft session command: ${problem}`, EXIT_USAGE)
     }
-    const self = ref === MYSELF || isMe(ref, caller.session, d.conductorOf(ref), caller.tabId)
+    const self = isMe(ref, caller.session, d.conductorOf(ref), caller.tabId)
     if (self && sub === 'screen') return answered(formatScreen('you', await d.screen(caller.tabId)))
     if (self && sub === 'command') {
       const me = d.conductorOf(caller.session.sessionId)
@@ -718,7 +732,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       return answered(await d.command(caller.tabId, me, text))
     }
     if (self) return refused(`koloft session ${sub}: ${THAT_IS_YOU}`)
-    const found = await findInScope(d, sub, ref, caller.tabId)
+    const found = findAmong(rows, sub, ref)
     if (!found.ok) return refused(found.error)
     const t = rowTarget(d, found.value)
     if (sub === 'screen')
@@ -819,7 +833,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       if (conductor) return deliver('send', conductor, text, caller)
       if (caller.session.backendId !== 'codex')
         return refused(`koloft session send: ${CLAUDE_USES_SEND_MESSAGE}`)
-      const target = findCodexTarget(d.allSessions(), ref)
+      const target = findCodexTarget(open, ref)
       if (!target.ok) return refused(`koloft session send: ${target.error}`)
       await d.queue(target.value.tabId, text)
       return answered(`Sent to ${target.value.title}.`)
