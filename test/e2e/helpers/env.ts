@@ -282,12 +282,17 @@ export function writeGitIdentity(home: string): void {
   )
 }
 
-export function installGhForWorkspaceA(env: E2EEnv, prints: string): string {
+export function installGhForWorkspaceA(
+  env: E2EEnv,
+  prints: string,
+  issueCreatePrints = prints
+): string {
   setGithubFixture(env, { [env.workspaces.a]: { owner: 'acme', repo: 'app' } })
   const log = path.join(env.home, 'gh-calls.txt')
   fs.writeFileSync(
     path.join(env.fakeBin, 'gh'),
-    `#!/bin/sh\necho "$*" >> ${JSON.stringify(log)}\necho '${prints}'\n`,
+    `#!/bin/sh\necho "$*" >> ${JSON.stringify(log)}\n` +
+      `if [ "$1 $2" = "issue create" ]; then echo '${issueCreatePrints}'; else echo '${prints}'; fi\n`,
     { mode: 0o755 }
   )
   return log

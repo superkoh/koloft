@@ -273,7 +273,7 @@ import type {
 } from '@shared/types'
 import { copyWorktreeIncludes } from './sessionWorktrees'
 import { AgentRequests, BUILTIN_VERBS, errorText, refused, type AgentVerb } from './agentRequests'
-import { Conductors } from './discord/conductors'
+import { conductorFolder, Conductors } from './discord/conductors'
 import { discordApiUrl, DiscordLink } from './discord/link'
 import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay, type Destination } from './discord/relay'
@@ -898,6 +898,7 @@ const agentRequests = new AgentRequests({
     }),
     gh: githubVerb({
       scopeOf: (tabId) => conductors?.scopeOfTab(tabId),
+      folderOf: (scope) => conductorFolder(app.getPath('userData'), scope),
       repoOf: async (scope) =>
         scope === GLOBAL_SCOPE ? null : hosts.of(scope).github.ownerSlashName(scope),
       // PLATFORM§1
