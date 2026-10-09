@@ -317,6 +317,7 @@ import { writeLine } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
 import { claudeTitleModel } from './sessionTitle'
 import { closingTree, removeTree, whatIsLeft } from './sessionClose'
+import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
 import { writeAgentPlugin } from './agentPlugin'
 
@@ -427,6 +428,32 @@ if (process.platform !== 'win32') {
   void refreshLeftovers()
 }
 let quitCommitted = false
+
+interface ClaudeTabExit {
+  watch: WorktreeRemovalWatch
+  leaving?: { sessionId?: string; claudePid?: number; treeRoot?: string }
+}
+const claudeTabExits = new Map<string, ClaudeTabExit>()
+const sessionsLeavingTheirWorktree = new Set<string>()
+
+function watchForWorktreeRemoval(tabId: string, data: string): void {
+  let exit = claudeTabExits.get(tabId)
+  if (!exit) {
+    if (ptyMgr.get(tabId)?.kind !== 'claude' || tracker.remoteOf(tabId)) return
+    claudeTabExits.set(tabId, (exit = { watch: new WorktreeRemovalWatch() }))
+  }
+  if (!exit.watch.started(data)) return
+  const session = tracker.infoOf(tabId)
+  exit.leaving = {
+    sessionId: session?.sessionId,
+    claudePid: ptyMgr.pidOf(tabId),
+    treeRoot: session?.treeRoot
+  }
+  if (session?.sessionId) sessionsLeavingTheirWorktree.add(session.sessionId)
+  sendToRenderer('tab:killedByMain', tabId)
+  workspaceMgr?.refresh()
+}
+
 const attention = new AttentionTracker((pending, event) => {
   if (!quitCommitted) saveAttention(pending)
   updateDockBadge(pending)
@@ -1495,6 +1522,7 @@ app.whenReady().then(() => {
   }
   ptyMgr.on('data', (d: { id: string; data: string }) => {
     if (loginWatchers.size) feedLoginWatcher(d.id, d.data)
+    watchForWorktreeRemoval(d.id, d.data)
     pendingData.set(d.id, (pendingData.get(d.id) ?? '') + d.data)
     if (!flushTimer) flushTimer = setTimeout(flushData, PTY_OUTPUT_COALESCE_ONE_FRAME_MS)
   })
@@ -1528,6 +1556,16 @@ app.whenReady().then(() => {
     if (loginWatchers.has(e.id)) failLogin(e.id, 'setup-token exited without printing a token')
     attention.clear(e.id)
     claudeBackend.onPtyExit(e.id, !quitCommitted && exitedAbnormally(e))
+    const claudeExit = claudeTabExits.get(e.id)
+    claudeTabExits.delete(e.id)
+    if (claudeExit?.leaving) {
+      const { sessionId } = claudeExit.leaving
+      if (sessionId) sessionsLeavingTheirWorktree.delete(sessionId)
+      const claudeSaid = claudeExit.watch.failure()
+      if (claudeSaid)
+        sendToRenderer('cron:toast', `Claude Code did not remove the worktree: ${claudeSaid}`)
+      workspaceMgr?.refresh()
+    }
     flushData()
     // PLATFORM§21
     const held = pendingData.get(e.id)
@@ -1676,7 +1714,7 @@ app.whenReady().then(() => {
     remoteGit: (host, p) => remoteSync?.gitInfo(host, p),
     killRemoteSession: (host, sessionId) =>
       claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId)),
-    hiddenRow: (id) => !!conductors?.conductorOf(id),
+    hiddenRow: (id) => !!conductors?.conductorOf(id) || sessionsLeavingTheirWorktree.has(id),
     parentOf: (rowId) => startedSessions.parentOfRow(rowId),
     conductorsRoot: path.join(userData, 'conductors'),
     sessionsOnDiskOrRunning: (ids) =>
@@ -2170,6 +2208,11 @@ app.on('before-quit', (e) => {
     }
     return
   }
+  for (const { leaving } of claudeTabExits.values()) {
+    if (leaving?.claudePid && leaving.treeRoot)
+      finishAfterKoloftQuits(leaving.claudePid, leaving.treeRoot)
+  }
+  claudeTabExits.clear()
   cronRunner?.quitSweep()
   cronRunner?.stop()
   discordLink?.stop()
