@@ -9,17 +9,9 @@ import { normalizeSessionMethods } from './sessionBackend'
 import { sanitizeDiscord } from './conductors'
 
 export function buildResetPatch(): Partial<Settings> {
-  const {
-    accounts,
-    multiAccount,
-    skipPermissions,
-    fablePriority,
-    sessionMethods,
-    discord,
-    ...rest
-  } = DEFAULT_SETTINGS
+  const { accounts, skipPermissions, fablePriority, sessionMethods, discord, ...rest } =
+    DEFAULT_SETTINGS
   void accounts
-  void multiAccount
   void skipPermissions
   void fablePriority
   void sessionMethods

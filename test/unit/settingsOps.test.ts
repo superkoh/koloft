@@ -12,10 +12,9 @@ import {
 import { DEFAULT_SETTINGS, HINT_IDS } from '@shared/types'
 
 describe('buildResetPatch (FR-12)', () => {
-  it('excludes the whole account domain: accounts, multiAccount, skipPermissions, fablePriority', () => {
+  it('excludes the whole account domain: accounts, skipPermissions, fablePriority', () => {
     const patch = buildResetPatch()
     expect(patch).not.toHaveProperty('accounts')
-    expect(patch).not.toHaveProperty('multiAccount')
     expect(patch).not.toHaveProperty('skipPermissions')
     expect(patch).not.toHaveProperty('fablePriority')
   })
@@ -64,15 +63,13 @@ describe('buildResetPatch (FR-12)', () => {
 })
 
 describe('sanitizeSettingsPatch (FR-13)', () => {
-  it('strips accounts but lets multiAccount/skipPermissions through (legal toggle payloads)', () => {
+  it('strips accounts but lets skipPermissions through (a legal toggle payload)', () => {
     const patch = {
       accounts: [{ name: 'x', kind: 'oauth', enabled: true }],
-      multiAccount: false,
       skipPermissions: false,
       fontSize: 20
     } as never
     expect(sanitizeSettingsPatch(patch)).toEqual({
-      multiAccount: false,
       skipPermissions: false,
       fontSize: 20
     })

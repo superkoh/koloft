@@ -119,7 +119,7 @@ beforeEach(() => {
     events: vi.fn((tabId, event) => sessions.observe(tabId, event)),
     error: vi.fn(),
     trustFolder: vi.fn(),
-    pickHome: vi.fn(() => undefined),
+    pickHome: vi.fn(() => ({ account: 'work', home: '/homes/work' })),
     shareHomes: vi.fn(),
     openShimRoot: path.join(directory, 'codex-open'),
     agent: { enabled: () => false, answer: vi.fn() }

@@ -156,7 +156,6 @@ export interface Settings {
   fileTreeHeight: number
   sidebarWidth: number
   sidebarHidden: boolean
-  multiAccount: boolean
   skipPermissions: boolean
   fablePriority: boolean
   accounts: AccountMeta[]
@@ -256,7 +255,6 @@ export const DEFAULT_SETTINGS: Settings = {
   fileTreeHeight: 260,
   sidebarWidth: 280,
   sidebarHidden: false,
-  multiAccount: false,
   skipPermissions: true,
   fablePriority: true,
   accounts: [],

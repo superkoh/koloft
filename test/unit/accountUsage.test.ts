@@ -18,8 +18,28 @@ import {
   STALE_MS,
   GRACE,
   FABLE_STOP,
-  CAP
+  CAP,
+  hasUsableAccount
 } from '../../src/shared/accountUsage'
+import { meta } from './helpers/accounts'
+
+// ADR-0030
+describe('hasUsableAccount (whether a Claude or Codex session may start at all)', () => {
+  it('counts only an enabled account of that tool whose sign-in is ok', () => {
+    const claudeKinds = [
+      meta({ kind: 'oauth' }),
+      meta({ kind: 'apikey' }),
+      meta({ kind: 'custom' })
+    ]
+    for (const a of claudeKinds) expect(hasUsableAccount([a], 'claude')).toBe(true)
+    expect(hasUsableAccount(claudeKinds, 'codex')).toBe(false)
+    expect(hasUsableAccount([meta({ kind: 'codex-home' })], 'codex')).toBe(true)
+    expect(hasUsableAccount([meta({ kind: 'codex-home' })], 'claude')).toBe(false)
+    expect(hasUsableAccount([meta({ enabled: false })], 'claude')).toBe(false)
+    expect(hasUsableAccount([meta({ status: 'expired' })], 'claude')).toBe(false)
+    expect(hasUsableAccount([meta({ status: 'unverified' })], 'claude')).toBe(false)
+  })
+})
 
 const NOW_SEC = 1_700_000_000
 const NOW_MS = NOW_SEC * 1000

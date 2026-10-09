@@ -138,6 +138,7 @@ import { shq } from '@shared/shellQuote'
 import { CronRunner, type LaunchRequest } from './cronRunner'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
+import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import { GitFreshnessEngine } from './gitFreshness'
 import {
   GithubLookup,
@@ -719,7 +720,6 @@ function foldProbeResult(
 
 const picker = new AccountPicker({
   listAccounts,
-  multiAccountOn: () => loadSettings().multiAccount,
   fablePriority: () => loadSettings().fablePriority,
   readSecret: (kind, name) => keychainRead(kind, name),
   probe: (a, secret) =>
@@ -890,7 +890,9 @@ async function pickForLaunch(tabId?: string): Promise<{
 
 async function pickedAccountEnv(): Promise<NodeJS.ProcessEnv> {
   await loginEnvReady()
-  return (await pickMachineAccount(() => pickForLaunch()))?.env ?? {}
+  const picked = await pickMachineAccount(() => pickForLaunch())
+  // ADR-0030
+  return picked ? { ...picked.env, KOLOFT_ACCOUNT_PICKED: '1' } : {}
 }
 
 async function handlePickRequest(pickDir: string, reqName: string, raw: unknown): Promise<void> {
@@ -1122,7 +1124,6 @@ function codexSharedConfig(): string {
 
 // CODEX§15
 function pickCodexHome(): { account: string; home: string } | undefined {
-  if (!loadSettings().multiAccount) return undefined
   const views = accountViews()
   const picked = codexPicker.pick(views)
   if (!picked) return undefined
@@ -1429,10 +1430,7 @@ app.whenReady().then(() => {
     ptyMgr.openDir = openDir
     sweepOpenRequests(openDir)
   }
-  if (watchPickRequests(pickDir)) {
-    ptyMgr.pickDir = pickDir
-    ptyMgr.multiAccountOn = () => loadSettings().multiAccount
-  }
+  if (watchPickRequests(pickDir)) ptyMgr.pickDir = pickDir
 
   ptyMgr.cdpDir = cdpEnvDir()
   startRelay(relayDeps())
@@ -2097,7 +2095,7 @@ app.whenReady().then(() => {
   startUpdateNotifier((offer) => sendToRenderer('update:offer', offer))
 
   const capsuleShownSoLaunchProbeIsNotBilledForNothing = (): boolean =>
-    loadSettings().multiAccount && listAccounts().some((a) => a.enabled && a.kind === 'oauth')
+    listAccounts().some((a) => a.enabled && a.kind === 'oauth')
   if (capsuleShownSoLaunchProbeIsNotBilledForNothing()) {
     void probeAllForPanel().catch(() => {})
   }
@@ -2990,6 +2988,9 @@ async function launchQuietTab(
   title: string,
   jobId?: string
 ): Promise<string | null> {
+  // ADR-0030
+  if (!sessionBackends.get(options.kind).accountUsable())
+    throw new Error(NO_USABLE_ACCOUNT[options.kind])
   const r = await sessionBackends.create(options)
   if (!r.ok) return null
   const spawned: SpawnedTab = { id: r.id, kind: options.kind, cwd: r.cwd, title, jobId }

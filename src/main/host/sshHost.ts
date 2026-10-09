@@ -12,6 +12,7 @@ import {
   type SkillSuggestion
 } from '@shared/types'
 import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
+import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import { shq } from '@shared/shellQuote'
 import { EDIT_OPEN_MAX_BYTES, EDIT_WRITE_MAX_BYTES } from '@shared/editLimits'
 import { portOffset } from '@shared/worktreeName'
@@ -56,7 +57,7 @@ export interface MachineClaudeDeps {
   machinePackage(): MachinePackage
   alive(): ReadonlySet<string>
   realPath(p: string): string
-  settings(): { multiAccount: boolean; skipPermissions: boolean }
+  settings(): { skipPermissions: boolean }
   pickAccount(launchKey: string): Promise<MachineAccount | undefined>
   hookSettings(tabId: string, machineDir: string): Record<string, unknown>
 }
@@ -68,8 +69,6 @@ export interface SshHostDeps {
   github: GithubOptions
   claude: MachineClaudeDeps
 }
-
-const OWN_LOGIN_BANNER = "[Koloft] using this machine's own claude login"
 
 // CC§9
 export function machineClaudeArgs(
@@ -638,8 +637,10 @@ export class SshHost implements Host {
     const pkg = d.machinePackage()
     const machineDir = remoteMachineDir(pkg.name)
     await this.kills.get(tmuxName)
-    const pickKey = mode === 'start' && settings.multiAccount ? `launch-${sid}` : undefined
+    const pickKey = mode === 'start' ? `launch-${sid}` : undefined
     const account = pickKey ? await d.pickAccount(pickKey) : undefined
+    // ADR-0030
+    if (pickKey && !account) throw new Error(NO_USABLE_ACCOUNT.claude)
     return {
       ok: true,
       spawnCwd: os.homedir(),
@@ -653,7 +654,7 @@ export class SshHost implements Host {
           machineName: pkg.name,
           cwd,
           fallbackCwd: wsRoot !== cwd ? wsRoot : undefined,
-          banner: account?.banner ?? OWN_LOGIN_BANNER,
+          banner: account?.banner ?? '',
           env: account?.env,
           portOffset: worktree ? portOffset(worktree) : undefined,
           settings: d.hookSettings(tabId, machineDir),

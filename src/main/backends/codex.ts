@@ -1,5 +1,7 @@
 import type { ResumePlan } from '@shared/types'
 import { parseRemoteKey } from '@shared/remoteKey'
+import { hasUsableAccount } from '@shared/accountUsage'
+import { listAccounts } from '../accounts'
 import type { SessionBackend } from '../sessionBackends'
 import type { CodexSessions } from '../codexSessions'
 import { acceptCodexTrust, codexConfigFile, codexTrustsFolder } from '../codexTrust'
@@ -49,7 +51,7 @@ export function codexBackend(sessions: CodexSessions, resumeProbes: ResumeProbes
     transcriptExists: (key) => sessions.transcriptExists(key),
     observe: (tabId, event) => sessions.observe(tabId, event),
     occupantOf: (dir) => sessions.occupantOf(dir),
-    accountUsable: () => true,
+    accountUsable: () => hasUsableAccount(listAccounts(), 'codex'),
     trustsFolder: (dir) => codexTrustsFolder(codexConfigFile(sessions.defaultEnv), dir),
     turns: async (key, n) => sessions.turnsOf(key, n) ?? sessions.readTurns(key, n),
     // ADR-0028

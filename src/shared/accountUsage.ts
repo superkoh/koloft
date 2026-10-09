@@ -1,4 +1,23 @@
-import type { AccountView, UsageSnapshot } from './types'
+import type { AccountKind, AccountMeta, AccountView, BackendId, UsageSnapshot } from './types'
+
+const ACCOUNT_KINDS_OF: Record<BackendId, AccountKind[]> = {
+  claude: ['oauth', 'apikey', 'custom'],
+  codex: ['codex-home']
+}
+
+// ADR-0030
+export function hasUsableAccount(accounts: readonly AccountMeta[], backend: BackendId): boolean {
+  return accounts.some(
+    (a) => ACCOUNT_KINDS_OF[backend].includes(a.kind) && a.enabled && a.status === 'ok'
+  )
+}
+
+export const NO_USABLE_ACCOUNT: Record<BackendId, string> = {
+  claude:
+    'No Claude account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.',
+  codex:
+    'No Codex account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.'
+}
 
 export const STALE_MS = 15 * 60_000
 export const CAP = 0.92

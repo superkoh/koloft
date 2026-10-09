@@ -272,10 +272,13 @@ for a in "$@"; do
     ${CLAUDE_FLAGS_FOLLOWED_BY_A_VALUE}) valflag=1 ;;
   esac
 done
-if [ "$noinj" = "0" ]; then
-  if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ] || [ -n "$ANTHROPIC_API_KEY" ] || [ -n "$ANTHROPIC_AUTH_TOKEN" ]; then
-    [ -n "$KOLOFT_MULTI_ACCOUNT" ] && echo "koloft: auth token already in env, skipping balancing" >&2
-  elif [ -n "$KOLOFT_PICK_DIR" ] && [ -n "$KOLOFT_TAB_ID" ] && [ -n "$KOLOFT_PID" ] && kill -0 "$KOLOFT_PID" 2>/dev/null; then
+# ADR-0030
+if [ "$noinj" = "0" ] && [ "$KOLOFT_ACCOUNT_PICKED" != "1" ]; then
+  unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN
+  if ! { [ -n "$KOLOFT_PICK_DIR" ] && [ -n "$KOLOFT_TAB_ID" ] && [ -n "$KOLOFT_PID" ] && kill -0 "$KOLOFT_PID" 2>/dev/null; }; then
+    echo "koloft: claude runs here only inside a Koloft tab, on an account from Settings > Accounts." >&2
+    exit 1
+  else
     pickid="$(newid)"
     [ -n "$pickid" ] || pickid="$$-$(date +%s)"
     preq="$KOLOFT_PICK_DIR/req-$pickid.json"
@@ -340,13 +343,16 @@ if [ "$noinj" = "0" ]; then
           inj+=(--dangerously-skip-permissions)
         fi
       else
-        echo "koloft: no credential for $pacct, launching as-is" >&2
+        echo "koloft: could not read the sign-in of $pacct from the Keychain. Try again, or sign it in again in Settings > Accounts." >&2
+        exit 1
       fi
     else
       case "$preason" in
-        no-accounts) echo "koloft: no usable account, using default login" >&2 ;;
-        timeout) echo "koloft: account pick timed out, launching as-is" >&2 ;;
+        no-accounts) echo "koloft: no Claude account in Koloft can be used. Add one, or fix the one you have, in Settings > Accounts." >&2 ;;
+        timeout) echo "koloft: picking an account took too long. Try again." >&2 ;;
+        *) echo "koloft: no Claude account could be picked. Check Settings > Accounts, then try again." >&2 ;;
       esac
+      exit 1
     fi
   fi
 fi

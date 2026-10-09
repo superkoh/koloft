@@ -36,6 +36,7 @@ import { removeCodexOpenShim, writeCodexOpenShim } from './openShimScript'
 import { AGENT_SHIM_WAITS_MS, writeCodexAgentShim } from './agentShim'
 import { CODEX_AGENT_HINT } from '@shared/agentGuide'
 import { portOffset } from '@shared/worktreeName'
+import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import type { CodexApproval, CodexQuestion } from './discord/dialog'
 
 const exists = (p: string): boolean => {
@@ -133,8 +134,7 @@ interface Run {
   stopping?: Promise<void>
   explicitStop: boolean
   resumeKey?: string
-  home?: string
-  account?: string
+  account: string
   bypassingChecks: boolean
   releaseOpenShim(): void
 }
@@ -661,6 +661,10 @@ export class CodexSessions {
     const workspace = this.workspaceFor(cwd)
     if (opts.resumeSessionId && this.aliveTabFor(opts.resumeSessionId))
       throw new Error('This Codex session is already open.')
+    // CODEX§15 ADR-0030
+    const picked = this.deps.pickHome()
+    if (!picked) throw new Error(NO_USABLE_ACCOUNT.codex)
+    const home = picked.home
     if (opts.worktreeResourceId) {
       const saved = this.store.getResource(opts.worktreeResourceId)
       if (!saved || saved.originalCwd !== workspace || opts.worktree || opts.resumeSessionId)
@@ -676,9 +680,6 @@ export class CodexSessions {
       resource = await this.worktrees.adopt(workspace, this.deps.projectInfo(cwd).treeRoot)
     }
     this.assertStarting()
-    // CODEX§15
-    const picked = this.deps.pickHome()
-    const home = picked?.home
     if (opts.trustFolder) this.deps.trustFolder(cwd, this.envFor(home))
     let run: Run | undefined
     const observe = (event: CodexEvent): void => {
@@ -752,8 +753,7 @@ export class CodexSessions {
         transport,
         explicitStop: false,
         resumeKey: opts.resumeSessionId,
-        home,
-        account: picked?.account,
+        account: picked.account,
         bypassingChecks: opts.permission === 'bypass',
         releaseOpenShim: openShim.release
       }
@@ -909,7 +909,7 @@ export class CodexSessions {
       alive: true,
       details: { codex: { observation: 'live' } },
       cliVersion: thread.cliVersion,
-      ...(run.account ? { pickedAccount: run.account } : {}),
+      pickedAccount: run.account,
       updatedAt: now
     }
     this.history.set(key, { ...thread, cwd: run.cwd })
