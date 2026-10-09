@@ -519,7 +519,7 @@ describe('koloft session close', () => {
       {},
       [someoneElses]
     )
-    for (const ref of ['other', 'other title', 'Old run', 'cold-session']) {
+    for (const ref of ['other', 'other title', 'Old run', 'cold-session', '']) {
       const reply = await verb(['close', ref], from('me'))
       expect(reply.exit).not.toBe(0)
       expect(reply.text).toContain('koloft session new')
