@@ -47,8 +47,7 @@ interface CreateArgs {
 
 const UTIL_TITLE_POLL_MS = 1500
 
-const SETUP_AFTER_RC_FILES_MS = 600
-const LAUNCH_AFTER_PATH_FIXED_MS = 1600
+const TYPE_EVEN_WITHOUT_A_SIGNAL_AFTER_MS = 1600
 
 // PLATFORM§2
 const LINE_EDITOR_STARTS_READING = /\x1b\[\?(?:2004|1034)h/
@@ -56,20 +55,21 @@ const SIGNAL_LENGTH_LESS_ONE = '\x1b[?2004h'.length - 1
 
 function typeOnceTheShellReads(
   write: (text: string) => void,
-  lines: { text: string; fallbackMs: number }[]
+  text: string
 ): (output: string) => void {
-  let typed = 0
+  let typed = text === ''
   let tail = ''
-  const typeThrough = (count: number): void => {
-    for (; typed < count; typed++) write(lines[typed].text + '\r')
-    if (typed === lines.length) for (const t of fallbacks) clearTimeout(t)
+  const type = (): void => {
+    if (typed) return
+    typed = true
+    write(text)
   }
-  const fallbacks = lines.map((line, i) => setTimeout(() => typeThrough(i + 1), line.fallbackMs))
+  if (!typed) setTimeout(type, TYPE_EVEN_WITHOUT_A_SIGNAL_AFTER_MS)
   return (output) => {
-    if (typed === lines.length) return
+    if (typed) return
     const seen = tail + output
-    if (LINE_EDITOR_STARTS_READING.test(seen)) typeThrough(lines.length)
-    else tail = seen.slice(-SIGNAL_LENGTH_LESS_ONE)
+    tail = seen.slice(-SIGNAL_LENGTH_LESS_ONE)
+    if (LINE_EDITOR_STARTS_READING.test(seen)) type()
   }
 }
 
@@ -227,10 +227,10 @@ export class PtyManager extends EventEmitter {
           proc.write(text)
         } catch {}
       },
-      [
-        { text: args.setupCommand, fallbackMs: SETUP_AFTER_RC_FILES_MS },
-        { text: launchCommand, fallbackMs: LAUNCH_AFTER_PATH_FIXED_MS }
-      ].filter((line): line is { text: string; fallbackMs: number } => !!line.text)
+      [args.setupCommand, launchCommand]
+        .filter(Boolean)
+        .map((line) => line + '\r')
+        .join('')
     )
 
     const cwdParser = args.util ? new OscCwdParser() : undefined

@@ -370,6 +370,7 @@ describe('PtyManager types the PATH line and the launch line once the login shel
     vi.useRealTimers()
   })
 
+  const BOTH = [SETUP + '\r' + LAUNCH + '\r']
   const typed = (): string[] => write.mock.calls.map(([d]) => d)
   const launch = (): void => {
     new PtyManager().create({
@@ -385,10 +386,10 @@ describe('PtyManager types the PATH line and the launch line once the login shel
     mocks.state.data?.('Last login: Fri Oct  9 on ttys004\r\nrc output\r\n')
     expect(typed()).toEqual([])
     mocks.state.data?.(ZSH_PROMPT)
-    expect(typed()).toEqual([SETUP + '\r', LAUNCH + '\r'])
+    expect(typed()).toEqual(BOTH)
     mocks.state.data?.('\x1b[?2004h')
     vi.runAllTimers()
-    expect(typed()).toEqual([SETUP + '\r', LAUNCH + '\r'])
+    expect(typed()).toEqual(BOTH)
   })
 
   it('still sees the signal when the pty splits it across two chunks', () => {
@@ -396,23 +397,23 @@ describe('PtyManager types the PATH line and the launch line once the login shel
     mocks.state.data?.(ZSH_PROMPT.slice(0, -4))
     expect(typed()).toEqual([])
     mocks.state.data?.(ZSH_PROMPT.slice(-4))
-    expect(typed()).toEqual([SETUP + '\r', LAUNCH + '\r'])
+    expect(typed()).toEqual(BOTH)
   })
 
   it("takes macOS bash 3.2's meta-key switch as the same signal, since its readline has no bracketed paste", () => {
     launch()
     mocks.state.data?.('\x1b[?1034hMac:~ me$ ')
-    expect(typed()).toEqual([SETUP + '\r', LAUNCH + '\r'])
+    expect(typed()).toEqual(BOTH)
   })
 
-  it('falls back to the fixed timers when the shell never signals, PATH line first, each line once even if the signal comes late', () => {
+  it('types both lines anyway, once, as late as it always did, when the shell never signals', () => {
     launch()
-    vi.advanceTimersToNextTimer()
-    expect(typed()).toEqual([SETUP + '\r'])
+    vi.advanceTimersByTime(1599)
+    expect(typed()).toEqual([])
+    vi.advanceTimersByTime(1)
+    expect(typed()).toEqual(BOTH)
     mocks.state.data?.('\x1b[?2004h')
-    expect(typed()).toEqual([SETUP + '\r', LAUNCH + '\r'])
-    vi.runAllTimers()
-    expect(typed()).toEqual([SETUP + '\r', LAUNCH + '\r'])
+    expect(typed()).toEqual(BOTH)
   })
 
   it('types nothing into a pty Koloft did not start a shell in', () => {
