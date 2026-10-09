@@ -1,5 +1,13 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
-import { useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+  type KeyboardEvent,
+  type ReactNode
+} from 'react'
 import { LuCheck, LuLoaderCircle, LuTriangleAlert, LuX } from 'react-icons/lu'
 import type {
   BackendId,
@@ -32,6 +40,7 @@ import {
   worktreeBaseMode,
   worktreeInUse,
   type PullPhase,
+  type RunChoice,
   type WtAction,
   type WtAim,
   type WtHot
@@ -143,8 +152,11 @@ export function WorktreeSessionDialog({
     [listed, ghItems]
   )
 
-  const picked = hot.where === 'list' ? ghItems[hot.index - listed.length] : undefined
-  const aim: WtAim = picked ? itemAim(picked, listed) : worktreeAim(listed, query, hot)
+  const aimAt = (i: number): WtAim => {
+    const item = ghItems[i - listed.length]
+    return item ? itemAim(item, listed) : worktreeAim(listed, '', { where: 'list', index: i })
+  }
+  const aim = hot.where === 'list' ? aimAt(hot.index) : worktreeAim(listed, query, hot)
   const actionable =
     loaded &&
     (aim.kind === 'create' || aim.kind === 'open' || aim.kind === 'recover' || aim.kind === 'item')
@@ -224,22 +236,18 @@ export function WorktreeSessionDialog({
       )
     } else if (target.kind === 'item') {
       const { item, name, dir } = target
-      const extras = itemLaunchExtras(item)
-      const open = (at: string): SessionLaunchOptions => ({
-        ...resolveLaunch({ kind: 'existing', name, dir: at }, wsPath),
-        ...extras
+      const withItem = (c: RunChoice): SessionLaunchOptions => ({
+        ...resolveLaunch(c, wsPath),
+        ...itemLaunchExtras(item)
       })
-      if (dir) void sessionLaunch.launch(open(dir), method)
+      if (dir) void sessionLaunch.launch(withItem({ kind: 'existing', name, dir }), method)
       else if (item.kind === 'issue')
-        void sessionLaunch.launch(
-          { ...resolveLaunch({ kind: 'create', name }, wsPath), ...extras },
-          method
-        )
+        void sessionLaunch.launch(withItem({ kind: 'create', name }), method)
       else
         void sessionLaunch.launch(async () => {
           const made = await window.api.github.prWorktree(wsPath, item.number, item.branch ?? '')
           if (!made.ok) throw new Error(made.reason)
-          return open(made.dir)
+          return withItem({ kind: 'existing', name, dir: made.dir })
         }, method)
     }
   }
@@ -311,30 +319,31 @@ export function WorktreeSessionDialog({
     }
     if (aim.kind === 'item') {
       const n = `#${aim.item.number}`
-      const send = `send ${n}'s title and link as the first message.`
-      if (aim.dir)
-        return (
-          <p className="field-hint">
-            Open the worktree <code>{aim.name}</code>
-            {aim.item.branch && aim.name !== `pr-${aim.item.number}` && (
-              <>
-                {' '}
-                — it is already on {n}'s branch <code>{aim.item.branch}</code> —
-              </>
-            )}{' '}
-            and {send}
-          </p>
-        )
-      if (aim.item.kind === 'issue')
-        return (
-          <p className="field-hint">
-            Create a worktree named <code>{aim.name}</code> from the repo root, and {send}
-          </p>
-        )
+      const onBranch = aim.item.branch && aim.name !== `pr-${aim.item.number}`
       return (
         <p className="field-hint">
-          Create a worktree named <code>{aim.name}</code> on {n}'s branch{' '}
-          <code>{aim.item.branch}</code>, fetched from GitHub if it is not here yet, and {send}
+          {aim.dir ? (
+            <>
+              Open the worktree <code>{aim.name}</code>
+              {onBranch && (
+                <>
+                  {' '}
+                  — it is already on {n}'s branch <code>{aim.item.branch}</code> —
+                </>
+              )}{' '}
+              and
+            </>
+          ) : aim.item.kind === 'issue' ? (
+            <>
+              Create a worktree named <code>{aim.name}</code> from the repo root, and
+            </>
+          ) : (
+            <>
+              Create a worktree named <code>{aim.name}</code> on {n}'s branch{' '}
+              <code>{aim.item.branch}</code>, fetched from GitHub if it is not here yet, and
+            </>
+          )}{' '}
+          send {n}'s title and link as the first message.
         </p>
       )
     }
@@ -387,27 +396,31 @@ export function WorktreeSessionDialog({
   const keepInView = (i: number) =>
     isHot(i) ? (el: HTMLDivElement | null) => el?.scrollIntoView({ block: 'nearest' }) : undefined
 
-  const itemRow = (item: GithubItem, i: number): JSX.Element => (
+  const row = (i: number, key: string, label: string, note: ReactNode): JSX.Element => (
     <div
-      key={`${item.kind}-${item.number}`}
+      key={key}
       ref={keepInView(i)}
-      className={
-        'cb-row' + (isDimmed(itemFilterText(item), query) ? ' dim' : '') + (isHot(i) ? ' hot' : '')
-      }
+      className={'cb-row' + (isDimmed(names[i], query) ? ' dim' : '') + (isHot(i) ? ' hot' : '')}
       onMouseDown={(e) => e.preventDefault()}
       onClick={() => {
         if (!locked && confirm === null) {
           setHot({ where: 'list', index: i })
-          launch(itemAim(item, listed))
+          launch(aimAt(i))
         }
       }}
     >
-      <span className="wt-name">{itemLabel(item)}</span>
-      <span className="note">
-        {item.branch ? `branch ${item.branch}` : ageLabel(Date.parse(item.updatedAt), now)}
-      </span>
+      <span className="wt-name">{label}</span>
+      <span className="note">{note}</span>
     </div>
   )
+
+  const itemRow = (item: GithubItem, i: number): JSX.Element =>
+    row(
+      i,
+      `${item.kind}-${item.number}`,
+      itemLabel(item),
+      item.branch ? `branch ${item.branch}` : ageLabel(Date.parse(item.updatedAt), now)
+    )
 
   const githubBox = (): JSX.Element | null => {
     if (!isGit || items?.state === 'no-repo') return null
@@ -500,23 +513,12 @@ export function WorktreeSessionDialog({
             {listed.length > 0 && (
               <div className="wt-list">
                 <div className="cb-hd">Worktrees</div>
-                {listed.map((w, i) => (
-                  <div
-                    key={w.name}
-                    ref={keepInView(i)}
-                    className={
-                      'cb-row' + (isDimmed(w.name, query) ? ' dim' : '') + (isHot(i) ? ' hot' : '')
-                    }
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => {
-                      if (!locked && confirm === null) {
-                        setHot({ where: 'list', index: i })
-                        launch(worktreeAim(listed, '', { where: 'list', index: i }))
-                      }
-                    }}
-                  >
-                    <span className="wt-name">{w.name}</span>
-                    <span className="note">
+                {listed.map((w, i) =>
+                  row(
+                    i,
+                    w.name,
+                    w.name,
+                    <>
                       {w.recoveryResourceId ? 'Recover worktree · ' : ''}
                       {w.branch ? `branch ${w.branch}` : 'detached'}
                       {worktreeInUse(w, ws.rows) && (
@@ -525,9 +527,9 @@ export function WorktreeSessionDialog({
                           <span className="inuse">in use</span>
                         </>
                       )}
-                    </span>
-                  </div>
-                ))}
+                    </>
+                  )
+                )}
               </div>
             )}
             {githubBox()}

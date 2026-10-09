@@ -11,6 +11,8 @@ export type GitRun = (args: string[], network?: boolean) => Promise<GitRunResult
 
 export const GIT_STEP_TIMEOUT_MS = 60_000
 
+export const GIT_REF_RE = /^[A-Za-z0-9._][A-Za-z0-9._/-]{0,120}$/
+
 function refused(r: GitRunResult, what: string): { ok: false; reason: string } {
   return {
     ok: false,

@@ -124,12 +124,7 @@ import { ensureNotesFile, notesBaseDir } from './notes'
 import { WorkspaceManager, type LiveSession } from './workspaces'
 import { sanitizeSessionWorkbench } from '@shared/workbenchState'
 import { dirExistsSync, gitProbes, type GitOut, type ResumeProbes } from './resumePlan'
-import {
-  ClaudeBackend,
-  GIT_REF_RE,
-  machineHookSettings,
-  pickMachineAccount
-} from './backends/claude'
+import { ClaudeBackend, machineHookSettings, pickMachineAccount } from './backends/claude'
 import { codexBackend, trustCodexFolder } from './backends/codex'
 import { codexConfigFile } from './codexTrust'
 import {
@@ -153,7 +148,7 @@ import {
 } from './github'
 import { GithubCountsSweep } from './githubCounts'
 import { runGh } from './prChecks'
-import { addPrWorktree, commitAll, pushBranch } from './gitSteps'
+import { addPrWorktree, commitAll, GIT_REF_RE, pushBranch } from './gitSteps'
 import { restoredWindowGeometry, trackWindowState } from './windowState'
 import { fullscreenOption, windowMinWidth } from './windowBounds'
 import { closeAllFileWatchers, closeAllDirWatchers } from './fileWatch'
@@ -3195,7 +3190,7 @@ function commitSettings(patch: Partial<Settings>): Settings {
   return s
 }
 
-const BAD_GIT_STEP: GitStepResult = { ok: false, reason: 'bad request' }
+const BAD_GIT_STEP: { ok: false; reason: string } = { ok: false, reason: 'bad request' }
 
 const githubOptions: GithubOptions = {
   fixture: parseGithubFixture(process.env.KOLOFT_GITHUB_FIXTURE),
@@ -3997,7 +3992,7 @@ function registerIpc(): void {
         typeof branch !== 'string' ||
         !GIT_REF_RE.test(branch)
       ) {
-        return { ok: false, reason: 'bad request' }
+        return BAD_GIT_STEP
       }
       const host = hosts.of(root)
       const r = await addPrWorktree(

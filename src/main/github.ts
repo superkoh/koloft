@@ -19,7 +19,15 @@ import {
   repoUrlOf
 } from '@shared/githubUrl'
 import { credentialGuardEnv, FETCH_TIMEOUT_MS, LOCAL_TIMEOUT_MS } from './gitFreshness'
-import { failingChecksText, GH_SIGNED_OUT, prChecks, type Gh, type GhResult } from './prChecks'
+import {
+  failingChecksText,
+  GH_SIGNED_OUT,
+  ghJsonArray,
+  prChecks,
+  slug,
+  type Gh,
+  type GhResult
+} from './prChecks'
 
 const execFile = promisify(execFileCb)
 const TTL_MS = 5 * 60_000
@@ -58,13 +66,8 @@ export async function ghOpenCounts(repo: GithubRepo): Promise<OpenCounts | null>
 const OPEN_ITEMS_LIMIT = 50
 
 function itemsOf(stdout: string, kind: GithubItem['kind']): GithubItem[] | null {
-  let v: unknown
-  try {
-    v = JSON.parse(stdout)
-  } catch {
-    return null
-  }
-  if (!Array.isArray(v)) return null
+  const v = ghJsonArray(stdout)
+  if (!v) return null
   return v
     .filter(
       (x) =>
@@ -89,7 +92,7 @@ function itemsOf(stdout: string, kind: GithubItem['kind']): GithubItem[] | null 
 }
 
 // PLATFORM§32
-export function parseOpenItems(repo: string, issues: GhResult, prs: GhResult): GithubOpenItems {
+function parseOpenItems(repo: string, issues: GhResult, prs: GhResult): GithubOpenItems {
   if (issues.missing || prs.missing) return { state: 'no-gh' }
   if (issues.code === GH_SIGNED_OUT || prs.code === GH_SIGNED_OUT) return { state: 'signed-out' }
   const i = itemsOf(issues.stdout, 'issue')
@@ -98,13 +101,12 @@ export function parseOpenItems(repo: string, issues: GhResult, prs: GhResult): G
 }
 
 export async function listOpenItems(gh: Gh, repo: GithubRepo): Promise<GithubOpenItems> {
-  const slug = `${repo.owner}/${repo.repo}`
   const list = (what: 'issue' | 'pr', fields: string): Promise<GhResult> =>
     gh([
       what,
       'list',
       '--repo',
-      slug,
+      slug(repo),
       '--state',
       'open',
       '--limit',
@@ -116,7 +118,7 @@ export async function listOpenItems(gh: Gh, repo: GithubRepo): Promise<GithubOpe
     list('issue', 'number,title,url,updatedAt'),
     list('pr', 'number,title,url,updatedAt,headRefName,isCrossRepository')
   ])
-  return parseOpenItems(slug, issues, prs)
+  return parseOpenItems(slug(repo), issues, prs)
 }
 
 export async function ghRead(args: string[]): Promise<{ ok: boolean; out: string }> {

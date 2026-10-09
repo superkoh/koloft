@@ -47,9 +47,7 @@ export type WtAim =
   | { kind: 'recover'; name: string; dir: string; recoveryResourceId: string }
   | { kind: 'reserved'; name: string }
   | { kind: 'invalid'; name: string }
-  | ItemAim
-
-export type ItemAim = { kind: 'item'; item: GithubItem; name: string; dir: string | null }
+  | { kind: 'item'; item: GithubItem; name: string; dir: string | null }
 
 function existingWorktreeAim(w: WorktreeInfo): WtAim {
   return w.recoveryResourceId
@@ -71,7 +69,7 @@ export function itemFilterText(item: GithubItem): string {
   return item.branch ? `${itemLabel(item)} ${item.branch}` : itemLabel(item)
 }
 
-export function itemAim(item: GithubItem, worktrees: WorktreeInfo[]): ItemAim {
+export function itemAim(item: GithubItem, worktrees: WorktreeInfo[]): WtAim {
   const name = `${item.kind}-${item.number}`
   const hit =
     (item.branch && worktrees.find((w) => w.branch === item.branch)) ||
@@ -81,16 +79,13 @@ export function itemAim(item: GithubItem, worktrees: WorktreeInfo[]): ItemAim {
     : { kind: 'item', item, name, dir: null }
 }
 
-export function itemFirstMessage(item: GithubItem): string {
-  const [what, view] =
-    item.kind === 'pr' ? ['pull request', 'gh pr view'] : ['issue', 'gh issue view']
-  return `${itemLabel(item)}\n${item.url}\n\nRead this ${what} and its comments yourself (${view} ${item.number} --comments), then work on it.`
-}
-
 export function itemLaunchExtras(
   item: GithubItem
 ): Pick<CreateTabOptions, 'firstPrompt' | 'name' | 'trustFolder'> {
-  return { firstPrompt: itemFirstMessage(item), name: itemLabel(item), trustFolder: true }
+  const [what, view] =
+    item.kind === 'pr' ? ['pull request', 'gh pr view'] : ['issue', 'gh issue view']
+  const firstPrompt = `${itemLabel(item)}\n${item.url}\n\nRead this ${what} and its comments yourself (${view} ${item.number} --comments), then work on it.`
+  return { firstPrompt, name: itemLabel(item), trustFolder: true }
 }
 
 export function worktreeAim(worktrees: WorktreeInfo[], query: string, hot: WtHot): WtAim {
