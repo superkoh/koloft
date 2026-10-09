@@ -475,7 +475,7 @@ describe('injected hook script', () => {
     })
 
     // ADR-0029 CC§15
-    describe('the gate lets a conductor read, ask the owner and run one plain koloft command, and nothing else', () => {
+    describe('the gate lets a conductor read, write its own memory folder, ask the owner and run one plain koloft command, and nothing else', () => {
       let command: string
       beforeAll(() => {
         command = hooksOf(true).PreToolUse[0].hooks[0].command
@@ -494,6 +494,12 @@ describe('injected hook script', () => {
         return 'deny'
       }
       const bash = (command: string): unknown => ({ tool_name: 'Bash', tool_input: { command } })
+      const transcript_path = '/home/o/.claude/projects/-conductors-global/c1.jsonl'
+      const write = (tool_name: string, file_path: string): unknown => ({
+        tool_name,
+        transcript_path,
+        tool_input: { file_path, content: 'x' }
+      })
 
       it.each([
         ['Read', { tool_name: 'Read', tool_input: { file_path: '/ws/a/README.md' } }],
@@ -503,7 +509,15 @@ describe('injected hook script', () => {
         ['a koloft command with spaces around it', bash('  koloft session list \n')],
         ['operators inside quotes', bash('koloft session send a -- "fix x; then y && z | w"')],
         ['a multi-line single-quoted message', bash("koloft session send a -- 'one\ntwo $HOME'")],
-        ['an escaped quote', bash('koloft session send a -- "say \\"hi\\" now"')]
+        ['an escaped quote', bash('koloft session send a -- "say \\"hi\\" now"')],
+        [
+          'a Write into its own memory folder',
+          write('Write', '/home/o/.claude/projects/-conductors-global/memory/MEMORY.md')
+        ],
+        [
+          'an Edit in its own memory folder',
+          write('Edit', '/home/o/.claude/projects/-conductors-global/memory/a/b.md')
+        ]
       ])('allows %s', (_name, event) => {
         expect(gate(event)).toBe('allow')
       })
@@ -523,7 +537,35 @@ describe('injected hook script', () => {
         ['command substitution in double quotes', bash('koloft session send a -- "$(rm x)"')],
         ['backticks', bash('koloft session send a -- `rm x`')],
         ['an unclosed quote', bash("koloft session send a -- 'oops")],
-        ['input that is not JSON', 'not json']
+        ['input that is not JSON', 'not json'],
+        [
+          'a Write beside its memory folder, onto its transcript',
+          write('Write', '/home/o/.claude/projects/-conductors-global/c1.jsonl')
+        ],
+        [
+          'a Write that climbs out of its memory folder',
+          write('Write', '/home/o/.claude/projects/-conductors-global/memory/../../x/memory/a.md')
+        ],
+        [
+          'a folder whose name only starts like its memory folder',
+          write('Write', '/home/o/.claude/projects/-conductors-global/memory-x/a.md')
+        ],
+        [
+          'another session’s memory folder',
+          write('Edit', '/home/o/.claude/projects/-ws-a/memory/a.md')
+        ],
+        [
+          'a memory Write with no transcript path',
+          { tool_name: 'Write', tool_input: { file_path: '/m/memory/a.md', content: 'x' } }
+        ],
+        [
+          'a memory-folder path through NotebookEdit',
+          {
+            tool_name: 'NotebookEdit',
+            transcript_path,
+            tool_input: { notebook_path: '/home/o/.claude/projects/-conductors-global/memory/a' }
+          }
+        ]
       ])('denies %s', (_name, event) => {
         expect(gate(event)).toBe('deny')
       })

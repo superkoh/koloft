@@ -16,6 +16,16 @@ may ignore; the owner asked for a guarantee.
 - The price: a conductor cannot take a screenshot, drive a browser or change a file —
   it asks a session to — and `koloft discord send` and `koloft open` need absolute
   paths into the workspace.
+- Two holes, both the owner's choice, so a conductor need not take a session's word
+  for a fact or lose what the owner taught it. `koloft gh` runs a read-only `gh`
+  command in Koloft's own process, from a list of subcommands and flags; a Claude
+  conductor may Write or Edit inside its own memory folder, the `memory` folder beside
+  the transcript the hook names.
+- Rejected for those: letting `gh` and `git` through the gate. A Codex conductor's
+  sandbox has no network, so `gh` fails there, and opening the network would let
+  `gh pr merge` through; `git log` reads a checkout that is stale until a fetch, which
+  writes. Also rejected: a conductor merging a pull request when the owner says so —
+  the gate sees the call, never who asked for it.
 **Rejected**: running a workspace conductor in its workspace (where it used to run).
 Relative paths would resolve there and the repository's own instructions would load,
 but a Codex sandbox cannot shut out its own folder, so the code would stay writable.

@@ -1294,6 +1294,13 @@ with `koloft`, and printed nothing for that one. The prompt asked for a Bash
   `discord-real-smoke` case for a Claude conductor: Koloft's own gate, a pty session
   with `--dangerously-skip-permissions`, asked to write a file — the file was not
   written and the transcript held `PreToolUse:<tool> hook error`.
+- **The hook's input names the transcript.** 2026-10-09, CC 2.1.295, `claude -p` with a
+  `PreToolUse` hook that logged its input, asked to Write a file then Edit it: each
+  input held `session_id`, `transcript_path` (absolute,
+  `~/.claude/projects/<folder>/<session id>.jsonl`), `cwd`, `permission_mode`,
+  `hook_event_name`, `tool_name`, `tool_input` (`file_path` absolute for Write and Edit)
+  and `tool_use_id`. The auto-memory folder is `memory/` beside that transcript (seen
+  for Koloft's global conductor).
 - Not run: a `Task` subagent's own tool calls under the hook.
 
 ## §16 `claude --version` and `claude update`

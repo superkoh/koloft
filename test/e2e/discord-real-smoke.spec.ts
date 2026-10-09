@@ -3,7 +3,7 @@ import path from 'path'
 import { execFileSync } from 'child_process'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { seedSettings, type E2EEnv } from './helpers/env'
+import { seedSettings, setGithubFixture, type E2EEnv } from './helpers/env'
 import { gitInit, seedJsonl, startSessionIn, terminalText, waitBooted, wsRows } from './helpers/p1'
 import { openerNow, startFakeDiscord, type FakeDiscord, type FakePost } from './helpers/fakeDiscord'
 
@@ -340,6 +340,31 @@ async function triesToWriteTheWorkspaceItselfAndIsRefused(
   expect(said(fake).join('\n')).toContain('WRITE-REFUSED')
 }
 
+const PR_TITLE_ONLY_GH_KNOWS = 'PLUM-58 tidy the docs'
+
+function fakeGhSaysMerged(env: E2EEnv): string {
+  setGithubFixture(env, { [env.workspaces.a]: { owner: 'acme', repo: 'app' } })
+  const log = path.join(env.home, 'gh-calls.txt')
+  fs.writeFileSync(
+    path.join(env.fakeBin, 'gh'),
+    `#!/bin/sh\necho "$*" >> ${JSON.stringify(log)}\n` +
+      `echo '{"number":389,"state":"MERGED","title":"${PR_TITLE_ONLY_GH_KNOWS}"}'\n`,
+    { mode: 0o755 }
+  )
+  return log
+}
+
+async function checksGithubItself(fake: FakeDiscord, log: string): Promise<void> {
+  fake.say(
+    OWNER,
+    'Is pull request 389 merged? Do not start or message any session; check it yourself on GitHub, then reply with its state and its exact title.'
+  )
+  await expect
+    .poll(() => conductorSaid(fake).join('\n'), { timeout: A_REAL_MODEL_TURN_MS })
+    .toContain('PLUM-58')
+  expect(fs.readFileSync(log, 'utf8')).toMatch(/^pr (view|list|checks) .*--repo acme\/app$/m)
+}
+
 async function answersWholeInTheChannel(fake: FakeDiscord): Promise<void> {
   const asked = fake.say(OWNER, ASK_FOR_TWO_LINES)
   await expect
@@ -391,6 +416,51 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       )!
       // CC§15
       expect(toolResults(env, conductor.sessionId).join('\n')).toMatch(/PreToolUse:\w+ hook error/)
+    })
+  })
+
+  // ADR-0029
+  test('a real Claude conductor told not to ask a session checks a pull request itself with koloft gh, and Koloft adds its workspace’s repository', async ({
+    env
+  }) => {
+    test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
+    test.setTimeout(A_REAL_MODEL_TURN_MS + 120_000)
+    const fake = await realClaudeConductor(env)
+    const log = fakeGhSaysMerged(env)
+    await withConductor(env, fake, async () => {
+      await checksGithubItself(fake, log)
+    })
+  })
+
+  // ADR-0029 CC§15
+  test('a real Claude conductor asked to remember something writes it into its own memory folder, past the gate', async ({
+    env
+  }) => {
+    test.skip(!HAVE_REAL_CLAUDE, NEEDS_REAL_CLAUDE)
+    test.setTimeout(A_REAL_MODEL_TURN_MS + 120_000)
+    const fake = await realClaudeConductor(env)
+    await withConductor(env, fake, async (_app, page) => {
+      fake.say(
+        OWNER,
+        'Save this in your own memory for future conversations: my favourite fruit is LYCHEE-31. Then reply SAVED.'
+      )
+      await expect
+        .poll(() => conductorSaid(fake).join('\n'), { timeout: A_REAL_MODEL_TURN_MS })
+        .toContain('SAVED')
+      const conductor = (await page.evaluate(() => window.api.sessions.list())).find(
+        (s) => s.alive && s.conductor
+      )!
+      const projects = path.join(env.home, '.claude', 'projects')
+      const memory = fs
+        .readdirSync(projects)
+        .map((slug) => path.join(projects, slug))
+        .find((dir) => fs.existsSync(path.join(dir, `${conductor.sessionId}.jsonl`)))!
+      const saved = fs
+        .readdirSync(path.join(memory, 'memory'))
+        .map((f) => fs.readFileSync(path.join(memory, 'memory', f), 'utf8'))
+        .join('\n')
+      expect(saved).toContain('LYCHEE-31')
+      expect(toolResults(env, conductor.sessionId).join('\n')).not.toMatch(/hook error/)
     })
   })
 
@@ -752,6 +822,21 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     const fake = await startFakeDiscord(env)
     await withConductor(env, fake, async () => {
       await triesToWriteTheWorkspaceItselfAndIsRefused(env, fake)
+    })
+  })
+
+  // ADR-0029 CODEX§12
+  test('a real Codex conductor, its sandbox without network, checks a pull request itself with koloft gh, and Koloft adds its workspace’s repository', async ({
+    env
+  }) => {
+    test.skip(!HAVE_REAL_CODEX, NEEDS_REAL_CODEX)
+    test.setTimeout(A_REAL_MODEL_TURN_MS + 120_000)
+    seedConductor(env, 'codex')
+    useRealCodex(env)
+    const log = fakeGhSaysMerged(env)
+    const fake = await startFakeDiscord(env)
+    await withConductor(env, fake, async () => {
+      await checksGithubItself(fake, log)
     })
   })
 
