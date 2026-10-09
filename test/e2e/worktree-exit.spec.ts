@@ -28,9 +28,8 @@ async function startWorktreeSession(page: Page, name: string): Promise<string> {
   await expect(dlg).toHaveCount(0)
   const row = worktreeRow(page, name)
   await expect(row).toHaveClass(/st-waiting|st-idle/, { timeout: 60_000 })
-  const tabId = await row.getAttribute('data-tab-id')
-  if (!tabId) throw new Error('the worktree row carries no tab id')
-  return tabId
+  await expect(row).toHaveAttribute('data-tab-id', /.+/)
+  return (await row.getAttribute('data-tab-id'))!
 }
 
 function type(page: Page, tabId: string, line: string): Promise<void> {
