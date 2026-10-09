@@ -25,13 +25,18 @@ export function codexHomes(userData: string): string[] {
 
 const FOLDERS_EVERY_HOME_SHARES = ['sessions', 'archived_sessions']
 
-function moveFilesNotAlreadyThere(from: string, to: string): void {
+function newerThan(a: string, b: string): boolean {
+  const there = fs.statSync(b, { throwIfNoEntry: false })
+  return !there || fs.statSync(a).mtimeMs > there.mtimeMs
+}
+
+function moveFilesKeepingTheNewer(from: string, to: string): void {
   fs.mkdirSync(to, { recursive: true, mode: 0o700 })
   for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
     const source = path.join(from, entry.name)
     const target = path.join(to, entry.name)
-    if (entry.isDirectory()) moveFilesNotAlreadyThere(source, target)
-    else if (!fs.existsSync(target)) fs.renameSync(source, target)
+    if (entry.isDirectory()) moveFilesKeepingTheNewer(source, target)
+    else if (newerThan(source, target)) fs.renameSync(source, target)
   }
 }
 
@@ -40,7 +45,7 @@ function shareFolder(own: string, shared: string): void {
   const existing = fs.lstatSync(own, { throwIfNoEntry: false })
   if (existing?.isSymbolicLink()) return
   if (existing) {
-    moveFilesNotAlreadyThere(own, shared)
+    moveFilesKeepingTheNewer(own, shared)
     fs.rmSync(own, { recursive: true, force: true })
   }
   fs.symlinkSync(shared, own)

@@ -108,25 +108,38 @@ describe('prepareCodexHome', () => {
   })
 
   // CODEX§15
-  it("moves a home's own sessions into the shared folder by date before linking it, keeping what is already there", () => {
+  it("moves a home's own sessions into the shared folder by date before linking it; where both hold a file of one name, the newer one stays", () => {
     const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-')))
     const shared = path.join(dir, 'dot-codex', 'config.toml')
     const day = path.join('2026', '10', '05')
-    fs.mkdirSync(path.join(dir, 'dot-codex', 'sessions', day), { recursive: true })
-    fs.writeFileSync(path.join(dir, 'dot-codex', 'sessions', day, 'rollout-a.jsonl'), 'default')
+    const sharedDay = path.join(dir, 'dot-codex', 'sessions', day)
+    fs.mkdirSync(sharedDay, { recursive: true })
     const home = path.join(dir, 'homes', 'work')
-    fs.mkdirSync(path.join(home, 'sessions', day), { recursive: true })
-    fs.writeFileSync(path.join(home, 'sessions', day, 'rollout-a.jsonl'), 'own copy')
-    fs.writeFileSync(path.join(home, 'sessions', day, 'rollout-b.jsonl'), 'own')
+    const ownDay = path.join(home, 'sessions', day)
+    fs.mkdirSync(ownDay, { recursive: true })
+    const write = (file: string, text: string, ageS: number): void => {
+      fs.writeFileSync(file, text)
+      const at = Date.now() / 1000 - ageS
+      fs.utimesSync(file, at, at)
+    }
+    write(path.join(sharedDay, 'rollout-a.jsonl'), 'default, newer', 10)
+    write(path.join(ownDay, 'rollout-a.jsonl'), 'own, older', 100)
+    write(path.join(sharedDay, 'rollout-c.jsonl'), 'default, older', 100)
+    write(path.join(ownDay, 'rollout-c.jsonl'), 'own, newer', 10)
+    write(path.join(ownDay, 'rollout-b.jsonl'), 'own', 10)
 
     prepareCodexHome(home, shared)
 
-    const sharedDay = path.join(dir, 'dot-codex', 'sessions', day)
-    expect(fs.readFileSync(path.join(sharedDay, 'rollout-a.jsonl'), 'utf8')).toBe('default')
+    expect(fs.readFileSync(path.join(sharedDay, 'rollout-a.jsonl'), 'utf8')).toBe('default, newer')
+    expect(fs.readFileSync(path.join(sharedDay, 'rollout-c.jsonl'), 'utf8')).toBe('own, newer')
     expect(fs.readFileSync(path.join(sharedDay, 'rollout-b.jsonl'), 'utf8')).toBe('own')
     expect(fs.readFileSync(path.join(home, 'sessions', day, 'rollout-b.jsonl'), 'utf8')).toBe('own')
     prepareCodexHome(home, shared)
-    expect(fs.readdirSync(sharedDay).sort()).toEqual(['rollout-a.jsonl', 'rollout-b.jsonl'])
+    expect(fs.readdirSync(sharedDay).sort()).toEqual([
+      'rollout-a.jsonl',
+      'rollout-b.jsonl',
+      'rollout-c.jsonl'
+    ])
     fs.rmSync(dir, { recursive: true, force: true })
   })
 
