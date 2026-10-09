@@ -336,7 +336,7 @@ function commandEcho(obj: { origin?: unknown }, raw: string | null): boolean {
 }
 
 // CC§1
-function compactionSummary(obj: { isCompactSummary?: unknown }): boolean {
+export function compactionSummary(obj: { isCompactSummary?: unknown }): boolean {
   return obj.isCompactSummary === true
 }
 

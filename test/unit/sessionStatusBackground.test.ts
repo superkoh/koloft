@@ -1767,12 +1767,10 @@ describe('a compaction the owner asked for', () => {
     tracker.receive('tabK4', hook('compacting'))
     tracker.receive('tabK4', hook('compacted'))
     expect(status(tracker, 'tabK4')).toBe('waiting')
-    // CC§1
     appendJsonl(file, [
       {
         type: 'user',
         isCompactSummary: true,
-        isVisibleInTranscriptOnly: true,
         message: { role: 'user', content: 'This session is being continued from a previous …' },
         cwd
       }

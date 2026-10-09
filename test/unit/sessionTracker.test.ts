@@ -1872,7 +1872,6 @@ describe('SessionTracker — what each turn said: the owner, another session, an
       {
         type: 'user',
         isCompactSummary: true,
-        isVisibleInTranscriptOnly: true,
         timestamp: at(2),
         message: { role: 'user', content: 'This session is being continued from a previous …' }
       },
