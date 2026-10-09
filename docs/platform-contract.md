@@ -72,15 +72,24 @@ method. A recheck adds its date, version and command to the bullet.
   canonical mode earlier, to read the terminal's answers to its queries, and writes the
   signal once its prompt is drawn. fish 4 first asks the terminal `ESC [ 0 c` and shows
   no prompt — and runs no typed line — until it is answered (the probe answered
-  `ESC [ ? 1 ; 2 c`, as xterm.js does). Text typed before the prompt is not lost: a line
-  written 0.3 s into a `.zshrc` / `.bash_profile` / `config.fish` that sleeps 3 s still
-  ran once the prompt came. Two lines written together at the signal — the PATH line
-  ending in `clear`, then the launch line — both ran in order. powerlevel10k's instant
-  prompt writes the signal at the top of `.zshrc`, before the rest of it runs; two lines
-  written then, with 2 s of `.zshrc` still to go, both ran in order once zsh's own prompt
-  came. (2026-10-09, Python `pty` probe: macOS 27.0.1 `/bin/zsh` 5.9, `/bin/bash`
-  3.2.57 and fish 4.9.3 (the release's macOS app); Ubuntu 24.04 in Docker: fish 3.7.0
-  and 4.9.3, bash 5.2.21, zsh 5.9; powerlevel10k `master` of that day.)
+  `ESC [ ? 1 ; 2 c`, as xterm.js does). A short line typed before the prompt is not
+  lost: one written 0.3 s into a `.zshrc` / `.bash_profile` / `config.fish` that sleeps
+  3 s still ran once the prompt came. Two short lines written together at the signal —
+  the PATH line ending in `clear`, then the launch line — both ran in order.
+  powerlevel10k's instant prompt writes the signal at the top of `.zshrc`, before the
+  rest of it runs; two short lines written then, with 2 s of `.zshrc` still to go, both
+  ran in order once zsh's own prompt came.
+- **A busy tty keeps at most 1023 bytes of a typed line.** While the tty is in canonical
+  mode — the rc files are still running, or the line before is still running — a line
+  of 1023 bytes before its Enter ran, and one of 1024 was lost with everything after
+  it (macOS `MAX_CANON` is 1024). Typed while the line editor reads, a 1.5 KB line ran.
+  A remote tab's launch line is about 2.2 KB and its shell line about 1.3 KB, so such a
+  line is written to a file and the typed line is `. '<file>'`; that ran after a 3 s
+  `.zshrc` and after powerlevel10k's early signal alike.
+  (2026-10-09, Python `pty` probe, macOS 27.0.1 `/bin/zsh` 5.9, for both bullets; also
+  `/bin/bash` 3.2.57 and fish 4.9.3 (the release's macOS app) for the first; Ubuntu
+  24.04 in Docker: fish 3.7.0 and 4.9.3, bash 5.2.21, zsh 5.9; powerlevel10k `master`
+  of that day.)
 - **bash `$!` and the subshell fold.** After `( … ) &`, `$!` is the subshell's pid. Bash
   folds the subshell into its last command only when that command stands alone; a
   `umask` before it prevents the fold. Without `exec`, killing `$!` kills only the

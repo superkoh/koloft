@@ -1,8 +1,11 @@
 import * as pty from 'node-pty'
 import { EventEmitter } from 'events'
+import fs from 'fs'
 import os from 'os'
+import path from 'path'
 import type { TabKind } from '@shared/types'
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
+import { shq } from '@shared/shellQuote'
 import { OscCwdParser } from './oscCwd'
 import { codexEnvironment } from './codexTransport'
 import { userShell } from './userShell'
@@ -52,6 +55,8 @@ const TYPE_EVEN_WITHOUT_A_SIGNAL_AFTER_MS = 1600
 // PLATFORM§2
 const LINE_EDITOR_STARTS_READING = /\x1b\[\?(?:2004|1034)h/
 const SIGNAL_LENGTH_LESS_ONE = '\x1b[?2004h'.length - 1
+// PLATFORM§2
+const LONGEST_LINE_A_BUSY_TTY_KEEPS = 1023
 
 function typeOnceTheShellReads(
   write: (text: string) => void,
@@ -221,6 +226,14 @@ export class PtyManager extends EventEmitter {
 
     const launchCommand =
       typeof args.launchCommand === 'function' ? args.launchCommand(id) : args.launchCommand
+    const sourcedFiles: string[] = []
+    const shortEnoughToType = (command: string): string => {
+      if (Buffer.byteLength(command) <= LONGEST_LINE_A_BUSY_TTY_KEEPS) return command
+      const file = path.join(os.tmpdir(), `koloft-${id}-${sourcedFiles.length}.sh`)
+      fs.writeFileSync(file, command + '\n', { mode: 0o600 })
+      sourcedFiles.push(file)
+      return `. ${shq(file)}`
+    }
     const watchForReadyShell = typeOnceTheShellReads(
       (text) => {
         try {
@@ -228,8 +241,8 @@ export class PtyManager extends EventEmitter {
         } catch {}
       },
       [args.setupCommand, launchCommand]
-        .filter(Boolean)
-        .map((line) => line + '\r')
+        .filter((command): command is string => !!command)
+        .map((command) => shortEnoughToType(command) + '\r')
         .join('')
     )
 
@@ -246,6 +259,7 @@ export class PtyManager extends EventEmitter {
     proc.onExit(({ exitCode, signal }) => {
       handle.alive = false
       if (titlePoll) clearInterval(titlePoll)
+      for (const file of sourcedFiles) fs.rm(file, { force: true }, () => {})
       this.wakeReady(id)
       this.emit('exit', { id, exitCode, signal })
     })

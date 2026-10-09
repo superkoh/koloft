@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest'
+import fs from 'fs'
 import os from 'os'
 
 const mocks = vi.hoisted(() => {
@@ -414,6 +415,24 @@ describe('PtyManager types the PATH line and the launch line once the login shel
     expect(typed()).toEqual(BOTH)
     mocks.state.data?.('\x1b[?2004h')
     expect(typed()).toEqual(BOTH)
+  })
+
+  it('types a command too long for one line of a busy tty as a file the shell sources, and removes the file when the pty exits', async () => {
+    const remoteLine = 'h=$(ssh -n host true); ' + 'x'.repeat(1100)
+    new PtyManager().create({
+      kind: 'claude',
+      cwd: os.tmpdir(),
+      setupCommand: SETUP,
+      launchCommand: () => remoteLine
+    })
+    mocks.state.data?.(ZSH_PROMPT)
+    const [line] = typed()
+    const file = /^[^\r]*\r\. '([^']+)'\r$/.exec(line)?.[1] ?? ''
+    expect(line.startsWith(SETUP + '\r')).toBe(true)
+    expect(fs.readFileSync(file, 'utf8')).toBe(remoteLine + '\n')
+    mocks.state.exit?.({ exitCode: 0 })
+    vi.useRealTimers()
+    await vi.waitFor(() => expect(fs.existsSync(file)).toBe(false))
   })
 
   it('types nothing into a pty Koloft did not start a shell in', () => {
