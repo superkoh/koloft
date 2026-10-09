@@ -25,13 +25,12 @@ import { FlowGate } from './flowControl'
 import { SessionTracker, type ToolCall } from './sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
-import { CodexSessions, endCodexLeftByACrash } from './codexSessions'
+import { CodexSessions } from './codexSessions'
 import {
   OpenTabsFile,
   openTabsNow,
   readOpenTabs,
   restorePlan,
-  type LiveTab,
   type OpenTab,
   type OpenTabs
 } from './openTabs'
@@ -203,7 +202,8 @@ import {
 } from './browserPermission'
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import { CDP_OP_BUDGET_MS } from '@shared/cdpBudget'
-import { scanLeftovers, stopLeftover } from './leftovers'
+import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
+import { mapAtMost } from './mapAtMost'
 import { SessionSearch } from './sessionSearch'
 import createTranscriptSearchWorker from './transcriptSearchWorker?nodeWorker'
 import { applyWindowCommand, guestShortcut } from '@shared/shortcutDispatch'
@@ -293,7 +293,7 @@ import { LiveStatus } from './discord/liveStatus'
 import { AskButtons } from './discord/buttons'
 import { SlashCommands, type SlashTarget } from './discord/slash'
 import { Interactions, SLASH_COMMANDS } from './discord/interactions'
-import { bracketedPaste, typeKeys } from './typeKeys'
+import { bracketedPaste, typedPieces, typeKeys } from './typeKeys'
 import { MYSELF } from '@shared/slashCommands'
 import {
   codexDialog,
@@ -484,43 +484,37 @@ function sidebarTitle(s: SessionInfo): string | undefined {
 const sleepers = new Map<string, OpenTab>()
 const typedWhileAsleep = new Map<string, string>()
 const wokenAs = new Map<string, string>()
-const restoringSessions = new Map<string, OpenTab>()
 let sleeperSeq = 0
+let openTabsRestoreStarted = false
 let openTabsFile: OpenTabsFile | undefined
 let savedOpenTabs: OpenTabs = { tabs: [] }
 let openTabsRestored = false
-const WOKEN_TAB_READY_MS = 30_000
+const RESUMED_TAB_READY_MS = 30_000
 
-function tabCwdOf(s: SessionInfo): string {
-  return s.remote ? formatRemoteKey(s.remote.host, s.cwd) : s.cwd
+function openTabOf(s: SessionInfo): OpenTab {
+  return {
+    sessionId: s.sessionId,
+    kind: s.backendId,
+    title: sidebarTitle(s) ?? s.title,
+    cwd: s.remote ? formatRemoteKey(s.remote.host, s.cwd) : s.cwd
+  }
 }
 
-function liveOpenTabs(): LiveTab[] {
-  return allSessions()
-    .filter((s) => s.alive && s.sessionId)
-    .map((s) => ({
-      sessionId: s.sessionId,
-      kind: s.backendId,
-      title: sidebarTitle(s) ?? s.title,
-      cwd: tabCwdOf(s)
-    }))
-}
-
-function rememberOpenTabs(): void {
+function rememberOpenTabs(all = allSessions()): void {
   if (!openTabsFile || !openTabsRestored || quitCommitted) return
-  const live = liveOpenTabs()
-  for (const t of live) restoringSessions.delete(t.sessionId)
+  const live = all.filter((s) => s.alive && s.sessionId).map(openTabOf)
   const activeTab = uiActiveTabId ?? activeTabBeforeReload
   const active = activeTab
-    ? sessionOfTab(activeTab)?.sessionId || sleepers.get(activeTab)?.sessionId
+    ? all.find((s) => s.tabId === activeTab)?.sessionId || sleepers.get(activeTab)?.sessionId
     : undefined
-  openTabsFile.write(
-    openTabsNow([...live, ...restoringSessions.values()], [...sleepers.values()], active)
-  )
+  openTabsFile.write(openTabsNow(live, [...sleepers.values()], active))
 }
 
-function asleepTab(id: string, t: OpenTab): AdoptableTab {
-  return { id, kind: t.kind, cwd: t.cwd, sessionId: t.sessionId, title: t.title, asleep: true }
+function onSessionsChanged(): SessionInfo[] {
+  const all = allSessions()
+  settleWokenSleepers(all)
+  rememberOpenTabs(all)
+  return all
 }
 
 function addSleeper(tabId: string, t: OpenTab): void {
@@ -531,12 +525,7 @@ function addSleeper(tabId: string, t: OpenTab): void {
 function sleepTab(tabId: string): void {
   const s = sessionOfTab(tabId)
   if (!s?.sessionId) return killTabFromMain(tabId)
-  addSleeper(tabId, {
-    sessionId: s.sessionId,
-    kind: s.backendId,
-    title: sidebarTitle(s) ?? s.title,
-    cwd: tabCwdOf(s)
-  })
+  addSleeper(tabId, openTabOf(s))
   sendToRenderer('tab:slept', tabId)
   void stopTabProcess(tabId)
   workspaceMgr?.onTrackerUpdate()
@@ -551,10 +540,10 @@ function forgetSleeper(tabId: string): void {
   rememberOpenTabs()
 }
 
-function settleWokenSleepers(): void {
+function settleWokenSleepers(all: SessionInfo[]): void {
   if (!sleepers.size) return
   const tabOfSession = new Map<string, string>()
-  for (const s of allSessions()) if (s.alive && s.sessionId) tabOfSession.set(s.sessionId, s.tabId)
+  for (const s of all) if (s.alive && s.sessionId) tabOfSession.set(s.sessionId, s.tabId)
   let woke = false
   for (const [oldId, t] of sleepers) {
     const newId = tabOfSession.get(t.sessionId)
@@ -569,12 +558,16 @@ function settleWokenSleepers(): void {
 
 const PASTE_OR_ENTER = /(\x1b\[200~[\s\S]*?\x1b\[201~|\r)/
 
-// CC§12
+// CC§12 CC§18
 async function handOverTyping(oldId: string, newId: string): Promise<void> {
-  const ready = await tabReady(newId, WOKEN_TAB_READY_MS, false)
+  const ready = await tabReady(newId, RESUMED_TAB_READY_MS, false)
   const typed = typedWhileAsleep.get(oldId) ?? ''
   typedWhileAsleep.delete(oldId)
-  if (ready && typed) void ptyMgr.type(newId, typed.split(PASTE_OR_ENTER).filter(Boolean))
+  if (!ready || !typed) return
+  const keys = typed
+    .split(PASTE_OR_ENTER)
+    .flatMap((part) => (PASTE_OR_ENTER.test(part) ? [part] : typedPieces(part)))
+  void ptyMgr.type(newId, keys)
 }
 
 function writeToTab(id: string, data: string): void {
@@ -1706,9 +1699,7 @@ app.whenReady().then(() => {
     sendToRenderer('terminal:exit', e)
   })
   tracker.on('update', (sessions: SessionInfo[]) => {
-    settleWokenSleepers()
-    rememberOpenTabs()
-    const all = allSessions()
+    const all = onSessionsChanged()
     sendToRenderer('sessions:update', all)
     workspaceMgr?.onTrackerUpdate()
     syncAnswerable()
@@ -1758,16 +1749,14 @@ app.whenReady().then(() => {
   const userData = app.getPath('userData')
   const openTabsPath = path.join(userData, 'open-tabs.json')
   savedOpenTabs = readOpenTabs(openTabsPath)
-  openTabsFile = new OpenTabsFile(openTabsPath)
+  openTabsFile = new OpenTabsFile(openTabsPath, savedOpenTabs)
   try {
     codexSessions = new CodexSessions(path.join(userData, 'sessions.json'), {
       pty: ptyMgr,
       runtime: tracker,
       projectInfo: projectInfoFor,
       changed: () => {
-        settleWokenSleepers()
-        rememberOpenTabs()
-        const all = allSessions()
+        const all = onSessionsChanged()
         sendToRenderer('sessions:update', all)
         workspaceMgr?.onAdditionalSessionsChanged()
         retitleDiscordThreads(all)
@@ -2347,6 +2336,7 @@ app.on('before-quit', (e) => {
   conductors?.flush()
   workspaceMgr?.dispose()
   flushLayout()
+  openTabsFile?.flushSync()
   flushAttention()
   freshness?.stop()
   remoteSync?.stop()
@@ -2382,15 +2372,6 @@ function sweepOpenRequests(openDir: string): void {
       })
     }
   })
-}
-
-function pidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch {
-    return false
-  }
 }
 
 // ADR-0009
@@ -3188,11 +3169,10 @@ async function launchQuietTab(
 }
 
 const RESUMES_AT_ONCE = 4
-const RESTORED_TAB_READY_MS = 30_000
 
 function restoreOpenTabs(): string | undefined {
-  if (openTabsRestored || !workspaceMgr) return undefined
-  openTabsRestored = true
+  if (openTabsRestoreStarted || !workspaceMgr) return undefined
+  openTabsRestoreStarted = true
   const plan = restorePlan(savedOpenTabs, workspaceMgr.residentIds())
   let activeAsleep: string | undefined
   for (const t of plan.asleep) {
@@ -3200,18 +3180,20 @@ function restoreOpenTabs(): string | undefined {
     addSleeper(id, t)
     if (t.sessionId === savedOpenTabs.active) activeAsleep = id
   }
-  for (const t of savedOpenTabs.tabs)
-    if (plan.awake.includes(t.sessionId)) restoringSessions.set(t.sessionId, t)
-  void resumeAwake(plan.awake, savedOpenTabs.active)
+  void resumeAwake(
+    [...plan.awake.map((t) => t.sessionId), ...plan.keepRunningOnly],
+    savedOpenTabs.active
+  ).finally(() => {
+    openTabsRestored = true
+    rememberOpenTabs()
+  })
   workspaceMgr.onTrackerUpdate()
-  rememberOpenTabs()
   return activeAsleep
 }
 
 async function resumeAwake(ids: string[], active: string | undefined): Promise<void> {
   if (!workspaceMgr || !ids.length) return
   await workspaceMgr.firstScan
-  if (ids.some((id) => identityOf(id).backendId === 'codex')) await endCodexLeftByACrash()
   const rows = workspaceMgr.rows().flatMap((w) => w.rows)
   const resumeOne = async (id: string): Promise<void> => {
     const row = rows.find((r) => r.id === id)
@@ -3219,16 +3201,13 @@ async function resumeAwake(ids: string[], active: string | undefined): Promise<v
       ? await resumeRow(row).catch(() => ({ ok: false as const, error: couldNotStart(row.title) }))
       : undefined
     if (!resumed?.ok) {
-      restoringSessions.delete(id)
-      rememberOpenTabs()
       if (resumed) sendToRenderer('cron:toast', resumed.error)
       return
     }
     if (id === active) sendToRenderer('attention:activate-tab', { tabId: resumed.tabId })
-    await tabReady(resumed.tabId, RESTORED_TAB_READY_MS, false)
+    await tabReady(resumed.tabId, RESUMED_TAB_READY_MS, false)
   }
-  for (let i = 0; i < ids.length; i += RESUMES_AT_ONCE)
-    await Promise.all(ids.slice(i, i + RESUMES_AT_ONCE).map(resumeOne))
+  await mapAtMost(ids, RESUMES_AT_ONCE, resumeOne)
 }
 
 function couldNotStart(title: string): string {
@@ -3517,7 +3496,7 @@ function registerIpc(): void {
   ipcMain.on('terminal:write', (_e, id: string, data: string) => writeToTab(id, data))
   ipcMain.handle('terminal:paste', (_e, id: string, text: string, typedAfter?: string) => {
     if (typedWhileAsleep.has(id)) return writeToTab(id, bracketedPaste(text) + (typedAfter ?? ''))
-    return ptyMgr.paste(wokenAs.get(id) ?? id, text, typedAfter)
+    return ptyMgr.paste(id, text, typedAfter)
   })
   // PLATFORM§21
   ipcMain.on('sessions:activity', (_e, id: unknown) => {
@@ -3576,7 +3555,7 @@ function registerIpc(): void {
     )
     // ADR-0007
     shrinkAdoptedClaudePtysOneRowSoFitRepaints(tabs)
-    const asleep = [...sleepers].map(([id, t]) => asleepTab(id, t))
+    const asleep = [...sleepers].map(([id, t]): AdoptableTab => ({ id, ...t, asleep: true }))
     return { tabs: [...tabs, ...asleep], activeTabBeforeReload: active }
   })
   ipcMain.on('attention:active-tab', (_e, id: string | null) => {

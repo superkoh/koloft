@@ -24,13 +24,14 @@ describe('restorePlan: which saved tabs come back running and which come back as
       { tabs: [tab('a'), tab('b', { asleep: true }), tab('c')], active: 'c' },
       []
     )
-    expect(plan.awake).toEqual(['c', 'a'])
+    expect(plan.awake.map((t) => t.sessionId)).toEqual(['c', 'a'])
     expect(plan.asleep.map((t) => t.sessionId)).toEqual(['b'])
   })
 
   it('a Keep running session always comes back running, even when its tab was asleep or closed', () => {
     const plan = restorePlan({ tabs: [tab('a', { asleep: true })] }, ['a', 'closed'])
-    expect(plan.awake).toEqual(['a', 'closed'])
+    expect(plan.awake).toEqual([tab('a')])
+    expect(plan.keepRunningOnly).toEqual(['closed'])
     expect(plan.asleep).toEqual([])
   })
 })
@@ -47,7 +48,9 @@ describe('the open-tabs file', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-open-tabs-'))
     const file = path.join(dir, 'open-tabs.json')
     const state = openTabsNow([tab('a')], [tab('b')], 'b')
-    new OpenTabsFile(file).write(state)
+    const onDisk = new OpenTabsFile(file, { tabs: [] })
+    onDisk.write(state)
+    onDisk.flushSync()
     expect(readOpenTabs(file)).toEqual({
       tabs: [tab('a'), tab('b', { asleep: true })],
       active: 'b'

@@ -1472,24 +1472,22 @@ export default function App(): JSX.Element {
             <div className="island flat term-island">
               <div className="terminals">
                 {tabs.flatMap((t) => [
-                  ...(t.ghost
-                    ? [
-                        <div
-                          key={t.ghost}
-                          className="term-wrap"
-                          style={{
-                            display: t.id === shown.id || t.ghost === shown.id ? 'block' : 'none'
-                          }}
-                        >
-                          <TerminalView
-                            id={t.ghost}
-                            active={t.id === shown.id || t.ghost === shown.id}
-                            scrollbar={false}
-                            focusSignal={tuiFocus}
-                          />
-                        </div>
-                      ]
-                    : []),
+                  t.ghost && (
+                    <div
+                      key={t.ghost}
+                      className="term-wrap"
+                      style={{
+                        display: t.id === shown.id || t.ghost === shown.id ? 'block' : 'none'
+                      }}
+                    >
+                      <TerminalView
+                        id={t.ghost}
+                        active={t.id === shown.id || t.ghost === shown.id}
+                        scrollbar={false}
+                        focusSignal={tuiFocus}
+                      />
+                    </div>
+                  ),
                   <div
                     key={t.id}
                     className="term-wrap"

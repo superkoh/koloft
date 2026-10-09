@@ -23,12 +23,8 @@ import {
   type CodexEvent,
   type CodexThread
 } from './codexObservation'
-import {
-  CodexRpc,
-  createCodexTransport,
-  endAppServersLeftByACrash,
-  type CodexTransport
-} from './codexTransport'
+import { CodexRpc, createCodexTransport, type CodexTransport } from './codexTransport'
+import { endCodexAppServersLeftByACrash } from './leftovers'
 import { SessionStore, codexSessionKey, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
@@ -61,10 +57,6 @@ const STATUS_LINE_CONFIG = `tui.status_line=${JSON.stringify([
   'pull-request-number',
   'current-dir'
 ])}`
-
-export function endCodexLeftByACrash(): Promise<void> {
-  return endAppServersLeftByACrash(STATUS_LINE_CONFIG)
-}
 
 // CODEX§17
 function developerInstructions(lines: string[]): string {
@@ -170,6 +162,7 @@ interface Run {
 }
 
 export class CodexSessions {
+  private crashLeftoversEnded?: Promise<void>
   private runs = new Map<string, Run>()
   private history = new Map<string, CodexThread>()
   private threadHomes = new Map<string, string>()
@@ -292,6 +285,8 @@ export class CodexSessions {
   private async startTransport(
     options: Parameters<typeof createCodexTransport>[0]
   ): Promise<CodexTransport> {
+    // CODEX§5
+    await (this.crashLeftoversEnded ??= endCodexAppServersLeftByACrash(STATUS_LINE_CONFIG))
     try {
       return await createCodexTransport(options)
     } catch (error) {

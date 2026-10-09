@@ -1,6 +1,6 @@
 import fs from 'fs'
 import type { BackendId } from '@shared/types'
-import { writePrivateAtomically } from './privateFile'
+import { BackgroundFile } from './backgroundFile'
 
 export interface OpenTab {
   sessionId: string
@@ -13,13 +13,6 @@ export interface OpenTab {
 export interface OpenTabs {
   tabs: OpenTab[]
   active?: string
-}
-
-export interface LiveTab {
-  sessionId: string
-  kind: BackendId
-  title: string
-  cwd: string
 }
 
 const NOTHING_OPEN: OpenTabs = { tabs: [] }
@@ -47,55 +40,55 @@ export function readOpenTabs(file: string): OpenTabs {
 }
 
 export function openTabsNow(
-  live: LiveTab[],
+  awake: OpenTab[],
   asleep: OpenTab[],
   activeSessionId: string | undefined
 ): OpenTabs {
-  const seen = new Set<string>()
-  const tabs: OpenTab[] = []
-  for (const t of live) {
-    if (seen.has(t.sessionId)) continue
-    seen.add(t.sessionId)
-    tabs.push({ sessionId: t.sessionId, kind: t.kind, title: t.title, cwd: t.cwd })
-  }
-  for (const t of asleep) {
-    if (seen.has(t.sessionId)) continue
-    seen.add(t.sessionId)
-    tabs.push({ ...t, asleep: true })
-  }
-  return activeSessionId && seen.has(activeSessionId) ? { tabs, active: activeSessionId } : { tabs }
+  const tabs = new Map<string, OpenTab>()
+  for (const t of [...awake, ...asleep.map((s) => ({ ...s, asleep: true as const }))])
+    if (!tabs.has(t.sessionId)) tabs.set(t.sessionId, t)
+  return activeSessionId && tabs.has(activeSessionId)
+    ? { tabs: [...tabs.values()], active: activeSessionId }
+    : { tabs: [...tabs.values()] }
 }
 
 export interface RestorePlan {
-  awake: string[]
+  awake: OpenTab[]
+  keepRunningOnly: string[]
   asleep: OpenTab[]
 }
 
 export function restorePlan(saved: OpenTabs, keepRunning: readonly string[]): RestorePlan {
   const resident = new Set(keepRunning)
-  const awake = saved.tabs.filter((t) => !t.asleep || resident.has(t.sessionId))
-  const awakeIds = awake.map((t) => t.sessionId)
-  for (const id of keepRunning) if (!awakeIds.includes(id)) awakeIds.push(id)
-  const activeFirst = saved.active && awakeIds.includes(saved.active) ? saved.active : undefined
+  const awake = saved.tabs
+    .filter((t) => !t.asleep || resident.has(t.sessionId))
+    .map(({ asleep: _, ...t }) => t)
+    .sort((a, b) => Number(b.sessionId === saved.active) - Number(a.sessionId === saved.active))
+  const saw = new Set(saved.tabs.map((t) => t.sessionId))
   return {
-    awake: activeFirst ? [activeFirst, ...awakeIds.filter((id) => id !== activeFirst)] : awakeIds,
+    awake,
+    keepRunningOnly: keepRunning.filter((id) => !saw.has(id)),
     asleep: saved.tabs.filter((t) => t.asleep && !resident.has(t.sessionId))
   }
 }
 
 export class OpenTabsFile {
   private written: string
+  private readonly disk: BackgroundFile
 
-  constructor(private file: string) {
-    this.written = JSON.stringify(readOpenTabs(file))
+  constructor(file: string, onDisk: OpenTabs) {
+    this.disk = new BackgroundFile(() => file)
+    this.written = JSON.stringify(onDisk)
   }
 
   write(state: OpenTabs): void {
     const text = JSON.stringify(state)
     if (text === this.written) return
-    try {
-      writePrivateAtomically(this.file, text)
-      this.written = text
-    } catch {}
+    this.written = text
+    this.disk.write(text)
+  }
+
+  flushSync(): void {
+    this.disk.flushSync()
   }
 }
