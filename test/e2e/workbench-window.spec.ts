@@ -12,14 +12,7 @@ import {
   waitBooted
 } from './helpers/p1'
 import { WORKBENCH, workbenchPanel } from './helpers/workbench'
-import {
-  BROWSER,
-  cdpEndpointOf,
-  connectCdp,
-  guestByUrl,
-  openBrowser,
-  openViaAgent
-} from './helpers/browser'
+import { BROWSER, cdpEndpointOf, connectCdp, guestByUrl, openViaAgent } from './helpers/browser'
 import { startEchoServer } from './helpers/fixtureServer'
 import { setupChangeFixture } from './helpers/filesFixture'
 import {
@@ -112,7 +105,7 @@ async function popOut(app: ElectronApplication, page: Page): Promise<Page> {
 }
 
 test.describe('Workbench window: the whole Workbench moves to a window of its own and back', () => {
-  test('WB-W01: popping out carries the shell with its screen, follows no reload of the shell, and closing the window puts the Workbench back beside the session', async ({
+  test('WB-WIN-01: popping out carries the shell with its screen, follows no reload of the shell, and closing the window puts the Workbench back beside the session', async ({
     app,
     page
   }) => {
@@ -142,7 +135,7 @@ test.describe('Workbench window: the whole Workbench moves to a window of its ow
     expect(text).toContain('after_pop_marker')
   })
 
-  test('WB-W02: a popped Workbench opens popped again on the next launch, and a put-back one opens beside the session', async ({
+  test('WB-WIN-02: a popped Workbench opens popped again on the next launch, and a put-back one opens beside the session', async ({
     env
   }) => {
     let app = await launchApp(env)
@@ -171,7 +164,7 @@ test.describe('Workbench window: the whole Workbench moves to a window of its ow
     await quitAndClose(app)
   })
 
-  test('WB-W03: a web page in the Workbench opens again inside the Workbench window, and comes back with it', async ({
+  test('WB-WIN-03: a web page in the Workbench opens again inside the Workbench window, and comes back with it', async ({
     app,
     page
   }) => {
@@ -179,10 +172,8 @@ test.describe('Workbench window: the whole Workbench moves to a window of its ow
     try {
       await startSessionIn(page, 'ws-a')
       await openViaAgent(page, server.page('/carried', '<title>Carried</title><body>c</body>'))
-      await openBrowser(page)
-      await page.locator(BROWSER.tabAgent).click()
       await guestByUrl(app, '/carried')
-      await expect.poll(() => hostOfGuest(app, '/carried')).not.toBe('about:blank')
+      await expect.poll(() => hostOfGuest(app, '/carried')).toBe(page.url())
 
       await popOut(app, page)
       await expect.poll(() => hostOfGuest(app, '/carried'), { timeout: 20_000 }).toBe('about:blank')
@@ -190,16 +181,13 @@ test.describe('Workbench window: the whole Workbench moves to a window of its ow
 
       await closeWorkbenchWindowLikeTheRedLight(app)
       await expect.poll(() => openWindowCount(app)).toBe(1)
-      await expect
-        .poll(() => hostOfGuest(app, '/carried'), { timeout: 20_000 })
-        .not.toBe('about:blank')
-      expect(await hostOfGuest(app, '/carried')).not.toBeNull()
+      await expect.poll(() => hostOfGuest(app, '/carried'), { timeout: 20_000 }).toBe(page.url())
     } finally {
       await server.close()
     }
   })
 
-  test('WB-W04: while an agent drives a page the Workbench stays where it is; once popped, the agent drives it there and a minimized window answers its screenshot with an error, not a hang', async ({
+  test('WB-WIN-04: while an agent drives a page the Workbench stays where it is; once popped, the agent drives it there and a minimized window answers its screenshot with an error, not a hang', async ({
     app,
     page,
     env
@@ -250,7 +238,7 @@ test.describe('Workbench window: the whole Workbench moves to a window of its ow
     }
   })
 
-  test('WB-W05: unplugging the screen the Workbench window sits on puts the Workbench back beside the session', async ({
+  test('WB-WIN-05: unplugging the screen the Workbench window sits on puts the Workbench back beside the session', async ({
     app,
     page
   }) => {
@@ -273,7 +261,7 @@ test.describe('Workbench window: the whole Workbench moves to a window of its ow
     await expect(workbenchPanel(page)).toBeVisible({ timeout: 15_000 })
   })
 
-  test('WB-W06: in the Workbench window, keys act on the Workbench — Find paints its marks there, ⌘W there never closes the session, Focus Mode is off and ⇧⌘B leaves the window where it is', async ({
+  test('WB-WIN-06: in the Workbench window, keys act on the Workbench — Find paints its marks there, ⌘W there never closes the session, Focus Mode is off and ⇧⌘B leaves the window where it is', async ({
     app,
     page,
     env
@@ -317,7 +305,7 @@ test.describe('Workbench window: the whole Workbench moves to a window of its ow
     await expect(aux.locator(`.wb-aux .empty ${PUT_BACK}`)).toHaveCount(0)
   })
 
-  test('WB-W07: a Codex session’s Workbench pops out and back the same way', async ({ env }) => {
+  test('WB-WIN-07: a Codex session’s Workbench pops out and back the same way', async ({ env }) => {
     installCodex(env)
     const app = await launchApp(env)
     try {
@@ -334,7 +322,7 @@ test.describe('Workbench window: the whole Workbench moves to a window of its ow
     }
   })
 
-  test('WB-W08: a remote session’s Workbench pops out with its remote files and back', async ({
+  test('WB-WIN-08: a remote session’s Workbench pops out with its remote files and back', async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -358,7 +346,7 @@ test.describe('Workbench window: the whole Workbench moves to a window of its ow
     }
   })
 
-  test('WB-W09: in the Workbench window a page’s dialog, the downloads list and a file row’s menu open in that window and close with Esc there', async ({
+  test('WB-WIN-09: in the Workbench window a page’s dialog, the downloads list and a file row’s menu open in that window and close with Esc there', async ({
     app,
     page,
     env
@@ -373,7 +361,6 @@ test.describe('Workbench window: the whole Workbench moves to a window of its ow
       const aux = await popOut(app, page)
 
       await openViaAgent(page, server.url('/dialogs'))
-      await aux.locator(BROWSER.tabAgent).click()
       const guest = await guestByUrl(app, '/dialogs')
       const alerted = guest.locator('#do-alert').click()
       const modal = aux.locator(BROWSER.modal)
@@ -404,7 +391,7 @@ test.describe('Workbench window: the whole Workbench moves to a window of its ow
     }
   })
 
-  test('WB-W10: the Workbench window reopens where it was left, at the size it was left', async ({
+  test('WB-WIN-10: the Workbench window reopens where it was left, at the size it was left', async ({
     env
   }) => {
     let app = await launchApp(env)
