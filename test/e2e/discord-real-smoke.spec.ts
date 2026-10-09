@@ -362,13 +362,7 @@ async function checksGithubItself(fake: FakeDiscord, log: string): Promise<void>
 }
 
 function fakeGhOpensIssue(env: E2EEnv): string {
-  const log = installGhForWorkspaceA(env, '[]')
-  fs.writeFileSync(
-    path.join(env.fakeBin, 'gh'),
-    `#!/bin/sh\necho "$*" >> ${JSON.stringify(log)}\nif [ "$1 $2" = "issue create" ]; then echo ${ISSUE_ONLY_GH_KNOWS}; else echo '[]'; fi\n`,
-    { mode: 0o755 }
-  )
-  return log
+  return installGhForWorkspaceA(env, '[]', ISSUE_ONLY_GH_KNOWS)
 }
 
 async function opensAnIssueItself(fake: FakeDiscord, log: string): Promise<void> {

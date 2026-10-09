@@ -48,43 +48,51 @@ function issueCreateFlags(rest: string[]): [string, string][] | null {
 
 async function realPathInside(folder: string, file: string): Promise<string | null> {
   try {
-    const [root, real] = await Promise.all([
-      fs.promises.realpath(folder),
-      fs.promises.realpath(file)
-    ])
+    const root = await fs.promises.realpath(folder)
+    const real = await fs.promises.realpath(file)
     return real.startsWith(root + path.sep) ? real : null
   } catch {
     return null
   }
 }
 
+async function issueCreateArgs(
+  flags: [string, string][],
+  folder: string,
+  cwd: string
+): Promise<string[] | null> {
+  const args = ['issue', 'create']
+  for (const [name, value] of flags) {
+    const given =
+      name === '--body-file' ? await realPathInside(folder, path.resolve(cwd, value)) : value
+    if (given === null) return null
+    // PLATFORM§32
+    args.push(`${name}=${given}`)
+  }
+  return args
+}
+
+function readAllowed(noun: string, action: string, rest: string[]): boolean {
+  return (
+    !!noun &&
+    !!action &&
+    !!GH_READS[noun]?.includes(action) &&
+    !rest.some((a) => a.startsWith('-') && !READ_FLAGS.has(flagName(a)))
+  )
+}
+
 // ADR-0029
 export function githubVerb(d: GithubVerbDeps): AgentVerb {
   return async (args, caller) => {
     const [noun, action, ...rest] = args
-    const created = noun === 'issue' && action === 'create' ? issueCreateFlags(rest) : null
-    if (!created) {
-      if (!noun || !action || !GH_READS[noun]?.includes(action))
-        return refused(GH_USAGE, EXIT_USAGE)
-      if (rest.some((a) => a.startsWith('-') && !READ_FLAGS.has(flagName(a))))
-        return refused(GH_USAGE, EXIT_USAGE)
-    }
+    const creating = noun === 'issue' && action === 'create'
+    const flags = creating ? issueCreateFlags(rest) : null
+    if (creating ? !flags : !readAllowed(noun, action, rest)) return refused(GH_USAGE, EXIT_USAGE)
     const scope = d.scopeOf(caller.tabId)
     if (scope === undefined) return refused(GH_ONLY_A_CONDUCTOR)
-    let gh = [...args]
-    let repoNamed = rest.some((a) => flagName(a) === '--repo' || a.startsWith('https://'))
-    if (created) {
-      for (const flag of created) {
-        if (flag[0] !== '--body-file') continue
-        const real = await realPathInside(d.folderOf(scope), path.resolve(caller.cwd, flag[1]))
-        if (!real) return refused(GH_BODY_FILE_OUTSIDE_OWN_FOLDER)
-        flag[1] = real
-      }
-      // PLATFORM§32
-      gh = [noun, action, ...created.map(([name, value]) => `${name}=${value}`)]
-      repoNamed = created.some(([name]) => name === '--repo')
-    }
-    if (!repoNamed) {
+    const gh = flags ? await issueCreateArgs(flags, d.folderOf(scope), caller.cwd) : [...args]
+    if (!gh) return refused(GH_BODY_FILE_OUTSIDE_OWN_FOLDER)
+    if (!gh.slice(2).some((a) => flagName(a) === '--repo' || a.startsWith('https://'))) {
       const repo = await d.repoOf(scope)
       if (!repo) return refused(GH_NEEDS_A_REPO)
       gh.push('--repo', repo)

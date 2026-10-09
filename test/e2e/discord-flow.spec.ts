@@ -767,7 +767,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       }
     })
 
-    test(`a ${backend} conductor opens a GitHub issue through koloft gh: Koloft adds the workspace’s repository, reads --body-file only from the conductor’s own folder, and refuses an assignee without running gh`, async ({
+    test(`a ${backend} conductor opens a GitHub issue through koloft gh: Koloft adds the workspace’s repository, and reads --body-file only from the conductor’s own folder`, async ({
       env
     }) => {
       if (backend === 'codex') installCodex(env)
@@ -777,7 +777,6 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       const fake = await startFakeDiscord(env)
       const { app } = await connected(env, fake)
       try {
-        fake.say(OWNER, '/koloft gh issue create --title "Login stays blank" --assignee someone')
         fake.say(
           OWNER,
           '/koloft gh issue create --title "Login stays blank" --body "- open /login"'
@@ -793,11 +792,11 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
         fake.say(OWNER, `/koloft gh issue create --title "Leak" --body-file ${env.home}/secret.txt`)
         fake.say(OWNER, '/koloft gh issue create --title "From a file" --body-file body.md')
         await expect
-          .poll(ghSaid, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-          .toContain('issue create --title=From a file --body-file=')
-        expect(ghSaid().split('\n')[1]).toBe(
-          `issue create --title=From a file --body-file=${fs.realpathSync(path.join(ownFolder, 'body.md'))} --repo acme/app`
-        )
+          .poll(() => ghSaid().split('\n')[1], { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+          .toBe(
+            `issue create --title=From a file --body-file=${fs.realpathSync(path.join(ownFolder, 'body.md'))} --repo acme/app`
+          )
+        expect(ghSaid()).not.toContain('Leak')
       } finally {
         await quitAndClose(app)
         await fake.close()

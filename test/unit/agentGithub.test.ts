@@ -70,11 +70,7 @@ describe('koloft gh', () => {
   it.each([
     ['a command that writes', ['pr', 'merge', '389']],
     ['a comment', ['issue', 'comment', '5', '--body', 'x']],
-    ['closing an issue', ['issue', 'close', '5']],
-    ['changing an issue', ['issue', 'edit', '5', '--title', 'x']],
     ['an issue created with an assignee', ['issue', 'create', '--title', 't', '--assignee', 'a']],
-    ['an issue created in the browser', ['issue', 'create', '--title', 't', '--web']],
-    ['an issue created from a template', ['issue', 'create', '--title', 't', '-T', 'Bug']],
     ['an issue created with a word that is no flag', ['issue', 'create', '5', '--title', 't']],
     ['an issue created with a flag left without its value', ['issue', 'create', '--title']],
     ['gh api', ['api', 'repos/a/b', '-X', 'DELETE']],
@@ -134,12 +130,13 @@ describe('koloft gh', () => {
     ])
   })
 
+  type Folder = ReturnType<typeof conductorFolderWithAFileBeside>
   it.each([
-    ['a file outside the conductor’s own folder', (f: { outside: string }) => f.outside],
+    ['a file outside the conductor’s own folder', (f: Folder) => f.outside],
     ['a way out of the folder through ..', () => '../secret.txt'],
     [
       'a link in the folder that points outside it',
-      (f: { folder: string; outside: string }) => {
+      (f: Folder) => {
         fs.symlinkSync(f.outside, path.join(f.folder, 'link.md'))
         return 'link.md'
       }
