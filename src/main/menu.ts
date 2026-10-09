@@ -19,6 +19,7 @@ export function setupAppMenu(
       | 'focus-notes'
       | 'toggle-sidebar'
       | 'open-settings'
+      | 'command-palette'
   ) => void,
   onBrowserCommand: (cmd: BrowserCommand) => void,
   keepAwake = false
@@ -147,6 +148,13 @@ export function setupAppMenu(
   const viewMenu: MenuItemConstructorOptions = {
     label: 'View',
     submenu: [
+      {
+        id: 'command-palette',
+        label: 'Command Palette…',
+        accelerator: 'CmdOrCtrl+P',
+        click: () => onShortcut('command-palette')
+      },
+      { type: 'separator' },
       {
         id: 'new-terminal-tab',
         label: 'New Terminal Tab',
