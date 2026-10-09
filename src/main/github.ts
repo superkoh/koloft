@@ -33,24 +33,29 @@ export function parseOpenCounts(stdout: string): OpenCounts | null {
 
 // PLATFORM§32
 export async function ghOpenCounts(repo: GithubRepo): Promise<OpenCounts | null> {
+  const { ok, out } = await ghRead([
+    'api',
+    'graphql',
+    '-f',
+    `owner=${repo.owner}`,
+    '-f',
+    `name=${repo.repo}`,
+    '-f',
+    `query=${OPEN_COUNTS_QUERY}`
+  ])
+  return ok ? parseOpenCounts(out) : null
+}
+
+export async function ghRead(args: string[]): Promise<{ ok: boolean; out: string }> {
   try {
-    const { stdout } = await execFile(
-      'gh',
-      [
-        'api',
-        'graphql',
-        '-f',
-        `owner=${repo.owner}`,
-        '-f',
-        `name=${repo.repo}`,
-        '-f',
-        `query=${OPEN_COUNTS_QUERY}`
-      ],
-      { timeout: FETCH_TIMEOUT_MS }
-    )
-    return parseOpenCounts(stdout)
-  } catch {
-    return null
+    const { stdout } = await execFile('gh', args, {
+      timeout: FETCH_TIMEOUT_MS,
+      maxBuffer: MAX_BUFFER
+    })
+    return { ok: true, out: stdout }
+  } catch (error) {
+    const e = error as Error & { stderr?: string }
+    return { ok: false, out: e.stderr?.trim() || e.message }
   }
 }
 
@@ -151,6 +156,11 @@ export class GithubLookup {
       this.counted.set(key, known)
     }
     return known.counts && { repo: key, ...known.counts }
+  }
+
+  async ownerSlashName(root: string): Promise<string | null> {
+    const repo = this.fixture ? this.fixture[root] : await this.repoOf(root, false)
+    return repo ? `${repo.owner}/${repo.repo}` : null
   }
 
   private async repoOf(root: string, force: boolean): Promise<GithubRepo | null> {

@@ -918,6 +918,10 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   `"repository":null` plus a `NOT_FOUND` error; with no login it exits 4 and prints
   "To get started with GitHub CLI, please run: gh auth login". (2026-10-03, gh 2.89.0,
   run by hand against a public repo, a made-up name, and an empty `GH_CONFIG_DIR`.)
+- **`--jq` can read the environment of the `gh` process**: `gh pr view 389 --repo
+  superkoh/koloft --json number --jq '$ENV.HOME'` printed the home folder. So a `--jq`
+  given by someone else can print any secret in that environment. (2026-10-09, gh 2.89.0,
+  run by hand.)
 
 ## §33 ssh
 

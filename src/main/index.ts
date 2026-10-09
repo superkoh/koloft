@@ -139,7 +139,13 @@ import { CronRunner, type LaunchRequest } from './cronRunner'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
 import { GitFreshnessEngine } from './gitFreshness'
-import { GithubLookup, ghOpenCounts, parseGithubFixture, type GithubOptions } from './github'
+import {
+  GithubLookup,
+  ghOpenCounts,
+  ghRead,
+  parseGithubFixture,
+  type GithubOptions
+} from './github'
 import { GithubCountsSweep } from './githubCounts'
 import { restoredWindowGeometry, trackWindowState } from './windowState'
 import { fullscreenOption, windowMinWidth } from './windowBounds'
@@ -278,13 +284,14 @@ import {
 } from './discord/dialog'
 import { sleep } from './codexTransport'
 import { discordVerb } from './agentDiscord'
+import { githubVerb } from './agentGithub'
 import {
   claudePeerNames,
   claudeShowsAPanel,
   runningClaudePid,
   whenMessagingSocket
 } from './claudeSessionRegistry'
-import { conductorName, isDiscordId, scopeName } from '@shared/conductors'
+import { conductorName, GLOBAL_SCOPE, isDiscordId, scopeName } from '@shared/conductors'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
 import {
@@ -848,6 +855,13 @@ const agentRequests = new AgentRequests({
         if (!discordRelay) throw new Error(STILL_STARTING)
         await discordRelay.send(channelId, files, text)
       }
+    }),
+    gh: githubVerb({
+      scopeOf: (tabId) => conductors?.scopeOfTab(tabId),
+      repoOf: async (scope) =>
+        scope === GLOBAL_SCOPE ? null : hosts.of(scope).github.ownerSlashName(scope),
+      // PLATFORM§1
+      run: (args) => loginEnvReady().then(() => ghRead(args))
     })
   },
   tab: (tabId) => ptyMgr.get(tabId),
