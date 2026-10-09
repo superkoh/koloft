@@ -2310,6 +2310,7 @@ app.on('before-quit', (e) => {
     approveQuit()
   }
   clearQuitFallback()
+  if (!quitCommitted) rememberOpenTabs()
   quitCommitted = true
   if (!codexQuitStopped && codexSessions?.hasRuns()) {
     e.preventDefault()

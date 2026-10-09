@@ -42,6 +42,14 @@ const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_SLEEP_MS = 3000
 const NO_SLEEP_DURING_THE_CHECKS_MS = 600_000
 
+function openTabsOnDisk(env: E2EEnv): unknown {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(env.userData, 'open-tabs.json'), 'utf8'))
+  } catch {
+    return null
+  }
+}
+
 async function startSession(
   page: Page,
   env: E2EEnv,
@@ -205,6 +213,11 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
     await page1.waitForLoadState('domcontentloaded')
     await startSession(page1, env)
     const [first] = await waitForCalls(env, 1)
+    const openRow = page1.locator('.ws-tab', { hasText: 'Fake session: project notes' })
+    await expect(openRow).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+    await openMenu(page1, openRow)
+    await page1.locator('.menu .mi', { hasText: /^Close$/ }).click()
+    await expect(openRow).toHaveClass(/\bcold\b/)
     await app1.close()
 
     fs.writeFileSync(env.claudeDelayFile, '3000')
@@ -422,15 +435,26 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
         await expect(row1(page1, 'Closed D')).toHaveClass(/\bcold\b/)
         await startSession(page1, env, { title: 'Asleep B', wsName: 'ws-b' })
         await startSession(page1, env, { title: 'Running C', wsName: 'ws-b' })
+        await runIn(page1, centerTerm(page1), '/need-approval')
+        await expect(row1(page1, 'Running C')).toHaveClass(/\bst-approval\b/, { timeout: 30_000 })
         await startSession(page1, env, { title: 'Running A' })
         const [, b, c, a] = await waitForCalls(env, 4)
-        await expect.poll(() => pendingAttention(page1), { timeout: 25_000 }).toHaveLength(3)
         await row1(page1, 'Asleep B').click()
         await row1(page1, 'Running A').click()
         await expect(row1(page1, 'Running A')).toHaveClass(/\bactive\b/)
         await expect.poll(() => processAlive(b.pid), { timeout: 40_000 }).toBe(false)
         await expect(row1(page1, 'Asleep B')).toHaveClass(/\bst-idle\b/)
         expect(processAlive(a.pid) && processAlive(c.pid)).toBe(true)
+        await expect
+          .poll(() => openTabsOnDisk(env))
+          .toEqual({
+            tabs: expect.arrayContaining([
+              expect.objectContaining({ sessionId: a.sessionId }),
+              expect.objectContaining({ sessionId: b.sessionId, asleep: true }),
+              expect.objectContaining({ sessionId: c.sessionId })
+            ]),
+            active: a.sessionId
+          })
         if (ending === 'crashes') process.kill(app1.process().pid!, 'SIGKILL')
         else await quitAndClose(app1)
         await expect.poll(() => processAlive(a.pid) || processAlive(c.pid)).toBe(false)
@@ -450,7 +474,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
         )
         await expect(row('Running A')).toHaveClass(/\bactive\b/, { timeout: 30_000 })
         await expect(row('Running A')).toHaveClass(/\bst-(working|waiting|idle)\b/)
-        await expect(row('Running C')).toHaveClass(/\bst-(working|waiting|idle)\b/)
+        await expect(row('Running C')).toHaveClass(/\bst-(working|waiting|idle|approval)\b/)
         await expect(row('Asleep B')).toHaveClass(/\bst-idle\b/)
         await expect(row('Asleep B')).not.toHaveClass(/\bactive\b/)
         await expect(row('Closed D')).toHaveClass(/\bcold\b/)
