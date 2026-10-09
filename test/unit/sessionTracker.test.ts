@@ -8,7 +8,6 @@ import type { ClaudeSessionInfo as SessionInfo } from '@shared/types'
 let SessionTracker: typeof import('../../src/main/sessionTracker').SessionTracker
 let encodeCwd: typeof import('../../src/main/sessionTracker').encodeCwd
 let scratchpadDirFor: typeof import('../../src/main/sessionTracker').scratchpadDirFor
-let tasksDirFor: typeof import('../../src/main/sessionTracker').tasksDirFor
 let classifyUserPrompt: typeof import('../../src/main/sessionTracker').classifyUserPrompt
 let transcriptTurns: typeof import('../../src/main/sessionTracker').transcriptTurns
 let lastTurnsOfLines: typeof import('../../src/main/sessionTracker').lastTurnsOfLines
@@ -28,7 +27,6 @@ beforeAll(async () => {
     SessionTracker,
     encodeCwd,
     scratchpadDirFor,
-    tasksDirFor,
     classifyUserPrompt,
     transcriptTurns,
     lastTurnsOfLines,
@@ -1483,13 +1481,6 @@ describe('scratchpadDirFor — Claude Code per-session scratchpad', () => {
     expect(scratchpadDirFor(inWorktree, '/r')).toBe('/b/-r/sid/scratchpad')
     expect(scratchpadDirFor(inWorktree, '/r/.claude/worktrees/w')).toBe(
       '/b/-r--claude-worktrees-w/sid/scratchpad'
-    )
-  })
-
-  it('keeps tasks/ beside the transcript, whatever folder claude started in', () => {
-    process.env.KOLOFT_SCRATCHPAD_BASE = '/b'
-    expect(tasksDirFor('/h/.claude/projects/-r--claude-worktrees-w/sid.jsonl')).toBe(
-      '/b/-r--claude-worktrees-w/sid/tasks'
     )
   })
 })

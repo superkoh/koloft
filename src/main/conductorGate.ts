@@ -1,13 +1,24 @@
 import { shq } from '@shared/shellQuote'
 
 const CONDUCTOR_DENIED =
-  'Koloft: a conductor only passes work on. It may read files, ask the owner a question and run one plain koloft command per Bash call (no ;, &&, |, >, $ or backticks outside quotes). To get anything else done, start a session with koloft session new or message one with koloft session send.'
+  'Koloft: a conductor only passes work on. It may read files, write its own memory folder, ask the owner a question and run one plain koloft command per Bash call (no ;, &&, |, >, $ or backticks outside quotes). To get anything else done, start a session with koloft session new or message one with koloft session send.'
 
 const READ_OR_ASK_TOOLS = ['Read', 'Glob', 'Grep', 'Skill', 'ToolSearch', 'AskUserQuestion']
+const WRITE_TOOLS = ['Write', 'Edit']
 
 // ADR-0029 CC§15
-export const CONDUCTOR_GATE_SCRIPT = `const READ_OR_ASK_TOOLS = new Set(${JSON.stringify(READ_OR_ASK_TOOLS)})
+export const CONDUCTOR_GATE_SCRIPT = `const path = require('path')
+const READ_OR_ASK_TOOLS = new Set(${JSON.stringify(READ_OR_ASK_TOOLS)})
+const WRITE_TOOLS = new Set(${JSON.stringify(WRITE_TOOLS)})
 const DENIED = ${JSON.stringify(CONDUCTOR_DENIED)}
+
+function inOwnMemory(event) {
+  const transcript = event.transcript_path
+  const file = event.tool_input && event.tool_input.file_path
+  if (typeof transcript !== 'string' || typeof file !== 'string') return false
+  const memory = path.join(path.dirname(transcript), 'memory')
+  return path.resolve(file).startsWith(memory + path.sep)
+}
 
 function oneKoloftCall(command) {
   const cmd = String(command).trim()
@@ -30,6 +41,7 @@ function oneKoloftCall(command) {
 
 function allowed(event) {
   if (READ_OR_ASK_TOOLS.has(event.tool_name)) return true
+  if (WRITE_TOOLS.has(event.tool_name)) return inOwnMemory(event)
   return event.tool_name === 'Bash' && oneKoloftCall(event.tool_input && event.tool_input.command)
 }
 

@@ -166,6 +166,18 @@ mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
   many times from inside the worktree) had both under the worktree. (`claude -p` names
   no scratchpad at all.) Older versions not checked. `tasks/` holds full subagent
   transcripts (single files reach MBs).
+  **On CC 2.1.295 an EnterWorktree session keeps `tasks/` under `<main checkout slug>`
+  too**, while a `-w` session still keeps it under `<worktree slug>`. Measured
+  2026-10-08: a session started in the main checkout that called EnterWorktree, then ran
+  two `run_in_background` Bash calls 2 s and 66 min later, had both
+  `<id>.output` files (and its subagents' `.output` links) under
+  `/private/tmp/claude-501/<main checkout slug>/<id>/tasks/`, with `lsof` showing the
+  live shell's fd 1 there, and no `<worktree slug>/<id>` folder at all; a `claude -w`
+  session started from the main checkout, with its scratchpad under the main checkout,
+  was told by its own Bash tool that a background command wrote to
+  `<worktree slug>/<id>/tasks/<task>.output`. So which slug holds `tasks/` cannot be read
+  from the transcript's folder or the launch folder; only the `<sessionId>/tasks/` end of
+  the path is fixed.
   The per-user folder is `realpath(<base>/claude-<uid>)` (mode 0700). `<base>` differs by
   OS. macOS build: `$CLAUDE_CODE_TMPDIR`, else a fixed `/tmp` — `$TMPDIR` is ignored
   (CC 2.1.286 and 2.1.287 macOS binaries:
@@ -1318,6 +1330,13 @@ with `koloft`, and printed nothing for that one. The prompt asked for a Bash
   `discord-real-smoke` case for a Claude conductor: Koloft's own gate, a pty session
   with `--dangerously-skip-permissions`, asked to write a file — the file was not
   written and the transcript held `PreToolUse:<tool> hook error`.
+- **The hook's input names the transcript.** 2026-10-09, CC 2.1.295, `claude -p` with a
+  `PreToolUse` hook that logged its input, asked to Write a file then Edit it: each
+  input held `session_id`, `transcript_path` (absolute,
+  `~/.claude/projects/<folder>/<session id>.jsonl`), `cwd`, `permission_mode`,
+  `hook_event_name`, `tool_name`, `tool_input` (`file_path` absolute for Write and Edit)
+  and `tool_use_id`. The auto-memory folder is `memory/` beside that transcript (seen
+  for Koloft's global conductor).
 - Not run: a `Task` subagent's own tool calls under the hook.
 
 ## §16 `claude --version` and `claude update`

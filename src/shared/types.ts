@@ -592,7 +592,21 @@ export interface GithubInfo {
   failed: boolean
 }
 
-export type GithubTarget = 'repo' | 'pulls' | 'pr'
+export type GithubTarget = 'repo' | 'pulls' | 'pr' | 'compare'
+
+export type PrCheckBucket = 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel'
+
+export interface PrCheck {
+  name: string
+  bucket: PrCheckBucket
+  link: string
+  workflow: string
+}
+
+export type PrChecks =
+  { state: 'ok'; checks: PrCheck[] } | { state: 'no-gh' | 'signed-out' | 'no-pr' | 'failed' }
+
+export type GitStepResult = { ok: true } | { ok: false; reason: string }
 
 // PLATFORM§15
 export interface ExtensionInfo {
@@ -856,6 +870,7 @@ export interface KoloftApi {
     onOverlayOpen(cb: (o: BrowserOverlayOpen) => void): () => void
     overlayReady(): void
     setOverlayGuest(guestId: number, on: boolean): void
+    setGuestOwner(guestId: number, ownerTabId: string): void
     reportStrip(sessionId: string, targets: BrowserStripTarget[]): void
     onCdpOp(cb: (op: BrowserCdpOp) => void): () => void
     answerCdpOp(res: BrowserCdpOpResult): void
@@ -935,6 +950,10 @@ export interface KoloftApi {
     info(root: string, force?: boolean): Promise<GithubInfo | null>
     target(root: string, what: GithubTarget): Promise<string | null>
     onInfo(cb: (root: string, info: GithubInfo) => void): () => void
+    checks(root: string, pr: number): Promise<PrChecks>
+    failingChecksText(root: string, pr: number): Promise<string | null>
+    commit(root: string, message: string): Promise<GitStepResult>
+    push(root: string): Promise<GitStepResult>
   }
   workspace: {
     pickFolder(): Promise<string | null>

@@ -445,6 +445,14 @@ A refused write failed with `Operation not permitted`. On 0.159.3, `codex sandbo
 `[permissions]` table", so the no-model route used on 2026-09-25 no longer takes a
 folder.
 
+**`workspace-write` has no network; reading files outside it works.** Checked 2026-10-09
+with codex-cli 0.159.3, one real turn through `codex exec -s workspace-write
+--skip-git-repo-check -C <scratch folder>` (approval `never`), this Mac's own config:
+`gh pr view 389 --repo superkoh/koloft --json state,mergedAt` exited 1 with "error
+connecting to api.github.com", and `git -C <a repo outside the folder> log -1 --oneline`
+printed the commit. Through the app-server (`thread/start` with the same sandbox), as a
+conductor runs: **inferred, not checked**.
+
 Browser control (an agent driving a Workbench web tab through Koloft's CDP (Chrome DevTools
 Protocol) relay) was not tried for Codex. Whether a command inside Codex's sandbox can
 reach the relay's local socket at all is **inferred, not checked** either way, so browser
@@ -920,6 +928,13 @@ message" (3 runs).
   text. Measured 2026-10-08, Codex CLI 0.161.0 (the standalone install above), a python
   `pty` probe in a scratch `HOME` whose `CODEX_HOME` held only a copied `auth.json` and
   a `config.toml` trusting the folder; a CR 4 s after the note.
+- **A longer bracketed paste shows as `[Pasted Content N chars]`** and still waits:
+  Koloft's Send failing checks for superkoh/koloft PR #3 (43 line breaks, the npm
+  ERESOLVE log; claude showed the same paste as `[Pasted text #1 +43 lines]`) showed as `[Pasted Content 1817 chars]`, the rollout held no user message 5 s
+  later, and the question typed after it went with it as one unwrapped `UserMessage` on
+  the next Enter, answered `ERESOLVE` in 5 of 5 runs (2026-10-08, Codex CLI 0.161.0;
+  established by `agent-tools-real-smoke.spec.ts` › "a real Codex holds the failing
+  checks of PR #3 in its composer unsent …").
 - Codex on a remote machine is not a tab Koloft starts yet (§16), so the paste over ssh
   and tmux is not probed for Codex.
 

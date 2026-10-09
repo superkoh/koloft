@@ -3,7 +3,14 @@ import path from 'path'
 import { execFileSync } from 'child_process'
 import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { seedSettings, type E2EEnv } from './helpers/env'
+import {
+  HAVE_REAL_GH,
+  NEEDS_REAL_GH,
+  installRealGhThatOnlyReads,
+  seedSettings,
+  setGithubFixture,
+  type E2EEnv
+} from './helpers/env'
 import { runGit, setupGitFixture } from './helpers/gitFixture'
 import {
   boundSessionId,
@@ -15,6 +22,11 @@ import {
 } from './helpers/p1'
 import { portOffset } from '../../src/shared/worktreeName'
 import {
+  PR_3_CHECKS_LINE,
+  PR_3_FAILING_CHECK_PASTE_HEAD,
+  PR_3_FIRST_ERROR_LINE,
+  PR_3_NPM_ERROR,
+  PR_3_OF_KOLOFT,
   WORKBENCH,
   claudePromptsIn,
   claudeRepliesIn,
@@ -437,6 +449,90 @@ function aHunkCommentWaitsForEnterThenGoesAsOneMessage(
   })
 }
 
+const ASK_FOR_THE_NPM_ERROR_CODE = 'Reply with only the npm error code.'
+const PR_3_NPM_ERROR_CODE = 'ERESOLVE'
+const TYPED_TEXT_SETTLES_IN_THE_INPUT_BOX_MS = 1_000
+const A_SUBMITTED_PROMPT_REACHES_THE_TRANSCRIPT_MS = 15_000
+const CHECKS_PASTE_ON_SCREEN = {
+  // CC§18
+  default: /\[Pasted text #\d+ \+\d+ lines\]/,
+  // CODEX§23
+  other: /\[Pasted Content \d+ chars\]/
+}
+
+function failingChecksWaitForEnterThenGoWithTheTypedQuestion(
+  env: E2EEnv,
+  backend: 'default' | 'other',
+  useReal: (env: E2EEnv, trusted: string[]) => void,
+  transcript: RealTranscript
+): Promise<void> {
+  test.setTimeout(A_REAL_MODEL_TURN_MS + 180_000)
+  return inARealWorktreeSession(
+    env,
+    backend,
+    useReal,
+    [],
+    async ({ page, rows }) => {
+      const tabId = (await rows.getAttribute('data-tab-id'))!
+      const sessionId = (await boundSessionId(page, tabId)) ?? ''
+      expect(sessionId).not.toBe('')
+      await expect(page.locator('.wb-gh .ci')).toHaveClass(/\bfail\b/, { timeout: 60_000 })
+      const promptsBefore = transcript.prompts(env, sessionId).length
+      const repliesBefore = transcript.replies(env, sessionId).length
+
+      await page.locator('.wb-gh').click({ button: 'right' })
+      await expect(page.locator('.wb-ghmenu .mi.head')).toHaveText(PR_3_CHECKS_LINE)
+      await page.locator('.wb-ghmenu .mi', { hasText: 'Send failing checks' }).click()
+      await expect
+        .poll(() => screen(page), { timeout: 60_000 })
+        .toMatch(CHECKS_PASTE_ON_SCREEN[backend])
+      await page.waitForTimeout(A_PASTE_THAT_SENT_ITSELF_WOULD_HAVE_STARTED_A_TURN_BY_MS)
+      await test.info().attach('screen-before-the-question', { body: await screen(page) })
+      expect(transcript.prompts(env, sessionId)).toHaveLength(promptsBefore)
+      await expect(rows).not.toHaveClass(/\bst-working\b/)
+
+      await expect
+        .poll(() => page.evaluate(() => !!document.activeElement?.closest('.term-island')))
+        .toBe(true)
+      await page.keyboard.type(ASK_FOR_THE_NPM_ERROR_CODE)
+      for (let i = 0; i < ENTERS_BEFORE_GIVING_UP; i++) {
+        await page.waitForTimeout(TYPED_TEXT_SETTLES_IN_THE_INPUT_BOX_MS)
+        await page.keyboard.press('Enter')
+        const sent = await expect
+          .poll(() => transcript.prompts(env, sessionId).length, {
+            timeout: A_SUBMITTED_PROMPT_REACHES_THE_TRANSCRIPT_MS
+          })
+          .toBeGreaterThan(promptsBefore)
+          .then(() => true)
+          .catch(() => false)
+        if (sent) break
+      }
+      expect(transcript.prompts(env, sessionId)).toHaveLength(promptsBefore + 1)
+      const sent = transcript.prompts(env, sessionId).at(-1)!
+      await test.info().attach('the-one-message', { body: sent })
+      expect(sent).toContain(PR_3_FAILING_CHECK_PASTE_HEAD)
+      expect(sent).toContain(PR_3_NPM_ERROR)
+      expect(sent).toContain(PR_3_FIRST_ERROR_LINE)
+      expect(outsideThePaste(sent)).toContain(ASK_FOR_THE_NPM_ERROR_CODE)
+      await expect
+        .poll(() => transcript.replies(env, sessionId).length, { timeout: A_REAL_MODEL_TURN_MS })
+        .toBeGreaterThan(repliesBefore)
+      await expect(rows).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: A_REAL_MODEL_TURN_MS })
+      const replies = transcript.replies(env, sessionId).slice(repliesBefore)
+      await test.info().attach('the-reply', { body: replies.join('\n') })
+      console.log(
+        `message: ${JSON.stringify(sent.slice(0, 160))} … ${JSON.stringify(sent.slice(-140))} reply: ${JSON.stringify(replies.at(-1))}`
+      )
+      expect(replies.at(-1)?.trim()).toBe(PR_3_NPM_ERROR_CODE)
+      expect(transcript.prompts(env, sessionId)).toHaveLength(promptsBefore + 1)
+    },
+    (repo) => {
+      installRealGhThatOnlyReads(env)
+      setGithubFixture(env, { [path.join(repo, '.claude', 'worktrees', WORKTREE)]: PR_3_OF_KOLOFT })
+    }
+  )
+}
+
 const ECHO_THE_PORT_OFFSET = {
   default:
     'Run this shell command exactly once with your Bash tool: echo "$KOLOFT_PORT_OFFSET" — then reply with only the number it printed. Do nothing else.',
@@ -611,6 +707,40 @@ test.describe('✎ comment on a Changes hunk with the REAL claude and codex: opt
       'set KOLOFT_SMOKE_CODEX (absolute path of a real codex binary) and KOLOFT_SMOKE_CODEX_HOME (a signed-in CODEX_HOME; only its auth.json is copied)'
     )
     await aHunkCommentWaitsForEnterThenGoesAsOneMessage(
+      env,
+      'other',
+      useRealCodex,
+      CODEX_TRANSCRIPT
+    )
+  })
+})
+
+test.describe('GitHub button ▸ Send failing checks with the REAL gh, claude and codex: opt-in cases on superkoh/koloft PR #3 proving the checks wait in the input box; they spend real money', () => {
+  test('a real Claude Code holds the failing checks of PR #3 in its input box unsent, and the question typed after them goes with them as one message, which the model answers from the log excerpt', async ({
+    env
+  }) => {
+    test.skip(
+      !HAVE_REAL_CLAUDE,
+      'set KOLOFT_SMOKE_CLAUDE (absolute path of a real claude binary) and KOLOFT_SMOKE_OAUTH_TOKEN or KOLOFT_SMOKE_ACCOUNT (a Settings ▸ Accounts name, read off the Keychain)'
+    )
+    test.skip(!HAVE_REAL_GH, NEEDS_REAL_GH)
+    await failingChecksWaitForEnterThenGoWithTheTypedQuestion(
+      env,
+      'default',
+      useRealClaude,
+      CLAUDE_TRANSCRIPT
+    )
+  })
+
+  test('a real Codex holds the failing checks of PR #3 in its composer unsent, and the question typed after them goes with them as one message, which the model answers from the log excerpt', async ({
+    env
+  }) => {
+    test.skip(
+      !HAVE_REAL_CODEX,
+      'set KOLOFT_SMOKE_CODEX (absolute path of a real codex binary) and KOLOFT_SMOKE_CODEX_HOME (a signed-in CODEX_HOME; only its auth.json is copied)'
+    )
+    test.skip(!HAVE_REAL_GH, NEEDS_REAL_GH)
+    await failingChecksWaitForEnterThenGoWithTheTypedQuestion(
       env,
       'other',
       useRealCodex,

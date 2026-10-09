@@ -49,7 +49,9 @@ when it works. That is what "judged against" means.
   its Workbench, the workspace note, and starting a sibling session and talking to it.
   A conductor (a session bound to a Discord channel) also reads what a session said,
   and sends to, resumes, stops and starts any session in its scope, Claude or Codex,
-  and closes an ended one on this computer.
+  and closes an ended one on this computer. It only passes work on (ADR-0029), but checks
+  facts on GitHub itself with a read-only `koloft gh`, and a Claude conductor keeps its
+  own memory.
   What is left: Codex driving the Workbench browser (#119), and sessions on another
   machine over ssh, which get no `koloft` command yet.
 
@@ -63,8 +65,7 @@ when it works. That is what "judged against" means.
 - **PR and CI inside the session** — the session's PR and check status, failing checks
   sent back to the session, commit / push / open PR from Koloft (#215). The end of the
   loop that a session started from an issue or PR (#218) begins.
-- **Point the agent at things** — pick an element in the Workbench browser (#217); a
-  one-click review by a sibling session (#222).
+- **Point the agent at things** — pick an element in the Workbench browser (#217).
 - **Many sessions, one change** — warn when two sessions write the same file (#221); each
   session's listening ports, opened in the Workbench browser (#224).
 - **Finding and branching sessions** — full-text search across transcripts (#220); fork a
@@ -107,6 +108,9 @@ Reopen one of these only with new evidence, not a new argument.
   command, because a message delivers `/compact` as plain text (CC§12, CODEX§21); Koloft
   types it only when that session is idle with no question or menu showing.
 
+- **A one-click Review button that starts a sibling to review the diff** (#222) — a
+  session already starts its own sibling session or subagent to review its changes
+  when asked.
 - **Checkpoints / rewind** — native in Claude Code (`/rewind`). At most, surface the list.
 - **Split panes / tiled layouts** — high cost on xterm.js for a window whose centre is
   one TUI.

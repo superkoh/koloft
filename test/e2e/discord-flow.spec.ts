@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
-import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
+import { installCodex, installGhForWorkspaceA, seedSettings, type E2EEnv } from './helpers/env'
 import {
   newSessionInWith,
   readCalls,
@@ -737,4 +737,34 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await fake.close()
     }
   })
+
+  for (const backend of ['claude', 'codex'] as const) {
+    test(`a ${backend} conductor reads GitHub through koloft gh: Koloft runs gh with the workspace’s repository added, and refuses a command that would write without running gh`, async ({
+      env
+    }) => {
+      if (backend === 'codex') installCodex(env)
+      seedConductor(env, backend)
+      const ghLog = installGhForWorkspaceA(env, '{"state":"MERGED"}')
+      const fake = await startFakeDiscord(env)
+      const { app, page } = await connected(env, fake)
+      try {
+        fake.say(OWNER, '/koloft gh pr merge 389')
+        fake.say(OWNER, '/koloft gh pr view 389 --json state')
+        await expect
+          .poll(() => (fs.existsSync(ghLog) ? fs.readFileSync(ghLog, 'utf8') : ''), {
+            timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+          })
+          .toBe('pr view 389 --json state --repo acme/app\n')
+        if (backend === 'claude') {
+          const conductorTab = await tabOf(page, bindingOnDisk(env)!.sessionIds[0])
+          await expect
+            .poll(() => terminalText(page, conductorTab))
+            .toMatch(/koloft: usage: koloft gh pr view[\s\S]*\{"state":"MERGED"\}/)
+        }
+      } finally {
+        await quitAndClose(app)
+        await fake.close()
+      }
+    })
+  }
 })
