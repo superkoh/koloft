@@ -342,6 +342,14 @@ test.describe('real third-party tools (playwright-mcp, playwright-cli), unmodifi
       expect((await cli(['go-back'], env.home)).code).toBe(0)
       expect((await cli(['eval', 'document.title'], env.home)).out).toContain('Order')
 
+      // PLATFORM§16
+      await page.evaluate(() => ((window as unknown as { __hostMark: number }).__hostMark = 1))
+      expect((await cli(['reload'], env.home)).code).toBe(0)
+      expect((await cli(['eval', 'document.title'], env.home)).out).toContain('Order')
+      expect(
+        await page.evaluate(() => (window as unknown as { __hostMark?: number }).__hostMark)
+      ).toBe(1)
+
       await openBrowser(page)
       await expect(openTabs(page)).toHaveCount(1, { timeout: 30_000 })
       await cli(['close'], env.home)
