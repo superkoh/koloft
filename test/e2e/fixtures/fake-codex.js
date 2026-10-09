@@ -91,7 +91,11 @@ function signIn() {
 }
 
 if (argv[0] === 'app-server') {
-  append('fake-codex-server-calls.jsonl', { argv, cwd: process.cwd() })
+  append('fake-codex-server-calls.jsonl', {
+    argv,
+    cwd: process.cwd(),
+    portOffset: process.env.KOLOFT_PORT_OFFSET || null
+  })
   let initialized = false
   let active
   let activeTurn

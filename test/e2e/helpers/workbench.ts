@@ -375,6 +375,30 @@ export function claudeRepliesIn(jsonl: string): string[] {
   })
 }
 
+export function claudeToolResultsIn(jsonl: string): string[] {
+  return jsonl.split('\n').flatMap((line) => {
+    try {
+      const record = JSON.parse(line)
+      const content = record.type === 'user' ? record.message?.content : undefined
+      return Array.isArray(content)
+        ? content.flatMap((part: { type?: string; content?: unknown }) => {
+            if (part?.type !== 'tool_result') return []
+            if (typeof part.content === 'string') return [part.content]
+            return Array.isArray(part.content)
+              ? [
+                  part.content
+                    .map((c: { text?: unknown }) => (typeof c?.text === 'string' ? c.text : ''))
+                    .join('')
+                ]
+              : []
+          })
+        : []
+    } catch {
+      return []
+    }
+  })
+}
+
 export function claudePrompts(transcript: string): string[] {
   return fs.existsSync(transcript) ? claudePromptsIn(fs.readFileSync(transcript, 'utf8')) : []
 }

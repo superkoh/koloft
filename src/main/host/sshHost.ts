@@ -14,6 +14,7 @@ import {
 import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { shq } from '@shared/shellQuote'
 import { EDIT_OPEN_MAX_BYTES, EDIT_WRITE_MAX_BYTES } from '@shared/editLimits'
+import { portOffset } from '@shared/worktreeName'
 import { contentHitsOf, gitGrepArgs, rankFiles, rgArgs, visibleEntries } from '../fileTree'
 import {
   MAX_READ_BYTES,
@@ -41,6 +42,7 @@ import { launchMode } from '../remote/sync'
 import { ensureControlDir, sshLinkBroke, sshOptions, type BytesResult } from '../remote/ssh'
 import { claudeArgv } from '../claudeArgs'
 import { listSkills, type SkillFs } from '../skillList'
+import { worktreeNameAround } from '../resumePlan'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host, ShellLaunch } from './host'
 
 export interface MachineAccount {
@@ -632,6 +634,7 @@ export class SshHost implements Host {
     const root = d.realPath(this.bare(spec.root))
     const cwd = spec.cwd ? this.bare(spec.cwd) : root
     const wsRoot = spec.fallbackCwd ? d.realPath(this.bare(spec.fallbackCwd)) : root
+    const worktree = spec.worktree ?? worktreeNameAround(cwd)
     const pkg = d.machinePackage()
     const machineDir = remoteMachineDir(pkg.name)
     await this.kills.get(tmuxName)
@@ -652,6 +655,7 @@ export class SshHost implements Host {
           fallbackCwd: wsRoot !== cwd ? wsRoot : undefined,
           banner: account?.banner ?? OWN_LOGIN_BANNER,
           env: account?.env,
+          portOffset: worktree ? portOffset(worktree) : undefined,
           settings: d.hookSettings(tabId, machineDir),
           claudeArgs: args.args
         })

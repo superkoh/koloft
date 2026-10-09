@@ -311,7 +311,11 @@ export const HAVE_LINUX_CLAUDE = fs.existsSync(LINUX_CLAUDE) && !!CLAUDE_TOKEN
 export const NEEDS_LINUX_CLAUDE =
   'set KOLOFT_SMOKE_CLAUDE_LINUX (a Linux claude binary for the lab machine’s CPU) and KOLOFT_SMOKE_OAUTH_TOKEN or KOLOFT_SMOKE_ACCOUNT'
 
-export function useRealClaudeOnTheMachine(env: E2EEnv, lab: SshLab): void {
+export function useRealClaudeOnTheMachine(
+  env: E2EEnv,
+  lab: SshLab,
+  alsoTrusted: string[] = []
+): void {
   installOnTarget(lab, LINUX_CLAUDE, '/usr/local/bin/claude')
   // CC§9 CC§10
   runOnTarget(
@@ -321,7 +325,9 @@ export function useRealClaudeOnTheMachine(env: E2EEnv, lab: SshLab): void {
       JSON.stringify({
         hasCompletedOnboarding: true,
         bypassPermissionsModeAccepted: true,
-        projects: { '/home/kuser/proj': { hasTrustDialogAccepted: true } }
+        projects: Object.fromEntries(
+          ['/home/kuser/proj', ...alsoTrusted].map((dir) => [dir, { hasTrustDialogAccepted: true }])
+        )
       })
     )} > .claude.json`
   )

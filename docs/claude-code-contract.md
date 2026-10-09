@@ -344,6 +344,35 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
   any other path mis-creates a same-named NEW worktree — so "open an existing
   worktree" must cd into its checkout and run bare `claude`, never `-w`. A bare
   `-w` with no name invents a random three-word name.
+- **`-w` copies the files `.worktreeinclude` names into a NEW worktree; nothing else
+  does.** The file sits at the repo root and holds `.gitignore`-style patterns (blank
+  lines and `#` lines skipped); a file is copied only when it matches a pattern AND git
+  ignores it (`git ls-files --others --ignored --exclude-standard`). A symbolic link is
+  skipped ("Skipping symlink in .worktreeinclude"). Read 2026-10-08 from the claude
+  2.1.294 binary (`strings`, the function that reads `.worktreeinclude`). That an
+  existing worktree entered with `-w` is reused as-is, so a worktree rebuilt by someone
+  else's `git worktree add` gets no copy, comes from the #5 probe on 2.1.287 (binary
+  strings + docs).
+- **A `WorktreeCreate` hook is not a setup step: it REPLACES `git worktree add`.** It is
+  meant for other version-control systems; the hook must make the folder and print its
+  path, and with the hook set the `.worktreeinclude` copy does not run. Setup work in a
+  new worktree belongs in a `SessionStart` hook. Probed for #5 on claude 2.1.287 (binary
+  strings + docs). The 2.1.294 strings agree that the hook makes the worktree
+  ("configure WorktreeCreate and WorktreeRemove hooks in settings.json for another
+  version-control system"; "Provides the absolute path to the created worktree
+  directory"); that the copy is then off was not re-read there.
+- **CC's Bash tool runs its commands with the env `claude` was started with**, so a
+  variable set on the launch reaches the model's shell in a `-w` worktree session:
+  `KOLOFT_PORT_OFFSET` set in the pty env on this Mac, and exported by the remote tab
+  script right before `exec claude` inside tmux on a Linux machine over ssh. In both, the
+  model ran `echo "$KOLOFT_PORT_OFFSET"`, the tool result held the worktree name's
+  offset, and the model replied with it. Measured 2026-10-08 with claude 2.1.294 (macOS,
+  and Linux in the Docker ssh lab, Debian bookworm's tmux), real model turns; established
+  by `agent-tools-real-smoke.spec.ts` › "a real Claude Code in a worktree session echoes,
+  with its Bash tool, the port offset of that worktree’s name" and
+  `remote-ssh-lab.spec.ts` › "E-SSH-11: a REAL claude on the machine, in a worktree
+  session made there through ssh and tmux, echoes with its Bash tool the port offset of
+  that worktree’s name (opt-in, spends real money)".
 - **CC's background retention sweep leaves hand-made worktrees under
   `.claude/worktrees/` alone from 2.1.246 on** (changelog, read 2026-09-18, not
   measured). Before that it could remove them.
@@ -354,7 +383,8 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
 Evidence: experiments E3/E4/E8, 2026-08-10, plus `strings` analysis of the claude
 2.1.227 binary. Koloft dependents: the resume decision tree in `src/main/resumePlan.ts`
 (behind `sessions:resumePlan`); `claudeArgv` in `src/main/claudeArgs.ts`, which composes
-`--resume`/`-w`.
+`--resume`/`-w`; `copyWorktreeIncludes` in `src/main/sessionWorktrees.ts`, which copies
+the same files into a worktree Koloft makes or rebuilds itself.
 
 ## §4 Worktree session exit
 

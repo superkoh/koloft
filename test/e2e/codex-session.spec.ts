@@ -20,12 +20,14 @@ import {
   wbUnreadTabs
 } from './helpers/workbench'
 import { setupChangeFixture } from './helpers/filesFixture'
+import { portOffset } from '../../src/shared/worktreeName'
 import {
   addWorkspace,
   centerTerm,
   chooseBackend,
   clickAppMenuItem,
   dialogPrimary,
+  gitCommitAll,
   gitInit,
   newSessionInWith,
   oneStillRunning,
@@ -461,9 +463,16 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('Codex worktree survives close and can be rebuilt on resume', async ({ env }) => {
+  test('Codex worktree survives close and can be rebuilt on resume; each time it is made it gets the .worktreeinclude files, and every run in it the same port offset', async ({
+    env
+  }) => {
     installCodex(env)
     gitInit(env.workspaces.a)
+    fs.writeFileSync(path.join(env.workspaces.a, '.gitignore'), 'NOTES.md\n.env\n')
+    fs.writeFileSync(path.join(env.workspaces.a, '.worktreeinclude'), '.env\n')
+    gitCommitAll(env.workspaces.a)
+    fs.writeFileSync(path.join(env.workspaces.a, '.env'), 'PORT=3000\n')
+    const includedIn = (dir: string): boolean => fs.existsSync(path.join(dir, '.env'))
     const app = await launchApp(env)
     try {
       const page = await app.firstWindow()
@@ -478,6 +487,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       const first = codexCalls(env)[0]
       expect(first.cwd).not.toBe(env.workspaces.a)
       expect(fs.existsSync(first.cwd)).toBe(true)
+      expect(includedIn(first.cwd)).toBe(true)
       let menu = await openMenu(page, codexRows(page))
       await expect(menu.locator('.mi', { hasText: 'Reveal in Finder' })).not.toHaveClass(/disabled/)
       await page.keyboard.press('Escape')
@@ -502,7 +512,16 @@ test.describe('Codex sessions through the real method chooser, process transport
       expect(codexCalls(env)[2].cwd).toBe(first.cwd)
       expect(codexCalls(env)[2].sessionId).toBe(first.sessionId)
       expect(fs.existsSync(first.cwd)).toBe(true)
+      expect(includedIn(first.cwd)).toBe(true)
       expect(readCalls(env)).toHaveLength(0)
+      const offsets = fs
+        .readFileSync(path.join(env.home, 'fake-codex-server-calls.jsonl'), 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => (JSON.parse(line) as { portOffset: string | null }).portOffset)
+        .filter((offset) => offset !== null)
+      const offset = String(portOffset('codex-feature'))
+      expect(offsets).toEqual([offset, offset, offset])
     } finally {
       await quitAndClose(app)
     }

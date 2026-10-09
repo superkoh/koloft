@@ -30,6 +30,7 @@ export interface ClaudeCall {
   cdpEndpoint?: string | null
   playwrightMcpEndpoint?: string | null
   playwrightCliSession?: string | null
+  portOffset: string | null
 }
 
 export function readCalls(env: E2EEnv): ClaudeCall[] {

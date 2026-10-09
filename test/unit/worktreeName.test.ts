@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isValidWorktreeName } from '@shared/worktreeName'
+import { isValidWorktreeName, portOffset } from '@shared/worktreeName'
 
 describe('isValidWorktreeName (§5 name rule)', () => {
   it('accepts letters, digits, dot, underscore and dash', () => {
@@ -32,5 +32,23 @@ describe('isValidWorktreeName (§5 name rule)', () => {
       expect(isValidWorktreeName(n), n).toBe(false)
     }
     expect(isValidWorktreeName('a-b')).toBe(true)
+  })
+})
+
+describe('portOffset', () => {
+  it('gives one worktree name the same offset every time, so a restarted session keeps its ports', () => {
+    expect(portOffset('codex-feature')).toBe(50)
+    expect(portOffset('featr')).toBe(20)
+  })
+
+  it('stays within 1..99 and spreads different names over the range', () => {
+    const offsets = new Set<number>()
+    for (let i = 0; i < 500; i++) {
+      const n = portOffset(`wt-${i}`)
+      expect(n).toBeGreaterThanOrEqual(1)
+      expect(n).toBeLessThanOrEqual(99)
+      offsets.add(n)
+    }
+    expect(offsets.size).toBeGreaterThan(80)
   })
 })

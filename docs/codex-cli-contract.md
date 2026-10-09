@@ -289,6 +289,18 @@ Checked 2026-09-24 with `strings` on the standalone codex-cli 0.153.4 binary: it
 `CODEX_SAGE_BACKFILL_TRACKER_TAB_REUSE` or `CODEX_SHELL`; that the CLI does not read
 those four, and what sets them, is inferred, not checked.
 
+**The model's shell commands run with the env the app-server was started with.**
+Measured 2026-10-08 with Codex CLI 0.161.0, a real model turn, a `CODEX_HOME` whose
+`config.toml` set only folder trust (no `shell_environment_policy`, from there or from
+Koloft's `-c` overrides): with
+`KOLOFT_PORT_OFFSET` in the `codex app-server` spawn env, the model's
+`echo "$KOLOFT_PORT_OFFSET"` ran as `["/bin/zsh","-lc",…]` in the thread's worktree and
+printed the value; the rollout's `item_completed` event holds it as a `CommandExecution`
+item with `aggregated_output` (also `stdout`, `formatted_output`). Established by
+`agent-tools-real-smoke.spec.ts` › "a real Codex in a worktree Koloft made gets the
+ignored files .worktreeinclude lists, and echoes, with its shell tool, the port offset of
+that worktree’s name".
+
 ## 11. Folder trust and the approval flags
 
 **Checked on 2026-09-24 with standalone Codex CLI 0.153.4 (`codex-cli 0.153.4`), without

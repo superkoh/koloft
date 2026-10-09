@@ -30,9 +30,12 @@ when it works. That is what "judged against" means.
 - **Worktree session bootstrap** — a setup script, copying gitignored files, a port offset,
   so a fresh worktree is usable the moment its session starts (#5). Creating the worktree
   session itself already works; cleanup afterwards is the agent's tool's, or
-  `koloft session close`'s (#116). `claude -w` already copies `.worktreeinclude` files and runs
-  `WorktreeCreate` hooks, so Koloft's part is the Codex worktrees it makes and the port
-  offset for both.
+  `koloft session close`'s (#116). `claude -w` already copies `.worktreeinclude` files; a
+  `WorktreeCreate` hook is not a setup step (it replaces `git worktree add` and turns that
+  copy off), so a setup script is left to each tool's own hooks (Claude Code
+  `SessionStart`). Koloft's part is the copy for the worktrees it makes or rebuilds
+  itself, and the port offset (`KOLOFT_PORT_OFFSET`) for every tab kind but remote Codex
+  (#99).
 - **Jump to the next waiting session** — one shortcut cycles through the sessions waiting
   for you, across workspaces (#216). A grouped sidebar view is not part of it.
 - **Broadcast input** — type once, send to the sessions you selected. The workspace →
