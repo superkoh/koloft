@@ -23,7 +23,12 @@ resuming a copy of a long session that had drifted, then given a Chinese task of
 | the quote, at the prompt only | 0 / 12 |
 | the quote, at the prompt and after every tool | 2 / 20, each fixed by the next note |
 
-The runs quoted the first 100 characters of the prompt; for Chinese that is the same
+The same drifted session given the task in Japanese, Korean, Spanish, German and
+Russian, 2 runs each, with the shipped script against the old sentence: notes in the
+wrong language 0 / 37 against 8 / 12 (all English); every final reply in the right
+language under both; an English task stayed English, and a Japanese task followed by a
+Spanish one in the same session was answered in each.
+The Chinese runs quoted the first 100 characters of the prompt; for Chinese that is the same
 300 bytes the hook keeps, for English up to three times less (not measured). Fresh
 sessions hardly drifted under any of them (4 English of 152 notes in 24 runs of up to 70
 tool calls), so no run measured a drifting session past about 20 tool calls: at the
