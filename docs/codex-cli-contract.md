@@ -588,10 +588,25 @@ folder then swapped for a link to a shared one holding another rollout, listed b
 Koloft links every account home's `sessions/` and `archived_sessions/` to the default
 home's, lists history once from the default home, and resumes a session in whichever
 account the picker chooses. A `codex exec` rollout (`source: "exec"`) is not in the
-default listing, which asks for interactive sources only. That a model turn then runs
-when the resuming login is not the one that started the session (each rollout's
-`session_meta` names its `creator_account_id`) is **inferred, not checked** — it needs
-two different Codex logins.
+default listing, which asks for interactive sources only.
+
+**A session started on one login takes a model turn on another.** Checked 2026-10-09
+with Codex CLI 0.162.0 and two real ChatGPT logins (one Plus, one Pro, different
+emails), each signed in with `codex login --device-auth` into its own throwaway
+`CODEX_HOME`, whose `sessions/`, `archived_sessions/` and `config.toml` were links into
+a third throwaway default home. Login A's app-server ran `thread/start` and one
+`gpt-6-luna` turn ("Reply with exactly: ONE" → "ONE"). Login B's app-server then ran
+`thread/resume` on that id (ok, the rollout path inside the shared folder) and a turn
+asking what it had replied before: it answered "ONE … TWO" and `turn/completed` with
+status `completed` — the earlier turns carried over, and the rollout's
+`creator_account_id` did not stop it. The shared folder still held one rollout. Both
+plans' `model/list` included `gpt-6-luna`.
+
+**The Assist one-shot runs in such a home.** Same day and setup, login B's home:
+`codex exec --skip-git-repo-check --ephemeral --ignore-user-config --ignore-rules -s
+read-only -m gpt-6-luna -C /tmp -` with the system text and task on stdin exited 0 in
+about 2 s, printed only the title on stdout, reported 2,538 tokens on stderr, and wrote
+no rollout into the shared `sessions/`.
 
 Not tried, because they need a second real login or would open a browser on this Mac:
 - that `codex login` with `CODEX_HOME` set signs in only that home and exits 0 once

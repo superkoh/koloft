@@ -9,7 +9,7 @@ import { useSettingsUpdate } from './settings/useSettingsUpdate'
 // CC§9 CODEX§15
 export const ASSIST_RUNS_ON: Record<BackendId, string> = {
   claude: 'Haiku, about 750 tokens a job',
-  codex: 'GPT-6 Luna, about 5,000 tokens a job'
+  codex: 'GPT-6 Luna, a few thousand tokens a job'
 }
 
 export const ASSIST_COST_LINE =
