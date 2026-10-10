@@ -102,9 +102,8 @@ test.describe('Workbench titlebar toggle, and the panel seam with the retired au
       const page2 = await app2.firstWindow()
       await page2.waitForLoadState('domcontentloaded')
       const rowA = wsRows(page2, 'ws-a').first()
-      await expect(rowA).toHaveClass(/\bcold\b/, { timeout: 30_000 })
-      await rowA.click()
       await waitForCalls(env, 2)
+      await rowA.click()
       await waitPanelAttached(page2)
       await expect(rowA).not.toHaveClass(/\bcold\b/, { timeout: 60_000 })
       await expect(workbenchPanel(page2)).toBeHidden({ timeout: 30_000 })
@@ -204,7 +203,6 @@ test.describe('Workbench titlebar toggle, and the panel seam with the retired au
       const page2 = await app2.firstWindow()
       await page2.waitForLoadState('domcontentloaded')
       const row = wsRows(page2, 'ws-a').first()
-      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
 
       await expect.poll(() => layoutOnDisk(env).version, { timeout: 30_000 }).toBe(6)
       const upgraded = layoutOnDisk(env)

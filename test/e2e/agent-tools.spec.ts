@@ -287,8 +287,6 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       await page.waitForLoadState('domcontentloaded')
       await waitBooted(page)
       const rows = wsRows(page, 'repo')
-      await expect(rows).toHaveClass(/\bcold\b/, { timeout: 30_000 })
-      await rows.click()
       await expect(rows).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
       const resumed = readCalls(env).at(-1)!
       expect(resumed.argv).toContain('--resume')
@@ -367,6 +365,9 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       await expect(rowOf(page, 'parent')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
       expect(await koloftInSession(page, 'session new -w kid --name kid -- hello')).toBe('0')
       await expect(rowOf(page, 'kid')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      await openMenu(page, rowOf(page, 'kid'))
+      await page.locator('.menu .mi', { hasText: /^Close$/ }).click()
+      await expect(rowOf(page, 'kid')).toHaveClass(/\bcold\b/, { timeout: 30_000 })
     } finally {
       await quitAndClose(before)
     }

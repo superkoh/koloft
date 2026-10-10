@@ -242,7 +242,7 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
         const page2 = await app2.firstWindow()
         await page2.waitForLoadState('domcontentloaded')
         const row = wsRows(page2, 'ws-a').first()
-        await expect(row).toHaveClass(/\bcold\b/, { timeout: 60_000 })
+        await expect(row).toHaveClass(/\bst-(working|waiting|idle)\b/, { timeout: 60_000 })
         await row.click()
         await waitPanelAttached(page2)
         await expect(wbTabs(page2)).toHaveCount(2, { timeout: 30_000 })
