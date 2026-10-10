@@ -381,6 +381,26 @@ describe('CodexSessions', () => {
     expect(sessions.list()).toEqual([])
   })
 
+  it('a restarting session reads as running from the old run stopping until the new one starts, and cold again, with the sidebar told, when the new one fails', async () => {
+    const launched = await sessions.launch({ kind: 'codex', cwd: repo })
+    bind()
+    const serverUp = deferred<void>()
+    mocks.create.mockImplementationOnce(async () => {
+      await serverUp.promise
+      throw new Error('app-server did not start')
+    })
+    const stopping = sessions.stop(launched.id)
+    const restarting = sessions.resume({ sessionId: codexSessionKey(A), cwd: repo })
+    await stopping
+    expect(sessions.hasTab(launched.id)).toBe(false)
+    expect(sessions.rows(repo)[0]).toMatchObject({ id: codexSessionKey(A), running: true })
+    vi.mocked(deps.changed).mockClear()
+    serverUp.resolve()
+    await expect(restarting).rejects.toThrow('app-server did not start')
+    expect(sessions.rows(repo)[0]).toMatchObject({ id: codexSessionKey(A), running: false })
+    expect(deps.changed).toHaveBeenCalled()
+  })
+
   it('retains members for uncertain native exit, evicts only an acknowledged native unsubscribe', async () => {
     const first = await sessions.launch({ kind: 'codex', cwd: repo })
     bind()

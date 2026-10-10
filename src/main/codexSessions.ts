@@ -219,6 +219,7 @@ export class CodexSessions {
   private historyError?: Error
   private listed = false
   private launchingKeys = new Set<string>()
+  private relaunchingKeys = new Set<string>()
   private pendingLaunches = new Set<Promise<{ id: string; cwd: string }>>()
   private shuttingDown = false
   private emitTimer?: ReturnType<typeof setTimeout>
@@ -410,6 +411,9 @@ export class CodexSessions {
     return [...this.runs.values()].find((r) => r.info?.sessionId === key || r.resumeKey === key)
       ?.tabId
   }
+  private readsRunning(key: string): boolean {
+    return !!this.aliveTabFor(key) || this.relaunchingKeys.has(key)
+  }
   occupantOf(dir: string): string | null {
     const target = path.resolve(dir)
     for (const run of this.runs.values()) {
@@ -471,7 +475,7 @@ export class CodexSessions {
       r.invalidCwd = !exists(m.cwd)
       r.nativeSessionId = m.id
       r.createdAt = m.createdAt
-      r.running = !!this.aliveTabFor(m.key)
+      r.running = this.readsRunning(m.key)
       const resource = m.worktreeResourceId
         ? this.store.getResource(m.worktreeResourceId)
         : undefined
@@ -513,7 +517,7 @@ export class CodexSessions {
       title: t.name || t.preview?.slice(0, 100) || CODEX_PLACEHOLDER_TITLE,
       cwd: t.cwd,
       worktree: resource?.worktreeName ?? this.deps.projectInfo(t.cwd).worktreeName ?? 'main',
-      running: !!this.aliveTabFor(key),
+      running: this.readsRunning(key),
       invalidCwd: !exists(t.cwd),
       mtime: (t.updatedAt ?? t.createdAt ?? 0) * 1000,
       ...(resource
@@ -722,6 +726,7 @@ export class CodexSessions {
     }
     const pending = start().finally(() => {
       if (key) this.launchingKeys.delete(key)
+      if (key && this.relaunchingKeys.delete(key)) this.changed()
       this.pendingLaunches.delete(pending)
     })
     this.pendingLaunches.add(pending)
@@ -733,7 +738,10 @@ export class CodexSessions {
     const previous = [...this.runs.values()].find(
       (r) => r.info?.sessionId === key || r.resumeKey === key
     )
-    if (previous?.stopping) await previous.stopping
+    if (previous?.stopping) {
+      this.relaunchingKeys.add(key)
+      await previous.stopping
+    }
     this.assertStarting()
     if (this.aliveTabFor(key)) throw new Error('This Codex session is already open.')
   }
