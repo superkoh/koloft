@@ -3108,9 +3108,15 @@ function killTabFromMain(tabId: string): void {
 }
 
 function killTabPty(tabId: string, restarting = false): Promise<boolean> {
-  if (sleepers.has(tabId)) {
+  const sleeper = sleepers.get(tabId)
+  if (sleeper) {
     forgetSleeper(tabId)
-    return Promise.resolve(true)
+    const tree = projectInfoFor(sleeper.cwd).treeRoot
+    const resource =
+      sleeper.kind === 'codex' && !restarting
+        ? codexSessions?.store.listResources().find((r) => r.worktreePath === tree)
+        : undefined
+    return (resource ? removeUntouchedCodexWorktree(resource) : Promise.resolve()).then(() => true)
   }
   discordNotices?.closed(tabId)
   discordLive?.closed(tabId)

@@ -727,7 +727,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('a Codex worktree tab that goes to sleep keeps its untouched worktree, and wakes in it', async ({
+  test('a Codex worktree tab that goes to sleep keeps its untouched worktree and wakes in it, and closing it while asleep takes the worktree with it', async ({
     env
   }) => {
     installCodex(env)
@@ -752,7 +752,15 @@ test.describe('Codex sessions through the real method chooser, process transport
 
       await codexRows(page).click()
       await expect.poll(() => codexCalls(env).length).toBe(2)
-      expect(codexCalls(env)[1]).toMatchObject({ cwd: first.cwd, sessionId: first.sessionId })
+      const woken = codexCalls(env)[1]
+      expect(woken).toMatchObject({ cwd: first.cwd, sessionId: first.sessionId })
+
+      await expect(codexRows(page)).toHaveClass(/st-waiting/)
+      await wsRows(page, 'ws-b').first().click()
+      await expect.poll(() => processAlive(woken.pid), { timeout: 40_000 }).toBe(false)
+      await openMenu(page, codexRows(page))
+      await page.locator('.menu .mi', { hasText: /^Close$/ }).click()
+      await expect.poll(() => fs.existsSync(first.cwd)).toBe(false)
     } finally {
       await quitAndClose(app)
     }
