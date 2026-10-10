@@ -6,8 +6,15 @@ import { spawn } from 'child_process'
 
 vi.mock('node-pty', () => ({ spawn: vi.fn() }))
 
-import { CLAUDE_AGENT_SHIM, writeCodexAgentShim } from '../../src/main/agentShim'
-import { AgentRequests, answered, refused, type AgentVerbs } from '../../src/main/agentRequests'
+import { CLAUDE_AGENT_SHIM, REMOTE_AGENT_SHIM, writeCodexAgentShim } from '../../src/main/agentShim'
+import {
+  AgentRequests,
+  answered,
+  refused,
+  replyJson,
+  type AgentVerbs
+} from '../../src/main/agentRequests'
+import { watchMirroredAgentRequests } from '../../src/main/remote/agentMirror'
 import { watchJsonDrops } from '../../src/main/jsonDrops'
 import type { SessionInfo } from '../../src/shared/types'
 
@@ -116,6 +123,37 @@ describe('koloft command in a Claude session', () => {
     expect(r.status).toBe(1)
     expect(r.stderr).toMatch(/^koloft: /)
     expect(fs.readdirSync(agentDir)).toEqual([])
+  })
+})
+
+describe('koloft command in a Claude session on a remote machine', () => {
+  it('writes its request, naming its tab and its tmux session, into the folder the mirror brings back, and prints the answer Koloft writes beside it', async () => {
+    const hookDir = path.join(base, '.koloft', 'hook-sessions')
+    const remoteShim = path.join(base, 'machine-bin', 'koloft')
+    fs.mkdirSync(path.dirname(remoteShim))
+    fs.writeFileSync(remoteShim, REMOTE_AGENT_SHIM, { mode: 0o755 })
+    fs.writeFileSync(path.join(shimDir, 'tmux'), '#!/bin/sh\necho k-sess1\n', { mode: 0o755 })
+    fs.mkdirSync(hookDir, { recursive: true })
+    const raws: unknown[] = []
+    const stop = watchMirroredAgentRequests(hookDir, (id, raw) => {
+      raws.push(raw)
+      fs.writeFileSync(path.join(hookDir, `res-${id}.json`), replyJson(answered('hi')))
+      fs.rmSync(path.join(hookDir, `req-${id}.json`))
+    })
+    try {
+      const r = await run(remoteShim, ['echo', 'hi'], {
+        HOME: base,
+        PATH: `${shimDir}:/usr/bin:/bin`,
+        KOLOFT_TAB_ID: TAB,
+        TMUX: '/tmp/tmux-1/koloft,1,0',
+        TMUX_PANE: '%0'
+      })
+      expect(r.stdout).toBe('hi\n')
+      expect(raws).toEqual([{ tabId: TAB, tmux: 'k-sess1', argv: ['echo', 'hi'], cwd: base }])
+      expect(fs.readdirSync(hookDir)).toEqual([])
+    } finally {
+      stop()
+    }
   })
 })
 

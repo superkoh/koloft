@@ -12,6 +12,8 @@ vi.mock('electron', async () => {
 })
 
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../src/main/backends/claude'
+import { watchMirroredAgentRequests } from '../../src/main/remote/agentMirror'
+import { mirrorHookDir } from '../../src/main/remote/paths'
 
 function fakeTracker(): ClaudeBackendDeps['tracker'] {
   const tracked = new Map<string, { sessionId: string }>()
@@ -69,6 +71,65 @@ function backendWithDirs(): {
     }
   }
 }
+
+function machineBackend(tmuxOfTab: Record<string, string>): {
+  backend: ClaudeBackend
+  boundTo: Map<string, string>
+  events: unknown[]
+  mirrorDir: string
+} {
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-backend-machine-'))
+  const boundTo = new Map(Object.keys(tmuxOfTab).map((id) => [id, `sid-of-${id}`]))
+  const events: unknown[] = []
+  const backend = new ClaudeBackend({
+    pty: { get: (id: string) => (tmuxOfTab[id] ? {} : undefined), clearResumeIntent: () => {} },
+    tracker: {
+      infoOf: (id: string) => (boundTo.has(id) ? { sessionId: boundTo.get(id) } : undefined),
+      bindSession: (id: string, _transcript: string, sid: string) => void boundTo.set(id, sid),
+      remoteOf: (id: string) =>
+        tmuxOfTab[id] ? { host: 'devbox', tmuxName: tmuxOfTab[id] } : undefined,
+      setRemoteTmuxName: () => {},
+      list: () => Object.keys(tmuxOfTab).map((tabId) => ({ tabId, alive: true }))
+    },
+    workspaces: () => ({
+      remoteTargets: () => [{ host: 'devbox', paths: [] }],
+      onSessionStart: () => {},
+      onSessionRebind: () => {},
+      onSessionBound: () => {},
+      dropOwnership: () => {}
+    }),
+    userData: () => userData,
+    events: (id: string, event: unknown) => events.push([id, event])
+  } as unknown as ClaudeBackendDeps)
+  return { backend, boundTo, events, mirrorDir: mirrorHookDir(userData, 'devbox') }
+}
+
+describe('ClaudeBackend: koloft requests from a session on a remote machine', () => {
+  it('a koloft request the hook mirror brings back goes to the koloft answer, and never rebinds the tab it names', async () => {
+    const m = machineBackend({ 'pty-a': 'k-sa', 'pty-b': 'k-sb' })
+    const asked: [string, string][] = []
+    m.backend.watchMirroredAgent = (host, dir) =>
+      watchMirroredAgentRequests(dir, (id) => asked.push([host, id]))
+    m.backend.watchRemoteHookMirrors()
+    const drop = (name: string, body: unknown): void =>
+      fs.writeFileSync(path.join(m.mirrorDir, name), JSON.stringify(body))
+
+    drop('req-r1.json', { tabId: 'pty-a', tmux: 'k-sa', argv: ['help'], cwd: '/home/u' })
+    drop('res-r0.json', { exit: 0, text: 'old answer' })
+    await vi.waitFor(() => expect(asked).toEqual([['devbox', 'r1']]), { timeout: 5000 })
+    drop('pty-b.json', { tabId: 'pty-b', event: 'start', source: 'clear', sessionId: 'sid-new' })
+    await vi.waitFor(() => expect(m.boundTo.get('pty-b')).toBe('sid-new'), { timeout: 5000 })
+
+    expect(m.boundTo.get('pty-a')).toBe('sid-of-pty-a')
+  })
+
+  it('finds the calling tab by its tmux session before its tab id, which a Koloft restart can hand to another tab, and only among the tabs on the machine the request came from', () => {
+    const { backend } = machineBackend({ 'pty-a': 'k-sa', 'pty-b': 'k-sb' })
+    expect(backend.remoteCaller('devbox', { tabId: 'pty-b', tmux: 'k-sa' })).toBe('pty-a')
+    expect(backend.remoteCaller('devbox', { tabId: 'pty-b', tmux: '' })).toBe('pty-b')
+    expect(backend.remoteCaller('elsewhere', { tabId: 'pty-a', tmux: 'k-sa' })).toBeUndefined()
+  })
+})
 
 describe('ClaudeBackend: a local tab binds once both of its start notes are on disk', () => {
   it("binds the session when claude's SessionStart is read before the shim's registration of the tab", async () => {

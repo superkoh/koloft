@@ -187,6 +187,19 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
         { name: '/tidy-up', source: 'home' }
       ])
     })
+
+    it('answers a koloft request on the machine: the reply lands whole beside it and the request goes, while a request whose command already gave up gets no reply', async () => {
+      const hookDir = path.join(home, '.koloft', 'hook-sessions')
+      fs.mkdirSync(hookDir, { recursive: true })
+      fs.writeFileSync(path.join(hookDir, 'req-r1.json'), '{}')
+      const reply = '{"exit":0,"text":"it\'s \\"done\\""}'
+
+      await machine().answerAgent('r1', reply)
+      await machine().answerAgent('r2', reply)
+
+      expect(fs.readdirSync(hookDir)).toEqual(['res-r1.json'])
+      expect(fs.readFileSync(path.join(hookDir, 'res-r1.json'), 'utf8')).toBe(reply)
+    })
   }
 )
 
