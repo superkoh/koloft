@@ -143,12 +143,14 @@ describe('SessionWorktrees', () => {
     expect(copied(rebuilt.worktreePath)).toEqual(['.env', 'secrets/key.txt'])
   })
 
-  it('calls a worktree untouched only while it is a Koloft-made one on its own worktree-<name> branch at the commit it was made from, with no change, no new file and no ignored file but unchanged copies from the main checkout', async () => {
-    fs.writeFileSync(path.join(repo, '.gitignore'), '.env\nbuild/\n')
-    fs.writeFileSync(path.join(repo, '.worktreeinclude'), '.env\n')
+  it('calls a worktree untouched only while it is a Koloft-made one on its own worktree-<name> branch at the commit it was made from, with no change, no new file and no ignored file, in an ignored folder too, but unchanged copies from the main checkout', async () => {
+    fs.writeFileSync(path.join(repo, '.gitignore'), '.env\nsecrets/\nbuild/\n')
+    fs.writeFileSync(path.join(repo, '.worktreeinclude'), '.env\nsecrets/\n')
     git('add', '.gitignore', '.worktreeinclude')
     git('commit', '-m', 'Ignore rules')
     fs.writeFileSync(path.join(repo, '.env'), 'PORT=3000\n')
+    fs.mkdirSync(path.join(repo, 'secrets'))
+    fs.writeFileSync(path.join(repo, 'secrets', 'key.txt'), 'k')
     let n = 0
     const untouchedAfter = async (touch: (tree: string) => void): Promise<boolean> => {
       const resource = await worktrees.create(repo, `case-${++n}`)
@@ -166,6 +168,12 @@ describe('SessionWorktrees', () => {
     ).toBe(false)
     expect(
       await untouchedAfter((tree) => fs.writeFileSync(path.join(tree, '.env'), 'PORT=4000\n'))
+    ).toBe(false)
+    expect(
+      await untouchedAfter((tree) => fs.writeFileSync(path.join(tree, 'secrets', 'key.txt'), 'K'))
+    ).toBe(false)
+    expect(
+      await untouchedAfter((tree) => fs.writeFileSync(path.join(tree, 'secrets', 'extra.txt'), 'e'))
     ).toBe(false)
     expect(
       await untouchedAfter((tree) => {

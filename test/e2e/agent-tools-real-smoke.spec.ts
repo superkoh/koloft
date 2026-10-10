@@ -979,6 +979,74 @@ test.describe('/exit from a REAL Claude Code worktree session: an opt-in case; i
   })
 })
 
+const JUST_ANSWER = 'Reply with the single word ok. Do nothing else.'
+const WRITE_A_FILE =
+  'Create a file named done.txt containing the word done in the current folder. Do nothing else.'
+const A_REMOVAL_WOULD_HAVE_FINISHED_MS = 3_000
+
+function closedCodexWorktree(env: E2EEnv, turn: string | undefined, kept: boolean): Promise<void> {
+  test.setTimeout(A_REAL_MODEL_TURN_MS + 180_000)
+  return inARealWorktreeSession(
+    env,
+    'other',
+    useRealCodex,
+    [],
+    async ({ page, rows, repo, tree }) => {
+      if (turn) {
+        await ask(page, rows, turn)
+        await expect(rows).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: A_REAL_MODEL_TURN_MS })
+      }
+      if (kept) await expect.poll(() => fs.existsSync(path.join(tree, 'done.txt'))).toBe(true)
+      const status = runGit(tree, 'status', '--porcelain', '--ignored', '--untracked-files=all')
+      await test.info().attach('worktree-status-before-close', { body: status })
+      const branch = (): string => runGit(repo, 'branch', '--list', `worktree-${WORKTREE}`).trim()
+      await openMenu(page, rows)
+      await page.locator('.menu .mi', { hasText: /^Close$/ }).click()
+      await expect(rows).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      if (kept) {
+        await page.waitForTimeout(A_REMOVAL_WOULD_HAVE_FINISHED_MS)
+        expect(fs.existsSync(path.join(tree, 'done.txt'))).toBe(true)
+        expect(branch()).not.toBe('')
+      } else {
+        await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+        expect(branch()).toBe('')
+      }
+    }
+  )
+}
+
+test.describe('closing a REAL Codex worktree session: opt-in cases; the ones with a turn spend real money', () => {
+  test('a real Codex worktree session closed before any turn takes its worktree folder and worktree-<name> branch with it', async ({
+    env
+  }) => {
+    test.skip(
+      !HAVE_REAL_CODEX,
+      'set KOLOFT_SMOKE_CODEX (absolute path of a real codex binary) and KOLOFT_SMOKE_CODEX_HOME (a signed-in CODEX_HOME; only its auth.json is copied)'
+    )
+    await closedCodexWorktree(env, undefined, false)
+  })
+
+  test('a real Codex worktree session that only answered takes its worktree folder and branch with it when closed', async ({
+    env
+  }) => {
+    test.skip(
+      !HAVE_REAL_CODEX,
+      'set KOLOFT_SMOKE_CODEX (absolute path of a real codex binary) and KOLOFT_SMOKE_CODEX_HOME (a signed-in CODEX_HOME; only its auth.json is copied)'
+    )
+    await closedCodexWorktree(env, JUST_ANSWER, false)
+  })
+
+  test('a real Codex worktree session that wrote a file keeps its worktree folder and branch when closed', async ({
+    env
+  }) => {
+    test.skip(
+      !HAVE_REAL_CODEX,
+      'set KOLOFT_SMOKE_CODEX (absolute path of a real codex binary) and KOLOFT_SMOKE_CODEX_HOME (a signed-in CODEX_HOME; only its auth.json is copied)'
+    )
+    await closedCodexWorktree(env, WRITE_A_FILE, true)
+  })
+})
+
 const SECRET = 'SECRET-PAPAYA-58'
 const CHILD_WORKS_WHILE_THE_PARENT_IS_CLOSED_S = 40
 const START_A_CHILD_THAT_REPORTS_BACK = `Run this shell command exactly once: koloft session new -- "First run the shell command perl -e 'sleep ${CHILD_WORKS_WHILE_THE_PARENT_IS_CLOSED_S}' in the foreground and wait for it to end. Then read the file secret.txt in this folder and report its content back." Then end your turn at once: do not wait for that session, check on it or read secret.txt yourself.`

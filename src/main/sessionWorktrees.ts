@@ -109,15 +109,14 @@ export async function copyWorktreeIncludes(root: string, worktreePath: string): 
   }
 }
 
-function sameFileInRoot(root: string, tree: string, rel: string): boolean {
+async function sameFileInRoot(root: string, tree: string, rel: string): Promise<boolean> {
   try {
     const here = path.join(tree, rel)
     const there = path.join(root, rel)
-    return (
-      fs.lstatSync(here).isFile() &&
-      fs.lstatSync(there).isFile() &&
-      fs.readFileSync(here).equals(fs.readFileSync(there))
-    )
+    const [a, b] = await Promise.all([fs.promises.lstat(here), fs.promises.lstat(there)])
+    if (!a.isFile() || !b.isFile() || a.size !== b.size) return false
+    const [x, y] = await Promise.all([fs.promises.readFile(here), fs.promises.readFile(there)])
+    return x.equals(y)
   } catch {
     return false
   }
@@ -175,17 +174,18 @@ export class SessionWorktrees {
         git(tree, ['symbolic-ref', '--quiet', '--short', 'HEAD']),
         git(tree, ['rev-parse', 'HEAD']),
         git(tree, ['status', '--porcelain', '--untracked-files=all']),
-        git(tree, ['ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory'])
+        git(tree, ['ls-files', '-z', '--others', '--ignored', '--exclude-standard'])
       ])
-      return (
-        branch === `worktree-${resource.worktreeName}` &&
-        head === resource.originalHeadCommit &&
-        !changes &&
-        ignored
-          .split('\0')
-          .filter(Boolean)
-          .every((rel) => sameFileInRoot(resource.originalCwd, tree, rel))
+      if (
+        branch !== `worktree-${resource.worktreeName}` ||
+        head !== resource.originalHeadCommit ||
+        changes
       )
+        return false
+      for (const rel of ignored.split('\0').filter(Boolean)) {
+        if (!(await sameFileInRoot(resource.originalCwd, tree, rel))) return false
+      }
+      return true
     } catch {
       return false
     }

@@ -549,7 +549,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('an untouched Codex worktree goes with its tab, folder and worktree-<name> branch, and clicking the cold row or a restart makes it again in place for the same thread', async ({
+  test('an untouched Codex worktree goes with its tab, folder and worktree-<name> branch, and clicking the cold row or a restart makes it again in place for the same thread, whose Changes list sees a file made in it afterwards', async ({
     env
   }) => {
     installCodex(env)
@@ -578,6 +578,12 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(codexRows(page)).toHaveClass(/st-waiting|st-idle/)
       expect(codexCalls(env)[1]).toMatchObject({ cwd: first.cwd, sessionId: first.sessionId })
       const madeAgain = fs.statSync(first.cwd).ino
+      await showBrowse(page)
+      await page
+        .locator(`${WORKBENCH.kindBar} .seg[aria-label="Files view"] button`)
+        .filter({ hasText: 'Changes' })
+        .click()
+      await expect(page.locator(`${WORKBENCH.panel} .fv`)).toHaveAttribute('data-view', 'changes')
 
       await clickAppMenuItem(app, page, 'restart-session')
       await expect.poll(() => codexCalls(env).length).toBe(3)
@@ -585,6 +591,10 @@ test.describe('Codex sessions through the real method chooser, process transport
       expect(codexCalls(env)[2]).toMatchObject({ cwd: first.cwd, sessionId: first.sessionId })
       expect(fs.statSync(first.cwd).ino).not.toBe(madeAgain)
       expect(branches()).not.toBe('')
+      fs.writeFileSync(path.join(first.cwd, 'after-rebuild.txt'), 'new\n')
+      await expect(
+        page.locator(`${WORKBENCH.panel} .cv-row[data-path="after-rebuild.txt"]`)
+      ).toBeVisible()
     } finally {
       await quitAndClose(app)
     }
