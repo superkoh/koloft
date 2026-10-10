@@ -64,9 +64,10 @@ export interface MachineClaudeDeps {
   machinePackage(): MachinePackage
   alive(): ReadonlySet<string>
   realPath(p: string): string
-  settings(): { skipPermissions: boolean; agentTools: boolean }
+  settings(): { skipPermissions: boolean }
+  agentTools(): boolean
   pickAccount(launchKey: string): Promise<MachineAccount | undefined>
-  hookSettings(tabId: string, machineDir: string): Record<string, unknown>
+  hookSettings(tabId: string, machineDir: string, allowKoloft: boolean): Record<string, unknown>
 }
 
 export interface SshHostDeps {
@@ -649,6 +650,7 @@ export class SshHost implements Host {
     await this.deps.sshEnvReady?.()
     ensureControlDir(d.controlDir)
     const settings = d.settings()
+    const agentTools = d.agentTools()
     const sid = spec.resumeSessionId ?? crypto.randomUUID()
     const args = machineClaudeArgs(spec, sid, settings.skipPermissions)
     if (!args.ok) return args
@@ -683,8 +685,8 @@ export class SshHost implements Host {
           banner: account?.banner ?? '',
           env: account?.env,
           portOffset: worktree ? portOffset(worktree) : undefined,
-          settings: d.hookSettings(tabId, machineDir),
-          agentPlugin: settings.agentTools,
+          settings: d.hookSettings(tabId, machineDir, agentTools),
+          agentPlugin: agentTools,
           claudeArgs: args.args
         })
         return launchLine({

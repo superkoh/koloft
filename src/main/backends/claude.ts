@@ -26,7 +26,7 @@ import { publicClaudeSession } from '../host/hosts'
 import type { MachineAccount, SshHost } from '../host/sshHost'
 import type { ClaudeLaunch, Host } from '../host/host'
 import type { RemoteSync } from '../remote/sync'
-import { AGENT_DROP_NAME } from '../remote/agentMirror'
+import { AGENT_DROP_NAME, REQUEST_NAME, replyJson, type AgentReply } from '../agentRequests'
 import { accountEnv, tmuxSessionName } from '../remote/launch'
 import {
   dq,
@@ -66,7 +66,7 @@ import {
   type HookReport
 } from '../hookRouting'
 import { registeredByTabRoot } from '../shim'
-import { oncePerName, watchAndSweepJsonDrops, watchJsonDrops } from '../jsonDrops'
+import { oncePerName, watchAndSweepJsonDrops } from '../jsonDrops'
 import { copyWorktreeIncludes } from '../sessionWorktrees'
 import { GIT_REF_RE } from '../gitSteps'
 import {
@@ -136,7 +136,7 @@ export class ClaudeBackend implements SessionBackend {
   private heldBeforeStartup = new Map<string, string>()
   private startsBeforeRegistration = new Map<string, unknown>()
   agentPlugin?: string
-  watchMirroredAgent?: (host: string, mirrorDir: string) => () => void
+  agentReply?: (tabId: string, raw: unknown) => Promise<AgentReply>
 
   constructor(private d: ClaudeBackendDeps) {}
 
@@ -358,8 +358,8 @@ export class ClaudeBackend implements SessionBackend {
     setInterval(() => void sweepLiveness(), LIVENESS_SWEEP_MS).unref()
   }
 
-  private watchHookRegistrations(dir: string, mirror = false): () => void {
-    const isNews = mirror ? makeDropDedupe() : null
+  private watchHookRegistrations(dir: string, machine?: string): () => void {
+    const isNews = machine ? makeDropDedupe() : null
     const handle = (obj: unknown, full: string): void => {
       if (isNews && !isNews(full, JSON.stringify(obj))) return
       this.handleHookRegistration(obj)
@@ -368,8 +368,16 @@ export class ClaudeBackend implements SessionBackend {
       const tabId = path.basename(name, '.json')
       return this.d.pty.get(tabId) && !this.sessionIdOf(tabId) ? handle : null
     }
-    const drops = mirror
-      ? watchJsonDrops(dir, (name) => (AGENT_DROP_NAME.test(name) ? null : handle))
+    const agentRequest = oncePerName((name) => {
+      const id = REQUEST_NAME.exec(name)?.[1]
+      return id && machine ? (raw): void => this.answerMachineRequest(machine, id, raw) : null
+    })
+    const drops = machine
+      ? watchAndSweepJsonDrops(
+          dir,
+          (name) => (AGENT_DROP_NAME.test(name) ? agentRequest(name) : handle),
+          agentRequest
+        )
       : watchAndSweepJsonDrops(dir, () => handle, unboundTabNote)
     const logs = this.watchStatusLogs(dir)
     return () => {
@@ -449,15 +457,36 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   private liveTabFor(report: { tabId?: string; tmux?: string }): string | undefined {
+    if (report.tabId && this.d.pty.get(report.tabId)) return report.tabId
+    return report.tmux ? this.tabRunningTmux(report.tmux) : undefined
+  }
+
+  private tabRunningTmux(tmuxName: string, machine?: string): string | undefined {
     const { pty, tracker } = this.d
-    if (report.tabId && pty.get(report.tabId)) return report.tabId
-    if (!report.tmux) return undefined
     for (const s of tracker.list()) {
-      if (s.alive && tracker.remoteOf(s.tabId)?.tmuxName === report.tmux && pty.get(s.tabId)) {
-        return s.tabId
-      }
+      const remote = s.alive ? tracker.remoteOf(s.tabId) : undefined
+      if (remote?.tmuxName !== tmuxName || !pty.get(s.tabId)) continue
+      if (!machine || remote.host === machine) return s.tabId
     }
     return undefined
+  }
+
+  private callerOnMachine(machine: string, raw: unknown): string | undefined {
+    const r = (raw ?? {}) as { tabId?: unknown; tmux?: unknown }
+    const byTmux = typeof r.tmux === 'string' && r.tmux && this.tabRunningTmux(r.tmux, machine)
+    if (byTmux) return byTmux
+    const tabId = typeof r.tabId === 'string' ? r.tabId : ''
+    return this.d.tracker.remoteOf(tabId)?.host === machine && this.d.pty.get(tabId)
+      ? tabId
+      : undefined
+  }
+
+  private answerMachineRequest(machine: string, requestId: string, raw: unknown): void {
+    const tabId = this.callerOnMachine(machine, raw)
+    if (!tabId || !this.agentReply) return
+    void this.agentReply(tabId, raw).then((reply) =>
+      this.d.hosts.machine(machine).answerAgent(requestId, replyJson(reply))
+    )
   }
 
   private handleStatusRegistration(raw: unknown): void {
@@ -694,27 +723,8 @@ export class ClaudeBackend implements SessionBackend {
       try {
         fs.mkdirSync(dir, { recursive: true })
       } catch {}
-      const hooks = this.watchHookRegistrations(dir, true)
-      const agent = this.watchMirroredAgent?.(host, dir)
-      this.watchedHookMirrors.set(dir, () => {
-        hooks()
-        agent?.()
-      })
+      this.watchedHookMirrors.set(dir, this.watchHookRegistrations(dir, host))
     }
-  }
-
-  remoteCaller(host: string, raw: unknown): string | undefined {
-    const { pty, tracker } = this.d
-    const r = (raw ?? {}) as { tabId?: unknown; tmux?: unknown }
-    const onHost = (tabId: string): boolean =>
-      tracker.remoteOf(tabId)?.host === host && !!pty.get(tabId)
-    const byTmux = r.tmux
-      ? tracker
-          .list()
-          .find((s) => s.alive && onHost(s.tabId) && tracker.remoteOf(s.tabId)?.tmuxName === r.tmux)
-      : undefined
-    if (byTmux) return byTmux.tabId
-    return typeof r.tabId === 'string' && onHost(r.tabId) ? r.tabId : undefined
   }
 
   async create(opts: CreateTabOptions): Promise<CreateTabResult> {

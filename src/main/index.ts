@@ -88,7 +88,6 @@ import {
 } from './remote/launch'
 import { machinePackageBase, mirrorHookDir, mirrorProjectsRoot } from './remote/paths'
 import { RemoteSync } from './remote/sync'
-import { watchMirroredAgentRequests } from './remote/agentMirror'
 import { REMOTE_AGENT_SHIM } from './agentShim'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
 import {
@@ -300,14 +299,7 @@ import type {
   PrWorktreeResult
 } from '@shared/types'
 import { copyWorktreeIncludes } from './sessionWorktrees'
-import {
-  AgentRequests,
-  BUILTIN_VERBS,
-  errorText,
-  refused,
-  replyJson,
-  type AgentVerb
-} from './agentRequests'
+import { AgentRequests, BUILTIN_VERBS, errorText, refused, type AgentVerb } from './agentRequests'
 import { conductorFolder, Conductors } from './discord/conductors'
 import { discordApiUrl, DiscordLink } from './discord/link'
 import { releaseLock, takeLock } from './discord/instanceLock'
@@ -1632,14 +1624,7 @@ app.whenReady().then(() => {
     ptyMgr.agentDir = agentDir
     claudeBackend.agentPlugin = writeAgentPlugin(app.getPath('userData'))
   }
-  claudeBackend.watchMirroredAgent = (host, mirrorDir) =>
-    watchMirroredAgentRequests(mirrorDir, (requestId, raw) => {
-      const tabId = claudeBackend.remoteCaller(host, raw)
-      if (!tabId) return
-      void agentRequests
-        .replyFor(tabId, raw)
-        .then((reply) => hosts.machine(host).answerAgent(requestId, replyJson(reply)))
-    })
+  claudeBackend.agentReply = (tabId, raw) => agentRequests.replyFor(tabId, raw)
   claudeBackend.watchShimRegistrations(regDir)
   if (watchOpenRequests(openDir)) {
     ptyMgr.openDir = openDir
@@ -3520,13 +3505,9 @@ const hosts = new Hosts(
         realPath: (p) => workspaceMgr?.realRemotePath({ host: machine, path: p }) ?? p,
         settings: loadSettings,
         pickAccount: (launchKey) => pickMachineAccount(() => pickForLaunch(launchKey)),
-        hookSettings: (tabId, dir) =>
-          machineHookSettings(
-            tabId,
-            dir,
-            loadSettings().statuslineBuiltin,
-            agentToolsFor('claude', 'ssh')
-          )
+        agentTools: () => agentToolsFor('claude', 'ssh'),
+        hookSettings: (tabId, dir, allowKoloft) =>
+          machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft)
       }
     })
 )

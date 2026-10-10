@@ -43,7 +43,8 @@ const machine = (run = runOnMachine): SshHost =>
       machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
       alive: () => new Set(),
       realPath: (p) => p,
-      settings: () => ({ skipPermissions: false, agentTools: true }),
+      settings: () => ({ skipPermissions: false }),
+      agentTools: () => true,
       pickAccount: async () => ({ env: {}, banner: '' }),
       hookSettings: () => ({})
     }
@@ -324,7 +325,8 @@ describe('accounts for remote launches started together', () => {
         machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
         alive: () => new Set(),
         realPath: (p) => p,
-        settings: () => ({ skipPermissions: false, agentTools: true }),
+        settings: () => ({ skipPermissions: false }),
+        agentTools: () => true,
         pickAccount: async (launchKey) => {
           const res = await picker.pick(launchKey)
           if (!res.account) return undefined
@@ -352,7 +354,8 @@ describe('accounts for remote launches started together', () => {
         machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
         alive: () => new Set([live]),
         realPath: (p) => p,
-        settings: () => ({ skipPermissions: false, agentTools: true }),
+        settings: () => ({ skipPermissions: false }),
+        agentTools: () => true,
         pickAccount,
         hookSettings: () => ({})
       }

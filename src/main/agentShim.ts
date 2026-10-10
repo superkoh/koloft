@@ -21,8 +21,9 @@ jstr() {
 `
 
 const REMOTE_AGENT_SHIM_WAITS_MS = 30_000
+const REMOTE_POLL_WELL_UNDER_ONE_MIRROR_PULL_MS = 250
 
-const body = (waitsMs: number): string => `
+const body = (waitsMs: number, pollMs = SHIM_POLL_MS): string => `
 ${NEWID_FN}
 id="$(newid)"
 [ -n "$id" ] || id="$$-$(date +%s)"
@@ -37,7 +38,7 @@ if ! printf '{%s"argv":[%s],"cwd":"%s"}\\n' "$tabfield" "$args" "$(jstr "$PWD")"
   exit 1
 fi
 waits=0
-while [ ! -f "$res" ] && [ "$waits" -lt ${waitsMs / SHIM_POLL_MS} ]; do sleep ${SHIM_POLL_MS / 1000}; waits=$((waits+1)); done
+while [ ! -f "$res" ] && [ "$waits" -lt ${waitsMs / pollMs} ]; do sleep ${pollMs / 1000}; waits=$((waits+1)); done
 if [ ! -f "$res" ]; then
   rm -f "$req" 2>/dev/null
   echo "koloft: Koloft did not answer." >&2
@@ -75,7 +76,7 @@ tm=""
 [ -n "$TMUX" ] && tm="$(tmux display-message -p -t "$TMUX_PANE" '#S' 2>/dev/null)"
 tabfield="\\"tabId\\":\\"$(jstr "$KOLOFT_TAB_ID")\\",\\"tmux\\":\\"$(jstr "$tm")\\","
 unwritable="koloft: could not reach Koloft."
-${body(REMOTE_AGENT_SHIM_WAITS_MS)}`
+${body(REMOTE_AGENT_SHIM_WAITS_MS, REMOTE_POLL_WELL_UNDER_ONE_MIRROR_PULL_MS)}`
 
 // CODEX§12 CODEX§17
 function codexAgentShim(requestDir: string): string {

@@ -129,6 +129,7 @@ export interface AgentRequestDeps {
 }
 
 export const REQUEST_NAME = /^req-([A-Za-z0-9-]+)\.json$/
+export const AGENT_DROP_NAME = /^(req|res)-[A-Za-z0-9-]+\.json$/
 const CLAIM_OUTLIVES_DROP_REREADS_MS = 500
 
 export class AgentRequests {
