@@ -9,7 +9,7 @@ import {
   startSessionIn,
   terminalText,
   waitBooted,
-  waitForCalls,
+  waitForCallsBesideConductors,
   wsRows,
   oneStillRunning
 } from './helpers/p1'
@@ -82,6 +82,11 @@ async function connected(
   const page = await app.firstWindow()
   await waitBooted(page)
   await expect.poll(() => fake.identifies).toBe(1)
+  await expect
+    .poll(() => bindingOnDisk(env)?.sessionIds.length ?? 0, {
+      timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+    })
+    .toBeGreaterThan(0)
   return { app, page }
 }
 
@@ -114,7 +119,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
         .poll(() => fake.commands.map((c) => c.name).sort())
         .toEqual(['clear', 'compact', 'run'])
       await startSessionIn(page, 'ws-a')
-      const child = (await waitForCalls(env, 1))[0].sessionId
+      const child = (await waitForCallsBesideConductors(env, 1))[0].sessionId
       await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 30_000 })
 
       const listed = await choices(fake, '')
@@ -217,7 +222,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
     const { app, page } = await connected(env, fake)
     try {
       await startSessionIn(page, 'ws-a')
-      const child = (await waitForCalls(env, 1))[0].sessionId
+      const child = (await waitForCallsBesideConductors(env, 1))[0].sessionId
       await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 30_000 })
       const tab = (await page.evaluate(() => window.api.sessions.list())).find(
         (s) => s.sessionId === child
@@ -250,7 +255,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
     const { app, page } = await connected(env, fake)
     try {
       await startSessionIn(page, 'ws-a')
-      const child = (await waitForCalls(env, 1))[0].sessionId
+      const child = (await waitForCallsBesideConductors(env, 1))[0].sessionId
       await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 30_000 })
 
       fake.say(OWNER, `/koloft session command ${child} /context`)

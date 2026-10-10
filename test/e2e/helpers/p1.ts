@@ -57,6 +57,16 @@ export async function waitForCalls(
   return readCalls(env)
 }
 
+export async function waitForCallsBesideConductors(
+  env: E2EEnv,
+  count: number
+): Promise<ClaudeCall[]> {
+  const sessions = (): ClaudeCall[] =>
+    readCalls(env).filter((c) => path.basename(path.dirname(c.cwd)) !== 'conductors')
+  await expect.poll(() => sessions().length, { timeout: 40_000 }).toBeGreaterThanOrEqual(count)
+  return sessions()
+}
+
 export function resumedId(call: ClaudeCall): string | undefined {
   const i = call.argv.indexOf('--resume')
   return i >= 0 ? call.argv[i + 1] : undefined

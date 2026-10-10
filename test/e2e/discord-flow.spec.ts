@@ -12,7 +12,7 @@ import {
   startSessionIn,
   terminalText,
   waitBooted,
-  waitForCalls,
+  waitForCallsBesideConductors,
   wsRows
 } from './helpers/p1'
 import {
@@ -152,17 +152,24 @@ async function connected(
   const page = await app.firstWindow()
   await waitBooted(page)
   await expect.poll(() => fake.identifies).toBe(1)
+  await expect
+    .poll(() => bindingOnDisk(env)?.sessionIds.length ?? 0, {
+      timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+    })
+    .toBeGreaterThan(0)
   return { app, page }
 }
 
 test.describe('Discord flow: the owner talks to a conductor in its channel, and hears about the sessions it looks after', () => {
-  test('an owner message opens the Claude conductor and is typed into it as [Discord] text; the reply comes back whole, a long one split in order; a stranger is ignored; an attachment arrives as a file path', async ({
+  test('the Claude conductor opens in its own folder as soon as Discord connects, before any message; an owner message is typed into it as [Discord] text; the reply comes back whole, a long one split in order; a stranger is ignored; an attachment arrives as a file path', async ({
     env
   }) => {
     seedConductor(env, 'claude')
     const fake = await startFakeDiscord(env)
     const { app } = await connected(env, fake)
     try {
+      expect(readCalls(env)).toHaveLength(1)
+      expect(path.dirname(readCalls(env)[0].cwd)).toBe(path.join(env.userData, 'conductors'))
       fake.say(STRANGER, 'not the owner')
       const hello = fake.say(OWNER, 'hello there')
       await expect
@@ -206,7 +213,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     const { app, page } = await connected(env, fake)
     try {
       await startSessionIn(page, 'ws-a')
-      const managed = (await waitForCalls(env, 1))[0].sessionId
+      const managed = (await waitForCallsBesideConductors(env, 1))[0].sessionId
       const managedTab = (await page.evaluate(() => window.api.sessions.list())).find(
         (s) => s.sessionId === managed
       )!.tabId
@@ -321,7 +328,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     }
   })
 
-  test('owner messages sent while Koloft was away each get one "not delivered" reply on connect and reach no conductor', async ({
+  test('owner messages sent while Koloft was away each get one "not delivered" reply on connect and are never typed into the conductor', async ({
     env
   }) => {
     seedConductor(env, 'claude', { lastMessageId: '100' })
@@ -338,7 +345,8 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
         .poll(() => fake.posted.filter((p) => p.content === OFFLINE_REPLY).map((p) => p.replyTo))
         .toEqual(['101', '103'])
       await expect.poll(() => bindingOnDisk(env)?.lastMessageId).toBe('103')
-      expect(readCalls(env)).toEqual([])
+      const conductorSaw = transcriptText(env, bindingOnDisk(env)!.sessionIds[0])
+      expect(conductorSaw).not.toMatch(/while you were away|one more/)
     } finally {
       await quitAndClose(app)
       await fake.close()
@@ -355,7 +363,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       const title = '更新 PR415 并合并'
       setNextSessionTitle(env, title)
       await startSessionIn(page, 'ws-a')
-      const managed = (await waitForCalls(env, 1))[0].sessionId
+      const managed = (await waitForCallsBesideConductors(env, 1))[0].sessionId
       await expect(wsRows(page, 'ws-a')).toContainText(title)
       const peerLog = path.join(env.home, 'fake-claude-peer.jsonl')
       const peerLines = (): string[] =>
@@ -506,7 +514,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     const { app, page } = await connected(env, fake)
     try {
       await startSessionIn(page, 'ws-b')
-      const managed = (await waitForCalls(env, 1))[0].sessionId
+      const managed = (await waitForCallsBesideConductors(env, 1))[0].sessionId
       const tab = (await page.evaluate(() => window.api.sessions.list())).find(
         (s) => s.sessionId === managed
       )!.tabId
@@ -594,7 +602,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     const { app, page } = await connected(env, fake)
     try {
       await startSessionIn(page, 'ws-a')
-      const managed = (await waitForCalls(env, 1))[0].sessionId
+      const managed = (await waitForCallsBesideConductors(env, 1))[0].sessionId
       const managedTab = await tabOf(page, managed)
       const type = (line: string): Promise<void> =>
         page.evaluate(([id, l]) => window.api.terminal.write(id, l + '\r'), [managedTab, line])
@@ -748,7 +756,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     const { app, page } = await connected(env, fake)
     try {
       await startSessionIn(page, 'ws-a')
-      const managed = (await waitForCalls(env, 1))[0].sessionId
+      const managed = (await waitForCallsBesideConductors(env, 1))[0].sessionId
       fake.say(OWNER, `/koloft session stop ${managed}`)
       await expect(wsRows(page, 'ws-a')).toHaveClass(/cold/, {
         timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
@@ -778,11 +786,9 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
 
   for (const conductor of ['claude', 'codex'] as const)
     for (const child of ['claude', 'codex'] as const)
-      test(`a ${child} session a ${conductor} conductor started reports back to it after the conductor went to sleep: its first message names the conductor’s id for koloft session send, which wakes the conductor and delivers the report marked with who sent it`, async ({
+      test(`a ${child} session a ${conductor} conductor started reports back to it after the conductor’s tab was closed: its first message names the conductor’s id for koloft session send, which opens the conductor again and delivers the report marked with who sent it`, async ({
         env
       }) => {
-        env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
-        env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
         installCodex(env)
         seedConductor(env, conductor)
         const fake = await startFakeDiscord(env)
@@ -814,9 +820,13 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
             (conductor === 'claude' ? readCalls(env) : codexCalls(env))
               .filter((c) => c.sessionId === conductorId)
               .at(-1)?.pid
-          const asleepPid = conductorPid()!
+          const closedPid = conductorPid()!
+          const conductorTab = (await page.evaluate(() => window.api.sessions.list())).find(
+            (s) => s.conductor
+          )!.tabId
+          await page.evaluate((tab) => window.api.terminal.kill(tab), conductorTab)
           await expect
-            .poll(() => processAlive(asleepPid), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+            .poll(() => processAlive(closedPid), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
             .toBe(false)
 
           const liveChildTab = async (): Promise<string | undefined> =>
@@ -840,12 +850,36 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
           await expect
             .poll(() => conductorGot().join('\n'), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
             .toMatch(/\(From the session ".+", id \S+:\) all done/)
-          expect(conductorPid()).not.toBe(asleepPid)
+          expect(conductorPid()).not.toBe(closedPid)
         } finally {
           await quitAndClose(app)
           await fake.close()
         }
       })
+
+  test('a conductor never goes to sleep, while a session left idle just as long does', async ({
+    env
+  }) => {
+    env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+    env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+    seedConductor(env, 'claude')
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      const conductorPid = readCalls(env)[0].pid
+      await startSessionIn(page, 'ws-a')
+      const idler = (await waitForCallsBesideConductors(env, 1))[0].pid
+      await startSessionIn(page, 'ws-b')
+      await expect
+        .poll(() => processAlive(idler), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toBe(false)
+      await page.waitForTimeout(WAITING_TO_IDLE_MS + IDLE_TO_SLEEP_MS)
+      expect(processAlive(conductorPid)).toBe(true)
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
 
   for (const backend of ['claude', 'codex'] as const) {
     test(`a ${backend} conductor reads GitHub through koloft gh: Koloft runs gh with the workspace’s repository added, and refuses a command that would write without running gh`, async ({

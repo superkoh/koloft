@@ -420,7 +420,8 @@ tracker.activeTabId = () => uiActiveTabId
 tracker.heldTabs = () => {
   const held = new Set(dirtyTabIds)
   for (const h of ptyMgr.list()) if (h.util && h.alive && h.ownerTabId) held.add(h.ownerTabId)
-  for (const s of allSessions()) if (workspaceMgr?.isResident(s.sessionId)) held.add(s.tabId)
+  for (const s of allSessions())
+    if (s.conductor || workspaceMgr?.isResident(s.sessionId)) held.add(s.tabId)
   return held
 }
 tracker.needsUser = (id) => attention.list().some((e) => e.tabId === id)
@@ -1930,6 +1931,7 @@ app.whenReady().then(() => {
     onMessage: (m) => discordRelay?.onMessage(m),
     onInteraction: (i) => void interactions.handle(i),
     onReady: () => {
+      for (const b of conductors?.bindings() ?? []) void conductors?.open(b.id)
       void discordRelay?.catchUp()
       registerSlashCommands()
     },
