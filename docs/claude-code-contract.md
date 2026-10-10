@@ -1534,10 +1534,17 @@ ADR-0031, each up to 70 tool calls, with the same entry.
   text outside ASCII written as raw UTF-8 (Chinese arrived as its UTF-8 bytes, not
   `\uXXXX`), and only `"`, `\` and control characters escaped (`\"`, `\\`, `\n`). On
   `UserPromptSubmit` the keys came in the order `session_id`, `transcript_path`, `cwd`,
-  `prompt_id`, `permission_mode`, `hook_event_name`, `prompt` — the prompt is last. On
+  `prompt_id`, `permission_mode`, `hook_event_name`, `prompt` — the prompt is last (an
+  interactive session adds `scratchpad_dir` before `prompt_id`; the prompt stays last). On
   `PostToolUse` they are the same up to `permission_mode`, then `effort`,
   `hook_event_name`, `tool_name`, `tool_input`, `tool_response`, `tool_use_id`,
   `duration_ms`; there is no `prompt`.
+- **A message from another session (§13) fires `UserPromptSubmit` too, its `prompt` the
+  envelope as sent**: an idle interactive receiver (haiku, `--dangerously-skip-permissions`,
+  scratch `CLAUDE_CONFIG_DIR`) sent Koloft's `bypass` line on its socket handed the hook
+  `"prompt":"<cross-session-message from-mode=\"bypass\">\n<body>\n</cross-session-message>"`.
+  In this Mac's transcripts since 2026-10-09, 10 of 12 such messages were followed by the
+  prompt hook's context.
 - **A `PostToolBatch` event also exists** (once per batch of tool calls; its
   `additionalContext` reached the model on 2.1.296; its name is in the 2.1.294 binary).
   It is not in the CHANGELOG, so whether 2.1.293, the oldest Koloft supports, knows it is

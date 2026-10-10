@@ -4,6 +4,7 @@ import path from 'path'
 import type { StatusLineSetting } from './statusline'
 import { shq } from '@shared/shellQuote'
 import { CONDUCTOR_GATE_SCRIPT, conductorGateCommand } from './conductorGate'
+import { HANDOVER_OPENING } from './handover'
 
 export interface HookPaths {
   hookScript: string
@@ -25,6 +26,18 @@ reg="$1"; tab="$2"; event="$3"
 [ -z "$tab" ] && exit 0
 # CC§14
 [ "$event" = "ask" ] && [ ! -f "$reg/$tab.answerable" ] && event="asked"
+said="$reg/$tab.said"
+# CC§17 CC§19
+remind_reply_language() {
+  quote="$(cat "$said" 2>/dev/null)"
+  [ -n "$quote" ] || return 0
+  printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s%s%s"}}\\n' "$1" ${shq(REPLY_LANGUAGE_BEFORE_QUOTE)} "$quote" ${shq(REPLY_LANGUAGE_AFTER_QUOTE)}
+}
+if [ "$event" = "tool" ]; then
+  cat >/dev/null
+  remind_reply_language PostToolUse
+  exit 0
+fi
 input="$(cat | tr -d '\\n')"
 mkdir -p "$reg" 2>/dev/null
 tm=""
@@ -38,20 +51,14 @@ session_id() {
     sed 's/.*"\\([^"]*\\)"$/\\1/' |
     tr -d '"\\\\[:cntrl:]'
 }
-said="$reg/$tab.said"
 # CC§19
 quote_prompt() {
   printf '%s' "$input" |
     LC_ALL=C sed -n -E 's/.*"prompt"[[:space:]]*:[[:space:]]*"(([^"\\\\]|\\\\.)*)".*/\\1/p' |
-    LC_ALL=C sed -E 's/^Koloft started you because .*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//' |
+    LC_ALL=C sed -E 's/^${HANDOVER_OPENING}.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//' |
     head -c ${QUOTED_PROMPT_BYTES} |
-    LC_ALL=C sed -E -e $'s/[\\xf0-\\xf7][\\x80-\\xbf]{0,2}$//' -e $'s/[\\xe0-\\xef][\\x80-\\xbf]?$//' -e $'s/[\\xc0-\\xdf]$//' \\
+    LC_ALL=C sed -E -e $'s/([\\xc0-\\xdf]|[\\xe0-\\xef][\\x80-\\xbf]?|[\\xf0-\\xf7][\\x80-\\xbf]{0,2})$//' \\
       -e 's/\\\\u[0-9a-fA-F]{0,3}$//' -e 's/(^|[^\\\\])((\\\\\\\\)*)\\\\$/\\1\\2/'
-}
-# CC§17 CC§19
-remind_reply_language() {
-  [ -s "$said" ] || return 0
-  printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s%s%s"}}\\n' "$1" ${shq(REPLY_LANGUAGE_BEFORE_QUOTE)} "$(cat "$said")" ${shq(REPLY_LANGUAGE_AFTER_QUOTE)}
 }
 case "$event" in
   start|end)
@@ -99,9 +106,6 @@ case "$event" in
   asked)
     # CC§14
     printf '{"tabId":"%s","event":"ask","sessionId":"%s","tmux":"%s","ask":%s}\\n' "$tab" "$(session_id)" "$tm" "$input" >> "$reg/$tab.status.jsonl"
-    ;;
-  tool)
-    remind_reply_language PostToolUse
     ;;
   posttool)
     # PLATFORM§36
@@ -176,8 +180,11 @@ case "$event" in
     esac
     printf '{"tabId":"%s","event":"%s","sessionId":"%s","message":"%s","tmux":"%s"%s%s}\\n' "$tab" "$event" "$sid" "$msg" "$tm" "$bgl" "$wake" >> "$reg/$tab.status.jsonl"
     if [ "$event" = "prompt" ]; then
-      quote="$(quote_prompt)"
-      [ -n "$quote" ] && printf '%s' "$quote" > "$said"
+      # CC§13 CC§19
+      case "$input" in
+        *'"prompt":"<cross-session-message '*) ;;
+        *) quote_prompt > "$said" ;;
+      esac
       remind_reply_language UserPromptSubmit
     fi
     ;;
@@ -262,10 +269,6 @@ export function hookSettings(
 ): Record<string, unknown> {
   const cmd = (event: string): string =>
     `${quote(hookScript)} ${quote(regDir)} ${quote(tabId)} ${event}`
-  // CC§19 ADR-0031
-  const postToolUse = [{ matcher: '*', hooks: [{ type: 'command', command: cmd('tool') }] }]
-  if (statusLine)
-    postToolUse.push({ matcher: 'Bash', hooks: [{ type: 'command', command: cmd('posttool') }] })
   const settings: Record<string, unknown> = {
     hooks: {
       SessionStart: [{ hooks: [{ type: 'command', command: cmd('start') }] }],
@@ -289,7 +292,13 @@ export function hookSettings(
           ]
         }
       ],
-      PostToolUse: postToolUse
+      // CC§19 ADR-0031
+      PostToolUse: [
+        { matcher: '*', hooks: [{ type: 'command', command: cmd('tool') }] },
+        ...(statusLine
+          ? [{ matcher: 'Bash', hooks: [{ type: 'command', command: cmd('posttool') }] }]
+          : [])
+      ]
     }
   }
   if (statusLine) settings.statusLine = statusLine

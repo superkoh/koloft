@@ -21,6 +21,7 @@ import {
   markAnswerable
 } from '../../src/main/hooks'
 import { withHandover } from '../../src/main/handover'
+import { crossSessionLine } from '../../src/main/crossSessionMessage'
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/paths'
 
 let hookScript: string
@@ -424,8 +425,22 @@ describe('injected hook script', () => {
       expect(fire('tabLang', 'notify', { message: 'Claude is waiting for your input' })).toBe('')
     })
 
-    it('a tool call before any prompt in the tab prints nothing', () => {
+    it('a tool call prints nothing before any prompt, or after a prompt with no words to quote', () => {
       expect(tool('tabLangNone')).toBe('')
+      prompt('tabLangNone', '你好')
+      expect(fire('tabLangNone', 'prompt', { hook_event_name: 'UserPromptSubmit' })).toBe('')
+      expect(tool('tabLangNone')).toBe('')
+    })
+
+    // CC§13
+    it('a message from another session keeps the quote of the person’s own last prompt', () => {
+      prompt('tabLangPeer', '查一下子会话做完没有')
+      const report = JSON.parse(crossSessionLine('bypass', 'Done: PR #12 is open.')!).message
+        .content
+      expect(remindedQuote(prompt('tabLangPeer', report), 'UserPromptSubmit')).toBe(
+        '查一下子会话做完没有'
+      )
+      expect(remindedQuote(tool('tabLangPeer'), 'PostToolUse')).toBe('查一下子会话做完没有')
     })
 
     it('a task Koloft hands over is quoted without the English preamble in front of it', () => {
@@ -438,7 +453,7 @@ describe('injected hook script', () => {
     // CC§19
     it('quotes at most 300 bytes and always whole characters and whole escapes, so the reminder is valid JSON', () => {
       for (let pad = 0; pad < 6; pad++) {
-        for (const body of ['中文'.repeat(100), 'a"b\\c\nd'.repeat(60), '😀é'.repeat(80)]) {
+        for (const body of ['中文'.repeat(100), 'a"b\\c\nd\x1b'.repeat(40), '😀é'.repeat(80)]) {
           const text = 'x'.repeat(pad) + body
           const quote = remindedQuote(prompt('tabLangCut', text), 'UserPromptSubmit')
           expect(text.startsWith(quote), JSON.stringify({ pad, quote })).toBe(true)
@@ -882,7 +897,7 @@ describe('setupHooks at startup', () => {
     for (const tab of [peerTab, crashedTab]) {
       markAnswerable(regDir, tab, true)
       writeConductorMarker(regDir, tab, 'role')
-      fire(tab, 'prompt', { hook_event_name: 'UserPromptSubmit', prompt: '你好' })
+      fs.writeFileSync(path.join(regDir, `${tab}.said`), '你好')
     }
     const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000)
     for (const f of markers(peerTab)) fs.utimesSync(f, twoDaysAgo, twoDaysAgo)

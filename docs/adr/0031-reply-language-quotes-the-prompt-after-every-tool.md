@@ -33,7 +33,10 @@ works). Naming the language ("Reply in Chinese") — Koloft would have to guess 
 language in a shell script, for every language; the quote lets the model see it.
 Skipping prompts written in plain ASCII to save tokens — a short "ok" or "merge" is
 exactly the prompt that starts a long turn. Claude Code's `language` setting — sent
-once per session, not per turn, and reported not to hold on Opus 5.5. A Stop hook that
+once per session, not per turn, and reported not to hold on Opus 5.5
+(anthropics/claude-code issues #96326, #96601; not measured here). A message from another
+session does not replace the quote: the person reads the reply, so a child's English
+report must not turn its parent English. A Stop hook that
 blocks an English reply — it sees only the final reply, never the notes, and costs a
 whole extra turn. `PostToolBatch` instead of `PostToolUse` — fewer reminders when tools
 run in parallel, but whether Claude Code 2.1.293 knows the event is not probed (CC§19).
