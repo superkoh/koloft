@@ -127,8 +127,11 @@
           </li>
           <li>
             <code>koloft session send</code> — Codex: message another Codex session (a Claude
-            session uses its own SendMessage tool). Any session: report back to the conductor that
-            started it.
+            session uses its own SendMessage tool). Any session: report back to the session or
+            conductor that started it, by the id it was given. If that one is asleep or its tab was
+            closed, Koloft starts it again first. The report arrives marked
+            <code class="nowrap">(From the session "…", id …:)</code>, so the reader knows who sent
+            it.
           </li>
           <li>
             <code>koloft session close</code> — close itself, or a session it started, for good: its
@@ -156,9 +159,9 @@
         <p>
           A conductor, the session you talk to from Discord, gets a few more: it can answer a
           session's question, resume it, stop it, close it once it has ended, run a slash command in
-          it, see its screen, send you files, and ask GitHub questions with
-          <code>koloft gh</code> (<code>gh</code> is GitHub's command-line tool). It only passes
-          work on; see <a href="../discord/">A butler on Discord</a>.
+          it, see its screen and press keys in it, send you files, and ask GitHub questions or open
+          an issue with <code>koloft gh</code> (<code>gh</code> is GitHub's command-line tool). It
+          only passes work on; see <a href="../discord/">A butler on Discord</a>.
         </p>
 
         <figure class="shot" style="--ar: 1322 / 661; --ar-phone: 710 / 590">

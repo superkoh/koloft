@@ -298,7 +298,8 @@ your Mac
         <p>
           Write in the bound channel. Your message reaches the conductor with
           <span class="nowrap">"[Discord]"</span> in front. It gets a ⏳ while it waits its turn,
-          and a ✅ once it is in. If the conductor is not open, your first message starts it; the ⏳
+          and a ✅ once it is in. The conductor opens as soon as Koloft connects to Discord, and it
+          never goes to sleep. If it is not open all the same, your first message starts it; the ⏳
           stays until it is ready. Files you attach are saved on your Mac, and the conductor is told
           where they are.
         </p>
@@ -424,18 +425,26 @@ your Mac
         <ul class="dash">
           <li>start, read, message, resume and stop sessions</li>
           <li>run a slash command in them, and see their screen</li>
-          <li>answer their questions</li>
+          <li>
+            answer their questions, and press keys in them as you would at the Mac: pick an option,
+            move through a menu, approve, refuse or cancel
+            <span class="why"
+              >(so when you tell the conductor how to answer, it does it, instead of sending you to
+              the Mac)</span
+            >
+          </li>
           <li>close the sessions it started</li>
           <li>close any ended session it looks after on your Mac, when you ask</li>
           <li>list your folders <span class="why">(Global only)</span></li>
           <li>
             check GitHub itself with <code>koloft gh</code>: is a pull request merged, how did its
-            checks go, what does an issue say
+            checks go, what does an issue say; and open an issue when you ask for one
             <span class="why"
-              >(Koloft runs <code>gh</code>, GitHub's command-line tool, for it, and only the
-              reading commands: pr view, list, checks, diff; issue view, list; run view, list. A
-              folder's conductor gets that folder's repository filled in; the Global one names it
-              with <code class="nowrap">--repo</code>)</span
+              >(Koloft runs <code>gh</code>, GitHub's command-line tool, for it: the reading
+              commands pr view, list, checks, diff; issue view, list; run view, list; and issue
+              create, with a title, a body and labels only. A folder's conductor gets that folder's
+              repository filled in; the Global one names it with
+              <code class="nowrap">--repo</code>)</span
             >
           </li>
           <li>
@@ -455,8 +464,11 @@ your Mac
             >
           </li>
           <li>
-            merge, comment or change anything on GitHub
-            <span class="why">(<code>koloft gh</code> refuses every command that writes)</span>
+            merge, comment on, close or edit anything on GitHub
+            <span class="why"
+              >(<code>koloft gh</code> refuses every command that writes, except opening an
+              issue)</span
+            >
           </li>
           <li>close an open session it did not start <span class="why">(stop it first)</span></li>
           <li>
@@ -592,7 +604,10 @@ your Mac
           <li>Yes / No works, and so does one question that picks one option.</li>
           <li>
             Anything else, like several parts, free text or a secret, gets "Codex is asking
-            something Koloft cannot answer from here… Answer this one at the Mac."
+            something Koloft cannot answer from here: it answers a yes-or-no approval, or one
+            question that picks one option from a list. The conductor can still answer this one by
+            pressing its keys." So tell the conductor what to pick: it looks at the screen and
+            presses the keys for you.
           </li>
           <li>
             What Codex shows only on its screen is not read back. The conductor can look with
@@ -605,7 +620,7 @@ your Mac
           <li>
             Koloft answers by typing keys into its terminal. So it can answer Yes / No, or one
             question with one pick. A question with several parts, or with several picks, gets no
-            buttons: answer that one at the Mac.
+            buttons: tell the conductor what to pick, and it presses the keys for you.
           </li>
           <li>A plan takes yes or no only.</li>
           <li>
@@ -635,8 +650,11 @@ your Mac
             >
           </li>
           <li>
-            <s class="struck">answer Codex forms</s>
-            <span class="why">(several parts, free text or secrets: answer at the Mac)</span>
+            <s class="struck">answer Codex forms from a thread</s>
+            <span class="why"
+              >(several parts, free text or secrets: the thread cannot, but the conductor can press
+              the keys when you tell it what to pick)</span
+            >
           </li>
           <li>
             <s class="struck">run two Kolofts on one data folder</s>
