@@ -379,22 +379,30 @@ export class ClaudeBackend implements SessionBackend {
       const tabId = path.basename(name, '.json')
       return this.d.pty.get(tabId) && !this.sessionIdOf(tabId) ? handle : null
     }
-    const agentRequest = oncePerName((name) => {
-      const id = REQUEST_NAME.exec(name)?.[1]
-      return id && machine ? (raw): void => this.answerMachineRequest(machine, id, raw) : null
-    })
     const drops = machine
-      ? watchAndSweepJsonDrops(
-          dir,
-          (name) => (AGENT_DROP_NAME.test(name) ? agentRequest(name) : handle),
-          agentRequest
-        )
+      ? this.watchMachineDrops(dir, machine, handle)
       : watchAndSweepJsonDrops(dir, () => handle, unboundTabNote)
     const logs = this.watchStatusLogs(dir)
     return () => {
       drops?.close()
       logs()
     }
+  }
+
+  private watchMachineDrops(
+    dir: string,
+    machine: string,
+    hookReport: (obj: unknown, full: string) => void
+  ): fs.FSWatcher | null {
+    const agentRequest = oncePerName((name) => {
+      const id = REQUEST_NAME.exec(name)?.[1]
+      return id ? (raw): void => this.answerMachineRequest(machine, id, raw) : null
+    })
+    return watchAndSweepJsonDrops(
+      dir,
+      (name) => (AGENT_DROP_NAME.test(name) ? agentRequest(name) : hookReport),
+      agentRequest
+    )
   }
 
   private watchStatusLogs(dir: string): () => void {

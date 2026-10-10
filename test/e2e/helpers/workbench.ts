@@ -347,69 +347,66 @@ export function outsideThePaste(prompt: string): string {
   return prompt.replace(/<pasted_content id="([^"]+)">[\s\S]*?<\/pasted_content id="\1">/g, '')
 }
 
-export function claudePromptsIn(jsonl: string): string[] {
+interface TranscriptRecord {
+  type?: string
+  message?: { content?: unknown }
+  attachment?: { type?: string; content?: unknown }
+}
+
+function jsonlRecords(jsonl: string): TranscriptRecord[] {
   return jsonl.split('\n').flatMap((line) => {
     try {
       const record = JSON.parse(line)
-      const content = record.type === 'user' ? record.message?.content : undefined
-      return typeof content === 'string' ? [content] : []
+      return record && typeof record === 'object' ? [record as TranscriptRecord] : []
     } catch {
       return []
     }
+  })
+}
+
+export function claudePromptsIn(jsonl: string): string[] {
+  return jsonlRecords(jsonl).flatMap((record) => {
+    const content = record.type === 'user' ? record.message?.content : undefined
+    return typeof content === 'string' ? [content] : []
   })
 }
 
 // CC§13
 export function claudeSkillListingsIn(jsonl: string): string[] {
-  return jsonl.split('\n').flatMap((line) => {
-    try {
-      const attachment = JSON.parse(line).attachment
-      return attachment?.type === 'skill_listing' && typeof attachment.content === 'string'
-        ? [attachment.content]
-        : []
-    } catch {
-      return []
-    }
-  })
+  return jsonlRecords(jsonl).flatMap(({ attachment }) =>
+    attachment?.type === 'skill_listing' && typeof attachment.content === 'string'
+      ? [attachment.content]
+      : []
+  )
 }
 
 export function claudeRepliesIn(jsonl: string): string[] {
-  return jsonl.split('\n').flatMap((line) => {
-    try {
-      const record = JSON.parse(line)
-      const content = record.type === 'assistant' ? record.message?.content : undefined
-      return Array.isArray(content)
-        ? content.flatMap((part: { type?: string; text?: unknown }) =>
-            part?.type === 'text' && typeof part.text === 'string' ? [part.text] : []
-          )
-        : []
-    } catch {
-      return []
-    }
+  return jsonlRecords(jsonl).flatMap((record) => {
+    const content = record.type === 'assistant' ? record.message?.content : undefined
+    return Array.isArray(content)
+      ? content.flatMap((part: { type?: string; text?: unknown }) =>
+          part?.type === 'text' && typeof part.text === 'string' ? [part.text] : []
+        )
+      : []
   })
 }
 
 export function claudeToolResultsIn(jsonl: string): string[] {
-  return jsonl.split('\n').flatMap((line) => {
-    try {
-      const record = JSON.parse(line)
-      const content = record.type === 'user' ? record.message?.content : undefined
-      return Array.isArray(content)
-        ? content.flatMap((part: { type?: string; content?: unknown }) => {
-            if (part?.type !== 'tool_result') return []
-            if (typeof part.content === 'string') return [part.content]
-            return Array.isArray(part.content)
-              ? [
-                  part.content
-                    .map((c: { text?: unknown }) => (typeof c?.text === 'string' ? c.text : ''))
-                    .join('')
-                ]
-              : []
-          })
-        : []
-    } catch {
-      return []
-    }
+  return jsonlRecords(jsonl).flatMap((record) => {
+    const content = record.type === 'user' ? record.message?.content : undefined
+    return Array.isArray(content)
+      ? content.flatMap((part: { type?: string; content?: unknown }) => {
+          if (part?.type !== 'tool_result') return []
+          if (typeof part.content === 'string') return [part.content]
+          return Array.isArray(part.content)
+            ? [
+                part.content
+                  .map((c: { text?: unknown }) => (typeof c?.text === 'string' ? c.text : ''))
+                  .join('')
+              ]
+            : []
+        })
+      : []
   })
 }
 

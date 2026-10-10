@@ -160,6 +160,52 @@ async function newSessionAnsweringAtTheTab(
   await expect(rows.filter({ hasText: FAKE_SESSION_TITLE })).toHaveCount(1, { timeout: 90_000 })
 }
 
+interface RealSession {
+  tabId: string
+  transcript: () => string
+  write: (data: string) => Promise<void>
+}
+
+async function boundRealSession(page: Page, lab: SshLab): Promise<RealSession> {
+  const bound = async (): Promise<{ tabId: string; sessionId: string } | undefined> =>
+    (await page.evaluate(() => window.api.sessions.list())).find((s) => s.alive && s.sessionId)
+  await expect
+    .poll(async () => (await bound())?.sessionId ?? '', {
+      timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
+    })
+    .not.toBe('')
+  const { tabId, sessionId } = (await bound())!
+  return {
+    tabId,
+    transcript: () => transcriptOnTarget(lab, sessionId),
+    write: (data) => page.evaluate(([id, d]) => window.api.terminal.write(id, d), [tabId, data])
+  }
+}
+
+async function newRealSessionOnKtKey(page: Page, lab: SshLab): Promise<RealSession> {
+  await addMachine(page, 'kt-key', 'kuser')
+  await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+  await openMenu(page, page.locator('.ws-head', { hasText: 'kt-key' }))
+  await page.locator('.menu .mi', { hasText: 'New session' }).click()
+  return boundRealSession(page, lab)
+}
+
+async function typeAndSubmit(page: Page, session: RealSession, text: string): Promise<void> {
+  const prompts = (): number => claudePromptsIn(session.transcript()).length
+  const before = prompts()
+  await session.write(text)
+  for (let i = 0; i < ENTERS_BEFORE_GIVING_UP; i++) {
+    await page.waitForTimeout(TYPED_TEXT_SETTLES_IN_THE_INPUT_BOX_MS)
+    await session.write('\r')
+    const sent = await expect
+      .poll(prompts, { timeout: A_SUBMITTED_PROMPT_REACHES_THE_TRANSCRIPT_MS })
+      .toBeGreaterThan(before)
+      .then(() => true)
+      .catch(() => false)
+    if (sent) return
+  }
+}
+
 test.describe('remote workspaces against real sshd machines behind a company jump host (Docker)', () => {
   test('E-SSH-01: with a key, through the jump host: connects before any session, lists and reads files, and a session starts and shows up', async ({
     env
@@ -374,21 +420,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       env,
       async ({ page, lab }) => {
         runOnTarget(lab, 'kuser', COMMIT_THE_PROJECT_THEN_EDIT_THE_README)
-        await addMachine(page, 'kt-key', 'kuser')
-        await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
-        await openMenu(page, page.locator('.ws-head', { hasText: 'kt-key' }))
-        await page.locator('.menu .mi', { hasText: 'New session' }).click()
-        const bound = async (): Promise<{ tabId: string; sessionId: string } | undefined> =>
-          (await page.evaluate(() => window.api.sessions.list())).find(
-            (s) => s.alive && s.sessionId
-          )
-        await expect
-          .poll(async () => (await bound())?.sessionId ?? '', {
-            timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
-          })
-          .not.toBe('')
-        const { tabId, sessionId } = (await bound())!
-        const transcript = (): string => transcriptOnTarget(lab, sessionId)
+        const { tabId, transcript } = await newRealSessionOnKtKey(page, lab)
         const prompts = (): string[] => claudePromptsIn(transcript())
         await showBrowse(page)
         await page
@@ -458,33 +490,10 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         await page.keyboard.type(worktree)
         await page.keyboard.press('Enter')
         await expect(dlg).toHaveCount(0)
-        const bound = async (): Promise<{ tabId: string; sessionId: string } | undefined> =>
-          (await page.evaluate(() => window.api.sessions.list())).find(
-            (s) => s.alive && s.sessionId
-          )
-        await expect
-          .poll(async () => (await bound())?.sessionId ?? '', {
-            timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
-          })
-          .not.toBe('')
-        const { tabId, sessionId } = (await bound())!
-        const transcript = (): string => transcriptOnTarget(lab, sessionId)
-        const write = (data: string): Promise<void> =>
-          page.evaluate(([id, d]) => window.api.terminal.write(id, d), [tabId, data])
+        const session = await boundRealSession(page, lab)
+        const { transcript } = session
 
-        await write(ECHO_THE_PORT_OFFSET_WITH_BASH)
-        for (let i = 0; i < ENTERS_BEFORE_GIVING_UP; i++) {
-          await page.waitForTimeout(TYPED_TEXT_SETTLES_IN_THE_INPUT_BOX_MS)
-          await write('\r')
-          const sent = await expect
-            .poll(() => claudePromptsIn(transcript()).length, {
-              timeout: A_SUBMITTED_PROMPT_REACHES_THE_TRANSCRIPT_MS
-            })
-            .toBeGreaterThan(0)
-            .then(() => true)
-            .catch(() => false)
-          if (sent) break
-        }
+        await typeAndSubmit(page, session, ECHO_THE_PORT_OFFSET_WITH_BASH)
         const offset = String(portOffset(worktree))
         await expect
           .poll(() => claudeRepliesIn(transcript()).at(-1)?.trim(), {
@@ -514,39 +523,14 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     await withLab(
       env,
       async ({ page, lab }) => {
-        await addMachine(page, 'kt-key', 'kuser')
-        await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
-        await openMenu(page, page.locator('.ws-head', { hasText: 'kt-key' }))
-        await page.locator('.menu .mi', { hasText: 'New session' }).click()
-        const bound = async (): Promise<{ tabId: string; sessionId: string } | undefined> =>
-          (await page.evaluate(() => window.api.sessions.list())).find(
-            (s) => s.alive && s.sessionId
-          )
-        await expect
-          .poll(async () => (await bound())?.sessionId ?? '', {
-            timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
-          })
-          .not.toBe('')
-        const { tabId, sessionId } = (await bound())!
-        const transcript = (): string => transcriptOnTarget(lab, sessionId)
-        const write = (data: string): Promise<void> =>
-          page.evaluate(([id, d]) => window.api.terminal.write(id, d), [tabId, data])
+        const session = await newRealSessionOnKtKey(page, lab)
+        const { transcript } = session
 
-        await write(
+        await typeAndSubmit(
+          page,
+          session,
           `With your Bash tool, run these two shell commands, one at a time: koloft help — then: koloft note append "${line}" — then reply with only the word ${REPLY_WORD}. Do nothing else.`
         )
-        for (let i = 0; i < ENTERS_BEFORE_GIVING_UP; i++) {
-          await page.waitForTimeout(TYPED_TEXT_SETTLES_IN_THE_INPUT_BOX_MS)
-          await write('\r')
-          const sent = await expect
-            .poll(() => claudePromptsIn(transcript()).length, {
-              timeout: A_SUBMITTED_PROMPT_REACHES_THE_TRANSCRIPT_MS
-            })
-            .toBeGreaterThan(0)
-            .then(() => true)
-            .catch(() => false)
-          if (sent) break
-        }
         await expect
           .poll(() => notesOnDisk(env, remoteKeyFor('kt-key', 'kuser')) ?? '', {
             timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
@@ -592,21 +576,8 @@ test.describe('remote workspaces against real sshd machines behind a company jum
             ' && git init -q && git add -A && git commit -qm base' +
             ` && git remote add origin /home/kuser/origin.git && git switch -q -c ${branch}`
         )
-        await addMachine(page, 'kt-key', 'kuser')
-        await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
-        await openMenu(page, page.locator('.ws-head', { hasText: 'kt-key' }))
-        await page.locator('.menu .mi', { hasText: 'New session' }).click()
-        const bound = async (): Promise<{ tabId: string; sessionId: string } | undefined> =>
-          (await page.evaluate(() => window.api.sessions.list())).find(
-            (s) => s.alive && s.sessionId
-          )
-        await expect
-          .poll(async () => (await bound())?.sessionId ?? '', {
-            timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
-          })
-          .not.toBe('')
-        const { tabId, sessionId } = (await bound())!
-        const transcript = (): string => transcriptOnTarget(lab, sessionId)
+        const session = await newRealSessionOnKtKey(page, lab)
+        const { transcript } = session
         const prompts = (): string[] => claudePromptsIn(transcript())
         const ghButton = page.locator('.wb-gh')
         await expect(ghButton.locator('.ci')).toHaveClass(/\bfail\b/, { timeout: 60_000 })
@@ -655,21 +626,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         await test.info().attach('screen-before-the-question', { body: await screen() })
         expect(prompts()).toHaveLength(promptsBefore)
 
-        const write = (data: string): Promise<void> =>
-          page.evaluate(([id, d]) => window.api.terminal.write(id, d), [tabId, data])
-        await write(question)
-        for (let i = 0; i < ENTERS_BEFORE_GIVING_UP; i++) {
-          await page.waitForTimeout(TYPED_TEXT_SETTLES_IN_THE_INPUT_BOX_MS)
-          await write('\r')
-          const sent = await expect
-            .poll(() => prompts().length, {
-              timeout: A_SUBMITTED_PROMPT_REACHES_THE_TRANSCRIPT_MS
-            })
-            .toBeGreaterThan(promptsBefore)
-            .then(() => true)
-            .catch(() => false)
-          if (sent) break
-        }
+        await typeAndSubmit(page, session, question)
         expect(prompts()).toHaveLength(promptsBefore + 1)
         const sent = prompts().at(-1)!
         await test.info().attach('the-one-message', { body: sent })
