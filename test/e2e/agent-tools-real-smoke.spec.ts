@@ -211,7 +211,7 @@ function refusedThenClosedForGood(
 const CHILD = 'kid'
 const CHILD_TASK = 'Reply with the single word ok.'
 const START_A_CHILD_THEN_CLOSE_IT = {
-  default: `Run these shell commands one after another, each exactly once: koloft session new -w ${CHILD} -- "${CHILD_TASK}" — it prints the new session's name in quotes — then sleep 20 — then koloft session close with that name in quotes. Then say only what the last command printed. Do nothing else.`,
+  default: `Run these shell commands one after another, each exactly once: koloft session new -w ${CHILD} -- "${CHILD_TASK}" — it prints the new session's name in quotes — then sleep 20 — then koloft session close followed by that name with the quotes left out, its words as separate arguments. Then say only what the last command printed. Do nothing else.`,
   other: `Run this shell command exactly once: koloft session new -w ${CHILD} -- "${CHILD_TASK}" It prints a tab id. Then run sleep 20, then run koloft session close with that tab id. Then say only what the last command printed. Do nothing else.`
 }
 const TITLE_SAMPLE_EVERY_MS = 250
@@ -283,6 +283,7 @@ function closesTheSessionItStarted(
         const name = launchNameOfTheChild(env)
         expect(name).toBeTruthy()
         expect(name).not.toBe(CHILD_TASK)
+        expect(name).toMatch(/\s/)
         expect(childTitles).toContain(name)
       }
       expect(childTitles.join('\n')).not.toMatch(TITLE_DRAWN_FROM_THE_HANDOVER)
@@ -641,7 +642,7 @@ test.describe('KOLOFT_PORT_OFFSET reaches the REAL agent’s own shell in a work
 })
 
 test.describe('`koloft session close` from a REAL agent in a worktree: opt-in cases proving the real claude and codex reach the command; they spend real money', () => {
-  test('a real Claude Code starts a child session in a worktree, then closes it for good while it stays open itself', async ({
+  test('a real Claude Code starts a child session in a worktree, then closes it for good by its made-up name with spaces given without quotes, while it stays open itself', async ({
     env
   }) => {
     test.skip(
@@ -744,6 +745,129 @@ test.describe('GitHub button ▸ Send failing checks with the REAL gh, claude an
       'other',
       useRealCodex,
       CODEX_TRANSCRIPT
+    )
+  })
+})
+
+const GOAL_THAT_WAITS_ON_A_BACKGROUND_TASK =
+  'Use your Bash tool with run_in_background set to true to run: sleep 8; echo BGDONE . Do not wait or poll for it; end your turn right away. When its completion notice arrives, reply with exactly the word DONE.'
+const TITLE_MAX = 60
+const THE_TRACKER_HAS_READ_THE_LAST_LINES_WITHIN_MS = 3_000
+
+// CC§8
+function repliedAfterATaskNoticeWrittenAsAUserRecord(transcript: string): boolean {
+  const lines = transcript.split('\n')
+  const notice = lines.findIndex(
+    (l) => /"type":"user"/.test(l) && /"kind":"task-notification"/.test(l)
+  )
+  return notice >= 0 && claudeRepliesIn(lines.slice(notice + 1).join('\n')).includes('DONE')
+}
+
+// CC§2 CC§8
+test.describe('a REAL Claude Code session opened by /goal: an opt-in case; it spends real money', () => {
+  test('a background task’s notice never becomes the title: the goal titles the live row, and the row read back from disk after a relaunch', async ({
+    env
+  }) => {
+    test.skip(
+      !HAVE_REAL_CLAUDE,
+      'set KOLOFT_SMOKE_CLAUDE (absolute path of a real claude binary) and KOLOFT_SMOKE_OAUTH_TOKEN or KOLOFT_SMOKE_ACCOUNT (a Settings ▸ Accounts name, read off the Keychain)'
+    )
+    test.setTimeout(A_REAL_MODEL_TURN_MS + 180_000)
+    await inARealWorktreeSession(env, 'default', useRealClaude, [], async ({ page, rows }) => {
+      await ask(page, rows, `/goal ${GOAL_THAT_WAITS_ON_A_BACKGROUND_TASK}`)
+      const sessionId = (await boundSessionId(page, await rows.getAttribute('data-tab-id'))) ?? ''
+      await expect
+        .poll(() => repliedAfterATaskNoticeWrittenAsAUserRecord(claudeTranscript(env, sessionId)), {
+          timeout: A_REAL_MODEL_TURN_MS
+        })
+        .toBe(true)
+      await page.waitForTimeout(THE_TRACKER_HAS_READ_THE_LAST_LINES_WITHIN_MS)
+      await expect(rows.locator('.ws-tab-title')).toHaveText(
+        GOAL_THAT_WAITS_ON_A_BACKGROUND_TASK.slice(0, TITLE_MAX)
+      )
+    })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      const row = wsRows(page, 'repo')
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      await expect(row.locator('.ws-tab-title')).toHaveText(
+        `${GOAL_THAT_WAITS_ON_A_BACKGROUND_TASK.slice(0, TITLE_MAX)}…`
+      )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+})
+
+const IGNORED_FILES_THAT_TAKE_CLAUDE_SECONDS_TO_DELETE = { dirs: 2500, filesEach: 100 }
+const A_SLASH_COMMAND_MENU_SETTLES_MS = 1_000
+
+function ignoreNodeModules(repo: string): void {
+  fs.writeFileSync(path.join(repo, '.gitignore'), 'node_modules/\n.claude/\n')
+  runGit(repo, 'add', '.gitignore')
+  runGit(repo, 'commit', '-q', '-m', 'ignore node_modules')
+}
+
+function fillNodeModules(tree: string): void {
+  const { dirs, filesEach } = IGNORED_FILES_THAT_TAKE_CLAUDE_SECONDS_TO_DELETE
+  for (let d = 0; d < dirs; d++) {
+    const dir = path.join(tree, 'node_modules', `pkg${d}`)
+    fs.mkdirSync(dir, { recursive: true })
+    for (let f = 0; f < filesEach; f++) fs.writeFileSync(path.join(dir, `f${f}.js`), '1\n')
+  }
+}
+
+// CC§4
+test.describe('/exit from a REAL Claude Code worktree session: an opt-in case; it asks the model nothing', () => {
+  test('the row goes the moment the real Claude Code starts removing a worktree full of ignored files, and the worktree and its branch are gone once it ends', async ({
+    env
+  }) => {
+    test.skip(
+      !HAVE_REAL_CLAUDE,
+      'set KOLOFT_SMOKE_CLAUDE (absolute path of a real claude binary) and KOLOFT_SMOKE_OAUTH_TOKEN or KOLOFT_SMOKE_ACCOUNT (a Settings ▸ Accounts name, read off the Keychain)'
+    )
+    test.setTimeout(300_000)
+    await inARealWorktreeSession(
+      env,
+      'default',
+      useRealClaude,
+      [],
+      async ({ page, rows, repo, tree }) => {
+        fillNodeModules(tree)
+        await centerTerm(page).click()
+        await page.keyboard.type('/exit')
+        for (let i = 0; i < ENTERS_BEFORE_GIVING_UP; i++) {
+          await page.waitForTimeout(A_SLASH_COMMAND_MENU_SETTLES_MS)
+          await page.keyboard.press('Enter')
+          const next = await expect
+            .poll(
+              async () =>
+                (await rows.count()) === 0
+                  ? 'gone'
+                  : /Exiting worktree session/.test(await screen(page))
+                    ? 'asked'
+                    : 'typed',
+              { timeout: 5_000 }
+            )
+            .not.toBe('typed')
+            .then(() => true)
+            .catch(() => false)
+          if (!next) continue
+          if ((await rows.count()) > 0) {
+            await page.keyboard.press('ArrowDown')
+            await page.keyboard.press('Enter')
+          }
+          break
+        }
+        await expect(rows).toHaveCount(0, { timeout: 5_000 })
+        expect(fs.existsSync(tree)).toBe(true)
+        await expect.poll(() => fs.existsSync(tree), { timeout: 120_000 }).toBe(false)
+        expect(runGit(repo, 'branch', '--list', `worktree-${WORKTREE}`).trim()).toBe('')
+      },
+      ignoreNodeModules
     )
   })
 })

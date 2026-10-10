@@ -51,10 +51,24 @@ export function readCalls(env: E2EEnv): ClaudeCall[] {
 export async function waitForCalls(
   env: E2EEnv,
   count: number,
-  timeout = 40_000
+  timeout = 40_000,
+  keep: (call: ClaudeCall) => boolean = () => true
 ): Promise<ClaudeCall[]> {
-  await expect.poll(() => readCalls(env).length, { timeout }).toBeGreaterThanOrEqual(count)
-  return readCalls(env)
+  const calls = (): ClaudeCall[] => readCalls(env).filter(keep)
+  await expect.poll(() => calls().length, { timeout }).toBeGreaterThanOrEqual(count)
+  return calls()
+}
+
+export function waitForCallsBesideConductors(env: E2EEnv, count: number): Promise<ClaudeCall[]> {
+  const conductors = path.join(env.userData, 'conductors')
+  return waitForCalls(env, count, undefined, (c) => path.dirname(c.cwd) !== conductors)
+}
+
+export async function waitConductorStarted(env: E2EEnv, timeout: number): Promise<void> {
+  const bound = (): number =>
+    (settingsOnDisk(env).discord as { bindings: { sessionIds: string[] }[] } | undefined)
+      ?.bindings[0]?.sessionIds.length ?? 0
+  await expect.poll(bound, { timeout }).toBeGreaterThan(0)
 }
 
 export function resumedId(call: ClaudeCall): string | undefined {

@@ -44,8 +44,8 @@ when it works. That is what "judged against" means.
   A conductor (a session bound to a Discord channel) also reads what a session said,
   and sends to, resumes, stops and starts any session in its scope, Claude or Codex,
   and closes an ended one on this computer. It only passes work on (ADR-0029), but checks
-  facts on GitHub itself with a read-only `koloft gh`, and a Claude conductor keeps its
-  own memory.
+  facts on GitHub itself with `koloft gh`, which reads and, when the owner asks, opens an
+  issue, and a Claude conductor keeps its own memory.
   What is left: Codex driving the Workbench browser (#119), and sessions on another
   machine over ssh, which get no `koloft` command yet.
 

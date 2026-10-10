@@ -31,6 +31,7 @@ import { crossSessionLine, type ModeClass } from './crossSessionMessage'
 import { handoverPreamble, withHandover, type SessionCaller } from './handover'
 import { nameForTask } from './sessionTitle'
 import type { Assist } from './assist'
+import { keysFor } from './typeKeys'
 import type { StartedSessions } from './startedSessions'
 
 export interface NewSessionArgs {
@@ -91,6 +92,10 @@ export interface ListedSession {
   peerName?: string
 }
 
+function idToReach(s: SessionInfo): string {
+  return s.nativeSessionId ?? s.sessionId
+}
+
 export function formatSessionList(sessions: ListedSession[], callerTabId: string): string {
   if (sessions.length === 0) return 'This workspace has no open sessions.'
   return sessions
@@ -100,7 +105,7 @@ export function formatSessionList(sessions: ListedSession[], callerTabId: string
         BACKEND_LABEL[info.backendId],
         STATE_WORDS[info.status ?? 'idle']
       ]
-      if (info.backendId === 'codex') parts.push(`id: ${info.nativeSessionId ?? info.sessionId}`)
+      if (info.backendId === 'codex') parts.push(`id: ${idToReach(info)}`)
       if (peerName) parts.push(`name: ${peerName}`)
       const transcript = info.details?.claude?.jsonlPath
       if (transcript) parts.push(`transcript: ${transcript}`)
@@ -161,7 +166,7 @@ function formatConductorList(
         title,
         BACKEND_LABEL[row.backendId],
         parseRemoteKey(workspace)?.host ?? 'local',
-        info ? STATE_WORDS[info.status ?? 'idle'] : 'closed',
+        info || row.running ? STATE_WORDS[info?.status ?? 'idle'] : 'closed',
         `last active ${ageLabel(row.mtime, now)}`,
         `id: ${row.nativeSessionId ?? row.id}`
       ]
@@ -212,7 +217,7 @@ function startableWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<stri
 }
 
 const CLAUDE_USES_SEND_MESSAGE =
-  'this is for Codex sessions. A Claude session talks to another Claude session with its SendMessage tool; ListAgents shows their names.'
+  'this is for Codex sessions, and for reporting to the conductor that started you by the id in your first message. A Claude session talks to another Claude session with its SendMessage tool; ListAgents shows their names.'
 
 function matchRef<T>(
   items: T[],
@@ -229,13 +234,17 @@ function matchRef<T>(
   return hits.length ? { ok: true, value: hits[0] } : null
 }
 
-export function findCodexTarget(sessions: SessionInfo[], ref: string): Parsed<SessionInfo> {
-  const hit = matchRef(
+function matchOpen(sessions: SessionInfo[], ref: string): Parsed<SessionInfo> | null {
+  return matchRef(
     sessions,
     ref,
     (s) => s.nativeSessionId === ref || s.sessionId === ref || s.tabId === ref,
     (s) => s.title
   )
+}
+
+export function findCodexTarget(sessions: SessionInfo[], ref: string): Parsed<SessionInfo> {
+  const hit = matchOpen(sessions, ref)
   if (!hit) return fail(`there is no open session "${ref}". Run "koloft session list" to see them.`)
   return !hit.ok || hit.value.backendId === 'codex' ? hit : fail(CLAUDE_USES_SEND_MESSAGE)
 }
@@ -248,9 +257,6 @@ export interface ClosableSession {
   treeRoot: string
   tabId?: string
 }
-
-const CLOSE_USAGE =
-  'koloft session close: give nothing to close this session, or the id or name of one you started with koloft session new (a conductor: of an ended session it looks after), like: koloft session close <id or name>'
 
 export async function findClosable(
   sessions: ClosableSession[],
@@ -296,7 +302,7 @@ export interface SessionVerbDeps {
   resume(row: SessionRow): Promise<string>
   ready(tabId: string, ms: number, turnEnded: boolean): Promise<boolean>
   sendLine(tabId: string, line: string, ms: number): Promise<void>
-  typeInto(tabId: string, text: string): Promise<void>
+  press(tabId: string, keys: string[]): Promise<void>
   modeOf(tabId: string): ModeClass
   stop(tabId: string): void
   answer(tabId: string, reply: string): Promise<string | undefined>
@@ -326,7 +332,7 @@ export interface Target {
 }
 
 const SESSION_USAGE =
-  'koloft session: use list, read, new, send, command, screen, answer, resume, stop or close. Run "koloft help" to see how.'
+  'koloft session: use list, read, new, send, command, screen, keys, answer, resume, stop or close. Run "koloft help" to see how.'
 const READ_USAGE = `koloft session read: give an id or name, and if you like --last <1 to ${MAX_READ_TURNS}>, like: koloft session read fix-login --last 3`
 const CONDUCTOR_LIST_USAGE =
   'koloft session list: it takes no options here; it lists every session you look after.'
@@ -366,7 +372,8 @@ async function startSibling(
   if (backend === 'codex' && args.name !== undefined) return refused(CODEX_HAS_NO_NAME, EXIT_USAGE)
   const caller: SessionCaller = {
     name: me.backendId === 'claude' ? ((await d.peerNames()(me.sessionId)) ?? me.title) : undefined,
-    id: me.nativeSessionId ?? me.sessionId
+    id: idToReach(me),
+    conductor: conductorTab !== undefined
   }
   const name =
     backend === 'claude'
@@ -406,13 +413,37 @@ async function startSibling(
 }
 
 function parseReadArgs(rest: string[]): Parsed<{ ref: string; last: number }> {
-  const [ref, flag, value, ...extra] = rest
-  if (!ref || extra.length > 0) return fail(READ_USAGE)
-  if (flag === undefined) return { ok: true, value: { ref, last: 1 } }
+  const flag = rest.indexOf('--last')
+  const ref = (flag < 0 ? rest : rest.slice(0, flag)).join(' ')
+  if (!ref) return fail(READ_USAGE)
+  if (flag < 0) return { ok: true, value: { ref, last: 1 } }
+  const [value, ...extra] = rest.slice(flag + 1)
   const last = Number(value)
-  if (flag !== '--last' || !Number.isInteger(last) || last < 1 || last > MAX_READ_TURNS)
+  if (extra.length > 0 || !Number.isInteger(last) || last < 1 || last > MAX_READ_TURNS)
     return fail(READ_USAGE)
   return { ok: true, value: { ref, last } }
+}
+
+function nameThenWords(
+  words: string[],
+  isName: (ref: string) => boolean
+): Parsed<{ ref: string; tail: string[] }> {
+  const heads = words.slice(0, -1).map((_, i) => words.slice(0, i + 1).join(' '))
+  const named = heads.filter(isName)
+  if (named.length > 1)
+    return fail(
+      `${named.map((n) => `"${n}"`).join(' and ')} are all session names, so Koloft cannot tell where the name ends. Give the session's id from "koloft session list" instead.`
+    )
+  const count = named.length ? heads.indexOf(named[0]) + 1 : 1
+  return { ok: true, value: { ref: words.slice(0, count).join(' '), tail: words.slice(count) } }
+}
+
+function wholeName(words: string[]): Parsed<{ ref: string; tail: string[] }> {
+  return { ok: true, value: { ref: words.join(' '), tail: [] } }
+}
+
+function asArgument(ref: string): string {
+  return /\s/.test(ref) ? JSON.stringify(ref) : ref
 }
 
 function matchRow(
@@ -470,15 +501,32 @@ export function sessionChoices(
     }))
 }
 
+interface ScopedRows {
+  all: PlacedRow[]
+  mine: PlacedRow[]
+  names: (string | null)[]
+}
+
+async function rowsIn(d: SessionVerbDeps, scope: string | undefined): Promise<ScopedRows> {
+  const all = placedRows(d.sidebar(), d.allSessions())
+  const mine = all.filter((p) => inScope(scope, p.workspace))
+  return { all, mine, names: await peerNamesOf(d, mine) }
+}
+
+function namesARow({ all, mine, names }: ScopedRows, ref: string): boolean {
+  return matchRow(mine, ref, names) !== null || matchRow(all, ref) !== null
+}
+
 async function findIn(
   d: SessionVerbDeps,
   verb: string,
   ref: string,
   scope: string | undefined
 ): Promise<Parsed<PlacedRow>> {
-  const all = placedRows(d.sidebar(), d.allSessions())
-  const mine = all.filter((p) => inScope(scope, p.workspace))
-  const names = await peerNamesOf(d, mine)
+  return findAmong(await rowsIn(d, scope), verb, ref)
+}
+
+function findAmong({ all, mine, names }: ScopedRows, verb: string, ref: string): Parsed<PlacedRow> {
   const hit = matchRow(mine, ref, names)
   if (hit && !hit.ok) return fail(`koloft session ${verb}: ${hit.error}`)
   if (hit) {
@@ -547,11 +595,18 @@ const ONLY_YOUR_WORKSPACE = 'koloft session new: you can only start sessions in 
 
 const COMMAND_USAGE = `koloft session command: give an id or name (or "me" for yourself), then one slash command, like: koloft session command fix-login /compact`
 const SCREEN_USAGE = `koloft session screen: give an id or name (or "me" for yourself), like: koloft session screen fix-login`
+const KEYS_USAGE = `koloft session keys: give an id or name, then the keys to press in order, like: koloft session keys fix-login Down Enter`
+
+function seeAndPress(ref: string): string {
+  const arg = asArgument(ref)
+  return `To answer it anyway, see what it shows with koloft session screen ${arg}, then press the keys with koloft session keys ${arg} <keys>.`
+}
 
 const CONDUCTOR_ACT_USAGE: Record<string, string> = {
   send: SEND_USAGE,
   command: COMMAND_USAGE,
   screen: SCREEN_USAGE,
+  keys: KEYS_USAGE,
   answer: ANSWER_USAGE,
   resume: RESUME_USAGE,
   stop: STOP_USAGE
@@ -570,13 +625,20 @@ export function ownerSays(text: string): string {
   return `(Your owner, via the Koloft conductor:) ${text}`
 }
 
+export function sessionSays(from: SessionInfo, text: string): string {
+  return `(From the session "${from.title}", id ${idToReach(from)}:) ${text}`
+}
+
 function isMe(
   ref: string,
   me: SessionInfo,
   mine: Target | undefined,
   callerTabId: string
 ): boolean {
-  return mine?.tabId === callerTabId || [me.sessionId, me.nativeSessionId, me.title].includes(ref)
+  return (
+    mine?.tabId === callerTabId ||
+    [MYSELF, me.sessionId, me.nativeSessionId, me.title].includes(ref)
+  )
 }
 
 export function sessionVerb(d: SessionVerbDeps): AgentVerb {
@@ -614,7 +676,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       throw new Error(
         `${t.name} stayed busy. It runs on another machine, where Koloft can only type into it once its turn has ended and it shows no question.`
       )
-    await d.typeInto(tab, text)
+    await d.press(tab, [text, '\r'])
     return `Typed into ${t.name}.`
   }
 
@@ -648,18 +710,27 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
     rest: string[],
     caller: AgentCaller
   ): Promise<AgentReply> => {
-    const [ref, ...tail] = rest
-    const resume = splitAtDashes(tail)
+    const takesWords = sub === 'send' || sub === 'answer' || sub === 'command' || sub === 'keys'
+    const resume = splitAtDashes(rest)
+    const rows = await rowsIn(d, d.conductorScope(caller.tabId))
+    const split = takesWords
+      ? nameThenWords(
+          rest,
+          (r) =>
+            isMe(r, caller.session, d.conductorOf(r), caller.tabId) ||
+            d.conductorOf(r) !== undefined ||
+            namesARow(rows, r)
+        )
+      : wholeName(sub === 'resume' ? resume.before : rest)
+    if (!split.ok) return refused(`koloft session ${sub}: ${split.error}`, EXIT_USAGE)
+    const { ref, tail } = split.value
     const text = sub === 'resume' ? resume.after : tail.join(' ').trim()
-    const extra = sub === 'resume' ? resume.before : tail
-    const takesWords = sub === 'send' || sub === 'answer' || sub === 'command'
-    if (!ref || (takesWords && !text) || (!takesWords && extra.length > 0))
-      return refused(CONDUCTOR_ACT_USAGE[sub], EXIT_USAGE)
+    if (!ref || (takesWords && !text)) return refused(CONDUCTOR_ACT_USAGE[sub], EXIT_USAGE)
     if (sub === 'command') {
       const problem = slashCommandProblem(text)
       if (problem) return refused(`koloft session command: ${problem}`, EXIT_USAGE)
     }
-    const self = ref === MYSELF || isMe(ref, caller.session, d.conductorOf(ref), caller.tabId)
+    const self = isMe(ref, caller.session, d.conductorOf(ref), caller.tabId)
     if (self && sub === 'screen') return answered(formatScreen('you', await d.screen(caller.tabId)))
     if (self && sub === 'command') {
       const me = d.conductorOf(caller.session.sessionId)
@@ -667,7 +738,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       return answered(await d.command(caller.tabId, me, text))
     }
     if (self) return refused(`koloft session ${sub}: ${THAT_IS_YOU}`)
-    const found = await findInScope(d, sub, ref, caller.tabId)
+    const found = findAmong(rows, sub, ref)
     if (!found.ok) return refused(found.error)
     const t = rowTarget(d, found.value)
     if (sub === 'screen')
@@ -679,12 +750,21 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       d.stop(t.tabId)
       return answered(`Closed ${t.name}. It stays in the list and can be resumed.`)
     }
+    if (sub === 'keys' && !t.tabId) return refused(`koloft session keys: ${t.name} is not open.`)
     d.touch(caller.tabId, t.key)
     if (sub === 'command') return answered(await d.command(caller.tabId, t, text))
+    if (sub === 'keys' && t.tabId) {
+      await d.press(t.tabId, keysFor(tail))
+      return answered(
+        `Pressed ${text} in ${t.name}. See what it shows now with koloft session screen ${asArgument(ref)}.`
+      )
+    }
     if (sub === 'answer') {
-      const error = t.tabId ? await d.answer(t.tabId, text) : SHOWS_NOTHING_WHILE_CLOSED
+      if (!t.tabId)
+        return refused(`koloft session answer: ${t.name}: ${SHOWS_NOTHING_WHILE_CLOSED}`)
+      const error = await d.answer(t.tabId, text)
       return error
-        ? refused(`koloft session answer: ${t.name}: ${error}`)
+        ? refused(`koloft session answer: ${t.name}: ${error} ${seeAndPress(ref)}`)
         : answered(`Answered ${t.name}.`)
     }
     if (sub === 'resume' && !text) {
@@ -746,14 +826,20 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
     if (scope !== undefined && Object.hasOwn(CONDUCTOR_ACT_USAGE, sub))
       return conductorAct(sub, rest, caller)
     if (sub === 'send') {
-      const [ref, ...words] = rest
-      const text = words.join(' ').trim()
+      const open = d.allSessions()
+      const split = nameThenWords(
+        rest,
+        (ref) => d.conductorOf(ref) !== undefined || matchOpen(open, ref) !== null
+      )
+      if (!split.ok) return refused(`koloft session send: ${split.error}`, EXIT_USAGE)
+      const { ref, tail } = split.value
+      const text = tail.join(' ').trim()
       if (!ref || !text) return refused(SEND_USAGE, EXIT_USAGE)
       const conductor = d.conductorOf(ref)
-      if (conductor) return deliver('send', conductor, text, caller)
+      if (conductor) return deliver('send', conductor, sessionSays(caller.session, text), caller)
       if (caller.session.backendId !== 'codex')
         return refused(`koloft session send: ${CLAUDE_USES_SEND_MESSAGE}`)
-      const target = findCodexTarget(d.allSessions(), ref)
+      const target = findCodexTarget(open, ref)
       if (!target.ok) return refused(`koloft session send: ${target.error}`)
       await d.queue(target.value.tabId, text)
       return answered(`Sent to ${target.value.title}.`)
@@ -761,8 +847,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
     if (Object.hasOwn(CONDUCTOR_ACT_USAGE, sub))
       return refused(`koloft session ${sub}: ${ONLY_A_CONDUCTOR}`)
     if (sub === 'close') {
-      if (rest.length > 1) return refused(CLOSE_USAGE, EXIT_USAGE)
-      const [ref] = rest
+      const ref = rest.length > 0 ? rest.join(' ') : undefined
       let target: ClosableSession = caller.session
       if (ref !== undefined) {
         const mine = d.closable().filter((s) => d.startedSessions.startedBy(s, caller.session))

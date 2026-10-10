@@ -332,7 +332,12 @@ export function compactionSummary(obj: { isCompactSummary?: unknown }): boolean 
   return obj.isCompactSummary === true
 }
 
-function ownerOrPeer(kind: unknown): 'owner' | 'peer' | null {
+// CC§2 CC§8
+const WRITTEN_BY_CLAUDE_CODE = /^<(task-notification|system-reminder|teammate-message)[\s>]/
+
+export function whoTyped(record: { origin?: unknown }, text: string): 'owner' | 'peer' | null {
+  if (WRITTEN_BY_CLAUDE_CODE.test(text)) return null
+  const kind = (record.origin as { kind?: unknown } | null | undefined)?.kind
   if (kind === undefined || kind === 'human') return 'owner'
   return kind === 'peer' ? 'peer' : null
 }
@@ -346,7 +351,7 @@ function claudeTurnPieces(obj: any): TurnPiece[] {
   const at = isFinite(ts) ? ts : Date.now()
   if (obj.type === 'user') {
     const raw = messageText(obj.message?.content)
-    const who = ownerOrPeer(obj.origin?.kind)
+    const who = raw === null ? null : whoTyped(obj, raw)
     if (raw === null || !who) return []
     if (who === 'peer') return [{ line: { who, text: peerText(raw), at }, midTurn: false }]
     if (
@@ -363,7 +368,7 @@ function claudeTurnPieces(obj: any): TurnPiece[] {
     const a = obj.attachment
     if (a?.type !== 'queued_command' || a.commandMode !== 'prompt' || typeof a.prompt !== 'string')
       return []
-    const who = ownerOrPeer(a.origin?.kind)
+    const who = whoTyped(a, a.prompt)
     if (!who) return []
     const text = who === 'peer' ? peerText(a.prompt) : a.prompt.trim()
     return [{ line: { who, text, at }, midTurn: true }]
@@ -1607,9 +1612,10 @@ export class SessionTracker extends SessionRuntime {
           return null
         }
         const cls = raw !== null ? classifyUserPrompt(raw) : null
-        if (cls?.title && !t.firstPrompt) t.firstPrompt = cls.title
-        if (cls?.commandArgs && !t.commandArgsTitle) t.commandArgsTitle = cls.commandArgs
-        if (cls?.commandName && !t.commandTitle) t.commandTitle = cls.commandName
+        const named = raw !== null && whoTyped(obj, raw) ? cls : null
+        if (named?.title && !t.firstPrompt) t.firstPrompt = named.title
+        if (named?.commandArgs && !t.commandArgsTitle) t.commandArgsTitle = named.commandArgs
+        if (named?.commandName && !t.commandTitle) t.commandTitle = named.commandName
         if ((cls?.genuine || hasImage) && mainThread && !commandEcho(obj, raw)) {
           activity = 'user'
           if (

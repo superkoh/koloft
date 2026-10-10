@@ -280,6 +280,10 @@ mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
   (§13), 3 `prompt`/`channel`, 89 `task-notification`; `user` records 261 `human`, 193
   `task-notification`, 7 `channel` and 4 `peer`; every assistant record held at most one
   `text` block, and no `(message.id, text)` pair repeated.
+- **Not every non-meta `user` record with no `origin` was typed by a person.** A sweep of
+  the 487 main transcripts on this Mac (2026-10-09) found, among those, one opening with
+  `<system-reminder>` and three with `<teammate-message teammate_id=…>` (all CC 2.1.111);
+  no `<task-notification>` text came without its `origin`.
 - **CC deletes transcripts itself**: `claude project purge [path]` — "Delete all Claude
   Code state for a project (transcripts, tasks, file history, config entry)"
   (`claude project --help`, 2.1.281, 2026-09-24).
@@ -490,12 +494,36 @@ the same files into a worktree Koloft makes or rebuilds itself.
   "no directory ever again" no longer holds. A session that leaves
   and then enters a worktree again mid-conversation (§2) is outside both sets.
 
+- **Removing happens before the exit, in the open, and can take seconds.** After a Remove
+  (or a silent clean removal) CC leaves its screen, writes `ESC ] 0 ; BEL` (an empty
+  window title) followed at once by the line `Removing worktree…` (U+2026), deletes the
+  folder, deletes the branch `worktree-<name>`, prints one result line, runs the
+  SessionEnd hooks and only then exits. Success lines start with `Worktree removed`
+  (`Worktree removed (no changes)`, `Worktree removed.`, `Worktree removed. Uncommitted
+  changes were discarded.`); the others name the trouble (`Could not finish removing the
+  worktree at …`, `Removing the worktree at … did not finish within …`, `Stopped waiting
+  for the removal of the worktree at …`, `Worktree could not be removed — kept at …`).
+  CC waits at most 10 minutes. Time grows with the files in the folder: 27k files (a
+  Koloft worktree with `node_modules`) took 3.5 s from `/exit` to exit, 2.6 s of it the
+  delete, under the owner's own settings (fullscreen, Koloft's hooks and plugin);
+  250k files took 9.5 s. The same title-then-line bytes came in normal and fullscreen
+  mode. Through Koloft's remote tmux (3.3a) the title code is not passed on, and the
+  line arrives as a redrawn screen row (`ESC[H` … `ESC[K`), like any other.
+- **A SIGHUP during the delete cuts it off half way.** CC stops waiting and exits; the
+  folder keeps what was not deleted yet (213,696 of 250,000 files), the worktree stays
+  in `git worktree list` and its branch stays. `git worktree remove --force --force`
+  and `git branch -D worktree-<name>` finish the job.
+- Measured 2026-10-09 on CC 2.1.295 (strings and code of the binary, a pty-driven `-w`
+  session in a throwaway repo, `--debug-file` timings, the raw pty bytes); the tmux row
+  in the e2e SSH lab image.
+
 Evidence: experiments E2/E8, 2026-08-10, claude 2.1.227; four live worktree exits on
 2026-09-03, claude 2.1.259 (`-w n5/n6/n7/n8/n9` in a throwaway repo, driven in a pty,
 checked with `git worktree list`, `git branch` and `ls ~/.claude/projects/<slug>`); the
 unchanged-tree removal on 2026-09-08, claude 2.1.265.
 Koloft dependents: the §1 whitelist eviction path; `fake-claude.js`'s dirty-tree exit
-prompt emulation.
+prompt and removal emulation; `src/main/claudeWorktreeExit.ts`, which hides a local tab
+the moment its CC starts removing and finishes the removal if Koloft quits first.
 
 ## §5 fork and background sessions (claude daemon)
 
@@ -833,8 +861,14 @@ inferred, not checked.
   `<task-id>`. It is written three ways: a `queue-operation` record (`operation:
   'enqueue'`, content = the notification) when the task reports, removed when
   delivered; then an `attachment` record (`type: 'queued_command'`,
-  `commandMode: 'task-notification'`) — the current shapes; and, before 2.1.18x, a user
-  record with `origin.kind: 'task-notification'`. Terminal `<status>` values are
+  `commandMode: 'task-notification'`); or a user record with `origin.kind:
+  'task-notification'`, `isMeta` unset, whose text opens with `<task-notification>`. That
+  user record is still written by 2.1.295–2.1.296 (sweep of the 487 main transcripts on
+  this Mac, 2026-10-09: 1,047 such records, every one carrying that `origin`). A probe
+  the same day (2.1.296, scratch `HOME`, `/goal` asking for a `run_in_background` Bash
+  and an end of turn) wrote it for a task that finished while CC sat idle, right after
+  the `queue-operation` pair; that session, opened by `/goal`, got no `ai-title`.
+  Which shape a task finishing mid-turn gets is not probed yet. Terminal `<status>` values are
   `completed`, `failed`, `killed`, `stopped`, `cancelled`, `canceled`; `stopped` comes
   for a task killed from the UI, by a Monitor timeout, or by agent teardown. Long-lived
   tasks (Monitor, teammate) also send progress notifications with the same tool-use-id.
@@ -1172,12 +1206,29 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   typed Enter picks Yes). One Esc closes each, except `/config`, which takes two (the
   first leaves its search box). A closed picker writes `Kept model as …` / `Resume
   cancelled`.
+- **A claude ended by a signal leaves the full screen and prints how to resume.**
+  Measured 2026-10-09, CC 2.1.295 logged in, inside a Koloft tab: after SIGTERM the
+  terminal left the alternate screen, and the normal buffer showed `Resume this session
+  with:` / `claude --resume <id>` under the launch line. So the last frame of the
+  conversation is gone from a terminal that keeps reading after the kill.
+- **The keys the TUI takes, one write each** (2026-10-09, CC 2.1.295, a python `pty`
+  (100×40) in a scratch folder, through Koloft's shim with `KOLOFT_HOOK_SETTINGS` unset,
+  about 1 s between writes, the screen read back through `pyte`): in the input box
+  `abcd`, `ESC[D` twice and `DEL` (0x7f) left `acd`; `ESC[C`, `X`, a space and `Y` made
+  `acX Yd`. `ESC[Z` (Shift+Tab) moved the footer from "bypass permissions on" to "auto
+  mode on". `/mod` then Tab completed to `/model `; CR opened its picker, where `ESC[B`
+  moved the `❯` mark down one entry (from the last entry it wrapped to the first),
+  `ESC[A` moved it up, and ESC closed it with "Kept model as …". The same keys through
+  ssh and tmux to a remote claude are not probed.
 - **URLs and files are opened with `Bun.spawn(["open", url])`**, which looks `open` up
   on PATH, so a PATH shim can catch it.
 - **An idle claude process holds a lot of memory**: measured 185–350 MB each for idle
   processes about two days old (date and CC version not recorded). On 2026-09-24, CC
   2.1.281, four live sessions (not idle, 20 min to 4 h old) held 196–403 MB each
-  (`ps -o rss`).
+  (`ps -o rss`). On 2026-10-09 (CC 2.1.295 on PATH), seven idle sessions 1–8 h old held
+  211–307 MB RSS (three of them measured with `footprint`: 255–271 MB) and used 1.8–5.3 s
+  of CPU in 5 minutes (0.6–1.8% of one core) — the process, not Koloft's watching of it,
+  is what an idle session costs.
 
 ## §13 Handing a session extra skills, context and a command allow rule; messaging between sessions
 

@@ -545,11 +545,10 @@ test.describe('Workbench panel layout: T1 collapsed, T2 right column, T3 the TUI
         const page = second.page
         const rowA = rowTitled(page, 'Session A')
         await expect(rowA).toHaveCount(1, { timeout: 30_000 })
-        await expect(rowA).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+        await expect(rowA).toHaveClass(/\bst-(working|waiting|idle)\b/, { timeout: 60_000 })
         await rowA.click()
         await waitForCalls(env, 3)
         await waitPanelAttached(page)
-        await expect(rowA).not.toHaveClass(/\bcold\b/, { timeout: 60_000 })
         await expect.poll(() => layoutState(page), { timeout: 30_000 }).toBe('T2')
         await expect(workbenchPanel(page)).toBeVisible()
       } finally {

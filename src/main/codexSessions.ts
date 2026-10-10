@@ -24,6 +24,7 @@ import {
   type CodexThread
 } from './codexObservation'
 import { CodexRpc, createCodexTransport, type CodexTransport } from './codexTransport'
+import { endCodexAppServersLeftByACrash } from './leftovers'
 import { SessionStore, codexSessionKey, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
@@ -160,6 +161,7 @@ interface Run {
 }
 
 export class CodexSessions {
+  private crashLeftoversEnded?: Promise<void>
   private runs = new Map<string, Run>()
   private history = new Map<string, CodexThread>()
   private archivedIds = new Set<string>()
@@ -281,6 +283,10 @@ export class CodexSessions {
   private async startTransport(
     options: Parameters<typeof createCodexTransport>[0]
   ): Promise<CodexTransport> {
+    // CODEX§5
+    await (this.crashLeftoversEnded ??= endCodexAppServersLeftByACrash(STATUS_LINE_CONFIG).catch(
+      () => {}
+    ))
     try {
       return await createCodexTransport(options)
     } catch (error) {

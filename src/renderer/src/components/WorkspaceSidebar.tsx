@@ -817,7 +817,7 @@ export function WorkspaceSidebar({
                       {row.resident && (
                         <span
                           className="ws-tab-resident"
-                          title="Keep running — starts again each time Koloft opens"
+                          title="Keep running — never sleeps, and starts again each time Koloft opens"
                         >
                           <LuPin size={12} />
                         </span>

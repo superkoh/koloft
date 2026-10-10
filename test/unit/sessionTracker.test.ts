@@ -481,6 +481,53 @@ describe('SessionTracker — title resolution priority', () => {
     expect(s.title).not.toContain('[Image')
   })
 
+  // CC§2 CC§8
+  it('a live session opened by /goal whose next plain user line is a background task’s notice is titled by the command’s args, not the notice', async () => {
+    const args = 'make the control session drive worker sessions, then open a PR'
+    const cwd = makeWorkspace({})
+    const tracker = newTracker()
+    tracker.track('tabT435', cwd)
+    const file = writeJsonl(cwd, SID, [
+      {
+        type: 'user',
+        userType: 'external',
+        version: '2.1.295',
+        message: {
+          role: 'user',
+          content: `<command-name>/goal</command-name>\n            <command-message>goal</command-message>\n            <command-args>${args}</command-args>`
+        },
+        cwd
+      },
+      {
+        type: 'user',
+        message: {
+          role: 'user',
+          content: `<local-command-stdout>Goal set: ${args}</local-command-stdout>`
+        },
+        cwd
+      },
+      {
+        type: 'user',
+        origin: {
+          kind: 'task-notification',
+          producer: 'session-task',
+          runId: '0mv0t1som-054cd057'
+        },
+        version: '2.1.295',
+        message: {
+          role: 'user',
+          content:
+            '<task-notification>\n<task-id>a36ec0ae0498f615b</task-id>\n<tool-use-id>toolu_01XPzwyfzjUKUPL9iepJvBN9</tool-use-id>\n<status>completed</status>\n<summary>Agent "Simplify review: simplification" finished</summary>\n</task-notification>'
+        },
+        cwd
+      },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Noted.' }] }, cwd }
+    ])
+    tracker.bindSession('tabT435', file, SID, cwd)
+    const s = await waitFor(tracker, (x) => x.tabId === 'tabT435' && x.title !== 'Claude session')
+    expect(s.title).toBe(args.slice(0, 60))
+  })
+
   it('strips inline image placeholders, keeping the real prompt text as the title', async () => {
     const cwd = makeWorkspace({})
     const tracker = newTracker()
@@ -1892,6 +1939,35 @@ describe('SessionTracker — what each turn said: the owner, another session, an
       },
       human('what changed?', 3),
       said(text('Nothing yet.'), 4)
+    ])
+    const turns = await transcriptTurns(file, 20)
+    expect(turns.map((t) => t.said.map((l) => l.text))).toEqual([['what changed?']])
+  })
+
+  // CC§2
+  it('a <system-reminder> or <teammate-message> line an older Claude Code wrote with no origin is not something the owner said', async () => {
+    const cwd = makeWorkspace({})
+    const file = writeJsonl(cwd, '77777777-7777-4777-8777-777777777777', [
+      {
+        type: 'user',
+        timestamp: at(1),
+        message: {
+          role: 'user',
+          content: '<system-reminder>\nYou are running in non-interactive mode.\n</system-reminder>'
+        }
+      },
+      human('what changed?', 2),
+      said(text('Nothing yet.'), 3),
+      {
+        type: 'user',
+        timestamp: at(4),
+        message: {
+          role: 'user',
+          content:
+            '<teammate-message teammate_id="scout3" color="blue">\n{"type":"idle_notification"}\n</teammate-message>'
+        }
+      },
+      said(text('Still nothing.'), 5)
     ])
     const turns = await transcriptTurns(file, 20)
     expect(turns.map((t) => t.said.map((l) => l.text))).toEqual([['what changed?']])

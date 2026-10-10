@@ -24,3 +24,24 @@ const TYPED_PIECE = new RegExp(`[\\s\\S]{1,${CHARS_PER_WRITE_CLAUDE_STILL_TAKES_
 export function typedPieces(text: string): string[] {
   return text.match(TYPED_PIECE) ?? []
 }
+
+// CC§12 CODEX§25
+const NAMED_KEYS = new Map([
+  ['enter', '\r'],
+  ['esc', '\x1b'],
+  ['tab', '\t'],
+  ['shift-tab', '\x1b[Z'],
+  ['up', '\x1b[A'],
+  ['down', '\x1b[B'],
+  ['right', '\x1b[C'],
+  ['left', '\x1b[D'],
+  ['space', ' '],
+  ['backspace', '\x7f']
+])
+
+export function keysFor(words: string[]): string[] {
+  return words.flatMap((word) => {
+    const key = NAMED_KEYS.get(word.toLowerCase())
+    return key === undefined ? typedPieces(word) : [key]
+  })
+}
