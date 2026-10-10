@@ -39,6 +39,8 @@ SCHEDULED TASKS
 
 A scheduled task (cron) is a job that starts a new session by itself on a timer. Name a task by its number from "koloft cron list" or by its name.
 
+A task's name may have spaces: put it in quotes, like "Nightly tests". If you forget, Koloft still finds it: all the words after the command, up to the first option or --, are the name.
+
 When it runs: --every 30m, --every 2h, --daily 09:00, or --weekly mon,wed,fri@09:00
 Options: --backend claude|codex, --model <model>, --effort low|medium|high|xhigh|max, --permission same|acceptEdits|skipAll, --when-done open|close
     same: the same permission as a session started from the sidebar's + button.
@@ -55,15 +57,15 @@ koloft cron show <number or name>
 
 koloft cron add --name <name> <when it runs> [options] -- "<what to do>"
     Add a task.
-    Example: koloft cron add --name nightly-tests --daily 02:00 --permission acceptEdits -- "Run the tests and write a short report."
+    Example: koloft cron add --name "Nightly tests" --daily 02:00 --permission acceptEdits -- "Run the tests and write a short report."
 
 koloft cron edit <number or name> [when it runs] [options] [-- "<what to do>"]
     Change a task. Only the parts you give change.
-    Example: koloft cron edit nightly-tests --daily 03:00
+    Example: koloft cron edit "Nightly tests" --daily 03:00
 
 koloft cron rm <number or name>
     Remove a task.
-    Example: koloft cron rm nightly-tests
+    Example: koloft cron rm "Nightly tests"
 
 koloft cron on <number or name>
 koloft cron off <number or name>
@@ -72,7 +74,7 @@ koloft cron off <number or name>
 
 koloft cron run <number or name>
     Run a task once, right now.
-    Example: koloft cron run nightly-tests
+    Example: koloft cron run "Nightly tests"
 
 SESSIONS
 

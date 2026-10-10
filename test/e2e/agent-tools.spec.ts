@@ -90,22 +90,40 @@ async function openCron(page: Page, wsName: string): Promise<Locator> {
 }
 
 test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH reaches Koloft and acts for the session it runs in', () => {
-  test('koloft cron add from a session adds a job to its pinned workspace, shown in Scheduled jobs and in koloft cron list', async ({
-    page
-  }) => {
-    test.setTimeout(120_000)
-    await waitBooted(page)
-    await startSessionIn(page, 'ws-a')
+  for (const backend of ['claude', 'codex'] as const)
+    test(`koloft cron add from a ${backend} session adds a job to its pinned workspace, shown in Scheduled jobs and in koloft cron list, and show and off find it by its name with spaces given without quotes`, async ({
+      env
+    }) => {
+      test.setTimeout(120_000)
+      if (backend === 'codex') installCodex(env)
+      seedSettings(env, { hintsOff: true })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        if (backend === 'claude') await startSessionIn(page, 'ws-a')
+        else await newSessionInWith(page, 'ws-a', 'Codex')
+        await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
 
-    expect(await koloftInSession(page, 'cron add --name Standup --daily 09:00 -- say hi')).toBe('0')
-    expect(await koloftInSession(page, 'cron list')).toBe('0')
-    expect(await shownTermText(page, CENTER)).toMatch(/^1\. Standup · /m)
+        expect(
+          await koloftInSession(page, 'cron add --name "Nightly tests" --daily 09:00 -- say hi')
+        ).toBe('0')
+        expect(await koloftInSession(page, 'cron list')).toBe('0')
+        expect(await shownTermText(page, CENTER)).toMatch(/^1\. Nightly tests · /m)
+        expect(await koloftInSession(page, 'cron off Nightly tests')).toBe('0')
+        expect(await koloftInSession(page, 'cron show Nightly tests')).toBe('0')
+        expect(await shownTermText(page, CENTER)).toMatch(/^On: no · no next run$/m)
 
-    const dlg = await openCron(page, 'ws-a')
-    await expect(
-      dlg.locator('.job-row').filter({ has: page.locator('.job-name', { hasText: /^Standup$/ }) })
-    ).toHaveCount(1)
-  })
+        const dlg = await openCron(page, 'ws-a')
+        await expect(
+          dlg
+            .locator('.job-row')
+            .filter({ has: page.locator('.job-name', { hasText: /^Nightly tests$/ }) })
+        ).toHaveCount(1)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
 
   test('koloft session new starts a sibling in the same workspace, named and titled by a short title made from its task, nested under the caller while it is still starting, and leaves the caller on screen', async ({
     page,

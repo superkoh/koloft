@@ -123,7 +123,8 @@ export function parseCronArgs(args: string[]): Parsed<CronCommand> {
     return fail(`${what}: use ${SUBS.join(', ')}. Run "koloft help" to see how.`)
   }
   const patch: CronPatch = {}
-  let ref: string | undefined
+  const nameWords: string[] = []
+  let nameEnded = false
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i]
     if (arg === '--') {
@@ -131,6 +132,7 @@ export function parseCronArgs(args: string[]): Parsed<CronCommand> {
       break
     }
     if (arg.startsWith('--')) {
+      nameEnded = nameWords.length > 0
       if (!VALUE_FLAGS.includes(arg)) return fail(`there is no ${arg} option.`)
       const value = rest[i + 1]
       if (value === undefined || value === '--') return fail(`${arg} needs a value.`)
@@ -139,12 +141,13 @@ export function parseCronArgs(args: string[]): Parsed<CronCommand> {
       if (error) return fail(error)
       continue
     }
-    if (ref === undefined && !TAKES_NO_JOB.includes(sub)) {
-      ref = arg
+    if (!nameEnded && !TAKES_NO_JOB.includes(sub)) {
+      nameWords.push(arg)
       continue
     }
     return fail(`did not expect "${arg}". Put what to do after --, like: -- "Run the tests"`)
   }
+  const ref = nameWords.length > 0 ? nameWords.join(' ') : undefined
   if (!TAKES_OPTIONS.includes(sub) && Object.keys(patch).length > 0)
     return fail(`"koloft cron ${sub}" takes no options.`)
   if (!TAKES_NO_JOB.includes(sub) && ref === undefined)

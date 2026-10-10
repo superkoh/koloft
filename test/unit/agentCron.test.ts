@@ -140,6 +140,28 @@ describe('koloft cron: reading the command line', () => {
     })
   })
 
+  it('a task name with spaces given without quotes is every word up to the first option or --, and a word after an option is still refused', () => {
+    expect(parseCronArgs(['run', 'nightly', 'tests'])).toEqual({
+      ok: true,
+      value: { sub: 'run', ref: 'nightly tests', patch: {} }
+    })
+    expect(parseCronArgs(['edit', 'nightly', 'tests', '--daily', '03:00'])).toEqual({
+      ok: true,
+      value: {
+        sub: 'edit',
+        ref: 'nightly tests',
+        patch: { schedule: { kind: 'daily', at: '03:00' } }
+      }
+    })
+    expect(parseCronArgs(['edit', 'nightly', 'tests', '--', 'Run', 'it'])).toEqual({
+      ok: true,
+      value: { sub: 'edit', ref: 'nightly tests', patch: { task: 'Run it' } }
+    })
+    expect(parseError(['edit', 'nightly', '--daily', '03:00', 'tests'])).toMatch(
+      /did not expect "tests"/
+    )
+  })
+
   it('a malformed command is refused with a reason, before anything is saved', () => {
     expect(parseError([])).toMatch(/say what to do/)
     expect(parseError(['make'])).toMatch(/no "make" command/)
@@ -246,6 +268,33 @@ describe('koloft cron: changing tasks', () => {
       expect.stringMatching(/Fix login.*weekly/),
       expect.stringMatching(/Fix login.*nightly/)
     ])
+  })
+
+  it('show, edit, off, on, run and rm find a task whose name has spaces by its unquoted words, not a task named by only the first of them, from a Claude and a Codex session', async () => {
+    for (const backend of ['claude', 'codex'] as const) {
+      const c = cron([job({ name: 'Nightly' }), job({ id: 'j2', name: 'Nightly tests' })], {
+        backend
+      })
+      const started: string[] = []
+      c.runner.runNow = async (jobId) => {
+        started.push(jobId)
+        return { ok: true }
+      }
+      expect((await c.run('show', 'Nightly', 'tests')).text).toMatch(/^2\. Nightly tests\nId: j2/)
+      expect((await c.run('edit', 'Nightly', 'tests', '--daily', '03:00')).exit).toBe(0)
+      expect((await c.run('off', 'Nightly', 'tests')).exit).toBe(0)
+      expect(c.runner.state().jobs[1]).toMatchObject({
+        schedule: { kind: 'daily', at: '03:00' },
+        enabled: false
+      })
+      expect((await c.run('on', 'Nightly', 'tests')).exit).toBe(0)
+      expect((await c.run('run', 'Nightly', 'tests')).exit).toBe(0)
+      expect(started).toEqual(['j2'])
+      expect((await c.run('rm', 'Nightly', 'tests')).exit).toBe(0)
+      expect(c.runner.state().jobs).toEqual([
+        expect.objectContaining({ id: 'j1', name: 'Nightly', enabled: true })
+      ])
+    }
   })
 
   it('a bad command line exits with the usage code', async () => {
