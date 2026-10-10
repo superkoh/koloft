@@ -3522,7 +3522,8 @@ const claudeBackend = new ClaudeBackend({
   setupLine,
   ptysChanged: () => writeRelayEnv(ptyTabIds()),
   resumeProbes,
-  events: (tabId, event) => sessionBackends.observe(tabId, event)
+  events: (tabId, event) => sessionBackends.observe(tabId, event),
+  error: (message) => sendToRenderer('cron:toast', message)
 })
 sessionBackends.register(claudeBackend)
 

@@ -35,9 +35,6 @@ when it works. That is what "judged against" means.
 - **Broadcast input** — type once, send to the sessions you selected. The workspace →
   session tree is the first reliable "select N sessions" unit Koloft has had, so the
   scope is unambiguous: the rows you picked, nothing implied.
-- **Command palette** — jump to any session across workspaces, and reach actions by name.
-  Finding a session *inside* one workspace is already solved by the flat tree; this is
-  the cross-workspace half.
 - **Agents use Koloft themselves** — a Claude or Codex session in Koloft already has a
   `koloft` command and a guide for it: scheduled tasks, opening a file, page or diff in
   its Workbench, the workspace note, and starting a sibling session and talking to it.
@@ -87,14 +84,15 @@ Reopen one of these only with new evidence, not a new argument.
   `koloft session send` for Codex), which the receiving session sees as a message it can
   judge. Faked keystrokes land in whatever that TUI's input box holds at the time.
   Broadcast input above is a feature for the *person*, with the rows they picked.
-  Two exceptions, both the owner's decisions. First, a conductor's `koloft session send`
+  Three exceptions, all the owner's decisions. First, a conductor's `koloft session send`
   to a Claude session on another machine over ssh is typed into its terminal, because
   that session's message socket is on the other machine where Koloft cannot reach it.
   Koloft types only when that session's turn has ended and it shows no dialog; its state
   arrives a mirror pull late, so a message can still land in a turn that just began,
   where Claude queues it. Second, a conductor's `koloft session command` types a slash
   command, because a message delivers `/compact` as plain text (CC§12, CODEX§21); Koloft
-  types it only when that session is idle with no question or menu showing.
+  types it only when that session is idle with no question or menu showing. Third, a
+  conductor's `koloft session keys` presses keys in a session (CC§12, CODEX§25).
 
 - **A one-click Review button that starts a sibling to review the diff** (#222) — a
   session already starts its own sibling session or subagent to review its changes

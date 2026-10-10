@@ -4,6 +4,7 @@ import path from 'path'
 import type { StatusLineSetting } from './statusline'
 import { shq } from '@shared/shellQuote'
 import { CONDUCTOR_GATE_SCRIPT, conductorGateCommand } from './conductorGate'
+import { HANDOVER_OPENING } from './handover'
 
 export interface HookPaths {
   hookScript: string
@@ -12,16 +13,11 @@ export interface HookPaths {
   regDir: string
 }
 
-export const REPLY_LANGUAGE_REMINDER =
-  "Reply in the language of the user's latest message, whatever language tool output, files or your earlier replies use."
-
-// CC§17
-const PROMPT_HOOK_OUTPUT = JSON.stringify({
-  hookSpecificOutput: {
-    hookEventName: 'UserPromptSubmit',
-    additionalContext: REPLY_LANGUAGE_REMINDER
-  }
-})
+// ADR-0031
+const REPLY_LANGUAGE_BEFORE_QUOTE = "The user's latest message begins: «"
+const REPLY_LANGUAGE_AFTER_QUOTE =
+  '». Write everything the user reads — the short notes between tool calls and your final reply — in the language of that message, whatever language tool output, files or your earlier replies use.'
+const QUOTED_PROMPT_BYTES = 300
 
 // CC§1
 export const HOOK_SCRIPT = `#!/usr/bin/env bash
@@ -30,6 +26,18 @@ reg="$1"; tab="$2"; event="$3"
 [ -z "$tab" ] && exit 0
 # CC§14
 [ "$event" = "ask" ] && [ ! -f "$reg/$tab.answerable" ] && event="asked"
+said="$reg/$tab.said"
+# CC§17 CC§19
+remind_reply_language() {
+  quote="$(cat "$said" 2>/dev/null)"
+  [ -n "$quote" ] || return 0
+  printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s%s%s"}}\\n' "$1" ${shq(REPLY_LANGUAGE_BEFORE_QUOTE)} "$quote" ${shq(REPLY_LANGUAGE_AFTER_QUOTE)}
+}
+if [ "$event" = "tool" ]; then
+  cat >/dev/null
+  remind_reply_language PostToolUse
+  exit 0
+fi
 input="$(cat | tr -d '\\n')"
 mkdir -p "$reg" 2>/dev/null
 tm=""
@@ -42,6 +50,15 @@ session_id() {
     head -1 |
     sed 's/.*"\\([^"]*\\)"$/\\1/' |
     tr -d '"\\\\[:cntrl:]'
+}
+# CC§19
+quote_prompt() {
+  printf '%s' "$input" |
+    LC_ALL=C sed -n -E 's/.*"prompt"[[:space:]]*:[[:space:]]*"(([^"\\\\]|\\\\.)*)".*/\\1/p' |
+    LC_ALL=C sed -E 's/^${HANDOVER_OPENING}.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//' |
+    head -c ${QUOTED_PROMPT_BYTES} |
+    LC_ALL=C sed -E -e $'s/([\\xc0-\\xdf]|[\\xe0-\\xef][\\x80-\\xbf]?|[\\xf0-\\xf7][\\x80-\\xbf]{0,2})$//' \\
+      -e 's/\\\\u[0-9a-fA-F]{0,3}$//' -e 's/(^|[^\\\\])((\\\\\\\\)*)\\\\$/\\1\\2/'
 }
 case "$event" in
   start|end)
@@ -162,8 +179,14 @@ case "$event" in
       *'"session_crons":['*) wake=',"wake":1' ;;
     esac
     printf '{"tabId":"%s","event":"%s","sessionId":"%s","message":"%s","tmux":"%s"%s%s}\\n' "$tab" "$event" "$sid" "$msg" "$tm" "$bgl" "$wake" >> "$reg/$tab.status.jsonl"
-    # CC§17
-    if [ "$event" = "prompt" ]; then printf '%s\\n' ${shq(PROMPT_HOOK_OUTPUT)}; fi
+    if [ "$event" = "prompt" ]; then
+      # CC§13 CC§19
+      case "$input" in
+        *'"prompt":"<cross-session-message '*) ;;
+        *) quote_prompt > "$said" ;;
+      esac
+      remind_reply_language UserPromptSubmit
+    fi
     ;;
 esac
 exit 0
@@ -187,7 +210,7 @@ export function pruneStale(dir: string, maxAgeMs = 12 * 60 * 60 * 1000, everyEnt
   }
 }
 
-const TAB_MARKER = /^(.+)\.(answerable|conductor)$/
+const TAB_MARKER = /^(.+)\.(answerable|conductor|said)$/
 
 // ADR-0004
 function pruneMarkersOfDeadTabs(regDir: string, peerOwnsTab: (tabId: string) => boolean): void {
@@ -268,15 +291,17 @@ export function hookSettings(
               : { type: 'command', command: cmd('asked') }
           ]
         }
+      ],
+      // CC§19 ADR-0031
+      PostToolUse: [
+        { matcher: '*', hooks: [{ type: 'command', command: cmd('tool') }] },
+        ...(statusLine
+          ? [{ matcher: 'Bash', hooks: [{ type: 'command', command: cmd('posttool') }] }]
+          : [])
       ]
     }
   }
-  if (statusLine) {
-    settings.statusLine = statusLine
-    ;(settings.hooks as Record<string, unknown>).PostToolUse = [
-      { matcher: 'Bash', hooks: [{ type: 'command', command: cmd('posttool') }] }
-    ]
-  }
+  if (statusLine) settings.statusLine = statusLine
   return settings
 }
 

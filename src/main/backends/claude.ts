@@ -27,7 +27,7 @@ import type { MachineAccount, SshHost } from '../host/sshHost'
 import type { ClaudeLaunch, Host } from '../host/host'
 import type { RemoteSync } from '../remote/sync'
 import { AGENT_DROP_NAME, REQUEST_NAME, replyJson, type AgentReply } from '../agentRequests'
-import { accountEnv, tmuxSessionName } from '../remote/launch'
+import { accountEnv, sessionIdOfTmux, tmuxSessionName } from '../remote/launch'
 import {
   dq,
   mirrorHookDir,
@@ -90,6 +90,7 @@ export interface ClaudeBackendDeps {
   ptysChanged(): void
   resumeProbes: ResumeProbes
   events(tabId: string, event: SessionEvent): void
+  error(message: string): void
 }
 
 // PLATFORM§28
@@ -233,10 +234,20 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   endRemoteTmux(machine: string, tmuxName: string): void {
+    const id = sessionIdOfTmux(tmuxName)
+    const title = id && this.d.workspaces()?.findRow(id)?.title
     void this.d.hosts
       .machine(machine)
       .endTmuxSession(tmuxName)
-      .then(() => this.d.remoteSync()?.pokeNow(machine))
+      .then((problem) => {
+        if (problem) {
+          const which = title ? `“${title}”` : 'a session'
+          this.d.error(
+            `Could not stop ${which} on ${machine}: ${problem}. It is still running there.`
+          )
+        }
+        this.d.remoteSync()?.pokeNow(machine)
+      })
   }
 
   sessionIdOf(tabId: string): string | undefined {

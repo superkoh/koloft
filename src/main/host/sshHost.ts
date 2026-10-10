@@ -47,7 +47,13 @@ import {
   tabPackageDir
 } from '../remote/paths'
 import { launchMode } from '../remote/sync'
-import { ensureControlDir, sshLinkBroke, sshOptions, type BytesResult } from '../remote/ssh'
+import {
+  ensureControlDir,
+  problemOf,
+  sshLinkBroke,
+  sshOptions,
+  type BytesResult
+} from '../remote/ssh'
 import { claudeArgv } from '../claudeArgs'
 import { listSkills, type SkillFs } from '../skillList'
 import { worktreeNameAround } from '../resumePlan'
@@ -611,12 +617,15 @@ export class SshHost implements Host {
 
   osOpen(): void {}
 
-  endTmuxSession(tmuxName: string): Promise<void> {
-    const kill = this.deps.run(killSessionCmd(tmuxName)).then(() => {
+  endTmuxSession(tmuxName: string): Promise<string | undefined> {
+    const killedId = sessionIdOfTmux(tmuxName)
+    const kill = this.deps.run(killSessionCmd(tmuxName)).then((r) => {
       if (this.kills.get(tmuxName) === kill) this.kills.delete(tmuxName)
+      if (!sshLinkBroke(r)) return undefined
+      if (killedId) this.killedSessions.delete(killedId)
+      return problemOf(r)
     })
     this.kills.set(tmuxName, kill)
-    const killedId = sessionIdOfTmux(tmuxName)
     if (killedId) this.killedSessions.add(killedId)
     return kill
   }

@@ -147,7 +147,7 @@ koloft discord send <file>... [-- "<text>"]
 GITHUB (conductors only)
 
 koloft gh ${GH_READS_TEXT} [<number or URL>] [flags]
-    Only for a conductor: Koloft runs that gh command for you and prints what it said, so you can check whether a pull request is merged, how its checks went, or what an issue says. It only reads: other gh commands are refused, and so are flags but ${GH_READ_FLAGS.join(', ')}. A workspace conductor's repository is filled in for it; the global conductor adds --repo <owner>/<name>, or gives a full GitHub URL.
+    Only for a conductor: Koloft runs that gh command for you and prints what it said, so you can check whether a pull request is merged, how its checks went, or what an issue says. Other gh commands are refused (issue create aside, below), and so are flags but ${GH_READ_FLAGS.join(', ')}. A workspace conductor's repository is filled in for it; the global conductor adds --repo <owner>/<name>, or gives a full GitHub URL.
     Example: koloft gh pr view 389 --repo octo/app --json state,mergedAt
 
 koloft gh ${GH_ISSUE_CREATE_TEXT}
