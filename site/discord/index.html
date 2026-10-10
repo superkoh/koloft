@@ -73,8 +73,9 @@
           Discord is a chat app for your phone and your computer. A conductor is a Claude or Codex
           session on your Mac, tied to one Discord channel (a chat room). You write to the conductor
           from your phone. It starts your other sessions, reads them, sends them messages, and
-          answers their questions the way you tell it to. It never does the work itself: Koloft lets
-          it only read, whatever your permission setting, so it passes each job on to a session.
+          answers their questions the way you tell it to. It never does the work itself: it cannot
+          change your files, whatever your permission setting, so it passes each job on to a
+          session.
         </p>
 
         <pre
@@ -257,7 +258,9 @@ your Mac
         </ul>
         <p>
           The conductor always runs on your Mac, even for a <a href="../remote/">remote folder</a>.
-          It runs in a folder of its own under Koloft's data folder, not in your workspace.
+          It runs in a folder of its own under Koloft's data folder, not in your workspace. It opens
+          as soon as Koloft connects to Discord, and it never goes to
+          <a href="../sessions/">sleep</a> the way an idle session does.
         </p>
 
         <h2>From your phone</h2>
@@ -298,8 +301,7 @@ your Mac
         <p>
           Write in the bound channel. Your message reaches the conductor with
           <span class="nowrap">"[Discord]"</span> in front. It gets a ⏳ while it waits its turn,
-          and a ✅ once it is in. The conductor opens as soon as Koloft connects to Discord, and it
-          never goes to sleep. If it is not open all the same, your first message starts it; the ⏳
+          and a ✅ once it is in. If the conductor is not open, your first message starts it; the ⏳
           stays until it is ready. Files you attach are saved on your Mac, and the conductor is told
           where they are.
         </p>
@@ -367,7 +369,10 @@ your Mac
             The thread takes the session's title from the sidebar, and changes when the title does.
             After <code>/clear</code>, the session stays in the same thread.
           </li>
-          <li>When the session's tab closes, its thread is put away (archived).</li>
+          <li>
+            When the session's tab closes, its thread is put away (archived). A session going to
+            sleep is not a close.
+          </li>
           <li>
             When the session leaves the sidebar (Remove from list, <code>/exit</code>, or
             <code>koloft session close</code>), its thread and its card are deleted. If the bot may
@@ -427,11 +432,8 @@ your Mac
           <li>run a slash command in them, and see their screen</li>
           <li>
             answer their questions, and press keys in them as you would at the Mac: pick an option,
-            move through a menu, approve, refuse or cancel
-            <span class="why"
-              >(so when you tell the conductor how to answer, it does it, instead of sending you to
-              the Mac)</span
-            >
+            move through a menu, approve, refuse or cancel. Tell it what to pick and it does it,
+            instead of sending you to the Mac
           </li>
           <li>close the sessions it started</li>
           <li>close any ended session it looks after on your Mac, when you ask</li>
@@ -606,8 +608,7 @@ your Mac
             Anything else, like several parts, free text or a secret, gets "Codex is asking
             something Koloft cannot answer from here: it answers a yes-or-no approval, or one
             question that picks one option from a list. The conductor can still answer this one by
-            pressing its keys." So tell the conductor what to pick: it looks at the screen and
-            presses the keys for you.
+            pressing its keys." So tell the conductor what to pick.
           </li>
           <li>
             What Codex shows only on its screen is not read back. The conductor can look with
@@ -620,7 +621,7 @@ your Mac
           <li>
             Koloft answers by typing keys into its terminal. So it can answer Yes / No, or one
             question with one pick. A question with several parts, or with several picks, gets no
-            buttons: tell the conductor what to pick, and it presses the keys for you.
+            buttons: tell the conductor what to pick.
           </li>
           <li>A plan takes yes or no only.</li>
           <li>
@@ -652,8 +653,7 @@ your Mac
           <li>
             <s class="struck">answer Codex forms from a thread</s>
             <span class="why"
-              >(several parts, free text or secrets: the thread cannot, but the conductor can press
-              the keys when you tell it what to pick)</span
+              >(several parts, free text or secrets: tell the conductor what to pick instead)</span
             >
           </li>
           <li>

@@ -77,8 +77,8 @@
         <p>
           Every session in Koloft runs on an account you add here, never on the login this Mac
           already has. So the first time Koloft opens, it asks you to sign in to Claude or Codex
-          (the welcome step "Sign in, and pick your Assist"), and an older Koloft that has no
-          account yet asks the same the next time it opens.
+          (the welcome step "Sign in, and pick your <a href="#assist">Assist</a>"). A Koloft you
+          updated asks too, if no account was added yet.
         </p>
 
         <figure class="shot" style="--ar: 1322 / 870; --ar-phone: 765 / 1080">
@@ -177,18 +177,16 @@
 
         <h2 id="assist">Koloft Assist</h2>
         <p>
-          Koloft has a few small jobs of its own that need an AI. Today there is one: the short
-          title of a Claude session that an agent starts with <code>koloft session new</code> (see
+          Koloft has small jobs of its own that need an AI. Today there is one: the short title of a
+          Claude session that an agent starts with <code>koloft session new</code> (see
           <a href="../agents/">agents</a>). One of your accounts does those jobs. That is
-          <mark class="hl">Koloft Assist</mark>. The welcome asks you to pick Claude or Codex for
-          it; after that, Settings ▸ Sessions ▸ Assist is where you turn it on or off and pick the
-          tool it runs on.
+          <mark class="hl">Koloft Assist</mark>. Settings ▸ Sessions ▸ Assist is where you turn it
+          on or off and pick the tool it runs on.
         </p>
         <ul class="dash">
-          <li>on Claude it uses Haiku, about 750 tokens a job</li>
-          <li>on Codex it uses GPT-6 Luna, a few thousand tokens a job</li>
           <li>
-            each job costs a tiny bit of that account's plan or API balance, far less than one cent
+            on Claude it uses Haiku, on Codex GPT-6 Luna; each job costs a tiny bit of that
+            account's plan or API balance, far less than one cent
           </li>
           <li>
             off, those jobs run without AI: a session an agent starts is named after the first line

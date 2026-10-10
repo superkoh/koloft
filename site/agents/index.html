@@ -117,9 +117,10 @@
             below) can pick the other kind, with <code class="nowrap">--backend</code>. Its row
             hangs under the session that started it (see
             <a href="../sessions/#session-tree">sessions an agent starts</a>). A Claude session it
-            starts gets a short title made from its task by a small model (the same title in the
-            sidebar, in <code class="nowrap">session list</code> and in Discord), or the name the
-            agent gave it with <code class="nowrap">--name</code>. Codex names it itself.
+            starts gets a short title that <a href="../accounts/#assist">Koloft Assist</a> makes
+            from its task (with Assist off, the first line of the task), or the name the agent gave
+            it with <code class="nowrap">--name</code>; the same title shows in the sidebar, in
+            <code class="nowrap">session list</code> and in Discord. Codex names it itself.
           </li>
           <li>
             <code>koloft session read</code> — print what a session said in its last turns, open or
@@ -130,8 +131,7 @@
             session uses its own SendMessage tool). Any session: report back to the session or
             conductor that started it, by the id it was given. If that one is asleep or its tab was
             closed, Koloft starts it again first. The report arrives marked
-            <code class="nowrap">(From the session "…", id …:)</code>, so the reader knows who sent
-            it.
+            <code class="nowrap">(From the session "…", id …:)</code>.
           </li>
           <li>
             <code>koloft session close</code> — close itself, or a session it started, for good: its

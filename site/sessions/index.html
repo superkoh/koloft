@@ -228,15 +228,14 @@
             folder, then the folders, then the app's actions (New session…, Settings…, and so on).
             Type a few letters of a session's title, its worktree, its folder or its machine, press
             <kbd>⏎</kbd>, and you are there. It does what a click on the row does, so a closed
-            session is resumed. When nothing fits, it says
-            <code>No session, workspace or action matches …</code>
+            session is resumed. When nothing fits, it says so.
           </li>
           <li>
-            <kbd>⌥⌘F</kbd> (Edit ▸ Search Sessions) searches what was said. Type a few words as they
-            were said, press <kbd>⏎</kbd>, and every session in every folder whose title or
-            conversation holds that phrase is listed, newest first, with one line of text around the
-            match. Click one to open it. For Claude it reads what you typed and what the agent
-            answered, not the output of its tools. For Codex, Codex itself does the search.
+            <kbd>⌥⌘F</kbd> (Edit ▸ Search Sessions) searches what was said. Type a phrase, press
+            <kbd>⏎</kbd>, and every session in every folder whose title or conversation holds it is
+            listed, newest first, with one line of text around the match. Click one to open it. For
+            Claude it reads what you typed and what the agent answered, not the output of its tools.
+            For Codex, Codex itself does the search.
           </li>
         </ul>
         <p>
@@ -286,9 +285,12 @@
             the <kbd>⇧⌘N</kbd> dialog also lists the repo's open issues and open pull requests. Pick
             an issue, and the session starts in a worktree named
             <code class="nowrap">issue-&lt;number&gt;</code>, already told which issue to read and
-            work on. Pick a pull request, and it starts in a worktree on that pull request's branch.
-            Claude Code and Codex both do this. On a <a href="../remote/">remote folder</a>, Claude
-            Code does it there; Codex sessions cannot run on a remote machine yet.
+            work on.
+          </li>
+          <li>
+            Pick a pull request there, and the session starts in a worktree on that pull request's
+            branch. Claude Code and Codex both do this; on a
+            <a href="../remote/">remote folder</a>, Claude Code does it there.
           </li>
         </ul>
         <p>
@@ -442,9 +444,8 @@
           </li>
           <li><code>Fetch now</code> asks origin what is new.</li>
           <li>
-            On github.com, with <code>gh</code> (GitHub's command-line tool) signed in: the open
-            issues and pull requests. Their two counts also sit after the branch sign (a count of 0
-            is not drawn).
+            On github.com, with <code>gh</code> signed in: the open issues and pull requests. Their
+            two counts also sit after the branch sign (a count of 0 is not drawn).
           </li>
         </ul>
         <figure class="shot" style="--ar: 740 / 612; --w: min(370px, 100cqw)">
