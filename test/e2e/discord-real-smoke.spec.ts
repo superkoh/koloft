@@ -7,6 +7,7 @@ import { installGhForWorkspaceA, seedSettings, type E2EEnv } from './helpers/env
 import { gitInit, seedJsonl, startSessionIn, terminalText, waitBooted, wsRows } from './helpers/p1'
 import { openerNow, startFakeDiscord, type FakeDiscord, type FakePost } from './helpers/fakeDiscord'
 import { BACKEND_LABEL } from '../../src/shared/sessionBackend'
+import { lastCodexTurnPermissions } from './helpers/codexRollout'
 
 function claudeTokenFromKeychain(): string {
   const account = process.env.KOLOFT_SMOKE_ACCOUNT
@@ -855,6 +856,34 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     })
   })
 
+  // ADR-0029 CODEX§11
+  test('a real Codex conductor whose tab closed is resumed by the owner’s next message, on the same thread, and its sandbox still stops it writing a file in its workspace', async ({
+    env
+  }) => {
+    test.skip(!HAVE_REAL_CODEX, NEEDS_REAL_CODEX)
+    test.setTimeout(2 * A_REAL_MODEL_TURN_MS + 120_000)
+    seedConductor(env, 'codex')
+    useRealCodex(env)
+    const fake = await startFakeDiscord(env)
+    await withConductor(env, fake, async (_app, page) => {
+      await answersWholeInTheChannel(fake)
+      const conductor = async (): Promise<{ tabId: string; sessionId: string } | undefined> =>
+        (await page.evaluate(() => window.api.sessions.list())).find((s) => s.alive && s.conductor)
+      const first = (await conductor())!
+      await page.evaluate((id) => window.api.terminal.kill(id), first.tabId)
+      await expect.poll(conductor).toBeUndefined()
+
+      await triesToWriteTheWorkspaceItselfAndIsRefused(env, fake)
+      const again = (await conductor())!
+      expect(again.tabId).not.toBe(first.tabId)
+      expect(again.sessionId).toBe(first.sessionId)
+      expect(lastCodexTurnPermissions(env, again.sessionId)).toEqual({
+        approval: 'never',
+        sandbox: 'workspace-write'
+      })
+    })
+  })
+
   // ADR-0029 CODEX§12
   test('a real Codex conductor, its sandbox without network, checks a pull request itself with koloft gh, and Koloft adds its workspace’s repository', async ({
     env
@@ -948,10 +977,6 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
           (needs.includes('claude') && !HAVE_REAL_CLAUDE) ||
             (needs.includes('codex') && !HAVE_REAL_CODEX),
           `${NEEDS_REAL_CLAUDE}; ${NEEDS_REAL_CODEX}`
-        )
-        test.skip(
-          conductor === 'codex',
-          'Codex 0.162 refuses to resume a conductor started with -a/-s, so it never wakes: issue #446'
         )
         test.setTimeout(5 * A_REAL_MODEL_TURN_MS)
         seedConductor(env, conductor)

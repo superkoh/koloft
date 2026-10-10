@@ -354,6 +354,48 @@ run, `-a on-request -s read-only` led to an approval request. That `never` /
 `danger-full-access` and `workspace-write` take effect the same way was **not
 exercised against a model — inferred, not checked**.
 
+**Codex CLI 0.162.0 refuses the approval flags on a resume under `--remote`, and the
+app-server's own config sets them instead.** Measured 2026-10-09 with `codex-cli
+0.162.0`: a Python PTY (120×40, answering the TUI's cursor and colour queries) ran
+`codex app-server --listen unix://<socket>` and the TUI `codex --remote unix://<socket> -C
+<folder> …`, with a throwaway `CODEX_HOME` holding only `auth.json` and the folder's trust
+table, real model turns, and each turn's settings read from the `turn_context` record in
+the thread's rollout file. The test asked the model to `touch` a file outside the folder.
+
+- `… resume <thread>` with `-a never`, with `-s workspace-write`, with both, or with
+  `-c approval_policy="never" -c sandbox_mode="workspace-write"` on the TUI: the TUI drew
+  "Resuming session…", then ended with "Error: Permission overrides are not supported
+  when resuming a remote task." (exit code 1 where the driver caught the exit). The check runs after the TUI connects:
+  against a socket that does not exist, every form fails first with "failed to connect to
+  remote app server". The same `-a`/`-s` on a new thread (no `resume`) are taken.
+- A bare `resume` (no flags) works. What it ran under, from `turn_context`: a thread
+  started with `-a never -s workspace-write` came back `never` / `workspace-write`; one
+  started with `-a never -s danger-full-access` came back `never` / `workspace-write`, and
+  its `touch` outside the folder was refused; one started with no flags (`on-request` /
+  `read-only` in that folder) came back `on-request` / `workspace-write`. So the approval
+  policy comes back with the thread, and the sandbox comes back as `workspace-write`
+  whatever it was. Where that `workspace-write` comes from is **inferred, not checked**.
+- The same bare `resume`, with `-c approval_policy="never" -c sandbox_mode="danger-full-access"`
+  given to `codex app-server` instead: `turn_context` showed `never` /
+  `danger-full-access` and the `touch` outside the folder worked with no question. With
+  `sandbox_mode="workspace-write"`: `never` / `workspace-write`, the `touch` was refused,
+  no question.
+- `workspace-write` lets the model's shell write in `/tmp` and in `$TMPDIR`: a `touch` in
+  a folder under `/private/tmp` worked under it, and was refused once `config.toml` held
+  `[sandbox_workspace_write]` with `exclude_slash_tmp = true` and
+  `exclude_tmpdir_env_var = true`. The e2e homes live under `$TMPDIR`, so a real-binary
+  case that checks a write outside the workspace sets those two.
+
+So Koloft hands a launch's approval and sandbox choice to the TUI as `-a`/`-s` on a new
+thread, and to that run's own app-server as `-c approval_policy=…` /
+`-c sandbox_mode=…` on a resume. Established again through Koloft by
+`discord-real-smoke.spec.ts` › "a real Codex conductor whose tab closed is resumed by the
+owner’s next message, …" (before the change: "The conductor closed before it was ready")
+and `agent-tools-real-smoke.spec.ts` › "a real Codex session launched with approvals and
+the sandbox bypassed, resumed after its tab closed, …" (before the change: `turn_context`
+`never` / `workspace-write`, the write refused). A new thread with the choice on the
+app-server alone, and no `-a`/`-s` on the TUI, is not probed yet.
+
 ## 12. Files a turn touched, and a command that opens a file
 
 **Checked on 2026-09-24 with standalone Codex CLI 0.153.4 (`codex-cli 0.153.4`), one real

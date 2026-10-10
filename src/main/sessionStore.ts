@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
+import type { LaunchPermission } from '@shared/types'
 
 export interface CodexMember {
   id: string
@@ -11,6 +12,7 @@ export interface CodexMember {
   createdAt: number
   updatedAt: number
   worktreeResourceId?: string
+  permission?: LaunchPermission
 }
 
 export interface WorktreeResource {
@@ -58,7 +60,10 @@ function validMember(value: unknown, key: string): value is CodexMember {
     Number.isFinite(value.createdAt) &&
     typeof value.updatedAt === 'number' &&
     Number.isFinite(value.updatedAt) &&
-    (value.worktreeResourceId === undefined || typeof value.worktreeResourceId === 'string')
+    (value.worktreeResourceId === undefined || typeof value.worktreeResourceId === 'string') &&
+    (value.permission === undefined ||
+      value.permission === 'acceptEdits' ||
+      value.permission === 'bypass')
   )
 }
 
