@@ -7,8 +7,8 @@ import {
   HAVE_REAL_GH,
   NEEDS_REAL_GH,
   installRealGhThatOnlyReads,
+  seedCodexAccount,
   seedSettings,
-  seededAccount,
   setGithubFixture,
   type E2EEnv
 } from './helpers/env'
@@ -62,7 +62,6 @@ const REAL_CODEX = process.env.KOLOFT_SMOKE_CODEX ?? ''
 const SIGNED_IN_CODEX_HOME = process.env.KOLOFT_SMOKE_CODEX_HOME ?? ''
 const HAVE_REAL_CODEX =
   fs.existsSync(REAL_CODEX) && fs.existsSync(path.join(SIGNED_IN_CODEX_HOME, 'auth.json'))
-const SIGNED_IN_CODEX_ACCOUNT = 'smoke-codex'
 
 const NO_RETRY_SINCE_EVERY_RUN_SPENDS_REAL_MONEY = 0
 test.describe.configure({ retries: NO_RETRY_SINCE_EVERY_RUN_SPENDS_REAL_MONEY })
@@ -122,10 +121,7 @@ function useRealCodex(env: E2EEnv, trusted: string[]): void {
   )
   env.launchEnv.KOLOFT_CODEX_CMD = spot
   env.launchEnv.CODEX_HOME = home
-  const account = path.join(env.userData, 'codex-homes', SIGNED_IN_CODEX_ACCOUNT)
-  fs.mkdirSync(account, { recursive: true })
-  fs.copyFileSync(path.join(SIGNED_IN_CODEX_HOME, 'auth.json'), path.join(account, 'auth.json'))
-  seedSettings(env, { accounts: [seededAccount(SIGNED_IN_CODEX_ACCOUNT, 'codex-home')] })
+  seedCodexAccount(env, fs.readFileSync(path.join(SIGNED_IN_CODEX_HOME, 'auth.json'), 'utf8'))
 }
 
 function screen(page: Page): Promise<string> {
@@ -901,8 +897,8 @@ test.describe("a REAL Codex drives its own tab's Workbench through the owner's P
       await expect(row).toHaveCount(1, { timeout: 60_000 })
       await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 90_000 })
       const tabId = (await row.getAttribute('data-tab-id'))!
-      const firstThread = (await boundSessionId(page, tabId)) ?? ''
-      expect(firstThread).not.toBe('')
+      await expect.poll(() => boundSessionId(page, tabId), { timeout: 60_000 }).toBeTruthy()
+      const firstThread = (await boundSessionId(page, tabId))!
       await openBrowser(page)
       await newWebTab(page)
       await typeInAddressBar(page, url)
@@ -910,6 +906,8 @@ test.describe("a REAL Codex drives its own tab's Workbench through the owner's P
 
       const readsTheTitle = async (thread: string): Promise<void> => {
         const before = CODEX_TRANSCRIPT.replies(env, thread).length
+        const newReplies = (): string =>
+          CODEX_TRANSCRIPT.replies(env, thread).slice(before).join('\n')
         await sendToCodexTab(page, tabId, codexReadsTheTitleWithItsBrowserTool(url))
         await expect
           .poll(
@@ -923,23 +921,19 @@ test.describe("a REAL Codex drives its own tab's Workbench through the owner's P
                 if (CODEX_MCP_TOOL_QUESTION.test(await screen(page)))
                   await page.evaluate((id) => window.api.terminal.write(id, '\r'), tabId)
               }
-              return CODEX_TRANSCRIPT.replies(env, thread).slice(before).join('\n')
+              return newReplies()
             },
             { intervals: [1_000], timeout: A_REAL_MODEL_TURN_MS }
           )
           .toContain(title)
-        await test.info().attach(`reply-${thread}`, {
-          body: CODEX_TRANSCRIPT.replies(env, thread).slice(before).join('\n')
-        })
-        await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: A_REAL_MODEL_TURN_MS })
+        await test.info().attach(`reply-${thread}`, { body: newReplies() })
+        await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 30_000 })
         expect(
           codexItems(env, thread, 'McpToolCall', (item) => `${item.server}.${item.tool}`)
         ).toContain('playwright.browser_navigate')
       }
 
       await readsTheTitle(firstThread)
-      const loadsAfterFirst = server.count('/title')
-      expect(loadsAfterFirst).toBeGreaterThan(1)
 
       await page.evaluate((id) => window.api.terminal.write(id, '/new'), tabId)
       await page.waitForTimeout(PAST_CODEX_PASTE_BURST_THAT_SWALLOWS_AN_EARLY_ENTER_MS)
@@ -949,11 +943,9 @@ test.describe("a REAL Codex drives its own tab's Workbench through the owner's P
         .not.toBe(firstThread)
       const secondThread = (await boundSessionId(page, tabId))!
       await readsTheTitle(secondThread)
-      expect(server.count('/title')).toBeGreaterThan(loadsAfterFirst)
       const [workbenchLoad, ...agentLoads] = server.requestsFor('/title')
-      expect(agentLoads.map((r) => r.userAgent)).toEqual(
-        agentLoads.map(() => workbenchLoad.userAgent)
-      )
+      expect(agentLoads.length).toBeGreaterThanOrEqual(2)
+      for (const r of agentLoads) expect(r.userAgent).toBe(workbenchLoad.userAgent)
     } catch (e) {
       await keepWhatTheAgentSawAndDid(page, env)
       throw e

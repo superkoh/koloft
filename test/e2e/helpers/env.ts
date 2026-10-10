@@ -241,9 +241,13 @@ export function installCodex(env: E2EEnv): void {
   env.launchEnv.KOLOFT_CODEX_CMD = binary
   env.launchEnv.CODEX_HOME = path.join(env.home, '.codex')
   fs.writeFileSync(path.join(env.home, '.zprofile'), `export PATH="${env.fakeBin}:$PATH"\n`)
+  seedCodexAccount(env, '{}')
+}
+
+export function seedCodexAccount(env: E2EEnv, authJson: string): void {
   const accountHome = path.join(env.userData, 'codex-homes', E2E_CODEX_ACCOUNT)
   fs.mkdirSync(accountHome, { recursive: true })
-  fs.writeFileSync(path.join(accountHome, 'auth.json'), '{}')
+  fs.writeFileSync(path.join(accountHome, 'auth.json'), authJson)
   const file = path.join(env.userData, 'settings.json')
   const current = JSON.parse(fs.readFileSync(file, 'utf8')) as { accounts?: unknown[] }
   seedSettings(env, {
