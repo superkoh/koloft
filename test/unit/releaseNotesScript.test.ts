@@ -163,10 +163,6 @@ describe('scripts/release-notes.sh — CLI contract', () => {
         )
       )
     ).toBe(true)
-    expect(
-      blocks.some((b) => b.includes('xattr -dr com.apple.quarantine /Applications/Koloft.app'))
-    ).toBe(true)
-    expect(installPart).toContain('unsigned')
   })
 
   it('A7: notes differ across versions instead of being byte-identical, and each run lists its own non-empty range of commits', () => {

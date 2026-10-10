@@ -132,6 +132,12 @@ method. A recheck adds its date, version and command to the bullet.
 - **A copy of a signed system binary saved under another name is SIGKILLed** when run.
 - **A file downloaded by Node has no `com.apple.quarantine` flag**, so an app installed
   from it opens without Gatekeeper.
+- **`hdiutil makehybrid -hfs` gives files a `com.apple.FinderInfo` attribute**, and
+  `codesign --verify --strict` rejects a signed app holding one ("Disallowed xattr").
+  `hdiutil create -srcfolder` (HFS+ or APFS) adds none. A `cp -R` out of the mounted
+  dmg keeps whatever the dmg holds, and Gatekeeper (`spctl --assess`) still accepted the
+  makehybrid copy. Measured 2026-10-08, macOS 27.0, on a notarized Developer ID app
+  (Tailscale.app): 199 files tagged by makehybrid, 0 by `create`.
 - **A launch in roughly the first half-minute after wake fails**: the network, the
   Keychain and file watches all need a moment to come back.
 - **A unix socket path is capped at 104 bytes** (`sun_path`). `os.tmpdir()`
