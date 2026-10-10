@@ -8,6 +8,7 @@ import {
   NEEDS_REAL_GH,
   installRealGhThatOnlyReads,
   seedSettings,
+  seededAccount,
   setGithubFixture,
   type E2EEnv
 } from './helpers/env'
@@ -16,10 +17,13 @@ import {
   boundSessionId,
   centerTerm,
   chooseBackend,
+  newSessionInWith,
   openWorktreeSession,
   waitBooted,
   wsRows
 } from './helpers/p1'
+import { newWebTab, openBrowser, typeInAddressBar } from './helpers/browser'
+import { startEchoServer } from './helpers/fixtureServer'
 import { portOffset } from '../../src/shared/worktreeName'
 import { lastCodexTurnPermissions } from './helpers/codexRollout'
 import {
@@ -58,6 +62,7 @@ const REAL_CODEX = process.env.KOLOFT_SMOKE_CODEX ?? ''
 const SIGNED_IN_CODEX_HOME = process.env.KOLOFT_SMOKE_CODEX_HOME ?? ''
 const HAVE_REAL_CODEX =
   fs.existsSync(REAL_CODEX) && fs.existsSync(path.join(SIGNED_IN_CODEX_HOME, 'auth.json'))
+const SIGNED_IN_CODEX_ACCOUNT = 'smoke-codex'
 
 const NO_RETRY_SINCE_EVERY_RUN_SPENDS_REAL_MONEY = 0
 test.describe.configure({ retries: NO_RETRY_SINCE_EVERY_RUN_SPENDS_REAL_MONEY })
@@ -110,7 +115,6 @@ function useRealCodex(env: E2EEnv, trusted: string[]): void {
   fs.symlinkSync(REAL_CODEX, spot)
   const home = path.join(env.home, '.codex')
   fs.mkdirSync(home, { recursive: true })
-  fs.copyFileSync(path.join(SIGNED_IN_CODEX_HOME, 'auth.json'), path.join(home, 'auth.json'))
   // CODEX§11
   fs.writeFileSync(
     path.join(home, 'config.toml'),
@@ -118,6 +122,10 @@ function useRealCodex(env: E2EEnv, trusted: string[]): void {
   )
   env.launchEnv.KOLOFT_CODEX_CMD = spot
   env.launchEnv.CODEX_HOME = home
+  const account = path.join(env.userData, 'codex-homes', SIGNED_IN_CODEX_ACCOUNT)
+  fs.mkdirSync(account, { recursive: true })
+  fs.copyFileSync(path.join(SIGNED_IN_CODEX_HOME, 'auth.json'), path.join(account, 'auth.json'))
+  seedSettings(env, { accounts: [seededAccount(SIGNED_IN_CODEX_ACCOUNT, 'codex-home')] })
 }
 
 function screen(page: Page): Promise<string> {
@@ -335,6 +343,8 @@ interface CodexItem {
   type?: string
   content?: { text?: unknown }[]
   aggregated_output?: unknown
+  server?: unknown
+  tool?: unknown
 }
 
 function contentText(item: CodexItem): string {
@@ -847,6 +857,109 @@ test.describe('a REAL Codex session resumed after its tab closed: an opt-in case
       throw e
     } finally {
       await quitAndClose(app)
+    }
+  })
+})
+
+const PLAYWRIGHT_MCP = path.join(process.env.KOLOFT_SMOKE_TOOLS_DIR ?? '', 'playwright-mcp')
+const HAVE_PLAYWRIGHT_MCP = !!process.env.KOLOFT_SMOKE_TOOLS_DIR && fs.existsSync(PLAYWRIGHT_MCP)
+const NO_WINDOW_OF_ITS_OWN_IF_THE_ENDPOINT_NEVER_REACHED_IT = '--headless'
+// CODEX§26
+const CODEX_MCP_TOOL_QUESTION = /Allow the playwright MCP server to run tool/
+const ALLOW_FOR_THIS_SESSION = '2'
+const A_PICKED_OPTION_LEAVES_THE_SCREEN_MS = 500
+
+function codexReadsTheTitleWithItsBrowserTool(url: string): string {
+  return `Use your playwright MCP browser tools, never the shell: navigate to ${url}, then reply with only that page's title.`
+}
+
+// CODEX§26
+test.describe("a REAL Codex drives its own tab's Workbench through the owner's Playwright MCP: an opt-in case; it spends real money", () => {
+  test('a real Codex reads a page title with its Playwright MCP tool through the Workbench of its own tab, and again in the new thread after /new', async ({
+    env
+  }) => {
+    test.skip(
+      !HAVE_REAL_CODEX || !HAVE_PLAYWRIGHT_MCP,
+      'set KOLOFT_SMOKE_CODEX, KOLOFT_SMOKE_CODEX_HOME (only its auth.json is copied) and KOLOFT_SMOKE_TOOLS_DIR (a node_modules/.bin holding playwright-mcp)'
+    )
+    test.setTimeout(3 * A_REAL_MODEL_TURN_MS + 120_000)
+    useRealCodex(env, [env.workspaces.a])
+    fs.appendFileSync(
+      path.join(env.home, '.codex', 'config.toml'),
+      `\n[mcp_servers.playwright]\ncommand = ${JSON.stringify(PLAYWRIGHT_MCP)}\nargs = [${JSON.stringify(NO_WINDOW_OF_ITS_OWN_IF_THE_ENDPOINT_NEVER_REACHED_IT)}]\n`
+    )
+    seedSettings(env, { hintsOff: true })
+    const server = await startEchoServer()
+    const title = `koloft-relay-${Date.now().toString(36)}`
+    const url = server.page('/title', `<title>${title}</title><body>relay check</body>`)
+    const app = await launchApp(env)
+    const page = await app.firstWindow()
+    try {
+      await waitBooted(page)
+      await newSessionInWith(page, 'ws-a', 'Codex')
+      const row = wsRows(page, 'ws-a')
+      await expect(row).toHaveCount(1, { timeout: 60_000 })
+      await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 90_000 })
+      const tabId = (await row.getAttribute('data-tab-id'))!
+      const firstThread = (await boundSessionId(page, tabId)) ?? ''
+      expect(firstThread).not.toBe('')
+      await openBrowser(page)
+      await newWebTab(page)
+      await typeInAddressBar(page, url)
+      await expect.poll(() => server.count('/title'), { timeout: 30_000 }).toBe(1)
+
+      const readsTheTitle = async (thread: string): Promise<void> => {
+        const before = CODEX_TRANSCRIPT.replies(env, thread).length
+        await sendToCodexTab(page, tabId, codexReadsTheTitleWithItsBrowserTool(url))
+        await expect
+          .poll(
+            async () => {
+              if (CODEX_MCP_TOOL_QUESTION.test(await screen(page))) {
+                await page.evaluate(
+                  ([id, key]) => window.api.terminal.write(id, key),
+                  [tabId, ALLOW_FOR_THIS_SESSION]
+                )
+                await page.waitForTimeout(A_PICKED_OPTION_LEAVES_THE_SCREEN_MS)
+                if (CODEX_MCP_TOOL_QUESTION.test(await screen(page)))
+                  await page.evaluate((id) => window.api.terminal.write(id, '\r'), tabId)
+              }
+              return CODEX_TRANSCRIPT.replies(env, thread).slice(before).join('\n')
+            },
+            { intervals: [1_000], timeout: A_REAL_MODEL_TURN_MS }
+          )
+          .toContain(title)
+        await test.info().attach(`reply-${thread}`, {
+          body: CODEX_TRANSCRIPT.replies(env, thread).slice(before).join('\n')
+        })
+        await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: A_REAL_MODEL_TURN_MS })
+        expect(
+          codexItems(env, thread, 'McpToolCall', (item) => `${item.server}.${item.tool}`)
+        ).toContain('playwright.browser_navigate')
+      }
+
+      await readsTheTitle(firstThread)
+      const loadsAfterFirst = server.count('/title')
+      expect(loadsAfterFirst).toBeGreaterThan(1)
+
+      await page.evaluate((id) => window.api.terminal.write(id, '/new'), tabId)
+      await page.waitForTimeout(PAST_CODEX_PASTE_BURST_THAT_SWALLOWS_AN_EARLY_ENTER_MS)
+      await page.evaluate((id) => window.api.terminal.write(id, '\r'), tabId)
+      await expect
+        .poll(async () => (await boundSessionId(page, tabId)) ?? firstThread, { timeout: 60_000 })
+        .not.toBe(firstThread)
+      const secondThread = (await boundSessionId(page, tabId))!
+      await readsTheTitle(secondThread)
+      expect(server.count('/title')).toBeGreaterThan(loadsAfterFirst)
+      const [workbenchLoad, ...agentLoads] = server.requestsFor('/title')
+      expect(agentLoads.map((r) => r.userAgent)).toEqual(
+        agentLoads.map(() => workbenchLoad.userAgent)
+      )
+    } catch (e) {
+      await keepWhatTheAgentSawAndDid(page, env)
+      throw e
+    } finally {
+      await quitAndClose(app)
+      await server.close()
     }
   })
 })

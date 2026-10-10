@@ -1157,3 +1157,22 @@ while one was connected ("this endpoint already has a client").
   **inferred, not checked**; and that `env_vars` takes only names (no other entry shape)
   is **inferred, not checked**.
 
+**With a model turn, inside a Koloft tab, checked 2026-10-10** with Codex CLI 0.162.0 (its
+default model), `@playwright/mcp` 0.0.83 run as `playwright-mcp --headless`, a Koloft
+`codex-home` account, the tab on Codex's own default permissions
+(`agent-tools-real-smoke.spec.ts` › "a real Codex reads a page title…"):
+
+- Asked to navigate to a local page and reply with its title, Codex called
+  `playwright.browser_navigate`; the tool result began `Page Title: <title>` and the reply
+  was the title alone. The rollout records the call as an `item_completed` event whose item
+  is `{"type":"McpToolCall","server":"playwright","tool":"browser_navigate",…}`.
+- Before the first call in each thread Codex stops on its own question,
+  `Allow the playwright MCP server to run tool "browser_navigate"?`, options `1. Allow`,
+  `2. Allow for this session`, `3. Always allow`, `4. Cancel`. Unanswered, the turn waits.
+  It asked again in the thread `/new` started.
+- The page loads were made by the Workbench guest (the same user agent as the guest's own
+  load, a plain Chrome string with no `Electron/` and no `HeadlessChrome`); in some runs the
+  MCP navigated the tab already open, in others it opened a second tab marked "agent
+  driving".
+- After `/new`, the new thread's first `browser_navigate` worked at once.
+
