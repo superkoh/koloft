@@ -873,6 +873,11 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await startSessionIn(page, 'ws-a')
       const idler = (await waitForCallsBesideConductors(env, 1))[0].pid
       await startSessionIn(page, 'ws-b')
+      for (const ws of ['ws-a', 'ws-b'])
+        await expect(wsRows(page, ws)).toHaveClass(/st-(waiting|idle)/, { timeout: 25_000 })
+      await wsRows(page, 'ws-a').click()
+      await wsRows(page, 'ws-b').click()
+      await expect.poll(() => pendingAttention(page)).toHaveLength(0)
       await expect
         .poll(() => processAlive(idler), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toBe(false)
