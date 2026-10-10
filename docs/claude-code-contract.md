@@ -1543,7 +1543,7 @@ ADR-0031, each up to 70 tool calls, with the same entry.
   envelope as sent**: an idle interactive receiver (haiku, `--dangerously-skip-permissions`,
   scratch `CLAUDE_CONFIG_DIR`) sent Koloft's `bypass` line on its socket handed the hook
   `"prompt":"<cross-session-message from-mode=\"bypass\">\n<body>\n</cross-session-message>"`.
-  In this Mac's transcripts since 2026-10-09, 10 of 12 such messages were followed by the
+  In one project's transcripts on this Mac since 2026-10-09, 10 of 12 such messages were followed by the
   prompt hook's context.
 - **A `PostToolBatch` event also exists** (once per batch of tool calls; its
   `additionalContext` reached the model on 2.1.296; its name is in the 2.1.294 binary).

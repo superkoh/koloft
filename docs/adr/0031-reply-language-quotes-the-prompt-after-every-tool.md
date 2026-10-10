@@ -23,20 +23,23 @@ resuming a copy of a long session that had drifted, then given a Chinese task of
 | the quote, at the prompt only | 0 / 12 |
 | the quote, at the prompt and after every tool | 2 / 20, each fixed by the next note |
 
-Fresh sessions hardly drifted under any of them (4 English of 152 notes in 24 runs of up
-to 70 tool calls), so no run measured the gap past 20 tool calls in a drifting session;
-the reminder after every tool is there
-because drift grows with the distance from the last reminder, which is also why Claude
-Code repeats an output style's line after every tool result (CC§19).
+The runs quoted the first 100 characters of the prompt; for Chinese that is the same
+300 bytes the hook keeps, for English up to three times less (not measured). Fresh
+sessions hardly drifted under any of them (4 English of 152 notes in 24 runs of up to 70
+tool calls), so no run measured a drifting session past about 20 tool calls: at the
+prompt only and after every tool did equally well there. The reminder after every tool
+is there because the transcripts show drift growing with the distance from the
+prompt, and it is what Claude Code itself does with an output style's line (CC§19).
+A message from another session does not replace the quote: the person reads the reply,
+so a child's English report must not turn its parent English.
 **Rejected**: repeating a generic sentence (above: it barely helped — the quote is what
 works). Naming the language ("Reply in Chinese") — Koloft would have to guess the
 language in a shell script, for every language; the quote lets the model see it.
 Skipping prompts written in plain ASCII to save tokens — a short "ok" or "merge" is
-exactly the prompt that starts a long turn. Claude Code's `language` setting — sent
-once per session, not per turn, and reported not to hold on Opus 5.5
-(anthropics/claude-code issues #96326, #96601; not measured here). A message from another
-session does not replace the quote: the person reads the reply, so a child's English
-report must not turn its parent English. A Stop hook that
-blocks an English reply — it sees only the final reply, never the notes, and costs a
-whole extra turn. `PostToolBatch` instead of `PostToolUse` — fewer reminders when tools
-run in parallel, but whether Claude Code 2.1.293 knows the event is not probed (CC§19).
+exactly the prompt that starts a long turn. Claude Code's `language` setting — read off
+the 2.1.296 binary, it is sent once at session start or when it changes, not after
+each tool result (not run here), and it is reported not to hold on Opus 5.5
+(anthropics/claude-code issue #96326). A Stop hook that blocks an English reply — it
+sees only the final reply, never the notes, and costs a whole extra turn.
+`PostToolBatch` instead of `PostToolUse` — fewer reminders when tools run in parallel,
+but whether Claude Code 2.1.293 knows the event is not probed (CC§19).
