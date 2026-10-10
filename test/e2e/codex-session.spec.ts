@@ -113,6 +113,15 @@ function codexCalls(env: E2EEnv): CodexCall[] {
       }
     })
 }
+async function startCodexInWorktree(page: Page, env: E2EEnv, name: string): Promise<CodexCall> {
+  const before = codexCalls(env).length
+  await newIn(page, true)
+  await worktreeDialog(page).locator('input').fill(name)
+  await chooseBackend(page, 'other')
+  await expect.poll(() => codexCalls(env).length).toBe(before + 1)
+  await expect(codexRows(page).filter({ hasText: 'Starting…' })).toHaveCount(0)
+  return codexCalls(env)[before]
+}
 function codexRows(page: Page): Locator {
   return wsRows(page, 'ws-a').filter({
     hasNot: page.getByRole('img', { name: 'Claude', exact: true })
@@ -554,12 +563,8 @@ test.describe('Codex sessions through the real method chooser, process transport
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      await newIn(page, true)
-      await worktreeDialog(page).locator('input').fill('codex-clean')
-      await chooseBackend(page, 'other')
-      await expect.poll(() => codexCalls(env).length).toBe(1)
+      const first = await startCodexInWorktree(page, env, 'codex-clean')
       await expect(codexRows(page)).toHaveClass(/st-waiting/)
-      const first = codexCalls(env)[0]
       expect(fs.existsSync(first.cwd)).toBe(true)
       expect(branches()).not.toBe('')
 
@@ -595,15 +600,8 @@ test.describe('Codex sessions through the real method chooser, process transport
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      for (const n of [1, 2]) {
-        await newIn(page, true)
-        await worktreeDialog(page).locator('input').fill('codex-shared')
-        await chooseBackend(page, 'other')
-        await expect.poll(() => codexCalls(env).length).toBe(n)
-        await expect(codexRows(page).filter({ hasText: 'Starting…' })).toHaveCount(0)
-      }
-      const tree = codexCalls(env)[0].cwd
-      expect(codexCalls(env)[1].cwd).toBe(tree)
+      const tree = (await startCodexInWorktree(page, env, 'codex-shared')).cwd
+      expect((await startCodexInWorktree(page, env, 'codex-shared')).cwd).toBe(tree)
       await expect(codexRows(page).and(page.locator('.st-waiting'))).toHaveCount(2)
 
       await sendShortcut(app, 'shortcut:close-tab')
@@ -700,12 +698,8 @@ test.describe('Codex sessions through the real method chooser, process transport
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      await newIn(page, true)
-      await worktreeDialog(page).locator('input').fill('codex-sleepy')
-      await chooseBackend(page, 'other')
-      await expect.poll(() => codexCalls(env).length).toBe(1)
+      const first = await startCodexInWorktree(page, env, 'codex-sleepy')
       await expect(codexRows(page)).toHaveClass(/st-waiting/)
-      const first = codexCalls(env)[0]
       await startSessionIn(page, 'ws-b', { method: 'Claude' })
       await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(2)
       await codexRows(page).click()

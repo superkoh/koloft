@@ -123,6 +123,14 @@ describe('planResume: bound session whose worktree still exists', () => {
     const plan = await planResume(bound, probes({ ...occupied, dirExists: (p) => taken.has(p) }))
     expect(plan).toMatchObject({ renamedName: 'session-tab-4' })
   })
+
+  it('skips a renamed name whose removed worktree still has a recovery record', async () => {
+    const plan = await planResume(
+      bound,
+      probes({ ...occupied, recorded: (p) => p === WT + '-2' || p === WT + '-3' })
+    )
+    expect(plan).toMatchObject({ renamedName: 'session-tab-4' })
+  })
 })
 
 describe('planResume: bound session whose worktree is gone (rebuild)', () => {

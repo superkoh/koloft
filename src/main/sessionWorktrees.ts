@@ -5,7 +5,6 @@ import { promisify } from 'util'
 import { randomUUID } from 'crypto'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import { SessionStore, type WorktreeResource } from './sessionStore'
-import { realpathSafe } from './projectInfo'
 
 const execFileAsync = promisify(execFile)
 
@@ -169,6 +168,7 @@ export class SessionWorktrees {
   }
 
   async untouched(resource: WorktreeResource): Promise<boolean> {
+    if (!resource.managed) return false
     const tree = resource.worktreePath
     try {
       const [branch, head, changes, ignored] = await Promise.all([
@@ -178,7 +178,6 @@ export class SessionWorktrees {
         git(tree, ['ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory'])
       ])
       return (
-        resource.managed &&
         branch === `worktree-${resource.worktreeName}` &&
         head === resource.originalHeadCommit &&
         !changes &&
@@ -192,9 +191,8 @@ export class SessionWorktrees {
     }
   }
 
-  recorded(root: string, name: string): boolean {
-    const target = path.join(realpathSafe(root), '.claude', 'worktrees', name)
-    return this.store.listResources().some((r) => r.worktreePath === target)
+  recorded(worktreePath: string): boolean {
+    return this.store.listResources().some((r) => r.worktreePath === worktreePath)
   }
 
   async rebuild(resourceId: string): Promise<WorktreeResource> {
@@ -226,7 +224,7 @@ export class SessionWorktrees {
     if (fs.existsSync(target)) throw new Error('Worktree directory already exists')
     const branch = `worktree-${name}`
     if (await branchExists(root, branch)) throw new Error('Worktree branch already exists')
-    if (this.store.listResources().some((r) => r.worktreePath === target)) {
+    if (this.recorded(target)) {
       throw new Error(
         'This worktree name has a recovery record; recover it or choose a different name'
       )

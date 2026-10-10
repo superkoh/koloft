@@ -145,7 +145,7 @@ export interface CodexSessionDeps {
   changed(): void
   replaced?(oldKey: string, newKey: string): void
   memberRemoved?(key: string): void
-  leftWorktree?(tabId: string, resource: WorktreeResource): Promise<void>
+  leftWorktree?(resource: WorktreeResource): Promise<void>
   events(tabId: string, event: SessionEvent): void
   error(message: string): void
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
@@ -1071,8 +1071,7 @@ export class CodexSessions {
             this.deps.error(String(error))
           }
         }
-        if (!this.shuttingDown && run.resource?.managed)
-          await this.deps.leftWorktree?.(tabId, run.resource)
+        if (!this.shuttingDown && run.resource) await this.deps.leftWorktree?.(run.resource)
         this.changed()
         if (!this.shuttingDown)
           void this.refreshHistory().catch((error) => this.deps.error(String(error)))

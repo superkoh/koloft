@@ -191,8 +191,8 @@ describe('SessionWorktrees', () => {
     const resource = await worktrees.create(repo, 'one')
     git('worktree', 'remove', resource.worktreePath)
     git('branch', '-D', 'worktree-one')
-    expect(worktrees.recorded(repo, 'one')).toBe(true)
-    expect(worktrees.recorded(repo, 'two')).toBe(false)
+    expect(worktrees.recorded(resource.worktreePath)).toBe(true)
+    await expect(worktrees.create(repo, 'one')).rejects.toThrow('recovery record')
   })
 
   it('refuses a locked missing worktree without modifying it', async () => {

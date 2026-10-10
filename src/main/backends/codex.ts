@@ -41,7 +41,11 @@ export function codexBackend(sessions: CodexSessions, resumeProbes: ResumeProbes
       if (row && !row.worktreeState && !dirExistsSync(row.cwd)) {
         return { action: 'unavailable', reason: 'no-cwd' }
       }
-      return planResume(row, resumeProbes, row?.worktreeState?.worktreePath)
+      return planResume(
+        row,
+        { ...resumeProbes, recorded: (dir) => sessions.worktrees.recorded(dir) },
+        row?.worktreeState?.worktreePath
+      )
     },
     hasTab: (tabId) => sessions.hasTab(tabId),
     workspaceOfTab: (tabId) => sessions.workspaceOfTab(tabId),

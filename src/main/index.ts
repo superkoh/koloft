@@ -178,7 +178,7 @@ import { sanitizeBase } from './gitStatus'
 import { Hosts } from './host/hosts'
 import { localGitOut, localHost } from './host/localHost'
 import { SshHost } from './host/sshHost'
-import { projectInfoFor } from './projectInfo'
+import { projectInfoFor, realpathSafe } from './projectInfo'
 import { whatsNewDecision } from './releaseNotes'
 import {
   checkForUpdates,
@@ -2219,7 +2219,8 @@ app.whenReady().then(() => {
     dirExists: (p) => hosts.of(p).dirExists(p),
     gitDirExists: (root) => hosts.of(root).dirExists(`${root}/.git`),
     worktreeDirExists: (root, name) => hosts.of(root).dirExists(`${worktreeHomeOf(root)}/${name}`),
-    worktreeRecorded: (root, name) => codexSessions?.worktrees.recorded(root, name) ?? false,
+    worktreeRecorded: (root, name) =>
+      codexSessions?.worktrees.recorded(`${worktreeHomeOf(realpathSafe(root))}/${name}`) ?? false,
     branchExists: (root, branch) => gitProbes(hostGitOut).branchExists(root, branch),
     countRunFolders,
     accountUsable: (backend) => sessionBackends.get(backend).accountUsable(),
@@ -3162,11 +3163,10 @@ async function closeSessionFully(
     sendToRenderer('cron:toast', `${target.title} was opened again, so Koloft did not close it.`)
     return
   }
-  const tree = await closingTree(hostGitOut, info)
-  const problem =
-    tree && (await hosts.of(tree.treeRoot).dirExists(tree.treeRoot))
-      ? await removeTree(hostGitOut, tree)
-      : null
+  const tree =
+    (await hosts.of(info.treeRoot).dirExists(info.treeRoot)) &&
+    (await closingTree(hostGitOut, info))
+  const problem = tree && (await removeTree(hostGitOut, tree))
   if (problem) {
     sendToRenderer('cron:toast', `${target.title}: ${problem}`)
     return
@@ -3175,15 +3175,11 @@ async function closeSessionFully(
   codexSessions?.store.removeUnusedResourcesAt(info.treeRoot)
 }
 
-async function removeUntouchedCodexWorktree(
-  tabId: string,
-  resource: WorktreeResource
-): Promise<void> {
+async function removeUntouchedCodexWorktree(resource: WorktreeResource): Promise<void> {
   const tree = resource.worktreePath
   const inTree = (dir: string): boolean => projectInfoFor(dir).treeRoot === tree
-  if (sleepers.has(tabId) || [...sleepers.values()].some((t) => inTree(t.cwd))) return
-  if (allSessions().some((s) => s.alive && inTree(s.treeRoot))) return
-  if (codexSessions?.occupantOf(tree) || !(await codexSessions?.worktrees.untouched(resource)))
+  if ([...sleepers.values()].some((t) => inTree(t.cwd))) return
+  if (sessionBackends.occupantOf(tree) || !(await codexSessions?.worktrees.untouched(resource)))
     return
   const problem = await removeTree(hostGitOut, {
     root: resource.originalCwd,

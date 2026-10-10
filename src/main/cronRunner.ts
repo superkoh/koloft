@@ -409,8 +409,8 @@ export class CronRunner {
   }
 
   private async taken(root: string, name: string): Promise<boolean> {
-    if (await this.d.worktreeDirExists(root, name)) return true
     if (this.d.worktreeRecorded(root, name)) return true
+    if (await this.d.worktreeDirExists(root, name)) return true
     return this.d.branchExists(root, `worktree-${name}`)
   }
 
