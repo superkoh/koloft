@@ -1634,8 +1634,10 @@ app.whenReady().then(() => {
   }
   claudeBackend.watchMirroredAgent = (host, mirrorDir) =>
     watchMirroredAgentRequests(mirrorDir, (requestId, raw) => {
+      const tabId = claudeBackend.remoteCaller(host, raw)
+      if (!tabId) return
       void agentRequests
-        .replyFor(claudeBackend.remoteCaller(host, raw), raw)
+        .replyFor(tabId, raw)
         .then((reply) => hosts.machine(host).answerAgent(requestId, replyJson(reply)))
     })
   claudeBackend.watchShimRegistrations(regDir)
