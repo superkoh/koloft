@@ -231,11 +231,12 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
     expect(remote.browserControl).not.toBe(true)
   })
 
-  it('gives a Codex session on this Mac a Workbench, accounts, scheduled tasks and the koloft command, and marks the three-line status line unsupported, citing the ledger section that shows why', () => {
+  it('gives a Codex session on this Mac a Workbench, accounts, scheduled tasks, the koloft command and browser control, and marks the three-line status line unsupported, citing the ledger section that shows why', () => {
     expect(capabilitiesFor('codex', 'local').workbench).toBe(true)
     expect(capabilitiesFor('codex', 'local').scheduledTasks).toBe(true)
     expect(capabilitiesFor('codex', 'local').accounts).toBe(true)
     expect(capabilitiesFor('codex', 'local').agentTools).toBe(true)
+    expect(capabilitiesFor('codex', 'local').browserControl).toBe(true)
     expect(capabilitiesFor('codex', 'local').statusline3).toEqual({ unsupported: 'CODEX§8' })
   })
 

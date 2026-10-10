@@ -197,6 +197,7 @@ import {
 } from '@shared/browserRoute'
 import {
   cdpEnvDir,
+  relayEndpoint,
   relayStripChanged,
   relayTabClosed,
   relayTabRebound,
@@ -540,7 +541,25 @@ function onSessionsChanged(): SessionInfo[] {
   const all = allSessions()
   settleWokenSleepers(all)
   rememberOpenTabs(all)
+  syncRelayBindings(all)
   return all
+}
+
+function syncRelayBindings(all: SessionInfo[]): void {
+  const seen = new Set<string>()
+  for (const s of all) {
+    seen.add(s.tabId)
+    const before = boundSessions.get(s.tabId)
+    if (before === s.sessionId) continue
+    boundSessions.set(s.tabId, s.sessionId)
+    // CODEX§26
+    relayTabRebound(s.tabId, s.sessionId || null, !!before && s.backendId === 'codex')
+  }
+  for (const tabId of [...boundSessions.keys()]) {
+    if (seen.has(tabId)) continue
+    boundSessions.delete(tabId)
+    relayTabRebound(tabId, null)
+  }
 }
 
 function addSleeper(tabId: string, t: OpenTab): void {
@@ -1739,25 +1758,12 @@ app.whenReady().then(() => {
     conductors?.onPtyExit(e.id)
     sendToRenderer('terminal:exit', e)
   })
-  tracker.on('update', (sessions: SessionInfo[]) => {
+  tracker.on('update', () => {
     const all = onSessionsChanged()
     sendToRenderer('sessions:update', all)
     workspaceMgr?.onTrackerUpdate()
     syncAnswerable()
     retitleDiscordThreads(all)
-    const seen = new Set<string>()
-    for (const s of sessions) {
-      seen.add(s.tabId)
-      const before = boundSessions.get(s.tabId)
-      if (before === s.sessionId) continue
-      boundSessions.set(s.tabId, s.sessionId)
-      relayTabRebound(s.tabId, s.sessionId || null)
-    }
-    for (const tabId of [...boundSessions.keys()]) {
-      if (seen.has(tabId)) continue
-      boundSessions.delete(tabId)
-      relayTabRebound(tabId, null)
-    }
   })
   tracker.on('relocated', (e: { tabId: string; dir: string }) => {
     sendToRenderer('session:relocated', e)
@@ -1808,6 +1814,7 @@ app.whenReady().then(() => {
       error: (message) => sendToRenderer('cron:toast', message),
       trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
+      browserEndpoint: relayEndpoint,
       openShimRoot: path.join(userData, 'codex-open'),
       agent: {
         enabled: () => agentToolsFor('codex', 'local'),
@@ -2770,7 +2777,8 @@ function cdpOp(
 
 function relayDeps(): RelayDeps {
   return {
-    sessionForTab: (tabId) => claudeBackend.sessionIdOf(tabId) ?? null,
+    sessionForTab: (tabId) =>
+      claudeBackend.sessionIdOf(tabId) ?? codexSessions?.sessionIdOf(tabId) ?? null,
     mount: async (sessionId, targetId) => {
       const r = await cdpOp('mount', sessionId, { targetId })
       if (!r.ok || typeof r.guestId !== 'number')

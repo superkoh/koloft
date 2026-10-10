@@ -109,6 +109,7 @@ beforeEach(() => {
   let tab = 0
   deps = {
     pty: {
+      nextId: vi.fn(() => 'pty-reserved'),
       create: vi.fn(() => ({ id: `pty-${++tab}` })),
       kill: vi.fn(),
       clearResumeIntent: vi.fn()
@@ -120,6 +121,7 @@ beforeEach(() => {
     error: vi.fn(),
     trustFolder: vi.fn(),
     pickHome: vi.fn(() => ({ account: 'work', home: '/homes/work' })),
+    browserEndpoint: vi.fn(() => ''),
     openShimRoot: path.join(directory, 'codex-open'),
     agent: { enabled: () => false, answer: vi.fn() }
   }
@@ -648,7 +650,60 @@ describe('CodexSessions', () => {
     const sessionEnvs = mocks.create.mock.calls.map(
       (call) => (call[0] as CodexTransportOptions).sessionEnv
     )
-    expect(sessionEnvs).toEqual([{ KOLOFT_PORT_OFFSET: String(portOffset('w1')) }, undefined])
+    expect(sessionEnvs).toEqual([{ KOLOFT_PORT_OFFSET: String(portOffset('w1')) }, {}])
+  })
+
+  // CODEX§26
+  it("with browser control on, every Playwright MCP entry in the owner's Codex config keeps its own env_vars and gains the tab's relay endpoint; other entries, and names Codex's -c cannot spell, are left alone", async () => {
+    const endpoint = 'ws://127.0.0.1:4100/cdp/' + 'a'.repeat(32)
+    vi.mocked(deps.browserEndpoint).mockImplementation((tabId) =>
+      tabId === 'pty-reserved' ? endpoint : ''
+    )
+    mocks.request.mockImplementation(async (method: string) =>
+      method === 'config/read'
+        ? {
+            config: {
+              mcp_servers: {
+                playwright: {
+                  command: 'npx',
+                  args: ['@playwright/mcp@latest'],
+                  env_vars: ['MINE']
+                },
+                'pw-global': { command: '/usr/local/bin/playwright-mcp', args: [] },
+                'my.browser': { command: 'npx', args: ['@playwright/mcp'] },
+                github: { command: 'github-mcp', args: [], env_vars: ['GH_TOKEN'] }
+              }
+            }
+          }
+        : {}
+    )
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    const options = mocks.create.mock.calls[0][0] as CodexTransportOptions
+    expect(mocks.request).toHaveBeenCalledWith('config/read', { cwd: repo }, '/homes/work')
+    expect(options.configOverrides).toEqual(
+      expect.arrayContaining([
+        'mcp_servers.playwright.env_vars=["MINE","PLAYWRIGHT_MCP_CDP_ENDPOINT","PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS"]',
+        'mcp_servers.pw-global.env_vars=["PLAYWRIGHT_MCP_CDP_ENDPOINT","PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS"]'
+      ])
+    )
+    expect(options.configOverrides!.filter((o) => o.startsWith('mcp_servers.'))).toHaveLength(2)
+    expect(options.sessionEnv).toEqual({
+      PLAYWRIGHT_MCP_CDP_ENDPOINT: endpoint,
+      PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS: '1'
+    })
+    expect(vi.mocked(deps.pty.create).mock.calls[0][0].id).toBe('pty-reserved')
+
+    vi.mocked(deps.browserEndpoint).mockReturnValue('')
+    mocks.request.mockClear()
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    expect(mocks.request).not.toHaveBeenCalledWith(
+      'config/read',
+      expect.anything(),
+      expect.anything()
+    )
+    const off = mocks.create.mock.calls[1][0] as CodexTransportOptions
+    expect(off.configOverrides!.some((o) => o.startsWith('mcp_servers.'))).toBe(false)
+    expect(off.sessionEnv).toEqual({})
   })
 
   // ADR-0029 CODEX§11 CODEX§12

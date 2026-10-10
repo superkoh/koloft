@@ -94,7 +94,6 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities | 'refused'>> 
   codex: {
     local: {
       ...EVERYTHING,
-      browserControl: PENDING,
       // CODEX§8
       statusline3: { unsupported: 'CODEX§8' }
     },

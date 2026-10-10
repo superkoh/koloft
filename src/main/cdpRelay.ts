@@ -399,7 +399,11 @@ export function sessionDrivingGuest(guestId: number): string | null {
   return null
 }
 
-export function relayTabRebound(tabId: string, sessionId: string | null): void {
+export function relayTabRebound(
+  tabId: string,
+  sessionId: string | null,
+  clientLeavesWithTheOldSession = false
+): void {
   const client = clients.get(tabId)
   if (!client) return
   if (sessionId !== null && sessionId === client.sessionId) return
@@ -407,6 +411,10 @@ export function relayTabRebound(tabId: string, sessionId: string | null): void {
     client.protocol.targetDestroyed(t.targetId)
   }
   deps?.setAttached(client.sessionId, [])
+  if (clientLeavesWithTheOldSession) {
+    dropClient(tabId)
+    return refuse(client.ws, 'a new session took over this tab')
+  }
   if (!sessionId) {
     client.sessionId = ''
     return
