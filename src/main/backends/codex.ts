@@ -46,7 +46,7 @@ export function codexBackend(sessions: CodexSessions, resumeProbes: ResumeProbes
     hasTab: (tabId) => sessions.hasTab(tabId),
     workspaceOfTab: (tabId) => sessions.workspaceOfTab(tabId),
     aliveTabFor: (key) => sessions.aliveTabFor(key),
-    stop: (tabId) => sessions.stop(tabId),
+    stop: (tabId, restarting) => sessions.stop(tabId, undefined, restarting),
     archive: (key) => sessions.archive(key),
     transcriptExists: (key) => sessions.transcriptExists(key),
     observe: (tabId, event) => sessions.observe(tabId, event),

@@ -379,7 +379,7 @@ describe('CodexSessions', () => {
     expect(sessions.list()).toEqual([])
   })
 
-  it('a closed tab hands its worktree over for removal only once its Codex is gone, a restart after that removal rebuilds the worktree and resumes there, and quitting Koloft hands nothing over', async () => {
+  it('a restart hands nothing over and resumes in the same worktree, a closed tab hands its worktree over for removal only once its Codex is gone, a resume after that removal rebuilds the worktree there, and quitting Koloft hands nothing over', async () => {
     const worktree = path.join(repo, '.claude', 'worktrees', 'w1')
     fs.mkdirSync(worktree, { recursive: true })
     const resource: WorktreeResource = {
@@ -406,14 +406,20 @@ describe('CodexSessions', () => {
 
     const launched = await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1' })
     bind(0, A, worktree)
-    await sessions.stop(launched.id)
+    await sessions.stop(launched.id, undefined, true)
+    expect(leftWorktree).not.toHaveBeenCalled()
+    const inPlace = await sessions.resume({ sessionId: codexSessionKey(A), cwd: worktree })
+    expect(rebuild).not.toHaveBeenCalled()
+    bind(1, A, worktree, 1, 'thread/resume')
+
+    await sessions.stop(inPlace.id)
     expect(leftWorktree.mock.calls).toEqual([[resource]])
     expect(fs.existsSync(worktree)).toBe(false)
 
     const restarted = await sessions.resume({ sessionId: codexSessionKey(A), cwd: worktree })
     expect(rebuild).toHaveBeenCalledWith(resource.id)
     expect(restarted.cwd).toBe(worktree)
-    bind(1, A, worktree, 1, 'thread/resume')
+    bind(2, A, worktree, 1, 'thread/resume')
     await sessions.stopAll()
     expect(leftWorktree).toHaveBeenCalledTimes(1)
     expect(fs.existsSync(worktree)).toBe(true)

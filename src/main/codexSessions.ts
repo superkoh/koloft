@@ -1042,7 +1042,7 @@ export class CodexSessions {
     )
   }
 
-  stop(tabId: string, nativeExitCode?: number): Promise<void> {
+  stop(tabId: string, nativeExitCode?: number, restarting = false): Promise<void> {
     const run = this.runs.get(tabId)
     if (!run) return Promise.resolve()
     if (run.stopping) return run.stopping
@@ -1071,7 +1071,8 @@ export class CodexSessions {
             this.deps.error(String(error))
           }
         }
-        if (!this.shuttingDown && run.resource) await this.deps.leftWorktree?.(run.resource)
+        if (!this.shuttingDown && !restarting && run.resource)
+          await this.deps.leftWorktree?.(run.resource)
         this.changed()
         if (!this.shuttingDown)
           void this.refreshHistory().catch((error) => this.deps.error(String(error)))

@@ -3107,19 +3107,21 @@ function killTabFromMain(tabId: string): void {
   void killTabPty(tabId)
 }
 
-function killTabPty(tabId: string): Promise<boolean> {
+function killTabPty(tabId: string, restarting = false): Promise<boolean> {
   if (sleepers.has(tabId)) {
     forgetSleeper(tabId)
     return Promise.resolve(true)
   }
   discordNotices?.closed(tabId)
   discordLive?.closed(tabId)
-  return stopTabProcess(tabId)
+  return stopTabProcess(tabId, restarting)
 }
 
-function stopTabProcess(tabId: string): Promise<boolean> {
+function stopTabProcess(tabId: string, restarting = false): Promise<boolean> {
   const owner = sessionBackends.ownerOfTab(tabId)
-  const stopped = owner ? Promise.resolve(owner.stop(tabId)) : Promise.resolve(ptyMgr.kill(tabId))
+  const stopped = owner
+    ? Promise.resolve(owner.stop(tabId, restarting))
+    : Promise.resolve(ptyMgr.kill(tabId))
   attention.clearKeepingExit(tabId)
   relayTabClosed(tabId)
   boundSessions.delete(tabId)
@@ -3618,7 +3620,10 @@ function registerIpc(): void {
   ipcMain.on('terminal:resize', (_e, id: string, cols: number, rows: number) =>
     ptyMgr.resize(id, cols, rows)
   )
-  ipcMain.on('terminal:kill', (_e, id: string) => void killTabPty(id))
+  ipcMain.on(
+    'terminal:kill',
+    (_e, id: string, restarting: unknown) => void killTabPty(id, restarting === true)
+  )
 
   ipcMain.handle('sessions:list', () => allSessions())
   ipcMain.handle('sessions:backends', () =>
