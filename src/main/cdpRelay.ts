@@ -399,11 +399,7 @@ export function sessionDrivingGuest(guestId: number): string | null {
   return null
 }
 
-export function relayTabRebound(
-  tabId: string,
-  sessionId: string | null,
-  clientLeavesWithTheOldSession = false
-): void {
+export function relayTabRebound(tabId: string, sessionId: string | null): void {
   const client = clients.get(tabId)
   if (!client) return
   if (sessionId !== null && sessionId === client.sessionId) return
@@ -411,10 +407,6 @@ export function relayTabRebound(
     client.protocol.targetDestroyed(t.targetId)
   }
   deps?.setAttached(client.sessionId, [])
-  if (clientLeavesWithTheOldSession) {
-    dropClient(tabId)
-    return refuse(client.ws, 'a new session took over this tab')
-  }
   if (!sessionId) {
     client.sessionId = ''
     return
@@ -423,15 +415,18 @@ export function relayTabRebound(
   for (const t of asTargets(snapshots.get(sessionId) ?? [])) void client.protocol.targetCreated(t)
 }
 
-export function relayTabClosed(tabId: string): void {
+export function relayClientEvicted(tabId: string, reason: string): void {
   const client = clients.get(tabId)
-  if (client) {
-    for (const t of asTargets(snapshots.get(client.sessionId) ?? [])) {
-      client.protocol.targetDestroyed(t.targetId)
-    }
-    dropClient(tabId)
-    refuse(client.ws, 'the tab this endpoint belonged to was closed')
+  if (!client) return
+  for (const t of asTargets(snapshots.get(client.sessionId) ?? [])) {
+    client.protocol.targetDestroyed(t.targetId)
   }
+  dropClient(tabId)
+  refuse(client.ws, reason)
+}
+
+export function relayTabClosed(tabId: string): void {
+  relayClientEvicted(tabId, 'the tab this endpoint belonged to was closed')
   paths.delete(tabId)
   try {
     fs.rmSync(path.join(cdpEnvDir(), tabId), { force: true })

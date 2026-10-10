@@ -197,6 +197,7 @@ import {
 } from '@shared/browserRoute'
 import {
   cdpEnvDir,
+  relayClientEvicted,
   relayEndpoint,
   relayStripChanged,
   relayTabClosed,
@@ -553,7 +554,9 @@ function syncRelayBindings(all: SessionInfo[]): void {
     if (before === s.sessionId) continue
     boundSessions.set(s.tabId, s.sessionId)
     // CODEX§26
-    relayTabRebound(s.tabId, s.sessionId || null, !!before && s.backendId === 'codex')
+    if (before && s.backendId === 'codex')
+      relayClientEvicted(s.tabId, 'a new session took over this tab')
+    relayTabRebound(s.tabId, s.sessionId || null)
   }
   for (const tabId of [...boundSessions.keys()]) {
     if (seen.has(tabId)) continue

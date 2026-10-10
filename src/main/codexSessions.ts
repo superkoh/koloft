@@ -69,10 +69,10 @@ const QUEUE_ANSWER_INSIDE_THE_KOLOFT_WAIT_MS = AGENT_SHIM_WAITS_MS / 2
 // CODEX§1
 const NO_UPDATE_NOTICE_AT_START = 'check_for_update_on_startup=false'
 
-const PLAYWRIGHT_MCP_ENV = [
-  'PLAYWRIGHT_MCP_CDP_ENDPOINT',
-  'PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS'
-] as const
+const playwrightMcpEnv = (endpoint: string): Record<string, string> => ({
+  PLAYWRIGHT_MCP_CDP_ENDPOINT: endpoint,
+  PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS: '1'
+})
 
 const runsPlaywrightMcp = (word: string): boolean =>
   word.includes('@playwright/mcp') || path.basename(word) === 'playwright-mcp'
@@ -90,7 +90,7 @@ export function playwrightEnvOverrides(mcpServers: unknown): string[] {
       (v): v is string => typeof v === 'string'
     )
     return [
-      `mcp_servers.${name}.env_vars=${JSON.stringify([...new Set([...own, ...PLAYWRIGHT_MCP_ENV])])}`
+      `mcp_servers.${name}.env_vars=${JSON.stringify([...new Set([...own, ...Object.keys(playwrightMcpEnv(''))])])}`
     ]
   })
 }
@@ -807,10 +807,7 @@ export class CodexSessions {
         env,
         sessionEnv: {
           ...(resource && { KOLOFT_PORT_OFFSET: String(portOffset(resource.worktreeName)) }),
-          ...(playwright.length > 0 && {
-            PLAYWRIGHT_MCP_CDP_ENDPOINT: endpoint,
-            PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS: '1'
-          })
+          ...(playwright.length > 0 && playwrightMcpEnv(endpoint))
         },
         cwd,
         configOverrides: [

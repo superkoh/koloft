@@ -235,11 +235,12 @@ describe('a tab whose session went away (§4.4)', () => {
   })
 
   // CODEX§26
-  it('a rebind that sends the client away with the old session frees the endpoint for the next client, which drives the new session', async () => {
+  it('a client sent away with the old session frees the endpoint for the next client, which drives the new session', async () => {
     const a = await registered()
     deps.session = 'session-after-clear'
 
-    relay.relayTabRebound(TAB, 'session-after-clear', true)
+    relay.relayClientEvicted(TAB, 'a new session took over this tab')
+    relay.relayTabRebound(TAB, 'session-after-clear')
 
     expect(await closedReason(a)).toBe('a new session took over this tab')
     const b = await registered()
