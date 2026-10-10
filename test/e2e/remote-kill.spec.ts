@@ -53,6 +53,16 @@ async function closeTabPastAnyConfirm(app: ElectronApplication, page: Page): Pro
   }
 }
 
+const TOAST_SAMPLES = 8
+const TOAST_SAMPLE_GAP_MS = 200
+
+async function expectNoToastAcrossAWindow(page: Page): Promise<void> {
+  for (let i = 0; i < TOAST_SAMPLES; i++) {
+    expect(await page.locator('.toast').count()).toBe(0)
+    await page.waitForTimeout(TOAST_SAMPLE_GAP_MS)
+  }
+}
+
 function killLines(env: E2EEnv, id: string): string[] {
   return sshCommands(env).filter((c) => c.includes(`kill-session -t ${tmuxName(id)}`))
 }
@@ -208,16 +218,25 @@ test.describe('who ends the claude on the other machine: every way of ending a r
     }
   })
 
-  test('E-RW-12: ⌘W with ssh down closes the tab but the row stays running', async ({ env }) => {
+  test('E-RW-12: ⌘W with ssh down closes the tab, says the session is still running on the machine, and the row stays running', async ({
+    env
+  }) => {
     test.setTimeout(240_000)
     const { app, page } = await launchWithRemote(env)
     try {
       await addRemoteWorkspace(page, env)
       await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
       const [first] = await waitForCalls(env, 1)
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await expect(row).toHaveClass(/st-waiting|st-idle/, { timeout: 60_000 })
+      const title = (await row.locator('.ws-tab-title').textContent())?.trim() ?? ''
 
       breakConnection(env)
       await closeTabPastAnyConfirm(app, page)
+
+      await expect(page.locator('.toast .toast-msg')).toHaveText(
+        `Could not stop “${title}” on devbox: ssh exited with 255. It is still running there.`
+      )
 
       await expect
         .poll(
@@ -242,6 +261,40 @@ test.describe('who ends the claude on the other machine: every way of ending a r
       await page.waitForTimeout(3000)
       await expect(wsRows(page, REMOTE_WS_NAME).first()).not.toHaveClass(/\bcold\b/)
       expect(readCalls(env)).toHaveLength(1)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-30: ⌘W on a remote tab whose claude is already gone sends a kill that finds nothing, and says nothing about it', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const [first] = await waitForCalls(env, 1)
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await expect(row).toHaveClass(/st-waiting|st-idle/, { timeout: 60_000 })
+
+      dropTabLinkWhileItsSessionDies(env, first.pid)
+      await expect.poll(() => processAlive(first.pid), { timeout: 5_000 }).toBe(false)
+      await closeTabPastAnyConfirm(app, page)
+
+      await expect
+        .poll(
+          () =>
+            sshCalls(env).filter(
+              (c) =>
+                c.phase === 'end' &&
+                c.exit === 1 &&
+                remoteCommandText(c.argv).includes(`kill-session -t ${tmuxName(first.sessionId)}`)
+            ).length,
+          { timeout: 30_000 }
+        )
+        .toBe(1)
+      await expectNoToastAcrossAWindow(page)
     } finally {
       await quitAndClose(app)
     }

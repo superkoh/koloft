@@ -152,7 +152,8 @@ if (verb === 'new-session') {
 } else if (verb === 'kill-session') {
   const name = flagVal('-t')
   const pid = pidOf(name)
-  if (pid) {
+  const gone = !alive(pid)
+  if (!gone) {
     try {
       process.kill(-pid, 'SIGTERM')
     } catch {}
@@ -165,7 +166,9 @@ if (verb === 'new-session') {
   try {
     fs.unlinkSync(aliveFile(name))
   } catch {}
-  process.exit(0)
+  // PLATFORM§35
+  if (gone) process.stderr.write(`can't find session: ${name}\n`)
+  process.exit(gone ? 1 : 0)
 } else {
   process.exit(0)
 }
