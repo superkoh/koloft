@@ -628,6 +628,48 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
+  test('a Codex worktree a Claude session was opened in stays while that Claude session runs, and goes when Codex is the last to leave it', async ({
+    env
+  }) => {
+    installCodex(env)
+    gitInit(env.workspaces.a)
+    fs.writeFileSync(path.join(env.workspaces.a, '.gitignore'), 'NOTES.md\n')
+    gitCommitAll(env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const claudeRow = (page: Page): Locator =>
+      wsRows(page, 'ws-a').filter({ has: page.getByRole('img', { name: 'Claude', exact: true }) })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const tree = (await startCodexInWorktree(page, env, 'codex-mixed')).cwd
+      await newIn(page, true)
+      await worktreeDialog(page).locator('input').fill('codex-mixed')
+      await chooseBackend(page, 'default')
+      await expect(claudeRow(page)).toHaveClass(/st-waiting/)
+      const notes = path.join(tree, 'NOTES.md')
+      await expect.poll(() => fs.existsSync(notes)).toBe(true)
+      fs.copyFileSync(notes, path.join(env.workspaces.a, 'NOTES.md'))
+
+      await codexRows(page).click()
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(codexRows(page)).toHaveClass(/cold/)
+      await page.waitForTimeout(A_REMOVAL_WOULD_HAVE_FINISHED_MS)
+      expect(fs.existsSync(tree)).toBe(true)
+
+      await claudeRow(page).click()
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(claudeRow(page)).toHaveClass(/cold/)
+      await codexRows(page).click()
+      await expect(codexRows(page)).toHaveClass(/st-waiting|st-idle/)
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(codexRows(page)).toHaveClass(/cold/)
+      await expect.poll(() => fs.existsSync(tree)).toBe(false)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('mixed sessions receive worktree and Codex approval hints without Claude-only guidance', async ({
     env
   }) => {
