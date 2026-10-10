@@ -1,6 +1,7 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
+import { SHIM_FOUND_NO_ACCOUNT_EXIT, SHIM_FOUND_NO_ACCOUNT_NOTICE } from '@shared/accountUsage'
 import { isSessionKind, type SessionBackend } from './agentUi'
-import type { SessionInfo, TabKind } from '@shared/types'
+import { exitedAbnormally, type SessionInfo, type TabKind } from '@shared/types'
 
 export type CloseIntent =
   | { kind: 'none' }
@@ -48,14 +49,20 @@ export function unsavedBody(files: string[]): string {
   return `Unsaved changes in ${unsavedFilesPhrase(files)}. Closing loses them — Koloft keeps no drafts.`
 }
 
+export function sessionEndedBody(title: string, files: string[]): string {
+  return `"${title}" ended with unsaved changes in ${unsavedFilesPhrase(files)}. Keep for later holds them until you quit Koloft, which asks again.`
+}
+
 export function unexpectedExitNotice(
   exit: { exitCode: number; signal?: number },
   backend: SessionBackend
 ): string {
   // PLATFORM§29
-  return exit.signal
-    ? `${BACKEND_LABEL[backend]} session ended: killed by signal ${exit.signal}`
-    : `${BACKEND_LABEL[backend]} session ended unexpectedly (exit code ${exit.exitCode})`
+  if (exit.signal) return `${BACKEND_LABEL[backend]} session ended: killed by signal ${exit.signal}`
+  // ADR-0030
+  if (backend === 'claude' && exit.exitCode === SHIM_FOUND_NO_ACCOUNT_EXIT)
+    return SHIM_FOUND_NO_ACCOUNT_NOTICE
+  return `${BACKEND_LABEL[backend]} session ended unexpectedly (exit code ${exit.exitCode})`
 }
 
 export function unexpectedExitWanted<
@@ -65,7 +72,6 @@ export function unexpectedExitWanted<
   exit: { exitCode: number; signal?: number }
 ): tab is T & { kind: SessionBackend } {
   if (!tab || !isSessionKind(tab.kind)) return false
-  // PLATFORM§29
-  if (exit.exitCode === 0 && !exit.signal) return false
+  if (!exitedAbnormally(exit)) return false
   return !(tab.jobId !== undefined && tab.sessionId === undefined)
 }

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -7,6 +7,9 @@ import { machineClaudeArgs, SshHost } from '../../src/main/host/sshHost'
 import { diffBase as localDiffBase } from '../../src/main/gitStatus'
 import { utilTerminalGuard } from '../../src/main/shim'
 import type { BytesResult } from '../../src/main/remote/ssh'
+import { AccountPicker, type LaunchedSession } from '../../src/main/accountPicker'
+import { meta, NOW_MS, NOW_S, usage } from './helpers/accounts'
+import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 
 const MACHINE = 'devbox'
 let home: string
@@ -40,8 +43,8 @@ const machine = (run = runOnMachine): SshHost =>
       machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
       alive: () => new Set(),
       realPath: (p) => p,
-      settings: () => ({ multiAccount: false, skipPermissions: false }),
-      pickAccount: async () => undefined,
+      settings: () => ({ skipPermissions: false }),
+      pickAccount: async () => ({ env: {}, banner: '' }),
       hookSettings: () => ({})
     }
   })
@@ -273,6 +276,78 @@ describe('what a remote launch hands claude', () => {
         false
       )
     ).toEqual({ ok: true, args: ['--resume', 'old1'] })
+  })
+})
+
+describe('accounts for remote launches started together', () => {
+  it('two remote launches started at once land on two accounts, as two local ones do', async () => {
+    const accounts = ['a', 'b'].map((name) => meta({ name }))
+    const sessions: LaunchedSession[] = []
+    const picker = new AccountPicker({
+      listAccounts: () => accounts,
+      fablePriority: () => false,
+      readSecret: async () => null,
+      probe: async () => ({ ok: false, error: 'network' }),
+      onProbeOutcome: () => {},
+      launchedSessions: () => sessions,
+      recordPick: (tabId, account) => sessions.push({ tabId, account }),
+      now: () => NOW_MS
+    })
+    accounts.forEach((a, i) =>
+      picker.cacheUsage(
+        'oauth',
+        a.name,
+        usage({ u5: 0.3, u7: 0.4, r5: NOW_S + 36_000, r7: NOW_S + (i + 1) * 86_400 })
+      )
+    )
+    const handed: string[] = []
+    const host = new SshHost(MACHINE, {
+      run: runOnMachine,
+      shell: () => ({ spawnCwd: '/' }),
+      github: {},
+      claude: {
+        userData: home,
+        controlDir: home,
+        machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
+        alive: () => new Set(),
+        realPath: (p) => p,
+        settings: () => ({ skipPermissions: false }),
+        pickAccount: async (launchKey) => {
+          const res = await picker.pick(launchKey)
+          if (!res.account) return undefined
+          handed.push(res.account)
+          return { env: {}, banner: '' }
+        },
+        hookSettings: () => ({})
+      }
+    })
+    await Promise.all([host.launch({ root: keyed('/w') }), host.launch({ root: keyed('/w') })])
+    expect(handed.sort()).toEqual(['a', 'b'])
+  })
+
+  // ADR-0030
+  it("refuses a remote launch with no usable account instead of using the machine's own login, but re-attaching a live session needs none", async () => {
+    const pickAccount = vi.fn(async () => undefined)
+    const live = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    const host = new SshHost(MACHINE, {
+      run: runOnMachine,
+      shell: () => ({ spawnCwd: '/' }),
+      github: {},
+      claude: {
+        userData: home,
+        controlDir: home,
+        machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
+        alive: () => new Set([live]),
+        realPath: (p) => p,
+        settings: () => ({ skipPermissions: false }),
+        pickAccount,
+        hookSettings: () => ({})
+      }
+    })
+    await expect(host.launch({ root: keyed('/w') })).rejects.toThrow(NO_USABLE_ACCOUNT.claude)
+    pickAccount.mockClear()
+    expect((await host.launch({ root: keyed('/w'), resumeSessionId: live })).ok).toBe(true)
+    expect(pickAccount).not.toHaveBeenCalled()
   })
 })
 

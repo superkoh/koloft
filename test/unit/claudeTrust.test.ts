@@ -3,10 +3,61 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import {
+  acceptBypassWarning,
   acceptClaudeTrust,
+  bypassWarningAccepted,
   claudeTrustsFolder,
   isTrustedByClaude
 } from '../../src/main/claudeTrust'
+
+// CC§9
+describe('the one-time "skip permissions" warning Claude shows', () => {
+  const files = (): { dir: string; claudeJson: string; settings: string } => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-bypass-'))
+    return {
+      dir,
+      claudeJson: path.join(dir, '.claude.json'),
+      settings: path.join(dir, '.claude', 'settings.json')
+    }
+  }
+
+  it('counts as accepted by either key Claude reads, and not when neither file says so', () => {
+    const f = files()
+    expect(bypassWarningAccepted(f.claudeJson, f.settings)).toBe(false)
+    fs.writeFileSync(f.claudeJson, JSON.stringify({ bypassPermissionsModeAccepted: true }))
+    expect(bypassWarningAccepted(f.claudeJson, f.settings)).toBe(true)
+    fs.rmSync(f.claudeJson)
+    fs.mkdirSync(path.dirname(f.settings))
+    fs.writeFileSync(f.settings, JSON.stringify({ skipDangerousModePermissionPrompt: true }))
+    expect(bypassWarningAccepted(f.claudeJson, f.settings)).toBe(true)
+    fs.rmSync(f.dir, { recursive: true, force: true })
+  })
+
+  it('accepting writes only skipDangerousModePermissionPrompt and keeps every other setting', () => {
+    const f = files()
+    expect(acceptBypassWarning(f.settings)).toBe(true)
+    expect(JSON.parse(fs.readFileSync(f.settings, 'utf8'))).toEqual({
+      skipDangerousModePermissionPrompt: true
+    })
+    fs.writeFileSync(f.settings, JSON.stringify({ model: 'opus', hooks: { Stop: [] } }))
+    acceptBypassWarning(f.settings)
+    expect(JSON.parse(fs.readFileSync(f.settings, 'utf8'))).toEqual({
+      model: 'opus',
+      hooks: { Stop: [] },
+      skipDangerousModePermissionPrompt: true
+    })
+    fs.rmSync(f.dir, { recursive: true, force: true })
+  })
+
+  it('never overwrites a settings file it cannot read as JSON', () => {
+    const f = files()
+    fs.mkdirSync(path.dirname(f.settings))
+    fs.writeFileSync(f.settings, '{ "model": "opus", ')
+    expect(acceptBypassWarning(f.settings)).toBe(false)
+    expect(fs.readFileSync(f.settings, 'utf8')).toBe('{ "model": "opus", ')
+    fs.rmSync(f.dir, { recursive: true, force: true })
+  })
+})
 
 const doc =
   (projects: Record<string, unknown>): (() => unknown) =>

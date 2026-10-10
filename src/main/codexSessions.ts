@@ -10,27 +10,36 @@ import type {
   SessionResumeRequest,
   BackendSessionRow
 } from '@shared/types'
-import { identityOf } from '@shared/sessionBackend'
+import { CODEX_PLACEHOLDER_TITLE } from '@shared/types'
+import { identityOf, sourceOf } from '@shared/sessionBackend'
+import type { SearchCandidate } from './sessionSearch'
 import type { SessionEvent } from '@shared/sessionEvent'
+import type { Turn } from '@shared/turns'
 import {
   CodexObservation,
+  codexTurns,
   record,
   userThread,
   type CodexEvent,
   type CodexThread
 } from './codexObservation'
 import { CodexRpc, createCodexTransport, type CodexTransport } from './codexTransport'
+import { endCodexAppServersLeftByACrash } from './leftovers'
 import { SessionStore, codexSessionKey, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
-import { resolveCodexRuntime } from './codexRuntime'
+import { codexTooOld, resolveCodexRuntime, updateCodex, type CodexRuntime } from './codexRuntime'
+import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from './cliMinimums'
 import { occupantName } from './resumePlan'
 import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
 import { watchJsonDrops } from './jsonDrops'
 import { openDropTarget, type OpenDrop } from './openDrop'
 import { removeCodexOpenShim, writeCodexOpenShim } from './openShimScript'
-import { writeCodexAgentShim } from './agentShim'
+import { AGENT_SHIM_WAITS_MS, writeCodexAgentShim } from './agentShim'
 import { CODEX_AGENT_HINT } from '@shared/agentGuide'
+import { portOffset } from '@shared/worktreeName'
+import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
+import type { CodexApproval, CodexQuestion } from './discord/dialog'
 
 const exists = (p: string): boolean => {
   try {
@@ -51,18 +60,40 @@ const STATUS_LINE_CONFIG = `tui.status_line=${JSON.stringify([
 ])}`
 
 // CODEX§17
-const AGENT_HINT_CONFIG = `developer_instructions=${JSON.stringify(CODEX_AGENT_HINT)}`
+function developerInstructions(lines: string[]): string {
+  return `developer_instructions=${JSON.stringify(lines.join('\n\n'))}`
+}
 
-const QUEUE_ANSWER_INSIDE_THE_KOLOFT_WAIT_MS = 5_000
+const QUEUE_ANSWER_INSIDE_THE_KOLOFT_WAIT_MS = AGENT_SHIM_WAITS_MS / 2
 
 // CODEX§1
 const NO_UPDATE_NOTICE_AT_START = 'check_for_update_on_startup=false'
 
+interface Permissions {
+  approval: 'never' | 'on-request'
+  sandbox: 'workspace-write' | 'danger-full-access'
+}
+
 // CODEX§11
-const PERMISSION_ARGS: Record<LaunchPermission, string[]> = {
-  default: [],
-  acceptEdits: ['-a', 'on-request', '-s', 'workspace-write'],
-  bypass: ['-a', 'never', '-s', 'danger-full-access']
+const PERMISSIONS: Record<LaunchPermission, Permissions | undefined> = {
+  default: undefined,
+  acceptEdits: { approval: 'on-request', sandbox: 'workspace-write' },
+  bypass: { approval: 'never', sandbox: 'danger-full-access' }
+}
+
+// ADR-0029 CODEX§12
+const CONDUCTOR_PERMISSIONS: Permissions = { approval: 'never', sandbox: 'workspace-write' }
+
+// CODEX§11
+function permissionFlags(p: Permissions | undefined): string[] {
+  return p ? ['-a', p.approval, '-s', p.sandbox] : []
+}
+
+// CODEX§11
+function permissionConfig(p: Permissions | undefined): string[] {
+  return p
+    ? [`approval_policy=${JSON.stringify(p.approval)}`, `sandbox_mode=${JSON.stringify(p.sandbox)}`]
+    : []
 }
 
 // CODEX§14
@@ -87,17 +118,37 @@ const EMIT_THROTTLE_MS = 500
 const binaryGone = (error: unknown): boolean =>
   (error as NodeJS.ErrnoException | null)?.code === 'ENOENT'
 
+const sourceKinds = ['cli', 'vscode', 'appServer']
+
+async function* everyPage(
+  rpc: CodexRpc,
+  method: string,
+  params: Record<string, unknown>
+): AsyncGenerator<unknown> {
+  let cursor: string | undefined
+  const cursors = new Set<string>()
+  do {
+    const reply = record(await rpc.request(method, { limit: 100, cursor, ...params }))
+    if (!Array.isArray(reply.data))
+      throw new Error('Codex history returned an unsupported response.')
+    yield* reply.data
+    cursor = typeof reply.nextCursor === 'string' && reply.nextCursor ? reply.nextCursor : undefined
+    if (cursor && cursors.has(cursor)) throw new Error('Codex history repeated a page.')
+    if (cursor) cursors.add(cursor)
+  } while (cursor)
+}
+
 export interface CodexSessionDeps {
   pty: PtyManager
   runtime: SessionRuntime
   projectInfo(p: string): ProjectInfo
   changed(): void
   replaced?(oldKey: string, newKey: string): void
+  memberRemoved?(key: string): void
   events(tabId: string, event: SessionEvent): void
   error(message: string): void
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
   pickHome(): { account: string; home: string } | undefined
-  homes(): string[]
   openShimRoot: string
   agent: {
     enabled(): boolean
@@ -121,22 +172,25 @@ interface Run {
   stopping?: Promise<void>
   explicitStop: boolean
   resumeKey?: string
-  home?: string
-  account?: string
+  account: string
+  permission: LaunchPermission
   releaseOpenShim(): void
 }
 
 export class CodexSessions {
+  private crashLeftoversEnded?: Promise<void>
   private runs = new Map<string, Run>()
   private history = new Map<string, CodexThread>()
-  private threadHomes = new Map<string, string>()
   private archivedIds = new Set<string>()
   private binary?: string
   private processEnv?: NodeJS.ProcessEnv
   private probed?: { at: number; reply: CodexAvailability }
+  private probing?: Promise<CodexAvailability>
+  private updateTried = false
   private warnedVersion?: string
   private refreshing?: Promise<void>
   private historyError?: Error
+  private listed = false
   private launchingKeys = new Set<string>()
   private pendingLaunches = new Set<Promise<{ id: string; cwd: string }>>()
   private shuttingDown = false
@@ -181,9 +235,32 @@ export class CodexSessions {
       (probed.reply.available || Date.now() - probed.at < AVAILABILITY_FAILURE_MS)
     )
       return probed.reply
+    this.probing ??= this.probe().finally(() => (this.probing = undefined))
+    return this.probing
+  }
+
+  private async resolveUpdatingOnce(): Promise<CodexRuntime> {
+    let runtime = await resolveCodexRuntime()
+    if (!codexTooOld(runtime)) return runtime
+    const updating = !this.updateTried
+    if (updating) {
+      this.updateTried = true
+      this.deps.error(
+        `Codex ${runtime.version} is older than ${MIN_CODEX_VERSION}, the oldest this Koloft supports. Updating it now…`
+      )
+      await updateCodex(runtime)
+      runtime = await resolveCodexRuntime()
+      if (!codexTooOld(runtime)) return runtime
+    }
+    const stillOld = `Koloft needs Codex CLI ${MIN_CODEX_VERSION} or newer, and this Mac has ${runtime.version}. Run "codex update", then try again.`
+    if (updating) this.deps.error(stillOld)
+    throw new Error(stillOld)
+  }
+
+  private async probe(): Promise<CodexAvailability> {
     let reply: CodexAvailability
     try {
-      const runtime = await resolveCodexRuntime()
+      const runtime = await this.resolveUpdatingOnce()
       this.binary = runtime.binary
       this.processEnv = runtime.env
       reply = {
@@ -210,7 +287,7 @@ export class CodexSessions {
     if (this.warnedVersion === available.version) return
     this.warnedVersion = available.version
     this.deps.error(
-      `Codex ${available.version} is newer than the version Koloft was tested with (0.153.x). It may misbehave.`
+      `Codex ${available.version} is newer than the version Koloft was tested with (${TESTED_CODEX_LINE}.x). It may misbehave.`
     )
   }
 
@@ -223,6 +300,10 @@ export class CodexSessions {
   private async startTransport(
     options: Parameters<typeof createCodexTransport>[0]
   ): Promise<CodexTransport> {
+    // CODEX§5
+    await (this.crashLeftoversEnded ??= endCodexAppServersLeftByACrash(STATUS_LINE_CONFIG).catch(
+      () => {}
+    ))
     try {
       return await createCodexTransport(options)
     } catch (error) {
@@ -244,26 +325,34 @@ export class CodexSessions {
     return home ? { ...this.processEnv, CODEX_HOME: home } : this.processEnv
   }
 
-  private homeFor(key: string): string | undefined {
-    return this.store.getMember(key)?.codexHome ?? this.threadHomes.get(key)
-  }
-
   private rpc(home: string | undefined): CodexRpc {
     return new CodexRpc({ binary: this.binary!, env: this.envFor(home), cwd: os.homedir() })
   }
 
-  // CODEX§15
-  async readAccount(home: string): Promise<{ signedIn: boolean; limits?: unknown }> {
+  private async withRpc<T>(
+    home: string | undefined,
+    use: (rpc: CodexRpc) => Promise<T>
+  ): Promise<T> {
     if (!this.binary && !(await this.availability()).available)
       throw new Error('Codex CLI is unavailable.')
     const rpc = this.rpc(home)
     try {
-      const account = record(await rpc.request('account/read', {}))
-      if (!account.account) return { signedIn: false }
-      return { signedIn: true, limits: await rpc.request('account/rateLimits/read', {}) }
+      return await use(rpc)
+    } catch (error) {
+      if (binaryGone(error)) this.forgetProbe()
+      throw error
     } finally {
       await rpc.close()
     }
+  }
+
+  // CODEX§15
+  async readAccount(home: string): Promise<{ signedIn: boolean; limits?: unknown }> {
+    return this.withRpc(home, async (rpc) => {
+      const account = record(await rpc.request('account/read', {}))
+      if (!account.account) return { signedIn: false }
+      return { signedIn: true, limits: await rpc.request('account/rateLimits/read', {}) }
+    })
   }
 
   hasRuns(): boolean {
@@ -383,7 +472,7 @@ export class CodexSessions {
       id: key,
       nativeSessionId: t.id,
       createdAt: (t.createdAt ?? 0) * 1000,
-      title: t.name || t.preview?.slice(0, 100) || 'Codex session',
+      title: t.name || t.preview?.slice(0, 100) || CODEX_PLACEHOLDER_TITLE,
       cwd: t.cwd,
       worktree: resource?.worktreeName ?? this.deps.projectInfo(t.cwd).worktreeName ?? 'main',
       running: !!this.aliveTabFor(key),
@@ -425,77 +514,74 @@ export class CodexSessions {
       }
     }
     if (this.shuttingDown) return
-    const homeList = [undefined, ...this.deps.homes()]
-    const listings = await Promise.allSettled(homeList.map((home) => this.listHome(home)))
-    const defaultListing = listings[0]
-    if (defaultListing.status === 'rejected') {
-      if (binaryGone(defaultListing.reason)) this.forgetProbe()
-      const error = defaultListing.reason
+    let threads: { key: string; thread: CodexThread; archived: boolean }[]
+    try {
+      threads = await this.listThreads()
+    } catch (error) {
+      if (binaryGone(error)) this.forgetProbe()
       this.historyError = error instanceof Error ? error : new Error(String(error))
       return
     }
     const seen = new Map<string, CodexThread>()
-    const homes = new Map<string, string>()
     const archivedIds = new Set<string>()
-    listings.forEach((listing, i) => {
-      const home = homeList[i]
-      const threads =
-        listing.status === 'fulfilled'
-          ? listing.value
-          : [...this.threadHomes]
-              .filter(([key, owner]) => owner === home && this.history.has(key))
-              .map(([key]) => ({
-                key,
-                thread: this.history.get(key)!,
-                archived: this.archivedIds.has(key)
-              }))
-      for (const { key, thread, archived } of threads) {
-        seen.set(key, thread)
-        if (home) homes.set(key, home)
-        if (archived) archivedIds.add(key)
-      }
-    })
+    for (const { key, thread, archived } of threads) {
+      seen.set(key, thread)
+      if (archived) archivedIds.add(key)
+    }
     this.history = seen
-    this.threadHomes = homes
     this.archivedIds = archivedIds
+    this.listed = true
     this.historyError = undefined
     this.changed()
   }
 
-  private async listHome(
-    home: string | undefined
-  ): Promise<{ key: string; thread: CodexThread; archived: boolean }[]> {
-    const rpc = this.rpc(home)
+  // CODEX§15
+  private async listThreads(): Promise<{ key: string; thread: CodexThread; archived: boolean }[]> {
+    const rpc = this.rpc(undefined)
     const threads: { key: string; thread: CodexThread; archived: boolean }[] = []
     try {
       for (const archived of [false, true]) {
-        let cursor: string | undefined
-        const cursors = new Set<string>()
-        do {
-          const reply = record(
-            await rpc.request('thread/list', {
-              limit: 100,
-              cursor,
-              archived,
-              sourceKinds: ['cli', 'vscode', 'appServer']
-            })
-          )
-          if (!Array.isArray(reply.data))
-            throw new Error('Codex history returned an unsupported response.')
-          for (const value of reply.data) {
-            const thread = userThread(value)
-            if (thread) threads.push({ key: codexSessionKey(thread.id), thread, archived })
-          }
-          cursor =
-            typeof reply.nextCursor === 'string' && reply.nextCursor ? reply.nextCursor : undefined
-          if (cursor && cursors.has(cursor)) throw new Error('Codex history repeated a page.')
-          if (cursor) cursors.add(cursor)
-        } while (cursor)
+        for await (const value of everyPage(rpc, 'thread/list', { archived, sourceKinds })) {
+          const thread = userThread(value)
+          if (thread) threads.push({ key: codexSessionKey(thread.id), thread, archived })
+        }
       }
       return threads
     } finally {
       await rpc.close()
     }
+  }
+
+  searchable(workspaces: string[]): SearchCandidate[] {
+    return workspaces.flatMap((workspacePath) =>
+      this.rows(workspacePath)
+        .filter((row) => !row.pending && !this.archivedIds.has(row.id))
+        .map((row) => ({ row: { ...row, ...sourceOf('codex', workspacePath) }, workspacePath }))
+    )
+  }
+
+  // CODEX§24
+  async searchSnippets(term: string): Promise<{ id: string; snippet: string }[]> {
+    if (!(await this.availability()).available) return []
+    return this.searchSharedHome(term).catch(() => [])
+  }
+
+  // CODEX§15
+  private searchSharedHome(term: string): Promise<{ id: string; snippet: string }[]> {
+    return this.withRpc(undefined, async (rpc) => {
+      const found: { id: string; snippet: string }[] = []
+      const params = { searchTerm: term, archived: false, sourceKinds }
+      for await (const value of everyPage(rpc, 'thread/search', params)) {
+        const item = record(value)
+        const thread = userThread(item.thread)
+        if (thread)
+          found.push({
+            id: codexSessionKey(thread.id),
+            snippet: typeof item.snippet === 'string' ? item.snippet : ''
+          })
+      }
+      return found
+    })
   }
 
   async historyRows(workspace: string): Promise<BackendSessionRow[]> {
@@ -509,25 +595,52 @@ export class CodexSessions {
   async transcriptExists(key: string): Promise<boolean> {
     const id = this.nativeId(key)
     if (this.archivedIds.has(key)) return false
-    if (!this.binary && !(await this.availability()).available)
-      throw new Error('Codex CLI is unavailable.')
-    const rpc = this.rpc(this.homeFor(key))
-    try {
+    return this.withRpc(undefined, async (rpc) => {
       const reply = record(await rpc.request('thread/read', { threadId: id, includeTurns: false }))
       const t = userThread(reply.thread)
       return !!t?.path && fs.existsSync(t.path)
-    } catch (error) {
-      if (binaryGone(error)) this.forgetProbe()
-      throw error
-    } finally {
-      await rpc.close()
-    }
+    })
+  }
+
+  openApproval(tabId: string): CodexApproval | undefined {
+    return this.runs.get(tabId)?.observer.openApproval()
+  }
+
+  openQuestion(tabId: string): CodexQuestion | undefined {
+    return this.runs.get(tabId)?.observer.openQuestion()
+  }
+
+  threadGone(key: string): boolean {
+    return this.listed && !this.refreshing && !this.history.has(key) && !this.aliveTabFor(key)
+  }
+
+  launchedBypassingChecks(tabId: string): boolean {
+    return this.runs.get(tabId)?.permission === 'bypass'
+  }
+
+  turnsOf(key: string, n: number): Turn[] | undefined {
+    return [...this.runs.values()].find((r) => r.info?.sessionId === key)?.observer.turns.last(n)
+  }
+
+  // CODEX§19
+  async readTurns(key: string, n: number): Promise<Turn[]> {
+    const id = this.nativeId(key)
+    return this.withRpc(undefined, async (rpc) => {
+      const reply = record(await rpc.request('thread/read', { threadId: id, includeTurns: true }))
+      return codexTurns(record(reply.thread).turns).last(n)
+    })
   }
 
   archive(key: string): boolean {
     if (this.aliveTabFor(key)) return false
-    const removed = this.store.removeMember(key)
+    const removed = this.removeMember(key)
     this.changed()
+    return removed
+  }
+
+  private removeMember(key: string): boolean {
+    const removed = this.store.removeMember(key)
+    if (removed) this.deps.memberRemoved?.(key)
     return removed
   }
 
@@ -604,6 +717,10 @@ export class CodexSessions {
     const workspace = this.workspaceFor(cwd)
     if (opts.resumeSessionId && this.aliveTabFor(opts.resumeSessionId))
       throw new Error('This Codex session is already open.')
+    // CODEX§15 ADR-0030
+    const picked = this.deps.pickHome()
+    if (!picked) throw new Error(NO_USABLE_ACCOUNT.codex)
+    const home = picked.home
     if (opts.worktreeResourceId) {
       const saved = this.store.getResource(opts.worktreeResourceId)
       if (!saved || saved.originalCwd !== workspace || opts.worktree || opts.resumeSessionId)
@@ -619,8 +736,7 @@ export class CodexSessions {
       resource = await this.worktrees.adopt(workspace, this.deps.projectInfo(cwd).treeRoot)
     }
     this.assertStarting()
-    const picked = opts.resumeSessionId ? undefined : this.deps.pickHome()
-    const home = opts.resumeSessionId ? this.homeFor(opts.resumeSessionId) : picked?.home
+    if (opts.trustFolder) this.deps.trustFolder(cwd, this.envFor(home))
     let run: Run | undefined
     const observe = (event: CodexEvent): void => {
       if (event.type !== 'bound') {
@@ -639,13 +755,23 @@ export class CodexSessions {
     )
     const env = { ...this.envFor(home), ZDOTDIR: openShim.zdotDir }
     const observer = new CodexObservation(observe)
+    const instructions = [...(agent ? [CODEX_AGENT_HINT] : []), ...(opts.role ? [opts.role] : [])]
+    const permission = opts.permission ?? 'default'
+    const permissions = opts.conductor ? CONDUCTOR_PERMISSIONS : PERMISSIONS[permission]
     let transport: CodexTransport | undefined
     try {
       transport = await this.startTransport({
         binary,
         env,
+        sessionEnv: resource
+          ? { KOLOFT_PORT_OFFSET: String(portOffset(resource.worktreeName)) }
+          : undefined,
         cwd,
-        configOverrides: agent ? [STATUS_LINE_CONFIG, AGENT_HINT_CONFIG] : [STATUS_LINE_CONFIG],
+        configOverrides: [
+          STATUS_LINE_CONFIG,
+          ...(instructions.length ? [developerInstructions(instructions)] : []),
+          ...(opts.resumeSessionId ? permissionConfig(permissions) : [])
+        ],
         onFrame: (direction, frame) => observer.receive(direction, frame),
         onDisconnect: () => this.markDegraded(run),
         onError: (error) => {
@@ -663,7 +789,7 @@ export class CodexSessions {
         STATUS_LINE_CONFIG,
         '-c',
         NO_UPDATE_NOTICE_AT_START,
-        ...PERMISSION_ARGS[opts.permission ?? 'default'],
+        ...(opts.resumeSessionId ? [] : permissionFlags(permissions)),
         ...launchChoiceArgs(opts)
       ]
       if (opts.resumeSessionId) argv.push('resume', this.nativeId(opts.resumeSessionId))
@@ -687,8 +813,8 @@ export class CodexSessions {
         transport,
         explicitStop: false,
         resumeKey: opts.resumeSessionId,
-        home,
-        account: picked?.account,
+        account: picked.account,
+        permission,
         releaseOpenShim: openShim.release
       }
       this.runs.set(handle.id, run)
@@ -765,19 +891,33 @@ export class CodexSessions {
   }
 
   // CODEX§17
-  async queueMessage(tabId: string, text: string): Promise<void> {
+  async queueMessage(
+    tabId: string,
+    text: string,
+    clientId = `koloft-${randomUUID()}`
+  ): Promise<void> {
     const run = this.runs.get(tabId)
     const threadId = run?.info?.nativeSessionId
     if (!run || !threadId) throw new Error('that Codex session has not started yet.')
-    await run.transport.request(
-      'thread/queue/add',
-      {
-        threadId,
-        clientUserMessageId: `koloft-${randomUUID()}`,
-        input: [{ type: 'text', text, text_elements: [] }]
-      },
-      QUEUE_ANSWER_INSIDE_THE_KOLOFT_WAIT_MS
-    )
+    run.observer.queuedMessage(clientId)
+    try {
+      await run.transport.request(
+        'thread/queue/add',
+        {
+          threadId,
+          clientUserMessageId: clientId,
+          input: [{ type: 'text', text, text_elements: [] }]
+        },
+        QUEUE_ANSWER_INSIDE_THE_KOLOFT_WAIT_MS
+      )
+    } catch (error) {
+      run.observer.queueRefused(clientId)
+      throw error
+    }
+  }
+
+  queueDrained(tabId: string): boolean {
+    return this.runs.get(tabId)?.observer.queueDrained() ?? true
   }
 
   private markDegraded(run: Run | undefined): void {
@@ -803,16 +943,16 @@ export class CodexSessions {
         key,
         workspacePath: run.workspace,
         cwd: run.cwd,
-        title: thread.name || thread.preview?.slice(0, 100) || m?.title || 'Codex session',
+        title: thread.name || thread.preview?.slice(0, 100) || m?.title || CODEX_PLACEHOLDER_TITLE,
         createdAt: m?.createdAt ?? (thread.createdAt ? thread.createdAt * 1000 : now),
         updatedAt: now,
         worktreeResourceId: run.resource?.id,
-        ...(run.home ? { codexHome: run.home } : {})
+        ...(run.permission !== 'default' ? { permission: run.permission } : {})
       })
       if (change === 'replace' && old && old !== key) {
         this.deps.replaced?.(old, key)
         if (![...this.runs.values()].some((r) => r !== run && r.info?.sessionId === old))
-          this.store.removeMember(old)
+          this.removeMember(old)
       }
     } catch (e) {
       this.deps.error(String(e))
@@ -823,18 +963,17 @@ export class CodexSessions {
       tabId: run.tabId,
       sessionId: key,
       nativeSessionId: thread.id,
-      title: this.store.getMember(key)?.title ?? 'Codex session',
+      title: this.store.getMember(key)?.title ?? CODEX_PLACEHOLDER_TITLE,
       cwd: run.cwd,
       treeRoot: run.cwd,
       worktree: run.resource?.worktreeName,
       alive: true,
       details: { codex: { observation: 'live' } },
       cliVersion: thread.cliVersion,
-      ...(run.account ? { pickedAccount: run.account } : {}),
+      pickedAccount: run.account,
       updatedAt: now
     }
     this.history.set(key, { ...thread, cwd: run.cwd })
-    if (run.home) this.threadHomes.set(key, run.home)
     this.deps.pty.clearResumeIntent(run.tabId)
     this.changed()
     this.deps.events(run.tabId, { type: 'bound', key })
@@ -886,7 +1025,17 @@ export class CodexSessions {
     }
     this.assertStarting()
     return this.launchRun(
-      { kind: 'codex', cwd, resumeSessionId: req.sessionId, cols: req.cols, rows: req.rows },
+      {
+        kind: 'codex',
+        cwd,
+        resumeSessionId: req.sessionId,
+        cols: req.cols,
+        rows: req.rows,
+        role: req.role,
+        conductor: req.conductor,
+        permission: m?.permission,
+        trustFolder: req.trustFolder
+      },
       resource
     )
   }
@@ -915,7 +1064,7 @@ export class CodexSessions {
         this.runs.delete(tabId)
         if (nativeExit && run.info && !this.aliveTabFor(run.info.sessionId)) {
           try {
-            this.store.removeMember(run.info.sessionId)
+            this.removeMember(run.info.sessionId)
           } catch (error) {
             this.deps.error(String(error))
           }

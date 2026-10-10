@@ -7,15 +7,24 @@ import { CodexSessions, type CodexSessionDeps } from '../../src/main/codexSessio
 import { codexSessionKey, type WorktreeResource } from '../../src/main/sessionStore'
 import type { CodexTransportOptions } from '../../src/main/codexTransport'
 import { SessionRuntime } from '../../src/main/sessionRuntime'
+import { MIN_CODEX_VERSION } from '../../src/main/cliMinimums'
+import { portOffset } from '@shared/worktreeName'
+
+const TOO_OLD = { binary: '/fixture/codex', env: {}, version: '0.150.0', verified: false }
 
 const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   request: vi.fn(),
   close: vi.fn(),
   runtime: vi.fn(),
+  update: vi.fn(),
   rpcHomes: [] as (string | undefined)[]
 }))
-vi.mock('../../src/main/codexRuntime', () => ({ resolveCodexRuntime: mocks.runtime }))
+vi.mock('../../src/main/codexRuntime', async (importOriginal) => ({
+  codexTooOld: (await importOriginal<typeof import('../../src/main/codexRuntime')>()).codexTooOld,
+  resolveCodexRuntime: mocks.runtime,
+  updateCodex: mocks.update
+}))
 vi.mock('../../src/main/codexTransport', () => ({
   createCodexTransport: mocks.create,
   CodexRpc: class {
@@ -94,7 +103,7 @@ beforeEach(() => {
   mocks.runtime.mockResolvedValue({
     binary: '/fixture/codex',
     env: {},
-    version: '0.153.4',
+    version: MIN_CODEX_VERSION,
     verified: true
   })
   let tab = 0
@@ -110,8 +119,7 @@ beforeEach(() => {
     events: vi.fn((tabId, event) => sessions.observe(tabId, event)),
     error: vi.fn(),
     trustFolder: vi.fn(),
-    pickHome: vi.fn(() => undefined),
-    homes: vi.fn(() => []),
+    pickHome: vi.fn(() => ({ account: 'work', home: '/homes/work' })),
     openShimRoot: path.join(directory, 'codex-open'),
     agent: { enabled: () => false, answer: vi.fn() }
   }
@@ -193,6 +201,23 @@ describe('CodexSessions', () => {
     expect(sessions.members().has(codexSessionKey(A))).toBe(true)
   })
 
+  it('calls a thread gone only once a listing finished without it, never before the first listing, after a failed one or while a listing runs', async () => {
+    const listed = codexSessionKey(A)
+    const unlisted = codexSessionKey(B)
+    expect(sessions.threadGone(unlisted)).toBe(false)
+    mocks.request.mockRejectedValue(new Error('history unreadable'))
+    await sessions.refreshHistory()
+    expect(sessions.threadGone(unlisted)).toBe(false)
+    mocks.request.mockImplementation(async (_method, params) => ({
+      data: params.archived ? [] : [{ id: A, cwd: repo }]
+    }))
+    const listing = sessions.refreshHistory()
+    expect(sessions.threadGone(unlisted)).toBe(false)
+    await listing
+    expect(sessions.threadGone(listed)).toBe(false)
+    expect(sessions.threadGone(unlisted)).toBe(true)
+  })
+
   it('reports unavailable history instead of returning an empty successful listing', async () => {
     vi.mocked(sessions.availability).mockResolvedValue({
       id: 'codex',
@@ -258,57 +283,81 @@ describe('CodexSessions', () => {
   })
 
   // CODEX§15
-  it('a new launch runs in the account home the picker chose, and a resume goes back to the home its session lives in', async () => {
-    vi.mocked(deps.pickHome).mockReturnValue({ account: 'work', home: '/homes/work' })
+  it('a launch and a resume both run in the account home the picker chose, since every home shares one sessions folder', async () => {
     const first = await sessions.launch({ kind: 'codex', cwd: repo })
     expect(transports[0].options.env?.CODEX_HOME).toBe('/homes/work')
     expect(vi.mocked(deps.pty.create).mock.calls[0][0].processEnv?.CODEX_HOME).toBe('/homes/work')
     bind()
-    expect(sessions.store.getMember(codexSessionKey(A))?.codexHome).toBe('/homes/work')
     expect(sessions.list()[0].pickedAccount).toBe('work')
     await sessions.stop(first.id)
 
     vi.mocked(deps.pickHome).mockReturnValue({ account: 'home', home: '/homes/home' })
     await sessions.resume({ sessionId: codexSessionKey(A), cwd: repo })
-    expect(transports[1].options.env?.CODEX_HOME).toBe('/homes/work')
-    mocks.request.mockResolvedValue({ thread: { id: A, cwd: repo, path: null } })
-    mocks.rpcHomes.length = 0
-    await sessions.transcriptExists(codexSessionKey(A))
-    expect(mocks.rpcHomes).toEqual(['/homes/work'])
+    expect(transports[1].options.env?.CODEX_HOME).toBe('/homes/home')
   })
 
   // CODEX§15
-  it('lists history from the default home and every account home, and resumes a thread in the home it was found in', async () => {
-    vi.mocked(deps.homes).mockReturnValue(['/homes/work'])
-    mocks.request.mockImplementation(async (_method, params, home) =>
-      params.archived
-        ? { data: [] }
-        : { data: [home === '/homes/work' ? { id: B, cwd: repo } : { id: A, cwd: repo }] }
+  it('lists and reads history once, from the default home every account home shares', async () => {
+    mocks.request.mockImplementation(async (_method, params) =>
+      params.archived ? { data: [] } : { data: [{ id: A, cwd: repo }] }
     )
-    const rows = await sessions.historyRows(repo)
-    expect(rows.map((row) => row.id).sort()).toEqual(
-      [codexSessionKey(A), codexSessionKey(B)].sort()
-    )
-    expect(mocks.rpcHomes).toEqual([undefined, '/homes/work'])
-    await sessions.resume({ sessionId: codexSessionKey(B), cwd: repo })
-    expect(transports[0].options.env?.CODEX_HOME).toBe('/homes/work')
-    expect(deps.pickHome).not.toHaveBeenCalled()
+    expect((await sessions.historyRows(repo)).map((row) => row.id)).toEqual([codexSessionKey(A)])
+    expect(mocks.rpcHomes).toEqual([undefined])
+    mocks.request.mockResolvedValue({ thread: { id: A, cwd: repo, path: null } })
+    await sessions.transcriptExists(codexSessionKey(A))
+    expect(mocks.rpcHomes).toEqual([undefined, undefined])
   })
 
-  it('an account home that fails to list keeps its last threads and hides no other home', async () => {
-    vi.mocked(deps.homes).mockReturnValue(['/homes/work'])
-    let broken = false
-    mocks.request.mockImplementation(async (_method, params, home) => {
-      if (home === '/homes/work' && broken) throw new Error('state database locked')
-      if (params.archived) return { data: [] }
-      return { data: [home === '/homes/work' ? { id: B, cwd: repo } : { id: A, cwd: repo }] }
+  // CODEX§24
+  it('a search offers the threads of the given workspaces but no archived one, and asks thread/search once, in the default home every account shares', async () => {
+    const C = '33333333-3333-4333-8333-333333333333'
+    const D = '44444444-4444-4444-8444-444444444444'
+    mocks.request.mockImplementation(async (method, params) => {
+      if (method === 'thread/list')
+        return params.archived
+          ? { data: [{ id: D, cwd: repo, name: 'Parser, archived' }] }
+          : {
+              data: [
+                { id: A, cwd: repo, name: 'Parser plan' },
+                { id: B, cwd: repo, name: 'Quiet title' },
+                { id: C, cwd: other, name: 'Elsewhere' }
+              ]
+            }
+      return {
+        data: [
+          { snippet: '... the PARSER crashed on an empty file', thread: { id: B, cwd: repo } },
+          { snippet: 'parser here too', thread: { id: C, cwd: other } }
+        ],
+        nextCursor: null
+      }
     })
     await sessions.refreshHistory()
-    broken = true
-    const rows = await sessions.historyRows(repo)
-    expect(rows.map((row) => row.id).sort()).toEqual(
-      [codexSessionKey(A), codexSessionKey(B)].sort()
+    expect(
+      sessions
+        .searchable([repo])
+        .map((c) => [c.row.id, c.row.backendId, c.workspacePath])
+        .sort()
+    ).toEqual(
+      [
+        [codexSessionKey(A), 'codex', repo],
+        [codexSessionKey(B), 'codex', repo]
+      ].sort()
     )
+    expect(await sessions.searchSnippets('parser')).toEqual([
+      { id: codexSessionKey(B), snippet: '... the PARSER crashed on an empty file' },
+      { id: codexSessionKey(C), snippet: 'parser here too' }
+    ])
+    expect(mocks.request).toHaveBeenCalledWith(
+      'thread/search',
+      expect.objectContaining({ searchTerm: 'parser', archived: false }),
+      undefined
+    )
+    expect(mocks.request.mock.calls.filter(([method]) => method === 'thread/search')).toHaveLength(
+      1
+    )
+
+    mocks.request.mockRejectedValue(new Error('state database locked'))
+    expect(await sessions.searchSnippets('parser')).toEqual([])
   })
 
   it('waits for an in-flight stop before restarting and prevents duplicate resume', async () => {
@@ -584,6 +633,65 @@ describe('CodexSessions', () => {
     expect(deps.trustFolder).toHaveBeenCalledTimes(1)
   })
 
+  it("a worktree launch's app-server gets that worktree's port offset, and a launch in the main checkout gets none", async () => {
+    const worktree = path.join(repo, '.claude', 'worktrees', 'w1')
+    fs.mkdirSync(worktree, { recursive: true })
+    vi.spyOn(sessions.worktrees, 'create').mockResolvedValue({
+      id: randomUUID(),
+      originalCwd: repo,
+      worktreePath: worktree,
+      worktreeName: 'w1',
+      worktreeBranch: 'worktree-w1'
+    } as WorktreeResource)
+    await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1' })
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    const sessionEnvs = mocks.create.mock.calls.map(
+      (call) => (call[0] as CodexTransportOptions).sessionEnv
+    )
+    expect(sessionEnvs).toEqual([{ KOLOFT_PORT_OFFSET: String(portOffset('w1')) }, undefined])
+  })
+
+  // ADR-0029 CODEX§11 CODEX§12
+  it('a conductor starts with approvals off and the workspace-write sandbox as TUI flags, so it can write only its own folder and /tmp, and on a resume, which refuses those flags, its own app-server gets the same choice; it claims no bypass', async () => {
+    const first = await sessions.launch({ kind: 'codex', cwd: repo, conductor: true })
+    bind()
+    await sessions.stop(first.id)
+    const again = await sessions.resume({
+      sessionId: codexSessionKey(A),
+      cwd: repo,
+      conductor: true
+    })
+    const [startArgv, resumeArgv] = vi.mocked(deps.pty.create).mock.calls.map(([c]) => c.argv!)
+    expect(startArgv[startArgv.indexOf('-s') + 1]).toBe('workspace-write')
+    expect(startArgv[startArgv.indexOf('-a') + 1]).toBe('never')
+    expect(resumeArgv).not.toContain('-s')
+    expect(resumeArgv).not.toContain('-a')
+    expect(transports[1].options.configOverrides).toEqual(
+      expect.arrayContaining(['approval_policy="never"', 'sandbox_mode="workspace-write"'])
+    )
+    expect(transports[0].options.configOverrides!.join('\n')).not.toMatch(
+      /approval_policy|sandbox_mode/
+    )
+    expect(sessions.launchedBypassingChecks(again.id)).toBe(false)
+  })
+
+  // ADR-0028 CODEX§11
+  it('remembers whether Koloft launched a session with approvals and the sandbox bypassed, the mode its messages to Claude sessions claim, and a resume of that session bypasses them again through its app-server', async () => {
+    const bypassed = await sessions.launch({ kind: 'codex', cwd: repo, permission: 'bypass' })
+    const asking = await sessions.launch({ kind: 'codex', cwd: repo })
+    expect(sessions.launchedBypassingChecks(bypassed.id)).toBe(true)
+    expect(sessions.launchedBypassingChecks(asking.id)).toBe(false)
+
+    bind(0)
+    await sessions.stop(bypassed.id)
+    const again = await sessions.resume({ sessionId: codexSessionKey(A), cwd: repo })
+    expect(sessions.launchedBypassingChecks(again.id)).toBe(true)
+    expect(vi.mocked(deps.pty.create).mock.calls[2][0].argv).not.toContain('-a')
+    expect(transports[2].options.configOverrides).toEqual(
+      expect.arrayContaining(['approval_policy="never"', 'sandbox_mode="danger-full-access"'])
+    )
+  })
+
   // CODEX§14
   it('a scheduled launch hands Codex its task as the first prompt with its model and thinking level, and reports the bind so the run stops counting as starting', async () => {
     const { id } = await sessions.launch({
@@ -650,7 +758,7 @@ describe('CodexSessions', () => {
     const fresh = new CodexSessions(path.join(directory, 'probe.json'), deps)
     expect(await fresh.availability()).toMatchObject({
       available: true,
-      version: '0.153.4',
+      version: MIN_CODEX_VERSION,
       verified: true
     })
     await fresh.availability()
@@ -673,6 +781,32 @@ describe('CodexSessions', () => {
     vi.advanceTimersByTime(2_000)
     await fresh.availability()
     expect(mocks.runtime).toHaveBeenCalledTimes(2)
+  })
+
+  it('a Codex older than the minimum is updated once, even when two checks ask at the same moment, and is then offered', async () => {
+    const fresh = new CodexSessions(path.join(directory, 'probe.json'), deps)
+    mocks.runtime.mockResolvedValueOnce(TOO_OLD)
+    const [first, second] = await Promise.all([fresh.availability(), fresh.availability()])
+    expect(first).toMatchObject({ available: true, version: MIN_CODEX_VERSION })
+    expect(second).toBe(first)
+    expect(mocks.update).toHaveBeenCalledOnce()
+    expect(mocks.update).toHaveBeenCalledWith(TOO_OLD)
+    expect(vi.mocked(deps.error).mock.calls[0][0]).toContain(`older than ${MIN_CODEX_VERSION}`)
+  })
+
+  it('a Codex the update cannot lift stays unavailable, says to run codex update, and is not updated again', async () => {
+    vi.useFakeTimers()
+    const fresh = new CodexSessions(path.join(directory, 'probe.json'), deps)
+    mocks.runtime.mockResolvedValue(TOO_OLD)
+    const reply = await fresh.availability()
+    expect(reply).toMatchObject({ available: false })
+    expect(reply.reason).toContain('codex update')
+    expect(vi.mocked(deps.error).mock.lastCall?.[0]).toContain('codex update')
+    vi.advanceTimersByTime(61_000)
+    await fresh.availability()
+    expect(mocks.runtime).toHaveBeenCalledTimes(3)
+    expect(mocks.update).toHaveBeenCalledOnce()
+    expect(deps.error).toHaveBeenCalledTimes(2)
   })
 
   it('gives up on a run that never finishes stopping so the app can quit', async () => {

@@ -34,6 +34,18 @@ const FAKE_MIC_AND_CAMERA_BEHIND_THE_PERMISSION_PROMPT = '--use-fake-device-for-
 
 const FAKE_CLAUDE_SRC = path.join(__dirname, '..', 'fixtures', 'fake-claude.js')
 
+const UNPACKAGED_BUILD_APIKEY_SVC = 'koloft-dev-anthropic-api'
+const E2E_CLAUDE_ACCOUNT = 'e2e-key'
+const E2E_CLAUDE_ACCOUNT_KEY = 'sk-ant-api03-e2e-fixture'
+const E2E_CODEX_ACCOUNT = 'e2e-codex'
+
+export function seededAccount(
+  name: string,
+  kind: 'oauth' | 'apikey' | 'codex-home' = 'oauth'
+): Record<string, unknown> {
+  return { name, kind, enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }
+}
+
 function makeWorkspace(home: string, name: string, files: Record<string, string>): string {
   const dir = path.join(home, name)
   for (const [rel, content] of Object.entries(files)) {
@@ -72,6 +84,26 @@ export function setupE2EEnv(): E2EEnv {
   fs.chmodSync(fakeOpen, 0o755)
 
   const keychainFile = path.join(home, 'keychain-fixture.json')
+  fs.writeFileSync(
+    keychainFile,
+    JSON.stringify({
+      [UNPACKAGED_BUILD_APIKEY_SVC]: { [E2E_CLAUDE_ACCOUNT]: E2E_CLAUDE_ACCOUNT_KEY }
+    })
+  )
+  fs.writeFileSync(
+    path.join(userData, 'settings.json'),
+    JSON.stringify({
+      onboardingSeen: false,
+      accounts: [seededAccount(E2E_CLAUDE_ACCOUNT, 'apikey')],
+      assist: { on: true, backend: 'claude' }
+    })
+  )
+  // CC§9
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true })
+  fs.writeFileSync(
+    path.join(home, '.claude', 'settings.json'),
+    JSON.stringify({ skipDangerousModePermissionPrompt: true })
+  )
   const fakeSecuritySrc =
     `#!/usr/bin/env bash\n` +
     `acct=""; svc=""; prev=""\n` +
@@ -177,6 +209,24 @@ export function setupE2EEnv(): E2EEnv {
   }
 }
 
+export function addKeychainEntry(
+  env: E2EEnv,
+  service: string,
+  account: string,
+  secret: string
+): void {
+  const all = JSON.parse(fs.readFileSync(env.keychainFile, 'utf8')) as Record<
+    string,
+    Record<string, string>
+  >
+  all[service] = { ...all[service], [account]: secret }
+  fs.writeFileSync(env.keychainFile, JSON.stringify(all))
+}
+
+export function seedNoClaudeAccountButStillSetUp(env: E2EEnv): void {
+  seedSettings(env, { accounts: [seededAccount(E2E_CODEX_ACCOUNT, 'codex-home')] })
+}
+
 export function seedSettings(env: E2EEnv, patch: Record<string, unknown>): void {
   const file = path.join(env.userData, 'settings.json')
   const current = fs.existsSync(file)
@@ -191,6 +241,14 @@ export function installCodex(env: E2EEnv): void {
   env.launchEnv.KOLOFT_CODEX_CMD = binary
   env.launchEnv.CODEX_HOME = path.join(env.home, '.codex')
   fs.writeFileSync(path.join(env.home, '.zprofile'), `export PATH="${env.fakeBin}:$PATH"\n`)
+  const accountHome = path.join(env.userData, 'codex-homes', E2E_CODEX_ACCOUNT)
+  fs.mkdirSync(accountHome, { recursive: true })
+  fs.writeFileSync(path.join(accountHome, 'auth.json'), '{}')
+  const file = path.join(env.userData, 'settings.json')
+  const current = JSON.parse(fs.readFileSync(file, 'utf8')) as { accounts?: unknown[] }
+  seedSettings(env, {
+    accounts: [...(current.accounts ?? []), seededAccount(E2E_CODEX_ACCOUNT, 'codex-home')]
+  })
 }
 
 export function setGuestLimit(env: E2EEnv, limit: number): void {
@@ -199,6 +257,103 @@ export function setGuestLimit(env: E2EEnv, limit: number): void {
 
 export function setGithubFixture(env: E2EEnv, repos: GithubFixture): void {
   env.launchEnv.KOLOFT_GITHUB_FIXTURE = JSON.stringify(repos)
+}
+
+export interface FakeGhCheck {
+  name: string
+  bucket: 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel'
+  link: string
+  workflow: string
+}
+
+export const GH_SIGNED_OUT = 4
+
+export interface FakeGhItem {
+  number: number
+  title: string
+  url: string
+  updatedAt: string
+  headRefName?: string
+  isCrossRepository?: boolean
+}
+
+export function installFakeGh(
+  env: E2EEnv,
+  answer: {
+    checks?: FakeGhCheck[]
+    failedLog?: string
+    exitCode?: number
+    issues?: FakeGhItem[]
+    prs?: FakeGhItem[]
+  }
+): void {
+  const checks = path.join(env.home, 'fake-gh-checks.json')
+  const log = path.join(env.home, 'fake-gh-log.txt')
+  const issues = path.join(env.home, 'fake-gh-issues.json')
+  const prs = path.join(env.home, 'fake-gh-prs.json')
+  fs.writeFileSync(checks, JSON.stringify(answer.checks ?? []))
+  fs.writeFileSync(log, answer.failedLog ?? '')
+  fs.writeFileSync(issues, JSON.stringify(answer.issues ?? []))
+  fs.writeFileSync(prs, JSON.stringify(answer.prs ?? []))
+  fs.writeFileSync(
+    path.join(env.fakeBin, 'gh'),
+    `#!/bin/sh\n` +
+      `printf '%s\\n' "$*" >> ${JSON.stringify(path.join(env.home, 'fake-gh-calls.txt'))}\n` +
+      (answer.exitCode
+        ? `echo "To get started with GitHub CLI, please run:  gh auth login" >&2; exit ${answer.exitCode}\n`
+        : '') +
+      `case "$1 $2" in\n` +
+      `  "pr checks") cat ${JSON.stringify(checks)}; exit 0;;\n` +
+      `  "run view") cat ${JSON.stringify(log)}; exit 0;;\n` +
+      `  "issue list") cat ${JSON.stringify(issues)}; exit 0;;\n` +
+      `  "pr list") cat ${JSON.stringify(prs)}; exit 0;;\n` +
+      `esac\n` +
+      `echo "fake gh answers only pr checks, run view, issue list and pr list: $*" >&2\n` +
+      `exit 1\n`,
+    { mode: 0o755 }
+  )
+}
+
+const REAL_GH = process.env.KOLOFT_SMOKE_GH ?? ''
+export const HAVE_REAL_GH = fs.existsSync(REAL_GH)
+export const NEEDS_REAL_GH =
+  'set KOLOFT_SMOKE_GH (absolute path of a gh signed in to github.com; only its read-only `pr checks` and `run view` are let through)'
+
+// PLATFORM§32
+export function installRealGhThatOnlyReads(env: E2EEnv): void {
+  fs.writeFileSync(
+    path.join(env.fakeBin, 'gh'),
+    `#!/bin/sh\n` +
+      `case "$1 $2" in\n` +
+      `  "pr checks"|"run view") HOME=${JSON.stringify(os.userInfo().homedir)} exec ${JSON.stringify(REAL_GH)} "$@";;\n` +
+      `esac\n` +
+      `echo "this gh only reads checks and logs: $*" >&2\n` +
+      `exit 1\n`,
+    { mode: 0o755 }
+  )
+}
+
+export function writeGitIdentity(home: string): void {
+  fs.writeFileSync(
+    path.join(home, '.gitconfig'),
+    '[user]\n\temail = e2e@koloft.test\n\tname = koloft-e2e\n'
+  )
+}
+
+export function installGhForWorkspaceA(
+  env: E2EEnv,
+  prints: string,
+  issueCreatePrints = prints
+): string {
+  setGithubFixture(env, { [env.workspaces.a]: { owner: 'acme', repo: 'app' } })
+  const log = path.join(env.home, 'gh-calls.txt')
+  fs.writeFileSync(
+    path.join(env.fakeBin, 'gh'),
+    `#!/bin/sh\necho "$*" >> ${JSON.stringify(log)}\n` +
+      `if [ "$1 $2" = "issue create" ]; then echo '${issueCreatePrints}'; else echo '${prints}'; fi\n`,
+    { mode: 0o755 }
+  )
+  return log
 }
 
 // PLATFORM§2

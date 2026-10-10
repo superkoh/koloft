@@ -12,7 +12,8 @@ import type {
   SessionResumeResult,
   SessionRow
 } from '@shared/types'
-import type { SessionEvent } from '@shared/sessionEvent'
+import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
+import type { Turn } from '@shared/turns'
 import {
   identityOf,
   sourceOf,
@@ -20,6 +21,8 @@ import {
   unsupportedPairMessage
 } from '@shared/sessionBackend'
 import { hostOf } from '@shared/remoteKey'
+import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
+import type { ModeClass } from './crossSessionMessage'
 
 export interface SessionBackend {
   id: BackendId
@@ -39,6 +42,8 @@ export interface SessionBackend {
   occupantOf(dir: string): string | null
   accountUsable(): boolean
   trustsFolder(dir: string): boolean | Promise<boolean>
+  turns(key: string, n: number): Promise<Turn[]>
+  permissionClass(tabId: string): ModeClass
 }
 
 export interface SessionLifecycle {
@@ -47,6 +52,8 @@ export interface SessionLifecycle {
   exited(tabId: string, subject: AttentionSubject): void
   clearAttention(tabId: string): void
   open(tabId: string, target: string): void
+  turnEnded(tabId: string, turn: Turn): void
+  asked(tabId: string, ask: AskPayload): void
 }
 
 const CLEAN_EXIT_HIDES_A_LATER_EXIT_MS = 30_000
@@ -54,6 +61,9 @@ const CLEAN_EXIT_HIDES_A_LATER_EXIT_MS = 30_000
 export class SessionBackends {
   private adapters = new Map<BackendId, SessionBackend>()
   private cleanExitAt = new Map<string, number>()
+  conductorOf: (tabOrSessionId: string) => string | undefined = () => undefined
+  conductorWorkspaceOf: (tabId: string) => string | undefined = () => undefined
+  turnOver: (tabId: string) => boolean = () => false
 
   constructor(private lifecycle: SessionLifecycle) {}
 
@@ -67,6 +77,10 @@ export class SessionBackends {
         return this.exited(tabId, event.clean, { title: event.title, sessionId: event.sessionId })
       case 'open':
         return this.lifecycle.open(tabId, event.target)
+      case 'turn-ended':
+        return this.lifecycle.turnEnded(tabId, event.turn)
+      case 'asked':
+        return this.lifecycle.asked(tabId, event.ask)
       case 'prompt':
         this.lifecycle.prompted(tabId)
     }
@@ -113,7 +127,7 @@ export class SessionBackends {
   }
 
   workspaceOfTab(tabId: string): string | undefined {
-    return this.ownerOfTab(tabId)?.workspaceOfTab(tabId)
+    return this.conductorWorkspaceOf(tabId) ?? this.ownerOfTab(tabId)?.workspaceOfTab(tabId)
   }
 
   availability(
@@ -133,9 +147,19 @@ export class SessionBackends {
         ...s,
         backendId: backend.id,
         host: s.remote ? 'ssh' : 'local',
-        nativeSessionId: s.nativeSessionId ?? s.sessionId
+        nativeSessionId: s.nativeSessionId ?? s.sessionId,
+        conductor: this.conductorOf(s.tabId) ?? this.conductorOf(s.sessionId),
+        turnOver: this.turnOver(s.tabId)
       }))
     )
+  }
+
+  turns(key: string, n: number): Promise<Turn[]> {
+    return this.forSession(key).turns(key, n)
+  }
+
+  permissionClass(tabId: string): ModeClass {
+    return this.ownerOfTab(tabId)?.permissionClass(tabId) ?? 'prompting'
   }
 
   async historyRows(
@@ -155,7 +179,7 @@ export class SessionBackends {
     })
     if (failures.length && !rows.length) throw failures[0].error
     for (const f of failures) partlyUnread(f.id, f.error)
-    return rows.sort((a, b) => b.mtime - a.mtime)
+    return rows.filter((r) => !this.conductorOf(r.id)).sort((a, b) => b.mtime - a.mtime)
   }
 
   create(options: CreateTabOptions): Promise<CreateTabResult> {
@@ -169,6 +193,9 @@ export class SessionBackends {
     }
     const refusal = unsupportedPairMessage(options.kind, hostOf(options.cwd ?? ''))
     if (refusal) return Promise.reject(new Error(refusal))
-    return this.get(options.kind).create(options)
+    const backend = this.get(options.kind)
+    // ADR-0030
+    if (!backend.accountUsable()) return Promise.reject(new Error(NO_USABLE_ACCOUNT[options.kind]))
+    return backend.create(options)
   }
 }

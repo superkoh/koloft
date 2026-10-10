@@ -86,8 +86,9 @@ const WHEN_DONE_CHIPS: { value: boolean; label: string }[] = [
 ]
 
 const WHEN_DONE_HINT =
-  'Close it = the tab closes once the run finishes its work, so the next run is not skipped. ' +
-  'The run stays in the sidebar; click it to look back. A run that stops to ask for permission stays open.'
+  'Close it = once the run has finished all its work, its tab, its row in the sidebar and its ' +
+  'worktree go, so the next run is not skipped. A run that stops to ask you something, still has ' +
+  'work running, or would lose a change or a commit stays open.'
 
 const taskHint = (label: string): string =>
   `Type the skill's /name, the same as in ${label} — or any message. It cannot start with a dash.`
@@ -394,7 +395,7 @@ export function CronJobsDialog({
   const modelChips = MODEL_CHIPS_OF[fields.backend]
 
   const permissionHint =
-    (fields.backend === 'claude' && settings.multiAccount && settings.skipPermissions
+    (fields.backend === 'claude' && settings.skipPermissions
       ? 'Today that means: skips all permission checks (your Accounts setting).'
       : `Today that means: ${label} asks before risky steps, like your other sessions.`) +
     ' ' +
@@ -685,7 +686,7 @@ export function CronJobsDialog({
               <span className="hist-when">{describeWhen(new Date(live.dueAt), new Date())}</span>
               <span className="hist-state">
                 <span className="dot ok" />
-                Done — waiting for you
+                {live.kept ? `Done — not closed: ${live.kept}` : 'Done — waiting for you'}
               </span>
               {live.worktree && <span className="hist-wt">{` · ${live.worktree}`}</span>}
             </div>

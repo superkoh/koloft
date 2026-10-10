@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Install, update, what it talks to — Koloft</title>
+    <meta
+      name="description"
+      content="Install Koloft with one Terminal line, why it is a Terminal line, how it updates, and every host it ever talks to."
+    />
+    <meta name="theme-color" content="#f6f1e6" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1c1a17" media="(prefers-color-scheme: dark)" />
+    <link rel="canonical" href="__SITE_URL__/install/" />
+    <link rel="icon" href="../favicon.png" type="image/png" sizes="32x32" />
+    <link rel="icon" href="../icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="../apple-touch-icon.png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Koloft" />
+    <meta property="og:title" content="Install, update, what it talks to — Koloft" />
+    <meta
+      property="og:description"
+      content="Install Koloft with one Terminal line, why it is a Terminal line, how it updates, and every host it ever talks to."
+    />
+    <meta property="og:url" content="__SITE_URL__/install/" />
+    <meta property="og:image" content="__SITE_URL__/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content='Koloft on ruled paper: its icon, the line "run and manage Claude Code and Codex on your Mac", and a crop of a session with its Workbench'
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Install, update, what it talks to — Koloft" />
+    <meta
+      name="twitter:description"
+      content="Install Koloft with one Terminal line, why it is a Terminal line, how it updates, and every host it ever talks to."
+    />
+    <meta name="twitter:image" content="__SITE_URL__/og.png" />
+    <link
+      rel="preload"
+      href="../fonts/special-elite-latin-400-normal.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body>
+    <div class="sheet">
+      <header class="masthead">
+        <p class="brand">
+          <a href="../"
+            ><img src="../icon.svg" alt="" width="28" height="28" /><span>Koloft</span></a
+          >
+        </p>
+        <nav class="contents" aria-label="Pages">
+          <a href="../">home</a>
+          <a href="../sessions/">sessions</a>
+          <a href="../workbench/">workbench</a>
+          <a href="../agents/">agents</a>
+          <a href="../scheduled/">scheduled</a>
+          <a href="../accounts/">accounts</a>
+          <a href="../remote/">remote</a>
+          <a href="../discord/">discord</a>
+          <a href="../install/" aria-current="page">install</a>
+        </nav>
+      </header>
+
+      <main>
+        <h1 class="title">Install, update, what it talks to</h1>
+
+        <p>
+          Koloft is a free Mac app. <mark class="hl">One line in Terminal</mark> installs it. This
+          page says why it is a Terminal line, what you need, how Koloft stays up to date, and every
+          place on the internet it talks to.
+        </p>
+
+        <h2>Install</h2>
+        <p>
+          Open Terminal, paste this line and press Return. It finds the newest release and puts
+          Koloft in your Applications folder.
+        </p>
+        <!-- prettier-ignore -->
+        <p class="command">
+          <code id="cmd-install">curl -fsSL https://<wbr>raw.githubusercontent.com/<wbr>superkoh/<wbr>koloft-releases/<wbr>main/<wbr>install.sh | bash</code>
+          <button type="button" class="copy" data-copy="cmd-install">Copy</button>
+        </p>
+
+        <h3>Why a Terminal line?</h3>
+        <p>
+          Koloft is not signed by Apple. Signing needs a paid Apple Developer ID, and this project
+          does not have one. When a browser downloads an app like that, macOS puts a quarantine mark
+          on it. Gatekeeper (the part of macOS that checks apps before they open) then blocks it and
+          calls it "damaged" or from an "unidentified developer".
+        </p>
+        <p>
+          <code>curl</code> (the download tool inside Terminal) never adds that mark. So the app it
+          fetches opens with a normal double-click, with no prompt.
+        </p>
+
+        <h3>Rather download it yourself?</h3>
+        <p>
+          Get the <code>.dmg</code> (the disk image a Mac app comes in) from
+          <a href="https://github.com/superkoh/koloft-releases/releases">Releases</a>. Drag Koloft
+          to Applications. Then clear the mark once:
+        </p>
+        <!-- prettier-ignore -->
+        <p class="command">
+          <code id="cmd-xattr">xattr -dr com.apple.quarantine /<wbr>Applications/<wbr>Koloft.app</code>
+          <button type="button" class="copy" data-copy="cmd-xattr">Copy</button>
+        </p>
+
+        <h3>What you need</h3>
+        <ul class="dash">
+          <li>a Mac with Apple Silicon (M1 or later)</li>
+          <li>
+            Claude Code, or the Codex CLI (command-line tool), already installed. Each Koloft
+            version names the oldest Claude Code and Codex it works with, and updates an older one
+            for you (see <a href="#updates">Updates</a> below).
+          </li>
+          <li>
+            if you like: <code>gh</code>, GitHub's own command-line tool, signed in, for a folder's
+            open issue and pull request counts, a branch's checks, and a Discord conductor's
+            <code>koloft gh</code>
+          </li>
+          <li>
+            if you like: a Discord account, for the <a href="../discord/">butler on Discord</a>
+          </li>
+        </ul>
+
+        <h3 id="updates">Updates</h3>
+        <p>
+          <code>Koloft ▸ Check for Updates…</code> opens a window. Download &amp; Restart fetches
+          the new version, quits Koloft, swaps it in and opens it again. A banner in the sidebar
+          tells you when a newer one is out. What changed in each version is in the
+          <a href="../changelog/">changelog</a>.
+        </p>
+        <p>
+          Koloft also keeps Claude Code and Codex new enough. If yours is older than this version
+          works with, Koloft runs <code>claude update</code> or <code>codex update</code> for you.
+          For Claude, this runs in the tab each time a session starts. For Codex, it runs once each
+          time Koloft opens, with a small message. If that does not bring it up to date, Koloft asks
+          you to run the update yourself.
+        </p>
+
+        <h2 id="what-it-talks-to">What it talks to</h2>
+        <p>
+          Koloft never counts, tracks or reports what you do. Nothing about you is sent anywhere,
+          unless you turn on the Discord butler: then what
+          <a href="../discord/">A butler on Discord</a> lists goes to your own bot. These are the
+          only hosts it ever reaches on its own:
+        </p>
+        <div class="typed-table stacked">
+          <table>
+            <thead>
+              <tr>
+                <th>host</th>
+                <th>why</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <code>api.anthropic.com</code>
+                </td>
+                <td>
+                  each account's room left, as a session starts and every 5 minutes. Through
+                  <code>claude</code>, a short title for a Claude session an agent starts
+                </td>
+              </tr>
+              <tr>
+                <td><code>api.github.com,</code><br /><code>github.com</code></td>
+                <td>
+                  a newer Koloft and its <code>.dmg</code>; through <code>gh</code>, issue and pull
+                  request counts, a branch's checks, and what a Discord conductor asks with
+                  <code>koloft gh</code>
+                </td>
+              </tr>
+              <tr>
+                <td>your folder's<br />git remote</td>
+                <td>
+                  often <code>github.com</code>; every 5 minutes, to see if your branch is behind
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <code>claude.ai,</code><br /><code>nodejs.org,</code><br /><code
+                    >unofficial-builds.nodejs.org</code
+                  >
+                </td>
+                <td>
+                  only to put <code>claude</code> and Node on a remote folder's machine (the third
+                  on an old Linux)
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <code>chromewebstore.google.com,</code><br /><code>clients2.google.com,</code
+                  ><br /><code>update.googleapis.com</code>
+                </td>
+                <td>Chrome extensions only: the store, the download, a check once per launch</td>
+              </tr>
+              <tr>
+                <td><code>discord.com,</code><br /><code>gateway.discord.gg</code></td>
+                <td>
+                  only once you paste a bot token; see <a href="../discord/">A butler on Discord</a>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <code>duckduckgo.com</code>
+                </td>
+                <td>words, not a web address, typed into the in-app browser, as a search</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>A few more details:</p>
+        <ul class="dash">
+          <li>
+            an API key, or an account on your own endpoint, gets the same tiny message there, only
+            to check it still works
+          </li>
+          <li>
+            the status line under each session asks <code>gh</code> about the branch's pull request
+          </li>
+          <li>the git check can be turned off in Settings ▸ Appearance ▸ Auto-fetch git remotes</li>
+          <li>
+            when Koloft runs <code>claude update</code> or <code>codex update</code> for you, the
+            tool fetches its own update, from the place it was installed from
+          </li>
+          <li>
+            for a remote folder, <code>bash</code>, <code>tmux</code> and <code>rsync</code> come
+            from that machine's own package manager, which may ask for its sudo password (the admin
+            password)
+          </li>
+          <li>
+            the store page loads only when you click Open Chrome Web Store in Settings ▸ Extensions
+          </li>
+          <li>
+            with a bot token pasted in Settings ▸ Discord, your messages, and your sessions'
+            replies, questions and approvals, go to your own bot; files you send are fetched from
+            the address Discord gives for them (its own file host)
+          </li>
+        </ul>
+        <p>
+          A <a href="../remote/">remote folder</a> also reaches the machine you named, over
+          <code>ssh</code> (a safe way to log in to another computer) and <code>rsync</code> (a tool
+          that copies files).
+        </p>
+        <p>
+          Claude Code talks to Anthropic and Codex talks to OpenAI by themselves, when you log in
+          and every time you send a message. That traffic is theirs, not Koloft's, and this list
+          does not cover it. Koloft also asks Codex how much of each account's limit is left. Codex
+          makes that call itself, through <code>codex app-server</code>.
+        </p>
+
+        <h2>Questions</h2>
+        <dl class="qa">
+          <dt><span>Does Koloft replace Claude Code or Codex?</span></dt>
+          <dd>
+            <span
+              >No. It runs the real <code>claude</code> and <code>codex</code> tools you already
+              have, and shows their own screen, untouched. Koloft adds the list, the Workbench and
+              the note around it.</span
+            >
+          </dd>
+          <dt><span>Does it cost anything?</span></dt>
+          <dd>
+            <span
+              >Koloft is free. Claude Code and Codex use your own Anthropic or OpenAI account, just
+              as they do without Koloft.</span
+            >
+          </dd>
+          <dt><span>Is there a version for Intel Macs, Windows or Linux?</span></dt>
+          <dd>
+            <span
+              >No. Koloft is built for Macs with Apple Silicon only, and the install line stops on
+              any other computer.</span
+            >
+          </dd>
+          <dt><span>I started a session in a plain Terminal. Can Koloft open it?</span></dt>
+          <dd>
+            <span
+              >Yes. Right-click the folder in Koloft and pick <code>Restore session…</code>. See
+              <a href="../sessions/">Folders and their sessions</a>.</span
+            >
+          </dd>
+        </dl>
+
+        <h2>Help and plans</h2>
+        <p>
+          Bug reports and ideas are welcome as
+          <a href="https://github.com/superkoh/koloft/issues">issues</a>. Koloft does not take pull
+          requests (code changes sent in by others) yet. The code is there to read, build and run.
+        </p>
+        <p>
+          The <a href="https://github.com/superkoh/koloft/blob/main/docs/roadmap.md">roadmap</a>
+          lists what is planned, what is left out on purpose, and how much to trust the order.
+        </p>
+        <p>
+          Found a security problem? Please do not open a public issue. Read
+          <a href="https://github.com/superkoh/koloft/blob/main/SECURITY.md">SECURITY.md</a> first.
+        </p>
+
+        <p class="next">back to the start -&gt; <a href="../">home</a></p>
+      </main>
+
+      <footer class="signoff">
+        <p>
+          <a href="https://github.com/superkoh/koloft">source</a> ·
+          <a href="https://github.com/superkoh/koloft-releases/releases">releases</a> ·
+          <a href="../changelog/">changelog</a> ·
+          <a href="https://github.com/superkoh/koloft/issues">issues</a> · GPL-3.0
+        </p>
+        <p class="fine">
+          Not made by or affiliated with Anthropic or OpenAI.<span
+            class="caret"
+            aria-hidden="true"
+          ></span>
+        </p>
+      </footer>
+    </div>
+
+    <script src="../script.js"></script>
+  </body>
+</html>

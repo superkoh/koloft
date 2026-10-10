@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest'
+import fs from 'fs'
 import os from 'os'
 
 const mocks = vi.hoisted(() => {
@@ -16,7 +17,7 @@ const mocks = vi.hoisted(() => {
     onExit: (cb: (e: { exitCode: number; signal?: number }) => void) => {
       state.exit = cb
     },
-    write: () => {},
+    write: (_data: string) => {},
     resize: () => {},
     kill: () => {},
     get process(): string {
@@ -182,37 +183,6 @@ describe('PtyManager per-tab environment', () => {
     expect(env.PATH.startsWith('/koloft/shim:')).toBe(true)
   })
 
-  it('drops an inherited ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN while balancing is on, since the shim yields to any token already in the env', () => {
-    process.env.ANTHROPIC_API_KEY = 'sk-ant-ambient'
-    process.env.ANTHROPIC_AUTH_TOKEN = 'ambient-token'
-    try {
-      const mgr = new PtyManager()
-      mgr.multiAccountOn = () => true
-      mgr.create({ kind: 'claude', cwd: os.tmpdir() })
-      const env = spawnedEnv()
-      expect(env.ANTHROPIC_API_KEY).toBeUndefined()
-      expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined()
-    } finally {
-      delete process.env.ANTHROPIC_API_KEY
-      delete process.env.ANTHROPIC_AUTH_TOKEN
-    }
-  })
-
-  it("keeps them when balancing is off: they are the user's own auth and Koloft has none to put in their place", () => {
-    process.env.ANTHROPIC_API_KEY = 'sk-ant-ambient'
-    process.env.ANTHROPIC_AUTH_TOKEN = 'ambient-token'
-    try {
-      const mgr = new PtyManager()
-      mgr.create({ kind: 'claude', cwd: os.tmpdir() })
-      const env = spawnedEnv()
-      expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-ambient')
-      expect(env.ANTHROPIC_AUTH_TOKEN).toBe('ambient-token')
-    } finally {
-      delete process.env.ANTHROPIC_API_KEY
-      delete process.env.ANTHROPIC_AUTH_TOKEN
-    }
-  })
-
   it("never lets an inherited browser endpoint reach a utility shell: it would point at the parent instance's browser", () => {
     process.env.KOLOFT_CDP_DIR = '/parent/koloft/cdp'
     process.env.KOLOFT_BROWSER_CDP = 'ws://127.0.0.1:9999/cdp/' + 'a'.repeat(32)
@@ -276,6 +246,167 @@ describe('PtyManager handles after the pty exits', () => {
   })
 })
 
+describe('PtyManager.whenReady: waiting until a tab can be typed into', () => {
+  it('checks again only when woken for that tab, answers false at its deadline, and false as soon as the pty exits', async () => {
+    vi.useFakeTimers()
+    try {
+      const mgr = new PtyManager()
+      const h = mgr.create({ kind: 'claude', cwd: os.tmpdir() })
+      let ready = false
+      let checks = 0
+      const isReady = (): boolean => {
+        checks++
+        return ready
+      }
+
+      const woken = mgr.whenReady(h.id, isReady, 60_000)
+      ready = true
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(checks).toBe(1)
+      mgr.wakeReady('another-tab')
+      mgr.wakeReady(h.id)
+      await expect(woken).resolves.toBe(true)
+
+      ready = false
+      const late = mgr.whenReady(h.id, isReady, 1000)
+      await vi.advanceTimersByTimeAsync(1000)
+      await expect(late).resolves.toBe(false)
+      await expect(mgr.whenReady(h.id, isReady, 0)).resolves.toBe(false)
+
+      const exiting = mgr.whenReady(h.id, isReady, 60_000)
+      mocks.state.exit?.({ exitCode: 0 })
+      await expect(exiting).resolves.toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('PtyManager.paste: a ✎ comment reaches the tool with the hunk pasted and the note typed', () => {
+  it('writes the pasted part as one bracketed paste and nothing else when there is nothing to type after it', async () => {
+    const write = vi.spyOn(mocks.proc, 'write')
+    try {
+      const mgr = new PtyManager()
+      const h = mgr.create({ kind: 'claude', cwd: os.tmpdir() })
+      write.mockClear()
+      await mgr.paste(h.id, 'a.md\n```diff\n+b\n```\n')
+      expect(write.mock.calls.map(([d]) => d)).toEqual([
+        '\x1b[200~a.md\n```diff\n+b\n```\n\x1b[201~'
+      ])
+    } finally {
+      write.mockRestore()
+    }
+  })
+
+  it('types the note after the paste ends, in writes short enough that claude takes them as typing, without splitting a character or losing one', async () => {
+    vi.useFakeTimers()
+    const write = vi.spyOn(mocks.proc, 'write')
+    try {
+      const mgr = new PtyManager()
+      const h = mgr.create({ kind: 'claude', cwd: os.tmpdir() })
+      write.mockClear()
+      const note = 'keep the old name 🙂 because\n'.repeat(12) + 'reply with one word'
+      const done = mgr.paste(h.id, 'hunk\n\n', note)
+      await vi.runAllTimersAsync()
+      await done
+      const [pasted, ...typed] = write.mock.calls.map(([d]) => d)
+      expect(pasted).toBe('\x1b[200~hunk\n\n\x1b[201~')
+      expect(typed.length).toBeGreaterThan(1)
+      expect(typed.join('')).toBe(note)
+      for (const piece of typed) {
+        expect(Array.from(piece).length).toBeLessThanOrEqual(128)
+        expect(piece).not.toContain('\x1b')
+        expect(Buffer.from(piece).toString()).toBe(piece)
+      }
+    } finally {
+      write.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('PtyManager types the PATH line and the launch line once the login shell reads', () => {
+  const SETUP = 'export PATH="/koloft/shim:$PATH"; hash -r 2>/dev/null; clear'
+  const LAUNCH = 'exec claude --resume abc'
+  const ZSH_PROMPT = '\x1b[0m\x1b[27m\x1b[24m\x1b[Jme@mac ~ % \x1b[K\x1b[?2004h'
+
+  let write: MockInstance<typeof mocks.proc.write>
+  beforeEach(() => {
+    vi.useFakeTimers()
+    write = vi.spyOn(mocks.proc, 'write')
+  })
+  afterEach(() => {
+    write.mockRestore()
+    vi.useRealTimers()
+  })
+
+  const BOTH = [SETUP + '\r' + LAUNCH + '\r']
+  const typed = (): string[] => write.mock.calls.map(([d]) => d)
+  const launch = (launchCommand = LAUNCH): void => {
+    new PtyManager().create({
+      kind: 'claude',
+      cwd: os.tmpdir(),
+      setupCommand: SETUP,
+      launchCommand: () => launchCommand
+    })
+  }
+
+  it('types nothing while the rc files still run, then both lines in order the moment the line editor turns on bracketed paste, and nothing again', () => {
+    launch()
+    mocks.state.data?.('Last login: Fri Oct  9 on ttys004\r\nrc output\r\n')
+    expect(typed()).toEqual([])
+    mocks.state.data?.(ZSH_PROMPT)
+    expect(typed()).toEqual(BOTH)
+    mocks.state.data?.('\x1b[?2004h')
+    vi.runAllTimers()
+    expect(typed()).toEqual(BOTH)
+  })
+
+  it('still sees the signal when the pty splits it across two chunks', () => {
+    launch()
+    mocks.state.data?.(ZSH_PROMPT.slice(0, -4))
+    expect(typed()).toEqual([])
+    mocks.state.data?.(ZSH_PROMPT.slice(-4))
+    expect(typed()).toEqual(BOTH)
+  })
+
+  it("takes macOS bash 3.2's meta-key switch as the same signal, since its readline has no bracketed paste", () => {
+    launch()
+    mocks.state.data?.('\x1b[?1034hMac:~ me$ ')
+    expect(typed()).toEqual(BOTH)
+  })
+
+  it('types both lines anyway, once, as late as it always did, when the shell never signals', () => {
+    launch()
+    vi.advanceTimersByTime(1599)
+    expect(typed()).toEqual([])
+    vi.advanceTimersByTime(1)
+    expect(typed()).toEqual(BOTH)
+    mocks.state.data?.('\x1b[?2004h')
+    expect(typed()).toEqual(BOTH)
+  })
+
+  it('types a command too long for one line of a busy tty as a file the shell sources, and removes the file when the pty exits', async () => {
+    const remoteLine = 'h=$(ssh -n host true); ' + 'x'.repeat(1100)
+    launch(remoteLine)
+    mocks.state.data?.(ZSH_PROMPT)
+    const [line] = typed()
+    const file = /^[^\r]*\r\. '([^']+)'\r$/.exec(line)?.[1] ?? ''
+    expect(line.startsWith(SETUP + '\r')).toBe(true)
+    expect(fs.readFileSync(file, 'utf8')).toBe(remoteLine + '\n')
+    mocks.state.exit?.({ exitCode: 0 })
+    vi.useRealTimers()
+    await vi.waitFor(() => expect(fs.existsSync(file)).toBe(false))
+  })
+
+  it('types nothing into a pty Koloft did not start a shell in', () => {
+    new PtyManager().create({ kind: 'codex', cwd: os.tmpdir(), executable: '/bin/codex' })
+    mocks.state.data?.('\x1b[?2004h')
+    vi.runAllTimers()
+    expect(typed()).toEqual([])
+  })
+})
+
 describe('tabInstancePid', () => {
   it('answers process.pid for an id PtyManager.create() minted and null for a malformed id, so a registration from another live Koloft is left alone', () => {
     const h = new PtyManager().create({ kind: 'claude', cwd: os.tmpdir() })
@@ -292,32 +423,41 @@ describe("BB-E27: a scheduled run's first prompt and session name reach only the
     return (mocks.spawn.mock.calls[call][2] as { env: Record<string, string> }).env
   }
 
-  it('never lets an inherited first prompt or session name reach an ordinary tab', () => {
+  it('never lets an inherited first prompt, session name or port offset reach an ordinary tab', () => {
     process.env.KOLOFT_FIRST_PROMPT = '/oops'
     process.env.KOLOFT_SESSION_NAME = 'x'
+    process.env.KOLOFT_PORT_OFFSET = '7'
     try {
       const mgr = new PtyManager()
       mgr.create({ kind: 'claude', cwd: os.tmpdir() })
       expect(spawnedEnv().KOLOFT_FIRST_PROMPT).toBeUndefined()
       expect(spawnedEnv().KOLOFT_SESSION_NAME).toBeUndefined()
+      expect(spawnedEnv().KOLOFT_PORT_OFFSET).toBeUndefined()
     } finally {
       delete process.env.KOLOFT_FIRST_PROMPT
       delete process.env.KOLOFT_SESSION_NAME
+      delete process.env.KOLOFT_PORT_OFFSET
     }
   })
 
-  it('gives the asking tab those two keys and the next tab none of them', () => {
+  it('gives the asking tab its own keys and the next tab none of them', () => {
     const mgr = new PtyManager()
     mgr.create({
       kind: 'claude',
       cwd: os.tmpdir(),
-      extraEnv: { KOLOFT_FIRST_PROMPT: '/daily-report', KOLOFT_SESSION_NAME: 'Nightly report' }
+      extraEnv: {
+        KOLOFT_FIRST_PROMPT: '/daily-report',
+        KOLOFT_SESSION_NAME: 'Nightly report',
+        KOLOFT_PORT_OFFSET: '42'
+      }
     })
     mgr.create({ kind: 'claude', cwd: os.tmpdir() })
     expect(envOf(0).KOLOFT_FIRST_PROMPT).toBe('/daily-report')
     expect(envOf(0).KOLOFT_SESSION_NAME).toBe('Nightly report')
+    expect(envOf(0).KOLOFT_PORT_OFFSET).toBe('42')
     expect(envOf(1).KOLOFT_FIRST_PROMPT).toBeUndefined()
     expect(envOf(1).KOLOFT_SESSION_NAME).toBeUndefined()
+    expect(envOf(1).KOLOFT_PORT_OFFSET).toBeUndefined()
   })
 
   it('ignores any other key someone puts in that object, so a PATH there cannot undo the shim line', () => {

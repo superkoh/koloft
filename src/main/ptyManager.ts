@@ -1,11 +1,15 @@
 import * as pty from 'node-pty'
 import { EventEmitter } from 'events'
+import fs from 'fs'
 import os from 'os'
+import path from 'path'
 import type { TabKind } from '@shared/types'
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
+import { shq } from '@shared/shellQuote'
 import { OscCwdParser } from './oscCwd'
 import { codexEnvironment } from './codexTransport'
 import { userShell } from './userShell'
+import { bracketedPaste, typeKeys, typedPieces } from './typeKeys'
 
 export interface PtyHandle {
   id: string
@@ -17,6 +21,7 @@ export interface PtyHandle {
   resumeSessionId?: string
   ownerTabId?: string
   resized?: (id: string, cols: number, rows: number) => void
+  startedAt: number
 }
 
 interface CreateArgs {
@@ -33,18 +38,46 @@ interface CreateArgs {
   util?: boolean
   resumeSessionId?: string
   ownerTabId?: string
+  conductor?: boolean
   resized?: (id: string, cols: number, rows: number) => void
   extraEnv?: {
     KOLOFT_FIRST_PROMPT?: string
     KOLOFT_SESSION_NAME?: string
     KOLOFT_AGENT_PLUGIN?: string
+    KOLOFT_PORT_OFFSET?: string
   }
 }
 
 const UTIL_TITLE_POLL_MS = 1500
 
-const SETUP_AFTER_RC_FILES_MS = 600
-const LAUNCH_AFTER_PATH_FIXED_MS = 1600
+const TYPE_EVEN_WITHOUT_A_SIGNAL_AFTER_MS = 1600
+
+// PLATFORM§2
+const LINE_EDITOR_STARTS_READING = /\x1b\[\?(?:2004|1034)h/
+const SIGNAL_LENGTH_LESS_ONE = '\x1b[?2004h'.length - 1
+// PLATFORM§2
+const LONGEST_LINE_A_BUSY_TTY_KEEPS = 1023
+
+function typeOnceTheShellReads(
+  write: (text: string) => void,
+  text: string
+): (output: string) => void {
+  if (text === '') return () => {}
+  let typed = false
+  let tail = ''
+  const type = (): void => {
+    if (typed) return
+    typed = true
+    write(text)
+  }
+  setTimeout(type, TYPE_EVEN_WITHOUT_A_SIGNAL_AFTER_MS)
+  return (output) => {
+    if (typed) return
+    const seen = tail + output
+    tail = seen.slice(-SIGNAL_LENGTH_LESS_ONE)
+    if (LINE_EDITOR_STARTS_READING.test(seen)) type()
+  }
+}
 
 export function foregroundName(reported: unknown): string | null {
   if (typeof reported !== 'string') return null
@@ -59,10 +92,11 @@ export class PtyManager extends EventEmitter {
   pickDir?: string
   cdpDir?: string
   agentDir?: string
-  multiAccountOn?: () => boolean
-  makeHookSettings?: (tabId: string, allowKoloft: boolean) => string | undefined
+  makeHookSettings?: (tabId: string, allowKoloft: boolean, conductor: boolean) => string | undefined
 
   private ptys = new Map<string, PtyHandle>()
+  private readyWaiters = new Map<string, Set<() => void>>()
+  private typing = new Map<string, Promise<void>>()
   private counter = 0
   private instanceTag = process.pid.toString(36)
 
@@ -112,6 +146,7 @@ export class PtyManager extends EventEmitter {
         key === 'KOLOFT_CDP_DIR' ||
         key === 'KOLOFT_AGENT_DIR' ||
         key === 'KOLOFT_AGENT_PLUGIN' ||
+        key === 'KOLOFT_PORT_OFFSET' ||
         key === 'ANT_ACCOUNT' ||
         (BROWSER_TAB_ENV as readonly string[]).includes(key)
       ) {
@@ -124,17 +159,16 @@ export class PtyManager extends EventEmitter {
     if (this.pickDir) env.KOLOFT_PICK_DIR = this.pickDir
     if (this.cdpDir && !args.util) env.KOLOFT_CDP_DIR = this.cdpDir
     if (this.agentDir && args.kind !== 'codex') env.KOLOFT_AGENT_DIR = this.agentDir
-    if (args.kind !== 'codex' && this.multiAccountOn?.()) {
-      env.KOLOFT_MULTI_ACCOUNT = '1'
-      delete env.ANTHROPIC_API_KEY
-      delete env.ANTHROPIC_AUTH_TOKEN
-    }
     if (process.env.KOLOFT_TEST_BACKGROUND !== '1') delete env.KOLOFT_KEYCHAIN_FILE
     env.KOLOFT_PID = String(process.pid)
     const hookSettings =
       args.util || args.kind === 'codex'
         ? undefined
-        : this.makeHookSettings?.(id, args.extraEnv?.KOLOFT_AGENT_PLUGIN !== undefined)
+        : this.makeHookSettings?.(
+            id,
+            args.extraEnv?.KOLOFT_AGENT_PLUGIN !== undefined,
+            args.conductor === true
+          )
     if (hookSettings) env.KOLOFT_HOOK_SETTINGS = hookSettings
     if (this.shimDir && !isWin && args.kind !== 'codex')
       env.PATH = `${this.shimDir}:${process.env.PATH ?? ''}`
@@ -142,7 +176,8 @@ export class PtyManager extends EventEmitter {
       for (const k of [
         'KOLOFT_FIRST_PROMPT',
         'KOLOFT_SESSION_NAME',
-        'KOLOFT_AGENT_PLUGIN'
+        'KOLOFT_AGENT_PLUGIN',
+        'KOLOFT_PORT_OFFSET'
       ] as const) {
         const v = args.extraEnv[k]
         if (v !== undefined) env[k] = v
@@ -177,14 +212,38 @@ export class PtyManager extends EventEmitter {
       util: args.util === true,
       resumeSessionId: args.resumeSessionId,
       ownerTabId: args.ownerTabId,
-      resized: args.resized
+      resized: args.resized,
+      startedAt: Date.now()
     }
     this.ptys.set(id, handle)
 
     let titlePoll: ReturnType<typeof setInterval> | undefined
 
+    const launchCommand =
+      typeof args.launchCommand === 'function' ? args.launchCommand(id) : args.launchCommand
+    const sourcedFiles: string[] = []
+    const shortEnoughToType = (command: string): string => {
+      if (Buffer.byteLength(command) <= LONGEST_LINE_A_BUSY_TTY_KEEPS) return command
+      const file = path.join(os.tmpdir(), `koloft-${id}-${sourcedFiles.length}.sh`)
+      fs.writeFileSync(file, command + '\n', { mode: 0o600 })
+      sourcedFiles.push(file)
+      return `. ${shq(file)}`
+    }
+    const watchForReadyShell = typeOnceTheShellReads(
+      (text) => {
+        try {
+          proc.write(text)
+        } catch {}
+      },
+      [args.setupCommand, launchCommand]
+        .filter((command): command is string => !!command)
+        .map((command) => shortEnoughToType(command) + '\r')
+        .join('')
+    )
+
     const cwdParser = args.util ? new OscCwdParser() : undefined
     proc.onData((data) => {
+      watchForReadyShell(data)
       this.emit('data', { id, data })
       const cwd = cwdParser?.push(data)
       if (cwd && cwd !== handle.cwd) {
@@ -195,6 +254,8 @@ export class PtyManager extends EventEmitter {
     proc.onExit(({ exitCode, signal }) => {
       handle.alive = false
       if (titlePoll) clearInterval(titlePoll)
+      for (const file of sourcedFiles) fs.rm(file, { force: true }, () => {})
+      this.wakeReady(id)
       this.emit('exit', { id, exitCode, signal })
     })
 
@@ -214,23 +275,57 @@ export class PtyManager extends EventEmitter {
       }, UTIL_TITLE_POLL_MS)
     }
 
-    const send = (text: string, delay: number): void => {
-      setTimeout(() => {
-        try {
-          proc.write(text + '\r')
-        } catch {}
-      }, delay)
-    }
-    if (args.setupCommand) send(args.setupCommand, SETUP_AFTER_RC_FILES_MS)
-    const launchCommand =
-      typeof args.launchCommand === 'function' ? args.launchCommand(id) : args.launchCommand
-    if (launchCommand) send(launchCommand, LAUNCH_AFTER_PATH_FIXED_MS)
-
     return handle
   }
 
   write(id: string, data: string): void {
     this.ptys.get(id)?.proc.write(data)
+  }
+
+  exclusive<T>(id: string, typing: () => Promise<T>): Promise<T> {
+    const turn = (this.typing.get(id) ?? Promise.resolve()).then(typing)
+    const done = turn.then(
+      () => undefined,
+      () => undefined
+    )
+    this.typing.set(id, done)
+    void done.then(() => {
+      if (this.typing.get(id) === done) this.typing.delete(id)
+    })
+    return turn
+  }
+
+  type(id: string, keys: string[]): Promise<void> {
+    return this.exclusive(id, () => typeKeys((data) => this.write(id, data), keys))
+  }
+
+  paste(id: string, text: string, typedAfter = ''): Promise<void> {
+    return this.type(id, [bracketedPaste(text), ...typedPieces(typedAfter)])
+  }
+
+  whenReady(id: string, ready: () => boolean, ms: number): Promise<boolean> {
+    if (ready()) return Promise.resolve(true)
+    if (!this.get(id)?.alive || ms <= 0) return Promise.resolve(false)
+    return new Promise((resolve) => {
+      const waiters = this.readyWaiters.get(id) ?? new Set()
+      this.readyWaiters.set(id, waiters)
+      const settle = (result: boolean): void => {
+        clearTimeout(deadline)
+        waiters.delete(recheck)
+        if (waiters.size === 0) this.readyWaiters.delete(id)
+        resolve(result)
+      }
+      const recheck = (): void => {
+        if (ready()) settle(true)
+        else if (!this.get(id)?.alive) settle(false)
+      }
+      const deadline = setTimeout(() => settle(ready()), ms)
+      waiters.add(recheck)
+    })
+  }
+
+  wakeReady(id: string): void {
+    for (const recheck of [...(this.readyWaiters.get(id) ?? [])]) recheck()
   }
 
   pause(id: string): void {

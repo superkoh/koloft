@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { Locator, Page } from '@playwright/test'
 import { expect } from './app'
-import type { E2EEnv } from './env'
+import type { E2EEnv, FakeGhCheck } from './env'
 import { encodeCwd, layoutOnDisk, withMember } from './p1'
 import { assertFixtureDir } from './fixtureGuard'
 import { PNG_1X1 } from './filesFixture'
@@ -299,4 +299,172 @@ export async function openInBrowse(page: Page, absPath: string): Promise<void> {
   await page
     .locator(`${WORKBENCH.browseRows}.ft-file[data-path="${absPath}"]`)
     .click({ timeout: 30_000 })
+}
+
+const TYPED_AFTER_THE_PASTE = ' and typed after the paste'
+
+export async function putCommentOnFirstHunkInSession(
+  page: Page,
+  rel: string,
+  note: string
+): Promise<string> {
+  const block = page.locator(`${WORKBENCH.panel} .cv-blk[data-path="${rel}"]`)
+  const button = block.locator('.cv-cmt').first()
+  await expect(button).toBeEnabled({ timeout: 60_000 })
+  const header = (await block.locator('.cv-hunk-hd').first().textContent()) ?? ''
+  await button.click()
+  const box = block.locator('.cv-comment textarea')
+  await box.fill(note)
+  await box.press('Enter')
+  await expect(block.locator('.cv-comment')).toHaveCount(0)
+  await expect
+    .poll(() => page.evaluate(() => !!document.activeElement?.closest('.term-island')))
+    .toBe(true)
+  return `${rel}\n\`\`\`diff\n${header}\n`
+}
+
+export async function commentOnFirstHunk(page: Page, rel: string, note: string): Promise<string> {
+  const head = await putCommentOnFirstHunkInSession(page, rel, note)
+  await page.keyboard.type(TYPED_AFTER_THE_PASTE)
+  await page.keyboard.press('Enter')
+  return head
+}
+
+export async function expectOnePromptFromTheComment(
+  prompts: () => string[],
+  head: string,
+  note: string
+): Promise<void> {
+  const fromNote = (): string[] => prompts().filter((p) => p.includes(note))
+  await expect.poll(fromNote, { timeout: 30_000 }).toHaveLength(1)
+  const [prompt] = fromNote()
+  expect(prompt.startsWith(head)).toBe(true)
+  expect(prompt.endsWith('\n```\n\n' + note + TYPED_AFTER_THE_PASTE)).toBe(true)
+}
+
+// CC§18
+export function outsideThePaste(prompt: string): string {
+  return prompt.replace(/<pasted_content id="([^"]+)">[\s\S]*?<\/pasted_content id="\1">/g, '')
+}
+
+export function claudePromptsIn(jsonl: string): string[] {
+  return jsonl.split('\n').flatMap((line) => {
+    try {
+      const record = JSON.parse(line)
+      const content = record.type === 'user' ? record.message?.content : undefined
+      return typeof content === 'string' ? [content] : []
+    } catch {
+      return []
+    }
+  })
+}
+
+export function claudeRepliesIn(jsonl: string): string[] {
+  return jsonl.split('\n').flatMap((line) => {
+    try {
+      const record = JSON.parse(line)
+      const content = record.type === 'assistant' ? record.message?.content : undefined
+      return Array.isArray(content)
+        ? content.flatMap((part: { type?: string; text?: unknown }) =>
+            part?.type === 'text' && typeof part.text === 'string' ? [part.text] : []
+          )
+        : []
+    } catch {
+      return []
+    }
+  })
+}
+
+export function claudeToolResultsIn(jsonl: string): string[] {
+  return jsonl.split('\n').flatMap((line) => {
+    try {
+      const record = JSON.parse(line)
+      const content = record.type === 'user' ? record.message?.content : undefined
+      return Array.isArray(content)
+        ? content.flatMap((part: { type?: string; content?: unknown }) => {
+            if (part?.type !== 'tool_result') return []
+            if (typeof part.content === 'string') return [part.content]
+            return Array.isArray(part.content)
+              ? [
+                  part.content
+                    .map((c: { text?: unknown }) => (typeof c?.text === 'string' ? c.text : ''))
+                    .join('')
+                ]
+              : []
+          })
+        : []
+    } catch {
+      return []
+    }
+  })
+}
+
+export const ONE_FAILING_OF_FIVE: FakeGhCheck[] = [
+  {
+    name: 'check',
+    bucket: 'fail',
+    link: 'https://github.com/acme/widgets/actions/runs/36829650571/job/110263090912',
+    workflow: 'CI'
+  },
+  ...['lint', 'build', 'docs', 'e2e'].map((name): FakeGhCheck => ({
+    name,
+    bucket: 'pass',
+    link: 'https://github.com/acme/widgets/actions/runs/36829650571/job/1',
+    workflow: 'CI'
+  }))
+]
+
+export const FAILED_LOG =
+  'check\tRun npm test\t2026-10-07T13:25:40.0000000Z AssertionError: expected 1 to be 2\n' +
+  'check\tRun npm test\t2026-10-07T13:25:40.1000000Z ##[error]Process completed with exit code 1.\n'
+
+export const FAILING_CHECK_PASTE_HEAD =
+  'CI check "check" (workflow CI) failed on pull request #265 of acme/widgets.\n' +
+  'Full log: https://github.com/acme/widgets/actions/runs/36829650571/job/110263090912\n\n' +
+  '--- log excerpt (around the first error) ---\n' +
+  'AssertionError: expected 1 to be 2\n' +
+  '##[error]Process completed with exit code 1.'
+
+export const PR_3_OF_KOLOFT = {
+  owner: 'superkoh',
+  repo: 'koloft',
+  branch: 'dependabot/npm_and_yarn/vitejs/plugin-react-6.1.1',
+  pr: 3
+}
+
+export const PR_3_CHECKS_LINE = 'Checks · 1 failing of 2'
+
+export const PR_3_FAILING_CHECK_PASTE_HEAD =
+  'CI check "check" (workflow CI) failed on pull request #3 of superkoh/koloft.\n' +
+  'Full log: https://github.com/superkoh/koloft/actions/runs/35815732286/job/107036731098\n\n' +
+  '--- log excerpt (around the first error) ---\n' +
+  '##[group]Run npm ci\n' +
+  'npm ci\n'
+
+export const PR_3_NPM_ERROR = 'npm error code ERESOLVE'
+export const PR_3_FIRST_ERROR_LINE = '##[error]Process completed with exit code 1.'
+
+export async function sendFailingChecks(page: Page): Promise<void> {
+  await page.locator('.wb-gh').click({ button: 'right' })
+  await page.locator('.wb-ghmenu .mi', { hasText: 'Send failing checks' }).click()
+  await expect
+    .poll(() => page.evaluate(() => !!document.activeElement?.closest('.term-island')))
+    .toBe(true)
+  await page.keyboard.type(TYPED_AFTER_THE_PASTE)
+  await page.keyboard.press('Enter')
+}
+
+export async function expectOnePromptFromTheChecks(
+  prompts: () => string[],
+  head = FAILING_CHECK_PASTE_HEAD
+): Promise<string> {
+  const fromChecks = (): string[] => prompts().filter((p) => p.startsWith(head))
+  await expect.poll(fromChecks, { timeout: 30_000 }).toHaveLength(1)
+  const [prompt] = fromChecks()
+  expect(prompt.endsWith('\n\n' + TYPED_AFTER_THE_PASTE)).toBe(true)
+  return prompt
+}
+
+export function claudePrompts(transcript: string): string[] {
+  return fs.existsSync(transcript) ? claudePromptsIn(fs.readFileSync(transcript, 'utf8')) : []
 }

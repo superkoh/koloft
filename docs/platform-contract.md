@@ -63,6 +63,33 @@ method. A recheck adds its date, version and command to the bullet.
   inherited value turns it on. node-pty reports nothing on `cd`, so OSC 7 is the only
   way to follow a plain shell's folder. (Format seen on a real pty; no date or macOS
   version.)
+- **A shell's line editor says when it starts reading.** zsh, bash 5 and fish write
+  `ESC [ ? 2004 h` (bracketed paste on) the moment their line editor starts waiting for a
+  line, after every rc file has run; macOS's own `/bin/bash` 3.2 writes none, but its
+  readline writes `ESC [ ? 1034 h` (meta key on, from the `xterm-256color` terminfo) at
+  the same moment. For zsh and bash it came out exactly when the tty left canonical mode
+  (`ICANON` off, read with `tcgetattr` on the pty master every 3 ms); fish leaves
+  canonical mode earlier, to read the terminal's answers to its queries, and writes the
+  signal once its prompt is drawn. fish 4 first asks the terminal `ESC [ 0 c` and shows
+  no prompt — and runs no typed line — until it is answered (the probe answered
+  `ESC [ ? 1 ; 2 c`, as xterm.js does). A short line typed before the prompt is not
+  lost: one written 0.3 s into a `.zshrc` / `.bash_profile` / `config.fish` that sleeps
+  3 s still ran once the prompt came. Two short lines written together at the signal —
+  the PATH line ending in `clear`, then the launch line — both ran in order.
+  powerlevel10k's instant prompt writes the signal at the top of `.zshrc`, before the
+  rest of it runs; two short lines written then, with 2 s of `.zshrc` still to go, both
+  ran in order once zsh's own prompt came.
+- **A busy tty keeps at most 1023 bytes of a typed line.** While the tty is in canonical
+  mode — the rc files are still running, or the line before is still running — a line
+  of 1023 bytes before its Enter ran, and one of 1024 was lost with everything after
+  it (macOS `MAX_CANON` is 1024). Typed while the line editor reads, a 1.5 KB line ran.
+  A remote tab's launch line is about 2.2 KB and its shell line about 1.3 KB, so such a
+  line is written to a file and the typed line is `. '<file>'`; that ran after a 3 s
+  `.zshrc` and after powerlevel10k's early signal alike.
+  (2026-10-09, Python `pty` probe, macOS 27.0.1 `/bin/zsh` 5.9, for both bullets; also
+  `/bin/bash` 3.2.57 and fish 4.9.3 (the release's macOS app) for the first; Ubuntu
+  24.04 in Docker: fish 3.7.0 and 4.9.3, bash 5.2.21, zsh 5.9; powerlevel10k `master`
+  of that day.)
 - **bash `$!` and the subshell fold.** After `( … ) &`, `$!` is the subshell's pid. Bash
   folds the subshell into its last command only when that command stands alone; a
   `umask` before it prevents the fold. Without `exec`, killing `$!` kills only the
@@ -131,7 +158,11 @@ method. A recheck adds its date, version and command to the bullet.
   app's. A bare `electron out/main/index.js` launch reports `out/main` as
   `app.getAppPath()`.
 - **Only Electron can open files inside `app.asar`.** bash or node must use the
-  `asarUnpack`'d copy under `app.asar.unpacked`.
+  `asarUnpack`'d copy under `app.asar.unpacked`. A `worker_threads` Worker the main
+  process starts counts as Electron: it loads its script from inside `app.asar`, by
+  path or by `file:` URL (Electron 43.7.3, 2026-10-09: a one-line worker packed with
+  `@electron/asar`, started from a bare `electron main.js` after `app.whenReady`,
+  posted its message back both ways).
 - **`app.setActivationPolicy('accessory')` must be set before any window exists**, or
   the first window show still makes the app active and takes focus.
 - **A Notification that nothing holds on to can be garbage-collected** while its banner
@@ -480,6 +511,14 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   fill went into the TUI the user was typing in). A real `Input.dispatchMouseEvent`
   mousedown makes the guest the window's focused frame and takes the host's focus
   (measured). An in-page `focus()` moves nothing in the host.
+- **`Page.reload` sent to a guest's `webContents.debugger` reloads the whole Koloft
+  window, not the guest**; the guest goes with it. Measured 2026-10-08, Electron 43.7.3 /
+  Chromium 150.0.7871.250, by watching the host's main-frame `did-start-navigation` in an
+  e2e run: a bare `sendCommand('Page.reload')` from main, Playwright's `page.reload()`
+  and the real `playwright-cli reload` (0.1.18) each reloaded the host. The guest's own
+  `webContents.reload()` / `reloadIgnoringCache()`, an in-page `location.reload()`,
+  `Page.navigate`, `Page.stopLoading`, Playwright's back/forward and DevTools' own reload
+  of that guest each left the host alone.
 - **A second `about:blank` load is a second navigation**: a CDP client that grabbed the
   page between the two is left holding a detached frame (measured with a real client).
 - **`webContents.debugger` and the DevTools window can hold one guest at the same time**,
@@ -813,6 +852,14 @@ inferred, not checked.
   watcher writes it again until it is seen.
 - **A recursive folder watcher cannot be trusted to report the removal of the watched
   folder itself.**
+- **A session's two start notes can go unreported.** With the launch line typed about
+  0.2 s after the pty opens, the shim's registration or claude's SessionStart drop was
+  never reported by its folder watch in 4 to 7 of about 195 e2e tests (4 workers),
+  while the files were on disk; the tab then never bound. A worktree-exit case that
+  lost one in 3 of 16 runs passed 9 of 9 with the old 1.6 s wait. A 1 s sweep of both
+  folders finds them.
+  (2026-10-09, Node 24.13.0 in Electron 43, macOS 27.0.1; files listed from the e2e
+  when a row stayed pending.)
 
 ## §29 node-pty and ptys
 
@@ -830,6 +877,15 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   name. Fast pipelines hit the gap within seconds (seen: a poll that read it raised
   Electron's error dialog every 1500 ms).
 - **Resizing a pty to the size it already has sends no SIGWINCH.**
+- **Node opens a terminal again by name the first time it makes `process.stdin`,
+  `stdout` or `stderr` on a tty, and that `open()` waits for good once the pty's master
+  side is closed.** A JS `SIGHUP` handler cannot free it (the thread that would run the
+  handler is the one stuck); with no JS handler the default `SIGHUP` kills it. Measured
+  2026-10-08 (Node 24.13.0, macOS 27.0) with a Python script that starts `node` on a pty
+  and closes the master 0.3 s later; seen in the e2e suite as leftover fake claudes stuck
+  in `uv_tty_init` → `open` (`sample`), with parent pid 1, on 2026-10-08 and 2026-10-09.
+  Making all three handles at startup, before any `SIGHUP` handler, removed the stuck
+  child in the probe.
 
 ## §30 git
 
@@ -870,6 +926,14 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   files. **It refuses a locked tree** ("cannot remove a locked working tree"), and a
   session's worktree was seen still locked after its tab was killed, so `git worktree
   unlock` comes first (measured, git 2.54.0, 2026-10-02, on a throwaway repo).
+- **`git worktree remove` deletes the ignored files too, so its time grows with
+  `node_modules`**: 24k files (Koloft's own `node_modules`) took 1.1 s, 100k files
+  3.8 s, and 250k files outran a 5 s `execFile` timeout. **Killed mid-delete, it leaves
+  a half-removed tree**: the folder keeps whatever it had not deleted yet, the worktree
+  stays registered in `git worktree list`, and its branch stays. Which files go first
+  follows the folder's read order, not the name order: killed at 5 s, a tree of `.git`,
+  `a.txt` and `node_modules/` still had `.git` and `a.txt` while `node_modules/` was half
+  gone. (Measured, git 2.54.0, macOS APFS, 2026-10-08, on a throwaway repo.)
 - **`.git/FETCH_HEAD` is rewritten on every fetch** and a fresh clone has none, so its
   existence and mtime show whether a fetch ran.
 - **The `ext::` transport** is refused unless `protocol.ext.allow` permits it (the repo's
@@ -902,6 +966,67 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   `"repository":null` plus a `NOT_FOUND` error; with no login it exits 4 and prints
   "To get started with GitHub CLI, please run: gh auth login". (2026-10-03, gh 2.89.0,
   run by hand against a public repo, a made-up name, and an empty `GH_CONFIG_DIR`.)
+- **`gh pr checks <n> --repo o/r --json name,bucket,link,workflow`** prints a JSON array
+  and exits 0 even when a check failed. `bucket` is one of `pass`, `fail`, `pending`,
+  `skipping`, `cancel`. A check from GitHub Actions links to
+  `…/actions/runs/<run>/job/<job>`; one from an app outside Actions (CodeQL's own
+  check-run) links to `…/runs/<id>` with `workflow` empty. A number with no pull request
+  exits 1 with "GraphQL: Could not resolve to a PullRequest…" (a branch name: "no pull
+  requests found for branch …"); a pull request whose repo runs no checks exits 1 with
+  "no checks reported on the '<branch>' branch"; signed out it exits 4 with the
+  `gh auth login` line. `--help` says exit 8 means "checks pending" — not seen with
+  `--json` (inferred, not checked). (2026-10-08, gh 2.89.0, by hand against
+  superkoh/koloft #385/#387, PR 999999, octocat/Hello-World #11472, an empty
+  `GH_CONFIG_DIR`.)
+- **`gh run view --job <job> --repo o/r --log-failed`** prints the whole job, not only
+  the failed step (118 KB for one failed `format:check`), one line each as
+  `<job>\t<step>\t<ISO time> <text>`, with the step often `UNKNOWN STEP`, ANSI colour
+  codes left in, and the failure marked by a `##[error]` line. (2026-10-08, gh 2.89.0,
+  job 112815692712 of superkoh/koloft.) Where the step is named it printed only that
+  step: job 107036731098 (PR #3, `npm ci`) came back as 38 lines, 3,366 bytes, all
+  `check\tRun npm ci\t…`, with `##[error]Process completed with exit code 1.` as the last
+  line (that the step name decides this is inferred, not checked). **The first line's
+  time starts with a UTF-8 byte-order mark** (`﻿2026-09-23T03:47:43.4098300Z`).
+- **`gh pr checks` reads a closed pull request the same way**: PR #3 (closed) printed
+  `check` as `fail` and `close` as `skipping` (workflow "Pull requests are not open yet"),
+  exit 0, so Koloft's menu reads `Checks · 1 failing of 2`.
+- **gh finds its token in the login keychain only under the real `HOME`**: with a scratch
+  `HOME`, `gh pr checks` exits 4 with the `gh auth login` line; with a scratch `HOME` but
+  `GH_CONFIG_DIR` set to the real `~/.config/gh` it exits 1 with "HTTP 401: Requires
+  authentication". So an e2e app, whose `HOME` is a scratch folder, reaches the signed-in
+  gh only through a `gh` on its PATH that sets the real `HOME`.
+- The three bullets above: 2026-10-08, gh 2.89.0, by hand (`gh pr checks 3 --repo
+  superkoh/koloft --json name,bucket,link,workflow`, `gh run view --job 107036731098
+  --log-failed`, a node probe with a scratch `HOME`), and established in the real app by
+  `github-button.spec.ts` › "G13: the real gh reads superkoh/koloft PR #3 as one failing
+  check of two, and Send failing checks pastes its name, job link and the npm ERESOLVE
+  excerpt …" (2 runs), `agent-tools-real-smoke.spec.ts` › "a real Claude Code holds the
+  failing checks of PR #3 in its input box unsent …" (3 runs) and "a real Codex holds the
+  failing checks of PR #3 in its composer unsent …" (5 runs), and `remote-ssh-lab.spec.ts`
+  › "E-SSH-12: the GitHub button on a session on the machine commits and pushes there …"
+  (2 runs). GitHub keeps Actions logs for 90 days by default, so job 107036731098's log is
+  expected to go around 2026-12-22 and these cases to fail on it then (inferred, not
+  checked).
+- **`--jq` can read the environment of the `gh` process**: `gh pr view 389 --repo
+  superkoh/koloft --json number --jq '$ENV.HOME'` printed the home folder. So a `--jq`
+  given by someone else can print any secret in that environment. (2026-10-09, gh 2.89.0,
+  run by hand.)
+- **`gh issue list` / `gh pr list --repo o/r --state open --json …`** print a JSON array
+  of objects with the fields asked for (`number`, `title`, `url`, `updatedAt` as an ISO
+  time; a pull request also has `headRefName` and `isCrossRepository`), newest created
+  first, and exit 0. Signed out, each exits 4 with the `gh auth login` line. A pull
+  request from a fork has `isCrossRepository: true` and a `headRefName` that names a
+  branch of the fork, not of the repo — so the same name may be a different branch here.
+  GitHub keeps `refs/pull/<n>/head` for a fork's pull request and a same-repo one alike
+  (`git ls-remote https://github.com/cli/cli refs/pull/14629/head refs/pull/14580/head`
+  listed both). (2026-10-09, gh 2.89.0, by hand against superkoh/koloft and cli/cli, and
+  an empty `GH_CONFIG_DIR` with a scratch `HOME`.)
+- **`gh issue create` with no terminal never prompts**: missing `--title` it exits 1 at
+  once with "must provide `--title` and `--body` when not running interactively" and
+  creates nothing. A flag given as `--flag=value` keeps a value that starts with `-`
+  (`gh issue list --search=-label:bug` listed issues without the label). What a
+  successful create prints is not probed (no test repository was used). (2026-10-09, gh
+  2.89.0, by hand against superkoh/koloft, stdin from `/dev/null`.)
 
 ## §33 ssh
 
@@ -1064,3 +1189,180 @@ tmux 2.6):
 - **The bastion drops window-size changes, but `stty -F <pts> rows R cols C` run from
   a second ssh command resizes that terminal**: `stty size` inside read `50 200`
   afterwards.
+
+## §39 Discord API (v10)
+
+Measured 2026-10-03 with a real bot on a private server, by a hand-written client: Node
+`fetch` for REST with `Authorization: Bot <token>`, and the `ws` library (8.x) for the
+Gateway (the live connection that pushes events):
+
+- **REST calls a bot needs all answer 200**: `GET /users/@me` (the bot's own name and
+  id), `GET /oauth2/applications/@me` (`id` is the application id that goes in the
+  invite link; `bot_public` says whether anyone can add it), `GET /users/@me/guilds` (the
+  servers it is in), `GET /guilds/{id}/channels` (type `0` is a text channel), and
+  `GET /gateway/bot` (the Gateway `url`, which was `wss://gateway.discord.gg`).
+- **Gateway handshake**: connect to `<url>/?v=10&encoding=json`; the server sends op 10
+  (hello) with `heartbeat_interval`; the client sends op 1 (heartbeat, last sequence
+  number) on that interval, and op 2 (identify) with the token and the intents
+  `GUILDS | GUILD_MESSAGES | DIRECT_MESSAGES | MESSAGE_CONTENT` (1 | 512 | 4096 | 32768).
+  Then `READY` arrives (bot user, a list of server ids), one `GUILD_CREATE` per server
+  (with its name), and `MESSAGE_CREATE` for every message in a channel the bot can see.
+- **With Message Content on, `MESSAGE_CREATE` carries the text** (`content`) and the
+  sender (`author.id`, `author.username`, `author.bot`).
+- **Sending works**: `POST /channels/{id}/messages` with JSON `{content}` answers 200; a
+  file goes as multipart with `payload_json` plus `files[0]`, also 200.
+- **Rate limit per channel: 5 messages, then 429.** In a burst of 7 posts to one
+  channel, posts 1–5 answered 200 and 6–7 answered 429 with a JSON body whose
+  `retry_after` was about 0.3 (seconds); the bucket refills in about 5 s. Waiting
+  `retry_after` and sending again works.
+- From Discord's docs, not measured here: close code 4004 means the token was refused,
+  4014 means an intent the bot is not allowed (Message Content turned off in the
+  Developer Portal); op 6 (resume) with `session_id` and the last sequence number,
+  sent to `READY`'s `resume_gateway_url`, picks up a dropped connection (Koloft resumes
+  on the fixed `wss://gateway.discord.gg` instead, so it never opens a connection to a
+  host a server response named; whether Discord accepts a resume there is not checked —
+  if it answers op 9, Koloft identifies again); op 7 asks the
+  client to reconnect and resume; op 9 (invalid session) with `d: false` means start
+  over with identify; 4007 and 4009 also mean the session cannot be resumed; a bot API
+  call must send a `User-Agent: DiscordBot (<url>, <version>)` header.
+- **Slash commands (application commands)** — measured 2026-10-05 on the same private
+  server with the same bot, which was added with the `bot` scope only, and the owner's
+  Discord iOS app:
+  - `POST /applications/{app}/guilds/{guild}/commands` with `{name, description, type:
+    1, options}` answered 201; the command showed in the app's `/` list at once, so the
+    bot needed no new invite. `GET` on the same route lists them; `DELETE …/{id}` answered
+    204.
+  - Using it sent `INTERACTION_CREATE` on the existing Gateway connection, with the same
+    intents, and no Interactions Endpoint URL set: `type` 2 for the command, 4 for each
+    autocomplete keystroke, `channel_id`, `member.user.id` (the sender, in a server),
+    and `data.options` `[{name, value, type: 3, focused?}]`.
+  - `POST /interactions/{id}/{token}/callback` answered 204 for `{type: 8, data:
+    {choices}}` (the choices showed on the phone, within about 0.2 s) and for `{type: 5}`;
+    `PATCH /webhooks/{app}/{token}/messages/@original` and a follow-up `POST
+    /webhooks/{app}/{token}` with `flags: 64` (only the sender sees it) answered 200.
+  - Text typed in the box that starts with `/` but is not picked from the list, like
+    `/compact hello`, is sent as an ordinary message (`MESSAGE_CREATE`).
+  - From the docs, not measured: the first answer must come within 3 s; the token
+    works for 15 minutes; a guild can take at most 200 command creates a day; an app
+    with no answer shows "The application did not respond". That two Gateway
+    connections of one bot (two Koloft installs) both receive each interaction is
+    inferred, not checked.
+- **How messages look, and threads** — measured 2026-10-06 with the same bot, REST only,
+  on a server where the bot role was the one the invite gave (`101440`) and the owner
+  read each message in the Discord app:
+  - In a message's `content`, `#`, `##`, `###`, `-#` (small text), `-`/`1.` lists with
+    indented sub-lists, `>` quotes, fenced code with a language and `[text](url)` show
+    as formatting. `####`, a `| a | b |` table, `---`, `- [ ]`/`- [x]` and
+    `![alt](url)` show as the raw characters.
+  - A Components V2 message (`flags` with `1 << 15`, `components` holding a container,
+    type 17, with `accent_color`, text displays, type 10, a separator, type 14, and an
+    action row of buttons) answered 200 and showed with a coloured bar; `###` inside a
+    text display shows as a heading. One text display took 4000 characters and refused
+    4001 (`400`, code 50035, `BASE_TYPE_BAD_LENGTH`, "Must be between 1 and 4000 in
+    length"). A cap on all text displays of one message together was not measured.
+  - An embed (`embeds: [{author, color, description, footer}]`) also posted (200, the
+    embed came back), with `###` shown as a heading inside `description`.
+  - `flags` with `1 << 12` (no push) was accepted on both kinds.
+  - `POST /channels/{id}/messages/{message}/threads` with `{name, auto_archive_duration:
+    1440}` answered 201 with the thread, whose id is the message's; posting to
+    `/channels/{thread}/messages` answered 200 and showed inside the thread. The invite's
+    permissions name neither "create public threads" nor "send messages in threads";
+    that the server's default role gave them is inferred, not checked.
+  - `DELETE /channels/{thread}` answered 403 (50013, Missing Permissions); `PATCH
+    /channels/{thread}` with `{archived: true}` on the bot's own thread answered 200.
+- **Threads, buttons and tables on the owner's phone** — Koloft 0.32.1, 2026-10-06, the
+  owner reading the Discord iOS app, one case at a time:
+  - A card posted in a bot-made thread the owner was added to
+    (`PUT /channels/{thread}/thread-members/{user}`) made the locked phone ring.
+  - A button press reached Koloft as `INTERACTION_CREATE` type 3 with `data.custom_id`,
+    and callback type 7 replaced the card: the buttons went and the new text showed.
+  - A message the owner posted in an archived thread went through, and the thread came
+    back into the list.
+  - A fenced code block does not keep columns on a phone held upright: a table with
+    Chinese cells did not line up, and a 39-character-wide one wrapped and did not line
+    up either. A table written as a bold line per row with a `>` quote line per cell
+    read well.
+- **Renaming a thread** (`PATCH /channels/{thread}` with `{name}`), same bot, 2026-10-06:
+  on an archived thread it answered `400`, code 50083 "Thread is archived"; the third
+  name change within a few seconds answered `429` with `retry_after` 599.6 s, though
+  the first two had failed — failed attempts count. Discord's docs give the limit as two
+  name changes per ten minutes per channel. An `{archived: true}` call right after was
+  not limited. Once the ten minutes had passed, `{name}` on the bot's own unarchived
+  thread answered `200` with the new name (a Chinese name kept as sent).
+- **A bot's own message opens its archived thread again** — read 2026-10-07 off the
+  owner's server, Koloft 0.32.3, REST `GET` only: of 29 bot-made threads, 6 were open
+  although Koloft had archived them; in each the last message was the bot's "closed"
+  card, and the thread's `thread_metadata.archive_timestamp` (when it last changed
+  between archived and open) lay within 0.12 s of that card's own time. The archive
+  `PATCH` and the card `POST` had been sent at once, in two separate queues, so the
+  archive landed first. Nothing else posted there afterwards.
+- **Deleting a thread needs Manage Threads** (bit 34, `1 << 34`): the bot role the
+  invite gave (`101440`) lacks it, and so did the server's `@everyone`; `DELETE
+  /channels/{thread}` without it answered 403 (above). Measured 2026-10-07 on the
+  owner's server once the owner had turned Manage Threads on for the bot's role by
+  hand (role permissions then `17179970624`), on 26 of the bot's own public threads,
+  archived and open: `DELETE /channels/{thread}` answered `200` each time; the
+  thread's opener message in the parent channel was still there afterwards (`GET
+  /channels/{parent}/messages/{thread}` answered 200), and `DELETE` on it answered
+  `204`. Whether re-inviting the bot with a link that asks for more permissions
+  updates an existing bot role was not probed.
+- **Showing a state that keeps changing** — measured 2026-10-08 with the same bot on
+  the owner's server, REST only, in a channel no conductor is bound to, with a Components
+  V2 card (`flags` `1 << 15 | 1 << 12`) that had a thread on it:
+  - `PATCH /channels/{channel}/messages/{opener}` with new `components` (another
+    `accent_color`, another header) answered 200, with or without `flags` in the body.
+    Edits share one limit per channel across its messages: two cards edited in turn
+    answered 200 five times, then 429 (`retry_after` 0.3–0.6 s), the bucket filling
+    again in about 5 s. Edits have a different bucket (`x-ratelimit-bucket`) from posts
+    to the same channel.
+  - Editing the opener of an archived thread answered 200 and left the thread archived
+    (`thread_metadata.archived` still `true`); editing a message inside the archived
+    thread answered 400, code 50083 "Thread is archived".
+  - A `<t:{unix seconds}:R>` in a text display was stored as sent. That the app shows
+    it as a relative time ("3 minutes ago") that counts up by itself is from Discord's
+    docs, not seen on a phone.
+  - `POST /channels/{id}/typing` answered 204, five per channel per about 5 s, then
+    429 (`retry_after` 0.3); a thread and its parent count apart. It answered 204 on an
+    archived thread too, and the thread stayed archived. That it shows for about 10 s,
+    stops when the bot posts, and sends no push is from Discord's docs.
+  - Reactions on one message: one per 0.25 s (`x-ratelimit-limit` 1); every other
+    call of a burst answered 429. A reaction on an archived thread's opener left it
+    archived.
+  - `PUT /channels/{thread}/messages/pins/{id}` answered 403 (50013) with the bot
+    role the invite gives.
+  - That an edit or a typing call rings the phone or marks the channel unread was not
+    checked (Discord's docs say neither does).
+- Also from Discord's docs, not measured here: a message's `content` holds at most 2000
+  characters; one message carries at most 10 files and one request at most 25 MiB; a
+  bot's file may be at most 20 MiB (changelog 2025-09-03); adding or removing a reaction
+  (`PUT`/`DELETE /channels/{id}/messages/{id}/reactions/{emoji}/@me`) answers 204 with no
+  body; `GET /channels/{id}/messages?after=<id>&limit=<1–100>` lists the messages after
+  that id, and an attachment in `MESSAGE_CREATE` carries `filename`, `size` and a `url`
+  that needs no token.
+
+## §40 Node `fs.watch` on a macOS directory
+
+- **Every event names the file, and appending to a file already there fires one too.**
+  Measured 2026-10-07 on macOS 27.0.1 (APFS) with a Node script, once under Node 24.13 and once under
+  Electron 43's own Node 24.21 (`ELECTRON_RUN_AS_NODE=1`). It watched a directory without
+  `recursive` and appended to a file already in it, created, renamed and deleted files,
+  and wrote a file inside a subdirectory. Each step gave events whose `filename` was the
+  touched file's base name (a rename gave both the old and the new name). Twenty quick
+  appends to one file were folded into a single event.
+- **The event type cannot tell an append from a create or a delete.** Under Node every
+  step reported `rename`, appends included; under Electron the twenty quick appends
+  reported `change` and the single ones `rename`. A watcher that must know what
+  happened has to look at the file itself.
+- A write inside a subdirectory gave no event at all; creating the subdirectory gave one.
+
+## §41 What an Electron app's quit does to its children
+
+- **A program running in a node-pty terminal gets SIGHUP when the app quits.** Nothing has
+  to kill it: the app's exit closes the terminal and the program's HUP trap fires within
+  the same second.
+- **A child spawned with `detached: true` and `unref()` keeps running after the quit.** It
+  can wait for the pty program's pid to disappear (`kill -0` in a loop) and then go on
+  working; three seconds later it was still alive and finished its script.
+- Measured 2026-10-09 on macOS 27.0.1 with a bare Electron 43.7.3 app (node-pty from the
+  repo, no window): one pty child running `sh` with HUP/TERM traps, one detached `sh`
+  helper, then `app.quit()` one second in.

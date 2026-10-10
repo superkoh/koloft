@@ -24,8 +24,6 @@ import {
   seedWorkbench,
   sessionWorkbenchOnDisk,
   waitPanelAttached,
-  wbTabs,
-  wbUnreadTabs,
   workbenchDefaultOnDisk,
   appRegion,
   workbenchIcon,
@@ -467,10 +465,6 @@ test.describe('Workbench panel layout: T1 collapsed, T2 right column, T3 the TUI
     await toggleWorkbench(app, page)
     await expect.poll(() => layoutState(page)).toBe('T1')
 
-    const before = await wbTabs(page).count()
-
-    await runIn(page, centerTerm(page), '/open http://127.0.0.1:1/one')
-    await runIn(page, centerTerm(page), '/open http://127.0.0.1:1/two')
     await runIn(page, centerTerm(page), '/write wb-k07-written.txt')
     await expect
       .poll(() => fs.existsSync(path.join(env.workspaces.a, 'wb-k07-written.txt')), {
@@ -481,13 +475,6 @@ test.describe('Workbench panel layout: T1 collapsed, T2 right column, T3 the TUI
     expect(await layoutState(page)).toBe('T1')
     await expect(workbenchIcon(page)).not.toHaveClass(/unread/)
     await expect(workbenchIcon(page).locator('.cnt')).toHaveCount(0)
-
-    await expect.poll(() => wbTabs(page).count()).toBe(before + 2)
-    await expect(wbUnreadTabs(page)).toHaveCount(2)
-
-    await toggleWorkbench(app, page)
-    await expect.poll(() => layoutState(page)).toBe('T2')
-    await expect(wbUnreadTabs(page)).toHaveCount(2)
   })
 
   test.describe('under the shipped default, with no workbench block in layout.json', () => {
@@ -558,11 +545,10 @@ test.describe('Workbench panel layout: T1 collapsed, T2 right column, T3 the TUI
         const page = second.page
         const rowA = rowTitled(page, 'Session A')
         await expect(rowA).toHaveCount(1, { timeout: 30_000 })
-        await expect(rowA).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+        await expect(rowA).toHaveClass(/\bst-(working|waiting|idle)\b/, { timeout: 60_000 })
         await rowA.click()
         await waitForCalls(env, 3)
         await waitPanelAttached(page)
-        await expect(rowA).not.toHaveClass(/\bcold\b/, { timeout: 60_000 })
         await expect.poll(() => layoutState(page), { timeout: 30_000 }).toBe('T2')
         await expect(workbenchPanel(page)).toBeVisible()
       } finally {

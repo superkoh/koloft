@@ -10,6 +10,7 @@ import type {
 } from '@shared/types'
 import type { ReportedTask, SessionEvent } from '@shared/sessionEvent'
 import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
+import { TurnLog, type SaidLine, type Turn as TalkTurn } from '@shared/turns'
 import { costUsdOf, resolvePricing } from '@shared/pricing'
 import { localDayKey } from '@shared/usageFormat'
 import { encodeCwd } from '@shared/cwdKey'
@@ -19,8 +20,11 @@ import { SessionRuntime, envMs, turnOf, type Turn } from './sessionRuntime'
 import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
 import type { LaunchedSession } from './accountPicker'
 import type { MachineTmp } from './remote/install'
+import { claudeWroteIt, commandOutputOf } from './claudeCommandOutput'
+import { withoutHandover } from './handover'
+import { messageText } from './messageText'
 
-const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects')
+export const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects')
 const TMP_ROOT = ((): string => {
   try {
     return fs.realpathSync('/tmp')
@@ -41,6 +45,8 @@ const TEAMMATE_QUIET_MS = envMs('KOLOFT_TEAMMATE_QUIET_MS', 60_000)
 const PROCS_SCAN_MS = envMs('KOLOFT_PROCS_SCAN_MS', 5000)
 // CC§2
 const RELOCATE_SETTLE_MS = envMs('KOLOFT_RELOCATE_SETTLE_MS', 1200)
+// CC§2
+const TURN_TEXT_WAIT_MS = envMs('KOLOFT_TURN_TEXT_WAIT_MS', 5000)
 
 export { encodeCwd }
 
@@ -49,6 +55,12 @@ function num(x: unknown): number {
 }
 
 const BG_PROMOTED = '\x00promoted'
+const UNLISTED_BACKGROUND_WORK: BackgroundItem = {
+  id: 'unlisted',
+  kind: 'command',
+  label: 'background work',
+  state: 'working'
+}
 
 // CC§8
 export function parseReportedTasks(bgl: unknown): ReportedTask[] | undefined {
@@ -65,11 +77,18 @@ export function parseReportedTasks(bgl: unknown): ReportedTask[] | undefined {
 export function sessionEventFromHook(
   event?: string,
   message?: string,
-  bgl?: unknown
+  bgl?: unknown,
+  ask?: unknown
 ): SessionEvent | null {
   switch (event) {
+    case 'ask':
+      return ask && typeof ask === 'object' ? { type: 'asked', ask } : null
     case 'prompt':
       return { type: 'prompt' }
+    case 'compacting':
+      return { type: 'compacting' }
+    case 'compacted':
+      return { type: 'compacted' }
     case 'stop':
       return { type: 'stop', reported: parseReportedTasks(bgl) }
     case 'notify': {
@@ -165,7 +184,17 @@ const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
 // CC§2
 const BASH_WRITES = /(^|[^0-9&])>>?\s*(?!\/dev\/null)\S|\btee\s|\bsed\s+-i\b|\btouch\s/
 const READ_TOOLS = new Set(['Read'])
-const UNACKED_TOOL_CMD_CAP = 64
+const TASK_LABEL_FIELD: Record<string, string> = {
+  Bash: 'command',
+  Monitor: 'command',
+  Agent: 'description'
+}
+const UNACKED_TOOL_CAP = 64
+
+export interface ToolCall {
+  name: string
+  input: Record<string, unknown>
+}
 
 const THIS_MAC_TMP: MachineTmp = { tmpRoot: TMP_ROOT, uid: process.getuid?.() ?? 0 }
 
@@ -195,12 +224,6 @@ export function scratchpadDirFor(
 ): string | null {
   const dir = sessionTmpDir(jsonlPath, launchCwd, machine)
   return dir && path.join(dir, 'scratchpad')
-}
-
-// CC§2
-export function tasksDirFor(jsonlPath: string | null): string | null {
-  const dir = sessionTmpDir(jsonlPath)
-  return dir && path.join(dir, 'tasks')
 }
 
 interface SubagentFile {
@@ -275,7 +298,7 @@ export function classifyUserPrompt(text: string): {
   ) {
     return { genuine: false, title: null, commandArgs: null, commandName: null }
   } else {
-    candidate = text
+    candidate = withoutHandover(text)
   }
   const genuine = candidate.trim().length > 0
   const stripped = candidate.replace(IMAGE_PLACEHOLDER, '')
@@ -289,6 +312,138 @@ export function classifyUserPrompt(text: string): {
   }
 }
 
+// CC§13
+const PEER_MESSAGE = /^Another Claude session sent a message:\n([\s\S]*?)\n\nThis came from another/
+// CC§13
+const PEER_ENVELOPE = /^<cross-session-message[^>\n]*>\n([\s\S]*)\n<\/cross-session-message>$/
+
+function peerText(raw: string): string {
+  const inner = PEER_MESSAGE.exec(raw)?.[1] ?? raw
+  return (PEER_ENVELOPE.exec(inner)?.[1] ?? inner).trim()
+}
+
+// CC§2
+function commandEcho(obj: { origin?: unknown }, raw: string | null): boolean {
+  return raw !== null && raw.startsWith('/') && claudeWroteIt(obj)
+}
+
+// CC§1
+export function compactionSummary(obj: { isCompactSummary?: unknown }): boolean {
+  return obj.isCompactSummary === true
+}
+
+// CC§2 CC§8
+const WRITTEN_BY_CLAUDE_CODE = /^<(task-notification|system-reminder|teammate-message)[\s>]/
+
+export function whoTyped(record: { origin?: unknown }, text: string): 'owner' | 'peer' | null {
+  if (WRITTEN_BY_CLAUDE_CODE.test(text)) return null
+  const kind = (record.origin as { kind?: unknown } | null | undefined)?.kind
+  if (kind === undefined || kind === 'human') return 'owner'
+  return kind === 'peer' ? 'peer' : null
+}
+
+type TurnPiece = { line: SaidLine; midTurn: boolean } | 'tool'
+
+// CC§2 CC§13
+function claudeTurnPieces(obj: any): TurnPiece[] {
+  if (!obj || obj.isSidechain === true) return []
+  const ts = Date.parse(obj.timestamp)
+  const at = isFinite(ts) ? ts : Date.now()
+  if (obj.type === 'user') {
+    const raw = messageText(obj.message?.content)
+    const who = raw === null ? null : whoTyped(obj, raw)
+    if (raw === null || !who) return []
+    if (who === 'peer') return [{ line: { who, text: peerText(raw), at }, midTurn: false }]
+    if (
+      obj.isMeta ||
+      compactionSummary(obj) ||
+      INTERRUPT_TEXTS.has(raw) ||
+      commandEcho(obj, raw) ||
+      !classifyUserPrompt(raw).title
+    )
+      return []
+    return [{ line: { who, text: raw.trim(), at }, midTurn: false }]
+  }
+  if (obj.type === 'attachment') {
+    const a = obj.attachment
+    if (a?.type !== 'queued_command' || a.commandMode !== 'prompt' || typeof a.prompt !== 'string')
+      return []
+    const who = whoTyped(a, a.prompt)
+    if (!who) return []
+    const text = who === 'peer' ? peerText(a.prompt) : a.prompt.trim()
+    return [{ line: { who, text, at }, midTurn: true }]
+  }
+  if (obj.type !== 'assistant' || !Array.isArray(obj.message?.content)) return []
+  return obj.message.content.flatMap((b: any): TurnPiece[] => {
+    if (b?.type === 'tool_use') return ['tool']
+    if (b?.type !== 'text' || typeof b.text !== 'string' || !b.text.trim()) return []
+    return [{ line: { who: 'assistant', text: b.text.trim(), at }, midTurn: true }]
+  })
+}
+
+export function lastTurnsOfLines(
+  lines: string[],
+  n: number
+): { turns: TalkTurn[]; started: number } {
+  const log = new TurnLog()
+  let started = 0
+  for (const line of lines) {
+    let obj: unknown
+    try {
+      obj = JSON.parse(line)
+    } catch {
+      continue
+    }
+    for (const piece of claudeTurnPieces(obj)) {
+      if (piece === 'tool') continue
+      const before = log.open()
+      log.add(piece.line, piece.midTurn)
+      if (log.open() !== before) started++
+    }
+  }
+  return { turns: log.last(n), started }
+}
+
+export const TRANSCRIPT_TAIL_FIRST_READ_BYTES = 64 * 1024
+
+export async function transcriptTurns(file: string, n: number): Promise<TalkTurn[]> {
+  const fh = await fs.promises.open(file, 'r')
+  try {
+    let start = (await fh.stat()).size
+    let tail = Buffer.alloc(0)
+    for (let chunk = TRANSCRIPT_TAIL_FIRST_READ_BYTES; ; chunk *= 2) {
+      const from = Math.max(0, start - chunk)
+      const head = Buffer.alloc(start - from)
+      await fh.read(head, 0, head.length, from)
+      tail = Buffer.concat([head, tail])
+      start = from
+      const lines = tail.toString('utf8').split('\n')
+      const whole = start === 0 ? lines : lines.slice(1)
+      const { turns, started } = lastTurnsOfLines(whole, n)
+      if (start === 0 || started > n) return turns
+    }
+  } finally {
+    await fh.close()
+  }
+}
+
+// CC§2
+export function findTranscript(projectsRoot: string, sessionId: string): string | null {
+  let buckets: string[]
+  try {
+    buckets = fs.readdirSync(projectsRoot)
+  } catch {
+    return null
+  }
+  const hits = buckets
+    .map((b) => path.join(projectsRoot, b, sessionId + '.jsonl'))
+    .filter((file) => fs.existsSync(file))
+  if (hits.length < 2) return hits[0] ?? null
+  return hits
+    .map((file) => ({ file, size: fs.statSync(file, { throwIfNoEntry: false })?.size ?? -1 }))
+    .reduce((a, b) => (b.size > a.size ? b : a)).file
+}
+
 export interface RemoteTab {
   host: string
   projectsRoot: string
@@ -297,15 +452,18 @@ export interface RemoteTab {
 
 interface Tracked {
   info: SessionInfo
+  compactingFrom?: Turn
   launchCwd: string
   readOffset: number
   tailBuf: Buffer
+  customTitle: string | null
   title: string | null
   firstPrompt: string | null
   commandArgsTitle: string | null
   commandTitle: string | null
   candidates: Map<string, FileAcc>
   fileCache: Map<string, string>
+  canonPending: Set<string>
   lastTouchedAbs: string | null
   lastWrittenAbs: string | null
   parsePromise?: Promise<void>
@@ -314,6 +472,7 @@ interface Tracked {
   caughtUp: boolean
   jsonlListener?: () => void
   titleListener?: () => void
+  sidecarTitle: string | null
   usageSeen: Set<string>
   usageAny: boolean
   usageInTok: number
@@ -335,9 +494,10 @@ interface Tracked {
   resetMs: number
   reported: ReportedTask[] | null
   reportedAt: number
-  taskCmds: Map<string, string>
+  taskLabels: Map<string, string>
   monitorIds: Set<string>
-  toolCmds: Map<string, string>
+  toolLabels: Map<string, string>
+  openTools: Map<string, ToolCall>
   procs: TaskProcs | null
   shellCpu: Map<string, { cpuMs: number; at: number; quiet: boolean }>
   procsAt: number
@@ -345,9 +505,13 @@ interface Tracked {
   teammateActiveMs: number
   lastInterruptTs: number
   rootPinAwaitingCatchup: boolean
+  turns: TurnLog
+  replyDone: boolean
+  endingTurn?: { turn: TalkTurn; deadline: ReturnType<typeof setTimeout> }
   inode?: number
   swept?: boolean
   relocatedCwd?: string
+  lastWorktreeStateInBatch?: string
   landTimer?: ReturnType<typeof setTimeout>
   remote?: RemoteTab
   subagentTimer?: ReturnType<typeof setInterval>
@@ -391,6 +555,7 @@ export class SessionTracker extends SessionRuntime {
   inspect: typeof inspectTaskProcs = inspectTaskProcs
   leftBehind?: (sessionId: string) => boolean
   machineTmp?: (host: string) => MachineTmp | undefined
+  dialogsWatched: (tabId: string) => boolean = () => true
 
   track(tabId: string, cwd: string, remote?: RemoteTab): void {
     const prev = this.tracked.get(tabId)
@@ -418,12 +583,15 @@ export class SessionTracker extends SessionRuntime {
       launchCwd: remote ? cwd : realpathSafe(cwd),
       readOffset: 0,
       tailBuf: Buffer.alloc(0),
+      customTitle: null,
       title: null,
       firstPrompt: null,
       commandArgsTitle: null,
       commandTitle: null,
       candidates: new Map(),
       fileCache: new Map(),
+      canonPending: new Set(),
+      sidecarTitle: null,
       lastTouchedAbs: null,
       lastWrittenAbs: null,
       parseAgain: false,
@@ -447,15 +615,18 @@ export class SessionTracker extends SessionRuntime {
       resetMs: Date.now(),
       reported: null,
       reportedAt: 0,
-      taskCmds: new Map(),
+      taskLabels: new Map(),
       monitorIds: new Set(),
-      toolCmds: new Map(),
+      toolLabels: new Map(),
+      openTools: new Map(),
       procs: null,
       shellCpu: new Map(),
       procsAt: 0,
       teammateActiveMs: 0,
       lastInterruptTs: 0,
       rootPinAwaitingCatchup: false,
+      turns: new TurnLog(),
+      replyDone: false,
       remote
     }
     this.tracked.set(tabId, t)
@@ -475,11 +646,31 @@ export class SessionTracker extends SessionRuntime {
   }
 
   receive(tabId: string, event: SessionEvent): void {
+    const t = this.tracked.get(tabId)
+    if (event.type === 'compacting' || event.type === 'compacted') {
+      if (t) this.compaction(t, event.type)
+      return
+    }
+    if (t && turnOf(event)) t.compactingFrom = undefined
+    if (event.type === 'stop') void this.endTurn(tabId)
     const turn = turnOf(event)
     if (turn === 'working' || turn === 'approval') this.recordHookTurn(tabId, turn)
     // CC§8
     else if (turn)
       void this.reportTurnEnd(tabId, event.type === 'stop' ? event.reported : undefined)
+  }
+
+  // CC§1
+  private compaction(t: Tracked, phase: 'compacting' | 'compacted'): void {
+    const tabId = t.info.tabId
+    if (phase === 'compacting') {
+      t.compactingFrom = this.turnNow(tabId) ?? 'ended'
+      this.recordHookTurn(tabId, 'working')
+      return
+    }
+    const from = t.compactingFrom
+    t.compactingFrom = undefined
+    if (from && this.turnNow(tabId) === 'working') this.recordHookTurn(tabId, from)
   }
 
   setStatus(tabId: string, status: SessionStatus): void {
@@ -506,15 +697,19 @@ export class SessionTracker extends SessionRuntime {
     this.emitUpdate()
   }
 
+  protected override turnOverChanged(): void {
+    this.emitUpdate()
+  }
+
   protected override async workStillRunning(tabId: string): Promise<boolean> {
     const t = this.tracked.get(tabId)
     if (!t) return false
     if (this.leftBehind?.(t.info.sessionId)) return true
     if (t.remote) return false
     const root = this.pidOf?.(tabId)
-    const tasksDir = tasksDirFor(t.info.jsonlPath)
-    if (!root || !tasksDir) return true
-    const procs = await this.inspect(root, tasksDir)
+    const sessionId = t.info.sessionId
+    if (!root || !sessionId) return true
+    const procs = await this.inspect(root, sessionId)
     return !procs || procs.shells.size > 0
   }
 
@@ -532,16 +727,55 @@ export class SessionTracker extends SessionRuntime {
       await this.refreshProcs(t, true)
       if (this.tracked.get(tabId) !== t || t.statusSeq !== seq) return
     }
-    const busy = t.reported ? this.judgeReported(t) : this.bgBusy(t)
+    this.endTurnHeldByWhatRuns(t)
+  }
+
+  private endTurnHeldByWhatRuns(t: Tracked): void {
+    const busy = this.judgeHold(t)
     if (!busy) t.bgTasks.clear()
     this.applyStatus(t, 'ended', busy)
   }
 
-  private judgeReported(t: Tracked): boolean {
+  // CC§2
+  private async endTurn(tabId: string): Promise<void> {
+    const t = this.tracked.get(tabId)
+    if (!t) return
+    await this.parse(t).catch(() => {})
+    const turn = t.turns.open()
+    if (this.tracked.get(tabId) !== t || !turn) return
+    if (t.replyDone) return this.finishTurn(t, turn)
+    clearTimeout(t.endingTurn?.deadline)
+    t.endingTurn = {
+      turn,
+      deadline: setTimeout(() => this.finishTurn(t, turn), TURN_TEXT_WAIT_MS)
+    }
+  }
+
+  private finishTurn(t: Tracked, turn: TalkTurn): void {
+    if (t.endingTurn?.turn === turn) {
+      clearTimeout(t.endingTurn.deadline)
+      t.endingTurn = undefined
+    }
+    if (this.tracked.get(t.info.tabId) === t && t.turns.end(turn))
+      this.emit('turn-ended', { tabId: t.info.tabId, turn: { ...turn, said: [...turn.said] } })
+  }
+
+  private judgeHold(t: Tracked): boolean {
+    if (t.reported) return this.judgeReported(t)
+    const busy = this.bgBusy(t)
+    this.setBackgroundItems(t, busy ? [UNLISTED_BACKGROUND_WORK] : [])
+    return busy
+  }
+
+  private judgeReported(t: Tracked, holding = true): boolean {
     const now = Date.now()
     const list = t.reported ?? []
     const procs = t.procs
     const parked: BackgroundItem[] = []
+    const running: BackgroundItem[] = []
+    const run = (task: ReportedTask, kind: BackgroundItem['kind'], label: string): void => {
+      running.push({ id: task.id, kind, label, state: 'working' })
+    }
     let observed = false
     let trusted = false
     const reportedIds = new Set(list.map((x) => x.id))
@@ -551,15 +785,19 @@ export class SessionTracker extends SessionRuntime {
     let idleTeammates = 0
     for (const task of list) {
       if (task.type === 'shell') {
-        const label = t.taskCmds.get(task.id) ?? task.id
+        const label = t.taskLabels.get(task.id) ?? task.id
         if (t.monitorIds.has(task.id)) {
           parked.push({ id: task.id, kind: 'monitor', label, state: 'waiting' })
         } else if (!procs) {
           trusted = true
+          run(task, 'command', label)
         } else {
           const sh = procs.shells.get(task.id)
           if (!sh) {
-            if ((task.since ?? 0) > t.procsAt) observed = true
+            if ((task.since ?? 0) > t.procsAt) {
+              observed = true
+              run(task, 'command', label)
+            }
             continue
           }
           if (sh.listening && t.shellCpu.get(task.id)?.quiet) {
@@ -570,13 +808,21 @@ export class SessionTracker extends SessionRuntime {
               state: 'waiting',
               ageMs: Math.floor(sh.ageMs / 60_000) * 60_000
             })
-          } else observed = true
+          } else {
+            observed = true
+            run(task, 'command', label)
+          }
         }
       } else if (AGENT_TYPES.has(task.type)) {
-        if (agentsFresh || toolCallInFlight) observed = true
+        if (agentsFresh || toolCallInFlight) {
+          observed = true
+          run(task, 'agent', t.taskLabels.get(task.id) ?? task.type)
+        }
       } else if (task.type === 'teammate') {
-        if (teammatesFresh || toolCallInFlight) observed = true
-        else idleTeammates++
+        if (teammatesFresh || toolCallInFlight) {
+          observed = true
+          run(task, 'agent', 'teammate')
+        } else idleTeammates++
       }
     }
     if (idleTeammates)
@@ -586,13 +832,12 @@ export class SessionTracker extends SessionRuntime {
         label: `${idleTeammates} idle`,
         state: 'waiting'
       })
-    this.setParked(t, parked)
-    if (observed) return true
-    if (!trusted) return false
-    return this.quietMs(t) < BG_SILENCE_MAX_MS
+    const busy = observed || (trusted && this.quietMs(t) < BG_SILENCE_MAX_MS)
+    this.setBackgroundItems(t, busy && holding ? [...running, ...parked] : parked)
+    return busy
   }
 
-  private setParked(t: Tracked, items: BackgroundItem[]): void {
+  private setBackgroundItems(t: Tracked, items: BackgroundItem[]): void {
     if (this.tracked.get(t.info.tabId) !== t || !this.setBackground(t.info.tabId, items)) return
     t.info.background = items.length ? items : undefined
     t.info.updatedAt = Date.now()
@@ -608,11 +853,11 @@ export class SessionTracker extends SessionRuntime {
     if (t.procsPromise) await t.procsPromise
     if (!force && Date.now() - t.procsAt < PROCS_SCAN_MS) return
     const root = this.pidOf?.(t.info.tabId)
-    const tasksDir = tasksDirFor(t.info.jsonlPath)
-    if (!root || !tasksDir) return
+    const sessionId = t.info.sessionId
+    if (!root || !sessionId) return
     t.procsPromise = (async () => {
       try {
-        const procs = await this.inspect(root, tasksDir)
+        const procs = await this.inspect(root, sessionId)
         if (this.tracked.get(t.info.tabId) !== t) return
         t.procs = procs
         t.procsAt = Date.now()
@@ -697,7 +942,7 @@ export class SessionTracker extends SessionRuntime {
     if (file && file !== t.info.jsonlPath) this.bind(t, file)
     if (source !== 'compact') {
       t.reported = null
-      this.setParked(t, [])
+      this.setBackgroundItems(t, [])
       this.setStatus(tabId, 'waiting')
     }
   }
@@ -713,6 +958,13 @@ export class SessionTracker extends SessionRuntime {
       t.info.updatedAt = Date.now()
       this.emitUpdate()
     }
+  }
+
+  movePick(from: string, to: string): void {
+    const account = this.pendingPicked.get(from)
+    if (!account) return
+    this.pendingPicked.delete(from)
+    this.setPickedAccount(to, account)
   }
 
   launchedSessions(): LaunchedSession[] {
@@ -758,13 +1010,13 @@ export class SessionTracker extends SessionRuntime {
       if (t.info.sessionId !== sessionId) continue
       return !!t.info.jsonlPath && fs.existsSync(t.info.jsonlPath)
     }
-    let buckets: string[]
-    try {
-      buckets = fs.readdirSync(PROJECTS_ROOT)
-    } catch {
-      return false
-    }
-    return buckets.some((d) => fs.existsSync(path.join(PROJECTS_ROOT, d, sessionId + '.jsonl')))
+    return !!findTranscript(PROJECTS_ROOT, sessionId)
+  }
+
+  turnsOf(sessionId: string, n: number): TalkTurn[] | undefined {
+    for (const t of this.tracked.values())
+      if (t.info.alive && t.info.sessionId === sessionId) return t.turns.last(n)
+    return undefined
   }
 
   aliveTabFor(sessionId: string): string | null {
@@ -793,6 +1045,15 @@ export class SessionTracker extends SessionRuntime {
       t,
       t.info.treeRoot ? projectInfoFor(t.info.treeRoot).worktreeName : undefined
     )
+  }
+
+  // CC§1 CC§2 CC§3 ADR-0025
+  private followWorktreeState(t: Tracked): void {
+    const bound = t.lastWorktreeStateInBatch
+    t.lastWorktreeStateInBatch = undefined
+    if (!bound || t.remote || t.landTimer || bound === t.info.treeRoot || !fs.existsSync(bound))
+      return
+    this.setTreeRoot(t, bound)
   }
 
   private setTreeRoot(t: Tracked, root: string): void {
@@ -824,6 +1085,7 @@ export class SessionTracker extends SessionRuntime {
   private resetParseState(t: Tracked, keepBindMs = false): void {
     t.readOffset = 0
     t.tailBuf = Buffer.alloc(0)
+    t.customTitle = null
     t.title = null
     t.firstPrompt = null
     t.commandArgsTitle = null
@@ -833,6 +1095,7 @@ export class SessionTracker extends SessionRuntime {
     t.lastTouchedAbs = null
     t.lastWrittenAbs = null
     t.relocatedCwd = undefined
+    t.lastWorktreeStateInBatch = undefined
     t.info.lastTouched = undefined
     t.info.lastWritten = undefined
     t.caughtUp = false
@@ -853,12 +1116,17 @@ export class SessionTracker extends SessionRuntime {
     t.info.usage = undefined
     t.bgTasks = new Set()
     t.monitorIds = new Set()
-    t.taskCmds = new Map()
-    t.toolCmds = new Map()
+    t.taskLabels = new Map()
+    t.toolLabels = new Map()
+    t.openTools = new Map()
     t.teammateActiveMs = 0
     t.lastBgActivityTs = 0
     t.lastMainActivityTs = 0
     t.lastInterruptTs = 0
+    t.turns = new TurnLog()
+    t.replyDone = false
+    clearTimeout(t.endingTurn?.deadline)
+    t.endingTurn = undefined
     if (!keepBindMs) t.bindMs = Date.now()
     t.resetMs = Date.now()
   }
@@ -870,10 +1138,25 @@ export class SessionTracker extends SessionRuntime {
       if (t.titleListener) fs.unwatchFile(this.sidecarOf(t.info.jsonlPath), t.titleListener)
     }
     t.info.jsonlPath = file
+    t.sidecarTitle = null
     t.jsonlListener ??= (): void => void this.parse(t)
-    t.titleListener ??= (): void => this.recompute(t)
+    t.titleListener ??= (): void => void this.readSidecarTitle(t)
     fs.watchFile(file, { interval: 500 }, t.jsonlListener)
     fs.watchFile(this.sidecarOf(file), { interval: 500 }, t.titleListener)
+    void this.readSidecarTitle(t)
+  }
+
+  private async readSidecarTitle(t: Tracked): Promise<void> {
+    const file = t.info.jsonlPath
+    if (!file) return
+    let title: string | null = null
+    try {
+      title = (await fs.promises.readFile(this.sidecarOf(file), 'utf8')).trim() || null
+    } catch {}
+    if (t.info.jsonlPath !== file || this.tracked.get(t.info.tabId) !== t) return
+    if (title === t.sidecarTitle) return
+    t.sidecarTitle = title
+    this.recompute(t)
   }
 
   private bind(t: Tracked, file: string): void {
@@ -896,6 +1179,7 @@ export class SessionTracker extends SessionRuntime {
     }
     if (t.subagentTimer) clearInterval(t.subagentTimer)
     t.subagentTimer = setInterval(() => void this.parse(t), SUBAGENT_SCAN_MS)
+    this.recompute(t)
     void this.parse(t)
   }
 
@@ -1051,10 +1335,10 @@ export class SessionTracker extends SessionRuntime {
       return
     }
     if (!this.isHeldByBackground(t.info.tabId)) {
-      if (t.reported && s !== 'working' && s !== 'approval') this.judgeReported(t)
+      if (t.reported && s !== 'working' && s !== 'approval') this.judgeReported(t, false)
       return
     }
-    const busy = t.reported ? this.judgeReported(t) : this.bgBusy(t)
+    const busy = this.judgeHold(t)
     if (!busy) {
       if (Date.now() - t.lastMainActivityTs < STOP_HOLD_MS) return
       t.bgTasks.clear()
@@ -1084,9 +1368,14 @@ export class SessionTracker extends SessionRuntime {
       else if (activity === 'interrupt') sawInterrupt = true
     }
     if (t.rootPinAwaitingCatchup) this.setTreeRoot(t, t.info.cwd)
+    this.followWorktreeState(t)
     if (sawInterrupt) await this.interruptTurn(t)
     else if (t.caughtUp) this.resumeWorkingIfStale(t, sawUserPrompt, sawAssistant)
-    if (!t.caughtUp) t.caughtUp = true
+    if (!t.caughtUp) {
+      const history = t.turns.open()
+      if (history && history.at < t.bindMs) t.turns.end(history)
+      t.caughtUp = true
+    }
     return true
   }
 
@@ -1099,9 +1388,7 @@ export class SessionTracker extends SessionRuntime {
       await this.refreshProcs(t, true)
       if (this.tracked.get(tabId) !== t || this.statusSince(tabId) > t.lastInterruptTs) return
     }
-    const busy = t.reported ? this.judgeReported(t) : this.bgBusy(t)
-    if (!busy) t.bgTasks.clear()
-    this.applyStatus(t, 'ended', busy)
+    this.endTurnHeldByWhatRuns(t)
   }
 
   private async tailSubagents(t: Tracked): Promise<boolean> {
@@ -1211,15 +1498,26 @@ export class SessionTracker extends SessionRuntime {
       task = { id: r.agentId, type: r.status === 'remote_launched' ? 'cloud-session' : 'subagent' }
     }
     if (task) {
-      const cmd = toolUseIds.map((id) => t.toolCmds.get(id)).find((c) => c)
-      if (cmd) t.taskCmds.set(task.id, cmd)
+      const cmd = toolUseIds.map((id) => t.toolLabels.get(id)).find((c) => c)
+      if (cmd) t.taskLabels.set(task.id, cmd)
       if (t.reported && !t.reported.some((x) => x.id === task.id)) {
         t.reported.push({ ...task, since: Date.now() })
       }
     }
-    for (const id of toolUseIds) t.toolCmds.delete(id)
+    for (const id of toolUseIds) t.toolLabels.delete(id)
     const at = Math.min(isFinite(ts) ? ts : Date.now(), Date.now())
     if (at > t.lastBgActivityTs) t.lastBgActivityTs = at
+  }
+
+  // CC§14
+  private ingestToolDone(t: Tracked, obj: any): void {
+    if (!Array.isArray(obj.message?.content)) return
+    for (const b of obj.message.content) {
+      const call = b?.type === 'tool_result' ? t.openTools.get(b.tool_use_id) : undefined
+      if (!call) continue
+      t.openTools.delete(b.tool_use_id)
+      if (t.caughtUp) this.emit('tool-done', { tabId: t.info.tabId, ...call })
+    }
   }
 
   // CC§8
@@ -1238,7 +1536,7 @@ export class SessionTracker extends SessionRuntime {
     if (t.reported && gone.size) t.reported = t.reported.filter((x) => !gone.has(x.id))
     for (const id of gone) {
       t.monitorIds.delete(id)
-      t.taskCmds.delete(id)
+      t.taskLabels.delete(id)
     }
     t.bgTasks.delete(BG_PROMOTED)
   }
@@ -1258,9 +1556,16 @@ export class SessionTracker extends SessionRuntime {
         if (!t.remote && !fs.existsSync(t.info.treeRoot)) this.setTreeRoot(t, obj.cwd)
       }
       if (obj.type === 'ai-title' && typeof obj.aiTitle === 'string') t.title = obj.aiTitle
+      // CC§9
+      if (obj.type === 'custom-title' && typeof obj.customTitle === 'string' && obj.customTitle)
+        t.customTitle = obj.customTitle
       // CC§2
       if (obj.type === 'relocated' && typeof obj.relocatedCwd === 'string' && obj.relocatedCwd) {
         t.relocatedCwd = obj.relocatedCwd
+      }
+      if (obj.type === 'worktree-state') {
+        const bound = obj.worktreeSession?.worktreePath
+        t.lastWorktreeStateInBatch = typeof bound === 'string' && bound ? bound : undefined
       }
       // CC§2
       const recTs = Math.min(Date.parse(obj.timestamp), Date.now())
@@ -1272,9 +1577,23 @@ export class SessionTracker extends SessionRuntime {
           t.lastMainActivityTs = recTs
         }
       }
-      if (obj.type === 'user') this.ingestSpawnAck(t, obj)
+      for (const piece of claudeTurnPieces(obj)) {
+        if (piece === 'tool') t.replyDone = false
+        else {
+          t.turns.add(piece.line, piece.midTurn)
+          t.replyDone = piece.line.who === 'assistant'
+        }
+      }
+      const ending = t.endingTurn?.turn
+      if (ending && (t.replyDone || ending !== t.turns.open())) this.finishTurn(t, ending)
+      if (obj.type === 'user') {
+        this.ingestSpawnAck(t, obj)
+        this.ingestToolDone(t, obj)
+      }
       this.ingestTaskNotification(t, obj)
-      if (obj.type === 'user' && !obj.isMeta) {
+      const output = t.caughtUp ? commandOutputOf(obj) : null
+      if (output) this.emit('command-output', { tabId: t.info.tabId, ...output })
+      if (obj.type === 'user' && !obj.isMeta && !compactionSummary(obj)) {
         const c = obj.message?.content
         let raw: string | null = null
         let hasImage = false
@@ -1293,10 +1612,11 @@ export class SessionTracker extends SessionRuntime {
           return null
         }
         const cls = raw !== null ? classifyUserPrompt(raw) : null
-        if (cls?.title && !t.firstPrompt) t.firstPrompt = cls.title
-        if (cls?.commandArgs && !t.commandArgsTitle) t.commandArgsTitle = cls.commandArgs
-        if (cls?.commandName && !t.commandTitle) t.commandTitle = cls.commandName
-        if ((cls?.genuine || hasImage) && mainThread) {
+        const named = raw !== null && whoTyped(obj, raw) ? cls : null
+        if (named?.title && !t.firstPrompt) t.firstPrompt = named.title
+        if (named?.commandArgs && !t.commandArgsTitle) t.commandArgsTitle = named.commandArgs
+        if (named?.commandName && !t.commandTitle) t.commandTitle = named.commandName
+        if ((cls?.genuine || hasImage) && mainThread && !commandEcho(obj, raw)) {
           activity = 'user'
           if (
             (t.caughtUp || (isFinite(recTs) && recTs >= t.resetMs)) &&
@@ -1314,11 +1634,18 @@ export class SessionTracker extends SessionRuntime {
         const liveNow = t.caughtUp || (isFinite(recTs) && recTs >= t.bindMs)
         for (const b of obj.message.content) {
           if (!b || b.type !== 'tool_use') continue
-          if ((b.name === 'Bash' || b.name === 'Monitor') && typeof b.input?.command === 'string') {
-            if (t.toolCmds.size >= UNACKED_TOOL_CMD_CAP)
-              t.toolCmds.delete(t.toolCmds.keys().next().value as string)
-            t.toolCmds.set(b.id, b.input.command.replace(/\s+/g, ' ').trim().slice(0, 120))
-            if (b.name === 'Bash' && liveNow && BASH_WRITES.test(b.input.command)) {
+          if (liveNow && typeof b.id === 'string' && this.dialogsWatched(t.info.tabId)) {
+            if (t.openTools.size >= UNACKED_TOOL_CAP)
+              t.openTools.delete(t.openTools.keys().next().value as string)
+            t.openTools.set(b.id, { name: b.name, input: b.input ?? {} })
+          }
+          const labelField = TASK_LABEL_FIELD[b.name]
+          const label = labelField ? b.input?.[labelField] : undefined
+          if (typeof label === 'string') {
+            if (t.toolLabels.size >= UNACKED_TOOL_CAP)
+              t.toolLabels.delete(t.toolLabels.keys().next().value as string)
+            t.toolLabels.set(b.id, label.replace(/\s+/g, ' ').trim().slice(0, 120))
+            if (b.name === 'Bash' && liveNow && BASH_WRITES.test(label)) {
               t.info.liveWrites = (t.info.liveWrites ?? 0) + 1
             }
           }
@@ -1418,15 +1745,6 @@ export class SessionTracker extends SessionRuntime {
     return jsonlPath.replace(/\.jsonl$/, '.title')
   }
 
-  private titleFromSidecar(jsonlPath: string): string | null {
-    try {
-      const text = fs.readFileSync(this.sidecarOf(jsonlPath), 'utf8').trim()
-      return text || null
-    } catch {
-      return null
-    }
-  }
-
   private recompute(t: Tracked): void {
     const byCanon = new Map<string, PreviewItem>()
     for (const [abs, acc] of t.candidates) {
@@ -1446,9 +1764,9 @@ export class SessionTracker extends SessionRuntime {
     }
     const files = capTouched([...byCanon.values()])
 
-    const sidecarTitle = t.info.jsonlPath ? this.titleFromSidecar(t.info.jsonlPath) : null
     t.info.title =
-      sidecarTitle ||
+      t.sidecarTitle ||
+      t.customTitle ||
       t.title ||
       (t.firstPrompt ? t.firstPrompt.slice(0, 60) : null) ||
       (t.commandArgsTitle ? t.commandArgsTitle.slice(0, 60) : null) ||
@@ -1471,13 +1789,21 @@ export class SessionTracker extends SessionRuntime {
     if (cached !== undefined) return cached
     // ADR-0025
     if (t.remote) return abs
-    try {
-      if (fs.statSync(abs).isFile()) {
-        const real = fs.realpathSync(abs)
-        t.fileCache.set(abs, real)
-        return real
-      }
-    } catch {}
+    if (!t.canonPending.has(abs)) {
+      t.canonPending.add(abs)
+      void this.resolveCanon(t, abs)
+    }
     return null
+  }
+
+  private async resolveCanon(t: Tracked, abs: string): Promise<void> {
+    let real: string | undefined
+    try {
+      if ((await fs.promises.stat(abs)).isFile()) real = await fs.promises.realpath(abs)
+    } catch {}
+    t.canonPending.delete(abs)
+    if (real === undefined || this.tracked.get(t.info.tabId) !== t) return
+    t.fileCache.set(abs, real)
+    this.recompute(t)
   }
 }

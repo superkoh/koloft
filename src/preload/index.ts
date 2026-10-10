@@ -22,11 +22,14 @@ import type {
   TerminalData,
   TerminalExit,
   TerminalCwd,
+  ScreenRequest,
   TerminalProcessTitle,
   LeftoverProcess,
   SessionInfo,
+  SessionSearchHits,
   SpawnedTab,
   CronState,
+  DiscordStatus,
   AttentionEvent,
   AccountView,
   LoginProgress,
@@ -55,6 +58,7 @@ const api: KoloftApi = {
   terminal: {
     create: (opts: CreateTabOptions) => ipcRenderer.invoke('terminal:create', opts),
     write: (id, data) => ipcRenderer.send('terminal:write', id, data),
+    paste: (id, text, typedAfter) => ipcRenderer.invoke('terminal:paste', id, text, typedAfter),
     ack: (id, utf16Units) => ipcRenderer.send('terminal:ack', id, utf16Units),
     attach: (id) => ipcRenderer.send('terminal:attach', id),
     flowStats: () => ipcRenderer.invoke('terminal:flowStats'),
@@ -84,7 +88,13 @@ const api: KoloftApi = {
       const handler = (_e: unknown, t: SpawnedTab): void => cb(t)
       ipcRenderer.on('terminal:spawned', handler)
       return () => ipcRenderer.removeListener('terminal:spawned', handler)
-    }
+    },
+    onScreenRequest: (cb) => {
+      const handler = (_e: unknown, r: ScreenRequest): void => cb(r)
+      ipcRenderer.on('terminal:screen', handler)
+      return () => ipcRenderer.removeListener('terminal:screen', handler)
+    },
+    answerScreen: (a) => ipcRenderer.send('terminal:screen-done', a)
   },
   workbench: {
     get: (sessionId) => ipcRenderer.invoke('workbench:get', sessionId),
@@ -101,6 +111,11 @@ const api: KoloftApi = {
       const handler = (_e: unknown, tabId: string): void => cb(tabId)
       ipcRenderer.on('tab:killedByMain', handler)
       return () => ipcRenderer.removeListener('tab:killedByMain', handler)
+    },
+    onSlept: (cb) => {
+      const handler = (_e: unknown, tabId: string): void => cb(tabId)
+      ipcRenderer.on('tab:slept', handler)
+      return () => ipcRenderer.removeListener('tab:slept', handler)
     }
   },
   sessions: {
@@ -129,7 +144,13 @@ const api: KoloftApi = {
       ipcRenderer.on('sessions:leftovers', handler)
       return () => ipcRenderer.removeListener('sessions:leftovers', handler)
     },
-    stopLeftover: (sessionId, pid) => ipcRenderer.invoke('sessions:stopLeftover', sessionId, pid)
+    stopLeftover: (sessionId, pid) => ipcRenderer.invoke('sessions:stopLeftover', sessionId, pid),
+    search: (searchId, term) => ipcRenderer.send('sessions:search', searchId, term),
+    onSearchHits: (cb) => {
+      const handler = (_e: unknown, found: SessionSearchHits): void => cb(found)
+      ipcRenderer.on('sessions:search-hits', handler)
+      return () => ipcRenderer.removeListener('sessions:search-hits', handler)
+    }
   },
   cron: {
     list: () => ipcRenderer.invoke('cron:list'),
@@ -149,6 +170,25 @@ const api: KoloftApi = {
       ipcRenderer.on('cron:toast', handler)
       return () => ipcRenderer.removeListener('cron:toast', handler)
     }
+  },
+  conductors: {
+    save: (input) => ipcRenderer.invoke('conductors:save', input),
+    unbind: (id) => ipcRenderer.invoke('conductors:unbind', id),
+    switchBackend: (id) => ipcRenderer.invoke('conductors:switchBackend', id),
+    open: (id) => ipcRenderer.invoke('conductors:open', id),
+    startFresh: (id) => ipcRenderer.invoke('conductors:startFresh', id)
+  },
+  discord: {
+    setToken: (token) => ipcRenderer.invoke('discord:setToken', token),
+    status: () => ipcRenderer.invoke('discord:status'),
+    onStatus: (cb) => {
+      const handler = (_e: unknown, s: DiscordStatus): void => cb(s)
+      ipcRenderer.on('discord:status', handler)
+      return () => ipcRenderer.removeListener('discord:status', handler)
+    },
+    pair: (isMe) => ipcRenderer.invoke('discord:pair', isMe),
+    forgetOwner: () => ipcRenderer.invoke('discord:forgetOwner'),
+    channels: () => ipcRenderer.invoke('discord:channels')
   },
   attention: {
     list: () => ipcRenderer.invoke('attention:list'),
@@ -251,6 +291,8 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener('browser:overlay-open', handler)
     },
     setOverlayGuest: (guestId, on) => ipcRenderer.send('browser:overlay-guest', guestId, on),
+    setGuestOwner: (guestId, ownerTabId) =>
+      ipcRenderer.send('browser:guest-owner', guestId, ownerTabId),
     reportStrip: (sessionId, targets) => ipcRenderer.send('browser:strip', sessionId, targets),
     onCdpOp: (cb) => {
       const handler = (_e: unknown, op: BrowserCdpOp): void => cb(op)
@@ -331,7 +373,13 @@ const api: KoloftApi = {
       const handler = (_e: unknown, root: string, info: GithubInfo): void => cb(root, info)
       ipcRenderer.on('github:info', handler)
       return () => ipcRenderer.removeListener('github:info', handler)
-    }
+    },
+    checks: (root, pr) => ipcRenderer.invoke('github:checks', root, pr),
+    failingChecksText: (root, pr) => ipcRenderer.invoke('github:failing-checks-text', root, pr),
+    commit: (root, message) => ipcRenderer.invoke('github:commit', root, message),
+    push: (root) => ipcRenderer.invoke('github:push', root),
+    openItems: (root) => ipcRenderer.invoke('github:open-items', root),
+    prWorktree: (root, pr, branch) => ipcRenderer.invoke('github:pr-worktree', root, pr, branch)
   },
   workspace: {
     pickFolder: () => ipcRenderer.invoke('workspace:pickFolder'),
@@ -367,6 +415,8 @@ const api: KoloftApi = {
     remove: (name, kind) => ipcRenderer.invoke('accounts:remove', name, kind),
     toggle: (name, kind, enabled) => ipcRenderer.invoke('accounts:toggle', name, kind, enabled),
     probe: () => ipcRenderer.invoke('accounts:probe'),
+    bypassAccepted: () => ipcRenderer.invoke('accounts:bypass-accepted'),
+    acceptBypass: () => ipcRenderer.invoke('accounts:accept-bypass'),
     startLogin: (name, reauth) => ipcRenderer.invoke('accounts:start-login', name, reauth),
     cancelLogin: () => ipcRenderer.send('accounts:cancel-login'),
     codexSignIn: (name, again) => ipcRenderer.invoke('accounts:codex-sign-in', name, again),
@@ -461,6 +511,11 @@ const api: KoloftApi = {
       ipcRenderer.on('shortcut:open-settings', handler)
       return () => ipcRenderer.removeListener('shortcut:open-settings', handler)
     },
+    onCommandPalette: (cb) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('shortcut:command-palette', handler)
+      return () => ipcRenderer.removeListener('shortcut:command-palette', handler)
+    },
     onRestartSession: (cb) => {
       const handler = (): void => cb()
       ipcRenderer.on('shortcut:restart-session', handler)
@@ -480,6 +535,11 @@ const api: KoloftApi = {
       const handler = (): void => cb()
       ipcRenderer.on('shortcut:find-files', handler)
       return () => ipcRenderer.removeListener('shortcut:find-files', handler)
+    },
+    onSearchSessions: (cb) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('shortcut:search-sessions', handler)
+      return () => ipcRenderer.removeListener('shortcut:search-sessions', handler)
     },
     onWorkbenchShortcut: (cb) => {
       const handler = (_e: unknown, cmd: WorkbenchShortcut): void => cb(cmd)

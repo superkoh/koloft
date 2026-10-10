@@ -2,8 +2,9 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { resolveCodexRuntime } from '../../src/main/codexRuntime'
+import { codexTooOld, resolveCodexRuntime } from '../../src/main/codexRuntime'
 import { PtyManager } from '../../src/main/ptyManager'
+import { MIN_CODEX_VERSION } from '../../src/main/cliMinimums'
 
 const fake = vi.hoisted(() => ({ spawn: vi.fn() }))
 vi.mock('node-pty', () => ({ spawn: fake.spawn }))
@@ -17,7 +18,9 @@ beforeEach(() => {
   const bin = path.join(directory, 'bin')
   fs.mkdirSync(bin)
   binary = path.join(bin, 'codex')
-  fs.writeFileSync(binary, '#!/bin/sh\nprintf "codex-cli 0.153.4\\n"\n', { mode: 0o700 })
+  fs.writeFileSync(binary, `#!/bin/sh\nprintf "codex-cli ${MIN_CODEX_VERSION}\\n"\n`, {
+    mode: 0o700
+  })
   environment = {
     PATH: '/usr/bin:/bin',
     SHELL: '/bin/zsh',
@@ -46,7 +49,7 @@ describe('Codex shell runtime', () => {
   it('loads login and interactive configuration while excluding profile noise and runtime markers', async () => {
     const runtime = await resolveCodexRuntime({ env: environment })
     expect(runtime.binary).toBe(binary)
-    expect(runtime.version).toBe('0.153.4')
+    expect(runtime.version).toBe(MIN_CODEX_VERSION)
     expect(runtime.env.CODEX_HOME).toBe(path.join(directory, 'codex home'))
     expect(runtime.env.OPENAI_API_KEY).toBe('profile-fixture-key')
     expect(runtime.env.CODEX_CUSTOM_OPTION).toBe('normal-config')
@@ -96,22 +99,19 @@ describe('Codex shell runtime', () => {
   })
 
   it.each([
-    { printed: '0.153.3', runs: false, verified: false },
-    { printed: '0.153.4', runs: true, verified: true },
-    { printed: '0.154.0', runs: true, verified: false }
-  ])('runs Codex $printed: $runs (verified $verified)', async ({ printed, runs, verified }) => {
-    fs.writeFileSync(binary, `#!/bin/sh\nprintf "codex-cli ${printed}\\n"\n`, { mode: 0o700 })
-    if (!runs) {
-      await expect(resolveCodexRuntime({ env: environment })).rejects.toThrow(
-        'Codex CLI 0.153.4 or newer'
-      )
-      return
+    { printed: '0.160.9', tooOld: true, verified: false },
+    { printed: '0.161.0', tooOld: false, verified: true },
+    { printed: '0.161.3', tooOld: false, verified: true },
+    { printed: '0.162.0', tooOld: false, verified: false }
+  ])(
+    'reads Codex $printed: too old $tooOld (verified $verified)',
+    async ({ printed, tooOld, verified }) => {
+      fs.writeFileSync(binary, `#!/bin/sh\nprintf "codex-cli ${printed}\\n"\n`, { mode: 0o700 })
+      const runtime = await resolveCodexRuntime({ env: environment })
+      expect(runtime).toMatchObject({ version: printed, verified })
+      expect(codexTooOld(runtime)).toBe(tooOld)
     }
-    await expect(resolveCodexRuntime({ env: environment })).resolves.toMatchObject({
-      version: printed,
-      verified
-    })
-  })
+  )
 
   it('passes the same resolved user configuration to the native PTY without Claude integration', async () => {
     const runtime = await resolveCodexRuntime({ env: environment })
@@ -121,7 +121,6 @@ describe('Codex shell runtime', () => {
     manager.pickDir = '/must-not-pick'
     manager.cdpDir = '/must-not-browse'
     manager.makeHookSettings = vi.fn(() => '/must-not-hook')
-    manager.multiAccountOn = vi.fn(() => true)
     manager.create({
       kind: 'codex',
       cwd: directory,
@@ -139,6 +138,5 @@ describe('Codex shell runtime', () => {
     expect(Object.keys(options.env).some((key) => key.startsWith('KOLOFT_'))).toBe(false)
     expect(options.env.CODEX_THREAD_ID).toBeUndefined()
     expect(manager.makeHookSettings).not.toHaveBeenCalled()
-    expect(manager.multiAccountOn).not.toHaveBeenCalled()
   })
 })

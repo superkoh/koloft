@@ -7,6 +7,7 @@ const readline = require('readline')
 const LIVE_EXECPATH_DIFFERING_FROM_TRANSCRIPT_VERSION = '/fake/versions/8.8.8'
 const TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE = '9.9.9-fake'
 const PRICED_MODEL_ID = 'claude-opus-4-8'
+const VERSION_ABOVE_ANY_MINIMUM = '99.0.0'
 
 const FULL_LENGTH_108_CHAR_SETUP_TOKEN =
   'sk-ant-oat01-A1b2C3d4E5f6G7h8I9j0A1b2C3d4E5f6G7h8I9j0A1b2C3d4E5f6G7h8I9j0A1b2C3d4E5f6G7h8I9j0K1L2M3N4O5P6Q7R'
@@ -21,6 +22,24 @@ const firstPrompt = dashDashAt >= 0 ? rawArgv.slice(dashDashAt + 1).join(' ') : 
 const argVal = (flag) => {
   const i = argv.indexOf(flag)
   return i >= 0 ? argv[i + 1] : undefined
+}
+
+// CC§16
+if (argv[0] === '--version') {
+  process.stdout.write(`${VERSION_ABOVE_ANY_MINIMUM} (Claude Code)\n`)
+  process.exit(0)
+}
+
+// CC§9
+const typedInATerminal = require('tty').isatty(0) && require('tty').isatty(1)
+if (argv[0] === '-p' && !typedInATerminal) {
+  const promptArg = argv[1] && !argv[1].startsWith('-') ? argv[1] : ''
+  const task = (require('tty').isatty(0) ? promptArg : fs.readFileSync(0, 'utf8'))
+    .split('Task:\n')
+    .pop()
+  const firstLine = task.split('\n').find((l) => l.trim()) ?? ''
+  process.stdout.write(`${firstLine.trim()} (titled)\n`)
+  process.exit(0)
 }
 
 // CC§7
@@ -41,6 +60,13 @@ if (argv[0] === 'setup-token') {
   )
   process.exit(0)
 }
+
+// PLATFORM§29
+const stdioOpenedBeforeTheSighupHandlerSoAHungUpPtyStillKillsUs = [
+  process.stdin,
+  process.stdout,
+  process.stderr
+]
 
 let sessionId = argVal('--session-id') || argVal('--resume') || require('crypto').randomUUID()
 const settingsPath = argVal('--settings')
@@ -65,7 +91,8 @@ function writeCallLog(effCwd) {
         apiKey: process.env.ANTHROPIC_API_KEY || null,
         cdpEndpoint: process.env.KOLOFT_BROWSER_CDP || null,
         playwrightMcpEndpoint: process.env.PLAYWRIGHT_MCP_CDP_ENDPOINT || null,
-        playwrightCliSession: process.env.PLAYWRIGHT_CLI_SESSION || null
+        playwrightCliSession: process.env.PLAYWRIGHT_CLI_SESSION || null,
+        portOffset: process.env.KOLOFT_PORT_OFFSET || null
       }) + '\n'
     )
   } catch {}
@@ -174,6 +201,14 @@ function delayMs() {
   return Number(process.env.KOLOFT_FAKE_START_DELAY_MS || 0) || 0
 }
 
+function reportedBackgroundMs() {
+  try {
+    const v = fs.readFileSync(path.join(home, 'fake-claude-bg-ms'), 'utf8').trim()
+    if (v) return Number(v) || SECOND_STOP_AFTER_MS_OUTLASTING_A_MISSED_WATCH_POLL
+  } catch {}
+  return SECOND_STOP_AFTER_MS_OUTLASTING_A_MISSED_WATCH_POLL
+}
+
 function nextFreshLaunchTitleFromFile() {
   if (argVal('--resume')) return null
   const f = path.join(home, 'fake-claude-next-title')
@@ -224,21 +259,26 @@ const EVENT_KEY = {
   end: 'SessionEnd',
   prompt: 'UserPromptSubmit',
   stop: 'Stop',
-  notify: 'Notification'
+  notify: 'Notification',
+  ask: 'PermissionRequest',
+  compacting: 'PreCompact'
 }
 function fireHook(event, payload) {
   const cmd = hooks?.[EVENT_KEY[event]]?.[0]?.hooks?.[0]?.command
-  if (!cmd) return
+  if (!cmd) return ''
   // CC§1
   const body = 'session_id' in payload ? payload : { ...payload, session_id: sessionId }
   try {
-    cp.execSync(cmd, {
+    return cp.execSync(cmd, {
       input: JSON.stringify(body),
-      stdio: ['pipe', 'ignore', 'ignore'],
+      stdio: ['pipe', 'pipe', 'ignore'],
+      encoding: 'utf8',
       // CC§1
       env: { ...process.env, CLAUDE_CODE_EXECPATH: LIVE_EXECPATH_DIFFERING_FROM_TRANSCRIPT_VERSION }
     })
-  } catch {}
+  } catch {
+    return ''
+  }
 }
 
 function append(lines) {
@@ -390,6 +430,14 @@ function startupTurn() {
     hook_event_name: 'SessionStart',
     source: 'startup'
   })
+  // CC§9
+  const launchName = argVal('--name')
+  if (launchName && !resumeId) {
+    append([
+      { type: 'custom-title', customTitle: launchName, sessionId },
+      { type: 'agent-name', agentName: launchName, sessionId }
+    ])
+  }
   if (wtName) appendWorktreeState()
 
   // ADR-0020
@@ -441,7 +489,27 @@ if (startDelay > 0) {
   startupTurn()
 }
 
+let waitingHook = null
+// CC§14
+function fireWaitingHook(event, payload) {
+  const cmd = hooks?.[EVENT_KEY[event]]?.[0]?.hooks?.[0]?.command
+  if (!cmd) return Promise.resolve('')
+  return new Promise((resolve) => {
+    const child = cp.spawn('/bin/sh', ['-c', cmd], { stdio: ['pipe', 'pipe', 'ignore'] })
+    waitingHook = child
+    let out = ''
+    child.stdout.on('data', (c) => (out += c))
+    child.on('error', () => resolve(''))
+    child.on('close', () => {
+      waitingHook = null
+      resolve(out)
+    })
+    child.stdin.end(JSON.stringify({ ...payload, session_id: sessionId }))
+  })
+}
+
 function shutdown(reason) {
+  waitingHook?.kill('SIGTERM')
   fireHook('end', { session_id: sessionId, transcript_path: transcript, cwd, reason })
   process.exit(0)
 }
@@ -450,9 +518,29 @@ function dirtyCount() {
   return git('status --porcelain', cwd).split('\n').filter(Boolean).length
 }
 
-function removeWorktree() {
-  git(`worktree remove --force ${JSON.stringify(cwd)}`, launchCwd)
-  git(`branch -D ${JSON.stringify('worktree-' + wtName)}`, launchCwd)
+function removalMs() {
+  try {
+    return Number(fs.readFileSync(path.join(home, 'fake-claude-remove-ms'), 'utf8').trim()) || 0
+  } catch {
+    return 0
+  }
+}
+
+// CC§4
+function removeWorktree(then) {
+  process.stdout.write('\x1b]0;\x07Removing worktree…\r\n')
+  setTimeout(() => {
+    if (fs.existsSync(path.join(home, 'fake-claude-remove-fails'))) {
+      process.stdout.write(
+        `Could not finish removing the worktree at ${cwd}; it may be partly deleted. Delete the folder if you no longer need it.\r\n`
+      )
+      return then()
+    }
+    git(`worktree remove --force ${JSON.stringify(cwd)}`, launchCwd)
+    git(`branch -D ${JSON.stringify('worktree-' + wtName)}`, launchCwd)
+    process.stdout.write('Worktree removed.\r\n')
+    then()
+  }, removalMs())
 }
 
 let worktreeChoicePending = false
@@ -460,10 +548,7 @@ let worktreeChoicePending = false
 function exitSession() {
   if (!wtName) return shutdown('prompt_input_exit')
   const dirty = dirtyCount()
-  if (!dirty) {
-    removeWorktree()
-    return shutdown('prompt_input_exit')
-  }
+  if (!dirty) return removeWorktree(() => shutdown('prompt_input_exit'))
   worktreeChoicePending = true
   process.stdout.write(
     `\r\nExiting worktree session\r\n` +
@@ -488,15 +573,110 @@ function openEnvRoutingPastShimToRecordingFakeOpen() {
   return { ...process.env, PATH }
 }
 
-const rl = readline.createInterface({ input: process.stdin })
-rl.on('line', handleLine)
+// CC§11
+const peerSocket = path.join(require('os').tmpdir(), `kfc-${process.pid}.sock`)
+const peerEntry = path.join(home, '.claude', 'sessions', `${process.pid}.json`)
+function registerPeer() {
+  const procStart = cp
+    .execFileSync('ps', ['-o', 'lstart=', '-p', String(process.pid)], {
+      env: { ...process.env, TZ: 'UTC' }
+    })
+    .toString()
+    .trim()
+  const name = argVal('--name')
+  fs.mkdirSync(path.dirname(peerEntry), { recursive: true })
+  fs.writeFileSync(
+    peerEntry,
+    JSON.stringify({
+      pid: process.pid,
+      sessionId,
+      procStart,
+      messagingSocketPath: peerSocket,
+      ...(name ? { name } : {})
+    })
+  )
+}
+// CC§13
+function peerTurn(content) {
+  fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
+  append([
+    {
+      type: 'user',
+      isMeta: true,
+      origin: { kind: 'peer', from: 'unknown' },
+      message: {
+        role: 'user',
+        content: `Another Claude session sent a message:\n${content}\n\nThis came from another Claude session — not typed by your user.`
+      },
+      cwd
+    },
+    {
+      type: 'assistant',
+      timestamp: new Date().toISOString(),
+      message: { role: 'assistant', content: [{ type: 'text', text: `Peer said: ${content}` }] },
+      cwd
+    }
+  ])
+  fireHook('stop', { hook_event_name: 'Stop' })
+  process.stdout.write('[fake-claude] took a peer message\r\n> ')
+}
+fs.rmSync(peerSocket, { force: true })
+require('net')
+  .createServer((c) => {
+    let got = ''
+    c.on('data', (b) => (got += b))
+    c.on('end', () => {
+      c.end()
+      fs.appendFileSync(path.join(home, 'fake-claude-peer.jsonl'), got)
+      for (const line of got.split('\n').filter(Boolean)) peerTurn(JSON.parse(line).message.content)
+    })
+  })
+  .listen(peerSocket, registerPeer)
+process.on('exit', () => {
+  fs.rmSync(peerEntry, { force: true })
+  fs.rmSync(peerSocket, { force: true })
+})
+
+const NOTIFICATION_TRAILS_AN_UNANSWERED_DIALOG_MS = 6000
+const typedLines = new (require('stream').PassThrough)()
+let dialogKey = null
+const ESC = /\x1b/g
+process.stdin.on('data', (chunk) =>
+  dialogKey ? dialogKey(String(chunk)) : typedLines.write(chunk)
+)
+process.stdin.on('end', () => typedLines.end())
+// CC§14
+function keyOnTheDialog() {
+  return new Promise((resolve) => {
+    if (process.stdin.isTTY) process.stdin.setRawMode(true)
+    dialogKey = (key) => {
+      dialogKey = null
+      if (process.stdin.isTTY) process.stdin.setRawMode(false)
+      resolve(key)
+    }
+  })
+}
+const rl = readline.createInterface({ input: typedLines })
+const PASTE_START = '\x1b[200~'
+const PASTE_END = '\x1b[201~'
+let pasted = null
+// CC§18
+rl.on('line', (line) => {
+  if (pasted === null && !line.includes(PASTE_START)) return handleLine(line)
+  pasted = pasted === null ? line.replace(PASTE_START, '') : pasted + '\n' + line
+  if (!pasted.includes(PASTE_END)) return
+  const whole = pasted.replace(PASTE_END, '')
+  pasted = null
+  handleLine(whole)
+})
 function handleLine(line) {
-  const text = line.trim()
+  const text = line.replace(ESC, '').trim()
   if (worktreeChoicePending) {
     // CC§4
-    if (text === '2') removeWorktree()
+    if (text === '2') return removeWorktree(() => shutdown('prompt_input_exit'))
     return shutdown('prompt_input_exit')
   }
+  if (text.startsWith('[Discord] ')) return handleLine(`/answer ${text}`)
   if (text === '/exit' || text === 'exit' || text === '/quit') return exitSession()
   // CC§1 CC§2
   if (text === '/clear') {
@@ -504,6 +684,7 @@ function handleLine(line) {
     sessionId = require('crypto').randomUUID()
     transcript = path.join(projDir, sessionId + '.jsonl')
     fs.writeFileSync(transcript, '')
+    registerPeer()
     fireHook('start', {
       session_id: sessionId,
       transcript_path: transcript,
@@ -580,6 +761,7 @@ function handleLine(line) {
   }
   // CC§1
   if (text === '/compact') {
+    fireHook('compacting', { hook_event_name: 'PreCompact', trigger: 'manual' })
     fireHook('end', { session_id: sessionId, transcript_path: transcript, cwd, reason: 'other' })
     fireHook('start', {
       session_id: sessionId,
@@ -588,7 +770,46 @@ function handleLine(line) {
       hook_event_name: 'SessionStart',
       source: 'compact'
     })
+    append([
+      { type: 'user', message: { role: 'user', content: '/compact' }, cwd },
+      {
+        type: 'user',
+        isCompactSummary: true,
+        isVisibleInTranscriptOnly: true,
+        message: {
+          role: 'user',
+          content: 'This session is being continued from a previous conversation.'
+        },
+        cwd
+      },
+      {
+        type: 'system',
+        subtype: 'local_command',
+        content:
+          '<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>',
+        cwd
+      }
+    ])
     process.stdout.write(`\r\n[fake-claude] compacted -> session ${sessionId}\r\n> `)
+    return
+  }
+  // CC§2
+  if (text === '/context') {
+    append([
+      {
+        type: 'system',
+        subtype: 'local_command',
+        content: '<local-command-stdout>Context Usage 14%</local-command-stdout>',
+        cwd
+      },
+      {
+        type: 'user',
+        isMeta: true,
+        message: { role: 'user', content: '## Context Usage\n\n**Tokens:** 28.5k / 200k (14%)' },
+        cwd
+      }
+    ])
+    process.stdout.write('\r\n[fake-claude] context shown\r\n> ')
     return
   }
   // CC§1
@@ -750,7 +971,7 @@ function handleLine(line) {
       ])
       fireHook('stop', { hook_event_name: 'Stop', background_tasks: [] })
       process.stdout.write('[fake-claude] bg-reported finished\r\n> ')
-    }, SECOND_STOP_AFTER_MS_OUTLASTING_A_MISSED_WATCH_POLL)
+    }, reportedBackgroundMs())
     process.stdout.write('[fake-claude] bg-reported running\r\n> ')
     return
   }
@@ -1011,6 +1232,131 @@ function handleLine(line) {
     }, 250)
     return
   }
+  if (text.startsWith('/answer ')) {
+    const question = text.slice('/answer '.length)
+    fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
+    append([
+      { type: 'user', message: { role: 'user', content: question }, cwd },
+      {
+        type: 'assistant',
+        timestamp: new Date().toISOString(),
+        message: { role: 'assistant', content: [{ type: 'text', text: `Answer to: ${question}` }] },
+        cwd
+      }
+    ])
+    fireHook('stop', { hook_event_name: 'Stop' })
+    process.stdout.write(`[fake-claude] answered: ${question}\r\n> `)
+    return
+  }
+  if (text.startsWith('/long ')) {
+    const lines = Number(text.slice('/long '.length)) || 1
+    fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
+    const reply = Array.from({ length: lines }, (_, i) => `line ${i + 1}`).join('\n')
+    append([
+      { type: 'user', message: { role: 'user', content: text }, cwd },
+      {
+        type: 'assistant',
+        timestamp: new Date().toISOString(),
+        message: { role: 'assistant', content: [{ type: 'text', text: reply }] },
+        cwd
+      }
+    ])
+    fireHook('stop', { hook_event_name: 'Stop' })
+    process.stdout.write(`[fake-claude] wrote ${lines} lines\r\n> `)
+    return
+  }
+  // CC§14
+  const ask = async (name, input, allowed, keyed) => {
+    const toolUseId = `toolu_ask_${Date.now()}`
+    fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
+    append([
+      { type: 'user', message: { role: 'user', content: text }, cwd },
+      {
+        type: 'assistant',
+        timestamp: new Date().toISOString(),
+        message: {
+          role: 'assistant',
+          content: [{ type: 'tool_use', id: toolUseId, name, input }]
+        },
+        cwd
+      }
+    ])
+    process.stdout.write(`[fake-claude] asking: ${name}\r\n`)
+    const out = await fireWaitingHook('ask', {
+      hook_event_name: 'PermissionRequest',
+      tool_name: name,
+      tool_input: input
+    })
+    let decision = {}
+    try {
+      decision = JSON.parse(out).hookSpecificOutput.decision
+    } catch {}
+    let picked
+    if (decision.behavior === 'allow') picked = allowed(decision.updatedInput)
+    else if (decision.behavior === 'deny') picked = `Denied: ${decision.message}`
+    else {
+      const key = keyOnTheDialog()
+      process.stdout.write('[fake-claude] dialog on screen: press a key\r\n')
+      // CC§14
+      setTimeout(() => {
+        if (dialogKey)
+          fireHook('notify', {
+            hook_event_name: 'Notification',
+            message: `Claude needs your permission to use ${name}`
+          })
+      }, NOTIFICATION_TRAILS_AN_UNANSWERED_DIALOG_MS)
+      picked = keyed(await key)
+    }
+    append([
+      {
+        type: 'user',
+        timestamp: new Date().toISOString(),
+        message: {
+          role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: toolUseId, content: picked }]
+        },
+        cwd
+      },
+      {
+        type: 'assistant',
+        timestamp: new Date().toISOString(),
+        message: { role: 'assistant', content: [{ type: 'text', text: picked }] },
+        cwd
+      }
+    ])
+    fireHook('stop', { hook_event_name: 'Stop' })
+    process.stdout.write(`[fake-claude] ${picked}\r\n> `)
+  }
+  if (text.startsWith('/ask ')) {
+    const [question, ...labels] = text.slice('/ask '.length).split('|')
+    const input = {
+      questions: [
+        {
+          question,
+          header: 'Pick',
+          options: labels.map((label) => ({ label, description: `The ${label} one` })),
+          multiSelect: false
+        }
+      ]
+    }
+    const pickedText = (answer) => `Picked: ${answer}`
+    return ask(
+      'AskUserQuestion',
+      input,
+      (updated) => pickedText(Object.values(updated.answers).join(', ')),
+      (key) => pickedText(labels[Number(key) - 1] ?? key)
+    )
+  }
+  if (text.startsWith('/bash ')) {
+    const command = text.slice('/bash '.length)
+    const ran = `Ran: ${command}`
+    return ask(
+      'Bash',
+      { command, description: 'A command' },
+      () => ran,
+      (key) => (key === '1' ? ran : `Denied: key ${JSON.stringify(key)}`)
+    )
+  }
   if (text === '/need-approval') {
     fireHook('notify', {
       hook_event_name: 'Notification',
@@ -1044,8 +1390,13 @@ function handleLine(line) {
 }
 // CC§1
 rl.on('close', () => shutdown('other'))
-process.on('SIGTERM', () => shutdown('other'))
-process.on('SIGHUP', () => shutdown('other'))
+// CC§12
+function shutdownBySignal() {
+  process.stdout.write(`\r\nResume this session with:\r\nclaude --resume ${sessionId}\r\n`)
+  shutdown('other')
+}
+process.on('SIGTERM', shutdownBySignal)
+process.on('SIGHUP', shutdownBySignal)
 process.on('SIGWINCH', () => {
   process.stdout.write(`[fake-claude] winch ${process.stdout.columns}x${process.stdout.rows}\r\n> `)
 })

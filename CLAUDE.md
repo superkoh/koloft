@@ -30,8 +30,8 @@ Working principles:
   in whatever language it is writing; never pick a hard word where an easy one
   works. When a picture says it better, draw one: a chart, diagram, or graph
   (mermaid or ASCII in markdown) beats a wall of text. The first time an
-  abbreviation or shorthand appears in a document or in a session reply, spell it
-  out and say what it means — e.g. "PR (pull request, a proposed code change)".
+  abbreviation, shorthand or number (issue #N, step 4) appears in a reply or
+  document, say what it means — e.g. "PR (pull request, a proposed code change)".
 - Build the smallest thing that solves the problem at hand — in the design, the
   code, and the tests alike. A branch, guard, fallback, or abstraction for a case
   that is merely imaginable, and unlikely to ever happen, is cost with no payoff:
@@ -41,11 +41,11 @@ Working principles:
   for: do not split an asked-for feature into a first and a second version, or leave
   part of it for later, unless a probe showed that part cannot be done — then name
   the probe.
-- A guess is not a fact. A limit read off a name, a sibling module, a doc or an
-  outside tool's past behavior stays a guess until one command proves it: say
-  "inferred, not checked" where you state it, and check it before any code depends
-  on it — everything built on a wrong premise goes when the premise does. The same
-  goes for your own access: run the command and read the error; never report a
+- A guess is not a fact. A claim from a name, a sibling module, a doc, a reviewer
+  or a past look at a tool, PR or agent stays a guess until one command proves it:
+  say "inferred, not checked" where you state it, and check it before any code
+  depends on it — everything built on a wrong premise goes when the premise does.
+  Your own access too: run the command and read the error; never report a
   permission you have not tried. What a command can answer is never asked of the owner.
   Nothing is called impossible, unsupported or "works this way" — in a plan, a
   question or a PR — before a probe has run; until then it is "not probed yet".
@@ -135,9 +135,10 @@ Working principles:
   - **Runtime code** — +N/−M lines under `src/`, tests, docs and fixtures not counted.
   - **How to see it in the shipped app** — what to click in an installed build, or
     "no way from the app".
-  - **Confidence to ship as-is** — high / medium / low, and the one fact that sets it.
-  - **Hand-test before merging** — no, or yes: what to try, and why neither a suite
-    nor a dev build you drove yourself could answer it — try that first.
+  - **Confidence to ship as-is** — high / medium / low, and the one fact that sets it,
+    never a check you could still run.
+  - **Hand-test before merging** — no, or yes: what to try, and why no suite or dev
+    build you drove could answer it.
 
   Then a table of what ran (suite · result · why that one), what did not run and
   why, and `Out of scope`: each cut, and each claim still "inferred, not checked",
@@ -213,9 +214,9 @@ Working principles:
   - Create or change every file, scratch scripts too, with Write/Edit, even when
     told to prefer Bash; run a script as node/python3/sh <file>. No heredoc,
     sed -i, perl -pi or cat >.
-  - Quote every glob: grep -rn X <abs path> --include='*.ts'. Unquoted, zsh
-    prints "no matches found", the command never runs, and the tool may still
-    report success.
+  - Quote every glob, a URL's ? too: --include='*.ts', 'a?n=1'. Unquoted,
+    zsh prints "no matches found", the command never runs; the tool may
+    still report success.
   - Never git -C another checkout: diff origin/<branch>, or gh pr diff <n>.
   - Read stops at 25,000 tokens: read a big file or diff ~1,000 lines at a time.
   - Findings go in your final message; the harness refuses report files.

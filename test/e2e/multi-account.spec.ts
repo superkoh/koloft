@@ -3,9 +3,16 @@ import path from 'path'
 import http from 'http'
 import type { AddressInfo } from 'net'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
+import type { AccountView } from '../../src/shared/types'
 import { test, expect, launchApp } from './helpers/app'
-import { seedSettings, type E2EEnv } from './helpers/env'
-import { centerTerm, runIn, startSessionIn, waitBooted } from './helpers/p1'
+import {
+  seededAccount as acct,
+  seedNoClaudeAccountButStillSetUp,
+  seedSettings,
+  type E2EEnv
+} from './helpers/env'
+import { centerTerm, openMenu, startSessionIn, waitBooted } from './helpers/p1'
+import { SHIM_FOUND_NO_ACCOUNT_NOTICE } from '../../src/shared/accountUsage'
 
 const TOKENS: Record<string, string> = {
   alpha: 'sk-ant-oat01-fixture-alpha',
@@ -18,7 +25,6 @@ const UNPACKAGED_BUILD_OAUTH_SVC_SPELLED_OUT_NOT_IMPORTED = 'koloft-dev-claude-o
 const UNPACKAGED_BUILD_APIKEY_SVC_SPELLED_OUT_NOT_IMPORTED = 'koloft-dev-anthropic-api'
 const UNPACKAGED_BUILD_CUSTOM_SVC_SPELLED_OUT_NOT_IMPORTED = 'koloft-dev-custom-endpoint'
 
-const LET_THE_FIRST_SESSION_EXIT_MS = 800
 const COLD_STATUSLINE_RENDER_MS = 40_000
 const ROOM_FOR_A_WRONG_REFETCH_MS = 1_000
 
@@ -36,14 +42,9 @@ function seedKeychain(env: E2EEnv): void {
   )
 }
 
-function acct(name: string, kind: 'oauth' | 'apikey' = 'oauth'): Record<string, unknown> {
-  return { name, kind, enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }
-}
-
 function seedPool(env: E2EEnv, extra: Record<string, unknown> = {}): void {
   seedKeychain(env)
   seedSettings(env, {
-    multiAccount: true,
     accounts: [acct('alpha'), acct('bravo'), acct('charlie'), acct('api-main', 'apikey')],
     ...extra
   })
@@ -186,6 +187,11 @@ function scanForTokens(root: string, skip: (p: string) => boolean): string[] {
   return hits
 }
 
+async function claudeAccountList(page: Page): Promise<AccountView[]> {
+  const all = await page.evaluate(() => window.api.accounts.list())
+  return all.filter((a) => a.kind !== 'codex-home')
+}
+
 function claudeAccounts(page: Page): Locator {
   return page.locator('.acct-section').first()
 }
@@ -196,7 +202,8 @@ test('E1: settings CRUD — no launch-command field, only the verifiable add ent
   test.setTimeout(120_000)
   const mock = await startProbeMock()
   env.launchEnv.KOLOFT_PROBE_BASE_URL = mock.base
-  seedSettings(env, { claudeCommand: 'stale-wrapper', multiAccount: true })
+  seedSettings(env, { claudeCommand: 'stale-wrapper' })
+  seedNoClaudeAccountButStillSetUp(env)
   seedKeychain(env)
 
   let app = await launchApp(env)
@@ -226,8 +233,8 @@ test('E1: settings CRUD — no launch-command field, only the verifiable add ent
     await page.locator('.acct-add input[type="text"]').fill('bravo')
     await page.locator('.acct-add input[type="password"]').fill(TOKENS.bravo)
     await page.locator('.acct-add-actions button', { hasText: 'Verify and save' }).click()
-    await expect(page.locator('.acct-row')).toHaveCount(1, { timeout: 15_000 })
-    await expect(page.locator('.acct-name')).toHaveText('bravo')
+    await expect(claudeAccounts(page).locator('.acct-row')).toHaveCount(1, { timeout: 15_000 })
+    await expect(claudeAccounts(page).locator('.acct-name')).toHaveText('bravo')
     await expect(page.locator('.acct-badge.fable')).toBeVisible()
 
     await page.locator('.acct-row input[type="checkbox"]').first().uncheck()
@@ -255,9 +262,9 @@ test('E1: settings CRUD — no launch-command field, only the verifiable add ent
       timeout: 15_000
     })
 
-    await page.locator('.acct-x').click()
+    await claudeAccounts(page).locator('.acct-x').click()
     await page.locator('.acct-confirm button', { hasText: 'Delete' }).click()
-    await expect(page.locator('.acct-row')).toHaveCount(0)
+    await expect(claudeAccounts(page).locator('.acct-row')).toHaveCount(0)
     const kc2 = JSON.parse(fs.readFileSync(env.keychainFile, 'utf8'))
     expect(kc2[UNPACKAGED_BUILD_OAUTH_SVC_SPELLED_OUT_NOT_IMPORTED].bravo).toBeUndefined()
 
@@ -268,28 +275,24 @@ test('E1: settings CRUD — no launch-command field, only the verifiable add ent
   }
 })
 
-test('E2: mode off → no injection, no banner, no chip; a runtime toggle reaches the next launch', async ({
-  env,
-  page
+// ADR-0030
+test('E2: a session whose Koloft account cannot be read does not start, and says it lacked an account — it never runs on the login this Mac has', async ({
+  env
 }) => {
   test.setTimeout(120_000)
-  seedPool(env, { multiAccount: false })
-  await waitBooted(page)
-  await startSessionIn(page, 'ws-a')
-  const [first] = await waitForCalls(env, 1)
-  expect(first.oauthToken).toBeNull()
-  expect(first.apiKey).toBeNull()
-  const text = await visibleTerminalText(page)
-  expect(text).not.toContain('koloft: →')
-  await expect(page.locator('.ws-acct-chip')).toHaveCount(0)
-  await expect(page.locator('.island .acct-meter')).toHaveCount(0)
-
-  await page.evaluate(() => window.api.settings.set({ multiAccount: true }))
-  await runIn(page, centerTerm(page), '/exit')
-  await page.waitForTimeout(LET_THE_FIRST_SESSION_EXIT_MS)
-  await startSessionIn(page, 'ws-a')
-  const calls = await waitForCalls(env, 2)
-  expect(calls[1].oauthToken).not.toBeNull()
+  seedSettings(env, { accounts: [acct('ghost', 'apikey')] })
+  const { app, page } = await launchConfigured(env)
+  try {
+    await waitBooted(page)
+    await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+    await page.locator('.menu .mi', { hasText: 'New session' }).click()
+    await expect(page.locator('.toast')).toContainText(SHIM_FOUND_NO_ACCOUNT_NOTICE, {
+      timeout: 30_000
+    })
+    expect(readCalls(env)).toEqual([])
+  } finally {
+    await app.close().catch(() => {})
+  }
 })
 
 test('E3: picks the least-loaded account; the shim banner says so', async ({ env }) => {
@@ -724,7 +727,8 @@ test('E7: leak scan — no token bytes in the renderer, the scrollback or userDa
   }
 })
 
-test('E8: a token exported by the user’s shell rc (downstream of main’s env scrub) is used verbatim, with a warning', async ({
+// ADR-0030
+test('E8: a token exported by the user’s shell rc never stands in for a Koloft account — the shim drops it and picks from the pool', async ({
   env
 }) => {
   test.setTimeout(150_000)
@@ -741,8 +745,7 @@ test('E8: a token exported by the user’s shell rc (downstream of main’s env 
     await waitBooted(page)
     await startSessionIn(page, 'ws-a')
     const [call] = await waitForCalls(env, 1)
-    expect(call.oauthToken).toBe('zzz-wrapper-token')
-    await expect(centerTerm(page)).toContainText('skipping balancing', { timeout: 10_000 })
+    expect(Object.values(TOKENS)).toContain(call.oauthToken)
   } finally {
     await app.close().catch(() => {})
     await mock.close()
@@ -801,7 +804,6 @@ test('E11: an expired account recovers in place via “Sign in again”, keeping
     JSON.stringify({ [UNPACKAGED_BUILD_OAUTH_SVC_SPELLED_OUT_NOT_IMPORTED]: { bravo: 'stale' } })
   )
   seedSettings(env, {
-    multiAccount: true,
     accounts: [
       { ...acct('alpha'), enabled: true },
       {
@@ -858,7 +860,7 @@ test('E10: guided login captures the printed token (even wrapped at 80 columns) 
   const AUTH_URL = 'https://example.invalid/oauth/authorize?state=e10'
   env.launchEnv.KOLOFT_FAKE_SETUP_URL = AUTH_URL
   fs.writeFileSync(env.keychainFile, JSON.stringify({}))
-  seedSettings(env, { multiAccount: true, accounts: [] })
+  seedNoClaudeAccountButStillSetUp(env)
 
   const { app, page } = await launchConfigured(env)
   try {
@@ -873,18 +875,16 @@ test('E10: guided login captures the printed token (even wrapped at 80 columns) 
     await expect(claudeAccounts(page)).toBeVisible()
 
     await expect
-      .poll(
-        async () =>
-          (await page.evaluate(() => window.api.accounts.list())).map((a) => a.name).join(','),
-        { timeout: 45_000 }
-      )
+      .poll(async () => (await claudeAccountList(page)).map((a) => a.name).join(','), {
+        timeout: 45_000
+      })
       .toBe('bravo')
 
     const kc = JSON.parse(fs.readFileSync(env.keychainFile, 'utf8'))
     expect(kc[UNPACKAGED_BUILD_OAUTH_SVC_SPELLED_OUT_NOT_IMPORTED].bravo).toBe(
       TOKEN_LONG_ENOUGH_TO_WRAP_AT_80_COLUMNS
     )
-    const [acct] = await page.evaluate(() => window.api.accounts.list())
+    const [acct] = await claudeAccountList(page)
     expect(acct.status).toBe('ok')
     expect(acct.fable).toBe('yes')
 
@@ -913,7 +913,7 @@ test('guided login: a captured token the probe rejects as expired reports failur
   env.launchEnv.KOLOFT_PROBE_BASE_URL = mock.base
   env.launchEnv.KOLOFT_FAKE_SETUP_TOKEN = REJECTED_TOKEN
   fs.writeFileSync(env.keychainFile, JSON.stringify({}))
-  seedSettings(env, { multiAccount: true, accounts: [] })
+  seedNoClaudeAccountButStillSetUp(env)
 
   const { app, page } = await launchConfigured(env)
   try {
@@ -926,7 +926,7 @@ test('guided login: a captured token the probe rejects as expired reports failur
       timeout: 45_000
     })
     expect(mock.requests).toContain(REJECTED_TOKEN)
-    expect(await page.evaluate(() => window.api.accounts.list())).toEqual([])
+    expect(await claudeAccountList(page)).toEqual([])
     expect(fs.readFileSync(env.keychainFile, 'utf8')).not.toContain(REJECTED_TOKEN)
   } finally {
     await app.close().catch(() => {})
@@ -983,7 +983,6 @@ test('panel probe: a custom-endpoint account is probed with its own model, not t
     })
   )
   seedSettings(env, {
-    multiAccount: true,
     accounts: [
       {
         name: 'glm',

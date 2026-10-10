@@ -9,15 +9,50 @@ const ADOPTED_BY_LAUNCHD = 1
 const sessionOf = (commandWithEnv: string): string | undefined =>
   commandWithEnv.match(/(?:^|\s)CLAUDE_CODE_SESSION_ID=([0-9a-f-]{36})(?=\s|$)/m)?.[1]
 
-// CC§9 PLATFORM§3
-export async function scanLeftovers(
-  run: Exec = defaultExec
-): Promise<Record<string, LeftoverProcess[]>> {
+async function orphansByLaunchd(run: Exec): Promise<Map<number, string>> {
   const commandOf = new Map<number, string>()
   for (const line of (await run('ps', ['-Ao', 'pid=,ppid=,command='])).split('\n')) {
     const m = line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/)
     if (m && Number(m[2]) === ADOPTED_BY_LAUNCHD) commandOf.set(Number(m[1]), m[3])
   }
+  return commandOf
+}
+
+export function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+const WAIT_FOR_LEFTOVER_EXIT_MS = 3000
+const LEFTOVER_EXIT_POLL_MS = 100
+
+// CODEX§5
+export async function endCodexAppServersLeftByACrash(
+  marker: string,
+  run: Exec = defaultExec
+): Promise<void> {
+  const leftovers = [...(await orphansByLaunchd(run))]
+    .filter(([, command]) => command.includes('app-server --stdio') && command.includes(marker))
+    .map(([pid]) => pid)
+  for (const pid of leftovers) {
+    try {
+      process.kill(pid, 'SIGKILL')
+    } catch {}
+  }
+  const until = Date.now() + WAIT_FOR_LEFTOVER_EXIT_MS
+  while (leftovers.some(pidAlive) && Date.now() < until)
+    await new Promise((r) => setTimeout(r, LEFTOVER_EXIT_POLL_MS))
+}
+
+// CC§9 PLATFORM§3
+export async function scanLeftovers(
+  run: Exec = defaultExec
+): Promise<Record<string, LeftoverProcess[]>> {
+  const commandOf = await orphansByLaunchd(run)
   const out: Record<string, LeftoverProcess[]> = {}
   if (!commandOf.size) return out
   const withEnv = await run('ps', [

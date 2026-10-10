@@ -13,11 +13,14 @@ import {
   gitFileDiffFull
 } from '../gitStatus'
 import type { GithubLookup } from '../github'
+import { networkGit } from '../gitFreshness'
+import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
 import { resolveSpawnCwd } from '../projectInfo'
 import { leaveForOS, osOpenFallback } from '../osOpen'
 import { claudeArgv } from '../claudeArgs'
 import { acceptClaudeTrust, claudeJsonPath, claudeTrustsFolder } from '../claudeTrust'
-import { dirExistsSync } from '../resumePlan'
+import { dirExistsSync, worktreeNameAround } from '../resumePlan'
+import { portOffset } from '@shared/worktreeName'
 import { listSkills, type SkillFs } from '../skillList'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host } from './host'
 
@@ -35,10 +38,43 @@ const skillFs: SkillFs = {
 }
 
 const GIT_CALL_TIMEOUT_MS = 5000
-export function localGitOut(cwd: string, args: string[]): Promise<string | null> {
+export function localGitOut(
+  cwd: string,
+  args: string[],
+  timeoutMs = GIT_CALL_TIMEOUT_MS
+): Promise<string | null> {
   return new Promise((resolve) => {
-    execFile('git', ['-C', cwd, ...args], { timeout: GIT_CALL_TIMEOUT_MS }, (err, stdout) =>
+    execFile('git', ['-C', cwd, ...args], { timeout: timeoutMs }, (err, stdout) =>
       resolve(err ? null : stdout)
+    )
+  })
+}
+
+const GIT_DID_NOT_START = 127
+const GIT_FAILED = 1
+const networkStepsRunning = new Set<number>()
+
+export function localGitRun(cwd: string, args: string[], network = false): Promise<GitRunResult> {
+  if (network) {
+    return networkGit('git', cwd, args, GIT_STEP_TIMEOUT_MS, networkStepsRunning).then((r) => ({
+      code: r.ok ? 0 : r.timedOut ? null : r.enoent ? GIT_DID_NOT_START : GIT_FAILED,
+      stdout: r.stdout,
+      stderr: r.stderr
+    }))
+  }
+  return new Promise((resolve) => {
+    execFile(
+      'git',
+      ['-C', cwd, ...args],
+      { timeout: GIT_STEP_TIMEOUT_MS },
+      (err, stdout, stderr) => {
+        const code = err?.code
+        resolve({
+          code: !err ? 0 : err.killed ? null : typeof code === 'number' ? code : GIT_DID_NOT_START,
+          stdout: String(stdout),
+          stderr: String(stderr)
+        })
+      }
     )
   })
 }
@@ -54,16 +90,19 @@ async function launchClaude(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {
   if (!args.ok) return args
   const cwd = resolveSpawnCwd(spec.cwd ?? spec.root)
   const launchCommand = `exec ${args.argv.join(' ')}`
+  const worktree = spec.worktree ?? worktreeNameAround(cwd)
   return {
     ok: true,
     spawnCwd: cwd,
     cwd,
     launchCommand: () => launchCommand,
-    // CC§9
-    extraEnv:
-      spec.firstPrompt !== undefined
-        ? { KOLOFT_FIRST_PROMPT: spec.firstPrompt, KOLOFT_SESSION_NAME: spec.name ?? '' }
-        : undefined
+    extraEnv: {
+      // CC§9
+      ...(spec.firstPrompt !== undefined || spec.name
+        ? { KOLOFT_FIRST_PROMPT: spec.firstPrompt ?? '', KOLOFT_SESSION_NAME: spec.name ?? '' }
+        : {}),
+      ...(worktree ? { KOLOFT_PORT_OFFSET: String(portOffset(worktree)) } : {})
+    }
   }
 }
 
@@ -121,6 +160,7 @@ export function localHost(github: GithubLookup): Host {
     listSkills: async (root) => listSkills(skillFs, root, os.homedir()),
     keyed: (p) => p,
     gitOut: localGitOut,
+    gitRun: localGitRun,
     reveal: (p) => void leaveForOS(p, 'reveal'),
     osOpen: osOpenFallback,
     github
