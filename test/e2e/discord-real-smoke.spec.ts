@@ -3,7 +3,7 @@ import path from 'path'
 import { execFileSync } from 'child_process'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installGhForWorkspaceA, seedSettings, type E2EEnv } from './helpers/env'
+import { addCodexAccount, installGhForWorkspaceA, seedSettings, type E2EEnv } from './helpers/env'
 import { gitInit, seedJsonl, startSessionIn, terminalText, waitBooted, wsRows } from './helpers/p1'
 import { openerNow, startFakeDiscord, type FakeDiscord, type FakePost } from './helpers/fakeDiscord'
 import { BACKEND_LABEL } from '../../src/shared/sessionBackend'
@@ -100,6 +100,7 @@ function useRealCodex(env: E2EEnv): void {
   const home = path.join(env.home, '.codex')
   fs.mkdirSync(home, { recursive: true })
   fs.copyFileSync(path.join(SIGNED_IN_CODEX_HOME, 'auth.json'), path.join(home, 'auth.json'))
+  addCodexAccount(env, fs.readFileSync(path.join(SIGNED_IN_CODEX_HOME, 'auth.json'), 'utf8'))
   // CODEX§11
   fs.writeFileSync(
     path.join(home, 'config.toml'),
