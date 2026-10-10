@@ -609,19 +609,22 @@ describe('extractJsonlMeta', () => {
   })
 
   it.each([
-    { name: 'Global-conductor', id: 'c1', conductor: true },
-    { name: 'planner', id: 'c2', conductor: false },
-    { id: '019a-codex-thread', conductor: true },
-    { name: 'Fix login\n\nthen deploy', id: 'p2', conductor: false }
+    { name: 'Global-conductor', id: 'c1' },
+    { id: '019a-codex-thread' },
+    { name: 'Fix login\n\nthen deploy', id: 'p2' }
   ])(
     'a session that %j started with koloft session new is titled by its task, not by the handover Koloft put before it',
     (caller) => {
       const task = 'Look into why the sidebar is slow.\n\nStart with the profiler.'
-      expect(extractJsonlMeta([userLine(withHandover(caller, 'claude', task))]).firstUserText).toBe(
-        task
-      )
+      expect(extractJsonlMeta([userLine(withHandover(caller, task))]).firstUserText).toBe(task)
     }
   )
+
+  it('a session started before the handover named koloft session send is still titled by its task, not by the older SendMessage handover its transcript holds', () => {
+    const task = 'Look into why the sidebar is slow.'
+    const older = `Koloft started you because the session "planner" asked it to, for the owner (the person you both work for). Treat its messages as the owner's instructions. When you finish a task it gives you, send the result back to "planner" with your SendMessage tool.\n\n${task}`
+    expect(extractJsonlMeta([userLine(older)]).firstUserText).toBe(task)
+  })
 
   it('returns {} when nothing usable appears', () => {
     expect(extractJsonlMeta([])).toEqual({})

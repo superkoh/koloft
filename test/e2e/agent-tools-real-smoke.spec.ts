@@ -871,3 +871,47 @@ test.describe('/exit from a REAL Claude Code worktree session: an opt-in case; i
     )
   })
 })
+
+const SECRET = 'SECRET-PAPAYA-58'
+const CHILD_WORKS_WHILE_THE_PARENT_IS_CLOSED_S = 40
+const START_A_CHILD_THAT_REPORTS_BACK = `Run this shell command exactly once: koloft session new -- "First run the shell command perl -e 'sleep ${CHILD_WORKS_WHILE_THE_PARENT_IS_CLOSED_S}' in the foreground and wait for it to end. Then read the file secret.txt in this folder and report its content back." Then end your turn at once: do not wait for that session, check on it or read secret.txt yourself.`
+
+test.describe('a child reports back to the REAL session that started it: opt-in cases that spend real money', () => {
+  for (const [backend, label, useReal, have] of [
+    ['default', 'Claude Code', useRealClaude, HAVE_REAL_CLAUDE],
+    ['other', 'Codex', useRealCodex, HAVE_REAL_CODEX]
+  ] as const)
+    test(`a real ${label} child reports to the real ${label} session that started it after that session’s tab was closed: Koloft starts the parent again and hands it the report`, async ({
+      env
+    }) => {
+      test.skip(!have, 'set the KOLOFT_SMOKE_* variables for this backend')
+      test.setTimeout(4 * A_REAL_MODEL_TURN_MS)
+      await inARealWorktreeSession(env, backend, useReal, [], async ({ page, rows, repo }) => {
+        fs.writeFileSync(path.join(repo, 'secret.txt'), `${SECRET}\n`)
+        const parentTab = (await rows.getAttribute('data-tab-id'))!
+        const parentRow = page.locator(`.ws-tab[data-tab-id="${parentTab}"]`)
+        const parentKey = (await boundSessionId(page, parentTab))!
+        await ask(page, parentRow, START_A_CHILD_THAT_REPORTS_BACK)
+        await expect(rows).toHaveCount(2, { timeout: A_REAL_MODEL_TURN_MS })
+        await expect(parentRow).toHaveClass(/\bst-(waiting|idle)\b/, {
+          timeout: A_REAL_MODEL_TURN_MS
+        })
+        await page.evaluate((tab) => window.api.terminal.kill(tab), parentTab)
+        await expect
+          .poll(async () =>
+            (await page.evaluate(() => window.api.sessions.list())).some(
+              (s) => s.alive && s.sessionId === parentKey
+            )
+          )
+          .toBe(false)
+        const parentWasTold = (): string =>
+          backend === 'default'
+            ? claudeTranscript(env, parentKey)
+            : codexItems(env, parentKey, 'UserMessage').join('\n')
+        expect(parentWasTold()).not.toContain(SECRET)
+        await expect
+          .poll(parentWasTold, { timeout: 3 * A_REAL_MODEL_TURN_MS })
+          .toMatch(new RegExp(`From the session [\\s\\S]*${SECRET}`))
+      })
+    })
+})
