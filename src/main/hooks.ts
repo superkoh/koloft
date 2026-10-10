@@ -12,16 +12,11 @@ export interface HookPaths {
   regDir: string
 }
 
-export const REPLY_LANGUAGE_REMINDER =
-  "Reply in the language of the user's latest message, whatever language tool output, files or your earlier replies use."
-
-// CC§17
-const PROMPT_HOOK_OUTPUT = JSON.stringify({
-  hookSpecificOutput: {
-    hookEventName: 'UserPromptSubmit',
-    additionalContext: REPLY_LANGUAGE_REMINDER
-  }
-})
+// ADR-0031
+const REPLY_LANGUAGE_BEFORE_QUOTE = "The user's latest message begins: «"
+const REPLY_LANGUAGE_AFTER_QUOTE =
+  '». Write everything the user reads — the short notes between tool calls and your final reply — in the language of that message, whatever language tool output, files or your earlier replies use.'
+const QUOTED_PROMPT_BYTES = 300
 
 // CC§1
 export const HOOK_SCRIPT = `#!/usr/bin/env bash
@@ -42,6 +37,21 @@ session_id() {
     head -1 |
     sed 's/.*"\\([^"]*\\)"$/\\1/' |
     tr -d '"\\\\[:cntrl:]'
+}
+said="$reg/$tab.said"
+# CC§19
+quote_prompt() {
+  printf '%s' "$input" |
+    LC_ALL=C sed -n -E 's/.*"prompt"[[:space:]]*:[[:space:]]*"(([^"\\\\]|\\\\.)*)".*/\\1/p' |
+    LC_ALL=C sed -E 's/^Koloft started you because .*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//' |
+    head -c ${QUOTED_PROMPT_BYTES} |
+    LC_ALL=C sed -E -e $'s/[\\xf0-\\xf7][\\x80-\\xbf]{0,2}$//' -e $'s/[\\xe0-\\xef][\\x80-\\xbf]?$//' -e $'s/[\\xc0-\\xdf]$//' \\
+      -e 's/\\\\u[0-9a-fA-F]{0,3}$//' -e 's/(^|[^\\\\])((\\\\\\\\)*)\\\\$/\\1\\2/'
+}
+# CC§17 CC§19
+remind_reply_language() {
+  [ -s "$said" ] || return 0
+  printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s%s%s"}}\\n' "$1" ${shq(REPLY_LANGUAGE_BEFORE_QUOTE)} "$(cat "$said")" ${shq(REPLY_LANGUAGE_AFTER_QUOTE)}
 }
 case "$event" in
   start|end)
@@ -89,6 +99,9 @@ case "$event" in
   asked)
     # CC§14
     printf '{"tabId":"%s","event":"ask","sessionId":"%s","tmux":"%s","ask":%s}\\n' "$tab" "$(session_id)" "$tm" "$input" >> "$reg/$tab.status.jsonl"
+    ;;
+  tool)
+    remind_reply_language PostToolUse
     ;;
   posttool)
     # PLATFORM§36
@@ -162,8 +175,11 @@ case "$event" in
       *'"session_crons":['*) wake=',"wake":1' ;;
     esac
     printf '{"tabId":"%s","event":"%s","sessionId":"%s","message":"%s","tmux":"%s"%s%s}\\n' "$tab" "$event" "$sid" "$msg" "$tm" "$bgl" "$wake" >> "$reg/$tab.status.jsonl"
-    # CC§17
-    if [ "$event" = "prompt" ]; then printf '%s\\n' ${shq(PROMPT_HOOK_OUTPUT)}; fi
+    if [ "$event" = "prompt" ]; then
+      quote="$(quote_prompt)"
+      [ -n "$quote" ] && printf '%s' "$quote" > "$said"
+      remind_reply_language UserPromptSubmit
+    fi
     ;;
 esac
 exit 0
@@ -187,7 +203,7 @@ export function pruneStale(dir: string, maxAgeMs = 12 * 60 * 60 * 1000, everyEnt
   }
 }
 
-const TAB_MARKER = /^(.+)\.(answerable|conductor)$/
+const TAB_MARKER = /^(.+)\.(answerable|conductor|said)$/
 
 // ADR-0004
 function pruneMarkersOfDeadTabs(regDir: string, peerOwnsTab: (tabId: string) => boolean): void {
@@ -246,6 +262,10 @@ export function hookSettings(
 ): Record<string, unknown> {
   const cmd = (event: string): string =>
     `${quote(hookScript)} ${quote(regDir)} ${quote(tabId)} ${event}`
+  // CC§19 ADR-0031
+  const postToolUse = [{ matcher: '*', hooks: [{ type: 'command', command: cmd('tool') }] }]
+  if (statusLine)
+    postToolUse.push({ matcher: 'Bash', hooks: [{ type: 'command', command: cmd('posttool') }] })
   const settings: Record<string, unknown> = {
     hooks: {
       SessionStart: [{ hooks: [{ type: 'command', command: cmd('start') }] }],
@@ -268,15 +288,11 @@ export function hookSettings(
               : { type: 'command', command: cmd('asked') }
           ]
         }
-      ]
+      ],
+      PostToolUse: postToolUse
     }
   }
-  if (statusLine) {
-    settings.statusLine = statusLine
-    ;(settings.hooks as Record<string, unknown>).PostToolUse = [
-      { matcher: 'Bash', hooks: [{ type: 'command', command: cmd('posttool') }] }
-    ]
-  }
+  if (statusLine) settings.statusLine = statusLine
   return settings
 }
 
