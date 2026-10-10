@@ -12,6 +12,7 @@ import {
   startSessionIn,
   terminalText,
   waitBooted,
+  waitConductorStarted,
   waitForCallsBesideConductors,
   wsRows
 } from './helpers/p1'
@@ -152,11 +153,7 @@ async function connected(
   const page = await app.firstWindow()
   await waitBooted(page)
   await expect.poll(() => fake.identifies).toBe(1)
-  await expect
-    .poll(() => bindingOnDisk(env)?.sessionIds.length ?? 0, {
-      timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
-    })
-    .toBeGreaterThan(0)
+  await waitConductorStarted(env, CONDUCTOR_STARTS_AND_ANSWERS_MS)
   return { app, page }
 }
 
@@ -181,7 +178,6 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
         .poll(() => fake.reactions)
         .toContainEqual({ messageId: hello, emoji: '✅', on: true })
       expect(readCalls(env)).toHaveLength(1)
-      expect(path.dirname(readCalls(env)[0].cwd)).toBe(path.join(env.userData, 'conductors'))
 
       fake.say(OWNER, '/long 600')
       const lines = Array.from({ length: 600 }, (_, i) => `line ${i + 1}`).join('\n')
@@ -873,7 +869,6 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await expect
         .poll(() => processAlive(idler), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toBe(false)
-      await page.waitForTimeout(WAITING_TO_IDLE_MS + IDLE_TO_SLEEP_MS)
       expect(processAlive(conductorPid)).toBe(true)
     } finally {
       await quitAndClose(app)

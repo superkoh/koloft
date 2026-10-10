@@ -9,6 +9,7 @@ import {
   startSessionIn,
   terminalText,
   waitBooted,
+  waitConductorStarted,
   waitForCallsBesideConductors,
   wsRows,
   oneStillRunning
@@ -82,11 +83,7 @@ async function connected(
   const page = await app.firstWindow()
   await waitBooted(page)
   await expect.poll(() => fake.identifies).toBe(1)
-  await expect
-    .poll(() => bindingOnDisk(env)?.sessionIds.length ?? 0, {
-      timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
-    })
-    .toBeGreaterThan(0)
+  await waitConductorStarted(env, CONDUCTOR_STARTS_AND_ANSWERS_MS)
   return { app, page }
 }
 
