@@ -39,7 +39,7 @@ SCHEDULED TASKS
 
 A scheduled task (cron) is a job that starts a new session by itself on a timer. Name a task by its number from "koloft cron list" or by its name.
 
-A task's name may have spaces: put it in quotes, like "Nightly tests". If you forget, Koloft still finds it: all the words after the command, up to the first option or --, are the name.
+A task's name may have spaces: put it in quotes, like "Nightly tests". If you forget, Koloft still finds it: the words that stand together, with no option or -- between them, are the name.
 
 When it runs: --every 30m, --every 2h, --daily 09:00, or --weekly mon,wed,fri@09:00
 Options: --backend claude|codex, --model <model>, --effort low|medium|high|xhigh|max, --permission same|acceptEdits|skipAll, --when-done open|close
