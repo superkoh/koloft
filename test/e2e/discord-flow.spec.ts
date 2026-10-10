@@ -824,6 +824,13 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
           await expect
             .poll(() => processAlive(closedPid), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
             .toBe(false)
+          await expect
+            .poll(async () =>
+              (await page.evaluate(() => window.api.sessions.list())).some(
+                (s) => s.conductor && s.alive
+              )
+            )
+            .toBe(false)
 
           const liveChildTab = async (): Promise<string | undefined> =>
             (await page.evaluate(() => window.api.sessions.list())).find(
