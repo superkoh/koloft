@@ -23,9 +23,40 @@ export function codexHomes(userData: string): string[] {
   }
 }
 
+const FOLDERS_EVERY_HOME_SHARES = ['sessions', 'archived_sessions']
+
+function newerThan(a: string, b: string): boolean {
+  const there = fs.statSync(b, { throwIfNoEntry: false })
+  return !there || fs.statSync(a).mtimeMs > there.mtimeMs
+}
+
+function moveFilesKeepingTheNewer(from: string, to: string): void {
+  fs.mkdirSync(to, { recursive: true, mode: 0o700 })
+  for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+    const source = path.join(from, entry.name)
+    const target = path.join(to, entry.name)
+    if (entry.isDirectory()) moveFilesKeepingTheNewer(source, target)
+    else if (newerThan(source, target)) fs.renameSync(source, target)
+  }
+}
+
+function shareFolder(own: string, shared: string): void {
+  fs.mkdirSync(shared, { recursive: true, mode: 0o700 })
+  const existing = fs.lstatSync(own, { throwIfNoEntry: false })
+  if (existing?.isSymbolicLink()) return
+  if (existing) {
+    moveFilesKeepingTheNewer(own, shared)
+    fs.rmSync(own, { recursive: true, force: true })
+  }
+  fs.symlinkSync(shared, own)
+}
+
 // CODEX§15
 export function prepareCodexHome(home: string, sharedConfig: string): void {
   fs.mkdirSync(home, { recursive: true, mode: 0o700 })
+  const sharedHome = path.dirname(sharedConfig)
+  for (const folder of FOLDERS_EVERY_HOME_SHARES)
+    shareFolder(path.join(home, folder), path.join(sharedHome, folder))
   const config = path.join(home, 'config.toml')
   try {
     fs.lstatSync(config)

@@ -33,7 +33,7 @@ import {
 } from 'react-icons/lu'
 import type { BackendId, SessionRow } from '@shared/types'
 import type { DirtyTab } from '../unsavedGuard'
-import { ATTENTION_REASON, PLACEHOLDER_SESSION_TITLE } from '@shared/types'
+import { ATTENTION_REASON } from '@shared/types'
 import { popoverX } from '@shared/accountUsage'
 import { slugOf } from '@shared/cronNames'
 import { describeWhen } from '@shared/schedule'
@@ -42,6 +42,7 @@ import { useStore } from '../store'
 import {
   attentionOnRow,
   isOrphanRow,
+  liveTabOf,
   marqueeAnim,
   mixesBackends,
   sessionActivityBadge,
@@ -52,11 +53,14 @@ import {
   sessionsInside,
   sessionsNeedYou,
   sessionTree,
+  shownTitle,
   statusUnavailable,
+  tabOfRow,
+  workspaceName,
   type RowNode
 } from '../sessionRows'
-import { releaseSettledResumes, resumeInFlight, resumeSession } from '../resumeFlow'
-import { adoptionSettled } from '../adoption'
+import { releaseSettledResumes } from '../resumeFlow'
+import { offerForceCloseUnlessMainHasBoundIt, openSessionRow } from '../sessionClick'
 import { requestCloseTab } from '../closeFlow'
 import { freshnessShown } from '@shared/freshnessOps'
 import { behindBadge, countLabel, openIssuesLabel, openPullsLabel } from '../freshnessView'
@@ -187,8 +191,6 @@ export function WorkspaceSidebar({
   const storeTabs = useStore((s) => s.tabs)
   const activeTabId = useStore((s) => s.activeTabId)
   const resumeLaunch = useStore((s) => s.resumeLaunch)
-  const activateTab = useStore((s) => s.activateTab)
-  const visitTab = useStore((s) => s.visitTab)
   const selectedWs = useStore((s) => s.selectedWs)
   const selectWorkspace = useStore((s) => s.selectWorkspace)
   const showToast = useStore((s) => s.showToast)
@@ -209,7 +211,8 @@ export function WorkspaceSidebar({
   } | null>(null)
   const [removing, setRemoving] = useState(false)
   const removeCancelRef = useRef<HTMLButtonElement>(null)
-  const [confirmOrphan, setConfirmOrphan] = useState<string | null>(null)
+  const confirmOrphan = useStore((s) => s.orphanConfirm)
+  const setConfirmOrphan = useStore((s) => s.setOrphanConfirm)
   const [fresh, setFresh] = useState<{ path: string; left: number; top: number } | null>(null)
   const [parkedPop, setParkedPop] = useState<{ rowId: string; left: number; top: number } | null>(
     null
@@ -232,13 +235,9 @@ export function WorkspaceSidebar({
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const cardTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const sessionByIdEntries = sessions.filter((s) => s.sessionId)
-  // CODEX§9
   const tabIdFor = (sessionId: string): string | undefined =>
-    sessionByIdEntries.find((s) => s.sessionId === sessionId && s.alive)?.tabId ??
-    storeTabs.find((t) => t.alive && t.sessionId === sessionId)?.id
-  const tabIdOfRow = (row: SessionRow): string | undefined =>
-    row.pending ? row.id : row.running ? tabIdFor(row.id) : undefined
+    liveTabOf(sessionId, sessions, storeTabs)
+  const tabIdOfRow = (row: SessionRow): string | undefined => tabOfRow(row, sessions, storeTabs)
   const callingAmong = (rows: SessionRow[]): number =>
     rows.filter((r) => attentionOnRow(r.id, tabIdOfRow(r), attention)).length
 
@@ -392,44 +391,6 @@ export function WorkspaceSidebar({
     cardTimer.current = setTimeout(() => {
       if (!freshBusy.current) setFresh(null)
     }, MENU_LEAVE_MS)
-  }
-
-  const offerForceCloseUnlessMainHasBoundIt = (row: SessionRow): void => {
-    void adoptionSettled.then(() => {
-      const st = useStore.getState()
-      if (!isOrphanRow(row, st.sessions, st.tabs)) return
-      void window.api.sessions.list().then((sessionsAheadOfTheStream) => {
-        if (isOrphanRow(row, sessionsAheadOfTheStream, useStore.getState().tabs))
-          setConfirmOrphan(row.id)
-      })
-    })
-  }
-
-  const clickRow = (row: SessionRow, wsPath: string): void => {
-    const remoteHost = machineOf(wsPath)
-    if (row.pending) {
-      activateTab(row.id)
-      return
-    }
-    if (row.running) {
-      if (isOrphanRow(row, sessions, storeTabs)) {
-        if (remoteHost) {
-          void resumeSession(row)
-          return
-        }
-        offerForceCloseUnlessMainHasBoundIt(row)
-        return
-      }
-      const tabId = tabIdFor(row.id)
-      if (tabId) visitTab(tabId)
-      return
-    }
-    if (resumeInFlight(row.id)) {
-      const t = useStore.getState().tabs.find((x) => x.sessionId === row.id && x.alive)
-      if (t) activateTab(t.id)
-      return
-    }
-    void resumeSession(row)
   }
 
   const forceCloseSession = async (id: string): Promise<void> => {
@@ -657,7 +618,7 @@ export function WorkspaceSidebar({
           className="mi"
           onClick={() => {
             setMenu(null)
-            clickRow(row, target.wsPath)
+            openSessionRow(row, target.wsPath)
           }}
         >
           Resume<span className="k">↩</span>
@@ -836,7 +797,7 @@ export function WorkspaceSidebar({
                             ? ' — worktree deleted; click to rebuild and resume'
                             : ' — click to resume')
                     }
-                    onClick={() => clickRow(row, ws.path)}
+                    onClick={() => openSessionRow(row, ws.path)}
                     onContextMenu={(e) => openMenuNow(e, rowTarget)}
                     onMouseEnter={(e) => {
                       armHoverMenu(e, rowTarget)
@@ -856,16 +817,14 @@ export function WorkspaceSidebar({
                       {row.resident && (
                         <span
                           className="ws-tab-resident"
-                          title="Keep running — starts again each time Koloft opens"
+                          title="Keep running — never sleeps, and starts again each time Koloft opens"
                         >
                           <LuPin size={12} />
                         </span>
                       )}
                       <span className={'ws-tab-title' + (mq?.id === row.id ? ' mq' : '')}>
                         <i ref={mq?.id === row.id ? mqRef : undefined}>
-                          {sess?.title && sess.title !== PLACEHOLDER_SESSION_TITLE
-                            ? sess.title
-                            : row.title}
+                          {shownTitle(row.title, sess?.title)}
                         </i>
                       </span>
                       {tabId && <UnseenFileMark tabId={tabId} />}
@@ -974,9 +933,7 @@ export function WorkspaceSidebar({
                     {open ? <LuFolderOpen size={15} /> : <LuFolder size={15} />}
                   </span>
                   <span className={'ws-name' + (mq?.id === nameMq ? ' mq' : '')}>
-                    <i ref={mq?.id === nameMq ? mqRef : undefined}>
-                      {basename(ws.remote?.path ?? ws.path)}
-                    </i>
+                    <i ref={mq?.id === nameMq ? mqRef : undefined}>{workspaceName(ws)}</i>
                   </span>
                   {ws.remote && (
                     <span

@@ -7,6 +7,12 @@ import { REMOTE_PATH_LINE, onATerminalEvenWhenSshGaveNone, remoteShCommand } fro
 import { remotePtsFile } from './paths'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
 
+export const CLAUDE_AUTH_ENV_VARS = [
+  'CLAUDE_CODE_OAUTH_TOKEN',
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN'
+]
+
 export function accountEnv(
   kind: AccountKind,
   name: string,
@@ -110,7 +116,7 @@ M="$HOME/.koloft/${spec.machineName}"
 ${REMOTE_PATH_LINE}
 if [ "$1" = run ]; then
   KOLOFT_TMUX_FOLLOW=1; export KOLOFT_TMUX_FOLLOW
-  unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN
+  unset ${CLAUDE_AUTH_ENV_VARS.join(' ')}
   E="${T}.env"; [ -f "$E" ] && { set -a; . "$E"; set +a; rm -f "$E"; }
 ${spec.portOffset ? `  KOLOFT_PORT_OFFSET=${spec.portOffset}; export KOLOFT_PORT_OFFSET\n` : ''}  exec claude --settings "${T}.json" ${spec.claudeArgs.map(shq).join(' ')}
 fi

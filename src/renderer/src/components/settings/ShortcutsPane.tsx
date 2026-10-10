@@ -11,6 +11,16 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
     title: 'Sessions & workspaces',
     items: [
       {
+        keys: ['⌘P'],
+        name: 'Jump to',
+        uses: [
+          {
+            what: 'Opens a list of every session, every workspace and the app actions. Type a few letters, ⏎ opens the one picked.'
+          },
+          { where: 'Dialog', what: 'Nothing.' }
+        ]
+      },
+      {
         keys: ['⌘N'],
         name: 'New session',
         uses: [
@@ -74,6 +84,16 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
             what: 'Shows the session that has waited longest for you, in any workspace, and clears its red dot.'
           },
           { where: 'Nothing waiting', what: 'Nothing.' }
+        ]
+      },
+      {
+        keys: ['⌥⌘F'],
+        name: 'Search sessions',
+        uses: [
+          {
+            what: 'Lists every session, in every workspace, whose conversation or title holds the words.'
+          },
+          { where: 'No workspace', what: 'No matches.' }
         ]
       },
       {

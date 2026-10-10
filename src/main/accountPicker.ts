@@ -39,7 +39,6 @@ export const FABLE_EXHAUSTED_LINE =
 
 export interface PickDeps {
   listAccounts(): AccountMeta[]
-  multiAccountOn(): boolean
   fablePriority(): boolean
   readSecret(kind: AccountKind, name: string): Promise<string | null>
   probe(a: AccountMeta, secret: string): Promise<ProbeResult>
@@ -56,7 +55,7 @@ export type PickResponse =
       banner: string
       warning?: string
     }
-  | { account: null; reason: 'disabled' | 'no-accounts' | 'no-usable' }
+  | { account: null; reason: 'no-accounts' | 'no-usable' }
 
 function pct(v: number): string {
   return `${Math.round(v * 100)}%`
@@ -166,7 +165,6 @@ export class AccountPicker {
   }
 
   async pick(tabId?: string): Promise<PickResponse> {
-    if (!this.deps.multiAccountOn()) return { account: null, reason: 'disabled' }
     const subs = this.eligible('oauth')
     const apis = this.eligible('apikey', 'custom')
     if (subs.length === 0 && apis.length === 0) return { account: null, reason: 'no-accounts' }

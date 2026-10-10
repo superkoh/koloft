@@ -1305,6 +1305,33 @@ describe('remote workspace: reading the mirror', () => {
     expect(row.cwd).toBe(RPATH)
   })
 
+  it('offers a search every Claude row of every pinned workspace, listed or removed, local or mirrored, with the transcript it came from', async () => {
+    writeMirrorJsonl('abc')
+    writeJsonl(repo, 'listed')
+    writeJsonl(repo, 'removed')
+    own('abc', 'listed')
+    mgr = remoteMgr()
+    mgr.start()
+    await vi.waitFor(() => expect(latest(RKEY).rows.length).toBe(1))
+    expect(
+      mgr
+        .searchableRows()
+        .map((c) => [c.row.id, c.row.backendId, c.workspacePath, c.file])
+        .sort()
+    ).toEqual(
+      [
+        [
+          'abc',
+          'claude',
+          RKEY,
+          path.join(root, 'remote', 'devbox', 'projects', encodeCwd(RPATH), 'abc.jsonl')
+        ],
+        ['listed', 'claude', repo, path.join(projectsRoot, encodeCwd(repo), 'listed.jsonl')],
+        ['removed', 'claude', repo, path.join(projectsRoot, encodeCwd(repo), 'removed.jsonl')]
+      ].sort()
+    )
+  })
+
   it('U-READ-3/U-READ-4: keeps a mirrored session through GC while still collecting a local orphan', async () => {
     writeMirrorJsonl('abc')
     writeJsonl(repo, 'local1')

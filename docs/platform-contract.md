@@ -63,6 +63,33 @@ method. A recheck adds its date, version and command to the bullet.
   inherited value turns it on. node-pty reports nothing on `cd`, so OSC 7 is the only
   way to follow a plain shell's folder. (Format seen on a real pty; no date or macOS
   version.)
+- **A shell's line editor says when it starts reading.** zsh, bash 5 and fish write
+  `ESC [ ? 2004 h` (bracketed paste on) the moment their line editor starts waiting for a
+  line, after every rc file has run; macOS's own `/bin/bash` 3.2 writes none, but its
+  readline writes `ESC [ ? 1034 h` (meta key on, from the `xterm-256color` terminfo) at
+  the same moment. For zsh and bash it came out exactly when the tty left canonical mode
+  (`ICANON` off, read with `tcgetattr` on the pty master every 3 ms); fish leaves
+  canonical mode earlier, to read the terminal's answers to its queries, and writes the
+  signal once its prompt is drawn. fish 4 first asks the terminal `ESC [ 0 c` and shows
+  no prompt — and runs no typed line — until it is answered (the probe answered
+  `ESC [ ? 1 ; 2 c`, as xterm.js does). A short line typed before the prompt is not
+  lost: one written 0.3 s into a `.zshrc` / `.bash_profile` / `config.fish` that sleeps
+  3 s still ran once the prompt came. Two short lines written together at the signal —
+  the PATH line ending in `clear`, then the launch line — both ran in order.
+  powerlevel10k's instant prompt writes the signal at the top of `.zshrc`, before the
+  rest of it runs; two short lines written then, with 2 s of `.zshrc` still to go, both
+  ran in order once zsh's own prompt came.
+- **A busy tty keeps at most 1023 bytes of a typed line.** While the tty is in canonical
+  mode — the rc files are still running, or the line before is still running — a line
+  of 1023 bytes before its Enter ran, and one of 1024 was lost with everything after
+  it (macOS `MAX_CANON` is 1024). Typed while the line editor reads, a 1.5 KB line ran.
+  A remote tab's launch line is about 2.2 KB and its shell line about 1.3 KB, so such a
+  line is written to a file and the typed line is `. '<file>'`; that ran after a 3 s
+  `.zshrc` and after powerlevel10k's early signal alike.
+  (2026-10-09, Python `pty` probe, macOS 27.0.1 `/bin/zsh` 5.9, for both bullets; also
+  `/bin/bash` 3.2.57 and fish 4.9.3 (the release's macOS app) for the first; Ubuntu
+  24.04 in Docker: fish 3.7.0 and 4.9.3, bash 5.2.21, zsh 5.9; powerlevel10k `master`
+  of that day.)
 - **bash `$!` and the subshell fold.** After `( … ) &`, `$!` is the subshell's pid. Bash
   folds the subshell into its last command only when that command stands alone; a
   `umask` before it prevents the fold. Without `exec`, killing `$!` kills only the
@@ -131,7 +158,11 @@ method. A recheck adds its date, version and command to the bullet.
   app's. A bare `electron out/main/index.js` launch reports `out/main` as
   `app.getAppPath()`.
 - **Only Electron can open files inside `app.asar`.** bash or node must use the
-  `asarUnpack`'d copy under `app.asar.unpacked`.
+  `asarUnpack`'d copy under `app.asar.unpacked`. A `worker_threads` Worker the main
+  process starts counts as Electron: it loads its script from inside `app.asar`, by
+  path or by `file:` URL (Electron 43.7.3, 2026-10-09: a one-line worker packed with
+  `@electron/asar`, started from a bare `electron main.js` after `app.whenReady`,
+  posted its message back both ways).
 - **`app.setActivationPolicy('accessory')` must be set before any window exists**, or
   the first window show still makes the app active and takes focus.
 - **A Notification that nothing holds on to can be garbage-collected** while its banner
@@ -821,6 +852,14 @@ inferred, not checked.
   watcher writes it again until it is seen.
 - **A recursive folder watcher cannot be trusted to report the removal of the watched
   folder itself.**
+- **A session's two start notes can go unreported.** With the launch line typed about
+  0.2 s after the pty opens, the shim's registration or claude's SessionStart drop was
+  never reported by its folder watch in 4 to 7 of about 195 e2e tests (4 workers),
+  while the files were on disk; the tab then never bound. A worktree-exit case that
+  lost one in 3 of 16 runs passed 9 of 9 with the old 1.6 s wait. A 1 s sweep of both
+  folders finds them.
+  (2026-10-09, Node 24.13.0 in Electron 43, macOS 27.0.1; files listed from the e2e
+  when a row stayed pending.)
 
 ## §29 node-pty and ptys
 
@@ -838,6 +877,15 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   name. Fast pipelines hit the gap within seconds (seen: a poll that read it raised
   Electron's error dialog every 1500 ms).
 - **Resizing a pty to the size it already has sends no SIGWINCH.**
+- **Node opens a terminal again by name the first time it makes `process.stdin`,
+  `stdout` or `stderr` on a tty, and that `open()` waits for good once the pty's master
+  side is closed.** A JS `SIGHUP` handler cannot free it (the thread that would run the
+  handler is the one stuck); with no JS handler the default `SIGHUP` kills it. Measured
+  2026-10-08 (Node 24.13.0, macOS 27.0) with a Python script that starts `node` on a pty
+  and closes the master 0.3 s later; seen in the e2e suite as leftover fake claudes stuck
+  in `uv_tty_init` → `open` (`sample`), with parent pid 1, on 2026-10-08 and 2026-10-09.
+  Making all three handles at startup, before any `SIGHUP` handler, removed the stuck
+  child in the probe.
 
 ## §30 git
 
@@ -963,6 +1011,22 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   superkoh/koloft --json number --jq '$ENV.HOME'` printed the home folder. So a `--jq`
   given by someone else can print any secret in that environment. (2026-10-09, gh 2.89.0,
   run by hand.)
+- **`gh issue list` / `gh pr list --repo o/r --state open --json …`** print a JSON array
+  of objects with the fields asked for (`number`, `title`, `url`, `updatedAt` as an ISO
+  time; a pull request also has `headRefName` and `isCrossRepository`), newest created
+  first, and exit 0. Signed out, each exits 4 with the `gh auth login` line. A pull
+  request from a fork has `isCrossRepository: true` and a `headRefName` that names a
+  branch of the fork, not of the repo — so the same name may be a different branch here.
+  GitHub keeps `refs/pull/<n>/head` for a fork's pull request and a same-repo one alike
+  (`git ls-remote https://github.com/cli/cli refs/pull/14629/head refs/pull/14580/head`
+  listed both). (2026-10-09, gh 2.89.0, by hand against superkoh/koloft and cli/cli, and
+  an empty `GH_CONFIG_DIR` with a scratch `HOME`.)
+- **`gh issue create` with no terminal never prompts**: missing `--title` it exits 1 at
+  once with "must provide `--title` and `--body` when not running interactively" and
+  creates nothing. A flag given as `--flag=value` keeps a value that starts with `-`
+  (`gh issue list --search=-label:bug` listed issues without the label). What a
+  successful create prints is not probed (no test repository was used). (2026-10-09, gh
+  2.89.0, by hand against superkoh/koloft, stdin from `/dev/null`.)
 
 ## §33 ssh
 
@@ -1290,3 +1354,15 @@ Gateway (the live connection that pushes events):
   reported `change` and the single ones `rename`. A watcher that must know what
   happened has to look at the file itself.
 - A write inside a subdirectory gave no event at all; creating the subdirectory gave one.
+
+## §41 What an Electron app's quit does to its children
+
+- **A program running in a node-pty terminal gets SIGHUP when the app quits.** Nothing has
+  to kill it: the app's exit closes the terminal and the program's HUP trap fires within
+  the same second.
+- **A child spawned with `detached: true` and `unref()` keeps running after the quit.** It
+  can wait for the pty program's pid to disappear (`kill -0` in a loop) and then go on
+  working; three seconds later it was still alive and finished its script.
+- Measured 2026-10-09 on macOS 27.0.1 with a bare Electron 43.7.3 app (node-pty from the
+  repo, no window): one pty child running `sh` with HUP/TERM traps, one detached `sh`
+  helper, then `app.quit()` one second in.

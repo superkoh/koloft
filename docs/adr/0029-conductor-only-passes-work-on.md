@@ -16,11 +16,19 @@ may ignore; the owner asked for a guarantee.
 - The price: a conductor cannot take a screenshot, drive a browser or change a file —
   it asks a session to — and `koloft discord send` and `koloft open` need absolute
   paths into the workspace.
-- Two holes, both the owner's choice, so a conductor need not take a session's word
-  for a fact or lose what the owner taught it. `koloft gh` runs a read-only `gh`
-  command in Koloft's own process, from a list of subcommands and flags; a Claude
-  conductor may Write or Edit inside its own memory folder, the `memory` folder beside
-  the transcript the hook names.
+- Holes, each the owner's choice, so a conductor need not take a session's word
+  for a fact, lose what the owner taught it, or start a session just to file an issue.
+  `koloft gh` runs a `gh` command in Koloft's own process, from a list of subcommands
+  and flags: reads, and one write, `issue create` with only a title, a body (or a body
+  file inside the conductor's own folder), labels and a repository; a Claude conductor
+  may Write or Edit inside its own memory folder, the `memory` folder beside the
+  transcript the hook names.
+- `issue create` is let through although the gate cannot tell who asked for it (the
+  reason a merge is not, below): a stray issue is a note the owner closes, while a
+  merge changes `main`. That only the owner's own message may ask for one is role
+  text, not a guarantee, so the flags stay few — no assignee, project or template —
+  and a body file must lie in the conductor's own folder, so text injected into a page
+  cannot have Koloft post any file on the Mac in one step.
 - Rejected for those: letting `gh` and `git` through the gate. A Codex conductor's
   sandbox has no network, so `gh` fails there, and opening the network would let
   `gh pr merge` through; `git log` reads a checkout that is stale until a fetch, which

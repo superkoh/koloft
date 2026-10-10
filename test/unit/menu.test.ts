@@ -290,6 +290,22 @@ describe('app menu: Toggle Sidebar', () => {
   })
 })
 
+describe('app menu: Command Palette', () => {
+  it('sits in View on ⌘P, bound exactly once, and forwards command-palette to the renderer', () => {
+    const seen: string[] = []
+    const menu = buildMenu((a) => seen.push(a))
+    const item = topLevel(menu, 'View').submenu!.find((i) => i.id === 'command-palette')
+    expect(item!.label).toBe('Command Palette…')
+    expect(item!.accelerator).toBe('CmdOrCtrl+P')
+    const bound = flatten(menu).filter(
+      (i) => i.accelerator && normalizeAccel(i.accelerator) === normalizeAccel('CmdOrCtrl+P')
+    )
+    expect(bound.map((i) => i.id)).toEqual(['command-palette'])
+    item!.click!()
+    expect(seen).toEqual(['command-palette'])
+  })
+})
+
 // PLATFORM§7
 describe('app menu: View menu after Force Reload gave up ⇧⌘R', () => {
   it('no longer offers Force Reload anywhere', () => {

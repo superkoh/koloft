@@ -5,7 +5,7 @@ export const GH_READS: Record<string, string[]> = {
 }
 
 // PLATFORM§32
-export const GH_FLAGS = [
+export const GH_READ_FLAGS = [
   '--json',
   '--repo',
   '--state',
@@ -27,6 +27,11 @@ export const GH_FLAGS = [
   '--log-failed'
 ]
 
+export const GH_ISSUE_CREATE_FLAGS = ['--title', '--body', '--body-file', '--label', '--repo']
+
 export const GH_READS_TEXT = Object.entries(GH_READS)
   .map(([noun, actions]) => `${noun} ${actions.join('|')}`)
   .join(', ')
+
+export const GH_ISSUE_CREATE_TEXT =
+  'issue create --title <title> --body <text> [--label <name>] [--repo <owner>/<name>]'

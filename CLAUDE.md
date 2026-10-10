@@ -41,11 +41,11 @@ Working principles:
   for: do not split an asked-for feature into a first and a second version, or leave
   part of it for later, unless a probe showed that part cannot be done — then name
   the probe.
-- A guess is not a fact. A limit read off a name, a sibling module, a doc or an
-  outside tool's past behavior stays a guess until one command proves it: say
-  "inferred, not checked" where you state it, and check it before any code depends
-  on it — everything built on a wrong premise goes when the premise does. The same
-  goes for your own access: run the command and read the error; never report a
+- A guess is not a fact. A claim from a name, a sibling module, a doc, a reviewer
+  or a past look at a tool, PR or agent stays a guess until one command proves it:
+  say "inferred, not checked" where you state it, and check it before any code
+  depends on it — everything built on a wrong premise goes when the premise does.
+  Your own access too: run the command and read the error; never report a
   permission you have not tried. What a command can answer is never asked of the owner.
   Nothing is called impossible, unsupported or "works this way" — in a plan, a
   question or a PR — before a probe has run; until then it is "not probed yet".

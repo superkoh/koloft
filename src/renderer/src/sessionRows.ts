@@ -8,6 +8,8 @@ import type {
   TabKind,
   WorkspaceRows
 } from '@shared/types'
+import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
+import { basename } from '@shared/preview'
 import { NOTES_HEIGHT_FLOOR } from '@shared/settingsOps'
 import { statusUnavailable } from '@shared/sessionBackend'
 
@@ -179,14 +181,47 @@ export function nextWaitingTab(
     .sort((a, b) => a.at - b.at)[0]?.tabId
 }
 
+// CODEX§9
+export function liveTabOf(
+  sessionId: string,
+  sessions: readonly { sessionId: string; tabId: string; alive: boolean }[],
+  tabs: readonly { id: string; sessionId?: string; alive: boolean; asleep?: true }[]
+): string | undefined {
+  return (
+    sessions.find((s) => s.sessionId === sessionId && s.alive)?.tabId ??
+    tabs.find((t) => (t.alive || t.asleep) && t.sessionId === sessionId)?.id
+  )
+}
+
+export function tabOfRow(
+  row: { id: string; running: boolean; pending?: boolean },
+  sessions: readonly { sessionId: string; tabId: string; alive: boolean }[],
+  tabs: readonly { id: string; sessionId?: string; alive: boolean; asleep?: true }[]
+): string | undefined {
+  if (row.pending) return row.id
+  return row.running ? liveTabOf(row.id, sessions, tabs) : undefined
+}
+
+export function shownTitle(rowTitle: string, liveTitle: string | undefined): string {
+  return liveTitle && liveTitle !== PLACEHOLDER_SESSION_TITLE ? liveTitle : rowTitle
+}
+
+export function workspaceName(ws: WorkspaceRows['workspace']): string {
+  return basename(ws.remote?.path ?? ws.path)
+}
+
 export function isOrphanRow(
   row: { id: string; running: boolean },
   sessions: { sessionId: string; tabId: string; alive: boolean }[],
-  tabs: { id: string; sessionId?: string; alive: boolean }[]
+  tabs: { id: string; sessionId?: string; alive: boolean; asleep?: true }[]
 ): boolean {
   if (!row.running) return false
   const bound = sessions.find((s) => s.sessionId === row.id && s.alive)?.tabId
-  return !tabs.some((t) => t.alive && (t.id === bound || t.sessionId === row.id))
+  return !tabs.some(
+    (t) =>
+      (t.alive && (t.id === bound || t.sessionId === row.id)) ||
+      (t.asleep && t.sessionId === row.id)
+  )
 }
 
 export function mixesBackends(rows: { backendId: SessionBackend }[]): boolean {

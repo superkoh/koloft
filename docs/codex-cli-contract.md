@@ -197,6 +197,16 @@ closure terminates them; the result confirms that case. It does not establish th
 behavior for a detached shell daemon, an MCP server or a nested tool, so nothing here
 says Codex reclaims a descendant that has left its process group.
 
+**An app-server whose host was killed outlives it and keeps its thread locked.** Measured
+2026-10-09, codex 0.162.0, a hidden Koloft build in a scratch `HOME` and `CODEX_HOME`:
+one Codex tab ran one turn, then Koloft's main process got SIGKILL. The TUI died at once;
+the detached `codex app-server --stdio -c tui.status_line=…` was re-parented to pid 1 and
+exited on its own 13.7–13.9 s later. A relaunched Koloft that resumed the same thread
+while it lived (1.1 s after the kill, two runs) got, within 0.4 s, "This conversation is
+open in another app — Close it there and press R to continue here"; pressing `r` after
+the old app-server had exited resumed in 0.2 s, and a resume ~20 s after the kill was
+normal. With four app-servers resuming one thread at once, three showed the same lock.
+
 Koloft's own stop, ownership and retry rules are product rules, covered by
 `test/unit/codexTransport.test.ts`, not Codex facts.
 
@@ -343,6 +353,48 @@ past argument parsing (it then stopped at "stdin is not a terminal"). In section
 run, `-a on-request -s read-only` led to an approval request. That `never` /
 `danger-full-access` and `workspace-write` take effect the same way was **not
 exercised against a model — inferred, not checked**.
+
+**Codex CLI 0.162.0 refuses the approval flags on a resume under `--remote`, and the
+app-server's own config sets them instead.** Measured 2026-10-09 with `codex-cli
+0.162.0`: a Python PTY (120×40, answering the TUI's cursor and colour queries) ran
+`codex app-server --listen unix://<socket>` and the TUI `codex --remote unix://<socket> -C
+<folder> …`, with a throwaway `CODEX_HOME` holding only `auth.json` and the folder's trust
+table, real model turns, and each turn's settings read from the `turn_context` record in
+the thread's rollout file. The test asked the model to `touch` a file outside the folder.
+
+- `… resume <thread>` with `-a never`, with `-s workspace-write`, with both, or with
+  `-c approval_policy="never" -c sandbox_mode="workspace-write"` on the TUI: the TUI drew
+  "Resuming session…", then ended with "Error: Permission overrides are not supported
+  when resuming a remote task." (exit code 1 where the driver caught the exit). The check runs after the TUI connects:
+  against a socket that does not exist, every form fails first with "failed to connect to
+  remote app server". The same `-a`/`-s` on a new thread (no `resume`) are taken.
+- A bare `resume` (no flags) works. What it ran under, from `turn_context`: a thread
+  started with `-a never -s workspace-write` came back `never` / `workspace-write`; one
+  started with `-a never -s danger-full-access` came back `never` / `workspace-write`, and
+  its `touch` outside the folder was refused; one started with no flags (`on-request` /
+  `read-only` in that folder) came back `on-request` / `workspace-write`. So the approval
+  policy comes back with the thread, and the sandbox comes back as `workspace-write`
+  whatever it was. Where that `workspace-write` comes from is **inferred, not checked**.
+- The same bare `resume`, with `-c approval_policy="never" -c sandbox_mode="danger-full-access"`
+  given to `codex app-server` instead: `turn_context` showed `never` /
+  `danger-full-access` and the `touch` outside the folder worked with no question. With
+  `sandbox_mode="workspace-write"`: `never` / `workspace-write`, the `touch` was refused,
+  no question.
+- `workspace-write` lets the model's shell write in `/tmp` and in `$TMPDIR`: a `touch` in
+  a folder under `/private/tmp` worked under it, and was refused once `config.toml` held
+  `[sandbox_workspace_write]` with `exclude_slash_tmp = true` and
+  `exclude_tmpdir_env_var = true`. The e2e homes live under `$TMPDIR`, so a real-binary
+  case that checks a write outside the workspace sets those two.
+
+So Koloft hands a launch's approval and sandbox choice to the TUI as `-a`/`-s` on a new
+thread, and to that run's own app-server as `-c approval_policy=…` /
+`-c sandbox_mode=…` on a resume. Established again through Koloft by
+`discord-real-smoke.spec.ts` › "a real Codex conductor whose tab closed is resumed by the
+owner’s next message, …" (before the change: "The conductor closed before it was ready")
+and `agent-tools-real-smoke.spec.ts` › "a real Codex session launched with approvals and
+the sandbox bypassed, resumed after its tab closed, …" (before the change: `turn_context`
+`never` / `workspace-write`, the write refused). A new thread with the choice on the
+app-server alone, and no `-a`/`-s` on the TUI, is not probed yet.
 
 ## 12. Files a turn touched, and a command that opens a file
 
@@ -570,6 +622,44 @@ With `config.toml` a link to an empty shared file, the same start-up write and t
 answer both went into the shared file and the link stayed a link. Hence Koloft makes an
 empty shared file when there is none, rather than skip the link.
 
+**A home finds a session by the file under its own `sessions/`, wherever that folder
+really is.** Checked 2026-10-08 with Codex CLI 0.162.0, no model turn, no login in any
+home. A Node script ran `codex app-server` on three throwaway `CODEX_HOME`s and sent
+`thread/list`, `thread/read` and `thread/resume` for one real interactive (`source:
+"vscode"`) rollout copied from this Mac's `~/.codex/sessions/YYYY/MM/DD/` (copies deleted
+afterwards):
+
+| home | listed | `thread/read` | `thread/resume` |
+|---|---|---|---|
+| empty | no | `-32600` "thread not loaded" | `-32600` "no rollout found for thread id" |
+| rollout copied under `sessions/` | yes | ok | ok |
+| `sessions/` a symlink to a folder holding it | yes | ok | ok |
+
+A home whose `state_5.sqlite` had already been built from its own `sessions/`, with that
+folder then swapped for a link to a shared one holding another rollout, listed both. So
+Koloft links every account home's `sessions/` and `archived_sessions/` to the default
+home's, lists history once from the default home, and resumes a session in whichever
+account the picker chooses. A `codex exec` rollout (`source: "exec"`) is not in the
+default listing, which asks for interactive sources only.
+
+**A session started on one login takes a model turn on another.** Checked 2026-10-09
+with Codex CLI 0.162.0 and two real ChatGPT logins (one Plus, one Pro, different
+emails), each signed in with `codex login --device-auth` into its own throwaway
+`CODEX_HOME`, whose `sessions/`, `archived_sessions/` and `config.toml` were links into
+a third throwaway default home. Login A's app-server ran `thread/start` and one
+`gpt-6-luna` turn ("Reply with exactly: ONE" → "ONE"). Login B's app-server then ran
+`thread/resume` on that id (ok, the rollout path inside the shared folder) and a turn
+asking what it had replied before: it answered "ONE … TWO" and `turn/completed` with
+status `completed` — the earlier turns carried over, and the rollout's
+`creator_account_id` did not stop it. The shared folder still held one rollout. Both
+plans' `model/list` included `gpt-6-luna`.
+
+**The Assist one-shot runs in such a home.** Same day and setup, login B's home:
+`codex exec --skip-git-repo-check --ephemeral --ignore-user-config --ignore-rules -s
+read-only -m gpt-6-luna -C /tmp -` with the system text and task on stdin exited 0 in
+about 2 s, printed only the title on stdout, reported 2,538 tokens on stderr, and wrote
+no rollout into the shared `sessions/`.
+
 Not tried, because they need a second real login or would open a browser on this Mac:
 - that `codex login` with `CODEX_HOME` set signs in only that home and exits 0 once
   done (Koloft types `codex login && exit` into the sign-in terminal, so the tab closes
@@ -764,6 +854,14 @@ sentence, then `ls`, then `DONE`; turn 2 was sent with `thread/queue/add`.
   said `historyMode: "paginated"`). Those two methods are not on the list `CodexRpc` lets
   through; if a later Codex drops `includeTurns`, reading a closed Codex session breaks
   there first.
+- **A Plan-mode turn writes no plan file; the plan is a `plan` item** `{type, id, text}`
+  on `item/completed`, streamed before that by `item/plan/delta` (72 deltas adding up to
+  the same 362 characters). It is not `turn/plan/updated`, which is `update_plan`'s step
+  list. The saved rollout holds the plan twice: an `item_completed` event whose
+  `item.text` is the plan, and the final assistant message, which wraps it in
+  `<proposed_plan>` tags. Checked 2026-10-03 with Codex 0.159.3: one `turn/start` with
+  `collaborationMode: {mode: "plan", …}` in a fresh `CODEX_HOME`, in a folder holding
+  only `README.md`; `collaborationMode/list` answered `Plan` and `Default`.
 - That the TUI's ephemeral title thread (section 17, its own `temporary-structured-…` id)
   never sends items under the session's thread id is inferred from section 17, not
   re-run here: no TUI was attached in this probe.
@@ -845,6 +943,12 @@ folder trusted. Text was typed in one write and CR in a second write 0.3–0.6 s
   started and completed, `turn/completed` (2.8–5.4 s), on the same thread id. No
   `thread/compacted` notification came. The relay sending `thread/compact/start` itself
   did the same, and the TUI drew it and kept working.
+- **An automatic compaction stays inside the turn it interrupts** (2026-10-09, Codex CLI
+  0.162.0, `codex app-server` on stdio driven by a Node script, a temporary `CODEX_HOME`
+  with `model_auto_compact_token_limit = 30000`, one real turn of four `seq` commands):
+  after the third command a `contextCompaction` item started and completed (10.6 s), the
+  fourth command and the reply followed, and one `turn/completed` for the same turn id
+  ended it. No other turn started and no user message was added.
 - **`/new` and `/clear`** each sent `config/read`, `thread/start` (a new id), then
   `thread/unsubscribe` of the old thread. `/clear` adds `sessionStartSource: "clear"`.
   A `-c developer_instructions=…` given to the app-server still reached the model in the
@@ -937,4 +1041,60 @@ message" (3 runs).
   checks of PR #3 in its composer unsent …").
 - Codex on a remote machine is not a tab Koloft starts yet (§16), so the paste over ssh
   and tmux is not probed for Codex.
+
+## 24. Searching the words of every thread
+
+How established: 2026-10-09 on this Mac, Codex CLI 0.162.0. The schema from
+`codex app-server generate-json-schema --experimental` (`v2/ThreadSearchParams.json`,
+`ThreadSearchResponse.json`), then a Node client on `codex app-server --stdio` in a
+scratch `CODEX_HOME` holding only a copied `auth.json` and a `config.toml` (update check
+off, the work folder trusted), deleted afterwards. One real turn (`thread/start` with
+`approvalPolicy: "never"`, `sandbox: "read-only"`) asked the model to reply with the
+word made of "ban" and "jo", with the marker `zebrafinch42` in the prompt; it answered
+`banjo`.
+
+- **`thread/search` takes `{ searchTerm, cursor, limit, archived, sourceKinds, sortKey,
+  sortDirection }`** (only `searchTerm` required; `sortKey` `created_at` by default,
+  `sortDirection` `desc`) **and answers `{ data: [{ snippet, thread }], nextCursor,
+  backwardsCursor }`**; `thread` has the shape `thread/list` returns, and the pages
+  follow `nextCursor` the same way.
+- **It matches what the person typed and what the model answered, in any case.**
+  `zebrafinch42` (only in the prompt), `banjo` (only in the reply) and `ZEBRAFINCH42`
+  each returned the thread; a word in neither returned `{data: [], nextCursor: null,
+  backwardsCursor: null}`. Each call took about 6–8 ms on the one-thread home (150 ms
+  for the first call right after the turn).
+- **One hit per thread.** `ban`, in both the prompt and the reply, gave one hit, whose
+  snippet came from the prompt.
+- **The snippet is plain text with no match range**: `... ban" followed by "jo", and
+  nothing else. Marker: zebrafinch42`, cut with `... ` at the front and ` ...` at the end,
+  not centred on the match. Whoever shows the match finds the term in it again.
+- **The thread's name is not searched.** After `thread/name/set` named it "Pelican title
+  only", `pelican` returned nothing; so a search by title is the caller's own.
+- **It also matches text Codex adds itself**: the term `e` hit inside the
+  `<environment_context>` block Codex puts before the first turn.
+- **`archived` picks one side**: the schema says `true` gives archived threads only and
+  `false` or null the rest; `archived: true` with `banjo` returned nothing, the thread
+  not being archived. That `false` hides an archived thread was not run. An empty
+  `searchTerm` is refused with `-32600 "thread/search requires a non-empty searchTerm"`.
+- Not probed: how long it takes on a home with thousands of threads (no real home was
+  searched), and Codex on a remote machine (§16).
+
+## 25. The keys the TUI takes
+
+How established: 2026-10-09, Codex CLI 0.162.0, this Mac's own login, `codex --no-daemon`
+in a python `pty` (100×40) in a fresh scratch folder, each key one write about 1 s after
+the one before, the screen read back through `pyte`.
+
+- **In the composer:** `abcd`, then `ESC[D` twice and `DEL` (0x7f) left `acd`; `ESC[C`,
+  `X`, a space and `Y` made `acX Yd`. Left, Right and Backspace move and delete as
+  typed.
+- **`/mod` then Tab** completed to `/model`; CR opened the "Select Model and Effort"
+  list.
+- **In a list:** `ESC[B` moved the `›` mark down one entry, `ESC[A` back up; in the
+  three-entry "Background server" prompt `ESC[B` from the last entry wrapped to the
+  first. ESC closed the model list and left the composer empty.
+- **Shift+Tab (`ESC[Z`)** at the empty composer switched the session to Plan mode ("Model
+  changed to … for Plan mode").
+- Not run: the same keys through ssh and tmux, since Koloft starts no remote Codex tab
+  (§16).
 

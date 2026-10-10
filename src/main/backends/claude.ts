@@ -13,6 +13,7 @@ import type {
 } from '@shared/types'
 import type { SessionEvent } from '@shared/sessionEvent'
 import { formatRemoteKey, hostOf, isAbsoluteOnHost, parseRemoteKey } from '@shared/remoteKey'
+import { hasUsableAccount } from '@shared/accountUsage'
 import type { Turn } from '@shared/turns'
 import type { ModeClass } from '../crossSessionMessage'
 import { isValidWorktreeName } from '@shared/worktreeName'
@@ -59,8 +60,9 @@ import {
   type HookReport
 } from '../hookRouting'
 import { registeredByTabRoot } from '../shim'
-import { watchJsonDrops } from '../jsonDrops'
+import { oncePerName, watchAndSweepJsonDrops, watchJsonDrops } from '../jsonDrops'
 import { copyWorktreeIncludes } from '../sessionWorktrees'
+import { GIT_REF_RE } from '../gitSteps'
 import {
   dirExistsSync,
   gitProbes,
@@ -83,8 +85,6 @@ export interface ClaudeBackendDeps {
   resumeProbes: ResumeProbes
   events(tabId: string, event: SessionEvent): void
 }
-
-const GIT_REF_RE = /^[A-Za-z0-9._][A-Za-z0-9._/-]{0,120}$/
 
 // PLATFORM§28
 const STATUS_LOG_POLL_MS = 2000
@@ -124,11 +124,11 @@ export class ClaudeBackend implements SessionBackend {
   private hookRegDir = ''
   private statusLogCursors = new Map<string, { offset: number; tail: Buffer }>()
   private statusLogDraining = new Map<string, boolean>()
-  private processedRegIds = new Set<string>()
   private watchedHookMirrors = new Map<string, () => void>()
   private pickedSkipFlag = new Set<string>()
   private launchedBypassing = new Set<string>()
   private heldBeforeStartup = new Map<string, string>()
+  private startsBeforeRegistration = new Map<string, unknown>()
   agentPlugin?: string
 
   constructor(private d: ClaudeBackendDeps) {}
@@ -176,8 +176,7 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   accountUsable(): boolean {
-    if (!loadSettings().multiAccount) return true
-    return listAccounts().some((a) => a.kind !== 'codex-home' && a.enabled && a.status === 'ok')
+    return hasUsableAccount(listAccounts(), 'claude')
   }
 
   trustsFolder(dir: string): Promise<boolean> {
@@ -247,7 +246,14 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   watchShimRegistrations(regDir: string): void {
-    watchJsonDrops(regDir, () => (raw) => this.handleRegistration(raw))
+    watchAndSweepJsonDrops(
+      regDir,
+      oncePerName(
+        () =>
+          (raw): void =>
+            this.handleRegistration(raw)
+      )
+    )
   }
 
   private handleRegistration(raw: unknown): void {
@@ -261,12 +267,13 @@ export class ClaudeBackend implements SessionBackend {
       pid?: number
     }
     if (!obj.tabId || !obj.regId) return
-    if (this.processedRegIds.has(obj.regId)) return
     if (!this.d.pty.get(obj.tabId)) return
     if (!registeredByTabRoot(obj.pid, this.d.pty.pidOf(obj.tabId))) return
-    this.processedRegIds.add(obj.regId)
     const cwd = obj.cwd && obj.cwd.length ? obj.cwd : os.homedir()
     this.d.tracker.track(obj.tabId, cwd)
+    const early = this.startsBeforeRegistration.get(obj.tabId)
+    this.startsBeforeRegistration.delete(obj.tabId)
+    if (early) this.handleHookRegistration(early)
   }
 
   watchLocalHooks(regDir: string): void {
@@ -280,6 +287,7 @@ export class ClaudeBackend implements SessionBackend {
     this.pickedSkipFlag.delete(tabId)
     this.launchedBypassing.delete(tabId)
     this.heldBeforeStartup.delete(tabId)
+    this.startsBeforeRegistration.delete(tabId)
     const remote = this.d.tracker.remoteOf(tabId)
     const sid = this.sessionIdOf(tabId)
     const title = this.titleOf(tabId)
@@ -345,10 +353,17 @@ export class ClaudeBackend implements SessionBackend {
 
   private watchHookRegistrations(dir: string, mirror = false): () => void {
     const isNews = mirror ? makeDropDedupe() : null
-    const drops = watchJsonDrops(dir, () => (obj, full) => {
+    const handle = (obj: unknown, full: string): void => {
       if (isNews && !isNews(full, JSON.stringify(obj))) return
       this.handleHookRegistration(obj)
-    })
+    }
+    const unboundTabNote = (name: string): typeof handle | null => {
+      const tabId = path.basename(name, '.json')
+      return this.d.pty.get(tabId) && !this.sessionIdOf(tabId) ? handle : null
+    }
+    const drops = mirror
+      ? watchJsonDrops(dir, () => handle)
+      : watchAndSweepJsonDrops(dir, () => handle, unboundTabNote)
     const logs = this.watchStatusLogs(dir)
     return () => {
       drops?.close()
@@ -608,6 +623,10 @@ export class ClaudeBackend implements SessionBackend {
     }
     obj.tabId = this.liveTabFor(obj)
     if (!obj.tabId) return
+    if (obj.event !== 'end' && !tracker.infoOf(obj.tabId)) {
+      this.startsBeforeRegistration.set(obj.tabId, raw)
+      return
+    }
     // CC§5
     if (!ownsHookReport(obj, this.sessionIdOf(obj.tabId))) return
     if (obj.event === 'end') {

@@ -41,9 +41,14 @@ export class StartedSessions {
   }
 
   startedBy(target: { sessionId: string; tabId?: string }, caller: { sessionId: string }): boolean {
-    return [target.sessionId, target.tabId].some(
-      (rowId) => rowId !== undefined && this.parentOfRow(rowId) === caller.sessionId
-    )
+    return this.startersOf(target).includes(caller.sessionId)
+  }
+
+  startersOf(target: { sessionId: string; tabId?: string }): string[] {
+    return [target.sessionId, target.tabId].flatMap((rowId) => {
+      const parent = rowId === undefined ? undefined : this.parentOfRow(rowId)
+      return parent === undefined ? [] : [parent]
+    })
   }
 
   parentOfRow(rowId: string): string | undefined {

@@ -11,7 +11,8 @@ import type {
   BackendSessionRow
 } from '@shared/types'
 import { CODEX_PLACEHOLDER_TITLE } from '@shared/types'
-import { identityOf } from '@shared/sessionBackend'
+import { identityOf, sourceOf } from '@shared/sessionBackend'
+import type { SearchCandidate } from './sessionSearch'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
 import {
@@ -23,6 +24,7 @@ import {
   type CodexThread
 } from './codexObservation'
 import { CodexRpc, createCodexTransport, type CodexTransport } from './codexTransport'
+import { endCodexAppServersLeftByACrash } from './leftovers'
 import { SessionStore, codexSessionKey, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees } from './sessionWorktrees'
 import type { PtyManager } from './ptyManager'
@@ -36,6 +38,7 @@ import { removeCodexOpenShim, writeCodexOpenShim } from './openShimScript'
 import { AGENT_SHIM_WAITS_MS, writeCodexAgentShim } from './agentShim'
 import { CODEX_AGENT_HINT } from '@shared/agentGuide'
 import { portOffset } from '@shared/worktreeName'
+import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import type { CodexApproval, CodexQuestion } from './discord/dialog'
 
 const exists = (p: string): boolean => {
@@ -66,15 +69,32 @@ const QUEUE_ANSWER_INSIDE_THE_KOLOFT_WAIT_MS = AGENT_SHIM_WAITS_MS / 2
 // CODEX§1
 const NO_UPDATE_NOTICE_AT_START = 'check_for_update_on_startup=false'
 
+interface Permissions {
+  approval: 'never' | 'on-request'
+  sandbox: 'workspace-write' | 'danger-full-access'
+}
+
 // CODEX§11
-const PERMISSION_ARGS: Record<LaunchPermission, string[]> = {
-  default: [],
-  acceptEdits: ['-a', 'on-request', '-s', 'workspace-write'],
-  bypass: ['-a', 'never', '-s', 'danger-full-access']
+const PERMISSIONS: Record<LaunchPermission, Permissions | undefined> = {
+  default: undefined,
+  acceptEdits: { approval: 'on-request', sandbox: 'workspace-write' },
+  bypass: { approval: 'never', sandbox: 'danger-full-access' }
 }
 
 // ADR-0029 CODEX§12
-const CONDUCTOR_ARGS = ['-a', 'never', '-s', 'workspace-write']
+const CONDUCTOR_PERMISSIONS: Permissions = { approval: 'never', sandbox: 'workspace-write' }
+
+// CODEX§11
+function permissionFlags(p: Permissions | undefined): string[] {
+  return p ? ['-a', p.approval, '-s', p.sandbox] : []
+}
+
+// CODEX§11
+function permissionConfig(p: Permissions | undefined): string[] {
+  return p
+    ? [`approval_policy=${JSON.stringify(p.approval)}`, `sandbox_mode=${JSON.stringify(p.sandbox)}`]
+    : []
+}
 
 // CODEX§14
 function launchChoiceArgs(opts: CreateTabOptions): string[] {
@@ -98,6 +118,26 @@ const EMIT_THROTTLE_MS = 500
 const binaryGone = (error: unknown): boolean =>
   (error as NodeJS.ErrnoException | null)?.code === 'ENOENT'
 
+const sourceKinds = ['cli', 'vscode', 'appServer']
+
+async function* everyPage(
+  rpc: CodexRpc,
+  method: string,
+  params: Record<string, unknown>
+): AsyncGenerator<unknown> {
+  let cursor: string | undefined
+  const cursors = new Set<string>()
+  do {
+    const reply = record(await rpc.request(method, { limit: 100, cursor, ...params }))
+    if (!Array.isArray(reply.data))
+      throw new Error('Codex history returned an unsupported response.')
+    yield* reply.data
+    cursor = typeof reply.nextCursor === 'string' && reply.nextCursor ? reply.nextCursor : undefined
+    if (cursor && cursors.has(cursor)) throw new Error('Codex history repeated a page.')
+    if (cursor) cursors.add(cursor)
+  } while (cursor)
+}
+
 export interface CodexSessionDeps {
   pty: PtyManager
   runtime: SessionRuntime
@@ -109,7 +149,6 @@ export interface CodexSessionDeps {
   error(message: string): void
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
   pickHome(): { account: string; home: string } | undefined
-  homes(): string[]
   openShimRoot: string
   agent: {
     enabled(): boolean
@@ -133,16 +172,15 @@ interface Run {
   stopping?: Promise<void>
   explicitStop: boolean
   resumeKey?: string
-  home?: string
-  account?: string
-  bypassingChecks: boolean
+  account: string
+  permission: LaunchPermission
   releaseOpenShim(): void
 }
 
 export class CodexSessions {
+  private crashLeftoversEnded?: Promise<void>
   private runs = new Map<string, Run>()
   private history = new Map<string, CodexThread>()
-  private threadHomes = new Map<string, string>()
   private archivedIds = new Set<string>()
   private binary?: string
   private processEnv?: NodeJS.ProcessEnv
@@ -152,7 +190,7 @@ export class CodexSessions {
   private warnedVersion?: string
   private refreshing?: Promise<void>
   private historyError?: Error
-  private everyHomeListed = false
+  private listed = false
   private launchingKeys = new Set<string>()
   private pendingLaunches = new Set<Promise<{ id: string; cwd: string }>>()
   private shuttingDown = false
@@ -262,6 +300,10 @@ export class CodexSessions {
   private async startTransport(
     options: Parameters<typeof createCodexTransport>[0]
   ): Promise<CodexTransport> {
+    // CODEX§5
+    await (this.crashLeftoversEnded ??= endCodexAppServersLeftByACrash(STATUS_LINE_CONFIG).catch(
+      () => {}
+    ))
     try {
       return await createCodexTransport(options)
     } catch (error) {
@@ -281,10 +323,6 @@ export class CodexSessions {
   // CODEX§15
   private envFor(home: string | undefined): NodeJS.ProcessEnv | undefined {
     return home ? { ...this.processEnv, CODEX_HOME: home } : this.processEnv
-  }
-
-  private homeFor(key: string): string | undefined {
-    return this.store.getMember(key)?.codexHome ?? this.threadHomes.get(key)
   }
 
   private rpc(home: string | undefined): CodexRpc {
@@ -476,78 +514,74 @@ export class CodexSessions {
       }
     }
     if (this.shuttingDown) return
-    const homeList = [undefined, ...this.deps.homes()]
-    const listings = await Promise.allSettled(homeList.map((home) => this.listHome(home)))
-    const defaultListing = listings[0]
-    if (defaultListing.status === 'rejected') {
-      if (binaryGone(defaultListing.reason)) this.forgetProbe()
-      const error = defaultListing.reason
+    let threads: { key: string; thread: CodexThread; archived: boolean }[]
+    try {
+      threads = await this.listThreads()
+    } catch (error) {
+      if (binaryGone(error)) this.forgetProbe()
       this.historyError = error instanceof Error ? error : new Error(String(error))
       return
     }
     const seen = new Map<string, CodexThread>()
-    const homes = new Map<string, string>()
     const archivedIds = new Set<string>()
-    listings.forEach((listing, i) => {
-      const home = homeList[i]
-      const threads =
-        listing.status === 'fulfilled'
-          ? listing.value
-          : [...this.threadHomes]
-              .filter(([key, owner]) => owner === home && this.history.has(key))
-              .map(([key]) => ({
-                key,
-                thread: this.history.get(key)!,
-                archived: this.archivedIds.has(key)
-              }))
-      for (const { key, thread, archived } of threads) {
-        seen.set(key, thread)
-        if (home) homes.set(key, home)
-        if (archived) archivedIds.add(key)
-      }
-    })
+    for (const { key, thread, archived } of threads) {
+      seen.set(key, thread)
+      if (archived) archivedIds.add(key)
+    }
     this.history = seen
-    this.threadHomes = homes
     this.archivedIds = archivedIds
-    this.everyHomeListed = listings.every((listing) => listing.status === 'fulfilled')
+    this.listed = true
     this.historyError = undefined
     this.changed()
   }
 
-  private async listHome(
-    home: string | undefined
-  ): Promise<{ key: string; thread: CodexThread; archived: boolean }[]> {
-    const rpc = this.rpc(home)
+  // CODEX§15
+  private async listThreads(): Promise<{ key: string; thread: CodexThread; archived: boolean }[]> {
+    const rpc = this.rpc(undefined)
     const threads: { key: string; thread: CodexThread; archived: boolean }[] = []
     try {
       for (const archived of [false, true]) {
-        let cursor: string | undefined
-        const cursors = new Set<string>()
-        do {
-          const reply = record(
-            await rpc.request('thread/list', {
-              limit: 100,
-              cursor,
-              archived,
-              sourceKinds: ['cli', 'vscode', 'appServer']
-            })
-          )
-          if (!Array.isArray(reply.data))
-            throw new Error('Codex history returned an unsupported response.')
-          for (const value of reply.data) {
-            const thread = userThread(value)
-            if (thread) threads.push({ key: codexSessionKey(thread.id), thread, archived })
-          }
-          cursor =
-            typeof reply.nextCursor === 'string' && reply.nextCursor ? reply.nextCursor : undefined
-          if (cursor && cursors.has(cursor)) throw new Error('Codex history repeated a page.')
-          if (cursor) cursors.add(cursor)
-        } while (cursor)
+        for await (const value of everyPage(rpc, 'thread/list', { archived, sourceKinds })) {
+          const thread = userThread(value)
+          if (thread) threads.push({ key: codexSessionKey(thread.id), thread, archived })
+        }
       }
       return threads
     } finally {
       await rpc.close()
     }
+  }
+
+  searchable(workspaces: string[]): SearchCandidate[] {
+    return workspaces.flatMap((workspacePath) =>
+      this.rows(workspacePath)
+        .filter((row) => !row.pending && !this.archivedIds.has(row.id))
+        .map((row) => ({ row: { ...row, ...sourceOf('codex', workspacePath) }, workspacePath }))
+    )
+  }
+
+  // CODEX§24
+  async searchSnippets(term: string): Promise<{ id: string; snippet: string }[]> {
+    if (!(await this.availability()).available) return []
+    return this.searchSharedHome(term).catch(() => [])
+  }
+
+  // CODEX§15
+  private searchSharedHome(term: string): Promise<{ id: string; snippet: string }[]> {
+    return this.withRpc(undefined, async (rpc) => {
+      const found: { id: string; snippet: string }[] = []
+      const params = { searchTerm: term, archived: false, sourceKinds }
+      for await (const value of everyPage(rpc, 'thread/search', params)) {
+        const item = record(value)
+        const thread = userThread(item.thread)
+        if (thread)
+          found.push({
+            id: codexSessionKey(thread.id),
+            snippet: typeof item.snippet === 'string' ? item.snippet : ''
+          })
+      }
+      return found
+    })
   }
 
   async historyRows(workspace: string): Promise<BackendSessionRow[]> {
@@ -561,7 +595,7 @@ export class CodexSessions {
   async transcriptExists(key: string): Promise<boolean> {
     const id = this.nativeId(key)
     if (this.archivedIds.has(key)) return false
-    return this.withRpc(this.homeFor(key), async (rpc) => {
+    return this.withRpc(undefined, async (rpc) => {
       const reply = record(await rpc.request('thread/read', { threadId: id, includeTurns: false }))
       const t = userThread(reply.thread)
       return !!t?.path && fs.existsSync(t.path)
@@ -577,13 +611,11 @@ export class CodexSessions {
   }
 
   threadGone(key: string): boolean {
-    return (
-      this.everyHomeListed && !this.refreshing && !this.history.has(key) && !this.aliveTabFor(key)
-    )
+    return this.listed && !this.refreshing && !this.history.has(key) && !this.aliveTabFor(key)
   }
 
   launchedBypassingChecks(tabId: string): boolean {
-    return this.runs.get(tabId)?.bypassingChecks === true
+    return this.runs.get(tabId)?.permission === 'bypass'
   }
 
   turnsOf(key: string, n: number): Turn[] | undefined {
@@ -593,7 +625,7 @@ export class CodexSessions {
   // CODEX§19
   async readTurns(key: string, n: number): Promise<Turn[]> {
     const id = this.nativeId(key)
-    return this.withRpc(this.homeFor(key), async (rpc) => {
+    return this.withRpc(undefined, async (rpc) => {
       const reply = record(await rpc.request('thread/read', { threadId: id, includeTurns: true }))
       return codexTurns(record(reply.thread).turns).last(n)
     })
@@ -685,6 +717,10 @@ export class CodexSessions {
     const workspace = this.workspaceFor(cwd)
     if (opts.resumeSessionId && this.aliveTabFor(opts.resumeSessionId))
       throw new Error('This Codex session is already open.')
+    // CODEX§15 ADR-0030
+    const picked = this.deps.pickHome()
+    if (!picked) throw new Error(NO_USABLE_ACCOUNT.codex)
+    const home = picked.home
     if (opts.worktreeResourceId) {
       const saved = this.store.getResource(opts.worktreeResourceId)
       if (!saved || saved.originalCwd !== workspace || opts.worktree || opts.resumeSessionId)
@@ -700,8 +736,6 @@ export class CodexSessions {
       resource = await this.worktrees.adopt(workspace, this.deps.projectInfo(cwd).treeRoot)
     }
     this.assertStarting()
-    const picked = opts.resumeSessionId ? undefined : this.deps.pickHome()
-    const home = opts.resumeSessionId ? this.homeFor(opts.resumeSessionId) : picked?.home
     if (opts.trustFolder) this.deps.trustFolder(cwd, this.envFor(home))
     let run: Run | undefined
     const observe = (event: CodexEvent): void => {
@@ -722,6 +756,8 @@ export class CodexSessions {
     const env = { ...this.envFor(home), ZDOTDIR: openShim.zdotDir }
     const observer = new CodexObservation(observe)
     const instructions = [...(agent ? [CODEX_AGENT_HINT] : []), ...(opts.role ? [opts.role] : [])]
+    const permission = opts.permission ?? 'default'
+    const permissions = opts.conductor ? CONDUCTOR_PERMISSIONS : PERMISSIONS[permission]
     let transport: CodexTransport | undefined
     try {
       transport = await this.startTransport({
@@ -731,9 +767,11 @@ export class CodexSessions {
           ? { KOLOFT_PORT_OFFSET: String(portOffset(resource.worktreeName)) }
           : undefined,
         cwd,
-        configOverrides: instructions.length
-          ? [STATUS_LINE_CONFIG, developerInstructions(instructions)]
-          : [STATUS_LINE_CONFIG],
+        configOverrides: [
+          STATUS_LINE_CONFIG,
+          ...(instructions.length ? [developerInstructions(instructions)] : []),
+          ...(opts.resumeSessionId ? permissionConfig(permissions) : [])
+        ],
         onFrame: (direction, frame) => observer.receive(direction, frame),
         onDisconnect: () => this.markDegraded(run),
         onError: (error) => {
@@ -751,7 +789,7 @@ export class CodexSessions {
         STATUS_LINE_CONFIG,
         '-c',
         NO_UPDATE_NOTICE_AT_START,
-        ...(opts.conductor ? CONDUCTOR_ARGS : PERMISSION_ARGS[opts.permission ?? 'default']),
+        ...(opts.resumeSessionId ? [] : permissionFlags(permissions)),
         ...launchChoiceArgs(opts)
       ]
       if (opts.resumeSessionId) argv.push('resume', this.nativeId(opts.resumeSessionId))
@@ -775,9 +813,8 @@ export class CodexSessions {
         transport,
         explicitStop: false,
         resumeKey: opts.resumeSessionId,
-        home,
-        account: picked?.account,
-        bypassingChecks: opts.permission === 'bypass',
+        account: picked.account,
+        permission,
         releaseOpenShim: openShim.release
       }
       this.runs.set(handle.id, run)
@@ -910,7 +947,7 @@ export class CodexSessions {
         createdAt: m?.createdAt ?? (thread.createdAt ? thread.createdAt * 1000 : now),
         updatedAt: now,
         worktreeResourceId: run.resource?.id,
-        ...(run.home ? { codexHome: run.home } : {})
+        ...(run.permission !== 'default' ? { permission: run.permission } : {})
       })
       if (change === 'replace' && old && old !== key) {
         this.deps.replaced?.(old, key)
@@ -933,11 +970,10 @@ export class CodexSessions {
       alive: true,
       details: { codex: { observation: 'live' } },
       cliVersion: thread.cliVersion,
-      ...(run.account ? { pickedAccount: run.account } : {}),
+      pickedAccount: run.account,
       updatedAt: now
     }
     this.history.set(key, { ...thread, cwd: run.cwd })
-    if (run.home) this.threadHomes.set(key, run.home)
     this.deps.pty.clearResumeIntent(run.tabId)
     this.changed()
     this.deps.events(run.tabId, { type: 'bound', key })
@@ -997,6 +1033,7 @@ export class CodexSessions {
         rows: req.rows,
         role: req.role,
         conductor: req.conductor,
+        permission: m?.permission,
         trustFolder: req.trustFolder
       },
       resource

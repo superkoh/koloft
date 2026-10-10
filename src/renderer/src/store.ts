@@ -4,6 +4,7 @@ import { create } from 'zustand'
 import {
   DEFAULT_SETTINGS,
   DEFAULT_TERMINAL_TITLE,
+  type AccountView,
   type AdoptableTab,
   type ArtifactView,
   type AttentionEvent,
@@ -55,6 +56,8 @@ export interface Tab {
   alive: boolean
   resuming?: boolean
   jobId?: string
+  asleep?: true
+  ghost?: string
 }
 
 export interface OpenFile {
@@ -93,6 +96,10 @@ interface AppState {
   settings: Settings
   settingsOpen: boolean
   welcomeActive: boolean
+  onboardingStep: number
+  bypassAccepted: boolean | null
+  accounts: AccountView[] | null
+  signInTabId: string | null
   accountLogin: LoginFlowState | null
   openFiles: Record<string, OpenFile | null>
   workbenchWidth: number
@@ -144,6 +151,7 @@ interface AppState {
   conductorTabs: Record<string, string>
   bindConductor: { scope?: string; editId?: string } | null
   discordSetupStep: number | null
+  orphanConfirm: string | null
 
   addTab: (t: Tab) => void
   addTabQuiet: (t: Tab) => void
@@ -154,9 +162,9 @@ interface AppState {
   setActive: (id: string) => void
   setTabTitle: (id: string, title: string) => void
   setTabAlive: (id: string, alive: boolean) => void
+  setTabAsleep: (id: string) => void
 
   activateTab: (id: string) => void
-  visitTab: (id: string) => void
   restartActiveSession: () => void
 
   setSessions: (s: SessionInfo[]) => void
@@ -165,6 +173,10 @@ interface AppState {
   setSettings: (s: Settings) => void
   setSettingsOpen: (open: boolean) => void
   setWelcomeActive: (on: boolean) => void
+  setOnboardingStep: (step: number) => void
+  setBypassAccepted: (accepted: boolean) => void
+  setAccounts: (accounts: AccountView[]) => void
+  setSignInTabId: (tabId: string) => void
   beginLogin: (reauthName?: string) => void
   setLoginProgress: (p: LoginProgress) => void
   clearLogin: () => void
@@ -185,6 +197,7 @@ interface AppState {
   setConductorTab: (bindingId: string, tabId: string) => void
   setBindConductor: (b: AppState['bindConductor']) => void
   setDiscordSetupStep: (step: number | null) => void
+  setOrphanConfirm: (rowId: string | null) => void
 
   ensureWorkbench: (tabId: string) => Promise<void>
   setWorkbenchState: (tabId: string, state: SessionWorkbenchState) => void
@@ -285,6 +298,64 @@ function samePersistedTabs(a: WorkbenchTabSet, b: WorkbenchTabSet): boolean {
 
 const workbenchFetches = new Map<string, Promise<void>>()
 
+function movedKey<T>(m: Record<string, T>, oldId: string, newId: string): Record<string, T> {
+  if (!(oldId in m)) return m
+  const next = { ...m, [newId]: m[oldId] }
+  delete next[oldId]
+  return next
+}
+
+function panelStateMoved(
+  s: AppState,
+  oldId: string,
+  newId: string
+): Pick<
+  AppState,
+  'openFiles' | 'workbench' | 'workbenchOpen' | 'workbenchFetched' | 'changesBase'
+> {
+  return {
+    openFiles: movedKey(s.openFiles, oldId, newId),
+    workbench: movedKey(s.workbench, oldId, newId),
+    workbenchOpen: movedKey(s.workbenchOpen, oldId, newId),
+    workbenchFetched: movedKey(s.workbenchFetched, oldId, newId),
+    changesBase: movedKey(s.changesBase, oldId, newId)
+  }
+}
+
+function tabStateMoved(oldId: string, newId: string, sessionId: string): void {
+  const parked = workbenchParked.get(oldId)
+  if (parked) {
+    workbenchParked.delete(oldId)
+    workbenchParked.set(newId, parked)
+  }
+  rekeyOwner(oldId, newId)
+  everBoundSession.delete(oldId)
+  lastSessionId.delete(oldId)
+  lastSessionId.set(newId, sessionId)
+}
+
+function wakeInto(asleep: Tab, t: Tab, select: boolean): void {
+  useStore.setState((s) => ({
+    tabs: s.tabs.map((x) =>
+      x.id === asleep.id ? { ...t, title: asleep.title || t.title, ghost: asleep.id } : x
+    ),
+    activeTabId: select || s.activeTabId === asleep.id ? t.id : s.activeTabId,
+    resumeLaunch: select ? null : s.resumeLaunch,
+    ...panelStateMoved(s, asleep.id, t.id)
+  }))
+  tabStateMoved(asleep.id, t.id, t.sessionId ?? '')
+}
+
+function asleepTabFor(s: Pick<AppState, 'tabs'>, t: Tab): Tab | undefined {
+  return t.sessionId
+    ? s.tabs.find((x) => x.asleep && x.sessionId === t.sessionId && x.id !== t.id)
+    : undefined
+}
+
+function tabIsWoken(s: Pick<AppState, 'sessions'>, tabId: string): boolean {
+  return s.sessions.some((x) => x.tabId === tabId && !!x.sessionId && x.status !== undefined)
+}
+
 export function boundSessionId(
   s: Pick<AppState, 'sessions' | 'tabs'>,
   tabId: string
@@ -381,6 +452,10 @@ export const useStore = create<AppState>((set, get) => ({
   settings: DEFAULT_SETTINGS,
   settingsOpen: false,
   welcomeActive: false,
+  onboardingStep: 1,
+  bypassAccepted: null,
+  accounts: null,
+  signInTabId: null,
   accountLogin: null,
   openFiles: {},
   workbenchWidth: DEFAULT_SETTINGS.workbenchWidth,
@@ -416,12 +491,18 @@ export const useStore = create<AppState>((set, get) => ({
   conductorTabs: {},
   bindConductor: null,
   discordSetupStep: null,
+  orphanConfirm: null,
 
   addTab: (t) => {
+    const asleep = asleepTabFor(get(), t)
+    if (asleep) return wakeInto(asleep, t, true)
     set((s) => ({ tabs: [...s.tabs, t], activeTabId: t.id, resumeLaunch: null }))
   },
-  addTabQuiet: (t) =>
-    set((s) => (s.tabs.some((x) => x.id === t.id) ? {} : { tabs: [...s.tabs, t] })),
+  addTabQuiet: (t) => {
+    const asleep = asleepTabFor(get(), t)
+    if (asleep) return wakeInto(asleep, t, false)
+    set((s) => (s.tabs.some((x) => x.id === t.id) ? {} : { tabs: [...s.tabs, t] }))
+  },
   setCron: (cron) => set({ cron }),
   adoptTabs: (tabs, activeTabBeforeReload) => {
     const fresh = tabs.filter((a) => !get().tabs.some((t) => t.id === a.id))
@@ -439,6 +520,7 @@ export const useStore = create<AppState>((set, get) => ({
         cwd: a.cwd,
         alive: true
       }
+      if (a.asleep) return { ...t, alive: false, asleep: true, sessionId: a.sessionId }
       if (a.sessionId) {
         t.sessionId = a.sessionId
         everBoundSession.add(a.id)
@@ -449,7 +531,7 @@ export const useStore = create<AppState>((set, get) => ({
       }
       return t
     })
-    for (const t of adopted) adoptedNudgePending.add(t.id)
+    for (const t of adopted) if (!t.asleep) adoptedNudgePending.add(t.id)
     set((s) => ({
       tabs: [...s.tabs, ...adopted],
       activeTabId: adopted.some((t) => t.id === activeTabBeforeReload)
@@ -509,16 +591,26 @@ export const useStore = create<AppState>((set, get) => ({
   setTabAlive: (id, alive) =>
     set((s) => {
       const cur = s.tabs.find((t) => t.id === id)
-      if (!cur || cur.alive === alive) return {}
+      if (!cur || cur.alive === alive || cur.asleep) return {}
       return { tabs: s.tabs.map((t) => (t.id === id ? { ...t, alive } : t)) }
     }),
+  setTabAsleep: (id) =>
+    set((s) => ({
+      tabs: s.tabs.map((t) =>
+        t.id === id
+          ? {
+              ...t,
+              alive: false,
+              asleep: true,
+              resuming: undefined,
+              sessionId: boundSessionId(s, id) ?? lastSessionId.get(id)
+            }
+          : t
+      )
+    })),
   activateTab: (id) => {
     if (!get().tabs.some((x) => x.id === id)) return
     set({ activeTabId: id, resumeLaunch: null })
-  },
-  visitTab: (id) => {
-    window.api.attention.visit(id)
-    get().activateTab(id)
   },
 
   restartActiveSession: () => {
@@ -561,8 +653,8 @@ export const useStore = create<AppState>((set, get) => ({
             window.api.terminal.kill(res.id)
             return
           }
-          set((s) => {
-            const tabs = s.tabs.map((x) =>
+          set((s) => ({
+            tabs: s.tabs.map((x) =>
               x.id === oldId
                 ? {
                     ...x,
@@ -573,33 +665,11 @@ export const useStore = create<AppState>((set, get) => ({
                     alive: true
                   }
                 : x
-            )
-            const activeTabId = s.activeTabId === oldId ? res.id : s.activeTabId
-            const move = <T>(m: Record<string, T>): Record<string, T> => {
-              if (!(oldId in m)) return m
-              const next = { ...m, [res.id]: m[oldId] }
-              delete next[oldId]
-              return next
-            }
-            return {
-              tabs,
-              activeTabId,
-              openFiles: move(s.openFiles),
-              workbench: move(s.workbench),
-              workbenchOpen: move(s.workbenchOpen),
-              workbenchFetched: move(s.workbenchFetched),
-              changesBase: move(s.changesBase)
-            }
-          })
-          const parked = workbenchParked.get(oldId)
-          if (parked) {
-            workbenchParked.delete(oldId)
-            workbenchParked.set(res.id, parked)
-          }
-          rekeyOwner(oldId, res.id)
-          everBoundSession.delete(oldId)
-          lastSessionId.delete(oldId)
-          lastSessionId.set(res.id, resumeId)
+            ),
+            activeTabId: s.activeTabId === oldId ? res.id : s.activeTabId,
+            ...panelStateMoved(s, oldId, res.id)
+          }))
+          tabStateMoved(oldId, res.id, resumeId)
           restarting.add(res.id)
           setTimeout(() => restarting.delete(res.id), RESTART_COOLDOWN_MS)
         })
@@ -633,12 +703,19 @@ export const useStore = create<AppState>((set, get) => ({
       let changed = false
       let activeReverted = false
       const tabs = s.tabs.map((t) => {
-        if (t.resuming && liveTabs.has(t.id)) {
+        const woken = !!t.ghost && tabIsWoken({ sessions }, t.id)
+        const bound = !!t.resuming && liveTabs.has(t.id)
+        if (woken || bound) {
           changed = true
-          return { ...t, resuming: undefined }
+          return {
+            ...t,
+            ...(woken ? { ghost: undefined } : {}),
+            ...(bound ? { resuming: undefined } : {})
+          }
         }
         if (
           isSessionKind(t.kind) &&
+          !t.asleep &&
           !liveTabs.has(t.id) &&
           everBoundSession.has(t.id) &&
           !restarting.has(t.id)
@@ -662,6 +739,10 @@ export const useStore = create<AppState>((set, get) => ({
   setSettings: (settings) => set({ settings }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   setWelcomeActive: (welcomeActive) => set({ welcomeActive }),
+  setOnboardingStep: (onboardingStep) => set({ onboardingStep }),
+  setBypassAccepted: (bypassAccepted) => set({ bypassAccepted }),
+  setAccounts: (accounts) => set({ accounts }),
+  setSignInTabId: (signInTabId) => set({ signInTabId }),
   beginLogin: (reauthName) => set({ accountLogin: { reauthName, progress: null } }),
   setLoginProgress: (progress) =>
     set((s) => ({ accountLogin: { ...(s.accountLogin ?? {}), progress } })),
@@ -709,6 +790,7 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => ({ conductorTabs: { ...s.conductorTabs, [bindingId]: tabId } })),
   setBindConductor: (bindConductor) => set({ bindConductor }),
   setDiscordSetupStep: (discordSetupStep) => set({ discordSetupStep }),
+  setOrphanConfirm: (orphanConfirm) => set({ orphanConfirm }),
 
   ensureWorkbench: (tabId) => {
     if (!workbenchAllowed(get(), tabId)) return Promise.resolve()

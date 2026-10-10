@@ -9,6 +9,7 @@ import {
   SUPPORTED_PAIRS
 } from '@shared/sessionBackend'
 import type { BackendId, BackendSessionInfo, BackendSessionRow } from '@shared/types'
+import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 
 function stubBackend(
   id: BackendId,
@@ -159,6 +160,17 @@ describe('session backend boundary', () => {
       ok: true
     })
     expect(registry.forSession('codex:local:id')).toBe(backend)
+  })
+
+  // ADR-0030
+  it('refuses a new session whose tool has no usable Koloft account, saying where to add one, before reaching the backend', async () => {
+    const registry = new SessionBackends(lifecycle())
+    const create = vi.fn(async () => ({ ok: true as const, id: 'tab', cwd: '/repo' }))
+    registry.register({ ...stubBackend('codex'), create, accountUsable: () => false })
+    await expect(registry.create({ kind: 'codex', cwd: '/repo' })).rejects.toThrow(
+      NO_USABLE_ACCOUNT.codex
+    )
+    expect(create).not.toHaveBeenCalled()
   })
 })
 

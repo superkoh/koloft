@@ -181,6 +181,61 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     }
   })
 
+  for (const backend of ['claude', 'codex'] as const)
+    test(`a ${backend} child reports to the ${backend} session that started it after that session’s tab was closed: koloft session send with the id from its first message starts the parent again and delivers the report marked with who sent it`, async ({
+      env
+    }) => {
+      test.setTimeout(120_000)
+      if (backend === 'codex') installCodex(env)
+      seedSettings(env, { hintsOff: true })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        if (backend === 'claude') await startSessionIn(page, 'ws-a')
+        else await newSessionInWith(page, 'ws-a', 'Codex')
+        const parentRow = wsRows(page, 'ws-a').first()
+        await expect(parentRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+        const parentTab = (await parentRow.getAttribute('data-tab-id'))!
+        const parent = (await page.evaluate(() => window.api.sessions.list())).find(
+          (s) => s.tabId === parentTab
+        )!
+        const parentId = parent.nativeSessionId ?? parent.sessionId
+
+        expect(await koloftInSession(page, 'session new -- report back when done')).toBe('0')
+        const kidRow = wsGroup(page, 'ws-a').locator(
+          `.ws-tab[data-tab-id="${parentTab}"] + .ws-subtabs > .ws-tab`
+        )
+        await expect(kidRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+        const kidTab = (await kidRow.getAttribute('data-tab-id'))!
+
+        await page.evaluate((tab) => window.api.terminal.kill(tab), parentTab)
+        await expect
+          .poll(async () =>
+            (await page.evaluate(() => window.api.sessions.list())).some(
+              (s) => s.alive && s.tabId === parentTab
+            )
+          )
+          .toBe(false)
+        await page.evaluate(
+          ([tab, line]) => window.api.terminal.write(tab, line + '\r'),
+          [kidTab, `/koloft session send ${parentId} all done`]
+        )
+        const parentGot = (): string => {
+          const file = path.join(
+            env.home,
+            backend === 'claude' ? 'fake-claude-peer.jsonl' : 'fake-codex-wire.jsonl'
+          )
+          return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
+        }
+        await expect
+          .poll(parentGot, { timeout: 60_000 })
+          .toMatch(/\(From the session \\".+\\", id \S+:\) all done/)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
   test('koloft session new --workspace starts the sibling in another sidebar workspace, as a top-level row there', async ({
     page,
     env
@@ -261,6 +316,47 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     }
   })
 
+  test('koloft session close in a worktree session that Koloft resumed from the repo root after a restart still removes its worktree and branch', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const fx = setupGitFixture(env)
+    const tree = path.join(fx.clone, '.claude', 'worktrees', 'again')
+    const before = await launchApp(env)
+    try {
+      const page = await before.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      const dlg = await openWorktreeSession(page, 'repo')
+      await dlg.getByRole('textbox').click()
+      await page.keyboard.type('again')
+      await page.keyboard.press('Enter')
+      await expect(wsRows(page, 'repo')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+    } finally {
+      await quitAndClose(before)
+    }
+
+    const after = await launchApp(env)
+    try {
+      const page = await after.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      const rows = wsRows(page, 'repo')
+      await expect(rows).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const resumed = readCalls(env).at(-1)!
+      expect(resumed.argv).toContain('--resume')
+      expect(resumed.cwd).toBe(fs.realpathSync(fx.clone))
+
+      fs.rmSync(path.join(tree, 'NOTES.md'), { force: true })
+      await runIn(page, centerTerm(page), '/koloft session close')
+      await expect(rows).toHaveCount(0, { timeout: 30_000 })
+      await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+      expect(runGit(fx.clone, 'branch', '--list', 'worktree-again').trim()).toBe('')
+    } finally {
+      await quitAndClose(after)
+    }
+  })
+
   test('koloft session close <child> closes a session the caller started in a worktree, only once nothing in it would be lost, and leaves the caller open', async ({
     env
   }) => {
@@ -324,6 +420,9 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       await expect(rowOf(page, 'parent')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
       expect(await koloftInSession(page, 'session new -w kid --name kid -- hello')).toBe('0')
       await expect(rowOf(page, 'kid')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      await openMenu(page, rowOf(page, 'kid'))
+      await page.locator('.menu .mi', { hasText: /^Close$/ }).click()
+      await expect(rowOf(page, 'kid')).toHaveClass(/\bcold\b/, { timeout: 30_000 })
     } finally {
       await quitAndClose(before)
     }
