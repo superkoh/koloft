@@ -77,8 +77,10 @@ import {
 } from './remote/ssh'
 import { ENSURE_SH, TMUX_CONF, UTIL_SH } from './remote/install'
 import {
+  AGENT_PLUGIN_DIR,
   buildMachinePackage,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
+  SESSION_BIN_DIR,
   tmuxSessionName,
   UTIL_BIN_DIR,
   utilShellLine,
@@ -87,6 +89,7 @@ import {
 } from './remote/launch'
 import { machinePackageBase, mirrorHookDir, mirrorProjectsRoot } from './remote/paths'
 import { RemoteSync } from './remote/sync'
+import { REMOTE_AGENT_SHIM } from './agentShim'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
 import {
   oncePerName,
@@ -193,6 +196,7 @@ import { extOf } from '@shared/preview'
 import {
   canOpenExternally,
   routeFor,
+  schemeOf,
   type RouteDecision,
   type RouteSource
 } from '@shared/browserRoute'
@@ -343,7 +347,7 @@ import { koloftAssist } from './assist'
 import { closingTree, removeTree, whatIsLeft } from './sessionClose'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
-import { writeAgentPlugin } from './agentPlugin'
+import { agentPluginFiles, writeAgentPlugin } from './agentPlugin'
 
 // PLATFORM§4
 if (!app.isPackaged) app.setName('koloft-dev')
@@ -785,8 +789,11 @@ function machinePackage(): MachinePackage {
     'tmux.conf': TMUX_CONF,
     'util.sh': UTIL_SH,
     [`${UTIL_BIN_DIR}claude`]: utilTerminalGuard('claude'),
-    [`${UTIL_BIN_DIR}codex`]: utilTerminalGuard('codex')
+    [`${UTIL_BIN_DIR}codex`]: utilTerminalGuard('codex'),
+    [`${SESSION_BIN_DIR}koloft`]: REMOTE_AGENT_SHIM
   }
+  for (const [rel, text] of Object.entries(agentPluginFiles()))
+    pkgFiles[`${AGENT_PLUGIN_DIR}${rel}`] = text
   try {
     pkgFiles['statusline/ccstatusline.js'] = fs.readFileSync(bundlePath())
     pkgFiles['statusline/package.json'] = '{"type":"module"}\n'
@@ -934,8 +941,12 @@ function unlessWorkspacelessConductor(verb: AgentVerb): AgentVerb {
 }
 
 const notesAndWorkbenchVerbs = workbenchVerbs({
-  open: (tabId, target, view) =>
-    openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target, view),
+  open: (tabId, target, view) => {
+    const machine = tracker.remoteOf(tabId)?.host
+    return machine && !schemeOf(target)
+      ? openOnMachine(tabId, machine, target, view)
+      : openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target, view)
+  },
   notesFileOf: (tabId) => {
     const workspace = sessionBackends.workspaceOfTab(tabId)
     return workspace ? notesFileOfPinned(workspace) : undefined
@@ -1614,6 +1625,7 @@ app.whenReady().then(() => {
     ptyMgr.agentDir = agentDir
     claudeBackend.agentPlugin = writeAgentPlugin(app.getPath('userData'))
   }
+  claudeBackend.agentReply = (tabId, raw) => agentRequests.replyFor(tabId, raw)
   claudeBackend.watchShimRegistrations(regDir)
   if (watchOpenRequests(openDir)) {
     ptyMgr.openDir = openDir
@@ -3077,6 +3089,19 @@ function openInWorkbench(
   return false
 }
 
+async function openOnMachine(
+  tabId: string,
+  machine: string,
+  file: string,
+  view?: ArtifactView
+): Promise<boolean> {
+  const keyed = formatRemoteKey(machine, file)
+  if (!(await hosts.machine(machine).fileExists(keyed))) return false
+  const payload: OpenRequest = { tabId, path: keyed, source: 'agent', view }
+  sendToRenderer('preview:open-file', payload)
+  return true
+}
+
 function killTabFromMain(tabId: string): void {
   sendToRenderer('tab:killedByMain', tabId)
   void killTabPty(tabId)
@@ -3501,8 +3526,9 @@ const hosts = new Hosts(
         realPath: (p) => workspaceMgr?.realRemotePath({ host: machine, path: p }) ?? p,
         settings: loadSettings,
         pickAccount: (launchKey) => pickMachineAccount(() => pickForLaunch(launchKey)),
-        hookSettings: (tabId, dir) =>
-          machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin)
+        agentTools: () => agentToolsFor('claude', 'ssh'),
+        hookSettings: (tabId, dir, allowKoloft) =>
+          machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft)
       }
     })
 )
