@@ -707,8 +707,8 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   CC 2.1.286, in a session the shim had launched with an account's
   `CLAUDE_CODE_OAUTH_TOKEN`: `/remote-control` answered "Remote Control requires a
   full-scope login token. Long-lived tokens (from claude setup-token or
-  CLAUDE_CODE_OAUTH_TOKEN) are limited to inference-only…". So with Koloft's account
-  balancing on, Claude's own phone remote does not work for a Koloft session.
+  CLAUDE_CODE_OAUTH_TOKEN) are limited to inference-only…". So Claude's own phone remote
+  does not work for a Koloft session.
 - **Model prices** (USD per million tokens, input/output, and context window): Fable 5.1
   $10/$50, 1M (cache read $0.25); Fable/Mythos 5 $10/$50, 1M; Opus 5.5 $4/$20, 1M
   (cache read $0.20); Opus 5 $5/$25, 1M; Opus 4.6–4.8 $5/$25, 1M;
