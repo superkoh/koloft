@@ -99,7 +99,6 @@ function useRealCodex(env: E2EEnv): void {
   fs.symlinkSync(REAL_CODEX, spot)
   const home = path.join(env.home, '.codex')
   fs.mkdirSync(home, { recursive: true })
-  fs.copyFileSync(path.join(SIGNED_IN_CODEX_HOME, 'auth.json'), path.join(home, 'auth.json'))
   addCodexAccount(env, fs.readFileSync(path.join(SIGNED_IN_CODEX_HOME, 'auth.json'), 'utf8'))
   // CODEX§11
   fs.writeFileSync(
