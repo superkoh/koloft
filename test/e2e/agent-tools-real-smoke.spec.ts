@@ -21,6 +21,7 @@ import {
   wsRows
 } from './helpers/p1'
 import { portOffset } from '../../src/shared/worktreeName'
+import { lastCodexTurnPermissions } from './helpers/codexRollout'
 import {
   PR_3_CHECKS_LINE,
   PR_3_FAILING_CHECK_PASTE_HEAD,
@@ -747,6 +748,107 @@ test.describe('GitHub button ▸ Send failing checks with the REAL gh, claude an
       useRealCodex,
       CODEX_TRANSCRIPT
     )
+  })
+})
+
+// CODEX§11
+const NO_TEMP_FOLDER_IN_THE_SANDBOX_SINCE_THE_TEST_WORKSPACES_LIVE_THERE =
+  '\n[sandbox_workspace_write]\nexclude_slash_tmp = true\nexclude_tmpdir_env_var = true\n'
+
+async function sendToCodexTab(page: Page, tabId: string, text: string): Promise<void> {
+  await page.evaluate(([id, t]) => window.api.terminal.write(id, t), [tabId, text])
+  for (let i = 0; i < ENTERS_BEFORE_GIVING_UP; i++) {
+    await page.waitForTimeout(PAST_CODEX_PASTE_BURST_THAT_SWALLOWS_AN_EARLY_ENTER_MS)
+    await page.evaluate((id) => window.api.terminal.write(id, '\r'), tabId)
+    const working = await expect
+      .poll(
+        async () =>
+          (await page.evaluate(() => window.api.sessions.list())).find((s) => s.tabId === tabId)
+            ?.status,
+        { timeout: A_TAKEN_PROMPT_STARTS_WORKING_WITHIN_MS }
+      )
+      .toBe('working')
+      .then(() => true)
+      .catch(() => false)
+    if (working) return
+  }
+  throw new Error(`the session never started on the prompt after ${ENTERS_BEFORE_GIVING_UP} Enters`)
+}
+
+// CODEX§11
+test.describe('a REAL Codex session resumed after its tab closed: an opt-in case; it spends real money', () => {
+  test('a real Codex session launched with approvals and the sandbox bypassed, resumed after its tab closed, still writes a file outside its workspace with no question', async ({
+    env
+  }) => {
+    test.skip(
+      !HAVE_REAL_CODEX,
+      'set KOLOFT_SMOKE_CODEX (absolute path of a real codex binary) and KOLOFT_SMOKE_CODEX_HOME (a signed-in CODEX_HOME; only its auth.json is copied)'
+    )
+    test.setTimeout(3 * A_REAL_MODEL_TURN_MS + 120_000)
+    useRealCodex(env, [env.workspaces.a])
+    fs.appendFileSync(
+      path.join(env.home, '.codex', 'config.toml'),
+      NO_TEMP_FOLDER_IN_THE_SANDBOX_SINCE_THE_TEST_WORKSPACES_LIVE_THERE
+    )
+    seedSettings(env, { hintsOff: true })
+    const target = path.join(env.workspaces.b, 'resumed-wrote.txt')
+    const app = await launchApp(env)
+    const page = await app.firstWindow()
+    try {
+      await waitBooted(page)
+      const live = async (sessionId: string): Promise<string | undefined> =>
+        (await page.evaluate(() => window.api.sessions.list())).find(
+          (s) => s.alive && s.sessionId === sessionId
+        )?.tabId
+      const started = await page.evaluate(
+        (cwd) =>
+          window.api.terminal.create({
+            kind: 'codex',
+            cwd,
+            permission: 'bypass',
+            firstPrompt: 'Reply with the single word ok.'
+          }),
+        env.workspaces.a
+      )
+      if (!started.ok) throw new Error('the bypass Codex session did not start')
+      await expect.poll(() => boundSessionId(page, started.id), { timeout: 60_000 }).toBeTruthy()
+      const sessionId = (await boundSessionId(page, started.id))!
+      await expect
+        .poll(() => CODEX_TRANSCRIPT.replies(env, sessionId).length, {
+          timeout: A_REAL_MODEL_TURN_MS
+        })
+        .toBeGreaterThan(0)
+      await page.evaluate((id) => window.api.terminal.kill(id), started.id)
+      await expect.poll(() => live(sessionId), { timeout: 30_000 }).toBeUndefined()
+
+      const resumed = await page.evaluate(
+        ([id, cwd]) => window.api.sessions.resume({ sessionId: id, cwd }),
+        [sessionId, env.workspaces.a]
+      )
+      if (!resumed.ok) throw new Error(`the resume was refused: ${resumed.code}`)
+      await expect.poll(() => live(sessionId), { timeout: 60_000 }).toBe(resumed.id)
+      await sendToCodexTab(
+        page,
+        resumed.id,
+        `This checks your own permissions. Run exactly this one shell command, once: touch ${target} — then reply with exactly TOUCH-DONE if it worked or TOUCH-REFUSED if it failed. Do not retry and do not ask me anything.`
+      )
+      await expect
+        .poll(() => CODEX_TRANSCRIPT.replies(env, sessionId).join('\n'), {
+          timeout: A_REAL_MODEL_TURN_MS
+        })
+        .toMatch(/TOUCH-(DONE|REFUSED)/)
+      expect(lastCodexTurnPermissions(env, sessionId)).toEqual({
+        approval: 'never',
+        sandbox: 'danger-full-access'
+      })
+      expect(fs.existsSync(target)).toBe(true)
+      expect(CODEX_TRANSCRIPT.replies(env, sessionId).at(-1)).toContain('TOUCH-DONE')
+    } catch (e) {
+      await keepWhatTheAgentSawAndDid(page, env)
+      throw e
+    } finally {
+      await quitAndClose(app)
+    }
   })
 })
 
