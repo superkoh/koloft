@@ -364,8 +364,8 @@ the thread's rollout file. The test asked the model to `touch` a file outside th
 
 - `… resume <thread>` with `-a never`, with `-s workspace-write`, with both, or with
   `-c approval_policy="never" -c sandbox_mode="workspace-write"` on the TUI: the TUI drew
-  "Resuming session…", then ended with exit code 1 and "Error: Permission overrides are
-  not supported when resuming a remote task." The check runs after the TUI connects:
+  "Resuming session…", then ended with "Error: Permission overrides are not supported
+  when resuming a remote task." (exit code 1 where the driver caught the exit). The check runs after the TUI connects:
   against a socket that does not exist, every form fails first with "failed to connect to
   remote app server". The same `-a`/`-s` on a new thread (no `resume`) are taken.
 - A bare `resume` (no flags) works. What it ran under, from `turn_context`: a thread
@@ -388,7 +388,13 @@ the thread's rollout file. The test asked the model to `touch` a file outside th
 
 So Koloft hands a launch's approval and sandbox choice to the TUI as `-a`/`-s` on a new
 thread, and to that run's own app-server as `-c approval_policy=…` /
-`-c sandbox_mode=…` on a resume.
+`-c sandbox_mode=…` on a resume. Established again through Koloft by
+`discord-real-smoke.spec.ts` › "a real Codex conductor whose tab closed is resumed by the
+owner’s next message, …" (before the change: "The conductor closed before it was ready")
+and `agent-tools-real-smoke.spec.ts` › "a real Codex session launched with approvals and
+the sandbox bypassed, resumed after its tab closed, …" (before the change: `turn_context`
+`never` / `workspace-write`, the write refused). A new thread with the choice on the
+app-server alone, and no `-a`/`-s` on the TUI, is not probed yet.
 
 ## 12. Files a turn touched, and a command that opens a file
 
