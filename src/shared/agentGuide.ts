@@ -105,7 +105,7 @@ How to talk to a session you started:
 koloft session send <id or name> "<message>"
     Codex: send a message to another Codex session.
     A conductor: send a message to any session it looks after. Your message reaches it marked as coming from the owner through you. A closed one is resumed first, and a session on another machine only gets it once its turn has ended; then you are told "Will deliver when … is ready." at once, and if it never gets there you hear "[Koloft] Could not deliver to …" later.
-    Any session: report back to the conductor that started you, with the id it gave you.
+    Any session: report back to the session or conductor that started you, with the id it gave you. If it is not running, Koloft starts it again first.
     Example: koloft session send 0199c3f2-7a41-7c30-9e55-1d2b8f6a0c11 "Tell me what you found."
 
 koloft session command <id or name | me> /<command> [arguments]

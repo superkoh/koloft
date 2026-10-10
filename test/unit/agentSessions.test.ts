@@ -264,42 +264,18 @@ describe('koloft session new: reading the command line', () => {
 })
 
 describe('the handover put before the first message', () => {
-  it('tells a Claude child of a Claude caller who started it, to treat its messages as the owner’s, and to answer with SendMessage', () => {
-    const text = handoverPreamble({ name: 'planner', id: 'planner-id', conductor: false }, 'claude')
-    expect(text).toContain('"planner"')
+  it('tells a child who started it and to treat its messages as the owner’s', () => {
+    const text = handoverPreamble({ name: 'planner', id: 'planner-id' })
+    expect(text).toContain('the session "planner"')
     expect(text).toContain("the owner's instructions")
-    expect(text).toContain('SendMessage')
+    expect(handoverPreamble({ id: CODEX_THREAD })).toContain(`the Codex session ${CODEX_THREAD}`)
   })
 
-  it('tells a Codex child to answer with koloft session send and the caller’s id', () => {
-    const text = handoverPreamble({ id: CODEX_THREAD, conductor: false }, 'codex')
-    expect(text).toContain(`koloft session send ${CODEX_THREAD}`)
-    expect(text).not.toContain('SendMessage')
-  })
-
-  it('tells a child of the other kind to answer with koloft session send, since SendMessage only joins two Claude sessions', () => {
-    const fromClaude = handoverPreamble(
-      { name: 'planner', id: 'planner-id', conductor: false },
-      'codex'
-    )
-    expect(fromClaude).toContain('the session "planner"')
-    expect(fromClaude).toContain('koloft session send planner-id')
-    expect(fromClaude).not.toContain('SendMessage')
-    expect(handoverPreamble({ id: CODEX_THREAD, conductor: false }, 'claude')).toContain(
-      `koloft session send ${CODEX_THREAD}`
-    )
-  })
-
-  it.each([
-    [{ name: 'Global-conductor', id: 'cond-id', conductor: true }, 'claude'],
-    [{ name: 'Global-conductor', id: 'cond-id', conductor: true }, 'codex'],
-    [{ id: CODEX_THREAD, conductor: true }, 'claude'],
-    [{ id: CODEX_THREAD, conductor: true }, 'codex']
-  ] as const)(
-    'tells a child of the conductor %j, %s or the other kind, to answer with koloft session send and the conductor’s id, since a conductor that went idle has stopped and SendMessage cannot reach it, while koloft session send wakes it first',
-    (conductor, child) => {
-      const text = handoverPreamble(conductor, child)
-      expect(text).toContain(`koloft session send ${conductor.id}`)
+  it.each([{ name: 'planner', id: 'planner-id' }, { id: CODEX_THREAD }])(
+    'tells every child of %j, Claude or Codex, to answer with koloft session send and the caller’s id, never SendMessage, since a caller that went to sleep has left ListAgents while koloft session send starts it again first',
+    (caller) => {
+      const text = handoverPreamble(caller)
+      expect(text).toContain(`koloft session send ${caller.id} "<your result>"`)
       expect(text).not.toContain('SendMessage')
     }
   )
@@ -350,9 +326,7 @@ describe('koloft session new', () => {
     const [spec] = launched
     expect(spec).toMatchObject({ kind: 'claude', cwd: WS, worktree: 'links' })
     expect(
-      spec.firstPrompt?.startsWith(
-        handoverPreamble({ name: 'planner', id: 'me-session', conductor: false }, 'claude')
-      )
+      spec.firstPrompt?.startsWith(handoverPreamble({ name: 'planner', id: 'me-session' }))
     ).toBe(true)
     expect(spec.firstPrompt?.endsWith('Fix the links.')).toBe(true)
     expect(reply.text).toContain(`"${spec.name}"`)
@@ -464,6 +438,53 @@ describe('koloft session send', () => {
       expect(reply.text).toContain('SendMessage')
     }
     expect(queued).toEqual([])
+  })
+
+  it('a Claude or Codex child reports to the session that started it by its id or name, starting it again first if it is closed or asleep, marked with who sent it; any other Claude session stays out of reach', async () => {
+    const PARENT_KEY = `codex:local:${OTHER_THREAD}`
+    const { verb, lines, queued, resumed, startedSessions } = harness(
+      [
+        session('kid', 'claude', { sessionId: 'kid-id', title: 'Fix docs' }),
+        session('cxkid', 'codex', { sessionId: CODEX_THREAD, title: 'Check docs' })
+      ],
+      {},
+      [],
+      {
+        sidebar: sidebar([
+          [
+            WS,
+            [
+              row('planner-id', { title: 'Planner' }),
+              row(PARENT_KEY, { backendId: 'codex', nativeSessionId: OTHER_THREAD }),
+              row('other-id', { title: 'Other' })
+            ]
+          ]
+        ])
+      }
+    )
+    startedSessions.started('kid', 'planner-id')
+    startedSessions.bound('kid', 'kid-id')
+    startedSessions.started('cxkid', PARENT_KEY)
+    startedSessions.bound('cxkid', CODEX_THREAD)
+
+    for (const ref of [['planner-id'], ['Planner']])
+      expect((await verb(['send', ...ref, 'done'], from('kid'))).text).toMatch(/Will deliver/)
+    expect((await verb(['send', OTHER_THREAD, 'checked'], from('cxkid'))).exit).toBe(0)
+    expect((await verb(['send', 'other-id', 'hi'], from('kid'))).exit).not.toBe(0)
+
+    await vi.waitFor(() => expect([...new Set(resumed)]).toEqual(['planner-id', PARENT_KEY]))
+    const line = crossSessionLine('prompting', '(From the session "Fix docs", id kid-id:) done')
+    await vi.waitFor(() =>
+      expect(lines).toEqual([
+        { tabId: 'planner-id-tab', line },
+        { tabId: 'planner-id-tab', line }
+      ])
+    )
+    await vi.waitFor(() =>
+      expect(queued.map((q) => [q.tabId, q.text])).toEqual([
+        [`${PARENT_KEY}-tab`, `(From the session "Check docs", id ${CODEX_THREAD}:) checked`]
+      ])
+    )
   })
 
   it('reaches a Codex session open in another workspace, so a child started there can report back', async () => {
@@ -1066,11 +1087,12 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     ])
   })
 
-  it('a session a conductor starts gets the conductor’s own permission: bypass under a bypass conductor, the default otherwise', async () => {
-    const { verb, launched } = harness(live, {}, [], conducting({ bypass: ['global'] }))
+  it('a session another session starts gets its starter’s own permission, so its report back is not held: bypass under a bypass conductor or session, the default otherwise', async () => {
+    const { verb, launched } = harness(live, {}, [], conducting({ bypass: ['global', 'fix'] }))
     await verb(['new', '--workspace', WS, '--backend', 'codex', '--', 'go'], from('global'))
     await verb(['new', '--', 'go'], from('wsCond'))
-    expect(launched.map((l) => l.permission)).toEqual(['bypass', 'default'])
+    await verb(['new', '--', 'go'], from('fix'))
+    expect(launched.map((l) => l.permission)).toEqual(['bypass', 'default', 'bypass'])
   })
 
   it('any session reports back to the conductor that started it by the conductor’s id, which is hidden from every list, with its own mode, no owner label, and the name and id of the session it is from', async () => {

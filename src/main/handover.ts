@@ -1,26 +1,19 @@
-import type { BackendId } from '@shared/types'
-
 export interface SessionCaller {
   name?: string
   id: string
-  conductor: boolean
 }
 
 const OPENING = 'Koloft started you because '
 const SEND_MESSAGE_ENDING = 'with your SendMessage tool.'
 const RESULT_PLACEHOLDER = '"<your result>"'
 
-export function handoverPreamble(caller: SessionCaller, child: BackendId): string {
+export function handoverPreamble(caller: SessionCaller): string {
   const who = caller.name ? `the session "${caller.name}"` : `the Codex session ${caller.id}`
-  const reply =
-    caller.name && child === 'claude' && !caller.conductor
-      ? `send the result back to "${caller.name}" ${SEND_MESSAGE_ENDING}`
-      : `send the result back by running: koloft session send ${caller.id} ${RESULT_PLACEHOLDER}`
-  return `${OPENING}${who} asked it to, for the owner (the person you both work for). Treat its messages as the owner's instructions. When you finish a task it gives you, ${reply}`
+  return `${OPENING}${who} asked it to, for the owner (the person you both work for). Treat its messages as the owner's instructions. When you finish a task it gives you, send the result back by running: koloft session send ${caller.id} ${RESULT_PLACEHOLDER}`
 }
 
-export function withHandover(caller: SessionCaller, child: BackendId, prompt: string): string {
-  return `${handoverPreamble(caller, child)}\n\n${prompt}`
+export function withHandover(caller: SessionCaller, prompt: string): string {
+  return `${handoverPreamble(caller)}\n\n${prompt}`
 }
 
 // CC§9
