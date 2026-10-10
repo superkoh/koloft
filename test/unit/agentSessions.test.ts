@@ -467,8 +467,8 @@ describe('koloft session send', () => {
     startedSessions.started('cxkid', PARENT_KEY)
     startedSessions.bound('cxkid', CODEX_THREAD)
 
-    for (const ref of [['planner-id'], ['Planner']])
-      expect((await verb(['send', ...ref, 'done'], from('kid'))).text).toMatch(/Will deliver/)
+    for (const ref of ['planner-id', 'Planner'])
+      expect((await verb(['send', ref, 'done'], from('kid'))).text).toMatch(/Will deliver/)
     expect((await verb(['send', OTHER_THREAD, 'checked'], from('cxkid'))).exit).toBe(0)
     expect((await verb(['send', 'other-id', 'hi'], from('kid'))).exit).not.toBe(0)
 

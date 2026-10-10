@@ -482,18 +482,13 @@ function rowTarget(d: SessionVerbDeps, p: PlacedRow): Target {
   }
 }
 
-async function parentOf(
+function starterRow(
   d: SessionVerbDeps,
-  caller: AgentCaller
-): Promise<{ target: Target; names: string[] } | undefined> {
-  const id =
-    d.startedSessions.parentOfRow(caller.session.sessionId) ??
-    d.startedSessions.parentOfRow(caller.tabId)
-  const p = id && placedRows(d.sidebar(), d.allSessions()).find((r) => r.row.id === id)
-  if (!p) return undefined
-  const peerName = p.live?.backendId === 'claude' ? await d.peerNames()(p.live.sessionId) : null
-  const names = [p.row.id, p.row.nativeSessionId, p.title, peerName]
-  return { target: rowTarget(d, p), names: names.filter((n): n is string => !!n) }
+  caller: AgentCaller,
+  open: SessionInfo[]
+): PlacedRow | undefined {
+  const [id] = d.startedSessions.startersOf({ ...caller.session, tabId: caller.tabId })
+  return id === undefined ? undefined : placedRows(d.sidebar(), open).find((r) => r.row.id === id)
 }
 
 export async function targetIn(
@@ -843,22 +838,19 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       return conductorAct(sub, rest, caller)
     if (sub === 'send') {
       const open = d.allSessions()
-      const parent = await parentOf(d, caller)
+      const parent = starterRow(d, caller, open)
+      const starter = (ref: string): Target | undefined =>
+        d.conductorOf(ref) ?? (parent && matchRow([parent], ref) ? rowTarget(d, parent) : undefined)
       const split = nameThenWords(
         rest,
-        (ref) =>
-          d.conductorOf(ref) !== undefined ||
-          !!parent?.names.includes(ref) ||
-          matchOpen(open, ref) !== null
+        (ref) => starter(ref) !== undefined || matchOpen(open, ref) !== null
       )
       if (!split.ok) return refused(`koloft session send: ${split.error}`, EXIT_USAGE)
       const { ref, tail } = split.value
       const text = tail.join(' ').trim()
       if (!ref || !text) return refused(SEND_USAGE, EXIT_USAGE)
-      const conductor = d.conductorOf(ref)
-      if (conductor) return deliver('send', conductor, sessionSays(caller.session, text), caller)
-      if (parent?.names.includes(ref))
-        return deliver('send', parent.target, sessionSays(caller.session, text), caller)
+      const to = starter(ref)
+      if (to) return deliver('send', to, sessionSays(caller.session, text), caller)
       if (caller.session.backendId !== 'codex')
         return refused(`koloft session send: ${CLAUDE_USES_SEND_MESSAGE}`)
       const target = findCodexTarget(open, ref)

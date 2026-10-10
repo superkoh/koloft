@@ -4,7 +4,7 @@ export interface SessionCaller {
 }
 
 const OPENING = 'Koloft started you because '
-const SEND_MESSAGE_ENDING = 'with your SendMessage tool.'
+const OLDER_SEND_MESSAGE_ENDING = 'with your SendMessage tool.'
 const RESULT_PLACEHOLDER = '"<your result>"'
 
 export function handoverPreamble(caller: SessionCaller): string {
@@ -18,7 +18,7 @@ export function withHandover(caller: SessionCaller, prompt: string): string {
 
 // CC§9
 const HANDOVER_THEN_TASK = new RegExp(
-  `^${OPENING}[\\s\\S]*?(?:${SEND_MESSAGE_ENDING.replace('.', '\\.')}|koloft session send \\S+ ${RESULT_PLACEHOLDER})\\n\\n`
+  `^${OPENING}[\\s\\S]*?(?:${OLDER_SEND_MESSAGE_ENDING.replace('.', '\\.')}|koloft session send \\S+ ${RESULT_PLACEHOLDER})\\n\\n`
 )
 
 export function withoutHandover(text: string): string {

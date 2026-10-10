@@ -891,9 +891,7 @@ test.describe('a child reports back to the REAL session that started it: opt-in 
         fs.writeFileSync(path.join(repo, 'secret.txt'), `${SECRET}\n`)
         const parentTab = (await rows.getAttribute('data-tab-id'))!
         const parentRow = page.locator(`.ws-tab[data-tab-id="${parentTab}"]`)
-        const parentKey = (await page.evaluate(() => window.api.sessions.list())).find(
-          (s) => s.tabId === parentTab
-        )!.sessionId
+        const parentKey = (await boundSessionId(page, parentTab))!
         await ask(page, parentRow, START_A_CHILD_THAT_REPORTS_BACK)
         await expect(rows).toHaveCount(2, { timeout: A_REAL_MODEL_TURN_MS })
         await expect(parentRow).toHaveClass(/\bst-(waiting|idle)\b/, {
