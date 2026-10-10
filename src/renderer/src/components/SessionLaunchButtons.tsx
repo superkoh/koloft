@@ -16,11 +16,13 @@ export type SessionLaunchOptions = Pick<
 > & { cwd: string }
 export type StartSession = (opts: SessionLaunchOptions, backend: BackendId) => Promise<void>
 
+type DetectedBackends = Awaited<ReturnType<typeof window.api.sessions.backends>>
+
+let lastDetectedThisRun: DetectedBackends | null = null
+
 export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: () => void) {
   const methods = useStore((s) => s.settings.sessionMethods)
-  const [detected, setDetected] = useState<Awaited<
-    ReturnType<typeof window.api.sessions.backends>
-  > | null>(null)
+  const [detected, setDetected] = useState(lastDetectedThisRun)
   const [probeError, setProbeError] = useState('')
   const [retry, setRetry] = useState(0)
   const [starting, setStarting] = useState(false)
@@ -35,10 +37,10 @@ export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: (
   }, [])
   useEffect(() => {
     let alive = true
-    setDetected(null)
     setProbeError('')
     void window.api.sessions.backends().then(
       (backends) => {
+        lastDetectedThisRun = backends
         if (alive) setDetected(backends)
       },
       () => {
@@ -53,7 +55,8 @@ export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: (
   const usable = (backend: BackendId, on = host): boolean =>
     methods.enabled[backend] &&
     !unsupportedPairMessage(backend, on) &&
-    (!detected || backendAvailable(detected, backend))
+    !!detected &&
+    backendAvailable(detected, backend)
   const issue = (backend: BackendId, on = host): string => {
     if (!methods.enabled[backend]) return 'Disabled in Settings ▸ Sessions'
     const refusal = unsupportedPairMessage(backend, on)
