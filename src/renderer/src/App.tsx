@@ -1,6 +1,10 @@
 import { NewSessionDialog } from './components/NewSessionDialog'
 import { SessionBackendIcon } from './components/SessionBackendIcon'
-import type { SessionLaunchOptions } from './components/SessionLaunchButtons'
+import {
+  NoAccountLines,
+  useAccountIssue,
+  type SessionLaunchOptions
+} from './components/SessionLaunchButtons'
 import {
   backendAvailable,
   BACKEND_LABEL,
@@ -1107,7 +1111,8 @@ export default function App(): JSX.Element {
   const activeSession = activeTab ? sessions.find((s) => s.tabId === activeTab.id) : undefined
   // ADR-0030
   const assistSetup = useAssistSetup()
-  const signInTabId = useStore((s) => s.signInTabId)
+  const accountIssue = useAccountIssue()
+  const signInTabId = useStore((s) => s.signIn?.tabId)
   const whatsNewOpen = useStore((s) => s.update.open)
   const [assistSetupLater, setAssistSetupLater] = useState(false)
   const assistDialogShown =
@@ -1163,10 +1168,11 @@ export default function App(): JSX.Element {
   }, [])
 
   const welcomeRoot = welcomeWs?.workspace.path
-  const welcomeRefusal = (backend?: SessionBackend): string | undefined =>
-    welcomeWs && backend
-      ? unsupportedPairMessage(backend, hostOf(welcomeWs.workspace.path))
-      : undefined
+  const welcomeBackends = namedMethods ?? [effectiveBackend(sessionMethods, installed)]
+  const welcomeRefusal = (backend: SessionBackend): string | undefined =>
+    welcomeWs ? unsupportedPairMessage(backend, hostOf(welcomeWs.workspace.path)) : undefined
+  const welcomeIssue = (backend: SessionBackend): string | undefined =>
+    welcomeRefusal(backend) || accountIssue(backend) || undefined
   const fileTreeRoot = selectionRoot(
     hasWorkbench(landedTab) ? landedTab : undefined,
     landedSession?.treeRoot,
@@ -1553,8 +1559,8 @@ export default function App(): JSX.Element {
                       <div className="quiet">{welcomeQuietLine(welcomeRunning)}</div>
                       <button
                         className="btn-primary"
-                        disabled={!!welcomeRefusal(namedMethods?.[0])}
-                        title={welcomeRefusal(namedMethods?.[0])}
+                        disabled={!!welcomeIssue(welcomeBackends[0])}
+                        title={welcomeIssue(welcomeBackends[0])}
                         onClick={() => startIn(welcomeWs.workspace.path)}
                       >
                         ＋{' '}
@@ -1565,13 +1571,16 @@ export default function App(): JSX.Element {
                       {namedMethods && (
                         <button
                           className="mini"
-                          disabled={!!welcomeRefusal(namedMethods[1])}
-                          title={welcomeRefusal(namedMethods[1])}
+                          disabled={!!welcomeIssue(namedMethods[1])}
+                          title={welcomeIssue(namedMethods[1])}
                           onClick={() => startIn(welcomeWs.workspace.path, namedMethods[1])}
                         >
                           New {BACKEND_LABEL[namedMethods[1]]} session
                         </button>
                       )}
+                      <NoAccountLines
+                        backends={welcomeBackends.filter((b) => !welcomeRefusal(b))}
+                      />
                       {welcomeWs.workspace.isGit && (
                         <button
                           className="mini"

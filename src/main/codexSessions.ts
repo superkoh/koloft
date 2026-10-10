@@ -69,6 +69,32 @@ const QUEUE_ANSWER_INSIDE_THE_KOLOFT_WAIT_MS = AGENT_SHIM_WAITS_MS / 2
 // CODEX§1
 const NO_UPDATE_NOTICE_AT_START = 'check_for_update_on_startup=false'
 
+const playwrightMcpEnv = (endpoint: string): Record<string, string> => ({
+  PLAYWRIGHT_MCP_CDP_ENDPOINT: endpoint,
+  PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS: '1'
+})
+
+const runsPlaywrightMcp = (word: string): boolean =>
+  word.includes('@playwright/mcp') || path.basename(word) === 'playwright-mcp'
+
+const KEY_THE_CODEX_FLAG_PARSER_TAKES = /^[A-Za-z0-9_-]+$/
+
+// CODEX§26
+export function playwrightEnvOverrides(mcpServers: unknown): string[] {
+  return Object.entries(record(mcpServers)).flatMap(([name, raw]) => {
+    const entry = record(raw)
+    const words = [entry.command, ...(Array.isArray(entry.args) ? entry.args : [])]
+    if (!KEY_THE_CODEX_FLAG_PARSER_TAKES.test(name)) return []
+    if (!words.some((w) => typeof w === 'string' && runsPlaywrightMcp(w))) return []
+    const own = (Array.isArray(entry.env_vars) ? entry.env_vars : []).filter(
+      (v): v is string => typeof v === 'string'
+    )
+    return [
+      `mcp_servers.${name}.env_vars=${JSON.stringify([...new Set([...own, ...Object.keys(playwrightMcpEnv(''))])])}`
+    ]
+  })
+}
+
 interface Permissions {
   approval: 'never' | 'on-request'
   sandbox: 'workspace-write' | 'danger-full-access'
@@ -150,6 +176,7 @@ export interface CodexSessionDeps {
   error(message: string): void
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
   pickHome(): { account: string; home: string } | undefined
+  browserEndpoint(tabId: string): string
   openShimRoot: string
   agent: {
     enabled(): boolean
@@ -193,6 +220,7 @@ export class CodexSessions {
   private historyError?: Error
   private listed = false
   private launchingKeys = new Set<string>()
+  private relaunchingKeys = new Set<string>()
   private pendingLaunches = new Set<Promise<{ id: string; cwd: string }>>()
   private shuttingDown = false
   private emitTimer?: ReturnType<typeof setTimeout>
@@ -347,6 +375,14 @@ export class CodexSessions {
     }
   }
 
+  // CODEX§26
+  private async playwrightOverrides(home: string, cwd: string): Promise<string[]> {
+    const read = await this.withRpc(home, (rpc) => rpc.request('config/read', { cwd })).catch(
+      () => undefined
+    )
+    return playwrightEnvOverrides(record(record(read).config).mcp_servers)
+  }
+
   // CODEX§15
   async readAccount(home: string): Promise<{ signedIn: boolean; limits?: unknown }> {
     return this.withRpc(home, async (rpc) => {
@@ -366,12 +402,18 @@ export class CodexSessions {
   hasTab(tabId: string): boolean {
     return this.runs.has(tabId)
   }
+  sessionIdOf(tabId: string): string | undefined {
+    return this.runs.get(tabId)?.info?.sessionId
+  }
   workspaceOfTab(tabId: string): string | undefined {
     return this.runs.get(tabId)?.workspace
   }
   aliveTabFor(key: string): string | undefined {
     return [...this.runs.values()].find((r) => r.info?.sessionId === key || r.resumeKey === key)
       ?.tabId
+  }
+  private readsRunning(key: string): boolean {
+    return !!this.aliveTabFor(key) || this.relaunchingKeys.has(key)
   }
   occupantOf(dir: string): string | null {
     const target = path.resolve(dir)
@@ -434,7 +476,7 @@ export class CodexSessions {
       r.invalidCwd = !exists(m.cwd)
       r.nativeSessionId = m.id
       r.createdAt = m.createdAt
-      r.running = !!this.aliveTabFor(m.key)
+      r.running = this.readsRunning(m.key)
       const resource = m.worktreeResourceId
         ? this.store.getResource(m.worktreeResourceId)
         : undefined
@@ -476,7 +518,7 @@ export class CodexSessions {
       title: t.name || t.preview?.slice(0, 100) || CODEX_PLACEHOLDER_TITLE,
       cwd: t.cwd,
       worktree: resource?.worktreeName ?? this.deps.projectInfo(t.cwd).worktreeName ?? 'main',
-      running: !!this.aliveTabFor(key),
+      running: this.readsRunning(key),
       invalidCwd: !exists(t.cwd),
       mtime: (t.updatedAt ?? t.createdAt ?? 0) * 1000,
       ...(resource
@@ -685,6 +727,7 @@ export class CodexSessions {
     }
     const pending = start().finally(() => {
       if (key) this.launchingKeys.delete(key)
+      if (key && this.relaunchingKeys.delete(key)) this.changed()
       this.pendingLaunches.delete(pending)
     })
     this.pendingLaunches.add(pending)
@@ -696,7 +739,10 @@ export class CodexSessions {
     const previous = [...this.runs.values()].find(
       (r) => r.info?.sessionId === key || r.resumeKey === key
     )
-    if (previous?.stopping) await previous.stopping
+    if (previous?.stopping) {
+      this.relaunchingKeys.add(key)
+      await previous.stopping
+    }
     this.assertStarting()
     if (this.aliveTabFor(key)) throw new Error('This Codex session is already open.')
   }
@@ -738,6 +784,10 @@ export class CodexSessions {
     }
     this.assertStarting()
     if (opts.trustFolder) this.deps.trustFolder(cwd, this.envFor(home))
+    const tabId = this.deps.pty.nextId()
+    const endpoint = this.deps.browserEndpoint(tabId)
+    const playwright = endpoint ? await this.playwrightOverrides(home, cwd) : []
+    this.assertStarting()
     let run: Run | undefined
     const observe = (event: CodexEvent): void => {
       if (event.type !== 'bound') {
@@ -764,12 +814,14 @@ export class CodexSessions {
       transport = await this.startTransport({
         binary,
         env,
-        sessionEnv: resource
-          ? { KOLOFT_PORT_OFFSET: String(portOffset(resource.worktreeName)) }
-          : undefined,
+        sessionEnv: {
+          ...(resource && { KOLOFT_PORT_OFFSET: String(portOffset(resource.worktreeName)) }),
+          ...(playwright.length > 0 && playwrightMcpEnv(endpoint))
+        },
         cwd,
         configOverrides: [
           STATUS_LINE_CONFIG,
+          ...playwright,
           ...(instructions.length ? [developerInstructions(instructions)] : []),
           ...(opts.resumeSessionId ? permissionConfig(permissions) : [])
         ],
@@ -796,6 +848,7 @@ export class CodexSessions {
       if (opts.resumeSessionId) argv.push('resume', this.nativeId(opts.resumeSessionId))
       else if (opts.firstPrompt) argv.push(opts.firstPrompt)
       const handle = this.deps.pty.create({
+        id: tabId,
         kind: 'codex',
         cwd,
         cols: opts.cols,

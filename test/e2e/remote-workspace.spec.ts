@@ -2,7 +2,13 @@ import fs from 'fs'
 import path from 'path'
 import { execFileSync } from 'child_process'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installFakeGh, setGithubFixture, writeGitIdentity } from './helpers/env'
+import {
+  installCodex,
+  installFakeGh,
+  seedNoClaudeAccountButStillSetUp,
+  setGithubFixture,
+  writeGitIdentity
+} from './helpers/env'
 import {
   addRemoteWorkspace,
   breakConnection,
@@ -37,6 +43,7 @@ import {
   panelTerm,
   runIn,
   sendShortcut,
+  snap,
   startSessionIn,
   transcriptFile,
   waitBooted,
@@ -399,6 +406,34 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
 
       await sendFailingChecks(page)
       await expectOnePromptFromTheChecks(() => claudePrompts(transcript))
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // ADR-0030 CODEX§16
+  test('E-RW-30: with no Claude account, a remote workspace’s empty panel shuts "New Claude session" under a line that says why, while Codex stays refused there with no account line', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    installCodex(env)
+    seedNoClaudeAccountButStillSetUp(env)
+    const layoutFile = path.join(env.userData, 'layout.json')
+    const layout = JSON.parse(fs.readFileSync(layoutFile, 'utf8')) as Record<string, unknown>
+    fs.writeFileSync(
+      layoutFile,
+      JSON.stringify({ ...layout, workspaces: [{ path: remoteKey(env) }] })
+    )
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const empty = page.locator('.w-empty')
+      await expect(empty.locator('.big')).toHaveText(REMOTE_WS_NAME, { timeout: 20_000 })
+      await expect(empty.getByRole('button', { name: /New Claude session/ })).toBeDisabled()
+      await expect(empty.getByRole('button', { name: 'New Codex session' })).toBeDisabled()
+      await expect(empty.locator('.field-hint.bad')).toHaveText(
+        /^No Claude account yet — add one in Settings ▸ Accounts\.$/
+      )
+      await snap(page, 'E-RW-30')
     } finally {
       await quitAndClose(app)
     }

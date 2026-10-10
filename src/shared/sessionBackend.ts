@@ -33,6 +33,10 @@ export function backendAvailable(list: BackendAvailability[], id: BackendId): bo
   return list.some((b) => b.id === id && b.available)
 }
 
+export function shownAsInstalled(list: BackendAvailability[] | null, id: BackendId): boolean {
+  return list ? backendAvailable(list, id) : id === 'claude'
+}
+
 export function sourceOf(backendId: BackendId, workspacePath: string): SessionSource {
   return { backendId, host: hostOf(workspacePath) }
 }
@@ -93,7 +97,6 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities | 'refused'>> 
   codex: {
     local: {
       ...EVERYTHING,
-      browserControl: PENDING,
       // CODEX§8
       statusline3: { unsupported: 'CODEX§8' }
     },

@@ -506,9 +506,7 @@ printed the commit. Through the app-server (`thread/start` with the same sandbox
 conductor runs: **inferred, not checked**.
 
 Browser control (an agent driving a Workbench web tab through Koloft's CDP (Chrome DevTools
-Protocol) relay) was not tried for Codex. Whether a command inside Codex's sandbox can
-reach the relay's local socket at all is **inferred, not checked** either way, so browser
-control stays pending for Codex.
+Protocol) relay) goes through an MCP server, never a sandboxed command: see section 26.
 
 ## 13. Token counts and the price table
 
@@ -1097,4 +1095,84 @@ the one before, the screen read back through `pyte`.
   changed to … for Plan mode").
 - Not run: the same keys through ssh and tmux, since Koloft starts no remote Codex tab
   (§16).
+
+## 26. Reaching the Workbench browser: sandbox, MCP servers and their environment
+
+**A command in the sandbox cannot reach 127.0.0.1; an MCP server can.** Checked
+2026-10-04 with Codex CLI 0.159.3, Node 24.13.0, a fresh temporary `CODEX_HOME` and `HOME`
+each run, a dummy API key (`codex login --with-api-key`), no model turn. A Node script
+started a small WebSocket server on `127.0.0.1:<port>` and ran `codex sandbox [flags] --
+node client.mjs ws://127.0.0.1:<port>`:
+
+| sandbox | result |
+|---|---|
+| no flags (default config) | exit 2, the client's socket failed, the server saw nothing |
+| `workspace-write` | same |
+| `read-only` | same |
+| `workspace-write --log-denials` | same, and "Sandbox denials: None found." |
+| `workspace-write` + `sandbox_workspace_write.network_access=true` | exit 0, ping and pong went through |
+
+The same script then wrote an `[mcp_servers.probe]` entry (a tiny stdio MCP server that
+opens the WebSocket and logs its environment) into `config.toml`, started `codex
+app-server` with `PROBE_VAR` and `PLAYWRIGHT_MCP_CDP_ENDPOINT` in its environment, and sent
+`initialize`, `initialized` and `thread/start` (`sandbox: "workspace-write"`,
+`approvalPolicy: "on-request"`). The MCP server reached the socket (it runs outside the
+sandbox) but saw **neither variable**: Codex hands an MCP server a cleaned environment.
+`env_vars = ["PLAYWRIGHT_MCP_CDP_ENDPOINT"]` on the entry, in `config.toml` or as
+`-c mcp_servers.probe.env_vars=[…]` on the app-server, passed that one variable through.
+
+**What Koloft builds on, checked 2026-10-10** with Codex CLI 0.162.0, `@playwright/mcp`
+0.0.83 (installed into a scratch folder), Node 24.13.0, a fresh temporary `CODEX_HOME` and
+`HOME`, a dummy API key, no model turn. The `config.toml` held `[mcp_servers.playwright]`
+(`command` = node, `args` = [`…/@playwright/mcp/cli.js`, `--headless`], `env_vars =
+["OWNER_VAR"]`) and a second entry running `/bin/cat`. A headless Chrome stood behind a
+small WebSocket forwarder on 127.0.0.1 that, like Koloft's relay, refused a second client
+while one was connected ("this endpoint already has a client").
+
+- `config/read` (`{cwd}`) answered `config.mcp_servers` keyed by entry name, each with
+  `command`, `args`, `env_vars` (only when set), `enabled`, `environment_id` and
+  `tool_timeout_sec`. It took 50–270 ms on a fresh app-server.
+- `-c mcp_servers.playwright.env_vars=["OWNER_VAR","PLAYWRIGHT_MCP_CDP_ENDPOINT","PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS"]`
+  **replaces** the entry's list (so Koloft repeats the owner's names in it); `config/read`
+  then showed the three names.
+- `mcpServer/tool/call` (`server`, `threadId`, `tool`, `arguments`) ran
+  `browser_navigate` on a `data:` page with no model turn; the page title came back and
+  the forwarder saw one connection. So the real `@playwright/mcp` drove the browser at the
+  endpoint the app-server's environment named.
+- **One MCP server process per thread.** After `thread/start` for thread A, one
+  `@playwright/mcp` process ran under the app-server; after a second `thread/start` (B), two.
+  B's first `browser_navigate` opened a second connection, which the forwarder refused, and
+  the tool answered "Target page, context or browser has been closed … this endpoint
+  already has a client". `thread/unsubscribe` of A (what `/new` and `/clear` send after
+  their `thread/start`, §21) answered `unsubscribed`, but A's process and its connection
+  stayed **about 60 s**; once it had exited, B's `browser_navigate` connected and worked.
+  When the forwarder instead closed A's connection itself (code 1008) right after B's
+  `thread/start`, B's first `browser_navigate` connected and worked at once, and A's
+  process did not connect again by itself (two connections in all).
+- **`-c` keys: bare names only.** `-c 'mcp_servers.pw-dash.env_vars=["C"]'` worked;
+  `-c 'mcp_servers."my.pw server".env_vars=[…]'` stopped the app-server at start ("invalid
+  transport in `mcp_servers."my`"): the flag splits its key on every dot, quotes or not.
+- Not tried: a child agent's thread (it needs a model turn) — that it, too, gets its own
+  MCP server process, and so is refused while its parent's holds the endpoint, is
+  **inferred, not checked**; and that `env_vars` takes only names (no other entry shape)
+  is **inferred, not checked**.
+
+**With a model turn, inside a Koloft tab, checked 2026-10-10** with Codex CLI 0.162.0 (its
+default model), `@playwright/mcp` 0.0.83 run as `playwright-mcp --headless`, a Koloft
+`codex-home` account, the tab on Codex's own default permissions
+(`agent-tools-real-smoke.spec.ts` › "a real Codex reads a page title…"):
+
+- Asked to navigate to a local page and reply with its title, Codex called
+  `playwright.browser_navigate`; the tool result began `Page Title: <title>` and the reply
+  was the title alone. The rollout records the call as an `item_completed` event whose item
+  is `{"type":"McpToolCall","server":"playwright","tool":"browser_navigate",…}`.
+- Before the first call in each thread Codex stops on its own question,
+  `Allow the playwright MCP server to run tool "browser_navigate"?`, options `1. Allow`,
+  `2. Allow for this session`, `3. Always allow`, `4. Cancel`. Unanswered, the turn waits.
+  It asked again in the thread `/new` started.
+- The page loads were made by the Workbench guest (the same user agent as the guest's own
+  load, a plain Chrome string with no `Electron/` and no `HeadlessChrome`); in some runs the
+  MCP navigated the tab already open, in others it opened a second tab marked "agent
+  driving".
+- After `/new`, the new thread's first `browser_navigate` worked at once.
 

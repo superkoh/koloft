@@ -415,15 +415,18 @@ export function relayTabRebound(tabId: string, sessionId: string | null): void {
   for (const t of asTargets(snapshots.get(sessionId) ?? [])) void client.protocol.targetCreated(t)
 }
 
-export function relayTabClosed(tabId: string): void {
+export function relayClientEvicted(tabId: string, reason: string): void {
   const client = clients.get(tabId)
-  if (client) {
-    for (const t of asTargets(snapshots.get(client.sessionId) ?? [])) {
-      client.protocol.targetDestroyed(t.targetId)
-    }
-    dropClient(tabId)
-    refuse(client.ws, 'the tab this endpoint belonged to was closed')
+  if (!client) return
+  for (const t of asTargets(snapshots.get(client.sessionId) ?? [])) {
+    client.protocol.targetDestroyed(t.targetId)
   }
+  dropClient(tabId)
+  refuse(client.ws, reason)
+}
+
+export function relayTabClosed(tabId: string): void {
+  relayClientEvicted(tabId, 'the tab this endpoint belonged to was closed')
   paths.delete(tabId)
   try {
     fs.rmSync(path.join(cdpEnvDir(), tabId), { force: true })

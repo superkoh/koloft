@@ -50,7 +50,6 @@ when it works. That is what "judged against" means.
   issue, and a Claude conductor keeps its own memory.
   A Claude session on another machine over ssh has the same command; its answers take
   a few seconds longer.
-  What is left: Codex driving the Workbench browser (#119).
 
 ### Tier 2 — review: where Koloft can still grow
 

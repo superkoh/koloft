@@ -25,6 +25,7 @@ export interface PtyHandle {
 }
 
 interface CreateArgs {
+  id?: string
   executable?: string
   argv?: string[]
   processEnv?: NodeJS.ProcessEnv
@@ -100,8 +101,12 @@ export class PtyManager extends EventEmitter {
   private counter = 0
   private instanceTag = process.pid.toString(36)
 
+  nextId(): string {
+    return `pty-${this.instanceTag}-${++this.counter}`
+  }
+
   create(args: CreateArgs): PtyHandle {
-    const id = `pty-${this.instanceTag}-${++this.counter}`
+    const id = args.id ?? this.nextId()
     const isWin = os.platform() === 'win32'
     const login = userShell()
     const shell = args.shell || login.shell

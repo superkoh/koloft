@@ -140,6 +140,28 @@ describe('koloft cron: reading the command line', () => {
     })
   })
 
+  it('a task name with spaces given without quotes is the run of words before an option or --, and a word after an option that follows the name is still refused', () => {
+    expect(parseCronArgs(['run', 'nightly', 'tests'])).toEqual({
+      ok: true,
+      value: { sub: 'run', ref: 'nightly tests', patch: {} }
+    })
+    expect(parseCronArgs(['edit', 'nightly', 'tests', '--daily', '03:00'])).toEqual({
+      ok: true,
+      value: {
+        sub: 'edit',
+        ref: 'nightly tests',
+        patch: { schedule: { kind: 'daily', at: '03:00' } }
+      }
+    })
+    expect(parseCronArgs(['edit', 'nightly', 'tests', '--', 'Run', 'it'])).toEqual({
+      ok: true,
+      value: { sub: 'edit', ref: 'nightly tests', patch: { task: 'Run it' } }
+    })
+    expect(parseError(['edit', 'nightly', '--daily', '03:00', 'tests'])).toMatch(
+      /did not expect "tests"/
+    )
+  })
+
   it('a malformed command is refused with a reason, before anything is saved', () => {
     expect(parseError([])).toMatch(/say what to do/)
     expect(parseError(['make'])).toMatch(/no "make" command/)
@@ -246,6 +268,11 @@ describe('koloft cron: changing tasks', () => {
       expect.stringMatching(/Fix login.*weekly/),
       expect.stringMatching(/Fix login.*nightly/)
     ])
+  })
+
+  it('finds a task whose name has spaces by its unquoted words, not a task named by only the first of them', async () => {
+    const c = cron([job({ name: 'Nightly' }), job({ id: 'j2', name: 'Nightly tests' })])
+    expect((await c.run('show', 'Nightly', 'tests')).text).toMatch(/^2\. Nightly tests\nId: j2/)
   })
 
   it('a bad command line exits with the usage code', async () => {

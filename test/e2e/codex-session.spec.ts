@@ -2,7 +2,8 @@ import fs from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import { execFileSync } from 'child_process'
-import type { Locator, Page } from '@playwright/test'
+import { chromium, type Locator, type Page } from '@playwright/test'
+import { BROWSER, openBrowser } from './helpers/browser'
 import {
   test,
   expect,
@@ -48,6 +49,7 @@ import {
   readCalls,
   runIn,
   sendShortcut,
+  settingsOnDisk,
   snap,
   startSessionIn,
   termIds,
@@ -241,6 +243,46 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(
         wsRows(page, 'ws-a').getByRole('img', { name: 'Claude', exact: true })
       ).toHaveCount(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // ADR-0030
+  test('with no Codex account, "New Codex session" is shut on the empty workspace and in the ⌘N picker, under a line that stays and whose Settings part opens Settings ▸ Accounts', async ({
+    env
+  }) => {
+    installCodex(env)
+    const accounts = settingsOnDisk(env).accounts as { kind: string }[]
+    seedSettings(env, { accounts: accounts.filter((a) => a.kind !== 'codex-home') })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const empty = page.locator('.w-empty')
+      const line = /^No Codex account yet — add one in Settings ▸ Accounts\.$/
+      await expect(empty.getByRole('button', { name: 'New Codex session' })).toBeDisabled()
+      await expect(empty.getByRole('button', { name: /New Claude session/ })).toBeEnabled()
+      await expect(empty.locator('.field-hint.bad')).toHaveText(line)
+      await snap(page, 'codex-no-account-empty-workspace')
+
+      await clickAppMenuItem(app, page, 'new-session')
+      const dlg = pickerDialog(page)
+      await expect(dlg).toBeVisible({ timeout: 15_000 })
+      await expect(dlg.locator('.modal-foot button[data-default="false"]')).toBeDisabled()
+      await expect(dlg.locator('.field-hint.bad')).toHaveText(line)
+      await snap(page, 'codex-no-account-picker')
+      await page.keyboard.press('Shift+Enter')
+      await page.keyboard.press('Escape')
+      await expect(dlg).toHaveCount(0)
+
+      await empty.getByRole('button', { name: 'Settings ▸ Accounts' }).click()
+      await expect(page.getByRole('tab', { name: 'Accounts', exact: true })).toHaveAttribute(
+        'aria-selected',
+        'true'
+      )
+      await expect(page.getByRole('button', { name: 'Sign in to Codex' })).toBeVisible()
+      expect(codexCalls(env)).toHaveLength(0)
     } finally {
       await quitAndClose(app)
     }
@@ -483,6 +525,63 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(hint).not.toContainText('Claude')
       await expect(wbActiveTab(page)).toHaveAttribute('title', /codex-opened/)
       await expect(wbUnreadTabs(page)).toHaveCount(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§26
+  test("a Codex tab hands the owner's Playwright MCP entry its own browser endpoint, keeping the entry's env_vars; a client there drives that tab's Workbench, and after /new the old client is sent away so a new one drives the new thread", async ({
+    env
+  }) => {
+    installCodex(env)
+    fs.writeFileSync(
+      path.join(env.home, 'fake-codex-mcp-servers.json'),
+      JSON.stringify({
+        playwright: { command: 'npx', args: ['@playwright/mcp@latest'], env_vars: ['MINE'] },
+        github: { command: 'github-mcp', args: [] }
+      })
+    )
+    seedSettings(env, { onboardingSeen: true, hintsSeen: ['workbench'] })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      const tabServers = fs
+        .readFileSync(path.join(env.home, 'fake-codex-server-calls.jsonl'), 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as { argv: string[]; playwrightMcpEndpoint: string })
+        .filter((call) => call.argv.some((a) => a.startsWith('tui.status_line=')))
+      expect(tabServers).toHaveLength(1)
+      expect(tabServers[0].argv.filter((a) => a.startsWith('mcp_servers.'))).toEqual([
+        'mcp_servers.playwright.env_vars=["MINE","PLAYWRIGHT_MCP_CDP_ENDPOINT","PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS"]'
+      ])
+      const url = tabServers[0].playwrightMcpEndpoint
+      expect(url).toMatch(/^ws:\/\/127\.0\.0\.1:\d+\/cdp\/[a-f0-9]{32}$/)
+
+      const first = await chromium.connectOverCDP(url)
+      let sentAway = false
+      first.on('disconnected', () => {
+        sentAway = true
+      })
+      try {
+        await first.contexts()[0].newPage()
+        await openBrowser(page)
+        await expect(page.locator(BROWSER.drivenTab)).toHaveCount(1, { timeout: 30_000 })
+        await runIn(page, centerTerm(page), '/new')
+        await expect.poll(() => sentAway, { timeout: 30_000 }).toBe(true)
+      } finally {
+        await first.close().catch(() => {})
+      }
+      const second = await chromium.connectOverCDP(url)
+      try {
+        const driven = await second.contexts()[0].newPage()
+        expect(await driven.evaluate('1 + 1')).toBe(2)
+      } finally {
+        await second.close()
+      }
     } finally {
       await quitAndClose(app)
     }
@@ -1274,7 +1373,7 @@ test.describe('Codex sessions through the real method chooser, process transport
   })
 
   // CODEX§15
-  test('a Codex account signed in from Settings shows its weekly use, and a new Codex session runs in its own sign-in folder', async ({
+  test('a Codex account signed in from Settings shows its weekly use back in Settings ▸ Accounts once the sign-in tab closes, and a new Codex session runs in its own sign-in folder', async ({
     env
   }) => {
     installCodex(env)
@@ -1288,15 +1387,20 @@ test.describe('Codex sessions through the real method chooser, process transport
       await page.getByRole('button', { name: 'Sign in to Codex' }).click()
       await page.getByPlaceholder('Name this account (e.g. work)').fill('work')
       await page.locator('.acct-add').getByRole('button', { name: 'Sign in', exact: true }).click()
+      await expect(page.locator('.modal')).toHaveCount(0)
       const home = path.join(env.userData, 'codex-homes', 'work')
       await expect
         .poll(() => fs.existsSync(path.join(home, 'auth.json')), { timeout: 30_000 })
         .toBe(true)
-      await sendShortcut(app, 'shortcut:open-settings')
-      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      await expect(page.getByRole('tab', { name: 'Accounts', exact: true })).toHaveAttribute(
+        'aria-selected',
+        'true',
+        { timeout: 20_000 }
+      )
       await expect(
         page.locator('.acct-row', { hasText: 'work' }).locator('.acct-meter[data-win="7d"] .m-pct')
       ).toHaveText('30%', { timeout: 30_000 })
+      await snap(page, 'codex-sign-in-back-in-settings')
       await page.keyboard.press('Escape')
 
       await startCodex(page, env)
