@@ -15,6 +15,7 @@ import { costUsdOf, resolvePricing } from '@shared/pricing'
 import { localDayKey } from '@shared/usageFormat'
 import { encodeCwd } from '@shared/cwdKey'
 import { projectInfoFor, realpathSafe } from './projectInfo'
+import { worktreeHomeRoot } from './resumePlan'
 import { inspectTaskProcs, type TaskProcs } from './taskProcs'
 import { SessionRuntime, envMs, turnOf, type Turn } from './sessionRuntime'
 import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
@@ -1299,9 +1300,10 @@ export class SessionTracker extends SessionRuntime {
     const dir = t.relocatedCwd
     t.relocatedCwd = undefined
     if (!dir || dir === t.info.treeRoot) return
+    const leftItsWorktreeForItsCheckout = worktreeHomeRoot(t.info.treeRoot) === dir
     t.info.relocated = true
     this.setTreeRoot(t, dir)
-    this.emit('relocated', { tabId: t.info.tabId, dir })
+    if (!leftItsWorktreeForItsCheckout) this.emit('relocated', { tabId: t.info.tabId, dir })
   }
 
   private async parseOnce(t: Tracked): Promise<void> {
