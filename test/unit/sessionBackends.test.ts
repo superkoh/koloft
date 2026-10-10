@@ -6,6 +6,7 @@ import {
   effectiveBackend,
   identityOf,
   sessionKey,
+  shownAsInstalled,
   SUPPORTED_PAIRS
 } from '@shared/sessionBackend'
 import type { BackendId, BackendSessionInfo, BackendSessionRow } from '@shared/types'
@@ -244,6 +245,19 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
       claude: { local: true, ssh: true },
       codex: { local: true, ssh: false }
     })
+  })
+})
+
+describe('shownAsInstalled (which tools a dialog offers while the installed-tools check is out)', () => {
+  it('counts only Claude Code before the first answer, then goes by the answer', () => {
+    expect(shownAsInstalled(null, 'claude')).toBe(true)
+    expect(shownAsInstalled(null, 'codex')).toBe(false)
+    const onlyCodex = [
+      { id: 'claude' as const, available: false },
+      { id: 'codex' as const, available: true }
+    ]
+    expect(shownAsInstalled(onlyCodex, 'claude')).toBe(false)
+    expect(shownAsInstalled(onlyCodex, 'codex')).toBe(true)
   })
 })
 

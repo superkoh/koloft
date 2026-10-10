@@ -255,6 +255,16 @@ export function addCodexAccount(env: E2EEnv, authJson: string): void {
   })
 }
 
+export function codexMissingWhoseCheckAnswersOnlyWhenLetGo(env: E2EEnv): () => void {
+  const gate = path.join(env.home, 'codex-check-may-answer')
+  const binary = path.join(env.fakeBin, 'codex')
+  fs.writeFileSync(binary, `#!/bin/sh\nwhile [ ! -f '${gate}' ]; do sleep 0.05; done\nexit 1\n`, {
+    mode: 0o755
+  })
+  env.launchEnv.KOLOFT_CODEX_CMD = binary
+  return () => fs.writeFileSync(gate, '')
+}
+
 export function setGuestLimit(env: E2EEnv, limit: number): void {
   env.launchEnv.KOLOFT_BROWSER_GUEST_LIMIT = String(limit)
 }

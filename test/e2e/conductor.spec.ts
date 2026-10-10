@@ -3,7 +3,12 @@ import path from 'path'
 import { spawnSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
-import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
+import {
+  codexMissingWhoseCheckAnswersOnlyWhenLetGo,
+  installCodex,
+  seedSettings,
+  type E2EEnv
+} from './helpers/env'
 import {
   centerTerm,
   newSessionInWith,
@@ -11,6 +16,7 @@ import {
   openMenu,
   readCalls,
   runIn,
+  sampledWhileTheCodexCheckIsOutAndOnceAfter,
   seedJsonl,
   sendShortcut,
   settingsOnDisk,
@@ -272,6 +278,31 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
       await expect(page.locator('.ws-head', { hasText: 'ws-b' })).toHaveCount(0)
       await expect.poll(() => bindingsOnDisk(env)).toEqual([])
       await expect(island(page)).toHaveCount(0)
+    } finally {
+      await close()
+    }
+  })
+
+  test('with no Codex and a slow Codex check, the bind dialog never lets Codex be picked, before or after the check answers', async ({
+    env
+  }) => {
+    const letTheCheckAnswer = codexMissingWhoseCheckAnswersOnlyWhenLetGo(env)
+    const { page, close } = await launched(env)
+    try {
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await page.locator('.menu .mi', { hasText: 'Bind Discord channel…' }).click()
+      const dlg = page.getByRole('dialog', { name: 'Bind a Discord channel' })
+      await expect(dlg).toBeVisible()
+      const pickableCodex = dlg.locator('.seg button:not([disabled])', { hasText: 'Codex' })
+
+      const { samples, codexAvailable } = await sampledWhileTheCodexCheckIsOutAndOnceAfter(
+        page,
+        letTheCheckAnswer,
+        () => pickableCodex.count()
+      )
+      expect(codexAvailable).toBe(false)
+      expect(samples.filter((n) => n > 0).length, 'samples with Codex pickable').toBe(0)
+      await expect(dlg.locator('.seg button', { hasText: 'Claude' })).toBeEnabled()
     } finally {
       await close()
     }
