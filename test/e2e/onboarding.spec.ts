@@ -4,8 +4,19 @@ import type { AddressInfo } from 'net'
 import path from 'path'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
-import { seedJsonl, settingsOnDisk, snap, waitForCalls } from './helpers/p1'
+import {
+  codexMissingWhoseCheckAnswersOnlyWhenLetGo,
+  installCodex,
+  seedSettings,
+  type E2EEnv
+} from './helpers/env'
+import {
+  expectNoCodexWhileTheCheckIsOutNorAfter,
+  seedJsonl,
+  settingsOnDisk,
+  snap,
+  waitForCalls
+} from './helpers/p1'
 import {
   changelog,
   notesBody,
@@ -432,6 +443,34 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
       await expect(page.locator('.assist-modal')).toHaveCount(0)
     } finally {
       await quitAndClose(app2)
+    }
+  })
+
+  test('T-OB-13: with no Codex and a slow Codex check, the Assist question never offers Codex, before or after the check answers', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    seedSettings(env, { onboardingSeen: true, assist: null })
+    const letTheCheckAnswer = codexMissingWhoseCheckAnswersOnlyWhenLetGo(env)
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      const assist = page.locator('.assist-modal')
+      const choice = (name: string) =>
+        assist.locator('.assist-setup .choice-t', { hasText: new RegExp(`^${name}$`) })
+      await expect(choice('Claude')).toBeVisible({ timeout: 20_000 })
+
+      await expectNoCodexWhileTheCheckIsOutNorAfter(
+        page,
+        letTheCheckAnswer,
+        () => choice('Codex').count(),
+        'a Codex choice'
+      )
+      await expect(choice('Claude')).toBeVisible()
+    } finally {
+      await quitAndClose(app)
     }
   })
 

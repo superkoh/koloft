@@ -33,6 +33,10 @@ export function backendAvailable(list: BackendAvailability[], id: BackendId): bo
   return list.some((b) => b.id === id && b.available)
 }
 
+export function shownAsInstalled(list: BackendAvailability[] | null, id: BackendId): boolean {
+  return list ? backendAvailable(list, id) : id === 'claude'
+}
+
 export function sourceOf(backendId: BackendId, workspacePath: string): SessionSource {
   return { backendId, host: hostOf(workspacePath) }
 }
@@ -86,7 +90,6 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities | 'refused'>> 
     ssh: {
       ...EVERYTHING,
       agentOpen: PENDING,
-      agentTools: PENDING,
       browserControl: PENDING,
       rename: PENDING
     }

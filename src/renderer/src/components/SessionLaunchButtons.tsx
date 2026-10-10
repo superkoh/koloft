@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  backendAvailable,
   BACKEND_LABEL,
   SESSION_BACKENDS,
+  shownAsInstalled,
   unsupportedPairMessage
 } from '@shared/sessionBackend'
 import { ACCOUNTS_PANE, noUsableAccountLead } from '@shared/accountUsage'
-import type { BackendAvailability, BackendId, CreateTabOptions, HostId } from '@shared/types'
+import type { BackendId, CreateTabOptions, HostId } from '@shared/types'
 import { launchErrorMessage } from '../agentUi'
 import { useStore } from '../store'
+import { useInstalledBackends } from '../useInstalledBackends'
 import { SessionBackendIcon } from './SessionBackendIcon'
 
 export type SessionLaunchOptions = Pick<
@@ -17,13 +18,10 @@ export type SessionLaunchOptions = Pick<
 > & { cwd: string }
 export type StartSession = (opts: SessionLaunchOptions, backend: BackendId) => Promise<void>
 
-let lastDetectedThisRun: BackendAvailability[] | null = null
-
 export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: () => void) {
   const methods = useStore((s) => s.settings.sessionMethods)
-  const [detected, setDetected] = useState(lastDetectedThisRun)
-  const [probeError, setProbeError] = useState('')
   const [retry, setRetry] = useState(0)
+  const { installed: detected, checkFailed } = useInstalledBackends(retry)
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState('')
   const submitting = useRef(false)
@@ -34,28 +32,12 @@ export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: (
       live.current = false
     }
   }, [])
-  useEffect(() => {
-    let alive = true
-    setProbeError('')
-    void window.api.sessions.backends().then(
-      (backends) => {
-        lastDetectedThisRun = backends
-        if (alive) setDetected(backends)
-      },
-      () => {
-        if (alive) setProbeError('Could not check that Claude Code is installed.')
-      }
-    )
-    return () => {
-      alive = false
-    }
-  }, [retry])
   const accountIssue = useAccountIssue()
   const found = (backend: BackendId) => detected?.find((b) => b.id === backend)
   const usable = (backend: BackendId, on = host): boolean =>
     methods.enabled[backend] &&
     !unsupportedPairMessage(backend, on) &&
-    backendAvailable(detected ?? [], backend)
+    shownAsInstalled(detected, backend)
   const setupIssue = (backend: BackendId, on = host): string => {
     if (!methods.enabled[backend]) return 'Disabled in Settings ▸ Sessions'
     const refusal = unsupportedPairMessage(backend, on)
@@ -94,7 +76,7 @@ export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: (
     starting,
     error,
     retry: () => setRetry((n) => n + 1),
-    probeError
+    checkFailed
   }
 }
 
@@ -219,7 +201,7 @@ export function SessionLaunchStatus({ launch }: { launch: ReturnType<typeof useS
           {launch.error}
         </p>
       )}
-      {launch.probeError && (
+      {launch.checkFailed && (
         <button className="mini" onClick={launch.retry}>
           Retry
         </button>
