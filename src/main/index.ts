@@ -3163,10 +3163,10 @@ async function closeSessionFully(
     sendToRenderer('cron:toast', `${target.title} was opened again, so Koloft did not close it.`)
     return
   }
-  const tree =
-    (await hosts.of(info.treeRoot).dirExists(info.treeRoot)) &&
-    (await closingTree(hostGitOut, info))
-  const problem = tree && (await removeTree(hostGitOut, tree))
+  const tree = await closingTree(hostGitOut, info)
+  const alreadyRemoved =
+    !!tree && !tree.branches.length && !(await hosts.of(info.treeRoot).dirExists(info.treeRoot))
+  const problem = tree && !alreadyRemoved && (await removeTree(hostGitOut, tree))
   if (problem) {
     sendToRenderer('cron:toast', `${target.title}: ${problem}`)
     return
@@ -3177,8 +3177,7 @@ async function closeSessionFully(
 
 async function removeUntouchedCodexWorktree(resource: WorktreeResource): Promise<void> {
   const tree = resource.worktreePath
-  const inTree = (dir: string): boolean => projectInfoFor(dir).treeRoot === tree
-  if ([...sleepers.values()].some((t) => inTree(t.cwd))) return
+  if ([...sleepers.values()].some((t) => projectInfoFor(t.cwd).treeRoot === tree)) return
   if (sessionBackends.occupantOf(tree) || !(await codexSessions?.worktrees.untouched(resource)))
     return
   const problem = await removeTree(hostGitOut, {
@@ -3433,6 +3432,7 @@ function cronBindDeadlineMs(): number {
 const resumeProbes: ResumeProbes = {
   dirExists: dirExistsSync,
   occupantOf: (dir) => sessionBackends.occupantOf(dir),
+  recorded: (dir) => codexSessions?.worktrees.recorded(dir) ?? false,
   ...gitProbes(localGitOut)
 }
 

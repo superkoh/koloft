@@ -127,6 +127,11 @@ function codexRows(page: Page): Locator {
     hasNot: page.getByRole('img', { name: 'Claude', exact: true })
   })
 }
+function claudeRows(page: Page): Locator {
+  return wsRows(page, 'ws-a').filter({
+    has: page.getByRole('img', { name: 'Claude', exact: true })
+  })
+}
 async function restoreFromTheFirstMenuOpenedAfterLaunch(page: Page): Promise<void> {
   await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
   const restore = page.locator('.menu .mi', { hasText: 'Restore session' })
@@ -401,9 +406,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(wsRows(page, 'ws-a')).toHaveCount(2)
       expect(readCalls(env)).toHaveLength(1)
       await expect(page.locator('.wb-col:visible')).toHaveCount(1)
-      await wsRows(page, 'ws-a')
-        .filter({ has: page.getByRole('img', { name: 'Claude', exact: true }) })
-        .click()
+      await claudeRows(page).click()
       await expect(page.getByRole('button', { name: 'Workbench', exact: true })).toBeVisible()
 
       const statusOverride = (argv: string[]): string | undefined =>
@@ -636,8 +639,6 @@ test.describe('Codex sessions through the real method chooser, process transport
     fs.writeFileSync(path.join(env.workspaces.a, '.gitignore'), 'NOTES.md\n')
     gitCommitAll(env.workspaces.a)
     seedSettings(env, { hintsOff: true })
-    const claudeRow = (page: Page): Locator =>
-      wsRows(page, 'ws-a').filter({ has: page.getByRole('img', { name: 'Claude', exact: true }) })
     const app = await launchApp(env)
     try {
       const page = await app.firstWindow()
@@ -646,7 +647,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       await newIn(page, true)
       await worktreeDialog(page).locator('input').fill('codex-mixed')
       await chooseBackend(page, 'default')
-      await expect(claudeRow(page)).toHaveClass(/st-waiting/)
+      await expect(claudeRows(page)).toHaveClass(/st-waiting/)
       const notes = path.join(tree, 'NOTES.md')
       await expect.poll(() => fs.existsSync(notes)).toBe(true)
       fs.copyFileSync(notes, path.join(env.workspaces.a, 'NOTES.md'))
@@ -657,9 +658,9 @@ test.describe('Codex sessions through the real method chooser, process transport
       await page.waitForTimeout(A_REMOVAL_WOULD_HAVE_FINISHED_MS)
       expect(fs.existsSync(tree)).toBe(true)
 
-      await claudeRow(page).click()
+      await claudeRows(page).click()
       await sendShortcut(app, 'shortcut:close-tab')
-      await expect(claudeRow(page)).toHaveClass(/cold/)
+      await expect(claudeRows(page)).toHaveClass(/cold/)
       await codexRows(page).click()
       await expect(codexRows(page)).toHaveClass(/st-waiting|st-idle/)
       await sendShortcut(app, 'shortcut:close-tab')
@@ -685,9 +686,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       await worktreeHint.getByRole('button', { name: 'Got it', exact: true }).click()
       const tabId = await codexRows(page).getAttribute('data-tab-id')
       expect(tabId).toBeTruthy()
-      await wsRows(page, 'ws-a')
-        .filter({ has: page.getByRole('img', { name: 'Claude', exact: true }) })
-        .click()
+      await claudeRows(page).click()
       await page.evaluate((id) => window.api.terminal.write(id!, 'approve\r'), tabId)
       const approvalHint = page.locator('.hint-card[data-hint="approval"]')
       await expect(approvalHint.locator('.h')).toHaveText('Amber means a session needs you')
