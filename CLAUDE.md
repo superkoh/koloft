@@ -219,6 +219,7 @@ Working principles:
     still report success.
   - Never git -C another checkout: diff origin/<branch>, or gh pr diff <n>.
   - Read stops at 25,000 tokens: read a big file or diff ~1,000 lines at a time.
+  - grep is ugrep and fails on a .{0,N} span: use /usr/bin/grep -o -E, N ≤ 255.
   - Findings go in your final message; the harness refuses report files.
   ```
 
