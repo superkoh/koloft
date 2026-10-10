@@ -1,15 +1,47 @@
 import type { AccountKind, AccountMeta, AccountView, BackendId, UsageSnapshot } from './types'
+import { BACKEND_LABEL } from './sessionBackend'
 
 const ACCOUNT_KINDS_OF: Record<BackendId, AccountKind[]> = {
   claude: ['oauth', 'apikey', 'custom'],
   codex: ['codex-home']
 }
 
+const KINDS_WITH_A_BROWSER_SIGN_IN: AccountKind[] = ['oauth', 'codex-home']
+
 // ADR-0030
 export function hasUsableAccount(accounts: readonly AccountMeta[], backend: BackendId): boolean {
   return accounts.some(
     (a) => ACCOUNT_KINDS_OF[backend].includes(a.kind) && a.enabled && a.status === 'ok'
   )
+}
+
+export function needsSignInAgain(a: Pick<AccountMeta, 'kind' | 'status'>): boolean {
+  return (
+    KINDS_WITH_A_BROWSER_SIGN_IN.includes(a.kind) &&
+    (a.status === 'expired' || a.status === 'unverified')
+  )
+}
+
+export function accountToSignInAgain(
+  accounts: readonly AccountMeta[],
+  backend: BackendId
+): string | undefined {
+  return accounts.find(
+    (a) => ACCOUNT_KINDS_OF[backend].includes(a.kind) && a.enabled && needsSignInAgain(a)
+  )?.name
+}
+
+export const ACCOUNTS_PANE = 'Settings ▸ Accounts'
+
+// ADR-0030
+export function noUsableAccountLead(accounts: readonly AccountMeta[], backend: BackendId): string {
+  if (hasUsableAccount(accounts, backend)) return ''
+  const again = accountToSignInAgain(accounts, backend)
+  if (again) return `"${again}" is not signed in — sign in again in `
+  const label = BACKEND_LABEL[backend]
+  return accounts.some((a) => ACCOUNT_KINDS_OF[backend].includes(a.kind))
+    ? `No ${label} account can be used — check `
+    : `No ${label} account yet — add one in `
 }
 
 export const SHIM_FOUND_NO_ACCOUNT_EXIT = 78

@@ -99,7 +99,7 @@ interface AppState {
   onboardingStep: number
   bypassAccepted: boolean | null
   accounts: AccountView[] | null
-  signInTabId: string | null
+  signIn: { tabId: string; backToSettings: boolean } | null
   accountLogin: LoginFlowState | null
   openFiles: Record<string, OpenFile | null>
   workbenchWidth: number
@@ -176,7 +176,7 @@ interface AppState {
   setOnboardingStep: (step: number) => void
   setBypassAccepted: (accepted: boolean) => void
   setAccounts: (accounts: AccountView[]) => void
-  setSignInTabId: (tabId: string) => void
+  showSignInTab: (tabId: string) => void
   beginLogin: (reauthName?: string) => void
   setLoginProgress: (p: LoginProgress) => void
   clearLogin: () => void
@@ -455,7 +455,7 @@ export const useStore = create<AppState>((set, get) => ({
   onboardingStep: 1,
   bypassAccepted: null,
   accounts: null,
-  signInTabId: null,
+  signIn: null,
   accountLogin: null,
   openFiles: {},
   workbenchWidth: DEFAULT_SETTINGS.workbenchWidth,
@@ -563,7 +563,12 @@ export const useStore = create<AppState>((set, get) => ({
       delete workbenchWidths[id]
       delete workbenchLoad[id]
       delete filesReveal[id]
+      const signInEnds = s.signIn?.tabId === id
       return {
+        ...(signInEnds && {
+          signIn: null,
+          settingsOpen: s.settingsOpen || !!s.signIn?.backToSettings
+        }),
         tabs,
         openFiles,
         activeTabId,
@@ -742,7 +747,11 @@ export const useStore = create<AppState>((set, get) => ({
   setOnboardingStep: (onboardingStep) => set({ onboardingStep }),
   setBypassAccepted: (bypassAccepted) => set({ bypassAccepted }),
   setAccounts: (accounts) => set({ accounts }),
-  setSignInTabId: (signInTabId) => set({ signInTabId }),
+  showSignInTab: (tabId) =>
+    set((s) => ({
+      signIn: { tabId, backToSettings: s.settingsOpen },
+      settingsOpen: false
+    })),
   beginLogin: (reauthName) => set({ accountLogin: { reauthName, progress: null } }),
   setLoginProgress: (progress) =>
     set((s) => ({ accountLogin: { ...(s.accountLogin ?? {}), progress } })),

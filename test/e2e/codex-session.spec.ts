@@ -48,6 +48,7 @@ import {
   readCalls,
   runIn,
   sendShortcut,
+  settingsOnDisk,
   snap,
   startSessionIn,
   termIds,
@@ -226,6 +227,46 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(
         wsRows(page, 'ws-a').getByRole('img', { name: 'Claude', exact: true })
       ).toHaveCount(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // ADR-0030
+  test('with no Codex account, "New Codex session" is shut on the empty workspace and in the ⌘N picker, under a line that stays and whose Settings part opens Settings ▸ Accounts', async ({
+    env
+  }) => {
+    installCodex(env)
+    const accounts = settingsOnDisk(env).accounts as { kind: string }[]
+    seedSettings(env, { accounts: accounts.filter((a) => a.kind !== 'codex-home') })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const empty = page.locator('.w-empty')
+      const line = /^No Codex account yet — add one in Settings ▸ Accounts\.$/
+      await expect(empty.getByRole('button', { name: 'New Codex session' })).toBeDisabled()
+      await expect(empty.getByRole('button', { name: /New Claude session/ })).toBeEnabled()
+      await expect(empty.locator('.field-hint.bad')).toHaveText(line)
+      await snap(page, 'codex-no-account-empty-workspace')
+
+      await clickAppMenuItem(app, page, 'new-session')
+      const dlg = pickerDialog(page)
+      await expect(dlg).toBeVisible({ timeout: 15_000 })
+      await expect(dlg.locator('.modal-foot button[data-default="false"]')).toBeDisabled()
+      await expect(dlg.locator('.field-hint.bad')).toHaveText(line)
+      await snap(page, 'codex-no-account-picker')
+      await page.keyboard.press('Shift+Enter')
+      await page.keyboard.press('Escape')
+      await expect(dlg).toHaveCount(0)
+
+      await empty.getByRole('button', { name: 'Settings ▸ Accounts' }).click()
+      await expect(page.getByRole('tab', { name: 'Accounts', exact: true })).toHaveAttribute(
+        'aria-selected',
+        'true'
+      )
+      await expect(page.getByRole('button', { name: 'Sign in to Codex' })).toBeVisible()
+      expect(codexCalls(env)).toHaveLength(0)
     } finally {
       await quitAndClose(app)
     }
@@ -1115,7 +1156,7 @@ test.describe('Codex sessions through the real method chooser, process transport
   })
 
   // CODEX§15
-  test('a Codex account signed in from Settings shows its weekly use, and a new Codex session runs in its own sign-in folder', async ({
+  test('a Codex account signed in from Settings shows its weekly use back in Settings ▸ Accounts once the sign-in tab closes, and a new Codex session runs in its own sign-in folder', async ({
     env
   }) => {
     installCodex(env)
@@ -1129,15 +1170,20 @@ test.describe('Codex sessions through the real method chooser, process transport
       await page.getByRole('button', { name: 'Sign in to Codex' }).click()
       await page.getByPlaceholder('Name this account (e.g. work)').fill('work')
       await page.locator('.acct-add').getByRole('button', { name: 'Sign in', exact: true }).click()
+      await expect(page.locator('.set-nav')).toHaveCount(0)
       const home = path.join(env.userData, 'codex-homes', 'work')
       await expect
         .poll(() => fs.existsSync(path.join(home, 'auth.json')), { timeout: 30_000 })
         .toBe(true)
-      await sendShortcut(app, 'shortcut:open-settings')
-      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      await expect(page.getByRole('tab', { name: 'Accounts', exact: true })).toHaveAttribute(
+        'aria-selected',
+        'true',
+        { timeout: 20_000 }
+      )
       await expect(
         page.locator('.acct-row', { hasText: 'work' }).locator('.acct-meter[data-win="7d"] .m-pct')
       ).toHaveText('30%', { timeout: 30_000 })
+      await snap(page, 'codex-sign-in-back-in-settings')
       await page.keyboard.press('Escape')
 
       await startCodex(page, env)

@@ -1,5 +1,6 @@
 import { useState, type JSX } from 'react'
 import type { BackendId } from '@shared/types'
+import { accountToSignInAgain } from '@shared/accountUsage'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { useStore } from '../store'
 import type { AssistSetupState } from '../useAssistSetup'
@@ -28,17 +29,19 @@ export function InstallHint({ children }: { children: string }): JSX.Element {
 // ADR-0030
 export function AssistSetup({ setup }: { setup: AssistSetupState }): JSX.Element {
   const assist = useStore((s) => s.settings.assist)
+  const accounts = useStore((s) => s.accounts) ?? []
   const login = useStore((s) => s.accountLogin)
   const beginLogin = useStore((s) => s.beginLogin)
   const setBypassAccepted = useStore((s) => s.setBypassAccepted)
   const update = useSettingsUpdate()
-  const [codexSignIn, setCodexSignIn] = useState(false)
+  const [codexSignIn, setCodexSignIn] = useState<{ again?: string } | null>(null)
   const [pasting, setPasting] = useState(false)
 
   const pick = (b: BackendId): void => {
+    const again = accountToSignInAgain(accounts, b)
     if (setup.usable[b]) update({ assist: { on: true, backend: b } })
-    else if (b === 'claude') beginLogin()
-    else setCodexSignIn(true)
+    else if (b === 'claude') beginLogin(again)
+    else setCodexSignIn({ again })
   }
   const acceptBypass = async (): Promise<void> => {
     if (await window.api.accounts.acceptBypass()) setBypassAccepted(true)
@@ -60,20 +63,25 @@ export function AssistSetup({ setup }: { setup: AssistSetupState }): JSX.Element
         That is <b>Koloft Assist</b>.
       </div>
       <div className="ob-choices">
-        {setup.tools.map((b) => (
-          <button
-            key={b}
-            className={'choice' + (assist?.backend === b && setup.usable[b] ? ' on' : '')}
-            onClick={() => pick(b)}
-          >
-            <span className="choice-t">{BACKEND_LABEL[b]}</span>
-            <span className="choice-d">
-              {setup.usable[b]
-                ? `Signed in. Assist uses ${ASSIST_RUNS_ON[b]}.`
-                : 'No account yet. Click to sign in.'}
-            </span>
-          </button>
-        ))}
+        {setup.tools.map((b) => {
+          const again = accountToSignInAgain(accounts, b)
+          return (
+            <button
+              key={b}
+              className={'choice' + (assist?.backend === b && setup.usable[b] ? ' on' : '')}
+              onClick={() => pick(b)}
+            >
+              <span className="choice-t">{BACKEND_LABEL[b]}</span>
+              <span className="choice-d">
+                {setup.usable[b]
+                  ? `Signed in. Assist uses ${ASSIST_RUNS_ON[b]}.`
+                  : again
+                    ? `"${again}" is not signed in. Click to sign in again.`
+                    : 'No account yet. Click to sign in.'}
+              </span>
+            </button>
+          )
+        })}
       </div>
       <div className="quiet">
         {ASSIST_COST_LINE} Turn it off any time in Settings ▸ Sessions; Koloft then does those jobs
@@ -105,7 +113,9 @@ export function AssistSetup({ setup }: { setup: AssistSetupState }): JSX.Element
         </>
       )}
       {login && <LoginDialog />}
-      {codexSignIn && <CodexSignInDialog onClose={() => setCodexSignIn(false)} />}
+      {codexSignIn && (
+        <CodexSignInDialog again={codexSignIn.again} onClose={() => setCodexSignIn(null)} />
+      )}
       {pasting && <AddAccountDialog kind="oauth" onClose={() => setPasting(false)} />}
     </div>
   )
