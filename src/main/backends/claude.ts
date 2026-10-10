@@ -59,12 +59,7 @@ import {
   type HookReport
 } from '../hookRouting'
 import { registeredByTabRoot } from '../shim'
-import {
-  SWEEP_FOR_A_LOST_DROP_MS,
-  sweepJsonDrops,
-  watchAndSweepJsonDrops,
-  watchJsonDrops
-} from '../jsonDrops'
+import { oncePerName, watchAndSweepJsonDrops, watchJsonDrops } from '../jsonDrops'
 import { copyWorktreeIncludes } from '../sessionWorktrees'
 import { GIT_REF_RE } from '../gitSteps'
 import {
@@ -128,7 +123,6 @@ export class ClaudeBackend implements SessionBackend {
   private hookRegDir = ''
   private statusLogCursors = new Map<string, { offset: number; tail: Buffer }>()
   private statusLogDraining = new Map<string, boolean>()
-  private processedRegIds = new Set<string>()
   private watchedHookMirrors = new Map<string, () => void>()
   private pickedSkipFlag = new Set<string>()
   private launchedBypassing = new Set<string>()
@@ -252,10 +246,13 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   watchShimRegistrations(regDir: string): void {
-    watchAndSweepJsonDrops(regDir, (name) =>
-      this.processedRegIds.has(path.basename(name, '.json'))
-        ? null
-        : (raw): void => this.handleRegistration(raw)
+    watchAndSweepJsonDrops(
+      regDir,
+      oncePerName(
+        () =>
+          (raw): void =>
+            this.handleRegistration(raw)
+      )
     )
   }
 
@@ -270,8 +267,6 @@ export class ClaudeBackend implements SessionBackend {
       pid?: number
     }
     if (!obj.tabId || !obj.regId) return
-    if (this.processedRegIds.has(obj.regId)) return
-    this.processedRegIds.add(obj.regId)
     if (!this.d.pty.get(obj.tabId)) return
     if (!registeredByTabRoot(obj.pid, this.d.pty.pidOf(obj.tabId))) return
     const cwd = obj.cwd && obj.cwd.length ? obj.cwd : os.homedir()
@@ -362,18 +357,16 @@ export class ClaudeBackend implements SessionBackend {
       if (isNews && !isNews(full, JSON.stringify(obj))) return
       this.handleHookRegistration(obj)
     }
-    const drops = watchJsonDrops(dir, () => handle)
     const unboundTabNote = (name: string): typeof handle | null => {
       const tabId = path.basename(name, '.json')
       return this.d.pty.get(tabId) && !this.sessionIdOf(tabId) ? handle : null
     }
-    const sweep = mirror
-      ? undefined
-      : setInterval(() => sweepJsonDrops(dir, unboundTabNote), SWEEP_FOR_A_LOST_DROP_MS)
+    const drops = mirror
+      ? watchJsonDrops(dir, () => handle)
+      : watchAndSweepJsonDrops(dir, () => handle, unboundTabNote)
     const logs = this.watchStatusLogs(dir)
     return () => {
       drops?.close()
-      clearInterval(sweep)
       logs()
     }
   }

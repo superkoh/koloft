@@ -35,7 +35,7 @@ function readNamedDrop(dir: string, name: string, handlerFor: DropHandlerFor): v
   readJsonDrop(full, 0, (obj) => handle(obj, full))
 }
 
-export function sweepJsonDrops(dir: string, handlerFor: DropHandlerFor): void {
+function sweepJsonDrops(dir: string, handlerFor: DropHandlerFor): void {
   fs.readdir(dir, (err, names) => {
     if (err) return
     for (const name of names) readNamedDrop(dir, name, handlerFor)
@@ -53,16 +53,16 @@ export function watchJsonDrops(dir: string, handlerFor: DropHandlerFor): fs.FSWa
 }
 
 // PLATFORM§28
-export const SWEEP_FOR_A_LOST_DROP_MS = 1000
+const SWEEP_FOR_A_LOST_DROP_MS = 1000
 
 export function watchAndSweepJsonDrops(
   dir: string,
-  handlerFor: DropHandlerFor
+  handlerFor: DropHandlerFor,
+  sweepFor: DropHandlerFor = handlerFor
 ): fs.FSWatcher | null {
   const watcher = watchJsonDrops(dir, handlerFor)
   if (watcher) {
-    const sweep = setInterval(() => sweepJsonDrops(dir, handlerFor), SWEEP_FOR_A_LOST_DROP_MS)
-    sweep.unref()
+    const sweep = setInterval(() => sweepJsonDrops(dir, sweepFor), SWEEP_FOR_A_LOST_DROP_MS).unref()
     watcher.on('close', () => clearInterval(sweep))
   }
   return watcher
