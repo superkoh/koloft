@@ -85,9 +85,11 @@ function ownerIsClosed(ownerTabId: string): boolean {
 
 function bareLabel(t: DirtyTab): string {
   if (t.ownerTabId.startsWith(NOTES_OWNER_PREFIX)) return 'notes.md'
+  const st = useStore.getState()
   const root =
-    useStore.getState().sessions.find((s) => s.tabId === t.ownerTabId)?.treeRoot ??
+    st.sessions.find((s) => s.tabId === t.ownerTabId)?.treeRoot ??
     closedRoots.get(t.ownerTabId) ??
+    st.tabs.find((tab) => tab.id === t.ownerTabId)?.cwd ??
     null
   return relOf(t.path, root)
 }
