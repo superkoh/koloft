@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { shq } from '@shared/shellQuote'
 import { NEWID_FN } from './openShimScript'
+import { REMOTE_HOOK_DIR } from './remote/paths'
 
 export const AGENT_SHIM_WAITS_MS = 10_000
 const SHIM_POLL_MS = 50
@@ -19,7 +20,10 @@ jstr() {
 }
 `
 
-const BODY = `
+const REMOTE_AGENT_SHIM_WAITS_MS = 30_000
+const REMOTE_POLL_WELL_UNDER_ONE_MIRROR_PULL_MS = 250
+
+const body = (waitsMs: number, pollMs = SHIM_POLL_MS): string => `
 ${NEWID_FN}
 id="$(newid)"
 [ -n "$id" ] || id="$$-$(date +%s)"
@@ -34,7 +38,7 @@ if ! printf '{%s"argv":[%s],"cwd":"%s"}\\n' "$tabfield" "$args" "$(jstr "$PWD")"
   exit 1
 fi
 waits=0
-while [ ! -f "$res" ] && [ "$waits" -lt ${AGENT_SHIM_WAITS_MS / SHIM_POLL_MS} ]; do sleep ${SHIM_POLL_MS / 1000}; waits=$((waits+1)); done
+while [ ! -f "$res" ] && [ "$waits" -lt ${waitsMs / pollMs} ]; do sleep ${pollMs / 1000}; waits=$((waits+1)); done
 if [ ! -f "$res" ]; then
   rm -f "$req" 2>/dev/null
   echo "koloft: Koloft did not answer." >&2
@@ -59,7 +63,20 @@ fi
 dir="$KOLOFT_AGENT_DIR"
 tabfield="\\"tabId\\":\\"$(jstr "$KOLOFT_TAB_ID")\\","
 unwritable="koloft: could not reach Koloft."
-${BODY}`
+${body(AGENT_SHIM_WAITS_MS)}`
+
+export const REMOTE_AGENT_SHIM = `${HEAD}
+if [ -z "$KOLOFT_TAB_ID" ]; then
+  echo "koloft: this works only in a Koloft session." >&2
+  exit 1
+fi
+dir="${REMOTE_HOOK_DIR}"
+mkdir -p "$dir" 2>/dev/null
+tm=""
+[ -n "$TMUX" ] && tm="$(tmux display-message -p -t "$TMUX_PANE" '#S' 2>/dev/null)"
+tabfield="\\"tabId\\":\\"$(jstr "$KOLOFT_TAB_ID")\\",\\"tmux\\":\\"$(jstr "$tm")\\","
+unwritable="koloft: could not reach Koloft."
+${body(REMOTE_AGENT_SHIM_WAITS_MS, REMOTE_POLL_WELL_UNDER_ONE_MIRROR_PULL_MS)}`
 
 // CODEX§12 CODEX§17
 function codexAgentShim(requestDir: string): string {
@@ -71,7 +88,7 @@ if [ ! -d "$dir" ]; then
 fi
 tabfield=""
 unwritable="koloft: this sandbox is read-only, so koloft cannot run here."
-${BODY}`
+${body(AGENT_SHIM_WAITS_MS)}`
 }
 
 export function writeCodexAgentShim(shimDir: string, requestDir: string): void {

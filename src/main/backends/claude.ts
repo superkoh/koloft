@@ -26,6 +26,7 @@ import { publicClaudeSession } from '../host/hosts'
 import type { MachineAccount, SshHost } from '../host/sshHost'
 import type { ClaudeLaunch, Host } from '../host/host'
 import type { RemoteSync } from '../remote/sync'
+import { AGENT_DROP_NAME, REQUEST_NAME, replyJson, type AgentReply } from '../agentRequests'
 import { accountEnv, sessionIdOfTmux, tmuxSessionName } from '../remote/launch'
 import {
   dq,
@@ -34,7 +35,12 @@ import {
   REMOTE_HOOK_DIR,
   tabPackageDir
 } from '../remote/paths'
-import { hookSettings, removeConductorMarker, writeConductorMarker } from '../hooks'
+import {
+  hookSettings,
+  KOLOFT_ALLOW_RULE,
+  removeConductorMarker,
+  writeConductorMarker
+} from '../hooks'
 import type { StatusLineSetting } from '../statusline'
 import { loadSettings } from '../settings'
 import { keychainRead, listAccounts } from '../accounts'
@@ -60,7 +66,7 @@ import {
   type HookReport
 } from '../hookRouting'
 import { registeredByTabRoot } from '../shim'
-import { oncePerName, watchAndSweepJsonDrops, watchJsonDrops } from '../jsonDrops'
+import { oncePerName, watchAndSweepJsonDrops } from '../jsonDrops'
 import { copyWorktreeIncludes } from '../sessionWorktrees'
 import { GIT_REF_RE } from '../gitSteps'
 import {
@@ -131,6 +137,7 @@ export class ClaudeBackend implements SessionBackend {
   private heldBeforeStartup = new Map<string, string>()
   private startsBeforeRegistration = new Map<string, unknown>()
   agentPlugin?: string
+  agentReply?: (tabId: string, raw: unknown) => Promise<AgentReply>
 
   constructor(private d: ClaudeBackendDeps) {}
 
@@ -362,8 +369,8 @@ export class ClaudeBackend implements SessionBackend {
     setInterval(() => void sweepLiveness(), LIVENESS_SWEEP_MS).unref()
   }
 
-  private watchHookRegistrations(dir: string, mirror = false): () => void {
-    const isNews = mirror ? makeDropDedupe() : null
+  private watchHookRegistrations(dir: string, machine?: string): () => void {
+    const isNews = machine ? makeDropDedupe() : null
     const handle = (obj: unknown, full: string): void => {
       if (isNews && !isNews(full, JSON.stringify(obj))) return
       this.handleHookRegistration(obj)
@@ -372,14 +379,30 @@ export class ClaudeBackend implements SessionBackend {
       const tabId = path.basename(name, '.json')
       return this.d.pty.get(tabId) && !this.sessionIdOf(tabId) ? handle : null
     }
-    const drops = mirror
-      ? watchJsonDrops(dir, () => handle)
+    const drops = machine
+      ? this.watchMachineDrops(dir, machine, handle)
       : watchAndSweepJsonDrops(dir, () => handle, unboundTabNote)
     const logs = this.watchStatusLogs(dir)
     return () => {
       drops?.close()
       logs()
     }
+  }
+
+  private watchMachineDrops(
+    dir: string,
+    machine: string,
+    hookReport: (obj: unknown, full: string) => void
+  ): fs.FSWatcher | null {
+    const agentRequest = oncePerName((name) => {
+      const id = REQUEST_NAME.exec(name)?.[1]
+      return id ? (raw): void => this.answerMachineRequest(machine, id, raw) : null
+    })
+    return watchAndSweepJsonDrops(
+      dir,
+      (name) => (AGENT_DROP_NAME.test(name) ? agentRequest(name) : hookReport),
+      agentRequest
+    )
   }
 
   private watchStatusLogs(dir: string): () => void {
@@ -453,15 +476,36 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   private liveTabFor(report: { tabId?: string; tmux?: string }): string | undefined {
+    if (report.tabId && this.d.pty.get(report.tabId)) return report.tabId
+    return report.tmux ? this.tabRunningTmux(report.tmux) : undefined
+  }
+
+  private tabRunningTmux(tmuxName: string, machine?: string): string | undefined {
     const { pty, tracker } = this.d
-    if (report.tabId && pty.get(report.tabId)) return report.tabId
-    if (!report.tmux) return undefined
     for (const s of tracker.list()) {
-      if (s.alive && tracker.remoteOf(s.tabId)?.tmuxName === report.tmux && pty.get(s.tabId)) {
-        return s.tabId
-      }
+      const remote = s.alive ? tracker.remoteOf(s.tabId) : undefined
+      if (remote?.tmuxName !== tmuxName || !pty.get(s.tabId)) continue
+      if (!machine || remote.host === machine) return s.tabId
     }
     return undefined
+  }
+
+  private callerOnMachine(machine: string, raw: unknown): string | undefined {
+    const r = (raw ?? {}) as { tabId?: unknown; tmux?: unknown }
+    const byTmux = typeof r.tmux === 'string' && r.tmux && this.tabRunningTmux(r.tmux, machine)
+    if (byTmux) return byTmux
+    const tabId = typeof r.tabId === 'string' ? r.tabId : ''
+    return this.d.tracker.remoteOf(tabId)?.host === machine && this.d.pty.get(tabId)
+      ? tabId
+      : undefined
+  }
+
+  private answerMachineRequest(machine: string, requestId: string, raw: unknown): void {
+    const tabId = this.callerOnMachine(machine, raw)
+    if (!tabId || !this.agentReply) return
+    void this.agentReply(tabId, raw).then((reply) =>
+      this.d.hosts.machine(machine).answerAgent(requestId, replyJson(reply))
+    )
   }
 
   private handleStatusRegistration(raw: unknown): void {
@@ -682,20 +726,23 @@ export class ClaudeBackend implements SessionBackend {
 
   watchRemoteHookMirrors(): void {
     const userData = this.d.userData()
-    const wanted = new Set(
-      (this.d.workspaces()?.remoteTargets() ?? []).map((t) => mirrorHookDir(userData, t.host))
+    const wanted = new Map(
+      (this.d.workspaces()?.remoteTargets() ?? []).map((t) => [
+        mirrorHookDir(userData, t.host),
+        t.host
+      ])
     )
     for (const [dir, dispose] of this.watchedHookMirrors) {
       if (wanted.has(dir)) continue
       dispose()
       this.watchedHookMirrors.delete(dir)
     }
-    for (const dir of wanted) {
+    for (const [dir, host] of wanted) {
       if (this.watchedHookMirrors.has(dir)) continue
       try {
         fs.mkdirSync(dir, { recursive: true })
       } catch {}
-      this.watchedHookMirrors.set(dir, this.watchHookRegistrations(dir, true))
+      this.watchedHookMirrors.set(dir, this.watchHookRegistrations(dir, host))
     }
   }
 
@@ -934,12 +981,13 @@ export async function pickMachineAccount(
 export function machineHookSettings(
   tabId: string,
   machineDir: string,
-  statusline: boolean
+  statusline: boolean,
+  allowKoloft: boolean
 ): Record<string, unknown> {
   const remoteStatusLine: StatusLineSetting | undefined = statusline
     ? { type: 'command', command: dq(`${machineDir}/statusline/run.sh`), padding: 0 }
     : undefined
-  return hookSettings(
+  const settings = hookSettings(
     `${machineDir}/hook.sh`,
     REMOTE_HOOK_DIR,
     tabId,
@@ -947,4 +995,7 @@ export function machineHookSettings(
     dq,
     'record-only'
   )
+  // CC§13
+  if (allowKoloft) settings.permissions = KOLOFT_ALLOW_RULE
+  return settings
 }
