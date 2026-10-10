@@ -212,7 +212,7 @@ function startableWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<stri
 }
 
 const CLAUDE_USES_SEND_MESSAGE =
-  'this is for Codex sessions. A Claude session talks to another Claude session with its SendMessage tool; ListAgents shows their names.'
+  'this is for Codex sessions, and for reporting to the conductor that started you by the id in your first message. A Claude session talks to another Claude session with its SendMessage tool; ListAgents shows their names.'
 
 function matchRef<T>(
   items: T[],
@@ -367,7 +367,8 @@ async function startSibling(
   if (backend === 'codex' && args.name !== undefined) return refused(CODEX_HAS_NO_NAME, EXIT_USAGE)
   const caller: SessionCaller = {
     name: me.backendId === 'claude' ? ((await d.peerNames()(me.sessionId)) ?? me.title) : undefined,
-    id: me.nativeSessionId ?? me.sessionId
+    id: me.nativeSessionId ?? me.sessionId,
+    conductor: conductorTab !== undefined
   }
   const name =
     backend === 'claude'
@@ -623,6 +624,10 @@ export function ownerSays(text: string): string {
   return `(Your owner, via the Koloft conductor:) ${text}`
 }
 
+export function sessionSays(from: SessionInfo, text: string): string {
+  return `(From the session "${from.title}", id ${from.nativeSessionId ?? from.sessionId}:) ${text}`
+}
+
 function isMe(
   ref: string,
   me: SessionInfo,
@@ -830,7 +835,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       const text = tail.join(' ').trim()
       if (!ref || !text) return refused(SEND_USAGE, EXIT_USAGE)
       const conductor = d.conductorOf(ref)
-      if (conductor) return deliver('send', conductor, text, caller)
+      if (conductor) return deliver('send', conductor, sessionSays(caller.session, text), caller)
       if (caller.session.backendId !== 'codex')
         return refused(`koloft session send: ${CLAUDE_USES_SEND_MESSAGE}`)
       const target = findCodexTarget(open, ref)

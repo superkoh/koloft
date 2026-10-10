@@ -5,6 +5,7 @@ import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpe
 import { installCodex, installGhForWorkspaceA, seedSettings, type E2EEnv } from './helpers/env'
 import {
   newSessionInWith,
+  processAlive,
   readCalls,
   setNextSessionTitle,
   settingsOnDisk,
@@ -34,6 +35,8 @@ const CONDUCTOR_STARTS_AND_ANSWERS_MS = 60_000
 const DISCORD_MESSAGE_LIMIT = 2000
 const RESUMED_SESSION_BINDS_AFTER_MS = 12_000
 const SILENT_FLAG = 1 << 12
+const WAITING_TO_IDLE_MS = 1000
+const IDLE_TO_SLEEP_MS = 3000
 
 function seedConductor(
   env: E2EEnv,
@@ -98,6 +101,24 @@ function codexWire(env: E2EEnv): { direction: string; frame: Record<string, unkn
     .trim()
     .split('\n')
     .map((l) => JSON.parse(l) as { direction: string; frame: Record<string, unknown> })
+}
+
+function codexCalls(env: E2EEnv): { pid: number; sessionId: string }[] {
+  return fileText(path.join(env.home, 'fake-codex-calls.jsonl'))
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => JSON.parse(l) as { pid: number; sessionId: string })
+}
+
+function codexServerArgs(env: E2EEnv): string[] {
+  return fileText(path.join(env.home, 'fake-codex-server-calls.jsonl'))
+    .split('\n')
+    .filter(Boolean)
+    .flatMap((l) => (JSON.parse(l) as { argv: string[] }).argv)
+}
+
+function fileText(file: string): string {
+  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
 }
 
 async function tabOf(page: Page, sessionId: string): Promise<string> {
@@ -759,6 +780,88 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await fake.close()
     }
   })
+
+  for (const conductor of ['claude', 'codex'] as const)
+    for (const child of ['claude', 'codex'] as const)
+      test(`a ${child} session a ${conductor} conductor started reports back to it after the conductor went to sleep: its first message names the conductor’s id for koloft session send, which wakes the conductor and delivers the report marked with who sent it`, async ({
+        env
+      }) => {
+        env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+        env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+        installCodex(env)
+        seedConductor(env, conductor)
+        const fake = await startFakeDiscord(env)
+        const { app, page } = await connected(env, fake)
+        try {
+          fake.say(OWNER, `/koloft session new --backend ${child} -- report back when done`)
+          await expect
+            .poll(() => said(fake).join('\n'), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+            .toContain('▶ Started')
+          const childRow = wsRows(page, 'ws-a').first()
+          await expect(childRow).toHaveClass(/st-(waiting|idle)/, {
+            timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+          })
+          await childRow.click()
+          const conductorKey = bindingOnDisk(env)!.sessionIds[0]
+          const conductorId = conductorKey.split(':').pop()!
+          const handover = `koloft session send ${conductorId} "<your result>"`
+          if (child === 'claude')
+            expect(readCalls(env).find((c) => c.firstPrompt?.includes(handover))).toBeTruthy()
+          else
+            expect(
+              codexServerArgs(env).some(
+                (a) =>
+                  a.startsWith('developer_instructions=') &&
+                  a.includes(JSON.stringify(handover).slice(1, -1))
+              )
+            ).toBe(true)
+
+          const conductorPid = (): number | undefined =>
+            (conductor === 'claude' ? readCalls(env) : codexCalls(env))
+              .filter((c) => c.sessionId === conductorId)
+              .at(-1)?.pid
+          const asleepPid = conductorPid()!
+          await expect
+            .poll(() => processAlive(asleepPid), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+            .toBe(false)
+
+          const childTab = await childRow.getAttribute('data-tab-id')
+          const target =
+            conductor === 'claude' && child === 'claude' ? 'ws-a-conductor' : conductorId
+          await page.evaluate(
+            ([tab, line]) => window.api.terminal.write(tab, line + '\r'),
+            [childTab!, `/koloft session send ${target} all done`]
+          )
+          await expect
+            .poll(() => terminalText(page, childTab!))
+            .toContain('Will deliver when the ws-a conductor is ready.')
+          const report = /\(From the session ".+", id \S+:\) all done/
+          await expect
+            .poll(
+              () =>
+                conductor === 'claude'
+                  ? fileText(path.join(env.home, 'fake-claude-peer.jsonl'))
+                      .split('\n')
+                      .filter(Boolean)
+                      .map(
+                        (l) => (JSON.parse(l) as { message: { content: string } }).message.content
+                      )
+                      .join('\n')
+                  : codexWire(env)
+                      .filter(
+                        (w) => w.direction === 'client' && w.frame.method === 'thread/queue/add'
+                      )
+                      .map((w) => (w.frame.params as { input: { text: string }[] }).input[0].text)
+                      .join('\n'),
+              { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }
+            )
+            .toMatch(report)
+          expect(conductorPid()).not.toBe(asleepPid)
+        } finally {
+          await quitAndClose(app)
+          await fake.close()
+        }
+      })
 
   for (const backend of ['claude', 'codex'] as const) {
     test(`a ${backend} conductor reads GitHub through koloft gh: Koloft runs gh with the workspace’s repository added, and refuses a command that would write without running gh`, async ({

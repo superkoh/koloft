@@ -16,7 +16,8 @@ import {
   GLOBAL_SCOPE,
   keepPinnedBindings,
   newerSnowflake,
-  conductorName
+  conductorName,
+  conductorPeerName
 } from '@shared/conductors'
 import { conductorRole } from '@shared/agentGuide'
 import { isRemoteKey } from '@shared/remoteKey'
@@ -135,6 +136,12 @@ export class Conductors {
   bindingOfSession(ref: string): ConductorBinding | undefined {
     return this.discord.bindings.find((b) =>
       b.sessionIds.some((key) => key === ref || identityOf(key).nativeSessionId === ref)
+    )
+  }
+
+  bindingNamed(ref: string): ConductorBinding | undefined {
+    return this.discord.bindings.find(
+      (b) => ref === conductorName(b.scope) || ref === conductorPeerName(b.scope)
     )
   }
 

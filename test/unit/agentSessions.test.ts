@@ -265,26 +265,41 @@ describe('koloft session new: reading the command line', () => {
 
 describe('the handover put before the first message', () => {
   it('tells a Claude child of a Claude caller who started it, to treat its messages as the owner’s, and to answer with SendMessage', () => {
-    const text = handoverPreamble({ name: 'planner', id: 'planner-id' }, 'claude')
+    const text = handoverPreamble({ name: 'planner', id: 'planner-id', conductor: false }, 'claude')
     expect(text).toContain('"planner"')
     expect(text).toContain("the owner's instructions")
     expect(text).toContain('SendMessage')
   })
 
   it('tells a Codex child to answer with koloft session send and the caller’s id', () => {
-    const text = handoverPreamble({ id: CODEX_THREAD }, 'codex')
+    const text = handoverPreamble({ id: CODEX_THREAD, conductor: false }, 'codex')
     expect(text).toContain(`koloft session send ${CODEX_THREAD}`)
     expect(text).not.toContain('SendMessage')
   })
 
   it('tells a child of the other kind to answer with koloft session send, since SendMessage only joins two Claude sessions', () => {
-    const fromClaude = handoverPreamble({ name: 'planner', id: 'planner-id' }, 'codex')
+    const fromClaude = handoverPreamble(
+      { name: 'planner', id: 'planner-id', conductor: false },
+      'codex'
+    )
     expect(fromClaude).toContain('the session "planner"')
     expect(fromClaude).toContain('koloft session send planner-id')
     expect(fromClaude).not.toContain('SendMessage')
-    expect(handoverPreamble({ id: CODEX_THREAD }, 'claude')).toContain(
+    expect(handoverPreamble({ id: CODEX_THREAD, conductor: false }, 'claude')).toContain(
       `koloft session send ${CODEX_THREAD}`
     )
+  })
+
+  it('tells every child of a conductor, Claude or Codex, to answer with koloft session send and the conductor’s id, since a conductor that went idle has stopped and SendMessage cannot reach it, while koloft session send wakes it first', () => {
+    for (const conductor of [
+      { name: 'Global-conductor', id: 'cond-id', conductor: true },
+      { id: CODEX_THREAD, conductor: true }
+    ])
+      for (const child of ['claude', 'codex'] as const) {
+        const text = handoverPreamble(conductor, child)
+        expect(text).toContain(`koloft session send ${conductor.id}`)
+        expect(text).not.toContain('SendMessage')
+      }
   })
 })
 
@@ -334,7 +349,7 @@ describe('koloft session new', () => {
     expect(spec).toMatchObject({ kind: 'claude', cwd: WS, worktree: 'links' })
     expect(
       spec.firstPrompt?.startsWith(
-        handoverPreamble({ name: 'planner', id: 'me-session' }, 'claude')
+        handoverPreamble({ name: 'planner', id: 'me-session', conductor: false }, 'claude')
       )
     ).toBe(true)
     expect(spec.firstPrompt?.endsWith('Fix the links.')).toBe(true)
@@ -1029,7 +1044,8 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
       ['claude', WS]
     ])
     expect(launched[0].role).toContain('koloft session send global-id')
-    expect(launched[1].firstPrompt).toContain('"app-conductor" with your SendMessage tool')
+    expect(launched[1].firstPrompt).toContain('the session "app-conductor"')
+    expect(launched[1].firstPrompt).toContain('koloft session send cond-id')
     expect(started).toEqual([
       {
         conductorTab: 'global',
@@ -1055,7 +1071,7 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     expect(launched.map((l) => l.permission)).toEqual(['bypass', 'default'])
   })
 
-  it('any session reports back to the conductor that started it by the conductor’s id, which is hidden from every list, with its own mode and no owner label', async () => {
+  it('any session reports back to the conductor that started it by the conductor’s id, which is hidden from every list, with its own mode, no owner label, and the name and id of the session it is from', async () => {
     const opened: string[] = []
     const { verb, lines, queued } = harness(
       live,
@@ -1079,13 +1095,20 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     expect((await verb(['send', 'cond-id', 'done'], from('fix'))).exit).toBe(0)
     expect((await verb(['send', 'codex-cond', 'done'], from('cx'))).exit).toBe(0)
     expect((await verb(['send', 'closed-cond', 'done'], from('fix'))).exit).toBe(0)
+    const fromFix = '(From the session "fix-login", id fix-id:) done'
     await vi.waitFor(() =>
       expect(lines).toEqual([
-        { tabId: 'wsCond', line: crossSessionLine('prompting', 'done') },
-        { tabId: 'b3-tab', line: crossSessionLine('prompting', 'done') }
+        { tabId: 'wsCond', line: crossSessionLine('prompting', fromFix) },
+        { tabId: 'b3-tab', line: crossSessionLine('prompting', fromFix) }
       ])
     )
-    expect(queued).toEqual([{ tabId: 'cc', text: 'done', clientId: 'koloft-conductor-1' }])
+    expect(queued).toEqual([
+      {
+        tabId: 'cc',
+        text: `(From the session "docs-links", id ${CODEX_THREAD}:) done`,
+        clientId: 'koloft-conductor-1'
+      }
+    ])
     expect(opened).toEqual(['b3'])
   })
 })

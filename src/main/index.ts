@@ -310,7 +310,7 @@ import {
   runningClaudePid,
   whenMessagingSocket
 } from './claudeSessionRegistry'
-import { conductorName, GLOBAL_SCOPE, isDiscordId, scopeName } from '@shared/conductors'
+import { asPeerName, conductorName, GLOBAL_SCOPE, isDiscordId, scopeName } from '@shared/conductors'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
 import {
@@ -1885,7 +1885,7 @@ app.whenReady().then(() => {
           role: l.role,
           conductor: true,
           trustFolder: true,
-          name: l.backend === 'claude' ? l.title.replace(/\s+/g, '-') : undefined
+          name: l.backend === 'claude' ? asPeerName(l.title) : undefined
         },
         l.title
       ),
@@ -3322,7 +3322,7 @@ function commandIntoConductor(b: ConductorBinding, text: string): string {
 
 function conductorTarget(ref: string): Target | undefined {
   const all = conductors
-  const b = all?.bindingOfSession(ref)
+  const b = all?.bindingOfSession(ref) ?? all?.bindingNamed(ref)
   if (!all || !b) return undefined
   return {
     key: `conductor:${b.id}`,

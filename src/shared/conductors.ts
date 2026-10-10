@@ -25,6 +25,14 @@ export function conductorName(scope: string): string {
   return `${scopeName(scope)} conductor`
 }
 
+export function asPeerName(title: string): string {
+  return title.replace(/\s+/g, '-')
+}
+
+export function conductorPeerName(scope: string): string {
+  return asPeerName(conductorName(scope))
+}
+
 export function channelLabel(binding: Pick<ConductorBinding, 'channel'>): string {
   return `#${binding.channel.name}`
 }

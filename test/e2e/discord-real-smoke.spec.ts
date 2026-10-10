@@ -935,4 +935,46 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       expect(fake.reactions).toContainEqual({ messageId: green, emoji: '✅', on: true })
     })
   })
+
+  const SECRET = 'SECRET-MANGO-73'
+  const CHILD_WORKS_LONGER_THAN_THE_CONDUCTOR_STAYS_AWAKE_S = 40
+  const LABEL = { claude: 'Claude', codex: 'Codex' } as const
+  for (const conductor of ['claude', 'codex'] as const)
+    for (const child of ['claude', 'codex'] as const)
+      test(`a real ${LABEL[child]} session a real ${LABEL[conductor]} conductor started reports back after the conductor went to sleep: Koloft wakes the conductor, which gets the report and passes it on to the channel`, async ({
+        env
+      }) => {
+        const needs = [conductor, child]
+        test.skip(
+          (needs.includes('claude') && !HAVE_REAL_CLAUDE) ||
+            (needs.includes('codex') && !HAVE_REAL_CODEX),
+          `${NEEDS_REAL_CLAUDE}; ${NEEDS_REAL_CODEX}`
+        )
+        test.setTimeout(5 * A_REAL_MODEL_TURN_MS)
+        env.launchEnv.KOLOFT_IDLE_MS = '1000'
+        env.launchEnv.KOLOFT_IDLE_CLOSE_MS = '3000'
+        seedConductor(env, conductor)
+        if (needs.includes('claude')) useRealClaude(env)
+        if (needs.includes('codex')) useRealCodex(env)
+        fs.writeFileSync(path.join(env.workspaces.a, 'secret.txt'), `${SECRET}\n`)
+        const fake = await startFakeDiscord(env)
+        if (needs.includes('claude')) addClaudeAccountToKeychain(env)
+        await withConductor(env, fake, async (_app, page) => {
+          const conductorAlive = async (): Promise<boolean | undefined> =>
+            (await page.evaluate(() => window.api.sessions.list())).find((s) => s.conductor)?.alive
+          fake.say(
+            OWNER,
+            `Start one new ${LABEL[child]} session (koloft session new --backend ${child}) in this workspace whose task is: "First run the shell command sleep ${CHILD_WORKS_LONGER_THAN_THE_CONDUCTOR_STAYS_AWAKE_S} and wait for it to end. Then read the file secret.txt in this folder and report its content back." Do not read secret.txt yourself. When the session reports back, tell me exactly what it reported.`
+          )
+          await expect
+            .poll(() => notices(fake), { timeout: A_REAL_MODEL_TURN_MS })
+            .toContainEqual(expect.stringMatching(/^▶ Started /))
+          await expect.poll(conductorAlive, { timeout: A_REAL_MODEL_TURN_MS }).not.toBe(true)
+          expect(conductorSaid(fake).join('\n')).not.toContain(SECRET)
+          await expect
+            .poll(() => conductorSaid(fake).join('\n'), { timeout: 3 * A_REAL_MODEL_TURN_MS })
+            .toContain(SECRET)
+          expect(await conductorAlive()).toBe(true)
+        })
+      })
 })
