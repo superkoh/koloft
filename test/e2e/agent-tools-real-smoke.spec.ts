@@ -21,6 +21,7 @@ import {
   wsRows
 } from './helpers/p1'
 import { portOffset } from '../../src/shared/worktreeName'
+import { lastCodexTurnPermissions } from './helpers/codexRollout'
 import {
   PR_3_CHECKS_LINE,
   PR_3_FAILING_CHECK_PASTE_HEAD,
@@ -751,16 +752,6 @@ test.describe('GitHub button ▸ Send failing checks with the REAL gh, claude an
 })
 
 // CODEX§11
-function lastTurnPermissions(env: E2EEnv, sessionId: string): Record<string, unknown> {
-  const turn = codexRollouts(env)
-    .filter((f) => !!rolloutThreadId(f) && sessionId.endsWith(rolloutThreadId(f)))
-    .flatMap(jsonLines)
-    .filter((r) => r.type === 'turn_context')
-    .at(-1)?.payload as { approval_policy?: unknown; sandbox_policy?: { type?: unknown } }
-  return { approval: turn?.approval_policy, sandbox: turn?.sandbox_policy?.type }
-}
-
-// CODEX§11
 const NO_TEMP_FOLDER_IN_THE_SANDBOX_SINCE_THE_TEST_WORKSPACES_LIVE_THERE =
   '\n[sandbox_workspace_write]\nexclude_slash_tmp = true\nexclude_tmpdir_env_var = true\n'
 
@@ -820,18 +811,8 @@ test.describe('a REAL Codex session resumed after its tab closed: an opt-in case
         env.workspaces.a
       )
       if (!started.ok) throw new Error('the bypass Codex session did not start')
-      await expect
-        .poll(
-          async () =>
-            (await page.evaluate(() => window.api.sessions.list())).find(
-              (s) => s.tabId === started.id
-            )?.sessionId ?? '',
-          { timeout: 60_000 }
-        )
-        .not.toBe('')
-      const sessionId = (await page.evaluate(() => window.api.sessions.list())).find(
-        (s) => s.tabId === started.id
-      )!.sessionId
+      await expect.poll(() => boundSessionId(page, started.id), { timeout: 60_000 }).toBeTruthy()
+      const sessionId = (await boundSessionId(page, started.id))!
       await expect
         .poll(() => CODEX_TRANSCRIPT.replies(env, sessionId).length, {
           timeout: A_REAL_MODEL_TURN_MS
@@ -856,14 +837,14 @@ test.describe('a REAL Codex session resumed after its tab closed: an opt-in case
           timeout: A_REAL_MODEL_TURN_MS
         })
         .toMatch(/TOUCH-(DONE|REFUSED)/)
-      expect(lastTurnPermissions(env, sessionId)).toEqual({
+      expect(lastCodexTurnPermissions(env, sessionId)).toEqual({
         approval: 'never',
         sandbox: 'danger-full-access'
       })
       expect(fs.existsSync(target)).toBe(true)
       expect(CODEX_TRANSCRIPT.replies(env, sessionId).at(-1)).toContain('TOUCH-DONE')
     } catch (e) {
-      for (const f of codexRollouts(env)) await test.info().attach(path.basename(f), { path: f })
+      await keepWhatTheAgentSawAndDid(page, env)
       throw e
     } finally {
       await quitAndClose(app)

@@ -6,6 +6,7 @@ import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { installGhForWorkspaceA, seedSettings, type E2EEnv } from './helpers/env'
 import { gitInit, seedJsonl, startSessionIn, terminalText, waitBooted, wsRows } from './helpers/p1'
 import { openerNow, startFakeDiscord, type FakeDiscord, type FakePost } from './helpers/fakeDiscord'
+import { lastCodexTurnPermissions } from './helpers/codexRollout'
 
 function claudeTokenFromKeychain(): string {
   const account = process.env.KOLOFT_SMOKE_ACCOUNT
@@ -205,21 +206,6 @@ function saidBy(env: E2EEnv, sessionId: string, role: 'user' | 'assistant'): str
   return transcriptRecords(env, sessionId)
     .filter((r) => r.type === role)
     .map((r) => textOf(r.message?.content))
-}
-
-// CODEX§11
-function lastCodexTurnPermissions(env: E2EEnv, sessionId: string): Record<string, unknown> {
-  const root = path.join(env.home, '.codex', 'sessions')
-  const rollout = fs
-    .readdirSync(root, { recursive: true, encoding: 'utf8' })
-    .find((f) => f.endsWith('.jsonl') && sessionId.endsWith(f.slice(-42, -6)))
-  const turn = fs
-    .readFileSync(path.join(root, rollout!), 'utf8')
-    .split('\n')
-    .filter((line) => line.includes('"turn_context"'))
-    .map((line) => JSON.parse(line) as { payload: Record<string, { type?: unknown }> })
-    .at(-1)?.payload
-  return { approval: turn?.approval_policy, sandbox: turn?.sandbox_policy?.type }
 }
 
 async function keepWhatHappened(env: E2EEnv, fake: FakeDiscord): Promise<void> {

@@ -175,7 +175,6 @@ interface Run {
   home?: string
   account?: string
   permission: LaunchPermission
-  bypassingChecks: boolean
   releaseOpenShim(): void
 }
 
@@ -646,7 +645,7 @@ export class CodexSessions {
   }
 
   launchedBypassingChecks(tabId: string): boolean {
-    return this.runs.get(tabId)?.bypassingChecks === true
+    return this.runs.get(tabId)?.permission === 'bypass'
   }
 
   turnsOf(key: string, n: number): Turn[] | undefined {
@@ -845,7 +844,6 @@ export class CodexSessions {
         home,
         account: picked?.account,
         permission,
-        bypassingChecks: permission === 'bypass',
         releaseOpenShim: openShim.release
       }
       this.runs.set(handle.id, run)
