@@ -143,6 +143,58 @@ describe('SessionWorktrees', () => {
     expect(copied(rebuilt.worktreePath)).toEqual(['.env', 'secrets/key.txt'])
   })
 
+  it('calls a worktree untouched only while it is a Koloft-made one on its own worktree-<name> branch at the commit it was made from, with no change, no new file and no ignored file but unchanged copies from the main checkout', async () => {
+    fs.writeFileSync(path.join(repo, '.gitignore'), '.env\nbuild/\n')
+    fs.writeFileSync(path.join(repo, '.worktreeinclude'), '.env\n')
+    git('add', '.gitignore', '.worktreeinclude')
+    git('commit', '-m', 'Ignore rules')
+    fs.writeFileSync(path.join(repo, '.env'), 'PORT=3000\n')
+    let n = 0
+    const untouchedAfter = async (touch: (tree: string) => void): Promise<boolean> => {
+      const resource = await worktrees.create(repo, `case-${++n}`)
+      touch(resource.worktreePath)
+      return worktrees.untouched(resource)
+    }
+    const inTree = (tree: string, ...args: string[]): string => git('-C', tree, ...args)
+
+    expect(await untouchedAfter(() => {})).toBe(true)
+    expect(
+      await untouchedAfter((tree) => fs.writeFileSync(path.join(tree, 'file.txt'), 'edit\n'))
+    ).toBe(false)
+    expect(
+      await untouchedAfter((tree) => fs.writeFileSync(path.join(tree, 'new.txt'), 'new\n'))
+    ).toBe(false)
+    expect(
+      await untouchedAfter((tree) => fs.writeFileSync(path.join(tree, '.env'), 'PORT=4000\n'))
+    ).toBe(false)
+    expect(
+      await untouchedAfter((tree) => {
+        fs.mkdirSync(path.join(tree, 'build'))
+        fs.writeFileSync(path.join(tree, 'build', 'out.js'), 'built')
+      })
+    ).toBe(false)
+    expect(
+      await untouchedAfter((tree) => {
+        fs.writeFileSync(path.join(tree, 'new.txt'), 'new\n')
+        inTree(tree, 'add', 'new.txt')
+        inTree(tree, 'commit', '-m', 'Worktree change')
+      })
+    ).toBe(false)
+    expect(await untouchedAfter((tree) => inTree(tree, 'switch', '-c', 'pr-branch'))).toBe(false)
+
+    const checkout = path.join(directory, 'adopted')
+    git('worktree', 'add', '-b', 'worktree-adopted', checkout)
+    expect(await worktrees.untouched(await worktrees.adopt(repo, checkout))).toBe(false)
+  })
+
+  it('a worktree name stays recorded after its folder and branch are gone, so no new worktree takes it', async () => {
+    const resource = await worktrees.create(repo, 'one')
+    git('worktree', 'remove', resource.worktreePath)
+    git('branch', '-D', 'worktree-one')
+    expect(worktrees.recorded(repo, 'one')).toBe(true)
+    expect(worktrees.recorded(repo, 'two')).toBe(false)
+  })
+
   it('refuses a locked missing worktree without modifying it', async () => {
     const resource = await worktrees.create(repo, 'one')
     git('worktree', 'lock', resource.worktreePath)

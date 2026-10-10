@@ -5,6 +5,7 @@ import { promisify } from 'util'
 import { randomUUID } from 'crypto'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import { SessionStore, type WorktreeResource } from './sessionStore'
+import { realpathSafe } from './projectInfo'
 
 const execFileAsync = promisify(execFile)
 
@@ -109,6 +110,20 @@ export async function copyWorktreeIncludes(root: string, worktreePath: string): 
   }
 }
 
+function sameFileInRoot(root: string, tree: string, rel: string): boolean {
+  try {
+    const here = path.join(tree, rel)
+    const there = path.join(root, rel)
+    return (
+      fs.lstatSync(here).isFile() &&
+      fs.lstatSync(there).isFile() &&
+      fs.readFileSync(here).equals(fs.readFileSync(there))
+    )
+  } catch {
+    return false
+  }
+}
+
 export class SessionWorktrees {
   private readonly preparing = new Set<string>()
 
@@ -151,6 +166,35 @@ export class SessionWorktrees {
     }
     this.store.putResource(resource)
     return resource
+  }
+
+  async untouched(resource: WorktreeResource): Promise<boolean> {
+    const tree = resource.worktreePath
+    try {
+      const [branch, head, changes, ignored] = await Promise.all([
+        git(tree, ['symbolic-ref', '--quiet', '--short', 'HEAD']),
+        git(tree, ['rev-parse', 'HEAD']),
+        git(tree, ['status', '--porcelain', '--untracked-files=all']),
+        git(tree, ['ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory'])
+      ])
+      return (
+        resource.managed &&
+        branch === `worktree-${resource.worktreeName}` &&
+        head === resource.originalHeadCommit &&
+        !changes &&
+        ignored
+          .split('\0')
+          .filter(Boolean)
+          .every((rel) => sameFileInRoot(resource.originalCwd, tree, rel))
+      )
+    } catch {
+      return false
+    }
+  }
+
+  recorded(root: string, name: string): boolean {
+    const target = path.join(realpathSafe(root), '.claude', 'worktrees', name)
+    return this.store.listResources().some((r) => r.worktreePath === target)
   }
 
   async rebuild(resourceId: string): Promise<WorktreeResource> {

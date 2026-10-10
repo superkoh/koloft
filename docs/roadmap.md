@@ -14,7 +14,12 @@ place and edited in one place.
    Codex's — with no Koloft chrome inside it.
 4. Worktree lifecycle and session retention belong to **the agent's tool**, not Koloft.
    Three gaps, all run on the owner's word: Koloft makes the worktree for a Codex
-   worktree session, and only `koloft session close` removes it (#116); Koloft makes the
+   worktree session, and removes it when its Codex ends (not when the tab sleeps or
+   Koloft quits, and a restart makes it again) only if nothing was done in it —
+   no other session in it, still on `worktree-<name>` at the commit it was made from,
+   and no changed, new or ignored file except unchanged copies from the main checkout —
+   the way `claude -w` removes an unchanged one; any other is kept until
+   `koloft session close` removes it (#116); Koloft makes the
    `pr-<n>` worktree for a session started from a pull request, on that pull request's
    own branch, because `claude -w` only makes a worktree on a new `worktree-<name>`
    branch (#218); and a conductor may `koloft session close` an ended local session in

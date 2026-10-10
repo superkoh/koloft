@@ -26,6 +26,7 @@ import { SessionTracker, type ToolCall } from './sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
+import type { WorktreeResource } from './sessionStore'
 import {
   OpenTabsFile,
   openTabsNow,
@@ -1804,6 +1805,7 @@ app.whenReady().then(() => {
       },
       replaced: (oldKey, newKey) => workspaceMgr?.moveResident(oldKey, newKey),
       memberRemoved: (key) => discordThreads?.left(key),
+      leftWorktree: removeUntouchedCodexWorktree,
       events: (tabId, event) => sessionBackends.observe(tabId, event),
       error: (message) => sendToRenderer('cron:toast', message),
       trustFolder: trustCodexFolder,
@@ -2217,6 +2219,7 @@ app.whenReady().then(() => {
     dirExists: (p) => hosts.of(p).dirExists(p),
     gitDirExists: (root) => hosts.of(root).dirExists(`${root}/.git`),
     worktreeDirExists: (root, name) => hosts.of(root).dirExists(`${worktreeHomeOf(root)}/${name}`),
+    worktreeRecorded: (root, name) => codexSessions?.worktrees.recorded(root, name) ?? false,
     branchExists: (root, branch) => gitProbes(hostGitOut).branchExists(root, branch),
     countRunFolders,
     accountUsable: (backend) => sessionBackends.get(backend).accountUsable(),
@@ -3160,13 +3163,35 @@ async function closeSessionFully(
     return
   }
   const tree = await closingTree(hostGitOut, info)
-  const problem = tree && (await removeTree(hostGitOut, tree))
+  const problem =
+    tree && (await hosts.of(tree.treeRoot).dirExists(tree.treeRoot))
+      ? await removeTree(hostGitOut, tree)
+      : null
   if (problem) {
     sendToRenderer('cron:toast', `${target.title}: ${problem}`)
     return
   }
   archiveSession(target.sessionId)
   codexSessions?.store.removeUnusedResourcesAt(info.treeRoot)
+}
+
+async function removeUntouchedCodexWorktree(
+  tabId: string,
+  resource: WorktreeResource
+): Promise<void> {
+  const tree = resource.worktreePath
+  const inTree = (dir: string): boolean => projectInfoFor(dir).treeRoot === tree
+  if (sleepers.has(tabId) || [...sleepers.values()].some((t) => inTree(t.cwd))) return
+  if (allSessions().some((s) => s.alive && inTree(s.treeRoot))) return
+  if (codexSessions?.occupantOf(tree) || !(await codexSessions?.worktrees.untouched(resource)))
+    return
+  const problem = await removeTree(hostGitOut, {
+    root: resource.originalCwd,
+    treeRoot: tree,
+    worktreeName: resource.worktreeName,
+    branches: [`worktree-${resource.worktreeName}`]
+  })
+  if (problem) sendToRenderer('cron:toast', problem)
 }
 
 function worktreeHomeOf(root: string): string {

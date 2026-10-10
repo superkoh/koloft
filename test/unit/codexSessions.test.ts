@@ -379,6 +379,46 @@ describe('CodexSessions', () => {
     expect(sessions.list()).toEqual([])
   })
 
+  it('a closed tab hands its Koloft-made worktree over for removal only once its Codex is gone, a restart after that removal rebuilds the worktree and resumes there, and quitting Koloft hands nothing over', async () => {
+    const worktree = path.join(repo, '.claude', 'worktrees', 'w1')
+    fs.mkdirSync(worktree, { recursive: true })
+    const resource: WorktreeResource = {
+      id: randomUUID(),
+      originalCwd: repo,
+      worktreePath: worktree,
+      worktreeName: 'w1',
+      worktreeBranch: 'worktree-w1',
+      originalHeadCommit: 'a'.repeat(40),
+      state: 'ready',
+      managed: true
+    }
+    sessions.store.putResource(resource)
+    vi.spyOn(sessions.worktrees, 'create').mockResolvedValue(resource)
+    const rebuild = vi.spyOn(sessions.worktrees, 'rebuild').mockImplementation(async () => {
+      fs.mkdirSync(worktree, { recursive: true })
+      return resource
+    })
+    const leftWorktree = vi.fn(async (_tabId: string, left: WorktreeResource) => {
+      expect(deps.pty.kill).toHaveBeenCalled()
+      fs.rmSync(left.worktreePath, { recursive: true })
+    })
+    deps.leftWorktree = leftWorktree
+
+    const launched = await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1' })
+    bind(0, A, worktree)
+    await sessions.stop(launched.id)
+    expect(leftWorktree.mock.calls).toEqual([[launched.id, resource]])
+    expect(fs.existsSync(worktree)).toBe(false)
+
+    const restarted = await sessions.resume({ sessionId: codexSessionKey(A), cwd: worktree })
+    expect(rebuild).toHaveBeenCalledWith(resource.id)
+    expect(restarted.cwd).toBe(worktree)
+    bind(1, A, worktree, 1, 'thread/resume')
+    await sessions.stopAll()
+    expect(leftWorktree).toHaveBeenCalledTimes(1)
+    expect(fs.existsSync(worktree)).toBe(true)
+  })
+
   it('retains members for uncertain native exit, evicts only an acknowledged native unsubscribe', async () => {
     const first = await sessions.launch({ kind: 'codex', cwd: repo })
     bind()
