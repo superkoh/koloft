@@ -5,6 +5,7 @@ import {
   shownAsInstalled,
   unsupportedPairMessage
 } from '@shared/sessionBackend'
+import { ACCOUNTS_PANE, noUsableAccountLead } from '@shared/accountUsage'
 import type { BackendId, CreateTabOptions, HostId } from '@shared/types'
 import { launchErrorMessage } from '../agentUi'
 import { useStore } from '../store'
@@ -31,18 +32,21 @@ export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: (
       live.current = false
     }
   }, [])
+  const accountIssue = useAccountIssue()
   const found = (backend: BackendId) => detected?.find((b) => b.id === backend)
   const usable = (backend: BackendId, on = host): boolean =>
     methods.enabled[backend] &&
     !unsupportedPairMessage(backend, on) &&
     shownAsInstalled(detected, backend)
-  const issue = (backend: BackendId, on = host): string => {
+  const setupIssue = (backend: BackendId, on = host): string => {
     if (!methods.enabled[backend]) return 'Disabled in Settings ▸ Sessions'
     const refusal = unsupportedPairMessage(backend, on)
     if (refusal || on === 'ssh') return refusal ?? ''
     const result = found(backend)
     return !detected || result?.available ? '' : result?.reason || 'Not installed'
   }
+  const issue = (backend: BackendId, on = host): string =>
+    setupIssue(backend, on) || accountIssue(backend)
   const launch = async (
     opts: SessionLaunchOptions | (() => Promise<SessionLaunchOptions>),
     backend: BackendId
@@ -65,8 +69,10 @@ export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: (
     host,
     methods,
     usable: SESSION_BACKENDS.filter((b) => b === 'claude' || usable(b)),
+    setupIssue,
     issue,
     launch,
+    close: onClose,
     starting,
     error,
     retry: () => setRetry((n) => n + 1),
@@ -120,15 +126,65 @@ export function SessionLaunchButtons({
   )
 }
 
+function useNoAccountLeads(): Record<BackendId, string> {
+  const claude = useStore((s) => (s.accounts ? noUsableAccountLead(s.accounts, 'claude') : ''))
+  const codex = useStore((s) => (s.accounts ? noUsableAccountLead(s.accounts, 'codex') : ''))
+  return { claude, codex }
+}
+
+export function useAccountIssue(): (backend: BackendId) => string {
+  const leads = useNoAccountLeads()
+  return (backend) => leads[backend] && `${leads[backend]}${ACCOUNTS_PANE}.`
+}
+
+export function NoAccountLines({
+  backends,
+  onOpenSettings
+}: {
+  backends: BackendId[]
+  onOpenSettings?: () => void
+}) {
+  const leads = useNoAccountLeads()
+  const setSettingsOpen = useStore((s) => s.setSettingsOpen)
+  return (
+    <>
+      {backends.map((b) => {
+        const lead = leads[b]
+        return (
+          lead && (
+            <p key={b} className="field-hint bad">
+              {lead}
+              <button
+                className="ob-link"
+                onClick={() => {
+                  onOpenSettings?.()
+                  setSettingsOpen(true)
+                }}
+              >
+                {ACCOUNTS_PANE}
+              </button>
+              .
+            </p>
+          )
+        )
+      })}
+    </>
+  )
+}
+
 export function SessionLaunchStatus({ launch }: { launch: ReturnType<typeof useSessionLaunch> }) {
   const watched =
     launch.methods.defaultBackend === 'codex' ? SESSION_BACKENDS : (['claude'] as const)
   const issues = watched.flatMap((b) => {
-    const reason = launch.methods.enabled[b] ? launch.issue(b) : ''
+    const reason = launch.methods.enabled[b] ? launch.setupIssue(b) : ''
     return reason ? [{ backend: b, reason }] : []
   })
   return (
     <>
+      <NoAccountLines
+        backends={launch.usable.filter((b) => !launch.setupIssue(b))}
+        onOpenSettings={launch.close}
+      />
       {issues.length > 0 && (
         <p className="field-hint">
           {issues.map(({ backend, reason }, index) => (
