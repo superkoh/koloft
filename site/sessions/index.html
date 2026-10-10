@@ -232,14 +232,15 @@
             <code>No session, workspace or action matches …</code>
           </li>
           <li>
-            <kbd>⌥⌘F</kbd> (Edit ▸ Search Sessions) searches what was said. Type words, press
-            <kbd>⏎</kbd>, and every session in every folder whose title or conversation holds them
-            is listed, newest first, with one line of text around the match. Click one to open it.
-            It reads what you typed and what the agent answered, not the output of its tools.
+            <kbd>⌥⌘F</kbd> (Edit ▸ Search Sessions) searches what was said. Type a few words as they
+            were said, press <kbd>⏎</kbd>, and every session in every folder whose title or
+            conversation holds that phrase is listed, newest first, with one line of text around the
+            match. Click one to open it. For Claude it reads what you typed and what the agent
+            answered, not the output of its tools. For Codex, Codex itself does the search.
           </li>
         </ul>
         <p>
-          Both work for Claude and Codex, and for a session on a
+          Both work for Claude and Codex, and for a Claude session on a
           <a href="../remote/">remote folder</a>, which is listed with its machine's name and
           resumes there.
         </p>
@@ -286,7 +287,8 @@
             an issue, and the session starts in a worktree named
             <code class="nowrap">issue-&lt;number&gt;</code>, already told which issue to read and
             work on. Pick a pull request, and it starts in a worktree on that pull request's branch.
-            Claude Code and Codex both do this, on a <a href="../remote/">remote folder</a> too.
+            Claude Code and Codex both do this. On a <a href="../remote/">remote folder</a>, Claude
+            Code does it there; Codex sessions cannot run on a remote machine yet.
           </li>
         </ul>
         <p>
