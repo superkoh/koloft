@@ -359,6 +359,20 @@ export function claudePromptsIn(jsonl: string): string[] {
   })
 }
 
+// CC§13
+export function claudeSkillListingsIn(jsonl: string): string[] {
+  return jsonl.split('\n').flatMap((line) => {
+    try {
+      const attachment = JSON.parse(line).attachment
+      return attachment?.type === 'skill_listing' && typeof attachment.content === 'string'
+        ? [attachment.content]
+        : []
+    } catch {
+      return []
+    }
+  })
+}
+
 export function claudeRepliesIn(jsonl: string): string[] {
   return jsonl.split('\n').flatMap((line) => {
     try {

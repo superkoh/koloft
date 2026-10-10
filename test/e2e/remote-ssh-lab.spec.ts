@@ -22,6 +22,7 @@ import {
   artifactBody,
   claudePromptsIn,
   claudeRepliesIn,
+  claudeSkillListingsIn,
   claudeToolResultsIn,
   layoutState,
   outsideThePaste,
@@ -38,6 +39,7 @@ import {
   closeMenu,
   FAKE_SESSION_TITLE,
   menuItemTexts,
+  notesOnDisk,
   openMenu,
   openWorktreeSession,
   runIn,
@@ -499,6 +501,73 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       },
       (lab) =>
         useRealClaudeOnTheMachine(env, lab, [`/home/kuser/proj/.claude/worktrees/${worktree}`])
+    )
+  })
+
+  test('E-SSH-15: a REAL claude on the machine runs koloft help and koloft note append with its own Bash tool, and the line lands in this Koloft’s workspace note (opt-in, spends real money)', async ({
+    env
+  }) => {
+    test.skip(!HAVE_LINUX_CLAUDE, NEEDS_LINUX_CLAUDE)
+    test.setTimeout(2 * A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS + 120_000)
+    seedSettings(env, { hintsOff: true })
+    const line = `E-SSH-15 ${crypto.randomBytes(4).toString('hex')}`
+    await withLab(
+      env,
+      async ({ page, lab }) => {
+        await addMachine(page, 'kt-key', 'kuser')
+        await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+        await openMenu(page, page.locator('.ws-head', { hasText: 'kt-key' }))
+        await page.locator('.menu .mi', { hasText: 'New session' }).click()
+        const bound = async (): Promise<{ tabId: string; sessionId: string } | undefined> =>
+          (await page.evaluate(() => window.api.sessions.list())).find(
+            (s) => s.alive && s.sessionId
+          )
+        await expect
+          .poll(async () => (await bound())?.sessionId ?? '', {
+            timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
+          })
+          .not.toBe('')
+        const { tabId, sessionId } = (await bound())!
+        const transcript = (): string => transcriptOnTarget(lab, sessionId)
+        const write = (data: string): Promise<void> =>
+          page.evaluate(([id, d]) => window.api.terminal.write(id, d), [tabId, data])
+
+        await write(
+          `With your Bash tool, run these two shell commands, one at a time: koloft help — then: koloft note append "${line}" — then reply with only the word ${REPLY_WORD}. Do nothing else.`
+        )
+        for (let i = 0; i < ENTERS_BEFORE_GIVING_UP; i++) {
+          await page.waitForTimeout(TYPED_TEXT_SETTLES_IN_THE_INPUT_BOX_MS)
+          await write('\r')
+          const sent = await expect
+            .poll(() => claudePromptsIn(transcript()).length, {
+              timeout: A_SUBMITTED_PROMPT_REACHES_THE_TRANSCRIPT_MS
+            })
+            .toBeGreaterThan(0)
+            .then(() => true)
+            .catch(() => false)
+          if (sent) break
+        }
+        await expect
+          .poll(() => notesOnDisk(env, remoteKeyFor('kt-key', 'kuser')) ?? '', {
+            timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
+          })
+          .toContain(line)
+        await expect
+          .poll(() => claudeRepliesIn(transcript()).at(-1)?.trim(), {
+            timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
+          })
+          .toBe(REPLY_WORD)
+        const outputs = claudeToolResultsIn(transcript())
+        await test.info().attach('the-reply', { body: claudeRepliesIn(transcript()).join('\n') })
+        await test.info().attach('the-shell-output', { body: outputs.join('\n----\n') })
+        console.log(
+          `prompt: ${JSON.stringify(claudePromptsIn(transcript()))} reply: ${JSON.stringify(claudeRepliesIn(transcript()))} shell: ${JSON.stringify(outputs.map((o) => o.slice(0, 120)))}`
+        )
+        expect(claudeSkillListingsIn(transcript()).join('\n')).toMatch(/^- koloft:koloft: /m)
+        expect(outputs.some((o) => o.includes('koloft note append <text>'))).toBe(true)
+        expect(outputs.some((o) => o.includes('Added to the workspace note.'))).toBe(true)
+      },
+      (lab) => useRealClaudeOnTheMachine(env, lab)
     )
   })
 

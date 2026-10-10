@@ -1248,6 +1248,10 @@ sessions.
   as `plugins: [{name:"koloft", source:"koloft@inline"}]` and
   `skills: ["koloft:<n>"]`. The model called the skill through the Skill tool and read
   its body.
+- **An interactive session's transcript lists the skills it was handed** (2026-10-10,
+  CC 2.1.296 for Linux arm64, an interactive claude on a Docker ssh machine, read off its
+  jsonl): an `attachment` record `{type:"skill_listing", content}` whose `content` holds one
+  `- <name>: <description>` line per skill, `- koloft:koloft: …` among them.
 - **`--add-dir <dir>` also loads `<dir>/.claude/skills`** (listed without a prefix). It
   also opens that folder to the model's file tools.
 - **A SessionStart hook's `hookSpecificOutput.additionalContext`** (given through a
