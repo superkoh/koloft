@@ -819,13 +819,19 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
             .poll(() => processAlive(asleepPid), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
             .toBe(false)
 
-          const childTab = await childRow.getAttribute('data-tab-id')
+          const liveChildTab = async (): Promise<string | undefined> =>
+            (await page.evaluate(() => window.api.sessions.list())).find(
+              (s) => s.alive && !s.conductor
+            )?.tabId
+          await expect.poll(liveChildTab).toBeTruthy()
+          const childTab = (await liveChildTab())!
+          await expect.poll(() => terminalText(page, childTab)).not.toBe('')
           await page.evaluate(
             ([tab, line]) => window.api.terminal.write(tab, line + '\r'),
-            [childTab!, `/koloft session send ${conductorId} all done`]
+            [childTab, `/koloft session send ${conductorId} all done`]
           )
           await expect
-            .poll(() => terminalText(page, childTab!))
+            .poll(() => terminalText(page, childTab))
             .toContain('Will deliver when the ws-a conductor is ready.')
           const conductorGot = (): string[] =>
             conductor === 'claude'
