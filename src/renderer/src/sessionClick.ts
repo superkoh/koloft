@@ -16,6 +16,14 @@ export function offerForceCloseUnlessMainHasBoundIt(row: SessionRow): void {
   })
 }
 
+export function visitTab(tabId: string): void {
+  const st = useStore.getState()
+  window.api.attention.visit(tabId)
+  st.activateTab(tabId)
+  const tab = st.tabs.find((t) => t.id === tabId)
+  if (tab?.asleep) void wakeTab(tab)
+}
+
 export function openSessionRow(row: SessionRow, wsPath: string): void {
   const st = useStore.getState()
   if (row.pending) {
@@ -33,12 +41,7 @@ export function openSessionRow(row: SessionRow, wsPath: string): void {
       return
     }
     const tabId = liveTabOf(row.id, st.sessions, st.tabs)
-    if (tabId) {
-      window.api.attention.visit(tabId)
-      st.activateTab(tabId)
-      const tab = st.tabs.find((t) => t.id === tabId)
-      if (tab?.asleep) void wakeTab(tab)
-    }
+    if (tabId) visitTab(tabId)
     return
   }
   if (resumeInFlight(row.id)) {

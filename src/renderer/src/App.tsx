@@ -60,6 +60,7 @@ import {
   DOCK_GUTTER_PX,
   liveTabOf,
   mixesBackends,
+  nextWaitingTab,
   notesHeightFromDrag,
   paneWidthFromDrag,
   PREVIEW_CARD_WIDTH_PX,
@@ -93,6 +94,7 @@ import {
   RESTORE_FAILED_NOTICE,
   wakeTab
 } from './resumeFlow'
+import { visitTab } from './sessionClick'
 import { adoptionIsSettled, adoptionSettled, markAdoptionSettled, preAdoptExits } from './adoption'
 import { CloseSessionDialog } from './components/CloseSessionDialog'
 import { UnsavedDialog } from './components/UnsavedDialog'
@@ -637,6 +639,14 @@ export default function App(): JSX.Element {
       setNotesFocus((n) => n + 1)
     })
   }, [returnFocus, setNotesFolded, setSidebarHidden])
+
+  useEffect(() => {
+    return window.api.shortcuts.onNextWaitingSession(() => {
+      const st = useStore.getState()
+      const tabId = nextWaitingTab(st.attention, st.activeTabId, st.tabs)
+      if (tabId) visitTab(tabId)
+    })
+  }, [])
 
   useEffect(() => {
     return window.api.shortcuts.onFindFiles(() => {
