@@ -2,7 +2,8 @@ import fs from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import { execFileSync } from 'child_process'
-import type { Locator, Page } from '@playwright/test'
+import { chromium, type Locator, type Page } from '@playwright/test'
+import { BROWSER, openBrowser } from './helpers/browser'
 import {
   test,
   expect,
@@ -470,6 +471,63 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(hint).not.toContainText('Claude')
       await expect(wbActiveTab(page)).toHaveAttribute('title', /codex-opened/)
       await expect(wbUnreadTabs(page)).toHaveCount(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§26
+  test("a Codex tab hands the owner's Playwright MCP entry its own browser endpoint, keeping the entry's env_vars; a client there drives that tab's Workbench, and after /new the old client is sent away so a new one drives the new thread", async ({
+    env
+  }) => {
+    installCodex(env)
+    fs.writeFileSync(
+      path.join(env.home, 'fake-codex-mcp-servers.json'),
+      JSON.stringify({
+        playwright: { command: 'npx', args: ['@playwright/mcp@latest'], env_vars: ['MINE'] },
+        github: { command: 'github-mcp', args: [] }
+      })
+    )
+    seedSettings(env, { onboardingSeen: true, hintsSeen: ['workbench'] })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      const tabServers = fs
+        .readFileSync(path.join(env.home, 'fake-codex-server-calls.jsonl'), 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as { argv: string[]; playwrightMcpEndpoint: string })
+        .filter((call) => call.argv.some((a) => a.startsWith('tui.status_line=')))
+      expect(tabServers).toHaveLength(1)
+      expect(tabServers[0].argv.filter((a) => a.startsWith('mcp_servers.'))).toEqual([
+        'mcp_servers.playwright.env_vars=["MINE","PLAYWRIGHT_MCP_CDP_ENDPOINT","PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS"]'
+      ])
+      const url = tabServers[0].playwrightMcpEndpoint
+      expect(url).toMatch(/^ws:\/\/127\.0\.0\.1:\d+\/cdp\/[a-f0-9]{32}$/)
+
+      const first = await chromium.connectOverCDP(url)
+      let sentAway = false
+      first.on('disconnected', () => {
+        sentAway = true
+      })
+      try {
+        await first.contexts()[0].newPage()
+        await openBrowser(page)
+        await expect(page.locator(BROWSER.drivenTab)).toHaveCount(1, { timeout: 30_000 })
+        await runIn(page, centerTerm(page), '/new')
+        await expect.poll(() => sentAway, { timeout: 30_000 }).toBe(true)
+      } finally {
+        await first.close().catch(() => {})
+      }
+      const second = await chromium.connectOverCDP(url)
+      try {
+        const driven = await second.contexts()[0].newPage()
+        expect(await driven.evaluate('1 + 1')).toBe(2)
+      } finally {
+        await second.close()
+      }
     } finally {
       await quitAndClose(app)
     }
