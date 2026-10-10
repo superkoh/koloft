@@ -952,6 +952,10 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
             (needs.includes('codex') && !HAVE_REAL_CODEX),
           `${NEEDS_REAL_CLAUDE}; ${NEEDS_REAL_CODEX}`
         )
+        test.skip(
+          conductor === 'codex',
+          'Codex 0.162 refuses to resume a conductor started with -a/-s, so it never wakes: issue #446'
+        )
         test.setTimeout(5 * A_REAL_MODEL_TURN_MS)
         env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
         env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
