@@ -91,6 +91,10 @@ export interface ListedSession {
   peerName?: string
 }
 
+function idToReach(s: SessionInfo): string {
+  return s.nativeSessionId ?? s.sessionId
+}
+
 export function formatSessionList(sessions: ListedSession[], callerTabId: string): string {
   if (sessions.length === 0) return 'This workspace has no open sessions.'
   return sessions
@@ -100,7 +104,7 @@ export function formatSessionList(sessions: ListedSession[], callerTabId: string
         BACKEND_LABEL[info.backendId],
         STATE_WORDS[info.status ?? 'idle']
       ]
-      if (info.backendId === 'codex') parts.push(`id: ${info.nativeSessionId ?? info.sessionId}`)
+      if (info.backendId === 'codex') parts.push(`id: ${idToReach(info)}`)
       if (peerName) parts.push(`name: ${peerName}`)
       const transcript = info.details?.claude?.jsonlPath
       if (transcript) parts.push(`transcript: ${transcript}`)
@@ -367,7 +371,7 @@ async function startSibling(
   if (backend === 'codex' && args.name !== undefined) return refused(CODEX_HAS_NO_NAME, EXIT_USAGE)
   const caller: SessionCaller = {
     name: me.backendId === 'claude' ? ((await d.peerNames()(me.sessionId)) ?? me.title) : undefined,
-    id: me.nativeSessionId ?? me.sessionId,
+    id: idToReach(me),
     conductor: conductorTab !== undefined
   }
   const name =
@@ -625,7 +629,7 @@ export function ownerSays(text: string): string {
 }
 
 export function sessionSays(from: SessionInfo, text: string): string {
-  return `(From the session "${from.title}", id ${from.nativeSessionId ?? from.sessionId}:) ${text}`
+  return `(From the session "${from.title}", id ${idToReach(from)}:) ${text}`
 }
 
 function isMe(

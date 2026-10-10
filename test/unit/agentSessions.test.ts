@@ -290,17 +290,19 @@ describe('the handover put before the first message', () => {
     )
   })
 
-  it('tells every child of a conductor, Claude or Codex, to answer with koloft session send and the conductor’s id, since a conductor that went idle has stopped and SendMessage cannot reach it, while koloft session send wakes it first', () => {
-    for (const conductor of [
-      { name: 'Global-conductor', id: 'cond-id', conductor: true },
-      { id: CODEX_THREAD, conductor: true }
-    ])
-      for (const child of ['claude', 'codex'] as const) {
-        const text = handoverPreamble(conductor, child)
-        expect(text).toContain(`koloft session send ${conductor.id}`)
-        expect(text).not.toContain('SendMessage')
-      }
-  })
+  it.each([
+    [{ name: 'Global-conductor', id: 'cond-id', conductor: true }, 'claude'],
+    [{ name: 'Global-conductor', id: 'cond-id', conductor: true }, 'codex'],
+    [{ id: CODEX_THREAD, conductor: true }, 'claude'],
+    [{ id: CODEX_THREAD, conductor: true }, 'codex']
+  ] as const)(
+    'tells a child of the conductor %j, %s or the other kind, to answer with koloft session send and the conductor’s id, since a conductor that went idle has stopped and SendMessage cannot reach it, while koloft session send wakes it first',
+    (conductor, child) => {
+      const text = handoverPreamble(conductor, child)
+      expect(text).toContain(`koloft session send ${conductor.id}`)
+      expect(text).not.toContain('SendMessage')
+    }
+  )
 })
 
 describe('koloft session list', () => {

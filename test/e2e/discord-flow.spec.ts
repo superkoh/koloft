@@ -24,6 +24,7 @@ import {
 } from './helpers/fakeDiscord'
 import { openSettings } from './helpers/extensions'
 import type { ConductorBinding, DiscordSettings } from '../../src/shared/types'
+import { identityOf } from '../../src/shared/sessionBackend'
 
 test.setTimeout(120_000)
 
@@ -108,6 +109,23 @@ function codexCalls(env: E2EEnv): { pid: number; sessionId: string }[] {
     .split('\n')
     .filter(Boolean)
     .map((l) => JSON.parse(l) as { pid: number; sessionId: string })
+}
+
+function codexQueued(env: E2EEnv): [string | undefined, string | undefined][] {
+  return codexWire(env)
+    .filter((w) => w.direction === 'client' && w.frame.method === 'thread/queue/add')
+    .map((w) => {
+      const params = w.frame.params as
+        { clientUserMessageId?: string; input?: { text: string }[] } | undefined
+      return [params?.clientUserMessageId, params?.input?.[0].text]
+    })
+}
+
+function peerMessages(env: E2EEnv): string[] {
+  return fileText(path.join(env.home, 'fake-claude-peer.jsonl'))
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => (JSON.parse(l) as { message: { content: string } }).message.content)
 }
 
 function codexServerArgs(env: E2EEnv): string[] {
@@ -392,34 +410,11 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     try {
       await newSessionInWith(page, 'ws-a', 'Codex')
       await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
-      const codexCalls = (): { sessionId: string }[] =>
-        fs
-          .readFileSync(path.join(env.home, 'fake-codex-calls.jsonl'), 'utf8')
-          .split('\n')
-          .filter(Boolean)
-          .map((l) => JSON.parse(l) as { sessionId: string })
-      const codexId = codexCalls()[0].sessionId
+      const codexId = codexCalls(env)[0].sessionId
 
       fake.say(OWNER, `/koloft session send ${codexId} check the docs`)
-      const queued = (): unknown[] =>
-        fs
-          .readFileSync(path.join(env.home, 'fake-codex-wire.jsonl'), 'utf8')
-          .trim()
-          .split('\n')
-          .map(
-            (l) =>
-              JSON.parse(l) as {
-                direction: string
-                frame: {
-                  method?: string
-                  params?: { clientUserMessageId?: string; input?: { text: string }[] }
-                }
-              }
-          )
-          .filter((w) => w.direction === 'client' && w.frame.method === 'thread/queue/add')
-          .map((w) => [w.frame.params?.clientUserMessageId, w.frame.params?.input?.[0].text])
       await expect
-        .poll(queued, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .poll(() => codexQueued(env), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toEqual([['koloft-conductor-1', '(Your owner, via the Koloft conductor:) check the docs']])
 
       fake.say(OWNER, '/koloft session new --backend codex -- list the files')
@@ -802,8 +797,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
             timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
           })
           await childRow.click()
-          const conductorKey = bindingOnDisk(env)!.sessionIds[0]
-          const conductorId = conductorKey.split(':').pop()!
+          const conductorId = identityOf(bindingOnDisk(env)!.sessionIds[0]).nativeSessionId
           const handover = `koloft session send ${conductorId} "<your result>"`
           if (child === 'claude')
             expect(readCalls(env).find((c) => c.firstPrompt?.includes(handover))).toBeTruthy()
@@ -826,36 +820,20 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
             .toBe(false)
 
           const childTab = await childRow.getAttribute('data-tab-id')
-          const target =
-            conductor === 'claude' && child === 'claude' ? 'ws-a-conductor' : conductorId
           await page.evaluate(
             ([tab, line]) => window.api.terminal.write(tab, line + '\r'),
-            [childTab!, `/koloft session send ${target} all done`]
+            [childTab!, `/koloft session send ${conductorId} all done`]
           )
           await expect
             .poll(() => terminalText(page, childTab!))
             .toContain('Will deliver when the ws-a conductor is ready.')
-          const report = /\(From the session ".+", id \S+:\) all done/
+          const conductorGot = (): string[] =>
+            conductor === 'claude'
+              ? peerMessages(env)
+              : codexQueued(env).map(([, text]) => text ?? '')
           await expect
-            .poll(
-              () =>
-                conductor === 'claude'
-                  ? fileText(path.join(env.home, 'fake-claude-peer.jsonl'))
-                      .split('\n')
-                      .filter(Boolean)
-                      .map(
-                        (l) => (JSON.parse(l) as { message: { content: string } }).message.content
-                      )
-                      .join('\n')
-                  : codexWire(env)
-                      .filter(
-                        (w) => w.direction === 'client' && w.frame.method === 'thread/queue/add'
-                      )
-                      .map((w) => (w.frame.params as { input: { text: string }[] }).input[0].text)
-                      .join('\n'),
-              { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }
-            )
-            .toMatch(report)
+            .poll(() => conductorGot().join('\n'), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+            .toMatch(/\(From the session ".+", id \S+:\) all done/)
           expect(conductorPid()).not.toBe(asleepPid)
         } finally {
           await quitAndClose(app)

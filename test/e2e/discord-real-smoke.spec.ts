@@ -6,6 +6,7 @@ import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { installGhForWorkspaceA, seedSettings, type E2EEnv } from './helpers/env'
 import { gitInit, seedJsonl, startSessionIn, terminalText, waitBooted, wsRows } from './helpers/p1'
 import { openerNow, startFakeDiscord, type FakeDiscord, type FakePost } from './helpers/fakeDiscord'
+import { BACKEND_LABEL } from '../../src/shared/sessionBackend'
 
 function claudeTokenFromKeychain(): string {
   const account = process.env.KOLOFT_SMOKE_ACCOUNT
@@ -938,10 +939,11 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
 
   const SECRET = 'SECRET-MANGO-73'
   const CHILD_WORKS_LONGER_THAN_THE_CONDUCTOR_STAYS_AWAKE_S = 40
-  const LABEL = { claude: 'Claude', codex: 'Codex' } as const
+  const WAITING_TO_IDLE_MS = 1000
+  const IDLE_TO_SLEEP_MS = 3000
   for (const conductor of ['claude', 'codex'] as const)
     for (const child of ['claude', 'codex'] as const)
-      test(`a real ${LABEL[child]} session a real ${LABEL[conductor]} conductor started reports back after the conductor went to sleep: Koloft wakes the conductor, which gets the report and passes it on to the channel`, async ({
+      test(`a real ${BACKEND_LABEL[child]} session a real ${BACKEND_LABEL[conductor]} conductor started reports back after the conductor went to sleep: Koloft wakes the conductor, which gets the report and passes it on to the channel`, async ({
         env
       }) => {
         const needs = [conductor, child]
@@ -951,8 +953,8 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
           `${NEEDS_REAL_CLAUDE}; ${NEEDS_REAL_CODEX}`
         )
         test.setTimeout(5 * A_REAL_MODEL_TURN_MS)
-        env.launchEnv.KOLOFT_IDLE_MS = '1000'
-        env.launchEnv.KOLOFT_IDLE_CLOSE_MS = '3000'
+        env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+        env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
         seedConductor(env, conductor)
         if (needs.includes('claude')) useRealClaude(env)
         if (needs.includes('codex')) useRealCodex(env)
@@ -964,7 +966,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
             (await page.evaluate(() => window.api.sessions.list())).find((s) => s.conductor)?.alive
           fake.say(
             OWNER,
-            `Start one new ${LABEL[child]} session (koloft session new --backend ${child}) in this workspace whose task is: "First run the shell command sleep ${CHILD_WORKS_LONGER_THAN_THE_CONDUCTOR_STAYS_AWAKE_S} and wait for it to end. Then read the file secret.txt in this folder and report its content back." Do not read secret.txt yourself. When the session reports back, tell me exactly what it reported.`
+            `Start one new ${BACKEND_LABEL[child]} session (koloft session new --backend ${child}) in this workspace whose task is: "First run the shell command perl -e 'sleep ${CHILD_WORKS_LONGER_THAN_THE_CONDUCTOR_STAYS_AWAKE_S}' in the foreground and wait for it to end. Then read the file secret.txt in this folder and report its content back." Then end your turn at once: do not wait for it, check on it or read it, and do not read secret.txt yourself; it reports back to you on its own. When its report reaches you, tell me exactly what it reported.`
           )
           await expect
             .poll(() => notices(fake), { timeout: A_REAL_MODEL_TURN_MS })

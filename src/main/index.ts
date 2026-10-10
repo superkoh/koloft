@@ -3322,7 +3322,7 @@ function commandIntoConductor(b: ConductorBinding, text: string): string {
 
 function conductorTarget(ref: string): Target | undefined {
   const all = conductors
-  const b = all?.bindingOfSession(ref) ?? all?.bindingNamed(ref)
+  const b = all?.bindingOf(ref)
   if (!all || !b) return undefined
   return {
     key: `conductor:${b.id}`,
