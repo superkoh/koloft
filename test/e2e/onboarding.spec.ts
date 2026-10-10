@@ -11,7 +11,7 @@ import {
   type E2EEnv
 } from './helpers/env'
 import {
-  sampledWhileTheCodexCheckIsOutAndOnceAfter,
+  expectNoCodexWhileTheCheckIsOutNorAfter,
   seedJsonl,
   settingsOnDisk,
   snap,
@@ -408,13 +408,12 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
         assist.locator('.assist-setup .choice-t', { hasText: new RegExp(`^${name}$`) })
       await expect(choice('Claude')).toBeVisible({ timeout: 20_000 })
 
-      const { samples, codexAvailable } = await sampledWhileTheCodexCheckIsOutAndOnceAfter(
+      await expectNoCodexWhileTheCheckIsOutNorAfter(
         page,
         letTheCheckAnswer,
-        () => choice('Codex').count()
+        () => choice('Codex').count(),
+        'a Codex choice'
       )
-      expect(codexAvailable).toBe(false)
-      expect(samples.filter((n) => n > 0).length, 'samples with a Codex choice').toBe(0)
       await expect(choice('Claude')).toBeVisible()
     } finally {
       await quitAndClose(app)

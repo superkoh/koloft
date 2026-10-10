@@ -11,12 +11,12 @@ import {
 } from './helpers/env'
 import {
   centerTerm,
+  expectNoCodexWhileTheCheckIsOutNorAfter,
   newSessionInWith,
   notesIsland,
   openMenu,
   readCalls,
   runIn,
-  sampledWhileTheCodexCheckIsOutAndOnceAfter,
   seedJsonl,
   sendShortcut,
   settingsOnDisk,
@@ -295,13 +295,12 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
       await expect(dlg).toBeVisible()
       const pickableCodex = dlg.locator('.seg button:not([disabled])', { hasText: 'Codex' })
 
-      const { samples, codexAvailable } = await sampledWhileTheCodexCheckIsOutAndOnceAfter(
+      await expectNoCodexWhileTheCheckIsOutNorAfter(
         page,
         letTheCheckAnswer,
-        () => pickableCodex.count()
+        () => pickableCodex.count(),
+        'Codex pickable'
       )
-      expect(codexAvailable).toBe(false)
-      expect(samples.filter((n) => n > 0).length, 'samples with Codex pickable').toBe(0)
       await expect(dlg.locator('.seg button', { hasText: 'Claude' })).toBeEnabled()
     } finally {
       await close()

@@ -467,23 +467,25 @@ export async function runIn(page: Page, term: Locator, cmd: string): Promise<voi
 const BETWEEN_SAMPLES_MS = 100
 const SAMPLES_WHILE_THE_CHECK_IS_OUT = 5
 
-export async function sampledWhileTheCodexCheckIsOutAndOnceAfter(
+export async function expectNoCodexWhileTheCheckIsOutNorAfter(
   page: Page,
   letTheCheckAnswer: () => void,
-  sample: () => Promise<number>
-): Promise<{ samples: number[]; codexAvailable: boolean | undefined }> {
+  codexShown: () => Promise<number>,
+  what: string
+): Promise<void> {
   let answer: BackendAvailability[] | undefined
   const answered = page
     .evaluate(() => window.api.sessions.backends())
     .then((list) => (answer = list))
   const samples: number[] = []
   while (!answer) {
-    samples.push(await sample())
+    samples.push(await codexShown())
     if (samples.length === SAMPLES_WHILE_THE_CHECK_IS_OUT) letTheCheckAnswer()
     await Promise.race([answered, page.waitForTimeout(BETWEEN_SAMPLES_MS)])
   }
-  samples.push(await sample())
-  return { samples, codexAvailable: answer.find((b) => b.id === 'codex')?.available }
+  samples.push(await codexShown())
+  expect(answer.find((b) => b.id === 'codex')?.available).toBe(false)
+  expect(samples.filter((n) => n > 0).length, `samples with ${what}`).toBe(0)
 }
 
 export async function waitBooted(page: Page): Promise<void> {

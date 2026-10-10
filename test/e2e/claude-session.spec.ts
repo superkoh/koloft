@@ -4,11 +4,11 @@ import {
   boundSessionId,
   centerTerm,
   continuedInOf,
+  expectNoCodexWhileTheCheckIsOutNorAfter,
   FAKE_SESSION_TITLE,
   layoutOnDisk,
   openPicker,
   runIn,
-  sampledWhileTheCodexCheckIsOutAndOnceAfter,
   startSessionIn,
   transcriptFile,
   waitBooted,
@@ -28,13 +28,12 @@ test('with no Codex and a slow Codex check, the first ⌘N picker after launch n
     await expect(picker.locator('.modal-foot button[data-default="true"]')).toBeVisible()
     const codexButtons = picker.locator('.modal-foot button[data-default="false"]')
 
-    const { samples, codexAvailable } = await sampledWhileTheCodexCheckIsOutAndOnceAfter(
+    await expectNoCodexWhileTheCheckIsOutNorAfter(
       page,
       letTheCheckAnswer,
-      () => codexButtons.count()
+      () => codexButtons.count(),
+      'a Codex button'
     )
-    expect(codexAvailable).toBe(false)
-    expect(samples.filter((n) => n > 0).length, 'samples with a Codex button').toBe(0)
   } finally {
     await quitAndClose(app)
   }

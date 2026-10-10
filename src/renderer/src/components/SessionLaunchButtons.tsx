@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  backendAvailable,
   BACKEND_LABEL,
   SESSION_BACKENDS,
+  shownAsInstalled,
   unsupportedPairMessage
 } from '@shared/sessionBackend'
 import type { BackendId, CreateTabOptions, HostId } from '@shared/types'
@@ -21,7 +21,6 @@ export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: (
   const methods = useStore((s) => s.settings.sessionMethods)
   const [retry, setRetry] = useState(0)
   const { installed: detected, checkFailed } = useInstalledBackends(retry)
-  const probeError = checkFailed ? 'Could not check that Claude Code is installed.' : ''
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState('')
   const submitting = useRef(false)
@@ -36,7 +35,7 @@ export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: (
   const usable = (backend: BackendId, on = host): boolean =>
     methods.enabled[backend] &&
     !unsupportedPairMessage(backend, on) &&
-    backendAvailable(detected ?? [], backend)
+    shownAsInstalled(detected, backend)
   const issue = (backend: BackendId, on = host): string => {
     if (!methods.enabled[backend]) return 'Disabled in Settings ▸ Sessions'
     const refusal = unsupportedPairMessage(backend, on)
@@ -71,7 +70,7 @@ export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: (
     starting,
     error,
     retry: () => setRetry((n) => n + 1),
-    probeError
+    checkFailed
   }
 }
 
@@ -146,7 +145,7 @@ export function SessionLaunchStatus({ launch }: { launch: ReturnType<typeof useS
           {launch.error}
         </p>
       )}
-      {launch.probeError && (
+      {launch.checkFailed && (
         <button className="mini" onClick={launch.retry}>
           Retry
         </button>
