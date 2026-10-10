@@ -879,7 +879,7 @@ test.describe("a REAL Codex drives its own tab's Workbench through the owner's P
       !HAVE_REAL_CODEX || !HAVE_PLAYWRIGHT_MCP,
       'set KOLOFT_SMOKE_CODEX, KOLOFT_SMOKE_CODEX_HOME (only its auth.json is copied) and KOLOFT_SMOKE_TOOLS_DIR (a node_modules/.bin holding playwright-mcp)'
     )
-    test.setTimeout(3 * A_REAL_MODEL_TURN_MS + 120_000)
+    test.setTimeout(4 * A_REAL_MODEL_TURN_MS + 180_000)
     useRealCodex(env, [env.workspaces.a])
     fs.appendFileSync(
       path.join(env.home, '.codex', 'config.toml'),
