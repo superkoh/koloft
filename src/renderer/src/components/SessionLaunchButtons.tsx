@@ -144,12 +144,15 @@ export function SessionLaunchButtons({
   )
 }
 
+function useNoAccountLeads(): Record<BackendId, string> {
+  const claude = useStore((s) => (s.accounts ? noUsableAccountLead(s.accounts, 'claude') : ''))
+  const codex = useStore((s) => (s.accounts ? noUsableAccountLead(s.accounts, 'codex') : ''))
+  return { claude, codex }
+}
+
 export function useAccountIssue(): (backend: BackendId) => string {
-  const accounts = useStore((s) => s.accounts)
-  return (backend) => {
-    const lead = accounts ? noUsableAccountLead(accounts, backend) : ''
-    return lead && `${lead}${ACCOUNTS_PANE}.`
-  }
+  const leads = useNoAccountLeads()
+  return (backend) => leads[backend] && `${leads[backend]}${ACCOUNTS_PANE}.`
 }
 
 export function NoAccountLines({
@@ -159,13 +162,12 @@ export function NoAccountLines({
   backends: BackendId[]
   onOpenSettings?: () => void
 }) {
-  const accounts = useStore((s) => s.accounts)
+  const leads = useNoAccountLeads()
   const setSettingsOpen = useStore((s) => s.setSettingsOpen)
-  if (!accounts) return null
   return (
     <>
       {backends.map((b) => {
-        const lead = noUsableAccountLead(accounts, b)
+        const lead = leads[b]
         return (
           lead && (
             <p key={b} className="field-hint bad">

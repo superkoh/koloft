@@ -374,7 +374,7 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
         .toBe(true)
       await expectStep(page, 3)
       await expect(card).toContainText('Signed in', { timeout: 20_000 })
-      await expect(page.locator('.set-nav')).toHaveCount(0)
+      await expect(page.locator('.modal')).toHaveCount(0)
       const accounts = settingsOnDisk(env).accounts as { name: string }[]
       expect(accounts.map((a) => a.name)).toEqual(['me'])
     } finally {

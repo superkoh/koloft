@@ -37,8 +37,7 @@ export function AssistSetup({ setup }: { setup: AssistSetupState }): JSX.Element
   const [codexSignIn, setCodexSignIn] = useState<{ again?: string } | null>(null)
   const [pasting, setPasting] = useState(false)
 
-  const pick = (b: BackendId): void => {
-    const again = accountToSignInAgain(accounts, b)
+  const pick = (b: BackendId, again: string | undefined): void => {
     if (setup.usable[b]) update({ assist: { on: true, backend: b } })
     else if (b === 'claude') beginLogin(again)
     else setCodexSignIn({ again })
@@ -69,7 +68,7 @@ export function AssistSetup({ setup }: { setup: AssistSetupState }): JSX.Element
             <button
               key={b}
               className={'choice' + (assist?.backend === b && setup.usable[b] ? ' on' : '')}
-              onClick={() => pick(b)}
+              onClick={() => pick(b, again)}
             >
               <span className="choice-t">{BACKEND_LABEL[b]}</span>
               <span className="choice-d">

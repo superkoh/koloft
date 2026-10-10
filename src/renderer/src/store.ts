@@ -563,11 +563,10 @@ export const useStore = create<AppState>((set, get) => ({
       delete workbenchWidths[id]
       delete workbenchLoad[id]
       delete filesReveal[id]
-      const signInEnds = s.signIn?.tabId === id
       return {
-        ...(signInEnds && {
+        ...(s.signIn?.tabId === id && {
           signIn: null,
-          settingsOpen: s.settingsOpen || !!s.signIn?.backToSettings
+          settingsOpen: s.settingsOpen || s.signIn.backToSettings
         }),
         tabs,
         openFiles,

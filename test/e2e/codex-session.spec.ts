@@ -1170,7 +1170,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       await page.getByRole('button', { name: 'Sign in to Codex' }).click()
       await page.getByPlaceholder('Name this account (e.g. work)').fill('work')
       await page.locator('.acct-add').getByRole('button', { name: 'Sign in', exact: true }).click()
-      await expect(page.locator('.set-nav')).toHaveCount(0)
+      await expect(page.locator('.modal')).toHaveCount(0)
       const home = path.join(env.userData, 'codex-homes', 'work')
       await expect
         .poll(() => fs.existsSync(path.join(home, 'auth.json')), { timeout: 30_000 })
