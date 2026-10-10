@@ -13,6 +13,7 @@ import type {
 } from '@shared/types'
 import type { SessionEvent } from '@shared/sessionEvent'
 import { formatRemoteKey, hostOf, isAbsoluteOnHost, parseRemoteKey } from '@shared/remoteKey'
+import { hasUsableAccount } from '@shared/accountUsage'
 import type { Turn } from '@shared/turns'
 import type { ModeClass } from '../crossSessionMessage'
 import { isValidWorktreeName } from '@shared/worktreeName'
@@ -175,8 +176,7 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   accountUsable(): boolean {
-    if (!loadSettings().multiAccount) return true
-    return listAccounts().some((a) => a.kind !== 'codex-home' && a.enabled && a.status === 'ok')
+    return hasUsableAccount(listAccounts(), 'claude')
   }
 
   trustsFolder(dir: string): Promise<boolean> {

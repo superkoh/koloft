@@ -92,7 +92,6 @@ export class PtyManager extends EventEmitter {
   pickDir?: string
   cdpDir?: string
   agentDir?: string
-  multiAccountOn?: () => boolean
   makeHookSettings?: (tabId: string, allowKoloft: boolean, conductor: boolean) => string | undefined
 
   private ptys = new Map<string, PtyHandle>()
@@ -160,11 +159,6 @@ export class PtyManager extends EventEmitter {
     if (this.pickDir) env.KOLOFT_PICK_DIR = this.pickDir
     if (this.cdpDir && !args.util) env.KOLOFT_CDP_DIR = this.cdpDir
     if (this.agentDir && args.kind !== 'codex') env.KOLOFT_AGENT_DIR = this.agentDir
-    if (args.kind !== 'codex' && this.multiAccountOn?.()) {
-      env.KOLOFT_MULTI_ACCOUNT = '1'
-      delete env.ANTHROPIC_API_KEY
-      delete env.ANTHROPIC_AUTH_TOKEN
-    }
     if (process.env.KOLOFT_TEST_BACKGROUND !== '1') delete env.KOLOFT_KEYCHAIN_FILE
     env.KOLOFT_PID = String(process.pid)
     const hookSettings =

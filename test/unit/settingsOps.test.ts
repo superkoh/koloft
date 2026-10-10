@@ -12,10 +12,9 @@ import {
 import { DEFAULT_SETTINGS, HINT_IDS } from '@shared/types'
 
 describe('buildResetPatch (FR-12)', () => {
-  it('excludes the whole account domain: accounts, multiAccount, skipPermissions, fablePriority', () => {
+  it('excludes the whole account domain: accounts, skipPermissions, fablePriority', () => {
     const patch = buildResetPatch()
     expect(patch).not.toHaveProperty('accounts')
-    expect(patch).not.toHaveProperty('multiAccount')
     expect(patch).not.toHaveProperty('skipPermissions')
     expect(patch).not.toHaveProperty('fablePriority')
   })
@@ -64,15 +63,13 @@ describe('buildResetPatch (FR-12)', () => {
 })
 
 describe('sanitizeSettingsPatch (FR-13)', () => {
-  it('strips accounts but lets multiAccount/skipPermissions through (legal toggle payloads)', () => {
+  it('strips accounts but lets skipPermissions through (a legal toggle payload)', () => {
     const patch = {
       accounts: [{ name: 'x', kind: 'oauth', enabled: true }],
-      multiAccount: false,
       skipPermissions: false,
       fontSize: 20
     } as never
     expect(sanitizeSettingsPatch(patch)).toEqual({
-      multiAccount: false,
       skipPermissions: false,
       fontSize: 20
     })
@@ -194,6 +191,21 @@ describe('U-OB-03: sanitizeLoadedSettings and the onboarding keys', () => {
     const loaded = sanitizeLoadedSettings({ fontSize: 14, onboardingSeen: false })
     expect(loaded.onboardingSeen).toBe(false)
     expect(loaded.hintsSeen).toEqual([])
+  })
+})
+
+describe('sanitizeLoadedSettings and the Assist choice', () => {
+  it('keeps a valid choice, and reads anything else — or none at all, as after an upgrade — as not chosen yet', () => {
+    expect(sanitizeLoadedSettings({ assist: { on: false, backend: 'codex' } }).assist).toEqual({
+      on: false,
+      backend: 'codex'
+    })
+    for (const assist of [undefined, 'claude', { on: 'yes', backend: 'claude' }, { on: true }])
+      expect(sanitizeLoadedSettings({ fontSize: 13, assist }).assist).toBeNull()
+  })
+
+  it('About ▸ Reset leaves the choice alone', () => {
+    expect(buildResetPatch()).not.toHaveProperty('assist')
   })
 })
 

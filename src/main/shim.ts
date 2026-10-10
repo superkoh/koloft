@@ -5,6 +5,8 @@ import { keychainNamespace } from '@shared/types'
 import { NEWID_FN, OPEN_SHIM_HEAD, OPEN_SHIM_TARGET } from './openShimScript'
 import { CLAUDE_AGENT_SHIM } from './agentShim'
 import { ENSURE_CLAUDE_MINIMUM_FN } from './cliMinimums'
+import { CLAUDE_AUTH_ENV_VARS } from './remote/launch'
+import { NO_USABLE_ACCOUNT, SHIM_FOUND_NO_ACCOUNT_EXIT } from '@shared/accountUsage'
 
 export interface ShimPaths {
   shimDir: string
@@ -272,82 +274,75 @@ for a in "$@"; do
     ${CLAUDE_FLAGS_FOLLOWED_BY_A_VALUE}) valflag=1 ;;
   esac
 done
-if [ "$noinj" = "0" ]; then
-  if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ] || [ -n "$ANTHROPIC_API_KEY" ] || [ -n "$ANTHROPIC_AUTH_TOKEN" ]; then
-    [ -n "$KOLOFT_MULTI_ACCOUNT" ] && echo "koloft: auth token already in env, skipping balancing" >&2
-  elif [ -n "$KOLOFT_PICK_DIR" ] && [ -n "$KOLOFT_TAB_ID" ] && [ -n "$KOLOFT_PID" ] && kill -0 "$KOLOFT_PID" 2>/dev/null; then
-    pickid="$(newid)"
-    [ -n "$pickid" ] || pickid="$$-$(date +%s)"
-    preq="$KOLOFT_PICK_DIR/req-$pickid.json"
-    pres="$KOLOFT_PICK_DIR/res-$pickid.json"
-    printf '{"tabId":"%s","ts":%s}\\n' "$KOLOFT_TAB_ID" "$(date +%s)" > "$preq" 2>/dev/null
-    pwaits=0
-    while [ ! -f "$pres" ] && [ "$pwaits" -lt 60 ]; do sleep 0.05; pwaits=$((pwaits+1)); done
-    pacct=""
-    preason="timeout"
-    if [ -f "$pres" ]; then
-      pacct="$(sed -n 's/.*"account":"\\([^"]*\\)".*/\\1/p' "$pres" 2>/dev/null)"
-      pkind="$(sed -n 's/.*"kind":"\\([^"]*\\)".*/\\1/p' "$pres" 2>/dev/null)"
-      pbanner="$(sed -n 's/.*"banner":"\\([^"]*\\)".*/\\1/p' "$pres" 2>/dev/null)"
-      pwarn="$(sed -n 's/.*"warning":"\\([^"]*\\)".*/\\1/p' "$pres" 2>/dev/null)"
-      pbase="$(sed -n 's/.*"baseUrl":"\\([^"]*\\)".*/\\1/p' "$pres" 2>/dev/null)"
-      pmodel="$(sed -n 's/.*"model":"\\([^"]*\\)".*/\\1/p' "$pres" 2>/dev/null)"
-      preason="$(sed -n 's/.*"reason":"\\([^"]*\\)".*/\\1/p' "$pres" 2>/dev/null)"
-      pflag="$(sed -n 's/.*"skipFlag":true.*/1/p' "$pres" 2>/dev/null)"
+# ADR-0030
+refuse() { echo "koloft: $1" >&2; exit ${SHIM_FOUND_NO_ACCOUNT_EXIT}; }
+if [ "$noinj" = "0" ] && [ "$KOLOFT_ACCOUNT_PICKED" != "1" ]; then
+  unset ${CLAUDE_AUTH_ENV_VARS.join(' ')}
+  [ -n "$KOLOFT_PICK_DIR" ] && [ -n "$KOLOFT_TAB_ID" ] && [ -n "$KOLOFT_PID" ] && kill -0 "$KOLOFT_PID" 2>/dev/null ||
+    refuse "claude runs here only inside a Koloft tab, on an account from Settings ▸ Accounts."
+  pickid="$(newid)"
+  [ -n "$pickid" ] || pickid="$$-$(date +%s)"
+  preq="$KOLOFT_PICK_DIR/req-$pickid.json"
+  pres="$KOLOFT_PICK_DIR/res-$pickid.json"
+  printf '{"tabId":"%s","ts":%s}\\n' "$KOLOFT_TAB_ID" "$(date +%s)" > "$preq" 2>/dev/null
+  pwaits=0
+  while [ ! -f "$pres" ] && [ "$pwaits" -lt 60 ]; do sleep 0.05; pwaits=$((pwaits+1)); done
+  pacct=""
+  preason="timeout"
+  if [ -f "$pres" ]; then
+    pacct="$(sed -n 's/.*"account":"\\([^"]*\\)".*/\\1/p' "$pres" 2>/dev/null)"
+    pkind="$(sed -n 's/.*"kind":"\\([^"]*\\)".*/\\1/p' "$pres" 2>/dev/null)"
+    pbanner="$(sed -n 's/.*"banner":"\\([^"]*\\)".*/\\1/p' "$pres" 2>/dev/null)"
+    pwarn="$(sed -n 's/.*"warning":"\\([^"]*\\)".*/\\1/p' "$pres" 2>/dev/null)"
+    pbase="$(sed -n 's/.*"baseUrl":"\\([^"]*\\)".*/\\1/p' "$pres" 2>/dev/null)"
+    pmodel="$(sed -n 's/.*"model":"\\([^"]*\\)".*/\\1/p' "$pres" 2>/dev/null)"
+    preason="$(sed -n 's/.*"reason":"\\([^"]*\\)".*/\\1/p' "$pres" 2>/dev/null)"
+    pflag="$(sed -n 's/.*"skipFlag":true.*/1/p' "$pres" 2>/dev/null)"
+  fi
+  rm -f "$preq" "$pres" 2>/dev/null
+  if [ -z "$pacct" ]; then
+    [ "$preason" = "timeout" ] && refuse "picking an account took too long. Try again."
+    refuse "${NO_USABLE_ACCOUNT.claude}"
+  fi
+  psvc="__KOLOFT_KEYCHAIN_NS__-claude-oauth"
+  [ "$pkind" = "apikey" ] && psvc="__KOLOFT_KEYCHAIN_NS__-anthropic-api"
+  [ "$pkind" = "custom" ] && psvc="__KOLOFT_KEYCHAIN_NS__-custom-endpoint"
+  # PLATFORM§3 PLATFORM§2 ADR-0001
+  ptokf="$KOLOFT_PICK_DIR/tok-$pickid"
+  ( umask 077; exec security find-generic-password -s "$psvc" -a "$pacct" -w > "$ptokf" 2>/dev/null ) &
+  psec=$!
+  pswait=0
+  while kill -0 "$psec" 2>/dev/null && [ "$pswait" -lt 100 ]; do sleep 0.05; pswait=$((pswait+1)); done
+  kill "$psec" 2>/dev/null
+  wait "$psec" 2>/dev/null
+  ptok="$(cat "$ptokf" 2>/dev/null)"
+  rm -f "$ptokf" 2>/dev/null
+  [ -n "$ptok" ] ||
+    refuse "could not read the sign-in of $pacct from the Keychain. Try again, or sign it in again in Settings ▸ Accounts."
+  if [ "$pkind" = "apikey" ]; then
+    export ANTHROPIC_API_KEY="$ptok"
+  elif [ "$pkind" = "custom" ]; then
+    # CC§7
+    export ANTHROPIC_AUTH_TOKEN="$ptok"
+    export ANTHROPIC_BASE_URL="$pbase"
+    if [ -n "$pmodel" ]; then
+      export ANTHROPIC_MODEL="$pmodel"
+      export ANTHROPIC_DEFAULT_OPUS_MODEL="$pmodel"
+      export ANTHROPIC_DEFAULT_SONNET_MODEL="$pmodel"
+      export ANTHROPIC_DEFAULT_HAIKU_MODEL="$pmodel"
+      export ANTHROPIC_DEFAULT_FABLE_MODEL="$pmodel"
+      export CLAUDE_CODE_SUBAGENT_MODEL="$pmodel"
+      export CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1
     fi
-    rm -f "$preq" "$pres" 2>/dev/null
-    if [ -n "$pacct" ]; then
-      psvc="__KOLOFT_KEYCHAIN_NS__-claude-oauth"
-      [ "$pkind" = "apikey" ] && psvc="__KOLOFT_KEYCHAIN_NS__-anthropic-api"
-      [ "$pkind" = "custom" ] && psvc="__KOLOFT_KEYCHAIN_NS__-custom-endpoint"
-      # PLATFORM§3 PLATFORM§2 ADR-0001
-      ptokf="$KOLOFT_PICK_DIR/tok-$pickid"
-      ( umask 077; exec security find-generic-password -s "$psvc" -a "$pacct" -w > "$ptokf" 2>/dev/null ) &
-      psec=$!
-      pswait=0
-      while kill -0 "$psec" 2>/dev/null && [ "$pswait" -lt 100 ]; do sleep 0.05; pswait=$((pswait+1)); done
-      kill "$psec" 2>/dev/null
-      wait "$psec" 2>/dev/null
-      ptok="$(cat "$ptokf" 2>/dev/null)"
-      rm -f "$ptokf" 2>/dev/null
-      if [ -n "$ptok" ]; then
-        if [ "$pkind" = "apikey" ]; then
-          export ANTHROPIC_API_KEY="$ptok"
-          unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_AUTH_TOKEN
-        elif [ "$pkind" = "custom" ]; then
-          # CC§7
-          export ANTHROPIC_AUTH_TOKEN="$ptok"
-          export ANTHROPIC_BASE_URL="$pbase"
-          unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY
-          if [ -n "$pmodel" ]; then
-            export ANTHROPIC_MODEL="$pmodel"
-            export ANTHROPIC_DEFAULT_OPUS_MODEL="$pmodel"
-            export ANTHROPIC_DEFAULT_SONNET_MODEL="$pmodel"
-            export ANTHROPIC_DEFAULT_HAIKU_MODEL="$pmodel"
-            export ANTHROPIC_DEFAULT_FABLE_MODEL="$pmodel"
-            export CLAUDE_CODE_SUBAGENT_MODEL="$pmodel"
-            export CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1
-          fi
-        else
-          export CLAUDE_CODE_OAUTH_TOKEN="$ptok"
-          unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN
-        fi
-        ptok=""
-        export ANT_ACCOUNT="$pacct"
-        [ -n "$pbanner" ] && printf '%s\\n' "$pbanner" >&2
-        [ -n "$pwarn" ] && printf '%s\\n' "$pwarn" >&2
-        if [ "$pflag" = "1" ] && [ "$hasperm" = "0" ] && [ "$hasp" = "0" ]; then
-          inj+=(--dangerously-skip-permissions)
-        fi
-      else
-        echo "koloft: no credential for $pacct, launching as-is" >&2
-      fi
-    else
-      case "$preason" in
-        no-accounts) echo "koloft: no usable account, using default login" >&2 ;;
-        timeout) echo "koloft: account pick timed out, launching as-is" >&2 ;;
-      esac
-    fi
+  else
+    export CLAUDE_CODE_OAUTH_TOKEN="$ptok"
+  fi
+  ptok=""
+  export ANT_ACCOUNT="$pacct"
+  [ -n "$pbanner" ] && printf '%s\\n' "$pbanner" >&2
+  [ -n "$pwarn" ] && printf '%s\\n' "$pwarn" >&2
+  if [ "$pflag" = "1" ] && [ "$hasperm" = "0" ] && [ "$hasp" = "0" ]; then
+    inj+=(--dangerously-skip-permissions)
   fi
 fi
 

@@ -12,7 +12,6 @@ export interface CodexMember {
   createdAt: number
   updatedAt: number
   worktreeResourceId?: string
-  codexHome?: string
   permission?: LaunchPermission
 }
 
@@ -62,7 +61,6 @@ function validMember(value: unknown, key: string): value is CodexMember {
     typeof value.updatedAt === 'number' &&
     Number.isFinite(value.updatedAt) &&
     (value.worktreeResourceId === undefined || typeof value.worktreeResourceId === 'string') &&
-    (value.codexHome === undefined || absolute(value.codexHome)) &&
     (value.permission === undefined ||
       value.permission === 'acceptEdits' ||
       value.permission === 'bypass')

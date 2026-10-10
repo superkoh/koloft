@@ -119,8 +119,7 @@ beforeEach(() => {
     events: vi.fn((tabId, event) => sessions.observe(tabId, event)),
     error: vi.fn(),
     trustFolder: vi.fn(),
-    pickHome: vi.fn(() => undefined),
-    homes: vi.fn(() => []),
+    pickHome: vi.fn(() => ({ account: 'work', home: '/homes/work' })),
     openShimRoot: path.join(directory, 'codex-open'),
     agent: { enabled: () => false, answer: vi.fn() }
   }
@@ -202,15 +201,11 @@ describe('CodexSessions', () => {
     expect(sessions.members().has(codexSessionKey(A))).toBe(true)
   })
 
-  it('calls a thread gone only once every Codex home was listed without it, never before the first listing, after a failed home or while a listing runs', async () => {
+  it('calls a thread gone only once a listing finished without it, never before the first listing, after a failed one or while a listing runs', async () => {
     const listed = codexSessionKey(A)
     const unlisted = codexSessionKey(B)
     expect(sessions.threadGone(unlisted)).toBe(false)
-    vi.mocked(deps.homes).mockReturnValue(['/codex-home-2'])
-    mocks.request.mockImplementation(async (_method, params, home) => {
-      if (home === '/codex-home-2') throw new Error('home 2 unreadable')
-      return { data: params.archived ? [] : [{ id: A, cwd: repo }] }
-    })
+    mocks.request.mockRejectedValue(new Error('history unreadable'))
     await sessions.refreshHistory()
     expect(sessions.threadGone(unlisted)).toBe(false)
     mocks.request.mockImplementation(async (_method, params) => ({
@@ -288,65 +283,36 @@ describe('CodexSessions', () => {
   })
 
   // CODEX§15
-  it('a new launch runs in the account home the picker chose, and a resume goes back to the home its session lives in', async () => {
-    vi.mocked(deps.pickHome).mockReturnValue({ account: 'work', home: '/homes/work' })
+  it('a launch and a resume both run in the account home the picker chose, since every home shares one sessions folder', async () => {
     const first = await sessions.launch({ kind: 'codex', cwd: repo })
     expect(transports[0].options.env?.CODEX_HOME).toBe('/homes/work')
     expect(vi.mocked(deps.pty.create).mock.calls[0][0].processEnv?.CODEX_HOME).toBe('/homes/work')
     bind()
-    expect(sessions.store.getMember(codexSessionKey(A))?.codexHome).toBe('/homes/work')
     expect(sessions.list()[0].pickedAccount).toBe('work')
     await sessions.stop(first.id)
 
     vi.mocked(deps.pickHome).mockReturnValue({ account: 'home', home: '/homes/home' })
     await sessions.resume({ sessionId: codexSessionKey(A), cwd: repo })
-    expect(transports[1].options.env?.CODEX_HOME).toBe('/homes/work')
-    mocks.request.mockResolvedValue({ thread: { id: A, cwd: repo, path: null } })
-    mocks.rpcHomes.length = 0
-    await sessions.transcriptExists(codexSessionKey(A))
-    expect(mocks.rpcHomes).toEqual(['/homes/work'])
+    expect(transports[1].options.env?.CODEX_HOME).toBe('/homes/home')
   })
 
   // CODEX§15
-  it('lists history from the default home and every account home, and resumes a thread in the home it was found in', async () => {
-    vi.mocked(deps.homes).mockReturnValue(['/homes/work'])
-    mocks.request.mockImplementation(async (_method, params, home) =>
-      params.archived
-        ? { data: [] }
-        : { data: [home === '/homes/work' ? { id: B, cwd: repo } : { id: A, cwd: repo }] }
+  it('lists and reads history once, from the default home every account home shares', async () => {
+    mocks.request.mockImplementation(async (_method, params) =>
+      params.archived ? { data: [] } : { data: [{ id: A, cwd: repo }] }
     )
-    const rows = await sessions.historyRows(repo)
-    expect(rows.map((row) => row.id).sort()).toEqual(
-      [codexSessionKey(A), codexSessionKey(B)].sort()
-    )
-    expect(mocks.rpcHomes).toEqual([undefined, '/homes/work'])
-    await sessions.resume({ sessionId: codexSessionKey(B), cwd: repo })
-    expect(transports[0].options.env?.CODEX_HOME).toBe('/homes/work')
-    expect(deps.pickHome).not.toHaveBeenCalled()
-  })
-
-  it('an account home that fails to list keeps its last threads and hides no other home', async () => {
-    vi.mocked(deps.homes).mockReturnValue(['/homes/work'])
-    let broken = false
-    mocks.request.mockImplementation(async (_method, params, home) => {
-      if (home === '/homes/work' && broken) throw new Error('state database locked')
-      if (params.archived) return { data: [] }
-      return { data: [home === '/homes/work' ? { id: B, cwd: repo } : { id: A, cwd: repo }] }
-    })
-    await sessions.refreshHistory()
-    broken = true
-    const rows = await sessions.historyRows(repo)
-    expect(rows.map((row) => row.id).sort()).toEqual(
-      [codexSessionKey(A), codexSessionKey(B)].sort()
-    )
+    expect((await sessions.historyRows(repo)).map((row) => row.id)).toEqual([codexSessionKey(A)])
+    expect(mocks.rpcHomes).toEqual([undefined])
+    mocks.request.mockResolvedValue({ thread: { id: A, cwd: repo, path: null } })
+    await sessions.transcriptExists(codexSessionKey(A))
+    expect(mocks.rpcHomes).toEqual([undefined, undefined])
   })
 
   // CODEX§24
-  it('a search offers the threads of the given workspaces but no archived one, and asks thread/search in every home, keeping the homes that answer', async () => {
+  it('a search offers the threads of the given workspaces but no archived one, and asks thread/search once, in the default home every account shares', async () => {
     const C = '33333333-3333-4333-8333-333333333333'
     const D = '44444444-4444-4444-8444-444444444444'
-    vi.mocked(deps.homes).mockReturnValue(['/homes/work'])
-    mocks.request.mockImplementation(async (method, params, home) => {
+    mocks.request.mockImplementation(async (method, params) => {
       if (method === 'thread/list')
         return params.archived
           ? { data: [{ id: D, cwd: repo, name: 'Parser, archived' }] }
@@ -357,7 +323,6 @@ describe('CodexSessions', () => {
                 { id: C, cwd: other, name: 'Elsewhere' }
               ]
             }
-      if (home === '/homes/work') throw new Error('state database locked')
       return {
         data: [
           { snippet: '... the PARSER crashed on an empty file', thread: { id: B, cwd: repo } },
@@ -387,6 +352,12 @@ describe('CodexSessions', () => {
       expect.objectContaining({ searchTerm: 'parser', archived: false }),
       undefined
     )
+    expect(mocks.request.mock.calls.filter(([method]) => method === 'thread/search')).toHaveLength(
+      1
+    )
+
+    mocks.request.mockRejectedValue(new Error('state database locked'))
+    expect(await sessions.searchSnippets('parser')).toEqual([])
   })
 
   it('waits for an in-flight stop before restarting and prevents duplicate resume', async () => {

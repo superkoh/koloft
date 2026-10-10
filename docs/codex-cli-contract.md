@@ -622,6 +622,44 @@ With `config.toml` a link to an empty shared file, the same start-up write and t
 answer both went into the shared file and the link stayed a link. Hence Koloft makes an
 empty shared file when there is none, rather than skip the link.
 
+**A home finds a session by the file under its own `sessions/`, wherever that folder
+really is.** Checked 2026-10-08 with Codex CLI 0.162.0, no model turn, no login in any
+home. A Node script ran `codex app-server` on three throwaway `CODEX_HOME`s and sent
+`thread/list`, `thread/read` and `thread/resume` for one real interactive (`source:
+"vscode"`) rollout copied from this Mac's `~/.codex/sessions/YYYY/MM/DD/` (copies deleted
+afterwards):
+
+| home | listed | `thread/read` | `thread/resume` |
+|---|---|---|---|
+| empty | no | `-32600` "thread not loaded" | `-32600` "no rollout found for thread id" |
+| rollout copied under `sessions/` | yes | ok | ok |
+| `sessions/` a symlink to a folder holding it | yes | ok | ok |
+
+A home whose `state_5.sqlite` had already been built from its own `sessions/`, with that
+folder then swapped for a link to a shared one holding another rollout, listed both. So
+Koloft links every account home's `sessions/` and `archived_sessions/` to the default
+home's, lists history once from the default home, and resumes a session in whichever
+account the picker chooses. A `codex exec` rollout (`source: "exec"`) is not in the
+default listing, which asks for interactive sources only.
+
+**A session started on one login takes a model turn on another.** Checked 2026-10-09
+with Codex CLI 0.162.0 and two real ChatGPT logins (one Plus, one Pro, different
+emails), each signed in with `codex login --device-auth` into its own throwaway
+`CODEX_HOME`, whose `sessions/`, `archived_sessions/` and `config.toml` were links into
+a third throwaway default home. Login A's app-server ran `thread/start` and one
+`gpt-6-luna` turn ("Reply with exactly: ONE" → "ONE"). Login B's app-server then ran
+`thread/resume` on that id (ok, the rollout path inside the shared folder) and a turn
+asking what it had replied before: it answered "ONE … TWO" and `turn/completed` with
+status `completed` — the earlier turns carried over, and the rollout's
+`creator_account_id` did not stop it. The shared folder still held one rollout. Both
+plans' `model/list` included `gpt-6-luna`.
+
+**The Assist one-shot runs in such a home.** Same day and setup, login B's home:
+`codex exec --skip-git-repo-check --ephemeral --ignore-user-config --ignore-rules -s
+read-only -m gpt-6-luna -C /tmp -` with the system text and task on stdin exited 0 in
+about 2 s, printed only the title on stdout, reported 2,538 tokens on stderr, and wrote
+no rollout into the shared `sessions/`.
+
 Not tried, because they need a second real login or would open a browser on this Mac:
 - that `codex login` with `CODEX_HOME` set signs in only that home and exits 0 once
   done (Koloft types `codex login && exit` into the sign-in terminal, so the tab closes

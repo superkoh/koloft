@@ -34,6 +34,18 @@ const FAKE_MIC_AND_CAMERA_BEHIND_THE_PERMISSION_PROMPT = '--use-fake-device-for-
 
 const FAKE_CLAUDE_SRC = path.join(__dirname, '..', 'fixtures', 'fake-claude.js')
 
+const UNPACKAGED_BUILD_APIKEY_SVC = 'koloft-dev-anthropic-api'
+const E2E_CLAUDE_ACCOUNT = 'e2e-key'
+const E2E_CLAUDE_ACCOUNT_KEY = 'sk-ant-api03-e2e-fixture'
+const E2E_CODEX_ACCOUNT = 'e2e-codex'
+
+export function seededAccount(
+  name: string,
+  kind: 'oauth' | 'apikey' | 'codex-home' = 'oauth'
+): Record<string, unknown> {
+  return { name, kind, enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }
+}
+
 function makeWorkspace(home: string, name: string, files: Record<string, string>): string {
   const dir = path.join(home, name)
   for (const [rel, content] of Object.entries(files)) {
@@ -72,6 +84,26 @@ export function setupE2EEnv(): E2EEnv {
   fs.chmodSync(fakeOpen, 0o755)
 
   const keychainFile = path.join(home, 'keychain-fixture.json')
+  fs.writeFileSync(
+    keychainFile,
+    JSON.stringify({
+      [UNPACKAGED_BUILD_APIKEY_SVC]: { [E2E_CLAUDE_ACCOUNT]: E2E_CLAUDE_ACCOUNT_KEY }
+    })
+  )
+  fs.writeFileSync(
+    path.join(userData, 'settings.json'),
+    JSON.stringify({
+      onboardingSeen: false,
+      accounts: [seededAccount(E2E_CLAUDE_ACCOUNT, 'apikey')],
+      assist: { on: true, backend: 'claude' }
+    })
+  )
+  // CC§9
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true })
+  fs.writeFileSync(
+    path.join(home, '.claude', 'settings.json'),
+    JSON.stringify({ skipDangerousModePermissionPrompt: true })
+  )
   const fakeSecuritySrc =
     `#!/usr/bin/env bash\n` +
     `acct=""; svc=""; prev=""\n` +
@@ -177,6 +209,24 @@ export function setupE2EEnv(): E2EEnv {
   }
 }
 
+export function addKeychainEntry(
+  env: E2EEnv,
+  service: string,
+  account: string,
+  secret: string
+): void {
+  const all = JSON.parse(fs.readFileSync(env.keychainFile, 'utf8')) as Record<
+    string,
+    Record<string, string>
+  >
+  all[service] = { ...all[service], [account]: secret }
+  fs.writeFileSync(env.keychainFile, JSON.stringify(all))
+}
+
+export function seedNoClaudeAccountButStillSetUp(env: E2EEnv): void {
+  seedSettings(env, { accounts: [seededAccount(E2E_CODEX_ACCOUNT, 'codex-home')] })
+}
+
 export function seedSettings(env: E2EEnv, patch: Record<string, unknown>): void {
   const file = path.join(env.userData, 'settings.json')
   const current = fs.existsSync(file)
@@ -191,6 +241,14 @@ export function installCodex(env: E2EEnv): void {
   env.launchEnv.KOLOFT_CODEX_CMD = binary
   env.launchEnv.CODEX_HOME = path.join(env.home, '.codex')
   fs.writeFileSync(path.join(env.home, '.zprofile'), `export PATH="${env.fakeBin}:$PATH"\n`)
+  const accountHome = path.join(env.userData, 'codex-homes', E2E_CODEX_ACCOUNT)
+  fs.mkdirSync(accountHome, { recursive: true })
+  fs.writeFileSync(path.join(accountHome, 'auth.json'), '{}')
+  const file = path.join(env.userData, 'settings.json')
+  const current = JSON.parse(fs.readFileSync(file, 'utf8')) as { accounts?: unknown[] }
+  seedSettings(env, {
+    accounts: [...(current.accounts ?? []), seededAccount(E2E_CODEX_ACCOUNT, 'codex-home')]
+  })
 }
 
 export function setGuestLimit(env: E2EEnv, limit: number): void {

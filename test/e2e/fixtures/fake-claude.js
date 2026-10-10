@@ -31,8 +31,12 @@ if (argv[0] === '--version') {
 }
 
 // CC§9
-if (argv[0] === '-p' && !require('tty').isatty(0)) {
-  const task = fs.readFileSync(0, 'utf8').split('Task:\n').pop()
+const typedInATerminal = require('tty').isatty(0) && require('tty').isatty(1)
+if (argv[0] === '-p' && !typedInATerminal) {
+  const promptArg = argv[1] && !argv[1].startsWith('-') ? argv[1] : ''
+  const task = (require('tty').isatty(0) ? promptArg : fs.readFileSync(0, 'utf8'))
+    .split('Task:\n')
+    .pop()
   const firstLine = task.split('\n').find((l) => l.trim()) ?? ''
   process.stdout.write(`${firstLine.trim()} (titled)\n`)
   process.exit(0)

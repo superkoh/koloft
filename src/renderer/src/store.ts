@@ -4,6 +4,7 @@ import { create } from 'zustand'
 import {
   DEFAULT_SETTINGS,
   DEFAULT_TERMINAL_TITLE,
+  type AccountView,
   type AdoptableTab,
   type ArtifactView,
   type AttentionEvent,
@@ -95,6 +96,10 @@ interface AppState {
   settings: Settings
   settingsOpen: boolean
   welcomeActive: boolean
+  onboardingStep: number
+  bypassAccepted: boolean | null
+  accounts: AccountView[] | null
+  signInTabId: string | null
   accountLogin: LoginFlowState | null
   openFiles: Record<string, OpenFile | null>
   workbenchWidth: number
@@ -168,6 +173,10 @@ interface AppState {
   setSettings: (s: Settings) => void
   setSettingsOpen: (open: boolean) => void
   setWelcomeActive: (on: boolean) => void
+  setOnboardingStep: (step: number) => void
+  setBypassAccepted: (accepted: boolean) => void
+  setAccounts: (accounts: AccountView[]) => void
+  setSignInTabId: (tabId: string) => void
   beginLogin: (reauthName?: string) => void
   setLoginProgress: (p: LoginProgress) => void
   clearLogin: () => void
@@ -443,6 +452,10 @@ export const useStore = create<AppState>((set, get) => ({
   settings: DEFAULT_SETTINGS,
   settingsOpen: false,
   welcomeActive: false,
+  onboardingStep: 1,
+  bypassAccepted: null,
+  accounts: null,
+  signInTabId: null,
   accountLogin: null,
   openFiles: {},
   workbenchWidth: DEFAULT_SETTINGS.workbenchWidth,
@@ -726,6 +739,10 @@ export const useStore = create<AppState>((set, get) => ({
   setSettings: (settings) => set({ settings }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   setWelcomeActive: (welcomeActive) => set({ welcomeActive }),
+  setOnboardingStep: (onboardingStep) => set({ onboardingStep }),
+  setBypassAccepted: (bypassAccepted) => set({ bypassAccepted }),
+  setAccounts: (accounts) => set({ accounts }),
+  setSignInTabId: (signInTabId) => set({ signInTabId }),
   beginLogin: (reauthName) => set({ accountLogin: { reauthName, progress: null } }),
   setLoginProgress: (progress) =>
     set((s) => ({ accountLogin: { ...(s.accountLogin ?? {}), progress } })),

@@ -38,6 +38,7 @@ import { removeCodexOpenShim, writeCodexOpenShim } from './openShimScript'
 import { AGENT_SHIM_WAITS_MS, writeCodexAgentShim } from './agentShim'
 import { CODEX_AGENT_HINT } from '@shared/agentGuide'
 import { portOffset } from '@shared/worktreeName'
+import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import type { CodexApproval, CodexQuestion } from './discord/dialog'
 
 const exists = (p: string): boolean => {
@@ -148,7 +149,6 @@ export interface CodexSessionDeps {
   error(message: string): void
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
   pickHome(): { account: string; home: string } | undefined
-  homes(): string[]
   openShimRoot: string
   agent: {
     enabled(): boolean
@@ -172,8 +172,7 @@ interface Run {
   stopping?: Promise<void>
   explicitStop: boolean
   resumeKey?: string
-  home?: string
-  account?: string
+  account: string
   permission: LaunchPermission
   releaseOpenShim(): void
 }
@@ -182,7 +181,6 @@ export class CodexSessions {
   private crashLeftoversEnded?: Promise<void>
   private runs = new Map<string, Run>()
   private history = new Map<string, CodexThread>()
-  private threadHomes = new Map<string, string>()
   private archivedIds = new Set<string>()
   private binary?: string
   private processEnv?: NodeJS.ProcessEnv
@@ -192,7 +190,7 @@ export class CodexSessions {
   private warnedVersion?: string
   private refreshing?: Promise<void>
   private historyError?: Error
-  private everyHomeListed = false
+  private listed = false
   private launchingKeys = new Set<string>()
   private pendingLaunches = new Set<Promise<{ id: string; cwd: string }>>()
   private shuttingDown = false
@@ -325,10 +323,6 @@ export class CodexSessions {
   // CODEX§15
   private envFor(home: string | undefined): NodeJS.ProcessEnv | undefined {
     return home ? { ...this.processEnv, CODEX_HOME: home } : this.processEnv
-  }
-
-  private homeFor(key: string): string | undefined {
-    return this.store.getMember(key)?.codexHome ?? this.threadHomes.get(key)
   }
 
   private rpc(home: string | undefined): CodexRpc {
@@ -520,48 +514,30 @@ export class CodexSessions {
       }
     }
     if (this.shuttingDown) return
-    const homeList = [undefined, ...this.deps.homes()]
-    const listings = await Promise.allSettled(homeList.map((home) => this.listHome(home)))
-    const defaultListing = listings[0]
-    if (defaultListing.status === 'rejected') {
-      if (binaryGone(defaultListing.reason)) this.forgetProbe()
-      const error = defaultListing.reason
+    let threads: { key: string; thread: CodexThread; archived: boolean }[]
+    try {
+      threads = await this.listThreads()
+    } catch (error) {
+      if (binaryGone(error)) this.forgetProbe()
       this.historyError = error instanceof Error ? error : new Error(String(error))
       return
     }
     const seen = new Map<string, CodexThread>()
-    const homes = new Map<string, string>()
     const archivedIds = new Set<string>()
-    listings.forEach((listing, i) => {
-      const home = homeList[i]
-      const threads =
-        listing.status === 'fulfilled'
-          ? listing.value
-          : [...this.threadHomes]
-              .filter(([key, owner]) => owner === home && this.history.has(key))
-              .map(([key]) => ({
-                key,
-                thread: this.history.get(key)!,
-                archived: this.archivedIds.has(key)
-              }))
-      for (const { key, thread, archived } of threads) {
-        seen.set(key, thread)
-        if (home) homes.set(key, home)
-        if (archived) archivedIds.add(key)
-      }
-    })
+    for (const { key, thread, archived } of threads) {
+      seen.set(key, thread)
+      if (archived) archivedIds.add(key)
+    }
     this.history = seen
-    this.threadHomes = homes
     this.archivedIds = archivedIds
-    this.everyHomeListed = listings.every((listing) => listing.status === 'fulfilled')
+    this.listed = true
     this.historyError = undefined
     this.changed()
   }
 
-  private async listHome(
-    home: string | undefined
-  ): Promise<{ key: string; thread: CodexThread; archived: boolean }[]> {
-    const rpc = this.rpc(home)
+  // CODEX§15
+  private async listThreads(): Promise<{ key: string; thread: CodexThread; archived: boolean }[]> {
+    const rpc = this.rpc(undefined)
     const threads: { key: string; thread: CodexThread; archived: boolean }[] = []
     try {
       for (const archived of [false, true]) {
@@ -587,16 +563,12 @@ export class CodexSessions {
   // CODEX§24
   async searchSnippets(term: string): Promise<{ id: string; snippet: string }[]> {
     if (!(await this.availability()).available) return []
-    const homes = [undefined, ...this.deps.homes()]
-    const replies = await Promise.allSettled(homes.map((h) => this.searchHome(h, term)))
-    return replies.flatMap((reply) => (reply.status === 'fulfilled' ? reply.value : []))
+    return this.searchSharedHome(term).catch(() => [])
   }
 
-  private searchHome(
-    home: string | undefined,
-    term: string
-  ): Promise<{ id: string; snippet: string }[]> {
-    return this.withRpc(home, async (rpc) => {
+  // CODEX§15
+  private searchSharedHome(term: string): Promise<{ id: string; snippet: string }[]> {
+    return this.withRpc(undefined, async (rpc) => {
       const found: { id: string; snippet: string }[] = []
       const params = { searchTerm: term, archived: false, sourceKinds }
       for await (const value of everyPage(rpc, 'thread/search', params)) {
@@ -623,7 +595,7 @@ export class CodexSessions {
   async transcriptExists(key: string): Promise<boolean> {
     const id = this.nativeId(key)
     if (this.archivedIds.has(key)) return false
-    return this.withRpc(this.homeFor(key), async (rpc) => {
+    return this.withRpc(undefined, async (rpc) => {
       const reply = record(await rpc.request('thread/read', { threadId: id, includeTurns: false }))
       const t = userThread(reply.thread)
       return !!t?.path && fs.existsSync(t.path)
@@ -639,9 +611,7 @@ export class CodexSessions {
   }
 
   threadGone(key: string): boolean {
-    return (
-      this.everyHomeListed && !this.refreshing && !this.history.has(key) && !this.aliveTabFor(key)
-    )
+    return this.listed && !this.refreshing && !this.history.has(key) && !this.aliveTabFor(key)
   }
 
   launchedBypassingChecks(tabId: string): boolean {
@@ -655,7 +625,7 @@ export class CodexSessions {
   // CODEX§19
   async readTurns(key: string, n: number): Promise<Turn[]> {
     const id = this.nativeId(key)
-    return this.withRpc(this.homeFor(key), async (rpc) => {
+    return this.withRpc(undefined, async (rpc) => {
       const reply = record(await rpc.request('thread/read', { threadId: id, includeTurns: true }))
       return codexTurns(record(reply.thread).turns).last(n)
     })
@@ -747,6 +717,10 @@ export class CodexSessions {
     const workspace = this.workspaceFor(cwd)
     if (opts.resumeSessionId && this.aliveTabFor(opts.resumeSessionId))
       throw new Error('This Codex session is already open.')
+    // CODEX§15 ADR-0030
+    const picked = this.deps.pickHome()
+    if (!picked) throw new Error(NO_USABLE_ACCOUNT.codex)
+    const home = picked.home
     if (opts.worktreeResourceId) {
       const saved = this.store.getResource(opts.worktreeResourceId)
       if (!saved || saved.originalCwd !== workspace || opts.worktree || opts.resumeSessionId)
@@ -762,8 +736,6 @@ export class CodexSessions {
       resource = await this.worktrees.adopt(workspace, this.deps.projectInfo(cwd).treeRoot)
     }
     this.assertStarting()
-    const picked = opts.resumeSessionId ? undefined : this.deps.pickHome()
-    const home = opts.resumeSessionId ? this.homeFor(opts.resumeSessionId) : picked?.home
     if (opts.trustFolder) this.deps.trustFolder(cwd, this.envFor(home))
     let run: Run | undefined
     const observe = (event: CodexEvent): void => {
@@ -841,8 +813,7 @@ export class CodexSessions {
         transport,
         explicitStop: false,
         resumeKey: opts.resumeSessionId,
-        home,
-        account: picked?.account,
+        account: picked.account,
         permission,
         releaseOpenShim: openShim.release
       }
@@ -976,7 +947,6 @@ export class CodexSessions {
         createdAt: m?.createdAt ?? (thread.createdAt ? thread.createdAt * 1000 : now),
         updatedAt: now,
         worktreeResourceId: run.resource?.id,
-        ...(run.home ? { codexHome: run.home } : {}),
         ...(run.permission !== 'default' ? { permission: run.permission } : {})
       })
       if (change === 'replace' && old && old !== key) {
@@ -1000,11 +970,10 @@ export class CodexSessions {
       alive: true,
       details: { codex: { observation: 'live' } },
       cliVersion: thread.cliVersion,
-      ...(run.account ? { pickedAccount: run.account } : {}),
+      pickedAccount: run.account,
       updatedAt: now
     }
     this.history.set(key, { ...thread, cwd: run.cwd })
-    if (run.home) this.threadHomes.set(key, run.home)
     this.deps.pty.clearResumeIntent(run.tabId)
     this.changed()
     this.deps.events(run.tabId, { type: 'bound', key })

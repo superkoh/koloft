@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionInfo, SessionStatus } from '@shared/types'
+import { SHIM_FOUND_NO_ACCOUNT_EXIT, SHIM_FOUND_NO_ACCOUNT_NOTICE } from '@shared/accountUsage'
 import {
   closeConfirmBody,
   closeTabIntent,
@@ -168,5 +169,12 @@ describe('unexpectedExitNotice (the one account of a session that died)', () => 
   it('names the signal for a killed claude, the code for an error exit', () => {
     expect(unexpectedExitNotice({ exitCode: 0, signal: 9 }, 'claude')).toContain('signal 9')
     expect(unexpectedExitNotice({ exitCode: 1 }, 'claude')).toContain('exit code 1')
+  })
+
+  // ADR-0030
+  it('says Claude did not start for want of an account when the claude shim refused it, since the tab and its message are gone at once', () => {
+    expect(unexpectedExitNotice({ exitCode: SHIM_FOUND_NO_ACCOUNT_EXIT }, 'claude')).toBe(
+      SHIM_FOUND_NO_ACCOUNT_NOTICE
+    )
   })
 })

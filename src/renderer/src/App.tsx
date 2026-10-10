@@ -125,6 +125,8 @@ import { loginClearDelay, savedClearDue } from './components/settings/loginFlow'
 import { TopbarUsage } from './components/TopbarUsage'
 import { WorldClock } from './components/WorldClock'
 import { UpdateModal } from './components/UpdateModal'
+import { AssistDialog } from './components/AssistDialog'
+import { useAssistSetup } from './useAssistSetup'
 import { Onboarding } from './components/Onboarding'
 import { BrowserOverlay } from './components/BrowserOverlay'
 import { Hint } from './components/Hint'
@@ -986,6 +988,12 @@ export default function App(): JSX.Element {
   }, [setSettings, setWorkbenchWidth, setSidebarWidth, setNotesHeight])
 
   useEffect(() => {
+    const { setAccounts } = useStore.getState()
+    void window.api.accounts.list().then(setAccounts)
+    return window.api.accounts.onUpdate(setAccounts)
+  }, [])
+
+  useEffect(() => {
     let live = true
     void window.api.update.whatsNew().then((w) => {
       if (live && w) useStore.getState().openWhatsNew(w)
@@ -1097,6 +1105,19 @@ export default function App(): JSX.Element {
 
   const activeTab = tabs.find((t) => t.id === activeTabId)
   const activeSession = activeTab ? sessions.find((s) => s.tabId === activeTab.id) : undefined
+  // ADR-0030
+  const assistSetup = useAssistSetup()
+  const signInTabId = useStore((s) => s.signInTabId)
+  const whatsNewOpen = useStore((s) => s.update.open)
+  const [assistSetupLater, setAssistSetupLater] = useState(false)
+  const assistDialogShown =
+    rowsLoaded &&
+    assistSetup.loaded &&
+    !assistSetup.done &&
+    !assistSetupLater &&
+    !welcomeActive &&
+    !whatsNewOpen &&
+    !(signInTabId && activeTabId === signInTabId)
   const landedTab = tabs.find((t) => t.id === shown.id) ?? activeTab
   const landedSession = landedTab ? sessions.find((s) => s.tabId === landedTab.id) : undefined
   const panelTab = hasWorkbench(landedTab) ? landedTab?.id : undefined
@@ -1775,6 +1796,9 @@ export default function App(): JSX.Element {
           <DiscordSetup />
           <BindConductorDialog />
           <UpdateModal />
+          {assistDialogShown && (
+            <AssistDialog setup={assistSetup} onNotNow={() => setAssistSetupLater(true)} />
+          )}
           <UnsavedDialog />
         </>,
         document.body

@@ -183,37 +183,6 @@ describe('PtyManager per-tab environment', () => {
     expect(env.PATH.startsWith('/koloft/shim:')).toBe(true)
   })
 
-  it('drops an inherited ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN while balancing is on, since the shim yields to any token already in the env', () => {
-    process.env.ANTHROPIC_API_KEY = 'sk-ant-ambient'
-    process.env.ANTHROPIC_AUTH_TOKEN = 'ambient-token'
-    try {
-      const mgr = new PtyManager()
-      mgr.multiAccountOn = () => true
-      mgr.create({ kind: 'claude', cwd: os.tmpdir() })
-      const env = spawnedEnv()
-      expect(env.ANTHROPIC_API_KEY).toBeUndefined()
-      expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined()
-    } finally {
-      delete process.env.ANTHROPIC_API_KEY
-      delete process.env.ANTHROPIC_AUTH_TOKEN
-    }
-  })
-
-  it("keeps them when balancing is off: they are the user's own auth and Koloft has none to put in their place", () => {
-    process.env.ANTHROPIC_API_KEY = 'sk-ant-ambient'
-    process.env.ANTHROPIC_AUTH_TOKEN = 'ambient-token'
-    try {
-      const mgr = new PtyManager()
-      mgr.create({ kind: 'claude', cwd: os.tmpdir() })
-      const env = spawnedEnv()
-      expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-ambient')
-      expect(env.ANTHROPIC_AUTH_TOKEN).toBe('ambient-token')
-    } finally {
-      delete process.env.ANTHROPIC_API_KEY
-      delete process.env.ANTHROPIC_AUTH_TOKEN
-    }
-  })
-
   it("never lets an inherited browser endpoint reach a utility shell: it would point at the parent instance's browser", () => {
     process.env.KOLOFT_CDP_DIR = '/parent/koloft/cdp'
     process.env.KOLOFT_BROWSER_CDP = 'ws://127.0.0.1:9999/cdp/' + 'a'.repeat(32)

@@ -156,7 +156,6 @@ export interface Settings {
   fileTreeHeight: number
   sidebarWidth: number
   sidebarHidden: boolean
-  multiAccount: boolean
   skipPermissions: boolean
   fablePriority: boolean
   accounts: AccountMeta[]
@@ -178,11 +177,14 @@ export interface Settings {
   keepAwake: boolean
   worldClocks: string[]
   onboardingSeen: boolean
+  assist: AssistSetting
   hintsSeen: string[]
   hintsOff: boolean
   lastSeenVersion: string
   discord: DiscordSettings
 }
+
+export type AssistSetting = { on: boolean; backend: BackendId } | null
 
 export interface DiscordChannel {
   guildId: string
@@ -256,7 +258,6 @@ export const DEFAULT_SETTINGS: Settings = {
   fileTreeHeight: 260,
   sidebarWidth: 280,
   sidebarHidden: false,
-  multiAccount: false,
   skipPermissions: true,
   fablePriority: true,
   accounts: [],
@@ -276,6 +277,7 @@ export const DEFAULT_SETTINGS: Settings = {
   keepAwake: true,
   worldClocks: [],
   onboardingSeen: false,
+  assist: null,
   hintsSeen: [],
   hintsOff: false,
   lastSeenVersion: '',
@@ -1006,6 +1008,9 @@ export interface KoloftApi {
     remove(name: string, kind: AccountKind): Promise<void>
     toggle(name: string, kind: AccountKind, enabled: boolean): Promise<void>
     probe(): Promise<AccountView[]>
+    // CC§9
+    bypassAccepted(): Promise<boolean>
+    acceptBypass(): Promise<boolean>
     // CC§7
     startLogin(
       name: string,

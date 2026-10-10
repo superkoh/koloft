@@ -29,7 +29,8 @@ import {
 import { AGENT_SHIM_WAITS_MS } from './agentShim'
 import { crossSessionLine, type ModeClass } from './crossSessionMessage'
 import { handoverPreamble, withHandover, type SessionCaller } from './handover'
-import { nameForTask, type TitleModel } from './sessionTitle'
+import { nameForTask } from './sessionTitle'
+import type { Assist } from './assist'
 import { keysFor } from './typeKeys'
 import type { StartedSessions } from './startedSessions'
 
@@ -287,7 +288,7 @@ export interface SessionVerbDeps {
   pinnedWorkspaces(): PinnedWorkspace[]
   peerNames(): (sessionId: string) => Promise<string | null>
   launch(options: CreateTabOptions & { kind: BackendId }): Promise<string | null>
-  titleModel: TitleModel
+  assist: Assist
   queue(tabId: string, text: string, clientId?: string): Promise<void>
   startedSessions: StartedSessions
   closable(): ClosableSession[]
@@ -376,11 +377,7 @@ async function startSibling(
   const name =
     backend === 'claude'
       ? (args.name ??
-        (await nameForTask(
-          args.prompt,
-          d.titleModel,
-          new Set(d.allSessions().map((s) => s.title))
-        )))
+        (await nameForTask(args.prompt, d.assist, new Set(d.allSessions().map((s) => s.title)))))
       : undefined
   const tabId = await d.launch({
     kind: backend,

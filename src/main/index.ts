@@ -81,6 +81,7 @@ import {
   tmuxSessionName,
   UTIL_BIN_DIR,
   utilShellLine,
+  CLAUDE_AUTH_ENV_VARS,
   type MachinePackage
 } from './remote/launch'
 import { machinePackageBase, mirrorHookDir, mirrorProjectsRoot } from './remote/paths'
@@ -141,6 +142,12 @@ import { dirExistsSync, gitProbes, type GitOut, type ResumeProbes } from './resu
 import { ClaudeBackend, machineHookSettings, pickMachineAccount } from './backends/claude'
 import { codexBackend, trustCodexFolder } from './backends/codex'
 import { codexConfigFile } from './codexTrust'
+import {
+  acceptBypassWarning,
+  bypassWarningAccepted,
+  claudeJsonPath,
+  claudeSettingsPath
+} from './claudeTrust'
 import {
   CodexAccountPicker,
   codexHomeOf,
@@ -331,7 +338,7 @@ import {
 } from './agentSessions'
 import { writeLine } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
-import { claudeTitleModel } from './sessionTitle'
+import { koloftAssist } from './assist'
 import { closingTree, removeTree, whatIsLeft } from './sessionClose'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
@@ -883,7 +890,6 @@ function foldProbeResult(
 
 const picker = new AccountPicker({
   listAccounts,
-  multiAccountOn: () => loadSettings().multiAccount,
   fablePriority: () => loadSettings().fablePriority,
   readSecret: (kind, name) => keychainRead(kind, name),
   probe: (a, secret) =>
@@ -941,10 +947,21 @@ const sessionDeps: SessionVerbDeps = {
   pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
   peerNames: () => claudePeerNames(),
   launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
-  titleModel: claudeTitleModel(
-    () => (ptyMgr.shimDir ? path.join(ptyMgr.shimDir, 'claude') : 'claude'),
-    pickedAccountEnv
-  ),
+  assist: koloftAssist({
+    setting: () => loadSettings().assist,
+    claude: async () => {
+      const env = await pickedAccountEnv()
+      if (!env) return null
+      return { binary: ptyMgr.shimDir ? path.join(ptyMgr.shimDir, 'claude') : 'claude', env }
+    },
+    codex: async () => {
+      const picked = pickCodexHome()
+      if (!picked || !codexSessions || !(await codexSessions.availability()).available) return null
+      const binary = codexSessions.cliBinary
+      if (!binary) return null
+      return { binary, env: { ...codexSessions.defaultEnv, CODEX_HOME: picked.home } }
+    }
+  }),
   queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
   startedSessions,
   closable: closableSessions,
@@ -1056,9 +1073,14 @@ async function pickForLaunch(tabId?: string): Promise<{
   return { res, endpoint: { baseUrl: meta?.baseUrl, model: meta?.model } }
 }
 
-async function pickedAccountEnv(): Promise<NodeJS.ProcessEnv> {
+async function pickedAccountEnv(): Promise<NodeJS.ProcessEnv | null> {
   await loginEnvReady()
-  return (await pickMachineAccount(() => pickForLaunch()))?.env ?? {}
+  const picked = await pickMachineAccount(() => pickForLaunch())
+  if (!picked) return null
+  const env = { ...process.env }
+  for (const k of CLAUDE_AUTH_ENV_VARS) delete env[k]
+  // ADR-0030
+  return { ...env, ...picked.env, KOLOFT_ACCOUNT_PICKED: '1' }
 }
 
 async function handlePickRequest(pickDir: string, reqName: string, raw: unknown): Promise<void> {
@@ -1290,7 +1312,6 @@ function codexSharedConfig(): string {
 
 // CODEX§15
 function pickCodexHome(): { account: string; home: string } | undefined {
-  if (!loadSettings().multiAccount) return undefined
   const views = accountViews()
   const picked = codexPicker.pick(views)
   if (!picked) return undefined
@@ -1597,10 +1618,7 @@ app.whenReady().then(() => {
     ptyMgr.openDir = openDir
     sweepOpenRequests(openDir)
   }
-  if (watchPickRequests(pickDir)) {
-    ptyMgr.pickDir = pickDir
-    ptyMgr.multiAccountOn = () => loadSettings().multiAccount
-  }
+  if (watchPickRequests(pickDir)) ptyMgr.pickDir = pickDir
 
   ptyMgr.cdpDir = cdpEnvDir()
   startRelay(relayDeps())
@@ -1790,7 +1808,6 @@ app.whenReady().then(() => {
       error: (message) => sendToRenderer('cron:toast', message),
       trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
-      homes: () => codexHomes(userData),
       openShimRoot: path.join(userData, 'codex-open'),
       agent: {
         enabled: () => agentToolsFor('codex', 'local'),
@@ -1804,7 +1821,12 @@ app.whenReady().then(() => {
     sessionBackends.register(codexBackend(codexSessions, resumeProbes))
     void codexSessions
       .availability()
-      .then((codex) => (codex.available ? codexSessions!.refreshHistory() : undefined))
+      .then((codex) => {
+        if (!codex.available) return
+        // CODEX§15
+        for (const home of codexHomes(userData)) prepareCodexHome(home, codexSharedConfig())
+        return codexSessions!.refreshHistory()
+      })
       .catch((error) => sendToRenderer('cron:toast', String(error)))
   }
   workspaceMgr = new WorkspaceManager({
@@ -2287,7 +2309,7 @@ app.whenReady().then(() => {
   startUpdateNotifier((offer) => sendToRenderer('update:offer', offer))
 
   const capsuleShownSoLaunchProbeIsNotBilledForNothing = (): boolean =>
-    loadSettings().multiAccount && listAccounts().some((a) => a.enabled && a.kind === 'oauth')
+    listAccounts().some((a) => a.enabled && a.kind === 'oauth')
   if (capsuleShownSoLaunchProbeIsNotBilledForNothing()) {
     void probeAllForPanel().catch(() => {})
   }
@@ -3671,6 +3693,10 @@ function registerIpc(): void {
     pushAccounts()
   })
   ipcMain.handle('accounts:probe', () => probeAllForPanel())
+  ipcMain.handle('accounts:bypass-accepted', () =>
+    bypassWarningAccepted(claudeJsonPath(), claudeSettingsPath())
+  )
+  ipcMain.handle('accounts:accept-bypass', () => acceptBypassWarning(claudeSettingsPath()))
   ipcMain.handle('accounts:start-login', (_e, name: string, reauth?: boolean) => {
     const v = reauth
       ? findAccount(name, 'oauth')
