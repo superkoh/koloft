@@ -63,7 +63,7 @@ const api: KoloftApi = {
     attach: (id) => ipcRenderer.send('terminal:attach', id),
     flowStats: () => ipcRenderer.invoke('terminal:flowStats'),
     resize: (id, cols, rows) => ipcRenderer.send('terminal:resize', id, cols, rows),
-    kill: (id) => ipcRenderer.send('terminal:kill', id),
+    kill: (id, restarting) => ipcRenderer.send('terminal:kill', id, restarting),
     onData: (cb) => {
       const handler = (_e: unknown, d: TerminalData): void => cb(d)
       ipcRenderer.on('terminal:data', handler)

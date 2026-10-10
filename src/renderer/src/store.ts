@@ -648,7 +648,7 @@ export const useStore = create<AppState>((set, get) => ({
       }
       restartedPtys.add(oldId)
       get().setTabTitle(oldId, sess?.title ?? tab.title)
-      window.api.terminal.kill(oldId)
+      window.api.terminal.kill(oldId, true)
       void window.api.sessions
         .resume({ sessionId: resumeId, cwd })
         .then((res) => {

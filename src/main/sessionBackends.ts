@@ -35,7 +35,7 @@ export interface SessionBackend {
   hasTab(tabId: string): boolean
   workspaceOfTab(tabId: string): string | undefined
   aliveTabFor(key: string): string | undefined
-  stop(tabId: string): void | Promise<void>
+  stop(tabId: string, restarting?: boolean): void | Promise<void>
   archive(key: string): boolean
   transcriptExists(key: string): boolean | Promise<boolean>
   observe(tabId: string, event: SessionEvent): void

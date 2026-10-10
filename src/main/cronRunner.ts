@@ -104,6 +104,7 @@ export interface RunnerDeps {
   isPinned(p: string): boolean
   gitDirExists(root: string): MaybeAsync<boolean>
   worktreeDirExists(root: string, name: string): MaybeAsync<boolean>
+  worktreeRecorded(root: string, name: string): boolean
   branchExists(root: string, branch: string): Promise<boolean>
   countRunFolders(root: string, slug: string): MaybeAsync<number>
   accountUsable(backend: BackendId): boolean
@@ -408,6 +409,7 @@ export class CronRunner {
   }
 
   private async taken(root: string, name: string): Promise<boolean> {
+    if (this.d.worktreeRecorded(root, name)) return true
     if (await this.d.worktreeDirExists(root, name)) return true
     return this.d.branchExists(root, `worktree-${name}`)
   }

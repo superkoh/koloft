@@ -105,6 +105,7 @@ function makeHarness(
     isPinned: () => flags.pinned,
     gitDirExists: () => flags.git,
     worktreeDirExists: () => false,
+    worktreeRecorded: () => false,
     branchExists,
     countRunFolders: () => flags.folders,
     accountUsable: () => flags.account,
@@ -254,6 +255,15 @@ describe('CronRunner — starting one run', () => {
         dueAt: T0
       }
     ])
+  })
+
+  it('steps past a name whose removed worktree Koloft still keeps a recovery record for, though its folder and branch are gone', async () => {
+    const h = makeHarness([makeJob()], {
+      worktreeRecorded: (_root: string, name: string) => name === 'nightly-report-260902-1000'
+    })
+    h.runner.start()
+    await h.tick(at(10, 0, 20))
+    expect(h.launches.map((l) => l.worktree)).toEqual(['nightly-report-260902-1000-2'])
   })
 
   it('BB-E22: a folder whose .git is not a directory runs in place, with no worktree', async () => {

@@ -26,6 +26,7 @@ import { SessionTracker, type ToolCall } from './sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
+import type { WorktreeResource } from './sessionStore'
 import {
   OpenTabsFile,
   openTabsNow,
@@ -180,7 +181,7 @@ import { sanitizeBase } from './gitStatus'
 import { Hosts } from './host/hosts'
 import { localGitOut, localHost } from './host/localHost'
 import { SshHost } from './host/sshHost'
-import { projectInfoFor } from './projectInfo'
+import { projectInfoFor, realpathSafe } from './projectInfo'
 import { whatsNewDecision } from './releaseNotes'
 import {
   checkForUpdates,
@@ -1825,6 +1826,7 @@ app.whenReady().then(() => {
       },
       replaced: (oldKey, newKey) => workspaceMgr?.moveResident(oldKey, newKey),
       memberRemoved: (key) => discordThreads?.left(key),
+      leftWorktree: removeUntouchedCodexWorktree,
       events: (tabId, event) => sessionBackends.observe(tabId, event),
       error: (message) => sendToRenderer('cron:toast', message),
       trustFolder: trustCodexFolder,
@@ -2239,6 +2241,8 @@ app.whenReady().then(() => {
     dirExists: (p) => hosts.of(p).dirExists(p),
     gitDirExists: (root) => hosts.of(root).dirExists(`${root}/.git`),
     worktreeDirExists: (root, name) => hosts.of(root).dirExists(`${worktreeHomeOf(root)}/${name}`),
+    worktreeRecorded: (root, name) =>
+      codexSessions?.worktrees.recorded(`${worktreeHomeOf(realpathSafe(root))}/${name}`) ?? false,
     branchExists: (root, branch) => gitProbes(hostGitOut).branchExists(root, branch),
     countRunFolders,
     accountUsable: (backend) => sessionBackends.get(backend).accountUsable(),
@@ -3114,19 +3118,27 @@ function killTabFromMain(tabId: string): void {
   void killTabPty(tabId)
 }
 
-function killTabPty(tabId: string): Promise<boolean> {
-  if (sleepers.has(tabId)) {
+function killTabPty(tabId: string, restarting = false): Promise<boolean> {
+  const sleeper = sleepers.get(tabId)
+  if (sleeper) {
     forgetSleeper(tabId)
-    return Promise.resolve(true)
+    const tree = projectInfoFor(sleeper.cwd).treeRoot
+    const resource =
+      sleeper.kind === 'codex' && !restarting
+        ? codexSessions?.store.listResources().find((r) => r.worktreePath === tree)
+        : undefined
+    return (resource ? removeUntouchedCodexWorktree(resource) : Promise.resolve()).then(() => true)
   }
   discordNotices?.closed(tabId)
   discordLive?.closed(tabId)
-  return stopTabProcess(tabId)
+  return stopTabProcess(tabId, restarting)
 }
 
-function stopTabProcess(tabId: string): Promise<boolean> {
+function stopTabProcess(tabId: string, restarting = false): Promise<boolean> {
   const owner = sessionBackends.ownerOfTab(tabId)
-  const stopped = owner ? Promise.resolve(owner.stop(tabId)) : Promise.resolve(ptyMgr.kill(tabId))
+  const stopped = owner
+    ? Promise.resolve(owner.stop(tabId, restarting))
+    : Promise.resolve(ptyMgr.kill(tabId))
   attention.clearKeepingExit(tabId)
   relayTabClosed(tabId)
   boundSessions.delete(tabId)
@@ -3196,13 +3208,29 @@ async function closeSessionFully(
     return
   }
   const tree = await closingTree(hostGitOut, info)
-  const problem = tree && (await removeTree(hostGitOut, tree))
+  const alreadyRemoved =
+    !!tree && !tree.branches.length && !(await hosts.of(info.treeRoot).dirExists(info.treeRoot))
+  const problem = tree && !alreadyRemoved && (await removeTree(hostGitOut, tree))
   if (problem) {
     sendToRenderer('cron:toast', `${target.title}: ${problem}`)
     return
   }
   archiveSession(target.sessionId)
   codexSessions?.store.removeUnusedResourcesAt(info.treeRoot)
+}
+
+async function removeUntouchedCodexWorktree(resource: WorktreeResource): Promise<void> {
+  const tree = resource.worktreePath
+  if ([...sleepers.values()].some((t) => projectInfoFor(t.cwd).treeRoot === tree)) return
+  if (sessionBackends.occupantOf(tree) || !(await codexSessions?.worktrees.untouched(resource)))
+    return
+  const problem = await removeTree(hostGitOut, {
+    root: resource.originalCwd,
+    treeRoot: tree,
+    worktreeName: resource.worktreeName,
+    branches: [`worktree-${resource.worktreeName}`]
+  })
+  if (problem) sendToRenderer('cron:toast', problem)
 }
 
 function worktreeHomeOf(root: string): string {
@@ -3448,6 +3476,7 @@ function cronBindDeadlineMs(): number {
 const resumeProbes: ResumeProbes = {
   dirExists: dirExistsSync,
   occupantOf: (dir) => sessionBackends.occupantOf(dir),
+  recorded: (dir) => codexSessions?.worktrees.recorded(dir) ?? false,
   ...gitProbes(localGitOut)
 }
 
@@ -3608,7 +3637,10 @@ function registerIpc(): void {
   ipcMain.on('terminal:resize', (_e, id: string, cols: number, rows: number) =>
     ptyMgr.resize(id, cols, rows)
   )
-  ipcMain.on('terminal:kill', (_e, id: string) => void killTabPty(id))
+  ipcMain.on(
+    'terminal:kill',
+    (_e, id: string, restarting: unknown) => void killTabPty(id, restarting === true)
+  )
 
   ipcMain.handle('sessions:list', () => allSessions())
   ipcMain.handle('sessions:backends', () =>

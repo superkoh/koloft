@@ -6,6 +6,7 @@ import type { BackendSessionRow, ResumePlan } from '@shared/types'
 export interface ResumeProbes {
   dirExists(p: string): boolean | Promise<boolean>
   occupantOf(dir: string): string | null
+  recorded?(dir: string): boolean
   branchExists(repoDir: string, branch: string): Promise<boolean>
   headAt(repoDir: string): Promise<string | null>
 }
@@ -51,13 +52,11 @@ export function worktreeNameAround(dir: string): string | undefined {
 const RENAME_SUFFIX_CAP = 100
 
 // CC§3
-async function freeWorktreeName(
-  base: string,
-  home: string,
-  dirExists: ResumeProbes['dirExists']
-): Promise<string> {
+async function freeWorktreeName(base: string, home: string, probes: ResumeProbes): Promise<string> {
+  const taken = async (dir: string): Promise<boolean> =>
+    !!probes.recorded?.(dir) || (await probes.dirExists(dir))
   let n = 2
-  while (n < RENAME_SUFFIX_CAP && (await dirExists(path.join(home, `${base}-${n}`)))) n++
+  while (n < RENAME_SUFFIX_CAP && (await taken(path.join(home, `${base}-${n}`)))) n++
   return `${base}-${n}`
 }
 
@@ -111,10 +110,6 @@ export async function planResume(
     worktreeName: ws.worktreeName,
     occupiedBy,
     resumeCwd,
-    renamedName: await freeWorktreeName(
-      ws.worktreeName,
-      path.dirname(ws.worktreePath),
-      probes.dirExists
-    )
+    renamedName: await freeWorktreeName(ws.worktreeName, path.dirname(ws.worktreePath), probes)
   }
 }

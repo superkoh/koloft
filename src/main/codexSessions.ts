@@ -171,6 +171,7 @@ export interface CodexSessionDeps {
   changed(): void
   replaced?(oldKey: string, newKey: string): void
   memberRemoved?(key: string): void
+  leftWorktree?(resource: WorktreeResource): Promise<void>
   events(tabId: string, event: SessionEvent): void
   error(message: string): void
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
@@ -1064,7 +1065,8 @@ export class CodexSessions {
       ? this.store.getResource(m.worktreeResourceId)
       : this.store.listResources().find((r) => r.worktreePath === t?.cwd)
     let cwd = m?.cwd ?? t!.cwd
-    if (req.mode === 'rebuild') {
+    const treeRemoved = !req.mode && !!resource && !exists(resource.worktreePath)
+    if (req.mode === 'rebuild' || treeRemoved) {
       if (!resource) throw new Error('The worktree has no saved recovery record.')
       resource = await this.worktrees.rebuild(resource.id)
       cwd = resource.worktreePath
@@ -1093,7 +1095,7 @@ export class CodexSessions {
     )
   }
 
-  stop(tabId: string, nativeExitCode?: number): Promise<void> {
+  stop(tabId: string, nativeExitCode?: number, restarting = false): Promise<void> {
     const run = this.runs.get(tabId)
     if (!run) return Promise.resolve()
     if (run.stopping) return run.stopping
@@ -1102,7 +1104,7 @@ export class CodexSessions {
     run.explicitStop = true
     run.stopping = Promise.resolve()
       .then(() => run.transport.stop())
-      .then(() => {
+      .then(async () => {
         run.releaseOpenShim()
         this.deps.pty.kill(tabId)
         this.deps.runtime.forget(tabId)
@@ -1122,6 +1124,8 @@ export class CodexSessions {
             this.deps.error(String(error))
           }
         }
+        if (!this.shuttingDown && !restarting && run.resource)
+          await this.deps.leftWorktree?.(run.resource)
         this.changed()
         if (!this.shuttingDown)
           void this.refreshHistory().catch((error) => this.deps.error(String(error)))
