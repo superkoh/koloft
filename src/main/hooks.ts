@@ -300,6 +300,8 @@ export function markAnswerable(regDir: string, tabId: string, on: boolean): void
   else fs.rmSync(file, { force: true })
 }
 
+export const KOLOFT_ALLOW_RULE = { allow: ['Bash(koloft *)'] }
+
 // CC§6
 export function writeTabHookSettings(
   paths: HookPaths,
@@ -312,7 +314,7 @@ export function writeTabHookSettings(
   fs.rmSync(path.join(paths.regDir, `${tabId}.json`), { force: true })
   const settings = hookSettings(paths.hookScript, paths.regDir, tabId, statusLine)
   // CC§13
-  if (allowKoloft) settings.permissions = { allow: ['Bash(koloft *)'] }
+  if (allowKoloft) settings.permissions = KOLOFT_ALLOW_RULE
   // ADR-0029 CC§15
   if (conductor)
     (settings.hooks as Record<string, unknown>).PreToolUse = [

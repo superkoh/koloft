@@ -22,6 +22,7 @@ import {
   REPLY_LANGUAGE_REMINDER
 } from '../../src/main/hooks'
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/paths'
+import { machineHookSettings } from '../../src/main/backends/claude'
 
 let hookScript: string
 let regDir: string
@@ -672,7 +673,7 @@ describe('injected hook script', () => {
   })
 
   // CC§13
-  it('lets the koloft command run without asking only when agent tools are on, and never puts that rule in the settings a remote tab shares', () => {
+  it('lets the koloft command run without asking only when agent tools are on, in a tab on this Mac and in one on a remote machine alike', () => {
     const read = (file: string): Record<string, unknown> =>
       JSON.parse(fs.readFileSync(file, 'utf8'))
     expect(
@@ -682,6 +683,12 @@ describe('injected hook script', () => {
       'permissions'
     )
     expect(hookSettings('/x/hook.sh', '/x/reg', 'tabAG3')).not.toHaveProperty('permissions')
+    expect(machineHookSettings('tabAG4', '$HOME/.koloft/m', false, true).permissions).toEqual({
+      allow: ['Bash(koloft *)']
+    })
+    expect(machineHookSettings('tabAG5', '$HOME/.koloft/m', false, false)).not.toHaveProperty(
+      'permissions'
+    )
   })
 
   describe('a dialog Koloft can answer from Discord (PermissionRequest)', () => {

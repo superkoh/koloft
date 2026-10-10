@@ -76,8 +76,10 @@ import {
 } from './remote/ssh'
 import { ENSURE_SH, TMUX_CONF, UTIL_SH } from './remote/install'
 import {
+  AGENT_PLUGIN_DIR,
   buildMachinePackage,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
+  SESSION_BIN_DIR,
   tmuxSessionName,
   UTIL_BIN_DIR,
   utilShellLine,
@@ -86,6 +88,8 @@ import {
 } from './remote/launch'
 import { machinePackageBase, mirrorHookDir, mirrorProjectsRoot } from './remote/paths'
 import { RemoteSync } from './remote/sync'
+import { watchMirroredAgentRequests } from './remote/agentMirror'
+import { REMOTE_AGENT_SHIM } from './agentShim'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
 import {
   oncePerName,
@@ -295,7 +299,14 @@ import type {
   PrWorktreeResult
 } from '@shared/types'
 import { copyWorktreeIncludes } from './sessionWorktrees'
-import { AgentRequests, BUILTIN_VERBS, errorText, refused, type AgentVerb } from './agentRequests'
+import {
+  AgentRequests,
+  BUILTIN_VERBS,
+  errorText,
+  refused,
+  replyJson,
+  type AgentVerb
+} from './agentRequests'
 import { conductorFolder, Conductors } from './discord/conductors'
 import { discordApiUrl, DiscordLink } from './discord/link'
 import { releaseLock, takeLock } from './discord/instanceLock'
@@ -342,7 +353,7 @@ import { koloftAssist } from './assist'
 import { closingTree, removeTree, whatIsLeft } from './sessionClose'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
-import { writeAgentPlugin } from './agentPlugin'
+import { agentPluginFiles, writeAgentPlugin } from './agentPlugin'
 
 // PLATFORM§4
 if (!app.isPackaged) app.setName('koloft-dev')
@@ -784,8 +795,11 @@ function machinePackage(): MachinePackage {
     'tmux.conf': TMUX_CONF,
     'util.sh': UTIL_SH,
     [`${UTIL_BIN_DIR}claude`]: utilTerminalGuard('claude'),
-    [`${UTIL_BIN_DIR}codex`]: utilTerminalGuard('codex')
+    [`${UTIL_BIN_DIR}codex`]: utilTerminalGuard('codex'),
+    [`${SESSION_BIN_DIR}koloft`]: REMOTE_AGENT_SHIM
   }
+  for (const [rel, text] of Object.entries(agentPluginFiles()))
+    pkgFiles[`${AGENT_PLUGIN_DIR}${rel}`] = text
   try {
     pkgFiles['statusline/ccstatusline.js'] = fs.readFileSync(bundlePath())
     pkgFiles['statusline/package.json'] = '{"type":"module"}\n'
@@ -1613,6 +1627,12 @@ app.whenReady().then(() => {
     ptyMgr.agentDir = agentDir
     claudeBackend.agentPlugin = writeAgentPlugin(app.getPath('userData'))
   }
+  claudeBackend.watchMirroredAgent = (host, mirrorDir) =>
+    watchMirroredAgentRequests(mirrorDir, (requestId, raw) => {
+      void agentRequests
+        .replyFor(claudeBackend.remoteCaller(host, raw), raw)
+        .then((reply) => hosts.machine(host).answerAgent(requestId, replyJson(reply)))
+    })
   claudeBackend.watchShimRegistrations(regDir)
   if (watchOpenRequests(openDir)) {
     ptyMgr.openDir = openDir
@@ -3481,7 +3501,12 @@ const hosts = new Hosts(
         settings: loadSettings,
         pickAccount: (launchKey) => pickMachineAccount(() => pickForLaunch(launchKey)),
         hookSettings: (tabId, dir) =>
-          machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin)
+          machineHookSettings(
+            tabId,
+            dir,
+            loadSettings().statuslineBuiltin,
+            agentToolsFor('claude', 'ssh')
+          )
       }
     })
 )

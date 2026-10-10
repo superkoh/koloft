@@ -26,6 +26,7 @@ import { publicClaudeSession } from '../host/hosts'
 import type { MachineAccount, SshHost } from '../host/sshHost'
 import type { ClaudeLaunch, Host } from '../host/host'
 import type { RemoteSync } from '../remote/sync'
+import { AGENT_DROP_NAME } from '../remote/agentMirror'
 import { accountEnv, tmuxSessionName } from '../remote/launch'
 import {
   dq,
@@ -34,7 +35,12 @@ import {
   REMOTE_HOOK_DIR,
   tabPackageDir
 } from '../remote/paths'
-import { hookSettings, removeConductorMarker, writeConductorMarker } from '../hooks'
+import {
+  hookSettings,
+  KOLOFT_ALLOW_RULE,
+  removeConductorMarker,
+  writeConductorMarker
+} from '../hooks'
 import type { StatusLineSetting } from '../statusline'
 import { loadSettings } from '../settings'
 import { keychainRead, listAccounts } from '../accounts'
@@ -130,6 +136,7 @@ export class ClaudeBackend implements SessionBackend {
   private heldBeforeStartup = new Map<string, string>()
   private startsBeforeRegistration = new Map<string, unknown>()
   agentPlugin?: string
+  watchMirroredAgent?: (host: string, mirrorDir: string) => () => void
 
   constructor(private d: ClaudeBackendDeps) {}
 
@@ -362,7 +369,7 @@ export class ClaudeBackend implements SessionBackend {
       return this.d.pty.get(tabId) && !this.sessionIdOf(tabId) ? handle : null
     }
     const drops = mirror
-      ? watchJsonDrops(dir, () => handle)
+      ? watchJsonDrops(dir, (name) => (AGENT_DROP_NAME.test(name) ? null : handle))
       : watchAndSweepJsonDrops(dir, () => handle, unboundTabNote)
     const logs = this.watchStatusLogs(dir)
     return () => {
@@ -671,21 +678,43 @@ export class ClaudeBackend implements SessionBackend {
 
   watchRemoteHookMirrors(): void {
     const userData = this.d.userData()
-    const wanted = new Set(
-      (this.d.workspaces()?.remoteTargets() ?? []).map((t) => mirrorHookDir(userData, t.host))
+    const wanted = new Map(
+      (this.d.workspaces()?.remoteTargets() ?? []).map((t) => [
+        mirrorHookDir(userData, t.host),
+        t.host
+      ])
     )
     for (const [dir, dispose] of this.watchedHookMirrors) {
       if (wanted.has(dir)) continue
       dispose()
       this.watchedHookMirrors.delete(dir)
     }
-    for (const dir of wanted) {
+    for (const [dir, host] of wanted) {
       if (this.watchedHookMirrors.has(dir)) continue
       try {
         fs.mkdirSync(dir, { recursive: true })
       } catch {}
-      this.watchedHookMirrors.set(dir, this.watchHookRegistrations(dir, true))
+      const hooks = this.watchHookRegistrations(dir, true)
+      const agent = this.watchMirroredAgent?.(host, dir)
+      this.watchedHookMirrors.set(dir, () => {
+        hooks()
+        agent?.()
+      })
     }
+  }
+
+  remoteCaller(host: string, raw: unknown): string | undefined {
+    const { pty, tracker } = this.d
+    const r = (raw ?? {}) as { tabId?: unknown; tmux?: unknown }
+    const onHost = (tabId: string): boolean =>
+      tracker.remoteOf(tabId)?.host === host && !!pty.get(tabId)
+    const byTmux = r.tmux
+      ? tracker
+          .list()
+          .find((s) => s.alive && onHost(s.tabId) && tracker.remoteOf(s.tabId)?.tmuxName === r.tmux)
+      : undefined
+    if (byTmux) return byTmux.tabId
+    return typeof r.tabId === 'string' && onHost(r.tabId) ? r.tabId : undefined
   }
 
   async create(opts: CreateTabOptions): Promise<CreateTabResult> {
@@ -923,12 +952,13 @@ export async function pickMachineAccount(
 export function machineHookSettings(
   tabId: string,
   machineDir: string,
-  statusline: boolean
+  statusline: boolean,
+  allowKoloft: boolean
 ): Record<string, unknown> {
   const remoteStatusLine: StatusLineSetting | undefined = statusline
     ? { type: 'command', command: dq(`${machineDir}/statusline/run.sh`), padding: 0 }
     : undefined
-  return hookSettings(
+  const settings = hookSettings(
     `${machineDir}/hook.sh`,
     REMOTE_HOOK_DIR,
     tabId,
@@ -936,4 +966,7 @@ export function machineHookSettings(
     dq,
     'record-only'
   )
+  // CC§13
+  if (allowKoloft) settings.permissions = KOLOFT_ALLOW_RULE
+  return settings
 }

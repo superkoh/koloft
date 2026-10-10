@@ -39,7 +39,13 @@ import {
   writeTabPackage,
   type MachinePackage
 } from '../remote/launch'
-import { mirrorHookDir, mirrorProjectsRoot, remoteMachineDir, tabPackageDir } from '../remote/paths'
+import {
+  mirrorHookDir,
+  mirrorProjectsRoot,
+  REMOTE_HOOK_DIR,
+  remoteMachineDir,
+  tabPackageDir
+} from '../remote/paths'
 import { launchMode } from '../remote/sync'
 import { ensureControlDir, sshLinkBroke, sshOptions, type BytesResult } from '../remote/ssh'
 import { claudeArgv } from '../claudeArgs'
@@ -58,7 +64,7 @@ export interface MachineClaudeDeps {
   machinePackage(): MachinePackage
   alive(): ReadonlySet<string>
   realPath(p: string): string
-  settings(): { skipPermissions: boolean }
+  settings(): { skipPermissions: boolean; agentTools: boolean }
   pickAccount(launchKey: string): Promise<MachineAccount | undefined>
   hookSettings(tabId: string, machineDir: string): Record<string, unknown>
 }
@@ -345,6 +351,10 @@ function skillFsOf(files: Map<string, string>): SkillFs {
 const NETWORK_GIT = `GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=false SSH_ASKPASS=false \
 SSH_ASKPASS_REQUIRE=never GIT_SSH_COMMAND="\${GIT_SSH_COMMAND:-ssh} -o BatchMode=yes" git "$@"`
 
+const ANSWER_AGENT_REQUEST = `d="${REMOTE_HOOK_DIR}"
+[ -f "$d/req-$1.json" ] || exit 0
+cat > "$d/res-$1.json.tmp" && mv -f "$d/res-$1.json.tmp" "$d/res-$1.json" && rm -f "$d/req-$1.json"`
+
 const RESIZE_SETTLE_MS = 200
 
 export class SshHost implements Host {
@@ -606,6 +616,10 @@ export class SshHost implements Host {
     return kill
   }
 
+  async answerAgent(requestId: string, reply: string): Promise<void> {
+    await this.sh(ANSWER_AGENT_REQUEST, [requestId], { input: Buffer.from(reply) })
+  }
+
   // CC§9 ADR-0026
   async trustFolder(dir: string): Promise<void> {
     await this.sh(WITH_NODE_IN_REAL_DIR, [this.bare(dir), TRUST_CWD_JS])
@@ -666,6 +680,7 @@ export class SshHost implements Host {
           env: account?.env,
           portOffset: worktree ? portOffset(worktree) : undefined,
           settings: d.hookSettings(tabId, machineDir),
+          agentPlugin: settings.agentTools,
           claudeArgs: args.args
         })
         return launchLine({

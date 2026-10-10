@@ -79,6 +79,14 @@ const COMMIT_THE_PROJECT_THEN_EDIT_THE_README =
   ' && git -c user.email=lab@koloft.test -c user.name=lab commit -qm base' +
   ' && printf "edited\\n" >> README.md'
 
+const KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS = 45_000
+const MACHINES_FOR_THE_KOLOFT_COMMAND: [LabAlias, string][] = [
+  ['kt-key', 'kuser'],
+  ['kt-few', 'muser'],
+  ['kt-tcsh', 'tuser'],
+  ['kt-fish', 'fuser']
+]
+
 test.describe.configure({ timeout: 420_000 })
 test.beforeAll(() =>
   test.skip(!dockerAvailable(), 'needs a running Docker (for example `colima start`)')
@@ -308,6 +316,21 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       await expect(
         page.locator(`${WORKBENCH.panel} .fv-artifact-hd .seg[aria-label="View mode"] .on`)
       ).toHaveText('Source')
+    })
+  })
+
+  test('E-SSH-13: koloft help, run inside a session on the machine, gets its answer from this Koloft on a plain machine, one whose sshd allows two sessions, and ones whose login shell is tcsh and fish', async ({
+    env
+  }) => {
+    await withLab(env, async ({ page }) => {
+      for (const [alias, user] of MACHINES_FOR_THE_KOLOFT_COMMAND) {
+        await addMachine(page, alias, user)
+        await startSessionIn(page, alias, { remote: true })
+        await runIn(page, centerTerm(page), '/koloft help')
+        await expect(centerTerm(page)).toContainText('koloft exit=0', {
+          timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+        })
+      }
     })
   })
 

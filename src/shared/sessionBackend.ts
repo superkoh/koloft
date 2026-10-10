@@ -86,7 +86,6 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities | 'refused'>> 
     ssh: {
       ...EVERYTHING,
       agentOpen: PENDING,
-      agentTools: PENDING,
       browserControl: PENDING,
       rename: PENDING
     }
