@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
 import { LuX } from 'react-icons/lu'
-import { BACKEND_LABEL, backendAvailable, SESSION_BACKENDS } from '@shared/sessionBackend'
+import { BACKEND_LABEL, SESSION_BACKENDS, shownAsInstalled } from '@shared/sessionBackend'
 import { channelLabel, GLOBAL_SCOPE, scopeName } from '@shared/conductors'
-import type { BackendAvailability, BackendId, DiscordChannel } from '@shared/types'
+import type { BackendId, DiscordChannel } from '@shared/types'
 import { useStore } from '../store'
+import { useInstalledBackends } from '../useInstalledBackends'
 import { shortenHome } from '../browseModel'
 import { SessionBackendIcon } from './SessionBackendIcon'
 
@@ -26,10 +27,10 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
   const [picked, setPicked] = useState<string | undefined>(
     editing?.scope ?? (scope && !takenBy(scope) ? scope : scopes.find((s) => !takenBy(s)))
   )
-  const [detected, setDetected] = useState<BackendAvailability[] | null>(null)
+  const { installed } = useInstalledBackends()
   const issue = (b: BackendId): string | undefined => {
     if (!methods.enabled[b]) return 'Disabled in Settings ▸ Sessions'
-    if (detected && !backendAvailable(detected, b)) return 'Not installed'
+    if (!shownAsInstalled(installed, b)) return 'Not installed'
     return undefined
   }
   const [backend, setBackend] = useState<BackendId>(
@@ -47,9 +48,6 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
 
   useEffect(() => {
     let alive = true
-    void window.api.sessions.backends().then((list) => {
-      if (alive) setDetected(list)
-    })
     window.api.discord.channels().then(
       (list) => {
         if (!alive) return

@@ -6,7 +6,7 @@ import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { expect } from './app'
 import type { E2EEnv } from './env'
 import { assertFixtureDir } from './fixtureGuard'
-import type { SessionWorkbenchState } from '../../../src/shared/types'
+import type { BackendAvailability, SessionWorkbenchState } from '../../../src/shared/types'
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..')
 export const SCREEN_DIR = path.join(REPO_ROOT, 'test-results', 'p1-screens')
@@ -462,6 +462,30 @@ export async function runIn(page: Page, term: Locator, cmd: string): Promise<voi
   await term.click()
   await page.keyboard.type(cmd)
   await page.keyboard.press('Enter')
+}
+
+const BETWEEN_SAMPLES_MS = 100
+const SAMPLES_WHILE_THE_CHECK_IS_OUT = 5
+
+export async function expectNoCodexWhileTheCheckIsOutNorAfter(
+  page: Page,
+  letTheCheckAnswer: () => void,
+  codexShown: () => Promise<number>,
+  what: string
+): Promise<void> {
+  let answer: BackendAvailability[] | undefined
+  const answered = page
+    .evaluate(() => window.api.sessions.backends())
+    .then((list) => (answer = list))
+  const samples: number[] = []
+  while (!answer) {
+    samples.push(await codexShown())
+    if (samples.length === SAMPLES_WHILE_THE_CHECK_IS_OUT) letTheCheckAnswer()
+    await Promise.race([answered, page.waitForTimeout(BETWEEN_SAMPLES_MS)])
+  }
+  samples.push(await codexShown())
+  expect(answer.find((b) => b.id === 'codex')?.available).toBe(false)
+  expect(samples.filter((n) => n > 0).length, `samples with ${what}`).toBe(0)
 }
 
 export async function waitBooted(page: Page): Promise<void> {
