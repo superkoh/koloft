@@ -464,6 +464,10 @@ export class SshHost implements Host {
     return (await this.sh('test -d "$1"', [this.bare(dir)])).code === 0
   }
 
+  async fileExists(file: string): Promise<boolean> {
+    return (await this.sh('test -f "$1"', [this.bare(file)])).code === 0
+  }
+
   async search(root: string, query: string, opts?: { showIgnored?: boolean }) {
     const q = query.trim().toLowerCase()
     if (!q) return { hits: [], truncated: false }

@@ -196,6 +196,7 @@ import { extOf } from '@shared/preview'
 import {
   canOpenExternally,
   routeFor,
+  schemeOf,
   type RouteDecision,
   type RouteSource
 } from '@shared/browserRoute'
@@ -947,8 +948,12 @@ function unlessWorkspacelessConductor(verb: AgentVerb): AgentVerb {
 }
 
 const notesAndWorkbenchVerbs = workbenchVerbs({
-  open: (tabId, target, view) =>
-    openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target, view),
+  open: (tabId, target, view) => {
+    const machine = tracker.remoteOf(tabId)?.host
+    return machine && !schemeOf(target)
+      ? openOnMachine(tabId, machine, target, view)
+      : openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target, view)
+  },
   notesFileOf: (tabId) => {
     const workspace = sessionBackends.workspaceOfTab(tabId)
     return workspace ? notesFileOfPinned(workspace) : undefined
@@ -3091,6 +3096,19 @@ function openInWorkbench(
     return true
   }
   return false
+}
+
+async function openOnMachine(
+  tabId: string,
+  machine: string,
+  file: string,
+  view?: ArtifactView
+): Promise<boolean> {
+  const keyed = formatRemoteKey(machine, file)
+  if (!(await hosts.machine(machine).fileExists(keyed))) return false
+  const payload: OpenRequest = { tabId, path: keyed, source: 'agent', view }
+  sendToRenderer('preview:open-file', payload)
+  return true
 }
 
 function killTabFromMain(tabId: string): void {

@@ -19,6 +19,7 @@ import {
   PR_3_NPM_ERROR,
   PR_3_OF_KOLOFT,
   WORKBENCH,
+  artifactBody,
   claudePromptsIn,
   claudeRepliesIn,
   claudeToolResultsIn,
@@ -331,6 +332,32 @@ test.describe('remote workspaces against real sshd machines behind a company jum
           timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
         })
       }
+    })
+  })
+
+  test('E-SSH-14: koloft open, run inside a session on the machine, shows a file there in that session’s Workbench, and a file the machine does not have is refused', async ({
+    env
+  }) => {
+    seedWorkbenchDefault(env, false)
+    seedSettings(env, { hintsOff: true })
+    await withLab(env, async ({ page }) => {
+      await addMachine(page, 'kt-key', 'kuser')
+      await startSessionIn(page, 'kt-key', { remote: true })
+      await waitPanelAttached(page)
+      expect(await layoutState(page)).toBe('T1')
+
+      await runIn(page, centerTerm(page), '/koloft open README.md')
+      await expect(centerTerm(page)).toContainText('koloft exit=0', {
+        timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+      })
+      await expect.poll(() => layoutState(page), { timeout: 30_000 }).toBe('T2')
+      await expect(page.locator(WORKBENCH.readingTitle)).toContainText('README.md')
+      await expect(artifactBody(page)).toContainText('koloft-ssh-lab marker for kuser')
+
+      await runIn(page, centerTerm(page), '/koloft open missing.md')
+      await expect(centerTerm(page)).toContainText('koloft exit=1', {
+        timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+      })
     })
   })
 
