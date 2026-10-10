@@ -68,15 +68,32 @@ const QUEUE_ANSWER_INSIDE_THE_KOLOFT_WAIT_MS = AGENT_SHIM_WAITS_MS / 2
 // CODEX§1
 const NO_UPDATE_NOTICE_AT_START = 'check_for_update_on_startup=false'
 
+interface Permissions {
+  approval: 'never' | 'on-request'
+  sandbox: 'workspace-write' | 'danger-full-access'
+}
+
 // CODEX§11
-const PERMISSION_ARGS: Record<LaunchPermission, string[]> = {
-  default: [],
-  acceptEdits: ['-a', 'on-request', '-s', 'workspace-write'],
-  bypass: ['-a', 'never', '-s', 'danger-full-access']
+const PERMISSIONS: Record<LaunchPermission, Permissions | undefined> = {
+  default: undefined,
+  acceptEdits: { approval: 'on-request', sandbox: 'workspace-write' },
+  bypass: { approval: 'never', sandbox: 'danger-full-access' }
 }
 
 // ADR-0029 CODEX§12
-const CONDUCTOR_ARGS = ['-a', 'never', '-s', 'workspace-write']
+const CONDUCTOR_PERMISSIONS: Permissions = { approval: 'never', sandbox: 'workspace-write' }
+
+// CODEX§11
+function permissionFlags(p: Permissions | undefined): string[] {
+  return p ? ['-a', p.approval, '-s', p.sandbox] : []
+}
+
+// CODEX§11
+function permissionConfig(p: Permissions | undefined): string[] {
+  return p
+    ? [`approval_policy=${JSON.stringify(p.approval)}`, `sandbox_mode=${JSON.stringify(p.sandbox)}`]
+    : []
+}
 
 // CODEX§14
 function launchChoiceArgs(opts: CreateTabOptions): string[] {
@@ -157,6 +174,7 @@ interface Run {
   resumeKey?: string
   home?: string
   account?: string
+  permission: LaunchPermission
   bypassingChecks: boolean
   releaseOpenShim(): void
 }
@@ -767,6 +785,8 @@ export class CodexSessions {
     const env = { ...this.envFor(home), ZDOTDIR: openShim.zdotDir }
     const observer = new CodexObservation(observe)
     const instructions = [...(agent ? [CODEX_AGENT_HINT] : []), ...(opts.role ? [opts.role] : [])]
+    const permission = opts.permission ?? 'default'
+    const permissions = opts.conductor ? CONDUCTOR_PERMISSIONS : PERMISSIONS[permission]
     let transport: CodexTransport | undefined
     try {
       transport = await this.startTransport({
@@ -776,9 +796,11 @@ export class CodexSessions {
           ? { KOLOFT_PORT_OFFSET: String(portOffset(resource.worktreeName)) }
           : undefined,
         cwd,
-        configOverrides: instructions.length
-          ? [STATUS_LINE_CONFIG, developerInstructions(instructions)]
-          : [STATUS_LINE_CONFIG],
+        configOverrides: [
+          STATUS_LINE_CONFIG,
+          ...(instructions.length ? [developerInstructions(instructions)] : []),
+          ...(opts.resumeSessionId ? permissionConfig(permissions) : [])
+        ],
         onFrame: (direction, frame) => observer.receive(direction, frame),
         onDisconnect: () => this.markDegraded(run),
         onError: (error) => {
@@ -796,7 +818,7 @@ export class CodexSessions {
         STATUS_LINE_CONFIG,
         '-c',
         NO_UPDATE_NOTICE_AT_START,
-        ...(opts.conductor ? CONDUCTOR_ARGS : PERMISSION_ARGS[opts.permission ?? 'default']),
+        ...(opts.resumeSessionId ? [] : permissionFlags(permissions)),
         ...launchChoiceArgs(opts)
       ]
       if (opts.resumeSessionId) argv.push('resume', this.nativeId(opts.resumeSessionId))
@@ -822,7 +844,8 @@ export class CodexSessions {
         resumeKey: opts.resumeSessionId,
         home,
         account: picked?.account,
-        bypassingChecks: opts.permission === 'bypass',
+        permission,
+        bypassingChecks: permission === 'bypass',
         releaseOpenShim: openShim.release
       }
       this.runs.set(handle.id, run)
@@ -955,7 +978,8 @@ export class CodexSessions {
         createdAt: m?.createdAt ?? (thread.createdAt ? thread.createdAt * 1000 : now),
         updatedAt: now,
         worktreeResourceId: run.resource?.id,
-        ...(run.home ? { codexHome: run.home } : {})
+        ...(run.home ? { codexHome: run.home } : {}),
+        ...(run.permission !== 'default' ? { permission: run.permission } : {})
       })
       if (change === 'replace' && old && old !== key) {
         this.deps.replaced?.(old, key)
@@ -1042,6 +1066,7 @@ export class CodexSessions {
         rows: req.rows,
         role: req.role,
         conductor: req.conductor,
+        permission: m?.permission,
         trustFolder: req.trustFolder
       },
       resource

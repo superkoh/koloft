@@ -207,6 +207,21 @@ function saidBy(env: E2EEnv, sessionId: string, role: 'user' | 'assistant'): str
     .map((r) => textOf(r.message?.content))
 }
 
+// CODEX§11
+function lastCodexTurnPermissions(env: E2EEnv, sessionId: string): Record<string, unknown> {
+  const root = path.join(env.home, '.codex', 'sessions')
+  const rollout = fs
+    .readdirSync(root, { recursive: true, encoding: 'utf8' })
+    .find((f) => f.endsWith('.jsonl') && sessionId.endsWith(f.slice(-42, -6)))
+  const turn = fs
+    .readFileSync(path.join(root, rollout!), 'utf8')
+    .split('\n')
+    .filter((line) => line.includes('"turn_context"'))
+    .map((line) => JSON.parse(line) as { payload: Record<string, { type?: unknown }> })
+    .at(-1)?.payload
+  return { approval: turn?.approval_policy, sandbox: turn?.sandbox_policy?.type }
+}
+
 async function keepWhatHappened(env: E2EEnv, fake: FakeDiscord): Promise<void> {
   await test.info().attach('channel', { body: said(fake).join('\n────\n') || '(nothing)' })
   const projects = path.join(env.home, '.claude', 'projects')
@@ -852,6 +867,34 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
     const fake = await startFakeDiscord(env)
     await withConductor(env, fake, async () => {
       await triesToWriteTheWorkspaceItselfAndIsRefused(env, fake)
+    })
+  })
+
+  // ADR-0029 CODEX§11
+  test('a real Codex conductor whose tab closed is resumed by the owner’s next message, on the same thread, and its sandbox still stops it writing a file in its workspace', async ({
+    env
+  }) => {
+    test.skip(!HAVE_REAL_CODEX, NEEDS_REAL_CODEX)
+    test.setTimeout(2 * A_REAL_MODEL_TURN_MS + 120_000)
+    seedConductor(env, 'codex')
+    useRealCodex(env)
+    const fake = await startFakeDiscord(env)
+    await withConductor(env, fake, async (_app, page) => {
+      await answersWholeInTheChannel(fake)
+      const conductor = async (): Promise<{ tabId: string; sessionId: string } | undefined> =>
+        (await page.evaluate(() => window.api.sessions.list())).find((s) => s.alive && s.conductor)
+      const first = (await conductor())!
+      await page.evaluate((id) => window.api.terminal.kill(id), first.tabId)
+      await expect.poll(conductor).toBeUndefined()
+
+      await triesToWriteTheWorkspaceItselfAndIsRefused(env, fake)
+      const again = (await conductor())!
+      expect(again.tabId).not.toBe(first.tabId)
+      expect(again.sessionId).toBe(first.sessionId)
+      expect(lastCodexTurnPermissions(env, again.sessionId)).toEqual({
+        approval: 'never',
+        sandbox: 'workspace-write'
+      })
     })
   })
 
