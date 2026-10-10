@@ -188,7 +188,7 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   matches" line, a file fake-claude wrote, a saved stamp. Where none can exist, wait a
   named settle constant, never a bare number. `toHaveCount(0)` is true before the work
   starts, and true again once a 4 s toast has gone: to prove no toast, sample across a
-  window (cron-edge `expectNoToastAtAnyMomentOfAWindow`). For the same 4 s, check a
+  window (`expectNoToastAtAnyMomentOfAWindow`, helpers/app.ts). For the same 4 s, check a
   toast that should be there before any slower wait — a session bind alone outlives
   it (git-pull-start).
 - Wait on what the product shows or writes, never on the send: IPC posts such as

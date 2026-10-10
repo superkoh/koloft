@@ -1,7 +1,13 @@
 import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { test, expect, pendingAttention, quitAndClose } from './helpers/app'
+import {
+  test,
+  expect,
+  expectNoToastAtAnyMomentOfAWindow,
+  pendingAttention,
+  quitAndClose
+} from './helpers/app'
 import type { E2EEnv } from './helpers/env'
 import {
   addRemoteWorkspace,
@@ -53,18 +59,17 @@ async function closeTabPastAnyConfirm(app: ElectronApplication, page: Page): Pro
   }
 }
 
-const TOAST_SAMPLES = 8
-const TOAST_SAMPLE_GAP_MS = 200
-
-async function expectNoToastAcrossAWindow(page: Page): Promise<void> {
-  for (let i = 0; i < TOAST_SAMPLES; i++) {
-    expect(await page.locator('.toast').count()).toBe(0)
-    await page.waitForTimeout(TOAST_SAMPLE_GAP_MS)
-  }
-}
-
 function killLines(env: E2EEnv, id: string): string[] {
   return sshCommands(env).filter((c) => c.includes(`kill-session -t ${tmuxName(id)}`))
+}
+
+function killExits(env: E2EEnv, id: string): (number | undefined)[] {
+  return sshCalls(env)
+    .filter(
+      (c) =>
+        c.phase === 'end' && remoteCommandText(c.argv).includes(`kill-session -t ${tmuxName(id)}`)
+    )
+    .map((c) => c.exit)
 }
 
 test.describe('who ends the claude on the other machine: every way of ending a remote session says so over ssh', () => {
@@ -239,22 +244,9 @@ test.describe('who ends the claude on the other machine: every way of ending a r
       )
 
       await expect
-        .poll(
-          () =>
-            sshCalls(env).filter(
-              (c) =>
-                c.phase === 'end' &&
-                remoteCommandText(c.argv).includes(`kill-session -t ${tmuxName(first.sessionId)}`)
-            ).length,
-          { timeout: 30_000 }
-        )
+        .poll(() => killExits(env, first.sessionId).length, { timeout: 30_000 })
         .toBeGreaterThanOrEqual(1)
-      const kills = sshCalls(env).filter(
-        (c) =>
-          c.phase === 'end' &&
-          remoteCommandText(c.argv).includes(`kill-session -t ${tmuxName(first.sessionId)}`)
-      )
-      expect(kills.every((k) => k.exit === 255)).toBe(true)
+      expect(killExits(env, first.sessionId).every((exit) => exit === 255)).toBe(true)
 
       expect(processAlive(first.pid)).toBe(true)
       expect(liveTmuxSessions(env)).toContain(tmuxName(first.sessionId))
@@ -282,19 +274,8 @@ test.describe('who ends the claude on the other machine: every way of ending a r
       await expect.poll(() => processAlive(first.pid), { timeout: 5_000 }).toBe(false)
       await closeTabPastAnyConfirm(app, page)
 
-      await expect
-        .poll(
-          () =>
-            sshCalls(env).filter(
-              (c) =>
-                c.phase === 'end' &&
-                c.exit === 1 &&
-                remoteCommandText(c.argv).includes(`kill-session -t ${tmuxName(first.sessionId)}`)
-            ).length,
-          { timeout: 30_000 }
-        )
-        .toBe(1)
-      await expectNoToastAcrossAWindow(page)
+      await expect.poll(() => killExits(env, first.sessionId), { timeout: 30_000 }).toEqual([1])
+      await expectNoToastAtAnyMomentOfAWindow(page)
     } finally {
       await quitAndClose(app)
     }

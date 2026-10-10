@@ -3,7 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { execFileSync, spawn, spawnSync } from 'child_process'
-import { machineClaudeArgs, SshHost } from '../../src/main/host/sshHost'
+import { machineClaudeArgs, SshHost, type MachineClaudeDeps } from '../../src/main/host/sshHost'
 import { killSessionCmd } from '../../src/main/remote/launch'
 import { diffBase as localDiffBase } from '../../src/main/gitStatus'
 import { utilTerminalGuard } from '../../src/main/shim'
@@ -33,7 +33,7 @@ function runOnMachine(cmd: string, opts?: { input?: Buffer }): Promise<BytesResu
   })
 }
 
-const machine = (run = runOnMachine): SshHost =>
+const machine = (run = runOnMachine, claude: Partial<MachineClaudeDeps> = {}): SshHost =>
   new SshHost(MACHINE, {
     run,
     shell: () => ({ spawnCwd: '/' }),
@@ -46,7 +46,8 @@ const machine = (run = runOnMachine): SshHost =>
       realPath: (p) => p,
       settings: () => ({ skipPermissions: false }),
       pickAccount: async () => ({ env: {}, banner: '' }),
-      hookSettings: () => ({})
+      hookSettings: () => ({}),
+      ...claude
     }
   })
 
@@ -357,24 +358,13 @@ describe('ending a session that runs on the machine', () => {
   const tmux = `k-${live}`
   const killAnswering = (code: number | null, stderr = '') => {
     const pickAccount = vi.fn(async () => ({ env: {}, banner: '' }))
-    const host = new SshHost(MACHINE, {
-      run: (cmd, opts) =>
+    const host = machine(
+      (cmd, opts) =>
         cmd === killSessionCmd(tmux)
           ? Promise.resolve({ code, stdout: Buffer.alloc(0), stderr })
           : runOnMachine(cmd, opts),
-      shell: () => ({ spawnCwd: '/' }),
-      github: {},
-      claude: {
-        userData: home,
-        controlDir: home,
-        machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
-        alive: () => new Set([live]),
-        realPath: (p) => p,
-        settings: () => ({ skipPermissions: false }),
-        pickAccount,
-        hookSettings: () => ({})
-      }
-    })
+      { alive: () => new Set([live]), pickAccount }
+    )
     return { host, pickAccount }
   }
 
