@@ -51,3 +51,35 @@ export function watchJsonDrops(dir: string, handlerFor: DropHandlerFor): fs.FSWa
     return null
   }
 }
+
+// PLATFORM§28
+export const SWEEP_FOR_A_LOST_DROP_MS = 1000
+
+export function watchAndSweepJsonDrops(
+  dir: string,
+  handlerFor: DropHandlerFor
+): fs.FSWatcher | null {
+  const watcher = watchJsonDrops(dir, handlerFor)
+  if (watcher) {
+    const sweep = setInterval(() => sweepJsonDrops(dir, handlerFor), SWEEP_FOR_A_LOST_DROP_MS)
+    sweep.unref()
+    watcher.on('close', () => clearInterval(sweep))
+  }
+  return watcher
+}
+
+export function oncePerName(handlerFor: DropHandlerFor): DropHandlerFor {
+  const handled = new Set<string>()
+  return (name) => {
+    if (handled.has(name)) return null
+    const handle = handlerFor(name)
+    return (
+      handle &&
+      ((obj, full): void => {
+        if (handled.has(name)) return
+        handled.add(name)
+        handle(obj, full)
+      })
+    )
+  }
+}

@@ -59,7 +59,12 @@ import {
   type HookReport
 } from '../hookRouting'
 import { registeredByTabRoot } from '../shim'
-import { sweepJsonDrops, watchJsonDrops } from '../jsonDrops'
+import {
+  SWEEP_FOR_A_LOST_DROP_MS,
+  sweepJsonDrops,
+  watchAndSweepJsonDrops,
+  watchJsonDrops
+} from '../jsonDrops'
 import { copyWorktreeIncludes } from '../sessionWorktrees'
 import { GIT_REF_RE } from '../gitSteps'
 import {
@@ -87,8 +92,6 @@ export interface ClaudeBackendDeps {
 
 // PLATFORM§28
 const STATUS_LOG_POLL_MS = 2000
-// PLATFORM§28
-const SWEEP_FOR_A_LOST_DROP_MS = 1000
 // CC§1
 const SESSION_END_SETTLE_MS = 800
 // CC§1
@@ -249,15 +252,11 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   watchShimRegistrations(regDir: string): void {
-    const handle = (raw: unknown): void => this.handleRegistration(raw)
-    watchJsonDrops(regDir, () => handle)
-    setInterval(
-      () =>
-        sweepJsonDrops(regDir, (name) =>
-          this.processedRegIds.has(path.basename(name, '.json')) ? null : handle
-        ),
-      SWEEP_FOR_A_LOST_DROP_MS
-    ).unref()
+    watchAndSweepJsonDrops(regDir, (name) =>
+      this.processedRegIds.has(path.basename(name, '.json'))
+        ? null
+        : (raw): void => this.handleRegistration(raw)
+    )
   }
 
   private handleRegistration(raw: unknown): void {

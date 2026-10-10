@@ -158,4 +158,22 @@ describe('koloft requests from a session', () => {
     expect(calls.map((c) => c.caller.tabId)).toEqual([tabId])
     expect(reply('b')).toEqual({ exit: 1, text: expect.any(String) })
   })
+
+  // PLATFORM§28
+  it('answers, once, a request its folder watch never reported', async () => {
+    drop('req-a.json', { tabId: tabOf(process.pid, 1), argv: ['echo', 'late'], cwd: '/w' })
+    await new Promise((r) => setTimeout(r, REQUEST_LONG_SETTLED_BEFORE_THE_WATCH_MS))
+    const watcher = requests().watch(dir)
+    try {
+      await vi.waitFor(() => expect(reply('a')).toEqual({ exit: 0, text: 'late' }), {
+        timeout: 5000
+      })
+      await new Promise((r) => setTimeout(r, REQUEST_LONG_SETTLED_BEFORE_THE_WATCH_MS))
+      expect(calls).toHaveLength(1)
+    } finally {
+      watcher?.close()
+    }
+  })
 })
+
+const REQUEST_LONG_SETTLED_BEFORE_THE_WATCH_MS = 1500
