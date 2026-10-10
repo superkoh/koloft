@@ -62,6 +62,8 @@ const LONGER_THAN_OLD_15S_RESUME_DEADLINE_MS = 16_000
 const SLOW_VERSION_PROBE_MS = 10_000
 const LAUNCH_MUST_NOT_WAIT_FOR_PROBE_MS = 4000
 const CODEX_TRANSPORT_STOP_WORST_CASE_MS = 4000
+const WAITING_TO_IDLE_MS = 1000
+const IDLE_TO_SLEEP_MS = 3000
 
 interface CodexCall {
   pid: number
@@ -571,6 +573,40 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
+  test('an idle Codex session goes to sleep: its CLI ends while its row and tab stay, and clicking it wakes the same thread in that tab', async ({
+    env
+  }) => {
+    installCodex(env)
+    env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+    env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      const first = codexCalls(env)[0]
+      await startSessionIn(page, 'ws-b', { method: 'Claude' })
+      await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(2)
+      await codexRows(page).click()
+      await wsRows(page, 'ws-b').first().click()
+      await expect.poll(() => processAlive(first.pid), { timeout: 40_000 }).toBe(false)
+      const asleepTab = await codexRows(page).getAttribute('data-tab-id')
+      await expect(codexRows(page)).toHaveClass(/\bst-idle\b/)
+      expect(await termIds(page)).toContain(asleepTab)
+      expect(codexCalls(env)).toHaveLength(1)
+
+      await codexRows(page).click()
+      await expect.poll(() => codexCalls(env).length).toBe(2)
+      expect(codexCalls(env)[1].sessionId).toBe(first.sessionId)
+      await expect(codexRows(page)).not.toHaveAttribute('data-tab-id', asleepTab ?? '')
+      await expect(codexRows(page)).toHaveClass(/st-waiting|st-idle/, { timeout: 30_000 })
+      expect(await termIds(page)).not.toContain(asleepTab)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('a Codex that fails before any session binds leaves no mark behind once its tab has closed itself, so the Dock badge counts nothing no row can show', async ({
     env
   }) => {
@@ -746,7 +782,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('app restart leaves Codex members cold and restores removed history with its native identity', async ({
+  test('app restart brings an open Codex member back running with its native identity, and restores removed history with its native identity', async ({
     env
   }) => {
     installCodex(env)
@@ -769,19 +805,15 @@ test.describe('Codex sessions through the real method chooser, process transport
       app = await launchApp(env)
       page = await app.firstWindow()
       await waitBooted(page)
+      await expect.poll(() => codexCalls(env).length, { timeout: 30_000 }).toBe(3)
+      expect(codexCalls(env)[2].sessionId).toBe(member.sessionId)
       await expect(codexRows(page)).toHaveCount(1)
-      await expect(codexRows(page)).toHaveClass(/cold/)
-      expect(await termIds(page)).toHaveLength(0)
-      expect(codexCalls(env)).toHaveLength(2)
+      await expect(codexRows(page)).toHaveClass(/st-(working|waiting|idle)/, { timeout: 30_000 })
       await restoreFromTheFirstMenuOpenedAfterLaunch(page)
       const history = page.getByRole('dialog', { name: 'Restore session · ws-a', exact: true })
       await history.getByRole('button').filter({ hasText: 'Codex fixture session' }).click()
-      await expect.poll(() => codexCalls(env).length).toBe(3)
-      expect(codexCalls(env)[2].sessionId).toBe(historyId)
-      await expect(codexRows(page)).toHaveCount(2)
-      await codexRows(page).and(page.locator('.cold')).click()
       await expect.poll(() => codexCalls(env).length).toBe(4)
-      expect(codexCalls(env)[3].sessionId).toBe(member.sessionId)
+      expect(codexCalls(env)[3].sessionId).toBe(historyId)
       await expect(codexRows(page)).toHaveCount(2)
       expect(readCalls(env)).toHaveLength(0)
     } finally {
@@ -789,7 +821,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('a Codex session’s unread red dot survives a Koloft restart on its cold row, and clicking the row in a focused window clears it', async ({
+  test('after Koloft crashes, a Codex session that was open comes back running with its native identity', async ({
     env
   }) => {
     installCodex(env)
@@ -798,26 +830,54 @@ test.describe('Codex sessions through the real method chooser, process transport
       let page = await app.firstWindow()
       await waitBooted(page)
       await startCodex(page, env)
+      const first = codexCalls(env)[0]
+      process.kill(app.process().pid!, 'SIGKILL')
+      await expect.poll(() => processAlive(first.pid)).toBe(false)
+      await app.close().catch(() => {})
+
+      app = await launchApp(env)
+      page = await app.firstWindow()
+      await waitBooted(page)
+      await expect.poll(() => codexCalls(env).length, { timeout: 30_000 }).toBe(2)
+      expect(codexCalls(env)[1].sessionId).toBe(first.sessionId)
+      await expect(codexRows(page)).toHaveClass(/st-(working|waiting|idle)/, { timeout: 30_000 })
+      await expect(codexRows(page)).toHaveClass(/\bactive\b/)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a Codex session’s unread red dot survives a Koloft restart on its row, which comes back running, and clicking the row in a focused window clears it', async ({
+    env
+  }) => {
+    installCodex(env)
+    let app = await launchApp(env)
+    try {
+      let page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      const first = codexCalls(env)[0]
       await expect(codexRows(page).locator('.ws-tab-unread')).toHaveCount(1)
       await quitAndClose(app)
 
       app = await launchApp(env)
       page = await app.firstWindow()
       await waitBooted(page)
-      await expect(codexRows(page)).toHaveClass(/cold/)
+      await expect.poll(() => codexCalls(env).length, { timeout: 30_000 }).toBe(2)
+      expect(codexCalls(env)[1].sessionId).toBe(first.sessionId)
+      await expect(codexRows(page)).toHaveClass(/st-waiting/, { timeout: 30_000 })
       await expect(codexRows(page).locator('.ws-tab-unread')).toHaveCount(1)
 
       await pretendWindowFocused(app)
       await codexRows(page).click()
-      await expect.poll(() => codexCalls(env).length).toBe(2)
-      await expect(codexRows(page)).toHaveClass(/st-waiting/)
       await expect(codexRows(page).locator('.ws-tab-unread')).toHaveCount(0)
+      expect(codexCalls(env)).toHaveLength(2)
     } finally {
       await quitAndClose(app)
     }
   })
 
-  test('a Codex session marked Keep running starts again by itself when Koloft reopens, with its native identity, and selects nothing', async ({
+  test('a Codex session marked Keep running starts again by itself when Koloft reopens even though its tab was closed, with its native identity, and selects nothing', async ({
     env
   }) => {
     installCodex(env)
@@ -830,6 +890,8 @@ test.describe('Codex sessions through the real method chooser, process transport
       await openMenu(page, codexRows(page))
       await page.locator('.menu .mi', { hasText: 'Keep running' }).click()
       await expect(codexRows(page).locator('.ws-tab-resident')).toBeVisible()
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(codexRows(page)).toHaveClass(/cold/)
       await quitAndClose(app)
       await expect.poll(() => processAlive(first.pid)).toBe(false)
 
@@ -991,6 +1053,8 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(page.locator('.modal')).toHaveCount(0)
       expect(readCalls(env)).toHaveLength(0)
       await expect(codexRows(page)).toHaveClass(/st-waiting/)
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(codexRows(page)).toHaveClass(/cold/)
       await quitAndClose(app)
       app = await launchApp(env)
       page = await app.firstWindow()

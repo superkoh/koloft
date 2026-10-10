@@ -1,7 +1,7 @@
 import type { SessionRow } from '@shared/types'
 import { isRemoteKey } from '@shared/remoteKey'
 import { adoptionSettled } from './adoption'
-import { resumeInFlight, resumeSession } from './resumeFlow'
+import { resumeInFlight, resumeSession, wakeTab } from './resumeFlow'
 import { isOrphanRow, liveTabOf } from './sessionRows'
 import { useStore } from './store'
 
@@ -36,6 +36,8 @@ export function openSessionRow(row: SessionRow, wsPath: string): void {
     if (tabId) {
       window.api.attention.visit(tabId)
       st.activateTab(tabId)
+      const tab = st.tabs.find((t) => t.id === tabId)
+      if (tab?.asleep) void wakeTab(tab)
     }
     return
   }

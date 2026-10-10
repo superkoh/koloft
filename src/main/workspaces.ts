@@ -730,7 +730,9 @@ export class WorkspaceManager {
         allRows.unshift(...additional.filter((r) => r.pending))
       }
       for (const r of allRows) wsBySession.set(r.id, ws.path)
-      const visible = allRows.filter((r) => !this.hidden(r.id))
+      const visible = allRows
+        .filter((r) => !this.hidden(r.id))
+        .map((r) => (!r.running && wsRunningIds.has(r.id) ? { ...r, running: true } : r))
       const rows = filterOwned(visible, owned, wsRunningIds)
       for (const b of buckets) {
         bucketDirs.push(b.dir)
