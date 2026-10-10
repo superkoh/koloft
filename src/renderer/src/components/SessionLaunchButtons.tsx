@@ -5,7 +5,7 @@ import {
   SESSION_BACKENDS,
   unsupportedPairMessage
 } from '@shared/sessionBackend'
-import type { BackendId, CreateTabOptions, HostId } from '@shared/types'
+import type { BackendAvailability, BackendId, CreateTabOptions, HostId } from '@shared/types'
 import { launchErrorMessage } from '../agentUi'
 import { useStore } from '../store'
 import { SessionBackendIcon } from './SessionBackendIcon'
@@ -16,9 +16,7 @@ export type SessionLaunchOptions = Pick<
 > & { cwd: string }
 export type StartSession = (opts: SessionLaunchOptions, backend: BackendId) => Promise<void>
 
-type DetectedBackends = Awaited<ReturnType<typeof window.api.sessions.backends>>
-
-let lastDetectedThisRun: DetectedBackends | null = null
+let lastDetectedThisRun: BackendAvailability[] | null = null
 
 export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: () => void) {
   const methods = useStore((s) => s.settings.sessionMethods)
@@ -55,8 +53,7 @@ export function useSessionLaunch(host: HostId, onStart: StartSession, onClose: (
   const usable = (backend: BackendId, on = host): boolean =>
     methods.enabled[backend] &&
     !unsupportedPairMessage(backend, on) &&
-    !!detected &&
-    backendAvailable(detected, backend)
+    backendAvailable(detected ?? [], backend)
   const issue = (backend: BackendId, on = host): string => {
     if (!methods.enabled[backend]) return 'Disabled in Settings ▸ Sessions'
     const refusal = unsupportedPairMessage(backend, on)
