@@ -86,7 +86,13 @@ import {
 import { machinePackageBase, mirrorHookDir, mirrorProjectsRoot } from './remote/paths'
 import { RemoteSync } from './remote/sync'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
-import { readJsonDrop, watchJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
+import {
+  oncePerName,
+  readJsonDrop,
+  watchAndSweepJsonDrops,
+  watchJsonDrops,
+  writeWholeBeforeVisible
+} from './jsonDrops'
 import {
   bundlePath,
   DEFAULT_THEME,
@@ -891,8 +897,11 @@ const picker = new AccountPicker({
 })
 
 function watchPickRequests(pickDir: string): fs.FSWatcher | null {
-  return watchJsonDrops(pickDir, (name) =>
-    name.startsWith('req-') ? (obj): void => void handlePickRequest(pickDir, name, obj) : null
+  return watchAndSweepJsonDrops(
+    pickDir,
+    oncePerName((name) =>
+      name.startsWith('req-') ? (obj): void => void handlePickRequest(pickDir, name, obj) : null
+    )
   )
 }
 

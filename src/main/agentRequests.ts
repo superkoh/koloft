@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { SessionInfo } from '@shared/types'
 import { AGENT_GUIDE } from '@shared/agentGuide'
-import { watchJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
+import { watchAndSweepJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
 import { anotherLiveInstanceOwns } from './ptyManager'
 
 export interface AgentRequest {
@@ -137,7 +137,7 @@ export class AgentRequests {
   constructor(private deps: AgentRequestDeps) {}
 
   watch(dir: string): fs.FSWatcher | null {
-    return watchJsonDrops(dir, (name) =>
+    return watchAndSweepJsonDrops(dir, (name) =>
       REQUEST_NAME.test(name) ? (obj): void => void this.answer(dir, name, obj) : null
     )
   }
