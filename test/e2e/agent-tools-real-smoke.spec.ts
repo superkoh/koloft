@@ -6,8 +6,8 @@ import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   HAVE_REAL_GH,
   NEEDS_REAL_GH,
+  addCodexAccount,
   installRealGhThatOnlyReads,
-  seedCodexAccount,
   seedSettings,
   setGithubFixture,
   type E2EEnv
@@ -18,6 +18,7 @@ import {
   centerTerm,
   chooseBackend,
   newSessionInWith,
+  openMenu,
   openWorktreeSession,
   waitBooted,
   wsRows
@@ -114,6 +115,7 @@ function useRealCodex(env: E2EEnv, trusted: string[]): void {
   fs.symlinkSync(REAL_CODEX, spot)
   const home = path.join(env.home, '.codex')
   fs.mkdirSync(home, { recursive: true })
+  addCodexAccount(env, fs.readFileSync(path.join(SIGNED_IN_CODEX_HOME, 'auth.json'), 'utf8'))
   // CODEX§11
   fs.writeFileSync(
     path.join(home, 'config.toml'),
@@ -121,7 +123,6 @@ function useRealCodex(env: E2EEnv, trusted: string[]): void {
   )
   env.launchEnv.KOLOFT_CODEX_CMD = spot
   env.launchEnv.CODEX_HOME = home
-  seedCodexAccount(env, fs.readFileSync(path.join(SIGNED_IN_CODEX_HOME, 'auth.json'), 'utf8'))
 }
 
 function screen(page: Page): Promise<string> {
@@ -992,6 +993,9 @@ test.describe('a REAL Claude Code session opened by /goal: an opt-in case; it sp
       await expect(rows.locator('.ws-tab-title')).toHaveText(
         GOAL_THAT_WAITS_ON_A_BACKGROUND_TASK.slice(0, TITLE_MAX)
       )
+      await openMenu(page, rows)
+      await page.locator('.menu .mi', { hasText: /^Close$/ }).click()
+      await expect(rows).toHaveClass(/\bcold\b/, { timeout: 30_000 })
     })
     const app = await launchApp(env)
     try {

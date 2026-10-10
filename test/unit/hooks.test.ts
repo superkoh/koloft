@@ -18,9 +18,10 @@ import {
   hookSettings,
   writeConductorMarker,
   removeConductorMarker,
-  markAnswerable,
-  REPLY_LANGUAGE_REMINDER
+  markAnswerable
 } from '../../src/main/hooks'
+import { withHandover } from '../../src/main/handover'
+import { crossSessionLine } from '../../src/main/crossSessionMessage'
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../src/main/remote/paths'
 
 let hookScript: string
@@ -401,17 +402,66 @@ describe('injected hook script', () => {
     expect(readStatusLog('tabH')[0].message).toContain('permission')
   })
 
-  // CC§17
-  it('every prompt hands Claude the reply-language reminder; Stop and Notification print nothing', () => {
-    const out = fire('tabLang', 'prompt', { hook_event_name: 'UserPromptSubmit', prompt: '你好' })
-    expect(JSON.parse(out)).toEqual({
-      hookSpecificOutput: {
-        hookEventName: 'UserPromptSubmit',
-        additionalContext: REPLY_LANGUAGE_REMINDER
+  describe('the reply-language reminder (ADR-0031)', () => {
+    const remindedQuote = (out: string, event: string): string => {
+      const { hookSpecificOutput } = JSON.parse(out)
+      expect(hookSpecificOutput.hookEventName).toBe(event)
+      return /«(.*)»/s.exec(hookSpecificOutput.additionalContext)![1]
+    }
+    const prompt = (tab: string, text: string): string =>
+      fire(tab, 'prompt', { session_id: 's1', hook_event_name: 'UserPromptSubmit', prompt: text })
+    const tool = (tab: string): string =>
+      fire(tab, 'tool', { session_id: 's1', hook_event_name: 'PostToolUse', tool_name: 'Read' })
+
+    // CC§17 CC§19
+    it('quotes the latest prompt at the prompt and after every tool call; Stop and Notification print nothing', () => {
+      expect(remindedQuote(prompt('tabLang', '先别改代码，帮我查一下'), 'UserPromptSubmit')).toBe(
+        '先别改代码，帮我查一下'
+      )
+      expect(remindedQuote(tool('tabLang'), 'PostToolUse')).toBe('先别改代码，帮我查一下')
+      prompt('tabLang', '合并')
+      expect(remindedQuote(tool('tabLang'), 'PostToolUse')).toBe('合并')
+      expect(fire('tabLang', 'stop', { hook_event_name: 'Stop' })).toBe('')
+      expect(fire('tabLang', 'notify', { message: 'Claude is waiting for your input' })).toBe('')
+    })
+
+    it('a tool call prints nothing before any prompt, or after a prompt with no words to quote', () => {
+      expect(tool('tabLangNone')).toBe('')
+      prompt('tabLangNone', '你好')
+      expect(fire('tabLangNone', 'prompt', { hook_event_name: 'UserPromptSubmit' })).toBe('')
+      expect(tool('tabLangNone')).toBe('')
+    })
+
+    // CC§13
+    it('a message from another session keeps the quote of the person’s own last prompt', () => {
+      prompt('tabLangPeer', '查一下子会话做完没有')
+      const report = JSON.parse(crossSessionLine('bypass', 'Done: PR #12 is open.')!).message
+        .content
+      expect(remindedQuote(prompt('tabLangPeer', report), 'UserPromptSubmit')).toBe(
+        '查一下子会话做完没有'
+      )
+      expect(remindedQuote(tool('tabLangPeer'), 'PostToolUse')).toBe('查一下子会话做完没有')
+    })
+
+    it('a task Koloft hands over is quoted without the English preamble in front of it', () => {
+      const task = withHandover({ name: 'Global-conductor', id: 'abc-123' }, '评估管家的权限范围')
+      expect(remindedQuote(prompt('tabLangHO', task), 'UserPromptSubmit')).toBe(
+        '评估管家的权限范围'
+      )
+    })
+
+    // CC§19
+    it('quotes at most 300 bytes and always whole characters and whole escapes, so the reminder is valid JSON', () => {
+      for (let pad = 0; pad < 6; pad++) {
+        for (const body of ['中文'.repeat(100), 'a"b\\c\nd\x1b'.repeat(40), '😀é'.repeat(80)]) {
+          const text = 'x'.repeat(pad) + body
+          const quote = remindedQuote(prompt('tabLangCut', text), 'UserPromptSubmit')
+          expect(text.startsWith(quote), JSON.stringify({ pad, quote })).toBe(true)
+          expect(Buffer.byteLength(JSON.stringify(quote))).toBeLessThanOrEqual(302)
+          expect(Buffer.byteLength(JSON.stringify(quote))).toBeGreaterThan(290)
+        }
       }
     })
-    expect(fire('tabLang', 'stop', { hook_event_name: 'Stop' })).toBe('')
-    expect(fire('tabLang', 'notify', { message: 'Claude is waiting for your input' })).toBe('')
   })
 
   it('run-state reports APPEND — a whole turn survives, not just its last edge', () => {
@@ -631,18 +681,18 @@ describe('injected hook script', () => {
     })
   })
 
-  it('injects a Bash-matched PostToolUse hook only when the statusline rides along', () => {
+  // CC§19
+  it('every tool call fires the reply-language hook; the Bash-matched one rides along only with the statusline', () => {
     const sl = { type: 'command' as const, command: "'/x/statusline/run.sh'", padding: 0 }
-    const withSl = JSON.parse(
-      fs.readFileSync(writeTabHookSettings(setupHooks(noPeerInstance), 'tabPT1', sl), 'utf8')
-    )
-    expect(withSl.hooks.PostToolUse).toHaveLength(1)
-    expect(withSl.hooks.PostToolUse[0].matcher).toBe('Bash')
-    expect(withSl.hooks.PostToolUse[0].hooks[0].command).toContain(' posttool')
-    const without = JSON.parse(
-      fs.readFileSync(writeTabHookSettings(setupHooks(noPeerInstance), 'tabPT2'), 'utf8')
-    )
-    expect(without.hooks).not.toHaveProperty('PostToolUse')
+    const postToolUse = (file: string): { matcher: string; hooks: { command: string }[] }[] =>
+      JSON.parse(fs.readFileSync(file, 'utf8')).hooks.PostToolUse
+    const entries = (file: string): string[] =>
+      postToolUse(file).map((e) => `${e.matcher} ${e.hooks[0].command.split(' ').pop()}`)
+    expect(entries(writeTabHookSettings(setupHooks(noPeerInstance), 'tabPT1', sl))).toEqual([
+      '* tool',
+      'Bash posttool'
+    ])
+    expect(entries(writeTabHookSettings(setupHooks(noPeerInstance), 'tabPT2'))).toEqual(['* tool'])
   })
 
   // CC§8
@@ -836,17 +886,19 @@ describe('setupHooks at startup', () => {
     for (const f of old) expect(fs.existsSync(f), f).toBe(false)
   })
 
-  it('removes the answerable and conductor markers a crash left behind, and keeps a live peer instance’s however old they are', () => {
+  it('removes the answerable and conductor markers and the saved prompt a crash left behind, and keeps a live peer instance’s however old they are', () => {
     const peerTab = 'pty-peer-1'
     const crashedTab = 'pty-gone-1'
     const markers = (tab: string): string[] => [
       path.join(regDir, `${tab}.answerable`),
-      path.join(regDir, `${tab}.conductor`)
+      path.join(regDir, `${tab}.conductor`),
+      path.join(regDir, `${tab}.said`)
     ]
-    markAnswerable(regDir, peerTab, true)
-    writeConductorMarker(regDir, peerTab, 'role')
-    markAnswerable(regDir, crashedTab, true)
-    writeConductorMarker(regDir, crashedTab, 'role')
+    for (const tab of [peerTab, crashedTab]) {
+      markAnswerable(regDir, tab, true)
+      writeConductorMarker(regDir, tab, 'role')
+      fs.writeFileSync(path.join(regDir, `${tab}.said`), '你好')
+    }
     const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000)
     for (const f of markers(peerTab)) fs.utimesSync(f, twoDaysAgo, twoDaysAgo)
 

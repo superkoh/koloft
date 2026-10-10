@@ -280,7 +280,7 @@ test.describe('Workbench panel layout: T1 collapsed, T2 right column, T3 the TUI
     page.on('pageerror', (e) => errors.push(e.message))
 
     await runIn(page, centerTerm(page), 'WB_L10_MARK')
-    await expect(centerTerm(page)).toContainText('WB_L10_MARK', { timeout: 25_000 })
+    await expect(centerTerm(page)).toContainText('handled: WB_L10_MARK', { timeout: 25_000 })
     const before = await centerTerm(page).innerText()
 
     await toggleFull(app, page)

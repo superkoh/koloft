@@ -707,8 +707,8 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   CC 2.1.286, in a session the shim had launched with an account's
   `CLAUDE_CODE_OAUTH_TOKEN`: `/remote-control` answered "Remote Control requires a
   full-scope login token. Long-lived tokens (from claude setup-token or
-  CLAUDE_CODE_OAUTH_TOKEN) are limited to inference-only…". So with Koloft's account
-  balancing on, Claude's own phone remote does not work for a Koloft session.
+  CLAUDE_CODE_OAUTH_TOKEN) are limited to inference-only…". So Claude's own phone remote
+  does not work for a Koloft session.
 - **Model prices** (USD per million tokens, input/output, and context window): Fable 5.1
   $10/$50, 1M (cache read $0.25); Fable/Mythos 5 $10/$50, 1M; Opus 5.5 $4/$20, 1M
   (cache read $0.20); Opus 5 $5/$25, 1M; Opus 4.6–4.8 $5/$25, 1M;
@@ -1512,3 +1512,45 @@ earlier assertion that the model obey the note, the paste facts held in all thre
   two-line note typed after it (Koloft's ✎ comment, 128-character pieces 0.3 s apart)
   stayed outside the tags and was obeyed in 3 of 3 E-SSH-10 runs (2026-10-08, 2.1.294
   linux-arm64); the same held in 3 of 3 runs of the local real case.
+
+## §19 The PostToolUse hook adds text after every tool result
+
+How established: 2026-10-10, CC 2.1.296, on this Mac, `claude -p` with an empty MCP config,
+a scratch `CLAUDE_CONFIG_DIR` and a `--settings` file whose `PostToolUse` entry (matcher
+`*`) ran a script that saved its stdin and printed
+`{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"<text>"}}`
+with a made-up word in `<text>`; models Opus 5.5 and Haiku. Then the Opus 5.5 runs behind
+ADR-0031, each up to 70 tool calls, with the same entry.
+
+- **The text reaches the model before its next step**: asked after one `ls` for the word,
+  it said it back. It lands as its own transcript record right after the tool result:
+  `{"type":"attachment","attachment":{"type":"hook_additional_context","content":["<text>"],
+  "hookName":"PostToolUse:Bash","toolUseID":"toolu_…","hookEvent":"PostToolUse"},
+  "rendered":[{"content":"<system-reminder>\nPostToolUse:Bash hook additional context:
+  <text>\n</system-reminder>"}],"renderedRole":"system"}`.
+- **It fires for every tool, Read and Grep included**, once per call (`hookName`
+  `PostToolUse:Read`, `PostToolUse:Grep`, …).
+- **What a hook reads on stdin is one line of compact JSON**: no spaces after `:` or `,`,
+  text outside ASCII written as raw UTF-8 (Chinese arrived as its UTF-8 bytes, not
+  `\uXXXX`), and only `"`, `\` and control characters escaped (`\"`, `\\`, `\n`). On
+  `UserPromptSubmit` the keys came in the order `session_id`, `transcript_path`, `cwd`,
+  `prompt_id`, `permission_mode`, `hook_event_name`, `prompt` — the prompt is last (an
+  interactive session adds `scratchpad_dir` before `prompt_id`; the prompt stays last). On
+  `PostToolUse` they are the same up to `permission_mode`, then `effort`,
+  `hook_event_name`, `tool_name`, `tool_input`, `tool_response`, `tool_use_id`,
+  `duration_ms`; there is no `prompt`.
+- **A message from another session (§13) fires `UserPromptSubmit` too, its `prompt` the
+  envelope as sent**: an idle interactive receiver (haiku, `--dangerously-skip-permissions`,
+  scratch `CLAUDE_CONFIG_DIR`) sent Koloft's `bypass` line on its socket handed the hook
+  `"prompt":"<cross-session-message from-mode=\"bypass\">\n<body>\n</cross-session-message>"`.
+  In one project's transcripts on this Mac since 2026-10-09, 10 of 12 such messages were followed by the
+  prompt hook's context.
+- **A `PostToolBatch` event also exists** (once per batch of tool calls; its
+  `additionalContext` reached the model on 2.1.296; its name is in the 2.1.294 binary).
+  It is not in the CHANGELOG, so whether 2.1.293, the oldest Koloft supports, knows it is
+  not probed.
+- **With an output style set, CC itself repeats an English line after every tool
+  result**: the transcripts on this Mac carry an `output_style` attachment with
+  `"turnReminder":"Be concise: lead with the result, skip preamble and narration, keep
+  only what the user needs."` (style "Concise") after the prompt and after every tool
+  result (2.1.29x).
