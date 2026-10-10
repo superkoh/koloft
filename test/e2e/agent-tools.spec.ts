@@ -181,6 +181,61 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     }
   })
 
+  for (const backend of ['claude', 'codex'] as const)
+    test(`a ${backend} child reports to the ${backend} session that started it after that session’s tab was closed: koloft session send with the id from its first message starts the parent again and delivers the report marked with who sent it`, async ({
+      env
+    }) => {
+      test.setTimeout(120_000)
+      if (backend === 'codex') installCodex(env)
+      seedSettings(env, { hintsOff: true })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        if (backend === 'claude') await startSessionIn(page, 'ws-a')
+        else await newSessionInWith(page, 'ws-a', 'Codex')
+        const parentRow = wsRows(page, 'ws-a').first()
+        await expect(parentRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+        const parentTab = (await parentRow.getAttribute('data-tab-id'))!
+        const parent = (await page.evaluate(() => window.api.sessions.list())).find(
+          (s) => s.tabId === parentTab
+        )!
+        const parentId = parent.nativeSessionId ?? parent.sessionId
+
+        expect(await koloftInSession(page, 'session new -- report back when done')).toBe('0')
+        const kidRow = wsGroup(page, 'ws-a').locator(
+          `.ws-tab[data-tab-id="${parentTab}"] + .ws-subtabs > .ws-tab`
+        )
+        await expect(kidRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+        const kidTab = (await kidRow.getAttribute('data-tab-id'))!
+
+        await page.evaluate((tab) => window.api.terminal.kill(tab), parentTab)
+        await expect
+          .poll(async () =>
+            (await page.evaluate(() => window.api.sessions.list())).some(
+              (s) => s.alive && s.tabId === parentTab
+            )
+          )
+          .toBe(false)
+        await page.evaluate(
+          ([tab, line]) => window.api.terminal.write(tab, line + '\r'),
+          [kidTab, `/koloft session send ${parentId} all done`]
+        )
+        const parentGot = (): string => {
+          const file = path.join(
+            env.home,
+            backend === 'claude' ? 'fake-claude-peer.jsonl' : 'fake-codex-wire.jsonl'
+          )
+          return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
+        }
+        await expect
+          .poll(parentGot, { timeout: 60_000 })
+          .toMatch(/\(From the session \\".+\\", id \S+:\) all done/)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
   test('koloft session new --workspace starts the sibling in another sidebar workspace, as a top-level row there', async ({
     page,
     env

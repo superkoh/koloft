@@ -216,7 +216,7 @@ function startableWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<stri
 }
 
 const CLAUDE_USES_SEND_MESSAGE =
-  'this is for Codex sessions, and for reporting to the conductor that started you by the id in your first message. A Claude session talks to another Claude session with its SendMessage tool; ListAgents shows their names.'
+  'this is for Codex sessions, and for reporting to the session or conductor that started you, by the id in your first message. A Claude session talks to another Claude session with its SendMessage tool; ListAgents shows their names.'
 
 function matchRef<T>(
   items: T[],
@@ -371,8 +371,7 @@ async function startSibling(
   if (backend === 'codex' && args.name !== undefined) return refused(CODEX_HAS_NO_NAME, EXIT_USAGE)
   const caller: SessionCaller = {
     name: me.backendId === 'claude' ? ((await d.peerNames()(me.sessionId)) ?? me.title) : undefined,
-    id: idToReach(me),
-    conductor: conductorTab !== undefined
+    id: idToReach(me)
   }
   const name =
     backend === 'claude'
@@ -390,11 +389,11 @@ async function startSibling(
     worktree: args.worktree,
     model: args.model,
     // ADR-0028
-    permission: conductorTab && d.modeOf(conductorTab) === 'bypass' ? 'bypass' : 'default',
+    permission: d.modeOf(me.tabId) === 'bypass' ? 'bypass' : 'default',
     // CODEX§17
     ...(backend === 'codex'
-      ? { role: handoverPreamble(caller, backend), firstPrompt: args.prompt }
-      : { firstPrompt: withHandover(caller, backend, args.prompt) })
+      ? { role: handoverPreamble(caller), firstPrompt: args.prompt }
+      : { firstPrompt: withHandover(caller, args.prompt) })
   })
   if (!tabId) return refused('koloft session new: Koloft could not start the session.')
   d.startedSessions.started(tabId, me.sessionId)
@@ -481,6 +480,15 @@ function rowTarget(d: SessionVerbDeps, p: PlacedRow): Target {
     tabId: p.live?.tabId,
     open: () => d.resume(p.row)
   }
+}
+
+function starterRow(
+  d: SessionVerbDeps,
+  caller: AgentCaller,
+  open: SessionInfo[]
+): PlacedRow | undefined {
+  const [id] = d.startedSessions.startersOf({ ...caller.session, tabId: caller.tabId })
+  return id === undefined ? undefined : placedRows(d.sidebar(), open).find((r) => r.row.id === id)
 }
 
 export async function targetIn(
@@ -830,16 +838,19 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       return conductorAct(sub, rest, caller)
     if (sub === 'send') {
       const open = d.allSessions()
+      const parent = starterRow(d, caller, open)
+      const starter = (ref: string): Target | undefined =>
+        d.conductorOf(ref) ?? (parent && matchRow([parent], ref) ? rowTarget(d, parent) : undefined)
       const split = nameThenWords(
         rest,
-        (ref) => d.conductorOf(ref) !== undefined || matchOpen(open, ref) !== null
+        (ref) => starter(ref) !== undefined || matchOpen(open, ref) !== null
       )
       if (!split.ok) return refused(`koloft session send: ${split.error}`, EXIT_USAGE)
       const { ref, tail } = split.value
       const text = tail.join(' ').trim()
       if (!ref || !text) return refused(SEND_USAGE, EXIT_USAGE)
-      const conductor = d.conductorOf(ref)
-      if (conductor) return deliver('send', conductor, sessionSays(caller.session, text), caller)
+      const to = starter(ref)
+      if (to) return deliver('send', to, sessionSays(caller.session, text), caller)
       if (caller.session.backendId !== 'codex')
         return refused(`koloft session send: ${CLAUDE_USES_SEND_MESSAGE}`)
       const target = findCodexTarget(open, ref)
