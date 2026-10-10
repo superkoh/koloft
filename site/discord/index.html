@@ -73,8 +73,9 @@
           Discord is a chat app for your phone and your computer. A conductor is a Claude or Codex
           session on your Mac, tied to one Discord channel (a chat room). You write to the conductor
           from your phone. It starts your other sessions, reads them, sends them messages, and
-          answers their questions the way you tell it to. It never does the work itself: Koloft lets
-          it only read, whatever your permission setting, so it passes each job on to a session.
+          answers their questions the way you tell it to. It never does the work itself: it cannot
+          change your files, whatever your permission setting, so it passes each job on to a
+          session.
         </p>
 
         <pre
@@ -257,7 +258,9 @@ your Mac
         </ul>
         <p>
           The conductor always runs on your Mac, even for a <a href="../remote/">remote folder</a>.
-          It runs in a folder of its own under Koloft's data folder, not in your workspace.
+          It runs in a folder of its own under Koloft's data folder, not in your workspace. It opens
+          as soon as Koloft connects to Discord, and it never goes to
+          <a href="../sessions/">sleep</a> the way an idle session does.
         </p>
 
         <h2>From your phone</h2>
@@ -366,7 +369,10 @@ your Mac
             The thread takes the session's title from the sidebar, and changes when the title does.
             After <code>/clear</code>, the session stays in the same thread.
           </li>
-          <li>When the session's tab closes, its thread is put away (archived).</li>
+          <li>
+            When the session's tab closes, its thread is put away (archived). A session going to
+            sleep is not a close.
+          </li>
           <li>
             When the session leaves the sidebar (Remove from list, <code>/exit</code>, or
             <code>koloft session close</code>), its thread and its card are deleted. If the bot may
@@ -424,18 +430,23 @@ your Mac
         <ul class="dash">
           <li>start, read, message, resume and stop sessions</li>
           <li>run a slash command in them, and see their screen</li>
-          <li>answer their questions</li>
+          <li>
+            answer their questions, and press keys in them as you would at the Mac: pick an option,
+            move through a menu, approve, refuse or cancel. Tell it what to pick and it does it,
+            instead of sending you to the Mac
+          </li>
           <li>close the sessions it started</li>
           <li>close any ended session it looks after on your Mac, when you ask</li>
           <li>list your folders <span class="why">(Global only)</span></li>
           <li>
             check GitHub itself with <code>koloft gh</code>: is a pull request merged, how did its
-            checks go, what does an issue say
+            checks go, what does an issue say; and open an issue when you ask for one
             <span class="why"
-              >(Koloft runs <code>gh</code>, GitHub's command-line tool, for it, and only the
-              reading commands: pr view, list, checks, diff; issue view, list; run view, list. A
-              folder's conductor gets that folder's repository filled in; the Global one names it
-              with <code class="nowrap">--repo</code>)</span
+              >(Koloft runs <code>gh</code>, GitHub's command-line tool, for it: the reading
+              commands pr view, list, checks, diff; issue view, list; run view, list; and issue
+              create, with a title, a body and labels only. A folder's conductor gets that folder's
+              repository filled in; the Global one names it with
+              <code class="nowrap">--repo</code>)</span
             >
           </li>
           <li>
@@ -455,8 +466,11 @@ your Mac
             >
           </li>
           <li>
-            merge, comment or change anything on GitHub
-            <span class="why">(<code>koloft gh</code> refuses every command that writes)</span>
+            merge, comment on, close or edit anything on GitHub
+            <span class="why"
+              >(<code>koloft gh</code> refuses every command that writes, except opening an
+              issue)</span
+            >
           </li>
           <li>close an open session it did not start <span class="why">(stop it first)</span></li>
           <li>
@@ -592,7 +606,9 @@ your Mac
           <li>Yes / No works, and so does one question that picks one option.</li>
           <li>
             Anything else, like several parts, free text or a secret, gets "Codex is asking
-            something Koloft cannot answer from here… Answer this one at the Mac."
+            something Koloft cannot answer from here: it answers a yes-or-no approval, or one
+            question that picks one option from a list. The conductor can still answer this one by
+            pressing its keys." So tell the conductor what to pick.
           </li>
           <li>
             What Codex shows only on its screen is not read back. The conductor can look with
@@ -605,7 +621,7 @@ your Mac
           <li>
             Koloft answers by typing keys into its terminal. So it can answer Yes / No, or one
             question with one pick. A question with several parts, or with several picks, gets no
-            buttons: answer that one at the Mac.
+            buttons: tell the conductor what to pick.
           </li>
           <li>A plan takes yes or no only.</li>
           <li>
@@ -635,8 +651,10 @@ your Mac
             >
           </li>
           <li>
-            <s class="struck">answer Codex forms</s>
-            <span class="why">(several parts, free text or secrets: answer at the Mac)</span>
+            <s class="struck">answer Codex forms from a thread</s>
+            <span class="why"
+              >(several parts, free text or secrets: tell the conductor what to pick instead)</span
+            >
           </li>
           <li>
             <s class="struck">run two Kolofts on one data folder</s>

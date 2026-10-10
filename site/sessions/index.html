@@ -113,11 +113,17 @@
           </li>
           <li>Click an old row to resume that session.</li>
           <li>
-            About half an hour after a session goes quiet (its light turns dim green), its tab
-            closes by itself. It stays open while you look at it, while it still has a red dot, or
-            while a shell tab or an unsaved file is open in it. The row stays, so you can resume it.
-            A session marked Keep running never closes this way (see
-            <a href="#keep-running">below</a>).
+            About half an hour after a session goes quiet (its light turns dim green), it goes to
+            sleep: its program stops, but its row, its tab, its screen and its Workbench stay as
+            they were. Click the row, or let something send it a message, and the same session wakes
+            in that tab. It stays awake while you look at it, while it still has a red dot, or while
+            a shell tab or an unsaved file is open in it. A session marked Keep running never sleeps
+            (see <a href="#keep-running">below</a>).
+          </li>
+          <li>
+            Quit Koloft and open it again, and every session comes back the way it was: the ones
+            that were running run again, with the one you were on selected; the ones that were
+            asleep stay asleep until you click them; the closed ones stay closed.
           </li>
         </ul>
         <p>Every row has a light on its left. The colour says what the session is doing.</p>
@@ -151,7 +157,7 @@
               </tr>
               <tr>
                 <td>dim green</td>
-                <td>done a while ago, nothing new</td>
+                <td>done a while ago, nothing new; a sleeping session looks the same</td>
               </tr>
               <tr>
                 <td>grey</td>
@@ -196,8 +202,8 @@
         <p>
           Some sessions should always be there, like a helper you talk to all day. Right-click the
           row and pick <code>Keep running</code>. A tick shows it is on, and a small pin sits on the
-          row. Each time Koloft opens, the session starts again in the background. It does not pull
-          you over to it.
+          row. The session never goes to sleep, and each time Koloft opens it starts again in the
+          background, even if you had closed its tab. It does not pull you over to it.
         </p>
         <p>
           If its worktree has changed, the session stays closed and Koloft says
@@ -214,6 +220,29 @@
             it; it never starts a second one. If it has gone, Koloft resumes it there.
           </li>
         </ul>
+
+        <h2 id="find">Find any session</h2>
+        <ul class="dash">
+          <li>
+            <kbd>⌘P</kbd> (View ▸ Command Palette…) opens a box that lists every session in every
+            folder, then the folders, then the app's actions (New session…, Settings…, and so on).
+            Type a few letters of a session's title, its worktree, its folder or its machine, press
+            <kbd>⏎</kbd>, and you are there. It does what a click on the row does, so a closed
+            session is resumed. When nothing fits, it says so.
+          </li>
+          <li>
+            <kbd>⌥⌘F</kbd> (Edit ▸ Search Sessions) searches what was said. Type a phrase, press
+            <kbd>⏎</kbd>, and every session in every folder whose title or conversation holds it is
+            listed, newest first, with one line of text around the match. Click one to open it. For
+            Claude it reads what you typed and what the agent answered, not the output of its tools.
+            For Codex, Codex itself does the search.
+          </li>
+        </ul>
+        <p>
+          Both work for Claude and Codex, and for a Claude session on a
+          <a href="../remote/">remote folder</a>, which is listed with its machine's name and
+          resumes there.
+        </p>
 
         <h2>A tab is not a session</h2>
         <p>
@@ -250,6 +279,18 @@
           <li>
             A Codex worktree stays until you remove it yourself, or until the session is closed with
             <code>koloft session close</code> (see <a href="../agents/">agents</a>).
+          </li>
+          <li>
+            In a folder on github.com, with <code>gh</code> (GitHub's command-line tool) signed in,
+            the <kbd>⇧⌘N</kbd> dialog also lists the repo's open issues and open pull requests. Pick
+            an issue, and the session starts in a worktree named
+            <code class="nowrap">issue-&lt;number&gt;</code>, already told which issue to read and
+            work on.
+          </li>
+          <li>
+            Pick a pull request there, and the session starts in a worktree on that pull request's
+            branch. Claude Code and Codex both do this; on a
+            <a href="../remote/">remote folder</a>, Claude Code does it there.
           </li>
         </ul>
         <p>
@@ -403,9 +444,8 @@
           </li>
           <li><code>Fetch now</code> asks origin what is new.</li>
           <li>
-            On github.com, with <code>gh</code> (GitHub's command-line tool) signed in: the open
-            issues and pull requests. Their two counts also sit after the branch sign (a count of 0
-            is not drawn).
+            On github.com, with <code>gh</code> signed in: the open issues and pull requests. Their
+            two counts also sit after the branch sign (a count of 0 is not drawn).
           </li>
         </ul>
         <figure class="shot" style="--ar: 740 / 612; --w: min(370px, 100cqw)">
