@@ -229,8 +229,7 @@ Working principles:
 - Auth comes from Koloft's own multi-account balancer (Settings ▸ Accounts): the claude
   shim injects the picked account per launch; the probe/header contract is
   `docs/claude-code-contract.md` §7. A Codex account is its own `CODEX_HOME`, picked per
-  launch (`docs/codex-cli-contract.md` §15). With the mode off, a session runs bare
-  `claude` or `codex` on whatever login the machine already has.
+  launch (`docs/codex-cli-contract.md` §15).
 - Any browser automation here stays headless — never pass `--headed` unless asked to
   watch. Koloft is developed on the same Mac the automation runs on, so a browser window
   that takes focus, or merely covers a fullscreen Space, interrupts whatever is being
