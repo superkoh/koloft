@@ -43,8 +43,8 @@ when it works. That is what "judged against" means.
   and closes an ended one on this computer. It only passes work on (ADR-0029), but checks
   facts on GitHub itself with `koloft gh`, which reads and, when the owner asks, opens an
   issue, and a Claude conductor keeps its own memory.
-  What is left: sessions on another machine over ssh, which get no `koloft` command
-  yet.
+  A Claude session on another machine over ssh has the same command; its answers take
+  a few seconds longer.
 
 ### Tier 2 — review: where Koloft can still grow
 
