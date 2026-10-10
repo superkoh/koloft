@@ -680,8 +680,8 @@ describe('CodexSessions', () => {
     expect(sessionEnvs).toEqual([{ KOLOFT_PORT_OFFSET: String(portOffset('w1')) }, undefined])
   })
 
-  // ADR-0029 CODEX§12
-  it('a conductor starts and resumes with approvals off and the workspace-write sandbox, so it can write only its own folder and /tmp, and claims no bypass', async () => {
+  // ADR-0029 CODEX§11 CODEX§12
+  it('a conductor starts with approvals off and the workspace-write sandbox as TUI flags, so it can write only its own folder and /tmp, and on a resume, which refuses those flags, its own app-server gets the same choice; it claims no bypass', async () => {
     const first = await sessions.launch({ kind: 'codex', cwd: repo, conductor: true })
     bind()
     await sessions.stop(first.id)
@@ -690,21 +690,35 @@ describe('CodexSessions', () => {
       cwd: repo,
       conductor: true
     })
-    for (const [call] of vi.mocked(deps.pty.create).mock.calls) {
-      const argv = call.argv!
-      expect(argv[argv.indexOf('-s') + 1]).toBe('workspace-write')
-      expect(argv[argv.indexOf('-a') + 1]).toBe('never')
-    }
-    expect(vi.mocked(deps.pty.create).mock.calls).toHaveLength(2)
+    const [startArgv, resumeArgv] = vi.mocked(deps.pty.create).mock.calls.map(([c]) => c.argv!)
+    expect(startArgv[startArgv.indexOf('-s') + 1]).toBe('workspace-write')
+    expect(startArgv[startArgv.indexOf('-a') + 1]).toBe('never')
+    expect(resumeArgv).not.toContain('-s')
+    expect(resumeArgv).not.toContain('-a')
+    expect(transports[1].options.configOverrides).toEqual(
+      expect.arrayContaining(['approval_policy="never"', 'sandbox_mode="workspace-write"'])
+    )
+    expect(transports[0].options.configOverrides!.join('\n')).not.toMatch(
+      /approval_policy|sandbox_mode/
+    )
     expect(sessions.launchedBypassingChecks(again.id)).toBe(false)
   })
 
-  // ADR-0028
-  it('remembers whether Koloft launched a session with approvals and the sandbox bypassed, the mode its messages to Claude sessions claim', async () => {
+  // ADR-0028 CODEX§11
+  it('remembers whether Koloft launched a session with approvals and the sandbox bypassed, the mode its messages to Claude sessions claim, and a resume of that session bypasses them again through its app-server', async () => {
     const bypassed = await sessions.launch({ kind: 'codex', cwd: repo, permission: 'bypass' })
     const asking = await sessions.launch({ kind: 'codex', cwd: repo })
     expect(sessions.launchedBypassingChecks(bypassed.id)).toBe(true)
     expect(sessions.launchedBypassingChecks(asking.id)).toBe(false)
+
+    bind(0)
+    await sessions.stop(bypassed.id)
+    const again = await sessions.resume({ sessionId: codexSessionKey(A), cwd: repo })
+    expect(sessions.launchedBypassingChecks(again.id)).toBe(true)
+    expect(vi.mocked(deps.pty.create).mock.calls[2][0].argv).not.toContain('-a')
+    expect(transports[2].options.configOverrides).toEqual(
+      expect.arrayContaining(['approval_policy="never"', 'sandbox_mode="danger-full-access"'])
+    )
   })
 
   // CODEX§14
