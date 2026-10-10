@@ -316,7 +316,7 @@ import {
   runningClaudePid,
   whenMessagingSocket
 } from './claudeSessionRegistry'
-import { conductorName, GLOBAL_SCOPE, isDiscordId, scopeName } from '@shared/conductors'
+import { asPeerName, conductorName, GLOBAL_SCOPE, isDiscordId, scopeName } from '@shared/conductors'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
 import {
@@ -426,7 +426,8 @@ tracker.activeTabId = () => uiActiveTabId
 tracker.heldTabs = () => {
   const held = new Set(dirtyTabIds)
   for (const h of ptyMgr.list()) if (h.util && h.alive && h.ownerTabId) held.add(h.ownerTabId)
-  for (const s of allSessions()) if (workspaceMgr?.isResident(s.sessionId)) held.add(s.tabId)
+  for (const s of allSessions())
+    if (s.conductor || workspaceMgr?.isResident(s.sessionId)) held.add(s.tabId)
   return held
 }
 tracker.needsUser = (id) => attention.list().some((e) => e.tabId === id)
@@ -1894,7 +1895,7 @@ app.whenReady().then(() => {
           role: l.role,
           conductor: true,
           trustFolder: true,
-          name: l.backend === 'claude' ? l.title.replace(/\s+/g, '-') : undefined
+          name: l.backend === 'claude' ? asPeerName(l.title) : undefined
         },
         l.title
       ),
@@ -1939,6 +1940,7 @@ app.whenReady().then(() => {
     onMessage: (m) => discordRelay?.onMessage(m),
     onInteraction: (i) => void interactions.handle(i),
     onReady: () => {
+      for (const b of conductors?.bindings() ?? []) void conductors?.open(b.id)
       void discordRelay?.catchUp()
       registerSlashCommands()
     },
@@ -3331,7 +3333,7 @@ function commandIntoConductor(b: ConductorBinding, text: string): string {
 
 function conductorTarget(ref: string): Target | undefined {
   const all = conductors
-  const b = all?.bindingOfSession(ref)
+  const b = all?.bindingOf(ref)
   if (!all || !b) return undefined
   return {
     key: `conductor:${b.id}`,

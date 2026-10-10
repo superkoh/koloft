@@ -609,9 +609,10 @@ describe('extractJsonlMeta', () => {
   })
 
   it.each([
-    { name: 'Global-conductor', id: 'c1' },
-    { id: '019a-codex-thread' },
-    { name: 'Fix login\n\nthen deploy', id: 'p2' }
+    { name: 'Global-conductor', id: 'c1', conductor: true },
+    { name: 'planner', id: 'c2', conductor: false },
+    { id: '019a-codex-thread', conductor: true },
+    { name: 'Fix login\n\nthen deploy', id: 'p2', conductor: false }
   ])(
     'a session that %j started with koloft session new is titled by its task, not by the handover Koloft put before it',
     (caller) => {

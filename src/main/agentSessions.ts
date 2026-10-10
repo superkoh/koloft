@@ -91,6 +91,10 @@ export interface ListedSession {
   peerName?: string
 }
 
+function idToReach(s: SessionInfo): string {
+  return s.nativeSessionId ?? s.sessionId
+}
+
 export function formatSessionList(sessions: ListedSession[], callerTabId: string): string {
   if (sessions.length === 0) return 'This workspace has no open sessions.'
   return sessions
@@ -100,7 +104,7 @@ export function formatSessionList(sessions: ListedSession[], callerTabId: string
         BACKEND_LABEL[info.backendId],
         STATE_WORDS[info.status ?? 'idle']
       ]
-      if (info.backendId === 'codex') parts.push(`id: ${info.nativeSessionId ?? info.sessionId}`)
+      if (info.backendId === 'codex') parts.push(`id: ${idToReach(info)}`)
       if (peerName) parts.push(`name: ${peerName}`)
       const transcript = info.details?.claude?.jsonlPath
       if (transcript) parts.push(`transcript: ${transcript}`)
@@ -212,7 +216,7 @@ function startableWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<stri
 }
 
 const CLAUDE_USES_SEND_MESSAGE =
-  'this is for Codex sessions. A Claude session talks to another Claude session with its SendMessage tool; ListAgents shows their names.'
+  'this is for Codex sessions, and for reporting to the conductor that started you by the id in your first message. A Claude session talks to another Claude session with its SendMessage tool; ListAgents shows their names.'
 
 function matchRef<T>(
   items: T[],
@@ -367,7 +371,8 @@ async function startSibling(
   if (backend === 'codex' && args.name !== undefined) return refused(CODEX_HAS_NO_NAME, EXIT_USAGE)
   const caller: SessionCaller = {
     name: me.backendId === 'claude' ? ((await d.peerNames()(me.sessionId)) ?? me.title) : undefined,
-    id: me.nativeSessionId ?? me.sessionId
+    id: idToReach(me),
+    conductor: conductorTab !== undefined
   }
   const name =
     backend === 'claude'
@@ -623,6 +628,10 @@ export function ownerSays(text: string): string {
   return `(Your owner, via the Koloft conductor:) ${text}`
 }
 
+export function sessionSays(from: SessionInfo, text: string): string {
+  return `(From the session "${from.title}", id ${idToReach(from)}:) ${text}`
+}
+
 function isMe(
   ref: string,
   me: SessionInfo,
@@ -830,7 +839,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       const text = tail.join(' ').trim()
       if (!ref || !text) return refused(SEND_USAGE, EXIT_USAGE)
       const conductor = d.conductorOf(ref)
-      if (conductor) return deliver('send', conductor, text, caller)
+      if (conductor) return deliver('send', conductor, sessionSays(caller.session, text), caller)
       if (caller.session.backendId !== 'codex')
         return refused(`koloft session send: ${CLAUDE_USES_SEND_MESSAGE}`)
       const target = findCodexTarget(open, ref)

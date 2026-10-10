@@ -81,6 +81,16 @@ describe('Conductors', () => {
     expect(started).toHaveLength(1)
   })
 
+  it('a conductor is found by the name ListAgents shows for it, so a session reporting back by that name reaches it', () => {
+    const c = make()
+    c.save({ scope: 'global', backend: 'claude', channel: CHANNEL })
+    c.save({ scope: '/ws/a', backend: 'codex', channel: { ...CHANNEL, channelId: '201' } })
+    const [global, ws] = c.bindings()
+    expect(c.bindingOf('Global-conductor')?.id).toBe(global.id)
+    expect(c.bindingOf('a-conductor')?.id).toBe(ws.id)
+    expect(c.bindingOf('Global')).toBeUndefined()
+  })
+
   it('the global conductor starts in its own folder under userData, told its role', async () => {
     const c = make()
     c.save({ scope: 'global', backend: 'claude', channel: CHANNEL })
