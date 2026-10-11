@@ -497,10 +497,17 @@ export class Conductors {
   }
 
   open(scope: string): Promise<ConductorOpenResult> {
-    const inflight = this.opening.get(scope)
+    return this.once(scope, () => this.openNow(scope))
+  }
+
+  private once(
+    key: string,
+    start: () => Promise<ConductorOpenResult>
+  ): Promise<ConductorOpenResult> {
+    const inflight = this.opening.get(key)
     if (inflight) return inflight
-    const opening = this.openNow(scope).finally(() => this.opening.delete(scope))
-    this.opening.set(scope, opening)
+    const opening = start().finally(() => this.opening.delete(key))
+    this.opening.set(key, opening)
     return opening
   }
 
@@ -576,7 +583,11 @@ export class Conductors {
     return { ok: true, tabId }
   }
 
-  async openTask(scope: string, task: AssistTask): Promise<ConductorOpenResult> {
+  openTask(scope: string, task: AssistTask): Promise<ConductorOpenResult> {
+    return this.once(`${scope}\n${task.name}`, () => this.openTaskNow(scope, task))
+  }
+
+  private async openTaskNow(scope: string, task: AssistTask): Promise<ConductorOpenResult> {
     if (!this.canHaveAssist(scope)) return refusal(NOT_AN_ASSIST_SCOPE)
     const running = this.tasks.find((t) => t.scope === scope && t.name === task.name)
     if (running) return { ok: true, tabId: running.tabId }

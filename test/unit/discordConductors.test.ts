@@ -403,6 +403,18 @@ describe('Conductors', () => {
     })
   })
 
+  it('asking for the same task twice while it starts starts it once, and both get its tab', async () => {
+    const c = make()
+    const task = { name: 'Set up Discord', brief: 'b' }
+    const first = c.openTask('global', task)
+    const second = c.openTask('global', task)
+    await vi.waitFor(() => expect(started).toHaveLength(1))
+    release()
+    expect(await first).toEqual({ ok: true, tabId: 'tab-1' })
+    expect(await second).toEqual({ ok: true, tabId: 'tab-1' })
+    expect(c.taskRows()).toHaveLength(1)
+  })
+
   it('a task that sleeps stays listed and is found again when it wakes in a new tab; closing it ends it', async () => {
     const c = make()
     const opening = c.openTask('global', { name: 'Set up Discord', brief: 'b' })
