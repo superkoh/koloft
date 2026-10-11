@@ -51,18 +51,18 @@ contextBridge.executeInMainWorld({
   func: (ask: (kind: string, message: string, defaultValue: string) => BrowserDialogAnswer) => {
     // PLATFORM§14
     const nativeSource = new WeakMap<object, string>()
-    const realToString = Function.prototype.toString
-    const toString = new Proxy(realToString, {
-      apply: (target, self, args) => nativeSource.get(self) ?? Reflect.apply(target, self, args)
-    })
-    nativeSource.set(toString, 'function toString() { [native code] }')
-    Function.prototype.toString = toString
-    const asNative = <T extends object>(fn: T): T => {
-      nativeSource.set(fn, `function ${(fn as { name?: string }).name ?? ''}() { [native code] }`)
+    const asNative = <T extends (...args: never[]) => unknown>(fn: T): T => {
+      nativeSource.set(fn, `function ${fn.name}() { [native code] }`)
       return fn
     }
-    const getterOf = (holder: object, key: string): (() => unknown) =>
-      asNative(Object.getOwnPropertyDescriptor(holder, key)!.get!)
+    const realToString = Function.prototype.toString
+    Function.prototype.toString = asNative(
+      {
+        toString(this: unknown): string {
+          return nativeSource.get(this as object) ?? realToString.call(this)
+        }
+      }.toString
+    )
 
     type Brand = { brand: string; version: string }
     const withChrome = (list: Brand[] | undefined): Brand[] | undefined => {
@@ -73,54 +73,36 @@ contextBridge.executeInMainWorld({
     const uad = (globalThis.navigator as unknown as { userAgentData?: object }).userAgentData
     try {
       // PLATFORM§14
-      const proto = uad && (Object.getPrototypeOf(uad) as Record<string, unknown>)
-      const brandsDesc = proto && Object.getOwnPropertyDescriptor(proto, 'brands')
-      if (proto && brandsDesc?.get) {
-        const realBrands = brandsDesc.get
-        Object.defineProperty(proto, 'brands', {
-          ...brandsDesc,
-          get: getterOf(
-            {
-              get brands() {
-                return withChrome(realBrands.call(this) as Brand[])
-              }
-            },
-            'brands'
-          )
-        })
-      }
-      const hev = proto?.getHighEntropyValues as
-        ((h: string[]) => Promise<Record<string, unknown>>) | undefined
-      if (proto && hev) {
-        proto.getHighEntropyValues = asNative(
-          {
-            async getHighEntropyValues(hints: string[]): Promise<Record<string, unknown>> {
-              const r = await hev.call(this, hints)
-              if (Array.isArray(r.brands)) r.brands = withChrome(r.brands as Brand[])
-              if (Array.isArray(r.fullVersionList))
-                r.fullVersionList = withChrome(r.fullVersionList as Brand[])
-              return r
+      const proto = uad ? (Object.getPrototypeOf(uad) as Record<string, unknown>) : undefined
+      if (proto) {
+        const brandsDesc = Object.getOwnPropertyDescriptor(proto, 'brands')
+        const realBrands = brandsDesc?.get
+        if (realBrands) {
+          const holder = {
+            get brands() {
+              return withChrome(realBrands.call(this) as Brand[])
             }
-          }.getHighEntropyValues
-        )
-      }
-    } catch {}
-
-    try {
-      // PLATFORM§14
-      if ((globalThis.navigator as unknown as { webdriver?: boolean }).webdriver) {
-        const desc = Object.getOwnPropertyDescriptor(Navigator.prototype, 'webdriver')
-        Object.defineProperty(Navigator.prototype, 'webdriver', {
-          ...desc,
-          get: getterOf(
+          }
+          Object.defineProperty(proto, 'brands', {
+            ...brandsDesc,
+            get: asNative(Object.getOwnPropertyDescriptor(holder, 'brands')!.get!)
+          })
+        }
+        const hev = proto.getHighEntropyValues as
+          ((h: string[]) => Promise<Record<string, unknown>>) | undefined
+        if (hev) {
+          proto.getHighEntropyValues = asNative(
             {
-              get webdriver() {
-                return false
+              async getHighEntropyValues(hints: string[]): Promise<Record<string, unknown>> {
+                const r = await hev.call(this, hints)
+                if (Array.isArray(r.brands)) r.brands = withChrome(r.brands as Brand[])
+                if (Array.isArray(r.fullVersionList))
+                  r.fullVersionList = withChrome(r.fullVersionList as Brand[])
+                return r
               }
-            },
-            'webdriver'
+            }.getHighEntropyValues
           )
-        })
+        }
       }
     } catch {}
 

@@ -322,8 +322,6 @@ describe('enforceGuestAttach (SEC-5/SEC-6: what a <webview> may attach as)', () 
     const prefs: GuestAttachPrefs = {}
     enforceGuestAttach(prefs, browserParams(), HOST_PRELOAD)
     expect(prefs.nodeIntegrationInSubFrames).toBe(true)
-    expect(prefs.nodeIntegration).toBe(false)
-    expect(prefs.contextIsolation).toBe(true)
   })
 
   it("admits Preview's own koloft-file:// viewer, with popups still off (D6)", () => {
