@@ -82,7 +82,7 @@
           back.
         </p>
 
-        <h2>Folded down</h2>
+        <h2 id="folded">Folded down</h2>
         <figure class="shot is-narrow" style="--ar: 572 / 350">
           <div class="frame">
             <img
@@ -112,15 +112,23 @@
             its skills, are left out.
           </li>
           <li>
+            Once a turn ends, <a href="../accounts/#assist">Koloft Assist</a> looks at it and keeps
+            only the docs meant for you to read: a report, a plan, a write-up. A draft of text the
+            agent posts somewhere else, like a pull request body, drops off the card a few seconds
+            later. A doc the reply points you to is added, even if the agent did not write it. With
+            Assist off, every doc the agent wrote stays listed.
+          </li>
+          <li>
             A Markdown file opens in Browse, shown the way it looks. An HTML file opens as a web
             tab.
           </li>
           <li>When the window is too narrow for the card and the terminal both, the card hides.</li>
         </ul>
         <p>
-          A Codex session gets the same card. On a <a href="../remote/">remote folder</a> the line
-          count catches up at most every ten seconds, and an HTML file opens as its source, not as a
-          page.
+          A Codex session gets the same card, and so does a Claude session on a
+          <a href="../remote/">remote folder</a>, Assist's pick included. On a remote folder the
+          line count catches up at most every ten seconds, and an HTML file opens as its source, not
+          as a page.
         </p>
 
         <h2>Files ▸ Changes</h2>

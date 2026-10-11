@@ -16,6 +16,7 @@ import {
   waitPanelAttached,
   wbActiveTab,
   wbFrozenTabs,
+  wbTabByTitle,
   wbTabs,
   workbenchPanel
 } from './helpers/workbench'
@@ -150,17 +151,15 @@ test.describe('Workbench web guests: no layout change tears one down, the tab ca
 
     await startSessionIn(page, 'ws-a')
     await agentOpen(page, pageNamed('a'))
-    await wbTabs(page).nth(1).click()
+    await wbTabByTitle(page, 'T13b a').click()
     await expect.poll(() => server.count('/t13b-a'), { timeout: 30_000 }).toBeGreaterThan(0)
     await wbTabs(page).nth(0).click()
     await expect(wbActiveTab(page)).toHaveClass(/pinned/)
 
     await startSessionIn(page, 'ws-b')
-    for (const [i, n] of ['b', 'c'].entries()) {
+    for (const n of ['b', 'c']) {
       await agentOpen(page, pageNamed(n))
-      await wbTabs(page)
-        .nth(i + 1)
-        .click()
+      await wbTabByTitle(page, `T13b ${n}`).click()
       await expect.poll(() => server.count(`/t13b-${n}`), { timeout: 30_000 }).toBeGreaterThan(0)
     }
 

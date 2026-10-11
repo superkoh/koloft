@@ -1,3 +1,34 @@
+@font-face {
+  font-family: 'JetBrainsMono Nerd Font';
+  src: url('/fonts/JetBrainsMonoNerdFont-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'JetBrainsMono Nerd Font';
+  src: url('/fonts/JetBrainsMonoNerdFont-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'JetBrainsMono Nerd Font';
+  src: url('/fonts/JetBrainsMonoNerdFont-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'JetBrainsMono Nerd Font';
+  src: url('/fonts/JetBrainsMonoNerdFont-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+}
+@font-face {
+  font-family: 'JetBrainsMono Nerd Font';
+  src: url('/fonts/JetBrainsMonoNerdFont-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+}
+
 :root {
   --bg-0: #0d0d0f;
   --bg-1: #161618;
@@ -846,11 +877,16 @@ body {
 .ws-tab.st-working::before,
 .ob-bar.st-working {
   background: var(--accent);
-  animation: barBreathe 2.4s var(--ease) infinite;
 }
 .ws-tab.st-waiting::before,
 .ob-bar.st-waiting {
   background: var(--good);
+}
+.ws-tab.st-working::before,
+.ws-tab.st-bg-run::before,
+.ob-bar.st-working,
+.ob-bar.st-bg-run {
+  animation: barBreathe 2.4s var(--ease) infinite;
 }
 .ws-tab.st-approval::before,
 .ob-bar.st-approval {

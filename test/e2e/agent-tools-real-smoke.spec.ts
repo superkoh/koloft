@@ -1015,6 +1015,8 @@ test.describe('a REAL Claude Code session opened by /goal: an opt-in case; it sp
 
 const IGNORED_FILES_THAT_TAKE_CLAUDE_SECONDS_TO_DELETE = { dirs: 2500, filesEach: 100 }
 const A_SLASH_COMMAND_MENU_SETTLES_MS = 1_000
+// CC§4
+const A_BRANCH_GOES_AFTER_ITS_FOLDER_WITHIN_MS = 10_000
 
 function ignoreNodeModules(repo: string): void {
   fs.writeFileSync(path.join(repo, '.gitignore'), 'node_modules/\n.claude/\n')
@@ -1076,7 +1078,11 @@ test.describe('/exit from a REAL Claude Code worktree session: an opt-in case; i
         await expect(rows).toHaveCount(0, { timeout: 5_000 })
         expect(fs.existsSync(tree)).toBe(true)
         await expect.poll(() => fs.existsSync(tree), { timeout: 120_000 }).toBe(false)
-        expect(runGit(repo, 'branch', '--list', `worktree-${WORKTREE}`).trim()).toBe('')
+        await expect
+          .poll(() => runGit(repo, 'branch', '--list', `worktree-${WORKTREE}`).trim(), {
+            timeout: A_BRANCH_GOES_AFTER_ITS_FOLDER_WITHIN_MS
+          })
+          .toBe('')
       },
       ignoreNodeModules
     )
@@ -1154,6 +1160,29 @@ test.describe('closing a REAL Codex worktree session: opt-in cases; the ones wit
 const SECRET = 'SECRET-PAPAYA-58'
 const CHILD_WORKS_WHILE_THE_PARENT_IS_CLOSED_S = 40
 const START_A_CHILD_THAT_REPORTS_BACK = `Run this shell command exactly once: koloft session new -- "First run the shell command perl -e 'sleep ${CHILD_WORKS_WHILE_THE_PARENT_IS_CLOSED_S}' in the foreground and wait for it to end. Then read the file secret.txt in this folder and report its content back." Then end your turn at once: do not wait for that session, check on it or read secret.txt yourself.`
+
+const QUOTE_HELPER_RULE_ONE =
+  'Do not run any tool. Under HELPERS in your instructions, rule 1 names a command to run. Reply with only that command, nothing else.'
+
+test.describe('Koloft’s helper rules reach the REAL agent in a Koloft tab: opt-in cases that spend real money', () => {
+  for (const [label, backend, useReal, have] of [
+    ['Claude Code', 'default', useRealClaude, HAVE_REAL_CLAUDE],
+    ['Codex', 'other', useRealCodex, HAVE_REAL_CODEX]
+  ] as const) {
+    test(`a real ${label} in a Koloft tab knows, before any tool runs, that work needing its own worktree goes to koloft session new -w`, async ({
+      env
+    }) => {
+      test.skip(!have, 'set the KOLOFT_SMOKE_* variables for this backend')
+      test.setTimeout(A_REAL_MODEL_TURN_MS + 180_000)
+      await inARealWorktreeSession(env, backend, useReal, [], async ({ page, rows }) => {
+        await ask(page, rows, QUOTE_HELPER_RULE_ONE)
+        await expect
+          .poll(() => screen(page), { timeout: A_REAL_MODEL_TURN_MS })
+          .toMatch(/koloft session new -w/)
+      })
+    })
+  }
+})
 
 test.describe('a child reports back to the REAL session that started it: opt-in cases that spend real money', () => {
   for (const [backend, label, useReal, have] of [

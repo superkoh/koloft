@@ -28,6 +28,7 @@ import type { ClaudeLaunch, Host } from '../host/host'
 import type { RemoteSync } from '../remote/sync'
 import { AGENT_DROP_NAME, REQUEST_NAME, replyJson, type AgentReply } from '../agentRequests'
 import { accountEnv, sessionIdOfTmux, tmuxSessionName } from '../remote/launch'
+import { AGENT_PROMPT_FILE } from '../agentPlugin'
 import {
   dq,
   mirrorHookDir,
@@ -913,7 +914,15 @@ export class ClaudeBackend implements SessionBackend {
       conductor: spec.conductor,
       resized: plan.resized,
       shell: plan.shell,
-      extraEnv: agentPlugin ? { ...plan.extraEnv, KOLOFT_AGENT_PLUGIN: agentPlugin } : plan.extraEnv
+      extraEnv: agentPlugin
+        ? {
+            ...plan.extraEnv,
+            KOLOFT_AGENT_PLUGIN: agentPlugin,
+            KOLOFT_AGENT_PROMPT: spec.conductor
+              ? undefined
+              : path.join(agentPlugin, AGENT_PROMPT_FILE)
+          }
+        : plan.extraEnv
     })
     if (spec.role && !machine) writeConductorMarker(this.hookRegDir, handle.id, spec.role)
     if (spec.permission === 'bypass') this.launchedBypassing.add(handle.id)

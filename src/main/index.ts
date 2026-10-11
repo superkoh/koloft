@@ -1024,7 +1024,7 @@ const sessionDeps: SessionVerbDeps = {
   touch: (tabId, key) => conductors?.touch(tabId, key),
   conductorOf: conductorTarget,
   resume: async (row) => {
-    const resumed = await resumeRow(row)
+    const resumed = await resumeRow(row, { rebuildGoneWorktree: true })
     if (!resumed.ok) throw new Error(resumed.error)
     return resumed.tabId
   },
@@ -3327,7 +3327,10 @@ async function resumeAwake(ids: string[], active: string | undefined): Promise<v
   const resumeOne = async (id: string): Promise<void> => {
     const row = rows.find((r) => r.id === id)
     const resumed = row
-      ? await resumeRow(row).catch(() => ({ ok: false as const, error: couldNotStart(row.title) }))
+      ? await resumeRow(row, { rebuildGoneWorktree: false }).catch(() => ({
+          ok: false as const,
+          error: couldNotStart(row.title)
+        }))
       : undefined
     if (!resumed?.ok) {
       if (resumed) sendToRenderer('cron:toast', resumed.error)
@@ -3345,11 +3348,12 @@ function couldNotStart(title: string): string {
 
 // CC§11
 async function resumeRow(
-  row: SessionRow
+  row: SessionRow,
+  { rebuildGoneWorktree }: { rebuildGoneWorktree: boolean }
 ): Promise<{ ok: true; tabId: string } | { ok: false; error: string }> {
   const backend = sessionBackends.forSession(row.id)
   const plan = await backend.resumePlan(row.id)
-  if (plan.action === 'dialog' || plan.action === 'rebuild') {
+  if (plan.action === 'dialog' || (plan.action === 'rebuild' && !rebuildGoneWorktree)) {
     return {
       ok: false,
       error: `“${row.title}” needs you — its worktree changed. Click it to resume.`
@@ -3364,7 +3368,11 @@ async function resumeRow(
           : `Could not start “${row.title}” — its folder is gone.`
     }
   }
-  const res = await backend.resume({ sessionId: row.id, cwd: plan.cwd, mode: 'direct' })
+  const res = await backend.resume({
+    sessionId: row.id,
+    cwd: plan.action === 'rebuild' ? plan.resumeCwd : plan.cwd,
+    mode: plan.action
+  })
   if (!res.ok) return { ok: false, error: couldNotStart(row.title) }
   const spawned: SpawnedTab = {
     id: res.id,
