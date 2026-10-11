@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { WorkspaceRows } from '@shared/types'
-import { typedSeed, type SessionSeed } from '../newSession'
+import { pendingOptions } from '../aiStart'
+import type { PendingStart } from '../newSession'
 import type { PickerMode } from '../workspacePicker'
 import { useStore } from '../store'
 import { WorkspacePicker } from './WorkspacePicker'
@@ -14,7 +15,7 @@ export function NewSessionDialog({
   onClose,
   onStart,
   launchLock,
-  seed: initialSeed
+  pending
 }: {
   mode: PickerMode
   initialPath?: string
@@ -22,10 +23,9 @@ export function NewSessionDialog({
   onClose: () => void
   onStart: StartSession
   launchLock: { current: boolean }
-  seed?: SessionSeed
+  pending?: PendingStart
 }) {
   const [worktreePath, setWorktreePath] = useState(initialPath)
-  const [seed, setSeed] = useState(initialSeed)
   const lastWsPath = useStore((s) => s.lastWsPath)
   const ws = rows.find((w) => w.workspace.path === worktreePath && !w.workspace.missing)
   const targetGone = !!worktreePath && !ws
@@ -33,36 +33,23 @@ export function NewSessionDialog({
     if (targetGone) onClose()
   }, [targetGone, onClose])
   if (targetGone) return null
-  if (mode !== 'main' && ws)
+  if (mode === 'worktree' && ws)
     return (
-      <WorktreeSessionDialog
-        key={ws.workspace.path}
-        ws={ws}
-        onClose={onClose}
-        onStart={onStart}
-        launchLock={launchLock}
-        seed={seed}
-        onChangeWorkspace={
-          seed
-            ? (typed) => {
-                setSeed(typedSeed(typed))
-                setWorktreePath(undefined)
-              }
-            : undefined
-        }
-      />
+      <WorktreeSessionDialog ws={ws} onClose={onClose} onStart={onStart} launchLock={launchLock} />
     )
   return (
     <WorkspacePicker
       mode={mode}
       rows={rows}
-      lastWsPath={lastWsPath}
+      lastWsPath={pending?.path ?? lastWsPath}
       pinned={mode === 'main' ? ws : undefined}
       onClose={onClose}
       launchLock={launchLock}
       onConfirm={async (target, backend) => {
-        if (mode !== 'main') setWorktreePath(target.workspace.path)
-        else await onStart({ cwd: target.workspace.path }, backend)
+        const at = target.workspace.path
+        if (pending) await onStart(await pendingOptions(at, pending), backend)
+        else if (mode === 'worktree') setWorktreePath(at)
+        else await onStart({ cwd: at }, backend)
       }}
     />
   )

@@ -1,6 +1,6 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
-import { LuTriangleAlert, LuX } from 'react-icons/lu'
+import { LuLoaderCircle, LuTriangleAlert, LuX } from 'react-icons/lu'
 import type { BackendId, WorkspaceRows } from '@shared/types'
 import { basename } from '@shared/preview'
 import { hostOf } from '@shared/remoteKey'
@@ -24,12 +24,7 @@ import {
   type PickerMode
 } from '../workspacePicker'
 import { PullConfirm } from './PullConfirm'
-import {
-  BusyLine,
-  SessionLaunchButtons,
-  SessionLaunchStatus,
-  useSessionLaunch
-} from './SessionLaunchButtons'
+import { SessionLaunchButtons, SessionLaunchStatus, useSessionLaunch } from './SessionLaunchButtons'
 
 export function WorkspacePicker({
   mode,
@@ -117,7 +112,7 @@ export function WorkspacePicker({
     backend = sessionLaunch.methods.defaultBackend
   ): void => {
     if (!ws || locked || confirm !== null) return
-    if (mode !== 'main') {
+    if (mode === 'worktree') {
       void onConfirm(ws, backend)
       return
     }
@@ -188,9 +183,14 @@ export function WorkspacePicker({
     const f = target?.workspace.freshness
     if (locked) {
       return (
-        <BusyLine>
-          {sessionLaunch.starting ? 'Starting…' : f ? `Pulling ${f.defRef}…` : 'Pulling…'}
-        </BusyLine>
+        <div className="fresh-line busy">
+          <span className="fico-l">
+            <LuLoaderCircle size={14} />
+          </span>
+          <span>
+            {sessionLaunch.starting ? 'Starting…' : f ? `Pulling ${f.defRef}…` : 'Pulling…'}
+          </span>
+        </div>
       )
     }
     if (failedHere) {
@@ -217,12 +217,7 @@ export function WorkspacePicker({
     )
   }
 
-  const title =
-    mode === 'main'
-      ? 'New Session in…'
-      : mode === 'worktree'
-        ? 'New Worktree Session in…'
-        : 'Start in…'
+  const title = mode === 'main' ? 'New Session in…' : 'New Worktree Session in…'
 
   return (
     <>
@@ -290,7 +285,7 @@ export function WorkspacePicker({
             >
               Cancel
             </button>
-            {mode !== 'main' ? (
+            {mode === 'worktree' ? (
               <button
                 className="btn-primary"
                 disabled={!target || locked}

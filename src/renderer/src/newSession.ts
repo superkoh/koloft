@@ -41,21 +41,58 @@ export function escPeel(l: {
 
 export type WtHot = { where: 'field' } | { where: 'list'; index: number }
 
-export interface SessionSeed {
+export interface TypedStart {
   prompt: string
   title: string
+}
+
+export interface PendingStart extends TypedStart {
+  path: string | null
   worktree: RouteWorktree | null
-  why: string
-  unsure: boolean
-  warn: string
 }
 
-export function typedSeed(typed: { prompt: string; title: string }, warn = ''): SessionSeed {
-  return { ...typed, worktree: null, why: '', unsure: false, warn }
+export type PendingLaunch = { cwd: string; worktree?: string } & Pick<
+  CreateTabOptions,
+  'firstPrompt' | 'name' | 'trustFolder'
+>
+
+export function typedLaunch(typed: TypedStart): Pick<CreateTabOptions, 'firstPrompt' | 'name'> {
+  return { firstPrompt: typed.prompt.trim() || undefined, name: typed.title.trim() || undefined }
 }
 
-export function seedQuery(worktree: RouteWorktree | null | undefined): string {
-  return worktree?.kind === 'new' || worktree?.kind === 'existing' ? worktree.name : ''
+export function pendingLaunch(
+  wsPath: string,
+  pending: PendingStart,
+  worktrees: WorktreeInfo[],
+  issues: GithubItem[]
+): PendingLaunch {
+  const wt = wsPath === pending.path ? pending.worktree : null
+  if (!wt || wt.kind === 'main') return { cwd: wsPath, ...typedLaunch(pending) }
+  if (wt.kind === 'issue') {
+    const item = issues.find((i) => i.kind === 'issue' && i.number === wt.number)
+    const aim = item && itemAim(item, worktrees)
+    if (item && aim?.kind === 'item') {
+      const choice: RunChoice = aim.dir
+        ? { kind: 'existing', name: aim.name, dir: aim.dir }
+        : { kind: 'create', name: aim.name }
+      return {
+        ...resolveLaunch(choice, wsPath),
+        ...seededItemExtras(item, pending.prompt, pending.title)
+      }
+    }
+    return {
+      ...resolveLaunch({ kind: 'create', name: `issue-${wt.number}` }, wsPath),
+      ...typedLaunch(pending)
+    }
+  }
+  const hit = worktrees.find((w) => w.name === wt.name)
+  return {
+    ...resolveLaunch(
+      hit ? { kind: 'existing', ...hit } : { kind: 'create', name: wt.name },
+      wsPath
+    ),
+    ...typedLaunch(pending)
+  }
 }
 
 export function seededItemExtras(
@@ -74,7 +111,6 @@ export function seededItemExtras(
 
 export type WtAim =
   | { kind: 'none' }
-  | { kind: 'root' }
   | { kind: 'create'; name: string }
   | { kind: 'open'; name: string; dir: string }
   | { kind: 'recover'; name: string; dir: string; recoveryResourceId: string }

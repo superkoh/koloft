@@ -4,6 +4,7 @@ import { LuSparkles, LuX } from 'react-icons/lu'
 import type { BackendId } from '@shared/types'
 import { LOCAL_MACHINE } from '@shared/sessionRoute'
 import { isValidWorktreeName } from '@shared/worktreeName'
+import { projectOptions, projectParentKey } from '../aiStart'
 import { shortenHome } from '../browseModel'
 import { isComposing } from '../keys'
 import { remoteKeyFromForm } from '../remoteWorkspace'
@@ -73,7 +74,7 @@ export function NewProjectDialog({
   const nameBad = !!name && !isValidWorktreeName(name)
   const remote = local || !where ? null : remoteKeyFromForm(machine, where)
   const whereBad = remote?.ok === false ? remote.message : ''
-  const parentKey = remote?.ok ? remote.key : where
+  const parentKey = projectParentKey(machine, where) ?? where
   const ready = !!name && !nameBad && !!where && !whereBad
   const backends = sessionLaunch.usable
   const other =
@@ -84,15 +85,9 @@ export function NewProjectDialog({
   const submit = (backend: BackendId = sessionLaunch.methods.defaultBackend): void => {
     if (!ready || locked || sessionLaunch.issue(backend)) return
     void sessionLaunch.launch(async () => {
-      const made = await window.api.workspace.createProject(parentKey, name)
-      if (!made.ok) throw new Error(made.reason)
+      const opts = await projectOptions(parentKey, name, { prompt, title })
       updateSettings({ newProjectFolders: { ...folders, [machine]: where } })
-      return {
-        cwd: made.path,
-        firstPrompt: prompt.trim() || undefined,
-        name: title.trim() || undefined,
-        trustFolder: true
-      }
+      return opts
     }, backend)
   }
 

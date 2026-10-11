@@ -8,7 +8,7 @@ import {
   type KeyboardEvent,
   type ReactNode
 } from 'react'
-import { LuCheck, LuSparkles, LuTriangleAlert, LuX } from 'react-icons/lu'
+import { LuCheck, LuLoaderCircle, LuTriangleAlert, LuX } from 'react-icons/lu'
 import type {
   BackendId,
   GithubItem,
@@ -28,21 +28,19 @@ import {
   itemAim,
   itemFilterText,
   itemLabel,
+  itemLaunchExtras,
   mainRunningCount,
   moveHot,
   primaryKind,
   primaryLabel,
   pullFailedReason,
   resolveLaunch,
-  seededItemExtras,
-  seedQuery,
   sortWorktrees,
   worktreeAim,
   worktreeBaseMode,
   worktreeInUse,
   type PullPhase,
   type RunChoice,
-  type SessionSeed,
   type WtAction,
   type WtAim,
   type WtHot
@@ -53,9 +51,7 @@ import { pullToast } from '../freshnessView'
 import { isComposing } from '../keys'
 import { useStore } from '../store'
 import { PullConfirm } from './PullConfirm'
-import { SeedFields } from './SeedFields'
 import {
-  BusyLine,
   SessionLaunchButtons,
   SessionLaunchStatus,
   useSessionLaunch,
@@ -67,27 +63,19 @@ export function WorktreeSessionDialog({
   ws,
   launchLock,
   onClose,
-  onStart,
-  seed,
-  onChangeWorkspace
+  onStart
 }: {
   ws: WorkspaceRows
   launchLock: { current: boolean }
   onClose: () => void
   onStart: StartSession
-  seed?: SessionSeed
-  onChangeWorkspace?: (typed: { prompt: string; title: string }) => void
 }): JSX.Element {
   const { path: wsPath, isGit, remote } = ws.workspace
   const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([])
-  const [loaded, setLoaded] = useState(!isGit)
+  const [loaded, setLoaded] = useState(false)
   const [loadError, setLoadError] = useState('')
-  const [query, setQuery] = useState(() => seedQuery(seed?.worktree))
+  const [query, setQuery] = useState('')
   const [hot, setHot] = useState<WtHot>({ where: 'field' })
-  const [prompt, setPrompt] = useState(seed?.prompt ?? '')
-  const [sessionTitle, setSessionTitle] = useState(seed?.title ?? '')
-  const seededIssue = useRef(seed?.worktree?.kind === 'issue' ? seed.worktree.number : null)
-  const promptRef = useRef<HTMLTextAreaElement>(null)
   const [checking, setChecking] = useState(false)
   const [fetched, setFetched] = useState<WorkspaceFreshness | null>(null)
   const [phase, setPhase] = useState<PullPhase>('idle')
@@ -102,7 +90,6 @@ export function WorktreeSessionDialog({
   const confirmBackend = useRef<BackendId>(sessionLaunch.methods.defaultBackend)
 
   useEffect(() => {
-    if (!isGit) return
     let live = true
     void window.api.workspace.worktrees(wsPath).then(
       (w) => {
@@ -118,7 +105,7 @@ export function WorktreeSessionDialog({
     return () => {
       live = false
     }
-  }, [wsPath, isGit])
+  }, [wsPath])
 
   useEffect(() => {
     if (!isGit || remote || !gitAutoFetch) return
@@ -169,46 +156,25 @@ export function WorktreeSessionDialog({
     const item = ghItems[i - listed.length]
     return item ? itemAim(item, listed) : worktreeAim(listed, '', { where: 'list', index: i })
   }
-  useEffect(() => {
-    const issue = seededIssue.current
-    if (issue === null || ghItems.length === 0) return
-    seededIssue.current = null
-    const j = ghItems.findIndex((it) => it.kind === 'issue' && it.number === issue)
-    if (j >= 0) setHot({ where: 'list', index: listed.length + j })
-  }, [ghItems, listed.length])
-
-  const aim: WtAim = !isGit
-    ? { kind: 'root' }
-    : hot.where === 'list'
-      ? aimAt(hot.index)
-      : seed && !query.trim()
-        ? { kind: 'root' }
-        : worktreeAim(listed, query, hot)
+  const aim = hot.where === 'list' ? aimAt(hot.index) : worktreeAim(listed, query, hot)
   const actionable =
     loaded &&
-    (aim.kind === 'root' ||
-      aim.kind === 'create' ||
-      aim.kind === 'open' ||
-      aim.kind === 'recover' ||
-      aim.kind === 'item')
+    (aim.kind === 'create' || aim.kind === 'open' || aim.kind === 'recover' || aim.kind === 'item')
   const freshness = ws.workspace.freshness ?? fetched
   const now = Date.now()
   const line = freshLineState(freshness, checking, worktreeBaseMode(aim), now)
   const primary = primaryKind(line, phase)
-  const action: WtAction | undefined =
-    aim.kind === 'root'
-      ? undefined
-      : {
-          verb:
-            aim.kind === 'open' || (aim.kind === 'item' && aim.dir)
-              ? 'Open'
-              : aim.kind === 'recover'
-                ? 'Recover'
-                : 'Create',
-          name: 'name' in aim ? aim.name : null,
-          ref: freshness?.defRef,
-          item: aim.kind === 'item' ? aim.item.number : undefined
-        }
+  const action: WtAction = {
+    verb:
+      aim.kind === 'open' || (aim.kind === 'item' && aim.dir)
+        ? 'Open'
+        : aim.kind === 'recover'
+          ? 'Recover'
+          : 'Create',
+    name: 'name' in aim ? aim.name : null,
+    ref: freshness?.defRef,
+    item: aim.kind === 'item' ? aim.item.number : undefined
+  }
   const locked = phase === 'pulling' || sessionLaunch.starting
   useEffect(() => {
     launchLock.current = locked
@@ -246,7 +212,7 @@ export function WorktreeSessionDialog({
 
   useEffect(() => {
     if (locked || confirm !== null) return
-    ;(inputRef.current ?? promptRef.current)?.focus()
+    inputRef.current?.focus()
   }, [locked, confirm])
 
   const close = (): void => {
@@ -256,26 +222,23 @@ export function WorktreeSessionDialog({
   const launch = (target: WtAim, backend = sessionLaunch.methods.defaultBackend): void => {
     if (locked || sessionLaunch.issue(backend)) return
     const method = target.kind === 'recover' ? 'codex' : backend
-    const go = (base: SessionLaunchOptions): void =>
+    if (target.kind === 'recover') {
+      void sessionLaunch.launch(resolveLaunch(target, wsPath), method)
+    } else if (target.kind === 'open') {
       void sessionLaunch.launch(
-        {
-          ...base,
-          firstPrompt: prompt.trim() || undefined,
-          name: sessionTitle.trim() || undefined
-        },
+        resolveLaunch({ kind: 'existing', name: target.name, dir: target.dir }, wsPath),
         method
       )
-    if (target.kind === 'root') go({ cwd: wsPath })
-    else if (target.kind === 'recover') go(resolveLaunch(target, wsPath))
-    else if (target.kind === 'open')
-      go(resolveLaunch({ kind: 'existing', name: target.name, dir: target.dir }, wsPath))
-    else if (target.kind === 'create')
-      go(resolveLaunch({ kind: 'create', name: target.name }, wsPath))
-    else if (target.kind === 'item') {
+    } else if (target.kind === 'create') {
+      void sessionLaunch.launch(
+        resolveLaunch({ kind: 'create', name: target.name }, wsPath),
+        method
+      )
+    } else if (target.kind === 'item') {
       const { item, name, dir } = target
       const withItem = (c: RunChoice): SessionLaunchOptions => ({
         ...resolveLaunch(c, wsPath),
-        ...seededItemExtras(item, prompt, sessionTitle)
+        ...itemLaunchExtras(item)
       })
       if (dir) void sessionLaunch.launch(withItem({ kind: 'existing', name, dir }), method)
       else if (item.kind === 'issue')
@@ -333,23 +296,8 @@ export function WorktreeSessionDialog({
     }
   }
 
-  const onTypedKeyDown = (e: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>): void => {
-    if (confirm !== null || locked || e.key !== 'Enter' || isComposing(e)) return
-    e.preventDefault()
-    submit(e.shiftKey && other ? other : undefined)
-  }
-
   const hint = (): JSX.Element | null => {
     if (aim.kind === 'none') return null
-    if (aim.kind === 'root') {
-      return (
-        <p className="field-hint">
-          Start a session {isGit ? 'in the main checkout ' : ''}at{' '}
-          <code>{shortenHome(wsPath, window.api.home)}</code>
-          {isGit ? ' — or name a new worktree above.' : '.'}
-        </p>
-      )
-    }
     if (aim.kind === 'reserved') {
       return <p className="field-hint bad">“main” is the main checkout — pick another name</p>
     }
@@ -406,9 +354,18 @@ export function WorktreeSessionDialog({
     )
   }
 
+  const busyLine = (text: string): JSX.Element => (
+    <div className="fresh-line busy">
+      <span className="fico-l">
+        <LuLoaderCircle size={14} />
+      </span>
+      <span>{text}</span>
+    </div>
+  )
+
   const freshLine = (): JSX.Element | null => {
-    if (sessionLaunch.starting) return <BusyLine>Starting…</BusyLine>
-    if (phase === 'pulling' && freshness) return <BusyLine>Pulling {freshness.defRef}…</BusyLine>
+    if (sessionLaunch.starting) return busyLine('Starting…')
+    if (phase === 'pulling' && freshness) return busyLine(`Pulling ${freshness.defRef}…`)
     if (line === 'hidden') return null
     if (phase === 'failed') {
       return (
@@ -418,7 +375,7 @@ export function WorktreeSessionDialog({
         </p>
       )
     }
-    if (line === 'checking') return <BusyLine>Checking origin…</BusyLine>
+    if (line === 'checking') return busyLine('Checking origin…')
     const copy = freshness && freshLineCopy(line, freshness, now)
     if (!copy) return null
     const good = line === 'ok'
@@ -501,35 +458,7 @@ export function WorktreeSessionDialog({
     )
   }
 
-  const title = (isGit ? 'New Worktree Session · ' : 'New Session · ') + basename(wsPath)
-
-  const seedLine = (): JSX.Element | null => {
-    if (!seed) return null
-    const change = onChangeWorkspace && (
-      <button
-        className="ob-link"
-        disabled={locked}
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={() => onChangeWorkspace({ prompt, title: sessionTitle })}
-      >
-        Change workspace
-      </button>
-    )
-    if (seed.warn)
-      return (
-        <p className="field-hint warn assist-why">
-          <span>{seed.warn}</span>
-          {change}
-        </p>
-      )
-    return (
-      <p className={'field-hint assist-why' + (seed.unsure ? ' warn' : '')}>
-        <LuSparkles size={13} className="assist-glyph" />
-        <span>{seed.why || 'Picked by Koloft Assist.'}</span>
-        {change}
-      </p>
-    )
-  }
+  const title = 'New Worktree Session · ' + basename(wsPath)
 
   return (
     <>
@@ -547,38 +476,31 @@ export function WorktreeSessionDialog({
             </span>
           </div>
           <div className="modal-body">
-            {seedLine()}
-            {isGit && (
-              <>
-                <span className="flabel">Worktree</span>
-                <div className={'cb-input' + (hot.where === 'field' ? ' focus' : '')}>
-                  <input
-                    ref={inputRef}
-                    className="cb-field"
-                    spellCheck={false}
-                    autoComplete="off"
-                    placeholder={
-                      seed
-                        ? 'leave empty for the main checkout, or name a new worktree…'
-                        : ghItems.length > 0
-                          ? 'name a new worktree, or pick a worktree, issue or PR below…'
-                          : listed.length > 0
-                            ? 'name a new worktree, or pick below…'
-                            : 'name a new worktree'
-                    }
-                    aria-label="Worktree"
-                    disabled={locked}
-                    value={query}
-                    onChange={(e) => {
-                      if (confirm !== null) return
-                      setQuery(e.target.value)
-                      setHot({ where: 'field' })
-                    }}
-                    onKeyDown={onKeyDown}
-                  />
-                </div>
-              </>
-            )}
+            <span className="flabel">Worktree</span>
+            <div className={'cb-input' + (hot.where === 'field' ? ' focus' : '')}>
+              <input
+                ref={inputRef}
+                className="cb-field"
+                spellCheck={false}
+                autoComplete="off"
+                placeholder={
+                  ghItems.length > 0
+                    ? 'name a new worktree, or pick a worktree, issue or PR below…'
+                    : listed.length > 0
+                      ? 'name a new worktree, or pick below…'
+                      : 'name a new worktree'
+                }
+                aria-label="Worktree"
+                disabled={locked}
+                value={query}
+                onChange={(e) => {
+                  if (confirm !== null) return
+                  setQuery(e.target.value)
+                  setHot({ where: 'field' })
+                }}
+                onKeyDown={onKeyDown}
+              />
+            </div>
             {loaded ? (
               hint()
             ) : (
@@ -587,17 +509,6 @@ export function WorktreeSessionDialog({
               </p>
             )}
             {freshLine()}
-            {seed && (
-              <SeedFields
-                title={sessionTitle}
-                prompt={prompt}
-                onTitle={setSessionTitle}
-                onPrompt={setPrompt}
-                onKeyDown={onTypedKeyDown}
-                disabled={locked}
-                promptRef={promptRef}
-              />
-            )}
             <SessionLaunchStatus launch={sessionLaunch} />
             {listed.length > 0 && (
               <div className="wt-list">
@@ -648,7 +559,7 @@ export function WorktreeSessionDialog({
                       ? BACKEND_LABEL[backend]
                       : undefined
                   )
-                return `${primary === 'pull' ? 'Pull & ' : ''}${action ? actionText(action, false) : 'Start'} · ${BACKEND_LABEL[backend]}`
+                return `${primary === 'pull' ? 'Pull & ' : ''}${actionText(action, false)} · ${BACKEND_LABEL[backend]}`
               }}
               onStart={submit}
             />

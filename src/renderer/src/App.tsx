@@ -39,10 +39,12 @@ import type {
   BrowserCdpOp,
   BrowserJsDialog,
   ExtensionPermissionRequest,
+  HostId,
   SessionRow,
   SessionSearchHit,
   WorkspaceRows
 } from '@shared/types'
+import { LOCAL_MACHINE } from '@shared/sessionRoute'
 import {
   useStore,
   openInterceptedFile,
@@ -139,7 +141,8 @@ import { useHints } from './useHints'
 import { updateSettings } from './components/settings/useSettingsUpdate'
 import { CommandPalette, type PaletteRouted } from './components/CommandPalette'
 import { NewProjectDialog, type ProjectSeed } from './components/NewProjectDialog'
-import { typedSeed, type SessionSeed } from './newSession'
+import type { PendingStart, TypedStart } from './newSession'
+import { pendingOptions, projectOptions, projectParentKey } from './aiStart'
 import type { PaletteAction } from './palette'
 
 const RECENT_MAX = 3
@@ -298,7 +301,7 @@ export default function App(): JSX.Element {
     id: number
     mode: PickerMode
     path?: string
-    seed?: SessionSeed
+    pending?: PendingStart
   } | null>(null)
   const [newProject, setNewProject] = useState<{ id: number; seed: ProjectSeed } | null>(null)
   const [restoreWs, setRestoreWs] = useState<string | null>(null)
@@ -307,7 +310,6 @@ export default function App(): JSX.Element {
   const [remoteDialog, setRemoteDialog] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const closePalette = useCallback((): void => setPaletteOpen(false), [])
-  const paletteStart = useRef<(() => void) | null>(null)
   const [panelCmd, setPanelCmd] = useState<WorkbenchCommandSignal | null>(null)
   const [browserDialog, setBrowserDialog] = useState<BrowserAuthChallenge | BrowserJsDialog | null>(
     null
@@ -544,10 +546,6 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     return window.api.shortcuts.onBrowserCommand((cmd) => {
-      if (cmd === 'toggle-focus-mode' && paletteStart.current) {
-        paletteStart.current()
-        return
-      }
       const target = commandTarget(cmd, !!focusedWorkbench() && activeTabIsWeb())
       if (target.to === 'app') {
         if (target.cmd === 'toggle-browser') toggleWorkbench()
@@ -1072,42 +1070,83 @@ export default function App(): JSX.Element {
     void resumeSession({ id: row.id, backendId: row.backendId, title: row.title })
   }, [])
 
-  const paletteRouted: PaletteRouted = (prompt, route) => {
+  const startNow = (
+    host: HostId,
+    backend: SessionBackend,
+    options: () => Promise<SessionLaunchOptions>
+  ): void => {
+    const refusal = unsupportedPairMessage(backend, host)
+    if (refusal) {
+      showToast(refusal)
+      return
+    }
+    if (newSessionLocked.current) return
+    newSessionLocked.current = true
+    void options()
+      .then((opts) => startSession(opts, backend))
+      .catch((e) => showToast(launchErrorMessage(e)))
+      .finally(() => {
+        newSessionLocked.current = false
+      })
+  }
+
+  const pickWorkspaceFor = (pending: PendingStart, path?: string): void => {
+    setNewRequest({ id: ++newRequestId.current, mode: 'main', path, pending })
+  }
+
+  const paletteRouted: PaletteRouted = (prompt, backend, route) => {
     setPaletteOpen(false)
     if (route?.kind === 'project') {
+      const where = useStore.getState().settings.newProjectFolders[route.machine]
+      const parentKey = where ? projectParentKey(route.machine, where) : null
+      const folder = route.folder
+      if (parentKey && folder) {
+        startNow(route.machine === LOCAL_MACHINE ? 'local' : 'ssh', backend, () =>
+          projectOptions(parentKey, folder, { prompt, title: route.title })
+        )
+        return
+      }
       setNewProject({
         id: ++newRequestId.current,
         seed: {
           prompt,
           title: route.title,
           machine: route.machine,
-          folder: route.folder ?? '',
+          folder: folder ?? '',
           why: route.why
         }
       })
       return
     }
-    const here = workspaceRows.find((w) => w.workspace.path === currentWs && !w.workspace.missing)
-    setNewRequest({
-      id: ++newRequestId.current,
-      mode: 'any',
-      path: route ? route.path : here?.workspace.path,
-      seed: route
-        ? {
-            prompt,
-            title: route.title,
-            worktree: route.worktree,
-            why: route.why,
-            unsure: !route.sure,
-            warn: ''
-          }
-        : typedSeed(
-            { prompt, title: '' },
-            useStore.getState().settings.assist?.on
-              ? 'Koloft Assist could not answer, so pick the workspace and worktree yourself.'
-              : 'Koloft Assist is off, so pick the workspace and worktree yourself. Turn it on in Settings ▸ Assist.'
-          )
-    })
+    const pending: PendingStart = {
+      prompt,
+      title: route?.title ?? '',
+      path: route?.path ?? null,
+      worktree: route?.worktree ?? null
+    }
+    const ws =
+      route && workspaceRows.find((w) => w.workspace.path === route.path && !w.workspace.missing)
+    if (!route || !route.sure || !ws) {
+      if (!route)
+        showToast(
+          useStore.getState().settings.assist?.on
+            ? 'Koloft Assist could not answer, so pick the workspace yourself.'
+            : 'Koloft Assist is off, so pick the workspace yourself. Turn it on in Settings ▸ Assist.'
+        )
+      pickWorkspaceFor(pending)
+      return
+    }
+    const inMainCheckout = !pending.worktree || pending.worktree.kind === 'main'
+    if (inMainCheckout && pullable(ws)) {
+      pickWorkspaceFor(pending, ws.workspace.path)
+      return
+    }
+    startNow(hostOf(ws.workspace.path), backend, () => pendingOptions(ws.workspace.path, pending))
+  }
+
+  const pickWorkspaceForTyped = (typed: TypedStart): void => {
+    setNewProject(null)
+    pickWorkspaceFor({ ...typed, path: null, worktree: null })
   }
 
   const paletteActions = (): PaletteAction[] => {
@@ -1814,7 +1853,7 @@ export default function App(): JSX.Element {
               onClose={closePalette}
               onRouted={paletteRouted}
               onOpenHit={openSearchHit}
-              startRef={paletteStart}
+              methods={namedMethods ?? [effectiveBackend(sessionMethods, installed)]}
             />
           )}
           {newRequest && (
@@ -1826,7 +1865,7 @@ export default function App(): JSX.Element {
               onClose={() => setNewRequest(null)}
               onStart={startSession}
               launchLock={newSessionLocked}
-              seed={newRequest.seed}
+              pending={newRequest.pending}
             />
           )}
           {newProject && (
@@ -1836,14 +1875,7 @@ export default function App(): JSX.Element {
               launchLock={newSessionLocked}
               onClose={() => setNewProject(null)}
               onStart={startSession}
-              onChangeWorkspace={(typed) => {
-                setNewProject(null)
-                setNewRequest({
-                  id: ++newRequestId.current,
-                  mode: 'any',
-                  seed: typedSeed(typed)
-                })
-              }}
+              onChangeWorkspace={pickWorkspaceForTyped}
             />
           )}
           {restoreWs && workspaceRows.some((w) => w.workspace.path === restoreWs) && (

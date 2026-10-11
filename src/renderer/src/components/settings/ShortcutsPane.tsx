@@ -15,7 +15,7 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
         name: 'Ask or jump',
         uses: [
           {
-            what: 'Opens one input. Type a name and ⏎ jumps to that session, workspace or action; type what you want to do and ⏎ starts a session for it (⌘⏎ when a name also matches); ⌥⏎ searches every conversation for the words.'
+            what: 'Opens one input. Type what a new session should do and ⏎ starts it in your primary method (⇧⏎ the other), in the workspace, worktree and title Koloft Assist picks; ↓ picks a matching session, workspace or action and ⏎ opens it; ⌥⏎ searches every conversation for the words.'
           },
           { where: 'Dialog', what: 'Nothing.' }
         ]
@@ -116,8 +116,7 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
         name: 'Focus mode',
         uses: [
           { where: 'Panel shown', what: 'Flips between side-by-side and full width.' },
-          { where: 'Panel hidden', what: 'Nothing.' },
-          { where: '⌘P open', what: 'Starts a session for what is typed.' }
+          { where: 'Panel hidden', what: 'Nothing.' }
         ]
       },
       {

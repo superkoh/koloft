@@ -8,6 +8,7 @@ import {
   itemLaunchExtras,
   mainRunningCount,
   moveHot,
+  pendingLaunch,
   primaryKind,
   primaryLabel,
   pullFailedReason,
@@ -17,6 +18,7 @@ import {
   worktreeAim,
   worktreeBaseMode,
   worktreeInUse,
+  type PendingStart,
   type WtHot
 } from '../../src/renderer/src/newSession'
 import { freshLineState, type FreshLineState } from '@shared/freshnessOps'
@@ -373,6 +375,49 @@ describe('itemAim (#218 — where an issue or pull request session starts)', () 
     expect(extras.name).toBe('Login test')
     expect(extras.trustFolder).toBe(true)
     expect(seededItemExtras(issue, ' ', '')).toEqual(itemLaunchExtras(issue))
+  })
+
+  it('⌘P starts where Assist pointed: the main checkout, a listed worktree, a new one, or the issue’s worktree with its lines first', () => {
+    const pending = (worktree: PendingStart['worktree']): PendingStart => ({
+      prompt: ' fix login ',
+      title: 'Login fix',
+      path: '/repo',
+      worktree
+    })
+    const typed = { firstPrompt: 'fix login', name: 'Login fix' }
+    const listed = [wt('auth')]
+    expect(pendingLaunch('/repo', pending({ kind: 'main' }), listed, [])).toEqual({
+      cwd: '/repo',
+      ...typed
+    })
+    expect(pendingLaunch('/repo', pending({ kind: 'existing', name: 'auth' }), listed, [])).toEqual(
+      { cwd: '/repo/.claude/worktrees/auth', ...typed }
+    )
+    expect(pendingLaunch('/repo', pending({ kind: 'new', name: 'login' }), listed, [])).toEqual({
+      cwd: '/repo',
+      worktree: 'login',
+      ...typed
+    })
+    expect(pendingLaunch('/repo', pending({ kind: 'issue', number: 218 }), [], [issue])).toEqual({
+      cwd: '/repo',
+      worktree: 'issue-218',
+      ...seededItemExtras(issue, ' fix login ', 'Login fix')
+    })
+    expect(pendingLaunch('/repo', pending({ kind: 'issue', number: 9 }), [], [issue])).toEqual({
+      cwd: '/repo',
+      worktree: 'issue-9',
+      ...typed
+    })
+  })
+
+  it('⌘P drops the worktree Assist named in another workspace once the person picks a different one', () => {
+    const p: PendingStart = {
+      prompt: 'fix login',
+      title: '',
+      path: '/repo',
+      worktree: { kind: 'new', name: 'login' }
+    }
+    expect(pendingLaunch('/other', p, [], [])).toEqual({ cwd: '/other', firstPrompt: 'fix login' })
   })
 
   it('labels the primary with the number it acts on', () => {

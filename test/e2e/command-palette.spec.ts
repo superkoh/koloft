@@ -54,7 +54,9 @@ function codexCalls(env: E2EEnv): { argv: string[]; sessionId: string }[] {
 }
 
 test.describe('the command palette (⌘P) jumps to any session, workspace or action', () => {
-  test('⌘P, a few letters and ⏎ switch to a live session in another workspace', async ({ env }) => {
+  test('⌘P, a few letters, ↓ and ⏎ switch to a live session in another workspace; until ↓ no row is picked', async ({
+    env
+  }) => {
     test.setTimeout(120_000)
     seedSettings(env, { hintsOff: true })
     const app = await launchApp(env)
@@ -70,6 +72,8 @@ test.describe('the command palette (⌘P) jumps to any session, workspace or act
       await openPalette(app, page)
       await page.keyboard.type('alpha palette')
       await expect(paletteRows(page)).toHaveCount(1)
+      await expect(hotRow(page)).toHaveCount(0)
+      await page.keyboard.press('ArrowDown')
       await expect(hotRow(page)).toContainText('Alpha palette target')
       await expect(hotRow(page).locator('.note')).toHaveText('ws-a · main')
       await page.keyboard.press('Enter')
@@ -104,6 +108,8 @@ test.describe('the command palette (⌘P) jumps to any session, workspace or act
 
       await openPalette(app, page)
       await page.keyboard.type('settings')
+      await expect(paletteRows(page)).not.toHaveCount(0)
+      await page.keyboard.press('ArrowDown')
       await expect(hotRow(page)).toHaveText(/^Settings…⌘,$/)
       await page.keyboard.press('Enter')
       await expect(palette(page)).toHaveCount(0)
@@ -141,6 +147,7 @@ test.describe('the command palette (⌘P) jumps to any session, workspace or act
       await openPalette(app, page)
       await page.keyboard.type(`${REMOTE_HOST} yesterday`)
       await expect(paletteRows(page)).toHaveCount(1)
+      await page.keyboard.press('ArrowDown')
       await expect(hotRow(page)).toHaveClass(/\bcold\b/)
       await expect(hotRow(page).locator('.note')).toContainText(
         `${REMOTE_HOST}:${REMOTE_WS_NAME} · `
@@ -182,6 +189,7 @@ test.describe('the command palette (⌘P) jumps to any session, workspace or act
       await openPalette(app, page)
       await page.keyboard.type('codex palette')
       await expect(paletteRows(page)).toHaveCount(1)
+      await page.keyboard.press('ArrowDown')
       await expect(hotRow(page).getByRole('img', { name: 'Codex', exact: true })).toBeVisible()
       await expect(hotRow(page)).toHaveClass(/\bcold\b/)
       await page.keyboard.press('Enter')

@@ -4,12 +4,10 @@ import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { installCodex, installFakeGh, setGithubFixture, type E2EEnv } from './helpers/env'
 import {
-  clickAppMenuItem,
   gitInit,
   readCalls,
   sendShortcut,
   settingsOnDisk,
-  startSessionIn,
   waitBooted,
   waitForCalls,
   wsRows,
@@ -72,8 +70,8 @@ function codexCalls(env: E2EEnv): { argv: string[]; cwd: string }[] {
     .map((line) => JSON.parse(line))
 }
 
-test.describe('starting work from ⌘P: Koloft Assist picks where, the user confirms the method', () => {
-  test('local Claude: ⏎ on a request sends folder names only, opens C8 filled with the new worktree, title and first prompt, and ⏎ there starts it', async ({
+test.describe('starting work from ⌘P: Koloft Assist picks the workspace, worktree and title, and ⏎ or ⇧⏎ starts the session straight away', () => {
+  test('local Claude: ⏎ on a request sends folder names only and starts Claude at once in the new worktree, with the title and first prompt, no dialog in between', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -92,30 +90,22 @@ test.describe('starting work from ⌘P: Koloft Assist picks where, the user conf
       await ask(app, page, PROMPT)
       await page.keyboard.press('Enter')
 
-      const dlg = page.getByRole('dialog', { name: 'New Worktree Session · ws-a' })
-      await expect(dlg).toBeVisible({ timeout: 30_000 })
+      const [call] = await waitForCalls(env, 1, 30_000)
       await expect(palette(page)).toHaveCount(0)
-      await expect(dlg.locator('.assist-why')).toContainText('The palette lives in ws-a.')
-      await expect(dlg.getByRole('textbox', { name: 'Worktree' })).toHaveValue('palette-search')
-      await expect(dlg.getByRole('textbox', { name: 'Title' })).toHaveValue('Palette search')
-      await expect(dlg.getByRole('textbox', { name: 'First prompt' })).toHaveValue(PROMPT)
+      await expect(page.locator('.modal')).toHaveCount(0)
+      expect(call.argv.join(' ')).toContain('-w palette-search')
+      expect(nameOf(call)).toBe('Palette search')
+      expect(textAfterDashes(call)).toBe(PROMPT)
       const asked = assistWasAsked(env)
       expect(asked).toContain('| ws-a |')
       expect(asked).toContain(PROMPT)
       expect(asked).not.toContain(env.home)
-
-      await page.keyboard.press('Enter')
-      await expect(dlg).toHaveCount(0)
-      const [call] = await waitForCalls(env, 1)
-      expect(call.argv.join(' ')).toContain('-w palette-search')
-      expect(nameOf(call)).toBe('Palette search')
-      expect(textAfterDashes(call)).toBe(PROMPT)
     } finally {
       await quitAndClose(app)
     }
   })
 
-  test('local Codex: a folder that is not git opens without a worktree field and ⇧⏎ starts Codex there with the first prompt and no title', async ({
+  test('local Codex: ⇧⏎ starts the other method — Codex in a folder that is not git, with the first prompt and no title', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -126,15 +116,11 @@ test.describe('starting work from ⌘P: Koloft Assist picks where, the user conf
       const page = await app.firstWindow()
       await waitBooted(page)
       await ask(app, page, PROMPT)
-      await page.keyboard.press('Enter')
-
-      const dlg = page.getByRole('dialog', { name: 'New Session · ws-b' })
-      await expect(dlg).toBeVisible({ timeout: 30_000 })
-      await expect(dlg.getByRole('textbox', { name: 'Worktree' })).toHaveCount(0)
+      await expect(palette(page).getByRole('button', { name: /^Codex/ })).toContainText('⇧⏎')
       await page.keyboard.press('Shift+Enter')
-      await expect(dlg).toHaveCount(0)
 
       await expect.poll(() => codexCalls(env).length, { timeout: 40_000 }).toBe(1)
+      await expect(page.locator('.modal')).toHaveCount(0)
       const [call] = codexCalls(env)
       expect(fs.realpathSync(call.cwd)).toBe(fs.realpathSync(env.workspaces.b))
       expect(call.argv).not.toContain('--name')
@@ -145,7 +131,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks where, the user conf
     }
   })
 
-  test('an issue Assist names is picked from the open issues, and the first prompt carries the issue first, then a blank line, then what was typed', async ({
+  test('an issue Assist names starts in that issue’s worktree, and the first prompt carries the issue first, then a blank line, then what was typed', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -170,14 +156,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks where, the user conf
       await ask(app, page, 'handle #218 and add a test')
       await page.keyboard.press('Enter')
 
-      const dlg = page.getByRole('dialog', { name: 'New Worktree Session · ws-a' })
-      await expect(dlg.locator('.gh-items .cb-row.hot')).toContainText('#218 ', {
-        timeout: 30_000
-      })
-      await page.keyboard.press('Enter')
-      await expect(dlg).toHaveCount(0)
-
-      const [call] = await waitForCalls(env, 1)
+      const [call] = await waitForCalls(env, 1, 30_000)
       expect(call.argv.join(' ')).toContain('-w issue-218')
       expect(nameOf(call)).toBe('Issue 218')
       const sent = textAfterDashes(call)
@@ -193,7 +172,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks where, the user conf
     }
   })
 
-  test('when a name matches, ⏎ still jumps and ⌘⏎ (key or menu) asks Assist; Esc while it thinks keeps the words; an answer it cannot read, or Assist off, still opens C8 with the words', async ({
+  test('⏎ asks Assist even when a name matches, since no row is picked until ↓; Esc while it thinks keeps the words; when Assist is unsure, cannot answer or is off, the workspace picker opens with its pick first and the session starts on the pick', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -201,44 +180,56 @@ test.describe('starting work from ⌘P: Koloft Assist picks where, the user conf
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      await startSessionIn(page, 'ws-a')
-      await waitForCalls(env, 1)
 
       assistAnswers(env, { workspace: 2, worktree: 'main' }, 20_000)
       await ask(app, page, 'ws-b')
-      await expect(palette(page).locator('.cb-row.hot')).toContainText('ws-b')
-      const startPill = palette(page).getByRole('button', { name: /Start a session/ })
-      await expect(startPill).toContainText('⌘⏎')
-      await page.keyboard.press('Meta+Enter')
+      await expect(palette(page).locator('.cb-row')).not.toHaveCount(0)
+      await expect(palette(page).locator('.cb-row.hot')).toHaveCount(0)
+      await page.keyboard.press('Enter')
       await expect(palette(page).locator('.fresh-line.busy')).toBeVisible()
       await page.keyboard.press('Escape')
       await expect(palette(page).locator('.fresh-line.busy')).toHaveCount(0)
       await expect(askBox(page)).toHaveValue('ws-b')
+      await page.keyboard.press('Escape')
+      await expect(palette(page)).toHaveCount(0)
+
+      const picker = page.getByRole('dialog', { name: 'New Session in…' })
+      assistAnswers(env, { workspace: 2, worktree: 'main', title: 'Readme', sure: false })
+      await ask(app, page, 'tidy the readme')
+      await page.keyboard.press('Enter')
+      await expect(picker.locator('.cb-row.hot')).toContainText('ws-b', { timeout: 30_000 })
+      await page.keyboard.press('Enter')
+      const [unsure] = await waitForCalls(env, 1)
+      await expect(picker).toHaveCount(0)
+      expect(fs.realpathSync(unsure.cwd)).toBe(fs.realpathSync(env.workspaces.b))
+      expect(textAfterDashes(unsure)).toBe('tidy the readme')
+      expect(nameOf(unsure)).toBe('Readme')
 
       assistAnswers(env, 'not an answer')
-      await clickAppMenuItem(app, page, 'toggle-focus-mode')
-      const fallback = page.getByRole('dialog', { name: 'New Session · ws-a' })
-      await expect(fallback).toBeVisible({ timeout: 30_000 })
-      await expect(fallback.locator('.assist-why')).toContainText('could not answer')
-      await expect(fallback.getByRole('textbox', { name: 'First prompt' })).toHaveValue('ws-b')
+      await ask(app, page, 'fix the build')
+      await page.keyboard.press('Enter')
+      await expect(page.locator('.toast')).toContainText('could not answer', { timeout: 30_000 })
+      await expect(picker).toBeVisible()
       await page.keyboard.press('Escape')
-      await expect(fallback).toHaveCount(0)
+      await expect(picker).toHaveCount(0)
 
       await page.evaluate(() =>
         window.api.settings.set({ assist: { on: false, backend: 'claude' } })
       )
-      await ask(app, page, 'tidy the readme')
+      await ask(app, page, 'tidy the changelog')
       await page.keyboard.press('Enter')
-      await expect(fallback.locator('.assist-why')).toContainText('Koloft Assist is off')
-      await expect(fallback.getByRole('textbox', { name: 'First prompt' })).toHaveValue(
-        'tidy the readme'
-      )
+      await expect(page.locator('.toast')).toContainText('Koloft Assist is off')
+      await expect(picker).toBeVisible()
+      await page.keyboard.press('Enter')
+      const calls = await waitForCalls(env, 2)
+      expect(textAfterDashes(calls[1])).toBe('tidy the changelog')
+      expect(readCalls(env)).toHaveLength(2)
     } finally {
       await quitAndClose(app)
     }
   })
 
-  test('local new project: Assist gives only a name, the folder is picked once and remembered, and the name counts up rather than reuse a folder', async ({
+  test('local new project: Assist gives only a name, the folder is picked once in the New Project dialog and remembered, after which a new project starts at once, its name counting up rather than reuse a folder', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -272,19 +263,18 @@ test.describe('starting work from ⌘P: Koloft Assist picks where, the user conf
 
       await ask(app, page, 'another bookkeeping site')
       await page.keyboard.press('Enter')
-      await expect(dlg.getByRole('textbox', { name: 'In' })).not.toHaveValue('', {
-        timeout: 30_000
-      })
-      await dlg.getByRole('textbox', { name: 'Folder name' }).press('Enter')
-      const calls = await waitForCalls(env, 2)
+      const calls = await waitForCalls(env, 2, 30_000)
+      await expect(dlg).toHaveCount(0)
       expect(fs.realpathSync(calls[1].cwd)).toBe(path.join(parent, 'ledger-2'))
+      expect(textAfterDashes(calls[1])).toBe('another bookkeeping site')
+      await expect(wsRows(page, 'ledger-2')).toHaveCount(1, { timeout: 30_000 })
     } finally {
       await quitAndClose(app)
     }
   })
 
   test.describe('remote', () => {
-    test('remote Claude: a request lands in the ssh workspace with its first prompt, and a new project is made on the machine, added, and started there', async ({
+    test('remote Claude: a request starts at once in the ssh workspace with its title and first prompt, and a new project is made on the machine, added, and started there', async ({
       env
     }) => {
       test.setTimeout(300_000)
@@ -299,10 +289,6 @@ test.describe('starting work from ⌘P: Koloft Assist picks where, the user conf
         await waitBooted(page)
         await ask(app, page, 'check the deploy script')
         await page.keyboard.press('Enter')
-        const dlg = page.getByRole('dialog', { name: 'New Session · proj' })
-        await expect(dlg).toBeVisible({ timeout: 30_000 })
-        await page.keyboard.press('Enter')
-        await expect(dlg).toHaveCount(0)
         const [onRemote] = await waitForCalls(env, 1, 90_000)
         expect(onRemote.cwd).toBe(remoteDir(env))
         expect(textAfterDashes(onRemote)).toBe('check the deploy script')

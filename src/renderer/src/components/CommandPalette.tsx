@@ -1,15 +1,8 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type JSX,
-  type KeyboardEvent,
-  type MutableRefObject
-} from 'react'
+import { useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from 'react'
 import { LuFolder, LuSearch, LuSparkles } from 'react-icons/lu'
-import type { SessionSearchHit } from '@shared/types'
+import type { BackendId, SessionSearchHit } from '@shared/types'
 import type { SessionRoute } from '@shared/sessionRoute'
+import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { basename } from '@shared/preview'
 import { parseRemoteKey } from '@shared/remoteKey'
 import { askRoute } from '../aiStart'
@@ -41,20 +34,20 @@ function countLine(n: number): string {
   return n === 1 ? '1 conversation' : `${n} conversations`
 }
 
-export type PaletteRouted = (prompt: string, route: SessionRoute | null) => void
+export type PaletteRouted = (prompt: string, backend: BackendId, route: SessionRoute | null) => void
 
 export function CommandPalette({
   actions,
   onClose,
   onRouted,
   onOpenHit,
-  startRef
+  methods
 }: {
   actions: PaletteAction[]
   onClose: () => void
   onRouted: PaletteRouted
   onOpenHit: (hit: SessionSearchHit) => void
-  startRef: MutableRefObject<(() => void) | null>
+  methods: BackendId[]
 }): JSX.Element {
   const rows = useStore((s) => s.workspaceRows)
   const sessions = useStore((s) => s.sessions)
@@ -62,7 +55,7 @@ export function CommandPalette({
   const attention = useStore((s) => s.attention)
   const assistOn = useStore((s) => !!s.settings.assist?.on)
   const [query, setQuery] = useState('')
-  const [hot, setHot] = useState(0)
+  const [hot, setHot] = useState<number | null>(null)
   const [mode, setMode] = useState<'ask' | 'thinking' | 'search'>('ask')
   const [hits, setHits] = useState<SessionSearchHit[]>([])
   const [searchDone, setSearchDone] = useState(false)
@@ -79,9 +72,11 @@ export function CommandPalette({
   const groups = paletteGroups(sessionItems, workspaceItems, actions, query)
   const visible = groups.flatMap((g) => g.items)
   const count = mode === 'search' ? hits.length : visible.length
-  const at = Math.min(hot, Math.max(0, count - 1))
+  const picked = mode === 'search' ? (hot ?? 0) : hot
+  const at = picked === null ? null : Math.min(picked, Math.max(0, count - 1))
   const typed = query.trim()
-  const startIsDefault = mode === 'ask' && visible.length === 0 && !!typed
+  const [primary, other] = methods
+  const startIsDefault = mode === 'ask' && at === null && !!typed
 
   const open = (item: PaletteItem | undefined): void => {
     if (!item || (item.kind === 'action' && item.disabled)) return
@@ -91,10 +86,10 @@ export function CommandPalette({
     else item.run()
   }
 
-  const start = (): void => {
+  const start = (backend: BackendId = primary): void => {
     if (mode !== 'ask' || !typed) return
     if (!assistOn) {
-      onRouted(typed, null)
+      onRouted(typed, backend, null)
       return
     }
     setMode('thinking')
@@ -103,7 +98,7 @@ export function CommandPalette({
     void ask.result.then((route) => {
       if (asking.current !== ask) return
       asking.current = null
-      onRouted(typed, route)
+      onRouted(typed, backend, route)
     })
   }
 
@@ -115,15 +110,8 @@ export function CommandPalette({
   const search = (): void => {
     if (!typed) return
     setMode('search')
-    setHot(0)
+    setHot(null)
   }
-
-  useEffect(() => {
-    startRef.current = start
-    return () => {
-      startRef.current = null
-    }
-  })
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -161,7 +149,7 @@ export function CommandPalette({
       if (mode === 'ask') onClose()
       else {
         setMode('ask')
-        setHot(0)
+        setHot(null)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -180,18 +168,18 @@ export function CommandPalette({
     }
     if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && count > 0) {
       e.preventDefault()
-      setHot(e.key === 'ArrowDown' ? Math.min(at + 1, count - 1) : Math.max(at - 1, 0))
+      if (e.key === 'ArrowDown') setHot(at === null ? 0 : Math.min(at + 1, count - 1))
+      else setHot(at ? at - 1 : null)
       return
     }
-    if (e.key !== 'Enter' || e.shiftKey) return
+    if (e.key !== 'Enter') return
     e.preventDefault()
     e.stopPropagation()
     if (e.altKey) search()
-    else if (e.metaKey || e.ctrlKey) start()
     else if (mode === 'search') {
-      if (hits[at]) onOpenHit(hits[at])
-    } else if (visible.length > 0) open(visible[at])
-    else start()
+      if (at !== null && hits[at]) onOpenHit(hits[at])
+    } else if (at !== null && !e.shiftKey) open(visible[at])
+    else start(e.shiftKey && other ? other : primary)
   }
 
   const rowOf = (item: PaletteItem): JSX.Element => {
@@ -298,9 +286,11 @@ export function CommandPalette({
       ? 'Esc cancel'
       : mode === 'search'
         ? '↓↑ move · ⏎ open · Esc back'
-        : visible.length > 0
+        : at !== null
           ? '↓↑ move · ⏎ open · Esc'
-          : '⇧⏎ new line · Esc'
+          : visible.length > 0
+            ? '↓ pick a match · Esc'
+            : 'Esc'
 
   return (
     <div className="modal-backdrop palette-top" onClick={onClose}>
@@ -320,13 +310,13 @@ export function CommandPalette({
             rows={1}
             spellCheck={false}
             autoComplete="off"
-            placeholder="What do you want to do? Or type a name to jump…"
+            placeholder="What should a new session do? Or find one to jump to…"
             aria-label="Ask or jump"
             readOnly={mode === 'thinking'}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value)
-              setHot(0)
+              setHot(null)
             }}
             onKeyDown={onKeyDown}
           />
@@ -348,11 +338,22 @@ export function CommandPalette({
                 className={'pal-pill' + (startIsDefault ? ' go' : '')}
                 disabled={!typed}
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={start}
+                onClick={() => start(primary)}
               >
-                <LuSparkles size={12} className="pal-pill-glyph" /> Start a session{' '}
-                <span className="k">{startIsDefault ? '⏎' : '⌘⏎'}</span>
+                <LuSparkles size={12} className="pal-pill-glyph" />{' '}
+                {other ? `Start · ${BACKEND_LABEL[primary]}` : 'Start a session'}
+                {startIsDefault && <span className="k">⏎</span>}
               </button>
+              {other && (
+                <button
+                  className="pal-pill"
+                  disabled={!typed}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => start(other)}
+                >
+                  {BACKEND_LABEL[other]} <span className="k">⇧⏎</span>
+                </button>
+              )}
             </>
           )}
         </div>
