@@ -197,6 +197,7 @@ export interface CodexSessionDeps {
   browserEndpoint(tabId: string): string
   openShimRoot: string
   playwrightBin: string
+  workspaceEnv?(workspace: string): Record<string, string>
   agent: {
     enabled(): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
@@ -835,7 +836,11 @@ export class CodexSessions {
       (target) => observe({ type: 'open', target }),
       agent && ((dir, name, raw) => agent.answer(run?.tabId, dir, name, raw))
     )
-    const env = { ...this.envFor(home), ZDOTDIR: openShim.zdotDir }
+    const env = {
+      ...this.envFor(home),
+      ...this.deps.workspaceEnv?.(workspace),
+      ZDOTDIR: openShim.zdotDir
+    }
     const observer = new CodexObservation(observe)
     const instructions = [
       ...(agent && !opts.conductor ? [koloftPrompt('codex')] : []),

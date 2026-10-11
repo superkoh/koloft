@@ -110,9 +110,11 @@ import {
   GH_SIGN_IN_LINE,
   gitCredentialEnv,
   pathWithDirLast,
+  pickedGhAccountEnv,
   remoteGhSignInLine,
   setupBundledGh
 } from './bundledGh'
+import { GithubAccountPicks, parseGhAccounts, workspaceOfCwd } from './githubAccounts'
 import {
   setFindAvailable,
   setKeepAwakeChecked,
@@ -171,7 +173,7 @@ import { shq } from '@shared/shellQuote'
 import { CronRunner, type LaunchRequest } from './cronRunner'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
-import { GitFreshnessEngine } from './gitFreshness'
+import { GitFreshnessEngine, setWorkspaceGitEnv } from './gitFreshness'
 import {
   GithubLookup,
   ghOpenCounts,
@@ -259,6 +261,8 @@ import {
   uninstallExtension
 } from './extensionManager'
 import type {
+  GhAccount,
+  WorkspaceGhAccounts,
   AccountAddResult,
   AccountKind,
   AccountMeta,
@@ -811,6 +815,44 @@ let workspaceMgr: WorkspaceManager | null = null
 
 let freshness: GitFreshnessEngine | null = null
 let githubCounts: GithubCountsSweep | null = null
+let accountPicks: GithubAccountPicks | null = null
+let ghCredentialHelper: string | null = null
+let ghAccountsSeen: { at: number; accounts: GhAccount[] } | null = null
+const GH_ACCOUNTS_KEEP_MS = 5 * 60_000
+
+function workspaceOfRoot(root: string): string | undefined {
+  return workspaceMgr
+    ? workspaceOfCwd(
+        root,
+        workspaceMgr.pinnedPaths().map((p) => p.path)
+      )
+    : undefined
+}
+
+function pickedToken(root: string): string | undefined {
+  const ws = workspaceOfRoot(root)
+  return ws ? accountPicks?.token(ws) : undefined
+}
+
+function ghTokenEnv(root: string): Record<string, string> | undefined {
+  const token = pickedToken(root)
+  return token ? { GH_TOKEN: token } : undefined
+}
+
+function workspaceGhEnv(cwd: string): Record<string, string> {
+  const token = pickedToken(cwd)
+  if (!token) return {}
+  return ghCredentialHelper
+    ? pickedGhAccountEnv(process.env, ghCredentialHelper, token)
+    : { GH_TOKEN: token }
+}
+
+function ghAccountsChanged(): void {
+  ghAccountsSeen = null
+  for (const host of hosts.all()) host.github.forgetCounts()
+  void githubCounts?.sweep()
+  sendToRenderer('github:auth-changed')
+}
 let remoteSync: RemoteSync | null = null
 tracker.machineTmp = (host) => remoteSync?.machineTmp(host)
 let machinePkg: MachinePackage | null = null
@@ -1108,7 +1150,10 @@ const agentRequests = new AgentRequests({
       repoOf: async (scope) =>
         scope === GLOBAL_SCOPE ? null : hosts.of(scope).github.ownerSlashName(scope),
       // PLATFORM§1
-      run: (args) => loginEnvReady().then(() => ghRead(args))
+      run: (args, scope) =>
+        loginEnvReady().then(() =>
+          ghRead(args, scope === GLOBAL_SCOPE ? undefined : ghTokenEnv(scope))
+        )
     })
   },
   tab: (tabId) => ptyMgr.get(tabId),
@@ -1447,7 +1492,14 @@ async function codexSignIn(name: string, again?: boolean): Promise<CodexSignInRe
 
 function homeShellTab(launchCommand: string): { tabId: string; cwd: string } {
   const cwd = os.homedir()
-  const handle = ptyMgr.create({ kind: 'shell', cwd, cols: 100, rows: 30, launchCommand })
+  const handle = ptyMgr.create({
+    kind: 'shell',
+    cwd,
+    cols: 100,
+    rows: 30,
+    launchCommand,
+    noWorkspaceEnv: true
+  })
   return { tabId: handle.id, cwd }
 }
 
@@ -1699,10 +1751,17 @@ app.whenReady().then(() => {
   const statusline = setupStatusline()
   const playwrightBin = setupPlaywrightCli()
   playwrightCliBin = playwrightBin
-  const ghCredentialHelper = setupBundledGh(playwrightBin)
+  ghCredentialHelper = setupBundledGh(playwrightBin)
   process.env.PATH = pathWithDirLast(process.env.PATH, playwrightBin)
   if (ghCredentialHelper)
     Object.assign(process.env, gitCredentialEnv(process.env, ghCredentialHelper))
+  accountPicks = new GithubAccountPicks(
+    path.join(app.getPath('userData'), 'github-accounts.json'),
+    (args) => loginEnvReady().then(() => runGh(args))
+  )
+  void accountPicks.refresh()
+  ptyMgr.workspaceEnv = workspaceGhEnv
+  setWorkspaceGitEnv(workspaceGhEnv)
   ptyMgr.makeHookSettings = (tabId, allowKoloft, conductor) =>
     writeTabHookSettings(
       hookPaths,
@@ -1778,11 +1837,7 @@ app.whenReady().then(() => {
       sessionBackends.forgetAvailability()
       sendToRenderer('sessions:toolsChanged')
     }
-    if (ghSignInPtys.delete(e.id)) {
-      for (const host of hosts.all()) host.github.forgetCounts()
-      void githubCounts?.sweep()
-      sendToRenderer('github:auth-changed')
-    }
+    if (ghSignInPtys.delete(e.id)) void accountPicks?.refresh().then(ghAccountsChanged)
     const codexAccount = codexSignInPtys.get(e.id)
     if (codexAccount) {
       codexSignInPtys.delete(e.id)
@@ -1885,6 +1940,7 @@ app.whenReady().then(() => {
       browserEndpoint: relayEndpoint,
       openShimRoot: path.join(userData, 'codex-open'),
       playwrightBin,
+      workspaceEnv: workspaceGhEnv,
       agent: {
         enabled: () => agentToolsFor('codex', 'local'),
         answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw)
@@ -3558,8 +3614,13 @@ const BAD_GIT_STEP: { ok: false; reason: string } = { ok: false, reason: 'bad re
 const githubOptions: GithubOptions = {
   fixture: parseGithubFixture(process.env.KOLOFT_GITHUB_FIXTURE),
   // PLATFORM§1
-  openCounts: (repo) => loginEnvReady().then(() => ghOpenCounts(runGh, repo)),
-  gh: (args) => loginEnvReady().then(() => runGh(args)),
+  openCounts: (repo, root) =>
+    loginEnvReady().then(() => ghOpenCounts((args) => runGh(args, ghTokenEnv(root)), repo)),
+  gh: (args, root) => loginEnvReady().then(() => runGh(args, ghTokenEnv(root))),
+  accountOf: (root) => {
+    const ws = workspaceOfRoot(root)
+    return ws ? accountPicks?.picked(ws) : undefined
+  },
   signedIn: async () => {
     try {
       const jar = await session.fromPartition(BROWSER_PARTITION).cookies.get({
@@ -4389,6 +4450,20 @@ function registerIpc(): void {
     if (typeof root !== 'string' || !root) return BAD_GIT_STEP
     const host = hosts.of(root)
     return pushBranch((args, network) => host.gitRun(root, args, network))
+  })
+  ipcMain.handle('github:accounts', async (_e, wsPath: unknown): Promise<WorkspaceGhAccounts> => {
+    if (!ghAccountsSeen || Date.now() - ghAccountsSeen.at >= GH_ACCOUNTS_KEEP_MS) {
+      await loginEnvReady()
+      const r = await runGh(['auth', 'status', '--json', 'hosts'])
+      ghAccountsSeen = { at: Date.now(), accounts: parseGhAccounts(r.stdout) }
+    }
+    const ws = typeof wsPath === 'string' ? wsPath : ''
+    return { accounts: ghAccountsSeen.accounts, picked: accountPicks?.picked(ws) ?? null }
+  })
+  ipcMain.handle('github:pick', async (_e, wsPath: unknown, login: unknown) => {
+    if (typeof wsPath !== 'string' || !wsPath || !accountPicks) return
+    await accountPicks.pick(wsPath, typeof login === 'string' && login ? login : null)
+    ghAccountsChanged()
   })
   ipcMain.handle('github:auth-state', (_e, machine: unknown) =>
     loginEnvReady().then(() =>

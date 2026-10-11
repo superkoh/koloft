@@ -6,11 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('electron', () => ({ app: {} }))
 
-const { ghCredentialScript, gitCredentialEnv, pathWithDirLast } =
+const { ghCredentialScript, gitCredentialEnv, pathWithDirLast, pickedGhAccountEnv } =
   await import('../../src/main/bundledGh')
 
 let home: string
 let ghCalls: string
+let helperPath: string
 
 const FAKE_GH = `#!/bin/sh
 printf '%s\\n' "$*" >> "$GH_CALLS"
@@ -24,6 +25,7 @@ function setup(): NodeJS.ProcessEnv {
   const gh = path.join(home, 'gh')
   fs.writeFileSync(gh, FAKE_GH, { mode: 0o755 })
   const helper = path.join(home, 'gh-credential')
+  helperPath = helper
   fs.writeFileSync(helper, ghCredentialScript(gh), { mode: 0o755 })
   const base: NodeJS.ProcessEnv = {
     PATH: process.env.PATH,
@@ -80,6 +82,22 @@ describe("Koloft's last-resort GitHub credential helper", () => {
     spawnSync('git', ['credential', 'approve'], { env, input: cred, cwd: home })
     spawnSync('git', ['credential', 'reject'], { env, input: cred, cwd: home })
     expect(ghWasAsked()).toBe(false)
+  })
+
+  it("in a workspace that picked an account, only Koloft's helper answers — over a stored account, a named user and a GH_TOKEN-free shell — and a push stores nothing", () => {
+    useStoredAccount(env, 'alice')
+    const picked = { ...env, ...pickedGhAccountEnv(env, helperPath, 'tok-bob') }
+    expect(fill(picked, 'https://github.com/o/r.git')).toBe('gh-user')
+    expect(fill(picked, 'https://alice@github.com/o/r.git')).toBe('gh-user')
+    const stored = fs.readFileSync(path.join(home, '.git-credentials'), 'utf8')
+    const cred = 'protocol=https\nhost=github.com\nusername=gh-user\npassword=gh-token\n\n'
+    spawnSync('git', ['credential', 'approve'], { env: picked, input: cred, cwd: home })
+    expect(fs.readFileSync(path.join(home, '.git-credentials'), 'utf8')).toBe(stored)
+    expect(picked.GH_TOKEN).toBe('tok-bob')
+  })
+
+  it('an unpicked workspace with GH_TOKEN in the shell still stays silent for a URL that names its user', () => {
+    expect(fill({ ...env, GH_TOKEN: 'from-shell' }, 'https://bob@github.com/o/r.git')).toBeNull()
   })
 
   it("adds its config after any the user's environment already passes to git", () => {

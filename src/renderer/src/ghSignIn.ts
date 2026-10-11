@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { GhAuthState } from '@shared/types'
+import type { GhAuthState, WorkspaceGhAccounts } from '@shared/types'
 import { useStore } from './store'
 
 export function useGhSignIn(machine?: string): () => Promise<void> {
@@ -16,6 +16,24 @@ export function useGhSignIn(machine?: string): () => Promise<void> {
       alive: true
     })
   }, [addTab, showSignInTab, machine])
+}
+
+export function useWorkspaceGhAccounts(wsPath: string): WorkspaceGhAccounts | null {
+  const [state, setState] = useState<WorkspaceGhAccounts | null>(null)
+  useEffect(() => {
+    let alive = true
+    const read = (): void =>
+      void window.api.github.accounts(wsPath).then((s) => {
+        if (alive) setState(s)
+      })
+    read()
+    const off = window.api.github.onAuthChanged(read)
+    return () => {
+      alive = false
+      off()
+    }
+  }, [wsPath])
+  return state
 }
 
 export function useGhAuthState(machine?: string): GhAuthState | null {

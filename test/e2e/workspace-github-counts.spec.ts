@@ -99,6 +99,38 @@ test.describe('Workspace GitHub counts · open issues and pull requests after th
     }
   })
 
+  test("T-GH-09: with two gh accounts the git panel lists both, gh's current one checked; picking the other fetches its token and moves the check to it", async ({
+    env
+  }) => {
+    const fx = setupGitFixture(env)
+    setGithubFixture(env, { [fx.clone]: { owner: 'acme', repo: 'repo', issues: 12, prs: 3 } })
+    installFakeGh(env, {
+      accounts: [
+        { login: 'alice', active: true },
+        { login: 'bob', active: false }
+      ]
+    })
+    const { app, page } = await launchSettled(env)
+    try {
+      const panel = await openGitPanel(page, 'repo')
+      const row = (login: string) => panel.locator('.tbu-act', { hasText: login })
+      await expect(row('alice')).toContainText('gh’s current', { timeout: COUNTS_TIMEOUT })
+      await expect(row('alice').locator('svg path')).not.toHaveCount(0)
+      await expect(row('bob').locator('svg path')).toHaveCount(0)
+      await row('bob').click()
+      await expect
+        .poll(() => fs.readFileSync(path.join(env.home, 'fake-gh-calls.txt'), 'utf8'), {
+          timeout: COUNTS_TIMEOUT
+        })
+        .toContain('auth token -h github.com -u bob')
+      await expect(row('bob').locator('svg path')).not.toHaveCount(0, { timeout: COUNTS_TIMEOUT })
+      await expect(row('alice').locator('svg path')).toHaveCount(0)
+      await snap(page, 'T-GH-09-picked-bob')
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
   test('T-GH-02: a zero count draws nothing, and a workspace off GitHub keeps its plain git mark', async ({
     env
   }) => {

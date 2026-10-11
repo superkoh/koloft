@@ -1,4 +1,9 @@
-import type { WorkspaceFreshness, WorkspacePullSummary } from '@shared/types'
+import type {
+  GhAccount,
+  WorkspaceFreshness,
+  WorkspaceGhAccounts,
+  WorkspacePullSummary
+} from '@shared/types'
 import { ageLabel } from '@shared/freshnessOps'
 import { basename } from '@shared/preview'
 
@@ -15,6 +20,35 @@ function explainOnly(f: WorkspaceFreshness): string | null {
 
 export function countLabel(n: number): string {
   return n < 1000 ? `${n}` : `${Math.floor(n / 100) / 10}k`
+}
+
+export interface GhAccountRow extends GhAccount {
+  inUse: boolean
+}
+
+export interface GhAccountView {
+  only: string | null
+  rows: GhAccountRow[]
+  gone: string | null
+  current: string | null
+}
+
+export function ghAccountView(s: WorkspaceGhAccounts | null): GhAccountView {
+  if (!s) return { only: null, rows: [], gone: null, current: null }
+  const current = s.accounts.find((a) => a.active)?.login ?? null
+  const pickedUsable = s.accounts.some((a) => a.login === s.picked && a.ok)
+  const gone = s.picked && !pickedUsable ? s.picked : null
+  const listed =
+    gone && !s.accounts.some((a) => a.login === gone)
+      ? [...s.accounts, { login: gone, active: false, ok: false }]
+      : s.accounts
+  if (listed.length < 2) return { only: listed[0]?.login ?? null, rows: [], gone: null, current }
+  return {
+    only: null,
+    gone,
+    current,
+    rows: listed.map((a) => ({ ...a, inUse: s.picked ? a.login === s.picked : a.active }))
+  }
 }
 
 export function openIssuesLabel(n: number): string {

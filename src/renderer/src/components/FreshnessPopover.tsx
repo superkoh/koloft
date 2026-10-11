@@ -1,10 +1,11 @@
 import { useEffect, useState, type JSX } from 'react'
-import { LuDownload, LuLogIn, LuRefreshCw } from 'react-icons/lu'
+import { LuCheck, LuDownload, LuLogIn, LuRefreshCw } from 'react-icons/lu'
 import type { SessionRow, WorkspaceFreshness, WorkspaceGithub } from '@shared/types'
 import { canPull } from '@shared/freshnessOps'
 import { parseRemoteKey } from '@shared/remoteKey'
 import { useStore } from '../store'
 import {
+  ghAccountView,
   headAge,
   openIssuesLabel,
   openPullsLabel,
@@ -13,7 +14,7 @@ import {
   type PullNote
 } from '../freshnessView'
 import { mainRunningCount } from '../newSession'
-import { useGhAuthState, useGhSignIn } from '../ghSignIn'
+import { useGhAuthState, useGhSignIn, useWorkspaceGhAccounts } from '../ghSignIn'
 import { PullConfirm } from './PullConfirm'
 
 function MachineGhSignIn({
@@ -72,6 +73,10 @@ export function FreshnessPopover({
   const showToast = useStore((s) => s.showToast)
   const ghSignIn = useGhSignIn()
   const machine = parseRemoteKey(wsPath)?.host
+  const ghAccounts = useWorkspaceGhAccounts(wsPath)
+  const view = ghAccountView(ghAccounts)
+  const [picking, setPicking] = useState<string | null>(null)
+  useEffect(() => setPicking(null), [ghAccounts])
   const [fetching, setFetching] = useState(false)
   const [pulling, setPulling] = useState(false)
   const [failed, setFailed] = useState<string | null>(null)
@@ -198,6 +203,7 @@ export function FreshnessPopover({
             <>
               <div className="tbu-pop-head">
                 <span>GitHub · {github.repo}</span>
+                {view.only && <span className="age">as {view.only}</span>}
               </div>
               {github.signedOut ? (
                 <button
@@ -216,7 +222,53 @@ export function FreshnessPopover({
                     <span>{openIssuesLabel(github.issues)}</span>
                     <span>{openPullsLabel(github.prs)}</span>
                   </div>
+                  {view.gone && view.current && (
+                    <div className="fx-note warn">
+                      {view.gone} is signed out of gh · using {view.current} (gh’s current)
+                    </div>
+                  )}
                 </div>
+              )}
+              {!github.signedOut &&
+                view.rows.map((row) => (
+                  <button
+                    key={row.login}
+                    className="tbu-act"
+                    disabled={!row.ok || picking !== null}
+                    title={
+                      row.active
+                        ? 'Follow gh’s current account'
+                        : `Use ${row.login} in this workspace`
+                    }
+                    onClick={() => {
+                      setPicking(row.login)
+                      void window.api.github.pick(wsPath, row.active ? null : row.login)
+                    }}
+                  >
+                    {row.inUse ? <LuCheck size={14} /> : <svg width={14} height={14} />}
+                    {row.login}
+                    <span className="k">
+                      {picking === row.login
+                        ? 'checking…'
+                        : row.active
+                          ? 'gh’s current'
+                          : row.ok
+                            ? ''
+                            : 'signed out'}
+                    </span>
+                  </button>
+                ))}
+              {!github.signedOut && view.gone && (
+                <button
+                  className="tbu-act"
+                  onClick={() => {
+                    onClose()
+                    void ghSignIn()
+                  }}
+                >
+                  <LuLogIn size={14} />
+                  Sign in to GitHub
+                </button>
               )}
               {machine && <MachineGhSignIn machine={machine} onClose={onClose} />}
             </>
