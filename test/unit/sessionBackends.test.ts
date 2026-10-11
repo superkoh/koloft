@@ -6,9 +6,11 @@ import {
   effectiveBackend,
   identityOf,
   sessionKey,
+  shownAsInstalled,
   SUPPORTED_PAIRS
 } from '@shared/sessionBackend'
 import type { BackendId, BackendSessionInfo, BackendSessionRow } from '@shared/types'
+import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 
 function stubBackend(
   id: BackendId,
@@ -160,6 +162,17 @@ describe('session backend boundary', () => {
     })
     expect(registry.forSession('codex:local:id')).toBe(backend)
   })
+
+  // ADR-0030
+  it('refuses a new session whose tool has no usable Koloft account, saying where to add one, before reaching the backend', async () => {
+    const registry = new SessionBackends(lifecycle())
+    const create = vi.fn(async () => ({ ok: true as const, id: 'tab', cwd: '/repo' }))
+    registry.register({ ...stubBackend('codex'), create, accountUsable: () => false })
+    await expect(registry.create({ kind: 'codex', cwd: '/repo' })).rejects.toThrow(
+      NO_USABLE_ACCOUNT.codex
+    )
+    expect(create).not.toHaveBeenCalled()
+  })
 })
 
 describe('session lifecycle tap (one place turns a bind or an exit into attention)', () => {
@@ -210,20 +223,21 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
     expect(Object.values(capabilitiesFor('claude', 'local')).every((c) => c === true)).toBe(true)
   })
 
-  it('gives a remote Claude session a Workbench and scheduled tasks but keeps agent open, the koloft command and browser control off', () => {
+  it('gives a remote Claude session a Workbench, scheduled tasks and the koloft command but keeps agent open and browser control off', () => {
     const remote = capabilitiesFor('claude', 'ssh')
     expect(remote.workbench).toBe(true)
     expect(remote.scheduledTasks).toBe(true)
+    expect(remote.agentTools).toBe(true)
     expect(remote.agentOpen).not.toBe(true)
-    expect(remote.agentTools).not.toBe(true)
     expect(remote.browserControl).not.toBe(true)
   })
 
-  it('gives a Codex session on this Mac a Workbench, accounts, scheduled tasks and the koloft command, and marks the three-line status line unsupported, citing the ledger section that shows why', () => {
+  it('gives a Codex session on this Mac a Workbench, accounts, scheduled tasks, the koloft command and browser control, and marks the three-line status line unsupported, citing the ledger section that shows why', () => {
     expect(capabilitiesFor('codex', 'local').workbench).toBe(true)
     expect(capabilitiesFor('codex', 'local').scheduledTasks).toBe(true)
     expect(capabilitiesFor('codex', 'local').accounts).toBe(true)
     expect(capabilitiesFor('codex', 'local').agentTools).toBe(true)
+    expect(capabilitiesFor('codex', 'local').browserControl).toBe(true)
     expect(capabilitiesFor('codex', 'local').statusline3).toEqual({ unsupported: 'CODEX§8' })
   })
 
@@ -232,6 +246,19 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
       claude: { local: true, ssh: true },
       codex: { local: true, ssh: false }
     })
+  })
+})
+
+describe('shownAsInstalled (which tools a dialog offers while the installed-tools check is out)', () => {
+  it('counts only Claude Code before the first answer, then goes by the answer', () => {
+    expect(shownAsInstalled(null, 'claude')).toBe(true)
+    expect(shownAsInstalled(null, 'codex')).toBe(false)
+    const onlyCodex = [
+      { id: 'claude' as const, available: false },
+      { id: 'codex' as const, available: true }
+    ]
+    expect(shownAsInstalled(onlyCodex, 'claude')).toBe(false)
+    expect(shownAsInstalled(onlyCodex, 'codex')).toBe(true)
   })
 })
 

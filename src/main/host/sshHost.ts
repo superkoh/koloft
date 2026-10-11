@@ -12,8 +12,10 @@ import {
   type SkillSuggestion
 } from '@shared/types'
 import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
+import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import { shq } from '@shared/shellQuote'
 import { EDIT_OPEN_MAX_BYTES, EDIT_WRITE_MAX_BYTES } from '@shared/editLimits'
+import { portOffset } from '@shared/worktreeName'
 import { contentHitsOf, gitGrepArgs, rankFiles, rgArgs, visibleEntries } from '../fileTree'
 import {
   MAX_READ_BYTES,
@@ -25,6 +27,7 @@ import {
 } from '../fileEdit'
 import { GIT_TIMEOUT_MS, gitOps, type GitOps } from '../gitStatus'
 import { GithubLookup, type GithubOptions } from '../github'
+import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
 import { remoteShCommand } from '../remote/install'
 import {
   killSessionCmd,
@@ -36,16 +39,28 @@ import {
   writeTabPackage,
   type MachinePackage
 } from '../remote/launch'
-import { mirrorHookDir, mirrorProjectsRoot, remoteMachineDir, tabPackageDir } from '../remote/paths'
+import {
+  mirrorHookDir,
+  mirrorProjectsRoot,
+  REMOTE_HOOK_DIR,
+  remoteMachineDir,
+  tabPackageDir
+} from '../remote/paths'
 import { launchMode } from '../remote/sync'
-import { ensureControlDir, sshLinkBroke, sshOptions, type BytesResult } from '../remote/ssh'
+import {
+  ensureControlDir,
+  problemOf,
+  sshLinkBroke,
+  sshOptions,
+  type BytesResult
+} from '../remote/ssh'
 import { claudeArgv } from '../claudeArgs'
 import { listSkills, type SkillFs } from '../skillList'
+import { worktreeNameAround } from '../resumePlan'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host, ShellLaunch } from './host'
 
 export interface MachineAccount {
   env: Record<string, string>
-  picked: string
   banner: string
 }
 
@@ -55,9 +70,10 @@ export interface MachineClaudeDeps {
   machinePackage(): MachinePackage
   alive(): ReadonlySet<string>
   realPath(p: string): string
-  settings(): { multiAccount: boolean; skipPermissions: boolean }
-  pickAccount(): Promise<MachineAccount | undefined>
-  hookSettings(tabId: string, machineDir: string): Record<string, unknown>
+  settings(): { skipPermissions: boolean }
+  agentTools(): boolean
+  pickAccount(launchKey: string): Promise<MachineAccount | undefined>
+  hookSettings(tabId: string, machineDir: string, allowKoloft: boolean): Record<string, unknown>
 }
 
 export interface SshHostDeps {
@@ -67,8 +83,6 @@ export interface SshHostDeps {
   github: GithubOptions
   claude: MachineClaudeDeps
 }
-
-const OWN_LOGIN_BANNER = "[Koloft] using this machine's own claude login"
 
 // CC§9
 export function machineClaudeArgs(
@@ -344,6 +358,10 @@ function skillFsOf(files: Map<string, string>): SkillFs {
 const NETWORK_GIT = `GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=false SSH_ASKPASS=false \
 SSH_ASKPASS_REQUIRE=never GIT_SSH_COMMAND="\${GIT_SSH_COMMAND:-ssh} -o BatchMode=yes" git "$@"`
 
+const ANSWER_AGENT_REQUEST = `d="${REMOTE_HOOK_DIR}"
+[ -f "$d/req-$1.json" ] || exit 0
+cat > "$d/res-$1.json.tmp" && mv -f "$d/res-$1.json.tmp" "$d/res-$1.json" && rm -f "$d/req-$1.json"`
+
 const RESIZE_SETTLE_MS = 200
 
 export class SshHost implements Host {
@@ -389,15 +407,32 @@ export class SshHost implements Host {
     })
     this.github = new GithubLookup({
       ...deps.github,
-      git: (root, args, network) => this.gitOut(root, args, network)
+      git: (root, args, network) =>
+        network
+          ? this.runGit(NETWORK_GIT, root, args, NETWORK_GIT_TIMEOUT_MS)
+          : this.gitOut(root, args)
     })
   }
 
-  async gitOut(root: string, args: string[], network = false): Promise<string | null> {
-    const r = await this.sh(network ? NETWORK_GIT : GIT, ['-C', this.bare(root), ...args], {
-      timeoutMs: network ? NETWORK_GIT_TIMEOUT_MS : undefined
-    })
+  gitOut(root: string, args: string[], timeoutMs?: number): Promise<string | null> {
+    return this.runGit(GIT, root, args, timeoutMs)
+  }
+
+  private async runGit(
+    script: string,
+    root: string,
+    args: string[],
+    timeoutMs?: number
+  ): Promise<string | null> {
+    const r = await this.sh(script, ['-C', this.bare(root), ...args], { timeoutMs })
     return r.code === 0 ? r.stdout.toString('utf8') : null
+  }
+
+  async gitRun(root: string, args: string[], network = false): Promise<GitRunResult> {
+    const r = await this.sh(network ? NETWORK_GIT : GIT, ['-C', this.bare(root), ...args], {
+      timeoutMs: GIT_STEP_TIMEOUT_MS
+    })
+    return { code: r.code, stdout: r.stdout.toString('utf8'), stderr: r.stderr }
   }
 
   private bare(p: string): string {
@@ -434,6 +469,10 @@ export class SshHost implements Host {
 
   async dirExists(dir: string): Promise<boolean> {
     return (await this.sh('test -d "$1"', [this.bare(dir)])).code === 0
+  }
+
+  async fileExists(file: string): Promise<boolean> {
+    return (await this.sh('test -f "$1"', [this.bare(file)])).code === 0
   }
 
   async search(root: string, query: string, opts?: { showIgnored?: boolean }) {
@@ -578,14 +617,21 @@ export class SshHost implements Host {
 
   osOpen(): void {}
 
-  endTmuxSession(tmuxName: string): Promise<void> {
-    const kill = this.deps.run(killSessionCmd(tmuxName)).then(() => {
+  endTmuxSession(tmuxName: string): Promise<string | undefined> {
+    const killedId = sessionIdOfTmux(tmuxName)
+    const kill = this.deps.run(killSessionCmd(tmuxName)).then((r) => {
       if (this.kills.get(tmuxName) === kill) this.kills.delete(tmuxName)
+      if (!sshLinkBroke(r)) return undefined
+      if (killedId) this.killedSessions.delete(killedId)
+      return problemOf(r)
     })
     this.kills.set(tmuxName, kill)
-    const killedId = sessionIdOfTmux(tmuxName)
     if (killedId) this.killedSessions.add(killedId)
     return kill
+  }
+
+  async answerAgent(requestId: string, reply: string): Promise<void> {
+    await this.sh(ANSWER_AGENT_REQUEST, [requestId], { input: Buffer.from(reply) })
   }
 
   // CC§9 ADR-0026
@@ -613,6 +659,7 @@ export class SshHost implements Host {
     await this.deps.sshEnvReady?.()
     ensureControlDir(d.controlDir)
     const settings = d.settings()
+    const agentTools = d.agentTools()
     const sid = spec.resumeSessionId ?? crypto.randomUUID()
     const args = machineClaudeArgs(spec, sid, settings.skipPermissions)
     if (!args.ok) return args
@@ -623,10 +670,14 @@ export class SshHost implements Host {
     const root = d.realPath(this.bare(spec.root))
     const cwd = spec.cwd ? this.bare(spec.cwd) : root
     const wsRoot = spec.fallbackCwd ? d.realPath(this.bare(spec.fallbackCwd)) : root
-    const account = mode === 'start' && settings.multiAccount ? await d.pickAccount() : undefined
+    const worktree = spec.worktree ?? worktreeNameAround(cwd)
     const pkg = d.machinePackage()
     const machineDir = remoteMachineDir(pkg.name)
     await this.kills.get(tmuxName)
+    const pickKey = mode === 'start' ? `launch-${sid}` : undefined
+    const account = pickKey ? await d.pickAccount(pickKey) : undefined
+    // ADR-0030
+    if (pickKey && !account) throw new Error(NO_USABLE_ACCOUNT.claude)
     return {
       ok: true,
       spawnCwd: os.homedir(),
@@ -640,9 +691,11 @@ export class SshHost implements Host {
           machineName: pkg.name,
           cwd,
           fallbackCwd: wsRoot !== cwd ? wsRoot : undefined,
-          banner: account?.banner ?? OWN_LOGIN_BANNER,
+          banner: account?.banner ?? '',
           env: account?.env,
-          settings: d.hookSettings(tabId, machineDir),
+          portOffset: worktree ? portOffset(worktree) : undefined,
+          settings: d.hookSettings(tabId, machineDir, agentTools),
+          agentPlugin: agentTools,
           claudeArgs: args.args
         })
         return launchLine({
@@ -665,7 +718,7 @@ export class SshHost implements Host {
         root,
         hookMirror: mirrorHookDir(d.userData, this.machine),
         attachTo: mode === 'attach' ? sid : undefined,
-        picked: account?.picked
+        pickKey
       }
     }
   }

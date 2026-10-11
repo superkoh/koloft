@@ -454,10 +454,28 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(res.stdout).toContain('koloft: bravo')
   })
 
-  it('hands claude the -w name for a worktree session', () => {
-    const b = box(spec({ claudeArgs: ['--session-id', 'sess1', '-w', 'my.feature-1'] }))
+  it("hands claude the -w name and the worktree's port offset for a worktree session, and no offset to any other", () => {
+    const b = box(
+      spec({ claudeArgs: ['--session-id', 'sess1', '-w', 'my.feature-1'], portOffset: 42 })
+    )
     expect(b.run().status).toBe(0)
     expect(b.argv().slice(-3)).toEqual(['sess1', '-w', 'my.feature-1'])
+    expect(b.env().KOLOFT_PORT_OFFSET).toBe('42')
+    expect(claudeEnvOf(spec()).KOLOFT_PORT_OFFSET).toBeUndefined()
+  })
+
+  it("with agent tools on, claude gets Koloft's skill from the machine package and finds the machine's koloft first on its PATH, told which tab it runs in", () => {
+    const b = box(spec({ agentPlugin: true }))
+    expect(b.run().status).toBe(0)
+    const m = `${b.home}/.koloft/m-0000000000000000`
+    expect(b.argv().slice(0, 4)).toEqual([
+      '--settings',
+      `${b.home}/.koloft/tabs/T.json`,
+      '--plugin-dir',
+      `${m}/agent-plugin/`
+    ])
+    expect(b.env().PATH.split(':')[0]).toBe(`${m}/bin/`)
+    expect(b.env().KOLOFT_TAB_ID).toBe('T')
   })
 
   it('a reconnect attaches to the running session and installs nothing', () => {

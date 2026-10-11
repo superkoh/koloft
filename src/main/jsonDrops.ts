@@ -25,21 +25,61 @@ export function writeWholeBeforeVisible(dest: string, text: string): void {
   fs.renameSync(tmp, dest)
 }
 
-export function watchJsonDrops(
-  dir: string,
-  handlerFor: (name: string) => ((obj: unknown, full: string) => void) | null
-): fs.FSWatcher | null {
+type DropHandlerFor = (name: string) => ((obj: unknown, full: string) => void) | null
+
+function readNamedDrop(dir: string, name: string, handlerFor: DropHandlerFor): void {
+  if (!name.endsWith('.json')) return
+  const handle = handlerFor(name)
+  if (!handle) return
+  const full = path.join(dir, name)
+  readJsonDrop(full, 0, (obj) => handle(obj, full))
+}
+
+function sweepJsonDrops(dir: string, handlerFor: DropHandlerFor): void {
+  fs.readdir(dir, (err, names) => {
+    if (err) return
+    for (const name of names) readNamedDrop(dir, name, handlerFor)
+  })
+}
+
+export function watchJsonDrops(dir: string, handlerFor: DropHandlerFor): fs.FSWatcher | null {
   try {
     return fs.watch(dir, (_event, filename) => {
-      if (!filename) return
-      const name = filename.toString()
-      if (!name.endsWith('.json')) return
-      const handle = handlerFor(name)
-      if (!handle) return
-      const full = path.join(dir, name)
-      readJsonDrop(full, 0, (obj) => handle(obj, full))
+      if (filename) readNamedDrop(dir, filename.toString(), handlerFor)
     })
   } catch {
     return null
+  }
+}
+
+// PLATFORM§28
+const SWEEP_FOR_A_LOST_DROP_MS = 1000
+
+export function watchAndSweepJsonDrops(
+  dir: string,
+  handlerFor: DropHandlerFor,
+  sweepFor: DropHandlerFor = handlerFor
+): fs.FSWatcher | null {
+  const watcher = watchJsonDrops(dir, handlerFor)
+  if (watcher) {
+    const sweep = setInterval(() => sweepJsonDrops(dir, sweepFor), SWEEP_FOR_A_LOST_DROP_MS).unref()
+    watcher.on('close', () => clearInterval(sweep))
+  }
+  return watcher
+}
+
+export function oncePerName(handlerFor: DropHandlerFor): DropHandlerFor {
+  const handled = new Set<string>()
+  return (name) => {
+    if (handled.has(name)) return null
+    const handle = handlerFor(name)
+    return (
+      handle &&
+      ((obj, full): void => {
+        if (handled.has(name)) return
+        handled.add(name)
+        handle(obj, full)
+      })
+    )
   }
 }

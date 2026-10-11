@@ -1,16 +1,43 @@
-import fs from 'fs'
-import path from 'path'
-import { test, expect } from './helpers/app'
+import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { codexMissingWhoseCheckAnswersOnlyWhenLetGo } from './helpers/env'
 import {
+  boundSessionId,
   centerTerm,
-  encodeCwd,
+  continuedInOf,
+  expectNoCodexWhileTheCheckIsOutNorAfter,
   FAKE_SESSION_TITLE,
+  layoutOnDisk,
+  openPicker,
   runIn,
   startSessionIn,
+  transcriptFile,
   waitBooted,
   wsRows
 } from './helpers/p1'
 import { WORKBENCH, showBrowse } from './helpers/workbench'
+
+test('with no Codex and a slow Codex check, the first ⌘N picker after launch never shows a Codex button, before or after the check answers', async ({
+  env
+}) => {
+  const letTheCheckAnswer = codexMissingWhoseCheckAnswersOnlyWhenLetGo(env)
+  const app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await waitBooted(page)
+    const picker = await openPicker(app, page)
+    await expect(picker.locator('.modal-foot button[data-default="true"]')).toBeVisible()
+    const codexButtons = picker.locator('.modal-foot button[data-default="false"]')
+
+    await expectNoCodexWhileTheCheckIsOutNorAfter(
+      page,
+      letTheCheckAnswer,
+      () => codexButtons.count(),
+      'a Codex button'
+    )
+  } finally {
+    await quitAndClose(app)
+  }
+})
 
 test('starting a session in a workspace surfaces it, its file, and a preview through the real shim, hooks and tracker, with only the LLM faked', async ({
   page
@@ -43,28 +70,16 @@ test('when Claude Code moves the conversation to a new session id (a phantom sta
   await startSessionIn(page, 'ws-a')
   await expect(page.locator('.ws-tab.st-waiting')).toBeVisible({ timeout: 15_000 })
   const tabId = await wsRows(page, 'ws-a').first().getAttribute('data-tab-id')
-  const boundOf = (): Promise<string | undefined> =>
-    page.evaluate(
-      (id) => window.api.sessions.list().then((all) => all.find((s) => s.tabId === id)?.sessionId),
-      tabId
-    )
+  const boundOf = (): Promise<string | undefined> => boundSessionId(page, tabId)
   const before = await boundOf()
   expect(before).toBeTruthy()
-  const beforeTranscript = path.join(
-    env.home,
-    '.claude',
-    'projects',
-    encodeCwd(env.workspaces.a),
-    `${before}.jsonl`
-  )
+  const beforeTranscript = transcriptFile(env.home, env.workspaces.a, before ?? '')
 
   await runIn(page, centerTerm(page), '/move-to-background')
-  const continuedIn = (): string | undefined => {
-    const last = fs.readFileSync(beforeTranscript, 'utf8').trimEnd().split('\n').pop() ?? ''
-    return last.includes('continued-in') ? JSON.parse(last).continuedInSessionId : undefined
-  }
+  const continuedIn = (): string | undefined => continuedInOf(beforeTranscript)
   await expect.poll(continuedIn, { timeout: 15_000 }).toBeTruthy()
   await expect.poll(boundOf, { timeout: 15_000 }).toBe(continuedIn())
+  await expect.poll(() => layoutOnDisk(env).members, { timeout: 15_000 }).toEqual([continuedIn()])
   await expect(wsRows(page, 'ws-a')).toHaveCount(1)
   await expect(wsRows(page, 'ws-a').first()).not.toHaveClass(/\bcold\b/)
 })

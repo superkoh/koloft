@@ -1,6 +1,7 @@
 import { shq } from '@shared/shellQuote'
 import { parseWorktreeEntries, type WorktreeEntry } from '../workspaceOps'
 import { remotePtsFile } from './paths'
+import { ENSURE_CLAUDE_MINIMUM_FN } from '../cliMinimums'
 
 export const NODE_VERSION = '22.12.0'
 
@@ -86,6 +87,8 @@ if ! have claude; then
   else say "need curl or wget to install claude"; exit 4; fi
   have claude || { say "claude did not install; see the output above"; exit 4; }
 fi
+${ENSURE_CLAUDE_MINIMUM_FN}
+ensure_claude_minimum claude || exit 4
 
 node_ok() {
   have node || return 1

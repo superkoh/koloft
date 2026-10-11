@@ -81,7 +81,7 @@ describe('scripts/release-notes.sh — CLI contract', () => {
     expect(iBeta).toBeLessThan(iAlpha)
   })
 
-  it('A2: only feat and fix commits reach the notes — docs, test and chore changes stay out', () => {
+  it('A2: only feat, fix and perf commits reach the notes — docs, test, chore and website (site) changes stay out', () => {
     const dir = freshRepo()
     commit(dir, 'chore: init')
     tag(dir, 'v0.1.0')
@@ -91,10 +91,14 @@ describe('scripts/release-notes.sh — CLI contract', () => {
     commit(dir, 'chore: release v0.2.0')
     commit(dir, 'fixup the prefix-lookalike (#4)')
     commit(dir, 'fix: y (#5)')
+    commit(dir, 'perf(codex): z (#6)')
+    commit(dir, 'feat(site): a website page (#7)')
+    commit(dir, 'fix(site): a website typo (#8)')
 
     const { stdout } = run(dir, '0.2.0', 'v0.1.0')
 
     expect(beforeMarker(stdout).match(/^- .*$/gm)).toEqual([
+      '- perf(codex): z (#6)',
       '- fix: y (#5)',
       '- feat(sidebar): x (#1)'
     ])
@@ -159,10 +163,6 @@ describe('scripts/release-notes.sh — CLI contract', () => {
         )
       )
     ).toBe(true)
-    expect(
-      blocks.some((b) => b.includes('xattr -dr com.apple.quarantine /Applications/Koloft.app'))
-    ).toBe(true)
-    expect(installPart).toContain('unsigned')
   })
 
   it('A7: notes differ across versions instead of being byte-identical, and each run lists its own non-empty range of commits', () => {

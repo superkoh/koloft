@@ -66,6 +66,13 @@ export async function launchApp(env: E2EEnv): Promise<ElectronApplication> {
   })
 }
 
+export async function expectNoToastAtAnyMomentOfAWindow(page: Page): Promise<void> {
+  for (let i = 0; i < 8; i++) {
+    expect(await page.locator('.toast').count()).toBe(0)
+    await page.waitForTimeout(200)
+  }
+}
+
 export async function pendingAttention(page: Page): Promise<AttentionEvent[]> {
   return page.evaluate(() => window.api.attention.list())
 }

@@ -78,7 +78,7 @@ export function SessionMethodsSection() {
             <small>
               {backend === 'claude'
                 ? 'Always enabled'
-                : 'Uses Settings ▸ Accounts, or its own login on this Mac'}
+                : 'Runs on a Codex account from Settings ▸ Accounts'}
             </small>
             <small>{status(backend)}</small>
           </div>

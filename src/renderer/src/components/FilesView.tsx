@@ -17,7 +17,8 @@ import type {
   GitStatusMap,
   SessionInfo
 } from '@shared/types'
-import { basename, isWebPagePath } from '@shared/preview'
+import { opensAsWebTab } from '@shared/browserRoute'
+import { basename } from '@shared/preview'
 import { parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { boundSessionId, useActiveOpenFile, useStore, type OpenFile } from '../store'
 import { ArtifactPane, NO_CAPS, sameCaps, type ArtifactCaps } from './ArtifactPane'
@@ -134,16 +135,16 @@ export function useFilesController(tabId: string | null, root: string | null): F
     setOutlineOpen(false)
   }, [src, askedView])
 
-  const filesReveal = useStore((s) => s.filesReveal)
-  const revealed = useRef(0)
+  const filesReveal = useStore((s) => (tabId ? s.filesReveal[tabId] : undefined))
+  const revealed = useRef<Record<string, number>>({})
   useEffect(() => {
-    if (!filesReveal || filesReveal.nonce === revealed.current) return
-    if (filesReveal.tabId !== tabId) return
-    revealed.current = filesReveal.nonce
+    if (!tabId || !filesReveal || filesReveal.nonce === revealed.current[tabId]) return
+    revealed.current[tabId] = filesReveal.nonce
     setViewRaw(filesReveal.view)
     if (filesReveal.view !== 'browse') return
-    const src = useStore.getState().openFiles[filesReveal.tabId]?.src
-    if (!root || !src) return
+    const opened = useStore.getState().openFiles[tabId]
+    const src = opened?.src
+    if (!root || !src || opened.source === 'intercept') return
     setRecents((prevList) => {
       const next = pushRecent(prevList, src)
       saveList(recentKey(root), next)
@@ -425,6 +426,7 @@ export interface FilesBodyProps {
   onZoomImage: (src: string) => void
   zoom: string | null
   onCloseZoom: () => void
+  onReturnFocus: () => void
 }
 
 export function FilesBody({
@@ -442,7 +444,8 @@ export function FilesBody({
   onEdit,
   onZoomImage,
   zoom,
-  onCloseZoom
+  onCloseZoom,
+  onReturnFocus
 }: FilesBodyProps): JSX.Element {
   const contentRef = useRef<HTMLDivElement>(null)
   const [newFileDir, setNewFileDir] = useState<string | null>(null)
@@ -493,7 +496,7 @@ export function FilesBody({
 
   const openPath = useCallback(
     (path: string, line?: number): void => {
-      if (isWebPagePath(path)) {
+      if (opensAsWebTab(path)) {
         onOpenWeb(path)
         return
       }
@@ -546,6 +549,7 @@ export function FilesBody({
           onSplit={onSplit}
           onContextMenu={openContextMenu}
           onScrollRequest={c.scrollToFile}
+          onReturnFocus={onReturnFocus}
           streamRef={contentRef}
         />
       ) : (
@@ -765,7 +769,7 @@ function FilesContextMenu({
   if (!menu.isDir) {
     items.push(['Edit', onEdit])
     items.push(['Open', onOpen])
-    if (isWebPagePath(menu.path)) {
+    if (opensAsWebTab(menu.path)) {
       items.push([
         'View source',
         () => {

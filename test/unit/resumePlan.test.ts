@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import path from 'path'
-import { planResume, worktreeHomeRoot, type ResumeProbes } from '../../src/main/resumePlan'
+import {
+  planResume,
+  worktreeHomeRoot,
+  worktreeNameAround,
+  type ResumeProbes
+} from '../../src/main/resumePlan'
 import type { SessionRow, WorktreeStateMeta } from '@shared/types'
 
 const REPO = '/repo'
@@ -118,6 +123,14 @@ describe('planResume: bound session whose worktree still exists', () => {
     const plan = await planResume(bound, probes({ ...occupied, dirExists: (p) => taken.has(p) }))
     expect(plan).toMatchObject({ renamedName: 'session-tab-4' })
   })
+
+  it('skips a renamed name whose removed worktree still has a recovery record', async () => {
+    const plan = await planResume(
+      bound,
+      probes({ ...occupied, recorded: (p) => p === WT + '-2' || p === WT + '-3' })
+    )
+    expect(plan).toMatchObject({ renamedName: 'session-tab-4' })
+  })
 })
 
 describe('planResume: bound session whose worktree is gone (rebuild)', () => {
@@ -177,5 +190,17 @@ describe('worktreeHomeRoot', () => {
     expect(worktreeHomeRoot('/repo/src/thing')).toBeNull()
     expect(worktreeHomeRoot('/repo/.claude/worktrees/x/nested')).toBeNull()
     expect(worktreeHomeRoot('relative/.claude/worktrees/x')).toBeNull()
+  })
+})
+
+describe('worktreeNameAround', () => {
+  it('names the worktree a folder sits in, from its top or from deeper down', () => {
+    expect(worktreeNameAround(WT)).toBe('session-tab')
+    expect(worktreeNameAround(path.join(WT, 'src', 'deep'))).toBe('session-tab')
+  })
+
+  it('names nothing for a folder outside any .claude/worktrees home', () => {
+    expect(worktreeNameAround(REPO)).toBeUndefined()
+    expect(worktreeNameAround('/repo/.claude/worktrees')).toBeUndefined()
   })
 })

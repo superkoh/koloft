@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import type { ElectronApplication, Locator, Page } from '@playwright/test'
+import type { ElectronApplication, Frame, Locator, Page } from '@playwright/test'
 import { test, expect } from './helpers/app'
 import type { E2EEnv } from './helpers/env'
 import { launchSettled } from './helpers/blackbox'
@@ -839,7 +839,7 @@ test.describe('browser extensions (black-box cases; BB-M12 needs the real Web St
   })
 
   // PLATFORM§14
-  test('BB-C17: the browser guest presents a consistent Google Chrome brand in userAgentData and the other real-Chrome tells, so Google sign-in does not read it as an embedder', async ({
+  test('BB-C17: the browser guest, and every cross-site iframe in it, presents a consistent Google Chrome brand and the other real-Chrome tells as native code, so Google sign-in and captcha frames do not read it as an embedder', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -847,48 +847,81 @@ test.describe('browser extensions (black-box cases; BB-M12 needs the real Web St
     const { app, page } = await launchSettled(env)
     try {
       await browserSession(page, env)
-      await openTabOn(page, server.page('/c17', titled('C17')))
-      await expect.poll(() => server.count('/c17'), { timeout: 30_000 }).toBeGreaterThan(0)
+      server.page('/c17-frame', titled('C17 frame'))
+      const crossSiteFrame = server.localhostUrl('/c17-frame')
+      await openTabOn(
+        page,
+        server.page(
+          '/c17',
+          `<!doctype html><html><head><meta charset="utf-8"><title>C17</title></head>` +
+            `<body><iframe src="${crossSiteFrame}"></iframe></body></html>`
+        )
+      )
+      await expect.poll(() => server.count('/c17-frame'), { timeout: 30_000 }).toBeGreaterThan(0)
       const guest = await guestByUrl(app, '/c17')
-      const brand = await guest.evaluate(async () => {
-        const uad = (
-          navigator as unknown as {
-            userAgentData?: {
-              brands: Array<{ brand: string; version: string }>
-              getHighEntropyValues: (h: string[]) => Promise<{
-                fullVersionList: Array<{ brand: string; version: string }>
-              }>
-            }
-          }
-        ).userAgentData
-        const high = await uad!.getHighEntropyValues(['fullVersionList'])
-        const pick = (list: Array<{ brand: string; version: string }>, b: string): string | null =>
-          list.find((x) => x.brand === b)?.version ?? null
-        return {
-          lowChrome: pick(uad!.brands, 'Google Chrome'),
-          lowChromium: pick(uad!.brands, 'Chromium'),
-          fullChrome: pick(high.fullVersionList, 'Google Chrome'),
-          fullChromium: pick(high.fullVersionList, 'Chromium')
-        }
-      })
-      expect(brand.lowChrome).not.toBeNull()
-      expect(brand.lowChrome).toBe(brand.lowChromium)
-      expect(brand.fullChrome).not.toBeNull()
-      expect(brand.fullChrome).toBe(brand.fullChromium)
-      const tells = await guest.evaluate(() => ({
-        loadTimes: typeof (window as unknown as { chrome?: { loadTimes?: unknown } }).chrome
-          ?.loadTimes,
-        csi: typeof (window as unknown as { chrome?: { csi?: unknown } }).chrome?.csi,
-        webdriver: navigator.webdriver
-      }))
-      expect(tells.loadTimes).toBe('function')
-      expect(tells.csi).toBe('function')
-      expect(tells.webdriver).toBe(false)
+      await expect.poll(() => guest.frames().some((f) => f.url() === crossSiteFrame)).toBe(true)
+      for (const frame of guest.frames()) await assertPassesAsChrome(frame)
     } finally {
       await app.close().catch(() => {})
       await server.close()
     }
   })
+
+  async function assertPassesAsChrome(guest: Frame): Promise<void> {
+    const brand = await guest.evaluate(async () => {
+      const uad = (
+        navigator as unknown as {
+          userAgentData?: {
+            brands: Array<{ brand: string; version: string }>
+            getHighEntropyValues: (h: string[]) => Promise<{
+              fullVersionList: Array<{ brand: string; version: string }>
+            }>
+          }
+        }
+      ).userAgentData
+      const high = await uad!.getHighEntropyValues(['fullVersionList'])
+      const pick = (list: Array<{ brand: string; version: string }>, b: string): string | null =>
+        list.find((x) => x.brand === b)?.version ?? null
+      return {
+        lowChrome: pick(uad!.brands, 'Google Chrome'),
+        lowChromium: pick(uad!.brands, 'Chromium'),
+        fullChrome: pick(high.fullVersionList, 'Google Chrome'),
+        fullChromium: pick(high.fullVersionList, 'Chromium')
+      }
+    })
+    expect(brand.lowChrome).not.toBeNull()
+    expect(brand.lowChrome).toBe(brand.lowChromium)
+    expect(brand.fullChrome).not.toBeNull()
+    expect(brand.fullChrome).toBe(brand.fullChromium)
+    const tells = await guest.evaluate(() => {
+      const chrome = (window as unknown as { chrome?: { loadTimes?: unknown; csi?: unknown } })
+        .chrome
+      const source = (f: unknown): string => Function.prototype.toString.call(f)
+      const uadProto = Object.getPrototypeOf(
+        (navigator as unknown as { userAgentData: object }).userAgentData
+      ) as { getHighEntropyValues: unknown }
+      return {
+        loadTimes: typeof chrome?.loadTimes,
+        csi: typeof chrome?.csi,
+        sources: [
+          source(chrome?.loadTimes),
+          source(window.alert),
+          source(Object.getOwnPropertyDescriptor(uadProto, 'brands')?.get),
+          source(uadProto.getHighEntropyValues),
+          source(Function.prototype.toString)
+        ]
+      }
+    })
+    expect(tells.loadTimes).toBe('function')
+    expect(tells.csi).toBe('function')
+    expect(tells.sources).toEqual([
+      'function () { [native code] }',
+      'function alert() { [native code] }',
+      'function get brands() { [native code] }',
+      'function getHighEntropyValues() { [native code] }',
+      'function toString() { [native code] }'
+    ])
+  }
 
   test('BB-N01: install/permission confirmation never uses a native dialog', async ({ env }) => {
     test.setTimeout(300_000)

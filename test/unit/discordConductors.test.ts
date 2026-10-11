@@ -81,6 +81,16 @@ describe('Conductors', () => {
     expect(started).toHaveLength(1)
   })
 
+  it('a conductor is found by the name ListAgents shows for it, so a session reporting back by that name reaches it', () => {
+    const c = make()
+    c.save({ scope: 'global', backend: 'claude', channel: CHANNEL })
+    c.save({ scope: '/ws/a', backend: 'codex', channel: { ...CHANNEL, channelId: '201' } })
+    const [global, ws] = c.bindings()
+    expect(c.bindingOf('Global-conductor')?.id).toBe(global.id)
+    expect(c.bindingOf('a-conductor')?.id).toBe(ws.id)
+    expect(c.bindingOf('Global')).toBeUndefined()
+  })
+
   it('the global conductor starts in its own folder under userData, told its role', async () => {
     const c = make()
     c.save({ scope: 'global', backend: 'claude', channel: CHANNEL })
@@ -222,10 +232,34 @@ describe('Conductors', () => {
     expect(killed).toEqual(['tab-1'])
   })
 
-  it('a remote workspace’s conductor runs on this Mac, in a folder named by a hash of its key', () => {
-    const folder = conductorFolder(userData, 'ssh://devbox/home/me/app')
-    expect(path.dirname(folder)).toBe(path.join(userData, 'conductors'))
-    expect(path.basename(folder)).toMatch(/^[0-9a-f]{16}$/)
-    expect(conductorFolder(userData, '/ws/a')).toBe('/ws/a')
+  // ADR-0029
+  it('a workspace’s conductor, local or remote, runs on this Mac in a folder named by a hash of its scope, never in the workspace', () => {
+    for (const scope of ['ssh://devbox/home/me/app', '/ws/a']) {
+      const folder = conductorFolder(userData, scope)
+      expect(path.dirname(folder)).toBe(path.join(userData, 'conductors'))
+      expect(path.basename(folder)).toMatch(/^[0-9a-f]{16}$/)
+    }
+    expect(conductorFolder(userData, '/ws/a')).not.toBe(
+      conductorFolder(userData, 'ssh://devbox/home/me/app')
+    )
+  })
+
+  // ADR-0029
+  it('the workspace a local conductor’s koloft commands act on is its bound workspace, not its folder; the global one has none', async () => {
+    const c = make()
+    c.save({ scope: '/ws/a', backend: 'claude', channel: CHANNEL })
+    c.save({ scope: 'global', backend: 'claude', channel: { ...CHANNEL, channelId: '201' } })
+    const [local, global] = c.bindings()
+    const openingLocal = c.open(local.id)
+    await vi.waitFor(() => expect(started).toHaveLength(1))
+    release()
+    await openingLocal
+    const openingGlobal = c.open(global.id)
+    await vi.waitFor(() => expect(started).toHaveLength(2))
+    release()
+    await openingGlobal
+    expect(c.workspaceOfTab('tab-1')).toBe('/ws/a')
+    expect(c.workspaceOfTab('tab-2')).toBeUndefined()
+    expect(c.workspaceOfTab('some-other-tab')).toBeUndefined()
   })
 })

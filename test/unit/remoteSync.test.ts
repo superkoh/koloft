@@ -326,6 +326,21 @@ it('stops polling a machine that is no longer pinned', async () => {
   expect(sync.connected('devbox')).toBe(false)
 })
 
+it('a wait for the next pull ends only after a round that started after it, since a round already under way may have copied the files before', async () => {
+  sync.start()
+  await tick(1)
+  let release = (): void => {}
+  answers.push(() => new Promise<RunResult>((res) => (release = () => res(ok('')))))
+  await tick(2000)
+  let done = false
+  void sync.nextPullDone('devbox').then(() => (done = true))
+  release()
+  await tick(1)
+  expect(done).toBe(false)
+  await tick(2000)
+  expect(done).toBe(true)
+})
+
 describe('pokeNow', () => {
   it('runs a round at once instead of waiting out the interval', async () => {
     target = { ...target, hasTabs: false }

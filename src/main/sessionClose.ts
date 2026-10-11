@@ -6,6 +6,7 @@ import { gitProbes, type GitOut } from './resumePlan'
 export type ClosingTree = ProjectInfo & { branches: string[] }
 
 const MOST_COMMITS_LISTED = 20
+const DELETING_HUNDREDS_OF_THOUSANDS_OF_IGNORED_FILES_MS = 10 * 60_000
 
 export async function closingTree(git: GitOut, info: ProjectInfo): Promise<ClosingTree | null> {
   if (!info.worktreeName) return null
@@ -48,8 +49,12 @@ export async function whatIsLeft(git: GitOut, tree: ClosingTree): Promise<string
 export async function removeTree(git: GitOut, tree: ClosingTree): Promise<string | null> {
   const onItsHost = parseRemoteKey(tree.treeRoot)?.path ?? tree.treeRoot
   await git(tree.root, ['worktree', 'unlock', onItsHost])
-  if ((await git(tree.root, ['worktree', 'remove', onItsHost])) === null)
-    return `git could not remove the worktree ${tree.treeRoot}.`
+  const removed = await git(
+    tree.root,
+    ['worktree', 'remove', onItsHost],
+    DELETING_HUNDREDS_OF_THOUSANDS_OF_IGNORED_FILES_MS
+  )
+  if (removed === null) return `git could not remove the worktree ${tree.treeRoot}.`
   for (const branch of tree.branches) await git(tree.root, ['branch', '-D', branch])
   return null
 }

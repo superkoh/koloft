@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { EditWriteResult } from '@shared/types'
+import type { EditWriteResult, SessionInfo } from '@shared/types'
 import { NOTES_TAB, notesOwner } from '@shared/cwdKey'
 import {
   allDirty,
+  askAboutLeftEdits,
   dirtyInWorkspace,
   flushNotes,
   labelPaths,
@@ -21,7 +22,7 @@ import {
   noteConflict,
   setText
 } from '../../src/renderer/src/editRegistry'
-import { useStore } from '../../src/renderer/src/store'
+import { useStore, type Tab } from '../../src/renderer/src/store'
 
 const write =
   vi.fn<
@@ -246,6 +247,163 @@ describe('saveAll', () => {
     await expect(saveAll([note])).resolves.toBe(false)
     expect(useStore.getState().toast).toBe('Not allowed to write this file.')
     expect(useStore.getState().selectedWs).toBe(WS)
+  })
+})
+
+describe('askAboutLeftEdits: a session that ends on its own with unsaved edits asks Save / Discard / Keep for later, after any box already open', () => {
+  const ROOT = '/repo/dead'
+  const PATH = `${ROOT}/config/app.json`
+  const STAMP = { mtimeMs: 1, size: 3 }
+
+  const liveTab = (id: string, title: string): Tab => ({
+    id,
+    kind: 'claude',
+    title,
+    cwd: ROOT,
+    alive: true
+  })
+
+  const dirtyBuffer = (owner: string): void => {
+    beginEdit(owner, 'wt1', { path: PATH, text: 'old', eol: 'lf', stamp: STAMP, readOnly: null })
+    setText(owner, 'wt1', 'old + typed')
+  }
+
+  const sessionEnds = (owner: string, title = 'Fix login'): void => {
+    askAboutLeftEdits(liveTab(owner, title))
+    useStore.setState((s) => ({
+      tabs: s.tabs.filter((t) => t.id !== owner),
+      sessions: s.sessions.filter((x) => x.tabId !== owner)
+    }))
+  }
+
+  const startLive = (owner: string, title = 'Fix login'): void => {
+    useStore.setState((s) => ({
+      tabs: [...s.tabs, liveTab(owner, title)],
+      sessions: [...s.sessions, { tabId: owner, treeRoot: ROOT, title } as unknown as SessionInfo]
+    }))
+  }
+
+  beforeEach(() => {
+    write.mockReset()
+    useStore.setState({
+      tabs: [liveTab('pty-other', 'Other')],
+      sessions: [],
+      activeTabId: 'pty-other',
+      workbenchOpen: {},
+      unsavedPrompt: null,
+      closeConfirm: null,
+      toast: null
+    })
+  })
+
+  afterEach(() => {
+    for (const t of allEditTabs()) endEdit(t.ownerTabId, t.tabId)
+    useStore.setState({
+      tabs: [],
+      sessions: [],
+      activeTabId: null,
+      unsavedPrompt: null,
+      closeConfirm: null,
+      toast: null
+    })
+  })
+
+  it('asks at once, naming the session and the file under the session’s folder', () => {
+    startLive('pty-end-1')
+    dirtyBuffer('pty-end-1')
+    sessionEnds('pty-end-1')
+
+    const prompt = useStore.getState().unsavedPrompt
+    expect(prompt?.files).toEqual(['config/app.json'])
+    expect(prompt?.ended).toContain('"Fix login"')
+    expect(prompt?.ended).toContain('config/app.json')
+  })
+
+  it('asks nothing for a session with no unsaved edits', () => {
+    startLive('pty-end-2')
+    sessionEnds('pty-end-2')
+    expect(useStore.getState().unsavedPrompt).toBeNull()
+  })
+
+  it('waits behind a box already open, then asks about each ended session in turn', () => {
+    const open = { files: ['x'], onCancel: () => {}, onDiscard: () => {}, onSave: () => {} }
+    useStore.getState().setUnsavedPrompt(open)
+    startLive('pty-end-3', 'First')
+    startLive('pty-end-4', 'Second')
+    dirtyBuffer('pty-end-3')
+    dirtyBuffer('pty-end-4')
+    sessionEnds('pty-end-3', 'First')
+    sessionEnds('pty-end-4', 'Second')
+    expect(useStore.getState().unsavedPrompt).toBe(open)
+
+    useStore.getState().setUnsavedPrompt(null)
+    expect(useStore.getState().unsavedPrompt?.ended).toContain('"First"')
+
+    useStore.getState().setUnsavedPrompt(null)
+    expect(useStore.getState().unsavedPrompt?.ended).toContain('"Second"')
+  })
+
+  it('waits behind the close-session box too', () => {
+    useStore.getState().setCloseConfirm({ tabId: 'pty-other', title: 'Other', status: 'working' })
+    startLive('pty-end-5')
+    dirtyBuffer('pty-end-5')
+    sessionEnds('pty-end-5')
+    expect(useStore.getState().unsavedPrompt).toBeNull()
+
+    useStore.getState().setCloseConfirm(null)
+    expect(useStore.getState().unsavedPrompt?.ended).toContain('"Fix login"')
+  })
+
+  it('Save writes the file and lets the buffer go', async () => {
+    startLive('pty-end-6')
+    dirtyBuffer('pty-end-6')
+    sessionEnds('pty-end-6')
+    write.mockResolvedValue({ ok: true, mtimeMs: 2, size: 11 })
+
+    await useStore.getState().unsavedPrompt?.onSave()
+
+    expect(write).toHaveBeenCalledWith(PATH, 'old + typed', STAMP, { eol: 'lf' })
+    expect(useStore.getState().unsavedPrompt).toBeNull()
+    expect(allEditTabs().filter((t) => t.ownerTabId === 'pty-end-6')).toEqual([])
+  })
+
+  it('Discard writes nothing and lets the buffer go', () => {
+    startLive('pty-end-7')
+    dirtyBuffer('pty-end-7')
+    sessionEnds('pty-end-7')
+
+    useStore.getState().unsavedPrompt?.onDiscard()
+
+    expect(write).not.toHaveBeenCalled()
+    expect(allEditTabs().filter((t) => t.ownerTabId === 'pty-end-7')).toEqual([])
+  })
+
+  it('Keep for later leaves the buffer to the quit guard, which names it as from a closed session', () => {
+    startLive('pty-end-8')
+    dirtyBuffer('pty-end-8')
+    sessionEnds('pty-end-8')
+
+    useStore.getState().unsavedPrompt?.onCancel()
+    useStore.getState().setUnsavedPrompt(null)
+
+    expect(labelPaths(allDirty())).toEqual(['config/app.json (from a closed session)'])
+  })
+
+  it('a save that meets a newer file on disk points at no tab, since the session’s tab is gone', async () => {
+    startLive('pty-end-9')
+    dirtyBuffer('pty-end-9')
+    sessionEnds('pty-end-9')
+    write.mockResolvedValue({ ok: false, code: 'stale', mtimeMs: 9, size: 4, text: 'theirs' })
+
+    await useStore.getState().unsavedPrompt?.onSave()
+
+    const st = useStore.getState()
+    expect(st.activeTabId).toBe('pty-other')
+    expect(st.workbenchOpen['pty-end-9']).toBeUndefined()
+    expect(st.toast).toBe(
+      'Not saved — this file changed on disk, and its session is closed, so no tab can show the difference.'
+    )
+    expect(allDirty()).toHaveLength(1)
   })
 })
 

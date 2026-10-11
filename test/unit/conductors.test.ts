@@ -70,7 +70,7 @@ describe('sanitizeDiscord', () => {
         {
           ...binding('a', '/ws/a', '1'),
           threads: [
-            { threadId: '9', keys: ['k1', 'k2'], lastMessageId: '12' },
+            { threadId: '9', keys: ['k1', 'k2'], name: 'Fix login', lastMessageId: '12' },
             { threadId: 'nope', keys: ['k3'] },
             { threadId: '10', keys: [] }
           ]
@@ -78,7 +78,7 @@ describe('sanitizeDiscord', () => {
       ]
     })
     expect(doc.bindings[0].threads).toEqual([
-      { threadId: '9', keys: ['k1', 'k2'], lastMessageId: '12' }
+      { threadId: '9', keys: ['k1', 'k2'], name: 'Fix login', lastMessageId: '12' }
     ])
   })
 })

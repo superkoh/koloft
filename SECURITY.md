@@ -53,9 +53,6 @@ it; this paragraph is the answer.
 
 Reports about these will be closed as working-as-intended:
 
-- **The build is unsigned and not notarized.** That is a cost decision, written up in
-  the README. The `curl … | install.sh` path works because curl sets no quarantine
-  attribute — that is the point of it, not an oversight.
 - **A Workbench terminal tab refuses to run an interactive `claude`.** That is product
   routing so sessions stay bound to their tab, not a sandbox. Ways around it are not
   treated as vulnerabilities.

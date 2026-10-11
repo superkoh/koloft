@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { test, expect, quitAndClose } from './helpers/app'
+import { portOffset } from '../../src/shared/worktreeName'
 import {
   addRemoteWorkspace,
   installFakeRemote,
@@ -77,6 +78,7 @@ test.describe('worktree sessions in a remote workspace, driven by the machine’
       const [call] = await waitForCalls(env, 1, 60_000)
       expect(call.cwd).toBe(remoteDir(env))
       expect(call.argv.join(' ')).toContain('-w featr')
+      expect(call.portOffset).toBe(String(portOffset('featr')))
 
       const wtDir = path.join(remoteDir(env), '.claude', 'worktrees', 'featr')
       expect(fs.statSync(wtDir).isDirectory()).toBe(true)
@@ -114,6 +116,7 @@ test.describe('worktree sessions in a remote workspace, driven by the machine’
       const [call] = await waitForCalls(env, 1, 60_000)
       expect(fs.realpathSync(call.cwd)).toBe(fs.realpathSync(wtDir))
       expect(call.argv).not.toContain('-w')
+      expect(call.portOffset).toBe(String(portOffset('oldwt')))
     } finally {
       await quitAndClose(app)
     }

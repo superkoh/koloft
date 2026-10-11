@@ -1,7 +1,18 @@
-import type { BackendAvailability, BackendId, HostId, SessionMethods, SessionSource } from './types'
+import type {
+  BackendAvailability,
+  BackendId,
+  HostId,
+  SessionInfo,
+  SessionMethods,
+  SessionSource
+} from './types'
 import { hostOf } from './remoteKey'
 
 export const SESSION_BACKENDS: BackendId[] = ['claude', 'codex']
+
+export function statusUnavailable(session?: Pick<SessionInfo, 'details'>): boolean {
+  return session?.details?.codex?.observation === 'degraded'
+}
 
 export function backendIdOf(value: unknown): BackendId | undefined {
   return SESSION_BACKENDS.find((b) => b === value)
@@ -20,6 +31,10 @@ export const BACKEND_LABEL: Record<BackendId, string> = { claude: 'Claude', code
 
 export function backendAvailable(list: BackendAvailability[], id: BackendId): boolean {
   return list.some((b) => b.id === id && b.available)
+}
+
+export function shownAsInstalled(list: BackendAvailability[] | null, id: BackendId): boolean {
+  return list ? backendAvailable(list, id) : id === 'claude'
 }
 
 export function sourceOf(backendId: BackendId, workspacePath: string): SessionSource {
@@ -75,7 +90,6 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities | 'refused'>> 
     ssh: {
       ...EVERYTHING,
       agentOpen: PENDING,
-      agentTools: PENDING,
       browserControl: PENDING,
       rename: PENDING
     }
@@ -83,7 +97,6 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities | 'refused'>> 
   codex: {
     local: {
       ...EVERYTHING,
-      browserControl: PENDING,
       // CODEX§8
       statusline3: { unsupported: 'CODEX§8' }
     },

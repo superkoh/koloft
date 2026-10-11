@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>__SITE_URL__/</loc></url>
+  <url><loc>__SITE_URL__/sessions/</loc></url>
+  <url><loc>__SITE_URL__/workbench/</loc></url>
+  <url><loc>__SITE_URL__/agents/</loc></url>
+  <url><loc>__SITE_URL__/scheduled/</loc></url>
+  <url><loc>__SITE_URL__/accounts/</loc></url>
+  <url><loc>__SITE_URL__/remote/</loc></url>
+  <url><loc>__SITE_URL__/discord/</loc></url>
+  <url><loc>__SITE_URL__/install/</loc></url>
+  <url><loc>__SITE_URL__/changelog/</loc></url>
+</urlset>

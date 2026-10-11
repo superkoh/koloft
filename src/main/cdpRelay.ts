@@ -201,6 +201,13 @@ function backendFor(client: Client): RelayBackend {
         await d.stage(client.sessionId, tabIdFor(targetId))
       }
       const wc = guestOf(guestId)
+      // PLATFORM§16
+      if (method === 'Page.reload' && !sessionId) {
+        if ((params as { ignoreCache?: boolean }).ignoreCache) {
+          wc.reloadIgnoringCache()
+        } else wc.reload()
+        return {}
+      }
       const frameId = frameIds.get(targetId)
       const emulated = inputEmulation(method, params)
       const sendMethod = emulated ? 'Runtime.evaluate' : method
@@ -383,6 +390,15 @@ export function relayStripChanged(sessionId: string, next: RelayTarget[]): void 
   for (const targetId of diff.destroyed) client.protocol.targetDestroyed(targetId)
 }
 
+export function sessionDrivingGuest(guestId: number): string | null {
+  for (const client of clients.values()) {
+    for (const held of client.attached.values()) {
+      if (held.guestId === guestId && client.sessionId) return client.sessionId
+    }
+  }
+  return null
+}
+
 export function relayTabRebound(tabId: string, sessionId: string | null): void {
   const client = clients.get(tabId)
   if (!client) return
@@ -399,15 +415,18 @@ export function relayTabRebound(tabId: string, sessionId: string | null): void {
   for (const t of asTargets(snapshots.get(sessionId) ?? [])) void client.protocol.targetCreated(t)
 }
 
-export function relayTabClosed(tabId: string): void {
+export function relayClientEvicted(tabId: string, reason: string): void {
   const client = clients.get(tabId)
-  if (client) {
-    for (const t of asTargets(snapshots.get(client.sessionId) ?? [])) {
-      client.protocol.targetDestroyed(t.targetId)
-    }
-    dropClient(tabId)
-    refuse(client.ws, 'the tab this endpoint belonged to was closed')
+  if (!client) return
+  for (const t of asTargets(snapshots.get(client.sessionId) ?? [])) {
+    client.protocol.targetDestroyed(t.targetId)
   }
+  dropClient(tabId)
+  refuse(client.ws, reason)
+}
+
+export function relayTabClosed(tabId: string): void {
+  relayClientEvicted(tabId, 'the tab this endpoint belonged to was closed')
   paths.delete(tabId)
   try {
     fs.rmSync(path.join(cdpEnvDir(), tabId), { force: true })

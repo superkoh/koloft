@@ -69,6 +69,59 @@ function validName(name: string): void {
   if (!isValidWorktreeName(name)) throw new Error('Invalid worktree name')
 }
 
+const NOTHING_IGNORED_EXIT = 1
+
+function gitIgnoredAmong(root: string, paths: string[]): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    const child = execFile(
+      'git',
+      ['-C', root, 'check-ignore', '-z', '--stdin'],
+      { maxBuffer: 4 * 1024 * 1024 },
+      (error, stdout) => {
+        if (error && error.code !== NOTHING_IGNORED_EXIT) reject(error)
+        else resolve(stdout.split('\0').filter(Boolean))
+      }
+    )
+    child.stdin?.end(paths.map((p) => p + '\0').join(''))
+  })
+}
+
+// CC§3
+export async function copyWorktreeIncludes(root: string, worktreePath: string): Promise<void> {
+  try {
+    const includeFile = path.join(root, '.worktreeinclude')
+    if (!fs.existsSync(includeFile)) return
+    const listed = (
+      await git(root, ['ls-files', '-z', '--others', '--ignored', `--exclude-from=${includeFile}`])
+    )
+      .split('\0')
+      .filter(Boolean)
+    if (!listed.length) return
+    for (const rel of await gitIgnoredAmong(root, listed)) {
+      const from = path.join(root, rel)
+      const to = path.join(worktreePath, rel)
+      if (!fs.lstatSync(from).isFile() || fs.existsSync(to)) continue
+      await fs.promises.mkdir(path.dirname(to), { recursive: true })
+      await fs.promises.copyFile(from, to)
+    }
+  } catch (error) {
+    console.error('[koloft] could not copy the .worktreeinclude files into', worktreePath, error)
+  }
+}
+
+async function sameFileInRoot(root: string, tree: string, rel: string): Promise<boolean> {
+  try {
+    const here = path.join(tree, rel)
+    const there = path.join(root, rel)
+    const [a, b] = await Promise.all([fs.promises.lstat(here), fs.promises.lstat(there)])
+    if (!a.isFile() || !b.isFile() || a.size !== b.size) return false
+    const [x, y] = await Promise.all([fs.promises.readFile(here), fs.promises.readFile(there)])
+    return x.equals(y)
+  } catch {
+    return false
+  }
+}
+
 export class SessionWorktrees {
   private readonly preparing = new Set<string>()
 
@@ -113,6 +166,35 @@ export class SessionWorktrees {
     return resource
   }
 
+  async untouched(resource: WorktreeResource): Promise<boolean> {
+    if (!resource.managed) return false
+    const tree = resource.worktreePath
+    try {
+      const [branch, head, changes, ignored] = await Promise.all([
+        git(tree, ['symbolic-ref', '--quiet', '--short', 'HEAD']),
+        git(tree, ['rev-parse', 'HEAD']),
+        git(tree, ['status', '--porcelain', '--untracked-files=all']),
+        git(tree, ['ls-files', '-z', '--others', '--ignored', '--exclude-standard'])
+      ])
+      if (
+        branch !== `worktree-${resource.worktreeName}` ||
+        head !== resource.originalHeadCommit ||
+        changes
+      )
+        return false
+      for (const rel of ignored.split('\0').filter(Boolean)) {
+        if (!(await sameFileInRoot(resource.originalCwd, tree, rel))) return false
+      }
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  recorded(worktreePath: string): boolean {
+    return this.store.listResources().some((r) => r.worktreePath === worktreePath)
+  }
+
   async rebuild(resourceId: string): Promise<WorktreeResource> {
     const resource = this.requiredResource(resourceId)
     if (fs.existsSync(resource.worktreePath)) {
@@ -142,7 +224,7 @@ export class SessionWorktrees {
     if (fs.existsSync(target)) throw new Error('Worktree directory already exists')
     const branch = `worktree-${name}`
     if (await branchExists(root, branch)) throw new Error('Worktree branch already exists')
-    if (this.store.listResources().some((r) => r.worktreePath === target)) {
+    if (this.recorded(target)) {
       throw new Error(
         'This worktree name has a recovery record; recover it or choose a different name'
       )
@@ -200,6 +282,7 @@ export class SessionWorktrees {
           : ['worktree', 'add', '-b', branch, resource.worktreePath, resource.originalHeadCommit]
         : ['worktree', 'add', '--detach', resource.worktreePath, resource.originalHeadCommit]
       await git(root, args)
+      await copyWorktreeIncludes(root, resource.worktreePath)
       const ready: WorktreeResource = { ...pending, state: 'ready' }
       this.store.putResource(ready)
       return ready

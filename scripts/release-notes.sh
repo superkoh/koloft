@@ -1,6 +1,6 @@
 #!/bin/bash
 # Compose the GitHub Release notes for Koloft v<version>: this version's changelog, then the
-# (unchanged) unsigned-install instructions behind an install marker.
+# (unchanged) install instructions behind an install marker.
 #
 # The in-app updater renders ONLY what precedes `<!-- koloft:install -->` — the modal's reader
 # is mid-self-update and doesn't need install steps — while a GitHub web visitor still gets
@@ -61,10 +61,11 @@ RANGE="$END"
 SUBJECTS=""
 # A repo with no commits has no HEAD to log — that's "nothing to list", not a git failure.
 if git rev-parse -q --verify "$END" >/dev/null; then
-  # Only feat/fix reach the notes. `|| true`: both an empty range and a grep that filters
+  # Only feat/fix/perf reach the notes, and never a (site) one: the website ships on its own,
+  # not in the app the notes describe. `|| true`: both an empty range and a grep that filters
   # everything out are normal outcomes (a release of only docs and its own version bump).
   SUBJECTS=$(git log --no-merges --pretty=format:%s "$RANGE" |
-    grep -E '^(feat|fix)(\([^)]*\))?:' || true)
+    grep -E '^(feat|fix|perf)(\([^)]*\))?:' | grep -vE '^[a-z]+\(site\):' || true)
 fi
 
 if [ -n "$SUBJECTS" ]; then
@@ -82,17 +83,12 @@ fi
 # the body off here. Quoted heredoc: the install text is data, expanded by nothing.
 cat <<'EOF'
 <!-- koloft:install -->
-**The build is unsigned (macOS arm64).** The easiest way to install: a curl
-download gets no quarantine flag, so it opens with a double-click, no Gatekeeper steps at all:
+**macOS arm64, signed and notarized by Apple.** Download the dmg below, open it, and drag
+Koloft into Applications.
+
+Or install from the terminal in one line:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/superkoh/koloft-releases/main/install.sh | bash
-```
-
-Or download the dmg below yourself, drag it into Applications, and when Gatekeeper blocks the first open,
-remove the quarantine flag (macOS Sequoia dropped the old right-click → Open trick):
-
-```bash
-xattr -dr com.apple.quarantine /Applications/Koloft.app
 ```
 EOF

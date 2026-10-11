@@ -6,6 +6,7 @@ import type { BackendSessionRow, ResumePlan } from '@shared/types'
 export interface ResumeProbes {
   dirExists(p: string): boolean | Promise<boolean>
   occupantOf(dir: string): string | null
+  recorded?(dir: string): boolean
   branchExists(repoDir: string, branch: string): Promise<boolean>
   headAt(repoDir: string): Promise<string | null>
 }
@@ -18,7 +19,7 @@ export function dirExistsSync(p: string): boolean {
   }
 }
 
-export type GitOut = (dir: string, args: string[]) => Promise<string | null>
+export type GitOut = (dir: string, args: string[], timeoutMs?: number) => Promise<string | null>
 
 export function gitProbes(git: GitOut): Omit<ResumeProbes, 'dirExists' | 'occupantOf'> {
   return {
@@ -41,16 +42,21 @@ export function worktreeHomeRoot(worktreePath: string): string | null {
   return path.join(root, '.claude', 'worktrees') === home ? root : null
 }
 
+export function worktreeNameAround(dir: string): string | undefined {
+  for (let d = dir; path.dirname(d) !== d; d = path.dirname(d)) {
+    if (worktreeHomeRoot(d)) return path.basename(d)
+  }
+  return undefined
+}
+
 const RENAME_SUFFIX_CAP = 100
 
 // CC§3
-async function freeWorktreeName(
-  base: string,
-  home: string,
-  dirExists: ResumeProbes['dirExists']
-): Promise<string> {
+async function freeWorktreeName(base: string, home: string, probes: ResumeProbes): Promise<string> {
+  const taken = async (dir: string): Promise<boolean> =>
+    !!probes.recorded?.(dir) || (await probes.dirExists(dir))
   let n = 2
-  while (n < RENAME_SUFFIX_CAP && (await dirExists(path.join(home, `${base}-${n}`)))) n++
+  while (n < RENAME_SUFFIX_CAP && (await taken(path.join(home, `${base}-${n}`)))) n++
   return `${base}-${n}`
 }
 
@@ -104,10 +110,6 @@ export async function planResume(
     worktreeName: ws.worktreeName,
     occupiedBy,
     resumeCwd,
-    renamedName: await freeWorktreeName(
-      ws.worktreeName,
-      path.dirname(ws.worktreePath),
-      probes.dirExists
-    )
+    renamedName: await freeWorktreeName(ws.worktreeName, path.dirname(ws.worktreePath), probes)
   }
 }

@@ -8,6 +8,7 @@ import {
 } from '../../src/main/discord/slash'
 
 const TAB = 'pty-child-1'
+const turnIsOver = (s: SessionStatus): boolean => s === 'waiting' || s === 'idle'
 const CHANNEL = '222'
 
 function setup(over: Partial<SlashDeps> = {}) {
@@ -18,10 +19,11 @@ function setup(over: Partial<SlashDeps> = {}) {
   const deps: SlashDeps = {
     backendOf: () => 'claude',
     keyOf: () => key,
-    status: () => status,
+    turnOver: () => turnIsOver(status),
     asking: () => false,
-    takesTyping: () => status === 'waiting' || status === 'idle',
+    takesTyping: () => turnIsOver(status),
     panelOpen: async () => undefined,
+    nextMirrorPull: () => undefined,
     ready: async (_t, ready) => ready(),
     exclusive: (_t, typing) => typing(),
     typeNow: async (_t, keys) => void typed.push(...keys),
@@ -36,7 +38,7 @@ function setup(over: Partial<SlashDeps> = {}) {
     posts,
     setStatus: (s: SessionStatus) => {
       status = s
-      slash.status(TAB, s)
+      slash.turnOver(TAB, turnIsOver(s))
     },
     setKey: (k: string) => {
       key = k
@@ -90,10 +92,23 @@ describe('a slash command typed into a session', () => {
     setStatus('working')
     await vi.advanceTimersByTimeAsync(NOTHING_CAME_BACK_MS + MORE_OUTPUT_SETTLES_MS)
     expect(posts).toEqual([])
-    slash.turnEnded(TAB, { said: [], reply: 'All good.', at: 0 })
+    slash.turnEnded(TAB, { said: [], reply: 'All good.', at: Date.now() })
     setStatus('waiting')
     await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
     expect(posts).toEqual(['⌨️ **fix-login** ran /review:\nAll good.'])
+  })
+
+  it('does not take the reply of the turn before it, whose end Koloft learns only after the command was typed', async () => {
+    const { slash, posts, setStatus } = setup()
+    const before = Date.now()
+    await vi.advanceTimersByTimeAsync(1000)
+    await slash.typeWhenIdle(child, '/compact', CHANNEL)
+    slash.output(TAB, { kind: 'printed', text: 'Compacted' })
+    slash.turnEnded(TAB, { said: [], reply: 'MANGO', at: before })
+    setStatus('working')
+    setStatus('waiting')
+    await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
+    expect(posts).toEqual(['⌨️ **fix-login** ran /compact:\nCompacted'])
   })
 
   it('a turn with nothing said, like a Codex compaction, is reported as done', async () => {
@@ -103,6 +118,26 @@ describe('a slash command typed into a session', () => {
     setStatus('waiting')
     await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
     expect(posts).toEqual(['⌨️ **fix-login** ran /compact:\nDone.'])
+  })
+
+  it('in a remote tab, waits after the turn ends for one more mirror pull, so output the transcript brings late, like "Compacted", is in the card', async () => {
+    let pulled: () => void = () => undefined
+    const { slash, posts, setStatus } = setup({
+      nextMirrorPull: () => new Promise((done) => (pulled = done))
+    })
+    await slash.typeWhenIdle(child, '/compact', CHANNEL)
+    setStatus('working')
+    setStatus('waiting')
+    await vi.advanceTimersByTimeAsync(NOTHING_CAME_BACK_MS + MORE_OUTPUT_SETTLES_MS)
+    expect(posts).toEqual([])
+    slash.output(TAB, { kind: 'printed', text: 'Compacted (ctrl+o to see full summary)' })
+    await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
+    expect(posts).toEqual([])
+    pulled()
+    await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
+    expect(posts).toEqual([
+      '⌨️ **fix-login** ran /compact:\nCompacted (ctrl+o to see full summary)'
+    ])
   })
 
   it('/clear reports the new conversation id', async () => {
@@ -174,7 +209,7 @@ describe('a slash command typed into a session', () => {
     await slash.typeWhenIdle({ ...child, conductor: true }, '/review', CHANNEL)
     slash.output(TAB, { kind: 'details', text: 'Review the changes on this branch.' })
     setStatus('working')
-    slash.turnEnded(TAB, { said: [], reply: 'All good.', at: 0 })
+    slash.turnEnded(TAB, { said: [], reply: 'All good.', at: Date.now() })
     setStatus('waiting')
     await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
     expect(posts).toEqual([])

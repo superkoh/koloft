@@ -3,6 +3,7 @@ import { test, expect } from './helpers/app'
 import type { Locator, Page } from '@playwright/test'
 import {
   centerTerm,
+  killSession,
   layoutOnDisk,
   openMenu,
   processAlive,
@@ -565,6 +566,41 @@ test.describe('File edit · unsaved work is never lost, and the ✎ that stays o
     await expect(fileTab(page)).toHaveCount(1)
     expect(await editText(page)).toBe(mine)
     expect(fs.readFileSync(ed.config, 'utf8')).toBe(ed.configBody)
+
+    await closeDiscardingEdits(app)
+  })
+
+  test('a session killed while its Workbench has unsaved work asks at once — Keep for later, Discard or Save, with no Cancel as the tab is already gone — and Save writes the file', async ({
+    app,
+    page,
+    env
+  }) => {
+    test.slow()
+    test.setTimeout(300_000)
+    const fx = setupChangeFixture(env.workspaces.a)
+    const ed = seedEditFixture(env.workspaces.a)
+    await startSessionIn(page, 'ws-a')
+    await expect(workbenchPanel(page)).toBeVisible({ timeout: 25_000 })
+    const [session] = await waitForCalls(env, 1)
+
+    const mine = await dirtyEditor(page, fx.root, ed)
+
+    killSession(session.pid, env)
+
+    await expect(modal(page)).toBeVisible({ timeout: 30_000 })
+    await expect(modal(page)).toContainText('config/app.json')
+    await expect(modal(page)).not.toContainText(fx.root)
+    expect(await modal(page).locator('button').allTextContents()).toEqual([
+      'Keep for later',
+      'Discard',
+      'Save'
+    ])
+    await expect(page.locator('.term-island .term-wrap')).toHaveCount(0, { timeout: 20_000 })
+    expect(fs.readFileSync(ed.config, 'utf8')).toBe(ed.configBody)
+
+    await modal(page).getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(modal(page)).toHaveCount(0, { timeout: 20_000 })
+    await expect.poll(() => fs.readFileSync(ed.config, 'utf8'), { timeout: 20_000 }).toBe(mine)
 
     await closeDiscardingEdits(app)
   })

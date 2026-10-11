@@ -66,7 +66,7 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
     }
   })
 
-  test('E-RW-08: after a Koloft restart the remote session is still running, clicking attaches, and its hooks still reach the attached tab', async ({
+  test('E-RW-08: after a Koloft restart the remote session that was open is attached again by itself — the same claude, never a second one — and its hooks still reach the attached tab', async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -95,15 +95,13 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
       await expect(row).not.toHaveClass(/\bcold\b/, {
         timeout: IDLE_20S_HEARTBEAT_ROUND_TIMEOUT_MS
       })
-      await expect(page2.locator('.term-island .term-wrap')).toHaveCount(0)
-
-      await row.click()
 
       await expect
         .poll(() => sshCommands(env).filter((c) => /tabs\/[^"]+\.sh"?\s+attach/.test(c)).length, {
           timeout: 60_000
         })
         .toBeGreaterThanOrEqual(1)
+      await expect(row).toHaveClass(/\bactive\b/, { timeout: 30_000 })
       await expect(centerTerm(page2)).toBeVisible({ timeout: 30_000 })
       expect(processAlive(first.pid)).toBe(true)
       await page2.waitForTimeout(TMUX_ATTACH_SETTLE_MS)
@@ -190,7 +188,6 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
       await expect(row).toHaveClass(/\bst-(working|waiting|idle)\b/, {
         timeout: IDLE_20S_HEARTBEAT_ROUND_TIMEOUT_MS
       })
-      await expect(page2.locator('.ws-tab.active')).toHaveCount(0)
       await page2.waitForTimeout(TMUX_ATTACH_SETTLE_MS)
       expect(processAlive(first.pid)).toBe(true)
       expect(readCalls(env)).toHaveLength(1)

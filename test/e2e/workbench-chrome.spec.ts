@@ -46,9 +46,7 @@ test.describe('Workbench web tab chrome, and the panel shortcut arbitration agai
     )
   }
 
-  test('WB-W05: an agent tab makes no request until opened, and never fetches a favicon', async ({
-    page
-  }) => {
+  test('WB-W05: an agent tab loads its page but never fetches a favicon', async ({ page }) => {
     test.setTimeout(180_000)
     await startSessionIn(page, 'ws-a')
     const url = server.page('/agent-target', '<!doctype html><title>Agent target</title><p>hi')
@@ -56,13 +54,9 @@ test.describe('Workbench web tab chrome, and the panel shortcut arbitration agai
 
     await agentOpen(page, url)
     await expect(wbTabs(page)).toHaveCount(2)
+    await expect.poll(() => server.count('/agent-target'), { timeout: 25_000 }).toBeGreaterThan(0)
 
     await page.waitForTimeout(A_LATE_LOAD_WOULD_STILL_HAVE_ARRIVED_BY_MS)
-    expect(server.count()).toBe(0)
-    expect(server.faviconHits).toHaveLength(0)
-
-    await wbTabs(page).nth(1).click()
-    await expect.poll(() => server.count('/agent-target'), { timeout: 25_000 }).toBeGreaterThan(0)
     expect(server.faviconHits).toHaveLength(0)
     await expect(wbTabs(page).nth(1).locator('img')).toHaveCount(0)
   })

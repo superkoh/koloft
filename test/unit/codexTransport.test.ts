@@ -16,6 +16,7 @@ let binary: string
 const cleanups: (() => Promise<void>)[] = []
 const LONGER_THAN_ONE_PROCESS_SAMPLE_MS = 1500
 const CHILD_SIGTERM_HANDLER_INSTALL_MS = 100
+const LINEAR_SLACK_FAR_BELOW_THE_SQUARE_OF_THE_RATIO = 3
 
 beforeEach(async () => {
   directory = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-wire-test-'))
@@ -44,13 +45,14 @@ readline.createInterface({input:process.stdin}).on('line', line => {
    child.unref();
    out({id:f.id,result:{pid:process.pid,child:child.pid}});return;
  }
+ if(mode==='big') {process.stdout.write(JSON.stringify({id:f.id,result:{pad:'x'.repeat(f.params.bytes)}})+'\\n');return;}
  if(mode==='utf8') {
    const bytes=Buffer.from(JSON.stringify({id:f.id,result:{title:'会话🙂'}})+'\\n');
    const offset=bytes.indexOf(Buffer.from('会'))+1;
    process.stdout.write(bytes.subarray(0,offset));
    setTimeout(()=>process.stdout.write(bytes.subarray(offset)),15);return;
  }
- out({id:f.id,result:{data:[],params:f.params,env:{home:process.env.CODEX_HOME,key:process.env.OPENAI_API_KEY,thread:process.env.CODEX_THREAD_ID,tab:process.env.KOLOFT_TAB_ID}}});
+ out({id:f.id,result:{data:[],params:f.params,env:{home:process.env.CODEX_HOME,key:process.env.OPENAI_API_KEY,thread:process.env.CODEX_THREAD_ID,tab:process.env.KOLOFT_TAB_ID,offset:process.env.KOLOFT_PORT_OFFSET}}});
 });
 process.stdin.on('end',()=>process.exit(0));
 `,
@@ -106,6 +108,28 @@ describe('Codex stdio reads', () => {
     await expect(client.request('turn/start', {})).rejects.toThrow('does not allow')
   })
 
+  it('reads a frame spanning many pipe reads in time that grows with its size, not its square (catches O(n²), never pins speed)', async () => {
+    const SMALL_BYTES = 12 * 1024 * 1024
+    const SIZE_RATIO = 8
+    const JSON_ENVELOPE_ROOM_BYTES = 1024
+    const client = rpc({
+      maxFrameBytes: SIZE_RATIO * SMALL_BYTES + JSON_ENVELOPE_ROOM_BYTES,
+      timeoutMs: 120_000
+    })
+    await client.request('thread/read', { mode: 'big', bytes: 1024 })
+    const readMs = async (bytes: number): Promise<number> => {
+      const started = performance.now()
+      const reply = await client.request<{ pad: string }>('thread/read', { mode: 'big', bytes })
+      expect(reply.pad.length).toBe(bytes)
+      return performance.now() - started
+    }
+    const small = await readMs(SMALL_BYTES)
+    const big = await readMs(SIZE_RATIO * SMALL_BYTES)
+    expect(big / small, `${Math.round(small)}ms then ${Math.round(big)}ms`).toBeLessThan(
+      SIZE_RATIO * LINEAR_SLACK_FAR_BELOW_THE_SQUARE_OF_THE_RATIO
+    )
+  }, 180_000)
+
   it('rejects stalled requests and rejects pending reads when closed', async () => {
     const client = rpc({ timeoutMs: 1000 })
     await expect(client.request('thread/read', { mode: 'hang' })).rejects.toThrow('timed out')
@@ -147,6 +171,25 @@ describe('Codex stdio reads', () => {
     })
     expect(config.CODEX_CUSTOM_CONFIG).toBe('keep')
     expect(config.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
+  })
+
+  it("runs the app-server, where Codex runs its commands, with the session's own port offset and never an inherited one", async () => {
+    const inherited = { CODEX_HOME: directory, KOLOFT_PORT_OFFSET: '7' }
+    const own = new CodexRpc({
+      binary,
+      cwd: directory,
+      env: inherited,
+      sessionEnv: { KOLOFT_PORT_OFFSET: '42' }
+    })
+    const plain = new CodexRpc({ binary, cwd: directory, env: inherited })
+    cleanups.push(
+      () => own.close(),
+      () => plain.close()
+    )
+    const offsetOf = async (client: CodexRpc): Promise<unknown> =>
+      (await client.request<{ env: { offset?: string } }>('thread/list')).env.offset
+    expect(await offsetOf(own)).toBe('42')
+    expect(await offsetOf(plain)).toBeUndefined()
   })
 
   // CODEX§5

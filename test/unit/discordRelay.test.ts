@@ -94,6 +94,7 @@ function setup(
     boundKey: () => 'session-1',
     status: (): SessionStatus => 'waiting',
     awaitsInput: () => false,
+    turnOver: (t) => ['waiting', 'idle'].includes(deps.status(t) ?? ''),
     waiting: (t) => waiting.push(t),
     alive: () => true,
     ready: async (_t, ready) => {
@@ -263,6 +264,16 @@ describe('DiscordRelay: typing an owner message into a Claude conductor', () => 
       }
     )
     expect(reactions.slice(0, 4)).toEqual(['207 +⏳', '209 +⏳', '207 -⏳', '207 +✅'])
+  })
+
+  it('a slash command is typed at once into a conductor whose turn is over, though background work it left running still shows it as working', async () => {
+    const { relay, commands, reactions } = setup({}, [], {
+      status: () => 'working',
+      turnOver: () => true
+    })
+    relay.onMessage(message('210', OWNER, '/compact'))
+    await vi.waitFor(() => expect(commands).toEqual(['/compact']))
+    await vi.waitFor(() => expect(reactions).toEqual(['210 +✅']))
   })
 
   // CC§14

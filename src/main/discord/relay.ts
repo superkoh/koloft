@@ -37,9 +37,9 @@ import {
 
 export const OFFLINE_REPLY = 'Koloft was offline, this message was not delivered.'
 export const CODEX_NEEDS_YES_OR_NO = 'Reply yes or no.'
-export const SHOWS_NO_DIALOG = 'it shows no question or approval right now.'
+export const SHOWS_NO_DIALOG = 'Koloft sees no question or approval in it right now.'
 export const CODEX_INPUT_NOT_PROBED =
-  'Codex is asking something Koloft cannot answer from here: it answers a yes-or-no approval, or one question that picks one option from a list. Answer this one at the Mac.'
+  'Codex is asking something Koloft cannot answer from here: it answers a yes-or-no approval, or one question that picks one option from a list. The conductor can still answer this one by pressing its keys.'
 export const CONDUCTOR_ASKS = '❓ **The conductor** is waiting for you.'
 const CODEX_TAKES_YES_OR_NO = 'a Codex approval takes yes or no.'
 const CODEX_TAKES_AN_OPTION = 'this Codex question takes the number or the name of one option.'
@@ -80,6 +80,7 @@ export interface RelayDeps {
   boundKey(tabId: string): string | undefined
   status(tabId: string): SessionStatus | undefined
   awaitsInput(tabId: string): boolean
+  turnOver(tabId: string): boolean
   waiting(tabId: string): void
   alive(tabId: string): boolean
   ready(tabId: string, ready: () => boolean, ms: number): Promise<boolean>
@@ -121,8 +122,11 @@ export class DiscordRelay {
       void this.d.link.post(channelId, part, replyTo).catch(() => undefined)
   }
 
-  card(channelId: string, card: Card): void {
-    void this.d.link.card(channelId, card).catch(() => undefined)
+  card(channelId: string, card: Card): Promise<void> {
+    return this.d.link.card(channelId, card).then(
+      () => undefined,
+      () => undefined
+    )
   }
 
   async send(channelId: string, files: DiscordFile[], text: string): Promise<void> {
@@ -267,12 +271,8 @@ export class DiscordRelay {
   }
 
   takesCommand(tab: string): boolean {
-    const status = this.d.status(tab)
     return (
-      this.typable(tab) &&
-      (status === 'waiting' || status === 'idle') &&
-      !this.dialogOpen(tab) &&
-      this.d.queueDrained(tab)
+      this.typable(tab) && this.d.turnOver(tab) && !this.dialogOpen(tab) && this.d.queueDrained(tab)
     )
   }
 
@@ -407,17 +407,12 @@ export class DiscordRelay {
       this.answer(tab, hookAnswer(ask.payload, reply))
       return undefined
     }
-    if (this.turnOver(tab)) return SHOWS_NO_DIALOG
+    if (this.d.turnOver(tab) && !this.d.awaitsInput(tab)) return SHOWS_NO_DIALOG
     const keys = claudeKeysFor(ask.payload, reply)
     if (!keys.ok) return keys.error
     this.asks.delete(tab)
     await this.d.type(tab, keys.value)
     return undefined
-  }
-
-  private turnOver(tab: string): boolean {
-    const status = this.d.status(tab)
-    return status === 'idle' || (status === 'waiting' && !this.d.awaitsInput(tab))
   }
 
   codexAsked(tab: string, a: CodexApproval | CodexQuestion): void {

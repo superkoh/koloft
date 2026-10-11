@@ -3,12 +3,21 @@ import fs from 'fs'
 import path from 'path'
 import type { StatusLineSetting } from './statusline'
 import { shq } from '@shared/shellQuote'
+import { CONDUCTOR_GATE_SCRIPT, conductorGateCommand } from './conductorGate'
+import { HANDOVER_OPENING } from './handover'
 
 export interface HookPaths {
   hookScript: string
+  gateScript: string
   settingsDir: string
   regDir: string
 }
+
+// ADR-0031
+const REPLY_LANGUAGE_BEFORE_QUOTE = "The user's latest message begins: «"
+const REPLY_LANGUAGE_AFTER_QUOTE =
+  '». Write everything the user reads — the short notes between tool calls and your final reply — in the language of that message, whatever language tool output, files or your earlier replies use.'
+const QUOTED_PROMPT_BYTES = 300
 
 // CC§1
 export const HOOK_SCRIPT = `#!/usr/bin/env bash
@@ -16,7 +25,19 @@ reg="$1"; tab="$2"; event="$3"
 [ -z "$reg" ] && exit 0
 [ -z "$tab" ] && exit 0
 # CC§14
-[ "$event" = "ask" ] && [ ! -f "$reg/$tab.answerable" ] && exit 0
+[ "$event" = "ask" ] && [ ! -f "$reg/$tab.answerable" ] && event="asked"
+said="$reg/$tab.said"
+# CC§17 CC§19
+remind_reply_language() {
+  quote="$(cat "$said" 2>/dev/null)"
+  [ -n "$quote" ] || return 0
+  printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s%s%s"}}\\n' "$1" ${shq(REPLY_LANGUAGE_BEFORE_QUOTE)} "$quote" ${shq(REPLY_LANGUAGE_AFTER_QUOTE)}
+}
+if [ "$event" = "tool" ]; then
+  cat >/dev/null
+  remind_reply_language PostToolUse
+  exit 0
+fi
 input="$(cat | tr -d '\\n')"
 mkdir -p "$reg" 2>/dev/null
 tm=""
@@ -29,6 +50,15 @@ session_id() {
     head -1 |
     sed 's/.*"\\([^"]*\\)"$/\\1/' |
     tr -d '"\\\\[:cntrl:]'
+}
+# CC§19
+quote_prompt() {
+  printf '%s' "$input" |
+    LC_ALL=C sed -n -E 's/.*"prompt"[[:space:]]*:[[:space:]]*"(([^"\\\\]|\\\\.)*)".*/\\1/p' |
+    LC_ALL=C sed -E 's/^${HANDOVER_OPENING}.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//' |
+    head -c ${QUOTED_PROMPT_BYTES} |
+    LC_ALL=C sed -E -e $'s/([\\xc0-\\xdf]|[\\xe0-\\xef][\\x80-\\xbf]?|[\\xf0-\\xf7][\\x80-\\xbf]{0,2})$//' \\
+      -e 's/\\\\u[0-9a-fA-F]{0,3}$//' -e 's/(^|[^\\\\])((\\\\\\\\)*)\\\\$/\\1\\2/'
 }
 case "$event" in
   start|end)
@@ -149,6 +179,14 @@ case "$event" in
       *'"session_crons":['*) wake=',"wake":1' ;;
     esac
     printf '{"tabId":"%s","event":"%s","sessionId":"%s","message":"%s","tmux":"%s"%s%s}\\n' "$tab" "$event" "$sid" "$msg" "$tm" "$bgl" "$wake" >> "$reg/$tab.status.jsonl"
+    if [ "$event" = "prompt" ]; then
+      # CC§13 CC§19
+      case "$input" in
+        *'"prompt":"<cross-session-message '*) ;;
+        *) quote_prompt > "$said" ;;
+      esac
+      remind_reply_language UserPromptSubmit
+    fi
     ;;
 esac
 exit 0
@@ -172,7 +210,7 @@ export function pruneStale(dir: string, maxAgeMs = 12 * 60 * 60 * 1000, everyEnt
   }
 }
 
-const TAB_MARKER = /^(.+)\.(answerable|conductor)$/
+const TAB_MARKER = /^(.+)\.(answerable|conductor|said)$/
 
 // ADR-0004
 function pruneMarkersOfDeadTabs(regDir: string, peerOwnsTab: (tabId: string) => boolean): void {
@@ -203,8 +241,10 @@ export function setupHooks(peerOwnsTab: (tabId: string) => boolean): HookPaths {
   const hookScript = path.join(hookDir, 'sessionstart.sh')
   fs.writeFileSync(hookScript, HOOK_SCRIPT, { mode: 0o755 })
   fs.chmodSync(hookScript, 0o755)
+  const gateScript = path.join(hookDir, 'conductor-gate.js')
+  fs.writeFileSync(gateScript, CONDUCTOR_GATE_SCRIPT)
 
-  return { hookScript, settingsDir, regDir }
+  return { hookScript, gateScript, settingsDir, regDir }
 }
 
 // CC§8
@@ -251,15 +291,17 @@ export function hookSettings(
               : { type: 'command', command: cmd('asked') }
           ]
         }
+      ],
+      // CC§19 ADR-0031
+      PostToolUse: [
+        { matcher: '*', hooks: [{ type: 'command', command: cmd('tool') }] },
+        ...(statusLine
+          ? [{ matcher: 'Bash', hooks: [{ type: 'command', command: cmd('posttool') }] }]
+          : [])
       ]
     }
   }
-  if (statusLine) {
-    settings.statusLine = statusLine
-    ;(settings.hooks as Record<string, unknown>).PostToolUse = [
-      { matcher: 'Bash', hooks: [{ type: 'command', command: cmd('posttool') }] }
-    ]
-  }
+  if (statusLine) settings.statusLine = statusLine
   return settings
 }
 
@@ -283,18 +325,29 @@ export function markAnswerable(regDir: string, tabId: string, on: boolean): void
   else fs.rmSync(file, { force: true })
 }
 
+export const KOLOFT_ALLOW_RULE = { allow: ['Bash(koloft *)'] }
+
 // CC§6
 export function writeTabHookSettings(
   paths: HookPaths,
   tabId: string,
   statusLine?: StatusLineSetting,
-  allowKoloft = false
+  allowKoloft = false,
+  conductor = false
 ): string {
   fs.rmSync(path.join(paths.regDir, `${tabId}.status.jsonl`), { force: true })
   fs.rmSync(path.join(paths.regDir, `${tabId}.json`), { force: true })
   const settings = hookSettings(paths.hookScript, paths.regDir, tabId, statusLine)
   // CC§13
-  if (allowKoloft) settings.permissions = { allow: ['Bash(koloft *)'] }
+  if (allowKoloft) settings.permissions = KOLOFT_ALLOW_RULE
+  // ADR-0029 CC§15
+  if (conductor)
+    (settings.hooks as Record<string, unknown>).PreToolUse = [
+      {
+        matcher: '*',
+        hooks: [{ type: 'command', command: conductorGateCommand(paths.gateScript) }]
+      }
+    ]
   const out = path.join(paths.settingsDir, `${tabId}.json`)
   fs.writeFileSync(out, JSON.stringify(settings))
   return out

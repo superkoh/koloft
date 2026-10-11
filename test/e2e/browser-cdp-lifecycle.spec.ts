@@ -7,7 +7,8 @@ import {
   processAlive,
   startSessionIn,
   waitBooted,
-  waitForCalls
+  waitForCalls,
+  wsRows
 } from './helpers/p1'
 import {
   BROWSER,
@@ -18,7 +19,8 @@ import {
   guestByUrl,
   openBrowser,
   openTabs,
-  openViaAgent
+  openViaAgent,
+  tabTitles
 } from './helpers/browser'
 import { openSettings } from './helpers/extensions'
 import { startEchoServer } from './helpers/fixtureServer'
@@ -61,8 +63,8 @@ test.describe('CDP client lifecycle: the user always wins, and a connected clien
       const url = await session(page, env, 'ws-a')
       await openViaAgent(page, server.page('/guarded', '<title>Guarded</title><body>g</body>'))
       await openBrowser(page)
-      await page.locator(BROWSER.tabAgent).click()
       await guestByUrl(app, '/guarded')
+      await page.locator(BROWSER.tabActive).click()
       await clickAppMenuItem(app, page, BROWSER_MENU_IDS.devtools)
       await expect
         .poll(async () => (await guestGrips(app)).some((g) => g.devtools), { timeout: 30_000 })
@@ -182,6 +184,50 @@ test.describe('CDP client lifecycle: the user always wins, and a connected clien
         await clientB.close()
       }
     })
+  })
+
+  test('a page that a session’s agent opens from a link or window.open lands in that session’s Workbench, not in the session on screen', async ({
+    page,
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const server = await startEchoServer()
+    try {
+      await withTwoSessions(page, env, async (a) => {
+        const clientA = await connect(page, a)
+        try {
+          const ctx = clientA.contexts()[0]
+          const opener = await ctx.newPage()
+          const blank = server.page('/pop-blank', '<title>PopBlank</title>b')
+          const win = server.page('/pop-win', '<title>PopWin</title>w')
+          await opener.goto(
+            server.page(
+              '/opener',
+              `<title>Opener</title><a id="blank" target="_blank" href="${blank}">blank</a>` +
+                `<button id="win" onclick="window.open('${win}')">win</button>`
+            )
+          )
+          await opener.click('#blank')
+          await opener.click('#win')
+
+          await expect
+            .poll(() => ctx.pages().map((p) => p.url()), { timeout: 30_000 })
+            .toEqual(expect.arrayContaining([blank, win]))
+          await expect(wsRows(page, 'ws-b').first()).toHaveClass(/\bactive\b/)
+          await openBrowser(page)
+          await expect(openTabs(page)).toHaveCount(0)
+
+          await wsRows(page, 'ws-a').first().click()
+          await expect
+            .poll(() => tabTitles(page), { timeout: 30_000 })
+            .toEqual(expect.arrayContaining(['Opener', 'PopBlank', 'PopWin']))
+        } finally {
+          await clientA.close()
+        }
+      })
+    } finally {
+      await server.close()
+    }
   })
 
   test('BB-62: the user can close a driven tab; the client is told, and its next command errors instead of hanging', async ({

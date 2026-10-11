@@ -84,12 +84,72 @@ describe('prepareCodexHome', () => {
     const home = path.join(dir, 'homes', 'work')
     prepareCodexHome(home, shared)
     expect(fs.readlinkSync(path.join(home, 'config.toml'))).toBe(shared)
+    expect(fs.readFileSync(shared, 'utf8')).toBe('model = "gpt-5"\n')
 
     const own = path.join(dir, 'homes', 'own')
     fs.mkdirSync(own, { recursive: true })
     fs.writeFileSync(path.join(own, 'config.toml'), 'model = "o3"\n')
     prepareCodexHome(own, shared)
     expect(fs.lstatSync(path.join(own, 'config.toml')).isSymbolicLink()).toBe(false)
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+
+  // CODEX§15
+  it("links a home's sessions and archived_sessions to the default home's, so any account lists and resumes every session", () => {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-')))
+    const shared = path.join(dir, 'dot-codex', 'config.toml')
+    const home = path.join(dir, 'homes', 'work')
+    prepareCodexHome(home, shared)
+    for (const folder of ['sessions', 'archived_sessions']) {
+      expect(fs.readlinkSync(path.join(home, folder))).toBe(path.join(dir, 'dot-codex', folder))
+      expect(fs.statSync(path.join(dir, 'dot-codex', folder)).isDirectory()).toBe(true)
+    }
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+
+  // CODEX§15
+  it("moves a home's own sessions into the shared folder by date before linking it; where both hold a file of one name, the newer one stays", () => {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-')))
+    const shared = path.join(dir, 'dot-codex', 'config.toml')
+    const day = path.join('2026', '10', '05')
+    const sharedDay = path.join(dir, 'dot-codex', 'sessions', day)
+    fs.mkdirSync(sharedDay, { recursive: true })
+    const home = path.join(dir, 'homes', 'work')
+    const ownDay = path.join(home, 'sessions', day)
+    fs.mkdirSync(ownDay, { recursive: true })
+    const write = (file: string, text: string, ageS: number): void => {
+      fs.writeFileSync(file, text)
+      const at = Date.now() / 1000 - ageS
+      fs.utimesSync(file, at, at)
+    }
+    write(path.join(sharedDay, 'rollout-a.jsonl'), 'default, newer', 10)
+    write(path.join(ownDay, 'rollout-a.jsonl'), 'own, older', 100)
+    write(path.join(sharedDay, 'rollout-c.jsonl'), 'default, older', 100)
+    write(path.join(ownDay, 'rollout-c.jsonl'), 'own, newer', 10)
+    write(path.join(ownDay, 'rollout-b.jsonl'), 'own', 10)
+
+    prepareCodexHome(home, shared)
+
+    expect(fs.readFileSync(path.join(sharedDay, 'rollout-a.jsonl'), 'utf8')).toBe('default, newer')
+    expect(fs.readFileSync(path.join(sharedDay, 'rollout-c.jsonl'), 'utf8')).toBe('own, newer')
+    expect(fs.readFileSync(path.join(sharedDay, 'rollout-b.jsonl'), 'utf8')).toBe('own')
+    expect(fs.readFileSync(path.join(home, 'sessions', day, 'rollout-b.jsonl'), 'utf8')).toBe('own')
+    prepareCodexHome(home, shared)
+    expect(fs.readdirSync(sharedDay).sort()).toEqual([
+      'rollout-a.jsonl',
+      'rollout-b.jsonl',
+      'rollout-c.jsonl'
+    ])
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('links a new home even before the shared config.toml exists, by making it empty, so the first Codex start cannot write a home-only file', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-'))
+    const shared = path.join(dir, 'dot-codex', 'config.toml')
+    const home = path.join(dir, 'homes', 'work')
+    prepareCodexHome(home, shared)
+    expect(fs.readlinkSync(path.join(home, 'config.toml'))).toBe(shared)
+    expect(fs.readFileSync(shared, 'utf8')).toBe('')
     fs.rmSync(dir, { recursive: true, force: true })
   })
 })

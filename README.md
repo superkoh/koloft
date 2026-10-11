@@ -27,7 +27,8 @@ shell.
 - **Workspace sidebar** — pin folders as workspaces. Under each one, its sessions
   appear with a title, a status dot (working / waiting for you / done) and how long ago
   they ran. Nothing is imported: the list is what Claude Code and Codex themselves wrote
-  to disk, so sessions you started from a plain terminal show up too.
+  to disk, and Koloft keeps only a list of which sessions are its own. A session you
+  started from a plain terminal is one right-click ▸ `Restore session…` away.
 - **Start or resume sessions** — `File ▸ New Session…` (⌘N) starts one in the
   selected workspace with the default method set in `Settings ▸ Sessions`; clicking an
   old row resumes it; `New Worktree Session…` (⇧⌘N) runs the
@@ -38,8 +39,8 @@ shell.
 - **Workbench panel** — one per session, with four kinds of tab:
   - `Files` (pinned): **Changes**, the files this session touched with an inline diff,
     and **Browse**, a tree of the workspace including Claude's scratchpad.
-  - File tabs: rendered Markdown / HTML / images / PDF, a diff view, the source, and an
-    editor with ⌘S save.
+  - File tabs: rendered Markdown / images / PDF, a diff view, the source, and an
+    editor with ⌘S save. An HTML file opens as a web tab.
   - Web tabs: a real in-app browser (logins, downloads, popups, Chrome extensions) so an
     agent's `open <url>` never has to leave the app.
   - Terminal tabs: a shell in the session's directory (`View ▸ New Terminal Tab`, ⌃`).
@@ -50,8 +51,8 @@ shell.
   with it; the note belongs to the folder, so it is where the things that outlive this
   session go.
 - **Scheduled jobs** — a workspace's right-click menu has `Scheduled jobs…`: start a
-  Claude or Codex session on a timer with a first message, optionally in its own git
-  worktree. Koloft never types into a session — the first message is handed to `claude`
+  Claude or Codex session on a timer with a first message. In a git workspace every run
+  gets a fresh worktree of its own; a plain folder runs in place. Koloft never types into a session — the first message is handed to `claude`
   or `codex` directly, and everything after it is yours.
 - **Multi-account balancing** — register several Claude subscription accounts and
   several Codex sign-ins. Every launch looks at their live rate limits and starts on the
@@ -75,7 +76,7 @@ shell.
   preview, an agent's `open <url>` and the agent-driven browser do not reach the
   Workbench, and the session cannot be renamed from Koloft.
 - **Stays current** — `Koloft ▸ Check for Updates…` downloads and swaps the app bundle
-  without a signed installer; a banner in the sidebar says when a newer one is out.
+  in place; a banner in the sidebar says when a newer one is out.
 - **Smaller things** — a first-run walkthrough and a handful of tips that appear the
   first time each situation comes up (both re-openable from `Settings ▸ Welcome`), a
   `Settings ▸ Shortcuts` page listing every key and what it does where the caret is,
@@ -83,20 +84,17 @@ shell.
 
 ## Install (macOS, Apple Silicon)
 
+Download the `.dmg` from
+[Releases](https://github.com/superkoh/koloft-releases/releases), open it, and drag Koloft
+to Applications. The app is signed with an Apple Developer ID and notarized by Apple, so
+it opens with a normal double-click.
+
+Or in one line from the terminal, which fetches the latest dmg and copies `Koloft.app`
+into `/Applications`:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/superkoh/koloft-releases/main/install.sh | bash
 ```
-
-Koloft ships **unsigned** — signing and notarizing needs a paid Apple Developer ID,
-which this project does not have — so a *browser* download of the `.dmg` gets
-quarantined and Gatekeeper blocks it ("damaged" / "unidentified developer"). The
-installer sidesteps that for free: `curl` applies no quarantine attribute, so it
-fetches the latest release dmg, copies `Koloft.app` into `/Applications`, and the app
-then launches with a normal double-click — no paid Apple Developer ID, no prompt.
-
-Prefer the `.dmg` by hand? Download it from
-[Releases](https://github.com/superkoh/koloft-releases/releases), drag to Applications, then
-clear the quarantine flag once: `xattr -dr com.apple.quarantine /Applications/Koloft.app`.
 
 ## How it works
 
@@ -200,22 +198,21 @@ under — is in [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Packaging (macOS, arm64)
 
 ```bash
-npm run dist:mac    # electron-builder -> release/Koloft-<ver>-arm64.dmg + .zip (normal machines)
-npm run dist:dmg    # builds the .app, then makes the dmg via `hdiutil makehybrid`
+npm run dist:dmg    # the release build: signed, notarized .app and .dmg
+npm run dist:mac    # unsigned electron-builder dmg + zip, for a local try-out
 ```
 
-`dist:dmg` is the portable path: it builds the unpacked `.app` and assembles the DMG with
-`hdiutil makehybrid`, which never needs a writable image mount — so it also works in
-sandboxed/CI environments where `electron-builder`'s own dmg step (and read-write image
-mounts) are blocked. Output: `release/Koloft-<version>-arm64.dmg` (drag-to-Applications layout).
+`dist:dmg` is the one that ships. It needs, on the machine that runs it:
 
-The build is **unsigned**. An unsigned app launches fine as long as it
-isn't *quarantined* — and the `curl … | install.sh` one-liner above downloads with
-`curl`, which never sets the quarantine attribute, so the app just works. A *browser*
-download does get quarantined and Gatekeeper then blocks it as "damaged"; clear it with
-`xattr -dr com.apple.quarantine /Applications/Koloft.app` (on macOS Sequoia the old
-right-click → Open bypass is gone). For a true zero-friction double-click install, add an
-Apple Developer ID identity to `electron-builder.yml` and a notarization step (paid).
+- a `Developer ID Application` identity in the login keychain
+  (`security find-identity -v -p codesigning` lists it), and
+- notarization credentials saved under the profile name `koloft`:
+  `xcrun notarytool store-credentials koloft --apple-id <id> --team-id <team> --password <app-specific password>`.
+
+It signs the `.app` with the hardened runtime, has Apple notarize it, then builds
+`release/Koloft-<version>-arm64.dmg` (drag-to-Applications layout) and signs, notarizes
+and staples that too. Without the identity it stops with an error instead of shipping an
+unsigned build.
 
 ## Configuration
 
@@ -272,15 +269,18 @@ Everything lives in **Settings** (⌘, or the gear at the left of the title bar)
 
 ## What it talks to
 
-Koloft has no analytics and no telemetry — it reports nothing about you anywhere. The
-only hosts it ever reaches on its own are:
+Koloft has no analytics and no telemetry — it reports nothing about you anywhere, unless
+you turn on the Discord butler: then your messages and your sessions' replies, questions
+and approvals go to your own bot. The only hosts it ever reaches on its own are:
 
 | Host | Why |
 | --- | --- |
-| `api.anthropic.com` | reads each account's remaining rate-limit allowance, so the balancer can pick the least-loaded one |
-| `api.github.com`, `github.com` | checks for a newer Koloft and downloads its `.dmg` |
-| `claude.ai`, `nodejs.org` | only for a **remote** workspace, and only to install what that machine is missing — `claude` from the first, Node from the second |
-| `chromewebstore.google.com` | only when you install a Chrome extension for the in-app browser |
+| `api.anthropic.com` | sends each subscription account a one-token message and reads its remaining rate-limit allowance off the reply, as a session starts and every 5 minutes, so the balancer can pick the least-loaded one; an API key or custom endpoint is only checked that it still works |
+| `api.github.com`, `github.com` | checks for a newer Koloft and downloads its `.dmg`; through `gh`, reads a GitHub workspace's open issue and pull request counts, and the statusline asks `gh` about the branch's pull request |
+| your workspace's git remote (often `github.com`) | every 5 minutes, to see whether the branch is behind — `Settings ▸ Appearance` turns auto-fetch off |
+| `claude.ai`, `nodejs.org`, `unofficial-builds.nodejs.org` | only for a **remote** workspace, and only to install what that machine is missing — `claude` from the first, Node from the second (or, on an old Linux, the third); `bash`, `tmux` and `rsync` come from the machine's own package manager |
+| `chromewebstore.google.com`, `clients2.google.com`, `update.googleapis.com` | only for Chrome extensions in the in-app browser: the store page, the extension download, and a once-per-launch update check |
+| `discord.com`, `gateway.discord.gg` | only once a bot token is set in `Settings ▸ Discord`; files sent from Discord are fetched from Discord's own file host |
 | `duckduckgo.com` | whatever you type in the browser's address bar that is not a URL |
 
 A remote workspace also reaches the machine you named, over `ssh` and `rsync`.

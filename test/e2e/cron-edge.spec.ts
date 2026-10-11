@@ -2,8 +2,14 @@ import fs from 'fs'
 import path from 'path'
 import { execFileSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
-import { test, expect, launchApp, pendingAttention } from './helpers/app'
-import { seedSettings, type E2EEnv } from './helpers/env'
+import {
+  test,
+  expect,
+  expectNoToastAtAnyMomentOfAWindow,
+  launchApp,
+  pendingAttention
+} from './helpers/app'
+import { seedNoClaudeAccountButStillSetUp, seedSettings, type E2EEnv } from './helpers/env'
 import {
   addWorkspace,
   closeMenu,
@@ -177,13 +183,6 @@ function edHistRows(page: Page): Locator {
 
 async function edHistStates(page: Page): Promise<string[]> {
   return page.locator('.modal.cronjobs .hist-state').allTextContents()
-}
-
-async function expectNoToastAtAnyMomentOfAWindow(page: Page): Promise<void> {
-  for (let i = 0; i < 8; i++) {
-    expect(await page.locator('.toast').count()).toBe(0)
-    await page.waitForTimeout(200)
-  }
 }
 
 async function addWorkspaceToForceRescan(page: Page, env: E2EEnv, name: string): Promise<void> {
@@ -481,7 +480,7 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
   test('BB-E09: no usable account means no launch', async ({ env }) => {
     test.setTimeout(180_000)
     gitInit(env.workspaces.a)
-    seedSettings(env, { multiAccount: true, accounts: [] })
+    seedNoClaudeAccountButStillSetUp(env)
 
     const { app, page } = await edLaunch(env)
     try {
@@ -770,7 +769,6 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
     test.setTimeout(120_000)
     gitInit(env.workspaces.a)
     seedSettings(env, {
-      multiAccount: true,
       skipPermissions: true,
       accounts: [
         { name: 'alpha', kind: 'oauth', enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }
@@ -795,12 +793,12 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
     }
   })
 
-  test('BB-E25: without multi-account, the Permissions row says what this Mac really does', async ({
+  test('BB-E25: with skip permission prompts off, the Permissions row says Claude asks before risky steps', async ({
     env
   }) => {
     test.setTimeout(120_000)
     gitInit(env.workspaces.a)
-    seedSettings(env, { multiAccount: false, skipPermissions: true })
+    seedSettings(env, { skipPermissions: false })
 
     const { app, page } = await edLaunch(env)
     try {

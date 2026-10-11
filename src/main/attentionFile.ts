@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { ATTENTION_REASON, type AttentionEvent } from '@shared/types'
 import type { SavedMark } from './attention'
+import { BackgroundFile } from './backgroundFile'
 
 function attentionFile(): string {
   return path.join(app.getPath('userData'), 'attention.json')
@@ -23,8 +24,12 @@ export function loadLastRunAttention(): SavedMark[] {
   }
 }
 
+const attentionOnDisk = new BackgroundFile(attentionFile)
+
 export function saveAttention(pending: AttentionEvent[]): void {
-  try {
-    fs.writeFileSync(attentionFile(), JSON.stringify(pending))
-  } catch {}
+  attentionOnDisk.write(JSON.stringify(pending))
+}
+
+export function flushAttention(): void {
+  attentionOnDisk.flushSync()
 }

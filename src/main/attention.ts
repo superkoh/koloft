@@ -64,6 +64,10 @@ export class AttentionTracker {
     if (this.pending.delete(tabId)) this.onChange(this.list(), null)
   }
 
+  clearKeepingExit(tabId: string): void {
+    if (this.pending.get(tabId)?.kind !== 'exited') this.clear(tabId)
+  }
+
   clearSession(sessionId: string): void {
     const stale = this.list().filter((e) => e.sessionId === sessionId)
     for (const e of stale) this.pending.delete(e.tabId)

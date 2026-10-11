@@ -5,6 +5,7 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import {
   centerTerm,
   clickAppMenuItem,
+  focusOwner,
   openSessionTerminal,
   panelTerm,
   runIn,
@@ -12,7 +13,8 @@ import {
   sendShortcut,
   startSessionIn,
   waitBooted,
-  waitForCalls
+  waitForCalls,
+  wsRows
 } from './helpers/p1'
 import { addressField, guestByUrl, newWebTab, typeInAddressBar } from './helpers/browser'
 import { startEchoServer } from './helpers/fixtureServer'
@@ -52,55 +54,92 @@ async function agentOpen(page: Page, target: string): Promise<void> {
 
 const leaveTimeToCollapseBeforeOpenLands = 'sleep 3; '
 
-test.describe('Workbench tab lifecycle: an open forks by target (a web url lands a background tab, a file lands none) and by source (agent, or the user’s own shell)', () => {
-  test('WB-T02: an agent web open lands a background, unread, unloaded tab', async ({ page }) => {
-    await startSessionIn(page, 'ws-a')
-    await expect(wbTabs(page)).toHaveCount(1)
+test.describe('Workbench tab lifecycle: an open forks by target (a web url lands a tab, a file lands none) and by source (agent, or the user’s own shell)', () => {
+  test('WB-T02: an agent web open lands in front of its own session, read and loaded, and the caret stays in the terminal', async ({
+    page
+  }) => {
+    const srv = await startEchoServer()
+    try {
+      await startSessionIn(page, 'ws-a')
+      await expect(wbTabs(page)).toHaveCount(1)
 
-    await agentOpen(page, 'http://127.0.0.1:1/alpha')
-    await agentOpen(page, 'http://127.0.0.1:1/beta')
+      await agentOpen(page, srv.url('/alpha'))
+      await agentOpen(page, srv.url('/beta'))
 
-    await expect(wbTabs(page)).toHaveCount(3)
-    await expect(wbUnreadTabs(page)).toHaveCount(2)
-    await expect(wbActiveTab(page)).toHaveClass(/pinned/)
-    const titles = await wbTabTitles(page)
-    expect(titles.slice(1)).toEqual(['127.0.0.1:1/alpha', '127.0.0.1:1/beta'])
+      await expect(wbTabs(page)).toHaveCount(3)
+      await expect(wbActiveTab(page)).toHaveAttribute('title', /\/beta$/)
+      await expect(wbUnreadTabs(page)).toHaveCount(0)
+      await expect.poll(() => srv.count('/beta'), { timeout: 20_000 }).toBe(1)
+      expect(await focusOwner(page)).toBe('tui')
+    } finally {
+      await srv.close()
+    }
   })
 
-  test('WB-T03: an agent re-open only re-lights the mark', async ({ page }) => {
+  test('WB-T03: an agent re-open brings its existing tab back to the front', async ({ page }) => {
     await startSessionIn(page, 'ws-a')
     await agentOpen(page, 'http://127.0.0.1:1/alpha')
-    await expect(wbTabs(page)).toHaveCount(2)
+    await expect(wbActiveTab(page)).toHaveText(/alpha/)
 
-    await wbTabs(page).nth(1).click()
-    await expect(wbUnreadTabs(page)).toHaveCount(0)
     await wbTabs(page).nth(0).click()
+    await expect(wbActiveTab(page)).toHaveClass(/pinned/)
 
     await agentOpen(page, 'http://127.0.0.1:1/alpha')
 
     await expect(wbTabs(page)).toHaveCount(2)
-    await expect(wbUnreadTabs(page)).toHaveCount(1)
-    await expect(wbActiveTab(page)).toHaveClass(/pinned/)
+    await expect(wbActiveTab(page)).toHaveText(/alpha/)
+    await expect(wbUnreadTabs(page)).toHaveCount(0)
   })
 
-  test('WB-T04/T05: expanding never batch-clears; only activation clears one mark', async ({
+  test('WB-T04: an agent web open expands a collapsed panel onto its page', async ({
     app,
     page
   }) => {
     await startSessionIn(page, 'ws-a')
     await clickAppMenuItem(app, page, 'toggle-browser')
+    await expect(workbenchPanel(page)).toBeHidden()
+
     await agentOpen(page, 'http://127.0.0.1:1/alpha')
-    await agentOpen(page, 'http://127.0.0.1:1/beta')
 
-    await clickAppMenuItem(app, page, 'toggle-browser')
-    await expect(workbenchPanel(page)).toBeVisible()
-    await expect(wbUnreadTabs(page)).toHaveCount(2)
-
-    await wbTabs(page).nth(1).click()
-    await expect(wbUnreadTabs(page)).toHaveCount(1)
+    await expect(workbenchPanel(page)).toBeVisible({ timeout: 20_000 })
+    await expect(wbActiveTab(page)).toHaveText(/alpha/)
   })
 
-  test('WB-T22/T21: an agent file open makes no tab and no signal, and a user open of the same file still lands, read in Browse', async ({
+  test('an agent web open in a session that is not on screen leaves the person where they are, and the page is in front once they switch there', async ({
+    page,
+    env
+  }) => {
+    test.setTimeout(120_000)
+    const srv = await startEchoServer()
+    try {
+      await startSessionIn(page, 'ws-a')
+      const [a] = await waitForCalls(env, 1)
+      await runIn(page, centerTerm(page), `/open-later ${srv.url('/later')}`)
+      await expect(centerTerm(page)).toContainText('armed open', { timeout: 30_000 })
+
+      await startSessionIn(page, 'ws-b')
+      const tabsOfB = await wbTabTitles(page)
+      fs.writeFileSync(path.join(env.home, 'go-open'), '')
+
+      await expect
+        .poll(() => persistedTabsOnDisk(env, a.sessionId).map((t) => t.url), { timeout: 30_000 })
+        .toContain(srv.url('/later'))
+      const rowA = wsRows(page, 'ws-a').first()
+      await expect(wsRows(page, 'ws-b').first()).toHaveClass(/\bactive\b/)
+      expect(await wbTabTitles(page)).toEqual(tabsOfB)
+      expect(srv.count('/later')).toBe(0)
+
+      await rowA.click()
+      await expect(rowA).toHaveClass(/\bactive\b/)
+      await expect(wbActiveTab(page)).toHaveAttribute('title', /\/later$/, { timeout: 30_000 })
+      await expect(workbenchPanel(page)).toBeVisible()
+      await expect.poll(() => srv.count('/later'), { timeout: 20_000 }).toBe(1)
+    } finally {
+      await srv.close()
+    }
+  })
+
+  test('WB-T22/T21: an agent file open shows in Browse without minting a tab, and a user open of the same file lands the same way', async ({
     app,
     page,
     env
@@ -118,11 +157,13 @@ test.describe('Workbench tab lifecycle: an open forks by target (a web url lands
     await expect.poll(() => fs.existsSync(abs), { timeout: 30_000 }).toBe(true)
     await agentOpen(page, abs)
 
+    await expect(workbenchPanel(page)).toBeVisible({ timeout: 30_000 })
     await expect(wbTabs(page)).toHaveCount(before)
-    await expect(workbenchPanel(page)).toBeHidden()
+    await expect(page.locator('.wb-panel .fv')).toHaveAttribute('data-view', 'browse')
+    await expect(page.locator('.wb-panel .fv-artifact-hd .wb-title')).toContainText(rel)
 
-    await clickAppMenuItem(app, page, 'toggle-browser')
-    await expect(workbenchPanel(page)).toBeVisible()
+    await wbTabs(page).last().click()
+    await expect(panelTerm(page)).toBeVisible()
     await runIn(page, panelTerm(page), `${leaveTimeToCollapseBeforeOpenLands}open ${abs}`)
     await clickAppMenuItem(app, page, 'toggle-browser')
     await expect(workbenchPanel(page)).toBeHidden()

@@ -5,18 +5,24 @@ import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp } from './helpers/app'
 import type { E2EEnv } from './helpers/env'
 import {
+  boundSessionId,
   centerTerm,
   clickAppMenuItem,
   runIn,
   sendShortcut,
   setNextSessionTitle,
   startSessionIn,
-  waitBooted
+  transcriptFile,
+  waitBooted,
+  wsRows
 } from './helpers/p1'
 import { setupChangeFixture, seedBrowseTree } from './helpers/filesFixture'
 import {
   WORKBENCH,
+  claudePrompts,
+  commentOnFirstHunk,
   countGitSpawns,
+  expectOnePromptFromTheComment,
   installGitSpawnLog,
   installStallingGit,
   isAggregateDiff,
@@ -36,7 +42,7 @@ const CV = {
   stream: '.wb-panel .cv-stream',
   block: '.wb-panel .cv-blk',
   blockSeg: '.seg[aria-label="Block view"]',
-  expand: '.cv-exp',
+  expand: '.cv-exp:not(.cv-cmt)',
   hunk: '.cv-hunk',
   diffRow: '.idiff-row',
   token: '.idiff-code > span',
@@ -252,6 +258,29 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     await expect.poll(() => x.locator(CV.diffRow).count(), { timeout: 20_000 }).toBe(compactX)
     await expect(x.locator(CV.expand)).toHaveAttribute('aria-pressed', 'false')
     expect(await y.locator(CV.diffRow).count()).toBe(compactY)
+  })
+
+  test('WB-C19: ✎ comment pastes the path and the hunk in a diff fence into the session’s input box and types the note after it, unsent, with the caret in the session; it is greyed while an approval is up', async ({
+    page,
+    env
+  }) => {
+    const fx = setupChangeFixture(env.workspaces.a)
+    fx.modifyTracked(1)
+    await openChanges(page)
+    await waitStream(page, 1)
+    const tabId = await wsRows(page, 'ws-a').first().getAttribute('data-tab-id')
+    const sessionId = (await boundSessionId(page, tabId)) ?? ''
+    const transcript = transcriptFile(env.home, env.workspaces.a, sessionId)
+
+    const note = 'WB-C19 keep the old name'
+    const head = await commentOnFirstHunk(page, 'src/change-1.ts', note)
+    await expectOnePromptFromTheComment(() => claudePrompts(transcript), head, note)
+
+    const comment = blockOf(page, 'src/change-1.ts').locator('.cv-cmt').first()
+    await runIn(page, centerTerm(page), '/need-approval')
+    await expect(comment).toBeDisabled({ timeout: 30_000 })
+    await runIn(page, centerTerm(page), 'back to work')
+    await expect(comment).toBeEnabled({ timeout: 30_000 })
   })
 
   test('WB-C04: merge-base lists the committed and the uncommitted change; vs HEAD lists only the uncommitted', async ({

@@ -6,6 +6,7 @@ import {
 } from '@shared/sessionBackend'
 import { SessionBackendIcon } from './SessionBackendIcon'
 import {
+  Fragment,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -20,6 +21,8 @@ import { GoGitBranch, GoGitPullRequest, GoIssueOpened } from 'react-icons/go'
 import {
   LuAlarmClock,
   LuCheck,
+  LuChevronDown,
+  LuChevronRight,
   LuFileText,
   LuFolder,
   LuFolderOpen,
@@ -30,7 +33,7 @@ import {
 } from 'react-icons/lu'
 import type { BackendId, SessionRow } from '@shared/types'
 import type { DirtyTab } from '../unsavedGuard'
-import { ATTENTION_REASON, PLACEHOLDER_SESSION_TITLE } from '@shared/types'
+import { ATTENTION_REASON } from '@shared/types'
 import { popoverX } from '@shared/accountUsage'
 import { slugOf } from '@shared/cronNames'
 import { describeWhen } from '@shared/schedule'
@@ -39,17 +42,25 @@ import { useStore } from '../store'
 import {
   attentionOnRow,
   isOrphanRow,
+  liveTabOf,
   marqueeAnim,
   mixesBackends,
   sessionActivityBadge,
   leftoverLabel,
   relTime,
   rowStateClass,
+  rowsUnder,
+  sessionsInside,
   sessionsNeedYou,
-  statusUnavailable
+  sessionTree,
+  shownTitle,
+  statusUnavailable,
+  tabOfRow,
+  workspaceName,
+  type RowNode
 } from '../sessionRows'
-import { releaseSettledResumes, resumeInFlight, resumeSession } from '../resumeFlow'
-import { adoptionSettled } from '../adoption'
+import { releaseSettledResumes } from '../resumeFlow'
+import { offerForceCloseUnlessMainHasBoundIt, openSessionRow } from '../sessionClick'
 import { requestCloseTab } from '../closeFlow'
 import { freshnessShown } from '@shared/freshnessOps'
 import { behindBadge, countLabel, openIssuesLabel, openPullsLabel } from '../freshnessView'
@@ -99,7 +110,6 @@ type MenuTarget =
       wsPath: string
       missing: boolean
       isGit: boolean
-      hasHistory: boolean
     }
 
 // ADR-0025
@@ -181,7 +191,6 @@ export function WorkspaceSidebar({
   const storeTabs = useStore((s) => s.tabs)
   const activeTabId = useStore((s) => s.activeTabId)
   const resumeLaunch = useStore((s) => s.resumeLaunch)
-  const activateTab = useStore((s) => s.activateTab)
   const selectedWs = useStore((s) => s.selectedWs)
   const selectWorkspace = useStore((s) => s.selectWorkspace)
   const showToast = useStore((s) => s.showToast)
@@ -189,6 +198,7 @@ export function WorkspaceSidebar({
   const setBindConductor = useStore((s) => s.setBindConductor)
   const canBind = (wsPath: string): boolean => !conductorBindings.some((b) => b.scope === wsPath)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const [foldedRows, setFoldedRows] = useState<Record<string, boolean>>({})
   const [menu, setMenu] = useState<MenuState | null>(null)
   const [drag, setDrag] = useState<{ path: string; over: number | null } | null>(null)
   const [mq, setMq] = useState<{ id: string; overflow: number } | null>(null)
@@ -201,7 +211,8 @@ export function WorkspaceSidebar({
   } | null>(null)
   const [removing, setRemoving] = useState(false)
   const removeCancelRef = useRef<HTMLButtonElement>(null)
-  const [confirmOrphan, setConfirmOrphan] = useState<string | null>(null)
+  const confirmOrphan = useStore((s) => s.orphanConfirm)
+  const setConfirmOrphan = useStore((s) => s.setOrphanConfirm)
   const [fresh, setFresh] = useState<{ path: string; left: number; top: number } | null>(null)
   const [parkedPop, setParkedPop] = useState<{ rowId: string; left: number; top: number } | null>(
     null
@@ -224,13 +235,11 @@ export function WorkspaceSidebar({
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const cardTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const sessionByIdEntries = sessions.filter((s) => s.sessionId)
-  // CODEX§9
   const tabIdFor = (sessionId: string): string | undefined =>
-    sessionByIdEntries.find((s) => s.sessionId === sessionId && s.alive)?.tabId ??
-    storeTabs.find((t) => t.alive && t.sessionId === sessionId)?.id
-  const tabIdOfRow = (row: SessionRow): string | undefined =>
-    row.pending ? row.id : row.running ? tabIdFor(row.id) : undefined
+    liveTabOf(sessionId, sessions, storeTabs)
+  const tabIdOfRow = (row: SessionRow): string | undefined => tabOfRow(row, sessions, storeTabs)
+  const callingAmong = (rows: SessionRow[]): number =>
+    rows.filter((r) => attentionOnRow(r.id, tabIdOfRow(r), attention)).length
 
   useEffect(() => {
     const t = setInterval(() => bumpCronClock((n) => n + 1), CRON_BADGE_MS)
@@ -384,47 +393,6 @@ export function WorkspaceSidebar({
     }, MENU_LEAVE_MS)
   }
 
-  const offerForceCloseUnlessMainHasBoundIt = (row: SessionRow): void => {
-    void adoptionSettled.then(() => {
-      const st = useStore.getState()
-      if (!isOrphanRow(row, st.sessions, st.tabs)) return
-      void window.api.sessions.list().then((sessionsAheadOfTheStream) => {
-        if (isOrphanRow(row, sessionsAheadOfTheStream, useStore.getState().tabs))
-          setConfirmOrphan(row.id)
-      })
-    })
-  }
-
-  const clickRow = (row: SessionRow, wsPath: string): void => {
-    const remoteHost = machineOf(wsPath)
-    if (row.pending) {
-      activateTab(row.id)
-      return
-    }
-    if (row.running) {
-      if (isOrphanRow(row, sessions, storeTabs)) {
-        if (remoteHost) {
-          void resumeSession(row)
-          return
-        }
-        offerForceCloseUnlessMainHasBoundIt(row)
-        return
-      }
-      const tabId = tabIdFor(row.id)
-      if (tabId) {
-        window.api.attention.visit(tabId)
-        activateTab(tabId)
-      }
-      return
-    }
-    if (resumeInFlight(row.id)) {
-      const t = useStore.getState().tabs.find((x) => x.sessionId === row.id && x.alive)
-      if (t) activateTab(t.id)
-      return
-    }
-    void resumeSession(row)
-  }
-
   const forceCloseSession = async (id: string): Promise<void> => {
     const r = await window.api.sessions.forceClose(id)
     if (!r.ok) showToast(FORCE_CLOSE_FAILED_NOTICE)
@@ -528,6 +496,9 @@ export function WorkspaceSidebar({
           </div>
         )
       }
+      const hasHistory = rows.some(
+        (r) => r.workspace.path === target.wsPath && r.workspace.hasHistory
+      )
       return (
         <div className="menu" style={style} onMouseEnter={keepMenu} onMouseLeave={scheduleClose}>
           {!target.missing && (
@@ -553,7 +524,7 @@ export function WorkspaceSidebar({
                 </div>
               )}
               <div
-                className={'mi' + (target.hasHistory ? '' : ' disabled')}
+                className={'mi' + (hasHistory ? '' : ' disabled')}
                 onClick={() => {
                   setMenu(null)
                   onRestoreSession(target.wsPath)
@@ -647,7 +618,7 @@ export function WorkspaceSidebar({
           className="mi"
           onClick={() => {
             setMenu(null)
-            clickRow(row, target.wsPath)
+            openSessionRow(row, target.wsPath)
           }}
         >
           Resume<span className="k">↩</span>
@@ -760,8 +731,7 @@ export function WorkspaceSidebar({
               kind: 'workspace',
               wsPath: ws.path,
               missing: ws.missing,
-              isGit: ws.isGit,
-              hasHistory: ws.hasHistory
+              isGit: ws.isGit
             }
             const badge = behindBadge(ws.freshness, Date.now())
             const gitPanel = freshnessShown(ws.freshness) || !!ws.github
@@ -779,11 +749,144 @@ export function WorkspaceSidebar({
               if (ws.isGit) onNewWorktreeSession(ws.path)
               else onNewSession(ws.path)
             }
-            const callingInside = open
-              ? 0
-              : sessionRows.filter((r) => attentionOnRow(r.id, tabIdOfRow(r), attention)).length
+            const callingInside = open ? 0 : callingAmong(sessionRows)
             const cronNow = new Date()
             const soon = ws.missing || !open ? null : forecastFor(cron.jobs, ws.path, cronNow)
+            const sessionRow = (node: RowNode<SessionRow>): JSX.Element => {
+              const { row } = node
+              const tabId = tabIdOfRow(row)
+              const calling = attentionOnRow(row.id, tabId, attention)
+              const sess = tabId ? sessions.find((s) => s.tabId === tabId) : undefined
+              const stateCls = statusUnavailable(sess)
+                ? ''
+                : rowStateClass(row.running, sess?.status, row.pending, sess?.turnOver)
+              const badge = sessionActivityBadge(sess, leftovers[row.id])
+              const launching = resumeLaunch?.id === row.id
+              const active = launching || (!resumeLaunch && !!tabId && tabId === activeTabId)
+              const resumingNow =
+                !row.running &&
+                !row.pending &&
+                (launching || storeTabs.some((t) => t.sessionId === row.id && t.alive))
+              const shownCls = resumingNow ? rowStateClass(false, undefined, true) : stateCls
+              const rowTarget: MenuTarget = {
+                kind: 'session',
+                wsPath: ws.path,
+                row
+              }
+              const isCronRow =
+                capabilitiesFor(row.backendId, row.host).scheduledTasks === true &&
+                (cron.live.some((l) => (!!tabId && l.tabId === tabId) || l.sessionId === row.id) ||
+                  (row.worktree !== 'main' &&
+                    cron.jobs.some(
+                      (j) =>
+                        j.workspacePath === ws.path && row.worktree.startsWith(slugOf(j.name) + '-')
+                    )))
+              const folded = node.children.length > 0 && !!foldedRows[row.id]
+              const hidden = folded ? rowsUnder(node) : []
+              const callingHidden = callingAmong(hidden)
+              return (
+                <Fragment key={row.id}>
+                  <div
+                    className={'ws-tab ' + shownCls + (active ? ' active' : '')}
+                    data-tab-id={tabId}
+                    title={
+                      row.running || row.pending
+                        ? undefined
+                        : relTime(row.mtime, Date.now()) +
+                          (row.invalidCwd
+                            ? ' — worktree deleted; click to rebuild and resume'
+                            : ' — click to resume')
+                    }
+                    onClick={() => openSessionRow(row, ws.path)}
+                    onContextMenu={(e) => openMenuNow(e, rowTarget)}
+                    onMouseEnter={(e) => {
+                      armHoverMenu(e, rowTarget)
+                      marqueeIfClipped(e.currentTarget, '.ws-tab-title', row.id)
+                    }}
+                    onMouseLeave={() => {
+                      scheduleClose()
+                      stopMarquee(row.id)
+                    }}
+                  >
+                    <div className="ws-tab-main">
+                      {isCronRow && (
+                        <span className="ws-tab-cron" title="started by a scheduled job">
+                          <LuAlarmClock size={12} />
+                        </span>
+                      )}
+                      {row.resident && (
+                        <span
+                          className="ws-tab-resident"
+                          title="Keep running — never sleeps, and starts again each time Koloft opens"
+                        >
+                          <LuPin size={12} />
+                        </span>
+                      )}
+                      <span className={'ws-tab-title' + (mq?.id === row.id ? ' mq' : '')}>
+                        <i ref={mq?.id === row.id ? mqRef : undefined}>
+                          {shownTitle(row.title, sess?.title)}
+                        </i>
+                      </span>
+                      {tabId && <UnseenFileMark tabId={tabId} />}
+                      {calling && (
+                        <span className="ws-tab-unread" title={ATTENTION_REASON[calling.kind]} />
+                      )}
+                      {badge && (
+                        <button
+                          className={'ws-tab-parked' + (badge.running ? ' bg-run' : '')}
+                          title={badge.lines.join('\n')}
+                          aria-label={badge.heading}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            clearTimers()
+                            setMenu(null)
+                            setParkedPop({
+                              rowId: row.id,
+                              ...cardPosFor(e.currentTarget as HTMLElement)
+                            })
+                          }}
+                        >
+                          {badge.text}
+                        </button>
+                      )}
+                      {callingHidden > 0 && (
+                        <span
+                          className="ws-tab-parked ws-unread-count"
+                          title={sessionsNeedYou(callingHidden)}
+                        >
+                          {callingHidden}
+                        </span>
+                      )}
+                      {folded && (
+                        <span className="ws-tab-parked" title={sessionsInside(hidden.length)}>
+                          {hidden.length}
+                        </span>
+                      )}
+                      {node.children.length > 0 && (
+                        <button
+                          className="icobtn ws-tab-fold"
+                          title={folded ? 'Unfold' : 'Fold'}
+                          aria-label={folded ? 'Unfold' : 'Fold'}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setFoldedRows((f) => ({ ...f, [row.id]: !f[row.id] }))
+                          }}
+                        >
+                          {folded ? <LuChevronRight size={12} /> : <LuChevronDown size={12} />}
+                        </button>
+                      )}
+                    </div>
+                    <div className="ws-tab-sub">
+                      {mixesBackends(sessionRows) && <SessionBackendIcon backend={row.backendId} />}
+                      <span>{row.worktree}</span>
+                    </div>
+                  </div>
+                  {node.children.length > 0 && !folded && (
+                    <div className="ws-subtabs">{node.children.map(sessionRow)}</div>
+                  )}
+                </Fragment>
+              )
+            }
             return (
               <div
                 className={
@@ -830,9 +933,7 @@ export function WorkspaceSidebar({
                     {open ? <LuFolderOpen size={15} /> : <LuFolder size={15} />}
                   </span>
                   <span className={'ws-name' + (mq?.id === nameMq ? ' mq' : '')}>
-                    <i ref={mq?.id === nameMq ? mqRef : undefined}>
-                      {basename(ws.remote?.path ?? ws.path)}
-                    </i>
+                    <i ref={mq?.id === nameMq ? mqRef : undefined}>{workspaceName(ws)}</i>
                   </span>
                   {ws.remote && (
                     <span
@@ -941,120 +1042,7 @@ export function WorkspaceSidebar({
                         </span>
                       </div>
                     )}
-                    {sessionRows.map((row) => {
-                      const tabId = tabIdOfRow(row)
-                      const calling = attentionOnRow(row.id, tabId, attention)
-                      const sess = tabId ? sessions.find((s) => s.tabId === tabId) : undefined
-                      const stateCls = statusUnavailable(sess)
-                        ? ''
-                        : rowStateClass(row.running, sess?.status, row.pending)
-                      const badge = sessionActivityBadge(sess, leftovers[row.id])
-                      const launching = resumeLaunch?.id === row.id
-                      const active =
-                        launching || (!resumeLaunch && !!tabId && tabId === activeTabId)
-                      const resumingNow =
-                        !row.running &&
-                        !row.pending &&
-                        (launching || storeTabs.some((t) => t.sessionId === row.id && t.alive))
-                      const shownCls = resumingNow
-                        ? rowStateClass(false, undefined, true)
-                        : stateCls
-                      const rowTarget: MenuTarget = {
-                        kind: 'session',
-                        wsPath: ws.path,
-                        row
-                      }
-                      const isCronRow =
-                        capabilitiesFor(row.backendId, row.host).scheduledTasks === true &&
-                        (cron.live.some(
-                          (l) => (!!tabId && l.tabId === tabId) || l.sessionId === row.id
-                        ) ||
-                          (row.worktree !== 'main' &&
-                            cron.jobs.some(
-                              (j) =>
-                                j.workspacePath === ws.path &&
-                                row.worktree.startsWith(slugOf(j.name) + '-')
-                            )))
-                      return (
-                        <div
-                          key={row.id}
-                          className={'ws-tab ' + shownCls + (active ? ' active' : '')}
-                          data-tab-id={tabId}
-                          title={
-                            row.running || row.pending
-                              ? undefined
-                              : relTime(row.mtime, Date.now()) +
-                                (row.invalidCwd
-                                  ? ' — worktree deleted; click to rebuild and resume'
-                                  : ' — click to resume')
-                          }
-                          onClick={() => clickRow(row, ws.path)}
-                          onContextMenu={(e) => openMenuNow(e, rowTarget)}
-                          onMouseEnter={(e) => {
-                            armHoverMenu(e, rowTarget)
-                            marqueeIfClipped(e.currentTarget, '.ws-tab-title', row.id)
-                          }}
-                          onMouseLeave={() => {
-                            scheduleClose()
-                            stopMarquee(row.id)
-                          }}
-                        >
-                          <div className="ws-tab-main">
-                            {isCronRow && (
-                              <span className="ws-tab-cron" title="started by a scheduled job">
-                                <LuAlarmClock size={12} />
-                              </span>
-                            )}
-                            {row.resident && (
-                              <span
-                                className="ws-tab-resident"
-                                title="Keep running — starts again each time Koloft opens"
-                              >
-                                <LuPin size={12} />
-                              </span>
-                            )}
-                            <span className={'ws-tab-title' + (mq?.id === row.id ? ' mq' : '')}>
-                              <i ref={mq?.id === row.id ? mqRef : undefined}>
-                                {sess?.title && sess.title !== PLACEHOLDER_SESSION_TITLE
-                                  ? sess.title
-                                  : row.title}
-                              </i>
-                            </span>
-                            {tabId && <UnseenFileMark tabId={tabId} />}
-                            {calling && (
-                              <span
-                                className="ws-tab-unread"
-                                title={ATTENTION_REASON[calling.kind]}
-                              />
-                            )}
-                            {badge && (
-                              <button
-                                className="ws-tab-parked"
-                                title={badge.lines.join('\n')}
-                                aria-label={badge.heading}
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  clearTimers()
-                                  setMenu(null)
-                                  setParkedPop({
-                                    rowId: row.id,
-                                    ...cardPosFor(e.currentTarget as HTMLElement)
-                                  })
-                                }}
-                              >
-                                {badge.text}
-                              </button>
-                            )}
-                          </div>
-                          <div className="ws-tab-sub">
-                            {mixesBackends(sessionRows) && (
-                              <SessionBackendIcon backend={row.backendId} />
-                            )}
-                            <span>{row.worktree}</span>
-                          </div>
-                        </div>
-                      )
-                    })}
+                    {sessionTree(sessionRows).map(sessionRow)}
                     {sessionRows.length === 0 && !ws.missing && (
                       <div className="ws-empty" title={door.title} onClick={openDoor}>
                         <door.Icon size={12} />

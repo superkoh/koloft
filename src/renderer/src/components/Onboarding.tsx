@@ -6,6 +6,8 @@ import { shortenHome } from '../browseModel'
 import { useStore } from '../store'
 import { relTime } from '../sessionRows'
 import { useSettingsUpdate } from './settings/useSettingsUpdate'
+import { useAssistSetup } from '../useAssistSetup'
+import { AssistSetup, InstallHint } from './AssistSetup'
 
 const PIC_ROWS: { color: string; title: string; state: string; cold?: boolean }[] = [
   { color: 'var(--accent)', title: 'Fix login bug', state: 'working' },
@@ -163,8 +165,9 @@ function PicAccounts(): JSX.Element {
 const LEGEND: { cls: string; name: string; what: string }[] = [
   { cls: 'st-working', name: 'Orange', what: 'working' },
   { cls: 'st-approval', name: 'Amber', what: 'needs your OK' },
-  { cls: 'st-waiting', name: 'Green', what: 'turn done' },
-  { cls: 'st-idle', name: 'Dim green', what: 'done a while ago, nothing new' }
+  { cls: 'st-waiting', name: 'Green', what: 'turn done (with ↻: still running in the background)' },
+  { cls: 'st-idle', name: 'Dim green', what: 'done a while ago, nothing new' },
+  { cls: 'cold', name: 'Grey', what: 'closed, click to resume' }
 ]
 
 type Probe = 'pending' | 'found' | 'missing'
@@ -178,12 +181,13 @@ export function Onboarding({
 }): JSX.Element {
   const update = useSettingsUpdate()
   const firstWs = useStore((s) => s.workspaceRows[0]?.workspace.path)
-  const setSettingsOpen = useStore((s) => s.setSettingsOpen)
+  const step = useStore((s) => s.onboardingStep)
+  const setStep = useStore((s) => s.setOnboardingStep)
+  const setup = useAssistSetup()
+  const noTool = setup.noTool
 
-  const [step, setStep] = useState(1)
   const [found, setFound] = useState<DiscoveredFolder[] | null>(null)
   const [checked, setChecked] = useState<string[]>([])
-  const [balance, setBalance] = useState(false)
   const [probe, setProbe] = useState<Probe>('pending')
   const [codexFound, setCodexFound] = useState(false)
 
@@ -206,8 +210,8 @@ export function Onboarding({
 
   const finish = useCallback((): void => {
     update({ onboardingSeen: true })
-    if (balance) setSettingsOpen(true)
-  }, [update, setSettingsOpen, balance])
+    setStep(1)
+  }, [update, setStep])
 
   const now = Date.now()
   const primary = ((): { label: string; disabled?: boolean; go?: () => void } => {
@@ -232,6 +236,7 @@ export function Onboarding({
     if (step === 3)
       return {
         label: 'Continue',
+        disabled: !setup.done && !noTool,
         go: () => {
           setStep(4)
           runProbe()
@@ -239,7 +244,6 @@ export function Onboarding({
       }
     if (probe === 'pending') return { label: '＋ Start first session', disabled: true }
     if (probe === 'missing' && !codexFound) return { label: 'Check again', go: runProbe }
-    if (balance) return { label: 'Set up accounts', go: finish }
     if (!firstWs) return { label: 'Choose Folder…', go: () => void onAddWorkspace() }
     return {
       label: '＋ Start first session',
@@ -322,39 +326,8 @@ export function Onboarding({
 
         {step === 3 && (
           <>
-            <div className="big">Use your existing login.</div>
-            <div className="quiet">
-              {codexFound
-                ? 'Claude Code and Codex each need a login. Keep the ones this Mac already has, or let Koloft spread your sessions over several accounts.'
-                : 'Claude Code needs a login. Keep the one this Mac already has, or let Koloft spread your sessions over several accounts.'}
-            </div>
-            <div className="ob-choices">
-              <button
-                className={'choice' + (balance ? '' : ' on')}
-                onClick={() => setBalance(false)}
-              >
-                <span className="choice-t">The login this Mac already has</span>
-                <span className="choice-d">
-                  Whatever <code>claude</code>{' '}
-                  {codexFound && (
-                    <>
-                      or <code>codex</code>{' '}
-                    </>
-                  )}
-                  is signed in as now. Nothing to do.
-                </span>
-              </button>
-              <button
-                className={'choice' + (balance ? ' on' : '')}
-                onClick={() => setBalance(true)}
-              >
-                <span className="choice-t">Balance several accounts</span>
-                <span className="choice-d">
-                  Each new session starts on the one with the most room left. Set it up in Settings
-                  ▸ Accounts after this.
-                </span>
-              </button>
-            </div>
+            <div className="big">Sign in, and pick your Assist.</div>
+            <AssistSetup setup={setup} />
             <PicAccounts />
           </>
         )}
@@ -380,19 +353,13 @@ export function Onboarding({
               notification (Settings ▸ Notifications).
             </div>
             {probe === 'missing' && !codexFound ? (
-              <div className="quiet ob-warn">
+              <InstallHint>
                 Install Claude Code or a supported Codex CLI to start a session.
-                <code className="ob-cmd">npm install -g @anthropic-ai/claude-code</code>
-                <code className="ob-cmd">npm install -g @openai/codex</code>
-              </div>
-            ) : balance ? (
-              <div className="quiet">
-                Add your accounts first. Then ＋ New session on the workspace starts the first one.
-              </div>
+              </InstallHint>
             ) : (
               <div className="quiet">
-                {codexFound ? 'The CLI' : 'Claude itself'} may ask a thing or two first: theme,
-                login, whether you trust this folder. Answer in the terminal.
+                {codexFound ? 'The CLI' : 'Claude itself'} may ask a thing or two first: theme, or
+                whether you trust this folder. Answer in the terminal.
               </div>
             )}
           </>
@@ -400,9 +367,17 @@ export function Onboarding({
       </div>
 
       <div className="ob-actions">
-        <button className="ob-link ob-skip" onClick={finish}>
-          {step === 4 ? 'Not now' : 'Skip'}
-        </button>
+        {step < 3 ? (
+          <button className="ob-link ob-skip" onClick={() => setStep(3)}>
+            Skip
+          </button>
+        ) : step === 4 || noTool ? (
+          <button className="ob-link ob-skip" onClick={finish}>
+            Not now
+          </button>
+        ) : (
+          <span />
+        )}
         <div className="ob-dots">
           {[1, 2, 3, 4].map((n) => (
             <i key={n} className={'ob-dot' + (n === step ? ' on' : '')} />

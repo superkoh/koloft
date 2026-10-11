@@ -247,7 +247,11 @@ test.describe('real third-party tools (playwright-mcp, playwright-cli), unmodifi
       PLAYWRIGHT_CLI_SESSION: b.playwrightCliSession!
     }
     try {
-      const pageA = server.page('/a', '<title>Page A</title><body><h1>a</h1></body>')
+      const popA = server.page('/pop-a', '<title>Popped A</title><body>p</body>')
+      const pageA = server.page(
+        '/a',
+        `<title>Page A</title><body><h1>a</h1><a id="pop" target="_blank" href="${popA}">pop</a></body>`
+      )
       const pageB = server.page('/b', '<title>Page B</title><body><h1>b</h1></body>')
 
       expect((await cli(['open', pageA], env.home, envA)).code).toBe(0)
@@ -259,12 +263,19 @@ test.describe('real third-party tools (playwright-mcp, playwright-cli), unmodifi
       expect(titleA.out).toContain('Page A')
       expect(titleB.out).toContain('Page B')
 
+      expect(
+        (await cli(['eval', 'document.getElementById("pop").click()'], env.home, envA)).code
+      ).toBe(0)
+      await expect
+        .poll(async () => (await cli(['tab-list'], env.home, envA)).out, { timeout: 30_000 })
+        .toContain('/pop-a')
+
       await openBrowser(page)
       await expect(openTabs(page)).toHaveCount(1, { timeout: 30_000 })
       await expect(openTabs(page)).toContainText('Page B')
       await wsRows(page, 'ws-a').first().click()
-      await expect(openTabs(page)).toHaveCount(1, { timeout: 30_000 })
-      await expect(openTabs(page)).toContainText('Page A')
+      await expect(openTabs(page)).toHaveCount(2, { timeout: 30_000 })
+      await expect(openTabs(page)).toContainText(['Page A', 'Popped A'])
     } finally {
       await Promise.all([cli(['close'], env.home, envA), cli(['close'], env.home, envB)])
       await server.close()
@@ -341,6 +352,14 @@ test.describe('real third-party tools (playwright-mcp, playwright-cli), unmodifi
       expect((await cli(['eval', 'document.title'], env.home)).out).toContain('Thanks')
       expect((await cli(['go-back'], env.home)).code).toBe(0)
       expect((await cli(['eval', 'document.title'], env.home)).out).toContain('Order')
+
+      // PLATFORM§16
+      await page.evaluate(() => ((window as unknown as { __hostMark: number }).__hostMark = 1))
+      expect((await cli(['reload'], env.home)).code).toBe(0)
+      expect((await cli(['eval', 'document.title'], env.home)).out).toContain('Order')
+      expect(
+        await page.evaluate(() => (window as unknown as { __hostMark?: number }).__hostMark)
+      ).toBe(1)
 
       await openBrowser(page)
       await expect(openTabs(page)).toHaveCount(1, { timeout: 30_000 })

@@ -37,9 +37,9 @@ export function UnsavedDialog(): JSX.Element | null {
   }, [prompt, saveInFlight])
 
   if (!prompt) return null
-  const body = [unsavedBody(prompt.files), removeJobsNote(prompt.jobs ?? 0)]
-    .filter(Boolean)
-    .join(' ')
+  const body =
+    prompt.ended ??
+    [unsavedBody(prompt.files), removeJobsNote(prompt.jobs ?? 0)].filter(Boolean).join(' ')
   const cancel = (): void => {
     if (saveInFlight) return
     useStore.getState().setUnsavedPrompt(null)
@@ -63,7 +63,7 @@ export function UnsavedDialog(): JSX.Element | null {
         </div>
         <div className="modal-foot">
           <button ref={cancelRef} className="mini" disabled={saveInFlight} onClick={cancel}>
-            Cancel
+            {prompt.ended ? 'Keep for later' : 'Cancel'}
           </button>
           <button
             ref={discardRef}
@@ -74,7 +74,7 @@ export function UnsavedDialog(): JSX.Element | null {
             Discard
           </button>
           <button ref={saveRef} className="btn-primary" disabled={saveInFlight} onClick={save}>
-            Save &amp; close
+            {prompt.ended ? 'Save' : 'Save & close'}
           </button>
         </div>
       </div>

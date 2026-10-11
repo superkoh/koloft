@@ -5,3 +5,11 @@ export function isValidWorktreeName(name: string): boolean {
   if (name.startsWith('-')) return false
   return true
 }
+
+import { fnv1a32 } from './fnv1a'
+
+const PORT_OFFSETS = 99
+
+export function portOffset(worktreeName: string): number {
+  return (fnv1a32(worktreeName) % PORT_OFFSETS) + 1
+}

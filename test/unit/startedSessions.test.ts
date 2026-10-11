@@ -46,6 +46,17 @@ describe('which session started which, kept across a Koloft restart', () => {
     expect(after.startedBy({ sessionId: 'kid-1' }, { sessionId: 'parent-1' })).toBe(false)
   })
 
+  it('names the parent of a sidebar row while the child is starting, once bound, and after a restart', () => {
+    const started = record()
+    started.started('kid-tab', 'parent')
+    expect(started.parentOfRow('kid-tab')).toBe('parent')
+    started.bound('kid-tab', 'kid')
+    expect(started.parentOfRow('kid')).toBe('parent')
+    expect(started.parentOfRow('kid-tab')).toBe('parent')
+    expect(record().parentOfRow('kid')).toBe('parent')
+    expect(record().parentOfRow('parent')).toBeUndefined()
+  })
+
   it('forgets a child once it is closed', () => {
     const started = record()
     started.started('kid-tab', 'parent')

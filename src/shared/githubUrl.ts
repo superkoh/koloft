@@ -83,6 +83,10 @@ export function pullsUrlOf(r: GithubRepo): string {
   return `${repoUrlOf(r)}/pulls`
 }
 
+export function compareUrlOf(repoUrl: string, branch: string): string {
+  return `${repoUrl}/compare/${branch.split('/').map(encodeURIComponent).join('/')}?expand=1`
+}
+
 // PLATFORM§32
 export function loginUrlFor(target: string): string {
   let back = ''

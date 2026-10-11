@@ -1,13 +1,14 @@
-import type { SessionBackend } from './agentUi'
+import { isSessionKind, type SessionBackend } from './agentUi'
 import type { ResumePlan, SessionResumeRequest, SessionResumeResult } from '@shared/types'
 import { basename } from '@shared/preview'
-import { markRestoreLaunch, useStore } from './store'
+import { markRestoreLaunch, useStore, type Tab } from './store'
 
 export interface ResumeTarget {
   backendId: SessionBackend
   id: string
   title: string
   restore?: boolean
+  wake?: boolean
 }
 
 type RebuildPlan = Extract<ResumePlan, { action: 'rebuild' }>
@@ -148,7 +149,7 @@ export async function resumeSession(target: ResumeTarget): Promise<void> {
   if (inFlight.has(target.id)) return
   inFlight.add(target.id)
   if (target.restore) restoreIds.add(target.id)
-  useStore.getState().setResumeLaunch({ id: target.id, title: target.title })
+  if (!target.wake) useStore.getState().setResumeLaunch({ id: target.id, title: target.title })
   let step: ResumeStep
   try {
     step = planToStep(await window.api.sessions.resumePlan(target.id), target)
@@ -167,4 +168,16 @@ export async function resumeSession(target: ResumeTarget): Promise<void> {
     return
   }
   await runResume(target, step.req)
+}
+
+const waking = new Set<string>()
+
+export async function wakeTab(tab: Tab): Promise<void> {
+  if (!tab.asleep || !tab.sessionId || !isSessionKind(tab.kind) || waking.has(tab.id)) return
+  waking.add(tab.id)
+  try {
+    await resumeSession({ id: tab.sessionId, backendId: tab.kind, title: tab.title, wake: true })
+  } finally {
+    waking.delete(tab.id)
+  }
 }

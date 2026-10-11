@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { SessionRuntime } from '../../src/main/sessionRuntime'
+import { SessionRuntime, type TurnOverEdge } from '../../src/main/sessionRuntime'
 
 const runtime = new SessionRuntime()
 const TAB = 'tab-1'
@@ -31,5 +31,23 @@ describe('a session has finished all its work only once its turn ended and nothi
     runtime.recordTurn(TAB, 'ended')
     runtime.setWakeupPending(TAB, true)
     expect(await runtime.stillWorking(TAB)).toBe(true)
+  })
+})
+
+describe('a session takes typing once its turn is over, whatever background work it left running', () => {
+  it('a turn that ended with background work running still shows working, yet its turn is over and that edge is told', () => {
+    const edges: boolean[] = []
+    const listen = ({ tabId, over }: TurnOverEdge): void => {
+      if (tabId === TAB) edges.push(over)
+    }
+    runtime.on('turn-over', listen)
+    runtime.recordTurn(TAB, 'working')
+    expect(runtime.turnOver(TAB)).toBe(false)
+    runtime.recordTurn(TAB, 'ended', true)
+    expect(runtime.statusOf(TAB)).toBe('working')
+    expect(runtime.turnOver(TAB)).toBe(true)
+    runtime.recordTurn(TAB, 'ended')
+    expect(edges).toEqual([true])
+    runtime.off('turn-over', listen)
   })
 })

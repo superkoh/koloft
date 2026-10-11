@@ -399,7 +399,9 @@ test.describe('Workbench web tabs: an .html goes to a web tab, and the tab set s
     }
   })
 
-  test('BB-C42: a Koloft restart loads no tab until a session is resumed', async ({ env }) => {
+  test('BB-C42: after a Koloft restart a closed session loads no tab until it is resumed', async ({
+    env
+  }) => {
     test.setTimeout(420_000)
     const srv = await startEchoServer()
     try {
@@ -413,6 +415,9 @@ test.describe('Workbench web tabs: an .html goes to a web tab, and the tab set s
         await browseTo(page1, srv.url('/a'), 'Page A')
         await browseTo(page1, srv.url('/b'), 'Page B')
         expect(srv.count()).toBeGreaterThan(0)
+        await openMenu(page1, wsRows(page1, 'ws-a').first())
+        await page1.locator('.menu .mi', { hasText: /^Close$/ }).click()
+        await expect(wsRows(page1, 'ws-a').first()).toHaveClass(/\bcold\b/)
       } finally {
         await app1.close().catch(() => {})
       }

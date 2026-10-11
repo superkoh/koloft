@@ -6,7 +6,7 @@ import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { expect } from './app'
 import type { E2EEnv } from './env'
 import { assertFixtureDir } from './fixtureGuard'
-import type { SessionWorkbenchState } from '../../../src/shared/types'
+import type { BackendAvailability, SessionWorkbenchState } from '../../../src/shared/types'
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..')
 export const SCREEN_DIR = path.join(REPO_ROOT, 'test-results', 'p1-screens')
@@ -30,6 +30,7 @@ export interface ClaudeCall {
   cdpEndpoint?: string | null
   playwrightMcpEndpoint?: string | null
   playwrightCliSession?: string | null
+  portOffset: string | null
 }
 
 export function readCalls(env: E2EEnv): ClaudeCall[] {
@@ -50,10 +51,24 @@ export function readCalls(env: E2EEnv): ClaudeCall[] {
 export async function waitForCalls(
   env: E2EEnv,
   count: number,
-  timeout = 40_000
+  timeout = 40_000,
+  keep: (call: ClaudeCall) => boolean = () => true
 ): Promise<ClaudeCall[]> {
-  await expect.poll(() => readCalls(env).length, { timeout }).toBeGreaterThanOrEqual(count)
-  return readCalls(env)
+  const calls = (): ClaudeCall[] => readCalls(env).filter(keep)
+  await expect.poll(() => calls().length, { timeout }).toBeGreaterThanOrEqual(count)
+  return calls()
+}
+
+export function waitForCallsBesideConductors(env: E2EEnv, count: number): Promise<ClaudeCall[]> {
+  const conductors = path.join(env.userData, 'conductors')
+  return waitForCalls(env, count, undefined, (c) => path.dirname(c.cwd) !== conductors)
+}
+
+export async function waitConductorStarted(env: E2EEnv, timeout: number): Promise<void> {
+  const bound = (): number =>
+    (settingsOnDisk(env).discord as { bindings: { sessionIds: string[] }[] } | undefined)
+      ?.bindings[0]?.sessionIds.length ?? 0
+  await expect.poll(bound, { timeout }).toBeGreaterThan(0)
 }
 
 export function resumedId(call: ClaudeCall): string | undefined {
@@ -133,6 +148,23 @@ export function gitWorktreeAdd(repo: string, name: string): string {
 // CC§2
 export function encodeCwd(cwd: string): string {
   return cwd.replace(/[^a-zA-Z0-9]/g, '-')
+}
+
+export function transcriptFile(home: string, cwd: string, sessionId: string): string {
+  return path.join(home, '.claude', 'projects', encodeCwd(cwd), `${sessionId}.jsonl`)
+}
+
+// CC§5
+export function continuedInOf(transcript: string): string | undefined {
+  const last = fs.readFileSync(transcript, 'utf8').trimEnd().split('\n').pop() ?? ''
+  return last.includes('continued-in') ? JSON.parse(last).continuedInSessionId : undefined
+}
+
+export function boundSessionId(page: Page, tabId: string | null): Promise<string | undefined> {
+  return page.evaluate(
+    (id) => window.api.sessions.list().then((all) => all.find((s) => s.tabId === id)?.sessionId),
+    tabId
+  )
 }
 
 export interface SeedOptions {
@@ -327,6 +359,10 @@ export function wsRows(page: Page, wsName: string): Locator {
   return wsGroup(page, wsName).locator('.ws-tab')
 }
 
+export function oneStillRunning(scope: Page | Locator): Locator {
+  return scope.locator('.ws-tab-parked.bg-run', { hasText: /^↻ 1$/ })
+}
+
 export function auxIcon(page: Page, which: 'Preview' | 'Workbench' | 'Terminal'): Locator {
   return page.locator(`.aux-ico[aria-label="${which}"]`)
 }
@@ -426,6 +462,30 @@ export async function runIn(page: Page, term: Locator, cmd: string): Promise<voi
   await term.click()
   await page.keyboard.type(cmd)
   await page.keyboard.press('Enter')
+}
+
+const BETWEEN_SAMPLES_MS = 100
+const SAMPLES_WHILE_THE_CHECK_IS_OUT = 5
+
+export async function expectNoCodexWhileTheCheckIsOutNorAfter(
+  page: Page,
+  letTheCheckAnswer: () => void,
+  codexShown: () => Promise<number>,
+  what: string
+): Promise<void> {
+  let answer: BackendAvailability[] | undefined
+  const answered = page
+    .evaluate(() => window.api.sessions.backends())
+    .then((list) => (answer = list))
+  const samples: number[] = []
+  while (!answer) {
+    samples.push(await codexShown())
+    if (samples.length === SAMPLES_WHILE_THE_CHECK_IS_OUT) letTheCheckAnswer()
+    await Promise.race([answered, page.waitForTimeout(BETWEEN_SAMPLES_MS)])
+  }
+  samples.push(await codexShown())
+  expect(answer.find((b) => b.id === 'codex')?.available).toBe(false)
+  expect(samples.filter((n) => n > 0).length, `samples with ${what}`).toBe(0)
 }
 
 export async function waitBooted(page: Page): Promise<void> {

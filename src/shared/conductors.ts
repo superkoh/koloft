@@ -25,6 +25,10 @@ export function conductorName(scope: string): string {
   return `${scopeName(scope)} conductor`
 }
 
+export function asPeerName(title: string): string {
+  return title.replace(/\s+/g, '-')
+}
+
 export function channelLabel(binding: Pick<ConductorBinding, 'channel'>): string {
   return `#${binding.channel.name}`
 }
@@ -62,6 +66,7 @@ function cleanThreads(raw: unknown): SessionThread[] {
       {
         threadId: t.threadId,
         keys,
+        ...(typeof t.name === 'string' ? { name: t.name } : {}),
         ...(isDiscordId(t.lastMessageId) ? { lastMessageId: t.lastMessageId } : {})
       }
     ]

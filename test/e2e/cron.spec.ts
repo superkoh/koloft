@@ -7,6 +7,7 @@ import {
   installFakeRemote,
   killFakeRemote,
   launchWithRemote,
+  machineHome,
   REMOTE_WS_NAME,
   remoteDir
 } from './helpers/remote'
@@ -770,7 +771,6 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     test.setTimeout(180_000)
     gitInit(env.workspaces.a)
     seedSettings(env, {
-      multiAccount: true,
       skipPermissions: true,
       accounts: [
         { name: 'alpha', kind: 'oauth', enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }
@@ -884,6 +884,11 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     test.setTimeout(300_000)
     installFakeRemote(env)
     gitInit(remoteDir(env))
+    // CC§9 ADR-0026
+    fs.writeFileSync(
+      path.join(machineHome(env), '.claude.json'),
+      JSON.stringify({ projects: { [remoteDir(env)]: { hasTrustDialogAccepted: true } } })
+    )
     const { app, page } = await launchWithRemote(env)
     try {
       await addRemoteWorkspace(page, env)
