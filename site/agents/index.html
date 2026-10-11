@@ -220,8 +220,8 @@
           <code>@playwright/mcp</code> entry, Koloft hands it this session's address, so its browser
           tools open tabs in Koloft and not a browser of their own. On its usual permissions, Codex
           itself asks you once per thread whether to allow the tool. Only those tools reach the web
-          tabs: a command Codex runs in its sandbox, such as the Playwright CLI or your own script,
-          cannot.
+          tabs: on Codex's usual sandbox settings a command it runs, such as the Playwright CLI or
+          your own script, cannot reach the browser, and it is not given the address either.
         </p>
 
         <h3>What to expect</h3>

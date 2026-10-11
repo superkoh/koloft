@@ -159,10 +159,14 @@
           <li>the top bar shows how much room your Claude accounts have left</li>
           <li>
             with no account that can be used, the New session button is greyed out, and a line under
-            it says why: <code>No Claude account yet — add one in Settings ▸ Accounts.</code>
-            or, for an account that needs a fresh sign-in,
-            <code>"me" is not signed in — sign in again in Settings ▸ Accounts.</code> (the same for
-            Codex); a scheduled job does not start either
+            it says why: <code>No Claude account yet — add one in Settings ▸ Accounts.</code> when
+            none is added, <code>No Claude account can be used — check Settings ▸ Accounts.</code>
+            when the ones you have cannot be used, or
+            <code
+              >"&lt;account name&gt;" is not signed in — sign in again in Settings ▸ Accounts.</code
+            >
+            for one that needs a fresh sign-in (the same for Codex); a scheduled job does not start
+            either
           </li>
         </ul>
 
