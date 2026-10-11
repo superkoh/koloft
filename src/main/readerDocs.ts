@@ -75,6 +75,7 @@ async function localFile(p: string): Promise<string | null> {
 export class ReaderDocs {
   private readonly store: PrivateRecordFile<Record<string, DocVerdict>>
   private lastTurnEnd = new Map<string, number>()
+  private archived = new Set<string>()
 
   constructor(private readonly deps: ReaderDocsDeps) {
     this.store = new PrivateRecordFile(deps.file)
@@ -85,6 +86,7 @@ export class ReaderDocs {
   }
 
   forget(sessionId: string): void {
+    this.archived.add(sessionId)
     this.store.forget(sessionId)
   }
 
@@ -120,7 +122,8 @@ export class ReaderDocs {
       reply.split('\n').map(async (line) => {
         const src = docIn(line, s.cwd, host)
         if (!src || written.includes(src)) return src
-        if (host) return (await this.deps.remoteFileExists(host, src)) ? src : null
+        if (host)
+          return (await this.deps.remoteFileExists(host, src).catch(() => false)) ? src : null
         const real = await localFile(src)
         return real && !writtenForTheAgent(real) ? real : null
       })
@@ -130,6 +133,7 @@ export class ReaderDocs {
       const p = parseRemoteKey(src)?.path ?? src
       return turn.reply.includes(p) || (!host && turn.reply.includes(p.replace(home, '~/')))
     }
+    if (this.archived.has(s.sessionId)) return
     const at = Date.now()
     const verdicts = { ...this.of(s.sessionId) }
     for (const src of written) verdicts[src] = { show: replyGivesFullPath(src), at }

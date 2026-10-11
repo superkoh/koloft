@@ -33,6 +33,8 @@ function setup(opts: {
   remote?: string
   cwd?: string
   remoteFiles?: string[]
+  remoteDown?: boolean
+  duringAssist?: (docs: ReaderDocs) => void
 }) {
   const jobs: AssistJob[] = []
   const asked: string[] = []
@@ -44,20 +46,24 @@ function setup(opts: {
     files: opts.files,
     ...(opts.remote ? { remote: { host: opts.remote } } : {})
   } as SessionInfo
-  const make = (): ReaderDocs =>
-    new ReaderDocs({
+  const make = (): ReaderDocs => {
+    const docs: ReaderDocs = new ReaderDocs({
       file: () => path.join(dir, 'doc-verdicts.json'),
       assist: async (job) => {
         jobs.push(job)
+        opts.duringAssist?.(docs)
         return opts.answer
       },
       session: (tabId) => (tabId === 't1' ? session : undefined),
       remoteFileExists: async (_host, keyed) => {
         asked.push(keyed)
+        if (opts.remoteDown) throw new Error('ssh: connection closed')
         return (opts.remoteFiles ?? []).includes(keyed)
       },
       changed: () => changed++
     })
+    return docs
+  }
   return { make, session, jobs, asked, changed: () => changed }
 }
 
@@ -156,6 +162,32 @@ describe('Assist picks the docs a session made for its reader', () => {
     expect(docs.of('s1')?.[plan]?.show).toBe(true)
     expect(docs.of('s1')?.[atHome]?.show).toBe(true)
     expect(docs.of('s1')?.[draft]?.show).toBe(false)
+  })
+
+  it('on an ssh session whose connection drops, still records the written docs and skips the unchecked one', async () => {
+    const written = 'ssh://devbox/home/koh/repo/report.md'
+    const t = setup({
+      remote: 'devbox',
+      cwd: '/home/koh/repo',
+      files: [wrote(written, TURN_START + 1)],
+      remoteDown: true,
+      answer: ['/home/koh/repo/report.md', '/home/koh/repo/notes/summary.md'].join('\n')
+    })
+    const docs = t.make()
+    await docs.turnEnded('t1', turn('Done.'))
+    expect(docs.of('s1')).toEqual({ [written]: { show: true, at: expect.any(Number) } })
+  })
+
+  it('writes nothing for a session archived while Assist was still answering', async () => {
+    const t = setup({
+      files: [wrote(path.join(dir, 'a.md'), TURN_START + 1)],
+      answer: path.join(dir, 'a.md'),
+      duringAssist: (docs) => docs.forget('s1')
+    })
+    const docs = t.make()
+    await docs.turnEnded('t1', turn('Wrote a.md'))
+    expect(docs.of('s1')).toBeUndefined()
+    expect(fs.existsSync(path.join(dir, 'doc-verdicts.json'))).toBe(false)
   })
 
   it('records nothing when Assist is off or fails, so the docs fall back to the rule', async () => {
