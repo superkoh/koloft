@@ -151,8 +151,7 @@ export function UpdateModal(): JSX.Element | null {
                 )}
               </div>
               <div className="update-hint">
-                Koloft downloads the new version, replaces itself, and relaunches. It’s unsigned, so
-                this is a direct in-app update — no App Store, no Gatekeeper prompt.
+                Koloft downloads the new version, replaces itself, and relaunches.
               </div>
             </>
           )}

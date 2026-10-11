@@ -76,7 +76,7 @@ shell.
   preview, an agent's `open <url>` and the agent-driven browser do not reach the
   Workbench, and the session cannot be renamed from Koloft.
 - **Stays current** — `Koloft ▸ Check for Updates…` downloads and swaps the app bundle
-  without a signed installer; a banner in the sidebar says when a newer one is out.
+  in place; a banner in the sidebar says when a newer one is out.
 - **Smaller things** — a first-run walkthrough and a handful of tips that appear the
   first time each situation comes up (both re-openable from `Settings ▸ Welcome`), a
   `Settings ▸ Shortcuts` page listing every key and what it does where the caret is,
@@ -84,20 +84,17 @@ shell.
 
 ## Install (macOS, Apple Silicon)
 
+Download the `.dmg` from
+[Releases](https://github.com/superkoh/koloft-releases/releases), open it, and drag Koloft
+to Applications. The app is signed with an Apple Developer ID and notarized by Apple, so
+it opens with a normal double-click.
+
+Or in one line from the terminal, which fetches the latest dmg and copies `Koloft.app`
+into `/Applications`:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/superkoh/koloft-releases/main/install.sh | bash
 ```
-
-Koloft ships **unsigned** — signing and notarizing needs a paid Apple Developer ID,
-which this project does not have — so a *browser* download of the `.dmg` gets
-quarantined and Gatekeeper blocks it ("damaged" / "unidentified developer"). The
-installer sidesteps that for free: `curl` applies no quarantine attribute, so it
-fetches the latest release dmg, copies `Koloft.app` into `/Applications`, and the app
-then launches with a normal double-click — no paid Apple Developer ID, no prompt.
-
-Prefer the `.dmg` by hand? Download it from
-[Releases](https://github.com/superkoh/koloft-releases/releases), drag to Applications, then
-clear the quarantine flag once: `xattr -dr com.apple.quarantine /Applications/Koloft.app`.
 
 ## How it works
 
@@ -201,22 +198,21 @@ under — is in [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Packaging (macOS, arm64)
 
 ```bash
-npm run dist:mac    # electron-builder -> release/Koloft-<ver>-arm64.dmg + .zip (normal machines)
-npm run dist:dmg    # builds the .app, then makes the dmg via `hdiutil makehybrid`
+npm run dist:dmg    # the release build: signed, notarized .app and .dmg
+npm run dist:mac    # unsigned electron-builder dmg + zip, for a local try-out
 ```
 
-`dist:dmg` is the portable path: it builds the unpacked `.app` and assembles the DMG with
-`hdiutil makehybrid`, which never needs a writable image mount — so it also works in
-sandboxed/CI environments where `electron-builder`'s own dmg step (and read-write image
-mounts) are blocked. Output: `release/Koloft-<version>-arm64.dmg` (drag-to-Applications layout).
+`dist:dmg` is the one that ships. It needs, on the machine that runs it:
 
-The build is **unsigned**. An unsigned app launches fine as long as it
-isn't *quarantined* — and the `curl … | install.sh` one-liner above downloads with
-`curl`, which never sets the quarantine attribute, so the app just works. A *browser*
-download does get quarantined and Gatekeeper then blocks it as "damaged"; clear it with
-`xattr -dr com.apple.quarantine /Applications/Koloft.app` (on macOS Sequoia the old
-right-click → Open bypass is gone). For a true zero-friction double-click install, add an
-Apple Developer ID identity to `electron-builder.yml` and a notarization step (paid).
+- a `Developer ID Application` identity in the login keychain
+  (`security find-identity -v -p codesigning` lists it), and
+- notarization credentials saved under the profile name `koloft`:
+  `xcrun notarytool store-credentials koloft --apple-id <id> --team-id <team> --password <app-specific password>`.
+
+It signs the `.app` with the hardened runtime, has Apple notarize it, then builds
+`release/Koloft-<version>-arm64.dmg` (drag-to-Applications layout) and signs, notarizes
+and staples that too. Without the identity it stops with an error instead of shipping an
+unsigned build.
 
 ## Configuration
 

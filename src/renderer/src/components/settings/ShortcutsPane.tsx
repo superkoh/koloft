@@ -77,6 +77,16 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
         ]
       },
       {
+        keys: ['⌘J'],
+        name: 'Next waiting session',
+        uses: [
+          {
+            what: 'Shows the session that has waited longest for you, in any workspace, and clears its red dot.'
+          },
+          { where: 'Nothing waiting', what: 'Nothing.' }
+        ]
+      },
+      {
         keys: ['⌥⌘F'],
         name: 'Search sessions',
         uses: [

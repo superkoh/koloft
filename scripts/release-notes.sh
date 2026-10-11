@@ -1,6 +1,6 @@
 #!/bin/bash
 # Compose the GitHub Release notes for Koloft v<version>: this version's changelog, then the
-# (unchanged) unsigned-install instructions behind an install marker.
+# (unchanged) install instructions behind an install marker.
 #
 # The in-app updater renders ONLY what precedes `<!-- koloft:install -->` — the modal's reader
 # is mid-self-update and doesn't need install steps — while a GitHub web visitor still gets
@@ -83,17 +83,12 @@ fi
 # the body off here. Quoted heredoc: the install text is data, expanded by nothing.
 cat <<'EOF'
 <!-- koloft:install -->
-**The build is unsigned (macOS arm64).** The easiest way to install: a curl
-download gets no quarantine flag, so it opens with a double-click, no Gatekeeper steps at all:
+**macOS arm64, signed and notarized by Apple.** Download the dmg below, open it, and drag
+Koloft into Applications.
+
+Or install from the terminal in one line:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/superkoh/koloft-releases/main/install.sh | bash
-```
-
-Or download the dmg below yourself, drag it into Applications, and when Gatekeeper blocks the first open,
-remove the quarantine flag (macOS Sequoia dropped the old right-click → Open trick):
-
-```bash
-xattr -dr com.apple.quarantine /Applications/Koloft.app
 ```
 EOF

@@ -6,6 +6,7 @@ import type {
   BackendSessionRow,
   CreateTabOptions,
   CreateTabResult,
+  DocVerdict,
   ResumePlan,
   SessionInfo,
   SessionResumeRequest,
@@ -64,6 +65,7 @@ export class SessionBackends {
   conductorOf: (tabOrSessionId: string) => string | undefined = () => undefined
   conductorWorkspaceOf: (tabId: string) => string | undefined = () => undefined
   turnOver: (tabId: string) => boolean = () => false
+  docVerdictsOf: (sessionId: string) => Record<string, DocVerdict> | undefined = () => undefined
 
   constructor(private lifecycle: SessionLifecycle) {}
 
@@ -149,7 +151,8 @@ export class SessionBackends {
         host: s.remote ? 'ssh' : 'local',
         nativeSessionId: s.nativeSessionId ?? s.sessionId,
         conductor: this.conductorOf(s.tabId) ?? this.conductorOf(s.sessionId),
-        turnOver: this.turnOver(s.tabId)
+        turnOver: this.turnOver(s.tabId),
+        docVerdicts: s.sessionId ? this.docVerdictsOf(s.sessionId) : undefined
       }))
     )
   }

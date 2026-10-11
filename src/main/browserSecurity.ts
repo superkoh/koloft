@@ -125,6 +125,7 @@ export interface GuestAttachPrefs {
   webSecurity?: boolean
   disablePopups?: boolean
   autoplayPolicy?: string
+  nodeIntegrationInSubFrames?: boolean
 }
 
 export function enforceGuestAttach(
@@ -141,6 +142,8 @@ export function enforceGuestAttach(
   const browserGuest = params.partition === BROWSER_PARTITION
   // PLATFORM§8
   prefs.disablePopups = !browserGuest
+  // PLATFORM§14
+  prefs.nodeIntegrationInSubFrames = browserGuest
   return browserGuest || (params.src ?? '').toLowerCase().startsWith('koloft-file://')
 }
 

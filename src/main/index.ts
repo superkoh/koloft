@@ -345,6 +345,7 @@ import {
 } from './agentSessions'
 import { writeLine } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
+import { ReaderDocs } from './readerDocs'
 import { koloftAssist } from './assist'
 import { closingTree, removeTree, whatIsLeft } from './sessionClose'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
@@ -379,8 +380,16 @@ let codexStartupError: string | undefined
 const startedSessions = new StartedSessions(() =>
   path.join(app.getPath('userData'), 'started-sessions.json')
 )
+const readerDocs = new ReaderDocs({
+  file: () => path.join(app.getPath('userData'), 'doc-verdicts.json'),
+  assist: (job) => assist(job),
+  session: sessionOfTab,
+  remoteFileExists: (host, keyed) => hosts.machine(host).fileExists(keyed),
+  changed: () => sendToRenderer('sessions:update', onSessionsChanged())
+})
 const sessionBackends = new SessionBackends({
   turnEnded: (tabId, turn) => {
+    void readerDocs.turnEnded(tabId, turn)
     slash.turnEnded(tabId, turn)
     discordRelay?.turnEnded(tabId, turn)
     discordNotices?.turnEnded(tabId, turn.reply)
@@ -406,6 +415,7 @@ const sessionBackends = new SessionBackends({
 sessionBackends.conductorOf = (id) => conductors?.conductorOf(id)
 sessionBackends.conductorWorkspaceOf = (tabId) => conductors?.workspaceOfTab(tabId)
 sessionBackends.turnOver = (tabId) => tracker.turnOver(tabId)
+sessionBackends.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
 function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
@@ -975,27 +985,29 @@ const notesAndWorkbenchVerbs = workbenchVerbs({
   }
 })
 
+const assist = koloftAssist({
+  setting: () => loadSettings().assist,
+  claude: async () => {
+    const env = await pickedAccountEnv()
+    if (!env) return null
+    return { binary: ptyMgr.shimDir ? path.join(ptyMgr.shimDir, 'claude') : 'claude', env }
+  },
+  codex: async () => {
+    const picked = pickCodexHome()
+    if (!picked || !codexSessions || !(await codexSessions.availability()).available) return null
+    const binary = codexSessions.cliBinary
+    if (!binary) return null
+    return { binary, env: { ...codexSessions.defaultEnv, CODEX_HOME: picked.home } }
+  }
+})
+
 const sessionDeps: SessionVerbDeps = {
   workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
   allSessions: () => allSessions().filter((s) => !s.conductor),
   pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
   peerNames: () => claudePeerNames(),
   launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
-  assist: koloftAssist({
-    setting: () => loadSettings().assist,
-    claude: async () => {
-      const env = await pickedAccountEnv()
-      if (!env) return null
-      return { binary: ptyMgr.shimDir ? path.join(ptyMgr.shimDir, 'claude') : 'claude', env }
-    },
-    codex: async () => {
-      const picked = pickCodexHome()
-      if (!picked || !codexSessions || !(await codexSessions.availability()).available) return null
-      const binary = codexSessions.cliBinary
-      if (!binary) return null
-      return { binary, env: { ...codexSessions.defaultEnv, CODEX_HOME: picked.home } }
-    }
-  }),
+  assist,
   queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
   startedSessions,
   closable: closableSessions,
@@ -1008,7 +1020,7 @@ const sessionDeps: SessionVerbDeps = {
   touch: (tabId, key) => conductors?.touch(tabId, key),
   conductorOf: conductorTarget,
   resume: async (row) => {
-    const resumed = await resumeRow(row)
+    const resumed = await resumeRow(row, { rebuildGoneWorktree: true })
     if (!resumed.ok) throw new Error(resumed.error)
     return resumed.tabId
   },
@@ -2969,7 +2981,8 @@ function setupBrowserPartition(): void {
     return ses.fetch(request, { bypassCustomProtocolHandlers: true })
   })
   const guestUA = standardUserAgent(app.userAgentFallback, app.getName())
-  ses.setUserAgent(guestUA)
+  // PLATFORM§14
+  ses.setUserAgent(guestUA, app.getPreferredSystemLanguages().join(','))
   // PLATFORM§14
   app.userAgentFallback = guestUA
   const guestHints = chromeClientHints(guestUA)
@@ -3156,6 +3169,7 @@ function archiveSession(id: string): boolean {
   if (archived) {
     attention.clearSession(id)
     startedSessions.forget(id)
+    readerDocs.forget(id)
   }
   return archived
 }
@@ -3309,7 +3323,10 @@ async function resumeAwake(ids: string[], active: string | undefined): Promise<v
   const resumeOne = async (id: string): Promise<void> => {
     const row = rows.find((r) => r.id === id)
     const resumed = row
-      ? await resumeRow(row).catch(() => ({ ok: false as const, error: couldNotStart(row.title) }))
+      ? await resumeRow(row, { rebuildGoneWorktree: false }).catch(() => ({
+          ok: false as const,
+          error: couldNotStart(row.title)
+        }))
       : undefined
     if (!resumed?.ok) {
       if (resumed) sendToRenderer('cron:toast', resumed.error)
@@ -3327,11 +3344,12 @@ function couldNotStart(title: string): string {
 
 // CC§11
 async function resumeRow(
-  row: SessionRow
+  row: SessionRow,
+  { rebuildGoneWorktree }: { rebuildGoneWorktree: boolean }
 ): Promise<{ ok: true; tabId: string } | { ok: false; error: string }> {
   const backend = sessionBackends.forSession(row.id)
   const plan = await backend.resumePlan(row.id)
-  if (plan.action === 'dialog' || plan.action === 'rebuild') {
+  if (plan.action === 'dialog' || (plan.action === 'rebuild' && !rebuildGoneWorktree)) {
     return {
       ok: false,
       error: `“${row.title}” needs you — its worktree changed. Click it to resume.`
@@ -3346,7 +3364,11 @@ async function resumeRow(
           : `Could not start “${row.title}” — its folder is gone.`
     }
   }
-  const res = await backend.resume({ sessionId: row.id, cwd: plan.cwd, mode: 'direct' })
+  const res = await backend.resume({
+    sessionId: row.id,
+    cwd: plan.action === 'rebuild' ? plan.resumeCwd : plan.cwd,
+    mode: plan.action
+  })
   if (!res.ok) return { ok: false, error: couldNotStart(row.title) }
   const spawned: SpawnedTab = {
     id: res.id,

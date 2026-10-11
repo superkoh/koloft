@@ -267,7 +267,8 @@ describe('enforceGuestAttach (SEC-5/SEC-6: what a <webview> may attach as)', () 
       contextIsolation: true,
       webSecurity: true,
       autoplayPolicy: 'document-user-activation-required',
-      disablePopups: false
+      disablePopups: false,
+      nodeIntegrationInSubFrames: true
     })
   })
 
@@ -316,8 +317,15 @@ describe('enforceGuestAttach (SEC-5/SEC-6: what a <webview> may attach as)', () 
     expect(enforceGuestAttach({}, { src: 'https://evil.test/' }, HOST_PRELOAD)).toBe(false)
   })
 
+  // PLATFORM§14
+  it('runs the guest preload in a web page’s cross-site iframes too, so a captcha frame passes as Chrome', () => {
+    const prefs: GuestAttachPrefs = {}
+    enforceGuestAttach(prefs, browserParams(), HOST_PRELOAD)
+    expect(prefs.nodeIntegrationInSubFrames).toBe(true)
+  })
+
   it("admits Preview's own koloft-file:// viewer, with popups still off (D6)", () => {
-    const prefs: GuestAttachPrefs = { nodeIntegration: true }
+    const prefs: GuestAttachPrefs = { nodeIntegration: true, nodeIntegrationInSubFrames: true }
     expect(
       enforceGuestAttach(
         prefs,
@@ -327,6 +335,7 @@ describe('enforceGuestAttach (SEC-5/SEC-6: what a <webview> may attach as)', () 
     ).toBe(true)
     expect(prefs.nodeIntegration).toBe(false)
     expect(prefs.disablePopups).toBe(true)
+    expect(prefs.nodeIntegrationInSubFrames).toBe(false)
   })
 
   it('is not fooled by a scheme that merely starts like the viewer one', () => {

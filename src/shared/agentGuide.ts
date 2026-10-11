@@ -189,7 +189,7 @@ koloft gh ${GH_ISSUE_CREATE_TEXT}
 
 WEB PAGES
 
-To use the web pages in this session's Workbench, drive them with Playwright (a tool that controls a browser): the playwright-cli command or the Playwright MCP tools. When the owner allows it, they already connect to the Workbench browser; its address is in $KOLOFT_BROWSER_CDP. In a Codex session only the Playwright MCP tools connect: a command in Codex's sandbox cannot reach the browser.`
+To use the web pages in this session's Workbench, drive them with Playwright (a tool that controls a browser): the playwright-cli command or the Playwright MCP tools. In a session on this computer, when the owner allows it, they already connect to the Workbench browser; its address is in $KOLOFT_BROWSER_CDP. In a Codex session only the Playwright MCP tools connect: a command in Codex's sandbox cannot reach the browser.`
 
 export const AGENT_SKILL_DESCRIPTION =
   'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the workspace note, list, add, change or run scheduled tasks, list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, or close this session and its worktree for good. Read this before running any koloft command.'

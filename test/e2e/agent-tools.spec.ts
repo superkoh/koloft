@@ -7,6 +7,8 @@ import { runGit, setupGitFixture } from './helpers/gitFixture'
 import { installStallingGit } from './helpers/gitSpawnLog'
 import {
   centerTerm,
+  chooseBackend,
+  gitInit,
   newSessionInWith,
   openMenu,
   openSessionTerminal,
@@ -253,6 +255,53 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
         await quitAndClose(app)
       }
     })
+
+  test('a codex child reports to the codex worktree session that started it after that session’s tab was closed and its untouched worktree went with it: koloft session send makes the worktree again in place and delivers the report', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    installCodex(env)
+    gitInit(env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const dlg = await openWorktreeSession(page, 'ws-a')
+      await dlg.locator('input').fill('reports-here')
+      await chooseBackend(page, 'other')
+      const parentRow = wsRows(page, 'ws-a').first()
+      await expect(parentRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const parentTab = (await parentRow.getAttribute('data-tab-id'))!
+      const parent = (await page.evaluate(() => window.api.sessions.list())).find(
+        (s) => s.tabId === parentTab
+      )!
+      const parentId = parent.nativeSessionId ?? parent.sessionId
+      const tree = parent.cwd
+      expect(tree).not.toBe(env.workspaces.a)
+
+      expect(await koloftInSession(page, 'session new -- report back when done')).toBe('0')
+      const kidRow = wsGroup(page, 'ws-a').locator(
+        `.ws-tab[data-tab-id="${parentTab}"] + .ws-subtabs > .ws-tab`
+      )
+      await expect(kidRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const kidTab = (await kidRow.getAttribute('data-tab-id'))!
+
+      await page.evaluate((tab) => window.api.terminal.kill(tab), parentTab)
+      await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+      await page.evaluate(
+        ([tab, line]) => window.api.terminal.write(tab, line + '\r'),
+        [kidTab, `/koloft session send ${parentId} all done`]
+      )
+      const wire = path.join(env.home, 'fake-codex-wire.jsonl')
+      await expect
+        .poll(() => fs.readFileSync(wire, 'utf8'), { timeout: 60_000 })
+        .toMatch(/\(From the session \\".+\\", id \S+:\) all done/)
+      expect(fs.existsSync(tree)).toBe(true)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
 
   test('koloft session new --workspace starts the sibling in another sidebar workspace, as a top-level row there', async ({
     page,
