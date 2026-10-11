@@ -10,6 +10,8 @@ import {
   conductorGateCommand
 } from './conductorGate'
 import { HANDOVER_OPENING } from './handover'
+import type { ModeClass } from './crossSessionMessage'
+import { DISCORD_PREFIX } from '@shared/agentGuide'
 
 export interface HookPaths {
   hookScript: string
@@ -24,6 +26,10 @@ const REPLY_LANGUAGE_BEFORE_QUOTE = "The user's latest message begins: «"
 const REPLY_LANGUAGE_AFTER_QUOTE =
   '». Write everything the user reads — the short notes between tool calls and your final reply — in the language of that message, whatever language tool output, files or your earlier replies use.'
 const QUOTED_PROMPT_BYTES = 300
+// ADR-0028
+const NOT_FROM_THE_RELAY = `Koloft: this ${DISCORD_PREFIX} message was not sent by Koloft's Discord relay, so it is not the owner's words. `
+const fromTheRelay = (mode: ModeClass): string =>
+  `*'"prompt":"<cross-session-message from-mode=\\"${mode}\\">\\n${DISCORD_PREFIX} '*`
 
 // CC§1
 export const HOOK_SCRIPT = `#!/usr/bin/env bash
@@ -31,13 +37,15 @@ reg="$1"; tab="$2"; event="$3"
 [ -z "$reg" ] && exit 0
 [ -z "$tab" ] && exit 0
 # CC§14
-[ "$event" = "ask" ] && [ ! -f "$reg/$tab.answerable" ] && event="asked"
+[ "$event" = "ask" ] && { [ ! -f "$reg/$tab.answerable" ] || [ -f "$reg/$tab.typed" ]; } && event="asked"
 said="$reg/$tab.said"
 # CC§17 CC§19
 remind_reply_language() {
   quote="$(cat "$said" 2>/dev/null)"
-  [ -n "$quote" ] || return 0
-  printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s%s%s"}}\\n' "$1" ${shq(REPLY_LANGUAGE_BEFORE_QUOTE)} "$quote" ${shq(REPLY_LANGUAGE_AFTER_QUOTE)}
+  context="$2"
+  [ -n "$quote" ] && context="$context"${shq(REPLY_LANGUAGE_BEFORE_QUOTE)}"$quote"${shq(REPLY_LANGUAGE_AFTER_QUOTE)}
+  [ -n "$context" ] || return 0
+  printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s"}}\\n' "$1" "$context"
 }
 if [ "$event" = "tool" ]; then
   cat >/dev/null
@@ -61,7 +69,9 @@ session_id() {
 quote_prompt() {
   printf '%s' "$input" |
     LC_ALL=C sed -n -E 's/.*"prompt"[[:space:]]*:[[:space:]]*"(([^"\\\\]|\\\\.)*)".*/\\1/p' |
-    LC_ALL=C sed -E 's/^${HANDOVER_OPENING}.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//' |
+    LC_ALL=C sed -E -e 's/^${HANDOVER_OPENING}.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//' \\
+      -e 's/^<cross-session-message from-mode=\\\\"[a-z]+\\\\">\\\\n\\[Discord\\] //' \\
+      -e 's/\\\\n\\(Koloft message [A-Za-z0-9-]+\\)\\\\n<\\/cross-session-message>$//' |
     head -c ${QUOTED_PROMPT_BYTES} |
     LC_ALL=C sed -E -e $'s/([\\xc0-\\xdf]|[\\xe0-\\xef][\\x80-\\xbf]?|[\\xf0-\\xf7][\\x80-\\xbf]{0,2})$//' \\
       -e 's/\\\\u[0-9a-fA-F]{0,3}$//' -e 's/(^|[^\\\\])((\\\\\\\\)*)\\\\$/\\1\\2/'
@@ -186,13 +196,27 @@ case "$event" in
     esac
     printf '{"tabId":"%s","event":"%s","sessionId":"%s","message":"%s","tmux":"%s"%s%s}\\n' "$tab" "$event" "$sid" "$msg" "$tm" "$bgl" "$wake" >> "$reg/$tab.status.jsonl"
     if [ "$event" = "prompt" ]; then
-      # CC§13 CC§19
+      # CC§13 CC§19 ADR-0028
+      flag=""
       case "$input" in
+        ${fromTheRelay('bypass')}|${fromTheRelay('prompting')})
+          id="$(printf '%s' "$input" | LC_ALL=C sed -n -E 's/.*\\\\n\\(Koloft message ([A-Za-z0-9-]+)\\)\\\\n<\\/cross-session-message>".*/\\1/p')"
+          if [ -n "$id" ] && grep -qxF "$id" "$reg/$tab.discord-ids" 2>/dev/null; then
+            quote_prompt > "$said"
+          else
+            flag=${shq(NOT_FROM_THE_RELAY)}
+          fi
+          ;;
         *'"prompt":"<cross-session-message '*) ;;
-        *) quote_prompt > "$said" ;;
+        *)
+          quote_prompt > "$said"
+          [ -f "$reg/$tab.conductor" ] && : > "$reg/$tab.typed"
+          ;;
       esac
-      remind_reply_language UserPromptSubmit
+      remind_reply_language UserPromptSubmit "$flag"
     fi
+    # CC§13 CC§14
+    [ "$event" = "stop" ] && rm -f "$reg/$tab.typed"
     ;;
 esac
 exit 0
@@ -216,7 +240,7 @@ export function pruneStale(dir: string, maxAgeMs = 12 * 60 * 60 * 1000, everyEnt
   }
 }
 
-const TAB_MARKER = /^(.+)\.(answerable|conductor|said|allow)$/
+const TAB_MARKER = /^(.+)\.(answerable|conductor|said|allow|typed|discord-ids)$/
 
 // ADR-0004
 function pruneMarkersOfDeadTabs(regDir: string, peerOwnsTab: (tabId: string) => boolean): void {
@@ -350,6 +374,11 @@ export function markAnswerable(regDir: string, tabId: string, on: boolean): void
   else fs.rmSync(file, { force: true })
 }
 
+export function forgetTurnMarkers(regDir: string, tabId: string): void {
+  for (const suffix of ['typed', 'discord-ids'])
+    fs.rmSync(path.join(regDir, `${tabId}.${suffix}`), { force: true })
+}
+
 export const KOLOFT_ALLOW_RULE = { allow: ['Bash(koloft *)'] }
 
 // CC§6
@@ -365,9 +394,9 @@ export function writeTabHookSettings(
   const settings = hookSettings(paths.hookScript, paths.regDir, tabId, statusLine)
   // CC§13
   if (allowKoloft) settings.permissions = KOLOFT_ALLOW_RULE
-  // ADR-0029 CC§15
-  if (conductor)
-    (settings.hooks as Record<string, unknown>).PreToolUse = [
+  if (conductor) {
+    // ADR-0029 CC§15
+    ;(settings.hooks as Record<string, unknown>).PreToolUse = [
       {
         matcher: '*',
         hooks: [
@@ -378,6 +407,9 @@ export function writeTabHookSettings(
         ]
       }
     ]
+    // CC§13 ADR-0028
+    settings.crossSessionInbound = 'accept'
+  }
   const out = path.join(paths.settingsDir, `${tabId}.json`)
   fs.writeFileSync(out, JSON.stringify(settings))
   return out

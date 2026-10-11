@@ -161,8 +161,8 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
     try {
       fake.say(OWNER, 'hello')
       await expect
-        .poll(() => said(fake), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-        .toContain('Answer to: [Discord] hello')
+        .poll(() => said(fake).join('\n'), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('[Discord] hello')
       const before = assistRecordOnDisk(env)?.lastSessionKey
       expect(before).toBeTruthy()
 
