@@ -797,7 +797,10 @@ export function WorkspaceSidebar({
                             ? ' — worktree deleted; click to rebuild and resume'
                             : ' — click to resume')
                     }
-                    onClick={() => openSessionRow(row, ws.path)}
+                    onClick={() => {
+                      clearTimers()
+                      openSessionRow(row, ws.path)
+                    }}
                     onContextMenu={(e) => openMenuNow(e, rowTarget)}
                     onMouseEnter={(e) => {
                       armHoverMenu(e, rowTarget)
