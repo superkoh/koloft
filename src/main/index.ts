@@ -345,6 +345,7 @@ import {
 } from './agentSessions'
 import { writeLine } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
+import { ReaderDocs } from './readerDocs'
 import { koloftAssist } from './assist'
 import { closingTree, removeTree, whatIsLeft } from './sessionClose'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
@@ -379,8 +380,19 @@ let codexStartupError: string | undefined
 const startedSessions = new StartedSessions(() =>
   path.join(app.getPath('userData'), 'started-sessions.json')
 )
+const readerDocs = new ReaderDocs({
+  file: () => path.join(app.getPath('userData'), 'doc-verdicts.json'),
+  assist: (job) => assist(job),
+  session: (tabId) => allSessions().find((s) => s.tabId === tabId),
+  remoteFileExists: (keyed) => {
+    const remote = parseRemoteKey(keyed)
+    return remote ? hosts.machine(remote.host).fileExists(keyed) : Promise.resolve(false)
+  },
+  changed: () => sendToRenderer('sessions:update', onSessionsChanged())
+})
 const sessionBackends = new SessionBackends({
   turnEnded: (tabId, turn) => {
+    void readerDocs.turnEnded(tabId, turn)
     slash.turnEnded(tabId, turn)
     discordRelay?.turnEnded(tabId, turn)
     discordNotices?.turnEnded(tabId, turn.reply)
@@ -406,6 +418,7 @@ const sessionBackends = new SessionBackends({
 sessionBackends.conductorOf = (id) => conductors?.conductorOf(id)
 sessionBackends.conductorWorkspaceOf = (tabId) => conductors?.workspaceOfTab(tabId)
 sessionBackends.turnOver = (tabId) => tracker.turnOver(tabId)
+sessionBackends.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
 function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
@@ -975,27 +988,29 @@ const notesAndWorkbenchVerbs = workbenchVerbs({
   }
 })
 
+const assist = koloftAssist({
+  setting: () => loadSettings().assist,
+  claude: async () => {
+    const env = await pickedAccountEnv()
+    if (!env) return null
+    return { binary: ptyMgr.shimDir ? path.join(ptyMgr.shimDir, 'claude') : 'claude', env }
+  },
+  codex: async () => {
+    const picked = pickCodexHome()
+    if (!picked || !codexSessions || !(await codexSessions.availability()).available) return null
+    const binary = codexSessions.cliBinary
+    if (!binary) return null
+    return { binary, env: { ...codexSessions.defaultEnv, CODEX_HOME: picked.home } }
+  }
+})
+
 const sessionDeps: SessionVerbDeps = {
   workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
   allSessions: () => allSessions().filter((s) => !s.conductor),
   pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
   peerNames: () => claudePeerNames(),
   launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
-  assist: koloftAssist({
-    setting: () => loadSettings().assist,
-    claude: async () => {
-      const env = await pickedAccountEnv()
-      if (!env) return null
-      return { binary: ptyMgr.shimDir ? path.join(ptyMgr.shimDir, 'claude') : 'claude', env }
-    },
-    codex: async () => {
-      const picked = pickCodexHome()
-      if (!picked || !codexSessions || !(await codexSessions.availability()).available) return null
-      const binary = codexSessions.cliBinary
-      if (!binary) return null
-      return { binary, env: { ...codexSessions.defaultEnv, CODEX_HOME: picked.home } }
-    }
-  }),
+  assist,
   queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
   startedSessions,
   closable: closableSessions,
@@ -3156,6 +3171,7 @@ function archiveSession(id: string): boolean {
   if (archived) {
     attention.clearSession(id)
     startedSessions.forget(id)
+    readerDocs.forget(id)
   }
   return archived
 }

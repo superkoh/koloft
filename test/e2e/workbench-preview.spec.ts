@@ -174,3 +174,86 @@ test.describe('Workbench preview: the card beside the terminal while the Workben
     }
   })
 })
+
+test.describe('Workbench preview: Assist picks the docs that are for the reader', () => {
+  test('WB-P05: a draft the agent wrote to post elsewhere leaves the list, and a doc it only pointed to joins it', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    setupChangeFixture(env.workspaces.a)
+    const madeByAShell = path.join(env.workspaces.a, 'out', 'summary.md')
+    const { app, page } = await launchCollapsed(env)
+    try {
+      await startSessionIn(page, 'ws-a')
+      await expect.poll(() => docNames(page)).toEqual([CANNED_STARTUP_TURN_WRITES])
+      await runIn(page, centerTerm(page), '/write docs/draft-pr-body.md')
+      await runIn(page, centerTerm(page), '/write docs/plan.md')
+      await expect
+        .poll(() => docNames(page), { timeout: 30_000 })
+        .toEqual(['plan.md', CANNED_STARTUP_TURN_WRITES])
+
+      fs.mkdirSync(path.dirname(madeByAShell), { recursive: true })
+      fs.writeFileSync(madeByAShell, '# summary\n')
+      await runIn(page, centerTerm(page), `/answer see ${madeByAShell}`)
+      await expect
+        .poll(() => docNames(page), { timeout: 30_000 })
+        .toEqual(['summary.md', 'plan.md', CANNED_STARTUP_TURN_WRITES])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('WB-P06: a Codex session lists a doc its reply pointed to', async ({ env }) => {
+    test.setTimeout(180_000)
+    setupChangeFixture(env.workspaces.a)
+    installCodex(env)
+    const madeByAShell = path.join(env.workspaces.a, 'out', 'summary.md')
+    fs.mkdirSync(path.dirname(madeByAShell), { recursive: true })
+    fs.writeFileSync(madeByAShell, '# summary\n')
+    const { app, page } = await launchCollapsed(env)
+    try {
+      await newSessionInWith(page, 'ws-a', 'Codex')
+      await waitPanelAttached(page)
+      await runIn(page, centerTerm(page), `see ${madeByAShell}`)
+      await expect.poll(() => docNames(page), { timeout: 30_000 }).toEqual(['summary.md'])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('WB-P07: a remote (ssh) session drops a draft and lists a doc on the machine its reply pointed to', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    collapsedWithoutTips(env)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      const dir = remoteDir(env)
+      fs.writeFileSync(path.join(dir, '.gitignore'), 'NOTES.md\n')
+      gitInit(dir)
+      gitCommitAll(dir)
+      fs.mkdirSync(path.join(dir, 'notes'))
+      fs.writeFileSync(path.join(dir, 'notes', 'summary.md'), '# summary\n')
+
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      await wsRows(page, REMOTE_WS_NAME).first().click()
+      await waitPanelAttached(page)
+      await runIn(page, centerTerm(page), '/write draft-pr-body.md')
+      await runIn(page, centerTerm(page), '/write mock.html')
+      await expect(docRows(page).filter({ hasText: 'mock.html' })).toHaveCount(1, {
+        timeout: 60_000
+      })
+      await expect.poll(() => docNames(page), { timeout: 60_000 }).not.toContain('draft-pr-body.md')
+
+      await runIn(page, centerTerm(page), `/answer see ${dir}/notes/summary.md`)
+      await expect(docRows(page).filter({ hasText: 'summary.md' })).toHaveAttribute(
+        'data-path',
+        `${remoteKey(env)}/notes/summary.md`,
+        { timeout: 60_000 }
+      )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+})

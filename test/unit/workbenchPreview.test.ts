@@ -78,6 +78,32 @@ describe('Workbench preview card: the docs it lists', () => {
     ])
   })
 
+  it('follows Assist: drops a written doc it judged not for the reader, adds one it pointed to that no tool wrote, and leaves unjudged docs, pages and opened files alone', () => {
+    const docs = previewDocs({
+      files: [
+        wrote('/tmp/pad/pr-body.md', 100),
+        wrote('/repo/docs/report.md', 200),
+        wrote('/repo/docs/older.md', 50)
+      ],
+      verdicts: {
+        '/tmp/pad/pr-body.md': { show: false, at: 300 },
+        '/repo/docs/report.md': { show: true, at: 300 },
+        '/repo/out/summary.md': { show: true, at: 300 },
+        '/repo/docs/guide.md': { show: false, at: 300 },
+        '/tmp/scratch/mock.html': { show: false, at: 300 }
+      },
+      webTabs: [webTab('file:///tmp/scratch/mock.html', 400)],
+      openFile: { src: '/repo/docs/guide.md', openedAt: 500 }
+    })
+    expect(docs.map((d) => [d.src, d.at])).toEqual([
+      ['/repo/docs/guide.md', 500],
+      ['/tmp/scratch/mock.html', 400],
+      ['/repo/out/summary.md', 300],
+      ['/repo/docs/report.md', 200],
+      ['/repo/docs/older.md', 50]
+    ])
+  })
+
   it('leaves out a file the user opened in Browse themselves, and a page the user opened', () => {
     const docs = previewDocs({
       files: [],
