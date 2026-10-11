@@ -68,7 +68,7 @@ Reply with one JSON object and nothing else:
               or {"issue": <number>} when the message names an issue number,
               or {"new": "<short kebab-case English name, at most 30 chars, not a listed one>"}>,
  "title": <a very short title in the language of the message, at most 16 Chinese characters or 6 words>,
- "sure": <false when two workspaces fit about equally well>,
+ "sure": <true only when the message names one workspace or clearly points to exactly one (by its folder name, what it is about, or one of its recent session titles); false when it could fit more than one, like "fix the tests" or "tidy the README">,
  "why": <one short sentence in the language of the message>}
 Use a new worktree for a change to the code; use "main" for releasing, reading, asking or investigating without changing code.`
   return { system: ROUTE_SYSTEM, prompt }

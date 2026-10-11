@@ -2229,7 +2229,6 @@ body {
 }
 .wsp-list .cb-row:hover,
 .pal-results .cb-row:hover {
-  background: var(--bg-3);
   color: var(--fg);
 }
 .wsp-num {
@@ -2238,6 +2237,8 @@ body {
   color: var(--fg-faint);
 }
 .wsp-name {
+  flex-shrink: 0;
+  max-width: 60%;
   overflow: hidden;
   text-overflow: ellipsis;
 }
