@@ -735,13 +735,14 @@
       <h2>The four kinds of session tab</h2>
       <ul>
         <li>
-          <strong>Claude Code, local</strong> - root pid is the pty's process, which is
-          <code>claude</code> itself (Koloft spawns it directly). Same as shown above.
+          <strong>Claude Code, local</strong> - roots are the pty's process (a login shell that
+          <code>exec</code>s <code>claude</code>, so it is <code>claude</code> once launched) and
+          every Workbench terminal this tab owns. Same as shown above.
         </li>
         <li>
-          <strong>Codex, local</strong> - root pid is this tab's own <code>codex app-server</code>
-          (one per tab, not shared; that the TUI in the pty runs no commands itself is inferred, not
-          checked). Same menu, same rows.
+          <strong>Codex, local</strong> - roots are this tab's own
+          <code>codex app-server</code> (one per tab, not shared; model commands run under it,
+          CODEX§10) and the tab's Workbench terminals. Same menu, same rows.
         </li>
         <li>
           <strong>Claude Code, remote (ssh)</strong> - left out: the processes live on the other
