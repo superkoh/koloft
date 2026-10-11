@@ -133,6 +133,11 @@ export function localHost(github: GithubLookup): Host {
   return {
     listDir,
     dirExists,
+    makeDir: (dir) =>
+      fs.promises.mkdir(dir).then(
+        () => true,
+        () => false
+      ),
     search,
     searchContent,
     diffBase,

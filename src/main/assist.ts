@@ -5,6 +5,7 @@ import type { AssistSetting } from '@shared/types'
 export interface AssistJob {
   system: string
   prompt: string
+  signal?: AbortSignal
 }
 
 export type Assist = (job: AssistJob) => Promise<string | null>
@@ -55,12 +56,17 @@ export interface AssistDeps {
   codex(): Promise<AssistTarget | null>
 }
 
-function runOnce(target: AssistTarget, argv: string[], input: string): Promise<string | null> {
+function runOnce(
+  target: AssistTarget,
+  argv: string[],
+  input: string,
+  signal?: AbortSignal
+): Promise<string | null> {
   return new Promise((resolve) => {
     const child = execFile(
       target.binary,
       argv,
-      { env: target.env, cwd: os.tmpdir(), timeout: ASSIST_TIMEOUT_MS },
+      { env: target.env, cwd: os.tmpdir(), timeout: ASSIST_TIMEOUT_MS, signal },
       (err, stdout) => resolve(err ? null : stdout)
     )
     child.stdin?.on('error', () => {})
@@ -73,9 +79,9 @@ export function koloftAssist(deps: AssistDeps): Assist {
     const setting = deps.setting()
     if (!setting?.on) return null
     const target = await deps[setting.backend]()
-    if (!target) return null
+    if (!target || job.signal?.aborted) return null
     return setting.backend === 'claude'
-      ? runOnce(target, CLAUDE_ONE_SHOT(job.system), job.prompt)
-      : runOnce(target, CODEX_ONE_SHOT, `${job.system}\n\n${job.prompt}`)
+      ? runOnce(target, CLAUDE_ONE_SHOT(job.system), job.prompt, job.signal)
+      : runOnce(target, CODEX_ONE_SHOT, `${job.system}\n\n${job.prompt}`, job.signal)
   }
 }

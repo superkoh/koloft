@@ -10,9 +10,18 @@ import { normalizeSessionMethods } from './sessionBackend'
 import { sanitizeDiscord } from './conductors'
 
 export function buildResetPatch(): Partial<Settings> {
-  const { accounts, skipPermissions, fablePriority, sessionMethods, discord, assist, ...rest } =
-    DEFAULT_SETTINGS
+  const {
+    accounts,
+    skipPermissions,
+    fablePriority,
+    sessionMethods,
+    discord,
+    assist,
+    newProjectFolders,
+    ...rest
+  } = DEFAULT_SETTINGS
   void assist
+  void newProjectFolders
   void accounts
   void skipPermissions
   void fablePriority
@@ -35,6 +44,7 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   merged.accounts = sanitizeAccountList(merged.accounts)
   merged.discord = sanitizeDiscord(merged.discord)
   merged.assist = sanitizeAssist(merged.assist)
+  merged.newProjectFolders = sanitizeFolderMap(merged.newProjectFolders)
   merged.workbenchWidth = sanitizeWorkbenchWidth(
     'workbenchWidth' in doc
       ? merged.workbenchWidth
@@ -65,6 +75,15 @@ function sanitizeAssist(raw: unknown): AssistSetting {
   const { on, backend } = raw as Record<string, unknown>
   if (typeof on !== 'boolean' || (backend !== 'claude' && backend !== 'codex')) return null
   return { on, backend }
+}
+
+function sanitizeFolderMap(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== 'object') return {}
+  return Object.fromEntries(
+    Object.entries(raw).filter(
+      (e): e is [string, string] => typeof e[1] === 'string' && e[1].length > 0
+    )
+  )
 }
 
 function isZoneId(z: unknown): z is string {

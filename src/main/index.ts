@@ -299,7 +299,8 @@ import type {
   WhatsNew,
   GitStepResult,
   PrChecks,
-  PrWorktreeResult
+  PrWorktreeResult,
+  WorkspaceAddResult
 } from '@shared/types'
 import { copyWorktreeIncludes } from './sessionWorktrees'
 import { AgentRequests, BUILTIN_VERBS, errorText, refused, type AgentVerb } from './agentRequests'
@@ -346,6 +347,7 @@ import {
 import { writeLine } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
 import { koloftAssist } from './assist'
+import { createProject } from './newProject'
 import { closingTree, removeTree, whatIsLeft } from './sessionClose'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
@@ -975,27 +977,30 @@ const notesAndWorkbenchVerbs = workbenchVerbs({
   }
 })
 
+const assist = koloftAssist({
+  setting: () => loadSettings().assist,
+  claude: async () => {
+    const env = await pickedAccountEnv()
+    if (!env) return null
+    return { binary: ptyMgr.shimDir ? path.join(ptyMgr.shimDir, 'claude') : 'claude', env }
+  },
+  codex: async () => {
+    const picked = pickCodexHome()
+    if (!picked || !codexSessions || !(await codexSessions.availability()).available) return null
+    const binary = codexSessions.cliBinary
+    if (!binary) return null
+    return { binary, env: { ...codexSessions.defaultEnv, CODEX_HOME: picked.home } }
+  }
+})
+const assistRuns = new Map<number, AbortController>()
+
 const sessionDeps: SessionVerbDeps = {
   workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
   allSessions: () => allSessions().filter((s) => !s.conductor),
   pinnedWorkspaces: () => workspaceMgr?.pinnedPaths() ?? [],
   peerNames: () => claudePeerNames(),
   launch: (options) => launchQuietTab(options, options.name ?? BACKEND_LABEL[options.kind]),
-  assist: koloftAssist({
-    setting: () => loadSettings().assist,
-    claude: async () => {
-      const env = await pickedAccountEnv()
-      if (!env) return null
-      return { binary: ptyMgr.shimDir ? path.join(ptyMgr.shimDir, 'claude') : 'claude', env }
-    },
-    codex: async () => {
-      const picked = pickCodexHome()
-      if (!picked || !codexSessions || !(await codexSessions.availability()).available) return null
-      const binary = codexSessions.cliBinary
-      if (!binary) return null
-      return { binary, env: { ...codexSessions.defaultEnv, CODEX_HOME: picked.home } }
-    }
-  }),
+  assist,
   queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
   startedSessions,
   closable: closableSessions,
@@ -3791,12 +3796,32 @@ function registerIpc(): void {
     return commitSettings(sanitizeSettingsPatch(patch))
   })
 
-  ipcMain.handle('workspace:add', (_e, p: string) => {
+  ipcMain.handle('assist:ask', async (_e, id: unknown, system: unknown, prompt: unknown) => {
+    if (typeof id !== 'number' || typeof system !== 'string' || typeof prompt !== 'string')
+      return null
+    const run = new AbortController()
+    assistRuns.set(id, run)
+    try {
+      return await assist({ system, prompt, signal: run.signal })
+    } finally {
+      assistRuns.delete(id)
+    }
+  })
+  ipcMain.on('assist:cancel', (_e, id: unknown) => {
+    if (typeof id === 'number') assistRuns.get(id)?.abort()
+  })
+  const addWorkspacePath = (p: string): WorkspaceAddResult | undefined => {
     const r = workspaceMgr?.add(p)
     const remote = parseRemoteKey(p)
     if (remote && r?.code === 'added') remoteSync?.pokeNow(remote.host)
     return r
-  })
+  }
+  ipcMain.handle('workspace:add', (_e, p: string) => addWorkspacePath(p))
+  ipcMain.handle('project:create', (_e, parent: unknown, name: unknown) =>
+    typeof parent === 'string' && parent && typeof name === 'string'
+      ? createProject(hosts.of(parent), parent, name, addWorkspacePath)
+      : { ok: false, reason: 'Pick a folder.' }
+  )
   ipcMain.handle('workspace:remove', (_e, p: string) => {
     const marked = markedSessionsOf(p)
     const r = workspaceMgr?.remove(p)

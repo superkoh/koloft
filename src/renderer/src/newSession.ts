@@ -8,6 +8,7 @@ import type {
 } from '@shared/types'
 import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { isValidWorktreeName } from '@shared/worktreeName'
+import type { RouteWorktree } from '@shared/sessionRoute'
 
 export type RunChoice =
   | ({ kind: 'existing' } & WorktreeInfo)
@@ -40,8 +41,36 @@ export function escPeel(l: {
 
 export type WtHot = { where: 'field' } | { where: 'list'; index: number }
 
+export interface SessionSeed {
+  prompt: string
+  title: string
+  worktree: RouteWorktree | null
+  why: string
+  unsure: boolean
+  warn: string
+}
+
+export function seedQuery(worktree: RouteWorktree | null | undefined): string {
+  return worktree?.kind === 'new' || worktree?.kind === 'existing' ? worktree.name : ''
+}
+
+export function seededItemExtras(
+  item: GithubItem,
+  prompt: string,
+  title: string
+): Pick<CreateTabOptions, 'firstPrompt' | 'name' | 'trustFolder'> {
+  const base = itemLaunchExtras(item)
+  const typed = prompt.trim()
+  return {
+    ...base,
+    firstPrompt: typed ? `${base.firstPrompt}\n\n${typed}` : base.firstPrompt,
+    name: title.trim() || base.name
+  }
+}
+
 export type WtAim =
   | { kind: 'none' }
+  | { kind: 'root' }
   | { kind: 'create'; name: string }
   | { kind: 'open'; name: string; dir: string }
   | { kind: 'recover'; name: string; dir: string; recoveryResourceId: string }

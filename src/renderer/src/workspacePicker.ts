@@ -4,7 +4,7 @@ import { pickerBehindNote } from './freshnessView'
 import type { WorkspaceRows } from '@shared/types'
 import { welcomeTarget } from './sessionRows'
 
-export type PickerMode = 'main' | 'worktree'
+export type PickerMode = 'main' | 'worktree' | 'any'
 
 export interface PickerRow {
   ws: WorkspaceRows
@@ -15,7 +15,7 @@ const LAST_DIGIT = 9
 
 export function pickerRows(rows: WorkspaceRows[], mode: PickerMode): PickerRow[] {
   return rows
-    .filter((w) => !w.workspace.missing && (mode === 'main' || w.workspace.isGit))
+    .filter((w) => !w.workspace.missing && (mode !== 'worktree' || w.workspace.isGit))
     .map((ws, i) => ({ ws, digit: i < LAST_DIGIT ? i + 1 : null }))
 }
 

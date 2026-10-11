@@ -112,7 +112,7 @@ export function WorkspacePicker({
     backend = sessionLaunch.methods.defaultBackend
   ): void => {
     if (!ws || locked || confirm !== null) return
-    if (mode === 'worktree') {
+    if (mode !== 'main') {
       void onConfirm(ws, backend)
       return
     }
@@ -217,7 +217,12 @@ export function WorkspacePicker({
     )
   }
 
-  const title = mode === 'main' ? 'New Session in…' : 'New Worktree Session in…'
+  const title =
+    mode === 'main'
+      ? 'New Session in…'
+      : mode === 'worktree'
+        ? 'New Worktree Session in…'
+        : 'Start in…'
 
   return (
     <>
@@ -285,7 +290,7 @@ export function WorkspacePicker({
             >
               Cancel
             </button>
-            {mode === 'worktree' ? (
+            {mode !== 'main' ? (
               <button
                 className="btn-primary"
                 disabled={!target || locked}

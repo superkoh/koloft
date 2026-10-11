@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { WorkspaceRows } from '@shared/types'
+import type { SessionSeed } from '../newSession'
 import type { PickerMode } from '../workspacePicker'
 import { useStore } from '../store'
 import { WorkspacePicker } from './WorkspacePicker'
@@ -12,7 +13,8 @@ export function NewSessionDialog({
   rows,
   onClose,
   onStart,
-  launchLock
+  launchLock,
+  seed: initialSeed
 }: {
   mode: PickerMode
   initialPath?: string
@@ -20,8 +22,10 @@ export function NewSessionDialog({
   onClose: () => void
   onStart: StartSession
   launchLock: { current: boolean }
+  seed?: SessionSeed
 }) {
   const [worktreePath, setWorktreePath] = useState(initialPath)
+  const [seed, setSeed] = useState(initialSeed)
   const lastWsPath = useStore((s) => s.lastWsPath)
   const ws = rows.find((w) => w.workspace.path === worktreePath && !w.workspace.missing)
   const targetGone = !!worktreePath && !ws
@@ -29,9 +33,24 @@ export function NewSessionDialog({
     if (targetGone) onClose()
   }, [targetGone, onClose])
   if (targetGone) return null
-  if (mode === 'worktree' && ws)
+  if (mode !== 'main' && ws)
     return (
-      <WorktreeSessionDialog ws={ws} onClose={onClose} onStart={onStart} launchLock={launchLock} />
+      <WorktreeSessionDialog
+        key={ws.workspace.path}
+        ws={ws}
+        onClose={onClose}
+        onStart={onStart}
+        launchLock={launchLock}
+        seed={seed}
+        onChangeWorkspace={
+          seed
+            ? (typed) => {
+                setSeed({ ...seed, ...typed, worktree: null, why: '', unsure: false, warn: '' })
+                setWorktreePath(undefined)
+              }
+            : undefined
+        }
+      />
     )
   return (
     <WorkspacePicker
@@ -42,7 +61,7 @@ export function NewSessionDialog({
       onClose={onClose}
       launchLock={launchLock}
       onConfirm={async (target, backend) => {
-        if (mode === 'worktree') setWorktreePath(target.workspace.path)
+        if (mode !== 'main') setWorktreePath(target.workspace.path)
         else await onStart({ cwd: target.workspace.path }, backend)
       }}
     />

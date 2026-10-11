@@ -12,10 +12,10 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
     items: [
       {
         keys: ['⌘P'],
-        name: 'Jump to',
+        name: 'Ask or jump',
         uses: [
           {
-            what: 'Opens a list of every session, every workspace and the app actions. Type a few letters, ⏎ opens the one picked.'
+            what: 'Opens one input. Type a name and ⏎ jumps to that session, workspace or action; type what you want to do and ⏎ starts a session for it (⌘⏎ when a name also matches); ⌥⏎ searches every conversation for the words.'
           },
           { where: 'Dialog', what: 'Nothing.' }
         ]
@@ -77,16 +77,6 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
         ]
       },
       {
-        keys: ['⌥⌘F'],
-        name: 'Search sessions',
-        uses: [
-          {
-            what: 'Lists every session, in every workspace, whose conversation or title holds the words.'
-          },
-          { where: 'No workspace', what: 'No matches.' }
-        ]
-      },
-      {
         keys: ['⌘B'],
         name: 'Toggle Sidebar',
         uses: [
@@ -116,7 +106,8 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
         name: 'Focus mode',
         uses: [
           { where: 'Panel shown', what: 'Flips between side-by-side and full width.' },
-          { where: 'Panel hidden', what: 'Nothing.' }
+          { where: 'Panel hidden', what: 'Nothing.' },
+          { where: '⌘P open', what: 'Starts a session for what is typed.' }
         ]
       },
       {

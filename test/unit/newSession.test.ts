@@ -12,6 +12,7 @@ import {
   primaryLabel,
   pullFailedReason,
   resolveLaunch,
+  seededItemExtras,
   sortWorktrees,
   worktreeAim,
   worktreeBaseMode,
@@ -364,6 +365,14 @@ describe('itemAim (#218 — where an issue or pull request session starts)', () 
     ])
     expect(extras.firstPrompt).toMatch(/gh issue view 218 --comments/)
     expect(itemLaunchExtras(pr).firstPrompt).toMatch(/gh pr view 329 --comments/)
+  })
+
+  it('from ⌘P, puts the issue first, then a blank line, then what was typed, and takes the typed title over the issue', () => {
+    const extras = seededItemExtras(issue, '  and add a test  ', 'Login test')
+    expect(extras.firstPrompt).toBe(`${itemLaunchExtras(issue).firstPrompt}\n\nand add a test`)
+    expect(extras.name).toBe('Login test')
+    expect(extras.trustFolder).toBe(true)
+    expect(seededItemExtras(issue, ' ', '')).toEqual(itemLaunchExtras(issue))
   })
 
   it('labels the primary with the number it acts on', () => {
