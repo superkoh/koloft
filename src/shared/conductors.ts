@@ -1,6 +1,6 @@
-import type { ConductorBinding, DiscordSettings, SessionThread } from './types'
+import type { ConductorBinding, DiscordChannel, DiscordSettings, SessionThread } from './types'
 import { basename } from './preview'
-import { isAbsoluteOnHost, parseRemoteKey } from './remoteKey'
+import { isAbsoluteOnHost, parseRemoteKey, remoteCopyText } from './remoteKey'
 import { backendIdOf } from './sessionBackend'
 import { isRecord } from './workbenchState'
 
@@ -31,6 +31,42 @@ export function asPeerName(title: string): string {
 
 export function channelLabel(binding: Pick<ConductorBinding, 'channel'>): string {
   return `#${binding.channel.name}`
+}
+
+// PLATFORM§39
+export function discordChannelName(raw: string): string {
+  return raw.toLowerCase().replace(/\s+/g, '-').replace(/\./g, '')
+}
+
+function machineName(host: string): string {
+  return host.replace(/^.*@/, '').replace(/\./g, '-')
+}
+
+export function newChannelName(scope: string): string {
+  if (scope === GLOBAL_SCOPE) return 'global'
+  const remote = parseRemoteKey(scope)
+  const folder = basename(remote?.path ?? scope)
+  return discordChannelName(remote ? `${folder}-${machineName(remote.host)}` : folder)
+}
+
+export function freeChannelName(name: string, taken: string[]): string {
+  if (!taken.includes(name)) return name
+  let n = 2
+  while (taken.includes(`${name}-${n}`)) n++
+  return `${name}-${n}`
+}
+
+export function newChannelTopic(scope: string): string {
+  if (scope === GLOBAL_SCOPE) return 'Koloft · global Assist, all workspaces'
+  const remote = parseRemoteKey(scope)
+  return remote ? remoteCopyText(remote.host, remote.path) : scope
+}
+
+export function newChannelGuild(
+  bindings: ConductorBinding[],
+  guildIds: string[]
+): string | undefined {
+  return bindings[0]?.channel.guildId ?? guildIds[0]
 }
 
 export function bindingProblem(
@@ -73,25 +109,31 @@ function cleanThreads(raw: unknown): SessionThread[] {
   })
 }
 
-function cleanBinding(raw: unknown): ConductorBinding | null {
-  if (!isRecord(raw)) return null
-  const { id, scope, channel, lastSessionKey, lastMessageId } = raw
-  const backend = backendIdOf(raw.backend)
-  const threads = cleanThreads(raw.threads)
-  if (typeof id !== 'string' || !id || !backend) return null
-  if (typeof scope !== 'string' || (scope !== GLOBAL_SCOPE && !isAbsoluteOnHost(scope))) return null
+function cleanChannel(raw: unknown): DiscordChannel | null {
   if (
-    !isRecord(channel) ||
-    !isDiscordId(channel.guildId) ||
-    !isDiscordId(channel.channelId) ||
-    typeof channel.name !== 'string'
+    !isRecord(raw) ||
+    !isDiscordId(raw.guildId) ||
+    !isDiscordId(raw.channelId) ||
+    typeof raw.name !== 'string'
   )
     return null
+  return { guildId: raw.guildId, channelId: raw.channelId, name: raw.name }
+}
+
+function cleanBinding(raw: unknown): ConductorBinding | null {
+  if (!isRecord(raw)) return null
+  const { id, scope, lastSessionKey, lastMessageId } = raw
+  const backend = backendIdOf(raw.backend)
+  const threads = cleanThreads(raw.threads)
+  const channel = cleanChannel(raw.channel)
+  if (typeof id !== 'string' || !id || !backend) return null
+  if (typeof scope !== 'string' || (scope !== GLOBAL_SCOPE && !isAbsoluteOnHost(scope))) return null
+  if (!channel) return null
   return {
     id,
     scope,
     backend,
-    channel: { guildId: channel.guildId, channelId: channel.channelId, name: channel.name },
+    channel,
     sessionIds: strings(raw.sessionIds),
     touched: strings(raw.touched),
     ...(threads.length ? { threads } : {}),
@@ -109,7 +151,9 @@ export function sanitizeDiscord(raw: unknown): DiscordSettings {
     if (bindingProblem(bindings, { scope: b.scope, channelId: b.channel.channelId })) continue
     bindings.push(b)
   }
+  const category = cleanChannel(doc.category)
   return {
+    ...(category ? { category } : {}),
     ...(isDiscordId(doc.userId)
       ? {
           userId: doc.userId,

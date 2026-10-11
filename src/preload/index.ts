@@ -181,6 +181,7 @@ const api: KoloftApi = {
   },
   conductors: {
     save: (input) => ipcRenderer.invoke('conductors:save', input),
+    saveWithNewChannel: (input) => ipcRenderer.invoke('conductors:saveWithNewChannel', input),
     unbind: (id) => ipcRenderer.invoke('conductors:unbind', id),
     switchBackend: (id) => ipcRenderer.invoke('conductors:switchBackend', id),
     open: (id) => ipcRenderer.invoke('conductors:open', id),

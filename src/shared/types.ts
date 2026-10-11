@@ -218,6 +218,7 @@ export interface DiscordSettings {
   userId?: string
   userName?: string
   bindings: ConductorBinding[]
+  category?: DiscordChannel
 }
 
 export interface ConductorSaveInput {
@@ -234,14 +235,27 @@ export interface DiscordStatus {
   phase: DiscordPhase
   botName?: string
   applicationId?: string
-  guildNames: string[]
+  guilds: DiscordGuild[]
+  appOwner?: DiscordUser
   failing: Record<string, string>
   candidate?: { name: string; text: string; at: number }
 }
 
-export const DISCORD_OFF: DiscordStatus = { phase: 'off', guildNames: [], failing: {} }
+export interface DiscordGuild {
+  id: string
+  name: string
+}
 
-export type ConductorSaveResult = { ok: true } | { ok: false; error: string }
+export interface DiscordUser {
+  id: string
+  name: string
+}
+
+export const DISCORD_OFF: DiscordStatus = { phase: 'off', guilds: [], failing: {} }
+
+export type ConductorSaveResult =
+  | { ok: true }
+  | { ok: false; error: string; cannotMakeChannels?: boolean }
 
 export type ConductorOpenResult = { ok: true; tabId: string } | { ok: false; error: string }
 
@@ -1101,6 +1115,7 @@ export interface KoloftApi {
   }
   conductors: {
     save(input: ConductorSaveInput): Promise<ConductorSaveResult>
+    saveWithNewChannel(input: Omit<ConductorSaveInput, 'channel'>): Promise<ConductorSaveResult>
     unbind(id: string): Promise<void>
     switchBackend(id: string): Promise<void>
     open(id: string): Promise<ConductorOpenResult>
