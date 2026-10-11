@@ -1510,6 +1510,13 @@ Gateway (the live connection that pushes events):
   password. After a successful push git hands the credential to every helper in the
   chain (`credential.c`), so an earlier keychain helper stores what a later one supplied.
   SSH remotes never consult a credential helper.
+- **`gh auth status --json hosts`** exits 0 and prints
+  `{"hosts":{"github.com":[{state, active, host, login, tokenSource, gitProtocol}, …]}}`,
+  one entry per account, the active one first (`state` is `success`, or `error` with an
+  `error` string when the token is refused); no token is printed. With `GH_TOKEN` set it
+  adds an entry whose `tokenSource` is `GH_TOKEN`. With no account it prints
+  `{"hosts":{}}` and the "not logged into any GitHub hosts" line on stderr, still exit 0.
+  It checks each account over the network, so it is not free to call.
 - Measured 2026-10-11 with gh 2.102.0 (macOS arm64 and Linux arm64 builds), git 2.39.5 in
   Docker (node:22) with fake tokens and `store` helpers, and Apple git 2.54.0 read from
   source; the keychain itself was not exercised.
