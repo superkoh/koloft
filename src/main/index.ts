@@ -1985,7 +1985,7 @@ app.whenReady().then(() => {
   conductors.keepPinned(workspaceMgr.pinnedPaths().map((w) => w.path))
   const discordLockFile = path.join(userData, 'discord.lock')
   const link = new DiscordLink({
-    apiUrl: discordApiUrl(),
+    apiUrl: discordApiUrl(app.isPackaged),
     readToken: discordTokenRead,
     takeLock: () => takeLock(discordLockFile, pidAlive),
     releaseLock: () => releaseLock(discordLockFile),

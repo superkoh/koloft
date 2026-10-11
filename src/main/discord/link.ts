@@ -15,10 +15,10 @@ export const BYTES_PER_FILE = 20 * 1024 * 1024
 
 const DISCORD_GATEWAY_URL = 'wss://gateway.discord.gg'
 
-export function discordApiUrl(): string | null {
+export function discordApiUrl(packaged: boolean): string | null {
   const override = process.env.KOLOFT_DISCORD_API_URL
   if (override) return override
-  return process.env.KOLOFT_TEST_BACKGROUND === '1' ? null : DISCORD_API_URL
+  return packaged && process.env.KOLOFT_TEST_BACKGROUND !== '1' ? DISCORD_API_URL : null
 }
 
 export function discordGatewayUrl(apiUrl: string): string {
