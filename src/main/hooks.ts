@@ -3,12 +3,18 @@ import fs from 'fs'
 import path from 'path'
 import type { StatusLineSetting } from './statusline'
 import { shq } from '@shared/shellQuote'
-import { CONDUCTOR_GATE_SCRIPT, conductorGateCommand } from './conductorGate'
+import {
+  CODEX_CONDUCTOR_GATE_SCRIPT,
+  CONDUCTOR_GATE_SCRIPT,
+  codexGateShell,
+  conductorGateCommand
+} from './conductorGate'
 import { HANDOVER_OPENING } from './handover'
 
 export interface HookPaths {
   hookScript: string
   gateScript: string
+  codexGate: string
   settingsDir: string
   regDir: string
 }
@@ -210,7 +216,7 @@ export function pruneStale(dir: string, maxAgeMs = 12 * 60 * 60 * 1000, everyEnt
   }
 }
 
-const TAB_MARKER = /^(.+)\.(answerable|conductor|said)$/
+const TAB_MARKER = /^(.+)\.(answerable|conductor|said|allow)$/
 
 // ADR-0004
 function pruneMarkersOfDeadTabs(regDir: string, peerOwnsTab: (tabId: string) => boolean): void {
@@ -243,8 +249,12 @@ export function setupHooks(peerOwnsTab: (tabId: string) => boolean): HookPaths {
   fs.chmodSync(hookScript, 0o755)
   const gateScript = path.join(hookDir, 'conductor-gate.js')
   fs.writeFileSync(gateScript, CONDUCTOR_GATE_SCRIPT)
+  const codexGateScript = path.join(hookDir, 'codex-conductor-gate.js')
+  fs.writeFileSync(codexGateScript, CODEX_CONDUCTOR_GATE_SCRIPT)
+  const codexGate = path.join(hookDir, 'codex-conductor-gate.sh')
+  fs.writeFileSync(codexGate, codexGateShell(codexGateScript))
 
-  return { hookScript, gateScript, settingsDir, regDir }
+  return { hookScript, gateScript, codexGate, settingsDir, regDir }
 }
 
 // CC§8
@@ -320,6 +330,20 @@ export function removeConductorMarker(regDir: string, tabId: string): void {
   fs.rmSync(conductorMarker(regDir, tabId), { force: true })
 }
 
+export function allowFile(regDir: string, tabId: string): string {
+  return path.join(regDir, `${tabId}.allow`)
+}
+
+export function writeAllowFile(regDir: string, tabId: string, allow: readonly string[]): string {
+  const file = allowFile(regDir, tabId)
+  fs.writeFileSync(file, JSON.stringify(allow))
+  return file
+}
+
+export function removeAllowFile(regDir: string, tabId: string): void {
+  fs.rmSync(allowFile(regDir, tabId), { force: true })
+}
+
 export function markAnswerable(regDir: string, tabId: string, on: boolean): void {
   const file = path.join(regDir, `${tabId}.answerable`)
   if (on) fs.writeFileSync(file, '')
@@ -346,7 +370,12 @@ export function writeTabHookSettings(
     (settings.hooks as Record<string, unknown>).PreToolUse = [
       {
         matcher: '*',
-        hooks: [{ type: 'command', command: conductorGateCommand(paths.gateScript) }]
+        hooks: [
+          {
+            type: 'command',
+            command: conductorGateCommand(paths.gateScript, allowFile(paths.regDir, tabId))
+          }
+        ]
       }
     ]
   const out = path.join(paths.settingsDir, `${tabId}.json`)

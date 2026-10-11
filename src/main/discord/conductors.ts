@@ -26,11 +26,13 @@ import {
 import { assistTaskRole, conductorRole } from '@shared/agentGuide'
 import { isRemoteKey } from '@shared/remoteKey'
 import { errorText } from '../agentRequests'
+import { CODEX_GATE_NOT_TRUSTED } from '../conductorGate'
 
 export interface ConductorLaunch {
   backend: BackendId
   cwd: string
   role: string
+  allow?: string[]
   title: string
   peerName: string
 }
@@ -515,12 +517,33 @@ export class Conductors {
     }
   }
 
+  // ADR-0029 CODEX§27
+  private async onClaudeIfCodexRefusedTheGate(
+    choice: { backend: BackendId; because?: string },
+    open: (choice: { backend: BackendId; because?: string }) => Promise<ConductorOpenResult>
+  ): Promise<ConductorOpenResult> {
+    const result = await open(choice)
+    if (result.ok || choice.backend !== 'codex' || result.error !== CODEX_GATE_NOT_TRUSTED)
+      return result
+    const fallback = await this.d.backend('codex')
+    if ('error' in fallback) return refusal(fallback.error)
+    this.d.toast(`Assist runs on Claude this time: ${CODEX_GATE_NOT_TRUSTED}`)
+    return open({ backend: fallback.backend })
+  }
+
   private async openNow(scope: string): Promise<ConductorOpenResult> {
     if (!this.canHaveAssist(scope)) return refusal(NOT_AN_ASSIST_SCOPE)
     const tab = this.tabs.get(scope)
     if (tab && this.d.tabAlive(tab)) return { ok: true, tabId: tab }
     const choice = await this.d.backend()
     if ('error' in choice) return refusal(choice.error)
+    return this.onClaudeIfCodexRefusedTheGate(choice, (c) => this.openOn(scope, c))
+  }
+
+  private async openOn(
+    scope: string,
+    choice: { backend: BackendId; because?: string }
+  ): Promise<ConductorOpenResult> {
     if (!this.record(scope)) this.changeRecord(scope, (r) => r)
     const launch = this.launchFor(scope, choice.backend)
     const key = this.record(scope)?.lastSessionKey
@@ -559,6 +582,14 @@ export class Conductors {
     if (running) return { ok: true, tabId: running.tabId }
     const choice = await this.d.backend()
     if ('error' in choice) return refusal(choice.error)
+    return this.onClaudeIfCodexRefusedTheGate(choice, (c) => this.openTaskOn(scope, task, c))
+  }
+
+  private async openTaskOn(
+    scope: string,
+    task: AssistTask,
+    choice: { backend: BackendId; because?: string }
+  ): Promise<ConductorOpenResult> {
     if (choice.because) this.d.toast(choice.because)
     if (!this.record(scope)) this.changeRecord(scope, (r) => r)
     const role = assistTaskRole(scope, task.brief)
@@ -566,6 +597,7 @@ export class Conductors {
     const launch: ConductorLaunch = {
       ...this.launchFor(scope, choice.backend),
       role,
+      allow: task.allow ?? [],
       title,
       peerName: asPeerName(title)
     }

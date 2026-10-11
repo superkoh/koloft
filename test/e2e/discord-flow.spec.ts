@@ -48,6 +48,7 @@ function seedConductor(
 ): void {
   seedSettings(env, {
     hintsOff: true,
+    assist: { on: true, backend },
     discord: {
       userId: OWNER.id,
       userName: OWNER.username,

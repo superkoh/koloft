@@ -32,6 +32,9 @@ import {
 } from './helpers/remote'
 import type { ConductorBinding, DiscordSettings } from '../../src/shared/types'
 
+const GATE_HOOK_ON_THE_COMMAND_LINE =
+  'hooks.PreToolUse=[{hooks=[{type="command",command="sh \\"$KOLOFT_CODEX_GATE\\""}]}]'
+
 test.setTimeout(120_000)
 
 const CHANNEL_A = 'koloft-all'
@@ -48,6 +51,23 @@ function firstCodexCall(env: E2EEnv): { sessionId: string; argv: string[]; cwd: 
   return JSON.parse(
     fs.readFileSync(path.join(env.home, 'fake-codex-calls.jsonl'), 'utf8').split('\n')[0]
   )
+}
+
+function runAssistOnCodex(env: E2EEnv): void {
+  seedSettings(env, { assist: { on: true, backend: 'codex' } })
+}
+
+function codexServers(env: E2EEnv): { argv: string[]; codexGate: string | null }[] {
+  return fs
+    .readFileSync(path.join(env.home, 'fake-codex-server-calls.jsonl'), 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line))
+}
+
+function gateTrustTables(env: E2EEnv): number {
+  const config = fs.readFileSync(path.join(env.home, '.codex', 'config.toml'), 'utf8')
+  return config.split('[hooks.state."/<session-flags>/config.toml:pre_tool_use:0:0"]').length - 1
 }
 
 function gateSays(call: { argv: string[] }, event: unknown): string {
@@ -293,17 +313,14 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
     env
   }) => {
     installCodex(env)
-    const { page, close } = await launched(env, { assist: { on: true, backend: 'codex' } })
+    runAssistOnCodex(env)
+    const { page, close } = await launched(env)
     try {
       await bindFromWorkspaceMenu(page, 'ws-a', { channel: CHANNEL_A })
       expect(bindingsOnDisk(env)).toMatchObject([{ backend: 'codex' }])
       await openConductor(page, 'ws-a')
       await expect.poll(() => assistRecordOnDisk(env)?.sessionIds.length).toBe(1)
-      const servers = fs
-        .readFileSync(path.join(env.home, 'fake-codex-server-calls.jsonl'), 'utf8')
-        .trim()
-        .split('\n')
-        .map((line) => JSON.parse(line) as { argv: string[] })
+      const servers = codexServers(env)
       expect(
         servers.some((s) =>
           s.argv.some(
@@ -313,6 +330,10 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
           )
         )
       ).toBe(true)
+      const assistServers = servers.filter((s) => s.codexGate)
+      expect(assistServers.length).toBeGreaterThan(0)
+      for (const s of assistServers) expect(s.argv).toContain(GATE_HOOK_ON_THE_COMMAND_LINE)
+      expect(gateTrustTables(env)).toBe(1)
       const tui = firstCodexCall(env)
       expect(path.dirname(tui.cwd)).toBe(path.join(env.userData, 'conductors'))
       expect(tui.argv[tui.argv.indexOf('-s') + 1]).toBe('workspace-write')
@@ -320,6 +341,37 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
       expect(readCalls(env)).toEqual([])
       await page.waitForTimeout(ROWS_RESCAN_AND_PUSH_SETTLE_MS)
       await expect(wsRows(page, 'ws-a')).toHaveCount(0)
+    } finally {
+      await close()
+    }
+  })
+
+  // ADR-0029 CODEX§27
+  test('a Codex Assist whose safety check Codex will not trust never starts on Codex: Koloft trusts the check once, asks again, refuses, and opens the Assist on Claude instead, saying why', async ({
+    env
+  }) => {
+    installCodex(env)
+    runAssistOnCodex(env)
+    fs.writeFileSync(path.join(env.home, 'fake-codex-hook-untrusted'), '')
+    const { page, close } = await launched(env)
+    try {
+      await bindFromWorkspaceMenu(page, 'ws-a', { channel: CHANNEL_A })
+      if (await island(page).getByRole('button', { name: 'Unfold' }).count())
+        await island(page).getByRole('button', { name: 'Unfold' }).click()
+      await conductorRow(page, 'ws-a').click()
+      await expect(
+        page.locator('.toast', { hasText: "Codex would not run Koloft's safety check" })
+      ).toBeVisible()
+      await expect(conductorRow(page, 'ws-a')).toHaveClass(/st-waiting/, { timeout: 60_000 })
+
+      expect(fs.existsSync(path.join(env.home, 'fake-codex-calls.jsonl'))).toBe(false)
+      const assistServers = codexServers(env).filter((s) => s.codexGate)
+      expect(assistServers.length).toBeGreaterThan(0)
+      for (const s of assistServers) expect(s.argv).toContain(GATE_HOOK_ON_THE_COMMAND_LINE)
+      expect(gateTrustTables(env)).toBe(1)
+      const claude = readCalls(env)
+      expect(claude).toHaveLength(1)
+      expect(path.dirname(claude[0].cwd)).toBe(path.join(env.userData, 'conductors'))
     } finally {
       await close()
     }

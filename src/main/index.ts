@@ -65,7 +65,15 @@ import {
   standardUserAgent
 } from './browserSecurity'
 import { directoryListingHtml } from './dirListing'
-import { HOOK_SCRIPT, markAnswerable, pruneStale, setupHooks, writeTabHookSettings } from './hooks'
+import {
+  HOOK_SCRIPT,
+  markAnswerable,
+  pruneStale,
+  removeAllowFile,
+  setupHooks,
+  writeAllowFile,
+  writeTabHookSettings
+} from './hooks'
 import { formatRemoteKey, hostOf, parseRemoteKey } from '@shared/remoteKey'
 import {
   defaultControlDir,
@@ -1807,6 +1815,7 @@ app.whenReady().then(() => {
     discordThreads?.forget(e.id)
     askButtons?.forget(e.id)
     if (answerable.delete(e.id) && answerableRegDir) markAnswerable(answerableRegDir, e.id, false)
+    if (answerableRegDir) removeAllowFile(answerableRegDir, e.id)
     loginPtys.delete(e.id)
     if (toolInstallPtys.delete(e.id)) {
       sessionBackends.forgetAvailability()
@@ -1912,6 +1921,10 @@ app.whenReady().then(() => {
       trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
       assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey),
+      conductorGate: {
+        script: hookPaths.codexGate,
+        writeAllow: (tabId, allow) => writeAllowFile(hookPaths.regDir, tabId, allow)
+      },
       browserEndpoint: relayEndpoint,
       openShimRoot: path.join(userData, 'codex-open'),
       playwrightBin,
@@ -2023,6 +2036,7 @@ app.whenReady().then(() => {
           kind: l.backend,
           cwd: l.cwd,
           role: l.role,
+          allow: l.allow,
           conductor: true,
           trustFolder: true,
           name: l.backend === 'claude' ? l.peerName : undefined
