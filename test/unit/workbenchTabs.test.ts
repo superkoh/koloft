@@ -543,18 +543,6 @@ describe('retargetTab (FR-34)', () => {
     expect(next.recency).toEqual(r.set.recency)
   })
 
-  it('a target already open in another tab is focused there, at the asked line, and the retargeted tab closes', () => {
-    const set = fileTabs(['/ws/a.ts', '/ws/b.ts'])
-    const [, a, b] = set.tabs
-
-    const next = retargetTab(activateTab(set, a.id), a.id, '/ws/b.ts', 9)
-
-    expect(paths(next)).toEqual(['/ws/b.ts'])
-    expect(next.activeId).toBe(b.id)
-    expect(next.tabs.find((t) => t.id === b.id)!.line).toBe(9)
-    expect(next.recency).not.toContain(a.id)
-  })
-
   it('ignores a tab id the set does not have', () => {
     const set = fileTabs(['/ws/a.ts'])
     expect(retargetTab(set, 'gone', '/ws/b.ts').tabs).toEqual(set.tabs)
@@ -1059,14 +1047,17 @@ describe('tabs with unsaved changes (B-27, B-28)', () => {
     expect(r.set).toEqual(retargetTab(set, id, '/ws/b.ts', 12))
   })
 
-  it('B-28: a clean tab whose target is already open lands on that tab', () => {
+  it('a clean tab whose target is already open in another tab lands on that tab, at the asked line, and closes', () => {
     const set = fileTabs(['/ws/a.ts', '/ws/b.ts'])
     const [, a, b] = set.tabs
 
-    const r = retargetOrOpenTab(set, a.id, '/ws/b.ts', undefined, () => false)
+    const r = retargetOrOpenTab(activateTab(set, a.id), a.id, '/ws/b.ts', 9, () => false)
 
     expect(r.tabId).toBe(b.id)
     expect(paths(r.set)).toEqual(['/ws/b.ts'])
+    expect(r.set.activeId).toBe(b.id)
+    expect(r.set.tabs.find((t) => t.id === b.id)!.line).toBe(9)
+    expect(r.set.recency).not.toContain(a.id)
   })
 
   it('B-28: a dirty tab opens a new tab instead, keeping its own text where it is', () => {
