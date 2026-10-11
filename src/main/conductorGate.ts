@@ -106,7 +106,7 @@ function allowed(event) {
   if (typeof tool !== 'string') return false
   if (tool === 'Bash') return true
   if (tool === 'apply_patch') return patchStaysInOwnFolder(event)
-  return !tool.startsWith('mcp__') && !tool.endsWith('spawn_agent')
+  return false
 }
 
 ${TOOLS_THE_ALLOW_FILE_NAMES}

@@ -660,8 +660,7 @@ describe('injected hook script', () => {
         'an absolute path inside its folder',
         patch(`*** Update File: ${own}/a/b.md`, '@@', '-x', '+y')
       ],
-      ['a move that stays inside', patch('*** Update File: a.md', '*** Move to: b/a.md')],
-      ['a built-in tool the gate has no rule for', tool('update_plan')]
+      ['a move that stays inside', patch('*** Update File: a.md', '*** Move to: b/a.md')]
     ])('allows %s', (_name, event) => {
       expect(gate(event)).toBe('allow')
     })
@@ -678,6 +677,7 @@ describe('injected hook script', () => {
       ['a patch that names no file', patch('nothing')],
       ['an MCP tool', tool('mcp__playwright__browser_navigate')],
       ['starting a sub-agent', tool('collaborationspawn_agent')],
+      ['a tool the gate has no rule for', tool('web_search')],
       ['input that is not JSON', 'not json']
     ])('denies %s', (_name, event) => {
       expect(gate(event)).toBe('deny')
