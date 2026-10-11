@@ -958,9 +958,10 @@ test.describe("a REAL Codex drives its own tab's Workbench through the owner's P
   })
 })
 
-const READ_THE_WORKBENCH_TITLE_WITH_PLAYWRIGHT_CLI =
-  'Use the playwright-cli shell command, not MCP tools: run playwright-cli attach --cdp="$KOLOFT_BROWSER_CDP" , then playwright-cli eval document.title . Reply with only the title it printed.'
-const THE_WORKBENCH_FOLLOWS_A_NEW_ROW_MS = 1_000
+const openAndReadTheTitle = (url: string): string =>
+  `Use the playwright-cli shell command, not MCP tools: run playwright-cli open ${url} , then playwright-cli eval document.title . Reply with only the title it printed.`
+const READ_THE_TITLE_AGAIN =
+  'Run playwright-cli eval document.title once more and reply with only the title it printed.'
 
 // CODEX§26 PLATFORM§17
 test.describe("REAL agents drive their own tab's Workbench with the playwright-cli Koloft ships: opt-in cases; they spend real money", () => {
@@ -968,7 +969,7 @@ test.describe("REAL agents drive their own tab's Workbench with the playwright-c
     ['Claude Code', 'Claude', useRealClaude, HAVE_REAL_CLAUDE, CLAUDE_TRANSCRIPT],
     ['Codex', 'Codex', useRealCodex, HAVE_REAL_CODEX, CODEX_TRANSCRIPT]
   ] as const)
-    test(`two real ${label} tabs in one workspace each read the title of the page in their own Workbench with the bundled playwright-cli, and neither sees the other's`, async ({
+    test(`two real ${label} tabs in one workspace each open a page in their own Workbench with the bundled playwright-cli, and the first still reads its own page after the second opened one`, async ({
       env
     }) => {
       test.skip(!have, 'set the KOLOFT_SMOKE_* variables for this backend')
@@ -992,24 +993,39 @@ test.describe("REAL agents drive their own tab's Workbench with the playwright-c
             { timeout: 90_000 }
           )
           await expect.poll(() => boundSessionId(page, tabId), { timeout: 60_000 }).toBeTruthy()
-          await page.waitForTimeout(THE_WORKBENCH_FOLLOWS_A_NEW_ROW_MS)
           const title = `koloft-cli-${n}-${Date.now().toString(36)}`
-          await openBrowser(page)
-          await newWebTab(page)
-          await typeInAddressBar(page, server.page(`/page-${n}`, `<title>${title}</title>`))
-          await expect.poll(() => server.count(`/page-${n}`), { timeout: 30_000 }).toBe(1)
           tabs.push({ tabId, title })
         }
-        for (const [i, t] of tabs.entries()) {
-          const sessionId = (await boundSessionId(page, t.tabId))!
+        const asks = [
+          {
+            tab: tabs[0],
+            text: openAndReadTheTitle(server.page('/page-1', `<title>${tabs[0].title}</title>`))
+          },
+          {
+            tab: tabs[1],
+            text: openAndReadTheTitle(server.page('/page-2', `<title>${tabs[1].title}</title>`))
+          },
+          { tab: tabs[0], text: READ_THE_TITLE_AGAIN }
+        ]
+        for (const [i, ask] of asks.entries()) {
+          const sessionId = (await boundSessionId(page, ask.tab.tabId))!
           const before = transcript.replies(env, sessionId).length
           const newReplies = (): string =>
             transcript.replies(env, sessionId).slice(before).join('\n')
-          await sendToCodexTab(page, t.tabId, READ_THE_WORKBENCH_TITLE_WITH_PLAYWRIGHT_CLI)
-          await expect.poll(newReplies, { timeout: A_REAL_MODEL_TURN_MS }).toContain(t.title)
+          await sendToCodexTab(page, ask.tab.tabId, ask.text)
+          await expect.poll(newReplies, { timeout: A_REAL_MODEL_TURN_MS }).toContain(ask.tab.title)
           await test.info().attach(`reply-${i + 1}`, { body: newReplies() })
-          expect(newReplies()).not.toContain(tabs[1 - i].title)
+          await expect(page.locator(`.ws-tab[data-tab-id="${ask.tab.tabId}"]`)).toHaveClass(
+            /\bst-(waiting|idle)\b/,
+            { timeout: A_REAL_MODEL_TURN_MS }
+          )
         }
+        const [workbenchLoad, ...more] = [
+          ...server.requestsFor('/page-1'),
+          ...server.requestsFor('/page-2')
+        ]
+        for (const r of more) expect(r.userAgent).toBe(workbenchLoad.userAgent)
+        expect(workbenchLoad.userAgent).not.toMatch(/HeadlessChrome|Electron\//)
       } catch (e) {
         await keepWhatTheAgentSawAndDid(page, env)
         throw e
