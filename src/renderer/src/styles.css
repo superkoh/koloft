@@ -875,13 +875,14 @@ body {
 .ws-tab.st-working::before,
 .ob-bar.st-working {
   background: var(--accent);
-  animation: barBreathe 2.4s var(--ease) infinite;
 }
 .ws-tab.st-waiting::before,
 .ob-bar.st-waiting {
   background: var(--good);
 }
+.ws-tab.st-working::before,
 .ws-tab.st-bg-run::before,
+.ob-bar.st-working,
 .ob-bar.st-bg-run {
   animation: barBreathe 2.4s var(--ease) infinite;
 }
