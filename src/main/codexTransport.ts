@@ -545,7 +545,9 @@ export class CodexRpc {
         'account/read',
         'account/rateLimits/read',
         'model/list',
-        'config/read'
+        'config/read',
+        // CODEX§27
+        'hooks/list'
       ].includes(method)
     ) {
       throw new Error(`Codex history connection does not allow ${method}`)

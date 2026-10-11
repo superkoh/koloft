@@ -10,6 +10,7 @@ import {
   type ConductorDeps
 } from '../../src/main/discord/conductors'
 import type { AssistRecord, BackendId, DiscordSettings } from '@shared/types'
+import { CODEX_GATE_NOT_TRUSTED } from '../../src/main/conductorGate'
 
 const CHANNEL = { guildId: '100', channelId: '200', name: 'koloft' }
 const DEADLINE_MS = 1000
@@ -21,7 +22,13 @@ let saved: DiscordSettings
 let records: AssistRecord[]
 let quiet: DiscordSettings[]
 let rescans: number
-let started: { cwd: string; role: string; title: string; backend: BackendId }[]
+let started: {
+  cwd: string
+  role: string
+  title: string
+  backend: BackendId
+  allow?: string[]
+}[]
 let resumed: string[]
 let killed: string[]
 let said: { channelId: string; text: string }[]
@@ -29,6 +36,7 @@ let toasts: string[]
 let taskPushes: number
 let transcripts: Set<string>
 let choice: AssistBackendChoice
+let codexRefusesTheGate: boolean
 let release: () => void
 
 function make(): Conductors {
@@ -40,13 +48,21 @@ function make(): Conductors {
     saveQuietly: (d) => void quiet.push(d),
     saveRecords: (r) => void (records = r),
     isPinned: (scope) => scope === '/ws/a',
-    backend: async () => choice,
+    backend: async (avoid) =>
+      avoid ? { backend: avoid === 'codex' ? 'claude' : 'codex' } : choice,
     tabAlive: (tabId) => !killed.includes(tabId),
     liveTabFor: () => undefined,
     runningElsewhere: async () => false,
     transcriptExists: async (_backend, key) => transcripts.has(key),
     start: async (l) => {
-      started.push({ cwd: l.cwd, role: l.role, title: l.title, backend: l.backend })
+      if (codexRefusesTheGate && l.backend === 'codex') throw new Error(CODEX_GATE_NOT_TRUSTED)
+      started.push({
+        cwd: l.cwd,
+        role: l.role,
+        title: l.title,
+        backend: l.backend,
+        allow: l.allow
+      })
       await new Promise<void>((r) => (release = r))
       return `tab-${started.length}`
     },
@@ -88,6 +104,7 @@ beforeEach(() => {
   taskPushes = 0
   transcripts = new Set()
   choice = { backend: 'claude' }
+  codexRefusesTheGate = false
   release = () => {}
 })
 
@@ -204,6 +221,24 @@ describe('Conductors', () => {
     expect(toasts).toEqual(['Assist runs on Codex this time: why.'])
     choice = { error: 'Assist cannot start: no.' }
     expect(await c.open('/ws/a')).toEqual({ ok: false, error: 'Assist cannot start: no.' })
+  })
+
+  // ADR-0029 CODEX§27
+  it('when Codex would not run the safety check, the Assist and its tasks start on Claude instead and say why, a task still with its allow list', async () => {
+    choice = { backend: 'codex' }
+    codexRefusesTheGate = true
+    const c = make()
+    await opened(c, 'global')
+    const task = c.openTask('/ws/a', { name: 'T', brief: 'Do T.', allow: ['Tool'] })
+    await vi.waitFor(() => expect(started).toHaveLength(2))
+    release()
+    expect(await task).toEqual({ ok: true, tabId: 'tab-2' })
+    expect(started.map((s) => s.backend)).toEqual(['claude', 'claude'])
+    expect(started[1].allow).toEqual(['Tool'])
+    expect(toasts).toEqual([
+      `Assist runs on Claude this time: ${CODEX_GATE_NOT_TRUSTED}`,
+      `Assist runs on Claude this time: ${CODEX_GATE_NOT_TRUSTED}`
+    ])
   })
 
   it('an Assist that never binds before the deadline is closed and reported, and its tab counts as the Assist’s until it is gone', async () => {
