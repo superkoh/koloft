@@ -414,6 +414,7 @@ export interface FilesBodyProps {
   c: FilesController
   root: string | null
   rootMissing: boolean
+  treeUnwatched: boolean
   session: SessionInfo | null
   git: GitStatusMap
   numstat: GitNumstatMap
@@ -433,6 +434,7 @@ export function FilesBody({
   c,
   root,
   rootMissing,
+  treeUnwatched,
   session,
   git,
   numstat,
@@ -567,6 +569,8 @@ export function FilesBody({
             recents={c.recents}
             bookmarks={c.bookmarks}
             sideWidth={shownSideWidth}
+            refreshNonce={c.refreshNonce}
+            treeUnwatched={treeUnwatched}
             onOpen={openPath}
             onEdit={onEdit}
             newFileDir={newFileDir}

@@ -76,6 +76,8 @@ export interface BrowseViewProps {
   onNewFileDone: (created: EditCreateResult | null) => void
   onContextMenu: (e: ReactMouseEvent, path: string, isDir: boolean) => void
   sideWidth: number
+  refreshNonce: number
+  treeUnwatched: boolean
   active?: boolean
 }
 
@@ -166,6 +168,8 @@ export function BrowseView({
   onNewFileDone,
   onContextMenu,
   sideWidth,
+  refreshNonce,
+  treeUnwatched,
   active = true
 }: BrowseViewProps): JSX.Element {
   const [children, setChildren] = useState<Record<string, DirEntry[]>>({})
@@ -274,6 +278,29 @@ export function BrowseView({
     })
     return off
   }, [root])
+
+  const seenRefreshNonce = useRef(refreshNonce)
+  useEffect(() => {
+    if (seenRefreshNonce.current === refreshNonce) return
+    seenRefreshNonce.current = refreshNonce
+    setFsTick((x) => x + 1)
+  }, [refreshNonce])
+
+  // PLATFORM§42
+  useEffect(() => {
+    if (!active || !treeUnwatched) return
+    const dirs = [...expanded].filter((d) => d !== root)
+    for (const d of dirs) window.api.fs.watchDir(d)
+    const off = window.api.fs.onDirChange((changed) => {
+      if (!dirs.includes(changed)) return
+      loadedRef.current.delete(changed)
+      void loadDir(changed)
+    })
+    return () => {
+      off()
+      for (const d of dirs) window.api.fs.unwatchDir(d)
+    }
+  }, [active, treeUnwatched, expanded, root, loadDir])
 
   const relistOwedWhileHidden = useRef(false)
   useEffect(() => {

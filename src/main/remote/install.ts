@@ -160,21 +160,27 @@ export interface MachineTmp {
   uid: number
 }
 
+// PLATFORM§37
+export const FINGERPRINT = `fp() { stat -c '%.9Y %s' "$1" 2>/dev/null || stat -f '%Fm %z' "$1"; }`
+
 const UID_LINE = 'uid '
 const TMP_LINE = 'tmp '
+const STAMP_LINE = 'stamp '
 const CLAUDE_TMP_BASE =
   'if [ "$(uname)" = Darwin ]; then b="${CLAUDE_CODE_TMPDIR:-/tmp}"; ' +
   'else b="${CLAUDE_CODE_TMPDIR:-${TMPDIR:-${TMP:-${TEMP:-/tmp}}}}"; fi'
 
 // CC§2
-export function heartbeatCmd(paths: string[]): string {
+export function heartbeatCmd(paths: string[], watched: string[] = []): string {
   return remoteShCommand(
     `echo "${UID_LINE}$(id -u)"; ${CLAUDE_TMP_BASE}; echo "${TMP_LINE}$(cd "$b" && pwd -P)"; ` +
+      `${FINGERPRINT}; n=$1; shift; ` +
+      `while [ "$n" -gt 0 ]; do echo "${STAMP_LINE}$(fp "$1" 2>/dev/null)"; shift; n=$((n - 1)); done; ` +
       'tmux -L koloft ls -F "#S" 2>/dev/null; ' +
       'for p in "$@"; do echo "== $p"; echo "real $(cd "$p" 2>/dev/null && pwd -P)"; ' +
       '[ -e "$p/.git" ] && echo git; ' +
       'git -C "$p" worktree list --porcelain 2>/dev/null; done; exit 0',
-    paths
+    [String(watched.length), ...watched, ...paths]
   )
 }
 
@@ -188,8 +194,10 @@ export function parseHeartbeat(stdout: string): {
   alive: string[]
   git: Map<string, RemoteGitInfo>
   tmp?: MachineTmp
+  stamps: string[]
 } {
   const alive: string[] = []
+  const stamps: string[] = []
   const git = new Map<string, RemoteGitInfo>()
   let uid = NaN
   let tmpRoot = ''
@@ -212,6 +220,8 @@ export function parseHeartbeat(stdout: string): {
       uid = parseInt(line.slice(UID_LINE.length), 10)
     } else if (!current && line.startsWith(TMP_LINE)) {
       tmpRoot = line.slice(TMP_LINE.length)
+    } else if (!current && line.startsWith(STAMP_LINE)) {
+      stamps.push(line.slice(STAMP_LINE.length))
     } else if (!current) {
       if (line.trim()) alive.push(line.trim())
     } else if (line === 'git') {
@@ -223,7 +233,7 @@ export function parseHeartbeat(stdout: string): {
     }
   }
   flush()
-  return { alive, git, tmp: tmpRoot && uid >= 0 ? { tmpRoot, uid } : undefined }
+  return { alive, git, tmp: tmpRoot && uid >= 0 ? { tmpRoot, uid } : undefined, stamps }
 }
 
 // PLATFORM§37

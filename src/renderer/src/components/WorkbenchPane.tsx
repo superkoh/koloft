@@ -2335,6 +2335,7 @@ export function WorkbenchPane({
             c={files}
             root={treeRoot}
             rootMissing={rootMissing}
+            treeUnwatched={watchDead}
             session={session}
             git={git}
             numstat={numstat}

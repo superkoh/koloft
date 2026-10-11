@@ -1411,3 +1411,22 @@ Gateway (the live connection that pushes events):
 - Measured 2026-10-09 on macOS 27.0.1 with a bare Electron 43.7.3 app (node-pty from the
   repo, no window): one pty child running `sh` with HUP/TERM traps, one detached `sh`
   helper, then `app.quit()` one second in.
+
+## §42 A folder's last-modified time on Linux and macOS
+
+- **Adding, renaming or removing a file right inside a folder moves the folder's
+  last-modified time.** So does creating a file inside a subfolder for that subfolder.
+- **Writing into a file already there does not move its folder's time, and a change
+  inside a subfolder does not reach the parent folder.** Watching a folder this way sees
+  its own list of names change, nothing deeper.
+- On Linux the folder's size stays `4096` through all of it; on macOS (APFS) the size
+  changes with the number of entries (`96` → `128` → `96`).
+- A missing path prints nothing to stdout from either `stat` dialect (§37).
+- Measured 2026-10-11 with one script that ran the §37 `fp()` (`stat -c '%.9Y %s'`, falling
+  back to `stat -f '%Fm %z'`) on a fresh folder after each step, one second apart: add a
+  file, append to it, rename it, remove it, add a file in a subfolder. Run in a Docker
+  `ubuntu:24.04` container (Linux 6.8.0, GNU coreutils) and on this Mac (macOS 27.0, BSD
+  `stat`). Linux output: `start 1791720666.973637444 4096`, `add file 1791720667.980639518`,
+  `edit file 1791720667.980639518` (unchanged), `rename 1791720670.010643717`,
+  `remove 1791720671.024645823`, `add in sub 1791720671.024645823` (unchanged; the
+  subfolder moved to `1791720672.028647913`).
