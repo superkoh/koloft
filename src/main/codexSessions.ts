@@ -988,6 +988,8 @@ export class CodexSessions {
     } catch (error) {
       await transport?.stop()
       openShim.release()
+      const allowFile = processOptions.sessionEnv?.[ASSIST_ALLOW_ENV]
+      if (allowFile) fs.rmSync(allowFile, { force: true })
       throw error
     }
   }

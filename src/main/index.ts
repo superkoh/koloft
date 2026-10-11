@@ -3232,6 +3232,7 @@ function killTabPty(tabId: string, restarting = false): Promise<boolean> {
   const sleeper = sleepers.get(tabId)
   if (sleeper) {
     forgetSleeper(tabId)
+    conductors?.onPtyExit(tabId, false)
     const tree = projectInfoFor(sleeper.cwd).treeRoot
     const resource =
       sleeper.kind === 'codex' && !restarting

@@ -58,10 +58,13 @@ export function ConductorsIsland(): JSX.Element {
     attention.find(
       (e) => (!!tabId && e.tabId === tabId) || (!!e.sessionId && keys.includes(e.sessionId))
     )
+  const taskKeys = new Set(sessions.filter((s) => s.assistTask).map((s) => s.sessionId))
   const rows = assistScopes(settings).map((scope) => {
     const tabId = conductorTab(scope, sessions, opened, tabs)
     const sess = tabId ? sessions.find((s) => s.tabId === tabId) : undefined
-    const keys = settings.assistSessions.find((r) => r.scope === scope)?.sessionIds ?? []
+    const keys = (settings.assistSessions.find((r) => r.scope === scope)?.sessionIds ?? []).filter(
+      (key) => !taskKeys.has(key)
+    )
     return { scope, binding: bindingOf(scope), tabId, sess, calling: callingFor(tabId, keys) }
   })
   const taskRows = tasks.map((task) => ({
