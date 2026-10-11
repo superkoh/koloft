@@ -19,6 +19,7 @@ import {
   errorText,
   EXIT_USAGE,
   fail,
+  ONLY_ASSIST,
   refused,
   splitAtDashes,
   type AgentCaller,
@@ -585,7 +586,7 @@ async function endedInScope(
 }
 
 export const THAT_IS_YOU = 'That is you.'
-const ONLY_A_CONDUCTOR = 'only Assist (the session bound to a Discord channel) can do this.'
+const ONLY_A_CONDUCTOR = `${ONLY_ASSIST} can do this.`
 const TIME_FOR_THE_REPLY_TO_REACH_THE_SHIM_MS = 2_000
 const REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS =
   AGENT_SHIM_WAITS_MS - TIME_FOR_THE_REPLY_TO_REACH_THE_SHIM_MS

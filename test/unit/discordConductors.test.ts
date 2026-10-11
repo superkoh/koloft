@@ -91,15 +91,6 @@ describe('Conductors', () => {
     expect(c.bindingOf('Global')).toBeUndefined()
   })
 
-  it('a session started before the rename to Assist still reaches it by the old name it was given, Global-conductor', () => {
-    const c = make()
-    c.save({ scope: 'global', backend: 'claude', channel: CHANNEL })
-    c.save({ scope: '/ws/a', backend: 'codex', channel: { ...CHANNEL, channelId: '201' } })
-    const [global, ws] = c.bindings()
-    expect(c.bindingOf('Global-conductor')?.id).toBe(global.id)
-    expect(c.bindingOf('a-conductor')?.id).toBe(ws.id)
-  })
-
   it('the global conductor starts in its own folder under userData, told its role', async () => {
     const c = make()
     c.save({ scope: 'global', backend: 'claude', channel: CHANNEL })
