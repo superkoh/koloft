@@ -17,6 +17,7 @@ import {
   wsRows
 } from './helpers/p1'
 import { setupChangeFixture, seedBrowseTree } from './helpers/filesFixture'
+import { readExternalOpens } from './helpers/browser'
 import {
   WORKBENCH,
   claudePrompts,
@@ -679,11 +680,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
       })
       await expect(page.locator(CV.empty)).toHaveCount(0)
       await banner.getByRole('button', { name: 'Install them' }).click()
-      await expect
-        .poll(() =>
-          fs.existsSync(env.externalOpens) ? fs.readFileSync(env.externalOpens, 'utf8') : ''
-        )
-        .toContain('xcode-select --install')
+      await expect.poll(() => readExternalOpens(env)).toContain('xcode-select --install')
     } finally {
       await app.close().catch(() => {})
     }

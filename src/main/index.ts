@@ -351,7 +351,6 @@ import { closingTree, removeTree, whatIsLeft } from './sessionClose'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
 import { agentPluginFiles, writeAgentPlugin } from './agentPlugin'
-import { forgetClaudeProbe } from './claudeProbe'
 import { installLine, pathWithInstallDir } from './toolInstall'
 import { commandLineToolsMissing, installCommandLineTools } from './commandLineTools'
 
@@ -1428,36 +1427,23 @@ async function codexSignIn(name: string, again?: boolean): Promise<CodexSignInRe
     addedAt: acct?.addedAt ?? Date.now()
   })
   pushAccounts()
+  const tab = homeShellTab(`CODEX_HOME=${shq(home)} ${shq(binary)} login && exit`)
+  codexSignInPtys.set(tab.tabId, name)
+  return { ok: true, ...tab }
+}
+
+function homeShellTab(launchCommand: string): { tabId: string; cwd: string } {
   const cwd = os.homedir()
-  const handle = ptyMgr.create({
-    kind: 'shell',
-    cwd,
-    cols: 100,
-    rows: 30,
-    launchCommand: `CODEX_HOME=${shq(home)} ${shq(binary)} login && exit`
-  })
-  codexSignInPtys.set(handle.id, name)
-  return { ok: true, tabId: handle.id, cwd }
+  const handle = ptyMgr.create({ kind: 'shell', cwd, cols: 100, rows: 30, launchCommand })
+  return { tabId: handle.id, cwd }
 }
 
 const toolInstallPtys = new Set<string>()
 
-function forgetToolAvailability(): void {
-  forgetClaudeProbe()
-  codexSessions?.forgetAvailability()
-}
-
 function installTool(backend: BackendId): { tabId: string; cwd: string } {
-  const cwd = os.homedir()
-  const handle = ptyMgr.create({
-    kind: 'shell',
-    cwd,
-    cols: 100,
-    rows: 30,
-    launchCommand: installLine(backend, process.env.KOLOFT_TEST_TOOL_INSTALLER)
-  })
-  toolInstallPtys.add(handle.id)
-  return { tabId: handle.id, cwd }
+  const tab = homeShellTab(installLine(backend, process.env.KOLOFT_TEST_TOOL_INSTALLER))
+  toolInstallPtys.add(tab.tabId)
+  return tab
 }
 
 protocol.registerSchemesAsPrivileged([
@@ -1769,7 +1755,7 @@ app.whenReady().then(() => {
     if (answerable.delete(e.id) && answerableRegDir) markAnswerable(answerableRegDir, e.id, false)
     loginPtys.delete(e.id)
     if (toolInstallPtys.delete(e.id)) {
-      forgetToolAvailability()
+      sessionBackends.forgetAvailability()
       sendToRenderer('sessions:toolsChanged')
     }
     const codexAccount = codexSignInPtys.get(e.id)
@@ -3694,7 +3680,7 @@ function registerIpc(): void {
 
   ipcMain.handle('sessions:list', () => allSessions())
   ipcMain.handle('sessions:backends', (_e, recheck: unknown) => {
-    if (recheck === true) forgetToolAvailability()
+    if (recheck === true) sessionBackends.forgetAvailability()
     return sessionBackends.availability((id) => ({
       id,
       available: false,

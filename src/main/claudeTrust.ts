@@ -79,10 +79,11 @@ export function markClaudeOnboarded(claudeJson: string): void {
 
 // CC§9 ADR-0026
 export function acceptClaudeTrust(claudeJson: string, dir: string): void {
-  const doc = fs.existsSync(claudeJson) ? JSON.parse(fs.readFileSync(claudeJson, 'utf8')) : {}
+  const doc = jsonObjectIn(claudeJson)
+  if (!doc) throw new Error(`${claudeJson} is not a JSON object`)
   const key = fs.realpathSync(dir)
   if (isTrustedByClaude(() => doc, key)) return
-  const projects = (doc.projects ??= {})
+  const projects = (doc.projects ??= {}) as Record<string, object | undefined>
   projects[key] = { ...projects[key], hasTrustDialogAccepted: true }
   writePrivateAtomically(claudeJson, JSON.stringify(doc, null, 2))
 }

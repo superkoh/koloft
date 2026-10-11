@@ -19,6 +19,7 @@ import {
   termIds,
   waitForCalls
 } from './helpers/p1'
+import { readExternalOpens } from './helpers/browser'
 import {
   changelog,
   notesBody,
@@ -382,11 +383,7 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
       const warn = welcome(page).locator('.ob-warn')
       await expect(warn).toContainText('Apple’s command line tools', { timeout: 20_000 })
       await warn.getByRole('button', { name: 'Install them' }).click()
-      await expect
-        .poll(() =>
-          fs.existsSync(env.externalOpens) ? fs.readFileSync(env.externalOpens, 'utf8') : ''
-        )
-        .toContain('xcode-select --install')
+      await expect.poll(() => readExternalOpens(env)).toContain('xcode-select --install')
     } finally {
       await quitAndClose(app)
     }

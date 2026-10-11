@@ -1,5 +1,5 @@
-import fs from 'fs'
 import { execFile } from 'child_process'
+import { osHandOffSuppressed } from './osOpen'
 
 const APPLE_INSTALLER = ['xcode-select', '--install']
 
@@ -12,8 +12,6 @@ export function commandLineToolsMissing(): Promise<boolean> {
 }
 
 export function installCommandLineTools(): void {
-  const log = process.env.KOLOFT_EXTERNAL_OPENS_FILE
-  if (log) fs.appendFile(log, `${APPLE_INSTALLER.join(' ')}\n`, () => {})
-  if (process.env.KOLOFT_SUPPRESS_OS_OPEN) return
+  if (osHandOffSuppressed(APPLE_INSTALLER.join(' '))) return
   execFile(APPLE_INSTALLER[0], APPLE_INSTALLER.slice(1), () => {})
 }

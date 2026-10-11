@@ -99,9 +99,7 @@ export function AssistSetup({
       <div className="ob-choices">
         {SESSION_BACKENDS.map((b) => {
           if (!setup.tools.includes(b))
-            return offerInstall && setup.missing.includes(b) ? (
-              <InstallChoice key={b} backend={b} />
-            ) : null
+            return offerInstall && setup.toolsKnown ? <InstallChoice key={b} backend={b} /> : null
           const again = accountToSignInAgain(accounts, b)
           return (
             <button
