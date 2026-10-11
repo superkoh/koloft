@@ -20,6 +20,7 @@ import {
   newSessionInWith,
   openMenu,
   openWorktreeSession,
+  startSessionIn,
   waitBooted,
   wsRows
 } from './helpers/p1'
@@ -958,7 +959,7 @@ test.describe("a REAL Codex drives its own tab's Workbench through the owner's P
 })
 
 const READ_THE_WORKBENCH_TITLE_WITH_PLAYWRIGHT_CLI =
-  'Use the playwright-cli shell command, not MCP tools: run playwright-cli open with no address, then playwright-cli eval document.title . Reply with only the title it printed.'
+  'Use the playwright-cli shell command, not MCP tools: run playwright-cli attach --cdp="$KOLOFT_BROWSER_CDP" , then playwright-cli eval document.title . Reply with only the title it printed.'
 const THE_WORKBENCH_FOLLOWS_A_NEW_ROW_MS = 1_000
 
 // CODEX§26 PLATFORM§17
@@ -982,7 +983,7 @@ test.describe("REAL agents drive their own tab's Workbench with the playwright-c
         const rows = wsRows(page, 'ws-a')
         const tabs: { tabId: string; title: string }[] = []
         for (const n of [1, 2]) {
-          await newSessionInWith(page, 'ws-a', method)
+          await startSessionIn(page, 'ws-a', method === 'Codex' ? { method } : {})
           await expect(rows).toHaveCount(n, { timeout: 60_000 })
           const ids = await rows.evaluateAll((els) => els.map((e) => e.getAttribute('data-tab-id')))
           const tabId = ids.find((id) => id && !tabs.some((t) => t.tabId === id))!

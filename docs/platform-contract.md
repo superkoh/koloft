@@ -623,6 +623,14 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   playwright-cli 0.1.18 against Koloft's relay, `test/e2e/real-tools-smoke.spec.ts`:
   `open file://…` fails with that message on the endpoint alone and succeeds with the
   variable set to `1`).
+- **`playwright-cli open` with no address loads `about:blank` into the first page**; the
+  CLI answers every other command with "The browser '<session>' is not open, please run
+  open first" until `open` or `attach` has run. `attach --cdp=<endpoint>` reused the page
+  already shown, unchanged (its title came back from `eval document.title`), under the
+  session name `PLAYWRIGHT_CLI_SESSION` gives. Seen 2026-10-11: a real Codex turn asked
+  to run `playwright-cli open` with no address blanked the Workbench page and read the
+  title "" (@playwright/cli 0.1.22 through Koloft's relay); `attach` measured the same day
+  against a headless Chrome.
 - **Two installs of playwright-cli share a daemon only through a `.playwright`
   folder.** Without one, each install's own root names its bucket, so the same session
   name in the same folder gave two daemons, each reading its own page. With a
