@@ -28,6 +28,7 @@ import {
 import { GIT_TIMEOUT_MS, gitOps, type GitOps } from '../gitStatus'
 import { GithubLookup, type GithubOptions } from '../github'
 import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
+import { parseLeftRight, type FreshnessRunner, type GitSnapshot } from '../gitFreshness'
 import { remoteShCommand } from '../remote/install'
 import {
   killSessionCmd,
@@ -355,8 +356,71 @@ function skillFsOf(files: Map<string, string>): SkillFs {
   }
 }
 
-const NETWORK_GIT = `GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=false SSH_ASKPASS=false \
-SSH_ASKPASS_REQUIRE=never GIT_SSH_COMMAND="\${GIT_SSH_COMMAND:-ssh} -o BatchMode=yes" git "$@"`
+const NETWORK_ENV = `GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=false SSH_ASKPASS=false \
+SSH_ASKPASS_REQUIRE=never GIT_SSH_COMMAND="\${GIT_SSH_COMMAND:-ssh} -o BatchMode=yes"`
+
+const NETWORK_GIT = `${NETWORK_ENV} git "$@"`
+
+// PLATFORM§30
+const FRESHNESS = `r=$1
+g() { GIT_OPTIONAL_LOCKS=0 git -C "$r" "$@" 2>/dev/null; }
+${FINGERPRINT}
+br=$(g rev-parse --abbrev-ref HEAD) && head=$(g rev-parse HEAD) || exit 1
+def=
+ref=$(g symbolic-ref --quiet refs/remotes/origin/HEAD) && ref=\${ref#refs/remotes/} &&
+  g rev-parse --verify --quiet "$ref" >/dev/null && def=$ref
+if [ -z "$def" ]; then
+  for c in origin/main origin/master; do
+    g rev-parse --verify --quiet "$c" >/dev/null && { def=$c; break; }
+  done
+fi
+l=0; [ -f "$r/.git" ] && l=1
+s=0; [ -e "$r/.gitmodules" ] && s=1
+fh=$(fp "$r/.git/FETCH_HEAD" 2>/dev/null) || fh=-
+printf '%s\\n%s\\n%s\\n%s %s %s\\n' "$br" "$head" "$def" "$l" "$s" "\${fh%% *}"
+[ "$br" != HEAD ] && [ -n "$def" ] || exit 0
+f=-
+if [ "$2" = 1 ]; then
+  if ${NETWORK_ENV} git -C "$r" fetch --quiet --no-auto-maintenance origin "\${def#origin/}" >/dev/null 2>&1
+  then f=1; else f=0; fi
+fi
+c=$(g rev-list --left-right --count "HEAD...$def") && d=$(g status --porcelain -uno --ignore-submodules=all) || exit 1
+printf '%s\\n%s\\n%s\\n' "$f" "$c" "\${d:+dirty}"`
+
+const PULLED = 'KOLOFT_PULLED'
+
+const FAST_FORWARD = `r=$1 from=$3
+${NETWORK_ENV} git -C "$r" -c advice.diverging=false pull --ff-only --no-recurse-submodules origin "$2" || exit
+to=$(git -C "$r" rev-parse HEAD 2>/dev/null) || to=$from
+n=$(git -C "$r" rev-list --count "$from..$to" 2>/dev/null) || n=0
+printf '\\n${PULLED} %s %s\\n' "$to" "$n"`
+
+export function parseFreshness(stdout: string): GitSnapshot | null {
+  const [branch, head, defRef, flags, fetched, counts, dirty] = stdout.split('\n')
+  if (!branch || !head || flags === undefined) return null
+  const [linked, subs, fetchHead] = flags.split(' ')
+  const snapshot: GitSnapshot = {
+    branch,
+    head,
+    defRef,
+    linked: linked === '1',
+    hasSubmodules: subs === '1',
+    tracking: null
+  }
+  if (fetched === undefined || fetched === '') return snapshot
+  const lr = parseLeftRight(counts ?? '')
+  if (!lr) return null
+  const fh = parseFloat(fetchHead)
+  return {
+    ...snapshot,
+    tracking: {
+      fetched: fetched === '-' ? null : fetched === '1',
+      fetchHeadAt: Number.isFinite(fh) ? fh * 1000 : null,
+      ...lr,
+      dirty: dirty === 'dirty'
+    }
+  }
+}
 
 const ANSWER_AGENT_REQUEST = `d="${REMOTE_HOOK_DIR}"
 [ -f "$d/req-$1.json" ] || exit 0
@@ -426,6 +490,29 @@ export class SshHost implements Host {
   ): Promise<string | null> {
     const r = await this.sh(script, ['-C', this.bare(root), ...args], { timeoutMs })
     return r.code === 0 ? r.stdout.toString('utf8') : null
+  }
+
+  readonly freshness: FreshnessRunner = {
+    measure: async (root, fetchTimeoutMs) => {
+      const r = await this.sh(FRESHNESS, [this.bare(root), fetchTimeoutMs === null ? '0' : '1'], {
+        timeoutMs: (fetchTimeoutMs ?? 0) + GIT_TIMEOUT_MS
+      })
+      return r.code === 0 ? parseFreshness(r.stdout.toString('utf8')) : null
+    },
+    pull: async (root, defBranch, from, timeoutMs) => {
+      const r = await this.sh(FAST_FORWARD, [this.bare(root), defBranch, from], { timeoutMs })
+      const stdout = r.stdout.toString('utf8')
+      const pulled = new RegExp(`${PULLED} (\\S+) (\\d+)\\s*$`).exec(stdout)
+      return {
+        ok: r.code === 0,
+        stdout,
+        stderr: r.stderr,
+        timedOut: r.code === null,
+        enoent: false,
+        to: pulled?.[1] ?? from,
+        count: pulled ? Number(pulled[2]) : 0
+      }
+    }
   }
 
   async gitRun(root: string, args: string[], network = false): Promise<GitRunResult> {

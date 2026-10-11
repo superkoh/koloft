@@ -81,6 +81,16 @@ const COMMIT_THE_PROJECT_THEN_EDIT_THE_README =
   'cd proj && printf "NOTES.md\\n" > .gitignore && git init -q && git add -A' +
   ' && git -c user.email=lab@koloft.test -c user.name=lab commit -qm base' +
   ' && printf "edited\\n" >> README.md'
+const COMMIT_THE_PROJECT_THEN_PUBLISH_TWO_MORE_TO_ITS_ORIGIN = [
+  'set -e',
+  'G="git -c user.email=lab@koloft.test -c user.name=lab"',
+  'cd proj && git init -q -b main && git add -A && $G commit -qm base',
+  'git clone -q --bare . "$HOME/origin.git"',
+  'git remote add origin "$HOME/origin.git" && git fetch -q origin',
+  'git clone -q "$HOME/origin.git" "$HOME/pub" && cd "$HOME/pub"',
+  'for n in 1 2; do echo $n > up$n.txt; git add -A; $G commit -qm $n; done',
+  'git push -q origin main'
+].join('\n')
 
 const KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS = 45_000
 const MACHINES_FOR_THE_KOLOFT_COMMAND: [LabAlias, string][] = [
@@ -257,6 +267,28 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       await connectsListsAndReads(page, 'kt-fish', 'fuser')
       await startSessionIn(page, 'kt-tcsh', { remote: true })
       await startSessionIn(page, 'kt-fish', { remote: true })
+    })
+  })
+
+  test('E-SSH-16: a checkout behind its origin on a machine whose login shell is fish shows the behind badge, and Pull fast-forwards it there with real git', async ({
+    env
+  }) => {
+    await withLab(env, async ({ page, lab }) => {
+      runOnTarget(lab, 'fuser', COMMIT_THE_PROJECT_THEN_PUBLISH_TWO_MORE_TO_ITS_ORIGIN)
+      await addMachine(page, 'kt-fish', 'fuser')
+      const badge = page.locator('.ws-head', { hasText: 'kt-fish' }).locator('.ws-behind')
+      await expect(badge).toHaveText('2', { timeout: BACKGROUND_CONNECT_MS })
+      await badge.click()
+      const pull = page.locator('.tbu-pop.fx .tbu-act.pull')
+      await expect(pull).toBeEnabled()
+      await pull.click()
+      await expect(page.locator('.toast')).toHaveText(/^proj · main: fast-forwarded 2 commits/, {
+        timeout: 60_000
+      })
+      await expect(badge).toHaveCount(0)
+      expect(runOnTarget(lab, 'fuser', 'git -C proj rev-parse HEAD')).toBe(
+        runOnTarget(lab, 'fuser', 'git -C pub rev-parse HEAD')
+      )
     })
   })
 

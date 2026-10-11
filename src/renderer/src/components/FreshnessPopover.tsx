@@ -18,6 +18,7 @@ export function FreshnessPopover({
   wsPath,
   f,
   github,
+  remote,
   rows,
   left,
   top,
@@ -29,6 +30,7 @@ export function FreshnessPopover({
   wsPath: string
   f?: WorkspaceFreshness
   github?: WorkspaceGithub
+  remote?: { host: string; connected: boolean }
   rows: SessionRow[]
   left: number
   top: number
@@ -98,8 +100,13 @@ export function FreshnessPopover({
   }
 
   const inMain = mainRunningCount(rows)
+  const offline = !!remote && !remote.connected
   const eligible = !!f && canPull(f)
-  const note: PullNote | null = failed ? { text: failed, tone: 'alarm' } : f ? pullNote(f) : null
+  const note: PullNote | null = failed
+    ? { text: failed, tone: 'alarm' }
+    : f
+      ? pullNote(f, remote?.host)
+      : null
 
   return (
     <>
@@ -136,7 +143,7 @@ export function FreshnessPopover({
               <div className="tbu-sep" />
               <button
                 className="tbu-act pull"
-                disabled={!eligible || pulling}
+                disabled={!eligible || pulling || offline}
                 onClick={() => {
                   if (inMain > 0) {
                     setConfirm(inMain)
@@ -153,7 +160,11 @@ export function FreshnessPopover({
                   </span>
                 )}
               </button>
-              <button className="tbu-act" disabled={fetching} onClick={() => void doFetch()}>
+              <button
+                className="tbu-act"
+                disabled={fetching || offline}
+                onClick={() => void doFetch()}
+              >
                 <LuRefreshCw size={14} />
                 {fetching ? 'Fetching…' : 'Fetch now'}
               </button>

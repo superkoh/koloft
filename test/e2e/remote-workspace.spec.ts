@@ -451,7 +451,6 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       await openMenu(page, page.locator('.ws-head', { hasText: REMOTE_WS_NAME }))
       const wsItems = await menuItemTexts(page)
       expect(wsItems.join(' | ')).toContain('Scheduled jobs')
-      expect(wsItems.join(' | ')).not.toContain('Fetch origin')
       expect(wsItems.join(' | ')).not.toContain('New worktree session')
       expect(wsItems.some((t) => t.startsWith('New session'))).toBe(true)
       expect(wsItems.some((t) => t.startsWith('Restore session'))).toBe(true)

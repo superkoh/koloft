@@ -56,11 +56,16 @@ export interface PullNote {
   extra?: string
 }
 
-export function pullNote(f: WorkspaceFreshness): PullNote {
+export function pullNote(f: WorkspaceFreshness, machine?: string): PullNote {
   const why = explainOnly(f)
   if (why) return { text: why, tone: 'plain' }
   if (f.state === 'error')
-    return { text: "can't reach origin — check network or credentials.", tone: 'alarm' }
+    return {
+      text: machine
+        ? `can't reach origin from ${machine} — check its network or credentials.`
+        : "can't reach origin — check network or credentials.",
+      tone: 'alarm'
+    }
   if (f.behind === 0) return { text: `Up to date with ${f.defRef}.`, tone: 'plain' }
   if (f.dirty)
     return {

@@ -696,6 +696,7 @@ export function WorkspaceSidebar({
         wsPath={fresh.path}
         f={f}
         github={w.workspace.github}
+        remote={w.workspace.remote}
         rows={w.rows}
         left={fresh.left}
         top={fresh.top}

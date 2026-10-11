@@ -2215,12 +2215,14 @@ app.whenReady().then(() => {
       tracker.fillMachineScratchpads(host)
       workspaceMgr?.onRemoteChanged()
     },
-    onLeft: (host, ids) => claudeBackend.noticeRemoteExits(host, ids)
+    onLeft: (host, ids) => claudeBackend.noticeRemoteExits(host, ids),
+    onConnected: (host) => void freshness?.machineUp(host)
   })
   freshness = new GitFreshnessEngine({
     workspaces: () => workspaceMgr?.pinnedPaths() ?? [],
     autoFetch: () => loadSettings().gitAutoFetch,
-    onChange: () => workspaceMgr?.restampLive()
+    onChange: () => workspaceMgr?.restampLive(),
+    machine: (host) => (remoteSync?.connected(host) ? hosts.machine(host).freshness : null)
   })
   githubCounts = new GithubCountsSweep({
     workspaces: () => workspaceMgr?.pinnedPaths() ?? [],
