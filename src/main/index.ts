@@ -1020,7 +1020,7 @@ const sessionDeps: SessionVerbDeps = {
   touch: (tabId, key) => conductors?.touch(tabId, key),
   conductorOf: conductorTarget,
   resume: async (row) => {
-    const resumed = await resumeRow(row)
+    const resumed = await resumeRow(row, true)
     if (!resumed.ok) throw new Error(resumed.error)
     return resumed.tabId
   },
@@ -3341,11 +3341,12 @@ function couldNotStart(title: string): string {
 
 // CC§11
 async function resumeRow(
-  row: SessionRow
+  row: SessionRow,
+  rebuildGoneWorktree = false
 ): Promise<{ ok: true; tabId: string } | { ok: false; error: string }> {
   const backend = sessionBackends.forSession(row.id)
   const plan = await backend.resumePlan(row.id)
-  if (plan.action === 'dialog') {
+  if (plan.action === 'dialog' || (plan.action === 'rebuild' && !rebuildGoneWorktree)) {
     return {
       ok: false,
       error: `“${row.title}” needs you — its worktree changed. Click it to resume.`
