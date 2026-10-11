@@ -573,7 +573,7 @@ describe('CodexSessions', () => {
   })
 
   // CODEX§17
-  it("with agent tools on, the app-server is told to run koloft help, a koloft request dropped in the run's own folder is answered for that tab, and stopping the run removes the folder", async () => {
+  it("with agent tools on, the app-server is told to run koloft help and to hand work needing its own worktree to a Koloft session, a koloft request dropped in the run's own folder is answered for that tab, and stopping the run removes the folder", async () => {
     const answer = vi.fn()
     deps.agent = { enabled: () => true, answer }
     const launched = await sessions.launch({ kind: 'codex', cwd: repo })
@@ -581,6 +581,7 @@ describe('CodexSessions', () => {
       c.startsWith('developer_instructions=')
     )
     expect(hint).toContain('koloft help')
+    expect(hint).toContain('koloft session new -w')
     const shimDir = path.dirname(transports[0].options.env!.ZDOTDIR!)
     const requestDir = /\/tmp\/koloft-cx-open-[0-9a-f-]{36}/.exec(
       fs.readFileSync(path.join(shimDir, 'koloft'), 'utf8')
@@ -614,6 +615,17 @@ describe('CodexSessions', () => {
       }),
       expect.any(Number)
     )
+  })
+
+  // ADR-0029
+  it('a conductor with agent tools on is told its role but never the helper rules, which would have it do work itself', async () => {
+    deps.agent = { enabled: () => true, answer: vi.fn() }
+    await sessions.launch({ kind: 'codex', cwd: repo, conductor: true, role: 'ROLE-TEXT' })
+    const hint = transports[0].options.configOverrides?.find((c) =>
+      c.startsWith('developer_instructions=')
+    )
+    expect(hint).toContain('ROLE-TEXT')
+    expect(hint).not.toContain('HELPERS')
   })
 
   it('with agent tools off, a Codex tab gets neither the koloft command nor the Koloft hint', async () => {

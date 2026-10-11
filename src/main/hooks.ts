@@ -270,6 +270,8 @@ export function hookSettings(
   const cmd = (event: string): string =>
     `${quote(hookScript)} ${quote(regDir)} ${quote(tabId)} ${event}`
   const settings: Record<string, unknown> = {
+    // CC§6
+    env: { CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '' },
     hooks: {
       SessionStart: [{ hooks: [{ type: 'command', command: cmd('start') }] }],
       SessionEnd: [{ hooks: [{ type: 'command', command: cmd('end') }] }],

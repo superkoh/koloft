@@ -750,6 +750,21 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   message, Codex named the thread "Acknowledge session handoff" — a name drawn from the
   note, not the task (`agent-tools-real-smoke.spec.ts`). That the title thread never
   reads the developer instructions is inferred, not checked, beyond that spec passing.
+- **Developer instructions do not count as the owner asking for sub-agents.** Codex
+  ships sub-agents on (`codex features list`: `multi_agent stable true`) but tells the
+  model, last in its developer message, `Do not spawn sub-agents unless the user or
+  applicable AGENTS.md/skill instructions explicitly ask for sub-agents, delegation, or
+  parallel agent work` (read with `codex debug prompt-input`). 2026-10-11, Codex CLI
+  0.162.0, `codex exec`, gpt-6-astra at low effort, a folder whose README points at two
+  files: the same sentence ordering one `explorer` sub-agent per file was given as
+  `-c developer_instructions=` (two runs, two wordings: no sub-agent, the model read both
+  files itself), as an `AGENTS.md` (the model went to spawn) and in the prompt (the model
+  went to spawn). In both spawn runs `--ephemeral` made the spawn itself fail ("no rollout
+  found for thread id").
+- **`codex exec --json` shows a sub-agent only through the parent's `wait` items**: a run
+  that started two sub-agents printed four `collab_tool_call` items, all `tool: "wait"`,
+  and no spawn item; each child left its own rollout file under `$CODEX_HOME/sessions`
+  that names the parent's thread id. 2026-10-11, Codex CLI 0.162.0, gpt-6-astra.
 - **Skills:** a folder under `$CODEX_HOME/skills/<n>/SKILL.md` was listed by
   `skills/list` (scope `user`) and used by the model. `-c 'skills.config=[{path=…}]'`
   with a path to a folder, or to a `SKILL.md`, outside those roots added nothing to

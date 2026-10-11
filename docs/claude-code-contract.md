@@ -616,6 +616,16 @@ never wrote a transcript.
   `disableAllHooks: true` turns off both statusLine and hooks.
 - CC also supports `subagentStatusLine` (the key is in the 2.1.281 binary, `strings`,
   2026-09-24).
+- **An `env` entry in `--settings` beats the same entry in `~/.claude/settings.json`, and
+  an empty string turns agent teams off.** 2026-10-11, CC 2.1.296, two interactive
+  sessions in a pty, model haiku, with the user settings holding
+  `"env": {"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "true"}`; each was asked to call the
+  Agent tool once with a `name`. Without a `--settings` file the Agent ack read
+  `status: "teammate_spawned"`; with `--settings '{"env":
+  {"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": ""}}'` it read `status: "async_launched"`,
+  `isAsync: true` — an ordinary background subagent. The binary's teams gate is a
+  plain truthiness test (`if(!a.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS&&!t())return!1`, read
+  with `strings`), so `"0"` would leave teams on; only `""` was run.
 - **The status JSON carries `effort: { level }`** (the session's thinking effort:
   low / medium / high / xhigh / max; Ultracode reports as xhigh). Read from the
   status-object builder in the installed 2.1.263 binary via `strings`, 2026-09-06.
@@ -1314,6 +1324,18 @@ sessions.
   started `sleep 90` with the Bash tool's `run_in_background: true` and ended; 5 s later a
   `bypass` envelope written to its socket was answered 1.3 s after the write. A control
   receiver with no background work answered in 1.0 s.
+- **Messaging between sessions works with agent teams off.** 2026-10-11, CC 2.1.296, two
+  interactive sessions in a pty, both started with `--settings '{"env":
+  {"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": ""}}'` (§6), the receiver also with
+  `-n <name>`: the sender's `ListAgents` listed the receiver ("interactive · idle"), its
+  `SendMessage` was accepted, and the receiver's transcript held the text. The docs page
+  on messaging other sessions says it is "on with nothing to enable"; in `claude -p` both
+  tools were offered with teams on and off alike.
+- **Only the last `--append-system-prompt-file` reaches the model.** 2026-10-11, CC
+  2.1.296, `claude -p`, model haiku, two files each holding one made-up word: given two
+  `--append-system-prompt-file` flags the model knew only the second file's word. Given
+  one `--append-system-prompt-file` and one inline `--append-system-prompt`, it knew both
+  words.
 
 ## §14 The PermissionRequest hook: answering a dialog from outside
 

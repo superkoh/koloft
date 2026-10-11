@@ -409,6 +409,26 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
+  test('E-SSH-16: koloft session new -w, run inside a session on the machine, starts a child session there in a worktree of its own, listed under the session that started it', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    await withLab(env, async ({ page, lab }) => {
+      runOnTarget(lab, 'kuser', COMMIT_THE_PROJECT_THEN_EDIT_THE_README)
+      await addMachine(page, 'kt-key', 'kuser')
+      await startSessionIn(page, 'kt-key', { remote: true })
+      await runIn(page, centerTerm(page), '/koloft session new -w lab-child -- "/answer hi"')
+      await expect(centerTerm(page)).toContainText('koloft exit=0', {
+        timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+      })
+      await expect(wsRows(page, 'kt-key')).toHaveCount(2, { timeout: 90_000 })
+      await expect(wsGroup(page, 'kt-key').locator('.ws-subtabs > .ws-tab')).toHaveCount(1)
+      await expect
+        .poll(() => runOnTarget(lab, 'kuser', 'ls proj/.claude/worktrees'), { timeout: 30_000 })
+        .toContain('lab-child')
+    })
+  })
+
   test('E-SSH-10: ✎ comment on a remote Changes hunk reaches a REAL claude on the machine through ssh and tmux as one paste that waits in its input box, and the next Enter sends path, diff fence and hunk as a paste and the two-line note as typed words in one message, which the model obeys (opt-in, spends real money)', async ({
     env
   }) => {

@@ -5,7 +5,7 @@ import path from 'path'
 
 vi.mock('node-pty', () => ({ spawn: vi.fn() }))
 
-import { AGENT_GUIDE } from '../../src/shared/agentGuide'
+import { agentGuide } from '../../src/shared/agentGuide'
 import {
   AGENT_TOOLS_OFF,
   AgentRequests,
@@ -82,8 +82,17 @@ describe('koloft requests from a session', () => {
     const tabId = tabOf(process.pid, 1)
     await r.answer(dir, 'req-a.json', { tabId, argv: ['help'], cwd: '/w' })
     await r.answer(dir, 'req-b.json', { tabId, argv: [], cwd: '/w' })
-    expect(reply('a')).toEqual({ exit: 0, text: AGENT_GUIDE })
-    expect(reply('b')).toEqual({ exit: 0, text: AGENT_GUIDE })
+    expect(reply('a')).toEqual({ exit: 0, text: agentGuide('claude') })
+    expect(reply('b')).toEqual({ exit: 0, text: agentGuide('claude') })
+  })
+
+  it("help to a Codex session names Codex's own sub-agents and none of Claude's helpers", async () => {
+    const r = requests({ session: (id) => ({ ...sessionOf(id), backendId: 'codex' }) })
+    await r.answer(dir, 'req-a.json', { tabId: tabOf(process.pid, 1), argv: ['help'], cwd: '/w' })
+    const text = (reply('a') as { text: string }).text
+    const helpers = text.slice(text.indexOf('HELPERS'), text.indexOf('\nRULES'))
+    expect(helpers).toContain('spawn_agent')
+    expect(helpers).not.toMatch(/subagent|workflow|Explore|fork/i)
   })
 
   it('an unknown command is refused with exit code 2 and points at koloft help', async () => {
