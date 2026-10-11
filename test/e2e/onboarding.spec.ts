@@ -246,8 +246,8 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
       await advanceTo(page, 4)
 
       const primary = welcome(page).locator('.btn-primary')
+      await expect(primary).toBeEnabled({ timeout: 20_000 })
       await expect(primary).toHaveText('＋ Start first session', { timeout: 20_000 })
-      await expect(primary).toBeEnabled()
       await primary.click()
 
       const [call] = await waitForCalls(env, 1)
@@ -484,7 +484,9 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
       await page.waitForLoadState('domcontentloaded')
       await advanceTo(page, 3)
 
-      const card = welcome(page).locator('.assist-setup .choice')
+      const card = welcome(page)
+        .locator('.assist-setup .choice')
+        .filter({ has: page.locator('.choice-t', { hasText: /^Codex$/ }) })
       await expect(card).toContainText('"me" is not signed in. Click to sign in again.', {
         timeout: 20_000
       })
