@@ -1,16 +1,14 @@
 import { test, expect } from './helpers/app'
-import { startSessionIn, termIds, waitBooted } from './helpers/p1'
+import { startSessionIn, waitBooted } from './helpers/p1'
 
 test.describe('the terminal font ships with the app', () => {
-  test('every bundled JetBrainsMono Nerd Font face has loaded by the time the first terminal opens, so xterm measures its cells in it', async ({
-    app,
+  test('every bundled JetBrainsMono Nerd Font face has loaded before the first terminal opens', async ({
     page
   }) => {
     await waitBooted(page)
     await startSessionIn(page, 'ws-a')
-    const ids = await termIds(page)
 
-    await app.context().addInitScript(() => {
+    await page.addInitScript(() => {
       const w = window as unknown as { __bundledFacesAtFirstTerminal?: string[] }
       const seen = new MutationObserver(() => {
         if (!document.querySelector('.xterm')) return
@@ -18,25 +16,25 @@ test.describe('the terminal font ships with the app', () => {
         w.__bundledFacesAtFirstTerminal = [...document.fonts]
           .filter((f) => f.family.replace(/["']/g, '') === 'JetBrainsMono Nerd Font')
           .map((f) => `${f.style} ${f.weight} ${f.status}`)
+          .sort()
       })
       seen.observe(document, { childList: true, subtree: true })
     })
     await page.reload()
-    await waitBooted(page)
-    await expect.poll(() => termIds(page), { timeout: 30_000 }).toEqual(ids)
-
-    const faces = await page.evaluate(
+    const faces = await page.waitForFunction(
       () =>
         (window as unknown as { __bundledFacesAtFirstTerminal?: string[] })
-          .__bundledFacesAtFirstTerminal
+          .__bundledFacesAtFirstTerminal,
+      undefined,
+      { timeout: 30_000 }
     )
-    expect(faces).toEqual(
-      expect.arrayContaining([
-        'italic 400 loaded',
-        'italic 700 loaded',
-        'normal 400 loaded',
-        'normal 700 loaded'
-      ])
-    )
+
+    expect(await faces.jsonValue()).toEqual([
+      'italic 400 loaded',
+      'italic 700 loaded',
+      'normal 400 loaded',
+      'normal 600 loaded',
+      'normal 700 loaded'
+    ])
   })
 })
