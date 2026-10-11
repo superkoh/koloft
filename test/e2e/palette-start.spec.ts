@@ -14,6 +14,7 @@ import {
   type ClaudeCall
 } from './helpers/p1'
 import { answerFileDialog } from './helpers/workbench'
+import { setupGitFixture } from './helpers/gitFixture'
 import {
   installFakeRemote,
   killFakeRemote,
@@ -224,6 +225,35 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       const calls = await waitForCalls(env, 2)
       expect(textAfterDashes(calls[1])).toBe('tidy the changelog')
       expect(readCalls(env)).toHaveLength(2)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a new worktree off a main checkout that is behind origin goes through Pull & Start first, then starts in that worktree with the prompt', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    setupGitFixture(env).originAhead(2)
+    assistAnswers(env, { workspace: 1, worktree: { new: 'catch-up' }, title: 'Catch up' })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await expect(page.locator('.ws-behind')).toHaveText('2', { timeout: 30_000 })
+      await ask(app, page, 'catch up with main')
+      await page.keyboard.press('Enter')
+
+      const gate = page.getByRole('dialog', { name: 'New Session in…' })
+      await expect(gate.locator('.modal-foot')).toContainText('Pull & Start', { timeout: 30_000 })
+      await page.keyboard.press('Enter')
+      await expect(page.locator('.toast')).toHaveText(/fast-forwarded 2 commits/, {
+        timeout: 30_000
+      })
+      const [call] = await waitForCalls(env, 1)
+      expect(call.argv.join(' ')).toContain('-w catch-up')
+      expect(nameOf(call)).toBe('Catch up')
+      expect(textAfterDashes(call)).toBe('catch up with main')
     } finally {
       await quitAndClose(app)
     }

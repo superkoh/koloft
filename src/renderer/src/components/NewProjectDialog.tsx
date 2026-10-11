@@ -4,7 +4,7 @@ import { LuSparkles, LuX } from 'react-icons/lu'
 import type { BackendId } from '@shared/types'
 import { LOCAL_MACHINE } from '@shared/sessionRoute'
 import { isValidWorktreeName } from '@shared/worktreeName'
-import { projectOptions, projectParentKey } from '../aiStart'
+import { projectOptions } from '../aiStart'
 import { shortenHome } from '../browseModel'
 import { isComposing } from '../keys'
 import { remoteKeyFromForm } from '../remoteWorkspace'
@@ -74,7 +74,7 @@ export function NewProjectDialog({
   const nameBad = !!name && !isValidWorktreeName(name)
   const remote = local || !where ? null : remoteKeyFromForm(machine, where)
   const whereBad = remote?.ok === false ? remote.message : ''
-  const parentKey = projectParentKey(machine, where) ?? where
+  const parentKey = remote?.ok ? remote.key : where
   const ready = !!name && !nameBad && !!where && !whereBad
   const backends = sessionLaunch.usable
   const other =

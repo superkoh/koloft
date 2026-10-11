@@ -30,7 +30,9 @@ export async function routeSession(
         name: path.basename(ws.remote?.path ?? ws.path),
         git: ws.isGit,
         worktrees: ws.isGit
-          ? (await deps.worktrees(ws.path).catch(() => [])).map((w) => w.name)
+          ? (await deps.worktrees(ws.path).catch(() => []))
+              .filter((w) => !w.recoveryResourceId)
+              .map((w) => w.name)
           : [],
         titles: [...rows].sort((a, b) => b.mtime - a.mtime).map((r) => r.title)
       }))

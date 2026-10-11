@@ -1,4 +1,4 @@
-import type { JSX, KeyboardEvent, RefObject } from 'react'
+import type { JSX, KeyboardEvent } from 'react'
 
 type FieldKeys = (e: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => void
 
@@ -8,8 +8,7 @@ export function SeedFields({
   onTitle,
   onPrompt,
   onKeyDown,
-  disabled,
-  promptRef
+  disabled
 }: {
   title: string
   prompt: string
@@ -17,7 +16,6 @@ export function SeedFields({
   onPrompt: (v: string) => void
   onKeyDown: FieldKeys
   disabled: boolean
-  promptRef?: RefObject<HTMLTextAreaElement | null>
 }): JSX.Element {
   return (
     <>
@@ -38,7 +36,6 @@ export function SeedFields({
       <span className="flabel">First prompt</span>
       <div className="cb-input">
         <textarea
-          ref={promptRef}
           className="cb-field task"
           rows={3}
           spellCheck={false}

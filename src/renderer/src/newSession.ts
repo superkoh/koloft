@@ -9,6 +9,7 @@ import type {
 import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import type { RouteWorktree } from '@shared/sessionRoute'
+import type { SessionLaunchOptions } from './components/SessionLaunchButtons'
 
 export type RunChoice =
   | ({ kind: 'existing' } & WorktreeInfo)
@@ -51,22 +52,21 @@ export interface PendingStart extends TypedStart {
   worktree: RouteWorktree | null
 }
 
-export type PendingLaunch = { cwd: string; worktree?: string } & Pick<
-  CreateTabOptions,
-  'firstPrompt' | 'name' | 'trustFolder'
->
-
 export function typedLaunch(typed: TypedStart): Pick<CreateTabOptions, 'firstPrompt' | 'name'> {
   return { firstPrompt: typed.prompt.trim() || undefined, name: typed.title.trim() || undefined }
 }
 
+export function pendingWorktree(wsPath: string, pending: PendingStart): RouteWorktree | null {
+  return wsPath === pending.path ? pending.worktree : null
+}
+
 export function pendingLaunch(
   wsPath: string,
-  pending: PendingStart,
+  wt: RouteWorktree | null,
+  pending: TypedStart,
   worktrees: WorktreeInfo[],
   issues: GithubItem[]
-): PendingLaunch {
-  const wt = wsPath === pending.path ? pending.worktree : null
+): SessionLaunchOptions {
   if (!wt || wt.kind === 'main') return { cwd: wsPath, ...typedLaunch(pending) }
   if (wt.kind === 'issue') {
     const item = issues.find((i) => i.kind === 'issue' && i.number === wt.number)

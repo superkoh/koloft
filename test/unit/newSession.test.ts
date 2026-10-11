@@ -9,6 +9,7 @@ import {
   mainRunningCount,
   moveHot,
   pendingLaunch,
+  pendingWorktree,
   primaryKind,
   primaryLabel,
   pullFailedReason,
@@ -378,32 +379,28 @@ describe('itemAim (#218 — where an issue or pull request session starts)', () 
   })
 
   it('⌘P starts where Assist pointed: the main checkout, a listed worktree, a new one, or the issue’s worktree with its lines first', () => {
-    const pending = (worktree: PendingStart['worktree']): PendingStart => ({
-      prompt: ' fix login ',
-      title: 'Login fix',
-      path: '/repo',
-      worktree
-    })
+    const said = { prompt: ' fix login ', title: 'Login fix' }
     const typed = { firstPrompt: 'fix login', name: 'Login fix' }
     const listed = [wt('auth')]
-    expect(pendingLaunch('/repo', pending({ kind: 'main' }), listed, [])).toEqual({
+    expect(pendingLaunch('/repo', { kind: 'main' }, said, listed, [])).toEqual({
       cwd: '/repo',
       ...typed
     })
-    expect(pendingLaunch('/repo', pending({ kind: 'existing', name: 'auth' }), listed, [])).toEqual(
-      { cwd: '/repo/.claude/worktrees/auth', ...typed }
-    )
-    expect(pendingLaunch('/repo', pending({ kind: 'new', name: 'login' }), listed, [])).toEqual({
+    expect(pendingLaunch('/repo', { kind: 'existing', name: 'auth' }, said, listed, [])).toEqual({
+      cwd: '/repo/.claude/worktrees/auth',
+      ...typed
+    })
+    expect(pendingLaunch('/repo', { kind: 'new', name: 'login' }, said, listed, [])).toEqual({
       cwd: '/repo',
       worktree: 'login',
       ...typed
     })
-    expect(pendingLaunch('/repo', pending({ kind: 'issue', number: 218 }), [], [issue])).toEqual({
+    expect(pendingLaunch('/repo', { kind: 'issue', number: 218 }, said, [], [issue])).toEqual({
       cwd: '/repo',
       worktree: 'issue-218',
       ...seededItemExtras(issue, ' fix login ', 'Login fix')
     })
-    expect(pendingLaunch('/repo', pending({ kind: 'issue', number: 9 }), [], [issue])).toEqual({
+    expect(pendingLaunch('/repo', { kind: 'issue', number: 9 }, said, [], [issue])).toEqual({
       cwd: '/repo',
       worktree: 'issue-9',
       ...typed
@@ -417,7 +414,8 @@ describe('itemAim (#218 — where an issue or pull request session starts)', () 
       path: '/repo',
       worktree: { kind: 'new', name: 'login' }
     }
-    expect(pendingLaunch('/other', p, [], [])).toEqual({ cwd: '/other', firstPrompt: 'fix login' })
+    expect(pendingWorktree('/repo', p)).toEqual({ kind: 'new', name: 'login' })
+    expect(pendingWorktree('/other', p)).toBeNull()
   })
 
   it('labels the primary with the number it acts on', () => {

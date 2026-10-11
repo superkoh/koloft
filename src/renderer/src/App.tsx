@@ -44,7 +44,6 @@ import type {
   SessionSearchHit,
   WorkspaceRows
 } from '@shared/types'
-import { LOCAL_MACHINE } from '@shared/sessionRoute'
 import {
   useStore,
   openInterceptedFile,
@@ -400,11 +399,33 @@ export default function App(): JSX.Element {
     [addTab]
   )
 
-  const requestNew = useCallback((mode: PickerMode, path?: string): void => {
-    if (newSessionLocked.current) return
-    setRestoreWs(null)
-    setNewRequest({ id: ++newRequestId.current, mode, path })
-  }, [])
+  const requestNew = useCallback(
+    (mode: PickerMode, path?: string, pending?: PendingStart): void => {
+      if (newSessionLocked.current) return
+      setRestoreWs(null)
+      setNewRequest({ id: ++newRequestId.current, mode, path, pending })
+    },
+    []
+  )
+
+  const startNow = useCallback(
+    (host: HostId, backend: SessionBackend, options: () => Promise<SessionLaunchOptions>): void => {
+      if (newSessionLocked.current) return
+      const refusal = unsupportedPairMessage(backend, host)
+      if (refusal) {
+        showToast(refusal)
+        return
+      }
+      newSessionLocked.current = true
+      void options()
+        .then((opts) => startSession(opts, backend))
+        .catch((e) => showToast(launchErrorMessage(e)))
+        .finally(() => {
+          newSessionLocked.current = false
+        })
+    },
+    [showToast, startSession]
+  )
 
   const startIn = useCallback(
     (wsPath: string, backend?: SessionBackend): void => {
@@ -414,21 +435,15 @@ export default function App(): JSX.Element {
         requestNew('main', wsPath)
         return
       }
-      if (newSessionLocked.current) return
-      const chosen = backend ?? effectiveBackend(sessionMethods, installed)
-      const refusal = unsupportedPairMessage(chosen, hostOf(wsPath))
-      if (refusal) {
-        showToast(refusal)
-        return
-      }
-      newSessionLocked.current = true
-      void startSession({ cwd: wsPath }, chosen)
-        .catch((e) => showToast(launchErrorMessage(e)))
-        .finally(() => {
-          newSessionLocked.current = false
+      startNow(
+        hostOf(wsPath),
+        backend ?? effectiveBackend(sessionMethods, installed),
+        async () => ({
+          cwd: wsPath
         })
+      )
     },
-    [installed, requestNew, sessionMethods, showToast, startSession]
+    [installed, requestNew, sessionMethods, startNow]
   )
 
   const globalNew = useCallback(
@@ -1072,30 +1087,6 @@ export default function App(): JSX.Element {
     void resumeSession({ id: row.id, backendId: row.backendId, title: row.title })
   }, [])
 
-  const startNow = (
-    host: HostId,
-    backend: SessionBackend,
-    options: () => Promise<SessionLaunchOptions>
-  ): void => {
-    const refusal = unsupportedPairMessage(backend, host)
-    if (refusal) {
-      showToast(refusal)
-      return
-    }
-    if (newSessionLocked.current) return
-    newSessionLocked.current = true
-    void options()
-      .then((opts) => startSession(opts, backend))
-      .catch((e) => showToast(launchErrorMessage(e)))
-      .finally(() => {
-        newSessionLocked.current = false
-      })
-  }
-
-  const pickWorkspaceFor = (pending: PendingStart, path?: string): void => {
-    setNewRequest({ id: ++newRequestId.current, mode: 'main', path, pending })
-  }
-
   const paletteRouted: PaletteRouted = (prompt, backend, route) => {
     setPaletteOpen(false)
     if (route?.kind === 'project') {
@@ -1103,7 +1094,7 @@ export default function App(): JSX.Element {
       const parentKey = where ? projectParentKey(route.machine, where) : null
       const folder = route.folder
       if (parentKey && folder) {
-        startNow(route.machine === LOCAL_MACHINE ? 'local' : 'ssh', backend, () =>
+        startNow(hostOf(parentKey), backend, () =>
           projectOptions(parentKey, folder, { prompt, title: route.title })
         )
         return
@@ -1135,12 +1126,11 @@ export default function App(): JSX.Element {
             ? 'Koloft Assist could not answer, so pick the workspace yourself.'
             : 'Koloft Assist is off, so pick the workspace yourself. Turn it on in Settings ▸ Assist.'
         )
-      pickWorkspaceFor(pending)
+      requestNew('main', undefined, pending)
       return
     }
-    const inMainCheckout = !pending.worktree || pending.worktree.kind === 'main'
-    if (inMainCheckout && pullable(ws)) {
-      pickWorkspaceFor(pending, ws.workspace.path)
+    if (pullable(ws) && pending.worktree?.kind !== 'existing') {
+      requestNew('main', ws.workspace.path, pending)
       return
     }
     startNow(hostOf(ws.workspace.path), backend, () => pendingOptions(ws.workspace.path, pending))
@@ -1148,7 +1138,7 @@ export default function App(): JSX.Element {
 
   const pickWorkspaceForTyped = (typed: TypedStart): void => {
     setNewProject(null)
-    pickWorkspaceFor({ ...typed, path: null, worktree: null })
+    requestNew('main', undefined, { ...typed, path: null, worktree: null })
   }
 
   const paletteActions = (): PaletteAction[] => {
@@ -1855,7 +1845,7 @@ export default function App(): JSX.Element {
               onClose={closePalette}
               onRouted={paletteRouted}
               onOpenHit={openSearchHit}
-              methods={namedMethods ?? [effectiveBackend(sessionMethods, installed)]}
+              methods={welcomeBackends}
             />
           )}
           {newRequest && (
