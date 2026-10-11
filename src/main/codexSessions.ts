@@ -194,6 +194,7 @@ export interface CodexSessionDeps {
   error(message: string): void
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
   pickHome(): { account: string; home: string } | undefined
+  assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
   browserEndpoint(tabId: string): string
   openShimRoot: string
   playwrightBin: string
@@ -813,10 +814,14 @@ export class CodexSessions {
       resource = await this.worktrees.adopt(workspace, this.deps.projectInfo(cwd).treeRoot)
     }
     this.assertStarting()
-    if (opts.trustFolder) this.deps.trustFolder(cwd, this.envFor(home))
+    // ADR-0029
+    const assist = this.deps.assistOf(cwd, opts.resumeSessionId)
+    const conductor = opts.conductor || !!assist
+    const role = opts.role ?? assist?.role
+    if (opts.trustFolder || assist) this.deps.trustFolder(cwd, this.envFor(home))
     const tabId = this.deps.pty.nextId()
     // ADR-0029
-    const endpoint = opts.conductor ? '' : this.deps.browserEndpoint(tabId)
+    const endpoint = conductor ? '' : this.deps.browserEndpoint(tabId)
     const browser = endpoint ? await this.browserOverrides(home, cwd) : []
     this.assertStarting()
     let run: Run | undefined
@@ -838,11 +843,11 @@ export class CodexSessions {
     const env = { ...this.envFor(home), ZDOTDIR: openShim.zdotDir }
     const observer = new CodexObservation(observe)
     const instructions = [
-      ...(agent && !opts.conductor ? [koloftPrompt('codex')] : []),
-      ...(opts.role ? [opts.role] : [])
+      ...(agent && !conductor ? [koloftPrompt('codex')] : []),
+      ...(role ? [role] : [])
     ]
     const permission = opts.permission ?? 'default'
-    const permissions = opts.conductor ? CONDUCTOR_PERMISSIONS : PERMISSIONS[permission]
+    const permissions = conductor ? CONDUCTOR_PERMISSIONS : PERMISSIONS[permission]
     let transport: CodexTransport | undefined
     try {
       transport = await this.startTransport({

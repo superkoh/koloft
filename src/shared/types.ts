@@ -185,9 +185,22 @@ export interface Settings {
   hintsOff: boolean
   lastSeenVersion: string
   discord: DiscordSettings
+  assistSessions: AssistRecord[]
 }
 
 export type AssistSetting = { on: boolean; backend: BackendId } | null
+
+export interface AssistRecord {
+  scope: string
+  sessionIds: string[]
+  lastSessionKey?: string
+}
+
+export interface AssistTaskRow {
+  tabId: string
+  scope: string
+  name: string
+}
 
 export interface DiscordChannel {
   guildId: string
@@ -200,8 +213,6 @@ export interface ConductorBinding {
   scope: string
   backend: BackendId
   channel: DiscordChannel
-  sessionIds: string[]
-  lastSessionKey?: string
   lastMessageId?: string
   touched: string[]
   threads?: SessionThread[]
@@ -223,7 +234,6 @@ export interface DiscordSettings {
 export interface ConductorSaveInput {
   id?: string
   scope: string
-  backend: BackendId
   channel: DiscordChannel
 }
 
@@ -285,7 +295,8 @@ export const DEFAULT_SETTINGS: Settings = {
   hintsSeen: [],
   hintsOff: false,
   lastSeenVersion: '',
-  discord: { bindings: [] }
+  discord: { bindings: [] },
+  assistSessions: []
 }
 
 export type BackendId = 'claude' | 'codex'
@@ -534,6 +545,7 @@ export interface DocVerdict {
 
 export interface SessionInfo extends BackendSessionInfo, SessionSource {
   conductor?: string
+  assistTask?: string
   turnOver?: boolean
   docVerdicts?: Record<string, DocVerdict>
 }
@@ -1101,10 +1113,12 @@ export interface KoloftApi {
   }
   conductors: {
     save(input: ConductorSaveInput): Promise<ConductorSaveResult>
-    unbind(id: string): Promise<void>
-    switchBackend(id: string): Promise<void>
-    open(id: string): Promise<ConductorOpenResult>
-    startFresh(id: string): Promise<ConductorOpenResult>
+    unbind(bindingId: string): Promise<void>
+    open(scope: string): Promise<ConductorOpenResult>
+    startFresh(scope: string): Promise<ConductorOpenResult>
+    closeTask(tabId: string): Promise<void>
+    tasks(): Promise<AssistTaskRow[]>
+    onTasks(cb: (rows: AssistTaskRow[]) => void): () => void
   }
   discord: {
     setToken(token: string): Promise<boolean>

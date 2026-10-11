@@ -10,6 +10,7 @@ import {
   type E2EEnv
 } from './helpers/env'
 import {
+  assistRecordOnDisk,
   centerTerm,
   expectNoCodexWhileTheCheckIsOutNorAfter,
   newSessionInWith,
@@ -103,9 +104,10 @@ async function openConductor(page: Page, name: string): Promise<void> {
   await expect(conductorRow(page, name)).toHaveClass(/st-waiting/, { timeout: 60_000 })
 }
 
-async function conductorTabId(page: Page, binding: ConductorBinding): Promise<string> {
+async function conductorTabId(page: Page, env: E2EEnv): Promise<string> {
   const sessions = await page.evaluate(() => window.api.sessions.list())
-  const live = sessions.find((s) => s.alive && binding.sessionIds.includes(s.sessionId))
+  const keys = assistRecordOnDisk(env)?.sessionIds ?? []
+  const live = sessions.find((s) => s.alive && keys.includes(s.sessionId))
   if (!live) throw new Error('the conductor has no live tab')
   return live.tabId
 }
@@ -198,7 +200,7 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
       expect(path.dirname(call.cwd)).toBe(path.join(env.userData, 'conductors'))
       expect(call.argv).toContain('--plugin-dir')
       expect(call.argv).not.toContain('--append-system-prompt-file')
-      await expect.poll(() => bindingsOnDisk(env)[0]?.sessionIds.length).toBe(1)
+      await expect.poll(() => assistRecordOnDisk(env)?.sessionIds.length).toBe(1)
       await expect(notesIsland(page).locator('.wb-title')).toHaveText('Notes · ws-a')
       const write = {
         tool_name: 'Write',
@@ -211,12 +213,12 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
 
       await page.waitForTimeout(ROWS_RESCAN_AND_PUSH_SETTLE_MS)
       await expect(wsRows(page, 'ws-a')).toHaveCount(0)
-      const tabId = await conductorTabId(page, bindingsOnDisk(env)[0])
+      const tabId = await conductorTabId(page, env)
       expect((await pendingAttention(page)).filter((e) => e.tabId === tabId)).toEqual([])
 
       await page.evaluate((id) => window.api.terminal.write(id, '/clear\r'), tabId)
-      await expect.poll(() => bindingsOnDisk(env)[0]?.sessionIds.length).toBe(2)
-      expect(bindingsOnDisk(env)[0].lastSessionKey).toBe(bindingsOnDisk(env)[0].sessionIds[1])
+      await expect.poll(() => assistRecordOnDisk(env)?.sessionIds.length).toBe(2)
+      expect(assistRecordOnDisk(env)?.lastSessionKey).toBe(assistRecordOnDisk(env)?.sessionIds[1])
       await page.waitForTimeout(ROWS_RESCAN_AND_PUSH_SETTLE_MS)
       await expect(wsRows(page, 'ws-a')).toHaveCount(0)
 
@@ -319,7 +321,7 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
       await bindFromWorkspaceMenu(page, 'ws-a', { backend: 'Codex', channel: CHANNEL_A })
       expect(bindingsOnDisk(env)).toMatchObject([{ backend: 'codex' }])
       await openConductor(page, 'ws-a')
-      await expect.poll(() => bindingsOnDisk(env)[0]?.sessionIds.length).toBe(1)
+      await expect.poll(() => assistRecordOnDisk(env)?.sessionIds.length).toBe(1)
       const servers = fs
         .readFileSync(path.join(env.home, 'fake-codex-server-calls.jsonl'), 'utf8')
         .trim()

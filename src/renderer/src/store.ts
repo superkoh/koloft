@@ -7,6 +7,7 @@ import {
   type AccountView,
   type AdoptableTab,
   type ArtifactView,
+  type AssistTaskRow,
   type AttentionEvent,
   type BrowserJsDialog,
   type CronState,
@@ -149,6 +150,8 @@ interface AppState {
     onSave(): void | Promise<void>
   } | null
   conductorTabs: Record<string, string>
+  assistTasks: AssistTaskRow[]
+  assistAsked: boolean
   bindConductor: { scope?: string; editId?: string } | null
   discordSetupStep: number | null
   orphanConfirm: string | null
@@ -194,7 +197,9 @@ interface AppState {
   setResumeLaunch: (l: AppState['resumeLaunch']) => void
   setCloseConfirm: (c: AppState['closeConfirm']) => void
   setUnsavedPrompt: (p: AppState['unsavedPrompt']) => void
-  setConductorTab: (bindingId: string, tabId: string) => void
+  setConductorTab: (scope: string, tabId: string) => void
+  setAssistTasks: (rows: AssistTaskRow[]) => void
+  setAssistAsked: (asked: boolean) => void
   setBindConductor: (b: AppState['bindConductor']) => void
   setDiscordSetupStep: (step: number | null) => void
   setOrphanConfirm: (rowId: string | null) => void
@@ -489,6 +494,8 @@ export const useStore = create<AppState>((set, get) => ({
   cron: { jobs: [], live: [], folders: {}, notes: {} },
   unsavedPrompt: null,
   conductorTabs: {},
+  assistTasks: [],
+  assistAsked: false,
   bindConductor: null,
   discordSetupStep: null,
   orphanConfirm: null,
@@ -794,8 +801,10 @@ export const useStore = create<AppState>((set, get) => ({
   setResumeLaunch: (resumeLaunch) => set({ resumeLaunch }),
   setCloseConfirm: (closeConfirm) => set({ closeConfirm }),
   setUnsavedPrompt: (unsavedPrompt) => set({ unsavedPrompt }),
-  setConductorTab: (bindingId, tabId) =>
-    set((s) => ({ conductorTabs: { ...s.conductorTabs, [bindingId]: tabId } })),
+  setConductorTab: (scope, tabId) =>
+    set((s) => ({ conductorTabs: { ...s.conductorTabs, [scope]: tabId } })),
+  setAssistTasks: (assistTasks) => set({ assistTasks }),
+  setAssistAsked: (assistAsked) => set({ assistAsked }),
   setBindConductor: (bindConductor) => set({ bindConductor }),
   setDiscordSetupStep: (discordSetupStep) => set({ discordSetupStep }),
   setOrphanConfirm: (orphanConfirm) => set({ orphanConfirm }),

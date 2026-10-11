@@ -13,6 +13,7 @@ import {
   terminalText,
   waitBooted,
   waitConductorStarted,
+  assistRecordOnDisk,
   waitForCallsBesideConductors,
   wsRows
 } from './helpers/p1'
@@ -341,7 +342,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
         .poll(() => fake.posted.filter((p) => p.content === OFFLINE_REPLY).map((p) => p.replyTo))
         .toEqual(['101', '103'])
       await expect.poll(() => bindingOnDisk(env)?.lastMessageId).toBe('103')
-      const conductorSaw = transcriptText(env, bindingOnDisk(env)!.sessionIds[0])
+      const conductorSaw = transcriptText(env, assistRecordOnDisk(env)!.sessionIds[0])
       expect(conductorSaw).not.toMatch(/while you were away|one more/)
     } finally {
       await quitAndClose(app)
@@ -757,7 +758,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await expect(wsRows(page, 'ws-a')).toHaveClass(/cold/, {
         timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
       })
-      const conductorTab = await tabOf(page, bindingOnDisk(env)!.sessionIds[0])
+      const conductorTab = await tabOf(page, assistRecordOnDisk(env)!.sessionIds[0])
       fs.writeFileSync(
         path.join(env.home, 'fake-claude-delay'),
         String(RESUMED_SESSION_BINDS_AFTER_MS)
@@ -799,7 +800,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
             timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
           })
           await childRow.click()
-          const conductorId = identityOf(bindingOnDisk(env)!.sessionIds[0]).nativeSessionId
+          const conductorId = identityOf(assistRecordOnDisk(env)!.sessionIds[0]).nativeSessionId
           const handover = `koloft session send ${conductorId} "<your result>"`
           if (child === 'claude')
             expect(readCalls(env).find((c) => c.firstPrompt?.includes(handover))).toBeTruthy()
@@ -906,7 +907,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
           })
           .toBe('pr view 389 --json state --repo acme/app\n')
         if (backend === 'claude') {
-          const conductorTab = await tabOf(page, bindingOnDisk(env)!.sessionIds[0])
+          const conductorTab = await tabOf(page, assistRecordOnDisk(env)!.sessionIds[0])
           await expect
             .poll(() => terminalText(page, conductorTab))
             .toMatch(/koloft: usage: koloft gh pr view[\s\S]*\{"state":"MERGED"\}/)

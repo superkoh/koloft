@@ -328,7 +328,7 @@ export interface Target {
   remote: boolean
   workspace?: string
   tabId?: string
-  bindingId?: string
+  assistScope?: string
   open(): Promise<string>
 }
 

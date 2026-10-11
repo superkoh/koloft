@@ -115,7 +115,7 @@ import { NotesIsland } from './components/NotesIsland'
 import { ConductorsIsland } from './components/ConductorsIsland'
 import { BindConductorDialog } from './components/BindConductorDialog'
 import { DiscordSetup } from './components/DiscordSetup'
-import { conductorNotesWorkspace, conductorOfTab } from './conductorRows'
+import { assistScopes, conductorNotesWorkspace, conductorOfTab } from './conductorRows'
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
 import { RestoreDialog } from './components/RestoreDialog'
 import { CronJobsDialog } from './components/CronJobsDialog'
@@ -1058,11 +1058,12 @@ export default function App(): JSX.Element {
     else if (rowsLoaded && noWorkspaces) setWelcomeActive(true)
   }, [rowsLoaded, onboardingSeen, noWorkspaces, setWelcomeActive])
   const updateOffer = useStore((s) => s.updateOffer)
-  const conductorBindings = useStore((s) => s.settings.discord.bindings)
   const conductorTabs = useStore((s) => s.conductorTabs)
+  const assistTasks = useStore((s) => s.assistTasks)
+  const assistRowCount = useStore((s) => assistScopes(s.settings).length) + assistTasks.length
   const conductorsFolded = useStore((s) => s.settings.conductorsFolded)
   const activeConductor = activeTabId
-    ? conductorOfTab(conductorBindings, sessions, conductorTabs, tabs, activeTabId)
+    ? conductorOfTab(sessions, conductorTabs, assistTasks, activeTabId)
     : undefined
   const currentWs = currentWorkspace(
     workspaceRows,
@@ -1198,14 +1199,17 @@ export default function App(): JSX.Element {
   const signInTabId = useStore((s) => s.signIn?.tabId)
   const whatsNewOpen = useStore((s) => s.update.open)
   const [assistSetupLater, setAssistSetupLater] = useState(false)
+  const assistAsked = useStore((s) => s.assistAsked && !s.settings.assist?.on)
+  const setAssistAsked = useStore((s) => s.setAssistAsked)
   const assistDialogShown =
-    rowsLoaded &&
-    assistSetup.loaded &&
-    !assistSetup.done &&
-    !assistSetupLater &&
-    !welcomeActive &&
-    !whatsNewOpen &&
-    !(signInTabId && activeTabId === signInTabId)
+    assistAsked ||
+    (rowsLoaded &&
+      assistSetup.loaded &&
+      !assistSetup.done &&
+      !assistSetupLater &&
+      !welcomeActive &&
+      !whatsNewOpen &&
+      !(signInTabId && activeTabId === signInTabId))
   const landedTab = tabs.find((t) => t.id === shown.id) ?? activeTab
   const landedSession = landedTab ? sessions.find((s) => s.tabId === landedTab.id) : undefined
   const panelTab = hasWorkbench(landedTab) ? landedTab?.id : undefined
@@ -1411,7 +1415,7 @@ export default function App(): JSX.Element {
   useLayoutEffect(() => {
     const island = dockRef.current?.querySelector('.isl-conductors')
     setConductorsHeight(island ? island.getBoundingClientRect().height + DOCK_GUTTER_PX : 0)
-  }, [conductorBindings.length, conductorsFolded, sidebarHidden])
+  }, [assistRowCount, conductorsFolded, sidebarHidden])
   const notesRoom = dockHeight - conductorsHeight
 
   const [osFullscreen, setOsFullscreen] = useState(false)
@@ -1907,7 +1911,14 @@ export default function App(): JSX.Element {
           <BindConductorDialog />
           <UpdateModal />
           {assistDialogShown && (
-            <AssistDialog setup={assistSetup} onNotNow={() => setAssistSetupLater(true)} />
+            <AssistDialog
+              setup={assistSetup}
+              asked={assistAsked}
+              onNotNow={() => {
+                setAssistSetupLater(true)
+                setAssistAsked(false)
+              }}
+            />
           )}
           <UnsavedDialog />
         </>,

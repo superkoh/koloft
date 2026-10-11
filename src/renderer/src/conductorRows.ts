@@ -1,31 +1,43 @@
-import type { ConductorBinding, SessionInfo } from '@shared/types'
+import type { AssistTaskRow, SessionInfo, Settings } from '@shared/types'
 import { GLOBAL_SCOPE } from '@shared/conductors'
 import { isRemoteKey } from '@shared/remoteKey'
 
+type TabState = { id: string; alive: boolean; asleep?: true }
+
 export function conductorTab(
-  binding: ConductorBinding,
+  scope: string,
   sessions: readonly SessionInfo[],
   opened: Record<string, string>,
-  tabs: readonly { id: string; alive: boolean; asleep?: true }[]
+  tabs: readonly TabState[]
 ): string | undefined {
-  const bound = sessions.find((s) => s.alive && s.conductor === binding.id)?.tabId
+  const bound = sessions.find((s) => s.alive && s.conductor === scope && !s.assistTask)?.tabId
   if (bound) return bound
-  const tabId = opened[binding.id]
+  const tabId = opened[scope]
   return tabId && tabs.some((t) => t.id === tabId && (t.alive || t.asleep)) ? tabId : undefined
 }
 
 export function conductorOfTab(
-  bindings: readonly ConductorBinding[],
   sessions: readonly SessionInfo[],
   opened: Record<string, string>,
-  tabs: readonly { id: string; alive: boolean }[],
+  tasks: readonly AssistTaskRow[],
   tabId: string
-): ConductorBinding | undefined {
-  return bindings.find((b) => conductorTab(b, sessions, opened, tabs) === tabId)
+): string | undefined {
+  return (
+    sessions.find((s) => s.tabId === tabId)?.conductor ??
+    tasks.find((t) => t.tabId === tabId)?.scope ??
+    Object.keys(opened).find((scope) => opened[scope] === tabId)
+  )
 }
 
-export function conductorNotesWorkspace(binding: ConductorBinding): string | null {
-  return binding.scope === GLOBAL_SCOPE || isRemoteKey(binding.scope) ? null : binding.scope
+export function assistScopes(
+  settings: Pick<Settings, 'assist' | 'discord' | 'assistSessions'>
+): string[] {
+  const talked = settings.assist?.on ? settings.assistSessions.map((r) => r.scope) : []
+  return [...new Set([GLOBAL_SCOPE, ...settings.discord.bindings.map((b) => b.scope), ...talked])]
+}
+
+export function conductorNotesWorkspace(scope: string): string | null {
+  return scope === GLOBAL_SCOPE || isRemoteKey(scope) ? null : scope
 }
 
 export function conductorsNeedYou(n: number): string {

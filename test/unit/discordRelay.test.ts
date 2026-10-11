@@ -42,7 +42,6 @@ function setup(
     scope: 'global',
     backend: 'claude',
     channel: { guildId: '1', channelId: CHANNEL, name: 'koloft' },
-    sessionIds: [],
     touched: [],
     ...over
   }
