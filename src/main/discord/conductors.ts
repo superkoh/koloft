@@ -12,15 +12,14 @@ import type {
   DiscordSettings,
   SessionThread
 } from '@shared/types'
-import { identityOf } from '@shared/sessionBackend'
+import { BACKEND_LABEL, identityOf } from '@shared/sessionBackend'
 import {
   assistTaskName,
   bindingProblem,
   GLOBAL_SCOPE,
-  keepPinnedBindings,
+  keepPinnedScopes,
   newerSnowflake,
   conductorName,
-  asPeerName,
   peerNamesOf
 } from '@shared/conductors'
 import { assistTaskRole, conductorRole } from '@shared/agentGuide'
@@ -34,10 +33,10 @@ export interface ConductorLaunch {
   role: string
   allow?: string[]
   title: string
-  peerName: string
 }
 
-export type AssistBackendChoice = { backend: BackendId; because?: string } | { error: string }
+export type AssistBackendPick = { backend: BackendId; because?: string }
+export type AssistBackendChoice = AssistBackendPick | { error: string }
 
 export interface AssistTask {
   name: string
@@ -79,7 +78,7 @@ export const NOT_BOUND = 'That Assist is no longer bound.'
 export const GLOBAL_HAS_NO_WORKSPACE = 'The global Assist has no workspace.'
 export const REMOTE_CONDUCTOR_HAS_NO_WORKSPACE =
   'This Assist runs on this Mac, outside its remote workspace, so it has no workspace.'
-export const NOT_AN_ASSIST_SCOPE = 'Pick a workspace from the sidebar, or Global.'
+const NOT_AN_ASSIST_SCOPE = 'Pick a workspace from the sidebar, or Global.'
 
 const FOLDER_NAME_HASH_CHARS = 16
 const LAST_MESSAGE_SAVE_DELAY_MS = 1000
@@ -477,11 +476,9 @@ export class Conductors {
   }
 
   keepPinned(pinned: string[]): void {
-    const kept = keepPinnedBindings(this.discord.bindings, pinned)
+    const kept = keepPinnedScopes(this.discord.bindings, pinned)
     if (kept.length !== this.discord.bindings.length) this.write({ bindings: kept })
-    const keptRecords = this.records.filter(
-      (r) => r.scope === GLOBAL_SCOPE || pinned.includes(r.scope)
-    )
+    const keptRecords = keepPinnedScopes(this.records, pinned)
     if (keptRecords.length !== this.records.length) this.writeRecords(keptRecords)
   }
 
@@ -519,15 +516,14 @@ export class Conductors {
       backend,
       cwd,
       role: conductorRole(scope, !!this.bindingOfScope(scope)),
-      title,
-      peerName: asPeerName(title)
+      title
     }
   }
 
   // ADR-0029 CODEX§27
   private async onClaudeIfCodexRefusedTheGate(
-    choice: { backend: BackendId; because?: string },
-    open: (choice: { backend: BackendId; because?: string }) => Promise<ConductorOpenResult>
+    choice: AssistBackendPick,
+    open: (choice: AssistBackendPick) => Promise<ConductorOpenResult>
   ): Promise<ConductorOpenResult> {
     const result = await open(choice)
     if (result.ok || choice.backend !== 'codex' || result.error !== CODEX_GATE_NOT_TRUSTED)
@@ -547,17 +543,14 @@ export class Conductors {
     return this.onClaudeIfCodexRefusedTheGate(choice, (c) => this.openOn(scope, c))
   }
 
-  private async openOn(
-    scope: string,
-    choice: { backend: BackendId; because?: string }
-  ): Promise<ConductorOpenResult> {
+  private async openOn(scope: string, choice: AssistBackendPick): Promise<ConductorOpenResult> {
     if (!this.record(scope)) this.changeRecord(scope, (r) => r)
     const launch = this.launchFor(scope, choice.backend)
     const key = this.record(scope)?.lastSessionKey
     const resumable = key !== undefined && identityOf(key).backendId === launch.backend
     if (key !== undefined && !resumable)
       this.d.toast(
-        `The ${launch.title} now runs on ${launch.backend === 'claude' ? 'Claude' : 'Codex'}, so it starts a new conversation.`
+        `The ${launch.title} now runs on ${BACKEND_LABEL[launch.backend]}, so it starts a new conversation.`
       )
     else if (choice.because) this.d.toast(choice.because)
     let tabId: string | null
@@ -599,7 +592,7 @@ export class Conductors {
   private async openTaskOn(
     scope: string,
     task: AssistTask,
-    choice: { backend: BackendId; because?: string }
+    choice: AssistBackendPick
   ): Promise<ConductorOpenResult> {
     if (choice.because) this.d.toast(choice.because)
     if (!this.record(scope)) this.changeRecord(scope, (r) => r)
@@ -609,8 +602,7 @@ export class Conductors {
       ...this.launchFor(scope, choice.backend),
       role,
       allow: task.allow ?? [],
-      title,
-      peerName: asPeerName(title)
+      title
     }
     const placeholder: RunningTask = { ...task, scope, role, tabId: '' }
     this.tasks.push(placeholder)

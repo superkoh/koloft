@@ -2,15 +2,11 @@ import { useEffect, useState, type JSX, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { LuChevronDown, LuChevronUp, LuConciergeBell, LuPlus, LuX } from 'react-icons/lu'
 import { channelLabel, conductorName, GLOBAL_SCOPE, scopeName } from '@shared/conductors'
-import {
-  ATTENTION_REASON,
-  type AssistTaskRow,
-  type BackendId,
-  type SessionInfo
-} from '@shared/types'
+import { ATTENTION_REASON, type AssistTaskRow, type SessionInfo } from '@shared/types'
 import { useStore } from '../store'
 import { rowStateClass } from '../sessionRows'
 import { assistScopes, conductorsNeedYou, conductorTab } from '../conductorRows'
+import { preferredAssistBackend } from '@shared/sessionBackend'
 import { SessionBackendIcon } from './SessionBackendIcon'
 import { menuPosFor, useDismissOnOutside } from './WorkspaceSidebar'
 
@@ -33,7 +29,11 @@ export async function openConductor(scope: string, fresh = false): Promise<void>
 type MenuTarget = { kind: 'assist'; scope: string } | { kind: 'task'; task: AssistTaskRow }
 
 export function ConductorsIsland(): JSX.Element {
-  const settings = useStore((s) => s.settings)
+  const assist = useStore((s) => s.settings.assist)
+  const discord = useStore((s) => s.settings.discord)
+  const assistSessions = useStore((s) => s.settings.assistSessions)
+  const sessionMethods = useStore((s) => s.settings.sessionMethods)
+  const folded = useStore((s) => s.settings.conductorsFolded)
   const sessions = useStore((s) => s.sessions)
   const tabs = useStore((s) => s.tabs)
   const attention = useStore((s) => s.attention)
@@ -43,7 +43,6 @@ export function ConductorsIsland(): JSX.Element {
   const setAssistTasks = useStore((s) => s.setAssistTasks)
   const setAssistAsked = useStore((s) => s.setAssistAsked)
   const setBindConductor = useStore((s) => s.setBindConductor)
-  const folded = settings.conductorsFolded
   const [menu, setMenu] = useState<{ target: MenuTarget; left: number; top: number } | null>(null)
   useDismissOnOutside(!!menu, setMenu)
 
@@ -52,17 +51,17 @@ export function ConductorsIsland(): JSX.Element {
     return window.api.conductors.onTasks(setAssistTasks)
   }, [setAssistTasks])
 
-  const preferred: BackendId = settings.assist?.backend ?? settings.sessionMethods.defaultBackend
-  const bindingOf = (scope: string) => settings.discord.bindings.find((b) => b.scope === scope)
+  const preferred = preferredAssistBackend({ assist, sessionMethods })
+  const bindingOf = (scope: string) => discord.bindings.find((b) => b.scope === scope)
   const callingFor = (tabId: string | undefined, keys: readonly string[]) =>
     attention.find(
       (e) => (!!tabId && e.tabId === tabId) || (!!e.sessionId && keys.includes(e.sessionId))
     )
   const taskKeys = new Set(sessions.filter((s) => s.assistTask).map((s) => s.sessionId))
-  const rows = assistScopes(settings).map((scope) => {
+  const rows = assistScopes({ assist, discord, assistSessions }).map((scope) => {
     const tabId = conductorTab(scope, sessions, opened, tabs)
     const sess = tabId ? sessions.find((s) => s.tabId === tabId) : undefined
-    const keys = (settings.assistSessions.find((r) => r.scope === scope)?.sessionIds ?? []).filter(
+    const keys = (assistSessions.find((r) => r.scope === scope)?.sessionIds ?? []).filter(
       (key) => !taskKeys.has(key)
     )
     return { scope, binding: bindingOf(scope), tabId, sess, calling: callingFor(tabId, keys) }
@@ -73,7 +72,7 @@ export function ConductorsIsland(): JSX.Element {
     calling: callingFor(task.tabId, [])
   }))
   const callingCount = [...rows, ...taskRows].filter((r) => r.calling).length
-  const greyGlobal = !settings.assist?.on && !bindingOf(GLOBAL_SCOPE)
+  const greyGlobal = !assist?.on && !bindingOf(GLOBAL_SCOPE)
 
   const setFolded = (next: boolean): void => {
     const st = useStore.getState()
@@ -184,7 +183,7 @@ export function ConductorsIsland(): JSX.Element {
                     </div>
                     <div className="ws-tab-sub">
                       <span>
-                        {settings.assist ? 'Off — click to turn on' : 'Not set up — click to start'}
+                        {assist ? 'Off — click to turn on' : 'Not set up — click to start'}
                       </span>
                     </div>
                   </div>

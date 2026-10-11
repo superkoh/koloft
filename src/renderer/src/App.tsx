@@ -115,7 +115,7 @@ import { NotesIsland } from './components/NotesIsland'
 import { ConductorsIsland } from './components/ConductorsIsland'
 import { BindConductorDialog } from './components/BindConductorDialog'
 import { DiscordSetup } from './components/DiscordSetup'
-import { assistScopes, conductorNotesWorkspace, conductorOfTab } from './conductorRows'
+import { conductorNotesWorkspace, conductorOfTab } from './conductorRows'
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
 import { RestoreDialog } from './components/RestoreDialog'
 import { CronJobsDialog } from './components/CronJobsDialog'
@@ -1060,7 +1060,9 @@ export default function App(): JSX.Element {
   const updateOffer = useStore((s) => s.updateOffer)
   const conductorTabs = useStore((s) => s.conductorTabs)
   const assistTasks = useStore((s) => s.assistTasks)
-  const assistRowCount = useStore((s) => assistScopes(s.settings).length) + assistTasks.length
+  const assistBindings = useStore((s) => s.settings.discord.bindings)
+  const assistRecords = useStore((s) => s.settings.assistSessions)
+  const assistOn = useStore((s) => !!s.settings.assist?.on)
   const conductorsFolded = useStore((s) => s.settings.conductorsFolded)
   const activeConductor = activeTabId
     ? conductorOfTab(sessions, conductorTabs, assistTasks, activeTabId)
@@ -1415,7 +1417,7 @@ export default function App(): JSX.Element {
   useLayoutEffect(() => {
     const island = dockRef.current?.querySelector('.isl-conductors')
     setConductorsHeight(island ? island.getBoundingClientRect().height + DOCK_GUTTER_PX : 0)
-  }, [assistRowCount, conductorsFolded, sidebarHidden])
+  }, [assistBindings, assistRecords, assistOn, assistTasks.length, conductorsFolded, sidebarHidden])
   const notesRoom = dockHeight - conductorsHeight
 
   const [osFullscreen, setOsFullscreen] = useState(false)

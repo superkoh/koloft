@@ -41,6 +41,8 @@ import {
   backendIdOf,
   capabilitiesFor,
   identityOf,
+  otherBackend,
+  preferredAssistBackend,
   statusUnavailable,
   SUPPORTED_PAIRS
 } from '@shared/sessionBackend'
@@ -67,10 +69,9 @@ import {
 import { directoryListingHtml } from './dirListing'
 import {
   HOOK_SCRIPT,
-  forgetTurnMarkers,
+  forgetAssistMarkers,
   markAnswerable,
   pruneStale,
-  removeAllowFile,
   setupHooks,
   writeAllowFile,
   writeTabHookSettings
@@ -292,6 +293,7 @@ import type {
   ResumePlan,
   ProjectInfo,
   SessionInfo,
+  SessionMethods,
   AttentionEvent,
   AttentionSubject,
   SessionResumeRequest,
@@ -614,6 +616,7 @@ function sleepTab(tabId: string): void {
 
 function forgetSleeper(tabId: string): void {
   sleepers.delete(tabId)
+  conductors?.onPtyExit(tabId, false)
   typedWhileAsleep.delete(tabId)
   sendToRenderer('tab:killedByMain', tabId)
   workspaceMgr?.onTrackerUpdate()
@@ -1025,15 +1028,11 @@ const assist = koloftAssist({
 })
 const assistRuns = new Map<number, AbortController>()
 
-function preferredAssistBackend(): BackendId {
-  const s = loadSettings()
-  return s.assist?.backend ?? s.sessionMethods.defaultBackend
-}
-
-async function whyAssistCannotRunOn(backend: BackendId): Promise<string | undefined> {
-  const label = BACKEND_LABEL[backend]
-  if (!loadSettings().sessionMethods.enabled[backend])
-    return `${label} is turned off in Settings ▸ Sessions`
+async function whyAssistCannotRunOn(
+  backend: BackendId,
+  enabled: SessionMethods['enabled']
+): Promise<string | undefined> {
+  if (!enabled[backend]) return `${BACKEND_LABEL[backend]} is turned off in Settings ▸ Sessions`
   if (backend === 'codex') {
     if (!codexSessions || !(await codexSessions.availability()).available)
       return 'Codex is not available on this Mac'
@@ -1047,11 +1046,15 @@ async function whyAssistCannotRunOn(backend: BackendId): Promise<string | undefi
 }
 
 async function assistBackendChoice(avoid?: BackendId): Promise<AssistBackendChoice> {
-  const preferred = preferredAssistBackend()
-  const other: BackendId = preferred === 'claude' ? 'codex' : 'claude'
-  const why = avoid === preferred ? 'it could not start' : await whyAssistCannotRunOn(preferred)
+  const settings = loadSettings()
+  const preferred = preferredAssistBackend(settings)
+  const other = otherBackend(preferred)
+  const { enabled } = settings.sessionMethods
+  const why =
+    avoid === preferred ? 'it could not start' : await whyAssistCannotRunOn(preferred, enabled)
   if (!why) return { backend: preferred }
-  const otherWhy = avoid === other ? 'it could not start' : await whyAssistCannotRunOn(other)
+  const otherWhy =
+    avoid === other ? 'it could not start' : await whyAssistCannotRunOn(other, enabled)
   if (!otherWhy)
     return { backend: other, because: `Assist runs on ${BACKEND_LABEL[other]} this time: ${why}.` }
   return {
@@ -1818,10 +1821,7 @@ app.whenReady().then(() => {
     discordThreads?.forget(e.id)
     askButtons?.forget(e.id)
     if (answerable.delete(e.id) && answerableRegDir) markAnswerable(answerableRegDir, e.id, false)
-    if (answerableRegDir) {
-      removeAllowFile(answerableRegDir, e.id)
-      forgetTurnMarkers(answerableRegDir, e.id)
-    }
+    if (answerableRegDir) forgetAssistMarkers(answerableRegDir, e.id)
     loginPtys.delete(e.id)
     if (toolInstallPtys.delete(e.id)) {
       sessionBackends.forgetAvailability()
@@ -2045,7 +2045,7 @@ app.whenReady().then(() => {
           allow: l.allow,
           conductor: true,
           trustFolder: true,
-          name: l.backend === 'claude' ? l.peerName : undefined
+          name: l.backend === 'claude' ? asPeerName(l.title) : undefined
         },
         l.title
       ),
@@ -2069,7 +2069,7 @@ app.whenReady().then(() => {
       sendToRenderer('terminal:spawned', spawned)
       return res.id
     },
-    kill: (tabId) => (sleepers.has(tabId) ? forgetSleeper(tabId) : killTabFromMain(tabId)),
+    kill: killTabFromMain,
     say: (channelId, text) => discordRelay?.say(channelId, text),
     rowsChanged: () => workspaceMgr?.refresh(),
     tasksChanged: () => sendToRenderer('conductors:tasks', conductors?.taskRows() ?? []),
@@ -2077,7 +2077,7 @@ app.whenReady().then(() => {
     bindDeadlineMs: cronBindDeadlineMs()
   })
   conductors.keepPinned(workspaceMgr.pinnedPaths().map((w) => w.path))
-  conductors.followBackend(preferredAssistBackend())
+  conductors.followBackend(preferredAssistBackend(loadSettings()))
   const discordLockFile = path.join(userData, 'discord.lock')
   const link = new DiscordLink({
     apiUrl: discordApiUrl(),
@@ -3232,7 +3232,6 @@ function killTabPty(tabId: string, restarting = false): Promise<boolean> {
   const sleeper = sleepers.get(tabId)
   if (sleeper) {
     forgetSleeper(tabId)
-    conductors?.onPtyExit(tabId, false)
     const tree = projectInfoFor(sleeper.cwd).treeRoot
     const resource =
       sleeper.kind === 'codex' && !restarting
@@ -3545,7 +3544,8 @@ function conductorTarget(ref: string): Target | undefined {
   return {
     key: `conductor:${scope}`,
     name: `the ${conductorName(scope)}`,
-    backend: (tabId && backendIdOf(ptyMgr.get(tabId)?.kind)) || preferredAssistBackend(),
+    backend:
+      (tabId && backendIdOf(ptyMgr.get(tabId)?.kind)) || preferredAssistBackend(loadSettings()),
     remote: false,
     tabId,
     assistScope: scope,
@@ -3916,8 +3916,10 @@ function registerIpc(): void {
   ipcMain.handle('settings:get', () => loadSettings())
   ipcMain.handle('app:version', () => app.getVersion())
   ipcMain.handle('settings:set', (_e, patch) => {
-    commitSettings(sanitizeSettingsPatch(patch))
-    conductors?.followBackend(preferredAssistBackend())
+    const saved = commitSettings(sanitizeSettingsPatch(patch))
+    const backend = preferredAssistBackend(saved)
+    if (!conductors || saved.discord.bindings.every((b) => b.backend === backend)) return saved
+    conductors.followBackend(backend)
     return loadSettings()
   })
 
@@ -3987,7 +3989,7 @@ function registerIpc(): void {
     const { guildId, channelId, name } = channel
     const saved = conductors?.save(
       { id: input.id, scope: input.scope, channel: { guildId, channelId, name } },
-      preferredAssistBackend()
+      preferredAssistBackend(loadSettings())
     ) ?? { ok: false, error: STILL_STARTING }
     if (saved.ok) registerSlashCommands()
     return saved

@@ -53,11 +53,8 @@ export function bindingProblem(
   return undefined
 }
 
-export function keepPinnedBindings(
-  bindings: ConductorBinding[],
-  pinned: string[]
-): ConductorBinding[] {
-  return bindings.filter((b) => b.scope === GLOBAL_SCOPE || pinned.includes(b.scope))
+export function keepPinnedScopes<T extends { scope: string }>(items: T[], pinned: string[]): T[] {
+  return items.filter((b) => b.scope === GLOBAL_SCOPE || pinned.includes(b.scope))
 }
 
 function strings(raw: unknown): string[] {

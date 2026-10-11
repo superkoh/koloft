@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
 import os from 'node:os'
 import type { AssistSetting, BackendId } from '@shared/types'
+import { otherBackend } from '@shared/sessionBackend'
 
 export interface AssistJob {
   system: string
@@ -79,8 +80,7 @@ export function koloftAssist(deps: AssistDeps): Assist {
   return async (job) => {
     const setting = deps.setting()
     if (!setting?.on) return null
-    const other: BackendId = setting.backend === 'claude' ? 'codex' : 'claude'
-    for (const backend of [setting.backend, other]) {
+    for (const backend of [setting.backend, otherBackend(setting.backend)]) {
       if (!deps.enabled(backend)) continue
       const target = await deps[backend]()
       if (job.signal?.aborted) return null

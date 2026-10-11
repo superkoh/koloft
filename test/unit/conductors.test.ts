@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  bindingProblem,
-  GLOBAL_SCOPE,
-  keepPinnedBindings,
-  sanitizeDiscord
-} from '@shared/conductors'
+import { bindingProblem, GLOBAL_SCOPE, keepPinnedScopes, sanitizeDiscord } from '@shared/conductors'
 import { buildResetPatch, sanitizeLoadedSettings, sanitizeSettingsPatch } from '@shared/settingsOps'
 import type { ConductorBinding } from '@shared/types'
 
@@ -132,9 +127,9 @@ describe('loading settings written before Assist records existed', () => {
   })
 })
 
-describe('keepPinnedBindings', () => {
+describe('keepPinnedScopes', () => {
   it('drops a workspace binding whose workspace is no longer pinned and keeps the global one', () => {
-    const kept = keepPinnedBindings(
+    const kept = keepPinnedScopes(
       [binding('g', GLOBAL_SCOPE, '1'), binding('a', '/ws/a', '2'), binding('b', '/ws/b', '3')],
       ['/ws/b']
     )

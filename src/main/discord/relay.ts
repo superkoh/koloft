@@ -22,6 +22,7 @@ import type { AskPayload } from '@shared/sessionEvent'
 import { DISCORD_PREFIX } from '@shared/agentGuide'
 import type { ToolCall } from '../sessionTracker'
 import { crossSessionLine, type ModeClass } from '../crossSessionMessage'
+import { discordIdsFile } from '../hooks'
 import {
   askHow,
   claudeDialog,
@@ -53,7 +54,6 @@ const PAGE = 100
 const PROMPT_SETTLES_AFTER_BIND_MS = 1000
 const CONDUCTOR_GETS_READY_WITHIN_MS = 10 * 60_000
 const MESSAGE_SOCKET_SHOWS_WITHIN_MS = 10_000
-export const DISCORD_IDS_SUFFIX = '.discord-ids'
 
 export interface Destination {
   id: string
@@ -261,7 +261,7 @@ export class DiscordRelay {
     if (line === null)
       throw new Error('Assist cannot take a message holding </cross-session-message>.')
     if (text.startsWith(DISCORD_PREFIX))
-      fs.appendFileSync(path.join(this.d.regDir, `${tab}${DISCORD_IDS_SUFFIX}`), `${id}\n`)
+      fs.appendFileSync(discordIdsFile(this.d.regDir, tab), `${id}\n`)
     await this.d.sendLine(tab, line, MESSAGE_SOCKET_SHOWS_WITHIN_MS)
   }
 

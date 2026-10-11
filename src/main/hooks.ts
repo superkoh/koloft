@@ -354,8 +354,12 @@ export function removeConductorMarker(regDir: string, tabId: string): void {
   fs.rmSync(conductorMarker(regDir, tabId), { force: true })
 }
 
-export function allowFile(regDir: string, tabId: string): string {
+function allowFile(regDir: string, tabId: string): string {
   return path.join(regDir, `${tabId}.allow`)
+}
+
+export function discordIdsFile(regDir: string, tabId: string): string {
+  return path.join(regDir, `${tabId}.discord-ids`)
 }
 
 export function writeAllowFile(regDir: string, tabId: string, allow: readonly string[]): string {
@@ -364,19 +368,19 @@ export function writeAllowFile(regDir: string, tabId: string, allow: readonly st
   return file
 }
 
-export function removeAllowFile(regDir: string, tabId: string): void {
-  fs.rmSync(allowFile(regDir, tabId), { force: true })
-}
-
 export function markAnswerable(regDir: string, tabId: string, on: boolean): void {
   const file = path.join(regDir, `${tabId}.answerable`)
   if (on) fs.writeFileSync(file, '')
   else fs.rmSync(file, { force: true })
 }
 
-export function forgetTurnMarkers(regDir: string, tabId: string): void {
-  for (const suffix of ['typed', 'discord-ids'])
-    fs.rmSync(path.join(regDir, `${tabId}.${suffix}`), { force: true })
+export function forgetAssistMarkers(regDir: string, tabId: string): void {
+  for (const file of [
+    allowFile(regDir, tabId),
+    discordIdsFile(regDir, tabId),
+    path.join(regDir, `${tabId}.typed`)
+  ])
+    fs.rmSync(file, { force: true })
 }
 
 export const KOLOFT_ALLOW_RULE = { allow: ['Bash(koloft *)'] }

@@ -2,6 +2,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { writePrivateAtomically } from './privateFile'
+import { realpathSafe } from './projectInfo'
 
 export function codexConfigFile(env: NodeJS.ProcessEnv | undefined): string {
   return path.join(env?.CODEX_HOME || path.join(os.homedir(), '.codex'), 'config.toml')
@@ -20,17 +21,9 @@ function readConfig(configFile: string): string {
   }
 }
 
-function fileBehindLinks(file: string): string {
-  try {
-    return fs.realpathSync(file)
-  } catch {
-    return file
-  }
-}
-
 // CODEX§15 PLATFORM§43
 function writeConfig(configFile: string, text: string): void {
-  const target = fileBehindLinks(configFile)
+  const target = realpathSafe(configFile)
   fs.mkdirSync(path.dirname(target), { recursive: true })
   writePrivateAtomically(target, text)
 }

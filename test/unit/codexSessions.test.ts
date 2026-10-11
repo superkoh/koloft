@@ -921,7 +921,7 @@ describe('CodexSessions', () => {
   })
 
   // ADR-0029 CODEX§27 CODEX§15
-  it('when Codex does not trust the gate, Koloft writes one trust entry into the config every account home links to and asks again; when it is still untrusted, or Codex cannot answer, the Assist is refused before any app-server or TUI of its own starts, so it never runs ungated', async () => {
+  it('when Codex does not trust the gate, Koloft writes one trust entry into the config every account home links to and asks again; it asks no more while that config is unchanged; once the config changes and the gate is untrusted, or Codex cannot answer, the Assist is refused before any app-server or TUI of its own starts, so it never runs ungated', async () => {
     const shared = path.join(directory, '.codex', 'config.toml')
     const home = path.join(directory, 'homes', 'work')
     fs.mkdirSync(path.dirname(shared), { recursive: true })
@@ -946,6 +946,13 @@ describe('CodexSessions', () => {
     )
     expect(transports).toHaveLength(1)
 
+    const asks = (): number =>
+      mocks.request.mock.calls.filter(([method]) => method === 'hooks/list').length
+    const asked = asks()
+    await sessions.launch({ kind: 'codex', cwd: repo, conductor: true })
+    expect(asks()).toBe(asked)
+
+    fs.writeFileSync(shared, 'model = "gpt-5"\n')
     mocks.request.mockImplementation(async (method: string) =>
       method === 'hooks/list' ? gateListing('untrusted') : { data: [], nextCursor: null }
     )
@@ -956,8 +963,8 @@ describe('CodexSessions', () => {
     await expect(sessions.launch({ kind: 'codex', cwd: repo, conductor: true })).rejects.toThrow(
       CODEX_GATE_NOT_TRUSTED
     )
-    expect(transports).toHaveLength(1)
-    expect(deps.pty.create).toHaveBeenCalledTimes(1)
+    expect(transports).toHaveLength(2)
+    expect(deps.pty.create).toHaveBeenCalledTimes(2)
   })
 
   // ADR-0029 CODEX§26
