@@ -165,6 +165,7 @@ export interface GithubFixture {
     pr?: number | null
     issues?: number
     prs?: number
+    signedOut?: boolean
   } | null
 }
 
@@ -360,6 +361,7 @@ function prOf(
 
 function fixtureCounts(fx: GithubFixture, root: string): WorkspaceGithub | null {
   const f = fx[root]
+  if (f?.signedOut) return { repo: `${f.owner}/${f.repo}`, issues: 0, prs: 0, signedOut: true }
   if (!f || f.issues === undefined || f.prs === undefined) return null
   return { repo: `${f.owner}/${f.repo}`, issues: f.issues, prs: f.prs }
 }

@@ -303,7 +303,7 @@ test.describe('Workbench · GitHub button (github.com is pinned to loopback, so 
     }
   })
 
-  test('G10: with gh signed out the menu says to run gh auth login, draws no dot and offers nothing to send', async ({
+  test("G10: with gh signed out the menu says so and offers Sign in to GitHub, which runs gh's prompt-free web login in a terminal tab; once it signs in the checks come back without a restart", async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -311,11 +311,20 @@ test.describe('Workbench · GitHub button (github.com is pinned to loopback, so 
     try {
       await expect(ghButton(page)).toBeVisible({ timeout: 30_000 })
       await ghButton(page).click({ button: 'right' })
-      await expect(page.locator('.wb-ghmenu .mi.head')).toHaveText('Checks · run gh auth login', {
+      await expect(page.locator('.wb-ghmenu .mi.head')).toHaveText('Checks · not signed in', {
         timeout: 30_000
       })
       expect(await ghMenuItems(page)).not.toContain('Send failing checks')
       await expect(ghButton(page).locator('.ci')).toHaveCount(0)
+
+      installFakeGh(env, { checks: ONE_FAILING_OF_FIVE })
+      await page.locator('.wb-ghmenu .mi', { hasText: 'Sign in to GitHub' }).click()
+      await expect
+        .poll(() => fs.readFileSync(path.join(env.home, 'fake-gh-calls.txt'), 'utf8'), {
+          timeout: 30_000
+        })
+        .toContain('auth login --web -h github.com --clipboard=false')
+      await expect(ghButton(page).locator('.ci')).toHaveClass(/\bfail\b/, { timeout: 30_000 })
     } finally {
       await app.close().catch(() => {})
     }
