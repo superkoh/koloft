@@ -28,6 +28,7 @@ import type { ModeClass } from './crossSessionMessage'
 export interface SessionBackend {
   id: BackendId
   availability(): Promise<BackendAvailability>
+  forgetAvailability(): void
   list(): BackendSessionInfo[]
   historyRows(workspacePath: string): Promise<BackendSessionRow[]>
   create(spec: CreateTabOptions): Promise<CreateTabResult>
@@ -141,6 +142,10 @@ export class SessionBackends {
         return backend ? backend.availability() : unregistered(id)
       })
     )
+  }
+
+  forgetAvailability(): void {
+    for (const backend of this.adapters.values()) backend.forgetAvailability()
   }
 
   list(): SessionInfo[] {

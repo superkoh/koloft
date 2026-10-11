@@ -20,6 +20,7 @@ import {
   newSessionInWith,
   openMenu,
   openWorktreeSession,
+  startSessionIn,
   waitBooted,
   wsRows
 } from './helpers/p1'
@@ -955,6 +956,84 @@ test.describe("a REAL Codex drives its own tab's Workbench through the owner's P
       await server.close()
     }
   })
+})
+
+const openAndReadTheTitle = (url: string): string =>
+  `Use the playwright-cli shell command, not MCP tools: run playwright-cli open ${url} , then playwright-cli eval document.title . Reply with only the title it printed.`
+const READ_THE_TITLE_AGAIN =
+  'Run playwright-cli eval document.title once more and reply with only the title it printed.'
+
+// CODEX§26 PLATFORM§17
+test.describe("REAL agents drive their own tab's Workbench with the playwright-cli Koloft ships: opt-in cases; they spend real money", () => {
+  for (const [label, method, useReal, have, transcript] of [
+    ['Claude Code', 'Claude', useRealClaude, HAVE_REAL_CLAUDE, CLAUDE_TRANSCRIPT],
+    ['Codex', 'Codex', useRealCodex, HAVE_REAL_CODEX, CODEX_TRANSCRIPT]
+  ] as const)
+    test(`two real ${label} tabs in one workspace each open a page in their own Workbench with the bundled playwright-cli, and the first still reads its own page after the second opened one`, async ({
+      env
+    }) => {
+      test.skip(!have, 'set the KOLOFT_SMOKE_* variables for this backend')
+      test.setTimeout(4 * A_REAL_MODEL_TURN_MS)
+      useReal(env, [env.workspaces.a])
+      seedSettings(env, { hintsOff: true })
+      const server = await startEchoServer()
+      const app = await launchApp(env)
+      const page = await app.firstWindow()
+      try {
+        await waitBooted(page)
+        const rows = wsRows(page, 'ws-a')
+        const tabs: { tabId: string; title: string }[] = []
+        for (const n of [1, 2]) {
+          await startSessionIn(page, 'ws-a', method === 'Codex' ? { method } : {})
+          await expect(rows).toHaveCount(n, { timeout: 60_000 })
+          const ids = await rows.evaluateAll((els) => els.map((e) => e.getAttribute('data-tab-id')))
+          const tabId = ids.find((id) => id && !tabs.some((t) => t.tabId === id))!
+          await expect(page.locator(`.ws-tab[data-tab-id="${tabId}"]`)).toHaveClass(
+            /\bst-(waiting|idle)\b/,
+            { timeout: 90_000 }
+          )
+          await expect.poll(() => boundSessionId(page, tabId), { timeout: 60_000 }).toBeTruthy()
+          const title = `koloft-cli-${n}-${Date.now().toString(36)}`
+          tabs.push({ tabId, title })
+        }
+        const asks = [
+          {
+            tab: tabs[0],
+            text: openAndReadTheTitle(server.page('/page-1', `<title>${tabs[0].title}</title>`))
+          },
+          {
+            tab: tabs[1],
+            text: openAndReadTheTitle(server.page('/page-2', `<title>${tabs[1].title}</title>`))
+          },
+          { tab: tabs[0], text: READ_THE_TITLE_AGAIN }
+        ]
+        for (const [i, ask] of asks.entries()) {
+          const sessionId = (await boundSessionId(page, ask.tab.tabId))!
+          const before = transcript.replies(env, sessionId).length
+          const newReplies = (): string =>
+            transcript.replies(env, sessionId).slice(before).join('\n')
+          await sendToCodexTab(page, ask.tab.tabId, ask.text)
+          await expect.poll(newReplies, { timeout: A_REAL_MODEL_TURN_MS }).toContain(ask.tab.title)
+          await test.info().attach(`reply-${i + 1}`, { body: newReplies() })
+          await expect(page.locator(`.ws-tab[data-tab-id="${ask.tab.tabId}"]`)).toHaveClass(
+            /\bst-(waiting|idle)\b/,
+            { timeout: A_REAL_MODEL_TURN_MS }
+          )
+        }
+        const [workbenchLoad, ...more] = [
+          ...server.requestsFor('/page-1'),
+          ...server.requestsFor('/page-2')
+        ]
+        for (const r of more) expect(r.userAgent).toBe(workbenchLoad.userAgent)
+        expect(workbenchLoad.userAgent).not.toMatch(/HeadlessChrome|Electron\//)
+      } catch (e) {
+        await keepWhatTheAgentSawAndDid(page, env)
+        throw e
+      } finally {
+        await quitAndClose(app)
+        await server.close()
+      }
+    })
 })
 
 const GOAL_THAT_WAITS_ON_A_BACKGROUND_TASK =

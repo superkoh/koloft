@@ -844,7 +844,11 @@ export interface KoloftApi {
     onSlept(cb: (tabId: string) => void): () => void
   }
   sessions: {
-    backends(): Promise<BackendAvailability[]>
+    backends(recheck?: boolean): Promise<BackendAvailability[]>
+    installTool(backend: BackendId): Promise<{ tabId: string; cwd: string } | null>
+    onToolsChanged(cb: () => void): () => void
+    commandLineToolsMissing(): Promise<boolean>
+    installCommandLineTools(): void
     onUpdate(cb: (sessions: SessionInfo[]) => void): () => void
     onRelocated(cb: (e: { tabId: string; dir: string }) => void): () => void
     noteActivity(tabId: string): void

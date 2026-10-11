@@ -134,6 +134,7 @@ import { WorldClock } from './components/WorldClock'
 import { UpdateModal } from './components/UpdateModal'
 import { AssistDialog } from './components/AssistDialog'
 import { useAssistSetup } from './useAssistSetup'
+import { useToolsChanged } from './useInstalledBackends'
 import { Onboarding } from './components/Onboarding'
 import { BrowserOverlay } from './components/BrowserOverlay'
 import { Hint } from './components/Hint'
@@ -352,6 +353,7 @@ export default function App(): JSX.Element {
   const [rowsLoaded, setRowsLoaded] = useState(false)
 
   const [probed, setProbed] = useState<Record<SessionBackend, boolean> | null>(null)
+  const toolsChanged = useToolsChanged()
   useEffect(() => {
     let alive = true
     void window.api.sessions.backends().then(
@@ -369,7 +371,7 @@ export default function App(): JSX.Element {
     return () => {
       alive = false
     }
-  }, [])
+  }, [toolsChanged])
   const installed = useMemo(
     () => new Set(probed ? SESSION_BACKENDS.filter((b) => probed[b]) : SESSION_BACKENDS),
     [probed]

@@ -1217,13 +1217,18 @@ function handleLine(line) {
     }
     return
   }
-  if (text.startsWith('/koloft ')) {
-    const rest = text.slice('/koloft '.length).trim()
-    cp.execFile('/bin/sh', ['-c', `koloft ${rest}`], { cwd, env: process.env }, (e, out, err) => {
+  const runAndEcho = (label, command) =>
+    cp.execFile('/bin/sh', ['-c', command], { cwd, env: process.env }, (e, out, err) => {
       const code = e ? (typeof e.code === 'number' ? e.code : 1) : 0
       const said = `${out}${err}`.replace(/\r?\n/g, '\r\n')
-      process.stdout.write(`${said}[fake-claude] koloft exit=${code}\r\n> `)
+      process.stdout.write(`${said}[fake-claude] ${label} exit=${code}\r\n> `)
     })
+  if (text.startsWith('/koloft ')) {
+    runAndEcho('koloft', `koloft ${text.slice('/koloft '.length).trim()}`)
+    return
+  }
+  if (text.startsWith('/sh ')) {
+    runAndEcho('sh', text.slice('/sh '.length).trim())
     return
   }
   if (text === '/busy') {

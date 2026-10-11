@@ -17,6 +17,7 @@ import {
   wsRows
 } from './helpers/p1'
 import { setupChangeFixture, seedBrowseTree } from './helpers/filesFixture'
+import { readExternalOpens } from './helpers/browser'
 import {
   WORKBENCH,
   claudePrompts,
@@ -660,6 +661,29 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
       timeout: 30_000
     })
     await expect(page.locator(WORKBENCH.readingBody)).toBeVisible()
+  })
+
+  // PLATFORM§1
+  test('WB-C13b: on a Mac without Apple’s command line tools a local non-git Changes says git needs them, and Install them opens Apple’s installer', async ({
+    env
+  }) => {
+    env.launchEnv.KOLOFT_TEST_CLT = 'missing'
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      await openChanges(page)
+      const banner = page.locator(CV.banner)
+      await expect(banner).toContainText('it needs Apple’s command line tools', {
+        timeout: 30_000
+      })
+      await expect(page.locator(CV.empty)).toHaveCount(0)
+      await banner.getByRole('button', { name: 'Install them' }).click()
+      await expect.poll(() => readExternalOpens(env)).toContain('xcode-select --install')
+    } finally {
+      await app.close().catch(() => {})
+    }
   })
 
   test('WB-C14: a deleted worktree shows the placeholder, keeps other tabs readable, and stops polling', async ({

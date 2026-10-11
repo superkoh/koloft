@@ -6126,18 +6126,6 @@ input.ft-newfile {
   color: var(--fg-dim);
   font-weight: 650;
 }
-.assist-modal .ob-cmd,
-.onboarding .ob-cmd {
-  display: block;
-  margin-top: 5px;
-  padding: 5px 9px;
-  border-radius: 5px;
-  background: var(--bg-0);
-  color: var(--fg-dim);
-  font-family: var(--mono);
-  font-size: 11.5px;
-}
-
 .ob-actions {
   display: flex;
   align-items: center;

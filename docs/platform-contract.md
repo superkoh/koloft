@@ -17,7 +17,10 @@ method. A recheck adds its date, version and command to the bullet.
   always on it, but on a Mac without the Xcode Command Line Tools it is only a stub that
   fails or offers an install dialog (inferred, not checked). Homebrew tools like `gh`,
   and a `claude` found on a developer's PATH, are not found at all (ENOENT, the "no such
-  file" error). Either kind of failure shows no error in the app.
+  file" error). Either kind of failure shows no error in the app. Without the tools,
+  `xcode-select -p` exits non-zero, and `xcode-select --install` opens Apple's own
+  install dialog and returns at once (both inferred, not checked: every Mac this was
+  developed on has the tools).
 - No locale is set either, so a shell started from the app runs in the C locale: CJK
   text is garbled and wcwidth counts a wide character as 1 cell, which breaks the
   layout of Claude Code's TUI (text user interface).
@@ -623,6 +626,29 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   playwright-cli 0.1.18 against Koloft's relay, `test/e2e/real-tools-smoke.spec.ts`:
   `open file://…` fails with that message on the endpoint alone and succeeds with the
   variable set to `1`).
+- **Two installs of playwright-cli share a daemon only through a `.playwright`
+  folder.** Without one, each install's own root names its bucket, so the same session
+  name in the same folder gave two daemons, each reading its own page. With a
+  `.playwright` folder in the working folder both used one bucket: 0.1.18 refused to
+  talk to a daemon 0.1.22 had started ("Client is v1.63.0-alpha-2026-08-05, session
+  'koloft-tab1' is v1.64.0-alpha-1790635538000. Run playwright-cli -s=koloft-tab1 open to
+  restart the browser session."), its `open` replaced that daemon, and 0.1.22's next
+  `eval` then read the page 0.1.18 had opened. (Measured 2026-10-11, @playwright/cli
+  0.1.22 run on Electron 43.7.3's Node and a global 0.1.18 on Node 24, two headless
+  Chromes, a temporary `HOME`.)
+- **Without `NO_UPDATE_NOTIFIER` (or `CI`) the CLI asks npm once a day for a newer
+  version**, prints a boxed "Update available … npm install -g" notice to stderr, and on
+  the same check prints a "skill … does not match the tool version" box for each
+  `.claude/skills/playwright-cli` or `.agents/skills/playwright-cli` under the working
+  folder whose `SKILL.md` differs from its own (read in `playwright-cli.js` and
+  `skillCheck.js` of 0.1.22; with the variable set, neither check runs).
+- **A refused CDP connection is reported at once.** Against Koloft's relay holding a
+  Playwright MCP client for the same tab, `playwright-cli open` failed in 0.3 s with
+  "Target page, context or browser has been closed … this endpoint already has a client"
+  (the relay's 1008 close reason), and an MCP `browser_navigate` refused the same way
+  while the CLI held the tab answered at once; once the holder exited, the other
+  connected in 0.4 s. (Measured 2026-10-11, @playwright/cli 0.1.22, @playwright/mcp
+  0.0.83 on Node 24, a Koloft dev build.)
 
 ## §18 Playwright and Electron in the e2e suite
 
@@ -1411,3 +1437,29 @@ Gateway (the live connection that pushes events):
 - Measured 2026-10-09 on macOS 27.0.1 with a bare Electron 43.7.3 app (node-pty from the
   repo, no window): one pty child running `sh` with HUP/TERM traps, one detached `sh`
   helper, then `app.quit()` one second in.
+
+## §42 A Node command-line tool run on Electron's own Node
+
+- **commander reads one argument short under Electron.** With no `argv` given,
+  commander's `parse` takes `process.versions.electron` as a sign it runs inside
+  Electron and, unless `process.defaultApp` is set, treats `argv[1]` (the script) as the
+  first user argument. Under `ELECTRON_RUN_AS_NODE=1` `process.versions.electron` is
+  still set, so playwright-cli 0.1.22's background daemon (`cliDaemon.js <session>`, a
+  commander program) stopped at once with "too many arguments. Expected 1 argument but
+  got 2". Setting `process.defaultApp = true` before the script loads fixed it.
+- **A child the tool starts with `process.execPath` gets the bare Electron again.**
+  playwright-cli starts its daemon as `spawn(process.execPath, [cliDaemon.js, …])`, so
+  a fix made in the parent does not reach the daemon. `process.execPath` can be
+  assigned; pointing it at a small script that re-runs the same launcher (with
+  `ELECTRON_RUN_AS_NODE=1`) carried the fix into the daemon, and `open`, `eval`,
+  `screenshot`, `list` and `close` all worked.
+- **Inside Codex's macOS sandbox every start prints one error line to stderr**:
+  `ERROR:electron/shell/common/mac/codesign_util.cc:79] task_name_for_pid: (os/kern)
+  failure (5)`, as the process exits. It changes nothing else; outside the sandbox it
+  does not appear. `ELECTRON_LOG_FILE=/dev/null`, with or without
+  `ELECTRON_ENABLE_LOGGING=file`, did not silence it. A model once quoted the line back
+  as the command's output.
+- Measured 2026-10-11 on macOS 27.0.1 with Electron 43.7.3 (`node_modules/electron`) and
+  @playwright/cli 0.1.22 (playwright-core 1.64.0-alpha-1790635538000), against a
+  headless Chrome's CDP endpoint, outside and inside `codex app-server`'s `command/exec`
+  (Codex CLI 0.162.0).

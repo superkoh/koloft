@@ -119,7 +119,15 @@ const api: KoloftApi = {
     }
   },
   sessions: {
-    backends: () => ipcRenderer.invoke('sessions:backends'),
+    backends: (recheck) => ipcRenderer.invoke('sessions:backends', recheck === true),
+    installTool: (backend) => ipcRenderer.invoke('sessions:installTool', backend),
+    onToolsChanged: (cb) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('sessions:toolsChanged', handler)
+      return () => ipcRenderer.removeListener('sessions:toolsChanged', handler)
+    },
+    commandLineToolsMissing: () => ipcRenderer.invoke('system:commandLineToolsMissing'),
+    installCommandLineTools: () => ipcRenderer.send('system:installCommandLineTools'),
     onUpdate: (cb) => {
       const handler = (_e: unknown, s: SessionInfo[]): void => cb(s)
       ipcRenderer.on('sessions:update', handler)

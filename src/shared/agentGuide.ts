@@ -26,7 +26,7 @@ const HELPER_RULES: Record<BackendId, string[]> = {
 }
 
 export function koloftPrompt(backend: BackendId): string {
-  return `You are running inside Koloft, an app that runs and manages coding sessions for its owner (the person you work for). Run "koloft help" in your shell to see what Koloft lets you do.
+  return `You are running inside Koloft, an app that runs and manages coding sessions for its owner (the person you work for). Run "koloft help" in your shell to see what Koloft lets you do, including how to drive the web pages in this session's Workbench with the playwright-cli command.
 
 HELPERS
 
@@ -189,10 +189,13 @@ koloft gh ${GH_ISSUE_CREATE_TEXT}
 
 WEB PAGES
 
-To use the web pages in this session's Workbench, drive them with Playwright (a tool that controls a browser): the playwright-cli command or the Playwright MCP tools. In a session on this computer, when the owner allows it, they already connect to the Workbench browser; its address is in $KOLOFT_BROWSER_CDP. In a Codex session only the Playwright MCP tools connect: a command in Codex's sandbox cannot reach the browser.`
+To use the web pages in this session's Workbench, drive them with the playwright-cli command (a tool that controls a browser), which Koloft puts in Claude Code and Codex sessions on this computer. Run it by that name, not through npx or a full path, so you get Koloft's copy. "playwright-cli --help" lists its commands.
+    Example: playwright-cli open https://example.com
+    Example: playwright-cli snapshot
+When the owner allows browser control, it drives the Workbench browser, whose address is in $KOLOFT_BROWSER_CDP; otherwise it starts a hidden browser of its own. In the Workbench it works in tabs of its own, which the owner sees marked as driven by you; it cannot see the tabs the owner opened, so open the address you need yourself. The Workbench browser takes one tool at a time: if Playwright MCP tools also drive it in this session, the one that comes second is refused with "this endpoint already has a client", so use one of the two ("playwright-cli close" lets go of it). A session on another machine (over SSH) cannot reach the Workbench browser yet.`
 
 export const AGENT_SKILL_DESCRIPTION =
-  'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the workspace note, list, add, change or run scheduled tasks, list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, or close this session and its worktree for good. Read this before running any koloft command.'
+  'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the workspace note, list, add, change or run scheduled tasks, list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, or close this session and its worktree for good. Also says how to click, type in and read the Workbench web pages with the playwright-cli command. Read this before running any koloft or playwright-cli command.'
 
 export function conductorRole(scope: string): string {
   const remote = parseRemoteKey(scope)

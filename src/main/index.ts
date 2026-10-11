@@ -105,6 +105,7 @@ import {
   setupStatusline,
   statusLineSetting
 } from './statusline'
+import { setupPlaywrightCli } from './playwrightCli'
 import {
   setFindAvailable,
   setKeepAwakeChecked,
@@ -354,6 +355,8 @@ import { closingTree, removeTree, whatIsLeft } from './sessionClose'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
 import { agentPluginFiles, writeAgentPlugin } from './agentPlugin'
+import { installLine, pathWithInstallDir } from './toolInstall'
+import { commandLineToolsMissing, installCommandLineTools } from './commandLineTools'
 
 // PLATFORM§4
 if (!app.isPackaged) app.setName('koloft-dev')
@@ -808,6 +811,7 @@ tracker.machineTmp = (host) => remoteSync?.machineTmp(host)
 let machinePkg: MachinePackage | null = null
 const remoteControlDir = defaultControlDir()
 let loginEnv: Promise<void> | null = null
+process.env.PATH = pathWithInstallDir(process.env.PATH, os.homedir())
 
 // PLATFORM§1
 function loginEnvReady(): Promise<void> {
@@ -840,6 +844,7 @@ function machinePackage(): MachinePackage {
   return (machinePkg = buildMachinePackage(machinePackageBase(app.getPath('userData')), pkgFiles))
 }
 
+let playwrightCliBin: string | undefined
 let cronRunner: CronRunner | null = null
 let conductors: Conductors | null = null
 let discordLink: DiscordLink | null = null
@@ -1428,16 +1433,23 @@ async function codexSignIn(name: string, again?: boolean): Promise<CodexSignInRe
     addedAt: acct?.addedAt ?? Date.now()
   })
   pushAccounts()
+  const tab = homeShellTab(`CODEX_HOME=${shq(home)} ${shq(binary)} login && exit`)
+  codexSignInPtys.set(tab.tabId, name)
+  return { ok: true, ...tab }
+}
+
+function homeShellTab(launchCommand: string): { tabId: string; cwd: string } {
   const cwd = os.homedir()
-  const handle = ptyMgr.create({
-    kind: 'shell',
-    cwd,
-    cols: 100,
-    rows: 30,
-    launchCommand: `CODEX_HOME=${shq(home)} ${shq(binary)} login && exit`
-  })
-  codexSignInPtys.set(handle.id, name)
-  return { ok: true, tabId: handle.id, cwd }
+  const handle = ptyMgr.create({ kind: 'shell', cwd, cols: 100, rows: 30, launchCommand })
+  return { tabId: handle.id, cwd }
+}
+
+const toolInstallPtys = new Set<string>()
+
+function installTool(backend: BackendId): { tabId: string; cwd: string } {
+  const tab = homeShellTab(installLine(backend, process.env.KOLOFT_TEST_TOOL_INSTALLER))
+  toolInstallPtys.add(tab.tabId)
+  return tab
 }
 
 protocol.registerSchemesAsPrivileged([
@@ -1677,6 +1689,8 @@ app.whenReady().then(() => {
 
   const hookPaths = setupHooks((tabId) => anotherLiveInstanceOwns(tabId, pidAlive))
   const statusline = setupStatusline()
+  const playwrightBin = setupPlaywrightCli()
+  playwrightCliBin = playwrightBin
   ptyMgr.makeHookSettings = (tabId, allowKoloft, conductor) =>
     writeTabHookSettings(
       hookPaths,
@@ -1748,6 +1762,10 @@ app.whenReady().then(() => {
     askButtons?.forget(e.id)
     if (answerable.delete(e.id) && answerableRegDir) markAnswerable(answerableRegDir, e.id, false)
     loginPtys.delete(e.id)
+    if (toolInstallPtys.delete(e.id)) {
+      sessionBackends.forgetAvailability()
+      sendToRenderer('sessions:toolsChanged')
+    }
     const codexAccount = codexSignInPtys.get(e.id)
     if (codexAccount) {
       codexSignInPtys.delete(e.id)
@@ -1849,6 +1867,7 @@ app.whenReady().then(() => {
       pickHome: pickCodexHome,
       browserEndpoint: relayEndpoint,
       openShimRoot: path.join(userData, 'codex-open'),
+      playwrightBin,
       agent: {
         enabled: () => agentToolsFor('codex', 'local'),
         answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw)
@@ -2433,9 +2452,10 @@ app.on('before-quit', (e) => {
   resetQuitGuard()
 })
 
-function setupLine(): string | undefined {
+function setupLine(playwrightBin?: string): string | undefined {
   if (!ptyMgr.shimDir) return undefined
-  return `export PATH="${ptyMgr.shimDir}:$PATH"; hash -r 2>/dev/null; clear`
+  const dirs = playwrightBin ? `${ptyMgr.shimDir}:${playwrightBin}` : ptyMgr.shimDir
+  return `export PATH="${dirs}:$PATH"; hash -r 2>/dev/null; clear`
 }
 
 const processedOpenIds = new Set<string>()
@@ -3585,7 +3605,7 @@ const claudeBackend = new ClaudeBackend({
   workspaces: () => workspaceMgr,
   remoteSync: () => remoteSync,
   userData: () => app.getPath('userData'),
-  setupLine,
+  setupLine: () => setupLine(playwrightCliBin),
   ptysChanged: () => writeRelayEnv(ptyTabIds()),
   resumeProbes,
   events: (tabId, event) => sessionBackends.observe(tabId, event),
@@ -3669,13 +3689,19 @@ function registerIpc(): void {
   )
 
   ipcMain.handle('sessions:list', () => allSessions())
-  ipcMain.handle('sessions:backends', () =>
-    sessionBackends.availability((id) => ({
+  ipcMain.handle('sessions:backends', (_e, recheck: unknown) => {
+    if (recheck === true) sessionBackends.forgetAvailability()
+    return sessionBackends.availability((id) => ({
       id,
       available: false,
       reason: codexStartupError ?? `${BACKEND_LABEL[id]} is not ready.`
     }))
+  })
+  ipcMain.handle('sessions:installTool', (_e, backend: unknown) =>
+    backend === 'claude' || backend === 'codex' ? installTool(backend) : null
   )
+  ipcMain.handle('system:commandLineToolsMissing', () => commandLineToolsMissing())
+  ipcMain.on('system:installCommandLineTools', () => installCommandLineTools())
   ipcMain.handle('attention:list', () => attention.list())
   ipcMain.handle('tabs:list', (): TabInventoryReply => {
     rendererReady = true
