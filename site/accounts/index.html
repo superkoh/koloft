@@ -159,14 +159,25 @@
           <li>the top bar shows how much room your Claude accounts have left</li>
           <li>
             with no account that can be used, the New session button is greyed out, and a line under
-            it says why: <code>No Claude account yet — add one in Settings ▸ Accounts.</code> when
-            none is added, <code>No Claude account can be used — check Settings ▸ Accounts.</code>
-            when the ones you have cannot be used, or
-            <code
-              >"&lt;account name&gt;" is not signed in — sign in again in Settings ▸ Accounts.</code
-            >
-            for one that needs a fresh sign-in (the same for Codex); a scheduled job does not start
-            either
+            it says why (the same for Codex); a scheduled job does not start either. The line is one
+            of:
+            <ul class="dash">
+              <li>
+                <code>No Claude account yet — add one in Settings ▸ Accounts.</code> when none is
+                added
+              </li>
+              <li>
+                <code>No Claude account can be used — check Settings ▸ Accounts.</code> when none of
+                yours can be used
+              </li>
+              <li>
+                <code
+                  >"&lt;account name&gt;" is not signed in — sign in again in Settings ▸
+                  Accounts.</code
+                >
+                when one needs a fresh sign-in
+              </li>
+            </ul>
           </li>
         </ul>
 
@@ -182,10 +193,10 @@
         <p>
           Koloft has small jobs of its own that need an AI. Today there are two: the short title of
           a Claude session that an agent starts with <code>koloft session new</code> (see
-          <a href="../agents/">agents</a>), and the pick of which docs the folded
-          <a href="../workbench/">Workbench</a> card lists. One of your accounts does those jobs.
-          That is <mark class="hl">Koloft Assist</mark>. Settings ▸ Sessions ▸ Assist is where you
-          turn it on or off and pick the tool it runs on.
+          <a href="../agents/">agents</a>), and which docs the
+          <a href="../workbench/#folded">folded Workbench card</a> lists. One of your accounts does
+          those jobs. That is <mark class="hl">Koloft Assist</mark>. Settings ▸ Sessions ▸ Assist is
+          where you turn it on or off and pick the tool it runs on.
         </p>
         <ul class="dash">
           <li>

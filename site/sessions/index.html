@@ -186,8 +186,8 @@
           <li>
             <kbd>⌘J</kbd> (View ▸ Next Waiting Session) takes you to the session with the oldest red
             dot, in any folder, and clears it. Press it again for the next one. When no dot is left,
-            it does nothing. It wakes a sleeping session the way a click does. A closed row with a
-            dot it skips; a click still resumes that one.
+            it does nothing. It wakes a sleeping session the way a click does. It skips a closed row
+            with a dot; a click still resumes that one.
           </li>
         </ul>
 
@@ -285,11 +285,14 @@
           <li>
             A Codex worktree goes, folder and branch, when the last session in it ends and nothing
             in it changed. A restart (<kbd>⇧⌘R</kbd>) or a sleep is not an end. If something did
-            change, it stays until you remove it yourself; <code>koloft session close</code> (see
-            <a href="../agents/">agents</a>) removes it only once every change is committed and on a
-            remote branch. Hover the row of a removed one and its tip reads
+            change, it stays until you remove it yourself, or until an agent closes the session with
+            <code>koloft session close</code> (see <a href="../agents/">agents</a>, which says when
+            that is allowed).
+          </li>
+          <li>
+            A session whose worktree is gone stays in the list. Hover its row and the tip reads
             <code>worktree deleted; click to rebuild and resume</code>; a click makes the worktree
-            again and resumes the same thread in it.
+            again and resumes the same session in it. Claude and Codex both do this.
           </li>
           <li>
             In a folder on github.com, with <code>gh</code> (GitHub's command-line tool) signed in,
