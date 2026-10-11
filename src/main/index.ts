@@ -2969,7 +2969,8 @@ function setupBrowserPartition(): void {
     return ses.fetch(request, { bypassCustomProtocolHandlers: true })
   })
   const guestUA = standardUserAgent(app.userAgentFallback, app.getName())
-  ses.setUserAgent(guestUA)
+  // PLATFORM§14
+  ses.setUserAgent(guestUA, app.getPreferredSystemLanguages().join(','))
   // PLATFORM§14
   app.userAgentFallback = guestUA
   const guestHints = chromeClientHints(guestUA)
