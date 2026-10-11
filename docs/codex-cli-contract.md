@@ -532,7 +532,9 @@ tokens (input / cached input / output): `gpt-6-astra` 10 / 1 / 50, `gpt-6-sol` 2
 10, `gpt-6-luna` 0.1 / 0.01 / 0.5, `gpt-5.6-sol` 4 / 0.4 / 20, `gpt-5.6-terra` 2 / 0.2 /
 12, `gpt-5.6-luna` 0.2 / 0.02 / 1.2, `gpt-5.5` 5 / 0.5 / 30, `gpt-5.4` 2.5 / 0.25 / 15,
 `gpt-5.3-codex` 1.75 / 0.175 / 14, `gpt-5.2` 1.75 / 0.175 / 14, `gpt-5.1` 1.25 / 0.125 /
-10, `gpt-5` 1.25 / 0.125 / 10. OpenAI charges nothing to write the cache. The page lists
+10, `gpt-5` 1.25 / 0.125 / 10. **`gpt-6.1-sol` 2 / 0.10 / 10** (the same page, fetched
+2026-10-11; Codex 0.161.0 made it the default model of the bundled catalog, so a fresh
+account home runs on it). OpenAI charges nothing to write the cache. The page lists
 a higher "long context" price for prompts above 272K tokens; Codex's window on this Mac
 (258400 on the wire, 272000 in `~/.codex/models_cache.json`) stays below it, so only
 the short-context price is used. The model ids match the `slug`s in

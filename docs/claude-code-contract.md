@@ -715,12 +715,24 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   Opus 4.5 $5/$25, 200k; Opus 4/4.1 $15/$75, 200k; Sonnet 5 $2/$10, 1M (standard rates
   since CC 2.1.243); Sonnet 4.6 $3/$15, 1M; Sonnet 4/4.5 $3/$15, 200k; Haiku 4.5 $1/$5,
   200k. A 5-minute cache write costs 1.25× input and a cache read 0.10× input, as
-  ccusage applies them. Sources (2026-07): the Anthropic model catalog (through the
+  ccusage applies them — except the 5.5-generation rows, whose cache read is their own
+  figure: Fable 5.1 $0.25, Opus 5.5 $0.20, Sonnet 5.5 $0.10 (Anthropic's pricing page,
+  fetched 2026-10-11, which also gives Haiku 5.5 $0.01, the plain 0.10×). Sources (2026-07): the Anthropic model catalog (through the
   local claude-api skill reference) for current families, Anthropic's public pricing
   page for older Opus/Sonnet, and the Sonnet 5 change noted against CC 2.1.243. The Opus
   5 and Opus 5.5 rows: the same skill's catalog (cached 2026-06-24), read 2026-09-24.
   Transcripts on the dev Mac (sweep 2026-09-24) record `message.model` values
-  `claude-opus-5` and `claude-opus-5-5`, bare, with no date suffix.
+  `claude-opus-5` and `claude-opus-5-5`, bare, with no date suffix. **Sonnet 5.5
+  (`claude-sonnet-5-5`) $2/$10, 1M, cache read $0.10** — CC 2.1.296 changed its own
+  `/cost` and status-line figure from $0.20 to $0.10 (changelog, read 2026-10-11), and
+  Anthropic's pricing page said $0.10 the same day; the claude-api skill's catalog
+  (cached 2026-10-06) still says $0.20.
+  **Haiku 5.5 (`claude-haiku-5-5`) $0.10/$0.50, 1M**, the default `haiku` alias since
+  CC 2.1.293 (so the §9 one-shot title runs on it); prompts over 100K tokens cost
+  $0.50/$2.50 (changelog and the skill's catalog), a tier Koloft does not apply — it
+  prices every token at the short-prompt rate, as it does for Codex's long-context
+  tier (CODEX§13). Both bare ids were in transcripts on the dev Mac on 2026-10-11
+  (17 and 5 records).
 
 Evidence: probe edge shapes curl-verified 2026-08-17; latency measured 2026-08-19–20;
 classifier fallback seen 2026-08-20. Koloft dependents:
