@@ -881,6 +881,10 @@ body {
 .ob-bar.st-waiting {
   background: var(--good);
 }
+.ws-tab.st-bg-run::before,
+.ob-bar.st-bg-run {
+  animation: barBreathe 2.4s var(--ease) infinite;
+}
 .ws-tab.st-approval::before,
 .ob-bar.st-approval {
   background: var(--amber);
