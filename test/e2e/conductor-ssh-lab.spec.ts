@@ -165,7 +165,7 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
         fake.say(OWNER, `/koloft session send ${remote.sessionId} hello from Discord`)
         await expect
           .poll(transcript, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
-          .toContain('(Your owner, via the Koloft conductor:) hello from Discord')
+          .toContain("(Your owner, via Koloft's Assist:) hello from Discord")
         await expect
           .poll(() => notices(fake), { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
           .toEqual([expect.stringMatching(/^🔔 .+ finished\.$/)])
@@ -286,7 +286,7 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
         )
         await expect
           .poll(transcript, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS })
-          .toContain('(Your owner, via the Koloft conductor:) Say the word MANGO')
+          .toContain("(Your owner, via Koloft's Assist:) Say the word MANGO")
         await expect
           .poll(transcript, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS })
           .toMatch(/"type":"text","text":"MANGO/)

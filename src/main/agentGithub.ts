@@ -11,9 +11,9 @@ import { answered, EXIT_USAGE, refused, type AgentVerb } from './agentRequests'
 
 export const GH_USAGE = `koloft: usage: koloft gh ${GH_READS_TEXT} [<number or URL>] [flags], with only the flags ${GH_READ_FLAGS.join(', ')}; or koloft gh ${GH_ISSUE_CREATE_TEXT}, where --body-file <file in your own folder> may stand for --body.`
 export const GH_ONLY_A_CONDUCTOR =
-  'koloft: only a conductor (a session bound to a Discord channel) can run koloft gh; a session runs gh itself.'
+  'koloft: only Assist (the session bound to a Discord channel) can run koloft gh; a session runs gh itself.'
 export const GH_NEEDS_A_REPO =
-  'koloft: this conductor has no workspace to take the repository from; add --repo <owner>/<name>, or give a full GitHub URL.'
+  'koloft: this Assist has no workspace to take the repository from; add --repo <owner>/<name>, or give a full GitHub URL.'
 export const GH_BODY_FILE_OUTSIDE_OWN_FOLDER =
   'koloft: --body-file must name a file in your own folder, the one you run in; or give the text with --body.'
 

@@ -26,7 +26,7 @@ function Steps({ items }: { items: string[] }): JSX.Element {
   )
 }
 
-const WIZARD_FOOT = 'One bot serves all your conductors: the global one and one per workspace.'
+const WIZARD_FOOT = 'One bot serves every Assist: the global one and one per workspace.'
 
 interface Page {
   name: string
@@ -84,7 +84,7 @@ const PAGES: Page[] = [
   },
   {
     name: 'Make a private server — in the Discord app',
-    why: 'Your conductors talk to you in channels of a server only you are in.',
+    why: 'Assist talks to you in channels of a server only you are in.',
     list: (
       <>
         <h4>On iPhone:</h4>
@@ -116,7 +116,7 @@ const PAGES: Page[] = [
   },
   {
     name: 'Tell Koloft who you are',
-    why: 'Only your messages reach a conductor; anyone else in the channel is ignored.',
+    why: 'Only your messages reach Assist; anyone else in the channel is ignored.',
     list: (
       <Steps
         items={[
@@ -128,14 +128,14 @@ const PAGES: Page[] = [
     )
   },
   {
-    name: 'Make a channel and bind a conductor',
-    why: 'Each conductor talks to you in its own channel — one for the global conductor, one per workspace you bind.',
+    name: 'Make a channel and bind Assist',
+    why: 'Each Assist talks to you in its own channel — one for the global Assist, one per workspace you bind.',
     list: (
       <Steps
         items={[
           'In your server, tap **＋** next to "Text Channels", name the channel (for example **koloft-all**), keep it a normal (not private) channel, create it.',
           "Click **Bind a channel…** below, pick Global or a workspace, Claude or Codex, then pick the channel from the list (Koloft reads your server's channels through the bot — no link to copy), click **Bind**.",
-          'Say hello in that channel. The conductor answers there.'
+          'Say hello in that channel. Assist answers there.'
         ]}
       />
     )

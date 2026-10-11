@@ -5,7 +5,7 @@ import { BYTES_PER_FILE, type DiscordFile } from './discord/link'
 
 export const DISCORD_USAGE = 'koloft: usage: koloft discord send <file>... [-- "<text>"]'
 export const NOT_A_CONDUCTOR =
-  'koloft: only a conductor (a session bound to a Discord channel) can send to Discord.'
+  'koloft: only Assist (the session bound to a Discord channel) can send to Discord.'
 
 const MB = 1024 * 1024
 

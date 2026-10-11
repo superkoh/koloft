@@ -86,9 +86,18 @@ describe('Conductors', () => {
     c.save({ scope: 'global', backend: 'claude', channel: CHANNEL })
     c.save({ scope: '/ws/a', backend: 'codex', channel: { ...CHANNEL, channelId: '201' } })
     const [global, ws] = c.bindings()
+    expect(c.bindingOf('Global-Assist')?.id).toBe(global.id)
+    expect(c.bindingOf('a-Assist')?.id).toBe(ws.id)
+    expect(c.bindingOf('Global')).toBeUndefined()
+  })
+
+  it('a session started before the rename to Assist still reaches it by the old name it was given, Global-conductor', () => {
+    const c = make()
+    c.save({ scope: 'global', backend: 'claude', channel: CHANNEL })
+    c.save({ scope: '/ws/a', backend: 'codex', channel: { ...CHANNEL, channelId: '201' } })
+    const [global, ws] = c.bindings()
     expect(c.bindingOf('Global-conductor')?.id).toBe(global.id)
     expect(c.bindingOf('a-conductor')?.id).toBe(ws.id)
-    expect(c.bindingOf('Global')).toBeUndefined()
   })
 
   it('the global conductor starts in its own folder under userData, told its role', async () => {
@@ -100,7 +109,7 @@ describe('Conductors', () => {
     await opening
     expect(started[0].cwd).toBe(path.join(userData, 'conductors', 'global'))
     expect(fs.statSync(started[0].cwd).isDirectory()).toBe(true)
-    expect(started[0].role).toMatch(/^You are Koloft's conductor for all workspaces\./)
+    expect(started[0].role).toMatch(/^You are Assist, Koloft's own AI, for all workspaces\./)
   })
 
   it('binding follows the tab: every session it binds stays hidden and the newest is the one to resume', async () => {
@@ -135,7 +144,7 @@ describe('Conductors', () => {
     await opening
     vi.advanceTimersByTime(DEADLINE_MS)
     expect(killed).toEqual(['tab-1'])
-    expect(toasts).toEqual(['The Global conductor did not start.'])
+    expect(toasts).toEqual(['The Global Assist did not start.'])
     expect(c.conductorOf('tab-1')).toBe(id)
     c.onPtyExit('tab-1')
     expect(c.conductorOf('tab-1')).toBeUndefined()

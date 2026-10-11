@@ -168,9 +168,7 @@ test.describe('Discord slash commands: the owner runs /clear, /compact and any s
       fake.say(OWNER, '/clear')
       await expect
         .poll(() => ran(fake), { timeout: 30_000 })
-        .toEqual([
-          expect.stringMatching(/conductor\*\* ran \/clear:\nIt is a new conversation now/)
-        ])
+        .toEqual([expect.stringMatching(/Assist\*\* ran \/clear:\nIt is a new conversation now/)])
       expect(ranPosts(fake)[0].channelId).toBe(CHANNEL)
       await expect.poll(() => bindingOnDisk(env)?.lastSessionKey).not.toBe(before)
       expect(said(fake).join('\n')).not.toContain('[Discord] /clear')
