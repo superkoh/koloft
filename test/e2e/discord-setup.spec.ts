@@ -225,7 +225,7 @@ test.describe('Discord setup: the 7-step guide checks the bot for real, learns w
       await pane.getByRole('button', { name: 'Set up Discord…' }).click()
       await expect(wizard(page).locator('.flabel')).toHaveText('Step 2 of 7')
       await expect(wizard(page).locator('.acct-login-state.bad')).toContainText(
-        'Koloft could not turn Message Content on'
+        'Koloft could not turn on Message Content'
       )
     } finally {
       await close()

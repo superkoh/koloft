@@ -34,7 +34,7 @@ export function channelLabel(binding: Pick<ConductorBinding, 'channel'>): string
 }
 
 // PLATFORM§39
-export function discordChannelName(raw: string): string {
+function discordChannelName(raw: string): string {
   return raw.toLowerCase().replace(/\s+/g, '-').replace(/\./g, '')
 }
 
@@ -47,13 +47,6 @@ export function newChannelName(scope: string): string {
   const remote = parseRemoteKey(scope)
   const folder = basename(remote?.path ?? scope)
   return discordChannelName(remote ? `${folder}-${machineName(remote.host)}` : folder)
-}
-
-export function freeChannelName(name: string, taken: string[]): string {
-  if (!taken.includes(name)) return name
-  let n = 2
-  while (taken.includes(`${name}-${n}`)) n++
-  return `${name}-${n}`
 }
 
 export function newChannelTopic(scope: string): string {
@@ -71,12 +64,12 @@ export function newChannelGuild(
 
 export function bindingProblem(
   bindings: ConductorBinding[],
-  wanted: { id?: string; scope: string; channelId: string }
+  wanted: { id?: string; scope: string; channelId?: string }
 ): string | undefined {
   const others = bindings.filter((b) => b.id !== wanted.id)
   if (others.some((b) => b.scope === wanted.scope))
     return `${scopeName(wanted.scope)} already has an Assist.`
-  const taken = others.find((b) => b.channel.channelId === wanted.channelId)
+  const taken = wanted.channelId && others.find((b) => b.channel.channelId === wanted.channelId)
   if (taken) return `That channel is already bound to the ${conductorName(taken.scope)}.`
   return undefined
 }

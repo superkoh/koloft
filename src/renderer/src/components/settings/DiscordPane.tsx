@@ -6,8 +6,10 @@ import { useStore } from '../../store'
 import { SessionBackendIcon } from '../SessionBackendIcon'
 import {
   DEVELOPER_PORTAL,
+  MESSAGE_CONTENT_BY_HAND,
   nextSetupStep,
   nextStepLine,
+  ownerFromApp,
   SETUP_STEPS,
   statusClass,
   statusText,
@@ -40,7 +42,7 @@ export function DiscordPane(): JSX.Element {
   const next = nextSetupStep(status, discord)
   const setUp = next === null
   const row = setUp ? 'set-row' : 'set-row off'
-  const fromApp = !!status.appOwner && status.appOwner.id === discord.userId
+  const fromApp = ownerFromApp(status, discord)
 
   return (
     <>
@@ -136,7 +138,7 @@ export function DiscordPane(): JSX.Element {
           <b>Status</b>
           <small>
             {status.phase === 'intents'
-              ? 'Koloft could not turn on Message Content. Open your app ▸ Bot ▸ turn Message Content Intent on ▸ Save Changes. Koloft checks again every 30 seconds.'
+              ? MESSAGE_CONTENT_BY_HAND
               : 'The bot reads only the bound channels. Koloft keeps the bot’s Message Content on, so it can read what you type.'}
           </small>
         </div>

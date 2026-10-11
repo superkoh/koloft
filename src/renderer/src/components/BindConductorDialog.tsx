@@ -3,13 +3,13 @@ import { LuArrowUpRight, LuPlus, LuX } from 'react-icons/lu'
 import { BACKEND_LABEL, SESSION_BACKENDS, shownAsInstalled } from '@shared/sessionBackend'
 import {
   channelLabel,
-  freeChannelName,
   GLOBAL_SCOPE,
   newChannelGuild,
   newChannelName,
   newChannelTopic,
   scopeName
 } from '@shared/conductors'
+import { distinctName } from '@shared/sessionRoute'
 import type { BackendId, DiscordChannel } from '@shared/types'
 import { useStore } from '../store'
 import { inviteLink, useDiscordStatus } from '../discordStatus'
@@ -52,10 +52,10 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
   const [channel, setChannel] = useState<DiscordChannel | typeof NEW | undefined>(
     editing ? undefined : NEW
   )
-  const [error, setError] = useState('')
-  const [reinvite, setReinvite] = useState(false)
+  const [error, setError] = useState<{ text: string; reinvite?: boolean } | null>(null)
   const [busy, setBusy] = useState(false)
   const status = useDiscordStatus()
+  const appId = status?.applicationId
   const guildId = newChannelGuild(
     bindings,
     (status?.guilds ?? []).map((g) => g.id)
@@ -63,15 +63,10 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
   const guildName = status?.guilds.find((g) => g.id === guildId)?.name
   const newName =
     picked &&
-    freeChannelName(
+    distinctName(
       newChannelName(picked),
       (channels ?? []).filter((c) => c.guildId === guildId).map((c) => c.name)
     )
-  const pick = (c: DiscordChannel | typeof NEW): void => {
-    setChannel(c)
-    setError('')
-    setReinvite(false)
-  }
   const close = (): void => setBindConductor(null)
   const channelTakenBy = (c: DiscordChannel) =>
     bindings.find((b) => b.channel.channelId === c.channelId && b.id !== editId)
@@ -112,9 +107,9 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
 
   const submit = async (): Promise<void> => {
     if (busy || !picked) return
-    if (!channel || (channel === NEW && !guildId)) return setError('Pick a channel.')
+    if (!channel || (channel === NEW && !guildId)) return setError({ text: 'Pick a channel.' })
     const unusable = issue(backend)
-    if (unusable) return setError(unusable)
+    if (unusable) return setError({ text: unusable })
     setBusy(true)
     const input = { id: editId, scope: picked, backend }
     const r =
@@ -123,8 +118,7 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
         : await window.api.conductors.save({ ...input, channel })
     setBusy(false)
     if (r.ok) return close()
-    setError(r.error)
-    setReinvite(!!r.cannotMakeChannels)
+    setError({ text: r.error, reinvite: r.cannotMakeChannels })
   }
   submitRef.current = submit
 
@@ -157,8 +151,7 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
                   onClick={() => {
                     if (taken) return
                     setPicked(s)
-                    setError('')
-                    setReinvite(false)
+                    setError(null)
                   }}
                 >
                   <span className="wt-name">{scopeName(s)}</span>
@@ -185,7 +178,7 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
                   title={issue(b)}
                   onClick={() => {
                     setBackend(b)
-                    setError('')
+                    setError(null)
                   }}
                 >
                   <SessionBackendIcon backend={b} size={14} decorative />
@@ -201,7 +194,10 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
                 <div
                   className={'cb-row' + (channel === NEW ? ' hot' : '')}
                   onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => pick(NEW)}
+                  onClick={() => {
+                    setChannel(NEW)
+                    setError(null)
+                  }}
                 >
                   <span className="wt-name">
                     <LuPlus size={14} /> New channel #{newName}
@@ -225,7 +221,9 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
                     }
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => {
-                      if (!taken) pick(c)
+                      if (taken) return
+                      setChannel(c)
+                      setError(null)
                     }}
                   >
                     <span className="wt-name">#{c.name}</span>
@@ -238,16 +236,13 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
           <p className={'field-hint' + (error ? ' bad' : '')}>
             {error ? (
               <>
-                {error}
-                {reinvite && status?.applicationId && (
+                {error.text}
+                {error.reinvite && appId && (
                   <>
                     {' '}
                     <button
                       className="ob-link"
-                      onClick={() =>
-                        status.applicationId &&
-                        window.api.browser.openExternal(inviteLink(status.applicationId))
-                      }
+                      onClick={() => window.api.browser.openExternal(inviteLink(appId))}
                     >
                       Invite the bot again <LuArrowUpRight size={13} />
                     </button>

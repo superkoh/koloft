@@ -90,7 +90,7 @@ function text(v: unknown, max = TITLE_MAX_CHARS): string {
   return typeof v === 'string' ? v.trim().slice(0, max) : ''
 }
 
-export function distinctWorktreeName(name: string, taken: string[]): string {
+export function distinctName(name: string, taken: string[]): string {
   const used = new Set(taken.map((t) => t.toLowerCase()))
   if (!used.has(name.toLowerCase())) return name
   let n = 2
@@ -111,7 +111,7 @@ function worktreeOf(raw: unknown, ws: RouteWorkspace): RouteWorktree | null {
   if (typeof o.new === 'string') {
     const name = o.new.trim()
     if (!isValidWorktreeName(name) || name.toLowerCase() === 'main') return null
-    return { kind: 'new', name: distinctWorktreeName(name, ws.worktrees) }
+    return { kind: 'new', name: distinctName(name, ws.worktrees) }
   }
   return null
 }

@@ -11,8 +11,7 @@ import type {
   DiscordSettings,
   SessionThread
 } from '@shared/types'
-import type { NewChannel } from './link'
-import { DiscordHttpError } from './rest'
+import { CannotMakeChannels, type NewChannel } from './link'
 import { BACKEND_LABEL, identityOf } from '@shared/sessionBackend'
 import {
   bindingProblem,
@@ -57,12 +56,8 @@ export const GLOBAL_HAS_NO_WORKSPACE = 'The global Assist has no workspace.'
 export const REMOTE_CONDUCTOR_HAS_NO_WORKSPACE =
   'This Assist runs on this Mac, outside its remote workspace, so it has no workspace.'
 
-const CANNOT_MAKE_CHANNELS =
-  'The bot is not allowed to make channels yet. Invite it again to give it that permission — the channels you already bound keep working.'
-
 type NewChannelInput = Omit<ConductorSaveInput, 'channel'>
 
-const MISSING_PERMISSIONS = 403
 const FOLDER_NAME_HASH_CHARS = 16
 const LAST_MESSAGE_SAVE_DELAY_MS = 1000
 
@@ -317,7 +312,7 @@ export class Conductors {
     return isRemoteKey(b.scope) ? REMOTE_CONDUCTOR_HAS_NO_WORKSPACE : undefined
   }
 
-  private saveProblem(input: NewChannelInput, channelId = ''): string | undefined {
+  private saveProblem(input: NewChannelInput, channelId?: string): string | undefined {
     if (!this.d.backendEnabled(input.backend))
       return `${BACKEND_LABEL[input.backend]} is turned off in Settings ▸ Sessions.`
     if (input.id && !this.binding(input.id)) return NOT_BOUND
@@ -341,9 +336,11 @@ export class Conductors {
     try {
       made = await make(this.scopeToSave(input), this.discord.category)
     } catch (error) {
-      if (error instanceof DiscordHttpError && error.status === MISSING_PERMISSIONS)
-        return { ok: false, error: CANNOT_MAKE_CHANNELS, cannotMakeChannels: true }
-      return { ok: false, error: errorText(error) }
+      return {
+        ok: false,
+        error: errorText(error),
+        ...(error instanceof CannotMakeChannels ? { cannotMakeChannels: true } : {})
+      }
     }
     this.discord = { ...this.discord, category: made.category }
     return this.save({ ...input, channel: made.channel })
@@ -386,12 +383,8 @@ export class Conductors {
     return this.discord.userId
   }
 
-  takeAppOwner(owner: { id: string; name: string }): void {
-    if (this.discord.userId !== owner.id || this.discord.userName !== owner.name)
-      this.setOwner(owner)
-  }
-
   setOwner(owner: { id: string; name: string } | null): void {
+    if (owner && owner.id === this.discord.userId && owner.name === this.discord.userName) return
     const { userId: droppedId, userName: droppedName, ...rest } = this.discord
     void droppedId
     void droppedName

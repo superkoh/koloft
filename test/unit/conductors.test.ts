@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
   bindingProblem,
-  freeChannelName,
   GLOBAL_SCOPE,
   keepPinnedBindings,
   newChannelName,
@@ -94,11 +93,6 @@ describe('a new channel’s name', () => {
   it('adds the machine for a remote workspace, without the user and with its dots as hyphens', () => {
     expect(newChannelName('ssh://me@devbox.lan/home/me/ws-b')).toBe('ws-b-devbox-lan')
     expect(newChannelName('ssh://box/srv/api')).toBe('api-box')
-  })
-
-  it('takes the next free number when the name is taken', () => {
-    expect(freeChannelName('ws-a', ['koloft'])).toBe('ws-a')
-    expect(freeChannelName('ws-a', ['ws-a', 'ws-a-2'])).toBe('ws-a-3')
   })
 })
 

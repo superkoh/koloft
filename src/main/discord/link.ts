@@ -5,12 +5,8 @@ import type {
   DiscordStatus,
   DiscordUser
 } from '@shared/types'
-import {
-  freeChannelName,
-  newChannelGuild,
-  newChannelName,
-  newChannelTopic
-} from '@shared/conductors'
+import { newChannelGuild, newChannelName, newChannelTopic } from '@shared/conductors'
+import { distinctName } from '@shared/sessionRoute'
 import { DiscordGateway } from './gateway'
 import { DiscordHttpError, DiscordRest } from './rest'
 import { cardMessages, NO_MENTIONS, type Card } from './cards'
@@ -560,7 +556,7 @@ export class DiscordLink {
     const lists = await Promise.all(
       guilds.map((g) =>
         rest
-          .request<{ id: string; name: string; type: number }[]>('GET', `/guilds/${g.id}/channels`)
+          .request<RawChannel[]>('GET', `/guilds/${g.id}/channels`)
           .then((list) =>
             list
               .filter((c) => c.type === TEXT_CHANNEL)
@@ -585,13 +581,19 @@ export class DiscordLink {
     const there = await api.request<RawChannel[]>('GET', route)
     const botName = this.botName ?? 'Koloft'
     const categories = there.filter((c) => c.type === CATEGORY)
+    const make = (body: unknown): Promise<RawChannel> =>
+      api.request<RawChannel>('POST', route, body).catch((error: unknown) => {
+        if (error instanceof DiscordHttpError && error.status === MISSING_PERMISSIONS)
+          throw new CannotMakeChannels()
+        throw error
+      })
     const category =
-      (saved?.guildId === guildId && categories.find((c) => c.id === saved.channelId)) ||
-      (!saved && categories.find((c) => c.name === botName)) ||
-      (await api.request<RawChannel>('POST', route, { name: botName, type: CATEGORY }))
+      categories.find((c) => c.id === saved?.channelId) ??
+      categories.find((c) => c.name === botName) ??
+      (await make({ name: botName, type: CATEGORY }))
     const taken = there.filter((c) => c.type === TEXT_CHANNEL).map((c) => c.name)
-    const made = await api.request<RawChannel>('POST', route, {
-      name: freeChannelName(newChannelName(scope), taken),
+    const made = await make({
+      name: distinctName(newChannelName(scope), taken),
       type: TEXT_CHANNEL,
       parent_id: category.id,
       topic: newChannelTopic(scope)
@@ -600,5 +602,13 @@ export class DiscordLink {
       channel: { guildId, channelId: made.id, name: made.name },
       category: { guildId, channelId: category.id, name: category.name }
     }
+  }
+}
+
+export class CannotMakeChannels extends Error {
+  constructor() {
+    super(
+      'The bot is not allowed to make channels yet. Invite it again to give it that permission — the channels you already bound keep working.'
+    )
   }
 }

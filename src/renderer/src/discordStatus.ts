@@ -60,6 +60,13 @@ export function statusClass(s: DiscordStatus): string {
   return s.phase === 'token' || s.phase === 'intents' ? ' bad' : ''
 }
 
+export const MESSAGE_CONTENT_BY_HAND =
+  'Koloft could not turn on Message Content. Open your app ▸ Bot ▸ turn Message Content Intent on ▸ Save Changes. Koloft checks again every 30 seconds.'
+
+export function ownerFromApp(s: DiscordStatus, discord: DiscordSettings): boolean {
+  return !!discord.userId && s.appOwner?.id === discord.userId
+}
+
 export function nextSetupStep(s: DiscordStatus, discord: DiscordSettings): number | null {
   if (s.phase === 'connected' && s.guilds.length === 0) return 4
   if (s.phase !== 'off' && discord.userId) return null

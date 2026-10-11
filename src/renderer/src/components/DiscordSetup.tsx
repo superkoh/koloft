@@ -3,7 +3,14 @@ import { LuArrowUpRight, LuPlus, LuX } from 'react-icons/lu'
 import { DISCORD_OFF, type DiscordStatus } from '@shared/types'
 import { ageLabel } from '@shared/freshnessOps'
 import { useStore } from '../store'
-import { DEVELOPER_PORTAL, inviteLink, SETUP_STEPS, useDiscordStatus } from '../discordStatus'
+import {
+  DEVELOPER_PORTAL,
+  inviteLink,
+  MESSAGE_CONTENT_BY_HAND,
+  ownerFromApp,
+  SETUP_STEPS,
+  useDiscordStatus
+} from '../discordStatus'
 
 function bold(text: string): ReactNode[] {
   return text.split('**').map((part, i) => (i % 2 ? <strong key={i}>{part}</strong> : part))
@@ -198,7 +205,7 @@ function TokenStep({ status }: { status: DiscordStatus }): JSX.Element {
 
 function PairStep({ status }: { status: DiscordStatus }): JSX.Element {
   const discord = useStore((s) => s.settings.discord)
-  if (discord.userId && status.appOwner?.id === discord.userId)
+  if (ownerFromApp(status, discord))
     return <Done>✓ You are {discord.userName ?? discord.userId} · owner of the bot’s app</Done>
   if (discord.userId)
     return (
@@ -246,13 +253,7 @@ function StepAction({ step, status }: { step: number; status: DiscordStatus }): 
     case 2:
       if (status.phase === 'connected') return <Done>✓ Message Content is on</Done>
       if (status.phase === 'intents')
-        return (
-          <div className="acct-login-state bad">
-            {bold(
-              'Koloft could not turn Message Content on. On **Bot**, under **Privileged Gateway Intents**, turn **Message Content Intent** on and click **Save Changes**. Koloft checks again every 30 seconds.'
-            )}
-          </div>
-        )
+        return <div className="acct-login-state bad">{MESSAGE_CONTENT_BY_HAND}</div>
       return null
     case 3:
       return <TokenStep status={status} />
