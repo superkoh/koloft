@@ -18,7 +18,7 @@ import {
   newerSnowflake,
   conductorName,
   asPeerName,
-  scopeName
+  peerNameBeforeAssistRename
 } from '@shared/conductors'
 import { conductorRole } from '@shared/agentGuide'
 import { isRemoteKey } from '@shared/remoteKey'
@@ -142,8 +142,7 @@ export class Conductors {
       bySession ??
       this.discord.bindings.find(
         (b) =>
-          ref === asPeerName(conductorName(b.scope)) ||
-          ref === asPeerName(`${scopeName(b.scope)} conductor`)
+          ref === asPeerName(conductorName(b.scope)) || ref === peerNameBeforeAssistRename(b.scope)
       )
     )
   }

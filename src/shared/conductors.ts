@@ -25,6 +25,10 @@ export function conductorName(scope: string): string {
   return `${scopeName(scope)} Assist`
 }
 
+export function peerNameBeforeAssistRename(scope: string): string {
+  return asPeerName(`${scopeName(scope)} conductor`)
+}
+
 export function asPeerName(title: string): string {
   return title.replace(/\s+/g, '-')
 }
