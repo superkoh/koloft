@@ -615,7 +615,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
   })
 
   // CC§5
-  test('E-RW-28: a remote turn that ends while its reported background work still runs shows green with ↻ until the work drains', async ({
+  test('E-RW-28: a remote turn that ends while its reported background work still runs shows breathing green with ↻ until the work drains', async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -630,8 +630,10 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       const running = oneStillRunning(row)
       await expect(running).toBeVisible({ timeout: 60_000 })
       await expect(row).toHaveClass(/\bst-waiting\b/)
+      await expect(row).toHaveClass(/\bst-bg-run\b/)
       await expect(running).toHaveCount(0, { timeout: 90_000 })
       await expect(row).toHaveClass(/\bst-waiting\b/)
+      await expect(row).not.toHaveClass(/\bst-bg-run\b/)
     } finally {
       await quitAndClose(app)
     }
