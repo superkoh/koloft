@@ -723,7 +723,7 @@
         <li>
           Only when the "+" menu opens: one <code>ps -Ao pid=,ppid=,command=</code> to walk the
           session's process tree from its root pid, and one
-          <code>lsof -a -p &lt;tree pids&gt; -iTCP -sTCP:LISTEN -Fn</code> for the ports. Measured
+          <code>lsof -a -p &lt;tree pids&gt; -iTCP -sTCP:LISTEN -Fpn</code> for the ports. Measured
           on this Mac: about 30 ms each. No timer, no new background scan, nothing stored.
         </li>
         <li>
@@ -740,7 +740,8 @@
         </li>
         <li>
           <strong>Codex, local</strong> - root pid is this tab's own <code>codex app-server</code>
-          (one per tab, not shared; the TUI in the pty runs no commands). Same menu, same rows.
+          (one per tab, not shared; that the TUI in the pty runs no commands itself is inferred, not
+          checked). Same menu, same rows.
         </li>
         <li>
           <strong>Claude Code, remote (ssh)</strong> - left out: the processes live on the other
