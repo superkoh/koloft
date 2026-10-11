@@ -137,13 +137,13 @@ koloft session stop <id or name>
     Example: koloft session stop "Fix docs links"
 
 koloft session close [<id or name>]
-    Close a session for good: Koloft ends it, closes its tab and takes it off the sidebar list. If it runs in its own git worktree, Koloft also deletes that worktree and its branches. With no id or name it closes the session you run it in; run that as your very last step, only when the owner asked for it. With an id or name it closes a session you started with "koloft session new" (open, or already ended), once you have its result. A conductor may also close, when the owner asks, any ended session it looks after on this computer: an open one is refused (stop it first), and so is one on another machine. Do not resume a session to ask it to close itself. If anything in the worktree is not committed, or a commit is on no remote branch, nothing is closed and Koloft lists what is left.
+    Close a session for good: Koloft ends it, closes its tab and takes it off the sidebar list. If it runs in its own git worktree, Koloft also deletes that worktree and its branches. With no id or name it closes the session you run it in; run that as your very last step, only when the owner asked for it. With an id or name it closes a session you started with "koloft session new" (open, or already ended), once you have its result. A conductor may also close, when the owner asks, any ended session it looks after on this computer: an open one is refused (stop it first), and so is one on another machine. Do not resume a session to ask it to close itself. If anything in the worktree is not committed, or a commit is on no other branch and no remote branch, nothing is closed and Koloft lists what is left. Koloft has no merge button: to bring a worktree session's work into the main checkout, commit it, merge its branch from the main checkout, then close.
     Example: koloft session close "Fix docs links"
 
 DISCORD (conductors only)
 
 koloft discord send <file>... [-- "<text>"]
-    Only for a conductor: send files, pictures or screenshots to the Discord channel the owner talks to you in, with an optional line of text. Paths are relative to your current folder. At most 20 MB per file. Use it when the owner wants to see a file or a screenshot; a path you only mention in your reply is not sent.
+    Only for a conductor: send files, pictures or screenshots to the Discord channel the owner talks to you in, with an optional line of text. You run in a folder of your own, so give a workspace file its full path. At most 20 MB per file. Use it when the owner wants to see a file or a screenshot; a path you only mention in your reply is not sent.
     Example: koloft discord send shot.png -- "The login page now."
 
 GITHUB (conductors only)
