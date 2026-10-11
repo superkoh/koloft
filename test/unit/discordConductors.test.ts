@@ -67,6 +67,7 @@ function make(): Conductors {
       return `tab-${started.length}`
     },
     resume: async (l) => {
+      if (codexRefusesTheGate && l.backend === 'codex') throw new Error(CODEX_GATE_NOT_TRUSTED)
       resumed.push(l.key)
       return `tab-resumed-${l.key}`
     },
@@ -238,6 +239,22 @@ describe('Conductors', () => {
     expect(toasts).toEqual([
       `Assist runs on Claude this time: ${CODEX_GATE_NOT_TRUSTED}`,
       `Assist runs on Claude this time: ${CODEX_GATE_NOT_TRUSTED}`
+    ])
+  })
+
+  // ADR-0029 CODEX§27
+  it('a Codex Assist that has talked before and is refused its safety check on resume starts a new conversation on Claude and says why', async () => {
+    const codexThread = 'codex:local:11111111-1111-4111-8111-111111111111'
+    records = [{ scope: 'global', sessionIds: [codexThread], lastSessionKey: codexThread }]
+    transcripts.add(codexThread)
+    choice = { backend: 'codex' }
+    codexRefusesTheGate = true
+    await opened(make(), 'global')
+    expect(resumed).toEqual([])
+    expect(started.map((s) => s.backend)).toEqual(['claude'])
+    expect(toasts).toEqual([
+      `Assist runs on Claude this time: ${CODEX_GATE_NOT_TRUSTED}`,
+      'The Global Assist now runs on Claude, so it starts a new conversation.'
     ])
   })
 
