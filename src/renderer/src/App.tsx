@@ -1507,6 +1507,16 @@ export default function App(): JSX.Element {
               <WorldClock />
             </div>
             <div className="island flat term-island">
+              {signInTabId && activeTab?.id === signInTabId && (
+                <div className="wb-bar">
+                  <span className="wb-title">
+                    <span className="nm">{activeTab.title}</span>
+                  </span>
+                  <button className="mini" onClick={() => closeTab(signInTabId)}>
+                    Cancel
+                  </button>
+                </div>
+              )}
               <div className="terminals">
                 {tabs.flatMap((t) => [
                   t.ghost && (
