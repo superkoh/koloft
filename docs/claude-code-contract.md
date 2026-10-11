@@ -9,13 +9,17 @@ external system; Koloft's own mechanism rationale lives in ADRs (`docs/adr/`) an
 claims live in tests (doctrine: the document-retirement rule in CLAUDE.md). An entry
 with no date, version or method is marked "inferred, not checked".
 
-**Canary run** — the e2e suite against a real `claude`, started by hand after a CC
-upgrade; nothing schedules it and it is not a gate. `test/e2e/helpers/env.ts` pins
-`KOLOFT_CLAUDE_CMD: 'claude'` after spreading `process.env` and builds PATH itself, so
-an exported env var never reaches the app — override `launchEnv` in code instead
-(pattern: restart-session.spec.ts). Viable because specs assert structure, never model
-prose; `cron-real-smoke.spec.ts` is the one opt-in case that already runs on the real
-binary.
+**Canary run** — the opt-in e2e specs against a real `claude`, run after each CC
+release on a copy of the new binary downloaded to a scratch folder (never the installed
+one, and never `claude update`): `agent-tools-real-smoke.spec.ts`,
+`cron-real-smoke.spec.ts`, `conductor-ssh-lab.spec.ts` and `remote-ssh-lab.spec.ts`,
+`--workers=1`, with `KOLOFT_SMOKE_CLAUDE` / `KOLOFT_SMOKE_CLAUDE_LINUX` pointing at that
+copy (the other `KOLOFT_SMOKE_*` variables are read at the top of each spec). It is not
+a gate. `test/e2e/helpers/env.ts` pins `KOLOFT_CLAUDE_CMD: 'claude'` after spreading
+`process.env` and builds PATH itself, so an exported env var never reaches the app —
+override `launchEnv` in code instead (pattern: restart-session.spec.ts). Viable because
+specs assert structure, never model prose. A case that fails is re-run on the oldest
+version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new release's.
 
 ## §1 Hook event vocabulary (SessionStart / SessionEnd)
 
@@ -295,7 +299,15 @@ Unless a bullet below says more, it is inferred, not checked.
 
 - **The transcript is append-only.** Once the head of a file has been read to its end
   (or to the scan cap), later writes never change what that head says; a file that
-  shrinks was rewritten by someone else.
+  shrinks was rewritten by someone else. **The one CC path that shrinks a transcript
+  is off unless asked for, and never runs in an interactive session**: read from the
+  2.1.296 binary (`strings`, 2026-10-11), `CLAUDE_CODE_TRANSCRIPT_LOCAL_GC` is read
+  from the environment only (a settings file's copy is dropped with a warning), is off
+  when unset, and turns the compaction on only for a `-p` run that is not remote and
+  has no SDK url (a cloud worker path falls back to a server flag, also off). When on,
+  a file over 5 MiB that gained 20 MiB since the last pass is rewritten into
+  `<file>.compact.tmp.<hex>` and renamed over the original, so its inode changes and
+  it gets shorter.
 - **`ai-title` records repeat.** CC writes the session's `ai-title` again every few
   turns with the same value, so the first one is enough (one 2.1.281 transcript,
   2026-09-24: 56 `ai-title` records).
@@ -426,7 +438,10 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
   with its Bash tool, the port offset of that worktree’s name" and
   `remote-ssh-lab.spec.ts` › "E-SSH-11: a REAL claude on the machine, in a worktree
   session made there through ssh and tmux, echoes with its Bash tool the port offset of
-  that worktree’s name (opt-in, spends real money)".
+  that worktree’s name (opt-in, spends real money)". Both passed again on 2.1.296,
+  2026-10-11, as did E-SSH-15 (`koloft help` and `koloft note append` from the Bash
+  tool on the machine) and E-SSH-C2 (a conductor's typed message answered, its question
+  answered by `koloft session answer`).
 - **CC's background retention sweep leaves hand-made worktrees under
   `.claude/worktrees/` alone from 2.1.246 on** (changelog, read 2026-09-18, not
   measured). Before that it could remove them.
@@ -509,6 +524,14 @@ the same files into a worktree Koloft makes or rebuilds itself.
   250k files took 9.5 s. The same title-then-line bytes came in normal and fullscreen
   mode. Through Koloft's remote tmux (3.3a) the title code is not passed on, and the
   line arrives as a redrawn screen row (`ESC[H` … `ESC[K`), like any other.
+- **The folder goes first, the branch 60–140 ms later, and the process exits last.**
+  Measured 2026-10-11 on CC 2.1.293 and 2.1.296 (two runs each; a `-w` session in a
+  throwaway one-commit repo driven in a python pty, no login, `/exit` with no turn and
+  3,000 ignored files in the worktree, polled every 50 ms from the Enter): the folder
+  was gone at 0.52–0.58 s, `worktree-<name>` at 0.63–0.66 s, the process at
+  0.78–1.14 s (exit 0, "Worktree removed (no changes)"), same order and timing on both.
+  So a check that reads the branch the moment the folder is gone can still see it; the
+  real-binary e2e case polls the branch until it goes.
 - **A SIGHUP during the delete cuts it off half way.** CC stops waiting and exits; the
   folder keeps what was not deleted yet (213,696 of 250,000 files), the worktree stays
   in `git worktree list` and its branch stays. `git worktree remove --force --force`
@@ -681,6 +704,16 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   `ANTHROPIC_DEFAULT_MODEL`; what it out-ranks is unmeasured.
   `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`, `ANTHROPIC_DEFAULT_MODEL` and
   `ANTHROPIC_DEFAULT_FABLE_MODEL` are all in the 2.1.281 binary (`strings`, 2026-09-24).
+  **2.1.296 added `CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL`, and the six slots still
+  cover a Workflow agent**: read from the 2.1.296 binary (`strings`, 2026-10-11), a
+  workflow agent's model falls back explicit `model` → that variable →
+  `CLAUDE_CODE_SUBAGENT_MODEL` → the main loop's model, and with
+  `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` set the script's own `model` is dropped
+  ("Workflow agent model … ignored") and the new variable counts only when the
+  managed-policy tier set it, so one a person exports is ignored. The same binary also
+  names `ANTHROPIC_SMALL_FAST_MODEL`, `CLAUDE_CODE_AUTO_MODE_MODEL` and
+  `CLAUDE_CODE_BG_CLASSIFIER_MODEL` — pointers only; the diff of `*_MODEL` names
+  between 2.1.293 and 2.1.296 is the one workflow variable.
   `CLAUDE_CONFIG_DIR` does NOT isolate credentials on macOS (official docs —
   credentials always go through the system Keychain). `claude setup-token` is the
   official login flow: it prints the authorization URL and, on success, the token on
@@ -895,7 +928,9 @@ of the real binary on 2026-09-03, CC 2.1.259, on a throwaway one-commit git repo
 an own `--settings` hook file logging `SessionStart / UserPromptSubmit / Stop /
 SessionEnd` with millisecond stamps, and the resulting
 `~/.claude/projects/<slug>/<id>.jsonl` read back record by record.
-Probes P1–P7. Flag spellings quoted from `claude --help` of the same build.
+Probes P1–P7. Flag spellings quoted from `claude --help` of the same build. The launch
+line Koloft's scheduled jobs use (`--model`, `--name`, the task after `--`) is pinned by
+`cron-real-smoke.spec.ts` › BB-R01, green on 2.1.296 (2026-10-11).
 
 Re-checked on 2026-09-06, CC 2.1.263, same throwaway-repo pty setup, six runs, each
 transcript read back record by record: **P1, P3 and P6 are unchanged.** P1 — the text
@@ -1016,7 +1051,8 @@ other bullets of §9 were not re-measured on this build.
   `--max-turns` works the same as a shown flag is inferred, not checked. `-n` really is
   CC's short form of `--name`. From `claude --help` on 2.1.281 (2026-09-24):
   `--permission-prompts` takes `host` or `none`; `--effort` takes exactly `low`,
-  `medium`, `high`, `xhigh`, `max`.
+  `medium`, `high`, `xhigh`, `max`. The `--help` flag set of 2.1.293 and 2.1.296 is
+  identical (both run in a scratch `HOME` with stdin closed, 2026-10-11).
 - **A new directory always asks for trust on its first launch**, and
   `--dangerously-skip-permissions` does not skip that question ("Quick safety check: Is
   this a project you created or one you trust?", default answer "No, exit"). A worktree
@@ -1222,6 +1258,23 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   ssh and tmux to a remote claude are not probed.
 - **URLs and files are opened with `Bun.spawn(["open", url])`**, which looks `open` up
   on PATH, so a PATH shim can catch it.
+- **Since 2.1.295 claude can tell its terminal whether it is working, waiting or done
+  (OSC 7501, "Program Status Protocol"), but only to a terminal that answers its
+  query.** Read from the 2.1.296 binary (`strings`, 2026-10-11; not run): at startup
+  it writes `ESC ] 7501 ; ? BEL` next to its XTVERSION query, and only a reply that is
+  an OSC 7501 whose data starts with `?` turns the reports on — no env var, setting,
+  `TERM_PROGRAM` or DA reply takes part, and `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` or a
+  background worker (`CLAUDE_CODE_SESSION_KIND=bg`) skips the query. Then, on every
+  change, `ESC ] 7501 ; state=<s>:app=claude-code[:id=<id>][:kind=<k>][:progress=<n>]
+  [:title=<base64>][:msg=<base64>] BEL` (ST instead of BEL under kitty): `working` (a
+  turn runs, or idle with a queued message), `blocked` (waiting on the person; `kind`
+  `permission` for a permission, sandbox, worker or goal dialog, `question` for an MCP
+  elicitation, `auth` for a login error), `done` (last turn completed), `idle` (no turn
+  yet, or the last one stopped), `error`; background tasks and subagents report under
+  their own `id`, a gone one gets `state=clear:id=<id>`, and exit writes a bare
+  `state=clear`. The sequence is not wrapped for tmux (the DCS passthrough wrapper is
+  not applied), so whether it crosses tmux to the outer terminal is not probed; in or
+  out of fullscreen alike (read, not run).
 - **An idle claude process holds a lot of memory**: measured 185–350 MB each for idle
   processes about two days old (date and CC version not recorded). On 2026-09-24, CC
   2.1.281, four live sessions (not idle, 20 min to 4 h old) held 196–403 MB each
@@ -1423,6 +1476,15 @@ with `koloft`, and printed nothing for that one. The prompt asked for a Bash
   and `tool_use_id`. The auto-memory folder is `memory/` beside that transcript (seen
   for Koloft's global conductor).
 - Not run: a `Task` subagent's own tool calls under the hook.
+- **A hook that cannot run lets the call through unless `onFailure: "block"` is set.**
+  Since 2.1.295 a command or HTTP hook entry takes `onFailure: "continue" | "block"`,
+  default `continue` (read from the 2.1.296 binary, 2026-10-11, not run): a hook that
+  could not start, timed out, exited with a code other than 0 or 2, or printed invalid
+  JSON is reported and the action goes ahead; with `block` it counts as exit 2 and the
+  guarded tool call, permission request or prompt is blocked (a `PermissionRequest`
+  gets `behavior: "deny"`). Ignored for async hooks and on Stop, SubagentStop,
+  TaskCompleted and TeammateIdle. Koloft's hook entries set nothing, so a gate hook
+  that fails to start fails open.
 
 ## §16 `claude --version` and `claude update`
 
@@ -1432,7 +1494,8 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
 
 - **`claude --version` prints `2.1.294 (Claude Code)`** — the version first, then a
   space — and returns at once (`time` shows 0.00 s native, 0.12 s for the npm install),
-  so a check on every launch costs next to nothing.
+  so a check on every launch costs next to nothing. The same shape on 2.1.296
+  (`2.1.296 (Claude Code)`, the darwin-arm64 download, 2026-10-11).
 - **`claude update` asks nothing and exits 0.** Native: 2.1.250 → 2.1.294; the
   `~/.local/bin/claude` link moves to `versions/2.1.294` and `versions/2.1.250` stays,
   so a session already running on the old file keeps going. npm: 2.1.250 → **2.1.293**,
@@ -1448,7 +1511,8 @@ one (`npm install -g @anthropic-ai/claude-code@2.1.250` into a user-writable pre
 - **The minimum is 2.1.293, the newest every channel offered on 2026-10-08**
   (`downloads.claude.ai/claude-code-releases/latest` said 2.1.294; npm dist-tags said
   `latest` 2.1.293, `next` 2.1.294, `stable` 2.1.285). A minimum above npm's `latest`
-  would leave an npm install that `claude update` cannot lift to it.
+  would leave an npm install that `claude update` cannot lift to it. On 2026-10-11 both
+  channels offered 2.1.296 (`latest` and `next` 2.1.296, `stable` 2.1.287).
 
 ## §17 The UserPromptSubmit hook adds text beside every prompt
 
@@ -1483,6 +1547,7 @@ sends path, diff fence, hunk and note as one message" (4 runs) and
 `remote-ssh-lab.spec.ts` › "E-SSH-10: ✎ comment on a remote Changes hunk reaches a REAL
 claude on the machine through ssh and tmux …" (3 runs; one of them failed only on an
 earlier assertion that the model obey the note, the paste facts held in all three).
+Both passed again on 2.1.296 (Mac, and linux-arm64 in the lab), 2026-10-11.
 
 - **claude turns bracketed paste on at startup** (it writes `ESC[?2004h`; 2.1.287 notes).
 - **A write wrapped in `ESC[200~` … `ESC[201~` lands as one block and is not sent.** On
@@ -1551,8 +1616,9 @@ ADR-0031, each up to 70 tool calls, with the same entry.
   prompt hook's context.
 - **A `PostToolBatch` event also exists** (once per batch of tool calls; its
   `additionalContext` reached the model on 2.1.296; its name is in the 2.1.294 binary).
-  It is not in the CHANGELOG, so whether 2.1.293, the oldest Koloft supports, knows it is
-  not probed.
+  It is not in the CHANGELOG; the 2.1.293 binary, the oldest Koloft supports, carries
+  it too (`strings`, 2026-10-11: `executePostToolBatchHooks` and "Execution stopped by
+  PostToolBatch hook" in both 2.1.293 and 2.1.296).
 - **With an output style set, CC itself repeats an English line after every tool
   result**: the transcripts on this Mac carry an `output_style` attachment with
   `"turnReminder":"Be concise: lead with the result, skip preamble and narration, keep
