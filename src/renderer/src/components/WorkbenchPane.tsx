@@ -40,6 +40,7 @@ import {
   CDP_MOUNT_SETTLE_MS
 } from '@shared/cdpBudget'
 import { isWebPagePath } from '@shared/preview'
+import { BACKEND_LABEL, backendIdOf } from '@shared/sessionBackend'
 import type {
   ArtifactView,
   BrowserCdpOp,
@@ -345,6 +346,9 @@ export function WorkbenchPane({
 }: WorkbenchPaneProps): JSX.Element {
   const termFocus = useStore((s) => s.termFocus)
   const load = useStore((s) => (ownerTab ? s.workbenchLoad[ownerTab] : undefined))
+  const ownerBackend = useStore(
+    (s) => backendIdOf(s.tabs.find((t) => t.id === ownerTab)?.kind) ?? 'claude'
+  )
   const [live, setLive] = useState<string[]>([])
   const [runtime, setRuntime] = useState<Record<string, TabRuntime>>({})
   const [attached, setAttached] = useState(0)
@@ -1631,7 +1635,7 @@ export function WorkbenchPane({
         <div className="bstate-t">No page open yet</div>
         <div className="bempty-hint">Press ⌘L and enter an address (http(s) / file://)</div>
         <div className="bempty-hint">Click a link in the terminal</div>
-        <div className="bempty-hint">Or let Claude open one</div>
+        <div className="bempty-hint">Or let {BACKEND_LABEL[ownerBackend]} open one</div>
       </div>
     ) : activeTab && !live.includes(activeTab.id) ? (
       <div className="bempty">
