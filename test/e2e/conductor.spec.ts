@@ -3,11 +3,7 @@ import path from 'path'
 import { spawnSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
-import {
-  installCodex,
-  seedSettings,
-  type E2EEnv
-} from './helpers/env'
+import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
 import {
   assistRecordOnDisk,
   centerTerm,
@@ -21,6 +17,7 @@ import {
   settingsOnDisk,
   startSessionIn,
   waitBooted,
+  resumedId,
   waitForCalls,
   wsRows
 } from './helpers/p1'
@@ -432,6 +429,74 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
     } finally {
       await close()
       killFakeRemote(env)
+    }
+  })
+})
+
+test.describe('Assist without Discord: talked to from the sidebar, gated however its session is started', () => {
+  // ADR-0029
+  test('with Assist on and no Discord at all, Talk to Assist opens the workspace’s Assist, its row says it is not on Discord, and resuming its session the ordinary way is still gated and kept out of the workspace rows', async ({
+    env
+  }) => {
+    const { page, close } = await launched(env, {
+      assist: { on: true, backend: 'claude' },
+      conductorsFolded: false
+    })
+    try {
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await page.locator('.menu .mi', { hasText: 'Talk to Assist' }).click()
+      const first = (await waitForCalls(env, 1))[0]
+      expect(path.dirname(first.cwd)).toBe(path.join(env.userData, 'conductors'))
+      const write = {
+        tool_name: 'Write',
+        tool_input: { file_path: path.join(env.workspaces.a, 'x') }
+      }
+      expect(gateSays(first, write)).toBe('deny')
+      await expect.poll(() => assistRecordOnDisk(env)?.sessionIds.length).toBe(1)
+      await expect(conductorRow(page, 'ws-a').locator('.ws-tab-sub')).toHaveText(NOT_ON_DISCORD)
+
+      const key = assistRecordOnDisk(env)!.lastSessionKey!
+      const tabId = await conductorTabId(page, env)
+      await page.evaluate((id) => window.api.terminal.kill(id), tabId)
+      await expect
+        .poll(async () =>
+          (await page.evaluate(() => window.api.sessions.list())).some((s) => s.tabId === tabId)
+        )
+        .toBe(false)
+      await page.evaluate((req) => window.api.sessions.resume(req), {
+        sessionId: key,
+        cwd: first.cwd
+      })
+      const resumed = (await waitForCalls(env, 2))[1]
+      expect(resumedId(resumed)).toBe(key)
+      expect(gateSays(resumed, write)).toBe('deny')
+      await page.waitForTimeout(ROWS_RESCAN_AND_PUSH_SETTLE_MS)
+      await expect(wsRows(page, 'ws-a')).toHaveCount(0)
+    } finally {
+      await close()
+    }
+  })
+
+  test('with Assist off, the Assist island shows one grey row that opens the Assist setup, and a workspace menu has no Talk to Assist', async ({
+    env
+  }) => {
+    const { page, close } = await launched(env, {
+      assist: { on: false, backend: 'claude' },
+      conductorsFolded: false
+    })
+    try {
+      await expect(island(page).locator('.ws-tab')).toHaveCount(1)
+      await expect(island(page).locator('.ws-tab-title')).toHaveText('Assist')
+      await island(page).locator('.ws-tab').click()
+      await expect(page.getByRole('dialog', { name: 'Koloft Assist' })).toBeVisible()
+      await page
+        .getByRole('dialog', { name: 'Koloft Assist' })
+        .getByRole('button', { name: 'Not now' })
+        .click()
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await expect(page.locator('.menu .mi', { hasText: 'Talk to Assist' })).toHaveCount(0)
+    } finally {
+      await close()
     }
   })
 })

@@ -89,8 +89,7 @@ async function upgradedApp(env: E2EEnv, fake: FakeDiscord) {
 }
 
 function writtenBindingsAnOlderKoloftKeeps(env: E2EEnv): void {
-  const bindings = (settingsOnDisk(env).discord as { bindings: Record<string, unknown>[] })
-    .bindings
+  const bindings = (settingsOnDisk(env).discord as { bindings: Record<string, unknown>[] }).bindings
   expect(bindings.length).toBeGreaterThan(0)
   for (const b of bindings) {
     expect(['claude', 'codex']).toContain(b.backend)
@@ -153,9 +152,9 @@ test.describe('Upgrade continuity: what v0.38.0 left on disk keeps working after
         .toBe(1)
       expect(resumedId(assistCalls(env, 'global')[0])).toBeUndefined()
       await answersOnDiscord(fake, 'hello from a Codex Assist')
-      await expect.poll(() => assistRecordOnDisk(env, 'global')?.lastSessionKey).not.toBe(
-        'codex:019a0000-old'
-      )
+      await expect
+        .poll(() => assistRecordOnDisk(env, 'global')?.lastSessionKey)
+        .not.toBe('codex:019a0000-old')
       expect(
         (settingsOnDisk(env).discord as { bindings: { backend: string }[] }).bindings[0].backend
       ).toBe('claude')
