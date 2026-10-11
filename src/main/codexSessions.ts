@@ -36,7 +36,7 @@ import { watchJsonDrops } from './jsonDrops'
 import { openDropTarget, type OpenDrop } from './openDrop'
 import { removeCodexOpenShim, writeCodexOpenShim } from './openShimScript'
 import { AGENT_SHIM_WAITS_MS, writeCodexAgentShim } from './agentShim'
-import { CODEX_AGENT_HINT } from '@shared/agentGuide'
+import { koloftPrompt } from '@shared/agentGuide'
 import { portOffset } from '@shared/worktreeName'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import type { CodexApproval, CodexQuestion } from './discord/dialog'
@@ -835,7 +835,10 @@ export class CodexSessions {
     )
     const env = { ...this.envFor(home), ZDOTDIR: openShim.zdotDir }
     const observer = new CodexObservation(observe)
-    const instructions = [...(agent ? [CODEX_AGENT_HINT] : []), ...(opts.role ? [opts.role] : [])]
+    const instructions = [
+      ...(agent && !opts.conductor ? [koloftPrompt('codex')] : []),
+      ...(opts.role ? [opts.role] : [])
+    ]
     const permission = opts.permission ?? 'default'
     const permissions = opts.conductor ? CONDUCTOR_PERMISSIONS : PERMISSIONS[permission]
     let transport: CodexTransport | undefined

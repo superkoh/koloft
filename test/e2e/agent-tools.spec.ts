@@ -520,7 +520,21 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     }
   })
 
-  test('with agent tools off in Settings, koloft in a new session is refused', async ({ env }) => {
+  // CC§13
+  test('a Claude session starts with Koloft’s prompt, which sends work needing a worktree of its own to koloft session new -w', async ({
+    page,
+    env
+  }) => {
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    const { argv } = (await waitForCalls(env, 1))[0]
+    const prompt = argv[argv.indexOf('--append-system-prompt-file') + 1]
+    expect(fs.readFileSync(prompt, 'utf8')).toContain('koloft session new -w')
+  })
+
+  test('with agent tools off in Settings, koloft in a new session is refused, and the session starts without Koloft’s prompt', async ({
+    env
+  }) => {
     test.setTimeout(120_000)
     seedSettings(env, { agentTools: false })
     const app = await launchApp(env)
@@ -531,6 +545,7 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
       await startSessionIn(page, 'ws-a')
 
       expect(await koloftInSession(page, 'help')).not.toBe('0')
+      expect((await waitForCalls(env, 1))[0].argv).not.toContain('--append-system-prompt-file')
     } finally {
       await quitAndClose(app)
     }

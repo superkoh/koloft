@@ -39,8 +39,8 @@ export function AppearancePane(): JSX.Element {
         <div className="set-lab">
           <b>Font family</b>
           <small>
-            Comma-separated CSS stack. Put a Nerd Font first so powerline / git / icon glyphs render
-            (no more □ boxes).
+            Comma-separated CSS stack. JetBrainsMono Nerd Font comes with Koloft, so powerline / git
+            / icon glyphs render with no install; keep a Nerd Font first (no more □ boxes).
           </small>
         </div>
         <input

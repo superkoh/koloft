@@ -741,6 +741,17 @@ describe('injected hook script', () => {
     )
   })
 
+  // CC§6
+  it("turns Claude Code's agent teams off in every tab, on this Mac and on a remote machine, so a named subagent never becomes a teammate", () => {
+    const off = { CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '' }
+    expect(
+      JSON.parse(
+        fs.readFileSync(writeTabHookSettings(setupHooks(noPeerInstance), 'tabTM1'), 'utf8')
+      ).env
+    ).toEqual(off)
+    expect(machineHookSettings('tabTM2', '$HOME/.koloft/m', false, false).env).toEqual(off)
+  })
+
   describe('a dialog Koloft can answer from Discord (PermissionRequest)', () => {
     const ask = {
       session_id: 's1',
