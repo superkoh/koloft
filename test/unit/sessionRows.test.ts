@@ -103,8 +103,8 @@ describe('rowStateClass (C2 lightbar)', () => {
     expect(rowStateClass(true, undefined)).toBe('st-idle')
   })
 
-  it('a session still working only in the background after its turn ended reads green, like a finished turn', () => {
-    expect(rowStateClass(true, 'working', false, true)).toBe('st-waiting')
+  it('a session still working only in the background after its turn ended reads green like a finished turn, and breathes', () => {
+    expect(rowStateClass(true, 'working', false, true)).toBe('st-waiting st-bg-run')
     expect(rowStateClass(true, 'approval', false, true)).toBe('st-approval')
   })
 
