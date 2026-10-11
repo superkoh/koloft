@@ -166,7 +166,12 @@ function PicAccounts(): JSX.Element {
 const LEGEND: { cls: string; name: string; what: string }[] = [
   { cls: 'st-working', name: 'Orange', what: 'working' },
   { cls: 'st-approval', name: 'Amber', what: 'needs your OK' },
-  { cls: 'st-waiting', name: 'Green', what: 'turn done (with ↻: still running in the background)' },
+  { cls: 'st-waiting', name: 'Green', what: 'turn done' },
+  {
+    cls: 'st-waiting st-bg-run',
+    name: 'Breathing green',
+    what: 'turn done, still running in the background (↻)'
+  },
   { cls: 'st-idle', name: 'Dim green', what: 'done a while ago, nothing new' },
   { cls: 'cold', name: 'Grey', what: 'closed, click to resume' }
 ]
