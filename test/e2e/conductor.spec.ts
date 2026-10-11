@@ -4,7 +4,6 @@ import { spawnSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import {
-  codexMissingWhoseCheckAnswersOnlyWhenLetGo,
   installCodex,
   seedSettings,
   type E2EEnv
@@ -12,7 +11,6 @@ import {
 import {
   assistRecordOnDisk,
   centerTerm,
-  expectNoCodexWhileTheCheckIsOutNorAfter,
   newSessionInWith,
   notesIsland,
   openMenu,
@@ -41,6 +39,7 @@ test.setTimeout(120_000)
 
 const CHANNEL_A = 'koloft-all'
 const CHANNEL_B = 'koloft'
+const NOT_ON_DISCORD = 'not on Discord'
 const ROWS_RESCAN_AND_PUSH_SETTLE_MS = 1500
 const KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS = 30_000
 
@@ -78,14 +77,13 @@ function conductorRow(page: Page, name: string): Locator {
 async function bindFromWorkspaceMenu(
   page: Page,
   wsName: string,
-  opts: { scope?: string; backend?: 'Claude' | 'Codex'; channel: string }
+  opts: { scope?: string; channel: string }
 ): Promise<void> {
   await openMenu(page, page.locator('.ws-head', { hasText: wsName }))
   await page.locator('.menu .mi', { hasText: 'Bind Discord channel…' }).click()
   const dlg = page.getByRole('dialog', { name: 'Bind a Discord channel' })
   await expect(dlg).toBeVisible()
   if (opts.scope) await dlg.locator('.cb-row', { hasText: opts.scope }).click()
-  if (opts.backend) await dlg.getByRole('button', { name: opts.backend }).click()
   await channelRow(dlg, opts.channel).click()
   await dlg.locator('.modal-foot .btn-primary').click()
   await expect(dlg).toHaveCount(0)
@@ -159,9 +157,10 @@ async function koloftSays(page: Page, args: string): Promise<string> {
 }
 
 async function launched(
-  env: E2EEnv
+  env: E2EEnv,
+  seed: Record<string, unknown> = {}
 ): Promise<{ app: ElectronApplication; page: Page; close: () => Promise<void> }> {
-  seedSettings(env, { hintsOff: true })
+  seedSettings(env, { hintsOff: true, ...seed })
   const discord = await startFakeDiscord(env)
   const app = await launchApp(env)
   const page = await app.firstWindow()
@@ -178,12 +177,15 @@ async function launched(
 
 test.describe('Conductors: a session bound to a Discord channel, kept in its own island and out of every workspace list', () => {
   // ADR-0029
-  test('a workspace conductor bound through the dialog opens in a folder of its own yet keeps its workspace note, may only read and run koloft, stays out of the workspace rows across /clear, raises no turn-done mark, and unbinding closes it', async ({
+  test('a workspace Assist bound through the dialog opens in a folder of its own yet keeps its workspace note, may only read and run koloft, stays out of the workspace rows across /clear, raises no turn-done mark, and unbinding only drops Discord', async ({
     env
   }) => {
-    const { page, close } = await launched(env)
+    const { page, close } = await launched(env, { assist: { on: true, backend: 'claude' } })
     try {
-      await expect(island(page)).toHaveCount(0)
+      await island(page).getByRole('button', { name: 'Unfold' }).click()
+      await expect(island(page).locator('.ws-tab')).toHaveCount(1)
+      await expect(conductorRow(page, 'Global').locator('.ws-tab-sub')).toHaveText(NOT_ON_DISCORD)
+      await island(page).getByRole('button', { name: 'Fold' }).click()
       await bindFromWorkspaceMenu(page, 'ws-a', { channel: CHANNEL_A })
       expect(bindingsOnDisk(env)).toMatchObject([
         {
@@ -222,15 +224,16 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
       await page.waitForTimeout(ROWS_RESCAN_AND_PUSH_SETTLE_MS)
       await expect(wsRows(page, 'ws-a')).toHaveCount(0)
 
+      const lastSession = assistRecordOnDisk(env)?.lastSessionKey
       await conductorRow(page, 'ws-a').click({ button: 'right' })
-      await page.locator('.menu .mi', { hasText: 'Unbind' }).click()
-      await expect(island(page)).toHaveCount(0)
-      expect(bindingsOnDisk(env)).toEqual([])
-      await expect
-        .poll(async () =>
-          (await page.evaluate(() => window.api.sessions.list())).some((s) => s.tabId === tabId)
-        )
-        .toBe(false)
+      await page.locator('.menu .mi', { hasText: 'Unbind Discord channel' }).click()
+      await expect.poll(() => bindingsOnDisk(env)).toEqual([])
+      await expect(conductorRow(page, 'ws-a').locator('.ws-tab-sub')).toHaveText(NOT_ON_DISCORD)
+      expect(assistRecordOnDisk(env)?.lastSessionKey).toBe(lastSession)
+      await page.waitForTimeout(ROWS_RESCAN_AND_PUSH_SETTLE_MS)
+      expect(
+        (await page.evaluate(() => window.api.sessions.list())).some((s) => s.tabId === tabId)
+      ).toBe(true)
     } finally {
       await close()
     }
@@ -281,44 +284,21 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
       await page.locator('.menu .mi', { hasText: 'Remove workspace' }).click()
       await expect(page.locator('.ws-head', { hasText: 'ws-b' })).toHaveCount(0)
       await expect.poll(() => bindingsOnDisk(env)).toEqual([])
-      await expect(island(page)).toHaveCount(0)
-    } finally {
-      await close()
-    }
-  })
-
-  test('with no Codex and a slow Codex check, the bind dialog never lets Codex be picked, before or after the check answers', async ({
-    env
-  }) => {
-    const letTheCheckAnswer = codexMissingWhoseCheckAnswersOnlyWhenLetGo(env)
-    const { page, close } = await launched(env)
-    try {
-      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
-      await page.locator('.menu .mi', { hasText: 'Bind Discord channel…' }).click()
-      const dlg = page.getByRole('dialog', { name: 'Bind a Discord channel' })
-      await expect(dlg).toBeVisible()
-      const pickableCodex = dlg.locator('.seg button:not([disabled])', { hasText: 'Codex' })
-
-      await expectNoCodexWhileTheCheckIsOutNorAfter(
-        page,
-        letTheCheckAnswer,
-        () => pickableCodex.count(),
-        'Codex pickable'
-      )
-      await expect(dlg.locator('.seg button', { hasText: 'Claude' })).toBeEnabled()
+      await island(page).getByRole('button', { name: 'Unfold' }).click()
+      await expect(conductorRow(page, 'ws-b')).toHaveCount(0)
     } finally {
       await close()
     }
   })
 
   // ADR-0029
-  test('a Codex conductor gets its role as developer instructions, runs in a folder of its own with approvals off and the workspace-write sandbox, and its session stays out of the workspace rows', async ({
+  test('a Codex Assist gets its role as developer instructions, runs in a folder of its own with approvals off and the workspace-write sandbox, and its session stays out of the workspace rows', async ({
     env
   }) => {
     installCodex(env)
-    const { page, close } = await launched(env)
+    const { page, close } = await launched(env, { assist: { on: true, backend: 'codex' } })
     try {
-      await bindFromWorkspaceMenu(page, 'ws-a', { backend: 'Codex', channel: CHANNEL_A })
+      await bindFromWorkspaceMenu(page, 'ws-a', { channel: CHANNEL_A })
       expect(bindingsOnDisk(env)).toMatchObject([{ backend: 'codex' }])
       await openConductor(page, 'ws-a')
       await expect.poll(() => assistRecordOnDisk(env)?.sessionIds.length).toBe(1)
