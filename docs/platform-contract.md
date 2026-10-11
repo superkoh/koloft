@@ -1516,7 +1516,13 @@ Gateway (the live connection that pushes events):
   `error` string when the token is refused); no token is printed. With `GH_TOKEN` set it
   adds an entry whose `tokenSource` is `GH_TOKEN`. With no account it prints
   `{"hosts":{}}` and the "not logged into any GitHub hosts" line on stderr, still exit 0.
-  It checks each account over the network, so it is not free to call.
+  It checks each account over the network, so it is not free to call; any account that
+  fails that check (offline, a revoked second account) makes plain `gh auth status` exit
+  non-zero.
+- **`gh auth token -h github.com` answers "is a login stored" without the network**: in a
+  container with no network it exited 0 with one stored account or with `GH_TOKEN` set, and
+  1 ("no oauth token found for github.com") with none. It prints the token, so its output
+  is never shown or logged.
 - Measured 2026-10-11 with gh 2.102.0 (macOS arm64 and Linux arm64 builds), git 2.39.5 in
   Docker (node:22) with fake tokens and `store` helpers, and Apple git 2.54.0 read from
   source; the keychain itself was not exercised.

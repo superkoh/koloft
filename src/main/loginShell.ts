@@ -55,6 +55,15 @@ export async function readLoginShell(opts: {
   return { probed, env }
 }
 
+const GH_LOGIN_VARS = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_CONFIG_DIR', 'GH_HOST'] as const
+
+// PLATFORM§1
+export function ghEnvFromLogin(login: NodeJS.ProcessEnv): Record<string, string> {
+  return Object.fromEntries(
+    GH_LOGIN_VARS.flatMap((k) => (login[k] ? [[k, login[k] as string]] : []))
+  )
+}
+
 // PLATFORM§1
 export function sshEnvFromLogin(
   current: NodeJS.ProcessEnv,

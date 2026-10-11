@@ -65,8 +65,9 @@ export async function ghOpenCounts(gh: Gh, repo: GithubRepo): Promise<OpenCounts
   return r.code === 0 ? parseOpenCounts(r.stdout) : null
 }
 
+// PLATFORM§43
 export async function ghAuthState(gh: Gh): Promise<GhAuthState> {
-  const r = await gh(['auth', 'status', '-h', 'github.com'])
+  const r = await gh(['auth', 'token', '-h', 'github.com'])
   return r.missing ? 'no-gh' : r.code === 0 ? 'signed-in' : 'signed-out'
 }
 

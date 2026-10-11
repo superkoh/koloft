@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { readLoginShell, sshEnvFromLogin } from '../../src/main/loginShell'
+import { ghEnvFromLogin, readLoginShell, sshEnvFromLogin } from '../../src/main/loginShell'
 
 let zdotdir: string
 
@@ -36,5 +36,21 @@ describe("background ssh gets what the user's own terminal has", () => {
 
   it('changes nothing when the login files add nothing', () => {
     expect(sshEnvFromLogin({ PATH: '/usr/bin:/bin' }, { PATH: '/bin:/usr/bin' })).toEqual({})
+  })
+})
+
+// PLATFORM§1
+describe("Koloft's own gh sees the gh login the user's terminal sees", () => {
+  it('carries the GitHub token and gh config folder the login files set, and nothing else', async () => {
+    fs.writeFileSync(
+      path.join(zdotdir, '.zshrc'),
+      'export GH_CONFIG_DIR=/tmp/kt-gh\nexport GH_TOKEN=kt-token\nexport OTHER=x\n'
+    )
+    const login = await readLoginShell({
+      shell: '/bin/zsh',
+      env: { PATH: '/usr/bin:/bin', ZDOTDIR: zdotdir },
+      timeoutMs: 8000
+    })
+    expect(ghEnvFromLogin(login.env)).toEqual({ GH_CONFIG_DIR: '/tmp/kt-gh', GH_TOKEN: 'kt-token' })
   })
 })

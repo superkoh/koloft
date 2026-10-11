@@ -317,7 +317,8 @@ export function installFakeGh(
         ? `echo "To get started with GitHub CLI, please run:  gh auth login" >&2; exit ${answer.exitCode}\n`
         : '') +
       `case "$1 $2" in\n` +
-      `  "auth status"|"auth login") exit 0;;\n` +
+      `  "auth token") echo gho_FAKE_E2E; exit 0;;\n` +
+      `  "auth login") exit 0;;\n` +
       `  "pr checks") cat ${JSON.stringify(checks)}; exit 0;;\n` +
       `  "run view") cat ${JSON.stringify(log)}; exit 0;;\n` +
       `  "issue list") cat ${JSON.stringify(issues)}; exit 0;;\n` +

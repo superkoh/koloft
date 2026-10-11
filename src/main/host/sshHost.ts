@@ -365,7 +365,7 @@ cat > "$d/res-$1.json.tmp" && mv -f "$d/res-$1.json.tmp" "$d/res-$1.json" && rm 
 
 const NO_GH = 127
 const GH_AUTH_STATE = `command -v gh >/dev/null 2>&1 || exit ${NO_GH}
-gh auth status -h github.com >/dev/null 2>&1`
+gh auth token -h github.com >/dev/null 2>&1`
 
 const RESIZE_SETTLE_MS = 200
 

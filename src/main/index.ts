@@ -90,7 +90,7 @@ import {
 import { machinePackageBase, mirrorHookDir, mirrorProjectsRoot } from './remote/paths'
 import { RemoteSync } from './remote/sync'
 import { REMOTE_AGENT_SHIM } from './agentShim'
-import { readLoginShell, sshEnvFromLogin } from './loginShell'
+import { ghEnvFromLogin, readLoginShell, sshEnvFromLogin } from './loginShell'
 import {
   oncePerName,
   readJsonDrop,
@@ -821,7 +821,10 @@ process.env.PATH = pathWithInstallDir(process.env.PATH, os.homedir())
 // PLATFORM§1
 function loginEnvReady(): Promise<void> {
   return (loginEnv ??= readLoginShell({ env: process.env })
-    .then(({ env }) => void Object.assign(process.env, sshEnvFromLogin(process.env, env)))
+    .then(
+      ({ env }) =>
+        void Object.assign(process.env, sshEnvFromLogin(process.env, env), ghEnvFromLogin(env))
+    )
     .catch(() => undefined))
 }
 
