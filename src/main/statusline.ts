@@ -153,7 +153,11 @@ node="$HOME/.koloft/node/bin/node"
 }
 
 // ADR-0004
-function pruneDeadWrappers(dir: string, keep: string): void {
+export function pruneDeadInstalls(
+  dir: string,
+  keep: string,
+  markerFile: (entry: string) => string | undefined
+): void {
   let names: string[]
   try {
     names = fs.readdirSync(dir)
@@ -161,18 +165,25 @@ function pruneDeadWrappers(dir: string, keep: string): void {
     return
   }
   for (const name of names) {
-    if (name === keep || !/^run-[0-9a-f]+\.sh$/.test(name)) continue
     const full = path.join(dir, name)
+    const file = name === keep ? undefined : markerFile(full)
+    if (!file) continue
     try {
       const marker = fs
-        .readFileSync(full, 'utf8')
+        .readFileSync(file, 'utf8')
         .split('\n')
         .find((l) => l.startsWith(EXEC_MARKER))
       if (marker && !fs.existsSync(marker.slice(EXEC_MARKER.length))) {
-        fs.rmSync(full, { force: true })
+        fs.rmSync(full, { recursive: true, force: true })
       }
     } catch {}
   }
+}
+
+function pruneDeadWrappers(dir: string, keep: string): void {
+  pruneDeadInstalls(dir, keep, (entry) =>
+    /^run-[0-9a-f]+\.sh$/.test(path.basename(entry)) ? entry : undefined
+  )
 }
 
 export function setupStatusline(): StatuslinePaths {

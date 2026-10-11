@@ -1675,7 +1675,8 @@ app.whenReady().then(() => {
 
   const hookPaths = setupHooks((tabId) => anotherLiveInstanceOwns(tabId, pidAlive))
   const statusline = setupStatusline()
-  playwrightCliBin = setupPlaywrightCli()
+  const playwrightBin = setupPlaywrightCli()
+  playwrightCliBin = playwrightBin
   ptyMgr.makeHookSettings = (tabId, allowKoloft, conductor) =>
     writeTabHookSettings(
       hookPaths,
@@ -1848,7 +1849,7 @@ app.whenReady().then(() => {
       pickHome: pickCodexHome,
       browserEndpoint: relayEndpoint,
       openShimRoot: path.join(userData, 'codex-open'),
-      playwrightBin: playwrightCliBin,
+      playwrightBin,
       agent: {
         enabled: () => agentToolsFor('codex', 'local'),
         answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw)

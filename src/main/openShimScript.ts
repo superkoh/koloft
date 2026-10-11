@@ -87,12 +87,10 @@ exit 0
 const ZSH_DOTFILES = ['.zshenv', '.zprofile', '.zshrc', '.zlogin']
 
 // PLATFORM§2
-function zdotFile(name: string, userDotDir: string, pathDirs: string[]): string {
+function zdotFile(name: string, userDotDir: string, shimDir: string): string {
   const own = `${userDotDir}/${name}`
   const source = `[ -f ${own} ] && . ${own}\n`
-  return name === '.zprofile'
-    ? `${source}export PATH=${pathDirs.map(shq).join(':')}:"$PATH"\n`
-    : source
+  return name === '.zprofile' ? `${source}export PATH=${shq(shimDir)}:"$PATH"\n` : source
 }
 
 export interface CodexOpenShim {
@@ -104,8 +102,7 @@ export interface CodexOpenShim {
 export function writeCodexOpenShim(
   root: string,
   token: string,
-  userZdotdir: string | undefined,
-  morePathDirs: string[] = []
+  userZdotdir: string | undefined
 ): CodexOpenShim {
   const shimDir = path.join(root, token)
   const zdotDir = path.join(shimDir, 'zdot')
@@ -117,10 +114,7 @@ export function writeCodexOpenShim(
     })
     const userDotDir = userZdotdir ? shq(userZdotdir) : '"$HOME"'
     for (const name of ZSH_DOTFILES)
-      fs.writeFileSync(
-        path.join(zdotDir, name),
-        zdotFile(name, userDotDir, [shimDir, ...morePathDirs])
-      )
+      fs.writeFileSync(path.join(zdotDir, name), zdotFile(name, userDotDir, shimDir))
     fs.mkdirSync(shim.requestDir, { mode: 0o700 })
   } catch (error) {
     removeCodexOpenShim(shim)

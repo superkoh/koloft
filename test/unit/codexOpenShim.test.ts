@@ -103,38 +103,29 @@ describe('Codex open shim', () => {
 })
 
 describe('Codex open shim dotfile folder', () => {
-  it("puts the shim and Koloft's playwright-cli first in a zsh login shell after the user's own profile has run, from $HOME or from the user's own ZDOTDIR, so the user's own playwright-cli loses", () => {
-    const userBin = path.join(base, 'user-bin')
-    const koloftBin = path.join(base, 'koloft playwright bin')
-    for (const dir of [userBin, koloftBin]) {
-      fs.mkdirSync(dir, { recursive: true })
-      fs.writeFileSync(path.join(dir, 'playwright-cli'), '#!/bin/sh\n', { mode: 0o755 })
-    }
+  it("puts the shim first in a zsh login shell after the user's own profile has run, from $HOME or from the user's own ZDOTDIR", () => {
     for (const own of ['home', 'zdotdir'] as const) {
       const home = path.join(base, `home-${own}`)
       const userDir = own === 'home' ? home : path.join(base, 'user-zdotdir')
       fs.mkdirSync(userDir, { recursive: true })
       fs.mkdirSync(home, { recursive: true })
-      fs.writeFileSync(path.join(userDir, '.zprofile'), `export PATH="${userBin}:$PATH"\n`)
+      fs.writeFileSync(
+        path.join(userDir, '.zprofile'),
+        `export PATH="${path.join(base, 'user-bin')}:$PATH"\n`
+      )
       const run = writeCodexOpenShim(
         path.join(base, `codex-open-${own}`),
         randomUUID(),
-        own === 'zdotdir' ? userDir : undefined,
-        [koloftBin]
+        own === 'zdotdir' ? userDir : undefined
       )
       try {
-        const res = spawnSync(
-          '/bin/zsh',
-          ['-lc', 'command -v open; command -v playwright-cli; printf "%s\\n" "$PATH"'],
-          {
-            env: { HOME: home, PATH: '/usr/bin:/bin', ZDOTDIR: run.zdotDir },
-            encoding: 'utf8'
-          }
-        )
-        const [openPath, cliPath, pathLine] = res.stdout.trim().split('\n')
+        const res = spawnSync('/bin/zsh', ['-lc', 'command -v open; printf "%s\\n" "$PATH"'], {
+          env: { HOME: home, PATH: '/usr/bin:/bin', ZDOTDIR: run.zdotDir },
+          encoding: 'utf8'
+        })
+        const [openPath, pathLine] = res.stdout.trim().split('\n')
         expect(openPath, own).toBe(path.join(run.shimDir, 'open'))
-        expect(cliPath, own).toBe(path.join(koloftBin, 'playwright-cli'))
-        expect(pathLine.split(':'), own).toContain(userBin)
+        expect(pathLine.split(':'), own).toContain(path.join(base, 'user-bin'))
       } finally {
         removeCodexOpenShim(run)
       }

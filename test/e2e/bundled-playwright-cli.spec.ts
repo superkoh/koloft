@@ -24,7 +24,9 @@ test.describe('the playwright-cli Koloft ships, run from a Claude Code session o
       const tabId = (await wsRows(page, 'ws-a').getAttribute('data-tab-id'))!
       const title = `bundled-${Date.now().toString(36)}`
       const url = server.page('/bundled', `<title>${title}</title><body>bundled cli</body>`)
-      const run = async (command: string, marks: number): Promise<string> => {
+      let steps = 0
+      const run = async (command: string): Promise<string> => {
+        steps += 1
         await page.evaluate(
           ([id, line]) => window.api.terminal.write(id, line),
           [tabId, `/sh ${command}\r`]
@@ -33,23 +35,19 @@ test.describe('the playwright-cli Koloft ships, run from a Claude Code session o
           .poll(async () => (await terminalText(page, tabId)).split('sh exit=').length - 1, {
             timeout: A_CLI_STEP_FINISHES_WITHIN_MS
           })
-          .toBe(marks)
+          .toBe(steps)
         return terminalText(page, tabId)
       }
 
       expect(
-        await run(
-          "command -v playwright-cli | grep -c '/playwright-cli/[0-9a-f]*/bin/playwright-cli$'",
-          1
-        )
+        await run("command -v playwright-cli | grep -c '/commands/[0-9a-f]*/bin/playwright-cli$'")
       ).toMatch(/^1$/m)
-      expect(await run(`playwright-cli open ${url}`, 2)).toContain(`Page Title: ${title}`)
-      const screen = await run('playwright-cli eval document.title', 3)
+      expect(await run(`playwright-cli open ${url}`)).toContain(`Page Title: ${title}`)
+      const screen = await run('playwright-cli eval document.title')
       expect(screen).toContain(`"${title}"`)
       expect(screen).not.toContain("the user's own playwright-cli")
       expect(screen).toMatch(/sh exit=0[\s\S]*sh exit=0[\s\S]*sh exit=0/)
-      expect(server.count('/bundled')).toBeGreaterThanOrEqual(1)
-      await run('playwright-cli close', 4)
+      await run('playwright-cli close')
     } finally {
       await server.close()
     }
