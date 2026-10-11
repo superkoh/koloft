@@ -74,6 +74,26 @@ const playwrightMcpEnv = (endpoint: string): Record<string, string> => ({
   PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS: '1'
 })
 
+// PLATFORM§17
+const browserTabEnv = (tabId: string, endpoint: string): Record<string, string> => ({
+  ...playwrightMcpEnv(endpoint),
+  PLAYWRIGHT_CLI_SESSION: `koloft-${tabId}`,
+  KOLOFT_BROWSER_CDP: endpoint
+})
+
+const playwrightCacheDir = (): string =>
+  path.join(os.homedir(), 'Library', 'Caches', 'ms-playwright')
+
+// CODEX§26
+export function browserSandboxOverrides(sandbox: unknown, cacheDir: string): string[] {
+  const own = record(sandbox).writable_roots
+  const roots = (Array.isArray(own) ? own : []).filter((r): r is string => typeof r === 'string')
+  return [
+    'sandbox_workspace_write.network_access=true',
+    `sandbox_workspace_write.writable_roots=${JSON.stringify([...new Set([...roots, cacheDir])])}`
+  ]
+}
+
 const runsPlaywrightMcp = (word: string): boolean =>
   word.includes('@playwright/mcp') || path.basename(word) === 'playwright-mcp'
 
@@ -178,6 +198,7 @@ export interface CodexSessionDeps {
   pickHome(): { account: string; home: string } | undefined
   browserEndpoint(tabId: string): string
   openShimRoot: string
+  playwrightBin?: string
   agent: {
     enabled(): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
@@ -376,11 +397,19 @@ export class CodexSessions {
   }
 
   // CODEX§26
-  private async playwrightOverrides(home: string, cwd: string): Promise<string[]> {
+  private async browserOverrides(home: string, cwd: string, sandbox: boolean): Promise<string[]> {
     const read = await this.withRpc(home, (rpc) => rpc.request('config/read', { cwd })).catch(
       () => undefined
     )
-    return playwrightEnvOverrides(record(record(read).config).mcp_servers)
+    if (!read) return []
+    const config = record(record(read).config)
+    const mcp = playwrightEnvOverrides(config.mcp_servers)
+    if (!sandbox) return mcp
+    fs.mkdirSync(playwrightCacheDir(), { recursive: true })
+    return [
+      ...mcp,
+      ...browserSandboxOverrides(config.sandbox_workspace_write, playwrightCacheDir())
+    ]
   }
 
   // CODEX§15
@@ -786,7 +815,7 @@ export class CodexSessions {
     if (opts.trustFolder) this.deps.trustFolder(cwd, this.envFor(home))
     const tabId = this.deps.pty.nextId()
     const endpoint = this.deps.browserEndpoint(tabId)
-    const playwright = endpoint ? await this.playwrightOverrides(home, cwd) : []
+    const browser = endpoint ? await this.browserOverrides(home, cwd, !opts.conductor) : []
     this.assertStarting()
     let run: Run | undefined
     const observe = (event: CodexEvent): void => {
@@ -816,12 +845,12 @@ export class CodexSessions {
         env,
         sessionEnv: {
           ...(resource && { KOLOFT_PORT_OFFSET: String(portOffset(resource.worktreeName)) }),
-          ...(playwright.length > 0 && playwrightMcpEnv(endpoint))
+          ...(endpoint ? browserTabEnv(tabId, endpoint) : {})
         },
         cwd,
         configOverrides: [
           STATUS_LINE_CONFIG,
-          ...playwright,
+          ...browser,
           ...(instructions.length ? [developerInstructions(instructions)] : []),
           ...(opts.resumeSessionId ? permissionConfig(permissions) : [])
         ],
@@ -888,7 +917,12 @@ export class CodexSessions {
     open: (target: string) => void,
     agent?: (dir: string, name: string, raw: unknown) => void
   ): { zdotDir: string; release(): void } {
-    const shim = writeCodexOpenShim(this.deps.openShimRoot, randomUUID(), userZdotdir)
+    const shim = writeCodexOpenShim(
+      this.deps.openShimRoot,
+      randomUUID(),
+      userZdotdir,
+      this.deps.playwrightBin ? [this.deps.playwrightBin] : []
+    )
     if (agent) writeCodexAgentShim(shim.shimDir, shim.requestDir)
     const handled = new Set<string>()
     const drops = watchJsonDrops(shim.requestDir, (name) => {

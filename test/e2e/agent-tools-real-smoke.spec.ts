@@ -957,6 +957,68 @@ test.describe("a REAL Codex drives its own tab's Workbench through the owner's P
   })
 })
 
+const READ_THE_WORKBENCH_TITLE_WITH_PLAYWRIGHT_CLI =
+  'Use the playwright-cli shell command, not MCP tools: run playwright-cli open with no address, then playwright-cli eval document.title . Reply with only the title it printed.'
+const THE_WORKBENCH_FOLLOWS_A_NEW_ROW_MS = 1_000
+
+// CODEX§26 PLATFORM§17
+test.describe("REAL agents drive their own tab's Workbench with the playwright-cli Koloft ships: opt-in cases; they spend real money", () => {
+  for (const [label, method, useReal, have, transcript] of [
+    ['Claude Code', 'Claude', useRealClaude, HAVE_REAL_CLAUDE, CLAUDE_TRANSCRIPT],
+    ['Codex', 'Codex', useRealCodex, HAVE_REAL_CODEX, CODEX_TRANSCRIPT]
+  ] as const)
+    test(`two real ${label} tabs in one workspace each read the title of the page in their own Workbench with the bundled playwright-cli, and neither sees the other's`, async ({
+      env
+    }) => {
+      test.skip(!have, 'set the KOLOFT_SMOKE_* variables for this backend')
+      test.setTimeout(4 * A_REAL_MODEL_TURN_MS)
+      useReal(env, [env.workspaces.a])
+      seedSettings(env, { hintsOff: true })
+      const server = await startEchoServer()
+      const app = await launchApp(env)
+      const page = await app.firstWindow()
+      try {
+        await waitBooted(page)
+        const rows = wsRows(page, 'ws-a')
+        const tabs: { tabId: string; title: string }[] = []
+        for (const n of [1, 2]) {
+          await newSessionInWith(page, 'ws-a', method)
+          await expect(rows).toHaveCount(n, { timeout: 60_000 })
+          const ids = await rows.evaluateAll((els) => els.map((e) => e.getAttribute('data-tab-id')))
+          const tabId = ids.find((id) => id && !tabs.some((t) => t.tabId === id))!
+          await expect(page.locator(`.ws-tab[data-tab-id="${tabId}"]`)).toHaveClass(
+            /\bst-(waiting|idle)\b/,
+            { timeout: 90_000 }
+          )
+          await expect.poll(() => boundSessionId(page, tabId), { timeout: 60_000 }).toBeTruthy()
+          await page.waitForTimeout(THE_WORKBENCH_FOLLOWS_A_NEW_ROW_MS)
+          const title = `koloft-cli-${n}-${Date.now().toString(36)}`
+          await openBrowser(page)
+          await newWebTab(page)
+          await typeInAddressBar(page, server.page(`/page-${n}`, `<title>${title}</title>`))
+          await expect.poll(() => server.count(`/page-${n}`), { timeout: 30_000 }).toBe(1)
+          tabs.push({ tabId, title })
+        }
+        for (const [i, t] of tabs.entries()) {
+          const sessionId = (await boundSessionId(page, t.tabId))!
+          const before = transcript.replies(env, sessionId).length
+          const newReplies = (): string =>
+            transcript.replies(env, sessionId).slice(before).join('\n')
+          await sendToCodexTab(page, t.tabId, READ_THE_WORKBENCH_TITLE_WITH_PLAYWRIGHT_CLI)
+          await expect.poll(newReplies, { timeout: A_REAL_MODEL_TURN_MS }).toContain(t.title)
+          await test.info().attach(`reply-${i + 1}`, { body: newReplies() })
+          expect(newReplies()).not.toContain(tabs[1 - i].title)
+        }
+      } catch (e) {
+        await keepWhatTheAgentSawAndDid(page, env)
+        throw e
+      } finally {
+        await quitAndClose(app)
+        await server.close()
+      }
+    })
+})
+
 const GOAL_THAT_WAITS_ON_A_BACKGROUND_TASK =
   'Use your Bash tool with run_in_background set to true to run: sleep 8; echo BGDONE . Do not wait or poll for it; end your turn right away. When its completion notice arrives, reply with exactly the word DONE.'
 const TITLE_MAX = 60

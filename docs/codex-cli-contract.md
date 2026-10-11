@@ -1267,3 +1267,56 @@ default model), `@playwright/mcp` 0.0.83 run as `playwright-mcp --headless`, a K
 - After `/new`, the new thread's first `browser_navigate` worked at once.
 - The same case passed on 0.162.1 (2026-10-11), `/new` included.
 
+**A shell command in the sandbox reaches the browser with two settings, checked
+2026-10-11** with Codex CLI 0.162.0, @playwright/cli 0.1.22 run on Electron 43.7.3's Node
+(PLATFORM§42), a fresh temporary `CODEX_HOME`, and a `HOME` outside `/tmp` and `$TMPDIR`
+so its folders were not writable by default.
+
+- Through `codex app-server`'s `command/exec` (no model turn; the command ran under the
+  configured policy) against a headless Chrome's CDP endpoint on 127.0.0.1:
+  - `sandbox_mode="workspace-write"` alone: `playwright-cli open` failed, `connect EPERM
+    127.0.0.1:<port>`.
+  - plus `sandbox_workspace_write.network_access=true`: the CLI's daemon stopped first on
+    `EPERM … mkdir '<HOME>/Library/Caches'` — it keeps its session files under
+    `~/Library/Caches/ms-playwright/daemon/<hash>` and also writes
+    `~/Library/Caches/ms-playwright/b/browser@<hash>`, so `writable_roots` set to
+    `…/ms-playwright/daemon` alone still failed, on `ms-playwright/b`.
+  - plus `writable_roots=["<HOME>/Library/Caches/ms-playwright"]` (the folder made
+    beforehand, outside the sandbox): `open`, `eval document.title`, `screenshot` and
+    `close` all worked; the daemon's unix socket under `$TMPDIR/pw-<hash>/cli/` needed
+    nothing more, since `workspace-write` leaves `$TMPDIR` writable.
+  - With the network on, `curl https://example.com` from the same sandbox answered 200:
+    `network_access` opens the internet too, not only 127.0.0.1. No proxy variable was
+    set.
+- **`-c sandbox_workspace_write.writable_roots=[…]` replaces the list in `config.toml`**:
+  with `["/tmp/owner-root"]` in `config.toml` and `-c …=["/tmp/koloft-root"]` on the
+  app-server, `config/read` showed only `/tmp/koloft-root`.
+- **`codex sandbox` is no stand-in for a session on 0.162**: it now refuses to run
+  without `-P/--permission-profile`, and under `-P :workspace` the legacy
+  `sandbox_workspace_write.network_access=true` was ignored (TCP to 127.0.0.1 still
+  EPERM).
+- **Real model turns through Koloft** (a dev build in a scratch `HOME`, the relay of the
+  tab's own Workbench, a Koloft `codex-home` account whose `config.toml` held only the
+  folder's trust table, a tab opened from the sidebar's ＋, so no `-a`/`-s` on the TUI):
+  - With the two settings given to the tab's app-server only, the turn's `turn_context`
+    read `on-request` / `workspace-write` with `network_access: true` and that one extra
+    writable root. The model ran `playwright-cli open <url>`, `eval document.title`
+    and `echo "$PLAYWRIGHT_CLI_SESSION"` in one command; the title came back, the page
+    load came from the Workbench guest, and the session name was `koloft-<tab id>`, with
+    no question to the owner. So a default ＋ tab runs `workspace-write`, and the
+    app-server's `-c` reaches the turn's sandbox with no flag on the TUI.
+  - Without them (`network_access: false`) the same command failed with `connect EPERM`,
+    and Codex then asked "Would you like to run the following command? … Allow the
+    requested Playwright commands to connect to the local browser outside the sandbox?"
+    with only `1. Yes, proceed` and `2. No` — no "always" choice. With `1` it ran outside
+    the sandbox and read the title.
+  - An earlier run with the same settings written in `config.toml` read the title, waited
+    20 s past the turn's end, and in the next turn `eval document.title` still answered
+    from the same daemon: a detached daemon started by a turn's command outlives the turn.
+  - Inside the sandbox each CLI start printed Electron's `codesign_util.cc …
+    task_name_for_pid` line on stderr (PLATFORM§42); one reply quoted it back.
+- Not tried: a `read-only` thread (`network_access` belongs to `workspace-write` only, so
+  the CLI is refused there — **inferred, not checked**), and a user on the newer
+  `default_permissions` profiles, which the `-P` result suggests ignore these legacy keys
+  — **inferred, not checked**.
+

@@ -41,6 +41,7 @@ vi.mock('../../src/main/codexTransport', () => ({
 const A = '11111111-1111-4111-8111-111111111111'
 const B = '22222222-2222-4222-8222-222222222222'
 let directory: string
+let realHome: string | undefined
 let repo: string
 let other: string
 let sessions: CodexSessions
@@ -86,6 +87,8 @@ function addMember(id = A, cwd = repo, worktreeResourceId?: string) {
 beforeEach(() => {
   vi.clearAllMocks()
   directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-sessions-')))
+  realHome = process.env.HOME
+  process.env.HOME = directory
   repo = path.join(directory, 'repo')
   other = path.join(directory, 'other')
   fs.mkdirSync(repo)
@@ -133,6 +136,7 @@ afterEach(async () => {
   vi.useRealTimers()
   await sessions.stopAll()
   vi.restoreAllMocks()
+  process.env.HOME = realHome
   fs.rmSync(directory, { recursive: true, force: true })
 })
 
@@ -753,10 +757,6 @@ describe('CodexSessions', () => {
       ])
     )
     expect(options.configOverrides!.filter((o) => o.startsWith('mcp_servers.'))).toHaveLength(2)
-    expect(options.sessionEnv).toEqual({
-      PLAYWRIGHT_MCP_CDP_ENDPOINT: endpoint,
-      PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS: '1'
-    })
     expect(vi.mocked(deps.pty.create).mock.calls[0][0].id).toBe('pty-reserved')
 
     vi.mocked(deps.browserEndpoint).mockReturnValue('')
@@ -769,6 +769,45 @@ describe('CodexSessions', () => {
     )
     const off = mocks.create.mock.calls[1][0] as CodexTransportOptions
     expect(off.configOverrides!.some((o) => o.startsWith('mcp_servers.'))).toBe(false)
+    expect(off.sessionEnv).toEqual({})
+  })
+
+  // CODEX§26 PLATFORM§17
+  it("with browser control on, the tab's shell gets the relay endpoint and its own playwright-cli session, and its sandbox gets the network plus Playwright's cache folder on top of the owner's own writable folders; a conductor gets no sandbox change, and with browser control off nothing changes", async () => {
+    const endpoint = 'ws://127.0.0.1:4100/cdp/' + 'b'.repeat(32)
+    const cache = path.join(directory, 'Library', 'Caches', 'ms-playwright')
+    vi.mocked(deps.browserEndpoint).mockReturnValue(endpoint)
+    mocks.request.mockImplementation(async (method: string) =>
+      method === 'config/read'
+        ? { config: { sandbox_workspace_write: { writable_roots: ['/owner/root', cache] } } }
+        : {}
+    )
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    const on = mocks.create.mock.calls[0][0] as CodexTransportOptions
+    expect(on.sessionEnv).toEqual({
+      PLAYWRIGHT_MCP_CDP_ENDPOINT: endpoint,
+      PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS: '1',
+      PLAYWRIGHT_CLI_SESSION: 'koloft-pty-reserved',
+      KOLOFT_BROWSER_CDP: endpoint
+    })
+    expect(on.configOverrides).toEqual(
+      expect.arrayContaining([
+        'sandbox_workspace_write.network_access=true',
+        `sandbox_workspace_write.writable_roots=${JSON.stringify(['/owner/root', cache])}`
+      ])
+    )
+    expect(fs.statSync(cache).isDirectory()).toBe(true)
+
+    await sessions.launch({ kind: 'codex', cwd: repo, conductor: true })
+    const conductor = mocks.create.mock.calls[1][0] as CodexTransportOptions
+    expect(conductor.configOverrides!.some((o) => o.startsWith('sandbox_workspace_write.'))).toBe(
+      false
+    )
+
+    vi.mocked(deps.browserEndpoint).mockReturnValue('')
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    const off = mocks.create.mock.calls[2][0] as CodexTransportOptions
+    expect(off.configOverrides!.some((o) => o.startsWith('sandbox_workspace_write.'))).toBe(false)
     expect(off.sessionEnv).toEqual({})
   })
 

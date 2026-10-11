@@ -32,6 +32,9 @@ asarUnpack:
   # executed by an external bash wrapper (src/main/statusline.ts) via
   # ELECTRON_RUN_AS_NODE — must exist as real files, not asar entries
   - '**/node_modules/ccstatusline/**'
+  # run the same way by the playwright-cli wrapper (src/main/playwrightCli.ts); its own
+  # playwright and playwright-core sit nested under it
+  - '**/node_modules/@playwright/cli/**'
 
 mac:
   target:
