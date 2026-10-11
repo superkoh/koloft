@@ -82,7 +82,11 @@ test.describe('Per-workspace direct-launch surfaces and the Pull & Start gate', 
 
       await first.page.waitForTimeout(GRACE_FOR_A_WRONG_DIALOG_MS)
       await expectNoDialog(first.page)
-      await waitForSessionRow(first.page, 'ws-alpha', 'main')
+      const row = await waitForSessionRow(first.page, 'ws-alpha', 'main')
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+      await openMenu(first.page, row)
+      await first.page.locator('.menu .mi', { hasText: /^Close$/ }).click()
+      await expect(row).toHaveClass(/\bcold\b/)
     } finally {
       await first.app.close().catch(() => {})
     }

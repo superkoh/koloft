@@ -109,6 +109,7 @@ beforeEach(() => {
   let tab = 0
   deps = {
     pty: {
+      nextId: vi.fn(() => 'pty-reserved'),
       create: vi.fn(() => ({ id: `pty-${++tab}` })),
       kill: vi.fn(),
       clearResumeIntent: vi.fn()
@@ -120,6 +121,7 @@ beforeEach(() => {
     error: vi.fn(),
     trustFolder: vi.fn(),
     pickHome: vi.fn(() => ({ account: 'work', home: '/homes/work' })),
+    browserEndpoint: vi.fn(() => ''),
     openShimRoot: path.join(directory, 'codex-open'),
     agent: { enabled: () => false, answer: vi.fn() }
   }
@@ -377,6 +379,72 @@ describe('CodexSessions', () => {
     expect(mocks.create).toHaveBeenCalledTimes(2)
     expect(sessions.runningBindings().get(codexSessionKey(A))).toBe('pty-2')
     expect(sessions.list()).toEqual([])
+  })
+
+  it('a restart hands nothing over and resumes in the same worktree, a closed tab hands its worktree over for removal only once its Codex is gone, a resume after that removal rebuilds the worktree there, and quitting Koloft hands nothing over', async () => {
+    const worktree = path.join(repo, '.claude', 'worktrees', 'w1')
+    fs.mkdirSync(worktree, { recursive: true })
+    const resource: WorktreeResource = {
+      id: randomUUID(),
+      originalCwd: repo,
+      worktreePath: worktree,
+      worktreeName: 'w1',
+      worktreeBranch: 'worktree-w1',
+      originalHeadCommit: 'a'.repeat(40),
+      state: 'ready',
+      managed: true
+    }
+    sessions.store.putResource(resource)
+    vi.spyOn(sessions.worktrees, 'create').mockResolvedValue(resource)
+    const rebuild = vi.spyOn(sessions.worktrees, 'rebuild').mockImplementation(async () => {
+      fs.mkdirSync(worktree, { recursive: true })
+      return resource
+    })
+    const leftWorktree = vi.fn(async (left: WorktreeResource) => {
+      expect(deps.pty.kill).toHaveBeenCalled()
+      fs.rmSync(left.worktreePath, { recursive: true })
+    })
+    deps.leftWorktree = leftWorktree
+
+    const launched = await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1' })
+    bind(0, A, worktree)
+    await sessions.stop(launched.id, undefined, true)
+    expect(leftWorktree).not.toHaveBeenCalled()
+    const inPlace = await sessions.resume({ sessionId: codexSessionKey(A), cwd: worktree })
+    expect(rebuild).not.toHaveBeenCalled()
+    bind(1, A, worktree, 1, 'thread/resume')
+
+    await sessions.stop(inPlace.id)
+    expect(leftWorktree.mock.calls).toEqual([[resource]])
+    expect(fs.existsSync(worktree)).toBe(false)
+
+    const restarted = await sessions.resume({ sessionId: codexSessionKey(A), cwd: worktree })
+    expect(rebuild).toHaveBeenCalledWith(resource.id)
+    expect(restarted.cwd).toBe(worktree)
+    bind(2, A, worktree, 1, 'thread/resume')
+    await sessions.stopAll()
+    expect(leftWorktree).toHaveBeenCalledTimes(1)
+    expect(fs.existsSync(worktree)).toBe(true)
+  })
+
+  it('a restarting session reads as running from the old run stopping until the new one starts, and cold again, with the sidebar told, when the new one fails', async () => {
+    const launched = await sessions.launch({ kind: 'codex', cwd: repo })
+    bind()
+    const serverUp = deferred<void>()
+    mocks.create.mockImplementationOnce(async () => {
+      await serverUp.promise
+      throw new Error('app-server did not start')
+    })
+    const stopping = sessions.stop(launched.id)
+    const restarting = sessions.resume({ sessionId: codexSessionKey(A), cwd: repo })
+    await stopping
+    expect(sessions.hasTab(launched.id)).toBe(false)
+    expect(sessions.rows(repo)[0]).toMatchObject({ id: codexSessionKey(A), running: true })
+    vi.mocked(deps.changed).mockClear()
+    serverUp.resolve()
+    await expect(restarting).rejects.toThrow('app-server did not start')
+    expect(sessions.rows(repo)[0]).toMatchObject({ id: codexSessionKey(A), running: false })
+    expect(deps.changed).toHaveBeenCalled()
   })
 
   it('retains members for uncertain native exit, evicts only an acknowledged native unsubscribe', async () => {
@@ -648,7 +716,60 @@ describe('CodexSessions', () => {
     const sessionEnvs = mocks.create.mock.calls.map(
       (call) => (call[0] as CodexTransportOptions).sessionEnv
     )
-    expect(sessionEnvs).toEqual([{ KOLOFT_PORT_OFFSET: String(portOffset('w1')) }, undefined])
+    expect(sessionEnvs).toEqual([{ KOLOFT_PORT_OFFSET: String(portOffset('w1')) }, {}])
+  })
+
+  // CODEX§26
+  it("with browser control on, every Playwright MCP entry in the owner's Codex config keeps its own env_vars and gains the tab's relay endpoint; other entries, and names Codex's -c cannot spell, are left alone", async () => {
+    const endpoint = 'ws://127.0.0.1:4100/cdp/' + 'a'.repeat(32)
+    vi.mocked(deps.browserEndpoint).mockImplementation((tabId) =>
+      tabId === 'pty-reserved' ? endpoint : ''
+    )
+    mocks.request.mockImplementation(async (method: string) =>
+      method === 'config/read'
+        ? {
+            config: {
+              mcp_servers: {
+                playwright: {
+                  command: 'npx',
+                  args: ['@playwright/mcp@latest'],
+                  env_vars: ['MINE']
+                },
+                'pw-global': { command: '/usr/local/bin/playwright-mcp', args: [] },
+                'my.browser': { command: 'npx', args: ['@playwright/mcp'] },
+                github: { command: 'github-mcp', args: [], env_vars: ['GH_TOKEN'] }
+              }
+            }
+          }
+        : {}
+    )
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    const options = mocks.create.mock.calls[0][0] as CodexTransportOptions
+    expect(mocks.request).toHaveBeenCalledWith('config/read', { cwd: repo }, '/homes/work')
+    expect(options.configOverrides).toEqual(
+      expect.arrayContaining([
+        'mcp_servers.playwright.env_vars=["MINE","PLAYWRIGHT_MCP_CDP_ENDPOINT","PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS"]',
+        'mcp_servers.pw-global.env_vars=["PLAYWRIGHT_MCP_CDP_ENDPOINT","PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS"]'
+      ])
+    )
+    expect(options.configOverrides!.filter((o) => o.startsWith('mcp_servers.'))).toHaveLength(2)
+    expect(options.sessionEnv).toEqual({
+      PLAYWRIGHT_MCP_CDP_ENDPOINT: endpoint,
+      PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS: '1'
+    })
+    expect(vi.mocked(deps.pty.create).mock.calls[0][0].id).toBe('pty-reserved')
+
+    vi.mocked(deps.browserEndpoint).mockReturnValue('')
+    mocks.request.mockClear()
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    expect(mocks.request).not.toHaveBeenCalledWith(
+      'config/read',
+      expect.anything(),
+      expect.anything()
+    )
+    const off = mocks.create.mock.calls[1][0] as CodexTransportOptions
+    expect(off.configOverrides!.some((o) => o.startsWith('mcp_servers.'))).toBe(false)
+    expect(off.sessionEnv).toEqual({})
   })
 
   // ADR-0029 CODEX§11 CODEX§12

@@ -6,6 +6,7 @@ import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   HAVE_REAL_GH,
   NEEDS_REAL_GH,
+  addCodexAccount,
   installRealGhThatOnlyReads,
   seedSettings,
   setGithubFixture,
@@ -16,10 +17,14 @@ import {
   boundSessionId,
   centerTerm,
   chooseBackend,
+  newSessionInWith,
+  openMenu,
   openWorktreeSession,
   waitBooted,
   wsRows
 } from './helpers/p1'
+import { newWebTab, openBrowser, typeInAddressBar } from './helpers/browser'
+import { startEchoServer } from './helpers/fixtureServer'
 import { portOffset } from '../../src/shared/worktreeName'
 import { lastCodexTurnPermissions } from './helpers/codexRollout'
 import {
@@ -110,7 +115,7 @@ function useRealCodex(env: E2EEnv, trusted: string[]): void {
   fs.symlinkSync(REAL_CODEX, spot)
   const home = path.join(env.home, '.codex')
   fs.mkdirSync(home, { recursive: true })
-  fs.copyFileSync(path.join(SIGNED_IN_CODEX_HOME, 'auth.json'), path.join(home, 'auth.json'))
+  addCodexAccount(env, fs.readFileSync(path.join(SIGNED_IN_CODEX_HOME, 'auth.json'), 'utf8'))
   // CODEX§11
   fs.writeFileSync(
     path.join(home, 'config.toml'),
@@ -335,6 +340,8 @@ interface CodexItem {
   type?: string
   content?: { text?: unknown }[]
   aggregated_output?: unknown
+  server?: unknown
+  tool?: unknown
 }
 
 function contentText(item: CodexItem): string {
@@ -851,6 +858,105 @@ test.describe('a REAL Codex session resumed after its tab closed: an opt-in case
   })
 })
 
+const PLAYWRIGHT_MCP = path.join(process.env.KOLOFT_SMOKE_TOOLS_DIR ?? '', 'playwright-mcp')
+const HAVE_PLAYWRIGHT_MCP = !!process.env.KOLOFT_SMOKE_TOOLS_DIR && fs.existsSync(PLAYWRIGHT_MCP)
+const NO_WINDOW_OF_ITS_OWN_IF_THE_ENDPOINT_NEVER_REACHED_IT = '--headless'
+// CODEX§26
+const CODEX_MCP_TOOL_QUESTION = /Allow the playwright MCP server to run tool/
+const ALLOW_FOR_THIS_SESSION = '2'
+const A_PICKED_OPTION_LEAVES_THE_SCREEN_MS = 500
+
+function codexReadsTheTitleWithItsBrowserTool(url: string): string {
+  return `Use your playwright MCP browser tools, never the shell: navigate to ${url}, then reply with only that page's title.`
+}
+
+// CODEX§26
+test.describe("a REAL Codex drives its own tab's Workbench through the owner's Playwright MCP: an opt-in case; it spends real money", () => {
+  test('a real Codex reads a page title with its Playwright MCP tool through the Workbench of its own tab, and again in the new thread after /new', async ({
+    env
+  }) => {
+    test.skip(
+      !HAVE_REAL_CODEX || !HAVE_PLAYWRIGHT_MCP,
+      'set KOLOFT_SMOKE_CODEX, KOLOFT_SMOKE_CODEX_HOME (only its auth.json is copied) and KOLOFT_SMOKE_TOOLS_DIR (a node_modules/.bin holding playwright-mcp)'
+    )
+    test.setTimeout(4 * A_REAL_MODEL_TURN_MS + 180_000)
+    useRealCodex(env, [env.workspaces.a])
+    fs.appendFileSync(
+      path.join(env.home, '.codex', 'config.toml'),
+      `\n[mcp_servers.playwright]\ncommand = ${JSON.stringify(PLAYWRIGHT_MCP)}\nargs = [${JSON.stringify(NO_WINDOW_OF_ITS_OWN_IF_THE_ENDPOINT_NEVER_REACHED_IT)}]\n`
+    )
+    seedSettings(env, { hintsOff: true })
+    const server = await startEchoServer()
+    const title = `koloft-relay-${Date.now().toString(36)}`
+    const url = server.page('/title', `<title>${title}</title><body>relay check</body>`)
+    const app = await launchApp(env)
+    const page = await app.firstWindow()
+    try {
+      await waitBooted(page)
+      await newSessionInWith(page, 'ws-a', 'Codex')
+      const row = wsRows(page, 'ws-a')
+      await expect(row).toHaveCount(1, { timeout: 60_000 })
+      await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 90_000 })
+      const tabId = (await row.getAttribute('data-tab-id'))!
+      await expect.poll(() => boundSessionId(page, tabId), { timeout: 60_000 }).toBeTruthy()
+      const firstThread = (await boundSessionId(page, tabId))!
+      await openBrowser(page)
+      await newWebTab(page)
+      await typeInAddressBar(page, url)
+      await expect.poll(() => server.count('/title'), { timeout: 30_000 }).toBe(1)
+
+      const readsTheTitle = async (thread: string): Promise<void> => {
+        const before = CODEX_TRANSCRIPT.replies(env, thread).length
+        const newReplies = (): string =>
+          CODEX_TRANSCRIPT.replies(env, thread).slice(before).join('\n')
+        await sendToCodexTab(page, tabId, codexReadsTheTitleWithItsBrowserTool(url))
+        await expect
+          .poll(
+            async () => {
+              if (CODEX_MCP_TOOL_QUESTION.test(await screen(page))) {
+                await page.evaluate(
+                  ([id, key]) => window.api.terminal.write(id, key),
+                  [tabId, ALLOW_FOR_THIS_SESSION]
+                )
+                await page.waitForTimeout(A_PICKED_OPTION_LEAVES_THE_SCREEN_MS)
+                if (CODEX_MCP_TOOL_QUESTION.test(await screen(page)))
+                  await page.evaluate((id) => window.api.terminal.write(id, '\r'), tabId)
+              }
+              return newReplies()
+            },
+            { intervals: [1_000], timeout: A_REAL_MODEL_TURN_MS }
+          )
+          .toContain(title)
+        await test.info().attach(`reply-${thread}`, { body: newReplies() })
+        await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 30_000 })
+        expect(
+          codexItems(env, thread, 'McpToolCall', (item) => `${item.server}.${item.tool}`)
+        ).toContain('playwright.browser_navigate')
+      }
+
+      await readsTheTitle(firstThread)
+
+      await page.evaluate((id) => window.api.terminal.write(id, '/new'), tabId)
+      await page.waitForTimeout(PAST_CODEX_PASTE_BURST_THAT_SWALLOWS_AN_EARLY_ENTER_MS)
+      await page.evaluate((id) => window.api.terminal.write(id, '\r'), tabId)
+      await expect
+        .poll(async () => (await boundSessionId(page, tabId)) ?? firstThread, { timeout: 60_000 })
+        .not.toBe(firstThread)
+      const secondThread = (await boundSessionId(page, tabId))!
+      await readsTheTitle(secondThread)
+      const [workbenchLoad, ...agentLoads] = server.requestsFor('/title')
+      expect(agentLoads.length).toBeGreaterThanOrEqual(2)
+      for (const r of agentLoads) expect(r.userAgent).toBe(workbenchLoad.userAgent)
+    } catch (e) {
+      await keepWhatTheAgentSawAndDid(page, env)
+      throw e
+    } finally {
+      await quitAndClose(app)
+      await server.close()
+    }
+  })
+})
+
 const GOAL_THAT_WAITS_ON_A_BACKGROUND_TASK =
   'Use your Bash tool with run_in_background set to true to run: sleep 8; echo BGDONE . Do not wait or poll for it; end your turn right away. When its completion notice arrives, reply with exactly the word DONE.'
 const TITLE_MAX = 60
@@ -887,6 +993,9 @@ test.describe('a REAL Claude Code session opened by /goal: an opt-in case; it sp
       await expect(rows.locator('.ws-tab-title')).toHaveText(
         GOAL_THAT_WAITS_ON_A_BACKGROUND_TASK.slice(0, TITLE_MAX)
       )
+      await openMenu(page, rows)
+      await page.locator('.menu .mi', { hasText: /^Close$/ }).click()
+      await expect(rows).toHaveClass(/\bcold\b/, { timeout: 30_000 })
     })
     const app = await launchApp(env)
     try {
@@ -971,6 +1080,74 @@ test.describe('/exit from a REAL Claude Code worktree session: an opt-in case; i
       },
       ignoreNodeModules
     )
+  })
+})
+
+const JUST_ANSWER = 'Reply with the single word ok. Do nothing else.'
+const WRITE_A_FILE =
+  'Create a file named done.txt containing the word done in the current folder. Do nothing else.'
+const A_REMOVAL_WOULD_HAVE_FINISHED_MS = 3_000
+
+function closedCodexWorktree(env: E2EEnv, turn: string | undefined, kept: boolean): Promise<void> {
+  test.setTimeout(A_REAL_MODEL_TURN_MS + 180_000)
+  return inARealWorktreeSession(
+    env,
+    'other',
+    useRealCodex,
+    [],
+    async ({ page, rows, repo, tree }) => {
+      if (turn) {
+        await ask(page, rows, turn)
+        await expect(rows).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: A_REAL_MODEL_TURN_MS })
+      }
+      if (kept) await expect.poll(() => fs.existsSync(path.join(tree, 'done.txt'))).toBe(true)
+      const status = runGit(tree, 'status', '--porcelain', '--ignored', '--untracked-files=all')
+      await test.info().attach('worktree-status-before-close', { body: status })
+      const branch = (): string => runGit(repo, 'branch', '--list', `worktree-${WORKTREE}`).trim()
+      await openMenu(page, rows)
+      await page.locator('.menu .mi', { hasText: /^Close$/ }).click()
+      await expect(rows).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      if (kept) {
+        await page.waitForTimeout(A_REMOVAL_WOULD_HAVE_FINISHED_MS)
+        expect(fs.existsSync(path.join(tree, 'done.txt'))).toBe(true)
+        expect(branch()).not.toBe('')
+      } else {
+        await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+        expect(branch()).toBe('')
+      }
+    }
+  )
+}
+
+test.describe('closing a REAL Codex worktree session: opt-in cases; the ones with a turn spend real money', () => {
+  test('a real Codex worktree session closed before any turn takes its worktree folder and worktree-<name> branch with it', async ({
+    env
+  }) => {
+    test.skip(
+      !HAVE_REAL_CODEX,
+      'set KOLOFT_SMOKE_CODEX (absolute path of a real codex binary) and KOLOFT_SMOKE_CODEX_HOME (a signed-in CODEX_HOME; only its auth.json is copied)'
+    )
+    await closedCodexWorktree(env, undefined, false)
+  })
+
+  test('a real Codex worktree session that only answered takes its worktree folder and branch with it when closed', async ({
+    env
+  }) => {
+    test.skip(
+      !HAVE_REAL_CODEX,
+      'set KOLOFT_SMOKE_CODEX (absolute path of a real codex binary) and KOLOFT_SMOKE_CODEX_HOME (a signed-in CODEX_HOME; only its auth.json is copied)'
+    )
+    await closedCodexWorktree(env, JUST_ANSWER, false)
+  })
+
+  test('a real Codex worktree session that wrote a file keeps its worktree folder and branch when closed', async ({
+    env
+  }) => {
+    test.skip(
+      !HAVE_REAL_CODEX,
+      'set KOLOFT_SMOKE_CODEX (absolute path of a real codex binary) and KOLOFT_SMOKE_CODEX_HOME (a signed-in CODEX_HOME; only its auth.json is copied)'
+    )
+    await closedCodexWorktree(env, WRITE_A_FILE, true)
   })
 })
 

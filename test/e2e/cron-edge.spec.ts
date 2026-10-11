@@ -2,7 +2,13 @@ import fs from 'fs'
 import path from 'path'
 import { execFileSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
-import { test, expect, launchApp, pendingAttention } from './helpers/app'
+import {
+  test,
+  expect,
+  expectNoToastAtAnyMomentOfAWindow,
+  launchApp,
+  pendingAttention
+} from './helpers/app'
 import { seedNoClaudeAccountButStillSetUp, seedSettings, type E2EEnv } from './helpers/env'
 import {
   addWorkspace,
@@ -177,13 +183,6 @@ function edHistRows(page: Page): Locator {
 
 async function edHistStates(page: Page): Promise<string[]> {
   return page.locator('.modal.cronjobs .hist-state').allTextContents()
-}
-
-async function expectNoToastAtAnyMomentOfAWindow(page: Page): Promise<void> {
-  for (let i = 0; i < 8; i++) {
-    expect(await page.locator('.toast').count()).toBe(0)
-    await page.waitForTimeout(200)
-  }
 }
 
 async function addWorkspaceToForceRescan(page: Page, env: E2EEnv, name: string): Promise<void> {

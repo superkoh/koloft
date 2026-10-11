@@ -978,9 +978,11 @@ describe('SessionTracker — a session that moved: EnterWorktree / ExitWorktree 
     expect(scratchpadDirFor(moved)).not.toBe(scratchpad)
   })
 
-  it('follows it back out, where no line ever carries a directory again (R4)', async () => {
+  it('follows it back out, where no line ever carries a directory again, with no notice: leaving the worktree is how a session closes it (R4)', async () => {
     const { repo, wt } = repoWithWorktree('back')
     const tracker = newTracker()
+    const events: { tabId: string; dir: string }[] = []
+    tracker.on('relocated', (e: { tabId: string; dir: string }) => events.push(e))
     tracker.track('tabM2', wt)
     const file = writeJsonl(wt, SID, [{ type: 'user', message: { content: 'hi' }, cwd: wt }])
     tracker.bindSession('tabM2', file, SID, wt)
@@ -993,6 +995,7 @@ describe('SessionTracker — a session that moved: EnterWorktree / ExitWorktree 
     const after = await waitFor(tracker, (x) => x.tabId === 'tabM2' && x.treeRoot === repo)
     expect(after.worktree).toBeUndefined()
     expect(after.cwd).toBe(wt)
+    expect(events).toEqual([])
   })
 
   it('a resume launched from the repo root, whose SessionStart names that root, is rooted in the worktree its last worktree-state says Claude Code re-entered', async () => {

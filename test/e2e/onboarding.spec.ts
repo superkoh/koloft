@@ -4,8 +4,19 @@ import type { AddressInfo } from 'net'
 import path from 'path'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
-import { seedJsonl, settingsOnDisk, snap, waitForCalls } from './helpers/p1'
+import {
+  codexMissingWhoseCheckAnswersOnlyWhenLetGo,
+  installCodex,
+  seedSettings,
+  type E2EEnv
+} from './helpers/env'
+import {
+  expectNoCodexWhileTheCheckIsOutNorAfter,
+  seedJsonl,
+  settingsOnDisk,
+  snap,
+  waitForCalls
+} from './helpers/p1'
 import {
   changelog,
   notesBody,
@@ -328,6 +339,60 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
     }
   })
 
+  // ADR-0030 CODEX§15
+  test('T-OB-13: a Codex account that is not signed in is named on its step 3 card, which signs that account in again, and the sign-in tab hands back to step 3', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    firstRun(env, { assist: null })
+    installCodex(env)
+    seedSettings(env, {
+      accounts: [
+        {
+          name: 'me',
+          kind: 'codex-home',
+          enabled: true,
+          fable: 'unknown',
+          status: 'unverified',
+          addedAt: 1
+        }
+      ]
+    })
+    env.launchEnv.KOLOFT_TEST_CLAUDE_PROBE = 'missing'
+    seedJsonl(env, env.workspaces.a, { summary: 'A one', mtime: Date.now() - 60_000 })
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await advanceTo(page, 3)
+
+      const card = welcome(page).locator('.assist-setup .choice')
+      await expect(card).toContainText('"me" is not signed in. Click to sign in again.', {
+        timeout: 20_000
+      })
+      await snap(page, 'T-OB-13-not-signed-in')
+      await card.click()
+      const signIn = welcome(page).locator('.acct-add')
+      await expect(signIn.locator('.acct-add-title')).toHaveText('Sign in again me')
+      await expect(signIn.locator('input')).toHaveValue('me')
+      await signIn.getByRole('button', { name: 'Sign in', exact: true }).click()
+
+      await expect
+        .poll(() => fs.existsSync(path.join(env.userData, 'codex-homes', 'me', 'auth.json')), {
+          timeout: 30_000
+        })
+        .toBe(true)
+      await expectStep(page, 3)
+      await expect(card).toContainText('Signed in', { timeout: 20_000 })
+      await expect(page.locator('.modal')).toHaveCount(0)
+      const accounts = settingsOnDisk(env).accounts as { name: string }[]
+      expect(accounts.map((a) => a.name)).toEqual(['me'])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // ADR-0030 CC§9
   test("T-OB-12: an upgrade from before Koloft Assist asks once, after What's new — it cannot be waved away, asks about skipping permission prompts, and is gone for good once answered", async ({
     env
@@ -378,6 +443,34 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
       await expect(page.locator('.assist-modal')).toHaveCount(0)
     } finally {
       await quitAndClose(app2)
+    }
+  })
+
+  test('T-OB-13: with no Codex and a slow Codex check, the Assist question never offers Codex, before or after the check answers', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    seedSettings(env, { onboardingSeen: true, assist: null })
+    const letTheCheckAnswer = codexMissingWhoseCheckAnswersOnlyWhenLetGo(env)
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      const assist = page.locator('.assist-modal')
+      const choice = (name: string) =>
+        assist.locator('.assist-setup .choice-t', { hasText: new RegExp(`^${name}$`) })
+      await expect(choice('Claude')).toBeVisible({ timeout: 20_000 })
+
+      await expectNoCodexWhileTheCheckIsOutNorAfter(
+        page,
+        letTheCheckAnswer,
+        () => choice('Codex').count(),
+        'a Codex choice'
+      )
+      await expect(choice('Claude')).toBeVisible()
+    } finally {
+      await quitAndClose(app)
     }
   })
 

@@ -19,7 +19,8 @@ import {
   GRACE,
   FABLE_STOP,
   CAP,
-  hasUsableAccount
+  hasUsableAccount,
+  noUsableAccountLead
 } from '../../src/shared/accountUsage'
 import { meta } from './helpers/accounts'
 
@@ -38,6 +39,28 @@ describe('hasUsableAccount (whether a Claude or Codex session may start at all)'
     expect(hasUsableAccount([meta({ enabled: false })], 'claude')).toBe(false)
     expect(hasUsableAccount([meta({ status: 'expired' })], 'claude')).toBe(false)
     expect(hasUsableAccount([meta({ status: 'unverified' })], 'claude')).toBe(false)
+  })
+})
+
+// ADR-0030
+describe('noUsableAccountLead (the line that says why a session cannot start)', () => {
+  it('tells "no account yet" apart from "not signed in", and names the account to sign in again', () => {
+    const codex = (p: Parameters<typeof meta>[0]) => meta({ kind: 'codex-home', ...p })
+    const NOT_SIGNED_IN = /^"me" is not signed in/
+    expect(noUsableAccountLead([codex({})], 'codex')).toBe('')
+    expect(noUsableAccountLead([], 'codex')).toMatch(/^No Codex account yet/)
+    expect(noUsableAccountLead([codex({ name: 'me', status: 'unverified' })], 'codex')).toMatch(
+      NOT_SIGNED_IN
+    )
+    expect(noUsableAccountLead([meta({ name: 'me', status: 'expired' })], 'claude')).toMatch(
+      NOT_SIGNED_IN
+    )
+    expect(noUsableAccountLead([codex({ name: 'me', enabled: false })], 'codex')).toMatch(
+      /^No Codex account can be used/
+    )
+    expect(
+      noUsableAccountLead([meta({ name: 'me', kind: 'apikey', status: 'unverified' })], 'claude')
+    ).toMatch(/^No Claude account can be used/)
   })
 })
 

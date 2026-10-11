@@ -1,7 +1,13 @@
 import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
-import { test, expect, pendingAttention, quitAndClose } from './helpers/app'
+import {
+  test,
+  expect,
+  expectNoToastAtAnyMomentOfAWindow,
+  pendingAttention,
+  quitAndClose
+} from './helpers/app'
 import type { E2EEnv } from './helpers/env'
 import {
   addRemoteWorkspace,
@@ -55,6 +61,15 @@ async function closeTabPastAnyConfirm(app: ElectronApplication, page: Page): Pro
 
 function killLines(env: E2EEnv, id: string): string[] {
   return sshCommands(env).filter((c) => c.includes(`kill-session -t ${tmuxName(id)}`))
+}
+
+function killExits(env: E2EEnv, id: string): (number | undefined)[] {
+  return sshCalls(env)
+    .filter(
+      (c) =>
+        c.phase === 'end' && remoteCommandText(c.argv).includes(`kill-session -t ${tmuxName(id)}`)
+    )
+    .map((c) => c.exit)
 }
 
 test.describe('who ends the claude on the other machine: every way of ending a remote session says so over ssh', () => {
@@ -208,40 +223,59 @@ test.describe('who ends the claude on the other machine: every way of ending a r
     }
   })
 
-  test('E-RW-12: ⌘W with ssh down closes the tab but the row stays running', async ({ env }) => {
+  test('E-RW-12: ⌘W with ssh down closes the tab, says the session is still running on the machine, and the row stays running', async ({
+    env
+  }) => {
     test.setTimeout(240_000)
     const { app, page } = await launchWithRemote(env)
     try {
       await addRemoteWorkspace(page, env)
       await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
       const [first] = await waitForCalls(env, 1)
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await expect(row).toHaveClass(/st-waiting|st-idle/, { timeout: 60_000 })
+      const title = (await row.locator('.ws-tab-title').textContent())?.trim() ?? ''
 
       breakConnection(env)
       await closeTabPastAnyConfirm(app, page)
 
-      await expect
-        .poll(
-          () =>
-            sshCalls(env).filter(
-              (c) =>
-                c.phase === 'end' &&
-                remoteCommandText(c.argv).includes(`kill-session -t ${tmuxName(first.sessionId)}`)
-            ).length,
-          { timeout: 30_000 }
-        )
-        .toBeGreaterThanOrEqual(1)
-      const kills = sshCalls(env).filter(
-        (c) =>
-          c.phase === 'end' &&
-          remoteCommandText(c.argv).includes(`kill-session -t ${tmuxName(first.sessionId)}`)
+      await expect(page.locator('.toast .toast-msg')).toHaveText(
+        `Could not stop “${title}” on devbox: ssh exited with 255. It is still running there.`
       )
-      expect(kills.every((k) => k.exit === 255)).toBe(true)
+
+      await expect
+        .poll(() => killExits(env, first.sessionId).length, { timeout: 30_000 })
+        .toBeGreaterThanOrEqual(1)
+      expect(killExits(env, first.sessionId).every((exit) => exit === 255)).toBe(true)
 
       expect(processAlive(first.pid)).toBe(true)
       expect(liveTmuxSessions(env)).toContain(tmuxName(first.sessionId))
       await page.waitForTimeout(3000)
       await expect(wsRows(page, REMOTE_WS_NAME).first()).not.toHaveClass(/\bcold\b/)
       expect(readCalls(env)).toHaveLength(1)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('E-RW-30: ⌘W on a remote tab whose claude is already gone sends a kill that finds nothing, and says nothing about it', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const [first] = await waitForCalls(env, 1)
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await expect(row).toHaveClass(/st-waiting|st-idle/, { timeout: 60_000 })
+
+      dropTabLinkWhileItsSessionDies(env, first.pid)
+      await expect.poll(() => processAlive(first.pid), { timeout: 5_000 }).toBe(false)
+      await closeTabPastAnyConfirm(app, page)
+
+      await expect.poll(() => killExits(env, first.sessionId), { timeout: 30_000 }).toEqual([1])
+      await expectNoToastAtAnyMomentOfAWindow(page)
     } finally {
       await quitAndClose(app)
     }

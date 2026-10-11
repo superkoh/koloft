@@ -1,10 +1,13 @@
-import { test, expect } from './helpers/app'
+import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { codexMissingWhoseCheckAnswersOnlyWhenLetGo } from './helpers/env'
 import {
   boundSessionId,
   centerTerm,
   continuedInOf,
+  expectNoCodexWhileTheCheckIsOutNorAfter,
   FAKE_SESSION_TITLE,
   layoutOnDisk,
+  openPicker,
   runIn,
   startSessionIn,
   transcriptFile,
@@ -12,6 +15,29 @@ import {
   wsRows
 } from './helpers/p1'
 import { WORKBENCH, showBrowse } from './helpers/workbench'
+
+test('with no Codex and a slow Codex check, the first ⌘N picker after launch never shows a Codex button, before or after the check answers', async ({
+  env
+}) => {
+  const letTheCheckAnswer = codexMissingWhoseCheckAnswersOnlyWhenLetGo(env)
+  const app = await launchApp(env)
+  try {
+    const page = await app.firstWindow()
+    await waitBooted(page)
+    const picker = await openPicker(app, page)
+    await expect(picker.locator('.modal-foot button[data-default="true"]')).toBeVisible()
+    const codexButtons = picker.locator('.modal-foot button[data-default="false"]')
+
+    await expectNoCodexWhileTheCheckIsOutNorAfter(
+      page,
+      letTheCheckAnswer,
+      () => codexButtons.count(),
+      'a Codex button'
+    )
+  } finally {
+    await quitAndClose(app)
+  }
+})
 
 test('starting a session in a workspace surfaces it, its file, and a preview through the real shim, hooks and tracker, with only the LLM faked', async ({
   page

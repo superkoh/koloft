@@ -1101,6 +1101,10 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   tmux session already running keeps the old config until its last session ends.
 - **`new-session -A -s <name> <cmd>` attaches to an existing session and never runs
   `<cmd>`**; `attach -t <name>` for a session that is gone exits 1.
+- **`kill-session -t <name>` for a session that is gone exits 1**, never 255, so ssh's
+  255 alone says the kill did not reach the machine: `can't find session: <name>` with
+  a server running, `error connecting to …` with none (2026-10-10, tmux 3.3a in the
+  e2e sshd Docker image, run directly).
 - **With no `default-shell`, tmux runs the new-session command through `$SHELL`**, the
   login shell — for a fish user, sh syntax is a syntax error.
 - **With `mouse off`, tmux 3.6b passes the pane's mouse-mode requests (1000/1002/1006)

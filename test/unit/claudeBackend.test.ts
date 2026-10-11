@@ -12,6 +12,8 @@ vi.mock('electron', async () => {
 })
 
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../src/main/backends/claude'
+import { answered, replyJson } from '../../src/main/agentRequests'
+import { mirrorHookDir } from '../../src/main/remote/paths'
 
 function fakeTracker(): ClaudeBackendDeps['tracker'] {
   const tracked = new Map<string, { sessionId: string }>()
@@ -69,6 +71,100 @@ function backendWithDirs(): {
     }
   }
 }
+
+const MACHINE_TABS = {
+  'pty-a': { host: 'devbox', tmuxName: 'k-sa' },
+  'pty-b': { host: 'devbox', tmuxName: 'k-sb' },
+  'pty-c': { host: 'otherbox', tmuxName: 'k-sc' }
+} as Record<string, { host: string; tmuxName: string }>
+
+function machineBackend(): {
+  boundTo: Map<string, string>
+  answeredFor: string[]
+  sent: [string, string, string][]
+  drop(name: string, body: unknown): void
+} {
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-backend-machine-'))
+  const boundTo = new Map(Object.keys(MACHINE_TABS).map((id) => [id, `sid-of-${id}`]))
+  const answeredFor: string[] = []
+  const sent: [string, string, string][] = []
+  const backend = new ClaudeBackend({
+    pty: { get: (id: string) => (MACHINE_TABS[id] ? {} : undefined), clearResumeIntent: () => {} },
+    hosts: {
+      machine: (host: string) => ({
+        answerAgent: async (id: string, reply: string) => void sent.push([host, id, reply])
+      })
+    },
+    tracker: {
+      infoOf: (id: string) => (boundTo.has(id) ? { sessionId: boundTo.get(id) } : undefined),
+      bindSession: (id: string, _transcript: string, sid: string) => void boundTo.set(id, sid),
+      remoteOf: (id: string) => MACHINE_TABS[id],
+      setRemoteTmuxName: () => {},
+      list: () => Object.keys(MACHINE_TABS).map((tabId) => ({ tabId, alive: true }))
+    },
+    workspaces: () => ({
+      remoteTargets: () => [{ host: 'devbox', paths: [] }],
+      onSessionStart: () => {},
+      onSessionRebind: () => {},
+      onSessionBound: () => {},
+      dropOwnership: () => {}
+    }),
+    userData: () => userData,
+    events: () => {}
+  } as unknown as ClaudeBackendDeps)
+  backend.agentReply = async (tabId) => {
+    answeredFor.push(tabId)
+    return answered(`for ${tabId}`)
+  }
+  backend.watchRemoteHookMirrors()
+  const mirrorDir = mirrorHookDir(userData, 'devbox')
+  return {
+    boundTo,
+    answeredFor,
+    sent,
+    drop: (name, body) => fs.writeFileSync(path.join(mirrorDir, name), JSON.stringify(body))
+  }
+}
+
+const A_FEW_MIRROR_PULLS_MS = 1500
+const request = (tabId: string, tmux: string): unknown => ({
+  tabId,
+  tmux,
+  argv: ['help'],
+  cwd: '/'
+})
+
+describe('ClaudeBackend: koloft requests from a session on a remote machine', () => {
+  // PLATFORM§34
+  it('answers a request the hook mirror brings back once on the machine, though every pull writes it again, and never rebinds the tab it names', async () => {
+    const m = machineBackend()
+    m.drop('req-r1.json', request('pty-a', 'k-sa'))
+    m.drop('res-r0.json', { exit: 0, text: 'an answer the mirror pulled back' })
+    await vi.waitFor(() => expect(m.sent).toHaveLength(1), { timeout: 5000 })
+    for (let i = 0; i < 3; i++) {
+      await new Promise((r) => setTimeout(r, A_FEW_MIRROR_PULLS_MS / 3))
+      m.drop('req-r1.json', request('pty-a', 'k-sa'))
+    }
+    m.drop('pty-b.json', { tabId: 'pty-b', event: 'start', source: 'clear', sessionId: 'sid-new' })
+    await vi.waitFor(() => expect(m.boundTo.get('pty-b')).toBe('sid-new'), { timeout: 5000 })
+
+    expect(m.sent).toEqual([['devbox', 'r1', replyJson(answered('for pty-a'))]])
+    expect(m.boundTo.get('pty-a')).toBe('sid-of-pty-a')
+  })
+
+  it('finds the calling tab by its tmux session before its tab id, which a Koloft restart can hand to another tab, and leaves a request from no tab of its own on that machine unanswered, for the Koloft that owns it', async () => {
+    const m = machineBackend()
+    m.drop('req-r2.json', request('pty-c', 'k-sc'))
+    m.drop('req-r3.json', request('pty-gone', 'k-gone'))
+    m.drop('req-r4.json', request('pty-b', 'k-sa'))
+    m.drop('req-r5.json', request('pty-b', ''))
+    await vi.waitFor(() => expect(m.sent).toHaveLength(2), { timeout: 5000 })
+    await new Promise((r) => setTimeout(r, A_FEW_MIRROR_PULLS_MS))
+
+    expect(m.sent.map(([, id]) => id).sort()).toEqual(['r4', 'r5'])
+    expect(m.answeredFor.sort()).toEqual(['pty-a', 'pty-b'])
+  })
+})
 
 describe('ClaudeBackend: a local tab binds once both of its start notes are on disk', () => {
   it("binds the session when claude's SessionStart is read before the shim's registration of the tab", async () => {

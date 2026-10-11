@@ -3,7 +3,8 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { execFileSync, spawn, spawnSync } from 'child_process'
-import { machineClaudeArgs, SshHost } from '../../src/main/host/sshHost'
+import { machineClaudeArgs, SshHost, type MachineClaudeDeps } from '../../src/main/host/sshHost'
+import { killSessionCmd } from '../../src/main/remote/launch'
 import { diffBase as localDiffBase } from '../../src/main/gitStatus'
 import { utilTerminalGuard } from '../../src/main/shim'
 import type { BytesResult } from '../../src/main/remote/ssh'
@@ -32,7 +33,7 @@ function runOnMachine(cmd: string, opts?: { input?: Buffer }): Promise<BytesResu
   })
 }
 
-const machine = (run = runOnMachine): SshHost =>
+const machine = (run = runOnMachine, claude: Partial<MachineClaudeDeps> = {}): SshHost =>
   new SshHost(MACHINE, {
     run,
     shell: () => ({ spawnCwd: '/' }),
@@ -44,8 +45,10 @@ const machine = (run = runOnMachine): SshHost =>
       alive: () => new Set(),
       realPath: (p) => p,
       settings: () => ({ skipPermissions: false }),
+      agentTools: () => true,
       pickAccount: async () => ({ env: {}, banner: '' }),
-      hookSettings: () => ({})
+      hookSettings: () => ({}),
+      ...claude
     }
   })
 
@@ -187,6 +190,19 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
         { name: '/tidy-up', source: 'home' }
       ])
     })
+
+    it('answers a koloft request on the machine: the reply lands whole beside it and the request goes, while a request whose command already gave up gets no reply', async () => {
+      const hookDir = path.join(home, '.koloft', 'hook-sessions')
+      fs.mkdirSync(hookDir, { recursive: true })
+      fs.writeFileSync(path.join(hookDir, 'req-r1.json'), '{}')
+      const reply = '{"exit":0,"text":"it\'s \\"done\\""}'
+
+      await machine().answerAgent('r1', reply)
+      await machine().answerAgent('r2', reply)
+
+      expect(fs.readdirSync(hookDir)).toEqual(['res-r1.json'])
+      expect(fs.readFileSync(path.join(hookDir, 'res-r1.json'), 'utf8')).toBe(reply)
+    })
   }
 )
 
@@ -312,6 +328,7 @@ describe('accounts for remote launches started together', () => {
         alive: () => new Set(),
         realPath: (p) => p,
         settings: () => ({ skipPermissions: false }),
+        agentTools: () => true,
         pickAccount: async (launchKey) => {
           const res = await picker.pick(launchKey)
           if (!res.account) return undefined
@@ -340,6 +357,7 @@ describe('accounts for remote launches started together', () => {
         alive: () => new Set([live]),
         realPath: (p) => p,
         settings: () => ({ skipPermissions: false }),
+        agentTools: () => true,
         pickAccount,
         hookSettings: () => ({})
       }
@@ -348,6 +366,46 @@ describe('accounts for remote launches started together', () => {
     pickAccount.mockClear()
     expect((await host.launch({ root: keyed('/w'), resumeSessionId: live })).ok).toBe(true)
     expect(pickAccount).not.toHaveBeenCalled()
+  })
+})
+
+describe('ending a session that runs on the machine', () => {
+  const live = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+  const tmux = `k-${live}`
+  const killAnswering = (code: number | null, stderr = '') => {
+    const pickAccount = vi.fn(async () => ({ env: {}, banner: '' }))
+    const host = machine(
+      (cmd, opts) =>
+        cmd === killSessionCmd(tmux)
+          ? Promise.resolve({ code, stdout: Buffer.alloc(0), stderr })
+          : runOnMachine(cmd, opts),
+      { alive: () => new Set([live]), pickAccount }
+    )
+    return { host, pickAccount }
+  }
+
+  it('a kill ssh could not deliver says why, and the next launch attaches to the session still running there', async () => {
+    const { host, pickAccount } = killAnswering(
+      255,
+      'ssh: connect to host devbox: Connection refused\n'
+    )
+    expect(await host.endTmuxSession(tmux)).toBe('ssh: connect to host devbox: Connection refused')
+    await host.launch({ root: keyed('/w'), resumeSessionId: live })
+    expect(pickAccount).not.toHaveBeenCalled()
+  })
+
+  it('a kill that timed out says so, and the next launch attaches', async () => {
+    const { host, pickAccount } = killAnswering(null)
+    expect(await host.endTmuxSession(tmux)).toBe('ssh timed out')
+    await host.launch({ root: keyed('/w'), resumeSessionId: live })
+    expect(pickAccount).not.toHaveBeenCalled()
+  })
+
+  it('a kill of a session already gone (tmux exits 1) is no failure, and the next launch starts afresh', async () => {
+    const { host, pickAccount } = killAnswering(1, "can't find session: " + tmux + '\n')
+    expect(await host.endTmuxSession(tmux)).toBeUndefined()
+    await host.launch({ root: keyed('/w'), resumeSessionId: live })
+    expect(pickAccount).toHaveBeenCalled()
   })
 })
 

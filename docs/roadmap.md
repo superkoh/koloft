@@ -14,7 +14,12 @@ place and edited in one place.
    Codex's — with no Koloft chrome inside it.
 4. Worktree lifecycle and session retention belong to **the agent's tool**, not Koloft.
    Three gaps, all run on the owner's word: Koloft makes the worktree for a Codex
-   worktree session, and only `koloft session close` removes it (#116); Koloft makes the
+   worktree session, and removes it when its Codex ends (not when the tab sleeps or
+   restarts, or Koloft quits) only if nothing was done in it —
+   no other session in it, still on `worktree-<name>` at the commit it was made from,
+   and no changed, new or ignored file except unchanged copies from the main checkout —
+   the way `claude -w` removes an unchanged one; any other is kept until
+   `koloft session close` removes it (#116); Koloft makes the
    `pr-<n>` worktree for a session started from a pull request, on that pull request's
    own branch, because `claude -w` only makes a worktree on a new `worktree-<name>`
    branch (#218); and a conductor may `koloft session close` an ended local session in
@@ -33,9 +38,6 @@ when it works. That is what "judged against" means.
 - **Broadcast input** — type once, send to the sessions you selected. The workspace →
   session tree is the first reliable "select N sessions" unit Koloft has had, so the
   scope is unambiguous: the rows you picked, nothing implied.
-- **Command palette** — jump to any session across workspaces, and reach actions by name.
-  Finding a session *inside* one workspace is already solved by the flat tree; this is
-  the cross-workspace half.
 - **Agents use Koloft themselves** — a Claude or Codex session in Koloft already has a
   `koloft` command and a guide for it: scheduled tasks, opening a file, page or diff in
   its Workbench, the workspace note, and starting a sibling session and talking to it.
@@ -44,8 +46,8 @@ when it works. That is what "judged against" means.
   and closes an ended one on this computer. It only passes work on (ADR-0029), but checks
   facts on GitHub itself with `koloft gh`, which reads and, when the owner asks, opens an
   issue, and a Claude conductor keeps its own memory.
-  What is left: Codex driving the Workbench browser (#119), and sessions on another
-  machine over ssh, which get no `koloft` command yet.
+  A Claude session on another machine over ssh has the same command; its answers take
+  a few seconds longer.
 
 ### Tier 2 — review: where Koloft can still grow
 
@@ -84,14 +86,15 @@ Reopen one of these only with new evidence, not a new argument.
   `koloft session send` for Codex), which the receiving session sees as a message it can
   judge. Faked keystrokes land in whatever that TUI's input box holds at the time.
   Broadcast input above is a feature for the *person*, with the rows they picked.
-  Two exceptions, both the owner's decisions. First, a conductor's `koloft session send`
+  Three exceptions, all the owner's decisions. First, a conductor's `koloft session send`
   to a Claude session on another machine over ssh is typed into its terminal, because
   that session's message socket is on the other machine where Koloft cannot reach it.
   Koloft types only when that session's turn has ended and it shows no dialog; its state
   arrives a mirror pull late, so a message can still land in a turn that just began,
   where Claude queues it. Second, a conductor's `koloft session command` types a slash
   command, because a message delivers `/compact` as plain text (CC§12, CODEX§21); Koloft
-  types it only when that session is idle with no question or menu showing.
+  types it only when that session is idle with no question or menu showing. Third, a
+  conductor's `koloft session keys` presses keys in a session (CC§12, CODEX§25).
 
 - **A one-click Review button that starts a sibling to review the diff** (#222) — a
   session already starts its own sibling session or subagent to review its changes

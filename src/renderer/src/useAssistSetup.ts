@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
-import type { BackendAvailability, BackendId } from '@shared/types'
+import { useEffect } from 'react'
+import type { BackendId } from '@shared/types'
 import { hasUsableAccount } from '@shared/accountUsage'
-import { SESSION_BACKENDS, backendAvailable } from '@shared/sessionBackend'
+import { SESSION_BACKENDS, shownAsInstalled } from '@shared/sessionBackend'
 import { useStore } from './store'
+import { useInstalledBackends } from './useInstalledBackends'
 
 export interface AssistSetupState {
   tools: BackendId[]
@@ -22,23 +23,13 @@ export function useAssistSetup(): AssistSetupState {
   const accountsLoaded = useStore((s) => s.accounts !== null)
   const claude = useStore((s) => hasUsableAccount(s.accounts ?? [], 'claude'))
   const codex = useStore((s) => hasUsableAccount(s.accounts ?? [], 'codex'))
-  const [installed, setInstalled] = useState<BackendAvailability[] | null>(null)
-
-  useEffect(() => {
-    let alive = true
-    void window.api.sessions.backends().then((b) => {
-      if (alive) setInstalled(b)
-    })
-    return () => {
-      alive = false
-    }
-  }, [])
+  const { installed } = useInstalledBackends()
 
   useEffect(() => {
     if (bypassAccepted === null) void window.api.accounts.bypassAccepted().then(setBypassAccepted)
   }, [bypassAccepted, setBypassAccepted])
 
-  const tools = SESSION_BACKENDS.filter((b) => !installed || backendAvailable(installed, b))
+  const tools = SESSION_BACKENDS.filter((b) => shownAsInstalled(installed, b))
   const askBypass = skipPermissions && bypassAccepted === false
   return {
     tools,

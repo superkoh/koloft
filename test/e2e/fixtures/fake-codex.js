@@ -100,7 +100,8 @@ if (argv[0] === 'app-server') {
   append('fake-codex-server-calls.jsonl', {
     argv,
     cwd: process.cwd(),
-    portOffset: process.env.KOLOFT_PORT_OFFSET || null
+    portOffset: process.env.KOLOFT_PORT_OFFSET || null,
+    playwrightMcpEndpoint: process.env.PLAYWRIGHT_MCP_CDP_ENDPOINT || null
   })
   let initialized = false
   let active
@@ -418,7 +419,12 @@ if (argv[0] === 'app-server') {
       return
     }
     if (method === 'config/read') {
-      result(id, { config: { model: 'gpt-5.5' }, origins: {}, layers: [] })
+      const mcpServers = read('fake-codex-mcp-servers.json')
+      result(id, {
+        config: { model: 'gpt-5.5', ...(mcpServers && { mcp_servers: JSON.parse(mcpServers) }) },
+        origins: {},
+        layers: []
+      })
       return
     }
     if (method === 'account/read') {

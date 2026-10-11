@@ -64,7 +64,7 @@ export const BUILTIN_VERBS: AgentVerbs = {
 export const NOT_PINNED = 'koloft: pin this workspace in the sidebar first.'
 
 export const AGENT_TOOLS_OFF =
-  "koloft: Koloft's agent tools are not on for this session. Either the owner turned them off in Koloft's Settings, or the session runs on another machine, where they do not work."
+  "koloft: Koloft's agent tools are not on for this session: the owner turned them off in Koloft's Settings."
 const UNKNOWN_TAB = 'koloft: Koloft does not know this session.'
 const UNREADABLE = 'koloft: Koloft could not read this request.'
 
@@ -128,7 +128,8 @@ export interface AgentRequestDeps {
   alive(pid: number): boolean
 }
 
-const REQUEST_NAME = /^req-([A-Za-z0-9-]+)\.json$/
+export const REQUEST_NAME = /^req-([A-Za-z0-9-]+)\.json$/
+export const AGENT_DROP_NAME = /^(req|res)-[A-Za-z0-9-]+\.json$/
 const CLAIM_OUTLIVES_DROP_REREADS_MS = 500
 
 export class AgentRequests {
@@ -152,6 +153,10 @@ export class AgentRequests {
 
   answerFor(tabId: string | undefined, dir: string, name: string, raw: unknown): Promise<void> {
     return this.settle(dir, name, parseAgentRequest(raw), tabId)
+  }
+
+  replyFor(tabId: string | undefined, raw: unknown): Promise<AgentReply> {
+    return this.replyTo(parseAgentRequest(raw), tabId)
   }
 
   private async settle(

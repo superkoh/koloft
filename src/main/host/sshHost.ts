@@ -39,9 +39,21 @@ import {
   writeTabPackage,
   type MachinePackage
 } from '../remote/launch'
-import { mirrorHookDir, mirrorProjectsRoot, remoteMachineDir, tabPackageDir } from '../remote/paths'
+import {
+  mirrorHookDir,
+  mirrorProjectsRoot,
+  REMOTE_HOOK_DIR,
+  remoteMachineDir,
+  tabPackageDir
+} from '../remote/paths'
 import { launchMode } from '../remote/sync'
-import { ensureControlDir, sshLinkBroke, sshOptions, type BytesResult } from '../remote/ssh'
+import {
+  ensureControlDir,
+  problemOf,
+  sshLinkBroke,
+  sshOptions,
+  type BytesResult
+} from '../remote/ssh'
 import { claudeArgv } from '../claudeArgs'
 import { listSkills, type SkillFs } from '../skillList'
 import { worktreeNameAround } from '../resumePlan'
@@ -59,8 +71,9 @@ export interface MachineClaudeDeps {
   alive(): ReadonlySet<string>
   realPath(p: string): string
   settings(): { skipPermissions: boolean }
+  agentTools(): boolean
   pickAccount(launchKey: string): Promise<MachineAccount | undefined>
-  hookSettings(tabId: string, machineDir: string): Record<string, unknown>
+  hookSettings(tabId: string, machineDir: string, allowKoloft: boolean): Record<string, unknown>
 }
 
 export interface SshHostDeps {
@@ -345,6 +358,10 @@ function skillFsOf(files: Map<string, string>): SkillFs {
 const NETWORK_GIT = `GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=false SSH_ASKPASS=false \
 SSH_ASKPASS_REQUIRE=never GIT_SSH_COMMAND="\${GIT_SSH_COMMAND:-ssh} -o BatchMode=yes" git "$@"`
 
+const ANSWER_AGENT_REQUEST = `d="${REMOTE_HOOK_DIR}"
+[ -f "$d/req-$1.json" ] || exit 0
+cat > "$d/res-$1.json.tmp" && mv -f "$d/res-$1.json.tmp" "$d/res-$1.json" && rm -f "$d/req-$1.json"`
+
 const RESIZE_SETTLE_MS = 200
 
 export class SshHost implements Host {
@@ -452,6 +469,10 @@ export class SshHost implements Host {
 
   async dirExists(dir: string): Promise<boolean> {
     return (await this.sh('test -d "$1"', [this.bare(dir)])).code === 0
+  }
+
+  async fileExists(file: string): Promise<boolean> {
+    return (await this.sh('test -f "$1"', [this.bare(file)])).code === 0
   }
 
   async search(root: string, query: string, opts?: { showIgnored?: boolean }) {
@@ -596,14 +617,21 @@ export class SshHost implements Host {
 
   osOpen(): void {}
 
-  endTmuxSession(tmuxName: string): Promise<void> {
-    const kill = this.deps.run(killSessionCmd(tmuxName)).then(() => {
+  endTmuxSession(tmuxName: string): Promise<string | undefined> {
+    const killedId = sessionIdOfTmux(tmuxName)
+    const kill = this.deps.run(killSessionCmd(tmuxName)).then((r) => {
       if (this.kills.get(tmuxName) === kill) this.kills.delete(tmuxName)
+      if (!sshLinkBroke(r)) return undefined
+      if (killedId) this.killedSessions.delete(killedId)
+      return problemOf(r)
     })
     this.kills.set(tmuxName, kill)
-    const killedId = sessionIdOfTmux(tmuxName)
     if (killedId) this.killedSessions.add(killedId)
     return kill
+  }
+
+  async answerAgent(requestId: string, reply: string): Promise<void> {
+    await this.sh(ANSWER_AGENT_REQUEST, [requestId], { input: Buffer.from(reply) })
   }
 
   // CC§9 ADR-0026
@@ -631,6 +659,7 @@ export class SshHost implements Host {
     await this.deps.sshEnvReady?.()
     ensureControlDir(d.controlDir)
     const settings = d.settings()
+    const agentTools = d.agentTools()
     const sid = spec.resumeSessionId ?? crypto.randomUUID()
     const args = machineClaudeArgs(spec, sid, settings.skipPermissions)
     if (!args.ok) return args
@@ -665,7 +694,8 @@ export class SshHost implements Host {
           banner: account?.banner ?? '',
           env: account?.env,
           portOffset: worktree ? portOffset(worktree) : undefined,
-          settings: d.hookSettings(tabId, machineDir),
+          settings: d.hookSettings(tabId, machineDir, agentTools),
+          agentPlugin: agentTools,
           claudeArgs: args.args
         })
         return launchLine({

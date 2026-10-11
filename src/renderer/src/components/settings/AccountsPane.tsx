@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type JSX } from 'react'
 import { LuGlobe, LuPlus, LuRefreshCw, LuX } from 'react-icons/lu'
 import type { AccountKind, AccountView } from '@shared/types'
 import { useStore } from '../../store'
-import { windowLabel } from '@shared/accountUsage'
+import { needsSignInAgain, windowLabel } from '@shared/accountUsage'
 import { Meter, ageLabel, probeErrorLabel, resetLabel } from '../accountMeter'
 import { Switch } from './Switch'
 import { useEscConsumer } from './escScope'
@@ -192,8 +192,7 @@ export function AccountsPane(): JSX.Element {
 export function LoginDialog(): JSX.Element | null {
   const login = useStore((s) => s.accountLogin)
   const addTab = useStore((s) => s.addTab)
-  const setSignInTabId = useStore((s) => s.setSignInTabId)
-  const setSettingsOpen = useStore((s) => s.setSettingsOpen)
+  const showSignInTab = useStore((s) => s.showSignInTab)
   const beginLogin = useStore((s) => s.beginLogin)
   const setLoginProgress = useStore((s) => s.setLoginProgress)
   const clearLogin = useStore((s) => s.clearLogin)
@@ -227,7 +226,7 @@ export function LoginDialog(): JSX.Element | null {
 
   const showTerminal = (): void => {
     if (!progress?.tabId) return
-    setSignInTabId(progress.tabId)
+    showSignInTab(progress.tabId)
     addTab({
       id: progress.tabId,
       kind: 'shell',
@@ -235,7 +234,6 @@ export function LoginDialog(): JSX.Element | null {
       cwd: progress.cwd ?? '',
       alive: true
     })
-    setSettingsOpen(false)
     clearLogin()
   }
 
@@ -335,8 +333,7 @@ export function CodexSignInDialog({
   onClose(): void
 }): JSX.Element {
   const addTab = useStore((s) => s.addTab)
-  const setSignInTabId = useStore((s) => s.setSignInTabId)
-  const setSettingsOpen = useStore((s) => s.setSettingsOpen)
+  const showSignInTab = useStore((s) => s.showSignInTab)
   const [name, setName] = useState(again ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -357,7 +354,7 @@ export function CodexSignInDialog({
       )
       return
     }
-    setSignInTabId(r.tabId)
+    showSignInTab(r.tabId)
     addTab({
       id: r.tabId,
       kind: 'shell',
@@ -365,7 +362,6 @@ export function CodexSignInDialog({
       cwd: r.cwd,
       alive: true
     })
-    setSettingsOpen(false)
     onClose()
   }
 
@@ -420,7 +416,6 @@ function AccountRow({
   const now = Date.now()
   const measuredAt = u?.at ?? a.limits?.at
   const stale = measuredAt !== undefined ? ageLabel(measuredAt, now) : null
-  const needsAuth = a.status === 'expired' || a.status === 'unverified'
   return (
     <div className={'acct-row' + (a.enabled ? '' : ' off') + (confirming ? ' confirming' : '')}>
       <div className="acct-main">
@@ -449,7 +444,7 @@ function AccountRow({
         )}
         {a.status === 'unverified' && <span className="acct-status unverified">UNVERIFIED</span>}
         {stale && <span className="acct-status stale">{stale}</span>}
-        {needsAuth && onRelogin && (
+        {needsSignInAgain(a) && onRelogin && (
           <button
             className="acct-relogin"
             onClick={onRelogin}

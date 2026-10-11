@@ -26,6 +26,7 @@ import { SessionTracker, type ToolCall } from './sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
 import { CodexSessions } from './codexSessions'
+import type { WorktreeResource } from './sessionStore'
 import {
   OpenTabsFile,
   openTabsNow,
@@ -76,8 +77,10 @@ import {
 } from './remote/ssh'
 import { ENSURE_SH, TMUX_CONF, UTIL_SH } from './remote/install'
 import {
+  AGENT_PLUGIN_DIR,
   buildMachinePackage,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
+  SESSION_BIN_DIR,
   tmuxSessionName,
   UTIL_BIN_DIR,
   utilShellLine,
@@ -86,6 +89,7 @@ import {
 } from './remote/launch'
 import { machinePackageBase, mirrorHookDir, mirrorProjectsRoot } from './remote/paths'
 import { RemoteSync } from './remote/sync'
+import { REMOTE_AGENT_SHIM } from './agentShim'
 import { readLoginShell, sshEnvFromLogin } from './loginShell'
 import {
   oncePerName,
@@ -177,7 +181,7 @@ import { sanitizeBase } from './gitStatus'
 import { Hosts } from './host/hosts'
 import { localGitOut, localHost } from './host/localHost'
 import { SshHost } from './host/sshHost'
-import { projectInfoFor } from './projectInfo'
+import { projectInfoFor, realpathSafe } from './projectInfo'
 import { whatsNewDecision } from './releaseNotes'
 import {
   checkForUpdates,
@@ -192,11 +196,14 @@ import { extOf } from '@shared/preview'
 import {
   canOpenExternally,
   routeFor,
+  schemeOf,
   type RouteDecision,
   type RouteSource
 } from '@shared/browserRoute'
 import {
   cdpEnvDir,
+  relayClientEvicted,
+  relayEndpoint,
   relayStripChanged,
   relayTabClosed,
   relayTabRebound,
@@ -342,7 +349,7 @@ import { koloftAssist } from './assist'
 import { closingTree, removeTree, whatIsLeft } from './sessionClose'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
-import { writeAgentPlugin } from './agentPlugin'
+import { agentPluginFiles, writeAgentPlugin } from './agentPlugin'
 
 // PLATFORM§4
 if (!app.isPackaged) app.setName('koloft-dev')
@@ -540,7 +547,27 @@ function onSessionsChanged(): SessionInfo[] {
   const all = allSessions()
   settleWokenSleepers(all)
   rememberOpenTabs(all)
+  syncRelayBindings(all)
   return all
+}
+
+function syncRelayBindings(all: SessionInfo[]): void {
+  const seen = new Set<string>()
+  for (const s of all) {
+    seen.add(s.tabId)
+    const before = boundSessions.get(s.tabId)
+    if (before === s.sessionId) continue
+    boundSessions.set(s.tabId, s.sessionId)
+    // CODEX§26
+    if (before && s.backendId === 'codex')
+      relayClientEvicted(s.tabId, 'a new session took over this tab')
+    relayTabRebound(s.tabId, s.sessionId || null)
+  }
+  for (const tabId of [...boundSessions.keys()]) {
+    if (seen.has(tabId)) continue
+    boundSessions.delete(tabId)
+    relayTabRebound(tabId, null)
+  }
 }
 
 function addSleeper(tabId: string, t: OpenTab): void {
@@ -784,8 +811,11 @@ function machinePackage(): MachinePackage {
     'tmux.conf': TMUX_CONF,
     'util.sh': UTIL_SH,
     [`${UTIL_BIN_DIR}claude`]: utilTerminalGuard('claude'),
-    [`${UTIL_BIN_DIR}codex`]: utilTerminalGuard('codex')
+    [`${UTIL_BIN_DIR}codex`]: utilTerminalGuard('codex'),
+    [`${SESSION_BIN_DIR}koloft`]: REMOTE_AGENT_SHIM
   }
+  for (const [rel, text] of Object.entries(agentPluginFiles()))
+    pkgFiles[`${AGENT_PLUGIN_DIR}${rel}`] = text
   try {
     pkgFiles['statusline/ccstatusline.js'] = fs.readFileSync(bundlePath())
     pkgFiles['statusline/package.json'] = '{"type":"module"}\n'
@@ -933,8 +963,12 @@ function unlessWorkspacelessConductor(verb: AgentVerb): AgentVerb {
 }
 
 const notesAndWorkbenchVerbs = workbenchVerbs({
-  open: (tabId, target, view) =>
-    openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target, view),
+  open: (tabId, target, view) => {
+    const machine = tracker.remoteOf(tabId)?.host
+    return machine && !schemeOf(target)
+      ? openOnMachine(tabId, machine, target, view)
+      : openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target, view)
+  },
   notesFileOf: (tabId) => {
     const workspace = sessionBackends.workspaceOfTab(tabId)
     return workspace ? notesFileOfPinned(workspace) : undefined
@@ -1613,6 +1647,7 @@ app.whenReady().then(() => {
     ptyMgr.agentDir = agentDir
     claudeBackend.agentPlugin = writeAgentPlugin(app.getPath('userData'))
   }
+  claudeBackend.agentReply = (tabId, raw) => agentRequests.replyFor(tabId, raw)
   claudeBackend.watchShimRegistrations(regDir)
   if (watchOpenRequests(openDir)) {
     ptyMgr.openDir = openDir
@@ -1739,25 +1774,12 @@ app.whenReady().then(() => {
     conductors?.onPtyExit(e.id)
     sendToRenderer('terminal:exit', e)
   })
-  tracker.on('update', (sessions: SessionInfo[]) => {
+  tracker.on('update', () => {
     const all = onSessionsChanged()
     sendToRenderer('sessions:update', all)
     workspaceMgr?.onTrackerUpdate()
     syncAnswerable()
     retitleDiscordThreads(all)
-    const seen = new Set<string>()
-    for (const s of sessions) {
-      seen.add(s.tabId)
-      const before = boundSessions.get(s.tabId)
-      if (before === s.sessionId) continue
-      boundSessions.set(s.tabId, s.sessionId)
-      relayTabRebound(s.tabId, s.sessionId || null)
-    }
-    for (const tabId of [...boundSessions.keys()]) {
-      if (seen.has(tabId)) continue
-      boundSessions.delete(tabId)
-      relayTabRebound(tabId, null)
-    }
   })
   tracker.on('relocated', (e: { tabId: string; dir: string }) => {
     sendToRenderer('session:relocated', e)
@@ -1804,10 +1826,12 @@ app.whenReady().then(() => {
       },
       replaced: (oldKey, newKey) => workspaceMgr?.moveResident(oldKey, newKey),
       memberRemoved: (key) => discordThreads?.left(key),
+      leftWorktree: removeUntouchedCodexWorktree,
       events: (tabId, event) => sessionBackends.observe(tabId, event),
       error: (message) => sendToRenderer('cron:toast', message),
       trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
+      browserEndpoint: relayEndpoint,
       openShimRoot: path.join(userData, 'codex-open'),
       agent: {
         enabled: () => agentToolsFor('codex', 'local'),
@@ -2217,6 +2241,8 @@ app.whenReady().then(() => {
     dirExists: (p) => hosts.of(p).dirExists(p),
     gitDirExists: (root) => hosts.of(root).dirExists(`${root}/.git`),
     worktreeDirExists: (root, name) => hosts.of(root).dirExists(`${worktreeHomeOf(root)}/${name}`),
+    worktreeRecorded: (root, name) =>
+      codexSessions?.worktrees.recorded(`${worktreeHomeOf(realpathSafe(root))}/${name}`) ?? false,
     branchExists: (root, branch) => gitProbes(hostGitOut).branchExists(root, branch),
     countRunFolders,
     accountUsable: (backend) => sessionBackends.get(backend).accountUsable(),
@@ -2770,7 +2796,8 @@ function cdpOp(
 
 function relayDeps(): RelayDeps {
   return {
-    sessionForTab: (tabId) => claudeBackend.sessionIdOf(tabId) ?? null,
+    sessionForTab: (tabId) =>
+      claudeBackend.sessionIdOf(tabId) ?? codexSessions?.sessionIdOf(tabId) ?? null,
     mount: async (sessionId, targetId) => {
       const r = await cdpOp('mount', sessionId, { targetId })
       if (!r.ok || typeof r.guestId !== 'number')
@@ -3073,24 +3100,45 @@ function openInWorkbench(
   return false
 }
 
+async function openOnMachine(
+  tabId: string,
+  machine: string,
+  file: string,
+  view?: ArtifactView
+): Promise<boolean> {
+  const keyed = formatRemoteKey(machine, file)
+  if (!(await hosts.machine(machine).fileExists(keyed))) return false
+  const payload: OpenRequest = { tabId, path: keyed, source: 'agent', view }
+  sendToRenderer('preview:open-file', payload)
+  return true
+}
+
 function killTabFromMain(tabId: string): void {
   sendToRenderer('tab:killedByMain', tabId)
   void killTabPty(tabId)
 }
 
-function killTabPty(tabId: string): Promise<boolean> {
-  if (sleepers.has(tabId)) {
+function killTabPty(tabId: string, restarting = false): Promise<boolean> {
+  const sleeper = sleepers.get(tabId)
+  if (sleeper) {
     forgetSleeper(tabId)
-    return Promise.resolve(true)
+    const tree = projectInfoFor(sleeper.cwd).treeRoot
+    const resource =
+      sleeper.kind === 'codex' && !restarting
+        ? codexSessions?.store.listResources().find((r) => r.worktreePath === tree)
+        : undefined
+    return (resource ? removeUntouchedCodexWorktree(resource) : Promise.resolve()).then(() => true)
   }
   discordNotices?.closed(tabId)
   discordLive?.closed(tabId)
-  return stopTabProcess(tabId)
+  return stopTabProcess(tabId, restarting)
 }
 
-function stopTabProcess(tabId: string): Promise<boolean> {
+function stopTabProcess(tabId: string, restarting = false): Promise<boolean> {
   const owner = sessionBackends.ownerOfTab(tabId)
-  const stopped = owner ? Promise.resolve(owner.stop(tabId)) : Promise.resolve(ptyMgr.kill(tabId))
+  const stopped = owner
+    ? Promise.resolve(owner.stop(tabId, restarting))
+    : Promise.resolve(ptyMgr.kill(tabId))
   attention.clearKeepingExit(tabId)
   relayTabClosed(tabId)
   boundSessions.delete(tabId)
@@ -3160,13 +3208,29 @@ async function closeSessionFully(
     return
   }
   const tree = await closingTree(hostGitOut, info)
-  const problem = tree && (await removeTree(hostGitOut, tree))
+  const alreadyRemoved =
+    !!tree && !tree.branches.length && !(await hosts.of(info.treeRoot).dirExists(info.treeRoot))
+  const problem = tree && !alreadyRemoved && (await removeTree(hostGitOut, tree))
   if (problem) {
     sendToRenderer('cron:toast', `${target.title}: ${problem}`)
     return
   }
   archiveSession(target.sessionId)
   codexSessions?.store.removeUnusedResourcesAt(info.treeRoot)
+}
+
+async function removeUntouchedCodexWorktree(resource: WorktreeResource): Promise<void> {
+  const tree = resource.worktreePath
+  if ([...sleepers.values()].some((t) => projectInfoFor(t.cwd).treeRoot === tree)) return
+  if (sessionBackends.occupantOf(tree) || !(await codexSessions?.worktrees.untouched(resource)))
+    return
+  const problem = await removeTree(hostGitOut, {
+    root: resource.originalCwd,
+    treeRoot: tree,
+    worktreeName: resource.worktreeName,
+    branches: [`worktree-${resource.worktreeName}`]
+  })
+  if (problem) sendToRenderer('cron:toast', problem)
 }
 
 function worktreeHomeOf(root: string): string {
@@ -3412,6 +3476,7 @@ function cronBindDeadlineMs(): number {
 const resumeProbes: ResumeProbes = {
   dirExists: dirExistsSync,
   occupantOf: (dir) => sessionBackends.occupantOf(dir),
+  recorded: (dir) => codexSessions?.worktrees.recorded(dir) ?? false,
   ...gitProbes(localGitOut)
 }
 
@@ -3480,8 +3545,9 @@ const hosts = new Hosts(
         realPath: (p) => workspaceMgr?.realRemotePath({ host: machine, path: p }) ?? p,
         settings: loadSettings,
         pickAccount: (launchKey) => pickMachineAccount(() => pickForLaunch(launchKey)),
-        hookSettings: (tabId, dir) =>
-          machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin)
+        agentTools: () => agentToolsFor('claude', 'ssh'),
+        hookSettings: (tabId, dir, allowKoloft) =>
+          machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft)
       }
     })
 )
@@ -3496,7 +3562,8 @@ const claudeBackend = new ClaudeBackend({
   setupLine,
   ptysChanged: () => writeRelayEnv(ptyTabIds()),
   resumeProbes,
-  events: (tabId, event) => sessionBackends.observe(tabId, event)
+  events: (tabId, event) => sessionBackends.observe(tabId, event),
+  error: (message) => sendToRenderer('cron:toast', message)
 })
 sessionBackends.register(claudeBackend)
 
@@ -3570,7 +3637,10 @@ function registerIpc(): void {
   ipcMain.on('terminal:resize', (_e, id: string, cols: number, rows: number) =>
     ptyMgr.resize(id, cols, rows)
   )
-  ipcMain.on('terminal:kill', (_e, id: string) => void killTabPty(id))
+  ipcMain.on(
+    'terminal:kill',
+    (_e, id: string, restarting: unknown) => void killTabPty(id, restarting === true)
+  )
 
   ipcMain.handle('sessions:list', () => allSessions())
   ipcMain.handle('sessions:backends', () =>

@@ -464,6 +464,20 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(claudeEnvOf(spec()).KOLOFT_PORT_OFFSET).toBeUndefined()
   })
 
+  it("with agent tools on, claude gets Koloft's skill from the machine package and finds the machine's koloft first on its PATH, told which tab it runs in", () => {
+    const b = box(spec({ agentPlugin: true }))
+    expect(b.run().status).toBe(0)
+    const m = `${b.home}/.koloft/m-0000000000000000`
+    expect(b.argv().slice(0, 4)).toEqual([
+      '--settings',
+      `${b.home}/.koloft/tabs/T.json`,
+      '--plugin-dir',
+      `${m}/agent-plugin/`
+    ])
+    expect(b.env().PATH.split(':')[0]).toBe(`${m}/bin/`)
+    expect(b.env().KOLOFT_TAB_ID).toBe('T')
+  })
+
   it('a reconnect attaches to the running session and installs nothing', () => {
     const b = box(spec())
     const res = b.run('attach')
