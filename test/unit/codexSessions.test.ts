@@ -921,7 +921,7 @@ describe('CodexSessions', () => {
   })
 
   // ADR-0029 CODEX§27 CODEX§15
-  it('when Codex does not trust the gate, Koloft writes one trust entry into the config every account home links to and asks again; when it is still untrusted the Assist is refused before any app-server or TUI of its own starts, so it never runs ungated', async () => {
+  it('when Codex does not trust the gate, Koloft writes one trust entry into the config every account home links to and asks again; when it is still untrusted, or Codex cannot answer, the Assist is refused before any app-server or TUI of its own starts, so it never runs ungated', async () => {
     const shared = path.join(directory, '.codex', 'config.toml')
     const home = path.join(directory, 'homes', 'work')
     fs.mkdirSync(path.dirname(shared), { recursive: true })
@@ -949,6 +949,10 @@ describe('CodexSessions', () => {
     mocks.request.mockImplementation(async (method: string) =>
       method === 'hooks/list' ? gateListing('untrusted') : { data: [], nextCursor: null }
     )
+    await expect(sessions.launch({ kind: 'codex', cwd: repo, conductor: true })).rejects.toThrow(
+      CODEX_GATE_NOT_TRUSTED
+    )
+    mocks.request.mockRejectedValue(new Error('Method not found: hooks/list'))
     await expect(sessions.launch({ kind: 'codex', cwd: repo, conductor: true })).rejects.toThrow(
       CODEX_GATE_NOT_TRUSTED
     )

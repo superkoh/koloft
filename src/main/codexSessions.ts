@@ -428,7 +428,7 @@ export class CodexSessions {
     const rpc = new CodexRpc(launch)
     try {
       const gate = async (): Promise<GateHook | undefined> =>
-        gateHookIn(await rpc.request('hooks/list', { cwds: [launch.cwd] }))
+        gateHookIn(await rpc.request('hooks/list', { cwds: [launch.cwd] }).catch(() => undefined))
       const hook = await gate()
       if (hook?.trustStatus === 'trusted') return
       if (hook) acceptCodexHookTrust(configFile, hook.key, hook.currentHash)
