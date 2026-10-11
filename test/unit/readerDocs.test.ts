@@ -126,6 +126,19 @@ describe('Assist picks the docs a session made for its reader', () => {
     expect(t.jobs[0].prompt.split('Files the agent wrote this turn:\n')[1]).toBe(second)
   })
 
+  it('asks about a doc the agent only read and then pointed the reader to, and lists it', async () => {
+    const guide = path.join(dir, 'guide.md')
+    fs.writeFileSync(guide, '# guide')
+    const t = setup({
+      files: [{ src: guide, label: 'guide.md', access: 'read' }],
+      answer: guide
+    })
+    const docs = t.make()
+    await docs.turnEnded('t1', turn('Read it first: see guide.md'))
+    expect(t.jobs).toHaveLength(1)
+    expect(docs.of('s1')).toEqual({ [guide]: { show: true, at: expect.any(Number) } })
+  })
+
   it('records nothing when Assist is off or fails, so the docs fall back to the rule', async () => {
     const t = setup({ files: [wrote(path.join(dir, 'a.md'), TURN_START + 1)], answer: null })
     const docs = t.make()

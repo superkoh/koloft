@@ -94,16 +94,13 @@ export class ReaderDocs {
     this.lastTurnEnd.set(tabId, turn.at)
     const host = s.remote?.host
     const files = s.files ?? []
-    const written = files
+    const wrote = files.filter((f) => f.access === 'wrote')
+    const written = wrote
       .filter(
-        (f) =>
-          f.access === 'wrote' &&
-          (f.wroteAt ?? 0) >= since &&
-          isReaderDocPath(f.src) &&
-          !writtenForTheAgent(f.src)
+        (f) => (f.wroteAt ?? 0) >= since && isReaderDocPath(f.src) && !writtenForTheAgent(f.src)
       )
       .map((f) => f.src)
-    const known = new Set([...files.map((f) => f.src), ...Object.keys(this.of(s.sessionId) ?? {})])
+    const known = new Set([...wrote.map((f) => f.src), ...Object.keys(this.of(s.sessionId) ?? {})])
     const namesANewDoc = turn.reply.split(BETWEEN_PATHS_IN_PROSE).some((word) => {
       const src = docIn(word, s.cwd, host)
       return src !== null && !known.has(src)
