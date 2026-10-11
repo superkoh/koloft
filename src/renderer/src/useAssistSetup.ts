@@ -7,6 +7,7 @@ import { useInstalledBackends } from './useInstalledBackends'
 
 export interface AssistSetupState {
   tools: BackendId[]
+  toolsKnown: boolean
   noTool: boolean
   usable: Record<BackendId, boolean>
   askBypass: boolean
@@ -33,6 +34,7 @@ export function useAssistSetup(): AssistSetupState {
   const askBypass = skipPermissions && bypassAccepted === false
   return {
     tools,
+    toolsKnown: installed !== null,
     noTool: tools.length === 0,
     usable: { claude, codex },
     askBypass,

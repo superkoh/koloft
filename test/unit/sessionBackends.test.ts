@@ -24,6 +24,7 @@ function stubBackend(
     historyRows: rows,
     create: async () => ({ ok: true as const, id: 'tab', cwd: '/repo' }),
     resume: async () => ({ ok: true as const, id: 'tab', cwd: '/repo' }),
+    forgetAvailability: () => {},
     resumePlan: async () => ({ action: 'unavailable' as const, reason: 'not-found' as const }),
     hasTab: () => false,
     workspaceOfTab: () => undefined,

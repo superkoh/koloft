@@ -47,7 +47,7 @@ import { loadSettings } from '../settings'
 import { keychainRead, listAccounts } from '../accounts'
 import type { PickResponse } from '../accountPicker'
 import { SESSION_ID_RE } from '../claudeArgs'
-import { probeClaude } from '../claudeProbe'
+import { forgetClaudeProbe, probeClaude } from '../claudeProbe'
 import { runningClaudePid } from '../claudeSessionRegistry'
 import { rootsWithClaude } from '../claudeLiveness'
 import {
@@ -145,6 +145,10 @@ export class ClaudeBackend implements SessionBackend {
   async availability(): Promise<BackendAvailability> {
     const { found } = await probeClaude()
     return { id: 'claude', available: found, reason: found ? undefined : 'Not installed' }
+  }
+
+  forgetAvailability(): void {
+    forgetClaudeProbe()
   }
 
   list(): BackendSessionInfo[] {

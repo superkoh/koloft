@@ -1092,6 +1092,11 @@ How established: 2026-10-08 on this Mac, each run in a fresh temporary `HOME` wi
   reads `CODEX_HOME`, falling back to `~/.codex`), so the update must run with the
   user's own `CODEX_HOME`, never an account home (§15). `current` moves to
   `releases/0.161.0-…` and `releases/0.153.4-…` stays.
+- **A fresh standalone install links `~/.local/bin/codex` and adds that folder to PATH
+  in `~/.zprofile`** (a block between `# >>> Codex installer >>>` markers), so `zsh -l -c`
+  and `zsh -l -i -c` both find `codex` right after it. (2026-10-11, 0.162.1, macOS 27:
+  `curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh` under
+  `zsh -l -i` with a fresh temporary `HOME`, `CODEX_HOME` unset.)
 
 ## 23. A bracketed paste lands in the composer unsent
 

@@ -339,6 +339,10 @@ export class CodexSessions {
     )
   }
 
+  forgetAvailability(): void {
+    this.probed = undefined
+  }
+
   private forgetProbe(): void {
     this.probed = undefined
     this.binary = undefined

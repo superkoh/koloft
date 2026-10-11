@@ -43,6 +43,8 @@ import {
   type DiffSection,
   type HunkPrompt
 } from './changesModel'
+import { useCommandLineToolsMissing } from '../useCommandLineTools'
+import { hostOf } from '@shared/remoteKey'
 import '../changesView.css'
 
 export interface ChangesViewProps {
@@ -447,11 +449,21 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
     [split]
   )
 
+  const cltMissing = useCommandLineToolsMissing(
+    load.done && !load.failed && load.notRepo && hostOf(root) === 'local'
+  )
   const banner = load.failed ? (
     <div className="cv-banner cv-banner-err" role="status">
       <span>{MSG.gitFailed}</span>
       <button className="cv-retry" onClick={() => setRetryNonce((n) => n + 1)}>
         Retry
+      </button>
+    </div>
+  ) : cltMissing ? (
+    <div className="cv-banner cv-banner-err" role="status">
+      <span>{MSG.noCommandLineTools}</span>
+      <button className="cv-retry" onClick={() => window.api.sessions.installCommandLineTools()}>
+        Install them
       </button>
     </div>
   ) : load.truncated ? (
@@ -514,7 +526,8 @@ export function ChangesView(props: ChangesViewProps): JSX.Element {
       <div className="cv-stream" ref={streamEl}>
         {banner}
         {shown.length === 0
-          ? !load.failed && (
+          ? !load.failed &&
+            !cltMissing && (
               <div className="fv-empty cv-empty">
                 <p>{emptyMsg}</p>
               </div>
