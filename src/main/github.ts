@@ -1,6 +1,7 @@
 import { execFile as execFileCb } from 'child_process'
 import { promisify } from 'util'
 import type {
+  GhAuthState,
   GithubInfo,
   GithubItem,
   GithubOpenItems,
@@ -35,7 +36,7 @@ const MAX_BUFFER = 16 * 1024 * 1024
 const OPEN_COUNTS_QUERY =
   'query($owner:String!,$name:String!){repository(owner:$owner,name:$name){issues(states:OPEN){totalCount} pullRequests(states:OPEN){totalCount}}}'
 
-export type OpenCounts = Pick<WorkspaceGithub, 'issues' | 'prs'>
+export type OpenCounts = Pick<WorkspaceGithub, 'issues' | 'prs' | 'signedOut'>
 
 export function parseOpenCounts(stdout: string): OpenCounts | null {
   try {
@@ -49,8 +50,8 @@ export function parseOpenCounts(stdout: string): OpenCounts | null {
 }
 
 // PLATFORM§32
-export async function ghOpenCounts(repo: GithubRepo): Promise<OpenCounts | null> {
-  const { ok, out } = await ghRead([
+export async function ghOpenCounts(gh: Gh, repo: GithubRepo): Promise<OpenCounts | null> {
+  const r = await gh([
     'api',
     'graphql',
     '-f',
@@ -60,7 +61,13 @@ export async function ghOpenCounts(repo: GithubRepo): Promise<OpenCounts | null>
     '-f',
     `query=${OPEN_COUNTS_QUERY}`
   ])
-  return ok ? parseOpenCounts(out) : null
+  if (r.code === GH_SIGNED_OUT) return { issues: 0, prs: 0, signedOut: true }
+  return r.code === 0 ? parseOpenCounts(r.stdout) : null
+}
+
+export async function ghAuthState(gh: Gh): Promise<GhAuthState> {
+  const r = await gh(['auth', 'status', '-h', 'github.com'])
+  return r.missing ? 'no-gh' : r.code === 0 ? 'signed-in' : 'signed-out'
 }
 
 const OPEN_ITEMS_LIMIT = 50
@@ -232,6 +239,10 @@ export class GithubLookup {
       this.counted.set(key, known)
     }
     return known.counts && { repo: key, ...known.counts }
+  }
+
+  forgetCounts(): void {
+    this.counted.clear()
   }
 
   async ownerSlashName(root: string): Promise<string | null> {

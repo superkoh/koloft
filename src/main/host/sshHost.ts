@@ -7,6 +7,7 @@ import {
   type EditCreateResult,
   type EditFingerprint,
   type EditWriteResult,
+  type GhAuthState,
   type GitNumstatMap,
   type GitStatusMap,
   type SkillSuggestion
@@ -362,6 +363,10 @@ const ANSWER_AGENT_REQUEST = `d="${REMOTE_HOOK_DIR}"
 [ -f "$d/req-$1.json" ] || exit 0
 cat > "$d/res-$1.json.tmp" && mv -f "$d/res-$1.json.tmp" "$d/res-$1.json" && rm -f "$d/req-$1.json"`
 
+const NO_GH = 127
+const GH_AUTH_STATE = `command -v gh >/dev/null 2>&1 || exit ${NO_GH}
+gh auth status -h github.com >/dev/null 2>&1`
+
 const RESIZE_SETTLE_MS = 200
 
 export class SshHost implements Host {
@@ -453,6 +458,11 @@ export class SshHost implements Host {
 
   private sh(script: string, args: string[], opts?: { timeoutMs?: number; input?: Buffer }) {
     return this.deps.run(remoteShCommand(script, args), opts)
+  }
+
+  async ghAuthState(): Promise<GhAuthState> {
+    const r = await this.sh(GH_AUTH_STATE, [])
+    return r.code === 0 ? 'signed-in' : r.code === NO_GH ? 'no-gh' : 'signed-out'
   }
 
   async listDir(dir: string, opts?: { showIgnored?: boolean }): Promise<DirEntry[]> {

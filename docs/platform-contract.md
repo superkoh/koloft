@@ -1463,3 +1463,53 @@ Gateway (the live connection that pushes events):
   @playwright/cli 0.1.22 (playwright-core 1.64.0-alpha-1790635538000), against a
   headless Chrome's CDP endpoint, outside and inside `codex app-server`'s `command/exec`
   (Codex CLI 0.162.0).
+
+## §43 gh (GitHub CLI): install, sign-in and git credentials
+
+- **Install on a Mac.** gh's own docs list only Homebrew and the release page's zip /
+  `.pkg` for macOS (the `.pkg` "unsigned"); there is no official one-line installer
+  (`webi.sh` is community). The `macOS_arm64.zip` of 2.102.0 is 14.4 MB; its `bin/gh` is
+  39.8 MB, signed "Developer ID Application: GitHub" with the hardened runtime; the repo's
+  licence is MIT. The release's `gh_<v>_checksums.txt` lists a sha256 per asset.
+- **The login lives in the macOS keychain, not in `GH_CONFIG_DIR`.** Under the real
+  `HOME` with an empty `GH_CONFIG_DIR`, `gh auth status` said "not logged into any GitHub
+  hosts" and `gh api user` exited 4, yet `gh auth token` printed the token a Homebrew gh
+  had stored — read by a second gh binary at another path with no keychain prompt. So a gh
+  shipped in an app shares the user's gh login. (§32 has the scratch-`HOME` case.)
+- **`gh auth login --web` without a terminal** asks nothing, prints the one-time code and
+  "Open this URL to continue in your web browser: https://github.com/login/device", opens
+  no browser, and by default copies the code to the clipboard (config `clipboard`
+  defaults to enabled; `--clipboard=false` stops it).
+- **In a terminal**, `gh auth login --web -h github.com -p https` first asks "Authenticate
+  Git with your GitHub credentials? (Y/n)". With `GH_PROMPT_DISABLED=1` in the same
+  terminal it asks nothing and prints only the code and the URL line, and writes no
+  `~/.gitconfig`. In the source (`login.go`, `login_flow.go`) the question is asked only
+  when gh can prompt and the protocol is https; `-p`/`--git-protocol` writes
+  `git_protocol` for the host into gh's config, so leaving it out keeps a user's ssh
+  setting.
+- **What "Yes" does (source, `shared/git_credential.go`, `gitcredentials/*.go`).** gh reads
+  `git config credential.https://github.com.helper`, then `credential.helper`. If either
+  is set — and Apple's git sets `helper = osxkeychain` in
+  `/Library/Developer/CommandLineTools/usr/share/git-core/gitconfig` — gh runs
+  `git credential reject` with only `protocol=https host=github.com`, then `approve` with
+  its own user and token. git's osxkeychain helper (2.54.0 source) deletes every matching
+  item when no username is given. With no helper set, `gh auth setup-git` writes, per
+  host (github.com and gist.github.com), an empty `helper =` (cutting the chain) then
+  `helper = !<quoted absolute gh path> auth git-credential`, appended after any
+  `includeIf`. Run in Docker (git 2.39.5, a `store` helper standing in for the keychain,
+  fake tokens): the reject removed both stored github.com accounts; after `setup-git` an
+  `includeIf`'d folder's own helper no longer answered.
+- **`gh auth git-credential get`** answers only for `protocol=https`, with the active
+  account's token; a request naming another username gets nothing; with `GH_TOKEN` set it
+  answers `x-access-token` and that token whatever the username. `store` and `erase` do
+  nothing. `gh auth token -u <user>` prints a given account's token; `gh auth switch`
+  changes the active account for every caller.
+- **Helpers added through `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_n` / `GIT_CONFIG_VALUE_n`**
+  come after every config file (`git config --show-scope` lists them as `command`), so an
+  appended helper is asked last; git stops at the first helper that gives a username and
+  password. After a successful push git hands the credential to every helper in the
+  chain (`credential.c`), so an earlier keychain helper stores what a later one supplied.
+  SSH remotes never consult a credential helper.
+- Measured 2026-10-11 with gh 2.102.0 (macOS arm64 and Linux arm64 builds), git 2.39.5 in
+  Docker (node:22) with fake tokens and `store` helpers, and Apple git 2.54.0 read from
+  source; the keychain itself was not exercised.

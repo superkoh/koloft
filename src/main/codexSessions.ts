@@ -927,6 +927,8 @@ export class CodexSessions {
       path.join(this.deps.playwrightBin, 'playwright-cli'),
       path.join(shim.shimDir, 'playwright-cli')
     )
+    const gh = path.join(this.deps.playwrightBin, 'gh')
+    if (fs.existsSync(gh)) fs.symlinkSync(gh, path.join(shim.shimDir, 'gh'))
     if (agent) writeCodexAgentShim(shim.shimDir, shim.requestDir)
     const handled = new Set<string>()
     const drops = watchJsonDrops(shim.requestDir, (name) => {

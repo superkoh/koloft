@@ -107,6 +107,13 @@ import {
 } from './statusline'
 import { setupPlaywrightCli } from './playwrightCli'
 import {
+  GH_SIGN_IN_LINE,
+  gitCredentialEnv,
+  pathWithDirLast,
+  remoteGhSignInLine,
+  setupBundledGh
+} from './bundledGh'
+import {
   setFindAvailable,
   setKeepAwakeChecked,
   setSaveAvailable,
@@ -168,6 +175,7 @@ import { GitFreshnessEngine } from './gitFreshness'
 import {
   GithubLookup,
   ghOpenCounts,
+  ghAuthState,
   ghRead,
   parseGithubFixture,
   type GithubOptions
@@ -1441,6 +1449,7 @@ function homeShellTab(launchCommand: string): { tabId: string; cwd: string } {
 }
 
 const toolInstallPtys = new Set<string>()
+const ghSignInPtys = new Set<string>()
 
 function installTool(backend: BackendId): { tabId: string; cwd: string } {
   const tab = homeShellTab(installLine(backend, process.env.KOLOFT_TEST_TOOL_INSTALLER))
@@ -1687,6 +1696,10 @@ app.whenReady().then(() => {
   const statusline = setupStatusline()
   const playwrightBin = setupPlaywrightCli()
   playwrightCliBin = playwrightBin
+  const ghCredentialHelper = setupBundledGh(playwrightBin)
+  process.env.PATH = pathWithDirLast(process.env.PATH, playwrightBin)
+  if (ghCredentialHelper)
+    Object.assign(process.env, gitCredentialEnv(process.env, ghCredentialHelper))
   ptyMgr.makeHookSettings = (tabId, allowKoloft, conductor) =>
     writeTabHookSettings(
       hookPaths,
@@ -1761,6 +1774,11 @@ app.whenReady().then(() => {
     if (toolInstallPtys.delete(e.id)) {
       sessionBackends.forgetAvailability()
       sendToRenderer('sessions:toolsChanged')
+    }
+    if (ghSignInPtys.delete(e.id)) {
+      for (const host of hosts.all()) host.github.forgetCounts()
+      void githubCounts?.sweep()
+      sendToRenderer('github:auth-changed')
     }
     const codexAccount = codexSignInPtys.get(e.id)
     if (codexAccount) {
@@ -3537,7 +3555,7 @@ const BAD_GIT_STEP: { ok: false; reason: string } = { ok: false, reason: 'bad re
 const githubOptions: GithubOptions = {
   fixture: parseGithubFixture(process.env.KOLOFT_GITHUB_FIXTURE),
   // PLATFORM§1
-  openCounts: (repo) => loginEnvReady().then(() => ghOpenCounts(repo)),
+  openCounts: (repo) => loginEnvReady().then(() => ghOpenCounts(runGh, repo)),
   gh: (args) => loginEnvReady().then(() => runGh(args)),
   signedIn: async () => {
     try {
@@ -4368,6 +4386,22 @@ function registerIpc(): void {
     if (typeof root !== 'string' || !root) return BAD_GIT_STEP
     const host = hosts.of(root)
     return pushBranch((args, network) => host.gitRun(root, args, network))
+  })
+  ipcMain.handle('github:auth-state', (_e, machine: unknown) =>
+    loginEnvReady().then(() =>
+      typeof machine === 'string' && machine
+        ? hosts.machine(machine).ghAuthState()
+        : ghAuthState(runGh)
+    )
+  )
+  ipcMain.handle('github:sign-in', (_e, machine: unknown) => {
+    const tab = homeShellTab(
+      typeof machine === 'string' && machine
+        ? remoteGhSignInLine(machine, sshOptions(remoteControlDir, false))
+        : GH_SIGN_IN_LINE
+    )
+    ghSignInPtys.add(tab.tabId)
+    return tab
   })
   ipcMain.handle('github:open-items', (_e, root: unknown) => {
     if (typeof root !== 'string' || !root) return { state: 'no-repo' }

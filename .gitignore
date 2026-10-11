@@ -8,6 +8,8 @@ release/
 release-beta/
 .vite/
 build/icon-1024.png
+# gh (GitHub CLI) shipped in the app; scripts/fetch-gh.cjs downloads it
+vendor/
 
 # TypeScript
 *.tsbuildinfo

@@ -39,6 +39,10 @@ export class Hosts<Machine extends Host> {
     return key ? this.machine(key.host) : this.local
   }
 
+  all(): Host[] {
+    return [this.local, ...this.machines.values()]
+  }
+
   machine(name: string): Machine {
     let host = this.machines.get(name)
     if (!host) this.machines.set(name, (host = this.makeSsh(name)))

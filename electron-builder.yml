@@ -23,6 +23,14 @@ electronLanguages:
   - en
   - zh_CN
 
+# Downloads the pinned gh (GitHub CLI) release into vendor/gh, checksum-checked, so a
+# new Mac has gh without installing it (scripts/gh-release.json holds the version).
+beforePack: scripts/fetch-gh.cjs
+
+extraResources:
+  - from: vendor/gh
+    to: gh
+
 # Runs after the app is assembled and before it is signed, so the signature covers the
 # stripped native binaries.
 afterPack: scripts/strip-native-build-paths.cjs

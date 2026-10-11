@@ -2,6 +2,7 @@ import { shq } from '@shared/shellQuote'
 import { parseWorktreeEntries, type WorktreeEntry } from '../workspaceOps'
 import { remotePtsFile } from './paths'
 import { ENSURE_CLAUDE_MINIMUM_FN } from '../cliMinimums'
+import GH_RELEASE from '../../../scripts/gh-release.json'
 
 export const NODE_VERSION = '22.12.0'
 
@@ -136,6 +137,31 @@ if ! node_ok && [ ! -f "$no_build_runs" ]; then
     rm -rf "$HOME/.koloft/node" "$HOME/.koloft/node.tmp.$$"; : > "$no_build_runs"
     say "node $NODE_VERSION does not run on this machine (its C library is too old): this machine gets no statusline"
   fi
+fi
+
+GH_VERSION=${GH_RELEASE.version}
+gh_platform() {
+  case "$(uname -s)" in Linux) gh_os=linux; gh_ext=tar.gz ;; Darwin) gh_os=macOS; gh_ext=zip ;; *) return 1 ;; esac
+  case "$(uname -m)" in x86_64|amd64) gh_arch=amd64 ;; aarch64|arm64) gh_arch=arm64 ;; *) return 1 ;; esac
+}
+install_gh() {
+  name="gh_\${GH_VERSION}_\${gh_os}_\${gh_arch}"
+  base="https://github.com/cli/cli/releases/download/v$GH_VERSION"
+  tmp="$HOME/.koloft/gh.tmp.$$"
+  rm -rf "$tmp" && mkdir -p "$tmp" || return 1
+  fetch "$base/$name.$gh_ext" "$tmp/$name.$gh_ext" || return 1
+  fetch "$base/gh_\${GH_VERSION}_checksums.txt" "$tmp/sums.txt" || return 1
+  grep "  $name.$gh_ext\$" "$tmp/sums.txt" > "$tmp/sum.txt" || return 1
+  ( cd "$tmp" && if have sha256sum; then sha256sum -c sum.txt; else shasum -a 256 -c sum.txt; fi ) >/dev/null 2>&1 \\
+    || { say "the gh download failed its checksum"; return 1; }
+  if [ "$gh_ext" = zip ]; then unzip -q "$tmp/$name.zip" -d "$tmp" || return 1
+  else tar xzf "$tmp/$name.tar.gz" -C "$tmp" || return 1; fi
+  mkdir -p "$HOME/.local/bin" && mv "$tmp/$name/bin/gh" "$HOME/.local/bin/gh" || return 1
+  rm -rf "$tmp"
+}
+if ! have gh; then
+  say "installing gh $GH_VERSION, the GitHub CLI (about 40 MB, once)"
+  gh_platform && install_gh || { rm -rf "$HOME/.koloft/gh.tmp.$$"; say "gh could not be installed: sessions on this machine have no gh"; }
 fi
 
 have tmux || install_pkg tmux || exit 4

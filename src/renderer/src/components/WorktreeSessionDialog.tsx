@@ -50,6 +50,7 @@ import { shortenHome } from '../browseModel'
 import { pullToast } from '../freshnessView'
 import { isComposing } from '../keys'
 import { useStore } from '../store'
+import { useGhSignIn } from '../ghSignIn'
 import { PullConfirm } from './PullConfirm'
 import {
   SessionLaunchButtons,
@@ -87,6 +88,7 @@ export function WorktreeSessionDialog({
   const showToast = useStore((s) => s.showToast)
   const gitAutoFetch = useStore((s) => s.settings.gitAutoFetch)
   const sessionLaunch = useSessionLaunch(hostOf(wsPath), onStart, onClose)
+  const ghSignIn = useGhSignIn()
   const confirmBackend = useRef<BackendId>(sessionLaunch.methods.defaultBackend)
 
   useEffect(() => {
@@ -434,7 +436,17 @@ export function WorktreeSessionDialog({
             </>
           ) : items.state === 'signed-out' ? (
             <>
-              No issue or PR list — run <code>gh auth login</code> on this Mac.
+              No issue or PR list yet —{' '}
+              <button
+                className="ob-link"
+                onClick={() => {
+                  onClose()
+                  void ghSignIn()
+                }}
+              >
+                Sign in to GitHub
+              </button>{' '}
+              to pick one.
             </>
           ) : (
             'Could not load issues and pull requests from GitHub.'

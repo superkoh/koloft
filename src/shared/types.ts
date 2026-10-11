@@ -987,6 +987,9 @@ export interface KoloftApi {
     push(root: string): Promise<GitStepResult>
     openItems(root: string): Promise<GithubOpenItems>
     prWorktree(root: string, pr: number, branch: string): Promise<PrWorktreeResult>
+    authState(machine?: string): Promise<GhAuthState>
+    signIn(machine?: string): Promise<{ tabId: string; cwd: string }>
+    onAuthChanged(cb: () => void): () => void
   }
   workspace: {
     pickFolder(): Promise<string | null>
@@ -1347,10 +1350,13 @@ export interface WorkspaceRows {
   rows: SessionRow[]
 }
 
+export type GhAuthState = 'signed-in' | 'signed-out' | 'no-gh'
+
 export interface WorkspaceGithub {
   repo: string
   issues: number
   prs: number
+  signedOut?: true
 }
 
 export interface WorktreeInfo {

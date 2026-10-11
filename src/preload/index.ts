@@ -387,7 +387,14 @@ const api: KoloftApi = {
     commit: (root, message) => ipcRenderer.invoke('github:commit', root, message),
     push: (root) => ipcRenderer.invoke('github:push', root),
     openItems: (root) => ipcRenderer.invoke('github:open-items', root),
-    prWorktree: (root, pr, branch) => ipcRenderer.invoke('github:pr-worktree', root, pr, branch)
+    prWorktree: (root, pr, branch) => ipcRenderer.invoke('github:pr-worktree', root, pr, branch),
+    authState: (machine) => ipcRenderer.invoke('github:auth-state', machine),
+    signIn: (machine) => ipcRenderer.invoke('github:sign-in', machine),
+    onAuthChanged: (cb) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('github:auth-changed', handler)
+      return () => ipcRenderer.removeListener('github:auth-changed', handler)
+    }
   },
   workspace: {
     pickFolder: () => ipcRenderer.invoke('workspace:pickFolder'),

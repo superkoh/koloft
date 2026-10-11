@@ -1,7 +1,8 @@
 import { useEffect, useState, type JSX } from 'react'
-import { LuDownload, LuRefreshCw } from 'react-icons/lu'
+import { LuDownload, LuLogIn, LuRefreshCw } from 'react-icons/lu'
 import type { SessionRow, WorkspaceFreshness, WorkspaceGithub } from '@shared/types'
 import { canPull } from '@shared/freshnessOps'
+import { parseRemoteKey } from '@shared/remoteKey'
 import { useStore } from '../store'
 import {
   headAge,
@@ -12,7 +13,38 @@ import {
   type PullNote
 } from '../freshnessView'
 import { mainRunningCount } from '../newSession'
+import { useGhAuthState, useGhSignIn } from '../ghSignIn'
 import { PullConfirm } from './PullConfirm'
+
+function MachineGhSignIn({
+  machine,
+  onClose
+}: {
+  machine: string
+  onClose: () => void
+}): JSX.Element | null {
+  const auth = useGhAuthState(machine)
+  const signIn = useGhSignIn(machine)
+  if (auth !== 'signed-out') return null
+  return (
+    <>
+      <div className="tbu-sep" />
+      <div className="tbu-pop-head">
+        <span>gh on {machine} · not signed in</span>
+      </div>
+      <button
+        className="tbu-act"
+        onClick={() => {
+          onClose()
+          void signIn()
+        }}
+      >
+        <LuLogIn size={14} />
+        Sign in to GitHub on {machine}
+      </button>
+    </>
+  )
+}
 
 export function FreshnessPopover({
   wsPath,
@@ -38,6 +70,8 @@ export function FreshnessPopover({
   onMouseLeave: () => void
 }): JSX.Element {
   const showToast = useStore((s) => s.showToast)
+  const ghSignIn = useGhSignIn()
+  const machine = parseRemoteKey(wsPath)?.host
   const [fetching, setFetching] = useState(false)
   const [pulling, setPulling] = useState(false)
   const [failed, setFailed] = useState<string | null>(null)
@@ -165,12 +199,26 @@ export function FreshnessPopover({
               <div className="tbu-pop-head">
                 <span>GitHub · {github.repo}</span>
               </div>
-              <div className="tbu-row">
-                <div className="fx-counts">
-                  <span>{openIssuesLabel(github.issues)}</span>
-                  <span>{openPullsLabel(github.prs)}</span>
+              {github.signedOut ? (
+                <button
+                  className="tbu-act"
+                  onClick={() => {
+                    onClose()
+                    void ghSignIn()
+                  }}
+                >
+                  <LuLogIn size={14} />
+                  Sign in to GitHub to see counts
+                </button>
+              ) : (
+                <div className="tbu-row">
+                  <div className="fx-counts">
+                    <span>{openIssuesLabel(github.issues)}</span>
+                    <span>{openPullsLabel(github.prs)}</span>
+                  </div>
                 </div>
-              </div>
+              )}
+              {machine && <MachineGhSignIn machine={machine} onClose={onClose} />}
             </>
           )}
         </div>

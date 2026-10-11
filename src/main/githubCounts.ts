@@ -10,7 +10,12 @@ export interface GithubCountsDeps {
 }
 
 function same(a: WorkspaceGithub | undefined, b: WorkspaceGithub | undefined): boolean {
-  return a?.repo === b?.repo && a?.issues === b?.issues && a?.prs === b?.prs
+  return (
+    a?.repo === b?.repo &&
+    a?.issues === b?.issues &&
+    a?.prs === b?.prs &&
+    a?.signedOut === b?.signedOut
+  )
 }
 
 export class GithubCountsSweep {
