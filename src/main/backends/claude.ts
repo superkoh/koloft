@@ -40,6 +40,7 @@ import {
   hookSettings,
   KOLOFT_ALLOW_RULE,
   removeConductorMarker,
+  writeAllowFile,
   writeConductorMarker
 } from '../hooks'
 import type { StatusLineSetting } from '../statusline'
@@ -92,7 +93,7 @@ export interface ClaudeBackendDeps {
   resumeProbes: ResumeProbes
   events(tabId: string, event: SessionEvent): void
   error(message: string): void
-  assistOf(cwd: string, resumeKey?: string): { role: string } | undefined
+  assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
 }
 
 // PLATFORM§28
@@ -769,6 +770,7 @@ export class ClaudeBackend implements SessionBackend {
       cols: opts.cols,
       rows: opts.rows,
       role: opts.role,
+      allow: opts.allow,
       conductor: opts.conductor,
       trustFolder: opts.trustFolder
     })
@@ -889,6 +891,7 @@ export class ClaudeBackend implements SessionBackend {
       cols?: number
       rows?: number
       role?: string
+      allow?: string[]
       conductor?: boolean
       trustFolder?: boolean
     }
@@ -932,6 +935,8 @@ export class ClaudeBackend implements SessionBackend {
         : plan.extraEnv
     })
     if (role && !machine) writeConductorMarker(this.hookRegDir, handle.id, role)
+    if (conductor && !machine)
+      writeAllowFile(this.hookRegDir, handle.id, spec.allow ?? assist?.allow ?? [])
     if (spec.permission === 'bypass') this.launchedBypassing.add(handle.id)
     if (machine) {
       tracker.track(handle.id, machine.cwd, machine.tracking)
