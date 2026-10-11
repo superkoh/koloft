@@ -1458,7 +1458,8 @@ export function WorkbenchPane({
         useStore.getState().showToast('All tabs have unsaved changes')
         return
       }
-      if (r.openedNew) setVisited((prev) => (prev.includes(r.tabId) ? prev : [...prev, r.tabId]))
+      if (r.tabId !== tabId)
+        setVisited((prev) => (prev.includes(r.tabId) ? prev : [...prev, r.tabId]))
     },
     [ownerTab, onUpdate]
   )
