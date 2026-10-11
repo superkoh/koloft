@@ -183,6 +183,12 @@
             Notifications and the number goes, but the dots stay.
           </li>
           <li>A folded folder shows how many of its sessions are calling.</li>
+          <li>
+            <kbd>⌘J</kbd> (View ▸ Next Waiting Session) takes you to the session with the oldest red
+            dot, in any folder, and clears it. Press it again for the next one. When no dot is left,
+            it does nothing. It wakes a sleeping session the way a click does. A closed row with a
+            dot it skips; a click still resumes that one.
+          </li>
         </ul>
 
         <h2 id="keep-running">Keep running</h2>
@@ -277,8 +283,12 @@
             did, Claude asks you: keep it or remove it.
           </li>
           <li>
-            A Codex worktree stays until you remove it yourself, or until the session is closed with
-            <code>koloft session close</code> (see <a href="../agents/">agents</a>).
+            A Codex worktree goes, folder and branch, when the last session in it ends and nothing
+            in it changed. A restart (<kbd>⇧⌘R</kbd>) or a sleep is not an end. If something did
+            change, it stays until you remove it yourself, or until the session is closed with
+            <code>koloft session close</code> (see <a href="../agents/">agents</a>). The row of a
+            removed one reads <code>worktree deleted; click to rebuild and resume</code>, and a
+            click makes the worktree again and resumes the same thread in it.
           </li>
           <li>
             In a folder on github.com, with <code>gh</code> (GitHub's command-line tool) signed in,

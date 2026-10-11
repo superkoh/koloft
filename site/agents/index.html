@@ -6,7 +6,7 @@
     <title>Agents can use Koloft too — Koloft</title>
     <meta
       name="description"
-      content="In Koloft the agent gets a koloft command to show you files, add to the note, run jobs and start sessions. A Claude session can drive Koloft's web tabs."
+      content="In Koloft the agent gets a koloft command to show you files, add to the note, run jobs and start sessions. A Claude or Codex session can drive Koloft's web tabs."
     />
     <meta name="theme-color" content="#f6f1e6" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#1c1a17" media="(prefers-color-scheme: dark)" />
@@ -19,7 +19,7 @@
     <meta property="og:title" content="Agents can use Koloft too — Koloft" />
     <meta
       property="og:description"
-      content="In Koloft the agent gets a koloft command to show you files, add to the note, run jobs and start sessions. A Claude session can drive Koloft's web tabs."
+      content="In Koloft the agent gets a koloft command to show you files, add to the note, run jobs and start sessions. A Claude or Codex session can drive Koloft's web tabs."
     />
     <meta property="og:url" content="__SITE_URL__/agents/" />
     <meta property="og:image" content="__SITE_URL__/og.png" />
@@ -33,7 +33,7 @@
     <meta name="twitter:title" content="Agents can use Koloft too — Koloft" />
     <meta
       name="twitter:description"
-      content="In Koloft the agent gets a koloft command to show you files, add to the note, run jobs and start sessions. A Claude session can drive Koloft's web tabs."
+      content="In Koloft the agent gets a koloft command to show you files, add to the note, run jobs and start sessions. A Claude or Codex session can drive Koloft's web tabs."
     />
     <meta name="twitter:image" content="__SITE_URL__/og.png" />
     <link
@@ -77,11 +77,11 @@
 
         <h2>The koloft command</h2>
         <p>
-          Every session Koloft starts on this Mac, Claude or Codex, gets a <code>koloft</code>
-          command. It is on by default. The switch is Settings ▸ Extensions ▸ "Let agents use
-          Koloft". Turning it on reaches sessions you start after that. Turning it off stops the
-          command in every session at once. When an agent changes a scheduled job, a small message
-          pops up to tell you.
+          Every session Koloft starts gets a <code>koloft</code> command: Claude or Codex on this
+          Mac, and Claude on a <a href="../remote/">remote folder</a>'s machine. It is on by
+          default. The switch is Settings ▸ Extensions ▸ "Let agents use Koloft". Turning it on
+          reaches sessions you start after that. Turning it off stops the command in every session
+          at once. When an agent changes a scheduled job, a small message pops up to tell you.
         </p>
         <p>With it, the agent can:</p>
 
@@ -153,8 +153,9 @@
           started in a remote folder this way.
         </p>
         <p>
-          Each command prints its answer, so the agent sees what happened. The agent runs
-          <code>koloft help</code> for the rest.
+          Each command prints its answer, so the agent sees what happened. On a remote folder's
+          machine the answer comes from Koloft on your Mac, so it takes a moment longer. The agent
+          runs <code>koloft help</code> for the rest.
         </p>
         <p>
           A conductor, the session you talk to from Discord, gets a few more: it can answer a
@@ -212,6 +213,15 @@
         <p class="command">
           <code id="cmd-cdp">chromium.connectOverCDP(process.env.KOLOFT_BROWSER_CDP)</code>
           <button type="button" class="copy" data-copy="cmd-cdp">Copy</button>
+        </p>
+        <p>
+          A Codex session on this Mac gets the same, through the Playwright MCP server in your Codex
+          settings (an MCP server is a box of tools an agent can call). If your Codex config has an
+          <code>@playwright/mcp</code> entry, Koloft hands it this session's address, so its browser
+          tools open tabs in Koloft and not a browser of their own. On its usual permissions, Codex
+          itself asks you once per thread whether to allow the tool. Only those tools reach the web
+          tabs: a command Codex runs in its sandbox, such as the Playwright CLI or your own script,
+          cannot.
         </p>
 
         <h3>What to expect</h3>
@@ -278,12 +288,15 @@
         <h2>Not there yet</h2>
         <ul class="dash">
           <li>
-            <s class="struck">the browser in Codex</s>
-            <span class="why">(a Codex session has the koloft command, but not the web tabs)</span>
+            <s class="struck">the Playwright CLI or your own script in Codex</s>
+            <span class="why">(only Codex's Playwright MCP tools reach the web tabs)</span>
           </li>
           <li>
-            <s class="struck">either one in remote folders</s>
-            <span class="why">(a session on another machine has neither, yet)</span>
+            <s class="struck">the browser in remote folders</s>
+            <span class="why"
+              >(a session on another machine has the koloft command, but not the web tabs,
+              yet)</span
+            >
           </li>
         </ul>
 

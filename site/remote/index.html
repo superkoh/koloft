@@ -171,6 +171,18 @@ your Mac                     the other machine
             machine: soon at first, then less and less often, down to once a minute.
           </li>
           <li>
+            If you close a session's tab while Koloft cannot reach the machine, it says so:
+            <code
+              >Could not stop “…” on &lt;machine&gt;: &lt;why&gt;. It is still running there.</code
+            >
+            The row stays lit, and a click joins that session again.
+          </li>
+          <li>
+            The agent gets the <code>koloft</code> command there too (see
+            <a href="../agents/">Agents can use Koloft too</a>). Its answers come from Koloft on
+            your Mac, so each takes a moment longer than on this Mac.
+          </li>
+          <li>
             The first session on a machine takes a few seconds longer: <code>claude</code> fetches
             its own settings once.
           </li>
@@ -198,6 +210,9 @@ your Mac                     the other machine
           <li>
             <code>bash</code>, <code>tmux</code> and <code>rsync</code> come from the machine's own
             package manager, which may ask for its sudo password (the admin password)
+          </li>
+          <li>
+            a small <code>koloft</code> script, and the guide that tells the agent how to use it
           </li>
           <li>
             Node, only for the status line; if that fails, the session still runs, just without a
@@ -233,7 +248,6 @@ your Mac                     the other machine
             The agent cannot drive your web tabs. See
             <a href="../agents/">Agents can use Koloft too</a>.
           </li>
-          <li>The agent does not get the <code>koloft</code> command.</li>
           <li>No Codex yet. A remote folder runs Claude Code only.</li>
           <li>
             A session row's menu offers Copy path (<code>machine:/path</code>) instead of Reveal in
