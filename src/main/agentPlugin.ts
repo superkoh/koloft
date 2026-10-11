@@ -1,11 +1,11 @@
 import fs from 'fs'
 import path from 'path'
-import { agentGuide, AGENT_SKILL_DESCRIPTION, koloftPrompt } from '@shared/agentGuide'
+import { AGENT_GUIDE, AGENT_SKILL_DESCRIPTION, koloftPrompt } from '@shared/agentGuide'
 
 export const AGENT_PROMPT_FILE = 'koloft-prompt.md'
 
 function agentSkillMarkdown(): string {
-  return `---\nname: koloft\ndescription: ${JSON.stringify(AGENT_SKILL_DESCRIPTION)}\n---\n\n${agentGuide('claude')}\n`
+  return `---\nname: koloft\ndescription: ${JSON.stringify(AGENT_SKILL_DESCRIPTION)}\n---\n\n${AGENT_GUIDE}\n`
 }
 
 // CC§13

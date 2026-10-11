@@ -3,27 +3,26 @@ import { GH_ISSUE_CREATE_TEXT, GH_READ_FLAGS, GH_READS_TEXT } from './githubComm
 import { parseRemoteKey, remoteCopyText } from './remoteKey'
 import type { BackendId } from './types'
 
-const OWN_WORKTREE_RULE = `1. The work needs a git worktree or branch of its own (a parallel change, an experiment, a fix that lands as its own pull request): start a Koloft session in its own worktree with koloft session new -w <short-name> -- "<task>". Do this instead of running git worktree add`
+const OWN_WORKTREE_RULE =
+  'The work needs a git worktree or branch of its own (a parallel change, an experiment, a fix that lands as its own pull request): start a Koloft session in its own worktree with koloft session new -w <short-name> -- "<task>". Do this instead of running git worktree add'
 
 const SHARED_CHECKOUT_RULE =
   'If this session does not run in a worktree of its own, never create or switch branches here: other sessions share this checkout.'
 
-const WATCHED_SESSION_RULE = `2. The owner should be able to watch the work, take it over or answer its questions, or it must go on after this session ends: start a Koloft session with koloft session new -- "<task>".`
-
-const HELPER_RULES: Record<BackendId, string> = {
-  claude: `When you hand work to a helper, take the first rule that fits:
-
-${OWN_WORKTREE_RULE}, and instead of giving a subagent or a workflow agent a worktree of its own. ${SHARED_CHECKOUT_RULE}
-${WATCHED_SESSION_RULE}
-3. Dozens of similar small jobs, like checking 40 files the same way: do not start a workflow yourself. Suggest one to the owner, say about how many agents it would run, and start it only when the owner asks for it.
-4. A side job that finishes on its own and only hands you back an answer, like searching or reading many files: a subagent. Use Explore to search and read, or a fork when it needs what this conversation already knows.
-5. Anything else: do it yourself, in this session.`,
-  codex: `When you hand work to a helper, take the first rule that fits:
-
-${OWN_WORKTREE_RULE}. ${SHARED_CHECKOUT_RULE}
-${WATCHED_SESSION_RULE}
-3. A side job that only hands you back an answer, like searching, reading or checking: never a Koloft session. Use a sub-agent (spawn_agent) when the owner asked for sub-agents or for work in the background; otherwise do it yourself. Your sub-agents share this folder, so never let two of them change files at the same time; use rule 1 for that.
-4. Anything else: do it yourself, in this session.`
+const HELPER_RULES: Record<BackendId, string[]> = {
+  claude: [
+    `${OWN_WORKTREE_RULE}, and instead of giving a subagent or a workflow agent a worktree of its own. ${SHARED_CHECKOUT_RULE}`,
+    'The owner should be able to watch the work, take it over or answer its questions, or it must go on after this session ends: start a Koloft session with koloft session new -- "<task>".',
+    'Dozens of similar small jobs, like checking 40 files the same way: do not start a workflow yourself. Suggest one to the owner, say about how many agents it would run, and start it only when the owner asks for it.',
+    'A side job that finishes on its own and only hands you back an answer, like searching or reading many files: a subagent. Use Explore to search and read, or a fork when it needs what this conversation already knows.',
+    'Anything else: do it yourself, in this session.'
+  ],
+  codex: [
+    `${OWN_WORKTREE_RULE}. ${SHARED_CHECKOUT_RULE}`,
+    'The owner should be able to watch the work, take it over or answer its questions, or it must go on after this session ends: start a Koloft session with koloft session new -- "<task>".',
+    'A side job that only hands you back an answer, like searching, reading or checking: never a Koloft session. Use a sub-agent (spawn_agent) when the owner asked for sub-agents or for work in the background; otherwise do it yourself. Your sub-agents share this folder, so never let two of them change files at the same time; use rule 1 for that.',
+    'Anything else: do it yourself, in this session.'
+  ]
 }
 
 export function koloftPrompt(backend: BackendId): string {
@@ -31,15 +30,12 @@ export function koloftPrompt(backend: BackendId): string {
 
 HELPERS
 
-${HELPER_RULES[backend]}`
+When you hand work to a helper, take the first rule that fits:
+
+${HELPER_RULES[backend].map((rule, i) => `${i + 1}. ${rule}`).join('\n')}`
 }
 
-export function agentGuide(backend: BackendId): string {
-  return `koloft lets you ask Koloft, the app this session runs in, to do things for its owner (the person you work for). Run it in your shell. Each command prints its answer; exit code 0 means it worked.
-
-HELPERS
-
-${HELPER_RULES[backend]}
+export const AGENT_GUIDE = `koloft lets you ask Koloft, the app this session runs in, to do things for its owner (the person you work for). Run it in your shell. Each command prints its answer; exit code 0 means it worked.
 
 RULES
 
@@ -194,7 +190,6 @@ koloft gh ${GH_ISSUE_CREATE_TEXT}
 WEB PAGES
 
 To use the web pages in this session's Workbench, drive them with Playwright (a tool that controls a browser): the playwright-cli command or the Playwright MCP tools. When the owner allows it, they already connect to the Workbench browser; its address is in $KOLOFT_BROWSER_CDP. In a Codex session only the Playwright MCP tools connect: a command in Codex's sandbox cannot reach the browser.`
-}
 
 export const AGENT_SKILL_DESCRIPTION =
   'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the workspace note, list, add, change or run scheduled tasks, list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, or close this session and its worktree for good. Read this before running any koloft command.'

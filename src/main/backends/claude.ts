@@ -918,9 +918,9 @@ export class ClaudeBackend implements SessionBackend {
         ? {
             ...plan.extraEnv,
             KOLOFT_AGENT_PLUGIN: agentPlugin,
-            ...(!spec.conductor && {
-              KOLOFT_AGENT_PROMPT: path.join(agentPlugin, AGENT_PROMPT_FILE)
-            })
+            KOLOFT_AGENT_PROMPT: spec.conductor
+              ? undefined
+              : path.join(agentPlugin, AGENT_PROMPT_FILE)
           }
         : plan.extraEnv
     })
