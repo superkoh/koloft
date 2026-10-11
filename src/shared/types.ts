@@ -525,9 +525,15 @@ export interface BackendSessionInfo {
   updatedAt: number
 }
 
+export interface DocVerdict {
+  show: boolean
+  at: number
+}
+
 export interface SessionInfo extends BackendSessionInfo, SessionSource {
   conductor?: string
   turnOver?: boolean
+  docVerdicts?: Record<string, DocVerdict>
 }
 
 export interface ClaudeSessionInfo extends BackendSessionInfo {
@@ -1052,6 +1058,7 @@ export interface KoloftApi {
   shortcuts: {
     onNewTerminalTab(cb: () => void): () => void
     onFocusNotes(cb: () => void): () => void
+    onNextWaitingSession(cb: () => void): () => void
     onToggleSidebar(cb: () => void): () => void
     onNewSession(cb: () => void): () => void
     onNewWorktreeSession(cb: () => void): () => void

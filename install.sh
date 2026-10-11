@@ -1,14 +1,10 @@
 #!/usr/bin/env bash
-# One-line installer for Koloft (macOS arm64, unsigned build):
+# One-line installer for Koloft (macOS arm64):
 #
 #   curl -fsSL https://raw.githubusercontent.com/superkoh/koloft-releases/main/install.sh | bash
 #
-# Why this exists: Koloft's .dmg is unsigned and un-notarized, so a *browser*
-# download gets the com.apple.quarantine attribute and Gatekeeper refuses to
-# launch it ("damaged" / "unidentified developer"). Files fetched with curl
-# carry no quarantine, so downloading the dmg here and copying the app out
-# yields an /Applications/Koloft.app that opens with a normal double-click, with
-# no paid Apple Developer ID and no Gatekeeper prompt.
+# It downloads the latest dmg and copies Koloft.app into /Applications, replacing an
+# older copy.
 #
 # Kept strictly ASCII on purpose: this runs under whatever locale the user has,
 # and a multibyte char (e.g. an ellipsis) next to an unbraced $var can get

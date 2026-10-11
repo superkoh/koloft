@@ -132,6 +132,12 @@ method. A recheck adds its date, version and command to the bullet.
 - **A copy of a signed system binary saved under another name is SIGKILLed** when run.
 - **A file downloaded by Node has no `com.apple.quarantine` flag**, so an app installed
   from it opens without Gatekeeper.
+- **`hdiutil makehybrid -hfs` gives files a `com.apple.FinderInfo` attribute**, and
+  `codesign --verify --strict` rejects a signed app holding one ("Disallowed xattr").
+  `hdiutil create -srcfolder` (HFS+ or APFS) adds none. A `cp -R` out of the mounted
+  dmg keeps whatever the dmg holds, and Gatekeeper (`spctl --assess`) still accepted the
+  makehybrid copy. Measured 2026-10-08, macOS 27.0, on a notarized Developer ID app
+  (Tailscale.app): 199 files tagged by makehybrid, 0 by `create`.
 - **A launch in roughly the first half-minute after wake fails**: the network, the
   Keychain and file watches all need a moment to come back.
 - **A unix socket path is capped at 104 bytes** (`sun_path`). `os.tmpdir()`
@@ -454,8 +460,43 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   falls back to the checkbox, which then never passes. Measured 2026-09-29 on Electron
   43.7.3 with a plain Electron script, no automation: session UA only → checkbox;
   plus `webContents.setUserAgent` → checkbox; plus `app.userAgentFallback` → token in
-  1.5 s, twice each. The iframe's `userAgentData.brands` still lacks "Google Chrome"
-  (the guest preload does not run in subframes) and Turnstile passed anyway.
+  1.5 s, twice each. Turnstile passed even though the iframe's brands lacked "Google
+  Chrome"; hCaptcha (below) did not.
+- **A session `frame` preload runs only in the top frame unless the guest has
+  `nodeIntegrationInSubFrames: true`**; with it, it also runs in cross-site iframes, still
+  sandboxed and context-isolated. Measured 2026-10-11, Electron 43.7.3 / Chromium
+  150.0.7871.250, on accounts.hcaptcha.com/demo: with the flag off, the hCaptcha iframes
+  (newassets.hcaptcha.com) saw `brands` without "Google Chrome" and an empty
+  `window.chrome`, while their own requests carried the session's injected
+  `Sec-CH-UA: … "Google Chrome"` — a header/JS contradiction; with it on, both iframes
+  showed the Chrome brand and `loadTimes`/`csi`/`app`, the iframes' own window property
+  names were identical to flag-off, and `require`/`process`/`Buffer`/`electron` stayed
+  undefined. Before the fix, Discord's developer portal kept refusing its hCaptcha in the
+  guest (owner report); after it, the captcha passed by hand.
+- **Real Chrome's built-ins read as native**: `Function.prototype.toString` of `alert`,
+  `confirm`, `prompt` gives `function alert() { [native code] }` (name = the key,
+  length 0, no `prototype`); `getHighEntropyValues` length 1; the `brands` and
+  `webdriver` getters `function get brands() { [native code] }` (name `get brands`);
+  `chrome.loadTimes` / `chrome.csi` `function () { [native code] }` (name `""`, length 0,
+  with a `prototype`); `webdriver` lives on `Navigator.prototype`, never on the
+  `navigator` instance (Chrome 154, 2026-10-11). A JS patch that shows its source, or an
+  own `navigator.webdriver`, is a tell real Chrome never has.
+- **`navigator.webdriver` is natively `false` in a guest of a normally launched app**,
+  even while a CDP client is attached through `webContents.debugger`; it is `true` when
+  the app is launched by Playwright's `_electron` (its `--remote-debugging-port`), so in
+  the e2e suite only (measured 2026-10-11, Electron 43.7.3).
+- **`Accept-Language` comes from `session.setUserAgent`'s second argument**, sent with
+  q-values (`en-US,zh-Hans-US;q=0.9`); without it the guest sends bare `en-US` while
+  `navigator.languages` lists every system language (measured 2026-10-11).
+- **Discord's developer portal refuses to create an application while a CDP client is
+  attached to the guest**: `POST /api/v9/applications` → 403 `{"code": 50001}` after the
+  hCaptcha passed, even on a freshly loaded page where a person did every click; the
+  same tab passed after the client detached and the page reloaded. Measured 2026-10-11
+  with playwright-cli 0.1.18 through Koloft's relay. Attached vs detached, the page
+  could see only `prefers-color-scheme` forced to light, `document.hasFocus()` forced
+  true (`Emulation.setFocusEmulationEnabled`), and console calls ~2 ms slower per 200;
+  the request headers on the wire were identical. Which of these Discord reads: not
+  probed yet.
 
 ## §15 Chrome extensions in Electron (electron-chrome-extensions)
 

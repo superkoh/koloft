@@ -111,7 +111,12 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     injected auth) before any delay — except a `-p` Koloft runs itself (the title
     call, task piped on stdin; the remote launch's first-run warm-up, output sent to
     /dev/null), which prints `<first line of the task> (titled)` and exits unlogged; a
-    `-p` typed in a terminal is logged like any launch.
+    `-p` typed in a terminal is logged like any launch. Asked which docs are for the
+    reader, it picks every written file whose name does not start with `draft-`, plus
+    every absolute `.md`/`.html` path in the reply. While `<home>/fake-claude-assist-reply`
+    exists, every such `-p` instead prints that file as Assist's answer (after
+    `fake-claude-assist-ms` ms, when that file exists) and appends what it was asked to
+    `fake-claude-assist-asked.txt`.
   - like the real one, it lists itself in `<home>/.claude/sessions/<pid>.json` with a
     message socket (CC§11); each line written there is appended raw to
     `<home>/fake-claude-peer.jsonl` and taken as a peer message (reply

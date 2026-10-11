@@ -346,6 +346,7 @@ import {
 } from './agentSessions'
 import { writeLine } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
+import { ReaderDocs } from './readerDocs'
 import { koloftAssist } from './assist'
 import { createProject } from './newProject'
 import { closingTree, removeTree, whatIsLeft } from './sessionClose'
@@ -381,8 +382,16 @@ let codexStartupError: string | undefined
 const startedSessions = new StartedSessions(() =>
   path.join(app.getPath('userData'), 'started-sessions.json')
 )
+const readerDocs = new ReaderDocs({
+  file: () => path.join(app.getPath('userData'), 'doc-verdicts.json'),
+  assist: (job) => assist(job),
+  session: sessionOfTab,
+  remoteFileExists: (host, keyed) => hosts.machine(host).fileExists(keyed),
+  changed: () => sendToRenderer('sessions:update', onSessionsChanged())
+})
 const sessionBackends = new SessionBackends({
   turnEnded: (tabId, turn) => {
+    void readerDocs.turnEnded(tabId, turn)
     slash.turnEnded(tabId, turn)
     discordRelay?.turnEnded(tabId, turn)
     discordNotices?.turnEnded(tabId, turn.reply)
@@ -408,6 +417,7 @@ const sessionBackends = new SessionBackends({
 sessionBackends.conductorOf = (id) => conductors?.conductorOf(id)
 sessionBackends.conductorWorkspaceOf = (tabId) => conductors?.workspaceOfTab(tabId)
 sessionBackends.turnOver = (tabId) => tracker.turnOver(tabId)
+sessionBackends.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
 function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
@@ -2974,7 +2984,8 @@ function setupBrowserPartition(): void {
     return ses.fetch(request, { bypassCustomProtocolHandlers: true })
   })
   const guestUA = standardUserAgent(app.userAgentFallback, app.getName())
-  ses.setUserAgent(guestUA)
+  // PLATFORM§14
+  ses.setUserAgent(guestUA, app.getPreferredSystemLanguages().join(','))
   // PLATFORM§14
   app.userAgentFallback = guestUA
   const guestHints = chromeClientHints(guestUA)
@@ -3161,6 +3172,7 @@ function archiveSession(id: string): boolean {
   if (archived) {
     attention.clearSession(id)
     startedSessions.forget(id)
+    readerDocs.forget(id)
   }
   return archived
 }

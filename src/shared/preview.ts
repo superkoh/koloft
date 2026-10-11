@@ -42,6 +42,22 @@ export function isWebPagePath(p: string): boolean {
   return WEB_PAGE_EXTENSIONS.includes(extOf(p))
 }
 
+export function isReaderDocPath(p: string): boolean {
+  return previewKindForPath(p) === 'markdown' || isWebPagePath(p)
+}
+
+// CC§2 CC§9
+const AGENT_ONLY_PATHS = [
+  /\/(CLAUDE|AGENTS|SKILL)\.md$/,
+  /\/\.claude\/projects\/[^/]+\/memory\//,
+  /\/\.claude\/(skills|agents|commands)\//,
+  /\/skills\/[^/]+\/references\//
+]
+
+export function writtenForTheAgent(src: string): boolean {
+  return AGENT_ONLY_PATHS.some((p) => p.test(src))
+}
+
 export const VIEWABLE_EXTENSIONS: readonly string[] = [
   ...PREVIEW_EXTENSIONS,
   ...WEB_PAGE_EXTENSIONS

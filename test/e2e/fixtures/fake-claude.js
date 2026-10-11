@@ -34,17 +34,30 @@ if (argv[0] === '--version') {
 const typedInATerminal = require('tty').isatty(0) && require('tty').isatty(1)
 if (argv[0] === '-p' && !typedInATerminal) {
   const promptArg = argv[1] && !argv[1].startsWith('-') ? argv[1] : ''
-  const asked = require('tty').isatty(0) ? promptArg : fs.readFileSync(0, 'utf8')
+  const input = require('tty').isatty(0) ? promptArg : fs.readFileSync(0, 'utf8')
   const sentinelHome = process.env.HOME || require('os').homedir()
   const assistReply = path.join(sentinelHome, 'fake-claude-assist-reply')
   if (fs.existsSync(assistReply)) {
-    fs.appendFileSync(path.join(sentinelHome, 'fake-claude-assist-asked.txt'), asked + '\n')
+    fs.appendFileSync(path.join(sentinelHome, 'fake-claude-assist-asked.txt'), input + '\n')
     const waitMsFile = path.join(sentinelHome, 'fake-claude-assist-ms')
     if (fs.existsSync(waitMsFile)) sleepBlockingMs(Number(fs.readFileSync(waitMsFile, 'utf8')))
     process.stdout.write(fs.readFileSync(assistReply, 'utf8'))
     process.exit(0)
   }
-  const task = asked.split('Task:\n').pop()
+  const WRITTEN_LIST = 'Files the agent wrote this turn:\n'
+  if (input.includes(WRITTEN_LIST)) {
+    const [asked, written] = input.split(WRITTEN_LIST)
+    const reply = asked.split('Agent replied:\n').pop()
+    const picks = [
+      ...written
+        .split('\n')
+        .filter((l) => l.startsWith('/') && !path.basename(l).startsWith('draft-')),
+      ...(reply.match(/(?<![\w.~-])\/[^\s`'"]+\.(?:md|html)\b/g) ?? [])
+    ]
+    process.stdout.write(`${[...new Set(picks)].join('\n') || 'NONE'}\n`)
+    process.exit(0)
+  }
+  const task = input.split('Task:\n').pop()
   const firstLine = task.split('\n').find((l) => l.trim()) ?? ''
   process.stdout.write(`${firstLine.trim()} (titled)\n`)
   process.exit(0)
@@ -1130,7 +1143,12 @@ function handleLine(line) {
     fs.writeFileSync(abs, body)
     const meta = usageMeta()
     append([
-      { type: 'user', message: { role: 'user', content: text }, cwd },
+      {
+        type: 'user',
+        timestamp: new Date().toISOString(),
+        message: { role: 'user', content: text },
+        cwd
+      },
       {
         type: 'assistant',
         version: TRANSCRIPT_VERSION_THAT_LOSES_TO_LIVE,

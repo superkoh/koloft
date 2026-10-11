@@ -4,9 +4,11 @@ import {
   FAKE_SESSION_TITLE,
   killSession,
   runIn,
+  sendShortcut,
   startSessionIn,
   waitBooted,
-  waitForCalls
+  waitForCalls,
+  wsGroup
 } from './helpers/p1'
 
 const PAST_TWO_LIVENESS_SWEEPS_MS = 6_000
@@ -39,6 +41,33 @@ test.describe('attention markers come from real session-status transitions (shim
     await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
     await expect(page.locator('.ws-tab.st-waiting')).toBeVisible()
     await expect(page.locator('.ws-tab-unread')).toHaveCount(0)
+  })
+
+  test('⌘J walks the waiting sessions oldest first across workspaces, skipping the one on screen and clearing each mark it lands on', async ({
+    app,
+    page
+  }) => {
+    await waitBooted(page)
+    await startSessionIn(page, 'ws-a')
+    await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(1)
+    await startSessionIn(page, 'ws-b')
+    await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(2)
+
+    const activeIn = (ws: string) => wsGroup(page, ws).locator('.ws-tab.active')
+    await expect(activeIn('ws-b')).toHaveCount(1)
+    const [older, newer] = (await pendingAttention(page)).sort((x, y) => x.at - y.at)
+    const aTab = await wsGroup(page, 'ws-a').locator('.ws-tab').getAttribute('data-tab-id')
+    expect(older.tabId).toBe(aTab)
+
+    await sendShortcut(app, 'shortcut:next-waiting-session')
+    await expect(activeIn('ws-a')).toHaveCount(1)
+    await expect
+      .poll(async () => (await pendingAttention(page)).map((e) => e.tabId))
+      .toEqual([newer.tabId])
+
+    await sendShortcut(app, 'shortcut:next-waiting-session')
+    await expect(activeIn('ws-b')).toHaveCount(1)
+    await expect.poll(() => pendingAttention(page)).toHaveLength(0)
   })
 
   test('a graceful /exit clears pending and never raises exited, not even after two liveness sweeps', async ({

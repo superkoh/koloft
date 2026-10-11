@@ -171,6 +171,16 @@ export function attentionOnRow(
   return pending.find((e) => e.sessionId === rowId || e.tabId === tabId)
 }
 
+export function nextWaitingTab(
+  pending: readonly AttentionEvent[],
+  activeTabId: string | null,
+  tabs: readonly { id: string }[]
+): string | undefined {
+  return pending
+    .filter((e) => e.tabId !== activeTabId && tabs.some((t) => t.id === e.tabId))
+    .sort((a, b) => a.at - b.at)[0]?.tabId
+}
+
 // CODEX§9
 export function liveTabOf(
   sessionId: string,
