@@ -16,14 +16,12 @@ import {
   BROWSER,
   BROWSER_MENU_IDS,
   activeKind,
-  activeSurface,
   addressField,
   addressValue,
   browserSurface,
   crashGuest,
   downloadedFiles,
   dropOpenRequest,
-  globeHasUnread,
   globeIcon,
   guestByUrl,
   guestContents,
@@ -155,31 +153,6 @@ test.describe('Workbench browser cases between the other browser specs: agent op
     const box = await page.locator('.term-island').first().boundingBox()
     return box ? Math.round(box.width) : 0
   }
-
-  test('BB-M02: user clicking the agent-created tab loads it for the first time and clears the unread marker', async ({
-    page,
-    env
-  }) => {
-    test.setTimeout(240_000)
-    const server = await startEchoServer()
-    try {
-      await browserSession(page, env)
-      await agentOpen(page, server.localhostUrl('/a'))
-
-      await expect(openTabs(page)).toHaveCount(1, { timeout: 30_000 })
-      await expect(wbUnreadTabs(page)).toHaveCount(1)
-      expect(server.count()).toBe(0)
-
-      await openTabs(page).first().click()
-
-      await expect.poll(() => server.count('/a'), { timeout: 30_000 }).toBe(1)
-      expect(server.count()).toBe(1)
-      await expect(openTabs(page).first()).toHaveClass(/\bon\b/, { timeout: 20_000 })
-      await expect(wbUnreadTabs(page)).toHaveCount(0)
-    } finally {
-      await server.close()
-    }
-  })
 
   test('BB-M13: ⌘⇧B opens the Workbench and toggles it closed again, giving the TUI its width back', async ({
     app,
@@ -401,7 +374,7 @@ test.describe('Workbench browser cases between the other browser specs: agent op
     }
   })
 
-  test('BB-C02: agent re-open of an existing URL only sets the unread dot, current tab unchanged', async ({
+  test('BB-C02: agent re-open of an existing URL brings that tab to the front, minting no second one', async ({
     page,
     env
   }) => {
@@ -414,14 +387,12 @@ test.describe('Workbench browser cases between the other browser specs: agent op
       await openLoadedTab(page, server, 'B')
       await wbTabByTitle(page, 'A').click()
       await expect(wbTabByTitle(page, 'A')).toHaveClass(/\bon\b/, { timeout: 20_000 })
-      await expect(wbUnreadTabs(page)).toHaveCount(0)
 
       await agentOpen(page, server.url('/b'))
 
-      await expect(wbTabByTitle(page, 'B')).toHaveClass(/\bagent\b/, { timeout: 30_000 })
+      await expect(wbTabByTitle(page, 'B')).toHaveClass(/\bon\b/, { timeout: 30_000 })
       await expect(openTabs(page)).toHaveCount(2)
-      await expect(wbTabByTitle(page, 'A')).toHaveClass(/\bon\b/)
-      await expect(wbTabByTitle(page, 'B')).not.toHaveClass(/\bon\b/)
+      await expect(wbUnreadTabs(page)).toHaveCount(0)
     } finally {
       await server.close()
     }
@@ -443,8 +414,7 @@ test.describe('Workbench browser cases between the other browser specs: agent op
       await expect(openTabs(page)).toHaveCount(2, { timeout: 30_000 })
 
       await agentOpen(page, server.url('/p#two'))
-      await expect(wbUnreadTabs(page)).toHaveCount(1, { timeout: 30_000 })
-      await page.waitForTimeout(3000)
+      await expect(openTabs(page).first()).toHaveClass(/\bon\b/, { timeout: 30_000 })
       expect(await openTabs(page).count()).toBe(2)
 
       const flood = server.page(
@@ -466,65 +436,6 @@ test.describe('Workbench browser cases between the other browser specs: agent op
       await expect(guest.locator('#fired')).toHaveText(String(FLOOD_OPENS), { timeout: 30_000 })
       await page.waitForTimeout(5000)
       expect(await openTabs(page).count()).toBeLessThanOrEqual(PER_SESSION_TAB_CAP)
-    } finally {
-      await server.close()
-    }
-  })
-
-  test('BB-C09: an agent-opened tab is never loaded until the user opens it, even with the panel open', async ({
-    page,
-    env
-  }) => {
-    test.setTimeout(240_000)
-    const server = await startEchoServer()
-    try {
-      await browserSession(page, env)
-
-      await agentOpen(page, server.localhostUrl('/a'))
-      await expect(openTabs(page)).toHaveCount(1, { timeout: 30_000 })
-
-      expect(server.count()).toBe(0)
-      await page.waitForTimeout(5000)
-      expect(server.count()).toBe(0)
-    } finally {
-      await server.close()
-    }
-  })
-
-  test('BB-C10: no agent action changes the current tab or the panel open/collapsed state, and the titlebar gives no signal', async ({
-    page,
-    env
-  }) => {
-    test.setTimeout(300_000)
-    const server = await startEchoServer()
-    try {
-      await browserSession(page, env)
-
-      await openLoadedTab(page, server, 'A')
-      await expect(wbTabByTitle(page, 'A')).toHaveClass(/\bon\b/, { timeout: 20_000 })
-
-      await agentOpen(page, server.url('/b'))
-      await agentOpen(page, server.url('/next'))
-
-      await expect(wbUnreadTabs(page)).toHaveCount(2, { timeout: 40_000 })
-      await expect(wbTabByTitle(page, 'A')).toHaveClass(/\bon\b/)
-      expect(await activeKind(page)).toBe('web')
-      await expect(browserSurface(page)).toBeVisible()
-
-      await globeIcon(page).click()
-      await expect(browserSurface(page)).toBeHidden({ timeout: 20_000 })
-
-      await agentOpen(page, server.url('/p'))
-      await page.waitForTimeout(5000)
-
-      await expect(browserSurface(page)).toBeHidden()
-      expect(await activeSurface(page)).toBeNull()
-      expect(await globeHasUnread(page)).toBe(false)
-      await expect(globeIcon(page)).not.toHaveClass(/\bon\b/)
-
-      await showWorkbench(page)
-      await expect(wbUnreadTabs(page)).toHaveCount(3, { timeout: 20_000 })
-      await expect(wbTabByTitle(page, 'A')).toHaveClass(/\bon\b/)
     } finally {
       await server.close()
     }
@@ -874,7 +785,7 @@ test.describe('Workbench browser cases between the other browser specs: agent op
     }
   })
 
-  test('BB-C47: an agent-created tab that is opened by the user reuses the freeze/reload mechanism', async ({
+  test('BB-C47: an agent-created tab loads through the same live-guest mechanism as any other, never frozen', async ({
     app,
     page,
     env
@@ -886,11 +797,6 @@ test.describe('Workbench browser cases between the other browser specs: agent op
       const url = server.localhostUrl('/a')
       await agentOpen(page, url)
       await expect(openTabs(page)).toHaveCount(1, { timeout: 30_000 })
-
-      expect(server.count('/a')).toBe(0)
-      expect((await guestUrls(app)).filter((u) => u.includes(`:${server.port}/a`))).toEqual([])
-
-      await openTabs(page).first().click()
 
       await expect.poll(() => server.count('/a'), { timeout: 30_000 }).toBe(1)
       await guestByUrl(app, `:${server.port}/a`)
@@ -1007,9 +913,10 @@ test.describe('Workbench browser cases between the other browser specs: agent op
     try {
       await addressBarSession(page, env)
 
-      await typeInAddressBar(page, server.url('/a'))
-      await guestByUrl(app, `:${server.port}/a`)
-      await agentOpen(page, server.url('/b'))
+      const b = server.url('/b')
+      await typeInAddressBar(page, server.url(`/link?href=${encodeURIComponent(b)}`))
+      const guest = await guestByUrl(app, '/link')
+      await guest.locator('#link').click({ button: 'middle' })
       await expect(openTabs(page)).toHaveCount(2, { timeout: 30_000 })
 
       await focusWorkbenchPanelSoDevtoolsTargetsTheGuest(page)
@@ -1025,7 +932,7 @@ test.describe('Workbench browser cases between the other browser specs: agent op
         })
         .toBe(1)
       const opened = (await devtoolsState(app)).guests.filter((g) => g.devtools)
-      expect(opened[0].url).toContain(`:${server.port}/a`)
+      expect(opened[0].url).toContain('/link')
       for (const w of await windowStates(app)) expect(w.visible).toBe(false)
       expect(server.count('/b')).toBe(0)
 

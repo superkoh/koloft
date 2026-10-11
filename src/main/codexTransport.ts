@@ -538,6 +538,8 @@ export class CodexRpc {
     if (
       ![
         'thread/list',
+        // CODEX§24
+        'thread/search',
         'thread/read',
         'thread/loaded/list',
         'account/read',

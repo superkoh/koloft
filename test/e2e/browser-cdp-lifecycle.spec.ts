@@ -63,8 +63,8 @@ test.describe('CDP client lifecycle: the user always wins, and a connected clien
       const url = await session(page, env, 'ws-a')
       await openViaAgent(page, server.page('/guarded', '<title>Guarded</title><body>g</body>'))
       await openBrowser(page)
-      await page.locator(BROWSER.tabAgent).click()
       await guestByUrl(app, '/guarded')
+      await page.locator(BROWSER.tabActive).click()
       await clickAppMenuItem(app, page, BROWSER_MENU_IDS.devtools)
       await expect
         .poll(async () => (await guestGrips(app)).some((g) => g.devtools), { timeout: 30_000 })

@@ -6,6 +6,7 @@ import type {
   BackendSessionRow,
   CreateTabOptions,
   CreateTabResult,
+  DocVerdict,
   ResumePlan,
   SessionInfo,
   SessionResumeRequest,
@@ -21,6 +22,7 @@ import {
   unsupportedPairMessage
 } from '@shared/sessionBackend'
 import { hostOf } from '@shared/remoteKey'
+import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import type { ModeClass } from './crossSessionMessage'
 
 export interface SessionBackend {
@@ -34,7 +36,7 @@ export interface SessionBackend {
   hasTab(tabId: string): boolean
   workspaceOfTab(tabId: string): string | undefined
   aliveTabFor(key: string): string | undefined
-  stop(tabId: string): void | Promise<void>
+  stop(tabId: string, restarting?: boolean): void | Promise<void>
   archive(key: string): boolean
   transcriptExists(key: string): boolean | Promise<boolean>
   observe(tabId: string, event: SessionEvent): void
@@ -63,6 +65,7 @@ export class SessionBackends {
   conductorOf: (tabOrSessionId: string) => string | undefined = () => undefined
   conductorWorkspaceOf: (tabId: string) => string | undefined = () => undefined
   turnOver: (tabId: string) => boolean = () => false
+  docVerdictsOf: (sessionId: string) => Record<string, DocVerdict> | undefined = () => undefined
 
   constructor(private lifecycle: SessionLifecycle) {}
 
@@ -148,7 +151,8 @@ export class SessionBackends {
         host: s.remote ? 'ssh' : 'local',
         nativeSessionId: s.nativeSessionId ?? s.sessionId,
         conductor: this.conductorOf(s.tabId) ?? this.conductorOf(s.sessionId),
-        turnOver: this.turnOver(s.tabId)
+        turnOver: this.turnOver(s.tabId),
+        docVerdicts: s.sessionId ? this.docVerdictsOf(s.sessionId) : undefined
       }))
     )
   }
@@ -192,6 +196,9 @@ export class SessionBackends {
     }
     const refusal = unsupportedPairMessage(options.kind, hostOf(options.cwd ?? ''))
     if (refusal) return Promise.reject(new Error(refusal))
-    return this.get(options.kind).create(options)
+    const backend = this.get(options.kind)
+    // ADR-0030
+    if (!backend.accountUsable()) return Promise.reject(new Error(NO_USABLE_ACCOUNT[options.kind]))
+    return backend.create(options)
   }
 }

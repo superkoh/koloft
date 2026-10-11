@@ -1,4 +1,5 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
+import { SHIM_FOUND_NO_ACCOUNT_EXIT, SHIM_FOUND_NO_ACCOUNT_NOTICE } from '@shared/accountUsage'
 import { isSessionKind, type SessionBackend } from './agentUi'
 import { exitedAbnormally, type SessionInfo, type TabKind } from '@shared/types'
 
@@ -57,9 +58,11 @@ export function unexpectedExitNotice(
   backend: SessionBackend
 ): string {
   // PLATFORM§29
-  return exit.signal
-    ? `${BACKEND_LABEL[backend]} session ended: killed by signal ${exit.signal}`
-    : `${BACKEND_LABEL[backend]} session ended unexpectedly (exit code ${exit.exitCode})`
+  if (exit.signal) return `${BACKEND_LABEL[backend]} session ended: killed by signal ${exit.signal}`
+  // ADR-0030
+  if (backend === 'claude' && exit.exitCode === SHIM_FOUND_NO_ACCOUNT_EXIT)
+    return SHIM_FOUND_NO_ACCOUNT_NOTICE
+  return `${BACKEND_LABEL[backend]} session ended unexpectedly (exit code ${exit.exitCode})`
 }
 
 export function unexpectedExitWanted<

@@ -23,6 +23,7 @@ function setup(over: Partial<SlashDeps> = {}) {
     asking: () => false,
     takesTyping: () => turnIsOver(status),
     panelOpen: async () => undefined,
+    nextMirrorPull: () => undefined,
     ready: async (_t, ready) => ready(),
     exclusive: (_t, typing) => typing(),
     typeNow: async (_t, keys) => void typed.push(...keys),
@@ -117,6 +118,26 @@ describe('a slash command typed into a session', () => {
     setStatus('waiting')
     await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
     expect(posts).toEqual(['⌨️ **fix-login** ran /compact:\nDone.'])
+  })
+
+  it('in a remote tab, waits after the turn ends for one more mirror pull, so output the transcript brings late, like "Compacted", is in the card', async () => {
+    let pulled: () => void = () => undefined
+    const { slash, posts, setStatus } = setup({
+      nextMirrorPull: () => new Promise((done) => (pulled = done))
+    })
+    await slash.typeWhenIdle(child, '/compact', CHANNEL)
+    setStatus('working')
+    setStatus('waiting')
+    await vi.advanceTimersByTimeAsync(NOTHING_CAME_BACK_MS + MORE_OUTPUT_SETTLES_MS)
+    expect(posts).toEqual([])
+    slash.output(TAB, { kind: 'printed', text: 'Compacted (ctrl+o to see full summary)' })
+    await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
+    expect(posts).toEqual([])
+    pulled()
+    await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
+    expect(posts).toEqual([
+      '⌨️ **fix-login** ran /compact:\nCompacted (ctrl+o to see full summary)'
+    ])
   })
 
   it('/clear reports the new conversation id', async () => {

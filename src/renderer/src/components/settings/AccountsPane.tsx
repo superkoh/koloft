@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type JSX } from 'react'
 import { LuGlobe, LuPlus, LuRefreshCw, LuX } from 'react-icons/lu'
 import type { AccountKind, AccountView } from '@shared/types'
 import { useStore } from '../../store'
-import { windowLabel } from '@shared/accountUsage'
+import { needsSignInAgain, windowLabel } from '@shared/accountUsage'
 import { Meter, ageLabel, probeErrorLabel, resetLabel } from '../accountMeter'
 import { Switch } from './Switch'
 import { useEscConsumer } from './escScope'
@@ -16,8 +16,6 @@ export function AccountsPane(): JSX.Element {
   const login = useStore((s) => s.accountLogin)
   const beginLogin = useStore((s) => s.beginLogin)
   const update = useSettingsUpdate()
-  const multiAccount = settings.multiAccount
-  const childRow = 'set-row child' + (multiAccount ? '' : ' off')
 
   const [accounts, setAccounts] = useState<AccountView[]>([])
   // ADR-0002
@@ -60,7 +58,6 @@ export function AccountsPane(): JSX.Element {
       <AccountRow
         key={key}
         account={a}
-        disabled={!multiAccount}
         confirming={confirmDel === key}
         onToggle={(en) => {
           setAccounts((cur) =>
@@ -86,7 +83,7 @@ export function AccountsPane(): JSX.Element {
   }
 
   const section = (list: AccountView[], empty: string, foot: JSX.Element): JSX.Element => (
-    <div className={'acct-section' + (multiAccount ? '' : ' disabled')}>
+    <div className="acct-section">
       {list.length === 0 ? (
         <div className="acct-empty">{empty}</div>
       ) : (
@@ -110,21 +107,13 @@ export function AccountsPane(): JSX.Element {
     <>
       <div className="set-ph">
         <h3>Claude accounts</h3>
-        <p>Every claude launched in Koloft picks the least-used account below.</p>
+        <p>
+          Every session in Koloft runs on an account below, never on the login already on this Mac.
+          Each new claude picks the least-used one.
+        </p>
       </div>
 
       <div className="set-row">
-        <div className="set-lab">
-          <b>Multi-account mode</b>
-          <small>Off, every new session uses the login already on this Mac.</small>
-        </div>
-        <Switch
-          checked={multiAccount}
-          onChange={(on) => update({ multiAccount: on })}
-          title="Multi-account mode"
-        />
-      </div>
-      <div className={childRow}>
         <div className="set-lab">
           <b>Skip permission prompts</b>
           <small>
@@ -135,10 +124,9 @@ export function AccountsPane(): JSX.Element {
         <Switch
           checked={settings.skipPermissions}
           onChange={(on) => update({ skipPermissions: on })}
-          disabled={!multiAccount}
         />
       </div>
-      <div className={childRow}>
+      <div className="set-row">
         <div className="set-lab">
           <b>Prefer accounts with fable allowance</b>
           <small>
@@ -146,31 +134,26 @@ export function AccountsPane(): JSX.Element {
             and one account is taking every session.
           </small>
         </div>
-        <Switch
-          checked={settings.fablePriority}
-          onChange={(on) => update({ fablePriority: on })}
-          disabled={!multiAccount}
-        />
+        <Switch checked={settings.fablePriority} onChange={(on) => update({ fablePriority: on })} />
       </div>
 
       {section(
         claudeAccounts,
-        'No accounts yet — add one below. With the switch on but the pool empty, claude falls back to your system login.',
+        'No accounts yet — add one below. Claude sessions start only once there is one.',
         <>
           <button
             className="mini"
-            disabled={!multiAccount}
             onClick={() => beginLogin()}
             title="Runs claude setup-token in the background and stores the token for you"
           >
             <LuGlobe size={14} /> Sign in
           </button>
-          <button className="mini" disabled={!multiAccount} onClick={() => setAdding('oauth')}>
+          <button className="mini" onClick={() => setAdding('oauth')}>
             <LuPlus size={14} /> Paste token
           </button>
           <button
             className="mini acct-refresh"
-            disabled={!multiAccount || refresh === 'busy'}
+            disabled={refresh === 'busy'}
             onClick={() => void runRefresh()}
             title="Probe every enabled account now"
           >
@@ -187,10 +170,9 @@ export function AccountsPane(): JSX.Element {
       <div className="set-grp">Codex</div>
       {section(
         codexAccounts,
-        'No Codex accounts yet — with none, Codex uses its own login on this Mac. Each account here is its own Codex sign-in, and every new Codex session picks the least-used one.',
+        'No Codex accounts yet — Codex sessions start only once there is one. Each account here is its own Codex sign-in, and every Codex session picks the least-used one.',
         <button
           className="mini"
-          disabled={!multiAccount}
           onClick={() => setCodexSignIn({})}
           title="Runs codex login in a terminal tab for a new Codex account"
         >
@@ -207,10 +189,10 @@ export function AccountsPane(): JSX.Element {
 }
 
 // CC§7
-function LoginDialog(): JSX.Element | null {
+export function LoginDialog(): JSX.Element | null {
   const login = useStore((s) => s.accountLogin)
   const addTab = useStore((s) => s.addTab)
-  const setSettingsOpen = useStore((s) => s.setSettingsOpen)
+  const showSignInTab = useStore((s) => s.showSignInTab)
   const beginLogin = useStore((s) => s.beginLogin)
   const setLoginProgress = useStore((s) => s.setLoginProgress)
   const clearLogin = useStore((s) => s.clearLogin)
@@ -244,6 +226,7 @@ function LoginDialog(): JSX.Element | null {
 
   const showTerminal = (): void => {
     if (!progress?.tabId) return
+    showSignInTab(progress.tabId)
     addTab({
       id: progress.tabId,
       kind: 'shell',
@@ -251,7 +234,6 @@ function LoginDialog(): JSX.Element | null {
       cwd: progress.cwd ?? '',
       alive: true
     })
-    setSettingsOpen(false)
     clearLogin()
   }
 
@@ -343,9 +325,15 @@ function LoginDialog(): JSX.Element | null {
 }
 
 // CODEX§15
-function CodexSignInDialog({ again, onClose }: { again?: string; onClose(): void }): JSX.Element {
+export function CodexSignInDialog({
+  again,
+  onClose
+}: {
+  again?: string
+  onClose(): void
+}): JSX.Element {
   const addTab = useStore((s) => s.addTab)
-  const setSettingsOpen = useStore((s) => s.setSettingsOpen)
+  const showSignInTab = useStore((s) => s.showSignInTab)
   const [name, setName] = useState(again ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -366,6 +354,7 @@ function CodexSignInDialog({ again, onClose }: { again?: string; onClose(): void
       )
       return
     }
+    showSignInTab(r.tabId)
     addTab({
       id: r.tabId,
       kind: 'shell',
@@ -373,7 +362,6 @@ function CodexSignInDialog({ again, onClose }: { again?: string; onClose(): void
       cwd: r.cwd,
       alive: true
     })
-    setSettingsOpen(false)
     onClose()
   }
 
@@ -409,7 +397,6 @@ function CodexSignInDialog({ again, onClose }: { again?: string; onClose(): void
 
 function AccountRow({
   account: a,
-  disabled,
   confirming,
   onToggle,
   onAskRemove,
@@ -418,7 +405,6 @@ function AccountRow({
   onRelogin
 }: {
   account: AccountView
-  disabled: boolean
   confirming: boolean
   onToggle(enabled: boolean): void
   onAskRemove(): void
@@ -430,14 +416,12 @@ function AccountRow({
   const now = Date.now()
   const measuredAt = u?.at ?? a.limits?.at
   const stale = measuredAt !== undefined ? ageLabel(measuredAt, now) : null
-  const needsAuth = a.status === 'expired' || a.status === 'unverified'
   return (
     <div className={'acct-row' + (a.enabled ? '' : ' off') + (confirming ? ' confirming' : '')}>
       <div className="acct-main">
         <Switch
           small
           checked={a.enabled}
-          disabled={disabled}
           onChange={onToggle}
           title={a.enabled ? 'In the pool' : 'Out of the pool'}
         />
@@ -460,7 +444,7 @@ function AccountRow({
         )}
         {a.status === 'unverified' && <span className="acct-status unverified">UNVERIFIED</span>}
         {stale && <span className="acct-status stale">{stale}</span>}
-        {needsAuth && onRelogin && !disabled && (
+        {needsSignInAgain(a) && onRelogin && (
           <button
             className="acct-relogin"
             onClick={onRelogin}
@@ -553,7 +537,13 @@ function AccountRow({
   )
 }
 
-function AddAccountDialog({ kind, onClose }: { kind: AccountKind; onClose(): void }): JSX.Element {
+export function AddAccountDialog({
+  kind,
+  onClose
+}: {
+  kind: AccountKind
+  onClose(): void
+}): JSX.Element {
   const [name, setName] = useState('')
   const [secret, setSecret] = useState('')
   const [baseUrl, setBaseUrl] = useState('')

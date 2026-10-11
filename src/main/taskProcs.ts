@@ -98,10 +98,10 @@ function parseLsofPids(stdout: string): Set<number> {
   return out
 }
 
-// CC§8
+// CC§2 CC§8
 export async function inspectTaskProcs(
   rootPid: number,
-  tasksDir: string,
+  sessionId: string,
   exec: Exec = defaultExec
 ): Promise<TaskProcs | null> {
   const snap = parsePs(await exec('ps', ['-Ao', 'pid=,ppid=,etime=,time=,command=']))
@@ -115,10 +115,11 @@ export async function inspectTaskProcs(
   const fd1 = await exec('lsof', ['-a', '-p', shells.join(','), '-d', '1', '-Fn'])
   if (!fd1.trim()) return null
   const names = parseLsofNames(fd1)
-  const prefix = path.resolve(tasksDir) + path.sep
+  const sessionTasks = path.sep + path.join(sessionId, 'tasks')
   for (const pid of shells) {
     const name = names.get(pid)
-    if (name === undefined || !name.startsWith(prefix) || !name.endsWith('.output')) continue
+    if (name === undefined || !name.endsWith('.output')) continue
+    if (!path.dirname(name).endsWith(sessionTasks)) continue
     result.shells.set(path.basename(name, '.output'), {
       pid,
       ageMs: parsePsDuration(snap.etimeOf.get(pid) ?? ''),

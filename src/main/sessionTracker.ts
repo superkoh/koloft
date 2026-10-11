@@ -15,6 +15,7 @@ import { costUsdOf, resolvePricing } from '@shared/pricing'
 import { localDayKey } from '@shared/usageFormat'
 import { encodeCwd } from '@shared/cwdKey'
 import { projectInfoFor, realpathSafe } from './projectInfo'
+import { worktreeHomeRoot } from './resumePlan'
 import { inspectTaskProcs, type TaskProcs } from './taskProcs'
 import { SessionRuntime, envMs, turnOf, type Turn } from './sessionRuntime'
 import { capTouched, noteRead, noteWrite, touchedItem, type FileAcc } from './touchedFiles'
@@ -22,6 +23,7 @@ import type { LaunchedSession } from './accountPicker'
 import type { MachineTmp } from './remote/install'
 import { claudeWroteIt, commandOutputOf } from './claudeCommandOutput'
 import { withoutHandover } from './handover'
+import { messageText } from './messageText'
 
 export const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects')
 const TMP_ROOT = ((): string => {
@@ -225,12 +227,6 @@ export function scratchpadDirFor(
   return dir && path.join(dir, 'scratchpad')
 }
 
-// CC§2
-export function tasksDirFor(jsonlPath: string | null): string | null {
-  const dir = sessionTmpDir(jsonlPath)
-  return dir && path.join(dir, 'tasks')
-}
-
 interface SubagentFile {
   offset: number
   tail: Buffer
@@ -327,21 +323,22 @@ function peerText(raw: string): string {
   return (PEER_ENVELOPE.exec(inner)?.[1] ?? inner).trim()
 }
 
-function promptText(content: unknown): string | null {
-  if (typeof content === 'string') return content
-  if (!Array.isArray(content)) return null
-  const texts = content.flatMap((b) =>
-    b?.type === 'text' && typeof b.text === 'string' ? [b.text] : []
-  )
-  return texts.length ? texts.join('\n') : null
-}
-
 // CC§2
 function commandEcho(obj: { origin?: unknown }, raw: string | null): boolean {
   return raw !== null && raw.startsWith('/') && claudeWroteIt(obj)
 }
 
-function ownerOrPeer(kind: unknown): 'owner' | 'peer' | null {
+// CC§1
+export function compactionSummary(obj: { isCompactSummary?: unknown }): boolean {
+  return obj.isCompactSummary === true
+}
+
+// CC§2 CC§8
+const WRITTEN_BY_CLAUDE_CODE = /^<(task-notification|system-reminder|teammate-message)[\s>]/
+
+export function whoTyped(record: { origin?: unknown }, text: string): 'owner' | 'peer' | null {
+  if (WRITTEN_BY_CLAUDE_CODE.test(text)) return null
+  const kind = (record.origin as { kind?: unknown } | null | undefined)?.kind
   if (kind === undefined || kind === 'human') return 'owner'
   return kind === 'peer' ? 'peer' : null
 }
@@ -354,12 +351,13 @@ function claudeTurnPieces(obj: any): TurnPiece[] {
   const ts = Date.parse(obj.timestamp)
   const at = isFinite(ts) ? ts : Date.now()
   if (obj.type === 'user') {
-    const raw = promptText(obj.message?.content)
-    const who = ownerOrPeer(obj.origin?.kind)
+    const raw = messageText(obj.message?.content)
+    const who = raw === null ? null : whoTyped(obj, raw)
     if (raw === null || !who) return []
     if (who === 'peer') return [{ line: { who, text: peerText(raw), at }, midTurn: false }]
     if (
       obj.isMeta ||
+      compactionSummary(obj) ||
       INTERRUPT_TEXTS.has(raw) ||
       commandEcho(obj, raw) ||
       !classifyUserPrompt(raw).title
@@ -371,7 +369,7 @@ function claudeTurnPieces(obj: any): TurnPiece[] {
     const a = obj.attachment
     if (a?.type !== 'queued_command' || a.commandMode !== 'prompt' || typeof a.prompt !== 'string')
       return []
-    const who = ownerOrPeer(a.origin?.kind)
+    const who = whoTyped(a, a.prompt)
     if (!who) return []
     const text = who === 'peer' ? peerText(a.prompt) : a.prompt.trim()
     return [{ line: { who, text, at }, midTurn: true }]
@@ -514,6 +512,7 @@ interface Tracked {
   inode?: number
   swept?: boolean
   relocatedCwd?: string
+  lastWorktreeStateInBatch?: string
   landTimer?: ReturnType<typeof setTimeout>
   remote?: RemoteTab
   subagentTimer?: ReturnType<typeof setInterval>
@@ -709,9 +708,9 @@ export class SessionTracker extends SessionRuntime {
     if (this.leftBehind?.(t.info.sessionId)) return true
     if (t.remote) return false
     const root = this.pidOf?.(tabId)
-    const tasksDir = tasksDirFor(t.info.jsonlPath)
-    if (!root || !tasksDir) return true
-    const procs = await this.inspect(root, tasksDir)
+    const sessionId = t.info.sessionId
+    if (!root || !sessionId) return true
+    const procs = await this.inspect(root, sessionId)
     return !procs || procs.shells.size > 0
   }
 
@@ -855,11 +854,11 @@ export class SessionTracker extends SessionRuntime {
     if (t.procsPromise) await t.procsPromise
     if (!force && Date.now() - t.procsAt < PROCS_SCAN_MS) return
     const root = this.pidOf?.(t.info.tabId)
-    const tasksDir = tasksDirFor(t.info.jsonlPath)
-    if (!root || !tasksDir) return
+    const sessionId = t.info.sessionId
+    if (!root || !sessionId) return
     t.procsPromise = (async () => {
       try {
-        const procs = await this.inspect(root, tasksDir)
+        const procs = await this.inspect(root, sessionId)
         if (this.tracked.get(t.info.tabId) !== t) return
         t.procs = procs
         t.procsAt = Date.now()
@@ -1049,6 +1048,15 @@ export class SessionTracker extends SessionRuntime {
     )
   }
 
+  // CC§1 CC§2 CC§3 ADR-0025
+  private followWorktreeState(t: Tracked): void {
+    const bound = t.lastWorktreeStateInBatch
+    t.lastWorktreeStateInBatch = undefined
+    if (!bound || t.remote || t.landTimer || bound === t.info.treeRoot || !fs.existsSync(bound))
+      return
+    this.setTreeRoot(t, bound)
+  }
+
   private setTreeRoot(t: Tracked, root: string): void {
     t.rootPinAwaitingCatchup = false
     if (!root || t.info.treeRoot === root) return
@@ -1088,6 +1096,7 @@ export class SessionTracker extends SessionRuntime {
     t.lastTouchedAbs = null
     t.lastWrittenAbs = null
     t.relocatedCwd = undefined
+    t.lastWorktreeStateInBatch = undefined
     t.info.lastTouched = undefined
     t.info.lastWritten = undefined
     t.caughtUp = false
@@ -1291,9 +1300,10 @@ export class SessionTracker extends SessionRuntime {
     const dir = t.relocatedCwd
     t.relocatedCwd = undefined
     if (!dir || dir === t.info.treeRoot) return
+    const leftItsWorktreeForItsCheckout = worktreeHomeRoot(t.info.treeRoot) === dir
     t.info.relocated = true
     this.setTreeRoot(t, dir)
-    this.emit('relocated', { tabId: t.info.tabId, dir })
+    if (!leftItsWorktreeForItsCheckout) this.emit('relocated', { tabId: t.info.tabId, dir })
   }
 
   private async parseOnce(t: Tracked): Promise<void> {
@@ -1360,6 +1370,7 @@ export class SessionTracker extends SessionRuntime {
       else if (activity === 'interrupt') sawInterrupt = true
     }
     if (t.rootPinAwaitingCatchup) this.setTreeRoot(t, t.info.cwd)
+    this.followWorktreeState(t)
     if (sawInterrupt) await this.interruptTurn(t)
     else if (t.caughtUp) this.resumeWorkingIfStale(t, sawUserPrompt, sawAssistant)
     if (!t.caughtUp) {
@@ -1554,6 +1565,10 @@ export class SessionTracker extends SessionRuntime {
       if (obj.type === 'relocated' && typeof obj.relocatedCwd === 'string' && obj.relocatedCwd) {
         t.relocatedCwd = obj.relocatedCwd
       }
+      if (obj.type === 'worktree-state') {
+        const bound = obj.worktreeSession?.worktreePath
+        t.lastWorktreeStateInBatch = typeof bound === 'string' && bound ? bound : undefined
+      }
       // CC§2
       const recTs = Math.min(Date.parse(obj.timestamp), Date.now())
       const mainThread = obj.isSidechain !== true
@@ -1580,7 +1595,7 @@ export class SessionTracker extends SessionRuntime {
       this.ingestTaskNotification(t, obj)
       const output = t.caughtUp ? commandOutputOf(obj) : null
       if (output) this.emit('command-output', { tabId: t.info.tabId, ...output })
-      if (obj.type === 'user' && !obj.isMeta) {
+      if (obj.type === 'user' && !obj.isMeta && !compactionSummary(obj)) {
         const c = obj.message?.content
         let raw: string | null = null
         let hasImage = false
@@ -1599,9 +1614,10 @@ export class SessionTracker extends SessionRuntime {
           return null
         }
         const cls = raw !== null ? classifyUserPrompt(raw) : null
-        if (cls?.title && !t.firstPrompt) t.firstPrompt = cls.title
-        if (cls?.commandArgs && !t.commandArgsTitle) t.commandArgsTitle = cls.commandArgs
-        if (cls?.commandName && !t.commandTitle) t.commandTitle = cls.commandName
+        const named = raw !== null && whoTyped(obj, raw) ? cls : null
+        if (named?.title && !t.firstPrompt) t.firstPrompt = named.title
+        if (named?.commandArgs && !t.commandArgsTitle) t.commandArgsTitle = named.commandArgs
+        if (named?.commandName && !t.commandTitle) t.commandTitle = named.commandName
         if ((cls?.genuine || hasImage) && mainThread && !commandEcho(obj, raw)) {
           activity = 'user'
           if (

@@ -143,6 +143,13 @@ async function startClaudeTab(
   await expect(page.locator('.ws-tab-title', { hasText: title })).toBeVisible({ timeout: 40_000 })
 }
 
+async function backAfterRelaunch(page: Page, title: string): Promise<void> {
+  await expect(page.locator('.ws-tab', { hasText: title })).toHaveClass(
+    /\bst-(working|waiting|idle)\b/,
+    { timeout: 40_000 }
+  )
+}
+
 async function resumeColdRow(page: Page, title: string): Promise<void> {
   const row = page.locator('.ws-tab', { hasText: title })
   await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
@@ -278,8 +285,7 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
 
       const { app, page } = await launch(env)
       try {
-        expect(readCalls(env)).toHaveLength(1)
-        await resumeColdRow(page, SESSION_TITLE)
+        await backAfterRelaunch(page, SESSION_TITLE)
         const restored = await waitForCalls(env, 2)
         expect(resumedId(restored[1])).toBe(sessionId)
 
@@ -539,7 +545,7 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
 
       const { app, page } = await launch(env)
       try {
-        await resumeColdRow(page, SESSION_TITLE)
+        await backAfterRelaunch(page, SESSION_TITLE)
         await waitForCalls(env, 2)
 
         await showBrowse(page)
@@ -585,7 +591,7 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
       }
     })
 
-    test('T14: a restarted session is still listed and resumable after an app restart', async ({
+    test('T14: a restarted session is still listed and comes back after an app restart', async ({
       env
     }) => {
       test.setTimeout(240_000)
@@ -599,13 +605,14 @@ test.describe('Restart Session (⇧⌘R / File ▸ Restart Session): a resumable
         await triggerRestart(first.app)
         const calls = await waitForCalls(env, 2)
         expect(resumedId(calls[1])).toBe(sessionId)
+        await backAfterRelaunch(first.page, SESSION_TITLE)
       } finally {
         await first.app.close().catch(() => {})
       }
 
       const second = await launch(env)
       try {
-        await resumeColdRow(second.page, SESSION_TITLE)
+        await backAfterRelaunch(second.page, SESSION_TITLE)
         const calls = await waitForCalls(env, 3)
         expect(resumedId(calls[2])).toBe(sessionId)
       } finally {

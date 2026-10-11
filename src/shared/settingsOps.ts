@@ -3,23 +3,17 @@ import {
   HINT_IDS,
   WORLD_CLOCK_MAX,
   sanitizeAccountList,
+  type AssistSetting,
   type Settings
 } from './types'
 import { normalizeSessionMethods } from './sessionBackend'
 import { sanitizeDiscord } from './conductors'
 
 export function buildResetPatch(): Partial<Settings> {
-  const {
-    accounts,
-    multiAccount,
-    skipPermissions,
-    fablePriority,
-    sessionMethods,
-    discord,
-    ...rest
-  } = DEFAULT_SETTINGS
+  const { accounts, skipPermissions, fablePriority, sessionMethods, discord, assist, ...rest } =
+    DEFAULT_SETTINGS
+  void assist
   void accounts
-  void multiAccount
   void skipPermissions
   void fablePriority
   void sessionMethods
@@ -40,6 +34,7 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   merged.sessionMethods = normalizeSessionMethods(merged.sessionMethods)
   merged.accounts = sanitizeAccountList(merged.accounts)
   merged.discord = sanitizeDiscord(merged.discord)
+  merged.assist = sanitizeAssist(merged.assist)
   merged.workbenchWidth = sanitizeWorkbenchWidth(
     'workbenchWidth' in doc
       ? merged.workbenchWidth
@@ -63,6 +58,13 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
       ? merged.hintsSeen
       : []
   return merged
+}
+
+function sanitizeAssist(raw: unknown): AssistSetting {
+  if (!raw || typeof raw !== 'object') return null
+  const { on, backend } = raw as Record<string, unknown>
+  if (typeof on !== 'boolean' || (backend !== 'claude' && backend !== 'codex')) return null
+  return { on, backend }
 }
 
 function isZoneId(z: unknown): z is string {

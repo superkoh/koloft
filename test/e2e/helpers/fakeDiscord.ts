@@ -2,7 +2,7 @@ import fs from 'fs'
 import http from 'http'
 import type { AddressInfo } from 'net'
 import { WebSocketServer, type WebSocket } from 'ws'
-import type { E2EEnv } from './env'
+import { addKeychainEntry, type E2EEnv } from './env'
 
 export const FAKE_BOT = 'koloft-bot'
 export const FAKE_APPLICATION_ID = '700'
@@ -455,7 +455,6 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
   })
 
   env.launchEnv.KOLOFT_DISCORD_API_URL = `http://127.0.0.1:${port}/api/v10`
-  if (token)
-    fs.writeFileSync(env.keychainFile, JSON.stringify({ 'koloft-dev-discord-bot': { bot: token } }))
+  if (token) addKeychainEntry(env, 'koloft-dev-discord-bot', 'bot', token)
   return fake
 }

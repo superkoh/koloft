@@ -1756,7 +1756,7 @@ describe('a compaction the owner asked for', () => {
     expect(status(tracker, 'tabK2')).toBe('working')
   })
 
-  it('the "/compact" line Claude writes into the transcript is not a new prompt, so it cannot outlast the compaction as working', async () => {
+  it('neither the "/compact" line nor the summary Claude writes into the transcript is a new prompt, so neither can outlast the compaction as working', async () => {
     const cwd = makeWorkspace()
     const tracker = newTracker()
     const file = await bindCaughtUp(tracker, 'tabK4', cwd, initialLines(cwd))
@@ -1766,6 +1766,16 @@ describe('a compaction the owner asked for', () => {
     expect(status(tracker, 'tabK4')).toBe('waiting')
     tracker.receive('tabK4', hook('compacting'))
     tracker.receive('tabK4', hook('compacted'))
+    expect(status(tracker, 'tabK4')).toBe('waiting')
+    appendJsonl(file, [
+      {
+        type: 'user',
+        isCompactSummary: true,
+        message: { role: 'user', content: 'This session is being continued from a previous …' },
+        cwd
+      }
+    ])
+    await sleep(RESUME_MS * 2)
     expect(status(tracker, 'tabK4')).toBe('waiting')
     appendJsonl(file, [
       {

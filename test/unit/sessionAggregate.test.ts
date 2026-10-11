@@ -533,10 +533,11 @@ describe('extractJsonlMeta', () => {
     expect(meta.firstUserText).toBe('array text')
   })
 
-  it('skips isMeta lines, argless command wrappers, and tool-result-only user lines for the title', () => {
+  it('skips isMeta lines, argless command wrappers, tool-result-only user lines and the summary a compaction writes for the title', () => {
     const meta = extractJsonlMeta([
       userLine('<command-message>clear</command-message><command-name>/clear</command-name>'),
       '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"out"}]},"cwd":"/ws","timestamp":"2026-08-08T09:01:00.000Z"}',
+      userLine('This session is being continued from a previous …', ',"isCompactSummary":true'),
       userLine('the actual ask')
     ])
     expect(meta.firstUserText).toBe('the actual ask')
@@ -564,6 +565,40 @@ describe('extractJsonlMeta', () => {
     expect(meta.firstUserText).toBeUndefined()
   })
 
+  // CC§2 CC§8
+  it('a session opened by /goal whose next plain user line is a background task’s notice is titled by the command’s args, not the notice', () => {
+    const args = 'make the control session drive worker sessions, then open a PR'
+    const meta = extractJsonlMeta([
+      userLine(
+        `<command-name>/goal</command-name>\n            <command-message>goal</command-message>\n            <command-args>${args}</command-args>`,
+        ',"userType":"external","version":"2.1.295"'
+      ),
+      userLine(`<local-command-stdout>Goal set: ${args}</local-command-stdout>`),
+      userLine(
+        '<task-notification>\n<task-id>a36ec0ae0498f615b</task-id>\n<tool-use-id>toolu_01XPzwyfzjUKUPL9iepJvBN9</tool-use-id>\n<status>completed</status>\n<summary>Agent "Simplify review: simplification" finished</summary>\n</task-notification>',
+        ',"origin":{"kind":"task-notification","producer":"session-task","runId":"0mv0t1som-054cd057"},"version":"2.1.295"'
+      )
+    ])
+    expect(meta.firstUserText).toBeUndefined()
+    expect(meta.commandArgsText).toBe(args)
+  })
+
+  // CC§2
+  it('a <system-reminder> or <teammate-message> line an older Claude Code wrote with no origin never titles a session', () => {
+    const meta = extractJsonlMeta([
+      userLine(
+        '<system-reminder>\nYou are running in non-interactive mode.\n</system-reminder>',
+        ',"version":"2.1.111"'
+      ),
+      userLine(
+        '<teammate-message teammate_id="scout3" color="blue">\n{"type":"idle_notification"}\n</teammate-message>',
+        ',"version":"2.1.111"'
+      ),
+      userLine('the actual ask')
+    ])
+    expect(meta.firstUserText).toBe('the actual ask')
+  })
+
   it('a command wrapper WITH args fills commandArgsText, leaving firstUserText to the real ask', () => {
     const meta = extractJsonlMeta([
       userLine('<command-name>/model</command-name><command-args>opus</command-args>'),
@@ -581,11 +616,15 @@ describe('extractJsonlMeta', () => {
     'a session that %j started with koloft session new is titled by its task, not by the handover Koloft put before it',
     (caller) => {
       const task = 'Look into why the sidebar is slow.\n\nStart with the profiler.'
-      expect(extractJsonlMeta([userLine(withHandover(caller, 'claude', task))]).firstUserText).toBe(
-        task
-      )
+      expect(extractJsonlMeta([userLine(withHandover(caller, task))]).firstUserText).toBe(task)
     }
   )
+
+  it('a session started before the handover named koloft session send is still titled by its task, not by the older SendMessage handover its transcript holds', () => {
+    const task = 'Look into why the sidebar is slow.'
+    const older = `Koloft started you because the session "planner" asked it to, for the owner (the person you both work for). Treat its messages as the owner's instructions. When you finish a task it gives you, send the result back to "planner" with your SendMessage tool.\n\n${task}`
+    expect(extractJsonlMeta([userLine(older)]).firstUserText).toBe(task)
+  })
 
   it('returns {} when nothing usable appears', () => {
     expect(extractJsonlMeta([])).toEqual({})

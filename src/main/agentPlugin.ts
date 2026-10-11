@@ -7,17 +7,21 @@ function agentSkillMarkdown(): string {
 }
 
 // CC§13
-export function writeAgentPlugin(userData: string): string {
-  const dir = path.join(userData, 'agent-plugin')
-  fs.mkdirSync(path.join(dir, '.claude-plugin'), { recursive: true })
-  fs.mkdirSync(path.join(dir, 'skills', 'koloft'), { recursive: true })
-  fs.writeFileSync(
-    path.join(dir, '.claude-plugin', 'plugin.json'),
-    JSON.stringify({
+export function agentPluginFiles(): Record<string, string> {
+  return {
+    '.claude-plugin/plugin.json': JSON.stringify({
       name: 'koloft',
       description: 'Lets this session use Koloft, the app it runs in.'
-    })
-  )
-  fs.writeFileSync(path.join(dir, 'skills', 'koloft', 'SKILL.md'), agentSkillMarkdown())
+    }),
+    'skills/koloft/SKILL.md': agentSkillMarkdown()
+  }
+}
+
+export function writeAgentPlugin(userData: string): string {
+  const dir = path.join(userData, 'agent-plugin')
+  for (const [rel, text] of Object.entries(agentPluginFiles())) {
+    fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true })
+    fs.writeFileSync(path.join(dir, rel), text)
+  }
   return dir
 }

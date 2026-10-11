@@ -10,10 +10,13 @@ import {
 } from 'react'
 import {
   LuAlignLeft,
+  LuCloudUpload,
   LuDownload,
   LuEllipsis,
   LuFileText,
+  LuGitCommitHorizontal,
   LuGitPullRequest,
+  LuGitPullRequestCreate,
   LuGithub,
   LuGlobe,
   LuLink,
@@ -23,6 +26,7 @@ import {
   LuPencil,
   LuPlus,
   LuRotateCw,
+  LuSend,
   LuTerminal,
   LuVolume2,
   LuVolumeX,
@@ -44,10 +48,15 @@ import type {
   BrowserPermissionRefusal,
   EditFingerprint,
   GitFileStatus,
+  GitStepResult,
   GithubInfo,
   GithubTarget,
+  PrChecks,
   SessionInfo
 } from '@shared/types'
+import { CommitDialog } from './CommitDialog'
+import { commentBlocked } from './changesModel'
+import { checksDot, checksLine, failingChecks, type ChecksDot } from './prChecksView'
 import { BrowserActions } from './BrowserActions'
 import { BrowserAddressBar } from './BrowserAddressBar'
 import { BrowserGuest, type GuestElement, type GuestFailure } from './BrowserGuest'
@@ -146,6 +155,12 @@ const PREARMED_COMMANDS: ReadonlySet<WorkbenchCommandSignal['id']> = new Set([
   'browser-new-tab'
 ])
 
+const DOT_WORD: Record<ChecksDot, string> = {
+  pass: 'passed',
+  fail: 'failing',
+  pending: 'running'
+}
+
 const VIEW_LABEL: Record<ArtifactView, string> = {
   render: 'Rendered',
   diff: 'Diff',
@@ -197,7 +212,6 @@ export interface WorkbenchPaneProps {
   liveTabs: ReadonlySet<string>
   visible: boolean
   full: boolean
-  load: { tabId: string; nonce: number } | null
   command: WorkbenchCommandSignal | null
   dialog: BrowserDialog | null
   onUpdate: (
@@ -282,13 +296,33 @@ function useGithubInfo(root: string | null): {
   return { info: got && got.root === root ? got.info : null, recheck }
 }
 
+function useGithubChecks(
+  root: string | null,
+  pr: number | null
+): { checks: PrChecks | null; refresh: () => void } {
+  const [got, setGot] = useState<{ key: string; checks: PrChecks } | null>(null)
+  const [nonce, setNonce] = useState(0)
+  const key = root && pr !== null ? `${root}#${pr}` : null
+  useEffect(() => {
+    if (!root || pr === null) return undefined
+    let alive = true
+    void window.api.github.checks(root, pr).then((checks) => {
+      if (alive) setGot({ key: `${root}#${pr}`, checks })
+    })
+    return () => {
+      alive = false
+    }
+  }, [root, pr, nonce])
+  const refresh = useCallback((): void => setNonce((n) => n + 1), [])
+  return { checks: got && got.key === key ? got.checks : null, refresh }
+}
+
 export function WorkbenchPane({
   tabId: ownerTab,
   states,
   liveTabs,
   visible,
   full,
-  load,
   command,
   dialog,
   onUpdate,
@@ -310,6 +344,7 @@ export function WorkbenchPane({
   onCdpCreate
 }: WorkbenchPaneProps): JSX.Element {
   const termFocus = useStore((s) => s.termFocus)
+  const load = useStore((s) => (ownerTab ? s.workbenchLoad[ownerTab] : undefined))
   const [live, setLive] = useState<string[]>([])
   const [runtime, setRuntime] = useState<Record<string, TabRuntime>>({})
   const [attached, setAttached] = useState(0)
@@ -323,6 +358,8 @@ export function WorkbenchPane({
   const [newMenuOpen, setNewMenuOpen] = useState(false)
   const [ghMenu, setGhMenu] = useState(false)
   const github = useGithubInfo(visible ? treeRoot : null)
+  const ghChecks = useGithubChecks(visible ? treeRoot : null, github.info?.pr ?? null)
+  const [commitOpen, setCommitOpen] = useState(false)
   const [permAsk, setPermAsk] = useState<BrowserPermissionAsk | null>(null)
   const [permRefusal, setPermRefusal] = useState<BrowserPermissionRefusal | null>(null)
   const [audio, setAudio] = useState<Record<string, { audible: boolean; muted: boolean }>>({})
@@ -1128,12 +1165,12 @@ export function WorkbenchPane({
     if (document.activeElement === document.body) rootRef.current?.focus()
   }, [set.activeId, ownerTab, activate])
 
-  const lastLoad = useRef(0)
+  const lastLoad = useRef<Record<string, number>>({})
   useEffect(() => {
-    if (!load || load.nonce === lastLoad.current) return
-    lastLoad.current = load.nonce
+    if (!load || !ownerTab || load.nonce === lastLoad.current[ownerTab]) return
+    lastLoad.current[ownerTab] = load.nonce
     activate(load.tabId)
-  }, [load, activate])
+  }, [load, ownerTab, activate])
 
   useEffect(() => {
     return window.api.browser.onDownloadEvent((event) => {
@@ -1696,9 +1733,41 @@ export function WorkbenchPane({
   }, [visible, github.info])
 
   const ghInfo = github.info
+  const ghDot = ghInfo?.pr ? checksDot(ghChecks.checks) : null
   const ghLabel = ghInfo?.pr
-    ? `Open pull request #${ghInfo.pr} · right-click for more`
+    ? `Open pull request #${ghInfo.pr}${ghDot ? ` · checks ${DOT_WORD[ghDot]}` : ''} · right-click for more`
     : 'Open this repository on GitHub · right-click for more'
+  const checksText = ghInfo?.pr ? checksLine(ghChecks.checks) : null
+  const failing = failingChecks(ghChecks.checks)
+  const sendBlocked = commentBlocked(session)
+  const pasteTab = session?.tabId ?? null
+  const refreshChecks = ghChecks.refresh
+
+  const sendFailingChecks = useCallback(async (): Promise<void> => {
+    const pr = ghInfo?.pr
+    if (!treeRoot || !pasteTab || !pr) return
+    const text = await window.api.github.failingChecksText(treeRoot, pr)
+    if (!text) {
+      useStore.getState().showToast('No failing checks to send.')
+      return
+    }
+    await window.api.terminal.paste(pasteTab, text)
+    onReturnFocus()
+  }, [treeRoot, pasteTab, ghInfo?.pr, onReturnFocus])
+
+  const gitStep = useCallback(
+    async (step: Promise<GitStepResult>, done: string): Promise<boolean> => {
+      const r = await step
+      useStore.getState().showToast(r.ok ? done : r.reason)
+      if (r.ok) {
+        reread()
+        refreshChecks()
+      }
+      return r.ok
+    },
+    [reread, refreshChecks]
+  )
+
   const ghButton = ghInfo ? (
     <button
       className={'wb-gh' + (ghInfo.pr ? ' has' : '') + (ghInfo.pending ? ' pending' : '')}
@@ -1714,10 +1783,12 @@ export function WorkbenchPane({
         setNewMenuOpen(false)
         setDlOpen(false)
         setGhMenu(true)
+        refreshChecks()
       }}
     >
       <LuGithub size={13} />
       {ghInfo.pr !== null && <span className="n">{`#${ghInfo.pr}`}</span>}
+      {ghDot && <span className={'ci ' + ghDot} />}
     </button>
   ) : null
 
@@ -1830,18 +1901,91 @@ export function WorkbenchPane({
               {`Open pull request #${ghInfo.pr}`}
             </button>
           )}
+          <div className="sep" />
+          {checksText && (
+            <>
+              <div className="mi head">{checksText}</div>
+              {failing > 0 && (
+                <button
+                  className={'mi' + (sendBlocked ? ' disabled' : '')}
+                  role="menuitem"
+                  onClick={() => {
+                    if (sendBlocked) return
+                    setGhMenu(false)
+                    void sendFailingChecks()
+                  }}
+                >
+                  <LuSend size={14} />
+                  Send failing checks
+                </button>
+              )}
+              <div className="sep" />
+            </>
+          )}
+          <button
+            className="mi"
+            role="menuitem"
+            onClick={() => {
+              setGhMenu(false)
+              setCommitOpen(true)
+            }}
+          >
+            <LuGitCommitHorizontal size={14} />
+            Commit…
+          </button>
+          <button
+            className="mi"
+            role="menuitem"
+            onClick={() => {
+              setGhMenu(false)
+              if (treeRoot) void gitStep(window.api.github.push(treeRoot), 'Pushed.')
+            }}
+          >
+            <LuCloudUpload size={14} />
+            Push
+          </button>
+          {ghInfo.pr === null && ghInfo.branch !== null && (
+            <button
+              className="mi"
+              role="menuitem"
+              onClick={() => {
+                setGhMenu(false)
+                if (!treeRoot) return
+                void gitStep(window.api.github.push(treeRoot), 'Pushed.').then((ok) => {
+                  if (ok) openGithub('compare')
+                })
+              }}
+            >
+              <LuGitPullRequestCreate size={14} />
+              Open pull request…
+            </button>
+          )}
+          <div className="sep" />
           <button
             className="mi"
             role="menuitem"
             onClick={() => {
               setGhMenu(false)
               github.recheck()
+              refreshChecks()
             }}
           >
             <LuRotateCw size={14} />
             Check again
           </button>
         </div>
+      )}
+
+      {commitOpen && treeRoot && (
+        <CommitDialog
+          branch={ghInfo?.branch ?? null}
+          onCancel={() => setCommitOpen(false)}
+          onCommit={async (message) => {
+            const ok = await gitStep(window.api.github.commit(treeRoot, message), 'Committed.')
+            if (ok) setCommitOpen(false)
+            return ok
+          }}
+        />
       )}
 
       {newMenuOpen && (

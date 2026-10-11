@@ -56,8 +56,14 @@ export function WorkbenchPreview({
     [git, numstat, root, base]
   )
   const docs = useMemo(
-    () => previewDocs({ files: session?.files ?? [], webTabs: webTabs ?? [], openFile }),
-    [session?.files, webTabs, openFile]
+    () =>
+      previewDocs({
+        files: session?.files ?? [],
+        verdicts: session?.docVerdicts,
+        webTabs: webTabs ?? [],
+        openFile
+      }),
+    [session?.files, session?.docVerdicts, webTabs, openFile]
   )
 
   const label = !totals

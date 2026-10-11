@@ -37,7 +37,6 @@ function headAge(oldest: number | null, now: number): string {
 }
 
 export function TopbarUsage(): JSX.Element | null {
-  const multiAccount = useStore((s) => s.settings.multiAccount)
   const setSettingsOpen = useStore((s) => s.setSettingsOpen)
   const [accounts, setAccounts] = useState<AccountView[]>([])
   const [now, setNow] = useState(() => Date.now())
@@ -108,7 +107,7 @@ export function TopbarUsage(): JSX.Element | null {
   )
 
   const members = accounts.filter((a) => a.kind === 'oauth' && a.enabled)
-  if (!multiAccount || members.length === 0) return null
+  if (members.length === 0) return null
 
   const enabled = accounts.filter((a) => a.enabled && a.kind !== 'codex-home')
   const armed = meteredArmed(accounts, Math.floor(now / 1000))

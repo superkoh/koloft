@@ -74,21 +74,27 @@
           log in to another one, and start again. Koloft keeps your accounts in one pool, and each
           new session starts on <mark class="hl">the one with the most room</mark> left.
         </p>
+        <p>
+          Every session in Koloft runs on an account you add here, never on the login this Mac
+          already has. So the first time Koloft opens, it asks you to sign in to Claude or Codex
+          (the welcome step "Sign in, and pick your <a href="#assist">Assist</a>"). A Koloft you
+          updated asks too, if no account was added yet.
+        </p>
 
-        <figure class="shot" style="--ar: 1290 / 760; --ar-phone: 710 / 914">
+        <figure class="shot" style="--ar: 1322 / 870; --ar-phone: 765 / 1080">
           <div class="frame">
             <picture>
               <source
                 media="(max-width: 760px)"
-                srcset="../img/h-settings-accounts-phone2.webp"
-                width="710"
-                height="914"
+                srcset="../img/h-settings-accounts-phone3.webp"
+                width="765"
+                height="1080"
               />
               <img
-                src="../img/h-settings-accounts-pane.webp"
-                width="1290"
-                height="760"
-                alt="Koloft's Settings, Accounts page: Multi-account mode on, two Claude accounts named Personal and Work with their five-hour, seven-day and fable use, and Sign in, Paste token and Refresh usage buttons"
+                src="../img/h-settings-accounts-pane3.webp"
+                width="1322"
+                height="870"
+                alt="Koloft's Settings, Accounts page: the Skip permission prompts and Prefer accounts with fable allowance switches, two Claude accounts named Personal and Work with their five-hour, seven-day and fable use, and Sign in, Paste token and Refresh usage buttons"
               />
             </picture>
             <span class="tape" aria-hidden="true"></span>
@@ -100,10 +106,9 @@
 
         <h2>Claude</h2>
         <p>
-          Turn on Settings ▸ Accounts ▸ Multi-account mode, then add your subscription accounts.
-          Sign in runs the official <code>claude setup-token</code> for you in the background. You
-          approve once in your browser, and the token goes straight into the pool. Or paste a token
-          you already have.
+          Add your subscription accounts in Settings ▸ Accounts. Sign in runs the official
+          <code>claude setup-token</code> for you in the background. You approve once in your
+          browser, and the token goes straight into the pool. Or paste a token you already have.
         </p>
         <p>
           You can also add an API (application programming interface) key, or a custom endpoint:
@@ -153,8 +158,12 @@
           <li>tokens and keys are kept in the macOS Keychain</li>
           <li>the top bar shows how much room your Claude accounts have left</li>
           <li>
-            with the mode on but no accounts added, a session you start uses the login already on
-            this Mac; a scheduled job does not start
+            with no account that can be used, a session does not start. Koloft says
+            <code
+              >No Claude account in Koloft can be used. Add one, or fix the one you have, in
+              Settings ▸ Accounts.</code
+            >
+            (the same for Codex), and a scheduled job does not start either
           </li>
         </ul>
 
@@ -166,11 +175,24 @@
           week), shows in Settings.
         </p>
 
-        <h2>With the mode off</h2>
+        <h2 id="assist">Koloft Assist</h2>
         <p>
-          Sessions run a plain <code>claude</code> or <code>codex</code>, on whatever login this Mac
-          already has. Nothing is picked for you.
+          Koloft has small jobs of its own that need an AI. Today there is one: the short title of a
+          Claude session that an agent starts with <code>koloft session new</code> (see
+          <a href="../agents/">agents</a>). One of your accounts does those jobs. That is
+          <mark class="hl">Koloft Assist</mark>. Settings ▸ Sessions ▸ Assist is where you turn it
+          on or off and pick the tool it runs on.
         </p>
+        <ul class="dash">
+          <li>
+            on Claude it uses Haiku, on Codex GPT-6 Luna; each job costs a tiny bit of that
+            account's plan or API balance, far less than one cent
+          </li>
+          <li>
+            off, those jobs run without AI: a session an agent starts is named after the first line
+            of its task
+          </li>
+        </ul>
 
         <h2>Your own accounts</h2>
         <p>

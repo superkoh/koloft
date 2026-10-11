@@ -2,7 +2,8 @@ import fs from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import { execFileSync } from 'child_process'
-import type { Locator, Page } from '@playwright/test'
+import { chromium, type Locator, type Page } from '@playwright/test'
+import { BROWSER, openBrowser } from './helpers/browser'
 import {
   test,
   expect,
@@ -11,12 +12,23 @@ import {
   pretendWindowFocused,
   quitAndClose
 } from './helpers/app'
-import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
 import {
+  installCodex,
+  installFakeGh,
+  seedSettings,
+  setGithubFixture,
+  type E2EEnv
+} from './helpers/env'
+import {
+  FAILED_LOG,
+  ONE_FAILING_OF_FIVE,
   WORKBENCH,
   commentOnFirstHunk,
+  expectOnePromptFromTheChecks,
   expectOnePromptFromTheComment,
+  sendFailingChecks,
   showBrowse,
+  wbActiveTab,
   wbUnreadTabs
 } from './helpers/workbench'
 import { setupChangeFixture } from './helpers/filesFixture'
@@ -37,6 +49,7 @@ import {
   readCalls,
   runIn,
   sendShortcut,
+  settingsOnDisk,
   snap,
   startSessionIn,
   termIds,
@@ -51,6 +64,9 @@ const LONGER_THAN_OLD_15S_RESUME_DEADLINE_MS = 16_000
 const SLOW_VERSION_PROBE_MS = 10_000
 const LAUNCH_MUST_NOT_WAIT_FOR_PROBE_MS = 4000
 const CODEX_TRANSPORT_STOP_WORST_CASE_MS = 4000
+const WAITING_TO_IDLE_MS = 1000
+const IDLE_TO_SLEEP_MS = 3000
+const A_REMOVAL_WOULD_HAVE_FINISHED_MS = 3000
 
 interface CodexCall {
   pid: number
@@ -99,9 +115,23 @@ function codexCalls(env: E2EEnv): CodexCall[] {
       }
     })
 }
+async function startCodexInWorktree(page: Page, env: E2EEnv, name: string): Promise<CodexCall> {
+  const before = codexCalls(env).length
+  await newIn(page, true)
+  await worktreeDialog(page).locator('input').fill(name)
+  await chooseBackend(page, 'other')
+  await expect.poll(() => codexCalls(env).length).toBe(before + 1)
+  await expect(codexRows(page).filter({ hasText: 'Starting…' })).toHaveCount(0)
+  return codexCalls(env)[before]
+}
 function codexRows(page: Page): Locator {
   return wsRows(page, 'ws-a').filter({
     hasNot: page.getByRole('img', { name: 'Claude', exact: true })
+  })
+}
+function claudeRows(page: Page): Locator {
+  return wsRows(page, 'ws-a').filter({
+    has: page.getByRole('img', { name: 'Claude', exact: true })
   })
 }
 async function restoreFromTheFirstMenuOpenedAfterLaunch(page: Page): Promise<void> {
@@ -213,6 +243,46 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(
         wsRows(page, 'ws-a').getByRole('img', { name: 'Claude', exact: true })
       ).toHaveCount(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // ADR-0030
+  test('with no Codex account, "New Codex session" is shut on the empty workspace and in the ⌘N picker, under a line that stays and whose Settings part opens Settings ▸ Accounts', async ({
+    env
+  }) => {
+    installCodex(env)
+    const accounts = settingsOnDisk(env).accounts as { kind: string }[]
+    seedSettings(env, { accounts: accounts.filter((a) => a.kind !== 'codex-home') })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const empty = page.locator('.w-empty')
+      const line = /^No Codex account yet — add one in Settings ▸ Accounts\.$/
+      await expect(empty.getByRole('button', { name: 'New Codex session' })).toBeDisabled()
+      await expect(empty.getByRole('button', { name: /New Claude session/ })).toBeEnabled()
+      await expect(empty.locator('.field-hint.bad')).toHaveText(line)
+      await snap(page, 'codex-no-account-empty-workspace')
+
+      await clickAppMenuItem(app, page, 'new-session')
+      const dlg = pickerDialog(page)
+      await expect(dlg).toBeVisible({ timeout: 15_000 })
+      await expect(dlg.locator('.modal-foot button[data-default="false"]')).toBeDisabled()
+      await expect(dlg.locator('.field-hint.bad')).toHaveText(line)
+      await snap(page, 'codex-no-account-picker')
+      await page.keyboard.press('Shift+Enter')
+      await page.keyboard.press('Escape')
+      await expect(dlg).toHaveCount(0)
+
+      await empty.getByRole('button', { name: 'Settings ▸ Accounts' }).click()
+      await expect(page.getByRole('tab', { name: 'Accounts', exact: true })).toHaveAttribute(
+        'aria-selected',
+        'true'
+      )
+      await expect(page.getByRole('button', { name: 'Sign in to Codex' })).toBeVisible()
+      expect(codexCalls(env)).toHaveLength(0)
     } finally {
       await quitAndClose(app)
     }
@@ -378,9 +448,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(wsRows(page, 'ws-a')).toHaveCount(2)
       expect(readCalls(env)).toHaveLength(1)
       await expect(page.locator('.wb-col:visible')).toHaveCount(1)
-      await wsRows(page, 'ws-a')
-        .filter({ has: page.getByRole('img', { name: 'Claude', exact: true }) })
-        .click()
+      await claudeRows(page).click()
       await expect(page.getByRole('button', { name: 'Workbench', exact: true })).toBeVisible()
 
       const statusOverride = (argv: string[]): string | undefined =>
@@ -441,7 +509,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('a page Codex opens with `open` lands as an unread web tab in its own Workbench, and the agent-web hint names Codex', async ({
+  test('a page Codex opens with `open` comes up in front in its own Workbench, and the agent-web hint names Codex', async ({
     env
   }) => {
     installCodex(env)
@@ -455,9 +523,65 @@ test.describe('Codex sessions through the real method chooser, process transport
       const hint = page.locator('.hint-card[data-hint="agent-web"] .h')
       await expect(hint).toContainText('Codex')
       await expect(hint).not.toContainText('Claude')
-      const toggle = page.getByRole('button', { name: 'Workbench', exact: true })
-      if (!(await toggle.getAttribute('class'))?.includes(' on')) await toggle.click()
-      await expect(wbUnreadTabs(page)).toHaveCount(1)
+      await expect(wbActiveTab(page)).toHaveAttribute('title', /codex-opened/)
+      await expect(wbUnreadTabs(page)).toHaveCount(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§26
+  test("a Codex tab hands the owner's Playwright MCP entry its own browser endpoint, keeping the entry's env_vars; a client there drives that tab's Workbench, and after /new the old client is sent away so a new one drives the new thread", async ({
+    env
+  }) => {
+    installCodex(env)
+    fs.writeFileSync(
+      path.join(env.home, 'fake-codex-mcp-servers.json'),
+      JSON.stringify({
+        playwright: { command: 'npx', args: ['@playwright/mcp@latest'], env_vars: ['MINE'] },
+        github: { command: 'github-mcp', args: [] }
+      })
+    )
+    seedSettings(env, { onboardingSeen: true, hintsSeen: ['workbench'] })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      const tabServers = fs
+        .readFileSync(path.join(env.home, 'fake-codex-server-calls.jsonl'), 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as { argv: string[]; playwrightMcpEndpoint: string })
+        .filter((call) => call.argv.some((a) => a.startsWith('tui.status_line=')))
+      expect(tabServers).toHaveLength(1)
+      expect(tabServers[0].argv.filter((a) => a.startsWith('mcp_servers.'))).toEqual([
+        'mcp_servers.playwright.env_vars=["MINE","PLAYWRIGHT_MCP_CDP_ENDPOINT","PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS"]'
+      ])
+      const url = tabServers[0].playwrightMcpEndpoint
+      expect(url).toMatch(/^ws:\/\/127\.0\.0\.1:\d+\/cdp\/[a-f0-9]{32}$/)
+
+      const first = await chromium.connectOverCDP(url)
+      let sentAway = false
+      first.on('disconnected', () => {
+        sentAway = true
+      })
+      try {
+        await first.contexts()[0].newPage()
+        await openBrowser(page)
+        await expect(page.locator(BROWSER.drivenTab)).toHaveCount(1, { timeout: 30_000 })
+        await runIn(page, centerTerm(page), '/new')
+        await expect.poll(() => sentAway, { timeout: 30_000 }).toBe(true)
+      } finally {
+        await first.close().catch(() => {})
+      }
+      const second = await chromium.connectOverCDP(url)
+      try {
+        const driven = await second.contexts()[0].newPage()
+        expect(await driven.evaluate('1 + 1')).toBe(2)
+      } finally {
+        await second.close()
+      }
     } finally {
       await quitAndClose(app)
     }
@@ -527,6 +651,115 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
+  test('an untouched Codex worktree goes with its tab, folder and worktree-<name> branch, clicking the cold row makes it again in place for the same thread, and a restart after that resumes the same thread in that same folder', async ({
+    env
+  }) => {
+    installCodex(env)
+    gitInit(env.workspaces.a)
+    const branches = (): string =>
+      execFileSync('git', ['branch', '--list', 'worktree-codex-clean'], {
+        cwd: env.workspaces.a,
+        encoding: 'utf8'
+      }).trim()
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const first = await startCodexInWorktree(page, env, 'codex-clean')
+      await expect(codexRows(page)).toHaveClass(/st-waiting/)
+      expect(fs.existsSync(first.cwd)).toBe(true)
+      expect(branches()).not.toBe('')
+
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(codexRows(page)).toHaveClass(/cold/)
+      await expect.poll(() => fs.existsSync(first.cwd)).toBe(false)
+      expect(branches()).toBe('')
+
+      await codexRows(page).click()
+      await expect.poll(() => codexCalls(env).length).toBe(2)
+      await expect(codexRows(page)).toHaveClass(/st-waiting|st-idle/)
+      expect(codexCalls(env)[1]).toMatchObject({ cwd: first.cwd, sessionId: first.sessionId })
+      const madeAgain = fs.statSync(first.cwd).ino
+
+      await clickAppMenuItem(app, page, 'restart-session')
+      await expect.poll(() => codexCalls(env).length).toBe(3)
+      await expect(codexRows(page)).toHaveClass(/st-waiting|st-idle/)
+      expect(codexCalls(env)[2]).toMatchObject({ cwd: first.cwd, sessionId: first.sessionId })
+      expect(fs.statSync(first.cwd).ino).toBe(madeAgain)
+      expect(branches()).not.toBe('')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a Codex worktree another session still runs in stays when one tab closes, and goes when the last one does', async ({
+    env
+  }) => {
+    installCodex(env)
+    gitInit(env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const tree = (await startCodexInWorktree(page, env, 'codex-shared')).cwd
+      expect((await startCodexInWorktree(page, env, 'codex-shared')).cwd).toBe(tree)
+      await expect(codexRows(page).and(page.locator('.st-waiting'))).toHaveCount(2)
+
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(codexRows(page).and(page.locator('.cold'))).toHaveCount(1)
+      await page.waitForTimeout(A_REMOVAL_WOULD_HAVE_FINISHED_MS)
+      expect(fs.existsSync(tree)).toBe(true)
+
+      await codexRows(page).and(page.locator('.st-waiting')).click()
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(codexRows(page).and(page.locator('.cold'))).toHaveCount(2)
+      await expect.poll(() => fs.existsSync(tree)).toBe(false)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a Codex worktree a Claude session was opened in stays while that Claude session runs, and goes when Codex is the last to leave it', async ({
+    env
+  }) => {
+    installCodex(env)
+    gitInit(env.workspaces.a)
+    fs.writeFileSync(path.join(env.workspaces.a, '.gitignore'), 'NOTES.md\n')
+    gitCommitAll(env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const tree = (await startCodexInWorktree(page, env, 'codex-mixed')).cwd
+      await newIn(page, true)
+      await worktreeDialog(page).locator('input').fill('codex-mixed')
+      await chooseBackend(page, 'default')
+      await expect(claudeRows(page)).toHaveClass(/st-waiting/)
+      const notes = path.join(tree, 'NOTES.md')
+      await expect.poll(() => fs.existsSync(notes)).toBe(true)
+      fs.copyFileSync(notes, path.join(env.workspaces.a, 'NOTES.md'))
+
+      await codexRows(page).click()
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(codexRows(page)).toHaveClass(/cold/)
+      await page.waitForTimeout(A_REMOVAL_WOULD_HAVE_FINISHED_MS)
+      expect(fs.existsSync(tree)).toBe(true)
+
+      await claudeRows(page).click()
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(claudeRows(page)).toHaveClass(/cold/)
+      await codexRows(page).click()
+      await expect(codexRows(page)).toHaveClass(/st-waiting|st-idle/)
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(codexRows(page)).toHaveClass(/cold/)
+      await expect.poll(() => fs.existsSync(tree)).toBe(false)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('mixed sessions receive worktree and Codex approval hints without Claude-only guidance', async ({
     env
   }) => {
@@ -542,9 +775,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       await worktreeHint.getByRole('button', { name: 'Got it', exact: true }).click()
       const tabId = await codexRows(page).getAttribute('data-tab-id')
       expect(tabId).toBeTruthy()
-      await wsRows(page, 'ws-a')
-        .filter({ has: page.getByRole('img', { name: 'Claude', exact: true }) })
-        .click()
+      await claudeRows(page).click()
       await page.evaluate((id) => window.api.terminal.write(id!, 'approve\r'), tabId)
       const approvalHint = page.locator('.hint-card[data-hint="approval"]')
       await expect(approvalHint.locator('.h')).toHaveText('Amber means a session needs you')
@@ -556,6 +787,79 @@ test.describe('Codex sessions through the real method chooser, process transport
       )
       await runIn(page, centerTerm(page), 'y')
       await expect(codexRows(page)).toHaveClass(/st-waiting/)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('an idle Codex session goes to sleep: its CLI ends while its row and tab stay, and clicking it wakes the same thread in that tab', async ({
+    env
+  }) => {
+    installCodex(env)
+    env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+    env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      const first = codexCalls(env)[0]
+      await startSessionIn(page, 'ws-b', { method: 'Claude' })
+      await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(2)
+      await codexRows(page).click()
+      await wsRows(page, 'ws-b').first().click()
+      await expect.poll(() => processAlive(first.pid), { timeout: 40_000 }).toBe(false)
+      const asleepTab = await codexRows(page).getAttribute('data-tab-id')
+      await expect(codexRows(page)).toHaveClass(/\bst-idle\b/)
+      expect(await termIds(page)).toContain(asleepTab)
+      expect(codexCalls(env)).toHaveLength(1)
+
+      await codexRows(page).click()
+      await expect.poll(() => codexCalls(env).length).toBe(2)
+      expect(codexCalls(env)[1].sessionId).toBe(first.sessionId)
+      await expect(codexRows(page)).not.toHaveAttribute('data-tab-id', asleepTab ?? '')
+      await expect(codexRows(page)).toHaveClass(/st-waiting|st-idle/, { timeout: 30_000 })
+      expect(await termIds(page)).not.toContain(asleepTab)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a Codex worktree tab that goes to sleep keeps its untouched worktree and wakes in it, and closing it while asleep takes the worktree with it', async ({
+    env
+  }) => {
+    installCodex(env)
+    gitInit(env.workspaces.a)
+    env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+    env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const first = await startCodexInWorktree(page, env, 'codex-sleepy')
+      await expect(codexRows(page)).toHaveClass(/st-waiting/)
+      await startSessionIn(page, 'ws-b', { method: 'Claude' })
+      await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(2)
+      await codexRows(page).click()
+      await wsRows(page, 'ws-b').first().click()
+      await expect.poll(() => processAlive(first.pid), { timeout: 40_000 }).toBe(false)
+      await expect(codexRows(page)).toHaveClass(/\bst-idle\b/)
+      await page.waitForTimeout(A_REMOVAL_WOULD_HAVE_FINISHED_MS)
+      expect(fs.existsSync(first.cwd)).toBe(true)
+
+      await codexRows(page).click()
+      await expect.poll(() => codexCalls(env).length).toBe(2)
+      const woken = codexCalls(env)[1]
+      expect(woken).toMatchObject({ cwd: first.cwd, sessionId: first.sessionId })
+
+      await expect(codexRows(page)).toHaveClass(/st-waiting/)
+      await wsRows(page, 'ws-b').first().click()
+      await expect.poll(() => processAlive(woken.pid), { timeout: 40_000 }).toBe(false)
+      await openMenu(page, codexRows(page))
+      await page.locator('.menu .mi', { hasText: /^Close$/ }).click()
+      await expect.poll(() => fs.existsSync(first.cwd)).toBe(false)
     } finally {
       await quitAndClose(app)
     }
@@ -736,7 +1040,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('app restart leaves Codex members cold and restores removed history with its native identity', async ({
+  test('app restart brings an open Codex member back running with its native identity, and restores removed history with its native identity', async ({
     env
   }) => {
     installCodex(env)
@@ -759,19 +1063,15 @@ test.describe('Codex sessions through the real method chooser, process transport
       app = await launchApp(env)
       page = await app.firstWindow()
       await waitBooted(page)
+      await expect.poll(() => codexCalls(env).length, { timeout: 30_000 }).toBe(3)
+      expect(codexCalls(env)[2].sessionId).toBe(member.sessionId)
       await expect(codexRows(page)).toHaveCount(1)
-      await expect(codexRows(page)).toHaveClass(/cold/)
-      expect(await termIds(page)).toHaveLength(0)
-      expect(codexCalls(env)).toHaveLength(2)
+      await expect(codexRows(page)).toHaveClass(/st-(working|waiting|idle)/, { timeout: 30_000 })
       await restoreFromTheFirstMenuOpenedAfterLaunch(page)
       const history = page.getByRole('dialog', { name: 'Restore session · ws-a', exact: true })
       await history.getByRole('button').filter({ hasText: 'Codex fixture session' }).click()
-      await expect.poll(() => codexCalls(env).length).toBe(3)
-      expect(codexCalls(env)[2].sessionId).toBe(historyId)
-      await expect(codexRows(page)).toHaveCount(2)
-      await codexRows(page).and(page.locator('.cold')).click()
       await expect.poll(() => codexCalls(env).length).toBe(4)
-      expect(codexCalls(env)[3].sessionId).toBe(member.sessionId)
+      expect(codexCalls(env)[3].sessionId).toBe(historyId)
       await expect(codexRows(page)).toHaveCount(2)
       expect(readCalls(env)).toHaveLength(0)
     } finally {
@@ -779,7 +1079,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('a Codex session’s unread red dot survives a Koloft restart on its cold row, and clicking the row in a focused window clears it', async ({
+  test('after Koloft crashes, a Codex session that was open comes back running with its native identity', async ({
     env
   }) => {
     installCodex(env)
@@ -788,26 +1088,54 @@ test.describe('Codex sessions through the real method chooser, process transport
       let page = await app.firstWindow()
       await waitBooted(page)
       await startCodex(page, env)
+      const first = codexCalls(env)[0]
+      process.kill(app.process().pid!, 'SIGKILL')
+      await expect.poll(() => processAlive(first.pid)).toBe(false)
+      await app.close().catch(() => {})
+
+      app = await launchApp(env)
+      page = await app.firstWindow()
+      await waitBooted(page)
+      await expect.poll(() => codexCalls(env).length, { timeout: 30_000 }).toBe(2)
+      expect(codexCalls(env)[1].sessionId).toBe(first.sessionId)
+      await expect(codexRows(page)).toHaveClass(/st-(working|waiting|idle)/, { timeout: 30_000 })
+      await expect(codexRows(page)).toHaveClass(/\bactive\b/)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a Codex session’s unread red dot survives a Koloft restart on its row, which comes back running, and clicking the row in a focused window clears it', async ({
+    env
+  }) => {
+    installCodex(env)
+    let app = await launchApp(env)
+    try {
+      let page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      const first = codexCalls(env)[0]
       await expect(codexRows(page).locator('.ws-tab-unread')).toHaveCount(1)
       await quitAndClose(app)
 
       app = await launchApp(env)
       page = await app.firstWindow()
       await waitBooted(page)
-      await expect(codexRows(page)).toHaveClass(/cold/)
+      await expect.poll(() => codexCalls(env).length, { timeout: 30_000 }).toBe(2)
+      expect(codexCalls(env)[1].sessionId).toBe(first.sessionId)
+      await expect(codexRows(page)).toHaveClass(/st-waiting/, { timeout: 30_000 })
       await expect(codexRows(page).locator('.ws-tab-unread')).toHaveCount(1)
 
       await pretendWindowFocused(app)
       await codexRows(page).click()
-      await expect.poll(() => codexCalls(env).length).toBe(2)
-      await expect(codexRows(page)).toHaveClass(/st-waiting/)
       await expect(codexRows(page).locator('.ws-tab-unread')).toHaveCount(0)
+      expect(codexCalls(env)).toHaveLength(2)
     } finally {
       await quitAndClose(app)
     }
   })
 
-  test('a Codex session marked Keep running starts again by itself when Koloft reopens, with its native identity, and selects nothing', async ({
+  test('a Codex session marked Keep running starts again by itself when Koloft reopens even though its tab was closed, with its native identity, and selects nothing', async ({
     env
   }) => {
     installCodex(env)
@@ -820,6 +1148,8 @@ test.describe('Codex sessions through the real method chooser, process transport
       await openMenu(page, codexRows(page))
       await page.locator('.menu .mi', { hasText: 'Keep running' }).click()
       await expect(codexRows(page).locator('.ws-tab-resident')).toBeVisible()
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(codexRows(page)).toHaveClass(/cold/)
       await quitAndClose(app)
       await expect.poll(() => processAlive(first.pid)).toBe(false)
 
@@ -960,7 +1290,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       let page = await app.firstWindow()
       await waitBooted(page)
       await sendShortcut(app, 'shortcut:open-settings')
-      await expect(page.locator('.set-main')).toContainText('Codex uses its own login on this Mac.')
+      await expect(page.locator('.set-main')).toContainText('Sign in to Codex')
       await page.getByRole('tab', { name: 'Sessions', exact: true }).click()
       await expect(page.getByRole('button', { name: 'Use Claude by default' })).toHaveAttribute(
         'aria-pressed',
@@ -981,6 +1311,8 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(page.locator('.modal')).toHaveCount(0)
       expect(readCalls(env)).toHaveLength(0)
       await expect(codexRows(page)).toHaveClass(/st-waiting/)
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(codexRows(page)).toHaveClass(/cold/)
       await quitAndClose(app)
       app = await launchApp(env)
       page = await app.firstWindow()
@@ -1041,11 +1373,11 @@ test.describe('Codex sessions through the real method chooser, process transport
   })
 
   // CODEX§15
-  test('a Codex account signed in from Settings shows its weekly use, and a new Codex session runs in its own sign-in folder', async ({
+  test('a Codex account signed in from Settings shows its weekly use back in Settings ▸ Accounts once the sign-in tab closes, and a new Codex session runs in its own sign-in folder', async ({
     env
   }) => {
     installCodex(env)
-    seedSettings(env, { hintsOff: true, multiAccount: true })
+    seedSettings(env, { hintsOff: true })
     const app = await launchApp(env)
     try {
       const page = await app.firstWindow()
@@ -1055,15 +1387,20 @@ test.describe('Codex sessions through the real method chooser, process transport
       await page.getByRole('button', { name: 'Sign in to Codex' }).click()
       await page.getByPlaceholder('Name this account (e.g. work)').fill('work')
       await page.locator('.acct-add').getByRole('button', { name: 'Sign in', exact: true }).click()
+      await expect(page.locator('.modal')).toHaveCount(0)
       const home = path.join(env.userData, 'codex-homes', 'work')
       await expect
         .poll(() => fs.existsSync(path.join(home, 'auth.json')), { timeout: 30_000 })
         .toBe(true)
-      await sendShortcut(app, 'shortcut:open-settings')
-      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      await expect(page.getByRole('tab', { name: 'Accounts', exact: true })).toHaveAttribute(
+        'aria-selected',
+        'true',
+        { timeout: 20_000 }
+      )
       await expect(
         page.locator('.acct-row', { hasText: 'work' }).locator('.acct-meter[data-win="7d"] .m-pct')
       ).toHaveText('30%', { timeout: 30_000 })
+      await snap(page, 'codex-sign-in-back-in-settings')
       await page.keyboard.press('Escape')
 
       await startCodex(page, env)
@@ -1190,6 +1527,28 @@ test.describe('Codex sessions through the real method chooser, process transport
       const note = 'Codex keep the old name'
       const head = await commentOnFirstHunk(page, 'src/change-1.ts', note)
       await expectOnePromptFromTheComment(() => codexPrompts(env), head, note)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('GitHub button ▸ Send failing checks lands in the Codex composer as one paste, unsent until the person presses Enter, with gh run on this Mac', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedSettings(env, { hintsOff: true })
+    installFakeGh(env, { checks: ONE_FAILING_OF_FIVE, failedLog: FAILED_LOG })
+    setGithubFixture(env, {
+      [env.workspaces.a]: { owner: 'acme', repo: 'widgets', branch: 'feature/login', pr: 265 }
+    })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await expect(page.locator('.wb-gh .ci')).toHaveClass(/\bfail\b/, { timeout: 30_000 })
+      await sendFailingChecks(page)
+      await expectOnePromptFromTheChecks(() => codexPrompts(env))
     } finally {
       await quitAndClose(app)
     }

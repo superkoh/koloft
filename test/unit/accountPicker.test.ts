@@ -25,10 +25,7 @@ interface Harness {
   advance(ms: number): void
 }
 
-function makeHarness(
-  accounts: AccountMeta[],
-  opts?: { multiAccount?: boolean; fablePriority?: boolean }
-): Harness {
+function makeHarness(accounts: AccountMeta[], opts?: { fablePriority?: boolean }): Harness {
   const results = new Map<string, ProbeResult>()
   const probeCalls: string[] = []
   const secretOf = new Map(accounts.map((a) => [`${a.kind}:${a.name}`, `tok-${a.name}`]))
@@ -36,7 +33,6 @@ function makeHarness(
   const sessions: LaunchedSession[] = []
   const deps: PickDeps = {
     listAccounts: () => accounts,
-    multiAccountOn: () => opts?.multiAccount !== false,
     fablePriority: () => opts?.fablePriority !== false,
     readSecret: async (kind, name) => secretOf.get(`${kind}:${name}`) ?? null,
     probe: async (_a, secret) => {
@@ -60,13 +56,7 @@ function makeHarness(
   }
 }
 
-describe('U4 · mode / empty-pool gates', () => {
-  it('mode off → immediate {account:null, reason:disabled}', async () => {
-    const h = makeHarness([meta({ name: 'bravo' })], { multiAccount: false })
-    expect(await h.picker.pick()).toEqual({ account: null, reason: 'disabled' })
-    expect(h.probeCalls).toHaveLength(0)
-  })
-
+describe('U4 · empty-pool gates', () => {
   it('empty pool → no-accounts', async () => {
     const h = makeHarness([])
     expect(await h.picker.pick()).toEqual({ account: null, reason: 'no-accounts' })

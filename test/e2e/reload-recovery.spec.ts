@@ -1,8 +1,10 @@
-import { test, expect, pendingAttention } from './helpers/app'
+import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
+import { seedSettings } from './helpers/env'
 import {
   centerTerm,
   processAlive,
   readCalls,
+  resumedId,
   runIn,
   startSessionIn,
   termIds,
@@ -12,6 +14,9 @@ import {
 } from './helpers/p1'
 
 const ROOM_FOR_A_WRONG_FORCE_CLOSE_MODAL_MS = 1500
+const WAITING_TO_IDLE_MS = 1000
+const IDLE_TO_SLEEP_MS = 3000
+const ROOM_FOR_A_WRONG_RESTART_MS = 2000
 
 test.describe("a renderer reload re-adopts main's live ptys instead of orphaning them, proven on process boundaries rather than DOM", () => {
   test('T-REL-01: a reload re-adopts the session — same pty, one claude, repaint, typing works', async ({
@@ -165,5 +170,43 @@ test.describe("a renderer reload re-adopts main's live ptys instead of orphaning
     await expect(wsRows(reopened, 'ws-a').first()).toHaveClass(/\bactive\b/, { timeout: 30_000 })
     await expect(wsRows(reopened, 'ws-b').first()).not.toHaveClass(/\bactive\b/)
     expect(readCalls(env)).toHaveLength(2)
+  })
+
+  test('T-REL-06: a reload keeps a sleeping tab asleep — its row stays running, nothing restarts, and clicking it wakes the same session', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
+    env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a')
+      await startSessionIn(page, 'ws-b')
+      const [a] = await waitForCalls(env, 2)
+      const rowA = wsRows(page, 'ws-a').first()
+      await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(2)
+      await rowA.click()
+      await wsRows(page, 'ws-b').first().click()
+      await expect.poll(() => processAlive(a.pid), { timeout: 40_000 }).toBe(false)
+      const asleepTab = await rowA.getAttribute('data-tab-id')
+
+      await page.reload()
+      await waitBooted(page)
+      await expect.poll(() => termIds(page), { timeout: 30_000 }).toContain(asleepTab)
+      await expect(rowA).toHaveClass(/\bst-idle\b/)
+      await page.waitForTimeout(ROOM_FOR_A_WRONG_RESTART_MS)
+      expect(readCalls(env)).toHaveLength(2)
+
+      await rowA.click()
+      const calls = await waitForCalls(env, 3)
+      expect(resumedId(calls[2])).toBe(a.sessionId)
+      await expect(rowA).toHaveClass(/\bst-(working|waiting|idle)\b/, { timeout: 30_000 })
+    } finally {
+      await quitAndClose(app)
+    }
   })
 })

@@ -156,7 +156,6 @@ export interface Settings {
   fileTreeHeight: number
   sidebarWidth: number
   sidebarHidden: boolean
-  multiAccount: boolean
   skipPermissions: boolean
   fablePriority: boolean
   accounts: AccountMeta[]
@@ -178,11 +177,14 @@ export interface Settings {
   keepAwake: boolean
   worldClocks: string[]
   onboardingSeen: boolean
+  assist: AssistSetting
   hintsSeen: string[]
   hintsOff: boolean
   lastSeenVersion: string
   discord: DiscordSettings
 }
+
+export type AssistSetting = { on: boolean; backend: BackendId } | null
 
 export interface DiscordChannel {
   guildId: string
@@ -256,7 +258,6 @@ export const DEFAULT_SETTINGS: Settings = {
   fileTreeHeight: 260,
   sidebarWidth: 280,
   sidebarHidden: false,
-  multiAccount: false,
   skipPermissions: true,
   fablePriority: true,
   accounts: [],
@@ -276,6 +277,7 @@ export const DEFAULT_SETTINGS: Settings = {
   keepAwake: true,
   worldClocks: [],
   onboardingSeen: false,
+  assist: null,
   hintsSeen: [],
   hintsOff: false,
   lastSeenVersion: '',
@@ -339,6 +341,7 @@ export interface AdoptableTab {
   sessionId?: string
   resumeSessionId?: string
   title?: string
+  asleep?: true
 }
 
 export interface TabInventoryReply {
@@ -520,9 +523,15 @@ export interface BackendSessionInfo {
   updatedAt: number
 }
 
+export interface DocVerdict {
+  show: boolean
+  at: number
+}
+
 export interface SessionInfo extends BackendSessionInfo, SessionSource {
   conductor?: string
   turnOver?: boolean
+  docVerdicts?: Record<string, DocVerdict>
 }
 
 export interface ClaudeSessionInfo extends BackendSessionInfo {
@@ -592,7 +601,36 @@ export interface GithubInfo {
   failed: boolean
 }
 
-export type GithubTarget = 'repo' | 'pulls' | 'pr'
+export type GithubTarget = 'repo' | 'pulls' | 'pr' | 'compare'
+
+export type PrCheckBucket = 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel'
+
+export interface PrCheck {
+  name: string
+  bucket: PrCheckBucket
+  link: string
+  workflow: string
+}
+
+export type PrChecks =
+  { state: 'ok'; checks: PrCheck[] } | { state: 'no-gh' | 'signed-out' | 'no-pr' | 'failed' }
+
+export type GitStepResult = { ok: true } | { ok: false; reason: string }
+
+export interface GithubItem {
+  kind: 'issue' | 'pr'
+  number: number
+  title: string
+  url: string
+  updatedAt: string
+  branch?: string
+}
+
+export type GithubOpenItems =
+  | { state: 'no-repo' | 'no-gh' | 'signed-out' | 'failed' }
+  | { state: 'items'; repo: string; issues: GithubItem[]; prs: GithubItem[] }
+
+export type PrWorktreeResult = { ok: true; dir: string } | { ok: false; reason: string }
 
 // PLATFORM§15
 export interface ExtensionInfo {
@@ -779,7 +817,7 @@ export interface KoloftApi {
     attach(id: string): void
     flowStats(): Promise<FlowStats[]>
     resize(id: string, cols: number, rows: number): void
-    kill(id: string): void
+    kill(id: string, restarting?: boolean): void
     onData(cb: (d: TerminalData) => void): () => void
     onExit(cb: (e: TerminalExit) => void): () => void
     onProcessTitle(cb: (t: TerminalProcessTitle) => void): () => void
@@ -799,6 +837,7 @@ export interface KoloftApi {
   tabs: {
     list(): Promise<TabInventoryReply>
     onKilledByMain(cb: (tabId: string) => void): () => void
+    onSlept(cb: (tabId: string) => void): () => void
   }
   sessions: {
     backends(): Promise<BackendAvailability[]>
@@ -816,6 +855,8 @@ export interface KoloftApi {
     leftovers(): Promise<Record<string, LeftoverProcess[]>>
     onLeftovers(cb: (leftovers: Record<string, LeftoverProcess[]>) => void): () => void
     stopLeftover(sessionId: string, pid: number): Promise<boolean>
+    search(searchId: number, term: string): void
+    onSearchHits(cb: (found: SessionSearchHits) => void): () => void
   }
   attention: {
     list(): Promise<AttentionEvent[]>
@@ -936,6 +977,12 @@ export interface KoloftApi {
     info(root: string, force?: boolean): Promise<GithubInfo | null>
     target(root: string, what: GithubTarget): Promise<string | null>
     onInfo(cb: (root: string, info: GithubInfo) => void): () => void
+    checks(root: string, pr: number): Promise<PrChecks>
+    failingChecksText(root: string, pr: number): Promise<string | null>
+    commit(root: string, message: string): Promise<GitStepResult>
+    push(root: string): Promise<GitStepResult>
+    openItems(root: string): Promise<GithubOpenItems>
+    prWorktree(root: string, pr: number, branch: string): Promise<PrWorktreeResult>
   }
   workspace: {
     pickFolder(): Promise<string | null>
@@ -967,6 +1014,9 @@ export interface KoloftApi {
     remove(name: string, kind: AccountKind): Promise<void>
     toggle(name: string, kind: AccountKind, enabled: boolean): Promise<void>
     probe(): Promise<AccountView[]>
+    // CC§9
+    bypassAccepted(): Promise<boolean>
+    acceptBypass(): Promise<boolean>
     // CC§7
     startLogin(
       name: string,
@@ -1001,6 +1051,7 @@ export interface KoloftApi {
   shortcuts: {
     onNewTerminalTab(cb: () => void): () => void
     onFocusNotes(cb: () => void): () => void
+    onNextWaitingSession(cb: () => void): () => void
     onToggleSidebar(cb: () => void): () => void
     onNewSession(cb: () => void): () => void
     onNewWorktreeSession(cb: () => void): () => void
@@ -1008,10 +1059,12 @@ export interface KoloftApi {
     onFind(cb: () => void): () => void
     onCheckUpdate(cb: () => void): () => void
     onOpenSettings(cb: () => void): () => void
+    onCommandPalette(cb: () => void): () => void
     onRestartSession(cb: () => void): () => void
     onAddWorkspace(cb: () => void): () => void
     onSave(cb: () => void): () => void
     onFindFiles(cb: () => void): () => void
+    onSearchSessions(cb: () => void): () => void
     // PLATFORM§7
     onBrowserCommand(cb: (cmd: BrowserCommand) => void): () => void
     // PLATFORM§7
@@ -1233,6 +1286,24 @@ export interface BackendSessionRow {
 export interface SessionRow extends BackendSessionRow, SessionSource {
   resident?: boolean
   parentId?: string
+}
+
+export interface SearchSnippet {
+  before: string
+  match: string
+  after: string
+}
+
+export interface SessionSearchHit {
+  row: SessionRow
+  workspacePath: string
+  snippet?: SearchSnippet
+}
+
+export interface SessionSearchHits {
+  searchId: number
+  hits: SessionSearchHit[]
+  done: boolean
 }
 
 export interface WorkspaceFreshness {

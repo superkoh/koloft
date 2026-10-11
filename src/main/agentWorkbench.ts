@@ -13,7 +13,7 @@ import {
 } from './agentRequests'
 
 export interface WorkbenchVerbDeps {
-  open(tabId: string, target: string, view?: ArtifactView): boolean
+  open(tabId: string, target: string, view?: ArtifactView): boolean | Promise<boolean>
   notesFileOf(tabId: string): string | undefined
 }
 
@@ -27,14 +27,14 @@ export function noteAppendText(existing: string, text: string): string {
   return `${separator}${text}\n`
 }
 
-function show(
+async function show(
   d: WorkbenchVerbDeps,
   arg: string,
   caller: AgentCaller,
   view?: ArtifactView
-): AgentReply {
+): Promise<AgentReply> {
   const target = openDropTarget(schemeOf(arg) ? { url: arg } : { path: arg, cwd: caller.cwd })
-  if (!d.open(caller.tabId, target, view))
+  if (!(await d.open(caller.tabId, target, view)))
     return refused(`koloft: there is no file at ${target} that the Workbench can show.`)
   return answered(`Opened ${target} in this session's Workbench.`)
 }

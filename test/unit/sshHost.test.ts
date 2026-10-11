@@ -1,14 +1,16 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { execFileSync, spawn, spawnSync } from 'child_process'
-import { machineClaudeArgs, SshHost } from '../../src/main/host/sshHost'
+import { machineClaudeArgs, SshHost, type MachineClaudeDeps } from '../../src/main/host/sshHost'
+import { killSessionCmd } from '../../src/main/remote/launch'
 import { diffBase as localDiffBase } from '../../src/main/gitStatus'
 import { utilTerminalGuard } from '../../src/main/shim'
 import type { BytesResult } from '../../src/main/remote/ssh'
 import { AccountPicker, type LaunchedSession } from '../../src/main/accountPicker'
 import { meta, NOW_MS, NOW_S, usage } from './helpers/accounts'
+import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 
 const MACHINE = 'devbox'
 let home: string
@@ -31,7 +33,7 @@ function runOnMachine(cmd: string, opts?: { input?: Buffer }): Promise<BytesResu
   })
 }
 
-const machine = (run = runOnMachine): SshHost =>
+const machine = (run = runOnMachine, claude: Partial<MachineClaudeDeps> = {}): SshHost =>
   new SshHost(MACHINE, {
     run,
     shell: () => ({ spawnCwd: '/' }),
@@ -42,9 +44,11 @@ const machine = (run = runOnMachine): SshHost =>
       machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
       alive: () => new Set(),
       realPath: (p) => p,
-      settings: () => ({ multiAccount: false, skipPermissions: false }),
-      pickAccount: async () => undefined,
-      hookSettings: () => ({})
+      settings: () => ({ skipPermissions: false }),
+      agentTools: () => true,
+      pickAccount: async () => ({ env: {}, banner: '' }),
+      hookSettings: () => ({}),
+      ...claude
     }
   })
 
@@ -186,6 +190,19 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
         { name: '/tidy-up', source: 'home' }
       ])
     })
+
+    it('answers a koloft request on the machine: the reply lands whole beside it and the request goes, while a request whose command already gave up gets no reply', async () => {
+      const hookDir = path.join(home, '.koloft', 'hook-sessions')
+      fs.mkdirSync(hookDir, { recursive: true })
+      fs.writeFileSync(path.join(hookDir, 'req-r1.json'), '{}')
+      const reply = '{"exit":0,"text":"it\'s \\"done\\""}'
+
+      await machine().answerAgent('r1', reply)
+      await machine().answerAgent('r2', reply)
+
+      expect(fs.readdirSync(hookDir)).toEqual(['res-r1.json'])
+      expect(fs.readFileSync(path.join(hookDir, 'res-r1.json'), 'utf8')).toBe(reply)
+    })
   }
 )
 
@@ -284,7 +301,6 @@ describe('accounts for remote launches started together', () => {
     const sessions: LaunchedSession[] = []
     const picker = new AccountPicker({
       listAccounts: () => accounts,
-      multiAccountOn: () => true,
       fablePriority: () => false,
       readSecret: async () => null,
       probe: async () => ({ ok: false, error: 'network' }),
@@ -311,7 +327,8 @@ describe('accounts for remote launches started together', () => {
         machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
         alive: () => new Set(),
         realPath: (p) => p,
-        settings: () => ({ multiAccount: true, skipPermissions: false }),
+        settings: () => ({ skipPermissions: false }),
+        agentTools: () => true,
         pickAccount: async (launchKey) => {
           const res = await picker.pick(launchKey)
           if (!res.account) return undefined
@@ -323,6 +340,72 @@ describe('accounts for remote launches started together', () => {
     })
     await Promise.all([host.launch({ root: keyed('/w') }), host.launch({ root: keyed('/w') })])
     expect(handed.sort()).toEqual(['a', 'b'])
+  })
+
+  // ADR-0030
+  it("refuses a remote launch with no usable account instead of using the machine's own login, but re-attaching a live session needs none", async () => {
+    const pickAccount = vi.fn(async () => undefined)
+    const live = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    const host = new SshHost(MACHINE, {
+      run: runOnMachine,
+      shell: () => ({ spawnCwd: '/' }),
+      github: {},
+      claude: {
+        userData: home,
+        controlDir: home,
+        machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
+        alive: () => new Set([live]),
+        realPath: (p) => p,
+        settings: () => ({ skipPermissions: false }),
+        agentTools: () => true,
+        pickAccount,
+        hookSettings: () => ({})
+      }
+    })
+    await expect(host.launch({ root: keyed('/w') })).rejects.toThrow(NO_USABLE_ACCOUNT.claude)
+    pickAccount.mockClear()
+    expect((await host.launch({ root: keyed('/w'), resumeSessionId: live })).ok).toBe(true)
+    expect(pickAccount).not.toHaveBeenCalled()
+  })
+})
+
+describe('ending a session that runs on the machine', () => {
+  const live = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+  const tmux = `k-${live}`
+  const killAnswering = (code: number | null, stderr = '') => {
+    const pickAccount = vi.fn(async () => ({ env: {}, banner: '' }))
+    const host = machine(
+      (cmd, opts) =>
+        cmd === killSessionCmd(tmux)
+          ? Promise.resolve({ code, stdout: Buffer.alloc(0), stderr })
+          : runOnMachine(cmd, opts),
+      { alive: () => new Set([live]), pickAccount }
+    )
+    return { host, pickAccount }
+  }
+
+  it('a kill ssh could not deliver says why, and the next launch attaches to the session still running there', async () => {
+    const { host, pickAccount } = killAnswering(
+      255,
+      'ssh: connect to host devbox: Connection refused\n'
+    )
+    expect(await host.endTmuxSession(tmux)).toBe('ssh: connect to host devbox: Connection refused')
+    await host.launch({ root: keyed('/w'), resumeSessionId: live })
+    expect(pickAccount).not.toHaveBeenCalled()
+  })
+
+  it('a kill that timed out says so, and the next launch attaches', async () => {
+    const { host, pickAccount } = killAnswering(null)
+    expect(await host.endTmuxSession(tmux)).toBe('ssh timed out')
+    await host.launch({ root: keyed('/w'), resumeSessionId: live })
+    expect(pickAccount).not.toHaveBeenCalled()
+  })
+
+  it('a kill of a session already gone (tmux exits 1) is no failure, and the next launch starts afresh', async () => {
+    const { host, pickAccount } = killAnswering(1, "can't find session: " + tmux + '\n')
+    expect(await host.endTmuxSession(tmux)).toBeUndefined()
+    await host.launch({ root: keyed('/w'), resumeSessionId: live })
+    expect(pickAccount).toHaveBeenCalled()
   })
 })
 

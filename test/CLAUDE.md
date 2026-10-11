@@ -80,7 +80,9 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     `-exit` (exits with that code, no hook), `-lazy` (no transcript until the first
     typed line), `-hang` (never binds, and has no signal handler, so the SIGHUP that
     closes its tab kills it), `-bg-ms` (how long `/bg-reported`'s background work runs,
-    5 s when absent).
+    5 s when absent), `-remove-ms` (how long removing a worktree at `/exit` takes; a
+    SIGHUP meanwhile leaves it unremoved), `-remove-fails` (that removal prints CC's
+    failure line and leaves the worktree).
   - typed lines: `/write <path>` (a Write, Stop 2.5 s later — the file on disk proves
     the transcript has it), `/answer <text>` (`<text>` as the prompt, `Answer to: <text>`
     as the reply's text, then Stop), `[Discord] <text>` (answered like `/answer` with the
@@ -97,7 +99,7 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     `/compact` (PreCompact, a compact SessionStart, then the "Compacted" line Claude
     writes), `/context` (the two records Claude writes for it), `/resume <id>`, `/exit` (also
     `exit` and `/quit`; in a `-w` worktree with uncommitted files it first asks keep or
-    remove, and a typed `2` removes),
+    remove, and a typed `2` removes; a removal prints what CC prints, CC§4),
     `/enter-worktree <name>`, `/exit-worktree`, `/bg-work`, `/bg-reported`,
     `/bg-monitor`, `/bg-shell`. Any other line is a prompt answered by a Read and a
     Stop. Esc keystrokes are dropped from a typed line (its pty hands over whole lines,
@@ -106,7 +108,12 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     it, and is then one prompt together with what was typed after it; fake-codex
     keeps one in its composer the same way.
   - every launch writes one line to `env.claudeCalls` (argv, cwd, session id,
-    injected auth) before any delay.
+    injected auth) before any delay — except a `-p` Koloft runs itself (the title
+    call, task piped on stdin; the remote launch's first-run warm-up, output sent to
+    /dev/null), which prints `<first line of the task> (titled)` and exits unlogged; a
+    `-p` typed in a terminal is logged like any launch. Asked which docs are for the
+    reader, it picks every written file whose name does not start with `draft-`, plus
+    every absolute `.md`/`.html` path in the reply.
   - like the real one, it lists itself in `<home>/.claude/sessions/<pid>.json` with a
     message socket (CC§11); each line written there is appended raw to
     `<home>/fake-claude-peer.jsonl` and taken as a peer message (reply
@@ -183,7 +190,7 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   matches" line, a file fake-claude wrote, a saved stamp. Where none can exist, wait a
   named settle constant, never a bare number. `toHaveCount(0)` is true before the work
   starts, and true again once a 4 s toast has gone: to prove no toast, sample across a
-  window (cron-edge `expectNoToastAtAnyMomentOfAWindow`). For the same 4 s, check a
+  window (`expectNoToastAtAnyMomentOfAWindow`, helpers/app.ts). For the same 4 s, check a
   toast that should be there before any slower wait — a session bind alone outlives
   it (git-pull-start).
 - Wait on what the product shows or writes, never on the send: IPC posts such as

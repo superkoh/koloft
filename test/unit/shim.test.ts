@@ -14,6 +14,7 @@ vi.mock('electron', async () => {
 
 import { registeredByTabRoot, setupShim } from '../../src/main/shim'
 import { MIN_CLAUDE_VERSION } from '../../src/main/cliMinimums'
+import { NO_USABLE_ACCOUNT, SHIM_FOUND_NO_ACCOUNT_EXIT } from '../../src/shared/accountUsage'
 
 let shimDir: string
 let regDir: string
@@ -124,6 +125,14 @@ function collect(
   return { reg, realArgs, realArgs0, realEnv, stderr, status }
 }
 
+const startedClaude = (r: ShimRun): boolean => !!r.realArgs?.includes('--session-id')
+
+const ACCOUNT_MAIN_ALREADY_PICKED = {
+  KOLOFT_ACCOUNT_PICKED: '1',
+  CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-picked-by-main'
+}
+const NO_ACCOUNT_PICKED_YET = { KOLOFT_ACCOUNT_PICKED: '', CLAUDE_CODE_OAUTH_TOKEN: '' }
+
 function runShim(
   args: string[],
   extraEnv: Record<string, string> = {},
@@ -134,7 +143,10 @@ function runShim(
   const envOut = path.join(base, `env-${Math.random().toString(36).slice(2)}`)
   const res = spawnSync(path.join(shimDir, bin), args, {
     cwd,
-    env: pinnedShimEnvNeverSpreadingProcessEnv(cwd, argsOut, envOut, extraEnv),
+    env: pinnedShimEnvNeverSpreadingProcessEnv(cwd, argsOut, envOut, {
+      ...ACCOUNT_MAIN_ALREADY_PICKED,
+      ...extraEnv
+    }),
     encoding: 'utf8',
     timeout: 15_000
   })
@@ -253,7 +265,8 @@ describe('claude shim (multi-account pick section — U5)', () => {
   const CAPPED_NOT_HUNG_BOUND_FOR_A_SLOW_CI_RUNNER_MS = 25_000
 
   // PLATFORM§3
-  it('a HANGING Keychain read degrades inside the ~5s cap, then launches unauthenticated — a locked keychain must never hang every launch', async () => {
+  // ADR-0030
+  it('a HANGING Keychain read gives up inside the ~5s cap and does not start — a locked keychain must never hang every launch, nor run it on another login', async () => {
     token('bravo', 'tok-never-read')
     const t0 = Date.now()
     const r = await runShimPick(
@@ -264,9 +277,9 @@ describe('claude shim (multi-account pick section — U5)', () => {
     const elapsed = Date.now() - t0
     expect(elapsed).toBeGreaterThan(4_000)
     expect(elapsed).toBeLessThan(CAPPED_NOT_HUNG_BOUND_FOR_A_SLOW_CI_RUNNER_MS)
-    expect(r.stderr).toContain('no credential for bravo')
-    expect(r.realArgs).not.toBeNull()
-    expect(r.realEnv?.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
+    expect(r.stderr).toContain('could not read the sign-in of bravo')
+    expect(startedClaude(r)).toBe(false)
+    expect(r.status).toBe(SHIM_FOUND_NO_ACCOUNT_EXIT)
   }, 30_000)
 
   // PLATFORM§2
@@ -299,41 +312,51 @@ describe('claude shim (multi-account pick section — U5)', () => {
     expect(script).not.toContain('"koloft-claude-oauth"')
   })
 
-  it('wrapper respect: pre-existing token env → no req file, env untouched, warning when mode on', () => {
-    const r = runShim([], {
-      CLAUDE_CODE_OAUTH_TOKEN: 'wrapper-tok',
-      KOLOFT_PICK_DIR: pickDir,
-      KOLOFT_PID: String(process.pid),
-      KOLOFT_MULTI_ACCOUNT: '1'
-    })
+  // ADR-0030
+  it('a token a login shell exported is dropped before the pick, so it never stands in for a Koloft account', async () => {
+    token('bravo', 'sk-ant-oat01-bravo-fixture')
+    const r = await runShimPick(
+      [],
+      { account: 'bravo', kind: 'oauth', banner: 'koloft: → bravo' },
+      {
+        CLAUDE_CODE_OAUTH_TOKEN: 'from-a-profile',
+        ANTHROPIC_API_KEY: 'from-a-profile',
+        ANTHROPIC_AUTH_TOKEN: 'from-a-profile'
+      }
+    )
+    expect(r.realEnv?.CLAUDE_CODE_OAUTH_TOKEN).toBe('sk-ant-oat01-bravo-fixture')
+    expect(r.realEnv?.ANTHROPIC_API_KEY).toBeUndefined()
+    expect(r.realEnv?.ANTHROPIC_AUTH_TOKEN).toBeUndefined()
+  })
+
+  // ADR-0030
+  it("a token Koloft's own process already picked is used as it is, with no second pick", () => {
+    const r = runShim([], { KOLOFT_PICK_DIR: pickDir, KOLOFT_PID: String(process.pid) })
     expect(fs.readdirSync(pickDir)).toHaveLength(0)
-    expect(r.realEnv?.CLAUDE_CODE_OAUTH_TOKEN).toBe('wrapper-tok')
-    expect(r.stderr).toContain('skipping balancing')
+    expect(r.realEnv?.CLAUDE_CODE_OAUTH_TOKEN).toBe(
+      ACCOUNT_MAIN_ALREADY_PICKED.CLAUDE_CODE_OAUTH_TOKEN
+    )
   })
 
-  it('wrapper respect without mode: same passthrough, NO warning line', () => {
-    const r = runShim([], {
-      ANTHROPIC_API_KEY: 'ambient-key',
-      KOLOFT_PICK_DIR: pickDir,
-      KOLOFT_PID: String(process.pid)
-    })
-    expect(fs.readdirSync(pickDir)).toHaveLength(0)
-    expect(r.realEnv?.ANTHROPIC_API_KEY).toBe('ambient-key')
-    expect(r.stderr).not.toContain('skipping balancing')
+  // ADR-0030
+  it('outside a Koloft tab (no pick watcher) claude does not start, rather than run on the login this Mac has', () => {
+    const r = runShim([], NO_ACCOUNT_PICKED_YET)
+    expect(r.status).toBe(SHIM_FOUND_NO_ACCOUNT_EXIT)
+    expect(startedClaude(r)).toBe(false)
+    expect(r.stderr).toContain('only inside a Koloft tab')
   })
 
-  it('no KOLOFT_PICK_DIR (no watcher) → bare exec, no pick attempted', () => {
-    const r = runShim([])
-    expect(r.realEnv?.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
-    expect(r.stderr).not.toContain('koloft:')
-  })
-
-  it('Koloft dead (stale KOLOFT_PID) → instant bare exec, no 3s wait', () => {
+  it('Koloft dead (stale KOLOFT_PID) → refused at once, no 3s wait', () => {
     const t0 = Date.now()
-    const r = runShim([], { KOLOFT_PICK_DIR: pickDir, KOLOFT_PID: '999999' })
+    const r = runShim([], {
+      ...NO_ACCOUNT_PICKED_YET,
+      KOLOFT_PICK_DIR: pickDir,
+      KOLOFT_PID: '999999'
+    })
     expect(Date.now() - t0).toBeLessThan(2500)
     expect(fs.readdirSync(pickDir)).toHaveLength(0)
-    expect(r.realEnv?.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
+    expect(r.status).toBe(SHIM_FOUND_NO_ACCOUNT_EXIT)
+    expect(startedClaude(r)).toBe(false)
   })
 
   it('normal oauth injection: env + the ANT_ACCOUNT tag the statusline reads + banner format + flag BEFORE user args + cleanup', async () => {
@@ -444,11 +467,12 @@ describe('claude shim (multi-account pick section — U5)', () => {
   it('setup-token (the login flow) is NEVER injected and never asks for a pick', () => {
     token('bravo', 'tok-bravo')
     const r = runShim(['setup-token'], {
+      ...NO_ACCOUNT_PICKED_YET,
       KOLOFT_PICK_DIR: pickDir,
       KOLOFT_PID: String(process.pid)
     })
     expect(fs.readdirSync(pickDir)).toHaveLength(0)
-    expect(r.realEnv?.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
+    expect(r.realEnv?.CLAUDE_CODE_OAUTH_TOKEN || undefined).toBeUndefined()
   })
 
   it('explicit --permission-mode wins: token injected, flag NOT appended', async () => {
@@ -471,36 +495,39 @@ describe('claude shim (multi-account pick section — U5)', () => {
     expect(r.realArgs).not.toContain('--dangerously-skip-permissions')
   })
 
-  it('res timeout → bare exec + explanation line + req best-effort removed', () => {
+  // ADR-0030
+  it('res timeout → refused with the reason, and the req best-effort removed', () => {
     const t0 = Date.now()
-    const r = runShim([], { KOLOFT_PICK_DIR: pickDir, KOLOFT_PID: String(process.pid) })
+    const r = runShim([], {
+      ...NO_ACCOUNT_PICKED_YET,
+      KOLOFT_PICK_DIR: pickDir,
+      KOLOFT_PID: String(process.pid)
+    })
     const elapsed = Date.now() - t0
     expect(elapsed).toBeGreaterThan(2500)
-    expect(r.realEnv?.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
-    expect(r.stderr).toContain('timed out')
+    expect(r.status).toBe(SHIM_FOUND_NO_ACCOUNT_EXIT)
+    expect(startedClaude(r)).toBe(false)
+    expect(r.stderr).toContain('took too long')
     expect(fs.readdirSync(pickDir).filter((f) => f.startsWith('req-'))).toHaveLength(0)
   }, 15_000)
 
-  it('missing keychain entry → bare exec with explanation, claude still launches', async () => {
+  // ADR-0030
+  it('missing keychain entry → refused with the reason, claude never starts', async () => {
     const r = await runShimPick([], { account: 'ghost', kind: 'oauth', banner: 'koloft: → ghost' })
-    expect(r.realEnv?.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
-    expect(r.stderr).toContain('no credential for')
-    expect(r.realArgs).not.toBeNull()
+    expect(r.status).toBe(SHIM_FOUND_NO_ACCOUNT_EXIT)
+    expect(startedClaude(r)).toBe(false)
+    expect(r.stderr).toContain('could not read the sign-in of ghost')
   })
 
-  it('reason no-accounts → bare exec + default-login line', async () => {
+  // ADR-0030
+  it('no usable account → refused with a pointer to Settings ▸ Accounts', async () => {
     const r = await runShimPick([], { account: null, reason: 'no-accounts' })
-    expect(r.realEnv?.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
-    expect(r.stderr).toContain('no usable account')
+    expect(r.status).toBe(SHIM_FOUND_NO_ACCOUNT_EXIT)
+    expect(startedClaude(r)).toBe(false)
+    expect(r.stderr).toContain(NO_USABLE_ACCOUNT.claude)
   })
 
-  it('reason disabled → silent bare exec (mode off is not an anomaly)', async () => {
-    const r = await runShimPick([], { account: null, reason: 'disabled' })
-    expect(r.realEnv?.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
-    expect(r.stderr).not.toContain('koloft:')
-  })
-
-  it('hostile account name in the res: quoted everywhere, no side effects, bare exec', async () => {
+  it('hostile account name in the res: quoted everywhere, no side effects, never starts', async () => {
     const pwned = path.join(base, 'pwned-marker')
     const r = await runShimPick([], {
       account: `x;touch ${pwned}`,
@@ -508,8 +535,7 @@ describe('claude shim (multi-account pick section — U5)', () => {
       banner: 'koloft: → x'
     })
     expect(fs.existsSync(pwned)).toBe(false)
-    expect(r.realEnv?.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
-    expect(r.status).toBe(0)
+    expect(startedClaude(r)).toBe(false)
   })
 
   it('LEAK ASSERTION: the token never appears on the shim stdio (banner only)', async () => {

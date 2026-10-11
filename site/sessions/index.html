@@ -80,10 +80,10 @@
             <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>
-            two folders and their sessions. The bars on the left are the lights; the red dots mark
-            two sessions that need you. The 2 by the branch sign means tidewatch is two steps behind
-            the shared copy it came from (origin). The 7 and the 2 after it are its open issues and
-            pull requests.
+            two folders and their sessions. The bars on the left are the lights: green for a turn
+            that is done, grey for a closed session. The red dots mark two sessions that need you.
+            The 2 by the branch sign means tidewatch is two steps behind the shared copy it came
+            from (origin). The 7 and the 2 after it are its open issues and pull requests.
           </figcaption>
         </figure>
 
@@ -113,15 +113,21 @@
           </li>
           <li>Click an old row to resume that session.</li>
           <li>
-            About half an hour after a session goes quiet (its light turns dim green), its tab
-            closes by itself. It stays open while you look at it, while it still has a red dot, or
-            while a shell tab or an unsaved file is open in it. The row stays, so you can resume it.
-            A session marked Keep running never closes this way (see
-            <a href="#keep-running">below</a>).
+            About half an hour after a session goes quiet (its light turns dim green), it goes to
+            sleep: its program stops, but its row, its tab, its screen and its Workbench stay as
+            they were. Click the row, or let something send it a message, and the same session wakes
+            in that tab. It stays awake while you look at it, while it still has a red dot, or while
+            a shell tab or an unsaved file is open in it. A session marked Keep running never sleeps
+            (see <a href="#keep-running">below</a>).
+          </li>
+          <li>
+            Quit Koloft and open it again, and every session comes back the way it was: the ones
+            that were running run again, with the one you were on selected; the ones that were
+            asleep stay asleep until you click them; the closed ones stay closed.
           </li>
         </ul>
-        <p>A running session has a light on its row. A row with no light is not running.</p>
-        <div class="typed-table">
+        <p>Every row has a light on its left. The colour says what the session is doing.</p>
+        <div class="typed-table" id="lights">
           <table>
             <thead>
               <tr>
@@ -143,8 +149,19 @@
                 <td>its turn is done</td>
               </tr>
               <tr>
+                <td>green with <code>↻ N</code></td>
+                <td>
+                  its turn is done, but N things it started still run in the background. Hover the
+                  mark to see them.
+                </td>
+              </tr>
+              <tr>
                 <td>dim green</td>
-                <td>done a while ago, nothing new</td>
+                <td>done a while ago, nothing new; a sleeping session looks the same</td>
+              </tr>
+              <tr>
+                <td>grey</td>
+                <td>closed</td>
               </tr>
             </tbody>
           </table>
@@ -185,8 +202,8 @@
         <p>
           Some sessions should always be there, like a helper you talk to all day. Right-click the
           row and pick <code>Keep running</code>. A tick shows it is on, and a small pin sits on the
-          row. Each time Koloft opens, the session starts again in the background. It does not pull
-          you over to it.
+          row. The session never goes to sleep, and each time Koloft opens it starts again in the
+          background, even if you had closed its tab. It does not pull you over to it.
         </p>
         <p>
           If its worktree has changed, the session stays closed and Koloft says
@@ -203,6 +220,29 @@
             it; it never starts a second one. If it has gone, Koloft resumes it there.
           </li>
         </ul>
+
+        <h2 id="find">Find any session</h2>
+        <ul class="dash">
+          <li>
+            <kbd>⌘P</kbd> (View ▸ Command Palette…) opens a box that lists every session in every
+            folder, then the folders, then the app's actions (New session…, Settings…, and so on).
+            Type a few letters of a session's title, its worktree, its folder or its machine, press
+            <kbd>⏎</kbd>, and you are there. It does what a click on the row does, so a closed
+            session is resumed. When nothing fits, it says so.
+          </li>
+          <li>
+            <kbd>⌥⌘F</kbd> (Edit ▸ Search Sessions) searches what was said. Type a phrase, press
+            <kbd>⏎</kbd>, and every session in every folder whose title or conversation holds it is
+            listed, newest first, with one line of text around the match. Click one to open it. For
+            Claude it reads what you typed and what the agent answered, not the output of its tools.
+            For Codex, Codex itself does the search.
+          </li>
+        </ul>
+        <p>
+          Both work for Claude and Codex, and for a Claude session on a
+          <a href="../remote/">remote folder</a>, which is listed with its machine's name and
+          resumes there.
+        </p>
 
         <h2>A tab is not a session</h2>
         <p>
@@ -240,6 +280,92 @@
             A Codex worktree stays until you remove it yourself, or until the session is closed with
             <code>koloft session close</code> (see <a href="../agents/">agents</a>).
           </li>
+          <li>
+            In a folder on github.com, with <code>gh</code> (GitHub's command-line tool) signed in,
+            the <kbd>⇧⌘N</kbd> dialog also lists the repo's open issues and open pull requests. Pick
+            an issue, and the session starts in a worktree named
+            <code class="nowrap">issue-&lt;number&gt;</code>, already told which issue to read and
+            work on.
+          </li>
+          <li>
+            Pick a pull request there, and the session starts in a worktree on that pull request's
+            branch. Claude Code and Codex both do this; on a
+            <a href="../remote/">remote folder</a>, Claude Code does it there.
+          </li>
+        </ul>
+        <p>
+          Two worktrees often want the same port for the server a project runs while you work on it.
+          So every session in a worktree gets <code>KOLOFT_PORT_OFFSET</code>, a number from 1 to 99
+          that is always the same for one worktree name. A project can add it to its base port, like
+          <code class="nowrap">PORT=$((3000 + KOLOFT_PORT_OFFSET))</code>. Claude Code, Codex and
+          Claude Code on a <a href="../remote/">remote folder</a> all get it.
+        </p>
+        <p>
+          A new worktree has none of the files git ignores, such as <code>.env</code>. List the ones
+          you want in a <code>.worktreeinclude</code> file at the root of the repo, and they are
+          copied into each worktree. Claude Code copies them into the worktrees it makes. Koloft
+          copies them into a Codex worktree, and into a worktree it rebuilds for a resumed Claude
+          session. Not on a <a href="../remote/">remote folder</a> yet.
+        </p>
+
+        <h2 id="session-tree">Sessions an agent starts</h2>
+        <p>
+          An agent can start sessions of its own, with <code>koloft session new</code> (see
+          <a href="../agents/">agents</a>, which also says how each one gets its name). Each one
+          <mark class="hl">hangs under the session that started it</mark>, set in a little, with a
+          thin line down its left. A session that one of those starts hangs one level deeper. The
+          row is there from the moment it reads Starting….
+        </p>
+        <figure class="shot is-narrow" style="--ar: 558 / 578">
+          <div class="frame">
+            <img
+              src="../img/v-session-tree.webp"
+              width="558"
+              height="578"
+              loading="lazy"
+              alt="The folder tidewatch: the session Add storm alerts endpoint with two sessions set in under it, Update the API docs and Write the storm alert tests, and under the second of those, one level deeper, Check the test fixtures; below them all, Fix tide times near midnight on its own"
+            />
+            <span class="tape" aria-hidden="true"></span>
+          </div>
+          <figcaption>one session started two, and one of those started one more</figcaption>
+        </figure>
+        <p>
+          A row with sessions under it gets a small arrow on the right. Click it to fold them away.
+          Folded, the row shows a red count of the hidden sessions that need you, the way a
+          <a href="#red-dots">folded folder</a> does, and a grey count of all the hidden ones. Click
+          the arrow again to see them.
+        </p>
+        <figure class="shot is-narrow" style="--ar: 558 / 296">
+          <div class="frame">
+            <img
+              src="../img/v-session-tree-folded.webp"
+              width="558"
+              height="296"
+              loading="lazy"
+              alt="The same folder with Add storm alerts endpoint folded: a red 2 and a grey 3 at the right of its name, and the arrow now points right"
+            />
+            <span class="tape" aria-hidden="true"></span>
+          </div>
+          <figcaption>folded: 2 of the 3 sessions inside need you</figcaption>
+        </figure>
+        <ul class="dash">
+          <li>Claude and Codex both do this.</li>
+          <li>
+            If the session that started them ends but its row stays in the list, they stay under
+            that row, now shown as closed. Nothing under a session closes with it, however it is
+            closed.
+          </li>
+          <li>
+            A row hangs under its starter only while the starter is in the same folder's list.
+            Otherwise it sits at the top of that list: when its starter is gone from the list, when
+            it was started into another folder with <code class="nowrap">--workspace</code>, when a
+            <a href="../discord/">Discord butler</a> started it, and always for a session on another
+            machine.
+          </li>
+          <li>
+            A folded row works like a folded folder: switching to a session inside does not unfold
+            it, and the fold is forgotten when Koloft restarts.
+          </li>
         </ul>
 
         <h2 id="the-sidebar">The sidebar</h2>
@@ -253,15 +379,6 @@
           sidebar comes back as wide as it was. It stays hidden after a restart, if you left it
           hidden.
         </p>
-        <p>
-          A session that another session started (with <code>koloft session new</code>, see
-          <a href="../agents/">agents</a>) hangs under its starter, set in a little, with a thin
-          line down its left. A row with sessions under it gets a small arrow on the right: click it
-          to fold them away. Folded, the row shows a red count of hidden sessions that need you, the
-          way a folded folder does, and a grey count of all hidden ones. Claude and Codex both do
-          this. A session on another machine is always a top-level row.
-        </p>
-
         <h2>Right-click a folder</h2>
         <ul class="dash">
           <li>
@@ -327,9 +444,8 @@
           </li>
           <li><code>Fetch now</code> asks origin what is new.</li>
           <li>
-            On github.com, with <code>gh</code> (GitHub's command-line tool) signed in: the open
-            issues and pull requests. Their two counts also sit after the branch sign (a count of 0
-            is not drawn).
+            On github.com, with <code>gh</code> signed in: the open issues and pull requests. Their
+            two counts also sit after the branch sign (a count of 0 is not drawn).
           </li>
         </ul>
         <figure class="shot" style="--ar: 740 / 612; --w: min(370px, 100cqw)">

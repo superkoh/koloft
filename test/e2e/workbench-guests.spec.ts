@@ -209,9 +209,9 @@ test.describe('Workbench web guests: no layout change tears one down, the tab ca
     await agentOpen(page, server.page('/cap-9', '<!doctype html><title>Cap 9</title>'))
 
     await expect(wbTabs(page)).toHaveCount(9)
-    await expect(page.locator('.wb-tab', { hasText: 'cap-1' })).toHaveCount(0)
-    await expect(page.locator('.wb-tab', { hasText: 'cap-9' })).toHaveCount(1)
-    await expect(page.locator('.toast')).toContainText('cap-1')
+    await expect(page.locator('.wb-tab[title$="/cap-1"]')).toHaveCount(0)
+    await expect(page.locator('.wb-tab[title$="/cap-9"]')).toHaveCount(1)
+    await expect(page.locator('.toast')).toContainText('Cap 1')
     await expect(wbTabs(page).nth(0)).toHaveClass(/pinned/)
   })
 

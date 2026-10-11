@@ -150,7 +150,6 @@ test.describe('Scheduled jobs on the REAL claude: the one opt-in case proving th
     useRealClaudeBehindTheShim(env)
     seedClaudeConfig(env)
     seedSettings(env, {
-      multiAccount: true,
       skipPermissions: true,
       accounts: [
         { name: 'alpha', kind: 'oauth', enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }

@@ -7,6 +7,12 @@ import { REMOTE_PATH_LINE, onATerminalEvenWhenSshGaveNone, remoteShCommand } fro
 import { remotePtsFile } from './paths'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
 
+export const CLAUDE_AUTH_ENV_VARS = [
+  'CLAUDE_CODE_OAUTH_TOKEN',
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN'
+]
+
 export function accountEnv(
   kind: AccountKind,
   name: string,
@@ -42,6 +48,8 @@ export interface MachinePackage {
 }
 
 export const UTIL_BIN_DIR = 'util-bin/'
+export const SESSION_BIN_DIR = 'bin/'
+export const AGENT_PLUGIN_DIR = 'agent-plugin/'
 
 export function buildMachinePackage(
   base: string,
@@ -61,7 +69,8 @@ export function buildMachinePackage(
     for (const [rel, content] of Object.entries(files)) {
       const full = path.join(dir, rel)
       fs.mkdirSync(path.dirname(full), { recursive: true })
-      const executable = rel.endsWith('.sh') || rel.startsWith(UTIL_BIN_DIR)
+      const executable =
+        rel.endsWith('.sh') || rel.startsWith(UTIL_BIN_DIR) || rel.startsWith(SESSION_BIN_DIR)
       fs.writeFileSync(full, content, { mode: executable ? 0o755 : 0o644 })
     }
     fs.writeFileSync(path.join(dir, '.complete'), '')
@@ -89,6 +98,7 @@ export interface TabSpec {
   env?: Record<string, string>
   portOffset?: number
   settings: Record<string, unknown>
+  agentPlugin?: boolean
   claudeArgs: string[]
 }
 
@@ -110,9 +120,10 @@ M="$HOME/.koloft/${spec.machineName}"
 ${REMOTE_PATH_LINE}
 if [ "$1" = run ]; then
   KOLOFT_TMUX_FOLLOW=1; export KOLOFT_TMUX_FOLLOW
-  unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN
+  KOLOFT_TAB_ID=${spec.tabId}; PATH="$M/${SESSION_BIN_DIR}:$PATH"; export KOLOFT_TAB_ID PATH
+  unset ${CLAUDE_AUTH_ENV_VARS.join(' ')}
   E="${T}.env"; [ -f "$E" ] && { set -a; . "$E"; set +a; rm -f "$E"; }
-${spec.portOffset ? `  KOLOFT_PORT_OFFSET=${spec.portOffset}; export KOLOFT_PORT_OFFSET\n` : ''}  exec claude --settings "${T}.json" ${spec.claudeArgs.map(shq).join(' ')}
+${spec.portOffset ? `  KOLOFT_PORT_OFFSET=${spec.portOffset}; export KOLOFT_PORT_OFFSET\n` : ''}  exec claude --settings "${T}.json"${spec.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}"` : ''} ${spec.claudeArgs.map(shq).join(' ')}
 fi
 ${onATerminalEvenWhenSshGaveNone('$2', '$3', spec.tabId, `sh '${T}.sh' $1`)}
 [ "$1" = attach ] && exec tmux -L koloft attach -d -t '${spec.tmuxName}'

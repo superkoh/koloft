@@ -6,12 +6,12 @@ export function conductorTab(
   binding: ConductorBinding,
   sessions: readonly SessionInfo[],
   opened: Record<string, string>,
-  tabs: readonly { id: string; alive: boolean }[]
+  tabs: readonly { id: string; alive: boolean; asleep?: true }[]
 ): string | undefined {
   const bound = sessions.find((s) => s.alive && s.conductor === binding.id)?.tabId
   if (bound) return bound
   const tabId = opened[binding.id]
-  return tabId && tabs.some((t) => t.id === tabId && t.alive) ? tabId : undefined
+  return tabId && tabs.some((t) => t.id === tabId && (t.alive || t.asleep)) ? tabId : undefined
 }
 
 export function conductorOfTab(

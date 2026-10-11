@@ -37,9 +37,9 @@ import {
 
 export const OFFLINE_REPLY = 'Koloft was offline, this message was not delivered.'
 export const CODEX_NEEDS_YES_OR_NO = 'Reply yes or no.'
-export const SHOWS_NO_DIALOG = 'it shows no question or approval right now.'
+export const SHOWS_NO_DIALOG = 'Koloft sees no question or approval in it right now.'
 export const CODEX_INPUT_NOT_PROBED =
-  'Codex is asking something Koloft cannot answer from here: it answers a yes-or-no approval, or one question that picks one option from a list. Answer this one at the Mac.'
+  'Codex is asking something Koloft cannot answer from here: it answers a yes-or-no approval, or one question that picks one option from a list. The conductor can still answer this one by pressing its keys.'
 export const CONDUCTOR_ASKS = '❓ **The conductor** is waiting for you.'
 const CODEX_TAKES_YES_OR_NO = 'a Codex approval takes yes or no.'
 const CODEX_TAKES_AN_OPTION = 'this Codex question takes the number or the name of one option.'

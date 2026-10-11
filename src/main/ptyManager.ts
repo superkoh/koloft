@@ -1,8 +1,11 @@
 import * as pty from 'node-pty'
 import { EventEmitter } from 'events'
+import fs from 'fs'
 import os from 'os'
+import path from 'path'
 import type { TabKind } from '@shared/types'
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
+import { shq } from '@shared/shellQuote'
 import { OscCwdParser } from './oscCwd'
 import { codexEnvironment } from './codexTransport'
 import { userShell } from './userShell'
@@ -22,6 +25,7 @@ export interface PtyHandle {
 }
 
 interface CreateArgs {
+  id?: string
   executable?: string
   argv?: string[]
   processEnv?: NodeJS.ProcessEnv
@@ -47,8 +51,34 @@ interface CreateArgs {
 
 const UTIL_TITLE_POLL_MS = 1500
 
-const SETUP_AFTER_RC_FILES_MS = 600
-const LAUNCH_AFTER_PATH_FIXED_MS = 1600
+const TYPE_EVEN_WITHOUT_A_SIGNAL_AFTER_MS = 1600
+
+// PLATFORM§2
+const LINE_EDITOR_STARTS_READING = /\x1b\[\?(?:2004|1034)h/
+const SIGNAL_LENGTH_LESS_ONE = '\x1b[?2004h'.length - 1
+// PLATFORM§2
+const LONGEST_LINE_A_BUSY_TTY_KEEPS = 1023
+
+function typeOnceTheShellReads(
+  write: (text: string) => void,
+  text: string
+): (output: string) => void {
+  if (text === '') return () => {}
+  let typed = false
+  let tail = ''
+  const type = (): void => {
+    if (typed) return
+    typed = true
+    write(text)
+  }
+  setTimeout(type, TYPE_EVEN_WITHOUT_A_SIGNAL_AFTER_MS)
+  return (output) => {
+    if (typed) return
+    const seen = tail + output
+    tail = seen.slice(-SIGNAL_LENGTH_LESS_ONE)
+    if (LINE_EDITOR_STARTS_READING.test(seen)) type()
+  }
+}
 
 export function foregroundName(reported: unknown): string | null {
   if (typeof reported !== 'string') return null
@@ -63,7 +93,6 @@ export class PtyManager extends EventEmitter {
   pickDir?: string
   cdpDir?: string
   agentDir?: string
-  multiAccountOn?: () => boolean
   makeHookSettings?: (tabId: string, allowKoloft: boolean, conductor: boolean) => string | undefined
 
   private ptys = new Map<string, PtyHandle>()
@@ -72,8 +101,12 @@ export class PtyManager extends EventEmitter {
   private counter = 0
   private instanceTag = process.pid.toString(36)
 
+  nextId(): string {
+    return `pty-${this.instanceTag}-${++this.counter}`
+  }
+
   create(args: CreateArgs): PtyHandle {
-    const id = `pty-${this.instanceTag}-${++this.counter}`
+    const id = args.id ?? this.nextId()
     const isWin = os.platform() === 'win32'
     const login = userShell()
     const shell = args.shell || login.shell
@@ -131,11 +164,6 @@ export class PtyManager extends EventEmitter {
     if (this.pickDir) env.KOLOFT_PICK_DIR = this.pickDir
     if (this.cdpDir && !args.util) env.KOLOFT_CDP_DIR = this.cdpDir
     if (this.agentDir && args.kind !== 'codex') env.KOLOFT_AGENT_DIR = this.agentDir
-    if (args.kind !== 'codex' && this.multiAccountOn?.()) {
-      env.KOLOFT_MULTI_ACCOUNT = '1'
-      delete env.ANTHROPIC_API_KEY
-      delete env.ANTHROPIC_AUTH_TOKEN
-    }
     if (process.env.KOLOFT_TEST_BACKGROUND !== '1') delete env.KOLOFT_KEYCHAIN_FILE
     env.KOLOFT_PID = String(process.pid)
     const hookSettings =
@@ -196,8 +224,31 @@ export class PtyManager extends EventEmitter {
 
     let titlePoll: ReturnType<typeof setInterval> | undefined
 
+    const launchCommand =
+      typeof args.launchCommand === 'function' ? args.launchCommand(id) : args.launchCommand
+    const sourcedFiles: string[] = []
+    const shortEnoughToType = (command: string): string => {
+      if (Buffer.byteLength(command) <= LONGEST_LINE_A_BUSY_TTY_KEEPS) return command
+      const file = path.join(os.tmpdir(), `koloft-${id}-${sourcedFiles.length}.sh`)
+      fs.writeFileSync(file, command + '\n', { mode: 0o600 })
+      sourcedFiles.push(file)
+      return `. ${shq(file)}`
+    }
+    const watchForReadyShell = typeOnceTheShellReads(
+      (text) => {
+        try {
+          proc.write(text)
+        } catch {}
+      },
+      [args.setupCommand, launchCommand]
+        .filter((command): command is string => !!command)
+        .map((command) => shortEnoughToType(command) + '\r')
+        .join('')
+    )
+
     const cwdParser = args.util ? new OscCwdParser() : undefined
     proc.onData((data) => {
+      watchForReadyShell(data)
       this.emit('data', { id, data })
       const cwd = cwdParser?.push(data)
       if (cwd && cwd !== handle.cwd) {
@@ -208,6 +259,7 @@ export class PtyManager extends EventEmitter {
     proc.onExit(({ exitCode, signal }) => {
       handle.alive = false
       if (titlePoll) clearInterval(titlePoll)
+      for (const file of sourcedFiles) fs.rm(file, { force: true }, () => {})
       this.wakeReady(id)
       this.emit('exit', { id, exitCode, signal })
     })
@@ -227,18 +279,6 @@ export class PtyManager extends EventEmitter {
         this.emit('process-title', { id, name })
       }, UTIL_TITLE_POLL_MS)
     }
-
-    const send = (text: string, delay: number): void => {
-      setTimeout(() => {
-        try {
-          proc.write(text + '\r')
-        } catch {}
-      }, delay)
-    }
-    if (args.setupCommand) send(args.setupCommand, SETUP_AFTER_RC_FILES_MS)
-    const launchCommand =
-      typeof args.launchCommand === 'function' ? args.launchCommand(id) : args.launchCommand
-    if (launchCommand) send(launchCommand, LAUNCH_AFTER_PATH_FIXED_MS)
 
     return handle
   }

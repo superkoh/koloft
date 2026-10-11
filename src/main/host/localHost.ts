@@ -13,6 +13,8 @@ import {
   gitFileDiffFull
 } from '../gitStatus'
 import type { GithubLookup } from '../github'
+import { networkGit } from '../gitFreshness'
+import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
 import { resolveSpawnCwd } from '../projectInfo'
 import { leaveForOS, osOpenFallback } from '../osOpen'
 import { claudeArgv } from '../claudeArgs'
@@ -44,6 +46,35 @@ export function localGitOut(
   return new Promise((resolve) => {
     execFile('git', ['-C', cwd, ...args], { timeout: timeoutMs }, (err, stdout) =>
       resolve(err ? null : stdout)
+    )
+  })
+}
+
+const GIT_DID_NOT_START = 127
+const GIT_FAILED = 1
+const networkStepsRunning = new Set<number>()
+
+export function localGitRun(cwd: string, args: string[], network = false): Promise<GitRunResult> {
+  if (network) {
+    return networkGit('git', cwd, args, GIT_STEP_TIMEOUT_MS, networkStepsRunning).then((r) => ({
+      code: r.ok ? 0 : r.timedOut ? null : r.enoent ? GIT_DID_NOT_START : GIT_FAILED,
+      stdout: r.stdout,
+      stderr: r.stderr
+    }))
+  }
+  return new Promise((resolve) => {
+    execFile(
+      'git',
+      ['-C', cwd, ...args],
+      { timeout: GIT_STEP_TIMEOUT_MS },
+      (err, stdout, stderr) => {
+        const code = err?.code
+        resolve({
+          code: !err ? 0 : err.killed ? null : typeof code === 'number' ? code : GIT_DID_NOT_START,
+          stdout: String(stdout),
+          stderr: String(stderr)
+        })
+      }
     )
   })
 }
@@ -129,6 +160,7 @@ export function localHost(github: GithubLookup): Host {
     listSkills: async (root) => listSkills(skillFs, root, os.homedir()),
     keyed: (p) => p,
     gitOut: localGitOut,
+    gitRun: localGitRun,
     reveal: (p) => void leaveForOS(p, 'reveal'),
     osOpen: osOpenFallback,
     github

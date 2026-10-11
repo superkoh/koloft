@@ -3,9 +3,15 @@ import path from 'path'
 import { spawnSync } from 'child_process'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
-import { installCodex, seedSettings, type E2EEnv } from './helpers/env'
+import {
+  codexMissingWhoseCheckAnswersOnlyWhenLetGo,
+  installCodex,
+  seedSettings,
+  type E2EEnv
+} from './helpers/env'
 import {
   centerTerm,
+  expectNoCodexWhileTheCheckIsOutNorAfter,
   newSessionInWith,
   notesIsland,
   openMenu,
@@ -277,6 +283,30 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
     }
   })
 
+  test('with no Codex and a slow Codex check, the bind dialog never lets Codex be picked, before or after the check answers', async ({
+    env
+  }) => {
+    const letTheCheckAnswer = codexMissingWhoseCheckAnswersOnlyWhenLetGo(env)
+    const { page, close } = await launched(env)
+    try {
+      await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+      await page.locator('.menu .mi', { hasText: 'Bind Discord channel…' }).click()
+      const dlg = page.getByRole('dialog', { name: 'Bind a Discord channel' })
+      await expect(dlg).toBeVisible()
+      const pickableCodex = dlg.locator('.seg button:not([disabled])', { hasText: 'Codex' })
+
+      await expectNoCodexWhileTheCheckIsOutNorAfter(
+        page,
+        letTheCheckAnswer,
+        () => pickableCodex.count(),
+        'Codex pickable'
+      )
+      await expect(dlg.locator('.seg button', { hasText: 'Claude' })).toBeEnabled()
+    } finally {
+      await close()
+    }
+  })
+
   // ADR-0029
   test('a Codex conductor gets its role as developer instructions, runs in a folder of its own with approvals off and the workspace-write sandbox, and its session stays out of the workspace rows', async ({
     env
@@ -323,6 +353,7 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
       const asked = (await waitForCalls(env, 1))[0].sessionId
       await runIn(page, centerTerm(page), '/answer two plus two')
       await expect.poll(() => shownTermText(page)).toContain('answered: two plus two')
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-waiting\b/)
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(wsRows(page, 'ws-a')).toHaveClass(/cold/)
       await startSessionIn(page, 'ws-b')

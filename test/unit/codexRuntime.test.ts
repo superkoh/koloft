@@ -121,7 +121,6 @@ describe('Codex shell runtime', () => {
     manager.pickDir = '/must-not-pick'
     manager.cdpDir = '/must-not-browse'
     manager.makeHookSettings = vi.fn(() => '/must-not-hook')
-    manager.multiAccountOn = vi.fn(() => true)
     manager.create({
       kind: 'codex',
       cwd: directory,
@@ -139,6 +138,5 @@ describe('Codex shell runtime', () => {
     expect(Object.keys(options.env).some((key) => key.startsWith('KOLOFT_'))).toBe(false)
     expect(options.env.CODEX_THREAD_ID).toBeUndefined()
     expect(manager.makeHookSettings).not.toHaveBeenCalled()
-    expect(manager.multiAccountOn).not.toHaveBeenCalled()
   })
 })

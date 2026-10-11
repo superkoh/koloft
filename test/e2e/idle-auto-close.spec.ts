@@ -3,12 +3,17 @@ import path from 'path'
 import type { Locator } from '@playwright/test'
 import { test, expect, launchApp, pendingAttention, quitAndClose } from './helpers/app'
 import {
+  focusOwner,
   processAlive,
+  readCalls,
   resumedId,
   setNextSessionTitle,
   startSessionIn,
+  terminalText,
+  termIds,
   waitBooted,
-  waitForCalls
+  waitForCalls,
+  wsRows
 } from './helpers/p1'
 import { EDIT, editReady, typeAtEnd } from './helpers/editPane'
 import { openFileTab, workbenchPanel } from './helpers/workbench'
@@ -18,7 +23,7 @@ const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_CLOSE_AND_EACH_REFUSAL_MS = 3000
 const ONE_CLOSE_WINDOW_WITH_MARGIN_MS = 4000
 
-test('an idle session closes itself quietly once its needs-you mark is seen (window focus is not a rule); an unsaved edit and the open tab keep theirs; the cold row resumes the same session', async ({
+test('an idle session goes to sleep quietly once its needs-you mark is seen (window focus is not a rule): its process ends but its row, tab and screen stay; an unsaved edit and the open tab keep their process; clicking it wakes the same session in that tab, and a line typed while it wakes reaches it', async ({
   env
 }) => {
   test.setTimeout(120_000)
@@ -64,29 +69,46 @@ test('an idle session closes itself quietly once its needs-you mark is seen (win
     await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
     await expect(row('Open C')).toHaveClass(/\bactive\b/)
 
+    const asleepTab = await row('Idle A').getAttribute('data-tab-id')
     await expect.poll(() => processAlive(a.pid), { timeout: 40_000 }).toBe(false)
-    await expect(row('Idle A')).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+    await page.waitForTimeout(ONE_CLOSE_WINDOW_WITH_MARGIN_MS)
+    await expect(row('Idle A')).toHaveClass(/\bst-idle\b/)
     await expect(row('Idle A')).not.toHaveClass(/\bactive\b/)
+    expect(await row('Idle A').getAttribute('data-tab-id')).toBe(asleepTab)
+    const frozen = await terminalText(page, asleepTab!)
+    expect(frozen).toContain(a.sessionId)
+    expect(frozen).not.toContain('Resume this session with')
 
     await expect(page.locator('.toast-msg')).toHaveCount(0)
     await expect(page.locator('.modal')).toHaveCount(0)
     expect(await app.evaluate(({ app }) => app.dock?.getBadge?.() ?? '')).toBe('')
 
-    await page.waitForTimeout(ONE_CLOSE_WINDOW_WITH_MARGIN_MS)
     expect(processAlive(b.pid)).toBe(true)
     expect(processAlive(c.pid)).toBe(true)
     await expect(row('Unsaved B')).not.toHaveClass(/\bcold\b/)
     await expect(row('Open C')).not.toHaveClass(/\bcold\b/)
+    expect(readCalls(env)).toHaveLength(3)
 
     await row('Idle A').click()
+    await expect(row('Idle A')).toHaveClass(/\bactive\b/)
+    await expect.poll(() => focusOwner(page)).toBe('tui')
+    await page.keyboard.type('/answer typed while waking')
+    await page.keyboard.press('Enter')
     const calls = await waitForCalls(env, 4)
     expect(resumedId(calls[3])).toBe(a.sessionId)
+    await expect(row('Idle A')).not.toHaveAttribute('data-tab-id', asleepTab!)
+    const wokenTab = await row('Idle A').getAttribute('data-tab-id')
+    await expect
+      .poll(() => terminalText(page, wokenTab!), { timeout: 30_000 })
+      .toContain('answered: typed while waking')
+    expect(await termIds(page)).not.toContain(asleepTab)
+    await expect(wsRows(page, 'ws-a')).toHaveCount(2)
   } finally {
     await quitAndClose(app)
   }
 })
 
-test('a Keep running session is never closed for being idle, while an unmarked one beside it is', async ({
+test('a Keep running session never goes to sleep for being idle, while an unmarked one beside it does', async ({
   env
 }) => {
   test.setTimeout(120_000)
@@ -124,6 +146,7 @@ test('a Keep running session is never closed for being idle, while an unmarked o
     await expect.poll(() => processAlive(c.pid), { timeout: 40_000 }).toBe(false)
     expect(processAlive(a.pid)).toBe(true)
     await expect(row('Resident A')).not.toHaveClass(/\bcold\b/)
+    await expect(row('Idle C')).toHaveClass(/\bst-idle\b/)
   } finally {
     await quitAndClose(app)
   }

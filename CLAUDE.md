@@ -41,11 +41,11 @@ Working principles:
   for: do not split an asked-for feature into a first and a second version, or leave
   part of it for later, unless a probe showed that part cannot be done — then name
   the probe.
-- A guess is not a fact. A limit read off a name, a sibling module, a doc or an
-  outside tool's past behavior stays a guess until one command proves it: say
-  "inferred, not checked" where you state it, and check it before any code depends
-  on it — everything built on a wrong premise goes when the premise does. The same
-  goes for your own access: run the command and read the error; never report a
+- A guess is not a fact. A claim from a name, a sibling module, a doc, a reviewer
+  or a past look at a tool, PR or agent stays a guess until one command proves it:
+  say "inferred, not checked" where you state it, and check it before any code
+  depends on it — everything built on a wrong premise goes when the premise does.
+  Your own access too: run the command and read the error; never report a
   permission you have not tried. What a command can answer is never asked of the owner.
   Nothing is called impossible, unsupported or "works this way" — in a plan, a
   question or a PR — before a probe has run; until then it is "not probed yet".
@@ -219,6 +219,7 @@ Working principles:
     still report success.
   - Never git -C another checkout: diff origin/<branch>, or gh pr diff <n>.
   - Read stops at 25,000 tokens: read a big file or diff ~1,000 lines at a time.
+  - grep is ugrep and fails on a .{0,N} span: use /usr/bin/grep -o -E, N ≤ 255.
   - Findings go in your final message; the harness refuses report files.
   ```
 
@@ -229,8 +230,7 @@ Working principles:
 - Auth comes from Koloft's own multi-account balancer (Settings ▸ Accounts): the claude
   shim injects the picked account per launch; the probe/header contract is
   `docs/claude-code-contract.md` §7. A Codex account is its own `CODEX_HOME`, picked per
-  launch (`docs/codex-cli-contract.md` §15). With the mode off, a session runs bare
-  `claude` or `codex` on whatever login the machine already has.
+  launch (`docs/codex-cli-contract.md` §15).
 - Any browser automation here stays headless — never pass `--headed` unless asked to
   watch. Koloft is developed on the same Mac the automation runs on, so a browser window
   that takes focus, or merely covers a fullscreen Space, interrupts whatever is being
