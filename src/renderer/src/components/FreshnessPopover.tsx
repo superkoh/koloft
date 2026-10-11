@@ -1,6 +1,6 @@
 import { useEffect, useState, type JSX } from 'react'
 import { LuDownload, LuRefreshCw } from 'react-icons/lu'
-import type { SessionRow, WorkspaceFreshness, WorkspaceGithub } from '@shared/types'
+import type { SessionRow, WorkspaceFreshness, WorkspaceGithub, WorkspaceRows } from '@shared/types'
 import { canPull } from '@shared/freshnessOps'
 import { useStore } from '../store'
 import {
@@ -30,7 +30,7 @@ export function FreshnessPopover({
   wsPath: string
   f?: WorkspaceFreshness
   github?: WorkspaceGithub
-  remote?: { host: string; connected: boolean }
+  remote?: WorkspaceRows['workspace']['remote']
   rows: SessionRow[]
   left: number
   top: number

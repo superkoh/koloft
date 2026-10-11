@@ -1595,7 +1595,7 @@ function createWindow(): void {
       consumeOutletDedupe(uiActiveTabId)
       attention.clear(uiActiveTabId)
     }
-    void freshness?.sweep()
+    void freshness?.sweep({ host: null })
   })
   mainWindow.on('blur', () => {
     sendToRenderer('window:focus', false)
@@ -2222,7 +2222,10 @@ app.whenReady().then(() => {
     workspaces: () => workspaceMgr?.pinnedPaths() ?? [],
     autoFetch: () => loadSettings().gitAutoFetch,
     onChange: () => workspaceMgr?.restampLive(),
-    machine: (host) => (remoteSync?.connected(host) ? hosts.machine(host).freshness : null)
+    runner: (wsPath) => {
+      const key = parseRemoteKey(wsPath)
+      return key && !remoteSync?.connected(key.host) ? null : hosts.of(wsPath).freshness
+    }
   })
   githubCounts = new GithubCountsSweep({
     workspaces: () => workspaceMgr?.pinnedPaths() ?? [],
@@ -2338,7 +2341,7 @@ app.whenReady().then(() => {
   // PLATFORM§20
   powerMonitor.on('resume', requestWebglRepair)
   powerMonitor.on('unlock-screen', requestWebglRepair)
-  powerMonitor.on('resume', () => void freshness?.sweep())
+  powerMonitor.on('resume', () => void freshness?.sweep({ host: null }))
   // PLATFORM§3
   powerMonitor.on('resume', () => cronRunner?.onResume())
   screen.on('display-added', requestWebglRepair)

@@ -310,16 +310,21 @@ fp "$t"`
 
 const GIT = `GIT_OPTIONAL_LOCKS=0 git "$@"`
 
-const DIFF_BASE = `r=$1
-g() { GIT_OPTIONAL_LOCKS=0 git -C "$r" "$@" 2>/dev/null; }
-def=
-ref=$(g symbolic-ref --quiet refs/remotes/origin/HEAD) && ref=\${ref#refs/remotes/} &&
-  g rev-parse --verify --quiet "$ref" >/dev/null && def=$ref
-if [ -z "$def" ]; then
-  for c in origin/main origin/master main master; do
-    g rev-parse --verify --quiet "$c" >/dev/null && { def=$c; break; }
+const GIT_IN_REPO = `g() { GIT_OPTIONAL_LOCKS=0 git -C "$r" "$@" 2>/dev/null; }`
+
+const DEFAULT_REF = `dr() {
+  ref=$(g symbolic-ref --quiet refs/remotes/origin/HEAD) && ref=\${ref#refs/remotes/} &&
+    g rev-parse --verify --quiet "$ref" >/dev/null && { printf '%s' "$ref"; return 0; }
+  for c in "$@"; do
+    g rev-parse --verify --quiet "$c" >/dev/null && { printf '%s' "$c"; return 0; }
   done
-fi
+  return 1
+}`
+
+const DIFF_BASE = `r=$1
+${GIT_IN_REPO}
+${DEFAULT_REF}
+def=$(dr origin/main origin/master main master)
 if [ -n "$def" ]; then
   mb=$(g merge-base HEAD "$def") && [ -n "$mb" ] && { printf '%s' "$mb"; exit 0; }
 fi
@@ -363,21 +368,15 @@ const NETWORK_GIT = `${NETWORK_ENV} git "$@"`
 
 // PLATFORM§30
 const FRESHNESS = `r=$1
-g() { GIT_OPTIONAL_LOCKS=0 git -C "$r" "$@" 2>/dev/null; }
+${GIT_IN_REPO}
+${DEFAULT_REF}
 ${FINGERPRINT}
 br=$(g rev-parse --abbrev-ref HEAD) && head=$(g rev-parse HEAD) || exit 1
-def=
-ref=$(g symbolic-ref --quiet refs/remotes/origin/HEAD) && ref=\${ref#refs/remotes/} &&
-  g rev-parse --verify --quiet "$ref" >/dev/null && def=$ref
-if [ -z "$def" ]; then
-  for c in origin/main origin/master; do
-    g rev-parse --verify --quiet "$c" >/dev/null && { def=$c; break; }
-  done
-fi
+def=$(dr origin/main origin/master)
 l=0; [ -f "$r/.git" ] && l=1
 s=0; [ -e "$r/.gitmodules" ] && s=1
 fh=$(fp "$r/.git/FETCH_HEAD" 2>/dev/null) || fh=-
-printf '%s\\n%s\\n%s\\n%s %s %s\\n' "$br" "$head" "$def" "$l" "$s" "\${fh%% *}"
+printf '%s\\n%s\\n%s\\n%s %s\\n%s\\n' "$br" "$head" "$def" "$l" "$s" "$fh"
 [ "$br" != HEAD ] && [ -n "$def" ] || exit 0
 f=-
 if [ "$2" = 1 ]; then
@@ -390,15 +389,19 @@ printf '%s\\n%s\\n%s\\n' "$f" "$c" "\${d:+dirty}"`
 const PULLED = 'KOLOFT_PULLED'
 
 const FAST_FORWARD = `r=$1 from=$3
-${NETWORK_ENV} git -C "$r" -c advice.diverging=false pull --ff-only --no-recurse-submodules origin "$2" || exit
-to=$(git -C "$r" rev-parse HEAD 2>/dev/null) || to=$from
-n=$(git -C "$r" rev-list --count "$from..$to" 2>/dev/null) || n=0
-printf '\\n${PULLED} %s %s\\n' "$to" "$n"`
+${NETWORK_ENV} git -C "$r" -c advice.diverging=false pull --ff-only --no-recurse-submodules origin "$2"
+ok=$?
+n=$(git -C "$r" rev-list --count "$from..HEAD" 2>/dev/null) || n=0
+printf '\\n${PULLED} %s\\n' "$n"
+( set -- "$r" 0
+${FRESHNESS}
+)
+exit $ok`
 
 export function parseFreshness(stdout: string): GitSnapshot | null {
-  const [branch, head, defRef, flags, fetched, counts, dirty] = stdout.split('\n')
-  if (!branch || !head || flags === undefined) return null
-  const [linked, subs, fetchHead] = flags.split(' ')
+  const [branch, head, defRef, flags, fetchHead, fetched, counts, dirty] = stdout.split('\n')
+  if (!branch || !head || fetchHead === undefined) return null
+  const [linked, subs] = flags.split(' ')
   const snapshot: GitSnapshot = {
     branch,
     head,
@@ -410,17 +413,18 @@ export function parseFreshness(stdout: string): GitSnapshot | null {
   if (fetched === undefined || fetched === '') return snapshot
   const lr = parseLeftRight(counts ?? '')
   if (!lr) return null
-  const fh = parseFloat(fetchHead)
   return {
     ...snapshot,
     tracking: {
       fetched: fetched === '-' ? null : fetched === '1',
-      fetchHeadAt: Number.isFinite(fh) ? fh * 1000 : null,
+      fetchHeadAt: parseFingerprint(fetchHead)?.mtimeMs ?? null,
       ...lr,
       dirty: dirty === 'dirty'
     }
   }
 }
+
+const PULLED_TAIL = new RegExp(`\\n${PULLED} (\\d+)\\n([\\s\\S]*)$`)
 
 const ANSWER_AGENT_REQUEST = `d="${REMOTE_HOOK_DIR}"
 [ -f "$d/req-$1.json" ] || exit 0
@@ -497,20 +501,23 @@ export class SshHost implements Host {
       const r = await this.sh(FRESHNESS, [this.bare(root), fetchTimeoutMs === null ? '0' : '1'], {
         timeoutMs: (fetchTimeoutMs ?? 0) + GIT_TIMEOUT_MS
       })
-      return r.code === 0 ? parseFreshness(r.stdout.toString('utf8')) : null
+      return {
+        snapshot: r.code === 0 ? parseFreshness(r.stdout.toString('utf8')) : null,
+        enoent: false
+      }
     },
     pull: async (root, defBranch, from, timeoutMs) => {
       const r = await this.sh(FAST_FORWARD, [this.bare(root), defBranch, from], { timeoutMs })
       const stdout = r.stdout.toString('utf8')
-      const pulled = new RegExp(`${PULLED} (\\S+) (\\d+)\\s*$`).exec(stdout)
+      const tail = PULLED_TAIL.exec(stdout)
       return {
         ok: r.code === 0,
-        stdout,
+        stdout: tail ? stdout.slice(0, tail.index) : stdout,
         stderr: r.stderr,
         timedOut: r.code === null,
         enoent: false,
-        to: pulled?.[1] ?? from,
-        count: pulled ? Number(pulled[2]) : 0
+        count: tail ? Number(tail[1]) : 0,
+        after: tail ? parseFreshness(tail[2]) : null
       }
     }
   }

@@ -5,7 +5,8 @@ import os from 'os'
 import http from 'http'
 import type { AddressInfo } from 'net'
 import { execFileSync } from 'child_process'
-import { GitFreshnessEngine, type FreshnessRunner } from '../../src/main/gitFreshness'
+import { GitFreshnessEngine, LocalRunner, type FreshnessRunner } from '../../src/main/gitFreshness'
+import { parseRemoteKey } from '@shared/remoteKey'
 import type { WorkspaceFreshness } from '@shared/types'
 
 let tmp: string
@@ -72,6 +73,7 @@ function harness(
 ): Harness {
   const changed: string[] = []
   let now = 1_700_000_000_000
+  const local = new LocalRunner(opts.gitBin)
   const engine = new GitFreshnessEngine(
     {
       workspaces: () =>
@@ -81,10 +83,13 @@ function harness(
         })),
       autoFetch: opts.autoFetch ?? ((): boolean => true),
       onChange: (p) => changed.push(p),
-      machine: opts.machine,
+      runner: (p) => {
+        const key = parseRemoteKey(p)
+        return key ? (opts.machine?.(key.host) ?? null) : local
+      },
       now: () => now
     },
-    { gitBin: opts.gitBin, fetchTimeoutMs: opts.fetchTimeoutMs }
+    { fetchTimeoutMs: opts.fetchTimeoutMs }
   )
   return { engine, changed, setNow: (ms) => (now = ms) }
 }
@@ -730,12 +735,15 @@ describe('remote workspaces', () => {
         asked.push(`${root}${fetchTimeoutMs === null ? '' : ' +fetch'}`)
         if (fail) throw fail
         return {
-          branch: 'main',
-          head: 'a'.repeat(40),
-          defRef: 'origin/main',
-          linked: false,
-          hasSubmodules: false,
-          tracking: { fetched: true, fetchHeadAt: null, ahead: 0, behind: 2, dirty: false }
+          snapshot: {
+            branch: 'main',
+            head: 'a'.repeat(40),
+            defRef: 'origin/main',
+            linked: false,
+            hasSubmodules: false,
+            tracking: { fetched: true, fetchHeadAt: null, ahead: 0, behind: 2, dirty: false }
+          },
+          enoent: false
         }
       },
       pull: async () => {
@@ -769,6 +777,23 @@ describe('remote workspaces', () => {
 
     await h.engine.refreshLocal([REMOTE])
     expect(asked).toHaveLength(1)
+  })
+
+  it('a window-focus or wake-up sweep fetches only the local pins, never over ssh', async () => {
+    const w = loggingGitBin('git-local-sweep')
+    const asked: string[] = []
+    const h = harness({
+      paths: [work, REMOTE],
+      missing: [],
+      gitBin: w.bin,
+      machine: () => machineRunner(asked)
+    })
+    await h.engine.sweep({ host: null })
+    expect(asked).toEqual([])
+    expect(fetchLines(w.log).join('\n')).toContain(work)
+
+    await h.engine.sweep()
+    expect(asked).toEqual([`${REMOTE} +fetch`])
   })
 
   it('a machine whose git is missing never stops the local badges', async () => {

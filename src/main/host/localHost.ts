@@ -13,7 +13,7 @@ import {
   gitFileDiffFull
 } from '../gitStatus'
 import type { GithubLookup } from '../github'
-import { networkGit } from '../gitFreshness'
+import { LocalRunner, networkGit } from '../gitFreshness'
 import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
 import { resolveSpawnCwd } from '../projectInfo'
 import { leaveForOS, osOpenFallback } from '../osOpen'
@@ -163,6 +163,7 @@ export function localHost(github: GithubLookup): Host {
     gitRun: localGitRun,
     reveal: (p) => void leaveForOS(p, 'reveal'),
     osOpen: osOpenFallback,
-    github
+    github,
+    freshness: new LocalRunner()
   }
 }
