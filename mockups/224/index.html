@@ -1,0 +1,754 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>#224 - a session's listening ports in the Workbench + menu</title>
+    <style>
+      /* Copied verbatim from src/renderer/src/styles.css (the rules the + menu, the tab strip and the empty web page use). */
+      :root {
+        --bg-0: #0d0d0f;
+        --bg-1: #161618;
+        --bg-2: #1c1c1f;
+        --bg-3: #27272c;
+        --bg-4: #34343a;
+        --bg-term: #0f0f11;
+        --term-ground: var(--bg-term);
+        --line-layout: rgba(255, 255, 255, 0.06);
+
+        --line: rgba(255, 255, 255, 0.1);
+        --line-2: rgba(255, 255, 255, 0.17);
+
+        --fg: #f3f1ee;
+        --fg-dim: #bdb9b2;
+        --fg-faint: #908b84;
+
+        --accent: #ec9670;
+        --accent-press: #d97757;
+        --accent-soft: rgba(236, 150, 112, 0.18);
+        --accent-line: rgba(236, 150, 112, 0.45);
+        --good: #8fc69a;
+        --good-soft: rgba(143, 198, 154, 0.16);
+
+        --amber: #f0a830;
+        --amber-soft: rgba(240, 168, 48, 0.14);
+        --amber-line: rgba(240, 168, 48, 0.45);
+        --good-line: rgba(143, 198, 154, 0.4);
+        --red: #d9776a;
+        --fable: #a99ad8;
+        --folder: #c9a06a;
+        --fg-cold: #9a958d;
+        --danger: #f0a0a0;
+
+        --r: 9px;
+        --r-sm: 7px;
+        --r-lg: 12px;
+        --shadow-lg: 0 18px 56px -16px rgba(0, 0, 0, 0.7);
+        --ease: cubic-bezier(0.32, 0.72, 0, 1);
+        --switch-sm-w: 30px;
+
+        --font: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+        --mono: 'JetBrainsMono Nerd Font', 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+
+        --titlebar-h: 46px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: var(--font);
+        font-size: 14px;
+        -webkit-font-smoothing: antialiased;
+        color: var(--fg);
+        background: var(--bg-0);
+        cursor: default;
+        user-select: none;
+      }
+
+      .menu {
+        position: fixed;
+        z-index: 200;
+        width: 190px;
+        background: var(--bg-2);
+        border: 1px solid var(--line-2);
+        border-radius: var(--r);
+        overflow: hidden;
+        box-shadow: 0 14px 40px -10px rgba(0, 0, 0, 0.7);
+        font-size: 13px;
+      }
+      .menu .mi {
+        -webkit-app-region: no-drag;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 12px;
+        color: var(--fg-dim);
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .menu .mi:hover {
+        background: var(--bg-3);
+        color: var(--fg);
+      }
+      .menu .mi .k,
+      .palette .cb-row .k {
+        margin-left: auto;
+        font-family: var(--mono);
+        font-size: 10.5px;
+        color: var(--fg-faint);
+      }
+      .menu .mi .k.on {
+        color: var(--accent);
+      }
+      .menu .sep {
+        height: 1px;
+        background: var(--line);
+        margin: 4px 0;
+      }
+      .menu .mi.danger {
+        color: var(--danger);
+      }
+      .menu .mi.disabled {
+        opacity: 0.35;
+        pointer-events: none;
+      }
+      .menu .mi.head {
+        font-family: var(--mono);
+        font-size: 10.5px;
+        color: var(--fg-faint);
+        cursor: default;
+      }
+      .menu .mi.head:hover {
+        background: transparent;
+        color: var(--fg-faint);
+      }
+
+      .wb-panel {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        background: var(--bg-1);
+      }
+      .wb-panel:focus {
+        outline: none;
+      }
+      .wb-tabs {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        height: 36px;
+        padding: 0 9px;
+        background: var(--bg-2);
+        border-bottom: 1px solid var(--line);
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+      .wb-tabs::-webkit-scrollbar {
+        display: none;
+      }
+      .wb-tabs .wb-drag {
+        -webkit-app-region: drag;
+        flex: 1 1 0;
+        align-self: stretch;
+      }
+      .wb-tab {
+        flex: 0 1 auto;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        max-width: 180px;
+        min-width: 68px;
+        height: 28px;
+        padding: 0 9px;
+        border-radius: 7px;
+        background: var(--bg-3);
+        border: 1px solid transparent;
+        font-size: 12.5px;
+        color: var(--fg-dim);
+        cursor: pointer;
+        transition: background 0.15s var(--ease);
+      }
+      .wb-tab:hover {
+        background: var(--bg-4);
+      }
+      .wb-tab.on {
+        background: var(--accent-soft);
+        border-color: var(--accent-line);
+        color: var(--fg);
+      }
+      .wb-tab.pinned {
+        flex: 0 0 auto;
+        min-width: 0;
+        padding: 0 10px;
+        background: transparent;
+        border-color: var(--line);
+      }
+      .wb-tab.pinned.on {
+        background: var(--accent-soft);
+        border-color: var(--accent-line);
+      }
+      .wb-tab .ic {
+        flex: 0 0 auto;
+        display: flex;
+        color: var(--fg-faint);
+      }
+      .wb-tab.on .ic {
+        color: var(--accent);
+      }
+      .wb-tab .lb {
+        flex: 1;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .wb-tab .x {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 16px;
+        height: 16px;
+        margin-right: -3px;
+        border-radius: 4px;
+        color: var(--fg-faint);
+        opacity: 0.7;
+      }
+      .wb-tab .x:hover {
+        color: var(--accent);
+        opacity: 1;
+      }
+      .wb-sep {
+        flex: 0 0 auto;
+        width: 1px;
+        height: 18px;
+        margin: 0 2px;
+        background: var(--line-2);
+      }
+      .wb-pin,
+      .wb-spill {
+        position: sticky;
+        z-index: 1;
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        background: var(--bg-2);
+      }
+      .wb-pin {
+        left: 0;
+        padding-right: 6px;
+      }
+      .wb-spill {
+        right: 0;
+        padding-left: 6px;
+      }
+      .wb-new {
+        -webkit-app-region: no-drag;
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        border: none;
+        border-radius: 6px;
+        background: none;
+        color: var(--fg-faint);
+        cursor: pointer;
+        transition: color 0.15s var(--ease);
+      }
+      .wb-new:hover {
+        color: var(--accent);
+      }
+
+      .wb-newmenu,
+      .wb-ghmenu {
+        position: absolute;
+        top: 38px;
+        z-index: 40;
+      }
+      .wb-newmenu {
+        right: 9px;
+      }
+      .wb-ghmenu {
+        left: 9px;
+      }
+      .wb-newmenu:focus,
+      .wb-ghmenu:focus {
+        outline: none;
+      }
+      .wb-newmenu .mi,
+      .wb-ghmenu .mi {
+        width: 100%;
+        border: none;
+        background: none;
+        font-family: inherit;
+        font-size: 13px;
+        text-align: left;
+      }
+
+      .wb-body {
+        position: relative;
+        flex: 1;
+        min-height: 0;
+        background: var(--bg-1);
+      }
+
+      .baddr {
+        -webkit-app-region: no-drag;
+        position: relative;
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        height: 36px;
+        padding: 0 9px;
+        background: var(--bg-2);
+        border-bottom: 1px solid var(--line);
+      }
+      .bnav {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border: none;
+        border-radius: 7px;
+        background: none;
+        color: var(--fg-dim);
+        cursor: pointer;
+      }
+      .bnav:hover {
+        color: var(--accent);
+      }
+      .bnav.dis {
+        color: var(--fg-faint);
+        opacity: 0.4;
+        cursor: default;
+      }
+      .baddr .url {
+        flex: 1;
+        min-width: 0;
+        height: 26px;
+        padding: 0 10px;
+        background: var(--bg-1);
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        font-family: var(--mono);
+        font-size: 12.5px;
+        color: var(--fg);
+        outline: none;
+      }
+      .baddr .url:focus {
+        border-color: var(--accent-line);
+      }
+
+      .bempty,
+      .berror,
+      .bcrash,
+      .bcert {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 24px;
+        text-align: center;
+        background: var(--bg-1);
+      }
+      .bstate-t {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--fg);
+      }
+      .bstate-sub {
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--fg-faint);
+      }
+      .bempty-hint {
+        font-size: 12px;
+        color: var(--fg-dim);
+      }
+      .wb-tabs .wb-spill {
+        padding-right: 33px;
+      }
+    </style>
+    <style>
+      /* Mockup page frame only - not app CSS. The app's .wb-panel is absolute inside a .wb-col, so each case gets a sized box to sit in. */
+      body {
+        margin: 0;
+        padding: 32px 24px 64px;
+        user-select: text;
+      }
+      .mock-page {
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+      .mock-page h1 {
+        font-size: 18px;
+        font-weight: 600;
+        margin: 0 0 6px;
+      }
+      .mock-page h2 {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--fg-dim);
+        margin: 28px 0 8px;
+      }
+      .mock-page p,
+      .mock-page li {
+        font-size: 13px;
+        line-height: 1.5;
+        color: var(--fg-dim);
+        max-width: 72ch;
+      }
+      .mock-page code {
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--fg);
+      }
+      .mock-cases {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 24px;
+      }
+      .mock-case {
+        flex: 1 1 480px;
+        min-width: 0;
+      }
+      .mock-frame {
+        position: relative;
+        height: 320px;
+        border: 1px solid var(--line-layout);
+        border-radius: var(--r-lg);
+        overflow: hidden;
+      }
+      .mock-cursor {
+        position: absolute;
+        pointer-events: none;
+        color: var(--fg);
+        filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.8));
+      }
+      .mock-note {
+        margin-top: 10px;
+        font-size: 12px;
+        color: var(--fg-faint);
+      }
+      svg.lu {
+        width: 14px;
+        height: 14px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        flex: 0 0 auto;
+      }
+      svg.lu.s12 {
+        width: 12px;
+        height: 12px;
+      }
+      svg.lu.s13 {
+        width: 13px;
+        height: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="mock-page">
+      <h1>#224 - a session's listening ports, in the Workbench "+" menu</h1>
+      <p>
+        The "+" button at the right of the Workbench tab strip already opens a small menu (New web
+        tab / Open file… / New terminal). The change adds one section under a separator: the ports
+        that the processes of <em>this</em> session are listening on. Clicking a port opens
+        <code>http://localhost:&lt;port&gt;</code> in a new web tab of this session, the same way
+        "New web tab" + typing an address does. Nothing opens by itself: the list is scanned when
+        the menu opens, and a page opens only on the person's click.
+      </p>
+
+      <div class="mock-cases">
+        <section class="mock-case">
+          <h2>A - two ports are listening (a dev server and a docs server)</h2>
+          <div class="mock-frame">
+            <div class="wb-panel" data-kind="web">
+              <div class="wb-tabs">
+                <div class="wb-pin">
+                  <span class="wb-tab pinned">
+                    <span class="ic">
+                      <svg class="lu s13" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M21 12h-8" />
+                        <path d="M21 6H8" />
+                        <path d="M21 18h-8" />
+                        <path d="M3 6v4c0 1.1.9 2 2 2h3" />
+                        <path d="M3 10v6c0 1.1.9 2 2 2h3" />
+                      </svg>
+                    </span>
+                    <span class="lb">Files</span>
+                  </span>
+                  <span class="wb-sep"></span>
+                </div>
+                <span class="wb-tab on">
+                  <span class="ic">
+                    <svg class="lu s12" viewBox="0 0 24 24" aria-hidden="true">
+                      <circle cx="12" cy="12" r="10" />
+                      <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+                      <path d="M2 12h20" />
+                    </svg>
+                  </span>
+                  <span class="lb">New tab</span>
+                  <span class="x" title="Close tab">
+                    <svg class="lu s12" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M18 6 6 18" />
+                      <path d="m6 6 12 12" />
+                    </svg>
+                  </span>
+                </span>
+                <div class="wb-drag"></div>
+                <div class="wb-spill">
+                  <button class="wb-new" aria-label="New tab" title="New tab ⌘T">
+                    <svg class="lu" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M5 12h14" />
+                      <path d="M12 5v14" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <div class="menu wb-newmenu" role="menu">
+                <button class="mi" role="menuitem">
+                  <svg class="lu" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+                    <path d="M2 12h20" />
+                  </svg>
+                  New web tab
+                </button>
+                <button class="mi" role="menuitem">
+                  <svg class="lu" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+                    <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+                    <path d="M10 9H8" />
+                    <path d="M16 13H8" />
+                    <path d="M16 17H8" />
+                  </svg>
+                  Open file…
+                </button>
+                <button class="mi" role="menuitem">
+                  <svg class="lu" viewBox="0 0 24 24" aria-hidden="true">
+                    <polyline points="4 17 10 11 4 5" />
+                    <line x1="12" x2="20" y1="19" y2="19" />
+                  </svg>
+                  New terminal
+                </button>
+                <div class="sep"></div>
+                <div class="mi head">Listening ports</div>
+                <button class="mi" role="menuitem" title="node (pid 48213)">
+                  <svg class="lu" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+                    <path d="M2 12h20" />
+                  </svg>
+                  localhost:5173
+                </button>
+                <button class="mi" role="menuitem" title="python3 (pid 48377)">
+                  <svg class="lu" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+                    <path d="M2 12h20" />
+                  </svg>
+                  localhost:8000
+                </button>
+              </div>
+
+              <div class="baddr">
+                <button class="bnav dis" aria-label="Back">
+                  <svg class="lu" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="m15 18-6-6 6-6" />
+                  </svg>
+                </button>
+                <button class="bnav dis" aria-label="Forward">
+                  <svg class="lu" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="m9 18 6-6-6-6" />
+                  </svg>
+                </button>
+                <input class="url" value="" placeholder="Enter an address" readonly />
+              </div>
+              <div class="wb-body">
+                <div class="bempty">
+                  <div class="bstate-t">No page open yet</div>
+                  <div class="bempty-hint">Press ⌘L and enter an address (http(s) / file://)</div>
+                  <div class="bempty-hint">Click a link in the terminal</div>
+                  <div class="bempty-hint">Or let Claude open one</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p class="mock-note">
+            Hover on a port row shows the process behind it (<code>node (pid 48213)</code>) as a
+            tooltip; the row itself stays short so it fits the menu's 190px.
+          </p>
+        </section>
+
+        <section class="mock-case">
+          <h2>B - nothing is listening</h2>
+          <div class="mock-frame">
+            <div class="wb-panel" data-kind="web">
+              <div class="wb-tabs">
+                <div class="wb-pin">
+                  <span class="wb-tab pinned">
+                    <span class="ic">
+                      <svg class="lu s13" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M21 12h-8" />
+                        <path d="M21 6H8" />
+                        <path d="M21 18h-8" />
+                        <path d="M3 6v4c0 1.1.9 2 2 2h3" />
+                        <path d="M3 10v6c0 1.1.9 2 2 2h3" />
+                      </svg>
+                    </span>
+                    <span class="lb">Files</span>
+                  </span>
+                  <span class="wb-sep"></span>
+                </div>
+                <span class="wb-tab on">
+                  <span class="ic">
+                    <svg class="lu s12" viewBox="0 0 24 24" aria-hidden="true">
+                      <circle cx="12" cy="12" r="10" />
+                      <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+                      <path d="M2 12h20" />
+                    </svg>
+                  </span>
+                  <span class="lb">New tab</span>
+                  <span class="x" title="Close tab">
+                    <svg class="lu s12" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M18 6 6 18" />
+                      <path d="m6 6 12 12" />
+                    </svg>
+                  </span>
+                </span>
+                <div class="wb-drag"></div>
+                <div class="wb-spill">
+                  <button class="wb-new" aria-label="New tab" title="New tab ⌘T">
+                    <svg class="lu" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M5 12h14" />
+                      <path d="M12 5v14" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <div class="menu wb-newmenu" role="menu">
+                <button class="mi" role="menuitem">
+                  <svg class="lu" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+                    <path d="M2 12h20" />
+                  </svg>
+                  New web tab
+                </button>
+                <button class="mi" role="menuitem">
+                  <svg class="lu" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+                    <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+                    <path d="M10 9H8" />
+                    <path d="M16 13H8" />
+                    <path d="M16 17H8" />
+                  </svg>
+                  Open file…
+                </button>
+                <button class="mi" role="menuitem">
+                  <svg class="lu" viewBox="0 0 24 24" aria-hidden="true">
+                    <polyline points="4 17 10 11 4 5" />
+                    <line x1="12" x2="20" y1="19" y2="19" />
+                  </svg>
+                  New terminal
+                </button>
+                <div class="sep"></div>
+                <div class="mi head">No listening ports</div>
+              </div>
+
+              <div class="baddr">
+                <button class="bnav dis" aria-label="Back">
+                  <svg class="lu" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="m15 18-6-6 6-6" />
+                  </svg>
+                </button>
+                <button class="bnav dis" aria-label="Forward">
+                  <svg class="lu" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="m9 18 6-6-6-6" />
+                  </svg>
+                </button>
+                <input class="url" value="" placeholder="Enter an address" readonly />
+              </div>
+              <div class="wb-body">
+                <div class="bempty">
+                  <div class="bstate-t">No page open yet</div>
+                  <div class="bempty-hint">Press ⌘L and enter an address (http(s) / file://)</div>
+                  <div class="bempty-hint">Click a link in the terminal</div>
+                  <div class="bempty-hint">Or let Claude open one</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p class="mock-note">
+            The head row uses the menu's existing <code>.mi.head</code> style (mono, faint, not
+            clickable). A remote (ssh) session's menu shows no ports section at all until #431 gives
+            it a way to reach a remote port.
+          </p>
+        </section>
+      </div>
+
+      <h2>What a click does</h2>
+      <ul>
+        <li>
+          A port row calls the same path as typing an address into a new web tab:
+          <code>openHere({ kind: 'web', url: 'http://localhost:5173', source: 'user' })</code>, then
+          <code>applyLive</code>. The tab belongs to this session's Workbench like any web tab the
+          person opened.
+        </li>
+        <li>The menu closes, as it does for the other three rows.</li>
+      </ul>
+
+      <h2>When the scan runs</h2>
+      <ul>
+        <li>
+          Only when the "+" menu opens: one <code>ps -Ao pid=,ppid=,command=</code> to walk the
+          session's process tree from its root pid, and one
+          <code>lsof -a -p &lt;tree pids&gt; -iTCP -sTCP:LISTEN -Fn</code> for the ports. Measured
+          on this Mac: about 30 ms each. No timer, no new background scan, nothing stored.
+        </li>
+        <li>
+          The rows appear a moment after the menu opens; until then only the three usual rows show.
+          Ports are de-duplicated (a server bound on IPv4 and IPv6 is one row) and sorted.
+        </li>
+      </ul>
+
+      <h2>The four kinds of session tab</h2>
+      <ul>
+        <li>
+          <strong>Claude Code, local</strong> - root pid is the pty's process, which is
+          <code>claude</code> itself (Koloft spawns it directly). Same as shown above.
+        </li>
+        <li>
+          <strong>Codex, local</strong> - root pid is this tab's own <code>codex app-server</code>
+          (one per tab, not shared; the TUI in the pty runs no commands). Same menu, same rows.
+        </li>
+        <li>
+          <strong>Claude Code, remote (ssh)</strong> - left out: the processes live on the other
+          machine, so even a found port needs an ssh forward to open (#431, still at its probe
+          step). The menu shows no ports section.
+        </li>
+        <li><strong>Codex, remote</strong> - does not exist yet (#99).</li>
+      </ul>
+    </main>
+  </body>
+</html>
