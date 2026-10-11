@@ -17,7 +17,10 @@ method. A recheck adds its date, version and command to the bullet.
   always on it, but on a Mac without the Xcode Command Line Tools it is only a stub that
   fails or offers an install dialog (inferred, not checked). Homebrew tools like `gh`,
   and a `claude` found on a developer's PATH, are not found at all (ENOENT, the "no such
-  file" error). Either kind of failure shows no error in the app.
+  file" error). Either kind of failure shows no error in the app. Without the tools,
+  `xcode-select -p` exits non-zero, and `xcode-select --install` opens Apple's own
+  install dialog and returns at once (both inferred, not checked: every Mac this was
+  developed on has the tools).
 - No locale is set either, so a shell started from the app runs in the C locale: CJK
   text is garbled and wcwidth counts a wide character as 1 cell, which breaks the
   layout of Claude Code's TUI (text user interface).

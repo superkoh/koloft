@@ -7,6 +7,7 @@ import { useStore } from '../store'
 import { relTime } from '../sessionRows'
 import { useSettingsUpdate } from './settings/useSettingsUpdate'
 import { useAssistSetup } from '../useAssistSetup'
+import { useCommandLineToolsMissing } from '../useCommandLineTools'
 import { AssistSetup, InstallHint } from './AssistSetup'
 
 const PIC_ROWS: { color: string; title: string; state: string; cold?: boolean }[] = [
@@ -202,11 +203,27 @@ export function Onboarding({
   const runProbe = useCallback((): void => {
     setProbe('pending')
     setCodexFound(false)
-    void window.api.sessions.backends().then((backends) => {
+    void window.api.sessions.backends(true).then((backends) => {
       setCodexFound(backendAvailable(backends, 'codex'))
       setProbe(backendAvailable(backends, 'claude') ? 'found' : 'missing')
     })
   }, [])
+
+  useEffect(() => {
+    if (step === 4) runProbe()
+  }, [step, runProbe])
+
+  const cltMissing = useCommandLineToolsMissing(step === 2)
+  const cltWarn = cltMissing && (
+    <div className="quiet ob-warn">
+      This Mac does not have Apple’s command line tools yet, so git does not work here: Koloft
+      cannot show the files a session changed or start a worktree session.{' '}
+      <button className="ob-link" onClick={() => window.api.sessions.installCommandLineTools()}>
+        Install them
+      </button>{' '}
+      (Apple’s own installer opens).
+    </div>
+  )
 
   const finish = useCallback((): void => {
     update({ onboardingSeen: true })
@@ -237,10 +254,7 @@ export function Onboarding({
       return {
         label: 'Continue',
         disabled: !setup.done && !noTool,
-        go: () => {
-          setStep(4)
-          runProbe()
-        }
+        go: () => setStep(4)
       }
     if (probe === 'pending') return { label: '＋ Start first session', disabled: true }
     if (probe === 'missing' && !codexFound) return { label: 'Check again', go: runProbe }
@@ -311,6 +325,7 @@ export function Onboarding({
               <span className="quiet key">⇧⌘O</span>. Any folder works; a git checkout gets extra
               help.
             </div>
+            {cltWarn}
           </>
         )}
 
@@ -321,13 +336,14 @@ export function Onboarding({
               Any folder works; a git checkout gets extra help. You can add more later with{' '}
               <span className="quiet key">⇧⌘O</span>.
             </div>
+            {cltWarn}
           </>
         )}
 
         {step === 3 && (
           <>
             <div className="big">Sign in, and pick your Assist.</div>
-            <AssistSetup setup={setup} />
+            <AssistSetup setup={setup} offerInstall />
             <PicAccounts />
           </>
         )}
@@ -354,7 +370,8 @@ export function Onboarding({
             </div>
             {probe === 'missing' && !codexFound ? (
               <InstallHint>
-                Install Claude Code or a supported Codex CLI to start a session.
+                To start a session, install Claude Code or Codex. A terminal opens and runs its
+                official installer.
               </InstallHint>
             ) : (
               <div className="quiet">

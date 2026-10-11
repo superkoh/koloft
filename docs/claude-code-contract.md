@@ -1127,16 +1127,21 @@ branch (`src/main/shim.ts`), `src/main/claudeArgs.ts`, `src/main/skillList.ts`,
 ## §10 The official install script (`https://claude.ai/install.sh`)
 
 How established: the script as served on 2026-09-08 was fetched and read, alongside
-the official install docs; Claude Code 2.1.263 was the current version that day. Not
-re-measured against a running install.
+the official install docs; Claude Code 2.1.263 was the current version that day. The
+bullets dated 2026-10-11 were measured against a real install on macOS.
 
 - **It is `#!/bin/bash`** (uses `[[ ]]` and `=~`), so `sh` cannot run it — a machine
   without bash needs bash installed first. It needs `curl` or `wget` and `sha256sum` or
   `shasum`, detects `x86_64` / `aarch64` and musl by itself, **refuses to run under
   `sudo`** (plain root is fine), and installs a self-contained native binary to
   `~/.local/bin/claude`, so a machine with claude need not have node.
-  **The native installer adds `~/.local/bin` to PATH in `~/.zshrc`**, which only an
-  interactive shell reads (inferred, not checked).
+- **The installer writes no shell rc file.** It only prints "~/.local/bin is not in your
+  PATH" with an `echo … >> ~/.zshrc` line for the user to run, so neither `zsh -l -c` nor
+  `zsh -l -i -c` finds `claude` afterwards. It does create `~/.claude.json` (install
+  method, user and machine ids — no `hasCompletedOnboarding`). (2026-10-11, Claude Code
+  2.1.296, macOS 27: `curl -fsSL https://claude.ai/install.sh | bash` under `zsh -l -i`
+  with a fresh temporary `HOME` and `PATH=/usr/bin:/bin:/usr/sbin:/sbin`, then the home's
+  files listed and `command -v claude` run through both shells.)
 
 - **A fresh install shows the first-run "Select login method" page even when
   `CLAUDE_CODE_OAUTH_TOKEN` is set** — the token is used (the process fetched
@@ -1156,13 +1161,25 @@ re-measured against a running install.
   from the server, so they cannot be written by hand; that a short `claude -p` run
   fetches and caches them before the first interactive run is inferred, not checked.
   Measured 2026-09-08, CC 2.1.263, Ubuntu 24.04 container.
+  **On 2.1.296 on macOS the first run waits for the flags instead:** with a fresh
+  `~/.claude.json` (only `hasCompletedOnboarding` and a trusted folder) and an OAuth token,
+  `cachedGrowthBookFeatures` landed in the file 0.65 s after spawn and the alternate
+  screen (`ESC[?1049h`) came 0.02 s later; with the network cut (`HTTPS_PROXY` to a dead
+  port) nothing was drawn in 10 s. `claude -p ok --max-turns 1 --no-session-persistence`
+  wrote the flags in about 3 s and left no transcript. (2026-10-11, Python pty probe.)
+- **The first-run page on macOS is the text-style (theme) picker**, and
+  `hasCompletedOnboarding: true` skips it: the same fresh install then opened on the
+  folder-trust question. (2026-10-11, CC 2.1.296, macOS 27, pty probe with no login.)
 
 Koloft dependents: `ensure.sh` in `src/main/remote/install.ts` (installs bash first —
 through `sudo` unless root or Homebrew — pipes the install script to plain `bash`,
 never through `sudo`, and treats node as a separate, non-fatal step); `tabs/<tab>.sh` in
 `src/main/remote/launch.ts`, only when Koloft itself supplied the login, writes the
 onboarding flag and runs `claude -p ok --max-turns 1` once when
-`cachedGrowthBookFeatures` is missing.
+`cachedGrowthBookFeatures` is missing. Locally, `src/main/toolInstall.ts` runs the script
+in a terminal tab and puts `~/.local/bin` at the end of Koloft's own PATH, and
+`launchClaude` in `src/main/host/localHost.ts` writes only the onboarding flag (no
+warm-up, per the 2.1.296 bullet above).
 
 ## §11 Session registry (`~/.claude/sessions/`)
 

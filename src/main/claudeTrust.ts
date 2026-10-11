@@ -67,9 +67,19 @@ export function acceptBypassWarning(claudeSettings: string): boolean {
   return true
 }
 
+// CC§10
+export function markClaudeOnboarded(claudeJson: string): void {
+  const doc = jsonObjectIn(claudeJson)
+  if (!doc || doc.hasCompletedOnboarding === true) return
+  writePrivateAtomically(
+    claudeJson,
+    JSON.stringify({ ...doc, hasCompletedOnboarding: true }, null, 2)
+  )
+}
+
 // CC§9 ADR-0026
 export function acceptClaudeTrust(claudeJson: string, dir: string): void {
-  const doc = JSON.parse(fs.readFileSync(claudeJson, 'utf8'))
+  const doc = fs.existsSync(claudeJson) ? JSON.parse(fs.readFileSync(claudeJson, 'utf8')) : {}
   const key = fs.realpathSync(dir)
   if (isTrustedByClaude(() => doc, key)) return
   const projects = (doc.projects ??= {})

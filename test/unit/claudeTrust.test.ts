@@ -7,7 +7,8 @@ import {
   acceptClaudeTrust,
   bypassWarningAccepted,
   claudeTrustsFolder,
-  isTrustedByClaude
+  isTrustedByClaude,
+  markClaudeOnboarded
 } from '../../src/main/claudeTrust'
 
 // CC§9
@@ -117,5 +118,43 @@ describe('acceptClaudeTrust', () => {
     expect(fs.statSync(file).mode & 0o777).toBe(0o600)
     expect(claudeTrustsFolder(file, link)).toBe(true)
     fs.rmSync(tmp, { recursive: true, force: true })
+  })
+
+  it('records trust when ~/.claude.json does not exist yet, creating it', () => {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-trust-')))
+    const file = path.join(tmp, '.claude.json')
+
+    acceptClaudeTrust(file, tmp)
+
+    expect(claudeTrustsFolder(file, tmp)).toBe(true)
+    fs.rmSync(tmp, { recursive: true, force: true })
+  })
+})
+
+// CC§10
+describe('markClaudeOnboarded', () => {
+  const claudeJson = (): string =>
+    path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-onboarded-')), '.claude.json')
+
+  it('marks the first-run page done, creating the file when missing and keeping every other key', () => {
+    const missing = claudeJson()
+    markClaudeOnboarded(missing)
+    expect(JSON.parse(fs.readFileSync(missing, 'utf8'))).toEqual({ hasCompletedOnboarding: true })
+
+    const fresh = claudeJson()
+    fs.writeFileSync(fresh, JSON.stringify({ installMethod: 'native', projects: {} }))
+    markClaudeOnboarded(fresh)
+    expect(JSON.parse(fs.readFileSync(fresh, 'utf8'))).toEqual({
+      installMethod: 'native',
+      projects: {},
+      hasCompletedOnboarding: true
+    })
+  })
+
+  it('never overwrites a file it cannot read as JSON', () => {
+    const file = claudeJson()
+    fs.writeFileSync(file, '{ half')
+    markClaudeOnboarded(file)
+    expect(fs.readFileSync(file, 'utf8')).toBe('{ half')
   })
 })

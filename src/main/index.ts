@@ -351,6 +351,9 @@ import { closingTree, removeTree, whatIsLeft } from './sessionClose'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
 import { agentPluginFiles, writeAgentPlugin } from './agentPlugin'
+import { forgetClaudeProbe } from './claudeProbe'
+import { installLine, pathWithInstallDir } from './toolInstall'
+import { commandLineToolsMissing, installCommandLineTools } from './commandLineTools'
 
 // PLATFORM§4
 if (!app.isPackaged) app.setName('koloft-dev')
@@ -805,6 +808,7 @@ tracker.machineTmp = (host) => remoteSync?.machineTmp(host)
 let machinePkg: MachinePackage | null = null
 const remoteControlDir = defaultControlDir()
 let loginEnv: Promise<void> | null = null
+process.env.PATH = pathWithInstallDir(process.env.PATH, os.homedir())
 
 // PLATFORM§1
 function loginEnvReady(): Promise<void> {
@@ -1436,6 +1440,26 @@ async function codexSignIn(name: string, again?: boolean): Promise<CodexSignInRe
   return { ok: true, tabId: handle.id, cwd }
 }
 
+const toolInstallPtys = new Set<string>()
+
+function forgetToolAvailability(): void {
+  forgetClaudeProbe()
+  codexSessions?.forgetAvailability()
+}
+
+function installTool(backend: BackendId): { tabId: string; cwd: string } {
+  const cwd = os.homedir()
+  const handle = ptyMgr.create({
+    kind: 'shell',
+    cwd,
+    cols: 100,
+    rows: 30,
+    launchCommand: installLine(backend, process.env.KOLOFT_TEST_TOOL_INSTALLER)
+  })
+  toolInstallPtys.add(handle.id)
+  return { tabId: handle.id, cwd }
+}
+
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'koloft-file',
@@ -1744,6 +1768,10 @@ app.whenReady().then(() => {
     askButtons?.forget(e.id)
     if (answerable.delete(e.id) && answerableRegDir) markAnswerable(answerableRegDir, e.id, false)
     loginPtys.delete(e.id)
+    if (toolInstallPtys.delete(e.id)) {
+      forgetToolAvailability()
+      sendToRenderer('sessions:toolsChanged')
+    }
     const codexAccount = codexSignInPtys.get(e.id)
     if (codexAccount) {
       codexSignInPtys.delete(e.id)
@@ -3665,13 +3693,19 @@ function registerIpc(): void {
   )
 
   ipcMain.handle('sessions:list', () => allSessions())
-  ipcMain.handle('sessions:backends', () =>
-    sessionBackends.availability((id) => ({
+  ipcMain.handle('sessions:backends', (_e, recheck: unknown) => {
+    if (recheck === true) forgetToolAvailability()
+    return sessionBackends.availability((id) => ({
       id,
       available: false,
       reason: codexStartupError ?? `${BACKEND_LABEL[id]} is not ready.`
     }))
+  })
+  ipcMain.handle('sessions:installTool', (_e, backend: unknown) =>
+    backend === 'claude' || backend === 'codex' ? installTool(backend) : null
   )
+  ipcMain.handle('system:commandLineToolsMissing', () => commandLineToolsMissing())
+  ipcMain.on('system:installCommandLineTools', () => installCommandLineTools())
   ipcMain.handle('attention:list', () => attention.list())
   ipcMain.handle('tabs:list', (): TabInventoryReply => {
     rendererReady = true
