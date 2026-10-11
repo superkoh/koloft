@@ -298,7 +298,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     const { app } = await connected(env, fake)
     try {
       const question =
-        '❓ **The conductor** is waiting for you.\nWhich colour?\n1. Red — The Red one\n2. Green — The Green one'
+        '❓ **Assist** is waiting for you.\nWhich colour?\n1. Red — The Red one\n2. Green — The Green one'
       const asked = `${question}\n-# Reply with a number or your own answer.`
       const card = (): FakePost | undefined =>
         fake.posted.filter((p) => p.channelId === CHANNEL && p.content === asked).at(-1)
@@ -369,7 +369,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
           type: 'user',
           message: {
             role: 'user',
-            content: `<cross-session-message from-mode="bypass">\n(Your owner, via the Koloft conductor:) ${text}\n</cross-session-message>`
+            content: `<cross-session-message from-mode="bypass">\n(Your owner, via Koloft's Assist:) ${text}\n</cross-session-message>`
           }
         })
 
@@ -419,7 +419,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       fake.say(OWNER, `/koloft session send ${codexId} check the docs`)
       await expect
         .poll(() => codexQueued(env), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-        .toEqual([['koloft-conductor-1', '(Your owner, via the Koloft conductor:) check the docs']])
+        .toEqual([['koloft-conductor-1', "(Your owner, via Koloft's Assist:) check the docs"]])
 
       fake.say(OWNER, '/koloft session new --backend codex -- list the files')
       await expect
@@ -561,7 +561,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await expect
         .poll(() => said(fake))
         .toContain(
-          '❓ **The conductor** is waiting for you.\nCodex asks to run: echo approved\n-# Reply yes or no.'
+          '❓ **Assist** is waiting for you.\nCodex asks to run: echo approved\n-# Reply yes or no.'
         )
       fake.say(OWNER, 'yes')
       await expect
@@ -572,7 +572,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await expect
         .poll(() => said(fake))
         .toContain(
-          '❓ **The conductor** is waiting for you.\nWhich colour do you prefer?\n1. Red — Choose red.\n2. Green — Choose green.\n-# Reply with the number or the name of one option.'
+          '❓ **Assist** is waiting for you.\nWhich colour do you prefer?\n1. Red — Choose red.\n2. Green — Choose green.\n-# Reply with the number or the name of one option.'
         )
       fake.say(OWNER, 'Green')
       await expect
@@ -773,7 +773,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
         .poll(() => (fs.existsSync(peerLog) ? fs.readFileSync(peerLog, 'utf8') : ''), {
           timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
         })
-        .toContain('(Your owner, via the Koloft conductor:) after the wait')
+        .toContain("(Your owner, via Koloft's Assist:) after the wait")
     } finally {
       await quitAndClose(app)
       await fake.close()
@@ -845,7 +845,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
           )
           await expect
             .poll(() => terminalText(page, childTab))
-            .toContain('Will deliver when the ws-a conductor is ready.')
+            .toContain('Will deliver when the ws-a Assist is ready.')
           const conductorGot = (): string[] =>
             conductor === 'claude'
               ? peerMessages(env)

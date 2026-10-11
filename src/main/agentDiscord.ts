@@ -1,11 +1,17 @@
 import fs from 'fs'
 import path from 'path'
-import { answered, EXIT_USAGE, refused, splitAtDashes, type AgentVerb } from './agentRequests'
+import {
+  answered,
+  EXIT_USAGE,
+  ONLY_ASSIST,
+  refused,
+  splitAtDashes,
+  type AgentVerb
+} from './agentRequests'
 import { BYTES_PER_FILE, type DiscordFile } from './discord/link'
 
 export const DISCORD_USAGE = 'koloft: usage: koloft discord send <file>... [-- "<text>"]'
-export const NOT_A_CONDUCTOR =
-  'koloft: only a conductor (a session bound to a Discord channel) can send to Discord.'
+export const NOT_A_CONDUCTOR = `koloft: ${ONLY_ASSIST} can send to Discord.`
 
 const MB = 1024 * 1024
 

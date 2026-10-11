@@ -86,7 +86,7 @@ export function ConductorsIsland(): JSX.Element | null {
         {item(`Switch to ${BACKEND_LABEL[other]} next time`, () => {
           void window.api.conductors.switchBackend(binding.id)
         })}
-        {item('Start a fresh conductor', () => void openConductor(binding.id, true))}
+        {item('Start a fresh Assist', () => void openConductor(binding.id, true))}
         <div className="sep" />
         {item('Unbind', () => void window.api.conductors.unbind(binding.id), 'mi danger')}
       </div>
@@ -98,11 +98,11 @@ export function ConductorsIsland(): JSX.Element | null {
       <div className="gutter-h idle" style={{ height: 10 }} />
       <div className="island isl-notes isl-conductors">
         <div className="wb-bar">
-          <span className="wb-title" title="Conductors">
+          <span className="wb-title" title="Assist">
             <span className="ic">
               <LuConciergeBell size={14} />
             </span>
-            <span className="nm">Conductors</span>
+            <span className="nm">Assist</span>
           </span>
           {folded && callingCount > 0 && (
             <span className="ws-tab-parked ws-unread-count" title={conductorsNeedYou(callingCount)}>

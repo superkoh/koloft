@@ -49,10 +49,10 @@ export interface ConductorDeps {
   bindDeadlineMs: number
 }
 
-export const NOT_BOUND = 'That conductor is no longer bound.'
-export const GLOBAL_HAS_NO_WORKSPACE = 'The global conductor has no workspace.'
+export const NOT_BOUND = 'That Assist is no longer bound.'
+export const GLOBAL_HAS_NO_WORKSPACE = 'The global Assist has no workspace.'
 export const REMOTE_CONDUCTOR_HAS_NO_WORKSPACE =
-  'This conductor runs on this Mac, outside its remote workspace, so it has no workspace.'
+  'This Assist runs on this Mac, outside its remote workspace, so it has no workspace.'
 
 const FOLDER_NAME_HASH_CHARS = 16
 const LAST_MESSAGE_SAVE_DELAY_MS = 1000
@@ -409,7 +409,7 @@ export class Conductors {
           return { ok: true, tabId: live }
         }
         if (await this.d.runningElsewhere(b.backend, key))
-          return refusal('This conductor is already running in another claude process.')
+          return refusal('This Assist is already running in another claude process.')
       }
       const hasTranscript =
         resumable && (await this.d.transcriptExists(b.backend, key).catch(() => false))

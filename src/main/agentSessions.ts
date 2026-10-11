@@ -19,6 +19,7 @@ import {
   errorText,
   EXIT_USAGE,
   fail,
+  ONLY_ASSIST,
   refused,
   splitAtDashes,
   type AgentCaller,
@@ -217,7 +218,7 @@ function startableWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<stri
 }
 
 const CLAUDE_USES_SEND_MESSAGE =
-  'this is for Codex sessions, and for reporting to the session or conductor that started you, by the id in your first message. A Claude session talks to another Claude session with its SendMessage tool; ListAgents shows their names.'
+  'this is for Codex sessions, and for reporting to the session or Assist that started you, by the id in your first message. A Claude session talks to another Claude session with its SendMessage tool; ListAgents shows their names.'
 
 function matchRef<T>(
   items: T[],
@@ -585,7 +586,7 @@ async function endedInScope(
 }
 
 export const THAT_IS_YOU = 'That is you.'
-const ONLY_A_CONDUCTOR = 'only a conductor (a session bound to a Discord channel) can do this.'
+const ONLY_A_CONDUCTOR = `${ONLY_ASSIST} can do this.`
 const TIME_FOR_THE_REPLY_TO_REACH_THE_SHIM_MS = 2_000
 const REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS =
   AGENT_SHIM_WAITS_MS - TIME_FOR_THE_REPLY_TO_REACH_THE_SHIM_MS
@@ -596,7 +597,7 @@ const ANSWER_USAGE =
   'koloft session answer: give an id or name, then an option number, yes, no or your own words, like: koloft session answer fix-login 2'
 const WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS = 10 * 60_000
 const SHOWS_NOTHING_WHILE_CLOSED = 'it is not open, so it shows no question.'
-const BACKEND_IS_FOR_CONDUCTORS = 'koloft session new: only a conductor can pick --backend.'
+const BACKEND_IS_FOR_CONDUCTORS = 'koloft session new: only Assist can pick --backend.'
 const GLOBAL_NEEDS_WORKSPACE =
   'koloft session new: say which workspace with --workspace <workspace>; "koloft workspace list" shows them.'
 const ONLY_YOUR_WORKSPACE = 'koloft session new: you can only start sessions in your own workspace.'
@@ -630,7 +631,7 @@ export function formatScreen(name: string, screen: SessionScreen): string {
 }
 
 export function ownerSays(text: string): string {
-  return `(Your owner, via the Koloft conductor:) ${text}`
+  return `(Your owner, via Koloft's Assist:) ${text}`
 }
 
 export function sessionSays(from: SessionInfo, text: string): string {
@@ -889,7 +890,7 @@ export interface WorkspaceVerbDeps {
 }
 
 export const ONLY_THE_GLOBAL_CONDUCTOR =
-  'koloft workspace list: only the global conductor can list workspaces.'
+  'koloft workspace list: only the global Assist can list workspaces.'
 
 export function workspaceVerb(d: WorkspaceVerbDeps): AgentVerb {
   return (args, caller) => {

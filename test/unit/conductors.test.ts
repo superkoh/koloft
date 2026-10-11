@@ -23,19 +23,19 @@ describe('bindingProblem', () => {
 
   it('allows one global conductor only', () => {
     expect(bindingProblem(bound, { scope: GLOBAL_SCOPE, channelId: '9' })).toBe(
-      'Global already has a conductor.'
+      'Global already has an Assist.'
     )
   })
 
   it('allows one conductor per workspace', () => {
     expect(bindingProblem(bound, { scope: '/ws/a', channelId: '9' })).toBe(
-      'a already has a conductor.'
+      'a already has an Assist.'
     )
   })
 
   it('allows one conductor per channel', () => {
     expect(bindingProblem(bound, { scope: '/ws/b', channelId: '2' })).toBe(
-      'That channel is already bound to the a conductor.'
+      'That channel is already bound to the a Assist.'
     )
   })
 

@@ -55,7 +55,7 @@ function setup(
   const commands: string[] = []
   const conductor: Destination = {
     id: bound.id,
-    name: 'The conductor',
+    name: 'Assist',
     conductor: true,
     liveTab: () => TAB,
     open: async () => TAB,
@@ -285,7 +285,7 @@ describe('DiscordRelay: typing an owner message into a Claude conductor', () => 
     await vi.waitFor(() => expect(posts).toHaveLength(1))
     relay.onMessage(message('208', OWNER, '/clear'))
     await vi.waitFor(() =>
-      expect(posts.map((p) => p.text)).toContain(waitingForAnswer('The conductor', '/clear'))
+      expect(posts.map((p) => p.text)).toContain(waitingForAnswer('Assist', '/clear'))
     )
     expect(fs.existsSync(hookFile(TAB, 'answer'))).toBe(false)
     expect(commands).toEqual([])

@@ -20,7 +20,7 @@ const MAX_CHOICE_CHARS = 100
 const SESSION_OPTION = {
   type: STRING_OPTION,
   name: 'session',
-  description: 'Which session; left out: the conductor, or in a session’s thread that session',
+  description: 'Which session; left out: Assist, or in a session’s thread that session',
   autocomplete: true
 }
 
@@ -28,7 +28,7 @@ const SESSION_OPTION = {
 export const SLASH_COMMANDS: SlashCommandSpec[] = [
   {
     name: 'run',
-    description: 'Type a slash command into a session, or into this channel’s conductor',
+    description: 'Type a slash command into a session, or into this channel’s Assist',
     options: [
       {
         type: STRING_OPTION,

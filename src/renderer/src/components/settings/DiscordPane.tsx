@@ -31,10 +31,7 @@ export function DiscordPane(): JSX.Element {
   const head = (
     <div className="set-ph">
       <h3>Discord</h3>
-      <p>
-        Talk to your conductors from Discord. Each conductor is a normal session bound to one
-        channel.
-      </p>
+      <p>Talk to Assist from Discord. Each Assist is a normal session bound to one channel.</p>
     </div>
   )
   if (!loaded) return head
@@ -113,7 +110,7 @@ export function DiscordPane(): JSX.Element {
       <div className={row}>
         <div className="set-lab">
           <b>Your Discord account</b>
-          <small>Only messages from this user reach a conductor.</small>
+          <small>Only messages from this user reach Assist.</small>
         </div>
         <span className="acct-note">
           {discord.userId ? `You are ${discord.userName ?? discord.userId}` : 'Not set'}

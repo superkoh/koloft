@@ -29,5 +29,5 @@ export function conductorNotesWorkspace(binding: ConductorBinding): string | nul
 }
 
 export function conductorsNeedYou(n: number): string {
-  return n > 1 ? `${n} conductors need you` : '1 conductor needs you'
+  return n > 1 ? `${n} Assists need you` : '1 Assist needs you'
 }

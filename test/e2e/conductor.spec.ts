@@ -190,7 +190,7 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
           channel: { guildId: '111', channelId: '222' }
         }
       ])
-      await expect(island(page).locator('.wb-title')).toHaveText('Conductors')
+      await expect(island(page).locator('.wb-title')).toHaveText('Assist')
       await expect(island(page).locator('.ws-tab')).toHaveCount(0)
 
       await openConductor(page, 'ws-a')
@@ -249,7 +249,7 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
       await runIn(page, centerTerm(page), '/koloft note')
       await expect
         .poll(() => shownTermText(page), { timeout: KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS })
-        .toContain('The global conductor has no workspace.')
+        .toContain('The global Assist has no workspace.')
     } finally {
       await close()
     }
@@ -330,7 +330,7 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
           s.argv.some(
             (a) =>
               a.startsWith('developer_instructions=') &&
-              a.includes(`conductor for the workspace ${env.workspaces.a}`)
+              a.includes(`Assist, Koloft's own AI, for the workspace ${env.workspaces.a}`)
           )
         )
       ).toBe(true)

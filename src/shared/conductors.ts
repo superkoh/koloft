@@ -22,7 +22,7 @@ export function scopeName(scope: string): string {
 }
 
 export function conductorName(scope: string): string {
-  return `${scopeName(scope)} conductor`
+  return `${scopeName(scope)} Assist`
 }
 
 export function asPeerName(title: string): string {
@@ -75,9 +75,9 @@ export function bindingProblem(
 ): string | undefined {
   const others = bindings.filter((b) => b.id !== wanted.id)
   if (others.some((b) => b.scope === wanted.scope))
-    return `${scopeName(wanted.scope)} already has a conductor.`
+    return `${scopeName(wanted.scope)} already has an Assist.`
   const taken = others.find((b) => b.channel.channelId === wanted.channelId)
-  if (taken) return `That channel is already bound to the ${scopeName(taken.scope)} conductor.`
+  if (taken) return `That channel is already bound to the ${conductorName(taken.scope)}.`
   return undefined
 }
 

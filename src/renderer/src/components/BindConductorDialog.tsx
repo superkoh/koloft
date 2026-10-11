@@ -136,9 +136,9 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
               )
             })}
           </div>
-          <span className="flabel">Conductor</span>
+          <span className="flabel">Assist</span>
           <div className="field-check-row">
-            <div className="seg" role="group" aria-label="Conductor method">
+            <div className="seg" role="group" aria-label="Assist method">
               {SESSION_BACKENDS.map((b) => (
                 <button
                   key={b}
@@ -190,7 +190,7 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
                 ? 'Loading your channels…'
                 : channels.length === 0
                   ? 'No channels yet. Finish Settings ▸ Discord ▸ Set up Discord… first.'
-                  : 'Channels come from your server through the bot. Each workspace binds one channel; the global conductor binds one.')}
+                  : 'Channels come from your server through the bot. Each workspace binds one channel; the global Assist binds one.')}
           </p>
         </div>
         <div className="modal-foot">

@@ -2085,7 +2085,7 @@ app.whenReady().then(() => {
     owner: () => conductorsNow.owner(),
     routeOf: (channelId) => conductorsNow.routeOf(channelId),
     choices: (b) => [
-      { name: `This channel’s conductor (${scopeName(b.scope)})`, value: MYSELF },
+      { name: `This channel’s Assist (${scopeName(b.scope)})`, value: MYSELF },
       ...sessionChoices(sessionDeps, b.scope)
     ],
     run: async (b, session, text) => {
@@ -3424,7 +3424,7 @@ function registerSlashCommands(): void {
 function conductorDestination(b: ConductorBinding): Destination {
   return {
     id: b.id,
-    name: 'The conductor',
+    name: 'Assist',
     conductor: true,
     liveTab: () => conductors?.liveTab(b.id),
     open: async () => {
