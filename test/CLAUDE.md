@@ -121,8 +121,10 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     `fake-claude-assist-asked.txt`.
   - like the real one, it lists itself in `<home>/.claude/sessions/<pid>.json` with a
     message socket (CC§11); each line written there is appended raw to
-    `<home>/fake-claude-peer.jsonl` and taken as a peer message (reply
-    `Peer said: <content>`, then Stop). A `--name` shows as its registry name.
+    `<home>/fake-claude-peer.jsonl` and taken as a peer message (its UserPromptSubmit hook
+    gets the content as `prompt`, and any `additionalContext` the hook prints lands in the
+    transcript as a `hook_additional_context` record; reply `Peer said: <content>`, then
+    Stop). A `--name` shows as its registry name.
   - its canned startup turn writes NOTES.md into its cwd, so a git fixture it runs in
     lists NOTES.md in the first commit's .gitignore.
   - its transcript lands a moment after it binds: before closing an app whose
