@@ -254,8 +254,7 @@ export interface DiscordUser {
 export const DISCORD_OFF: DiscordStatus = { phase: 'off', guilds: [], failing: {} }
 
 export type ConductorSaveResult =
-  | { ok: true }
-  | { ok: false; error: string; cannotMakeChannels?: boolean }
+  { ok: true } | { ok: false; error: string; cannotMakeChannels?: boolean }
 
 export type ConductorOpenResult = { ok: true; tabId: string } | { ok: false; error: string }
 

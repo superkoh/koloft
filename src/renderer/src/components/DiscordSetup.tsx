@@ -3,14 +3,7 @@ import { LuArrowUpRight, LuPlus, LuX } from 'react-icons/lu'
 import { DISCORD_OFF, type DiscordStatus } from '@shared/types'
 import { ageLabel } from '@shared/freshnessOps'
 import { useStore } from '../store'
-import { SETUP_STEPS, useDiscordStatus } from '../discordStatus'
-
-const DEVELOPER_PORTAL = 'https://discord.com/developers/applications'
-const INVITE_PERMISSIONS = 326417615936
-
-function inviteLink(applicationId: string): string {
-  return `https://discord.com/oauth2/authorize?client_id=${applicationId}&permissions=${INVITE_PERMISSIONS}&scope=bot`
-}
+import { DEVELOPER_PORTAL, inviteLink, SETUP_STEPS, useDiscordStatus } from '../discordStatus'
 
 function bold(text: string): ReactNode[] {
   return text.split('**').map((part, i) => (i % 2 ? <strong key={i}>{part}</strong> : part))
@@ -25,6 +18,11 @@ function Steps({ items }: { items: string[] }): JSX.Element {
     </ol>
   )
 }
+
+const PAIR_STEP = 6
+const OWNER_KNOWN = "Nothing to do: Koloft reads who owns the bot's app, and that is you."
+const TEAM_APP =
+  "Your bot's app belongs to a team, so Koloft cannot tell which member you are — tell it once:"
 
 const WIZARD_FOOT = 'One bot serves every Assist: the global one and one per workspace.'
 
@@ -53,19 +51,24 @@ const PAGES: Page[] = [
     warn: 'If something goes wrong: "Missing Access" when you click Create → you are in Koloft\'s built-in browser; open the portal in Safari or Chrome instead.'
   },
   {
-    name: 'Make the bot private and let it read messages',
-    why: 'A private bot can only be added by you, and the bot needs "Message Content" to read what you type.',
+    name: 'Make the bot private',
+    why: 'A private bot can only be added by you.',
     list: (
-      <Steps
-        items={[
-          'In your app, open **Installation** in the left menu.',
-          'Under **Install Link**, change the dropdown to **None**, then click **Save Changes** at the bottom.',
-          'Open **Bot** in the left menu.',
-          'Under **Authorization Flow**, turn **Public Bot** off.',
-          'Under **Privileged Gateway Intents**, turn **Message Content Intent** on.',
-          'Click **Save Changes**.'
-        ]}
-      />
+      <>
+        <Steps
+          items={[
+            'In your app, open **Installation** in the left menu.',
+            'Under **Install Link**, change the dropdown to **None**, then click **Save Changes** at the bottom.',
+            'Open **Bot** in the left menu.',
+            'Under **Authorization Flow**, turn **Public Bot** off, then click **Save Changes**.'
+          ]}
+        />
+        <p>
+          {bold(
+            'You do not need to touch **Message Content Intent**: once the token is in (step 3), Koloft turns it on for you.'
+          )}
+        </p>
+      </>
     ),
     warn: 'If something goes wrong: "Private application cannot have a default authorization link" → do step 2 (Install Link → None) first, then turn Public Bot off.'
   },
@@ -106,10 +109,10 @@ const PAGES: Page[] = [
     list: (
       <Steps
         items={[
-          'Click **Invite the bot** below. It opens Discord\'s "add an app" page with the right permissions already chosen (see channels, send messages, attach files, read message history, add reactions, start threads, talk in them and delete them).',
+          'Click **Invite the bot** below. It opens Discord\'s "add an app" page with the right permissions already chosen (see channels, make channels, send messages, attach files, read message history, add reactions, start threads, talk in them and delete them).',
           'Pick your server from **Add to server**, click **Continue**, then **Authorize**, and pass the "I am human" check.',
           "In your server's member list you now see **Koloft** with a BOT tag. It shows online while Koloft runs on your Mac.",
-          "Added the bot before? Its role does not gain new permissions by itself: open **Server Settings ▸ Roles**, pick the bot's role (named after the bot), and under **Permissions** turn on **Manage Threads**, so Koloft can delete a session's thread once the session leaves the sidebar."
+          'Added the bot before? Nothing to do now: your bound channels keep working. The day you bind with a **new channel**, Koloft asks you to invite the bot again, so it may make channels.'
         ]}
       />
     )
@@ -128,13 +131,12 @@ const PAGES: Page[] = [
     )
   },
   {
-    name: 'Make a channel and bind Assist',
-    why: 'Each Assist talks to you in its own channel — one for the global Assist, one per workspace you bind.',
+    name: 'Bind Assist to a channel',
+    why: 'Each Assist talks to you in its own channel — #global for the global one, one per workspace you bind.',
     list: (
       <Steps
         items={[
-          'In your server, tap **＋** next to "Text Channels", name the channel (for example **koloft-all**), keep it a normal (not private) channel, create it.',
-          "Click **Bind a channel…** below, pick Global or a workspace, Claude or Codex, then pick the channel from the list (Koloft reads your server's channels through the bot — no link to copy), click **Bind**.",
+          'Click **Bind a channel…** below, pick Global or a workspace, keep **New channel** picked and click **Bind**. Koloft makes the channel in your server for you.',
           'Say hello in that channel. Assist answers there.'
         ]}
       />
@@ -196,6 +198,8 @@ function TokenStep({ status }: { status: DiscordStatus }): JSX.Element {
 
 function PairStep({ status }: { status: DiscordStatus }): JSX.Element {
   const discord = useStore((s) => s.settings.discord)
+  if (discord.userId && status.appOwner?.id === discord.userId)
+    return <Done>✓ You are {discord.userName ?? discord.userId} · owner of the bot’s app</Done>
   if (discord.userId)
     return (
       <Done>
@@ -244,15 +248,12 @@ function StepAction({ step, status }: { step: number; status: DiscordStatus }): 
       if (status.phase === 'intents')
         return (
           <div className="acct-login-state bad">
-            Message Content is off. Turn it on (steps 5 and 6 above); Koloft checks again every 30
-            seconds.
+            {bold(
+              'Koloft could not turn Message Content on. On **Bot**, under **Privileged Gateway Intents**, turn **Message Content Intent** on and click **Save Changes**. Koloft checks again every 30 seconds.'
+            )}
           </div>
         )
-      return (
-        <Hint>
-          Koloft checks Message Content when it connects and tells you here if it is still off.
-        </Hint>
-      )
+      return null
     case 3:
       return <TokenStep status={status} />
     case 5:
@@ -269,14 +270,14 @@ function StepAction({ step, status }: { step: number; status: DiscordStatus }): 
           >
             Invite the bot <LuArrowUpRight size={13} />
           </button>
-          {status.guildNames.length > 0 ? (
-            <Done>✓ The bot is in your server {status.guildNames[0]}</Done>
+          {status.guilds.length > 0 ? (
+            <Done>✓ The bot is in your server {status.guilds[0].name}</Done>
           ) : (
             <Hint>Koloft shows ✓ here once it sees the bot in a server.</Hint>
           )}
         </>
       )
-    case 6:
+    case PAIR_STEP:
       return <PairStep status={status} />
     case 7:
       return (
@@ -337,9 +338,16 @@ export function DiscordSetup(): JSX.Element | null {
               Step {step} of {SETUP_STEPS}
             </span>
             <span className="field-label">{page.name}</span>
-            <div className="field-hint">{page.why}</div>
+            <div className="field-hint">
+              {page.why}
+              {step === PAIR_STEP && status.phase === 'connected' && !status.appOwner
+                ? ` ${TEAM_APP}`
+                : ''}
+            </div>
           </div>
-          <div className="update-notes">{page.list}</div>
+          <div className="update-notes">
+            {step === PAIR_STEP && status.appOwner ? <p>{OWNER_KNOWN}</p> : page.list}
+          </div>
           <StepAction step={step} status={status} />
           {page.warn && <div className="field-hint warn">{page.warn}</div>}
           <div className="field-hint">{WIZARD_FOOT}</div>
@@ -359,7 +367,7 @@ export function DiscordSetup(): JSX.Element | null {
             )}
             <button
               className="btn-primary"
-              disabled={step === 6 && !paired}
+              disabled={step === PAIR_STEP && !paired}
               onClick={() => (last ? close() : setStep(step + 1))}
             >
               {last ? 'Done' : 'Next'}

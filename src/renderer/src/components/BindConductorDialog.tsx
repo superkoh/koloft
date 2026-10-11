@@ -1,12 +1,23 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
-import { LuX } from 'react-icons/lu'
+import { LuArrowUpRight, LuPlus, LuX } from 'react-icons/lu'
 import { BACKEND_LABEL, SESSION_BACKENDS, shownAsInstalled } from '@shared/sessionBackend'
-import { channelLabel, GLOBAL_SCOPE, scopeName } from '@shared/conductors'
+import {
+  channelLabel,
+  freeChannelName,
+  GLOBAL_SCOPE,
+  newChannelGuild,
+  newChannelName,
+  newChannelTopic,
+  scopeName
+} from '@shared/conductors'
 import type { BackendId, DiscordChannel } from '@shared/types'
 import { useStore } from '../store'
+import { inviteLink, useDiscordStatus } from '../discordStatus'
 import { useInstalledBackends } from '../useInstalledBackends'
 import { shortenHome } from '../browseModel'
 import { SessionBackendIcon } from './SessionBackendIcon'
+
+const NEW = 'new'
 
 export function BindConductorDialog(): JSX.Element | null {
   const request = useStore((s) => s.bindConductor)
@@ -38,9 +49,29 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
       (methods.enabled[methods.defaultBackend] ? methods.defaultBackend : 'claude')
   )
   const [channels, setChannels] = useState<DiscordChannel[] | null>(null)
-  const [channel, setChannel] = useState<DiscordChannel | undefined>()
+  const [channel, setChannel] = useState<DiscordChannel | typeof NEW | undefined>(
+    editing ? undefined : NEW
+  )
   const [error, setError] = useState('')
+  const [reinvite, setReinvite] = useState(false)
   const [busy, setBusy] = useState(false)
+  const status = useDiscordStatus()
+  const guildId = newChannelGuild(
+    bindings,
+    (status?.guilds ?? []).map((g) => g.id)
+  )
+  const guildName = status?.guilds.find((g) => g.id === guildId)?.name
+  const newName =
+    picked &&
+    freeChannelName(
+      newChannelName(picked),
+      (channels ?? []).filter((c) => c.guildId === guildId).map((c) => c.name)
+    )
+  const pick = (c: DiscordChannel | typeof NEW): void => {
+    setChannel(c)
+    setError('')
+    setReinvite(false)
+  }
   const close = (): void => setBindConductor(null)
   const channelTakenBy = (c: DiscordChannel) =>
     bindings.find((b) => b.channel.channelId === c.channelId && b.id !== editId)
@@ -52,7 +83,7 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
       (list) => {
         if (!alive) return
         setChannels(list)
-        setChannel(list.find((c) => c.channelId === editedChannelId))
+        if (editedChannelId) setChannel(list.find((c) => c.channelId === editedChannelId))
       },
       () => {
         if (alive) setChannels([])
@@ -81,14 +112,19 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
 
   const submit = async (): Promise<void> => {
     if (busy || !picked) return
-    if (!channel) return setError('Pick a channel.')
+    if (!channel || (channel === NEW && !guildId)) return setError('Pick a channel.')
     const unusable = issue(backend)
     if (unusable) return setError(unusable)
     setBusy(true)
-    const r = await window.api.conductors.save({ id: editId, scope: picked, backend, channel })
+    const input = { id: editId, scope: picked, backend }
+    const r =
+      channel === NEW
+        ? await window.api.conductors.saveWithNewChannel(input)
+        : await window.api.conductors.save({ ...input, channel })
     setBusy(false)
-    if (r.ok) close()
-    else setError(r.error)
+    if (r.ok) return close()
+    setError(r.error)
+    setReinvite(!!r.cannotMakeChannels)
   }
   submitRef.current = submit
 
@@ -122,6 +158,7 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
                     if (taken) return
                     setPicked(s)
                     setError('')
+                    setReinvite(false)
                   }}
                 >
                   <span className="wt-name">{scopeName(s)}</span>
@@ -158,8 +195,24 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
             </div>
           </div>
           <span className="flabel">Channel</span>
-          {channels && channels.length > 0 && (
+          {channels && (guildId || channels.length > 0) && (
             <div className="wt-list">
+              {guildId && newName && (
+                <div
+                  className={'cb-row' + (channel === NEW ? ' hot' : '')}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => pick(NEW)}
+                >
+                  <span className="wt-name">
+                    <LuPlus size={14} /> New channel #{newName}
+                  </span>
+                  <span className="note">
+                    {picked === GLOBAL_SCOPE
+                      ? 'Koloft makes it'
+                      : `topic: ${newChannelTopic(picked)}`}
+                  </span>
+                </div>
+              )}
               {channels.map((c) => {
                 const taken = channelTakenBy(c)
                 return (
@@ -168,13 +221,11 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
                     className={
                       'cb-row' +
                       (taken ? ' dim' : '') +
-                      (c.channelId === channel?.channelId ? ' hot' : '')
+                      (channel !== NEW && c.channelId === channel?.channelId ? ' hot' : '')
                     }
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => {
-                      if (taken) return
-                      setChannel(c)
-                      setError('')
+                      if (!taken) pick(c)
                     }}
                   >
                     <span className="wt-name">#{c.name}</span>
@@ -185,12 +236,37 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
             </div>
           )}
           <p className={'field-hint' + (error ? ' bad' : '')}>
-            {error ||
-              (channels === null
-                ? 'Loading your channels…'
-                : channels.length === 0
-                  ? 'No channels yet. Finish Settings ▸ Discord ▸ Set up Discord… first.'
-                  : 'Channels come from your server through the bot. Each workspace binds one channel; the global Assist binds one.')}
+            {error ? (
+              <>
+                {error}
+                {reinvite && status?.applicationId && (
+                  <>
+                    {' '}
+                    <button
+                      className="ob-link"
+                      onClick={() =>
+                        status.applicationId &&
+                        window.api.browser.openExternal(inviteLink(status.applicationId))
+                      }
+                    >
+                      Invite the bot again <LuArrowUpRight size={13} />
+                    </button>
+                  </>
+                )}
+              </>
+            ) : channels === null ? (
+              'Loading your channels…'
+            ) : !guildId && channels.length === 0 ? (
+              'No channels yet. Finish Settings ▸ Discord ▸ Set up Discord… first.'
+            ) : channel === NEW ? (
+              <>
+                Koloft makes the new channel in your server <b>{guildName}</b>, under the category{' '}
+                <b>{status?.botName}</b> (named after your bot), and writes the full path in its
+                topic. Or pick a channel you already have.
+              </>
+            ) : (
+              'Channels come from your server through the bot. Each workspace binds one channel; the global Assist binds one.'
+            )}
           </p>
         </div>
         <div className="modal-foot">

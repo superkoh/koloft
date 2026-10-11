@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import {
   bindingProblem,
+  freeChannelName,
   GLOBAL_SCOPE,
   keepPinnedBindings,
+  newChannelName,
   sanitizeDiscord
 } from '@shared/conductors'
 import type { ConductorBinding } from '@shared/types'
@@ -80,6 +82,23 @@ describe('sanitizeDiscord', () => {
     expect(doc.bindings[0].threads).toEqual([
       { threadId: '9', keys: ['k1', 'k2'], name: 'Fix login', lastMessageId: '12' }
     ])
+  })
+})
+
+describe('a new channel’s name', () => {
+  it('is #global for the global Assist and the folder name for a workspace, written the way Discord stores it', () => {
+    expect(newChannelName(GLOBAL_SCOPE)).toBe('global')
+    expect(newChannelName('/Users/me/My Project.v2 项目')).toBe('my-projectv2-项目')
+  })
+
+  it('adds the machine for a remote workspace, without the user and with its dots as hyphens', () => {
+    expect(newChannelName('ssh://me@devbox.lan/home/me/ws-b')).toBe('ws-b-devbox-lan')
+    expect(newChannelName('ssh://box/srv/api')).toBe('api-box')
+  })
+
+  it('takes the next free number when the name is taken', () => {
+    expect(freeChannelName('ws-a', ['koloft'])).toBe('ws-a')
+    expect(freeChannelName('ws-a', ['ws-a', 'ws-a-2'])).toBe('ws-a-3')
   })
 })
 

@@ -1,10 +1,11 @@
 import { useState, type JSX } from 'react'
-import { LuChevronRight, LuPlus } from 'react-icons/lu'
+import { LuArrowUpRight, LuChevronRight, LuPlus } from 'react-icons/lu'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { channelLabel, scopeName } from '@shared/conductors'
 import { useStore } from '../../store'
 import { SessionBackendIcon } from '../SessionBackendIcon'
 import {
+  DEVELOPER_PORTAL,
   nextSetupStep,
   nextStepLine,
   SETUP_STEPS,
@@ -39,6 +40,7 @@ export function DiscordPane(): JSX.Element {
   const next = nextSetupStep(status, discord)
   const setUp = next === null
   const row = setUp ? 'set-row' : 'set-row off'
+  const fromApp = !!status.appOwner && status.appOwner.id === discord.userId
 
   return (
     <>
@@ -113,9 +115,11 @@ export function DiscordPane(): JSX.Element {
           <small>Only messages from this user reach Assist.</small>
         </div>
         <span className="acct-note">
-          {discord.userId ? `You are ${discord.userName ?? discord.userId}` : 'Not set'}
+          {discord.userId
+            ? `You are ${discord.userName ?? discord.userId}${fromApp ? ' · owner of the bot’s app' : ''}`
+            : 'Not set'}
         </span>
-        {setUp && (
+        {setUp && !fromApp && (
           <button
             className="mini"
             onClick={() => {
@@ -130,9 +134,21 @@ export function DiscordPane(): JSX.Element {
       <div className={row}>
         <div className="set-lab">
           <b>Status</b>
-          <small>The bot reads only the bound channels.</small>
+          <small>
+            {status.phase === 'intents'
+              ? 'Koloft could not turn on Message Content. Open your app ▸ Bot ▸ turn Message Content Intent on ▸ Save Changes. Koloft checks again every 30 seconds.'
+              : 'The bot reads only the bound channels. Koloft keeps the bot’s Message Content on, so it can read what you type.'}
+          </small>
         </div>
         <div className={'acct-login-state' + statusClass(status)}>{statusText(status)}</div>
+        {status.phase === 'intents' && (
+          <button
+            className="mini"
+            onClick={() => window.api.browser.openExternal(DEVELOPER_PORTAL)}
+          >
+            Open Developer Portal <LuArrowUpRight size={13} />
+          </button>
+        )}
       </div>
 
       {setUp && (

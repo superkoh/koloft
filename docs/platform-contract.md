@@ -1403,6 +1403,23 @@ Gateway (the live connection that pushes events):
     role the invite gives.
   - That an edit or a typing call rings the phone or marks the channel unread was not
     checked (Discord's docs say neither does).
+- **Who owns the bot, Message Content, and making channels** — measured 2026-10-11 on
+  API v10 with a test bot's own token, REST only:
+  - `GET /oauth2/applications/@me` carries `owner: {id, username}`, `team` (`null` for an
+    app one person owns, set when a team owns it) and `flags`.
+  - `PATCH /applications/@me` with `{flags: <flags> | 1 << 19}` (Message Content,
+    limited — the switch a bot in under 100 servers has) answered 200 with the bot's own
+    token. That the Gateway then accepts the Message Content intent without a 4014 is
+    inferred, not checked.
+  - `POST /guilds/{id}/channels` made a category (`type: 4`) and a text channel under it
+    (`type: 0`, `parent_id`, `topic`); the bot already had Manage Channels there, so the
+    403 a bot without it gets is from Discord's docs, as is whether a second invite with
+    more permissions widens an existing bot's role (not probed). The invite permissions
+    Koloft used before (`326417615936`) lack only Manage Channels (`1 << 4`).
+  - Discord rewrites a text channel's name: `"My Project.v2 项目"` came back as
+    `my-projectv2-项目` — lowercased, a space as a hyphen, the dot dropped, Chinese kept.
+    Two channels may share one name; Koloft's `-2` is its own rule.
+  - A thread on a message in a DM answered 400 Unknown Guild.
 - Also from Discord's docs, not measured here: a message's `content` holds at most 2000
   characters; one message carries at most 10 files and one request at most 25 MiB; a
   bot's file may be at most 20 MiB (changelog 2025-09-03); adding or removing a reaction

@@ -7,9 +7,12 @@ import type {
   ConductorOpenResult,
   ConductorSaveInput,
   ConductorSaveResult,
+  DiscordChannel,
   DiscordSettings,
   SessionThread
 } from '@shared/types'
+import type { NewChannel } from './link'
+import { DiscordHttpError } from './rest'
 import { BACKEND_LABEL, identityOf } from '@shared/sessionBackend'
 import {
   bindingProblem,
@@ -54,6 +57,12 @@ export const GLOBAL_HAS_NO_WORKSPACE = 'The global Assist has no workspace.'
 export const REMOTE_CONDUCTOR_HAS_NO_WORKSPACE =
   'This Assist runs on this Mac, outside its remote workspace, so it has no workspace.'
 
+const CANNOT_MAKE_CHANNELS =
+  'The bot is not allowed to make channels yet. Invite it again to give it that permission — the channels you already bound keep working.'
+
+type NewChannelInput = Omit<ConductorSaveInput, 'channel'>
+
+const MISSING_PERMISSIONS = 403
 const FOLDER_NAME_HASH_CHARS = 16
 const LAST_MESSAGE_SAVE_DELAY_MS = 1000
 
@@ -308,24 +317,44 @@ export class Conductors {
     return isRemoteKey(b.scope) ? REMOTE_CONDUCTOR_HAS_NO_WORKSPACE : undefined
   }
 
+  private saveProblem(input: NewChannelInput, channelId = ''): string | undefined {
+    if (!this.d.backendEnabled(input.backend))
+      return `${BACKEND_LABEL[input.backend]} is turned off in Settings ▸ Sessions.`
+    if (input.id && !this.binding(input.id)) return NOT_BOUND
+    const scope = this.scopeToSave(input)
+    if (scope !== GLOBAL_SCOPE && !this.d.isPinned(scope))
+      return 'Pick a workspace from the sidebar, or Global.'
+    return bindingProblem(this.discord.bindings, { id: input.id, scope, channelId })
+  }
+
+  private scopeToSave(input: NewChannelInput): string {
+    return (input.id && this.binding(input.id)?.scope) || input.scope
+  }
+
+  async saveWithNewChannel(
+    input: NewChannelInput,
+    make: (scope: string, category: DiscordChannel | undefined) => Promise<NewChannel>
+  ): Promise<ConductorSaveResult> {
+    const problem = this.saveProblem(input)
+    if (problem) return { ok: false, error: problem }
+    let made: NewChannel
+    try {
+      made = await make(this.scopeToSave(input), this.discord.category)
+    } catch (error) {
+      if (error instanceof DiscordHttpError && error.status === MISSING_PERMISSIONS)
+        return { ok: false, error: CANNOT_MAKE_CHANNELS, cannotMakeChannels: true }
+      return { ok: false, error: errorText(error) }
+    }
+    this.discord = { ...this.discord, category: made.category }
+    return this.save({ ...input, channel: made.channel })
+  }
+
   save(input: ConductorSaveInput): ConductorSaveResult {
     const { channel } = input
-    if (!this.d.backendEnabled(input.backend))
-      return {
-        ok: false,
-        error: `${BACKEND_LABEL[input.backend]} is turned off in Settings ▸ Sessions.`
-      }
-    const current = input.id ? this.binding(input.id) : undefined
-    if (input.id && !current) return { ok: false, error: NOT_BOUND }
-    const scope = current?.scope ?? input.scope
-    if (scope !== GLOBAL_SCOPE && !this.d.isPinned(scope))
-      return { ok: false, error: 'Pick a workspace from the sidebar, or Global.' }
-    const problem = bindingProblem(this.discord.bindings, {
-      id: input.id,
-      scope,
-      channelId: channel.channelId
-    })
+    const problem = this.saveProblem(input, channel.channelId)
     if (problem) return { ok: false, error: problem }
+    const current = input.id ? this.binding(input.id) : undefined
+    const scope = this.scopeToSave(input)
     if (current) this.update(current.id, (b) => ({ ...b, backend: input.backend, channel }))
     else
       this.write({
@@ -355,6 +384,11 @@ export class Conductors {
 
   owner(): string | undefined {
     return this.discord.userId
+  }
+
+  takeAppOwner(owner: { id: string; name: string }): void {
+    if (this.discord.userId !== owner.id || this.discord.userName !== owner.name)
+      this.setOwner(owner)
   }
 
   setOwner(owner: { id: string; name: string } | null): void {

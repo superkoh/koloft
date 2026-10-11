@@ -3,9 +3,16 @@ import type { DiscordSettings, DiscordStatus } from '@shared/types'
 
 export const SETUP_STEPS = 7
 
+export const DEVELOPER_PORTAL = 'https://discord.com/developers/applications'
+const INVITE_PERMISSIONS = 326417615952
+
+export function inviteLink(applicationId: string): string {
+  return `https://discord.com/oauth2/authorize?client_id=${applicationId}&permissions=${INVITE_PERMISSIONS}&scope=bot`
+}
+
 const NEXT_STEP_LABEL = [
   'create the app',
-  'let the bot read messages',
+  'make the bot private',
   'copy the bot token',
   'make a private server',
   'add the bot to your server',
@@ -40,7 +47,7 @@ export function statusText(s: DiscordStatus): string {
     case 'token':
       return 'Invalid token'
     case 'intents':
-      return 'Message Content is off — see step 2 of the setup guide'
+      return 'Message Content is off'
     case 'unreachable':
       return 'Cannot reach Discord — trying again'
     case 'elsewhere':
@@ -54,11 +61,11 @@ export function statusClass(s: DiscordStatus): string {
 }
 
 export function nextSetupStep(s: DiscordStatus, discord: DiscordSettings): number | null {
+  if (s.phase === 'connected' && s.guilds.length === 0) return 4
   if (s.phase !== 'off' && discord.userId) return null
   if (s.phase === 'off') return 1
   if (s.phase === 'intents') return 2
   if (s.phase === 'token') return 3
-  if (s.phase === 'connected' && s.guildNames.length === 0) return 4
   return 6
 }
 

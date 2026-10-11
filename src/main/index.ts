@@ -2013,6 +2013,7 @@ app.whenReady().then(() => {
     takeLock: () => takeLock(discordLockFile, pidAlive),
     releaseLock: () => releaseLock(discordLockFile),
     owner: () => conductors?.owner(),
+    foundAppOwner: (owner) => conductors?.takeAppOwner(owner),
     push: (status) => {
       sendToRenderer('discord:status', status)
       discordConnected = status.phase === 'connected'
@@ -3915,6 +3916,21 @@ function registerIpc(): void {
     if (saved.ok) registerSlashCommands()
     return saved
   })
+  ipcMain.handle(
+    'conductors:saveWithNewChannel',
+    async (_e, input: Omit<ConductorSaveInput, 'channel'>) => {
+      if (typeof input?.scope !== 'string' || !backendIdOf(input.backend))
+        return { ok: false, error: 'Pick a scope.' }
+      const link = discordLink
+      if (!conductors || !link) return { ok: false, error: STILL_STARTING }
+      const saved = await conductors.saveWithNewChannel(
+        { id: input.id, scope: input.scope, backend: input.backend },
+        (scope, category) => link.newChannel(scope, conductors?.bindings() ?? [], category)
+      )
+      if (saved.ok) registerSlashCommands()
+      return saved
+    }
+  )
   ipcMain.handle('conductors:unbind', (_e, id: string) => conductors?.unbind(id))
   ipcMain.handle('conductors:switchBackend', (_e, id: string) => conductors?.switchBackend(id))
   ipcMain.handle(
