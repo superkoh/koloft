@@ -143,7 +143,7 @@ export function DiscordPane(): JSX.Element {
           </small>
         </div>
         <div className={'acct-login-state' + statusClass(status)}>{statusText(status)}</div>
-        {status.phase === 'intents' && (
+        {setUp && status.phase === 'intents' && (
           <button
             className="mini"
             onClick={() => window.api.browser.openExternal(DEVELOPER_PORTAL)}

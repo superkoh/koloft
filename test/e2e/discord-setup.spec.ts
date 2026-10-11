@@ -204,31 +204,44 @@ test.describe('Discord setup: the 7-step guide checks the bot for real, learns w
   test('when Koloft cannot switch Message Content on, Discord closes with 4014 and Settings and the guide tell the owner how to switch it on by hand', async ({
     env
   }) => {
-    const { page, fake, close } = await launched(env, {
+    const refused = (f: FakeDiscord): void => {
+      f.appFlags = 0
+      f.refuseAppEdit = true
+    }
+    const team = await launched(env, { setUp: refused })
+    try {
+      const pane = await discordPane(team.page)
+      await expect(pane.locator('.set-row', { hasText: 'Status' })).toContainText(
+        'Message Content is off'
+      )
+      await expect(
+        pane.locator('.set-row', { hasText: 'Discord is not set up yet.' })
+      ).toContainText('Step 2 of 7 next: make the bot private')
+      await pane.getByRole('button', { name: 'Set up Discord…' }).click()
+      await expect(wizard(team.page).locator('.flabel')).toHaveText('Step 2 of 7')
+      await expect(wizard(team.page).locator('.acct-login-state.bad')).toContainText(
+        'Koloft could not turn on Message Content'
+      )
+    } finally {
+      await team.close()
+    }
+
+    const personal = await launched(env, {
       setUp: (f) => {
-        f.appFlags = 0
-        f.refuseAppEdit = true
+        refused(f)
+        f.appOwner = OWNER
       }
     })
     try {
-      const pane = await discordPane(page)
+      const pane = await discordPane(personal.page)
       const status = pane.locator('.set-row', { hasText: 'Status' })
-      await expect(status).toContainText('Message Content is off')
       await expect(status).toContainText('Koloft could not turn on Message Content')
       await status.getByRole('button', { name: 'Open Developer Portal' }).click()
       await expect
         .poll(() => externalOpens(env))
         .toContain('https://discord.com/developers/applications')
-      await expect(
-        pane.locator('.set-row', { hasText: 'Discord is not set up yet.' })
-      ).toContainText('Step 2 of 7 next: make the bot private')
-      await pane.getByRole('button', { name: 'Set up Discord…' }).click()
-      await expect(wizard(page).locator('.flabel')).toHaveText('Step 2 of 7')
-      await expect(wizard(page).locator('.acct-login-state.bad')).toContainText(
-        'Koloft could not turn on Message Content'
-      )
     } finally {
-      await close()
+      await personal.close()
     }
   })
 

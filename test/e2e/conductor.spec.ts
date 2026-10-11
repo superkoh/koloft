@@ -270,8 +270,8 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
       await expect(channelRow(dlg, CHANNEL_B)).toHaveClass(/dim/)
       await expect(channelRow(dlg, CHANNEL_B).locator('.note')).toHaveText('bound to ws-b')
       await channelRow(dlg, CHANNEL_B).click()
-      await dlg.locator('.modal-foot .btn-primary').click()
-      await expect(dlg.locator('.field-hint.bad')).toHaveText('Pick a channel.')
+      await expect(channelRow(dlg, CHANNEL_B)).not.toHaveClass(/hot/)
+      await expect(dlg.locator('.cb-row.hot', { hasText: 'New channel' })).toHaveCount(1)
       await expect(dlg.locator('.wt-name', { hasText: 'Lounge' })).toHaveCount(0)
       await dlg.getByRole('button', { name: 'Cancel' }).click()
 
