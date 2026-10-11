@@ -58,7 +58,7 @@ function remoteHead(page: Page): Locator {
 }
 
 test.describe('a remote workspace knows how far it is behind origin, asked on the machine itself', () => {
-  test('E-RW-31: a remote checkout 2 commits behind shows the amber badge, and Pull fast-forwards it on the machine', async ({
+  test('E-RW-35: a remote checkout 2 commits behind shows the amber badge, and Pull fast-forwards it on the machine', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -82,7 +82,7 @@ test.describe('a remote workspace knows how far it is behind origin, asked on th
       await expect(pop.locator('.tbu-act', { hasText: 'Fetch now' })).toBeEnabled()
       const pull = pop.locator('.tbu-act.pull')
       await expect(pull).toBeEnabled()
-      await snap(page, 'E-RW-31-popover')
+      await snap(page, 'E-RW-35-popover')
 
       await pull.click()
       await expect(page.locator('.toast')).toHaveText(
@@ -96,7 +96,7 @@ test.describe('a remote workspace knows how far it is behind origin, asked on th
     }
   })
 
-  test('E-RW-32: when the machine cannot reach origin, the git panel names the machine in its alarm', async ({
+  test('E-RW-36: when the machine cannot reach origin, the git panel names the machine in its alarm', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -118,13 +118,13 @@ test.describe('a remote workspace knows how far it is behind origin, asked on th
       await expect(panel.locator('.fx-note')).toHaveText(
         `can't reach origin from ${REMOTE_HOST} — check its network or credentials.`
       )
-      await snap(page, 'E-RW-32')
+      await snap(page, 'E-RW-36')
     } finally {
       await quitAndClose(app)
     }
   })
 
-  test('E-RW-33: a machine that connects late gets its badge on connect, and while it is away Fetch now and Pull are off', async ({
+  test('E-RW-37: a machine that connects late gets its badge on connect, and while it is away Fetch now and Pull are off', async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -155,7 +155,7 @@ test.describe('a remote workspace knows how far it is behind origin, asked on th
       await expect(pop.locator('.fx-counts')).toContainText('↓ 2 behind')
       await expect(pop.locator('.tbu-act.pull')).toBeDisabled()
       await expect(pop.locator('.tbu-act', { hasText: 'Fetch now' })).toBeDisabled()
-      await snap(page, 'E-RW-33-away')
+      await snap(page, 'E-RW-37-away')
     } finally {
       await quitAndClose(app)
     }
