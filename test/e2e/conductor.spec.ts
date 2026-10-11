@@ -57,6 +57,10 @@ function firstCodexCall(env: E2EEnv): { sessionId: string; argv: string[]; cwd: 
   )
 }
 
+function runAssistOnCodex(env: E2EEnv): void {
+  seedSettings(env, { assist: { on: true, backend: 'codex' } })
+}
+
 function codexServers(env: E2EEnv): { argv: string[]; codexGate: string | null }[] {
   return fs
     .readFileSync(path.join(env.home, 'fake-codex-server-calls.jsonl'), 'utf8')
@@ -332,9 +336,10 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
     env
   }) => {
     installCodex(env)
+    runAssistOnCodex(env)
     const { page, close } = await launched(env)
     try {
-      await bindFromWorkspaceMenu(page, 'ws-a', { backend: 'Codex', channel: CHANNEL_A })
+      await bindFromWorkspaceMenu(page, 'ws-a', { channel: CHANNEL_A })
       expect(bindingsOnDisk(env)).toMatchObject([{ backend: 'codex' }])
       await openConductor(page, 'ws-a')
       await expect.poll(() => assistRecordOnDisk(env)?.sessionIds.length).toBe(1)
@@ -369,10 +374,11 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
     env
   }) => {
     installCodex(env)
+    runAssistOnCodex(env)
     fs.writeFileSync(path.join(env.home, 'fake-codex-hook-untrusted'), '')
     const { page, close } = await launched(env)
     try {
-      await bindFromWorkspaceMenu(page, 'ws-a', { backend: 'Codex', channel: CHANNEL_A })
+      await bindFromWorkspaceMenu(page, 'ws-a', { channel: CHANNEL_A })
       if (await island(page).getByRole('button', { name: 'Unfold' }).count())
         await island(page).getByRole('button', { name: 'Unfold' }).click()
       await conductorRow(page, 'ws-a').click()
