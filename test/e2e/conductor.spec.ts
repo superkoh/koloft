@@ -196,6 +196,8 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
       await openConductor(page, 'ws-a')
       const call = (await waitForCalls(env, 1))[0]
       expect(path.dirname(call.cwd)).toBe(path.join(env.userData, 'conductors'))
+      expect(call.argv).toContain('--plugin-dir')
+      expect(call.argv).not.toContain('--append-system-prompt-file')
       await expect.poll(() => bindingsOnDisk(env)[0]?.sessionIds.length).toBe(1)
       await expect(notesIsland(page).locator('.wb-title')).toHaveText('Notes · ws-a')
       const write = {

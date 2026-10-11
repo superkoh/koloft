@@ -409,6 +409,26 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
+  test('E-SSH-16: koloft session new -w, run inside a session on the machine, starts a child session there in a worktree of its own, listed under the session that started it', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    await withLab(env, async ({ page, lab }) => {
+      runOnTarget(lab, 'kuser', COMMIT_THE_PROJECT_THEN_EDIT_THE_README)
+      await addMachine(page, 'kt-key', 'kuser')
+      await startSessionIn(page, 'kt-key', { remote: true })
+      await runIn(page, centerTerm(page), '/koloft session new -w lab-child -- "/answer hi"')
+      await expect(centerTerm(page)).toContainText('koloft exit=0', {
+        timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+      })
+      await expect(wsRows(page, 'kt-key')).toHaveCount(2, { timeout: 90_000 })
+      await expect(wsGroup(page, 'kt-key').locator('.ws-subtabs > .ws-tab')).toHaveCount(1)
+      await expect
+        .poll(() => runOnTarget(lab, 'kuser', 'ls proj/.claude/worktrees'), { timeout: 30_000 })
+        .toContain('lab-child')
+    })
+  })
+
   test('E-SSH-10: ✎ comment on a remote Changes hunk reaches a REAL claude on the machine through ssh and tmux as one paste that waits in its input box, and the next Enter sends path, diff fence and hunk as a paste and the two-line note as typed words in one message, which the model obeys (opt-in, spends real money)', async ({
     env
   }) => {
@@ -550,6 +570,31 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         expect(claudeSkillListingsIn(transcript()).join('\n')).toMatch(/^- koloft:koloft: /m)
         expect(outputs.some((o) => o.includes('koloft note append <text>'))).toBe(true)
         expect(outputs.some((o) => o.includes('Added to the workspace note.'))).toBe(true)
+      },
+      (lab) => useRealClaudeOnTheMachine(env, lab)
+    )
+  })
+
+  test('E-SSH-17: a REAL claude on the machine knows, before any tool runs, that work needing its own worktree goes to koloft session new -w (opt-in, spends real money)', async ({
+    env
+  }) => {
+    test.skip(!HAVE_LINUX_CLAUDE, NEEDS_LINUX_CLAUDE)
+    test.setTimeout(A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS + 120_000)
+    seedSettings(env, { hintsOff: true })
+    await withLab(
+      env,
+      async ({ page, lab }) => {
+        const session = await newRealSessionOnKtKey(page, lab)
+        await typeAndSubmit(
+          page,
+          session,
+          'Do not run any tool. Under HELPERS in your instructions, rule 1 names a command to run. Reply with only that command, nothing else.'
+        )
+        await expect
+          .poll(() => claudeRepliesIn(session.transcript()).at(-1) ?? '', {
+            timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
+          })
+          .toMatch(/koloft session new -w/)
       },
       (lab) => useRealClaudeOnTheMachine(env, lab)
     )
