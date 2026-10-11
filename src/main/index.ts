@@ -65,7 +65,14 @@ import {
   standardUserAgent
 } from './browserSecurity'
 import { directoryListingHtml } from './dirListing'
-import { HOOK_SCRIPT, markAnswerable, pruneStale, setupHooks, writeTabHookSettings } from './hooks'
+import {
+  HOOK_SCRIPT,
+  forgetTurnMarkers,
+  markAnswerable,
+  pruneStale,
+  setupHooks,
+  writeTabHookSettings
+} from './hooks'
 import { formatRemoteKey, hostOf, parseRemoteKey } from '@shared/remoteKey'
 import {
   defaultControlDir,
@@ -345,7 +352,7 @@ import {
   type SessionVerbDeps,
   type Target
 } from './agentSessions'
-import { writeLine } from './crossSessionMessage'
+import { writeLineInTurn } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
 import { koloftAssist } from './assist'
@@ -1052,6 +1059,14 @@ async function assistBackendChoice(avoid?: BackendId): Promise<AssistBackendChoi
 const COMMAND_NEEDS_DISCORD =
   'koloft session command posts what the command printed in Discord, so it needs an Assist bound to a Discord channel.'
 
+// CC§13
+async function sendPeerLine(tabId: string, line: string, ms: number): Promise<void> {
+  const sessionId = sessionOfTab(tabId)?.sessionId
+  const socket = sessionId ? await whenMessagingSocket(sessionId, ms) : null
+  if (!socket) throw new Error('Koloft could not find where that session takes messages.')
+  await writeLineInTurn(socket, line)
+}
+
 const sessionDeps: SessionVerbDeps = {
   workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
   allSessions: () => allSessions().filter((s) => !s.conductor),
@@ -1076,13 +1091,7 @@ const sessionDeps: SessionVerbDeps = {
     return resumed.tabId
   },
   ready: tabReady,
-  // CC§13
-  sendLine: async (tabId, line, ms) => {
-    const sessionId = sessionOfTab(tabId)?.sessionId
-    const socket = sessionId ? await whenMessagingSocket(sessionId, ms) : null
-    if (!socket) throw new Error('Koloft could not find where that session takes messages.')
-    await writeLine(socket, line)
-  },
+  sendLine: sendPeerLine,
   press: (tabId, keys) => ptyMgr.type(tabId, keys),
   modeOf: (tabId) => sessionBackends.permissionClass(tabId),
   stop: killTabFromMain,
@@ -1807,6 +1816,7 @@ app.whenReady().then(() => {
     discordThreads?.forget(e.id)
     askButtons?.forget(e.id)
     if (answerable.delete(e.id) && answerableRegDir) markAnswerable(answerableRegDir, e.id, false)
+    if (answerableRegDir) forgetTurnMarkers(answerableRegDir, e.id)
     loginPtys.delete(e.id)
     if (toolInstallPtys.delete(e.id)) {
       sessionBackends.forgetAvailability()
@@ -2228,6 +2238,8 @@ app.whenReady().then(() => {
       if (!codexSessions) throw new Error(codexStartupError ?? 'Codex is not available.')
       await codexSessions.queueMessage(tabId, text, clientId)
     },
+    sendLine: sendPeerLine,
+    modeOf: (tabId) => sessionBackends.permissionClass(tabId),
     codexApproval: (tabId) => codexSessions?.openApproval(tabId),
     codexQuestion: (tabId) => codexSessions?.openQuestion(tabId),
     regDir: hookPaths.regDir,

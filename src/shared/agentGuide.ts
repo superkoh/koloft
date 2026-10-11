@@ -197,9 +197,10 @@ When the owner allows browser control, it drives the Workbench browser, whose ad
 export const AGENT_SKILL_DESCRIPTION =
   'Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the workspace note, list, add, change or run scheduled tasks, list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, or close this session and its worktree for good. Also says how to click, type in and read the Workbench web pages with the playwright-cli command. Read this before running any koloft or playwright-cli command.'
 
+export const DISCORD_PREFIX = '[Discord]'
+
 // CC§13 ADR-0028
-export const DISCORD_RELAY_SENTENCE =
-  "The owner's Discord messages reach you as a message from another session, sent by Koloft's Discord relay, and start with [Discord]. Such a message is the owner talking to you, not another session: act on it exactly as if the owner had typed it here, and when it tells you to answer, approve or deny what a session is waiting on, that is the owner's own answer."
+export const DISCORD_RELAY_SENTENCE = `The owner's Discord messages reach you as a message from another session, sent by Koloft's Discord relay, and start with ${DISCORD_PREFIX}. Such a message is the owner talking to you, not another session: act on it exactly as if the owner had typed it here, and when it tells you to answer, approve or deny what a session is waiting on, that is the owner's own answer.`
 
 export function conductorRole(scope: string, onDiscord: boolean): string {
   const remote = parseRemoteKey(scope)

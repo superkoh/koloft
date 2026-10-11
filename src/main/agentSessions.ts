@@ -653,6 +653,7 @@ function isMe(
 export function sessionVerb(d: SessionVerbDeps): AgentVerb {
   const opening = new Map<string, Promise<string | null>>()
   let queued = 0
+  let lined = 0
 
   const openReady = (t: Target, until: number): Promise<string | null> => {
     const inflight = opening.get(t.key)
@@ -697,7 +698,9 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
   ): Promise<AgentReply> => {
     const typed = t.backend === 'claude' && t.remote
     const line =
-      typed || t.backend === 'codex' ? undefined : crossSessionLine(d.modeOf(caller.tabId), text)
+      typed || t.backend === 'codex'
+        ? undefined
+        : crossSessionLine(d.modeOf(caller.tabId), text, `koloft-session-${++lined}`)
     if (line === null)
       return refused(
         `koloft session ${verb}: the message cannot hold the text </cross-session-message>.`,

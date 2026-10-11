@@ -52,6 +52,7 @@ function setup(
   const reactions: string[] = []
   const asksChanged: string[] = []
   const commands: string[] = []
+  const sent: { tab: string; content: string }[] = []
   const conductor: Destination = {
     id: bound.id,
     name: 'Assist',
@@ -104,6 +105,9 @@ function setup(
     type: (_t, keys) => typeKeys((data) => writes.push({ data, at: Date.now() }), keys),
     queueDrained: () => true,
     queue: async () => undefined,
+    sendLine: async (tab, line) =>
+      void sent.push({ tab, content: JSON.parse(line).message.content }),
+    modeOf: () => 'bypass',
     codexApproval: () => undefined,
     codexQuestion: () => undefined,
     regDir: dir,
@@ -114,6 +118,8 @@ function setup(
     relay: new DiscordRelay(deps),
     conductor,
     posts,
+    sent,
+    bodies: (): string[] => sent.map((s) => s.content.split('\n').slice(1, -2).join('\n')),
     writes,
     last,
     waiting,
@@ -180,20 +186,27 @@ describe('DiscordRelay: offline catch-up', () => {
   })
 })
 
-describe('DiscordRelay: typing an owner message into a Claude conductor', () => {
-  it('types the text, then Enter in a separate write at least 300 ms later', async () => {
-    const { relay, writes, last } = setup()
+describe('DiscordRelay: an owner message to a Claude conductor', () => {
+  // CC§13 ADR-0028
+  it('goes to its message socket as [Discord] text claiming the conductor’s own permission class, with the Discord message id, which Koloft notes as its own; nothing is typed', async () => {
+    const { relay, sent, writes, last } = setup({}, [], { modeOf: () => 'prompting' })
     relay.onMessage(message('201', OWNER, 'hello'))
-    await vi.waitFor(() => expect(writes).toHaveLength(2), { timeout: 3000 })
-    expect(writes[0].data).toBe('[Discord] hello')
-    expect(writes[1].data).toBe('\r')
-    expect(writes[1].at - writes[0].at).toBeGreaterThanOrEqual(290)
+    await vi.waitFor(() => expect(sent).toHaveLength(1))
+    expect(sent[0]).toEqual({
+      tab: TAB,
+      content:
+        '<cross-session-message from-mode="prompting">\n[Discord] hello\n(Koloft message koloft-discord-201)\n</cross-session-message>'
+    })
+    expect(fs.readFileSync(path.join(dir, `${TAB}.discord-ids`), 'utf8')).toBe(
+      'koloft-discord-201\n'
+    )
+    expect(writes).toEqual([])
     await vi.waitFor(() => expect(last).toEqual(['201']))
   })
 
-  it('a message the conductor can take at once gets only ✅; one that has to wait shows ⏳ until it is typed', async () => {
+  it('a message the conductor can take at once gets only ✅; one that has to wait shows ⏳ until it is sent', async () => {
     let status: SessionStatus = 'waiting'
-    const { relay, writes, reactions } = setup({}, [], { status: () => status })
+    const { relay, bodies, reactions } = setup({}, [], { status: () => status })
     relay.onMessage(message('203', OWNER, 'now'))
     await vi.waitFor(() => expect(reactions).toEqual(['203 +✅']), { timeout: 3000 })
     status = 'approval'
@@ -205,13 +218,14 @@ describe('DiscordRelay: typing an owner message into a Claude conductor', () => 
       () => expect(reactions).toEqual(['203 +✅', '204 +⏳', '204 -⏳', '204 +✅']),
       { timeout: 3000 }
     )
-    expect(writes.map((w) => w.data)).toEqual(['[Discord] now', '\r', '[Discord] later', '\r'])
+    expect(bodies()).toEqual(['[Discord] now', '[Discord] later'])
   })
 
-  it('a stranger’s message is not typed', async () => {
-    const { relay, writes } = setup()
+  it('a stranger’s message is not passed on', async () => {
+    const { relay, sent, writes } = setup()
     relay.onMessage(message('202', '556'))
     await new Promise((r) => setTimeout(r, 400))
+    expect(sent).toEqual([])
     expect(writes).toEqual([])
   })
 
@@ -225,20 +239,20 @@ describe('DiscordRelay: typing an owner message into a Claude conductor', () => 
   })
 
   it('a slash message that comes with a file is an ordinary message', async () => {
-    const { relay, writes, commands } = setup()
+    const { relay, bodies, commands } = setup()
     relay.onMessage({
       ...message('206', OWNER, '/look at this'),
       attachments: [{ filename: 'a.txt', size: 1, url: 'http://x/a.txt' }]
     })
-    await vi.waitFor(() => expect(writes).toHaveLength(2), { timeout: 3000 })
-    expect(writes[0].data).toMatch(/^\[Discord\] \/look at this/)
+    await vi.waitFor(() => expect(bodies()).toHaveLength(1), { timeout: 3000 })
+    expect(bodies()[0]).toMatch(/^\[Discord\] \/look at this/)
     expect(commands).toEqual([])
   })
 
   it('a slash command sent while the conductor is busy shows ⏳ until it is typed, and holds later messages behind it', async () => {
     let status: SessionStatus = 'working'
     const typedCommands: string[] = []
-    const { relay, writes, reactions } = setup(
+    const { relay, sent, bodies, reactions } = setup(
       {},
       [],
       { status: () => status },
@@ -253,15 +267,10 @@ describe('DiscordRelay: typing an owner message into a Claude conductor', () => 
     relay.onMessage(message('209', OWNER, 'then this'))
     await new Promise((r) => setTimeout(r, 400))
     expect(reactions).toEqual(['207 +⏳', '209 +⏳'])
-    expect(writes).toEqual([])
+    expect(sent).toEqual([])
     status = 'waiting'
     await vi.waitFor(() => expect(typedCommands).toEqual(['/clear']))
-    await vi.waitFor(
-      () => expect(writes.map((w) => w.data)).toEqual(['[Discord] then this', '\r']),
-      {
-        timeout: 3000
-      }
-    )
+    await vi.waitFor(() => expect(bodies()).toEqual(['[Discord] then this']), { timeout: 3000 })
     expect(reactions.slice(0, 4)).toEqual(['207 +⏳', '209 +⏳', '207 -⏳', '207 +✅'])
   })
 
@@ -294,7 +303,7 @@ describe('DiscordRelay: typing an owner message into a Claude conductor', () => 
   // CC§14
   it('answers the conductor’s own open question with the next message, and holds a later message until the question’s file is gone, which alone wakes the wait', async () => {
     const wakes: (() => void)[] = []
-    const { relay, writes, posts, waiting } = setup({}, [], {
+    const { relay, sent, bodies, posts, waiting } = setup({}, [], {
       ready: async (_t, ready) => {
         while (!ready()) await new Promise<void>((wake) => wakes.push(wake))
         return true
@@ -317,13 +326,27 @@ describe('DiscordRelay: typing an owner message into a Claude conductor', () => 
     })
     relay.onMessage(message('302', OWNER, 'after the question'))
     await new Promise((r) => setTimeout(r, 600))
-    expect(writes).toEqual([])
+    expect(sent).toEqual([])
     fs.rmSync(askFile)
-    await vi.waitFor(
-      () => expect(writes.map((w) => w.data)).toEqual(['[Discord] after the question', '\r']),
-      { timeout: 3000 }
-    )
+    await vi.waitFor(() => expect(bodies()).toEqual(['[Discord] after the question']), {
+      timeout: 3000
+    })
     watcher?.close()
+  })
+
+  // CC§14
+  it('its question held in the terminal, during a turn the owner typed at the Mac, is still posted and is answered from the channel by its keys; once that turn is over, the next message goes to it as usual', async () => {
+    let status: SessionStatus = 'approval'
+    const { relay, posts, writes, reactions, bodies } = setup({}, [], { status: () => status })
+    relay.onAsk(TAB, QUESTION)
+    await vi.waitFor(() => expect(posts.map((p) => p.text)[0]).toContain('Which?'))
+    relay.onMessage(message('701', OWNER, '2'))
+    await vi.waitFor(() => expect(reactions).toContain('701 +✅'))
+    expect(writes.map((w) => w.data)).toEqual(['2'])
+    relay.onAsk(TAB, { tool_name: 'Bash', tool_input: { command: 'make' } })
+    status = 'waiting'
+    relay.onMessage(message('702', OWNER, 'next'))
+    await vi.waitFor(() => expect(bodies()).toEqual(['[Discord] next']), { timeout: 3000 })
   })
 
   // CC§14
@@ -565,14 +588,12 @@ describe('DiscordRelay: the owner writing in a session’s thread', () => {
 })
 
 describe('DiscordRelay: Koloft telling a conductor something', () => {
-  it('goes the way an owner message does: typed, then Enter', async () => {
-    const { relay, writes, conductor } = setup()
+  it('goes the way an owner message does, to its message socket, but is not noted as one of the owner’s Discord messages', async () => {
+    const { relay, bodies, conductor } = setup()
     relay.tell(conductor, '[Koloft] Could not deliver to fix-login: it closed.')
     await vi.waitFor(() =>
-      expect(writes.map((w) => w.data)).toEqual([
-        '[Koloft] Could not deliver to fix-login: it closed.',
-        '\r'
-      ])
+      expect(bodies()).toEqual(['[Koloft] Could not deliver to fix-login: it closed.'])
     )
+    expect(fs.existsSync(path.join(dir, `${TAB}.discord-ids`))).toBe(false)
   })
 })

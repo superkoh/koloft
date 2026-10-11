@@ -19,7 +19,9 @@ import { toDiscordMarkdown } from './markdown'
 import { CONDUCTOR_ACCENT, type Card } from './cards'
 import { didNotRun, slashCommandProblem, waitingForAnswer } from '@shared/slashCommands'
 import type { AskPayload } from '@shared/sessionEvent'
+import { DISCORD_PREFIX } from '@shared/agentGuide'
 import type { ToolCall } from '../sessionTracker'
+import { crossSessionLine, type ModeClass } from '../crossSessionMessage'
 import {
   askHow,
   claudeDialog,
@@ -50,6 +52,8 @@ const DELIVERED = '✅'
 const PAGE = 100
 const PROMPT_SETTLES_AFTER_BIND_MS = 1000
 const CONDUCTOR_GETS_READY_WITHIN_MS = 10 * 60_000
+const MESSAGE_SOCKET_SHOWS_WITHIN_MS = 10_000
+export const DISCORD_IDS_SUFFIX = '.discord-ids'
 
 export interface Destination {
   id: string
@@ -88,6 +92,8 @@ export interface RelayDeps {
   type(tabId: string, keys: string[]): Promise<void>
   queueDrained(tabId: string): boolean
   queue(tabId: string, text: string, clientId: string): Promise<void>
+  sendLine(tabId: string, line: string, ms: number): Promise<void>
+  modeOf(tabId: string): ModeClass
   codexApproval(tabId: string): CodexApproval | undefined
   codexQuestion(tabId: string): CodexQuestion | undefined
   regDir: string
@@ -149,7 +155,8 @@ export class DiscordRelay {
     const tab = dest.liveTab()
     const command = m.attachments.length ? undefined : slashTextOf(m.content)
     const refusal = command === undefined ? undefined : this.commandRefusal(tab, command, dest.name)
-    if (!refusal && command === undefined && tab && !dest.conductor && this.dialogOpen(tab)) {
+    const answersByKeys = !dest.conductor || (!!tab && this.heldInTerminal(tab))
+    if (!refusal && command === undefined && tab && answersByKeys && this.dialogOpen(tab)) {
       void this.answerSession(tab, m.content).then((error) =>
         error ? this.say(m.channelId, error, m.id) : this.react(m, DELIVERED, true)
       )
@@ -244,7 +251,18 @@ export class DiscordRelay {
       await this.d.queue(tab, text, item.clientId)
       return
     }
+    if (dest.conductor) return this.sendAsPeer(tab, text, item.clientId)
     await this.d.type(tab, [text, '\r'])
+  }
+
+  // CC§13 ADR-0028
+  private async sendAsPeer(tab: string, text: string, id: string): Promise<void> {
+    const line = crossSessionLine(this.d.modeOf(tab), text, id)
+    if (line === null)
+      throw new Error('Assist cannot take a message holding </cross-session-message>.')
+    if (text.startsWith(DISCORD_PREFIX))
+      fs.appendFileSync(path.join(this.d.regDir, `${tab}${DISCORD_IDS_SUFFIX}`), `${id}\n`)
+    await this.d.sendLine(tab, line, MESSAGE_SOCKET_SHOWS_WITHIN_MS)
   }
 
   private async readyTab(dest: Destination): Promise<string> {
@@ -291,7 +309,7 @@ export class DiscordRelay {
   private async textOf(m: DiscordMessage, dest: Destination, tab: string): Promise<string> {
     const remote = this.d.remote(tab)
     const notes = await Promise.all(m.attachments.map((a) => this.fetchAttachment(m.id, a, remote)))
-    return [dest.conductor ? '[Discord]' : '', m.content, ...notes].filter(Boolean).join(' ')
+    return [dest.conductor ? DISCORD_PREFIX : '', m.content, ...notes].filter(Boolean).join(' ')
   }
 
   private async fetchAttachment(
@@ -426,9 +444,15 @@ export class DiscordRelay {
     this.card(channelId, this.askCard(tab, view, how, shown))
   }
 
+  // CC§14
+  private heldInTerminal(tab: string): boolean {
+    const ask = this.openAsk(tab)
+    return !!ask && !ask.hook && !(this.d.turnOver(tab) && !this.d.awaitsInput(tab))
+  }
+
   private answerDialog(tab: string, m: DiscordMessage): boolean {
     const ask = this.openAsk(tab)
-    if (ask) {
+    if (ask?.hook) {
       this.answer(tab, hookAnswer(ask.payload, m.content))
       return true
     }
