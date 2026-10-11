@@ -700,16 +700,16 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     test.setTimeout(300_000)
     const { app, page } = await launchWithRemote(env)
     try {
-      const notes = path.join(remoteDir(env), 'notes.md')
-      fs.writeFileSync(notes, '# Notes\n\nfirst line\n')
+      const doc = path.join(remoteDir(env), 'doc.md')
+      fs.writeFileSync(doc, '# Doc\n\nfirst line\n')
       await openRemoteSessionWorkbench(page, env)
 
-      await openInBrowse(page, `${remoteKey(env)}/notes.md`)
+      await openInBrowse(page, `${remoteKey(env)}/doc.md`)
       const body = page.locator(`${WORKBENCH.readingBody} .md-body`)
       await expect(body).toContainText('first line', { timeout: 30_000 })
 
-      await untilTheMachineHasStamped(env, notes)
-      fs.writeFileSync(notes, '# Notes\n\nsecond line, written on the machine\n')
+      await untilTheMachineHasStamped(env, doc)
+      fs.writeFileSync(doc, '# Doc\n\nsecond line, written on the machine\n')
       await expect(body).toContainText('second line, written on the machine', { timeout: 30_000 })
     } finally {
       await quitAndClose(app)
