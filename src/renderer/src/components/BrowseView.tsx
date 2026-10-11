@@ -77,7 +77,6 @@ export interface BrowseViewProps {
   onContextMenu: (e: ReactMouseEvent, path: string, isDir: boolean) => void
   sideWidth: number
   refreshNonce: number
-  treeUnwatched: boolean
   active?: boolean
 }
 
@@ -169,7 +168,6 @@ export function BrowseView({
   onContextMenu,
   sideWidth,
   refreshNonce,
-  treeUnwatched,
   active = true
 }: BrowseViewProps): JSX.Element {
   const [children, setChildren] = useState<Record<string, DirEntry[]>>({})
@@ -184,6 +182,7 @@ export function BrowseView({
   const [bmOpen, setBmOpen] = useState(true)
   const [recentOpen, setRecentOpen] = useState(true)
   const [fsTick, setFsTick] = useState(0)
+  const [treeLive, setTreeLive] = useState(true)
 
   const [query, setQuery] = useState('')
   const [searchMode, setSearchMode] = useState<SearchMode>('name')
@@ -244,6 +243,14 @@ export function BrowseView({
     }
   }, [])
 
+  const relist = useCallback(
+    (dir: string): void => {
+      loadedRef.current.delete(dir)
+      void loadDir(dir)
+    },
+    [loadDir]
+  )
+
   const firstRoot = useRef(root)
   useEffect(() => {
     if (firstRoot.current === root) {
@@ -256,6 +263,7 @@ export function BrowseView({
     setErrors(new Set())
     setLoading(new Set())
     setKbdRow(null)
+    setTreeLive(true)
     setScratchOpen(true)
     setExtOpen(true)
     const flag = loadFlag(showIgnoredKey(root))
@@ -272,24 +280,25 @@ export function BrowseView({
   }, [active, expanded, loadDir])
 
   useEffect(() => {
+    let watching = true
+    window.api.fs.watchDir(root).then((live) => {
+      if (watching) setTreeLive(live)
+    })
     const off = window.api.fs.onDirChange((changed) => {
       if (changed !== root) return
       setFsTick((x) => x + 1)
     })
-    return off
+    return () => {
+      watching = false
+      off()
+      window.api.fs.unwatchDir(root)
+    }
   }, [root])
-
-  const seenRefreshNonce = useRef(refreshNonce)
-  useEffect(() => {
-    if (seenRefreshNonce.current === refreshNonce) return
-    seenRefreshNonce.current = refreshNonce
-    setFsTick((x) => x + 1)
-  }, [refreshNonce])
 
   const watchedDirs = useRef(new Set<string>())
   // PLATFORM§42
   useEffect(() => {
-    const want = new Set(active && treeUnwatched ? [...expanded].filter((d) => d !== root) : [])
+    const want = new Set(active && !treeLive ? [...expanded].filter((d) => d !== root) : [])
     for (const d of watchedDirs.current) {
       if (want.has(d)) continue
       window.api.fs.unwatchDir(d)
@@ -300,16 +309,14 @@ export function BrowseView({
       window.api.fs.watchDir(d)
       watchedDirs.current.add(d)
     }
-  }, [active, treeUnwatched, expanded, root])
+  }, [active, treeLive, expanded, root])
   useEffect(() => {
     const watched = watchedDirs.current
     const off = window.api.fs.onDirChange((changed) => {
-      if (!watched.has(changed)) return
-      loadedRef.current.delete(changed)
-      void loadDir(changed)
+      if (watched.has(changed)) relist(changed)
     })
     return off
-  }, [loadDir])
+  }, [relist])
   useEffect(() => {
     const watched = watchedDirs.current
     return () => {
@@ -319,27 +326,22 @@ export function BrowseView({
   }, [])
 
   const relistOwedWhileHidden = useRef(false)
+  const refreshNonceAtMount = useRef(refreshNonce)
   useEffect(() => {
-    if (fsTick === 0) return
+    if (fsTick === 0 && refreshNonce === refreshNonceAtMount.current) return
     if (!active) {
       relistOwedWhileHidden.current = true
       return
     }
     relistOwedWhileHidden.current = false
-    for (const d of expandedRef.current) {
-      loadedRef.current.delete(d)
-      void loadDir(d)
-    }
-  }, [fsTick, active, loadDir])
+    for (const d of expandedRef.current) relist(d)
+  }, [fsTick, refreshNonce, active, relist])
 
   useEffect(() => {
     if (!active || !relistOwedWhileHidden.current) return
     relistOwedWhileHidden.current = false
-    for (const d of expandedRef.current) {
-      loadedRef.current.delete(d)
-      void loadDir(d)
-    }
-  }, [active, loadDir])
+    for (const d of expandedRef.current) relist(d)
+  }, [active, relist])
 
   // CC§2
   const scratchTimerRef = useRef<{ dir: string; t: ReturnType<typeof setTimeout> } | null>(null)
@@ -348,16 +350,13 @@ export function BrowseView({
     const pending = scratchTimerRef.current
     if (pending?.dir === scratchpadDir) return
     if (pending) clearTimeout(pending.t)
-    const relistScratchpadWithoutRelistingEveryExpandedDir = (): void => {
-      loadedRef.current.delete(scratchpadDir)
-      void loadDir(scratchpadDir)
-    }
+    const relistScratchpadWithoutRelistingEveryExpandedDir = (): void => relist(scratchpadDir)
     const t = setTimeout(() => {
       scratchTimerRef.current = null
       relistScratchpadWithoutRelistingEveryExpandedDir()
     }, SCRATCHPAD_RELIST_THROTTLE_MS)
     scratchTimerRef.current = { dir: scratchpadDir, t }
-  }, [active, scratchpadDir, session?.updatedAt, loadDir])
+  }, [active, scratchpadDir, session?.updatedAt, relist])
   useEffect(
     () => () => {
       if (scratchTimerRef.current) clearTimeout(scratchTimerRef.current.t)
@@ -370,20 +369,18 @@ export function BrowseView({
   useEffect(() => {
     const dir = scratchpadDir
     if (!active || !dir) return
-    loadedRef.current.delete(dir)
-    void loadDir(dir)
+    relist(dir)
     window.api.fs.watchDir(dir)
     const off = window.api.fs.onDirChange((changed) => {
       if (changed !== dir) return
-      loadedRef.current.delete(dir)
-      void loadDir(dir)
+      relist(dir)
       setFsTick((x) => x + 1)
     })
     return () => {
       off()
       window.api.fs.unwatchDir(dir)
     }
-  }, [active, scratchpadDir, scratchLive, root, loadDir])
+  }, [active, scratchpadDir, scratchLive, root, relist])
 
   const idx = useMemo(() => sessionIndex(session, root), [session, root])
   const changedDirs = useMemo(() => changedDirsOf(git, root), [git, root])
@@ -557,15 +554,14 @@ export function BrowseView({
       if (!dir) return null
       try {
         const created = await window.api.edit.create(dir, name)
-        loadedRef.current.delete(dir)
-        void loadDir(dir)
+        relist(dir)
         onNewFileDone(created)
         return null
       } catch (err) {
         return createRefusal(String((err as Error)?.message ?? ''))
       }
     },
-    [newFileDir, loadDir, onNewFileDone]
+    [newFileDir, relist, onNewFileDone]
   )
 
   useEffect(() => {

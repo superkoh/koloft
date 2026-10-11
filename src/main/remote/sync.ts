@@ -123,6 +123,10 @@ export class RemoteSync {
     if (paths && w && --w.count <= 0) paths.delete(path)
   }
 
+  unwatchAll(): void {
+    this.watches.clear()
+  }
+
   private noticeStamps(host: string, asked: string[], stamps: string[]): void {
     const paths = this.watches.get(host)
     asked.forEach((path, i) => {

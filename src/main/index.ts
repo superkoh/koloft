@@ -1503,6 +1503,7 @@ function rendererTeardown(): void {
   cronRunner?.onRendererTeardown()
   closeAllDirWatchers()
   closeAllFileWatchers()
+  remoteSync?.unwatchAll()
   resetAllFlow()
   overlayListenerLost()
   if (uiActiveTabId !== null) activeTabBeforeReload = uiActiveTabId
