@@ -1,18 +1,15 @@
 import fs from 'fs'
-import os from 'os'
 import path from 'path'
 import type { DocVerdict, SessionInfo } from '@shared/types'
 import type { Turn } from '@shared/turns'
 import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { isReaderDocPath, writtenForTheAgent } from '@shared/preview'
 import type { Assist } from './assist'
-import { writePrivateAtomically } from './privateFile'
-
-type VerdictsBySession = Record<string, Record<string, DocVerdict>>
+import { PrivateRecordFile } from './privateFile'
 
 const SAID_CHARS_SENT = 1500
 const REPLY_CHARS_SENT = 8000
-const NAMES_A_DOC = /\.(md|markdown|html?)\b/i
+const BETWEEN_PATHS_IN_PROSE = /[\s`'"()<>[\]（）「」『』，。、；：]+/
 
 const SYSTEM = 'You decide which files a person should open and read.'
 
@@ -32,7 +29,7 @@ export interface ReaderDocsDeps {
   file(): string
   assist: Assist
   session(tabId: string): SessionInfo | undefined
-  remoteFileExists(keyed: string): Promise<boolean>
+  remoteFileExists(host: string, keyed: string): Promise<boolean>
   changed(): void
 }
 
@@ -54,14 +51,15 @@ function promptFor(turn: Turn, cwd: string, written: string[]): string {
   ].join('\n')
 }
 
-function pathIn(line: string, cwd: string, remote: boolean): string | null {
-  const p = line
+function docIn(text: string, cwd: string, host: string | undefined): string | null {
+  const p = text
     .trim()
     .replace(/^(?:[-*]|\d+[.)])\s+/, '')
-    .replace(/^[`'"]+|[`'"]+$/g, '')
+    .replace(/^[`'"]+|[`'".,;:!?]+$/g, '')
   if (!p || !isReaderDocPath(p)) return null
-  if (p.startsWith('~/')) return remote ? null : path.join(os.homedir(), p.slice(2))
-  return path.posix.resolve(cwd, p)
+  const abs = path.posix.resolve(cwd, p)
+  const src = host ? formatRemoteKey(host, abs) : abs
+  return writtenForTheAgent(src) ? null : src
 }
 
 async function localFile(p: string): Promise<string | null> {
@@ -74,20 +72,19 @@ async function localFile(p: string): Promise<string | null> {
 }
 
 export class ReaderDocs {
-  private verdicts: VerdictsBySession | null = null
+  private readonly store: PrivateRecordFile<Record<string, DocVerdict>>
   private lastTurnEnd = new Map<string, number>()
 
-  constructor(private readonly deps: ReaderDocsDeps) {}
+  constructor(private readonly deps: ReaderDocsDeps) {
+    this.store = new PrivateRecordFile(deps.file)
+  }
 
   of(sessionId: string): Record<string, DocVerdict> | undefined {
-    return this.all()[sessionId]
+    return this.store.get()[sessionId]
   }
 
   forget(sessionId: string): void {
-    const all = this.all()
-    if (!(sessionId in all)) return
-    delete all[sessionId]
-    this.save()
+    this.store.forget(sessionId)
   }
 
   async turnEnded(tabId: string, turn: Turn): Promise<void> {
@@ -95,7 +92,9 @@ export class ReaderDocs {
     if (!s?.sessionId) return
     const since = turn.said[0]?.at ?? this.lastTurnEnd.get(tabId) ?? 0
     this.lastTurnEnd.set(tabId, turn.at)
-    const written = (s.files ?? [])
+    const host = s.remote?.host
+    const files = s.files ?? []
+    const written = files
       .filter(
         (f) =>
           f.access === 'wrote' &&
@@ -104,8 +103,12 @@ export class ReaderDocs {
           !writtenForTheAgent(f.src)
       )
       .map((f) => f.src)
-    if (!written.length && !NAMES_A_DOC.test(turn.reply)) return
-    const machine = s.remote?.host
+    const known = new Set([...files.map((f) => f.src), ...Object.keys(this.of(s.sessionId) ?? {})])
+    const namesANewDoc = turn.reply.split(BETWEEN_PATHS_IN_PROSE).some((word) => {
+      const src = docIn(word, s.cwd, host)
+      return src !== null && !known.has(src)
+    })
+    if (!written.length && !namesANewDoc) return
     const reply = await this.deps.assist({
       system: SYSTEM,
       prompt: promptFor(
@@ -115,47 +118,21 @@ export class ReaderDocs {
       )
     })
     if (reply === null) return
-    const picked = new Set<string>()
-    for (const line of reply.split('\n')) {
-      const p = pathIn(line, s.cwd, !!machine)
-      if (!p) continue
-      const src = machine ? formatRemoteKey(machine, p) : p
-      const found = written.includes(src)
-        ? src
-        : machine
-          ? (await this.deps.remoteFileExists(src))
-            ? src
-            : null
-          : await localFile(p)
-      if (found) picked.add(found)
-    }
+    const found = await Promise.all(
+      reply.split('\n').map(async (line) => {
+        const src = docIn(line, s.cwd, host)
+        if (!src || written.includes(src)) return src
+        if (host) return (await this.deps.remoteFileExists(host, src)) ? src : null
+        const real = await localFile(src)
+        return real && !writtenForTheAgent(real) ? real : null
+      })
+    )
     const at = Date.now()
     const verdicts = { ...this.of(s.sessionId) }
     for (const src of written) verdicts[src] = { show: false, at }
-    for (const src of picked) verdicts[src] = { show: true, at }
-    this.all()[s.sessionId] = verdicts
-    this.save()
+    for (const src of found) if (src) verdicts[src] = { show: true, at }
+    this.store.get()[s.sessionId] = verdicts
+    this.store.save()
     this.deps.changed()
-  }
-
-  private all(): VerdictsBySession {
-    if (!this.verdicts) {
-      try {
-        const read: unknown = JSON.parse(fs.readFileSync(this.deps.file(), 'utf8'))
-        this.verdicts =
-          read && typeof read === 'object' && !Array.isArray(read)
-            ? (read as VerdictsBySession)
-            : {}
-      } catch {
-        this.verdicts = {}
-      }
-    }
-    return this.verdicts
-  }
-
-  private save(): void {
-    try {
-      writePrivateAtomically(this.deps.file(), JSON.stringify(this.verdicts))
-    } catch {}
   }
 }

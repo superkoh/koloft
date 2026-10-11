@@ -52,7 +52,7 @@ function setup(opts: {
         return opts.answer
       },
       session: (tabId) => (tabId === 't1' ? session : undefined),
-      remoteFileExists: async (keyed) => {
+      remoteFileExists: async (_host, keyed) => {
         asked.push(keyed)
         return (opts.remoteFiles ?? []).includes(keyed)
       },
@@ -62,18 +62,25 @@ function setup(opts: {
 }
 
 describe('Assist picks the docs a session made for its reader', () => {
-  it('asks nothing when the turn wrote no doc and its reply names none', async () => {
-    const t = setup({ files: [wrote(path.join(dir, 'a.ts'), TURN_START + 1)], answer: 'NONE' })
-    await t.make().turnEnded('t1', turn('Fixed the bug.'))
+  it('asks nothing when the turn wrote no doc and its reply names no doc it does not already know', async () => {
+    const t = setup({
+      files: [
+        wrote(path.join(dir, 'a.ts'), TURN_START + 1),
+        wrote(path.join(dir, 'NOTES.md'), TURN_START - 1)
+      ],
+      answer: 'NONE'
+    })
+    await t.make().turnEnded('t1', turn('Fixed the bug, as CLAUDE.md asks; see NOTES.md.'))
     expect(t.jobs).toEqual([])
   })
 
-  it('sends only the docs written this turn, keeps what Assist picked that exists, and remembers it across restarts', async () => {
+  it('sends only the docs written this turn, keeps what Assist picked that exists and is not written for the agent, and remembers it across restarts', async () => {
     fs.mkdirSync(path.join(dir, 'docs'))
     fs.writeFileSync(path.join(dir, 'docs', 'report.md'), '# r')
     fs.writeFileSync(path.join(dir, 'pr-body.md'), 'body')
     fs.writeFileSync(path.join(dir, 'old.md'), 'old')
     fs.writeFileSync(path.join(dir, 'guide.md'), 'made by a shell command')
+    fs.writeFileSync(path.join(dir, 'CLAUDE.md'), 'for the agent')
     const report = path.join(dir, 'docs', 'report.md')
     const prBody = path.join(dir, 'pr-body.md')
     const t = setup({
@@ -87,7 +94,8 @@ describe('Assist picks the docs a session made for its reader', () => {
         `- ${report}`,
         '`guide.md`',
         path.join(dir, 'missing.md'),
-        path.join(dir, 'x.ts')
+        path.join(dir, 'x.ts'),
+        path.join(dir, 'CLAUDE.md')
       ].join('\n')
     })
     await t.make().turnEnded('t1', turn('Done.'))
@@ -148,12 +156,7 @@ describe('Assist picks the docs a session made for its reader', () => {
       cwd: '/home/koh/repo',
       files: [wrote(written, TURN_START + 1)],
       remoteFiles: ['ssh://devbox/home/koh/repo/notes/summary.md'],
-      answer: [
-        '/home/koh/repo/report.md',
-        'notes/summary.md',
-        '/home/koh/repo/gone.md',
-        '~/elsewhere.md'
-      ].join('\n')
+      answer: ['/home/koh/repo/report.md', 'notes/summary.md', '/home/koh/repo/gone.md'].join('\n')
     })
     const docs = t.make()
     await docs.turnEnded('t1', turn('See notes/summary.md'))

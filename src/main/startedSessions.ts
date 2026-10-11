@@ -1,14 +1,15 @@
-import fs from 'fs'
-import { writePrivateAtomically } from './privateFile'
+import { PrivateRecordFile } from './privateFile'
 
 type ParentBySession = Record<string, string>
 
 export class StartedSessions {
   private parentOfWaitingTab = new Map<string, string>()
   private sessionOfTab = new Map<string, string>()
-  private parentOf: ParentBySession | null = null
+  private readonly parentOf: PrivateRecordFile<string>
 
-  constructor(private readonly file: () => string) {}
+  constructor(file: () => string) {
+    this.parentOf = new PrivateRecordFile(file)
+  }
 
   started(childTabId: string, parentSessionId: string): void {
     this.parentOfWaitingTab.set(childTabId, parentSessionId)
@@ -61,28 +62,14 @@ export class StartedSessions {
   }
 
   forget(sessionId: string): void {
-    const parents = this.parents()
-    if (!(sessionId in parents)) return
-    delete parents[sessionId]
-    this.save()
+    this.parentOf.forget(sessionId)
   }
 
   private parents(): ParentBySession {
-    if (!this.parentOf) {
-      try {
-        const read: unknown = JSON.parse(fs.readFileSync(this.file(), 'utf8'))
-        this.parentOf =
-          read && typeof read === 'object' && !Array.isArray(read) ? (read as ParentBySession) : {}
-      } catch {
-        this.parentOf = {}
-      }
-    }
-    return this.parentOf
+    return this.parentOf.get()
   }
 
   private save(): void {
-    try {
-      writePrivateAtomically(this.file(), JSON.stringify(this.parentOf))
-    } catch {}
+    this.parentOf.save()
   }
 }

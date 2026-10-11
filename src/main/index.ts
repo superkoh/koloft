@@ -383,11 +383,8 @@ const startedSessions = new StartedSessions(() =>
 const readerDocs = new ReaderDocs({
   file: () => path.join(app.getPath('userData'), 'doc-verdicts.json'),
   assist: (job) => assist(job),
-  session: (tabId) => allSessions().find((s) => s.tabId === tabId),
-  remoteFileExists: (keyed) => {
-    const remote = parseRemoteKey(keyed)
-    return remote ? hosts.machine(remote.host).fileExists(keyed) : Promise.resolve(false)
-  },
+  session: sessionOfTab,
+  remoteFileExists: (host, keyed) => hosts.machine(host).fileExists(keyed),
   changed: () => sendToRenderer('sessions:update', onSessionsChanged())
 })
 const sessionBackends = new SessionBackends({
