@@ -1,4 +1,5 @@
 import fs from 'fs'
+import os from 'os'
 import path from 'path'
 import type { DocVerdict, SessionInfo } from '@shared/types'
 import type { Turn } from '@shared/turns'
@@ -124,9 +125,14 @@ export class ReaderDocs {
         return real && !writtenForTheAgent(real) ? real : null
       })
     )
+    const home = `${os.homedir()}/`
+    const replyGivesFullPath = (src: string): boolean => {
+      const p = parseRemoteKey(src)?.path ?? src
+      return turn.reply.includes(p) || (!host && turn.reply.includes(p.replace(home, '~/')))
+    }
     const at = Date.now()
     const verdicts = { ...this.of(s.sessionId) }
-    for (const src of written) verdicts[src] = { show: false, at }
+    for (const src of written) verdicts[src] = { show: replyGivesFullPath(src), at }
     for (const src of found) if (src) verdicts[src] = { show: true, at }
     this.store.get()[s.sessionId] = verdicts
     this.store.save()

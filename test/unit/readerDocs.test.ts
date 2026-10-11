@@ -139,6 +139,25 @@ describe('Assist picks the docs a session made for its reader', () => {
     expect(docs.of('s1')).toEqual({ [guide]: { show: true, at: expect.any(Number) } })
   })
 
+  it('lists a written doc whose full path the reply gives, also as ~/…, even when Assist leaves it out', async () => {
+    const plan = path.join(dir, 'plan.md')
+    const atHome = path.join(os.homedir(), 'notes', 'report.md')
+    const draft = path.join(dir, 'pr-body.md')
+    const t = setup({
+      files: [
+        wrote(plan, TURN_START + 1),
+        wrote(atHome, TURN_START + 2),
+        wrote(draft, TURN_START + 3)
+      ],
+      answer: 'NONE'
+    })
+    const docs = t.make()
+    await docs.turnEnded('t1', turn(`The plan is at ${plan}; the report is ~/notes/report.md.`))
+    expect(docs.of('s1')?.[plan]?.show).toBe(true)
+    expect(docs.of('s1')?.[atHome]?.show).toBe(true)
+    expect(docs.of('s1')?.[draft]?.show).toBe(false)
+  })
+
   it('records nothing when Assist is off or fails, so the docs fall back to the rule', async () => {
     const t = setup({ files: [wrote(path.join(dir, 'a.md'), TURN_START + 1)], answer: null })
     const docs = t.make()
