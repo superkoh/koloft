@@ -3345,7 +3345,7 @@ async function resumeRow(
 ): Promise<{ ok: true; tabId: string } | { ok: false; error: string }> {
   const backend = sessionBackends.forSession(row.id)
   const plan = await backend.resumePlan(row.id)
-  if (plan.action === 'dialog' || plan.action === 'rebuild') {
+  if (plan.action === 'dialog') {
     return {
       ok: false,
       error: `“${row.title}” needs you — its worktree changed. Click it to resume.`
@@ -3360,7 +3360,16 @@ async function resumeRow(
           : `Could not start “${row.title}” — its folder is gone.`
     }
   }
-  const res = await backend.resume({ sessionId: row.id, cwd: plan.cwd, mode: 'direct' })
+  const res = await backend.resume(
+    plan.action === 'rebuild'
+      ? {
+          sessionId: row.id,
+          cwd: plan.resumeCwd,
+          mode: 'rebuild',
+          rebuild: { worktreePath: plan.worktreePath, branch: plan.branch, baseRef: plan.baseRef }
+        }
+      : { sessionId: row.id, cwd: plan.cwd, mode: 'direct' }
+  )
   if (!res.ok) return { ok: false, error: couldNotStart(row.title) }
   const spawned: SpawnedTab = {
     id: res.id,
