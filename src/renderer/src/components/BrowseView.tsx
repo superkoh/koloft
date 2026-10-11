@@ -286,21 +286,37 @@ export function BrowseView({
     setFsTick((x) => x + 1)
   }, [refreshNonce])
 
+  const watchedDirs = useRef(new Set<string>())
   // PLATFORM§42
   useEffect(() => {
-    if (!active || !treeUnwatched) return
-    const dirs = [...expanded].filter((d) => d !== root)
-    for (const d of dirs) window.api.fs.watchDir(d)
+    const want = new Set(active && treeUnwatched ? [...expanded].filter((d) => d !== root) : [])
+    for (const d of watchedDirs.current) {
+      if (want.has(d)) continue
+      window.api.fs.unwatchDir(d)
+      watchedDirs.current.delete(d)
+    }
+    for (const d of want) {
+      if (watchedDirs.current.has(d)) continue
+      window.api.fs.watchDir(d)
+      watchedDirs.current.add(d)
+    }
+  }, [active, treeUnwatched, expanded, root])
+  useEffect(() => {
+    const watched = watchedDirs.current
     const off = window.api.fs.onDirChange((changed) => {
-      if (!dirs.includes(changed)) return
+      if (!watched.has(changed)) return
       loadedRef.current.delete(changed)
       void loadDir(changed)
     })
+    return off
+  }, [loadDir])
+  useEffect(() => {
+    const watched = watchedDirs.current
     return () => {
-      off()
-      for (const d of dirs) window.api.fs.unwatchDir(d)
+      for (const d of watched) window.api.fs.unwatchDir(d)
+      watched.clear()
     }
-  }, [active, treeUnwatched, expanded, root, loadDir])
+  }, [])
 
   const relistOwedWhileHidden = useRef(false)
   useEffect(() => {
