@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { LuLoaderCircle } from 'react-icons/lu'
 import {
   BACKEND_LABEL,
   SESSION_BACKENDS,
@@ -169,6 +170,17 @@ export function NoAccountLines({
         )
       })}
     </>
+  )
+}
+
+export function BusyLine({ children }: { children: ReactNode }) {
+  return (
+    <div className="fresh-line busy">
+      <span className="fico-l">
+        <LuLoaderCircle size={14} />
+      </span>
+      <span>{children}</span>
+    </div>
   )
 }
 

@@ -8,7 +8,7 @@ import {
   type KeyboardEvent,
   type ReactNode
 } from 'react'
-import { LuCheck, LuLoaderCircle, LuSparkles, LuTriangleAlert, LuX } from 'react-icons/lu'
+import { LuCheck, LuSparkles, LuTriangleAlert, LuX } from 'react-icons/lu'
 import type {
   BackendId,
   GithubItem,
@@ -28,7 +28,6 @@ import {
   itemAim,
   itemFilterText,
   itemLabel,
-  itemLaunchExtras,
   mainRunningCount,
   moveHot,
   primaryKind,
@@ -54,7 +53,9 @@ import { pullToast } from '../freshnessView'
 import { isComposing } from '../keys'
 import { useStore } from '../store'
 import { PullConfirm } from './PullConfirm'
+import { SeedFields } from './SeedFields'
 import {
+  BusyLine,
   SessionLaunchButtons,
   SessionLaunchStatus,
   useSessionLaunch,
@@ -252,34 +253,29 @@ export function WorktreeSessionDialog({
     if (!locked) onClose()
   }
 
-  const typed = (): Pick<SessionLaunchOptions, 'firstPrompt' | 'name'> =>
-    seed ? { firstPrompt: prompt.trim() || undefined, name: sessionTitle.trim() || undefined } : {}
-
   const launch = (target: WtAim, backend = sessionLaunch.methods.defaultBackend): void => {
     if (locked || sessionLaunch.issue(backend)) return
     const method = target.kind === 'recover' ? 'codex' : backend
-    if (target.kind === 'root') {
-      void sessionLaunch.launch({ cwd: wsPath, ...typed() }, method)
-    } else if (target.kind === 'recover') {
-      void sessionLaunch.launch({ ...resolveLaunch(target, wsPath), ...typed() }, method)
-    } else if (target.kind === 'open') {
+    const go = (base: SessionLaunchOptions): void =>
       void sessionLaunch.launch(
         {
-          ...resolveLaunch({ kind: 'existing', name: target.name, dir: target.dir }, wsPath),
-          ...typed()
+          ...base,
+          firstPrompt: prompt.trim() || undefined,
+          name: sessionTitle.trim() || undefined
         },
         method
       )
-    } else if (target.kind === 'create') {
-      void sessionLaunch.launch(
-        { ...resolveLaunch({ kind: 'create', name: target.name }, wsPath), ...typed() },
-        method
-      )
-    } else if (target.kind === 'item') {
+    if (target.kind === 'root') go({ cwd: wsPath })
+    else if (target.kind === 'recover') go(resolveLaunch(target, wsPath))
+    else if (target.kind === 'open')
+      go(resolveLaunch({ kind: 'existing', name: target.name, dir: target.dir }, wsPath))
+    else if (target.kind === 'create')
+      go(resolveLaunch({ kind: 'create', name: target.name }, wsPath))
+    else if (target.kind === 'item') {
       const { item, name, dir } = target
       const withItem = (c: RunChoice): SessionLaunchOptions => ({
         ...resolveLaunch(c, wsPath),
-        ...(seed ? seededItemExtras(item, prompt, sessionTitle) : itemLaunchExtras(item))
+        ...seededItemExtras(item, prompt, sessionTitle)
       })
       if (dir) void sessionLaunch.launch(withItem({ kind: 'existing', name, dir }), method)
       else if (item.kind === 'issue')
@@ -410,18 +406,9 @@ export function WorktreeSessionDialog({
     )
   }
 
-  const busyLine = (text: string): JSX.Element => (
-    <div className="fresh-line busy">
-      <span className="fico-l">
-        <LuLoaderCircle size={14} />
-      </span>
-      <span>{text}</span>
-    </div>
-  )
-
   const freshLine = (): JSX.Element | null => {
-    if (sessionLaunch.starting) return busyLine('Starting…')
-    if (phase === 'pulling' && freshness) return busyLine(`Pulling ${freshness.defRef}…`)
+    if (sessionLaunch.starting) return <BusyLine>Starting…</BusyLine>
+    if (phase === 'pulling' && freshness) return <BusyLine>Pulling {freshness.defRef}…</BusyLine>
     if (line === 'hidden') return null
     if (phase === 'failed') {
       return (
@@ -431,7 +418,7 @@ export function WorktreeSessionDialog({
         </p>
       )
     }
-    if (line === 'checking') return busyLine('Checking origin…')
+    if (line === 'checking') return <BusyLine>Checking origin…</BusyLine>
     const copy = freshness && freshLineCopy(line, freshness, now)
     if (!copy) return null
     const good = line === 'ok'
@@ -544,40 +531,6 @@ export function WorktreeSessionDialog({
     )
   }
 
-  const seedFields = (): JSX.Element | null =>
-    seed ? (
-      <>
-        <span className="flabel">Title · Claude only</span>
-        <div className="cb-input">
-          <input
-            className="cb-field"
-            spellCheck={false}
-            autoComplete="off"
-            placeholder="name the session, or leave it to Claude"
-            aria-label="Title"
-            disabled={locked}
-            value={sessionTitle}
-            onChange={(e) => setSessionTitle(e.target.value)}
-            onKeyDown={onTypedKeyDown}
-          />
-        </div>
-        <span className="flabel">First prompt</span>
-        <div className="cb-input">
-          <textarea
-            ref={promptRef}
-            className="cb-field task"
-            rows={3}
-            spellCheck={false}
-            aria-label="First prompt"
-            disabled={locked}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={onTypedKeyDown}
-          />
-        </div>
-      </>
-    ) : null
-
   return (
     <>
       <div className="modal-backdrop" onClick={close}>
@@ -634,7 +587,17 @@ export function WorktreeSessionDialog({
               </p>
             )}
             {freshLine()}
-            {seedFields()}
+            {seed && (
+              <SeedFields
+                title={sessionTitle}
+                prompt={prompt}
+                onTitle={setSessionTitle}
+                onPrompt={setPrompt}
+                onKeyDown={onTypedKeyDown}
+                disabled={locked}
+                promptRef={promptRef}
+              />
+            )}
             <SessionLaunchStatus launch={sessionLaunch} />
             {listed.length > 0 && (
               <div className="wt-list">

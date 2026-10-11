@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { WorkspaceRows } from '@shared/types'
-import type { SessionSeed } from '../newSession'
+import { typedSeed, type SessionSeed } from '../newSession'
 import type { PickerMode } from '../workspacePicker'
 import { useStore } from '../store'
 import { WorkspacePicker } from './WorkspacePicker'
@@ -45,7 +45,7 @@ export function NewSessionDialog({
         onChangeWorkspace={
           seed
             ? (typed) => {
-                setSeed({ ...seed, ...typed, worktree: null, why: '', unsure: false, warn: '' })
+                setSeed(typedSeed(typed))
                 setWorktreePath(undefined)
               }
             : undefined

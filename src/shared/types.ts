@@ -1,3 +1,5 @@
+import type { SessionRoute } from './sessionRoute'
+
 export interface ProjectInfo {
   root: string
   treeRoot: string
@@ -1002,7 +1004,7 @@ export interface KoloftApi {
     createProject(parent: string, name: string): Promise<ProjectCreateResult>
   }
   assist: {
-    ask(id: number, system: string, prompt: string): Promise<string | null>
+    route(id: number, message: string): Promise<SessionRoute | null>
     cancel(id: number): void
   }
   settings: {

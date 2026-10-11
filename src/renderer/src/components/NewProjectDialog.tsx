@@ -1,15 +1,17 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react'
-import { LuLoaderCircle, LuSparkles, LuX } from 'react-icons/lu'
+import { LuSparkles, LuX } from 'react-icons/lu'
 import type { BackendId } from '@shared/types'
-import { formatRemoteKey } from '@shared/remoteKey'
 import { LOCAL_MACHINE } from '@shared/sessionRoute'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import { shortenHome } from '../browseModel'
 import { isComposing } from '../keys'
-import { PATH_BAD } from '../remoteWorkspace'
+import { remoteKeyFromForm } from '../remoteWorkspace'
 import { useStore } from '../store'
+import { SeedFields } from './SeedFields'
+import { updateSettings } from './settings/useSettingsUpdate'
 import {
+  BusyLine,
   SessionLaunchButtons,
   SessionLaunchStatus,
   useSessionLaunch,
@@ -69,7 +71,9 @@ export function NewProjectDialog({
   const name = folder.trim()
   const where = parent.trim().replace(/\/+$/, '')
   const nameBad = !!name && !isValidWorktreeName(name)
-  const whereBad = !local && !!where && !where.startsWith('/')
+  const remote = local || !where ? null : remoteKeyFromForm(machine, where)
+  const whereBad = remote?.ok === false ? remote.message : ''
+  const parentKey = remote?.ok ? remote.key : where
   const ready = !!name && !nameBad && !!where && !whereBad
   const backends = sessionLaunch.usable
   const other =
@@ -80,12 +84,9 @@ export function NewProjectDialog({
   const submit = (backend: BackendId = sessionLaunch.methods.defaultBackend): void => {
     if (!ready || locked || sessionLaunch.issue(backend)) return
     void sessionLaunch.launch(async () => {
-      const made = await window.api.workspace.createProject(
-        local ? where : formatRemoteKey(machine, where),
-        name
-      )
+      const made = await window.api.workspace.createProject(parentKey, name)
       if (!made.ok) throw new Error(made.reason)
-      void window.api.settings.set({ newProjectFolders: { ...folders, [machine]: where } })
+      updateSettings({ newProjectFolders: { ...folders, [machine]: where } })
       return {
         cwd: made.path,
         firstPrompt: prompt.trim() || undefined,
@@ -177,7 +178,7 @@ export function NewProjectDialog({
             )}
           </div>
           {whereBad ? (
-            <p className="field-hint bad">{PATH_BAD}</p>
+            <p className="field-hint bad">{whereBad}</p>
           ) : !where ? (
             <p className="field-hint warn">
               Pick where new projects go{local ? '' : ` on ${machine}`}. Koloft remembers it for
@@ -191,41 +192,15 @@ export function NewProjectDialog({
               </p>
             )
           )}
-          <span className="flabel">Title · Claude only</span>
-          <div className="cb-input">
-            <input
-              className="cb-field"
-              spellCheck={false}
-              autoComplete="off"
-              aria-label="Title"
-              placeholder="name the session, or leave it to Claude"
-              disabled={locked}
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              onKeyDown={onKeyDown}
-            />
-          </div>
-          <span className="flabel">First prompt</span>
-          <div className="cb-input">
-            <textarea
-              className="cb-field task"
-              rows={3}
-              spellCheck={false}
-              aria-label="First prompt"
-              disabled={locked}
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              onKeyDown={onKeyDown}
-            />
-          </div>
-          {locked && (
-            <div className="fresh-line busy">
-              <span className="fico-l">
-                <LuLoaderCircle size={14} />
-              </span>
-              <span>Starting…</span>
-            </div>
-          )}
+          <SeedFields
+            title={title}
+            prompt={prompt}
+            onTitle={setTitle}
+            onPrompt={setPrompt}
+            onKeyDown={onKeyDown}
+            disabled={locked}
+          />
+          {locked && <BusyLine>Starting…</BusyLine>}
           <SessionLaunchStatus launch={sessionLaunch} />
         </div>
         <div className="modal-foot">

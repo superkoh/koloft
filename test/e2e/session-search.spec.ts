@@ -298,7 +298,7 @@ test.describe('Search conversations (⌘P, then ⌥⏎) · finds a session by it
         const dialog = await searchFor(app, page, 'lynx-needle-5')
         const row = hit(dialog, 'Yesterday on the build machine')
         await expect(row.locator('.restore-meta')).toContainText(
-          `${REMOTE_WS_NAME} (${REMOTE_HOST}) · main ·`
+          `${REMOTE_HOST}:${REMOTE_WS_NAME} · main ·`
         )
         await row.click()
 

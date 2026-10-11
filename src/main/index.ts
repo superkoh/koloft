@@ -349,6 +349,7 @@ import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
 import { koloftAssist } from './assist'
 import { createProject } from './newProject'
+import { routeSession } from './sessionRouter'
 import { closingTree, removeTree, whatIsLeft } from './sessionClose'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
@@ -3808,13 +3809,17 @@ function registerIpc(): void {
     return commitSettings(sanitizeSettingsPatch(patch))
   })
 
-  ipcMain.handle('assist:ask', async (_e, id: unknown, system: unknown, prompt: unknown) => {
-    if (typeof id !== 'number' || typeof system !== 'string' || typeof prompt !== 'string')
-      return null
+  ipcMain.handle('assist:route', async (_e, id: unknown, message: unknown) => {
+    if (typeof id !== 'number' || typeof message !== 'string' || !workspaceMgr) return null
+    const mgr = workspaceMgr
     const run = new AbortController()
     assistRuns.set(id, run)
     try {
-      return await assist({ system, prompt, signal: run.signal })
+      return await routeSession(
+        { rows: () => mgr.rows(), worktrees: (p) => mgr.worktrees(p), assist },
+        message,
+        run.signal
+      )
     } finally {
       assistRuns.delete(id)
     }

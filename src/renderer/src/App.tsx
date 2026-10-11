@@ -139,7 +139,7 @@ import { useHints } from './useHints'
 import { updateSettings } from './components/settings/useSettingsUpdate'
 import { CommandPalette, type PaletteRouted } from './components/CommandPalette'
 import { NewProjectDialog, type ProjectSeed } from './components/NewProjectDialog'
-import type { SessionSeed } from './newSession'
+import { typedSeed, type SessionSeed } from './newSession'
 import type { PaletteAction } from './palette'
 
 const RECENT_MAX = 3
@@ -1074,8 +1074,6 @@ export default function App(): JSX.Element {
 
   const paletteRouted: PaletteRouted = (prompt, route) => {
     setPaletteOpen(false)
-    if (newSessionLocked.current) return
-    setRestoreWs(null)
     if (route?.kind === 'project') {
       setNewProject({
         id: ++newRequestId.current,
@@ -1094,18 +1092,21 @@ export default function App(): JSX.Element {
       id: ++newRequestId.current,
       mode: 'any',
       path: route ? route.path : here?.workspace.path,
-      seed: {
-        prompt,
-        title: route?.title ?? '',
-        worktree: route?.worktree ?? null,
-        why: route?.why ?? '',
-        unsure: !!route && !route.sure,
-        warn: route
-          ? ''
-          : useStore.getState().settings.assist?.on
-            ? 'Koloft Assist could not answer, so pick the workspace and worktree yourself.'
-            : 'Koloft Assist is off, so pick the workspace and worktree yourself. Turn it on in Settings ▸ Assist.'
-      }
+      seed: route
+        ? {
+            prompt,
+            title: route.title,
+            worktree: route.worktree,
+            why: route.why,
+            unsure: !route.sure,
+            warn: ''
+          }
+        : typedSeed(
+            { prompt, title: '' },
+            useStore.getState().settings.assist?.on
+              ? 'Koloft Assist could not answer, so pick the workspace and worktree yourself.'
+              : 'Koloft Assist is off, so pick the workspace and worktree yourself. Turn it on in Settings ▸ Assist.'
+          )
     })
   }
 
@@ -1840,7 +1841,7 @@ export default function App(): JSX.Element {
                 setNewRequest({
                   id: ++newRequestId.current,
                   mode: 'any',
-                  seed: { ...typed, worktree: null, why: '', unsure: false, warn: '' }
+                  seed: typedSeed(typed)
                 })
               }}
             />

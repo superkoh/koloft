@@ -50,6 +50,10 @@ export interface SessionSeed {
   warn: string
 }
 
+export function typedSeed(typed: { prompt: string; title: string }, warn = ''): SessionSeed {
+  return { ...typed, worktree: null, why: '', unsure: false, warn }
+}
+
 export function seedQuery(worktree: RouteWorktree | null | undefined): string {
   return worktree?.kind === 'new' || worktree?.kind === 'existing' ? worktree.name : ''
 }

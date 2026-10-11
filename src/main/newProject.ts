@@ -13,8 +13,12 @@ export async function createProject(
   add: (dir: string) => WorkspaceAddResult | undefined
 ): Promise<ProjectCreateResult> {
   if (!isValidWorktreeName(name)) return { ok: false, reason: 'Only letters, digits, . _ -' }
-  if (!(await host.dirExists(parent))) return { ok: false, reason: 'That folder does not exist.' }
-  if ((await host.gitOut(parent, ['rev-parse', '--show-toplevel'])) !== null)
+  const [there, inRepo] = await Promise.all([
+    host.dirExists(parent),
+    host.gitOut(parent, ['rev-parse', '--show-toplevel'])
+  ])
+  if (!there) return { ok: false, reason: 'That folder does not exist.' }
+  if (inRepo !== null)
     return { ok: false, reason: 'That folder is inside a git repository — pick one outside it.' }
   const base = parent.replace(/\/+$/, '')
   for (let n = 1; n <= FREE_NAME_TRIES; n++) {

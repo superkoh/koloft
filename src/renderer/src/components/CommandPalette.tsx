@@ -7,7 +7,7 @@ import {
   type KeyboardEvent,
   type MutableRefObject
 } from 'react'
-import { LuFolder, LuLoaderCircle, LuSearch, LuSparkles } from 'react-icons/lu'
+import { LuFolder, LuSearch, LuSparkles } from 'react-icons/lu'
 import type { SessionSearchHit } from '@shared/types'
 import type { SessionRoute } from '@shared/sessionRoute'
 import { basename } from '@shared/preview'
@@ -25,14 +25,15 @@ import { openSessionRow } from '../sessionClick'
 import { mixesBackends, relTime } from '../sessionRows'
 import { useStore } from '../store'
 import { SessionBackendIcon } from './SessionBackendIcon'
+import { BusyLine } from './SessionLaunchButtons'
 
-const SEARCH_AFTER_TYPING_MS = 250
+const SEARCH_AFTER_TYPING_MS = 400
 
 let lastSearchId = 0
 
 function workspaceLabel(wsPath: string): string {
   const key = parseRemoteKey(wsPath)
-  return key ? `${basename(key.path)} (${key.host})` : basename(wsPath)
+  return key ? `${key.host}:${basename(key.path)}` : basename(wsPath)
 }
 
 function countLine(n: number): string {
@@ -97,7 +98,7 @@ export function CommandPalette({
       return
     }
     setMode('thinking')
-    const ask = askRoute(rows, typed)
+    const ask = askRoute(typed)
     asking.current = ask
     void ask.result.then((route) => {
       if (asking.current !== ask) return
@@ -140,11 +141,15 @@ export function CommandPalette({
         setHits((had) => [...had, ...found.hits].sort((a, b) => b.row.mtime - a.row.mtime))
       if (found.done) setSearchDone(true)
     })
-    const timer = setTimeout(() => window.api.sessions.search(id, typed), SEARCH_AFTER_TYPING_MS)
+    let sent = false
+    const timer = setTimeout(() => {
+      sent = true
+      window.api.sessions.search(id, typed)
+    }, SEARCH_AFTER_TYPING_MS)
     return () => {
       clearTimeout(timer)
       off()
-      window.api.sessions.search(++lastSearchId, '')
+      if (sent) window.api.sessions.search(++lastSearchId, '')
     }
   }, [mode, typed])
 
@@ -238,12 +243,7 @@ export function CommandPalette({
     if (mode === 'thinking')
       return (
         <div className="pal-status">
-          <div className="fresh-line busy">
-            <span className="fico-l">
-              <LuLoaderCircle size={14} />
-            </span>
-            <span>Picking a workspace and a worktree…</span>
-          </div>
+          <BusyLine>Picking a workspace and a worktree…</BusyLine>
         </div>
       )
     if (mode === 'search')
