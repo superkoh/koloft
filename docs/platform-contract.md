@@ -1409,13 +1409,16 @@ Gateway (the live connection that pushes events):
     app one person owns, set when a team owns it) and `flags`.
   - `PATCH /applications/@me` with `{flags: <flags> | 1 << 19}` (Message Content,
     limited — the switch a bot in under 100 servers has) answered 200 with the bot's own
-    token. That the Gateway then accepts the Message Content intent without a 4014 is
-    inferred, not checked.
+    token. With Message Content off, identify was closed with 4014 "Disallowed
+    intent(s)"; an identify sent about 0.4 s after the PATCH got `READY`, so no wait or
+    retry is needed between them.
   - `POST /guilds/{id}/channels` made a category (`type: 4`) and a text channel under it
-    (`type: 0`, `parent_id`, `topic`); the bot already had Manage Channels there, so the
-    403 a bot without it gets is from Discord's docs, as is whether a second invite with
-    more permissions widens an existing bot's role (not probed). The invite permissions
-    Koloft used before (`326417615936`) lack only Manage Channels (`1 << 4`).
+    (`type: 0`, `parent_id`, `topic`). A category's name is kept as sent (`"Koloft ·
+    MacBook"`: case, spaces and the middle dot kept), and so is a channel's topic. The
+    bot already had Manage Channels there, so the 403 a bot without it gets is from
+    Discord's docs, as is whether a second invite with more permissions widens an
+    existing bot's role (not probed). The invite permissions Koloft used before
+    (`326417615936`) lack only Manage Channels (`1 << 4`).
   - Discord rewrites a text channel's name: `"My Project.v2 项目"` came back as
     `my-projectv2-项目` — lowercased, a space as a hyphen, the dot dropped, Chinese kept.
     Two channels may share one name; Koloft's `-2` is its own rule.
