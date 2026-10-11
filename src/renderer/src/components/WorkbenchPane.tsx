@@ -895,7 +895,17 @@ export function WorkbenchPane({
   const submitAddress = useCallback(
     (raw: string): void => {
       if (!ownerTab) return
-      const decision = routeFor(raw, 'address')
+      const entry = raw.trim()
+      const decision = routeFor(
+        entry.startsWith('~/') ? window.api.home + entry.slice(1) : entry,
+        'address'
+      )
+      if (decision.dest === 'preview') {
+        openHere({ kind: 'file', path: decision.target, source: 'user' }, (r) =>
+          setVisited((prev) => (prev.includes(r.tabId) ? prev : [...prev, r.tabId]))
+        )
+        return
+      }
       if (decision.dest !== 'browser') return
       const url = decision.target
       if (!activeTab || activeTab.kind !== 'web') {
