@@ -575,6 +575,31 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     )
   })
 
+  test('E-SSH-17: a REAL claude on the machine knows, before any tool runs, that work needing its own worktree goes to koloft session new -w (opt-in, spends real money)', async ({
+    env
+  }) => {
+    test.skip(!HAVE_LINUX_CLAUDE, NEEDS_LINUX_CLAUDE)
+    test.setTimeout(A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS + 120_000)
+    seedSettings(env, { hintsOff: true })
+    await withLab(
+      env,
+      async ({ page, lab }) => {
+        const session = await newRealSessionOnKtKey(page, lab)
+        await typeAndSubmit(
+          page,
+          session,
+          'Do not run any tool. Under HELPERS in your instructions, rule 1 names a command to run. Reply with only that command, nothing else.'
+        )
+        await expect
+          .poll(() => claudeRepliesIn(session.transcript()).at(-1) ?? '', {
+            timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS
+          })
+          .toMatch(/koloft session new -w/)
+      },
+      (lab) => useRealClaudeOnTheMachine(env, lab)
+    )
+  })
+
   test('E-SSH-12: the GitHub button on a session on the machine commits and pushes there with real git to an origin on the machine, and the failing checks the REAL gh reads on this Mac reach a REAL claude there through ssh and tmux as one paste that waits for the question typed after it (opt-in, spends real money)', async ({
     env
   }) => {
