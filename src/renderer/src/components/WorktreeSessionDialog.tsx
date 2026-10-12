@@ -8,7 +8,7 @@ import {
   type KeyboardEvent,
   type ReactNode
 } from 'react'
-import { LuCheck, LuLoaderCircle, LuTriangleAlert, LuX } from 'react-icons/lu'
+import { LuCheck, LuTriangleAlert, LuX } from 'react-icons/lu'
 import type {
   BackendId,
   GithubItem,
@@ -52,6 +52,7 @@ import { isComposing } from '../keys'
 import { useStore } from '../store'
 import { PullConfirm } from './PullConfirm'
 import {
+  BusyLine,
   SessionLaunchButtons,
   SessionLaunchStatus,
   useSessionLaunch,
@@ -354,18 +355,9 @@ export function WorktreeSessionDialog({
     )
   }
 
-  const busyLine = (text: string): JSX.Element => (
-    <div className="fresh-line busy">
-      <span className="fico-l">
-        <LuLoaderCircle size={14} />
-      </span>
-      <span>{text}</span>
-    </div>
-  )
-
   const freshLine = (): JSX.Element | null => {
-    if (sessionLaunch.starting) return busyLine('Starting…')
-    if (phase === 'pulling' && freshness) return busyLine(`Pulling ${freshness.defRef}…`)
+    if (sessionLaunch.starting) return <BusyLine>Starting…</BusyLine>
+    if (phase === 'pulling' && freshness) return <BusyLine>Pulling {freshness.defRef}…</BusyLine>
     if (line === 'hidden') return null
     if (phase === 'failed') {
       return (
@@ -375,7 +367,7 @@ export function WorktreeSessionDialog({
         </p>
       )
     }
-    if (line === 'checking') return busyLine('Checking origin…')
+    if (line === 'checking') return <BusyLine>Checking origin…</BusyLine>
     const copy = freshness && freshLineCopy(line, freshness, now)
     if (!copy) return null
     const good = line === 'ok'

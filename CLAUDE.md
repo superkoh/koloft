@@ -127,6 +127,12 @@ Working principles:
   table says "did not apply", never "no findings". Playwright never builds: after the
   last `src/` change or merge of `main`, `npm run build` first, or e2e tests the old
   `out/`.
+- The PR title becomes `main`'s commit subject on squash, and the release notes and
+  the site changelog sort by its type, so it reads `type(scope): what changed`, the
+  change in the user's words: `feat`, `fix` or `perf` for what a user meets,
+  `refactor`, `docs`, `test`, `chore`, `build` or `ci` for the rest. A plain-sentence
+  title lands untyped in the changelog (v0.41.0 shipped four); the `PR title` check
+  fails it.
 - The PR (pull request) body is a report for the owner deciding whether to merge. It
   opens with six lines, in this order:
   - **What it does** — one sentence, in the user's words, before any mechanism.
@@ -204,13 +210,16 @@ Working principles:
     launch stalls on a silent download.
 - Shell in a worktree stays plain. The worktree isolation guard refuses any Bash
   call it cannot prove stays inside this worktree, not only git ones. This block
-  binds you too, its last line aside — that one is for agents; your long text for
-  `gh` goes in a file (`--body-file`):
+  binds you too, its last line aside; long text for `gh` goes in a `--body-file`:
 
   ```
   Shell rules — a guard refuses the rest; each refusal is a lost turn:
   - One plain command per Bash call, absolute paths. No loop, $(…) or shell
-    variable whose value lands in a command's arguments; no env -u.
+    variable whose value lands in a command's arguments; no env -u or HOME=.
+  - Also refused: a path outside the worktree inside a chain, a cd outside then
+    git, a shell name or builtin as an argument (grep -n "source" f, bash
+    --version, docker … sh -c), python3 - or sh <file> whose text names git
+    (a .github path counts).
   - Create or change every file, scratch scripts too, with Write/Edit, even when
     told to prefer Bash; run a script as node/python3/sh <file>. No heredoc,
     sed -i, perl -pi or cat >.
@@ -218,15 +227,12 @@ Working principles:
     zsh prints "no matches found", the command never runs; the tool may
     still report success.
   - Never git -C another checkout: diff origin/<branch>, or gh pr diff <n>.
+  - Find a file before you grep or read it (grep -rl 'word' src): a name
+    made up from a sibling file fails.
   - Read stops at 25,000 tokens: read a big file or diff ~1,000 lines at a time.
   - grep is ugrep and fails on a .{0,N} span: use /usr/bin/grep -o -E, N ≤ 255.
   - Findings go in your final message; the harness refuses report files.
   ```
-
-  Also refused: a path outside the worktree inside a chain, a `cd` outside followed
-  by `git`, a bare shell name or builtin as an argument (`grep -n "source" f`,
-  `bash --version`), and `python3 -` or `sh <file>` whose text names git (a `.github`
-  path counts). An edit made through the shell also slips past the comment hook.
 - Auth comes from Koloft's own multi-account balancer (Settings ▸ Accounts): the claude
   shim injects the picked account per launch; the probe/header contract is
   `docs/claude-code-contract.md` §7. A Codex account is its own `CODEX_HOME`, picked per
@@ -237,7 +243,7 @@ Working principles:
   typed at that moment. The app's own e2e suite obeys the same rule by launching
   hidden and never showing itself (`KOLOFT_TEST_BACKGROUND=1` in
   `test/e2e/helpers/env.ts`, pinned by `test/e2e/background-launch.spec.ts`).
-- `README.md` is the human-facing product page (install, packaging, Gatekeeper). Don't
+- `README.md` is the human-facing product page (install, packaging). Don't
   read it for context — the code is the source of truth; read it only when the task is
   editing the README itself. Test-layer seams and conventions live in `test/CLAUDE.md`.
 - No per-feature document survives its feature shipping — anywhere in the repo.

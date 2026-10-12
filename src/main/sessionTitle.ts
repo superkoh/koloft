@@ -11,7 +11,7 @@ const TITLE_INSTRUCTIONS =
   'Leave out background, rules and filler such as "research a question". ' +
   'Reply with the title alone, no quotes, no full stop.\n\nTask:\n'
 
-function firstLineName(text: string): string {
+export function firstLineName(text: string): string {
   const line = text
     .split('\n')
     .map((l) => l.trim())

@@ -10,7 +10,6 @@ export function setupAppMenu(
       | 'close-tab'
       | 'find'
       | 'find-files'
-      | 'search-sessions'
       | 'check-update'
       | 'restart-session'
       | 'add-workspace'
@@ -142,12 +141,6 @@ export function setupAppMenu(
         label: 'Search Files',
         accelerator: isMac ? 'Shift+CmdOrCtrl+F' : undefined,
         click: () => onShortcut('find-files')
-      },
-      {
-        id: 'search-sessions',
-        label: 'Search Sessions',
-        accelerator: isMac ? 'Alt+CmdOrCtrl+F' : undefined,
-        click: () => onShortcut('search-sessions')
       }
     ]
   }
