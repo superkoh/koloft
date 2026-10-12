@@ -728,3 +728,26 @@ describe('selectWorkspace: a session tab and a workspace head are one selection'
     expect(useStore.getState().resumeLaunch?.id).toBe('sess-cold')
   })
 })
+
+describe('activateTab: a tab main started but has not announced yet', () => {
+  it('goes active the moment it spawns, so an Assist opened on a slow backend still comes to the front', () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'late0', kind: 'claude', title: 'A', cwd: '/w/a', alive: true })
+    s.activateTab('late1')
+    expect(useStore.getState().activeTabId).toBe('late0')
+
+    s.addTabQuiet({ id: 'late1', kind: 'codex', title: 'Assist', cwd: '/w/b', alive: true })
+    expect(useStore.getState().activeTabId).toBe('late1')
+  })
+
+  it('stays put when the person picked another tab in the meantime', () => {
+    const s = useStore.getState()
+    s.addTab({ id: 'late2', kind: 'claude', title: 'A', cwd: '/w/a', alive: true })
+    s.addTab({ id: 'late3', kind: 'claude', title: 'B', cwd: '/w/a', alive: true })
+    s.activateTab('late4')
+    s.activateTab('late2')
+
+    s.addTabQuiet({ id: 'late4', kind: 'codex', title: 'Assist', cwd: '/w/b', alive: true })
+    expect(useStore.getState().activeTabId).toBe('late2')
+  })
+})

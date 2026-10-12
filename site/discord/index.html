@@ -116,9 +116,11 @@ your Mac
 
         <h2>Set it up</h2>
         <p>
-          Open Settings ▸ Discord. Until you finish, it says "Discord is not set up yet." Click
-          <code>Set up Discord…</code> and a guide walks you through seven steps. When all are done
-          it says "✓ All 7 steps done".
+          Open Settings ▸ Discord and click <code>Set up with Assist</code>. Assist opens the
+          Discord website in its Workbench browser and does each step it can; you sign in, type your
+          password and pass the "I am human" checks. Koloft reads the bot's token from the page
+          itself, so it never passes through Assist. To do it by hand instead, the same screen has
+          the token field, Invite the bot and Bind a channel…; the steps are:
         </p>
         <ol>
           <li>
@@ -127,9 +129,10 @@ your Mac
             name it Koloft. The portal opens in your normal browser.
           </li>
           <li>
-            Make the bot private and let it read messages. First set Installation ▸ Install Link to
-            None and save. Then turn Public Bot off, so only you can add it. Turn Message Content
-            Intent on: that is Discord's switch that lets a bot read what you type.
+            Make the bot private. First set Installation ▸ Install Link to None and save. Then turn
+            Public Bot off, so only you can add it. You do not need to touch Message Content Intent
+            (Discord's switch that lets a bot read what you type): once the token is in, Koloft
+            turns it on. If Koloft cannot, Settings ▸ Discord tells you where to turn it on.
           </li>
           <li>
             Copy the bot's token into Koloft. The token is the bot's password. Koloft keeps it in
@@ -141,17 +144,22 @@ your Mac
           </li>
           <li>
             Add the bot to your server. Click Invite the bot. The invite asks for the rights the bot
-            needs, Manage Threads among them. If you added the bot before this, its role does not
-            get the new right on its own: open Server Settings ▸ Roles, pick the bot's role, and
-            under Permissions turn on Manage Threads.
+            needs, making channels and Manage Threads among them. If you added the bot before this,
+            your channels keep working; the first time you bind with a new channel, Koloft asks you
+            to invite the bot again.
           </li>
           <li>
-            Tell Koloft who you are. Send any message in your server, like "hi". It shows up in
-            Koloft with the sender's name. Click This is me (or Not me).
+            Tell Koloft who you are. If the bot's app is yours alone, Koloft already knows: it is
+            the app's owner, and nothing is left to do. If a team owns the app, send any message in
+            your server, like "hi". It shows up in Koloft with the sender's name. Click This is me
+            (or Not me).
           </li>
           <li>
-            Make a channel and bind Assist. Bind means tie the channel to Assist. Click Bind a
-            channel…, pick Global or a folder, Claude or Codex, then the channel.
+            Bind Assist to a channel. Bind means tie the channel to Assist. Click Bind a channel…,
+            pick Global or a folder, keep New channel picked and click Bind. Koloft makes the
+            channel in a category named after your bot: #global for the global Assist, the folder's
+            name for a folder (with the machine's name for a remote one), and the folder's full path
+            in the channel's topic. You can pick a channel you already have instead.
           </li>
         </ol>
         <p>

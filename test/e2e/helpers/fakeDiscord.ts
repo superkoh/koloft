@@ -7,6 +7,7 @@ import { addKeychainEntry, type E2EEnv } from './env'
 export const FAKE_BOT = 'koloft-bot'
 export const FAKE_APPLICATION_ID = '700'
 export const FAKE_GUILD = { id: '111', name: 'koloft' }
+export const FAKE_GUILD_OWNER = '555'
 export const FAKE_CHANNELS = [
   { id: '222', name: 'koloft-all', type: 0 },
   { id: '333', name: 'koloft', type: 0 },
@@ -14,6 +15,18 @@ export const FAKE_CHANNELS = [
 ]
 const HEARTBEAT_MS = 41_250
 const FIRST_LIVE_MESSAGE_ID = 5000
+export const MESSAGE_CONTENT_LIMITED = 1 << 19
+const INTENT_NOT_ALLOWED = 4014
+const TEAM_APP = { owner: { id: '800', username: 'team-owner' }, team: { id: '801' } }
+const RETRY_AFTER_S = 0.05
+
+export interface FakeChannel {
+  id: string
+  name: string
+  type: number
+  parent_id?: string
+  topic?: string
+}
 
 export interface FakeAuthor {
   id: string
@@ -115,6 +128,13 @@ export function callbackText(c: FakeCallback): string {
 export interface FakeDiscord {
   identifies: number
   closeOnIdentify: number | null
+  appOwner: FakeAuthor | null
+  appFlags: number
+  refuseAppEdit: boolean
+  made: FakeChannel[]
+  refuseChannels: boolean
+  rateLimitChannelPosts: number
+  rateLimited: number
   closeCodes: number[]
   posted: FakePost[]
   refusePostsIn: string[]
@@ -204,6 +224,13 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
   const fake: FakeDiscord = {
     identifies: 0,
     closeOnIdentify: null,
+    appOwner: null,
+    appFlags: MESSAGE_CONTENT_LIMITED,
+    refuseAppEdit: false,
+    made: [],
+    refuseChannels: false,
+    rateLimitChannelPosts: 0,
+    rateLimited: 0,
     closeCodes: [],
     posted: [],
     refusePostsIn: [],
@@ -306,14 +333,43 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
 
   const routes: Record<string, () => unknown> = {
     '/users/@me': () => ({ id: '900', username: FAKE_BOT, bot: true }),
-    '/oauth2/applications/@me': () => ({ id: FAKE_APPLICATION_ID, bot_public: false }),
-    '/users/@me/guilds': () => [FAKE_GUILD],
-    [`/guilds/${FAKE_GUILD.id}/channels`]: () => FAKE_CHANNELS
+    '/oauth2/applications/@me': () => ({
+      id: FAKE_APPLICATION_ID,
+      bot_public: false,
+      flags: fake.appFlags,
+      ...(fake.appOwner ? { owner: fake.appOwner, team: null } : TEAM_APP)
+    }),
+    '/users/@me/guilds': () => [FAKE_GUILD]
   }
 
   const answer = async (req: http.IncomingMessage): Promise<{ status: number; body?: unknown }> => {
     const url = new URL(req.url ?? '/', 'http://fake')
     const route = url.pathname.replace(/^\/api\/v10/, '')
+    if (route === '/applications/@me' && req.method === 'PATCH') {
+      const { flags } = JSON.parse((await bodyOf(req)).toString()) as { flags: number }
+      if (fake.refuseAppEdit)
+        return { status: 403, body: { message: 'Missing Access', code: 50001 } }
+      fake.appFlags = flags
+      return { status: 200, body: { id: FAKE_APPLICATION_ID, flags } }
+    }
+    if (route === `/guilds/${FAKE_GUILD.id}/channels` && req.method === 'GET')
+      return { status: 200, body: [...FAKE_CHANNELS, ...fake.made] }
+    if (route === `/guilds/${FAKE_GUILD.id}/channels` && req.method === 'POST') {
+      const asked = JSON.parse((await bodyOf(req)).toString()) as Omit<FakeChannel, 'id'>
+      if (fake.rateLimitChannelPosts > 0) {
+        fake.rateLimitChannelPosts--
+        fake.rateLimited++
+        return {
+          status: 429,
+          body: { message: 'You are being rate limited.', retry_after: RETRY_AFTER_S }
+        }
+      }
+      if (fake.refuseChannels)
+        return { status: 403, body: { message: 'Missing Permissions', code: 50013 } }
+      const made = { ...asked, id: String(++nextId) }
+      fake.made.push(made)
+      return { status: 201, body: made }
+    }
     const attachment = ATTACHMENT_ROUTE.exec(route)
     if (attachment) return { status: 200, body: attachments.get(attachment[1]) ?? '' }
     if (COMMANDS_ROUTE.test(route) && req.method === 'GET')
@@ -436,6 +492,7 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
       if (p.op !== 2) return
       fake.identifies++
       if (fake.closeOnIdentify) return ws.close(fake.closeOnIdentify)
+      if (!(fake.appFlags & MESSAGE_CONTENT_LIMITED)) return ws.close(INTENT_NOT_ALLOWED)
       ws.send(
         JSON.stringify({
           op: 0,
@@ -449,7 +506,14 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
           }
         })
       )
-      ws.send(JSON.stringify({ op: 0, t: 'GUILD_CREATE', s: ++seq, d: FAKE_GUILD }))
+      ws.send(
+        JSON.stringify({
+          op: 0,
+          t: 'GUILD_CREATE',
+          s: ++seq,
+          d: { ...FAKE_GUILD, owner_id: FAKE_GUILD_OWNER }
+        })
+      )
     })
     ws.send(JSON.stringify({ op: 10, d: { heartbeat_interval: HEARTBEAT_MS }, s: null, t: null }))
   })

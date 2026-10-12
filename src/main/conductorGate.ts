@@ -18,7 +18,8 @@ const TOOLS_THE_ALLOW_FILE_NAMES = `function toolsTheAllowFileNames() {
   }
 }`
 
-const DENY_AND_SAY = (denied: string): string => `let raw = ''
+const DENY_AND_SAY = (denied: string): string => `const GRANTED = 'granted'
+let raw = ''
 process.stdin.setEncoding('utf8')
 process.stdin.on('data', (chunk) => (raw += chunk))
 process.stdin.on('end', () => {
@@ -26,14 +27,19 @@ process.stdin.on('end', () => {
   try {
     event = JSON.parse(raw)
   } catch {}
-  if (toolsTheAllowFileNames().has(event.tool_name) || allowed(event)) return
+  const named = toolsTheAllowFileNames()
+  const verdict = named.has(event.tool_name) || allowed(event, named)
+  if (verdict === true) return
   process.stdout.write(
     JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        permissionDecision: 'deny',
-        permissionDecisionReason: ${JSON.stringify(denied)}
-      }
+      hookSpecificOutput:
+        verdict === GRANTED
+          ? { hookEventName: 'PreToolUse', permissionDecision: 'allow' }
+          : {
+              hookEventName: 'PreToolUse',
+              permissionDecision: 'deny',
+              permissionDecisionReason: ${JSON.stringify(denied)}
+            }
     })
   )
 })
@@ -52,9 +58,9 @@ function inOwnMemory(event) {
   return path.resolve(file).startsWith(memory + path.sep)
 }
 
-function oneKoloftCall(command) {
+function onePlainCall(command, program) {
   const cmd = String(command).trim()
-  if (!/^koloft(\\s|$)/.test(cmd)) return false
+  if (cmd !== program && !cmd.startsWith(program + ' ')) return false
   let quote = ''
   for (let i = 0; i < cmd.length; i++) {
     const c = cmd[i]
@@ -71,10 +77,20 @@ function oneKoloftCall(command) {
   return quote === ''
 }
 
-function allowed(event) {
+function allowedCommands(named) {
+  return [...named].flatMap((tool) => {
+    const bash = /^Bash\\((.+)\\)$/.exec(tool)
+    return bash ? [bash[1]] : []
+  })
+}
+
+function allowed(event, named) {
   if (READ_OR_ASK_TOOLS.has(event.tool_name)) return true
   if (WRITE_TOOLS.has(event.tool_name)) return inOwnMemory(event)
-  return event.tool_name === 'Bash' && oneKoloftCall(event.tool_input && event.tool_input.command)
+  if (event.tool_name !== 'Bash') return false
+  const command = event.tool_input && event.tool_input.command
+  if (allowedCommands(named).some((program) => onePlainCall(command, program))) return GRANTED
+  return onePlainCall(command, 'koloft')
 }
 
 ${TOOLS_THE_ALLOW_FILE_NAMES}
@@ -131,8 +147,10 @@ export function codexGateShell(gateScript: string): string {
 export const CODEX_GATE_NOT_TRUSTED =
   "Codex would not run Koloft's safety check for Assist, so Koloft did not start Assist on Codex."
 
-const PLAYWRIGHT_MCP_TOOL = 'mcp__playwright__'
+export const PLAYWRIGHT_CLI_RULE = 'Bash(playwright-cli '
+
+const BROWSER_TOOLS = ['mcp__playwright__', PLAYWRIGHT_CLI_RULE]
 
 export function allowsTheBrowser(allow: readonly string[]): boolean {
-  return allow.some((tool) => tool.startsWith(PLAYWRIGHT_MCP_TOOL))
+  return allow.some((tool) => BROWSER_TOOLS.some((prefix) => tool.startsWith(prefix)))
 }

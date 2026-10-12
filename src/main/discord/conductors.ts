@@ -8,10 +8,13 @@ import type {
   ConductorBinding,
   ConductorOpenResult,
   ConductorSaveInput,
+  NewChannelInput,
   ConductorSaveResult,
+  DiscordChannel,
   DiscordSettings,
   SessionThread
 } from '@shared/types'
+import { CannotMakeChannels, type NewChannel } from './link'
 import { BACKEND_LABEL, identityOf } from '@shared/sessionBackend'
 import {
   assistTaskName,
@@ -34,7 +37,10 @@ export interface ConductorLaunch {
   role: string
   allow?: string[]
   title: string
+  firstPrompt?: string
 }
+
+export const TASK_KICKOFF = 'Do the task in your instructions now.'
 
 export type AssistBackendPick = { backend: BackendId; because?: string }
 export type AssistBackendChoice = AssistBackendPick | { error: string }
@@ -422,18 +428,44 @@ export class Conductors {
     return scope === GLOBAL_SCOPE || this.d.isPinned(scope)
   }
 
+  private saveProblem(input: NewChannelInput, channelId?: string): string | undefined {
+    if (input.id && !this.binding(input.id)) return NOT_BOUND
+    const scope = this.scopeToSave(input)
+    if (!this.canHaveAssist(scope)) return NOT_AN_ASSIST_SCOPE
+    return bindingProblem(this.discord.bindings, { id: input.id, scope, channelId })
+  }
+
+  private scopeToSave(input: NewChannelInput): string {
+    return (input.id && this.binding(input.id)?.scope) || input.scope
+  }
+
+  async saveWithNewChannel(
+    input: NewChannelInput,
+    backend: BackendId,
+    make: (scope: string, category: DiscordChannel | undefined) => Promise<NewChannel>
+  ): Promise<ConductorSaveResult> {
+    const problem = this.saveProblem(input)
+    if (problem) return { ok: false, error: problem }
+    let made: NewChannel
+    try {
+      made = await make(this.scopeToSave(input), this.discord.category)
+    } catch (error) {
+      return {
+        ok: false,
+        error: errorText(error),
+        ...(error instanceof CannotMakeChannels ? { cannotMakeChannels: true } : {})
+      }
+    }
+    this.discord = { ...this.discord, category: made.category }
+    return this.save({ ...input, channel: made.channel }, backend)
+  }
+
   save(input: ConductorSaveInput, backend: BackendId): ConductorSaveResult {
     const { channel } = input
-    const current = input.id ? this.binding(input.id) : undefined
-    if (input.id && !current) return { ok: false, error: NOT_BOUND }
-    const scope = current?.scope ?? input.scope
-    if (!this.canHaveAssist(scope)) return { ok: false, error: NOT_AN_ASSIST_SCOPE }
-    const problem = bindingProblem(this.discord.bindings, {
-      id: input.id,
-      scope,
-      channelId: channel.channelId
-    })
+    const problem = this.saveProblem(input, channel.channelId)
     if (problem) return { ok: false, error: problem }
+    const current = input.id ? this.binding(input.id) : undefined
+    const scope = this.scopeToSave(input)
     if (current) this.update(current.id, (b) => ({ ...b, backend, channel }))
     else
       this.write({
@@ -465,11 +497,16 @@ export class Conductors {
     return this.open(scope)
   }
 
+  discordSettings(): DiscordSettings {
+    return this.discord
+  }
+
   owner(): string | undefined {
     return this.discord.userId
   }
 
   setOwner(owner: { id: string; name: string } | null): void {
+    if (owner && owner.id === this.discord.userId && owner.name === this.discord.userName) return
     const { userId: droppedId, userName: droppedName, ...rest } = this.discord
     void droppedId
     void droppedName
@@ -604,7 +641,8 @@ export class Conductors {
       ...this.launchFor(scope, choice.backend),
       role,
       allow: task.allow ?? [],
-      title
+      title,
+      firstPrompt: TASK_KICKOFF
     }
     const placeholder: RunningTask = { ...task, scope, role, tabId: '' }
     this.tasks.push(placeholder)

@@ -1403,6 +1403,45 @@ Gateway (the live connection that pushes events):
     role the invite gives.
   - That an edit or a typing call rings the phone or marks the channel unread was not
     checked (Discord's docs say neither does).
+- **Who owns the bot, Message Content, and making channels** — measured 2026-10-11 on
+  API v10 with a test bot's own token, REST only:
+  - `GET /oauth2/applications/@me` carries `owner: {id, username}`, `team` (`null` for an
+    app one person owns, set when a team owns it) and `flags`.
+  - `PATCH /applications/@me` with `{flags: <flags> | 1 << 19}` (Message Content,
+    limited — the switch a bot in under 100 servers has) answered 200 with the bot's own
+    token. With Message Content off, identify was closed with 4014 "Disallowed
+    intent(s)"; an identify sent about 0.4 s after the PATCH got `READY`, so no wait or
+    retry is needed between them.
+  - `POST /guilds/{id}/channels` made a category (`type: 4`) and a text channel under it
+    (`type: 0`, `parent_id`, `topic`). A category's name is kept as sent (`"Koloft ·
+    MacBook"`: case, spaces and the middle dot kept), and so is a channel's topic. The
+    bot already had Manage Channels there, so the 403 a bot without it gets is from
+    Discord's docs, as is whether a second invite with more permissions widens an
+    existing bot's role (not probed). The invite permissions Koloft used before
+    (`326417615936`) lack only Manage Channels (`1 << 4`).
+  - Discord rewrites a text channel's name: `"My Project.v2 项目"` came back as
+    `my-projectv2-项目` — lowercased, a space as a hyphen, the dot dropped, Chinese kept.
+    Two channels may share one name; Koloft's `-2` is its own rule.
+  - A thread on a message in a DM answered 400 Unknown Guild.
+  - `PATCH /applications/@me` with `{bot_public: false}` answered 200 but left the bot
+    public, even after `install_params` and `custom_install_url` were cleared: the bot's
+    token cannot make the bot private. `POST /guilds` answered 400 (20001): a bot cannot
+    make a server.
+- **The Developer Portal in the Workbench browser** — measured 2026-10-10 and 10-11 with a
+  test account: with any CDP client attached to the page, Create on New Application
+  answered 403 (50001) in five rounds; with none attached and the page reloaded, it
+  answered 201. In the 2026-10-11 walk with a real Claude Code session, the session
+  filled the name and ticked the box while attached, then detached with no reload, and
+  the owner's Create answered 201. After Reset Token, the Bot page (`/developers/applications/<id>/bot`)
+  shows the new token as plain text. The invite's Authorize worked with a client
+  attached; its "I am human" check was passed by hand with the client detached. The
+  invite page first offered to continue in the Discord desktop app; continuing in the
+  browser led to the server picker. Signing in with a client attached was not probed.
+  A snapshot taken by a client re-attached after Reset Token included the token text,
+  so Koloft reads it only while no client is attached and reloads the page afterwards.
+- **`GUILD_CREATE` carries the server's `owner_id`** — seen in the 2026-10-10 Gateway
+  probe's logs with the same test bot. Koloft makes new channels only in a server whose
+  `owner_id` is the app owner (or the paired owner of a team app).
 - Also from Discord's docs, not measured here: a message's `content` holds at most 2000
   characters; one message carries at most 10 files and one request at most 25 MiB; a
   bot's file may be at most 20 MiB (changelog 2025-09-03); adding or removing a reaction
