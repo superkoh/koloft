@@ -368,7 +368,7 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
   })
 
   // PLATFORM§1
-  test('T-OB-16: on a Mac without Apple’s command line tools step 2 says git will not work, and Install them opens Apple’s installer', async ({
+  test('T-OB-16: on a Mac without Apple’s command line tools step 2 asks to install nothing, since the git Koloft ships runs there', async ({
     env
   }) => {
     test.setTimeout(120_000)
@@ -380,10 +380,9 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
       await advanceTo(page, 2)
-      const warn = welcome(page).locator('.ob-warn')
-      await expect(warn).toContainText('Apple’s command line tools', { timeout: 20_000 })
-      await warn.getByRole('button', { name: 'Install them' }).click()
-      await expect.poll(() => readExternalOpens(env)).toContain('xcode-select --install')
+      expect(await page.evaluate(() => window.api.sessions.commandLineToolsMissing())).toBe(false)
+      await expect(welcome(page).locator('.ob-warn')).toHaveCount(0)
+      expect(readExternalOpens(env)).not.toContain('xcode-select --install')
     } finally {
       await quitAndClose(app)
     }

@@ -17,7 +17,6 @@ import {
   wsRows
 } from './helpers/p1'
 import { setupChangeFixture, seedBrowseTree } from './helpers/filesFixture'
-import { readExternalOpens } from './helpers/browser'
 import {
   WORKBENCH,
   claudePrompts,
@@ -664,7 +663,7 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
   })
 
   // PLATFORM§1
-  test('WB-C13b: on a Mac without Apple’s command line tools a local non-git Changes says git needs them, and Install them opens Apple’s installer', async ({
+  test('WB-C13b: on a Mac without Apple’s command line tools the git Koloft ships runs, so a local non-git Changes says so and asks to install nothing', async ({
     env
   }) => {
     env.launchEnv.KOLOFT_TEST_CLT = 'missing'
@@ -674,13 +673,8 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
       await page.waitForLoadState('domcontentloaded')
       await waitBooted(page)
       await openChanges(page)
-      const banner = page.locator(CV.banner)
-      await expect(banner).toContainText('it needs Apple’s command line tools', {
-        timeout: 30_000
-      })
-      await expect(page.locator(CV.empty)).toHaveCount(0)
-      await banner.getByRole('button', { name: 'Install them' }).click()
-      await expect.poll(() => readExternalOpens(env)).toContain('xcode-select --install')
+      await expect(page.locator(CV.empty)).toHaveText('Not a git repository.', { timeout: 30_000 })
+      await expect(page.locator(CV.banner)).toHaveCount(0)
     } finally {
       await app.close().catch(() => {})
     }
