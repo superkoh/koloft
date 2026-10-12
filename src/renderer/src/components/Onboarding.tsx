@@ -7,7 +7,6 @@ import { useStore } from '../store'
 import { relTime } from '../sessionRows'
 import { useSettingsUpdate } from './settings/useSettingsUpdate'
 import { useAssistSetup } from '../useAssistSetup'
-import { useCommandLineToolsMissing } from '../useCommandLineTools'
 import { AssistSetup, InstallHint } from './AssistSetup'
 
 const PIC_ROWS: { color: string; title: string; state: string; cold?: boolean }[] = [
@@ -218,18 +217,6 @@ export function Onboarding({
     if (step === 4) runProbe()
   }, [step, runProbe])
 
-  const cltMissing = useCommandLineToolsMissing(step === 2)
-  const cltWarn = cltMissing && (
-    <div className="quiet ob-warn">
-      This Mac does not have Apple’s command line tools yet, so git does not work here: Koloft
-      cannot show the files a session changed or start a worktree session.{' '}
-      <button className="ob-link" onClick={() => window.api.sessions.installCommandLineTools()}>
-        Install them
-      </button>{' '}
-      (Apple’s own installer opens).
-    </div>
-  )
-
   const finish = useCallback((): void => {
     update({ onboardingSeen: true })
     setStep(1)
@@ -330,7 +317,6 @@ export function Onboarding({
               <span className="quiet key">⇧⌘O</span>. Any folder works; a git checkout gets extra
               help.
             </div>
-            {cltWarn}
           </>
         )}
 
@@ -341,7 +327,6 @@ export function Onboarding({
               Any folder works; a git checkout gets extra help. You can add more later with{' '}
               <span className="quiet key">⇧⌘O</span>.
             </div>
-            {cltWarn}
           </>
         )}
 

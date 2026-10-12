@@ -116,6 +116,7 @@ import {
   statusLineSetting
 } from './statusline'
 import { setupPlaywrightCli } from './playwrightCli'
+import { bundledGhDir, linkOrUnlink, setupBundledGit } from './bundledTools'
 import {
   setFindAvailable,
   setKeepAwakeChecked,
@@ -386,8 +387,7 @@ import { closingTree, removeTree, whatIsLeft } from './sessionClose'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
 import { agentPluginFiles, writeAgentPlugin } from './agentPlugin'
-import { installLine, pathWithInstallDir } from './toolInstall'
-import { commandLineToolsMissing, installCommandLineTools } from './commandLineTools'
+import { installLine, pathWithDirFirst, pathWithDirLast, pathWithInstallDir } from './toolInstall'
 
 // PLATFORM§4
 if (!app.isPackaged) app.setName('koloft-dev')
@@ -855,7 +855,10 @@ process.env.PATH = pathWithInstallDir(process.env.PATH, os.homedir())
 // PLATFORM§1
 function loginEnvReady(): Promise<void> {
   return (loginEnv ??= readLoginShell({ env: process.env })
-    .then(({ env }) => void Object.assign(process.env, sshEnvFromLogin(process.env, env)))
+    .then(({ env }) => {
+      Object.assign(process.env, sshEnvFromLogin(process.env, env))
+      if (fallbackBin) process.env.PATH = pathWithDirLast(process.env.PATH, fallbackBin)
+    })
     .catch(() => undefined))
 }
 
@@ -884,6 +887,8 @@ function machinePackage(): MachinePackage {
 }
 
 let playwrightCliBin: string | undefined
+let fallbackBin: string | undefined
+let gitFirstBin: string | undefined
 let cronRunner: CronRunner | null = null
 let conductors: Conductors | null = null
 let discordLink: DiscordLink | null = null
@@ -1802,6 +1807,12 @@ app.whenReady().then(() => {
   const statusline = setupStatusline()
   const playwrightBin = setupPlaywrightCli()
   playwrightCliBin = playwrightBin
+  fallbackBin = bundledGhDir()
+  if (fallbackBin) process.env.PATH = pathWithDirLast(process.env.PATH, fallbackBin)
+  gitFirstBin = setupBundledGit(path.dirname(playwrightBin), process.env.PATH)
+  if (gitFirstBin) process.env.PATH = pathWithDirFirst(process.env.PATH, gitFirstBin)
+  // PLATFORM§2
+  linkOrUnlink(path.join(shimDir, 'git'), gitFirstBin && path.join(gitFirstBin, 'git'))
   ptyMgr.makeHookSettings = (tabId, allowKoloft, conductor) =>
     writeTabHookSettings(
       hookPaths,
@@ -1985,6 +1996,8 @@ app.whenReady().then(() => {
       browserEndpoint: relayEndpoint,
       openShimRoot: path.join(userData, 'codex-open'),
       playwrightBin,
+      fallbackBin,
+      gitBin: gitFirstBin,
       agent: {
         enabled: () => agentToolsFor('codex', 'local'),
         answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw)
@@ -3897,8 +3910,6 @@ function registerIpc(): void {
   ipcMain.handle('sessions:installTool', (_e, backend: unknown) =>
     backend === 'claude' || backend === 'codex' ? installTool(backend) : null
   )
-  ipcMain.handle('system:commandLineToolsMissing', () => commandLineToolsMissing())
-  ipcMain.on('system:installCommandLineTools', () => installCommandLineTools())
   ipcMain.handle('attention:list', () => attention.list())
   ipcMain.handle('tabs:list', (): TabInventoryReply => {
     rendererReady = true

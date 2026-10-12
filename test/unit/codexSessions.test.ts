@@ -878,6 +878,29 @@ describe('CodexSessions', () => {
     expect(off.sessionEnv).toEqual({ PLAYWRIGHT_CLI_SESSION: 'koloft-pty-reserved' })
   })
 
+  it("a tab's shell finds the user's own gh before the one Koloft ships, and Koloft's git first only when the Mac has none", async () => {
+    mocks.runtime.mockResolvedValue({
+      binary: '/fixture/codex',
+      env: { PATH: '/usr/bin:/opt/homebrew/bin' },
+      version: MIN_CODEX_VERSION,
+      verified: true
+    })
+    vi.mocked(sessions.availability).mockRestore()
+    deps.fallbackBin = '/koloft/fallback-bin'
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    const withGit = vi.mocked(deps.pty.create).mock.calls[0][0].processEnv!
+    expect(withGit.PATH).toBe('/usr/bin:/opt/homebrew/bin:/koloft/fallback-bin')
+    expect(fs.existsSync(path.join(path.dirname(withGit.ZDOTDIR!), 'git'))).toBe(false)
+    expect(fs.existsSync(path.join(path.dirname(withGit.ZDOTDIR!), 'gh'))).toBe(false)
+
+    deps.gitBin = path.join(directory, 'git-bin')
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    const noGit = vi.mocked(deps.pty.create).mock.calls[1][0].processEnv!
+    expect(fs.readlinkSync(path.join(path.dirname(noGit.ZDOTDIR!), 'git'))).toBe(
+      path.join(deps.gitBin, 'git')
+    )
+  })
+
   // ADR-0029 CODEX§11 CODEX§12
   it('a conductor starts with approvals off and the workspace-write sandbox as TUI flags, so it can write only its own folder and /tmp, and on a resume, which refuses those flags, its own app-server gets the same choice; it claims no bypass', async () => {
     const first = await sessions.launch({ kind: 'codex', cwd: repo, conductor: true })

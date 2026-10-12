@@ -127,8 +127,6 @@ const api: KoloftApi = {
       ipcRenderer.on('sessions:toolsChanged', handler)
       return () => ipcRenderer.removeListener('sessions:toolsChanged', handler)
     },
-    commandLineToolsMissing: () => ipcRenderer.invoke('system:commandLineToolsMissing'),
-    installCommandLineTools: () => ipcRenderer.send('system:installCommandLineTools'),
     onUpdate: (cb) => {
       const handler = (_e: unknown, s: SessionInfo[]): void => cb(s)
       ipcRenderer.on('sessions:update', handler)

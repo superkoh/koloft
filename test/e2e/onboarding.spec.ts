@@ -367,28 +367,6 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
     }
   })
 
-  // PLATFORM§1
-  test('T-OB-16: on a Mac without Apple’s command line tools step 2 says git will not work, and Install them opens Apple’s installer', async ({
-    env
-  }) => {
-    test.setTimeout(120_000)
-    firstRun(env)
-    env.launchEnv.KOLOFT_TEST_CLT = 'missing'
-
-    const app = await launchApp(env)
-    try {
-      const page = await app.firstWindow()
-      await page.waitForLoadState('domcontentloaded')
-      await advanceTo(page, 2)
-      const warn = welcome(page).locator('.ob-warn')
-      await expect(warn).toContainText('Apple’s command line tools', { timeout: 20_000 })
-      await warn.getByRole('button', { name: 'Install them' }).click()
-      await expect.poll(() => readExternalOpens(env)).toContain('xcode-select --install')
-    } finally {
-      await quitAndClose(app)
-    }
-  })
-
   // ADR-0030
   test('T-OB-07: with no Koloft account the welcome stops at step 3 — no Skip, Continue shut — and goes on once an account is added and Assist picked', async ({
     env

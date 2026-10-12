@@ -1510,3 +1510,46 @@ Gateway (the live connection that pushes events):
   the new text, and the file the link pointed to kept its old text. A write that must
   reach the shared file renames onto `fs.realpathSync(link)` instead.
 - Measured 2026-10-11 on macOS 27.0.1 with Node 24.13.0, in a scratch folder.
+
+## §44 gh (GitHub CLI) shipped inside an app
+
+- **Install on a Mac.** gh's own docs list only Homebrew and the release page's zip /
+  `.pkg` for macOS (the `.pkg` "unsigned"); there is no official one-line installer
+  (`webi.sh` is community). The `macOS_arm64.zip` of 2.102.0 is 14.4 MB; its `bin/gh` is
+  39.8 MB, signed "Developer ID Application: GitHub" with the hardened runtime; the repo's
+  licence is MIT. The release's `gh_<v>_checksums.txt` lists a sha256 per asset.
+- **The login lives in the macOS keychain, not in `GH_CONFIG_DIR`.** Under the real
+  `HOME` with an empty `GH_CONFIG_DIR`, `gh auth status` said "not logged into any GitHub
+  hosts" and `gh api user` exited 4, yet `gh auth token` printed the token a Homebrew gh
+  had stored — read by a second gh binary at another path with no keychain prompt. So a gh
+  shipped in an app shares the user's gh login. (§32 has the scratch-`HOME` case.)
+- Measured 2026-10-11 with gh 2.102.0 (macOS arm64 and Linux arm64 builds).
+
+## §45 git shipped inside an app (dugite-native)
+
+- **What GitHub Desktop ships.** dugite-native `v2.53.0-4`'s `macOS-arm64.tar.gz` is
+  62.3 MB (sha256 from the release's asset `digest`) and unpacks to 148 MB: git 2.53.0
+  built from upstream tag v2.53.0, Git LFS 3.7.1 and Git Credential Manager 2.9.0 (115 MB
+  of the total). It links Apple's `/usr/lib/libcurl.4.dylib`, so https uses the system
+  trust store and ships no CA file; it is built with `NO_PERL`. The 145 commands in
+  `libexec/git-core` are symlinks to one `git`. The tarball carries no git `COPYING`;
+  git is GPL-2.0.
+- **Built with `prefix=/`.** Run from any folder with nothing set, `init`, `commit` and a
+  local `clone` work with a "templates not found" warning, but https fails with
+  `git: 'remote-https' is not a git command` and `submodule` is not found. With
+  `GIT_EXEC_PATH=<root>/libexec/git-core` an https clone, `ls-remote` and `submodule`
+  all worked; `init.templateDir` (or `GIT_TEMPLATE_DIR`) silences the warning. Its system
+  config is `/etc/gitconfig`, never Apple's
+  `/Library/Developer/CommandLineTools/usr/share/git-core/gitconfig`, so it sets no
+  credential helper and no `init.defaultBranch`; `GIT_CONFIG_SYSTEM` points it at
+  another file. There is no `git-credential-osxkeychain` inside.
+- **Kept for Koloft**: `libexec/git-core` without LFS, scalar, the daemon/server
+  programs and the credential manager, plus `share/git-core/templates`: 8.5 MB on disk,
+  about 4 MB gzipped. The full https flow passed through `libexec/git-core/git` with
+  `bin/` removed.
+- **Signing.** `git` is ad-hoc linker-signed. `@electron/osx-sign` signs every Mach-O
+  under `Contents/` (Resources included) and follows symlinks; a copy re-signed ad hoc
+  with `--options runtime` still cloned over https. electron-builder's `extraResources`
+  copy, the mac zip (`zip -y`) and the in-app updater (`cp -R`) keep the symlinks.
+- Measured 2026-10-11 on macOS 27.0 with a temp `HOME` and `GIT_CONFIG_NOSYSTEM=1`, https
+  against github.com's public `octocat/Hello-World`.

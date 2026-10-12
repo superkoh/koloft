@@ -52,6 +52,7 @@ import { watchJsonDrops } from './jsonDrops'
 import { openDropTarget, type OpenDrop } from './openDrop'
 import { removeCodexOpenShim, writeCodexOpenShim } from './openShimScript'
 import { AGENT_SHIM_WAITS_MS, writeCodexAgentShim } from './agentShim'
+import { pathWithDirFirst, pathWithDirLast } from './toolInstall'
 import { koloftPrompt } from '@shared/agentGuide'
 import { playwrightCliSession } from '@shared/browserTabEnv'
 import { portOffset } from '@shared/worktreeName'
@@ -245,6 +246,8 @@ export interface CodexSessionDeps {
   browserEndpoint(tabId: string): string
   openShimRoot: string
   playwrightBin: string
+  fallbackBin?: string
+  gitBin?: string
   agent: {
     enabled(): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
@@ -359,7 +362,7 @@ export class CodexSessions {
     try {
       const runtime = await this.resolveUpdatingOnce()
       this.binary = runtime.binary
-      this.processEnv = runtime.env
+      this.processEnv = this.withShippedTools(runtime.env)
       reply = {
         id: 'codex',
         available: true,
@@ -424,6 +427,14 @@ export class CodexSessions {
   // CODEX§15
   private envFor(home: string | undefined): NodeJS.ProcessEnv | undefined {
     return home ? { ...this.processEnv, CODEX_HOME: home } : this.processEnv
+  }
+
+  private withShippedTools(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+    const { fallbackBin, gitBin } = this.deps
+    let pathVar = env.PATH
+    if (fallbackBin) pathVar = pathWithDirLast(pathVar, fallbackBin)
+    if (gitBin) pathVar = pathWithDirFirst(pathVar, gitBin)
+    return pathVar === env.PATH ? env : { ...env, PATH: pathVar }
   }
 
   // ADR-0029 CODEX§27
@@ -1023,6 +1034,9 @@ export class CodexSessions {
       path.join(this.deps.playwrightBin, 'playwright-cli'),
       path.join(shim.shimDir, 'playwright-cli')
     )
+    // PLATFORM§2
+    if (this.deps.gitBin)
+      fs.symlinkSync(path.join(this.deps.gitBin, 'git'), path.join(shim.shimDir, 'git'))
     if (agent) writeCodexAgentShim(shim.shimDir, shim.requestDir)
     const handled = new Set<string>()
     const drops = watchJsonDrops(shim.requestDir, (name) => {
