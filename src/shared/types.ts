@@ -469,6 +469,11 @@ export interface AttentionEvent extends AttentionSubject {
   resurrected?: boolean
 }
 
+export interface OsOutletsSeenByTests {
+  notifications: { title: string; body: string }[]
+  dockBadge: string
+}
+
 export const ATTENTION_REASON: Record<AttentionKind, string> = {
   'turn-done': 'turn done — your move',
   approval: 'waiting for your approval',

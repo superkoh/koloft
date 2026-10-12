@@ -3,7 +3,7 @@ import { _electron as electron } from 'playwright'
 import fs from 'fs'
 import path from 'path'
 import { setupE2EEnv, type E2EEnv } from './env'
-import type { AttentionEvent } from '../../../src/shared/types'
+import type { AttentionEvent, OsOutletsSeenByTests } from '../../../src/shared/types'
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..')
 const MAIN_ENTRY = path.join(REPO_ROOT, 'out', 'main', 'index.js')
@@ -75,11 +75,6 @@ export async function expectNoToastAtAnyMomentOfAWindow(page: Page): Promise<voi
 
 export async function pendingAttention(page: Page): Promise<AttentionEvent[]> {
   return page.evaluate(() => window.api.attention.list())
-}
-
-export interface OsOutletsSeenByTests {
-  notifications: { title: string; body: string }[]
-  dockBadge: string
 }
 
 export async function osOutlets(app: ElectronApplication): Promise<OsOutletsSeenByTests> {

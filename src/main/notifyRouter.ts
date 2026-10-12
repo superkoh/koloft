@@ -1,18 +1,11 @@
 import type { AttentionEvent, AttentionKind, Settings } from '@shared/types'
 
-export interface RouteContext {
-  windowFocused: boolean
-  backgroundTest: boolean
-}
-
-export type OsOutlet = 'none' | 'banner' | 'recordForTest'
-
 export interface RouteDecision {
-  os: OsOutlet
+  os: boolean
   sound: boolean
 }
 
-const NONE: RouteDecision = { os: 'none', sound: false }
+const NONE: RouteDecision = { os: false, sound: false }
 
 function categoryEnabled(kind: AttentionKind, s: Settings): boolean {
   switch (kind) {
@@ -30,9 +23,12 @@ export function dockBadgeText(pendingCount: number, dockBadgeEnabled: boolean): 
   return String(pendingCount)
 }
 
-export function route(event: AttentionEvent, ctx: RouteContext, settings: Settings): RouteDecision {
+export function route(
+  event: AttentionEvent,
+  windowFocused: boolean,
+  settings: Settings
+): RouteDecision {
   if (!categoryEnabled(event.kind, settings)) return NONE
-  const sound = !ctx.backgroundTest && event.kind === 'approval' && settings.notifyApprovalSound
-  if (ctx.windowFocused) return { os: 'none', sound }
-  return { os: ctx.backgroundTest ? 'recordForTest' : 'banner', sound }
+  const sound = event.kind === 'approval' && settings.notifyApprovalSound
+  return { os: !windowFocused, sound }
 }
