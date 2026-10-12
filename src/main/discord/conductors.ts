@@ -2,6 +2,8 @@ import fs from 'fs'
 import path from 'path'
 import { createHash, randomUUID } from 'crypto'
 import type {
+  AssistRecord,
+  AssistTaskRow,
   BackendId,
   ConductorBinding,
   ConductorOpenResult,
@@ -12,31 +14,53 @@ import type {
 } from '@shared/types'
 import { BACKEND_LABEL, identityOf } from '@shared/sessionBackend'
 import {
+  assistTaskName,
   bindingProblem,
   GLOBAL_SCOPE,
-  keepPinnedBindings,
+  keepPinnedScopes,
   newerSnowflake,
   conductorName,
-  asPeerName
+  peerNamesOf
 } from '@shared/conductors'
-import { conductorRole } from '@shared/agentGuide'
+import { assistTaskRole, conductorRole } from '@shared/agentGuide'
 import { isRemoteKey } from '@shared/remoteKey'
 import { errorText } from '../agentRequests'
+import { realpathSafe } from '../projectInfo'
+import { CODEX_GATE_NOT_TRUSTED } from '../conductorGate'
 
 export interface ConductorLaunch {
   backend: BackendId
   cwd: string
   role: string
+  allow?: string[]
   title: string
+}
+
+export type AssistBackendPick = { backend: BackendId; because?: string }
+export type AssistBackendChoice = AssistBackendPick | { error: string }
+
+export interface AssistTask {
+  name: string
+  brief: string
+  allow?: string[]
+}
+
+export interface AssistIdentity {
+  scope: string
+  role: string
+  allow: string[]
+  task?: string
 }
 
 export interface ConductorDeps {
   userData: string
   load(): DiscordSettings
+  loadRecords(): AssistRecord[]
   save(discord: DiscordSettings): void
   saveQuietly(discord: DiscordSettings): void
+  saveRecords(records: AssistRecord[]): void
   isPinned(scope: string): boolean
-  backendEnabled(backend: BackendId): boolean
+  backend(avoid?: BackendId): Promise<AssistBackendChoice>
   tabAlive(tabId: string): boolean
   liveTabFor(backend: BackendId, key: string): string | undefined
   runningElsewhere(backend: BackendId, key: string): Promise<boolean>
@@ -44,7 +68,9 @@ export interface ConductorDeps {
   start(launch: ConductorLaunch): Promise<string | null>
   resume(launch: ConductorLaunch & { key: string }): Promise<string | null>
   kill(tabId: string): void
+  say(channelId: string, text: string): void
   rowsChanged(): void
+  tasksChanged(): void
   toast(text: string): void
   bindDeadlineMs: number
 }
@@ -53,6 +79,7 @@ export const NOT_BOUND = 'That Assist is no longer bound.'
 export const GLOBAL_HAS_NO_WORKSPACE = 'The global Assist has no workspace.'
 export const REMOTE_CONDUCTOR_HAS_NO_WORKSPACE =
   'This Assist runs on this Mac, outside its remote workspace, so it has no workspace.'
+const NOT_AN_ASSIST_SCOPE = 'Pick a workspace from the sidebar, or Global.'
 
 const FOLDER_NAME_HASH_CHARS = 16
 const LAST_MESSAGE_SAVE_DELAY_MS = 1000
@@ -64,9 +91,20 @@ export function conductorFolder(userData: string, scope: string): string {
   return path.join(userData, 'conductors', hash)
 }
 
+export function workspaceRemovedLine(scope: string): string {
+  return `The ${conductorName(scope)} was removed with its workspace, so it no longer answers here. This channel stays; bind it again from Koloft to use it.`
+}
+
 interface BoundThread {
   binding: ConductorBinding
   thread: SessionThread
+}
+
+interface RunningTask extends AssistTask {
+  scope: string
+  role: string
+  tabId: string
+  key?: string
 }
 
 function keptKeys(
@@ -85,7 +123,9 @@ function refusal(error: string): ConductorOpenResult {
 
 export class Conductors {
   private discord: DiscordSettings
+  private records: AssistRecord[]
   private tabs = new Map<string, string>()
+  private tasks: RunningTask[] = []
   private pendingSave: ReturnType<typeof setTimeout> | null = null
   private stopping = new Map<string, string>()
   private opening = new Map<string, Promise<ConductorOpenResult>>()
@@ -94,6 +134,7 @@ export class Conductors {
 
   constructor(private d: ConductorDeps) {
     this.discord = d.load()
+    this.records = d.loadRecords()
   }
 
   bindings(): ConductorBinding[] {
@@ -113,6 +154,21 @@ export class Conductors {
     }
   }
 
+  private writeRecords(records: AssistRecord[]): void {
+    this.records = records
+    this.d.saveRecords(records)
+    this.d.rowsChanged()
+  }
+
+  private changeRecord(scope: string, change: (r: AssistRecord) => AssistRecord): void {
+    const at = this.records.findIndex((r) => r.scope === scope)
+    const current = at < 0 ? { scope, sessionIds: [] } : this.records[at]
+    const next = change(current)
+    this.writeRecords(
+      at < 0 ? [...this.records, next] : this.records.map((r, i) => (i === at ? next : r))
+    )
+  }
+
   flush(): void {
     if (!this.pendingSave) return
     clearTimeout(this.pendingSave)
@@ -124,22 +180,48 @@ export class Conductors {
     return this.discord.bindings.find((b) => b.id === id)
   }
 
-  bindingOfTab(tabId: string): ConductorBinding | undefined {
-    for (const [id, tab] of this.tabs) if (tab === tabId) return this.binding(id)
+  bindingOfScope(scope: string): ConductorBinding | undefined {
+    return this.discord.bindings.find((b) => b.scope === scope)
+  }
+
+  record(scope: string): AssistRecord | undefined {
+    return this.records.find((r) => r.scope === scope)
+  }
+
+  private scopeOfResident(tabId: string): string | undefined {
+    for (const [scope, tab] of this.tabs) if (tab === tabId) return scope
     return undefined
+  }
+
+  private taskOfTab(tabId: string): RunningTask | undefined {
+    return this.tasks.find((t) => t.tabId === tabId)
+  }
+
+  bindingOfTab(tabId: string): ConductorBinding | undefined {
+    const scope = this.scopeOfResident(tabId)
+    return scope ? this.bindingOfScope(scope) : undefined
   }
 
   bindingOfChannel(channelId: string): ConductorBinding | undefined {
     return this.discord.bindings.find((b) => b.channel.channelId === channelId)
   }
 
-  bindingOf(ref: string): ConductorBinding | undefined {
-    const bySession = this.discord.bindings.find((b) =>
-      b.sessionIds.some((key) => key === ref || identityOf(key).nativeSessionId === ref)
-    )
-    return (
-      bySession ?? this.discord.bindings.find((b) => ref === asPeerName(conductorName(b.scope)))
-    )
+  scopeOf(ref: string): string | undefined {
+    const bySession = this.records.find((r) =>
+      r.sessionIds.some((key) => key === ref || identityOf(key).nativeSessionId === ref)
+    )?.scope
+    if (bySession) return bySession
+    return this.knownScopes().find((scope) => peerNamesOf(scope).includes(ref))
+  }
+
+  private knownScopes(): string[] {
+    return [
+      ...new Set([
+        GLOBAL_SCOPE,
+        ...this.records.map((r) => r.scope),
+        ...this.discord.bindings.map((b) => b.scope)
+      ])
+    ]
   }
 
   touchWhenBound(conductorTab: string, tabId: string): void {
@@ -152,8 +234,8 @@ export class Conductors {
     if (tabId) this.pendingTouch.set(tabId, id)
   }
 
-  liveTab(id: string): string | undefined {
-    const tab = this.tabs.get(id)
+  liveTab(scope: string): string | undefined {
+    const tab = this.tabs.get(scope)
     return tab && this.d.tabAlive(tab) ? tab : undefined
   }
 
@@ -171,11 +253,21 @@ export class Conductors {
   }
 
   conductorOf(tabOrSessionId: string): string | undefined {
-    for (const [id, tab] of this.tabs) if (tab === tabOrSessionId) return id
     return (
+      this.scopeOfResident(tabOrSessionId) ??
+      this.taskOfTab(tabOrSessionId)?.scope ??
       this.stopping.get(tabOrSessionId) ??
-      this.discord.bindings.find((b) => b.sessionIds.includes(tabOrSessionId))?.id
+      this.records.find((r) => r.sessionIds.includes(tabOrSessionId))?.scope
     )
+  }
+
+  taskNameOf(tabId: string): string | undefined {
+    return this.taskOfTab(tabId)?.name
+  }
+
+  heldResident(tabId: string): boolean {
+    const scope = this.scopeOfResident(tabId)
+    return !!scope && !!this.bindingOfScope(scope)
   }
 
   covers(workspace: string | undefined): boolean {
@@ -183,13 +275,25 @@ export class Conductors {
   }
 
   scopeOfTab(tabId: string): string | undefined {
-    return this.bindingOfTab(tabId)?.scope
+    return this.scopeOfResident(tabId) ?? this.taskOfTab(tabId)?.scope
   }
 
   // ADR-0029
   workspaceOfTab(tabId: string): string | undefined {
-    const b = this.bindingOfTab(tabId)
-    return b && !this.noWorkspaceReason(tabId) ? b.scope : undefined
+    const scope = this.scopeOfTab(tabId)
+    return scope && !this.noWorkspaceReason(tabId) ? scope : undefined
+  }
+
+  // ADR-0029
+  identityOfLaunch(cwd: string, resumeKey?: string): AssistIdentity | undefined {
+    const launched = realpathSafe(path.resolve(cwd))
+    const scope = this.knownScopes().find(
+      (s) => realpathSafe(conductorFolder(this.d.userData, s)) === launched
+    )
+    if (!scope) return undefined
+    const task = resumeKey ? this.tasks.find((t) => t.key === resumeKey) : undefined
+    if (task) return { scope, role: task.role, allow: task.allow ?? [], task: task.name }
+    return { scope, role: conductorRole(scope, !!this.bindingOfScope(scope)), allow: [] }
   }
 
   touch(tabId: string, key: string): void {
@@ -282,75 +386,83 @@ export class Conductors {
   forgetGone(stillOnDisk: (key: string) => boolean): void {
     let changed = false
     const bindings = this.discord.bindings.map((b) => {
-      const sessionIds = b.sessionIds.filter(stillOnDisk)
       const touched = b.touched.filter(stillOnDisk)
       const threads = keptKeys(b.threads, stillOnDisk)
       const threadKeys = (list?: SessionThread[]): number =>
         (list ?? []).reduce((n, t) => n + t.keys.length, 0)
-      if (
-        sessionIds.length === b.sessionIds.length &&
-        touched.length === b.touched.length &&
-        threadKeys(threads) === threadKeys(b.threads)
-      )
+      if (touched.length === b.touched.length && threadKeys(threads) === threadKeys(b.threads))
         return b
       changed = true
-      return { ...b, sessionIds, touched, threads }
+      return { ...b, touched, threads }
     })
-    if (!changed) return
-    this.discord = { ...this.discord, bindings }
-    this.d.saveQuietly(this.discord)
+    if (changed) {
+      this.discord = { ...this.discord, bindings }
+      this.d.saveQuietly(this.discord)
+    }
+    let recordsChanged = false
+    const records = this.records.map((r) => {
+      const sessionIds = r.sessionIds.filter(stillOnDisk)
+      const keepLast = !r.lastSessionKey || stillOnDisk(r.lastSessionKey)
+      if (sessionIds.length === r.sessionIds.length && keepLast) return r
+      recordsChanged = true
+      const { lastSessionKey, ...rest } = r
+      return { ...rest, sessionIds, ...(keepLast && lastSessionKey ? { lastSessionKey } : {}) }
+    })
+    if (recordsChanged) this.writeRecords(records)
   }
 
   noWorkspaceReason(tabId: string): string | undefined {
-    const b = this.bindingOfTab(tabId)
-    if (!b) return undefined
-    if (b.scope === GLOBAL_SCOPE) return GLOBAL_HAS_NO_WORKSPACE
-    return isRemoteKey(b.scope) ? REMOTE_CONDUCTOR_HAS_NO_WORKSPACE : undefined
+    const scope = this.scopeOfTab(tabId)
+    if (!scope) return undefined
+    if (scope === GLOBAL_SCOPE) return GLOBAL_HAS_NO_WORKSPACE
+    return isRemoteKey(scope) ? REMOTE_CONDUCTOR_HAS_NO_WORKSPACE : undefined
   }
 
-  save(input: ConductorSaveInput): ConductorSaveResult {
+  private canHaveAssist(scope: string): boolean {
+    return scope === GLOBAL_SCOPE || this.d.isPinned(scope)
+  }
+
+  save(input: ConductorSaveInput, backend: BackendId): ConductorSaveResult {
     const { channel } = input
-    if (!this.d.backendEnabled(input.backend))
-      return {
-        ok: false,
-        error: `${BACKEND_LABEL[input.backend]} is turned off in Settings ▸ Sessions.`
-      }
     const current = input.id ? this.binding(input.id) : undefined
     if (input.id && !current) return { ok: false, error: NOT_BOUND }
     const scope = current?.scope ?? input.scope
-    if (scope !== GLOBAL_SCOPE && !this.d.isPinned(scope))
-      return { ok: false, error: 'Pick a workspace from the sidebar, or Global.' }
+    if (!this.canHaveAssist(scope)) return { ok: false, error: NOT_AN_ASSIST_SCOPE }
     const problem = bindingProblem(this.discord.bindings, {
       id: input.id,
       scope,
       channelId: channel.channelId
     })
     if (problem) return { ok: false, error: problem }
-    if (current) this.update(current.id, (b) => ({ ...b, backend: input.backend, channel }))
+    if (current) this.update(current.id, (b) => ({ ...b, backend, channel }))
     else
       this.write({
         bindings: [
           ...this.discord.bindings,
-          { id: randomUUID(), scope, backend: input.backend, channel, sessionIds: [], touched: [] }
+          { id: randomUUID(), scope, backend, channel, touched: [] }
         ]
       })
     return { ok: true }
   }
 
+  followBackend(backend: BackendId): void {
+    if (this.discord.bindings.every((b) => b.backend === backend)) return
+    this.write({ bindings: this.discord.bindings.map((b) => ({ ...b, backend })) })
+  }
+
   unbind(id: string): void {
-    this.stopTab(id)
     this.write({ bindings: this.discord.bindings.filter((b) => b.id !== id) })
   }
 
-  switchBackend(id: string): void {
-    this.update(id, (b) => ({ ...b, backend: b.backend === 'claude' ? 'codex' : 'claude' }))
-  }
-
-  startFresh(id: string): Promise<ConductorOpenResult> {
-    if (!this.binding(id)) return Promise.resolve(refusal(NOT_BOUND))
-    this.stopTab(id)
-    this.update(id, (b) => ({ ...b, lastSessionKey: undefined }))
-    return this.open(id)
+  startFresh(scope: string): Promise<ConductorOpenResult> {
+    if (!this.canHaveAssist(scope)) return Promise.resolve(refusal(NOT_AN_ASSIST_SCOPE))
+    this.stopResident(scope)
+    this.changeRecord(scope, (r) => {
+      const { lastSessionKey, ...rest } = r
+      void lastSessionKey
+      return rest
+    })
+    return this.open(scope)
   }
 
   owner(): string | undefined {
@@ -366,79 +478,187 @@ export class Conductors {
   }
 
   keepPinned(pinned: string[]): void {
-    const kept = keepPinnedBindings(this.discord.bindings, pinned)
+    const kept = keepPinnedScopes(this.discord.bindings, pinned)
     if (kept.length !== this.discord.bindings.length) this.write({ bindings: kept })
+    const keptRecords = keepPinnedScopes(this.records, pinned)
+    if (keptRecords.length !== this.records.length) this.writeRecords(keptRecords)
   }
 
-  removeWorkspace(wsPath: string): void {
-    const b = this.discord.bindings.find((x) => x.scope === wsPath)
-    if (b) this.unbind(b.id)
+  removeWorkspace(scope: string): void {
+    const b = this.bindingOfScope(scope)
+    if (b) {
+      this.d.say(b.channel.channelId, workspaceRemovedLine(scope))
+      this.unbind(b.id)
+    }
+    this.stopResident(scope)
+    for (const t of this.tasks.filter((x) => x.scope === scope)) this.closeTask(t.tabId)
+    if (this.record(scope)) this.writeRecords(this.records.filter((r) => r.scope !== scope))
   }
 
-  open(id: string): Promise<ConductorOpenResult> {
-    const inflight = this.opening.get(id)
+  open(scope: string): Promise<ConductorOpenResult> {
+    return this.once(scope, () => this.openNow(scope))
+  }
+
+  private once(
+    key: string,
+    start: () => Promise<ConductorOpenResult>
+  ): Promise<ConductorOpenResult> {
+    const inflight = this.opening.get(key)
     if (inflight) return inflight
-    const opening = this.openNow(id).finally(() => this.opening.delete(id))
-    this.opening.set(id, opening)
+    const opening = start().finally(() => this.opening.delete(key))
+    this.opening.set(key, opening)
     return opening
   }
 
-  private async openNow(id: string): Promise<ConductorOpenResult> {
-    const b = this.binding(id)
-    if (!b) return refusal(NOT_BOUND)
-    const tab = this.tabs.get(id)
-    if (tab && this.d.tabAlive(tab)) return { ok: true, tabId: tab }
-    if (!this.d.backendEnabled(b.backend))
-      return refusal(`${BACKEND_LABEL[b.backend]} is turned off in Settings ▸ Sessions.`)
-    const cwd = conductorFolder(this.d.userData, b.scope)
+  private launchFor(scope: string, backend: BackendId): ConductorLaunch {
+    const cwd = conductorFolder(this.d.userData, scope)
     fs.mkdirSync(cwd, { recursive: true })
-    const launch: ConductorLaunch = {
-      backend: b.backend,
+    const title = conductorName(scope)
+    return {
+      backend,
       cwd,
-      role: conductorRole(b.scope),
-      title: conductorName(b.scope)
+      role: conductorRole(scope, !!this.bindingOfScope(scope)),
+      title
     }
-    const key = b.lastSessionKey
-    const resumable = key !== undefined && identityOf(key).backendId === b.backend
+  }
+
+  // ADR-0029 CODEX§27
+  private async onClaudeIfCodexRefusedTheGate(
+    choice: AssistBackendPick,
+    open: (choice: AssistBackendPick) => Promise<ConductorOpenResult>
+  ): Promise<ConductorOpenResult> {
+    const result = await open(choice)
+    if (result.ok || choice.backend !== 'codex' || result.error !== CODEX_GATE_NOT_TRUSTED)
+      return result
+    const fallback = await this.d.backend('codex')
+    if ('error' in fallback) return refusal(fallback.error)
+    this.d.toast(`Assist runs on Claude this time: ${CODEX_GATE_NOT_TRUSTED}`)
+    return open({ backend: fallback.backend })
+  }
+
+  private async openNow(scope: string): Promise<ConductorOpenResult> {
+    if (!this.canHaveAssist(scope)) return refusal(NOT_AN_ASSIST_SCOPE)
+    const tab = this.tabs.get(scope)
+    if (tab && this.d.tabAlive(tab)) return { ok: true, tabId: tab }
+    const choice = await this.d.backend()
+    if ('error' in choice) return refusal(choice.error)
+    return this.onClaudeIfCodexRefusedTheGate(choice, (c) => this.openOn(scope, c))
+  }
+
+  private async openOn(scope: string, choice: AssistBackendPick): Promise<ConductorOpenResult> {
+    if (!this.record(scope)) this.changeRecord(scope, (r) => r)
+    const launch = this.launchFor(scope, choice.backend)
+    const key = this.record(scope)?.lastSessionKey
+    const resumable = key !== undefined && identityOf(key).backendId === launch.backend
+    if (key !== undefined && !resumable)
+      this.d.toast(
+        `The ${launch.title} now runs on ${BACKEND_LABEL[launch.backend]}, so it starts a new conversation.`
+      )
+    else if (choice.because) this.d.toast(choice.because)
     let tabId: string | null
     try {
       if (resumable) {
-        const live = this.d.liveTabFor(b.backend, key)
+        const live = this.d.liveTabFor(launch.backend, key)
         if (live) {
-          this.tabs.set(id, live)
+          this.tabs.set(scope, live)
           return { ok: true, tabId: live }
         }
-        if (await this.d.runningElsewhere(b.backend, key))
+        if (await this.d.runningElsewhere(launch.backend, key))
           return refusal('This Assist is already running in another claude process.')
       }
       const hasTranscript =
-        resumable && (await this.d.transcriptExists(b.backend, key).catch(() => false))
+        resumable && (await this.d.transcriptExists(launch.backend, key).catch(() => false))
       tabId = hasTranscript ? await this.d.resume({ ...launch, key }) : await this.d.start(launch)
     } catch (error) {
       return refusal(errorText(error))
     }
     if (!tabId) return refusal(`The ${launch.title} could not start.`)
-    this.tabs.set(id, tabId)
-    this.armDeadline(id, tabId, launch.title)
+    this.tabs.set(scope, tabId)
+    this.armDeadline(tabId, launch.title, () => this.tabs.get(scope) === tabId)
     return { ok: true, tabId }
   }
 
-  private armDeadline(id: string, tabId: string, title: string): void {
+  openTask(scope: string, task: AssistTask): Promise<ConductorOpenResult> {
+    return this.once(`${scope}\n${task.name}`, () => this.openTaskNow(scope, task))
+  }
+
+  private async openTaskNow(scope: string, task: AssistTask): Promise<ConductorOpenResult> {
+    if (!this.canHaveAssist(scope)) return refusal(NOT_AN_ASSIST_SCOPE)
+    const running = this.tasks.find((t) => t.scope === scope && t.name === task.name)
+    if (running) return { ok: true, tabId: running.tabId }
+    const choice = await this.d.backend()
+    if ('error' in choice) return refusal(choice.error)
+    return this.onClaudeIfCodexRefusedTheGate(choice, (c) => this.openTaskOn(scope, task, c))
+  }
+
+  private async openTaskOn(
+    scope: string,
+    task: AssistTask,
+    choice: AssistBackendPick
+  ): Promise<ConductorOpenResult> {
+    if (choice.because) this.d.toast(choice.because)
+    if (!this.record(scope)) this.changeRecord(scope, (r) => r)
+    const role = assistTaskRole(scope, task.brief)
+    const title = assistTaskName(scope, task.name)
+    const launch: ConductorLaunch = {
+      ...this.launchFor(scope, choice.backend),
+      role,
+      allow: task.allow ?? [],
+      title
+    }
+    const placeholder: RunningTask = { ...task, scope, role, tabId: '' }
+    this.tasks.push(placeholder)
+    let tabId: string | null
+    try {
+      tabId = await this.d.start(launch)
+    } catch (error) {
+      this.tasks = this.tasks.filter((t) => t !== placeholder)
+      return refusal(errorText(error))
+    }
+    if (!tabId) {
+      this.tasks = this.tasks.filter((t) => t !== placeholder)
+      return refusal(`The ${title} could not start.`)
+    }
+    placeholder.tabId = tabId
+    this.d.tasksChanged()
+    this.armDeadline(tabId, title, () => placeholder.tabId === tabId && !placeholder.key)
+    return { ok: true, tabId }
+  }
+
+  taskRows(): AssistTaskRow[] {
+    return this.tasks
+      .filter((t) => t.tabId)
+      .map((t) => ({ tabId: t.tabId, scope: t.scope, name: t.name }))
+  }
+
+  closeTask(tabId: string): void {
+    const task = this.taskOfTab(tabId)
+    if (!task) return
+    this.tasks = this.tasks.filter((t) => t !== task)
+    this.forgetTab(tabId)
+    this.stopping.set(tabId, task.scope)
+    this.d.kill(tabId)
+    this.d.tasksChanged()
+  }
+
+  private armDeadline(tabId: string, title: string, stillWaiting: () => boolean): void {
     const timer = setTimeout(() => {
       this.deadlines.delete(tabId)
-      if (this.tabs.get(id) !== tabId) return
-      this.stopTab(id)
+      if (!stillWaiting()) return
+      const scope = this.scopeOfResident(tabId)
+      if (scope) this.stopResident(scope)
+      else this.closeTask(tabId)
       this.d.toast(`The ${title} did not start.`)
     }, this.d.bindDeadlineMs)
     this.deadlines.set(tabId, timer)
   }
 
-  private stopTab(id: string): void {
-    const tab = this.tabs.get(id)
+  private stopResident(scope: string): void {
+    const tab = this.tabs.get(scope)
     if (!tab) return
-    this.tabs.delete(id)
+    this.tabs.delete(scope)
     this.forgetTab(tab)
-    this.stopping.set(tab, id)
+    this.stopping.set(tab, scope)
     this.d.kill(tab)
   }
 
@@ -454,25 +674,41 @@ export class Conductors {
       this.touchFor(toucher, key)
       return
     }
-    let b = this.bindingOfTab(tabId)
-    if (!b) {
-      b = this.discord.bindings.find((x) => x.sessionIds.includes(key))
-      const current = b && this.tabs.get(b.id)
-      if (!b || (current && this.d.tabAlive(current))) return
-      this.tabs.set(b.id, tabId)
+    const task = this.taskOfTab(tabId) ?? this.tasks.find((t) => t.key === key)
+    if (task) {
+      this.forgetTab(tabId)
+      const moved = task.tabId !== tabId
+      task.tabId = tabId
+      task.key = key
+      this.changeRecord(task.scope, (r) =>
+        r.sessionIds.includes(key) ? r : { ...r, sessionIds: [...r.sessionIds, key] }
+      )
+      if (moved) this.d.tasksChanged()
+      return
+    }
+    let scope = this.scopeOfResident(tabId)
+    if (!scope) {
+      scope = this.records.find((r) => r.lastSessionKey === key)?.scope
+      const current = scope && this.tabs.get(scope)
+      if (!scope || (current && this.d.tabAlive(current))) return
+      this.tabs.set(scope, tabId)
     }
     this.forgetTab(tabId)
-    this.update(b.id, (x) => ({
-      ...x,
-      sessionIds: x.sessionIds.includes(key) ? x.sessionIds : [...x.sessionIds, key],
+    this.changeRecord(scope, (r) => ({
+      ...r,
+      sessionIds: r.sessionIds.includes(key) ? r.sessionIds : [...r.sessionIds, key],
       lastSessionKey: key
     }))
   }
 
-  onPtyExit(tabId: string): void {
+  onPtyExit(tabId: string, asleep: boolean): void {
     this.stopping.delete(tabId)
     this.pendingTouch.delete(tabId)
-    for (const [id, tab] of this.tabs) if (tab === tabId) this.tabs.delete(id)
+    for (const [scope, tab] of this.tabs) if (tab === tabId) this.tabs.delete(scope)
     this.forgetTab(tabId)
+    const task = asleep ? undefined : this.taskOfTab(tabId)
+    if (!task) return
+    this.tasks = this.tasks.filter((t) => t !== task)
+    this.d.tasksChanged()
   }
 }

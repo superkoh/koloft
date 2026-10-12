@@ -2,62 +2,110 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { Conductors, conductorFolder, type ConductorDeps } from '../../src/main/discord/conductors'
-import type { DiscordSettings } from '@shared/types'
+import {
+  Conductors,
+  conductorFolder,
+  workspaceRemovedLine,
+  type AssistBackendChoice,
+  type ConductorDeps
+} from '../../src/main/discord/conductors'
+import type { AssistRecord, BackendId, DiscordSettings } from '@shared/types'
+import { CODEX_GATE_NOT_TRUSTED } from '../../src/main/conductorGate'
 
 const CHANNEL = { guildId: '100', channelId: '200', name: 'koloft' }
 const DEADLINE_MS = 1000
+const CLAUDE_KEY = 's1'
+const CODEX_KEY = 'codex:019a-thread'
 
 let userData: string
 let saved: DiscordSettings
+let records: AssistRecord[]
 let quiet: DiscordSettings[]
 let rescans: number
-let started: { cwd: string; role: string }[]
+let started: {
+  cwd: string
+  role: string
+  title: string
+  backend: BackendId
+  allow?: string[]
+}[]
 let resumed: string[]
 let killed: string[]
+let said: { channelId: string; text: string }[]
 let toasts: string[]
+let taskPushes: number
 let transcripts: Set<string>
+let choice: AssistBackendChoice
+let codexRefusesTheGate: boolean
 let release: () => void
 
 function make(): Conductors {
   const deps: ConductorDeps = {
     userData,
     load: () => saved,
+    loadRecords: () => records,
     save: (d) => void (saved = d),
     saveQuietly: (d) => void quiet.push(d),
+    saveRecords: (r) => void (records = r),
     isPinned: (scope) => scope === '/ws/a',
-    backendEnabled: () => true,
+    backend: async (avoid) =>
+      avoid ? { backend: avoid === 'codex' ? 'claude' : 'codex' } : choice,
     tabAlive: (tabId) => !killed.includes(tabId),
     liveTabFor: () => undefined,
     runningElsewhere: async () => false,
     transcriptExists: async (_backend, key) => transcripts.has(key),
     start: async (l) => {
-      started.push({ cwd: l.cwd, role: l.role })
+      if (codexRefusesTheGate && l.backend === 'codex') throw new Error(CODEX_GATE_NOT_TRUSTED)
+      started.push({
+        cwd: l.cwd,
+        role: l.role,
+        title: l.title,
+        backend: l.backend,
+        allow: l.allow
+      })
       await new Promise<void>((r) => (release = r))
       return `tab-${started.length}`
     },
     resume: async (l) => {
+      if (codexRefusesTheGate && l.backend === 'codex') throw new Error(CODEX_GATE_NOT_TRUSTED)
       resumed.push(l.key)
       return `tab-resumed-${l.key}`
     },
     kill: (tabId) => void killed.push(tabId),
+    say: (channelId, text) => void said.push({ channelId, text }),
     rowsChanged: () => void rescans++,
+    tasksChanged: () => void taskPushes++,
     toast: (t) => void toasts.push(t),
     bindDeadlineMs: DEADLINE_MS
   }
   return new Conductors(deps)
 }
 
+async function opened(c: Conductors, scope: string): Promise<string> {
+  const before = started.length
+  const opening = c.open(scope)
+  await vi.waitFor(() => expect(started).toHaveLength(before + 1))
+  release()
+  const r = await opening
+  if (!r.ok) throw new Error(r.error)
+  return r.tabId
+}
+
 beforeEach(() => {
   userData = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-conductors-'))
   saved = { bindings: [] }
+  records = []
   quiet = []
   rescans = 0
   started = []
   resumed = []
   killed = []
+  said = []
   toasts = []
+  taskPushes = 0
   transcripts = new Set()
+  choice = { backend: 'claude' }
+  codexRefusesTheGate = false
   release = () => {}
 })
 
@@ -69,88 +117,203 @@ afterEach(() => {
 describe('Conductors', () => {
   it('a second open while the first is still starting waits for it and starts nothing new', async () => {
     const c = make()
-    expect(c.save({ scope: 'global', backend: 'claude', channel: CHANNEL })).toEqual({ ok: true })
-    const id = c.bindings()[0].id
-    const first = c.open(id)
-    const second = c.open(id)
+    const first = c.open('global')
+    const second = c.open('global')
     await vi.waitFor(() => expect(started).toHaveLength(1))
     release()
     expect(await first).toEqual({ ok: true, tabId: 'tab-1' })
     expect(await second).toEqual({ ok: true, tabId: 'tab-1' })
-    expect(await c.open(id)).toEqual({ ok: true, tabId: 'tab-1' })
+    expect(await c.open('global')).toEqual({ ok: true, tabId: 'tab-1' })
     expect(started).toHaveLength(1)
   })
 
-  it('a conductor is found by the name ListAgents shows for it, so a session reporting back by that name reaches it', () => {
+  it('an Assist opens with no Discord binding at all, and a workspace not in the sidebar has none', async () => {
     const c = make()
-    c.save({ scope: 'global', backend: 'claude', channel: CHANNEL })
-    c.save({ scope: '/ws/a', backend: 'codex', channel: { ...CHANNEL, channelId: '201' } })
-    const [global, ws] = c.bindings()
-    expect(c.bindingOf('Global-Assist')?.id).toBe(global.id)
-    expect(c.bindingOf('a-Assist')?.id).toBe(ws.id)
-    expect(c.bindingOf('Global')).toBeUndefined()
+    expect(await opened(c, '/ws/a')).toBe('tab-1')
+    expect(await c.open('/ws/elsewhere')).toEqual({
+      ok: false,
+      error: 'Pick a workspace from the sidebar, or Global.'
+    })
   })
 
-  it('the global conductor starts in its own folder under userData, told its role', async () => {
+  it('an Assist is found by the name ListAgents shows for it, and by the name it had before it was called Assist', async () => {
     const c = make()
-    c.save({ scope: 'global', backend: 'claude', channel: CHANNEL })
-    const opening = c.open(c.bindings()[0].id)
-    await vi.waitFor(() => expect(started).toHaveLength(1))
-    release()
-    await opening
+    records = [{ scope: '/ws/a', sessionIds: ['s7'] }]
+    const again = make()
+    expect(c.scopeOf('Global-Assist')).toBe('global')
+    expect(c.scopeOf('Global-conductor')).toBe('global')
+    expect(again.scopeOf('a-Assist')).toBe('/ws/a')
+    expect(again.scopeOf('a-conductor')).toBe('/ws/a')
+    expect(again.scopeOf('s7')).toBe('/ws/a')
+    expect(c.scopeOf('Global')).toBeUndefined()
+  })
+
+  it('the global Assist starts in its own folder under userData, told its role; on Discord the role says how the owner’s Discord messages reach it', async () => {
+    const c = make()
+    await opened(c, 'global')
     expect(started[0].cwd).toBe(path.join(userData, 'conductors', 'global'))
     expect(fs.statSync(started[0].cwd).isDirectory()).toBe(true)
     expect(started[0].role).toMatch(/^You are Assist, Koloft's own AI, for all workspaces\./)
+    expect(started[0].role).not.toContain('[Discord]')
+    c.save({ scope: '/ws/a', channel: CHANNEL }, 'claude')
+    await opened(c, '/ws/a')
+    expect(started[1].role).toContain('start with [Discord]')
   })
 
-  it('binding follows the tab: every session it binds stays hidden and the newest is the one to resume', async () => {
+  // ADR-0029
+  it('an Assist folder is recognised whether the launch names it through a symlink or by its real path', () => {
+    const real = fs.realpathSync(userData)
+    const linked = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-link-')), 'userData')
+    fs.symlinkSync(real, linked)
+    userData = linked
     const c = make()
-    c.save({ scope: '/ws/a', backend: 'claude', channel: CHANNEL })
-    const id = c.bindings()[0].id
-    const opening = c.open(id)
-    await vi.waitFor(() => expect(started).toHaveLength(1))
-    release()
-    await opening
-    c.onBound('tab-1', 's1')
-    c.onBound('tab-1', 's2')
-    c.onBound('tab-1', 's2')
-    expect(saved.bindings[0]).toMatchObject({ sessionIds: ['s1', 's2'], lastSessionKey: 's2' })
-    expect([c.conductorOf('s1'), c.conductorOf('s2'), c.conductorOf('tab-1')]).toEqual([id, id, id])
+    fs.mkdirSync(conductorFolder(linked, 'global'), { recursive: true })
+    expect(c.identityOfLaunch(conductorFolder(real, 'global'))?.scope).toBe('global')
+    expect(c.identityOfLaunch(conductorFolder(linked, 'global'))?.scope).toBe('global')
+    userData = real
+  })
+
+  it('a launch in an Assist folder is that Assist by its folder alone, so any resume or wake gets its role and its gate', async () => {
+    records = [{ scope: '/ws/a', sessionIds: [] }]
+    const c = make()
+    expect(c.identityOfLaunch(conductorFolder(userData, 'global'))?.scope).toBe('global')
+    const ws = c.identityOfLaunch(conductorFolder(userData, '/ws/a') + '/')
+    expect(ws?.scope).toBe('/ws/a')
+    expect(ws?.role).toMatch(/^You are Assist, Koloft's own AI, for the workspace \/ws\/a\./)
+    expect(c.identityOfLaunch('/ws/a')).toBeUndefined()
+    expect(c.identityOfLaunch(conductorFolder(userData, '/ws/never-had-one'))).toBeUndefined()
+  })
+
+  it('every session the Assist binds stays hidden and the newest is the one to resume', async () => {
+    const c = make()
+    const tab = await opened(c, '/ws/a')
+    c.onBound(tab, 's1')
+    c.onBound(tab, 's2')
+    c.onBound(tab, 's2')
+    expect(records).toEqual([{ scope: '/ws/a', sessionIds: ['s1', 's2'], lastSessionKey: 's2' }])
+    expect([c.conductorOf('s1'), c.conductorOf('s2'), c.conductorOf(tab)]).toEqual([
+      '/ws/a',
+      '/ws/a',
+      '/ws/a'
+    ])
     expect(c.conductorOf('someone-else')).toBeUndefined()
 
-    c.onPtyExit('tab-1')
+    c.onPtyExit(tab, false)
     transcripts.add('s2')
-    expect(await c.open(id)).toEqual({ ok: true, tabId: 'tab-resumed-s2' })
+    expect(await c.open('/ws/a')).toEqual({ ok: true, tabId: 'tab-resumed-s2' })
     expect(resumed).toEqual(['s2'])
   })
 
-  it('a conductor that never binds before the deadline is closed and reported, and its tab counts as the conductor’s until it is gone, so its closing is no session notice', async () => {
+  it('a tab resumed some other way and bound to the last session is taken as the Assist again', async () => {
+    records = [{ scope: 'global', sessionIds: ['s1'], lastSessionKey: 's1' }]
+    const c = make()
+    c.onBound('tab-from-the-sidebar', 's1')
+    expect(c.scopeOfTab('tab-from-the-sidebar')).toBe('global')
+    expect(c.liveTab('global')).toBe('tab-from-the-sidebar')
+  })
+
+  it('when the Assist backend changes, the next open starts a new conversation on it and says so once', async () => {
+    records = [{ scope: 'global', sessionIds: [CLAUDE_KEY], lastSessionKey: CLAUDE_KEY }]
+    transcripts.add(CLAUDE_KEY)
+    choice = { backend: 'codex' }
+    const c = make()
+    await opened(c, 'global')
+    expect(started[0].backend).toBe('codex')
+    expect(resumed).toEqual([])
+    expect(toasts).toEqual([
+      'The Global Assist now runs on Codex, so it starts a new conversation.'
+    ])
+    c.onBound('tab-1', CODEX_KEY)
+    expect(records[0].lastSessionKey).toBe(CODEX_KEY)
+  })
+
+  it('when the chosen backend cannot run, the Assist starts on the other one and says why; with neither, nothing starts', async () => {
+    choice = { backend: 'codex', because: 'Assist runs on Codex this time: why.' }
+    const c = make()
+    await opened(c, 'global')
+    expect(toasts).toEqual(['Assist runs on Codex this time: why.'])
+    choice = { error: 'Assist cannot start: no.' }
+    expect(await c.open('/ws/a')).toEqual({ ok: false, error: 'Assist cannot start: no.' })
+  })
+
+  // ADR-0029 CODEX§27
+  it('when Codex would not run the safety check, the Assist and its tasks start on Claude instead and say why, a task still with its allow list', async () => {
+    choice = { backend: 'codex' }
+    codexRefusesTheGate = true
+    const c = make()
+    await opened(c, 'global')
+    const task = c.openTask('/ws/a', { name: 'T', brief: 'Do T.', allow: ['Tool'] })
+    await vi.waitFor(() => expect(started).toHaveLength(2))
+    release()
+    expect(await task).toEqual({ ok: true, tabId: 'tab-2' })
+    expect(started.map((s) => s.backend)).toEqual(['claude', 'claude'])
+    expect(started[1].allow).toEqual(['Tool'])
+    expect(toasts).toEqual([
+      `Assist runs on Claude this time: ${CODEX_GATE_NOT_TRUSTED}`,
+      `Assist runs on Claude this time: ${CODEX_GATE_NOT_TRUSTED}`
+    ])
+  })
+
+  // ADR-0029 CODEX§27
+  it('a Codex Assist that has talked before and is refused its safety check on resume starts a new conversation on Claude and says why', async () => {
+    const codexThread = 'codex:local:11111111-1111-4111-8111-111111111111'
+    records = [{ scope: 'global', sessionIds: [codexThread], lastSessionKey: codexThread }]
+    transcripts.add(codexThread)
+    choice = { backend: 'codex' }
+    codexRefusesTheGate = true
+    await opened(make(), 'global')
+    expect(resumed).toEqual([])
+    expect(started.map((s) => s.backend)).toEqual(['claude'])
+    expect(toasts).toEqual([
+      `Assist runs on Claude this time: ${CODEX_GATE_NOT_TRUSTED}`,
+      'The Global Assist now runs on Claude, so it starts a new conversation.'
+    ])
+  })
+
+  it('an Assist that never binds before the deadline is closed and reported, and its tab counts as the Assist’s until it is gone', async () => {
     vi.useFakeTimers()
     const c = make()
-    c.save({ scope: 'global', backend: 'claude', channel: CHANNEL })
-    const id = c.bindings()[0].id
-    const opening = c.open(id)
+    const opening = c.open('global')
     await vi.waitFor(() => expect(started).toHaveLength(1))
     release()
     await opening
     vi.advanceTimersByTime(DEADLINE_MS)
     expect(killed).toEqual(['tab-1'])
     expect(toasts).toEqual(['The Global Assist did not start.'])
-    expect(c.conductorOf('tab-1')).toBe(id)
-    c.onPtyExit('tab-1')
+    expect(c.conductorOf('tab-1')).toBe('global')
+    c.onPtyExit('tab-1', false)
     expect(c.conductorOf('tab-1')).toBeUndefined()
   })
 
-  it('a session the conductor touched is saved at once, and the last Discord message a second later or at quit, neither with a rescan of the sidebar rows', async () => {
+  it('only an Assist bound to Discord is kept awake; unbinding keeps its conversation and its tab', async () => {
     const c = make()
-    c.save({ scope: 'global', backend: 'claude', channel: CHANNEL })
+    c.save({ scope: '/ws/a', channel: CHANNEL }, 'claude')
+    const tab = await opened(c, '/ws/a')
+    c.onBound(tab, 's1')
+    expect(c.heldResident(tab)).toBe(true)
+    c.unbind(c.bindings()[0].id)
+    expect(saved.bindings).toEqual([])
+    expect(killed).toEqual([])
+    expect(c.heldResident(tab)).toBe(false)
+    expect(c.scopeOfTab(tab)).toBe('/ws/a')
+    expect(records[0].lastSessionKey).toBe('s1')
+  })
+
+  it('binding writes the Assist backend onto the binding, and a backend change rewrites every binding, so an older Koloft still reads them all', () => {
+    const c = make()
+    c.save({ scope: 'global', channel: CHANNEL }, 'claude')
+    c.save({ scope: '/ws/a', channel: { ...CHANNEL, channelId: '201' } }, 'claude')
+    c.followBackend('codex')
+    expect(saved.bindings.map((b) => b.backend)).toEqual(['codex', 'codex'])
+  })
+
+  it('a session the Assist touched is saved at once, and the last Discord message a second later or at quit, neither with a rescan of the sidebar rows', async () => {
+    const c = make()
+    c.save({ scope: 'global', channel: CHANNEL }, 'claude')
     const id = c.bindings()[0].id
-    const opening = c.open(id)
-    await vi.waitFor(() => expect(started).toHaveLength(1))
-    release()
-    await opening
+    const tab = await opened(c, 'global')
     rescans = 0
-    c.touch('tab-1', 's9')
+    c.touch(tab, 's9')
     expect(quiet.at(-1)?.bindings[0].touched).toEqual(['s9'])
 
     vi.useFakeTimers()
@@ -165,7 +328,7 @@ describe('Conductors', () => {
     expect(rescans).toBe(0)
   })
 
-  it('forgets the session ids, touched sessions and threads whose transcript is gone, keeps the rest, and saves only when something went, without a rescan of the sidebar rows', () => {
+  it('forgets the session ids, touched sessions and threads whose transcript is gone and keeps the rest', () => {
     saved = {
       bindings: [
         {
@@ -173,8 +336,6 @@ describe('Conductors', () => {
           scope: 'global',
           backend: 'claude',
           channel: CHANNEL,
-          sessionIds: ['gone-1', 'kept-1'],
-          lastSessionKey: 'gone-1',
           touched: ['kept-2', 'gone-2'],
           threads: [
             { threadId: '7', keys: ['gone-3'] },
@@ -183,20 +344,19 @@ describe('Conductors', () => {
         }
       ]
     }
+    records = [{ scope: 'global', sessionIds: ['gone-1', 'kept-1'], lastSessionKey: 'gone-1' }]
     const c = make()
     const onDisk = new Set(['kept-1', 'kept-2', 'kept-3'])
     c.forgetGone((key) => onDisk.has(key))
     expect(quiet.at(-1)?.bindings[0]).toMatchObject({
-      sessionIds: ['kept-1'],
-      lastSessionKey: 'gone-1',
       touched: ['kept-2'],
       threads: [{ threadId: '8', keys: ['kept-3'] }]
     })
+    expect(records).toEqual([{ scope: 'global', sessionIds: ['kept-1'] }])
     expect(c.conductorOf('gone-1')).toBeUndefined()
-    expect(c.conductorOf('kept-1')).toBe('b1')
+    expect(c.conductorOf('kept-1')).toBe('global')
     c.forgetGone((key) => onDisk.has(key))
     expect(quiet).toHaveLength(1)
-    expect(rescans).toBe(0)
   })
 
   it('a session id is kept by one thread only: keeping it in another moves it there, once, and a thread left with no session goes', () => {
@@ -207,7 +367,6 @@ describe('Conductors', () => {
           scope: 'global',
           backend: 'claude',
           channel: CHANNEL,
-          sessionIds: [],
           touched: [],
           threads: [{ threadId: '7', keys: ['k1'] }]
         }
@@ -220,20 +379,82 @@ describe('Conductors', () => {
     expect(c.threadOfChannel('7')).toBeUndefined()
   })
 
-  it('removing a workspace unbinds its conductor and closes its tab', async () => {
+  it('removing a workspace says so in its channel, then drops its binding and Assist and closes its tab', async () => {
     const c = make()
-    c.save({ scope: '/ws/a', backend: 'claude', channel: CHANNEL })
-    const opening = c.open(c.bindings()[0].id)
+    c.save({ scope: '/ws/a', channel: CHANNEL }, 'claude')
+    const tab = await opened(c, '/ws/a')
+    c.onBound(tab, 's1')
+    c.removeWorkspace('/ws/a')
+    expect(said).toEqual([{ channelId: '200', text: workspaceRemovedLine('/ws/a') }])
+    expect(saved.bindings).toEqual([])
+    expect(records).toEqual([])
+    expect(killed).toEqual([tab])
+  })
+
+  it('a task is a second session in the same folder, named after its Assist, told its task, and never the Assist’s everyday conversation', async () => {
+    const c = make()
+    const opening = c.openTask('global', { name: 'Set up Discord', brief: 'Set up Discord.' })
+    await vi.waitFor(() => expect(started).toHaveLength(1))
+    release()
+    expect(await opening).toEqual({ ok: true, tabId: 'tab-1' })
+    expect(started[0].cwd).toBe(conductorFolder(userData, 'global'))
+    expect(started[0].title).toBe('Global Assist-Set up Discord')
+    expect(started[0].role).toContain('Your task: Set up Discord.')
+    expect(started[0].role).toContain('run koloft session close as your very last step')
+    expect(c.scopeOfTab('tab-1')).toBe('global')
+    expect(c.heldResident('tab-1')).toBe(false)
+    expect(c.taskRows()).toEqual([{ tabId: 'tab-1', scope: 'global', name: 'Set up Discord' }])
+    c.onBound('tab-1', 'task-key')
+    expect(records).toEqual([{ scope: 'global', sessionIds: ['task-key'] }])
+    expect(c.identityOfLaunch(conductorFolder(userData, 'global'), 'task-key')?.task).toBe(
+      'Set up Discord'
+    )
+    expect(await c.openTask('global', { name: 'Set up Discord', brief: 'again' })).toEqual({
+      ok: true,
+      tabId: 'tab-1'
+    })
+  })
+
+  it('asking for the same task twice while it starts starts it once, and both get its tab', async () => {
+    const c = make()
+    const task = { name: 'Set up Discord', brief: 'b' }
+    const first = c.openTask('global', task)
+    const second = c.openTask('global', task)
+    await vi.waitFor(() => expect(started).toHaveLength(1))
+    release()
+    expect(await first).toEqual({ ok: true, tabId: 'tab-1' })
+    expect(await second).toEqual({ ok: true, tabId: 'tab-1' })
+    expect(c.taskRows()).toHaveLength(1)
+  })
+
+  it('a task that sleeps stays listed and is found again when it wakes in a new tab; closing it ends it', async () => {
+    const c = make()
+    const opening = c.openTask('global', { name: 'Set up Discord', brief: 'b' })
     await vi.waitFor(() => expect(started).toHaveLength(1))
     release()
     await opening
-    c.removeWorkspace('/ws/a')
-    expect(saved.bindings).toEqual([])
-    expect(killed).toEqual(['tab-1'])
+    c.onBound('tab-1', 'task-key')
+    c.onPtyExit('tab-1', true)
+    expect(c.taskRows()).toHaveLength(1)
+    c.onBound('tab-woken', 'task-key')
+    expect(c.taskRows()).toEqual([{ tabId: 'tab-woken', scope: 'global', name: 'Set up Discord' }])
+    c.closeTask('tab-woken')
+    expect(killed).toEqual(['tab-woken'])
+    expect(c.taskRows()).toEqual([])
+  })
+
+  it('a task whose session ends on its own leaves the list', async () => {
+    const c = make()
+    const opening = c.openTask('global', { name: 'Set up Discord', brief: 'b' })
+    await vi.waitFor(() => expect(started).toHaveLength(1))
+    release()
+    await opening
+    c.onPtyExit('tab-1', false)
+    expect(c.taskRows()).toEqual([])
   })
 
   // ADR-0029
-  it('a workspace’s conductor, local or remote, runs on this Mac in a folder named by a hash of its scope, never in the workspace', () => {
+  it('a workspace’s Assist, local or remote, runs on this Mac in a folder named by a hash of its scope, never in the workspace', () => {
     for (const scope of ['ssh://devbox/home/me/app', '/ws/a']) {
       const folder = conductorFolder(userData, scope)
       expect(path.dirname(folder)).toBe(path.join(userData, 'conductors'))
@@ -245,21 +466,12 @@ describe('Conductors', () => {
   })
 
   // ADR-0029
-  it('the workspace a local conductor’s koloft commands act on is its bound workspace, not its folder; the global one has none', async () => {
+  it('the workspace a local Assist’s koloft commands act on is its workspace, not its folder; the global one has none', async () => {
     const c = make()
-    c.save({ scope: '/ws/a', backend: 'claude', channel: CHANNEL })
-    c.save({ scope: 'global', backend: 'claude', channel: { ...CHANNEL, channelId: '201' } })
-    const [local, global] = c.bindings()
-    const openingLocal = c.open(local.id)
-    await vi.waitFor(() => expect(started).toHaveLength(1))
-    release()
-    await openingLocal
-    const openingGlobal = c.open(global.id)
-    await vi.waitFor(() => expect(started).toHaveLength(2))
-    release()
-    await openingGlobal
-    expect(c.workspaceOfTab('tab-1')).toBe('/ws/a')
-    expect(c.workspaceOfTab('tab-2')).toBeUndefined()
+    const local = await opened(c, '/ws/a')
+    const global = await opened(c, 'global')
+    expect(c.workspaceOfTab(local)).toBe('/ws/a')
+    expect(c.workspaceOfTab(global)).toBeUndefined()
     expect(c.workspaceOfTab('some-other-tab')).toBeUndefined()
   })
 })

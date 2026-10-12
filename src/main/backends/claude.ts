@@ -40,6 +40,7 @@ import {
   hookSettings,
   KOLOFT_ALLOW_RULE,
   removeConductorMarker,
+  writeAllowFile,
   writeConductorMarker
 } from '../hooks'
 import type { StatusLineSetting } from '../statusline'
@@ -92,6 +93,7 @@ export interface ClaudeBackendDeps {
   resumeProbes: ResumeProbes
   events(tabId: string, event: SessionEvent): void
   error(message: string): void
+  assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
 }
 
 // PLATFORM§28
@@ -387,7 +389,15 @@ export class ClaudeBackend implements SessionBackend {
     const drops = machine
       ? this.watchMachineDrops(dir, machine, handle)
       : watchAndSweepJsonDrops(dir, () => handle, unboundTabNote)
-    const logs = this.watchStatusLogs(dir)
+    const tabNoteFirst = machine
+      ? (statusLog: string): void => {
+          const note = statusLog.replace(/\.status\.jsonl$/, '.json')
+          try {
+            handle(JSON.parse(fs.readFileSync(note, 'utf8')), note)
+          } catch {}
+        }
+      : undefined
+    const logs = this.watchStatusLogs(dir, tabNoteFirst)
     return () => {
       drops?.close()
       logs()
@@ -410,20 +420,25 @@ export class ClaudeBackend implements SessionBackend {
     )
   }
 
-  private watchStatusLogs(dir: string): () => void {
+  private watchStatusLogs(dir: string, before?: (statusLog: string) => void): () => void {
+    const drain = (name: string): void => {
+      const full = path.join(dir, name)
+      before?.(full)
+      void this.drainStatusLog(full)
+    }
     let watcher: fs.FSWatcher | null = null
     try {
       watcher = fs.watch(dir, (_event, filename) => {
         const name = filename?.toString()
         if (!name || !name.endsWith('.status.jsonl')) return
-        void this.drainStatusLog(path.join(dir, name))
+        drain(name)
       })
     } catch {}
     const poll = setInterval(() => {
       void fs.promises.readdir(dir).then(
         (names) => {
           for (const name of names) {
-            if (name.endsWith('.status.jsonl')) void this.drainStatusLog(path.join(dir, name))
+            if (name.endsWith('.status.jsonl')) drain(name)
           }
         },
         () => {}
@@ -768,6 +783,7 @@ export class ClaudeBackend implements SessionBackend {
       cols: opts.cols,
       rows: opts.rows,
       role: opts.role,
+      allow: opts.allow,
       conductor: opts.conductor,
       trustFolder: opts.trustFolder
     })
@@ -888,6 +904,7 @@ export class ClaudeBackend implements SessionBackend {
       cols?: number
       rows?: number
       role?: string
+      allow?: string[]
       conductor?: boolean
       trustFolder?: boolean
     }
@@ -902,6 +919,10 @@ export class ClaudeBackend implements SessionBackend {
     })
     if (!plan.ok) return plan
     const machine = plan.machine
+    // ADR-0029
+    const assist = machine ? undefined : this.d.assistOf(plan.cwd, spec.resumeSessionId)
+    const conductor = spec.conductor || !!assist
+    const role = spec.role ?? assist?.role
     const agentPlugin =
       !machine && this.agentPlugin && loadSettings().agentTools ? this.agentPlugin : undefined
     const handle = this.d.pty.create({
@@ -915,20 +936,20 @@ export class ClaudeBackend implements SessionBackend {
         return plan.launchCommand(tabId)
       },
       resumeSessionId: spec.resumeSessionId,
-      conductor: spec.conductor,
+      conductor,
       resized: plan.resized,
       shell: plan.shell,
       extraEnv: agentPlugin
         ? {
             ...plan.extraEnv,
             KOLOFT_AGENT_PLUGIN: agentPlugin,
-            KOLOFT_AGENT_PROMPT: spec.conductor
-              ? undefined
-              : path.join(agentPlugin, AGENT_PROMPT_FILE)
+            KOLOFT_AGENT_PROMPT: conductor ? undefined : path.join(agentPlugin, AGENT_PROMPT_FILE)
           }
         : plan.extraEnv
     })
-    if (spec.role && !machine) writeConductorMarker(this.hookRegDir, handle.id, spec.role)
+    if (role && !machine) writeConductorMarker(this.hookRegDir, handle.id, role)
+    if (conductor && !machine)
+      writeAllowFile(this.hookRegDir, handle.id, spec.allow ?? assist?.allow ?? [])
     if (spec.permission === 'bypass') this.launchedBypassing.add(handle.id)
     if (machine) {
       tracker.track(handle.id, machine.cwd, machine.tracking)
