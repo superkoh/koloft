@@ -1784,7 +1784,9 @@ app.whenReady().then(() => {
   setupGuestAudioState()
   setupGuestFullscreen()
 
-  const { shimDir, regDir, openDir, pickDir, agentDir } = setupShim()
+  const { shimDir, regDir, openDir, pickDir, agentDir } = setupShim(
+    `/tmp/koloft-git-${crypto.randomUUID()}`
+  )
   ptyMgr.shimDir = shimDir
   ptyMgr.regDir = regDir
   if (agentRequests.watch(agentDir)) {
