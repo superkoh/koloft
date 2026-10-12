@@ -6,7 +6,12 @@ import type {
   DiscordStatus,
   DiscordUser
 } from '@shared/types'
-import { newChannelGuild, newChannelName, newChannelTopic } from '@shared/conductors'
+import {
+  newChannelGuild,
+  newChannelName,
+  newChannelTopic,
+  SET_UP_WITH_ASSIST
+} from '@shared/conductors'
 import { distinctName } from '@shared/sessionRoute'
 import { DiscordGateway } from './gateway'
 import { DiscordHttpError, DiscordRest } from './rest'
@@ -464,7 +469,7 @@ export class DiscordLink {
         if (error.status === NOT_FOUND) return
         if (error.status === MISSING_PERMISSIONS)
           throw new Error(
-            `${error.message}. Invite the bot again (Settings ▸ Discord ▸ Set up with Assist), or give it the Manage Threads permission in the server’s settings.`
+            `${error.message}. Invite the bot again (Settings ▸ Discord ▸ ${SET_UP_WITH_ASSIST}), or give it the Manage Threads permission in the server’s settings.`
           )
         throw error
       })

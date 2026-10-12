@@ -1,12 +1,11 @@
 import { useState, type JSX } from 'react'
 import { LuPlus } from 'react-icons/lu'
-import { channelLabel, scopeName } from '@shared/conductors'
+import { channelLabel, scopeName, SET_UP_WITH_ASSIST } from '@shared/conductors'
 import { ageLabel } from '@shared/freshnessOps'
 import { useStore } from '../../store'
 import { setUpDiscordWithAssist } from '../ConductorsIsland'
 import {
   MESSAGE_CONTENT_BY_HAND,
-  ownerFromApp,
   statusClass,
   statusText,
   useDiscordStatus
@@ -30,7 +29,6 @@ export function DiscordPane(): JSX.Element {
   )
   if (!loaded) return head
   const status = loaded
-  const fromApp = ownerFromApp(status, discord)
   const candidate = status.candidate
   const setUp = status.phase !== 'off'
 
@@ -47,7 +45,7 @@ export function DiscordPane(): JSX.Element {
           </small>
         </div>
         <button className="btn-primary" onClick={() => void setUpWithAssist()}>
-          Set up with Assist
+          {SET_UP_WITH_ASSIST}
         </button>
       </div>
       {assistError && <div className="acct-login-state bad">{assistError}</div>}
@@ -62,7 +60,7 @@ export function DiscordPane(): JSX.Element {
             </div>
             <span className="acct-note">
               {discord.userId
-                ? `You are ${discord.userName ?? discord.userId}${fromApp ? ' · owner of the bot’s app' : ''}`
+                ? `You are ${discord.userName ?? discord.userId}${status.appOwner?.id === discord.userId ? ' · owner of the bot’s app' : ''}`
                 : status.phase === 'connected'
                   ? 'Send any message in your server'
                   : 'Not set'}
@@ -110,7 +108,7 @@ export function DiscordPane(): JSX.Element {
                   ? 'Known once the bot is connected.'
                   : status.guilds.length
                     ? `The bot is in ${status.guilds.map((g) => g.name).join(', ')}.`
-                    : 'The bot is not in a server you own yet. Set up with Assist invites it.'}
+                    : `The bot is not in a server you own yet. ${SET_UP_WITH_ASSIST} invites it.`}
               </small>
             </div>
           </div>

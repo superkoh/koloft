@@ -44,6 +44,8 @@ export function assistTaskName(scope: string, task: string): string {
   return `${conductorName(scope)}-${task}`
 }
 
+export const SET_UP_WITH_ASSIST = 'Set up with Assist'
+
 export function channelLabel(binding: Pick<ConductorBinding, 'channel'>): string {
   return `#${binding.channel.name}`
 }

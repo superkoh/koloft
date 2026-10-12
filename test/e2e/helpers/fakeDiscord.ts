@@ -5,7 +5,7 @@ import { WebSocketServer, type WebSocket } from 'ws'
 import { addKeychainEntry, type E2EEnv } from './env'
 
 export const FAKE_BOT = 'koloft-bot'
-export const FAKE_APPLICATION_ID = '700'
+const FAKE_APPLICATION_ID = '700'
 export const FAKE_GUILD = { id: '111', name: 'koloft' }
 export const FAKE_GUILD_OWNER = '555'
 export const FAKE_CHANNELS = [

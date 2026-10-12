@@ -522,8 +522,16 @@ export const useStore = create<AppState>((set, get) => ({
   addTabQuiet: (t) => {
     const asleep = asleepTabFor(get(), t)
     if (asleep) return wakeInto(asleep, t, false)
-    set((s) => (s.tabs.some((x) => x.id === t.id) ? {} : { tabs: [...s.tabs, t] }))
-    if (activateOnceSpawned === t.id) get().activateTab(t.id)
+    const awaited = activateOnceSpawned === t.id
+    if (awaited) activateOnceSpawned = null
+    set((s) =>
+      s.tabs.some((x) => x.id === t.id)
+        ? {}
+        : {
+            tabs: [...s.tabs, t],
+            ...(awaited && { activeTabId: t.id, resumeLaunch: null })
+          }
+    )
   },
   setCron: (cron) => set({ cron }),
   adoptTabs: (tabs, activeTabBeforeReload) => {

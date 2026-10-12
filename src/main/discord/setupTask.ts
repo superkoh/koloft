@@ -1,4 +1,4 @@
-import { PLAYWRIGHT_CLI_RULE } from '../conductorGate'
+import { CODEX_WAITING_QUESTION_TOOL, PLAYWRIGHT_CLI_RULE } from '../conductorGate'
 import type { AssistTask } from './conductors'
 import { channelLabel, ownedGuilds, scopeName } from '@shared/conductors'
 import type { DiscordSettings, DiscordStatus } from '@shared/types'
@@ -25,7 +25,7 @@ Rules:
 - Never read, copy, print or type the bot token. Use "koloft discord token --from-page" to save it; Koloft reads it from the page itself, then reloads the page so the token is gone, and tells you only "saved" or why not. It refuses while you are attached.
 - "Detach" means run "playwright-cli close", so no tool is attached to the browser; "re-attach" means open the page again with playwright-cli. Detach before every step the owner does by hand (signing in, typing a name or a password, clicking Create, any "I am human" check). Then ask the owner inside Koloft whether they are done, and re-attach only after they say yes, except where a step below says to stay detached.
 - You cannot reload while detached: run "koloft discord reload" and Koloft reloads the Discord page for you. Never ask the owner to reload.
-- Ask the owner only inside Koloft, never on Discord, and ask one question at a time: wait for the answer before the next, and skip any question that answer has already settled. Use a question tool that waits for the answer (AskUserQuestion, or request_user_input — never request_user_input_async, which does not wait); if you have none, ask in a plain message and end your turn. Never sleep or poll while you wait: the owner's reply starts your next turn.
+- Ask the owner only inside Koloft, never on Discord, and ask one question at a time: wait for the answer before the next, and skip any question that answer has already settled. Use a question tool that waits for the answer (AskUserQuestion, or ${CODEX_WAITING_QUESTION_TOOL} — never ${CODEX_WAITING_QUESTION_TOOL}_async, which does not wait); if you have none, ask in a plain message and end your turn. Never sleep or poll while you wait: the owner's reply starts your next turn.
 - Run "koloft discord status" first and again after each step; skip every step it says is done, and every scope it lists under Bindings. A bot token Discord refuses is not done: do steps 2 to 5 to get a new one. Do steps 2 to 5 too when the owner says they want to change the bot, even though status says the token is saved.
 
 Steps:

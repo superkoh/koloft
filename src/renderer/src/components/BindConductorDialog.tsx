@@ -7,7 +7,8 @@ import {
   newChannelGuild,
   newChannelName,
   newChannelTopic,
-  scopeName
+  scopeName,
+  SET_UP_WITH_ASSIST
 } from '@shared/conductors'
 import { distinctName } from '@shared/sessionRoute'
 import type { DiscordChannel } from '@shared/types'
@@ -214,7 +215,7 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
             ) : channels === null ? (
               'Loading your channels…'
             ) : !guildId && channels.length === 0 ? (
-              'No channels yet. Finish Settings ▸ Discord ▸ Set up with Assist first.'
+              `No channels yet. Finish Settings ▸ Discord ▸ ${SET_UP_WITH_ASSIST} first.`
             ) : channel === NEW && guildId ? (
               <>
                 Koloft makes the new channel in your server <b>{guildName}</b>, under your bot’s

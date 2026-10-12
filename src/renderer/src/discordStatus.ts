@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { DiscordSettings, DiscordStatus } from '@shared/types'
+import { SET_UP_WITH_ASSIST } from '@shared/conductors'
+import type { DiscordStatus } from '@shared/types'
 
 export function useDiscordStatus(): DiscordStatus | null {
   const [status, setStatus] = useState<DiscordStatus | null>(null)
@@ -41,9 +42,4 @@ export function statusClass(s: DiscordStatus): string {
   return s.phase === 'token' || s.phase === 'intents' ? ' bad' : ''
 }
 
-export const MESSAGE_CONTENT_BY_HAND =
-  'Koloft could not turn Message Content on. Click Set up with Assist above: Assist does that with you. Koloft checks again every 30 seconds.'
-
-export function ownerFromApp(s: DiscordStatus, discord: DiscordSettings): boolean {
-  return !!discord.userId && s.appOwner?.id === discord.userId
-}
+export const MESSAGE_CONTENT_BY_HAND = `Koloft could not turn Message Content on. Click ${SET_UP_WITH_ASSIST} above: Assist does that with you. Koloft checks again every 30 seconds.`

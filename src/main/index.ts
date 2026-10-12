@@ -1186,7 +1186,11 @@ const agentRequests = new AgentRequests({
         await discordRelay.send(channelId, files, text)
       },
       isSetupTask: (tabId) => conductors?.taskNameOf(tabId) === DISCORD_SETUP_TASK_NAME,
-      status: () => discordSetupStatus(),
+      status: () =>
+        setupStatusText(
+          discordLink?.status() ?? DISCORD_OFF,
+          conductors?.discordSettings() ?? { bindings: [] }
+        ),
       tokenFromPage: (tabId) =>
         saveTokenFromPage(guestPagesOf(tabId), relayAttached(tabId), saveDiscordToken),
       reload: (tabId) => reloadDiscordPage(guestPagesOf(tabId), relayAttached(tabId)),
@@ -3538,13 +3542,6 @@ function tabReady(tabId: string, ms: number, turnEnded: boolean): Promise<boolea
 function registerSlashCommands(): void {
   const guilds = new Set((conductors?.bindings() ?? []).map((b) => b.channel.guildId))
   void discordLink?.registerCommands([...guilds], SLASH_COMMANDS)
-}
-
-function discordSetupStatus(): string {
-  return setupStatusText(
-    discordLink?.status() ?? DISCORD_OFF,
-    conductors?.discordSettings() ?? { bindings: [] }
-  )
 }
 
 function guestPagesOf(tabId: string): GuestPage[] {
