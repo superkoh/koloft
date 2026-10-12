@@ -9,7 +9,12 @@ import {
   launchApp,
   pendingAttention
 } from './helpers/app'
-import { seedNoClaudeAccountButStillSetUp, seedSettings, type E2EEnv } from './helpers/env'
+import {
+  seedClaudeTrust,
+  seedNoClaudeAccountButStillSetUp,
+  seedSettings,
+  type E2EEnv
+} from './helpers/env'
 import {
   addWorkspace,
   closeMenu,
@@ -215,6 +220,8 @@ function edWorktreeArg(argv: string[]): string | undefined {
 }
 
 test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overlaps, misses, failed starts, the start deadline, a broken store, form refusals, workspace removal', () => {
+  test.beforeEach(({ env }) => seedClaudeTrust(env, [env.workspaces.a, env.workspaces.b]))
+
   test('BB-E01: a due while the last run is still open is skipped, and skips fold into one line', async ({
     env
   }) => {
@@ -949,7 +956,7 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
     test.setTimeout(180_000)
     gitInit(env.workspaces.a)
     const claudeJson = path.join(env.home, '.claude.json')
-    expect(fs.existsSync(claudeJson)).toBe(false)
+    fs.rmSync(claudeJson)
 
     const first = await edLaunch(env)
     try {

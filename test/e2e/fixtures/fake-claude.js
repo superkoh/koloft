@@ -169,11 +169,10 @@ function makeWorktree(name, fatal = false) {
 function seededTrustRefuses(dir) {
   let projects
   try {
-    projects = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8')).projects
+    projects = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8')).projects ?? {}
   } catch {
     return false
   }
-  if (!projects) return false
   for (let p = fs.realpathSync(dir); ; p = path.dirname(p)) {
     if (projects[p]?.hasTrustDialogAccepted === true) return false
     if (path.dirname(p) === p) return true

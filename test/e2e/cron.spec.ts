@@ -11,7 +11,7 @@ import {
   REMOTE_WS_NAME,
   remoteDir
 } from './helpers/remote'
-import { seedSettings, type E2EEnv } from './helpers/env'
+import { seedClaudeTrust, seedSettings, type E2EEnv } from './helpers/env'
 import { runGit } from './helpers/gitFixture'
 import {
   auxIcon,
@@ -226,6 +226,8 @@ function worktreeOf(call: ClaudeCall): string {
 }
 
 test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', () => {
+  test.beforeEach(({ env }) => seedClaudeTrust(env, [env.workspaces.a, env.workspaces.b]))
+
   test('BB-M01: the workspace menu has a Scheduled jobs… item, and it opens the dialog', async ({
     env
   }) => {
