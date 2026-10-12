@@ -1628,6 +1628,109 @@ Gateway (the live connection that pushes events):
   `_sk`), and prints no `proxycommand` or `identityagent` line when none is set.
 - **A server that greets the key's owner writes it to stderr and exits 1**; GitHub's
   documented greeting is `Hi <login>! You've successfully authenticated, but GitHub does
-  not provide shell access.` (inferred, not checked: no real key was used).
+  not provide shell access.` (inferred, not checked: no real key was used). Read in their
+  sources, not checked against a server: GitLab greets `Welcome to GitLab, @<username>!`,
+  Gitea and Forgejo `Hi there, <login>! You've successfully authenticated…`.
 - Measured 2026-10-12 in a Docker Linux container against a local sshd with throwaway
   keys, and `ssh -F /dev/null -G github.com` on macOS 27.0.
+
+## §49 gh and GitHub Enterprise: token variables, sign-in, ports
+
+- **Which variable gh sends.** For github.com, `*.ghe.com` and `github.localhost` gh reads
+  `GH_TOKEN`, then `GITHUB_TOKEN`; for every other host `GH_ENTERPRISE_TOKEN`, then
+  `GITHUB_ENTERPRISE_TOKEN`, then that host's `oauth_token` in `hosts.yml` (go-gh v2.16.1
+  `pkg/auth/auth.go:63-84`). Measured: with `GH_HOST=<server>` and
+  `GH_ENTERPRISE_TOKEN=x`, `gh api user` sent `GET /api/v3/user` with `Authorization:
+  token x`; with only `GH_TOKEN` set it sent no `Authorization` at all and did not fail
+  (a real server would answer 401).
+- **`gh auth login --web --hostname <server>`** with stdin not a terminal asks
+  `POST https://<server>/login/device/code`. When the server answers, stderr is the same
+  two lines as on github.com (§47) with `https://<server>/login/device`, and the finished
+  `hosts.yml` is keyed by the server name in lower case. When the device endpoint answers
+  401, 403, 404, 422, or 400 `device_flow_disabled`/`unauthorized_client`, gh falls back
+  to the web flow: it prints only `Open this URL to continue in your web browser:
+  https://<server>/login/oauth/authorize?client_id=…&redirect_uri=http%3A%2F%2Flocalhost%3A<port>%2F…`
+  (no code) and waits for the browser on that localhost port; opening the URL finished
+  the sign-in. gh also writes `$HOME/.local/state/gh/device-id` whatever
+  `GH_CONFIG_DIR` says.
+- **A port in the host.** `--hostname <host>:<port>` is refused before any request
+  (`error parsing hostname: invalid hostname`, exit 1) in `auth login` and `api`, while
+  `GH_HOST=<host>:<port>` with `GH_ENTERPRISE_TOKEN` works for API calls. A `hosts.yml`
+  entry keyed `<host>:<port>` is read by `gh auth status` but API calls then go out with
+  no token (`api/http_client.go:219-225` drops the port before the lookup).
+- Measured 2026-10-12 in a Docker Linux container, gh 2.102.0 linux-arm64, against a
+  fake GitHub Enterprise over https on 127.0.0.1 with a self-signed certificate.
+
+## §50 Git Credential Manager run by Koloft
+
+- **On macOS GCM keeps the Microsoft (Azure DevOps) sign-in cache in one fixed Keychain
+  item**, service `GitCredentialManager.MSAL`, account `MSALCache`, whatever
+  `GCM_NAMESPACE`, `HOME` or any setting says, so it is shared with the user's own GCM
+  and between any two accounts. (Read in the GCM 3.0.1 source,
+  `src/Core/Authentication/Entra/EntraAuthentication.Caching.cs` lines 99–155.)
+- **A sign-in `get` goes straight to the browser** only with `GCM_GUI_PROMPT=0`,
+  `GIT_TERMINAL_PROMPT` unset and exactly one mode allowed (`GCM_GITLAB_AUTHMODES=browser`,
+  `GCM_BITBUCKET_AUTHMODES=oauth`, `GCM_OAUTH_AUTHMODES=browser`); otherwise it fails with
+  `Cannot prompt because terminal prompts have been disabled.` or `Cannot show selection
+  prompt…`. It never gives up while the browser does not come back. On Linux it needs
+  `DISPLAY` or `WAYLAND_DISPLAY`.
+- **The URL it opens shows only in its trace**: with `GCM_TRACE=1`, stderr carries
+  `… trace: [OpenBrowserInternal] Opening browser using '<xdg-open path>: <url>` on Linux
+  and, from the source (`src/Core/ISessionManager.cs:81`), `Opening browser using
+  framework shell-execute: <url>` on macOS. No token, refresh token or code appeared in
+  the trace (`password=********`).
+- **Who keeps what.** GitLab's sign-in `get` answers `username=oauth2` and stores both
+  the access and the refresh token itself; a later `get` checks `/oauth/token/info` and
+  refreshes silently when it answers 401. The generic provider (Gitea, Forgejo,
+  Codeberg) picks Gitea's built-in client `e90ee53c-94e2-48ac-9358-a874fb9e0662` only when
+  the request carries `wwwauth[]=Basic realm="Gitea"` (every `get`, not just the first),
+  stores only the refresh token, and mints a new access token from it on every later
+  `get`; it answers `username=OAUTH_USER` unless the request names one. Bitbucket, from
+  the source, also stores only the refresh token.
+- **Each `GCM_NAMESPACE` keeps its own entries**: two GitLab sign-ins as two users in two
+  namespaces each got their own token back. `erase` with the provider's own rules leaves
+  Gitea's refresh token behind; an `erase` naming the host `refresh_token.<host>` (Gitea)
+  or `oauth-refresh-token.<host>` (GitLab) removes it.
+- **A quiet `get`** (`GCM_INTERACTIVE=never`, `GIT_TERMINAL_PROMPT=0`) with nothing it can
+  use exits 255 with `fatal: Cannot prompt because user interactivity has been
+  disabled.`; with the server down GitLab still hands back its stored token, while a
+  refresh-only Gitea namespace exits 255 with `fatal: Connection refused`.
+- **Where it reads settings.** It runs `git` from `PATH` (none: it aborts and leaves a
+  `core` file in its folder), reads the global file named by `GIT_CONFIG_GLOBAL` and the
+  config of the repository it runs in, and without `GCM_PROVIDER` it probes the host and
+  writes `provider = generic` into that global file. It wrote nothing under `HOME`.
+- **On macOS the shipped binary** (osx-arm64 tarball: the executable, four dylibs and
+  `NOTICE`, 52 MB unpacked, signed by Microsoft) printed `3.0.1+4e8a96b…` for `--version`
+  and did a plaintext-store `store`/`get`/`erase` under a sandbox that blocks
+  `/usr/bin/security` and the Keychain.
+- Measured 2026-10-12 in a Docker Linux container (GCM 3.0.1 linux-arm64, no network,
+  fake GitLab and Gitea servers on 127.0.0.1, a fake `xdg-open` that follows the URL with
+  curl) and, for the last point, on macOS 27.0.
+## §51 Who-am-I, push access and commit address on GitLab, Gitea, Bitbucket and Azure DevOps
+
+From each platform's API docs, read 2026-10-11; inferred, not checked against a real
+server unless a line says so.
+
+- **GitLab**: `GET /api/v4/user` with `Authorization: Bearer <token>` (a personal token
+  or an OAuth token) gives `username`, `id`, `name` and, to the user themself,
+  `commit_email`; an unknown or revoked token answers 401. `GET
+  /api/v4/personal_access_tokens/self` lists a personal token's `scopes`. `GET
+  /api/v4/projects/<url-encoded path>` gives `permissions.project_access.access_level`
+  and `permissions.group_access.access_level`; 30 (Developer) or more can push. The
+  private commit address is `<id>-<username>@users.noreply.<host>`.
+- **Gitea / Forgejo / Codeberg**: `GET /api/v1/user` gives `login`, `id`, `full_name`;
+  `GET /api/v1/version` gives `version` (Forgejo: `<forgejo>+gitea-<gitea>`); `GET
+  /api/v1/repos/<owner>/<repo>` gives `permissions.push`; 401 for a bad token. The
+  private commit address is `<login>@noreply.<domain>`, and from Gitea 1.26
+  `<id>+<login>@noreply.<domain>`.
+- **Bitbucket Cloud**: `GET https://api.bitbucket.org/2.0/user` gives `username`,
+  `display_name`; `GET /2.0/user/emails` lists `email` with `is_primary`; `GET
+  /2.0/user/permissions/repositories?q=repository.full_name="<ws>/<repo>"` gives
+  `permission` (`read`, `write`, `admin`). No private commit address exists.
+- **Azure DevOps**: a personal token goes as `Basic` with an empty user name. Without
+  `X-TFS-FedAuthRedirect: Suppress` a bad token is redirected to a sign-in page (302 or
+  203) instead of 401. `GET https://dev.azure.com/<org>/_apis/connectionData` names the
+  signed-in user (`authenticatedUser.properties.Account.$value`). Which permission bit
+  means "can push" is not checked, so Koloft only asks whether `GET
+  .../<project>/_apis/git/repositories/<repo>` answers 200. No private commit address
+  exists.

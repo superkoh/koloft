@@ -1,4 +1,5 @@
-import { GITHUB_LOGIN_RE, type GitAccount } from '@shared/types'
+import type { GitAccount } from '@shared/types'
+import { GIT_LOGIN_RE } from '@shared/gitAccountOps'
 
 const FIXED_GIT_USERNAMES = new Set(['git', 'oauth2', 'x-access-token'])
 const TOKEN_PREFIX = /^(gh[pousr]_|github_pat_)/
@@ -7,7 +8,7 @@ const TOKEN_LIKE = /^[A-Za-z0-9_-]{36,}$/
 export function plausibleLogin(name: string): string | null {
   if (FIXED_GIT_USERNAMES.has(name.toLowerCase())) return null
   if (TOKEN_PREFIX.test(name) || TOKEN_LIKE.test(name)) return null
-  return GITHUB_LOGIN_RE.test(name) ? name : null
+  return GIT_LOGIN_RE.test(name) ? name : null
 }
 
 export function loginFromRemoteUrl(url: string): string | null | 'discard' {
@@ -33,9 +34,14 @@ const yamlScalar = (s: string): string => s.trim().replace(/^(['"])(.*)\1$/, '$2
 const indentOf = (line: string): number => line.length - line.trimStart().length
 
 // PLATFORM§47
-export function githubHostEntry(hostsYml: string): { user?: string; token?: string } {
+export function githubHostEntry(
+  hostsYml: string,
+  host = 'github.com'
+): { user?: string; token?: string } {
   const lines = hostsYml.split('\n')
-  const start = lines.findIndex((l) => /^["']?github\.com["']?:\s*$/.test(l))
+  const start = lines.findIndex(
+    (l) => indentOf(l) === 0 && /:\s*$/.test(l) && yamlScalar(l.replace(/:\s*$/, '')) === host
+  )
   if (start < 0) return {}
   const block: string[] = []
   for (const l of lines.slice(start + 1)) {
@@ -65,41 +71,49 @@ export function githubHostEntry(hostsYml: string): { user?: string; token?: stri
   return { ...(user ? { user } : {}), ...(token ? { token } : {}) }
 }
 
-export function ghActiveLogin(hostsYml: string, hasGhHelper: boolean): string | null {
+export function ghActiveLogin(hostsYml: string, hasGhHelper: boolean, host: string): string | null {
   if (!hasGhHelper) return null
-  const { user } = githubHostEntry(hostsYml)
+  const { user } = githubHostEntry(hostsYml, host)
   return user ? plausibleLogin(user) : null
 }
 
 const GH_CREDENTIAL_HELPER = /(^|[\s/'"!])gh(\.exe)?['"]?\s+auth\s+git-credential\b/
 
-export function usesGhCredentialHelper(helperConfigLines: string): boolean {
-  return helperConfigLines
-    .split('\n')
-    .some(
-      (l) =>
-        /^credential\.(https:\/\/github\.com\/?\.)?helper\s/.test(l) && GH_CREDENTIAL_HELPER.test(l)
-    )
+export function usesGhCredentialHelper(helperConfigLines: string, host: string): boolean {
+  const forHost = `credential.https://${host}`.toLowerCase()
+  return helperConfigLines.split('\n').some((l) => {
+    const key = l.split(/\s/)[0].toLowerCase()
+    const scoped = key === 'credential.helper' || key.replace(/\/?\.helper$/, '') === forHost
+    return scoped && key.endsWith('.helper') && GH_CREDENTIAL_HELPER.test(l)
+  })
 }
 
-const SSH_GREETING = /^Hi ([^!\s]+)!/m
+const SSH_GREETINGS = [
+  /^Hi ([^!\s]+)!/m,
+  /^Welcome to GitLab, @([^!\s]+)!/m,
+  /^Hi there, ([^!\s]+)!/m
+]
 
 // PLATFORM§48
 export function loginFromSshGreeting(stderr: string): string | null {
-  const m = SSH_GREETING.exec(stderr)
-  return m ? plausibleLogin(m[1]) : null
+  for (const greeting of SSH_GREETINGS) {
+    const m = greeting.exec(stderr)
+    if (m) return plausibleLogin(m[1])
+  }
+  return null
 }
 
-const NOREPLY = /^(?:(\d+)\+)?([^@+]+)@users\.noreply\.github\.com$/i
+const GITHUB_NOREPLY_WITHOUT_ID = /^([^@+]+)@users\.noreply\.github\.com$/i
 
 export function loginFromCommitEmails(emails: string[], accounts: GitAccount[]): string | null {
   const found = new Set<string>()
-  for (const email of emails) {
-    const m = NOREPLY.exec(email.trim())
-    if (!m) continue
-    const id = m[1] ? Number(m[1]) : undefined
+  for (const raw of emails) {
+    const email = raw.trim().toLowerCase()
+    const bare = GITHUB_NOREPLY_WITHOUT_ID.exec(email)?.[1]
     const account = accounts.find(
-      (a) => a.login.toLowerCase() === m[2].toLowerCase() && (id === undefined || a.id === id)
+      (a) =>
+        a.author?.email.toLowerCase() === email ||
+        (a.platform === 'github' && bare === a.login.toLowerCase())
     )
     if (account) found.add(account.login)
   }

@@ -40,11 +40,22 @@ describe('readHostsYml', () => {
   it('reads the signed-in login and its token from what an --insecure-storage login writes', () => {
     const yml =
       'github.com:\n    users:\n        bob:\n            oauth_token: gho_bob\n    git_protocol: https\n    oauth_token: gho_bob\n    user: bob\n'
-    expect(readHostsYml(yml)).toEqual({ login: 'bob', token: 'gho_bob' })
+    expect(readHostsYml(yml, 'github.com')).toEqual({ login: 'bob', token: 'gho_bob' })
   })
 
   it('a hosts.yml whose token lives in the keychain gives no sign-in', () => {
-    expect(readHostsYml('github.com:\n    users:\n        bob:\n    user: bob\n')).toBeNull()
+    expect(
+      readHostsYml('github.com:\n    users:\n        bob:\n    user: bob\n', 'github.com')
+    ).toBeNull()
+  })
+
+  it('reads the entry of the server it signed in to, so a GitHub Enterprise sign-in never reads github.com', () => {
+    const yml =
+      'github.com:\n    oauth_token: gho_other\n    user: other\nghe.example.com:8443:\n    oauth_token: gho_carol\n    user: carol\n'
+    expect(readHostsYml(yml, 'ghe.example.com:8443')).toEqual({
+      login: 'carol',
+      token: 'gho_carol'
+    })
   })
 })
 
@@ -79,7 +90,7 @@ describe('GithubLogin with the fake gh', () => {
   let fakeHome: string
   let progress: GitLoginProgress[]
   let pages: { url: string; closed: boolean }[]
-  let saved: { login: string; id: number; name: string; token: string }[]
+  let saved: { host: string; token: string }[]
   let login: GithubLogin
 
   const loginDirs = (): string[] =>
@@ -108,11 +119,11 @@ describe('GithubLogin with the fake gh', () => {
       },
       openInBrowser: () => {},
       progress: (p) => progress.push(p),
-      whoami: async (token) =>
-        token === 'gho_fake_bob'
-          ? { ok: true, login: 'bob', id: 42, name: 'Bob Example', scopes: ['repo', 'read:org'] }
-          : { ok: false, error: 'expired' },
-      save: async (a, token) => void saved.push({ ...a, token })
+      signedIn: async (host, token) => {
+        if (token !== 'gho_fake_bob') return { ok: false, message: 'not accepted' }
+        saved.push({ host, token })
+        return { ok: true, login: 'bob' }
+      }
     }
     login = new GithubLogin(deps)
   })
@@ -135,7 +146,7 @@ describe('GithubLogin with the fake gh', () => {
     })
 
   it('shows the code, opens the device page, then saves the account GitHub names and leaves no login folder', async () => {
-    expect(await login.start()).toEqual({ ok: true })
+    expect(await login.start('github.com')).toEqual({ ok: true })
     await codeShown()
     expect(progress).toContainEqual({
       phase: 'code',
@@ -147,15 +158,13 @@ describe('GithubLogin with the fake gh', () => {
     await vi.waitFor(() => expect(progress.at(-1)).toEqual({ phase: 'saved', login: 'bob' }), {
       timeout: 5000
     })
-    expect(saved).toEqual([
-      { host: 'github.com', login: 'bob', id: 42, name: 'Bob Example', token: 'gho_fake_bob' }
-    ])
+    expect(saved).toEqual([{ host: 'github.com', token: 'gho_fake_bob' }])
     expect(pages[0].closed).toBe(true)
     expect(loginDirs()).toEqual([])
   })
 
   it('hands gh no token variable and a PATH that is one empty folder inside its own login folder', async () => {
-    await login.start()
+    await login.start('github.com')
     await codeShown()
     const log = fs.readFileSync(path.join(fakeHome, 'fake-gh-login-env.txt'), 'utf8')
     const keys = /^keys (.*)$/m.exec(log)![1].split(' ')
@@ -169,13 +178,48 @@ describe('GithubLogin with the fake gh', () => {
     )
   })
 
+  it('a GitHub Enterprise sign-in names that server to gh', async () => {
+    await login.start('ghe.example.com:8443')
+    await codeShown()
+    const log = fs.readFileSync(path.join(fakeHome, 'fake-gh-login-env.txt'), 'utf8')
+    expect(/^argv (.*)$/m.exec(log)![1]).toContain('--hostname ghe.example.com:8443 ')
+  })
+
+  it('a GitHub Enterprise server with no device flow: gh prints only an authorize address, which opens as a browser sign-in', async () => {
+    const webOnly = path.join(root, 'web-only-login.js')
+    fs.writeFileSync(
+      webOnly,
+      "process.stderr.write('Open this URL to continue in your web browser: https://ghe.example.com/login/oauth/authorize?client_id=x&state=y\\n')\nsetInterval(() => {}, 1000)\n"
+    )
+    process.env.KOLOFT_TEST_GH_LOGIN = webOnly
+    await login.start('ghe.example.com')
+    const authorize = 'https://ghe.example.com/login/oauth/authorize?client_id=x&state=y'
+    await vi.waitFor(() => expect(progress).toContainEqual({ phase: 'browser', url: authorize }), {
+      timeout: 5000
+    })
+    expect(pages.map((p) => p.url)).toEqual([authorize])
+  })
+
+  it('a device address with no code yet is not shown before its code arrives', async () => {
+    const half = path.join(root, 'half-login.js')
+    fs.writeFileSync(
+      half,
+      "process.stderr.write('Open this URL to continue in your web browser: https://github.com/login/device\\n')\nsetInterval(() => {}, 1000)\n"
+    )
+    process.env.KOLOFT_TEST_GH_LOGIN = half
+    await login.start('github.com')
+    await new Promise((r) => setTimeout(r, 300))
+    expect(progress).toEqual([{ phase: 'checking' }])
+    expect(pages).toEqual([])
+  })
+
   it('a second start while one runs is busy', async () => {
-    await login.start()
-    expect(await login.start()).toEqual({ ok: false, error: 'busy' })
+    await login.start('github.com')
+    expect(await login.start('github.com')).toEqual({ ok: false, error: 'busy' })
   })
 
   it('a refused device login reports failed and removes the login folder', async () => {
-    await login.start()
+    await login.start('github.com')
     await codeShown()
     fs.writeFileSync(path.join(fakeHome, 'deny-gh-login'), '')
     await vi.waitFor(() => expect(progress.at(-1)?.phase).toBe('failed'), { timeout: 5000 })
@@ -184,7 +228,7 @@ describe('GithubLogin with the fake gh', () => {
   })
 
   it('cancel stops gh, removes the login folder and reports nothing more', async () => {
-    await login.start()
+    await login.start('github.com')
     await codeShown()
     const seen = progress.length
     login.cancel()
@@ -193,11 +237,11 @@ describe('GithubLogin with the fake gh', () => {
     await new Promise((r) => setTimeout(r, 300))
     expect(progress.length).toBe(seen)
     expect(saved).toEqual([])
-    expect(await login.start()).toEqual({ ok: true })
+    expect(await login.start('github.com')).toEqual({ ok: true })
   })
 
   it('with no fake and no bundled gh it says no-gh', async () => {
     delete process.env.KOLOFT_TEST_GH_LOGIN
-    expect(await login.start()).toEqual({ ok: false, error: 'no-gh' })
+    expect(await login.start('github.com')).toEqual({ ok: false, error: 'no-gh' })
   })
 })

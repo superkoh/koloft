@@ -1,16 +1,16 @@
 import type { AccountStatus, GitAccount } from '@shared/types'
-import type { whoami } from './githubApi'
 
 export const GIT_ACCOUNT_CHECK_EVERY_MS = 6 * 3_600_000
 const FIRST_CHECK_AFTER_MS = 3_000
 const SAME_ACCOUNT_CHECK_GAP_MS = 60_000
 
+export type AccountHealth = 'ok' | 'expired' | 'offline' | 'unknown'
+
 export interface GitAccountChecksDeps {
   accounts(): GitAccount[]
-  token(login: string): Promise<string | null>
-  whoami: typeof whoami
-  setStatus(login: string, s: AccountStatus): void
-  setOffline(login: string, offline: boolean): void
+  health(a: GitAccount): Promise<AccountHealth>
+  setStatus(id: string, s: AccountStatus): void
+  setOffline(id: string, offline: boolean): void
 }
 
 export class GitAccountChecks {
@@ -25,36 +25,32 @@ export class GitAccountChecks {
   }
 
   async checkAll(): Promise<void> {
-    await Promise.all(this.d.accounts().map((a) => this.checkOne(a.login)))
+    await Promise.all(this.d.accounts().map((a) => this.checkOne(a.id)))
   }
 
-  checkOne(login: string): Promise<void> {
-    const pending = this.running.get(login)
+  checkOne(id: string): Promise<void> {
+    const pending = this.running.get(id)
     if (pending) return pending
-    const last = this.lastStarted.get(login)
+    const last = this.lastStarted.get(id)
     if (last !== undefined && Date.now() - last < SAME_ACCOUNT_CHECK_GAP_MS)
       return Promise.resolve()
-    this.lastStarted.set(login, Date.now())
-    const run = this.check(login).finally(() => this.running.delete(login))
-    this.running.set(login, run)
+    this.lastStarted.set(id, Date.now())
+    const run = this.check(id).finally(() => this.running.delete(id))
+    this.running.set(id, run)
     return run
   }
 
-  private async check(login: string): Promise<void> {
-    const token = await this.d.token(login)
-    if (!token) return
-    const r = await this.d.whoami(token)
-    if (r.ok) {
-      this.d.setOffline(login, false)
-      this.setStatus(login, 'ok')
-    } else if (r.error === 'expired') {
-      this.d.setOffline(login, false)
-      this.setStatus(login, 'expired')
-    } else if (r.error === 'offline') this.d.setOffline(login, true)
+  private async check(id: string): Promise<void> {
+    const a = this.d.accounts().find((x) => x.id === id)
+    if (!a) return
+    const h = await this.d.health(a)
+    if (h === 'unknown') return
+    this.d.setOffline(id, h === 'offline')
+    if (h !== 'offline') this.setStatus(id, h)
   }
 
-  private setStatus(login: string, s: AccountStatus): void {
-    const now = this.d.accounts().find((a) => a.login === login)
-    if (now && now.status !== s) this.d.setStatus(login, s)
+  private setStatus(id: string, s: AccountStatus): void {
+    const now = this.d.accounts().find((a) => a.id === id)
+    if (now && now.status !== s) this.d.setStatus(id, s)
   }
 }

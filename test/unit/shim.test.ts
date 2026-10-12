@@ -939,14 +939,17 @@ describe('git credential helper and gh wrapper', () => {
     expect(path.dirname(gitHelper)).toBe(shimDir)
     for (const f of [ghWrapper, gitHelper]) expect(fs.statSync(f).mode & 0o111).toBe(0o111)
     fs.mkdirSync(gitAuthDir, { recursive: true })
-    const r = spawnSync(gitHelper, ['bob', 'erase'], { input: 'protocol=https\n\n' })
+    const r = spawnSync(gitHelper, ['github.com/bob', 'erase'], {
+      input: 'protocol=https\nhost=github.com\n\n'
+    })
     expect(r.status).toBe(0)
     const drops = fs.readdirSync(gitAuthDir)
     expect(drops).toHaveLength(1)
     expect(JSON.parse(fs.readFileSync(path.join(gitAuthDir, drops[0]), 'utf8'))).toEqual({
       kind: 'rejected',
-      host: 'github.com',
-      account: 'bob'
+      account: 'github.com/bob',
+      protocol: 'https',
+      host: 'github.com'
     })
   })
 })

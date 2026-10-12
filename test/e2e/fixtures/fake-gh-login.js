@@ -24,6 +24,9 @@ process.stderr.write(
 const approved = path.join(home, 'approve-gh-login')
 const denied = path.join(home, 'deny-gh-login')
 
+const args = process.argv.slice(2)
+const host = args[args.indexOf('--hostname') + 1]
+
 const wait = setInterval(() => {
   if (fs.existsSync(denied)) {
     clearInterval(wait)
@@ -36,7 +39,7 @@ const wait = setInterval(() => {
   const token = process.env.KOLOFT_FAKE_GH_LOGIN_TOKEN || 'gho_fake_bob'
   fs.writeFileSync(
     path.join(process.env.GH_CONFIG_DIR, 'hosts.yml'),
-    `github.com:\n    users:\n        ${login}:\n            oauth_token: ${token}\n    git_protocol: https\n    oauth_token: ${token}\n    user: ${login}\n`,
+    `${host}:\n    users:\n        ${login}:\n            oauth_token: ${token}\n    git_protocol: https\n    oauth_token: ${token}\n    user: ${login}\n`,
     { mode: 0o600 }
   )
   process.stderr.write('✓ Authentication complete.\n')

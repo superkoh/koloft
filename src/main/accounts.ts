@@ -9,8 +9,7 @@ import {
   keychainService,
   type AccountKind,
   type AccountMeta,
-  type AccountStatus,
-  type GitHost
+  type AccountStatus
 } from '@shared/types'
 import { loadSettings, saveSettings } from './settings'
 
@@ -130,15 +129,15 @@ export function keychainDelete(kind: AccountKind, name: string): Promise<void> {
   return deleteSecret(serviceForAppNameAtCall(kind), name)
 }
 
-export function gitTokenRead(host: GitHost, login: string): Promise<string | null> {
+export function gitTokenRead(host: string, login: string): Promise<string | null> {
   return readSecret(gitKeychainService(app.getName(), host), login)
 }
 
-export function gitTokenWrite(host: GitHost, login: string, token: string): Promise<boolean> {
+export function gitTokenWrite(host: string, login: string, token: string): Promise<boolean> {
   return writeSecret(gitKeychainService(app.getName(), host), login, token)
 }
 
-export function gitTokenDelete(host: GitHost, login: string): Promise<void> {
+export function gitTokenDelete(host: string, login: string): Promise<void> {
   return deleteSecret(gitKeychainService(app.getName(), host), login)
 }
 

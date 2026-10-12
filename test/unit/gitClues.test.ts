@@ -11,10 +11,12 @@ import {
 } from '../../src/main/gitClues'
 
 const account = (login: string, id: number): GitAccount => ({
+  id: `github.com/${login}`,
+  platform: 'github',
+  url: 'https://github.com',
   host: 'github.com',
   login,
-  id,
-  name: login,
+  author: { name: login, email: `${id}+${login}@users.noreply.github.com` },
   default: false,
   status: 'ok',
   addedAt: 0
@@ -64,23 +66,43 @@ describe('ghActiveLogin', () => {
   const hosts = 'github.com:\n    users:\n        bob:\n    git_protocol: https\n    user: bob\n'
 
   it('names the user own gh is signed in as, only when gh is git’s helper and the remote is https', () => {
-    expect(ghActiveLogin(hosts, true)).toBe('bob')
-    expect(ghActiveLogin(hosts, false)).toBeNull()
+    expect(ghActiveLogin(hosts, true, 'github.com')).toBe('bob')
+    expect(ghActiveLogin(hosts, false, 'github.com')).toBeNull()
   })
 
-  it('spots gh set up as git’s credential helper, globally or for github.com', () => {
+  it('reads the entry for the server asked about, so a GitHub Enterprise login is never taken for github.com', () => {
+    const both = `${hosts}ghe.example.com:8443:\n    users:\n        carol:\n    user: carol\n`
+    expect(ghActiveLogin(both, true, 'ghe.example.com:8443')).toBe('carol')
+    expect(ghActiveLogin(both, true, 'github.com')).toBe('bob')
+    expect(ghActiveLogin(both, true, 'ghe.other.com')).toBeNull()
+  })
+
+  it('spots gh set up as git’s credential helper, globally or for the server asked about', () => {
     expect(
       usesGhCredentialHelper(
-        'credential.https://github.com.helper \ncredential.https://github.com.helper !/opt/homebrew/bin/gh auth git-credential'
+        'credential.https://github.com.helper \ncredential.https://github.com.helper !/opt/homebrew/bin/gh auth git-credential',
+        'github.com'
       )
     ).toBe(true)
     expect(
-      usesGhCredentialHelper("credential.helper !'/usr/local/bin/gh' auth git-credential")
+      usesGhCredentialHelper(
+        "credential.helper !'/usr/local/bin/gh' auth git-credential",
+        'github.com'
+      )
     ).toBe(true)
-    expect(usesGhCredentialHelper('credential.helper osxkeychain')).toBe(false)
+    expect(usesGhCredentialHelper('credential.helper osxkeychain', 'github.com')).toBe(false)
     expect(
-      usesGhCredentialHelper('credential.https://gitlab.com.helper !gh auth git-credential')
+      usesGhCredentialHelper(
+        'credential.https://gitlab.com.helper !gh auth git-credential',
+        'github.com'
+      )
     ).toBe(false)
+    expect(
+      usesGhCredentialHelper(
+        'credential.https://ghe.example.com.helper !gh auth git-credential',
+        'ghe.example.com'
+      )
+    ).toBe(true)
   })
 })
 
@@ -92,6 +114,15 @@ describe('loginFromSshGreeting', () => {
       )
     ).toBe('bob')
     expect(loginFromSshGreeting('git@github.com: Permission denied (publickey).\n')).toBeNull()
+  })
+
+  it('reads GitLab’s and Gitea’s greetings too', () => {
+    expect(loginFromSshGreeting('Welcome to GitLab, @dev.ops!\n')).toBe('dev.ops')
+    expect(
+      loginFromSshGreeting(
+        "Hi there, carol! You've successfully authenticated with the key named k, but Gitea does not provide shell access.\n"
+      )
+    ).toBe('carol')
   })
 })
 

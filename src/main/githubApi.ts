@@ -14,15 +14,15 @@ export type PushAccess =
   | { kind: 'org-blocked'; org: string }
   | { kind: 'offline' }
 
-function unreachable(e: unknown): boolean {
+export function unreachable(e: unknown): boolean {
   if (!(e instanceof Error)) return false
   if (e.name === 'TimeoutError' || e.name === 'AbortError') return true
   const code = (e.cause as { code?: string } | undefined)?.code
   return (code !== undefined && UNREACHABLE_CODES.has(code)) || e.message === 'fetch failed'
 }
 
-function apiGet(route: string, token: string): Promise<Response> {
-  return fetch(`${GITHUB_API_URL}${route}`, {
+function apiGet(route: string, token: string, apiBase: string): Promise<Response> {
+  return fetch(`${apiBase}${route}`, {
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: 'application/vnd.github+json',
@@ -45,9 +45,9 @@ export function missingScope(scopes: string[]): string | undefined {
 }
 
 // PLATFORM§32
-export async function whoami(token: string): Promise<WhoAmI> {
+export async function whoami(token: string, apiBase = GITHUB_API_URL): Promise<WhoAmI> {
   try {
-    const res = await apiGet('/user', token)
+    const res = await apiGet('/user', token, apiBase)
     if (res.status === 401) return { ok: false, error: 'expired' }
     if (!res.ok) return { ok: false, error: 'failed' }
     const body = (await res.json()) as { login?: unknown; id?: unknown; name?: unknown }
@@ -69,11 +69,17 @@ const ORG_RESTRICTED = /OAuth App access restrictions/i
 const ORG_NAMED = /the `([^`]+)` organization/
 
 // PLATFORM§32
-export async function pushAccess(token: string, owner: string, repo: string): Promise<PushAccess> {
+export async function pushAccess(
+  token: string,
+  owner: string,
+  repo: string,
+  apiBase = GITHUB_API_URL
+): Promise<PushAccess> {
   try {
     const res = await apiGet(
       `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
-      token
+      token,
+      apiBase
     )
     if (res.status === 401) return { kind: 'expired' }
     if (res.status === 404) return { kind: 'none' }

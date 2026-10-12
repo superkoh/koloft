@@ -1,5 +1,5 @@
 import path from 'path'
-import type { GitAccount, GitAccountSuggestion, GitClueReason } from '@shared/types'
+import type { GitAccount, GitAccountSuggestion, GitClueReason, GitPlatform } from '@shared/types'
 import {
   ghActiveLogin,
   loginFromCommitEmails,
@@ -11,8 +11,9 @@ import {
   sshSetting,
   usesGhCredentialHelper
 } from './gitClues'
-import type { pushAccess } from './githubApi'
+import type { PushAccess } from './githubApi'
 import type { GitRunResult } from './gitSteps'
+import type { GitTarget } from './gitPlatformApi'
 
 export interface SuggestDeps {
   git(
@@ -26,16 +27,19 @@ export interface SuggestDeps {
   env: NodeJS.ProcessEnv
   githubUrl: string
   accounts(): GitAccount[]
-  token(login: string): Promise<string | null>
-  pushAccess: typeof pushAccess
-  repoOf(ws: string): Promise<{ owner: string; name: string } | null>
+  serverOf(a: GitAccount): string
+  token(a: GitAccount): Promise<string | null>
+  pushAccess(t: GitTarget, token: string, repoPath: string): Promise<PushAccess>
 }
 
-const NONE: GitAccountSuggestion = { kind: 'none' }
+const OFF: GitAccountSuggestion = { kind: 'off' }
 const NO_HELPERS_NO_PROMPTS = ['-c', 'credential.helper=', '-c', 'core.askPass=']
 const COMMIT_EMAILS_LOOKED_AT = 50
 const CONFIG_ENTRY_VARIABLE = /^GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+)$/
-const SCP_LIKE = /^(?:([^@/]+)@)?([^:/]+):(?!\/)/
+const SCP_LIKE = /^(?:([^@/]+)@)?([^:/]+):(?!\/)(.*)$/
+const PUBLIC_HOSTS = ['gitlab.com', 'bitbucket.org', 'dev.azure.com', 'codeberg.org']
+const SSH_GREETS: GitPlatform[] = ['github', 'ghes', 'gitlab', 'gitea']
+const GH_SIGNS_IN: GitPlatform[] = ['github', 'ghes']
 
 export function clueEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const out: NodeJS.ProcessEnv = {}
@@ -47,11 +51,31 @@ export function clueEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 }
 
 type Remote =
-  { kind: 'https'; urls: string[] } | { kind: 'ssh'; dest: string; port?: string; sshG: string }
+  | { kind: 'https'; host: string; urls: string[]; path: string }
+  | { kind: 'ssh'; host: string; dest: string; port?: string; sshG: string; path: string }
 
 interface Clue {
   login: string
   reason: GitClueReason
+}
+
+interface Here {
+  remote: Remote
+  host: string
+  accounts: GitAccount[]
+  platform: GitPlatform | undefined
+}
+
+function trimRepoPath(p: string): string {
+  return p
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '')
+    .replace(/\.git$/, '')
+}
+
+function azureSshPath(p: string): string {
+  const m = /^v3\/([^/]+)\/([^/]+)\/([^/]+)$/.exec(p)
+  return m ? `${m[1]}/${m[2]}/_git/${m[3]}` : p
 }
 
 export async function suggestFor(
@@ -66,62 +90,82 @@ export async function suggestFor(
     const r = await git(args)
     return r.code === 0 && r.stdout.trim() ? r.stdout.trim() : null
   }
-  const remote = await githubRemote(out, d)
-  if (!remote) return NONE
-  const clue = await firstClue(remote, opts.network, git, out, d)
-  if (clue) return decide(clue, wsPath, opts.network, d)
-  return noClue(wsPath, opts.network, out, d)
+  const remote = await pushRemote(out, d)
+  if (!remote) return OFF
+  const here = whereIs(remote, d)
+  if (!here) return OFF
+  const clue = await firstClue(here, opts.network, git, out, d)
+  if (clue) return decide(clue, here, opts.network, d)
+  return noClue(here, opts.network, out, d)
 }
 
-async function githubRemote(
+function whereIs(remote: Remote, d: SuggestDeps): Here | null {
+  const accounts = d.accounts().filter((a) => {
+    const server = new URL(d.serverOf(a))
+    return remote.kind === 'https' ? server.host === remote.host : server.hostname === remote.host
+  })
+  const githubHost = new URL(d.githubUrl)[remote.kind === 'https' ? 'host' : 'hostname']
+  const known = remote.host === githubHost || PUBLIC_HOSTS.includes(remote.host)
+  if (!accounts.length && !known) return null
+  const host = accounts[0]?.host ?? (remote.host === githubHost ? 'github.com' : remote.host)
+  const platform = accounts[0]?.platform ?? (remote.host === githubHost ? 'github' : undefined)
+  const repoPath = (a: GitAccount | undefined): string => {
+    const base = a && a.platform !== 'azure' ? new URL(a.url).pathname.replace(/\/+$/, '') : ''
+    return base && remote.path.startsWith(`${base.slice(1)}/`)
+      ? remote.path.slice(base.length)
+      : remote.path
+  }
+  return { remote: { ...remote, path: repoPath(accounts[0]) }, host, accounts, platform }
+}
+
+async function pushRemote(
   out: (args: string[]) => Promise<string | null>,
   d: SuggestDeps
 ): Promise<Remote | null> {
   const branch = await out(['symbolic-ref', '--short', '-q', 'HEAD'])
   const cfg = (key: string): Promise<string | null> => out(['config', '--get', key])
   const fetchRemote = (branch && (await cfg(`branch.${branch}.remote`))) || 'origin'
-  const pushRemote =
+  const pushRemoteName =
     (branch && (await cfg(`branch.${branch}.pushRemote`))) ||
     (await cfg('remote.pushDefault')) ||
     fetchRemote
-  const pushUrl = await out(['remote', 'get-url', '--push', pushRemote])
+  const pushUrl = await out(['remote', 'get-url', '--push', pushRemoteName])
   if (!pushUrl) return null
   if (/^https?:\/\//.test(pushUrl)) {
-    if (!sameHost(pushUrl, d.githubUrl)) return null
+    let u: URL
+    try {
+      u = new URL(pushUrl)
+    } catch {
+      return null
+    }
     const fetchUrl = await out(['remote', 'get-url', fetchRemote])
     return {
       kind: 'https',
+      host: u.host.toLowerCase(),
+      path: trimRepoPath(decodeURIComponent(u.pathname)),
       urls: fetchUrl && fetchUrl !== pushUrl ? [pushUrl, fetchUrl] : [pushUrl]
     }
   }
   const target = sshTarget(pushUrl)
   if (!target) return null
   const g = await d.ssh(['-G', ...(target.port ? ['-p', target.port] : []), target.dest])
-  if (g.code !== 0 || sshSetting(g.stdout, 'hostname') !== new URL(d.githubUrl).hostname)
-    return null
-  return { kind: 'ssh', ...target, sshG: g.stdout }
+  const hostname = g.code === 0 ? sshSetting(g.stdout, 'hostname')?.toLowerCase() : undefined
+  if (!hostname) return null
+  return { kind: 'ssh', host: hostname, ...target, path: azureSshPath(target.path), sshG: g.stdout }
 }
 
-function sameHost(url: string, githubUrl: string): boolean {
-  try {
-    return new URL(url).host === new URL(githubUrl).host
-  } catch {
-    return false
-  }
-}
-
-function sshTarget(url: string): { dest: string; port?: string } | null {
+function sshTarget(url: string): { dest: string; port?: string; path: string } | null {
   if (url.startsWith('ssh://')) {
     try {
       const u = new URL(url)
       const dest = u.username ? `${decodeURIComponent(u.username)}@${u.hostname}` : u.hostname
-      return { dest, ...(u.port ? { port: u.port } : {}) }
+      return { dest, ...(u.port ? { port: u.port } : {}), path: trimRepoPath(u.pathname) }
     } catch {
       return null
     }
   }
   const m = SCP_LIKE.exec(url)
-  return m ? { dest: m[1] ? `${m[1]}@${m[2]}` : m[2] } : null
+  return m ? { dest: m[1] ? `${m[1]}@${m[2]}` : m[2], path: trimRepoPath(m[3]) } : null
 }
 
 function withoutUser(url: string): string {
@@ -132,16 +176,18 @@ function withoutUser(url: string): string {
 }
 
 async function firstClue(
-  remote: Remote,
+  here: Here,
   network: boolean,
   git: (args: string[], input?: string) => Promise<GitRunResult>,
   out: (args: string[]) => Promise<string | null>,
   d: SuggestDeps
 ): Promise<Clue | null> {
+  const { remote, platform } = here
   if (remote.kind === 'https') {
-    const named = remote.urls
-      .map(loginFromRemoteUrl)
-      .filter((l): l is string => !!l && l !== 'discard')
+    const named =
+      platform === 'azure'
+        ? []
+        : remote.urls.map(loginFromRemoteUrl).filter((l): l is string => !!l && l !== 'discard')
     const distinct = new Set(named.map((l) => l.toLowerCase()))
     if (distinct.size === 1) return { login: named[0], reason: 'url-user' }
     if (distinct.size > 1) return null
@@ -151,12 +197,17 @@ async function firstClue(
     )
     const configured = loginFromCredentialFill(fill.stderr)
     if (configured) return { login: configured, reason: 'config-user' }
-    if (d.env.GH_TOKEN || d.env.GITHUB_TOKEN) return null
+    if (!platform || !GH_SIGNS_IN.includes(platform)) return null
+    if (d.env.GH_TOKEN || d.env.GITHUB_TOKEN || d.env.GH_ENTERPRISE_TOKEN) return null
     const helpers = (await out(['config', '--get-regexp', '^credential\\..*helper$'])) ?? ''
-    const ghLogin = ghActiveLogin(readGhHosts(d), usesGhCredentialHelper(helpers))
+    const ghLogin = ghActiveLogin(
+      readGhHosts(d),
+      usesGhCredentialHelper(helpers, here.host),
+      here.host
+    )
     return ghLogin ? { login: ghLogin, reason: 'gh-user' } : null
   }
-  if (!network) return null
+  if (!network || !platform || !SSH_GREETS.includes(platform)) return null
   if (await out(['config', '--get', 'core.sshCommand'])) return null
   if (sshClueSkipped(remote.sshG, d.env)) return null
   const hello = await d.ssh([
@@ -177,59 +228,67 @@ function readGhHosts(d: SuggestDeps): string {
   return d.readFile(path.join(dir, 'hosts.yml')) ?? ''
 }
 
+function target(a: GitAccount, d: SuggestDeps): GitTarget {
+  return { platform: a.platform, url: a.platform === 'github' ? d.serverOf(a) : a.url }
+}
+
 async function decide(
   clue: Clue,
-  wsPath: string,
+  here: Here,
   network: boolean,
   d: SuggestDeps
 ): Promise<GitAccountSuggestion> {
-  const account = d.accounts().find((a) => a.login.toLowerCase() === clue.login.toLowerCase())
-  if (!account) return { kind: 'add', login: clue.login, reason: clue.reason }
-  const use: GitAccountSuggestion = { kind: 'use', login: account.login, reason: clue.reason }
-  if (!network) return use
-  const repo = await d.repoOf(wsPath)
-  if (!repo) return use
-  const token = await d.token(account.login)
-  if (!token) return { kind: 'cannot-push', login: account.login, reason: clue.reason }
-  const access = await d.pushAccess(token, repo.owner, repo.name)
-  if (access.kind === 'offline') return NONE
+  const host = here.host
+  const account = here.accounts.find((a) => a.login.toLowerCase() === clue.login.toLowerCase())
+  if (!account) return { kind: 'add', host, login: clue.login, reason: clue.reason }
+  const use: GitAccountSuggestion = { kind: 'use', host, login: account.login, reason: clue.reason }
+  if (!network || account.platform === 'other') return use
+  const token = await d.token(account)
+  if (!token) return { kind: 'cannot-push', host, login: account.login, reason: clue.reason }
+  const access = await d.pushAccess(target(account, d), token, here.remote.path)
+  if (access.kind === 'offline') return { kind: 'none', host }
   if (access.kind === 'org-blocked')
-    return { kind: 'org-blocked', login: account.login, org: access.org }
+    return { kind: 'org-blocked', host, login: account.login, org: access.org }
   if (access.kind === 'push' && access.allowed) return use
-  return { kind: 'cannot-push', login: account.login, reason: clue.reason }
+  return { kind: 'cannot-push', host, login: account.login, reason: clue.reason }
 }
 
 async function noClue(
-  wsPath: string,
+  here: Here,
   network: boolean,
   out: (args: string[]) => Promise<string | null>,
   d: SuggestDeps
 ): Promise<GitAccountSuggestion> {
-  const hint = await commitEmailHint(out, d)
-  const fallback = hint ? hint : NONE
-  if (!network) return fallback
-  const repo = await d.repoOf(wsPath)
-  if (!repo) return fallback
+  const host = here.host
+  const none: GitAccountSuggestion = { kind: 'none', host }
+  const accounts = here.accounts.filter((a) => a.platform !== 'other')
+  const hint = await commitEmailHint(out, accounts, host)
+  const fallback = hint ?? none
+  if (!network || !accounts.length) return fallback
   const accesses = await Promise.all(
-    d.accounts().map(async (a) => {
-      const token = await d.token(a.login)
-      return { login: a.login, access: token && (await d.pushAccess(token, repo.owner, repo.name)) }
+    accounts.map(async (a) => {
+      const token = await d.token(a)
+      return {
+        login: a.login,
+        access: token && (await d.pushAccess(target(a, d), token, here.remote.path))
+      }
     })
   )
   if (accesses.some((x) => x.access && x.access.kind === 'offline')) return fallback
   const pushers = accesses
     .filter((x) => x.access && x.access.kind === 'push' && x.access.allowed)
     .map((x) => x.login)
-  if (pushers.length === 1) return { kind: 'only-one-can-push', login: pushers[0] }
-  const byDefault = d.accounts().find((a) => a.default && pushers.includes(a.login))
-  return byDefault ? { kind: 'default-can-push', login: byDefault.login } : fallback
+  if (pushers.length === 1) return { kind: 'only-one-can-push', host, login: pushers[0] }
+  const byDefault = accounts.find((a) => a.default && pushers.includes(a.login))
+  return byDefault ? { kind: 'default-can-push', host, login: byDefault.login } : fallback
 }
 
 async function commitEmailHint(
   out: (args: string[]) => Promise<string | null>,
-  d: SuggestDeps
+  accounts: GitAccount[],
+  host: string
 ): Promise<GitAccountSuggestion | null> {
-  const accounts = d.accounts()
+  if (!accounts.length) return null
   const reflog =
     (await out(['log', '-g', `-n${COMMIT_EMAILS_LOOKED_AT}`, '--format=%gs%x09%ce'])) ?? ''
   const madeHere = reflog
@@ -237,8 +296,8 @@ async function commitEmailHint(
     .filter((l) => l.startsWith('commit'))
     .map((l) => l.split('\t')[1] ?? '')
   const fromCommits = loginFromCommitEmails(madeHere, accounts)
-  if (fromCommits) return { kind: 'hint', login: fromCommits, reason: 'commit-email' }
+  if (fromCommits) return { kind: 'hint', host, login: fromCommits, reason: 'commit-email' }
   const configured = await out(['config', '--get', 'user.email'])
   const fromConfig = configured ? loginFromCommitEmails([configured], accounts) : null
-  return fromConfig ? { kind: 'hint', login: fromConfig, reason: 'commit-email' } : null
+  return fromConfig ? { kind: 'hint', host, login: fromConfig, reason: 'commit-email' } : null
 }
