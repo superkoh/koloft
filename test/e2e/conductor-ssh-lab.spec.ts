@@ -2,6 +2,7 @@ import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { seedSettings, type E2EEnv } from './helpers/env'
 import { defaultControlDir } from '../../src/main/remote/ssh'
+import { ownerSays } from '../../src/shared/agentGuide'
 import { addWorkspace, openMenu, startSessionIn, waitBooted, wsGroup } from './helpers/p1'
 import {
   HAVE_LINUX_CLAUDE,
@@ -165,7 +166,7 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
         fake.say(OWNER, `/koloft session send ${remote.sessionId} hello from Discord`)
         await expect
           .poll(transcript, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
-          .toContain('(Your owner, via the Koloft conductor:) hello from Discord')
+          .toContain(ownerSays('hello from Discord'))
         await expect
           .poll(() => notices(fake), { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
           .toEqual([expect.stringMatching(/^🔔 .+ finished\.$/)])
@@ -286,7 +287,7 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
         )
         await expect
           .poll(transcript, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS })
-          .toContain('(Your owner, via the Koloft conductor:) Say the word MANGO')
+          .toContain(ownerSays('Say the word MANGO'))
         await expect
           .poll(transcript, { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS })
           .toMatch(/"type":"text","text":"MANGO/)

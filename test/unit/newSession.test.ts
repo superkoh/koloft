@@ -8,14 +8,18 @@ import {
   itemLaunchExtras,
   mainRunningCount,
   moveHot,
+  pendingLaunch,
+  pendingWorktree,
   primaryKind,
   primaryLabel,
   pullFailedReason,
   resolveLaunch,
+  seededItemExtras,
   sortWorktrees,
   worktreeAim,
   worktreeBaseMode,
   worktreeInUse,
+  type PendingStart,
   type WtHot
 } from '../../src/renderer/src/newSession'
 import { freshLineState, type FreshLineState } from '@shared/freshnessOps'
@@ -364,6 +368,54 @@ describe('itemAim (#218 — where an issue or pull request session starts)', () 
     ])
     expect(extras.firstPrompt).toMatch(/gh issue view 218 --comments/)
     expect(itemLaunchExtras(pr).firstPrompt).toMatch(/gh pr view 329 --comments/)
+  })
+
+  it('from ⌘P, puts the issue first, then a blank line, then what was typed, and takes the typed title over the issue', () => {
+    const extras = seededItemExtras(issue, '  and add a test  ', 'Login test')
+    expect(extras.firstPrompt).toBe(`${itemLaunchExtras(issue).firstPrompt}\n\nand add a test`)
+    expect(extras.name).toBe('Login test')
+    expect(extras.trustFolder).toBe(true)
+    expect(seededItemExtras(issue, ' ', '')).toEqual(itemLaunchExtras(issue))
+  })
+
+  it('⌘P starts where Assist pointed: the main checkout, a listed worktree, a new one, or the issue’s worktree with its lines first', () => {
+    const said = { prompt: ' fix login ', title: 'Login fix' }
+    const typed = { firstPrompt: 'fix login', name: 'Login fix' }
+    const listed = [wt('auth')]
+    expect(pendingLaunch('/repo', { kind: 'main' }, said, listed, [])).toEqual({
+      cwd: '/repo',
+      ...typed
+    })
+    expect(pendingLaunch('/repo', { kind: 'existing', name: 'auth' }, said, listed, [])).toEqual({
+      cwd: '/repo/.claude/worktrees/auth',
+      ...typed
+    })
+    expect(pendingLaunch('/repo', { kind: 'new', name: 'login' }, said, listed, [])).toEqual({
+      cwd: '/repo',
+      worktree: 'login',
+      ...typed
+    })
+    expect(pendingLaunch('/repo', { kind: 'issue', number: 218 }, said, [], [issue])).toEqual({
+      cwd: '/repo',
+      worktree: 'issue-218',
+      ...seededItemExtras(issue, ' fix login ', 'Login fix')
+    })
+    expect(pendingLaunch('/repo', { kind: 'issue', number: 9 }, said, [], [issue])).toEqual({
+      cwd: '/repo',
+      worktree: 'issue-9',
+      ...typed
+    })
+  })
+
+  it('⌘P drops the worktree Assist named in another workspace once the person picks a different one', () => {
+    const p: PendingStart = {
+      prompt: 'fix login',
+      title: '',
+      path: '/repo',
+      worktree: { kind: 'new', name: 'login' }
+    }
+    expect(pendingWorktree('/repo', p)).toEqual({ kind: 'new', name: 'login' })
+    expect(pendingWorktree('/other', p)).toBeNull()
   })
 
   it('labels the primary with the number it acts on', () => {

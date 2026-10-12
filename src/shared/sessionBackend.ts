@@ -29,6 +29,17 @@ export function normalizeSessionMethods(raw: unknown): SessionMethods {
 
 export const BACKEND_LABEL: Record<BackendId, string> = { claude: 'Claude', codex: 'Codex' }
 
+export function otherBackend(backend: BackendId): BackendId {
+  return backend === 'claude' ? 'codex' : 'claude'
+}
+
+export function preferredAssistBackend(settings: {
+  assist: { backend: BackendId } | null
+  sessionMethods: SessionMethods
+}): BackendId {
+  return settings.assist?.backend ?? settings.sessionMethods.defaultBackend
+}
+
 export function backendAvailable(list: BackendAvailability[], id: BackendId): boolean {
   return list.some((b) => b.id === id && b.available)
 }

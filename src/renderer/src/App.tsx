@@ -39,6 +39,7 @@ import type {
   BrowserCdpOp,
   BrowserJsDialog,
   ExtensionPermissionRequest,
+  HostId,
   SessionRow,
   SessionSearchHit,
   WorkspaceRows
@@ -111,13 +112,11 @@ import { TerminalView } from './components/TerminalView'
 import { repairAllWebgl, scheduleWebglRepair } from './webglRepair'
 import { WorkspaceSidebar } from './components/WorkspaceSidebar'
 import { NotesIsland } from './components/NotesIsland'
-import { ConductorsIsland } from './components/ConductorsIsland'
+import { ConductorsIsland, setUpDiscordWithAssist } from './components/ConductorsIsland'
 import { BindConductorDialog } from './components/BindConductorDialog'
-import { DiscordSetup } from './components/DiscordSetup'
 import { conductorNotesWorkspace, conductorOfTab } from './conductorRows'
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
 import { RestoreDialog } from './components/RestoreDialog'
-import { SearchSessionsDialog } from './components/SearchSessionsDialog'
 import { CronJobsDialog } from './components/CronJobsDialog'
 import { RemoteWorkspaceDialog } from './components/RemoteWorkspaceDialog'
 import { hostOf } from '@shared/remoteKey'
@@ -139,8 +138,12 @@ import { BrowserOverlay } from './components/BrowserOverlay'
 import { Hint } from './components/Hint'
 import { useHints } from './useHints'
 import { updateSettings } from './components/settings/useSettingsUpdate'
-import { CommandPalette } from './components/CommandPalette'
+import { CommandPalette, type PaletteRouted } from './components/CommandPalette'
+import { NewProjectDialog, type ProjectSeed } from './components/NewProjectDialog'
+import type { PendingStart, TypedStart } from './newSession'
+import { pendingOptions, projectOptions, projectParentKey } from './aiStart'
 import type { PaletteAction } from './palette'
+import { GLOBAL_SCOPE } from '@shared/conductors'
 
 const RECENT_MAX = 3
 
@@ -298,9 +301,10 @@ export default function App(): JSX.Element {
     id: number
     mode: PickerMode
     path?: string
+    pending?: PendingStart
   } | null>(null)
+  const [newProject, setNewProject] = useState<{ id: number; seed: ProjectSeed } | null>(null)
   const [restoreWs, setRestoreWs] = useState<string | null>(null)
-  const [searchOpen, setSearchOpen] = useState(false)
   const [cronWs, setCronWs] = useState<{ path: string; jobId?: string } | null>(null)
   const [addMenu, setAddMenu] = useState(false)
   const [remoteDialog, setRemoteDialog] = useState(false)
@@ -395,11 +399,33 @@ export default function App(): JSX.Element {
     [addTab]
   )
 
-  const requestNew = useCallback((mode: PickerMode, path?: string): void => {
-    if (newSessionLocked.current) return
-    setRestoreWs(null)
-    setNewRequest({ id: ++newRequestId.current, mode, path })
-  }, [])
+  const requestNew = useCallback(
+    (mode: PickerMode, path?: string, pending?: PendingStart): void => {
+      if (newSessionLocked.current) return
+      setRestoreWs(null)
+      setNewRequest({ id: ++newRequestId.current, mode, path, pending })
+    },
+    []
+  )
+
+  const startNow = useCallback(
+    (host: HostId, backend: SessionBackend, options: () => Promise<SessionLaunchOptions>): void => {
+      if (newSessionLocked.current) return
+      const refusal = unsupportedPairMessage(backend, host)
+      if (refusal) {
+        showToast(refusal)
+        return
+      }
+      newSessionLocked.current = true
+      void options()
+        .then((opts) => startSession(opts, backend))
+        .catch((e) => showToast(launchErrorMessage(e)))
+        .finally(() => {
+          newSessionLocked.current = false
+        })
+    },
+    [showToast, startSession]
+  )
 
   const startIn = useCallback(
     (wsPath: string, backend?: SessionBackend): void => {
@@ -409,21 +435,15 @@ export default function App(): JSX.Element {
         requestNew('main', wsPath)
         return
       }
-      if (newSessionLocked.current) return
-      const chosen = backend ?? effectiveBackend(sessionMethods, installed)
-      const refusal = unsupportedPairMessage(chosen, hostOf(wsPath))
-      if (refusal) {
-        showToast(refusal)
-        return
-      }
-      newSessionLocked.current = true
-      void startSession({ cwd: wsPath }, chosen)
-        .catch((e) => showToast(launchErrorMessage(e)))
-        .finally(() => {
-          newSessionLocked.current = false
+      startNow(
+        hostOf(wsPath),
+        backend ?? effectiveBackend(sessionMethods, installed),
+        async () => ({
+          cwd: wsPath
         })
+      )
     },
-    [installed, requestNew, sessionMethods, showToast, startSession]
+    [installed, requestNew, sessionMethods, startNow]
   )
 
   const globalNew = useCallback(
@@ -664,11 +684,8 @@ export default function App(): JSX.Element {
     })
   }, [dispatchPanel])
 
-  useEffect(() => window.api.shortcuts.onSearchSessions(() => setSearchOpen(true)), [])
-
-  const closeSearch = useCallback(() => setSearchOpen(false), [])
   const openSearchHit = useCallback((hit: SessionSearchHit): void => {
-    setSearchOpen(false)
+    setPaletteOpen(false)
     const st = useStore.getState()
     const tabId = liveTabOf(hit.row.id, st.sessions, st.tabs)
     if (tabId) {
@@ -1041,11 +1058,14 @@ export default function App(): JSX.Element {
     else if (rowsLoaded && noWorkspaces) setWelcomeActive(true)
   }, [rowsLoaded, onboardingSeen, noWorkspaces, setWelcomeActive])
   const updateOffer = useStore((s) => s.updateOffer)
-  const conductorBindings = useStore((s) => s.settings.discord.bindings)
   const conductorTabs = useStore((s) => s.conductorTabs)
+  const assistTasks = useStore((s) => s.assistTasks)
+  const assistBindings = useStore((s) => s.settings.discord.bindings)
+  const assistRecords = useStore((s) => s.settings.assistSessions)
+  const assistOn = useStore((s) => !!s.settings.assist?.on)
   const conductorsFolded = useStore((s) => s.settings.conductorsFolded)
   const activeConductor = activeTabId
-    ? conductorOfTab(conductorBindings, sessions, conductorTabs, tabs, activeTabId)
+    ? conductorOfTab(sessions, conductorTabs, assistTasks, activeTabId)
     : undefined
   const currentWs = currentWorkspace(
     workspaceRows,
@@ -1069,6 +1089,87 @@ export default function App(): JSX.Element {
   const resumeRecent = useCallback((row: SessionRow): void => {
     void resumeSession({ id: row.id, backendId: row.backendId, title: row.title })
   }, [])
+
+  const paletteRouted: PaletteRouted = (prompt, backend, route) => {
+    setPaletteOpen(false)
+    if (route?.kind === 'project') {
+      const where = useStore.getState().settings.newProjectFolders[route.machine]
+      const parentKey = where ? projectParentKey(route.machine, where) : null
+      const folder = route.folder
+      if (parentKey && folder) {
+        startNow(hostOf(parentKey), backend, () =>
+          projectOptions(parentKey, folder, { prompt, title: route.title })
+        )
+        return
+      }
+      setNewProject({
+        id: ++newRequestId.current,
+        seed: {
+          prompt,
+          title: route.title,
+          machine: route.machine,
+          folder: folder ?? '',
+          why: route.why
+        }
+      })
+      return
+    }
+    if (route?.kind === 'discord') {
+      void setUpDiscordWithAssist().then((error) => {
+        if (error) showToast(error)
+      })
+      return
+    }
+    if (route?.kind === 'koloft' || route?.kind === 'assist') {
+      void (
+        route.kind === 'koloft'
+          ? window.api.conductors.openTask(GLOBAL_SCOPE, route.title, prompt)
+          : window.api.conductors.tell(route.path, route.title, prompt)
+      ).then((r) => {
+        if (r.ok) {
+          window.api.attention.visit(r.tabId)
+          useStore.getState().activateTab(r.tabId)
+          return
+        }
+        showToast(r.error)
+        requestNew('main', undefined, {
+          prompt,
+          title: route.title,
+          path: route.kind === 'assist' ? route.path : null,
+          worktree: null
+        })
+      })
+      return
+    }
+    const pending: PendingStart = {
+      prompt,
+      title: route?.title ?? '',
+      path: route?.path ?? null,
+      worktree: route?.worktree ?? null
+    }
+    const ws =
+      route && workspaceRows.find((w) => w.workspace.path === route.path && !w.workspace.missing)
+    if (!route || !route.sure || !ws) {
+      if (!route)
+        showToast(
+          useStore.getState().settings.assist?.on
+            ? 'Koloft Assist could not answer, so pick the workspace yourself.'
+            : 'Koloft Assist is off, so pick the workspace yourself. Turn it on in Settings ▸ Assist.'
+        )
+      requestNew('main', undefined, pending)
+      return
+    }
+    if (pullable(ws) && pending.worktree?.kind !== 'existing') {
+      requestNew('main', ws.workspace.path, pending)
+      return
+    }
+    startNow(hostOf(ws.workspace.path), backend, () => pendingOptions(ws.workspace.path, pending))
+  }
+
+  const pickWorkspaceForTyped = (typed: TypedStart): void => {
+    setNewProject(null)
+    requestNew('main', undefined, { ...typed, path: null, worktree: null })
+  }
 
   const paletteActions = (): PaletteAction[] => {
     const hasHistory = workspaceRows.some(
@@ -1127,14 +1228,17 @@ export default function App(): JSX.Element {
   const signInTabId = useStore((s) => s.signIn?.tabId)
   const whatsNewOpen = useStore((s) => s.update.open)
   const [assistSetupLater, setAssistSetupLater] = useState(false)
+  const assistAsked = useStore((s) => s.assistAsked && !s.settings.assist?.on)
+  const setAssistAsked = useStore((s) => s.setAssistAsked)
   const assistDialogShown =
-    rowsLoaded &&
-    assistSetup.loaded &&
-    !assistSetup.done &&
-    !assistSetupLater &&
-    !welcomeActive &&
-    !whatsNewOpen &&
-    !(signInTabId && activeTabId === signInTabId)
+    assistAsked ||
+    (rowsLoaded &&
+      assistSetup.loaded &&
+      !assistSetup.done &&
+      !assistSetupLater &&
+      !welcomeActive &&
+      !whatsNewOpen &&
+      !(signInTabId && activeTabId === signInTabId))
   const landedTab = tabs.find((t) => t.id === shown.id) ?? activeTab
   const landedSession = landedTab ? sessions.find((s) => s.tabId === landedTab.id) : undefined
   const panelTab = hasWorkbench(landedTab) ? landedTab?.id : undefined
@@ -1340,7 +1444,7 @@ export default function App(): JSX.Element {
   useLayoutEffect(() => {
     const island = dockRef.current?.querySelector('.isl-conductors')
     setConductorsHeight(island ? island.getBoundingClientRect().height + DOCK_GUTTER_PX : 0)
-  }, [conductorBindings.length, conductorsFolded, sidebarHidden])
+  }, [assistBindings, assistRecords, assistOn, assistTasks.length, conductorsFolded, sidebarHidden])
   const notesRoom = dockHeight - conductorsHeight
 
   const [osFullscreen, setOsFullscreen] = useState(false)
@@ -1768,7 +1872,15 @@ export default function App(): JSX.Element {
       {/* ADR-0013 */}
       {createPortal(
         <>
-          {paletteOpen && <CommandPalette actions={paletteActions()} onClose={closePalette} />}
+          {paletteOpen && (
+            <CommandPalette
+              actions={paletteActions()}
+              onClose={closePalette}
+              onRouted={paletteRouted}
+              onOpenHit={openSearchHit}
+              methods={welcomeBackends}
+            />
+          )}
           {newRequest && (
             <NewSessionDialog
               key={newRequest.id}
@@ -1778,6 +1890,17 @@ export default function App(): JSX.Element {
               onClose={() => setNewRequest(null)}
               onStart={startSession}
               launchLock={newSessionLocked}
+              pending={newRequest.pending}
+            />
+          )}
+          {newProject && (
+            <NewProjectDialog
+              key={newProject.id}
+              seed={newProject.seed}
+              launchLock={newSessionLocked}
+              onClose={() => setNewProject(null)}
+              onStart={startSession}
+              onChangeWorkspace={pickWorkspaceForTyped}
             />
           )}
           {restoreWs && workspaceRows.some((w) => w.workspace.path === restoreWs) && (
@@ -1796,7 +1919,6 @@ export default function App(): JSX.Element {
               }}
             />
           )}
-          {searchOpen && <SearchSessionsDialog onClose={closeSearch} onOpen={openSearchHit} />}
           {remoteDialog && (
             <RemoteWorkspaceDialog
               onAdd={(key) => void addRemoteWorkspace(key)}
@@ -1814,11 +1936,17 @@ export default function App(): JSX.Element {
           <ResumeDialog />
           <CloseSessionDialog />
           <SettingsModal />
-          <DiscordSetup />
           <BindConductorDialog />
           <UpdateModal />
           {assistDialogShown && (
-            <AssistDialog setup={assistSetup} onNotNow={() => setAssistSetupLater(true)} />
+            <AssistDialog
+              setup={assistSetup}
+              asked={assistAsked}
+              onNotNow={() => {
+                setAssistSetupLater(true)
+                setAssistAsked(false)
+              }}
+            />
           )}
           <UnsavedDialog />
         </>,

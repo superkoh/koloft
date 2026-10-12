@@ -12,10 +12,10 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
     items: [
       {
         keys: ['⌘P'],
-        name: 'Jump to',
+        name: 'Ask or jump',
         uses: [
           {
-            what: 'Opens a list of every session, every workspace and the app actions. Type a few letters, ⏎ opens the one picked.'
+            what: 'Opens one input. Type what a new session should do and ⏎ starts it in your primary method (⇧⏎ the other), in the workspace, worktree and title Koloft Assist picks; ↓ picks a matching session, workspace or action and ⏎ opens it; ⌥⏎ searches every conversation for the words.'
           },
           { where: 'Dialog', what: 'Nothing.' }
         ]
@@ -84,16 +84,6 @@ const GROUPS: { title: string; items: Shortcut[] }[] = [
             what: 'Shows the session that has waited longest for you, in any workspace, and clears its red dot.'
           },
           { where: 'Nothing waiting', what: 'Nothing.' }
-        ]
-      },
-      {
-        keys: ['⌥⌘F'],
-        name: 'Search sessions',
-        uses: [
-          {
-            what: 'Lists every session, in every workspace, whose conversation or title holds the words.'
-          },
-          { where: 'No workspace', what: 'No matches.' }
         ]
       },
       {

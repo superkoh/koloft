@@ -464,6 +464,36 @@ export class CodexSessions {
     }
   }
 
+  // ADR-0029 CODEX§27
+  private async trustGate(launch: CodexProcessOptions, configFile: string): Promise<void> {
+    const file = realpathSafe(configFile)
+    const changedAt = (): number | undefined => {
+      try {
+        return fs.statSync(file).mtimeMs
+      } catch {
+        return undefined
+      }
+    }
+    if (this.gateTrustedAt.has(file) && this.gateTrustedAt.get(file) === changedAt()) return
+    await this.askGateTrust(launch, configFile)
+    this.gateTrustedAt.set(file, changedAt())
+  }
+
+  // CODEX§27
+  private async askGateTrust(launch: CodexProcessOptions, configFile: string): Promise<void> {
+    const rpc = new CodexRpc(launch)
+    try {
+      const gate = async (): Promise<GateHook | undefined> =>
+        gateHookIn(await rpc.request('hooks/list', { cwds: [launch.cwd] }).catch(() => undefined))
+      const hook = await gate()
+      if (hook?.trustStatus === 'trusted') return
+      if (hook) acceptCodexHookTrust(configFile, hook.key, hook.currentHash)
+      if ((await gate())?.trustStatus !== 'trusted') throw new Error(CODEX_GATE_NOT_TRUSTED)
+    } finally {
+      await rpc.close().catch(() => {})
+    }
+  }
+
   private rpc(home: string | undefined): CodexRpc {
     return new CodexRpc({ binary: this.binary!, env: this.envFor(home), cwd: os.homedir() })
   }

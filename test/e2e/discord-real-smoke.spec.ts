@@ -7,6 +7,7 @@ import { addCodexAccount, installGhForWorkspaceA, seedSettings, type E2EEnv } fr
 import { gitInit, seedJsonl, startSessionIn, terminalText, waitBooted, wsRows } from './helpers/p1'
 import { openerNow, startFakeDiscord, type FakeDiscord, type FakePost } from './helpers/fakeDiscord'
 import { BACKEND_LABEL } from '../../src/shared/sessionBackend'
+import { ownerSays } from '../../src/shared/agentGuide'
 import { lastCodexTurnPermissions } from './helpers/codexRollout'
 
 function claudeTokenFromKeychain(): string {
@@ -604,7 +605,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
         .poll(() => saidBy(env, target.sessionId, 'user').join('\n'), {
           timeout: A_REAL_MODEL_TURN_MS
         })
-        .toContain('(Your owner, via the Koloft conductor:) Say the word MANGO')
+        .toContain(ownerSays('Say the word MANGO'))
       await expect
         .poll(() => saidBy(env, target.sessionId, 'assistant').join('\n'), {
           timeout: A_REAL_MODEL_TURN_MS
@@ -756,7 +757,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       fake.say(OWNER, '/context')
       await expect
         .poll(() => ran(fake), { timeout: A_REAL_MODEL_TURN_MS })
-        .toContainEqual(expect.stringMatching(/conductor\*\* ran \/context:\n## Context Usage/))
+        .toContainEqual(expect.stringMatching(/Assist\*\* ran \/context:\n## Context Usage/))
 
       const child = await liveClaudeTab(page)
       await typePrompt(page, child.tabId, 'Say the word MANGO and nothing else.')
@@ -809,7 +810,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
       fake.say(OWNER, '/compact')
       await expect
         .poll(() => ran(fake), { timeout: A_REAL_MODEL_TURN_MS })
-        .toEqual([expect.stringMatching(/conductor\*\* ran \/compact:\nDone\.$/)])
+        .toEqual([expect.stringMatching(/Assist\*\* ran \/compact:\nDone\.$/)])
     })
   })
 

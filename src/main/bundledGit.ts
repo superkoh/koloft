@@ -27,7 +27,7 @@ export function anotherGitIn(dirs: string[]): boolean {
 const gitConfigString = (value: string): string =>
   `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`
 
-// PLATFORM§44
+// PLATFORM§45
 export function gitSystemConfig(root: string): string {
   return `[include]
 \tpath = /etc/gitconfig
@@ -37,7 +37,7 @@ export function gitSystemConfig(root: string): string {
 `
 }
 
-// PLATFORM§44
+// PLATFORM§45
 export function gitLauncherScript(root: string, systemConfig: string): string {
   const core = path.join(root, 'libexec', 'git-core')
   return `#!/bin/sh
