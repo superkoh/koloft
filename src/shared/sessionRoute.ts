@@ -23,6 +23,8 @@ export interface RouteText {
 export type SessionRoute =
   | (RouteText & { kind: 'workspace'; path: string; worktree: RouteWorktree | null; sure: boolean })
   | (RouteText & { kind: 'project'; machine: string; folder: string | null })
+  | (RouteText & { kind: 'koloft' })
+  | (RouteText & { kind: 'assist'; path: string })
 
 export const LOCAL_MACHINE = 'local'
 
@@ -60,7 +62,10 @@ ${message.slice(0, PROMPT_MAX_CHARS_SENT)}
 >>>
 
 Reply with one JSON object and nothing else:
-{"workspace": <workspace id, or null when this needs a brand-new project>,
+{"hand": <leave it out for coding work;
+          "koloft" when the message is about the Koloft app itself rather than a project, like "set up Discord", "turn on dark mode", "why is my session slow" or "make a scheduled job";
+          "assist" when the message asks one workspace's Assist something, like "ask <folder name> …" or "tell the <folder name> Assist …", and then "workspace" is that workspace's id>,
+ "workspace": <workspace id, or null when this needs a brand-new project>,
  "machine": <only when workspace is null: "${LOCAL_MACHINE}", or the machine the person named>,
  "newFolder": <only when workspace is null: a short kebab-case English folder name, a name only, never a path>,
  "worktree": <"main" to work in the main checkout (always "main" for a folder that is not git),
@@ -120,6 +125,7 @@ export function parseRoute(reply: string | null, list: RouteWorkspace[]): Sessio
   const o = reply ? jsonIn(reply) : null
   if (!o) return null
   const said = { title: text(o.title), why: text(o.why, WHY_MAX_CHARS) }
+  if (o.hand === 'koloft') return { ...said, kind: 'koloft' }
   if (o.workspace === null) {
     const machines = new Set(list.map((w) => w.machine))
     const machine =
@@ -134,6 +140,7 @@ export function parseRoute(reply: string | null, list: RouteWorkspace[]): Sessio
   }
   const ws = typeof o.workspace === 'number' ? list[o.workspace - 1] : undefined
   if (!ws) return null
+  if (o.hand === 'assist') return { ...said, kind: 'assist', path: ws.path }
   return {
     ...said,
     kind: 'workspace',

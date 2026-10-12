@@ -286,6 +286,7 @@ import type {
   CreateTabOptions,
   CreateTabResult,
   CronSaveInput,
+  ConductorOpenResult,
   ConductorSaveInput,
   ConductorBinding,
   ProbeErrorKind,
@@ -356,7 +357,7 @@ import {
   type SessionVerbDeps,
   type Target
 } from './agentSessions'
-import { writeLineInTurn } from './crossSessionMessage'
+import { crossSessionLine, writeLineInTurn } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
 import { koloftAssist } from './assist'
@@ -3536,6 +3537,29 @@ function commandIntoConductor(b: ConductorBinding, text: string): string {
   return `Koloft will type ${text} into the ${conductorName(b.scope)} once its turn ends, and post what it prints in Discord.`
 }
 
+const PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS = 10_000
+let paletteMessages = 0
+
+async function tellAssist(scope: string, name: string, text: string): Promise<ConductorOpenResult> {
+  const all = conductors
+  if (!all) return { ok: false, error: STILL_STARTING }
+  const tabId = all.liveTab(scope)
+  if (!tabId) return all.openTask(scope, { name, brief: text })
+  const id = `koloft-palette-${++paletteMessages}`
+  try {
+    if (backendIdOf(ptyMgr.get(tabId)?.kind) === 'codex')
+      await codexSessions?.queueMessage(tabId, text, id)
+    else {
+      const line = crossSessionLine('prompting', `The owner typed this in ⌘P: ${text}`, id)
+      if (!line) return { ok: false, error: 'The message cannot be sent as it is.' }
+      await sendPeerLine(tabId, line, PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS)
+    }
+  } catch (error) {
+    return { ok: false, error: errorText(error) }
+  }
+  return { ok: true, tabId }
+}
+
 function conductorTarget(ref: string): Target | undefined {
   const all = conductors
   const scope = all?.scopeOf(ref)
@@ -4005,6 +4029,14 @@ function registerIpc(): void {
   ipcMain.handle(
     'conductors:startFresh',
     (_e, scope: string) => conductors?.startFresh(scope) ?? { ok: false, error: STILL_STARTING }
+  )
+  ipcMain.handle(
+    'conductors:openTask',
+    (_e, scope: string, name: string, brief: string) =>
+      conductors?.openTask(scope, { name, brief }) ?? { ok: false, error: STILL_STARTING }
+  )
+  ipcMain.handle('conductors:tell', (_e, scope: string, name: string, text: string) =>
+    tellAssist(scope, name, text)
   )
   ipcMain.handle('conductors:closeTask', (_e, tabId: string) => conductors?.closeTask(tabId))
   ipcMain.handle('conductors:tasks', () => conductors?.taskRows() ?? [])

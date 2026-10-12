@@ -144,8 +144,10 @@ import { NewProjectDialog, type ProjectSeed } from './components/NewProjectDialo
 import type { PendingStart, TypedStart } from './newSession'
 import { pendingOptions, projectOptions, projectParentKey } from './aiStart'
 import type { PaletteAction } from './palette'
+import { GLOBAL_SCOPE } from '@shared/conductors'
 
 const RECENT_MAX = 3
+const ASSIST_TASK_NAME_MAX_CHARS = 40
 
 const LAUNCH_REFUSED_NOTICE = 'Could not start the session — invalid launch arguments'
 
@@ -1111,6 +1113,29 @@ export default function App(): JSX.Element {
           folder: folder ?? '',
           why: route.why
         }
+      })
+      return
+    }
+    if (route?.kind === 'koloft' || route?.kind === 'assist') {
+      const name = route.title || prompt.slice(0, ASSIST_TASK_NAME_MAX_CHARS)
+      const scope = route.kind === 'koloft' ? GLOBAL_SCOPE : route.path
+      void (
+        route.kind === 'koloft'
+          ? window.api.conductors.openTask(scope, name, prompt)
+          : window.api.conductors.tell(scope, name, prompt)
+      ).then((r) => {
+        if (r.ok) {
+          window.api.attention.visit(r.tabId)
+          useStore.getState().activateTab(r.tabId)
+          return
+        }
+        showToast(r.error)
+        requestNew('main', undefined, {
+          prompt,
+          title: route.title,
+          path: route.kind === 'assist' ? route.path : null,
+          worktree: null
+        })
       })
       return
     }
