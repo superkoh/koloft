@@ -471,6 +471,12 @@ export class SshHost implements Host {
     return (await this.sh('test -d "$1"', [this.bare(dir)])).code === 0
   }
 
+  async dirKnownMissing(dir: string): Promise<boolean> {
+    const r = await this.sh('test -d "$1"', [this.bare(dir)])
+    if (sshLinkBroke(r)) throw new Error(problemOf(r))
+    return r.code !== 0
+  }
+
   async makeDir(dir: string): Promise<boolean> {
     return (await this.sh('mkdir -- "$1"', [this.bare(dir)])).code === 0
   }
