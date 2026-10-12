@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>#251 - mark a file as viewed in the Changes view</title>
+<link rel="stylesheet" href="./app.css">
+<style>
+  .note { max-width: 980px; margin: 18px auto 10px; padding: 0 16px; font-size: 13px; line-height: 1.7; color: var(--fg-dim); user-select: text; }
+  .note h1 { font-size: 16px; color: var(--fg); margin: 0 0 6px; }
+  .note ol { margin: 6px 0 0; padding-left: 22px; }
+  .note code { font-family: var(--mono); font-size: 12px; color: var(--fg); }
+  .note b { color: var(--fg); }
+  .mock { position: relative; width: 980px; height: 560px; margin: 0 auto 28px; border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; }
+  .tag { position: absolute; right: 12px; z-index: 5; padding: 2px 8px; border-radius: 999px; background: var(--accent); color: #1a1a1a; font-size: 11px; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="note">
+  <h1>#251 - a "viewed" check for each file in the Changes view</h1>
+  Each file's header row gets a <code>"✓ Viewed"</code> button. One click folds that file's diff, puts a check on its row in the file list, and adds <code>"1 viewed"</code> to the total at the top.
+  A second click undoes it. The check is still there after Koloft restarts. When the file changes again, the check goes by itself and the diff opens again.
+  <ol>
+    <li><b>Not viewed</b> (<code>src/parser.ts</code> below): as today, the diff is open.</li>
+    <li><b>Viewed</b> (<code>src/cli.ts</code>): <code>"✓ Viewed"</code> is lit, the body is folded to the header row, and its list row has a check.</li>
+    <li><b>Viewed, then changed again</b> (<code>README.md</code>): the check is gone and the diff is open again, so it looks like ①. The orange tag only points it out here; the app has no such tag.</li>
+  </ol>
+  How "changed again" is told: on marking, Koloft keeps a fingerprint (hash) of that file's diff text; when the current diff text differs, the file counts as changed. Kept in this Mac's <code>localStorage</code>, per workspace folder, apart from the open/folded state.
+  <br><b>The choice for you:</b> Koloft reads a file's diff again only when its +/− counts or status letter change, on "Reload", or on a base switch. So an edit that keeps the counts (one word changed inside a line that was already added) leaves the check on until "Reload". Pick: accept that (no code). The other way: on every folder change, read each checked file's diff again (on a remote workspace, one more ssh call per checked file each time).
+  <br>On a viewed file the "Diff" / "Source" buttons are greyed (the body is folded, so they would do nothing); "↗ New tab" still works.
+  <br>No new CSS class: the button is the existing <code>.seg</code>, the list check is the existing <code>.bv-bm</code>, and folding renders no body. Only this note, the frame and the orange tag have styles of their own.
+</div>
+
+<div class="mock">
+  <span class="tag" style="top: 320px; right: 300px;">③ viewed, then changed again → check gone, diff open</span>
+  <div class="wb-panel">
+    <div class="wb-bar">
+      <div class="seg" role="group" aria-label="Files view">
+        <button class="on" aria-pressed="true">Changes<span class="n">3</span></button>
+        <button aria-pressed="false">Browse</button>
+      </div>
+      <span class="wb-title"></span>
+      <div class="seg"><button aria-haspopup="menu" aria-expanded="false">base ▾</button></div>
+      <div class="seg"><button aria-haspopup="menu" aria-expanded="false">Filter ▾</button></div>
+    </div>
+
+    <div class="fv" data-view="changes">
+      <div class="fv-changes">
+        <div class="cv-side" style="flex-basis: 224px;">
+          <div class="cv-total" title="3 files listed · 31 added, 9 removed.">
+            <span class="cv-total-n">3 files · 1 viewed</span>
+            <span class="ft-delta"><span class="add">+31</span><span class="del">−9</span></span>
+          </div>
+          <div class="cv-list">
+            <div class="cv-grp">/</div>
+            <div class="ft-node cv-row" data-path="README.md" data-status="modified" title="README.md">
+              <span class="ft-name">README.md</span>
+              <span class="ft-delta"><span class="add">+4</span><span class="del">−1</span></span>
+              <span class="ft-gbadge git-modified" title="modified">M</span>
+            </div>
+            <div class="cv-grp">src</div>
+            <div class="ft-node cv-row" data-path="src/cli.ts" data-status="modified" data-viewed="1" title="src/cli.ts">
+              <span class="ft-name">cli.ts</span>
+              <span class="bv-bm" title="Viewed" aria-label="Viewed"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+              <span class="ft-delta"><span class="add">+12</span><span class="del">−3</span></span>
+              <span class="ft-gbadge git-modified" title="modified">M</span>
+            </div>
+            <div class="ft-node cv-row active" data-path="src/parser.ts" data-status="modified" title="src/parser.ts">
+              <span class="ft-name">parser.ts</span>
+              <span class="ft-delta"><span class="add">+15</span><span class="del">−5</span></span>
+              <span class="ft-gbadge git-modified" title="modified">M</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="cv-stream">
+          <!-- ① not viewed -->
+          <div class="cv-blk" data-path="src/parser.ts" data-kind="text" data-status="modified" data-ready="1">
+            <div class="cv-blk-hd">
+              <span class="path" title="src/parser.ts — click for Reveal in Finder / Copy path"><span class="dir">src/</span>parser.ts</span>
+              <span class="ft-gbadge git-modified" title="modified">M</span>
+              <span class="ft-delta"><span class="add">+15</span><span class="del">−5</span></span>
+              <span class="cv-gap"></span>
+              <div class="seg"><button aria-pressed="false" title="Mark this file as viewed and fold its diff">✓ Viewed</button></div>
+              <div class="seg" role="group" aria-label="Block view">
+                <button class="on" aria-pressed="true">Diff</button>
+                <button aria-pressed="false">Source</button>
+                <button class="cv-split">↗ New tab</button>
+              </div>
+            </div>
+            <div class="cv-hunk">
+              <span class="cv-hunk-hd">@@ -12,7 +12,9 @@ export function parse(src: string): Node[] {</span>
+              <button class="cv-exp" aria-pressed="false" title="Expand context">⤢ expand context</button>
+              <button class="cv-exp cv-cmt" aria-pressed="false" title="Comment on this hunk and put it in the session’s input box">✎ comment</button>
+            </div>
+            <div class="idiff">
+              <div class="idiff-row idiff-ctx"><span class="idiff-num">12</span><span class="idiff-num">12</span><span class="idiff-sign"> </span><span class="idiff-code">  const out: Node[] = []</span></div>
+              <div class="idiff-row idiff-del"><span class="idiff-num">13</span><span class="idiff-num"></span><span class="idiff-sign">−</span><span class="idiff-code">  for (const line of src.split('\n')) {</span></div>
+              <div class="idiff-row idiff-add"><span class="idiff-num"></span><span class="idiff-num">13</span><span class="idiff-sign">+</span><span class="idiff-code">  const lines = src.split(/\r?\n/)</span></div>
+              <div class="idiff-row idiff-add"><span class="idiff-num"></span><span class="idiff-num">14</span><span class="idiff-sign">+</span><span class="idiff-code">  for (const line of lines) {</span></div>
+              <div class="idiff-row idiff-ctx"><span class="idiff-num">14</span><span class="idiff-num">15</span><span class="idiff-sign"> </span><span class="idiff-code">    if (!line.trim()) continue</span></div>
+              <div class="idiff-row idiff-add"><span class="idiff-num"></span><span class="idiff-num">16</span><span class="idiff-sign">+</span><span class="idiff-code">    if (line.startsWith('#')) continue</span></div>
+              <div class="idiff-row idiff-ctx"><span class="idiff-num">15</span><span class="idiff-num">17</span><span class="idiff-sign"> </span><span class="idiff-code">    out.push(parseLine(line))</span></div>
+              <div class="idiff-row idiff-ctx"><span class="idiff-num">16</span><span class="idiff-num">18</span><span class="idiff-sign"> </span><span class="idiff-code">  }</span></div>
+            </div>
+          </div>
+
+          <!-- ② viewed: folded to the header row -->
+          <div class="cv-blk" data-path="src/cli.ts" data-kind="text" data-status="modified" data-ready="1" data-viewed="1">
+            <div class="cv-blk-hd">
+              <span class="path" title="src/cli.ts — click for Reveal in Finder / Copy path"><span class="dir">src/</span>cli.ts</span>
+              <span class="ft-gbadge git-modified" title="modified">M</span>
+              <span class="ft-delta"><span class="add">+12</span><span class="del">−3</span></span>
+              <span class="cv-gap"></span>
+              <div class="seg"><button class="on" aria-pressed="true" title="Viewed — uncheck to show the diff again">✓ Viewed</button></div>
+              <div class="seg" role="group" aria-label="Block view">
+                <button class="on" aria-pressed="true" disabled>Diff</button>
+                <button aria-pressed="false" disabled>Source</button>
+                <button class="cv-split">↗ New tab</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ③ viewed, then changed again: check gone, diff open -->
+          <div class="cv-blk" data-path="README.md" data-kind="text" data-status="modified" data-ready="1">
+            <div class="cv-blk-hd">
+              <span class="path" title="README.md — click for Reveal in Finder / Copy path">README.md</span>
+              <span class="ft-gbadge git-modified" title="modified">M</span>
+              <span class="ft-delta"><span class="add">+4</span><span class="del">−1</span></span>
+              <span class="cv-gap"></span>
+              <div class="seg"><button aria-pressed="false" title="Mark this file as viewed and fold its diff">✓ Viewed</button></div>
+              <div class="seg" role="group" aria-label="Block view">
+                <button class="on" aria-pressed="true">Diff</button>
+                <button aria-pressed="false">Source</button>
+                <button class="cv-split">↗ New tab</button>
+              </div>
+            </div>
+            <div class="cv-hunk">
+              <span class="cv-hunk-hd">@@ -1,4 +1,7 @@</span>
+              <button class="cv-exp" aria-pressed="false" title="Expand context">⤢ expand context</button>
+              <button class="cv-exp cv-cmt" aria-pressed="false" title="Comment on this hunk and put it in the session’s input box">✎ comment</button>
+            </div>
+            <div class="idiff">
+              <div class="idiff-row idiff-ctx"><span class="idiff-num">1</span><span class="idiff-num">1</span><span class="idiff-sign"> </span><span class="idiff-code"># demo</span></div>
+              <div class="idiff-row idiff-del"><span class="idiff-num">2</span><span class="idiff-num"></span><span class="idiff-sign">−</span><span class="idiff-code">A small parser.</span></div>
+              <div class="idiff-row idiff-add"><span class="idiff-num"></span><span class="idiff-num">2</span><span class="idiff-sign">+</span><span class="idiff-code">A small parser for line-based files.</span></div>
+              <div class="idiff-row idiff-add"><span class="idiff-num"></span><span class="idiff-num">3</span><span class="idiff-sign">+</span><span class="idiff-code"></span></div>
+              <div class="idiff-row idiff-add"><span class="idiff-num"></span><span class="idiff-num">4</span><span class="idiff-sign">+</span><span class="idiff-code">## Usage</span></div>
+              <div class="idiff-row idiff-add"><span class="idiff-num"></span><span class="idiff-num">5</span><span class="idiff-sign">+</span><span class="idiff-code">Lines starting with # are skipped.</span></div>
+              <div class="idiff-row idiff-ctx"><span class="idiff-num">3</span><span class="idiff-num">6</span><span class="idiff-sign"> </span><span class="idiff-code"></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
