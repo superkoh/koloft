@@ -1,6 +1,7 @@
 ObjC.import('CoreGraphics')
 ObjC.import('ApplicationServices')
 ObjC.import('AppKit')
+ObjC.import('Carbon')
 
 const HID_EVENT_TAP = 0
 const LEFT_BUTTON = 0
@@ -104,6 +105,31 @@ function dockItemCenter(appName) {
 
 const NOTIFICATION_CENTER = 'com.apple.notificationcenterui'
 
+function inputSources() {
+  const list = ObjC.castRefToObject($.TISCreateInputSourceList(null, true))
+  const out = []
+  for (let i = 0; i < list.count; i++) {
+    const source = list.objectAtIndex(i)
+    const id = $.TISGetInputSourceProperty(source, $.kTISPropertyInputSourceID)
+    out.push({ source, id: ObjC.unwrap(ObjC.castRefToObject(id)) })
+  }
+  return out
+}
+
+function selectInputSource(id) {
+  const match = inputSources().find((s) => s.id === id)
+  if (!match) throw new Error('no input source ' + id)
+  $.TISEnableInputSource(match.source)
+  return String($.TISSelectInputSource(match.source))
+}
+
+function currentInputSource() {
+  const source = $.TISCopyCurrentKeyboardInputSource()
+  return ObjC.unwrap(
+    ObjC.castRefToObject($.TISGetInputSourceProperty(source, $.kTISPropertyInputSourceID))
+  )
+}
+
 function run(argv) {
   const [command, ...rest] = argv
   const n = rest.map(Number)
@@ -113,6 +139,12 @@ function run(argv) {
   if (command === 'drag') return drag(n[0], n[1], n[2], n[3])
   if (command === 'dock-badge') return string(dockItem(rest[0]), 'AXStatusLabel') ?? ''
   if (command === 'dock-item-center') return dockItemCenter(rest[0])
+  if (command === 'input-sources')
+    return inputSources()
+      .map((s) => s.id)
+      .join('\n')
+  if (command === 'select-input-source') return selectInputSource(rest[0])
+  if (command === 'current-input-source') return currentInputSource()
   if (command === 'notification-center-running')
     return String(processElement(NOTIFICATION_CENTER) !== null)
   if (command === 'banner-texts') {

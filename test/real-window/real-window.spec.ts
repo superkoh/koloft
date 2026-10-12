@@ -7,6 +7,7 @@ import {
   centerTerm,
   focusOwner,
   startSessionIn,
+  terminalText,
   waitBooted,
   wsRows
 } from '../e2e/helpers/p1'
@@ -21,6 +22,13 @@ import {
   dockBadgeDrawn,
   dockItemCenter,
   notificationCenterRunning,
+  selectInputSource,
+  currentInputSource,
+  realType,
+  KEY_RETURN,
+  KEY_SPACE,
+  PINYIN_SIMPLIFIED,
+  ABC_LAYOUT,
   realClick,
   realDrag,
   realKey,
@@ -138,6 +146,85 @@ test.describe('a real Mac screen: keys, mouse, Dock and banners as macOS itself 
     realClick(dockItemCenter(DOCK_NAME))
     await expect.poll(() => windowFocused(app)).toBe(true)
     await expect.poll(() => dockBadgeDrawn(DOCK_NAME)).toBe('')
+  })
+
+  test('PROBE: macOS Pinyin in the session terminal, Return while composing and Space-then-Return', async ({
+    shown: { app, page }
+  }, testInfo) => {
+    await sessionInWsA(page)
+    const tabId = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id')) ?? ''
+    await clickIntoTerminal(app, page)
+    await page.evaluate(() => {
+      const log: unknown[] = []
+      ;(window as unknown as { __keyLog: unknown[] }).__keyLog = log
+      for (const type of [
+        'keydown',
+        'keyup',
+        'compositionstart',
+        'compositionupdate',
+        'compositionend',
+        'input'
+      ])
+        document.addEventListener(
+          type,
+          (e) => {
+            const k = e as KeyboardEvent & { data?: string; inputType?: string }
+            log.push({
+              type: e.type,
+              key: k.key,
+              keyCode: k.keyCode,
+              isComposing: k.isComposing,
+              data: k.data,
+              inputType: k.inputType
+            })
+          },
+          true
+        )
+    })
+    const dump = async (name: string): Promise<void> => {
+      screenshot(testInfo.outputPath(`${name}.png`))
+      fs.writeFileSync(
+        testInfo.outputPath(`${name}.json`),
+        JSON.stringify(
+          {
+            source: currentInputSource(),
+            focus: await focusOwner(page),
+            keys: await page.evaluate(() =>
+              (window as unknown as { __keyLog: unknown[] }).__keyLog.splice(0)
+            ),
+            terminal: (await terminalText(page, tabId)).split('\n').filter(Boolean).slice(-8)
+          },
+          null,
+          2
+        )
+      )
+    }
+    try {
+      selectInputSource(PINYIN_SIMPLIFIED)
+      await page.waitForTimeout(1000)
+      realType('nihao')
+      await page.waitForTimeout(800)
+      await dump('1-composing')
+      realKey(KEY_RETURN)
+      await page.waitForTimeout(1500)
+      await dump('2-after-return')
+      realType('nihao')
+      await page.waitForTimeout(800)
+      realKey(KEY_SPACE)
+      await page.waitForTimeout(800)
+      await dump('3-after-space')
+      realKey(KEY_RETURN)
+      await page.waitForTimeout(1500)
+      await dump('4-after-second-return')
+      selectInputSource(ABC_LAYOUT)
+      await page.waitForTimeout(800)
+      realType('hi')
+      realKey(KEY_RETURN)
+      await page.waitForTimeout(1500)
+      await dump('5-plain-hi-return')
+    } finally {
+      selectInputSource(ABC_LAYOUT)
+    }
   })
 
   test('a turn that ends while Koloft is in the background shows a macOS banner naming the session and what happened', async ({

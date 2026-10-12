@@ -45,6 +45,24 @@ export function dockItemCenter(appName: string): Point {
   return { x, y }
 }
 
+export const KEY_RETURN = 36
+export const KEY_SPACE = 49
+export const PINYIN_KEYS: Record<string, number> = { n: 45, i: 34, h: 4, a: 0, o: 31 }
+export const PINYIN_SIMPLIFIED = 'com.apple.inputmethod.SCIM.ITABC'
+export const ABC_LAYOUT = 'com.apple.keylayout.ABC'
+
+export function selectInputSource(id: string): void {
+  osa('select-input-source', id)
+}
+
+export function currentInputSource(): string {
+  return osa('current-input-source')
+}
+
+export function realType(letters: string): void {
+  for (const c of letters) realKey(PINYIN_KEYS[c])
+}
+
 export function notificationCenterRunning(): boolean {
   return osa('notification-center-running') === 'true'
 }
