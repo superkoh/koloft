@@ -426,7 +426,7 @@ export function relayClientEvicted(tabId: string, reason: string): void {
 }
 
 export function relayAttached(tabId: string): boolean {
-  return [...clients.values()].some((c) => c.tabId === tabId)
+  return clients.has(tabId)
 }
 
 export function relayTabClosed(tabId: string): void {

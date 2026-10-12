@@ -359,6 +359,7 @@ import {
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
 import {
+  resolveWorkspace,
   sessionChoices,
   sessionVerb,
   targetIn,
@@ -1166,17 +1167,22 @@ const agentRequests = new AgentRequests({
         if (!discordRelay) throw new Error(STILL_STARTING)
         await discordRelay.send(channelId, files, text)
       },
-      isSetupTask: (tabId) =>
-        conductors?.scopeOfTab(tabId) === GLOBAL_SCOPE &&
-        conductors.taskNameOf(tabId) === DISCORD_SETUP_TASK_NAME,
+      isSetupTask: (tabId) => conductors?.taskNameOf(tabId) === DISCORD_SETUP_TASK_NAME,
       status: () => discordSetupStatus(),
-      tokenFromPage: (tabId) => tokenFromCallersPage(tabId),
+      tokenFromPage: (tabId) =>
+        saveTokenFromPage(guestPagesOf(tabId), relayAttached(tabId), saveDiscordToken),
       reload: (tabId) => reloadDiscordPage(guestPagesOf(tabId), relayAttached(tabId)),
       invite: () => {
         const appId = discordLink?.status().applicationId
         return appId ? inviteLink(appId) : null
       },
-      bindNewChannel: (scope) => bindWithNewChannel({ scope })
+      bindNewChannel: async (ref) => {
+        if (ref === GLOBAL_SCOPE) return bindWithNewChannel({ scope: ref })
+        const found = resolveWorkspace(ref, workspaceMgr?.pinnedPaths() ?? [])
+        return found.ok
+          ? bindWithNewChannel({ scope: found.value.path })
+          : { ok: false, error: found.error }
+      }
     }),
     gh: githubVerb({
       scopeOf: (tabId) => conductors?.scopeOfTab(tabId),
@@ -3520,7 +3526,7 @@ function registerSlashCommands(): void {
 
 function discordSetupStatus(): string {
   const s = discordLink?.status() ?? DISCORD_OFF
-  const discord = loadSettings().discord
+  const discord = conductors?.discordSettings() ?? { bindings: [] }
   const owned = s.guilds.filter((g) => discord.userId && g.ownerId === discord.userId)
   const lines = [
     `Bot token: ${s.phase === 'off' ? 'not saved' : 'saved'}`,
@@ -3540,16 +3546,18 @@ function guestPagesOf(tabId: string): GuestPage[] {
     .map((wc) => ({
       url: () => wc.getURL(),
       run: (script: string) => wc.executeJavaScript(script),
-      reload: () => wc.reload()
+      reload: () =>
+        new Promise<void>((resolve) => {
+          wc.once('did-stop-loading', () => resolve())
+          wc.reload()
+        })
     }))
 }
 
-function tokenFromCallersPage(tabId: string): Promise<string> {
-  return saveTokenFromPage(guestPagesOf(tabId), relayAttached(tabId), async (token) => {
-    const saved = await discordTokenWrite(token)
-    if (saved) void discordLink?.connect()
-    return saved
-  })
+async function saveDiscordToken(token: string): Promise<boolean> {
+  const saved = await discordTokenWrite(token)
+  if (saved) void discordLink?.connect()
+  return saved
 }
 
 function openDiscordSetup(): Promise<ConductorOpenResult> {
@@ -4075,10 +4083,8 @@ function registerIpc(): void {
   })
   ipcMain.handle(
     'conductors:saveWithNewChannel',
-    (_e, input: Omit<ConductorSaveInput, 'channel'>) => {
-      if (typeof input?.scope !== 'string') return { ok: false, error: 'Pick a scope.' }
-      return bindWithNewChannel({ id: input.id, scope: input.scope })
-    }
+    (_e, input: Omit<ConductorSaveInput, 'channel'>) =>
+      bindWithNewChannel({ id: input.id, scope: input.scope })
   )
   ipcMain.handle('conductors:unbind', (_e, id: string) => {
     conductors?.unbind(id)
@@ -4096,9 +4102,7 @@ function registerIpc(): void {
   ipcMain.handle('conductors:tasks', () => conductors?.taskRows() ?? [])
   ipcMain.handle('discord:setToken', async (_e, token: unknown) => {
     if (typeof token !== 'string' || !token.trim()) return false
-    const saved = await discordTokenWrite(token.trim())
-    if (saved) void discordLink?.connect()
-    return saved
+    return saveDiscordToken(token.trim())
   })
   ipcMain.handle('discord:status', () => discordLink?.status() ?? DISCORD_OFF)
   ipcMain.handle('discord:pair', (_e, isMe: unknown) => {

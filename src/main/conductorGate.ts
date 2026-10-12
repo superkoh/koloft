@@ -26,7 +26,8 @@ process.stdin.on('end', () => {
   try {
     event = JSON.parse(raw)
   } catch {}
-  if (toolsTheAllowFileNames().has(event.tool_name) || allowed(event)) return
+  const named = toolsTheAllowFileNames()
+  if (named.has(event.tool_name) || allowed(event, named)) return
   process.stdout.write(
     JSON.stringify({
       hookSpecificOutput: {
@@ -71,19 +72,19 @@ function onePlainCall(command, program) {
   return quote === ''
 }
 
-function allowedCommands() {
-  return [...toolsTheAllowFileNames()].flatMap((tool) => {
+function allowedCommands(named) {
+  return [...named].flatMap((tool) => {
     const named = /^Bash\\((.+)\\)$/.exec(tool)
     return named ? [named[1]] : []
   })
 }
 
-function allowed(event) {
+function allowed(event, named) {
   if (READ_OR_ASK_TOOLS.has(event.tool_name)) return true
   if (WRITE_TOOLS.has(event.tool_name)) return inOwnMemory(event)
   if (event.tool_name !== 'Bash') return false
   const command = event.tool_input && event.tool_input.command
-  return ['koloft', ...allowedCommands()].some((program) => onePlainCall(command, program))
+  return ['koloft', ...allowedCommands(named)].some((program) => onePlainCall(command, program))
 }
 
 ${TOOLS_THE_ALLOW_FILE_NAMES}

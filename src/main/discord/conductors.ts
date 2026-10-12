@@ -454,7 +454,7 @@ export class Conductors {
         ...(error instanceof CannotMakeChannels ? { cannotMakeChannels: true } : {})
       }
     }
-    this.discord = { ...this.discord, category: made.category }
+    this.write({ category: made.category })
     return this.save({ ...input, channel: made.channel }, backend)
   }
 
@@ -493,6 +493,10 @@ export class Conductors {
       return rest
     })
     return this.open(scope)
+  }
+
+  discordSettings(): DiscordSettings {
+    return this.discord
   }
 
   owner(): string | undefined {

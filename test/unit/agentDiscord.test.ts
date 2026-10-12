@@ -25,7 +25,7 @@ function verb(conductor: boolean, setupTask = false) {
     isSetupTask: () => setupTask,
     status: () => 'Bot token: saved',
     tokenFromPage: async () => 'Saved the bot token.',
-    reload: () => 'Reloaded.',
+    reload: async () => 'Reloaded.',
     invite: () => 'https://discord.com/oauth2/authorize?client_id=700',
     bindNewChannel: async (scope) => {
       bound.push(scope)

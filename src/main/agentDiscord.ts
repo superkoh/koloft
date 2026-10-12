@@ -28,7 +28,7 @@ export interface DiscordVerbDeps {
   isSetupTask(tabId: string): boolean
   status(): string
   tokenFromPage(tabId: string): Promise<string>
-  reload(tabId: string): string
+  reload(tabId: string): Promise<string>
   invite(): string | null
   bindNewChannel(scope: string): Promise<ConductorSaveResult>
 }
@@ -71,7 +71,7 @@ async function setup(
   if (sub === 'status' && !rest.length) return answered(d.status())
   if (sub === 'token' && rest.length === 1 && rest[0] === '--from-page')
     return answered(await d.tokenFromPage(tabId))
-  if (sub === 'reload' && !rest.length) return answered(d.reload(tabId))
+  if (sub === 'reload' && !rest.length) return answered(await d.reload(tabId))
   if (sub === 'invite' && !rest.length) {
     const url = d.invite()
     return url ? answered(url) : refused('koloft: save the bot token first.')

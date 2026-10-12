@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   NO_BOT_PAGE,
   NO_TOKEN_ON_PAGE,
+  NOT_SAVED,
   SAVED,
   saveTokenFromPage,
   STILL_ATTACHED,
@@ -20,7 +21,7 @@ function page(url: string, text: string): GuestPage & { ran: number; reloads: nu
       p.ran++
       return new Function('document', `return ${script}`)({ body: { innerText: text } })
     },
-    reload: () => {
+    reload: async () => {
       p.reloads++
     }
   }
@@ -67,9 +68,15 @@ describe('saving the bot token from the Workbench page', () => {
     expect(saved).toEqual([])
   })
 
-  it('says so when the Bot page shows no token yet', async () => {
+  it('says so when the Bot page shows no token, and reloads it all the same', async () => {
     const bot = page(BOT, 'Reset Token')
     expect(await saveTokenFromPage([bot], false, saver().save)).toBe(NO_TOKEN_ON_PAGE)
-    expect(bot.reloads).toBe(0)
+    expect(bot.reloads).toBe(1)
+  })
+
+  it('reloads the page even when the Keychain refuses the token, so it does not stay on screen', async () => {
+    const bot = page(BOT, TOKEN)
+    expect(await saveTokenFromPage([bot], false, async () => false)).toBe(NOT_SAVED)
+    expect(bot.reloads).toBe(1)
   })
 })
