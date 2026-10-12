@@ -1340,3 +1340,68 @@ so its folders were not writable by default.
   `default_permissions` profiles, which the `-P` result suggests ignore these legacy keys
   — **inferred, not checked**.
 
+## 27. A PreToolUse hook on one app-server, and its trust
+
+**Checked on 2026-10-11 with standalone Codex CLI 0.162.0.** Node scripts drove
+`codex app-server --stdio` (`initialize` with `experimentalApi: true`, `initialized`,
+`hooks/list {cwds:[<folder>]}`, then `thread/start` or `thread/resume` and real model
+turns), each in a throwaway `CODEX_HOME`, with the hook given only as
+`-c hooks.PreToolUse=[{hooks=[{type="command",command="…"}]}]` on the app-server's
+command line. The hook command was a small Node script that logged its stdin.
+
+- **It fires before each of these tools**, with `tool_name`: `Bash` (shell),
+  `apply_patch`, `mcp__<server>__<tool>`, `collaborationspawn_agent` and
+  `collaborationwait_agent`. Its stdin is one JSON object: `session_id`, `turn_id`,
+  `transcript_path`, `cwd` (the thread's folder), `hook_event_name: "PreToolUse"`, `model`,
+  `permission_mode`, `tool_name`, `tool_input`, `tool_use_id`. For `apply_patch`,
+  `tool_input.command` is the whole patch (`*** Begin Patch` … `*** End Patch`), and its
+  `*** Add File:` paths were relative to `cwd` (`*** Add File: note.txt`).
+- **Claude Code's deny shape is honoured**: printing
+  `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"…"}}`
+  stopped the call, and the model quoted the reason back word for word. It held under
+  `approval_policy="never"` with `sandbox_mode="workspace-write"`, on `thread/start` and on
+  `thread/resume`. Other built-in tools (`web_search`, `view_image`, `update_plan`) were not
+  probed.
+- **The hook lists as `/<session-flags>/config.toml:pre_tool_use:0:0`**, `source:
+  "sessionFlags"`, `eventName: "preToolUse"`, `command` exactly as given, with a
+  `currentHash` (`sha256:…`) and a `trustStatus`: `untrusted` with no entry, `modified`
+  with an entry for another hash, `trusted` with a matching one. An untrusted hook does not
+  run and nothing says so (section 17 for SessionStart).
+- **Trust is a table in the home's `config.toml`**:
+  `[hooks.state."<key>"]` then `trusted_hash = "<currentHash>"`. A second table for the
+  same key made the whole file unreadable for hooks: `hooks/list` answered `hooks: []` and
+  `errors: [{…, message: "…config.toml:14:14: duplicate key"}]`. A home whose
+  `config.toml` is a symbolic link to a shared file reads the table through the link.
+- **The hash follows the command string alone**: the same command under two different
+  config file keys had the same hash, and `sh "$KOLOFT_CODEX_GATE"` kept
+  `sha256:f74c4b76…` when `KOLOFT_CODEX_GATE` pointed at another path. So builds that put
+  their own script path in the environment share one trust entry.
+- **A `$NAME` in the command is expanded by a shell from the app-server's environment**:
+  `sh "$KOLOFT_PROBE_GATE"` given as a SessionStart hook ran the script that variable
+  named. The hook also saw every other variable of the app-server's environment.
+- **The trust is read again on each ask**: a table written while the app-server ran made
+  the next `hooks/list` on that same server say `trusted`; a second app-server started
+  after the write, with the same `-c` and another value of the variable, said `trusted` on
+  its first ask.
+- **`hooks/list` needs the connection's own `initialize`**: sent first it answered
+  `{"code":-32600,"message":"Not initialized"}`, and a second `initialize` on a connection
+  that already had one answered `{"code":-32600,"message":"Already initialized"}`. A stdio
+  app-server has one connection, and Koloft's TUI sends its own `initialize` through it
+  (section 1), so Koloft cannot ask the tab's own app-server before its TUI connects; it
+  asks a second app-server started with the same command line, environment and folder.
+- **An owner's own PreToolUse hook in `config.toml` stays next to the one given with `-c`.**
+  2026-10-11, codex-cli 0.162.0, temp `CODEX_HOME`, no model turn: with
+  `[[hooks.PreToolUse]]` … `command = "echo owner-hook"` in `config.toml` and
+  `-c hooks.PreToolUse=[…sh "$KOLOFT_CODEX_GATE"…]` on the command line, `hooks/list`
+  listed both — `source: "user"` with key `<config path>:pre_tool_use:0:0`, and
+  `source: "sessionFlags"` with key `/<session-flags>/config.toml:pre_tool_use:0:0` — and
+  trusting the second left the first `untrusted`.
+- **Codex keeps the trust table when it rewrites `config.toml` itself.** Same run:
+  `config/value/write {keyPath:"model", value:"gpt-6", mergeStrategy:"replace"}` rewrote
+  the file (`model = "gpt-6"`), kept the owner's hook and the
+  `[hooks.state."/<session-flags>/config.toml:pre_tool_use:0:0"]` table byte for byte, and
+  the next `hooks/list` still said `trusted`.
+- Not probed yet: a real TUI connected over `--remote` to the hooked app-server, and
+  whether both PreToolUse hooks run in one turn (each needs a model turn, so a signed-in
+  account).
+

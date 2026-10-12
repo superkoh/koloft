@@ -30,6 +30,7 @@ import type {
   SpawnedTab,
   CronState,
   DiscordStatus,
+  AssistTaskRow,
   AttentionEvent,
   AccountView,
   LoginProgress,
@@ -182,9 +183,15 @@ const api: KoloftApi = {
   conductors: {
     save: (input) => ipcRenderer.invoke('conductors:save', input),
     unbind: (id) => ipcRenderer.invoke('conductors:unbind', id),
-    switchBackend: (id) => ipcRenderer.invoke('conductors:switchBackend', id),
-    open: (id) => ipcRenderer.invoke('conductors:open', id),
-    startFresh: (id) => ipcRenderer.invoke('conductors:startFresh', id)
+    open: (scope) => ipcRenderer.invoke('conductors:open', scope),
+    startFresh: (scope) => ipcRenderer.invoke('conductors:startFresh', scope),
+    closeTask: (tabId) => ipcRenderer.invoke('conductors:closeTask', tabId),
+    tasks: () => ipcRenderer.invoke('conductors:tasks'),
+    onTasks: (cb) => {
+      const handler = (_e: unknown, rows: AssistTaskRow[]): void => cb(rows)
+      ipcRenderer.on('conductors:tasks', handler)
+      return () => ipcRenderer.removeListener('conductors:tasks', handler)
+    }
   },
   discord: {
     setToken: (token) => ipcRenderer.invoke('discord:setToken', token),

@@ -1413,6 +1413,42 @@ sessions.
   `SendMessage` was accepted, and the receiver's transcript held the text. The docs page
   on messaging other sessions says it is "on with nothing to enable"; in `claude -p` both
   tools were offered with teams on and off alike.
+- **What a receiver does with messages on its socket** (2026-10-11, CC 2.1.296, the socket
+  probe: interactive receivers in a pty with a scratch `HOME`, model haiku and opus, a
+  `--settings` file with a SessionStart role, a logging `UserPromptSubmit` hook and the
+  `Bash(koloft *)` allow rule; each message one `{"type":"user",…}` line on the
+  receiver's `messagingSocketPath`, sent by one Python process):
+  - **`"crossSessionInbound": "accept"` in the receiver's settings takes a message whose
+    claimed mode does not match.** Three receivers, each sent a line asking it to run
+    `koloft session list`: bypass receiver with `from-mode="prompting"`, `default`
+    receiver with `bypass`, `auto` receiver with `bypass` — all three ran it (3 of 3). The
+    same `default`/`bypass` pair without the setting held the message and ran nothing.
+  - **A body identical to the one before it from the same sender is dropped, with no
+    error to the sender.** Three sends of one body: the second, 2 s after the first, made
+    no turn and the transcript got a `system` record "Dropped a peer message from unknown:
+    identical to the previous message from this sender."; the third, 31 s after the
+    first, was taken. Four sends differing only in a last line holding an id were each
+    taken. The 2.1.296 binary has `dedupWindowMs:30000` and compares only with that
+    sender's last body (read, not run).
+  - **A sender may send 30 at once, then one more every 2 s; the rest are dropped** —
+    read from the 2.1.296 binary, not run: `bucketCapacity:30, refillPerSecond:0.5`,
+    drop reason `"rate-limited"` ("sender exceeded the peer message rate limit"), kept per
+    sender by the receiver.
+  - **A message fires `UserPromptSubmit`, idle or busy, and the hook's `prompt` holds
+    the whole envelope**: `<cross-session-message from-mode="bypass">\n<body>\n</cross-session-message>`.
+    Sent while a typed turn was running a slow command, it was folded into that turn as a
+    `queued_command` attachment (`origin.kind: "peer"`), and its `UserPromptSubmit` input
+    carried the same `prompt_id` as the typed prompt that started the turn.
+  - **The input box is left alone.** With a half-typed line in an idle receiver's box, a
+    message started its own turn; Enter pressed after that turn sent the half-typed line
+    whole, as a prompt of its own. The same check while the receiver was busy was run but
+    its result was not kept.
+- **Esc that interrupts a running turn fires no `Stop` hook.** 2026-10-11, CC 2.1.296,
+  model haiku, temp HOME, a `Stop` hook that appends to a file: a typed turn running
+  `ping -c 30 127.0.0.1` was interrupted with Esc 6 s in; the session went `idle` and the
+  file stayed empty. (A standalone `sleep 30` is refused by CC itself — "Blocked:
+  standalone sleep" — and ends the turn at once, with a `Stop`.) So a typed turn's
+  `<tab>.typed` mark outlives an Esc until the next typed turn's `Stop`.
 - **Only the last `--append-system-prompt-file` reaches the model.** 2026-10-11, CC
   2.1.296, `claude -p`, model haiku, two files each holding one made-up word: given two
   `--append-system-prompt-file` flags the model knew only the second file's word. Given

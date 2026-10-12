@@ -17,7 +17,6 @@ const binding: ConductorBinding = {
   scope: 'global',
   backend: 'claude',
   channel: { guildId: '1', channelId: CHANNEL, name: 'koloft-all' },
-  sessionIds: [],
   touched: []
 }
 

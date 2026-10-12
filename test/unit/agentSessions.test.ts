@@ -485,11 +485,12 @@ describe('koloft session send', () => {
     expect((await verb(['send', 'other-id', 'hi'], from('kid'))).exit).not.toBe(0)
 
     await vi.waitFor(() => expect([...new Set(resumed)]).toEqual(['planner-id', PARENT_KEY]))
-    const line = crossSessionLine('prompting', '(From the session "Fix docs", id kid-id:) done')
+    const line = (id: string): string | null =>
+      crossSessionLine('prompting', '(From the session "Fix docs", id kid-id:) done', id)
     await vi.waitFor(() =>
       expect(lines).toEqual([
-        { tabId: 'planner-id-tab', line },
-        { tabId: 'planner-id-tab', line }
+        { tabId: 'planner-id-tab', line: line('koloft-session-1') },
+        { tabId: 'planner-id-tab', line: line('koloft-session-2') }
       ])
     )
     await vi.waitFor(() =>
@@ -786,8 +787,11 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     expect((await verb(['send', CODEX_THREAD, 'check docs'], from('wsCond'))).exit).toBe(0)
     expect((await verb(['send', 'fix-id', 'hi'], from('global'))).exit).toBe(0)
     expect(lines).toEqual([
-      { tabId: 'fix', line: crossSessionLine('bypass', ownerSays('also the tests')) },
-      { tabId: 'fix', line: crossSessionLine('prompting', ownerSays('hi')) }
+      {
+        tabId: 'fix',
+        line: crossSessionLine('bypass', ownerSays('also the tests'), 'koloft-session-1')
+      },
+      { tabId: 'fix', line: crossSessionLine('prompting', ownerSays('hi'), 'koloft-session-2') }
     ])
     expect(queued).toEqual([
       { tabId: 'cx', text: ownerSays('check docs'), clientId: 'koloft-conductor-1' }
@@ -862,7 +866,10 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     expect(ready.resumed).toEqual(['old-id'])
     await vi.waitFor(() =>
       expect(ready.lines).toEqual([
-        { tabId: 'old-id-tab', line: crossSessionLine('prompting', ownerSays('go')) }
+        {
+          tabId: 'old-id-tab',
+          line: crossSessionLine('prompting', ownerSays('go'), 'koloft-session-1')
+        }
       ])
     )
     const slow = harness(live, {}, [], conducting({ ready: () => false }))
@@ -994,7 +1001,10 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     expect(resumed).toEqual(['old-id', 'old-id'])
     await vi.waitFor(() =>
       expect(lines).toEqual([
-        { tabId: 'old-id-tab', line: crossSessionLine('prompting', ownerSays('carry on')) }
+        {
+          tabId: 'old-id-tab',
+          line: crossSessionLine('prompting', ownerSays('carry on'), 'koloft-session-1')
+        }
       ])
     )
     expect(touched.map((t) => t.key)).toEqual(['old-id', 'fix-id', 'old-id'])
@@ -1160,8 +1170,8 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     const fromFix = '(From the session "fix-login", id fix-id:) done'
     await vi.waitFor(() =>
       expect(lines).toEqual([
-        { tabId: 'wsCond', line: crossSessionLine('prompting', fromFix) },
-        { tabId: 'b3-tab', line: crossSessionLine('prompting', fromFix) }
+        { tabId: 'wsCond', line: crossSessionLine('prompting', fromFix, 'koloft-session-1') },
+        { tabId: 'b3-tab', line: crossSessionLine('prompting', fromFix, 'koloft-session-2') }
       ])
     )
     expect(queued).toEqual([
@@ -1235,7 +1245,10 @@ describe('a conductor given a session name with spaces and no quotes', () => {
     ])
       expect((await h.verb(words(line), from('cond'))).exit).toBe(0)
     expect(h.lines).toEqual([
-      { tabId: 'fix', line: crossSessionLine('prompting', ownerSays('fix the tests')) }
+      {
+        tabId: 'fix',
+        line: crossSessionLine('prompting', ownerSays('fix the tests'), 'koloft-session-1')
+      }
     ])
     expect(h.queued).toEqual([
       { tabId: 'cx', text: ownerSays('check the links'), clientId: 'koloft-conductor-1' }

@@ -41,6 +41,8 @@ import {
   backendIdOf,
   capabilitiesFor,
   identityOf,
+  otherBackend,
+  preferredAssistBackend,
   statusUnavailable,
   SUPPORTED_PAIRS
 } from '@shared/sessionBackend'
@@ -65,7 +67,15 @@ import {
   standardUserAgent
 } from './browserSecurity'
 import { directoryListingHtml } from './dirListing'
-import { HOOK_SCRIPT, markAnswerable, pruneStale, setupHooks, writeTabHookSettings } from './hooks'
+import {
+  HOOK_SCRIPT,
+  forgetAssistMarkers,
+  markAnswerable,
+  pruneStale,
+  setupHooks,
+  writeAllowFile,
+  writeTabHookSettings
+} from './hooks'
 import { formatRemoteKey, hostOf, parseRemoteKey } from '@shared/remoteKey'
 import {
   defaultControlDir,
@@ -283,6 +293,7 @@ import type {
   ResumePlan,
   ProjectInfo,
   SessionInfo,
+  SessionMethods,
   AttentionEvent,
   AttentionSubject,
   SessionResumeRequest,
@@ -305,7 +316,7 @@ import type {
 } from '@shared/types'
 import { copyWorktreeIncludes } from './sessionWorktrees'
 import { AgentRequests, BUILTIN_VERBS, errorText, refused, type AgentVerb } from './agentRequests'
-import { conductorFolder, Conductors } from './discord/conductors'
+import { conductorFolder, Conductors, type AssistBackendChoice } from './discord/conductors'
 import { discordApiUrl, DiscordLink } from './discord/link'
 import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay, type Destination } from './discord/relay'
@@ -345,7 +356,7 @@ import {
   type SessionVerbDeps,
   type Target
 } from './agentSessions'
-import { writeLine } from './crossSessionMessage'
+import { writeLineInTurn } from './crossSessionMessage'
 import { StartedSessions } from './startedSessions'
 import { ReaderDocs } from './readerDocs'
 import { koloftAssist } from './assist'
@@ -420,6 +431,7 @@ const sessionBackends = new SessionBackends({
 })
 sessionBackends.conductorOf = (id) => conductors?.conductorOf(id)
 sessionBackends.conductorWorkspaceOf = (tabId) => conductors?.workspaceOfTab(tabId)
+sessionBackends.assistTaskOf = (tabId) => conductors?.taskNameOf(tabId)
 sessionBackends.turnOver = (tabId) => tracker.turnOver(tabId)
 sessionBackends.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
 function allSessions(): SessionInfo[] {
@@ -461,7 +473,8 @@ tracker.heldTabs = () => {
   const held = new Set(dirtyTabIds)
   for (const h of ptyMgr.list()) if (h.util && h.alive && h.ownerTabId) held.add(h.ownerTabId)
   for (const s of allSessions())
-    if (s.conductor || workspaceMgr?.isResident(s.sessionId)) held.add(s.tabId)
+    if (conductors?.heldResident(s.tabId) || workspaceMgr?.isResident(s.sessionId))
+      held.add(s.tabId)
   return held
 }
 tracker.needsUser = (id) => attention.list().some((e) => e.tabId === id)
@@ -607,6 +620,7 @@ function sleepTab(tabId: string): void {
 
 function forgetSleeper(tabId: string): void {
   sleepers.delete(tabId)
+  conductors?.onPtyExit(tabId, false)
   typedWhileAsleep.delete(tabId)
   sendToRenderer('tab:killedByMain', tabId)
   workspaceMgr?.onTrackerUpdate()
@@ -876,13 +890,16 @@ async function codexAskOf(tabId: string): Promise<CodexApproval | CodexQuestion 
   }
 }
 
+function watchedByDiscord(all: Conductors, s: { tabId: string; conductor?: string }): boolean {
+  if (s.conductor) return all.heldResident(s.tabId)
+  return all.covers(sessionBackends.workspaceOfTab(s.tabId))
+}
+
 function syncAnswerable(): void {
   if (!answerableRegDir || !conductors) return
   for (const s of allSessions()) {
     if (s.backendId !== 'claude' || !s.alive || s.remote) continue
-    const on =
-      discordConnected &&
-      (!!s.conductor || conductors.covers(sessionBackends.workspaceOfTab(s.tabId)))
+    const on = discordConnected && watchedByDiscord(conductors, s)
     if (on === answerable.has(s.tabId)) continue
     if (on) answerable.add(s.tabId)
     else answerable.delete(s.tabId)
@@ -999,6 +1016,7 @@ const notesAndWorkbenchVerbs = workbenchVerbs({
 
 const assist = koloftAssist({
   setting: () => loadSettings().assist,
+  enabled: (backend) => loadSettings().sessionMethods.enabled[backend],
   claude: async () => {
     const env = await pickedAccountEnv()
     if (!env) return null
@@ -1013,6 +1031,50 @@ const assist = koloftAssist({
   }
 })
 const assistRuns = new Map<number, AbortController>()
+
+async function whyAssistCannotRunOn(
+  backend: BackendId,
+  enabled: SessionMethods['enabled']
+): Promise<string | undefined> {
+  if (!enabled[backend]) return `${BACKEND_LABEL[backend]} is turned off in Settings ▸ Sessions`
+  if (backend === 'codex') {
+    if (!codexSessions || !(await codexSessions.availability()).available)
+      return 'Codex is not available on this Mac'
+    return codexPicker.pick(accountViews()) ? undefined : 'every Codex account is at its limit'
+  }
+  const { res } = await pickForLaunch()
+  if (res.account !== null) return undefined
+  return res.reason === 'no-accounts'
+    ? 'there is no Claude account'
+    : 'every Claude account is at its limit'
+}
+
+async function assistBackendChoice(avoid?: BackendId): Promise<AssistBackendChoice> {
+  const settings = loadSettings()
+  const preferred = preferredAssistBackend(settings)
+  const other = otherBackend(preferred)
+  const { enabled } = settings.sessionMethods
+  const why =
+    avoid === preferred ? 'it could not start' : await whyAssistCannotRunOn(preferred, enabled)
+  if (!why) return { backend: preferred }
+  const otherWhy =
+    avoid === other ? 'it could not start' : await whyAssistCannotRunOn(other, enabled)
+  if (!otherWhy)
+    return { backend: other, because: `Assist runs on ${BACKEND_LABEL[other]} this time: ${why}.` }
+  return {
+    error: `Assist cannot start: ${why}, and ${otherWhy}. Check Settings ▸ Accounts.`
+  }
+}
+const COMMAND_NEEDS_DISCORD =
+  'koloft session command posts what the command printed in Discord, so it needs an Assist bound to a Discord channel.'
+
+// CC§13
+async function sendPeerLine(tabId: string, line: string, ms: number): Promise<void> {
+  const sessionId = sessionOfTab(tabId)?.sessionId
+  const socket = sessionId ? await whenMessagingSocket(sessionId, ms) : null
+  if (!socket) throw new Error('Koloft could not find where that session takes messages.')
+  await writeLineInTurn(socket, line)
+}
 
 const sessionDeps: SessionVerbDeps = {
   workspaceOf: (tabId) => sessionBackends.workspaceOfTab(tabId),
@@ -1039,13 +1101,7 @@ const sessionDeps: SessionVerbDeps = {
   },
   ready: tabReady,
   asking: asksTheOwner,
-  // CC§13
-  sendLine: async (tabId, line, ms) => {
-    const sessionId = sessionOfTab(tabId)?.sessionId
-    const socket = sessionId ? await whenMessagingSocket(sessionId, ms) : null
-    if (!socket) throw new Error('Koloft could not find where that session takes messages.')
-    await writeLine(socket, line)
-  },
+  sendLine: sendPeerLine,
   press: (tabId, keys) => ptyMgr.type(tabId, keys),
   modeOf: (tabId) => sessionBackends.permissionClass(tabId),
   stop: killTabFromMain,
@@ -1055,7 +1111,8 @@ const sessionDeps: SessionVerbDeps = {
   },
   undelivered: (callerTab, target, why) => {
     const caller = conductors?.bindingOfTab(callerTab)
-    const b = caller ?? (target.bindingId ? conductors?.binding(target.bindingId) : undefined)
+    const b =
+      caller ?? (target.assistScope ? conductors?.bindingOfScope(target.assistScope) : undefined)
     const text = `Could not deliver to ${target.name}: ${why}`
     if (!b) return void sendToRenderer('cron:toast', text)
     discordRelay?.say(b.channel.channelId, `⚠ ${text}`)
@@ -1068,9 +1125,12 @@ const sessionDeps: SessionVerbDeps = {
     void discordThreads?.place(b, { tabId, name, workspace, backend }, true)
   },
   command: async (callerTab, target, text) => {
-    const b = conductors?.bindingOfTab(callerTab)
-    if (!b) throw new Error(STILL_STARTING)
-    return target.bindingId === b.id ? commandIntoConductor(b, text) : commandInto(b, target, text)
+    if (!conductors) throw new Error(STILL_STARTING)
+    const b = conductors.bindingOfTab(callerTab)
+    if (!b) throw new Error(COMMAND_NEEDS_DISCORD)
+    return target.assistScope === b.scope
+      ? commandIntoConductor(b, text)
+      : commandInto(b, target, text)
   },
   screen: screenOf
 }
@@ -1766,6 +1826,7 @@ app.whenReady().then(() => {
     discordThreads?.forget(e.id)
     askButtons?.forget(e.id)
     if (answerable.delete(e.id) && answerableRegDir) markAnswerable(answerableRegDir, e.id, false)
+    if (answerableRegDir) forgetAssistMarkers(answerableRegDir, e.id)
     loginPtys.delete(e.id)
     if (toolInstallPtys.delete(e.id)) {
       sessionBackends.forgetAvailability()
@@ -1810,7 +1871,7 @@ app.whenReady().then(() => {
         .catch((error) => sendToRenderer('cron:toast', String(error)))
     workspaceMgr?.launchEnded(e.id)
     cronRunner?.onPtyExit(e.id)
-    conductors?.onPtyExit(e.id)
+    conductors?.onPtyExit(e.id, sleepers.has(e.id))
     sendToRenderer('terminal:exit', e)
   })
   tracker.on('update', () => {
@@ -1837,7 +1898,7 @@ app.whenReady().then(() => {
   })
   tracker.on('status', (t: StatusEdge) => {
     ptyMgr.wakeReady(t.tabId)
-    const conductor = !!conductors?.conductorOf(t.tabId)
+    const conductor = !!conductors?.heldResident(t.tabId)
     if (conductor && (t.next === 'approval' || t.next === 'waiting'))
       void codexAskOf(t.tabId).then((a) => a && discordRelay?.codexAsked(t.tabId, a))
     discordNotices?.onStatus(t.tabId, t.prev, t.next)
@@ -1870,6 +1931,11 @@ app.whenReady().then(() => {
       error: (message) => sendToRenderer('cron:toast', message),
       trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
+      assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey),
+      conductorGate: {
+        script: hookPaths.codexGate,
+        writeAllow: (tabId, allow) => writeAllowFile(hookPaths.regDir, tabId, allow)
+      },
       browserEndpoint: relayEndpoint,
       openShimRoot: path.join(userData, 'codex-open'),
       playwrightBin,
@@ -1961,13 +2027,15 @@ app.whenReady().then(() => {
   conductors = new Conductors({
     userData,
     load: () => loadSettings().discord,
+    loadRecords: () => loadSettings().assistSessions,
     save: (discord) => {
       void commitSettings({ discord })
       syncAnswerable()
     },
     saveQuietly: (discord) => void saveSettings({ discord }),
+    saveRecords: (assistSessions) => void commitSettings({ assistSessions }),
     isPinned: (scope) => workspaceMgr?.isPinned(scope) ?? false,
-    backendEnabled: (backend) => loadSettings().sessionMethods.enabled[backend],
+    backend: assistBackendChoice,
     tabAlive: (tabId) => !!ptyMgr.get(tabId)?.alive,
     liveTabFor: (backend, key) => sessionBackends.get(backend).aliveTabFor(key),
     runningElsewhere: async (backend, key) =>
@@ -1979,6 +2047,7 @@ app.whenReady().then(() => {
           kind: l.backend,
           cwd: l.cwd,
           role: l.role,
+          allow: l.allow,
           conductor: true,
           trustFolder: true,
           name: l.backend === 'claude' ? asPeerName(l.title) : undefined
@@ -2006,11 +2075,14 @@ app.whenReady().then(() => {
       return res.id
     },
     kill: killTabFromMain,
+    say: (channelId, text) => discordRelay?.say(channelId, text),
     rowsChanged: () => workspaceMgr?.refresh(),
+    tasksChanged: () => sendToRenderer('conductors:tasks', conductors?.taskRows() ?? []),
     toast: (text) => sendToRenderer('cron:toast', text),
     bindDeadlineMs: cronBindDeadlineMs()
   })
   conductors.keepPinned(workspaceMgr.pinnedPaths().map((w) => w.path))
+  conductors.followBackend(preferredAssistBackend(loadSettings()))
   const discordLockFile = path.join(userData, 'discord.lock')
   const link = new DiscordLink({
     apiUrl: discordApiUrl(),
@@ -2026,7 +2098,7 @@ app.whenReady().then(() => {
     onMessage: (m) => discordRelay?.onMessage(m),
     onInteraction: (i) => void interactions.handle(i),
     onReady: () => {
-      for (const b of conductors?.bindings() ?? []) void conductors?.open(b.id)
+      for (const b of conductors?.bindings() ?? []) void conductors?.open(b.scope)
       void discordRelay?.catchUp()
       registerSlashCommands()
     },
@@ -2181,6 +2253,8 @@ app.whenReady().then(() => {
       if (!codexSessions) throw new Error(codexStartupError ?? 'Codex is not available.')
       await codexSessions.queueMessage(tabId, text, clientId)
     },
+    sendLine: sendPeerLine,
+    modeOf: (tabId) => sessionBackends.permissionClass(tabId),
     codexApproval: (tabId) => codexSessions?.openApproval(tabId),
     codexQuestion: (tabId) => codexSessions?.openQuestion(tabId),
     regDir: hookPaths.regDir,
@@ -2216,8 +2290,7 @@ app.whenReady().then(() => {
     dialog: dialogOf
   })
   tracker.dialogsWatched = (tabId) =>
-    !!conductorsNow.conductorOf(tabId) ||
-    conductorsNow.covers(sessionBackends.workspaceOfTab(tabId))
+    watchedByDiscord(conductorsNow, { tabId, conductor: conductorsNow.conductorOf(tabId) })
   void link.connect()
   remoteSync = new RemoteSync({
     run: (host, cmd) =>
@@ -3431,9 +3504,9 @@ function conductorDestination(b: ConductorBinding): Destination {
     id: b.id,
     name: 'Assist',
     conductor: true,
-    liveTab: () => conductors?.liveTab(b.id),
+    liveTab: () => conductors?.liveTab(b.scope),
     open: async () => {
-      const opened = await conductors?.open(b.id)
+      const opened = await conductors?.open(b.scope)
       if (!opened) throw new Error(STILL_STARTING)
       if (!opened.ok) throw new Error(opened.error)
       return opened.tabId
@@ -3470,17 +3543,19 @@ function commandIntoConductor(b: ConductorBinding, text: string): string {
 
 function conductorTarget(ref: string): Target | undefined {
   const all = conductors
-  const b = all?.bindingOf(ref)
-  if (!all || !b) return undefined
+  const scope = all?.scopeOf(ref)
+  if (!all || !scope) return undefined
+  const tabId = all.liveTab(scope)
   return {
-    key: `conductor:${b.id}`,
-    name: `the ${conductorName(b.scope)}`,
-    backend: b.backend,
+    key: `conductor:${scope}`,
+    name: `the ${conductorName(scope)}`,
+    backend:
+      (tabId && backendIdOf(ptyMgr.get(tabId)?.kind)) || preferredAssistBackend(loadSettings()),
     remote: false,
-    tabId: all.liveTab(b.id),
-    bindingId: b.id,
+    tabId,
+    assistScope: scope,
     open: async () => {
-      const opened = await all.open(b.id)
+      const opened = await all.open(scope)
       if (!opened.ok) throw new Error(opened.error)
       return opened.tabId
     }
@@ -3614,7 +3689,8 @@ const claudeBackend = new ClaudeBackend({
   ptysChanged: () => writeRelayEnv(ptyTabIds()),
   resumeProbes,
   events: (tabId, event) => sessionBackends.observe(tabId, event),
-  error: (message) => sendToRenderer('cron:toast', message)
+  error: (message) => sendToRenderer('cron:toast', message),
+  assistOf: (cwd, resumeKey) => conductors?.identityOfLaunch(cwd, resumeKey)
 })
 sessionBackends.register(claudeBackend)
 
@@ -3845,7 +3921,11 @@ function registerIpc(): void {
   ipcMain.handle('settings:get', () => loadSettings())
   ipcMain.handle('app:version', () => app.getVersion())
   ipcMain.handle('settings:set', (_e, patch) => {
-    return commitSettings(sanitizeSettingsPatch(patch))
+    const saved = commitSettings(sanitizeSettingsPatch(patch))
+    const backend = preferredAssistBackend(saved)
+    if (!conductors || saved.discord.bindings.every((b) => b.backend === backend)) return saved
+    conductors.followBackend(backend)
+    return loadSettings()
   })
 
   ipcMain.handle('assist:route', async (_e, id: unknown, message: unknown) => {
@@ -3906,30 +3986,33 @@ function registerIpc(): void {
     const channel = input?.channel
     if (
       typeof input?.scope !== 'string' ||
-      !backendIdOf(input.backend) ||
       !isDiscordId(channel?.guildId) ||
       !isDiscordId(channel.channelId) ||
       typeof channel.name !== 'string'
     )
       return { ok: false, error: 'Pick a channel.' }
     const { guildId, channelId, name } = channel
-    const saved = conductors?.save({ ...input, channel: { guildId, channelId, name } }) ?? {
-      ok: false,
-      error: STILL_STARTING
-    }
+    const saved = conductors?.save(
+      { id: input.id, scope: input.scope, channel: { guildId, channelId, name } },
+      preferredAssistBackend(loadSettings())
+    ) ?? { ok: false, error: STILL_STARTING }
     if (saved.ok) registerSlashCommands()
     return saved
   })
-  ipcMain.handle('conductors:unbind', (_e, id: string) => conductors?.unbind(id))
-  ipcMain.handle('conductors:switchBackend', (_e, id: string) => conductors?.switchBackend(id))
+  ipcMain.handle('conductors:unbind', (_e, id: string) => {
+    conductors?.unbind(id)
+    syncAnswerable()
+  })
   ipcMain.handle(
     'conductors:open',
-    (_e, id: string) => conductors?.open(id) ?? { ok: false, error: STILL_STARTING }
+    (_e, scope: string) => conductors?.open(scope) ?? { ok: false, error: STILL_STARTING }
   )
   ipcMain.handle(
     'conductors:startFresh',
-    (_e, id: string) => conductors?.startFresh(id) ?? { ok: false, error: STILL_STARTING }
+    (_e, scope: string) => conductors?.startFresh(scope) ?? { ok: false, error: STILL_STARTING }
   )
+  ipcMain.handle('conductors:closeTask', (_e, tabId: string) => conductors?.closeTask(tabId))
+  ipcMain.handle('conductors:tasks', () => conductors?.taskRows() ?? [])
   ipcMain.handle('discord:setToken', async (_e, token: unknown) => {
     if (typeof token !== 'string' || !token.trim()) return false
     const saved = await discordTokenWrite(token.trim())

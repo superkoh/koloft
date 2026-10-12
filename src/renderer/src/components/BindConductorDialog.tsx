@@ -1,12 +1,9 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
 import { LuX } from 'react-icons/lu'
-import { BACKEND_LABEL, SESSION_BACKENDS, shownAsInstalled } from '@shared/sessionBackend'
 import { channelLabel, GLOBAL_SCOPE, scopeName } from '@shared/conductors'
-import type { BackendId, DiscordChannel } from '@shared/types'
+import type { DiscordChannel } from '@shared/types'
 import { useStore } from '../store'
-import { useInstalledBackends } from '../useInstalledBackends'
 import { shortenHome } from '../browseModel'
-import { SessionBackendIcon } from './SessionBackendIcon'
 
 export function BindConductorDialog(): JSX.Element | null {
   const request = useStore((s) => s.bindConductor)
@@ -16,7 +13,6 @@ export function BindConductorDialog(): JSX.Element | null {
 
 function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.Element {
   const bindings = useStore((s) => s.settings.discord.bindings)
-  const methods = useStore((s) => s.settings.sessionMethods)
   const workspaceRows = useStore((s) => s.workspaceRows)
   const setBindConductor = useStore((s) => s.setBindConductor)
   const editing = editId ? bindings.find((b) => b.id === editId) : undefined
@@ -26,16 +22,6 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
   const takenBy = (s: string) => bindings.find((b) => b.scope === s && b.id !== editId)
   const [picked, setPicked] = useState<string | undefined>(
     editing?.scope ?? (scope && !takenBy(scope) ? scope : scopes.find((s) => !takenBy(s)))
-  )
-  const { installed } = useInstalledBackends()
-  const issue = (b: BackendId): string | undefined => {
-    if (!methods.enabled[b]) return 'Disabled in Settings ▸ Sessions'
-    if (!shownAsInstalled(installed, b)) return 'Not installed'
-    return undefined
-  }
-  const [backend, setBackend] = useState<BackendId>(
-    editing?.backend ??
-      (methods.enabled[methods.defaultBackend] ? methods.defaultBackend : 'claude')
   )
   const [channels, setChannels] = useState<DiscordChannel[] | null>(null)
   const [channel, setChannel] = useState<DiscordChannel | undefined>()
@@ -82,10 +68,8 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
   const submit = async (): Promise<void> => {
     if (busy || !picked) return
     if (!channel) return setError('Pick a channel.')
-    const unusable = issue(backend)
-    if (unusable) return setError(unusable)
     setBusy(true)
-    const r = await window.api.conductors.save({ id: editId, scope: picked, backend, channel })
+    const r = await window.api.conductors.save({ id: editId, scope: picked, channel })
     setBusy(false)
     if (r.ok) close()
     else setError(r.error)
@@ -135,27 +119,6 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
                 </div>
               )
             })}
-          </div>
-          <span className="flabel">Assist</span>
-          <div className="field-check-row">
-            <div className="seg" role="group" aria-label="Assist method">
-              {SESSION_BACKENDS.map((b) => (
-                <button
-                  key={b}
-                  className={backend === b ? 'on' : ''}
-                  aria-pressed={backend === b}
-                  disabled={!!issue(b)}
-                  title={issue(b)}
-                  onClick={() => {
-                    setBackend(b)
-                    setError('')
-                  }}
-                >
-                  <SessionBackendIcon backend={b} size={14} decorative />
-                  {BACKEND_LABEL[b]}
-                </button>
-              ))}
-            </div>
           </div>
           <span className="flabel">Channel</span>
           {channels && channels.length > 0 && (

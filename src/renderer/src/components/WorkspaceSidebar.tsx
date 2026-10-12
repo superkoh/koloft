@@ -69,6 +69,7 @@ import { FreshnessPopover } from './FreshnessPopover'
 import { basename } from '@shared/preview'
 import { hostOf, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { remoteDotTitle, workspaceMenuCount } from '../remoteWorkspace'
+import { openConductor } from './ConductorsIsland'
 import {
   discardAll,
   dirtyInWorkspace,
@@ -197,6 +198,7 @@ export function WorkspaceSidebar({
   const conductorBindings = useStore((s) => s.settings.discord.bindings)
   const setBindConductor = useStore((s) => s.setBindConductor)
   const canBind = (wsPath: string): boolean => !conductorBindings.some((b) => b.scope === wsPath)
+  const canTalk = useStore((s) => !!s.settings.assist?.on)
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [foldedRows, setFoldedRows] = useState<Record<string, boolean>>({})
   const [menu, setMenu] = useState<MenuState | null>(null)
@@ -304,7 +306,12 @@ export function WorkspaceSidebar({
 
   const menuItemCount = (t: MenuTarget): number =>
     t.kind === 'workspace'
-      ? workspaceMenuCount({ missing: t.missing, isGit: t.isGit, canBind: canBind(t.wsPath) })
+      ? workspaceMenuCount({
+          missing: t.missing,
+          isGit: t.isGit,
+          canBind: canBind(t.wsPath),
+          canTalk
+        })
       : t.row.pending
         ? 1
         : t.row.running
@@ -541,6 +548,17 @@ export function WorkspaceSidebar({
               >
                 Scheduled jobs…
               </div>
+              {canTalk && (
+                <div
+                  className="mi"
+                  onClick={() => {
+                    setMenu(null)
+                    void openConductor(target.wsPath)
+                  }}
+                >
+                  Talk to Assist
+                </div>
+              )}
               {canBind(target.wsPath) && (
                 <div
                   className="mi"

@@ -7,7 +7,7 @@ import {
   type Settings
 } from './types'
 import { normalizeSessionMethods } from './sessionBackend'
-import { sanitizeDiscord } from './conductors'
+import { sanitizeAssistSessions, sanitizeDiscord } from './conductors'
 
 export function buildResetPatch(): Partial<Settings> {
   const {
@@ -17,10 +17,12 @@ export function buildResetPatch(): Partial<Settings> {
     sessionMethods,
     discord,
     assist,
+    assistSessions,
     newProjectFolders,
     ...rest
   } = DEFAULT_SETTINGS
   void assist
+  void assistSessions
   void newProjectFolders
   void accounts
   void skipPermissions
@@ -31,9 +33,10 @@ export function buildResetPatch(): Partial<Settings> {
 }
 
 export function sanitizeSettingsPatch(patch: Partial<Settings>): Partial<Settings> {
-  const { accounts, discord, ...rest } = patch
+  const { accounts, discord, assistSessions, ...rest } = patch
   void accounts
   void discord
+  void assistSessions
   return rest
 }
 
@@ -42,6 +45,7 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   const merged = { ...DEFAULT_SETTINGS, ...doc }
   merged.sessionMethods = normalizeSessionMethods(merged.sessionMethods)
   merged.accounts = sanitizeAccountList(merged.accounts)
+  merged.assistSessions = sanitizeAssistSessions(merged.assistSessions, merged.discord)
   merged.discord = sanitizeDiscord(merged.discord)
   merged.assist = sanitizeAssist(merged.assist)
   merged.newProjectFolders = sanitizeFolderMap(merged.newProjectFolders)
