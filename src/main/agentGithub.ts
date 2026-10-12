@@ -25,7 +25,7 @@ export interface GithubVerbDeps {
   scopeOf(tabId: string): string | undefined
   folderOf(scope: string): string
   repoOf(scope: string): Promise<string | null>
-  run(args: string[]): Promise<{ ok: boolean; out: string }>
+  run(args: string[], scope: string): Promise<{ ok: boolean; out: string }>
 }
 
 function flagName(arg: string): string {
@@ -96,7 +96,7 @@ export function githubVerb(d: GithubVerbDeps): AgentVerb {
       if (!repo) return refused(GH_NEEDS_A_REPO)
       gh.push('--repo', repo)
     }
-    const { ok, out } = await d.run(gh)
+    const { ok, out } = await d.run(gh, scope)
     if (!ok) return refused(`koloft: gh ${noun} ${action}: ${out}`)
     if (out.length <= REPLY_CHARS_A_CONDUCTOR_TURN_HOLDS) return answered(out)
     return answered(
