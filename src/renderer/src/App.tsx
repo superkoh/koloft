@@ -144,6 +144,7 @@ import { NewProjectDialog, type ProjectSeed } from './components/NewProjectDialo
 import type { PendingStart, TypedStart } from './newSession'
 import { pendingOptions, projectOptions, projectParentKey } from './aiStart'
 import type { PaletteAction } from './palette'
+import { GLOBAL_SCOPE } from '@shared/conductors'
 
 const RECENT_MAX = 3
 
@@ -1111,6 +1112,27 @@ export default function App(): JSX.Element {
           folder: folder ?? '',
           why: route.why
         }
+      })
+      return
+    }
+    if (route?.kind === 'koloft' || route?.kind === 'assist') {
+      void (
+        route.kind === 'koloft'
+          ? window.api.conductors.openTask(GLOBAL_SCOPE, route.title, prompt)
+          : window.api.conductors.tell(route.path, route.title, prompt)
+      ).then((r) => {
+        if (r.ok) {
+          window.api.attention.visit(r.tabId)
+          useStore.getState().activateTab(r.tabId)
+          return
+        }
+        showToast(r.error)
+        requestNew('main', undefined, {
+          prompt,
+          title: route.title,
+          path: route.kind === 'assist' ? route.path : null,
+          worktree: null
+        })
       })
       return
     }
