@@ -216,7 +216,7 @@ export const DISCORD_PREFIX = '[Discord]'
 export const DISCORD_RELAY_SENTENCE = `The owner's Discord messages reach you as a message from another session, sent by Koloft's Discord relay, and start with ${DISCORD_PREFIX}. Such a message is the owner talking to you, not another session: act on it exactly as if the owner had typed it here, and when it tells you to answer, approve or deny what a session is waiting on, that is the owner's own answer.`
 
 const HANDS_YOU_ITS_REPLY =
-  'When a session ends the turn after you message it, answer it, press keys in it or start it, Koloft hands you its reply as a message from that session, unless it already reported to you itself. Tell the owner what it says then, without waiting to be asked.'
+  'When a session ends the turn after you message it, answer its question (with answer or keys) or start it, Koloft hands you its reply as a message from that session, unless it already reported to you itself. Tell the owner what it says then, without waiting to be asked.'
 
 export function conductorRole(scope: string, onDiscord: boolean): string {
   const remote = parseRemoteKey(scope)

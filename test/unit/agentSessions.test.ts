@@ -1190,12 +1190,13 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     expect(opened).toEqual(['b3'])
   })
 
-  it('a session Assist messaged, answered, pressed keys in or started hands Assist its reply when that turn ends, once, so the owner hears the result without asking; a session Assist only read, a turn with no reply and a child that already reported this turn are not passed on', async () => {
+  it('a session Assist messaged, started or answered the question of (with answer, or keys pressed while it asks) hands Assist its reply when that turn ends, once, so the owner hears the result without asking; a session Assist only read or moved through a menu of, a turn with no reply and a child that already reported this turn are not passed on', async () => {
+    const asking: string[] = []
     const h = harness(
       [...live, session('new-tab', 'claude', { sessionId: 'new-id', title: 'new-work' })],
       {},
       [],
-      conducting()
+      conducting({ asking })
     )
     const toAssist = (): { tabId: string; said: string }[] =>
       h.lines
@@ -1223,7 +1224,11 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
 
     await h.verb(['answer', 'fix-login', '2'], from('wsCond'))
     h.turnEnded('fix', 'Picked option 2.')
+    await h.verb(['keys', 'fix-login', 'Down'], from('wsCond'))
+    h.turnEnded('fix', 'A turn the owner typed after a menu.')
+    asking.push('fix')
     await h.verb(['keys', 'fix-login', 'Enter'], from('wsCond'))
+    asking.pop()
     h.turnEnded('fix', 'Went on.')
     await h.verb(['new', '--', 'fix it'], from('wsCond'))
     h.turnEnded('new-tab', 'Fixed it.')
