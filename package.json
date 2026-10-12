@@ -1,6 +1,6 @@
 {
   "name": "koloft",
-  "version": "0.41.0",
+  "version": "0.41.1",
   "description": "A macOS app that runs and manages your Claude Code sessions — every session in a folder, with a Workbench beside it.",
   "main": "./out/main/index.js",
   "author": {
@@ -83,5 +83,9 @@
     "vite": "^7.0.0",
     "vitest": "^4.1.11",
     "zustand": "^5.0.15"
+  },
+  "overrides": {
+    "adm-zip": "^0.6.1",
+    "katex": "$katex"
   }
 }

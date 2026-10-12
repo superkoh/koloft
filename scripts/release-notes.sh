@@ -72,6 +72,13 @@ if git rev-parse -q --verify "$END" >/dev/null; then
     grep -vE '^[a-z]+\(site\):' || true)
 fi
 
+# An untyped subject is listed as-is, so the notes still carry it, but a PR title should have
+# had a prefix (the `PR title` check): say which ones, for the release to reword.
+UNTYPED=$(printf '%s\n' "$SUBJECTS" | grep -vE '^[a-z]+(\([^)]*\))?!?:' | grep -v '^$' || true)
+if [ -n "$UNTYPED" ]; then
+  printf 'release-notes.sh: warning: no type prefix, listed as-is — reword in the notes:\n%s\n' "$UNTYPED" >&2
+fi
+
 if [ -n "$SUBJECTS" ]; then
   printf '%s\n\n' "## What's Changed"
   while IFS= read -r subject; do
