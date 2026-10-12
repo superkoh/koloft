@@ -1430,7 +1430,9 @@ Gateway (the live connection that pushes events):
 - **The Developer Portal in the Workbench browser** — measured 2026-10-10 and 10-11 with a
   test account: with any CDP client attached to the page, Create on New Application
   answered 403 (50001) in five rounds; with none attached and the page reloaded, it
-  answered 201. After Reset Token, the Bot page (`/developers/applications/<id>/bot`)
+  answered 201. In the 2026-10-11 walk with a real Claude Code session, the session
+  filled the name and ticked the box while attached, then detached with no reload, and
+  the owner's Create answered 201. After Reset Token, the Bot page (`/developers/applications/<id>/bot`)
   shows the new token as plain text. The invite's Authorize worked with a client
   attached; its "I am human" check was passed by hand with the client detached. The
   invite page first offered to continue in the Discord desktop app; continuing in the
