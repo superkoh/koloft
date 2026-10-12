@@ -393,8 +393,9 @@ import { installLine, pathWithDirFirst, pathWithDirLast, pathWithInstallDir } fr
 if (!app.isPackaged) app.setName('koloft-dev')
 
 const BACKGROUND_TEST = process.env.KOLOFT_TEST_BACKGROUND === '1'
+const HIDDEN_TEST_WINDOW = BACKGROUND_TEST && process.env.KOLOFT_TEST_REAL_WINDOW !== '1'
 // PLATFORM§4
-if (BACKGROUND_TEST && process.platform === 'darwin') {
+if (HIDDEN_TEST_WINDOW && process.platform === 'darwin') {
   app.setActivationPolicy('accessory')
   app.dock?.hide()
 }
@@ -723,7 +724,7 @@ function projectFolderName(tabId: string): string | undefined {
 
 function updateDockBadge(pending: AttentionEvent[]): void {
   if (process.platform !== 'darwin') return
-  const text = dockBadgeText(pending.length, loadSettings().dockBadge, BACKGROUND_TEST)
+  const text = dockBadgeText(pending.length, loadSettings().dockBadge, HIDDEN_TEST_WINDOW)
   if (text !== null) app.dock?.setBadge(text)
 }
 
@@ -787,7 +788,7 @@ function showOsNotification(event: AttentionEvent): void {
 }
 
 function notifyPlain(title: string, body: string): void {
-  if (BACKGROUND_TEST || !Notification.isSupported()) return
+  if (HIDDEN_TEST_WINDOW || !Notification.isSupported()) return
   const g = globalThis as { __koloftOsNotifCount?: number }
   g.__koloftOsNotifCount = (g.__koloftOsNotifCount ?? 0) + 1
   new Notification({ title, body }).show()
@@ -810,7 +811,7 @@ function routeAttentionEvent(event: AttentionEvent): void {
   recentOutlets.set(outletKey, now)
   const decision = route(
     event,
-    { windowFocused: attentionCtx().windowFocused, backgroundTest: BACKGROUND_TEST },
+    { windowFocused: attentionCtx().windowFocused, backgroundTest: HIDDEN_TEST_WINDOW },
     loadSettings()
   )
   if (decision.os) showOsNotification(event)
@@ -957,7 +958,7 @@ function pushAccounts(): void {
 }
 
 function notifyExpired(name: string): void {
-  if (BACKGROUND_TEST || !Notification.isSupported()) return
+  if (HIDDEN_TEST_WINDOW || !Notification.isSupported()) return
   new Notification({
     title: 'Claude account expired',
     body: `Account ${name} expired and left the pool — sign in again from Settings to restore it`
@@ -1654,8 +1655,8 @@ function createWindow(): void {
     ...geo.bounds,
     minWidth: windowMinWidth(geo.bounds.width),
     minHeight: 560,
-    ...fullscreenOption(geo.fullScreen && !BACKGROUND_TEST),
-    show: !BACKGROUND_TEST,
+    ...fullscreenOption(geo.fullScreen && !HIDDEN_TEST_WINDOW),
+    show: !HIDDEN_TEST_WINDOW,
     title: 'Koloft',
     backgroundColor: '#0e0e10',
     titleBarStyle: 'hiddenInset',
@@ -1687,10 +1688,10 @@ function createWindow(): void {
     if (releaseWithoutHostPress) e.preventDefault()
   })
   // PLATFORM§5
-  if (!BACKGROUND_TEST && geo.maximized && !geo.fullScreen) mainWindow.maximize()
+  if (!HIDDEN_TEST_WINDOW && geo.maximized && !geo.fullScreen) mainWindow.maximize()
   trackWindowState(
     mainWindow,
-    BACKGROUND_TEST ? { maximized: geo.maximized, fullScreen: geo.fullScreen } : undefined
+    HIDDEN_TEST_WINDOW ? { maximized: geo.maximized, fullScreen: geo.fullScreen } : undefined
   )
 
   // PLATFORM§5

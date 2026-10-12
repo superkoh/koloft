@@ -1553,3 +1553,7 @@ Gateway (the live connection that pushes events):
   copy, the mac zip (`zip -y`) and the in-app updater (`cp -R`) keep the symlinks.
 - Measured 2026-10-11 on macOS 27.0 with a temp `HOME` and `GIT_CONFIG_NOSYSTEM=1`, https
   against github.com's public `octocat/Hello-World`.
+
+## §46 Real keys, real mouse and a real screen on a Mac nobody sits at
+
+- (to be filled from the probes)
