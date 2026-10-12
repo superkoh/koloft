@@ -1573,3 +1573,50 @@ Gateway (the live connection that pushes events):
   user.email=…` beats the included value; a user's own `GIT_CONFIG_COUNT=1` entry plus one
   appended `include.path` entry both load.
 - Measured 2026-10-12 with Apple git 2.54, a temp `HOME` and `GIT_CONFIG_NOSYSTEM=1`.
+
+## §47 gh sign-in inside the macOS sandbox
+
+- **Every `gh auth login` reads and then deletes the user's own gh entry in the login
+  keychain**, even with `--insecure-storage` and its own `GH_CONFIG_DIR`, which signs the
+  user's own gh out. gh reaches the keychain only by running `/usr/bin/security`, and a
+  failed keychain call does not stop the login: it goes on and writes the token into
+  `GH_CONFIG_DIR/hosts.yml`. (Read in the gh 2.102.0 source.)
+- **`sandbox-exec -f` with `(version 1) (allow default) (deny process-exec (literal
+  "/usr/bin/security"))`** lets `/usr/bin/true` exit 0, while `/usr/bin/security help`
+  exits 71 with `sandbox-exec: execvp() of '/usr/bin/security' failed: Operation not
+  permitted`. gh starts and reaches github.com inside it.
+- **With stdin not a terminal, `gh auth login --web` never tries to open a browser.**
+  Run as `sandbox-exec -f <profile> gh auth login --web --insecure-storage --git-protocol
+  https --hostname github.com -s repo,read:org,gist,workflow --clipboard=false`, with an
+  env of only `PATH=<empty folder>`, a fresh `HOME` and `GH_CONFIG_DIR`,
+  `GH_PROMPT_DISABLED=1` and `GH_NO_UPDATE_NOTIFIER=1`, stdout stayed empty and stderr
+  printed, within about 2 s, exactly `\n! First copy your one-time code: XXXX-XXXX\nOpen
+  this URL to continue in your web browser: https://github.com/login/device\n` (no colour
+  codes, since stderr was a pipe). gh then kept polling: 8 s later it had printed nothing
+  more and had not exited, and the config folder and `HOME` were still empty. The source
+  prints "Press Enter to open … in your browser" and "Failed opening a web browser at …"
+  only when interactive.
+- **After a finished login, `hosts.yml`** holds `github.com:` with `users: <login>:
+  oauth_token: <token>`, `git_protocol: https`, `oauth_token: <token>` and `user: <login>`
+  (seen in Docker against a fake GitHub with gh 2.102.0; never against github.com).
+- Measured 2026-10-12 on macOS 27.0 with the bundled gh 2.102.0; the login was killed
+  after the code line and never approved.
+
+## §48 ssh "who am I" without side effects
+
+- **These options make `ssh -T` ask nothing and change nothing**: `-o BatchMode=yes -o
+  StrictHostKeyChecking=yes -o UpdateHostKeys=no -o CheckHostIP=no -o ControlMaster=no -o
+  ClearAllForwardings=yes -o AddKeysToAgent=no -o ConnectTimeout=5 -o LogLevel=ERROR -a
+  -x`. A key with a passphrase and no agent fails in about 0.06 s; an unknown host is
+  refused without writing `known_hosts`; a `LocalForward` or `ControlMaster` in the user's
+  config is not set up; a hostile config (`accept-new`, `UpdateHostKeys yes`,
+  `AddKeysToAgent yes`) left every file in `~/.ssh` byte for byte the same. A `Match exec`
+  in the user's config still runs. ssh honours the first `-o` given for a key (§33).
+- **`ssh -G <alias>` resolves the user's config offline**: it prints `hostname`, `user`,
+  `port` and every `identityfile` (with no config, the five default files, two of them
+  `_sk`), and prints no `proxycommand` or `identityagent` line when none is set.
+- **A server that greets the key's owner writes it to stderr and exits 1**; GitHub's
+  documented greeting is `Hi <login>! You've successfully authenticated, but GitHub does
+  not provide shell access.` (inferred, not checked: no real key was used).
+- Measured 2026-10-12 in a Docker Linux container against a local sshd with throwaway
+  keys, and `ssh -F /dev/null -G github.com` on macOS 27.0.
