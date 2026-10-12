@@ -33,6 +33,7 @@ export async function setUpDiscordWithAssist(): Promise<string | null> {
   st.setSettingsOpen(false)
   window.api.attention.visit(r.tabId)
   st.activateTab(r.tabId)
+  st.followAgentBrowser(r.tabId)
   return null
 }
 

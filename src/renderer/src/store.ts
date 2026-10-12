@@ -120,6 +120,7 @@ interface AppState {
   workbenchFull: boolean
   overlay: { url: string; unread: boolean; open: boolean } | null
   cdpAttached: Record<string, string[]>
+  followsAgentBrowser: Record<string, true>
   overlayDialog: BrowserJsDialog | null
   termFocus: { ptyId: string; n: number }
   githubBtn: boolean
@@ -227,6 +228,7 @@ interface AppState {
   setOverlayDialog: (d: BrowserJsDialog | null) => void
   setCdpAttached: (sessionId: string, targetIds: string[]) => void
   openCdpTab: (tabId: string, url: string) => Promise<string | null>
+  followAgentBrowser: (tabId: string) => void
   setLastWsPath: (p: string) => void
   selectWorkspace: (path: string) => void
 
@@ -479,6 +481,7 @@ export const useStore = create<AppState>((set, get) => ({
   overlay: null,
   overlayDialog: null,
   cdpAttached: {},
+  followsAgentBrowser: {},
   termFocus: { ptyId: '', n: 0 },
   githubBtn: false,
   lastWsPath: null,
@@ -905,7 +908,20 @@ export const useStore = create<AppState>((set, get) => ({
     set((st) => ({ workbench: { ...st.workbench, [tabId]: r.set } }))
     persistWorkbench(tabId)
     if (r.evicted) s.showToast(tabEvictedNotice(tabLabel(r.set, r.evicted)))
+    if (s.followsAgentBrowser[tabId]) {
+      if (!s.workbenchOpen[tabId]) s.setWorkbenchOpen(tabId, true)
+      set((st) => ({
+        workbenchLoad: {
+          ...st.workbenchLoad,
+          [tabId]: { tabId: r.tabId, nonce: (st.workbenchLoad[tabId]?.nonce ?? 0) + 1 }
+        }
+      }))
+    }
     return r.tabId
+  },
+  followAgentBrowser: (tabId) => {
+    set((s) => ({ followsAgentBrowser: { ...s.followsAgentBrowser, [tabId]: true } }))
+    get().setWorkbenchOpen(tabId, true)
   },
   setLastWsPath: (lastWsPath) => set({ lastWsPath }),
   selectWorkspace: (path) =>
