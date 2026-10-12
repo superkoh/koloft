@@ -2,28 +2,56 @@ import { describe, it, expect } from 'vitest'
 import {
   NO_BOT_PAGE,
   NO_TOKEN_ON_PAGE,
-  tokenFromPage,
+  SAVED,
+  saveTokenFromPage,
+  STILL_ATTACHED,
   type GuestPage
 } from '../../src/main/discord/tokenFromPage'
 
 const TOKEN = 'MTQyNzAwMDAwMDAwMDAwMDAw.GabcDe.abcdefghijklmnopqrstuvwxyz0123456789'
+const BOT = 'https://discord.com/developers/applications/700/bot'
 
-function page(url: string, text: string): GuestPage & { ran: number } {
+function page(url: string, text: string): GuestPage & { ran: number; reloads: number } {
   const p = {
     ran: 0,
+    reloads: 0,
     url: () => url,
     run: async (script: string) => {
       p.ran++
       return new Function('document', `return ${script}`)({ body: { innerText: text } })
+    },
+    reload: () => {
+      p.reloads++
     }
   }
   return p
 }
 
-describe('reading the bot token from the Workbench page', () => {
-  it('reads it only from a discord.com Developer Portal Bot page', async () => {
-    const bot = page('https://discord.com/developers/applications/700/bot', `Token\n${TOKEN}\nCopy`)
-    expect(await tokenFromPage([bot])).toEqual({ token: TOKEN })
+function saver(): { save: (t: string) => Promise<boolean>; saved: string[] } {
+  const saved: string[] = []
+  return {
+    saved,
+    save: async (t) => {
+      saved.push(t)
+      return true
+    }
+  }
+}
+
+describe('saving the bot token from the Workbench page', () => {
+  it('reads it from the Bot page, saves it, then reloads the page so no later snapshot can show it', async () => {
+    const bot = page(BOT, `Token\n${TOKEN}\nCopy`)
+    const { save, saved } = saver()
+    expect(await saveTokenFromPage([bot], false, save)).toBe(SAVED)
+    expect(saved).toEqual([TOKEN])
+    expect(bot.reloads).toBe(1)
+  })
+
+  it('refuses while a tool is still attached to the browser, and reads nothing', async () => {
+    const bot = page(BOT, TOKEN)
+    const { save, saved } = saver()
+    expect(await saveTokenFromPage([bot], true, save)).toBe(STILL_ATTACHED)
+    expect([bot.ran, saved.length]).toEqual([0, 0])
   })
 
   it('never runs anything on another page, even one that shows a token or looks alike', async () => {
@@ -33,12 +61,15 @@ describe('reading the bot token from the Workbench page', () => {
       page('https://discord.com/developers/applications/700/information', TOKEN),
       page('https://example.com/?u=https://discord.com/developers/applications/700/bot', TOKEN)
     ]
-    expect(await tokenFromPage(lookalikes)).toEqual({ error: NO_BOT_PAGE })
+    const { save, saved } = saver()
+    expect(await saveTokenFromPage(lookalikes, false, save)).toBe(NO_BOT_PAGE)
     expect(lookalikes.map((p) => p.ran)).toEqual([0, 0, 0, 0])
+    expect(saved).toEqual([])
   })
 
   it('says so when the Bot page shows no token yet', async () => {
-    const bot = page('https://discord.com/developers/applications/700/bot', 'Reset Token')
-    expect(await tokenFromPage([bot])).toEqual({ error: NO_TOKEN_ON_PAGE })
+    const bot = page(BOT, 'Reset Token')
+    expect(await saveTokenFromPage([bot], false, saver().save)).toBe(NO_TOKEN_ON_PAGE)
+    expect(bot.reloads).toBe(0)
   })
 })

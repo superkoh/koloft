@@ -222,6 +222,7 @@ import {
   setRelayEnabled,
   startRelay,
   writeRelayEnv,
+  relayAttached,
   type RelayDeps
 } from './cdpRelay'
 import { safeDownloadName, suggestedDownloadName, uniqueDownloadName } from '@shared/downloadName'
@@ -320,7 +321,7 @@ import { copyWorktreeIncludes } from './sessionWorktrees'
 import { AgentRequests, BUILTIN_VERBS, errorText, refused, type AgentVerb } from './agentRequests'
 import { conductorFolder, Conductors, type AssistBackendChoice } from './discord/conductors'
 import { discordApiUrl, DiscordLink } from './discord/link'
-import { tokenFromPage } from './discord/tokenFromPage'
+import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './discord/tokenFromPage'
 import { DISCORD_SETUP_TASK, DISCORD_SETUP_TASK_NAME } from './discord/setupTask'
 import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay, type Destination } from './discord/relay'
@@ -1169,7 +1170,8 @@ const agentRequests = new AgentRequests({
         conductors?.scopeOfTab(tabId) === GLOBAL_SCOPE &&
         conductors.taskNameOf(tabId) === DISCORD_SETUP_TASK_NAME,
       status: () => discordSetupStatus(),
-      tokenFromPage: (tabId) => saveTokenFromPage(tabId),
+      tokenFromPage: (tabId) => tokenFromCallersPage(tabId),
+      reload: (tabId) => reloadDiscordPage(guestPagesOf(tabId), relayAttached(tabId)),
       invite: () => {
         const appId = discordLink?.status().applicationId
         return appId ? inviteLink(appId) : null
@@ -3531,20 +3533,23 @@ function discordSetupStatus(): string {
   return lines.join('\n')
 }
 
-async function saveTokenFromPage(tabId: string): Promise<string> {
-  const pages = webContents
+function guestPagesOf(tabId: string): GuestPage[] {
+  return webContents
     .getAllWebContents()
     .filter((wc) => !wc.isDestroyed() && guestOwners.get(wc) === tabId)
     .map((wc) => ({
       url: () => wc.getURL(),
-      run: (script: string) => wc.executeJavaScript(script)
+      run: (script: string) => wc.executeJavaScript(script),
+      reload: () => wc.reload()
     }))
-  const read = await tokenFromPage(pages)
-  if ('error' in read) return read.error
-  if (!(await discordTokenWrite(read.token)))
-    return 'Koloft could not save the token in the Keychain.'
-  void discordLink?.connect()
-  return 'Saved the bot token. Koloft is connecting; run koloft discord status in a few seconds.'
+}
+
+function tokenFromCallersPage(tabId: string): Promise<string> {
+  return saveTokenFromPage(guestPagesOf(tabId), relayAttached(tabId), async (token) => {
+    const saved = await discordTokenWrite(token)
+    if (saved) void discordLink?.connect()
+    return saved
+  })
 }
 
 function openDiscordSetup(): Promise<ConductorOpenResult> {

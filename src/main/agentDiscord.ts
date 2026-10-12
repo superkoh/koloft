@@ -13,14 +13,14 @@ import {
 import { BYTES_PER_FILE, type DiscordFile } from './discord/link'
 
 export const DISCORD_USAGE =
-  'koloft: usage: koloft discord send <file>... [-- "<text>"] | status | token --from-page | invite | bind --new-channel [--workspace <path>]'
+  'koloft: usage: koloft discord send <file>... [-- "<text>"] | status | token --from-page | reload | invite | bind --new-channel [--workspace <path>]'
 export const NOT_A_CONDUCTOR =
   'koloft: only an Assist bound to a Discord channel can send to Discord.'
 export const NOT_THE_SETUP_TASK =
   "koloft: only the global Assist's Discord setup task can run this."
 
 const MB = 1024 * 1024
-const SETUP_ONLY = new Set(['status', 'token', 'invite', 'bind'])
+const SETUP_ONLY = new Set(['status', 'token', 'reload', 'invite', 'bind'])
 
 export interface DiscordVerbDeps {
   channelOf(tabId: string): string | undefined
@@ -28,6 +28,7 @@ export interface DiscordVerbDeps {
   isSetupTask(tabId: string): boolean
   status(): string
   tokenFromPage(tabId: string): Promise<string>
+  reload(tabId: string): string
   invite(): string | null
   bindNewChannel(scope: string): Promise<ConductorSaveResult>
 }
@@ -70,6 +71,7 @@ async function setup(
   if (sub === 'status' && !rest.length) return answered(d.status())
   if (sub === 'token' && rest.length === 1 && rest[0] === '--from-page')
     return answered(await d.tokenFromPage(tabId))
+  if (sub === 'reload' && !rest.length) return answered(d.reload(tabId))
   if (sub === 'invite' && !rest.length) {
     const url = d.invite()
     return url ? answered(url) : refused('koloft: save the bot token first.')

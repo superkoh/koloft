@@ -1432,7 +1432,14 @@ Gateway (the live connection that pushes events):
   answered 403 (50001) in five rounds; with none attached and the page reloaded, it
   answered 201. After Reset Token, the Bot page (`/developers/applications/<id>/bot`)
   shows the new token as plain text. The invite's Authorize worked with a client
-  attached; its "I am human" check was passed by hand with the client detached.
+  attached; its "I am human" check was passed by hand with the client detached. The
+  invite page first offered to continue in the Discord desktop app; continuing in the
+  browser led to the server picker. Signing in with a client attached was not probed.
+  A snapshot taken by a client re-attached after Reset Token included the token text,
+  so Koloft reads it only while no client is attached and reloads the page afterwards.
+- **`GUILD_CREATE` carries the server's `owner_id`** — seen in the 2026-10-10 Gateway
+  probe's logs with the same test bot. Koloft makes new channels only in a server whose
+  `owner_id` is the app owner (or the paired owner of a team app).
 - Also from Discord's docs, not measured here: a message's `content` holds at most 2000
   characters; one message carries at most 10 files and one request at most 25 MiB; a
   bot's file may be at most 20 MiB (changelog 2025-09-03); adding or removing a reaction
