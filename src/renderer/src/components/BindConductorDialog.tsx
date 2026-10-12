@@ -217,9 +217,8 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
               'No channels yet. Finish Settings ▸ Discord ▸ Set up Discord… first.'
             ) : channel === NEW && guildId ? (
               <>
-                Koloft makes the new channel in your server <b>{guildName}</b>, under the category{' '}
-                <b>{status?.botName}</b> (named after your bot), and writes the full path in its
-                topic. Or pick a channel you already have.
+                Koloft makes the new channel in your server <b>{guildName}</b>, under your bot’s
+                category, and writes the full path in its topic. Or pick a channel you already have.
               </>
             ) : (
               'Channels come from your server through the bot. Each workspace binds one channel; the global Assist binds one.'

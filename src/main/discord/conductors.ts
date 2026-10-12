@@ -8,6 +8,7 @@ import type {
   ConductorBinding,
   ConductorOpenResult,
   ConductorSaveInput,
+  NewChannelInput,
   ConductorSaveResult,
   DiscordChannel,
   DiscordSettings,
@@ -85,8 +86,6 @@ export const GLOBAL_HAS_NO_WORKSPACE = 'The global Assist has no workspace.'
 export const REMOTE_CONDUCTOR_HAS_NO_WORKSPACE =
   'This Assist runs on this Mac, outside its remote workspace, so it has no workspace.'
 const NOT_AN_ASSIST_SCOPE = 'Pick a workspace from the sidebar, or Global.'
-
-type NewChannelInput = Omit<ConductorSaveInput, 'channel'>
 
 const FOLDER_NAME_HASH_CHARS = 16
 const LAST_MESSAGE_SAVE_DELAY_MS = 1000
@@ -457,7 +456,7 @@ export class Conductors {
         ...(error instanceof CannotMakeChannels ? { cannotMakeChannels: true } : {})
       }
     }
-    this.write({ category: made.category })
+    this.discord = { ...this.discord, category: made.category }
     return this.save({ ...input, channel: made.channel }, backend)
   }
 

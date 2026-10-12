@@ -232,9 +232,12 @@ export interface DiscordSettings {
   category?: DiscordChannel
 }
 
-export interface ConductorSaveInput {
+export interface NewChannelInput {
   id?: string
   scope: string
+}
+
+export interface ConductorSaveInput extends NewChannelInput {
   channel: DiscordChannel
 }
 
@@ -1128,7 +1131,7 @@ export interface KoloftApi {
   }
   conductors: {
     save(input: ConductorSaveInput): Promise<ConductorSaveResult>
-    saveWithNewChannel(input: Omit<ConductorSaveInput, 'channel'>): Promise<ConductorSaveResult>
+    saveWithNewChannel(input: NewChannelInput): Promise<ConductorSaveResult>
     unbind(bindingId: string): Promise<void>
     open(scope: string): Promise<ConductorOpenResult>
     startFresh(scope: string): Promise<ConductorOpenResult>

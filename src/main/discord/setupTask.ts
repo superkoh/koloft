@@ -1,3 +1,4 @@
+import { PLAYWRIGHT_CLI_RULE } from '../conductorGate'
 import type { AssistTask } from './conductors'
 
 export const DISCORD_SETUP_TASK_NAME = 'Discord setup'
@@ -14,9 +15,9 @@ const BROWSER_VERBS = [
   'close'
 ]
 
-export const DISCORD_SETUP_ALLOW = BROWSER_VERBS.map((verb) => `Bash(playwright-cli ${verb})`)
+const DISCORD_SETUP_ALLOW = BROWSER_VERBS.map((verb) => `${PLAYWRIGHT_CLI_RULE}${verb})`)
 
-const BRIEF = `Your task: set up Discord for the owner, so they can talk to Assist from a Discord channel. Work in the Workbench browser with playwright-cli (only open, goto, snapshot, click, fill, type, press, select and close are allowed). The owner sees that browser in Koloft and does the steps you cannot.
+const BRIEF = `Your task: set up Discord for the owner, so they can talk to Assist from a Discord channel. Work in the Workbench browser with playwright-cli (only ${BROWSER_VERBS.join(', ')} are allowed). The owner sees that browser in Koloft and does the steps you cannot.
 
 Rules:
 - Never read, copy, print or type the bot token. Use "koloft discord token --from-page" to save it; Koloft reads it from the page itself, then reloads the page so the token is gone, and tells you only "saved" or why not. It refuses while you are attached.

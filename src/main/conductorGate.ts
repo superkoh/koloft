@@ -79,8 +79,8 @@ function onePlainCall(command, program) {
 
 function allowedCommands(named) {
   return [...named].flatMap((tool) => {
-    const named = /^Bash\\((.+)\\)$/.exec(tool)
-    return named ? [named[1]] : []
+    const bash = /^Bash\\((.+)\\)$/.exec(tool)
+    return bash ? [bash[1]] : []
   })
 }
 
@@ -147,7 +147,9 @@ export function codexGateShell(gateScript: string): string {
 export const CODEX_GATE_NOT_TRUSTED =
   "Codex would not run Koloft's safety check for Assist, so Koloft did not start Assist on Codex."
 
-const BROWSER_TOOLS = ['mcp__playwright__', 'Bash(playwright-cli ']
+export const PLAYWRIGHT_CLI_RULE = 'Bash(playwright-cli '
+
+const BROWSER_TOOLS = ['mcp__playwright__', PLAYWRIGHT_CLI_RULE]
 
 export function allowsTheBrowser(allow: readonly string[]): boolean {
   return allow.some((tool) => BROWSER_TOOLS.some((prefix) => tool.startsWith(prefix)))

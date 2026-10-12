@@ -15,7 +15,7 @@ import { cardMessages, NO_MENTIONS, type Card } from './cards'
 export const DISCORD_API_URL = 'https://discord.com/api/v10'
 const UNREACHABLE_RETRY_MS = 30_000
 const LOCK_RETRY_MS = 30_000
-export const NO_OWNED_SERVER =
+const NO_OWNED_SERVER =
   'The bot is in no server you own yet. Make a server of your own in Discord, invite the bot to it, then try again.'
 const TEXT_CHANNEL = 0
 const CATEGORY = 4

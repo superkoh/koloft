@@ -289,6 +289,7 @@ import type {
   CronSaveInput,
   ConductorOpenResult,
   ConductorSaveInput,
+  NewChannelInput,
   ConductorSaveResult,
   ConductorBinding,
   ProbeErrorKind,
@@ -356,10 +357,12 @@ import {
 } from './claudeSessionRegistry'
 import {
   asPeerName,
+  channelLabel,
   conductorName,
   GLOBAL_SCOPE,
   inviteLink,
   isDiscordId,
+  ownedGuilds,
   scopeName
 } from '@shared/conductors'
 import { cronVerb } from './agentCron'
@@ -3536,14 +3539,14 @@ function registerSlashCommands(): void {
 function discordSetupStatus(): string {
   const s = discordLink?.status() ?? DISCORD_OFF
   const discord = conductors?.discordSettings() ?? { bindings: [] }
-  const owned = s.guilds.filter((g) => discord.userId && g.ownerId === discord.userId)
+  const owned = ownedGuilds(s.guilds, discord.userId)
   const lines = [
     `Bot token: ${s.phase === 'off' ? 'not saved' : 'saved'}`,
     `Connection: ${s.phase}${s.botName ? ` as ${s.botName}` : ''}`,
     `Owner: ${discord.userId ? (discord.userName ?? discord.userId) : 'not known yet'}${s.appOwner ? ' (owner of the app)' : ''}`,
     `Message Content: ${s.phase === 'connected' ? 'on' : s.phase === 'intents' ? 'off' : 'unknown until connected'}`,
     `Servers the owner owns with the bot in them: ${owned.map((g) => g.name).join(', ') || 'none'}`,
-    `Bindings: ${discord.bindings.map((b) => `${scopeName(b.scope)} → #${b.channel.name}`).join(', ') || 'none'}`
+    `Bindings: ${discord.bindings.map((b) => `${scopeName(b.scope)} → ${channelLabel(b)}`).join(', ') || 'none'}`
   ]
   return lines.join('\n')
 }
@@ -3574,10 +3577,7 @@ function openDiscordSetup(): Promise<ConductorOpenResult> {
   return conductors.openTask(GLOBAL_SCOPE, DISCORD_SETUP_TASK)
 }
 
-async function bindWithNewChannel(input: {
-  id?: string
-  scope: string
-}): Promise<ConductorSaveResult> {
+async function bindWithNewChannel(input: NewChannelInput): Promise<ConductorSaveResult> {
   const link = discordLink
   const bound = conductors
   if (!bound || !link) return { ok: false, error: STILL_STARTING }
@@ -4122,10 +4122,8 @@ function registerIpc(): void {
     if (saved.ok) registerSlashCommands()
     return saved
   })
-  ipcMain.handle(
-    'conductors:saveWithNewChannel',
-    (_e, input: Omit<ConductorSaveInput, 'channel'>) =>
-      bindWithNewChannel({ id: input.id, scope: input.scope })
+  ipcMain.handle('conductors:saveWithNewChannel', (_e, input: NewChannelInput) =>
+    bindWithNewChannel({ id: input.id, scope: input.scope })
   )
   ipcMain.handle('conductors:unbind', (_e, id: string) => {
     conductors?.unbind(id)

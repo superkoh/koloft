@@ -76,12 +76,16 @@ export function inviteLink(applicationId: string): string {
   return `https://discord.com/oauth2/authorize?client_id=${applicationId}&permissions=${INVITE_PERMISSIONS}&scope=bot`
 }
 
+export function ownedGuilds(guilds: DiscordGuild[], ownerId: string | undefined): DiscordGuild[] {
+  return guilds.filter((g) => ownerId && g.ownerId === ownerId)
+}
+
 export function newChannelGuild(
   bindings: ConductorBinding[],
   guilds: DiscordGuild[],
   ownerId: string | undefined
 ): string | undefined {
-  const owned = guilds.filter((g) => ownerId && g.ownerId === ownerId).map((g) => g.id)
+  const owned = ownedGuilds(guilds, ownerId).map((g) => g.id)
   const bound = bindings.map((b) => b.channel.guildId).find((id) => owned.includes(id))
   return bound ?? owned[0]
 }

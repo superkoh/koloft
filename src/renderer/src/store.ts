@@ -448,6 +448,17 @@ function persistWorkbench(tabId: string): void {
   whenWorkbenchFetched(tabId, () => writeWorkbench(tabId, useStore.getState()))
 }
 
+function landInWorkbench(tabId: string, wbTabId: string): void {
+  const s = useStore.getState()
+  if (!s.workbenchOpen[tabId]) s.setWorkbenchOpen(tabId, true)
+  useStore.setState((st) => ({
+    workbenchLoad: {
+      ...st.workbenchLoad,
+      [tabId]: { tabId: wbTabId, nonce: (st.workbenchLoad[tabId]?.nonce ?? 0) + 1 }
+    }
+  }))
+}
+
 export const useStore = create<AppState>((set, get) => ({
   tabs: [],
   activeTabId: null,
@@ -564,12 +575,14 @@ export const useStore = create<AppState>((set, get) => ({
       const workbenchWidths = { ...s.workbenchWidths }
       const workbenchLoad = { ...s.workbenchLoad }
       const filesReveal = { ...s.filesReveal }
+      const followsAgentBrowser = { ...s.followsAgentBrowser }
       delete workbench[id]
       delete workbenchOpen[id]
       delete workbenchFetched[id]
       delete workbenchWidths[id]
       delete workbenchLoad[id]
       delete filesReveal[id]
+      delete followsAgentBrowser[id]
       return {
         ...(s.signIn?.tabId === id && {
           signIn: null,
@@ -583,7 +596,8 @@ export const useStore = create<AppState>((set, get) => ({
         workbenchFetched,
         workbenchWidths,
         workbenchLoad,
-        filesReveal
+        filesReveal,
+        followsAgentBrowser
       }
     })
   },
@@ -870,13 +884,7 @@ export const useStore = create<AppState>((set, get) => ({
           }
         }))
       }
-      if (!s.workbenchOpen[tabId]) get().setWorkbenchOpen(tabId, true)
-      set((st) => ({
-        workbenchLoad: {
-          ...st.workbenchLoad,
-          [tabId]: { tabId: r.tabId, nonce: (st.workbenchLoad[tabId]?.nonce ?? 0) + 1 }
-        }
-      }))
+      landInWorkbench(tabId, r.tabId)
     }),
   setWorkbenchFull: (workbenchFull) => {
     if (workbenchFull && !workbenchAllowed(get(), get().activeTabId)) return
@@ -908,15 +916,7 @@ export const useStore = create<AppState>((set, get) => ({
     set((st) => ({ workbench: { ...st.workbench, [tabId]: r.set } }))
     persistWorkbench(tabId)
     if (r.evicted) s.showToast(tabEvictedNotice(tabLabel(r.set, r.evicted)))
-    if (s.followsAgentBrowser[tabId]) {
-      if (!s.workbenchOpen[tabId]) s.setWorkbenchOpen(tabId, true)
-      set((st) => ({
-        workbenchLoad: {
-          ...st.workbenchLoad,
-          [tabId]: { tabId: r.tabId, nonce: (st.workbenchLoad[tabId]?.nonce ?? 0) + 1 }
-        }
-      }))
-    }
+    if (s.followsAgentBrowser[tabId]) landInWorkbench(tabId, r.tabId)
     return r.tabId
   },
   followAgentBrowser: (tabId) => {
