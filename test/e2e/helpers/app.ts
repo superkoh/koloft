@@ -77,6 +77,17 @@ export async function pendingAttention(page: Page): Promise<AttentionEvent[]> {
   return page.evaluate(() => window.api.attention.list())
 }
 
+export interface OsOutletsSeenByTests {
+  notifications: { title: string; body: string }[]
+  dockBadge: string
+}
+
+export async function osOutlets(app: ElectronApplication): Promise<OsOutletsSeenByTests> {
+  return app.evaluate(
+    () => (globalThis as { __koloftOsOutlets?: OsOutletsSeenByTests }).__koloftOsOutlets!
+  )
+}
+
 export async function pretendWindowFocused(app: ElectronApplication): Promise<void> {
   await app.evaluate(({ BrowserWindow }) => {
     BrowserWindow.getAllWindows()[0].isFocused = () => true

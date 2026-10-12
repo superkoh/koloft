@@ -721,10 +721,19 @@ function projectFolderName(tabId: string): string | undefined {
   return root ? path.basename(root) : undefined
 }
 
+interface OsOutletsSeenByTests {
+  notifications: { title: string; body: string }[]
+  dockBadge: string
+}
+const osOutletsSeenByTests: OsOutletsSeenByTests = { notifications: [], dockBadge: '' }
+;(globalThis as { __koloftOsOutlets?: OsOutletsSeenByTests }).__koloftOsOutlets =
+  osOutletsSeenByTests
+
 function updateDockBadge(pending: AttentionEvent[]): void {
   if (process.platform !== 'darwin') return
-  const text = dockBadgeText(pending.length, loadSettings().dockBadge, BACKGROUND_TEST)
-  if (text !== null) app.dock?.setBadge(text)
+  const text = dockBadgeText(pending.length, loadSettings().dockBadge)
+  if (BACKGROUND_TEST) osOutletsSeenByTests.dockBadge = text
+  else app.dock?.setBadge(text)
 }
 
 function pointFocusClearingAtTabBeforeFocusingWindow(tabId: string): void {
@@ -749,7 +758,6 @@ function activateTabFromNotification(tabId: string): void {
 
 // PLATFORM§4
 const osNotifications = new Map<string, Notification>()
-;(globalThis as { __koloftOsNotifCount?: number }).__koloftOsNotifCount = 0
 
 function retractStaleOsNotifications(pending: AttentionEvent[]): void {
   for (const [tabId, n] of osNotifications) {
@@ -762,15 +770,17 @@ function retractStaleOsNotifications(pending: AttentionEvent[]): void {
   }
 }
 
-function showOsNotification(event: AttentionEvent): void {
+function osNotificationText(event: AttentionEvent): { title: string; body: string } {
   const reason = ATTENTION_REASON[event.kind]
   const folder = projectFolderName(event.tabId)
-  const g = globalThis as { __koloftOsNotifCount?: number }
-  g.__koloftOsNotifCount = (g.__koloftOsNotifCount ?? 0) + 1
-  const n = new Notification({
+  return {
     title: event.title || PLACEHOLDER_SESSION_TITLE,
     body: folder ? `${reason} · ${folder}` : reason
-  })
+  }
+}
+
+function showOsNotification(event: AttentionEvent): void {
+  const n = new Notification(osNotificationText(event))
   n.on('click', () => {
     osNotifications.delete(event.tabId)
     activateTabFromNotification(event.tabId)
@@ -787,10 +797,8 @@ function showOsNotification(event: AttentionEvent): void {
 }
 
 function notifyPlain(title: string, body: string): void {
-  if (BACKGROUND_TEST || !Notification.isSupported()) return
-  const g = globalThis as { __koloftOsNotifCount?: number }
-  g.__koloftOsNotifCount = (g.__koloftOsNotifCount ?? 0) + 1
-  new Notification({ title, body }).show()
+  if (BACKGROUND_TEST) osOutletsSeenByTests.notifications.push({ title, body })
+  else if (Notification.isSupported()) new Notification({ title, body }).show()
 }
 
 const OUTLET_FLAP_DEDUPE_MS = 5000
@@ -813,7 +821,9 @@ function routeAttentionEvent(event: AttentionEvent): void {
     { windowFocused: attentionCtx().windowFocused, backgroundTest: BACKGROUND_TEST },
     loadSettings()
   )
-  if (decision.os) showOsNotification(event)
+  if (decision.os === 'banner') showOsNotification(event)
+  if (decision.os === 'recordForTest')
+    osOutletsSeenByTests.notifications.push(osNotificationText(event))
   if (decision.sound) shell.beep()
 }
 let mainWindow: BrowserWindow | null = null
