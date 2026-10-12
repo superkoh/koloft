@@ -10,7 +10,9 @@ terminal, a scheduled run keeps the jobs form's warning, and a launch that fell 
 another folder writes nothing. The same rule holds on a remote machine (the entry is
 written there, over ssh) and for a Codex worktree session: its native TUI asks the same
 kind of question (`CODEX§9`), so Koloft writes `trust_level = "trusted"` for the
-workspace folder into Codex's `config.toml` (`CODEX§11`), on the same trigger.
+workspace folder, and for the new worktree's own folder (Codex 0.159.3 stopped
+counting the workspace's entry for it), into Codex's `config.toml` (`CODEX§11`), on the
+same trigger.
 **Rejected**: refusing the launch and telling the person to open a main session first
 to answer the question — one click beats that detour. Also writing trust for a
 scheduled run or a fallback folder: nobody said yes, and home would trust everything.
