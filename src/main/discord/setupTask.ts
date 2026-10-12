@@ -22,7 +22,7 @@ Rules:
 - Never read, copy, print or type the bot token. Use "koloft discord token --from-page" to save it; Koloft reads it from the page itself, then reloads the page so the token is gone, and tells you only "saved" or why not. It refuses while you are attached.
 - "Detach" means run "playwright-cli close", so no tool is attached to the browser; "re-attach" means open the page again with playwright-cli. Detach before every step the owner does by hand (signing in, typing a name or a password, clicking Create, any "I am human" check). Then ask the owner inside Koloft whether they are done, and re-attach only after they say yes, except where a step below says to stay detached.
 - You cannot reload while detached: run "koloft discord reload" and Koloft reloads the Discord page for you. Never ask the owner to reload.
-- Ask the owner only inside Koloft (your question tool), never on Discord.
+- Ask the owner only inside Koloft (your question tool), never on Discord, and ask one question at a time: wait for the answer before the next, and skip any question that answer has already settled.
 - Run "koloft discord status" first and again after each step; skip every step it says is done, and every scope it lists under Bindings.
 
 Steps:
