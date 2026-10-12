@@ -26,6 +26,7 @@ import {
 import { openSettings } from './helpers/extensions'
 import type { ConductorBinding, DiscordSettings } from '../../src/shared/types'
 import { identityOf } from '../../src/shared/sessionBackend'
+import { ownerSays } from '../../src/shared/agentGuide'
 
 test.setTimeout(120_000)
 
@@ -369,7 +370,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
           type: 'user',
           message: {
             role: 'user',
-            content: `<cross-session-message from-mode="bypass">\n(Your owner, via Koloft's Assist:) ${text}\n</cross-session-message>`
+            content: `<cross-session-message from-mode="bypass">\n${ownerSays(text)}\n</cross-session-message>`
           }
         })
 
@@ -419,7 +420,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       fake.say(OWNER, `/koloft session send ${codexId} check the docs`)
       await expect
         .poll(() => codexQueued(env), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-        .toEqual([['koloft-conductor-1', "(Your owner, via Koloft's Assist:) check the docs"]])
+        .toEqual([['koloft-conductor-1', ownerSays('check the docs')]])
 
       fake.say(OWNER, '/koloft session new --backend codex -- list the files')
       await expect
@@ -773,7 +774,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
         .poll(() => (fs.existsSync(peerLog) ? fs.readFileSync(peerLog, 'utf8') : ''), {
           timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
         })
-        .toContain("(Your owner, via Koloft's Assist:) after the wait")
+        .toContain(ownerSays('after the wait'))
     } finally {
       await quitAndClose(app)
       await fake.close()

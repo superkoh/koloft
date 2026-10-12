@@ -426,11 +426,15 @@ function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
 
+function asksTheOwner(tabId: string): boolean {
+  return tracker.statusOf(tabId) === 'approval' || !!discordRelay?.dialogOpen(tabId)
+}
+
 const slash = new SlashCommands({
   backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
   keyOf: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
   turnOver: (tabId) => tracker.turnOver(tabId),
-  asking: (tabId) => tracker.statusOf(tabId) === 'approval' || !!discordRelay?.dialogOpen(tabId),
+  asking: asksTheOwner,
   takesTyping: (tabId) => !!discordRelay?.takesCommand(tabId),
   panelOpen: async (tabId) => {
     const s = sessionOfTab(tabId)
@@ -1034,6 +1038,7 @@ const sessionDeps: SessionVerbDeps = {
     return resumed.tabId
   },
   ready: tabReady,
+  asking: asksTheOwner,
   // CC§13
   sendLine: async (tabId, line, ms) => {
     const sessionId = sessionOfTab(tabId)?.sessionId

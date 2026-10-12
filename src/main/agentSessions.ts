@@ -6,6 +6,7 @@ import type {
   SessionStatus,
   WorkspaceRows
 } from '@shared/types'
+import { ownerSays } from '@shared/agentGuide'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import { isRemoteKey, parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
@@ -81,11 +82,17 @@ export function parseNewSessionArgs(args: string[]): Parsed<NewSessionArgs> {
   return fail(PROMPT_AFTER_DASHES)
 }
 
+const ASKING = 'asking the owner a question'
+
 const STATE_WORDS: Record<SessionStatus, string> = {
   working: 'working',
-  approval: 'waiting for the owner',
-  waiting: 'waiting for the owner',
+  approval: ASKING,
+  waiting: 'finished its turn',
   idle: 'idle'
+}
+
+function stateWords(info: SessionInfo, asking: (tabId: string) => boolean): string {
+  return asking(info.tabId) ? ASKING : STATE_WORDS[info.status ?? 'idle']
 }
 
 export interface ListedSession {
@@ -97,14 +104,18 @@ function idToReach(s: SessionInfo): string {
   return s.nativeSessionId ?? s.sessionId
 }
 
-export function formatSessionList(sessions: ListedSession[], callerTabId: string): string {
+export function formatSessionList(
+  sessions: ListedSession[],
+  callerTabId: string,
+  asking: (tabId: string) => boolean
+): string {
   if (sessions.length === 0) return 'This workspace has no open sessions.'
   return sessions
     .map(({ info, peerName }) => {
       const parts = [
         `${info.title}${info.tabId === callerTabId ? ' (you)' : ''}`,
         BACKEND_LABEL[info.backendId],
-        STATE_WORDS[info.status ?? 'idle']
+        stateWords(info, asking)
       ]
       if (info.backendId === 'codex') parts.push(`id: ${idToReach(info)}`)
       if (peerName) parts.push(`name: ${peerName}`)
@@ -158,7 +169,8 @@ function formatConductorList(
   placed: PlacedRow[],
   names: (string | null)[],
   withWorkspace: boolean,
-  now: number
+  now: number,
+  asking: (tabId: string) => boolean
 ): string {
   if (placed.length === 0) return 'There are no sessions to look after.'
   return placed
@@ -167,7 +179,7 @@ function formatConductorList(
         title,
         BACKEND_LABEL[row.backendId],
         parseRemoteKey(workspace)?.host ?? 'local',
-        info || row.running ? STATE_WORDS[info?.status ?? 'idle'] : 'closed',
+        info ? stateWords(info, asking) : row.running ? STATE_WORDS.idle : 'closed',
         `last active ${ageLabel(row.mtime, now)}`,
         `id: ${row.nativeSessionId ?? row.id}`
       ]
@@ -302,6 +314,7 @@ export interface SessionVerbDeps {
   conductorOf(ref: string): Target | undefined
   resume(row: SessionRow): Promise<string>
   ready(tabId: string, ms: number, turnEnded: boolean): Promise<boolean>
+  asking(tabId: string): boolean
   sendLine(tabId: string, line: string, ms: number): Promise<void>
   press(tabId: string, keys: string[]): Promise<void>
   modeOf(tabId: string): ModeClass
@@ -359,7 +372,7 @@ async function listSessions(
         info.backendId === 'claude' ? ((await peerName(info.sessionId)) ?? undefined) : undefined
     }))
   )
-  return answered(formatSessionList(listed, callerTabId))
+  return answered(formatSessionList(listed, callerTabId, d.asking))
 }
 
 async function startSibling(
@@ -373,7 +386,8 @@ async function startSibling(
   if (backend === 'codex' && args.name !== undefined) return refused(CODEX_HAS_NO_NAME, EXIT_USAGE)
   const caller: SessionCaller = {
     name: me.backendId === 'claude' ? ((await d.peerNames()(me.sessionId)) ?? me.title) : undefined,
-    id: idToReach(me)
+    id: idToReach(me),
+    assist: conductorTab !== undefined
   }
   const name =
     backend === 'claude'
@@ -630,8 +644,9 @@ export function formatScreen(name: string, screen: SessionScreen): string {
   return [`The screen of ${name} right now:`, shown, ...screen.notes].join('\n')
 }
 
-export function ownerSays(text: string): string {
-  return `(Your owner, via Koloft's Assist:) ${text}`
+function readsItAfterTheQuestion(name: string): string {
+  const arg = asArgument(name)
+  return `But ${name} is asking the owner a question, so it reads your message only once that is answered. See the question with koloft session screen ${arg} and pass it on to the owner.`
 }
 
 export function sessionSays(from: SessionInfo, text: string): string {
@@ -704,10 +719,11 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
         EXIT_USAGE
       )
     const busy = typed && t.tabId !== undefined && !(await d.ready(t.tabId, 0, true))
-    if (t.tabId && !busy)
-      return answered(
-        await sendNow(t, text, line, Date.now() + REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS)
-      )
+    if (t.tabId && !busy) {
+      const asking = d.asking(t.tabId)
+      const sent = await sendNow(t, text, line, Date.now() + REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS)
+      return answered(asking ? `${sent} ${readsItAfterTheQuestion(t.name)}` : sent)
+    }
     void sendNow(t, text, line, Date.now() + WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS).catch(
       (error: unknown) => d.undelivered(caller.tabId, t, errorText(error))
     )
@@ -800,7 +816,8 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
           placed,
           await peerNamesOf(d, placed),
           scope === GLOBAL_SCOPE,
-          Date.now()
+          Date.now(),
+          d.asking
         )
       )
     }
