@@ -73,7 +73,13 @@ test('PROBE: WebGL session terminal on a real screen after switch, minimize, ful
   const results: Record<string, number> = {}
   const grab = async (name: string): Promise<string> => {
     const file = testInfo.outputPath(`${name}.png`)
-    screenshotOf(file, await termRect(app, page))
+    const rect = await termRect(app, page)
+    const content = await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].getContentBounds()
+    )
+    await page.mouse.move(rect.x - content.x + rect.width / 2, rect.y - content.y + 4)
+    await page.waitForTimeout(500)
+    screenshotOf(file, rect)
     return inkOf(page, fs.readFileSync(file))
   }
   try {

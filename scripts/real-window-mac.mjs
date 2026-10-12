@@ -62,6 +62,9 @@ defaults write "${GUEST_HOME}/Library/Group Containers/group.com.apple.replayd/S
 cd ${GUEST_HOME}/koloft
 sudo launchctl asuser ${GUEST_UID} sudo -u ${GUEST_LOGIN} HOME=${GUEST_HOME} USER=${GUEST_LOGIN} KOLOFT_REAL_WINDOW=1 ${GUEST_HOME}/node ${PLAYWRIGHT_CLI} test -c ${CONFIG} ${quoted}
 code=$?
+mkdir -p ${GUEST_HOME}/koloft/test-results/real-window
+log show --last 5m --style compact --predicate 'subsystem BEGINSWITH "com.apple.UserNotifications" OR process == "usernoted" OR process == "NotificationCenter"' > ${GUEST_HOME}/koloft/test-results/real-window/PROBE-notif-log.txt 2>&1
+plutil -p ${GUEST_HOME}/Library/Preferences/com.apple.ncprefs.plist > ${GUEST_HOME}/koloft/test-results/real-window/PROBE-ncprefs.txt 2>&1
 rsync -a ${GUEST_HOME}/koloft/test-results/real-window/ "${GUEST_SHARES}/kit/results/"
 exit $code
 `
