@@ -32,18 +32,18 @@ import {
 import { layoutState } from './helpers/workbench'
 
 const head = (page: Page, wsName: string) => page.locator('.ws-head', { hasText: wsName })
+const notesGutter = (page: Page) => page.locator('.gutter-h:has(+ .isl-notes:not(.isl-conductors))')
 
 function notesBorder(page: Page): Promise<{ border: string; accent: string }> {
-  return page.evaluate(() => {
+  return notesIsland(page).evaluate((el) => {
     const flat = (c: string): string => c.replace(/\s+/g, '')
-    const el = document.querySelector('.island.isl-notes') as HTMLElement | null
     const probe = document.createElement('div')
     probe.style.borderTopColor = 'var(--accent-line)'
     probe.style.display = 'none'
     document.body.appendChild(probe)
     const accent = flat(getComputedStyle(probe).borderTopColor)
     probe.remove()
-    return { border: el ? flat(getComputedStyle(el).borderTopColor) : '', accent }
+    return { border: flat(getComputedStyle(el).borderTopColor), accent }
   })
 }
 
@@ -69,7 +69,8 @@ test.describe('Workspace note: an island under the sessions list, always holding
     const order = await page.evaluate(() =>
       [...(document.querySelector('.dock-left')?.children ?? [])].map((el) => el.className)
     )
-    expect(order).toEqual(['island flat isl-sessions', 'gutter-h', 'island isl-notes'])
+    expect(order[0]).toBe('island flat isl-sessions')
+    expect(order.slice(-2)).toEqual(['gutter-h', 'island isl-notes'])
     await snap(page, 'N01')
   })
 
@@ -246,13 +247,13 @@ test.describe('Workspace note: an island under the sessions list, always holding
     await notesIsland(page).locator('.icobtn[aria-label="Fold"]').click()
     await expect(notesArea(page)).toHaveCount(0)
     await expect(notesIsland(page).locator('.wb-bar')).toBeVisible()
-    await expect(page.locator('.gutter-h.idle')).toHaveCount(1)
+    await expect(notesGutter(page)).toHaveClass(/\bidle\b/)
     expect(await notesIsland(page).evaluate((el) => el.matches(':focus-within'))).toBe(false)
     expect(await focusOwner(page)).toBe('welcome')
     await expect.poll(() => settingsOnDisk(env).notesFolded, { timeout: 5_000 }).toBe(true)
 
     await notesIsland(page).locator('.icobtn[aria-label="Unfold"]').click()
-    await expect(page.locator('.gutter-h.idle')).toHaveCount(0)
+    await expect(notesGutter(page)).not.toHaveClass(/\bidle\b/)
     await expect(notesArea(page)).toBeVisible()
     await expect.poll(() => settingsOnDisk(env).notesFolded, { timeout: 5_000 }).toBe(false)
     await snap(page, 'N10')
@@ -301,7 +302,7 @@ test.describe('Workspace note: an island under the sessions list, always holding
       await page.waitForLoadState('domcontentloaded')
       await expect(page.locator('.w-empty')).toBeVisible({ timeout: 20_000 })
       await expect(notesIsland(page)).toHaveCount(0)
-      await expect(page.locator('.gutter-h')).toHaveCount(0)
+      await expect(notesGutter(page)).toHaveCount(0)
       await snap(page, 'N18')
     } finally {
       await app.close().catch(() => {})
@@ -326,7 +327,7 @@ test.describe('Workspace note: an island under the sessions list, always holding
         return {
           dock: h('.dock-left'),
           sessions: h('.island.isl-sessions'),
-          notes: h('.island.isl-notes')
+          notes: h('.island.isl-notes:not(.isl-conductors)')
         }
       })
       expect(box.sessions).toBeGreaterThanOrEqual(SESSION_LIST_MIN_HEIGHT_PX)

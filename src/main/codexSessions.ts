@@ -919,7 +919,7 @@ export class CodexSessions {
     // ADR-0029
     const endpoint = conductor && !allowsTheBrowser(allow) ? '' : this.deps.browserEndpoint(tabId)
     const browser = endpoint ? await this.browserOverrides(home, cwd) : []
-    // CODEX§28
+    // CODEX§29
     const gitNetwork = (await this.deps.gitAccounts.picked(cwd))
       ? ['sandbox_workspace_write.network_access=true']
       : []

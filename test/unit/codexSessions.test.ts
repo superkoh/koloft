@@ -908,7 +908,7 @@ describe('CodexSessions', () => {
     )
   })
 
-  // CODEX§28
+  // CODEX§29
   it('a tab in a repository with a picked git account may reach the network, and one without stays offline', async () => {
     vi.mocked(deps.gitAccounts.picked).mockImplementation(async (cwd) => cwd === repo)
     await sessions.launch({ kind: 'codex', cwd: repo })
