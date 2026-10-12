@@ -201,7 +201,7 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
         .poll(() => (fs.existsSync(wire) ? fs.readFileSync(wire, 'utf8') : ''), {
           timeout: 60_000
         })
-        .toMatch(/\(From the session \\".+\\", id \S+:\) Codex fixture answered: hello/)
+        .toMatch(/"thread\/queue\/add".+\(From the session \\".+\\", id \S+:\) Codex fixture answered: /)
     } finally {
       await quitAndClose(app)
     }
