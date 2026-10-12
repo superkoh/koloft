@@ -237,13 +237,15 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await waitBooted(page)
 
       await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
-      expect(await menuItemTexts(page)).toContain('Scheduled jobs…')
+      expect(await menuItemTexts(page)).toEqual(
+        expect.arrayContaining(['Scheduled jobs…', 'Talk to Assist'])
+      )
       const shape = await page
         .locator('.menu')
         .evaluate((el) =>
           Array.from(el.children).map((c) => (c.classList.contains('sep') ? 'sep' : 'mi'))
         )
-      expect(shape).toEqual(['mi', 'mi', 'mi', 'mi', 'mi', 'sep', 'mi'])
+      expect(shape).toEqual(['mi', 'mi', 'mi', 'mi', 'mi', 'mi', 'sep', 'mi'])
 
       await page.locator('.menu .mi', { hasText: 'Scheduled jobs' }).click()
       await expect(cronDialog(page)).toBeVisible()
