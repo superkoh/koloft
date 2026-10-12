@@ -51,7 +51,7 @@ export function TerminalView({
   // PLATFORM§20
   const forceRepaint = useCallback((): void => {
     const term = termRef.current
-    if (!term || repaintedRef.current) return
+    if (window.api || !term || repaintedRef.current) return
     repaintedRef.current = true
     exitSyncWindow(term)
     let repainted = false
