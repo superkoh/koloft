@@ -143,8 +143,8 @@ Working principles:
     "no way from the app".
   - **Confidence to ship as-is** — high / medium / low, and the one fact that sets it,
     never a check you could still run.
-  - **Hand-test before merging** — no, or yes: what to try, and why no suite or dev
-    build you drove could answer it.
+  - **Hand-test before merging** — no, or yes: the one step only a person can do, and
+    why no suite, sandbox or dev build you drove could do it.
 
   Then a table of what ran (suite · result · why that one), what did not run and
   why, and `Out of scope`: each cut, and each claim still "inferred, not checked",
@@ -192,7 +192,10 @@ Working principles:
   question — never a list of open questions at the end of a report. Automate every
   check you can — a suite, a dev build you drive; the owner hand-tests only a case
   that matters and truly cannot be automated (name it and say why), or a round the
-  owner asks for. One dev build at a time: stop every older one first, its Electron
+  owner asks for. Even then the AI does every step of the case it can — the
+  hand-test sandbox, a fake server, the real binary, the Docker lab (`test/CLAUDE.md`,
+  Hand tests) — asks the owner only for the step that needs a person, and checks
+  that step itself afterwards in a log or file. One dev build at a time: stop every older one first, its Electron
   main process too (killing `electron-vite` alone leaves the window up). A dev build
   has its own profile (`koloft-dev`), so the installed Koloft, where these sessions
   run, stays open.

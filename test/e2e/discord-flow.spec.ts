@@ -724,6 +724,40 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     }
   })
 
+  test('a session that another plain session started with koloft session new asks the owner in a thread of its own, with a button per option, and a button press there answers it', async ({
+    env
+  }) => {
+    seedConductor(env, 'claude')
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      await startSessionIn(page, 'ws-a')
+      const parentTab = await tabOf(page, (await waitForCallsBesideConductors(env, 1))[0].sessionId)
+      const type = (tab: string, line: string): Promise<void> =>
+        page.evaluate(([id, l]) => window.api.terminal.write(id, l + '\r'), [tab, line])
+      await type(parentTab, '/koloft session new -- check the colour')
+      const child = (await waitForCallsBesideConductors(env, 2))[1].sessionId
+      await expect.poll(() => transcriptText(env, child)).toContain('check the colour')
+      await type(await tabOf(page, child), '/ask Which colour?|Red|Green')
+      const card = (): FakePost | undefined =>
+        threadPosts(fake).find((p) =>
+          /^❓ .+ is waiting for you\.\nWhich colour\?\n1\. Red — The Red one\n2\. Green — The Green one\n/.test(
+            p.content
+          )
+        )
+      await expect.poll(card, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }).toBeTruthy()
+      expect(fake.threads).toEqual([
+        expect.objectContaining({ parentId: CHANNEL, members: [OWNER.id] })
+      ])
+      expect(card()!.buttons?.map((b) => b.label)).toEqual(['1. Red', '2. Green'])
+      fake.press(OWNER, card()!.buttons![0], card()!.channelId)
+      await expect.poll(() => transcriptText(env, child)).toContain('Picked: Red')
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
+  })
+
   test('a managed Codex session’s approval reaches its thread with its command and is answered by the Yes button there, and its one-question list with its options is answered by the conductor, once with koloft session answer and once with koloft session keys; each presses its key', async ({
     env
   }) => {
