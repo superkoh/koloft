@@ -1037,8 +1037,12 @@ Koloft's (one TUI connection, one stdio app-server upstream, every frame logged)
   Either way a `PreToolUse` hook got `tool_name: "request_user_input"` with the whole
   `questions` array, before the server refused or raised it. The model's tool list held
   `request_user_input`, `request_user_input_async` and `sleep` with or without the flag.
-  Not probed here: the TUI over `--remote` drawing it in the default mode; what
-  `isBlocking: false` changes.
+  The same day, through Koloft itself (an Assist task with the flag and the gate, the
+  real TUI over `--remote`): the model called `request_user_input` with two options and
+  the TUI drew it as a question the owner could pick by digit. In one run whose brief
+  still allowed a plain-text question, the model asked in plain text instead; told to
+  ask every question with that tool, it did. Not probed: what `isBlocking: false`
+  changes.
 - Not probed: several questions in one request, a free-text answer (`N+1` and notes),
   `isSecret`, a form with several fields or a field that is not an enum, and an
   elicitation `mode` other than `form`. Koloft refuses those from Discord.
