@@ -1450,8 +1450,12 @@ Gateway (the live connection that pushes events):
   shows a Workbench page reaches such a port unless Koloft stops it. Koloft cancels a
   request to 127.0.0.1 ports 6463–6472 when a page whose host is not loopback starts it
   (Electron's `initiatorOrigin`); an address the user types has no initiator and still
-  goes through. From Discord's docs, not measured: the app takes the first free port
-  in that range and also answers HTTP there. Whether the signed-in invite page still
+  goes through. Driven through the Workbench of a test build on 2026-10-12, signed
+  out, with the desktop app listening on 6463: the invite page loaded and moved on to
+  sign-in, and `lsof` sampled every 100 ms saw no socket from the test app to port
+  6463, while a WebSocket that same page opened to another local port showed up. From
+  Discord's docs, not measured: the app takes the first free port in that range and
+  also answers HTTP there. Whether the signed-in invite page still
   offers "continue in the Discord app" once the port is closed is not probed yet.
 - **`GUILD_CREATE` carries the server's `owner_id`** — seen in the 2026-10-10 Gateway
   probe's logs with the same test bot. Koloft makes new channels only in a server whose
