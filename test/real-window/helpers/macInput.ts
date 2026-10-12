@@ -40,6 +40,11 @@ export function dockBadgeDrawn(appName: string): string {
   return osa('dock-badge', appName)
 }
 
+export function dockItemCenter(appName: string): Point {
+  const [x, y] = osa('dock-item-center', appName).split(' ').map(Number)
+  return { x, y }
+}
+
 export function bannerTexts(): string {
   return osa('banner-texts')
 }
@@ -65,4 +70,19 @@ export async function screenPointOf(app: ElectronApplication, target: Locator): 
   const box = await target.boundingBox()
   if (!box) throw new Error('target has no box on screen')
   return { x: content.x + box.x + box.width / 2, y: content.y + box.y + box.height / 2 }
+}
+
+export async function bareScreenPointOf(app: ElectronApplication, target: Locator): Promise<Point> {
+  const content = await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].getContentBounds()
+  )
+  const inPage = await target.evaluate((el) => {
+    const r = el.getBoundingClientRect()
+    const y = r.top + r.height / 2
+    for (let x = r.right - 4; x > r.left; x -= 4)
+      if (document.elementFromPoint(x, y) === el) return { x, y }
+    return null
+  })
+  if (!inPage) throw new Error('no spot where the target itself is on top')
+  return { x: content.x + inPage.x, y: content.y + inPage.y }
 }

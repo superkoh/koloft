@@ -8,6 +8,9 @@ const LEFT_DOWN = 1
 const LEFT_UP = 2
 const MOUSE_MOVED = 5
 const LEFT_DRAGGED = 6
+const CLICK_STATE_FIELD = 1
+const AX_POINT = 1
+const AX_SIZE = 2
 const DRAG_STEPS = 20
 const STEP_SECONDS = 0.02
 
@@ -17,7 +20,9 @@ function post(event) {
 }
 
 function mouse(type, x, y) {
-  post($.CGEventCreateMouseEvent(null, type, { x, y }, LEFT_BUTTON))
+  const event = $.CGEventCreateMouseEvent(null, type, { x, y }, LEFT_BUTTON)
+  if (type !== MOUSE_MOVED) $.CGEventSetIntegerValueField(event, CLICK_STATE_FIELD, 1)
+  post(event)
 }
 
 function key(code, flags) {
@@ -49,41 +54,55 @@ function attribute(element, name) {
   return value[0]
 }
 
+function string(element, name) {
+  const value = attribute(element, name)
+  if (value === null) return null
+  const s = ObjC.unwrap(ObjC.castRefToObject(value))
+  return typeof s === 'string' ? s : null
+}
+
+function children(element) {
+  const value = attribute(element, 'AXChildren')
+  if (value === null) return []
+  const list = ObjC.castRefToObject(value)
+  const out = []
+  for (let i = 0; i < list.count; i++) out.push(list.objectAtIndex(i))
+  return out
+}
+
 function texts(element, depth, out) {
-  const value = attribute(element, 'AXValue')
-  const title = attribute(element, 'AXTitle')
-  const description = attribute(element, 'AXDescription')
-  const label = attribute(element, 'AXStatusLabel')
-  for (const v of [value, title, description, label]) {
-    const s = v === null ? '' : ObjC.unwrap(ObjC.castRefToObject(v))
-    if (typeof s === 'string' && s) out.push(s)
+  for (const name of ['AXValue', 'AXTitle', 'AXDescription']) {
+    const s = string(element, name)
+    if (s) out.push(s)
   }
-  if (depth <= 0) return out
-  const children = attribute(element, 'AXChildren')
-  if (children === null) return out
-  const list = ObjC.castRefToObject(children)
-  for (let i = 0; i < list.count; i++) texts(list.objectAtIndex(i), depth - 1, out)
+  if (depth > 0) for (const child of children(element)) texts(child, depth - 1, out)
   return out
 }
 
 function processElement(bundleId) {
-  const running = $.NSRunningApplication.runningApplicationsWithBundleIdentifier(bundleId)
-  if (running.count === 0) return null
-  return $.AXUIElementCreateApplication(running.objectAtIndex(0).processIdentifier)
+  const first = $.NSRunningApplication.runningApplicationsWithBundleIdentifier(bundleId).firstObject
+  if (first.isNil()) return null
+  return $.AXUIElementCreateApplication(first.processIdentifier)
 }
 
-function dockBadge(appName) {
+function dockItem(appName) {
   const dock = processElement('com.apple.dock')
-  const list = ObjC.castRefToObject(attribute(dock, 'AXChildren')).objectAtIndex(0)
-  const items = ObjC.castRefToObject(attribute(list, 'AXChildren'))
-  for (let i = 0; i < items.count; i++) {
-    const item = items.objectAtIndex(i)
-    const title = attribute(item, 'AXTitle')
-    if (title === null || ObjC.unwrap(ObjC.castRefToObject(title)) !== appName) continue
-    const label = attribute(item, 'AXStatusLabel')
-    return label === null ? '' : ObjC.unwrap(ObjC.castRefToObject(label))
-  }
-  return 'no dock item named ' + appName
+  for (const list of children(dock))
+    for (const item of children(list)) if (string(item, 'AXTitle') === appName) return item
+  throw new Error('no Dock item named ' + appName)
+}
+
+function axStruct(element, name, type) {
+  const out = Ref()
+  $.AXValueGetValue(attribute(element, name), type, out)
+  return out[0]
+}
+
+function dockItemCenter(appName) {
+  const item = dockItem(appName)
+  const p = axStruct(item, 'AXPosition', AX_POINT)
+  const s = axStruct(item, 'AXSize', AX_SIZE)
+  return `${p.x + s.width / 2} ${p.y + s.height / 2}`
 }
 
 function run(argv) {
@@ -93,7 +112,8 @@ function run(argv) {
   if (command === 'key') return key(n[0], n[1])
   if (command === 'click') return click(n[0], n[1])
   if (command === 'drag') return drag(n[0], n[1], n[2], n[3])
-  if (command === 'dock-badge') return dockBadge(rest[0])
+  if (command === 'dock-badge') return string(dockItem(rest[0]), 'AXStatusLabel') ?? ''
+  if (command === 'dock-item-center') return dockItemCenter(rest[0])
   if (command === 'banner-texts') {
     const center = processElement('com.apple.notificationcenterui')
     return center === null ? '' : texts(center, 12, []).join('\n')

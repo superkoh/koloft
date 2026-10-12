@@ -40,10 +40,6 @@ jobs:
           screencapture -x probe-screen.png && ls -la probe-screen.png || echo "screencapture failed"
           sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" "select service, client, auth_value from access where service in ('kTCCServiceAccessibility','kTCCServicePostEvent','kTCCServiceScreenCapture','kTCCServiceAppleEvents')" || true
 
-      - name: PROBE hidden-window e2e on this runner
-        continue-on-error: true
-        run: npx playwright test test/e2e/command-palette.spec.ts -g 'a few letters' --retries=0
-
       - run: npx playwright test -c test/real-window/playwright.config.ts
         env:
           KOLOFT_REAL_WINDOW: '1'

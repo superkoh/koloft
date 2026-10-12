@@ -16,8 +16,10 @@ import {
   KEY_P,
   accessibilityTrusted,
   bannerTexts,
+  bareScreenPointOf,
   bringFinderToFront,
   dockBadgeDrawn,
+  dockItemCenter,
   realClick,
   realDrag,
   realKey,
@@ -104,7 +106,7 @@ test.describe('a real Mac screen: keys, mouse, Dock and banners as macOS itself 
   }, testInfo) => {
     await sessionInWsA(page)
     const before = await windowBounds(app)
-    const from = await screenPointOf(app, page.locator('.center-top'))
+    const from = await bareScreenPointOf(app, page.locator('.center-top'))
     realDrag(from, { x: from.x + DRAG_BY.x, y: from.y + DRAG_BY.y })
     await expect
       .poll(async () => {
@@ -122,7 +124,8 @@ test.describe('a real Mac screen: keys, mouse, Dock and banners as macOS itself 
     await endATurnWhileInBackground(app, page)
     await expect.poll(() => dockBadgeDrawn(DOCK_NAME), { timeout: 30_000 }).toBe('1')
     screenshot(testInfo.outputPath('dock-badge.png'))
-    await clickIntoTerminal(app, page)
+    realClick(dockItemCenter(DOCK_NAME))
+    await expect.poll(() => windowFocused(app)).toBe(true)
     await expect.poll(() => dockBadgeDrawn(DOCK_NAME)).toBe('')
   })
 
@@ -131,6 +134,11 @@ test.describe('a real Mac screen: keys, mouse, Dock and banners as macOS itself 
   }, testInfo) => {
     await sessionInWsA(page)
     await endATurnWhileInBackground(app, page)
+    await expect
+      .poll(() =>
+        app.evaluate(() => (globalThis as { __koloftOsNotifCount?: number }).__koloftOsNotifCount)
+      )
+      .toBe(1)
     await expect.poll(() => bannerTexts(), { timeout: 30_000 }).toContain(FAKE_SESSION_TITLE)
     expect(bannerTexts()).toContain('turn done — your move · ws-a')
     screenshot(testInfo.outputPath('banner.png'))
