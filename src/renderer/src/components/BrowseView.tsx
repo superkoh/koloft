@@ -296,7 +296,7 @@ export function BrowseView({
   }, [root])
 
   const watchedDirs = useRef(new Set<string>())
-  // PLATFORM§42
+  // PLATFORM§46
   useEffect(() => {
     const want = new Set(active && !treeLive ? [...expanded].filter((d) => d !== root) : [])
     for (const d of watchedDirs.current) {

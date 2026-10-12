@@ -101,6 +101,7 @@ export function paletteGroups(
   actions: PaletteAction[],
   query: string
 ): PaletteGroup[] {
+  if (!query.trim()) return []
   const groups: PaletteGroup[] = [
     { title: 'Sessions', items: sessions.filter((s) => matchesQuery(s.text, query)) },
     { title: 'Workspaces', items: workspaces.filter((w) => matchesQuery(w.note, query)) },

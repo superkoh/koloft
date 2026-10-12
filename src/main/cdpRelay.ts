@@ -425,6 +425,10 @@ export function relayClientEvicted(tabId: string, reason: string): void {
   refuse(client.ws, reason)
 }
 
+export function relayAttached(tabId: string): boolean {
+  return clients.has(tabId)
+}
+
 export function relayTabClosed(tabId: string): void {
   relayClientEvicted(tabId, 'the tab this endpoint belonged to was closed')
   paths.delete(tabId)

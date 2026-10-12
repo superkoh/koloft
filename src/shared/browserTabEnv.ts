@@ -4,3 +4,8 @@ export const BROWSER_TAB_ENV = [
   'PLAYWRIGHT_CLI_SESSION',
   'PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS'
 ] as const
+
+export const PLAYWRIGHT_CLI_SESSION_PREFIX = 'koloft-'
+
+export const playwrightCliSession = (tabId: string): string =>
+  `${PLAYWRIGHT_CLI_SESSION_PREFIX}${tabId}`

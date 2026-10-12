@@ -168,7 +168,17 @@ your Mac                     the other machine
           <li>
             Claude runs inside <code>tmux</code> (a program that keeps a terminal going after you
             leave). If the link drops, Claude keeps working. Koloft keeps trying to reach the
-            machine: soon at first, then less and less often, down to once a minute.
+            machine: soon at first, then less and less often, down to once a minute. Close the
+            session's tab meanwhile and Koloft says so:
+            <code
+              >Could not stop “…” on &lt;machine&gt;: &lt;why&gt;. It is still running there.</code
+            >
+            The row stays lit, and a click joins that session again.
+          </li>
+          <li>
+            The agent gets the <code>koloft</code> command there too, a moment slower, since each
+            answer comes from Koloft on your Mac (see
+            <a href="../agents/">Agents can use Koloft too</a>).
           </li>
           <li>
             The first session on a machine takes a few seconds longer: <code>claude</code> fetches
@@ -198,6 +208,9 @@ your Mac                     the other machine
           <li>
             <code>bash</code>, <code>tmux</code> and <code>rsync</code> come from the machine's own
             package manager, which may ask for its sudo password (the admin password)
+          </li>
+          <li>
+            a small <code>koloft</code> script, and the guide that tells the agent how to use it
           </li>
           <li>
             Node, only for the status line; if that fails, the session still runs, just without a
@@ -233,7 +246,6 @@ your Mac                     the other machine
             The agent cannot drive your web tabs. See
             <a href="../agents/">Agents can use Koloft too</a>.
           </li>
-          <li>The agent does not get the <code>koloft</code> command.</li>
           <li>No Codex yet. A remote folder runs Claude Code only.</li>
           <li>
             A session row's menu offers Copy path (<code>machine:/path</code>) instead of Reveal in

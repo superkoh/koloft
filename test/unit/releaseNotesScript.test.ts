@@ -81,7 +81,7 @@ describe('scripts/release-notes.sh — CLI contract', () => {
     expect(iBeta).toBeLessThan(iAlpha)
   })
 
-  it('A2: only feat, fix and perf commits reach the notes — docs, test, chore and website (site) changes stay out', () => {
+  it('A2: of the prefixed commits only feat, fix and perf reach the notes — docs, test, chore, refactor and website (site) changes stay out', () => {
     const dir = freshRepo()
     commit(dir, 'chore: init')
     tag(dir, 'v0.1.0')
@@ -89,14 +89,15 @@ describe('scripts/release-notes.sh — CLI contract', () => {
     commit(dir, 'docs(CLAUDE.md): d (#2)')
     commit(dir, 'test(e2e): t (#3)')
     commit(dir, 'chore: release v0.2.0')
-    commit(dir, 'fixup the prefix-lookalike (#4)')
+    commit(dir, 'refactor(ui): r (#4)')
     commit(dir, 'fix: y (#5)')
     commit(dir, 'perf(codex): z (#6)')
     commit(dir, 'feat(site): a website page (#7)')
     commit(dir, 'fix(site): a website typo (#8)')
 
-    const { stdout } = run(dir, '0.2.0', 'v0.1.0')
+    const { stdout, stderr } = run(dir, '0.2.0', 'v0.1.0')
 
+    expect(stderr).toBe('')
     expect(beforeMarker(stdout).match(/^- .*$/gm)).toEqual([
       '- perf(codex): z (#6)',
       '- fix: y (#5)',
@@ -261,5 +262,27 @@ describe('scripts/release-notes.sh — CLI contract', () => {
     expect(stdout).toContain(`- ${subject}`)
     expect(stdout).not.toMatch(/uid=\d+/)
     expect(stdout).not.toContain(os.homedir())
+  })
+
+  it('A13: a subject with no type prefix still reaches the notes, and stderr names it for rewording', () => {
+    const dir = freshRepo()
+    commit(dir, 'chore: init')
+    tag(dir, 'v0.1.0')
+    commit(dir, 'Assist without Discord: talk to it from the sidebar (#1)')
+    commit(dir, '⌘P hands tasks to Assist (#2)')
+    commit(dir, 'fixup the prefix-lookalike (#3)')
+    commit(dir, 'build(release): b (#4)')
+    commit(dir, 'chore: release v0.2.0')
+
+    const { stdout, stderr } = run(dir, '0.2.0', 'v0.1.0')
+
+    expect(stderr).toContain('no type prefix')
+    expect(stderr).toContain('⌘P hands tasks to Assist (#2)')
+    expect(stderr).not.toContain('build(release)')
+    expect(beforeMarker(stdout).match(/^- .*$/gm)).toEqual([
+      '- fixup the prefix-lookalike (#3)',
+      '- ⌘P hands tasks to Assist (#2)',
+      '- Assist without Discord: talk to it from the sidebar (#1)'
+    ])
   })
 })

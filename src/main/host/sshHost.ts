@@ -472,6 +472,10 @@ export class SshHost implements Host {
     return (await this.sh('test -d "$1"', [this.bare(dir)])).code === 0
   }
 
+  async makeDir(dir: string): Promise<boolean> {
+    return (await this.sh('mkdir -- "$1"', [this.bare(dir)])).code === 0
+  }
+
   async fileExists(file: string): Promise<boolean> {
     return (await this.sh('test -f "$1"', [this.bare(file)])).code === 0
   }
@@ -600,7 +604,7 @@ export class SshHost implements Host {
     return { path: this.keyed(created), mtimeMs: fp.mtimeMs, size: fp.size }
   }
 
-  // PLATFORM§42
+  // PLATFORM§46
   watchDir(dir: string, onChange: (dir: string) => void): boolean {
     this.deps.watch(this.bare(dir), () => onChange(dir))
     return false

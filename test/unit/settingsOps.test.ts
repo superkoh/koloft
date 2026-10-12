@@ -209,6 +209,24 @@ describe('sanitizeLoadedSettings and the Assist choice', () => {
   })
 })
 
+describe('sanitizeLoadedSettings and where new projects go', () => {
+  it('starts empty — no folder is guessed — and keeps only non-empty paths per machine', () => {
+    expect(sanitizeLoadedSettings({}).newProjectFolders).toEqual({})
+    expect(
+      sanitizeLoadedSettings({
+        newProjectFolders: { local: '/Users/me/code', devbox: '', other: 3 } as never
+      }).newProjectFolders
+    ).toEqual({ local: '/Users/me/code' })
+    expect(sanitizeLoadedSettings({ newProjectFolders: 'x' as never }).newProjectFolders).toEqual(
+      {}
+    )
+  })
+
+  it('About ▸ Reset leaves the remembered folders alone', () => {
+    expect(buildResetPatch()).not.toHaveProperty('newProjectFolders')
+  })
+})
+
 describe('sanitizeLoadedSettings and the account list', () => {
   it('merges accounts that differ only in letter case within one kind, keeping the first, and keeps the same name under another kind', () => {
     const base = { enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }

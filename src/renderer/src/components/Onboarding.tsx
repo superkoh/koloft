@@ -165,7 +165,12 @@ function PicAccounts(): JSX.Element {
 const LEGEND: { cls: string; name: string; what: string }[] = [
   { cls: 'st-working', name: 'Orange', what: 'working' },
   { cls: 'st-approval', name: 'Amber', what: 'needs your OK' },
-  { cls: 'st-waiting', name: 'Green', what: 'turn done (with ↻: still running in the background)' },
+  { cls: 'st-waiting', name: 'Green', what: 'turn done' },
+  {
+    cls: 'st-waiting st-bg-run',
+    name: 'Breathing green',
+    what: 'turn done, still running in the background (↻)'
+  },
   { cls: 'st-idle', name: 'Dim green', what: 'done a while ago, nothing new' },
   { cls: 'cold', name: 'Grey', what: 'closed, click to resume' }
 ]
@@ -202,11 +207,15 @@ export function Onboarding({
   const runProbe = useCallback((): void => {
     setProbe('pending')
     setCodexFound(false)
-    void window.api.sessions.backends().then((backends) => {
+    void window.api.sessions.backends(true).then((backends) => {
       setCodexFound(backendAvailable(backends, 'codex'))
       setProbe(backendAvailable(backends, 'claude') ? 'found' : 'missing')
     })
   }, [])
+
+  useEffect(() => {
+    if (step === 4) runProbe()
+  }, [step, runProbe])
 
   const finish = useCallback((): void => {
     update({ onboardingSeen: true })
@@ -237,10 +246,7 @@ export function Onboarding({
       return {
         label: 'Continue',
         disabled: !setup.done && !noTool,
-        go: () => {
-          setStep(4)
-          runProbe()
-        }
+        go: () => setStep(4)
       }
     if (probe === 'pending') return { label: '＋ Start first session', disabled: true }
     if (probe === 'missing' && !codexFound) return { label: 'Check again', go: runProbe }
@@ -327,7 +333,7 @@ export function Onboarding({
         {step === 3 && (
           <>
             <div className="big">Sign in, and pick your Assist.</div>
-            <AssistSetup setup={setup} />
+            <AssistSetup setup={setup} offerInstall />
             <PicAccounts />
           </>
         )}
@@ -354,7 +360,8 @@ export function Onboarding({
             </div>
             {probe === 'missing' && !codexFound ? (
               <InstallHint>
-                Install Claude Code or a supported Codex CLI to start a session.
+                To start a session, install Claude Code or Codex. A terminal opens and runs its
+                official installer.
               </InstallHint>
             ) : (
               <div className="quiet">

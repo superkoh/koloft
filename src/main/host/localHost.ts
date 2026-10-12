@@ -18,7 +18,12 @@ import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
 import { resolveSpawnCwd } from '../projectInfo'
 import { leaveForOS, osOpenFallback } from '../osOpen'
 import { claudeArgv } from '../claudeArgs'
-import { acceptClaudeTrust, claudeJsonPath, claudeTrustsFolder } from '../claudeTrust'
+import {
+  acceptClaudeTrust,
+  claudeJsonPath,
+  claudeTrustsFolder,
+  markClaudeOnboarded
+} from '../claudeTrust'
 import { dirExistsSync, worktreeNameAround } from '../resumePlan'
 import { portOffset } from '@shared/worktreeName'
 import { listSkills, type SkillFs } from '../skillList'
@@ -88,6 +93,11 @@ async function launchClaude(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {
     permission: spec.permission
   })
   if (!args.ok) return args
+  try {
+    markClaudeOnboarded(claudeJsonPath())
+  } catch (err) {
+    console.error('[koloft] could not mark Claude onboarding done', err)
+  }
   const cwd = resolveSpawnCwd(spec.cwd ?? spec.root)
   const launchCommand = `exec ${args.argv.join(' ')}`
   const worktree = spec.worktree ?? worktreeNameAround(cwd)
@@ -133,6 +143,11 @@ export function localHost(github: GithubLookup): Host {
   return {
     listDir,
     dirExists,
+    makeDir: (dir) =>
+      fs.promises.mkdir(dir).then(
+        () => true,
+        () => false
+      ),
     search,
     searchContent,
     diffBase,
