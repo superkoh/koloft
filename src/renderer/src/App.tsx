@@ -112,7 +112,7 @@ import { TerminalView } from './components/TerminalView'
 import { repairAllWebgl, scheduleWebglRepair } from './webglRepair'
 import { WorkspaceSidebar } from './components/WorkspaceSidebar'
 import { NotesIsland } from './components/NotesIsland'
-import { ConductorsIsland } from './components/ConductorsIsland'
+import { ConductorsIsland, setUpDiscordWithAssist } from './components/ConductorsIsland'
 import { BindConductorDialog } from './components/BindConductorDialog'
 import { conductorNotesWorkspace, conductorOfTab } from './conductorRows'
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
@@ -1111,6 +1111,12 @@ export default function App(): JSX.Element {
           folder: folder ?? '',
           why: route.why
         }
+      })
+      return
+    }
+    if (route?.kind === 'discord') {
+      void setUpDiscordWithAssist().then((error) => {
+        if (error) showToast(error)
       })
       return
     }

@@ -18,7 +18,8 @@ const TOOLS_THE_ALLOW_FILE_NAMES = `function toolsTheAllowFileNames() {
   }
 }`
 
-const DENY_AND_SAY = (denied: string): string => `let raw = ''
+const DENY_AND_SAY = (denied: string): string => `const GRANTED = 'granted'
+let raw = ''
 process.stdin.setEncoding('utf8')
 process.stdin.on('data', (chunk) => (raw += chunk))
 process.stdin.on('end', () => {
@@ -27,14 +28,18 @@ process.stdin.on('end', () => {
     event = JSON.parse(raw)
   } catch {}
   const named = toolsTheAllowFileNames()
-  if (named.has(event.tool_name) || allowed(event, named)) return
+  const verdict = named.has(event.tool_name) || allowed(event, named)
+  if (verdict === true) return
   process.stdout.write(
     JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        permissionDecision: 'deny',
-        permissionDecisionReason: ${JSON.stringify(denied)}
-      }
+      hookSpecificOutput:
+        verdict === GRANTED
+          ? { hookEventName: 'PreToolUse', permissionDecision: 'allow' }
+          : {
+              hookEventName: 'PreToolUse',
+              permissionDecision: 'deny',
+              permissionDecisionReason: ${JSON.stringify(denied)}
+            }
     })
   )
 })
@@ -84,7 +89,8 @@ function allowed(event, named) {
   if (WRITE_TOOLS.has(event.tool_name)) return inOwnMemory(event)
   if (event.tool_name !== 'Bash') return false
   const command = event.tool_input && event.tool_input.command
-  return ['koloft', ...allowedCommands(named)].some((program) => onePlainCall(command, program))
+  if (allowedCommands(named).some((program) => onePlainCall(command, program))) return GRANTED
+  return onePlainCall(command, 'koloft')
 }
 
 ${TOOLS_THE_ALLOW_FILE_NAMES}

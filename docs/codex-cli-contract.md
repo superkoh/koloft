@@ -1335,6 +1335,11 @@ so its folders were not writable by default.
     from the same daemon: a detached daemon started by a turn's command outlives the turn.
   - Inside the sandbox each CLI start printed Electron's `codesign_util.cc …
     task_name_for_pid` line on stderr (PLATFORM§42); one reply quoted it back.
+- **The same holds with approvals off, as an Assist runs.** 2026-10-11, codex-cli 0.162.0,
+  `codex exec -s workspace-write -c approval_policy="never"` in a temp folder, a model
+  turn asked to `curl` a local HTTP server on 127.0.0.1: without
+  `sandbox_workspace_write.network_access=true` curl failed to connect and the server saw
+  nothing; with it the server answered and saw one request.
 - Not tried: a `read-only` thread (`network_access` belongs to `workspace-write` only, so
   the CLI is refused there — **inferred, not checked**), and a user on the newer
   `default_permissions` profiles, which the `-P` result suggests ignore these legacy keys

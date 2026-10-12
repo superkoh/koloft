@@ -103,6 +103,11 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
     expect(
       parseRoute(reply({ hand: 'koloft', title: 'Dark mode', why: 'A setting.' }), LIST)
     ).toEqual({ kind: 'koloft', title: 'Dark mode', why: 'A setting.' })
+    expect(parseRoute(reply({ hand: 'discord', title: 'Discord' }), LIST)).toEqual({
+      kind: 'discord',
+      title: 'Discord',
+      why: ''
+    })
     expect(parseRoute(reply({ hand: 'assist', workspace: 2, title: 'Ask api' }), LIST)).toEqual({
       kind: 'assist',
       path: 'devbox:/srv/api',

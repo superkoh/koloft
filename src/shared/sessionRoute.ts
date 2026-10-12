@@ -24,6 +24,7 @@ export type SessionRoute =
   | (RouteText & { kind: 'workspace'; path: string; worktree: RouteWorktree | null; sure: boolean })
   | (RouteText & { kind: 'project'; machine: string; folder: string | null })
   | (RouteText & { kind: 'koloft' })
+  | (RouteText & { kind: 'discord' })
   | (RouteText & { kind: 'assist'; path: string })
 
 export const LOCAL_MACHINE = 'local'
@@ -63,7 +64,8 @@ ${message.slice(0, PROMPT_MAX_CHARS_SENT)}
 
 Reply with one JSON object and nothing else:
 {"hand": <omit for work to do in a project, even when it names a workspace;
-          "koloft" when the person wants something from the Koloft app they are using — its settings and look, accounts, Discord, scheduled jobs, or how its sessions run ("set up Discord", "turn on dark mode", "why is my session slow");
+          "discord" when the person wants Koloft connected to Discord or its Discord set up ("set up Discord", "connect my Discord bot");
+          "koloft" when the person wants anything else from the Koloft app they are using — its settings and look, accounts, scheduled jobs, or how its sessions run ("turn on dark mode", "why is my session slow");
           "assist" only when the message asks or tells a workspace something ("ask <folder name> …", "tell <folder name> …"), with "workspace" set to that id>,
  "workspace": <workspace id as a number, or null when this needs a brand-new project>,
  "machine": <only when workspace is null: "${LOCAL_MACHINE}", or the machine the person named>,
@@ -126,6 +128,7 @@ export function parseRoute(reply: string | null, list: RouteWorkspace[]): Sessio
   if (!o) return null
   const said = { title: text(o.title), why: text(o.why, WHY_MAX_CHARS) }
   if (o.hand === 'koloft') return { ...said, kind: 'koloft' }
+  if (o.hand === 'discord') return { ...said, kind: 'discord' }
   if (o.workspace === null) {
     const machines = new Set(list.map((w) => w.machine))
     const machine =
