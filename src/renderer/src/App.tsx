@@ -147,7 +147,6 @@ import type { PaletteAction } from './palette'
 import { GLOBAL_SCOPE } from '@shared/conductors'
 
 const RECENT_MAX = 3
-const ASSIST_TASK_NAME_MAX_CHARS = 40
 
 const LAUNCH_REFUSED_NOTICE = 'Could not start the session — invalid launch arguments'
 
@@ -1117,11 +1116,10 @@ export default function App(): JSX.Element {
       return
     }
     if (route?.kind === 'koloft' || route?.kind === 'assist') {
-      const name = route.title || prompt.slice(0, ASSIST_TASK_NAME_MAX_CHARS)
       void (
         route.kind === 'koloft'
-          ? window.api.conductors.openTask(GLOBAL_SCOPE, name, prompt)
-          : window.api.conductors.tell(route.path, name, prompt)
+          ? window.api.conductors.openTask(GLOBAL_SCOPE, route.title, prompt)
+          : window.api.conductors.tell(route.path, route.title, prompt)
       ).then((r) => {
         if (r.ok) {
           window.api.attention.visit(r.tabId)

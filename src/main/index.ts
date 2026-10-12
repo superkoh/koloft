@@ -317,7 +317,13 @@ import type {
 } from '@shared/types'
 import { copyWorktreeIncludes } from './sessionWorktrees'
 import { AgentRequests, BUILTIN_VERBS, errorText, refused, type AgentVerb } from './agentRequests'
-import { conductorFolder, Conductors, type AssistBackendChoice } from './discord/conductors'
+import {
+  conductorFolder,
+  Conductors,
+  type AssistBackendChoice,
+  type AssistTask
+} from './discord/conductors'
+import { firstLineName } from './sessionTitle'
 import { discordApiUrl, DiscordLink } from './discord/link'
 import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay, type Destination } from './discord/relay'
@@ -1071,6 +1077,11 @@ async function sendPeerLine(tabId: string, line: string, ms: number): Promise<vo
   const socket = sessionId ? await whenMessagingSocket(sessionId, ms) : null
   if (!socket) throw new Error('Koloft could not find where that session takes messages.')
   await writeLineInTurn(socket, line)
+}
+
+async function queueCodexMessage(tabId: string, text: string, clientId: string): Promise<void> {
+  if (!codexSessions) throw new Error(codexStartupError ?? 'Codex is not available.')
+  await codexSessions.queueMessage(tabId, text, clientId)
 }
 
 const sessionDeps: SessionVerbDeps = {
@@ -2245,10 +2256,7 @@ app.whenReady().then(() => {
     asksChanged: (tabId) => ptyMgr.wakeReady(tabId),
     type: (tabId, keys) => ptyMgr.type(tabId, keys),
     queueDrained: (tabId) => codexSessions?.queueDrained(tabId) ?? true,
-    queue: async (tabId, text, clientId) => {
-      if (!codexSessions) throw new Error(codexStartupError ?? 'Codex is not available.')
-      await codexSessions.queueMessage(tabId, text, clientId)
-    },
+    queue: queueCodexMessage,
     sendLine: sendPeerLine,
     modeOf: (tabId) => sessionBackends.permissionClass(tabId),
     codexApproval: (tabId) => codexSessions?.openApproval(tabId),
@@ -3540,17 +3548,25 @@ function commandIntoConductor(b: ConductorBinding, text: string): string {
 const PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS = 10_000
 let paletteMessages = 0
 
-async function tellAssist(scope: string, name: string, text: string): Promise<ConductorOpenResult> {
+function paletteTask(title: string, text: string): AssistTask {
+  return { name: title || firstLineName(text), brief: text }
+}
+
+async function tellAssist(
+  scope: string,
+  title: string,
+  text: string
+): Promise<ConductorOpenResult> {
   const all = conductors
   if (!all) return { ok: false, error: STILL_STARTING }
   const tabId = all.liveTab(scope)
-  if (!tabId) return all.openTask(scope, { name, brief: text })
+  if (!tabId) return all.openTask(scope, paletteTask(title, text))
   const id = `koloft-palette-${++paletteMessages}`
+  if (!(await tabReady(tabId, PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS, false)))
+    return { ok: false, error: `The ${conductorName(scope)} did not get ready in time.` }
   try {
-    if (backendIdOf(ptyMgr.get(tabId)?.kind) === 'codex') {
-      if (!codexSessions) return { ok: false, error: STILL_STARTING }
-      await codexSessions.queueMessage(tabId, text, id)
-    } else {
+    if (backendIdOf(ptyMgr.get(tabId)?.kind) === 'codex') await queueCodexMessage(tabId, text, id)
+    else {
       const line = crossSessionLine('prompting', `The owner typed this in ⌘P: ${text}`, id)
       if (!line) return { ok: false, error: 'The message cannot be sent as it is.' }
       await sendPeerLine(tabId, line, PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS)
@@ -4033,11 +4049,11 @@ function registerIpc(): void {
   )
   ipcMain.handle(
     'conductors:openTask',
-    (_e, scope: string, name: string, brief: string) =>
-      conductors?.openTask(scope, { name, brief }) ?? { ok: false, error: STILL_STARTING }
+    (_e, scope: string, title: string, text: string) =>
+      conductors?.openTask(scope, paletteTask(title, text)) ?? { ok: false, error: STILL_STARTING }
   )
-  ipcMain.handle('conductors:tell', (_e, scope: string, name: string, text: string) =>
-    tellAssist(scope, name, text)
+  ipcMain.handle('conductors:tell', (_e, scope: string, title: string, text: string) =>
+    tellAssist(scope, title, text)
   )
   ipcMain.handle('conductors:closeTask', (_e, tabId: string) => conductors?.closeTask(tabId))
   ipcMain.handle('conductors:tasks', () => conductors?.taskRows() ?? [])
