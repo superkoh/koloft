@@ -50,7 +50,7 @@ function tart(args, opts = {}) {
   const r = spawnSync('tart', args, { encoding: 'utf8', ...opts })
   if (r.error) fail(`tart could not run: ${r.error.message}`)
   if (r.status !== 0) throw new Error(`tart ${args[0]} failed: ${r.stderr || r.stdout}`)
-  return r.stdout.trim()
+  return (r.stdout ?? '').trim()
 }
 
 function guestScript(args) {
@@ -58,7 +58,7 @@ function guestScript(args) {
   return `set -u
 rsync -a --delete --exclude .git --exclude test-results "${GUEST_SHARES}/repo/" ${GUEST_HOME}/koloft/
 cp "${GUEST_SHARES}/kit/node" ${GUEST_HOME}/node
-sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" "${grantSql()}"
+defaults write "${GUEST_HOME}/Library/Group Containers/group.com.apple.replayd/ScreenCaptureApprovals" /usr/libexec/sshd-session -date "4000-01-01 00:00:00 +0000"
 cd ${GUEST_HOME}/koloft
 sudo launchctl asuser ${GUEST_UID} sudo -u ${GUEST_LOGIN} HOME=${GUEST_HOME} USER=${GUEST_LOGIN} KOLOFT_REAL_WINDOW=1 ${GUEST_HOME}/node ${PLAYWRIGHT_CLI} test -c ${CONFIG} ${quoted}
 code=$?
@@ -67,8 +67,58 @@ exit $code
 `
 }
 
-function grantSql() {
-  return ''
+// PLATFORM§46
+const GRANTS_FOR_TESTS_RUN_OVER_SSH = `insert or replace into access
+  (service, client, client_type, auth_value, auth_reason, auth_version, flags) values
+  ('kTCCServiceAccessibility', '/usr/libexec/sshd-keygen-wrapper', 1, 2, 4, 1, 0),
+  ('kTCCServiceAccessibility', '/usr/bin/osascript', 1, 2, 4, 1, 0),
+  ('kTCCServicePostEvent', '/usr/libexec/sshd-keygen-wrapper', 1, 2, 4, 1, 0),
+  ('kTCCServicePostEvent', '/usr/bin/osascript', 1, 2, 4, 1, 0),
+  ('kTCCServiceScreenCapture', '/usr/libexec/sshd-keygen-wrapper', 1, 2, 4, 1, 0),
+  ('kTCCServiceAccessibility', '/usr/libexec/sshd-session', 1, 2, 4, 1, 0),
+  ('kTCCServicePostEvent', '/usr/libexec/sshd-session', 1, 2, 4, 1, 0),
+  ('kTCCServiceScreenCapture', '/usr/libexec/sshd-session', 1, 2, 4, 1, 0),
+  ('kTCCServiceScreenCapture', 'com.apple.sshd-session', 0, 2, 4, 1, 0);`
+
+function diskutilPlist(args) {
+  const r = spawnSync('diskutil', args, { encoding: 'utf8' })
+  if (r.status !== 0) throw new Error(`diskutil ${args.join(' ')} failed: ${r.stderr}`)
+  const json = spawnSync('plutil', ['-convert', 'json', '-o', '-', '-'], {
+    input: r.stdout,
+    encoding: 'utf8'
+  })
+  return JSON.parse(json.stdout)
+}
+
+function grantWhileStopped(name, kit) {
+  const disk = path.join(process.env.TART_HOME, 'vms', name, 'disk.img')
+  const devs = diskutilPlist(['image', 'attach', '--noMount', '--plist', disk])[
+    'system-entities'
+  ].map((e) => e['dev-entry'])
+  const mountPoint = path.join(kit, 'guest-data')
+  fs.mkdirSync(mountPoint)
+  try {
+    const data = devs.find((d) => diskutilPlist(['info', '-plist', d]).VolumeName === 'Data')
+    if (!data) throw new Error(`no Data volume in ${disk}`)
+    run('diskutil', [
+      'mount',
+      '-mountOptions',
+      'nobrowse,noowners',
+      '-mountPoint',
+      mountPoint,
+      data
+    ])
+    const db = path.join(mountPoint, 'Library/Application Support/com.apple.TCC/TCC.db')
+    run('sqlite3', [db, GRANTS_FOR_TESTS_RUN_OVER_SSH])
+    run('diskutil', ['unmount', mountPoint])
+  } finally {
+    spawnSync('diskutil', ['eject', devs[0]], { stdio: 'ignore' })
+  }
+}
+
+function run(command, args) {
+  const r = spawnSync(command, args, { encoding: 'utf8' })
+  if (r.status !== 0) throw new Error(`${command} ${args.join(' ')} failed: ${r.stderr}`)
 }
 
 function ssh(ip, kit, remote, opts = {}) {
@@ -121,6 +171,7 @@ async function runInTart(args) {
     console.log(`cloning ${BASE_IMAGE} into ${name}`)
     tart(['clone', BASE_IMAGE, name], { stdio: 'inherit' })
     tart(['set', name, '--memory', String(VM_MEMORY_MB), '--cpu', String(VM_CPUS)])
+    grantWhileStopped(name, kit)
     vm = spawn(
       'tart',
       ['run', '--no-graphics', '--no-audio', `--dir=repo:${REPO}:ro`, `--dir=kit:${kit}`, name],

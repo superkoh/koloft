@@ -75,6 +75,13 @@ export function screenshot(file: string): void {
   execFileSync('screencapture', ['-x', file])
 }
 
+export function screenshotOf(
+  file: string,
+  r: { x: number; y: number; width: number; height: number }
+): void {
+  execFileSync('screencapture', ['-x', `-R${r.x},${r.y},${r.width},${r.height}`, file])
+}
+
 export function bringFinderToFront(): void {
   execFileSync('open', ['-a', 'Finder'])
 }

@@ -171,6 +171,11 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
     test.skip(!notificationCenterRunning(), 'this Mac runs no Notification Center to draw banners')
     const tabId = await sessionInWsA(page)
     await endATurnWhileInBackground(app, page, tabId)
+    for (let i = 0; i < 10; i++) {
+      screenshot(testInfo.outputPath(`probe-${i}.png`))
+      fs.appendFileSync(testInfo.outputPath('probe.txt'), `--- ${i}\n${bannerTexts()}\n`)
+      await page.waitForTimeout(400)
+    }
     await expect.poll(() => bannerTexts(), { timeout: 30_000 }).toContain(FAKE_SESSION_TITLE)
     expect(bannerTexts()).toContain('turn done — your move · ws-a')
     screenshot(testInfo.outputPath('banner.png'))
