@@ -1,4 +1,4 @@
-import { useEffect, useState, type JSX } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react'
 import {
   LuCheck,
   LuChevronDown,
@@ -70,6 +70,10 @@ function useGitAccountView(
     onClose()
     openGitAccounts()
   }
+  const toTokenBox = (): void => {
+    onClose()
+    openGitAccounts('git-token')
+  }
   const openList = (): void => {
     setSwitching(true)
     void window.api.gitAccounts.list().then(setAccounts)
@@ -88,7 +92,7 @@ function useGitAccountView(
       <button
         className="mini"
         title={`Paste a token for ${login} — opens Settings ▸ Accounts`}
-        onClick={toSettings}
+        onClick={toTokenBox}
       >
         Use a token
       </button>
@@ -356,6 +360,14 @@ export function FreshnessPopover({
     onClose()
   }
 
+  const popRef = useRef<HTMLDivElement>(null)
+  const [height, setHeight] = useState(0)
+  useLayoutEffect(() => {
+    const h = popRef.current?.offsetHeight
+    if (h !== undefined && h !== height) setHeight(h)
+  })
+  const fitTop = Math.min(top, Math.max(4, window.innerHeight - height - 4))
+
   const { acct, notes: gitNotes, block: gitBlock } = useGitAccountView(wsPath, !!github, onClose)
   const inMain = mainRunningCount(rows)
   const eligible = !!f && canPull(f)
@@ -365,8 +377,9 @@ export function FreshnessPopover({
     <>
       {confirm === null && (
         <div
+          ref={popRef}
           className="tbu-pop fx"
-          style={{ left, top }}
+          style={{ left, top: fitTop }}
           onClick={(e) => e.stopPropagation()}
           onMouseEnter={onMouseEnter}
           onMouseLeave={failed ? undefined : onMouseLeave}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type JSX, type Ref } from 'react'
 import { LuCopy, LuExternalLink, LuLoaderCircle, LuPlus, LuX } from 'react-icons/lu'
 import type { GitAccountView, GitLoginProgress, GitTokenAddResult } from '@shared/types'
 import { basename } from '@shared/preview'
+import { useStore } from '../../store'
 import { useEscConsumer } from './escScope'
 
 const DEFAULT_TITLE = 'First choice when a workspace on this host picks an account'
@@ -41,6 +42,11 @@ export function GitAccountsSection({ headRef }: { headRef?: Ref<HTMLDivElement> 
   const [accounts, setAccounts] = useState<GitAccountView[]>([])
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
   const [adding, setAdding] = useState<AddMode | null>(null)
+  const tokenFocus = useStore((s) => s.settingsFocus === 'git-token')
+
+  useEffect(() => {
+    if (tokenFocus) setAdding({ step: 'token' })
+  }, [tokenFocus])
 
   useEffect(() => {
     let alive = true

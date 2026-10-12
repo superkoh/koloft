@@ -31,7 +31,7 @@ export function AccountsPane(): JSX.Element {
   const gitHeadRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (settingsFocus !== 'git-accounts') return
+    if (!settingsFocus) return
     gitHeadRef.current?.scrollIntoView({ block: 'start' })
     setSettingsFocus(null)
   }, [settingsFocus, setSettingsFocus])

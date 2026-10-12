@@ -88,6 +88,8 @@ export interface UpdateState {
   error?: string
 }
 
+export type SettingsFocus = 'git-accounts' | 'git-token' | null
+
 interface AppState {
   tabs: Tab[]
   activeTabId: string | null
@@ -96,7 +98,7 @@ interface AppState {
   attention: AttentionEvent[]
   settings: Settings
   settingsOpen: boolean
-  settingsFocus: 'git-accounts' | null
+  settingsFocus: SettingsFocus
   welcomeActive: boolean
   onboardingStep: number
   bypassAccepted: boolean | null
@@ -176,8 +178,8 @@ interface AppState {
   setAttention: (pending: AttentionEvent[]) => void
   setSettings: (s: Settings) => void
   setSettingsOpen: (open: boolean) => void
-  setSettingsFocus: (focus: 'git-accounts' | null) => void
-  openGitAccounts: () => void
+  setSettingsFocus: (focus: SettingsFocus) => void
+  openGitAccounts: (focus?: 'git-token') => void
   setWelcomeActive: (on: boolean) => void
   setOnboardingStep: (step: number) => void
   setBypassAccepted: (accepted: boolean) => void
@@ -781,7 +783,7 @@ export const useStore = create<AppState>((set, get) => ({
   setSettings: (settings) => set({ settings }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   setSettingsFocus: (settingsFocus) => set({ settingsFocus }),
-  openGitAccounts: () => set({ settingsFocus: 'git-accounts', settingsOpen: true }),
+  openGitAccounts: (focus) => set({ settingsFocus: focus ?? 'git-accounts', settingsOpen: true }),
   setWelcomeActive: (welcomeActive) => set({ welcomeActive }),
   setOnboardingStep: (onboardingStep) => set({ onboardingStep }),
   setBypassAccepted: (bypassAccepted) => set({ bypassAccepted }),
