@@ -88,6 +88,7 @@ function harness(
   cold: ClosableSession[] = []
 ): {
   verb: (args: string[], from: { tabId: string; cwd: string }) => Promise<AgentReply>
+  turnEnded: (tabId: string, reply: string) => void
   launched: Launch[]
   queued: { tabId: string; text: string; clientId?: string }[]
   closed: string[]
@@ -184,6 +185,7 @@ function harness(
     inner(args, { ...from, session: sessions.find((s) => s.tabId === from.tabId)! })
   return {
     verb,
+    turnEnded: (tabId, reply) => inner.turnEnded(tabId, { said: [], reply, at: 1 }),
     launched,
     queued,
     closed,
@@ -1186,6 +1188,66 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
       }
     ])
     expect(opened).toEqual(['b3'])
+  })
+
+  it('a session Assist messaged, answered, pressed keys in or started hands Assist its reply when that turn ends, once, so the owner hears the result without asking; a session Assist only read, a turn with no reply and a child that already reported this turn are not passed on', async () => {
+    const h = harness(
+      [...live, session('new-tab', 'claude', { sessionId: 'new-id', title: 'new-work' })],
+      {},
+      [],
+      conducting()
+    )
+    const toAssist = (): { tabId: string; said: string }[] =>
+      h.lines
+        .filter((l) => l.tabId === 'wsCond' || l.tabId === 'global')
+        .map((l) => ({
+          tabId: l.tabId,
+          said: (JSON.parse(l.line) as { message: { content: string } }).message.content
+        }))
+    const handed = (tabId: string, text: string): { tabId: string; said: string } => ({
+      tabId,
+      said: expect.stringContaining(text) as string
+    })
+
+    await h.verb(['send', 'fix-login', 'run the tests'], from('wsCond'))
+    h.turnEnded('fix', 'All tests pass.')
+    h.turnEnded('fix', 'Something later the owner asked.')
+    await h.verb(['send', CODEX_THREAD, 'check docs'], from('global'))
+    h.turnEnded('cx', 'Two links fixed.')
+    await vi.waitFor(() =>
+      expect(toAssist()).toEqual([
+        handed('wsCond', '(From the session "fix-login", id fix-id:) All tests pass.'),
+        handed('global', `(From the session "docs-links", id ${CODEX_THREAD}:) Two links fixed.`)
+      ])
+    )
+
+    await h.verb(['answer', 'fix-login', '2'], from('wsCond'))
+    h.turnEnded('fix', 'Picked option 2.')
+    await h.verb(['keys', 'fix-login', 'Enter'], from('wsCond'))
+    h.turnEnded('fix', 'Went on.')
+    await h.verb(['new', '--', 'fix it'], from('wsCond'))
+    h.turnEnded('new-tab', 'Fixed it.')
+    await vi.waitFor(() => expect(toAssist()).toHaveLength(5))
+    expect(toAssist().slice(2)).toEqual([
+      handed('wsCond', 'Picked option 2.'),
+      handed('wsCond', 'Went on.'),
+      handed('wsCond', '(From the session "new-work", id new-id:) Fixed it.')
+    ])
+
+    await h.verb(['read', 'fix-login'], from('wsCond'))
+    h.turnEnded('fix', 'Only read.')
+    await h.verb(['send', 'fix-login', 'go'], from('wsCond'))
+    h.turnEnded('fix', '')
+    h.turnEnded('fix', 'After an empty turn.')
+    await h.verb(['send', 'fix-login', 'go'], from('wsCond'))
+    await h.verb(['send', 'cond-id', 'My own report.'], from('fix'))
+    h.turnEnded('fix', 'My own report, again.')
+    await vi.waitFor(() =>
+      expect(toAssist().at(-1)).toEqual(
+        handed('wsCond', '(From the session "fix-login", id fix-id:) My own report.')
+      )
+    )
+    expect(toAssist()).toHaveLength(6)
   })
 })
 

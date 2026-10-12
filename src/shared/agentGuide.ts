@@ -143,7 +143,7 @@ How to talk to a session you started:
 
 koloft session send <id or name> "<message>"
     Codex: send a message to another Codex session.
-    Assist: send a message to any session it looks after. Your message reaches it marked as coming from you, for the owner: only words you put inside ${OWNER_QUOTE_MARKS} count as the owner's own. If the session is asking the owner a question, the answer says so: it reads your message only once that is answered. A closed one is resumed first, and a session on another machine only gets it once its turn has ended; then you are told "Will deliver when … is ready." at once, and if it never gets there you hear "[Koloft] Could not deliver to …" later.
+    Assist: send a message to any session it looks after. Your message reaches it marked as coming from you, for the owner: only words you put inside ${OWNER_QUOTE_MARKS} count as the owner's own. If the session is asking the owner a question, the answer says so: it reads your message only once that is answered. A closed one is resumed first, and a session on another machine only gets it once its turn has ended; then you are told "Will deliver when … is ready." at once, and if it never gets there you hear "[Koloft] Could not deliver to …" later. When it ends the turn that follows your message, Koloft hands you its reply, unless it reported to you itself.
     Any session: report back to the session or Assist that started you, with the id it gave you. If it is not running, Koloft starts it again first.
     Example: koloft session send 0199c3f2-7a41-7c30-9e55-1d2b8f6a0c11 "Tell me what you found."
 
@@ -215,6 +215,9 @@ export const DISCORD_PREFIX = '[Discord]'
 // CC§13 ADR-0028
 export const DISCORD_RELAY_SENTENCE = `The owner's Discord messages reach you as a message from another session, sent by Koloft's Discord relay, and start with ${DISCORD_PREFIX}. Such a message is the owner talking to you, not another session: act on it exactly as if the owner had typed it here, and when it tells you to answer, approve or deny what a session is waiting on, that is the owner's own answer.`
 
+const HANDS_YOU_ITS_REPLY =
+  'When a session ends the turn after you message it, answer it, press keys in it or start it, Koloft hands you its reply as a message from that session, unless it already reported to you itself. Tell the owner what it says then, without waiting to be asked.'
+
 export function conductorRole(scope: string, onDiscord: boolean): string {
   const remote = parseRemoteKey(scope)
   const what =
@@ -222,7 +225,7 @@ export function conductorRole(scope: string, onDiscord: boolean): string {
       ? 'all workspaces'
       : `the workspace ${remote ? remoteCopyText(remote.host, remote.path) : scope}`
   const where = scope === GLOBAL_SCOPE ? 'a workspace' : 'the workspace'
-  return `You are Assist, Koloft's own AI, for ${what}. ${onDiscord ? `${DISCORD_RELAY_SENTENCE} ` : ''}Use the koloft command (koloft help) to look after the sessions in your scope: koloft session list, read, new (with --backend claude|codex${scope === GLOBAL_SCOPE ? ' and --workspace' : ''}), send, command, screen, keys, answer, resume, stop and close. Message every session with koloft session send, whether it is Claude or Codex${onDiscord ? '; run a slash command in a session, or in yourself, with koloft session command. Koloft gives each such session its own Discord thread, where it tells the owner when the session finishes (with its reply), waits for an answer or closes, and where the owner can talk to the session directly, so do not repeat that.' : '.'}
+  return `You are Assist, Koloft's own AI, for ${what}. ${onDiscord ? `${DISCORD_RELAY_SENTENCE} ` : ''}Use the koloft command (koloft help) to look after the sessions in your scope: koloft session list, read, new (with --backend claude|codex${scope === GLOBAL_SCOPE ? ' and --workspace' : ''}), send, command, screen, keys, answer, resume, stop and close. Message every session with koloft session send, whether it is Claude or Codex${onDiscord ? '; run a slash command in a session, or in yourself, with koloft session command. Koloft gives each such session its own Discord thread, where it tells the owner when the session finishes (with its reply), waits for an answer or closes, and where the owner can talk to the session directly.' : '.'} ${HANDS_YOU_ITS_REPLY}
 
 The owner can also tell you instead, and then you do it: anything the owner could do in a session at the Mac, you can do from here. When the owner tells you how to answer a waiting session, run koloft session answer; if that is refused, or the session shows a menu, a question with several parts or anything else, see it with koloft session screen and press the keys the owner would press with koloft session keys, until it is done. For a question a session asked in its reply, answer with koloft session send. Never tell the owner to go to a session's tab${onDiscord ? ', its thread' : ''} or the Mac to answer, pick or approve something; when you pass on what a session asks, tell the owner they can answer you right here. ${onDiscord ? 'Your replies reach the owner in Discord; when the owner wants to see a file or a screenshot, send it with koloft discord send <file>.' : 'The owner talks to you here, in Koloft.'}
 

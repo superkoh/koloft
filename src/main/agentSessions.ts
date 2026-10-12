@@ -380,8 +380,9 @@ async function startSibling(
   args: NewSessionArgs,
   me: SessionInfo,
   workspace: string,
-  conductorTab?: string
+  conductor?: { tabId: string; replyOwed: Map<string, string> }
 ): Promise<AgentReply> {
+  const conductorTab = conductor?.tabId
   const backend = args.backend ?? me.backendId
   if (backend === 'codex' && args.name !== undefined) return refused(CODEX_HAS_NO_NAME, EXIT_USAGE)
   const caller: SessionCaller = {
@@ -409,8 +410,9 @@ async function startSibling(
   })
   if (!tabId) return refused('koloft session new: Koloft could not start the session.')
   d.startedSessions.started(tabId, me.sessionId)
-  if (conductorTab) {
-    d.started(conductorTab, tabId, name ?? 'a Codex session', workspace, backend)
+  if (conductor) {
+    conductor.replyOwed.set(tabId, me.sessionId)
+    d.started(conductor.tabId, tabId, name ?? 'a Codex session', workspace, backend)
     return answered(
       `Started ${name ? `session "${name}"` : 'a Codex session'} in a new tab. "koloft session list" shows its id once it starts; reach it with koloft session send.`
     )
@@ -665,10 +667,13 @@ function isMe(
   )
 }
 
-export function sessionVerb(d: SessionVerbDeps): AgentVerb {
+export type SessionVerb = AgentVerb & { turnEnded(tabId: string, turn: Turn): void }
+
+export function sessionVerb(d: SessionVerbDeps): SessionVerb {
   const opening = new Map<string, Promise<string | null>>()
   let queued = 0
   let lined = 0
+  const replyOwed = new Map<string, string>()
 
   const openReady = (t: Target, until: number): Promise<string | null> => {
     const inflight = opening.get(t.key)
@@ -685,10 +690,23 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
     t: Target,
     text: string,
     line: string | undefined,
-    until: number
+    until: number,
+    assist?: string
   ): Promise<string> => {
     const tab = t.tabId ?? (await openReady(t, until))
     if (!tab) throw new Error(`${t.name} was resumed but did not get ready in time.`)
+    const sent = await sendInto(t, tab, text, line, until)
+    if (assist) replyOwed.set(tab, assist)
+    return sent
+  }
+
+  const sendInto = async (
+    t: Target,
+    tab: string,
+    text: string,
+    line: string | undefined,
+    until: number
+  ): Promise<string> => {
     if (t.backend === 'codex') {
       await d.queue(tab, text, `koloft-conductor-${++queued}`)
       return `Sent to ${t.name}.`
@@ -709,7 +727,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
     verb: string,
     t: Target,
     text: string,
-    caller: AgentCaller,
+    caller: Pick<AgentCaller, 'tabId' | 'session'>,
     fromAssist: boolean
   ): Promise<AgentReply> => {
     const typed = t.backend === 'claude' && t.remote
@@ -723,16 +741,32 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
         EXIT_USAGE
       )
     const busy = typed && t.tabId !== undefined && !(await d.ready(t.tabId, 0, true))
+    const assist = fromAssist ? caller.session.sessionId : undefined
     if (t.tabId && !busy) {
       // CC§14
       const asking = fromAssist && d.asking(t.tabId)
-      const sent = await sendNow(t, text, line, Date.now() + REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS)
+      const sent = await sendNow(
+        t,
+        text,
+        line,
+        Date.now() + REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS,
+        assist
+      )
       return answered(asking ? `${sent} ${readsItAfterTheQuestion(t.name)}` : sent)
     }
-    void sendNow(t, text, line, Date.now() + WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS).catch(
+    void sendNow(t, text, line, Date.now() + WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS, assist).catch(
       (error: unknown) => d.undelivered(caller.tabId, t, errorText(error))
     )
     return answered(`Will deliver when ${t.name} is ready.`)
+  }
+
+  const turnEnded = (tabId: string, turn: Turn): void => {
+    const assist = replyOwed.get(tabId)
+    replyOwed.delete(tabId)
+    const to = assist === undefined ? undefined : d.conductorOf(assist)
+    const session = d.allSessions().find((s) => s.tabId === tabId)
+    if (!to || !session || !turn.reply.trim()) return
+    void deliver('send', to, sessionSays(session, turn.reply), { tabId, session }, false)
   }
 
   const conductorAct = async (
@@ -785,6 +819,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
     if (sub === 'command') return answered(await d.command(caller.tabId, t, text))
     if (sub === 'keys' && t.tabId) {
       await d.press(t.tabId, keysFor(tail))
+      replyOwed.set(t.tabId, caller.session.sessionId)
       return answered(
         `Pressed ${text} in ${t.name}. See what it shows now with koloft session screen ${asArgument(ref)}.`
       )
@@ -793,9 +828,9 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       if (!t.tabId)
         return refused(`koloft session answer: ${t.name}: ${SHOWS_NOTHING_WHILE_CLOSED}`)
       const error = await d.answer(t.tabId, text)
-      return error
-        ? refused(`koloft session answer: ${t.name}: ${error} ${seeAndPress(ref)}`)
-        : answered(`Answered ${t.name}.`)
+      if (error) return refused(`koloft session answer: ${t.name}: ${error} ${seeAndPress(ref)}`)
+      replyOwed.set(t.tabId, caller.session.sessionId)
+      return answered(`Answered ${t.name}.`)
     }
     if (sub === 'resume' && !text) {
       if (t.tabId) return answered(`${t.name} is already open.`)
@@ -805,7 +840,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
     return deliver(sub, t, ownerSays(text), caller, true)
   }
 
-  return async (args, caller): Promise<AgentReply> => {
+  const verb: AgentVerb = async (args, caller): Promise<AgentReply> => {
     const [sub, ...rest] = args
     const ws = d.workspaceOf(caller.tabId)
     const sessionsIn = (workspace: string): SessionInfo[] =>
@@ -845,7 +880,10 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
         const target = startableWorkspace(where ?? scope, d.pinnedWorkspaces())
         if (!target.ok) return refused(`koloft session new: ${target.error}`)
         if (scope !== GLOBAL_SCOPE && target.value !== scope) return refused(ONLY_YOUR_WORKSPACE)
-        return startSibling(d, parsed.value, caller.session, target.value, caller.tabId)
+        return startSibling(d, parsed.value, caller.session, target.value, {
+          tabId: caller.tabId,
+          replyOwed
+        })
       }
       if (parsed.value.backend !== undefined) return refused(BACKEND_IS_FOR_CONDUCTORS, EXIT_USAGE)
       if (where === undefined)
@@ -870,6 +908,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       const text = tail.join(' ').trim()
       if (!ref || !text) return refused(SEND_USAGE, EXIT_USAGE)
       const to = starter(ref)
+      if (d.conductorOf(ref)) replyOwed.delete(caller.tabId)
       if (to) return deliver('send', to, sessionSays(caller.session, text), caller, false)
       if (caller.session.backendId !== 'codex')
         return refused(`koloft session send: ${CLAUDE_USES_SEND_MESSAGE}`)
@@ -904,6 +943,8 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
     }
     return refused(SESSION_USAGE, EXIT_USAGE)
   }
+
+  return Object.assign(verb, { turnEnded })
 }
 
 export interface WorkspaceVerbDeps {

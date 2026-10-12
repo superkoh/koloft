@@ -430,6 +430,7 @@ const sessionBackends = new SessionBackends({
     slash.turnEnded(tabId, turn)
     discordRelay?.turnEnded(tabId, turn)
     discordNotices?.turnEnded(tabId, turn.reply)
+    sessionCommand.turnEnded(tabId, turn)
   },
   prompted: consumeOutletDedupe,
   bound: (tabId, key) => {
@@ -1165,6 +1166,7 @@ const sessionDeps: SessionVerbDeps = {
   },
   screen: screenOf
 }
+const sessionCommand = sessionVerb(sessionDeps)
 
 const agentRequests = new AgentRequests({
   verbs: {
@@ -1179,7 +1181,7 @@ const agentRequests = new AgentRequests({
     ),
     ...notesAndWorkbenchVerbs,
     note: unlessWorkspacelessConductor(notesAndWorkbenchVerbs.note),
-    session: sessionVerb(sessionDeps),
+    session: sessionCommand,
     workspace: workspaceVerb({
       conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
       sidebar: () => workspaceMgr?.rows() ?? []
