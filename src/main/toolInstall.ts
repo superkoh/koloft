@@ -15,6 +15,14 @@ export function pathWithInstallDir(pathVar: string | undefined, home: string): s
   return (dirs.includes(installDir) ? dirs : [...dirs, installDir]).join(':')
 }
 
+export function pathWithDirFirst(pathVar: string | undefined, dir: string): string {
+  return [dir, ...(pathVar ?? '').split(':').filter((d) => d && d !== dir)].join(':')
+}
+
+export function pathWithDirLast(pathVar: string | undefined, dir: string): string {
+  return [...(pathVar ?? '').split(':').filter((d) => d && d !== dir), dir].join(':')
+}
+
 export function installLine(backend: BackendId, testInstaller?: string): string {
   const run = testInstaller ? `${shq(testInstaller)} ${backend}` : OFFICIAL_INSTALLER[backend]
   return `${run}; [ -x "$HOME/.local/bin/${backend}" ] && exit`

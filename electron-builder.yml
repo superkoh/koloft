@@ -24,7 +24,7 @@ electronLanguages:
   - zh_CN
 
 # Downloads the pinned gh (GitHub CLI) and git into vendor/, checksum-checked, so a new
-# Mac has both without installing anything (scripts/gh-release.json, git-release.json).
+# Mac has both without installing anything (scripts/vendor-release.json pins them).
 beforePack: scripts/fetch-vendor.cjs
 
 extraResources:

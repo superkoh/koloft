@@ -662,24 +662,6 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     await expect(page.locator(WORKBENCH.readingBody)).toBeVisible()
   })
 
-  // PLATFORM§1
-  test('WB-C13b: on a Mac without Apple’s command line tools the git Koloft ships runs, so a local non-git Changes says so and asks to install nothing', async ({
-    env
-  }) => {
-    env.launchEnv.KOLOFT_TEST_CLT = 'missing'
-    const app = await launchApp(env)
-    try {
-      const page = await app.firstWindow()
-      await page.waitForLoadState('domcontentloaded')
-      await waitBooted(page)
-      await openChanges(page)
-      await expect(page.locator(CV.empty)).toHaveText('Not a git repository.', { timeout: 30_000 })
-      await expect(page.locator(CV.banner)).toHaveCount(0)
-    } finally {
-      await app.close().catch(() => {})
-    }
-  })
-
   test('WB-C14: a deleted worktree shows the placeholder, keeps other tabs readable, and stops polling', async ({
     app,
     page,

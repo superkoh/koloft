@@ -28,7 +28,7 @@ NO_UPDATE_NOTIFIER=1 exec ${shq(path.join(dir, 'node'))} ${shq(unpackedModulePat
 `
 }
 
-function writeExecutable(file: string, text: string): void {
+export function writeExecutable(file: string, text: string): void {
   fs.writeFileSync(file, text, { mode: 0o755 })
   fs.chmodSync(file, 0o755)
 }

@@ -4,12 +4,11 @@ import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('electron', () => ({ app: {} }))
+vi.mock('electron', () => ({ app: { getPath: () => os.tmpdir() } }))
 
-const { pathWithDirLast } = await import('../../src/main/bundledGh')
-const { anotherGitIn, gitLauncherScript, gitSystemConfig, pathWithDirFirst } =
-  await import('../../src/main/bundledGit')
-const { dirsAnotherGitMayBeIn } = await import('../../src/main/commandLineTools')
+const { pathWithDirLast } = await import('../../src/main/toolInstall')
+const { gitLauncherScript, gitMissing, gitSystemConfig } =
+  await import('../../src/main/bundledTools')
 
 let dir: string
 
@@ -29,28 +28,19 @@ function executable(file: string, text: string): string {
 
 describe('the bundled gh', () => {
   it('stays behind every other folder, even ones the login shell adds after it, so a user’s own gh wins', () => {
-    const fallback = '/k/fallback-bin'
-    const atStart = pathWithDirLast('/usr/bin:/bin', fallback)
-    const loginAdded = `${atStart}:/opt/homebrew/bin`
-    expect(pathWithDirLast(loginAdded, fallback).split(':')).toEqual([
+    const shipped = '/k/gh/bin'
+    const loginAdded = `${pathWithDirLast('/usr/bin:/bin', shipped)}:/opt/homebrew/bin`
+    expect(pathWithDirLast(loginAdded, shipped).split(':')).toEqual([
       '/usr/bin',
       '/bin',
       '/opt/homebrew/bin',
-      fallback
+      shipped
     ])
   })
 })
 
 describe('the bundled git', () => {
-  it('goes before /usr/bin, whose git is only Apple’s install stub on a Mac without the tools', () => {
-    expect(pathWithDirFirst('/usr/bin:/k/git-bin:/bin', '/k/git-bin').split(':')).toEqual([
-      '/k/git-bin',
-      '/usr/bin',
-      '/bin'
-    ])
-  })
-
-  it('counts a git in any folder but /usr/bin as the user’s own', () => {
+  it('is needed only when no folder but /usr/bin, whose git is Apple’s install stub, holds a git', () => {
     const own = path.join(dir, 'own')
     executable(path.join(own, 'git'), '#!/bin/sh\n')
     const empty = path.join(dir, 'empty')
@@ -58,8 +48,8 @@ describe('the bundled git', () => {
     const prev = process.env.KOLOFT_TEST_CLT
     process.env.KOLOFT_TEST_CLT = 'missing'
     try {
-      expect(anotherGitIn(dirsAnotherGitMayBeIn(`/usr/bin:${empty}`))).toBe(false)
-      expect(anotherGitIn(dirsAnotherGitMayBeIn(`/usr/bin:${empty}:${own}`))).toBe(true)
+      expect(gitMissing(`/usr/bin:${empty}`)).toBe(true)
+      expect(gitMissing(`/usr/bin:${empty}:${own}`)).toBe(false)
     } finally {
       if (prev === undefined) delete process.env.KOLOFT_TEST_CLT
       else process.env.KOLOFT_TEST_CLT = prev

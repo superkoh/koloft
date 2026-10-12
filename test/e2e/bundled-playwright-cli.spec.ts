@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { test, expect } from './helpers/app'
-import { startSessionIn, terminalText, waitBooted, wsRows } from './helpers/p1'
+import { agentShell, startSessionIn, waitBooted, wsRows } from './helpers/p1'
 import { startEchoServer } from './helpers/fixtureServer'
 
 const A_CLI_STEP_FINISHES_WITHIN_MS = 60_000
@@ -24,20 +24,7 @@ test.describe('the playwright-cli Koloft ships, run from a Claude Code session o
       const tabId = (await wsRows(page, 'ws-a').getAttribute('data-tab-id'))!
       const title = `bundled-${Date.now().toString(36)}`
       const url = server.page('/bundled', `<title>${title}</title><body>bundled cli</body>`)
-      let steps = 0
-      const run = async (command: string): Promise<string> => {
-        steps += 1
-        await page.evaluate(
-          ([id, line]) => window.api.terminal.write(id, line),
-          [tabId, `/sh ${command}\r`]
-        )
-        await expect
-          .poll(async () => (await terminalText(page, tabId)).split('sh exit=').length - 1, {
-            timeout: A_CLI_STEP_FINISHES_WITHIN_MS
-          })
-          .toBe(steps)
-        return terminalText(page, tabId)
-      }
+      const run = agentShell(page, tabId, A_CLI_STEP_FINISHES_WITHIN_MS)
 
       expect(
         await run("command -v playwright-cli | grep -c '/commands/[0-9a-f]*/bin/playwright-cli$'")

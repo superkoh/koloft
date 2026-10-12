@@ -1511,7 +1511,7 @@ Gateway (the live connection that pushes events):
   reach the shared file renames onto `fs.realpathSync(link)` instead.
 - Measured 2026-10-11 on macOS 27.0.1 with Node 24.13.0, in a scratch folder.
 
-## §44 gh (GitHub CLI): install, sign-in and git credentials
+## §44 gh (GitHub CLI) shipped inside an app
 
 - **Install on a Mac.** gh's own docs list only Homebrew and the release page's zip /
   `.pkg` for macOS (the `.pkg` "unsigned"); there is no official one-line installer
@@ -1523,56 +1523,7 @@ Gateway (the live connection that pushes events):
   hosts" and `gh api user` exited 4, yet `gh auth token` printed the token a Homebrew gh
   had stored — read by a second gh binary at another path with no keychain prompt. So a gh
   shipped in an app shares the user's gh login. (§32 has the scratch-`HOME` case.)
-- **`gh auth login --web` without a terminal** asks nothing, prints the one-time code and
-  "Open this URL to continue in your web browser: https://github.com/login/device", opens
-  no browser, and by default copies the code to the clipboard (config `clipboard`
-  defaults to enabled; `--clipboard=false` stops it).
-- **In a terminal**, `gh auth login --web -h github.com -p https` first asks "Authenticate
-  Git with your GitHub credentials? (Y/n)". With `GH_PROMPT_DISABLED=1` in the same
-  terminal it asks nothing and prints only the code and the URL line, and writes no
-  `~/.gitconfig`. In the source (`login.go`, `login_flow.go`) the question is asked only
-  when gh can prompt and the protocol is https; `-p`/`--git-protocol` writes
-  `git_protocol` for the host into gh's config, so leaving it out keeps a user's ssh
-  setting.
-- **What "Yes" does (source, `shared/git_credential.go`, `gitcredentials/*.go`).** gh reads
-  `git config credential.https://github.com.helper`, then `credential.helper`. If either
-  is set — and Apple's git sets `helper = osxkeychain` in
-  `/Library/Developer/CommandLineTools/usr/share/git-core/gitconfig` — gh runs
-  `git credential reject` with only `protocol=https host=github.com`, then `approve` with
-  its own user and token. git's osxkeychain helper (2.54.0 source) deletes every matching
-  item when no username is given. With no helper set, `gh auth setup-git` writes, per
-  host (github.com and gist.github.com), an empty `helper =` (cutting the chain) then
-  `helper = !<quoted absolute gh path> auth git-credential`, appended after any
-  `includeIf`. Run in Docker (git 2.39.5, a `store` helper standing in for the keychain,
-  fake tokens): the reject removed both stored github.com accounts; after `setup-git` an
-  `includeIf`'d folder's own helper no longer answered.
-- **`gh auth git-credential get`** answers only for `protocol=https`, with the active
-  account's token; a request naming another username gets nothing; with `GH_TOKEN` set it
-  answers `x-access-token` and that token whatever the username. `store` and `erase` do
-  nothing. `gh auth token -u <user>` prints a given account's token; `gh auth switch`
-  changes the active account for every caller.
-- **Helpers added through `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_n` / `GIT_CONFIG_VALUE_n`**
-  come after every config file (`git config --show-scope` lists them as `command`), so an
-  appended helper is asked last; git stops at the first helper that gives a username and
-  password. After a successful push git hands the credential to every helper in the
-  chain (`credential.c`), so an earlier keychain helper stores what a later one supplied.
-  SSH remotes never consult a credential helper.
-- **`gh auth status --json hosts`** exits 0 and prints
-  `{"hosts":{"github.com":[{state, active, host, login, tokenSource, gitProtocol}, …]}}`,
-  one entry per account, the active one first (`state` is `success`, or `error` with an
-  `error` string when the token is refused); no token is printed. With `GH_TOKEN` set it
-  adds an entry whose `tokenSource` is `GH_TOKEN`. With no account it prints
-  `{"hosts":{}}` and the "not logged into any GitHub hosts" line on stderr, still exit 0.
-  It checks each account over the network, so it is not free to call; any account that
-  fails that check (offline, a revoked second account) makes plain `gh auth status` exit
-  non-zero.
-- **`gh auth token -h github.com` answers "is a login stored" without the network**: in a
-  container with no network it exited 0 with one stored account or with `GH_TOKEN` set, and
-  1 ("no oauth token found for github.com") with none. It prints the token, so its output
-  is never shown or logged.
-- Measured 2026-10-11 with gh 2.102.0 (macOS arm64 and Linux arm64 builds), git 2.39.5 in
-  Docker (node:22) with fake tokens and `store` helpers, and Apple git 2.54.0 read from
-  source; the keychain itself was not exercised.
+- Measured 2026-10-11 with gh 2.102.0 (macOS arm64 and Linux arm64 builds).
 
 ## §45 git shipped inside an app (dugite-native)
 

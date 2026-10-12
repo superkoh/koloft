@@ -309,7 +309,6 @@ export const CHANGES_MSG = {
   loading: 'Reading the change set…',
   filtered: 'No changes match the current filters.',
   notGit: 'Not a git repository.',
-  noCommandLineTools: 'Git does not work on this Mac yet: it needs Apple’s command line tools.',
   gitFailed: 'Repo too large or git unresponsive — retry.',
   bigDiff: 'Large diff not shown by default — Load diff',
   truncated: (n: number): string => `Change set too large — showing the first ${n} files.`,

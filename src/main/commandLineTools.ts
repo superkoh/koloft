@@ -1,15 +1,4 @@
-import { execFile, execFileSync } from 'child_process'
-import { osHandOffSuppressed } from './osOpen'
-
-const APPLE_INSTALLER = ['xcode-select', '--install']
-
-// PLATFORM§1
-export function commandLineToolsMissing(): Promise<boolean> {
-  if (process.env.KOLOFT_TEST_CLT === 'missing') return Promise.resolve(true)
-  return new Promise((resolve) =>
-    execFile('xcode-select', ['-p'], (err) => resolve(!!err && typeof err.code === 'number'))
-  )
-}
+import { execFileSync } from 'child_process'
 
 const APPLE_GIT_STUB_DIR = '/usr/bin'
 const USUAL_OTHER_GIT_DIRS = ['/opt/homebrew/bin', '/usr/local/bin', '/opt/local/bin']
@@ -21,7 +10,7 @@ export function dirsAnotherGitMayBeIn(pathVar: string | undefined): string[] {
 }
 
 // PLATFORM§1
-export function commandLineToolsMissingNow(): boolean {
+export function commandLineToolsMissing(): boolean {
   if (process.env.KOLOFT_TEST_CLT === 'missing') return true
   try {
     execFileSync('xcode-select', ['-p'], { stdio: 'ignore' })
@@ -29,9 +18,4 @@ export function commandLineToolsMissingNow(): boolean {
   } catch (err) {
     return typeof (err as { status?: unknown }).status === 'number'
   }
-}
-
-export function installCommandLineTools(): void {
-  if (osHandOffSuppressed(APPLE_INSTALLER.join(' '))) return
-  execFile(APPLE_INSTALLER[0], APPLE_INSTALLER.slice(1), () => {})
 }

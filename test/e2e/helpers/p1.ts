@@ -509,6 +509,27 @@ export async function waitBooted(page: Page): Promise<void> {
   )
 }
 
+export function agentShell(
+  page: Page,
+  tabId: string,
+  stepTimeoutMs: number
+): (command: string) => Promise<string> {
+  let steps = 0
+  return async (command) => {
+    steps += 1
+    await page.evaluate(
+      ([id, line]) => window.api.terminal.write(id, line),
+      [tabId, `/sh ${command}\r`]
+    )
+    await expect
+      .poll(async () => (await terminalText(page, tabId)).split('sh exit=').length - 1, {
+        timeout: stepTimeoutMs
+      })
+      .toBe(steps)
+    return terminalText(page, tabId)
+  }
+}
+
 export function terminalText(page: Page, tabId: string): Promise<string> {
   return page.evaluate((id) => {
     const term = (
