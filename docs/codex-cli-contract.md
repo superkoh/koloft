@@ -1438,3 +1438,24 @@ command line. The hook command was a small Node script that logged its stdin.
   whether both PreToolUse hooks run in one turn (each needs a model turn, so a signed-in
   account).
 
+## 28. Two app-servers starting at once in a home no app-server has used
+
+**Checked on 2026-10-12 with standalone Codex CLI 0.162.0**, no model turn. A Node script
+made a fresh temporary `CODEX_HOME` and folder, started two `codex app-server --stdio`
+in it at the same moment and sent each an `initialize`; six rounds, then six more in a
+home where one app-server had already started and stopped first.
+
+- **Fresh home: in 4 of 6 rounds one of the two exited with code 1 at once**, never
+  answering `initialize`, its stderr
+  `Error: failed to initialize sqlite state runtime under <CODEX_HOME>: failed to initialize state runtime at <CODEX_HOME>`.
+  The other started and answered. A home used once before: 0 of 6.
+- **`codex login` leaves a home in that fresh state**: after `codex login --with-api-key`
+  in an empty `CODEX_HOME` it held only `auth.json`, `log/codex-login.log` and `tmp/arg0`.
+  So a Codex account Koloft has just signed in is such a home until an app-server runs
+  in it.
+- Seen in Koloft the same day (`discord-real-smoke.spec.ts`, real Codex, an account home
+  holding only a copied `auth.json`): the second app-server Koloft starts to ask
+  `hooks/list` for an Assist's gate (section 27) exited this way 27–116 ms after it
+  started, while another app-server of Koloft's started in the same home; a second ask
+  right after found the gate as usual.
+

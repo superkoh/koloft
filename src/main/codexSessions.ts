@@ -448,7 +448,8 @@ export class CodexSessions {
       }
     }
     if (this.gateTrustedAt.has(file) && this.gateTrustedAt.get(file) === changedAt()) return
-    await this.askGateTrust(launch, configFile)
+    // CODEX§28
+    await this.askGateTrust(launch, configFile).catch(() => this.askGateTrust(launch, configFile))
     this.gateTrustedAt.set(file, changedAt())
   }
 
