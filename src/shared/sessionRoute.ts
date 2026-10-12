@@ -62,8 +62,10 @@ ${message.slice(0, PROMPT_MAX_CHARS_SENT)}
 >>>
 
 Reply with one JSON object and nothing else:
-{"hand": <omit for coding work; "koloft" when the message is about the Koloft app itself ("set up Discord", "turn on dark mode", "make a scheduled job"); "assist" when it asks one workspace's Assist ("ask <folder name> …"), with "workspace" set to that id>,
- "workspace": <workspace id, or null when this needs a brand-new project>,
+{"hand": <omit for work to do in a project, even when it names a workspace;
+          "koloft" when the person wants something from the Koloft app they are using — its settings and look, accounts, Discord, scheduled jobs, or how its sessions run ("set up Discord", "turn on dark mode", "why is my session slow");
+          "assist" only when the message asks or tells a workspace something ("ask <folder name> …", "tell <folder name> …"), with "workspace" set to that id>,
+ "workspace": <workspace id as a number, or null when this needs a brand-new project>,
  "machine": <only when workspace is null: "${LOCAL_MACHINE}", or the machine the person named>,
  "newFolder": <only when workspace is null: a short kebab-case English folder name, a name only, never a path>,
  "worktree": <"main" to work in the main checkout (always "main" for a folder that is not git),
