@@ -51,8 +51,8 @@ export const PINYIN_KEYS: Record<string, number> = { n: 45, i: 34, h: 4, a: 0, o
 export const PINYIN_SIMPLIFIED = 'com.apple.inputmethod.SCIM.ITABC'
 export const ABC_LAYOUT = 'com.apple.keylayout.ABC'
 
-export function selectInputSource(id: string): void {
-  osa('select-input-source', id)
+export function selectInputSource(id: string): string {
+  return osa('select-input-source', id)
 }
 
 export function currentInputSource(): string {

@@ -117,10 +117,18 @@ function inputSources() {
 }
 
 function selectInputSource(id) {
-  const match = inputSources().find((s) => s.id === id)
+  const all = inputSources()
+  const steps = []
+  for (const s of all)
+    if (id.startsWith(s.id + '.') || s.id === id)
+      steps.push(`enable ${s.id}=${$.TISEnableInputSource(s.source)}`)
+  const match = all.find((s) => s.id === id)
   if (!match) throw new Error('no input source ' + id)
-  $.TISEnableInputSource(match.source)
-  return String($.TISSelectInputSource(match.source))
+  delay(0.5)
+  steps.push(`select=${$.TISSelectInputSource(match.source)}`)
+  delay(0.5)
+  steps.push(`now=${currentInputSource()}`)
+  return steps.join(' ')
 }
 
 function currentInputSource() {

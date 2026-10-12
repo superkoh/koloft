@@ -200,7 +200,7 @@ test.describe('a real Mac screen: keys, mouse, Dock and banners as macOS itself 
       )
     }
     try {
-      selectInputSource(PINYIN_SIMPLIFIED)
+      fs.writeFileSync(testInfo.outputPath('0-select.txt'), selectInputSource(PINYIN_SIMPLIFIED))
       await page.waitForTimeout(1000)
       realType('nihao')
       await page.waitForTimeout(800)
