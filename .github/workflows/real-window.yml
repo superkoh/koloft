@@ -27,6 +27,8 @@ jobs:
 
       - run: node node_modules/electron/install.js
 
+      - run: npm run rebuild
+
       - run: npm run build
 
       - name: What this Mac lets a test do
