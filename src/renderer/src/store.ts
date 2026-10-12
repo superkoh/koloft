@@ -96,6 +96,7 @@ interface AppState {
   attention: AttentionEvent[]
   settings: Settings
   settingsOpen: boolean
+  settingsFocus: 'git-accounts' | null
   welcomeActive: boolean
   onboardingStep: number
   bypassAccepted: boolean | null
@@ -175,6 +176,8 @@ interface AppState {
   setAttention: (pending: AttentionEvent[]) => void
   setSettings: (s: Settings) => void
   setSettingsOpen: (open: boolean) => void
+  setSettingsFocus: (focus: 'git-accounts' | null) => void
+  openGitAccounts: () => void
   setWelcomeActive: (on: boolean) => void
   setOnboardingStep: (step: number) => void
   setBypassAccepted: (accepted: boolean) => void
@@ -469,6 +472,7 @@ export const useStore = create<AppState>((set, get) => ({
   attention: [],
   settings: DEFAULT_SETTINGS,
   settingsOpen: false,
+  settingsFocus: null,
   welcomeActive: false,
   onboardingStep: 1,
   bypassAccepted: null,
@@ -776,6 +780,8 @@ export const useStore = create<AppState>((set, get) => ({
   setAttention: (attention) => set({ attention }),
   setSettings: (settings) => set({ settings }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  setSettingsFocus: (settingsFocus) => set({ settingsFocus }),
+  openGitAccounts: () => set({ settingsFocus: 'git-accounts', settingsOpen: true }),
   setWelcomeActive: (welcomeActive) => set({ welcomeActive }),
   setOnboardingStep: (onboardingStep) => set({ onboardingStep }),
   setBypassAccepted: (bypassAccepted) => set({ bypassAccepted }),
