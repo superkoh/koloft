@@ -1553,3 +1553,23 @@ Gateway (the live connection that pushes events):
   copy, the mac zip (`zip -y`) and the in-app updater (`cp -R`) keep the symlinks.
 - Measured 2026-10-11 on macOS 27.0 with a temp `HOME` and `GIT_CONFIG_NOSYSTEM=1`, https
   against github.com's public `octocat/Hello-World`.
+
+## §46 git includeIf gitdir: and credential helper quoting
+
+- **`gitdir:` needs two lines per repository.** `includeIf "gitdir:<real>/.git"` (no
+  trailing slash) matches the main checkout and its subfolders, also when reached through
+  a symlink, but not a linked worktree; `gitdir:<real>/.git/` (trailing slash) matches only
+  the linked worktrees. The two together cover the whole repository and leave out a
+  repository nested inside it and every other repository. A pattern written with a
+  symlinked path never matches: it must be the real path.
+- **The repository's key.** `git rev-parse --path-format=absolute --git-common-dir` prints
+  the absolute common `.git` dir from the top, from a subfolder and from a linked
+  worktree; outside a repository it exits 128.
+- **Helper quoting.** A `credential.<url>.helper` value that is a bare absolute path with a
+  space in it never runs; `!'<path>'` runs it, and `!'<path>' bob` hands the helper
+  `$1=bob $2=get`. An empty `helper =` line first drops every helper set before it (the
+  user's own included).
+- **Other behaviour.** `git credential reject` reaches the helper as `erase`; `-c
+  user.email=…` beats the included value; a user's own `GIT_CONFIG_COUNT=1` entry plus one
+  appended `include.path` entry both load.
+- Measured 2026-10-12 with Apple git 2.54, a temp `HOME` and `GIT_CONFIG_NOSYSTEM=1`.
