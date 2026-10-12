@@ -45,6 +45,10 @@ export function dockItemCenter(appName: string): Point {
   return { x, y }
 }
 
+export function notificationApps(): string {
+  return osa('notification-apps')
+}
+
 export function bannerTexts(): string {
   return osa('banner-texts')
 }

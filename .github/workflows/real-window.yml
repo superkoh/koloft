@@ -44,6 +44,13 @@ jobs:
         env:
           KOLOFT_REAL_WINDOW: '1'
 
+      - name: PROBE what macOS did with the notifications
+        if: always()
+        run: |
+          plutil -p ~/Library/Preferences/com.apple.ncprefs.plist > ncprefs.txt 2>&1 || true
+          log show --last 10m --style compact --predicate 'subsystem BEGINSWITH "com.apple.UserNotifications" OR process == "NotificationCenter" OR process == "usernoted"' > notif-log.txt 2>&1 || true
+          grep -i -n electron notif-log.txt | tail -60 || true
+
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -51,3 +58,5 @@ jobs:
           path: |
             test-results/real-window
             probe-screen.png
+            ncprefs.txt
+            notif-log.txt

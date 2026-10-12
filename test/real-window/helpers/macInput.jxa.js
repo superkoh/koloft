@@ -9,8 +9,6 @@ const LEFT_UP = 2
 const MOUSE_MOVED = 5
 const LEFT_DRAGGED = 6
 const CLICK_STATE_FIELD = 1
-const AX_POINT = 1
-const AX_SIZE = 2
 const DRAG_STEPS = 20
 const STEP_SECONDS = 0.02
 
@@ -92,17 +90,26 @@ function dockItem(appName) {
   throw new Error('no Dock item named ' + appName)
 }
 
-function axStruct(element, name, type) {
-  const out = Ref()
-  $.AXValueGetValue(attribute(element, name), type, out)
-  return out[0]
+function axNumbers(element, name) {
+  const text = ObjC.unwrap(ObjC.castRefToObject(attribute(element, name)).description)
+  return [...text.matchAll(/[xywh]:(-?[\d.]+)/g)].map((m) => Number(m[1]))
 }
 
 function dockItemCenter(appName) {
   const item = dockItem(appName)
-  const p = axStruct(item, 'AXPosition', AX_POINT)
-  const s = axStruct(item, 'AXSize', AX_SIZE)
-  return `${p.x + s.width / 2} ${p.y + s.height / 2}`
+  const [x, y] = axNumbers(item, 'AXPosition')
+  const [w, h] = axNumbers(item, 'AXSize')
+  return `${x + w / 2} ${y + h / 2}`
+}
+
+function notificationApps() {
+  const apps = $.NSWorkspace.sharedWorkspace.runningApplications
+  const out = []
+  for (let i = 0; i < apps.count; i++) {
+    const id = ObjC.unwrap(apps.objectAtIndex(i).bundleIdentifier)
+    if (typeof id === 'string' && /notification/i.test(id)) out.push(id)
+  }
+  return out.join(' ')
 }
 
 function run(argv) {
@@ -114,6 +121,7 @@ function run(argv) {
   if (command === 'drag') return drag(n[0], n[1], n[2], n[3])
   if (command === 'dock-badge') return string(dockItem(rest[0]), 'AXStatusLabel') ?? ''
   if (command === 'dock-item-center') return dockItemCenter(rest[0])
+  if (command === 'notification-apps') return notificationApps()
   if (command === 'banner-texts') {
     const center = processElement('com.apple.notificationcenterui')
     return center === null ? '' : texts(center, 12, []).join('\n')

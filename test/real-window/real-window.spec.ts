@@ -20,6 +20,7 @@ import {
   bringFinderToFront,
   dockBadgeDrawn,
   dockItemCenter,
+  notificationApps,
   realClick,
   realDrag,
   realKey,
@@ -63,6 +64,7 @@ const UNPACKAGED_BUILD_RUNS_AS_ELECTRON_APP = 'Electron'
 const DOCK_NAME = UNPACKAGED_BUILD_RUNS_AS_ELECTRON_APP
 const palette = (page: Page) => page.locator('.modal.palette')
 const DRAG_BY = { x: 160, y: 90 }
+const ROOM_TO_DRAG_IN = { x: 40, y: 60, width: 760, height: 520 }
 
 async function sessionInWsA(page: Page): Promise<void> {
   await waitBooted(page)
@@ -105,6 +107,9 @@ test.describe('a real Mac screen: keys, mouse, Dock and banners as macOS itself 
     shown: { app, page }
   }, testInfo) => {
     await sessionInWsA(page)
+    await app.evaluate(({ BrowserWindow }, bounds) => {
+      BrowserWindow.getAllWindows()[0].setBounds(bounds)
+    }, ROOM_TO_DRAG_IN)
     const before = await windowBounds(app)
     const from = await bareScreenPointOf(app, page.locator('.center-top'))
     realDrag(from, { x: from.x + DRAG_BY.x, y: from.y + DRAG_BY.y })
@@ -139,6 +144,14 @@ test.describe('a real Mac screen: keys, mouse, Dock and banners as macOS itself 
         app.evaluate(() => (globalThis as { __koloftOsNotifCount?: number }).__koloftOsNotifCount)
       )
       .toBe(1)
+    for (let i = 0; i < 6; i++) {
+      screenshot(testInfo.outputPath(`after-turn-${i}.png`))
+      fs.appendFileSync(
+        testInfo.outputPath('banner-probe.txt'),
+        `${i}: apps=[${notificationApps()}] texts=[${bannerTexts()}]\n`
+      )
+      await page.waitForTimeout(700)
+    }
     await expect.poll(() => bannerTexts(), { timeout: 30_000 }).toContain(FAKE_SESSION_TITLE)
     expect(bannerTexts()).toContain('turn done — your move · ws-a')
     screenshot(testInfo.outputPath('banner.png'))
