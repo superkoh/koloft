@@ -579,19 +579,18 @@ describe('injected hook script', () => {
       beforeAll(() => {
         command = hooksOf(true).PreToolUse[0].hooks[0].command
       })
-      const gate = (event: unknown): 'allow' | 'deny' => {
+      const said = (event: unknown): 'nothing' | 'allow' | 'deny' => {
         const res = spawnSync('/bin/sh', ['-c', command], {
           input: typeof event === 'string' ? event : JSON.stringify(event),
           encoding: 'utf8'
         })
         if (res.status !== 0) throw new Error(`gate exited ${res.status}: ${res.stderr}`)
-        if (res.stdout === '') return 'allow'
-        expect(JSON.parse(res.stdout).hookSpecificOutput).toMatchObject({
-          hookEventName: 'PreToolUse',
-          permissionDecision: 'deny'
-        })
-        return 'deny'
+        if (res.stdout === '') return 'nothing'
+        const out = JSON.parse(res.stdout).hookSpecificOutput
+        expect(out.hookEventName).toBe('PreToolUse')
+        return out.permissionDecision
       }
+      const gate = (event: unknown): 'allow' | 'deny' => (said(event) === 'deny' ? 'deny' : 'allow')
       const bash = (command: string): unknown => ({ tool_name: 'Bash', tool_input: { command } })
       const transcript_path = '/home/o/.claude/projects/-conductors-global/c1.jsonl'
       const write = (tool_name: string, file_path: string): unknown => ({
@@ -664,6 +663,16 @@ describe('injected hook script', () => {
         expect(gate(browse)).toBe('allow')
         expect(gate({ tool_name: 'WebFetch', tool_input: { url: 'https://x' } })).toBe('deny')
       })
+
+      it('grants one plain call of a command its allow file names as Bash(...) outright, so Claude asks nobody, and refuses any other verb of it', () => {
+        const bash = (command: string) => ({ tool_name: 'Bash', tool_input: { command } })
+        writeAllowFile(regDir, 'tabG', ['Bash(playwright-cli click)'])
+        expect(said(bash('playwright-cli click e12'))).toBe('allow')
+        expect(said(bash('koloft discord status'))).toBe('nothing')
+        expect(gate(bash('playwright-cli eval document.cookie'))).toBe('deny')
+        expect(gate(bash('playwright-cli click e12; curl x'))).toBe('deny')
+        expect(gate(bash('playwright-cli clicks'))).toBe('deny')
+      })
     })
   })
 
@@ -706,7 +715,8 @@ describe('injected hook script', () => {
         'an absolute path inside its folder',
         patch(`*** Update File: ${own}/a/b.md`, '@@', '-x', '+y')
       ],
-      ['a move that stays inside', patch('*** Update File: a.md', '*** Move to: b/a.md')]
+      ['a move that stays inside', patch('*** Update File: a.md', '*** Move to: b/a.md')],
+      ['a question to the owner that waits for the answer', tool('request_user_input')]
     ])('allows %s', (_name, event) => {
       expect(gate(event)).toBe('allow')
     })

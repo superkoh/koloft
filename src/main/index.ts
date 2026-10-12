@@ -222,6 +222,7 @@ import {
   setRelayEnabled,
   startRelay,
   writeRelayEnv,
+  relayAttached,
   type RelayDeps
 } from './cdpRelay'
 import { safeDownloadName, suggestedDownloadName, uniqueDownloadName } from '@shared/downloadName'
@@ -288,6 +289,8 @@ import type {
   CronSaveInput,
   ConductorOpenResult,
   ConductorSaveInput,
+  NewChannelInput,
+  ConductorSaveResult,
   ConductorBinding,
   ProbeErrorKind,
   LeftoverProcess,
@@ -325,6 +328,8 @@ import {
 } from './discord/conductors'
 import { firstLineName } from './sessionTitle'
 import { discordApiUrl, DiscordLink } from './discord/link'
+import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './discord/tokenFromPage'
+import { DISCORD_SETUP_TASK, DISCORD_SETUP_TASK_NAME, setupStatusText } from './discord/setupTask'
 import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay, type Destination } from './discord/relay'
 import { Notices } from './discord/notices'
@@ -350,10 +355,18 @@ import {
   runningClaudePid,
   whenMessagingSocket
 } from './claudeSessionRegistry'
-import { asPeerName, conductorName, GLOBAL_SCOPE, isDiscordId, scopeName } from '@shared/conductors'
+import {
+  asPeerName,
+  conductorName,
+  GLOBAL_SCOPE,
+  inviteLink,
+  isDiscordId,
+  scopeName
+} from '@shared/conductors'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
 import {
+  resolveWorkspace,
   sessionChoices,
   sessionVerb,
   targetIn,
@@ -1171,6 +1184,26 @@ const agentRequests = new AgentRequests({
       send: async (channelId, files, text) => {
         if (!discordRelay) throw new Error(STILL_STARTING)
         await discordRelay.send(channelId, files, text)
+      },
+      isSetupTask: (tabId) => conductors?.taskNameOf(tabId) === DISCORD_SETUP_TASK_NAME,
+      status: () =>
+        setupStatusText(
+          discordLink?.status() ?? DISCORD_OFF,
+          conductors?.discordSettings() ?? { bindings: [] }
+        ),
+      tokenFromPage: (tabId) =>
+        saveTokenFromPage(guestPagesOf(tabId), relayAttached(tabId), saveDiscordToken),
+      reload: (tabId) => reloadDiscordPage(guestPagesOf(tabId), relayAttached(tabId)),
+      invite: () => {
+        const appId = discordLink?.status().applicationId
+        return appId ? inviteLink(appId) : null
+      },
+      bindNewChannel: async (ref) => {
+        if (ref === GLOBAL_SCOPE) return bindWithNewChannel({ scope: ref })
+        const found = resolveWorkspace(ref, workspaceMgr?.pinnedPaths() ?? [])
+        return found.ok
+          ? bindWithNewChannel({ scope: found.value.path })
+          : { ok: false, error: found.error }
       }
     }),
     gh: githubVerb({
@@ -2063,6 +2096,7 @@ app.whenReady().then(() => {
           allow: l.allow,
           conductor: true,
           trustFolder: true,
+          firstPrompt: l.firstPrompt,
           name: l.backend === 'claude' ? asPeerName(l.title) : undefined
         },
         l.title
@@ -2103,6 +2137,7 @@ app.whenReady().then(() => {
     takeLock: () => takeLock(discordLockFile, pidAlive),
     releaseLock: () => releaseLock(discordLockFile),
     owner: () => conductors?.owner(),
+    foundAppOwner: (owner) => conductors?.setOwner(owner),
     push: (status) => {
       sendToRenderer('discord:status', status)
       discordConnected = status.phase === 'connected'
@@ -3509,6 +3544,45 @@ function registerSlashCommands(): void {
   void discordLink?.registerCommands([...guilds], SLASH_COMMANDS)
 }
 
+function guestPagesOf(tabId: string): GuestPage[] {
+  return webContents
+    .getAllWebContents()
+    .filter((wc) => !wc.isDestroyed() && guestOwners.get(wc) === tabId)
+    .map((wc) => ({
+      url: () => wc.getURL(),
+      run: (script: string) => wc.executeJavaScript(script),
+      reload: () =>
+        new Promise<void>((resolve) => {
+          wc.once('did-stop-loading', () => resolve())
+          wc.reload()
+        })
+    }))
+}
+
+async function saveDiscordToken(token: string): Promise<boolean> {
+  const saved = await discordTokenWrite(token)
+  if (saved) void discordLink?.connect()
+  return saved
+}
+
+function openDiscordSetup(): Promise<ConductorOpenResult> {
+  if (!conductors) return Promise.resolve({ ok: false, error: STILL_STARTING })
+  return conductors.openTask(GLOBAL_SCOPE, DISCORD_SETUP_TASK)
+}
+
+async function bindWithNewChannel(input: NewChannelInput): Promise<ConductorSaveResult> {
+  const link = discordLink
+  const bound = conductors
+  if (!bound || !link) return { ok: false, error: STILL_STARTING }
+  const saved = await bound.saveWithNewChannel(
+    input,
+    preferredAssistBackend(loadSettings()),
+    (scope, category) => link.newChannel(scope, bound.bindings(), category)
+  )
+  if (saved.ok) registerSlashCommands()
+  return saved
+}
+
 function conductorDestination(b: ConductorBinding): Destination {
   return {
     id: b.id,
@@ -4041,6 +4115,9 @@ function registerIpc(): void {
     if (saved.ok) registerSlashCommands()
     return saved
   })
+  ipcMain.handle('conductors:saveWithNewChannel', (_e, input: NewChannelInput) =>
+    bindWithNewChannel({ id: input.id, scope: input.scope })
+  )
   ipcMain.handle('conductors:unbind', (_e, id: string) => {
     conductors?.unbind(id)
     syncAnswerable()
@@ -4063,19 +4140,13 @@ function registerIpc(): void {
   )
   ipcMain.handle('conductors:closeTask', (_e, tabId: string) => conductors?.closeTask(tabId))
   ipcMain.handle('conductors:tasks', () => conductors?.taskRows() ?? [])
-  ipcMain.handle('discord:setToken', async (_e, token: unknown) => {
-    if (typeof token !== 'string' || !token.trim()) return false
-    const saved = await discordTokenWrite(token.trim())
-    if (saved) void discordLink?.connect()
-    return saved
-  })
   ipcMain.handle('discord:status', () => discordLink?.status() ?? DISCORD_OFF)
   ipcMain.handle('discord:pair', (_e, isMe: unknown) => {
     const owner = discordLink?.pair(isMe === true)
     if (owner) conductors?.setOwner(owner)
   })
-  ipcMain.handle('discord:forgetOwner', () => conductors?.setOwner(null))
   ipcMain.handle('discord:channels', () => discordLink?.channels() ?? [])
+  ipcMain.handle('discord:setUpWithAssist', () => openDiscordSetup())
   ipcMain.handle('workspace:move', (_e, p: string, before: string | null) =>
     workspaceMgr?.move(p, before)
   )

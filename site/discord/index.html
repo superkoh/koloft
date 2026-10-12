@@ -110,54 +110,49 @@ your Mac
         <p>
           Nothing runs on a server of ours, and you make no account with us. The words travel
           through <mark class="hl">your own private bot</mark>. A bot is an account that a program
-          uses, not a person. You make it on Discord, and Koloft signs in as it. Until you paste the
-          bot's token, nothing connects.
+          uses, not a person. You make it on Discord, and Koloft signs in as it. Until Koloft has
+          the bot's token, nothing connects.
         </p>
 
         <h2>Set it up</h2>
         <p>
-          Open Settings ▸ Discord. Until you finish, it says "Discord is not set up yet." Click
-          <code>Set up Discord…</code> and a guide walks you through seven steps. When all are done
-          it says "✓ All 7 steps done".
+          Open Settings ▸ Discord and click <code>Set up with Assist</code>. Assist opens the
+          Discord website in its Workbench browser and does each step it can; you sign in, type your
+          password and pass the "I am human" checks. Already have a bot? Assist can use it too. The
+          steps Assist takes are:
         </p>
         <ol>
           <li>
-            Make the app, on the Discord website. An app is Discord's box that holds a bot. Click
-            Open Developer Portal (Discord's website for making apps), then New Application, and
-            name it Koloft. The portal opens in your normal browser.
+            Make the app, on the Discord website. An app is Discord's box that holds a bot. Or pick
+            the app you already have.
           </li>
           <li>
-            Make the bot private and let it read messages. First set Installation ▸ Install Link to
-            None and save. Then turn Public Bot off, so only you can add it. Turn Message Content
-            Intent on: that is Discord's switch that lets a bot read what you type.
+            Get the bot's token. The token is the bot's password. Koloft reads it from the page
+            itself, so it never passes through Assist, and keeps it in the macOS Keychain (the Mac's
+            locked box for passwords). Once the token is in, Koloft turns on Message Content
+            (Discord's switch that lets a bot read what you type).
           </li>
           <li>
-            Copy the bot's token into Koloft. The token is the bot's password. Koloft keeps it in
-            the macOS Keychain (the Mac's locked box for passwords) and never shows it again.
-          </li>
-          <li>
-            Make a private server, in the Discord app. A server is your own space in Discord, with
+            Make a private server, if you have none. A server is your own space in Discord, with
             channels in it. Only you are in this one.
           </li>
           <li>
-            Add the bot to your server. Click Invite the bot. The invite asks for the rights the bot
-            needs, Manage Threads among them. If you added the bot before this, its role does not
-            get the new right on its own: open Server Settings ▸ Roles, pick the bot's role, and
-            under Permissions turn on Manage Threads.
+            Add the bot to your server. The invite asks for the rights the bot needs, making
+            channels and Manage Threads among them.
           </li>
           <li>
-            Tell Koloft who you are. Send any message in your server, like "hi". It shows up in
-            Koloft with the sender's name. Click This is me (or Not me).
-          </li>
-          <li>
-            Make a channel and bind Assist. Bind means tie the channel to Assist. Click Bind a
-            channel…, pick Global or a folder, Claude or Codex, then the channel.
+            Bind Assist to a channel. Bind means tie the channel to Assist. Koloft makes #global in
+            a category named after your bot, and a channel for each folder you pick.
           </li>
         </ol>
         <p>
-          After that, Settings ▸ Discord shows the bot token ("Stored in the macOS Keychain"), your
-          Discord account ("Only messages from this user reach Assist."), the status ("The bot reads
-          only the bound channels."), and your bindings.
+          Koloft also needs to know who you are. If the bot's app is yours alone, Koloft already
+          knows: it is the app's owner. If a team owns the app, send any message in your server,
+          like "hi". It shows up in Settings ▸ Discord with the sender's name. Click This is me (or
+          Not me). After that, Settings ▸ Discord shows your Discord account ("Only messages from
+          this user reach Assist."), the status ("The bot reads only the bound channels."), and your
+          bindings. Click Set up with Assist again any time to fix a problem: Assist skips the steps
+          that are done.
         </p>
 
         <figure class="shot" style="--ar: 1322 / 792; --ar-phone: 730 / 600">
@@ -180,8 +175,7 @@ your Mac
             <span class="tape" aria-hidden="true"></span>
           </div>
           <figcaption>
-            Settings ▸ Discord, all set up: the token in the Keychain, your account, and the bot
-            connected
+            Settings ▸ Discord, all set up: your account, and the bot connected
           </figcaption>
         </figure>
 

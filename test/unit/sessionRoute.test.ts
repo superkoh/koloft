@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  distinctWorktreeName,
+  distinctName,
   parseRoute,
   routeJob,
   type RouteWorkspace
@@ -103,6 +103,11 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
     expect(
       parseRoute(reply({ hand: 'koloft', title: 'Dark mode', why: 'A setting.' }), LIST)
     ).toEqual({ kind: 'koloft', title: 'Dark mode', why: 'A setting.' })
+    expect(parseRoute(reply({ hand: 'discord', title: 'Discord' }), LIST)).toEqual({
+      kind: 'discord',
+      title: 'Discord',
+      why: ''
+    })
     expect(parseRoute(reply({ hand: 'assist', workspace: 2, title: 'Ask api' }), LIST)).toEqual({
       kind: 'assist',
       path: 'devbox:/srv/api',
@@ -123,9 +128,9 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
   })
 })
 
-describe('distinctWorktreeName', () => {
+describe('distinctName', () => {
   it('keeps a free name and counts up past taken ones, ignoring letter case', () => {
-    expect(distinctWorktreeName('a', [])).toBe('a')
-    expect(distinctWorktreeName('a', ['A', 'a-2'])).toBe('a-3')
+    expect(distinctName('a', [])).toBe('a')
+    expect(distinctName('a', ['A', 'a-2'])).toBe('a-3')
   })
 })

@@ -235,7 +235,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     }
   })
 
-  test('words about Koloft itself go to a global Assist task with them as its brief; "ask <workspace> …" reaches that workspace’s running Assist as a message, or opens a task of it when none runs', async ({
+  test('words about Koloft itself go to a global Assist task with them as its brief, and "set up Discord" to the global Assist’s Discord setup task; "ask <workspace> …" reaches that workspace’s running Assist as a message, or opens a task of it when none runs', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -256,22 +256,30 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
         .poll(tasks)
         .toEqual([{ tabId: expect.any(String), scope: 'global', name: 'Dark mode' }])
 
+      assistAnswers(env, { hand: 'discord', title: 'Discord' })
+      await ask(app, page, 'set up Discord')
+      await page.keyboard.press('Enter')
+      await expect
+        .poll(tasks)
+        .toContainEqual({ tabId: expect.any(String), scope: 'global', name: 'Discord setup' })
+      await waitForCalls(env, 2, 30_000)
+
       const opened = await page.evaluate((p) => window.api.conductors.open(p), env.workspaces.a)
       expect(opened.ok).toBe(true)
-      await waitForCalls(env, 2, 30_000)
+      await waitForCalls(env, 3, 30_000)
       assistAnswers(env, { hand: 'assist', workspace: 1, title: 'Ask ws-a' })
       await ask(app, page, 'ask ws-a what changed today')
       await page.keyboard.press('Enter')
       await expect
         .poll(() => peerLines(env), { timeout: 30_000 })
         .toContain('The owner typed this in ⌘P: ask ws-a what changed today')
-      expect(readCalls(env)).toHaveLength(2)
+      expect(readCalls(env)).toHaveLength(3)
 
       assistAnswers(env, { hand: 'assist', workspace: 2, title: 'Ask ws-b' })
       await ask(app, page, 'ask ws-b about the release')
       await page.keyboard.press('Enter')
-      const calls = await waitForCalls(env, 3, 30_000)
-      expect(path.dirname(calls[2].cwd)).toBe(path.join(env.userData, 'conductors'))
+      const calls = await waitForCalls(env, 4, 30_000)
+      expect(path.dirname(calls[3].cwd)).toBe(path.join(env.userData, 'conductors'))
       await expect
         .poll(tasks)
         .toContainEqual({ tabId: expect.any(String), scope: env.workspaces.b, name: 'Ask ws-b' })

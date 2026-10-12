@@ -229,11 +229,15 @@ export interface DiscordSettings {
   userId?: string
   userName?: string
   bindings: ConductorBinding[]
+  category?: DiscordChannel
 }
 
-export interface ConductorSaveInput {
+export interface NewChannelInput {
   id?: string
   scope: string
+}
+
+export interface ConductorSaveInput extends NewChannelInput {
   channel: DiscordChannel
 }
 
@@ -244,14 +248,27 @@ export interface DiscordStatus {
   phase: DiscordPhase
   botName?: string
   applicationId?: string
-  guildNames: string[]
+  guilds: DiscordGuild[]
+  appOwner?: DiscordUser
   failing: Record<string, string>
   candidate?: { name: string; text: string; at: number }
 }
 
-export const DISCORD_OFF: DiscordStatus = { phase: 'off', guildNames: [], failing: {} }
+export interface DiscordGuild {
+  id: string
+  name: string
+  ownerId?: string
+}
 
-export type ConductorSaveResult = { ok: true } | { ok: false; error: string }
+export interface DiscordUser {
+  id: string
+  name: string
+}
+
+export const DISCORD_OFF: DiscordStatus = { phase: 'off', guilds: [], failing: {} }
+
+export type ConductorSaveResult =
+  { ok: true } | { ok: false; error: string; cannotMakeChannels?: boolean }
 
 export type ConductorOpenResult = { ok: true; tabId: string } | { ok: false; error: string }
 
@@ -1114,6 +1131,7 @@ export interface KoloftApi {
   }
   conductors: {
     save(input: ConductorSaveInput): Promise<ConductorSaveResult>
+    saveWithNewChannel(input: NewChannelInput): Promise<ConductorSaveResult>
     unbind(bindingId: string): Promise<void>
     open(scope: string): Promise<ConductorOpenResult>
     startFresh(scope: string): Promise<ConductorOpenResult>
@@ -1124,12 +1142,11 @@ export interface KoloftApi {
     onTasks(cb: (rows: AssistTaskRow[]) => void): () => void
   }
   discord: {
-    setToken(token: string): Promise<boolean>
     status(): Promise<DiscordStatus>
     onStatus(cb: (s: DiscordStatus) => void): () => void
     pair(isMe: boolean): Promise<void>
-    forgetOwner(): Promise<void>
     channels(): Promise<DiscordChannel[]>
+    setUpWithAssist(): Promise<ConductorOpenResult>
   }
 }
 

@@ -22,6 +22,8 @@ import {
   wsRows
 } from './helpers/p1'
 import { startFakeDiscord } from './helpers/fakeDiscord'
+import { openSettings } from './helpers/extensions'
+import { TASK_KICKOFF } from '../../src/main/discord/conductors'
 import {
   installFakeRemote,
   killFakeRemote,
@@ -292,8 +294,7 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
       await expect(channelRow(dlg, CHANNEL_B)).toHaveClass(/dim/)
       await expect(channelRow(dlg, CHANNEL_B).locator('.note')).toHaveText('bound to ws-b')
       await channelRow(dlg, CHANNEL_B).click()
-      await dlg.locator('.modal-foot .btn-primary').click()
-      await expect(dlg.locator('.field-hint.bad')).toHaveText('Pick a channel.')
+      await expect(channelRow(dlg, CHANNEL_B)).not.toHaveClass(/hot/)
       await expect(dlg.locator('.wt-name', { hasText: 'Lounge' })).toHaveCount(0)
       await dlg.getByRole('button', { name: 'Cancel' }).click()
 
@@ -481,6 +482,65 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
     } finally {
       await close()
       killFakeRemote(env)
+    }
+  })
+
+  test('Settings ▸ Discord ▸ Set up with Assist opens the global Assist’s Discord setup task, which alone may run koloft discord status, invite and bind --new-channel', async ({
+    env
+  }) => {
+    const { page, close } = await launched(env, {
+      assist: { on: true, backend: 'claude' },
+      discord: { userId: '555', userName: 'letian', bindings: [] }
+    })
+    try {
+      await startSessionIn(page, 'ws-a')
+      expect(await koloftSays(page, 'discord status')).toContain(
+        "only the global Assist's Discord setup task"
+      )
+
+      await openSettings(page)
+      await page.locator('.set-ni', { hasText: 'Discord' }).click()
+      await page.getByRole('button', { name: 'Set up with Assist' }).click()
+      await expect(page.locator('.settings-modal')).toHaveCount(0)
+      await expect
+        .poll(async () =>
+          (await page.evaluate(() => window.api.sessions.list())).some(
+            (s) => s.assistTask === 'Discord setup' && !!s.sessionId
+          )
+        )
+        .toBe(true)
+      expect(readCalls(env).some((c) => c.argv.includes(TASK_KICKOFF))).toBe(true)
+      expect(await koloftSays(page, 'discord status')).toContain(
+        'Servers the owner owns with the bot in them: koloft'
+      )
+      expect(await koloftSays(page, 'discord invite')).toContain(
+        'https://discord.com/oauth2/authorize?client_id=700&permissions=326417615952&scope=bot'
+      )
+      expect(await koloftSays(page, 'discord bind --new-channel')).toContain(
+        'Bound to a new channel.'
+      )
+      await expect.poll(() => bindingsOnDisk(env).map((b) => b.channel.name)).toEqual(['global'])
+    } finally {
+      await close()
+    }
+  })
+
+  test('Set up with Assist on a Codex Assist lands on the setup task’s tab, though that tab is not listed yet when the click is answered', async ({
+    env
+  }) => {
+    installCodex(env)
+    const { page, close } = await launched(env, {
+      conductorsFolded: false,
+      assist: { on: true, backend: 'codex' },
+      discord: { bindings: [] }
+    })
+    try {
+      await openSettings(page)
+      await page.locator('.set-ni', { hasText: 'Discord' }).click()
+      await page.getByRole('button', { name: 'Set up with Assist' }).click()
+      await expect(island(page).locator('.ws-tab.active')).toHaveText(/Discord setup/)
+    } finally {
+      await close()
     }
   })
 })

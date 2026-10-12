@@ -1565,6 +1565,12 @@ with `koloft`, and printed nothing for that one. The prompt asked for a Bash
 - **A `deny` stopped the call in that mode**: neither file was written, and claude got
   the reason back as `PreToolUse:Bash hook error: <text>` and went on to the next step.
 - **Printing nothing let the call run** (`koloft help` ran).
+- **`permissionDecision: "allow"` runs a Bash call that would otherwise need approval.**
+  2026-10-11, CC 2.1.296, `claude -p --permission-mode default`, model haiku, a temp
+  folder, an empty MCP config: asked to run `touch <file>`, with no hook claude refused
+  ("blocked because it needs approval") and the file was not made; with Koloft's Assist
+  gate as the `PreToolUse` hook and an allow file naming `Bash(touch)`, the gate printed
+  `allow` and the file was made, with no approval asked.
 - **The same holds in an interactive session.** 2026-10-08, CC 2.1.294, the
   `discord-real-smoke` case for a Claude conductor: Koloft's own gate, a pty session
   with `--dangerously-skip-permissions`, asked to write a file — the file was not

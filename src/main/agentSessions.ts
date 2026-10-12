@@ -204,7 +204,7 @@ function formatTurns(turns: Turn[]): string {
 const NO_REMOTE_START =
   'the koloft command cannot start a session in a remote (SSH) workspace. Pick a workspace on this computer.'
 
-function resolveWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<PinnedWorkspace> {
+export function resolveWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<PinnedWorkspace> {
   const hits = pinned.filter(
     (w) => w.path === ref || workspaceLabel(w.path) === ref || basename(w.path) === ref
   )

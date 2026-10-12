@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { bindingProblem, GLOBAL_SCOPE, keepPinnedScopes, sanitizeDiscord } from '@shared/conductors'
+import {
+  bindingProblem,
+  GLOBAL_SCOPE,
+  keepPinnedScopes,
+  newChannelGuild,
+  newChannelName,
+  sanitizeDiscord
+} from '@shared/conductors'
 import { buildResetPatch, sanitizeLoadedSettings, sanitizeSettingsPatch } from '@shared/settingsOps'
 import type { ConductorBinding } from '@shared/types'
 
@@ -75,6 +82,41 @@ describe('sanitizeDiscord', () => {
     expect(doc.bindings[0].threads).toEqual([
       { threadId: '9', keys: ['k1', 'k2'], name: 'Fix login', lastMessageId: '12' }
     ])
+  })
+})
+
+describe('the server a new channel goes in', () => {
+  const guilds = [
+    { id: '1', name: 'someone else’s', ownerId: '999' },
+    { id: '2', name: 'mine', ownerId: '555' },
+    { id: '3', name: 'also mine', ownerId: '555' }
+  ]
+
+  it('is a server the owner owns, never one the bot was only invited to', () => {
+    expect(newChannelGuild([], guilds, '555')).toBe('2')
+    expect(newChannelGuild([], guilds.slice(0, 1), '555')).toBeUndefined()
+    expect(newChannelGuild([], guilds, undefined)).toBeUndefined()
+  })
+
+  it('is the owned server a channel is already bound in', () => {
+    expect(newChannelGuild([binding('g', GLOBAL_SCOPE, '1')], guilds, '555')).toBe('2')
+    const inThree = {
+      ...binding('g', GLOBAL_SCOPE, '1'),
+      channel: { guildId: '3', channelId: '1', name: 'x' }
+    }
+    expect(newChannelGuild([inThree], guilds, '555')).toBe('3')
+  })
+})
+
+describe('a new channel’s name', () => {
+  it('is #global for the global Assist and the folder name for a workspace, written the way Discord stores it', () => {
+    expect(newChannelName(GLOBAL_SCOPE)).toBe('global')
+    expect(newChannelName('/Users/me/My Project.v2 项目')).toBe('my-projectv2-项目')
+  })
+
+  it('adds the machine for a remote workspace, without the user and with its dots as hyphens', () => {
+    expect(newChannelName('ssh://me@devbox.lan/home/me/ws-b')).toBe('ws-b-devbox-lan')
+    expect(newChannelName('ssh://box/srv/api')).toBe('api-box')
   })
 })
 

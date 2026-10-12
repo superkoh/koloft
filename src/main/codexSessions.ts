@@ -36,7 +36,8 @@ import {
   CODEX_GATE_ENV,
   CODEX_GATE_HOOK_COMMAND,
   CODEX_GATE_NOT_TRUSTED,
-  CODEX_GATE_OVERRIDE
+  CODEX_GATE_OVERRIDE,
+  CODEX_ASKS_AND_WAITS
 } from './conductorGate'
 import { acceptCodexHookTrust, codexConfigFile } from './codexTrust'
 import { endCodexAppServersLeftByACrash } from './leftovers'
@@ -943,7 +944,7 @@ export class CodexSessions {
         ...browser,
         ...(instructions.length ? [developerInstructions(instructions)] : []),
         ...(opts.resumeSessionId ? permissionConfig(permissions) : []),
-        ...(conductor ? [CODEX_GATE_OVERRIDE] : [])
+        ...(conductor ? [CODEX_GATE_OVERRIDE, CODEX_ASKS_AND_WAITS] : [])
       ]
     }
     let transport: CodexTransport | undefined

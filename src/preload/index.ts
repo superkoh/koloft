@@ -182,6 +182,7 @@ const api: KoloftApi = {
   },
   conductors: {
     save: (input) => ipcRenderer.invoke('conductors:save', input),
+    saveWithNewChannel: (input) => ipcRenderer.invoke('conductors:saveWithNewChannel', input),
     unbind: (id) => ipcRenderer.invoke('conductors:unbind', id),
     open: (scope) => ipcRenderer.invoke('conductors:open', scope),
     startFresh: (scope) => ipcRenderer.invoke('conductors:startFresh', scope),
@@ -197,7 +198,6 @@ const api: KoloftApi = {
     }
   },
   discord: {
-    setToken: (token) => ipcRenderer.invoke('discord:setToken', token),
     status: () => ipcRenderer.invoke('discord:status'),
     onStatus: (cb) => {
       const handler = (_e: unknown, s: DiscordStatus): void => cb(s)
@@ -205,8 +205,8 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener('discord:status', handler)
     },
     pair: (isMe) => ipcRenderer.invoke('discord:pair', isMe),
-    forgetOwner: () => ipcRenderer.invoke('discord:forgetOwner'),
-    channels: () => ipcRenderer.invoke('discord:channels')
+    channels: () => ipcRenderer.invoke('discord:channels'),
+    setUpWithAssist: () => ipcRenderer.invoke('discord:setUpWithAssist')
   },
   attention: {
     list: () => ipcRenderer.invoke('attention:list'),
