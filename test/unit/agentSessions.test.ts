@@ -182,7 +182,7 @@ function harness(
       tabId === 'fix' ? { lines: ['', '$ ls', 'a.txt', '', ''], notes: [] } : { error: 'no window' }
   })
   const verb = async (args: string[], from: { tabId: string; cwd: string }): Promise<AgentReply> =>
-    inner(args, { ...from, session: sessions.find((s) => s.tabId === from.tabId)! })
+    inner.verb(args, { ...from, session: sessions.find((s) => s.tabId === from.tabId)! })
   return {
     verb,
     turnEnded: (tabId, reply) => inner.turnEnded(tabId, { said: [], reply, at: 1 }),

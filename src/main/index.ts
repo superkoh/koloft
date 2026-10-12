@@ -1181,7 +1181,7 @@ const agentRequests = new AgentRequests({
     ),
     ...notesAndWorkbenchVerbs,
     note: unlessWorkspacelessConductor(notesAndWorkbenchVerbs.note),
-    session: sessionCommand,
+    session: sessionCommand.verb,
     workspace: workspaceVerb({
       conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
       sidebar: () => workspaceMgr?.rows() ?? []
