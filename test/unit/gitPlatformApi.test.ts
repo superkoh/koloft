@@ -95,6 +95,8 @@ describe('GitLab', () => {
     expect(missingScopeOn('gitlab', ['read_api'])).toBe('write_repository')
     expect(missingScopeOn('gitlab', null)).toBeUndefined()
     expect(missingScopeOn('github', null)).toBe('repo')
+    expect(missingScopeOn('github', ['repo', 'gist'])).toBe('read:org')
+    expect(missingScopeOn('github', ['gist', 'read:org', 'repo', 'workflow'])).toBeUndefined()
     expect(missingScopeOn('gitea', null)).toBeUndefined()
   })
 })

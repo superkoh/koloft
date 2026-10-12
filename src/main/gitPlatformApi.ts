@@ -1,8 +1,16 @@
 import type { GitAuthor, GitPlatform } from '@shared/types'
-import { GITHUB_API_URL, pushAccess, unreachable, whoami, type PushAccess } from './githubApi'
+import { githubNoreply } from '@shared/gitAccountOps'
+import {
+  API_TIMEOUT_MS,
+  GITHUB_API_URL,
+  pushAccess,
+  unreachable,
+  whoami,
+  type PushAccess
+} from './githubApi'
 
-const API_TIMEOUT_MS = 10_000
 const GITLAB_DEVELOPER_ACCESS = 30
+const AZURE_SIGN_IN_PAGE = 203
 const GITEA_NOREPLY_WITH_ID_SINCE: [number, number] = [1, 26]
 export const BITBUCKET_API_URL = process.env.KOLOFT_BITBUCKET_API_URL || 'https://api.bitbucket.org'
 
@@ -49,14 +57,20 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : '')
 const bearer = (token: string): Record<string, string> => ({ Authorization: `Bearer ${token}` })
 const hostname = (url: string): string => new URL(url).hostname
 
+async function azureGet(url: string, token: string): Promise<Http> {
+  const r = await getJson(url, {
+    Authorization: `Basic ${Buffer.from(`:${token}`).toString('base64')}`,
+    'X-TFS-FedAuthRedirect': 'Suppress'
+  })
+  return r.status === AZURE_SIGN_IN_PAGE ? new Http(401, r.body) : r
+}
+
 export function githubApiBase(t: GitTarget): string {
   return t.platform === 'github' ? GITHUB_API_URL : `${t.url}/api/v3`
 }
 
 function versionAtLeast(version: string, [major, minor]: [number, number]): boolean {
-  const m = /(?:gitea-)?(\d+)\.(\d+)/.exec(
-    version.includes('gitea-') ? version.split('gitea-')[1] : version
-  )
+  const m = /(\d+)\.(\d+)/.exec(version.split('gitea-').pop()!)
   if (!m) return false
   const [a, b] = [Number(m[1]), Number(m[2])]
   return a > major || (a === major && b >= minor)
@@ -74,7 +88,7 @@ async function whoAt(t: GitTarget, token: string): Promise<Identity> {
         login: me.login,
         scopes: me.scopes,
         ...(t.platform === 'github' && {
-          author: { name: me.name, email: `${me.id}+${me.login}@users.noreply.github.com` }
+          author: { name: me.name, email: githubNoreply(me.id, me.login) }
         })
       }
     }
@@ -134,11 +148,8 @@ async function whoAt(t: GitTarget, token: string): Promise<Identity> {
       }
     }
     case 'azure': {
-      const r = await getJson(`${t.url}/_apis/connectionData`, {
-        Authorization: `Basic ${Buffer.from(`:${token}`).toString('base64')}`,
-        'X-TFS-FedAuthRedirect': 'Suppress'
-      })
-      if (r.status === 401 || r.status === 203) return EXPIRED
+      const r = await azureGet(`${t.url}/_apis/connectionData`, token)
+      if (r.status === 401) return EXPIRED
       const login =
         str(field(r.body, 'authenticatedUser', 'properties', 'Account', '$value')) ||
         str(field(r.body, 'authenticatedUser', 'providerDisplayName'))
@@ -221,14 +232,11 @@ async function pushAt(t: GitTarget, token: string, repoPath: string): Promise<Pu
       const at = parts.indexOf('_git')
       if (at !== 2 || parts.length !== 4) return { kind: 'none' }
       const [org, project, , repo] = parts.map(encodeURIComponent)
-      const r = await getJson(
+      const r = await azureGet(
         `${new URL(t.url).origin}/${org}/${project}/_apis/git/repositories/${repo}?api-version=7.1`,
-        {
-          Authorization: `Basic ${Buffer.from(`:${token}`).toString('base64')}`,
-          'X-TFS-FedAuthRedirect': 'Suppress'
-        }
+        token
       )
-      return access(r.status === 203 ? 401 : r.status, () => true)
+      return access(r.status, () => true)
     }
     case 'other':
       return { kind: 'offline' }

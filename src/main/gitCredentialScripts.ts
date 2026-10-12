@@ -109,7 +109,7 @@ case "$1 $2" in
     ;;
 esac
 proto=""
-host="$(git config --get koloft.host 2>/dev/null)"
+host=""
 ${requestFns(requestDir)}
 ask gh-token "$acct"
 tok=${replyField('token')}
@@ -119,7 +119,7 @@ if [ -z "$tok" ]; then
 fi
 unset ${GH_TOKEN_VARIABLES.join(' ')}
 if [ "$plat" = ghes ]; then
-  export GH_ENTERPRISE_TOKEN="$tok" GH_HOST="$host"
+  export GH_ENTERPRISE_TOKEN="$tok" GH_HOST="$(git config --get koloft.host 2>/dev/null)"
 else
   export GH_TOKEN="$tok" GH_HOST=github.com
 fi

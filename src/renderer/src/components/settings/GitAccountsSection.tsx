@@ -8,6 +8,7 @@ import {
   type GitTokenAddResult
 } from '@shared/types'
 import {
+  GITHUB_DOT_COM,
   GIT_PLATFORM_CHIP,
   gitAccountUrl,
   gitHostLabel,
@@ -47,7 +48,7 @@ function createTokenUrl(platform: GitPlatform, url: string): string | null {
   switch (platform) {
     case 'github':
     case 'ghes':
-      return `${platform === 'github' ? 'https://github.com' : url}/settings/tokens/new?scopes=repo,read:org,gist,workflow&description=Koloft`
+      return `${url}/settings/tokens/new?scopes=repo,read:org,gist,workflow&description=Koloft`
     case 'gitlab':
       return `${url}/-/user_settings/personal_access_tokens?name=Koloft&scopes=write_repository,read_api`
     case 'gitea':
@@ -86,17 +87,16 @@ function rowNote(a: GitAccountView): string {
 
 function tokenError(r: GitTokenAddResult, platform: GitPlatform): string | null {
   if (r.ok) return null
-  const who = platform === 'github' || platform === 'ghes' ? 'GitHub' : 'The server'
+  const who = gitPlatformName(platform)
   if (r.error === 'bad-url') return 'That server address does not look right.'
   if (r.error === 'rejected')
     return platform === 'other'
       ? 'Type the username you use on that server.'
       : `${who} turned this token down. Check that you copied all of it and that it has not expired.`
-  if (r.error === 'offline')
-    return `Could not reach ${who === 'GitHub' ? 'GitHub' : 'the server'}. Check your network and try again.`
+  if (r.error === 'offline') return `Could not reach ${who}. Check your network and try again.`
   if (r.error === 'missing-scope')
     return `This token lacks the ${r.scope ?? 'needed'} permission. Make a token with ${TOKEN_SCOPES[platform] ?? 'push access'} ticked.`
-  return `Could not check this token with ${who === 'GitHub' ? 'GitHub' : 'the server'}.`
+  return `Could not check this token with ${who}.`
 }
 
 function startFailure(error: string, platform: GitPlatform): string {
@@ -118,7 +118,7 @@ export function GitAccountsSection(): JSX.Element {
 
   useEffect(() => {
     if (!focus) return
-    if (focus === 'git-token') setAdding({ step: 'token', platform: 'github', url: '' })
+    if (focus === 'git-token') setAdding({ step: 'token', platform: 'github', url: GITHUB_DOT_COM })
     headRef.current?.scrollIntoView({ block: 'start' })
     setFocus(null)
   }, [focus, setFocus])
@@ -547,10 +547,9 @@ function GitTokenBox({
   const [username, setUsername] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const host = url ? gitHostOf(url) : 'github.com'
+  const host = gitHostOf(url)
   const name = gitPlatformName(platform)
-  const fixedHost = platform === 'github' || !url
-  const title = fixedHost ? `Add ${name} account` : `Add account · ${host} (${name})`
+  const title = platform === 'github' ? `Add ${name} account` : `Add account · ${host} (${name})`
   const needsUser = platform === 'other'
   const create = createTokenUrl(platform, url)
   const scopes = TOKEN_SCOPES[platform]

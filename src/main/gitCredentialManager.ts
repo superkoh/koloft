@@ -3,15 +3,13 @@ import fs from 'fs'
 import path from 'path'
 import type { GitPlatform } from '@shared/types'
 import type { GitCredential } from './gitAuthRequests'
+import { withoutConfigEntries } from './gitConfigFile'
 
 const GCM_SIGN_IN_TIMEOUT_MS = 10 * 60_000
 const GCM_QUIET_TIMEOUT_MS = 20_000
-const CONFIG_ENTRY_VARIABLE = /^GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+)$/
 const BROWSER_OPENED = /Opening browser using .*?(https?:\/\/\S+)/
 
-export type GcmPlatform = 'gitlab' | 'bitbucket' | 'gitea'
-
-const PROVIDER: Record<GcmPlatform, string> = {
+const PROVIDER: Partial<Record<GitPlatform, string>> = {
   gitlab: 'gitlab',
   bitbucket: 'bitbucket',
   gitea: 'generic'
@@ -80,10 +78,14 @@ export class CredentialManager {
     return !!(process.env.KOLOFT_TEST_GCM || this.d.bin)
   }
 
+  private configMade = false
+
   private configFile(): string {
-    fs.mkdirSync(this.d.stateDir, { recursive: true, mode: 0o700 })
     const file = path.join(this.d.stateDir, 'gitconfig')
+    if (this.configMade) return file
+    fs.mkdirSync(this.d.stateDir, { recursive: true, mode: 0o700 })
     if (!fs.existsSync(file)) fs.writeFileSync(file, '', { mode: 0o600 })
+    this.configMade = true
     return file
   }
 
@@ -91,12 +93,11 @@ export class CredentialManager {
     a: GcmAccount,
     namespace: string,
     signIn: boolean,
-    provider = PROVIDER[a.platform as GcmPlatform] ?? 'generic'
+    provider = PROVIDER[a.platform] ?? 'generic'
   ): NodeJS.ProcessEnv {
     const out: NodeJS.ProcessEnv = {}
-    for (const [k, v] of Object.entries(this.d.env()))
-      if (!CONFIG_ENTRY_VARIABLE.test(k) && !k.startsWith('GCM_') && k !== 'GIT_TERMINAL_PROMPT')
-        out[k] = v
+    for (const [k, v] of Object.entries(withoutConfigEntries(this.d.env())))
+      if (!k.startsWith('GCM_') && k !== 'GIT_TERMINAL_PROMPT') out[k] = v
     const keychainFile = process.env.KOLOFT_KEYCHAIN_FILE
     Object.assign(out, {
       GCM_NAMESPACE: namespace,

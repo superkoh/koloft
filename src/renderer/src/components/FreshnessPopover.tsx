@@ -226,12 +226,14 @@ function useGitAccountView(
   }
 
   if (!suggestion || suggestion.kind === 'off') return none
-  const lead = withCounts ? null : (
-    <>
-      {accountHead}
-      {noteRows}
-    </>
-  )
+  const offer = (actions: JSX.Element): ReturnType<typeof useGitAccountView> =>
+    result(
+      <>
+        {!withCounts && accountHead}
+        {noteRows}
+        {actions}
+      </>
+    )
   const pickAccount = (
     <button className="tbu-act" onClick={openList}>
       <LuUsers size={14} />
@@ -248,49 +250,41 @@ function useGitAccountView(
       Not now
     </button>
   )
-  if (suggestion.kind === 'none')
-    return result(
-      <>
-        {lead}
-        {pickAccount}
-      </>
-    )
-  if (suggestion.kind === 'org-blocked')
-    return result(
-      <>
-        {lead}
-        {useToken(suggestion.login)}
-        {pickAccount}
-      </>
-    )
-  if (suggestion.kind === 'cannot-push')
-    return result(
-      <>
-        {lead}
-        {pickAccount}
-        {notNowBtn}
-      </>
-    )
-  if (suggestion.kind === 'add')
-    return result(
-      <>
-        {lead}
-        <button className="tbu-act" onClick={toSettings}>
-          <LuPlus size={14} />
-          Add {suggestion.login}
-        </button>
-        {notNowBtn}
-      </>
-    )
-  const login = suggestion.login
-  const id = gitAccountId(suggestion.host, login)
-  return result(
+  switch (suggestion.kind) {
+    case 'none':
+      return offer(pickAccount)
+    case 'org-blocked':
+      return offer(
+        <>
+          {useToken(suggestion.login)}
+          {pickAccount}
+        </>
+      )
+    case 'cannot-push':
+      return offer(
+        <>
+          {pickAccount}
+          {notNowBtn}
+        </>
+      )
+    case 'add':
+      return offer(
+        <>
+          <button className="tbu-act" onClick={toSettings}>
+            <LuPlus size={14} />
+            Add {suggestion.login}
+          </button>
+          {notNowBtn}
+        </>
+      )
+  }
+  const { login, host: on } = suggestion
+  return offer(
     <>
-      {lead}
       <button
         className="tbu-act"
         title={`This workspace’s git and gh use ${login} from now on`}
-        onClick={() => pick(id)}
+        onClick={() => pick(gitAccountId(on, login))}
       >
         <LuCheck size={14} />
         Use {login}

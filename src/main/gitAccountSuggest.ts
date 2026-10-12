@@ -14,6 +14,8 @@ import {
 import type { PushAccess } from './githubApi'
 import type { GitRunResult } from './gitSteps'
 import type { GitTarget } from './gitPlatformApi'
+import { apiTargetOf, withoutConfigEntries } from './gitConfigFile'
+import { GIT_PUBLIC_HOSTS, isGhPlatform } from '@shared/gitAccountOps'
 
 export interface SuggestDeps {
   git(
@@ -35,15 +37,11 @@ export interface SuggestDeps {
 const OFF: GitAccountSuggestion = { kind: 'off' }
 const NO_HELPERS_NO_PROMPTS = ['-c', 'credential.helper=', '-c', 'core.askPass=']
 const COMMIT_EMAILS_LOOKED_AT = 50
-const CONFIG_ENTRY_VARIABLE = /^GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+)$/
 const SCP_LIKE = /^(?:([^@/]+)@)?([^:/]+):(?!\/)(.*)$/
-const PUBLIC_HOSTS = ['gitlab.com', 'bitbucket.org', 'dev.azure.com', 'codeberg.org']
 const SSH_GREETS: GitPlatform[] = ['github', 'ghes', 'gitlab', 'gitea']
-const GH_SIGNS_IN: GitPlatform[] = ['github', 'ghes']
 
 export function clueEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const out: NodeJS.ProcessEnv = {}
-  for (const [k, v] of Object.entries(env)) if (!CONFIG_ENTRY_VARIABLE.test(k)) out[k] = v
+  const out = withoutConfigEntries(env)
   out.GIT_TERMINAL_PROMPT = '0'
   out.GIT_ASKPASS = '/usr/bin/false'
   out.SSH_ASKPASS = '/usr/bin/false'
@@ -105,7 +103,7 @@ function whereIs(remote: Remote, d: SuggestDeps): Here | null {
     return remote.kind === 'https' ? server.host === remote.host : server.hostname === remote.host
   })
   const githubHost = new URL(d.githubUrl)[remote.kind === 'https' ? 'host' : 'hostname']
-  const known = remote.host === githubHost || PUBLIC_HOSTS.includes(remote.host)
+  const known = remote.host === githubHost || GIT_PUBLIC_HOSTS.includes(remote.host)
   if (!accounts.length && !known) return null
   const host = accounts[0]?.host ?? (remote.host === githubHost ? 'github.com' : remote.host)
   const platform = accounts[0]?.platform ?? (remote.host === githubHost ? 'github' : undefined)
@@ -197,7 +195,7 @@ async function firstClue(
     )
     const configured = loginFromCredentialFill(fill.stderr)
     if (configured) return { login: configured, reason: 'config-user' }
-    if (!platform || !GH_SIGNS_IN.includes(platform)) return null
+    if (!platform || !isGhPlatform(platform)) return null
     if (d.env.GH_TOKEN || d.env.GITHUB_TOKEN || d.env.GH_ENTERPRISE_TOKEN) return null
     const helpers = (await out(['config', '--get-regexp', '^credential\\..*helper$'])) ?? ''
     const ghLogin = ghActiveLogin(
@@ -228,10 +226,6 @@ function readGhHosts(d: SuggestDeps): string {
   return d.readFile(path.join(dir, 'hosts.yml')) ?? ''
 }
 
-function target(a: GitAccount, d: SuggestDeps): GitTarget {
-  return { platform: a.platform, url: a.platform === 'github' ? d.serverOf(a) : a.url }
-}
-
 async function decide(
   clue: Clue,
   here: Here,
@@ -245,7 +239,7 @@ async function decide(
   if (!network || account.platform === 'other') return use
   const token = await d.token(account)
   if (!token) return { kind: 'cannot-push', host, login: account.login, reason: clue.reason }
-  const access = await d.pushAccess(target(account, d), token, here.remote.path)
+  const access = await d.pushAccess(apiTargetOf(account), token, here.remote.path)
   if (access.kind === 'offline') return { kind: 'none', host }
   if (access.kind === 'org-blocked')
     return { kind: 'org-blocked', host, login: account.login, org: access.org }
@@ -270,7 +264,7 @@ async function noClue(
       const token = await d.token(a)
       return {
         login: a.login,
-        access: token && (await d.pushAccess(target(a, d), token, here.remote.path))
+        access: token && (await d.pushAccess(apiTargetOf(a), token, here.remote.path))
       }
     })
   )

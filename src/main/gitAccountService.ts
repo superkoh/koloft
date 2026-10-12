@@ -22,7 +22,9 @@ import {
   gitAccountId,
   gitAccountUrl,
   gitHostOf,
-  gitSignIn
+  gitPlatformName,
+  gitSignIn,
+  isGhPlatform
 } from '@shared/gitAccountOps'
 import { gitTokenDelete, gitTokenRead, gitTokenWrite } from './accounts'
 import {
@@ -40,6 +42,7 @@ import { suggestFor } from './gitAccountSuggest'
 import { GitAuthRequests, type GitAuthRequest, type GitCredential } from './gitAuthRequests'
 import {
   GITHUB_URL,
+  apiTargetOf,
   credentialUrlOf,
   gitAccountsDir,
   gitConfigEnv,
@@ -55,7 +58,6 @@ import {
   identify,
   missingScopeOn,
   pushAccessOn,
-  type GitTarget,
   type Identity
 } from './gitPlatformApi'
 import { GithubLogin, type GithubLoginDeps } from './githubLogin'
@@ -67,7 +69,6 @@ const PICKED_WITHOUT_ASKING: GitAccountSuggestion['kind'][] = [
   'only-one-can-push',
   'default-can-push'
 ]
-const GH_PLATFORMS: GitPlatform[] = ['github', 'ghes']
 
 export function newGitRequestDir(): string {
   return `/tmp/koloft-git-${process.pid}-${randomUUID()}`
@@ -118,16 +119,8 @@ function readText(p: string): string | null {
   }
 }
 
-function targetOf(a: Pick<GitAccount, 'platform' | 'url'>): GitTarget {
-  return { platform: a.platform, url: a.platform === 'github' ? GITHUB_URL : a.url }
-}
-
-function serverName(platform: GitPlatform): string {
-  return platform === 'github' || platform === 'ghes' ? 'GitHub' : 'The server'
-}
-
 function identityFailure(platform: GitPlatform, me: Identity & { ok: false }): string {
-  const who = serverName(platform)
+  const who = gitPlatformName(platform)
   if (me.error === 'offline')
     return `${who} could not be reached to read the new account. Check the connection and try again.`
   if (me.error === 'expired') return `${who} did not accept the new sign-in. Try again.`
@@ -169,7 +162,6 @@ export class GitAccountService {
   private login: GithubLogin
   private gcm: CredentialManager
   private gcmRun: GcmRun | null = null
-  private ghesUrl = ''
   private loginEnv: NodeJS.ProcessEnv = { ...process.env }
 
   constructor(private d: GitAccountServiceDeps) {
@@ -201,10 +193,8 @@ export class GitAccountService {
       openPage: d.openPage,
       openInBrowser: d.openInBrowser,
       progress: d.progress,
-      signedIn: (host, token) =>
-        host === 'github.com'
-          ? this.signedIn('github', GITHUB_DOT_COM, { token })
-          : this.signedIn('ghes', this.ghesUrl, { token })
+      signedIn: (url, token) =>
+        this.signedIn(url === GITHUB_DOT_COM ? 'github' : 'ghes', url, { token })
     })
   }
 
@@ -270,7 +260,7 @@ export class GitAccountService {
 
   private async ghToken(id: string): Promise<string | null> {
     const a = this.account(id)
-    return a && GH_PLATFORMS.includes(a.platform) ? this.token(a) : null
+    return a && isGhPlatform(a.platform) ? this.token(a) : null
   }
 
   private rejected(id: string): void {
@@ -283,7 +273,7 @@ export class GitAccountService {
     if (a.platform === 'other') return 'unknown'
     const token = await this.token(a)
     if (!token && !a.gcmNamespace) return 'unknown'
-    const me = await identify(targetOf(a), token ?? '')
+    const me = await identify(apiTargetOf(a), token ?? '')
     if (me.ok) return token ? 'ok' : 'unknown'
     if (me.error === 'failed') return 'unknown'
     return me.error
@@ -412,7 +402,7 @@ export class GitAccountService {
     secret: { token: string } | { gcmNamespace: string; cred: GitCredential }
   ): Promise<{ ok: true; login: string } | { ok: false; message: string }> {
     const token = 'token' in secret ? secret.token : secret.cred.password
-    const me = await identify(targetOf({ platform, url }), token)
+    const me = await identify(apiTargetOf({ platform, url }), token)
     if (!me.ok) return { ok: false, message: identityFailure(platform, me) }
     try {
       await this.save(
@@ -432,11 +422,7 @@ export class GitAccountService {
     const url = gitAccountUrl(platform, raw)
     const how = url && gitSignIn(platform, url)
     if (!url || !how || how === 'token') return { ok: false, error: 'bad-url' }
-    if (platform === 'github') return this.login.start('github.com')
-    if (how === 'gh') {
-      this.ghesUrl = url
-      return this.login.start(gitHostOf(url))
-    }
+    if (how === 'gh') return this.login.start(url)
     if (!this.gcm.available()) return { ok: false, error: 'no-gcm' }
     return this.gcmLogin(platform, url)
   }
@@ -502,7 +488,7 @@ export class GitAccountService {
       if (!GIT_LOGIN_RE.test(login)) return { ok: false, error: 'rejected' }
       me = { login }
     } else {
-      const found = await identify(targetOf({ platform: add.platform, url }), add.token)
+      const found = await identify(apiTargetOf({ platform: add.platform, url }), add.token)
       if (!found.ok)
         return { ok: false, error: found.error === 'expired' ? 'rejected' : found.error }
       const scope = missingScopeOn(add.platform, found.scopes)
@@ -541,8 +527,7 @@ export class GitAccountService {
     this.orgBlocked.delete(repo)
     this.changed()
     const account = this.account(id ?? undefined)
-    if (account && GH_PLATFORMS.includes(account.platform))
-      void this.checkOrgAccess(wsPath, repo, account)
+    if (account && isGhPlatform(account.platform)) void this.checkOrgAccess(wsPath, repo, account)
   }
 
   private async checkOrgAccess(wsPath: string, repo: string, account: GitAccount): Promise<void> {
@@ -553,7 +538,7 @@ export class GitAccountService {
       token,
       where.owner,
       where.name,
-      githubApiBase(targetOf(account))
+      githubApiBase(apiTargetOf(account))
     )
     if (access.kind !== 'org-blocked' || this.pickFor(repo) !== this.account(account.id)) return
     this.orgBlocked.set(repo, { id: account.id, org: access.org })
@@ -583,15 +568,11 @@ export class GitAccountService {
   async suggest(wsPath: string, network: boolean): Promise<GitAccountSuggestion> {
     const repo = await this.keys.resolve(wsPath)
     if (!repo) return { kind: 'off' }
+    const dismissed = suggestionDismissed(repo)
     const cached = this.found.get(wsPath)
-    if (!network && cached) return this.unlessDismissed(repo, cached)
-    const s = await this.suggestNow(wsPath, network && !suggestionDismissed(repo))
-    if (!network || s.kind !== 'none') this.found.set(wsPath, s)
-    return this.unlessDismissed(repo, s)
-  }
-
-  private unlessDismissed(repo: string, s: GitAccountSuggestion): GitAccountSuggestion {
-    return s.kind !== 'off' && suggestionDismissed(repo) ? { kind: 'none', host: s.host } : s
+    const s = !network && cached ? cached : await this.suggestNow(wsPath, network && !dismissed)
+    if (s !== cached && (!network || s.kind !== 'none')) this.found.set(wsPath, s)
+    return dismissed && s.kind !== 'off' ? { kind: 'none', host: s.host } : s
   }
 
   async dismiss(wsPath: string): Promise<void> {
@@ -606,15 +587,7 @@ export class GitAccountService {
     if (!repo || this.pickFor(repo)) return
     const s = await this.suggest(wsPath, true)
     if (!PICKED_WITHOUT_ASKING.includes(s.kind) || !('login' in s)) return
-    const account = this.accounts.find(
-      (a) => a.host === s.host && a.login.toLowerCase() === s.login.toLowerCase()
-    )
+    const account = this.account(gitAccountId(s.host, s.login))
     if (account) await this.pick(wsPath, account.id)
-  }
-
-  accountFor(host: string, login: string): string | undefined {
-    return this.accounts.find(
-      (a) => a.host === host && a.login.toLowerCase() === login.toLowerCase()
-    )?.id
   }
 }

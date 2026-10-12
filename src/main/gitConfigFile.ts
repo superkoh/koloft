@@ -3,12 +3,25 @@ import path from 'path'
 import { shq } from '@shared/shellQuote'
 import { gitCredentialUrl } from '@shared/gitAccountOps'
 import type { GitAccount, GitRepoPick } from '@shared/types'
+import type { GitTarget } from './gitPlatformApi'
 import { writeWholeBeforeVisible } from './jsonDrops'
 
 export const GITHUB_URL = process.env.KOLOFT_GITHUB_URL || 'https://github.com'
 
 export function credentialUrlOf(a: Pick<GitAccount, 'platform' | 'url'>): string {
   return a.platform === 'github' ? GITHUB_URL : gitCredentialUrl(a.url)
+}
+
+export function apiTargetOf(a: Pick<GitAccount, 'platform' | 'url'>): GitTarget {
+  return { platform: a.platform, url: a.platform === 'github' ? GITHUB_URL : a.url }
+}
+
+const CONFIG_ENTRY_VARIABLE = /^GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+)$/
+
+export function withoutConfigEntries(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {}
+  for (const [k, v] of Object.entries(env)) if (!CONFIG_ENTRY_VARIABLE.test(k)) out[k] = v
+  return out
 }
 
 export function gitAccountsDir(userData: string): string {

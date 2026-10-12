@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import type { GitLoginProgress, GitLoginStart } from '@shared/types'
+import { gitHostOf } from '@shared/gitAccountOps'
 import { githubHostEntry } from './gitClues'
 import type { DeviceCodePage } from './deviceCodeWindow'
 
@@ -103,6 +104,7 @@ export interface GithubLoginDeps {
 }
 
 interface LoginRun {
+  server: string
   host: string
   dir: string
   child?: ChildProcess
@@ -138,11 +140,13 @@ export class GithubLogin {
     return this.run !== null
   }
 
-  async start(host: string): Promise<GitLoginStart> {
+  async start(url: string): Promise<GitLoginStart> {
+    const host = gitHostOf(url)
     if (this.run) return { ok: false, error: 'busy' }
     const fake = process.env.KOLOFT_TEST_GH_LOGIN
     if (!fake && !this.d.ghBin) return { ok: false, error: 'no-gh' }
     const run: LoginRun = {
+      server: url,
       host,
       dir: path.join(this.d.userData, LOGIN_DIR_PREFIX + randomUUID()),
       stderr: '',
@@ -243,7 +247,7 @@ export class GithubLogin {
     const token = signedIn.token
     clearTimeout(run.timer)
     fs.rmSync(run.dir, { recursive: true, force: true })
-    const saved = await this.d.signedIn(run.host, token)
+    const saved = await this.d.signedIn(run.server, token)
     if (this.run !== run) return
     if (!saved.ok) return this.end(run, saved.message)
     this.end(run, null)

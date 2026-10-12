@@ -38,6 +38,16 @@ const PUBLIC_HOST: Partial<Record<GitPlatform, string>> = {
   gitea: 'codeberg.org'
 }
 
+export const GIT_PUBLIC_HOSTS = Object.values(PUBLIC_HOST)
+
+export function isGhPlatform(platform: GitPlatform): boolean {
+  return platform === 'github' || platform === 'ghes'
+}
+
+export function githubNoreply(id: number, login: string): string {
+  return `${id}+${login}@users.noreply.github.com`
+}
+
 export function gitPlatformName(platform: GitPlatform): string {
   return PLATFORM_NAME[platform]
 }
@@ -113,7 +123,7 @@ function upgradedFromGithubOnly(a: StoredAccount): Partial<GitAccount> {
     ...(numericId !== undefined && {
       author: {
         name: typeof a.name === 'string' && a.name ? a.name : a.login,
-        email: `${numericId}+${a.login}@users.noreply.github.com`
+        email: githubNoreply(numericId, a.login)
       }
     })
   }
