@@ -23,6 +23,7 @@ import {
 } from './helpers/p1'
 import { startFakeDiscord } from './helpers/fakeDiscord'
 import { openSettings } from './helpers/extensions'
+import { TASK_KICKOFF } from '../../src/main/discord/conductors'
 import {
   installFakeRemote,
   killFakeRemote,
@@ -508,6 +509,7 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
           )
         )
         .toBe(true)
+      expect(readCalls(env).some((c) => c.argv.includes(TASK_KICKOFF))).toBe(true)
       expect(await koloftSays(page, 'discord status')).toContain(
         'Servers the owner owns with the bot in them: koloft'
       )

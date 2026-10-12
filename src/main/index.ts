@@ -2085,6 +2085,7 @@ app.whenReady().then(() => {
           allow: l.allow,
           conductor: true,
           trustFolder: true,
+          firstPrompt: l.firstPrompt,
           name: l.backend === 'claude' ? asPeerName(l.title) : undefined
         },
         l.title

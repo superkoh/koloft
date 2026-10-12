@@ -36,7 +36,10 @@ export interface ConductorLaunch {
   role: string
   allow?: string[]
   title: string
+  firstPrompt?: string
 }
+
+export const TASK_KICKOFF = 'Do the task in your instructions now.'
 
 export type AssistBackendPick = { backend: BackendId; because?: string }
 export type AssistBackendChoice = AssistBackendPick | { error: string }
@@ -639,7 +642,8 @@ export class Conductors {
       ...this.launchFor(scope, choice.backend),
       role,
       allow: task.allow ?? [],
-      title
+      title,
+      firstPrompt: TASK_KICKOFF
     }
     const placeholder: RunningTask = { ...task, scope, role, tabId: '' }
     this.tasks.push(placeholder)
