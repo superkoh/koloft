@@ -1443,6 +1443,12 @@ sessions.
     message started its own turn; Enter pressed after that turn sent the half-typed line
     whole, as a prompt of its own. The same check while the receiver was busy was run but
     its result was not kept.
+- **Esc that interrupts a running turn fires no `Stop` hook.** 2026-10-11, CC 2.1.296,
+  model haiku, temp HOME, a `Stop` hook that appends to a file: a typed turn running
+  `ping -c 30 127.0.0.1` was interrupted with Esc 6 s in; the session went `idle` and the
+  file stayed empty. (A standalone `sleep 30` is refused by CC itself — "Blocked:
+  standalone sleep" — and ends the turn at once, with a `Stop`.) So a typed turn's
+  `<tab>.typed` mark outlives an Esc until the next typed turn's `Stop`.
 - **Only the last `--append-system-prompt-file` reaches the model.** 2026-10-11, CC
   2.1.296, `claude -p`, model haiku, two files each holding one made-up word: given two
   `--append-system-prompt-file` flags the model knew only the second file's word. Given

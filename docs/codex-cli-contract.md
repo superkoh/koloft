@@ -1389,8 +1389,19 @@ command line. The hook command was a small Node script that logged its stdin.
   app-server has one connection, and Koloft's TUI sends its own `initialize` through it
   (section 1), so Koloft cannot ask the tab's own app-server before its TUI connects; it
   asks a second app-server started with the same command line, environment and folder.
-- Not probed yet: a real TUI connected over `--remote` to the hooked app-server; an owner's
-  own PreToolUse hook in `config.toml` next to this one; whether Codex keeps the table when
-  it rewrites `config.toml` itself; and the hook run by Electron's own Node (Koloft's
-  suite runs it with the fake codex only).
+- **An owner's own PreToolUse hook in `config.toml` stays next to the one given with `-c`.**
+  2026-10-11, codex-cli 0.162.0, temp `CODEX_HOME`, no model turn: with
+  `[[hooks.PreToolUse]]` … `command = "echo owner-hook"` in `config.toml` and
+  `-c hooks.PreToolUse=[…sh "$KOLOFT_CODEX_GATE"…]` on the command line, `hooks/list`
+  listed both — `source: "user"` with key `<config path>:pre_tool_use:0:0`, and
+  `source: "sessionFlags"` with key `/<session-flags>/config.toml:pre_tool_use:0:0` — and
+  trusting the second left the first `untrusted`.
+- **Codex keeps the trust table when it rewrites `config.toml` itself.** Same run:
+  `config/value/write {keyPath:"model", value:"gpt-6", mergeStrategy:"replace"}` rewrote
+  the file (`model = "gpt-6"`), kept the owner's hook and the
+  `[hooks.state."/<session-flags>/config.toml:pre_tool_use:0:0"]` table byte for byte, and
+  the next `hooks/list` still said `trusted`.
+- Not probed yet: a real TUI connected over `--remote` to the hooked app-server, and
+  whether both PreToolUse hooks run in one turn (each needs a model turn, so a signed-in
+  account).
 

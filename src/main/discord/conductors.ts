@@ -27,6 +27,7 @@ import {
 import { assistTaskRole, conductorRole } from '@shared/agentGuide'
 import { isRemoteKey } from '@shared/remoteKey'
 import { errorText } from '../agentRequests'
+import { realpathSafe } from '../projectInfo'
 import { CODEX_GATE_NOT_TRUSTED } from '../conductorGate'
 
 export interface ConductorLaunch {
@@ -289,8 +290,9 @@ export class Conductors {
 
   // ADR-0029
   identityOfLaunch(cwd: string, resumeKey?: string): AssistIdentity | undefined {
+    const launched = realpathSafe(path.resolve(cwd))
     const scope = this.knownScopes().find(
-      (s) => conductorFolder(this.d.userData, s) === path.resolve(cwd)
+      (s) => realpathSafe(conductorFolder(this.d.userData, s)) === launched
     )
     if (!scope) return undefined
     const task = resumeKey ? this.tasks.find((t) => t.key === resumeKey) : undefined
