@@ -88,7 +88,7 @@ function harness(
   cold: ClosableSession[] = []
 ): {
   verb: (args: string[], from: { tabId: string; cwd: string }) => Promise<AgentReply>
-  turnEnded: (tabId: string, reply: string) => void
+  turnEnded: (tabId: string, reply: string, said?: string) => void
   launched: Launch[]
   queued: { tabId: string; text: string; clientId?: string }[]
   closed: string[]
@@ -185,7 +185,12 @@ function harness(
     inner.verb(args, { ...from, session: sessions.find((s) => s.tabId === from.tabId)! })
   return {
     verb,
-    turnEnded: (tabId, reply) => inner.turnEnded(tabId, { said: [], reply, at: 1 }),
+    turnEnded: (tabId, reply, said) =>
+      inner.turnEnded(tabId, {
+        said: said === undefined ? [] : [{ who: 'owner', text: said, at: 1 }],
+        reply,
+        at: 1
+      }),
     launched,
     queued,
     closed,
@@ -1241,7 +1246,7 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
       [...live, session('new-tab', 'claude', { sessionId: 'new-id', title: 'new-work' })],
       {},
       [],
-      conducting({ asking })
+      conducting({ asking, answer: (_tab, reply) => (reply === 'bad' ? 'no dialog' : undefined) })
     )
     const toAssist = (): { tabId: string; said: string }[] =>
       h.lines
@@ -1259,7 +1264,8 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     h.turnEnded('fix', 'All tests pass.')
     h.turnEnded('fix', 'Something later the owner asked.')
     await h.verb(['send', CODEX_THREAD, 'check docs'], from('global'))
-    h.turnEnded('cx', 'Two links fixed.')
+    h.turnEnded('cx', 'The turn it was busy with when the message was queued.')
+    h.turnEnded('cx', 'Two links fixed.', ownerSays('check docs'))
     await vi.waitFor(() =>
       expect(toAssist()).toEqual([
         handed('wsCond', '(From the session "fix-login", id fix-id:) All tests pass.'),
@@ -1309,6 +1315,13 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
           why: expect.stringContaining('</cross-session-message>')
         }
       ])
+    )
+
+    await h.verb(['send', 'fix-login', 'go'], from('wsCond'))
+    expect((await h.verb(['answer', 'fix-login', 'bad'], from('wsCond'))).exit).not.toBe(0)
+    h.turnEnded('fix', 'Still owed after a failed answer.')
+    await vi.waitFor(() =>
+      expect(toAssist().at(-1)).toEqual(handed('wsCond', 'Still owed after a failed answer.'))
     )
   })
 })

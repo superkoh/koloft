@@ -667,6 +667,11 @@ function isMe(
   )
 }
 
+interface OwedReply {
+  owner: string
+  asked?: string
+}
+
 export function sessionVerb(d: SessionVerbDeps): {
   verb: AgentVerb
   turnEnded(tabId: string, turn: Turn): void
@@ -674,7 +679,30 @@ export function sessionVerb(d: SessionVerbDeps): {
   const opening = new Map<string, Promise<string | null>>()
   let queued = 0
   let lined = 0
-  const replyOwed = new Map<string, string>()
+  const replyOwed = new Map<string, OwedReply>()
+
+  const owing = async <T>(
+    tab: string,
+    owed: OwedReply | undefined,
+    act: () => Promise<T>,
+    failed: (result: T) => boolean = () => false
+  ): Promise<T> => {
+    const before = replyOwed.get(tab)
+    if (owed) replyOwed.set(tab, owed)
+    const takeBack = (): void => {
+      if (!owed || replyOwed.get(tab) !== owed) return
+      if (before) replyOwed.set(tab, before)
+      else replyOwed.delete(tab)
+    }
+    try {
+      const result = await act()
+      if (failed(result)) takeBack()
+      return result
+    } catch (error) {
+      takeBack()
+      throw error
+    }
+  }
 
   const openReady = (t: Target, until: number): Promise<string | null> => {
     const inflight = opening.get(t.key)
@@ -696,11 +724,10 @@ export function sessionVerb(d: SessionVerbDeps): {
   ): Promise<string> => {
     const tab = t.tabId ?? (await openReady(t, until))
     if (!tab) throw new Error(`${t.name} was resumed but did not get ready in time.`)
-    if (assist) replyOwed.set(tab, assist)
-    return sendInto(t, tab, text, line, until).catch((error: unknown) => {
-      if (assist) replyOwed.delete(tab)
-      throw error
-    })
+    const owed = assist
+      ? { owner: assist, asked: t.backend === 'codex' ? text : undefined }
+      : undefined
+    return owing(tab, owed, () => sendInto(t, tab, text, line, until))
   }
 
   const sendInto = async (
@@ -764,8 +791,10 @@ export function sessionVerb(d: SessionVerbDeps): {
   }
 
   const turnEnded = (tabId: string, turn: Turn): void => {
-    const owner = replyOwed.get(tabId)
-    if (owner === undefined) return
+    const owed = replyOwed.get(tabId)
+    if (!owed) return
+    const { owner, asked } = owed
+    if (asked !== undefined && !turn.said.some((l) => l.text.includes(asked))) return
     replyOwed.delete(tabId)
     if (!turn.reply.trim()) return
     const parent = placedRows(d.sidebar(), d.allSessions()).find((p) => p.row.id === owner)
@@ -828,11 +857,8 @@ export function sessionVerb(d: SessionVerbDeps): {
     if (sub === 'command') return answered(await d.command(caller.tabId, t, text))
     if (sub === 'keys' && t.tabId) {
       const tab = t.tabId
-      if (d.asking(tab)) replyOwed.set(tab, caller.session.sessionId)
-      await d.press(tab, keysFor(tail)).catch((error: unknown) => {
-        replyOwed.delete(tab)
-        throw error
-      })
+      const owed = d.asking(tab) ? { owner: caller.session.sessionId } : undefined
+      await owing(tab, owed, () => d.press(tab, keysFor(tail)))
       return answered(
         `Pressed ${text} in ${t.name}. See what it shows now with koloft session screen ${asArgument(ref)}.`
       )
@@ -840,11 +866,16 @@ export function sessionVerb(d: SessionVerbDeps): {
     if (sub === 'answer') {
       if (!t.tabId)
         return refused(`koloft session answer: ${t.name}: ${SHOWS_NOTHING_WHILE_CLOSED}`)
-      replyOwed.set(t.tabId, caller.session.sessionId)
-      const error = await d.answer(t.tabId, text)
-      if (!error) return answered(`Answered ${t.name}.`)
-      replyOwed.delete(t.tabId)
-      return refused(`koloft session answer: ${t.name}: ${error} ${seeAndPress(ref)}`)
+      const tab = t.tabId
+      const error = await owing(
+        tab,
+        { owner: caller.session.sessionId },
+        () => d.answer(tab, text),
+        (e) => e !== undefined
+      )
+      return error
+        ? refused(`koloft session answer: ${t.name}: ${error} ${seeAndPress(ref)}`)
+        : answered(`Answered ${t.name}.`)
     }
     if (sub === 'resume' && !text) {
       if (t.tabId) return answered(`${t.name} is already open.`)
@@ -891,7 +922,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       const where = parsed.value.workspace
       const start = (workspace: string, conductorTab?: string): Promise<AgentReply> =>
         startSibling(d, parsed.value, caller.session, workspace, conductorTab, (tab) =>
-          replyOwed.set(tab, caller.session.sessionId)
+          replyOwed.set(tab, { owner: caller.session.sessionId })
         )
       if (scope !== undefined) {
         if (scope === GLOBAL_SCOPE && where === undefined) return refused(GLOBAL_NEEDS_WORKSPACE)
