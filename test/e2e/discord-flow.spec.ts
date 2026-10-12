@@ -400,7 +400,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     }
   })
 
-  test('the conductor sends to a local Claude session through its message socket as the owner’s words, and when that turn ends the session’s reply is handed to the conductor, whose answer reaches the owner in the channel unasked; it stops it — the session stays on the sidebar, so its thread is only archived, after its "closed" card — and resumes it with a first message, each time naming it by its title with spaces and no quotes; the session is touched', async ({
+  test('the conductor sends to a local Claude session through its message socket as the owner’s words, stops it — the session stays on the sidebar, so its thread is only archived, after its "closed" card — and resumes it with a first message, each time naming it by its title with spaces and no quotes; the session is touched', async ({
     env
   }) => {
     seedConductor(env, 'claude')
@@ -424,17 +424,6 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
         .toEqual(sent('fix the tests', 1))
       await expect.poll(() => bindingOnDisk(env)?.touched).toEqual([managed])
       await expect.poll(() => notices(fake)).toEqual([expect.stringMatching(/^🔔 .+ finished\.$/)])
-      const handedBack = `(From the session "${title}", id ${managed}:) Peer said: `
-      await expect
-        .poll(() => peerMessages(env).filter((m) => m.includes(handedBack)), {
-          timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
-        })
-        .toHaveLength(1)
-      await expect
-        .poll(() => said(fake).some((s) => s.includes(handedBack)), {
-          timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
-        })
-        .toBe(true)
 
       fake.say(OWNER, `/koloft session stop ${title}`)
       await expect
@@ -651,7 +640,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     }
   })
 
-  test('a managed Claude session’s question reaches its thread whole and the conductor answers it with koloft session answer; in the thread its command approval is allowed by the Yes button and refused by the owner’s words, and the owner’s message is typed into it and its reply comes back there; a question asked while the session has lost its answerable marker still reaches the thread and is answered by koloft session answer, and koloft session keys picks the option of the next one', async ({
+  test('a managed Claude session’s question reaches its thread whole and the conductor answers it with koloft session answer, and the reply that ends that turn is handed to the conductor, whose answer reaches the owner in the channel unasked; in the thread its command approval is allowed by the Yes button and refused by the owner’s words, and the owner’s message is typed into it and its reply comes back there; a question asked while the session has lost its answerable marker still reaches the thread and is answered by koloft session answer, and koloft session keys picks the option of the next one', async ({
     env
   }) => {
     seedConductor(env, 'claude')
@@ -684,6 +673,17 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
         .poll(() => transcriptText(env, managed), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toContain('Picked: Green')
       expect(bindingOnDisk(env)?.touched).toEqual([managed])
+      const handedBack = `, id ${managed}:) Picked: Green`
+      await expect
+        .poll(() => peerMessages(env).some((m) => m.includes(handedBack)), {
+          timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+        })
+        .toBe(true)
+      await expect
+        .poll(() => said(fake).some((s) => s.includes(handedBack)), {
+          timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+        })
+        .toBe(true)
       const thread = question.channelId
 
       await type('/bash touch made.txt')

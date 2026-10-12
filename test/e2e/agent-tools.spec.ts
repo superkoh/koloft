@@ -173,7 +173,7 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
     await expect(caller.locator('.ws-tab-parked')).toHaveCount(0)
   })
 
-  test('a Codex session started by koloft session new in a Codex session is nested under it', async ({
+  test('a Codex session started by koloft session new in a Codex session is nested under it, and the reply that ends its first turn, which it never sent back itself, is handed to its starter', async ({
     env
   }) => {
     test.setTimeout(120_000)
@@ -196,6 +196,12 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
         )
       ).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
       await expect(wsRows(page, 'ws-a')).toHaveCount(2)
+      const wire = path.join(env.home, 'fake-codex-wire.jsonl')
+      await expect
+        .poll(() => (fs.existsSync(wire) ? fs.readFileSync(wire, 'utf8') : ''), {
+          timeout: 60_000
+        })
+        .toMatch(/\(From the session \\".+\\", id \S+:\) Codex fixture answered: hello/)
     } finally {
       await quitAndClose(app)
     }

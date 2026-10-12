@@ -773,9 +773,9 @@ export function sessionVerb(d: SessionVerbDeps): {
     if (!to) return
     const session = d.allSessions().find((s) => s.tabId === tabId)
     if (!session) return
-    deliver('send', to, sessionSays(session, turn.reply), { tabId, session }, false).catch(
-      (error: unknown) => d.undelivered(tabId, to, errorText(error))
-    )
+    deliver('send', to, sessionSays(session, turn.reply), { tabId, session }, false)
+      .then((reply) => reply.exit === 0 || d.undelivered(tabId, to, reply.text))
+      .catch((error: unknown) => d.undelivered(tabId, to, errorText(error)))
   }
 
   const conductorAct = async (
@@ -827,8 +827,12 @@ export function sessionVerb(d: SessionVerbDeps): {
     d.touch(caller.tabId, t.key)
     if (sub === 'command') return answered(await d.command(caller.tabId, t, text))
     if (sub === 'keys' && t.tabId) {
-      if (d.asking(t.tabId)) replyOwed.set(t.tabId, caller.session.sessionId)
-      await d.press(t.tabId, keysFor(tail))
+      const tab = t.tabId
+      if (d.asking(tab)) replyOwed.set(tab, caller.session.sessionId)
+      await d.press(tab, keysFor(tail)).catch((error: unknown) => {
+        replyOwed.delete(tab)
+        throw error
+      })
       return answered(
         `Pressed ${text} in ${t.name}. See what it shows now with koloft session screen ${asArgument(ref)}.`
       )

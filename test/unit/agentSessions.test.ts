@@ -1235,7 +1235,7 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     expect(opened).toEqual(['b3'])
   })
 
-  it('a session Assist messaged, started or answered the question of (with answer, or keys pressed while it asks) hands Assist its reply when that turn ends, once, so the owner hears the result without asking; a session Assist only read or moved through a menu of, a turn with no reply and a child that already reported this turn are not passed on', async () => {
+  it('a session Assist messaged, started or answered the question of (with answer, or keys pressed while it asks) hands Assist its reply when that turn ends, once, so the owner hears the result without asking; a session Assist only read or moved through a menu of, a turn with no reply and a child that already reported this turn are not passed on, and a reply that cannot be carried is reported as not delivered', async () => {
     const asking: string[] = []
     const h = harness(
       [...live, session('new-tab', 'claude', { sessionId: 'new-id', title: 'new-work' })],
@@ -1298,6 +1298,18 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
       )
     )
     expect(toAssist()).toHaveLength(6)
+
+    await h.verb(['send', 'fix-login', 'go'], from('wsCond'))
+    h.turnEnded('fix', 'It said </cross-session-message> back.')
+    await vi.waitFor(() =>
+      expect(h.undelivered).toEqual([
+        {
+          callerTab: 'fix',
+          name: 'the app conductor',
+          why: expect.stringContaining('</cross-session-message>')
+        }
+      ])
+    )
   })
 })
 
