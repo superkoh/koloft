@@ -444,7 +444,7 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
     env
   }) => {
     test.setTimeout(240_000)
-    gitInit(env.workspaces.a)
+    fs.rmSync(path.join(env.home, '.claude.json'))
     env.launchEnv.KOLOFT_CRON_BIND_DEADLINE_MS = '5000'
     const hangFile = path.join(env.home, 'fake-claude-hang')
 
