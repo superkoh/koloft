@@ -1,14 +1,13 @@
-import type { GitAccount } from '@shared/types'
+import { GITHUB_LOGIN_RE, type GitAccount } from '@shared/types'
 
 const FIXED_GIT_USERNAMES = new Set(['git', 'oauth2', 'x-access-token'])
 const TOKEN_PREFIX = /^(gh[pousr]_|github_pat_)/
 const TOKEN_LIKE = /^[A-Za-z0-9_-]{36,}$/
-const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/
 
 export function plausibleLogin(name: string): string | null {
   if (FIXED_GIT_USERNAMES.has(name.toLowerCase())) return null
   if (TOKEN_PREFIX.test(name) || TOKEN_LIKE.test(name)) return null
-  return GITHUB_LOGIN.test(name) ? name : null
+  return GITHUB_LOGIN_RE.test(name) ? name : null
 }
 
 export function loginFromRemoteUrl(url: string): string | null | 'discard' {
@@ -66,12 +65,8 @@ export function githubHostEntry(hostsYml: string): { user?: string; token?: stri
   return { ...(user ? { user } : {}), ...(token ? { token } : {}) }
 }
 
-export function ghActiveLogin(
-  hostsYml: string,
-  hasGhHelper: boolean,
-  remoteIsHttps: boolean
-): string | null {
-  if (!hasGhHelper || !remoteIsHttps) return null
+export function ghActiveLogin(hostsYml: string, hasGhHelper: boolean): string | null {
+  if (!hasGhHelper) return null
   const { user } = githubHostEntry(hostsYml)
   return user ? plausibleLogin(user) : null
 }

@@ -81,14 +81,14 @@ export interface WorkspaceGitAccount {
   pushBlockedByOrg?: string
 }
 
-const GIT_LOGIN_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/
+export const GITHUB_LOGIN_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/
 
 export function sanitizeGitAccounts(raw: unknown): GitAccount[] {
   if (!Array.isArray(raw)) return []
   const out: GitAccount[] = []
   for (const a of raw as Partial<GitAccount>[]) {
     if (!a || a.host !== 'github.com' || typeof a.login !== 'string') continue
-    if (!GIT_LOGIN_RE.test(a.login)) continue
+    if (!GITHUB_LOGIN_RE.test(a.login)) continue
     if (out.some((o) => o.login.toLowerCase() === a.login!.toLowerCase())) continue
     out.push({
       host: 'github.com',

@@ -11,16 +11,15 @@ import type {
   GitHost,
   GitLoginProgress,
   GitLoginStart,
+  GitRepoPick,
   GitTokenAddResult,
   WorkspaceGitAccount
 } from '@shared/types'
 import { gitTokenDelete, gitTokenRead, gitTokenWrite } from './accounts'
 import {
   dismissSuggestion,
-  findGitAccount,
   listGitAccounts,
   listGitPicks,
-  pickForRepo,
   removeGitAccount,
   setDefaultGitAccount,
   setGitPick,
@@ -28,21 +27,24 @@ import {
   upsertGitAccount
 } from './gitAccounts'
 import { GitAccountChecks } from './gitAccountChecks'
-import { suggestFor, type GitRun } from './gitAccountSuggest'
+import { suggestFor } from './gitAccountSuggest'
 import { GitAuthRequests } from './gitAuthRequests'
-import { GITHUB_URL, gitAccountsDir, gitConfigEnv, writeGitAccountConfigs } from './gitConfigFile'
-import { GitRepoKeys, repoKeyOf } from './gitRepoKey'
+import {
+  GITHUB_URL,
+  gitAccountsDir,
+  gitConfigEnv,
+  noreplyEmail,
+  writeGitAccountConfigs
+} from './gitConfigFile'
+import { TOKEN_VARIABLES_GH_PREFERS } from './gitCredentialScripts'
+import { GitRepoKeys } from './gitRepoKey'
+import type { GitRunResult } from './gitSteps'
 import { missingScope, pushAccess, whoami } from './githubApi'
-import { GithubLogin } from './githubLogin'
+import { GithubLogin, type GithubLoginDeps } from './githubLogin'
 
 const HOST: GitHost = 'github.com'
 const CLUE_COMMAND_KILL_MS = 10_000
 const REQUEST_DIR = /^koloft-git-(\d+)-/
-const TOKEN_VARIABLES_GH_PREFERS = [
-  'GITHUB_TOKEN',
-  'GH_ENTERPRISE_TOKEN',
-  'GITHUB_ENTERPRISE_TOKEN'
-]
 const PICKED_WITHOUT_ASKING: GitAccountSuggestion['kind'][] = [
   'use',
   'only-one-can-push',
@@ -71,7 +73,7 @@ function runForClue(
   cmd: string,
   args: string[],
   opts: { cwd?: string; env?: NodeJS.ProcessEnv; input?: string }
-): Promise<GitRun> {
+): Promise<GitRunResult> {
   return new Promise((resolve) => {
     const child = execFile(
       cmd,
@@ -103,9 +105,9 @@ export interface GitAccountServiceDeps {
   requestDir: string
   gitHelper: string
   ghBin: string | undefined
-  clueEnv(): Promise<NodeJS.ProcessEnv>
+  baseEnv(): Promise<NodeJS.ProcessEnv>
   repoOf(wsPath: string): Promise<{ owner: string; name: string } | null>
-  openPage(url: string): { show(): void; close(): void }
+  openPage: GithubLoginDeps['openPage']
   openInBrowser(url: string): void
   progress(p: GitLoginProgress): void
   accountsChanged(views: GitAccountView[]): void
@@ -114,7 +116,9 @@ export interface GitAccountServiceDeps {
 
 export class GitAccountService {
   private keys = new GitRepoKeys()
-  private master: string
+  private readonly master: string
+  private accounts: GitAccount[] = []
+  private picks: GitRepoPick[] = []
   private offline = new Set<string>()
   private found = new Map<string, GitAccountSuggestion>()
   private orgBlocked = new Map<string, { login: string; org: string }>()
@@ -123,9 +127,9 @@ export class GitAccountService {
   private login: GithubLogin
 
   constructor(private d: GitAccountServiceDeps) {
-    this.master = this.writeConfigs()
+    this.master = this.reload()
     this.checks = new GitAccountChecks({
-      accounts: listGitAccounts,
+      accounts: () => this.accounts,
       token: (login) => gitTokenRead(HOST, login),
       whoami,
       setStatus: (login, status) => this.setStatus(login, status),
@@ -167,25 +171,34 @@ export class GitAccountService {
     return gitConfigEnv(env, this.master)
   }
 
-  private writeConfigs(): string {
+  private reload(): string {
+    this.accounts = listGitAccounts()
+    this.picks = listGitPicks()
     return writeGitAccountConfigs(
       gitAccountsDir(this.d.userData),
-      listGitPicks(),
-      listGitAccounts(),
+      this.picks,
+      this.accounts,
       this.d.gitHelper
     )
   }
 
-  async refreshRepoKeys(localWorkspaces: string[]): Promise<void> {
-    await this.keys.refresh(localWorkspaces)
+  private account(login: string | undefined): GitAccount | undefined {
+    return this.accounts.find((a) => a.login.toLowerCase() === login?.toLowerCase())
+  }
+
+  private pickFor(repo: string | null): GitAccount | undefined {
+    return this.account(this.picks.find((p) => p.repo === repo)?.login)
+  }
+
+  async refreshRepoKeys(workspaces: string[]): Promise<void> {
+    await this.keys.refresh(workspaces)
     this.accountsChanged()
   }
 
   views(): GitAccountView[] {
-    const picks = listGitPicks()
-    return listGitAccounts().map((a) => ({
+    return this.accounts.map((a) => ({
       ...a,
-      usedBy: picks
+      usedBy: this.picks
         .filter((p) => p.login === a.login)
         .flatMap((p) => this.keys.workspacesOf(p.repo)),
       ...(this.offline.has(a.login) && { checkError: 'offline' as const })
@@ -197,40 +210,36 @@ export class GitAccountService {
   }
 
   private changed(): void {
-    this.master = this.writeConfigs()
+    this.reload()
     this.found.clear()
     this.accountsChanged()
     this.d.picksChanged()
   }
 
   private setStatus(login: string, status: AccountStatus): void {
-    const a = findGitAccount(login)
+    const a = this.account(login)
     if (!a) return
     upsertGitAccount({ ...a, status })
     this.changed()
   }
 
-  private pickOf(wsPath: string): { repo: string; account: GitAccount } | undefined {
-    const repo = this.keys.known(wsPath)
-    const pick = repo ? pickForRepo(repo) : undefined
-    const account = pick && findGitAccount(pick.login)
-    return repo && account ? { repo, account } : undefined
+  pickedLogin(root: string): string | undefined {
+    return this.pickFor(this.keys.known(root))?.login
   }
 
   async pickedAt(cwd: string): Promise<boolean> {
-    const repo = await repoKeyOf(cwd)
-    return !!repo && !!pickForRepo(repo)
+    return !!this.pickFor(await this.keys.resolve(cwd))
   }
 
   workspaceAccount(wsPath: string): WorkspaceGitAccount | undefined {
-    const picked = this.pickOf(wsPath)
-    if (!picked) return undefined
-    const { repo, account: a } = picked
+    const repo = this.keys.known(wsPath)
+    const a = this.pickFor(repo)
+    if (!repo || !a) return undefined
     const blocked = this.orgBlocked.get(repo)
     return {
       login: a.login,
       host: a.host,
-      author: { name: a.name || a.login, email: `${a.id}+${a.login}@users.noreply.github.com` },
+      author: { name: a.name || a.login, email: noreplyEmail(a) },
       status: a.status,
       sharedWith: this.keys.workspacesOf(repo).filter((p) => p !== wsPath),
       ...(blocked?.login === a.login && { pushBlockedByOrg: blocked.org })
@@ -246,9 +255,7 @@ export class GitAccountService {
   }
 
   async ghEnv(root: string): Promise<NodeJS.ProcessEnv | undefined> {
-    const repo = this.keys.known(root) ?? (await repoKeyOf(root))
-    const pick = repo ? pickForRepo(repo) : undefined
-    return this.envFor(pick && findGitAccount(pick.login))
+    return this.envFor(this.pickFor(await this.keys.resolve(root)))
   }
 
   async ghEnvForRepo(
@@ -256,11 +263,11 @@ export class GitAccountService {
     workspaces: string[]
   ): Promise<NodeJS.ProcessEnv | undefined> {
     for (const ws of slug ? workspaces : []) {
-      const picked = this.pickOf(ws)
+      const picked = this.pickFor(this.keys.known(ws))
       const repo = picked && (await this.d.repoOf(ws))
-      if (repo && `${repo.owner}/${repo.name}` === slug) return this.envFor(picked.account)
+      if (repo && `${repo.owner}/${repo.name}` === slug) return this.envFor(picked)
     }
-    return this.envFor(listGitAccounts().find((a) => a.default))
+    return this.envFor(this.accounts.find((a) => a.default))
   }
 
   private async save(
@@ -268,12 +275,11 @@ export class GitAccountService {
     token: string
   ): Promise<void> {
     if (!(await gitTokenWrite(a.host, a.login, token))) throw new Error('keychain write failed')
-    const before = findGitAccount(a.login)
     upsertGitAccount({
       ...a,
       default: false,
       status: 'ok',
-      addedAt: before?.addedAt ?? Date.now()
+      addedAt: this.account(a.login)?.addedAt ?? Date.now()
     })
     this.offline.delete(a.login)
     this.changed()
@@ -313,7 +319,7 @@ export class GitAccountService {
   }
 
   async remove(login: string): Promise<void> {
-    const a = findGitAccount(login)
+    const a = this.account(login)
     if (!a) return
     await gitTokenDelete(a.host, a.login)
     removeGitAccount(a.login)
@@ -323,17 +329,18 @@ export class GitAccountService {
 
   makeDefault(login: string): void {
     setDefaultGitAccount(login)
+    this.reload()
     this.accountsChanged()
   }
 
   async pick(wsPath: string, login: string | null): Promise<void> {
-    const repo = this.keys.known(wsPath) ?? (await repoKeyOf(wsPath))
+    const repo = await this.keys.resolve(wsPath)
     if (!repo) return
     setGitPick(repo, login)
     this.keys.set(wsPath, repo)
     this.orgBlocked.delete(repo)
     this.changed()
-    const account = login ? findGitAccount(login) : undefined
+    const account = this.account(login ?? undefined)
     if (account) void this.checkOrgAccess(wsPath, repo, account)
   }
 
@@ -342,13 +349,13 @@ export class GitAccountService {
     const token = where && (await gitTokenRead(account.host, account.login))
     if (!where || !token) return
     const access = await pushAccess(token, where.owner, where.name)
-    if (access.kind !== 'org-blocked' || pickForRepo(repo)?.login !== account.login) return
+    if (access.kind !== 'org-blocked' || this.pickFor(repo) !== this.account(account.login)) return
     this.orgBlocked.set(repo, { login: account.login, org: access.org })
     this.d.picksChanged()
   }
 
   private async suggestNow(wsPath: string, network: boolean): Promise<GitAccountSuggestion> {
-    const env = await this.d.clueEnv()
+    const env = await this.d.baseEnv()
     return suggestFor(
       wsPath,
       { network },
@@ -359,7 +366,7 @@ export class GitAccountService {
         home: os.homedir(),
         env,
         githubUrl: GITHUB_URL,
-        accounts: listGitAccounts,
+        accounts: () => this.accounts,
         token: (login) => gitTokenRead(HOST, login),
         pushAccess,
         repoOf: this.d.repoOf
@@ -368,24 +375,26 @@ export class GitAccountService {
   }
 
   async suggest(wsPath: string, network: boolean): Promise<GitAccountSuggestion> {
-    const repo = this.keys.known(wsPath) ?? (await repoKeyOf(wsPath))
+    const repo = await this.keys.resolve(wsPath)
     if (!repo || suggestionDismissed(repo)) return { kind: 'none' }
-    if (!network) return this.found.get(wsPath) ?? this.suggestNow(wsPath, false)
-    const s = await this.suggestNow(wsPath, true)
-    if (s.kind !== 'none') this.found.set(wsPath, s)
+    const cached = this.found.get(wsPath)
+    if (!network && cached) return cached
+    const s = await this.suggestNow(wsPath, network)
+    if (!network || s.kind !== 'none') this.found.set(wsPath, s)
     return s
   }
 
   async dismiss(wsPath: string): Promise<void> {
-    const repo = this.keys.known(wsPath) ?? (await repoKeyOf(wsPath))
+    const repo = await this.keys.resolve(wsPath)
     if (!repo) return
     dismissSuggestion(repo)
     this.found.delete(wsPath)
   }
 
   async autoPickNewWorkspace(wsPath: string): Promise<void> {
-    const repo = await repoKeyOf(wsPath)
-    if (!repo || pickForRepo(repo) || listGitAccounts().length === 0) return
+    if (this.accounts.length === 0) return
+    const repo = await this.keys.resolve(wsPath)
+    if (!repo || this.pickFor(repo)) return
     const s = await this.suggest(wsPath, true)
     if (PICKED_WITHOUT_ASKING.includes(s.kind) && 'login' in s) await this.pick(wsPath, s.login)
   }

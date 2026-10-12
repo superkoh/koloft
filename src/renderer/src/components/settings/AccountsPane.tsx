@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
+import { useCallback, useEffect, useState, type JSX } from 'react'
 import { LuGlobe, LuPlus, LuRefreshCw, LuX } from 'react-icons/lu'
 import type { AccountKind, AccountView } from '@shared/types'
 import { useStore } from '../../store'
@@ -26,15 +26,6 @@ export function AccountsPane(): JSX.Element {
   const [codexSignIn, setCodexSignIn] = useState<{ again?: string } | null>(null)
   const claudeAccounts = accounts.filter((a) => a.kind !== 'codex-home')
   const codexAccounts = accounts.filter((a) => a.kind === 'codex-home')
-  const settingsFocus = useStore((s) => s.settingsFocus)
-  const setSettingsFocus = useStore((s) => s.setSettingsFocus)
-  const gitHeadRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!settingsFocus) return
-    gitHeadRef.current?.scrollIntoView({ block: 'start' })
-    setSettingsFocus(null)
-  }, [settingsFocus, setSettingsFocus])
 
   useEffect(() => {
     let alive = true
@@ -194,7 +185,7 @@ export function AccountsPane(): JSX.Element {
       )}
       {adding && <AddAccountDialog kind={adding} onClose={() => setAdding(null)} />}
       {login && <LoginDialog />}
-      <GitAccountsSection headRef={gitHeadRef} />
+      <GitAccountsSection />
     </>
   )
 }

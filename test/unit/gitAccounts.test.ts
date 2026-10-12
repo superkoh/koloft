@@ -16,7 +16,6 @@ import {
   findGitAccount,
   listGitAccounts,
   listGitPicks,
-  pickForRepo,
   removeGitAccount,
   setDefaultGitAccount,
   setGitPick,
@@ -73,9 +72,8 @@ describe('git accounts', () => {
     setGitPick('/r/three/.git', 'alice')
     dismissSuggestion('/r/one/.git')
 
-    const { removedPicks } = removeGitAccount('alice')
+    removeGitAccount('alice')
 
-    expect(removedPicks.map((p) => p.repo)).toEqual(['/r/one/.git', '/r/three/.git'])
     expect(listGitPicks()).toEqual([{ repo: '/r/two/.git', host: 'github.com', login: 'bob' }])
     expect(defaults()).toEqual(['bob'])
     expect(suggestionDismissed('/r/one/.git')).toBe(true)
@@ -84,11 +82,11 @@ describe('git accounts', () => {
   it('a pick names a known account or nothing; null clears it', () => {
     upsertGitAccount(account('bob', 1))
     setGitPick('/r/one/.git', 'nobody')
-    expect(pickForRepo('/r/one/.git')).toBeUndefined()
+    expect(listGitPicks().find((p) => p.repo === '/r/one/.git')).toBeUndefined()
     setGitPick('/r/one/.git', 'BOB')
-    expect(pickForRepo('/r/one/.git')?.login).toBe('bob')
+    expect(listGitPicks().find((p) => p.repo === '/r/one/.git')?.login).toBe('bob')
     setGitPick('/r/one/.git', null)
-    expect(pickForRepo('/r/one/.git')).toBeUndefined()
+    expect(listGitPicks().find((p) => p.repo === '/r/one/.git')).toBeUndefined()
   })
 
   it('a dismissed suggestion is remembered for that repository only', () => {

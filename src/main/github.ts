@@ -187,6 +187,7 @@ export interface GithubOptions {
   gitBin?: string
   git?: (root: string, args: string[], network: boolean) => Promise<string | null>
   openCounts?: (repo: GithubRepo, root: string) => Promise<OpenCounts | null>
+  countedAs?: (root: string) => string | undefined
   gh?: (args: string[], root: string) => Promise<GhResult>
   now?: () => number
 }
@@ -235,17 +236,14 @@ export class GithubLookup {
     if (this.fixture) return fixtureCounts(this.fixture, root)
     const repo = await this.repoOf(root, false)
     if (!repo || !this.opts.openCounts) return null
-    const key = `${repo.owner}/${repo.repo}`
+    const slug = `${repo.owner}/${repo.repo}`
+    const key = `${this.opts.countedAs?.(root) ?? ''} ${slug}`
     let known = this.counted.get(key)
     if (!known || this.now() - known.at >= TTL_MS) {
       known = { at: this.now(), counts: await this.opts.openCounts(repo, root) }
       this.counted.set(key, known)
     }
-    return known.counts && { repo: key, ...known.counts }
-  }
-
-  forgetOpenCounts(): void {
-    this.counted.clear()
+    return known.counts && { repo: slug, ...known.counts }
   }
 
   async ownerSlashName(root: string): Promise<string | null> {

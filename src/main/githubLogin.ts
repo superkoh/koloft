@@ -5,11 +5,12 @@ import path from 'path'
 import type { GitLoginProgress, GitLoginStart } from '@shared/types'
 import { githubHostEntry } from './gitClues'
 import type { whoami } from './githubApi'
+import type { DeviceCodePage } from './deviceCodeWindow'
 
 const SANDBOX_EXEC = '/usr/bin/sandbox-exec'
 const KEYCHAIN_TOOL = '/usr/bin/security'
 const SANDBOX_CHECK_TIMEOUT_MS = 5_000
-export const GH_LOGIN_TIMEOUT_MS = 10 * 60_000
+const GH_LOGIN_TIMEOUT_MS = 10 * 60_000
 const LOGIN_DIR_PREFIX = 'gh-login-'
 const PROFILE_FILE = 'gh-login.sb'
 
@@ -90,7 +91,7 @@ export function removeStaleLoginDirs(userData: string): void {
 export interface GithubLoginDeps {
   ghBin: string | undefined
   userData: string
-  openPage(url: string): { show(): void; close(): void }
+  openPage(url: string): DeviceCodePage
   openInBrowser(url: string): void
   progress(p: GitLoginProgress): void
   whoami: typeof whoami
@@ -104,7 +105,7 @@ interface LoginRun {
   dir: string
   child?: ChildProcess
   url?: string
-  page?: { show(): void; close(): void }
+  page?: DeviceCodePage
   stderr: string
   cancelled: boolean
   timer?: NodeJS.Timeout
@@ -252,8 +253,7 @@ export class GithubLogin {
       return this.end(run, 'Koloft could not save the GitHub account.')
     }
     if (this.run !== run) return
-    this.run = null
-    run.page?.close()
+    this.end(run, null)
     this.d.progress({ phase: 'saved', login: me.login })
   }
 }

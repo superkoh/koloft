@@ -1836,7 +1836,7 @@ app.whenReady().then(() => {
     requestDir: gitRequestDir,
     gitHelper,
     ghBin: fallbackBin && path.join(fallbackBin, 'gh'),
-    clueEnv: () => loginEnvReady().then(() => ({ ...process.env })),
+    baseEnv: () => loginEnvReady().then(() => ({ ...process.env })),
     repoOf: async (wsPath) => {
       const slug = await hosts.of(wsPath).github.ownerSlashName(wsPath)
       const [owner, name] = slug?.split('/') ?? []
@@ -1847,7 +1847,6 @@ app.whenReady().then(() => {
     progress: (p) => sendToRenderer('gitAccounts:login-progress', p),
     accountsChanged: (views) => sendToRenderer('gitAccounts:update', views),
     picksChanged: () => {
-      localGithub.forgetOpenCounts()
       void githubCounts?.sweep()
       workspaceMgr?.restampLive()
     }
@@ -2102,9 +2101,7 @@ app.whenReady().then(() => {
     gitAccount: (wsPath) => gitAccounts?.workspaceAccount(wsPath),
     onRescanned: (wsPaths) => {
       void freshness?.refreshLocal(wsPaths)
-      void gitAccounts
-        ?.refreshRepoKeys(wsPaths.filter((p) => !parseRemoteKey(p)))
-        .then(() => workspaceMgr?.restampLive())
+      void gitAccounts?.refreshRepoKeys(wsPaths).then(() => workspaceMgr?.restampLive())
       void githubCounts?.sweep()
       claudeBackend.watchRemoteHookMirrors()
     },
@@ -3802,6 +3799,7 @@ const BAD_GIT_STEP: { ok: false; reason: string } = { ok: false, reason: 'bad re
 const githubOptions: GithubOptions = {
   fixture: parseGithubFixture(process.env.KOLOFT_GITHUB_FIXTURE),
   // PLATFORM§1
+  countedAs: (root) => gitAccounts?.pickedLogin(root),
   openCounts: async (repo, root) => {
     await loginEnvReady()
     return ghOpenCounts(repo, await gitAccounts?.ghEnv(root))
@@ -3825,9 +3823,8 @@ const githubOptions: GithubOptions = {
   }
 }
 
-const localGithub = new GithubLookup(githubOptions)
 const hosts = new Hosts(
-  localHost(localGithub),
+  localHost(new GithubLookup(githubOptions)),
   (machine) =>
     new SshHost(machine, {
       run: (cmd, opts) =>
@@ -4140,7 +4137,7 @@ function registerIpc(): void {
   }
   ipcMain.handle('workspace:add', (_e, p: string) => {
     const r = addWorkspacePath(p)
-    if (r?.code === 'added' && !parseRemoteKey(p)) void gitAccounts?.autoPickNewWorkspace(p)
+    if (r?.code === 'added') void gitAccounts?.autoPickNewWorkspace(p)
     return r
   })
   const isText = (v: unknown): v is string => typeof v === 'string' && v.length > 0

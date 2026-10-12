@@ -64,9 +64,8 @@ describe('ghActiveLogin', () => {
   const hosts = 'github.com:\n    users:\n        bob:\n    git_protocol: https\n    user: bob\n'
 
   it('names the user own gh is signed in as, only when gh is git’s helper and the remote is https', () => {
-    expect(ghActiveLogin(hosts, true, true)).toBe('bob')
-    expect(ghActiveLogin(hosts, false, true)).toBeNull()
-    expect(ghActiveLogin(hosts, true, false)).toBeNull()
+    expect(ghActiveLogin(hosts, true)).toBe('bob')
+    expect(ghActiveLogin(hosts, false)).toBeNull()
   })
 
   it('spots gh set up as git’s credential helper, globally or for github.com', () => {

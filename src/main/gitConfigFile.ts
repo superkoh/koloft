@@ -6,6 +6,10 @@ import { writeWholeBeforeVisible } from './jsonDrops'
 
 export const GITHUB_URL = process.env.KOLOFT_GITHUB_URL || 'https://github.com'
 
+export function noreplyEmail(a: { id: number; login: string }): string {
+  return `${a.id}+${a.login}@users.noreply.github.com`
+}
+
 export function gitAccountsDir(userData: string): string {
   return path.join(userData, 'git-accounts')
 }
@@ -42,7 +46,7 @@ export function accountConfigText(a: GitAccount, helperPath: string, hostUrl: st
     `\tusername = ${a.login}`,
     '[user]',
     `\tname = ${quoted(a.name || a.login)}`,
-    `\temail = ${a.id}+${a.login}@users.noreply.github.com`,
+    `\temail = ${noreplyEmail(a)}`,
     ''
   ].join('\n')
 }

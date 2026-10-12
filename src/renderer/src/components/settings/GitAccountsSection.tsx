@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type JSX, type Ref } from 'react'
+import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
 import { LuCopy, LuExternalLink, LuLoaderCircle, LuPlus, LuX } from 'react-icons/lu'
 import type { GitAccountView, GitLoginProgress, GitTokenAddResult } from '@shared/types'
 import { basename } from '@shared/preview'
@@ -12,7 +12,7 @@ const CREATE_TOKEN_URL =
 
 type AddMode =
   | { step: 'host' }
-  | { step: 'login'; progress: GitLoginProgress | null; again?: string }
+  | { step: 'login'; progress: GitLoginProgress; again?: string }
   | { step: 'token'; why?: string }
 
 function workspacesLabel(n: number): string {
@@ -38,15 +38,20 @@ function tokenError(r: GitTokenAddResult): string | null {
   return 'Could not check this token with GitHub.'
 }
 
-export function GitAccountsSection({ headRef }: { headRef?: Ref<HTMLDivElement> }): JSX.Element {
+export function GitAccountsSection(): JSX.Element {
   const [accounts, setAccounts] = useState<GitAccountView[]>([])
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
   const [adding, setAdding] = useState<AddMode | null>(null)
-  const tokenFocus = useStore((s) => s.settingsFocus === 'git-token')
+  const focus = useStore((s) => s.settingsFocus)
+  const setFocus = useStore((s) => s.setSettingsFocus)
+  const headRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (tokenFocus) setAdding({ step: 'token' })
-  }, [tokenFocus])
+    if (!focus) return
+    if (focus === 'git-token') setAdding({ step: 'token' })
+    headRef.current?.scrollIntoView({ block: 'start' })
+    setFocus(null)
+  }, [focus, setFocus])
 
   useEffect(() => {
     let alive = true
@@ -269,7 +274,7 @@ function GitLoginBox({
   onClose
 }: {
   again?: string
-  progress: GitLoginProgress | null
+  progress: GitLoginProgress
   onRetry(): void
   onToken(): void
   onClose(): void
@@ -290,7 +295,7 @@ function GitLoginBox({
       <div className="acct-add-title">
         {again ? `Sign in again ${again}` : 'Add GitHub account'}
       </div>
-      {progress?.phase === 'failed' ? (
+      {progress.phase === 'failed' ? (
         <div className="acct-login-state bad">
           <div>Sign-in did not complete.</div>
           <pre className="acct-login-tail">{progress.message}</pre>
@@ -303,7 +308,7 @@ function GitLoginBox({
         </div>
       ) : (
         <div className="acct-login-state">
-          {progress?.phase === 'code' && (
+          {progress.phase === 'code' && (
             <>
               <div>A sign-in window opened. Enter this code:</div>
               <div className="acct-foot">

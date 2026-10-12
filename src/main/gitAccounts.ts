@@ -13,28 +13,26 @@ export function findGitAccount(login: string): GitAccount | undefined {
   return listGitAccounts().find((a) => sameLogin(a.login, login))
 }
 
-export function upsertGitAccount(a: GitAccount): GitAccount[] {
+export function upsertGitAccount(a: GitAccount): void {
   const current = listGitAccounts()
   const at = current.findIndex((o) => sameLogin(o.login, a.login))
   const next = [...current]
   if (at >= 0) next[at] = { ...a, default: current[at].default }
   else next.push({ ...a, default: current.length === 0 })
-  return saveSettings({ gitAccounts: next }).gitAccounts
+  saveSettings({ gitAccounts: next })
 }
 
-export function removeGitAccount(login: string): { removedPicks: GitRepoPick[] } {
+export function removeGitAccount(login: string): void {
   const accounts = listGitAccounts()
   const gone = accounts.find((a) => sameLogin(a.login, login))
-  if (!gone) return { removedPicks: [] }
+  if (!gone) return
   let rest = accounts.filter((a) => a !== gone)
   if (gone.default && rest.length) {
     const oldest = rest.reduce((o, a) => (a.addedAt < o.addedAt ? a : o))
     rest = rest.map((a) => ({ ...a, default: a === oldest }))
   }
   const picks = listGitPicks()
-  const removedPicks = picks.filter((p) => sameLogin(p.login, login))
-  saveSettings({ gitAccounts: rest, gitPicks: picks.filter((p) => !removedPicks.includes(p)) })
-  return { removedPicks }
+  saveSettings({ gitAccounts: rest, gitPicks: picks.filter((p) => !sameLogin(p.login, login)) })
 }
 
 export function setDefaultGitAccount(login: string): void {
@@ -45,10 +43,6 @@ export function setDefaultGitAccount(login: string): void {
 
 export function listGitPicks(): GitRepoPick[] {
   return loadSettings().gitPicks
-}
-
-export function pickForRepo(repoKey: string): GitRepoPick | undefined {
-  return listGitPicks().find((p) => p.repo === repoKey)
 }
 
 export function setGitPick(repoKey: string, login: string | null): void {

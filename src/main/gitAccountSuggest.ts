@@ -12,20 +12,15 @@ import {
   usesGhCredentialHelper
 } from './gitClues'
 import type { pushAccess } from './githubApi'
-
-export interface GitRun {
-  code: number | null
-  stdout: string
-  stderr: string
-}
+import type { GitRunResult } from './gitSteps'
 
 export interface SuggestDeps {
   git(
     cwd: string,
     args: string[],
     opts: { env: NodeJS.ProcessEnv; input?: string }
-  ): Promise<GitRun>
-  ssh(args: string[]): Promise<GitRun>
+  ): Promise<GitRunResult>
+  ssh(args: string[]): Promise<GitRunResult>
   readFile(p: string): string | null
   home: string
   env: NodeJS.ProcessEnv
@@ -65,7 +60,7 @@ export async function suggestFor(
   d: SuggestDeps
 ): Promise<GitAccountSuggestion> {
   const env = clueEnv(d.env)
-  const git = async (args: string[], input?: string): Promise<GitRun> =>
+  const git = async (args: string[], input?: string): Promise<GitRunResult> =>
     d.git(wsPath, args, { env, ...(input === undefined ? {} : { input }) })
   const out = async (args: string[]): Promise<string | null> => {
     const r = await git(args)
@@ -139,7 +134,7 @@ function withoutUser(url: string): string {
 async function firstClue(
   remote: Remote,
   network: boolean,
-  git: (args: string[], input?: string) => Promise<GitRun>,
+  git: (args: string[], input?: string) => Promise<GitRunResult>,
   out: (args: string[]) => Promise<string | null>,
   d: SuggestDeps
 ): Promise<Clue | null> {
@@ -158,7 +153,7 @@ async function firstClue(
     if (configured) return { login: configured, reason: 'config-user' }
     if (d.env.GH_TOKEN || d.env.GITHUB_TOKEN) return null
     const helpers = (await out(['config', '--get-regexp', '^credential\\..*helper$'])) ?? ''
-    const ghLogin = ghActiveLogin(readGhHosts(d), usesGhCredentialHelper(helpers), true)
+    const ghLogin = ghActiveLogin(readGhHosts(d), usesGhCredentialHelper(helpers))
     return ghLogin ? { login: ghLogin, reason: 'gh-user' } : null
   }
   if (!network) return null
@@ -215,14 +210,16 @@ async function noClue(
   if (!network) return fallback
   const repo = await d.repoOf(wsPath)
   if (!repo) return fallback
-  const pushers: string[] = []
-  for (const a of d.accounts()) {
-    const token = await d.token(a.login)
-    if (!token) continue
-    const access = await d.pushAccess(token, repo.owner, repo.name)
-    if (access.kind === 'offline') return fallback
-    if (access.kind === 'push' && access.allowed) pushers.push(a.login)
-  }
+  const accesses = await Promise.all(
+    d.accounts().map(async (a) => {
+      const token = await d.token(a.login)
+      return { login: a.login, access: token && (await d.pushAccess(token, repo.owner, repo.name)) }
+    })
+  )
+  if (accesses.some((x) => x.access && x.access.kind === 'offline')) return fallback
+  const pushers = accesses
+    .filter((x) => x.access && x.access.kind === 'push' && x.access.allowed)
+    .map((x) => x.login)
   if (pushers.length === 1) return { kind: 'only-one-can-push', login: pushers[0] }
   const byDefault = d.accounts().find((a) => a.default && pushers.includes(a.login))
   return byDefault ? { kind: 'default-can-push', login: byDefault.login } : fallback

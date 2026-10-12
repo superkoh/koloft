@@ -1,7 +1,7 @@
 export const GITHUB_API_URL = process.env.KOLOFT_GITHUB_API_URL || 'https://api.github.com'
 const API_TIMEOUT_MS = 10_000
 const UNREACHABLE_CODES = new Set(['ENOTFOUND', 'ECONNREFUSED', 'ECONNRESET', 'EAI_AGAIN'])
-export const SCOPES_KOLOFT_NEEDS = ['repo', 'read:org'] as const
+const SCOPES_KOLOFT_NEEDS = ['repo', 'read:org'] as const
 
 export type WhoAmI =
   | { ok: true; login: string; id: number; name: string; scopes: string[] }

@@ -5,7 +5,8 @@ import os from 'os'
 import path from 'path'
 import type { GitAccount } from '@shared/types'
 import type { PushAccess } from '../../src/main/githubApi'
-import { suggestFor, type GitRun, type SuggestDeps } from '../../src/main/gitAccountSuggest'
+import { suggestFor, type SuggestDeps } from '../../src/main/gitAccountSuggest'
+import type { GitRunResult } from '../../src/main/gitSteps'
 
 const account = (login: string, id: number): GitAccount => ({
   host: 'github.com',
@@ -21,7 +22,7 @@ function runGit(
   cwd: string,
   args: string[],
   opts: { env: NodeJS.ProcessEnv; input?: string }
-): Promise<GitRun> {
+): Promise<GitRunResult> {
   return new Promise((resolve) => {
     const p = spawn('git', args, { cwd, env: opts.env })
     let stdout = ''

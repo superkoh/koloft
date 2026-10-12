@@ -2,6 +2,11 @@ import { shq } from '@shared/shellQuote'
 import { NEWID_FN } from './openShimScript'
 
 export const GIT_AUTH_WAITS_MS = 10_000
+export const TOKEN_VARIABLES_GH_PREFERS = [
+  'GITHUB_TOKEN',
+  'GH_ENTERPRISE_TOKEN',
+  'GITHUB_ENTERPRISE_TOKEN'
+]
 const GIT_AUTH_POLL_MS = 50
 const GIT_HOST = 'github.com'
 
@@ -96,7 +101,7 @@ if [ -z "$tok" ]; then
   echo "koloft: Koloft did not hand over the token for $acct; sign in again in Settings ▸ Accounts." >&2
   exit 1
 fi
-unset GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN
+unset ${TOKEN_VARIABLES_GH_PREFERS.join(' ')}
 export GH_TOKEN="$tok" GH_HOST=${GIT_HOST}
 exec "$real" "$@"
 `
