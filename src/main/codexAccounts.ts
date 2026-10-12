@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { AccountView, CodexLimits, CodexLimitWindow } from '@shared/types'
+import { usableAccounts } from '@shared/accountUsage'
 
 const CODEX_HOMES = 'codex-homes'
 
@@ -97,7 +98,7 @@ export class CodexAccountPicker {
   private turn = 0
 
   pick(accounts: AccountView[]): AccountView | undefined {
-    const pool = accounts.filter((a) => a.kind === 'codex-home' && a.enabled && a.status === 'ok')
+    const pool = usableAccounts(accounts, ['codex-home'])
     if (pool.length === 0) return undefined
     const measured = pool.filter((a) => a.limits && heaviest(a.limits) < 1)
     if (measured.length > 0)
