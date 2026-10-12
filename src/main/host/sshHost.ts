@@ -467,14 +467,18 @@ export class SshHost implements Host {
     return items.map((item) => ({ ...item, path: this.keyed(item.path) }))
   }
 
-  async dirExists(dir: string): Promise<boolean> {
-    return (await this.sh('test -d "$1"', [this.bare(dir)])).code === 0
+  private testDir(dir: string) {
+    return this.sh('test -d "$1"', [this.bare(dir)])
   }
 
-  async dirKnownMissing(dir: string): Promise<boolean> {
-    const r = await this.sh('test -d "$1"', [this.bare(dir)])
+  async dirExists(dir: string): Promise<boolean> {
+    return (await this.testDir(dir)).code === 0
+  }
+
+  async dirExistsOrThrow(dir: string): Promise<boolean> {
+    const r = await this.testDir(dir)
     if (sshLinkBroke(r)) throw new Error(problemOf(r))
-    return r.code !== 0
+    return r.code === 0
   }
 
   async makeDir(dir: string): Promise<boolean> {

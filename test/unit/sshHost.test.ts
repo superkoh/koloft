@@ -238,12 +238,12 @@ describe('a remote Workbench while the ssh link is down', () => {
   it('never calls the workspace folder missing when ssh cannot connect, only when the machine says it is gone', async () => {
     let linkDown = false
     const host = machine((cmd, opts) => (linkDown ? unreachable() : runOnMachine(cmd, opts)))
-    expect(await host.dirKnownMissing(keyed(repo))).toBe(false)
-    expect(await host.dirKnownMissing(keyed(path.join(repo, 'gone')))).toBe(true)
+    expect(await host.dirExistsOrThrow(keyed(repo))).toBe(true)
+    expect(await host.dirExistsOrThrow(keyed(path.join(repo, 'gone')))).toBe(false)
 
     linkDown = true
 
-    await expect(host.dirKnownMissing(keyed(repo))).rejects.toThrow('Operation timed out')
+    await expect(host.dirExistsOrThrow(keyed(repo))).rejects.toThrow('Operation timed out')
   })
 })
 
