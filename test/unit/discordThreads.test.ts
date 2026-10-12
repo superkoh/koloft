@@ -10,7 +10,6 @@ function setup(scope = WS, fail = false, refuseDelete = false) {
     scope,
     backend: 'claude',
     channel: { guildId: '1', channelId: '10', name: 'koloft' },
-    sessionIds: [],
     touched: []
   }
   const threads: SessionThread[] = []

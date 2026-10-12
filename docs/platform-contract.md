@@ -1483,3 +1483,11 @@ Gateway (the live connection that pushes events):
   @playwright/cli 0.1.22 (playwright-core 1.64.0-alpha-1790635538000), against a
   headless Chrome's CDP endpoint, outside and inside `codex app-server`'s `command/exec`
   (Codex CLI 0.162.0).
+
+## §43 Node `fs.renameSync` onto a symbolic link
+
+- **A rename onto a path that is a symbolic link replaces the link, not the file it points
+  to.** Writing a temp file and `fs.renameSync(tmp, link)` left `link` a plain file with
+  the new text, and the file the link pointed to kept its old text. A write that must
+  reach the shared file renames onto `fs.realpathSync(link)` instead.
+- Measured 2026-10-11 on macOS 27.0.1 with Node 24.13.0, in a scratch folder.

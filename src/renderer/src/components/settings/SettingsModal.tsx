@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
 import {
   LuBell,
+  LuConciergeBell,
   LuInfo,
   LuKeyboard,
   LuPalette,
@@ -22,6 +23,7 @@ import { ExtensionsPane } from './ExtensionsPane'
 import { AboutPane } from './AboutPane'
 import { WelcomePane } from './WelcomePane'
 import { DiscordPane } from './DiscordPane'
+import { AssistPane } from './AssistPane'
 import { BsDiscord } from 'react-icons/bs'
 
 type PaneId =
@@ -30,6 +32,7 @@ type PaneId =
   | 'accounts'
   | 'appearance'
   | 'shortcuts'
+  | 'assist'
   | 'notifications'
   | 'discord'
   | 'extensions'
@@ -81,6 +84,7 @@ const PANES: { id: PaneId; label: string; Icon: typeof LuUsers }[] = [
   { id: 'accounts', label: 'Accounts', Icon: LuUsers },
   { id: 'appearance', label: 'Appearance', Icon: LuPalette },
   { id: 'shortcuts', label: 'Shortcuts', Icon: LuKeyboard },
+  { id: 'assist', label: 'Assist', Icon: LuConciergeBell },
   { id: 'discord', label: 'Discord', Icon: BsDiscord },
   { id: 'notifications', label: 'Notifications', Icon: LuBell },
   { id: 'extensions', label: 'Extensions', Icon: LuPuzzle },
@@ -207,6 +211,7 @@ export function SettingsModal(): JSX.Element | null {
             {pane === 'appearance' && <AppearancePane />}
             {pane === 'shortcuts' && <ShortcutsPane />}
             {pane === 'notifications' && <NotificationsPane />}
+            {pane === 'assist' && <AssistPane />}
             {pane === 'discord' && <DiscordPane />}
             {pane === 'extensions' && <ExtensionsPane />}
             {pane === 'about' && <AboutPane />}

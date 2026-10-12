@@ -63,7 +63,7 @@ export const BUILTIN_VERBS: AgentVerbs = {
 
 export const NOT_PINNED = 'koloft: pin this workspace in the sidebar first.'
 
-export const ONLY_ASSIST = 'only Assist (the session bound to a Discord channel)'
+export const ONLY_ASSIST = "only Assist (Koloft's own AI)"
 
 export const AGENT_TOOLS_OFF =
   "koloft: Koloft's agent tools are not on for this session: the owner turned them off in Koloft's Settings."

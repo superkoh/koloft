@@ -2,10 +2,11 @@ import { describe, it, expect } from 'vitest'
 import {
   bindingProblem,
   GLOBAL_SCOPE,
-  keepPinnedBindings,
+  keepPinnedScopes,
   newChannelName,
   sanitizeDiscord
 } from '@shared/conductors'
+import { buildResetPatch, sanitizeLoadedSettings, sanitizeSettingsPatch } from '@shared/settingsOps'
 import type { ConductorBinding } from '@shared/types'
 
 function binding(id: string, scope: string, channelId: string): ConductorBinding {
@@ -14,7 +15,6 @@ function binding(id: string, scope: string, channelId: string): ConductorBinding
     scope,
     backend: 'claude',
     channel: { guildId: '100', channelId, name: `ch-${channelId}` },
-    sessionIds: [],
     touched: []
   }
 }
@@ -96,9 +96,58 @@ describe('a new channel’s name', () => {
   })
 })
 
-describe('keepPinnedBindings', () => {
+describe('loading settings written before Assist records existed', () => {
+  const v038 = {
+    discord: {
+      userId: '555',
+      bindings: [
+        {
+          ...binding('g', GLOBAL_SCOPE, '1'),
+          sessionIds: ['old-1', 'old-2'],
+          lastSessionKey: 'old-2'
+        },
+        { ...binding('a', '/ws/a', '2'), backend: 'codex', sessionIds: [] }
+      ]
+    }
+  }
+
+  it('moves each binding’s sessions to its scope’s Assist record, one to one, and the binding keeps its Discord parts', () => {
+    const s = sanitizeLoadedSettings(v038)
+    expect(s.assistSessions).toEqual([
+      { scope: GLOBAL_SCOPE, sessionIds: ['old-1', 'old-2'], lastSessionKey: 'old-2' }
+    ])
+    expect(s.discord.bindings.map((b) => b.id)).toEqual(['g', 'a'])
+    expect(s.discord.bindings[0]).not.toHaveProperty('sessionIds')
+  })
+
+  it('reading the same file again changes nothing, and a record already there keeps its newest session', () => {
+    const once = sanitizeLoadedSettings(v038)
+    const twice = sanitizeLoadedSettings({ ...v038, assistSessions: once.assistSessions })
+    expect(twice.assistSessions).toEqual(once.assistSessions)
+    const newer = sanitizeLoadedSettings({
+      ...v038,
+      assistSessions: [{ scope: GLOBAL_SCOPE, sessionIds: ['new-1'], lastSessionKey: 'new-1' }]
+    })
+    expect(newer.assistSessions).toEqual([
+      { scope: GLOBAL_SCOPE, sessionIds: ['new-1', 'old-1', 'old-2'], lastSessionKey: 'new-1' }
+    ])
+  })
+
+  it('every binding it writes back still has the backend an older Koloft needs to keep it', () => {
+    const written = JSON.parse(JSON.stringify(sanitizeLoadedSettings(v038)))
+    for (const b of written.discord.bindings) expect(['claude', 'codex']).toContain(b.backend)
+    expect(sanitizeDiscord(written.discord).bindings).toHaveLength(2)
+  })
+
+  it('Assist records are left out of a settings reset and of what the window may write', () => {
+    expect(buildResetPatch()).not.toHaveProperty('assistSessions')
+    expect(sanitizeSettingsPatch({ assistSessions: [], fontSize: 12 })).toEqual({ fontSize: 12 })
+  })
+})
+
+describe('keepPinnedScopes', () => {
   it('drops a workspace binding whose workspace is no longer pinned and keeps the global one', () => {
-    const kept = keepPinnedBindings(
+    const kept = keepPinnedScopes(
       [binding('g', GLOBAL_SCOPE, '1'), binding('a', '/ws/a', '2'), binding('b', '/ws/b', '3')],
       ['/ws/b']
     )

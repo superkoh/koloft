@@ -1,9 +1,7 @@
 import { useState, type JSX } from 'react'
 import { LuArrowUpRight, LuChevronRight, LuPlus } from 'react-icons/lu'
-import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { channelLabel, scopeName } from '@shared/conductors'
 import { useStore } from '../../store'
-import { SessionBackendIcon } from '../SessionBackendIcon'
 import {
   DEVELOPER_PORTAL,
   MESSAGE_CONTENT_BY_HAND,
@@ -161,11 +159,8 @@ export function DiscordPane(): JSX.Element {
               {discord.bindings.map((b) => (
                 <div className="acct-row" key={b.id}>
                   <div className="acct-main">
-                    <SessionBackendIcon backend={b.backend} size={14} />
                     <span className="acct-name">{scopeName(b.scope)}</span>
-                    <span className="acct-note">
-                      {BACKEND_LABEL[b.backend]} · {channelLabel(b)}
-                    </span>
+                    <span className="acct-note">{channelLabel(b)}</span>
                     <button
                       className="acct-x"
                       title="Unbind"

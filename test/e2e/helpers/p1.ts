@@ -6,7 +6,11 @@ import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { expect } from './app'
 import type { E2EEnv } from './env'
 import { assertFixtureDir } from './fixtureGuard'
-import type { BackendAvailability, SessionWorkbenchState } from '../../../src/shared/types'
+import type {
+  AssistRecord,
+  BackendAvailability,
+  SessionWorkbenchState
+} from '../../../src/shared/types'
 
 const REPO_ROOT = path.join(__dirname, '..', '..', '..')
 export const SCREEN_DIR = path.join(REPO_ROOT, 'test-results', 'p1-screens')
@@ -64,10 +68,13 @@ export function waitForCallsBesideConductors(env: E2EEnv, count: number): Promis
   return waitForCalls(env, count, undefined, (c) => path.dirname(c.cwd) !== conductors)
 }
 
+export function assistRecordOnDisk(env: E2EEnv, scope?: string): AssistRecord | undefined {
+  const records = (settingsOnDisk(env).assistSessions as AssistRecord[] | undefined) ?? []
+  return scope === undefined ? records[0] : records.find((r) => r.scope === scope)
+}
+
 export async function waitConductorStarted(env: E2EEnv, timeout: number): Promise<void> {
-  const bound = (): number =>
-    (settingsOnDisk(env).discord as { bindings: { sessionIds: string[] }[] } | undefined)
-      ?.bindings[0]?.sessionIds.length ?? 0
+  const bound = (): number => assistRecordOnDisk(env)?.sessionIds.length ?? 0
   await expect.poll(bound, { timeout }).toBeGreaterThan(0)
 }
 

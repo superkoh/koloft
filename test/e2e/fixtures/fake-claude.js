@@ -617,9 +617,22 @@ function registerPeer() {
     })
   )
 }
+// CC§17
+function hookContext(output) {
+  try {
+    const text = JSON.parse(output).hookSpecificOutput.additionalContext
+    return [
+      { type: 'attachment', attachment: { type: 'hook_additional_context', content: [text] } }
+    ]
+  } catch {
+    return []
+  }
+}
 // CC§13
 function peerTurn(content) {
-  fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
+  const context = hookContext(
+    fireHook('prompt', { hook_event_name: 'UserPromptSubmit', prompt: content })
+  )
   append([
     {
       type: 'user',
@@ -631,6 +644,7 @@ function peerTurn(content) {
       },
       cwd
     },
+    ...context,
     {
       type: 'assistant',
       timestamp: new Date().toISOString(),
