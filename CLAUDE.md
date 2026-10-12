@@ -127,6 +127,12 @@ Working principles:
   table says "did not apply", never "no findings". Playwright never builds: after the
   last `src/` change or merge of `main`, `npm run build` first, or e2e tests the old
   `out/`.
+- The PR title becomes `main`'s commit subject on squash, and the release notes and
+  the site changelog sort by its type, so it reads `type(scope): what changed`, the
+  change in the user's words: `feat`, `fix` or `perf` for what a user meets,
+  `refactor`, `docs`, `test`, `chore`, `build` or `ci` for the rest. A plain-sentence
+  title lands untyped in the changelog (v0.41.0 shipped four); the `PR title` check
+  fails it.
 - The PR (pull request) body is a report for the owner deciding whether to merge. It
   opens with six lines, in this order:
   - **What it does** — one sentence, in the user's words, before any mechanism.
