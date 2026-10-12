@@ -677,17 +677,25 @@ test.describe('a REAL Codex in a repository picked for a Koloft git account: opt
         useRealCodex,
         [],
         async ({ rows, page }) => {
+          const sessionId =
+            (await boundSessionId(page, (await rows.getAttribute('data-tab-id'))!)) ?? ''
+          expect(github.hits.some((h) => h.basic)).toBe(false)
           await ask(page, rows, LIST_THE_REMOTE)
           await expect(rows).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: A_REAL_MODEL_TURN_MS })
           await expect
-            .poll(() => github.hits.filter((h) => h.basic).map((h) => h.basic), {
+            .poll(() => CODEX_SHELL_TRANSCRIPT.shellOutputs(env, sessionId).join('\n'), {
               timeout: 30_000
             })
-            .toContainEqual({ username: 'bob', password: token })
+            .toContain('refs/heads/main')
+          expect(github.hits.filter((h) => h.basic).map((h) => h.basic)).toContainEqual({
+            username: 'bob',
+            password: token
+          })
         },
         (repo) => {
           runGit(repo, 'remote', 'set-url', 'origin', `${github.url}/acme/app.git`)
           seedGitAccount(env, 'bob', token, [repo])
+          seedSettings(env, { gitAutoFetch: false })
         }
       )
     } finally {
