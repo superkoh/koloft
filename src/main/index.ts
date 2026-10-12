@@ -3547,9 +3547,10 @@ async function tellAssist(scope: string, name: string, text: string): Promise<Co
   if (!tabId) return all.openTask(scope, { name, brief: text })
   const id = `koloft-palette-${++paletteMessages}`
   try {
-    if (backendIdOf(ptyMgr.get(tabId)?.kind) === 'codex')
-      await codexSessions?.queueMessage(tabId, text, id)
-    else {
+    if (backendIdOf(ptyMgr.get(tabId)?.kind) === 'codex') {
+      if (!codexSessions) return { ok: false, error: STILL_STARTING }
+      await codexSessions.queueMessage(tabId, text, id)
+    } else {
       const line = crossSessionLine('prompting', `The owner typed this in ⌘P: ${text}`, id)
       if (!line) return { ok: false, error: 'The message cannot be sent as it is.' }
       await sendPeerLine(tabId, line, PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS)

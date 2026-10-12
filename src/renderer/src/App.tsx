@@ -1118,11 +1118,10 @@ export default function App(): JSX.Element {
     }
     if (route?.kind === 'koloft' || route?.kind === 'assist') {
       const name = route.title || prompt.slice(0, ASSIST_TASK_NAME_MAX_CHARS)
-      const scope = route.kind === 'koloft' ? GLOBAL_SCOPE : route.path
       void (
         route.kind === 'koloft'
-          ? window.api.conductors.openTask(scope, name, prompt)
-          : window.api.conductors.tell(scope, name, prompt)
+          ? window.api.conductors.openTask(GLOBAL_SCOPE, name, prompt)
+          : window.api.conductors.tell(route.path, name, prompt)
       ).then((r) => {
         if (r.ok) {
           window.api.attention.visit(r.tabId)
