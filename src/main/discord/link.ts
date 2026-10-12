@@ -464,7 +464,7 @@ export class DiscordLink {
         if (error.status === NOT_FOUND) return
         if (error.status === MISSING_PERMISSIONS)
           throw new Error(
-            `${error.message}. Invite the bot again (Settings ▸ Discord ▸ Invite the bot), or give it the Manage Threads permission in the server’s settings.`
+            `${error.message}. Invite the bot again (Settings ▸ Discord ▸ Set up with Assist), or give it the Manage Threads permission in the server’s settings.`
           )
         throw error
       })

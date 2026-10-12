@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { DiscordSettings, DiscordStatus } from '@shared/types'
 
-export const DEVELOPER_PORTAL = 'https://discord.com/developers/applications'
-
 export function useDiscordStatus(): DiscordStatus | null {
   const [status, setStatus] = useState<DiscordStatus | null>(null)
   useEffect(() => {
@@ -44,7 +42,7 @@ export function statusClass(s: DiscordStatus): string {
 }
 
 export const MESSAGE_CONTENT_BY_HAND =
-  'Koloft could not turn on Message Content. Open your app ▸ Bot ▸ turn Message Content Intent on ▸ Save Changes. Koloft checks again every 30 seconds.'
+  'Koloft could not turn Message Content on. Click Set up with Assist above: Assist does that with you. Koloft checks again every 30 seconds.'
 
 export function ownerFromApp(s: DiscordStatus, discord: DiscordSettings): boolean {
   return !!discord.userId && s.appOwner?.id === discord.userId

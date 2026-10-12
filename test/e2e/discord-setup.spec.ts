@@ -5,7 +5,6 @@ import { seedSettings, type E2EEnv } from './helpers/env'
 import { settingsOnDisk, waitBooted } from './helpers/p1'
 import { openSettings } from './helpers/extensions'
 import {
-  FAKE_APPLICATION_ID,
   FAKE_BOT,
   FAKE_GUILD,
   MESSAGE_CONTENT_LIMITED,
@@ -18,7 +17,6 @@ test.setTimeout(120_000)
 
 const OWNER = { id: '555', username: 'letian' }
 const STRANGER = { id: '556', username: 'someone' }
-const TOKEN = 'typed-token'
 const LOCK_RETRY_PLUS_ROOM_MS = 45_000
 const MANAGE_CHANNELS = 1 << 4
 const CATEGORY = 4
@@ -65,31 +63,38 @@ async function launched(
   }
 }
 
-test.describe('Discord setup by hand: one Settings screen saves the token, invites the bot, learns who you are, and binds a channel', () => {
-  test('a token typed into Settings connects; Invite the bot opens the invite with Manage Channels; a team app pairs on the first message only after This is me; a listed channel binds', async ({
+test.describe('Discord in Settings: Assist does the setup, and the screen shows who you are, the status and the bindings', () => {
+  test('with no bot token saved, Settings ▸ Discord shows only Set up with Assist: no token field, no Bot rows, no bindings', async ({
     env
   }) => {
-    const { page, fake, close } = await launched(env, { token: '' })
+    const { page, close } = await launched(env, { token: '' })
     try {
       const pane = await discordPane(page)
-      await expect(pane.getByRole('button', { name: 'Invite the bot' })).toBeDisabled()
-      await pane.getByLabel('Bot token').fill(TOKEN)
-      await pane.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(
+        pane.locator('.set-row', { hasText: 'Let Assist set up Discord' })
+      ).toContainText('Already have a bot?')
+      await expect(pane.getByRole('button', { name: 'Set up with Assist' })).toBeVisible()
+      await expect(pane.locator('input')).toHaveCount(0)
+      await expect(pane.locator('.set-grp')).toHaveCount(0)
+      await expect(pane.getByRole('button', { name: 'Bind a channel…' })).toHaveCount(0)
+    } finally {
+      await close()
+    }
+  })
+
+  test('a saved token connects; a team app pairs on the first message only after This is me; a listed channel binds', async ({
+    env
+  }) => {
+    const { page, fake, close } = await launched(env)
+    try {
+      const pane = await discordPane(page)
       await expect(pane.locator('.set-row', { hasText: 'Status' })).toContainText(
         `✓ Connected as ${FAKE_BOT}`
       )
-      expect(fs.readFileSync(env.keychainFile, 'utf8')).toContain(TOKEN)
       expect(fake.identifies).toBe(1)
-      await expect(page.locator('body')).not.toContainText(TOKEN)
       await expect(
         pane.locator('.set-row', { has: page.locator('b', { hasText: /^Server$/ }) })
       ).toContainText(FAKE_GUILD.name)
-      await pane.getByRole('button', { name: 'Invite the bot' }).click()
-      await expect
-        .poll(() => externalOpens(env))
-        .toContain(
-          `https://discord.com/oauth2/authorize?client_id=${FAKE_APPLICATION_ID}&permissions=${INVITE_PERMISSIONS_WITH_MANAGE_CHANNELS}&scope=bot`
-        )
 
       fake.say({ id: '901', username: 'another-bot', bot: true }, 'beep')
       fake.say(STRANGER, 'not me')
@@ -139,7 +144,6 @@ test.describe('Discord setup by hand: one Settings screen saves the token, invit
       expect(fake.appFlags & MESSAGE_CONTENT_LIMITED).toBeTruthy()
       const account = pane.locator('.set-row', { hasText: 'Your Discord account' })
       await expect(account).toContainText(`You are ${OWNER.username} · owner of the bot’s app`)
-      await expect(account.getByRole('button', { name: 'Change' })).toHaveCount(0)
       expect(discordOnDisk(env)).toMatchObject({ userId: OWNER.id, userName: OWNER.username })
     } finally {
       await quitAndClose(app)
@@ -147,7 +151,7 @@ test.describe('Discord setup by hand: one Settings screen saves the token, invit
     }
   })
 
-  test('when Koloft cannot switch Message Content on, Discord closes with 4014 and Settings tells the owner how to switch it on by hand', async ({
+  test('when Koloft cannot switch Message Content on, Discord closes with 4014 and Settings sends the owner to Set up with Assist', async ({
     env
   }) => {
     const { page, close } = await launched(env, {
@@ -160,11 +164,7 @@ test.describe('Discord setup by hand: one Settings screen saves the token, invit
       const pane = await discordPane(page)
       const status = pane.locator('.set-row', { hasText: 'Status' })
       await expect(status).toContainText('Message Content is off')
-      await expect(status).toContainText('Koloft could not turn on Message Content')
-      await status.getByRole('button', { name: 'Open Developer Portal' }).click()
-      await expect
-        .poll(() => externalOpens(env))
-        .toContain('https://discord.com/developers/applications')
+      await expect(status).toContainText('Click Set up with Assist above')
     } finally {
       await close()
     }

@@ -17,9 +17,9 @@ export const STILL_ATTACHED =
 export const NO_BOT_PAGE =
   'No Discord Bot page is open in your Workbench browser. Open https://discord.com/developers/applications/<app>/bot there, click Reset Token, then run this again.'
 export const NO_TOKEN_ON_PAGE =
-  'The Bot page showed no token; Koloft reloaded it. Reset the token again (the owner clicks Yes, Do It! while you stay detached), then run this again. If it still fails, the owner can paste the token in Settings ▸ Discord.'
+  'The Bot page showed no token; Koloft reloaded it. Reset the token again (the owner clicks Yes, Do It! while you stay detached), then run this again. If it still fails, tell the owner Koloft cannot read the token from the page, and stop.'
 export const NOT_SAVED =
-  'Koloft could not save the token in the Keychain; it reloaded the page. Ask the owner to paste the token in Settings ▸ Discord.'
+  'Koloft could not save the token in the Keychain; it reloaded the page. Tell the owner the Keychain refused it, and stop.'
 export const SAVED =
   'Saved the bot token. Koloft reloaded the page, so the token is no longer on it, and is connecting; run koloft discord status in a few seconds.'
 export const NO_DISCORD_PAGE = 'No discord.com page is open in your Workbench browser.'

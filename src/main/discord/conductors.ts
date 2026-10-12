@@ -505,12 +505,9 @@ export class Conductors {
     return this.discord.userId
   }
 
-  setOwner(owner: { id: string; name: string } | null): void {
-    if (owner && owner.id === this.discord.userId && owner.name === this.discord.userName) return
-    const { userId: droppedId, userName: droppedName, ...rest } = this.discord
-    void droppedId
-    void droppedName
-    this.discord = owner ? { ...rest, userId: owner.id, userName: owner.name } : rest
+  setOwner(owner: { id: string; name: string }): void {
+    if (owner.id === this.discord.userId && owner.name === this.discord.userName) return
+    this.discord = { ...this.discord, userId: owner.id, userName: owner.name }
     this.d.save(this.discord)
   }
 

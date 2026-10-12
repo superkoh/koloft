@@ -198,7 +198,6 @@ const api: KoloftApi = {
     }
   },
   discord: {
-    setToken: (token) => ipcRenderer.invoke('discord:setToken', token),
     status: () => ipcRenderer.invoke('discord:status'),
     onStatus: (cb) => {
       const handler = (_e: unknown, s: DiscordStatus): void => cb(s)
@@ -206,7 +205,6 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener('discord:status', handler)
     },
     pair: (isMe) => ipcRenderer.invoke('discord:pair', isMe),
-    forgetOwner: () => ipcRenderer.invoke('discord:forgetOwner'),
     channels: () => ipcRenderer.invoke('discord:channels'),
     setUpWithAssist: () => ipcRenderer.invoke('discord:setUpWithAssist')
   },

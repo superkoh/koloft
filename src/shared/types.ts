@@ -1142,11 +1142,9 @@ export interface KoloftApi {
     onTasks(cb: (rows: AssistTaskRow[]) => void): () => void
   }
   discord: {
-    setToken(token: string): Promise<boolean>
     status(): Promise<DiscordStatus>
     onStatus(cb: (s: DiscordStatus) => void): () => void
     pair(isMe: boolean): Promise<void>
-    forgetOwner(): Promise<void>
     channels(): Promise<DiscordChannel[]>
     setUpWithAssist(): Promise<ConductorOpenResult>
   }
