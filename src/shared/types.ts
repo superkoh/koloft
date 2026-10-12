@@ -25,6 +25,103 @@ export function keychainService(appName: string, kind: AccountKind): string {
   return keychainNamespace(appName) + keychainServiceSuffix(kind)
 }
 
+export type GitHost = 'github.com'
+
+export function gitKeychainService(appName: string, host: GitHost): string {
+  return `${keychainNamespace(appName)}-git-${host}`
+}
+
+export interface GitAccount {
+  host: GitHost
+  login: string
+  id: number
+  name: string
+  default: boolean
+  status: AccountStatus
+  addedAt: number
+}
+
+export interface GitRepoPick {
+  repo: string
+  host: GitHost
+  login: string
+}
+
+export interface GitAccountView extends GitAccount {
+  usedBy: string[]
+  checkError?: 'offline'
+}
+
+export type GitLoginProgress =
+  | { phase: 'checking' }
+  | { phase: 'code'; code: string; url: string }
+  | { phase: 'saved'; login: string }
+  | { phase: 'failed'; message: string }
+
+export type GitLoginStart = { ok: true } | { ok: false; error: 'no-sandbox' | 'no-gh' | 'busy' }
+
+export type GitTokenAddResult =
+  | { ok: true; login: string }
+  | { ok: false; error: 'rejected' | 'offline' | 'failed' | 'missing-scope'; scope?: string }
+
+export type GitClueReason = 'url-user' | 'config-user' | 'gh-user' | 'ssh-greeting' | 'commit-email'
+
+export type GitAccountSuggestion =
+  | { kind: 'none' }
+  | { kind: 'use' | 'add' | 'cannot-push' | 'hint'; login: string; reason: GitClueReason }
+  | { kind: 'only-one-can-push' | 'default-can-push'; login: string }
+  | { kind: 'org-blocked'; login: string; org: string }
+
+export interface WorkspaceGitAccount {
+  login: string
+  host: GitHost
+  author: { name: string; email: string }
+  status: AccountStatus
+  sharedWith: string[]
+  pushBlockedByOrg?: string
+}
+
+export const GITHUB_LOGIN_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/
+
+export function sanitizeGitAccounts(raw: unknown): GitAccount[] {
+  if (!Array.isArray(raw)) return []
+  const out: GitAccount[] = []
+  for (const a of raw as Partial<GitAccount>[]) {
+    if (!a || a.host !== 'github.com' || typeof a.login !== 'string') continue
+    if (!GITHUB_LOGIN_RE.test(a.login)) continue
+    if (out.some((o) => o.login.toLowerCase() === a.login!.toLowerCase())) continue
+    out.push({
+      host: 'github.com',
+      login: a.login,
+      id: typeof a.id === 'number' && Number.isFinite(a.id) ? a.id : 0,
+      name: typeof a.name === 'string' ? a.name : a.login,
+      default: a.default === true,
+      status: a.status === 'expired' || a.status === 'unverified' ? a.status : 'ok',
+      addedAt: typeof a.addedAt === 'number' ? a.addedAt : 0
+    })
+  }
+  if (out.length && !out.some((a) => a.default)) out[0].default = true
+  let seenDefault = false
+  for (const a of out) {
+    if (a.default && seenDefault) a.default = false
+    if (a.default) seenDefault = true
+  }
+  return out
+}
+
+export function sanitizeGitPicks(raw: unknown, accounts: GitAccount[]): GitRepoPick[] {
+  if (!Array.isArray(raw)) return []
+  const out: GitRepoPick[] = []
+  for (const p of raw as Partial<GitRepoPick>[]) {
+    if (!p || typeof p.repo !== 'string' || !p.repo.startsWith('/')) continue
+    if (p.host !== 'github.com' || typeof p.login !== 'string') continue
+    if (!accounts.some((a) => a.login === p.login)) continue
+    if (out.some((o) => o.repo === p.repo)) continue
+    out.push({ repo: p.repo, host: 'github.com', login: p.login })
+  }
+  return out
+}
+
 export function keychainServiceSuffix(kind: AccountKind): string {
   if (kind === 'oauth') return '-claude-oauth'
   if (kind === 'codex-home') return '-codex-home'
@@ -186,6 +283,9 @@ export interface Settings {
   lastSeenVersion: string
   discord: DiscordSettings
   assistSessions: AssistRecord[]
+  gitAccounts: GitAccount[]
+  gitPicks: GitRepoPick[]
+  gitSuggestionsDismissed: string[]
 }
 
 export type AssistSetting = { on: boolean; backend: BackendId } | null
@@ -313,7 +413,10 @@ export const DEFAULT_SETTINGS: Settings = {
   hintsOff: false,
   lastSeenVersion: '',
   discord: { bindings: [] },
-  assistSessions: []
+  assistSessions: [],
+  gitAccounts: [],
+  gitPicks: [],
+  gitSuggestionsDismissed: []
 }
 
 export type BackendId = 'claude' | 'codex'
@@ -1069,6 +1172,22 @@ export interface KoloftApi {
     onLoginProgress(cb: (p: LoginProgress) => void): () => void
     onUpdate(cb: (accounts: AccountView[]) => void): () => void
   }
+  gitAccounts: {
+    list(): Promise<GitAccountView[]>
+    onUpdate(cb: (accounts: GitAccountView[]) => void): () => void
+    loginStart(): Promise<GitLoginStart>
+    loginCancel(): void
+    loginWindow(): void
+    loginBrowser(): void
+    onLoginProgress(cb: (p: GitLoginProgress) => void): () => void
+    addToken(token: string): Promise<GitTokenAddResult>
+    remove(login: string): Promise<void>
+    makeDefault(login: string): Promise<void>
+    check(): Promise<void>
+    pick(wsPath: string, login: string | null): Promise<void>
+    suggest(wsPath: string, network: boolean): Promise<GitAccountSuggestion>
+    dismiss(wsPath: string): Promise<void>
+  }
   // ADR-0006
   update: {
     version(): Promise<string>
@@ -1382,6 +1501,7 @@ export interface WorkspaceRows {
     hasHistory: boolean
     freshness?: WorkspaceFreshness
     github?: WorkspaceGithub
+    gitAccount?: WorkspaceGitAccount
     remote?: { host: string; path: string; connected: boolean; problem?: string }
   }
   rows: SessionRow[]

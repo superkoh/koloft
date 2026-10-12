@@ -1074,6 +1074,17 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   (2 runs). GitHub keeps Actions logs for 90 days by default, so job 107036731098's log is
   expected to go around 2026-12-22 and these cases to fail on it then (inferred, not
   checked).
+- **`GET /user` with a token GitHub does not know answers 401** with
+  `{"message":"Bad credentials",…}`, and the answer lists `X-OAuth-Scopes` among the
+  headers a browser may read. `GET /repos/<o>/<r>` without a token answers 200 with no
+  `permissions` field. (2026-10-12, curl against api.github.com with a made-up `ghp_`
+  token, and `octocat/Hello-World`.)
+- From GitHub's docs, inferred, not checked: a classic token's `GET /user` carries
+  `X-OAuth-Scopes: repo, read:org, …` and a fine-grained token's carries none; with a
+  token, `GET /repos/<o>/<r>` adds `permissions.push`; a private repo the token cannot see
+  answers 404; an organization that restricts OAuth apps answers 403 with a message about
+  "OAuth App access restrictions"; the private commit address is
+  `<id>+<login>@users.noreply.github.com`.
 - **`--jq` can read the environment of the `gh` process**: `gh pr view 389 --repo
   superkoh/koloft --json number --jq '$ENV.HOME'` printed the home folder. So a `--jq`
   given by someone else can print any secret in that environment. (2026-10-09, gh 2.89.0,
@@ -1553,3 +1564,70 @@ Gateway (the live connection that pushes events):
   copy, the mac zip (`zip -y`) and the in-app updater (`cp -R`) keep the symlinks.
 - Measured 2026-10-11 on macOS 27.0 with a temp `HOME` and `GIT_CONFIG_NOSYSTEM=1`, https
   against github.com's public `octocat/Hello-World`.
+
+## §46 git includeIf gitdir: and credential helper quoting
+
+- **`gitdir:` needs two lines per repository.** `includeIf "gitdir:<real>/.git"` (no
+  trailing slash) matches the main checkout and its subfolders, also when reached through
+  a symlink, but not a linked worktree; `gitdir:<real>/.git/` (trailing slash) matches only
+  the linked worktrees. The two together cover the whole repository and leave out a
+  repository nested inside it and every other repository. A pattern written with a
+  symlinked path never matches: it must be the real path.
+- **The repository's key.** `git rev-parse --path-format=absolute --git-common-dir` prints
+  the absolute common `.git` dir from the top, from a subfolder and from a linked
+  worktree; outside a repository it exits 128.
+- **Helper quoting.** A `credential.<url>.helper` value that is a bare absolute path with a
+  space in it never runs; `!'<path>'` runs it, and `!'<path>' bob` hands the helper
+  `$1=bob $2=get`. An empty `helper =` line first drops every helper set before it (the
+  user's own included).
+- **Other behaviour.** `git credential reject` reaches the helper as `erase`; `-c
+  user.email=…` beats the included value; a user's own `GIT_CONFIG_COUNT=1` entry plus one
+  appended `include.path` entry both load.
+- Measured 2026-10-12 with Apple git 2.54, a temp `HOME` and `GIT_CONFIG_NOSYSTEM=1`.
+
+## §47 gh sign-in inside the macOS sandbox
+
+- **Every `gh auth login` reads and then deletes the user's own gh entry in the login
+  keychain**, even with `--insecure-storage` and its own `GH_CONFIG_DIR`, which signs the
+  user's own gh out. gh reaches the keychain only by running `/usr/bin/security`, and a
+  failed keychain call does not stop the login: it goes on and writes the token into
+  `GH_CONFIG_DIR/hosts.yml`. (Read in the gh 2.102.0 source.)
+- **`sandbox-exec -f` with `(version 1) (allow default) (deny process-exec (literal
+  "/usr/bin/security"))`** lets `/usr/bin/true` exit 0, while `/usr/bin/security help`
+  exits 71 with `sandbox-exec: execvp() of '/usr/bin/security' failed: Operation not
+  permitted`. gh starts and reaches github.com inside it.
+- **With stdin not a terminal, `gh auth login --web` never tries to open a browser.**
+  Run as `sandbox-exec -f <profile> gh auth login --web --insecure-storage --git-protocol
+  https --hostname github.com -s repo,read:org,gist,workflow --clipboard=false`, with an
+  env of only `PATH=<empty folder>`, a fresh `HOME` and `GH_CONFIG_DIR`,
+  `GH_PROMPT_DISABLED=1` and `GH_NO_UPDATE_NOTIFIER=1`, stdout stayed empty and stderr
+  printed, within about 2 s, exactly `\n! First copy your one-time code: XXXX-XXXX\nOpen
+  this URL to continue in your web browser: https://github.com/login/device\n` (no colour
+  codes, since stderr was a pipe). gh then kept polling: 8 s later it had printed nothing
+  more and had not exited, and the config folder and `HOME` were still empty. The source
+  prints "Press Enter to open … in your browser" and "Failed opening a web browser at …"
+  only when interactive.
+- **After a finished login, `hosts.yml`** holds `github.com:` with `users: <login>:
+  oauth_token: <token>`, `git_protocol: https`, `oauth_token: <token>` and `user: <login>`
+  (seen in Docker against a fake GitHub with gh 2.102.0; never against github.com).
+- Measured 2026-10-12 on macOS 27.0 with the bundled gh 2.102.0; the login was killed
+  after the code line and never approved.
+
+## §48 ssh "who am I" without side effects
+
+- **These options make `ssh -T` ask nothing and change nothing**: `-o BatchMode=yes -o
+  StrictHostKeyChecking=yes -o UpdateHostKeys=no -o CheckHostIP=no -o ControlMaster=no -o
+  ClearAllForwardings=yes -o AddKeysToAgent=no -o ConnectTimeout=5 -o LogLevel=ERROR -a
+  -x`. A key with a passphrase and no agent fails in about 0.06 s; an unknown host is
+  refused without writing `known_hosts`; a `LocalForward` or `ControlMaster` in the user's
+  config is not set up; a hostile config (`accept-new`, `UpdateHostKeys yes`,
+  `AddKeysToAgent yes`) left every file in `~/.ssh` byte for byte the same. A `Match exec`
+  in the user's config still runs. ssh honours the first `-o` given for a key (§33).
+- **`ssh -G <alias>` resolves the user's config offline**: it prints `hostname`, `user`,
+  `port` and every `identityfile` (with no config, the five default files, two of them
+  `_sk`), and prints no `proxycommand` or `identityagent` line when none is set.
+- **A server that greets the key's owner writes it to stderr and exits 1**; GitHub's
+  documented greeting is `Hi <login>! You've successfully authenticated, but GitHub does
+  not provide shell access.` (inferred, not checked: no real key was used).
+- Measured 2026-10-12 in a Docker Linux container against a local sshd with throwaway
+  keys, and `ssh -F /dev/null -G github.com` on macOS 27.0.

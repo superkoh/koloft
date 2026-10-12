@@ -7,7 +7,9 @@ import {
   GH_SIGNED_OUT,
   HAVE_REAL_GH,
   NEEDS_REAL_GH,
+  fakeGhEnvFile,
   installFakeGh,
+  seedGitAccount,
   installRealGhThatOnlyReads,
   setGithubFixture,
   writeGitIdentity,
@@ -297,6 +299,23 @@ test.describe('Workbench · GitHub button (github.com is pinned to loopback, so 
       await expectOnePromptFromTheChecks(() => claudePrompts(transcript))
       expect(fs.readFileSync(path.join(env.home, 'fake-gh-calls.txt'), 'utf8')).toContain(
         'run view --job 110263090912 --repo acme/widgets --log-failed'
+      )
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
+  test('G14: in a repository picked for a Koloft git account, gh reads the checks as that account', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    repoWithOrigin(env, 'feature/login')
+    seedGitAccount(env, 'bob', 'gho_e2e_bob', [env.workspaces.a])
+    const { app, page } = await startWithGithub(env)
+    try {
+      await expect(ghButton(page).locator('.ci')).toHaveClass(/\bpass\b/, { timeout: 30_000 })
+      expect(fs.readFileSync(fakeGhEnvFile(env), 'utf8')).toContain(
+        'GH_TOKEN=gho_e2e_bob GH_HOST=github.com'
       )
     } finally {
       await app.close().catch(() => {})
