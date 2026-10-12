@@ -524,6 +524,25 @@ test.describe('Conductors: a session bound to a Discord channel, kept in its own
       await close()
     }
   })
+
+  test('Set up with Assist on a Codex Assist lands on the setup task’s tab, though that tab is not listed yet when the click is answered', async ({
+    env
+  }) => {
+    installCodex(env)
+    const { page, close } = await launched(env, {
+      conductorsFolded: false,
+      assist: { on: true, backend: 'codex' },
+      discord: { bindings: [] }
+    })
+    try {
+      await openSettings(page)
+      await page.locator('.set-ni', { hasText: 'Discord' }).click()
+      await page.getByRole('button', { name: 'Set up with Assist' }).click()
+      await expect(island(page).locator('.ws-tab.active')).toHaveText(/Discord setup/)
+    } finally {
+      await close()
+    }
+  })
 })
 
 test.describe('Assist without Discord: talked to from the sidebar, gated however its session is started', () => {
