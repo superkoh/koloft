@@ -5,7 +5,8 @@ import { spawnSync } from 'node:child_process'
 const SETUP_STEPS = [
   ['npm', ['ci']],
   ['npm', ['run', 'rebuild']],
-  ['node', ['node_modules/electron/install.js']]
+  ['node', ['node_modules/electron/install.js']],
+  ['node', ['scripts/fetch-vendor.cjs']]
 ]
 
 const git = (cwd, ...args) =>

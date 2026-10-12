@@ -196,18 +196,21 @@ Working principles:
   main process too (killing `electron-vite` alone leaves the window up). A dev build
   has its own profile (`koloft-dev`), so the installed Koloft, where these sessions
   run, stays open.
-- Three setup steps, each with a silent failure mode:
+- Four setup steps, each with a silent failure mode:
   - `npm run rebuild` before the first run, and again after any change to the Electron
     or node-pty version — otherwise the app crashes on launch with an ABI mismatch.
   - A fresh git worktree has no `node_modules` of its own and Node silently resolves up
     to the parent checkout's. A SessionStart hook (`scripts/worktree-deps.mjs`) runs
-    `npm ci`, `npm run rebuild` and the Electron download in the background the first
-    time a session starts in a worktree without `node_modules`, and wakes Claude only
-    if a step fails. When a worktree is entered mid-session no session starts, so run
-    those three by hand there.
+    `npm ci`, `npm run rebuild`, the Electron download and the `vendor/` download in
+    the background the first time a session starts in a worktree without
+    `node_modules`, and wakes Claude only if a step fails. When a worktree is entered
+    mid-session no session starts, so run those four by hand there.
   - `npm ci` and `npm install` do not fetch the Electron binary — run
     `node node_modules/electron/install.js` once, or the first (possibly headless e2e)
     launch stalls on a silent download.
+  - `vendor/` (the git and gh Koloft ships) is only downloaded when the app is packed —
+    run `node scripts/fetch-vendor.cjs` once, or a dev build quietly ships neither and
+    `bundled-git-gh.spec.ts` fails.
 - Shell in a worktree stays plain. The worktree isolation guard refuses any Bash
   call it cannot prove stays inside this worktree, not only git ones. This block
   binds you too, its last line aside; long text for `gh` goes in a `--body-file`:
