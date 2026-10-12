@@ -25,7 +25,7 @@ export interface GitAuthRequestDeps {
   rejected(host: GitHost, login: string): void
 }
 
-// ADR-0033 CODEX§28
+// ADR-0033 CODEX§29
 export class GitAuthRequests {
   private claimed = new Set<string>()
 

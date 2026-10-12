@@ -39,10 +39,11 @@ cd koloft
 npm install
 npm run rebuild                        # required — see below
 node node_modules/electron/install.js  # once, see below
+node scripts/fetch-vendor.cjs          # once, see below
 npm run dev
 ```
 
-Three steps that each fail **silently** if you skip them:
+Four steps that each fail **silently** if you skip them:
 
 - **`npm run rebuild`** builds `node-pty` against Electron's own Node version. Skip it
   and the app crashes on launch with a mismatch error. Run it again after any change to
@@ -50,9 +51,12 @@ Three steps that each fail **silently** if you skip them:
 - **`node node_modules/electron/install.js`** fetches the Electron binary. Since
   Electron 42 that no longer happens during `npm install`, so the first launch otherwise
   stalls on a download with nothing on screen saying so.
+- **`node scripts/fetch-vendor.cjs`** downloads the git and gh Koloft ships into
+  `vendor/`. Packing the app does it on its own; a dev build without it ships neither.
 - **A fresh git worktree has no `node_modules` of its own**, and Node quietly resolves
-  up to the parent checkout's. Run all three — `npm install`, `npm run rebuild` and
-  `node node_modules/electron/install.js` — inside each worktree before testing there.
+  up to the parent checkout's. Run all four — `npm install`, `npm run rebuild`,
+  `node node_modules/electron/install.js` and `node scripts/fetch-vendor.cjs` — inside
+  each worktree before testing there.
   A Claude Code session started in a worktree of this repo does it for you, through the
   project's SessionStart hook.
 

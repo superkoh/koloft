@@ -655,7 +655,7 @@ test.describe('KOLOFT_PORT_OFFSET reaches the REAL agent’s own shell in a work
 const LIST_THE_REMOTE =
   'Run this shell command exactly once with your shell tool: git ls-remote origin — then reply with only the word DONE. Do nothing else.'
 
-// CODEX§28
+// CODEX§29
 test.describe('a REAL Codex in a repository picked for a Koloft git account: opt-in case; it spends real money', () => {
   test("a real Codex turn's git, inside its sandbox, reaches the server with the picked account's token through Koloft", async ({
     env

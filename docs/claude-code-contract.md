@@ -1228,7 +1228,7 @@ sessions plus a tmux probe, 2026-09-23, CC 2.1.281 (bullets below).
     for 7 of 7 entries.
 
 Koloft dependents: `src/main/claudeSessionRegistry.ts`, read before resuming a
-session; `restoreResident` in `src/main/index.ts`, which starts the Keep running
+session; `restoreOpenTabs` in `src/main/index.ts`, which starts the Keep running
 sessions once at launch and does not retry one found still registered.
 
 ## §12 The interactive TUI inside a terminal
