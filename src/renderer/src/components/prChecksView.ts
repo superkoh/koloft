@@ -19,7 +19,7 @@ export function checksDot(c: PrChecks | null): ChecksDot | null {
 
 const NOT_READ: Record<Exclude<PrChecks['state'], 'ok'>, string | null> = {
   'no-gh': 'Checks · install gh',
-  'signed-out': 'Checks · not signed in',
+  'signed-out': 'Checks · run gh auth login',
   'no-pr': null,
   failed: 'Checks · could not reach GitHub'
 }

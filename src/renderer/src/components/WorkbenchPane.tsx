@@ -17,7 +17,6 @@ import {
   LuGitCommitHorizontal,
   LuGitPullRequest,
   LuGitPullRequestCreate,
-  LuLogIn,
   LuGithub,
   LuGlobe,
   LuLink,
@@ -92,7 +91,6 @@ import {
 import { historyKey, loadHistory, remember, saveHistory } from '../browserHistory'
 import { workspaceOfTab } from '../sessionRows'
 import { boundSessionId, useStore } from '../store'
-import { useGhSignIn } from '../ghSignIn'
 import {
   FILES_TAB_ID,
   activateTab,
@@ -316,7 +314,6 @@ function useGithubChecks(
     }
   }, [root, pr, nonce])
   const refresh = useCallback((): void => setNonce((n) => n + 1), [])
-  useEffect(() => window.api.github.onAuthChanged(refresh), [refresh])
   return { checks: got && got.key === key ? got.checks : null, refresh }
 }
 
@@ -1745,7 +1742,6 @@ export function WorkbenchPane({
   const sendBlocked = commentBlocked(session)
   const pasteTab = session?.tabId ?? null
   const refreshChecks = ghChecks.refresh
-  const ghSignIn = useGhSignIn()
 
   const sendFailingChecks = useCallback(async (): Promise<void> => {
     const pr = ghInfo?.pr
@@ -1909,19 +1905,6 @@ export function WorkbenchPane({
           {checksText && (
             <>
               <div className="mi head">{checksText}</div>
-              {ghChecks.checks?.state === 'signed-out' && (
-                <button
-                  className="mi"
-                  role="menuitem"
-                  onClick={() => {
-                    setGhMenu(false)
-                    void ghSignIn()
-                  }}
-                >
-                  <LuLogIn size={14} />
-                  Sign in to GitHub
-                </button>
-              )}
               {failing > 0 && (
                 <button
                   className={'mi' + (sendBlocked ? ' disabled' : '')}

@@ -81,12 +81,6 @@ interface NetResult {
   enoent: boolean
 }
 
-let workspaceGitEnv: (root: string) => Record<string, string> = () => ({})
-
-export function setWorkspaceGitEnv(envFor: (root: string) => Record<string, string>): void {
-  workspaceGitEnv = envFor
-}
-
 // PLATFORM§27
 export function networkGit(
   bin: string,
@@ -101,7 +95,7 @@ export function networkGit(
       child = spawn(bin, ['-C', root, ...args], {
         detached: true,
         stdio: ['ignore', 'pipe', 'pipe'],
-        env: credentialGuardEnv({ ...process.env, ...workspaceGitEnv(root) })
+        env: credentialGuardEnv(process.env)
       })
     } catch (e) {
       resolve({ ok: false, stdout: '', stderr: '', timedOut: false, enoent: isEnoent(e) })

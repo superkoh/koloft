@@ -30,6 +30,7 @@ import type {
   SpawnedTab,
   CronState,
   DiscordStatus,
+  AssistTaskRow,
   AttentionEvent,
   AccountView,
   LoginProgress,
@@ -181,13 +182,22 @@ const api: KoloftApi = {
   },
   conductors: {
     save: (input) => ipcRenderer.invoke('conductors:save', input),
+    saveWithNewChannel: (input) => ipcRenderer.invoke('conductors:saveWithNewChannel', input),
     unbind: (id) => ipcRenderer.invoke('conductors:unbind', id),
-    switchBackend: (id) => ipcRenderer.invoke('conductors:switchBackend', id),
-    open: (id) => ipcRenderer.invoke('conductors:open', id),
-    startFresh: (id) => ipcRenderer.invoke('conductors:startFresh', id)
+    open: (scope) => ipcRenderer.invoke('conductors:open', scope),
+    startFresh: (scope) => ipcRenderer.invoke('conductors:startFresh', scope),
+    openTask: (scope, title, brief) =>
+      ipcRenderer.invoke('conductors:openTask', scope, title, brief),
+    tell: (scope, title, text) => ipcRenderer.invoke('conductors:tell', scope, title, text),
+    closeTask: (tabId) => ipcRenderer.invoke('conductors:closeTask', tabId),
+    tasks: () => ipcRenderer.invoke('conductors:tasks'),
+    onTasks: (cb) => {
+      const handler = (_e: unknown, rows: AssistTaskRow[]): void => cb(rows)
+      ipcRenderer.on('conductors:tasks', handler)
+      return () => ipcRenderer.removeListener('conductors:tasks', handler)
+    }
   },
   discord: {
-    setToken: (token) => ipcRenderer.invoke('discord:setToken', token),
     status: () => ipcRenderer.invoke('discord:status'),
     onStatus: (cb) => {
       const handler = (_e: unknown, s: DiscordStatus): void => cb(s)
@@ -195,8 +205,8 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener('discord:status', handler)
     },
     pair: (isMe) => ipcRenderer.invoke('discord:pair', isMe),
-    forgetOwner: () => ipcRenderer.invoke('discord:forgetOwner'),
-    channels: () => ipcRenderer.invoke('discord:channels')
+    channels: () => ipcRenderer.invoke('discord:channels'),
+    setUpWithAssist: () => ipcRenderer.invoke('discord:setUpWithAssist')
   },
   attention: {
     list: () => ipcRenderer.invoke('attention:list'),
@@ -387,16 +397,7 @@ const api: KoloftApi = {
     commit: (root, message) => ipcRenderer.invoke('github:commit', root, message),
     push: (root) => ipcRenderer.invoke('github:push', root),
     openItems: (root) => ipcRenderer.invoke('github:open-items', root),
-    prWorktree: (root, pr, branch) => ipcRenderer.invoke('github:pr-worktree', root, pr, branch),
-    accounts: (wsPath) => ipcRenderer.invoke('github:accounts', wsPath),
-    pick: (wsPath, login) => ipcRenderer.invoke('github:pick', wsPath, login),
-    authState: (machine) => ipcRenderer.invoke('github:auth-state', machine),
-    signIn: (machine) => ipcRenderer.invoke('github:sign-in', machine),
-    onAuthChanged: (cb) => {
-      const handler = (): void => cb()
-      ipcRenderer.on('github:auth-changed', handler)
-      return () => ipcRenderer.removeListener('github:auth-changed', handler)
-    }
+    prWorktree: (root, pr, branch) => ipcRenderer.invoke('github:pr-worktree', root, pr, branch)
   },
   workspace: {
     pickFolder: () => ipcRenderer.invoke('workspace:pickFolder'),
@@ -414,7 +415,12 @@ const api: KoloftApi = {
     },
     fetchFreshness: (p) => ipcRenderer.invoke('workspace:fetchFreshness', p),
     pull: (p, expect) => ipcRenderer.invoke('workspace:pull', p, expect),
-    discover: () => ipcRenderer.invoke('workspace:discover')
+    discover: () => ipcRenderer.invoke('workspace:discover'),
+    createProject: (parent, name) => ipcRenderer.invoke('project:create', parent, name)
+  },
+  assist: {
+    route: (id, message) => ipcRenderer.invoke('assist:route', id, message),
+    cancel: (id) => ipcRenderer.send('assist:cancel', id)
   },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
@@ -557,11 +563,6 @@ const api: KoloftApi = {
       const handler = (): void => cb()
       ipcRenderer.on('shortcut:find-files', handler)
       return () => ipcRenderer.removeListener('shortcut:find-files', handler)
-    },
-    onSearchSessions: (cb) => {
-      const handler = (): void => cb()
-      ipcRenderer.on('shortcut:search-sessions', handler)
-      return () => ipcRenderer.removeListener('shortcut:search-sessions', handler)
     },
     onWorkbenchShortcut: (cb) => {
       const handler = (_e: unknown, cmd: WorkbenchShortcut): void => cb(cmd)

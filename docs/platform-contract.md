@@ -1526,3 +1526,32 @@ Gateway (the live connection that pushes events):
 - Measured 2026-10-11 with gh 2.102.0 (macOS arm64 and Linux arm64 builds), git 2.39.5 in
   Docker (node:22) with fake tokens and `store` helpers, and Apple git 2.54.0 read from
   source; the keychain itself was not exercised.
+
+## §44 git shipped inside an app (dugite-native)
+
+- **What GitHub Desktop ships.** dugite-native `v2.53.0-4`'s `macOS-arm64.tar.gz` is
+  62.3 MB (sha256 from the release's asset `digest`) and unpacks to 148 MB: git 2.53.0
+  built from upstream tag v2.53.0, Git LFS 3.7.1 and Git Credential Manager 2.9.0 (115 MB
+  of the total). It links Apple's `/usr/lib/libcurl.4.dylib`, so https uses the system
+  trust store and ships no CA file; it is built with `NO_PERL`. The 145 commands in
+  `libexec/git-core` are symlinks to one `git`. The tarball carries no git `COPYING`;
+  git is GPL-2.0.
+- **Built with `prefix=/`.** Run from any folder with nothing set, `init`, `commit` and a
+  local `clone` work with a "templates not found" warning, but https fails with
+  `git: 'remote-https' is not a git command` and `submodule` is not found. With
+  `GIT_EXEC_PATH=<root>/libexec/git-core` an https clone, `ls-remote` and `submodule`
+  all worked; `init.templateDir` (or `GIT_TEMPLATE_DIR`) silences the warning. Its system
+  config is `/etc/gitconfig`, never Apple's
+  `/Library/Developer/CommandLineTools/usr/share/git-core/gitconfig`, so it sets no
+  credential helper and no `init.defaultBranch`; `GIT_CONFIG_SYSTEM` points it at
+  another file. There is no `git-credential-osxkeychain` inside.
+- **Kept for Koloft**: `libexec/git-core` without LFS, scalar, the daemon/server
+  programs and the credential manager, plus `share/git-core/templates`: 8.5 MB on disk,
+  about 4 MB gzipped. The full https flow passed through `libexec/git-core/git` with
+  `bin/` removed.
+- **Signing.** `git` is ad-hoc linker-signed. `@electron/osx-sign` signs every Mach-O
+  under `Contents/` (Resources included) and follows symlinks; a copy re-signed ad hoc
+  with `--options runtime` still cloned over https. electron-builder's `extraResources`
+  copy, the mac zip (`zip -y`) and the in-app updater (`cp -R`) keep the symlinks.
+- Measured 2026-10-11 on macOS 27.0 with a temp `HOME` and `GIT_CONFIG_NOSYSTEM=1`, https
+  against github.com's public `octocat/Hello-World`.

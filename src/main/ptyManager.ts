@@ -40,7 +40,6 @@ interface CreateArgs {
   resumeSessionId?: string
   ownerTabId?: string
   conductor?: boolean
-  noWorkspaceEnv?: boolean
   resized?: (id: string, cols: number, rows: number) => void
   extraEnv?: {
     KOLOFT_FIRST_PROMPT?: string
@@ -96,7 +95,6 @@ export class PtyManager extends EventEmitter {
   cdpDir?: string
   agentDir?: string
   makeHookSettings?: (tabId: string, allowKoloft: boolean, conductor: boolean) => string | undefined
-  workspaceEnv?: (cwd: string) => Record<string, string>
 
   private ptys = new Map<string, PtyHandle>()
   private readyWaiters = new Map<string, Set<() => void>>()
@@ -193,8 +191,6 @@ export class PtyManager extends EventEmitter {
         if (v !== undefined) env[k] = v
       }
     }
-    if (args.kind !== 'codex' && !args.noWorkspaceEnv && this.workspaceEnv)
-      Object.assign(env, this.workspaceEnv(args.cwd))
 
     if (args.kind === 'codex') {
       env = Object.fromEntries(

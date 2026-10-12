@@ -1,7 +1,6 @@
 import { execFile as execFileCb } from 'child_process'
 import { promisify } from 'util'
 import type {
-  GhAuthState,
   GithubInfo,
   GithubItem,
   GithubOpenItems,
@@ -36,7 +35,7 @@ const MAX_BUFFER = 16 * 1024 * 1024
 const OPEN_COUNTS_QUERY =
   'query($owner:String!,$name:String!){repository(owner:$owner,name:$name){issues(states:OPEN){totalCount} pullRequests(states:OPEN){totalCount}}}'
 
-export type OpenCounts = Pick<WorkspaceGithub, 'issues' | 'prs' | 'signedOut'>
+export type OpenCounts = Pick<WorkspaceGithub, 'issues' | 'prs'>
 
 export function parseOpenCounts(stdout: string): OpenCounts | null {
   try {
@@ -50,8 +49,8 @@ export function parseOpenCounts(stdout: string): OpenCounts | null {
 }
 
 // PLATFORM§32
-export async function ghOpenCounts(gh: Gh, repo: GithubRepo): Promise<OpenCounts | null> {
-  const r = await gh([
+export async function ghOpenCounts(repo: GithubRepo): Promise<OpenCounts | null> {
+  const { ok, out } = await ghRead([
     'api',
     'graphql',
     '-f',
@@ -61,14 +60,7 @@ export async function ghOpenCounts(gh: Gh, repo: GithubRepo): Promise<OpenCounts
     '-f',
     `query=${OPEN_COUNTS_QUERY}`
   ])
-  if (r.code === GH_SIGNED_OUT) return { issues: 0, prs: 0, signedOut: true }
-  return r.code === 0 ? parseOpenCounts(r.stdout) : null
-}
-
-// PLATFORM§43
-export async function ghAuthState(gh: Gh): Promise<GhAuthState> {
-  const r = await gh(['auth', 'token', '-h', 'github.com'])
-  return r.missing ? 'no-gh' : r.code === 0 ? 'signed-in' : 'signed-out'
+  return ok ? parseOpenCounts(out) : null
 }
 
 const OPEN_ITEMS_LIMIT = 50
@@ -129,15 +121,11 @@ export async function listOpenItems(gh: Gh, repo: GithubRepo): Promise<GithubOpe
   return parseOpenItems(slug(repo), issues, prs)
 }
 
-export async function ghRead(
-  args: string[],
-  env?: Record<string, string>
-): Promise<{ ok: boolean; out: string }> {
+export async function ghRead(args: string[]): Promise<{ ok: boolean; out: string }> {
   try {
     const { stdout } = await execFile('gh', args, {
       timeout: FETCH_TIMEOUT_MS,
-      maxBuffer: MAX_BUFFER,
-      ...(env && { env: { ...process.env, ...env } })
+      maxBuffer: MAX_BUFFER
     })
     return { ok: true, out: stdout }
   } catch (error) {
@@ -170,7 +158,6 @@ export interface GithubFixture {
     pr?: number | null
     issues?: number
     prs?: number
-    signedOut?: boolean
   } | null
 }
 
@@ -189,9 +176,8 @@ export interface GithubOptions {
   fixture?: GithubFixture | null
   gitBin?: string
   git?: (root: string, args: string[], network: boolean) => Promise<string | null>
-  openCounts?: (repo: GithubRepo, root: string) => Promise<OpenCounts | null>
-  gh?: (args: string[], root: string) => Promise<GhResult>
-  accountOf?: (root: string) => string | undefined
+  openCounts?: (repo: GithubRepo) => Promise<OpenCounts | null>
+  gh?: Gh
   now?: () => number
 }
 
@@ -240,17 +226,12 @@ export class GithubLookup {
     const repo = await this.repoOf(root, false)
     if (!repo || !this.opts.openCounts) return null
     const key = `${repo.owner}/${repo.repo}`
-    const asAccount = `${key} ${this.opts.accountOf?.(root) ?? ''}`
-    let known = this.counted.get(asAccount)
+    let known = this.counted.get(key)
     if (!known || this.now() - known.at >= TTL_MS) {
-      known = { at: this.now(), counts: await this.opts.openCounts(repo, root) }
-      this.counted.set(asAccount, known)
+      known = { at: this.now(), counts: await this.opts.openCounts(repo) }
+      this.counted.set(key, known)
     }
     return known.counts && { repo: key, ...known.counts }
-  }
-
-  forgetCounts(): void {
-    this.counted.clear()
   }
 
   async ownerSlashName(root: string): Promise<string | null> {
@@ -293,30 +274,22 @@ export class GithubLookup {
     return (await this.signedIn()) ? url : loginUrlFor(url)
   }
 
-  private ghFor(root: string): Gh | null {
-    const gh = this.opts.gh
-    return gh ? (args) => gh(args, root) : null
-  }
-
   async checks(root: string, pr: number): Promise<PrChecks> {
     const repo = await this.repoFor(root)
-    const gh = this.ghFor(root)
-    if (!repo || !gh) return { state: 'failed' }
-    return prChecks(gh, repo, pr)
+    if (!repo || !this.opts.gh) return { state: 'failed' }
+    return prChecks(this.opts.gh, repo, pr)
   }
 
   async openItems(root: string): Promise<GithubOpenItems> {
     const repo = await this.repoFor(root)
-    const gh = this.ghFor(root)
-    if (!repo || !gh) return { state: 'no-repo' }
-    return listOpenItems(gh, repo)
+    if (!repo || !this.opts.gh) return { state: 'no-repo' }
+    return listOpenItems(this.opts.gh, repo)
   }
 
   async failingChecksText(root: string, pr: number): Promise<string | null> {
     const repo = await this.repoFor(root)
-    const gh = this.ghFor(root)
-    if (!repo || !gh) return null
-    return failingChecksText(gh, repo, pr)
+    if (!repo || !this.opts.gh) return null
+    return failingChecksText(this.opts.gh, repo, pr)
   }
 
   private async repoFor(root: string): Promise<GithubRepo | null> {
@@ -376,7 +349,6 @@ function prOf(
 
 function fixtureCounts(fx: GithubFixture, root: string): WorkspaceGithub | null {
   const f = fx[root]
-  if (f?.signedOut) return { repo: `${f.owner}/${f.repo}`, issues: 0, prs: 0, signedOut: true }
   if (!f || f.issues === undefined || f.prs === undefined) return null
   return { repo: `${f.owner}/${f.repo}`, issues: f.issues, prs: f.prs }
 }

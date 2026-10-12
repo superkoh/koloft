@@ -30,7 +30,7 @@ describe('the GitHub button dot and the Checks line', () => {
 
   it('says what to do when gh cannot answer', () => {
     expect(checksLine({ state: 'no-gh' })).toBe('Checks · install gh')
-    expect(checksLine({ state: 'signed-out' })).toBe('Checks · not signed in')
+    expect(checksLine({ state: 'signed-out' })).toBe('Checks · run gh auth login')
     expect(checksLine({ state: 'no-pr' })).toBeNull()
   })
 })

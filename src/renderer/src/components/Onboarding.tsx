@@ -9,7 +9,6 @@ import { useSettingsUpdate } from './settings/useSettingsUpdate'
 import { useAssistSetup } from '../useAssistSetup'
 import { useCommandLineToolsMissing } from '../useCommandLineTools'
 import { AssistSetup, InstallHint } from './AssistSetup'
-import { useGhAuthState, useGhSignIn } from '../ghSignIn'
 
 const PIC_ROWS: { color: string; title: string; state: string; cold?: boolean }[] = [
   { color: 'var(--accent)', title: 'Fix login bug', state: 'working' },
@@ -122,28 +121,6 @@ const METERS: { name: string; pct: number; color: string }[] = [
   { name: 'B', pct: 22, color: 'var(--good)' },
   { name: 'C', pct: 53, color: 'var(--amber)' }
 ]
-
-function GithubChoice(): JSX.Element | null {
-  const auth = useGhAuthState()
-  const signIn = useGhSignIn()
-  if (auth !== 'signed-in' && auth !== 'signed-out') return null
-  return (
-    <>
-      <div className="quiet">
-        Sessions use <b>GitHub</b> to open pull requests and read checks. Sign in once; every
-        session on this Mac shares it.
-      </div>
-      <div className="ob-choices">
-        <button className="choice" onClick={() => auth === 'signed-out' && void signIn()}>
-          <span className="choice-t">GitHub</span>
-          <span className="choice-d">
-            {auth === 'signed-in' ? 'Signed in.' : 'Not signed in. Click to sign in.'}
-          </span>
-        </button>
-      </div>
-    </>
-  )
-}
 
 function PicAccounts(): JSX.Element {
   return (
@@ -373,7 +350,6 @@ export function Onboarding({
             <div className="big">Sign in, and pick your Assist.</div>
             <AssistSetup setup={setup} offerInstall />
             <PicAccounts />
-            <GithubChoice />
           </>
         )}
 

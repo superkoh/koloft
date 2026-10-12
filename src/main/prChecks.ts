@@ -18,16 +18,12 @@ const GH_MAX_BUFFER = 64 * 1024 * 1024
 export const GH_SIGNED_OUT = 4
 const BUCKETS: readonly PrCheckBucket[] = ['pass', 'fail', 'pending', 'skipping', 'cancel']
 
-export function runGh(args: string[], env?: Record<string, string>): Promise<GhResult> {
+export function runGh(args: string[]): Promise<GhResult> {
   return new Promise((resolve) => {
     execFile(
       'gh',
       args,
-      {
-        timeout: FETCH_TIMEOUT_MS,
-        maxBuffer: GH_MAX_BUFFER,
-        ...(env && { env: { ...process.env, ...env } })
-      },
+      { timeout: FETCH_TIMEOUT_MS, maxBuffer: GH_MAX_BUFFER },
       (err, stdout, stderr) => {
         const code = (err as { code?: unknown } | null)?.code
         resolve({

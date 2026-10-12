@@ -299,24 +299,8 @@ export function installFakeGh(
     exitCode?: number
     issues?: FakeGhItem[]
     prs?: FakeGhItem[]
-    accounts?: { login: string; active: boolean }[]
   }
 ): void {
-  const accounts = path.join(env.home, 'fake-gh-accounts.json')
-  fs.writeFileSync(
-    accounts,
-    JSON.stringify({
-      hosts: {
-        'github.com': (answer.accounts ?? []).map((a) => ({
-          state: 'success',
-          active: a.active,
-          host: 'github.com',
-          login: a.login,
-          tokenSource: 'keyring'
-        }))
-      }
-    })
-  )
   const checks = path.join(env.home, 'fake-gh-checks.json')
   const log = path.join(env.home, 'fake-gh-log.txt')
   const issues = path.join(env.home, 'fake-gh-issues.json')
@@ -333,9 +317,6 @@ export function installFakeGh(
         ? `echo "To get started with GitHub CLI, please run:  gh auth login" >&2; exit ${answer.exitCode}\n`
         : '') +
       `case "$1 $2" in\n` +
-      `  "auth token") echo gho_FAKE_E2E; exit 0;;\n` +
-      `  "auth status") cat ${JSON.stringify(accounts)}; exit 0;;\n` +
-      `  "auth login") exit 0;;\n` +
       `  "pr checks") cat ${JSON.stringify(checks)}; exit 0;;\n` +
       `  "run view") cat ${JSON.stringify(log)}; exit 0;;\n` +
       `  "issue list") cat ${JSON.stringify(issues)}; exit 0;;\n` +

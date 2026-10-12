@@ -3,7 +3,7 @@ import path from 'path'
 import type { Page } from '@playwright/test'
 import { test, expect, quitAndClose } from './helpers/app'
 import { launchSettled } from './helpers/blackbox'
-import { GH_SIGNED_OUT, installFakeGh, seedSettings, setGithubFixture } from './helpers/env'
+import { seedSettings, setGithubFixture } from './helpers/env'
 import { runGit, setupGitFixture } from './helpers/gitFixture'
 import { gitInit, gitMark, openGitPanel, snap } from './helpers/p1'
 import {
@@ -69,63 +69,6 @@ test.describe('Workspace GitHub counts · open issues and pull requests after th
       )
       await expect(panel.locator('.tbu-act', { hasText: 'Fetch now' })).toBeEnabled()
       await snap(page, 'T-GH-01-panel')
-    } finally {
-      await app.close().catch(() => {})
-    }
-  })
-
-  test("T-GH-08: with gh signed out the git panel names the repo and offers Sign in to GitHub, which runs gh's prompt-free web login", async ({
-    env
-  }) => {
-    const fx = setupGitFixture(env)
-    setGithubFixture(env, { [fx.clone]: { owner: 'acme', repo: 'repo', signedOut: true } })
-    installFakeGh(env, { exitCode: GH_SIGNED_OUT })
-    const { app, page } = await launchSettled(env)
-    try {
-      const panel = await openGitPanel(page, 'repo')
-      await expect(panel.locator('.tbu-pop-head').last()).toHaveText('GitHub · acme/repo', {
-        timeout: COUNTS_TIMEOUT
-      })
-      await expect(panel.locator('.fx-counts')).toHaveCount(0)
-      await panel.locator('.tbu-act', { hasText: 'Sign in to GitHub to see counts' }).click()
-      await expect
-        .poll(() => fs.readFileSync(path.join(env.home, 'fake-gh-calls.txt'), 'utf8'), {
-          timeout: COUNTS_TIMEOUT
-        })
-        .toContain('auth login --web -h github.com --clipboard=false')
-      await snap(page, 'T-GH-08-signed-out-panel')
-    } finally {
-      await app.close().catch(() => {})
-    }
-  })
-
-  test("T-GH-09: with two gh accounts the git panel lists both, gh's current one checked; picking the other fetches its token and moves the check to it", async ({
-    env
-  }) => {
-    const fx = setupGitFixture(env)
-    setGithubFixture(env, { [fx.clone]: { owner: 'acme', repo: 'repo', issues: 12, prs: 3 } })
-    installFakeGh(env, {
-      accounts: [
-        { login: 'alice', active: true },
-        { login: 'bob', active: false }
-      ]
-    })
-    const { app, page } = await launchSettled(env)
-    try {
-      const panel = await openGitPanel(page, 'repo')
-      const row = (login: string) => panel.locator('.tbu-act', { hasText: login })
-      await expect(row('alice')).toContainText('gh’s current', { timeout: COUNTS_TIMEOUT })
-      await expect(row('alice').locator('svg path')).not.toHaveCount(0)
-      await expect(row('bob').locator('svg path')).toHaveCount(0)
-      await row('bob').click()
-      await expect
-        .poll(() => fs.readFileSync(path.join(env.home, 'fake-gh-calls.txt'), 'utf8'), {
-          timeout: COUNTS_TIMEOUT
-        })
-        .toContain('auth token -h github.com -u bob')
-      await expect(row('bob').locator('svg path')).not.toHaveCount(0, { timeout: COUNTS_TIMEOUT })
-      await expect(row('alice').locator('svg path')).toHaveCount(0)
-      await snap(page, 'T-GH-09-picked-bob')
     } finally {
       await app.close().catch(() => {})
     }

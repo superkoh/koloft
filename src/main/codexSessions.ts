@@ -1,4 +1,5 @@
 import fs from 'fs'
+import { realpathSafe } from './projectInfo'
 import os from 'os'
 import path from 'path'
 import { randomUUID } from 'crypto'
@@ -23,7 +24,22 @@ import {
   type CodexEvent,
   type CodexThread
 } from './codexObservation'
-import { CodexRpc, createCodexTransport, type CodexTransport } from './codexTransport'
+import {
+  CodexRpc,
+  createCodexTransport,
+  type CodexProcessOptions,
+  type CodexTransport
+} from './codexTransport'
+import {
+  allowsTheBrowser,
+  ASSIST_ALLOW_ENV,
+  CODEX_GATE_ENV,
+  CODEX_GATE_HOOK_COMMAND,
+  CODEX_GATE_NOT_TRUSTED,
+  CODEX_GATE_OVERRIDE,
+  CODEX_ASKS_AND_WAITS
+} from './conductorGate'
+import { acceptCodexHookTrust, codexConfigFile } from './codexTrust'
 import { endCodexAppServersLeftByACrash } from './leftovers'
 import { SessionStore, codexSessionKey, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees } from './sessionWorktrees'
@@ -36,6 +52,7 @@ import { watchJsonDrops } from './jsonDrops'
 import { openDropTarget, type OpenDrop } from './openDrop'
 import { removeCodexOpenShim, writeCodexOpenShim } from './openShimScript'
 import { AGENT_SHIM_WAITS_MS, writeCodexAgentShim } from './agentShim'
+import { pathWithDirLast } from './bundledGh'
 import { koloftPrompt } from '@shared/agentGuide'
 import { playwrightCliSession } from '@shared/browserTabEnv'
 import { portOffset } from '@shared/worktreeName'
@@ -111,6 +128,36 @@ export function playwrightEnvOverrides(mcpServers: unknown): string[] {
       `mcp_servers.${name}.env_vars=${mergedList(entry.env_vars, Object.keys(playwrightMcpEnv('')))}`
     ]
   })
+}
+
+interface GateHook {
+  key: string
+  currentHash: string
+  trustStatus: string
+}
+
+// CODEX§27
+function gateHookIn(reply: unknown): GateHook | undefined {
+  const lists = record(reply).data
+  for (const list of Array.isArray(lists) ? lists : []) {
+    const hooks = record(list).hooks
+    for (const raw of Array.isArray(hooks) ? hooks : []) {
+      const hook = record(raw)
+      if (
+        hook.source === 'sessionFlags' &&
+        hook.eventName === 'preToolUse' &&
+        hook.command === CODEX_GATE_HOOK_COMMAND &&
+        typeof hook.key === 'string' &&
+        typeof hook.currentHash === 'string'
+      )
+        return {
+          key: hook.key,
+          currentHash: hook.currentHash,
+          trustStatus: String(hook.trustStatus)
+        }
+    }
+  }
+  return undefined
 }
 
 interface Permissions {
@@ -194,10 +241,13 @@ export interface CodexSessionDeps {
   error(message: string): void
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
   pickHome(): { account: string; home: string } | undefined
+  assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
+  conductorGate: { script: string; writeAllow(tabId: string, allow: string[]): string }
   browserEndpoint(tabId: string): string
   openShimRoot: string
   playwrightBin: string
-  workspaceEnv?(workspace: string): Record<string, string>
+  fallbackBin?: string
+  gitBin?: string
   agent: {
     enabled(): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
@@ -228,6 +278,7 @@ interface Run {
 export class CodexSessions {
   private crashLeftoversEnded?: Promise<void>
   private runs = new Map<string, Run>()
+  private gateTrustedAt = new Map<string, number | undefined>()
   private history = new Map<string, CodexThread>()
   private archivedIds = new Set<string>()
   private binary?: string
@@ -375,7 +426,42 @@ export class CodexSessions {
 
   // CODEX§15
   private envFor(home: string | undefined): NodeJS.ProcessEnv | undefined {
-    return home ? { ...this.processEnv, CODEX_HOME: home } : this.processEnv
+    const fallback = this.deps.fallbackBin
+    const env =
+      this.processEnv && fallback
+        ? { ...this.processEnv, PATH: pathWithDirLast(this.processEnv.PATH, fallback) }
+        : this.processEnv
+    return home ? { ...env, CODEX_HOME: home } : env
+  }
+
+  // ADR-0029 CODEX§27
+  private async trustGate(launch: CodexProcessOptions, configFile: string): Promise<void> {
+    const file = realpathSafe(configFile)
+    const changedAt = (): number | undefined => {
+      try {
+        return fs.statSync(file).mtimeMs
+      } catch {
+        return undefined
+      }
+    }
+    if (this.gateTrustedAt.has(file) && this.gateTrustedAt.get(file) === changedAt()) return
+    await this.askGateTrust(launch, configFile)
+    this.gateTrustedAt.set(file, changedAt())
+  }
+
+  // CODEX§27
+  private async askGateTrust(launch: CodexProcessOptions, configFile: string): Promise<void> {
+    const rpc = new CodexRpc(launch)
+    try {
+      const gate = async (): Promise<GateHook | undefined> =>
+        gateHookIn(await rpc.request('hooks/list', { cwds: [launch.cwd] }).catch(() => undefined))
+      const hook = await gate()
+      if (hook?.trustStatus === 'trusted') return
+      if (hook) acceptCodexHookTrust(configFile, hook.key, hook.currentHash)
+      if ((await gate())?.trustStatus !== 'trusted') throw new Error(CODEX_GATE_NOT_TRUSTED)
+    } finally {
+      await rpc.close().catch(() => {})
+    }
   }
 
   private rpc(home: string | undefined): CodexRpc {
@@ -814,10 +900,15 @@ export class CodexSessions {
       resource = await this.worktrees.adopt(workspace, this.deps.projectInfo(cwd).treeRoot)
     }
     this.assertStarting()
-    if (opts.trustFolder) this.deps.trustFolder(cwd, this.envFor(home))
+    // ADR-0029
+    const assist = this.deps.assistOf(cwd, opts.resumeSessionId)
+    const conductor = opts.conductor || !!assist
+    const role = opts.role ?? assist?.role
+    const allow = opts.allow ?? assist?.allow ?? []
+    if (opts.trustFolder || assist) this.deps.trustFolder(cwd, this.envFor(home))
     const tabId = this.deps.pty.nextId()
     // ADR-0029
-    const endpoint = opts.conductor ? '' : this.deps.browserEndpoint(tabId)
+    const endpoint = conductor && !allowsTheBrowser(allow) ? '' : this.deps.browserEndpoint(tabId)
     const browser = endpoint ? await this.browserOverrides(home, cwd) : []
     this.assertStarting()
     let run: Run | undefined
@@ -836,34 +927,40 @@ export class CodexSessions {
       (target) => observe({ type: 'open', target }),
       agent && ((dir, name, raw) => agent.answer(run?.tabId, dir, name, raw))
     )
-    const env = {
-      ...this.envFor(home),
-      ...this.deps.workspaceEnv?.(workspace),
-      ZDOTDIR: openShim.zdotDir
-    }
+    const env = { ...this.envFor(home), ZDOTDIR: openShim.zdotDir }
     const observer = new CodexObservation(observe)
     const instructions = [
-      ...(agent && !opts.conductor ? [koloftPrompt('codex')] : []),
-      ...(opts.role ? [opts.role] : [])
+      ...(agent && !conductor ? [koloftPrompt('codex')] : []),
+      ...(role ? [role] : [])
     ]
     const permission = opts.permission ?? 'default'
-    const permissions = opts.conductor ? CONDUCTOR_PERMISSIONS : PERMISSIONS[permission]
+    const permissions = conductor ? CONDUCTOR_PERMISSIONS : PERMISSIONS[permission]
+    const processOptions: CodexProcessOptions = {
+      binary,
+      env,
+      sessionEnv: {
+        ...(resource && { KOLOFT_PORT_OFFSET: String(portOffset(resource.worktreeName)) }),
+        ...browserControlEnv(tabId, endpoint),
+        ...(conductor && {
+          [CODEX_GATE_ENV]: this.deps.conductorGate.script,
+          [ASSIST_ALLOW_ENV]: this.deps.conductorGate.writeAllow(tabId, allow)
+        })
+      },
+      cwd,
+      configOverrides: [
+        STATUS_LINE_CONFIG,
+        ...browser,
+        ...(instructions.length ? [developerInstructions(instructions)] : []),
+        ...(opts.resumeSessionId ? permissionConfig(permissions) : []),
+        ...(conductor ? [CODEX_GATE_OVERRIDE, CODEX_ASKS_AND_WAITS] : [])
+      ]
+    }
     let transport: CodexTransport | undefined
     try {
+      if (conductor) await this.trustGate(processOptions, codexConfigFile(this.envFor(home)))
+      this.assertStarting()
       transport = await this.startTransport({
-        binary,
-        env,
-        sessionEnv: {
-          ...(resource && { KOLOFT_PORT_OFFSET: String(portOffset(resource.worktreeName)) }),
-          ...browserControlEnv(tabId, endpoint)
-        },
-        cwd,
-        configOverrides: [
-          STATUS_LINE_CONFIG,
-          ...browser,
-          ...(instructions.length ? [developerInstructions(instructions)] : []),
-          ...(opts.resumeSessionId ? permissionConfig(permissions) : [])
-        ],
+        ...processOptions,
         onFrame: (direction, frame) => observer.receive(direction, frame),
         onDisconnect: () => this.markDegraded(run),
         onError: (error) => {
@@ -917,6 +1014,8 @@ export class CodexSessions {
     } catch (error) {
       await transport?.stop()
       openShim.release()
+      const allowFile = processOptions.sessionEnv?.[ASSIST_ALLOW_ENV]
+      if (allowFile) fs.rmSync(allowFile, { force: true })
       throw error
     }
   }
@@ -932,8 +1031,8 @@ export class CodexSessions {
       path.join(this.deps.playwrightBin, 'playwright-cli'),
       path.join(shim.shimDir, 'playwright-cli')
     )
-    const gh = path.join(this.deps.playwrightBin, 'gh')
-    if (fs.existsSync(gh)) fs.symlinkSync(gh, path.join(shim.shimDir, 'gh'))
+    if (this.deps.gitBin)
+      fs.symlinkSync(path.join(this.deps.gitBin, 'git'), path.join(shim.shimDir, 'git'))
     if (agent) writeCodexAgentShim(shim.shimDir, shim.requestDir)
     const handled = new Set<string>()
     const drops = watchJsonDrops(shim.requestDir, (name) => {
