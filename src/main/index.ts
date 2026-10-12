@@ -3650,10 +3650,27 @@ async function tellAssist(
   title: string,
   text: string
 ): Promise<ConductorOpenResult> {
+  const tabId = conductors?.liveTab(scope)
+  return tabId ? sendPaletteText(scope, tabId, text) : openPaletteTask(scope, title, text)
+}
+
+async function openPaletteTask(
+  scope: string,
+  title: string,
+  text: string
+): Promise<ConductorOpenResult> {
   const all = conductors
   if (!all) return { ok: false, error: STILL_STARTING }
-  const tabId = all.liveTab(scope)
-  if (!tabId) return all.openTask(scope, paletteTask(title, text))
+  const task = paletteTask(title, text)
+  const running = all.runningTaskTab(scope, task.name)
+  return running ? sendPaletteText(scope, running, text) : all.openTask(scope, task)
+}
+
+async function sendPaletteText(
+  scope: string,
+  tabId: string,
+  text: string
+): Promise<ConductorOpenResult> {
   const id = `koloft-palette-${++paletteMessages}`
   if (!(await tabReady(tabId, PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS, false)))
     return { ok: false, error: `The ${conductorName(scope)} did not get ready in time.` }
@@ -4141,10 +4158,8 @@ function registerIpc(): void {
     'conductors:startFresh',
     (_e, scope: string) => conductors?.startFresh(scope) ?? { ok: false, error: STILL_STARTING }
   )
-  ipcMain.handle(
-    'conductors:openTask',
-    (_e, scope: string, title: string, text: string) =>
-      conductors?.openTask(scope, paletteTask(title, text)) ?? { ok: false, error: STILL_STARTING }
+  ipcMain.handle('conductors:openTask', (_e, scope: string, title: string, text: string) =>
+    openPaletteTask(scope, title, text)
   )
   ipcMain.handle('conductors:tell', (_e, scope: string, title: string, text: string) =>
     tellAssist(scope, title, text)
