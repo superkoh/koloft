@@ -7,6 +7,7 @@ import { CodexSessions, type CodexSessionDeps } from '../../src/main/codexSessio
 import { codexSessionKey, type WorktreeResource } from '../../src/main/sessionStore'
 import type { CodexProcessOptions, CodexTransportOptions } from '../../src/main/codexTransport'
 import {
+  CODEX_ASKS_AND_WAITS,
   CODEX_GATE_HOOK_COMMAND,
   CODEX_GATE_NOT_TRUSTED,
   CODEX_GATE_OVERRIDE
@@ -902,14 +903,16 @@ describe('CodexSessions', () => {
   })
 
   // ADR-0029 CODEX§27
-  it("an Assist's own app-server carries Koloft's gate hook, and before the TUI starts a second app-server started the same way is asked whether Codex trusts it; a plain session gets no hook and no question", async () => {
+  it("an Assist's own app-server carries Koloft's gate hook and a question tool that waits for the owner, and before the TUI starts a second app-server started the same way is asked whether Codex trusts it; a plain session gets no hook, no such tool and no question", async () => {
     await sessions.launch({ kind: 'codex', cwd: repo })
     expect(transports[0].options.configOverrides).not.toContain(CODEX_GATE_OVERRIDE)
+    expect(transports[0].options.configOverrides).not.toContain(CODEX_ASKS_AND_WAITS)
     expect(mocks.request.mock.calls.some(([method]) => method === 'hooks/list')).toBe(false)
 
     await sessions.launch({ kind: 'codex', cwd: repo, conductor: true, allow: ['Tool'] })
     const tab = transports[1].options
     expect(tab.configOverrides).toContain(CODEX_GATE_OVERRIDE)
+    expect(tab.configOverrides).toContain(CODEX_ASKS_AND_WAITS)
     expect(deps.conductorGate.writeAllow).toHaveBeenCalledWith('pty-reserved', ['Tool'])
     const checker = mocks.rpcOptions.at(-1)!
     expect(checker.configOverrides).toEqual(tab.configOverrides)

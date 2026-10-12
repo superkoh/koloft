@@ -1025,6 +1025,20 @@ Koloft's (one TUI connection, one stdio app-server upstream, every frame logged)
   model then called `sleep` (`{duration_ms: 60000}`, hook `tool_name` `clocksleep`) to
   wait for an answer. So it does not wait for the owner the way AskUserQuestion does;
   where its answer would arrive was not probed.
+- **`features.default_mode_request_user_input=true` makes the waiting question work in
+  the default mode.** 2026-10-12, codex-cli 0.162.0, a Node client on `codex app-server
+  --stdio` (`experimentalApi: true`), a throwaway `CODEX_HOME`, real turns on two
+  models. `codex features list` shows the flag `under development`, off. With it, 3 of 3
+  turns asked through `request_user_input` (2 of them not told which tool): the server
+  sent `thread/status/changed` with `activeFlags: ["waitingOnUserInput"]` and
+  `item/tool/requestUserInput` shaped as above but with `isBlocking: false`; the turn
+  stayed open until the client answered 15 s later, then went on with the answer.
+  Without it, the call came back "request_user_input is unavailable in Default mode".
+  Either way a `PreToolUse` hook got `tool_name: "request_user_input"` with the whole
+  `questions` array, before the server refused or raised it. The model's tool list held
+  `request_user_input`, `request_user_input_async` and `sleep` with or without the flag.
+  Not probed here: the TUI over `--remote` drawing it in the default mode; what
+  `isBlocking: false` changes.
 - Not probed: several questions in one request, a free-text answer (`N+1` and notes),
   `isSecret`, a form with several fields or a field that is not an enum, and an
   elicitation `mode` other than `form`. Koloft refuses those from Discord.

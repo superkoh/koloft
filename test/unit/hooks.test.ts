@@ -715,7 +715,8 @@ describe('injected hook script', () => {
         'an absolute path inside its folder',
         patch(`*** Update File: ${own}/a/b.md`, '@@', '-x', '+y')
       ],
-      ['a move that stays inside', patch('*** Update File: a.md', '*** Move to: b/a.md')]
+      ['a move that stays inside', patch('*** Update File: a.md', '*** Move to: b/a.md')],
+      ['a question to the owner that waits for the answer', tool('request_user_input')]
     ])('allows %s', (_name, event) => {
       expect(gate(event)).toBe('allow')
     })

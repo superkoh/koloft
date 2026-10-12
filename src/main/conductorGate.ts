@@ -4,7 +4,9 @@ const CONDUCTOR_DENIED =
   'Koloft: Assist only passes work on. It may read files, write its own memory folder, ask the owner a question and run one plain koloft command per Bash call (no ;, &&, |, >, $ or backticks outside quotes). To get anything else done, start a session with koloft session new or message one with koloft session send.'
 
 const CODEX_CONDUCTOR_DENIED =
-  'Koloft: Assist only passes work on. It may run shell commands and change files inside its own folder. It may not start sub-agents or use other tools. To get anything else done, start a session with koloft session new or message one with koloft session send.'
+  'Koloft: Assist only passes work on. It may run shell commands, change files inside its own folder and ask the owner a question. It may not start sub-agents or use other tools. To get anything else done, start a session with koloft session new or message one with koloft session send.'
+
+const CODEX_WAITING_QUESTION_TOOL = 'request_user_input'
 
 const READ_OR_ASK_TOOLS = ['Read', 'Glob', 'Grep', 'Skill', 'ToolSearch', 'AskUserQuestion']
 const WRITE_TOOLS = ['Write', 'Edit']
@@ -120,7 +122,7 @@ function patchStaysInOwnFolder(event) {
 function allowed(event) {
   const tool = event.tool_name
   if (typeof tool !== 'string') return false
-  if (tool === 'Bash') return true
+  if (tool === 'Bash' || tool === ${JSON.stringify(CODEX_WAITING_QUESTION_TOOL)}) return true
   if (tool === 'apply_patch') return patchStaysInOwnFolder(event)
   return false
 }
@@ -139,6 +141,9 @@ export const ASSIST_ALLOW_ENV = 'KOLOFT_ASSIST_ALLOW'
 // CODEX§27
 export const CODEX_GATE_HOOK_COMMAND = `sh "$${CODEX_GATE_ENV}"`
 export const CODEX_GATE_OVERRIDE = `hooks.PreToolUse=[{hooks=[{type="command",command=${JSON.stringify(CODEX_GATE_HOOK_COMMAND)}}]}]`
+
+// CODEX§20
+export const CODEX_ASKS_AND_WAITS = 'features.default_mode_request_user_input=true'
 
 export function codexGateShell(gateScript: string): string {
   return `ELECTRON_RUN_AS_NODE=1 exec ${shq(process.execPath)} ${shq(gateScript)} "$${ASSIST_ALLOW_ENV}"\n`
