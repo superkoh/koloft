@@ -438,6 +438,7 @@ function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
 
+// CC§14
 function asksTheOwner(tabId: string): boolean {
   return tracker.statusOf(tabId) === 'approval' || !!discordRelay?.dialogOpen(tabId)
 }

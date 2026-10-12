@@ -724,6 +724,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       )
     const busy = typed && t.tabId !== undefined && !(await d.ready(t.tabId, 0, true))
     if (t.tabId && !busy) {
+      // CC§14
       const asking = fromAssist && d.asking(t.tabId)
       const sent = await sendNow(t, text, line, Date.now() + REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS)
       return answered(asking ? `${sent} ${readsItAfterTheQuestion(t.name)}` : sent)
