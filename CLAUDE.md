@@ -192,10 +192,9 @@ Working principles:
   question — never a list of open questions at the end of a report. Automate every
   check you can — a suite, a dev build you drive; the owner hand-tests only a case
   that matters and truly cannot be automated (name it and say why), or a round the
-  owner asks for. Even then the AI does every step of the case it can — the
-  hand-test sandbox, a fake server, the real binary, the Docker lab (`test/CLAUDE.md`,
-  Hand tests) — asks the owner only for the step that needs a person, and checks
-  that step itself afterwards in a log or file. One dev build at a time: stop every older one first, its Electron
+  owner asks for. Even then the AI does every step of the case the ladder in
+  `test/CLAUDE.md` (Hand tests) lets it do, asks the owner only for the step that
+  needs a person, and checks that step itself afterwards in a log or file. One dev build at a time: stop every older one first, its Electron
   main process too (killing `electron-vite` alone leaves the window up). A dev build
   has its own profile (`koloft-dev`), so the installed Koloft, where these sessions
   run, stays open.

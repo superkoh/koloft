@@ -3,6 +3,9 @@ import fs from 'fs'
 import net from 'net'
 import os from 'os'
 import path from 'path'
+import { Readable } from 'stream'
+import { pipeline } from 'stream/promises'
+import type { ReadableStream as WebReadableStream } from 'stream/web'
 import { parseArgs } from 'util'
 import {
   addCodexAccount,
@@ -14,8 +17,9 @@ import {
   type E2EEnv
 } from '../e2e/helpers/env'
 import {
+  installClaudeOnTheMachine,
   installLabSsh,
-  installOnTarget,
+  keychainSecret,
   remoteKeyFor,
   runOnTarget,
   startSshLab,
@@ -24,6 +28,11 @@ import {
 } from '../e2e/helpers/docker'
 import { writeExec } from '../e2e/helpers/remote'
 import { defaultControlDir } from '../../src/main/remote/ssh'
+import { readLoginShell } from '../../src/main/loginShell'
+import { acceptClaudeTrust } from '../../src/main/claudeTrust'
+import { acceptCodexTrust, codexConfigFile } from '../../src/main/codexTrust'
+import { codexHomes } from '../../src/main/codexAccounts'
+import { keychainService } from '../../src/shared/types'
 
 const USAGE = `Starts a hidden dev build of Koloft with the real claude and codex, in a home of its own.
 
@@ -44,19 +53,24 @@ Run npm run build first.`
 const REPO = path.resolve(__dirname, '..', '..')
 const MAIN_ENTRY = path.join(REPO, 'out', 'main', 'index.js')
 const INSTALLED_PROFILE = path.join(os.homedir(), 'Library', 'Application Support', 'koloft')
-const INSTALLED_KEYCHAIN_SERVICE = 'koloft-claude-oauth'
-const DEV_BUILD_KEYCHAIN_SERVICE = 'koloft-dev-claude-oauth'
 const STATE_FILE = 'handtest.json'
 const DEFAULT_PORT = '9555'
 const WINDOW_OPEN_DEADLINE_MS = 30_000
 const QUIT_DEADLINE_MS = 20_000
 const POLL_MS = 500
 const USAGE_PROBE_THAT_TEST_MODE_TURNS_OFF = 'https://api.anthropic.com'
+// CC§7
+const AMBIENT_ENV_THAT_WOULD_BYPASS_THE_ACCOUNT = [
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_MODEL'
+]
+// CC§16
 const LINUX_CLAUDE_RELEASES = 'https://downloads.claude.ai/claude-code-releases'
 const LINUX_ARCH: Record<string, string> = { aarch64: 'arm64', x86_64: 'x64' }
 const LAB_USER = 'kuser'
 const LAB_ALIAS = 'kt-key'
-const GIT_ID = ['-c', 'user.email=handtest@koloft.test', '-c', 'user.name=handtest']
+const LAB_GIT_ID = '-c user.email=handtest@koloft.test -c user.name=handtest'
 
 interface State {
   pid: number
@@ -78,33 +92,20 @@ function installedSettings(): { accounts?: InstalledAccount[]; skipPermissions?:
   return JSON.parse(fs.readFileSync(path.join(INSTALLED_PROFILE, 'settings.json'), 'utf8'))
 }
 
-function onLoginPath(name: string): string | undefined {
-  const cleanEnv = { HOME: os.homedir(), USER: os.userInfo().username, PATH: '/usr/bin:/bin' }
-  try {
-    const found = execFileSync('/bin/zsh', ['-lc', `command -v ${name}`], {
-      env: cleanEnv,
-      encoding: 'utf8'
-    }).trim()
-    return found ? fs.realpathSync(found) : undefined
-  } catch {
-    return undefined
-  }
-}
-
-function tokenOf(account: string): string {
-  return execFileSync(
-    'security',
-    ['find-generic-password', '-s', INSTALLED_KEYCHAIN_SERVICE, '-a', account, '-w'],
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
-  ).replace(/\n$/, '')
+async function onLoginPath(name: string): Promise<string | undefined> {
+  const { probed } = await readLoginShell({
+    env: { HOME: os.homedir(), USER: os.userInfo().username, PATH: '/usr/bin:/bin' },
+    shell: '/bin/zsh',
+    probe: `command -v ${name}`
+  })
+  return probed ? fs.realpathSync(probed) : undefined
 }
 
 function codexAuthOfTheInstalledApp(): string | undefined {
-  const homes = path.join(INSTALLED_PROFILE, 'codex-homes')
-  const own = fs.existsSync(homes)
-    ? fs.readdirSync(homes).map((name) => path.join(homes, name, 'auth.json'))
-    : []
-  return [...own, path.join(os.homedir(), '.codex', 'auth.json')].find((f) => fs.existsSync(f))
+  return [
+    ...codexHomes(INSTALLED_PROFILE).map((home) => path.join(home, 'auth.json')),
+    path.join(os.homedir(), '.codex', 'auth.json')
+  ].find((f) => fs.existsSync(f))
 }
 
 function portIsFree(port: number): Promise<boolean> {
@@ -124,30 +125,27 @@ function commitAll(env: E2EEnv, dir: string): void {
     execFileSync('git', args, { cwd: dir, env: env.launchEnv })
 }
 
-function useRealClaude(env: E2EEnv, account: string): string {
-  const claude = onLoginPath('claude')
+async function useRealClaude(env: E2EEnv, account: string): Promise<string> {
+  const claude = await onLoginPath('claude')
   if (!claude) throw new Error('no claude on the login PATH')
   fs.rmSync(path.join(env.fakeBin, 'claude'))
   fs.symlinkSync(claude, path.join(env.fakeBin, 'claude'))
-  fs.writeFileSync(env.keychainFile, '{}')
-  fs.chmodSync(env.keychainFile, 0o600)
-  addKeychainEntry(env, DEV_BUILD_KEYCHAIN_SERVICE, account, tokenOf(account))
-  // CC§9
-  fs.writeFileSync(
-    path.join(env.home, '.claude.json'),
-    JSON.stringify({
-      hasCompletedOnboarding: true,
-      projects: Object.fromEntries(
-        Object.values(env.workspaces).map((dir) => [dir, { hasTrustDialogAccepted: true }])
-      )
-    })
+  for (const k of AMBIENT_ENV_THAT_WOULD_BYPASS_THE_ACCOUNT) delete env.launchEnv[k]
+  addKeychainEntry(
+    env,
+    keychainService('koloft-dev', 'oauth'),
+    account,
+    keychainSecret(keychainService('koloft', 'oauth'), account)
   )
+  const claudeJson = path.join(env.home, '.claude.json')
+  fs.writeFileSync(claudeJson, '{}')
+  for (const dir of Object.values(env.workspaces)) acceptClaudeTrust(claudeJson, dir)
   return claude
 }
 
 // CODEX§15
-function useRealCodex(env: E2EEnv): boolean {
-  const codex = onLoginPath('codex')
+async function useRealCodex(env: E2EEnv): Promise<boolean> {
+  const codex = await onLoginPath('codex')
   const auth = codexAuthOfTheInstalledApp()
   if (!codex || !auth) return false
   const wrapper = path.join(env.fakeBin, 'codex')
@@ -159,19 +157,10 @@ function useRealCodex(env: E2EEnv): boolean {
       `exec '${codex}' "$@"\n`
   )
   addCodexAccount(env, fs.readFileSync(auth, 'utf8'))
-  for (const copy of fs.globSync(path.join(env.userData, 'codex-homes', '*', 'auth.json')))
-    fs.chmodSync(copy, 0o600)
-  const codexHome = path.join(env.home, '.codex')
-  fs.mkdirSync(codexHome, { recursive: true })
-  // CODEX§11
-  fs.writeFileSync(
-    path.join(codexHome, 'config.toml'),
-    Object.values(env.workspaces)
-      .map((dir) => `[projects.${JSON.stringify(dir)}]\ntrust_level = "trusted"\n`)
-      .join('\n')
-  )
   env.launchEnv.KOLOFT_CODEX_CMD = wrapper
-  env.launchEnv.CODEX_HOME = codexHome
+  env.launchEnv.CODEX_HOME = path.join(env.home, '.codex')
+  for (const dir of Object.values(env.workspaces))
+    acceptCodexTrust(codexConfigFile(env.launchEnv), dir)
   fs.writeFileSync(path.join(env.home, '.zprofile'), `export PATH="${env.fakeBin}:$PATH"\n`)
   return true
 }
@@ -185,9 +174,12 @@ async function linuxClaude(env: E2EEnv, localClaude: string): Promise<string> {
   }).trim()
   const url = `${LINUX_CLAUDE_RELEASES}/${version}/linux-${LINUX_ARCH[machine] ?? machine}/claude`
   const res = await fetch(url)
-  if (!res.ok) throw new Error(`${url} answered ${res.status}`)
+  if (!res.ok || !res.body) throw new Error(`${url} answered ${res.status}`)
   const file = path.join(env.home, 'linux-claude')
-  fs.writeFileSync(file, Buffer.from(await res.arrayBuffer()), { mode: 0o755 })
+  await pipeline(
+    Readable.fromWeb(res.body as WebReadableStream),
+    fs.createWriteStream(file, { mode: 0o755 })
+  )
   return file
 }
 
@@ -195,25 +187,16 @@ async function startRemote(env: E2EEnv, localClaude: string): Promise<SshLab> {
   const binary = await linuxClaude(env, localClaude)
   const lab = await startSshLab(env)
   installLabSsh(env, lab)
-  installOnTarget(lab, binary, '/usr/local/bin/claude')
-  const project = `/home/${LAB_USER}/proj`
-  // CC§9 CC§10
+  installClaudeOnTheMachine(lab, binary)
   runOnTarget(
     lab,
     LAB_USER,
-    `printf '%s' ${JSON.stringify(
-      JSON.stringify({
-        hasCompletedOnboarding: true,
-        bypassPermissionsModeAccepted: true,
-        projects: { [project]: { hasTrustDialogAccepted: true } }
-      })
-    )} > .claude.json && cd proj && git init -q -b main && git add -A && ` +
-      `git ${GIT_ID.join(' ')} commit -q -m start`
+    `cd proj && git init -q -b main && git add -A && git ${LAB_GIT_ID} commit -q -m start`
   )
   return lab
 }
 
-function writeLayout(env: E2EEnv, remote?: string): void {
+function writeLayoutWithTheShippedWorkbenchDefault(env: E2EEnv, remote?: string): void {
   const workspaces = [...Object.values(env.workspaces), ...(remote ? [remote] : [])]
   fs.writeFileSync(
     path.join(env.userData, 'layout.json'),
@@ -250,15 +233,14 @@ async function start(opt: { account?: string; port: string; remote: boolean }): 
     for (const dir of Object.values(env.workspaces)) commitAll(env, dir)
     seedSettings(env, {
       onboardingSeen: true,
-      multiAccount: true,
-      skipPermissions: installed.skipPermissions ?? false,
+      skipPermissions: installed.skipPermissions,
       accounts: [seededAccount(account, 'oauth')]
     })
-    const claude = useRealClaude(env, account)
-    const codex = useRealCodex(env)
+    const claude = await useRealClaude(env, account)
+    const codex = await useRealCodex(env)
     if (opt.remote) lab = await startRemote(env, claude)
     const remote = lab ? remoteKeyFor(LAB_ALIAS, LAB_USER) : undefined
-    writeLayout(env, remote)
+    writeLayoutWithTheShippedWorkbenchDefault(env, remote)
     const log = path.join(env.home, 'koloft.log')
     const out = fs.openSync(log, 'a')
     const child = spawn(
@@ -315,13 +297,27 @@ function alive(pid: number): boolean {
   }
 }
 
+function thisScriptAndItsParents(): Set<number> {
+  const parentOf = new Map(
+    execFileSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8' })
+      .trim()
+      .split('\n')
+      .map((line) => line.trim().split(/\s+/).map(Number) as [number, number])
+  )
+  const chain = new Set<number>()
+  for (let pid: number | undefined = process.pid; pid && !chain.has(pid); pid = parentOf.get(pid))
+    chain.add(pid)
+  return chain
+}
+
 function processesUnder(home: string): number[] {
+  const mine = thisScriptAndItsParents()
   try {
     return execFileSync('pgrep', ['-f', home], { encoding: 'utf8' })
       .trim()
       .split('\n')
       .map(Number)
-      .filter((pid) => pid && pid !== process.pid)
+      .filter((pid) => pid && !mine.has(pid))
   } catch {
     return []
   }
@@ -333,12 +329,14 @@ async function evaluate(webSocketDebuggerUrl: string, expression: string): Promi
     ws.onopen = resolve
     ws.onerror = reject
   })
+  let giveUp: NodeJS.Timeout | undefined
   const answer = new Promise<unknown>((resolve) => {
     ws.onmessage = (m) => resolve(JSON.parse(String(m.data)))
-    setTimeout(resolve, QUIT_DEADLINE_MS)
+    giveUp = setTimeout(resolve, QUIT_DEADLINE_MS)
   })
   ws.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression } }))
   const result = await answer
+  clearTimeout(giveUp)
   ws.close()
   return result
 }
@@ -387,7 +385,7 @@ const { positionals, values } = parseArgs({
 
 const [command, home, menuItem] = positionals
 if (command === 'start') {
-  await start({ account: values.account, port: values.port!, remote: values.remote! })
+  await start({ account: values.account, port: values.port, remote: values.remote })
 } else if (command === 'stop' && home) {
   await stop(home)
 } else if (command === 'menu' && home && menuItem) {

@@ -82,6 +82,17 @@ function threadPosts(fake: FakeDiscord): FakePost[] {
   return fake.posted.filter((p) => ids.includes(p.channelId))
 }
 
+async function waitingCard(fake: FakeDiscord, detail: string, timeout?: number): Promise<FakePost> {
+  const card = (): FakePost | undefined =>
+    threadPosts(fake).find((p) =>
+      new RegExp(
+        `^❓ .+ is waiting for you\\.\\n${detail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n`
+      ).test(p.content)
+    )
+  await expect.poll(card, { timeout }).toBeTruthy()
+  return card()!
+}
+
 function inThreads(fake: FakeDiscord): string[] {
   return threadPosts(fake).map((p) => p.content)
 }
@@ -652,16 +663,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       const managedTab = await tabOf(page, managed)
       const type = (line: string): Promise<void> =>
         page.evaluate(([id, l]) => window.api.terminal.write(id, l + '\r'), [managedTab, line])
-      const waiting = async (detail: string): Promise<FakePost> => {
-        const card = (): FakePost | undefined =>
-          threadPosts(fake).find((p) =>
-            new RegExp(
-              `^❓ .+ is waiting for you\\.\\n${detail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n`
-            ).test(p.content)
-          )
-        await expect.poll(card).toBeTruthy()
-        return card()!
-      }
+      const waiting = (detail: string): Promise<FakePost> => waitingCard(fake, detail)
 
       await type('/ask Which colour?|Red|Green')
       const question = await waiting(
@@ -739,18 +741,16 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       const child = (await waitForCallsBesideConductors(env, 2))[1].sessionId
       await expect.poll(() => transcriptText(env, child)).toContain('check the colour')
       await type(await tabOf(page, child), '/ask Which colour?|Red|Green')
-      const card = (): FakePost | undefined =>
-        threadPosts(fake).find((p) =>
-          /^❓ .+ is waiting for you\.\nWhich colour\?\n1\. Red — The Red one\n2\. Green — The Green one\n/.test(
-            p.content
-          )
-        )
-      await expect.poll(card, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }).toBeTruthy()
+      const card = await waitingCard(
+        fake,
+        'Which colour?\n1. Red — The Red one\n2. Green — The Green one',
+        CONDUCTOR_STARTS_AND_ANSWERS_MS
+      )
       expect(fake.threads).toEqual([
         expect.objectContaining({ parentId: CHANNEL, members: [OWNER.id] })
       ])
-      expect(card()!.buttons?.map((b) => b.label)).toEqual(['1. Red', '2. Green'])
-      fake.press(OWNER, card()!.buttons![0], card()!.channelId)
+      expect(card.buttons?.map((b) => b.label)).toEqual(['1. Red', '2. Green'])
+      fake.press(OWNER, card.buttons![0], card.channelId)
       await expect.poll(() => transcriptText(env, child)).toContain('Picked: Red')
     } finally {
       await quitAndClose(app)
