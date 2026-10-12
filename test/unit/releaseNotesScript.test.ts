@@ -95,8 +95,9 @@ describe('scripts/release-notes.sh — CLI contract', () => {
     commit(dir, 'feat(site): a website page (#7)')
     commit(dir, 'fix(site): a website typo (#8)')
 
-    const { stdout } = run(dir, '0.2.0', 'v0.1.0')
+    const { stdout, stderr } = run(dir, '0.2.0', 'v0.1.0')
 
+    expect(stderr).toBe('')
     expect(beforeMarker(stdout).match(/^- .*$/gm)).toEqual([
       '- perf(codex): z (#6)',
       '- fix: y (#5)',
@@ -263,7 +264,7 @@ describe('scripts/release-notes.sh — CLI contract', () => {
     expect(stdout).not.toContain(os.homedir())
   })
 
-  it('A13: a PR title with no type prefix is a headline change and reaches the notes', () => {
+  it('A13: a subject with no type prefix still reaches the notes, and stderr names it for rewording', () => {
     const dir = freshRepo()
     commit(dir, 'chore: init')
     tag(dir, 'v0.1.0')
@@ -273,8 +274,11 @@ describe('scripts/release-notes.sh — CLI contract', () => {
     commit(dir, 'build(release): b (#4)')
     commit(dir, 'chore: release v0.2.0')
 
-    const { stdout } = run(dir, '0.2.0', 'v0.1.0')
+    const { stdout, stderr } = run(dir, '0.2.0', 'v0.1.0')
 
+    expect(stderr).toContain('no type prefix')
+    expect(stderr).toContain('⌘P hands tasks to Assist (#2)')
+    expect(stderr).not.toContain('build(release)')
     expect(beforeMarker(stdout).match(/^- .*$/gm)).toEqual([
       '- fixup the prefix-lookalike (#3)',
       '- ⌘P hands tasks to Assist (#2)',
