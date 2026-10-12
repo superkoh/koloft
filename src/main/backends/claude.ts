@@ -389,7 +389,15 @@ export class ClaudeBackend implements SessionBackend {
     const drops = machine
       ? this.watchMachineDrops(dir, machine, handle)
       : watchAndSweepJsonDrops(dir, () => handle, unboundTabNote)
-    const logs = this.watchStatusLogs(dir)
+    const tabNoteFirst = machine
+      ? (statusLog: string): void => {
+          const note = statusLog.replace(/\.status\.jsonl$/, '.json')
+          try {
+            handle(JSON.parse(fs.readFileSync(note, 'utf8')), note)
+          } catch {}
+        }
+      : undefined
+    const logs = this.watchStatusLogs(dir, tabNoteFirst)
     return () => {
       drops?.close()
       logs()
@@ -412,20 +420,25 @@ export class ClaudeBackend implements SessionBackend {
     )
   }
 
-  private watchStatusLogs(dir: string): () => void {
+  private watchStatusLogs(dir: string, before?: (statusLog: string) => void): () => void {
+    const drain = (name: string): void => {
+      const full = path.join(dir, name)
+      before?.(full)
+      void this.drainStatusLog(full)
+    }
     let watcher: fs.FSWatcher | null = null
     try {
       watcher = fs.watch(dir, (_event, filename) => {
         const name = filename?.toString()
         if (!name || !name.endsWith('.status.jsonl')) return
-        void this.drainStatusLog(path.join(dir, name))
+        drain(name)
       })
     } catch {}
     const poll = setInterval(() => {
       void fs.promises.readdir(dir).then(
         (names) => {
           for (const name of names) {
-            if (name.endsWith('.status.jsonl')) void this.drainStatusLog(path.join(dir, name))
+            if (name.endsWith('.status.jsonl')) drain(name)
           }
         },
         () => {}

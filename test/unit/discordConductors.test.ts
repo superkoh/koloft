@@ -161,6 +161,18 @@ describe('Conductors', () => {
   })
 
   // ADR-0029
+  it('an Assist folder is recognised whether the launch names it through a symlink or by its real path', () => {
+    const real = fs.realpathSync(userData)
+    const linked = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-link-')), 'userData')
+    fs.symlinkSync(real, linked)
+    userData = linked
+    const c = make()
+    fs.mkdirSync(conductorFolder(linked, 'global'), { recursive: true })
+    expect(c.identityOfLaunch(conductorFolder(real, 'global'))?.scope).toBe('global')
+    expect(c.identityOfLaunch(conductorFolder(linked, 'global'))?.scope).toBe('global')
+    userData = real
+  })
+
   it('a launch in an Assist folder is that Assist by its folder alone, so any resume or wake gets its role and its gate', async () => {
     records = [{ scope: '/ws/a', sessionIds: [] }]
     const c = make()
