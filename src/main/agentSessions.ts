@@ -380,8 +380,8 @@ async function startSibling(
   args: NewSessionArgs,
   me: SessionInfo,
   workspace: string,
-  conductorTab?: string,
-  oweReply?: (tabId: string) => void
+  conductorTab: string | undefined,
+  oweReply: (tabId: string) => void
 ): Promise<AgentReply> {
   const backend = args.backend ?? me.backendId
   if (backend === 'codex' && args.name !== undefined) return refused(CODEX_HAS_NO_NAME, EXIT_USAGE)
@@ -409,9 +409,9 @@ async function startSibling(
       : { firstPrompt: withHandover(caller, args.prompt) })
   })
   if (!tabId) return refused('koloft session new: Koloft could not start the session.')
+  oweReply(tabId)
   d.startedSessions.started(tabId, me.sessionId)
   if (conductorTab) {
-    oweReply?.(tabId)
     d.started(conductorTab, tabId, name ?? 'a Codex session', workspace, backend)
     return answered(
       `Started ${name ? `session "${name}"` : 'a Codex session'} in a new tab. "koloft session list" shows its id once it starts; reach it with koloft session send.`
@@ -696,9 +696,11 @@ export function sessionVerb(d: SessionVerbDeps): {
   ): Promise<string> => {
     const tab = t.tabId ?? (await openReady(t, until))
     if (!tab) throw new Error(`${t.name} was resumed but did not get ready in time.`)
-    const sent = await sendInto(t, tab, text, line, until)
     if (assist) replyOwed.set(tab, assist)
-    return sent
+    return sendInto(t, tab, text, line, until).catch((error: unknown) => {
+      if (assist) replyOwed.delete(tab)
+      throw error
+    })
   }
 
   const sendInto = async (
@@ -762,11 +764,13 @@ export function sessionVerb(d: SessionVerbDeps): {
   }
 
   const turnEnded = (tabId: string, turn: Turn): void => {
-    const assist = replyOwed.get(tabId)
-    if (assist === undefined) return
+    const owner = replyOwed.get(tabId)
+    if (owner === undefined) return
     replyOwed.delete(tabId)
-    const to = d.conductorOf(assist)
-    if (!to || !turn.reply.trim()) return
+    if (!turn.reply.trim()) return
+    const parent = placedRows(d.sidebar(), d.allSessions()).find((p) => p.row.id === owner)
+    const to = d.conductorOf(owner) ?? (parent && rowTarget(d, parent))
+    if (!to) return
     const session = d.allSessions().find((s) => s.tabId === tabId)
     if (!session) return
     deliver('send', to, sessionSays(session, turn.reply), { tabId, session }, false).catch(
@@ -823,9 +827,8 @@ export function sessionVerb(d: SessionVerbDeps): {
     d.touch(caller.tabId, t.key)
     if (sub === 'command') return answered(await d.command(caller.tabId, t, text))
     if (sub === 'keys' && t.tabId) {
-      const answersAQuestion = d.asking(t.tabId)
+      if (d.asking(t.tabId)) replyOwed.set(t.tabId, caller.session.sessionId)
       await d.press(t.tabId, keysFor(tail))
-      if (answersAQuestion) replyOwed.set(t.tabId, caller.session.sessionId)
       return answered(
         `Pressed ${text} in ${t.name}. See what it shows now with koloft session screen ${asArgument(ref)}.`
       )
@@ -833,10 +836,11 @@ export function sessionVerb(d: SessionVerbDeps): {
     if (sub === 'answer') {
       if (!t.tabId)
         return refused(`koloft session answer: ${t.name}: ${SHOWS_NOTHING_WHILE_CLOSED}`)
-      const error = await d.answer(t.tabId, text)
-      if (error) return refused(`koloft session answer: ${t.name}: ${error} ${seeAndPress(ref)}`)
       replyOwed.set(t.tabId, caller.session.sessionId)
-      return answered(`Answered ${t.name}.`)
+      const error = await d.answer(t.tabId, text)
+      if (!error) return answered(`Answered ${t.name}.`)
+      replyOwed.delete(t.tabId)
+      return refused(`koloft session answer: ${t.name}: ${error} ${seeAndPress(ref)}`)
     }
     if (sub === 'resume' && !text) {
       if (t.tabId) return answered(`${t.name} is already open.`)
@@ -881,21 +885,22 @@ export function sessionVerb(d: SessionVerbDeps): {
       const parsed = parseNewSessionArgs(rest)
       if (!parsed.ok) return refused(`koloft session new: ${parsed.error}`, EXIT_USAGE)
       const where = parsed.value.workspace
+      const start = (workspace: string, conductorTab?: string): Promise<AgentReply> =>
+        startSibling(d, parsed.value, caller.session, workspace, conductorTab, (tab) =>
+          replyOwed.set(tab, caller.session.sessionId)
+        )
       if (scope !== undefined) {
         if (scope === GLOBAL_SCOPE && where === undefined) return refused(GLOBAL_NEEDS_WORKSPACE)
         const target = startableWorkspace(where ?? scope, d.pinnedWorkspaces())
         if (!target.ok) return refused(`koloft session new: ${target.error}`)
         if (scope !== GLOBAL_SCOPE && target.value !== scope) return refused(ONLY_YOUR_WORKSPACE)
-        return startSibling(d, parsed.value, caller.session, target.value, caller.tabId, (tab) =>
-          replyOwed.set(tab, caller.session.sessionId)
-        )
+        return start(target.value, caller.tabId)
       }
       if (parsed.value.backend !== undefined) return refused(BACKEND_IS_FOR_CONDUCTORS, EXIT_USAGE)
-      if (where === undefined)
-        return ws ? startSibling(d, parsed.value, caller.session, ws) : refused(NO_WORKSPACE)
+      if (where === undefined) return ws ? start(ws) : refused(NO_WORKSPACE)
       const target = startableWorkspace(where, d.pinnedWorkspaces())
       if (!target.ok) return refused(`koloft session new: ${target.error}`)
-      return startSibling(d, parsed.value, caller.session, target.value)
+      return start(target.value)
     }
     if (scope !== undefined && Object.hasOwn(CONDUCTOR_ACT_USAGE, sub))
       return conductorAct(sub, rest, caller)
@@ -913,7 +918,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       const text = tail.join(' ').trim()
       if (!ref || !text) return refused(SEND_USAGE, EXIT_USAGE)
       const to = starter(ref)
-      if (d.conductorOf(ref)) replyOwed.delete(caller.tabId)
+      if (to) replyOwed.delete(caller.tabId)
       if (to) return deliver('send', to, sessionSays(caller.session, text), caller, false)
       if (caller.session.backendId !== 'codex')
         return refused(`koloft session send: ${CLAUDE_USES_SEND_MESSAGE}`)

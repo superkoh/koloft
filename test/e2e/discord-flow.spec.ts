@@ -400,7 +400,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     }
   })
 
-  test('the conductor sends to a local Claude session through its message socket as the owner’s words, stops it — the session stays on the sidebar, so its thread is only archived, after its "closed" card — and resumes it with a first message, each time naming it by its title with spaces and no quotes; the session is touched', async ({
+  test('the conductor sends to a local Claude session through its message socket as the owner’s words, and when that turn ends the session’s reply is handed to the conductor, whose answer reaches the owner in the channel unasked; it stops it — the session stays on the sidebar, so its thread is only archived, after its "closed" card — and resumes it with a first message, each time naming it by its title with spaces and no quotes; the session is touched', async ({
     env
   }) => {
     seedConductor(env, 'claude')
@@ -420,10 +420,21 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
 
       fake.say(OWNER, `/koloft session send ${title} fix the tests`)
       await expect
-        .poll(peerLines, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-        .toEqual([sent('fix the tests', 1)])
+        .poll(() => peerLines()[0], { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toEqual(sent('fix the tests', 1))
       await expect.poll(() => bindingOnDisk(env)?.touched).toEqual([managed])
       await expect.poll(() => notices(fake)).toEqual([expect.stringMatching(/^🔔 .+ finished\.$/)])
+      const handedBack = `(From the session "${title}", id ${managed}:) Peer said: `
+      await expect
+        .poll(() => peerMessages(env).filter((m) => m.includes(handedBack)), {
+          timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+        })
+        .toHaveLength(1)
+      await expect
+        .poll(() => said(fake).some((s) => s.includes(handedBack)), {
+          timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+        })
+        .toBe(true)
 
       fake.say(OWNER, `/koloft session stop ${title}`)
       await expect
@@ -439,7 +450,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       fake.say(OWNER, `/koloft session resume ${title} -- carry on`)
       await expect
         .poll(peerLines, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-        .toEqual([sent('fix the tests', 1), sent('carry on', 2)])
+        .toContain(sent('carry on', 3))
       expect(
         readCalls(env).filter((c) => c.argv[c.argv.indexOf('--resume') + 1] === managed)
       ).toHaveLength(1)
@@ -449,7 +460,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     }
   })
 
-  test('the conductor queues a message on a Codex session with a conductor message id, and a session it starts with --backend codex is announced and touched, and its thread takes the session’s sidebar title once it has one; once the conductor closes it for good, its thread and the card it hangs from are deleted', async ({
+  test('the conductor queues a message on a Codex session with a conductor message id, and the reply that ends that turn is handed to the conductor; a session it starts with --backend codex is announced and touched, and its thread takes the session’s sidebar title once it has one; once the conductor closes it for good, its thread and the card it hangs from are deleted', async ({
     env
   }) => {
     installCodex(env)
@@ -465,6 +476,11 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await expect
         .poll(() => codexQueued(env), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toEqual([['koloft-conductor-1', ownerSays('check the docs')]])
+      await expect
+        .poll(() => peerMessages(env).some((m) => m.includes(`, id ${codexId}:) `)), {
+          timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+        })
+        .toBe(true)
 
       fake.say(OWNER, '/koloft session new --backend codex -- list the files')
       await expect

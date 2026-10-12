@@ -502,6 +502,51 @@ describe('koloft session send', () => {
     )
   })
 
+  it('a child that ends its first turn without reporting has its reply handed by Koloft to the Codex or Claude session that started it, so a parent never waits on a child that forgot; a child that reported itself is not repeated', async () => {
+    const h = harness(
+      [
+        session('me', 'codex', { nativeSessionId: CODEX_THREAD, title: 'Lead' }),
+        session('cc', 'claude', { title: 'Planner' }),
+        session('new-tab', 'codex', { nativeSessionId: OTHER_THREAD, title: 'Check docs' })
+      ],
+      {},
+      [],
+      {
+        sidebar: sidebar([
+          [
+            WS,
+            [
+              row('me-session', { backendId: 'codex', running: true }),
+              row('cc-session', { running: true })
+            ]
+          ]
+        ])
+      }
+    )
+    const handed = `(From the session "Check docs", id ${OTHER_THREAD}:) Found it.`
+
+    await h.verb(['new', '--', 'find it'], from('me'))
+    h.turnEnded('new-tab', 'Found it.')
+    h.turnEnded('new-tab', 'A later turn.')
+    await vi.waitFor(() => expect(h.queued.map((q) => [q.tabId, q.text])).toEqual([['me', handed]]))
+
+    await h.verb(['new', '--', 'find it'], from('cc'))
+    h.turnEnded('new-tab', 'Found it.')
+    await vi.waitFor(() =>
+      expect(h.lines).toEqual([
+        { tabId: 'cc', line: crossSessionLine('prompting', handed, 'koloft-session-1') }
+      ])
+    )
+
+    await h.verb(['new', '--', 'find it'], from('me'))
+    h.startedSessions.bound('new-tab', 'new-tab-session')
+    await h.verb(['send', 'me-session', 'Found it myself.'], from('new-tab'))
+    h.turnEnded('new-tab', 'Found it myself, again.')
+    await vi.waitFor(() => expect(h.queued).toHaveLength(2))
+    expect(h.queued[1].text).toContain('Found it myself.')
+    expect(h.lines).toHaveLength(1)
+  })
+
   it('reaches a Codex session open in another workspace, so a child started there can report back', async () => {
     const { verb, queued } = harness([
       session('me', 'codex', { nativeSessionId: CODEX_THREAD }),

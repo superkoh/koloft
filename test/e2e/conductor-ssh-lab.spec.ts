@@ -150,7 +150,7 @@ async function typeIntoRemote(page: Page, tabId: string, text: string): Promise<
 }
 
 test.describe('A conductor on this Mac looking after a Claude session on an SSH machine (Docker)', () => {
-  test('E-SSH-C1: the conductor types a message into the remote session and hears it finished in the session’s thread; the session’s question reaches the thread whole, and its button presses the key that answers it; the owner’s message in the thread is typed into the remote session and its reply comes back there; the next question is answered by the conductor with koloft session keys, pressed through ssh and tmux', async ({
+  test('E-SSH-C1: the conductor types a message into the remote session and hears it finished in the session’s thread; the session’s question reaches the thread whole, and its button presses the key that answers it; the owner’s message in the thread is typed into the remote session and its reply comes back there; the next question is answered by the conductor with koloft session keys, pressed through ssh and tmux, and the reply that ends that turn is handed to the conductor, whose answer reaches the channel', async ({
     env
   }) => {
     await withRemoteWorkspaceConductor(
@@ -226,6 +226,12 @@ test.describe('A conductor on this Mac looking after a Claude session on an SSH 
         await expect
           .poll(transcript, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
           .toContain('Picked: Small')
+        await expect
+          .poll(
+            () => said(fake).some((s) => s.includes(`, id ${remote.sessionId}:) Picked: Small`)),
+            { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS }
+          )
+          .toBe(true)
       }
     )
   })
