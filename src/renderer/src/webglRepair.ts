@@ -32,7 +32,6 @@ function onMergeSignal(): void {
 
 // PLATFORM§20 PLATFORM§23
 export function repairAllWebgl(): void {
-  if (live.size >= 0) return
   for (const e of live.values()) {
     try {
       e.addon.clearTextureAtlas()
