@@ -12,9 +12,13 @@ import {
   wsRows
 } from '../e2e/helpers/p1'
 import {
+  ABC_LAYOUT,
   COMMAND_FLAG,
   KEY_ESCAPE,
   KEY_P,
+  KEY_RETURN,
+  KEY_SPACE,
+  PINYIN_SIMPLIFIED,
   accessibilityTrusted,
   bannerTexts,
   bareScreenPointOf,
@@ -22,18 +26,13 @@ import {
   dockBadgeDrawn,
   dockItemCenter,
   notificationCenterRunning,
-  selectInputSource,
-  currentInputSource,
-  realType,
-  KEY_RETURN,
-  KEY_SPACE,
-  PINYIN_SIMPLIFIED,
-  ABC_LAYOUT,
   realClick,
   realDrag,
   realKey,
+  realType,
   screenPointOf,
   screenshot,
+  selectInputSource,
   windowBounds
 } from './helpers/macInput'
 
@@ -76,9 +75,10 @@ const ROOM_TO_DRAG_IN = { x: 40, y: 60, width: 760, height: 520 }
 // PLATFORM§46
 const MAC_DRAG_SLACK_PX = 6
 
-async function sessionInWsA(page: Page): Promise<void> {
+async function sessionInWsA(page: Page): Promise<string> {
   await waitBooted(page)
   await startSessionIn(page, 'ws-a')
+  return (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id')) ?? ''
 }
 
 const windowFocused = (app: ElectronApplication): Promise<boolean> =>
@@ -92,14 +92,31 @@ async function clickIntoTerminal(app: ElectronApplication, page: Page): Promise<
   await expect.poll(() => focusOwner(page)).toBe('tui')
 }
 
-async function endATurnWhileInBackground(app: ElectronApplication, page: Page): Promise<void> {
+async function goToBackground(app: ElectronApplication): Promise<void> {
   bringFinderToFront()
   await expect.poll(() => windowFocused(app)).toBe(false)
-  const tabId = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id')) ?? ''
+}
+
+async function comeBackThroughTheDock(app: ElectronApplication): Promise<void> {
+  realClick(dockItemCenter(DOCK_NAME))
+  await expect.poll(() => windowFocused(app)).toBe(true)
+}
+
+async function endATurnWhileInBackground(
+  app: ElectronApplication,
+  page: Page,
+  tabId: string
+): Promise<void> {
+  await goToBackground(app)
   await page.evaluate(([id, line]) => window.api.terminal.write(id, line), [tabId, '/answer hi\r'])
 }
 
-test.describe('a real Mac screen: keys, mouse, Dock and banners as macOS itself delivers and draws them', () => {
+async function sentPrompts(page: Page, tabId: string): Promise<string[]> {
+  const unwrapped = (await terminalText(page, tabId)).replace(/\n/g, '')
+  return [...unwrapped.matchAll(/\[fake-claude\] handled: (.*?)>/g)].map((m) => m[1].trim())
+}
+
+test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods as macOS itself delivers and draws them', () => {
   test('⌘P typed on the keyboard while the session terminal has focus opens the command palette through the app menu', async ({
     shown: { app, page }
   }, testInfo) => {
@@ -139,97 +156,12 @@ test.describe('a real Mac screen: keys, mouse, Dock and banners as macOS itself 
   test('a turn that ends while Koloft is in the background draws its count on the Dock icon, and coming back clears it', async ({
     shown: { app, page }
   }, testInfo) => {
-    await sessionInWsA(page)
-    await endATurnWhileInBackground(app, page)
+    const tabId = await sessionInWsA(page)
+    await endATurnWhileInBackground(app, page, tabId)
     await expect.poll(() => dockBadgeDrawn(DOCK_NAME), { timeout: 30_000 }).toBe('1')
     screenshot(testInfo.outputPath('dock-badge.png'))
-    realClick(dockItemCenter(DOCK_NAME))
-    await expect.poll(() => windowFocused(app)).toBe(true)
+    await comeBackThroughTheDock(app)
     await expect.poll(() => dockBadgeDrawn(DOCK_NAME)).toBe('')
-  })
-
-  test('PROBE: macOS Pinyin in the session terminal, Return while composing and Space-then-Return', async ({
-    shown: { app, page }
-  }, testInfo) => {
-    await sessionInWsA(page)
-    const tabId = (await wsRows(page, 'ws-a').first().getAttribute('data-tab-id')) ?? ''
-    await clickIntoTerminal(app, page)
-    await page.evaluate(() => {
-      const log: unknown[] = []
-      ;(window as unknown as { __keyLog: unknown[] }).__keyLog = log
-      for (const type of [
-        'keydown',
-        'keyup',
-        'compositionstart',
-        'compositionupdate',
-        'compositionend',
-        'input'
-      ])
-        document.addEventListener(
-          type,
-          (e) => {
-            const k = e as KeyboardEvent & { data?: string; inputType?: string }
-            log.push({
-              type: e.type,
-              key: k.key,
-              keyCode: k.keyCode,
-              isComposing: k.isComposing,
-              data: k.data,
-              inputType: k.inputType
-            })
-          },
-          true
-        )
-    })
-    const dump = async (name: string): Promise<void> => {
-      screenshot(testInfo.outputPath(`${name}.png`))
-      fs.writeFileSync(
-        testInfo.outputPath(`${name}.json`),
-        JSON.stringify(
-          {
-            source: currentInputSource(),
-            focus: await focusOwner(page),
-            keys: await page.evaluate(() =>
-              (window as unknown as { __keyLog: unknown[] }).__keyLog.splice(0)
-            ),
-            terminal: (await terminalText(page, tabId)).split('\n').filter(Boolean).slice(-8)
-          },
-          null,
-          2
-        )
-      )
-    }
-    try {
-      bringFinderToFront()
-      await expect.poll(() => windowFocused(app)).toBe(false)
-      fs.writeFileSync(testInfo.outputPath('0-select.txt'), selectInputSource(PINYIN_SIMPLIFIED))
-      realClick(dockItemCenter(DOCK_NAME))
-      await expect.poll(() => windowFocused(app)).toBe(true)
-      await clickIntoTerminal(app, page)
-      await page.waitForTimeout(1000)
-      realType('nihao')
-      await page.waitForTimeout(800)
-      await dump('1-composing')
-      realKey(KEY_RETURN)
-      await page.waitForTimeout(1500)
-      await dump('2-after-return')
-      realType('nihao')
-      await page.waitForTimeout(800)
-      realKey(KEY_SPACE)
-      await page.waitForTimeout(800)
-      await dump('3-after-space')
-      realKey(KEY_RETURN)
-      await page.waitForTimeout(1500)
-      await dump('4-after-second-return')
-      selectInputSource(ABC_LAYOUT)
-      await page.waitForTimeout(800)
-      realType('hi')
-      realKey(KEY_RETURN)
-      await page.waitForTimeout(1500)
-      await dump('5-plain-hi-return')
-    } finally {
-      selectInputSource(ABC_LAYOUT)
-    }
   })
 
   test('a turn that ends while Koloft is in the background shows a macOS banner naming the session and what happened', async ({
@@ -237,15 +169,34 @@ test.describe('a real Mac screen: keys, mouse, Dock and banners as macOS itself 
   }, testInfo) => {
     // PLATFORM§46
     test.skip(!notificationCenterRunning(), 'this Mac runs no Notification Center to draw banners')
-    await sessionInWsA(page)
-    await endATurnWhileInBackground(app, page)
-    await expect
-      .poll(() =>
-        app.evaluate(() => (globalThis as { __koloftOsNotifCount?: number }).__koloftOsNotifCount)
-      )
-      .toBe(1)
+    const tabId = await sessionInWsA(page)
+    await endATurnWhileInBackground(app, page, tabId)
     await expect.poll(() => bannerTexts(), { timeout: 30_000 }).toContain(FAKE_SESSION_TITLE)
     expect(bannerTexts()).toContain('turn done — your move · ws-a')
     screenshot(testInfo.outputPath('banner.png'))
+  })
+
+  test('with macOS Pinyin, Return while composing puts the letters in the line without sending it, and Space picks 你好 for the next Return to send', async ({
+    shown: { app, page }
+  }, testInfo) => {
+    const tabId = await sessionInWsA(page)
+    try {
+      await goToBackground(app)
+      // PLATFORM§18
+      selectInputSource(PINYIN_SIMPLIFIED)
+      await comeBackThroughTheDock(app)
+      await clickIntoTerminal(app, page)
+      realType('nihao')
+      realKey(KEY_RETURN)
+      await expect.poll(async () => (await terminalText(page, tabId)).trimEnd()).toMatch(/> nihao$/)
+      realType('nihao')
+      realKey(KEY_SPACE)
+      await expect.poll(async () => (await terminalText(page, tabId)).trimEnd()).toMatch(/你好$/)
+      screenshot(testInfo.outputPath('pinyin-picked.png'))
+      realKey(KEY_RETURN)
+      await expect.poll(() => sentPrompts(page, tabId)).toEqual(['nihao你好'])
+    } finally {
+      selectInputSource(ABC_LAYOUT)
+    }
   })
 })
