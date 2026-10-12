@@ -5,7 +5,6 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   NOT_IN_YOUR_WORKSPACE,
   ONLY_THE_GLOBAL_CONDUCTOR,
-  ownerSays,
   parseNewSessionArgs,
   sessionVerb,
   THAT_IS_YOU,
@@ -15,6 +14,7 @@ import {
   type Target
 } from '../../src/main/agentSessions'
 import { crossSessionLine } from '../../src/main/crossSessionMessage'
+import { ownerSays } from '../../src/shared/agentGuide'
 import { handoverPreamble } from '../../src/main/handover'
 import { StartedSessions } from '../../src/main/startedSessions'
 import { EXIT_USAGE, type AgentReply } from '../../src/main/agentRequests'
@@ -69,6 +69,7 @@ interface Conducting {
   bypass?: string[]
   answer?: (tabId: string, reply: string) => string | undefined
   titleReply?: string | null
+  asking?: string[]
 }
 
 interface Started {
@@ -151,6 +152,7 @@ function harness(
       return `${r.id}-tab`
     },
     ready: async (tabId, ms, turnEnded) => conducting.ready?.(tabId, turnEnded, ms) ?? true,
+    asking: (tabId) => conducting.asking?.includes(tabId) ?? false,
     sendLine: async (tabId, line) => {
       lines.push({ tabId, line })
     },
@@ -271,6 +273,12 @@ describe('the handover put before the first message', () => {
     expect(handoverPreamble({ id: CODEX_THREAD })).toContain(`the Codex session ${CODEX_THREAD}`)
   })
 
+  it('tells a child Assist started that only the words Assist quotes in « » are the owner’s, so Assist’s own guesses never pass as the owner’s orders', () => {
+    const text = handoverPreamble({ name: 'Global-conductor', id: 'global-id', assist: true })
+    expect(text).toContain("only words inside « » in its messages are the owner's own")
+    expect(text).not.toContain("the owner's instructions")
+  })
+
   it.each([{ name: 'planner', id: 'planner-id' }, { id: CODEX_THREAD }])(
     'tells every child of %j, Claude or Codex, to answer with koloft session send and the caller’s id, never SendMessage, since a caller that went to sleep has left ListAgents while koloft session send starts it again first',
     (caller) => {
@@ -282,7 +290,7 @@ describe('the handover put before the first message', () => {
 })
 
 describe('koloft session list', () => {
-  it('shows each session’s state, a Claude session’s name and transcript, a Codex session’s id, and marks the caller', async () => {
+  it('shows each session’s state, a Claude session’s name and transcript, a Codex session’s id, and marks the caller; a session showing a question reads apart from one that only finished its turn', async () => {
     const { verb } = harness(
       [
         session('me', 'claude', {
@@ -290,17 +298,21 @@ describe('koloft session list', () => {
           details: { claude: { jsonlPath: '/home/.claude/projects/app/me.jsonl' } }
         }),
         session('cx', 'codex', { status: 'approval', nativeSessionId: CODEX_THREAD }),
+        session('q', 'codex', { status: 'waiting', nativeSessionId: OTHER_THREAD }),
         session('done', 'claude', { status: 'waiting' }),
         session('idle', 'claude', { status: 'idle' })
       ],
-      { 'me-session': 'planner' }
+      { 'me-session': 'planner' },
+      [],
+      { asking: ['q'] }
     )
     const reply = await verb(['list'], from('me'))
     expect(reply.exit).toBe(0)
     expect(reply.text.split('\n')).toEqual([
       'me title (you) · Claude · working · name: planner · transcript: /home/.claude/projects/app/me.jsonl',
-      `cx title · Codex · waiting for the owner · id: ${CODEX_THREAD}`,
-      'done title · Claude · waiting for the owner',
+      `cx title · Codex · asking the owner a question · id: ${CODEX_THREAD}`,
+      `q title · Codex · asking the owner a question · id: ${OTHER_THREAD}`,
+      'done title · Claude · finished its turn',
       'idle title · Claude · idle'
     ])
   })
@@ -645,6 +657,13 @@ describe('a conductor’s view of sessions: its binding sets the scope', () => {
     )
   })
 
+  it('a conductor sees an open session that shows the owner a question as asking, not as working or done', async () => {
+    const { verb } = harness(live, {}, [], { ...conducting, asking: ['fix'] })
+    expect((await verb(['list'], from('wsCond'))).text.split('\n')[0]).toBe(
+      'fix-login · Claude · local · asking the owner a question · last active just now · id: fix-id'
+    )
+  })
+
   it('a session that is not a conductor keeps listing only the open sessions of a workspace', async () => {
     const { verb } = harness(live, {}, [], conducting)
     expect((await verb(['list'], from('fix'))).text).toBe('fix-login (you) · Claude · working')
@@ -782,6 +801,23 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
       { tabId: 'wsCond', key: CODEX_KEY },
       { tabId: 'global', key: 'fix-id' }
     ])
+  })
+
+  it('send to a session showing the owner a question still delivers, and its answer says the message waits until the question is answered and how to see it, so Assist never reports it as working', async () => {
+    const { verb, lines, queued } = harness(live, {}, [], conducting({ asking: ['fix', 'cx'] }))
+    for (const [ref, name] of [
+      ['fix-login', 'fix-login'],
+      [CODEX_THREAD, 'docs-links']
+    ]) {
+      const reply = await verb(['send', ref, 'go on'], from('global'))
+      expect(reply.exit).toBe(0)
+      expect(reply.text).toBe(
+        `Sent to ${name}. But ${name} is asking the owner a question, so it reads your message only once that is answered. See the question with koloft session screen ${name} and pass it on to the owner.`
+      )
+    }
+    expect(lines).toHaveLength(1)
+    expect(queued).toHaveLength(1)
+    expect((await verb(['send', 'api-fix', 'hi'], from('global'))).text).toBe('Typed into api-fix.')
   })
 
   it('send types into a Claude session on another machine at once when its turn has ended; while it is busy it answers at once, types when the turn ends, and reports to the conductor a turn that never does', async () => {
@@ -1079,6 +1115,8 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     expect(launched[0].role).toContain('koloft session send global-id')
     expect(launched[1].firstPrompt).toContain('the session "app-conductor"')
     expect(launched[1].firstPrompt).toContain('koloft session send cond-id')
+    for (const handover of [launched[0].role, launched[1].firstPrompt])
+      expect(handover).toContain("only words inside « » in its messages are the owner's own")
     expect(started).toEqual([
       {
         conductorTab: 'global',
@@ -1105,13 +1143,14 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     expect(launched.map((l) => l.permission)).toEqual(['bypass', 'default', 'bypass'])
   })
 
-  it('any session reports back to the conductor that started it by the conductor’s id, which is hidden from every list, with its own mode, no owner label, and the name and id of the session it is from', async () => {
+  it('any session reports back to the conductor that started it by the conductor’s id, which is hidden from every list, with its own mode, no owner label, and the name and id of the session it is from; a conductor showing a question does not send the child to koloft session screen, a conductor-only command', async () => {
     const opened: string[] = []
     const { verb, lines, queued } = harness(
       live,
       {},
       [],
       conducting({
+        asking: ['wsCond'],
         conductors: {
           'cond-id': conductorTarget({}),
           'codex-cond': conductorTarget({ backend: 'codex', tabId: 'cc' }),
@@ -1126,7 +1165,10 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
         }
       })
     )
-    expect((await verb(['send', 'cond-id', 'done'], from('fix'))).exit).toBe(0)
+    expect(await verb(['send', 'cond-id', 'done'], from('fix'))).toMatchObject({
+      exit: 0,
+      text: 'Sent to the app conductor.'
+    })
     expect((await verb(['send', 'codex-cond', 'done'], from('cx'))).exit).toBe(0)
     expect((await verb(['send', 'closed-cond', 'done'], from('fix'))).exit).toBe(0)
     const fromFix = '(From the session "fix-login", id fix-id:) done'

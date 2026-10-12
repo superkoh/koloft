@@ -214,7 +214,7 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
             ) : channels === null ? (
               'Loading your channels…'
             ) : !guildId && channels.length === 0 ? (
-              'No channels yet. Finish Settings ▸ Discord ▸ Set up Discord… first.'
+              'No channels yet. Finish Settings ▸ Discord ▸ Set up with Assist first.'
             ) : channel === NEW && guildId ? (
               <>
                 Koloft makes the new channel in your server <b>{guildName}</b>, under your bot’s

@@ -329,7 +329,7 @@ import {
 import { firstLineName } from './sessionTitle'
 import { discordApiUrl, DiscordLink } from './discord/link'
 import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './discord/tokenFromPage'
-import { DISCORD_SETUP_TASK, DISCORD_SETUP_TASK_NAME } from './discord/setupTask'
+import { DISCORD_SETUP_TASK, DISCORD_SETUP_TASK_NAME, setupStatusText } from './discord/setupTask'
 import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay, type Destination } from './discord/relay'
 import { Notices } from './discord/notices'
@@ -357,12 +357,10 @@ import {
 } from './claudeSessionRegistry'
 import {
   asPeerName,
-  channelLabel,
   conductorName,
   GLOBAL_SCOPE,
   inviteLink,
   isDiscordId,
-  ownedGuilds,
   scopeName
 } from '@shared/conductors'
 import { cronVerb } from './agentCron'
@@ -460,11 +458,16 @@ function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
 
+// CC§14
+function asksTheOwner(tabId: string): boolean {
+  return tracker.statusOf(tabId) === 'approval' || !!discordRelay?.dialogOpen(tabId)
+}
+
 const slash = new SlashCommands({
   backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
   keyOf: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
   turnOver: (tabId) => tracker.turnOver(tabId),
-  asking: (tabId) => tracker.statusOf(tabId) === 'approval' || !!discordRelay?.dialogOpen(tabId),
+  asking: asksTheOwner,
   takesTyping: (tabId) => !!discordRelay?.takesCommand(tabId),
   panelOpen: async (tabId) => {
     const s = sessionOfTab(tabId)
@@ -1123,6 +1126,7 @@ const sessionDeps: SessionVerbDeps = {
     return resumed.tabId
   },
   ready: tabReady,
+  asking: asksTheOwner,
   sendLine: sendPeerLine,
   press: (tabId, keys) => ptyMgr.type(tabId, keys),
   modeOf: (tabId) => sessionBackends.permissionClass(tabId),
@@ -3537,18 +3541,10 @@ function registerSlashCommands(): void {
 }
 
 function discordSetupStatus(): string {
-  const s = discordLink?.status() ?? DISCORD_OFF
-  const discord = conductors?.discordSettings() ?? { bindings: [] }
-  const owned = ownedGuilds(s.guilds, discord.userId)
-  const lines = [
-    `Bot token: ${s.phase === 'off' ? 'not saved' : 'saved'}`,
-    `Connection: ${s.phase}${s.botName ? ` as ${s.botName}` : ''}`,
-    `Owner: ${discord.userId ? (discord.userName ?? discord.userId) : 'not known yet'}${s.appOwner ? ' (owner of the app)' : ''}`,
-    `Message Content: ${s.phase === 'connected' ? 'on' : s.phase === 'intents' ? 'off' : 'unknown until connected'}`,
-    `Servers the owner owns with the bot in them: ${owned.map((g) => g.name).join(', ') || 'none'}`,
-    `Bindings: ${discord.bindings.map((b) => `${scopeName(b.scope)} → ${channelLabel(b)}`).join(', ') || 'none'}`
-  ]
-  return lines.join('\n')
+  return setupStatusText(
+    discordLink?.status() ?? DISCORD_OFF,
+    conductors?.discordSettings() ?? { bindings: [] }
+  )
 }
 
 function guestPagesOf(tabId: string): GuestPage[] {
@@ -4147,16 +4143,11 @@ function registerIpc(): void {
   )
   ipcMain.handle('conductors:closeTask', (_e, tabId: string) => conductors?.closeTask(tabId))
   ipcMain.handle('conductors:tasks', () => conductors?.taskRows() ?? [])
-  ipcMain.handle('discord:setToken', async (_e, token: unknown) => {
-    if (typeof token !== 'string' || !token.trim()) return false
-    return saveDiscordToken(token.trim())
-  })
   ipcMain.handle('discord:status', () => discordLink?.status() ?? DISCORD_OFF)
   ipcMain.handle('discord:pair', (_e, isMe: unknown) => {
     const owner = discordLink?.pair(isMe === true)
     if (owner) conductors?.setOwner(owner)
   })
-  ipcMain.handle('discord:forgetOwner', () => conductors?.setOwner(null))
   ipcMain.handle('discord:channels', () => discordLink?.channels() ?? [])
   ipcMain.handle('discord:setUpWithAssist', () => openDiscordSetup())
   ipcMain.handle('workspace:move', (_e, p: string, before: string | null) =>

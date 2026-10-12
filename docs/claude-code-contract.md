@@ -1513,6 +1513,20 @@ below was one run.
 - **The `Notification` hook (`permission_prompt`) comes about 6 s after
   `PermissionRequest`** for the same dialog (7.7→13.8 s, 6.4→12.4 s, 7.0→13.0 s in three
   runs), also for a plan in `bypassPermissions`.
+- **An open `AskUserQuestion` sends one `permission_prompt` Notification and nothing
+  after it while it stays open.** 2026-10-11, CC 2.1.296, an interactive claude in a pty
+  (python `pty.fork`), haiku, `--dangerously-skip-permissions`, a `--settings` file with
+  logging hooks on `PermissionRequest` (printing nothing), `Notification` (matcher
+  `permission_prompt|worker_permission_prompt|idle_prompt|elicitation_dialog|elicitation_url_dialog`),
+  `UserPromptSubmit` and `Stop`; 1 run. `PermissionRequest` at +1 s, then
+  `{"message":"Claude needs your permission","notification_type":"permission_prompt"}` at
+  +6 s; the dialog was then left open 330 s and no other Notification came (no
+  `idle_prompt`). So a session showing a question stays `approval` for Koloft until it is
+  answered.
+- **A peer message sent while an `AskUserQuestion` is open waits for the answer.** Same
+  run: a `bypass` envelope (§13) written to the session's socket 90 s into the dialog
+  drew no reply for the next 240 s; the moment `1` answered the dialog, a
+  `UserPromptSubmit` fired and the reply to the message appeared on screen.
 - **Koloft's own hook script and answer builder, run by a real claude** (2026-10-03, CC
   2.1.288, scratch `HOME`, haiku, the `PermissionRequest` entry exactly as
   `hookSettings()` writes it, the answer file written by `hookAnswer()`): with

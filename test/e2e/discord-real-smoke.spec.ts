@@ -7,6 +7,7 @@ import { addCodexAccount, installGhForWorkspaceA, seedSettings, type E2EEnv } fr
 import { gitInit, seedJsonl, startSessionIn, terminalText, waitBooted, wsRows } from './helpers/p1'
 import { openerNow, startFakeDiscord, type FakeDiscord, type FakePost } from './helpers/fakeDiscord'
 import { BACKEND_LABEL } from '../../src/shared/sessionBackend'
+import { ownerSays } from '../../src/shared/agentGuide'
 import { lastCodexTurnPermissions } from './helpers/codexRollout'
 
 function claudeTokenFromKeychain(): string {
@@ -604,7 +605,7 @@ test.describe('Discord conductors on the REAL claude and codex, with a fake Disc
         .poll(() => saidBy(env, target.sessionId, 'user').join('\n'), {
           timeout: A_REAL_MODEL_TURN_MS
         })
-        .toContain("(Your owner, via Koloft's Assist:) Say the word MANGO")
+        .toContain(ownerSays('Say the word MANGO'))
       await expect
         .poll(() => saidBy(env, target.sessionId, 'assistant').join('\n'), {
           timeout: A_REAL_MODEL_TURN_MS
