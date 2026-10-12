@@ -1453,9 +1453,13 @@ home where one app-server had already started and stopped first.
   in an empty `CODEX_HOME` it held only `auth.json`, `log/codex-login.log` and `tmp/arg0`.
   So a Codex account Koloft has just signed in is such a home until an app-server runs
   in it.
-- Seen in Koloft the same day (`discord-real-smoke.spec.ts`, real Codex, an account home
-  holding only a copied `auth.json`): the second app-server Koloft starts to ask
-  `hooks/list` for an Assist's gate (section 27) exited this way 27–116 ms after it
-  started, while another app-server of Koloft's started in the same home; a second ask
-  right after found the gate as usual.
+- Seen in Koloft the same day (real Codex, an account home holding only a copied
+  `auth.json`): a short-lived app-server Koloft starts to ask one thing lost this race to
+  another of Koloft's app-servers starting in the same home, and exited this way 27–116
+  ms after it started. Once it was the one asking `hooks/list` for an Assist's gate
+  (section 27; `discord-real-smoke.spec.ts`), and the Assist was refused; once it was
+  the one asking `config/read` for a tab's browser settings (section 26;
+  `agent-tools-real-smoke.spec.ts`), and the tab ran with no network, so
+  `playwright-cli` could not reach the browser. A second app-server started right after
+  answered as usual.
 

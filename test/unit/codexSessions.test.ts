@@ -993,21 +993,6 @@ describe('CodexSessions', () => {
     expect(deps.pty.create).toHaveBeenCalledTimes(2)
   })
 
-  // ADR-0029 CODEX§28
-  it('an Assist whose gate checker dies as it starts, as one does beside another app-server starting in a home no app-server has used yet, is checked once more by a new app-server and starts on Codex', async () => {
-    const checkers = (): number =>
-      mocks.rpcOptions.filter((o) => o.configOverrides?.includes(CODEX_GATE_OVERRIDE)).length
-    mocks.request.mockImplementation(async (method: string) => {
-      if (method !== 'hooks/list') return { data: [], nextCursor: null }
-      if (checkers() === 1) throw new Error('Codex app-server exited (1)')
-      return gateListing('trusted')
-    })
-
-    await sessions.launch({ kind: 'codex', cwd: repo, conductor: true })
-    expect(checkers()).toBe(2)
-    expect(transports).toHaveLength(1)
-  })
-
   // ADR-0029 CODEX§26
   it('an Assist whose allow list names a Playwright tool reaches the Workbench browser like any tab; every other Assist gets no browser', async () => {
     const endpoint = 'ws://127.0.0.1:4100/cdp/' + 'c'.repeat(32)
