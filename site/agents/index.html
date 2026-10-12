@@ -114,15 +114,12 @@
           <li>
             <code>koloft session new</code> — start a session of the same kind (Claude starts
             Claude, Codex starts Codex), in its own git worktree with
-            <code class="nowrap">-w</code>. With "Let agents use Koloft" on, every session is told
-            which helper fits which job: work that needs a branch or worktree of its own goes to a
-            Koloft session started this way, never to a hidden helper or a branch in the folder
-            other sessions share. Only Assist (see below) can pick the other kind, with
+            <code class="nowrap">-w</code>. Only Assist (see below) can pick the other kind, with
             <code class="nowrap">--backend</code>. Its row hangs under the session that started it
             (see <a href="../sessions/#session-tree">sessions an agent starts</a>). A Claude session
-            it starts gets a short title that <a href="../accounts/#assist">Koloft Assist</a> makes
-            from its task (with Assist off, the first line of the task), or the name the agent gave
-            it with <code class="nowrap">--name</code>; the same title shows in the sidebar, in
+            it starts gets a short title that <a href="../accounts/#assist">Assist</a> makes from
+            its task (with Assist off, the first line of the task), or the name the agent gave it
+            with <code class="nowrap">--name</code>; the same title shows in the sidebar, in
             <code class="nowrap">session list</code> and in Discord. Codex names it itself.
           </li>
           <li>
@@ -156,16 +153,22 @@
           started in a remote folder this way.
         </p>
         <p>
+          With "Let agents use Koloft" on, every session is also told which helper fits which job.
+          Work that needs its own branch or worktree goes to a Koloft session started with
+          <code class="nowrap">-w</code>. It never goes to a hidden helper, or to a branch in the
+          folder other sessions share.
+        </p>
+        <p>
           Each command prints its answer, so the agent sees what happened. The agent runs
           <code>koloft help</code> for the rest.
         </p>
         <p>
-          <a href="../accounts/#assist">Assist</a>, Koloft's own AI, which you talk to from the
-          sidebar or from Discord, gets a few more: it can answer a session's question, resume it,
-          stop it, close it once it has ended, run a slash command in it, see its screen and press
-          keys in it, send you files, and ask GitHub questions or open an issue with
-          <code>koloft gh</code> (<code>gh</code> is GitHub's command-line tool). It only passes
-          work on; see <a href="../discord/">A butler on Discord</a>.
+          <a href="../accounts/#assist">Assist</a> is Koloft's own AI, which you talk to from the
+          sidebar or from Discord. It gets a few more commands: it can answer a session's question,
+          resume it, stop it, close it once it has ended, run a slash command in it, see its screen
+          and press keys in it, send you files, and ask GitHub questions or open an issue with
+          <code>koloft gh</code> (<code>gh</code> is GitHub's command-line tool). See
+          <a href="../discord/#what-assist-can-do">what Assist can do</a>.
         </p>
 
         <figure class="shot" style="--ar: 1322 / 661; --ar-phone: 710 / 590">
@@ -203,22 +206,22 @@
           differs by tool.
         </p>
 
-        <h3>playwright-cli, for both</h3>
+        <h3>playwright-cli, for Claude Code and Codex</h3>
         <p>
           <code>playwright-cli</code> (a command that controls a browser: open a page, click, type,
           read it) <mark class="hl">comes with Koloft</mark>. Every Claude Code or Codex session on
-          this Mac can run it by name, with nothing to install. With the switch on, it drives that
-          session's own web tabs, in tabs of its own, marked as driven by the agent; with the switch
-          off, it starts a hidden browser of its own. The Workbench browser takes one tool at a
-          time: if the Playwright MCP tools below also drive it in the same session, the one that
-          comes second is refused.
+          this Mac can run it by name, with nothing to install. With "Let agents drive this Browser"
+          on, it opens its pages as new web tabs of that session, marked as driven by the agent.
+          With it off, it starts a hidden browser of its own. A session's web tabs take one tool at
+          a time. If the Playwright MCP tools below (an MCP server is a box of tools an agent can
+          call) are already driving them, the second tool is refused.
         </p>
         <h3>Claude Code</h3>
         <ul class="dash">
           <li>
-            playwright-mcp (an MCP server is a box of tools an agent can call): nothing to set up.
-            It reads <code>PLAYWRIGHT_MCP_CDP_ENDPOINT</code>, which is already set for the session,
-            so it opens a tab in Koloft and not a browser of its own.
+            playwright-mcp: nothing to set up. It reads
+            <code>PLAYWRIGHT_MCP_CDP_ENDPOINT</code>, which is already set for the session, so it
+            opens a tab in Koloft and not a browser of its own.
           </li>
           <li>
             your own Playwright script: one line, with the address in
@@ -234,8 +237,8 @@
           Koloft hands the address to the Playwright MCP server in your Codex settings. If your
           Codex settings have an <code>@playwright/mcp</code> entry, its browser tools open tabs in
           Koloft and not a browser of their own. Those tools and <code>playwright-cli</code> reach
-          the web tabs; for that, the session's sandbox (the box Codex runs commands in) gets the
-          network and Playwright's cache folder, for that one session only.
+          the web tabs. To let them, the session's sandbox (the box Codex runs commands in) gets the
+          network and Playwright's cache folder, for that session only.
         </p>
 
         <h3>What to expect</h3>

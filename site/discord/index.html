@@ -185,8 +185,8 @@ your Mac
         <p>
           A binding ties one channel to one Assist: Global, or one folder. The Global Assist looks
           after every folder in the sessions list. A folder's Assist looks after that folder only.
-          Each folder binds one channel, and Global binds one. Which tool Assist runs on, Claude or
-          Codex, is one setting for all of them: Settings ▸ Assist.
+          Each folder binds one channel, and Global binds one. Which tool Assist runs on is one
+          setting for all of them (see <a href="../accounts/#assist">Assist</a>).
         </p>
 
         <figure class="shot is-narrow" style="--ar: 430 / 620">
@@ -229,11 +229,9 @@ your Mac
           <figcaption>the Assist block: the tidewatch Assist is open</figcaption>
         </figure>
         <p>
-          The Assist block sits in the sidebar, under the sessions list and above Notes. It is
-          always there, Discord or not: Global first, then each folder's Assist you have talked to
-          or bound, then the tasks Assist is running for you. Under each Assist's name is its
-          channel, or "not on Discord". With Assist off and nothing bound, it shows one grey Assist
-          row; click it to set Assist up. Right-click an Assist there for a menu with:
+          The <a href="../accounts/#assist">Assist block</a> sits in the sidebar, under the sessions
+          list and above Notes. Under each Assist's name is its channel, or "not on Discord".
+          Right-click an Assist there for a menu with:
         </p>
         <ul class="dash">
           <li>Open</li>
@@ -248,9 +246,9 @@ your Mac
         </ul>
         <p>
           Assist always runs on your Mac, even for a <a href="../remote/">remote folder</a>. It runs
-          in a folder of its own under Koloft's data folder, not in your workspace. It opens as soon
-          as Koloft connects to Discord, and it never goes to <a href="../sessions/">sleep</a> the
-          way an idle session does.
+          in a folder of its own under Koloft's data folder, not in your workspace. An Assist on
+          Discord opens as soon as Koloft connects to Discord, and it never goes to
+          <a href="../sessions/">sleep</a> the way an idle session does.
         </p>
 
         <h2>From your phone</h2>
@@ -367,7 +365,7 @@ your Mac
             When the session leaves the sidebar (Remove from list, <code>/exit</code>, or
             <code>koloft session close</code>), its thread and its card are deleted. If the bot may
             not delete threads, Koloft archives it instead and a small message asks you to give the
-            bot Manage Threads (step 5 above). This is the same for every kind of session.
+            bot Manage Threads (step 4 above). This is the same for every kind of session.
           </li>
         </ul>
 
@@ -411,7 +409,7 @@ your Mac
           takes 10 files and 25 MB per message, so a bigger batch goes out as several messages.
         </p>
 
-        <h3>What Assist can do</h3>
+        <h3 id="what-assist-can-do">What Assist can do</h3>
         <p>
           It works through the <a href="../agents/">koloft command</a>, plus a few verbs only Assist
           gets. In its folder, or in every folder for Global, it can:
@@ -560,10 +558,9 @@ your Mac
             there, and none of it goes back out.
           </li>
           <li>
-            Koloft finds you by itself when the bot's app is yours. When a Discord team owns the app
-            instead, Koloft cannot tell who you are: until you pick yourself, the last message
-            anyone wrote in the server shows up in Settings ▸ Discord, so you can say it is you or
-            not.
+            If a Discord team owns the bot's app, then until you pick yourself, the last message
+            anyone wrote in the server shows up in Settings ▸ Discord, so you can say whether it is
+            you.
           </li>
           <li>
             "Waiting" and "closed" cards go out for every session in a bound folder (every folder,
