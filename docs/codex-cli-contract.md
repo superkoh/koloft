@@ -1020,7 +1020,11 @@ Koloft's (one TUI connection, one stdio app-server upstream, every frame logged)
   Assist gate as `PreToolUse` hook): the model called a tool named
   `request_user_input_async` with `{questions: [{title, options: ["Done, I’m signed
   in"]}]}`; the hook got that `tool_name`. The gate denied it, and the model asked the
-  same thing in plain text instead.
+  same thing in plain text instead. With the gate letting it through, the call returned
+  `{"accepted":true}` at once, the TUI (over Koloft's relay) drew no question, and the
+  model then called `sleep` (`{duration_ms: 60000}`, hook `tool_name` `clocksleep`) to
+  wait for an answer. So it does not wait for the owner the way AskUserQuestion does;
+  where its answer would arrive was not probed.
 - Not probed: several questions in one request, a free-text answer (`N+1` and notes),
   `isSecret`, a form with several fields or a field that is not an enum, and an
   elicitation `mode` other than `form`. Koloft refuses those from Discord.

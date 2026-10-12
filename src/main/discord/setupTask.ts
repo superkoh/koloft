@@ -15,13 +15,7 @@ const BROWSER_VERBS = [
   'close'
 ]
 
-// CODEX§20
-const CODEX_QUESTION_TOOL = 'request_user_input_async'
-
-const DISCORD_SETUP_ALLOW = [
-  ...BROWSER_VERBS.map((verb) => `${PLAYWRIGHT_CLI_RULE}${verb})`),
-  CODEX_QUESTION_TOOL
-]
+const DISCORD_SETUP_ALLOW = BROWSER_VERBS.map((verb) => `${PLAYWRIGHT_CLI_RULE}${verb})`)
 
 const BRIEF = `Your task: set up Discord for the owner, so they can talk to Assist from a Discord channel. Work in the Workbench browser with playwright-cli (only ${BROWSER_VERBS.join(', ')} are allowed). The owner sees that browser in Koloft and does the steps you cannot.
 
@@ -29,7 +23,7 @@ Rules:
 - Never read, copy, print or type the bot token. Use "koloft discord token --from-page" to save it; Koloft reads it from the page itself, then reloads the page so the token is gone, and tells you only "saved" or why not. It refuses while you are attached.
 - "Detach" means run "playwright-cli close", so no tool is attached to the browser; "re-attach" means open the page again with playwright-cli. Detach before every step the owner does by hand (signing in, typing a name or a password, clicking Create, any "I am human" check). Then ask the owner inside Koloft whether they are done, and re-attach only after they say yes, except where a step below says to stay detached.
 - You cannot reload while detached: run "koloft discord reload" and Koloft reloads the Discord page for you. Never ask the owner to reload.
-- Ask the owner only inside Koloft (your question tool), never on Discord, and ask one question at a time: wait for the answer before the next, and skip any question that answer has already settled.
+- Ask the owner only inside Koloft, never on Discord, and ask one question at a time: wait for the answer before the next, and skip any question that answer has already settled. Use a question tool only if it waits for the answer (AskUserQuestion does; request_user_input_async does not); otherwise ask in a plain message and end your turn. Never sleep or poll while you wait: the owner's reply starts your next turn.
 - Run "koloft discord status" first and again after each step; skip every step it says is done, and every scope it lists under Bindings.
 
 Steps:
