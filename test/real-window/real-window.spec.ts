@@ -200,7 +200,12 @@ test.describe('a real Mac screen: keys, mouse, Dock and banners as macOS itself 
       )
     }
     try {
+      bringFinderToFront()
+      await expect.poll(() => windowFocused(app)).toBe(false)
       fs.writeFileSync(testInfo.outputPath('0-select.txt'), selectInputSource(PINYIN_SIMPLIFIED))
+      realClick(dockItemCenter(DOCK_NAME))
+      await expect.poll(() => windowFocused(app)).toBe(true)
+      await clickIntoTerminal(app, page)
       await page.waitForTimeout(1000)
       realType('nihao')
       await page.waitForTimeout(800)
