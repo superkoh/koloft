@@ -61,6 +61,11 @@ function nameOf(call: ClaudeCall): string | undefined {
   return i >= 0 ? call.argv[i + 1] : undefined
 }
 
+function peerLines(env: E2EEnv): string {
+  const f = path.join(env.home, 'fake-claude-peer.jsonl')
+  return fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : ''
+}
+
 function codexCalls(env: E2EEnv): { argv: string[]; cwd: string }[] {
   const file = path.join(env.home, 'fake-codex-calls.jsonl')
   if (!fs.existsSync(file)) return []
@@ -225,6 +230,51 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       const calls = await waitForCalls(env, 2)
       expect(textAfterDashes(calls[1])).toBe('tidy the changelog')
       expect(readCalls(env)).toHaveLength(2)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('words about Koloft itself go to a global Assist task with them as its brief; "ask <workspace> …" reaches that workspace’s running Assist as a message, or opens a task of it when none runs', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const tasks = (): Promise<{ scope: string; name: string }[]> =>
+        page.evaluate(() => window.api.conductors.tasks())
+
+      assistAnswers(env, { hand: 'koloft', title: 'Dark mode', why: 'A Koloft setting.' })
+      await ask(app, page, 'turn on dark mode')
+      await page.keyboard.press('Enter')
+      const [global] = await waitForCalls(env, 1, 30_000)
+      await expect(page.locator('.modal')).toHaveCount(0)
+      expect(global.cwd).toBe(path.join(env.userData, 'conductors', 'global'))
+      await expect
+        .poll(tasks)
+        .toEqual([{ tabId: expect.any(String), scope: 'global', name: 'Dark mode' }])
+
+      const opened = await page.evaluate((p) => window.api.conductors.open(p), env.workspaces.a)
+      expect(opened.ok).toBe(true)
+      await waitForCalls(env, 2, 30_000)
+      assistAnswers(env, { hand: 'assist', workspace: 1, title: 'Ask ws-a' })
+      await ask(app, page, 'ask ws-a what changed today')
+      await page.keyboard.press('Enter')
+      await expect
+        .poll(() => peerLines(env), { timeout: 30_000 })
+        .toContain('The owner typed this in ⌘P: ask ws-a what changed today')
+      expect(readCalls(env)).toHaveLength(2)
+
+      assistAnswers(env, { hand: 'assist', workspace: 2, title: 'Ask ws-b' })
+      await ask(app, page, 'ask ws-b about the release')
+      await page.keyboard.press('Enter')
+      const calls = await waitForCalls(env, 3, 30_000)
+      expect(path.dirname(calls[2].cwd)).toBe(path.join(env.userData, 'conductors'))
+      await expect
+        .poll(tasks)
+        .toContainEqual({ tabId: expect.any(String), scope: env.workspaces.b, name: 'Ask ws-b' })
     } finally {
       await quitAndClose(app)
     }

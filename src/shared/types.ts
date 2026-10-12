@@ -1132,6 +1132,8 @@ export interface KoloftApi {
     unbind(bindingId: string): Promise<void>
     open(scope: string): Promise<ConductorOpenResult>
     startFresh(scope: string): Promise<ConductorOpenResult>
+    openTask(scope: string, title: string, brief: string): Promise<ConductorOpenResult>
+    tell(scope: string, title: string, text: string): Promise<ConductorOpenResult>
     closeTask(tabId: string): Promise<void>
     tasks(): Promise<AssistTaskRow[]>
     onTasks(cb: (rows: AssistTaskRow[]) => void): () => void

@@ -99,6 +99,22 @@ describe('parseRoute: an answer is checked before anything uses it', () => {
     ).toMatchObject({ kind: 'project', machine: 'local', folder: null })
   })
 
+  it('hands a message about Koloft itself to the global Assist, and "ask <workspace> …" to that workspace’s Assist; an unknown hand is ordinary work', () => {
+    expect(
+      parseRoute(reply({ hand: 'koloft', title: 'Dark mode', why: 'A setting.' }), LIST)
+    ).toEqual({ kind: 'koloft', title: 'Dark mode', why: 'A setting.' })
+    expect(parseRoute(reply({ hand: 'assist', workspace: 2, title: 'Ask api' }), LIST)).toEqual({
+      kind: 'assist',
+      path: 'devbox:/srv/api',
+      title: 'Ask api',
+      why: ''
+    })
+    expect(parseRoute(reply({ hand: 'assist', workspace: 9 }), LIST)).toBeNull()
+    expect(
+      parseRoute(reply({ hand: 'other', workspace: 1, worktree: 'main' }), LIST)
+    ).toMatchObject({ kind: 'workspace', path: '/Users/me/code/app' })
+  })
+
   it('gives up on no answer, no JSON, or a workspace number that is not listed', () => {
     expect(parseRoute(null, LIST)).toBeNull()
     expect(parseRoute('I think app.', LIST)).toBeNull()
