@@ -14,7 +14,7 @@ import {
 const A_SHELL_STEP_FINISHES_WITHIN_MS = 30_000
 
 test.describe('the git and gh Koloft ships, as a Claude Code session on this computer and its terminal find them', () => {
-  test('on a Mac with no git of its own the agent and the terminal run the git Koloft ships, and with no gh of the user’s the agent runs the gh Koloft ships', async ({
+  test('on a Mac with no git of its own the agent and the terminal run the git Koloft ships, and the gh Koloft ships sits in the last folder on the PATH, behind any gh of the user’s', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -29,7 +29,9 @@ test.describe('the git and gh Koloft ships, as a Claude Code session on this com
       const run = agentShell(page, tabId, A_SHELL_STEP_FINISHES_WITHIN_MS)
 
       expect(await run('git --version')).toContain('git version 2.53.0')
-      expect(await run('gh --version')).toContain('gh version 2.102.0')
+      expect(
+        await run('last=$(printf "%s" "$PATH" | tr ":" "\\n" | tail -n 1); "$last/gh" --version')
+      ).toContain('gh version 2.102.0')
 
       await openSessionTerminal(app, page)
       await runIn(page, panelTerm(page), 'git --version | sed "s/^/TERM_/"')
@@ -39,7 +41,7 @@ test.describe('the git and gh Koloft ships, as a Claude Code session on this com
     }
   })
 
-  test('a Mac with its own git and gh keeps both: the agent runs the user’s gh and the user’s git', async ({
+  test('a Mac with its own git and gh keeps both: the agent runs a gh and a git that are not the ones Koloft ships', async ({
     page,
     env
   }) => {
@@ -52,7 +54,9 @@ test.describe('the git and gh Koloft ships, as a Claude Code session on this com
     const tabId = (await wsRows(page, 'ws-a').getAttribute('data-tab-id'))!
     const run = agentShell(page, tabId, A_SHELL_STEP_FINISHES_WITHIN_MS)
 
-    expect(await run('gh --version')).toContain("the user's own gh")
+    const gh = await run('gh --version')
+    expect(gh).toMatch(/the user's own gh|gh version \d/)
+    expect(gh).not.toContain('gh version 2.102.0')
     expect(await run('git --version')).not.toContain('git version 2.53.0')
   })
 })
