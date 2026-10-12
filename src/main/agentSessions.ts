@@ -709,7 +709,8 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
     verb: string,
     t: Target,
     text: string,
-    caller: AgentCaller
+    caller: AgentCaller,
+    fromAssist: boolean
   ): Promise<AgentReply> => {
     const typed = t.backend === 'claude' && t.remote
     const line =
@@ -723,7 +724,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       )
     const busy = typed && t.tabId !== undefined && !(await d.ready(t.tabId, 0, true))
     if (t.tabId && !busy) {
-      const asking = d.asking(t.tabId)
+      const asking = fromAssist && d.asking(t.tabId)
       const sent = await sendNow(t, text, line, Date.now() + REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS)
       return answered(asking ? `${sent} ${readsItAfterTheQuestion(t.name)}` : sent)
     }
@@ -800,7 +801,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       await (opening.get(t.key) ?? t.open())
       return answered(`Resumed ${t.name}.`)
     }
-    return deliver(sub, t, ownerSays(text), caller)
+    return deliver(sub, t, ownerSays(text), caller, true)
   }
 
   return async (args, caller): Promise<AgentReply> => {
@@ -868,7 +869,7 @@ export function sessionVerb(d: SessionVerbDeps): AgentVerb {
       const text = tail.join(' ').trim()
       if (!ref || !text) return refused(SEND_USAGE, EXIT_USAGE)
       const to = starter(ref)
-      if (to) return deliver('send', to, sessionSays(caller.session, text), caller)
+      if (to) return deliver('send', to, sessionSays(caller.session, text), caller, false)
       if (caller.session.backendId !== 'codex')
         return refused(`koloft session send: ${CLAUDE_USES_SEND_MESSAGE}`)
       const target = findCodexTarget(open, ref)

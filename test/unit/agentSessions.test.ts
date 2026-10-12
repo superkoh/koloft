@@ -1143,13 +1143,14 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
     expect(launched.map((l) => l.permission)).toEqual(['bypass', 'default', 'bypass'])
   })
 
-  it('any session reports back to the conductor that started it by the conductor’s id, which is hidden from every list, with its own mode, no owner label, and the name and id of the session it is from', async () => {
+  it('any session reports back to the conductor that started it by the conductor’s id, which is hidden from every list, with its own mode, no owner label, and the name and id of the session it is from; a conductor showing a question does not send the child to koloft session screen, a conductor-only command', async () => {
     const opened: string[] = []
     const { verb, lines, queued } = harness(
       live,
       {},
       [],
       conducting({
+        asking: ['wsCond'],
         conductors: {
           'cond-id': conductorTarget({}),
           'codex-cond': conductorTarget({ backend: 'codex', tabId: 'cc' }),
@@ -1164,7 +1165,10 @@ describe('a conductor acting on the sessions it looks after: send, resume, stop,
         }
       })
     )
-    expect((await verb(['send', 'cond-id', 'done'], from('fix'))).exit).toBe(0)
+    expect(await verb(['send', 'cond-id', 'done'], from('fix'))).toMatchObject({
+      exit: 0,
+      text: 'Sent to the app conductor.'
+    })
     expect((await verb(['send', 'codex-cond', 'done'], from('cx'))).exit).toBe(0)
     expect((await verb(['send', 'closed-cond', 'done'], from('fix'))).exit).toBe(0)
     const fromFix = '(From the session "fix-login", id fix-id:) done'
