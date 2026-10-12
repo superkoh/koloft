@@ -102,15 +102,7 @@ function dockItemCenter(appName) {
   return `${x + w / 2} ${y + h / 2}`
 }
 
-function notificationApps() {
-  const apps = $.NSWorkspace.sharedWorkspace.runningApplications
-  const out = []
-  for (let i = 0; i < apps.count; i++) {
-    const id = ObjC.unwrap(apps.objectAtIndex(i).bundleIdentifier)
-    if (typeof id === 'string' && /notification/i.test(id)) out.push(id)
-  }
-  return out.join(' ')
-}
+const NOTIFICATION_CENTER = 'com.apple.notificationcenterui'
 
 function run(argv) {
   const [command, ...rest] = argv
@@ -121,9 +113,10 @@ function run(argv) {
   if (command === 'drag') return drag(n[0], n[1], n[2], n[3])
   if (command === 'dock-badge') return string(dockItem(rest[0]), 'AXStatusLabel') ?? ''
   if (command === 'dock-item-center') return dockItemCenter(rest[0])
-  if (command === 'notification-apps') return notificationApps()
+  if (command === 'notification-center-running')
+    return String(processElement(NOTIFICATION_CENTER) !== null)
   if (command === 'banner-texts') {
-    const center = processElement('com.apple.notificationcenterui')
+    const center = processElement(NOTIFICATION_CENTER)
     return center === null ? '' : texts(center, 12, []).join('\n')
   }
   throw new Error('unknown command ' + command)
