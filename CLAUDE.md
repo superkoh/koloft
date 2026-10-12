@@ -164,7 +164,7 @@ Working principles:
   worktree (`'main' is already used by worktree`). Then call ExitWorktree (`remove`
   deletes the worktree; `discard_changes: true`, as the squash
   on `main` holds the commits). Despite its description it also removes a worktree
-  the session was started in with `claude -w` (seen three times);
+  the session was started in with `claude -w`;
   never hand the owner a `git worktree remove` or `/exit` to run. A
   reply that ends a piece of work ends with what the owner must do next, or
   "nothing"; before going quiet on background work, say what runs and about how
@@ -178,7 +178,7 @@ Working principles:
   finding — a handful per phase — and say how many before launching. Every brief and
   every Workflow step prompt starts with the shell-rule block below, word for word:
   an Explore agent never sees this file, and agents whose brief lacked the block
-  were refused 2–3 times as often (211 agent transcripts). An agent
+  were refused 2–3 times as often. An agent
   writes only patches or code, in a scratchpad folder of its own.
 - Hand-testing on a real machine is driven one case at a time through
   AskUserQuestion, never as a wall of text. The steps to carry out go inside the
@@ -206,8 +206,8 @@ Working principles:
     `node_modules`, and wakes Claude only if a step fails. When a worktree is entered
     mid-session no session starts, so run those four by hand there.
   - `npm ci` and `npm install` do not fetch the Electron binary — run
-    `node node_modules/electron/install.js` once, or the first (possibly headless e2e)
-    launch stalls on a silent download.
+    `node node_modules/electron/install.js` once, or the first launch stalls on a
+    silent download.
   - `vendor/` (the git and gh Koloft ships) is only downloaded when the app is packed —
     run `node scripts/fetch-vendor.cjs` once, or a dev build quietly ships neither and
     `bundled-git-gh.spec.ts` fails.
@@ -229,6 +229,7 @@ Working principles:
   - Quote every glob, a URL's ? too: --include='*.ts', 'a?n=1'. Unquoted,
     zsh prints "no matches found", the command never runs; the tool may
     still report success.
+  - Quote a spaced path: '/a b', never /a\ b.
   - Never git -C another checkout: diff origin/<branch>, or gh pr diff <n>.
   - Find a file before you grep or read it (grep -rl 'word' src): a name
     made up from a sibling file fails.
