@@ -23,6 +23,8 @@ export interface RouteText {
 export type SessionRoute =
   | (RouteText & { kind: 'workspace'; path: string; worktree: RouteWorktree | null; sure: boolean })
   | (RouteText & { kind: 'project'; machine: string; folder: string | null })
+  | (RouteText & { kind: 'koloft' })
+  | (RouteText & { kind: 'assist'; path: string })
 
 export const LOCAL_MACHINE = 'local'
 
@@ -60,7 +62,10 @@ ${message.slice(0, PROMPT_MAX_CHARS_SENT)}
 >>>
 
 Reply with one JSON object and nothing else:
-{"workspace": <workspace id, or null when this needs a brand-new project>,
+{"hand": <omit for work to do in a project, even when it names a workspace;
+          "koloft" when the person wants something from the Koloft app they are using — its settings and look, accounts, Discord, scheduled jobs, or how its sessions run ("set up Discord", "turn on dark mode", "why is my session slow");
+          "assist" only when the message asks or tells a workspace something ("ask <folder name> …", "tell <folder name> …"), with "workspace" set to that id>,
+ "workspace": <workspace id as a number, or null when this needs a brand-new project>,
  "machine": <only when workspace is null: "${LOCAL_MACHINE}", or the machine the person named>,
  "newFolder": <only when workspace is null: a short kebab-case English folder name, a name only, never a path>,
  "worktree": <"main" to work in the main checkout (always "main" for a folder that is not git),
@@ -120,6 +125,7 @@ export function parseRoute(reply: string | null, list: RouteWorkspace[]): Sessio
   const o = reply ? jsonIn(reply) : null
   if (!o) return null
   const said = { title: text(o.title), why: text(o.why, WHY_MAX_CHARS) }
+  if (o.hand === 'koloft') return { ...said, kind: 'koloft' }
   if (o.workspace === null) {
     const machines = new Set(list.map((w) => w.machine))
     const machine =
@@ -134,6 +140,7 @@ export function parseRoute(reply: string | null, list: RouteWorkspace[]): Sessio
   }
   const ws = typeof o.workspace === 'number' ? list[o.workspace - 1] : undefined
   if (!ws) return null
+  if (o.hand === 'assist') return { ...said, kind: 'assist', path: ws.path }
   return {
     ...said,
     kind: 'workspace',
