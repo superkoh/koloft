@@ -448,6 +448,8 @@ function persistWorkbench(tabId: string): void {
   whenWorkbenchFetched(tabId, () => writeWorkbench(tabId, useStore.getState()))
 }
 
+let activateOnceSpawned: string | null = null
+
 function landInWorkbench(tabId: string, wbTabId: string): void {
   const s = useStore.getState()
   if (!s.workbenchOpen[tabId]) s.setWorkbenchOpen(tabId, true)
@@ -512,6 +514,7 @@ export const useStore = create<AppState>((set, get) => ({
   orphanConfirm: null,
 
   addTab: (t) => {
+    activateOnceSpawned = null
     const asleep = asleepTabFor(get(), t)
     if (asleep) return wakeInto(asleep, t, true)
     set((s) => ({ tabs: [...s.tabs, t], activeTabId: t.id, resumeLaunch: null }))
@@ -520,6 +523,7 @@ export const useStore = create<AppState>((set, get) => ({
     const asleep = asleepTabFor(get(), t)
     if (asleep) return wakeInto(asleep, t, false)
     set((s) => (s.tabs.some((x) => x.id === t.id) ? {} : { tabs: [...s.tabs, t] }))
+    if (activateOnceSpawned === t.id) get().activateTab(t.id)
   },
   setCron: (cron) => set({ cron }),
   adoptTabs: (tabs, activeTabBeforeReload) => {
@@ -634,7 +638,8 @@ export const useStore = create<AppState>((set, get) => ({
       )
     })),
   activateTab: (id) => {
-    if (!get().tabs.some((x) => x.id === id)) return
+    activateOnceSpawned = get().tabs.some((x) => x.id === id) ? null : id
+    if (activateOnceSpawned) return
     set({ activeTabId: id, resumeLaunch: null })
   },
 

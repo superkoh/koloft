@@ -15,7 +15,13 @@ const BROWSER_VERBS = [
   'close'
 ]
 
-const DISCORD_SETUP_ALLOW = BROWSER_VERBS.map((verb) => `${PLAYWRIGHT_CLI_RULE}${verb})`)
+// CODEX§20
+const CODEX_QUESTION_TOOL = 'request_user_input_async'
+
+const DISCORD_SETUP_ALLOW = [
+  ...BROWSER_VERBS.map((verb) => `${PLAYWRIGHT_CLI_RULE}${verb})`),
+  CODEX_QUESTION_TOOL
+]
 
 const BRIEF = `Your task: set up Discord for the owner, so they can talk to Assist from a Discord channel. Work in the Workbench browser with playwright-cli (only ${BROWSER_VERBS.join(', ')} are allowed). The owner sees that browser in Koloft and does the steps you cannot.
 

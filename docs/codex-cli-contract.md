@@ -1015,6 +1015,12 @@ Koloft's (one TUI connection, one stdio app-server upstream, every frame logged)
   "esc to cancel"; `2` sent `{id: 0, result: {action: "accept", content: {colour:
   "Green"}, _meta: null}}`, followed by `serverRequest/resolved`, and the MCP tool got
   `{action: "accept", content: {colour: "Green"}}`.
+- **In the default mode a newer Codex offers `request_user_input_async`.** 2026-10-12,
+  codex-cli 0.162.0, an Assist task Koloft started on this Mac (its own folder, the
+  Assist gate as `PreToolUse` hook): the model called a tool named
+  `request_user_input_async` with `{questions: [{title, options: ["Done, I’m signed
+  in"]}]}`; the hook got that `tool_name`. The gate denied it, and the model asked the
+  same thing in plain text instead.
 - Not probed: several questions in one request, a free-text answer (`N+1` and notes),
   `isSecret`, a form with several fields or a field that is not an enum, and an
   elicitation `mode` other than `form`. Koloft refuses those from Discord.
