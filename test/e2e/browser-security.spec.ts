@@ -1,5 +1,7 @@
 import fs from 'fs'
+import http from 'http'
 import path from 'path'
+import type { AddressInfo } from 'net'
 import type { Page } from '@playwright/test'
 import { test, expect } from './helpers/app'
 import type { E2EEnv } from './helpers/env'
@@ -25,6 +27,35 @@ import { WORKBENCH, openInBrowse } from './helpers/workbench'
 const NO_NAVIGATION_SETTLE_MS = 3000
 const PAGE_SELF_TRIGGER_SETTLE_MS = 1500
 const LATE_DROP_SETTLE_MS = 2000
+const BLOCKED_CONNECTION_SETTLE_MS = 1500
+const DISCORD_DESKTOP_APP_LAST_PORT = 6472
+
+interface HitCounter {
+  port: number
+  hits(): number
+  close(): Promise<void>
+}
+
+async function countConnections(port: number): Promise<HitCounter> {
+  let hits = 0
+  const server = http.createServer((_req, res) => {
+    hits++
+    res.end()
+  })
+  server.on('upgrade', (_req, socket) => {
+    hits++
+    socket.destroy()
+  })
+  await new Promise<void>((ok, fail) => {
+    server.once('error', fail)
+    server.listen(port, '127.0.0.1', () => ok())
+  })
+  return {
+    port: (server.address() as AddressInfo).port,
+    hits: () => hits,
+    close: () => new Promise<void>((ok) => server.close(() => ok()))
+  }
+}
 
 interface GuestAttach {
   partition: string
@@ -294,6 +325,38 @@ test.describe('Session Browser security boundaries: local file reads, renderer n
         .toBe(1)
       expect(osHandoffs(env).filter((l) => l.includes('auto@koloft.test'))).toEqual([])
     } finally {
+      await server.close()
+    }
+  })
+
+  test("BB-C72: a page in the built-in browser cannot reach the Discord desktop app's local ports 6463–6472, so the app never takes over the page's flow; other local ports still answer", async ({
+    app,
+    page,
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const server = await startEchoServer()
+    const discordApp = await countConnections(DISCORD_DESKTOP_APP_LAST_PORT)
+    const otherLocal = await countConnections(0)
+    try {
+      await browserSession(page, env)
+      const rpcPage = server.page(
+        '/rpc',
+        '<!doctype html><html><head><meta charset="utf-8"><title>rpc</title></head><body><script>\n' +
+          `new WebSocket("ws://127.0.0.1:${discordApp.port}/?v=1");\n` +
+          `fetch("http://127.0.0.1:${discordApp.port}/rpc?v=1", { method: "POST" }).catch(function () {});\n` +
+          `new WebSocket("ws://127.0.0.1:${otherLocal.port}/?v=1");\n` +
+          '</script></body></html>\n'
+      )
+      await typeInAddressBar(page, rpcPage)
+      await guestByUrl(app, '/rpc')
+
+      await expect.poll(() => otherLocal.hits(), { timeout: 20_000 }).toBeGreaterThan(0)
+      await page.waitForTimeout(BLOCKED_CONNECTION_SETTLE_MS)
+      expect(discordApp.hits()).toBe(0)
+    } finally {
+      await otherLocal.close()
+      await discordApp.close()
       await server.close()
     }
   })
