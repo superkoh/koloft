@@ -91,8 +91,8 @@ const STATE_WORDS: Record<SessionStatus, string> = {
   idle: 'idle'
 }
 
-function stateWords(info: SessionInfo, asking: (tabId: string) => boolean): string {
-  return asking(info.tabId) ? ASKING : STATE_WORDS[info.status ?? 'idle']
+function stateWords(info: SessionInfo | undefined, asking: (tabId: string) => boolean): string {
+  return info && asking(info.tabId) ? ASKING : STATE_WORDS[info?.status ?? 'idle']
 }
 
 export interface ListedSession {
@@ -179,7 +179,7 @@ function formatConductorList(
         title,
         BACKEND_LABEL[row.backendId],
         parseRemoteKey(workspace)?.host ?? 'local',
-        info ? stateWords(info, asking) : row.running ? STATE_WORDS.idle : 'closed',
+        info || row.running ? stateWords(info, asking) : 'closed',
         `last active ${ageLabel(row.mtime, now)}`,
         `id: ${row.nativeSessionId ?? row.id}`
       ]
