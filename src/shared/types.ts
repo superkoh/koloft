@@ -254,6 +254,7 @@ export interface DiscordStatus {
 export interface DiscordGuild {
   id: string
   name: string
+  ownerId?: string
 }
 
 export interface DiscordUser {
@@ -1142,6 +1143,7 @@ export interface KoloftApi {
     pair(isMe: boolean): Promise<void>
     forgetOwner(): Promise<void>
     channels(): Promise<DiscordChannel[]>
+    setUpWithAssist(): Promise<ConductorOpenResult>
   }
 }
 

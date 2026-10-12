@@ -286,6 +286,7 @@ import type {
   CreateTabOptions,
   CreateTabResult,
   CronSaveInput,
+  ConductorOpenResult,
   ConductorSaveInput,
   ConductorSaveResult,
   ConductorBinding,
@@ -319,6 +320,8 @@ import { copyWorktreeIncludes } from './sessionWorktrees'
 import { AgentRequests, BUILTIN_VERBS, errorText, refused, type AgentVerb } from './agentRequests'
 import { conductorFolder, Conductors, type AssistBackendChoice } from './discord/conductors'
 import { discordApiUrl, DiscordLink } from './discord/link'
+import { tokenFromPage } from './discord/tokenFromPage'
+import { DISCORD_SETUP_TASK, DISCORD_SETUP_TASK_NAME } from './discord/setupTask'
 import { releaseLock, takeLock } from './discord/instanceLock'
 import { DiscordRelay, type Destination } from './discord/relay'
 import { Notices } from './discord/notices'
@@ -344,7 +347,14 @@ import {
   runningClaudePid,
   whenMessagingSocket
 } from './claudeSessionRegistry'
-import { asPeerName, conductorName, GLOBAL_SCOPE, isDiscordId, scopeName } from '@shared/conductors'
+import {
+  asPeerName,
+  conductorName,
+  GLOBAL_SCOPE,
+  inviteLink,
+  isDiscordId,
+  scopeName
+} from '@shared/conductors'
 import { cronVerb } from './agentCron'
 import { workbenchVerbs } from './agentWorkbench'
 import {
@@ -1154,7 +1164,17 @@ const agentRequests = new AgentRequests({
       send: async (channelId, files, text) => {
         if (!discordRelay) throw new Error(STILL_STARTING)
         await discordRelay.send(channelId, files, text)
-      }
+      },
+      isSetupTask: (tabId) =>
+        conductors?.scopeOfTab(tabId) === GLOBAL_SCOPE &&
+        conductors.taskNameOf(tabId) === DISCORD_SETUP_TASK_NAME,
+      status: () => discordSetupStatus(),
+      tokenFromPage: (tabId) => saveTokenFromPage(tabId),
+      invite: () => {
+        const appId = discordLink?.status().applicationId
+        return appId ? inviteLink(appId) : null
+      },
+      bindNewChannel: (scope) => bindWithNewChannel({ scope })
     }),
     gh: githubVerb({
       scopeOf: (tabId) => conductors?.scopeOfTab(tabId),
@@ -3496,7 +3516,46 @@ function registerSlashCommands(): void {
   void discordLink?.registerCommands([...guilds], SLASH_COMMANDS)
 }
 
-async function bindWithNewChannel(input: { id?: string; scope: string }): Promise<ConductorSaveResult> {
+function discordSetupStatus(): string {
+  const s = discordLink?.status() ?? DISCORD_OFF
+  const discord = loadSettings().discord
+  const owned = s.guilds.filter((g) => discord.userId && g.ownerId === discord.userId)
+  const lines = [
+    `Bot token: ${s.phase === 'off' ? 'not saved' : 'saved'}`,
+    `Connection: ${s.phase}${s.botName ? ` as ${s.botName}` : ''}`,
+    `Owner: ${discord.userId ? (discord.userName ?? discord.userId) : 'not known yet'}${s.appOwner ? ' (owner of the app)' : ''}`,
+    `Message Content: ${s.phase === 'connected' ? 'on' : s.phase === 'intents' ? 'off' : 'unknown until connected'}`,
+    `Servers the owner owns with the bot in them: ${owned.map((g) => g.name).join(', ') || 'none'}`,
+    `Bindings: ${discord.bindings.map((b) => `${scopeName(b.scope)} → #${b.channel.name}`).join(', ') || 'none'}`
+  ]
+  return lines.join('\n')
+}
+
+async function saveTokenFromPage(tabId: string): Promise<string> {
+  const pages = webContents
+    .getAllWebContents()
+    .filter((wc) => !wc.isDestroyed() && guestOwners.get(wc) === tabId)
+    .map((wc) => ({
+      url: () => wc.getURL(),
+      run: (script: string) => wc.executeJavaScript(script)
+    }))
+  const read = await tokenFromPage(pages)
+  if ('error' in read) return read.error
+  if (!(await discordTokenWrite(read.token)))
+    return 'Koloft could not save the token in the Keychain.'
+  void discordLink?.connect()
+  return 'Saved the bot token. Koloft is connecting; run koloft discord status in a few seconds.'
+}
+
+function openDiscordSetup(): Promise<ConductorOpenResult> {
+  if (!conductors) return Promise.resolve({ ok: false, error: STILL_STARTING })
+  return conductors.openTask(GLOBAL_SCOPE, DISCORD_SETUP_TASK)
+}
+
+async function bindWithNewChannel(input: {
+  id?: string
+  scope: string
+}): Promise<ConductorSaveResult> {
   const link = discordLink
   const bound = conductors
   if (!bound || !link) return { ok: false, error: STILL_STARTING }
@@ -4043,6 +4102,7 @@ function registerIpc(): void {
   })
   ipcMain.handle('discord:forgetOwner', () => conductors?.setOwner(null))
   ipcMain.handle('discord:channels', () => discordLink?.channels() ?? [])
+  ipcMain.handle('discord:setUpWithAssist', () => openDiscordSetup())
   ipcMain.handle('workspace:move', (_e, p: string, before: string | null) =>
     workspaceMgr?.move(p, before)
   )

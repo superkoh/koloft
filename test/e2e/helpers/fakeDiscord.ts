@@ -7,6 +7,7 @@ import { addKeychainEntry, type E2EEnv } from './env'
 export const FAKE_BOT = 'koloft-bot'
 export const FAKE_APPLICATION_ID = '700'
 export const FAKE_GUILD = { id: '111', name: 'koloft' }
+export const FAKE_GUILD_OWNER = '555'
 export const FAKE_CHANNELS = [
   { id: '222', name: 'koloft-all', type: 0 },
   { id: '333', name: 'koloft', type: 0 },
@@ -505,7 +506,14 @@ export async function startFakeDiscord(env: E2EEnv, token = 'fake-token'): Promi
           }
         })
       )
-      ws.send(JSON.stringify({ op: 0, t: 'GUILD_CREATE', s: ++seq, d: FAKE_GUILD }))
+      ws.send(
+        JSON.stringify({
+          op: 0,
+          t: 'GUILD_CREATE',
+          s: ++seq,
+          d: { ...FAKE_GUILD, owner_id: FAKE_GUILD_OWNER }
+        })
+      )
     })
     ws.send(JSON.stringify({ op: 10, d: { heartbeat_interval: HEARTBEAT_MS }, s: null, t: null }))
   })

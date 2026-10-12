@@ -1,24 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { DiscordSettings, DiscordStatus } from '@shared/types'
 
-export const SETUP_STEPS = 7
-
 export const DEVELOPER_PORTAL = 'https://discord.com/developers/applications'
-const INVITE_PERMISSIONS = 326417615952
-
-export function inviteLink(applicationId: string): string {
-  return `https://discord.com/oauth2/authorize?client_id=${applicationId}&permissions=${INVITE_PERMISSIONS}&scope=bot`
-}
-
-const NEXT_STEP_LABEL = [
-  'create the app',
-  'make the bot private',
-  'copy the bot token',
-  'make a private server',
-  'add the bot to your server',
-  'tell Koloft who you are',
-  'bind a channel'
-]
 
 export function useDiscordStatus(): DiscordStatus | null {
   const [status, setStatus] = useState<DiscordStatus | null>(null)
@@ -65,17 +48,4 @@ export const MESSAGE_CONTENT_BY_HAND =
 
 export function ownerFromApp(s: DiscordStatus, discord: DiscordSettings): boolean {
   return !!discord.userId && s.appOwner?.id === discord.userId
-}
-
-export function nextSetupStep(s: DiscordStatus, discord: DiscordSettings): number | null {
-  if (s.phase === 'connected' && s.guilds.length === 0) return 4
-  if (s.phase !== 'off' && discord.userId) return null
-  if (s.phase === 'off') return 1
-  if (s.phase === 'intents') return 2
-  if (s.phase === 'token') return 3
-  return 6
-}
-
-export function nextStepLine(step: number): string {
-  return `Step ${step} of ${SETUP_STEPS} next: ${NEXT_STEP_LABEL[step - 1]}`
 }

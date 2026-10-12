@@ -52,9 +52,9 @@ function inOwnMemory(event) {
   return path.resolve(file).startsWith(memory + path.sep)
 }
 
-function oneKoloftCall(command) {
+function onePlainCall(command, program) {
   const cmd = String(command).trim()
-  if (!/^koloft(\\s|$)/.test(cmd)) return false
+  if (cmd !== program && !cmd.startsWith(program + ' ')) return false
   let quote = ''
   for (let i = 0; i < cmd.length; i++) {
     const c = cmd[i]
@@ -71,10 +71,19 @@ function oneKoloftCall(command) {
   return quote === ''
 }
 
+function allowedCommands() {
+  return [...toolsTheAllowFileNames()].flatMap((tool) => {
+    const named = /^Bash\\((.+)\\)$/.exec(tool)
+    return named ? [named[1]] : []
+  })
+}
+
 function allowed(event) {
   if (READ_OR_ASK_TOOLS.has(event.tool_name)) return true
   if (WRITE_TOOLS.has(event.tool_name)) return inOwnMemory(event)
-  return event.tool_name === 'Bash' && oneKoloftCall(event.tool_input && event.tool_input.command)
+  if (event.tool_name !== 'Bash') return false
+  const command = event.tool_input && event.tool_input.command
+  return ['koloft', ...allowedCommands()].some((program) => onePlainCall(command, program))
 }
 
 ${TOOLS_THE_ALLOW_FILE_NAMES}
@@ -131,8 +140,8 @@ export function codexGateShell(gateScript: string): string {
 export const CODEX_GATE_NOT_TRUSTED =
   "Codex would not run Koloft's safety check for Assist, so Koloft did not start Assist on Codex."
 
-const PLAYWRIGHT_MCP_TOOL = 'mcp__playwright__'
+const BROWSER_TOOLS = ['mcp__playwright__', 'Bash(playwright-cli ']
 
 export function allowsTheBrowser(allow: readonly string[]): boolean {
-  return allow.some((tool) => tool.startsWith(PLAYWRIGHT_MCP_TOOL))
+  return allow.some((tool) => BROWSER_TOOLS.some((prefix) => tool.startsWith(prefix)))
 }

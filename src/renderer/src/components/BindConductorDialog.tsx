@@ -3,6 +3,7 @@ import { LuArrowUpRight, LuPlus, LuX } from 'react-icons/lu'
 import {
   channelLabel,
   GLOBAL_SCOPE,
+  inviteLink,
   newChannelGuild,
   newChannelName,
   newChannelTopic,
@@ -11,7 +12,7 @@ import {
 import { distinctName } from '@shared/sessionRoute'
 import type { DiscordChannel } from '@shared/types'
 import { useStore } from '../store'
-import { inviteLink, useDiscordStatus } from '../discordStatus'
+import { useDiscordStatus } from '../discordStatus'
 import { shortenHome } from '../browseModel'
 
 const NEW = 'new'
@@ -42,10 +43,8 @@ function BindForm({ scope, editId }: { scope?: string; editId?: string }): JSX.E
   const [busy, setBusy] = useState(false)
   const status = useDiscordStatus()
   const appId = status?.applicationId
-  const guildId = newChannelGuild(
-    bindings,
-    (status?.guilds ?? []).map((g) => g.id)
-  )
+  const owner = useStore((s) => s.settings.discord.userId)
+  const guildId = newChannelGuild(bindings, status?.guilds ?? [], owner)
   const guildName = status?.guilds.find((g) => g.id === guildId)?.name
   const newName =
     picked &&

@@ -24,10 +24,6 @@ const MANAGE_CHANNELS = 1 << 4
 const CATEGORY = 4
 const INVITE_PERMISSIONS_WITH_MANAGE_CHANNELS = 326417615936 + MANAGE_CHANNELS
 
-function wizard(page: Page): Locator {
-  return page.getByRole('dialog', { name: 'Set up Discord' })
-}
-
 async function discordPane(page: Page): Promise<Locator> {
   await openSettings(page)
   await page.locator('.set-ni', { hasText: 'Discord' }).click()
@@ -69,97 +65,54 @@ async function launched(
   }
 }
 
-async function next(page: Page, step: number): Promise<void> {
-  await wizard(page).getByRole('button', { name: 'Next' }).click()
-  await expect(wizard(page).locator('.flabel')).toHaveText(`Step ${step} of 7`)
-}
-
-test.describe('Discord setup: the 7-step guide checks the bot for real, learns who you are, and binds a channel picked from the server', () => {
-  test('a token typed into step 3 connects; the guide opens the portal and the invite in the default browser, ticks Message Content and the server, pairs on the first message only after This is me, and binds a listed channel', async ({
+test.describe('Discord setup by hand: one Settings screen saves the token, invites the bot, learns who you are, and binds a channel', () => {
+  test('a token typed into Settings connects; Invite the bot opens the invite with Manage Channels; a team app pairs on the first message only after This is me; a listed channel binds', async ({
     env
   }) => {
     const { page, fake, close } = await launched(env, { token: '' })
     try {
       const pane = await discordPane(page)
-      await expect(
-        pane.locator('.set-row', { hasText: 'Discord is not set up yet.' })
-      ).toContainText('Step 1 of 7 next: create the app')
-      await pane.getByRole('button', { name: 'Set up Discord…' }).click()
-      await expect(wizard(page).locator('.flabel')).toHaveText('Step 1 of 7')
-      await wizard(page).getByRole('button', { name: 'Open Developer Portal' }).click()
-      await expect
-        .poll(() => externalOpens(env))
-        .toContain('https://discord.com/developers/applications')
-
-      await next(page, 2)
-      await next(page, 3)
-      await wizard(page).getByLabel('Bot token').fill(TOKEN)
-      await wizard(page).getByRole('button', { name: 'Save', exact: true }).click()
-      await expect(wizard(page).locator('.acct-login-state.ok')).toHaveText(
+      await expect(pane.getByRole('button', { name: 'Invite the bot' })).toBeDisabled()
+      await pane.getByLabel('Bot token').fill(TOKEN)
+      await pane.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(pane.locator('.set-row', { hasText: 'Status' })).toContainText(
         `✓ Connected as ${FAKE_BOT}`
       )
       expect(fs.readFileSync(env.keychainFile, 'utf8')).toContain(TOKEN)
       expect(fake.identifies).toBe(1)
       await expect(page.locator('body')).not.toContainText(TOKEN)
-
-      await wizard(page).getByRole('button', { name: 'Back' }).click()
-      await expect(wizard(page).locator('.acct-login-state.ok')).toHaveText(
-        '✓ Message Content is on'
-      )
-      await next(page, 3)
-      await next(page, 4)
-      await next(page, 5)
-      await expect(wizard(page).locator('.acct-login-state.ok')).toHaveText(
-        `✓ The bot is in your server ${FAKE_GUILD.name}`
-      )
-      await wizard(page).getByRole('button', { name: 'Invite the bot' }).click()
+      await expect(
+        pane.locator('.set-row', { has: page.locator('b', { hasText: /^Server$/ }) })
+      ).toContainText(FAKE_GUILD.name)
+      await pane.getByRole('button', { name: 'Invite the bot' }).click()
       await expect
         .poll(() => externalOpens(env))
         .toContain(
           `https://discord.com/oauth2/authorize?client_id=${FAKE_APPLICATION_ID}&permissions=${INVITE_PERMISSIONS_WITH_MANAGE_CHANNELS}&scope=bot`
         )
 
-      await next(page, 6)
-      await expect(wizard(page).getByRole('button', { name: 'Next' })).toBeDisabled()
-      await expect(wizard(page).locator('.acct-empty')).toHaveText(
-        'Waiting for a message in your server…'
-      )
       fake.say({ id: '901', username: 'another-bot', bot: true }, 'beep')
       fake.say(STRANGER, 'not me')
-      const candidate = wizard(page).locator('.acct-row')
+      const candidate = pane.locator('.acct-row', { hasText: 'This is me' })
       await expect(candidate.locator('.acct-name')).toHaveText(STRANGER.username)
       await candidate.getByRole('button', { name: 'Not me' }).click()
-      await expect(wizard(page).locator('.acct-empty')).toBeVisible()
+      await expect(candidate).toHaveCount(0)
       fake.say(OWNER, 'hi')
       await expect(candidate.locator('.acct-note')).toContainText('“hi”')
       await candidate.getByRole('button', { name: 'This is me' }).click()
-      await expect(wizard(page).locator('.acct-login-state.ok')).toContainText(
-        `✓ You are ${OWNER.username}`
+      await expect(pane.locator('.set-row', { hasText: 'Your Discord account' })).toContainText(
+        `You are ${OWNER.username}`
       )
       expect(discordOnDisk(env)).toMatchObject({ userId: OWNER.id, userName: OWNER.username })
 
-      await next(page, 7)
-      await wizard(page).getByRole('button', { name: 'Bind a channel…' }).click()
-      await expect(wizard(page)).toHaveCount(0)
+      await pane.getByRole('button', { name: 'Bind a channel…' }).click()
       const dlg = page.getByRole('dialog', { name: 'Bind a Discord channel' })
-      await expect(dlg.locator('.wt-name', { hasText: /^#/ })).toHaveText([
-        '#koloft-all',
-        '#koloft'
-      ])
       await dlg.locator('.cb-row', { hasText: '#koloft-all' }).click()
       await dlg.locator('.modal-foot .btn-primary').click()
       await expect(dlg).toHaveCount(0)
       expect(discordOnDisk(env).bindings).toMatchObject([
         { scope: 'global', channel: { guildId: '111', channelId: '222', name: 'koloft-all' } }
       ])
-
-      await expect(pane.locator('.acct-login-state.ok').first()).toHaveText('✓ All 7 steps done')
-      await expect(pane.locator('.set-row', { hasText: 'Your Discord account' })).toContainText(
-        `You are ${OWNER.username}`
-      )
-      await expect(pane.locator('.set-row', { hasText: 'Status' })).toContainText(
-        `✓ Connected as ${FAKE_BOT}`
-      )
     } finally {
       await close()
     }
@@ -188,60 +141,32 @@ test.describe('Discord setup: the 7-step guide checks the bot for real, learns w
       await expect(account).toContainText(`You are ${OWNER.username} · owner of the bot’s app`)
       await expect(account.getByRole('button', { name: 'Change' })).toHaveCount(0)
       expect(discordOnDisk(env)).toMatchObject({ userId: OWNER.id, userName: OWNER.username })
-
-      await pane.locator('.ob-link', { hasText: 'Setup guide' }).click()
-      for (let step = 2; step <= 6; step++) await next(page, step)
-      await expect(wizard(page).locator('.acct-login-state.ok')).toHaveText(
-        `✓ You are ${OWNER.username} · owner of the bot’s app`
-      )
-      await expect(wizard(page).getByRole('button', { name: 'Next' })).toBeEnabled()
     } finally {
       await quitAndClose(app)
       await fake.close()
     }
   })
 
-  test('when Koloft cannot switch Message Content on, Discord closes with 4014 and Settings and the guide tell the owner how to switch it on by hand', async ({
+  test('when Koloft cannot switch Message Content on, Discord closes with 4014 and Settings tells the owner how to switch it on by hand', async ({
     env
   }) => {
-    const refused = (f: FakeDiscord): void => {
-      f.appFlags = 0
-      f.refuseAppEdit = true
-    }
-    const team = await launched(env, { setUp: refused })
-    try {
-      const pane = await discordPane(team.page)
-      await expect(pane.locator('.set-row', { hasText: 'Status' })).toContainText(
-        'Message Content is off'
-      )
-      await expect(
-        pane.locator('.set-row', { hasText: 'Discord is not set up yet.' })
-      ).toContainText('Step 2 of 7 next: make the bot private')
-      await pane.getByRole('button', { name: 'Set up Discord…' }).click()
-      await expect(wizard(team.page).locator('.flabel')).toHaveText('Step 2 of 7')
-      await expect(wizard(team.page).locator('.acct-login-state.bad')).toContainText(
-        'Koloft could not turn on Message Content'
-      )
-    } finally {
-      await team.close()
-    }
-
-    const personal = await launched(env, {
+    const { page, close } = await launched(env, {
       setUp: (f) => {
-        refused(f)
-        f.appOwner = OWNER
+        f.appFlags = 0
+        f.refuseAppEdit = true
       }
     })
     try {
-      const pane = await discordPane(personal.page)
+      const pane = await discordPane(page)
       const status = pane.locator('.set-row', { hasText: 'Status' })
+      await expect(status).toContainText('Message Content is off')
       await expect(status).toContainText('Koloft could not turn on Message Content')
       await status.getByRole('button', { name: 'Open Developer Portal' }).click()
       await expect
         .poll(() => externalOpens(env))
         .toContain('https://discord.com/developers/applications')
     } finally {
-      await personal.close()
+      await close()
     }
   })
 
@@ -379,7 +304,6 @@ test.describe('Discord setup: the 7-step guide checks the bot for real, learns w
       await expect(pane.locator('.set-row', { hasText: 'Your Discord account' })).toContainText(
         `You are ${OWNER.username}`
       )
-      await expect(pane.getByText('Discord is not set up yet.')).toHaveCount(0)
     } finally {
       await close()
     }

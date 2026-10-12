@@ -1,6 +1,7 @@
 import type {
   ConductorBinding,
   DiscordChannel,
+  DiscordGuild,
   DiscordPhase,
   DiscordStatus,
   DiscordUser
@@ -14,6 +15,8 @@ import { cardMessages, NO_MENTIONS, type Card } from './cards'
 export const DISCORD_API_URL = 'https://discord.com/api/v10'
 const UNREACHABLE_RETRY_MS = 30_000
 const LOCK_RETRY_MS = 30_000
+export const NO_OWNED_SERVER =
+  'The bot is in no server you own yet. Make a server of your own in Discord, invite the bot to it, then try again.'
 const TEXT_CHANNEL = 0
 const CATEGORY = 4
 const MESSAGE_CONTENT = 1 << 18
@@ -232,7 +235,7 @@ export class DiscordLink {
   private botName?: string
   private applicationId?: string
   private appOwner?: DiscordUser
-  private guilds = new Map<string, string>()
+  private guilds = new Map<string, DiscordGuild>()
   private registered = new Set<string>()
   private failing = new Map<string, string>()
   private candidate?: Candidate
@@ -249,7 +252,7 @@ export class DiscordLink {
       phase: this.phase,
       botName: this.botName,
       applicationId: this.applicationId,
-      guilds: [...this.guilds].filter(([, name]) => name).map(([id, name]) => ({ id, name })),
+      guilds: [...this.guilds.values()].filter((g) => g.name),
       ...(this.appOwner ? { appOwner: this.appOwner } : {}),
       failing: Object.fromEntries(this.failing),
       ...(this.candidate
@@ -354,11 +357,11 @@ export class DiscordLink {
   private onDispatch(type: string, data: unknown): void {
     if (type === 'READY') {
       for (const g of (data as { guilds: { id: string }[] }).guilds)
-        this.guilds.set(g.id, this.guilds.get(g.id) ?? '')
+        this.guilds.set(g.id, this.guilds.get(g.id) ?? { id: g.id, name: '' })
       this.d.onReady()
     } else if (type === 'GUILD_CREATE') {
-      const g = data as { id: string; name: string }
-      this.guilds.set(g.id, g.name)
+      const g = data as { id: string; name: string; owner_id?: string }
+      this.guilds.set(g.id, { id: g.id, name: g.name, ownerId: g.owner_id })
     } else if (type === 'GUILD_DELETE') {
       const g = data as { id: string; unavailable?: boolean }
       if (g.unavailable) return
@@ -575,8 +578,8 @@ export class DiscordLink {
   ): Promise<NewChannel> {
     await this.starting
     const api = this.api()
-    const guildId = newChannelGuild(bindings, [...this.guilds.keys()])
-    if (!guildId) throw new Error('The bot is in no server yet.')
+    const guildId = newChannelGuild(bindings, [...this.guilds.values()], this.d.owner())
+    if (!guildId) throw new Error(NO_OWNED_SERVER)
     const route = `/guilds/${guildId}/channels`
     const there = await api.request<RawChannel[]>('GET', route)
     const botName = this.botName ?? 'Koloft'

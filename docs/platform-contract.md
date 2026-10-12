@@ -1423,6 +1423,16 @@ Gateway (the live connection that pushes events):
     `my-projectv2-项目` — lowercased, a space as a hyphen, the dot dropped, Chinese kept.
     Two channels may share one name; Koloft's `-2` is its own rule.
   - A thread on a message in a DM answered 400 Unknown Guild.
+  - `PATCH /applications/@me` with `{bot_public: false}` answered 200 but left the bot
+    public, even after `install_params` and `custom_install_url` were cleared: the bot's
+    token cannot make the bot private. `POST /guilds` answered 400 (20001): a bot cannot
+    make a server.
+- **The Developer Portal in the Workbench browser** — measured 2026-10-10 and 10-11 with a
+  test account: with any CDP client attached to the page, Create on New Application
+  answered 403 (50001) in five rounds; with none attached and the page reloaded, it
+  answered 201. After Reset Token, the Bot page (`/developers/applications/<id>/bot`)
+  shows the new token as plain text. The invite's Authorize worked with a client
+  attached; its "I am human" check was passed by hand with the client detached.
 - Also from Discord's docs, not measured here: a message's `content` holds at most 2000
   characters; one message carries at most 10 files and one request at most 25 MiB; a
   bot's file may be at most 20 MiB (changelog 2025-09-03); adding or removing a reaction

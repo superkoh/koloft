@@ -3,6 +3,7 @@ import {
   bindingProblem,
   GLOBAL_SCOPE,
   keepPinnedScopes,
+  newChannelGuild,
   newChannelName,
   sanitizeDiscord
 } from '@shared/conductors'
@@ -81,6 +82,29 @@ describe('sanitizeDiscord', () => {
     expect(doc.bindings[0].threads).toEqual([
       { threadId: '9', keys: ['k1', 'k2'], name: 'Fix login', lastMessageId: '12' }
     ])
+  })
+})
+
+describe('the server a new channel goes in', () => {
+  const guilds = [
+    { id: '1', name: 'someone else’s', ownerId: '999' },
+    { id: '2', name: 'mine', ownerId: '555' },
+    { id: '3', name: 'also mine', ownerId: '555' }
+  ]
+
+  it('is a server the owner owns, never one the bot was only invited to', () => {
+    expect(newChannelGuild([], guilds, '555')).toBe('2')
+    expect(newChannelGuild([], guilds.slice(0, 1), '555')).toBeUndefined()
+    expect(newChannelGuild([], guilds, undefined)).toBeUndefined()
+  })
+
+  it('is the owned server a channel is already bound in', () => {
+    expect(newChannelGuild([binding('g', GLOBAL_SCOPE, '1')], guilds, '555')).toBe('2')
+    const inThree = {
+      ...binding('g', GLOBAL_SCOPE, '1'),
+      channel: { guildId: '3', channelId: '1', name: 'x' }
+    }
+    expect(newChannelGuild([inThree], guilds, '555')).toBe('3')
   })
 })
 

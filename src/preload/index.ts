@@ -204,7 +204,8 @@ const api: KoloftApi = {
     },
     pair: (isMe) => ipcRenderer.invoke('discord:pair', isMe),
     forgetOwner: () => ipcRenderer.invoke('discord:forgetOwner'),
-    channels: () => ipcRenderer.invoke('discord:channels')
+    channels: () => ipcRenderer.invoke('discord:channels'),
+    setUpWithAssist: () => ipcRenderer.invoke('discord:setUpWithAssist')
   },
   attention: {
     list: () => ipcRenderer.invoke('attention:list'),

@@ -153,7 +153,6 @@ interface AppState {
   assistTasks: AssistTaskRow[]
   assistAsked: boolean
   bindConductor: { scope?: string; editId?: string } | null
-  discordSetupStep: number | null
   orphanConfirm: string | null
 
   addTab: (t: Tab) => void
@@ -201,7 +200,6 @@ interface AppState {
   setAssistTasks: (rows: AssistTaskRow[]) => void
   setAssistAsked: (asked: boolean) => void
   setBindConductor: (b: AppState['bindConductor']) => void
-  setDiscordSetupStep: (step: number | null) => void
   setOrphanConfirm: (rowId: string | null) => void
 
   ensureWorkbench: (tabId: string) => Promise<void>
@@ -497,7 +495,6 @@ export const useStore = create<AppState>((set, get) => ({
   assistTasks: [],
   assistAsked: false,
   bindConductor: null,
-  discordSetupStep: null,
   orphanConfirm: null,
 
   addTab: (t) => {
@@ -806,7 +803,6 @@ export const useStore = create<AppState>((set, get) => ({
   setAssistTasks: (assistTasks) => set({ assistTasks }),
   setAssistAsked: (assistAsked) => set({ assistAsked }),
   setBindConductor: (bindConductor) => set({ bindConductor }),
-  setDiscordSetupStep: (discordSetupStep) => set({ discordSetupStep }),
   setOrphanConfirm: (orphanConfirm) => set({ orphanConfirm }),
 
   ensureWorkbench: (tabId) => {

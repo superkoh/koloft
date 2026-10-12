@@ -26,6 +26,16 @@ export async function openConductor(scope: string, fresh = false): Promise<void>
   st.activateTab(r.tabId)
 }
 
+export async function setUpDiscordWithAssist(): Promise<string | null> {
+  const r = await window.api.discord.setUpWithAssist()
+  if (!r.ok) return r.error
+  const st = useStore.getState()
+  st.setSettingsOpen(false)
+  window.api.attention.visit(r.tabId)
+  st.activateTab(r.tabId)
+  return null
+}
+
 type MenuTarget = { kind: 'assist'; scope: string } | { kind: 'task'; task: AssistTaskRow }
 
 export function ConductorsIsland(): JSX.Element {

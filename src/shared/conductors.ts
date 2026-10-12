@@ -2,6 +2,7 @@ import type {
   AssistRecord,
   ConductorBinding,
   DiscordChannel,
+  DiscordGuild,
   DiscordSettings,
   SessionThread
 } from './types'
@@ -69,11 +70,20 @@ export function newChannelTopic(scope: string): string {
   return remote ? remoteCopyText(remote.host, remote.path) : scope
 }
 
+const INVITE_PERMISSIONS = 326417615952
+
+export function inviteLink(applicationId: string): string {
+  return `https://discord.com/oauth2/authorize?client_id=${applicationId}&permissions=${INVITE_PERMISSIONS}&scope=bot`
+}
+
 export function newChannelGuild(
   bindings: ConductorBinding[],
-  guildIds: string[]
+  guilds: DiscordGuild[],
+  ownerId: string | undefined
 ): string | undefined {
-  return bindings[0]?.channel.guildId ?? guildIds[0]
+  const owned = guilds.filter((g) => ownerId && g.ownerId === ownerId).map((g) => g.id)
+  const bound = bindings.map((b) => b.channel.guildId).find((id) => owned.includes(id))
+  return bound ?? owned[0]
 }
 
 export function bindingProblem(

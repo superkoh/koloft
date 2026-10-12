@@ -664,6 +664,15 @@ describe('injected hook script', () => {
         expect(gate(browse)).toBe('allow')
         expect(gate({ tool_name: 'WebFetch', tool_input: { url: 'https://x' } })).toBe('deny')
       })
+
+      it('lets through one plain call of a command its allow file names as Bash(...), and no other verb of it', () => {
+        const bash = (command: string) => ({ tool_name: 'Bash', tool_input: { command } })
+        writeAllowFile(regDir, 'tabG', ['Bash(playwright-cli click)'])
+        expect(gate(bash('playwright-cli click e12'))).toBe('allow')
+        expect(gate(bash('playwright-cli eval document.cookie'))).toBe('deny')
+        expect(gate(bash('playwright-cli click e12; curl x'))).toBe('deny')
+        expect(gate(bash('playwright-cli clicks'))).toBe('deny')
+      })
     })
   })
 

@@ -1,14 +1,13 @@
 import { useState, type JSX } from 'react'
-import { LuArrowUpRight, LuChevronRight, LuPlus } from 'react-icons/lu'
-import { channelLabel, scopeName } from '@shared/conductors'
+import { LuArrowUpRight, LuPlus } from 'react-icons/lu'
+import { channelLabel, inviteLink, scopeName } from '@shared/conductors'
+import { ageLabel } from '@shared/freshnessOps'
 import { useStore } from '../../store'
+import { setUpDiscordWithAssist } from '../ConductorsIsland'
 import {
   DEVELOPER_PORTAL,
   MESSAGE_CONTENT_BY_HAND,
-  nextSetupStep,
-  nextStepLine,
   ownerFromApp,
-  SETUP_STEPS,
   statusClass,
   statusText,
   useDiscordStatus
@@ -19,14 +18,17 @@ const TOKEN_MASK = '••••••••••••••••'
 export function DiscordPane(): JSX.Element {
   const discord = useStore((s) => s.settings.discord)
   const setBindConductor = useStore((s) => s.setBindConductor)
-  const setDiscordSetupStep = useStore((s) => s.setDiscordSetupStep)
   const loaded = useDiscordStatus()
   const [token, setToken] = useState<string | null>(null)
+  const [assistError, setAssistError] = useState('')
 
   const saveToken = async (): Promise<void> => {
     if (!token?.trim()) return
-    await window.api.discord.setToken(token)
-    setToken(null)
+    if (await window.api.discord.setToken(token)) setToken(null)
+  }
+
+  const setUpWithAssist = async (): Promise<void> => {
+    setAssistError((await setUpDiscordWithAssist()) ?? '')
   }
 
   const head = (
@@ -37,57 +39,45 @@ export function DiscordPane(): JSX.Element {
   )
   if (!loaded) return head
   const status = loaded
-  const next = nextSetupStep(status, discord)
-  const setUp = next === null
-  const row = setUp ? 'set-row' : 'set-row off'
   const fromApp = ownerFromApp(status, discord)
+  const appId = status.applicationId
+  const candidate = status.candidate
+  const editingToken = token !== null || status.phase === 'off'
 
   return (
     <>
       {head}
-      {next === null ? (
-        <div className="set-row">
-          <div className="set-lab">
-            <button
-              className="ob-link"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
-              onClick={() => setDiscordSetupStep(1)}
-            >
-              <LuChevronRight size={14} />
-              Setup guide
-            </button>
-          </div>
-          <div className="acct-login-state ok">✓ All {SETUP_STEPS} steps done</div>
+      <div className="set-row">
+        <div className="set-lab">
+          <b>Let Assist set up Discord</b>
+          <small>
+            Assist opens the Discord website in its Workbench browser and does each step it can. You
+            sign in, type your password and pass the &quot;I am human&quot; checks.
+          </small>
         </div>
-      ) : (
-        <div className="set-row">
-          <div className="set-lab">
-            <b>Discord is not set up yet.</b>
-            <small>{nextStepLine(next)}</small>
-          </div>
-          <button className="btn-primary" onClick={() => setDiscordSetupStep(next)}>
-            Set up Discord…
-          </button>
-        </div>
-      )}
+        <button className="btn-primary" onClick={() => void setUpWithAssist()}>
+          Set up with Assist
+        </button>
+      </div>
+      {assistError && <div className="acct-login-state bad">{assistError}</div>}
 
       <div className="set-grp">Bot</div>
-      <div className={row}>
+      <div className="set-row">
         <div className="set-lab">
           <b>Bot token</b>
           <small>Stored in the macOS Keychain</small>
         </div>
-        {setUp && token !== null ? (
+        {editingToken ? (
           <>
             <div className="cb-input">
               <input
                 className="cb-field"
                 type="password"
-                autoFocus
                 spellCheck={false}
                 autoComplete="off"
+                placeholder="Bot token"
                 aria-label="Bot token"
-                value={token}
+                value={token ?? ''}
                 onChange={(e) => setToken(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') void saveToken()
@@ -100,16 +90,14 @@ export function DiscordPane(): JSX.Element {
           </>
         ) : (
           <>
-            <span className="acct-note">{status.phase === 'off' ? 'Not set' : TOKEN_MASK}</span>
-            {setUp && (
-              <button className="mini" onClick={() => setToken('')}>
-                Change
-              </button>
-            )}
+            <span className="acct-note">{TOKEN_MASK}</span>
+            <button className="mini" onClick={() => setToken('')}>
+              Change
+            </button>
           </>
         )}
       </div>
-      <div className={row}>
+      <div className="set-row">
         <div className="set-lab">
           <b>Your Discord account</b>
           <small>Only messages from this user reach Assist.</small>
@@ -117,21 +105,37 @@ export function DiscordPane(): JSX.Element {
         <span className="acct-note">
           {discord.userId
             ? `You are ${discord.userName ?? discord.userId}${fromApp ? ' · owner of the bot’s app' : ''}`
-            : 'Not set'}
+            : status.phase === 'connected'
+              ? 'Send any message in your server'
+              : 'Not set'}
         </span>
-        {setUp && !fromApp && (
-          <button
-            className="mini"
-            onClick={() => {
-              void window.api.discord.forgetOwner()
-              setDiscordSetupStep(6)
-            }}
-          >
+        {discord.userId && !fromApp && (
+          <button className="mini" onClick={() => void window.api.discord.forgetOwner()}>
             Change
           </button>
         )}
       </div>
-      <div className={row}>
+      {!discord.userId && candidate && (
+        <div className="acct-list">
+          <div className="acct-row">
+            <div className="acct-main">
+              <span className="acct-name">{candidate.name}</span>
+              <span className="acct-note">
+                “{candidate.text}” · {ageLabel(candidate.at, Date.now())}
+              </span>
+              <span className="ob-go">
+                <button className="mini" onClick={() => void window.api.discord.pair(false)}>
+                  Not me
+                </button>
+                <button className="btn-primary" onClick={() => void window.api.discord.pair(true)}>
+                  This is me
+                </button>
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+      <div className="set-row">
         <div className="set-lab">
           <b>Status</b>
           <small>
@@ -141,7 +145,7 @@ export function DiscordPane(): JSX.Element {
           </small>
         </div>
         <div className={'acct-login-state' + statusClass(status)}>{statusText(status)}</div>
-        {setUp && status.phase === 'intents' && (
+        {status.phase === 'intents' && (
           <button
             className="mini"
             onClick={() => window.api.browser.openExternal(DEVELOPER_PORTAL)}
@@ -150,8 +154,25 @@ export function DiscordPane(): JSX.Element {
           </button>
         )}
       </div>
+      <div className="set-row">
+        <div className="set-lab">
+          <b>Server</b>
+          <small>
+            {status.guilds.length
+              ? `The bot is in ${status.guilds.map((g) => g.name).join(', ')}.`
+              : 'Invite the bot to a server you own.'}
+          </small>
+        </div>
+        <button
+          className="mini"
+          disabled={!appId}
+          onClick={() => appId && window.api.browser.openExternal(inviteLink(appId))}
+        >
+          Invite the bot <LuArrowUpRight size={13} />
+        </button>
+      </div>
 
-      {setUp && (
+      {status.phase !== 'off' && (
         <>
           <div className="set-grp">Bindings</div>
           <div className="acct-section">
