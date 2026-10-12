@@ -8,6 +8,7 @@ import {
   NEEDS_REAL_GH,
   addCodexAccount,
   installRealGhThatOnlyReads,
+  seedGitAccount,
   seedSettings,
   setGithubFixture,
   type E2EEnv
@@ -26,6 +27,7 @@ import {
 } from './helpers/p1'
 import { newWebTab, openBrowser, typeInAddressBar } from './helpers/browser'
 import { startEchoServer } from './helpers/fixtureServer'
+import { startFakeGithub } from './helpers/fakeGithub'
 import { portOffset } from '../../src/shared/worktreeName'
 import { lastCodexTurnPermissions } from './helpers/codexRollout'
 import {
@@ -647,6 +649,50 @@ test.describe('KOLOFT_PORT_OFFSET reaches the REAL agent’s own shell in a work
       CODEX_SHELL_TRANSCRIPT,
       true
     )
+  })
+})
+
+const LIST_THE_REMOTE =
+  'Run this shell command exactly once with your shell tool: git ls-remote origin — then reply with only the word DONE. Do nothing else.'
+
+// CODEX§28
+test.describe('a REAL Codex in a repository picked for a Koloft git account: opt-in case; it spends real money', () => {
+  test("a real Codex turn's git, inside its sandbox, reaches the server with the picked account's token through Koloft", async ({
+    env
+  }) => {
+    test.skip(
+      !HAVE_REAL_CODEX,
+      'set KOLOFT_SMOKE_CODEX (absolute path of a real codex binary) and KOLOFT_SMOKE_CODEX_HOME (a signed-in CODEX_HOME; only its auth.json is copied)'
+    )
+    test.setTimeout(A_REAL_MODEL_TURN_MS + 180_000)
+    const github = await startFakeGithub()
+    const token = 'gho_real_codex_bob'
+    github.addUser(token, { login: 'bob', id: 42 })
+    env.launchEnv.KOLOFT_GITHUB_URL = github.url
+    env.launchEnv.KOLOFT_GITHUB_API_URL = github.url
+    try {
+      await inARealWorktreeSession(
+        env,
+        'other',
+        useRealCodex,
+        [],
+        async ({ rows, page }) => {
+          await ask(page, rows, LIST_THE_REMOTE)
+          await expect(rows).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: A_REAL_MODEL_TURN_MS })
+          await expect
+            .poll(() => github.hits.filter((h) => h.basic).map((h) => h.basic), {
+              timeout: 30_000
+            })
+            .toContainEqual({ username: 'bob', password: token })
+        },
+        (repo) => {
+          runGit(repo, 'remote', 'set-url', 'origin', `${github.url}/acme/app.git`)
+          seedGitAccount(env, 'bob', token, [repo])
+        }
+      )
+    } finally {
+      await github.close()
+    }
   })
 })
 
