@@ -1412,6 +1412,46 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
+  // CODEX§15
+  test('with two Codex accounts, once both show their weekly use in Settings ▸ Accounts, every new Codex session runs in the one with more room left, even though it is listed second', async ({
+    env
+  }) => {
+    installCodex(env)
+    const busy = path.join(env.userData, 'codex-homes', 'e2e-codex')
+    const roomy = path.join(env.userData, 'codex-homes', 'roomy')
+    fs.writeFileSync(path.join(busy, 'auth.json'), JSON.stringify({ usedPercent: 90 }))
+    fs.mkdirSync(roomy, { recursive: true })
+    fs.writeFileSync(path.join(roomy, 'auth.json'), JSON.stringify({ usedPercent: 10 }))
+    const settings = JSON.parse(
+      fs.readFileSync(path.join(env.userData, 'settings.json'), 'utf8')
+    ) as { accounts: Record<string, unknown>[] }
+    seedSettings(env, {
+      hintsOff: true,
+      accounts: [
+        ...settings.accounts,
+        { ...settings.accounts.find((a) => a.name === 'e2e-codex'), name: 'roomy' }
+      ]
+    })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      const weekly = (name: string): Locator =>
+        page.locator('.acct-row', { hasText: name }).locator('.acct-meter[data-win="7d"] .m-pct')
+      await expect(weekly('e2e-codex')).toHaveText('90%', { timeout: 30_000 })
+      await expect(weekly('roomy')).toHaveText('10%', { timeout: 30_000 })
+      await page.keyboard.press('Escape')
+
+      await startCodex(page, env)
+      await startCodex(page, env)
+      expect(codexCalls(env).map((c) => c.codexHome)).toEqual([roomy, roomy])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // CODEX§14
   test('a scheduled job set to run in Codex starts Codex with its task, model and thinking level, never asking, and counts as running once Codex binds', async ({
     env

@@ -144,6 +144,52 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       expect(fs.readdirSync(repo).filter((n) => n.includes('koloft-tmp'))).toEqual([])
     })
 
+    it('"Keep mine" overwrites a file that changed on the machine since it was opened', async () => {
+      const file = keyed(path.join(repo, 'a.txt'))
+      const opened = await machine().openForEdit(file)
+      fs.writeFileSync(path.join(repo, 'a.txt'), 'theirs, longer\n')
+
+      const kept = await machine().writeText(file, 'mine\n', opened, { force: true })
+      expect(kept).toMatchObject({ ok: true, size: 5 })
+      expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8')).toBe('mine\n')
+    })
+
+    it('a change that lands on the machine between the check and the write is refused, not overwritten', async () => {
+      const file = keyed(path.join(repo, 'a.txt'))
+      const opened = await machine().openForEdit(file)
+      const otherWriterJustBeforeTheWrite = (
+        cmd: string,
+        opts?: { input?: Buffer }
+      ): Promise<BytesResult> => {
+        if (opts?.input) fs.writeFileSync(path.join(repo, 'a.txt'), 'theirs, longer\n')
+        return runOnMachine(cmd, opts)
+      }
+
+      const result = await machine(otherWriterJustBeforeTheWrite).writeText(file, 'mine\n', opened)
+      expect(result).toMatchObject({ ok: false, code: 'stale', text: 'theirs, longer\n' })
+      expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8')).toBe('theirs, longer\n')
+      expect(fs.readdirSync(repo).filter((n) => n.includes('koloft-tmp'))).toEqual([])
+    })
+
+    it('a save says why it failed: no permission in the folder, the file gone, or its folder gone', async () => {
+      const file = keyed(path.join(repo, 'sub', 'b.txt'))
+      const opened = await machine().openForEdit(file)
+
+      fs.chmodSync(path.join(repo, 'sub'), 0o555)
+      try {
+        await expect(machine().writeText(file, 'mine\n', opened, { force: true })).rejects.toThrow(
+          'KOLOFT_NO_PERM'
+        )
+      } finally {
+        fs.chmodSync(path.join(repo, 'sub'), 0o755)
+      }
+
+      fs.rmSync(path.join(repo, 'sub', 'b.txt'))
+      await expect(machine().writeText(file, 'mine\n', opened)).rejects.toThrow('KOLOFT_GONE')
+      fs.rmSync(path.join(repo, 'sub'), { recursive: true })
+      await expect(machine().writeText(file, 'mine\n', opened)).rejects.toThrow('KOLOFT_DIR_GONE')
+    })
+
     it('creates a new file on the machine but never over one that is there', async () => {
       const created = await machine().createFile(keyed(repo), 'fresh.md')
       expect(created.path).toBe(keyed(path.join(repo, 'fresh.md')))
