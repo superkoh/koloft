@@ -114,13 +114,13 @@
           <li>
             <code>koloft session new</code> — start a session of the same kind (Claude starts
             Claude, Codex starts Codex), in its own git worktree with
-            <code class="nowrap">-w</code>. Every session is told which helper fits which job: work
-            that needs a branch or worktree of its own goes to a Koloft session started this way,
-            never to a hidden helper or a branch in the folder other sessions share. Only Assist
-            (see below) can pick the other kind, with <code class="nowrap">--backend</code>. Its row
-            hangs under the session that started it (see
-            <a href="../sessions/#session-tree">sessions an agent starts</a>). A Claude session it
-            starts gets a short title that <a href="../accounts/#assist">Koloft Assist</a> makes
+            <code class="nowrap">-w</code>. With "Let agents use Koloft" on, every session is told
+            which helper fits which job: work that needs a branch or worktree of its own goes to a
+            Koloft session started this way, never to a hidden helper or a branch in the folder
+            other sessions share. Only Assist (see below) can pick the other kind, with
+            <code class="nowrap">--backend</code>. Its row hangs under the session that started it
+            (see <a href="../sessions/#session-tree">sessions an agent starts</a>). A Claude session
+            it starts gets a short title that <a href="../accounts/#assist">Koloft Assist</a> makes
             from its task (with Assist off, the first line of the task), or the name the agent gave
             it with <code class="nowrap">--name</code>; the same title shows in the sidebar, in
             <code class="nowrap">session list</code> and in Discord. Codex names it itself.
@@ -305,10 +305,6 @@
 
         <h2>Not there yet</h2>
         <ul class="dash">
-          <li>
-            <s class="struck">your own Playwright script in Codex</s>
-            <span class="why">(a command Codex runs is not given the address)</span>
-          </li>
           <li>
             <s class="struck">the browser in remote folders</s>
             <span class="why"
