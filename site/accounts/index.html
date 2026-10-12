@@ -189,23 +189,54 @@
           week), shows in Settings.
         </p>
 
-        <h2 id="assist">Koloft Assist</h2>
+        <h2 id="assist">Assist</h2>
         <p>
-          Koloft has small jobs of its own that need an AI. Today there are two: the short title of
-          a Claude session that an agent starts with <code>koloft session new</code> (see
-          <a href="../agents/">agents</a>), and which docs the
-          <a href="../workbench/#folded">folded Workbench card</a> lists. One of your accounts does
-          those jobs. That is <mark class="hl">Koloft Assist</mark>. Settings ▸ Sessions ▸ Assist is
-          where you turn it on or off and pick the tool it runs on.
+          <mark class="hl">Assist</mark> is Koloft's own AI. One of your accounts runs it. It does
+          small jobs for Koloft, and you can talk to it. Settings ▸ Assist is where you turn it on
+          or off and pick the tool it runs on, Claude or Codex; every Assist you talk to runs on
+          that tool too.
+        </p>
+        <p>The small jobs:</p>
+        <ul class="dash">
+          <li>
+            the short title of a Claude session that an agent starts with
+            <code>koloft session new</code> (see <a href="../agents/">agents</a>)
+          </li>
+          <li>which docs the <a href="../workbench/#folded">folded Workbench card</a> lists</li>
+          <li>
+            where a session you type into <kbd>⌘P</kbd> should start (see
+            <a href="../sessions/#find">find any session</a>)
+          </li>
+        </ul>
+        <p>Talking to it:</p>
+        <ul class="dash">
+          <li>
+            the Assist block in the sidebar, under the sessions list: a Global Assist that looks
+            after every folder, one Assist per folder (right-click the folder ▸ Talk to Assist), and
+            the tasks Assist is running for you, such as setting up Discord
+          </li>
+          <li>
+            from your phone, once an Assist has a Discord channel (see
+            <a href="../discord/">discord</a>)
+          </li>
+          <li>
+            from <kbd>⌘P</kbd>: words about Koloft itself open a task for it, and "ask
+            &lt;folder&gt; …" reaches that folder's Assist
+          </li>
+        </ul>
+        <p>
+          Assist only passes work on: it starts sessions, reads them, messages them and answers
+          their questions the way you say. It never changes your files itself.
         </p>
         <ul class="dash">
           <li>
-            on Claude it uses Haiku, on Codex GPT-6 Luna; each job costs a tiny bit of that
-            account's plan or API balance, far less than one cent
+            on Claude it uses Haiku, on Codex GPT-6 Luna, for the small jobs; each costs a tiny bit
+            of that account's plan or API balance, far less than one cent
           </li>
           <li>
-            off, those jobs run without AI: a session an agent starts is named after the first line
-            of its task, and the card lists every doc the agent wrote
+            off, the small jobs run without AI: a session an agent starts is named after the first
+            line of its task, the card lists every doc the agent wrote, and <kbd>⌘P</kbd> opens the
+            folder picker. An Assist on Discord keeps working either way.
           </li>
         </ul>
 
