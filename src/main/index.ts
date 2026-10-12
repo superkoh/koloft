@@ -67,6 +67,7 @@ import {
   standardUserAgent
 } from './browserSecurity'
 import { directoryListingHtml } from './dirListing'
+import { stripTerminalCodes } from './terminalCodes'
 import {
   HOOK_SCRIPT,
   forgetAssistMarkers,
@@ -1290,10 +1291,6 @@ const AUTH_URL_RE = /https?:\/\/[^\s'"`<>]+/
 // CC§7
 const TOKEN_RE = /sk-ant-[A-Za-z0-9]{2,12}-[A-Za-z0-9_-]{24,}/
 
-function stripAnsi(s: string): string {
-  return s.replace(/\[[0-9;?]*[A-Za-z]/g, '').replace(/[()][AB0]/g, '')
-}
-
 function sendLoginProgress(p: LoginProgress): void {
   sendToRenderer('accounts:login-progress', p)
 }
@@ -1305,7 +1302,7 @@ function feedLoginWatcher(tabId: string, data: string): void {
     failLogin(tabId, 'Sign-in timed out')
     return
   }
-  w.buf = (w.buf + stripAnsi(data)).slice(-LOGIN_BUF_MAX)
+  w.buf = (w.buf + stripTerminalCodes(data)).slice(-LOGIN_BUF_MAX)
   const m = TOKEN_RE.exec(w.buf)
   if (!m) {
     if (!w.sawUrl) {
