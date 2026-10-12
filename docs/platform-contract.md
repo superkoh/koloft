@@ -1074,6 +1074,17 @@ Read 2026-09-24 in the node-pty 1.1.0 source unless marked otherwise.
   (2 runs). GitHub keeps Actions logs for 90 days by default, so job 107036731098's log is
   expected to go around 2026-12-22 and these cases to fail on it then (inferred, not
   checked).
+- **`GET /user` with a token GitHub does not know answers 401** with
+  `{"message":"Bad credentials",…}`, and the answer lists `X-OAuth-Scopes` among the
+  headers a browser may read. `GET /repos/<o>/<r>` without a token answers 200 with no
+  `permissions` field. (2026-10-12, curl against api.github.com with a made-up `ghp_`
+  token, and `octocat/Hello-World`.)
+- From GitHub's docs, inferred, not checked: a classic token's `GET /user` carries
+  `X-OAuth-Scopes: repo, read:org, …` and a fine-grained token's carries none; with a
+  token, `GET /repos/<o>/<r>` adds `permissions.push`; a private repo the token cannot see
+  answers 404; an organization that restricts OAuth apps answers 403 with a message about
+  "OAuth App access restrictions"; the private commit address is
+  `<id>+<login>@users.noreply.github.com`.
 - **`--jq` can read the environment of the `gh` process**: `gh pr view 389 --repo
   superkoh/koloft --json number --jq '$ENV.HOME'` printed the home folder. So a `--jq`
   given by someone else can print any secret in that environment. (2026-10-09, gh 2.89.0,

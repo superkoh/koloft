@@ -13,11 +13,11 @@ export const GH_LOGIN_TIMEOUT_MS = 10 * 60_000
 const LOGIN_DIR_PREFIX = 'gh-login-'
 const PROFILE_FILE = 'gh-login.sb'
 
-// PLATFORM§47
+// PLATFORM§47 ADR-0032
 export const DENY_KEYCHAIN_PROFILE =
   '(version 1)\n(allow default)\n(deny process-exec (literal "/usr/bin/security"))\n'
 
-// PLATFORM§47
+// PLATFORM§47 ADR-0032
 export const GH_LOGIN_ARGS = [
   'auth',
   'login',
@@ -49,7 +49,7 @@ function runInSandbox(
   })
 }
 
-// PLATFORM§47
+// PLATFORM§47 ADR-0032
 export async function sandboxBlocksKeychain(profileFile: string): Promise<boolean> {
   const [control, keychain] = await Promise.all([
     runInSandbox(profileFile, ['/usr/bin/true']),
@@ -63,7 +63,7 @@ export async function sandboxBlocksKeychain(profileFile: string): Promise<boolea
 const ONE_TIME_CODE = /one-time code:\s*([A-Z0-9]{4}-[A-Z0-9]{4})/
 const DEVICE_URL = /Open this URL[^:]*:\s*(https?:\/\/\S+)/
 
-// PLATFORM§47
+// PLATFORM§47 ADR-0032
 export function parseLoginOutput(text: string): { code?: string; url?: string } {
   const code = ONE_TIME_CODE.exec(text)?.[1]
   const url = DEVICE_URL.exec(text)?.[1]
@@ -125,7 +125,7 @@ function lastLine(text: string): string | undefined {
     .at(-1)
 }
 
-// PLATFORM§47
+// PLATFORM§47 ADR-0032
 export class GithubLogin {
   private run: LoginRun | null = null
 

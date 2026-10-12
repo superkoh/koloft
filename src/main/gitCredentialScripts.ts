@@ -58,6 +58,7 @@ exit 0
 `
 }
 
+// ADR-0032
 const GH_AUTH_SUBCOMMANDS = ['login', 'logout', 'switch', 'refresh', 'setup-git', 'token', 'status']
 
 export function ghWrapperScript(requestDir: string): string {

@@ -33,6 +33,12 @@ function flagName(arg: string): string {
   return eq < 0 ? arg : arg.slice(0, eq)
 }
 
+export function repoFlagOf(args: string[]): string | undefined {
+  const at = args.findIndex((a) => flagName(a) === '--repo')
+  if (at < 0) return undefined
+  return args[at] === '--repo' ? args[at + 1] : args[at].slice('--repo='.length)
+}
+
 function issueCreateFlags(rest: string[]): [string, string][] | null {
   const flags: [string, string][] = []
   for (let i = 0; i < rest.length; i++) {

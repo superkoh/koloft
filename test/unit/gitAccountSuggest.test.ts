@@ -191,6 +191,17 @@ describe('suggestFor', () => {
     })
   })
 
+  it('with no clue and several accounts that can push, the default account is offered', async () => {
+    git('remote', 'add', 'origin', 'https://github.com/o/r.git')
+    accounts = [account('bob', 42), { ...account('alice', 7), default: true }]
+    access['tok-alice'] = { kind: 'push', allowed: true }
+    access['tok-bob'] = { kind: 'push', allowed: true }
+    expect(await suggestFor(repo, { network: true }, d)).toEqual({
+      kind: 'default-can-push',
+      login: 'alice'
+    })
+  })
+
   it('a commit made here with an account’s noreply address is only a hint', async () => {
     git('remote', 'add', 'origin', 'https://github.com/o/r.git')
     git(

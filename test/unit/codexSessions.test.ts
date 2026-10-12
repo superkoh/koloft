@@ -169,7 +169,12 @@ beforeEach(() => {
     browserEndpoint: vi.fn(() => ''),
     openShimRoot: path.join(directory, 'codex-open'),
     playwrightBin: path.join(directory, 'commands', 'bin'),
-    agent: { enabled: () => false, answer: vi.fn() }
+    agent: { enabled: () => false, answer: vi.fn() },
+    gitAccounts: {
+      configEnv: (env) => env,
+      picked: vi.fn(async () => false),
+      ghWrapper: path.join(directory, 'shim', 'gh')
+    }
   }
   sessions = new CodexSessions(path.join(directory, 'sessions.json'), deps)
   vi.spyOn(sessions, 'availability').mockResolvedValue({ id: 'codex', available: true })
@@ -891,13 +896,27 @@ describe('CodexSessions', () => {
     const withGit = vi.mocked(deps.pty.create).mock.calls[0][0].processEnv!
     expect(withGit.PATH).toBe('/usr/bin:/opt/homebrew/bin:/koloft/fallback-bin')
     expect(fs.existsSync(path.join(path.dirname(withGit.ZDOTDIR!), 'git'))).toBe(false)
-    expect(fs.existsSync(path.join(path.dirname(withGit.ZDOTDIR!), 'gh'))).toBe(false)
+    expect(fs.readlinkSync(path.join(path.dirname(withGit.ZDOTDIR!), 'gh'))).toBe(
+      deps.gitAccounts.ghWrapper
+    )
 
     deps.gitBin = path.join(directory, 'git-bin')
     await sessions.launch({ kind: 'codex', cwd: repo })
     const noGit = vi.mocked(deps.pty.create).mock.calls[1][0].processEnv!
     expect(fs.readlinkSync(path.join(path.dirname(noGit.ZDOTDIR!), 'git'))).toBe(
       path.join(deps.gitBin, 'git')
+    )
+  })
+
+  // CODEX§28
+  it('a tab in a repository with a picked git account may reach the network, and one without stays offline', async () => {
+    vi.mocked(deps.gitAccounts.picked).mockImplementation(async (cwd) => cwd === repo)
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    await sessions.launch({ kind: 'codex', cwd: other })
+    const [picked, unpicked] = mocks.create.mock.calls.map(([o]) => o as CodexTransportOptions)
+    expect(picked.configOverrides).toContain('sandbox_workspace_write.network_access=true')
+    expect(unpicked.configOverrides!.some((o) => o.startsWith('sandbox_workspace_write.'))).toBe(
+      false
     )
   })
 

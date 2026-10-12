@@ -244,6 +244,10 @@ export class GithubLookup {
     return known.counts && { repo: key, ...known.counts }
   }
 
+  forgetOpenCounts(): void {
+    this.counted.clear()
+  }
+
   async ownerSlashName(root: string): Promise<string | null> {
     const repo = this.fixture ? this.fixture[root] : await this.repoOf(root, false)
     return repo ? `${repo.owner}/${repo.repo}` : null

@@ -69,7 +69,7 @@ export type GitClueReason = 'url-user' | 'config-user' | 'gh-user' | 'ssh-greeti
 export type GitAccountSuggestion =
   | { kind: 'none' }
   | { kind: 'use' | 'add' | 'cannot-push' | 'hint'; login: string; reason: GitClueReason }
-  | { kind: 'only-one-can-push'; login: string }
+  | { kind: 'only-one-can-push' | 'default-can-push'; login: string }
   | { kind: 'org-blocked'; login: string; org: string }
 
 export interface WorkspaceGitAccount {

@@ -18,7 +18,7 @@ function quoted(s: string): string {
   return `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
 }
 
-// PLATFORM§46
+// PLATFORM§46 ADR-0033
 export function masterConfigText(picks: GitRepoPick[], dir: string): string {
   return picks
     .flatMap((p) => {

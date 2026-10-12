@@ -112,6 +112,8 @@ export function suggestionText(s: GitAccountSuggestion): string | null {
       return `${clueText(s.reason, s.login)}, but ${s.login} can't push here.`
     case 'only-one-can-push':
       return `Only ${s.login} can push here — use ${s.login}?`
+    case 'default-can-push':
+      return `Several accounts can push here — use your default, ${s.login}?`
     case 'org-blocked':
       return orgBlockedText(s.org, s.login)
   }

@@ -224,7 +224,8 @@ async function noClue(
     if (access.kind === 'push' && access.allowed) pushers.push(a.login)
   }
   if (pushers.length === 1) return { kind: 'only-one-can-push', login: pushers[0] }
-  return fallback
+  const byDefault = d.accounts().find((a) => a.default && pushers.includes(a.login))
+  return byDefault ? { kind: 'default-can-push', login: byDefault.login } : fallback
 }
 
 async function commitEmailHint(
