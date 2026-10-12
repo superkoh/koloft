@@ -1446,9 +1446,12 @@ Gateway (the live connection that pushes events):
   at once, before it moved on to sign-in. On this Mac the desktop app listens on
   `127.0.0.1:6463`; when the page reaches it, the app opens its own server picker and
   the Workbench flow is left behind. No `discord://` link is involved, so the scheme
-  rules never see it. Koloft cancels every Workbench request to 127.0.0.1 ports
-  6463–6472. From Discord's docs, not measured: the app takes the first free port in
-  that range and also answers HTTP there. Whether the signed-in invite page still
+  rules never see it. The probe ran in Chrome, not the Workbench; the e2e case BB-C72
+  shows a Workbench page reaches such a port unless Koloft stops it. Koloft cancels a
+  request to 127.0.0.1 ports 6463–6472 when a page whose host is not loopback starts it
+  (Electron's `initiatorOrigin`); an address the user types has no initiator and still
+  goes through. From Discord's docs, not measured: the app takes the first free port
+  in that range and also answers HTTP there. Whether the signed-in invite page still
   offers "continue in the Discord app" once the port is closed is not probed yet.
 - **`GUILD_CREATE` carries the server's `owner_id`** — seen in the 2026-10-10 Gateway
   probe's logs with the same test bot. Koloft makes new channels only in a server whose

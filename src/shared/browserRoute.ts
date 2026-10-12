@@ -93,18 +93,28 @@ export function canOpenExternally(target: string): boolean {
 const DISCORD_DESKTOP_APP_HOST = '127.0.0.1'
 const DISCORD_DESKTOP_APP_FIRST_PORT = 6463
 const DISCORD_DESKTOP_APP_LAST_PORT = 6472
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]'])
+
+function urlOrNull(raw: string): URL | null {
+  try {
+    return new URL(raw)
+  } catch {
+    return null
+  }
+}
 
 // PLATFORM§39
-export function reachesDiscordDesktopApp(target: string): boolean {
-  let u: URL
-  try {
-    u = new URL(target)
-  } catch {
-    return false
-  }
-  const port = Number(u.port)
+export function webPageReachesDiscordDesktopApp(
+  target: string,
+  initiatorOrigin: string | undefined
+): boolean {
+  if (!initiatorOrigin) return false
+  const from = urlOrNull(initiatorOrigin)
+  if (from && LOOPBACK_HOSTS.has(from.hostname)) return false
+  const to = urlOrNull(target)
+  const port = Number(to?.port)
   return (
-    u.hostname === DISCORD_DESKTOP_APP_HOST &&
+    to?.hostname === DISCORD_DESKTOP_APP_HOST &&
     port >= DISCORD_DESKTOP_APP_FIRST_PORT &&
     port <= DISCORD_DESKTOP_APP_LAST_PORT
   )
