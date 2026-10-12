@@ -1836,7 +1836,7 @@ app.whenReady().then(() => {
     requestDir: gitRequestDir,
     gitHelper,
     ghBin: fallbackBin && path.join(fallbackBin, 'gh'),
-    clueEnv: { ...process.env },
+    clueEnv: () => loginEnvReady().then(() => ({ ...process.env })),
     repoOf: async (wsPath) => {
       const slug = await hosts.of(wsPath).github.ownerSlashName(wsPath)
       const [owner, name] = slug?.split('/') ?? []

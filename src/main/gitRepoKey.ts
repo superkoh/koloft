@@ -41,6 +41,10 @@ export class GitRepoKeys {
     this.keys = new Map(wsPaths.map((p, i) => [p, found[i]]))
   }
 
+  set(wsPath: string, repoKey: string): void {
+    this.keys.set(wsPath, repoKey)
+  }
+
   workspacesOf(repoKey: string): string[] {
     return [...this.keys].filter(([, key]) => key === repoKey).map(([wsPath]) => wsPath)
   }

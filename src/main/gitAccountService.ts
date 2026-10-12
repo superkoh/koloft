@@ -103,7 +103,7 @@ export interface GitAccountServiceDeps {
   requestDir: string
   gitHelper: string
   ghBin: string | undefined
-  clueEnv: NodeJS.ProcessEnv
+  clueEnv(): Promise<NodeJS.ProcessEnv>
   repoOf(wsPath: string): Promise<{ owner: string; name: string } | null>
   openPage(url: string): { show(): void; close(): void }
   openInBrowser(url: string): void
@@ -198,6 +198,7 @@ export class GitAccountService {
 
   private changed(): void {
     this.master = this.writeConfigs()
+    this.found.clear()
     this.accountsChanged()
     this.d.picksChanged()
   }
@@ -244,8 +245,10 @@ export class GitAccountService {
     return env
   }
 
-  ghEnv(root: string): Promise<NodeJS.ProcessEnv | undefined> {
-    return this.envFor(this.pickOf(root)?.account)
+  async ghEnv(root: string): Promise<NodeJS.ProcessEnv | undefined> {
+    const repo = this.keys.known(root) ?? (await repoKeyOf(root))
+    const pick = repo ? pickForRepo(repo) : undefined
+    return this.envFor(pick && findGitAccount(pick.login))
   }
 
   async ghEnvForRepo(
@@ -327,8 +330,8 @@ export class GitAccountService {
     const repo = this.keys.known(wsPath) ?? (await repoKeyOf(wsPath))
     if (!repo) return
     setGitPick(repo, login)
+    this.keys.set(wsPath, repo)
     this.orgBlocked.delete(repo)
-    this.found.delete(wsPath)
     this.changed()
     const account = login ? findGitAccount(login) : undefined
     if (account) void this.checkOrgAccess(wsPath, repo, account)
@@ -344,16 +347,17 @@ export class GitAccountService {
     this.d.picksChanged()
   }
 
-  private suggestNow(wsPath: string, network: boolean): Promise<GitAccountSuggestion> {
+  private async suggestNow(wsPath: string, network: boolean): Promise<GitAccountSuggestion> {
+    const env = await this.d.clueEnv()
     return suggestFor(
       wsPath,
       { network },
       {
         git: (cwd, args, opts) => runForClue('git', args, { cwd, ...opts }),
-        ssh: (args) => runForClue('ssh', args, { env: this.d.clueEnv }),
+        ssh: (args) => runForClue('ssh', args, { env }),
         readFile: readText,
         home: os.homedir(),
-        env: this.d.clueEnv,
+        env,
         githubUrl: GITHUB_URL,
         accounts: listGitAccounts,
         token: (login) => gitTokenRead(HOST, login),
