@@ -56,7 +56,13 @@ import {
   writeGitAccountConfigs
 } from './gitConfigFile'
 import { loginFromSshGreeting, SSH_SAFE_OPTIONS, sshSetting } from './gitClues'
-import { HTTPS_REFUSED, remoteUrlsOf, rewriteRulesFor, type RepoRemotes } from './gitSshRemotes'
+import {
+  httpsTurnedAway,
+  remoteUrlsOf,
+  rewriteRulesFor,
+  type HttpsTurnedAway,
+  type RepoRemotes
+} from './gitSshRemotes'
 import { GH_TOKEN_VARIABLES } from './gitCredentialScripts'
 import { CredentialManager, type GcmAccount, type GcmSignIn } from './gitCredentialManager'
 import { GitRepoKeys } from './gitRepoKey'
@@ -73,6 +79,7 @@ import { GithubLogin } from './githubLogin'
 
 const CLUE_COMMAND_KILL_MS = 10_000
 const REQUEST_DIR = /^koloft-git-(\d+)-/
+const HTTPS_CAN_BE_OFF: GitPlatform[] = ['gitlab', 'gitea']
 const REMOTE_URLS = '^remote\\..*\\.(push)?url$'
 const PICKED_WITHOUT_ASKING: GitAccountSuggestion['kind'][] = [
   'use',
@@ -169,7 +176,7 @@ export class GitAccountService {
   private remotes = new Map<string, RepoRemotes>()
   private sshHosts = new Map<string, string | null>()
   private scanned = new Map<string, string>()
-  private httpsRefused = new Set<string>()
+  private httpsRefused = new Map<string, HttpsTurnedAway>()
   private publicKeys = new Map<string, string>()
   private requests: GitAuthRequests
   private checks: GitAccountChecks
@@ -296,12 +303,16 @@ export class GitAccountService {
     if (repo) void this.httpsFailed(repo, stderr)
   }
 
+  // ADR-0035
   private async httpsFailed(repo: string, stderr: string): Promise<void> {
     const pick = this.pickOf(repo)
-    if (!HTTPS_REFUSED.test(stderr) || !pick || pick.sshKey || !this.remotes.get(repo)?.ssh) return
-    if (fs.existsSync(this.keyPath(pick.account))) return this.useKey(repo)
-    if (this.httpsRefused.has(repo)) return
-    this.httpsRefused.add(repo)
+    const a = this.pickFor(repo)
+    const turned = httpsTurnedAway(stderr)
+    if (!turned || !pick || !a || pick.sshKey || !this.remotes.get(repo)?.ssh) return
+    if (turned === 'forbidden' && !HTTPS_CAN_BE_OFF.includes(a.platform)) return
+    if (fs.existsSync(this.keyPath(a.id))) return this.useKey(repo)
+    if (this.httpsRefused.get(repo) === turned) return
+    this.httpsRefused.set(repo, turned)
     this.d.picksChanged()
   }
 
@@ -354,7 +365,8 @@ export class GitAccountService {
       { env: await this.d.baseEnv() }
     )
     if (this.pickFor(repo)?.id !== a.id) return
-    const taken = loginFromSshGreeting(hello.stderr)?.toLowerCase() === a.login.toLowerCase()
+    const taken =
+      loginFromSshGreeting(hello.stdout + hello.stderr)?.toLowerCase() === a.login.toLowerCase()
     setGitPickSshKey(repo, taken ? 'works' : 'not-taken')
     this.changed()
   }
@@ -375,7 +387,8 @@ export class GitAccountService {
         notTakenYet: state === 'not-taken'
       }
     }
-    return this.httpsRefused.has(repo) ? { kind: 'https-refused' } : undefined
+    const turned = this.httpsRefused.get(repo)
+    return turned && { kind: 'https-refused', sshOnly: turned === 'ssh-only' }
   }
 
   private account(id: string | undefined): GitAccount | undefined {

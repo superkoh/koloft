@@ -1653,11 +1653,13 @@ Gateway (the live connection that pushes events):
 - **`ssh -G <alias>` resolves the user's config offline**: it prints `hostname`, `user`,
   `port` and every `identityfile` (with no config, the five default files, two of them
   `_sk`), and prints no `proxycommand` or `identityagent` line when none is set.
-- **A server that greets the key's owner writes it to stderr and exits 1**; GitHub's
-  documented greeting is `Hi <login>! You've successfully authenticated, but GitHub does
-  not provide shell access.` (inferred, not checked: no real key was used). Read in their
-  sources, not checked against a server: GitLab greets `Welcome to GitLab, @<username>!`,
-  Gitea and Forgejo `Hi there, <login>! You've successfully authenticated…`.
+- **The greeting names the key's owner, on either stream**: GitHub's documented greeting
+  is `Hi <login>! You've successfully authenticated, but GitHub does not provide shell
+  access.` on stderr with exit 1 (inferred, not checked: no real key was used). A real
+  GitLab CE 19.4.2 printed `Welcome to GitLab, @<username>!` on **stdout** with exit 0
+  (2026-10-13, Docker, a throwaway user and key); a real Gitea 1.24.6 printed `Hi there,
+  <login>! You've successfully authenticated…` on stderr with exit 0 (§52). Forgejo's is
+  read in its source only.
 - Measured 2026-10-12 in a Docker Linux container against a local sshd with throwaway
   keys, and `ssh -F /dev/null -G github.com` on macOS 27.0.
 
@@ -1802,9 +1804,14 @@ server unless a line says so.
   requested URL returned error: 403` and exits 128, for `ls-remote`, `fetch` and `push`
   alike. A real Gitea 1.24.6 with `[repository] DISABLE_HTTP_GIT = true` answered before
   asking for credentials with `Interacting with repositories by HTTP protocol is not
-  allowed`. GitLab's text, `Git access over HTTP is not allowed` (instance or top-level
-  group set to "SSH only"), comes after the 401 challenge; it is read in GitLab's source
-  and replayed by a stub, not checked against a real GitLab.
+  allowed`. A real GitLab CE 19.4.2 with the admin setting "Enabled Git access protocols"
+  = SSH only (`enabled_git_access_protocol=ssh`) answered a valid token, after the 401
+  challenge, with `remote: Git access over HTTP is not allowed` and 403, for `ls-remote`
+  and `push`; a wrong password there, as with https on, gave `remote: HTTP Basic: Access
+  denied. …` and `fatal: Authentication failed for '<url>'` (401, no `returned error`
+  line). A Koloft build picked that GitLab account for a repository with an `ssh://`
+  remote, and its own fetch right after the pick showed the SSH-only note and the key
+  offer.
 - **`ssh -i <key> -o IdentitiesOnly=yes`** puts that key first; `IdentityFile` lines from
   the user's config for the host still follow it, and ssh's default key files are then
   left out. `ProxyJump` and the rest of the user's config still apply (`ssh -G`). So when
@@ -1813,6 +1820,8 @@ server unless a line says so.
   registered key with `Hi there, <login>! You've successfully authenticated with the key
   named <title>, but Gitea does not provide shell access.` and exit 0, and refused an
   unknown one with `Permission denied (publickey).` and exit 255. `core.sshCommand = "ssh
-  -i '<key>' -o IdentitiesOnly=yes"` in an included file carried a fetch and a push.
+  -i '<key>' -o IdentitiesOnly=yes"` in an included file carried a fetch and a push, on
+  that Gitea and, with the key Koloft made added through GitLab's API, on that GitLab.
 - Measured 2026-10-13 with Apple git 2.54 and OpenSSH 10.3p1 on macOS 27.0, a temp
-  `HOME`, a 403 stub on 127.0.0.1, and a Gitea 1.24.6 in Docker with throwaway keys.
+  `HOME`, a 403 stub on 127.0.0.1, and a Gitea 1.24.6 and a GitLab CE 19.4.2 in Docker with
+  throwaway users and keys.

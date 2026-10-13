@@ -720,6 +720,34 @@ test.describe('Git accounts · sign in, pick per repository, and git and gh use 
     }
   })
 
+  test('GA-14: a GitLab that turns https away with words Koloft does not know still gets offered a key for the account', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    withFakeGcm(env)
+    const forge = await startFakeForge('gitlab')
+    forge.addUser(GITLAB_ALICE_TOKEN, { login: 'alice' })
+    forge.refuseHttps('HTTP access is switched off on this instance')
+    repoOn(env.workspaces.a, `ssh://git@127.0.0.1:${A_CLOSED_PORT}/grp/app.git`)
+    seedGcmAccount(env, 'gitlab', forge.url, 'alice', GITLAB_ALICE_TOKEN, [env.workspaces.a])
+    const { app, page } = await launched(env)
+    try {
+      await expect.poll(() => pickFiles(env).join('')).toContain('insteadOf')
+      const panel = await openGitPanel(page, 'ws-a')
+      await panel.locator('.tbu-act', { hasText: 'Fetch now' }).click()
+      await expect(
+        panel.locator('.fx-note.warn', {
+          hasText:
+            'This server turned https away, so it may allow SSH only — alice has no SSH key on this Mac yet.'
+        })
+      ).toBeVisible({ timeout: ACCOUNT_SHOWS_WITHIN_MS })
+      await expect(panel.locator('.tbu-act', { hasText: 'Make a key for alice' })).toBeVisible()
+    } finally {
+      await quitAndClose(app)
+      await forge.close()
+    }
+  })
+
   test('GA-13: a Gitea that allows SSH only is named in the panel after a fetch; Make a key leaves a key for bob in Koloft’s folder, switches the repository to it, shows the public key with the keys page, says the server does not know the key yet, and removing bob deletes the key', async ({
     env
   }) => {

@@ -20,7 +20,7 @@ export interface FakeForge {
   hits: FakeForgeHit[]
   addUser(token: string, user: Partial<FakeForgeUser> & { login: string }): void
   setAccess(token: string, repoPath: string, access: 'push' | 'read'): void
-  refuseHttps(): void
+  refuseHttps(answer?: string): void
   close(): Promise<void>
 }
 
@@ -58,7 +58,7 @@ export async function startFakeForge(kind: ForgeKind): Promise<FakeForge> {
   const access = new Map<string, 'push' | 'read'>()
   const hits: FakeForgeHit[] = []
   const realm = kind === 'gitlab' ? 'GitLab' : 'Gitea'
-  let httpsOff = false
+  let httpsOff: string | null = null
 
   const send = (res: http.ServerResponse, status: number, body: unknown): void => {
     res.writeHead(status, { 'Content-Type': 'application/json' })
@@ -73,7 +73,7 @@ export async function startFakeForge(kind: ForgeKind): Promise<FakeForge> {
     if (smart) {
       if (httpsOff) {
         res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' })
-        return res.end(HTTPS_OFF_TEXT[kind])
+        return res.end(httpsOff)
       }
       if (!basic || !users.has(basic.password)) {
         res.writeHead(401, { 'WWW-Authenticate': `Basic realm="${realm}"` })
@@ -131,8 +131,8 @@ export async function startFakeForge(kind: ForgeKind): Promise<FakeForge> {
     setAccess: (token, repoPath, level) => {
       access.set(`${token} ${repoPath}`, level)
     },
-    refuseHttps: () => {
-      httpsOff = true
+    refuseHttps: (answer = HTTPS_OFF_TEXT[kind]) => {
+      httpsOff = answer
     },
     close: () =>
       new Promise<void>((r) => {

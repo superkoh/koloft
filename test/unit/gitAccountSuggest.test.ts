@@ -200,6 +200,19 @@ describe('suggestFor', () => {
     expect(sshCalls.at(-1)?.at(-1)).toBe('git@github.com')
   })
 
+  it("reads GitLab's ssh greeting, which comes on stdout with exit 0", async () => {
+    git('remote', 'add', 'origin', 'git@gitlab.com:grp/r.git')
+    accounts = [account('bob', 42, 'gitlab', 'https://gitlab.com')]
+    d.ssh = async (args) =>
+      args[0] === '-G'
+        ? { code: 0, stdout: 'hostname gitlab.com\nport 22\n', stderr: '' }
+        : { code: 0, stdout: 'Welcome to GitLab, @bob!\n', stderr: '' }
+    expect(await suggestFor(repo, { network: true }, d)).toMatchObject({
+      login: 'bob',
+      reason: 'ssh-greeting'
+    })
+  })
+
   it('a repository with its own ssh command is never asked over ssh', async () => {
     git('remote', 'add', 'origin', 'git@github.com:o/r.git')
     git('config', 'core.sshCommand', 'ssh -i ~/.ssh/work')

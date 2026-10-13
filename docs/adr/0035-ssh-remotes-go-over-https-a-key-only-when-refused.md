@@ -9,12 +9,16 @@ not grant it).
 **Decision**: in the picked repository's own include file, Koloft writes `insteadOf`
 rules that send every SSH spelling of the account's server (and each remote's full
 address, so a user's longer rule cannot win) to its https address, where the credential
-helper answers with the account's token. Only when the server answers https with its
-fixed "https is off" text does that repository switch to a key Koloft makes for the
-account in its own folder (`core.sshCommand` with `-i <key> -o IdentitiesOnly=yes`), with
-no rewrite rules; the user adds the public key on the platform and Koloft checks it by the
-name in the server's greeting.
+helper answers with the account's token. Only when the server turns that https away does
+the panel offer a key Koloft makes for the account in its own folder, and the repository
+then uses it (`core.sshCommand` with `-i <key> -o IdentitiesOnly=yes`) with no rewrite
+rules; the user adds the public key on the platform and Koloft checks it by the name in
+the server's greeting. "Turned away" is GitLab's or Gitea's fixed "https is off" text, or
+any 403 from a GitLab or Gitea account's server, so a reworded text still gets the offer;
+a rejected sign-in (401), a missing repository or no connection never does.
 **Rejected**:
+- Recognizing only the fixed texts: a platform release that rewords them would leave a
+  picked SSH-only repository failing to push with no way out in the panel.
 - A Koloft SSH key per account for every SSH remote: each one needs the user to add it on
   every platform before anything works, while https works the moment the account is added.
 - Writing `GIT_SSH_COMMAND` or a key into the session's environment: it follows the session

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { HTTPS_REFUSED, rewriteRulesFor } from '../../src/main/gitSshRemotes'
+import { httpsTurnedAway, rewriteRulesFor } from '../../src/main/gitSshRemotes'
 
 const sameHost = async (dest: string): Promise<string> => dest.replace(/^.*@/, '')
 
@@ -33,16 +33,36 @@ describe('rewriteRulesFor', () => {
   })
 })
 
-describe('HTTPS_REFUSED', () => {
-  it("matches GitLab's and Gitea's https-off answer as git prints it, and no other 403", () => {
-    const fail = (body: string): string =>
-      `remote: ${body}\nfatal: unable to access 'https://h/a/b.git/': The requested URL returned error: 403\n`
-    expect(HTTPS_REFUSED.test(fail('Git access over HTTP is not allowed'))).toBe(true)
+describe('httpsTurnedAway', () => {
+  const forbidden = (body: string): string =>
+    `remote: ${body}\nfatal: unable to access 'https://h/a/b.git/': The requested URL returned error: 403\n`
+
+  it("names GitLab's and Gitea's https-off answer as SSH only", () => {
+    expect(httpsTurnedAway(forbidden('Git access over HTTP is not allowed'))).toBe('ssh-only')
     expect(
-      HTTPS_REFUSED.test(fail('Interacting with repositories by HTTP protocol is not allowed'))
-    ).toBe(true)
-    expect(HTTPS_REFUSED.test(fail('You are not allowed to push code to this project.'))).toBe(
-      false
+      httpsTurnedAway(forbidden('Interacting with repositories by HTTP protocol is not allowed'))
+    ).toBe('ssh-only')
+  })
+
+  it('a 403 with words it does not know still means the server turned https away', () => {
+    expect(httpsTurnedAway(forbidden('HTTP access is switched off on this instance'))).toBe(
+      'forbidden'
     )
+  })
+
+  it('a rejected sign-in, a missing repository and an unreachable server are not https turned away', () => {
+    expect(
+      httpsTurnedAway(
+        "remote: HTTP Basic: Access denied. If a password was provided for Git authentication, the password was incorrect or you're required to use a token instead of a password.\nfatal: Authentication failed for 'https://h/a/b.git/'\n"
+      )
+    ).toBeNull()
+    expect(
+      httpsTurnedAway(
+        "remote: Repository not found.\nfatal: repository 'https://h/a/b.git/' not found\n"
+      )
+    ).toBeNull()
+    expect(
+      httpsTurnedAway("fatal: unable to access 'https://h/a/b.git/': Could not resolve host: h\n")
+    ).toBeNull()
   })
 })

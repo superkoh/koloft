@@ -95,9 +95,9 @@ const SSH_GREETINGS = [
 ]
 
 // PLATFORM§48
-export function loginFromSshGreeting(stderr: string): string | null {
+export function loginFromSshGreeting(output: string): string | null {
   for (const greeting of SSH_GREETINGS) {
-    const m = greeting.exec(stderr)
+    const m = greeting.exec(output)
     if (m) return plausibleLogin(m[1])
   }
   return null

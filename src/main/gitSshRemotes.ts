@@ -8,8 +8,17 @@ const AZURE_SSH_PATH = /^v3\/([^/]+)\/([^/]+)\/([^/]+)$/
 const REMOTE_URL_LINE = /^remote\..+\.(?:push)?url\s+(.+)$/
 
 // PLATFORM§52
-export const HTTPS_REFUSED =
+const SSH_ONLY_ANSWER =
   /^remote: (?:Git access over HTTP is not allowed|Interacting with repositories by HTTP protocol is not allowed)\s*$/m
+const SERVER_FORBADE = /The requested URL returned error: 403\b/
+
+export type HttpsTurnedAway = 'ssh-only' | 'forbidden'
+
+// PLATFORM§52
+export function httpsTurnedAway(stderr: string): HttpsTurnedAway | null {
+  if (SSH_ONLY_ANSWER.test(stderr)) return 'ssh-only'
+  return SERVER_FORBADE.test(stderr) ? 'forbidden' : null
+}
 
 export interface SshTarget {
   dest: string

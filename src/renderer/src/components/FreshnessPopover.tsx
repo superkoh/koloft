@@ -118,7 +118,7 @@ function useGitAccountView(
     if (acct.ssh?.kind === 'https-refused')
       notes.push({
         warn: true,
-        text: `This server allows SSH only — ${acct.login} has no SSH key on this Mac yet.`
+        text: `${acct.ssh.sshOnly ? 'This server allows SSH only' : 'This server turned https away, so it may allow SSH only'} — ${acct.login} has no SSH key on this Mac yet.`
       })
   }
   if (!acct && suggestion) {

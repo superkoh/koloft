@@ -68,7 +68,7 @@ export interface GitRepoPick {
 }
 
 export type WorkspaceGitSsh =
-  | { kind: 'https-refused' }
+  | { kind: 'https-refused'; sshOnly: boolean }
   | { kind: 'key'; publicKey: string; keysPage: string; notTakenYet: boolean }
 
 export interface GitAccountView extends GitAccount {
