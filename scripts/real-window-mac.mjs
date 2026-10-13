@@ -60,7 +60,7 @@ rsync -a --delete --exclude .git --exclude test-results "${GUEST_SHARES}/repo/" 
 cp "${GUEST_SHARES}/kit/node" ${GUEST_HOME}/node
 cd ${GUEST_HOME}/koloft
 codesign --force --deep --sign - node_modules/electron/dist/Electron.app
-sudo launchctl asuser ${GUEST_UID} sudo -u ${GUEST_LOGIN} HOME=${GUEST_HOME} USER=${GUEST_LOGIN} KOLOFT_REAL_WINDOW=1 ${GUEST_HOME}/node ${PLAYWRIGHT_CLI} test -c ${CONFIG} ${quoted}
+sudo launchctl asuser ${GUEST_UID} sudo -u ${GUEST_LOGIN} HOME=${GUEST_HOME} USER=${GUEST_LOGIN} ${GUEST_HOME}/node scripts/real-window-mac.mjs here ${quoted}
 code=$?
 rsync -a ${GUEST_HOME}/koloft/test-results/real-window/ "${GUEST_SHARES}/kit/results/"
 exit $code

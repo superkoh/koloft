@@ -2,11 +2,9 @@ name: Real window
 
 # The test/real-window specs need a Mac whose screen they may take over: real keys,
 # a real mouse, the Dock and notification banners. A GitHub macOS runner is one.
-# PROBE: the push trigger is for the probe on this branch and goes before merging.
+# Run by hand (Actions tab, or `gh workflow run real-window.yml`); it is not a gate.
 on:
   workflow_dispatch:
-  push:
-    branches: [worktree-real-window-mac]
 
 permissions:
   contents: read
@@ -31,23 +29,10 @@ jobs:
 
       - run: npm run build
 
-      - name: What this Mac lets a test do
-        run: |
-          sw_vers
-          system_profiler SPDisplaysDataType | grep -E 'Resolution|Display Type|Main' || true
-          csrutil status || true
-          echo "accessibility trusted: $(osascript -l JavaScript test/real-window/helpers/macInput.jxa.js trusted)"
-          screencapture -x probe-screen.png && ls -la probe-screen.png || echo "screencapture failed"
-          sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" "select service, client, auth_value from access where service in ('kTCCServiceAccessibility','kTCCServicePostEvent','kTCCServiceScreenCapture','kTCCServiceAppleEvents')" || true
-
-      - run: npx playwright test -c test/real-window/playwright.config.ts
-        env:
-          KOLOFT_REAL_WINDOW: '1'
+      - run: node scripts/real-window-mac.mjs here
 
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: real-window
-          path: |
-            test-results/real-window
-            probe-screen.png
+          path: test-results/real-window
