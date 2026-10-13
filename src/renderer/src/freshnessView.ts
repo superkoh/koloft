@@ -84,7 +84,11 @@ export function pullNote(f: WorkspaceFreshness): PullNote {
     : clean
 }
 
-export function clueText(reason: GitClueReason, login: string): string {
+function siteName(host: string): string {
+  return host === 'github.com' ? 'GitHub' : host
+}
+
+export function clueText(reason: GitClueReason, login: string, host = 'github.com'): string {
   switch (reason) {
     case 'url-user':
       return `The repository address names ${login}`
@@ -93,23 +97,24 @@ export function clueText(reason: GitClueReason, login: string): string {
     case 'gh-user':
       return `Your gh is signed in as ${login}`
     case 'ssh-greeting':
-      return `This repository's SSH key belongs to ${login} on GitHub`
+      return `This repository's SSH key belongs to ${login} on ${siteName(host)}`
     case 'commit-email':
-      return `Commits here use ${login}'s GitHub email`
+      return `Commits here use ${login}'s ${siteName(host)} email`
   }
 }
 
 export function suggestionText(s: GitAccountSuggestion): string | null {
   switch (s.kind) {
+    case 'off':
     case 'none':
       return null
     case 'use':
     case 'hint':
-      return `${clueText(s.reason, s.login)} — use ${s.login}?`
+      return `${clueText(s.reason, s.login, s.host)} — use ${s.login}?`
     case 'add':
       return `This repository was used with ${s.login}, who is not in Koloft yet. Add ${s.login}?`
     case 'cannot-push':
-      return `${clueText(s.reason, s.login)}, but ${s.login} can't push here.`
+      return `${clueText(s.reason, s.login, s.host)}, but ${s.login} can't push here.`
     case 'only-one-can-push':
       return `Only ${s.login} can push here — use ${s.login}?`
     case 'default-can-push':
@@ -124,7 +129,9 @@ export function orgBlockedText(org: string, login: string): string {
 }
 
 export function authorLine(a: WorkspaceGitAccount): string {
-  return `Commits as ${a.author.name} <${a.author.email}>`
+  return a.author
+    ? `Commits as ${a.author.name} <${a.author.email}>`
+    : 'Commits keep your own name and email'
 }
 
 export function pullToast(wsPath: string, branch: string, s: WorkspacePullSummary): string {

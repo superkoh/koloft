@@ -208,9 +208,9 @@ Working principles:
   - `npm ci` and `npm install` do not fetch the Electron binary — run
     `node node_modules/electron/install.js` once, or the first launch stalls on a
     silent download.
-  - `vendor/` (the git and gh Koloft ships) is only downloaded when the app is packed —
-    run `node scripts/fetch-vendor.cjs` once, or a dev build quietly ships neither and
-    `bundled-git-gh.spec.ts` fails.
+  - `vendor/` (the git, gh and Git Credential Manager Koloft ships) is only downloaded
+    when the app is packed — run `node scripts/fetch-vendor.cjs` once, or a dev build
+    quietly ships none of them and `bundled-git-gh.spec.ts` fails.
 - Shell in a worktree stays plain. The worktree isolation guard refuses any Bash
   call it cannot prove stays inside this worktree, not only git ones. This block
   binds you too, its last line aside; long text for `gh` goes in a `--body-file`:

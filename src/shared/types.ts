@@ -25,17 +25,35 @@ export function keychainService(appName: string, kind: AccountKind): string {
   return keychainNamespace(appName) + keychainServiceSuffix(kind)
 }
 
-export type GitHost = 'github.com'
+export type GitPlatform = 'github' | 'ghes' | 'gitlab' | 'bitbucket' | 'azure' | 'gitea' | 'other'
 
-export function gitKeychainService(appName: string, host: GitHost): string {
-  return `${keychainNamespace(appName)}-git-${host}`
+export const GIT_PLATFORMS: readonly GitPlatform[] = [
+  'github',
+  'ghes',
+  'gitlab',
+  'bitbucket',
+  'azure',
+  'gitea',
+  'other'
+]
+
+export function gitKeychainService(appName: string, host: string): string {
+  return `${keychainNamespace(appName)}-git-${host.toLowerCase()}`
+}
+
+export interface GitAuthor {
+  name: string
+  email: string
 }
 
 export interface GitAccount {
-  host: GitHost
+  id: string
+  platform: GitPlatform
+  url: string
+  host: string
   login: string
-  id: number
-  name: string
+  author?: GitAuthor
+  gcmNamespace?: string
   default: boolean
   status: AccountStatus
   addedAt: number
@@ -43,8 +61,7 @@ export interface GitAccount {
 
 export interface GitRepoPick {
   repo: string
-  host: GitHost
-  login: string
+  account: string
 }
 
 export interface GitAccountView extends GitAccount {
@@ -55,71 +72,51 @@ export interface GitAccountView extends GitAccount {
 export type GitLoginProgress =
   | { phase: 'checking' }
   | { phase: 'code'; code: string; url: string }
+  | { phase: 'browser'; url?: string }
   | { phase: 'saved'; login: string }
   | { phase: 'failed'; message: string }
 
-export type GitLoginStart = { ok: true } | { ok: false; error: 'no-sandbox' | 'no-gh' | 'busy' }
+export type GitLoginStart =
+  { ok: true } | { ok: false; error: 'no-sandbox' | 'no-gh' | 'no-gcm' | 'busy' | 'bad-url' }
+
+export interface GitTokenAdd {
+  platform: GitPlatform
+  url: string
+  token: string
+  username?: string
+}
 
 export type GitTokenAddResult =
   | { ok: true; login: string }
-  | { ok: false; error: 'rejected' | 'offline' | 'failed' | 'missing-scope'; scope?: string }
+  | {
+      ok: false
+      error: 'rejected' | 'offline' | 'failed' | 'missing-scope' | 'bad-url'
+      scope?: string
+    }
 
 export type GitClueReason = 'url-user' | 'config-user' | 'gh-user' | 'ssh-greeting' | 'commit-email'
 
 export type GitAccountSuggestion =
-  | { kind: 'none' }
-  | { kind: 'use' | 'add' | 'cannot-push' | 'hint'; login: string; reason: GitClueReason }
-  | { kind: 'only-one-can-push' | 'default-can-push'; login: string }
-  | { kind: 'org-blocked'; login: string; org: string }
+  | { kind: 'off' }
+  | { kind: 'none'; host: string }
+  | {
+      kind: 'use' | 'add' | 'cannot-push' | 'hint'
+      host: string
+      login: string
+      reason: GitClueReason
+    }
+  | { kind: 'only-one-can-push' | 'default-can-push'; host: string; login: string }
+  | { kind: 'org-blocked'; host: string; login: string; org: string }
 
 export interface WorkspaceGitAccount {
+  id: string
   login: string
-  host: GitHost
-  author: { name: string; email: string }
+  host: string
+  platform: GitPlatform
+  author?: GitAuthor
   status: AccountStatus
   sharedWith: string[]
   pushBlockedByOrg?: string
-}
-
-export const GITHUB_LOGIN_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/
-
-export function sanitizeGitAccounts(raw: unknown): GitAccount[] {
-  if (!Array.isArray(raw)) return []
-  const out: GitAccount[] = []
-  for (const a of raw as Partial<GitAccount>[]) {
-    if (!a || a.host !== 'github.com' || typeof a.login !== 'string') continue
-    if (!GITHUB_LOGIN_RE.test(a.login)) continue
-    if (out.some((o) => o.login.toLowerCase() === a.login!.toLowerCase())) continue
-    out.push({
-      host: 'github.com',
-      login: a.login,
-      id: typeof a.id === 'number' && Number.isFinite(a.id) ? a.id : 0,
-      name: typeof a.name === 'string' ? a.name : a.login,
-      default: a.default === true,
-      status: a.status === 'expired' || a.status === 'unverified' ? a.status : 'ok',
-      addedAt: typeof a.addedAt === 'number' ? a.addedAt : 0
-    })
-  }
-  if (out.length && !out.some((a) => a.default)) out[0].default = true
-  let seenDefault = false
-  for (const a of out) {
-    if (a.default && seenDefault) a.default = false
-    if (a.default) seenDefault = true
-  }
-  return out
-}
-
-export function sanitizeGitPicks(raw: unknown, accounts: GitAccount[]): GitRepoPick[] {
-  if (!Array.isArray(raw)) return []
-  const out: GitRepoPick[] = []
-  for (const p of raw as Partial<GitRepoPick>[]) {
-    if (!p || typeof p.repo !== 'string' || !p.repo.startsWith('/')) continue
-    if (p.host !== 'github.com' || typeof p.login !== 'string') continue
-    if (!accounts.some((a) => a.login === p.login)) continue
-    if (out.some((o) => o.repo === p.repo)) continue
-    out.push({ repo: p.repo, host: 'github.com', login: p.login })
-  }
-  return out
 }
 
 export function keychainServiceSuffix(kind: AccountKind): string {
@@ -1175,15 +1172,15 @@ export interface KoloftApi {
   gitAccounts: {
     list(): Promise<GitAccountView[]>
     onUpdate(cb: (accounts: GitAccountView[]) => void): () => void
-    loginStart(): Promise<GitLoginStart>
+    loginStart(platform: GitPlatform, url: string): Promise<GitLoginStart>
     loginCancel(): void
     loginBrowser(): void
     onLoginProgress(cb: (p: GitLoginProgress) => void): () => void
-    addToken(token: string): Promise<GitTokenAddResult>
-    remove(login: string): Promise<void>
-    makeDefault(login: string): Promise<void>
+    addToken(add: GitTokenAdd): Promise<GitTokenAddResult>
+    remove(id: string): Promise<void>
+    makeDefault(id: string): Promise<void>
     check(): Promise<void>
-    pick(wsPath: string, login: string | null): Promise<void>
+    pick(wsPath: string, id: string | null): Promise<void>
     suggest(wsPath: string, network: boolean): Promise<GitAccountSuggestion>
     dismiss(wsPath: string): Promise<void>
   }

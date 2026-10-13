@@ -118,7 +118,7 @@ import {
   statusLineSetting
 } from './statusline'
 import { setupPlaywrightCli } from './playwrightCli'
-import { bundledGhDir, linkOrUnlink, setupBundledGit } from './bundledTools'
+import { bundledGcm, bundledGhDir, linkOrUnlink, setupBundledGit } from './bundledTools'
 import {
   setFindAvailable,
   setKeepAwakeChecked,
@@ -252,7 +252,11 @@ import {
   PLACEHOLDER_SESSION_TITLE,
   CODEX_PLACEHOLDER_TITLE,
   exitedAbnormally,
-  isHttpUrl
+  GIT_PLATFORMS,
+  isHttpUrl,
+  keychainNamespace,
+  type GitPlatform,
+  type GitTokenAdd
 } from '@shared/types'
 import {
   answerPermissionRequest,
@@ -1842,6 +1846,8 @@ app.whenReady().then(() => {
     requestDir: gitRequestDir,
     gitHelper,
     ghBin: fallbackBin && path.join(fallbackBin, 'gh'),
+    gcmBin: bundledGcm(),
+    gcmNamespacePrefix: `${keychainNamespace(app.getName())}-git`,
     baseEnv: () => loginEnvReady().then(() => ({ ...process.env })),
     repoOf: async (wsPath) => {
       const slug = await hosts.of(wsPath).github.ownerSlashName(wsPath)
@@ -3827,7 +3833,7 @@ const BAD_GIT_STEP: { ok: false; reason: string } = { ok: false, reason: 'bad re
 const githubOptions: GithubOptions = {
   fixture: parseGithubFixture(process.env.KOLOFT_GITHUB_FIXTURE),
   // PLATFORM§1
-  countedAs: (root) => gitAccounts?.pickedLogin(root),
+  countedAs: (root) => gitAccounts?.pickedAccount(root),
   openCounts: async (repo, root) => {
     await loginEnvReady()
     return ghOpenCounts(repo, await gitAccounts?.ghEnv(root))
@@ -4170,28 +4176,34 @@ function registerIpc(): void {
     return r
   })
   const isText = (v: unknown): v is string => typeof v === 'string' && v.length > 0
+  const isGitPlatform = (v: unknown): v is GitPlatform => GIT_PLATFORMS.includes(v as GitPlatform)
   ipcMain.handle('gitAccounts:list', () => gitAccounts?.views() ?? [])
-  ipcMain.handle('gitAccounts:login-start', () =>
-    gitAccounts ? gitAccounts.loginStart() : { ok: false, error: 'no-gh' }
+  ipcMain.handle('gitAccounts:login-start', (_e, platform: unknown, url: unknown) =>
+    gitAccounts && isGitPlatform(platform) && typeof url === 'string'
+      ? gitAccounts.loginStart(platform, url)
+      : { ok: false, error: 'bad-url' }
   )
   ipcMain.on('gitAccounts:login-cancel', () => gitAccounts?.loginCancel())
   ipcMain.on('gitAccounts:login-browser', () => gitAccounts?.loginBrowser())
-  ipcMain.handle('gitAccounts:add-token', (_e, token: unknown) =>
-    isText(token) && gitAccounts
-      ? gitAccounts.addToken(token.trim())
+  ipcMain.handle('gitAccounts:add-token', (_e, add: Partial<GitTokenAdd> | undefined) =>
+    gitAccounts && isGitPlatform(add?.platform) && isText(add.token) && typeof add.url === 'string'
+      ? gitAccounts.addToken({
+          platform: add.platform,
+          url: add.url,
+          token: add.token.trim(),
+          ...(typeof add.username === 'string' && { username: add.username })
+        })
       : { ok: false, error: 'rejected' }
   )
-  ipcMain.handle('gitAccounts:remove', (_e, login: unknown) =>
-    isText(login) ? gitAccounts?.remove(login) : undefined
+  ipcMain.handle('gitAccounts:remove', (_e, id: unknown) =>
+    isText(id) ? gitAccounts?.remove(id) : undefined
   )
-  ipcMain.handle('gitAccounts:make-default', (_e, login: unknown) =>
-    isText(login) ? gitAccounts?.makeDefault(login) : undefined
+  ipcMain.handle('gitAccounts:make-default', (_e, id: unknown) =>
+    isText(id) ? gitAccounts?.makeDefault(id) : undefined
   )
   ipcMain.handle('gitAccounts:check', () => gitAccounts?.checkAll())
-  ipcMain.handle('gitAccounts:pick', (_e, wsPath: unknown, login: unknown) =>
-    isText(wsPath) && (login === null || isText(login))
-      ? gitAccounts?.pick(wsPath, login)
-      : undefined
+  ipcMain.handle('gitAccounts:pick', (_e, wsPath: unknown, id: unknown) =>
+    isText(wsPath) && (id === null || isText(id)) ? gitAccounts?.pick(wsPath, id) : undefined
   )
   ipcMain.handle('gitAccounts:suggest', (_e, wsPath: unknown, network: unknown) =>
     isText(wsPath) && gitAccounts ? gitAccounts.suggest(wsPath, network === true) : { kind: 'none' }

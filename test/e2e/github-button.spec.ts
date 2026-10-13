@@ -315,7 +315,7 @@ test.describe('Workbench · GitHub button (github.com is pinned to loopback, so 
     try {
       await expect(ghButton(page).locator('.ci')).toHaveClass(/\bpass\b/, { timeout: 30_000 })
       expect(fs.readFileSync(fakeGhEnvFile(env), 'utf8')).toContain(
-        'GH_TOKEN=gho_e2e_bob GH_HOST=github.com'
+        'GH_TOKEN=gho_e2e_bob GH_ENTERPRISE_TOKEN= GH_HOST=github.com'
       )
     } finally {
       await app.close().catch(() => {})

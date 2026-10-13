@@ -3,8 +3,8 @@ import { randomUUID } from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import type { GitLoginProgress, GitLoginStart } from '@shared/types'
+import { gitHostOf } from '@shared/gitAccountOps'
 import { githubHostEntry } from './gitClues'
-import type { whoami } from './githubApi'
 
 const SANDBOX_EXEC = '/usr/bin/sandbox-exec'
 const KEYCHAIN_TOOL = '/usr/bin/security'
@@ -18,19 +18,21 @@ export const DENY_KEYCHAIN_PROFILE =
   '(version 1)\n(allow default)\n(deny process-exec (literal "/usr/bin/security"))\n'
 
 // PLATFORM§47 ADR-0032
-export const GH_LOGIN_ARGS = [
-  'auth',
-  'login',
-  '--web',
-  '--insecure-storage',
-  '--git-protocol',
-  'https',
-  '--hostname',
-  'github.com',
-  '-s',
-  'repo,read:org,gist,workflow',
-  '--clipboard=false'
-]
+export function ghLoginArgs(host: string): string[] {
+  return [
+    'auth',
+    'login',
+    '--web',
+    '--insecure-storage',
+    '--git-protocol',
+    'https',
+    '--hostname',
+    host,
+    '-s',
+    'repo,read:org,gist,workflow',
+    '--clipboard=false'
+  ]
+}
 
 function runInSandbox(
   profileFile: string,
@@ -62,6 +64,7 @@ export async function sandboxBlocksKeychain(profileFile: string): Promise<boolea
 
 const ONE_TIME_CODE = /one-time code:\s*([A-Z0-9]{4}-[A-Z0-9]{4})/
 const DEVICE_URL = /Open this URL[^:]*:\s*(https?:\/\/\S+)/
+const WEB_FLOW_URL = /\/login\/oauth\/authorize\?/
 
 // PLATFORM§47 ADR-0032
 export function parseLoginOutput(text: string): { code?: string; url?: string } {
@@ -70,8 +73,8 @@ export function parseLoginOutput(text: string): { code?: string; url?: string } 
   return { ...(code ? { code } : {}), ...(url ? { url } : {}) }
 }
 
-export function readHostsYml(text: string): { login: string; token: string } | null {
-  const { user, token } = githubHostEntry(text)
+export function readHostsYml(text: string, host: string): { login: string; token: string } | null {
+  const { user, token } = githubHostEntry(text, host)
   return user && token ? { login: user, token } : null
 }
 
@@ -92,14 +95,15 @@ export interface GithubLoginDeps {
   userData: string
   openInBrowser(url: string): void
   progress(p: GitLoginProgress): void
-  whoami: typeof whoami
-  save(
-    a: { host: 'github.com'; login: string; id: number; name: string },
+  signedIn(
+    host: string,
     token: string
-  ): Promise<void>
+  ): Promise<{ ok: true; login: string } | { ok: false; message: string }>
 }
 
 interface LoginRun {
+  server: string
+  host: string
   dir: string
   child?: ChildProcess
   url?: string
@@ -129,11 +133,18 @@ export class GithubLogin {
 
   constructor(private d: GithubLoginDeps) {}
 
-  async start(): Promise<GitLoginStart> {
+  get running(): boolean {
+    return this.run !== null
+  }
+
+  async start(url: string): Promise<GitLoginStart> {
+    const host = gitHostOf(url)
     if (this.run) return { ok: false, error: 'busy' }
     const fake = process.env.KOLOFT_TEST_GH_LOGIN
     if (!fake && !this.d.ghBin) return { ok: false, error: 'no-gh' }
     const run: LoginRun = {
+      server: url,
+      host,
       dir: path.join(this.d.userData, LOGIN_DIR_PREFIX + randomUUID()),
       stderr: '',
       cancelled: false
@@ -164,11 +175,11 @@ export class GithubLogin {
       GH_TELEMETRY: '0'
     }
     const child = fake
-      ? spawn(process.execPath, [fake, ...GH_LOGIN_ARGS], {
+      ? spawn(process.execPath, [fake, ...ghLoginArgs(host)], {
           env: { ...env, ...fakeLoginInputs() },
           stdio: ['ignore', 'ignore', 'pipe']
         })
-      : spawn(SANDBOX_EXEC, ['-f', profile, this.d.ghBin!, ...GH_LOGIN_ARGS], {
+      : spawn(SANDBOX_EXEC, ['-f', profile, this.d.ghBin!, ...ghLoginArgs(host)], {
           env,
           stdio: ['ignore', 'ignore', 'pipe']
         })
@@ -181,9 +192,9 @@ export class GithubLogin {
       run.stderr += chunk.toString()
       if (run.url) return
       const { code, url } = parseLoginOutput(run.stderr)
-      if (!code || !url) return
+      if (!url || (!code && !WEB_FLOW_URL.test(url))) return
       run.url = url
-      this.d.progress({ phase: 'code', code, url })
+      this.d.progress(code ? { phase: 'code', code, url } : { phase: 'browser', url })
       // PLATFORM§47
       this.d.openInBrowser(url)
     })
@@ -223,30 +234,16 @@ export class GithubLogin {
     if (this.run !== run) return
     let signedIn: { login: string; token: string } | null = null
     try {
-      signedIn = readHostsYml(fs.readFileSync(path.join(cfg, 'hosts.yml'), 'utf8'))
+      signedIn = readHostsYml(fs.readFileSync(path.join(cfg, 'hosts.yml'), 'utf8'), run.host)
     } catch {}
     if (!signedIn) return this.end(run, 'gh finished but saved no GitHub sign-in.')
     const token = signedIn.token
     clearTimeout(run.timer)
     fs.rmSync(run.dir, { recursive: true, force: true })
-    const me = await this.d.whoami(token)
+    const saved = await this.d.signedIn(run.server, token)
     if (this.run !== run) return
-    if (!me.ok) {
-      const why =
-        me.error === 'offline'
-          ? 'GitHub could not be reached to read the new account. Check the connection and try again.'
-          : me.error === 'expired'
-            ? 'GitHub did not accept the new sign-in. Try again.'
-            : 'GitHub did not say which account signed in. Try again.'
-      return this.end(run, why)
-    }
-    try {
-      await this.d.save({ host: 'github.com', login: me.login, id: me.id, name: me.name }, token)
-    } catch {
-      return this.end(run, 'Koloft could not save the GitHub account.')
-    }
-    if (this.run !== run) return
+    if (!saved.ok) return this.end(run, saved.message)
     this.end(run, null)
-    this.d.progress({ phase: 'saved', login: me.login })
+    this.d.progress({ phase: 'saved', login: saved.login })
   }
 }

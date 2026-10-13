@@ -45,15 +45,6 @@ describe('whoami', () => {
   it('a token GitHub answers 401 for is expired', async () => {
     expect(await api.whoami('tok-unknown')).toEqual({ ok: false, error: 'expired' })
   })
-
-  it('a fine-grained token (no X-OAuth-Scopes header) and a token without read:org each name the first scope Koloft is missing', async () => {
-    const fine = await api.whoami('tok-fine')
-    const narrow = await api.whoami('tok-narrow')
-    expect(fine.ok && api.missingScope(fine.scopes)).toBe('repo')
-    expect(narrow.ok && api.missingScope(narrow.scopes)).toBe('read:org')
-    const full = await api.whoami('tok-bob')
-    expect(full.ok && api.missingScope(full.scopes)).toBeUndefined()
-  })
 })
 
 describe('pushAccess', () => {

@@ -31,6 +31,7 @@ const FAKE_SHA = 'a'.repeat(40)
 const SMART_HTTP =
   /^\/([^/]+)\/([^/]+?)(?:\.git)?\/info\/refs\?service=(git-upload-pack|git-receive-pack)$/
 const REPO_ROUTE = /^\/repos\/([^/]+)\/([^/?]+)$/
+const ENTERPRISE_API = '/api/v3'
 
 const pkt = (s: string): string => (s.length + 4).toString(16).padStart(4, '0') + s
 
@@ -92,11 +93,12 @@ export async function startFakeGithub(): Promise<FakeGithub> {
     const token = bearerOf(req.headers.authorization)
     const user = token ? users.get(token) : undefined
     if (!user) return send(res, 401, { message: 'Bad credentials', status: '401' })
-    if (url === '/user') {
+    const route = url.startsWith(ENTERPRISE_API) ? url.slice(ENTERPRISE_API.length) : url
+    if (route === '/user') {
       const headers = user.scopes === null ? {} : { 'X-OAuth-Scopes': user.scopes }
       return send(res, 200, { login: user.login, id: user.id, name: user.name }, headers)
     }
-    const repo = REPO_ROUTE.exec(url)
+    const repo = REPO_ROUTE.exec(route)
     if (repo) {
       const full = `${repo[1]}/${repo[2]}`
       const level = access.get(`${token} ${full}`)

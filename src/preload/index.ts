@@ -461,7 +461,7 @@ const api: KoloftApi = {
       ipcRenderer.on('gitAccounts:update', handler)
       return () => ipcRenderer.removeListener('gitAccounts:update', handler)
     },
-    loginStart: () => ipcRenderer.invoke('gitAccounts:login-start'),
+    loginStart: (platform, url) => ipcRenderer.invoke('gitAccounts:login-start', platform, url),
     loginCancel: () => ipcRenderer.send('gitAccounts:login-cancel'),
     loginBrowser: () => ipcRenderer.send('gitAccounts:login-browser'),
     onLoginProgress: (cb) => {
@@ -469,11 +469,11 @@ const api: KoloftApi = {
       ipcRenderer.on('gitAccounts:login-progress', handler)
       return () => ipcRenderer.removeListener('gitAccounts:login-progress', handler)
     },
-    addToken: (token) => ipcRenderer.invoke('gitAccounts:add-token', token),
-    remove: (login) => ipcRenderer.invoke('gitAccounts:remove', login),
-    makeDefault: (login) => ipcRenderer.invoke('gitAccounts:make-default', login),
+    addToken: (add) => ipcRenderer.invoke('gitAccounts:add-token', add),
+    remove: (id) => ipcRenderer.invoke('gitAccounts:remove', id),
+    makeDefault: (id) => ipcRenderer.invoke('gitAccounts:make-default', id),
     check: () => ipcRenderer.invoke('gitAccounts:check'),
-    pick: (wsPath, login) => ipcRenderer.invoke('gitAccounts:pick', wsPath, login),
+    pick: (wsPath, id) => ipcRenderer.invoke('gitAccounts:pick', wsPath, id),
     suggest: (wsPath, network) => ipcRenderer.invoke('gitAccounts:suggest', wsPath, network),
     dismiss: (wsPath) => ipcRenderer.invoke('gitAccounts:dismiss', wsPath)
   },

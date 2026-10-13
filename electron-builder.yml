@@ -23,8 +23,9 @@ electronLanguages:
   - en
   - zh_CN
 
-# Downloads the pinned gh (GitHub CLI) and git into vendor/, checksum-checked, so a new
-# Mac has both without installing anything (scripts/vendor-release.json pins them).
+# Downloads the pinned gh (GitHub CLI), git and Git Credential Manager into vendor/,
+# checksum-checked, so a new Mac has them without installing anything
+# (scripts/vendor-release.json pins them).
 beforePack: scripts/fetch-vendor.cjs
 
 extraResources:
@@ -32,6 +33,8 @@ extraResources:
     to: gh
   - from: vendor/git
     to: git
+  - from: vendor/gcm
+    to: gcm
 
 # Runs after the app is assembled and before it is signed, so the signature covers the
 # stripped native binaries.

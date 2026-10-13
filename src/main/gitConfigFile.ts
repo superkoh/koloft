@@ -1,21 +1,35 @@
 import fs from 'fs'
 import path from 'path'
 import { shq } from '@shared/shellQuote'
-import type { GitAccount, GitHost, GitRepoPick } from '@shared/types'
+import { gitCredentialUrl } from '@shared/gitAccountOps'
+import type { GitAccount, GitRepoPick } from '@shared/types'
+import type { GitTarget } from './gitPlatformApi'
 import { writeWholeBeforeVisible } from './jsonDrops'
 
 export const GITHUB_URL = process.env.KOLOFT_GITHUB_URL || 'https://github.com'
 
-export function noreplyEmail(a: { id: number; login: string }): string {
-  return `${a.id}+${a.login}@users.noreply.github.com`
+export function credentialUrlOf(a: Pick<GitAccount, 'platform' | 'url'>): string {
+  return a.platform === 'github' ? GITHUB_URL : gitCredentialUrl(a.url)
+}
+
+export function apiTargetOf(a: Pick<GitAccount, 'platform' | 'url'>): GitTarget {
+  return { platform: a.platform, url: a.platform === 'github' ? GITHUB_URL : a.url }
+}
+
+const CONFIG_ENTRY_VARIABLE = /^GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+)$/
+
+export function withoutConfigEntries(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {}
+  for (const [k, v] of Object.entries(env)) if (!CONFIG_ENTRY_VARIABLE.test(k)) out[k] = v
+  return out
 }
 
 export function gitAccountsDir(userData: string): string {
   return path.join(userData, 'git-accounts')
 }
 
-function accountConfigPath(dir: string, host: GitHost, login: string): string {
-  return path.join(dir, 'accounts', `${host}-${login}.gitconfig`)
+function accountConfigPath(dir: string, id: string): string {
+  return path.join(dir, 'accounts', `${id.replace(/[^a-z0-9._@+-]/g, '_')}.gitconfig`)
 }
 
 function quoted(s: string): string {
@@ -26,7 +40,7 @@ function quoted(s: string): string {
 export function masterConfigText(picks: GitRepoPick[], dir: string): string {
   return picks
     .flatMap((p) => {
-      const include = `\tpath = ${quoted(accountConfigPath(dir, p.host, p.login))}\n`
+      const include = `\tpath = ${quoted(accountConfigPath(dir, p.account))}\n`
       return [`gitdir:${p.repo}`, `gitdir:${p.repo}/`].map(
         (pattern) => `[includeIf ${quoted(pattern)}]\n${include}`
       )
@@ -35,18 +49,23 @@ export function masterConfigText(picks: GitRepoPick[], dir: string): string {
 }
 
 // PLATFORM§46
-export function accountConfigText(a: GitAccount, helperPath: string, hostUrl: string): string {
+export function accountConfigText(a: GitAccount, helperPath: string): string {
   return [
     '[koloft]',
-    `\taccount = ${a.login}`,
-    `\thost = ${a.host}`,
-    `[credential ${quoted(hostUrl)}]`,
+    `\taccount = ${quoted(a.id)}`,
+    `\tplatform = ${a.platform}`,
+    `\thost = ${quoted(a.host)}`,
+    `[credential ${quoted(credentialUrlOf(a))}]`,
     '\thelper =',
-    `\thelper = ${quoted(`!${shq(helperPath)} ${a.login}`)}`,
-    `\tusername = ${a.login}`,
-    '[user]',
-    `\tname = ${quoted(a.name || a.login)}`,
-    `\temail = ${noreplyEmail(a)}`,
+    `\thelper = ${quoted(`!${shq(helperPath)} ${shq(a.id)}`)}`,
+    `\tusername = ${quoted(a.login)}`,
+    ...(a.author
+      ? [
+          '[user]',
+          `\tname = ${quoted(a.author.name || a.login)}`,
+          `\temail = ${quoted(a.author.email)}`
+        ]
+      : []),
     ''
   ].join('\n')
 }
@@ -61,8 +80,8 @@ export function writeGitAccountConfigs(
   fs.mkdirSync(accountsDir, { recursive: true })
   const written = new Set<string>()
   for (const a of accounts) {
-    const file = accountConfigPath(dir, a.host, a.login)
-    writeWholeBeforeVisible(file, accountConfigText(a, helperPath, GITHUB_URL))
+    const file = accountConfigPath(dir, a.id)
+    writeWholeBeforeVisible(file, accountConfigText(a, helperPath))
     written.add(path.basename(file))
   }
   for (const name of fs.readdirSync(accountsDir)) {

@@ -1,19 +1,75 @@
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
 import { LuCopy, LuExternalLink, LuLoaderCircle, LuPlus, LuX } from 'react-icons/lu'
-import type { GitAccountView, GitLoginProgress, GitTokenAddResult } from '@shared/types'
+import {
+  GIT_PLATFORMS,
+  type GitAccountView,
+  type GitLoginProgress,
+  type GitPlatform,
+  type GitTokenAddResult
+} from '@shared/types'
+import {
+  GITHUB_DOT_COM,
+  GIT_PLATFORM_CHIP,
+  gitAccountUrl,
+  gitHostLabel,
+  gitHostOf,
+  gitPlatformName,
+  gitSignIn
+} from '@shared/gitAccountOps'
 import { basename } from '@shared/preview'
 import { useStore } from '../../store'
 import { useEscConsumer } from './escScope'
 
 const DEFAULT_TITLE = 'First choice when a workspace on this host picks an account'
-const GITHUB_SCOPES = 'repo, read:org, gist, workflow'
-const CREATE_TOKEN_URL =
-  'https://github.com/settings/tokens/new?scopes=repo,read:org,gist,workflow&description=Koloft'
+
+const URL_PLACEHOLDER: Partial<Record<GitPlatform, string>> = {
+  ghes: 'Server URL (e.g. https://github.example.com)',
+  gitlab: 'Server URL — leave empty for gitlab.com',
+  gitea: 'Server URL (e.g. https://codeberg.org)',
+  azure: 'Organization URL (e.g. https://dev.azure.com/acme)',
+  other: 'Server URL (e.g. https://git.example.com)'
+}
+
+const TOKEN_SCOPES: Partial<Record<GitPlatform, string>> = {
+  github: 'repo, read:org, gist, workflow',
+  ghes: 'repo, read:org, gist, workflow',
+  gitlab: 'write_repository, read_api',
+  gitea: 'write:repository, read:user',
+  azure: 'Code (Read & write)'
+}
+
+const TOKEN_PLACEHOLDER: Partial<Record<GitPlatform, string>> = {
+  github: 'Paste a token (ghp_…)',
+  ghes: 'Paste a token (ghp_…)',
+  gitlab: 'Paste a token (glpat-…)'
+}
+
+function createTokenUrl(platform: GitPlatform, url: string): string | null {
+  switch (platform) {
+    case 'github':
+    case 'ghes':
+      return `${url}/settings/tokens/new?scopes=repo,read:org,gist,workflow&description=Koloft`
+    case 'gitlab':
+      return `${url}/-/user_settings/personal_access_tokens?name=Koloft&scopes=write_repository,read_api`
+    case 'gitea':
+      return `${url}/user/settings/applications`
+    case 'azure':
+      return `${url}/_usersSettings/tokens`
+    default:
+      return null
+  }
+}
 
 type AddMode =
-  | { step: 'host' }
-  | { step: 'login'; progress: GitLoginProgress; again?: string }
-  | { step: 'token'; why?: string }
+  | { step: 'host'; platform: GitPlatform; url: string; error?: string }
+  | {
+      step: 'login'
+      platform: GitPlatform
+      url: string
+      progress: GitLoginProgress
+      again?: string
+    }
+  | { step: 'token'; platform: GitPlatform; url: string; why?: string }
 
 function workspacesLabel(n: number): string {
   return `${n} workspace${n === 1 ? '' : 's'}`
@@ -24,18 +80,32 @@ function rowNote(a: GitAccountView): string {
     ? `used by ${workspacesLabel(a.usedBy.length)}`
     : 'Not used by any workspace yet'
   if (a.status === 'expired') return used
+  if (a.platform === 'other') return used.charAt(0).toUpperCase() + used.slice(1)
   const state = a.checkError === 'offline' ? 'Last seen signed in' : 'Signed in'
   return `${state} · ${used.charAt(0).toLowerCase()}${used.slice(1)}`
 }
 
-function tokenError(r: GitTokenAddResult): string | null {
+function tokenError(r: GitTokenAddResult, platform: GitPlatform): string | null {
   if (r.ok) return null
+  const who = gitPlatformName(platform)
+  if (r.error === 'bad-url') return 'That server address does not look right.'
   if (r.error === 'rejected')
-    return 'GitHub turned this token down. Check that you copied all of it and that it has not expired.'
-  if (r.error === 'offline') return 'Could not reach GitHub. Check your network and try again.'
+    return platform === 'other'
+      ? 'Type the username you use on that server.'
+      : `${who} turned this token down. Check that you copied all of it and that it has not expired.`
+  if (r.error === 'offline') return `Could not reach ${who}. Check your network and try again.`
   if (r.error === 'missing-scope')
-    return `This token lacks the ${r.scope ?? 'repo'} permission. Make a classic token with ${GITHUB_SCOPES} ticked.`
-  return 'Could not check this token with GitHub.'
+    return `This token lacks the ${r.scope ?? 'needed'} permission. Make a token with ${TOKEN_SCOPES[platform] ?? 'push access'} ticked.`
+  return `Could not check this token with ${who}.`
+}
+
+function startFailure(error: string, platform: GitPlatform): string {
+  if (error === 'no-gh') return 'GitHub CLI is not available, so paste a token instead.'
+  if (error === 'no-sandbox')
+    return 'This Mac cannot run the GitHub CLI sign-in safely, so paste a token instead.'
+  if (error === 'no-gcm')
+    return `The ${gitPlatformName(platform)} sign-in tool is not available, so paste a token instead.`
+  return 'That server address does not look right.'
 }
 
 export function GitAccountsSection(): JSX.Element {
@@ -48,7 +118,7 @@ export function GitAccountsSection(): JSX.Element {
 
   useEffect(() => {
     if (!focus) return
-    if (focus === 'git-token') setAdding({ step: 'token' })
+    if (focus === 'git-token') setAdding({ step: 'token', platform: 'github', url: GITHUB_DOT_COM })
     headRef.current?.scrollIntoView({ block: 'start' })
     setFocus(null)
   }, [focus, setFocus])
@@ -96,25 +166,30 @@ export function GitAccountsSection(): JSX.Element {
     }
   }, [signingIn])
 
-  const startLogin = async (again?: string): Promise<void> => {
-    setAdding({ step: 'login', progress: { phase: 'checking' }, again })
-    const r = await window.api.gitAccounts.loginStart()
-    if (r.ok) return
-    if (r.error === 'busy') {
-      setAdding({
-        step: 'login',
-        progress: { phase: 'failed', message: 'Another GitHub sign-in is already running.' },
-        again
-      })
+  const begin = async (platform: GitPlatform, raw: string, again?: string): Promise<void> => {
+    const url = gitAccountUrl(platform, raw)
+    if (!url) {
+      setAdding({ step: 'host', platform, url: raw, error: startFailure('bad-url', platform) })
       return
     }
-    setAdding({
-      step: 'token',
-      why:
-        r.error === 'no-gh'
-          ? 'GitHub CLI is not available, so paste a token instead.'
-          : 'This Mac cannot run the GitHub CLI sign-in safely, so paste a token instead.'
-    })
+    if (gitSignIn(platform, url) === 'token') {
+      setAdding({ step: 'token', platform, url })
+      return
+    }
+    setAdding({ step: 'login', platform, url, progress: { phase: 'checking' }, again })
+    const r = await window.api.gitAccounts.loginStart(platform, url)
+    if (r.ok) return
+    if (r.error === 'busy' || (r.error === 'no-gcm' && platform === 'bitbucket')) {
+      const message =
+        r.error === 'busy' ? 'Another sign-in is already running.' : startFailure(r.error, platform)
+      setAdding({ step: 'login', platform, url, progress: { phase: 'failed', message }, again })
+      return
+    }
+    if (r.error === 'bad-url') {
+      setAdding({ step: 'host', platform, url: raw, error: startFailure(r.error, platform) })
+      return
+    }
+    setAdding({ step: 'token', platform, url, why: startFailure(r.error, platform) })
   }
 
   return (
@@ -131,17 +206,17 @@ export function GitAccountsSection(): JSX.Element {
           <div className="acct-list">
             {accounts.map((a) => (
               <GitAccountRow
-                key={a.login}
+                key={a.id}
                 account={a}
-                confirming={confirmDel === a.login}
-                onAskRemove={() => setConfirmDel(a.login)}
+                confirming={confirmDel === a.id}
+                onAskRemove={() => setConfirmDel(a.id)}
                 onCancelRemove={() => setConfirmDel(null)}
                 onRemove={() => {
                   setConfirmDel(null)
-                  void window.api.gitAccounts.remove(a.login)
+                  void window.api.gitAccounts.remove(a.id)
                 }}
-                onRelogin={() => void startLogin(a.login)}
-                onMakeDefault={() => void window.api.gitAccounts.makeDefault(a.login)}
+                onRelogin={() => void begin(a.platform, a.url, a.login)}
+                onMakeDefault={() => void window.api.gitAccounts.makeDefault(a.id)}
               />
             ))}
           </div>
@@ -150,7 +225,7 @@ export function GitAccountsSection(): JSX.Element {
           <button
             className="mini"
             title="Pick a host, then sign in or paste a token"
-            onClick={() => setAdding({ step: 'host' })}
+            onClick={() => setAdding({ step: 'host', platform: 'github', url: '' })}
           >
             <LuPlus size={14} /> Add account
           </button>
@@ -161,36 +236,88 @@ export function GitAccountsSection(): JSX.Element {
         </span>
       </div>
       {adding?.step === 'host' && (
-        <div className="acct-add">
-          <div className="acct-add-title">Add account</div>
-          <div className="chips">
-            <button className="chip on">GitHub</button>
-          </div>
-          <div className="acct-add-actions">
-            <button className="mini" onClick={() => setAdding(null)}>
-              Cancel
-            </button>
-            <button className="mini" onClick={() => void startLogin()}>
-              Next
-            </button>
-          </div>
-          <span className="field-hint">
-            GitHub signs in through a sign-in window, or takes a token. The account is kept on this
-            Mac only.
-          </span>
-        </div>
-      )}
-      {adding?.step === 'login' && (
-        <GitLoginBox
-          again={adding.again}
-          progress={adding.progress}
-          onRetry={() => void startLogin(adding.again)}
-          onToken={() => setAdding({ step: 'token' })}
+        <GitHostBox
+          mode={adding}
+          onChange={(platform, url) => setAdding({ step: 'host', platform, url })}
+          onNext={() => void begin(adding.platform, adding.url)}
           onClose={() => setAdding(null)}
         />
       )}
-      {adding?.step === 'token' && <GitTokenBox why={adding.why} onClose={() => setAdding(null)} />}
+      {adding?.step === 'login' && (
+        <GitLoginBox
+          mode={adding}
+          onRetry={() => void begin(adding.platform, adding.url, adding.again)}
+          onToken={() => setAdding({ step: 'token', platform: adding.platform, url: adding.url })}
+          onClose={() => setAdding(null)}
+        />
+      )}
+      {adding?.step === 'token' && (
+        <GitTokenBox
+          platform={adding.platform}
+          url={adding.url}
+          why={adding.why}
+          onClose={() => setAdding(null)}
+        />
+      )}
     </>
+  )
+}
+
+function GitHostBox({
+  mode,
+  onChange,
+  onNext,
+  onClose
+}: {
+  mode: AddMode & { step: 'host' }
+  onChange(platform: GitPlatform, url: string): void
+  onNext(): void
+  onClose(): void
+}): JSX.Element {
+  const placeholder = URL_PLACEHOLDER[mode.platform]
+  const urlRequired = !!placeholder && mode.platform !== 'gitlab'
+  return (
+    <div className="acct-add">
+      <div className="acct-add-title">Add account</div>
+      <div className="chips">
+        {GIT_PLATFORMS.map((p) => (
+          <button
+            key={p}
+            className={'chip' + (p === mode.platform ? ' on' : '')}
+            onClick={() => onChange(p, p === mode.platform ? mode.url : '')}
+          >
+            {GIT_PLATFORM_CHIP[p]}
+          </button>
+        ))}
+      </div>
+      {placeholder && (
+        <input
+          type="text"
+          placeholder={placeholder}
+          spellCheck={false}
+          value={mode.url}
+          onChange={(e) => onChange(mode.platform, e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (!urlRequired || mode.url.trim())) onNext()
+          }}
+          autoFocus
+        />
+      )}
+      {mode.error && <div className="acct-add-err">{mode.error}</div>}
+      <div className="acct-add-actions">
+        <button className="mini" onClick={onClose}>
+          Cancel
+        </button>
+        <button className="mini" onClick={onNext} disabled={urlRequired && !mode.url.trim()}>
+          Next
+        </button>
+      </div>
+      <span className="field-hint">
+        GitHub, GitLab.com, Bitbucket and Gitea / Forgejo / Codeberg sign in through your browser.
+        Azure DevOps, your own GitLab and other servers take a token. The account is kept on this
+        Mac only.
+      </span>
+    </div>
   )
 }
 
@@ -216,7 +343,7 @@ function GitAccountRow({
     <div className={'acct-row' + (confirming ? ' confirming' : '')}>
       <div className="acct-main">
         <span className="acct-name">{a.login}</span>
-        <span className="acct-note">{a.host}</span>
+        <span className="acct-note">{gitHostLabel(a)}</span>
         {a.default && (
           <span className="acct-badge fable" title={DEFAULT_TITLE}>
             DEFAULT
@@ -267,23 +394,25 @@ function GitAccountRow({
 }
 
 function GitLoginBox({
-  again,
-  progress,
+  mode,
   onRetry,
   onToken,
   onClose
 }: {
-  again?: string
-  progress: GitLoginProgress
+  mode: AddMode & { step: 'login' }
   onRetry(): void
   onToken(): void
   onClose(): void
 }): JSX.Element {
-  const useToken = (
+  const { progress, again, platform } = mode
+  const name = gitPlatformName(platform)
+  const viaGh = gitSignIn(platform, mode.url) === 'gh'
+  const tokenWorks = platform !== 'bitbucket'
+  const useToken = tokenWorks && (
     <div>
       <button
         className="ob-link"
-        title="Paste a token for GitHub instead of signing in"
+        title={`Paste a token for ${name} instead of signing in`}
         onClick={onToken}
       >
         Use a token instead
@@ -293,7 +422,7 @@ function GitLoginBox({
   return (
     <div className="acct-add">
       <div className="acct-add-title">
-        {again ? `Sign in again ${again}` : 'Add GitHub account'}
+        {again ? `Sign in again ${again}` : `Add ${name} account`}
       </div>
       {progress.phase === 'failed' ? (
         <div className="acct-login-state bad">
@@ -310,7 +439,7 @@ function GitLoginBox({
         <div className="acct-login-state">
           {progress.phase === 'code' && (
             <>
-              <div>GitHub opened in your browser. Enter this code there:</div>
+              <div>{name} opened in your browser. Enter this code there:</div>
               <div className="acct-foot">
                 <span className="acct-name">{progress.code}</span>
                 <button
@@ -334,14 +463,41 @@ function GitLoginBox({
                 Signing in through GitHub CLI, the same way as <code>gh auth login</code>.
               </span>
               <span className="field-hint">
-                Adding a different GitHub account? Switch to it on github.com first (your picture ▸
-                Switch account), or paste the link into a private window. Your other account stays
-                signed in.
+                Adding a different {name} account? Switch to it on {gitHostOf(mode.url)} first (your
+                picture ▸ Switch account), or paste the link into a private window. Your other
+                account stays signed in.
+              </span>
+            </>
+          )}
+          {progress.phase === 'browser' && (
+            <>
+              <div>Finish signing in in your browser.</div>
+              <div className="acct-foot">
+                <button
+                  className="mini"
+                  disabled={!progress.url}
+                  onClick={() => window.api.gitAccounts.loginBrowser()}
+                >
+                  <LuExternalLink size={14} /> Open page again
+                </button>
+                <button
+                  className="mini"
+                  disabled={!progress.url}
+                  onClick={() =>
+                    progress.url && navigator.clipboard?.writeText(progress.url).catch(() => {})
+                  }
+                >
+                  <LuCopy size={14} /> Copy link
+                </button>
+              </div>
+              <span className="field-hint">
+                Adding a second account on the same site? Sign out of the first one on that site’s
+                page in your browser, or copy this link into a private window.
               </span>
             </>
           )}
           <div>
-            <LuLoaderCircle size={14} /> Waiting for GitHub…
+            <LuLoaderCircle size={14} /> Waiting for {name}…
           </div>
           {useToken}
         </div>
@@ -352,55 +508,98 @@ function GitLoginBox({
         </button>
       </div>
       <span className="field-hint">
-        Koloft runs the bundled GitHub CLI sign-in for you — no terminal tab. When you approve, the
-        account shows up above. Kept on this Mac only.
+        {viaGh
+          ? 'Koloft runs the bundled GitHub CLI sign-in for you — no terminal tab. When you approve, the account shows up above. Kept on this Mac only.'
+          : `${name} sends you back to Koloft when you are done — no copy-paste. Kept on this Mac only.`}
       </span>
     </div>
   )
 }
 
-function GitTokenBox({ why, onClose }: { why?: string; onClose(): void }): JSX.Element {
+function GitTokenBox({
+  platform,
+  url,
+  why,
+  onClose
+}: {
+  platform: GitPlatform
+  url: string
+  why?: string
+  onClose(): void
+}): JSX.Element {
   const [secret, setSecret] = useState('')
+  const [username, setUsername] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const host = gitHostOf(url)
+  const name = gitPlatformName(platform)
+  const title = platform === 'github' ? `Add ${name} account` : `Add account · ${host} (${name})`
+  const needsUser = platform === 'other'
+  const create = createTokenUrl(platform, url)
+  const scopes = TOKEN_SCOPES[platform]
 
   const save = async (): Promise<void> => {
     setBusy(true)
     setError(null)
-    const r = await window.api.gitAccounts.addToken(secret.trim())
+    const r = await window.api.gitAccounts.addToken({
+      platform,
+      url,
+      token: secret.trim(),
+      ...(needsUser && { username: username.trim() })
+    })
     setBusy(false)
     // ADR-0002
     setSecret('')
     if (r.ok) onClose()
-    else setError(tokenError(r))
+    else setError(tokenError(r, platform))
   }
 
   return (
     <div className="acct-add">
-      <div className="acct-add-title">Add GitHub account</div>
+      <div className="acct-add-title">{title}</div>
       {why && <span className="field-hint">{why}</span>}
+      {needsUser && (
+        <input
+          type="text"
+          placeholder="Your username on that server"
+          spellCheck={false}
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          autoFocus
+        />
+      )}
       <input
         type="password"
-        placeholder="Paste a token (ghp_…)"
+        placeholder={TOKEN_PLACEHOLDER[platform] ?? 'Paste a token'}
         value={secret}
         onChange={(e) => setSecret(e.target.value)}
-        autoFocus
+        autoFocus={!needsUser}
       />
       {error && <div className="acct-add-err">{error}</div>}
       <div className="acct-add-actions">
         <button className="mini" onClick={onClose} disabled={busy}>
           Cancel
         </button>
-        <button className="mini" onClick={() => void save()} disabled={busy || !secret.trim()}>
+        <button
+          className="mini"
+          onClick={() => void save()}
+          disabled={busy || !secret.trim() || (needsUser && !username.trim())}
+        >
           {busy ? 'Checking…' : 'Save'}
         </button>
       </div>
       <span className="field-hint">
-        <button className="ob-link" onClick={() => window.api.preview.osOpen(CREATE_TOKEN_URL)}>
-          Create a token
-        </button>{' '}
-        opens github.com — tick <code>{GITHUB_SCOPES}</code>, then paste it here. Koloft checks it,
-        reads your username from it, and keeps it on this Mac only.
+        {create ? (
+          <>
+            <button className="ob-link" onClick={() => window.api.preview.osOpen(create)}>
+              Create a token
+            </button>{' '}
+            opens {host} — tick <code>{scopes}</code>, then paste it here. Koloft checks it, reads
+            your username from it, and keeps it on this Mac only.
+          </>
+        ) : (
+          'Make a token on that server that can push, then paste it here with your username there. Koloft keeps it on this Mac only.'
+        )}
       </span>
     </div>
   )

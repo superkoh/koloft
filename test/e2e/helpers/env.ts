@@ -364,7 +364,7 @@ export function installFakeGh(
     path.join(env.fakeBin, 'gh'),
     `#!/bin/sh\n` +
       `printf '%s\\n' "$*" >> ${JSON.stringify(path.join(env.home, 'fake-gh-calls.txt'))}\n` +
-      `printf 'GH_TOKEN=%s GH_HOST=%s\\n' "$GH_TOKEN" "$GH_HOST" >> ${JSON.stringify(fakeGhEnvFile(env))}\n` +
+      `printf 'GH_TOKEN=%s GH_ENTERPRISE_TOKEN=%s GH_HOST=%s\\n' "$GH_TOKEN" "$GH_ENTERPRISE_TOKEN" "$GH_HOST" >> ${JSON.stringify(fakeGhEnvFile(env))}\n` +
       (answer.exitCode
         ? `echo "To get started with GitHub CLI, please run:  gh auth login" >&2; exit ${answer.exitCode}\n`
         : '') +

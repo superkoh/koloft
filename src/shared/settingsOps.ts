@@ -3,11 +3,10 @@ import {
   HINT_IDS,
   WORLD_CLOCK_MAX,
   sanitizeAccountList,
-  sanitizeGitAccounts,
-  sanitizeGitPicks,
   type AssistSetting,
   type Settings
 } from './types'
+import { sanitizeGitAccounts, sanitizeGitPicks } from './gitAccountOps'
 import { normalizeSessionMethods } from './sessionBackend'
 import { sanitizeAssistSessions, sanitizeDiscord } from './conductors'
 
