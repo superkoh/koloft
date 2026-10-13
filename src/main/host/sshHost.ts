@@ -72,7 +72,7 @@ export interface MachineClaudeDeps {
   realPath(p: string): string
   settings(): { skipPermissions: boolean }
   agentTools(): boolean
-  pickAccount(launchKey: string): Promise<MachineAccount | undefined>
+  pickAccount(launchKey: string, resumeSessionId?: string): Promise<MachineAccount | undefined>
   hookSettings(tabId: string, machineDir: string, allowKoloft: boolean): Record<string, unknown>
 }
 
@@ -689,7 +689,7 @@ export class SshHost implements Host {
     const machineDir = remoteMachineDir(pkg.name)
     await this.kills.get(tmuxName)
     const pickKey = mode === 'start' ? `launch-${sid}` : undefined
-    const account = pickKey ? await d.pickAccount(pickKey) : undefined
+    const account = pickKey ? await d.pickAccount(pickKey, spec.resumeSessionId) : undefined
     // ADR-0030
     if (pickKey && !account) throw new Error(NO_USABLE_ACCOUNT.claude)
     return {

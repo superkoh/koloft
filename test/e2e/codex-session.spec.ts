@@ -15,6 +15,7 @@ import {
 import {
   installCodex,
   installFakeGh,
+  seededAccount,
   seedSettings,
   setGithubFixture,
   type E2EEnv
@@ -398,6 +399,54 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect.poll(() => codexCalls(env).length).toBe(1)
       await expect(dlg).toHaveCount(0)
       expect(readCalls(env)).toHaveLength(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a restarted or resumed Codex session stays on the account it ran on until that account is past 95% used, even when another is lighter', async ({
+    env
+  }) => {
+    installCodex(env)
+    const homeOf = (name: string) => path.join(env.userData, 'codex-homes', name)
+    const setUsed = (name: string, usedPercent: number) => {
+      fs.mkdirSync(homeOf(name), { recursive: true })
+      fs.writeFileSync(path.join(homeOf(name), 'auth.json'), JSON.stringify({ usedPercent }))
+    }
+    const accounts = settingsOnDisk(env).accounts as Record<string, unknown>[]
+    seedSettings(env, { accounts: [...accounts, seededAccount('other', 'codex-home')] })
+    setUsed('e2e-codex', 10)
+    setUsed('other', 50)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await page.evaluate(() => window.api.accounts.probe())
+      await startCodex(page, env)
+      const first = codexCalls(env)[0]
+      expect(first.codexHome).toBe(homeOf('e2e-codex'))
+
+      setUsed('e2e-codex', 95)
+      setUsed('other', 5)
+      await page.evaluate(() => window.api.accounts.probe())
+      await clickAppMenuItem(app, page, 'restart-session')
+      await expect.poll(() => codexCalls(env).length).toBe(2)
+      await expect(codexRows(page)).toHaveClass(/st-waiting|st-idle/)
+      expect(codexCalls(env)[1]).toMatchObject({
+        sessionId: first.sessionId,
+        codexHome: homeOf('e2e-codex')
+      })
+
+      setUsed('e2e-codex', 96)
+      await page.evaluate(() => window.api.accounts.probe())
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(codexRows(page)).toHaveClass(/cold/)
+      await codexRows(page).click()
+      await expect.poll(() => codexCalls(env).length).toBe(3)
+      expect(codexCalls(env)[2]).toMatchObject({
+        sessionId: first.sessionId,
+        codexHome: homeOf('other')
+      })
     } finally {
       await quitAndClose(app)
     }

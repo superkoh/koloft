@@ -35,6 +35,7 @@ import {
   type OpenTab,
   type OpenTabs
 } from './openTabs'
+import { SessionAccounts } from './sessionAccounts'
 import { SessionBackends } from './sessionBackends'
 import {
   BACKEND_LABEL,
@@ -564,6 +565,7 @@ const wokenAs = new Map<string, string>()
 let sleeperSeq = 0
 let openTabsRestoreStarted = false
 let openTabsFile: OpenTabsFile | undefined
+let sessionAccounts: SessionAccounts | undefined
 let savedOpenTabs: OpenTabs = { tabs: [] }
 let openTabsRestored = false
 const RESUMED_TAB_READY_MS = 30_000
@@ -603,6 +605,7 @@ function onSessionsChanged(): SessionInfo[] {
   const all = allSessions()
   settleWokenSleepers(all)
   rememberOpenTabs(all)
+  sessionAccounts?.note(all)
   syncRelayBindings(all)
   return all
 }
@@ -1232,13 +1235,16 @@ const agentRequests = new AgentRequests({
   alive: pidAlive
 })
 
-async function pickForLaunch(tabId?: string): Promise<{
+async function pickForLaunch(
+  tabId?: string,
+  resumeSessionId?: string
+): Promise<{
   res: PickResponse
   endpoint?: { baseUrl?: string; model?: string }
 }> {
   let res: PickResponse
   try {
-    res = await picker.pick(tabId)
+    res = await picker.pick(tabId, sessionAccounts?.of('claude', resumeSessionId))
   } catch {
     res = { account: null, reason: 'no-usable' }
   }
@@ -1259,10 +1265,11 @@ async function pickedAccountEnv(): Promise<NodeJS.ProcessEnv | null> {
 
 async function handlePickRequest(pickDir: string, reqName: string, raw: unknown): Promise<void> {
   const obj = raw as { tabId?: string; ts?: number }
-  if (!obj.tabId || !ptyMgr.get(obj.tabId)) return
+  const tab = obj.tabId ? ptyMgr.get(obj.tabId) : undefined
+  if (!obj.tabId || !tab) return
   const id = reqName.slice('req-'.length).replace(/\.json$/, '')
   if (!/^[A-Za-z0-9-]+$/.test(id)) return
-  const { res, endpoint } = await pickForLaunch(obj.tabId)
+  const { res, endpoint } = await pickForLaunch(obj.tabId, tab.resumeSessionId)
   const payload: Record<string, unknown> = { ...res }
   if (res.account && loadSettings().skipPermissions) payload.skipFlag = true
   claudeBackend.picked(obj.tabId, payload.skipFlag === true)
@@ -1481,9 +1488,9 @@ function codexSharedConfig(): string {
 }
 
 // CODEX§15
-function pickCodexHome(): { account: string; home: string } | undefined {
+function pickCodexHome(resumeSessionId?: string): { account: string; home: string } | undefined {
   const views = accountViews()
-  const picked = codexPicker.pick(views)
+  const picked = codexPicker.pick(views, sessionAccounts?.of('codex', resumeSessionId))
   if (!picked) return undefined
   const stale = views.some(
     (a) =>
@@ -1969,6 +1976,7 @@ app.whenReady().then(() => {
   const openTabsPath = path.join(userData, 'open-tabs.json')
   savedOpenTabs = readOpenTabs(openTabsPath)
   openTabsFile = new OpenTabsFile(openTabsPath, savedOpenTabs)
+  sessionAccounts = new SessionAccounts(path.join(userData, 'session-accounts.json'))
   try {
     codexSessions = new CodexSessions(path.join(userData, 'sessions.json'), {
       pty: ptyMgr,
@@ -2580,6 +2588,7 @@ app.on('before-quit', (e) => {
   workspaceMgr?.dispose()
   flushLayout()
   openTabsFile?.flushSync()
+  sessionAccounts?.flushSync()
   flushAttention()
   freshness?.stop()
   remoteSync?.stop()
@@ -3815,7 +3824,8 @@ const hosts = new Hosts(
         alive: () => remoteSync?.alive(machine) ?? new Set(),
         realPath: (p) => workspaceMgr?.realRemotePath({ host: machine, path: p }) ?? p,
         settings: loadSettings,
-        pickAccount: (launchKey) => pickMachineAccount(() => pickForLaunch(launchKey)),
+        pickAccount: (launchKey, resumeSessionId) =>
+          pickMachineAccount(() => pickForLaunch(launchKey, resumeSessionId)),
         agentTools: () => agentToolsFor('claude', 'ssh'),
         hookSettings: (tabId, dir, allowKoloft) =>
           machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft)

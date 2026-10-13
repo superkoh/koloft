@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
+import { RESUME_KEEPS_ACCOUNT_UP_TO, usableAccounts } from '@shared/accountUsage'
 import type { AccountView, CodexLimits, CodexLimitWindow } from '@shared/types'
-import { usableAccounts } from '@shared/accountUsage'
 
 const CODEX_HOMES = 'codex-homes'
 
@@ -97,9 +97,11 @@ function heaviest(limits: CodexLimits): number {
 export class CodexAccountPicker {
   private turn = 0
 
-  pick(accounts: AccountView[]): AccountView | undefined {
+  pick(accounts: AccountView[], resumedOn?: string): AccountView | undefined {
     const pool = usableAccounts(accounts, ['codex-home'])
     if (pool.length === 0) return undefined
+    const same = pool.find((a) => a.name === resumedOn)
+    if (same && (!same.limits || heaviest(same.limits) <= RESUME_KEEPS_ACCOUNT_UP_TO)) return same
     const measured = pool.filter((a) => a.limits && heaviest(a.limits) < 1)
     if (measured.length > 0)
       return measured.reduce((best, a) => (heaviest(a.limits!) < heaviest(best.limits!) ? a : best))

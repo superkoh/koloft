@@ -353,6 +353,16 @@ describe('accounts for remote launches started together', () => {
     expect(handed.sort()).toEqual(['a', 'b'])
   })
 
+  it('a remote session resumed after its tmux ended is picked with its own id, so it can stay on the account it ran on', async () => {
+    const ended = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+    const pickAccount = vi.fn(async () => ({ env: {}, banner: '' }))
+    await machine(runOnMachine, { pickAccount }).launch({
+      root: keyed('/w'),
+      resumeSessionId: ended
+    })
+    expect(pickAccount).toHaveBeenCalledWith(`launch-${ended}`, ended)
+  })
+
   // ADR-0030
   it("refuses a remote launch with no usable account instead of using the machine's own login, but re-attaching a live session needs none", async () => {
     const pickAccount = vi.fn(async () => undefined)
