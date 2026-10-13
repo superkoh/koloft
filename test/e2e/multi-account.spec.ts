@@ -4,7 +4,7 @@ import http from 'http'
 import type { AddressInfo } from 'net'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import type { AccountView } from '../../src/shared/types'
-import { test, expect, launchApp } from './helpers/app'
+import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   seededAccount as acct,
   seedNoClaudeAccountButStillSetUp,
@@ -752,7 +752,57 @@ test('E8: a token exported by the user’s shell rc never stands in for a Koloft
   }
 })
 
-test('E9: a restarted (resumed) session re-balances to the now-lighter account — every launch picks afresh, and a manual refresh changes the next pick', async ({
+async function restartSessionFromMenu(app: ElectronApplication): Promise<void> {
+  await app.evaluate(({ Menu }) => {
+    const item = Menu.getApplicationMenu()?.getMenuItemById('restart-session')
+    if (!item) throw new Error('no application-menu item with id "restart-session"')
+    item.click()
+  })
+}
+
+for (const restart of ['Restart Session', 'quitting and reopening Koloft'] as const) {
+  test(`E9a: a session resumed by ${restart} stays on the account it ran on while that account is at most 95% used, even when another is now lighter`, async ({
+    env
+  }) => {
+    test.setTimeout(150_000)
+    const mock = await startProbeMock()
+    mock.script.set(TOKENS.alpha, { u5: 0.9 })
+    mock.script.set(TOKENS.bravo, { u5: 0.1 })
+    mock.script.set(TOKENS['charlie'], { u5: 0.95 })
+    env.launchEnv.KOLOFT_PROBE_BASE_URL = mock.base
+    seedPool(env)
+    let { app, page } = await launchConfigured(env)
+    try {
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a')
+      const [first] = await waitForCalls(env, 1)
+      expect(first.oauthToken).toBe(TOKENS.bravo)
+      await expect(
+        page.locator('.ws-tab-title', { hasText: 'Fake session: project notes' })
+      ).toBeVisible({ timeout: 40_000 })
+
+      mock.script.set(TOKENS.bravo, { u5: 0.5, u7: 0.95 })
+      mock.script.set(TOKENS.alpha, { u5: 0.05 })
+      mock.script.set(TOKENS['charlie'], { u5: 0.05 })
+      await page.evaluate(() => window.api.accounts.probe())
+
+      if (restart === 'Restart Session') await restartSessionFromMenu(app)
+      else {
+        await quitAndClose(app)
+        ;({ app, page } = await launchConfigured(env))
+      }
+      const calls = await waitForCalls(env, 2, 45_000)
+      expect(calls[1].argv).toContain('--resume')
+      expect(calls[1].argv).toContain(first.sessionId)
+      expect(calls[1].oauthToken).toBe(TOKENS.bravo)
+    } finally {
+      await app.close().catch(() => {})
+      await mock.close()
+    }
+  })
+}
+
+test('E9: a restarted (resumed) session leaves its account once that account is past 95% used, for the now-lighter one — and a manual refresh changes the next pick', async ({
   env
 }) => {
   test.setTimeout(150_000)
@@ -776,11 +826,7 @@ test('E9: a restarted (resumed) session re-balances to the now-lighter account �
     mock.script.set(TOKENS.alpha, { u5: 0.05 })
     await page.evaluate(() => window.api.accounts.probe())
 
-    await app.evaluate(({ Menu }) => {
-      const item = Menu.getApplicationMenu()?.getMenuItemById('restart-session')
-      if (!item) throw new Error('no application-menu item with id "restart-session"')
-      item.click()
-    })
+    await restartSessionFromMenu(app)
     const calls = await waitForCalls(env, 2, 45_000)
     expect(calls[1].argv).toContain('--resume')
     expect(calls[1].oauthToken).toBe(TOKENS.alpha)

@@ -1,5 +1,5 @@
 import type { AccountKind, AccountMeta, SessionInfo, UsageSnapshot } from '@shared/types'
-import { fableExhausted, STALE_MS } from '@shared/accountUsage'
+import { fableExhausted, keepsResumedSession, STALE_MS } from '@shared/accountUsage'
 import { ageLabel } from '@shared/freshnessOps'
 import {
   EPS,
@@ -164,7 +164,7 @@ export class AccountPicker {
     return a
   }
 
-  async pick(tabId?: string): Promise<PickResponse> {
+  async pick(tabId?: string, resumedOn?: string): Promise<PickResponse> {
     const subs = this.eligible('oauth')
     const apis = this.eligible('apikey', 'custom')
     if (subs.length === 0 && apis.length === 0) return { account: null, reason: 'no-accounts' }
@@ -178,9 +178,24 @@ export class AccountPicker {
       }
     }
 
-    const res = this.decide(subs, apis, tabId)
+    const res = this.keepResumed(subs, resumedOn) ?? this.decide(subs, apis, tabId)
     if (tabId && res.account) this.deps.recordPick(tabId, res.account)
     return res
+  }
+
+  private keepResumed(subs: AccountMeta[], resumedOn?: string): PickResponse | undefined {
+    const name = resumedOn?.toLowerCase()
+    const same = name ? subs.find((a) => a.name.toLowerCase() === name) : undefined
+    if (!same) return undefined
+    const snap = this.snapshotFor(same)
+    const nowSec = Math.floor(this.deps.now() / 1000)
+    if (snap && !keepsResumedSession(snap, nowSec)) return undefined
+    return {
+      account: same.name,
+      kind: 'oauth',
+      banner: bannerFor(same.name, snap, false, this.deps.now()),
+      ...(!snap || fableFree(snap, nowSec) ? {} : { warning: FABLE_EXHAUSTED_LINE })
+    }
   }
 
   private decide(subs: AccountMeta[], apis: AccountMeta[], tabId?: string): PickResponse {

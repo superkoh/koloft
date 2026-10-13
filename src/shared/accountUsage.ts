@@ -68,6 +68,14 @@ export function hardLimited(u: UsageSnapshot, nowSec: number): boolean {
   )
 }
 
+export const RESUME_KEEPS_ACCOUNT_UP_TO = 0.95
+
+export function keepsResumedSession(u: UsageSnapshot, nowSec: number): boolean {
+  const roomLeft = (used: number, resetsAt: number): boolean =>
+    (resetsAt > 0 && resetsAt <= nowSec) || used <= RESUME_KEEPS_ACCOUNT_UP_TO
+  return !hardLimited(u, nowSec) && roomLeft(u.u5, u.r5) && roomLeft(u.u7, u.r7)
+}
+
 export type WindowTone = 'ok' | 'soon' | 'due' | 'hard'
 
 // CC§7

@@ -240,7 +240,7 @@ export interface CodexSessionDeps {
   events(tabId: string, event: SessionEvent): void
   error(message: string): void
   trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
-  pickHome(): { account: string; home: string } | undefined
+  pickHome(resumeSessionId?: string): { account: string; home: string } | undefined
   assistOf(cwd: string, resumeKey?: string): { role: string; allow: string[] } | undefined
   conductorGate: { script: string; writeAllow(tabId: string, allow: string[]): string }
   browserEndpoint(tabId: string): string
@@ -885,7 +885,7 @@ export class CodexSessions {
     if (opts.resumeSessionId && this.aliveTabFor(opts.resumeSessionId))
       throw new Error('This Codex session is already open.')
     // CODEX§15 ADR-0030
-    const picked = this.deps.pickHome()
+    const picked = this.deps.pickHome(opts.resumeSessionId)
     if (!picked) throw new Error(NO_USABLE_ACCOUNT.codex)
     const home = picked.home
     if (opts.worktreeResourceId) {
