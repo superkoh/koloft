@@ -6,7 +6,7 @@
     <title>Several accounts, one pool — Koloft</title>
     <meta
       name="description"
-      content="Add several Claude and Codex accounts to Koloft, and each new session starts on the account with the most room left."
+      content="Add several Claude and Codex accounts to Koloft, and each new session starts on the account with the most room left. Add git accounts, and each repository pushes as its own."
     />
     <meta name="theme-color" content="#f6f1e6" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#1c1a17" media="(prefers-color-scheme: dark)" />
@@ -19,7 +19,7 @@
     <meta property="og:title" content="Several accounts, one pool — Koloft" />
     <meta
       property="og:description"
-      content="Add several Claude and Codex accounts to Koloft, and each new session starts on the account with the most room left."
+      content="Add several Claude and Codex accounts to Koloft, and each new session starts on the account with the most room left. Add git accounts, and each repository pushes as its own."
     />
     <meta property="og:url" content="__SITE_URL__/accounts/" />
     <meta property="og:image" content="__SITE_URL__/og.png" />
@@ -33,7 +33,7 @@
     <meta name="twitter:title" content="Several accounts, one pool — Koloft" />
     <meta
       name="twitter:description"
-      content="Add several Claude and Codex accounts to Koloft, and each new session starts on the account with the most room left."
+      content="Add several Claude and Codex accounts to Koloft, and each new session starts on the account with the most room left. Add git accounts, and each repository pushes as its own."
     />
     <meta name="twitter:image" content="__SITE_URL__/og.png" />
     <link
@@ -75,10 +75,10 @@
           new session starts on <mark class="hl">the one with the most room</mark> left.
         </p>
         <p>
-          Every session in Koloft runs on an account you add here, never on the login this Mac
-          already has. So the first time Koloft opens, it asks you to sign in to Claude or Codex
-          (the welcome step "Sign in, and pick your <a href="#assist">Assist</a>"). A Koloft you
-          updated asks too, if no account was added yet.
+          Every session in Koloft runs on a Claude or Codex account you add here, never on the login
+          this Mac already has. So the first time Koloft opens, it asks you to sign in to Claude or
+          Codex (the welcome step "Sign in, and pick your <a href="#assist">Assist</a>"). A Koloft
+          you updated asks too, if no account was added yet.
         </p>
 
         <figure class="shot" style="--ar: 1322 / 870; --ar-phone: 765 / 1080">
@@ -151,6 +151,12 @@
             onto one (Codex sessions do not spread this way)
           </li>
           <li>if no account can be read, Koloft picks the next one in order</li>
+          <li>
+            a session that starts again (you click its row, restart it, or quit and reopen Koloft)
+            stays on the account it ran on, Claude and Codex alike. It moves to another account only
+            when one of that account's limits (5 hours, 7 days) is past 95%, or that account is
+            being told to wait (rate-limited). An API key or custom endpoint is not kept this way.
+          </li>
         </ul>
 
         <h3>Good to know</h3>
@@ -184,9 +190,10 @@
         <h2>Codex</h2>
         <p>
           Sign in to Codex runs <code>codex login</code> in a terminal tab. Each sign-in becomes its
-          own Codex home, a folder that holds that one login. New Codex sessions start on the
-          least-used one. Each account's use, for each limit Codex reports (such as 5 hours and a
-          week), shows in Settings.
+          own Codex home, a folder that holds that one login. The sign-in tab says
+          <code>Codex sign in: &lt;name&gt;</code> above the terminal, with a Cancel button. New
+          Codex sessions start on the least-used one. Each account's use, for each limit Codex
+          reports (such as 5 hours and a week), shows in Settings.
         </p>
 
         <h2 id="assist">Assist</h2>
@@ -236,6 +243,84 @@
             with Assist off, the small jobs run without AI: a session an agent starts is named after
             the first line of its task, the card lists every doc the agent wrote, and
             <kbd>⌘P</kbd> opens the folder picker. An Assist on Discord keeps working either way.
+          </li>
+        </ul>
+
+        <h2 id="git-accounts">Git accounts</h2>
+        <p>
+          A session that pushes needs a git login too. Settings ▸ Accounts ▸ Git accounts lets you
+          add accounts for GitHub, GitHub Enterprise, GitLab, Bitbucket, Azure DevOps, Gitea /
+          Forgejo / Codeberg, or any other git server, and
+          <mark class="hl">pick one per repository</mark>. Every Claude Code and Codex session in a
+          folder with a pick pushes and fetches as that account; on GitHub and GitHub Enterprise,
+          <code>gh</code> (GitHub's command-line tool) runs as it too. Koloft never touches your own
+          git and gh setup: a folder with no pick, and every session in it, keeps using it.
+        </p>
+        <h3>Adding one</h3>
+        <p>Click Add account and pick the host:</p>
+        <ul class="dash">
+          <li>
+            GitHub and GitHub Enterprise: Koloft shows a one-time code and opens the server's
+            sign-in page in your own browser (so Google, Apple or company sign-in work as they do
+            there). Type the code, approve, and the account shows up. Koloft runs the sign-in of the
+            <code>gh</code> that comes with Koloft; there is no terminal tab. Or paste a token.
+          </li>
+          <li>
+            GitLab.com, Bitbucket, Gitea / Forgejo / Codeberg: sign in on the site in your browser;
+            it sends you back to Koloft when you are done
+          </li>
+          <li>
+            your own GitLab, Azure DevOps, and a GitHub Enterprise whose address has a port number:
+            paste a token. <code>Create a token</code> opens that server's token page and names the
+            boxes to tick. Koloft checks the token and reads your username from it; on GitLab and
+            GitHub Enterprise, a token that lacks a permission is turned down, and the message names
+            the missing one
+          </li>
+          <li>Other server: its address, your username there and a token, kept without checking</li>
+        </ul>
+        <p>
+          Each account is kept on this Mac only, in the Keychain like your other tokens. Its row
+          says how many folders use it; their names show when you click Remove.
+          <code>Make default</code> makes it the first choice when a folder on that host picks one;
+          <code>Remove</code> takes it off this Mac, and its folders go back to your own setup. When
+          the server turns its token down, the row says <code>NEEDS SIGN-IN AGAIN</code>.
+        </p>
+        <h3>Picking one per folder</h3>
+        <p>
+          Hover a folder's branch sign: its <a href="../sessions/#git-panel">git panel</a> has an
+          <code>Account</code> part. Pick an account there, change it, or go back to your own setup.
+        </p>
+        <ul class="dash">
+          <li>
+            under it, the panel says what name and email your commits get. On GitHub.com, GitLab,
+            Gitea and Bitbucket that is the account's own name and the email its server reports (a
+            no-reply address on GitHub.com and Gitea); on GitHub Enterprise, Azure DevOps and other
+            servers commits keep your own name and email
+          </li>
+          <li>
+            when you add a folder, Koloft picks an account for it by itself in two cases: the
+            folder's address or git setup names an account Koloft has, and that account can push
+            there; or only one of your accounts (or your default) can push there
+          </li>
+          <li>
+            a folder already in the list only gets a suggestion, such as
+            <code>The repository address names bob — use bob?</code> with a Use bob button, or
+            <code>This repository was used with alice, who is not in Koloft yet. Add alice?</code>
+            with an Add alice button. Click Not now and it does not ask again
+          </li>
+          <li>
+            <code>gh auth login</code> in a session in a picked GitHub folder says to manage the
+            account in Koloft instead
+          </li>
+          <li>
+            a Codex session's sandbox (the box Codex works in) may reach the network in a picked
+            folder, so it can push there. In another folder a session you start stays offline unless
+            Settings ▸ Extensions ▸ "Let agents drive this Browser" is on (see
+            <a href="../agents/">agents</a>)
+          </li>
+          <li>
+            a <a href="../remote/">remote folder</a> has no Account part: its sessions use that
+            machine's own git setup
           </li>
         </ul>
 
