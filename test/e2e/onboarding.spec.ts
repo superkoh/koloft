@@ -114,7 +114,7 @@ test.describe("first-run help: the welcome steps, Settings ▸ Welcome, and What
       await expect(welcome(page).locator('.big')).toHaveText(
         'Koloft runs Claude Code — and Codex, if you have it.'
       )
-      await expect(welcome(page).locator('.ob-skip')).toHaveText('Skip')
+      await expect(welcome(page).locator('.ob-skip')).toHaveText('Skip the tour')
       await expect(welcome(page).locator('.ob-back')).toHaveCount(0)
       await expect(page.locator('.tb-ico[aria-label="Add workspace"]')).toHaveClass(/\bon\b/)
       await expect(page.locator('.hint')).toHaveCount(0)

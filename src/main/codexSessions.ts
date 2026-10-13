@@ -897,8 +897,9 @@ export class CodexSessions {
     } else if (opts.worktree) {
       resource = await this.worktrees.create(workspace, opts.worktree)
       cwd = resource.worktreePath
-      // ADR-0026
-      if (!opts.scheduled) this.deps.trustFolder(workspace, processEnv)
+      // ADR-0026 CODEX§11
+      if (!opts.scheduled)
+        for (const dir of [workspace, cwd]) this.deps.trustFolder(dir, processEnv)
     } else if (!resource && this.deps.projectInfo(cwd).worktreeName) {
       resource = await this.worktrees.adopt(workspace, this.deps.projectInfo(cwd).treeRoot)
     }
