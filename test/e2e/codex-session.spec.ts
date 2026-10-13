@@ -404,7 +404,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('a restarted Codex session stays on the account it ran on until that account is past 95% used, even when another is lighter', async ({
+  test('a restarted or resumed Codex session stays on the account it ran on until that account is past 95% used, even when another is lighter', async ({
     env
   }) => {
     installCodex(env)
@@ -439,7 +439,9 @@ test.describe('Codex sessions through the real method chooser, process transport
 
       setUsed('e2e-codex', 96)
       await page.evaluate(() => window.api.accounts.probe())
-      await clickAppMenuItem(app, page, 'restart-session')
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(codexRows(page)).toHaveClass(/cold/)
+      await codexRows(page).click()
       await expect.poll(() => codexCalls(env).length).toBe(3)
       expect(codexCalls(env)[2]).toMatchObject({
         sessionId: first.sessionId,
