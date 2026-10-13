@@ -509,6 +509,41 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
+  // CODEX§15
+  test('two Codex accounts get a Codex pool like the Claude one: a leading total bar in the capsule and a Pool row that averages them and counts the walled one', async ({
+    env
+  }) => {
+    installCodex(env)
+    seedSettings(env, {
+      accounts: [seededAccount('e2e-codex', 'codex-home'), seededAccount('other', 'codex-home')]
+    })
+    for (const [name, usedPercent] of [
+      ['e2e-codex', 100],
+      ['other', 40]
+    ] as const) {
+      const home = path.join(env.userData, 'codex-homes', name)
+      fs.mkdirSync(home, { recursive: true })
+      fs.writeFileSync(path.join(home, 'auth.json'), JSON.stringify({ usedPercent }))
+    }
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await page.evaluate(() => window.api.accounts.probe())
+      const capsule = page.locator('.tbu')
+      await expect(capsule.locator('.tbu-bar.total')).toHaveCount(1)
+      await expect(capsule.locator('.tbu-bar:not(.total)')).toHaveCount(2)
+
+      await capsule.click()
+      const pool = page.locator('.tbu-pop .tbu-row.pool')
+      await expect(pool.locator('.tbu-pool-meta')).toHaveText('2 measured · 1 usable')
+      await expect(pool.locator('.acct-meter[data-win="7d"] .m-pct')).toHaveText('70%')
+      await expect(pool.locator('.tbu-cell-sub.alarm')).toHaveText('1 walled')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('Codex and Claude coexist; Codex has its own Workbench, and closes, resumes and restarts with it', async ({
     env
   }) => {

@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 import type { AccountView, CodexLimits, UsageSnapshot } from '../../src/shared/types'
 import {
   codexGlyph,
+  codexPoolGlyph,
+  codexPoolSnapshot,
   codexResetOffered,
   hardLimited,
   meterLevel,
@@ -720,6 +722,55 @@ describe('poolSnapshot — an equal-weight mean over the live rows that have a r
       view({ name: 'dead', status: 'expired', usage: snap({ at: NOW_MS - 900_000 }) })
     ]
     expect(poolSnapshot(rows, NOW_MS).oldestAt).toBe(NOW_MS - 5_000)
+  })
+})
+
+// CODEX§15
+describe('codexPoolSnapshot — the Codex pool reads like the Claude one', () => {
+  const codex = (name: string, limits?: Partial<CodexLimits>, p: Partial<AccountView> = {}) =>
+    view({
+      name,
+      kind: 'codex-home',
+      ...(limits && { limits: { windows: [], at: NOW_MS, ...limits } }),
+      ...p
+    })
+  const win = (minutes: number, used: number, resetsAt = 0) => ({ minutes, used, resetsAt })
+
+  it('averages each window over the measured accounts that have it, counts a walled one as full, and leaves out the signed-out and the unread', () => {
+    const p = codexPoolSnapshot(
+      [
+        codex('a', { windows: [win(10080, 0.2), win(300, 0.6)] }),
+        codex('b', { windows: [win(10080, 1.4, NOW_SEC + 900)] }),
+        codex('c', { windows: [win(10080, 0.3)], reached: true }),
+        codex('cold'),
+        codex('out', { windows: [win(10080, 0.9)] }, { status: 'expired' })
+      ],
+      NOW_MS
+    )
+    expect(p).toMatchObject({
+      measured: 3,
+      usable: 2,
+      walled: 2,
+      earliestBack: NOW_SEC + 900,
+      windows: [
+        { minutes: 300, mean: 0.6 },
+        { minutes: 10080, mean: 0.5 }
+      ]
+    })
+    expect(p.tension).toBeCloseTo((0.6 + 1 + 1) / 3)
+  })
+
+  it('draws a pool bar only from two measured accounts on, and walls it only when every one is walled', () => {
+    expect(codexPoolGlyph([codex('a', { windows: [win(10080, 0.2)] }), codex('b')], NOW_MS)).toBe(
+      null
+    )
+    const two = [
+      codex('a', { windows: [win(10080, 0.2)] }),
+      codex('b', { windows: [win(10080, 1)] })
+    ]
+    expect(codexPoolGlyph(two, NOW_MS)).toMatchObject({ kind: 'bar', frac: 0.6 })
+    const allOut = [codex('a', { reached: true }), codex('b', { windows: [win(10080, 1)] })]
+    expect(codexPoolGlyph(allOut, NOW_MS)?.kind).toBe('walled')
   })
 })
 

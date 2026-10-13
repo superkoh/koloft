@@ -294,6 +294,67 @@ export function poolSnapshot(members: AccountView[], nowMs: number): PoolSnapsho
   }
 }
 
+export interface CodexPoolSnapshot {
+  measured: number
+  usable: number
+  walled: number
+  tension: number
+  windows: { minutes: number; mean: number }[]
+  earliestBack: number | null
+  oldestAt: number | null
+}
+
+// CODEX§15
+export function codexPoolSnapshot(members: AccountView[], nowMs: number): CodexPoolSnapshot {
+  const nowSec = Math.floor(nowMs / 1000)
+  const live = usableAccounts(members, ['codex-home'])
+  const M = live.filter((a) => a.limits !== undefined)
+  const limitsOf = (a: AccountView): CodexLimits => a.limits as CodexLimits
+  const walledRows = M.filter((a) => codexWalled(limitsOf(a)))
+  const mean = (xs: number[]): number => xs.reduce((s, x) => s + x, 0) / xs.length
+  const minutes = [...new Set(M.flatMap((a) => limitsOf(a).windows.map((w) => w.minutes)))].sort(
+    (x, y) => x - y
+  )
+  let earliestBack: number | null = null
+  for (const a of walledRows)
+    for (const w of limitsOf(a).windows)
+      if (
+        w.used >= 1 &&
+        w.resetsAt > nowSec &&
+        (earliestBack === null || w.resetsAt < earliestBack)
+      )
+        earliestBack = w.resetsAt
+  return {
+    measured: M.length,
+    usable: live.length - walledRows.length,
+    walled: walledRows.length,
+    tension: M.length
+      ? mean(M.map((a) => (codexWalled(limitsOf(a)) ? 1 : Math.min(codexHeaviest(limitsOf(a)), 1))))
+      : 0,
+    windows: minutes.map((m) => ({
+      minutes: m,
+      mean: mean(
+        M.flatMap((a) =>
+          limitsOf(a)
+            .windows.filter((w) => w.minutes === m)
+            .map((w) => Math.min(w.used, 1))
+        )
+      )
+    })),
+    earliestBack,
+    oldestAt: oldestAt(M)
+  }
+}
+
+export function codexPoolGlyph(members: AccountView[], nowMs: number): CapsuleGlyph | null {
+  const p = codexPoolSnapshot(members, nowMs)
+  if (p.measured < 2) return null
+  const stale = p.oldestAt !== null && nowMs - p.oldestAt > STALE_MS
+  if (p.walled === p.measured) return { kind: 'walled', stale }
+  const frac = Math.min(p.tension, CAP)
+  return { kind: 'bar', frac, level: meterLevel(p.tension), stale, fable: null }
+}
+
 export function poolGlyph(members: AccountView[], nowMs: number): CapsuleGlyph | null {
   const p = poolSnapshot(members, nowMs)
   if (p.measured < 2) return null

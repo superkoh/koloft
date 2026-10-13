@@ -4,7 +4,8 @@ import {
   useRef,
   useState,
   type JSX,
-  type MouseEvent as ReactMouseEvent
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode
 } from 'react'
 import { createPortal } from 'react-dom'
 import { LuRotateCw, LuSettings } from 'react-icons/lu'
@@ -15,6 +16,8 @@ import {
   capsuleAria,
   capsuleGlyph,
   codexGlyph,
+  codexPoolGlyph,
+  codexPoolSnapshot,
   codexResetOffered,
   codexWalled,
   windowLabel,
@@ -24,7 +27,8 @@ import {
   poolSnapshot,
   popoverX,
   sublineFor,
-  type CapsuleGlyph
+  type CapsuleGlyph,
+  type PoolSnapshot
 } from '@shared/accountUsage'
 import { useStore } from '../store'
 import {
@@ -126,13 +130,10 @@ export function TopbarUsage(): JSX.Element | null {
   const armed = claude && meteredArmed(accounts, Math.floor(now / 1000))
   const total = claude ? poolGlyph(members, now) : null
   const codexGlyphs = codex.map((a) => codexGlyph(a, now))
-  const codexWindows = [
-    ...new Set(
-      codex.flatMap((a) =>
-        a.status === 'ok' ? (a.limits?.windows.map((w) => w.minutes) ?? []) : []
-      )
-    )
-  ].sort((x, y) => x - y)
+  const codexTotal = codexPoolGlyph(codex, now)
+  const codexPool = codexPoolSnapshot(codex, now)
+  const codexWindows = codexPool.windows.map((w) => w.minutes)
+  const claudePool = poolSnapshot(members, now)
   const cols = enabled.some((a) => a.kind === 'oauth' && a.status === 'ok' && a.usage?.hasOi)
     ? 3
     : 2
@@ -196,6 +197,7 @@ export function TopbarUsage(): JSX.Element | null {
         )}
         {codex.length > 0 && (
           <span className="tbu-group">
+            {codexTotal && <CapsuleBar glyph={codexTotal} total />}
             {codex.map((a, i) => (
               <CapsuleBar key={`${a.kind}:${a.name}`} glyph={codexGlyphs[i]} />
             ))}
@@ -216,50 +218,64 @@ export function TopbarUsage(): JSX.Element | null {
               <span>Account usage</span>
               <span className="age">{headAge(oldestAt([...enabled, ...codex]), now)}</span>
             </div>
-            {claude && (
-              <>
-                <div className="tbu-pop-head">
-                  <span>Claude</span>
-                </div>
-                <div className={'tbu-grid tbu-colhead' + (cols === 2 ? ' two' : '')} aria-hidden>
-                  <span>5h</span>
-                  <span>7d</span>
-                  {cols === 3 && <span>fable</span>}
-                </div>
-                {members.length >= 2 && (
-                  <>
-                    <PoolRow
-                      members={members}
-                      now={now}
-                      cols={cols}
-                      probing={probing}
-                      armed={armed}
-                    />
-                    <div className="tbu-sep" />
-                  </>
-                )}
-              </>
-            )}
             <div className="tbu-rows">
-              {claude &&
-                enabled.map((a) => (
-                  <PopRow key={`${a.kind}:${a.name}`} a={a} now={now} cols={cols} />
-                ))}
+              {claude && (
+                <Section
+                  title="Claude"
+                  columns={['5h', '7d', ...(cols === 3 ? ['fable'] : [])]}
+                  pool={
+                    members.length >= 2 && (
+                      <PoolRow
+                        p={claudePool}
+                        cells={[
+                          { win: '5h', v: claudePool.t5 },
+                          { win: '7d', v: claudePool.t7 },
+                          ...(cols === 3
+                            ? [
+                                claudePool.tfable === null
+                                  ? null
+                                  : { win: 'oi', v: claudePool.tfable }
+                              ]
+                            : [])
+                        ]}
+                        two={cols === 2}
+                        now={now}
+                        probing={probing}
+                        fallback={armed && claudePool.usable === 0}
+                      />
+                    )
+                  }
+                >
+                  {enabled.map((a) => (
+                    <PopRow key={`${a.kind}:${a.name}`} a={a} now={now} cols={cols} />
+                  ))}
+                </Section>
+              )}
+              {claude && codex.length > 0 && <div className="tbu-sep" />}
               {codex.length > 0 && (
-                <>
-                  {claude && <div className="tbu-sep" />}
-                  <div className="tbu-pop-head">
-                    <span>Codex</span>
-                  </div>
-                  <div className="tbu-grid tbu-colhead two" aria-hidden>
-                    {codexWindows.map((m) => (
-                      <span key={m}>{windowLabel(m)}</span>
-                    ))}
-                  </div>
+                <Section
+                  title="Codex"
+                  columns={codexWindows.map(windowLabel)}
+                  pool={
+                    codex.length >= 2 && (
+                      <PoolRow
+                        p={codexPool}
+                        cells={codexPool.windows.map((w) => ({
+                          win: windowLabel(w.minutes),
+                          v: w.mean
+                        }))}
+                        two
+                        now={now}
+                        probing={probing}
+                        fallback={false}
+                      />
+                    )
+                  }
+                >
                   {codex.map((a) => (
                     <CodexRow key={a.name} a={a} now={now} windows={codexWindows} />
                   ))}
-                </>
+                </Section>
               )}
             </div>
             <div className="tbu-sep" />
@@ -392,22 +408,24 @@ function GridCell({
   )
 }
 
+type PoolCell = { win: string; v: number } | null
+
 function PoolRow({
-  members,
+  p,
+  cells,
+  two,
   now,
-  cols,
   probing,
-  armed
+  fallback
 }: {
-  members: AccountView[]
+  p: Pick<PoolSnapshot, 'measured' | 'usable' | 'walled' | 'earliestBack' | 'oldestAt'>
+  cells: PoolCell[]
+  two: boolean
   now: number
-  cols: number
   probing: boolean
-  armed: boolean
+  fallback: boolean
 }): JSX.Element {
-  const p = poolSnapshot(members, now)
   const age = p.oldestAt === null ? null : ageLabel(p.oldestAt, now)
-  const fallback = armed && p.usable === 0
   return (
     <div
       className="tbu-row pool"
@@ -428,23 +446,14 @@ function PoolRow({
           age && <span className="tbu-age">{age}</span>
         )}
       </div>
-      <div className={'tbu-grid' + (cols === 2 ? ' two' : '')}>
+      <div className={'tbu-grid' + (two ? ' two' : '')}>
         {p.measured >= 2 ? (
           <>
-            <div className="tbu-cell">
-              <Meter v={p.t5} win="5h" />
-            </div>
-            <div className="tbu-cell">
-              <Meter v={p.t7} win="7d" />
-            </div>
-            {cols === 3 &&
-              (p.tfable !== null ? (
-                <div className="tbu-cell">
-                  <Meter v={p.tfable} win="oi" />
-                </div>
-              ) : (
-                <div className="tbu-cell" />
-              ))}
+            {cells.map((c, i) => (
+              <div key={i} className="tbu-cell">
+                {c && <Meter v={c.v} win={c.win} />}
+              </div>
+            ))}
             {p.walled > 0 && (
               <div className="tbu-cell span">
                 <span className="tbu-cell-sub alarm">
@@ -538,6 +547,38 @@ function PopRow({ a, now, cols }: { a: AccountView; now: number; cols: number })
         <NotProbedNote a={a} />
       )}
     </div>
+  )
+}
+
+function Section({
+  title,
+  columns,
+  pool,
+  children
+}: {
+  title: string
+  columns: string[]
+  pool: JSX.Element | false
+  children: ReactNode
+}): JSX.Element {
+  return (
+    <>
+      <div className="tbu-pop-head">
+        <span>{title}</span>
+      </div>
+      <div className={'tbu-grid tbu-colhead' + (columns.length < 3 ? ' two' : '')} aria-hidden>
+        {columns.map((c) => (
+          <span key={c}>{c}</span>
+        ))}
+      </div>
+      {pool && (
+        <>
+          {pool}
+          <div className="tbu-sep" />
+        </>
+      )}
+      {children}
+    </>
   )
 }
 
