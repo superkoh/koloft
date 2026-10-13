@@ -1706,6 +1706,26 @@ Gateway (the live connection that pushes events):
 - Measured 2026-10-12 in a Docker Linux container (GCM 3.0.1 linux-arm64, no network,
   fake GitLab and Gitea servers on 127.0.0.1, a fake `xdg-open` that follows the URL with
   curl) and, for the last point, on macOS 27.0.
+- **On macOS it opens the browser with `/usr/bin/open` by absolute path** (.NET's
+  shell-execute, dotnet/runtime `Process.OSX.cs` `GetPathToOpenFile`), so an `open` on
+  `PATH` never sees the URL, and a failed start of `/usr/bin/open` ends the sign-in
+  (GCM `OAuthAuthentication.cs:177-192` does not catch it). Run under `sandbox-exec` with
+  `(deny lsopen) (deny appleevent-send)` and the `com.apple.coreservices.*`,
+  `com.apple.lsd.*`, `com.apple.runningboard*` and `com.apple.ae*` mach lookups denied,
+  `open` starts but opens nothing (`open -g -j -a Calculator.app` failed with
+  `kLSNoExecutableErr`, no Calculator process), while GCM keeps waiting on its loopback
+  port and reads and writes the Keychain normally.
+- **Against a real Gitea 1.24.6 and Forgejo 11.0.16** (Docker, `http://127.0.0.1:3000`,
+  a throwaway user), the sign-in `get` used the servers' built-in GCM client with a
+  random loopback port and finished once a headless Chrome signed in and pressed *Grant*;
+  the macOS Keychain then held only `<namespace>:http://refresh_token.127.0.0.1:3000`
+  (account `OAUTH_USER`), no access-token item; a quiet `get` minted a token from it; the
+  erase of the host `refresh_token.<host>` removed it. Through a Koloft dev build the
+  same sign-in, a pull, a push and Koloft's own fetch reached the private repository
+  (`git-upload-pack` and `git-receive-pack` 200 after one 401 challenge each), with the
+  account's login as user name and the OAuth token as password, and removing the account
+  left neither Keychain item. Measured 2026-10-13 on macOS 27.0 with the bundled GCM
+  3.0.1.
 ## §51 Who-am-I, push access and commit address on GitLab, Gitea, Bitbucket and Azure DevOps
 
 From each platform's API docs, read 2026-10-11; inferred, not checked against a real
@@ -1722,7 +1742,9 @@ server unless a line says so.
   `GET /api/v1/version` gives `version` (Forgejo: `<forgejo>+gitea-<gitea>`); `GET
   /api/v1/repos/<owner>/<repo>` gives `permissions.push`; 401 for a bad token. The
   private commit address is `<login>@noreply.<domain>`, and from Gitea 1.26
-  `<id>+<login>@noreply.<domain>`.
+  `<id>+<login>@noreply.<domain>`. Checked 2026-10-13 against a real Gitea 1.24.6 with an
+  OAuth token: `/api/v1/user` named the user and `/api/v1/repos/<o>/<r>` gave
+  `permissions.push`, so a Koloft dev build picked the only account that could push.
 - **Bitbucket Cloud**: `GET https://api.bitbucket.org/2.0/user` gives `username`,
   `display_name`; `GET /2.0/user/emails` lists `email` with `is_primary`; `GET
   /2.0/user/permissions/repositories?q=repository.full_name="<ws>/<repo>"` gives
