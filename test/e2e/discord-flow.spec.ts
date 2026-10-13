@@ -590,7 +590,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     }
   })
 
-  test('a Codex conductor gets the owner message queued with a Discord message id, its reply comes back, its own approval is answered by a yes from the channel, and its own question reaches the channel with its options and is answered by an option name', async ({
+  test('a Codex conductor gets the owner message queued with a Discord message id, its reply comes back, an approval it raises is answered by a yes from the channel (a real Codex conductor runs with approvals off, so only fake-codex raises one; this keeps the channel relay’s yes-or-no path covered), and its own question reaches the channel with its options and is answered by an option name', async ({
     env
   }) => {
     installCodex(env)

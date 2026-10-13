@@ -164,7 +164,7 @@ function focusedWorkbench(): HTMLElement | null {
   return (document.activeElement?.closest('.wb-panel[data-surface]') as HTMLElement | null) ?? null
 }
 
-const NOTES_ISLAND = '.isl-notes:not(.isl-conductors)'
+const NOTES_ISLAND = '.isl-notes'
 
 function aDialogIsOpen(): boolean {
   return !!document.querySelector('.modal-backdrop, .bmodal-backdrop')
@@ -1613,6 +1613,16 @@ export default function App(): JSX.Element {
               <WorldClock />
             </div>
             <div className="island flat term-island">
+              {signInTabId && activeTab?.id === signInTabId && (
+                <div className="wb-bar">
+                  <span className="wb-title">
+                    <span className="nm">{activeTab.title}</span>
+                  </span>
+                  <button className="mini" onClick={() => closeTab(signInTabId)}>
+                    Cancel
+                  </button>
+                </div>
+              )}
               <div className="terminals">
                 {tabs.flatMap((t) => [
                   t.ghost && (

@@ -32,7 +32,7 @@ import {
 import { layoutState } from './helpers/workbench'
 
 const head = (page: Page, wsName: string) => page.locator('.ws-head', { hasText: wsName })
-const notesGutter = (page: Page) => page.locator('.gutter-h:has(+ .isl-notes:not(.isl-conductors))')
+const notesGutter = (page: Page) => page.locator('.gutter-h:has(+ .isl-notes)')
 
 function notesBorder(page: Page): Promise<{ border: string; accent: string }> {
   return notesIsland(page).evaluate((el) => {
@@ -70,7 +70,7 @@ test.describe('Workspace note: an island under the sessions list, always holding
       [...(document.querySelector('.dock-left')?.children ?? [])].map((el) => el.className)
     )
     expect(order[0]).toBe('island flat isl-sessions')
-    expect(order.slice(-2)).toEqual(['gutter-h', 'island isl-notes'])
+    expect(order.slice(-2)).toEqual(['gutter-h', 'island isl-dock isl-notes'])
     await snap(page, 'N01')
   })
 
@@ -327,7 +327,7 @@ test.describe('Workspace note: an island under the sessions list, always holding
         return {
           dock: h('.dock-left'),
           sessions: h('.island.isl-sessions'),
-          notes: h('.island.isl-notes:not(.isl-conductors)')
+          notes: h('.island.isl-notes')
         }
       })
       expect(box.sessions).toBeGreaterThanOrEqual(SESSION_LIST_MIN_HEIGHT_PX)

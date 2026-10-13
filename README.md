@@ -24,18 +24,43 @@ shell.
 
 ## What you get
 
-- **Workspace sidebar** — pin folders as workspaces. Under each one, its sessions
-  appear with a title, a status dot (working / waiting for you / done) and how long ago
-  they ran. Nothing is imported: the list is what Claude Code and Codex themselves wrote
-  to disk, and Koloft keeps only a list of which sessions are its own. A session you
-  started from a plain terminal is one right-click ▸ `Restore session…` away.
+- **Workspace sidebar** — pin folders as workspaces (drag a folder's name to reorder;
+  ⌘B hides the sidebar). Under each one, its sessions appear with a title, a status
+  light (working / waiting for you / done, and `↻ N` while N things it started still run
+  in the background) and how long ago they ran. A session an agent started hangs under
+  the session that started it. Nothing is imported: the list is what Claude Code and
+  Codex themselves wrote to disk, and Koloft keeps only a list of which sessions are its
+  own. A session you started from a plain terminal is one right-click ▸
+  `Restore session…` away.
+- **Red dots** — a small red dot after a session's name means it is calling you: its
+  turn is done, it waits for your OK, or it quit on its own. The number on the Dock icon
+  counts the dots, and ⌘J (`View ▸ Next Waiting Session`) takes you to the session with
+  the oldest one.
+- **Sessions sleep, wake and come back** — about half an hour after a session goes
+  quiet it goes to sleep: its program stops, but its row, tab, screen and Workbench stay,
+  and a click or a message wakes it in the same tab. Quit Koloft and open it again, and
+  every session comes back the way it was. Right-click a row ▸ `Keep running` and that
+  session never sleeps, and starts again in the background each time Koloft opens.
 - **Start or resume sessions** — `File ▸ New Session…` (⌘N) starts one in the
   selected workspace with the default method set in `Settings ▸ Sessions`; clicking an
-  old row resumes it; `New Worktree Session…` (⇧⌘N) runs the
-  session in an isolated git worktree. A workspace's right-click menu holds
-  the low-traffic doors: restore a session from history, fetch origin, remove the
-  workspace. When the checkout is behind `origin`, a badge on the row says by how much
-  and offers a fast-forward pull.
+  old row resumes it; `New Worktree Session…` (⇧⌘N) runs the session in an isolated git
+  worktree, and its dialog also lists the repository's open issues and pull requests to
+  start from. Each worktree session gets `KOLOFT_PORT_OFFSET` (1–99) so its dev servers
+  do not collide, and the files a `.worktreeinclude` lists are copied into each new
+  worktree. A workspace's right-click menu holds the low-traffic doors: restore a session
+  from history, scheduled jobs, remove the workspace.
+- **Git panel** — hover a folder's branch sign: how far it is behind `origin` (also a
+  badge on the row), `Fetch now`, a fast-forward `Pull`, and the repository's open issue
+  and pull request counts.
+- **⌘P** — type what a session should do and ⏎ starts it where Assist picks; the same
+  box jumps to any session and searches every chat.
+- **Assist** — Koloft's own AI, run by one of your accounts. It does small jobs for
+  Koloft, such as picking where a ⌘P session starts, and you can talk to it from its
+  block in the sidebar.
+- **Discord** — a bot of your own on your Discord server, so you can talk to your
+  sessions from your phone: Assist answers you in its channel, each session it looks
+  after gets a thread with its questions, approvals and finished turns, and the buttons
+  there answer them. Set up in `Settings ▸ Discord`.
 - **Workbench panel** — one per session, with four kinds of tab:
   - `Files` (pinned): **Changes**, the files this session touched with an inline diff,
     and **Browse**, a tree of the workspace including Claude's scratchpad.
@@ -45,6 +70,11 @@ shell.
     agent's `open <url>` never has to leave the app.
   - Terminal tabs: a shell in the session's directory (`View ▸ New Terminal Tab`, ⌃`).
 
+  Each hunk in Changes has `✎ comment` in its header, which puts that hunk and your note
+  into the session's input box. In a GitHub project a GitHub button sits next to Files:
+  the pull request and its checks, commit and push, and a failing check sent to the
+  session. ⇧⌘B folds the Workbench down to a small card beside the terminal.
+
   ![The Workbench's Browse view: the workspace's file tree with a Markdown file shown rendered beside it](.github/assets/screenshot-browse.png)
 - **A note per workspace** — a plain-text note in its own island under the sessions
   list (⌥⌘N puts the caret in it). The Workbench belongs to a session and goes away
@@ -52,8 +82,14 @@ shell.
   session go.
 - **Scheduled jobs** — a workspace's right-click menu has `Scheduled jobs…`: start a
   Claude or Codex session on a timer with a first message. In a git workspace every run
-  gets a fresh worktree of its own; a plain folder runs in place. Koloft never types into a session — the first message is handed to `claude`
-  or `codex` directly, and everything after it is yours.
+  gets a fresh worktree of its own; a plain folder runs in place. Koloft never types
+  into a session — the first message is handed to `claude` or `codex` directly, and
+  everything after it is yours. A finished run waits in the sidebar for you, unless the
+  job says `When done ▸ Close it`; then the run cleans up after itself.
+- **The `koloft` command** — every session Koloft starts gets a `koloft` command: show a
+  file, page or diff in its Workbench, add to the workspace note, set up scheduled jobs,
+  and start, message and read other sessions. A bundled `playwright-cli` drives the
+  session's own web tabs.
 - **Multi-account balancing** — register several Claude subscription accounts and
   several Codex sign-ins. Every launch looks at their live rate limits and starts on the
   account with the most room left. A Claude API (application programming interface) key
@@ -80,7 +116,9 @@ shell.
 - **Smaller things** — a first-run walkthrough and a handful of tips that appear the
   first time each situation comes up (both re-openable from `Settings ▸ Welcome`), a
   `Settings ▸ Shortcuts` page listing every key and what it does where the caret is,
-  and clocks for the timezones you pick in the title bar.
+  clocks for the timezones you pick in the title bar, a terminal font that comes with
+  Koloft (JetBrainsMono Nerd Font), a reminder with each prompt so Claude keeps replying
+  in your language, and `View ▸ Keep Mac Awake`.
 
 ## Install (macOS, Apple Silicon)
 
@@ -276,7 +314,8 @@ and approvals go to your own bot. The only hosts it ever reaches on its own are:
 | Host | Why |
 | --- | --- |
 | `api.anthropic.com` | sends each subscription account a one-token message and reads its remaining rate-limit allowance off the reply, as a session starts and every 5 minutes, so the balancer can pick the least-loaded one; an API key or custom endpoint is only checked that it still works |
-| `api.github.com`, `github.com` | checks for a newer Koloft and downloads its `.dmg`; through `gh`, reads a GitHub workspace's open issue and pull request counts, and the statusline asks `gh` about the branch's pull request; downloads `gh` itself for a **remote** workspace's machine that has none |
+| `api.github.com`, `github.com` | checks for a newer Koloft and downloads its `.dmg`; through `gh`, reads a GitHub workspace's open issue and pull request counts, and the statusline asks `gh` about the branch's pull request; downloads `gh` itself for a **remote** workspace's machine that has none; signs in a GitHub git account and checks its token |
+| `gitlab.com`, `api.bitbucket.org`, `dev.azure.com`, `codeberg.org`, or your own git server | the server of a git account you add, only after you add one there. To check the token and read the username: when it is added, when Koloft starts, every 6 hours, when `Settings ▸ Accounts` opens, and when the server turns the token down during a git call (an account added as "Other server" is never checked). To see whether the account can push to a workspace's repository: when a workspace is added, and when the git panel's Account list opens. Bitbucket also reaches `bitbucket.org` for the browser sign-in |
 | your workspace's git remote (often `github.com`) | every 5 minutes, to see whether the branch is behind — `Settings ▸ Appearance` turns auto-fetch off |
 | `claude.ai`, `chatgpt.com` | the official installers of `claude` and `codex`, only when you click a tool's card on the welcome steps to install it |
 | `claude.ai`, `nodejs.org`, `unofficial-builds.nodejs.org` | only for a **remote** workspace, and only to install what that machine is missing — `claude` from the first, Node from the second (or, on an old Linux, the third); `bash`, `tmux` and `rsync` come from the machine's own package manager |

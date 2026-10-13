@@ -657,3 +657,36 @@ describe('U4 · degradation ladder', () => {
     if (r.account) expect(r.banner).toContain('round-robin')
   }, 10_000)
 })
+
+describe('a resumed session keeps its account', () => {
+  async function resumedOn(same: UsageSnapshot | null, over: Partial<AccountMeta> = {}) {
+    const h = makeHarness([meta({ name: 'same', ...over }), meta({ name: 'idle' })])
+    if (same) h.setProbe('same', { ok: true, usage: same })
+    h.setProbe('idle', {
+      ok: true,
+      usage: usage({ u5: 0, u7: 0, uoi: 0, soi: 'allowed', hasOi: true })
+    })
+    return (await h.picker.pick('tab', 'same')).account
+  }
+
+  it('stays on the account it ran on while its 5h and 7d windows are each at most 95% used, even when another account is idler', async () => {
+    expect(await resumedOn(usage({ u5: 0.95, u7: 0.95 }))).toBe('same')
+  })
+
+  it('moves once its 5h or its 7d window is past 95% used, or it is rate-limited', async () => {
+    expect(await resumedOn(usage({ u5: 0.96 }))).toBe('idle')
+    expect(await resumedOn(usage({ u7: 0.96 }))).toBe('idle')
+    expect(await resumedOn(walled())).toBe('idle')
+  })
+
+  it('a spent fable allowance or a window whose reset has passed does not move it', async () => {
+    expect(await resumedOn(usage({ uoi: 1, soi: 'rejected', hasOi: true }))).toBe('same')
+    expect(await resumedOn(usage({ u5: 1, r5: NOW_S - 60 }))).toBe('same')
+  })
+
+  it('stays when its usage could not be read, and falls back to the usual pick when it can no longer run', async () => {
+    expect(await resumedOn(null)).toBe('same')
+    expect(await resumedOn(usage({}), { enabled: false })).toBe('idle')
+    expect(await resumedOn(usage({}), { status: 'expired' })).toBe('idle')
+  })
+})

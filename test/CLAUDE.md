@@ -177,10 +177,11 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 - The test window never has OS focus. Read focus from `focusOwner` /
   `document.activeElement`, never `document.hasFocus()` (platform ledger §10). For the
   same reason no tab is ever "watched": every finished turn leaves an attention mark,
-  seen only through `pendingAttention(page)`, and main's `__koloftOsNotifCount` must
-  stay 0. A case about what a focused user clears calls `pretendWindowFocused(app)`
-  (helpers/app.ts): main then reads its window as focused, and the click it makes
-  counts as "watching".
+  seen only through `pendingAttention(page)`. No OS notification or Dock badge is ever
+  shown; what one would have said is recorded instead and read with `osOutlets(app)`
+  (helpers/app.ts). A case about what a focused user clears calls
+  `pretendWindowFocused(app)`: main then reads its window as focused, and the click it
+  makes counts as "watching".
 - Never reach real OS UI or the developer's own state. No native dialog: stub and count
   it (restart-session `countConfirmationsInsteadOfShowingThem`). File pickers answer
   from a queue (`answerFileDialog`; an empty queue means "cancelled"); add workspaces
@@ -262,7 +263,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   spec may rewrite them after launch.
 - Not env vars: `window.__koloftTerms` (terminal text), `__koloftShortcutsReady` /
   `__koloftRowsReady` (the renderer is ready for keys), main's
-  `globalThis.__koloftOsNotifCount`, and `installGitSpawnLog` (the git the app runs).
+  `globalThis.__koloftOsOutlets` (read through `osOutlets`), and `installGitSpawnLog`
+  (the git the app runs).
   When a CDP relay test waits for a message that never comes, read
   `<home>/cdp-log.txt`: it holds the relay's whole conversation.
 
@@ -287,8 +289,8 @@ first of these that can do it; only a step none of them can do goes to the owner
    with their own account, a matter of taste, or an effect that takes days to show.
 
 The sandbox is launched like an e2e app, so "Keys, focus and the hidden window" and
-"Test-only seams" above hold for it too: no Dock, badge or OS notification, no real
-⌘ key or mouse, a file picker that answers from `<home>/file-dialog-answers`, OS
+"Test-only seams" above hold for it too: no Dock, badge or OS notification is shown
+(main records what it would have said in `__koloftOsOutlets`), no real ⌘ key or mouse, a file picker that answers from `<home>/file-dialog-answers`, OS
 hand-offs in `<home>/external-opens.txt`. Beyond those, its terminal draws with DOM
 (not WebGL), and the lab machine has no UTF-8 locale, so a remote Claude draws `_` for
 its symbols.

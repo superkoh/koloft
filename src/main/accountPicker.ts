@@ -1,5 +1,11 @@
 import type { AccountKind, AccountMeta, SessionInfo, UsageSnapshot } from '@shared/types'
-import { fableExhausted, STALE_MS } from '@shared/accountUsage'
+import {
+  fableExhausted,
+  keepsResumedSession,
+  resetElapsed,
+  STALE_MS,
+  usableAccounts
+} from '@shared/accountUsage'
 import { ageLabel } from '@shared/freshnessOps'
 import {
   EPS,
@@ -98,10 +104,6 @@ function fableFree(u: UsageSnapshot, nowSec: number): boolean {
   return !fableExhausted(u)
 }
 
-function resetElapsed(r: number, nowSec: number): boolean {
-  return r > 0 && r <= nowSec
-}
-
 function withLoad(score: Score, liveSessions: number): Score {
   return { ...score, s1: score.s1 + liveSessions * SCORE_PER_LIVE_SESSION }
 }
@@ -118,9 +120,7 @@ export class AccountPicker {
   }
 
   private eligible(...kinds: AccountKind[]): AccountMeta[] {
-    return this.deps
-      .listAccounts()
-      .filter((a) => kinds.includes(a.kind) && a.enabled && a.status === 'ok')
+    return usableAccounts(this.deps.listAccounts(), kinds)
   }
 
   private probeRound(accounts: AccountMeta[]): Promise<void> {
@@ -164,7 +164,7 @@ export class AccountPicker {
     return a
   }
 
-  async pick(tabId?: string): Promise<PickResponse> {
+  async pick(tabId?: string, resumedOn?: string): Promise<PickResponse> {
     const subs = this.eligible('oauth')
     const apis = this.eligible('apikey', 'custom')
     if (subs.length === 0 && apis.length === 0) return { account: null, reason: 'no-accounts' }
@@ -178,9 +178,33 @@ export class AccountPicker {
       }
     }
 
-    const res = this.decide(subs, apis, tabId)
+    const res = this.keepResumed(subs, resumedOn) ?? this.decide(subs, apis, tabId)
     if (tabId && res.account) this.deps.recordPick(tabId, res.account)
     return res
+  }
+
+  private keepResumed(subs: AccountMeta[], resumedOn?: string): PickResponse | undefined {
+    const name = resumedOn?.toLowerCase()
+    const same = name ? subs.find((a) => a.name.toLowerCase() === name) : undefined
+    if (!same) return undefined
+    const snap = this.snapshotFor(same)
+    const nowSec = Math.floor(this.deps.now() / 1000)
+    if (snap && !keepsResumedSession(snap, nowSec)) return undefined
+    return this.subscriptionPick(same.name, snap, false, nowSec)
+  }
+
+  private subscriptionPick(
+    name: string,
+    snap: UsageSnapshot | undefined,
+    fableRoute: boolean,
+    nowSec: number
+  ): PickResponse {
+    return {
+      account: name,
+      kind: 'oauth',
+      banner: bannerFor(name, snap, fableRoute, this.deps.now()),
+      ...(!snap || fableFree(snap, nowSec) ? {} : { warning: FABLE_EXHAUSTED_LINE })
+    }
   }
 
   private decide(subs: AccountMeta[], apis: AccountMeta[], tabId?: string): PickResponse {
@@ -251,12 +275,6 @@ export class AccountPicker {
         banner: `koloft: every account rate-limited → ${win.meta.name} (${fmtReset(r)})`
       }
     }
-    const banner = bannerFor(win.meta.name, win.snap, route === 'fable', this.deps.now())
-    return {
-      account: win.meta.name,
-      kind: 'oauth',
-      banner,
-      ...(fableFree(win.snap, nowSec) ? {} : { warning: FABLE_EXHAUSTED_LINE })
-    }
+    return this.subscriptionPick(win.meta.name, win.snap, route === 'fable', nowSec)
   }
 }

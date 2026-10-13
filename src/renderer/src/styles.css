@@ -559,7 +559,7 @@ body {
 .isl-sessions {
   flex: 1;
 }
-.isl-notes {
+.isl-dock {
   flex: 0 0 auto;
   margin: 0 6px;
   border-color: var(--line-layout);
@@ -582,7 +582,7 @@ body {
   white-space: nowrap;
   text-align: left;
 }
-.isl-notes .wb-title .ic {
+.isl-dock .wb-title .ic {
   flex: 0 0 auto;
   display: flex;
   align-self: center;
@@ -595,13 +595,13 @@ body {
   flex: 1;
   min-height: 0;
 }
-.isl-notes .ed-area {
+.isl-dock .ed-area {
   min-width: 0;
 }
 
 /* ADR-0012 PLATFORM§10 */
 .island.wb-col:focus-within,
-.island.isl-notes:focus-within,
+.island.isl-dock:focus-within,
 .island.wb-col.caret {
   border-color: var(--accent-line);
 }
@@ -623,8 +623,8 @@ body {
   cursor: row-resize;
   -webkit-app-region: no-drag;
 }
-.gutter-h:not(.idle):hover + .isl-notes,
-.gutter-h.active + .isl-notes {
+.gutter-h:not(.idle):hover + .isl-dock,
+.gutter-h.active + .isl-dock {
   border-top-color: var(--accent);
 }
 .gutter-h.idle {

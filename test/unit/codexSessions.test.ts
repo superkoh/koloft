@@ -169,7 +169,12 @@ beforeEach(() => {
     browserEndpoint: vi.fn(() => ''),
     openShimRoot: path.join(directory, 'codex-open'),
     playwrightBin: path.join(directory, 'commands', 'bin'),
-    agent: { enabled: () => false, answer: vi.fn() }
+    agent: { enabled: () => false, answer: vi.fn() },
+    gitAccounts: {
+      configEnv: (env) => env,
+      picked: vi.fn(async () => false),
+      ghWrapper: path.join(directory, 'shim', 'gh')
+    }
   }
   sessions = new CodexSessions(path.join(directory, 'sessions.json'), deps)
   vi.spyOn(sessions, 'availability').mockResolvedValue({ id: 'codex', available: true })
@@ -737,7 +742,7 @@ describe('CodexSessions', () => {
     expect(sessions.list()[0].cwd).toBe(newPath)
   })
 
-  it('a person’s new worktree launch trusts the workspace folder in the shared config, never through an account home, and passes the chosen permission as approval and sandbox flags; a scheduled one trusts nothing', async () => {
+  it('a person’s new worktree launch trusts the workspace folder and the worktree itself in the shared config, never through an account home, and passes the chosen permission as approval and sandbox flags; a scheduled one trusts nothing', async () => {
     const worktree = path.join(repo, '.claude', 'worktrees', 'w1')
     fs.mkdirSync(worktree, { recursive: true })
     vi.spyOn(sessions.worktrees, 'create').mockResolvedValue({
@@ -749,15 +754,15 @@ describe('CodexSessions', () => {
     } as WorktreeResource)
     vi.mocked(deps.pickHome).mockReturnValue({ account: 'work', home: '/homes/work' })
     await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1', permission: 'bypass' })
-    expect(deps.trustFolder).toHaveBeenCalledTimes(1)
-    expect(vi.mocked(deps.trustFolder).mock.calls[0][0]).toBe(repo)
-    expect(vi.mocked(deps.trustFolder).mock.calls[0][1]?.CODEX_HOME).toBeUndefined()
+    expect(vi.mocked(deps.trustFolder).mock.calls.map(([dir]) => dir)).toEqual([repo, worktree])
+    for (const [, env] of vi.mocked(deps.trustFolder).mock.calls)
+      expect(env?.CODEX_HOME).toBeUndefined()
     expect(vi.mocked(deps.pty.create).mock.calls[0][0].processEnv?.CODEX_HOME).toBe('/homes/work')
     const argv = vi.mocked(deps.pty.create).mock.calls[0][0].argv!
     expect(argv.slice(-4)).toEqual(['-a', 'never', '-s', 'danger-full-access'])
 
     await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1', scheduled: true })
-    expect(deps.trustFolder).toHaveBeenCalledTimes(1)
+    expect(deps.trustFolder).toHaveBeenCalledTimes(2)
   })
 
   it("a worktree launch's app-server gets that worktree's port offset, and a launch in the main checkout gets none", async () => {
@@ -891,13 +896,27 @@ describe('CodexSessions', () => {
     const withGit = vi.mocked(deps.pty.create).mock.calls[0][0].processEnv!
     expect(withGit.PATH).toBe('/usr/bin:/opt/homebrew/bin:/koloft/fallback-bin')
     expect(fs.existsSync(path.join(path.dirname(withGit.ZDOTDIR!), 'git'))).toBe(false)
-    expect(fs.existsSync(path.join(path.dirname(withGit.ZDOTDIR!), 'gh'))).toBe(false)
+    expect(fs.readlinkSync(path.join(path.dirname(withGit.ZDOTDIR!), 'gh'))).toBe(
+      deps.gitAccounts.ghWrapper
+    )
 
     deps.gitBin = path.join(directory, 'git-bin')
     await sessions.launch({ kind: 'codex', cwd: repo })
     const noGit = vi.mocked(deps.pty.create).mock.calls[1][0].processEnv!
     expect(fs.readlinkSync(path.join(path.dirname(noGit.ZDOTDIR!), 'git'))).toBe(
       path.join(deps.gitBin, 'git')
+    )
+  })
+
+  // CODEX§29
+  it('a tab in a repository with a picked git account may reach the network, and one without stays offline', async () => {
+    vi.mocked(deps.gitAccounts.picked).mockImplementation(async (cwd) => cwd === repo)
+    await sessions.launch({ kind: 'codex', cwd: repo })
+    await sessions.launch({ kind: 'codex', cwd: other })
+    const [picked, unpicked] = mocks.create.mock.calls.map(([o]) => o as CodexTransportOptions)
+    expect(picked.configOverrides).toContain('sandbox_workspace_write.network_access=true')
+    expect(unpicked.configOverrides!.some((o) => o.startsWith('sandbox_workspace_write.'))).toBe(
+      false
     )
   })
 

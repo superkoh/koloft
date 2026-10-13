@@ -495,6 +495,27 @@ test.describe('URL routing and the open shim: where a target lands (a web tab, t
     }
   })
 
+  test('an absolute or ~/ path to a page typed in the address bar opens that local page as file://', async ({
+    app,
+    page,
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const absolute = path.join(env.workspaces.a, 'typed-path.html')
+    fs.writeFileSync(absolute, '<!doctype html><title>typed path</title><p>typed</p>')
+    fs.writeFileSync(
+      path.join(env.home, 'typed-tilde.html'),
+      '<!doctype html><title>typed tilde</title><p>tilde</p>'
+    )
+    await addressBarSession(page)
+
+    await typeInAddressBar(page, absolute)
+    await guestByUrl(app, 'file://' + absolute)
+
+    await typeInAddressBar(page, '~/typed-tilde.html')
+    await guestByUrl(app, 'file://' + path.join(env.home, 'typed-tilde.html'))
+  })
+
   test('BB-C28: `chrome://` and `devtools://` are hard-blocked with no navigation', async ({
     app,
     page,

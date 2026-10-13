@@ -7,6 +7,7 @@ import {
   expect,
   expectNoToastAtAnyMomentOfAWindow,
   launchApp,
+  osOutlets,
   pendingAttention
 } from './helpers/app'
 import {
@@ -440,7 +441,7 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
     }
   })
 
-  test('BB-E08: a run that never starts is stopped at the deadline, without constructing an OS notification in background test mode', async ({
+  test('BB-E08: a run that never starts is stopped at the deadline, and an OS notification names the job and says it did not start', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -459,11 +460,9 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
       const [call] = await waitForCalls(env, 1)
 
       await edExpectToast(page, `⏰ ${JOB} could not start: Claude did not start`)
-      expect(
-        await app.evaluate(
-          () => (globalThis as { __koloftOsNotifCount?: number }).__koloftOsNotifCount ?? 0
-        )
-      ).toBe(0)
+      expect((await osOutlets(app)).notifications).toEqual([
+        { title: JOB, body: 'Could not start — Claude did not start' }
+      ])
       // CC§9
       await expect
         .poll(async () => (await edHistStates(page))[0] ?? '', { timeout: 15_000 })

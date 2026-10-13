@@ -1463,3 +1463,37 @@ home where one app-server had already started and stopped first.
   `playwright-cli` could not reach the browser. A second app-server started right after
   answered as usual.
 
+## 29. Git credentials from inside the sandbox
+
+2026-10-11, codex-cli 0.162.0, macOS 27, fake tokens and a local git smart-HTTP stub on
+127.0.0.1; commands run through the app-server's `command/exec` (no model turn), under
+the configured sandbox.
+
+- **A credential helper can ask Koloft's main process through files in `/tmp`.** Under
+  `workspace-write` a shell helper wrote a request JSON into a `/tmp/koloft-…` folder made
+  beforehand outside the sandbox, and read the answer main wrote back; about 100 ms on top
+  of main's own delay. git has no timeout of its own while the helper waits (15 s was
+  fine).
+- **`network_access` decides whether git reaches the server at all.** Without it git
+  cannot connect, so the helper's answer never matters. With
+  `sandbox_workspace_write.network_access=true`, `git ls-remote` against the stub sent the
+  helper's username and password.
+- **`read-only`**: the helper cannot write its request and fails at once.
+- **`GIT_CONFIG_COUNT/KEY_n/VALUE_n` in the app-server's environment reach the command it
+  runs**, so an `include.path` given there is loaded. That a model turn's shell sees them
+  too is inferred, not checked.
+- **The user's own Keychain**: the login Keychain file was readable inside the sandbox
+  only with the network on; that the user's `osxkeychain` helper therefore comes back
+  empty in a default Codex tab is inferred, not checked.
+- **When the helper gives up** (main silent): it prints one line and exits 1, and git
+  falls back to its prompt (`fatal`, exit 128, with `GIT_TERMINAL_PROMPT=0`).
+- **A real model turn in a Koloft Codex tab does the same.** 2026-10-12, codex-cli 0.162.0,
+  a dev build with the tab in a worktree of a repository picked for a Koloft git account,
+  `network_access=true` given only for that pick, the request folder in `/tmp`: asked to
+  run `git ls-remote origin`, the turn's shell listed `refs/heads/main` from a local fake
+  GitHub, which saw the account's login and token (no request with credentials reached it
+  before the turn). No question was put to the owner. Established by
+  `agent-tools-real-smoke.spec.ts` › "a real Codex turn's git, inside its sandbox, reaches
+  the server with the picked account's token through Koloft".
+- Not probed yet: a push to the real github.com from a Codex turn.
+
