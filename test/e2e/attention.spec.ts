@@ -1,4 +1,4 @@
-import { test, expect, pendingAttention } from './helpers/app'
+import { test, expect, osOutlets, pendingAttention } from './helpers/app'
 import {
   centerTerm,
   FAKE_SESSION_TITLE,
@@ -102,7 +102,8 @@ test.describe('attention markers come from real session-status transitions (shim
     await expect(page.locator('.ws-tab.st-approval')).toHaveCount(0)
   })
 
-  test('a local claude that dies without an end report raises the “exited” mark, drawn as a red dot on its cold row, and closing its dead tab keeps it', async ({
+  test('a local claude that dies without an end report raises the “exited” mark, drawn as a red dot on its cold row and said in an OS notification naming its folder', async ({
+    app,
     page,
     env
   }) => {
@@ -122,5 +123,9 @@ test.describe('attention markers come from real session-status transitions (shim
       .poll(async () => (await pendingAttention(page)).map((a) => a.kind), { timeout: 10_000 })
       .toEqual(['exited'])
     await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
+    expect((await osOutlets(app)).notifications).toContainEqual({
+      title: FAKE_SESSION_TITLE,
+      body: 'session exited unexpectedly · ws-a'
+    })
   })
 })

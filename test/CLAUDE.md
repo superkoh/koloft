@@ -177,10 +177,11 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 - The test window never has OS focus. Read focus from `focusOwner` /
   `document.activeElement`, never `document.hasFocus()` (platform ledger §10). For the
   same reason no tab is ever "watched": every finished turn leaves an attention mark,
-  seen only through `pendingAttention(page)`, and main's `__koloftOsNotifCount` must
-  stay 0. A case about what a focused user clears calls `pretendWindowFocused(app)`
-  (helpers/app.ts): main then reads its window as focused, and the click it makes
-  counts as "watching".
+  seen only through `pendingAttention(page)`. No OS notification or Dock badge is ever
+  shown; what one would have said is recorded instead and read with `osOutlets(app)`
+  (helpers/app.ts). A case about what a focused user clears calls
+  `pretendWindowFocused(app)`: main then reads its window as focused, and the click it
+  makes counts as "watching".
 - Never reach real OS UI or the developer's own state. No native dialog: stub and count
   it (restart-session `countConfirmationsInsteadOfShowingThem`). File pickers answer
   from a queue (`answerFileDialog`; an empty queue means "cancelled"); add workspaces
@@ -262,7 +263,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   spec may rewrite them after launch.
 - Not env vars: `window.__koloftTerms` (terminal text), `__koloftShortcutsReady` /
   `__koloftRowsReady` (the renderer is ready for keys), main's
-  `globalThis.__koloftOsNotifCount`, and `installGitSpawnLog` (the git the app runs).
+  `globalThis.__koloftOsOutlets` (read through `osOutlets`), and `installGitSpawnLog`
+  (the git the app runs).
   When a CDP relay test waits for a message that never comes, read
   `<home>/cdp-log.txt`: it holds the relay's whole conversation.
 

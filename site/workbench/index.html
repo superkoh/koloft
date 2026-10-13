@@ -210,6 +210,11 @@
           </li>
           <li>the diff, or the plain source</li>
           <li>
+            a link in a file (<code>path:line</code>, or a Markdown link to another file) opens that
+            file in the same tab. If another tab already shows it, that tab comes forward at the
+            line, and the tab you clicked in closes, unless it has unsaved edits
+          </li>
+          <li>
             an editor: <kbd>⌘S</kbd> saves. If the file changed on disk meanwhile, it will not
             quietly write over it. If the session ends while a file is not saved, a box asks at
             once: Keep for later, Discard or Save.
@@ -229,7 +234,8 @@
         </p>
         <p>
           Typing in the address bar suggests this project's pages first, the ones you visit most on
-          top (up to six).
+          top (up to six). A file path typed there opens that file: an HTML file as a web page, any
+          other file the Workbench can show as a file tab. Plain words run a search.
         </p>
 
         <figure class="shot" style="--ar: 1322 / 792; --ar-phone: 776 / 960">
@@ -329,9 +335,11 @@
         </ul>
         <p>
           The checks need <code>gh</code> (GitHub's command-line tool) signed in; without it the
-          line says <code>Checks · install gh</code> or <code>Checks · run gh auth login</code>. The
-          same on a Codex session. On a <a href="../remote/">remote folder</a> the commit and push
-          run on the remote machine, and <code>gh</code> runs on your Mac.
+          line says <code>Checks · install gh</code> or <code>Checks · run gh auth login</code>. In
+          a folder picked for a <a href="../accounts/#git-accounts">git account</a>, gh reads them
+          as that account instead. The same on a Codex session. On a
+          <a href="../remote/">remote folder</a> the commit and push run on the remote machine, and
+          <code>gh</code> runs on your Mac.
         </p>
 
         <h2>The note</h2>

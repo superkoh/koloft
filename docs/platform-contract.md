@@ -674,6 +674,21 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   `confirm`, `prompt`) does not settle until the dialog is answered**: the dialog blocks
   the guest's input ack that the click waits for. Awaiting the click first deadlocks the
   test, so start it, answer the modal, then await it.
+- **CDP can drive an input-method composition in a hidden window.**
+  `Input.imeSetComposition` fires `compositionstart`/`compositionupdate` and
+  `insertCompositionText` input events with `isComposing: true`; `Input.insertText` then
+  commits the text and fires `compositionend`. A key sent with `Input.dispatchKeyEvent`
+  while the composition is open arrives as a `keydown` with `isComposing: true` and
+  whatever `keyCode` it was given; a `rawKeyDown` Enter neither ends the composition nor
+  inserts a newline. xterm reacts to that keyCode: keyCode 13 makes its
+  CompositionHelper finish the composition early, and in a Koloft session terminal
+  neither the committed text nor any later key reached the session; keyCode 229 is
+  ignored as an IME key, and the commit and the next Enter arrive as one line.
+  (Measured 2026-10-12, Electron 43.7.3 / Chrome 150, a `show: false` window with the
+  app hidden from the Dock: a probe script on a bare textarea, then the e2e terminal
+  case.) That a real macOS input method hands Chromium its Enter as keyCode 229 is
+  inferred from the keyCode the app's guards check, not checked: no headless run can
+  drive a real input method.
 
 ## §19 The `ws` library (8.x)
 
@@ -699,6 +714,14 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   manual window resize brought a blank re-shown tab back).
 - **Moving the window between monitors with different devicePixelRatio can corrupt the
   WebGL glyph atlas**; clearing the atlas on each DPR change fixes it (observed).
+- **These losses did not happen in the hidden e2e window.** With Koloft's forced
+  repaint on re-show switched off, a WebGL session terminal switched away and back, or
+  hidden behind a full-width Workbench and back, drew the same picture as before (one
+  run each); with its atlas repair switched off, one left beside a closed shell that
+  had drawn 24k distinct coloured CJK glyphs did too (three runs). Measured 2026-10-12,
+  Electron 43.7.3 / Chrome 150, a `show: false` window, `webgl-terminal.spec.ts`. So a
+  headless test shows that the WebGL path draws, but has not been seen to make these
+  repairs fail.
 
 ## §21 xterm.js
 

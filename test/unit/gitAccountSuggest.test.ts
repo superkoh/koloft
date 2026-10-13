@@ -44,6 +44,7 @@ function runGit(
     p.stdout.on('data', (d) => (stdout += d))
     p.stderr.on('data', (d) => (stderr += d))
     p.on('close', (code) => resolve({ code, stdout, stderr }))
+    p.stdin.on('error', () => {})
     p.stdin.end(opts.input ?? '')
   })
 }

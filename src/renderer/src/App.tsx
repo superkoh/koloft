@@ -164,7 +164,7 @@ function focusedWorkbench(): HTMLElement | null {
   return (document.activeElement?.closest('.wb-panel[data-surface]') as HTMLElement | null) ?? null
 }
 
-const NOTES_ISLAND = '.isl-notes:not(.isl-conductors)'
+const NOTES_ISLAND = '.isl-notes'
 
 function aDialogIsOpen(): boolean {
   return !!document.querySelector('.modal-backdrop, .bmodal-backdrop')

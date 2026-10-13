@@ -124,6 +124,7 @@ function runForClue(
         })
       }
     )
+    child.stdin?.on('error', () => {})
     child.stdin?.end(opts.input ?? '')
   })
 }
