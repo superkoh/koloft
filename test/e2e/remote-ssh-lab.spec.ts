@@ -38,6 +38,8 @@ import {
   centerTerm,
   closeMenu,
   FAKE_SESSION_TITLE,
+  fetchNowInGitPanel,
+  openGitPanel,
   menuItemTexts,
   notesOnDisk,
   openMenu,
@@ -56,6 +58,7 @@ import {
   LAB_PASSWORD,
   loginsAccepted,
   remoteKeyFor,
+  runOnBastion,
   runOnTarget,
   startSshLab,
   stopSshLab,
@@ -124,6 +127,38 @@ async function withLab(
     if (app) await quitAndClose(app)
     stopSshLab(lab, defaultControlDir())
   }
+}
+
+const LAB_GIT = 'git -c user.email=lab@koloft.test -c user.name=lab'
+
+function originThatNeedsTheMachinesKey(lab: SshLab): void {
+  runOnBastion(lab, 'kuser', 'git init -q --bare -b main origin.git')
+  const pub = runOnTarget(
+    lab,
+    'kuser',
+    "ssh-keygen -q -t ed25519 -N '' -f .ssh/id_origin && cat .ssh/id_origin.pub"
+  ).trim()
+  runOnBastion(lab, 'kuser', `printf '%s\\n' '${pub}' >> .ssh/authorized_keys`)
+  runOnTarget(
+    lab,
+    'kuser',
+    [
+      'set -e',
+      `ssh-keyscan -t ed25519 ${lab.bastion} > .ssh/known_hosts 2>/dev/null`,
+      `printf 'Host gitbox\\n  HostName ${lab.bastion}\\n  User kuser\\n  IdentityFile ~/.ssh/id_origin\\n  IdentitiesOnly yes\\n' > .ssh/config`,
+      `cd proj && git init -q -b main && git add -A && ${LAB_GIT} commit -qm base`,
+      'git remote add origin gitbox:origin.git && git push -q -u origin main'
+    ].join('\n')
+  )
+  runOnBastion(lab, 'kuser', 'git clone -q origin.git pub')
+}
+
+function publishOnOrigin(lab: SshLab, from: number, to: number): void {
+  runOnBastion(
+    lab,
+    'kuser',
+    `set -e; cd pub; for n in $(seq ${from} ${to}); do echo $n > up$n.txt; git add -A; ${LAB_GIT} commit -qm up$n; done; git push -q origin main`
+  )
 }
 
 async function addMachine(page: Page, alias: LabAlias, user: string): Promise<void> {
@@ -270,7 +305,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     })
   })
 
-  test('E-SSH-16: a checkout behind its origin on a machine whose login shell is fish shows the behind badge, and Pull fast-forwards it there with real git', async ({
+  test('E-SSH-18: a checkout behind its origin on a machine whose login shell is fish shows the behind badge, and Pull fast-forwards it there with real git', async ({
     env
   }) => {
     await withLab(env, async ({ page, lab }) => {
@@ -289,6 +324,60 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       expect(runOnTarget(lab, 'fuser', 'git -C proj rev-parse HEAD')).toBe(
         runOnTarget(lab, 'fuser', 'git -C pub rev-parse HEAD')
       )
+    })
+  })
+
+  test('E-SSH-19: an origin the machine reaches only with its own ssh key: the behind count comes on connect, Fetch now sees a newer commit, Pull fast-forwards, with the key gone the git panel says origin cannot be reached from that machine, and once the machine drops off Fetch now and Pull are off', async ({
+    env
+  }) => {
+    await withLab(env, async ({ page, lab }) => {
+      originThatNeedsTheMachinesKey(lab)
+      publishOnOrigin(lab, 1, 2)
+      await addMachine(page, 'kt-key', 'kuser')
+      const badge = page.locator('.ws-head', { hasText: 'kt-key' }).locator('.ws-behind')
+      await expect(badge).toHaveText('2', { timeout: BACKGROUND_CONNECT_MS })
+
+      publishOnOrigin(lab, 3, 3)
+      await fetchNowInGitPanel(page, 'kt-key')
+      await expect(badge).toHaveText('3', { timeout: 60_000 })
+      await badge.click()
+      const pull = page.locator('.tbu-pop.fx .tbu-act.pull')
+      await expect(pull).toBeEnabled()
+      await pull.click()
+      await expect(page.locator('.toast')).toHaveText(/^proj · main: fast-forwarded 3 commits/, {
+        timeout: 60_000
+      })
+      await expect(badge).toHaveCount(0)
+      expect(runOnTarget(lab, 'kuser', 'git -C proj rev-parse HEAD')).toBe(
+        runOnBastion(lab, 'kuser', 'git -C pub rev-parse HEAD')
+      )
+
+      runOnTarget(lab, 'kuser', 'mv .ssh/id_origin .ssh/id_origin.off')
+      publishOnOrigin(lab, 4, 4)
+      await fetchNowInGitPanel(page, 'kt-key')
+      const panel = await openGitPanel(page, 'kt-key')
+      await expect(panel.locator('.fx-note', { hasText: 'origin' })).toHaveText(
+        "can't reach origin from kt-key — check its network or credentials.",
+        { timeout: 60_000 }
+      )
+      await expect(badge).toHaveCount(0)
+      await page.mouse.move(1, 1)
+
+      runOnTarget(lab, 'kuser', 'mv .ssh/id_origin.off .ssh/id_origin')
+      await fetchNowInGitPanel(page, 'kt-key')
+      await expect(badge).toHaveText('1', { timeout: 60_000 })
+
+      runOnTarget(
+        lab,
+        'kuser',
+        "mv .ssh/authorized_keys .ssh/authorized_keys.off && pkill -u kuser -f '^sshd(-session)?: kuser' || true"
+      )
+      await expect(dot(page, 'kt-key')).not.toHaveClass(/\bon\b/, { timeout: 60_000 })
+      await badge.click()
+      const pop = page.locator('.tbu-pop.fx')
+      await expect(pop.locator('.fx-counts')).toContainText('↓ 1 behind')
+      await expect(pop.locator('.tbu-act.pull')).toBeDisabled()
+      await expect(pop.locator('.tbu-act', { hasText: 'Fetch now' })).toBeDisabled()
     })
   })
 
