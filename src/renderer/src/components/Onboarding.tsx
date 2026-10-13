@@ -389,7 +389,7 @@ export function Onboarding({
       <div className="ob-actions">
         {step < 3 ? (
           <button className="ob-link ob-skip" onClick={() => setStep(3)}>
-            Skip
+            Skip the tour
           </button>
         ) : step === 4 || noTool ? (
           <button className="ob-link ob-skip" onClick={finish}>

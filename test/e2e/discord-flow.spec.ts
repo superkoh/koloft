@@ -420,8 +420,8 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
 
       fake.say(OWNER, `/koloft session send ${title} fix the tests`)
       await expect
-        .poll(peerLines, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-        .toEqual([sent('fix the tests', 1)])
+        .poll(() => peerLines()[0], { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toEqual(sent('fix the tests', 1))
       await expect.poll(() => bindingOnDisk(env)?.touched).toEqual([managed])
       await expect.poll(() => notices(fake)).toEqual([expect.stringMatching(/^🔔 .+ finished\.$/)])
 
@@ -439,7 +439,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       fake.say(OWNER, `/koloft session resume ${title} -- carry on`)
       await expect
         .poll(peerLines, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
-        .toEqual([sent('fix the tests', 1), sent('carry on', 2)])
+        .toContain(sent('carry on', 3))
       expect(
         readCalls(env).filter((c) => c.argv[c.argv.indexOf('--resume') + 1] === managed)
       ).toHaveLength(1)
@@ -449,7 +449,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     }
   })
 
-  test('the conductor queues a message on a Codex session with a conductor message id, and a session it starts with --backend codex is announced and touched, and its thread takes the session’s sidebar title once it has one; once the conductor closes it for good, its thread and the card it hangs from are deleted', async ({
+  test('the conductor queues a message on a Codex session with a conductor message id, and the reply that ends that turn is handed to the conductor; a session it starts with --backend codex is announced and touched, and its thread takes the session’s sidebar title once it has one; once the conductor closes it for good, its thread and the card it hangs from are deleted', async ({
     env
   }) => {
     installCodex(env)
@@ -465,6 +465,11 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
       await expect
         .poll(() => codexQueued(env), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toEqual([['koloft-conductor-1', ownerSays('check the docs')]])
+      await expect
+        .poll(() => peerMessages(env).some((m) => m.includes(`, id ${codexId}:) `)), {
+          timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+        })
+        .toBe(true)
 
       fake.say(OWNER, '/koloft session new --backend codex -- list the files')
       await expect
@@ -574,7 +579,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     }
   })
 
-  test('a Codex conductor gets the owner message queued with a Discord message id, its reply comes back, its own approval is answered by a yes from the channel, and its own question reaches the channel with its options and is answered by an option name', async ({
+  test('a Codex conductor gets the owner message queued with a Discord message id, its reply comes back, an approval it raises is answered by a yes from the channel (a real Codex conductor runs with approvals off, so only fake-codex raises one; this keeps the channel relay’s yes-or-no path covered), and its own question reaches the channel with its options and is answered by an option name', async ({
     env
   }) => {
     installCodex(env)
@@ -635,7 +640,7 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
     }
   })
 
-  test('a managed Claude session’s question reaches its thread whole and the conductor answers it with koloft session answer; in the thread its command approval is allowed by the Yes button and refused by the owner’s words, and the owner’s message is typed into it and its reply comes back there; a question asked while the session has lost its answerable marker still reaches the thread and is answered by koloft session answer, and koloft session keys picks the option of the next one', async ({
+  test('a managed Claude session’s question reaches its thread whole and the conductor answers it with koloft session answer, and the reply that ends that turn is handed to the conductor, whose answer reaches the owner in the channel unasked; in the thread its command approval is allowed by the Yes button and refused by the owner’s words, and the owner’s message is typed into it and its reply comes back there; a question asked while the session has lost its answerable marker still reaches the thread and is answered by koloft session answer, and koloft session keys picks the option of the next one', async ({
     env
   }) => {
     seedConductor(env, 'claude')
@@ -668,6 +673,17 @@ test.describe('Discord flow: the owner talks to a conductor in its channel, and 
         .poll(() => transcriptText(env, managed), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toContain('Picked: Green')
       expect(bindingOnDisk(env)?.touched).toEqual([managed])
+      const handedBack = `, id ${managed}:) Picked: Green`
+      await expect
+        .poll(() => peerMessages(env).some((m) => m.includes(handedBack)), {
+          timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+        })
+        .toBe(true)
+      await expect
+        .poll(() => said(fake).some((s) => s.includes(handedBack)), {
+          timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+        })
+        .toBe(true)
       const thread = question.channelId
 
       await type('/bash touch made.txt')

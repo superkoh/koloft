@@ -35,6 +35,7 @@ import {
   type OpenTab,
   type OpenTabs
 } from './openTabs'
+import { SessionAccounts } from './sessionAccounts'
 import { SessionBackends } from './sessionBackends'
 import {
   BACKEND_LABEL,
@@ -67,6 +68,7 @@ import {
   standardUserAgent
 } from './browserSecurity'
 import { directoryListingHtml } from './dirListing'
+import { stripTerminalCodes } from './terminalCodes'
 import {
   HOOK_SCRIPT,
   forgetAssistMarkers,
@@ -209,6 +211,7 @@ import { currentOffer, startUpdateNotifier } from './updateNotifier'
 import { extOf } from '@shared/preview'
 import {
   canOpenExternally,
+  webPageReachesDiscordDesktopApp,
   routeFor,
   schemeOf,
   type RouteDecision,
@@ -432,6 +435,7 @@ const sessionBackends = new SessionBackends({
     slash.turnEnded(tabId, turn)
     discordRelay?.turnEnded(tabId, turn)
     discordNotices?.turnEnded(tabId, turn.reply)
+    sessionCommand.turnEnded(tabId, turn)
   },
   prompted: consumeOutletDedupe,
   bound: (tabId, key) => {
@@ -564,6 +568,7 @@ const wokenAs = new Map<string, string>()
 let sleeperSeq = 0
 let openTabsRestoreStarted = false
 let openTabsFile: OpenTabsFile | undefined
+let sessionAccounts: SessionAccounts | undefined
 let savedOpenTabs: OpenTabs = { tabs: [] }
 let openTabsRestored = false
 const RESUMED_TAB_READY_MS = 30_000
@@ -603,6 +608,7 @@ function onSessionsChanged(): SessionInfo[] {
   const all = allSessions()
   settleWokenSleepers(all)
   rememberOpenTabs(all)
+  sessionAccounts?.note(all)
   syncRelayBindings(all)
   return all
 }
@@ -1168,6 +1174,7 @@ const sessionDeps: SessionVerbDeps = {
   },
   screen: screenOf
 }
+const sessionCommand = sessionVerb(sessionDeps)
 
 const agentRequests = new AgentRequests({
   verbs: {
@@ -1182,7 +1189,7 @@ const agentRequests = new AgentRequests({
     ),
     ...notesAndWorkbenchVerbs,
     note: unlessWorkspacelessConductor(notesAndWorkbenchVerbs.note),
-    session: sessionVerb(sessionDeps),
+    session: sessionCommand.verb,
     workspace: workspaceVerb({
       conductorScope: (tabId) => conductors?.scopeOfTab(tabId),
       sidebar: () => workspaceMgr?.rows() ?? []
@@ -1242,13 +1249,16 @@ const agentRequests = new AgentRequests({
   alive: pidAlive
 })
 
-async function pickForLaunch(tabId?: string): Promise<{
+async function pickForLaunch(
+  tabId?: string,
+  resumeSessionId?: string
+): Promise<{
   res: PickResponse
   endpoint?: { baseUrl?: string; model?: string }
 }> {
   let res: PickResponse
   try {
-    res = await picker.pick(tabId)
+    res = await picker.pick(tabId, sessionAccounts?.of('claude', resumeSessionId))
   } catch {
     res = { account: null, reason: 'no-usable' }
   }
@@ -1269,10 +1279,11 @@ async function pickedAccountEnv(): Promise<NodeJS.ProcessEnv | null> {
 
 async function handlePickRequest(pickDir: string, reqName: string, raw: unknown): Promise<void> {
   const obj = raw as { tabId?: string; ts?: number }
-  if (!obj.tabId || !ptyMgr.get(obj.tabId)) return
+  const tab = obj.tabId ? ptyMgr.get(obj.tabId) : undefined
+  if (!obj.tabId || !tab) return
   const id = reqName.slice('req-'.length).replace(/\.json$/, '')
   if (!/^[A-Za-z0-9-]+$/.test(id)) return
-  const { res, endpoint } = await pickForLaunch(obj.tabId)
+  const { res, endpoint } = await pickForLaunch(obj.tabId, tab.resumeSessionId)
   const payload: Record<string, unknown> = { ...res }
   if (res.account && loadSettings().skipPermissions) payload.skipFlag = true
   claudeBackend.picked(obj.tabId, payload.skipFlag === true)
@@ -1303,10 +1314,6 @@ const AUTH_URL_RE = /https?:\/\/[^\s'"`<>]+/
 // CC§7
 const TOKEN_RE = /sk-ant-[A-Za-z0-9]{2,12}-[A-Za-z0-9_-]{24,}/
 
-function stripAnsi(s: string): string {
-  return s.replace(/\[[0-9;?]*[A-Za-z]/g, '').replace(/[()][AB0]/g, '')
-}
-
 function sendLoginProgress(p: LoginProgress): void {
   sendToRenderer('accounts:login-progress', p)
 }
@@ -1318,7 +1325,7 @@ function feedLoginWatcher(tabId: string, data: string): void {
     failLogin(tabId, 'Sign-in timed out')
     return
   }
-  w.buf = (w.buf + stripAnsi(data)).slice(-LOGIN_BUF_MAX)
+  w.buf = (w.buf + stripTerminalCodes(data)).slice(-LOGIN_BUF_MAX)
   const m = TOKEN_RE.exec(w.buf)
   if (!m) {
     if (!w.sawUrl) {
@@ -1495,9 +1502,9 @@ function codexSharedConfig(): string {
 }
 
 // CODEX§15
-function pickCodexHome(): { account: string; home: string } | undefined {
+function pickCodexHome(resumeSessionId?: string): { account: string; home: string } | undefined {
   const views = accountViews()
-  const picked = codexPicker.pick(views)
+  const picked = codexPicker.pick(views, sessionAccounts?.of('codex', resumeSessionId))
   if (!picked) return undefined
   const stale = views.some(
     (a) =>
@@ -2009,6 +2016,7 @@ app.whenReady().then(() => {
   const openTabsPath = path.join(userData, 'open-tabs.json')
   savedOpenTabs = readOpenTabs(openTabsPath)
   openTabsFile = new OpenTabsFile(openTabsPath, savedOpenTabs)
+  sessionAccounts = new SessionAccounts(path.join(userData, 'session-accounts.json'))
   try {
     codexSessions = new CodexSessions(path.join(userData, 'sessions.json'), {
       pty: ptyMgr,
@@ -2627,6 +2635,7 @@ app.on('before-quit', (e) => {
   workspaceMgr?.dispose()
   flushLayout()
   openTabsFile?.flushSync()
+  sessionAccounts?.flushSync()
   flushAttention()
   freshness?.stop()
   remoteSync?.stop()
@@ -3208,6 +3217,10 @@ function setupBrowserPartition(): void {
     type: 'frame',
     filePath: path.join(__dirname, '../preload/guest.js')
   })
+  // PLATFORM§39
+  ses.webRequest.onBeforeRequest((details, callback) => {
+    callback({ cancel: webPageReachesDiscordDesktopApp(details.url, details.initiatorOrigin) })
+  })
   // PLATFORM§13
   ses.webRequest.onHeadersReceived((details, callback) => {
     const headers = details.responseHeaders
@@ -3697,10 +3710,27 @@ async function tellAssist(
   title: string,
   text: string
 ): Promise<ConductorOpenResult> {
+  const tabId = conductors?.liveTab(scope)
+  return tabId ? sendPaletteText(scope, tabId, text) : openPaletteTask(scope, title, text)
+}
+
+async function openPaletteTask(
+  scope: string,
+  title: string,
+  text: string
+): Promise<ConductorOpenResult> {
   const all = conductors
   if (!all) return { ok: false, error: STILL_STARTING }
-  const tabId = all.liveTab(scope)
-  if (!tabId) return all.openTask(scope, paletteTask(title, text))
+  const task = paletteTask(title, text)
+  const running = all.runningTaskTab(scope, task.name)
+  return running ? sendPaletteText(scope, running, text) : all.openTask(scope, task)
+}
+
+async function sendPaletteText(
+  scope: string,
+  tabId: string,
+  text: string
+): Promise<ConductorOpenResult> {
   const id = `koloft-palette-${++paletteMessages}`
   if (!(await tabReady(tabId, PALETTE_MESSAGE_WAITS_FOR_THE_ASSIST_MS, false)))
     return { ok: false, error: `The ${conductorName(scope)} did not get ready in time.` }
@@ -3853,7 +3883,8 @@ const hosts = new Hosts(
         alive: () => remoteSync?.alive(machine) ?? new Set(),
         realPath: (p) => workspaceMgr?.realRemotePath({ host: machine, path: p }) ?? p,
         settings: loadSettings,
-        pickAccount: (launchKey) => pickMachineAccount(() => pickForLaunch(launchKey)),
+        pickAccount: (launchKey, resumeSessionId) =>
+          pickMachineAccount(() => pickForLaunch(launchKey, resumeSessionId)),
         agentTools: () => agentToolsFor('claude', 'ssh'),
         hookSettings: (tabId, dir, allowKoloft) =>
           machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft)
@@ -4229,10 +4260,8 @@ function registerIpc(): void {
     'conductors:startFresh',
     (_e, scope: string) => conductors?.startFresh(scope) ?? { ok: false, error: STILL_STARTING }
   )
-  ipcMain.handle(
-    'conductors:openTask',
-    (_e, scope: string, title: string, text: string) =>
-      conductors?.openTask(scope, paletteTask(title, text)) ?? { ok: false, error: STILL_STARTING }
+  ipcMain.handle('conductors:openTask', (_e, scope: string, title: string, text: string) =>
+    openPaletteTask(scope, title, text)
   )
   ipcMain.handle('conductors:tell', (_e, scope: string, title: string, text: string) =>
     tellAssist(scope, title, text)
@@ -4596,7 +4625,7 @@ function registerIpc(): void {
     hosts.of(p).listDir(p, opts)
   )
   ipcMain.handle('fs:dirExists', (_e, p: string) =>
-    typeof p === 'string' && p ? hosts.of(p).dirExists(p) : false
+    typeof p === 'string' && p ? hosts.of(p).dirExistsOrThrow(p) : false
   )
   ipcMain.handle('fs:search', (_e, p: string, q: string, opts?: { showIgnored?: boolean }) =>
     hosts.of(p).search(p, q, opts)

@@ -265,6 +265,20 @@ describe('WorkspaceManager: owned-only sidebar (decided 2026-08-09)', () => {
     expect(layout.members).toEqual(['ext-1'])
     expect(layout.panels['ext-1']).toEqual(SEEDED)
   })
+
+  it('finds a session whose transcript folder appears after start on a machine that had no projects folder yet', async () => {
+    fs.rmSync(projectsRoot, { recursive: true })
+    own('first-1')
+    bindings.set('first-1', 'tab-1')
+    mgr.start()
+    await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(0))
+    expect(latest(repo).rows).toEqual([])
+
+    writeJsonl(repo, 'first-1')
+    await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['first-1']), {
+      timeout: 5000
+    })
+  })
 })
 
 describe('WorkspaceManager: a rescan never blocks the main process on the transcript storage', () => {

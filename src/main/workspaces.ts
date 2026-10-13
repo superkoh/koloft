@@ -210,6 +210,9 @@ export class WorkspaceManager {
   }
 
   start(): void {
+    try {
+      fs.mkdirSync(this.deps.projectsRoot, { recursive: true })
+    } catch {}
     this.watchRoots()
     this.scheduleRescan()
   }
