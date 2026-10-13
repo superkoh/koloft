@@ -151,6 +151,25 @@ describe('Codex stdio reads', () => {
     ).rejects.toThrow('size limit')
   })
 
+  // CODEX§28
+  it('a read whose app-server exits as it starts, as one does beside another starting in a home no app-server has used yet, is answered by a second app-server', async () => {
+    const diedOnce = path.join(directory, 'died-once')
+    const diesOnFirstStart = path.join(directory, 'codex-dies-once')
+    await fs.writeFile(
+      diesOnFirstStart,
+      `#!${process.execPath}
+const fs = require('fs');
+if (!fs.existsSync(${JSON.stringify(diedOnce)})) { fs.writeFileSync(${JSON.stringify(diedOnce)}, ''); process.exit(1); }
+require(${JSON.stringify(binary)});
+`,
+      { mode: 0o700 }
+    )
+    const client = new CodexRpc({ binary: diesOnFirstStart, cwd: directory })
+    cleanups.push(() => client.close())
+    const reply = await client.request<{ params: unknown }>('thread/list', { cursor: 'next' })
+    expect(reply.params).toEqual({ cursor: 'next' })
+  })
+
   it('preserves user auth/config but removes enclosing session markers', async () => {
     const client = new CodexRpc({
       binary,

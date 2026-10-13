@@ -173,9 +173,19 @@ describe('routeFor — the §05B routing table', () => {
     expect(new URL(search.target).searchParams.get('q')).toBe('error message text')
   })
 
-  it('searches rather than navigates for a lone word or a path-looking entry', () => {
+  it('searches rather than navigates for a lone word or a bare page name, which is not a host', () => {
     expect(new URL(routeFor('koloft', 'address').target).host).toBe('duckduckgo.com')
-    expect(new URL(routeFor('/w/docs/page.html', 'address').target).host).toBe('duckduckgo.com')
+    expect(new URL(routeFor('design.html', 'address').target).host).toBe('duckduckgo.com')
+    expect(new URL(routeFor('index.htm', 'address').target).host).toBe('duckduckgo.com')
+  })
+
+  it('opens an absolute path typed in the address bar as the local file: a page as file://, another viewable file in the preview', () => {
+    expect(routeFor('/w/docs/page.html', 'address')).toEqual({
+      dest: 'browser',
+      target: 'file:///w/docs/page.html'
+    })
+    expect(routeFor('/w/notes.md', 'address')).toEqual({ dest: 'preview', target: '/w/notes.md' })
+    expect(routeFor('/w/app.bin', 'address').dest).toBe('drop')
   })
 
   it('drops empty and whitespace-only targets', () => {
