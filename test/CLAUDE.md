@@ -272,6 +272,39 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   When a CDP relay test waits for a message that never comes, read
   `<home>/cdp-log.txt`: it holds the relay's whole conversation.
 
+## Hand tests
+
+A hand test is a case no suite answers. Split it into steps, and give each step to the
+first of these that can do it; only a step none of them can do goes to the owner:
+
+1. The hand-test sandbox, `npm run handtest` (test/handtest/sandbox.ts; its usage text
+   says how). It lends a Claude account from the installed Koloft: the token goes into
+   a 0600 file in the sandbox's home, is never printed, and goes with `stop`. Local
+   Claude and local Codex tabs run there, a remote Claude tab with `--remote`; a remote
+   Codex tab does not exist in the product (CODEX§16). Drive it with
+   `playwright-cli attach --cdp=<cdp>` and screenshots; check results in transcripts,
+   files and `<home>/koloft.log`.
+2. A fake server: helpers/fakeDiscord.ts, the GitHub fixture, the fake `gh`.
+3. The real binary in a temp HOME (claude, codex, gh) — a temp HOME does not hide the
+   login Keychain, so a probe that signs in runs in Docker.
+4. The Docker SSH lab, for anything about a remote machine.
+5. A Mac with a real window, for what the sandbox cannot see (below).
+6. The owner, only for: a captcha, their own Discord account or phone, a first sign-in
+   with their own account, a matter of taste, or an effect that takes days to show.
+
+The sandbox is launched like an e2e app, so "Keys, focus and the hidden window" and
+"Test-only seams" above hold for it too: no Dock, badge or OS notification is shown
+(main records what it would have said in `__koloftOsOutlets`), no real ⌘ key or mouse, a file picker that answers from `<home>/file-dialog-answers`, OS
+hand-offs in `<home>/external-opens.txt`. Beyond those, its terminal draws with DOM
+(not WebGL), and the lab machine has no UTF-8 locale, so a remote Claude draws `_` for
+its symbols.
+
+The owner's step goes through AskUserQuestion, one case at a time: the steps inside
+the question, the outcomes as options. Its card reaches the owner's Discord thread
+when a binding covers the workspace, also from a session another session started
+(discord-flow). The card carries text only — no picture — so name what to look at.
+After the owner answers, check their step in a log or file yourself.
+
 ## Real-window layer (test/real-window/)
 
 - For what only macOS itself delivers or draws: menu keys, the mouse on the window
