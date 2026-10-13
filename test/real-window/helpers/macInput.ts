@@ -6,7 +6,6 @@ const SCRIPT = path.join(__dirname, 'macInput.jxa.js')
 
 export const COMMAND_FLAG = 0x100000
 export const KEY_P = 35
-export const KEY_ESCAPE = 53
 
 export interface Point {
   x: number
@@ -65,6 +64,18 @@ export function realType(letters: string): void {
 
 export function notificationCenterRunning(): boolean {
   return osa('notification-center-running') === 'true'
+}
+
+export function bannerElementCenter(text: string): Point | null {
+  const found = osa('banner-element-center', text)
+  if (!found) return null
+  const [x, y] = found.split(' ').map(Number)
+  return { x, y }
+}
+
+// PLATFORM§46
+export function chooseOnBanner(text: string, choice: string): string {
+  return osa('banner-action', text, choice)
 }
 
 export function bannerTexts(): string {

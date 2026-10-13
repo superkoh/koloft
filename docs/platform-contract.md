@@ -709,6 +709,13 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   manual window resize brought a blank re-shown tab back).
 - **Moving the window between monitors with different devicePixelRatio can corrupt the
   WebGL glyph atlas**; clearing the atlas on each DPR change fixes it (observed).
+- **A shown window on a virtual Mac kept its drawing with or without the repairs.** On GitHub's `macos-latest` runner (macOS 26.6.2,
+  a virtual display), a WebGL session terminal grabbed with `screencapture` before and
+  after switching to another session and back, minimizing and restoring from the Dock,
+  the Workbench going full width and back, and Finder covering it for 3 s, drew the same
+  picture (ink difference 0–0.8%) both with Koloft's forced repaint on re-show and atlas
+  repair in place and with both switched off (one run each, 2026-10-12, Electron 43.7.3).
+  These repairs answer GPU memory losses that a virtual GPU has not been seen to cause.
 
 ## §21 xterm.js
 
@@ -1600,9 +1607,32 @@ Gateway (the live connection that pushes events):
   `nobrowse,noowners` (no root needed), and insert rows into
   `Library/Application Support/com.apple.TCC/TCC.db`; after boot the guest honours them
   with SIP still on (`AXIsProcessTrusted()` true over SSH and under `launchctl asuser`,
-  `screencapture` works). The rows that worked name both `/usr/libexec/sshd-keygen-wrapper`
-  and `/usr/bin/osascript`; which of the two mattered was not separated. Before that, a
-  booted clone held a row denying Accessibility to `sshd-keygen-wrapper`.
-- **tart's own VNC** (`--vnc-experimental`) crashes the VM unless the client declares
-  the pseudo-encodings `[0, -223, -308, -224]`, and accepts one connection per boot.
-  Measured 2026-10-12 by the session that ran PR #548's clean-Mac check.
+  `screencapture` works). The rows that worked name `/usr/libexec/sshd-keygen-wrapper`,
+  `/usr/libexec/sshd-session` and `/usr/bin/osascript`; which of them mattered was not
+  separated. Before that, a booted clone held a row denying Accessibility to
+  `sshd-keygen-wrapper`.
+- **macOS 27 asks about screen capture from SSH, and keeps asking.** A `screencapture`
+  run over SSH raised a dialog '"com.apple.sshd-session" is requesting to bypass the
+  system private window picker…' (Allow / Open System Settings) even with the TCC rows
+  above; the capture itself was written. Left alone, the dialog stayed on screen and the
+  real-window cases still passed with it in their screenshots. Answering it with a real
+  click on Allow between steps closed it, but later captures raised it again and later
+  Dock clicks failed (two runs). After Allow, macOS records the answer in
+  `~/Library/Group Containers/group.com.apple.replayd/ScreenCaptureApprovals.plist`,
+  keyed by `/usr/libexec/sshd-keygen-wrapper`, as a dict with
+  `kScreenCaptureApprovalLastAlerted`, `kScreenCaptureApprovalLastUsed`,
+  `kScreenCapturePrivacyHintDate` (30 days on), `kScreenCapturePrivacyHintPolicy`
+  2592000 and `kScreenCaptureAlertableUsageCount`; a copy written to the stopped disk
+  before boot was replaced when the user logged in (the group container was re-created).
+  macOS 26.6.2 on GitHub's runner did not ask.
+- **Notifications from a dev build need a full ad-hoc signature.** The Electron.app in
+  `node_modules` is only linker-signed (`Info.plist=not bound`, no sealed resources);
+  its `requestAuthorization` failed at once (`didGrant: 0 hasError: 1`) and nothing was
+  shown, on macOS 26.6.2 and 27.0 alike. After `codesign --force --deep --sign -` on the
+  bundle, macOS 27 registered it and put up its own question as a banner
+  ("“Electron” Notifications — Notifications may include alerts, sounds, and icon
+  badges."). That banner has no Allow button element: Allow, Don't Allow and Close are
+  named Accessibility actions on it (`Name:Allow\nTarget:0x0\nSelector:(null)`), and
+  performing Allow answers it. Until it is answered the app's notifications are kept
+  as "Denied" and its Dock badge is not drawn either; after Allow both appear. Measured
+  2026-10-12 in the tart VM above.

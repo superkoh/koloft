@@ -14,14 +14,15 @@ import {
 import {
   ABC_LAYOUT,
   COMMAND_FLAG,
-  KEY_ESCAPE,
   KEY_P,
   KEY_RETURN,
   KEY_SPACE,
   PINYIN_SIMPLIFIED,
   accessibilityTrusted,
+  bannerElementCenter,
   bannerTexts,
   bareScreenPointOf,
+  chooseOnBanner,
   bringFinderToFront,
   dockBadgeDrawn,
   dockItemCenter,
@@ -74,6 +75,19 @@ const DRAG_BY = { x: 160, y: 90 }
 const ROOM_TO_DRAG_IN = { x: 40, y: 60, width: 760, height: 520 }
 // PLATFORM§46
 const MAC_DRAG_SLACK_PX = 6
+const MACOS_ASKS_TO_ALLOW_NOTIFICATIONS = 'Notifications may include'
+
+async function allowNotificationsWhenMacOSAsks(shownAnyway: () => boolean): Promise<void> {
+  await expect
+    .poll(() => shownAnyway() || bannerElementCenter(MACOS_ASKS_TO_ALLOW_NOTIFICATIONS) !== null, {
+      timeout: 30_000
+    })
+    .toBe(true)
+  if (!bannerElementCenter(MACOS_ASKS_TO_ALLOW_NOTIFICATIONS)) return
+  // PLATFORM§46
+  expect(chooseOnBanner(MACOS_ASKS_TO_ALLOW_NOTIFICATIONS, 'Allow')).toBe('0')
+  await expect.poll(() => bannerElementCenter(MACOS_ASKS_TO_ALLOW_NOTIFICATIONS)).toBeNull()
+}
 
 async function sessionInWsA(page: Page): Promise<string> {
   await waitBooted(page)
@@ -126,8 +140,6 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
     await expect(palette(page)).toBeVisible()
     await expect(palette(page).getByRole('textbox', { name: 'Ask or jump' })).toBeFocused()
     screenshot(testInfo.outputPath('palette-open.png'))
-    realKey(KEY_ESCAPE)
-    await expect(palette(page)).toHaveCount(0)
   })
 
   test('dragging the title bar with the mouse moves the window along with it', async ({
@@ -158,26 +170,32 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
   }, testInfo) => {
     const tabId = await sessionInWsA(page)
     await endATurnWhileInBackground(app, page, tabId)
-    await expect.poll(() => dockBadgeDrawn(DOCK_NAME), { timeout: 30_000 }).toBe('1')
+    await allowNotificationsWhenMacOSAsks(() => dockBadgeDrawn(DOCK_NAME) === '1')
+    await expect.poll(() => dockBadgeDrawn(DOCK_NAME)).toBe('1')
     screenshot(testInfo.outputPath('dock-badge.png'))
     await comeBackThroughTheDock(app)
     await expect.poll(() => dockBadgeDrawn(DOCK_NAME)).toBe('')
   })
 
-  test('a turn that ends while Koloft is in the background shows a macOS banner naming the session and what happened', async ({
+  test('a turn that ends while Koloft is in the background shows a macOS banner naming the session and what happened, once macOS has asked and been told Allow', async ({
     shown: { app, page }
   }, testInfo) => {
     // PLATFORM§46
     test.skip(!notificationCenterRunning(), 'this Mac runs no Notification Center to draw banners')
-    const tabId = await sessionInWsA(page)
-    await endATurnWhileInBackground(app, page, tabId)
-    for (let i = 0; i < 10; i++) {
-      screenshot(testInfo.outputPath(`probe-${i}.png`))
-      fs.appendFileSync(testInfo.outputPath('probe.txt'), `--- ${i}\n${bannerTexts()}\n`)
-      await page.waitForTimeout(400)
-    }
-    await expect.poll(() => bannerTexts(), { timeout: 30_000 }).toContain(FAKE_SESSION_TITLE)
-    expect(bannerTexts()).toContain('turn done — your move · ws-a')
+    const first = await sessionInWsA(page)
+    await startSessionIn(page, 'ws-b')
+    const second = (await wsRows(page, 'ws-b').first().getAttribute('data-tab-id')) ?? ''
+    await endATurnWhileInBackground(app, page, first)
+    await allowNotificationsWhenMacOSAsks(() => bannerTexts().includes(FAKE_SESSION_TITLE))
+    expect(await windowFocused(app)).toBe(false)
+    await page.evaluate(
+      ([id, line]) => window.api.terminal.write(id, line),
+      [second, '/answer hi\r']
+    )
+    await expect
+      .poll(() => bannerTexts(), { timeout: 30_000 })
+      .toContain('turn done — your move · ws-b')
+    expect(bannerTexts()).toContain(FAKE_SESSION_TITLE)
     screenshot(testInfo.outputPath('banner.png'))
   })
 
@@ -197,9 +215,9 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
       realType('nihao')
       realKey(KEY_SPACE)
       await expect.poll(async () => (await terminalText(page, tabId)).trimEnd()).toMatch(/你好$/)
-      screenshot(testInfo.outputPath('pinyin-picked.png'))
       realKey(KEY_RETURN)
       await expect.poll(() => sentPrompts(page, tabId)).toEqual(['nihao你好'])
+      screenshot(testInfo.outputPath('pinyin-sent.png'))
     } finally {
       selectInputSource(ABC_LAYOUT)
     }

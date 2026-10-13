@@ -96,11 +96,28 @@ function axNumbers(element, name) {
   return [...text.matchAll(/[xywh]:(-?[\d.]+)/g)].map((m) => Number(m[1]))
 }
 
-function dockItemCenter(appName) {
-  const item = dockItem(appName)
-  const [x, y] = axNumbers(item, 'AXPosition')
-  const [w, h] = axNumbers(item, 'AXSize')
+function centerOf(element) {
+  const [x, y] = axNumbers(element, 'AXPosition')
+  const [w, h] = axNumbers(element, 'AXSize')
   return `${x + w / 2} ${y + h / 2}`
+}
+
+function dockItemCenter(appName) {
+  return centerOf(dockItem(appName))
+}
+
+function labels(element) {
+  return ['AXValue', 'AXTitle', 'AXDescription'].map((n) => string(element, n)).filter(Boolean)
+}
+
+function findByText(element, needle, depth) {
+  if (labels(element).some((s) => s.includes(needle))) return element
+  if (depth > 0)
+    for (const child of children(element)) {
+      const found = findByText(child, needle, depth - 1)
+      if (found) return found
+    }
+  return null
 }
 
 const NOTIFICATION_CENTER = 'com.apple.notificationcenterui'
@@ -158,6 +175,20 @@ function run(argv) {
   if (command === 'banner-texts') {
     const center = processElement(NOTIFICATION_CENTER)
     return center === null ? '' : texts(center, 12, []).join('\n')
+  }
+  if (command === 'banner-element-center') {
+    const found = findByText(processElement(NOTIFICATION_CENTER), rest[0], 14)
+    return found ? centerOf(found) : ''
+  }
+  if (command === 'banner-action') {
+    const found = findByText(processElement(NOTIFICATION_CENTER), rest[0], 14)
+    if (!found) return 'no banner'
+    const actions = Ref()
+    $.AXUIElementCopyActionNames(found, actions)
+    const names = ObjC.deepUnwrap(ObjC.castRefToObject(actions[0]))
+    const action = names.find((a) => a.startsWith(`Name:${rest[1]}\n`))
+    if (!action) return 'no action ' + rest[1]
+    return String($.AXUIElementPerformAction(found, $(action)))
   }
   throw new Error('unknown command ' + command)
 }
