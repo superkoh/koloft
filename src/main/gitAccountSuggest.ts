@@ -15,6 +15,7 @@ import type { PushAccess } from './githubApi'
 import type { GitRunResult } from './gitSteps'
 import type { GitTarget } from './gitPlatformApi'
 import { apiTargetOf, withoutConfigEntries } from './gitConfigFile'
+import { AZURE_HOST, AZURE_SSH_HOST, azureSshPath, sshTarget, trimRepoPath } from './gitSshRemotes'
 import { GIT_PUBLIC_HOSTS, isGhPlatform } from '@shared/gitAccountOps'
 
 export interface SuggestDeps {
@@ -37,7 +38,6 @@ export interface SuggestDeps {
 const OFF: GitAccountSuggestion = { kind: 'off' }
 const NO_HELPERS_NO_PROMPTS = ['-c', 'credential.helper=', '-c', 'core.askPass=']
 const COMMIT_EMAILS_LOOKED_AT = 50
-const SCP_LIKE = /^(?:([^@/]+)@)?([^:/]+):(?!\/)(.*)$/
 const SSH_GREETS: GitPlatform[] = ['github', 'ghes', 'gitlab', 'gitea']
 
 export function clueEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -62,18 +62,6 @@ interface Here {
   host: string
   accounts: GitAccount[]
   platform: GitPlatform | undefined
-}
-
-function trimRepoPath(p: string): string {
-  return p
-    .replace(/^\/+/, '')
-    .replace(/\/+$/, '')
-    .replace(/\.git$/, '')
-}
-
-function azureSshPath(p: string): string {
-  const m = /^v3\/([^/]+)\/([^/]+)\/([^/]+)$/.exec(p)
-  return m ? `${m[1]}/${m[2]}/_git/${m[3]}` : p
 }
 
 export async function suggestFor(
@@ -146,24 +134,18 @@ async function pushRemote(
   }
   const target = sshTarget(pushUrl)
   if (!target) return null
-  const g = await d.ssh(['-G', ...(target.port ? ['-p', target.port] : []), target.dest])
+  const { dest, port } = target
+  const g = await d.ssh(['-G', ...(port ? ['-p', port] : []), dest])
   const hostname = g.code === 0 ? sshSetting(g.stdout, 'hostname')?.toLowerCase() : undefined
   if (!hostname) return null
-  return { kind: 'ssh', host: hostname, ...target, path: azureSshPath(target.path), sshG: g.stdout }
-}
-
-function sshTarget(url: string): { dest: string; port?: string; path: string } | null {
-  if (url.startsWith('ssh://')) {
-    try {
-      const u = new URL(url)
-      const dest = u.username ? `${decodeURIComponent(u.username)}@${u.hostname}` : u.hostname
-      return { dest, ...(u.port ? { port: u.port } : {}), path: trimRepoPath(u.pathname) }
-    } catch {
-      return null
-    }
+  return {
+    kind: 'ssh',
+    host: hostname === AZURE_SSH_HOST ? AZURE_HOST : hostname,
+    dest,
+    ...(port ? { port } : {}),
+    path: azureSshPath(trimRepoPath(target.path)),
+    sshG: g.stdout
   }
-  const m = SCP_LIKE.exec(url)
-  return m ? { dest: m[1] ? `${m[1]}@${m[2]}` : m[2], path: trimRepoPath(m[3]) } : null
 }
 
 function withoutUser(url: string): string {

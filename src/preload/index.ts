@@ -475,7 +475,9 @@ const api: KoloftApi = {
     check: () => ipcRenderer.invoke('gitAccounts:check'),
     pick: (wsPath, id) => ipcRenderer.invoke('gitAccounts:pick', wsPath, id),
     suggest: (wsPath, network) => ipcRenderer.invoke('gitAccounts:suggest', wsPath, network),
-    dismiss: (wsPath) => ipcRenderer.invoke('gitAccounts:dismiss', wsPath)
+    dismiss: (wsPath) => ipcRenderer.invoke('gitAccounts:dismiss', wsPath),
+    makeSshKey: (wsPath) => ipcRenderer.invoke('gitAccounts:make-ssh-key', wsPath),
+    checkSshKey: (wsPath) => ipcRenderer.invoke('gitAccounts:check-ssh-key', wsPath)
   },
   update: {
     version: () => ipcRenderer.invoke('app:version'),

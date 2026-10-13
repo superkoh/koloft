@@ -37,6 +37,7 @@ const GHES_ERIN_TOKEN = 'ghp_e2e_enterprise_erin'
 const FAKE_GCM = path.join(__dirname, 'fixtures', 'fake-gcm.js')
 const SHORT_WINDOW_HEIGHT = 360
 const TERMINAL_LINE_WRAPS = /\n/g
+const A_CLOSED_PORT = 1
 
 async function withFakeGithub(env: E2EEnv): Promise<FakeGithub> {
   const github = await startFakeGithub()
@@ -150,6 +151,12 @@ function rowOn(page: Page, login: string, hostLabel: string): Locator {
 
 function escape(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function pickFiles(env: E2EEnv): string[] {
+  const dir = path.join(env.userData, 'git-accounts', 'picks')
+  if (!fs.existsSync(dir)) return []
+  return fs.readdirSync(dir).map((n) => fs.readFileSync(path.join(dir, n), 'utf8'))
 }
 
 function masterConfig(env: E2EEnv): string {
@@ -674,6 +681,96 @@ test.describe('Git accounts · sign in, pick per repository, and git and gh use 
       await expect(carol.locator('.acct-status')).toHaveText('NEEDS SIGN-IN AGAIN', {
         timeout: ACCOUNT_SHOWS_WITHIN_MS
       })
+    } finally {
+      await quitAndClose(app)
+      await forge.close()
+    }
+  })
+
+  test("GA-12: a repository whose remote is an SSH address, picked for bob, has the session's git reach the server over https with bob's token; the repository's own config is untouched and only git remote -v shows the https address", async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const github = await withFakeGithub(env)
+    github.addUser(BOB_TOKEN, { login: 'bob', id: 42 })
+    const sshRemote = `git@${new URL(github.url).hostname}:acme/app.git`
+    repoOnFakeGithub(env, env.workspaces.a, sshRemote)
+    seedGitAccount(env, 'bob', BOB_TOKEN, [env.workspaces.a])
+    const repoConfig = path.join(env.workspaces.a, '.git', 'config')
+    const before = fs.readFileSync(repoConfig, 'utf8')
+    const { app, page } = await launched(env)
+    try {
+      await expect.poll(() => pickFiles(env).join('')).toContain('insteadOf')
+      await startSessionIn(page, 'ws-a')
+      const tabId = (await wsRows(page, 'ws-a').getAttribute('data-tab-id'))!
+      const shell = agentShell(page, tabId, A_SHELL_STEP_FINISHES_WITHIN_MS)
+      const run = async (command: string): Promise<string> =>
+        (await shell(command)).replace(TERMINAL_LINE_WRAPS, '')
+      expect(await run('git ls-remote origin')).toContain('refs/heads/main')
+      expect(github.hits.filter((h) => h.basic).map((h) => h.basic)).toContainEqual({
+        username: 'bob',
+        password: BOB_TOKEN
+      })
+      expect(await run('git remote -v')).toContain(`${github.url}/acme/app.git`)
+      expect(await run('git config --get remote.origin.url')).toContain(sshRemote)
+      expect(fs.readFileSync(repoConfig, 'utf8')).toBe(before)
+    } finally {
+      await quitAndClose(app)
+      await github.close()
+    }
+  })
+
+  test('GA-13: a Gitea that allows SSH only is named in the panel after a fetch; Make a key leaves a key for bob in Koloft’s folder, switches the repository to it, shows the public key with the keys page, says the server does not know the key yet, and removing bob deletes the key', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    withFakeGcm(env)
+    const forge = await startFakeForge('gitea')
+    forge.refuseHttps()
+    repoOn(env.workspaces.a, `ssh://git@127.0.0.1:${A_CLOSED_PORT}/acme/app.git`)
+    seedGcmAccount(env, 'gitea', forge.url, 'bob', GITEA_BOB_TOKEN, [env.workspaces.a])
+    const id = `${new URL(forge.url).host}/bob`
+    const key = path.join(env.userData, 'git-accounts', 'ssh', id.replace(/[^a-z0-9._@+-]/g, '_'))
+    const { app, page } = await launched(env)
+    try {
+      await expect.poll(() => pickFiles(env).join('')).toContain('insteadOf')
+      const panel = await openGitPanel(page, 'ws-a')
+      await panel.locator('.tbu-act', { hasText: 'Fetch now' }).click()
+      await expect(
+        panel.locator('.fx-note.warn', {
+          hasText: 'This server allows SSH only — bob has no SSH key on this Mac yet.'
+        })
+      ).toBeVisible({ timeout: ACCOUNT_SHOWS_WITHIN_MS })
+      await panel.locator('.tbu-act', { hasText: 'Make a key for bob' }).click()
+
+      await expect(panel.locator('.acct-login-tail')).toContainText(
+        /^ssh-ed25519 \S+ bob@koloft$/,
+        {
+          timeout: ACCOUNT_SHOWS_WITHIN_MS
+        }
+      )
+      expect(fs.statSync(key).mode & 0o777).toBe(0o600)
+      expect(pickFiles(env).join('')).toContain(`IdentitiesOnly=yes`)
+      expect(pickFiles(env).join('')).not.toContain('insteadOf')
+      expect(settingsOnDisk(env).gitPicks).toEqual([
+        expect.objectContaining({ account: id, sshKey: 'unchecked' })
+      ])
+      await expect(
+        panel.locator('.fx-note.warn', { hasText: 'Gitea does not know this key for bob yet.' })
+      ).toBeVisible({ timeout: ACCOUNT_SHOWS_WITHIN_MS })
+      await panel.locator('.tbu-act', { hasText: 'Open SSH keys page' }).click()
+      await expect
+        .poll(() => fs.readFileSync(env.externalOpens, 'utf8'))
+        .toContain(`${forge.url}/user/settings/keys`)
+      await page.mouse.move(1, 1)
+
+      await openSettings(page)
+      const bob = rowOn(page, 'bob', `${new URL(forge.url).host} · Gitea`)
+      await bob.locator('.acct-x').click()
+      await bob.getByRole('button', { name: 'Remove', exact: true }).click()
+      await expect(bob).toHaveCount(0)
+      expect(fs.existsSync(key)).toBe(false)
+      expect(fs.existsSync(`${key}.pub`)).toBe(false)
     } finally {
       await quitAndClose(app)
       await forge.close()

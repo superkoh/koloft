@@ -3,7 +3,8 @@ import {
   type GitAccount,
   type GitAuthor,
   type GitPlatform,
-  type GitRepoPick
+  type GitRepoPick,
+  type GitSshKeyState
 } from './types'
 
 export const GITHUB_DOT_COM = 'https://github.com'
@@ -174,6 +175,17 @@ export function withOneDefaultPerHost(accounts: GitAccount[]): GitAccount[] {
   })
 }
 
+const GIT_SSH_KEY_STATES: GitSshKeyState[] = ['unchecked', 'works']
+
+const SSH_KEYS_PAGE: Partial<Record<GitPlatform, string>> = {
+  gitlab: '/-/user_settings/ssh_keys',
+  gitea: '/user/settings/keys'
+}
+
+export function gitSshKeysPage(a: Pick<GitAccount, 'platform' | 'url'>): string {
+  return `${a.url}${SSH_KEYS_PAGE[a.platform] ?? ''}`
+}
+
 export function sanitizeGitPicks(raw: unknown, accounts: GitAccount[]): GitRepoPick[] {
   if (!Array.isArray(raw)) return []
   const out: GitRepoPick[] = []
@@ -187,7 +199,8 @@ export function sanitizeGitPicks(raw: unknown, accounts: GitAccount[]): GitRepoP
           : undefined
     if (!account || !accounts.some((a) => a.id === account)) continue
     if (out.some((o) => o.repo === p.repo)) continue
-    out.push({ repo: p.repo, account })
+    const sshKey = GIT_SSH_KEY_STATES.find((s) => s === p.sshKey)
+    out.push({ repo: p.repo, account, ...(sshKey && { sshKey }) })
   }
   return out
 }

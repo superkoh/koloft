@@ -3,7 +3,13 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 import { spawnSync } from 'child_process'
-import { gitAccountsDir, gitConfigEnv, writeGitAccountConfigs } from '../../src/main/gitConfigFile'
+import {
+  gitAccountsDir,
+  gitConfigEnv,
+  pickConfigText,
+  writeGitAccountConfigs
+} from '../../src/main/gitConfigFile'
+import { rewriteRulesFor } from '../../src/main/gitSshRemotes'
 import type { GitAccount, GitRepoPick } from '../../src/shared/types'
 
 let root: string
@@ -17,7 +23,18 @@ let treeA: string
 let nested: string
 let repoB: string
 let repoC: string
+let repoD: string
+let repoE: string
+let sshKey: string
 let master: string
+
+const D_REMOTES = {
+  origin: 'git@github.com:acme/app.git',
+  alias: 'git@gh-work:acme/app.git',
+  port: 'ssh://git@github.com:22/acme/app.git',
+  web: 'https://github.com/acme/app.git',
+  elsewhere: 'git@gitlab.com:x/y.git'
+}
 
 const bob: GitAccount = {
   id: 'github.com/bob',
@@ -65,7 +82,7 @@ function recorder(file: string, log: string, password: string): void {
   )
 }
 
-beforeAll(() => {
+beforeAll(async () => {
   root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-gitcfg-')))
   home = path.join(root, 'home')
   const userData = path.join(root, 'Application Support', 'koloft')
@@ -107,11 +124,40 @@ beforeAll(() => {
 
   git(repoC, ['config', 'user.name', 'repo-own'])
 
+  repoD = path.join(root, 'D')
+  repoE = path.join(root, 'E')
+  for (const r of [repoD, repoE]) {
+    fs.mkdirSync(r)
+    git(r, ['init', '-q'])
+    for (const [name, url] of Object.entries(D_REMOTES)) git(r, ['remote', 'add', name, url])
+    git(r, ['remote', 'set-url', '--push', 'origin', 'git@github.com:acme/app-push.git'])
+  }
+  const resolved: Record<string, string> = {
+    'git@github.com': 'github.com',
+    'git@gh-work': 'github.com',
+    'git@gitlab.com': 'gitlab.com'
+  }
+  const remotesD = await rewriteRulesFor(bob, Object.values(D_REMOTES), async (dest) =>
+    dest in resolved ? resolved[dest] : null
+  )
+  sshKey = path.join(root, 'Application Support', 'koloft', 'ssh', 'bob')
+
   const picks: GitRepoPick[] = [
     { repo: path.join(repoA, '.git'), account: 'github.com/bob' },
-    { repo: path.join(repoC, '.git'), account: dev.id }
+    { repo: path.join(repoC, '.git'), account: dev.id },
+    { repo: path.join(repoD, '.git'), account: 'github.com/bob' },
+    { repo: path.join(repoE, '.git'), account: 'github.com/bob', sshKey: 'unchecked' }
   ]
-  master = writeGitAccountConfigs(dir, picks, [bob, dev], helper)
+  master = writeGitAccountConfigs(
+    dir,
+    picks,
+    [bob, dev],
+    helper,
+    new Map([
+      [path.join(repoD, '.git'), pickConfigText(remotesD.rules)],
+      [path.join(repoE, '.git'), pickConfigText([], sshKey)]
+    ])
+  )
 })
 
 afterAll(() => {
@@ -174,18 +220,55 @@ describe('per-repository git config', () => {
     expect(git(repoA, ['config', '--get', 'koloft.account'], env)).toBe('github.com/bob')
   })
 
-  it('a rewrite with the pick and the account gone leaves the repository on its own config and no account file behind', () => {
+  it("a picked repository's SSH remotes, an ssh alias and a push address included, go to the account's https address while its own config keeps them as written; an https remote stays on https despite the user's own rule sending it to SSH; another server's remote is left alone", () => {
+    const userRule = path.join(root, 'user-rule.gitconfig')
+    fs.writeFileSync(userRule, '[url "git@github.com:"]\n\tinsteadOf = https://github.com/\n')
+    const env = gitConfigEnv(baseEnv({ GIT_CONFIG_GLOBAL: userRule }), master)
+    const url = (remote: string): string => git(repoD, ['ls-remote', '--get-url', remote], env)
+    for (const remote of ['origin', 'alias', 'port', 'web'])
+      expect(url(remote)).toBe('https://github.com/acme/app.git')
+    expect(git(repoD, ['remote', 'get-url', '--push', 'origin'], env)).toBe(
+      'https://github.com/acme/app-push.git'
+    )
+    expect(url('elsewhere')).toBe('git@gitlab.com:x/y.git')
+    expect(git(repoD, ['config', '--get', 'remote.origin.url'], env)).toBe(D_REMOTES.origin)
+    expect(git(repoB, ['ls-remote', '--get-url', 'https://github.com/acme/app.git'], env)).toBe(
+      'git@github.com:acme/app.git'
+    )
+  })
+
+  it("a repository switched to the account's SSH key runs ssh with that key, its path's space intact, and keeps every remote on SSH", () => {
+    const bin = path.join(root, 'fake-ssh-bin')
+    const argsLog = path.join(root, 'ssh-args.log')
+    fs.mkdirSync(bin, { recursive: true })
+    fs.writeFileSync(
+      path.join(bin, 'ssh'),
+      `#!/bin/sh\nfor a in "$@"; do echo "$a" >> '${argsLog}'; done\nexit 1\n`,
+      { mode: 0o755 }
+    )
+    const env = gitConfigEnv(baseEnv({ PATH: `${bin}:${process.env.PATH}` }), master)
+    expect(git(repoE, ['ls-remote', '--get-url', 'origin'], env)).toBe(D_REMOTES.origin)
+    git(repoE, ['ls-remote', 'origin'], env)
+    const args = fs.readFileSync(argsLog, 'utf8').split('\n')
+    expect(args.slice(0, 4)).toEqual(['-i', sshKey, '-o', 'IdentitiesOnly=yes'])
+    expect(args).toContain('git@github.com')
+  })
+
+  it('a rewrite with the pick and the account gone leaves the repository on its own config and no account or pick file behind', () => {
     const tmpDir = path.join(root, 'rewrite')
+    const repo = path.join(repoA, '.git')
     writeGitAccountConfigs(
       tmpDir,
-      [{ repo: path.join(repoA, '.git'), account: 'github.com/bob' }],
+      [{ repo, account: 'github.com/bob' }],
       [bob],
-      helper
+      helper,
+      new Map([[repo, pickConfigText([], sshKey)]])
     )
-    const again = writeGitAccountConfigs(tmpDir, [], [], helper)
+    const again = writeGitAccountConfigs(tmpDir, [], [], helper, new Map())
     expect(git(repoA, ['config', '--get', 'koloft.account'], gitConfigEnv(baseEnv(), again))).toBe(
       'exit 1'
     )
     expect(fs.readdirSync(path.join(tmpDir, 'accounts'))).toEqual([])
+    expect(fs.readdirSync(path.join(tmpDir, 'picks'))).toEqual([])
   })
 })

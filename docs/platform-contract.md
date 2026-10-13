@@ -1783,3 +1783,36 @@ server unless a line says so.
   means "can push" is not checked, so Koloft only asks whether `GET
   .../<project>/_apis/git/repositories/<repo>` answers 200. No private commit address
   exists.
+
+## §52 An SSH remote sent over https, and a server that refuses https
+
+- **`url.<https>.insteadOf <ssh prefix>` from an included file rewrites every SSH
+  spelling**: `git@<host>:o/r.git`, `<host>:o/r.git`, `ssh://git@<host>/o/r.git`,
+  `ssh://git@<host>:22/o/r.git` and an ssh alias `git@<alias>:o/r.git` each need their
+  own rule and each went to `<https base>/o/r.git`; `git@ssh.dev.azure.com:v3/<org>/<p>/`
+  → `https://dev.azure.com/<org>/<p>/_git/` gave `…/_git/<repo>`. A `pushurl` is
+  rewritten by the same rules. The remote's raw value (`git config --get
+  remote.<n>.url`) stays as written, while `git remote -v` and `git remote get-url` print
+  the rewritten https address. With the user's own `url."git@github.com:".insteadOf
+  https://github.com/`, an https remote went over ssh; an included rule naming that
+  remote's full address mapped to itself kept it on https (the longest match wins, and
+  git rewrites once).
+- **A server that refuses https** answers `info/refs` with 403 and a `text/plain` body;
+  git prints the body as `remote: <text>` before `fatal: unable to access '<url>': The
+  requested URL returned error: 403` and exits 128, for `ls-remote`, `fetch` and `push`
+  alike. A real Gitea 1.24.6 with `[repository] DISABLE_HTTP_GIT = true` answered before
+  asking for credentials with `Interacting with repositories by HTTP protocol is not
+  allowed`. GitLab's text, `Git access over HTTP is not allowed` (instance or top-level
+  group set to "SSH only"), comes after the 401 challenge; it is read in GitLab's source
+  and replayed by a stub, not checked against a real GitLab.
+- **`ssh -i <key> -o IdentitiesOnly=yes`** puts that key first; `IdentityFile` lines from
+  the user's config for the host still follow it, and ssh's default key files are then
+  left out. `ProxyJump` and the rest of the user's config still apply (`ssh -G`). So when
+  the server does not know the key yet, ssh may go on and sign in with the user's own key:
+  only the greeting's name (§48) tells whose key was taken. The real Gitea greeted a
+  registered key with `Hi there, <login>! You've successfully authenticated with the key
+  named <title>, but Gitea does not provide shell access.` and exit 0, and refused an
+  unknown one with `Permission denied (publickey).` and exit 255. `core.sshCommand = "ssh
+  -i '<key>' -o IdentitiesOnly=yes"` in an included file carried a fetch and a push.
+- Measured 2026-10-13 with Apple git 2.54 and OpenSSH 10.3p1 on macOS 27.0, a temp
+  `HOME`, a 403 stub on 127.0.0.1, and a Gitea 1.24.6 in Docker with throwaway keys.

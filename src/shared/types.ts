@@ -59,10 +59,17 @@ export interface GitAccount {
   addedAt: number
 }
 
+export type GitSshKeyState = 'unchecked' | 'works'
+
 export interface GitRepoPick {
   repo: string
   account: string
+  sshKey?: GitSshKeyState
 }
+
+export type WorkspaceGitSsh =
+  | { kind: 'https-refused' }
+  | { kind: 'key'; publicKey: string; keysPage: string; notTakenYet: boolean }
 
 export interface GitAccountView extends GitAccount {
   usedBy: string[]
@@ -117,6 +124,7 @@ export interface WorkspaceGitAccount {
   status: AccountStatus
   sharedWith: string[]
   pushBlockedByOrg?: string
+  ssh?: WorkspaceGitSsh
 }
 
 export function keychainServiceSuffix(kind: AccountKind): string {
@@ -1183,6 +1191,8 @@ export interface KoloftApi {
     pick(wsPath: string, id: string | null): Promise<void>
     suggest(wsPath: string, network: boolean): Promise<GitAccountSuggestion>
     dismiss(wsPath: string): Promise<void>
+    makeSshKey(wsPath: string): Promise<void>
+    checkSshKey(wsPath: string): Promise<void>
   }
   // ADR-0006
   update: {

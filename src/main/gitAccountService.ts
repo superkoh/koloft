@@ -14,7 +14,8 @@ import type {
   GitRepoPick,
   GitTokenAdd,
   GitTokenAddResult,
-  WorkspaceGitAccount
+  WorkspaceGitAccount,
+  WorkspaceGitSsh
 } from '@shared/types'
 import {
   GITHUB_DOT_COM,
@@ -24,6 +25,7 @@ import {
   gitHostOf,
   gitPlatformName,
   gitSignIn,
+  gitSshKeysPage,
   isGhPlatform
 } from '@shared/gitAccountOps'
 import { gitTokenDelete, gitTokenRead, gitTokenWrite } from './accounts'
@@ -34,6 +36,7 @@ import {
   removeGitAccount,
   setDefaultGitAccount,
   setGitPick,
+  setGitPickSshKey,
   suggestionDismissed,
   upsertGitAccount
 } from './gitAccounts'
@@ -46,8 +49,14 @@ import {
   credentialUrlOf,
   gitAccountsDir,
   gitConfigEnv,
+  pickConfigText,
+  sshKeyPath,
+  withoutConfigEntries,
   writeGitAccountConfigs
 } from './gitConfigFile'
+import { loginFromSshGreeting, SSH_SAFE_OPTIONS, sshSetting } from './gitClues'
+import { FETCH_TIMEOUT_MS, networkGit } from './gitFreshness'
+import { HTTPS_REFUSED, remoteUrlsOf, rewriteRulesFor, type RepoRemotes } from './gitSshRemotes'
 import { GH_TOKEN_VARIABLES } from './gitCredentialScripts'
 import { CredentialManager, type GcmAccount, type GcmSignIn } from './gitCredentialManager'
 import { GitRepoKeys } from './gitRepoKey'
@@ -64,6 +73,8 @@ import { GithubLogin } from './githubLogin'
 
 const CLUE_COMMAND_KILL_MS = 10_000
 const REQUEST_DIR = /^koloft-git-(\d+)-/
+const REMOTE_URLS = '^remote\\..*\\.(push)?url$'
+const HTTPS_CAN_BE_OFF: GitPlatform[] = ['gitlab', 'gitea']
 const PICKED_WITHOUT_ASKING: GitAccountSuggestion['kind'][] = [
   'use',
   'only-one-can-push',
@@ -156,6 +167,10 @@ export class GitAccountService {
   private offline = new Set<string>()
   private found = new Map<string, GitAccountSuggestion>()
   private orgBlocked = new Map<string, { id: string; org: string }>()
+  private remotes = new Map<string, RepoRemotes>()
+  private sshHosts = new Map<string, string | null>()
+  private httpsRefused = new Set<string>()
+  private keyNotTaken = new Set<string>()
   private requests: GitAuthRequests
   private checks: GitAccountChecks
   private login: GithubLogin
@@ -217,12 +232,157 @@ export class GitAccountService {
   private reload(): string {
     this.accounts = listGitAccounts()
     this.picks = listGitPicks()
+    const texts = new Map<string, string>()
+    for (const p of this.picks) {
+      const remotes = this.remotes.get(p.repo)
+      if (p.sshKey) texts.set(p.repo, pickConfigText([], this.keyPath(p.account)))
+      else if (remotes) texts.set(p.repo, pickConfigText(remotes.rules))
+    }
     return writeGitAccountConfigs(
       gitAccountsDir(this.d.userData),
       this.picks,
       this.accounts,
-      this.d.gitHelper
+      this.d.gitHelper,
+      texts
     )
+  }
+
+  private keyPath(id: string): string {
+    return sshKeyPath(gitAccountsDir(this.d.userData), id)
+  }
+
+  private pickOf(repo: string | null): GitRepoPick | undefined {
+    return this.picks.find((p) => p.repo === repo)
+  }
+
+  private async sshHostname(dest: string, port?: string): Promise<string | null> {
+    const key = `${dest} ${port ?? ''}`
+    if (!this.sshHosts.has(key)) {
+      const env = await this.d.baseEnv()
+      const g = await runForClue('ssh', ['-G', ...(port ? ['-p', port] : []), dest], { env })
+      this.sshHosts.set(key, (g.code === 0 && sshSetting(g.stdout, 'hostname')) || null)
+    }
+    return this.sshHosts.get(key) ?? null
+  }
+
+  // PLATFORM§52 ADR-0035
+  private async scanRemotes(repo: string): Promise<void> {
+    const a = this.account(this.pickOf(repo)?.account)
+    if (!a) return
+    const env = withoutConfigEntries(await this.d.baseEnv())
+    const listed = await runForClue('git', ['-C', repo, 'config', '--get-regexp', REMOTE_URLS], {
+      env
+    })
+    const found = await rewriteRulesFor(a, remoteUrlsOf(listed.stdout), (dest, port) =>
+      this.sshHostname(dest, port)
+    )
+    const known = this.remotes.get(repo)
+    if (this.pickOf(repo)?.account !== a.id) return
+    if (known && JSON.stringify(known) === JSON.stringify(found)) return
+    this.remotes.set(repo, found)
+    this.reload()
+  }
+
+  private async checkHttps(repo: string): Promise<void> {
+    const pick = this.pickOf(repo)
+    const a = this.account(pick?.account)
+    const ssh = this.remotes.get(repo)?.ssh
+    if (!a || !ssh || pick?.sshKey || !HTTPS_CAN_BE_OFF.includes(a.platform)) return
+    const r = await networkGit(
+      'git',
+      repo,
+      ['ls-remote', ssh.url, 'HEAD'],
+      FETCH_TIMEOUT_MS,
+      new Set()
+    )
+    if (!r.ok) await this.httpsFailed(repo, r.stderr)
+  }
+
+  fetchFailed(wsPath: string, stderr: string): void {
+    const repo = this.keys.known(wsPath)
+    if (repo) void this.httpsFailed(repo, stderr)
+  }
+
+  private async httpsFailed(repo: string, stderr: string): Promise<void> {
+    const pick = this.pickOf(repo)
+    if (!HTTPS_REFUSED.test(stderr) || !pick || pick.sshKey || !this.remotes.get(repo)?.ssh) return
+    if (fs.existsSync(this.keyPath(pick.account))) return this.useKey(repo)
+    if (this.httpsRefused.has(repo)) return
+    this.httpsRefused.add(repo)
+    this.d.picksChanged()
+  }
+
+  async makeSshKey(wsPath: string): Promise<void> {
+    const repo = await this.keys.resolve(wsPath)
+    const a = this.pickFor(repo)
+    if (!repo || !a) return
+    const key = this.keyPath(a.id)
+    if (!fs.existsSync(key)) {
+      fs.mkdirSync(path.dirname(key), { recursive: true, mode: 0o700 })
+      await runForClue(
+        'ssh-keygen',
+        ['-q', '-t', 'ed25519', '-N', '', '-C', `${a.login}@koloft`, '-f', key],
+        {}
+      )
+    }
+    if (fs.existsSync(key)) await this.useKey(repo)
+  }
+
+  // ADR-0035
+  private async useKey(repo: string): Promise<void> {
+    setGitPickSshKey(repo, 'unchecked')
+    this.httpsRefused.delete(repo)
+    this.changed()
+    await this.checkKey(repo)
+  }
+
+  async checkSshKey(wsPath: string): Promise<void> {
+    const repo = await this.keys.resolve(wsPath)
+    if (repo) await this.checkKey(repo)
+  }
+
+  // PLATFORM§48 PLATFORM§52
+  private async checkKey(repo: string): Promise<void> {
+    const a = this.pickFor(repo)
+    const ssh = this.remotes.get(repo)?.ssh
+    if (!a || !ssh) return
+    const hello = await runForClue(
+      'ssh',
+      [
+        ...SSH_SAFE_OPTIONS,
+        '-i',
+        this.keyPath(a.id),
+        '-o',
+        'IdentitiesOnly=yes',
+        ...(ssh.port ? ['-p', ssh.port] : []),
+        ssh.dest
+      ],
+      { env: await this.d.baseEnv() }
+    )
+    if (this.pickFor(repo)?.id !== a.id) return
+    if (loginFromSshGreeting(hello.stderr)?.toLowerCase() === a.login.toLowerCase()) {
+      this.keyNotTaken.delete(repo)
+      setGitPickSshKey(repo, 'works')
+      this.changed()
+      return
+    }
+    this.keyNotTaken.add(repo)
+    this.d.picksChanged()
+  }
+
+  private sshView(repo: string, a: GitAccount): WorkspaceGitSsh | undefined {
+    if (this.pickOf(repo)?.sshKey === 'unchecked') {
+      const publicKey = readText(`${this.keyPath(a.id)}.pub`)?.trim()
+      return publicKey
+        ? {
+            kind: 'key',
+            publicKey,
+            keysPage: gitSshKeysPage(a),
+            notTakenYet: this.keyNotTaken.has(repo)
+          }
+        : undefined
+    }
+    return this.httpsRefused.has(repo) ? { kind: 'https-refused' } : undefined
   }
 
   private account(id: string | undefined): GitAccount | undefined {
@@ -279,6 +439,7 @@ export class GitAccountService {
 
   async refreshRepoKeys(workspaces: string[]): Promise<void> {
     await this.keys.refresh(workspaces)
+    await Promise.all(this.picks.map((p) => this.scanRemotes(p.repo)))
     this.accountsChanged()
   }
 
@@ -323,6 +484,7 @@ export class GitAccountService {
     const a = this.pickFor(repo)
     if (!repo || !a) return undefined
     const blocked = this.orgBlocked.get(repo)
+    const ssh = this.sshView(repo, a)
     return {
       id: a.id,
       login: a.login,
@@ -331,7 +493,8 @@ export class GitAccountService {
       ...(a.author && { author: a.author }),
       status: a.status,
       sharedWith: this.keys.workspacesOf(repo).filter((p) => p !== wsPath),
-      ...(blocked?.id === a.id && { pushBlockedByOrg: blocked.org })
+      ...(blocked?.id === a.id && { pushBlockedByOrg: blocked.org }),
+      ...(ssh && { ssh })
     }
   }
 
@@ -502,6 +665,7 @@ export class GitAccountService {
     if (!a) return
     if (a.gcmNamespace) await this.gcm.erase(a)
     else await gitTokenDelete(a.host, a.login)
+    for (const f of [this.keyPath(a.id), `${this.keyPath(a.id)}.pub`]) fs.rmSync(f, { force: true })
     removeGitAccount(a.id)
     this.offline.delete(a.id)
     this.changed()
@@ -519,9 +683,13 @@ export class GitAccountService {
     setGitPick(repo, id)
     this.keys.set(wsPath, repo)
     this.orgBlocked.delete(repo)
+    this.httpsRefused.delete(repo)
+    this.keyNotTaken.delete(repo)
     this.changed()
     const account = this.account(id ?? undefined)
     if (account && isGhPlatform(account.platform)) void this.checkOrgAccess(wsPath, repo, account)
+    await this.scanRemotes(repo)
+    void this.checkHttps(repo)
   }
 
   private async checkOrgAccess(wsPath: string, repo: string, account: GitAccount): Promise<void> {

@@ -1,10 +1,14 @@
+import { createHash } from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import { shq } from '@shared/shellQuote'
 import { gitCredentialUrl } from '@shared/gitAccountOps'
 import type { GitAccount, GitRepoPick } from '@shared/types'
 import type { GitTarget } from './gitPlatformApi'
+import type { RewriteRule } from './gitSshRemotes'
 import { writeWholeBeforeVisible } from './jsonDrops'
+
+const PICK_FILE_NAME_LENGTH = 16
 
 export const GITHUB_URL = process.env.KOLOFT_GITHUB_URL || 'https://github.com'
 
@@ -28,8 +32,21 @@ export function gitAccountsDir(userData: string): string {
   return path.join(userData, 'git-accounts')
 }
 
+function fileNameOf(id: string): string {
+  return id.replace(/[^a-z0-9._@+-]/g, '_')
+}
+
 function accountConfigPath(dir: string, id: string): string {
-  return path.join(dir, 'accounts', `${id.replace(/[^a-z0-9._@+-]/g, '_')}.gitconfig`)
+  return path.join(dir, 'accounts', `${fileNameOf(id)}.gitconfig`)
+}
+
+function pickConfigPath(dir: string, repo: string): string {
+  const name = createHash('sha256').update(repo).digest('hex').slice(0, PICK_FILE_NAME_LENGTH)
+  return path.join(dir, 'picks', `${name}.gitconfig`)
+}
+
+export function sshKeyPath(dir: string, id: string): string {
+  return path.join(dir, 'ssh', fileNameOf(id))
 }
 
 function quoted(s: string): string {
@@ -40,12 +57,21 @@ function quoted(s: string): string {
 export function masterConfigText(picks: GitRepoPick[], dir: string): string {
   return picks
     .flatMap((p) => {
-      const include = `\tpath = ${quoted(accountConfigPath(dir, p.account))}\n`
+      const include = [accountConfigPath(dir, p.account), pickConfigPath(dir, p.repo)]
+        .map((file) => `\tpath = ${quoted(file)}\n`)
+        .join('')
       return [`gitdir:${p.repo}`, `gitdir:${p.repo}/`].map(
         (pattern) => `[includeIf ${quoted(pattern)}]\n${include}`
       )
     })
     .join('')
+}
+
+// PLATFORM§52 ADR-0035
+export function pickConfigText(rules: RewriteRule[], sshKey?: string): string {
+  if (sshKey)
+    return `[core]\n\tsshCommand = ${quoted(`ssh -i ${shq(sshKey)} -o IdentitiesOnly=yes`)}\n`
+  return rules.map(([to, from]) => `[url ${quoted(to)}]\n\tinsteadOf = ${quoted(from)}\n`).join('')
 }
 
 // PLATFORM§46
@@ -70,23 +96,37 @@ export function accountConfigText(a: GitAccount, helperPath: string): string {
   ].join('\n')
 }
 
+function keepOnly(folder: string, kept: Set<string>): void {
+  for (const name of fs.readdirSync(folder)) {
+    if (!kept.has(name)) fs.rmSync(path.join(folder, name), { force: true })
+  }
+}
+
 export function writeGitAccountConfigs(
   dir: string,
   picks: GitRepoPick[],
   accounts: GitAccount[],
-  helperPath: string
+  helperPath: string,
+  pickTexts: Map<string, string>
 ): string {
   const accountsDir = path.join(dir, 'accounts')
-  fs.mkdirSync(accountsDir, { recursive: true })
+  const picksDir = path.join(dir, 'picks')
+  for (const d of [accountsDir, picksDir]) fs.mkdirSync(d, { recursive: true })
   const written = new Set<string>()
   for (const a of accounts) {
     const file = accountConfigPath(dir, a.id)
     writeWholeBeforeVisible(file, accountConfigText(a, helperPath))
     written.add(path.basename(file))
   }
-  for (const name of fs.readdirSync(accountsDir)) {
-    if (!written.has(name)) fs.rmSync(path.join(accountsDir, name), { force: true })
+  keepOnly(accountsDir, written)
+  const picked = new Set<string>()
+  for (const p of picks) {
+    const file = pickConfigPath(dir, p.repo)
+    const text = pickTexts.get(p.repo)
+    if (text !== undefined) writeWholeBeforeVisible(file, text)
+    picked.add(path.basename(file))
   }
+  keepOnly(picksDir, picked)
   const master = path.join(dir, 'config')
   writeWholeBeforeVisible(master, masterConfigText(picks, dir))
   return master

@@ -1495,5 +1495,13 @@ the configured sandbox.
   before the turn). No question was put to the owner. Established by
   `agent-tools-real-smoke.spec.ts` › "a real Codex turn's git, inside its sandbox, reaches
   the server with the picked account's token through Koloft".
+- **ssh with a key in Koloft's own folder works inside the sandbox once the network is
+  on.** 2026-10-13, codex-cli 0.162.0, `command/exec` under `workspace-write`, a
+  repository whose included config set `core.sshCommand = "ssh -i '<~/Library/Application
+  Support/…/key>' -o IdentitiesOnly=yes"`: the command read the key and `git push` reached
+  a Gitea 1.24.6 over ssh; without `network_access` ssh failed with `connect to host …:
+  Operation not permitted`. In both runs git could not write inside the repository's
+  `.git` (`index.lock`, `refs/remotes/origin/main.lock`: `Operation not permitted`), so the
+  push went out but the remote-tracking ref was not updated.
 - Not probed yet: a push to the real github.com from a Codex turn.
 

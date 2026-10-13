@@ -1,4 +1,4 @@
-import type { GitAccount, GitRepoPick } from '@shared/types'
+import type { GitAccount, GitRepoPick, GitSshKeyState } from '@shared/types'
 import { withOneDefaultPerHost } from '@shared/gitAccountOps'
 import { loadSettings, saveSettings } from './settings'
 
@@ -52,6 +52,12 @@ export function setGitPick(repoKey: string, id: string | null): void {
   const rest = listGitPicks().filter((p) => p.repo !== repoKey)
   if (id !== null && !findGitAccount(id)) return
   saveSettings({ gitPicks: id === null ? rest : [...rest, { repo: repoKey, account: id }] })
+}
+
+export function setGitPickSshKey(repoKey: string, sshKey: GitSshKeyState): void {
+  saveSettings({
+    gitPicks: listGitPicks().map((p) => (p.repo === repoKey ? { ...p, sshKey } : p))
+  })
 }
 
 export function dismissSuggestion(repoKey: string): void {
