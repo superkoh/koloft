@@ -1,5 +1,9 @@
+import fs from 'fs'
+import http from 'http'
+import type { AddressInfo } from 'net'
 import path from 'path'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { addKeychainEntry, seededAccount, seedSettings } from './helpers/env'
 import {
   installFakeRemote,
   killFakeRemote,
@@ -49,6 +53,61 @@ test.describe('resuming a cold remote row from the mirror, never as a local path
       await expect(row).not.toHaveClass(/\bcold\b/, { timeout: 60_000 })
     } finally {
       await quitAndClose(app)
+    }
+  })
+
+  test('a cold remote row resumes on the account the session last ran on while it has room, even when another account is lighter', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const tokens = { alpha: 'sk-ant-oat01-fixture-alpha', bravo: 'sk-ant-oat01-fixture-bravo' }
+    const fiveHourUse: Record<string, number> = { [tokens.alpha]: 0.1, [tokens.bravo]: 0.8 }
+    const probe = http.createServer((req, res) => {
+      const token = String(req.headers['authorization'] ?? '').replace(/^Bearer /, '')
+      req.resume()
+      req.on('end', () => {
+        res.writeHead(200, {
+          'content-type': 'application/json',
+          'anthropic-ratelimit-unified-5h-utilization': String(fiveHourUse[token] ?? 0),
+          'anthropic-ratelimit-unified-7d-utilization': '0.2',
+          'anthropic-ratelimit-unified-5h-status': 'allowed',
+          'anthropic-ratelimit-unified-7d-status': 'allowed'
+        })
+        res.end('{}')
+      })
+    })
+    await new Promise<void>((ok) => probe.listen(0, '127.0.0.1', ok))
+    env.launchEnv.KOLOFT_PROBE_BASE_URL = `http://127.0.0.1:${(probe.address() as AddressInfo).port}`
+    for (const [name, token] of Object.entries(tokens))
+      addKeychainEntry(env, 'koloft-dev-claude-oauth', name, token)
+    seedSettings(env, { accounts: [seededAccount('alpha'), seededAccount('bravo')] })
+    installFakeRemote(env)
+    seedRemoteWorkspace(env)
+    const seeded = seedJsonl(env, remoteDir(env), {
+      root: path.join(env.userData, 'remote', REMOTE_HOST, 'projects'),
+      cwd: remoteDir(env),
+      summary: 'Yesterday on the build machine'
+    })
+    fs.writeFileSync(
+      path.join(env.userData, 'session-accounts.json'),
+      JSON.stringify({ [`claude:${seeded}`]: 'bravo' })
+    )
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await waitBooted(page)
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
+      await row.click()
+      const calls = await waitForCalls(env, 1, 90_000)
+      const last = calls[calls.length - 1]
+      expect(resumedId(last)).toBe(seeded)
+      expect(last.oauthToken).toBe(tokens.bravo)
+    } finally {
+      await quitAndClose(app)
+      await new Promise((ok) => probe.close(ok))
     }
   })
 })

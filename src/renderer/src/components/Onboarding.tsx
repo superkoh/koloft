@@ -188,6 +188,7 @@ export function Onboarding({
   const firstWs = useStore((s) => s.workspaceRows[0]?.workspace.path)
   const step = useStore((s) => s.onboardingStep)
   const setStep = useStore((s) => s.setOnboardingStep)
+  const openGitAccounts = useStore((s) => s.openGitAccounts)
   const setup = useAssistSetup()
   const noTool = setup.noTool
 
@@ -335,6 +336,18 @@ export function Onboarding({
             <div className="big">Sign in, and pick your Assist.</div>
             <AssistSetup setup={setup} offerInstall />
             <PicAccounts />
+            <div className="quiet">
+              Pushing from a session?{' '}
+              <button
+                className="ob-link"
+                onClick={() => {
+                  finish()
+                  openGitAccounts()
+                }}
+              >
+                Add a git account
+              </button>
+            </div>
           </>
         )}
 
@@ -376,7 +389,7 @@ export function Onboarding({
       <div className="ob-actions">
         {step < 3 ? (
           <button className="ob-link ob-skip" onClick={() => setStep(3)}>
-            Skip
+            Skip the tour
           </button>
         ) : step === 4 || noTool ? (
           <button className="ob-link ob-skip" onClick={finish}>

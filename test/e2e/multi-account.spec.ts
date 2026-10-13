@@ -4,14 +4,14 @@ import http from 'http'
 import type { AddressInfo } from 'net'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import type { AccountView } from '../../src/shared/types'
-import { test, expect, launchApp } from './helpers/app'
+import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
   seededAccount as acct,
   seedNoClaudeAccountButStillSetUp,
   seedSettings,
   type E2EEnv
 } from './helpers/env'
-import { centerTerm, openMenu, startSessionIn, waitBooted } from './helpers/p1'
+import { centerTerm, clickAppMenuItem, openMenu, startSessionIn, waitBooted } from './helpers/p1'
 import { SHIM_FOUND_NO_ACCOUNT_NOTICE } from '../../src/shared/accountUsage'
 
 const TOKENS: Record<string, string> = {
@@ -752,43 +752,67 @@ test('E8: a token exported by the user’s shell rc never stands in for a Koloft
   }
 })
 
-test('E9: a restarted (resumed) session re-balances to the now-lighter account — every launch picks afresh, and a manual refresh changes the next pick', async ({
-  env
-}) => {
-  test.setTimeout(150_000)
-  const mock = await startProbeMock()
-  mock.script.set(TOKENS.alpha, { u5: 0.9 })
-  mock.script.set(TOKENS.bravo, { u5: 0.1 })
-  mock.script.set(TOKENS['charlie'], { u5: 0.95 })
-  env.launchEnv.KOLOFT_PROBE_BASE_URL = mock.base
-  seedPool(env)
-  const { app, page } = await launchConfigured(env)
-  try {
-    await waitBooted(page)
-    await startSessionIn(page, 'ws-a')
-    const [first] = await waitForCalls(env, 1)
-    expect(first.oauthToken).toBe(TOKENS.bravo)
-    await expect(
-      page.locator('.ws-tab-title', { hasText: 'Fake session: project notes' })
-    ).toBeVisible({ timeout: 40_000 })
-
-    mock.script.set(TOKENS.bravo, { u5: 0.97 })
-    mock.script.set(TOKENS.alpha, { u5: 0.05 })
-    await page.evaluate(() => window.api.accounts.probe())
-
-    await app.evaluate(({ Menu }) => {
-      const item = Menu.getApplicationMenu()?.getMenuItemById('restart-session')
-      if (!item) throw new Error('no application-menu item with id "restart-session"')
-      item.click()
-    })
-    const calls = await waitForCalls(env, 2, 45_000)
-    expect(calls[1].argv).toContain('--resume')
-    expect(calls[1].oauthToken).toBe(TOKENS.alpha)
-  } finally {
-    await app.close().catch(() => {})
-    await mock.close()
+const RESUMES = [
+  {
+    title:
+      'E9a: a session resumed by Restart Session stays on the account it ran on while that account is at most 95% used, even when another is now lighter',
+    quitKoloft: false,
+    bravoThen: { u5: 0.5, u7: 0.95 },
+    lands: 'bravo'
+  },
+  {
+    title:
+      'E9b: a session resumed by quitting and reopening Koloft stays on the account it ran on while that account is at most 95% used, even when another is now lighter',
+    quitKoloft: true,
+    bravoThen: { u5: 0.5, u7: 0.95 },
+    lands: 'bravo'
+  },
+  {
+    title:
+      'E9: a restarted (resumed) session leaves its account once that account is past 95% used, for the now-lighter one — and a manual refresh changes the next pick',
+    quitKoloft: false,
+    bravoThen: { u5: 0.97 },
+    lands: 'alpha'
   }
-})
+] as const
+
+for (const resume of RESUMES) {
+  test(resume.title, async ({ env }) => {
+    test.setTimeout(150_000)
+    const mock = await startProbeMock()
+    mock.script.set(TOKENS.alpha, { u5: 0.9 })
+    mock.script.set(TOKENS.bravo, { u5: 0.1 })
+    mock.script.set(TOKENS['charlie'], { u5: 0.95 })
+    env.launchEnv.KOLOFT_PROBE_BASE_URL = mock.base
+    seedPool(env)
+    let { app, page } = await launchConfigured(env)
+    try {
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a')
+      const [first] = await waitForCalls(env, 1)
+      expect(first.oauthToken).toBe(TOKENS.bravo)
+      await expect(
+        page.locator('.ws-tab-title', { hasText: 'Fake session: project notes' })
+      ).toBeVisible({ timeout: 40_000 })
+
+      mock.script.set(TOKENS.bravo, resume.bravoThen)
+      mock.script.set(TOKENS.alpha, { u5: 0.05 })
+      await page.evaluate(() => window.api.accounts.probe())
+
+      if (resume.quitKoloft) {
+        await quitAndClose(app)
+        ;({ app, page } = await launchConfigured(env))
+      } else await clickAppMenuItem(app, page, 'restart-session')
+      const calls = await waitForCalls(env, 2, 45_000)
+      expect(calls[1].argv).toContain('--resume')
+      expect(calls[1].argv).toContain(first.sessionId)
+      expect(calls[1].oauthToken).toBe(TOKENS[resume.lands])
+    } finally {
+      await app.close().catch(() => {})
+      await mock.close()
+    }
+  })
+}
 
 test('E11: an expired account recovers in place via “Sign in again”, keeping its position and the user’s disable', async ({
   env

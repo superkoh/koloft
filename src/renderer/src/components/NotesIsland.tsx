@@ -85,7 +85,7 @@ export function NotesIsland({
   const file = path && path.ws === wsPath ? path.file : null
 
   return (
-    <div className="island isl-notes" style={folded ? undefined : { height }}>
+    <div className="island isl-dock isl-notes" style={folded ? undefined : { height }}>
       <div className="wb-bar">
         <span className="wb-title" title={file ?? wsPath}>
           <span className="ic">

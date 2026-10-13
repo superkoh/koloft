@@ -8,11 +8,16 @@ const ACCOUNT_KINDS_OF: Record<BackendId, AccountKind[]> = {
 
 const KINDS_WITH_A_BROWSER_SIGN_IN: AccountKind[] = ['oauth', 'codex-home']
 
+export function usableAccounts<A extends Pick<AccountMeta, 'kind' | 'enabled' | 'status'>>(
+  accounts: readonly A[],
+  kinds: readonly AccountKind[]
+): A[] {
+  return accounts.filter((a) => kinds.includes(a.kind) && a.enabled && a.status === 'ok')
+}
+
 // ADR-0030
 export function hasUsableAccount(accounts: readonly AccountMeta[], backend: BackendId): boolean {
-  return accounts.some(
-    (a) => ACCOUNT_KINDS_OF[backend].includes(a.kind) && a.enabled && a.status === 'ok'
-  )
+  return usableAccounts(accounts, ACCOUNT_KINDS_OF[backend]).length > 0
 }
 
 export function needsSignInAgain(a: Pick<AccountMeta, 'kind' | 'status'>): boolean {
@@ -66,6 +71,18 @@ export function hardLimited(u: UsageSnapshot, nowSec: number): boolean {
     (u.s5 === 'rejected' && u.r5 - nowSec >= GRACE) ||
     (u.s7 === 'rejected' && u.r7 - nowSec >= GRACE)
   )
+}
+
+export const RESUME_KEEPS_ACCOUNT_UP_TO = 0.95
+
+export function resetElapsed(r: number, nowSec: number): boolean {
+  return r > 0 && r <= nowSec
+}
+
+export function keepsResumedSession(u: UsageSnapshot, nowSec: number): boolean {
+  const roomLeft = (used: number, resetsAt: number): boolean =>
+    resetElapsed(resetsAt, nowSec) || used <= RESUME_KEEPS_ACCOUNT_UP_TO
+  return !hardLimited(u, nowSec) && roomLeft(u.u5, u.r5) && roomLeft(u.u7, u.r7)
 }
 
 export type WindowTone = 'ok' | 'soon' | 'due' | 'hard'
@@ -128,7 +145,7 @@ export function capsuleGlyph(a: AccountView, nowMs: number): CapsuleGlyph {
 export function meteredArmed(views: AccountView[], nowSec: number): boolean {
   const hasMetered = views.some((a) => a.enabled && (a.kind === 'apikey' || a.kind === 'custom'))
   if (!hasMetered) return false
-  const subs = views.filter((a) => a.kind === 'oauth' && a.enabled && a.status === 'ok')
+  const subs = usableAccounts(views, ['oauth'])
   return subs.every((a) => (a.usage ? hardLimited(a.usage, nowSec) : false))
 }
 
@@ -149,7 +166,7 @@ export function autoProbeDue(
 ): boolean {
   if (lastAttempt !== null && nowMs >= lastAttempt && nowMs - lastAttempt <= AUTO_PROBE_MS)
     return false
-  const rows = views.filter((a) => a.kind === 'oauth' && a.enabled && a.status === 'ok')
+  const rows = usableAccounts(views, ['oauth'])
   if (rows.length === 0) return false
   let oldest = Infinity
   for (const a of rows) {
@@ -175,7 +192,7 @@ export interface PoolSnapshot {
 // CC§7
 export function poolSnapshot(members: AccountView[], nowMs: number): PoolSnapshot {
   const nowSec = Math.floor(nowMs / 1000)
-  const live = members.filter((a) => a.kind === 'oauth' && a.enabled && a.status === 'ok')
+  const live = usableAccounts(members, ['oauth'])
   const M = live.filter((a) => a.usage !== undefined)
   const isWalled = (a: AccountView): boolean => accountWalled(a.usage as UsageSnapshot, nowSec)
   const walledRows = M.filter(isWalled)

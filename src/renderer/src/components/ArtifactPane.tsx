@@ -11,7 +11,7 @@ import {
 import { LuX } from 'react-icons/lu'
 import type { ArtifactView } from '@shared/types'
 import { opensAsWebTab } from '@shared/browserRoute'
-import { basename, previewKindForPath } from '@shared/preview'
+import { basename, previewKindForPath, stateAfterReadError } from '@shared/preview'
 import { resolveOnHost } from '@shared/remoteKey'
 import { openWebPage, previewLinkTarget } from '../store'
 import { PreviewViewer, type MdHeading } from './PreviewViewer'
@@ -308,12 +308,8 @@ export function ArtifactPane({
       })
       .catch((err: unknown) => {
         if (cancelled) return
-        const msg = String((err as Error)?.message ?? '')
-        if (msg.includes('KOLOFT_READ_FAILED') || msg.includes('KOLOFT_NOT_FILE'))
-          setState('missing')
-        else if (msg.includes('KOLOFT_TOO_LARGE')) setState('tooLarge')
-        else if (msg.includes('KOLOFT_BINARY')) setState('binary')
-        else if (firstReadOfPath) setState('error')
+        const next = stateAfterReadError(String((err as Error)?.message ?? ''), firstReadOfPath)
+        if (next) setState(next)
       })
     return () => {
       cancelled = true

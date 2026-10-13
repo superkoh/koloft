@@ -280,6 +280,17 @@ describe('a remote Workbench while the ssh link is down', () => {
     await expect(host.gitNumstat(keyed(repo))).rejects.toThrow()
     await expect(host.gitDiff(keyed(repo))).rejects.toThrow()
   })
+
+  it('never calls the workspace folder missing when ssh cannot connect, only when the machine says it is gone', async () => {
+    let linkDown = false
+    const host = machine((cmd, opts) => (linkDown ? unreachable() : runOnMachine(cmd, opts)))
+    expect(await host.dirExistsOrThrow(keyed(repo))).toBe(true)
+    expect(await host.dirExistsOrThrow(keyed(path.join(repo, 'gone')))).toBe(false)
+
+    linkDown = true
+
+    await expect(host.dirExistsOrThrow(keyed(repo))).rejects.toThrow('Operation timed out')
+  })
 })
 
 describe('what a remote launch hands claude', () => {
@@ -386,6 +397,16 @@ describe('accounts for remote launches started together', () => {
     })
     await Promise.all([host.launch({ root: keyed('/w') }), host.launch({ root: keyed('/w') })])
     expect(handed.sort()).toEqual(['a', 'b'])
+  })
+
+  it('a remote session resumed after its tmux ended is picked with its own id, so it can stay on the account it ran on', async () => {
+    const ended = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+    const pickAccount = vi.fn(async () => ({ env: {}, banner: '' }))
+    await machine(runOnMachine, { pickAccount }).launch({
+      root: keyed('/w'),
+      resumeSessionId: ended
+    })
+    expect(pickAccount).toHaveBeenCalledWith(`launch-${ended}`, ended)
   })
 
   // ADR-0030

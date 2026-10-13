@@ -17,6 +17,12 @@ export function bundledGhDir(): string | undefined {
   return fs.existsSync(path.join(dir, 'gh')) ? dir : undefined
 }
 
+// PLATFORM§50
+export function bundledGcm(): string | undefined {
+  const bin = path.join(vendorPath('gcm'), 'git-credential-manager')
+  return fs.existsSync(bin) ? bin : undefined
+}
+
 function isExecutableFile(file: string): boolean {
   try {
     fs.accessSync(file, fs.constants.X_OK)

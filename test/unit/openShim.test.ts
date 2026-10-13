@@ -23,7 +23,7 @@ let fixtures: string
 let deadPid: string
 
 beforeAll(() => {
-  ;({ shimDir, openDir } = setupShim())
+  ;({ shimDir, openDir } = setupShim('/nonexistent-git-auth-dir'))
   base = path.dirname(shimDir)
   recordingRealOpenDir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-realopen-'))
   fs.writeFileSync(

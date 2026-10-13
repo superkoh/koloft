@@ -131,7 +131,10 @@
             session uses its own SendMessage tool). Any session: report back to the session or
             Assist that started it, by the id it was given. If that one is asleep or its tab was
             closed, Koloft starts it again first. The report arrives marked
-            <code class="nowrap">(From the session "…", id …:)</code>.
+            <code class="nowrap">(From the session "…", id …:)</code>. When a session that
+            <code class="nowrap">session new</code> started ends its first turn without reporting,
+            Koloft hands its reply to the starter by itself, the same way; a reply already sent with
+            <code class="nowrap">session send</code> is not sent twice.
           </li>
           <li>
             <code>koloft session close</code> — close itself, or a session it started, for good: its

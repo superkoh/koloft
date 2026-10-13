@@ -309,9 +309,10 @@
             again and resumes the same session in it. Claude and Codex both do this.
           </li>
           <li>
-            In a folder on github.com, with <code>gh</code> (GitHub's command-line tool) signed in,
-            the <kbd>⇧⌘N</kbd> dialog also lists the repo's open issues and open pull requests. Pick
-            an issue, and the session starts in a worktree named
+            In a folder on github.com, with <code>gh</code> (GitHub's command-line tool) signed in
+            or a <a href="../accounts/#git-accounts">git account</a> picked, the
+            <kbd>⇧⌘N</kbd> dialog also lists the repo's open issues and open pull requests. Pick an
+            issue, and the session starts in a worktree named
             <code class="nowrap">issue-&lt;number&gt;</code>, already told which issue to read and
             work on.
           </li>
@@ -466,7 +467,7 @@
           </li>
         </ul>
 
-        <h2>The git panel</h2>
+        <h2 id="git-panel">The git panel</h2>
         <p>Hover a folder's branch sign and its git panel opens.</p>
         <ul class="dash">
           <li>
@@ -480,8 +481,14 @@
           </li>
           <li><code>Fetch now</code> asks origin what is new.</li>
           <li>
-            On github.com, with <code>gh</code> signed in: the open issues and pull requests. Their
-            two counts also sit after the branch sign (a count of 0 is not drawn).
+            On github.com, with <code>gh</code> signed in or a git account picked: the open issues
+            and pull requests. Their two counts also sit after the branch sign (a count of 0 is not
+            drawn).
+          </li>
+          <li>
+            Account: which <a href="../accounts/#git-accounts">git account</a> this folder pushes
+            as. Shown for a folder on github.com or another host Koloft knows git accounts for; not
+            on a remote folder.
           </li>
         </ul>
         <figure class="shot" style="--ar: 740 / 612; --w: min(370px, 100cqw)">

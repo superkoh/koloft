@@ -235,7 +235,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     }
   })
 
-  test('words about Koloft itself go to a global Assist task with them as its brief, and "set up Discord" to the global Assist’s Discord setup task; "ask <workspace> …" reaches that workspace’s running Assist as a message, or opens a task of it when none runs', async ({
+  test('words about Koloft itself go to a global Assist task with them as its brief — a second such request under the title of a task still open reaches that task as a message — and "set up Discord" to the global Assist’s Discord setup task; "ask <workspace> …" reaches that workspace’s running Assist as a message, or opens a task of it when none runs', async ({
     env
   }) => {
     test.setTimeout(240_000)
@@ -255,6 +255,14 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       await expect
         .poll(tasks)
         .toEqual([{ tabId: expect.any(String), scope: 'global', name: 'Dark mode' }])
+
+      await ask(app, page, 'and dim the sidebar too')
+      await page.keyboard.press('Enter')
+      await expect
+        .poll(() => peerLines(env), { timeout: 30_000 })
+        .toContain('The owner typed this in ⌘P: and dim the sidebar too')
+      expect(readCalls(env)).toHaveLength(1)
+      expect(await tasks()).toHaveLength(1)
 
       assistAnswers(env, { hand: 'discord', title: 'Discord' })
       await ask(app, page, 'set up Discord')

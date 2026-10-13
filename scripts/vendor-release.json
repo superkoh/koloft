@@ -9,5 +9,10 @@
     "macArm64Asset": "dugite-native-v2.53.0-4098283-macOS-arm64.tar.gz",
     "macArm64Sha256": "f9dc64635a5b62fbd7ad95db73268bbb8912255ac516d65d37bf7af22fcb8ffe",
     "copyingSha256": "5b2198d1645f767585e8a88ac0499b04472164c0d2da22e75ecf97ef443ab32e"
+  },
+  "gcm": {
+    "version": "3.0.1",
+    "macArm64Sha256": "d285292475efe756e12a572a51a59cf6dd90edd562a77f5f64edd3636be4486e",
+    "licenseSha256": "b47f1a8a744ecdc7a3da35804f88552805d33f51a726b87a2105acdfae406b07"
   }
 }
