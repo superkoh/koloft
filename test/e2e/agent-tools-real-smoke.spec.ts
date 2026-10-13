@@ -20,6 +20,7 @@ import {
   newSessionInWith,
   openMenu,
   openWorktreeSession,
+  startSessionIn,
   waitBooted,
   wsRows
 } from './helpers/p1'
@@ -957,6 +958,84 @@ test.describe("a REAL Codex drives its own tab's Workbench through the owner's P
   })
 })
 
+const openAndReadTheTitle = (url: string): string =>
+  `Use the playwright-cli shell command, not MCP tools: run playwright-cli open ${url} , then playwright-cli eval document.title . Reply with only the title it printed.`
+const READ_THE_TITLE_AGAIN =
+  'Run playwright-cli eval document.title once more and reply with only the title it printed.'
+
+// CODEX§26 PLATFORM§17
+test.describe("REAL agents drive their own tab's Workbench with the playwright-cli Koloft ships: opt-in cases; they spend real money", () => {
+  for (const [label, method, useReal, have, transcript] of [
+    ['Claude Code', 'Claude', useRealClaude, HAVE_REAL_CLAUDE, CLAUDE_TRANSCRIPT],
+    ['Codex', 'Codex', useRealCodex, HAVE_REAL_CODEX, CODEX_TRANSCRIPT]
+  ] as const)
+    test(`two real ${label} tabs in one workspace each open a page in their own Workbench with the bundled playwright-cli, and the first still reads its own page after the second opened one`, async ({
+      env
+    }) => {
+      test.skip(!have, 'set the KOLOFT_SMOKE_* variables for this backend')
+      test.setTimeout(4 * A_REAL_MODEL_TURN_MS)
+      useReal(env, [env.workspaces.a])
+      seedSettings(env, { hintsOff: true })
+      const server = await startEchoServer()
+      const app = await launchApp(env)
+      const page = await app.firstWindow()
+      try {
+        await waitBooted(page)
+        const rows = wsRows(page, 'ws-a')
+        const tabs: { tabId: string; title: string }[] = []
+        for (const n of [1, 2]) {
+          await startSessionIn(page, 'ws-a', method === 'Codex' ? { method } : {})
+          await expect(rows).toHaveCount(n, { timeout: 60_000 })
+          const ids = await rows.evaluateAll((els) => els.map((e) => e.getAttribute('data-tab-id')))
+          const tabId = ids.find((id) => id && !tabs.some((t) => t.tabId === id))!
+          await expect(page.locator(`.ws-tab[data-tab-id="${tabId}"]`)).toHaveClass(
+            /\bst-(waiting|idle)\b/,
+            { timeout: 90_000 }
+          )
+          await expect.poll(() => boundSessionId(page, tabId), { timeout: 60_000 }).toBeTruthy()
+          const title = `koloft-cli-${n}-${Date.now().toString(36)}`
+          tabs.push({ tabId, title })
+        }
+        const asks = [
+          {
+            tab: tabs[0],
+            text: openAndReadTheTitle(server.page('/page-1', `<title>${tabs[0].title}</title>`))
+          },
+          {
+            tab: tabs[1],
+            text: openAndReadTheTitle(server.page('/page-2', `<title>${tabs[1].title}</title>`))
+          },
+          { tab: tabs[0], text: READ_THE_TITLE_AGAIN }
+        ]
+        for (const [i, ask] of asks.entries()) {
+          const sessionId = (await boundSessionId(page, ask.tab.tabId))!
+          const before = transcript.replies(env, sessionId).length
+          const newReplies = (): string =>
+            transcript.replies(env, sessionId).slice(before).join('\n')
+          await sendToCodexTab(page, ask.tab.tabId, ask.text)
+          await expect.poll(newReplies, { timeout: A_REAL_MODEL_TURN_MS }).toContain(ask.tab.title)
+          await test.info().attach(`reply-${i + 1}`, { body: newReplies() })
+          await expect(page.locator(`.ws-tab[data-tab-id="${ask.tab.tabId}"]`)).toHaveClass(
+            /\bst-(waiting|idle)\b/,
+            { timeout: A_REAL_MODEL_TURN_MS }
+          )
+        }
+        const [workbenchLoad, ...more] = [
+          ...server.requestsFor('/page-1'),
+          ...server.requestsFor('/page-2')
+        ]
+        for (const r of more) expect(r.userAgent).toBe(workbenchLoad.userAgent)
+        expect(workbenchLoad.userAgent).not.toMatch(/HeadlessChrome|Electron\//)
+      } catch (e) {
+        await keepWhatTheAgentSawAndDid(page, env)
+        throw e
+      } finally {
+        await quitAndClose(app)
+        await server.close()
+      }
+    })
+})
+
 const GOAL_THAT_WAITS_ON_A_BACKGROUND_TASK =
   'Use your Bash tool with run_in_background set to true to run: sleep 8; echo BGDONE . Do not wait or poll for it; end your turn right away. When its completion notice arrives, reply with exactly the word DONE.'
 const TITLE_MAX = 60
@@ -1015,6 +1094,8 @@ test.describe('a REAL Claude Code session opened by /goal: an opt-in case; it sp
 
 const IGNORED_FILES_THAT_TAKE_CLAUDE_SECONDS_TO_DELETE = { dirs: 2500, filesEach: 100 }
 const A_SLASH_COMMAND_MENU_SETTLES_MS = 1_000
+// CC§4
+const A_BRANCH_GOES_AFTER_ITS_FOLDER_WITHIN_MS = 10_000
 
 function ignoreNodeModules(repo: string): void {
   fs.writeFileSync(path.join(repo, '.gitignore'), 'node_modules/\n.claude/\n')
@@ -1076,7 +1157,11 @@ test.describe('/exit from a REAL Claude Code worktree session: an opt-in case; i
         await expect(rows).toHaveCount(0, { timeout: 5_000 })
         expect(fs.existsSync(tree)).toBe(true)
         await expect.poll(() => fs.existsSync(tree), { timeout: 120_000 }).toBe(false)
-        expect(runGit(repo, 'branch', '--list', `worktree-${WORKTREE}`).trim()).toBe('')
+        await expect
+          .poll(() => runGit(repo, 'branch', '--list', `worktree-${WORKTREE}`).trim(), {
+            timeout: A_BRANCH_GOES_AFTER_ITS_FOLDER_WITHIN_MS
+          })
+          .toBe('')
       },
       ignoreNodeModules
     )
@@ -1154,6 +1239,29 @@ test.describe('closing a REAL Codex worktree session: opt-in cases; the ones wit
 const SECRET = 'SECRET-PAPAYA-58'
 const CHILD_WORKS_WHILE_THE_PARENT_IS_CLOSED_S = 40
 const START_A_CHILD_THAT_REPORTS_BACK = `Run this shell command exactly once: koloft session new -- "First run the shell command perl -e 'sleep ${CHILD_WORKS_WHILE_THE_PARENT_IS_CLOSED_S}' in the foreground and wait for it to end. Then read the file secret.txt in this folder and report its content back." Then end your turn at once: do not wait for that session, check on it or read secret.txt yourself.`
+
+const QUOTE_HELPER_RULE_ONE =
+  'Do not run any tool. Under HELPERS in your instructions, rule 1 names a command to run. Reply with only that command, nothing else.'
+
+test.describe('Koloft’s helper rules reach the REAL agent in a Koloft tab: opt-in cases that spend real money', () => {
+  for (const [label, backend, useReal, have] of [
+    ['Claude Code', 'default', useRealClaude, HAVE_REAL_CLAUDE],
+    ['Codex', 'other', useRealCodex, HAVE_REAL_CODEX]
+  ] as const) {
+    test(`a real ${label} in a Koloft tab knows, before any tool runs, that work needing its own worktree goes to koloft session new -w`, async ({
+      env
+    }) => {
+      test.skip(!have, 'set the KOLOFT_SMOKE_* variables for this backend')
+      test.setTimeout(A_REAL_MODEL_TURN_MS + 180_000)
+      await inARealWorktreeSession(env, backend, useReal, [], async ({ page, rows }) => {
+        await ask(page, rows, QUOTE_HELPER_RULE_ONE)
+        await expect
+          .poll(() => screen(page), { timeout: A_REAL_MODEL_TURN_MS })
+          .toMatch(/koloft session new -w/)
+      })
+    })
+  }
+})
 
 test.describe('a child reports back to the REAL session that started it: opt-in cases that spend real money', () => {
   for (const [backend, label, useReal, have] of [

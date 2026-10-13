@@ -1,4 +1,18 @@
-import type { DiscordChannel, DiscordPhase, DiscordStatus } from '@shared/types'
+import type {
+  ConductorBinding,
+  DiscordChannel,
+  DiscordGuild,
+  DiscordPhase,
+  DiscordStatus,
+  DiscordUser
+} from '@shared/types'
+import {
+  newChannelGuild,
+  newChannelName,
+  newChannelTopic,
+  SET_UP_WITH_ASSIST
+} from '@shared/conductors'
+import { distinctName } from '@shared/sessionRoute'
 import { DiscordGateway } from './gateway'
 import { DiscordHttpError, DiscordRest } from './rest'
 import { cardMessages, NO_MENTIONS, type Card } from './cards'
@@ -6,7 +20,12 @@ import { cardMessages, NO_MENTIONS, type Card } from './cards'
 export const DISCORD_API_URL = 'https://discord.com/api/v10'
 const UNREACHABLE_RETRY_MS = 30_000
 const LOCK_RETRY_MS = 30_000
+const NO_OWNED_SERVER =
+  'The bot is in no server you own yet. Make a server of your own in Discord, invite the bot to it, then try again.'
 const TEXT_CHANNEL = 0
+const CATEGORY = 4
+const MESSAGE_CONTENT = 1 << 18
+const MESSAGE_CONTENT_LIMITED = 1 << 19
 const NOT_FOUND = 404
 const MISSING_PERMISSIONS = 403
 const FILES_PER_MESSAGE = 10
@@ -139,6 +158,7 @@ export interface DiscordLinkDeps {
   takeLock(): boolean
   releaseLock(): void
   owner(): string | undefined
+  foundAppOwner(owner: DiscordUser): void
   push(status: DiscordStatus): void
   onMessage(m: DiscordMessage): void
   onInteraction(i: DiscordInteraction): void
@@ -160,6 +180,24 @@ interface RawMessage {
   content: string
   author: Author
   attachments?: DiscordAttachment[]
+}
+
+interface RawApplication {
+  id: string
+  flags?: number
+  owner?: { id: string; username: string }
+  team?: unknown
+}
+
+interface RawChannel {
+  id: string
+  name: string
+  type: number
+}
+
+export interface NewChannel {
+  channel: DiscordChannel
+  category: DiscordChannel
 }
 
 interface Candidate {
@@ -201,7 +239,8 @@ export class DiscordLink {
   private phase: DiscordPhase = 'off'
   private botName?: string
   private applicationId?: string
-  private guilds = new Map<string, string>()
+  private appOwner?: DiscordUser
+  private guilds = new Map<string, DiscordGuild>()
   private registered = new Set<string>()
   private failing = new Map<string, string>()
   private candidate?: Candidate
@@ -218,7 +257,8 @@ export class DiscordLink {
       phase: this.phase,
       botName: this.botName,
       applicationId: this.applicationId,
-      guildNames: [...this.guilds.values()].filter(Boolean),
+      guilds: [...this.guilds.values()].filter((g) => g.name),
+      ...(this.appOwner ? { appOwner: this.appOwner } : {}),
       failing: Object.fromEntries(this.failing),
       ...(this.candidate
         ? {
@@ -246,6 +286,7 @@ export class DiscordLink {
     this.rest = null
     this.botName = undefined
     this.applicationId = undefined
+    this.appOwner = undefined
     this.guilds.clear()
     this.registered.clear()
     this.failing.clear()
@@ -283,11 +324,17 @@ export class DiscordLink {
     try {
       const [me, app] = await Promise.all([
         rest.request<{ username: string }>('GET', '/users/@me'),
-        rest.request<{ id: string }>('GET', '/oauth2/applications/@me')
+        rest.request<RawApplication>('GET', '/oauth2/applications/@me')
       ])
       if (generation !== this.generation) return
       this.botName = me.username
       this.applicationId = app.id
+      if (app.owner && !app.team) {
+        this.appOwner = { id: app.owner.id, name: app.owner.username }
+        this.d.foundAppOwner(this.appOwner)
+      }
+      await this.turnOnMessageContent(rest, app.flags ?? 0)
+      if (generation !== this.generation) return
       this.rest = rest
       this.gateway = new DiscordGateway({
         token,
@@ -304,14 +351,22 @@ export class DiscordLink {
     }
   }
 
+  // PLATFORM§39
+  private async turnOnMessageContent(rest: DiscordRest, flags: number): Promise<void> {
+    if (flags & (MESSAGE_CONTENT | MESSAGE_CONTENT_LIMITED)) return
+    await rest
+      .request('PATCH', '/applications/@me', { flags: flags | MESSAGE_CONTENT_LIMITED })
+      .catch(() => undefined)
+  }
+
   private onDispatch(type: string, data: unknown): void {
     if (type === 'READY') {
       for (const g of (data as { guilds: { id: string }[] }).guilds)
-        this.guilds.set(g.id, this.guilds.get(g.id) ?? '')
+        this.guilds.set(g.id, this.guilds.get(g.id) ?? { id: g.id, name: '' })
       this.d.onReady()
     } else if (type === 'GUILD_CREATE') {
-      const g = data as { id: string; name: string }
-      this.guilds.set(g.id, g.name)
+      const g = data as { id: string; name: string; owner_id?: string }
+      this.guilds.set(g.id, { id: g.id, name: g.name, ownerId: g.owner_id })
     } else if (type === 'GUILD_DELETE') {
       const g = data as { id: string; unavailable?: boolean }
       if (g.unavailable) return
@@ -414,7 +469,7 @@ export class DiscordLink {
         if (error.status === NOT_FOUND) return
         if (error.status === MISSING_PERMISSIONS)
           throw new Error(
-            `${error.message}. Give the bot the Manage Threads permission in the server’s settings.`
+            `${error.message}. Invite the bot again (Settings ▸ Discord ▸ ${SET_UP_WITH_ASSIST}), or give it the Manage Threads permission in the server’s settings.`
           )
         throw error
       })
@@ -509,7 +564,7 @@ export class DiscordLink {
     const lists = await Promise.all(
       guilds.map((g) =>
         rest
-          .request<{ id: string; name: string; type: number }[]>('GET', `/guilds/${g.id}/channels`)
+          .request<RawChannel[]>('GET', `/guilds/${g.id}/channels`)
           .then((list) =>
             list
               .filter((c) => c.type === TEXT_CHANNEL)
@@ -518,5 +573,50 @@ export class DiscordLink {
       )
     )
     return lists.flat()
+  }
+
+  // PLATFORM§39
+  async newChannel(
+    scope: string,
+    bindings: ConductorBinding[],
+    saved: DiscordChannel | undefined
+  ): Promise<NewChannel> {
+    await this.starting
+    const api = this.api()
+    const guildId = newChannelGuild(bindings, [...this.guilds.values()], this.d.owner())
+    if (!guildId) throw new Error(NO_OWNED_SERVER)
+    const route = `/guilds/${guildId}/channels`
+    const there = await api.request<RawChannel[]>('GET', route)
+    const botName = this.botName ?? 'Koloft'
+    const categories = there.filter((c) => c.type === CATEGORY)
+    const make = (body: unknown): Promise<RawChannel> =>
+      api.request<RawChannel>('POST', route, body).catch((error: unknown) => {
+        if (error instanceof DiscordHttpError && error.status === MISSING_PERMISSIONS)
+          throw new CannotMakeChannels()
+        throw error
+      })
+    const category =
+      categories.find((c) => c.id === saved?.channelId) ??
+      categories.find((c) => c.name === botName) ??
+      (await make({ name: botName, type: CATEGORY }))
+    const taken = there.filter((c) => c.type === TEXT_CHANNEL).map((c) => c.name)
+    const made = await make({
+      name: distinctName(newChannelName(scope), taken),
+      type: TEXT_CHANNEL,
+      parent_id: category.id,
+      topic: newChannelTopic(scope)
+    })
+    return {
+      channel: { guildId, channelId: made.id, name: made.name },
+      category: { guildId, channelId: category.id, name: category.name }
+    }
+  }
+}
+
+export class CannotMakeChannels extends Error {
+  constructor() {
+    super(
+      'The bot is not allowed to make channels yet. Invite it again to give it that permission — the channels you already bound keep working.'
+    )
   }
 }

@@ -3,7 +3,9 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import type { SessionInfo } from '../../src/shared/types'
-import { discordVerb, NOT_A_CONDUCTOR } from '../../src/main/agentDiscord'
+import { discordVerb, NOT_A_CONDUCTOR, NOT_THE_SETUP_TASK } from '../../src/main/agentDiscord'
+import { EXIT_USAGE } from '../../src/main/agentRequests'
+import { GLOBAL_SCOPE } from '../../src/shared/conductors'
 import type { DiscordFile } from '../../src/main/discord/link'
 
 let cwd: string
@@ -12,17 +14,52 @@ beforeEach(() => {
 })
 afterEach(() => fs.rmSync(cwd, { recursive: true, force: true }))
 
-function verb(conductor: boolean) {
+function verb(conductor: boolean, setupTask = false) {
   const sent: { channelId: string; files: DiscordFile[]; text: string }[] = []
+  const bound: string[] = []
   const run = discordVerb({
     channelOf: () => (conductor ? '222' : undefined),
     send: async (channelId, files, text) => {
       sent.push({ channelId, files, text })
+    },
+    isSetupTask: () => setupTask,
+    status: () => 'Bot token: saved',
+    tokenFromPage: async () => 'Saved the bot token.',
+    reload: async () => 'Reloaded.',
+    invite: () => 'https://discord.com/oauth2/authorize?client_id=700',
+    bindNewChannel: async (scope) => {
+      bound.push(scope)
+      return { ok: true }
     }
   })
   const call = (args: string[]) => run(args, { tabId: 'pty-1', cwd, session: {} as SessionInfo })
-  return { call, sent }
+  return { call, sent, bound }
 }
+
+describe('koloft discord setup commands', () => {
+  it('answer only the global Assist’s Discord setup task, and nothing runs for anyone else', async () => {
+    const { call, bound } = verb(true, false)
+    for (const args of [
+      ['status'],
+      ['token', '--from-page'],
+      ['invite'],
+      ['bind', '--new-channel']
+    ])
+      expect(await call(args)).toEqual({ text: NOT_THE_SETUP_TASK, exit: 1 })
+    expect(bound).toEqual([])
+  })
+
+  it('bind --new-channel binds the global Assist, or the workspace named after --workspace', async () => {
+    const { call, bound } = verb(false, true)
+    expect(await call(['bind', '--new-channel'])).toEqual({
+      text: 'Bound to a new channel.',
+      exit: 0
+    })
+    expect((await call(['bind', '--new-channel', '--workspace', '/ws/a'])).exit).toBe(0)
+    expect((await call(['bind', '--new-channel', '--workspace'])).exit).toBe(EXIT_USAGE)
+    expect(bound).toEqual([GLOBAL_SCOPE, '/ws/a'])
+  })
+})
 
 describe('koloft discord send', () => {
   it('sends files named relative to the conductor’s folder, with the text after --', async () => {

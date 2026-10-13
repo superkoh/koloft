@@ -19,7 +19,6 @@ function binding(scope: string, channelId: string, touched: string[] = []): Cond
     scope,
     backend: 'claude',
     channel: { guildId: '1', channelId, name: channelId },
-    sessionIds: [],
     touched
   }
 }

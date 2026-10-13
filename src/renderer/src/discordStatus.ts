@@ -1,17 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { DiscordSettings, DiscordStatus } from '@shared/types'
-
-export const SETUP_STEPS = 7
-
-const NEXT_STEP_LABEL = [
-  'create the app',
-  'let the bot read messages',
-  'copy the bot token',
-  'make a private server',
-  'add the bot to your server',
-  'tell Koloft who you are',
-  'bind a channel'
-]
+import { SET_UP_WITH_ASSIST } from '@shared/conductors'
+import type { DiscordStatus } from '@shared/types'
 
 export function useDiscordStatus(): DiscordStatus | null {
   const [status, setStatus] = useState<DiscordStatus | null>(null)
@@ -40,7 +29,7 @@ export function statusText(s: DiscordStatus): string {
     case 'token':
       return 'Invalid token'
     case 'intents':
-      return 'Message Content is off — see step 2 of the setup guide'
+      return 'Message Content is off'
     case 'unreachable':
       return 'Cannot reach Discord — trying again'
     case 'elsewhere':
@@ -53,15 +42,4 @@ export function statusClass(s: DiscordStatus): string {
   return s.phase === 'token' || s.phase === 'intents' ? ' bad' : ''
 }
 
-export function nextSetupStep(s: DiscordStatus, discord: DiscordSettings): number | null {
-  if (s.phase !== 'off' && discord.userId) return null
-  if (s.phase === 'off') return 1
-  if (s.phase === 'intents') return 2
-  if (s.phase === 'token') return 3
-  if (s.phase === 'connected' && s.guildNames.length === 0) return 4
-  return 6
-}
-
-export function nextStepLine(step: number): string {
-  return `Step ${step} of ${SETUP_STEPS} next: ${NEXT_STEP_LABEL[step - 1]}`
-}
+export const MESSAGE_CONTENT_BY_HAND = `Koloft could not turn Message Content on. Click ${SET_UP_WITH_ASSIST} above: Assist does that with you. Koloft checks again every 30 seconds.`

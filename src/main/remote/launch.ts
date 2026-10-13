@@ -6,6 +6,7 @@ import { shq } from '@shared/shellQuote'
 import { REMOTE_PATH_LINE, onATerminalEvenWhenSshGaveNone, remoteShCommand } from './install'
 import { remotePtsFile } from './paths'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
+import { AGENT_PROMPT_FILE } from '../agentPlugin'
 
 export const CLAUDE_AUTH_ENV_VARS = [
   'CLAUDE_CODE_OAUTH_TOKEN',
@@ -123,7 +124,7 @@ if [ "$1" = run ]; then
   KOLOFT_TAB_ID=${spec.tabId}; PATH="$M/${SESSION_BIN_DIR}:$PATH"; export KOLOFT_TAB_ID PATH
   unset ${CLAUDE_AUTH_ENV_VARS.join(' ')}
   E="${T}.env"; [ -f "$E" ] && { set -a; . "$E"; set +a; rm -f "$E"; }
-${spec.portOffset ? `  KOLOFT_PORT_OFFSET=${spec.portOffset}; export KOLOFT_PORT_OFFSET\n` : ''}  exec claude --settings "${T}.json"${spec.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}"` : ''} ${spec.claudeArgs.map(shq).join(' ')}
+${spec.portOffset ? `  KOLOFT_PORT_OFFSET=${spec.portOffset}; export KOLOFT_PORT_OFFSET\n` : ''}  exec claude --settings "${T}.json"${spec.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}"` : ''} ${spec.claudeArgs.map(shq).join(' ')}
 fi
 ${onATerminalEvenWhenSshGaveNone('$2', '$3', spec.tabId, `sh '${T}.sh' $1`)}
 [ "$1" = attach ] && exec tmux -L koloft attach -d -t '${spec.tmuxName}'

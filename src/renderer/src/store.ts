@@ -7,6 +7,7 @@ import {
   type AccountView,
   type AdoptableTab,
   type ArtifactView,
+  type AssistTaskRow,
   type AttentionEvent,
   type BrowserJsDialog,
   type CronState,
@@ -119,6 +120,7 @@ interface AppState {
   workbenchFull: boolean
   overlay: { url: string; unread: boolean; open: boolean } | null
   cdpAttached: Record<string, string[]>
+  followsAgentBrowser: Record<string, true>
   overlayDialog: BrowserJsDialog | null
   termFocus: { ptyId: string; n: number }
   githubBtn: boolean
@@ -149,8 +151,9 @@ interface AppState {
     onSave(): void | Promise<void>
   } | null
   conductorTabs: Record<string, string>
+  assistTasks: AssistTaskRow[]
+  assistAsked: boolean
   bindConductor: { scope?: string; editId?: string } | null
-  discordSetupStep: number | null
   orphanConfirm: string | null
 
   addTab: (t: Tab) => void
@@ -194,9 +197,10 @@ interface AppState {
   setResumeLaunch: (l: AppState['resumeLaunch']) => void
   setCloseConfirm: (c: AppState['closeConfirm']) => void
   setUnsavedPrompt: (p: AppState['unsavedPrompt']) => void
-  setConductorTab: (bindingId: string, tabId: string) => void
+  setConductorTab: (scope: string, tabId: string) => void
+  setAssistTasks: (rows: AssistTaskRow[]) => void
+  setAssistAsked: (asked: boolean) => void
   setBindConductor: (b: AppState['bindConductor']) => void
-  setDiscordSetupStep: (step: number | null) => void
   setOrphanConfirm: (rowId: string | null) => void
 
   ensureWorkbench: (tabId: string) => Promise<void>
@@ -224,6 +228,7 @@ interface AppState {
   setOverlayDialog: (d: BrowserJsDialog | null) => void
   setCdpAttached: (sessionId: string, targetIds: string[]) => void
   openCdpTab: (tabId: string, url: string) => Promise<string | null>
+  followAgentBrowser: (tabId: string) => void
   setLastWsPath: (p: string) => void
   selectWorkspace: (path: string) => void
 
@@ -443,6 +448,19 @@ function persistWorkbench(tabId: string): void {
   whenWorkbenchFetched(tabId, () => writeWorkbench(tabId, useStore.getState()))
 }
 
+let activateOnceSpawned: string | null = null
+
+function landInWorkbench(tabId: string, wbTabId: string): void {
+  const s = useStore.getState()
+  if (!s.workbenchOpen[tabId]) s.setWorkbenchOpen(tabId, true)
+  useStore.setState((st) => ({
+    workbenchLoad: {
+      ...st.workbenchLoad,
+      [tabId]: { tabId: wbTabId, nonce: (st.workbenchLoad[tabId]?.nonce ?? 0) + 1 }
+    }
+  }))
+}
+
 export const useStore = create<AppState>((set, get) => ({
   tabs: [],
   activeTabId: null,
@@ -476,6 +494,7 @@ export const useStore = create<AppState>((set, get) => ({
   overlay: null,
   overlayDialog: null,
   cdpAttached: {},
+  followsAgentBrowser: {},
   termFocus: { ptyId: '', n: 0 },
   githubBtn: false,
   lastWsPath: null,
@@ -489,11 +508,13 @@ export const useStore = create<AppState>((set, get) => ({
   cron: { jobs: [], live: [], folders: {}, notes: {} },
   unsavedPrompt: null,
   conductorTabs: {},
+  assistTasks: [],
+  assistAsked: false,
   bindConductor: null,
-  discordSetupStep: null,
   orphanConfirm: null,
 
   addTab: (t) => {
+    activateOnceSpawned = null
     const asleep = asleepTabFor(get(), t)
     if (asleep) return wakeInto(asleep, t, true)
     set((s) => ({ tabs: [...s.tabs, t], activeTabId: t.id, resumeLaunch: null }))
@@ -501,7 +522,16 @@ export const useStore = create<AppState>((set, get) => ({
   addTabQuiet: (t) => {
     const asleep = asleepTabFor(get(), t)
     if (asleep) return wakeInto(asleep, t, false)
-    set((s) => (s.tabs.some((x) => x.id === t.id) ? {} : { tabs: [...s.tabs, t] }))
+    const awaited = activateOnceSpawned === t.id
+    if (awaited) activateOnceSpawned = null
+    set((s) =>
+      s.tabs.some((x) => x.id === t.id)
+        ? {}
+        : {
+            tabs: [...s.tabs, t],
+            ...(awaited && { activeTabId: t.id, resumeLaunch: null })
+          }
+    )
   },
   setCron: (cron) => set({ cron }),
   adoptTabs: (tabs, activeTabBeforeReload) => {
@@ -557,12 +587,14 @@ export const useStore = create<AppState>((set, get) => ({
       const workbenchWidths = { ...s.workbenchWidths }
       const workbenchLoad = { ...s.workbenchLoad }
       const filesReveal = { ...s.filesReveal }
+      const followsAgentBrowser = { ...s.followsAgentBrowser }
       delete workbench[id]
       delete workbenchOpen[id]
       delete workbenchFetched[id]
       delete workbenchWidths[id]
       delete workbenchLoad[id]
       delete filesReveal[id]
+      delete followsAgentBrowser[id]
       return {
         ...(s.signIn?.tabId === id && {
           signIn: null,
@@ -576,7 +608,8 @@ export const useStore = create<AppState>((set, get) => ({
         workbenchFetched,
         workbenchWidths,
         workbenchLoad,
-        filesReveal
+        filesReveal,
+        followsAgentBrowser
       }
     })
   },
@@ -613,7 +646,8 @@ export const useStore = create<AppState>((set, get) => ({
       )
     })),
   activateTab: (id) => {
-    if (!get().tabs.some((x) => x.id === id)) return
+    activateOnceSpawned = get().tabs.some((x) => x.id === id) ? null : id
+    if (activateOnceSpawned) return
     set({ activeTabId: id, resumeLaunch: null })
   },
 
@@ -794,10 +828,11 @@ export const useStore = create<AppState>((set, get) => ({
   setResumeLaunch: (resumeLaunch) => set({ resumeLaunch }),
   setCloseConfirm: (closeConfirm) => set({ closeConfirm }),
   setUnsavedPrompt: (unsavedPrompt) => set({ unsavedPrompt }),
-  setConductorTab: (bindingId, tabId) =>
-    set((s) => ({ conductorTabs: { ...s.conductorTabs, [bindingId]: tabId } })),
+  setConductorTab: (scope, tabId) =>
+    set((s) => ({ conductorTabs: { ...s.conductorTabs, [scope]: tabId } })),
+  setAssistTasks: (assistTasks) => set({ assistTasks }),
+  setAssistAsked: (assistAsked) => set({ assistAsked }),
   setBindConductor: (bindConductor) => set({ bindConductor }),
-  setDiscordSetupStep: (discordSetupStep) => set({ discordSetupStep }),
   setOrphanConfirm: (orphanConfirm) => set({ orphanConfirm }),
 
   ensureWorkbench: (tabId) => {
@@ -862,13 +897,7 @@ export const useStore = create<AppState>((set, get) => ({
           }
         }))
       }
-      if (!s.workbenchOpen[tabId]) get().setWorkbenchOpen(tabId, true)
-      set((st) => ({
-        workbenchLoad: {
-          ...st.workbenchLoad,
-          [tabId]: { tabId: r.tabId, nonce: (st.workbenchLoad[tabId]?.nonce ?? 0) + 1 }
-        }
-      }))
+      landInWorkbench(tabId, r.tabId)
     }),
   setWorkbenchFull: (workbenchFull) => {
     if (workbenchFull && !workbenchAllowed(get(), get().activeTabId)) return
@@ -900,7 +929,12 @@ export const useStore = create<AppState>((set, get) => ({
     set((st) => ({ workbench: { ...st.workbench, [tabId]: r.set } }))
     persistWorkbench(tabId)
     if (r.evicted) s.showToast(tabEvictedNotice(tabLabel(r.set, r.evicted)))
+    if (s.followsAgentBrowser[tabId]) landInWorkbench(tabId, r.tabId)
     return r.tabId
+  },
+  followAgentBrowser: (tabId) => {
+    set((s) => ({ followsAgentBrowser: { ...s.followsAgentBrowser, [tabId]: true } }))
+    get().setWorkbenchOpen(tabId, true)
   },
   setLastWsPath: (lastWsPath) => set({ lastWsPath }),
   selectWorkspace: (path) =>
