@@ -15,6 +15,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 - `npm run test:e2e`   — Playwright drives the real built app. Needs
   `npm run build` first — Playwright never builds (root CLAUDE.md).
 - `npm test`           — both.
+- `node scripts/real-window-mac.mjs tart|here` — the real-window layer (below); never
+  part of `npm test`.
 
 ## Unit layer (test/unit/)
 
@@ -167,7 +169,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 ### Keys, focus and the hidden window
 
 - Native menu accelerators are unreachable from Playwright's synthetic keys — send
-  the IPC (`sendShortcut`) or click the menu item (`clickAppMenuItem`). Which island
+  the IPC (`sendShortcut`) or click the menu item (`clickAppMenuItem`); a case about the
+  key itself belongs in the real-window layer. Which island
   a key belongs to is decided by focus, so click the target area first. Dialog-local
   keys (⏎/Esc/digits/arrows/typing inside C8/C9/C10) are renderer keydown — plain
   `page.keyboard`. The app drops a shortcut sent before its first rows push, on
@@ -257,7 +260,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `KOLOFT_TEST_TOOL_INSTALLER` (fixtures/fake-tool-installer.js), `KOLOFT_TEST_CLT`,
   `KOLOFT_PROBE_BASE_URL`, `KOLOFT_UPDATE_FIXTURE`, `KOLOFT_RELEASES_URL`,
   `KOLOFT_DISCORD_API_URL` (set by `startFakeDiscord`, helpers/fakeDiscord.ts),
-  `KOLOFT_CRON_BIND_DEADLINE_MS`, `KOLOFT_GIT_TIMEOUT_MS`, the session timing knobs
+  `KOLOFT_CRON_BIND_DEADLINE_MS`, `KOLOFT_GIT_TIMEOUT_MS`, `KOLOFT_TEST_REAL_WINDOW`
+  (real-window layer), the session timing knobs
   (`KOLOFT_*_MS`, see Unit layer), and the fakes' `KOLOFT_FAKE_*` inputs. The files behind
   `KOLOFT_FILE_DIALOG_FILE` and `KOLOFT_UPDATE_FIXTURE` are read on every use, so a
   spec may rewrite them after launch.
@@ -300,6 +304,19 @@ the question, the outcomes as options. Its card reaches the owner's Discord thre
 when a binding covers the workspace, also from a session another session started
 (discord-flow). The card carries text only — no picture — so name what to look at.
 After the owner answers, check their step in a log or file yourself.
+
+## Real-window layer (test/real-window/)
+
+- For what only macOS itself delivers or draws: menu keys, the mouse on the window
+  frame, the Dock, banners, a real input method. It reuses the e2e fixtures and
+  launches with `KOLOFT_TEST_REAL_WINDOW=1` on top of the test seams, so the window,
+  Dock icon, badge and banners are real; input goes through `helpers/macInput.ts`
+  (CGEvent and Accessibility, platform ledger §52). The hidden-window rules above
+  about focus and `osOutlets` turn around here: notifications and the badge are really
+  shown, and `osOutlets` records nothing.
+- Every case skips unless `KOLOFT_REAL_WINDOW=1`, which only `scripts/real-window-mac.mjs`
+  sets: in a throwaway tart VM (`tart`), or on a Mac nobody is using (`here`, which the
+  GitHub workflow `real-window.yml` runs). One worker, no retries.
 
 ## Component & case numbers used in specs and test titles
 

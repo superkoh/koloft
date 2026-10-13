@@ -686,9 +686,17 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   ignored as an IME key, and the commit and the next Enter arrive as one line.
   (Measured 2026-10-12, Electron 43.7.3 / Chrome 150, a `show: false` window with the
   app hidden from the Dock: a probe script on a bare textarea, then the e2e terminal
-  case.) That a real macOS input method hands Chromium its Enter as keyCode 229 is
-  inferred from the keyCode the app's guards check, not checked: no headless run can
-  drive a real input method.
+  case.)
+- **What macOS's own Pinyin hands Chromium.** Every key typed while composing arrives as
+  a `keydown` with `keyCode` 229 (`isComposing` true from the second key on). Return
+  while composing is a `keydown` with `key` "Enter" and `keyCode` 229, `isComposing`
+  true; it ends the composition with the typed letters ("nihao") and its `keyup` is
+  `keyCode` 13. Space picks the first word: a 229 `keydown`, then `compositionend` with
+  "你好", `keyup` 32. In a Koloft session terminal the letters went into the line without
+  sending it, and the next Return sent "nihao你好". So a real input method never gives
+  the 13-coded composing Enter that sticks xterm. Measured 2026-10-12 on macOS 26.6.2,
+  Electron 43.7.3, `com.apple.inputmethod.SCIM.ITABC`, real keys in a shown window
+  (test/real-window, §52).
 
 ## §19 The `ws` library (8.x)
 
@@ -714,6 +722,13 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   manual window resize brought a blank re-shown tab back).
 - **Moving the window between monitors with different devicePixelRatio can corrupt the
   WebGL glyph atlas**; clearing the atlas on each DPR change fixes it (observed).
+- **A shown window on a virtual Mac kept its drawing with or without the repairs.** On GitHub's `macos-latest` runner (macOS 26.6.2,
+  a virtual display), a WebGL session terminal grabbed with `screencapture` before and
+  after switching to another session and back, minimizing and restoring from the Dock,
+  the Workbench going full width and back, and Finder covering it for 3 s, drew the same
+  picture (ink difference 0–0.8%) both with Koloft's forced repaint on re-show and atlas
+  repair in place and with both switched off (one run each, 2026-10-12, Electron 43.7.3).
+  These repairs answer GPU memory losses that a virtual GPU has not been seen to cause.
 - **These losses did not happen in the hidden e2e window.** With Koloft's forced
   repaint on re-show switched off, a WebGL session terminal switched away and back, or
   hidden behind a full-width Workbench and back, drew the same picture as before (one
@@ -1806,3 +1821,72 @@ server unless a line says so.
   means "can push" is not checked, so Koloft only asks whether `GET
   .../<project>/_apis/git/repositories/<repo>` answers 200. No private commit address
   exists.
+
+## §52 Real keys, real mouse and a real screen on a Mac nobody sits at
+
+- **Keys and clicks from `CGEventPost` are real input.** Posted at the HID tap from JXA
+  (`osascript -l JavaScript`, no compiler needed), ⌘P reached the app menu's accelerator,
+  which a key sent into a hidden window does not (§7); a click on a Dock icon activated
+  that app; a drag on a `-webkit-app-region: drag` spot moved the window. `CGEventPost`
+  returns nothing and drops events silently unless the responsible process has
+  Accessibility (`AXIsProcessTrusted()`). A drag moved the window with the mouse to within
+  3 pt (160×87 for a 160×90 drag). Mouse events here carried click state 1.
+- **A posted key's modifier flags stay held until an event without them is posted.**
+  After a key-down and key-up both posted with the ⌘ flag, the next posted click on a
+  Dock icon acted as a ⌘-click (it revealed the app in Finder instead of activating it),
+  on macOS 26.6.2 and 27.0 alike; posting the key-up with no flags fixed it.
+- **What the Dock and Notification Center draw can be read through Accessibility.** A
+  Dock item's `AXStatusLabel` is its badge text ("1", or absent); `AXPosition`/`AXSize`
+  come back as `AXValue`s whose `description` holds the numbers. Notification Center's
+  banners are Accessibility elements of `com.apple.notificationcenterui`. An unpackaged
+  build shows in the Dock as "Electron" and notifies as `com.github.Electron`.
+- **Switching the input method from another process.** `TISEnableInputSource` on the
+  input method and its mode, then `TISSelectInputSource`, makes the system report the
+  new source at once, but a window that already has focus keeps typing through the old
+  one; it picks the new one up when its app is activated again.
+- **GitHub's `macos-latest` runner** (measured 2026-10-12, macOS 26.6.2, 1024×768
+  display): SIP off; its system TCC.db already grants Accessibility to `/bin/bash`,
+  `/usr/bin/osascript` and `/usr/libexec/sshd-keygen-wrapper` and Screen Recording to
+  `/bin/bash`, so a workflow step can post events, read the Dock and run `screencapture`
+  with no setup. It runs no Notification Center: usernoted logs "Error connection with
+  NotificationCenter" (`com.apple.notificationcenterui.main` not found), and an app's
+  `requestAuthorization` comes back `didGrant: 0 hasError: 1`, so no banner is ever
+  drawn there.
+- **A tart VM** (measured 2026-10-12, tart 2.40.1, `ghcr.io/cirruslabs/macos-golden-gate-vanilla`
+  = macOS 27.0, 35 GB on disk, 1024×768): user `admin`/`admin`, logged in to a desktop
+  at boot, `sudo` without a password, SSH on; SIP on; Notification Center running; no
+  Node and no tart guest agent. Its system TCC.db can be read but not written from inside
+  ("attempt to write a readonly database"), and screenshots fail ("could not create
+  image from display"). With the VM stopped, the host can attach its `disk.img` (ASIF)
+  with `diskutil image attach --noMount`, mount the volume named Data with
+  `nobrowse,noowners` (no root needed), and insert rows into
+  `Library/Application Support/com.apple.TCC/TCC.db`; after boot the guest honours them
+  with SIP still on (`AXIsProcessTrusted()` true over SSH and under `launchctl asuser`,
+  `screencapture` works). The rows that worked name `/usr/libexec/sshd-keygen-wrapper`,
+  `/usr/libexec/sshd-session` and `/usr/bin/osascript`; which of them mattered was not
+  separated. Before that, a booted clone held a row denying Accessibility to
+  `sshd-keygen-wrapper`.
+- **macOS 27 asks about screen capture from SSH, and keeps asking.** A `screencapture`
+  run over SSH raised a dialog '"com.apple.sshd-session" is requesting to bypass the
+  system private window picker…' (Allow / Open System Settings) even with the TCC rows
+  above; the capture itself was written. Left alone, the dialog stayed on screen and the
+  real-window cases still passed with it in their screenshots. A real click on Allow
+  closed it, but later captures raised it again. After Allow, macOS records the answer in
+  `~/Library/Group Containers/group.com.apple.replayd/ScreenCaptureApprovals.plist`,
+  keyed by `/usr/libexec/sshd-keygen-wrapper`, as a dict with
+  `kScreenCaptureApprovalLastAlerted`, `kScreenCaptureApprovalLastUsed`,
+  `kScreenCapturePrivacyHintDate` (30 days on), `kScreenCapturePrivacyHintPolicy`
+  2592000 and `kScreenCaptureAlertableUsageCount`; a copy written to the stopped disk
+  before boot was replaced when the user logged in (the group container was re-created).
+  macOS 26.6.2 on GitHub's runner did not ask.
+- **Notifications from a dev build need a full ad-hoc signature.** The Electron.app in
+  `node_modules` is only linker-signed (`Info.plist=not bound`, no sealed resources);
+  its `requestAuthorization` failed at once (`didGrant: 0 hasError: 1`) and nothing was
+  shown, on macOS 26.6.2 and 27.0 alike. After `codesign --force --deep --sign -` on the
+  bundle, macOS 27 registered it and put up its own question as a banner
+  ("“Electron” Notifications — Notifications may include alerts, sounds, and icon
+  badges."). That banner has no Allow button element: Allow, Don't Allow and Close are
+  named Accessibility actions on it (`Name:Allow\nTarget:0x0\nSelector:(null)`), and
+  performing Allow answers it. Until it is answered the app's notifications are kept
+  as "Denied" and its Dock badge is not drawn either; after Allow both appear. Measured
+  2026-10-12 in the tart VM above.
