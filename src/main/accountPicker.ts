@@ -1,5 +1,5 @@
 import type { AccountKind, AccountMeta, SessionInfo, UsageSnapshot } from '@shared/types'
-import { fableExhausted, keepsResumedSession, STALE_MS } from '@shared/accountUsage'
+import { fableExhausted, keepsResumedSession, resetElapsed, STALE_MS } from '@shared/accountUsage'
 import { ageLabel } from '@shared/freshnessOps'
 import {
   EPS,
@@ -98,10 +98,6 @@ function fableFree(u: UsageSnapshot, nowSec: number): boolean {
   return !fableExhausted(u)
 }
 
-function resetElapsed(r: number, nowSec: number): boolean {
-  return r > 0 && r <= nowSec
-}
-
 function withLoad(score: Score, liveSessions: number): Score {
   return { ...score, s1: score.s1 + liveSessions * SCORE_PER_LIVE_SESSION }
 }
@@ -190,10 +186,19 @@ export class AccountPicker {
     const snap = this.snapshotFor(same)
     const nowSec = Math.floor(this.deps.now() / 1000)
     if (snap && !keepsResumedSession(snap, nowSec)) return undefined
+    return this.subscriptionPick(same.name, snap, false, nowSec)
+  }
+
+  private subscriptionPick(
+    name: string,
+    snap: UsageSnapshot | undefined,
+    fableRoute: boolean,
+    nowSec: number
+  ): PickResponse {
     return {
-      account: same.name,
+      account: name,
       kind: 'oauth',
-      banner: bannerFor(same.name, snap, false, this.deps.now()),
+      banner: bannerFor(name, snap, fableRoute, this.deps.now()),
       ...(!snap || fableFree(snap, nowSec) ? {} : { warning: FABLE_EXHAUSTED_LINE })
     }
   }
@@ -266,12 +271,6 @@ export class AccountPicker {
         banner: `koloft: every account rate-limited → ${win.meta.name} (${fmtReset(r)})`
       }
     }
-    const banner = bannerFor(win.meta.name, win.snap, route === 'fable', this.deps.now())
-    return {
-      account: win.meta.name,
-      kind: 'oauth',
-      banner,
-      ...(fableFree(win.snap, nowSec) ? {} : { warning: FABLE_EXHAUSTED_LINE })
-    }
+    return this.subscriptionPick(win.meta.name, win.snap, route === 'fable', nowSec)
   }
 }

@@ -1264,10 +1264,11 @@ async function pickedAccountEnv(): Promise<NodeJS.ProcessEnv | null> {
 
 async function handlePickRequest(pickDir: string, reqName: string, raw: unknown): Promise<void> {
   const obj = raw as { tabId?: string; ts?: number }
-  if (!obj.tabId || !ptyMgr.get(obj.tabId)) return
+  const tab = obj.tabId ? ptyMgr.get(obj.tabId) : undefined
+  if (!obj.tabId || !tab) return
   const id = reqName.slice('req-'.length).replace(/\.json$/, '')
   if (!/^[A-Za-z0-9-]+$/.test(id)) return
-  const { res, endpoint } = await pickForLaunch(obj.tabId, ptyMgr.get(obj.tabId)?.resumeSessionId)
+  const { res, endpoint } = await pickForLaunch(obj.tabId, tab.resumeSessionId)
   const payload: Record<string, unknown> = { ...res }
   if (res.account && loadSettings().skipPermissions) payload.skipFlag = true
   claudeBackend.picked(obj.tabId, payload.skipFlag === true)
