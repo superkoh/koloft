@@ -149,9 +149,13 @@ export function capsuleGlyph(a: AccountView, nowMs: number): CapsuleGlyph {
   }
 }
 
+export function codexHeaviest(limits: CodexLimits): number {
+  return Math.max(0, ...limits.windows.map((w) => w.used))
+}
+
 // CODEX§15
 export function codexWalled(limits: CodexLimits): boolean {
-  return limits.reached === true || limits.windows.some((w) => w.used >= 1)
+  return limits.reached === true || codexHeaviest(limits) >= 1
 }
 
 export function codexGlyph(a: AccountView, nowMs: number): CapsuleGlyph {
@@ -160,7 +164,7 @@ export function codexGlyph(a: AccountView, nowMs: number): CapsuleGlyph {
   if (!l) return { kind: 'empty' }
   const stale = nowMs - l.at > STALE_MS
   if (codexWalled(l)) return { kind: 'walled', stale }
-  const binding = Math.max(0, ...l.windows.map((w) => w.used))
+  const binding = codexHeaviest(l)
   return {
     kind: 'bar',
     frac: Math.min(binding, CAP),
@@ -186,7 +190,7 @@ export function meteredArmed(views: AccountView[], nowSec: number): boolean {
   return subs.every((a) => (a.usage ? hardLimited(a.usage, nowSec) : false))
 }
 
-function measuredAt(a: AccountView): number | undefined {
+export function measuredAt(a: AccountView): number | undefined {
   return a.usage?.at ?? a.limits?.at
 }
 

@@ -102,8 +102,8 @@ function codexPrompts(env: E2EEnv): string[] {
       }
     })
 }
-function codexCalls(env: E2EEnv): CodexCall[] {
-  const file = path.join(env.home, 'fake-codex-calls.jsonl')
+function fakeCodexLog<T>(env: E2EEnv, name: string): T[] {
+  const file = path.join(env.home, name)
   if (!fs.existsSync(file)) return []
   return fs
     .readFileSync(file, 'utf8')
@@ -111,11 +111,14 @@ function codexCalls(env: E2EEnv): CodexCall[] {
     .filter(Boolean)
     .flatMap((line) => {
       try {
-        return [JSON.parse(line) as CodexCall]
+        return [JSON.parse(line) as T]
       } catch {
         return []
       }
     })
+}
+function codexCalls(env: E2EEnv): CodexCall[] {
+  return fakeCodexLog<CodexCall>(env, 'fake-codex-calls.jsonl')
 }
 async function startCodexInWorktree(page: Page, env: E2EEnv, name: string): Promise<CodexCall> {
   const before = codexCalls(env).length
@@ -464,15 +467,7 @@ test.describe('Codex sessions through the real method chooser, process transport
       path.join(home, 'auth.json'),
       JSON.stringify({ usedPercent: 100, balance: '62500.0000000000', resets: 3 })
     )
-    const resetCalls = (): unknown[] => {
-      const file = path.join(env.home, 'fake-codex-reset-calls.jsonl')
-      if (!fs.existsSync(file)) return []
-      return fs
-        .readFileSync(file, 'utf8')
-        .split('\n')
-        .filter(Boolean)
-        .map((line) => JSON.parse(line))
-    }
+    const resetCalls = (): unknown[] => fakeCodexLog(env, 'fake-codex-reset-calls.jsonl')
     const app = await launchApp(env)
     try {
       const page = await app.firstWindow()

@@ -220,8 +220,15 @@ export interface CodexLimits {
   resets?: { available: number; firstExpiresAt?: number }
 }
 
-export type CodexResetOutcome =
-  'reset' | 'nothingToReset' | 'noCredit' | 'alreadyRedeemed' | 'failed'
+// CODEX§15
+export const CODEX_RESET_OUTCOMES = [
+  'reset',
+  'nothingToReset',
+  'noCredit',
+  'alreadyRedeemed'
+] as const
+
+export type CodexResetOutcome = (typeof CODEX_RESET_OUTCOMES)[number] | 'failed'
 
 export interface AccountView extends AccountMeta {
   usage?: UsageSnapshot

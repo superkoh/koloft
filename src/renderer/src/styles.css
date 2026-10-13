@@ -286,7 +286,12 @@ body {
   border-radius: 3px;
   margin-right: 4px;
 }
-.tbu-bar.lead {
+.tbu-group {
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+}
+.tbu > * + .tbu-group {
   margin-left: 4px;
 }
 .tbu-bar.total .tbu-fill,

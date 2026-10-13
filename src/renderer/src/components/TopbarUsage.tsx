@@ -125,6 +125,7 @@ export function TopbarUsage(): JSX.Element | null {
   const enabled = accounts.filter((a) => a.enabled && a.kind !== 'codex-home')
   const armed = claude && meteredArmed(accounts, Math.floor(now / 1000))
   const total = claude ? poolGlyph(members, now) : null
+  const codexGlyphs = codex.map((a) => codexGlyph(a, now))
   const codexWindows = [
     ...new Set(
       codex.flatMap((a) =>
@@ -168,7 +169,7 @@ export function TopbarUsage(): JSX.Element | null {
         className="tbu"
         aria-label={[
           ...(claude ? [capsuleAria(members, now)] : []),
-          ...(codex.length > 0 ? [codexAria(codex, now)] : [])
+          ...(codex.length > 0 ? [codexAria(codexGlyphs)] : [])
         ].join('; ')}
         aria-expanded={pop !== null}
         onMouseEnter={enter}
@@ -193,13 +194,13 @@ export function TopbarUsage(): JSX.Element | null {
             <i className="tbu-fill acc" style={{ height: '100%' }} />
           </span>
         )}
-        {codex.map((a, i) => (
-          <CapsuleBar
-            key={`${a.kind}:${a.name}`}
-            glyph={codexGlyph(a, now)}
-            lead={claude && i === 0}
-          />
-        ))}
+        {codex.length > 0 && (
+          <span className="tbu-group">
+            {codex.map((a, i) => (
+              <CapsuleBar key={`${a.kind}:${a.name}`} glyph={codexGlyphs[i]} />
+            ))}
+          </span>
+        )}
       </button>
       {/* ADR-0013 */}
       {pop &&
@@ -284,32 +285,20 @@ export function TopbarUsage(): JSX.Element | null {
   )
 }
 
-function codexAria(codex: AccountView[], now: number): string {
-  const walled = codex.filter((a) => codexGlyph(a, now).kind === 'walled').length
+function codexAria(glyphs: CapsuleGlyph[]): string {
+  const walled = glyphs.filter((g) => g.kind === 'walled').length
   return (
-    `${codex.length} Codex account${codex.length === 1 ? '' : 's'}` +
+    `${glyphs.length} Codex account${glyphs.length === 1 ? '' : 's'}` +
     (walled > 0 ? `, ${walled} walled` : '')
   )
 }
 
-function CapsuleBar({
-  glyph: g,
-  total,
-  lead
-}: {
-  glyph: CapsuleGlyph
-  total?: boolean
-  lead?: boolean
-}): JSX.Element {
+function CapsuleBar({ glyph: g, total }: { glyph: CapsuleGlyph; total?: boolean }): JSX.Element {
   const stale = (g.kind === 'walled' || g.kind === 'bar') && g.stale
   const fillPct = g.kind === 'bar' ? Math.round(g.frac * 100) : 0
   const fable = g.kind === 'bar' && g.fable && g.fable.frac > g.frac ? g.fable : null
   return (
-    <span
-      className={
-        'tbu-bar' + (total ? ' total' : '') + (lead ? ' lead' : '') + (stale ? ' stale' : '')
-      }
-    >
+    <span className={'tbu-bar' + (total ? ' total' : '') + (stale ? ' stale' : '')}>
       {g.kind === 'grey' && <i className="tbu-fill cold" style={{ height: '100%' }} />}
       {g.kind === 'walled' && <i className="tbu-fill bad" style={{ height: '100%' }} />}
       {fable && (
@@ -487,18 +476,20 @@ function PopRow({ a, now, cols }: { a: AccountView; now: number; cols: number })
   const walled = !dead && u != null && accountWalled(u, nowSec)
   return (
     <div className={'tbu-row' + (dead ? ' dim' : '')}>
-      <div className="tbu-row-head">
-        <span className="acct-name" title={a.name}>
-          {a.name}
-        </span>
-        {a.kind === 'apikey' && <span className="acct-badge api">API KEY</span>}
-        {a.kind === 'custom' && <span className="acct-badge api">ENDPOINT</span>}
-        {a.kind === 'oauth' && a.fable === 'yes' && <span className="acct-badge fable">FABLE</span>}
-        {a.status === 'expired' && <span className="acct-status expired">EXPIRED</span>}
-        {a.status === 'unverified' && <span className="acct-status unverified">UNVERIFIED</span>}
-        {walled && <span className="acct-status walled">WALLED</span>}
-        {stale && <span className="tbu-age">{stale}</span>}
-      </div>
+      <RowHead
+        a={a}
+        walled={walled}
+        stale={stale}
+        badges={
+          <>
+            {a.kind === 'apikey' && <span className="acct-badge api">API KEY</span>}
+            {a.kind === 'custom' && <span className="acct-badge api">ENDPOINT</span>}
+            {a.kind === 'oauth' && a.fable === 'yes' && (
+              <span className="acct-badge fable">FABLE</span>
+            )}
+          </>
+        }
+      />
       {a.kind === 'apikey' ? (
         <div className="tbu-row-note">
           <span className="acct-note">
@@ -544,12 +535,46 @@ function PopRow({ a, now, cols }: { a: AccountView; now: number; cols: number })
           )}
         </div>
       ) : (
-        <div className="tbu-row-note">
-          <span className="acct-note">
-            {a.probeError ? probeErrorLabel(a.probeError) : 'Not probed yet'}
-          </span>
-        </div>
+        <NotProbedNote a={a} />
       )}
+    </div>
+  )
+}
+
+function RowHead({
+  a,
+  walled,
+  stale,
+  badges,
+  action
+}: {
+  a: AccountView
+  walled: boolean
+  stale: string | null
+  badges?: JSX.Element
+  action?: JSX.Element | false
+}): JSX.Element {
+  return (
+    <div className="tbu-row-head">
+      <span className="acct-name" title={a.name}>
+        {a.name}
+      </span>
+      {badges}
+      {a.status === 'expired' && <span className="acct-status expired">EXPIRED</span>}
+      {a.status === 'unverified' && <span className="acct-status unverified">UNVERIFIED</span>}
+      {walled && <span className="acct-status walled">WALLED</span>}
+      {action}
+      {stale && <span className="tbu-age">{stale}</span>}
+    </div>
+  )
+}
+
+function NotProbedNote({ a }: { a: AccountView }): JSX.Element {
+  return (
+    <div className="tbu-row-note">
+      <span className="acct-note">
+        {a.probeError ? probeErrorLabel(a.probeError) : 'Not probed yet'}
+      </span>
     </div>
   )
 }
@@ -577,41 +602,30 @@ function CodexRow({
   now: number
   windows: number[]
 }): JSX.Element {
-  const [asking, setAsking] = useState(false)
-  const [using, setUsing] = useState(false)
-  const [said, setSaid] = useState<string | null>(null)
+  const [confirm, setConfirm] = useState<'ask' | 'using' | { said: string } | null>(null)
   const l = a.limits
   const dead = a.status !== 'ok'
-  const walled = !dead && !!l && codexWalled(l)
-  const stale = l ? ageLabel(l.at, now) : null
   const balance = !dead && l ? codexBalanceLabel(l, now) : ''
-  const close = (): void => {
-    setAsking(false)
-    setSaid(null)
-  }
   const useReset = async (): Promise<void> => {
-    setUsing(true)
+    setConfirm('using')
     const outcome = await window.api.accounts.codexUseReset(a.name)
-    setUsing(false)
-    if (outcome === 'reset') close()
-    else setSaid(RESET_OUTCOME_TEXT[outcome])
+    setConfirm(outcome === 'reset' ? null : { said: RESET_OUTCOME_TEXT[outcome] })
   }
   return (
     <div className={'tbu-row' + (dead ? ' dim' : '')}>
-      <div className="tbu-row-head">
-        <span className="acct-name" title={a.name}>
-          {a.name}
-        </span>
-        {a.status === 'expired' && <span className="acct-status expired">EXPIRED</span>}
-        {a.status === 'unverified' && <span className="acct-status unverified">UNVERIFIED</span>}
-        {walled && <span className="acct-status walled">WALLED</span>}
-        {codexResetOffered(a) && !asking && (
-          <button className="acct-relogin" onClick={() => setAsking(true)}>
-            Use a reset
-          </button>
-        )}
-        {stale && <span className="tbu-age">{stale}</span>}
-      </div>
+      <RowHead
+        a={a}
+        walled={!dead && !!l && codexWalled(l)}
+        stale={l ? ageLabel(l.at, now) : null}
+        action={
+          codexResetOffered(a) &&
+          !confirm && (
+            <button className="acct-relogin" onClick={() => setConfirm('ask')}>
+              Use a reset
+            </button>
+          )
+        }
+      />
       {dead ? (
         <div className="tbu-row-note">
           <span className="acct-note">Not signed in — sign in again from Settings</span>
@@ -629,23 +643,19 @@ function CodexRow({
           })}
         </div>
       ) : (
-        <div className="tbu-row-note">
-          <span className="acct-note">
-            {a.probeError ? probeErrorLabel(a.probeError) : 'Not probed yet'}
-          </span>
-        </div>
+        <NotProbedNote a={a} />
       )}
       {balance && (
         <div className="tbu-row-note">
           <span className="acct-note">{balance}</span>
         </div>
       )}
-      {asking && (
+      {confirm && (
         <div className="acct-confirm">
-          {said ? (
+          {typeof confirm === 'object' ? (
             <>
-              <span>{said}</span>
-              <button className="mini" onClick={close}>
+              <span>{confirm.said}</span>
+              <button className="mini" onClick={() => setConfirm(null)}>
                 Close
               </button>
             </>
@@ -655,10 +665,18 @@ function CodexRow({
                 Use 1 of {l?.resets?.available} saved resets on <b>{a.name}</b> now? Its limits
                 start again from 0.
               </span>
-              <button className="mini danger" disabled={using} onClick={() => void useReset()}>
-                {using ? 'Using…' : 'Use'}
+              <button
+                className="mini danger"
+                disabled={confirm === 'using'}
+                onClick={() => void useReset()}
+              >
+                {confirm === 'using' ? 'Using…' : 'Use'}
               </button>
-              <button className="mini" disabled={using} onClick={close}>
+              <button
+                className="mini"
+                disabled={confirm === 'using'}
+                onClick={() => setConfirm(null)}
+              >
                 Cancel
               </button>
             </>

@@ -1439,10 +1439,10 @@ let probeAllInFlight: Promise<AccountView[]> | null = null
 function probeAllForPanel(): Promise<AccountView[]> {
   if (probeAllInFlight) return probeAllInFlight
   const round = (async (): Promise<AccountView[]> => {
-    const enabled = listAccounts().filter((a) => a.enabled)
-    await Promise.all(
-      enabled.map(async (a) => {
-        if (a.kind === 'codex-home') return probeCodexAccount(a.name)
+    const claude = listAccounts().filter((a) => a.enabled && a.kind !== 'codex-home')
+    await Promise.all([
+      probeCodexAccounts(),
+      ...claude.map(async (a) => {
         const secret = await keychainRead(a.kind, a.name)
         if (!secret) return
         const result = await probeAccount(a.kind, secret, {
@@ -1453,7 +1453,7 @@ function probeAllForPanel(): Promise<AccountView[]> {
         })
         foldProbeResult(a.name, a.kind, result)
       })
-    )
+    ])
     pushAccounts()
     return accountViews()
   })()
@@ -1545,24 +1545,13 @@ async function probeCodexAccount(name: string): Promise<void> {
   pushAccounts()
 }
 
-const CODEX_RESET_OUTCOMES: CodexResetOutcome[] = [
-  'reset',
-  'nothingToReset',
-  'noCredit',
-  'alreadyRedeemed'
-]
-
 async function codexUseReset(name: string): Promise<CodexResetOutcome> {
   if (!findAccount(name, 'codex-home') || !codexSessions) return 'failed'
-  const key = viewKey(name, 'codex-home')
-  try {
-    const r = await codexSessions.useResetCredit(codexHomeOf(app.getPath('userData'), name))
-    usageViews.set(key, { limits: limitsFrom(r.limits, Date.now()) ?? usageViews.get(key)?.limits })
-    pushAccounts()
-    return CODEX_RESET_OUTCOMES.find((o) => o === r.outcome) ?? 'failed'
-  } catch {
-    return 'failed'
-  }
+  const outcome = await codexSessions
+    .useResetCredit(codexHomeOf(app.getPath('userData'), name))
+    .catch((): CodexResetOutcome => 'failed')
+  await probeCodexAccount(name)
+  return outcome
 }
 
 let codexProbeRound: Promise<void> | null = null

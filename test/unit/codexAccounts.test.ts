@@ -82,12 +82,13 @@ describe('limitsFrom (the rate-limit reply a Codex login gives)', () => {
 })
 
 describe('CodexAccountPicker', () => {
-  it('picks the enabled, signed-in account with the most room left, skipping one that is used up', () => {
+  it('picks the enabled, signed-in account with the most room left, skipping one that is used up or that Codex says reached a limit', () => {
     const picker = new CodexAccountPicker()
     const pool = [
       account('full', { limits: used(1) }),
       account('busy', { limits: used(0.7) }),
       account('light', { limits: used(0.2) }),
+      account('reached', { limits: { ...used(0.1), reached: true } }),
       account('off', { enabled: false, limits: used(0) }),
       account('out', { status: 'expired', limits: used(0) }),
       account('claude', { kind: 'oauth' })
