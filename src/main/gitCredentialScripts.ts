@@ -29,8 +29,8 @@ send() {
 ask() {
   send "$1" "$2"
   res="$dir/gitres-$id.json"
-  waits=0
-  while [ ! -f "$res" ] && [ "$waits" -lt ${GIT_AUTH_WAITS_MS / GIT_AUTH_POLL_MS} ]; do sleep ${GIT_AUTH_POLL_MS / 1000}; waits=$((waits+1)); done
+  deadline=$(( $(date +%s) + ${GIT_AUTH_WAITS_MS / 1000} ))
+  while [ ! -f "$res" ] && [ "$(date +%s)" -lt "$deadline" ]; do sleep ${GIT_AUTH_POLL_MS / 1000}; done
   if [ ! -f "$res" ]; then
     rm -f "$dir/git-$id.json" 2>/dev/null
     unreachable
