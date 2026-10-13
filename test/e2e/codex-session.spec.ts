@@ -3,7 +3,7 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import { execFileSync } from 'child_process'
 import { chromium, type Locator, type Page } from '@playwright/test'
-import { BROWSER, openBrowser } from './helpers/browser'
+import { BROWSER, newWebTab, openBrowser } from './helpers/browser'
 import {
   test,
   expect,
@@ -509,7 +509,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('a page Codex opens with `open` comes up in front in its own Workbench, and the agent-web hint names Codex', async ({
+  test('a page Codex opens with `open` comes up in front in its own Workbench, and the agent-web hint and an empty web tab name Codex', async ({
     env
   }) => {
     installCodex(env)
@@ -525,6 +525,9 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect(hint).not.toContainText('Claude')
       await expect(wbActiveTab(page)).toHaveAttribute('title', /codex-opened/)
       await expect(wbUnreadTabs(page)).toHaveCount(0)
+
+      await newWebTab(page)
+      await expect(page.locator('.bempty')).toContainText('Or let Codex open one')
     } finally {
       await quitAndClose(app)
     }
