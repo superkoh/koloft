@@ -749,6 +749,21 @@ test.describe('Workbench files tab: the Changes half — one diff stream beside 
     await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toEqual(['src/agent-notes.ts'])
   })
 
+  test("after /clear the Ownership filter's session choice no longer lists the files the old session wrote", async ({
+    page,
+    env
+  }) => {
+    const fx = setupChangeFixture(env.workspaces.a)
+    await openChanges(page)
+    await runIn(page, centerTerm(page), `/write ${fx.rel(fx.paths.agentTs)}`)
+    await pickChip(page, 'Ownership', 'session')
+    await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toEqual(['src/agent-notes.ts'])
+
+    await runIn(page, centerTerm(page), '/clear')
+
+    await expect.poll(() => shownPaths(page), { timeout: 30_000 }).toEqual([])
+  })
+
   test('WB-C16: only the blocks that have been scrolled to are syntax-highlighted — an unscrolled block has ZERO tokens, never merely fewer — and nothing is truncated or dropped to afford it', async ({
     page,
     env

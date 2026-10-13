@@ -379,13 +379,12 @@ export class CodexObservation {
 
   // CODEX§12
   private seedFilesFromHistory(thread: Record<string, unknown>): void {
-    let changed = false
     for (const turn of Array.isArray(thread.turns) ? thread.turns.map(record) : []) {
       for (const item of Array.isArray(turn.items) ? turn.items.map(record) : []) {
-        if (this.noteFiles(item, false)) changed = true
+        this.noteFiles(item, false)
       }
     }
-    if (changed) this.publishFiles()
+    this.publishFiles()
   }
 
   // CODEX§12
