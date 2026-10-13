@@ -714,6 +714,14 @@ Unless marked otherwise, from the 2026-08-18 spikes run against this app's own E
   manual window resize brought a blank re-shown tab back).
 - **Moving the window between monitors with different devicePixelRatio can corrupt the
   WebGL glyph atlas**; clearing the atlas on each DPR change fixes it (observed).
+- **These losses did not happen in the hidden e2e window.** With Koloft's forced
+  repaint on re-show switched off, a WebGL session terminal switched away and back, or
+  hidden behind a full-width Workbench and back, drew the same picture as before (one
+  run each); with its atlas repair switched off, one left beside a closed shell that
+  had drawn 24k distinct coloured CJK glyphs did too (three runs). Measured 2026-10-12,
+  Electron 43.7.3 / Chrome 150, a `show: false` window, `webgl-terminal.spec.ts`. So a
+  headless test shows that the WebGL path draws, but has not been seen to make these
+  repairs fail.
 
 ## §21 xterm.js
 
