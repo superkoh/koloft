@@ -11,9 +11,10 @@ let base: string
 beforeAll(async () => {
   server = http.createServer((req, res) => {
     const route = routes.get((req.url ?? '').split('?')[0])
-    const [status, body] = route
-      ? route(req.headers.authorization ?? '')
-      : [404, { message: 'Not Found' }]
+    const [status, body] =
+      typeof route === 'function'
+        ? route(req.headers.authorization ?? '')
+        : [404, { message: 'Not Found' }]
     res.writeHead(status, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify(body))
   })
