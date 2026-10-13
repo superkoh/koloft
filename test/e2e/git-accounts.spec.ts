@@ -632,7 +632,7 @@ test.describe('Git accounts · sign in, pick per repository, and git and gh use 
     }
   })
 
-  test('GA-11: an account on any other server is a username and a token, kept without checking; when the server turns its token down during a git call, it is marked to sign in again', async ({
+  test('GA-11: an account on any other server is a username and a token, kept without checking; when the server turns its token down during a git call, it is marked to sign in again, and Sign in again keeps its username so the new token goes on the same row', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -674,6 +674,17 @@ test.describe('Git accounts · sign in, pick per repository, and git and gh use 
       await expect(carol.locator('.acct-status')).toHaveText('NEEDS SIGN-IN AGAIN', {
         timeout: ACCOUNT_SHOWS_WITHIN_MS
       })
+
+      await carol.locator('.acct-relogin', { hasText: 'Sign in again' }).click()
+      await expect(page.getByPlaceholder('Your username on that server')).toHaveValue('carol')
+      await page.getByPlaceholder('Paste a token', { exact: true }).fill('fresh_token')
+      await page.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(carol.locator('.acct-status')).not.toHaveText('NEEDS SIGN-IN AGAIN', {
+        timeout: ACCOUNT_SHOWS_WITHIN_MS
+      })
+      await expect(
+        page.locator('.acct-row', { has: page.locator('.acct-name', { hasText: /^carol$/ }) })
+      ).toHaveCount(1)
     } finally {
       await quitAndClose(app)
       await forge.close()
