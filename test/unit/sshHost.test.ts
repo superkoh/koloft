@@ -234,6 +234,17 @@ describe('a remote Workbench while the ssh link is down', () => {
     await expect(host.gitNumstat(keyed(repo))).rejects.toThrow()
     await expect(host.gitDiff(keyed(repo))).rejects.toThrow()
   })
+
+  it('never calls the workspace folder missing when ssh cannot connect, only when the machine says it is gone', async () => {
+    let linkDown = false
+    const host = machine((cmd, opts) => (linkDown ? unreachable() : runOnMachine(cmd, opts)))
+    expect(await host.dirExistsOrThrow(keyed(repo))).toBe(true)
+    expect(await host.dirExistsOrThrow(keyed(path.join(repo, 'gone')))).toBe(false)
+
+    linkDown = true
+
+    await expect(host.dirExistsOrThrow(keyed(repo))).rejects.toThrow('Operation timed out')
+  })
 })
 
 describe('what a remote launch hands claude', () => {

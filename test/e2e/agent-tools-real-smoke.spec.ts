@@ -80,16 +80,11 @@ const AMBIENT_ENV_THAT_WOULD_BYPASS_THE_ACCOUNT = [
   'ANTHROPIC_MODEL'
 ]
 
-function sidestepTheUnwatchedMissingProjectsFolderOfIssue277(env: E2EEnv): void {
-  fs.mkdirSync(path.join(env.home, '.claude', 'projects'), { recursive: true })
-}
-
 function useRealClaude(env: E2EEnv, trusted: string[]): void {
   const spot = path.join(env.fakeBin, 'claude')
   fs.rmSync(spot, { force: true })
   fs.symlinkSync(REAL_CLAUDE, spot)
   for (const k of AMBIENT_ENV_THAT_WOULD_BYPASS_THE_ACCOUNT) delete env.launchEnv[k]
-  sidestepTheUnwatchedMissingProjectsFolderOfIssue277(env)
   // CC§9 CC§10
   fs.writeFileSync(
     path.join(env.home, '.claude.json'),
