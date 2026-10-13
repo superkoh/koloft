@@ -7,6 +7,7 @@ import { CLAUDE_AGENT_SHIM } from './agentShim'
 import { ENSURE_CLAUDE_MINIMUM_FN } from './cliMinimums'
 import { CLAUDE_AUTH_ENV_VARS } from './remote/launch'
 import { NO_USABLE_ACCOUNT, SHIM_FOUND_NO_ACCOUNT_EXIT } from '@shared/accountUsage'
+import { PLAYWRIGHT_CLI_SESSION_PREFIX } from '@shared/browserTabEnv'
 
 export interface ShimPaths {
   shimDir: string
@@ -231,6 +232,7 @@ pre=()
 [ -n "$KOLOFT_HOOK_SETTINGS" ] && pre=(--settings "$KOLOFT_HOOK_SETTINGS")
 # CC§13
 [ -n "$KOLOFT_AGENT_PLUGIN" ] && pre+=(--plugin-dir "$KOLOFT_AGENT_PLUGIN")
+[ -n "$KOLOFT_AGENT_PROMPT" ] && pre+=(--append-system-prompt-file "$KOLOFT_AGENT_PROMPT")
 
 ${NEWID_FN}
 
@@ -245,7 +247,7 @@ register() {
 
 # PLATFORM§17
 if [ -n "$KOLOFT_CDP_DIR" ] && [ -n "$KOLOFT_TAB_ID" ] && [ "$KOLOFT_UTIL" != "1" ]; then
-  export PLAYWRIGHT_CLI_SESSION="koloft-$KOLOFT_TAB_ID"
+  export PLAYWRIGHT_CLI_SESSION="${PLAYWRIGHT_CLI_SESSION_PREFIX}$KOLOFT_TAB_ID"
   kcdp="$(cat "$KOLOFT_CDP_DIR/$KOLOFT_TAB_ID" 2>/dev/null)"
   if [ -n "$kcdp" ]; then
     export PLAYWRIGHT_MCP_CDP_ENDPOINT="$kcdp"

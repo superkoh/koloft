@@ -28,6 +28,7 @@ import type { ModeClass } from './crossSessionMessage'
 export interface SessionBackend {
   id: BackendId
   availability(): Promise<BackendAvailability>
+  forgetAvailability(): void
   list(): BackendSessionInfo[]
   historyRows(workspacePath: string): Promise<BackendSessionRow[]>
   create(spec: CreateTabOptions): Promise<CreateTabResult>
@@ -64,6 +65,7 @@ export class SessionBackends {
   private cleanExitAt = new Map<string, number>()
   conductorOf: (tabOrSessionId: string) => string | undefined = () => undefined
   conductorWorkspaceOf: (tabId: string) => string | undefined = () => undefined
+  assistTaskOf: (tabId: string) => string | undefined = () => undefined
   turnOver: (tabId: string) => boolean = () => false
   docVerdictsOf: (sessionId: string) => Record<string, DocVerdict> | undefined = () => undefined
 
@@ -143,6 +145,10 @@ export class SessionBackends {
     )
   }
 
+  forgetAvailability(): void {
+    for (const backend of this.adapters.values()) backend.forgetAvailability()
+  }
+
   list(): SessionInfo[] {
     return [...this.adapters.values()].flatMap((backend) =>
       backend.list().map((s): SessionInfo => ({
@@ -151,6 +157,7 @@ export class SessionBackends {
         host: s.remote ? 'ssh' : 'local',
         nativeSessionId: s.nativeSessionId ?? s.sessionId,
         conductor: this.conductorOf(s.tabId) ?? this.conductorOf(s.sessionId),
+        assistTask: this.assistTaskOf(s.tabId),
         turnOver: this.turnOver(s.tabId),
         docVerdicts: s.sessionId ? this.docVerdictsOf(s.sessionId) : undefined
       }))

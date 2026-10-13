@@ -7,12 +7,23 @@ import {
   type Settings
 } from './types'
 import { normalizeSessionMethods } from './sessionBackend'
-import { sanitizeDiscord } from './conductors'
+import { sanitizeAssistSessions, sanitizeDiscord } from './conductors'
 
 export function buildResetPatch(): Partial<Settings> {
-  const { accounts, skipPermissions, fablePriority, sessionMethods, discord, assist, ...rest } =
-    DEFAULT_SETTINGS
+  const {
+    accounts,
+    skipPermissions,
+    fablePriority,
+    sessionMethods,
+    discord,
+    assist,
+    assistSessions,
+    newProjectFolders,
+    ...rest
+  } = DEFAULT_SETTINGS
   void assist
+  void assistSessions
+  void newProjectFolders
   void accounts
   void skipPermissions
   void fablePriority
@@ -22,9 +33,10 @@ export function buildResetPatch(): Partial<Settings> {
 }
 
 export function sanitizeSettingsPatch(patch: Partial<Settings>): Partial<Settings> {
-  const { accounts, discord, ...rest } = patch
+  const { accounts, discord, assistSessions, ...rest } = patch
   void accounts
   void discord
+  void assistSessions
   return rest
 }
 
@@ -33,8 +45,10 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
   const merged = { ...DEFAULT_SETTINGS, ...doc }
   merged.sessionMethods = normalizeSessionMethods(merged.sessionMethods)
   merged.accounts = sanitizeAccountList(merged.accounts)
+  merged.assistSessions = sanitizeAssistSessions(merged.assistSessions, merged.discord)
   merged.discord = sanitizeDiscord(merged.discord)
   merged.assist = sanitizeAssist(merged.assist)
+  merged.newProjectFolders = sanitizeFolderMap(merged.newProjectFolders)
   merged.workbenchWidth = sanitizeWorkbenchWidth(
     'workbenchWidth' in doc
       ? merged.workbenchWidth
@@ -65,6 +79,15 @@ function sanitizeAssist(raw: unknown): AssistSetting {
   const { on, backend } = raw as Record<string, unknown>
   if (typeof on !== 'boolean' || (backend !== 'claude' && backend !== 'codex')) return null
   return { on, backend }
+}
+
+function sanitizeFolderMap(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== 'object') return {}
+  return Object.fromEntries(
+    Object.entries(raw).filter(
+      (e): e is [string, string] => typeof e[1] === 'string' && e[1].length > 0
+    )
+  )
 }
 
 function isZoneId(z: unknown): z is string {

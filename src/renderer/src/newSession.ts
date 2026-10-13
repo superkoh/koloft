@@ -8,6 +8,8 @@ import type {
 } from '@shared/types'
 import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { isValidWorktreeName } from '@shared/worktreeName'
+import type { RouteWorktree } from '@shared/sessionRoute'
+import type { SessionLaunchOptions } from './components/SessionLaunchButtons'
 
 export type RunChoice =
   | ({ kind: 'existing' } & WorktreeInfo)
@@ -39,6 +41,73 @@ export function escPeel(l: {
 }
 
 export type WtHot = { where: 'field' } | { where: 'list'; index: number }
+
+export interface TypedStart {
+  prompt: string
+  title: string
+}
+
+export interface PendingStart extends TypedStart {
+  path: string | null
+  worktree: RouteWorktree | null
+}
+
+export function typedLaunch(typed: TypedStart): Pick<CreateTabOptions, 'firstPrompt' | 'name'> {
+  return { firstPrompt: typed.prompt.trim() || undefined, name: typed.title.trim() || undefined }
+}
+
+export function pendingWorktree(wsPath: string, pending: PendingStart): RouteWorktree | null {
+  return wsPath === pending.path ? pending.worktree : null
+}
+
+export function pendingLaunch(
+  wsPath: string,
+  wt: RouteWorktree | null,
+  pending: TypedStart,
+  worktrees: WorktreeInfo[],
+  issues: GithubItem[]
+): SessionLaunchOptions {
+  if (!wt || wt.kind === 'main') return { cwd: wsPath, ...typedLaunch(pending) }
+  if (wt.kind === 'issue') {
+    const item = issues.find((i) => i.kind === 'issue' && i.number === wt.number)
+    const aim = item && itemAim(item, worktrees)
+    if (item && aim?.kind === 'item') {
+      const choice: RunChoice = aim.dir
+        ? { kind: 'existing', name: aim.name, dir: aim.dir }
+        : { kind: 'create', name: aim.name }
+      return {
+        ...resolveLaunch(choice, wsPath),
+        ...seededItemExtras(item, pending.prompt, pending.title)
+      }
+    }
+    return {
+      ...resolveLaunch({ kind: 'create', name: `issue-${wt.number}` }, wsPath),
+      ...typedLaunch(pending)
+    }
+  }
+  const hit = worktrees.find((w) => w.name === wt.name)
+  return {
+    ...resolveLaunch(
+      hit ? { kind: 'existing', ...hit } : { kind: 'create', name: wt.name },
+      wsPath
+    ),
+    ...typedLaunch(pending)
+  }
+}
+
+export function seededItemExtras(
+  item: GithubItem,
+  prompt: string,
+  title: string
+): Pick<CreateTabOptions, 'firstPrompt' | 'name' | 'trustFolder'> {
+  const base = itemLaunchExtras(item)
+  const typed = prompt.trim()
+  return {
+    ...base,
+    firstPrompt: typed ? `${base.firstPrompt}\n\n${typed}` : base.firstPrompt,
+    name: title.trim() || base.name
+  }
+}
 
 export type WtAim =
   | { kind: 'none' }
