@@ -309,6 +309,7 @@ import type {
   SessionInfo,
   SessionMethods,
   AttentionEvent,
+  OsOutletsSeenByTests,
   AttentionSubject,
   SessionResumeRequest,
   SessionRow,
@@ -732,15 +733,22 @@ function attentionCtx(): AttentionContext {
   return { windowFocused: focused, activeTabId: uiActiveTabId }
 }
 
-function projectFolderName(tabId: string): string | undefined {
-  const root = sessionOfTab(tabId)?.treeRoot
+function projectFolderName(event: AttentionEvent): string | undefined {
+  const root =
+    sessionOfTab(event.tabId)?.treeRoot ??
+    (event.sessionId ? workspaceMgr?.workspaceOf(event.sessionId) : undefined)
   return root ? path.basename(root) : undefined
 }
 
+const osOutletsSeenByTests: OsOutletsSeenByTests = { notifications: [], dockBadge: '' }
+;(globalThis as { __koloftOsOutlets?: OsOutletsSeenByTests }).__koloftOsOutlets =
+  osOutletsSeenByTests
+
 function updateDockBadge(pending: AttentionEvent[]): void {
   if (process.platform !== 'darwin') return
-  const text = dockBadgeText(pending.length, loadSettings().dockBadge, BACKGROUND_TEST)
-  if (text !== null) app.dock?.setBadge(text)
+  const text = dockBadgeText(pending.length, loadSettings().dockBadge)
+  if (BACKGROUND_TEST) osOutletsSeenByTests.dockBadge = text
+  else app.dock?.setBadge(text)
 }
 
 function pointFocusClearingAtTabBeforeFocusingWindow(tabId: string): void {
@@ -765,7 +773,6 @@ function activateTabFromNotification(tabId: string): void {
 
 // PLATFORM§4
 const osNotifications = new Map<string, Notification>()
-;(globalThis as { __koloftOsNotifCount?: number }).__koloftOsNotifCount = 0
 
 function retractStaleOsNotifications(pending: AttentionEvent[]): void {
   for (const [tabId, n] of osNotifications) {
@@ -778,15 +785,26 @@ function retractStaleOsNotifications(pending: AttentionEvent[]): void {
   }
 }
 
-function showOsNotification(event: AttentionEvent): void {
+function osNotificationText(event: AttentionEvent): { title: string; body: string } {
   const reason = ATTENTION_REASON[event.kind]
-  const folder = projectFolderName(event.tabId)
-  const g = globalThis as { __koloftOsNotifCount?: number }
-  g.__koloftOsNotifCount = (g.__koloftOsNotifCount ?? 0) + 1
-  const n = new Notification({
+  const folder = projectFolderName(event)
+  return {
     title: event.title || PLACEHOLDER_SESSION_TITLE,
     body: folder ? `${reason} · ${folder}` : reason
-  })
+  }
+}
+
+function osNotification(text: { title: string; body: string }): Notification | null {
+  if (BACKGROUND_TEST) {
+    osOutletsSeenByTests.notifications.push(text)
+    return null
+  }
+  return Notification.isSupported() ? new Notification(text) : null
+}
+
+function showOsNotification(event: AttentionEvent): void {
+  const n = osNotification(osNotificationText(event))
+  if (!n) return
   n.on('click', () => {
     osNotifications.delete(event.tabId)
     activateTabFromNotification(event.tabId)
@@ -803,10 +821,7 @@ function showOsNotification(event: AttentionEvent): void {
 }
 
 function notifyPlain(title: string, body: string): void {
-  if (BACKGROUND_TEST || !Notification.isSupported()) return
-  const g = globalThis as { __koloftOsNotifCount?: number }
-  g.__koloftOsNotifCount = (g.__koloftOsNotifCount ?? 0) + 1
-  new Notification({ title, body }).show()
+  osNotification({ title, body })?.show()
 }
 
 const OUTLET_FLAP_DEDUPE_MS = 5000
@@ -824,13 +839,9 @@ function routeAttentionEvent(event: AttentionEvent): void {
   const now = Date.now()
   if (lastAt !== undefined && now - lastAt < OUTLET_FLAP_DEDUPE_MS) return
   recentOutlets.set(outletKey, now)
-  const decision = route(
-    event,
-    { windowFocused: attentionCtx().windowFocused, backgroundTest: BACKGROUND_TEST },
-    loadSettings()
-  )
+  const decision = route(event, attentionCtx().windowFocused, loadSettings())
   if (decision.os) showOsNotification(event)
-  if (decision.sound) shell.beep()
+  if (decision.sound && !BACKGROUND_TEST) shell.beep()
 }
 let mainWindow: BrowserWindow | null = null
 
@@ -974,11 +985,10 @@ function pushAccounts(): void {
 }
 
 function notifyExpired(name: string): void {
-  if (BACKGROUND_TEST || !Notification.isSupported()) return
-  new Notification({
-    title: 'Claude account expired',
-    body: `Account ${name} expired and left the pool — sign in again from Settings to restore it`
-  }).show()
+  notifyPlain(
+    'Claude account expired',
+    `Account ${name} expired and left the pool — sign in again from Settings to restore it`
+  )
 }
 
 function foldProbeResult(

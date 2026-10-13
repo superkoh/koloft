@@ -8,6 +8,7 @@ import {
   test,
   expect,
   launchApp,
+  osOutlets,
   pendingAttention,
   pretendWindowFocused,
   quitAndClose
@@ -964,7 +965,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('a Codex turn that ends while its child agent still runs shows breathing green with ↻, and turn-done waits for the child', async ({
+  test('a Codex turn that ends while its child agent still runs shows breathing green with ↻, and turn-done — its mark and its OS notification — waits for the child', async ({
     env
   }) => {
     installCodex(env)
@@ -977,12 +978,14 @@ test.describe('Codex sessions through the real method chooser, process transport
       const row = codexRows(page)
       await row.click()
       await expect.poll(() => pendingAttention(page), { timeout: 10_000 }).toHaveLength(0)
+      const notifiedBefore = (await osOutlets(app)).notifications.length
       await runIn(page, centerTerm(page), 'spawn child')
       const running = oneStillRunning(row)
       await expect(running).toBeVisible()
       await expect(row).toHaveClass(/st-waiting/)
       await expect(row).toHaveClass(/\bst-bg-run\b/)
       expect(await pendingAttention(page)).toHaveLength(0)
+      expect((await osOutlets(app)).notifications).toHaveLength(notifiedBefore)
       await running.click()
       await expect(page.locator('.tbu-pop.parked')).toContainText('Turn done · still running')
       await page.keyboard.press('Escape')
@@ -992,6 +995,11 @@ test.describe('Codex sessions through the real method chooser, process transport
       await expect
         .poll(() => pendingAttention(page), { timeout: 10_000 })
         .toMatchObject([{ kind: 'turn-done' }])
+      const [mark] = await pendingAttention(page)
+      expect(mark.title).toBeTruthy()
+      expect((await osOutlets(app)).notifications.slice(notifiedBefore)).toEqual([
+        { title: mark.title, body: 'turn done — your move · ws-a' }
+      ])
     } finally {
       await quitAndClose(app)
     }
