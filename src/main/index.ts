@@ -651,6 +651,11 @@ function sleepTab(tabId: string): void {
   rememberOpenTabs()
 }
 
+function sleepingTabOf(sessionId: string): string | undefined {
+  for (const [tabId, t] of sleepers) if (t.sessionId === sessionId) return tabId
+  return undefined
+}
+
 function forgetSleeper(tabId: string): void {
   sleepers.delete(tabId)
   conductors?.onPtyExit(tabId, false)
@@ -3440,9 +3445,10 @@ async function closeSessionFully(
   target: ClosableSession,
   info = projectInfoFor(target.treeRoot)
 ): Promise<void> {
-  if (target.tabId) {
-    sendToRenderer('tab:killedByMain', target.tabId)
-    await killTabPty(target.tabId)
+  const tabId = target.tabId ?? sleepingTabOf(target.sessionId)
+  if (tabId) {
+    sendToRenderer('tab:killedByMain', tabId)
+    await killTabPty(tabId)
   } else if (allSessions().some((s) => s.alive && s.sessionId === target.sessionId)) {
     sendToRenderer('cron:toast', `${target.title} was opened again, so Koloft did not close it.`)
     return
