@@ -898,6 +898,61 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
     }
   })
 
+  test('BB-E36: History shows every job, newest first and named; a click on a card marks it and shows just that job, a second click shows all again', async ({
+    env
+  }) => {
+    gitInit(env.workspaces.a)
+
+    const now = Date.now()
+    const daysAgo = (n: number): number => now - n * 24 * 60 * 60_000
+    const at = edHHMM(new Date(now + CLEAR_OF_BOOT_TICK_MISS_WINDOW_MS))
+    edWriteStore(env, [
+      {
+        name: 'A',
+        schedule: { kind: 'daily', at },
+        history: [
+          { dueAt: daysAgo(1), state: 'closed' },
+          { dueAt: daysAgo(3), state: 'closed' }
+        ]
+      },
+      {
+        name: 'B',
+        schedule: { kind: 'daily', at },
+        history: [{ dueAt: daysAgo(2), state: 'finished' }]
+      }
+    ])
+
+    const { app, page } = await edLaunch(env)
+    try {
+      const dlg = await edOpenDialog(page, 'ws-a')
+      const label = dlg.locator('.hist .flabel')
+      const marked = dlg.locator('.job-row.on')
+
+      await expect(label).toHaveText('History · all jobs')
+      await expect(edHistRows(page).locator('.hist-job')).toHaveText(['A', 'B', 'A'])
+      expect(await edHistStates(page)).toEqual([
+        'Closed by you',
+        'Done — closed itself',
+        'Closed by you'
+      ])
+      await expect(marked).toHaveCount(0)
+
+      await edCard(page, 'B').locator('.job-name').click()
+      await expect(label).toHaveText('History · B')
+      await expect(marked).toHaveCount(1)
+      await expect(marked.locator('.job-name')).toHaveText('B')
+      expect(await edHistStates(page)).toEqual(['Done — closed itself'])
+      await expect(edHistRows(page).locator('.hist-job')).toHaveCount(0)
+
+      await edCard(page, 'B').locator('.job-name').click()
+      await expect(label).toHaveText('History · all jobs')
+      await expect(marked).toHaveCount(0)
+      await expect(edHistRows(page)).toHaveCount(3)
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
   async function edDirtyEditor(page: Page, ed: EditFixture): Promise<void> {
     await showBrowse(page)
     const dir = browseRow(page, ed.configDir)

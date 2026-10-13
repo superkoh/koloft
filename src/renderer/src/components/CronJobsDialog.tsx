@@ -18,7 +18,7 @@ import {
   SESSION_BACKENDS
 } from '@shared/sessionBackend'
 import { describeSchedule, describeWhen, nextRun } from '@shared/schedule'
-import { histText, histWhen, lastRunOf, liveOf, whenLine } from '@shared/cronHistory'
+import { histEnd, histText, histWhen, lastRunOf, liveOf, whenLine } from '@shared/cronHistory'
 import {
   emptyFields,
   permissionAfterSwitch,
@@ -146,7 +146,7 @@ export function CronJobsDialog({
   const mixed = mixesBackends(jobs.map((j) => ({ backendId: cronBackend(j) })))
 
   const [selectedId, setSelectedId] = useState<string | null>(initialJobId ?? null)
-  const selected = jobs.find((j) => j.id === selectedId) ?? jobs[0]
+  const selected = jobs.find((j) => j.id === selectedId)
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [form, setForm] = useState<{ mode: 'new' } | { mode: 'edit'; id: string } | null>(null)
   const [fields, setFields] = useState<JobFields>(emptyFields())
@@ -321,9 +321,12 @@ export function CronJobsDialog({
 
   const renderCard = (job: CronJob): JSX.Element => (
     <div
-      className={'job-row' + (job.enabled ? '' : ' off')}
+      className={'job-row' + (job.enabled ? '' : ' off') + (job.id === selected?.id ? ' on' : '')}
       key={job.id}
-      onClick={() => setSelectedId(job.id)}
+      onClick={(e) => {
+        if ((e.target as Element).closest('button, input')) return
+        setSelectedId(job.id === selected?.id ? null : job.id)
+      }}
     >
       <Switch
         checked={job.enabled}
@@ -675,33 +678,52 @@ export function CronJobsDialog({
   )
 
   const renderHistory = (): JSX.Element | null => {
-    if (!selected) return null
-    const live = liveOf(cron.live, selected.id)
-    return (
-      <div className="hist">
-        <span className="flabel">{`History · ${selected.name}`}</span>
-        <div className="hist-list">
-          {live?.state === 'done' && (
-            <div className="hist-row">
-              <span className="hist-when">{describeWhen(new Date(live.dueAt), new Date())}</span>
+    if (jobs.length === 0) return null
+    const now = new Date()
+    const rows: { at: number; row: JSX.Element }[] = []
+    for (const job of selected ? [selected] : jobs) {
+      const name = selected ? null : <span className="hist-job">{job.name}</span>
+      const live = liveOf(cron.live, job.id)
+      if (live?.state === 'done') {
+        rows.push({
+          at: live.dueAt,
+          row: (
+            <div className="hist-row" key={`${job.id}-live`}>
+              <span className="hist-when">{describeWhen(new Date(live.dueAt), now)}</span>
+              {name}
               <span className="hist-state">
                 <span className="dot ok" />
                 {live.kept ? `Done — not closed: ${live.kept}` : 'Done — waiting for you'}
               </span>
               {live.worktree && <span className="hist-wt">{` · ${live.worktree}`}</span>}
             </div>
-          )}
-          {selected.history.map((h, i) => (
-            <div className="hist-row" key={`${h.dueAt}-${i}`}>
-              <span className="hist-when">{histWhen(h, new Date())}</span>
+          )
+        })
+      }
+      job.history.forEach((h, i) =>
+        rows.push({
+          at: histEnd(h),
+          row: (
+            <div className="hist-row" key={`${job.id}-${h.dueAt}-${i}`}>
+              <span className="hist-when">{histWhen(h, now)}</span>
+              {name}
               <span className="hist-state">
                 <span className={histDot(h)} />
                 {histText(h)}
               </span>
               {h.worktree && <span className="hist-wt">{` · ${h.worktree}`}</span>}
             </div>
-          ))}
-        </div>
+          )
+        })
+      )
+    }
+    if (!selected) rows.sort((a, b) => b.at - a.at)
+    return (
+      <div className="hist">
+        <span className="flabel">
+          {selected ? `History · ${selected.name}` : 'History · all jobs'}
+        </span>
+        <div className="hist-list">{rows.map((r) => r.row)}</div>
       </div>
     )
   }

@@ -747,7 +747,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await closeCron(page)
       const dlg = await openCron(page, 'ws-a')
 
-      await expect(dlg.locator('.hist .flabel')).toHaveText('History · A')
+      await expect(dlg.locator('.hist .flabel')).toHaveText('History · all jobs')
       await card(page, 'B').click()
       await expect(dlg.locator('.hist .flabel')).toHaveText('History · B')
 
